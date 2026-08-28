@@ -310,6 +310,46 @@ reached n=104 in **6 days**, and volume alone is not evidence of durability.
 
 ---
 
+## 17. The Coolbet odds scraper is built on a DEAD endpoint, not a blocked one
+
+Diagnosed 2026-08-28 after the feed died three times in one day (6h, 4.5h, and
+80h historically). The reflex diagnosis is "Imperva is blocking us" and it is
+**wrong**.
+
+What is actually true:
+
+| probe | result |
+|---|---|
+| `GET coolbet.com/en/sports` via plain `requests` | **HTTP 200** |
+| `GET coolbet.com/s/search/v2` via plain `requests` | **HTTP 403** |
+| Same `/s/search/v2` **from inside the logged-in browser** | **hangs** (aborts at 12s) |
+| Match page HTML via plain `requests` | 200, but **6,058 bytes with zero odds** |
+
+The third row is the one that matters. If this were an Imperva fingerprint
+block, the request would succeed from inside a real Chrome with real cookies.
+It does not — it hangs there too. **`/s/search/v2` is deprecated/tarpitted for
+everyone**, so no amount of cookie refreshing, user-agent matching or
+FlareSolverr can bring it back. Cookie age was never the cause.
+
+Two supporting facts:
+
+* **Coolbet is an SPA.** The match page is a ~6KB shell; odds are rendered
+  client-side, so plain HTTP cannot read prices even on a 200.
+* **Live prices stream over Socket.IO** at
+  `wss://www.coolbet.com/s/pusher/socket.io/` — which is why `networkidle`
+  never settles on a match page and why almost no XHR is visible.
+
+**Consequence:** odds collection from Coolbet requires a browser that executes
+JS. That is not a workaround, it is the only surface that exists. The UI placer
+already does exactly this successfully (`read_outcomes` / `read_ou_grid`), and
+on 2026-08-28 wrote 413 rows across 14 matches in a single pass while the API
+scraper was returning nothing.
+
+Before "fixing" the Coolbet feed again, check whether the endpoint still exists
+rather than assuming the client is being blocked.
+
+---
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |
