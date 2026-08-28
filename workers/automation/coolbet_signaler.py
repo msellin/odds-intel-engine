@@ -83,7 +83,15 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
                  at2.name          AS away_team,
                  l.name            AS league,
                  l.country         AS country,
-                 COUNT(*) OVER (PARTITION BY sb.match_id, sb.market, sb.selection) AS bot_count
+                 COUNT(*) OVER (PARTITION BY sb.match_id, sb.market, sb.selection) AS bot_count,
+                 -- SIGNALER-MATURITY-SHADOWING (2026-08-28): whether ANY bot in
+                 -- this (match, market, selection) group is calibrated — not
+                 -- just the canonical highest-edge row DISTINCT ON happens to
+                 -- keep. The public-channel gate reads this instead of the
+                 -- canonical row's maturity; see the note above the gate.
+                 bool_or(b.maturity_label = 'calibrated')
+                   OVER (PARTITION BY sb.match_id, sb.market, sb.selection)
+                   AS group_has_calibrated
           FROM simulated_bets sb
           JOIN bots          b   ON b.id   = sb.bot_id
           JOIN matches       m   ON m.id   = sb.match_id
@@ -352,8 +360,29 @@ def signal_all_bets(*, lookahead_hours: int = 36,
             # experimental picks stay in the operator channel only. Failure
             # is non-fatal (operator-side signal already succeeded).
             public_msg_id = None
+            # SIGNALER-MATURITY-SHADOWING (2026-08-28) — gate on whether ANY
+            # bot in the group is calibrated, NOT on the canonical row's own
+            # maturity.
+            #
+            # load_signal_candidates collapses multi-bot picks with
+            # DISTINCT ON (...) ORDER BY edge_percent DESC, so the canonical
+            # row is simply the highest-edge one. When a BETA bot happened to
+            # quote a higher edge than a calibrated bot on the identical
+            # (match, market, selection), `b["maturity"]` read 'beta' and the
+            # public post was silently skipped — even though a calibrated bot
+            # backed exactly that pick. Nothing logged: the operator post
+            # succeeded normally, so the only symptom was a pick missing from
+            # @oddsintelpicks. Measured over 60d before the fix: 7 of 109
+            # calibrated picks (6.4%) suppressed this way.
+            #
+            # The canonical row still supplies the message CONTENT (odds, edge).
+            # It is the same pick either way, and leaving row selection alone
+            # keeps the per-market edge floor in load_signal_candidates behaving
+            # exactly as before — re-ordering to prefer calibrated rows would
+            # have let a lower-edge calibrated row fall under the floor and drop
+            # the pick entirely.
             if (
-                b.get("maturity") == "calibrated"
+                b.get("group_has_calibrated")
                 and b.get("market") in _PUBLIC_MARKETS
             ):
                 try:

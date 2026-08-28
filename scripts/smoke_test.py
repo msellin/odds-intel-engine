@@ -21605,8 +21605,35 @@ def _():
     assert "send_telegram_public" in src
     assert "_format_public_signal" in src
     assert "_PUBLIC_MARKETS" in src and "1x2" in src and "btts" in src
-    assert 'b.get("maturity") == "calibrated"' in src, (
-        "public post must be gated on maturity_label == 'calibrated'"
+    # SIGNALER-MATURITY-SHADOWING (2026-08-28): the gate must read the
+    # GROUP-level calibrated flag, not the canonical row's own maturity.
+    #
+    # load_signal_candidates collapses multi-bot picks with DISTINCT ON (...)
+    # ORDER BY edge_percent DESC, so the canonical row is whichever bot quoted
+    # the highest edge. Gating on `b["maturity"]` meant that when a BETA bot
+    # outbid a calibrated bot on the identical (match, market, selection), the
+    # public post was silently skipped even though a calibrated bot backed the
+    # pick — 7 of 109 calibrated picks (6.4%) suppressed over 60d, with nothing
+    # logged because the operator post succeeded normally.
+    assert 'b.get("group_has_calibrated")' in src, (
+        "public post must be gated on the group-level calibrated flag, not on "
+        "the canonical row's maturity — see SIGNALER-MATURITY-SHADOWING"
+    )
+    assert 'b.get("maturity") == "calibrated"' not in src, (
+        "the per-row maturity gate is the bug: a beta bot with a higher edge "
+        "shadows a calibrated bot on the same pick and suppresses the post"
+    )
+    # The SQL must actually compute the flag as a window function over the same
+    # partition DISTINCT ON collapses, or the Python gate reads None and NOTHING
+    # is ever posted publicly.
+    assert "bool_or(b.maturity_label = 'calibrated')" in src, (
+        "load_signal_candidates must compute group_has_calibrated in SQL"
+    )
+    assert "AS group_has_calibrated" in src
+    assert src.count("PARTITION BY sb.match_id, sb.market, sb.selection") >= 2, (
+        "group_has_calibrated must partition on the SAME key DISTINCT ON uses "
+        "(match_id, market, selection) — a different partition silently "
+        "mis-gates every pick"
     )
     assert "PUBLIC-CHANNEL-POST" in src
 
