@@ -25687,6 +25687,26 @@ def test_coolbet_feed_watchdog_2026_08_26():
     assert "dedup_hours" not in src, "wrong kwarg silently disabled every alert"
     assert "dedup_window_s" in src
 
+    # ZERO-PICKS ALARM (2026-08-28): a healthy feed does not mean a working bot.
+    # "0 picks" reads exactly like a quiet day — the shape that hid the
+    # InplayBot UUID bug for 11 days. Separable: if both books priced plenty of
+    # upcoming matches and the bot still wrote nothing, it is not a quiet day.
+    from workers.jobs.coolbet_feed_watchdog import (
+        PICKS_STALE_H, PICKS_MIN_PRICED_MATCHES, _picks_gap,
+    )
+    assert "NO_PICKS" in src, "a silent bot on a healthy feed must be detectable"
+    assert 0 < PICKS_STALE_H <= 24 and PICKS_MIN_PRICED_MATCHES >= 5
+    gap, priced = _picks_gap()
+    assert priced >= 0, "picks-gap probe must not raise"
+
+    # The cookie-age query named a column that does not exist
+    # (imperva_cookies_at vs imperva_cookies_refreshed_at), so it raised on
+    # every call, the except swallowed it, and the helper returned None
+    # forever — "cookie age is unknown" on every run, with the
+    # cookies-are-fresh branch of classify() unreachable.
+    assert "imperva_cookies_refreshed_at" in src, "cookie age must use the real column"
+    assert "imperva_cookies_at)" not in src
+
     assert 0 < FEED_STALE_H <= 6, "feed-stale threshold must be sane"
     assert 0 < COOKIE_STALE_H <= 4, "cookie-stale threshold must be sane"
     assert ODDS_JOB == "com.oddsintel.coolbet-odds-snapshot"

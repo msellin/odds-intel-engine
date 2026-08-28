@@ -67,6 +67,19 @@ COOKIE_STALE_H = 2.0
 # change — see the note in the odds-age lookup.
 BULK_SWEEP_MIN_MATCHES = 25
 
+# ZERO-PICKS ALARM (2026-08-28): the feed being healthy does not mean the BOT is
+# working. A pipeline that evaluates nothing produces "0 picks", which reads
+# exactly like a quiet day with no qualifying prices — the same silent shape as
+# the InplayBot UUID bug, which hid behind "0 bets" for 11 days.
+#
+# The two cases are separable: if Coolbet AND Pinnacle both priced upcoming
+# matches in the window and the bot still wrote nothing, that is not a quiet
+# day. Below this many priced matches we stay quiet, because then there really
+# was nothing to bet.
+PICKS_STALE_H = 14.0
+PICKS_MIN_PRICED_MATCHES = 20
+PICKS_BOT = "bot_coolbet_value_v1"
+
 # Alert at most this often per state, so a multi-day block sends a handful of
 # messages rather than one every run.
 ALERT_DEDUP_H = 6.0
@@ -114,8 +127,14 @@ def _hours_since_cookies() -> float | None:
     try:
         from workers.api_clients.db import execute_query
         rows = execute_query(
-            "SELECT EXTRACT(epoch FROM (now() - imperva_cookies_at)) / 3600.0 AS h "
-            "FROM coolbet_session_state WHERE id = 1",
+            # Column is imperva_cookies_refreshed_at. The old name
+            # `imperva_cookies_at` does not exist, so this query raised
+            # UndefinedColumn on every call, the except swallowed it, and the
+            # helper returned None forever — the watchdog reported "cookie age
+            # is unknown" on every run and the "cookies only Xh old" branch of
+            # classify() was unreachable dead code. Found 2026-08-28.
+            "SELECT EXTRACT(epoch FROM (now() - imperva_cookies_refreshed_at)) "
+            "/ 3600.0 AS h FROM coolbet_session_state WHERE id = 1",
             [],
         )
         if rows and rows[0].get("h") is not None:
@@ -123,6 +142,40 @@ def _hours_since_cookies() -> float | None:
     except Exception as e:
         log.warning("cookie-age lookup failed: %s", e)
     return None
+
+
+def _picks_gap() -> tuple[float | None, int]:
+    """(hours since the bot's last pick, matches both books priced meanwhile).
+
+    Returns (None, 0) on any error — a broken lookup must not manufacture an
+    incident, same rule as the odds-age lookup.
+    """
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """SELECT EXTRACT(epoch FROM (now() - MAX(s.pick_time)))/3600.0 AS h
+                 FROM shadow_bets s JOIN bots b ON b.id = s.bot_id
+                WHERE b.name = %s""",
+            [PICKS_BOT],
+        )
+        h = float(rows[0]["h"]) if rows and rows[0].get("h") is not None else None
+        # How many upcoming matches had BOTH books priced in the window? If this
+        # is small, "no picks" is honest rather than broken.
+        priced = execute_query(
+            """SELECT COUNT(*) AS n FROM (
+                 SELECT o.match_id
+                   FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
+                  WHERE o.timestamp > now() - (%s || ' hours')::interval
+                    AND m.date > now() AND o.market = '1x2'
+                    AND o.bookmaker IN ('Coolbet','Pinnacle')
+                  GROUP BY o.match_id
+                 HAVING COUNT(DISTINCT o.bookmaker) = 2) x""",
+            [str(int(PICKS_STALE_H))],
+        )
+        return h, int(priced[0]["n"]) if priced else 0
+    except Exception as e:
+        log.warning("picks-gap lookup failed: %s", e)
+        return None, 0
 
 
 def _job_loaded() -> bool:
@@ -154,6 +207,16 @@ def classify() -> tuple[str, str]:
     if odds_h is None:
         return ("UNKNOWN", "could not read odds_snapshots")
     if odds_h <= FEED_STALE_H:
+        # Feed is fine — but is the BOT producing? A healthy feed with a silent
+        # bot is the failure this check exists for.
+        picks_h, priced = _picks_gap()
+        if (picks_h is not None and picks_h > PICKS_STALE_H
+                and priced >= PICKS_MIN_PRICED_MATCHES):
+            return ("NO_PICKS",
+                    f"feed healthy ({odds_h:.1f}h) but {PICKS_BOT} has written no "
+                    f"pick for {picks_h:.1f}h while {priced} upcoming matches had "
+                    f"both Coolbet and Pinnacle priced — the pipeline is not "
+                    f"evaluating, this is not a quiet day")
         return ("HEALTHY", f"last Coolbet odds {odds_h:.1f}h ago")
 
     # Feed is stale. Work out why, cheapest and most-fixable first.
@@ -265,7 +328,8 @@ def run(dry_run: bool = False) -> dict:
                       f"a coolbet.com tab is open and logged in")
             result["state"], result["reason"] = state, reason
     else:
-        # CDP_DOWN / BLOCKED — no safe automatic remedy. Alert and stop.
+        # CDP_DOWN / BLOCKED / NO_PICKS — no safe automatic remedy. Restarting a
+        # pipeline that is silently evaluating nothing would just hide it again.
         result["action"] = "alerted"
 
     if state != "NOT_LOADED" or result["action"] != "reloaded":
