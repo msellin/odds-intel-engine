@@ -259,57 +259,6 @@ before believing it.**
 
 ---
 
-## 17. A bot's paper ledger is EITHER `simulated_bets` OR `shadow_bets` — never both
-
-Pipeline bots (`bot_v10_all`, `bot_btts_all`, `bot_opt_*`, `inplay_*`) write to
-`simulated_bets`. Sweep and shadow bots (`bot_sweep_*`, `bot_pin_*`,
-`bot_coolbet_value_v1`) write only to `shadow_bets`. Query one table and half
-the fleet looks **dormant with zero activity** — which is exactly how
-`bot_pin_1x2_home_v1` accumulated 104 settled picks at +13.1% ROI without ever
-appearing in a weekly bot review (BOT-GATE-REACHABLE, 2026-08-28).
-
-**Do not union the two to fix it.** Pipeline bots ALSO re-record into
-`shadow_bets` as part of the timing-cohort experiment, so a union double-counts
-— `bot_v10_all` has 357 sim rows and 319 shadow rows covering 85 of the same 93
-matches in 30d. And the join that would catch the duplicates silently fails:
-per gotcha 3, `shadow_bets` spells markets `1X2` / `O/U` / `over_under_25`
-where `simulated_bets` spells them `1x2` / `o/u`, so joining on `market`
-returns **zero overlap** and the two ledgers look independent when they are the
-same picks twice.
-
-Pick one source per bot: `simulated_bets` when it has rows, else
-`shadow_bets_unique` (gotcha 5 — always the view, never the base table). Also
-prefer `shadow_bets.clv_pinnacle` over `shadow_bets.clv`; the plain column is
-anchored on the pick's own book and is not comparable to `simulated_bets.clv`.
-
----
-
-## 18. A promotion gate scored on real money cannot promote anything
-
-The weekly bot review emitted **zero PROMOTE and zero DEMOTE verdicts in 10
-consecutive weeks**, and the reason was structural, not empirical: promotion
-required 20+ settled `real_bets`, while `COOLBET_RECORD_ALLOWED_MATURITY=calibrated`
-means only *calibrated* bots ever write to `real_bets`. A beta bot could not
-earn the real-money history the gate demanded, because being beta is precisely
-what stopped it placing real money. Every non-calibrated bot sat at real n <= 2
-indefinitely.
-
-The general shape, worth checking in any gate you write: **the evidence a gate
-demands must be producible by something on the wrong side of the gate.** Two
-corollaries that bit at the same time:
-
-- Gating on CLV excludes in-play bots permanently, because in-play has no
-  closing line (gotcha 14). Score them on a stiffer ROI bar instead of leaving
-  them ineligible forever.
-- Gating DEMOTE on `maturity == 'calibrated'` means a losing *beta* bot is
-  never demoted — and beta is visible to every signed-in user on `/picks`.
-
-Fixed 2026-08-28 with a paper-evidence path (n >= 100, ROI > +3%, CLV > +3%,
-picks spanning >= 21d). The span requirement matters: `bot_pin_1x2_home_v1`
-reached n=104 in **6 days**, and volume alone is not evidence of durability.
-
----
-
 ## 17. The Coolbet odds scraper is built on a DEAD endpoint, not a blocked one
 
 Diagnosed 2026-08-28 after the feed died three times in one day (6h, 4.5h, and
@@ -347,6 +296,94 @@ scraper was returning nothing.
 
 Before "fixing" the Coolbet feed again, check whether the endpoint still exists
 rather than assuming the client is being blocked.
+
+---
+
+## 18. A bot's paper ledger is EITHER `simulated_bets` OR `shadow_bets` — never both
+
+Pipeline bots (`bot_v10_all`, `bot_btts_all`, `bot_opt_*`, `inplay_*`) write to
+`simulated_bets`. Sweep and shadow bots (`bot_sweep_*`, `bot_pin_*`,
+`bot_coolbet_value_v1`) write only to `shadow_bets`. Query one table and half
+the fleet looks **dormant with zero activity** — which is exactly how
+`bot_pin_1x2_home_v1` accumulated 104 settled picks at +13.1% ROI without ever
+appearing in a weekly bot review (BOT-GATE-REACHABLE, 2026-08-28).
+
+**Do not union the two to fix it.** Pipeline bots ALSO re-record into
+`shadow_bets` as part of the timing-cohort experiment, so a union double-counts
+— `bot_v10_all` has 357 sim rows and 319 shadow rows covering 85 of the same 93
+matches in 30d. And the join that would catch the duplicates silently fails:
+per gotcha 3, `shadow_bets` spells markets `1X2` / `O/U` / `over_under_25`
+where `simulated_bets` spells them `1x2` / `o/u`, so joining on `market`
+returns **zero overlap** and the two ledgers look independent when they are the
+same picks twice.
+
+Pick one source per bot: `simulated_bets` when it has rows, else
+`shadow_bets_unique` (gotcha 5 — always the view, never the base table). Also
+prefer `shadow_bets.clv_pinnacle` over `shadow_bets.clv`; the plain column is
+anchored on the pick's own book and is not comparable to `simulated_bets.clv`.
+
+---
+
+## 19. A promotion gate scored on real money cannot promote anything
+
+The weekly bot review emitted **zero PROMOTE and zero DEMOTE verdicts in 10
+consecutive weeks**, and the reason was structural, not empirical: promotion
+required 20+ settled `real_bets`, while `COOLBET_RECORD_ALLOWED_MATURITY=calibrated`
+means only *calibrated* bots ever write to `real_bets`. A beta bot could not
+earn the real-money history the gate demanded, because being beta is precisely
+what stopped it placing real money. Every non-calibrated bot sat at real n <= 2
+indefinitely.
+
+The general shape, worth checking in any gate you write: **the evidence a gate
+demands must be producible by something on the wrong side of the gate.** Two
+corollaries that bit at the same time:
+
+- Gating on CLV excludes in-play bots permanently, because in-play has no
+  closing line (gotcha 14). Score them on a stiffer ROI bar instead of leaving
+  them ineligible forever.
+- Gating DEMOTE on `maturity == 'calibrated'` means a losing *beta* bot is
+  never demoted — and beta is visible to every signed-in user on `/picks`.
+
+Fixed 2026-08-28 with a paper-evidence path (n >= 100, ROI > +3%, CLV > +3%,
+picks spanning >= 21d). The span requirement matters: `bot_pin_1x2_home_v1`
+reached n=104 in **6 days**, and volume alone is not evidence of durability.
+
+---
+
+## 20. Line-shopping has only existed since 2026-04-28 — there is no long backtest
+
+`odds_snapshots` goes back to **2023-01-27**, which makes a multi-year
+line-shopping replay look available. It is not. Before **2026-04-28 the archive
+holds Pinnacle and nothing else**, so there is no second book to shop against:
+
+| book | first seen |
+|---|---|
+| Pinnacle | 2023-01-27 |
+| Unibet / Betano / 10Bet / Marathonbet | 2026-04-28 |
+| 888Sport | 2026-04-30 |
+| Coolbet | 2026-05-20 |
+
+A `lineshop_replay.py --start 2025-01-01` therefore returns exactly the same
+numbers as `--start 2026-04-28`, and any picks it "adds" from the earlier period
+are zero. Worse, the old output rendered that as a bare `(no qualifying picks)`
+line, indistinguishable from a config that genuinely never fires — which is how
+a 20-month replay of `bot_pin_1x2_home_v1` came back empty and looked like a
+dead strategy rather than a missing archive. The script now warns explicitly
+(`LINESHOP_DATA_START`).
+
+The honest maximum for any line-shop bot is **four months**. That is not enough
+to clear a t-gate: measured 2026-04-28 → 2026-08-26,
+
+| bot | n | ROI | t |
+|---|---|---|---|
+| `bot_pin_1x2_home_v1` | 583 | +6.91% | +1.20 |
+| `bot_sweep_ou35_v1` | 379 | +1.77% | +0.29 |
+| `bot_sweep_ou25_v1` | 365 | +1.18% | +0.21 |
+
+Related: the two sweep bots **claim ~+6.5% edge and realise ~+1.5%**, while
+`bot_pin_1x2_home_v1`'s claimed and realised edge agree to two decimal places.
+A claimed-vs-realised gap that large is a pricing bug, not variance — diagnose
+it before reading anything into either sweep bot's ROI.
 
 ---
 

@@ -715,38 +715,80 @@ because it was unwalkable, not because no bot qualified:
    `maturity == 'calibrated'`, so `bot_summer_specialist` (−56% paper ROI) kept
    its beta label — and beta is visible to every signed-in user.
 
-#### Current gate
+#### Current gate (BOT-GATE-TSTAT)
 
-Verdict window 60d. Paper ledger = `simulated_bets` when the bot writes there,
-otherwise `shadow_bets_unique`; never a union of the two (ANALYSIS_GOTCHAS #17).
+The gate is a **one-sided t-test**, not a raw ROI level. Verdict window 60d.
+Paper ledger = `simulated_bets` when the bot writes there, otherwise
+`shadow_bets_unique`; never a union (ANALYSIS_GOTCHAS #18).
 
-| Verdict | Path | Condition |
-|---|---|---|
-| PROMOTE | real (fast lane) | real n ≥ 20 **and** real ROI > +10% **and** paper CLV > +5% |
-| PROMOTE | paper | paper n ≥ 100 **and** span ≥ 21d **and** paper ROI > +3% **and** paper CLV > +3% |
-| PROMOTE | paper, no-CLV | paper n ≥ 100 **and** span ≥ 21d **and** paper ROI > +8% |
-| DEMOTE | real | `calibrated` **and** real n ≥ 20 **and** real ROI < −5% |
-| DEMOTE | paper | **any** maturity **and** paper n ≥ 100 **and** paper ROI < −10% |
-| HOLD | — | otherwise; the digest names the binding constraint per bot |
+| Verdict | Condition |
+|---|---|
+| PROMOTE | `t >= +1.65` **and** `maturity != calibrated` **and** >=14 days observed |
+| DEMOTE | `t <= -1.65`, at **any** maturity |
+| DEMOTE | real-money tripwire: `calibrated` **and** real n >= 20 **and** real ROI < -5% |
+| HOLD | otherwise; the digest names the binding constraint per bot |
 
-All PROMOTE paths additionally require `maturity != 'calibrated'`.
+The statistic is computed on **de-vigged Pinnacle CLV** once n >= 100, else on
+per-bet ROI once n >= 200. CLV's per-bet SD is 0.090 against ROI's 1.341, so CLV
+needs roughly 222x fewer bets for the same precision (SS 9.1). Bots on markets
+Pinnacle does not quote — BTTS above all — and every `inplay_*` bot have no CLV
+anchor and fall back to the far slower ROI test. That is a real cost of betting
+an unanchored market, and the digest shows it rather than hiding it.
 
-Two design choices worth stating explicitly, because both are judgement calls
-rather than derived numbers:
+**These constants are shared with** `odds-intel-web/src/app/(app)/admin/shadow-bots/page.tsx`.
+Smoke pins the pairing: two gates deciding the same question with different
+numbers is how a bot ends up promoted on one surface and retired on the other.
 
-- **The paper bars are lower than the real bars (+3% vs +10%) but demand 5× the
-  sample.** Paper ROI is measured without slippage, stake limits, or the
-  selection bias found in SELF-USE-VALIDATION Phase 3 (placed −6.6% vs unplaced
-  −1.3% ROI). A paper edge is weaker evidence *per unit*, so the correct
-  response is to require more of it, not to require a bigger number.
-- **Promotion requires the picks to span ≥ 21 days; demotion does not.**
-  `bot_pin_1x2_home_v1` reached n=104 in six days, so volume alone clears n≥100
-  without saying anything about whether the edge survives a change of regime.
-  Demotion is deliberately not span-gated — a bot losing money fast should be
-  caught fast.
+##### Why not a raw ROI threshold
 
-Revisit the paper bars once a paper-promoted bot has 60 days of real money
-behind it and the two ledgers can be compared directly.
+The first cut of this gate (shipped and corrected the same day, 2026-08-28) used
+`ROI > +3%` to promote and `ROI < -10%` to demote. SHADOW-PROMOTION-GATE-2026-08-26
+had already established for the sibling gate that a raw level is close to
+uninformative — it is cleared whenever noise lands above it, and raising n does
+not fix it, because the failure is the threshold rather than the sample size.
+
+Simulated at n=100 against the empirical odds pool these bots bet at (n=740,
+mean odds 2.95, 20k trials):
+
+| true ROI | true CLV | raw gate promote / **DEMOTE** | t-gate promote / DEMOTE |
+|---|---|---|---|
+| 0% | 0% | 0.0% / **24.4%** | 5.0% / 5.1% |
+| +5% | +5% | 54.1% / **14.7%** | 100% / 0.0% |
+| -5% | -3% | 0.0% / 36.5% | 0.0% / 95.5% |
+
+The raw gate demoted a break-even bot one time in four and a genuinely good bot
+one time in seven, because per-bet ROI SD of 1.341 makes a -10% threshold a t of
+-0.75 at n=100. Demotion is the consequential direction — it strips a bot off
+`/picks`. The t-gate holds both error rates at the nominal ~5%. (The 100% power
+figure is idealised: it assumes independent CLV draws at the documented SD, and
+real picks correlate within a matchday. Read it as an upper bound.)
+
+The **real-money tripwire is deliberately not a significance test.** At n=20 the
+ROI standard error is ~30pp, so `real ROI < -5%` is a t of about -0.17 and will
+fire on noise. It is kept because the loss function is asymmetric: a false
+DEMOTE costs a calibrated bot nothing but paper trading, while a false negative
+costs actual money every day it persists. Trigger-happy is the correct bias, and
+naming it a tripwire rather than a verdict is the honest way to say so.
+
+##### What the gate says today
+
+Point-in-time replay over the **entire** multi-book archive
+(`scripts/lineshop_replay.py`, 2026-04-28 -> 2026-08-26 — line-shopping is
+impossible before 2026-04-28, when only Pinnacle existed):
+
+| bot | n | ROI | SE | t | claimed edge |
+|---|---|---|---|---|---|
+| `bot_pin_1x2_home_v1` | 583 | +6.91% | 5.76% | **+1.20** | +6.9% |
+| `bot_sweep_ou35_v1` | 379 | +1.77% | 6.05% | +0.29 | +6.7% |
+| `bot_sweep_ou25_v1` | 365 | +1.18% | 5.52% | +0.21 | +6.4% |
+
+None reaches significance on four months of data. `bot_pin_1x2_home_v1` is
+suggestive and is the one to watch; the raw-threshold gate would have promoted
+it outright on ROI alone. Note also that both sweep bots **claim ~+6.5% edge and
+realise ~+1.5%**, while `bot_pin_1x2_home_v1`'s claimed edge matches what it
+earns almost exactly — a discrepancy worth diagnosing before either sweep bot is
+considered for promotion.
+
 
 ### 8.2 Bot Timing Cohorts
 

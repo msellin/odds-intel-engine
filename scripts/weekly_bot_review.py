@@ -20,7 +20,7 @@ why the job had never once emitted a PROMOTE or a DEMOTE in 10 weeks of runs:
      history the gate demanded, because being beta is exactly what stopped it
      placing real money. Every non-calibrated bot sat at real n <= 2 forever.
      Fix: a second, reachable promotion path scored on PAPER evidence
-     (see PROMOTE_PAPER_* below). The real-money path is kept as a fast lane.
+     scored with a t-test (see the gate constants below).
 
   2. THE SHADOW LEDGER WAS INVISIBLE. `bot_sweep_*`, `bot_pin_*` and
      `bot_coolbet_value_v1` write to `shadow_bets`, not `simulated_bets`, so
@@ -33,29 +33,41 @@ why the job had never once emitted a PROMOTE or a DEMOTE in 10 weeks of runs:
      true for `inplay_*` — there is no closing line for an in-play pick, so
      `clv` is always NULL. `inplay_l` is calibrated only because it was
      promoted by hand. Fix: bots with no CLV data at all are scored on a
-     higher ROI bar instead (PROMOTE_PAPER_ROI_NO_CLV_PCT).
+     ROI t-test at a much larger n instead.
 
   Also: DEMOTE only ever applied to calibrated bots, so a beta bot bleeding
   paper money (bot_summer_specialist, -56pct ROI) stayed beta indefinitely —
   and beta is visible to every signed-in user on /picks. DEMOTE now applies
   at any maturity once there is enough paper evidence.
 
-Verdict thresholds (verdict window = 60d):
-  PROMOTE  (real path)   real n >= 20  AND real ROI > +10pct AND paper CLV > +5pct
-           (paper path)  paper n >= 100 AND paper ROI > +3pct AND paper CLV > +3pct
-           (paper, no-CLV bots)        paper n >= 100 AND paper ROI > +8pct
-           ... all three additionally require maturity != calibrated
-  DEMOTE   (real path)   maturity == calibrated AND real n >= 20 AND real ROI < -5pct
-           (paper path)  paper n >= 100 AND paper ROI < -10pct
-  HOLD     everything else (including not enough evidence either way)
+Verdict thresholds (verdict window = 60d) — see BOT-GATE-TSTAT below:
+  basis    de-vigged Pinnacle CLV once n >= CLV_MIN_N (100), else per-bet ROI
+           once n >= MIN_SETTLED_FOR_DECISION (200)
+  PROMOTE  t >= +1.65 AND maturity != calibrated AND >= 14d observed
+  DEMOTE   t <= -1.65, at ANY maturity
+  DEMOTE   real-money tripwire: calibrated AND real n >= 20 AND real ROI < -5%
+  HOLD     everything else; the digest names the binding constraint per bot
 
-Thresholds are judgement calls, not derived numbers. The paper bars are set
-deliberately LOWER than the real-money bars because paper ROI is measured
-without slippage, limits, or the selection bias documented in
-[[project_self_use_validation_phase3]] — a paper edge is weaker evidence per
-unit, so the answer is to demand more of it (n >= 100 vs n >= 20), not to
-demand a bigger number. Revisit once a paper-promoted bot has 60d of real
-money behind it and the two can be compared directly.
+BOT-GATE-TSTAT (2026-08-28, same day as the above) — the first cut of the paper
+path used RAW thresholds (ROI > +3%, CLV > +3%, DEMOTE at ROI < -10%). That was
+wrong, and SHADOW-PROMOTION-GATE-2026-08-26 had already proved why for the
+sibling gate on /admin/shadow-bots: a raw level is cleared whenever noise lands
+above it, and raising n does not fix it. Simulated at n=100 against the odds
+pool these bots actually bet at, the raw version demoted a BREAK-EVEN bot 24.4%
+of the time and a genuinely +5% bot 14.7% of the time — because per-bet ROI SD
+is 1.341, so a -10% threshold is a t of -0.75. The t-gate holds both error rates
+at the nominal ~5%. Thresholds are now SHARED with the admin page; smoke pins
+the pairing so the two surfaces cannot drift apart.
+
+Point-in-time replay over the full multi-book archive (2026-04-28 -> 2026-08-26,
+scripts/lineshop_replay.py) says none of the three line-shop bots is yet
+significant, which is exactly what the gate now reports rather than promoting
+them on a flattering ROI:
+    bot_pin_1x2_home_v1   n=583  ROI +6.91%  t=+1.20
+    bot_sweep_ou35_v1     n=379  ROI +1.77%  t=+0.29
+    bot_sweep_ou25_v1     n=365  ROI +1.18%  t=+0.21
+Note also that the two sweep bots CLAIM ~+6.5% edge and realise ~+1.5%; only
+bot_pin_1x2_home_v1's claimed edge (+6.9%) matches what it earns (+6.91%).
 
 PROMOTION IS STILL MANUAL. This job only emits a verdict and emails it. The
 `bots.maturity_label` change is a hand-written migration (see
