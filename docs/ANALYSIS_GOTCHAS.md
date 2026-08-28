@@ -259,6 +259,57 @@ before believing it.**
 
 ---
 
+## 17. A bot's paper ledger is EITHER `simulated_bets` OR `shadow_bets` — never both
+
+Pipeline bots (`bot_v10_all`, `bot_btts_all`, `bot_opt_*`, `inplay_*`) write to
+`simulated_bets`. Sweep and shadow bots (`bot_sweep_*`, `bot_pin_*`,
+`bot_coolbet_value_v1`) write only to `shadow_bets`. Query one table and half
+the fleet looks **dormant with zero activity** — which is exactly how
+`bot_pin_1x2_home_v1` accumulated 104 settled picks at +13.1% ROI without ever
+appearing in a weekly bot review (BOT-GATE-REACHABLE, 2026-08-28).
+
+**Do not union the two to fix it.** Pipeline bots ALSO re-record into
+`shadow_bets` as part of the timing-cohort experiment, so a union double-counts
+— `bot_v10_all` has 357 sim rows and 319 shadow rows covering 85 of the same 93
+matches in 30d. And the join that would catch the duplicates silently fails:
+per gotcha 3, `shadow_bets` spells markets `1X2` / `O/U` / `over_under_25`
+where `simulated_bets` spells them `1x2` / `o/u`, so joining on `market`
+returns **zero overlap** and the two ledgers look independent when they are the
+same picks twice.
+
+Pick one source per bot: `simulated_bets` when it has rows, else
+`shadow_bets_unique` (gotcha 5 — always the view, never the base table). Also
+prefer `shadow_bets.clv_pinnacle` over `shadow_bets.clv`; the plain column is
+anchored on the pick's own book and is not comparable to `simulated_bets.clv`.
+
+---
+
+## 18. A promotion gate scored on real money cannot promote anything
+
+The weekly bot review emitted **zero PROMOTE and zero DEMOTE verdicts in 10
+consecutive weeks**, and the reason was structural, not empirical: promotion
+required 20+ settled `real_bets`, while `COOLBET_RECORD_ALLOWED_MATURITY=calibrated`
+means only *calibrated* bots ever write to `real_bets`. A beta bot could not
+earn the real-money history the gate demanded, because being beta is precisely
+what stopped it placing real money. Every non-calibrated bot sat at real n <= 2
+indefinitely.
+
+The general shape, worth checking in any gate you write: **the evidence a gate
+demands must be producible by something on the wrong side of the gate.** Two
+corollaries that bit at the same time:
+
+- Gating on CLV excludes in-play bots permanently, because in-play has no
+  closing line (gotcha 14). Score them on a stiffer ROI bar instead of leaving
+  them ineligible forever.
+- Gating DEMOTE on `maturity == 'calibrated'` means a losing *beta* bot is
+  never demoted — and beta is visible to every signed-in user on `/picks`.
+
+Fixed 2026-08-28 with a paper-evidence path (n >= 100, ROI > +3%, CLV > +3%,
+picks spanning >= 21d). The span requirement matters: `bot_pin_1x2_home_v1`
+reached n=104 in **6 days**, and volume alone is not evidence of durability.
+
+---
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |

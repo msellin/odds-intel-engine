@@ -19796,6 +19796,117 @@ def test_threshold_check_weekly_cron():
     )
 
 
+@test("BOT-GATE-REACHABLE — promotion gate must be walkable without real money")
+def test_bot_gate_reachable():
+    """BOT-GATE-REACHABLE (2026-08-28): the weekly bot review emitted zero
+    PROMOTE and zero DEMOTE verdicts in 10 weeks of runs. Not because no bot
+    deserved one — because the gate was unwalkable:
+
+      1. CATCH-22. Promotion required 20+ settled `real_bets`, but
+         COOLBET_RECORD_ALLOWED_MATURITY=calibrated means ONLY calibrated bots
+         write to real_bets. A beta bot could never earn the real-money
+         history the gate demanded, because being beta is what stopped it
+         placing real money.
+      2. SHADOW LEDGER INVISIBLE. bot_sweep_*, bot_pin_* and
+         bot_coolbet_value_v1 write to shadow_bets, not simulated_bets, so
+         they reported DORMANT. bot_pin_1x2_home_v1 sat on 104 settled picks
+         at +13.1% ROI, unseen.
+      3. IN-PLAY STRUCTURALLY INELIGIBLE. `sim CLV > +5%` can never be true
+         for inplay_* — no closing line means clv is always NULL.
+
+    This test pins the fixes so the gate cannot silently become unwalkable
+    again. It is source-inspection only (no DB) so it runs in CI.
+    """
+    import pathlib as _p
+    src = _p.Path("scripts/weekly_bot_review.py").read_text()
+
+    # --- Fix 1: a paper-evidence promotion path exists, with its own bars ---
+    for const in (
+        "MIN_PAPER_BETS_FOR_VERDICT",
+        "PROMOTE_PAPER_ROI_PCT",
+        "PROMOTE_PAPER_CLV_PCT",
+        "PROMOTE_PAPER_ROI_NO_CLV_PCT",
+        "DEMOTE_PAPER_ROI_PCT",
+        "MIN_PAPER_SPAN_DAYS",
+    ):
+        assert const in src, (
+            f"weekly_bot_review.py must expose {const} — the paper-evidence "
+            f"path is the ONLY promotion route a non-calibrated bot can walk, "
+            f"since real_bets is gated on maturity=calibrated"
+        )
+
+    # The paper path must not itself depend on real_bets. If a future edit
+    # adds `real_n >=` into the paper branch the catch-22 returns.
+    paper_branch = src[src.index("# Paper path — the reachable one"):src.index("# ---- HOLD")]
+    assert "real_n" not in paper_branch, (
+        "the paper promotion path must not reference real_n — requiring real "
+        "bets is exactly the catch-22 this task removed"
+    )
+
+    # --- Fix 2: the shadow ledger is read, and via the deduped VIEW ---------
+    assert "def _fetch_shadow_bets" in src, (
+        "must read shadow_bets — bot_sweep_*/bot_pin_*/bot_coolbet_value_v1 "
+        "write there and were invisible to the review"
+    )
+    assert "shadow_bets_unique" in src, (
+        "must query the shadow_bets_unique VIEW, not the base table: "
+        "shadow_bets holds one row per timing cohort (~20 per pick), so the "
+        "base table inflates n by ~20x"
+    )
+    # Every SELECT against the shadow ledger must target the view. Strip the
+    # view name first so the check cannot be satisfied by it.
+    assert "FROM shadow_bets" not in src.replace("FROM shadow_bets_unique", ""), (
+        "must not SELECT from the raw shadow_bets table — it holds one row "
+        "per timing cohort and inflates n by ~20x"
+    )
+    assert "COALESCE(clv_pinnacle, clv)" in src, (
+        "shadow CLV must prefer clv_pinnacle — the plain `clv` column is "
+        "anchored on the pick's own book and is not comparable to "
+        "simulated_bets.clv"
+    )
+    # ONE source per bot, never a union — the two ledgers spell markets
+    # differently ('1X2'/'O/U' vs '1x2'/'o/u') so a union double-counts.
+    assert "def _fetch_paper_bets" in src and "return sim, \"sim\"" in src, (
+        "_fetch_paper_bets must pick ONE ledger per bot (simulated_bets when "
+        "present, else shadow) rather than unioning them — the market "
+        "vocabularies differ and a union double-counts the same pick"
+    )
+
+    # --- Fix 3: no-CLV bots are scored, not silently excluded --------------
+    assert "def _has_clv_data" in src, (
+        "must detect bots that structurally cannot produce CLV (inplay_*) so "
+        "they are scored on a stiffer ROI bar instead of being permanently "
+        "ineligible for promotion"
+    )
+
+    # --- DEMOTE must apply at any maturity, not calibrated-only ------------
+    demote_paper = src[src.index("    # Paper path — applies at ANY maturity"):]
+    demote_paper = demote_paper[:demote_paper.index("# ---- PROMOTE")]
+    assert "is_calibrated" not in demote_paper, (
+        "the paper DEMOTE branch must NOT be gated on maturity — a beta bot "
+        "bleeding paper money (bot_summer_specialist, -56% ROI) is visible to "
+        "every signed-in user on /picks and must be demotable"
+    )
+
+    # --- Promotion needs persistence, not just volume ----------------------
+    # bot_pin_1x2_home_v1 reached n=104 in 6 days. Sample size alone is not
+    # evidence of durability.
+    assert "paper_span_days >= MIN_PAPER_SPAN_DAYS" in src, (
+        "paper promotion must require the picks to SPAN MIN_PAPER_SPAN_DAYS, "
+        "so a single hot week cannot clear the n>=100 bar"
+    )
+    assert "def _paper_span_days" in src, "span helper must exist"
+
+    # --- Promotion stays manual -------------------------------------------
+    # The review emits a verdict; the maturity_label change is a hand-written
+    # migration. A threshold bug must never be able to hand a bot the
+    # real-money key on its own.
+    assert "UPDATE bots" not in src and "maturity_label =" not in src, (
+        "weekly_bot_review.py must never WRITE maturity_label — promotion is "
+        "a manual migration so a threshold bug cannot self-promote a bot"
+    )
+
+
 @test("BOT-MATURITY-REVIEW-WEEKLY — script, email helper, scheduler hook, thresholds pinned")
 def test_bot_maturity_review_weekly():
     """BOT-MATURITY-REVIEW-WEEKLY (2026-06-15): the 2026-06-13 audit found
@@ -19838,14 +19949,18 @@ def test_bot_maturity_review_weekly():
     for verdict in ("PROMOTE", "DEMOTE", "HOLD"):
         assert verdict in script_src, f"verdict label '{verdict}' must appear in script output"
 
-    # Pin the maturity gate semantics: PROMOTE requires maturity != calibrated,
-    # DEMOTE requires maturity = calibrated. If a future refactor inverts this,
-    # the bot_high_alignment class of bug returns.
-    assert 'maturity != "calibrated"' in script_src or "maturity != 'calibrated'" in script_src, (
-        "PROMOTE branch must require maturity != calibrated"
+    # Pin the maturity gate semantics. BOT-GATE-REACHABLE (2026-08-28)
+    # refactored the inline `maturity != "calibrated"` test into an
+    # `is_calibrated` flag plus an early return, so pin the INVARIANT rather
+    # than the old literal: a calibrated bot must never reach a PROMOTE
+    # branch. If a future refactor drops that guard, the bot_high_alignment
+    # class of bug returns.
+    assert 'is_calibrated = maturity == "calibrated"' in script_src, (
+        "verdict must derive is_calibrated from maturity == 'calibrated'"
     )
-    assert 'maturity == "calibrated"' in script_src or "maturity == 'calibrated'" in script_src, (
-        "DEMOTE branch must require maturity == calibrated"
+    assert 'if is_calibrated:' in script_src and '"already calibrated"' in script_src, (
+        "PROMOTE paths must be unreachable for calibrated bots — the "
+        "is_calibrated early-return is what enforces that"
     )
 
     # Scheduler hook

@@ -668,6 +668,86 @@ T+FT+1h  Post-match: stats, events, player stats enrichment
 | Market specialist — O/U | `bot_ou15_defensive`, `bot_ou35_attacking` | O/U 1.5 (defensive leagues) and O/U 3.5 (high-scoring leagues) |
 | Draw specialist | `bot_draw_specialist` | Draws underbet in T2-4; odds range 2.80-4.50 |
 
+### 8.1b Maturity Ladder and the Promotion Gate (BOT-GATE-REACHABLE, 2026-08-28)
+
+Every bot carries a `bots.maturity_label` — `experimental` → `beta` → `active` →
+`calibrated`, plus the terminal `retired`. The label is a **capability grant**,
+not a description: it decides what the bot is allowed to touch.
+
+| Label | Real money | Public Telegram | `/picks` signed-out | `/picks` signed-in |
+|---|:---:|:---:|:---:|:---:|
+| `calibrated` | Yes | Yes | Yes | Yes |
+| `active` | — | — | — | Yes |
+| `beta` | — | — | — | Yes |
+| `experimental` | — | — | — | — |
+| `retired` | — | — | — | — |
+
+Real-money placement is gated by `COOLBET_RECORD_ALLOWED_MATURITY=calibrated`
+in `coolbet_placer._allowed_maturity_labels()`; the public channel by the
+`maturity == "calibrated"` test in `coolbet_signaler.signal_all_bets()`; the
+`/picks` cohorts by `PUBLIC_MATURITY_LABELS` / `SIGNED_IN_MATURITY_LABELS` in
+the frontend's `lib/upcoming-picks.ts`.
+
+**Verdicts** are produced weekly by `scripts/weekly_bot_review.py` (Sunday 06:30
+UTC, emailed). Promotion itself remains a **hand-written migration** — see
+`174_promote_inplay_l_calibrated.sql` — so a threshold bug can never hand a bot
+the real-money key on its own.
+
+#### Why the gate was rebuilt
+
+The original gate (2026-06-15) required **20+ settled `real_bets` at >+10% ROI**
+to promote. It emitted zero PROMOTE and zero DEMOTE verdicts across 10 weeks —
+because it was unwalkable, not because no bot qualified:
+
+1. **Catch-22.** Only `calibrated` bots write to `real_bets`, so a `beta` bot
+   could never accumulate the real-money history the gate demanded. Being beta
+   is exactly what stopped it placing real money. Every non-calibrated bot sat
+   at real n ≤ 2 forever.
+2. **Half the fleet was invisible.** `bot_sweep_*`, `bot_pin_*` and
+   `bot_coolbet_value_v1` write to `shadow_bets`, not `simulated_bets`, and the
+   review read only the latter — so they reported as dormant.
+   `bot_pin_1x2_home_v1` was sitting on 104 settled picks at +13.1% ROI, unseen.
+3. **In-play was structurally ineligible.** `sim CLV > +5%` can never be true
+   for `inplay_*`: there is no closing line for an in-play pick, so `clv` is
+   always NULL (see §9.1 and ANALYSIS_GOTCHAS #14). `inplay_l` is calibrated
+   only because it was promoted by hand.
+4. **Losing beta bots were never demoted.** DEMOTE required
+   `maturity == 'calibrated'`, so `bot_summer_specialist` (−56% paper ROI) kept
+   its beta label — and beta is visible to every signed-in user.
+
+#### Current gate
+
+Verdict window 60d. Paper ledger = `simulated_bets` when the bot writes there,
+otherwise `shadow_bets_unique`; never a union of the two (ANALYSIS_GOTCHAS #17).
+
+| Verdict | Path | Condition |
+|---|---|---|
+| PROMOTE | real (fast lane) | real n ≥ 20 **and** real ROI > +10% **and** paper CLV > +5% |
+| PROMOTE | paper | paper n ≥ 100 **and** span ≥ 21d **and** paper ROI > +3% **and** paper CLV > +3% |
+| PROMOTE | paper, no-CLV | paper n ≥ 100 **and** span ≥ 21d **and** paper ROI > +8% |
+| DEMOTE | real | `calibrated` **and** real n ≥ 20 **and** real ROI < −5% |
+| DEMOTE | paper | **any** maturity **and** paper n ≥ 100 **and** paper ROI < −10% |
+| HOLD | — | otherwise; the digest names the binding constraint per bot |
+
+All PROMOTE paths additionally require `maturity != 'calibrated'`.
+
+Two design choices worth stating explicitly, because both are judgement calls
+rather than derived numbers:
+
+- **The paper bars are lower than the real bars (+3% vs +10%) but demand 5× the
+  sample.** Paper ROI is measured without slippage, stake limits, or the
+  selection bias found in SELF-USE-VALIDATION Phase 3 (placed −6.6% vs unplaced
+  −1.3% ROI). A paper edge is weaker evidence *per unit*, so the correct
+  response is to require more of it, not to require a bigger number.
+- **Promotion requires the picks to span ≥ 21 days; demotion does not.**
+  `bot_pin_1x2_home_v1` reached n=104 in six days, so volume alone clears n≥100
+  without saying anything about whether the edge survives a change of regime.
+  Demotion is deliberately not span-gated — a bot losing money fast should be
+  caught fast.
+
+Revisit the paper bars once a paper-promoted bot has 60 days of real money
+behind it and the two ledgers can be compared directly.
+
 ### 8.2 Bot Timing Cohorts
 
 All 16 bots are assigned to one of three timing windows as an A/B test to identify the optimal bet placement time:
