@@ -62,20 +62,46 @@ FEED_STALE_H = 3.0
 # treats >2h as stale, so anything beyond that is worth acting on.
 COOKIE_STALE_H = 2.0
 
+# A bulk sweep touches 100+ matches in one minute; the UI placer touches only
+# the few it holds picks for. This separates the two writers without a schema
+# change — see the note in the odds-age lookup.
+BULK_SWEEP_MIN_MATCHES = 25
+
 # Alert at most this often per state, so a multi-day block sends a handful of
 # messages rather than one every run.
 ALERT_DEDUP_H = 6.0
 
 
 def _hours_since_last_odds() -> float | None:
-    """Hours since the newest Coolbet row in odds_snapshots. None on error —
-    a broken lookup must not manufacture an incident."""
+    """Hours since the newest BULK Coolbet sweep. None on error — a broken
+    lookup must not manufacture an incident.
+
+    COOLBET-WATCHDOG-BLINDED (2026-08-28): this used to take the newest Coolbet
+    row of any kind. Since COOLBET-UI-PLACER started writing snapshots from the
+    match pages it visits, that row is kept fresh by the PLACER even when the
+    bulk scraper is dead — so the watchdog reported HEALTHY through a 6-hour
+    scraper outage on 8.1h-stale Imperva cookies. Adding a second writer blinded
+    the monitor for the first one.
+
+    The two are separable by breadth, not by timestamp: a bulk sweep touches
+    100+ matches, while the placer only visits the handful it holds picks for.
+    So freshness is measured over sweep-shaped minutes only.
+    """
     try:
         from workers.api_clients.db import execute_query
         rows = execute_query(
-            "SELECT EXTRACT(epoch FROM (now() - max(timestamp))) / 3600.0 AS h "
-            "FROM odds_snapshots WHERE bookmaker = 'Coolbet'",
-            [],
+            # Hour buckets, not minutes: a bulk sweep spreads across several
+            # minutes touching a few matches each, so a per-minute test never
+            # reaches the breadth threshold. Measuring from the bucket START
+            # over-estimates staleness by up to an hour, which is the safe
+            # direction for a watchdog.
+            "SELECT EXTRACT(epoch FROM (now() - max(t))) / 3600.0 AS h FROM ("
+            "  SELECT date_trunc('hour', timestamp) AS t"
+            "    FROM odds_snapshots WHERE bookmaker = 'Coolbet'"
+            "     AND timestamp > now() - interval '48 hours'"
+            "   GROUP BY 1 HAVING COUNT(DISTINCT match_id) >= %s"
+            ") sweeps",
+            [BULK_SWEEP_MIN_MATCHES],
         )
         if rows and rows[0].get("h") is not None:
             return float(rows[0]["h"])
@@ -206,7 +232,11 @@ def _alert(state: str, reason: str) -> None:
         send_telegram(
             f"🔌 <b>Coolbet feed: {state}</b>\n{reason}",
             dedup_key=f"coolbet-feed-{state}",
-            dedup_hours=ALERT_DEDUP_H,
+            # send_telegram takes dedup_window_s (seconds), not hours. The
+            # wrong keyword raised TypeError inside the try/except, so the
+            # watchdog could DETECT an outage and never report it — the alert
+            # path had never once fired.
+            dedup_window_s=int(ALERT_DEDUP_H * 3600),
         )
     except Exception as e:
         log.warning("telegram alert failed: %s", e)

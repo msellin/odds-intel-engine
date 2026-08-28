@@ -25557,6 +25557,21 @@ def test_coolbet_feed_watchdog_2026_08_26():
         "BLOCKED must be reachable only after a failed cookie refresh"
     assert "cookie_refresh_failed" in heal
 
+    # COOLBET-WATCHDOG-BLINDED (2026-08-28): freshness must be measured over
+    # BULK SWEEPS only. Once the UI placer started writing snapshots for the
+    # few matches it visits, "newest Coolbet row" stayed fresh through a 6h
+    # scraper outage and the watchdog reported HEALTHY throughout.
+    assert "COUNT(DISTINCT match_id) >= " in src, \
+        "freshness must key on sweep breadth, not any Coolbet row"
+    from workers.jobs.coolbet_feed_watchdog import BULK_SWEEP_MIN_MATCHES
+    assert BULK_SWEEP_MIN_MATCHES >= 10, "a handful of placer matches is not a sweep"
+
+    # send_telegram takes dedup_window_s (seconds). The old dedup_hours kwarg
+    # raised TypeError inside the try/except, so the alert path had never
+    # fired — detection without notification.
+    assert "dedup_hours" not in src, "wrong kwarg silently disabled every alert"
+    assert "dedup_window_s" in src
+
     assert 0 < FEED_STALE_H <= 6, "feed-stale threshold must be sane"
     assert 0 < COOKIE_STALE_H <= 4, "cookie-stale threshold must be sane"
     assert ODDS_JOB == "com.oddsintel.coolbet-odds-snapshot"
