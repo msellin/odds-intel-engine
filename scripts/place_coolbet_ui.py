@@ -48,6 +48,16 @@ DEFAULT_STAKE = 10.00
 BOT_THRESHOLDS = {"bot_coolbet_value_v1": 0.03}
 DEFAULT_BOT = "bot_coolbet_value_v1"
 
+# REAL-MONEY ALLOWLIST. Only these bots may ever be placed with --execute.
+# Everything else is forced to dry-run no matter what flags are passed.
+#
+# Added 2026-08-28 when scoping bot_coolbet_dc_v1 and bot_coolbet_ah_v1: new
+# experimental bots must be able to run through the whole pipeline — matching,
+# pricing, snapshots, audit rows — WITHOUT any path by which an unproven
+# strategy reaches the account. A default is not a guard; --bot could name any
+# bot and --execute would have honoured it.
+EXECUTE_ALLOWED_BOTS = {"bot_coolbet_value_v1"}
+
 
 # Never place inside this window before kickoff — Coolbet suspends markets
 # around the start and a placement racing the whistle is the worst time to be
@@ -202,6 +212,11 @@ def main() -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     threshold = BOT_THRESHOLDS.get(args.bot, 0.03)
+
+    if args.execute and args.bot not in EXECUTE_ALLOWED_BOTS:
+        print(f"REFUSING --execute for {args.bot!r}: not in the real-money allowlist "
+              f"({', '.join(sorted(EXECUTE_ALLOWED_BOTS))}). Running dry instead.")
+        args.execute = False
 
     # Self-heal the session BEFORE opening the run's browser context.
     # cdp_auto_login opens its own sync_playwright, and Playwright refuses a

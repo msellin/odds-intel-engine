@@ -26016,6 +26016,16 @@ def test_coolbet_ui_placer_2026_08_27():
     assert "single_run_lock" in runner and "LOCK_NB" in runner, \
         "a second pass must refuse rather than fight for the browser"
 
+    # REAL-MONEY ALLOWLIST (2026-08-28). Experimental bots must be able to run
+    # the whole pipeline — matching, pricing, snapshots, audit rows — with no
+    # path to the account. A default bot name is not a guard: --bot could name
+    # anything and --execute would have honoured it.
+    from scripts.place_coolbet_ui import EXECUTE_ALLOWED_BOTS  # noqa: F401
+    assert EXECUTE_ALLOWED_BOTS == {"bot_coolbet_value_v1"}, \
+        "only the proven bot may place real money"
+    assert "not in EXECUTE_ALLOWED_BOTS" in runner
+    assert "args.execute = False" in runner, "a disallowed bot must be forced dry"
+
     # Coolbet's search does not tolerate our full DB team names. Verified live:
     # "Ararat-Armenia" returned 10 results NOT containing the fixture, while
     # "ararat" returned it second — the hyphen breaks their tokeniser.
