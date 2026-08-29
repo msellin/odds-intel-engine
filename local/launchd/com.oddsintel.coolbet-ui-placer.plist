@@ -56,40 +56,37 @@
     <!-- Every 30 min from 06:00 to 21:30 local. Outside that window there are
          no European kickoffs close enough for a price to be worth re-checking,
          and each pass drives a real browser. -->
+    <!-- HOURLY, not every 30 min (2026-08-29, PHASE-1.4). Measured on the
+         four picks that were rejected below floor and later placed: they
+         recovered after 0.5h, 1.8h, 3.3h and 5.3h. Nothing recovered inside
+         half an hour and the spread runs to five hours, so an hourly pass
+         catches every one of them — the extra :30 slot bought no bets.
+
+         It did buy risk. On 2026-08-28 the placer's own traffic (36 passes
+         plus diagnostics) contributed to an Imperva interstitial that blocked
+         this IP for ~7 hours. Halving the request rate for no measured loss of
+         bets is a straight win; see gotcha 17 and dev/active/phase1-audits.md.
+
+         Re-measure after a week — the recommendation rests on n=4 recoveries,
+         which is directional rather than decisive. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>30</integer></dict>
     </array>
 
     <!-- Never fire on load: loading must not itself place a bet. -->
