@@ -46,3 +46,15 @@ dev/active/supabase-migration-secrets.md
 
 # CS2-REMOVAL-2026-08-26: 41MB table dump, kept locally + on VPS /tmp, never committed
 dev/active/cs2-removal-2026-08-26/*.gz
+
+# Working artefacts under dev/active — logs, raw captures and bulk exports.
+# Added 2026-08-31 after a `git add -A` swept 69 of these into a commit,
+# including a 63 MB coolbet-odds-snapshot.log that tripped GitHub's size
+# warning. Plans/context/tasks markdown stays tracked; the noise does not.
+dev/active/*.log
+dev/active/**/*.log
+dev/active/*.csv
+dev/active/**/*.csv
+dev/active/*.pdf
+dev/active/coolbet-raw-*.json
+dev/active/deepbetting_stats.json
