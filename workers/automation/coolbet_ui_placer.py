@@ -365,6 +365,38 @@ def search_queries(home: str, away: str) -> list[str]:
     return out
 
 
+def _date_rejected_candidate(
+    events: list[UiEvent], home: str, away: str, kickoff: datetime | None,
+    *, min_score: float = 80.0,
+) -> tuple[UiEvent, datetime] | None:
+    """A candidate that matches on NAME but lost only on kickoff, if any.
+
+    pick_event drops these silently, which makes a postponed fixture
+    indistinguishable from one Coolbet does not carry. Both end the pass, but
+    only one of them means our own fixture date is wrong. The squad guard still
+    applies — a reserve side on another day is not a postponement.
+    """
+    from workers.automation.epicbet_explorer import _squad_tag
+
+    if kickoff is None:
+        return None
+    for ev in events:
+        if not ev.home or not ev.away:
+            continue
+        if _squad_tag(home) != _squad_tag(ev.home):
+            continue
+        if _squad_tag(away) != _squad_tag(ev.away):
+            continue
+        if start_matches(ev.start_text, kickoff) is not False:
+            continue   # agrees, or unparseable — not a date rejection
+        score = min(_best_score(home, ev.home), _best_score(away, ev.away))
+        if score >= min_score:
+            start = parse_start(ev.start_text, kickoff)
+            if start is not None:
+                return ev, start
+    return None
+
+
 def _best_pair_score(events: list[UiEvent], home: str, away: str) -> float:
     """Best min(home, away) score across candidates — how close we got."""
     best = 0.0
@@ -1259,6 +1291,29 @@ def stage_bet(
         best = _best_pair_score(real, home, away)
         if not real:
             return _fail("match", f"search returned no fixtures for {home!r}")
+
+        # THIRD cause, and the one that reads most like a lie: Coolbet offers
+        # this exact fixture, on a different day. Atletico Grau v FBC Melgar
+        # was postponed 31 Aug -> 1 Sept; Coolbet moved, API-Football did not,
+        # and this branch would have recorded "fixture not offered by Coolbet
+        # ... best pair score 100" — a perfect name score sitting next to a
+        # claim that Coolbet does not have it. Refusing the bet is right; the
+        # fixture is not played that night. Saying WHY is what makes the stale
+        # date fixable instead of looking like a matcher miss.
+        moved = _date_rejected_candidate(real, home, away, bet.get("match_date"))
+        if moved is not None:
+            cand, cand_start = moved
+            gap_h = abs((cand_start - bet["match_date"]).total_seconds()) / 3600
+            return _fail(
+                "match",
+                f"DATE MISMATCH, not missing coverage: Coolbet lists "
+                f"{cand.home} v {cand.away} at {cand_start:%Y-%m-%d %H:%M}Z, we have "
+                f"{bet['match_date']:%Y-%m-%d %H:%M}Z ({gap_h:.0f}h apart). "
+                f"OUR fixture date is probably stale — refusing rather than "
+                f"betting a match that is not played then.",
+                ev=cand,
+            )
+
         return _fail(
             "match",
             f"fixture not offered by Coolbet: {home} v {away} — "

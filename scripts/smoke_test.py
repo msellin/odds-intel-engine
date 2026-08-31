@@ -26504,5 +26504,59 @@ def test_coolbet_date_guard_dead_2026_08_31():
     return "search/v2 kickoff read as match_start; date guard live; postponement warns loudly"
 
 
+@test("COOLBET-UI-DATE-MISMATCH")
+def test_coolbet_ui_date_mismatch_2026_08_31():
+    """COOLBET-DATE-GUARD-DEAD-2026-08-31 — the placer must say "postponed", not
+    "not offered". A perfect name score next to "Coolbet does not have it" is a
+    contradiction, and it hides a stale fixture date in our own DB."""
+    import inspect
+    from datetime import datetime, timezone
+    from workers.automation import coolbet_ui_placer as up
+
+    ko = datetime(2026, 8, 31, 20, 0, tzinfo=timezone.utc)
+    # Coolbet renders Estonian local time: 01 sept 23:00 Tallinn == 01 Sept 20:00 UTC,
+    # exactly 24h after the date API-Football still gives us.
+    moved = up.UiEvent("6062800", "/et/sport/match/6062800", "",
+                       "Atl\u00e9tico Grau", "FBC Melgar", "01 sept 23:00")
+
+    # Refusing the bet is CORRECT — the fixture is not played that night. What
+    # changes is only the reason recorded.
+    assert up.pick_event([moved], "Atletico Grau", "FBC Melgar", ko) is None, \
+        "a disagreeing kickoff must still be a hard reject"
+
+    hit = up._date_rejected_candidate([moved], "Atletico Grau", "FBC Melgar", ko)
+    assert hit is not None, "a name-perfect candidate on another day must be surfaced"
+    assert hit[1] == datetime(2026, 9, 1, 20, 0, tzinfo=timezone.utc), \
+        "must report Coolbet's kickoff in UTC"
+
+    # It must stay narrow, or the signal is worthless. None of these is a
+    # postponement:
+    same = up.UiEvent("1", "/x", "", "Atl\u00e9tico Grau", "FBC Melgar", "31 aug 23:00")
+    assert up._date_rejected_candidate([same], "Atletico Grau", "FBC Melgar", ko) is None, \
+        "the fixture on our own date is not a date mismatch"
+    other = up.UiEvent("2", "/y", "", "Sondrio", "Sondalo", "01 sept 23:00")
+    assert up._date_rejected_candidate([other], "Atletico Grau", "FBC Melgar", ko) is None, \
+        "a different fixture is no coverage, not a postponement"
+    # COOLBET-SQUAD-GUARD still applies: a reserve side on another day is a
+    # different team, not the same match moved.
+    res = up.UiEvent("3", "/z", "", "Atl\u00e9tico Grau Res.", "FBC Melgar Res.", "01 sept 23:00")
+    assert up._date_rejected_candidate([res], "Atletico Grau", "FBC Melgar", ko) is None, \
+        "a reserve fixture must never read as a postponement"
+    # No kickoff of our own means nothing to disagree with.
+    assert up._date_rejected_candidate([moved], "Atletico Grau", "FBC Melgar", None) is None
+
+    # And the branch must actually be wired into the refusal path, ahead of the
+    # generic "not offered" message it would otherwise fall through to.
+    stage_src = inspect.getsource(up.stage_bet)
+    assert "_date_rejected_candidate" in stage_src
+    assert "DATE MISMATCH, not missing coverage" in stage_src
+    # rindex: the generic message also appears in the comment explaining why
+    # this branch exists, so anchor on the actual return statement.
+    assert stage_src.index("_date_rejected_candidate") < stage_src.rindex('f"fixture not offered by Coolbet'), \
+        "the postponement check must run before the generic no-coverage message"
+
+    return "placer reports a postponed fixture as a date mismatch, not as missing coverage"
+
+
 if __name__ == "__main__":
     main()
