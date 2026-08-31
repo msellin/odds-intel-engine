@@ -26320,5 +26320,105 @@ def test_coolbet_ui_placer_2026_08_27():
     return "Coolbet UI placer: selectors pinned, stage-only default, squad guard, stake read-back"
 
 
+@test("COOLBET-UI-SEARCH-PREFIX")
+def test_coolbet_ui_search_prefix_2026_08_31():
+    """COOLBET-UI-PLACER-MATCHGAPS-2026-08-31 — prefix queries as a LAST RESORT
+    fallback, appended after every whole-word query so they cost nothing on the
+    picks that never needed them."""
+    import datetime as _dt
+    import inspect
+    from workers.automation import coolbet_ui_placer as up
+
+    # Prefixes exist for a name that differs at its START, which whole words
+    # cannot reach — the way the odds-snapshot path (coolbet_placer._search_event)
+    # has always searched. They are NOT what fixed FC Copenhagen v Sonderjyske:
+    # that fixture matched on the whole word 'Sonderjyske' (Coolbet folds the
+    # o-slash itself) and had simply not been attempted yet, its pick having
+    # been created at 08:41 UTC — after that morning's 08:00 pass.
+    qs = up.search_queries("FC Copenhagen", "Sonderjyske")
+    assert "Son" in qs and "Cop" in qs, "prefixes must be available as a fallback"
+
+    # ORDERING IS THE POINT. stage_bet loops the queries and stops at the first
+    # one that matches, so every prefix placed before the whole words costs a
+    # live search round trip on a pick that never needed one. Coolbet blocked
+    # this IP on 2026-08-28 for traffic volume from a single address — extra
+    # searches are not free. Every whole-word query must come first.
+    prefixes = {"Cop", "Cope", "Copen", "Son", "Sond", "Sonde"}
+    first_prefix = min(i for i, q in enumerate(qs) if q in prefixes)
+    last_word = max(i for i, q in enumerate(qs) if q not in prefixes)
+    assert first_prefix > last_word, "prefixes must be tried only after every whole word"
+    assert qs[:3] == ["Copenhagen", "FC Copenhagen", "Sonderjyske"], \
+        "the whole-word queries that already worked must be unchanged"
+
+    # No duplicates — a repeated query is a wasted search.
+    assert len(qs) == len(set(q.lower() for q in qs)), "queries must be unique"
+    assert up.search_queries("X", "Rayo").count("Rayo") == 1
+
+    # A prefix is a SEARCH widening only. It must not loosen matching — 'Son'
+    # alone would match hundreds of clubs, and pick_event is what stops that.
+    src = inspect.getsource(up.search_queries)
+    assert "pick_event still vets" in src, "a loose query must not mean a loose match"
+    loose = [up.UiEvent("9", "/w", "", "Sondrio", "Sondalo", "31 aug 20:00")]
+    assert up.pick_event(loose, "FC Copenhagen", "Sonderjyske") is None, \
+        "a prefix hit on the wrong club must still be rejected"
+
+    # The fixture itself, placed live 2026-08-31 09:00 UTC at 5.50. Name score
+    # alone is 72, below the 80 bar — the 20:00 Tallinn kickoff is what carries
+    # it, which is exactly the design.
+    ko = _dt.datetime(2026, 8, 31, 17, 0, tzinfo=_dt.timezone.utc)
+    real = [up.UiEvent("6042909", "/et/sport/match/6042909", "",
+                       "FC K\u00f8benhavn", "S\u00f8nderjyskE", "31 aug 20:00")]
+    assert up.pick_event(real, "FC Copenhagen", "Sonderjyske", ko) is not None
+    assert up.pick_event(real, "FC Copenhagen", "Sonderjyske") is None, \
+        "without kickoff corroboration 72 is correctly below the name bar"
+
+    return "UI placer prefix queries appended last; whole-word order unchanged"
+
+@test("COOLBET-UI-OU-EXPAND")
+def test_coolbet_ui_ou_expand_2026_08_31():
+    """COOLBET-UI-PLACER-MATCHGAPS-2026-08-31 — the totals card must be expanded
+    before it is read. Coolbet shows ~5 lines around the main total and hides
+    the rest behind 'KUVA KOIK (n)'."""
+    import inspect
+    from workers.automation import coolbet_ui_placer as up
+
+    # THE BUG. Barcelona v Rayo centred on 4.0 and rendered 3/3.5/4/4.5/5, so
+    # over_under_25/under was rejected three times with "not offered on this
+    # page" while over_under_35/under placed from that SAME page. read_ou_grid
+    # reads the DOM, so an unexpanded card makes real markets invisible — and
+    # which totals were reachable depended on where Coolbet centred the ladder.
+    grid_src = inspect.getsource(up.read_ou_grid)
+    assert "expand_ou_card" in grid_src,         "the ladder must be expanded before it is read, not read as rendered"
+
+    exp_src = inspect.getsource(up.expand_ou_card)
+
+    # Only the TOTALS card's expander. Handikap carries its own 'KUVA KOIK'
+    # and clicking that one leaves 2.5 just as hidden.
+    assert "V\u00e4ravate arv" in exp_src, "must scope to the totals card"
+
+    # The click must be a real user event. Several controls on this page ignore
+    # dispatched MouseEvents — the per-selection slip trash icon already proved
+    # that in empty_slip — so JS .click() is not good enough for React here.
+    assert "locator(" in exp_src and ".click(" in exp_src,         "expander must be clicked through Playwright, not JS dispatch"
+
+    # Verify by EFFECT, not by the click returning. A click that silently does
+    # nothing must not be reported as an expansion — that would turn a visible
+    # failure back into an invisible one.
+    assert "_count()" in exp_src and ">" in exp_src,         "expansion must be confirmed by the ladder actually growing"
+    assert "did not grow" in exp_src
+
+    # A card with no expander is the NORMAL case (every line already shown),
+    # so it must return False, never raise — otherwise every low-scoring match
+    # becomes a placement failure.
+    import ast as _ast
+    import textwrap as _tw
+    fn = _ast.parse(_tw.dedent(exp_src)).body[0]
+    assert not [n for n in _ast.walk(fn) if isinstance(n, _ast.Raise)], \
+        "a card with no expander is not an error"
+    assert exp_src.count("return False") >= 3
+
+    return "OU totals card expanded before read; growth verified, missing expander is not an error"
+
+
 if __name__ == "__main__":
     main()

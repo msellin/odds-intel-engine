@@ -37,6 +37,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -329,6 +330,7 @@ def search_queries(home: str, away: str) -> list[str]:
         if q and q.lower() not in [o.lower() for o in out]:
             out.append(q)
 
+    heads: list[str] = []
     for name in (home, away):
         if not name:
             continue
@@ -336,9 +338,30 @@ def search_queries(home: str, away: str) -> list[str]:
         meaningful = [w for w in words if w.lower() not in _CLUB_NOISE and len(w) > 2]
         if meaningful:
             add(meaningful[0])
+            heads.append("".join(c for c in meaningful[0] if c.isalpha()))
         if len(meaningful) > 1:
             add(" ".join(meaningful[:2]))
         add(name)
+
+    # LAST RESORT ONLY — short prefixes, appended after every whole-word query.
+    #
+    # COOLBET-UI-PLACER-MATCHGAPS (2026-08-31): a name Coolbet spells
+    # differently is reachable by prefix when it is not reachable by word, the
+    # way the odds-snapshot path (`coolbet_placer._search_event`) has always
+    # done it. But the ordering matters more than the coverage: the caller
+    # stops at the first query that matches, so anything placed BEFORE the
+    # whole words costs a live search round trip on every pick that never
+    # needed it. Coolbet blocked this IP on 2026-08-28 for exactly that —
+    # traffic volume from one address — so extra searches are not free.
+    #
+    # Do not read this as the fix for FC Copenhagen v SønderjyskE. That fixture
+    # matched on the whole word 'Sonderjyske'; Coolbet's search folds the ø
+    # itself. It had simply not been attempted yet. Prefixes are insurance for
+    # a name that differs at its START, which is the case words cannot cover.
+    for head in heads:
+        for n in (3, 4, 5):
+            if len(head) > n:
+                add(head[:n])
     return out
 
 
@@ -590,6 +613,85 @@ def find_outcome(
     )
 
 
+# The OU card's "show all" control, as Coolbet renders it in Estonian. It
+# carries a count — "KUVA KÕIK (7)" — and collapses back to "PEIDA".
+_OU_EXPAND_RE = r"^\s*KUVA\s+K[ÕO]IK"
+
+
+def expand_ou_card(page, *, timeout_ms: int = 4000) -> bool:
+    """Click 'KUVA KÕIK' on the totals card so the whole ladder is in the DOM.
+
+    COOLBET-UI-PLACER-MATCHGAPS (2026-08-31): Coolbet renders only about five
+    totals around the main line and hides the rest behind this expander. That
+    is not cosmetic — `read_ou_grid` reads the DOM, so an unexpanded card makes
+    real markets invisible and the placer refuses them as "not offered on this
+    page". Barcelona v Rayo centred on 4.0 and showed 3/3.5/4/4.5/5:
+    `over_under_25/under` was rejected three times while `over_under_35/under`
+    placed from that same page. Which totals were reachable therefore depended
+    on where Coolbet happened to centre the ladder.
+
+    Returns True if the ladder grew. A card with no expander (every line
+    already shown) is the normal case, not an error — hence no raise.
+
+    The control is found in JS and tagged, because several cards on the page
+    carry their own 'KUVA KÕIK' (Händikäp has one too) and only the totals
+    card's must be clicked. The click itself goes through Playwright rather
+    than JS `.click()` so React sees a real user event.
+    """
+    def _count() -> int:
+        return page.evaluate(
+            r"""() => {
+                  const cards = [...document.querySelectorAll('div')].filter(d =>
+                    /Väravate arv/.test(d.innerText || '') &&
+                    d.querySelectorAll('button[data-test^="button-odds-"]').length >= 6);
+                  if (!cards.length) return 0;
+                  return cards[cards.length - 1]
+                    .querySelectorAll('button[data-test^="button-odds-"]').length;
+               }"""
+        )
+
+    before = _count()
+    if not before:
+        return False
+
+    tagged = page.evaluate(
+        r"""(re) => {
+              const cards = [...document.querySelectorAll('div')].filter(d =>
+                /Väravate arv/.test(d.innerText || '') &&
+                d.querySelectorAll('button[data-test^="button-odds-"]').length >= 6);
+              if (!cards.length) return false;
+              const card = cards[cards.length - 1];
+              const rx = new RegExp(re, 'i');
+              // Deepest matching node — the outer card also contains the text.
+              const hits = [...card.querySelectorAll('*')]
+                .filter(e => rx.test((e.innerText || '').trim()));
+              if (!hits.length) return false;
+              const el = hits[hits.length - 1];
+              el.setAttribute('data-oi-ou-expand', '1');
+              return true;
+           }""",
+        _OU_EXPAND_RE,
+    )
+    if not tagged:
+        return False
+
+    try:
+        page.locator('[data-oi-ou-expand="1"]').first.click(timeout=timeout_ms)
+    except Exception as e:
+        log.warning("OU expander click failed: %s", str(e)[:120])
+        return False
+
+    # Wait for the ladder to actually grow rather than trusting the click.
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        if _count() > before:
+            log.debug("OU ladder expanded: %d → %d prices", before, _count())
+            return True
+        page.wait_for_timeout(150)
+    log.warning("OU expander clicked but ladder did not grow (%d prices)", before)
+    return False
+
+
 def read_ou_grid(page) -> list[UiOutcome]:
     """Read the full Over/Under ladder from the 'Väravate arv (Üle/Alla)' card.
 
@@ -611,6 +713,7 @@ def read_ou_grid(page) -> list[UiOutcome]:
     keys one id per line). A row that fails that is dropped rather than
     guessed at — a mis-paired row is a silently wrong total.
     """
+    expand_ou_card(page)
     raw = page.evaluate(
         r"""() => {
               const cards = [...document.querySelectorAll('div')].filter(d =>
