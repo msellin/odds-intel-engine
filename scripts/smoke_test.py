@@ -26292,8 +26292,20 @@ def test_coolbet_ui_placer_2026_08_27():
     assert up.pick_event([right], "Ararat-Armenia", "Universitatea Craiova", ko) is not None
     # Same teams, wrong leg — a parsed-and-disagreeing kickoff is a hard reject
     # at any name score.
+    # COOLBET-MOVED-FIXTURE (2026-08-31) changed this: a LONE same-team
+    # candidate on another day is now taken as a postponement, because
+    # refusing it threw away real bets when Coolbet moved and our feed did
+    # not. What still must not happen is guessing between TWO of them — that
+    # is the wrong-leg case the guard was built for.
     wrong_leg = up.UiEvent("2", "/y", "", "FC Ararat-Armenia", "CS Universitatea Craiova", "21 aug 19:00")
-    assert up.pick_event([wrong_leg], "Ararat-Armenia", "Universitatea Craiova", ko) is None
+    assert up.pick_event([wrong_leg], "Ararat-Armenia", "Universitatea Craiova", ko,
+                         allow_moved=False) is None, \
+        "with the moved-fixture rule off, a disagreeing kickoff is still a hard reject"
+    leg_b = up.UiEvent("2b", "/yb", "", "FC Ararat-Armenia", "CS Universitatea Craiova", "28 aug 19:00")
+    assert up.pick_event([wrong_leg, leg_b], "Ararat-Armenia", "Universitatea Craiova", ko) is None, \
+        "two legs of a tie must never be guessed between"
+    # And a date-agreeing candidate always beats a moved one.
+    assert up.pick_event([wrong_leg, right], "Ararat-Armenia", "Universitatea Craiova", ko).match_id == "1"
     # And a perfect kickoff must NOT let a reserve side through.
     res = up.UiEvent("3", "/z", "", "Rosario Central Res.", "Boca Res.", "27 aug 19:00")
     assert up.pick_event([res], "Rosario Central", "Boca Juniors", ko) is None
@@ -26519,41 +26531,51 @@ def test_coolbet_ui_date_mismatch_2026_08_31():
     moved = up.UiEvent("6062800", "/et/sport/match/6062800", "",
                        "Atl\u00e9tico Grau", "FBC Melgar", "01 sept 23:00")
 
-    # Refusing the bet is CORRECT — the fixture is not played that night. What
-    # changes is only the reason recorded.
-    assert up.pick_event([moved], "Atletico Grau", "FBC Melgar", ko) is None, \
-        "a disagreeing kickoff must still be a hard reject"
+    # COOLBET-MOVED-FIXTURE (2026-08-31): a lone moved candidate is now BET,
+    # not refused — the operator's call, and the right one, since Coolbet and
+    # the press both had this fixture on 1 Sept while our feed did not.
+    assert up.pick_event([moved], "Atletico Grau", "FBC Melgar", ko) is not None, \
+        "a lone postponed fixture must be taken, not thrown away"
+    assert up.pick_event([moved], "Atletico Grau", "FBC Melgar", ko,
+                         allow_moved=False) is None, \
+        "the old hard-reject must still be reachable"
 
-    hit = up._date_rejected_candidate([moved], "Atletico Grau", "FBC Melgar", ko)
-    assert hit is not None, "a name-perfect candidate on another day must be surfaced"
-    assert hit[1] == datetime(2026, 9, 1, 20, 0, tzinfo=timezone.utc), \
+    hits = up._date_rejected_candidates([moved], "Atletico Grau", "FBC Melgar", ko)
+    assert len(hits) == 1, "a name-perfect candidate on another day must be surfaced"
+    assert hits[0][1] == datetime(2026, 9, 1, 20, 0, tzinfo=timezone.utc), \
         "must report Coolbet's kickoff in UTC"
 
     # It must stay narrow, or the signal is worthless. None of these is a
     # postponement:
     same = up.UiEvent("1", "/x", "", "Atl\u00e9tico Grau", "FBC Melgar", "31 aug 23:00")
-    assert up._date_rejected_candidate([same], "Atletico Grau", "FBC Melgar", ko) is None, \
+    assert not up._date_rejected_candidates([same], "Atletico Grau", "FBC Melgar", ko), \
         "the fixture on our own date is not a date mismatch"
     other = up.UiEvent("2", "/y", "", "Sondrio", "Sondalo", "01 sept 23:00")
-    assert up._date_rejected_candidate([other], "Atletico Grau", "FBC Melgar", ko) is None, \
+    assert not up._date_rejected_candidates([other], "Atletico Grau", "FBC Melgar", ko), \
         "a different fixture is no coverage, not a postponement"
     # COOLBET-SQUAD-GUARD still applies: a reserve side on another day is a
-    # different team, not the same match moved.
+    # different team, not the same match moved. It must not be bet either.
     res = up.UiEvent("3", "/z", "", "Atl\u00e9tico Grau Res.", "FBC Melgar Res.", "01 sept 23:00")
-    assert up._date_rejected_candidate([res], "Atletico Grau", "FBC Melgar", ko) is None, \
+    assert not up._date_rejected_candidates([res], "Atletico Grau", "FBC Melgar", ko), \
         "a reserve fixture must never read as a postponement"
+    assert up.pick_event([res], "Atletico Grau", "FBC Melgar", ko) is None, \
+        "and must never be bet as one"
     # No kickoff of our own means nothing to disagree with.
-    assert up._date_rejected_candidate([moved], "Atletico Grau", "FBC Melgar", None) is None
+    assert not up._date_rejected_candidates([moved], "Atletico Grau", "FBC Melgar", None)
 
     # And the branch must actually be wired into the refusal path, ahead of the
     # generic "not offered" message it would otherwise fall through to.
     stage_src = inspect.getsource(up.stage_bet)
-    assert "_date_rejected_candidate" in stage_src
+    assert "_date_rejected_candidates" in stage_src
     assert "DATE MISMATCH, not missing coverage" in stage_src
+    assert "AMBIGUOUS DATE" in stage_src, "two legs must record a distinct reason"
     # rindex: the generic message also appears in the comment explaining why
     # this branch exists, so anchor on the actual return statement.
-    assert stage_src.index("_date_rejected_candidate") < stage_src.rindex('f"fixture not offered by Coolbet'), \
+    assert stage_src.index("_date_rejected_candidates") < stage_src.rindex('f"fixture not offered by Coolbet'), \
         "the postponement check must run before the generic no-coverage message"
+    # A bet placed on a fixture we have mis-dated must say so on its own audit
+    # row — the stale date also drives the kickoff cutoff and settlement.
+    assert "MOVED FIXTURE: Coolbet has it" in stage_src
 
     return "placer reports a postponed fixture as a date mismatch, not as missing coverage"
 
@@ -26613,10 +26635,18 @@ def test_coolbet_search_promo_race_2026_08_31():
     assert up.parse_start(moved.start_text, ours) == datetime(2026, 9, 1, 20, 0, tzinfo=timezone.utc), \
         "01 sept 23:00 Tallinn is 1 Sept 20:00 UTC"
     assert up.start_matches(moved.start_text, ours) is False
-    assert up.pick_event([moved], "Atletico Grau", "FBC Melgar", ours) is None, \
-        "the postponed fixture must NOT be bet"
-    assert up._date_rejected_candidate([moved], "Atletico Grau", "FBC Melgar", ours) is not None, \
-        "and must be reported as a date mismatch"
+    # With start_text blank this used to match on names alone. Now the kickoff
+    # parses, so the fixture is recognised AS MOVED rather than silently
+    # treated as same-day — which is what makes the operator's
+    # bet-it-anyway rule (COOLBET-MOVED-FIXTURE) a decision rather than an
+    # accident.
+    assert up.pick_event([moved], "Atletico Grau", "FBC Melgar", ours,
+                         allow_moved=False) is None, \
+        "without the moved rule the postponed fixture must not be bet"
+    assert up.pick_event([moved], "Atletico Grau", "FBC Melgar", ours) is not None, \
+        "with it, a lone postponement is taken deliberately"
+    assert up._date_rejected_candidates([moved], "Atletico Grau", "FBC Melgar", ours), \
+        "and is recognised as a date mismatch, not as same-day"
     # On its real date the same row must still match — the guard rejects the
     # wrong day, not the fixture.
     right = datetime(2026, 9, 1, 20, 0, tzinfo=timezone.utc)
@@ -26630,9 +26660,72 @@ def test_coolbet_search_promo_race_2026_08_31():
     assert up.start_matches(nov.start_text, nko) is True
     assert up.pick_event([nov], "Novara", "Folgore Caratese", nko) is not None, \
         "a fixture whose kickoff agrees must match"
-    assert up._date_rejected_candidate([nov], "Novara", "Folgore Caratese", nko) is None
+    assert not up._date_rejected_candidates([nov], "Novara", "Folgore Caratese", nko)
 
     return "search waits for a real result; 4-letter Estonian months parse; date guard armed again"
+
+
+@test("COOLBET-MOVED-FIXTURE")
+def test_coolbet_moved_fixture_2026_08_31():
+    """COOLBET-MOVED-FIXTURE-2026-08-31 — a postponed fixture is a bet we should
+    take, not one to throw away. Operator call: if the model found a good game,
+    a date our own feed has wrong is not a reason to skip it."""
+    import inspect
+    from datetime import datetime, timezone
+    from workers.automation import coolbet_ui_placer as up
+
+    ours = datetime(2026, 8, 31, 20, 0, tzinfo=timezone.utc)
+    moved = up.UiEvent("6062800", "/a", "", "Atl\u00e9tico Grau", "FBC Melgar", "01 sept 23:00")
+
+    # THE CASE. Atletico Grau v FBC Melgar moved 31 Aug -> 1 Sept; Coolbet
+    # moved with it and the press agrees with Coolbet, not with API-Football.
+    # A lone same-team candidate has nothing to be confused with, so it is our
+    # fixture on a date we have wrong. Take it.
+    got = up.pick_event([moved], "Atletico Grau", "FBC Melgar", ours)
+    assert got is not None and got.match_id == "6062800", \
+        "a lone moved fixture must be bet, not refused"
+
+    # THE LIMIT, and the reason the guard existed. Two same-team candidates on
+    # different days is a two-legged tie: the kickoff is the ONLY thing telling
+    # them apart, so taking either backs a coin flip.
+    leg2 = up.UiEvent("2", "/b", "", "Atl\u00e9tico Grau", "FBC Melgar", "07 sept 23:00")
+    assert up.pick_event([moved, leg2], "Atletico Grau", "FBC Melgar", ours) is None, \
+        "two legs must never be guessed between"
+
+    # A date-AGREEING candidate must always win over a moved one, whatever the
+    # names say — the moved path is a fallback, never a preference.
+    agree = up.UiEvent("3", "/c", "", "Atl\u00e9tico Grau", "FBC Melgar", "31 aug 23:00")
+    assert up.pick_event([moved, agree], "Atletico Grau", "FBC Melgar", ours).match_id == "3"
+
+    # Bounds, so "moved" cannot become "any fixture with these teams":
+    #  - a higher name bar than normal, since the kickoff evidence is gone
+    weak = up.UiEvent("4", "/d", "", "Grau Sport", "Melgar B", "01 sept 23:00")
+    assert up.pick_event([weak], "Atletico Grau", "FBC Melgar", ours) is None, \
+        "a moved candidate is held to a HIGHER name bar, not a lower one"
+    #  - a reschedule window; the same teams months out is a different round
+    far = up.UiEvent("5", "/e", "", "Atl\u00e9tico Grau", "FBC Melgar", "30 nov 23:00")
+    assert up.pick_event([far], "Atletico Grau", "FBC Melgar", ours) is None, \
+        "3 months out is a different round, not a postponement"
+    #  - COOLBET-SQUAD-GUARD outranks all of it
+    res = up.UiEvent("6", "/f", "", "Atl\u00e9tico Grau Res.", "FBC Melgar Res.", "01 sept 23:00")
+    assert up.pick_event([res], "Atletico Grau", "FBC Melgar", ours) is None
+
+    # The old behaviour stays reachable, so this is a policy switch rather than
+    # a one-way door.
+    assert up.pick_event([moved], "Atletico Grau", "FBC Melgar", ours, allow_moved=False) is None
+    sig = inspect.signature(up.pick_event).parameters
+    assert sig["allow_moved"].default is True
+    assert sig["min_score_moved"].default > sig["min_score"].default, \
+        "the moved bar must be stricter than the ordinary one"
+    assert sig["max_move_days"].default == 7.0
+
+    # Accepting a moved fixture must be LOUD — the stale date also drives the
+    # kickoff cutoff, the pick's eligibility window and settlement.
+    src = inspect.getsource(up.pick_event)
+    assert "MOVED FIXTURE accepted" in src
+    assert "AMBIGUOUS DATE" in src
+
+    return "a lone postponed fixture is bet; two legs still refused; squad guard unaffected"
 
 
 if __name__ == "__main__":

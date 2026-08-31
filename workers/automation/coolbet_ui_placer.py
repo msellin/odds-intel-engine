@@ -403,21 +403,26 @@ def search_queries(home: str, away: str) -> list[str]:
     return out
 
 
-def _date_rejected_candidate(
+def _date_rejected_candidates(
     events: list[UiEvent], home: str, away: str, kickoff: datetime | None,
     *, min_score: float = 80.0,
-) -> tuple[UiEvent, datetime] | None:
-    """A candidate that matches on NAME but lost only on kickoff, if any.
+) -> list[tuple[UiEvent, datetime]]:
+    """Every candidate that matches on NAME but lost only on kickoff.
 
-    pick_event drops these silently, which makes a postponed fixture
-    indistinguishable from one Coolbet does not carry. Both end the pass, but
-    only one of them means our own fixture date is wrong. The squad guard still
-    applies — a reserve side on another day is not a postponement.
+    pick_event now ACCEPTS a lone one of these as a postponement, so reaching
+    here means it declined: either several same-team candidates exist and the
+    date is the only thing separating them, or the one candidate failed the
+    higher moved-fixture bars. The count is what tells those apart, and the
+    caller needs it to record an accurate reason.
+
+    The squad guard still applies — a reserve side on another day is not a
+    postponement.
     """
     from workers.automation.epicbet_explorer import _squad_tag
 
+    out: list[tuple[UiEvent, datetime]] = []
     if kickoff is None:
-        return None
+        return out
     for ev in events:
         if not ev.home or not ev.away:
             continue
@@ -431,8 +436,8 @@ def _date_rejected_candidate(
         if score >= min_score:
             start = parse_start(ev.start_text, kickoff)
             if start is not None:
-                return ev, start
-    return None
+                out.append((ev, start))
+    return out
 
 
 def _best_pair_score(events: list[UiEvent], home: str, away: str) -> float:
@@ -467,6 +472,9 @@ def pick_event(
     *,
     min_score: float = 80.0,
     min_score_with_time: float = 55.0,
+    min_score_moved: float = 85.0,
+    max_move_days: float = 7.0,
+    allow_moved: bool = True,
 ) -> UiEvent | None:
     """Choose the search result that is our fixture, or None.
 
@@ -479,15 +487,38 @@ def pick_event(
       * kickoff is parsed from Coolbet's Estonian local time into UTC and
         compared to ours to the minute — a fixture agreeing to the minute is
         close to unique, which lets the name bar drop to `min_score_with_time`;
-      * a kickoff that parses and DISAGREES is a hard reject at any name score,
-        which kills same-teams-different-leg false matches.
+      * a kickoff that parses and DISAGREES no longer kills the match outright
+        — see the moved-fixture rule below.
 
     COOLBET-SQUAD-GUARD: a reserve/youth side can never match a first team,
     whatever the time says — that produced a fake +87pct edge on Epicbet.
+
+    MOVED FIXTURES (COOLBET-MOVED-FIXTURE, 2026-08-31). A disagreeing kickoff
+    used to be a hard reject at any name score. That threw away real bets: when
+    a match is POSTPONED, Coolbet moves with it and API-Football often does
+    not, so the fixture we want is sitting right there under a different date.
+    Atletico Grau v FBC Melgar moved 31 Aug -> 1 Sept and the press agrees with
+    Coolbet, not with our feed.
+
+    The guard was not pointless though — it is what stops us backing the wrong
+    leg of a two-legged tie, where the same two teams really do play twice. The
+    distinction that matters is AMBIGUITY, not disagreement:
+
+      * exactly ONE same-team candidate clearing `min_score_moved` -> there is
+        nothing to confuse it with. It is our fixture on a date our own feed
+        has wrong. Take it.
+      * TWO OR MORE -> the kickoff is the only thing telling them apart, so
+        guessing would back a coin flip. Refuse, as before.
+
+    A moved candidate is always ranked BELOW any date-agreeing one, is held to
+    a HIGHER name bar than normal (we gave up the corroborating evidence, so
+    the names must carry more), and must fall inside `max_move_days` — the same
+    two teams three months out is a different round, not a postponement.
     """
     from workers.automation.epicbet_explorer import _squad_tag
 
     best: tuple[float, UiEvent] | None = None
+    moved: list[tuple[float, UiEvent]] = []
     for ev in events:
         if not ev.home or not ev.away:
             continue
@@ -497,10 +528,22 @@ def pick_event(
             continue
 
         time_ok = start_matches(ev.start_text, kickoff) if kickoff else None
-        if time_ok is False:
-            continue   # parsed and wrong — not our fixture, whatever the names say
-
         score = min(_best_score(home, ev.home), _best_score(away, ev.away))
+
+        if time_ok is False:
+            # Parsed and disagrees. Hold it as a possible postponement rather
+            # than discarding it, but only if the names carry the extra weight
+            # and the move is small enough to be a reschedule.
+            if not allow_moved or score < min_score_moved:
+                continue
+            start = parse_start(ev.start_text, kickoff)
+            if start is None:
+                continue
+            if abs((start - kickoff).total_seconds()) > max_move_days * 86400:
+                continue
+            moved.append((score, ev))
+            continue
+
         threshold = min_score_with_time if time_ok else min_score
         if score < threshold:
             continue
@@ -508,6 +551,24 @@ def pick_event(
         rank = score + (1000 if time_ok else 0)
         if best is None or rank > best[0]:
             best = (rank, ev)
+
+    if best is None and moved:
+        if len(moved) == 1:
+            score, ev = moved[0]
+            log.warning(
+                "MOVED FIXTURE accepted: %s v %s — Coolbet has it at %r, we have "
+                "%s (name score %d, sole candidate). Betting it; OUR date is the "
+                "suspect one.",
+                home, away, ev.start_text,
+                (kickoff.strftime("%Y-%m-%d %H:%M") + "Z") if kickoff else "?", score,
+            )
+            return ev
+        log.warning(
+            "AMBIGUOUS DATE for %s v %s — %d same-team candidates on other days "
+            "(%s). The kickoff is the only thing telling them apart, so refusing "
+            "rather than guessing which to back.",
+            home, away, len(moved), ", ".join(repr(e.start_text) for _, e in moved),
+        )
     return best[1] if best else None
 
 
@@ -1315,6 +1376,20 @@ def stage_bet(
         if ev is not None:
             if q.lower() != home.lower():
                 notes.append(f"matched via query {q!r}")
+            # A bet placed on a fixture whose date we have wrong must say so on
+            # its own audit row, not only in a log line — the stale date also
+            # drives the kickoff cutoff, the pick's own eligibility window and
+            # settlement, so whoever reads this row later needs to know.
+            ko = bet.get("match_date")
+            if ko and ev.start_text and start_matches(ev.start_text, ko) is False:
+                cb = parse_start(ev.start_text, ko)
+                if cb is not None:
+                    notes.append(
+                        f"MOVED FIXTURE: Coolbet has it {cb:%Y-%m-%d %H:%M}Z, "
+                        f"our date {ko:%Y-%m-%d %H:%M}Z "
+                        f"({abs((cb - ko).total_seconds()) / 3600:.0f}h apart) — "
+                        f"betting Coolbet's"
+                    )
             break
     if not events:
         return _fail("search", f"no search results for {home!r}")
@@ -1338,17 +1413,29 @@ def stage_bet(
         # claim that Coolbet does not have it. Refusing the bet is right; the
         # fixture is not played that night. Saying WHY is what makes the stale
         # date fixable instead of looking like a matcher miss.
-        moved = _date_rejected_candidate(real, home, away, bet.get("match_date"))
-        if moved is not None:
-            cand, cand_start = moved
+        moved = _date_rejected_candidates(real, home, away, bet.get("match_date"))
+        if len(moved) > 1:
+            # pick_event accepts a LONE moved candidate; several means the
+            # kickoff is the only thing separating them (two legs of a tie),
+            # and guessing would back a coin flip.
+            return _fail(
+                "match",
+                f"AMBIGUOUS DATE: {len(moved)} same-team candidates on other days ("
+                + ", ".join(f"{c.home} v {c.away} {st:%Y-%m-%d %H:%M}Z" for c, st in moved)
+                + f"), we have {bet['match_date']:%Y-%m-%d %H:%M}Z. Refusing rather "
+                f"than guessing which one to back.",
+                ev=moved[0][0],
+            )
+        if len(moved) == 1:
+            cand, cand_start = moved[0]
             gap_h = abs((cand_start - bet["match_date"]).total_seconds()) / 3600
             return _fail(
                 "match",
                 f"DATE MISMATCH, not missing coverage: Coolbet lists "
                 f"{cand.home} v {cand.away} at {cand_start:%Y-%m-%d %H:%M}Z, we have "
-                f"{bet['match_date']:%Y-%m-%d %H:%M}Z ({gap_h:.0f}h apart). "
-                f"OUR fixture date is probably stale — refusing rather than "
-                f"betting a match that is not played then.",
+                f"{bet['match_date']:%Y-%m-%d %H:%M}Z ({gap_h:.0f}h apart) — but it "
+                f"failed the moved-fixture bars (name score or {7}-day window), so "
+                f"it is not safe to treat as a postponement.",
                 ev=cand,
             )
 
