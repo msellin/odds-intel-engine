@@ -25378,9 +25378,17 @@ def test_weekly_eval_baseline_2026_08_26():
     assert '_per_market = {k: _rv(k) for k in ("1x2", "ou", "goals")}' in sched
     assert "is SPLIT across versions" in sched, "a split baseline must be surfaced"
 
-    assert "warn_split_baseline" in ev, "eval must carry the split check"
-    assert "NOT served by" in ev, \
-        "the eval table must name which market heads are not live on the baseline"
+    # SUPERSEDED 2026-08-31 by WEEKLY-EVAL-PERMARKET-BASELINE. The 08-26 fix
+    # only *warned* that the baseline was split and still scored every market
+    # against the one version passed in; the eval now scores each market
+    # against the version that actually serves it, so the "NOT served by"
+    # warning string it used to print no longer exists. Assert the stronger
+    # property instead — warning about the bug is not fixing it.
+    assert "baseline_for" in ev and "MARKET_HEAD" in ev, \
+        "the eval must apply a PER-MARKET baseline, not merely warn that one is split"
+    assert 'add_argument("--warn-split-baseline"' not in ev, \
+        "the warn-only flag was removed once the split became impossible — a " \
+        "declared-but-unread flag reads as working and does nothing"
 
     # The resolver itself, since the whole fix rests on it: a per-market
     # override must win over the global.

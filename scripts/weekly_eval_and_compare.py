@@ -267,8 +267,11 @@ def main():
     # _1X2 / _BTTS, then the global). When those disagree, a single-baseline
     # table silently compares some markets against a model that is not live —
     # which is what happened to OU from 2026-07-19 onward.
-    p.add_argument("--warn-split-baseline", action="store_true", default=True,
-                   help="Warn when production is served by more than one version")
+    # --warn-split-baseline (2026-08-26) removed 2026-08-31: it only ever
+    # printed a warning that the single baseline was wrong, and the per-market
+    # resolution below makes the condition it warned about impossible. Leaving
+    # the flag declared-but-unread would be a no-op the caller could set and
+    # believe was doing something.
     # WEEKLY-EVAL-PERMARKET-BASELINE-2026-08-31: warning about the split was
     # never enough — the table still scored every market against the ONE
     # version passed in. Since 2026-07-19 the global MODEL_VERSION has served
