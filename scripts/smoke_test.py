@@ -26558,5 +26558,82 @@ def test_coolbet_ui_date_mismatch_2026_08_31():
     return "placer reports a postponed fixture as a date mismatch, not as missing coverage"
 
 
+@test("COOLBET-SEARCH-PROMO-RACE")
+def test_coolbet_search_promo_race_2026_08_31():
+    """COOLBET-SEARCH-PROMO-RACE-2026-08-31 — the search read raced Coolbet's
+    promoted rows, and the kickoff regex could not see a 4-letter Estonian
+    month. Together they turned a listed fixture into "no fixtures" and
+    disarmed the placer's date guard."""
+    import inspect
+    from datetime import datetime, timezone
+    from workers.automation import coolbet_ui_placer as up
+
+    # --- BUG 1: the wait condition was satisfied by promotions -------------
+    # Coolbet's search overlay renders five promoted fixtures ('Lecce vs AS
+    # Roma' ...), identical whatever you type, BEFORE the real results arrive.
+    # The old condition was "more than one link with text", which promotions
+    # satisfy instantly, so the read could come back holding only promotions.
+    # They are rendered 'A vs B' with no kickoff, so every one fails
+    # _split_teams and the pass reported "search returned no fixtures" for a
+    # fixture Coolbet was about to list.
+    assert up._split_teams("Lecce vs AS Roma") == ("", ""), \
+        "a promoted row must not parse as a fixture"
+    search_src = inspect.getsource(up.search_events)
+    assert "_DT_PATTERN" in search_src, \
+        "the wait must key on a kickoff, which only real results carry"
+    assert "length > 1" not in search_src, \
+        "counting rows cannot distinguish promotions from results"
+
+    # --- BUG 2: the month token is not three letters -----------------------
+    # Estonian abbreviates September 'sept', February 'veebr'. The old pattern
+    # required exactly \w{3} then a separator, so it matched 'aug' and failed
+    # the rest. Not a cosmetic parse miss: an empty start_text makes
+    # start_matches() return None, pick_event treats the fixture as having no
+    # kickoff to check, and its hard reject on a disagreeing date cannot fire.
+    assert up._start_text("X - Y 31 aug 23:00 Jalgpall") == "31 aug 23:00"
+    assert up._start_text("X - Y 01 sept 23:00 Jalgpall") == "01 sept 23:00", \
+        "a 4-letter month must parse — this is what disarmed the date guard"
+    assert up._start_text("A - B 27 aug, 19:00") == "27 aug, 19:00"
+    assert up._start_text("C - D 03 veebr 18:45") == "03 veebr 18:45"
+
+    # Same assumption broke the away name, which was cut at the kickoff.
+    assert up._split_teams(
+        "Atl\u00e9tico Grau - FBC Melgar 01 sept 23:00 Jalgpall / Primera Divisi\u00f3n"
+    ) == ("Atl\u00e9tico Grau", "FBC Melgar"), "the date must not glue onto the away name"
+
+    # --- The consequence, end to end ---------------------------------------
+    # Atletico Grau v FBC Melgar: postponed 31 Aug -> 1 Sept, Coolbet moved,
+    # API-Football did not. With start_text blank this MATCHED on names alone
+    # and would have been bet. It must now be refused, and refused as a date
+    # mismatch rather than as missing coverage.
+    row = "Atl\u00e9tico Grau - FBC Melgar 01 sept 23:00 Jalgpall / Primera Divisi\u00f3n"
+    h, a = up._split_teams(row)
+    moved = up.UiEvent("6062800", "/et/sport/match/6062800", row, h, a, up._start_text(row))
+    ours = datetime(2026, 8, 31, 20, 0, tzinfo=timezone.utc)
+    assert up.parse_start(moved.start_text, ours) == datetime(2026, 9, 1, 20, 0, tzinfo=timezone.utc), \
+        "01 sept 23:00 Tallinn is 1 Sept 20:00 UTC"
+    assert up.start_matches(moved.start_text, ours) is False
+    assert up.pick_event([moved], "Atletico Grau", "FBC Melgar", ours) is None, \
+        "the postponed fixture must NOT be bet"
+    assert up._date_rejected_candidate([moved], "Atletico Grau", "FBC Melgar", ours) is not None, \
+        "and must be reported as a date mismatch"
+    # On its real date the same row must still match — the guard rejects the
+    # wrong day, not the fixture.
+    right = datetime(2026, 9, 1, 20, 0, tzinfo=timezone.utc)
+    assert up.pick_event([moved], "Atletico Grau", "FBC Melgar", right) is not None
+
+    # Novara v Folgore Caratese died in the SAME pass from the promo race
+    # alone — its kickoff agrees, so once the row is actually read it is a
+    # plain match and must be placeable.
+    nov = up.UiEvent("1", "/x", "", "Novara", "US Folgore Caratese", "31 aug 21:30")
+    nko = datetime(2026, 8, 31, 18, 30, tzinfo=timezone.utc)
+    assert up.start_matches(nov.start_text, nko) is True
+    assert up.pick_event([nov], "Novara", "Folgore Caratese", nko) is not None, \
+        "a fixture whose kickoff agrees must match"
+    assert up._date_rejected_candidate([nov], "Novara", "Folgore Caratese", nko) is None
+
+    return "search waits for a real result; 4-letter Estonian months parse; date guard armed again"
+
+
 if __name__ == "__main__":
     main()

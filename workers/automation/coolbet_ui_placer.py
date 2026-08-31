@@ -65,6 +65,23 @@ UNDER_PREFIXES = ("alla", "under")
 
 _MATCH_HREF_RE = re.compile(r"/et/sport/match/(\d+)")
 
+# Kickoff as Coolbet prints it in a search row: '31 aug 23:00', '01 sept 23:00',
+# '27 aug, 19:00'.
+#
+# COOLBET-SEARCH-PROMO-RACE (2026-08-31): the month token is NOT three letters.
+# Estonian abbreviates September as 'sept', February as 'veebr', March as
+# 'märts' — and the old `\w{3}` pattern required exactly three word characters
+# followed by a separator, so it matched 'aug' and failed every one of those.
+# The damage was not a missed parse but a SILENT LOSS OF EVIDENCE: an empty
+# start_text makes start_matches() return None, pick_event then treats the
+# fixture as having no kickoff to check, and its hard reject on a disagreeing
+# date cannot fire. Atletico Grau v FBC Melgar (postponed 31 Aug -> 1 Sept,
+# rendered '01 sept 23:00') was therefore ACCEPTED on names alone.
+#
+# Shared with the JS below so the wait condition and the parser cannot drift.
+_DT_PATTERN = r"\d{1,2}\s+[A-Za-zäöüõšž]{3,6}\.?,?\s+\d{1,2}:\d{2}"
+_START_TEXT_RE = re.compile(_DT_PATTERN)
+
 
 class UiPlacerError(RuntimeError):
     """Raised when the UI path cannot complete a step it must complete."""
@@ -249,10 +266,27 @@ def search_events(page, query: str, *, timeout_ms: int = 15000) -> list[UiEvent]
     # is really ZERO, because Coolbet injects a promoted 'Ungari - Eesti' row
     # into every search regardless of query. That looked like a matcher failure
     # when it was an empty read.
+    # Wait for a row that is a REAL RESULT, not merely for rows to exist.
+    #
+    # COOLBET-SEARCH-PROMO-RACE (2026-08-31): Coolbet's search overlay renders
+    # a block of promoted fixtures ('Lecce vs AS Roma', 'Osasuna vs Getafe' —
+    # five of them, identical whatever you type) before the actual results
+    # arrive. The previous condition — more than one link with text — is
+    # satisfied by those promotions instantly, so the read could happen before
+    # the search resolved and come back holding nothing but promotions. Every
+    # one of them fails _split_teams (they are rendered 'A vs B', with no
+    # kickoff), so the pass reported "search returned no fixtures" for a
+    # fixture Coolbet was about to list. Atletico Grau v FBC Melgar and Novara
+    # v Folgore Caratese both died this way on the 10:00 pass, minutes after
+    # other picks had matched fine.
+    #
+    # The kickoff text is the discriminator: real rows carry one, promoted rows
+    # do not. Same pattern as _START_TEXT_RE so the two cannot drift.
     try:
         page.wait_for_function(
-            """() => [...document.querySelectorAll('a[href*="/sport/match/"]')]
-                       .filter(a => (a.innerText||'').trim()).length > 1""",
+            """(pat) => [...document.querySelectorAll('a[href*="/sport/match/"]')]
+                          .some(a => new RegExp(pat).test((a.innerText||'').trim()))""",
+            arg=_DT_PATTERN,
             timeout=8000,
         )
     except Exception:
@@ -291,12 +325,16 @@ def _split_teams(text: str) -> tuple[str, str]:
         return "", ""
     home = head[0].strip()
     rest = " - ".join(head[1:])
-    away = re.split(r"\s+\d{1,2}\s+\w{3}\b|\s+\d{1,2}:\d{2}\b", rest)[0].strip()
+    # Cut the away name at the kickoff. Same month-token problem as
+    # _start_text: the old `\w{3}` alternative could not see '01 sept', so it
+    # fell through to the time alternative and left the date glued on —
+    # away='FBC Melgar 01 sept' rather than 'FBC Melgar'.
+    away = re.split(_DT_PATTERN + r"|\s+\d{1,2}:\d{2}\b", rest)[0].strip()
     return home, away
 
 
 def _start_text(text: str) -> str:
-    m = re.search(r"\d{1,2}\s+\w{3},?\s+\d{1,2}:\d{2}", text)
+    m = _START_TEXT_RE.search(text)
     return m.group(0) if m else ""
 
 
