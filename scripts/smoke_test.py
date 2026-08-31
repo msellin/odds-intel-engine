@@ -26420,5 +26420,89 @@ def test_coolbet_ui_ou_expand_2026_08_31():
     return "OU totals card expanded before read; growth verified, missing expander is not an error"
 
 
+@test("COOLBET-DATE-GUARD-DEAD")
+def test_coolbet_date_guard_dead_2026_08_31():
+    """COOLBET-DATE-GUARD-DEAD-2026-08-31 — COOLBET-FUZZY-DATE-GUARD read the
+    wrong field name and silently no-opped on every candidate since it was
+    written: 217,518 log lines, every one '0 candidates rejected on date'."""
+    import logging
+    from datetime import datetime, timezone
+    from workers.automation import coolbet_placer as cp
+
+    # THE BUG. search/v2 calls this field `match_start` — the same name
+    # fo-category already used, and which _fetch_category_matches already read.
+    # _parse_event read only `start`, so _parse_iso_start got None for EVERY
+    # search result and the guard's `if ev_start is not None` skipped it every
+    # time. A guard that never rejects anything is indistinguishable from no
+    # guard, which is why this survived unnoticed.
+    ev = cp._parse_event({
+        "id": 6062800,
+        "name": "Atl\u00e9tico Grau - FBC Melgar",
+        "match_start": "2026-09-01T20:00:00.000Z",
+    })
+    assert ev["start"] == "2026-09-01T20:00:00.000Z", \
+        "search/v2 names the kickoff `match_start`, not `start`"
+    # The old name must still work — fo-category events flow through the same
+    # matcher and some payloads do carry `start`.
+    assert cp._parse_event({"id": 1, "name": "A - B", "start": "2026-09-01T20:00:00Z"})["start"]
+
+    # WHAT IT COST. Atletico Grau v FBC Melgar was postponed 31 Aug -> 1 Sept
+    # for Melgar's travel to Piura. Coolbet moved the event; API-Football kept
+    # the old date. With the guard dead we matched the moved event at score
+    # 100, stored 82 price rows against a night it is not played, and
+    # bot_coolbet_value_v1 raised a draw @ 3.14 off them.
+    stale = datetime(2026, 8, 31, 20, 0, tzinfo=timezone.utc)
+    assert cp.fuzzy_match_event("Atletico Grau", "FBC Melgar", [ev], stale) is None, \
+        "a 24h gap must be rejected however perfectly the names score"
+    real = datetime(2026, 9, 1, 20, 0, tzinfo=timezone.utc)
+    assert (cp.fuzzy_match_event("Atletico Grau", "FBC Melgar", [ev], real) or {}).get("id") == 6062800, \
+        "the same fixture on the right date must still match"
+
+    # Tolerance stays generous enough that ordinary kickoff jitter is not a
+    # rejection — measured 2026-08-31 over 30 upcoming fixtures: of 9 that
+    # matched on name, 7 agreed to the minute and the 2 rejects were genuinely
+    # different fixtures (Man Utd U21 13 days out).
+    assert cp._FUZZY_DATE_TOLERANCE_HOURS == 6
+    near = cp._parse_event({"id": 2, "name": "Atl\u00e9tico Grau - FBC Melgar",
+                            "match_start": "2026-08-31T23:00:00.000Z"})
+    assert cp.fuzzy_match_event("Atletico Grau", "FBC Melgar", [near], stale) is not None, \
+        "3h of jitter must not cost us a fixture"
+
+    # A name-perfect candidate losing ONLY on date is not "Coolbet does not
+    # offer this" — it is "our date is stale", and the two call for opposite
+    # responses. Both looked like no coverage before.
+    recs = []
+
+    class _Cap(logging.Handler):
+        def emit(self, r):
+            recs.append(r)
+
+    h = _Cap()
+    cp.log.addHandler(h)
+    try:
+        cp.fuzzy_match_event("Atletico Grau", "FBC Melgar", [ev], stale)
+    finally:
+        cp.log.removeHandler(h)
+    warns = [r.getMessage() for r in recs if r.levelno >= logging.WARNING]
+    assert any("DATE MISMATCH" in m for m in warns), "a postponement must be loud"
+    assert any("24.0h apart" in m for m in warns), "the gap must be stated"
+    assert any("stale" in m for m in warns), "must name our date as the suspect one"
+
+    # A genuinely-absent fixture must NOT produce that warning — otherwise the
+    # signal is worthless.
+    recs.clear()
+    other = cp._parse_event({"id": 3, "name": "Sondrio - Sondalo",
+                             "match_start": "2026-09-01T20:00:00.000Z"})
+    cp.log.addHandler(h)
+    try:
+        cp.fuzzy_match_event("Atletico Grau", "FBC Melgar", [other], stale)
+    finally:
+        cp.log.removeHandler(h)
+    assert not [r for r in recs if r.levelno >= logging.WARNING], \
+        "a wrong-name candidate is no coverage, not a date mismatch"
+
+    return "search/v2 kickoff read as match_start; date guard live; postponement warns loudly"
+
+
 if __name__ == "__main__":
     main()

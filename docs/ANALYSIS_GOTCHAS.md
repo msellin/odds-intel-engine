@@ -387,6 +387,51 @@ it before reading anything into either sweep bot's ROI.
 
 ---
 
+## 21. Some Coolbet odds rows are attached to the WRONG fixture date
+
+Until 2026-08-31, `odds_snapshots` rows sourced from Coolbet could belong to a
+fixture played on a **different day** than `matches.date` says.
+
+`COOLBET-FUZZY-DATE-GUARD` was written to reject same-team different-day
+candidates, but it read `ev["start"]` while Coolbet's `search/v2` names the
+field **`match_start`** (the same name `fo-category` uses, and which the
+fo-category parser already read correctly). `_parse_iso_start(None)` returns
+`None`, and the guard is written as `if ev_start is not None:` — so it skipped
+its own check on every candidate it ever saw. Measured over the whole snapshot
+log: **217,518 match lines, every single one reporting `0 candidates rejected
+on date`.** The guard had never once fired.
+
+Worked example — Atlético Grau v FBC Melgar, 2026-08-31:
+
+| Source | Kickoff (UTC) |
+|---|---|
+| API-Football (`matches.date`) | 2026-08-31 20:00 |
+| Coolbet `match_start` | 2026-09-01 20:00 |
+
+The match was postponed a day for Melgar's travel to Piura. Coolbet moved;
+API-Football did not. We matched the moved event at name score **100**, stored
+**82 price rows** against a night it is not played, and `bot_coolbet_value_v1`
+raised a draw @ 3.14 off them.
+
+**What this means for analysis:**
+
+- Do not assume a Coolbet row in `odds_snapshots` was captured for a fixture
+  played on `matches.date`. Rows written **before 2026-08-31** carry no date
+  verification at all.
+- This inflates apparent coverage: some "Coolbet prices this fixture" rows are
+  really "Coolbet prices a fixture we have mis-dated".
+- CLV and closing-line work is the most exposed — a "closing" price for a
+  postponed match is not a close.
+- Rows written **after** the fix are date-checked to ±6h.
+
+**Related, still open:** API-Football does not always follow a postponement, so
+`matches.date` can be stale even now. The fix makes that *visible* rather than
+silent — `fuzzy_match_event` now logs a `DATE MISMATCH ... OUR fixture date is
+probably stale` warning when a name-perfect candidate is rejected only on date
+— but it does not correct the date. See `AF-STALE-FIXTURE-DATES-2026-08-31`.
+
+---
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |

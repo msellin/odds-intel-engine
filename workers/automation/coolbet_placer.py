@@ -748,7 +748,17 @@ def _parse_event(ev: dict) -> dict | None:
         "id":         ev_id,
         "home":       home.strip(),
         "away":       away.strip(),
-        "start":      ev.get("start"),
+        # COOLBET-DATE-GUARD-DEAD (2026-08-31): search/v2 calls this field
+        # `match_start`, not `start` — the same name fo-category uses. Reading
+        # only `start` returned None for EVERY search result, so
+        # COOLBET-FUZZY-DATE-GUARD silently no-opped: 217,518 log lines, every
+        # one reporting "0 candidates rejected on date", since it was written.
+        # Atletico Grau v FBC Melgar was postponed 31 Aug -> 1 Sept and Coolbet
+        # moved with it; we kept API-Football's stale date, matched the moved
+        # event at score 100 anyway, and stored 82 price rows against the wrong
+        # day — which is how bot_coolbet_value_v1 came to pick a draw @ 3.14 on
+        # a fixture that will not be played that night.
+        "start":      ev.get("match_start") or ev.get("start"),
         "bet_offers": bet_offers,
     }
 
@@ -1133,12 +1143,17 @@ def fuzzy_match_event(
     best_event = None
     best_score = -1
     skipped_date = 0
+    # Candidates rejected purely on date, kept so a postponement can be told
+    # apart from Coolbet simply not offering the fixture. Both look like "no
+    # coverage" otherwise, and they call for opposite responses.
+    date_rejects: list[tuple[dict, datetime]] = []
     for ev in events:
         if match_date is not None:
             ev_start = _parse_iso_start(ev.get("start"))
             if ev_start is not None:
                 if abs((ev_start - match_date).total_seconds()) > tol_seconds:
                     skipped_date += 1
+                    date_rejects.append((ev, ev_start))
                     continue
         ev_home = _ascii(ev.get("home") or "")
         ev_away = _ascii(ev.get("away") or "")
@@ -1160,6 +1175,28 @@ def fuzzy_match_event(
             best_event = ev
 
     if best_event is None or best_score < _FUZZY_THRESHOLD:
+        # A candidate that would have matched on NAME and lost only on date is
+        # not "Coolbet does not offer this" — it is "Coolbet and we disagree
+        # about when this is played", and the book is the likelier one to be
+        # right. Atletico Grau v FBC Melgar was postponed 31 Aug -> 1 Sept;
+        # Coolbet moved, API-Football did not, and we would have gone on
+        # pricing a fixture that is not played that night. Say so loudly rather
+        # than letting it read as no coverage.
+        for ev, ev_start in date_rejects:
+            name_score = min(
+                max(fuzz.partial_ratio(v, _ascii(ev.get("home") or "")) for v in home_variants),
+                max(fuzz.partial_ratio(v, _ascii(ev.get("away") or "")) for v in away_variants),
+            )
+            if name_score >= _FUZZY_THRESHOLD:
+                log.warning(
+                    "DATE MISMATCH for '%s vs %s' — Coolbet offers '%s vs %s' (score %d) at %s, "
+                    "we have %s (%.1fh apart). OUR fixture date is probably stale; "
+                    "no odds stored and no bet placeable until it is corrected.",
+                    home, away, ev.get("home"), ev.get("away"), name_score,
+                    ev_start.isoformat(), match_date.isoformat(),
+                    abs((ev_start - match_date).total_seconds()) / 3600,
+                )
+                break
         best_label = f"{best_event['home']} {best_event['away']}" if best_event else "—"
         log.info(
             "Fuzzy match FAILED for '%s vs %s' — best was '%s' (score %d < threshold %d, %d candidates rejected on date)",
