@@ -432,6 +432,65 @@ probably stale` warning when a name-perfect candidate is rejected only on date
 
 ---
 
+## 22. Retired bots keep writing `shadow_bets` — market aggregates are 85% dead weight
+
+`SHADOW-RETIRED-OK` (2026-05-20, `daily_pipeline_v2.py:3120`) deliberately keeps
+retired bots producing shadow picks; only `simulated_bets` respects
+`is_active`. So **any GROUP BY market over `shadow_bets` is dominated by bots
+that stopped placing months ago.**
+
+Measured 2026-08-31 over 30 days: `double_chance` alone was **59,488 of ~70,000
+settled shadow rows (85%)** — every one of them from `bot_dc_specialist`,
+`bot_dc_value` and `bot_dc_strong_fav`, all `is_active=false` with `retired_at`
+in May/June 2026. Reading that table raw makes DC look like the portfolio's
+biggest bleed when it carries **zero live exposure**.
+
+Always join `bots` and filter `b.is_active = true` when the question is "what
+are we actually betting". The unfiltered and filtered views disagree wildly:
+
+| market | all shadow rows | ACTIVE bots only |
+|---|---|---|
+| 1x2 | +12.36% (n=10,503) | **+26.56% (n=4,733)** |
+| over_under_25 | −0.02% (n=2,886) | **−6.17% (n=2,642)** |
+| btts | −7.14% (n=1,593) | **−6.36% (n=1,502)** |
+| double_chance | −6.39% (n=59,488) | **not bet at all** |
+
+## 23. Do NOT normalise the `1X2` / `1x2` case split — it is load-bearing
+
+It looks like a data-hygiene bug (older named bots write `1X2` / `O/U` / `BTTS`;
+newer sweep and coolbet bots write `1x2` / `over_under_25` / `btts`). It is not
+safe to "clean up".
+
+Per gotcha 6, the vocabulary mismatch is exactly what stops a
+`shadow_bets` ∪ `simulated_bets` union from double-counting: pipeline bots
+re-record into both ledgers, and the join on `market` returns zero overlap
+*because* the spellings differ. Normalise the stored labels and every existing
+analysis that unions the two silently starts counting the same picks twice.
+
+Normalise **in the query**, never in the table — `settlement.py`
+`_normalize_bet_market(market, selection)` is the canonical mapping and also
+extracts the OU line from `selection`. Aggregating on the raw column splits one
+market across two rows and makes both look like different strategies.
+
+## 24. A model head can lose to a coin and still look "slightly behind"
+
+Log loss and Brier are meaningless in isolation. Score every head against a
+**constant fixed at the observed base rate**:
+`-(p·ln p + (1-p)·ln(1-p))` where `p` is the realised outcome rate.
+
+On the 2026-08-17→31 holdout (n=6,717) the OU 2.5 head scored **0.7965 against
+a no-skill baseline of 0.6743** — measurably worse than guessing the average.
+BTTS failed the same test. Both had read as merely "a few percent behind the
+incumbent" for months. `weekly_eval_and_compare.py` now prints this column and
+flags failures with `!`; do not promote a head that carries the flag.
+
+**Caveat found 2026-08-31:** no-skill failure offline does *not* automatically
+justify killing the bots that trade it. `bot_sweep_ou25_v1` is −4.48% ROI on
+n=2,301 but **CLV +0.05%, t=38.2**. The two measure different things — the
+baseline test scores all matches, CLV scores only the filtered picks. Note
+also that a t of 38 on a +0.05% mean is statistical, not economic,
+significance; it will not cover the vig. Resolve the conflict before acting.
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |

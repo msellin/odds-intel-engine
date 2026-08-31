@@ -1,0 +1,2811 @@
+=== cs2_scanner_loop start  2026-06-11T12:53:49Z  interval=1800s ===
+
+--- run start  2026-06-11T12:53:49Z ---
+  06-12 08:30 BO3 [⚠ Abyssal: blood joined]
+    MARKandLARRY                  ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Abyssal                       ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.070]
+
+  06-12 08:30 BO3
+    Ding Cuts                     ELO=1500  [73%]  fair=1.37  min≥1.33  (≥1map fair=1.13 min≥1.10)  [PQ 1.030]
+    DXA                           ELO=1500  [27%]  fair=3.68  min≥3.57  (≥1map fair=1.76 min≥1.71)  [PQ 0.931]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1535  [51%]  fair=1.96  min≥1.90  (≥1map fair=1.32 min≥1.28)
+    DONSTU                        ELO=1527  [49%]  fair=2.05  min≥1.98  (≥1map fair=1.35 min≥1.31)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  35 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  ex-RUBY            vs G2 Ares             v8: 0.668/0.332  fair 1.50/3.01  (hltv_v1 was 0.552)
+  Virtus.pro         vs INOX Division       v8: 0.548/0.452  fair 1.82/2.21  (hltv_v1 was 0.524)
+  Falcons            vs G2                  v8: 0.476/0.524  fair 2.10/1.91  (hltv_v1 was 0.589)
+  Natus Vincere      vs Spirit              v8: 0.422/0.578  fair 2.37/1.73  (hltv_v1 was 0.551)
+  FURIA              vs B8                  v8: 0.546/0.454  fair 1.83/2.21  (hltv_v1 was 0.582)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  SPARTA             vs KOLESIE             v8: 0.539/0.461  fair 1.86/2.17  (hltv_v1 was 0.504)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 19 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 12:54 UTC ===
+DB pool created (2-20 connections)
+  19 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=36 with_bookie_odds=14
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T13:24:22Z ---
+  06-12 08:30 BO3 [⚠ Abyssal: blood joined]
+    MARKandLARRY                  ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Abyssal                       ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.070]
+
+  06-12 08:30 BO3
+    Ding Cuts                     ELO=1500  [73%]  fair=1.37  min≥1.33  (≥1map fair=1.13 min≥1.10)  [PQ 1.030]
+    DXA                           ELO=1500  [27%]  fair=3.68  min≥3.57  (≥1map fair=1.76 min≥1.71)  [PQ 0.931]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1535  [51%]  fair=1.96  min≥1.90  (≥1map fair=1.32 min≥1.28)
+    DONSTU                        ELO=1527  [49%]  fair=2.05  min≥1.98  (≥1map fair=1.35 min≥1.31)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  35 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  Virtus.pro         vs INOX Division       v8: 0.548/0.452  fair 1.82/2.21  (hltv_v1 was 0.524)
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  FURIA              vs B8                  v8: 0.546/0.454  fair 1.83/2.21  (hltv_v1 was 0.582)
+  Natus Vincere      vs Spirit              v8: 0.422/0.578  fair 2.37/1.73  (hltv_v1 was 0.551)
+  Falcons            vs G2                  v8: 0.476/0.524  fair 2.10/1.91  (hltv_v1 was 0.589)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  SPARTA             vs KOLESIE             v8: 0.539/0.461  fair 1.86/2.17  (hltv_v1 was 0.504)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 19 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 13:24 UTC ===
+DB pool created (2-20 connections)
+  19 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=37 with_bookie_odds=14
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T13:54:55Z ---
+  06-12 08:30 BO3
+    Ding Cuts                     ELO=1500  [73%]  fair=1.37  min≥1.33  (≥1map fair=1.13 min≥1.10)  [PQ 1.030]
+    DXA                           ELO=1500  [27%]  fair=3.68  min≥3.57  (≥1map fair=1.76 min≥1.71)  [PQ 0.931]
+
+  06-12 08:30 BO3 [⚠ Abyssal: blood joined]
+    MARKandLARRY                  ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Abyssal                       ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.070]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  33 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Natus Vincere      vs Spirit              v8: 0.422/0.578  fair 2.37/1.73  (hltv_v1 was 0.551)
+  FURIA              vs B8                  v8: 0.546/0.454  fair 1.83/2.21  (hltv_v1 was 0.582)
+  Falcons            vs G2                  v8: 0.476/0.524  fair 2.10/1.91  (hltv_v1 was 0.589)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  SPARTA             vs KOLESIE             v8: 0.539/0.461  fair 1.86/2.17  (hltv_v1 was 0.504)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 19 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 13:55 UTC ===
+DB pool created (2-20 connections)
+  19 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=38 with_bookie_odds=15
+--- sleeping 1800s ---
+=== cs2_scanner_loop start  2026-06-11T14:17:16Z  interval=1800s ===
+
+--- run start  2026-06-11T14:17:16Z ---
+  06-12 08:30 BO3
+    Ding Cuts                     ELO=1500  [73%]  fair=1.37  min≥1.33  (≥1map fair=1.13 min≥1.10)  [PQ 1.030]
+    DXA                           ELO=1500  [27%]  fair=3.68  min≥3.57  (≥1map fair=1.76 min≥1.71)  [PQ 0.931]
+
+  06-12 08:30 BO3 [⚠ Abyssal: blood joined]
+    MARKandLARRY                  ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Abyssal                       ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.070]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  33 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  Virtus.pro         vs INOX Division       v8: 0.548/0.452  fair 1.82/2.21  (hltv_v1 was 0.524)
+  ex-RUBY            vs G2 Ares             v8: 0.668/0.332  fair 1.50/3.01  (hltv_v1 was 0.552)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Natus Vincere      vs Spirit              v8: 0.422/0.578  fair 2.37/1.73  (hltv_v1 was 0.551)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+
+  wrote 18 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 14:17 UTC ===
+DB pool created (2-20 connections)
+  18 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=35 with_bookie_odds=14
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T14:25:26Z ---
+  06-12 08:30 BO3
+    Ding Cuts                     ELO=1500  [73%]  fair=1.37  min≥1.33  (≥1map fair=1.13 min≥1.10)  [PQ 1.030]
+    DXA                           ELO=1500  [27%]  fair=3.68  min≥3.57  (≥1map fair=1.76 min≥1.71)  [PQ 0.931]
+
+  06-12 08:30 BO3 [⚠ Abyssal: blood joined]
+    MARKandLARRY                  ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Abyssal                       ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.070]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  ex-RUBY            vs G2 Ares             v8: 0.668/0.332  fair 1.50/3.01  (hltv_v1 was 0.552)
+  Virtus.pro         vs INOX Division       v8: 0.548/0.452  fair 1.82/2.21  (hltv_v1 was 0.524)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Ursa               vs Leo                 v8: 0.547/0.453  fair 1.83/2.21  (hltv_v1 was 0.548)
+  Natus Vincere      vs Spirit              v8: 0.422/0.578  fair 2.37/1.73  (hltv_v1 was 0.551)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 18 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 14:25 UTC ===
+DB pool created (2-20 connections)
+  18 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=36 with_bookie_odds=14
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T14:55:52Z ---
+  06-12 08:30 BO3
+    Ding Cuts                     ELO=1500  [73%]  fair=1.37  min≥1.33  (≥1map fair=1.13 min≥1.10)  [PQ 1.030]
+    DXA                           ELO=1500  [27%]  fair=3.68  min≥3.57  (≥1map fair=1.76 min≥1.71)  [PQ 0.931]
+
+  06-12 08:30 BO3 [⚠ Abyssal: blood joined]
+    MARKandLARRY                  ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Abyssal                       ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.070]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  32 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Virtus.pro         vs INOX Division       v8: 0.548/0.452  fair 1.82/2.21  (hltv_v1 was 0.524)
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Natus Vincere      vs Spirit              v8: 0.422/0.578  fair 2.37/1.73  (hltv_v1 was 0.551)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 18 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 14:56 UTC ===
+DB pool created (2-20 connections)
+  18 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=36 with_bookie_odds=14
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T15:26:23Z ---
+  06-12 08:30 BO3
+    Ding Cuts                     ELO=1500  [73%]  fair=1.37  min≥1.33  (≥1map fair=1.13 min≥1.10)  [PQ 1.030]
+    DXA                           ELO=1500  [27%]  fair=3.68  min≥3.57  (≥1map fair=1.76 min≥1.71)  [PQ 0.931]
+
+  06-12 08:30 BO3 [⚠ Abyssal: blood joined]
+    MARKandLARRY                  ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Abyssal                       ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.070]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  32 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  ex-RUBY            vs G2 Ares             v8: 0.668/0.332  fair 1.50/3.01  (hltv_v1 was 0.552)
+  Oxuji              vs Misa                v8: 0.646/0.354  fair 1.55/2.82  (hltv_v1 was 0.581)
+  Natus Vincere      vs Spirit              v8: 0.422/0.578  fair 2.37/1.73  (hltv_v1 was 0.551)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+
+  wrote 17 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 15:26 UTC ===
+DB pool created (2-20 connections)
+  17 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=35 with_bookie_odds=20
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T15:56:54Z ---
+    MARKandLARRY                  ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Abyssal                       ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.070]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  33 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  Oxuji              vs Misa                v8: 0.646/0.354  fair 1.55/2.82  (hltv_v1 was 0.581)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Natus Vincere      vs Spirit              v8: 0.422/0.578  fair 2.37/1.73  (hltv_v1 was 0.551)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 17 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 15:57 UTC ===
+DB pool created (2-20 connections)
+  17 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=36 with_bookie_odds=20
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T16:27:23Z ---
+    Ding Cuts                     ELO=1500  [73%]  fair=1.37  min≥1.33  (≥1map fair=1.13 min≥1.10)  [PQ 1.030]
+    DXA                           ELO=1500  [27%]  fair=3.68  min≥3.57  (≥1map fair=1.76 min≥1.71)  [PQ 0.931]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  31 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  Ursa               vs Leo                 v8: 0.547/0.453  fair 1.83/2.21  (hltv_v1 was 0.548)
+  ex-RUBY            vs G2 Ares             v8: 0.668/0.332  fair 1.50/3.01  (hltv_v1 was 0.552)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Natus Vincere      vs Spirit              v8: 0.422/0.578  fair 2.37/1.73  (hltv_v1 was 0.551)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+
+  wrote 17 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 16:27 UTC ===
+DB pool created (2-20 connections)
+  17 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=36 with_bookie_odds=20
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T16:57:53Z ---
+    MARKandLARRY                  ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Abyssal                       ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.070]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  30 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  ex-RUBY            vs G2 Ares             v8: 0.668/0.332  fair 1.50/3.01  (hltv_v1 was 0.552)
+  Virtus.pro         vs INOX Division       v8: 0.548/0.452  fair 1.82/2.21  (hltv_v1 was 0.524)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Ursa               vs Leo                 v8: 0.547/0.453  fair 1.83/2.21  (hltv_v1 was 0.548)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 15 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 16:58 UTC ===
+DB pool created (2-20 connections)
+  15 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=34 with_bookie_odds=18
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T17:28:22Z ---
+    Ding Cuts                     ELO=1500  [73%]  fair=1.37  min≥1.33  (≥1map fair=1.13 min≥1.10)  [PQ 1.030]
+    DXA                           ELO=1500  [27%]  fair=3.68  min≥3.57  (≥1map fair=1.76 min≥1.71)  [PQ 0.931]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  30 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  ex-RUBY            vs G2 Ares             v8: 0.668/0.332  fair 1.50/3.01  (hltv_v1 was 0.552)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Ursa               vs Leo                 v8: 0.547/0.453  fair 1.83/2.21  (hltv_v1 was 0.548)
+  Oxuji              vs Misa                v8: 0.646/0.354  fair 1.55/2.82  (hltv_v1 was 0.581)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+
+  wrote 14 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 17:28 UTC ===
+DB pool created (2-20 connections)
+  14 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=33 with_bookie_odds=18
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T17:58:49Z ---
+    Ding Cuts                     ELO=1500  [73%]  fair=1.37  min≥1.33  (≥1map fair=1.13 min≥1.10)  [PQ 1.030]
+    DXA                           ELO=1500  [27%]  fair=3.68  min≥3.57  (≥1map fair=1.76 min≥1.71)  [PQ 0.931]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  30 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  ex-RUBY            vs G2 Ares             v8: 0.668/0.332  fair 1.50/3.01  (hltv_v1 was 0.552)
+  Oxuji              vs Misa                v8: 0.646/0.354  fair 1.55/2.82  (hltv_v1 was 0.581)
+  Virtus.pro         vs INOX Division       v8: 0.548/0.452  fair 1.82/2.21  (hltv_v1 was 0.524)
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  Ursa               vs Leo                 v8: 0.547/0.453  fair 1.83/2.21  (hltv_v1 was 0.548)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 14 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 17:59 UTC ===
+DB pool created (2-20 connections)
+  14 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=32 with_bookie_odds=17
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T18:29:19Z ---
+    Ding Cuts                     ELO=1500  [73%]  fair=1.37  min≥1.33  (≥1map fair=1.13 min≥1.10)  [PQ 1.030]
+    DXA                           ELO=1500  [27%]  fair=3.68  min≥3.57  (≥1map fair=1.76 min≥1.71)  [PQ 0.931]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  28 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  ex-RUBY            vs G2 Ares             v8: 0.668/0.332  fair 1.50/3.01  (hltv_v1 was 0.552)
+  Virtus.pro         vs INOX Division       v8: 0.548/0.452  fair 1.82/2.21  (hltv_v1 was 0.524)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Oxuji              vs Misa                v8: 0.646/0.354  fair 1.55/2.82  (hltv_v1 was 0.581)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+
+  wrote 15 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 18:29 UTC ===
+DB pool created (2-20 connections)
+  15 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=33 with_bookie_odds=18
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T18:59:48Z ---
+    MARKandLARRY                  ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Abyssal                       ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.070]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  28 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Ursa               vs Leo                 v8: 0.547/0.453  fair 1.83/2.21  (hltv_v1 was 0.548)
+  Oxuji              vs Misa                v8: 0.646/0.354  fair 1.55/2.82  (hltv_v1 was 0.581)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 15 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 19:00 UTC ===
+DB pool created (2-20 connections)
+  15 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=32 with_bookie_odds=17
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T19:30:16Z ---
+    MARKandLARRY                  ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Abyssal                       ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.070]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.95  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  28 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  ex-RUBY            vs G2 Ares             v8: 0.668/0.332  fair 1.50/3.01  (hltv_v1 was 0.552)
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Ursa               vs Leo                 v8: 0.547/0.453  fair 1.83/2.21  (hltv_v1 was 0.548)
+  Oxuji              vs Misa                v8: 0.646/0.354  fair 1.55/2.82  (hltv_v1 was 0.581)
+
+  wrote 15 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 19:30 UTC ===
+DB pool created (2-20 connections)
+  15 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=32 with_bookie_odds=17
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T20:00:45Z ---
+    MARKandLARRY                  ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Abyssal                       ELO=1496  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.070]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [33%]  fair=3.04  min≥2.94  (≥1map fair=1.61 min≥1.56)
+    PCIFIC                        ELO=1525  [67%]  fair=1.49  min≥1.45  (≥1map fair=1.17 min≥1.14)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  27 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Ursa               vs Leo                 v8: 0.547/0.453  fair 1.83/2.21  (hltv_v1 was 0.548)
+  Oxuji              vs Misa                v8: 0.646/0.354  fair 1.55/2.82  (hltv_v1 was 0.581)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 15 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 20:01 UTC ===
+DB pool created (2-20 connections)
+  15 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=32 with_bookie_odds=17
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T20:31:11Z ---
+    Ding Cuts                     ELO=1500  [73%]  fair=1.37  min≥1.33  (≥1map fair=1.13 min≥1.10)  [PQ 1.030]
+    DXA                           ELO=1500  [27%]  fair=3.68  min≥3.57  (≥1map fair=1.76 min≥1.71)  [PQ 0.931]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  26 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Ursa               vs Leo                 v8: 0.547/0.453  fair 1.83/2.21  (hltv_v1 was 0.548)
+  Oxuji              vs Misa                v8: 0.646/0.354  fair 1.55/2.82  (hltv_v1 was 0.581)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 15 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 20:31 UTC ===
+DB pool created (2-20 connections)
+  15 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=36 with_bookie_odds=17
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T21:01:45Z ---
+    Vitality                      ELO=1529  [67%]  fair=1.49  min≥1.44  (≥1map fair=1.17 min≥1.14)  [PQ 1.154]
+    9z                            ELO=1557  [33%]  fair=3.05  min≥2.95  (≥1map fair=1.61 min≥1.56)  [PQ 1.072]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  Ursa               vs Leo                 v8: 0.547/0.453  fair 1.83/2.21  (hltv_v1 was 0.548)
+  Oxuji              vs Misa                v8: 0.646/0.354  fair 1.55/2.82  (hltv_v1 was 0.581)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 15 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 21:02 UTC ===
+DB pool created (2-20 connections)
+  17 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=44 with_bookie_odds=17
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T21:32:17Z ---
+    Vitality                      ELO=1529  [67%]  fair=1.49  min≥1.44  (≥1map fair=1.17 min≥1.14)  [PQ 1.154]
+    9z                            ELO=1557  [33%]  fair=3.05  min≥2.95  (≥1map fair=1.61 min≥1.56)  [PQ 1.072]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+  Ursa               vs Leo                 v8: 0.547/0.453  fair 1.83/2.21  (hltv_v1 was 0.548)
+  Oxuji              vs Misa                v8: 0.646/0.354  fair 1.55/2.82  (hltv_v1 was 0.581)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 15 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 21:32 UTC ===
+DB pool created (2-20 connections)
+  17 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=44 with_bookie_odds=17
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T22:02:46Z ---
+    Aurora                        ELO=1536  [44%]  fair=2.27  min≥2.20  (≥1map fair=1.41 min≥1.37)
+    Spirit                        ELO=1577  [56%]  fair=1.79  min≥1.74  (≥1map fair=1.27 min≥1.23)  [PQ 1.098]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  brazylijski luz    vs HYPERSPIRIT         v8: 0.575/0.425  fair 1.74/2.35  (hltv_v1 was 0.559)
+  Sashi Academy      vs STATE               v8: 0.585/0.415  fair 1.71/2.41  (hltv_v1 was 0.485)
+  Ding Cuts          vs DXA                 v8: 0.626/0.374  fair 1.60/2.68  (hltv_v1 was 0.559)
+  SPARTA             vs GenOne              v8: 0.586/0.414  fair 1.71/2.42  (hltv_v1 was 0.497)
+  Ursa               vs Leo                 v8: 0.547/0.453  fair 1.83/2.21  (hltv_v1 was 0.548)
+  Oxuji              vs Misa                v8: 0.646/0.354  fair 1.55/2.82  (hltv_v1 was 0.581)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 15 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 22:03 UTC ===
+DB pool created (2-20 connections)
+  17 open model-covered matches
+
+  picks: 0  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=44 with_bookie_odds=17
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T22:33:16Z ---
+    Vitality                      ELO=1529  [67%]  fair=1.49  min≥1.44  (≥1map fair=1.17 min≥1.14)  [PQ 1.154]
+    9z                            ELO=1557  [33%]  fair=3.05  min≥2.95  (≥1map fair=1.61 min≥1.56)  [PQ 1.072]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+  PARIVISION         vs Monte               v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.595)
+  Natus Vincere      vs Legacy              v8: 0.492/0.508  fair 2.03/1.97  (hltv_v1 was 0.587)
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  Vitality           vs 9z                  v8: 0.570/0.430  fair 1.75/2.33  (hltv_v1 was 0.657)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+
+  wrote 24 v8 predictions
+--- bot pick scan ---
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 22:33 UTC ===
+DB pool created (2-20 connections)
+  24 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ coolbet   1.65  (thr 1.38, edge +19.6%, stake 0.12u cons=1.64 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → PARIVISION         @ coolbet   1.65  (thr 1.11, edge +48.6%, stake 1.00u cons=1.64 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ bo3gg     2.29  (thr 1.64, edge +39.6%, stake 1.00u cons=2.27 (n=2))
+
+  picks: 3  written: 3
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=44 with_bookie_odds=24
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T23:03:50Z ---
+    Vitality                      ELO=1529  [67%]  fair=1.49  min≥1.44  (≥1map fair=1.17 min≥1.14)  [PQ 1.154]
+    9z                            ELO=1557  [33%]  fair=3.05  min≥2.95  (≥1map fair=1.61 min≥1.56)  [PQ 1.072]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  Vitality           vs 9z                  v8: 0.570/0.430  fair 1.75/2.33  (hltv_v1 was 0.657)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  FURIA              vs MOUZ                v8: 0.584/0.416  fair 1.71/2.40  (hltv_v1 was 0.550)
+  The MongolZ        vs B8                  v8: 0.472/0.528  fair 2.12/1.90  (hltv_v1 was 0.557)
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+  PARIVISION         vs Monte               v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.595)
+  Natus Vincere      vs Legacy              v8: 0.492/0.508  fair 2.03/1.97  (hltv_v1 was 0.587)
+
+  wrote 24 v8 predictions
+--- bot pick scan ---
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 23:04 UTC ===
+DB pool created (2-20 connections)
+  24 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ coolbet   1.65  (thr 1.38, edge +19.6%, stake 0.12u cons=1.64 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → PARIVISION         @ coolbet   1.65  (thr 1.11, edge +48.6%, stake 1.00u cons=1.64 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ bo3gg     2.29  (thr 1.64, edge +39.6%, stake 1.00u cons=2.27 (n=2))
+
+  picks: 3  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=44 with_bookie_odds=24
+--- sleeping 1800s ---
+
+--- run start  2026-06-11T23:34:25Z ---
+    Aurora                        ELO=1536  [44%]  fair=2.27  min≥2.20  (≥1map fair=1.41 min≥1.37)
+    Spirit                        ELO=1577  [56%]  fair=1.79  min≥1.74  (≥1map fair=1.27 min≥1.23)  [PQ 1.098]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+  PARIVISION         vs Monte               v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.595)
+  Natus Vincere      vs Legacy              v8: 0.492/0.508  fair 2.03/1.97  (hltv_v1 was 0.587)
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+  Vitality           vs 9z                  v8: 0.570/0.430  fair 1.75/2.33  (hltv_v1 was 0.657)
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 24 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-11 23:34 UTC ===
+DB pool created (2-20 connections)
+  24 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.69  (thr 1.38, edge +22.3%, stake 0.14u cons=1.67 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.21 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=44 with_bookie_odds=25
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T00:04:58Z ---
+    Vitality                      ELO=1529  [67%]  fair=1.49  min≥1.44  (≥1map fair=1.17 min≥1.14)  [PQ 1.154]
+    9z                            ELO=1557  [33%]  fair=3.05  min≥2.95  (≥1map fair=1.61 min≥1.56)  [PQ 1.072]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+  PARIVISION         vs Monte               v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.595)
+  Natus Vincere      vs Legacy              v8: 0.492/0.508  fair 2.03/1.97  (hltv_v1 was 0.587)
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  Vitality           vs 9z                  v8: 0.570/0.430  fair 1.75/2.33  (hltv_v1 was 0.657)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 24 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 00:05 UTC ===
+DB pool created (2-20 connections)
+  24 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.69  (thr 1.38, edge +22.3%, stake 0.14u cons=1.67 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.21 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=44 with_bookie_odds=25
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T00:35:35Z ---
+    Aurora                        ELO=1536  [44%]  fair=2.27  min≥2.20  (≥1map fair=1.41 min≥1.37)
+    Spirit                        ELO=1577  [56%]  fair=1.79  min≥1.74  (≥1map fair=1.27 min≥1.23)  [PQ 1.098]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+  PARIVISION         vs Monte               v8: 0.479/0.520  fair 2.08/1.92  (hltv_v1 was 0.595)
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+  Natus Vincere      vs Legacy              v8: 0.462/0.538  fair 2.17/1.86  (hltv_v1 was 0.587)
+  Vitality           vs 9z                  v8: 0.540/0.460  fair 1.85/2.17  (hltv_v1 was 0.657)
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 24 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 00:36 UTC ===
+DB pool created (2-20 connections)
+  24 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.68  (thr 1.38, edge +21.4%, stake 0.13u cons=1.66 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.22 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=44 with_bookie_odds=25
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T01:06:09Z ---
+    Aurora                        ELO=1536  [44%]  fair=2.27  min≥2.20  (≥1map fair=1.41 min≥1.37)
+    Spirit                        ELO=1577  [56%]  fair=1.79  min≥1.74  (≥1map fair=1.27 min≥1.23)  [PQ 1.098]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+  Natus Vincere      vs Legacy              v8: 0.462/0.538  fair 2.17/1.86  (hltv_v1 was 0.587)
+  Vitality           vs 9z                  v8: 0.540/0.460  fair 1.85/2.17  (hltv_v1 was 0.657)
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  The MongolZ        vs B8                  v8: 0.472/0.528  fair 2.12/1.90  (hltv_v1 was 0.557)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  FURIA              vs MOUZ                v8: 0.554/0.446  fair 1.80/2.24  (hltv_v1 was 0.550)
+
+  wrote 23 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 01:08 UTC ===
+DB pool created (2-20 connections)
+  23 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.68  (thr 1.38, edge +21.4%, stake 0.13u cons=1.66 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.22 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=40 with_bookie_odds=22
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T01:38:37Z ---
+    Aurora                        ELO=1536  [44%]  fair=2.27  min≥2.20  (≥1map fair=1.41 min≥1.37)
+    Spirit                        ELO=1577  [56%]  fair=1.79  min≥1.74  (≥1map fair=1.27 min≥1.23)  [PQ 1.098]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  The MongolZ        vs B8                  v8: 0.472/0.528  fair 2.12/1.90  (hltv_v1 was 0.557)
+  FURIA              vs MOUZ                v8: 0.554/0.446  fair 1.80/2.24  (hltv_v1 was 0.550)
+  PARIVISION         vs Monte               v8: 0.479/0.520  fair 2.08/1.92  (hltv_v1 was 0.595)
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+  Natus Vincere      vs Legacy              v8: 0.462/0.538  fair 2.17/1.86  (hltv_v1 was 0.587)
+
+  wrote 23 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 01:39 UTC ===
+DB pool created (2-20 connections)
+  23 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.68  (thr 1.38, edge +21.4%, stake 0.13u cons=1.66 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.22 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=40 with_bookie_odds=22
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T02:09:12Z ---
+    Vitality                      ELO=1529  [67%]  fair=1.49  min≥1.44  (≥1map fair=1.17 min≥1.14)  [PQ 1.154]
+    9z                            ELO=1557  [33%]  fair=3.05  min≥2.95  (≥1map fair=1.61 min≥1.56)  [PQ 1.072]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  FURIA              vs MOUZ                v8: 0.554/0.446  fair 1.80/2.24  (hltv_v1 was 0.550)
+  The MongolZ        vs B8                  v8: 0.472/0.528  fair 2.12/1.90  (hltv_v1 was 0.557)
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+  PARIVISION         vs Monte               v8: 0.479/0.520  fair 2.08/1.92  (hltv_v1 was 0.595)
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+  Natus Vincere      vs Legacy              v8: 0.462/0.538  fair 2.17/1.86  (hltv_v1 was 0.587)
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  Vitality           vs 9z                  v8: 0.540/0.460  fair 1.85/2.17  (hltv_v1 was 0.657)
+
+  wrote 23 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 02:09 UTC ===
+DB pool created (2-20 connections)
+  23 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.68  (thr 1.38, edge +21.4%, stake 0.13u cons=1.66 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.22 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=39 with_bookie_odds=21
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T02:39:45Z ---
+    Aurora                        ELO=1536  [44%]  fair=2.27  min≥2.20  (≥1map fair=1.41 min≥1.37)
+    Spirit                        ELO=1577  [56%]  fair=1.79  min≥1.74  (≥1map fair=1.27 min≥1.23)  [PQ 1.098]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  PARIVISION         vs Monte               v8: 0.479/0.520  fair 2.08/1.92  (hltv_v1 was 0.595)
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+  Natus Vincere      vs Legacy              v8: 0.462/0.538  fair 2.17/1.86  (hltv_v1 was 0.587)
+  Vitality           vs 9z                  v8: 0.540/0.460  fair 1.85/2.17  (hltv_v1 was 0.657)
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 23 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 02:40 UTC ===
+DB pool created (2-20 connections)
+  23 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.70  (thr 1.38, edge +23.5%, stake 0.14u cons=1.68 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.20 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=39 with_bookie_odds=21
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T03:10:18Z ---
+    Aurora                        ELO=1536  [44%]  fair=2.27  min≥2.20  (≥1map fair=1.41 min≥1.37)
+    Spirit                        ELO=1577  [56%]  fair=1.79  min≥1.74  (≥1map fair=1.27 min≥1.23)  [PQ 1.098]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.44  min≥3.34  (≥1map fair=1.30 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1472  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  33 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+  Vitality           vs 9z                  v8: 0.540/0.460  fair 1.85/2.17  (hltv_v1 was 0.657)
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  FURIA              vs MOUZ                v8: 0.554/0.446  fair 1.80/2.24  (hltv_v1 was 0.550)
+  The MongolZ        vs B8                  v8: 0.472/0.528  fair 2.12/1.90  (hltv_v1 was 0.557)
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+
+  wrote 23 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 03:10 UTC ===
+DB pool created (2-20 connections)
+  23 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.70  (thr 1.38, edge +23.5%, stake 0.14u cons=1.68 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.20 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=39 with_bookie_odds=21
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T03:40:53Z ---
+    Vitality                      ELO=1529  [67%]  fair=1.49  min≥1.44  (≥1map fair=1.17 min≥1.14)  [PQ 1.154]
+    9z                            ELO=1557  [33%]  fair=3.05  min≥2.95  (≥1map fair=1.61 min≥1.56)  [PQ 1.072]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.45  min≥3.35  (≥1map fair=1.31 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1473  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  32 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  The MongolZ        vs B8                  v8: 0.472/0.528  fair 2.12/1.90  (hltv_v1 was 0.557)
+  FURIA              vs MOUZ                v8: 0.554/0.446  fair 1.80/2.24  (hltv_v1 was 0.550)
+  PARIVISION         vs Monte               v8: 0.479/0.520  fair 2.08/1.92  (hltv_v1 was 0.595)
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+  Natus Vincere      vs Legacy              v8: 0.462/0.538  fair 2.17/1.86  (hltv_v1 was 0.587)
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+
+  wrote 23 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 03:41 UTC ===
+DB pool created (2-20 connections)
+  23 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.71  (thr 1.38, edge +23.6%, stake 0.14u cons=1.68 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.19 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=39 with_bookie_odds=21
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T04:11:27Z ---
+    Aurora                        ELO=1536  [44%]  fair=2.27  min≥2.20  (≥1map fair=1.41 min≥1.37)
+    Spirit                        ELO=1577  [56%]  fair=1.79  min≥1.74  (≥1map fair=1.27 min≥1.23)  [PQ 1.098]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.45  min≥3.35  (≥1map fair=1.31 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1473  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  The MongolZ        vs B8                  v8: 0.472/0.528  fair 2.12/1.90  (hltv_v1 was 0.557)
+  FURIA              vs MOUZ                v8: 0.554/0.446  fair 1.80/2.24  (hltv_v1 was 0.550)
+  PARIVISION         vs Monte               v8: 0.479/0.520  fair 2.08/1.92  (hltv_v1 was 0.595)
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+  Natus Vincere      vs Legacy              v8: 0.462/0.538  fair 2.17/1.86  (hltv_v1 was 0.587)
+
+  wrote 23 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 04:11 UTC ===
+DB pool created (2-20 connections)
+  23 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.70  (thr 1.38, edge +23.2%, stake 0.14u cons=1.67 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.20 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=42 with_bookie_odds=21
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T04:42:01Z ---
+    Vitality                      ELO=1529  [67%]  fair=1.49  min≥1.44  (≥1map fair=1.17 min≥1.14)  [PQ 1.154]
+    9z                            ELO=1557  [33%]  fair=3.05  min≥2.95  (≥1map fair=1.61 min≥1.56)  [PQ 1.072]
+
+  ── Dust2.dk Ligaen Season 32: Online Stage ──
+  06-12 16:00 BO1 [⚠ STATE: thamlike joined]
+    Sashi Academy                 ELO=1395  [30%]  fair=3.33  min≥3.23  [PQ 0.978]
+    STATE                         ELO=1460  [70%]  fair=1.43  min≥1.39  [PQ 1.050]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  ── TESFED League Season 3 ──
+  06-12 16:00 BO3 [⚠ FUT Turkuaz: suisha joined, BoZZo joined, Layie joined, BatuOnFire joined, swerzieN joined]
+    FUT Turkuaz                   ELO=1487  [55%]  fair=1.81  min≥1.75  (≥1map fair=1.27 min≥1.24)
+    Fire Flux                     ELO=1450  [45%]  fair=2.24  min≥2.17  (≥1map fair=1.40 min≥1.36)
+
+  06-12 17:30 BO3 [⚠ Eternal Fire Academy: Y4G1Z joined] [⚠ PCIFIC: maxy0y0 joined, scolleN joined, Ens joined]
+    Eternal Fire Academy          ELO=1401  [35%]  fair=2.89  min≥2.80  (≥1map fair=1.57 min≥1.53)
+    PCIFIC                        ELO=1512  [65%]  fair=1.53  min≥1.48  (≥1map fair=1.19 min≥1.15)  [PQ 0.988]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.45  min≥3.35  (≥1map fair=1.31 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1473  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  33 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  FURIA              vs MOUZ                v8: 0.554/0.446  fair 1.80/2.24  (hltv_v1 was 0.550)
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+  PARIVISION         vs Monte               v8: 0.479/0.520  fair 2.08/1.92  (hltv_v1 was 0.595)
+  Natus Vincere      vs Legacy              v8: 0.462/0.538  fair 2.17/1.86  (hltv_v1 was 0.587)
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  Vitality           vs 9z                  v8: 0.540/0.460  fair 1.85/2.17  (hltv_v1 was 0.657)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+
+  wrote 23 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 04:42 UTC ===
+DB pool created (2-20 connections)
+  23 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.70  (thr 1.38, edge +23.2%, stake 0.14u cons=1.67 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.20 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=42 with_bookie_odds=21
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T05:12:33Z ---
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── NSTLGA League Season 1 ──
+  06-13 01:00 BO3 [⚠ Marsborne: motm joined, Wolfy joined]
+    Marsborne                     ELO=1485  [46%]  fair=2.18  min≥2.11  (≥1map fair=1.39 min≥1.34)  [PQ 1.080]
+    Overtake Sector               ELO=1514  [54%]  fair=1.85  min≥1.79  (≥1map fair=1.29 min≥1.25)
+
+  06-13 01:00 BO3
+    F5                            ELO=1485  [59%]  fair=1.69  min≥1.64  (≥1map fair=1.24 min≥1.20)  [PQ 1.052]
+    Wanted Goons                  ELO=1486  [41%]  fair=2.45  min≥2.38  (≥1map fair=1.46 min≥1.42)  [PQ 1.020]
+
+  06-13 01:00 BO3
+    Detonate                      ELO=1514  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Festina Lente                 ELO=1514  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+
+  06-13 01:00 BO3 [⚠ Club 333: SecretAgent joined, N2o joined, Marro joined, laxiee joined]
+    Iowa Stormboar                ELO=1486  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Club 333                      ELO=1486  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.018]
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.45  min≥3.35  (≥1map fair=1.31 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1473  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+  PARIVISION         vs Monte               v8: 0.479/0.520  fair 2.08/1.92  (hltv_v1 was 0.595)
+  Natus Vincere      vs Legacy              v8: 0.462/0.538  fair 2.17/1.86  (hltv_v1 was 0.587)
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  Vitality           vs 9z                  v8: 0.540/0.460  fair 1.85/2.17  (hltv_v1 was 0.657)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 23 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 05:13 UTC ===
+DB pool created (2-20 connections)
+  23 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.69  (thr 1.38, edge +22.1%, stake 0.14u cons=1.67 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.21 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=44 with_bookie_odds=21
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T05:43:06Z ---
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── NSTLGA League Season 1 ──
+  06-13 01:00 BO3 [⚠ Marsborne: motm joined, Wolfy joined]
+    Marsborne                     ELO=1485  [46%]  fair=2.18  min≥2.11  (≥1map fair=1.39 min≥1.34)  [PQ 1.080]
+    Overtake Sector               ELO=1514  [54%]  fair=1.85  min≥1.79  (≥1map fair=1.29 min≥1.25)
+
+  06-13 01:00 BO3
+    F5                            ELO=1485  [59%]  fair=1.69  min≥1.64  (≥1map fair=1.24 min≥1.20)  [PQ 1.052]
+    Wanted Goons                  ELO=1486  [41%]  fair=2.45  min≥2.38  (≥1map fair=1.46 min≥1.42)  [PQ 1.020]
+
+  06-13 01:00 BO3
+    Detonate                      ELO=1514  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Festina Lente                 ELO=1514  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+
+  06-13 01:00 BO3 [⚠ Club 333: SecretAgent joined, N2o joined, Marro joined, laxiee joined]
+    Iowa Stormboar                ELO=1486  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Club 333                      ELO=1486  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.018]
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.45  min≥3.35  (≥1map fair=1.31 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1473  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  Vitality           vs 9z                  v8: 0.540/0.460  fair 1.85/2.17  (hltv_v1 was 0.657)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  The MongolZ        vs B8                  v8: 0.472/0.528  fair 2.12/1.90  (hltv_v1 was 0.557)
+  FURIA              vs MOUZ                v8: 0.554/0.446  fair 1.80/2.24  (hltv_v1 was 0.550)
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+
+  wrote 23 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 05:43 UTC ===
+DB pool created (2-20 connections)
+  23 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.69  (thr 1.38, edge +22.1%, stake 0.14u cons=1.67 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.21 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=44 with_bookie_odds=21
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T06:13:39Z ---
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── NSTLGA League Season 1 ──
+  06-13 01:00 BO3 [⚠ Marsborne: motm joined, Wolfy joined]
+    Marsborne                     ELO=1485  [46%]  fair=2.18  min≥2.11  (≥1map fair=1.39 min≥1.34)  [PQ 1.080]
+    Overtake Sector               ELO=1514  [54%]  fair=1.85  min≥1.79  (≥1map fair=1.29 min≥1.25)
+
+  06-13 01:00 BO3
+    F5                            ELO=1485  [59%]  fair=1.69  min≥1.64  (≥1map fair=1.24 min≥1.20)  [PQ 1.052]
+    Wanted Goons                  ELO=1486  [41%]  fair=2.45  min≥2.38  (≥1map fair=1.46 min≥1.42)  [PQ 1.020]
+
+  06-13 01:00 BO3
+    Detonate                      ELO=1514  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Festina Lente                 ELO=1514  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+
+  06-13 01:00 BO3 [⚠ Club 333: SecretAgent joined, N2o joined, Marro joined, laxiee joined]
+    Iowa Stormboar                ELO=1486  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Club 333                      ELO=1486  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.018]
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.45  min≥3.35  (≥1map fair=1.31 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1473  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  PARIVISION         vs Monte               v8: 0.479/0.520  fair 2.08/1.92  (hltv_v1 was 0.595)
+  Natus Vincere      vs Legacy              v8: 0.462/0.538  fair 2.17/1.86  (hltv_v1 was 0.587)
+  Falcons            vs BetBoom             v8: 0.505/0.495  fair 1.98/2.02  (hltv_v1 was 0.610)
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  Vitality           vs 9z                  v8: 0.540/0.460  fair 1.85/2.17  (hltv_v1 was 0.657)
+  The MongolZ        vs B8                  v8: 0.472/0.528  fair 2.12/1.90  (hltv_v1 was 0.557)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+
+  wrote 23 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 06:14 UTC ===
+DB pool created (2-20 connections)
+  23 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.70  (thr 1.38, edge +23.2%, stake 0.14u cons=1.67 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.20 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=45 with_bookie_odds=23
+--- sleeping 1800s ---
+
+--- run start  2026-06-12T06:44:13Z ---
+  06-12 16:00 BO1
+    XI                            ELO=1527  [56%]  fair=1.80  min≥1.74  [PQ 0.982]
+    MASQ                          ELO=1488  [44%]  fair=2.25  min≥2.19
+
+  06-12 16:00 BO1
+    Washed                        ELO=1395  [34%]  fair=2.98  min≥2.89
+    Invicta                       ELO=1514  [66%]  fair=1.50  min≥1.46  [PQ 0.873]
+
+  06-12 16:00 BO1 [⚠ MASONIC: Avou joined]
+    struggletony                  ELO=1496  [58%]  fair=1.72  min≥1.67
+    MASONIC                       ELO=1438  [42%]  fair=2.39  min≥2.32  [PQ 0.952]
+
+  ── ESEA Season 57: Advanced Division - Europe ──
+  06-12 17:30 BO3
+    OLDBOYS PL                    ELO=1526  [50%]  fair=2.01  min≥1.95  (≥1map fair=1.33 min≥1.29)
+    DONSTU                        ELO=1527  [50%]  fair=1.99  min≥1.93  (≥1map fair=1.33 min≥1.29)  [PQ 1.055]
+
+  06-12 17:30 BO3
+    XI                            ELO=1527  [45%]  fair=2.22  min≥2.15  (≥1map fair=1.40 min≥1.35)  [PQ 0.982]
+    Wingman                       ELO=1513  [55%]  fair=1.82  min≥1.77  (≥1map fair=1.28 min≥1.24)  [PQ 1.020]
+
+  ── Gamers Club Liga Serie A: June 2026 ──
+  06-12 18:00 BO1 [NEW]
+    METANOIA Wolves               ELO=1549  [57%]  fair=1.75  min≥1.70  [PQ 0.940]
+    ALZON                         ELO=1500  [43%]  fair=2.33  min≥2.26
+
+  ── NSTLGA League Season 1 ──
+  06-13 01:00 BO3 [⚠ Club 333: SecretAgent joined, N2o joined, Marro joined, laxiee joined]
+    Iowa Stormboar                ELO=1486  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Club 333                      ELO=1486  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)  [PQ 1.018]
+
+  06-13 01:00 BO3
+    Detonate                      ELO=1514  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+    Festina Lente                 ELO=1514  [50%]  fair=2.00  min≥1.94  (≥1map fair=1.33 min≥1.29)
+
+  06-13 01:00 BO3
+    F5                            ELO=1485  [59%]  fair=1.69  min≥1.64  (≥1map fair=1.24 min≥1.20)  [PQ 1.052]
+    Wanted Goons                  ELO=1486  [41%]  fair=2.45  min≥2.38  (≥1map fair=1.46 min≥1.42)  [PQ 1.020]
+
+  06-13 01:00 BO3 [⚠ Marsborne: motm joined, Wolfy joined]
+    Marsborne                     ELO=1485  [46%]  fair=2.18  min≥2.11  (≥1map fair=1.39 min≥1.34)  [PQ 1.080]
+    Overtake Sector               ELO=1514  [54%]  fair=1.85  min≥1.79  (≥1map fair=1.29 min≥1.25)
+
+  ── UKIC League Season 10: Masters Division ──
+  06-13 14:00 BO5  ★
+    Dripmen                       ELO=1426  [29%]  fair=3.45  min≥3.35  (≥1map fair=1.31 min≥1.27)  [PQ 0.953]
+    The Last Resort               ELO=1473  [71%]  fair=1.41  min≥1.37  (≥1map fair=1.06 min≥1.03)  [PQ 1.040]
+
+[6] Writing to database...
+  34 matches written to cs2_upcoming_matches + cs2_predictions
+--- v8 predict ---
+  Vitality           vs 9z                  v8: 0.540/0.460  fair 1.85/2.17  (hltv_v1 was 0.657)
+  Aurora             vs Spirit              v8: 0.379/0.621  fair 2.64/1.61  (hltv_v1 was 0.507)
+  METANOIA Wolves    vs ALZON               v8: 0.627/0.373  fair 1.59/2.68  (hltv_v1 was 0.563)
+  Dripmen            vs The Last Resort     v8: 0.407/0.593  fair 2.46/1.69  (hltv_v1 was 0.491)
+  FURIA              vs MOUZ                v8: 0.554/0.446  fair 1.80/2.24  (hltv_v1 was 0.550)
+  The MongolZ        vs B8                  v8: 0.472/0.528  fair 2.12/1.90  (hltv_v1 was 0.557)
+  FUT                vs G2                  v8: 0.510/0.490  fair 1.96/2.04  (hltv_v1 was 0.529)
+  PARIVISION         vs Monte               v8: 0.479/0.520  fair 2.08/1.92  (hltv_v1 was 0.595)
+
+  wrote 24 v8 predictions
+--- bot pick scan ---
+
+=== CS2 BOT  bot_cs2_value_v1  2026-06-12 06:44 UTC ===
+DB pool created (2-20 connections)
+  24 open model-covered matches
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   match_winner → PARIVISION         @ bo3gg     1.70  (thr 1.38, edge +23.2%, stake 0.14u cons=1.67 (n=2))
+      fired  [elo+pq_v1 ]  PARIVISION             vs Monte                   atleast1map  → Monte              @ coolbet   2.25  (thr 1.64, edge +37.2%, stake 1.00u cons=2.20 (n=2))
+
+  picks: 2  written: 0
+  settled: 0 prior open bets
+
+DB pool created (2-20 connections)
+  state: upcoming=45 with_bookie_odds=23
+--- sleeping 1800s ---

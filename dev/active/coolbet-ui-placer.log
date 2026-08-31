@@ -1,0 +1,2911 @@
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 23 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     FK Jablonec v Rangers | 1x2/draw @ 3.5000
+         below min odds: 3.35 < 3.47 (break-even at 3% edge)
+skip     FC Iberia 1999 v Jagiellonia | over_under_25/over @ 1.9600
+         no confident match for FC Iberia 1999 v Jagiellonia in 2 results
+skip     FC Iberia 1999 v Jagiellonia | over_under_35/over @ 3.5100
+         no confident match for FC Iberia 1999 v Jagiellonia in 2 results
+skip     Ararat-Armenia v Universitatea Craiova | 1x2/away @ 2.1300
+         no confident match for Ararat-Armenia v Universitatea Craiova in 2 results
+skip     Ararat-Armenia v Universitatea Craiova | 1x2/draw @ 3.4000
+         no confident match for Ararat-Armenia v Universitatea Craiova in 1 results
+skip     Simba v Coastal Union | over_under_35/under @ 1.5300
+         no confident match for Simba v Coastal Union in 5 results
+skip     Brann v PAOK | 1x2/home @ 3.0000
+         no confident match for Brann v PAOK in 9 results
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_35/over @ 2.4000
+         below min odds: 2.06 < 2.25 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | 1x2/away @ 3.1000
+         below min odds: 2.9 < 3.10 (break-even at 3% edge)
+skip     CSKA Sofia v OFI | 1x2/draw @ 4.7500
+         below min odds: 4.4 < 4.69 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_25/over @ 1.5500
+         below min odds: 1.41 < 1.53 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/away @ 2.3000
+         no confident match for Ferencvarosi TC v Trabzonspor in 1 results
+skip     Austria Vienna v SC Braga | 1x2/draw @ 3.7500
+         no confident match for Austria Vienna v SC Braga in 1 results
+skip     Ferencvarosi TC v Trabzonspor | 1x2/home @ 3.4500
+         below min odds: 3.3 < 3.31 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_35/over @ 2.2383
+         below min odds: 2.03 < 2.19 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_25/over @ 1.4998
+         below min odds: 1.41 < 1.49 (break-even at 3% edge)
+skip     Larne v Lincoln Red Imps FC | over_under_35/over @ 3.3000
+         below min odds: 3.25 < 3.28 (break-even at 3% edge)
+skip     22 de Julio v Santo Domingo | over_under_25/under @ 1.7300
+         no confident match for 22 de Julio v Santo Domingo in 11 results
+skip     22 de Julio v Santo Domingo | 1x2/draw @ 3.4000
+         no confident match for 22 de Julio v Santo Domingo in 11 results
+
+placed=0 staged=0 skipped=19 already-placed=4 — 85 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 28 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Ararat-Armenia v Universitatea Craiova | 1x2/away @ 2.1300
+         below min odds: 1.97 < 2.03 (break-even at 3% edge)
+skip     Ararat-Armenia v Universitatea Craiova | 1x2/draw @ 3.4000
+         below min odds: 3.35 < 3.39 (break-even at 3% edge)
+skip     FC Iberia 1999 v Jagiellonia | over_under_25/over @ 1.9600
+         below min odds: 1.73 < 1.96 (break-even at 3% edge)
+skip     FC Iberia 1999 v Jagiellonia | over_under_35/over @ 3.5100
+         below min odds: 2.85 < 3.34 (break-even at 3% edge)
+skip     FK Jablonec v Rangers | 1x2/draw @ 3.5000
+         below min odds: 3.35 < 3.47 (break-even at 3% edge)
+skip     Simba v Coastal Union | over_under_35/under @ 1.5300
+         below min odds: 1.44 < 1.52 (break-even at 3% edge)
+skip     Brann v PAOK | 1x2/home @ 3.0000
+         below min odds: 2.6 < 2.96 (break-even at 3% edge)
+skip     Omonia Nicosia v St. Truiden | 1x2/home @ 2.1000
+         no confident match for Omonia Nicosia v St. Truiden in 4 results
+skip     CSKA Sofia v OFI | 1x2/draw @ 4.7500
+         below min odds: 4.4 < 4.69 (break-even at 3% edge)
+PLACED   Ajax v FC Sion | over_under_25/under @ 3.4400
+         snapshot 9 prices; min_odds=3.27 coolbet=3.44; odds 3.4400 → 3.44 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Alla 2.5 3.44 Vära; balance 210.00 -> 200.00
+skip     FC ST. Gallen v FC Nordsjaelland | 1x2/away @ 3.1000
+         below min odds: 2.9 < 3.10 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_25/over @ 1.5500
+         below min odds: 1.41 < 1.53 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_35/over @ 2.4000
+         below min odds: 2.06 < 2.25 (break-even at 3% edge)
+skip     Austria Vienna v SC Braga | 1x2/draw @ 3.7500
+         below min odds: 3.5 < 3.71 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/home @ 3.4500
+         below min odds: 3.3 < 3.31 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/away @ 2.3000
+         below min odds: 2.2 < 2.23 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_35/over @ 2.2383
+         below min odds: 2.03 < 2.19 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_25/over @ 1.4998
+         below min odds: 1.41 < 1.49 (break-even at 3% edge)
+skip     Larne v Lincoln Red Imps FC | over_under_35/over @ 3.3000
+         below min odds: 3.25 < 3.28 (break-even at 3% edge)
+skip     22 de Julio v Santo Domingo | over_under_25/under @ 1.7300
+         no confident match for 22 de Julio v Santo Domingo in 11 results
+skip     22 de Julio v Santo Domingo | 1x2/draw @ 3.4000
+         no confident match for 22 de Julio v Santo Domingo in 11 results
+skip     Estudiantes L.P. v Barracas Central | 1x2/home @ 1.9800
+         no confident match for Estudiantes L.P. v Barracas Central in 9 results
+skip     Independiente Petrolero v Guabirá | over_under_25/over @ 1.6000
+         no confident match for Independiente Petrolero v Guabirá in 10 results
+skip     Independiente Petrolero v Guabirá | over_under_35/over @ 2.5000
+         no confident match for Independiente Petrolero v Guabirá in 10 results
+
+placed=1 staged=0 skipped=23 already-placed=4 — 83 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 28 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Ararat-Armenia v Universitatea Craiova | 1x2/away @ 2.1300
+         below min odds: 1.97 < 2.03 (break-even at 3% edge)
+skip     Ararat-Armenia v Universitatea Craiova | 1x2/draw @ 3.4000
+         below min odds: 3.35 < 3.39 (break-even at 3% edge)
+skip     FC Iberia 1999 v Jagiellonia | over_under_25/over @ 1.9600
+         below min odds: 1.73 < 1.96 (break-even at 3% edge)
+skip     FC Iberia 1999 v Jagiellonia | over_under_35/over @ 3.5100
+         below min odds: 2.85 < 3.34 (break-even at 3% edge)
+skip     FK Jablonec v Rangers | 1x2/draw @ 3.5000
+         below min odds: 3.35 < 3.47 (break-even at 3% edge)
+skip     Simba v Coastal Union | over_under_35/under @ 1.5300
+         below min odds: 1.44 < 1.52 (break-even at 3% edge)
+skip     Brann v PAOK | 1x2/home @ 3.0000
+         below min odds: 2.6 < 2.96 (break-even at 3% edge)
+skip     Omonia Nicosia v St. Truiden | 1x2/home @ 2.1000
+         no confident match for Omonia Nicosia v St. Truiden in 4 results
+skip     CSKA Sofia v OFI | 1x2/draw @ 4.7500
+         below min odds: 4.4 < 4.69 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | 1x2/away @ 3.1000
+         below min odds: 2.85 < 3.10 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_25/over @ 1.5500
+         below min odds: 1.39 < 1.53 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_35/over @ 2.4000
+         below min odds: 2.01 < 2.25 (break-even at 3% edge)
+skip     Austria Vienna v SC Braga | 1x2/draw @ 3.7500
+         below min odds: 3.5 < 3.71 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/home @ 3.4500
+         below min odds: 3.3 < 3.31 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/away @ 2.3000
+         below min odds: 2.2 < 2.23 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_35/over @ 2.2383
+         below min odds: 2.06 < 2.19 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_25/over @ 1.4998
+         below min odds: 1.41 < 1.49 (break-even at 3% edge)
+skip     Larne v Lincoln Red Imps FC | over_under_35/over @ 3.3000
+         below min odds: 3.25 < 3.28 (break-even at 3% edge)
+skip     22 de Julio v Santo Domingo | over_under_25/under @ 1.7300
+         no confident match for 22 de Julio v Santo Domingo in 11 results
+skip     22 de Julio v Santo Domingo | 1x2/draw @ 3.4000
+         no confident match for 22 de Julio v Santo Domingo in 11 results
+skip     Estudiantes L.P. v Barracas Central | 1x2/home @ 1.9800
+         no confident match for Estudiantes L.P. v Barracas Central in 9 results
+skip     Independiente Petrolero v Guabirá | over_under_25/over @ 1.6000
+         no confident match for Independiente Petrolero v Guabirá in 10 results
+skip     Independiente Petrolero v Guabirá | over_under_35/over @ 2.5000
+         no confident match for Independiente Petrolero v Guabirá in 10 results
+
+placed=0 staged=0 skipped=23 already-placed=5 — 47 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 29 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Ararat-Armenia v Universitatea Craiova | 1x2/away @ 2.1300
+         below min odds: 1.97 < 2.03 (break-even at 3% edge)
+skip     Ararat-Armenia v Universitatea Craiova | 1x2/draw @ 3.4000
+         below min odds: 3.35 < 3.39 (break-even at 3% edge)
+skip     Simba v Coastal Union | over_under_35/under @ 1.5300
+         below min odds: 1.44 < 1.52 (break-even at 3% edge)
+skip     FC Iberia 1999 v Jagiellonia | over_under_25/over @ 1.9600
+         below min odds: 1.73 < 1.96 (break-even at 3% edge)
+skip     FC Iberia 1999 v Jagiellonia | over_under_35/over @ 3.5100
+         below min odds: 2.85 < 3.34 (break-even at 3% edge)
+skip     FK Jablonec v Rangers | 1x2/draw @ 3.5000
+         below min odds: 3.35 < 3.47 (break-even at 3% edge)
+skip     Brann v PAOK | 1x2/home @ 3.0000
+         below min odds: 2.6 < 2.96 (break-even at 3% edge)
+skip     Omonia Nicosia v St. Truiden | 1x2/home @ 2.1000
+         no confident match for Omonia Nicosia v St. Truiden in 4 results
+PLACED   Raków Częstochowa v HNK Hajduk Split | 1x2/away @ 3.6000
+         snapshot 9 prices; min_odds=3.55 coolbet=3.6; odds 3.6000 → 3.6 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Viik 3.60 Lõpptule; balance 200.00 -> 190.00
+skip     CSKA Sofia v OFI | 1x2/draw @ 4.7500
+         below min odds: 4.4 < 4.69 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | 1x2/away @ 3.1000
+         below min odds: 2.85 < 3.10 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_25/over @ 1.5500
+         no confident match for FC ST. Gallen v FC Nordsjaelland in 2 results
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_35/over @ 2.4000
+         no confident match for FC ST. Gallen v FC Nordsjaelland in 1 results
+skip     Austria Vienna v SC Braga | 1x2/draw @ 3.7500
+         below min odds: 3.5 < 3.71 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/home @ 3.4500
+         below min odds: 3.3 < 3.31 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/away @ 2.3000
+         below min odds: 2.2 < 2.23 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_35/over @ 2.2383
+         below min odds: 2.06 < 2.19 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_25/over @ 1.4998
+         below min odds: 1.41 < 1.49 (break-even at 3% edge)
+PLACED   Larne v Lincoln Red Imps FC | over_under_35/over @ 3.3000
+         snapshot 9 prices; min_odds=3.28 coolbet=3.51; odds 3.3000 → 3.51 (-6.4pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Üle 3.5 3.51 Värav; balance 190.00 -> 180.00
+skip     22 de Julio v Santo Domingo | over_under_25/under @ 1.7300
+         no confident match for 22 de Julio v Santo Domingo in 11 results
+skip     22 de Julio v Santo Domingo | 1x2/draw @ 3.4000
+         no confident match for 22 de Julio v Santo Domingo in 11 results
+skip     Estudiantes L.P. v Barracas Central | 1x2/home @ 1.9800
+         no confident match for Estudiantes L.P. v Barracas Central in 9 results
+skip     Independiente Petrolero v Guabirá | over_under_25/over @ 1.6000
+         no confident match for Independiente Petrolero v Guabirá in 10 results
+skip     Independiente Petrolero v Guabirá | over_under_35/over @ 2.5000
+         no confident match for Independiente Petrolero v Guabirá in 10 results
+
+placed=2 staged=0 skipped=22 already-placed=5 — 48 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 29 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Ararat-Armenia v Universitatea Craiova | 1x2/away @ 2.1300
+         below min odds: 1.97 < 2.03 (break-even at 3% edge)
+skip     Ararat-Armenia v Universitatea Craiova | 1x2/draw @ 3.4000
+         below min odds: 3.35 < 3.39 (break-even at 3% edge)
+skip     Simba v Coastal Union | over_under_35/under @ 1.5300
+         below min odds: 1.44 < 1.52 (break-even at 3% edge)
+skip     FC Iberia 1999 v Jagiellonia | over_under_25/over @ 1.9600
+         below min odds: 1.73 < 1.96 (break-even at 3% edge)
+skip     FC Iberia 1999 v Jagiellonia | over_under_35/over @ 3.5100
+         below min odds: 2.85 < 3.34 (break-even at 3% edge)
+skip     FK Jablonec v Rangers | 1x2/draw @ 3.5000
+         below min odds: 3.35 < 3.47 (break-even at 3% edge)
+skip     Brann v PAOK | 1x2/home @ 3.0000
+         below min odds: 2.6 < 2.96 (break-even at 3% edge)
+PLACED   Omonia Nicosia v St. Truiden | 1x2/home @ 2.1000
+         matched via query 'Omonia'; snapshot 8 prices; min_odds=2.10 coolbet=2.17; odds 2.1000 → 2.17 (-3.3pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem AC Omonia Nicosia ; balance 180.00 -> 170.00
+skip     CSKA Sofia v OFI | 1x2/draw @ 4.7500
+         below min odds: 4.4 < 4.69 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | 1x2/away @ 3.1000
+         below min odds: 2.85 < 3.10 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_25/over @ 1.5500
+         below min odds: 1.39 < 1.53 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_35/over @ 2.4000
+         below min odds: 2.01 < 2.25 (break-even at 3% edge)
+skip     Austria Vienna v SC Braga | 1x2/draw @ 3.7500
+         below min odds: 3.5 < 3.71 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/home @ 3.4500
+         below min odds: 3.3 < 3.31 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/away @ 2.3000
+         below min odds: 2.2 < 2.23 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_35/over @ 2.2383
+         below min odds: 2.06 < 2.19 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_25/over @ 1.4998
+         below min odds: 1.41 < 1.49 (break-even at 3% edge)
+skip     22 de Julio v Santo Domingo | over_under_25/under @ 1.7300
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 10 candidates, best pair score 43
+skip     22 de Julio v Santo Domingo | 1x2/draw @ 3.4000
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 10 candidates, best pair score 43
+skip     Estudiantes L.P. v Barracas Central | 1x2/home @ 1.9800
+         1x2/home not offered on this page
+PLACED   Independiente Petrolero v Guabirá | over_under_25/over @ 1.6000
+         matched via query 'Independiente'; snapshot 7 prices; min_odds=1.59 coolbet=1.62; odds 1.6000 → 1.62 (-1.3pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Üle 2.5 1.62 Värav; balance 170.00 -> 160.00
+PLACED   Independiente Petrolero v Guabirá | over_under_35/over @ 2.5000
+         matched via query 'Independiente'; snapshot 7 prices; min_odds=2.43 coolbet=2.6; odds 2.5000 → 2.6 (-4.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Üle 3.5 2.60 Värav; balance 160.00 -> 150.00
+
+placed=3 staged=0 skipped=19 already-placed=7 — 69 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 30 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Ararat-Armenia v Universitatea Craiova | 1x2/away @ 2.1300
+         below min odds: 1.98 < 2.03 (break-even at 3% edge)
+skip     Ararat-Armenia v Universitatea Craiova | 1x2/draw @ 3.4000
+         below min odds: 3.35 < 3.39 (break-even at 3% edge)
+skip     FK Jablonec v Rangers | 1x2/draw @ 3.5000
+         below min odds: 3.4 < 3.47 (break-even at 3% edge)
+skip     Simba v Coastal Union | over_under_35/under @ 1.5300
+         below min odds: 1.44 < 1.52 (break-even at 3% edge)
+skip     FC Iberia 1999 v Jagiellonia | over_under_25/over @ 1.9600
+         below min odds: 1.7 < 1.96 (break-even at 3% edge)
+skip     FC Iberia 1999 v Jagiellonia | over_under_35/over @ 3.5100
+         below min odds: 2.77 < 3.34 (break-even at 3% edge)
+skip     Brann v PAOK | 1x2/home @ 3.0000
+         below min odds: 2.57 < 2.96 (break-even at 3% edge)
+skip     CSKA Sofia v OFI | 1x2/draw @ 4.7500
+         below min odds: 4.5 < 4.69 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | 1x2/away @ 3.1000
+         below min odds: 2.85 < 3.10 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_25/over @ 1.5500
+         below min odds: 1.39 < 1.53 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_35/over @ 2.4000
+         below min odds: 2.01 < 2.25 (break-even at 3% edge)
+skip     Austria Vienna v SC Braga | 1x2/draw @ 3.7500
+         below min odds: 3.5 < 3.71 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/home @ 3.4500
+         below min odds: 3.3 < 3.31 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/away @ 2.3000
+         below min odds: 2.2 < 2.23 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_35/over @ 2.2383
+         below min odds: 2.06 < 2.19 (break-even at 3% edge)
+PLACED   Guairena FC v 12 de Octubre | 1x2/home @ 2.1200
+         matched via query 'Guairena'; snapshot 7 prices; min_odds=1.97 coolbet=2.05; odds 2.1200 → 2.05 (+3.3pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Guairena FC 2.05 L; balance 150.00 -> 140.00
+skip     Fulham v AFC Wimbledon | over_under_25/over @ 1.4998
+         below min odds: 1.41 < 1.49 (break-even at 3% edge)
+skip     22 de Julio v Santo Domingo | over_under_25/under @ 1.7300
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 9 candidates, best pair score 43
+skip     22 de Julio v Santo Domingo | 1x2/draw @ 3.4000
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 9 candidates, best pair score 43
+skip     Estudiantes L.P. v Barracas Central | 1x2/home @ 1.9800
+         1x2/home not offered on this page
+
+placed=1 staged=0 skipped=19 already-placed=10 — 67 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 23 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Brann v PAOK | 1x2/home @ 3.0000
+         below min odds: 2.57 < 2.96 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | 1x2/away @ 3.1000
+         below min odds: 2.85 < 3.10 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_25/over @ 1.5500
+         below min odds: 1.39 < 1.53 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_35/over @ 2.4000
+         below min odds: 2.01 < 2.25 (break-even at 3% edge)
+skip     CSKA Sofia v OFI | 1x2/draw @ 4.7500
+         below min odds: 4.5 < 4.69 (break-even at 3% edge)
+skip     Austria Vienna v SC Braga | 1x2/draw @ 3.7500
+         below min odds: 3.5 < 3.71 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/home @ 3.4500
+         below min odds: 2.95 < 3.31 (break-even at 3% edge)
+PLACED   Ferencvarosi TC v Trabzonspor | 1x2/away @ 2.3000
+         matched via query 'Ferencvarosi'; snapshot 9 prices; min_odds=2.23 coolbet=2.3; odds 2.3000 → 2.3 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Trabzonspor 2.30 L; balance 140.00 -> 130.00
+skip     Fulham v AFC Wimbledon | over_under_35/over @ 2.2383
+         below min odds: 2.06 < 2.19 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_25/over @ 1.4998
+         below min odds: 1.41 < 1.49 (break-even at 3% edge)
+skip     22 de Julio v Santo Domingo | over_under_25/under @ 1.7300
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 9 candidates, best pair score 43
+skip     22 de Julio v Santo Domingo | 1x2/draw @ 3.4000
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 9 candidates, best pair score 43
+skip     Estudiantes L.P. v Barracas Central | 1x2/home @ 1.9800
+         1x2/home not offered on this page
+
+placed=1 staged=0 skipped=12 already-placed=10 — 38 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 23 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Brann v PAOK | 1x2/home @ 3.0000
+         below min odds: 2.37 < 2.96 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | 1x2/away @ 3.1000
+         below min odds: 2.85 < 3.10 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_25/over @ 1.5500
+         below min odds: 1.39 < 1.53 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_35/over @ 2.4000
+         below min odds: 2.01 < 2.25 (break-even at 3% edge)
+skip     CSKA Sofia v OFI | 1x2/draw @ 4.7500
+         below min odds: 4.5 < 4.69 (break-even at 3% edge)
+skip     Austria Vienna v SC Braga | 1x2/draw @ 3.7500
+         below min odds: 3.5 < 3.71 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/home @ 3.4500
+         below min odds: 2.95 < 3.31 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_35/over @ 2.2383
+         below min odds: 1.98 < 2.19 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_25/over @ 1.4998
+         below min odds: 1.39 < 1.49 (break-even at 3% edge)
+skip     22 de Julio v Santo Domingo | over_under_25/under @ 1.7300
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 8 candidates, best pair score 43
+skip     22 de Julio v Santo Domingo | 1x2/draw @ 3.4000
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 8 candidates, best pair score 43
+skip     Estudiantes L.P. v Barracas Central | 1x2/home @ 1.9800
+         1x2/home not offered on this page
+
+placed=0 staged=0 skipped=12 already-placed=11 — 30 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 19 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     FC ST. Gallen v FC Nordsjaelland | 1x2/away @ 3.1000
+         below min odds: 3.0 < 3.10 (break-even at 3% edge)
+skip     CSKA Sofia v OFI | 1x2/draw @ 4.7500
+         below min odds: 4.5 < 4.69 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_25/over @ 1.5500
+         below min odds: 1.39 < 1.53 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_35/over @ 2.4000
+         below min odds: 2.01 < 2.25 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/home @ 3.4500
+         below min odds: 3.0 < 3.31 (break-even at 3% edge)
+skip     Austria Vienna v SC Braga | 1x2/draw @ 3.7500
+         below min odds: 3.5 < 3.71 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_35/over @ 2.2383
+         below min odds: 1.98 < 2.19 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_25/over @ 1.4998
+         below min odds: 1.39 < 1.49 (break-even at 3% edge)
+skip     22 de Julio v Santo Domingo | over_under_25/under @ 1.7300
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 8 candidates, best pair score 43
+skip     22 de Julio v Santo Domingo | 1x2/draw @ 3.4000
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 8 candidates, best pair score 43
+skip     Estudiantes L.P. v Barracas Central | 1x2/home @ 1.9800
+         1x2/home not offered on this page
+
+placed=0 staged=0 skipped=11 already-placed=8 — 25 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 21 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_25/over @ 1.5500
+         below min odds: 1.39 < 1.53 (break-even at 3% edge)
+PLACED   FC Thun v Lech Poznan | 1x2/home @ 2.7000
+         matched via query 'Thun'; snapshot 7 prices; min_odds=2.67 coolbet=2.8; odds 2.7000 → 2.8 (-3.7pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem FC Thun 2.80 Lõppt; balance 130.00 -> 120.00
+skip     FC ST. Gallen v FC Nordsjaelland | over_under_35/over @ 2.4000
+         below min odds: 2.01 < 2.25 (break-even at 3% edge)
+skip     CSKA Sofia v OFI | 1x2/draw @ 4.7500
+         below min odds: 4.4 < 4.69 (break-even at 3% edge)
+skip     FC ST. Gallen v FC Nordsjaelland | 1x2/away @ 3.1000
+         below min odds: 2.9 < 3.10 (break-even at 3% edge)
+skip     Ferencvarosi TC v Trabzonspor | 1x2/home @ 3.4500
+         below min odds: 3.15 < 3.31 (break-even at 3% edge)
+PLACED   Ferencvarosi TC v Trabzonspor | over_under_25/under @ 2.1100
+         matched via query 'Ferencvarosi'; snapshot 9 prices; min_odds=2.10 coolbet=2.11; odds 2.1100 → 2.11 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Alla 2.5 2.11 Vära; balance 120.00 -> 110.00
+skip     Austria Vienna v SC Braga | 1x2/draw @ 3.7500
+         below min odds: 3.5 < 3.71 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_35/over @ 2.2383
+         below min odds: 1.98 < 2.19 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_25/over @ 1.4998
+         below min odds: 1.39 < 1.49 (break-even at 3% edge)
+skip     22 de Julio v Santo Domingo | over_under_25/under @ 1.7300
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 8 candidates, best pair score 43
+skip     22 de Julio v Santo Domingo | 1x2/draw @ 3.4000
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 8 candidates, best pair score 43
+skip     Estudiantes L.P. v Barracas Central | 1x2/home @ 1.9800
+         1x2/home not offered on this page
+
+placed=2 staged=0 skipped=11 already-placed=8 — 24 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 16 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+PLACED   Austria Vienna v SC Braga | 1x2/draw @ 3.7500
+         matched via query 'Austria'; snapshot 8 prices; min_odds=3.71 coolbet=3.75; odds 3.7500 → 3.75 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Viik 3.75 Lõpptule; balance 110.00 -> 100.00
+PLACED   Ferencvarosi TC v Trabzonspor | 1x2/draw @ 3.8000
+         matched via query 'Ferencvarosi'; snapshot 9 prices; min_odds=3.76 coolbet=3.8; odds 3.8000 → 3.8 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Viik 3.80 Lõpptule; balance 100.00 -> 90.00
+skip     Ferencvarosi TC v Trabzonspor | 1x2/home @ 3.4500
+         below min odds: 3.2 < 3.31 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_35/over @ 2.2383
+         below min odds: 1.98 < 2.19 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_25/over @ 1.4998
+         below min odds: 1.39 < 1.49 (break-even at 3% edge)
+skip     22 de Julio v Santo Domingo | 1x2/draw @ 3.4000
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 8 candidates, best pair score 43
+skip     22 de Julio v Santo Domingo | over_under_25/under @ 1.7300
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 8 candidates, best pair score 43
+skip     Estudiantes L.P. v Barracas Central | 1x2/home @ 1.9800
+         1x2/home not offered on this page
+skip     Estudiantes L.P. v Barracas Central | 1x2/draw @ 3.4000
+         below min odds: 3.0 < 3.15 (break-even at 3% edge)
+
+placed=2 staged=0 skipped=7 already-placed=7 — 22 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 12 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Guairena FC v 12 de Octubre | 1x2/draw @ 3.7500
+         below min odds: 3.2 < 3.72 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_25/over @ 1.4998
+         below min odds: 1.36 < 1.49 (break-even at 3% edge)
+skip     Fulham v AFC Wimbledon | over_under_35/over @ 2.2383
+         below min odds: 1.9 < 2.19 (break-even at 3% edge)
+skip     22 de Julio v Santo Domingo | 1x2/draw @ 3.4000
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 9 candidates, best pair score 43
+skip     22 de Julio v Santo Domingo | over_under_25/under @ 1.7300
+         fixture not offered by Coolbet: 22 de Julio v Santo Domingo — 9 candidates, best pair score 43
+PLACED   Estudiantes L.P. v Barracas Central | 1x2/draw @ 3.4000
+         matched via query 'Estudiantes'; snapshot 6 prices; min_odds=3.15 coolbet=3.2; odds 3.4000 → 3.2 (+5.9pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Viik 3.20 Lõpptule; balance 90.00 -> 80.00
+skip     Estudiantes L.P. v Barracas Central | 1x2/home @ 1.9800
+         1x2/home not offered on this page
+
+placed=1 staged=0 skipped=6 already-placed=5 — 19 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 11 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         fixture not offered by Coolbet: Gomora United FC v Venda FC — 9 candidates, best pair score 48
+skip     AL Nasr SC v Haras El Hodood | 1x2/away @ 2.3500
+         below min odds: 1.95 < 2.16 (break-even at 3% edge)
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         placement NOT confirmed: balance 50.00 -> 50.00 (moved 0.00, expected 10.00)
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     FC Volendam v Dordrecht | 1x2/home @ 2.0300
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Jong AZ v MVV | 1x2/draw @ 4.2000
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Kári v Thróttur Vogar | 1x2/away @ 4.2000
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+
+placed=0 staged=0 skipped=11 already-placed=0 — 11 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 12 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+auto-login raised: Error: It looks like you are using Playwright Sync API inside the asyncio loop.
+Please use the Async API instead.
+AUTO-LOGIN FAILED — if Coolbet asked for SMS, complete it in the browser; otherwise check COOLBET_USER/COOLBET_PASS.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 12 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+auto-login raised: Error: It looks like you are using Playwright Sync API inside the asyncio loop.
+Please use the Async API instead.
+AUTO-LOGIN FAILED — if Coolbet asked for SMS, complete it in the browser; otherwise check COOLBET_USER/COOLBET_PASS.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 12 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+auto-login raised: Error: It looks like you are using Playwright Sync API inside the asyncio loop.
+Please use the Async API instead.
+AUTO-LOGIN FAILED — if Coolbet asked for SMS, complete it in the browser; otherwise check COOLBET_USER/COOLBET_PASS.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 12 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+auto-login raised: Error: It looks like you are using Playwright Sync API inside the asyncio loop.
+Please use the Async API instead.
+AUTO-LOGIN FAILED — if Coolbet asked for SMS, complete it in the browser; otherwise check COOLBET_USER/COOLBET_PASS.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 13 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+auto-login raised: Error: It looks like you are using Playwright Sync API inside the asyncio loop.
+Please use the Async API instead.
+AUTO-LOGIN FAILED — if Coolbet asked for SMS, complete it in the browser; otherwise check COOLBET_USER/COOLBET_PASS.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 13 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+auto-login raised: Error: It looks like you are using Playwright Sync API inside the asyncio loop.
+Please use the Async API instead.
+AUTO-LOGIN FAILED — if Coolbet asked for SMS, complete it in the browser; otherwise check COOLBET_USER/COOLBET_PASS.
+DB pool created (2-20 connections)
+SKIP — another Coolbet UI pass is running — refusing to drive the same browser twice (see ~/.coolbet-daemon/ui-placer.lock)
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 25 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+PLACED   Prospect United v Hurstville FC | 1x2/home @ 2.1000
+         matched via query 'Prospect'; snapshot 9 prices; min_odds=1.95 coolbet=2.15; odds 2.1000 → 2.15 (-2.4pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Prospect United 2.; balance 259.60 -> 249.60
+skip     Sabah FA v Penang | 1x2/away @ 4.0000
+         no prices rendered on match page
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         fixture not offered by Coolbet: Gomora United FC v Venda FC — 10 candidates, best pair score 48
+skip     AL Nasr SC v Haras El Hodood | 1x2/away @ 2.3500
+         below min odds: 2.08 < 2.16 (break-even at 3% edge)
+skip     AL Nasr SC v Haras El Hodood | 1x2/draw @ 3.4000
+         below min odds: 3.0 < 3.37 (break-even at 3% edge)
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         below min odds: 1.6 < 1.73 (break-even at 3% edge)
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         below min odds: 2.1 < 2.35 (break-even at 3% edge)
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         below min odds: 2.6 < 2.91 (break-even at 3% edge)
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         below min odds: 3.15 < 3.39 (break-even at 3% edge)
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         below min odds: 3.3 < 3.43 (break-even at 3% edge)
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         below min odds: 4.3 < 4.67 (break-even at 3% edge)
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         below min odds: 4.75 < 4.88 (break-even at 3% edge)
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         below min odds: 2.85 < 2.99 (break-even at 3% edge)
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         below min odds: 1.76 < 1.82 (break-even at 3% edge)
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         fixture not offered by Coolbet: Laval v Grenoble — 1 candidates, best pair score 50
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         below min odds: 2.25 < 2.37 (break-even at 3% edge)
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         below min odds: 1.77 < 1.93 (break-even at 3% edge)
+PLACED   FC Volendam v Dordrecht | 1x2/home @ 2.0300
+         matched via query 'Volendam'; snapshot 7 prices; min_odds=2.01 coolbet=2.05; odds 2.0300 → 2.05 (-1.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem FC Volendam 2.05 L; balance 249.60 -> 239.60
+PLACED   Jong AZ v MVV | 1x2/draw @ 4.2000
+         matched via query 'Jong'; snapshot 9 prices; min_odds=4.19 coolbet=4.2; odds 4.2000 → 4.2 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Viik 4.20 Lõpptule; balance 239.60 -> 229.60
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         fixture not offered by Coolbet: US Biskra v JS Saoura — 2 candidates, best pair score 21
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         below min odds: 2.3 < 2.63 (break-even at 3% edge)
+PLACED   Kári v Thróttur Vogar | 1x2/away @ 4.2000
+         snapshot 7 prices; min_odds=4.05 coolbet=4.4; odds 4.2000 → 4.4 (-4.8pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Throttur Vogar 4.4; balance 229.60 -> 219.60
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         fixture not offered by Coolbet: Toronto II v New York City II — 10 candidates, best pair score 82
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         fixture not offered by Coolbet: Toronto II v New York City II — 10 candidates, best pair score 82
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         fixture not offered by Coolbet: Toronto II v New York City II — 10 candidates, best pair score 82
+
+placed=4 staged=0 skipped=21 already-placed=0 — 46 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 27 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sabah FA v Penang | 1x2/away @ 4.0000
+         no prices rendered on match page
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         fixture not offered by Coolbet: Gomora United FC v Venda FC — 10 candidates, best pair score 48
+skip     AL Nasr SC v Haras El Hodood | 1x2/draw @ 3.4000
+         below min odds: 3.0 < 3.37 (break-even at 3% edge)
+skip     AL Nasr SC v Haras El Hodood | 1x2/away @ 2.3500
+         below min odds: 2.08 < 2.16 (break-even at 3% edge)
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         below min odds: 2.1 < 2.35 (break-even at 3% edge)
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         below min odds: 2.6 < 2.91 (break-even at 3% edge)
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         below min odds: 1.6 < 1.73 (break-even at 3% edge)
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         below min odds: 3.15 < 3.39 (break-even at 3% edge)
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         below min odds: 3.3 < 3.43 (break-even at 3% edge)
+PLACED   Voitsberg v FC Liefering | over_under_35/under @ 1.7700
+         snapshot 9 prices; min_odds=1.71 coolbet=1.77; odds 1.7700 → 1.77 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Alla 3.5 1.77 Vära; balance 219.60 -> 209.60
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         below min odds: 4.3 < 4.67 (break-even at 3% edge)
+PLACED   Voitsberg v FC Liefering | over_under_25/under @ 2.9500
+         snapshot 9 prices; min_odds=2.78 coolbet=2.95; odds 2.9500 → 2.95 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Alla 2.5 2.95 Vära; balance 209.60 -> 199.60
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         below min odds: 4.75 < 4.88 (break-even at 3% edge)
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         below min odds: 1.76 < 1.82 (break-even at 3% edge)
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         below min odds: 2.85 < 2.99 (break-even at 3% edge)
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         fixture not offered by Coolbet: US Biskra v JS Saoura — 2 candidates, best pair score 21
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         below min odds: 1.77 < 1.93 (break-even at 3% edge)
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         fixture not offered by Coolbet: Laval v Grenoble — 1 candidates, best pair score 50
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         below min odds: 2.25 < 2.37 (break-even at 3% edge)
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         below min odds: 2.3 < 2.63 (break-even at 3% edge)
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         fixture not offered by Coolbet: Toronto II v New York City II — 10 candidates, best pair score 82
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         fixture not offered by Coolbet: Toronto II v New York City II — 10 candidates, best pair score 82
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         fixture not offered by Coolbet: Toronto II v New York City II — 10 candidates, best pair score 82
+
+placed=2 staged=0 skipped=21 already-placed=4 — 67 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 30 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sabah FA v Penang | 1x2/away @ 4.0000
+         no prices rendered on match page
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         fixture not offered by Coolbet: Gomora United FC v Venda FC — 10 candidates, best pair score 48
+skip     AL Nasr SC v Haras El Hodood | 1x2/draw @ 3.4000
+         below min odds: 3.0 < 3.37 (break-even at 3% edge)
+skip     AL Nasr SC v Haras El Hodood | 1x2/away @ 2.3500
+         below min odds: 2.08 < 2.16 (break-even at 3% edge)
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         below min odds: 1.6 < 1.73 (break-even at 3% edge)
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         below min odds: 2.1 < 2.35 (break-even at 3% edge)
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         below min odds: 2.6 < 2.91 (break-even at 3% edge)
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         below min odds: 3.15 < 3.39 (break-even at 3% edge)
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         below min odds: 3.3 < 3.43 (break-even at 3% edge)
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         below min odds: 4.3 < 4.67 (break-even at 3% edge)
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         below min odds: 4.75 < 4.88 (break-even at 3% edge)
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         below min odds: 2.85 < 2.99 (break-even at 3% edge)
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         below min odds: 1.76 < 1.82 (break-even at 3% edge)
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         below min odds: 3.55 < 3.84 (break-even at 3% edge)
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         below min odds: 1.77 < 1.93 (break-even at 3% edge)
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         below min odds: 2.25 < 2.37 (break-even at 3% edge)
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         fixture not offered by Coolbet: Clermont Foot v Sochaux — 1 candidates, best pair score 54
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         fixture not offered by Coolbet: Laval v Grenoble — 1 candidates, best pair score 50
+PLACED   Groningen v Fortuna Sittard | 1x2/away @ 5.7500
+         snapshot 7 prices; min_odds=5.73 coolbet=5.75; odds 5.7500 → 5.75 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Fortuna Sittard 5.; balance 199.60 -> 189.60
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         fixture not offered by Coolbet: US Biskra v JS Saoura — 2 candidates, best pair score 21
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         below min odds: 2.3 < 2.63 (break-even at 3% edge)
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         fixture not offered by Coolbet: Toronto II v New York City II — 9 candidates, best pair score 82
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         fixture not offered by Coolbet: Toronto II v New York City II — 9 candidates, best pair score 82
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         fixture not offered by Coolbet: Toronto II v New York City II — 9 candidates, best pair score 82
+
+placed=1 staged=0 skipped=23 already-placed=6 — 70 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 36 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sabah FA v Penang | 1x2/away @ 4.0000
+         no prices rendered on match page
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         search returned no fixtures for 'Gomora United FC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/away @ 2.3500
+         search returned no fixtures for 'AL Nasr SC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/draw @ 3.4000
+         search returned no fixtures for 'AL Nasr SC'
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         search returned no fixtures for 'Struga'
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         search returned no fixtures for 'Slovan Ljubljana'
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         search returned no fixtures for 'Struga'
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         search returned no fixtures for 'Primorje'
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         search returned no fixtures for 'Slavia Sofia'
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         search returned no fixtures for 'Vfl Bochum'
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         search returned no fixtures for 'FC Helsingor'
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         search returned no fixtures for 'Racing Santander'
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         search returned no fixtures for 'Racing Santander'
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         search returned no fixtures for 'Racing Santander'
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         search returned no fixtures for 'Den Bosch'
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         search returned no fixtures for 'Clermont Foot'
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         search returned no fixtures for 'Universitatea Cluj'
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         search returned no fixtures for 'US Biskra'
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         search returned no fixtures for 'Laval'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_35/over @ 3.8000
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_25/over @ 2.0700
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | 1x2/home @ 2.0800
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Muğlaspor v Boluspor | 1x2/away @ 6.0000
+         search returned no fixtures for 'Muğlaspor'
+skip     Cobh Ramblers v Longford Town | over_under_35/over @ 3.5500
+         search returned no fixtures for 'Cobh Ramblers'
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         search returned no fixtures for 'The New Saints'
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         search returned no fixtures for 'Toronto II'
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         search returned no fixtures for 'Toronto II'
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         search returned no fixtures for 'Toronto II'
+skip     Atlético Ottawa v York United | 1x2/away @ 4.0000
+         search returned no fixtures for 'Atlético Ottawa'
+
+placed=0 staged=0 skipped=29 already-placed=7 — 53 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 36 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sabah FA v Penang | 1x2/away @ 4.0000
+         search returned no fixtures for 'Sabah FA'
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         search returned no fixtures for 'Gomora United FC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/away @ 2.3500
+         search returned no fixtures for 'AL Nasr SC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/draw @ 3.4000
+         search returned no fixtures for 'AL Nasr SC'
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         search returned no fixtures for 'Struga'
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         search returned no fixtures for 'Slovan Ljubljana'
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         search returned no fixtures for 'Struga'
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         search returned no fixtures for 'Primorje'
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         search returned no fixtures for 'Slavia Sofia'
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         search returned no fixtures for 'Vfl Bochum'
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         search returned no fixtures for 'FC Helsingor'
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         search returned no fixtures for 'Racing Santander'
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         search returned no fixtures for 'Racing Santander'
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         search returned no fixtures for 'Racing Santander'
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         search returned no fixtures for 'Den Bosch'
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         search returned no fixtures for 'Clermont Foot'
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         search returned no fixtures for 'Universitatea Cluj'
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         search returned no fixtures for 'US Biskra'
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         search returned no fixtures for 'Laval'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_35/over @ 3.8000
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_25/over @ 2.0700
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | 1x2/home @ 2.0800
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Muğlaspor v Boluspor | 1x2/away @ 6.0000
+         search returned no fixtures for 'Muğlaspor'
+skip     Cobh Ramblers v Longford Town | over_under_35/over @ 3.5500
+         search returned no fixtures for 'Cobh Ramblers'
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         search returned no fixtures for 'The New Saints'
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         search returned no fixtures for 'Toronto II'
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         search returned no fixtures for 'Toronto II'
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         search returned no fixtures for 'Toronto II'
+skip     Atlético Ottawa v York United | 1x2/away @ 4.0000
+         search returned no fixtures for 'Atlético Ottawa'
+
+placed=0 staged=0 skipped=29 already-placed=7 — 58 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 36 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sabah FA v Penang | 1x2/away @ 4.0000
+         search returned no fixtures for 'Sabah FA'
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         search returned no fixtures for 'Gomora United FC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/away @ 2.3500
+         search returned no fixtures for 'AL Nasr SC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/draw @ 3.4000
+         search returned no fixtures for 'AL Nasr SC'
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         search returned no fixtures for 'Struga'
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         search returned no fixtures for 'Slovan Ljubljana'
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         search returned no fixtures for 'Struga'
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         search returned no fixtures for 'Primorje'
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         search returned no fixtures for 'Slavia Sofia'
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         search returned no fixtures for 'Vfl Bochum'
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         search returned no fixtures for 'FC Helsingor'
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         search returned no fixtures for 'Racing Santander'
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         search returned no fixtures for 'Racing Santander'
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         search returned no fixtures for 'Racing Santander'
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         search returned no fixtures for 'Den Bosch'
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         search returned no fixtures for 'Clermont Foot'
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         search returned no fixtures for 'Universitatea Cluj'
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         search returned no fixtures for 'US Biskra'
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         search returned no fixtures for 'Laval'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_35/over @ 3.8000
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_25/over @ 2.0700
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | 1x2/home @ 2.0800
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Muğlaspor v Boluspor | 1x2/away @ 6.0000
+         search returned no fixtures for 'Muğlaspor'
+skip     Cobh Ramblers v Longford Town | over_under_35/over @ 3.5500
+         search returned no fixtures for 'Cobh Ramblers'
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         search returned no fixtures for 'The New Saints'
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         search returned no fixtures for 'Toronto II'
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         search returned no fixtures for 'Toronto II'
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         search returned no fixtures for 'Toronto II'
+skip     Atlético Ottawa v York United | 1x2/away @ 4.0000
+         search returned no fixtures for 'Atlético Ottawa'
+
+placed=0 staged=0 skipped=29 already-placed=7 — 58 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 36 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sabah FA v Penang | 1x2/away @ 4.0000
+         search returned no fixtures for 'Sabah FA'
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         search returned no fixtures for 'Gomora United FC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/away @ 2.3500
+         search returned no fixtures for 'AL Nasr SC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/draw @ 3.4000
+         search returned no fixtures for 'AL Nasr SC'
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         search returned no fixtures for 'Struga'
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         search returned no fixtures for 'Slovan Ljubljana'
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         search returned no fixtures for 'Struga'
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         search returned no fixtures for 'Primorje'
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         search returned no fixtures for 'Slavia Sofia'
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         search returned no fixtures for 'Vfl Bochum'
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         search returned no fixtures for 'FC Helsingor'
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         search returned no fixtures for 'Racing Santander'
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         search returned no fixtures for 'Racing Santander'
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         search returned no fixtures for 'Racing Santander'
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         search returned no fixtures for 'Den Bosch'
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         search returned no fixtures for 'Clermont Foot'
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         search returned no fixtures for 'Universitatea Cluj'
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         search returned no fixtures for 'US Biskra'
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         search returned no fixtures for 'Laval'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_35/over @ 3.8000
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_25/over @ 2.0700
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | 1x2/home @ 2.0800
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Muğlaspor v Boluspor | 1x2/away @ 6.0000
+         search returned no fixtures for 'Muğlaspor'
+skip     Cobh Ramblers v Longford Town | over_under_35/over @ 3.5500
+         search returned no fixtures for 'Cobh Ramblers'
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         search returned no fixtures for 'The New Saints'
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         search returned no fixtures for 'Toronto II'
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         search returned no fixtures for 'Toronto II'
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         search returned no fixtures for 'Toronto II'
+skip     Atlético Ottawa v York United | 1x2/away @ 4.0000
+         search returned no fixtures for 'Atlético Ottawa'
+
+placed=0 staged=0 skipped=29 already-placed=7 — 58 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 35 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sabah FA v Penang | 1x2/away @ 4.0000
+         search returned no fixtures for 'Sabah FA'
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         search returned no fixtures for 'Gomora United FC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/draw @ 3.4000
+         search returned no fixtures for 'AL Nasr SC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/away @ 2.3500
+         search returned no fixtures for 'AL Nasr SC'
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         search returned no fixtures for 'Slovan Ljubljana'
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         search returned no fixtures for 'Struga'
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         search returned no fixtures for 'Struga'
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         search returned no fixtures for 'Primorje'
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         search returned no fixtures for 'Slavia Sofia'
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         search returned no fixtures for 'Vfl Bochum'
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         search returned no fixtures for 'FC Helsingor'
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         search returned no fixtures for 'Racing Santander'
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         search returned no fixtures for 'Racing Santander'
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         search returned no fixtures for 'Racing Santander'
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         search returned no fixtures for 'Den Bosch'
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         search returned no fixtures for 'Clermont Foot'
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         search returned no fixtures for 'Universitatea Cluj'
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         search returned no fixtures for 'US Biskra'
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         search returned no fixtures for 'Laval'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_35/over @ 3.8000
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_25/over @ 2.0700
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | 1x2/home @ 2.0800
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Muğlaspor v Boluspor | 1x2/away @ 6.0000
+         search returned no fixtures for 'Muğlaspor'
+skip     Cobh Ramblers v Longford Town | over_under_35/over @ 3.5500
+         search returned no fixtures for 'Cobh Ramblers'
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         search returned no fixtures for 'The New Saints'
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         search returned no fixtures for 'Toronto II'
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         search returned no fixtures for 'Toronto II'
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         search returned no fixtures for 'Toronto II'
+skip     Atlético Ottawa v York United | 1x2/away @ 4.0000
+         search returned no fixtures for 'Atlético Ottawa'
+
+placed=0 staged=0 skipped=29 already-placed=6 — 58 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 35 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sabah FA v Penang | 1x2/away @ 4.0000
+         search returned no fixtures for 'Sabah FA'
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         search returned no fixtures for 'Gomora United FC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/draw @ 3.4000
+         search returned no fixtures for 'AL Nasr SC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/away @ 2.3500
+         search returned no fixtures for 'AL Nasr SC'
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         search returned no fixtures for 'Slovan Ljubljana'
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         search returned no fixtures for 'Struga'
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         search returned no fixtures for 'Struga'
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         search returned no fixtures for 'Primorje'
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         search returned no fixtures for 'Slavia Sofia'
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         search returned no fixtures for 'Vfl Bochum'
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         search returned no fixtures for 'FC Helsingor'
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         search returned no fixtures for 'Racing Santander'
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         search returned no fixtures for 'Racing Santander'
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         search returned no fixtures for 'Racing Santander'
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         search returned no fixtures for 'Den Bosch'
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         search returned no fixtures for 'Clermont Foot'
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         search returned no fixtures for 'Universitatea Cluj'
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         search returned no fixtures for 'US Biskra'
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         search returned no fixtures for 'Laval'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_35/over @ 3.8000
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_25/over @ 2.0700
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | 1x2/home @ 2.0800
+         search returned no fixtures for 'Gençlerbirliği S.K.'
+skip     Muğlaspor v Boluspor | 1x2/away @ 6.0000
+         search returned no fixtures for 'Muğlaspor'
+skip     Cobh Ramblers v Longford Town | over_under_35/over @ 3.5500
+         search returned no fixtures for 'Cobh Ramblers'
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         search returned no fixtures for 'The New Saints'
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         search returned no fixtures for 'Toronto II'
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         search returned no fixtures for 'Toronto II'
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         search returned no fixtures for 'Toronto II'
+skip     Atlético Ottawa v York United | 1x2/away @ 4.0000
+         search returned no fixtures for 'Atlético Ottawa'
+
+placed=0 staged=0 skipped=29 already-placed=6 — 59 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 35 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sabah FA v Penang | 1x2/away @ 4.0000
+         no search results for 'Sabah FA'
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         no search results for 'Gomora United FC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/draw @ 3.4000
+         no search results for 'AL Nasr SC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/away @ 2.3500
+         no search results for 'AL Nasr SC'
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         no search results for 'Slovan Ljubljana'
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         no search results for 'Struga'
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         no search results for 'Struga'
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         no search results for 'Primorje'
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         no search results for 'Slavia Sofia'
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         no search results for 'Vfl Bochum'
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         no search results for 'FC Helsingor'
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         no search results for 'Racing Santander'
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         no search results for 'Racing Santander'
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         no search results for 'Racing Santander'
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         no search results for 'Den Bosch'
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         no search results for 'Clermont Foot'
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         no search results for 'Universitatea Cluj'
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         no search results for 'US Biskra'
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         no search results for 'Laval'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_35/over @ 3.8000
+         no search results for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_25/over @ 2.0700
+         no search results for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | 1x2/home @ 2.0800
+         no search results for 'Gençlerbirliği S.K.'
+skip     Muğlaspor v Boluspor | 1x2/away @ 6.0000
+         no search results for 'Muğlaspor'
+skip     Cobh Ramblers v Longford Town | over_under_35/over @ 3.5500
+         no search results for 'Cobh Ramblers'
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         no search results for 'The New Saints'
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         no search results for 'Toronto II'
+skip     Atlético Ottawa v York United | 1x2/away @ 4.0000
+         no search results for 'Atlético Ottawa'
+
+placed=0 staged=0 skipped=29 already-placed=6 — 46 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 34 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         no search results for 'Gomora United FC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/draw @ 3.4000
+         no search results for 'AL Nasr SC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/away @ 2.3500
+         no search results for 'AL Nasr SC'
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         no search results for 'Struga'
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         no search results for 'Struga'
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         no search results for 'Slovan Ljubljana'
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         no search results for 'Slavia Sofia'
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         no search results for 'Primorje'
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         no search results for 'Vfl Bochum'
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         no search results for 'Racing Santander'
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         no search results for 'FC Helsingor'
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         no search results for 'Racing Santander'
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         no search results for 'Racing Santander'
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         no search results for 'Den Bosch'
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         no search results for 'Clermont Foot'
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         no search results for 'Universitatea Cluj'
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         no search results for 'US Biskra'
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         no search results for 'Laval'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_35/over @ 3.8000
+         no search results for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_25/over @ 2.0700
+         no search results for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | 1x2/home @ 2.0800
+         no search results for 'Gençlerbirliği S.K.'
+skip     Muğlaspor v Boluspor | 1x2/away @ 6.0000
+         no search results for 'Muğlaspor'
+skip     Cobh Ramblers v Longford Town | over_under_35/over @ 3.5500
+         no search results for 'Cobh Ramblers'
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         no search results for 'The New Saints'
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         no search results for 'Toronto II'
+skip     Atlético Ottawa v York United | 1x2/away @ 4.0000
+         no search results for 'Atlético Ottawa'
+
+placed=0 staged=0 skipped=28 already-placed=6 — 29 attempt(s) recorded in the last hour
+WARNING: 34 picks processed but only 29 recorded — audit trail is incomplete
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 33 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     AL Nasr SC v Haras El Hodood | 1x2/away @ 2.3500
+         no search results for 'AL Nasr SC'
+skip     AL Nasr SC v Haras El Hodood | 1x2/draw @ 3.4000
+         no search results for 'AL Nasr SC'
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         no search results for 'Struga'
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         no search results for 'Struga'
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         no search results for 'Slovan Ljubljana'
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         no search results for 'Slavia Sofia'
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         no search results for 'Primorje'
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         no search results for 'Vfl Bochum'
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         no search results for 'Racing Santander'
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         no search results for 'Racing Santander'
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         no search results for 'Racing Santander'
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         no search results for 'FC Helsingor'
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         no search results for 'Den Bosch'
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         no search results for 'Clermont Foot'
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         no search results for 'Universitatea Cluj'
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         no search results for 'US Biskra'
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         no search results for 'Laval'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_35/over @ 3.8000
+         no search results for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_25/over @ 2.0700
+         no search results for 'Gençlerbirliği S.K.'
+skip     Muğlaspor v Boluspor | 1x2/away @ 6.0000
+         no search results for 'Muğlaspor'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | 1x2/home @ 2.0800
+         no search results for 'Gençlerbirliği S.K.'
+skip     Cobh Ramblers v Longford Town | over_under_35/over @ 3.5500
+         no search results for 'Cobh Ramblers'
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         no search results for 'The New Saints'
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         no search results for 'Toronto II'
+skip     Atlético Ottawa v York United | 1x2/away @ 4.0000
+         no search results for 'Atlético Ottawa'
+
+placed=0 staged=0 skipped=27 already-placed=6 — 29 attempt(s) recorded in the last hour
+WARNING: 33 picks processed but only 29 recorded — audit trail is incomplete
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 31 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         no search results for 'Struga'
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         no search results for 'Slovan Ljubljana'
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         no search results for 'Struga'
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         no search results for 'Slavia Sofia'
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         no search results for 'Primorje'
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         no search results for 'Vfl Bochum'
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         no search results for 'Racing Santander'
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         no search results for 'Racing Santander'
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         no search results for 'FC Helsingor'
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         no search results for 'Racing Santander'
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         no search results for 'Den Bosch'
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         no search results for 'Clermont Foot'
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         no search results for 'Universitatea Cluj'
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         no search results for 'US Biskra'
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         no search results for 'Laval'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_35/over @ 3.8000
+         no search results for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_25/over @ 2.0700
+         no search results for 'Gençlerbirliği S.K.'
+skip     Muğlaspor v Boluspor | 1x2/away @ 6.0000
+         no search results for 'Muğlaspor'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | 1x2/home @ 2.0800
+         no search results for 'Gençlerbirliği S.K.'
+skip     Cobh Ramblers v Longford Town | over_under_35/over @ 3.5500
+         no search results for 'Cobh Ramblers'
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         no search results for 'The New Saints'
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         no search results for 'Toronto II'
+skip     Atlético Ottawa v York United | 1x2/away @ 4.0000
+         no search results for 'Atlético Ottawa'
+
+placed=0 staged=0 skipped=25 already-placed=6 — 32 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 31 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Struga v Bregalnica Štip | over_under_25/over @ 1.7500
+         no search results for 'Struga'
+skip     Slovan Ljubljana v Ilirija | 1x2/away @ 2.4000
+         no search results for 'Slovan Ljubljana'
+skip     Struga v Bregalnica Štip | over_under_35/over @ 2.9500
+         no search results for 'Struga'
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         no search results for 'Slavia Sofia'
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         no search results for 'Primorje'
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         no search results for 'Vfl Bochum'
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         no search results for 'Racing Santander'
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         no search results for 'Racing Santander'
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         no search results for 'FC Helsingor'
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         no search results for 'Racing Santander'
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         no search results for 'Den Bosch'
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         no search results for 'Clermont Foot'
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         no search results for 'Universitatea Cluj'
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         no search results for 'US Biskra'
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         no search results for 'Laval'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_35/over @ 3.8000
+         no search results for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_25/over @ 2.0700
+         no search results for 'Gençlerbirliği S.K.'
+skip     Muğlaspor v Boluspor | 1x2/away @ 6.0000
+         no search results for 'Muğlaspor'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | 1x2/home @ 2.0800
+         no search results for 'Gençlerbirliği S.K.'
+skip     Cobh Ramblers v Longford Town | over_under_35/over @ 3.5500
+         no search results for 'Cobh Ramblers'
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         no search results for 'The New Saints'
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         no search results for 'Toronto II'
+skip     Atlético Ottawa v York United | 1x2/away @ 4.0000
+         no search results for 'Atlético Ottawa'
+
+placed=0 staged=0 skipped=25 already-placed=6 — 50 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 28 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         no search results for 'Primorje'
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         no search results for 'Slavia Sofia'
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         no search results for 'Vfl Bochum'
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         no search results for 'Racing Santander'
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         no search results for 'Racing Santander'
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         no search results for 'FC Helsingor'
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         no search results for 'Racing Santander'
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         no search results for 'Den Bosch'
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         no search results for 'Clermont Foot'
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         no search results for 'Universitatea Cluj'
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         no search results for 'US Biskra'
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         no search results for 'Laval'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_35/over @ 3.8000
+         no search results for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_25/over @ 2.0700
+         no search results for 'Gençlerbirliği S.K.'
+skip     Muğlaspor v Boluspor | 1x2/away @ 6.0000
+         no search results for 'Muğlaspor'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | 1x2/home @ 2.0800
+         no search results for 'Gençlerbirliği S.K.'
+skip     Cobh Ramblers v Longford Town | over_under_35/over @ 3.5500
+         no search results for 'Cobh Ramblers'
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         no search results for 'The New Saints'
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         no search results for 'Toronto II'
+skip     Atlético Ottawa v York United | 1x2/away @ 4.0000
+         no search results for 'Atlético Ottawa'
+
+placed=0 staged=0 skipped=22 already-placed=6 — 49 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 28 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Primorje v Krka | 1x2/away @ 3.6000
+         no search results for 'Primorje'
+skip     Slavia Sofia v Septemvri Sofia | 1x2/draw @ 3.4000
+         no search results for 'Slavia Sofia'
+skip     Vfl Bochum v VfL Osnabrück | 1x2/away @ 5.0000
+         no search results for 'Vfl Bochum'
+skip     Racing Santander v Elche | 1x2/draw @ 4.2000
+         no search results for 'Racing Santander'
+skip     Racing Santander v Elche | over_under_35/over @ 3.1500
+         no search results for 'Racing Santander'
+skip     FC Helsingor v Ishøj | 1x2/away @ 5.0000
+         no search results for 'FC Helsingor'
+skip     Racing Santander v Elche | over_under_25/over @ 1.8710
+         no search results for 'Racing Santander'
+skip     Den Bosch v Vitesse | 1x2/away @ 2.4500
+         no search results for 'Den Bosch'
+skip     Clermont Foot v Sochaux | 1x2/draw @ 3.3000
+         no search results for 'Clermont Foot'
+skip     Universitatea Cluj v Petrolul Ploiesti | over_under_25/over @ 1.9500
+         no search results for 'Universitatea Cluj'
+skip     US Biskra v JS Saoura | 1x2/home @ 4.5000
+         no search results for 'US Biskra'
+skip     Laval v Grenoble | 1x2/draw @ 3.2500
+         no search results for 'Laval'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_35/over @ 3.8000
+         no search results for 'Gençlerbirliği S.K.'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | over_under_25/over @ 2.0700
+         no search results for 'Gençlerbirliği S.K.'
+skip     Muğlaspor v Boluspor | 1x2/away @ 6.0000
+         no search results for 'Muğlaspor'
+skip     Gençlerbirliği S.K. v Erzurumspor FK | 1x2/home @ 2.0800
+         no search results for 'Gençlerbirliği S.K.'
+skip     Cobh Ramblers v Longford Town | over_under_35/over @ 3.5500
+         no search results for 'Cobh Ramblers'
+skip     The New Saints v Colwyn Bay | over_under_35/over @ 2.7200
+         no search results for 'The New Saints'
+skip     Toronto II v New York City II | 1x2/home @ 2.4500
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_35/over @ 2.7000
+         no search results for 'Toronto II'
+skip     Toronto II v New York City II | over_under_25/over @ 1.6600
+         no search results for 'Toronto II'
+skip     Atlético Ottawa v York United | 1x2/away @ 4.0000
+         no search results for 'Atlético Ottawa'
+
+placed=0 staged=0 skipped=22 already-placed=6 — 47 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/login
+✓ Already logged in (no email field on page)
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 26 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+ABORT — Imperva interstitial (_Incapsula_Resource) — the IP is blocked
+  Coolbet is serving an interstitial to this IP. Do NOT retry or re-login; both add traffic from an already-flagged address. The job stays scheduled and will recover on its own once it lifts.
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/login
+✓ Already logged in (no email field on page)
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 23 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+ABORT — Imperva interstitial (_Incapsula_Resource) — the IP is blocked
+  Coolbet is serving an interstitial to this IP. Do NOT retry or re-login; both add traffic from an already-flagged address. The job stays scheduled and will recover on its own once it lifts.
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/login
+✓ Already logged in (no email field on page)
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 19 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+ABORT — Imperva interstitial (_Incapsula_Resource) — the IP is blocked
+  Coolbet is serving an interstitial to this IP. Do NOT retry or re-login; both add traffic from an already-flagged address. The job stays scheduled and will recover on its own once it lifts.
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/login
+✓ Already logged in (no email field on page)
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 19 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+ABORT — Imperva interstitial (_Incapsula_Resource) — the IP is blocked
+  Coolbet is serving an interstitial to this IP. Do NOT retry or re-login; both add traffic from an already-flagged address. The job stays scheduled and will recover on its own once it lifts.
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/login
+✓ Already logged in (no email field on page)
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 11 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+ABORT — Imperva interstitial (_Incapsula_Resource) — the IP is blocked
+  Coolbet is serving an interstitial to this IP. Do NOT retry or re-login; both add traffic from an already-flagged address. The job stays scheduled and will recover on its own once it lifts.
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/login
+✓ Already logged in (no email field on page)
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 7 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+ABORT — Imperva interstitial (_Incapsula_Resource) — the IP is blocked
+  Coolbet is serving an interstitial to this IP. Do NOT retry or re-login; both add traffic from an already-flagged address. The job stays scheduled and will recover on its own once it lifts.
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/login
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 1 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Seosan Pioneer v Namyangju | 1x2/home @ 4.3000
+         1x2/home not offered on this page
+
+placed=0 staged=0 skipped=1 already-placed=0 — 1 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 1 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Seosan Pioneer v Namyangju | 1x2/home @ 4.3000
+         1x2/home not offered on this page
+
+placed=0 staged=0 skipped=1 already-placed=0 — 2 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/match/6030498
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 2 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Seosan Pioneer v Namyangju | 1x2/home @ 4.3000
+         1x2/home not offered on this page
+skip     Flora II v Tallinna Kalev | 1x2/home @ 2.7000
+         fixture not offered by Coolbet: Flora II v Tallinna Kalev — 6 candidates, best pair score 77
+
+placed=0 staged=0 skipped=2 already-placed=0 — 3 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 4 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Seosan Pioneer v Namyangju | 1x2/home @ 4.3000
+         1x2/home not offered on this page
+skip     Flora II v Tallinna Kalev | 1x2/home @ 2.7000
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Alemannia Aachen v SV Meppen | 1x2/away @ 6.0000
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Rosengård W v Häcken W | over_under_35/under @ 1.6839
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+
+placed=0 staged=0 skipped=4 already-placed=0 — 7 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/match/6030498
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 6 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Seosan Pioneer v Namyangju | 1x2/home @ 4.3000
+         1x2/home not offered on this page
+skip     Flora II v Tallinna Kalev | 1x2/home @ 2.7000
+         fixture not offered by Coolbet: Flora II v Tallinna Kalev — 6 candidates, best pair score 77
+PLACED   Alemannia Aachen v SV Meppen | 1x2/away @ 6.0000
+         matched via query 'Alemannia'; snapshot 7 prices; min_odds=5.85 coolbet=6.0; odds 6.0000 → 6.0 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem SV Meppen 6.00 Lõp; balance 289.10 -> 279.10
+PLACED   Rosengård W v Häcken W | over_under_35/under @ 1.6839
+         matched via query 'Rosengård'; snapshot 9 prices; min_odds=1.67 coolbet=1.68; odds 1.6839 → 1.68 (+0.2pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Alla 3.5 1.68 Vära; balance 279.10 -> 269.10
+PLACED   Kozakken Boys v GVVV Veenendaal | 1x2/home @ 2.3000
+         matched via query 'Kozakken'; snapshot 7 prices; min_odds=2.27 coolbet=2.3; odds 2.3000 → 2.3 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Kozakken Boys 2.30; balance 269.10 -> 259.10
+PLACED   FSV Mainz 05 v SC Paderborn 07 | 1x2/away @ 5.5000
+         matched via query 'FSV'; snapshot 7 prices; min_odds=5.46 coolbet=5.5; odds 5.5000 → 5.5 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem SC Paderborn 07 5.; balance 259.10 -> 249.10
+
+placed=4 staged=0 skipped=2 already-placed=0 — 10 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 7 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Seosan Pioneer v Namyangju | 1x2/home @ 4.3000
+         1x2/home not offered on this page
+skip     Flora II v Tallinna Kalev | 1x2/home @ 2.7000
+         fixture not offered by Coolbet: Flora II v Tallinna Kalev — 6 candidates, best pair score 77
+skip     Deportivo Santani v Atlético Tembetary | over_under_25/over @ 2.3500
+         below min odds: 1.95 < 2.24 (break-even at 3% edge)
+
+placed=0 staged=0 skipped=3 already-placed=4 — 9 attempt(s) recorded in the last hour
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 7 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Seosan Pioneer v Namyangju | 1x2/home @ 4.3000
+         1x2/home not offered on this page
+skip     Flora II v Tallinna Kalev | 1x2/home @ 2.7000
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Deportivo Santani v Atlético Tembetary | over_under_25/over @ 2.3500
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+
+placed=0 staged=0 skipped=3 already-placed=4 — 12 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/match/6030498
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 15 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     V-varen Nagasaki v FC Tokyo | 1x2/away @ 1.6700
+         below min odds: 1.58 < 1.67 (break-even at 3% edge)
+skip     Flora II v Tallinna Kalev | 1x2/home @ 2.7000
+         fixture not offered by Coolbet: Flora II v Tallinna Kalev — 6 candidates, best pair score 77
+skip     Tokyo Verdy v Kashima | 1x2/draw @ 3.6000
+         below min odds: 3.3 < 3.42 (break-even at 3% edge)
+skip     Nagoya Grampus v Fagiano Okayama | over_under_35/over @ 3.7000
+         below min odds: 3.4 < 3.68 (break-even at 3% edge)
+skip     Urawa v Yokohama F Marinos | 1x2/home @ 2.3500
+         below min odds: 2.12 < 2.29 (break-even at 3% edge)
+skip     Urawa v Yokohama F Marinos | over_under_25/over @ 2.0800
+         below min odds: 1.87 < 2.00 (break-even at 3% edge)
+skip     Urawa v Yokohama F Marinos | over_under_35/over @ 3.9000
+         below min odds: 3.2 < 3.54 (break-even at 3% edge)
+skip     Kawasaki Frontale v JEF United Chiba | over_under_35/over @ 2.5200
+         below min odds: 2.42 < 2.50 (break-even at 3% edge)
+skip     Deportivo Santani v Atlético Tembetary | over_under_25/over @ 2.3500
+         below min odds: 1.95 < 2.24 (break-even at 3% edge)
+skip     Al-Duhail SC v Al-Arabi SC | over_under_25/over @ 1.7800
+         below min odds: 1.55 < 1.69 (break-even at 3% edge)
+skip     Al-Duhail SC v Al-Arabi SC | over_under_35/over @ 3.0000
+         below min odds: 2.4 < 2.64 (break-even at 3% edge)
+
+placed=0 staged=0 skipped=11 already-placed=4 — 11 attempt(s) recorded in the last hour
+WARNING: 15 picks processed but only 11 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/match/6032278
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 20 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     V-varen Nagasaki v FC Tokyo | 1x2/away @ 1.6700
+         search returned no fixtures for 'V-varen Nagasaki'
+skip     Flora II v Tallinna Kalev | 1x2/home @ 2.7000
+         search returned no fixtures for 'Flora II'
+skip     Nagoya Grampus v Fagiano Okayama | over_under_35/over @ 3.7000
+         search returned no fixtures for 'Nagoya Grampus'
+skip     Tokyo Verdy v Kashima | 1x2/draw @ 3.6000
+         search returned no fixtures for 'Tokyo Verdy'
+skip     Nagoya Grampus v Fagiano Okayama | 1x2/draw @ 4.2000
+         search returned no fixtures for 'Nagoya Grampus'
+skip     Urawa v Yokohama F Marinos | 1x2/home @ 2.3500
+         search returned no fixtures for 'Urawa'
+skip     Urawa v Yokohama F Marinos | over_under_25/over @ 2.0800
+         search returned no fixtures for 'Urawa'
+skip     Urawa v Yokohama F Marinos | over_under_35/over @ 3.9000
+         search returned no fixtures for 'Urawa'
+skip     Kawasaki Frontale v JEF United Chiba | over_under_35/over @ 2.5200
+         search returned no fixtures for 'Kawasaki Frontale'
+skip     Karlsruher SC v VfL Wolfsburg | 1x2/draw @ 4.0000
+         search returned no fixtures for 'Karlsruher SC'
+skip     Livyi Bereh v Karpaty | over_under_25/over @ 2.1700
+         search returned no fixtures for 'Livyi Bereh'
+skip     Livyi Bereh v Karpaty | 1x2/home @ 3.6000
+         search returned no fixtures for 'Livyi Bereh'
+skip     Deportivo Santani v Atlético Tembetary | over_under_25/over @ 2.3500
+         search returned no fixtures for 'Deportivo Santani'
+skip     Watford v West Ham | 1x2/away @ 1.8800
+         search returned no fixtures for 'Watford'
+skip     Al-Duhail SC v Al-Arabi SC | over_under_35/over @ 3.0000
+         search returned no fixtures for 'Al-Duhail SC'
+skip     Al-Duhail SC v Al-Arabi SC | over_under_25/over @ 1.7800
+         search returned no fixtures for 'Al-Duhail SC'
+
+placed=0 staged=0 skipped=16 already-placed=4 — 16 attempt(s) recorded in the last hour
+WARNING: 20 picks processed but only 16 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 20 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     V-varen Nagasaki v FC Tokyo | 1x2/away @ 1.6700
+         search returned no fixtures for 'V-varen Nagasaki'
+skip     Flora II v Tallinna Kalev | 1x2/home @ 2.7000
+         search returned no fixtures for 'Flora II'
+skip     Nagoya Grampus v Fagiano Okayama | over_under_35/over @ 3.7000
+         search returned no fixtures for 'Nagoya Grampus'
+skip     Tokyo Verdy v Kashima | 1x2/draw @ 3.6000
+         search returned no fixtures for 'Tokyo Verdy'
+skip     Nagoya Grampus v Fagiano Okayama | 1x2/draw @ 4.2000
+         search returned no fixtures for 'Nagoya Grampus'
+skip     Urawa v Yokohama F Marinos | 1x2/home @ 2.3500
+         search returned no fixtures for 'Urawa'
+skip     Urawa v Yokohama F Marinos | over_under_25/over @ 2.0800
+         search returned no fixtures for 'Urawa'
+skip     Urawa v Yokohama F Marinos | over_under_35/over @ 3.9000
+         search returned no fixtures for 'Urawa'
+skip     Kawasaki Frontale v JEF United Chiba | over_under_35/over @ 2.5200
+         search returned no fixtures for 'Kawasaki Frontale'
+skip     Karlsruher SC v VfL Wolfsburg | 1x2/draw @ 4.0000
+         search returned no fixtures for 'Karlsruher SC'
+skip     Livyi Bereh v Karpaty | over_under_25/over @ 2.1700
+         search returned no fixtures for 'Livyi Bereh'
+skip     Livyi Bereh v Karpaty | 1x2/home @ 3.6000
+         search returned no fixtures for 'Livyi Bereh'
+skip     Deportivo Santani v Atlético Tembetary | over_under_25/over @ 2.3500
+         search returned no fixtures for 'Deportivo Santani'
+skip     Watford v West Ham | 1x2/away @ 1.8800
+         search returned no fixtures for 'Watford'
+skip     Al-Duhail SC v Al-Arabi SC | over_under_35/over @ 3.0000
+         search returned no fixtures for 'Al-Duhail SC'
+skip     Al-Duhail SC v Al-Arabi SC | over_under_25/over @ 1.7800
+         search returned no fixtures for 'Al-Duhail SC'
+
+placed=0 staged=0 skipped=16 already-placed=4 — 16 attempt(s) recorded in the last hour
+WARNING: 20 picks processed but only 16 recorded — audit trail is incomplete
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 18 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     FC Jazz v Inter Turku II | 1x2/home @ 1.7000
+         search returned no fixtures for 'FC Jazz'
+skip     OLS v Tampere United | over_under_35/under @ 1.9022
+         search returned no fixtures for 'OLS'
+skip     Karlsruher SC v VfL Wolfsburg | 1x2/draw @ 4.0000
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Dongguan United v Shenzhen Juniors | 1x2/home @ 4.4000
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Nanjing City v Guangxi Hengchen | 1x2/home @ 3.5000
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Liverpool v Nottingham Forest | over_under_25/under @ 2.6042
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Liverpool v Nottingham Forest | over_under_35/under @ 1.6496
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Livyi Bereh v Karpaty | 1x2/home @ 3.6000
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Livyi Bereh v Karpaty | over_under_25/over @ 2.1700
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Deportivo Santani v Atlético Tembetary | over_under_25/over @ 2.3500
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Watford v West Ham | 1x2/away @ 1.8800
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Al-Duhail SC v Al-Arabi SC | over_under_25/over @ 1.7800
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+skip     Al-Duhail SC v Al-Arabi SC | over_under_35/over @ 3.0000
+         not logged in — run coolbet_browser_sync --cdp-auto-login
+
+placed=0 staged=0 skipped=14 already-placed=4 — 28 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/jalgpall
+✓ Already logged in (no email field on page)
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 15 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+still not logged in after auto-login — aborting
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/login
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 9 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Livyi Bereh v Karpaty | over_under_25/over @ 2.1700
+         search returned no fixtures for 'Livyi Bereh'
+skip     Livyi Bereh v Karpaty | 1x2/home @ 3.6000
+         search returned no fixtures for 'Livyi Bereh'
+skip     Deportivo Santani v Atlético Tembetary | over_under_25/over @ 2.3500
+         search returned no fixtures for 'Deportivo Santani'
+skip     Gomora United FC v Venda FC | 1x2/draw @ 3.6000
+         search returned no fixtures for 'Gomora United FC'
+skip     Watford v West Ham | 1x2/away @ 1.8800
+         search returned no fixtures for 'Watford'
+skip     Al-Duhail SC v Al-Arabi SC | over_under_25/over @ 1.7800
+         search returned no fixtures for 'Al-Duhail SC'
+skip     Al-Duhail SC v Al-Arabi SC | over_under_35/over @ 3.0000
+         search returned no fixtures for 'Al-Duhail SC'
+
+placed=0 staged=0 skipped=7 already-placed=2 — 7 attempt(s) recorded in the last hour
+WARNING: 9 picks processed but only 7 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 4 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Watford v West Ham | 1x2/away @ 1.8800
+         search returned no fixtures for 'Watford'
+skip     Al-Duhail SC v Al-Arabi SC | over_under_25/over @ 1.7800
+         search returned no fixtures for 'Al-Duhail SC'
+skip     Al-Duhail SC v Al-Arabi SC | over_under_35/over @ 3.0000
+         search returned no fixtures for 'Al-Duhail SC'
+
+placed=0 staged=0 skipped=3 already-placed=1 — 7 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 2 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Al-Duhail SC v Al-Arabi SC | over_under_25/over @ 1.7800
+         search returned no fixtures for 'Al-Duhail SC'
+skip     Al-Duhail SC v Al-Arabi SC | over_under_35/over @ 3.0000
+         search returned no fixtures for 'Al-Duhail SC'
+
+placed=0 staged=0 skipped=2 already-placed=0 — 3 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 6 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     CS Sfaxien v ES Zarzis | 1x2/draw @ 3.1000
+         search returned no fixtures for 'CS Sfaxien'
+skip     US Monastirienne v Stade Tunisien | 1x2/draw @ 2.5000
+         search returned no fixtures for 'US Monastirienne'
+skip     De Treffers v Rijnsburgse Boys | 1x2/away @ 4.7500
+         search returned no fixtures for 'De Treffers'
+skip     Lausanne v FC Zürich | 1x2/draw @ 3.8500
+         search returned no fixtures for 'Lausanne'
+skip     Fátima v Benfica Castelo Branco | over_under_35/over @ 3.5500
+         search returned no fixtures for 'Fátima'
+skip     Dalvík / Reynir v KFG | over_under_35/under @ 2.2622
+         search returned no fixtures for 'Dalvík / Reynir'
+
+placed=0 staged=0 skipped=6 already-placed=0 — 6 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 15 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Hamrun Spartans v Floriana | 1x2/draw @ 3.7500
+         search returned no fixtures for 'Hamrun Spartans'
+skip     Austria Vienna (Am) v Schwarz-Weiß Bregenz | 1x2/away @ 3.2000
+         search returned no fixtures for 'Austria Vienna (Am)'
+skip     Hapoel Petah Tikva v Hapoel Katamon | over_under_25/under @ 2.0300
+         search returned no fixtures for 'Hapoel Petah Tikva'
+skip     Hapoel Petah Tikva v Hapoel Katamon | over_under_35/under @ 1.3800
+         search returned no fixtures for 'Hapoel Petah Tikva'
+skip     Virtus Entella v Cesena | 1x2/draw @ 3.4000
+         search returned no fixtures for 'Virtus Entella'
+skip     Hapoel Petah Tikva v Hapoel Katamon | 1x2/draw @ 3.8500
+         search returned no fixtures for 'Hapoel Petah Tikva'
+skip     Al-Fateh v Al-Ittihad FC | over_under_25/over @ 1.6500
+         search returned no fixtures for 'Al-Fateh'
+skip     Al-Fateh v Al-Ittihad FC | over_under_35/over @ 2.6000
+         search returned no fixtures for 'Al-Fateh'
+skip     Al-Fateh v Al-Ittihad FC | 1x2/draw @ 5.2500
+         search returned no fixtures for 'Al-Fateh'
+skip     Dukla Banská Bystrica v Komárno | over_under_25/under @ 2.0300
+         search returned no fixtures for 'Dukla Banská Bystrica'
+skip     Torreense v Vizela | 1x2/home @ 2.1700
+         search returned no fixtures for 'Torreense'
+skip     Sevilla v Atletico Madrid | over_under_35/over @ 4.0000
+         search returned no fixtures for 'Sevilla'
+skip     Barra v Volta Redonda | 1x2/home @ 1.8500
+         search returned no fixtures for 'Barra'
+skip     Rosario Central v Gimnasia L.P. | over_under_25/under @ 1.7260
+         search returned no fixtures for 'Rosario Central'
+skip     Platense v Inter | 1x2/draw @ 3.5000
+         search returned no fixtures for 'Platense'
+
+placed=0 staged=0 skipped=15 already-placed=0 — 15 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+✓ Already logged in (no email field on page)
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 9 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+still not logged in after auto-login — aborting
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/login
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 6 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Dukla Banská Bystrica v Komárno | over_under_25/under @ 2.0300
+         search returned no fixtures for 'Dukla Banská Bystrica'
+skip     Sevilla v Atletico Madrid | over_under_35/over @ 4.0000
+         search returned no fixtures for 'Sevilla'
+skip     Torreense v Vizela | 1x2/home @ 2.1700
+         search returned no fixtures for 'Torreense'
+skip     Rosario Central v Gimnasia L.P. | over_under_25/under @ 1.7260
+         search returned no fixtures for 'Rosario Central'
+skip     Barra v Volta Redonda | 1x2/home @ 1.8500
+         search returned no fixtures for 'Barra'
+skip     Platense v Inter | 1x2/draw @ 3.5000
+         search returned no fixtures for 'Platense'
+
+placed=0 staged=0 skipped=6 already-placed=0 — 6 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 9 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sydney Olympic v Sydney FC U23 | 1x2/home @ 4.0000
+         fixture not offered by Coolbet: Sydney Olympic v Sydney FC U23 — 11 candidates, best pair score 82
+skip     Sturm Graz II v Rapid Wien II | over_under_25/over @ 1.6462
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 5 candidates, best pair score 87
+skip     Sturm Graz II v Rapid Wien II | 1x2/away @ 2.9000
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 5 candidates, best pair score 87
+skip     Sturm Graz II v Rapid Wien II | over_under_35/over @ 2.5915
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 5 candidates, best pair score 87
+PLACED   BC Rangers v Eastern District | 1x2/draw @ 3.6000
+         matched via query 'Rangers'; snapshot 8 prices; min_odds=3.60 coolbet=3.6; odds 3.6000 → 3.6 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Viik 3.60 Lõpptule; balance 348.90 -> 338.90
+skip     Brommapojkarna W v Piteå W | 1x2/away @ 2.5992
+         1x2/away not offered on this page
+skip     Nõmme United II v Elva | 1x2/away @ 2.4000
+         fixture not offered by Coolbet: Nõmme United II v Elva — 4 candidates, best pair score 89
+skip     Nõmme United II v Elva | over_under_35/under @ 2.0800
+         fixture not offered by Coolbet: Nõmme United II v Elva — 4 candidates, best pair score 89
+PLACED   Hønefoss v Follo | over_under_35/over @ 1.6720
+         snapshot 9 prices; min_odds=1.65 coolbet=1.67; odds 1.6720 → 1.67 (+0.1pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Üle 3.5 1.67 Värav; balance 338.90 -> 328.90
+
+placed=2 staged=0 skipped=7 already-placed=0 — 9 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/match/6061008
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+Traceback (most recent call last):
+  File "/Users/margussellin/www/odds-intel-engine/scripts/place_coolbet_ui.py", line 353, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/Users/margussellin/www/odds-intel-engine/scripts/place_coolbet_ui.py", line 242, in main
+    picks = load_picks(args.bot)
+  File "/Users/margussellin/www/odds-intel-engine/scripts/place_coolbet_ui.py", line 126, in load_picks
+    return execute_query(
+        """SELECT s.id::text        AS shadow_bet_id,
+    ...<17 lines>...
+        (bot_name,),
+    )
+  File "/Users/margussellin/www/odds-intel-engine/workers/api_clients/db.py", line 189, in execute_query
+    with get_conn() as conn:
+         ~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/margussellin/www/odds-intel-engine/workers/api_clients/db.py", line 154, in get_conn
+    p = get_pool()
+  File "/Users/margussellin/www/odds-intel-engine/workers/api_clients/db.py", line 48, in get_pool
+    _pool = pool.ThreadedConnectionPool(
+        minconn=2,
+    ...<2 lines>...
+        connect_timeout=10,
+    )
+  File "/Users/margussellin/www/odds-intel-engine/venv/lib/python3.14/site-packages/psycopg2/pool.py", line 161, in __init__
+    AbstractConnectionPool.__init__(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, minconn, maxconn, *args, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/margussellin/www/odds-intel-engine/venv/lib/python3.14/site-packages/psycopg2/pool.py", line 59, in __init__
+    self._connect()
+    ~~~~~~~~~~~~~^^
+  File "/Users/margussellin/www/odds-intel-engine/venv/lib/python3.14/site-packages/psycopg2/pool.py", line 63, in _connect
+    conn = psycopg2.connect(*self._args, **self._kwargs)
+  File "/Users/margussellin/www/odds-intel-engine/venv/lib/python3.14/site-packages/psycopg2/__init__.py", line 122, in connect
+    conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+psycopg2.OperationalError: connection to server at "localhost" (::1), port 5433 failed: FATAL:  the database system is shutting down
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 9 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sturm Graz II v Rapid Wien II | over_under_25/over @ 1.6462
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 5 candidates, best pair score 87
+skip     Sturm Graz II v Rapid Wien II | over_under_35/over @ 2.5915
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 5 candidates, best pair score 87
+skip     Sturm Graz II v Rapid Wien II | 1x2/away @ 2.9000
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 5 candidates, best pair score 87
+skip     Brommapojkarna W v Piteå W | 1x2/away @ 2.5992
+         1x2/away not offered on this page
+skip     Brommapojkarna W v Piteå W | 1x2/draw @ 4.4500
+         below min odds: 3.55 < 3.76 (break-even at 3% edge)
+skip     Nõmme United II v Elva | 1x2/away @ 2.4000
+         fixture not offered by Coolbet: Nõmme United II v Elva — 4 candidates, best pair score 89
+skip     Nõmme United II v Elva | over_under_35/under @ 2.0800
+         fixture not offered by Coolbet: Nõmme United II v Elva — 4 candidates, best pair score 89
+
+placed=0 staged=0 skipped=7 already-placed=2 — 7 attempt(s) recorded in the last hour
+WARNING: 9 picks processed but only 7 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/match/6037401
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 12 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sturm Graz II v Rapid Wien II | over_under_25/over @ 1.6462
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 5 candidates, best pair score 87
+skip     Sturm Graz II v Rapid Wien II | over_under_35/over @ 2.5915
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 5 candidates, best pair score 87
+skip     Sturm Graz II v Rapid Wien II | 1x2/away @ 2.9000
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 5 candidates, best pair score 87
+skip     Brommapojkarna W v Piteå W | 1x2/draw @ 4.4500
+         below min odds: 3.55 < 3.76 (break-even at 3% edge)
+skip     Nõmme United II v Elva | 1x2/away @ 2.4000
+         fixture not offered by Coolbet: Nõmme United II v Elva — 4 candidates, best pair score 89
+skip     Nõmme United II v Elva | over_under_35/under @ 2.0800
+         fixture not offered by Coolbet: Nõmme United II v Elva — 4 candidates, best pair score 89
+skip     Brommapojkarna W v Piteå W | 1x2/away @ 2.5992
+         1x2/away not offered on this page
+skip     Panevėžys v FK Zalgiris Vilnius | 1x2/home @ 5.7500
+         1x2/home not offered on this page
+PLACED   CS Cartagines v CS Herediano | 1x2/draw @ 3.2500
+         matched via query 'Cartagines'; snapshot 8 prices; min_odds=3.22 coolbet=3.3; odds 3.2500 → 3.3 (-1.5pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Viik 3.30 Lõpptule; balance 328.90 -> 318.90
+PLACED   Valur Reykjavík v IA Akranes | 1x2/away @ 2.7028
+         matched via query 'Valur'; snapshot 7 prices; min_odds=2.66 coolbet=2.75; odds 2.7028 → 2.75 (-1.7pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem IA Akranes 2.75 Lõ; balance 318.90 -> 308.90
+
+placed=2 staged=0 skipped=8 already-placed=2 — 10 attempt(s) recorded in the last hour
+WARNING: 12 picks processed but only 10 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/match/6039508
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 14 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sturm Graz II v Rapid Wien II | over_under_25/over @ 1.6462
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 5 candidates, best pair score 87
+skip     Sturm Graz II v Rapid Wien II | over_under_35/over @ 2.5915
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 5 candidates, best pair score 87
+skip     Sturm Graz II v Rapid Wien II | 1x2/away @ 2.9000
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 5 candidates, best pair score 87
+skip     Brommapojkarna W v Piteå W | 1x2/draw @ 4.4500
+         below min odds: 3.55 < 3.76 (break-even at 3% edge)
+skip     Nõmme United II v Elva | 1x2/away @ 2.4000
+         fixture not offered by Coolbet: Nõmme United II v Elva — 4 candidates, best pair score 89
+skip     Nõmme United II v Elva | over_under_35/under @ 2.0800
+         fixture not offered by Coolbet: Nõmme United II v Elva — 4 candidates, best pair score 89
+skip     Brommapojkarna W v Piteå W | 1x2/away @ 2.5992
+         1x2/away not offered on this page
+skip     Panevėžys v FK Zalgiris Vilnius | 1x2/home @ 5.7500
+         1x2/home not offered on this page
+skip     Águila v Fuerte San Francisco | 1x2/draw @ 4.4000
+         fixture not offered by Coolbet: Águila v Fuerte San Francisco — 8 candidates, best pair score 42
+skip     San Carlos v Puntarenas FC | 1x2/away @ 4.4000
+         below min odds: 3.3 < 3.73 (break-even at 3% edge)
+
+placed=0 staged=0 skipped=10 already-placed=4 — 10 attempt(s) recorded in the last hour
+WARNING: 14 picks processed but only 10 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/match/6039651
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 17 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Sturm Graz II v Rapid Wien II | over_under_35/over @ 2.5915
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 1 candidates, best pair score 11
+skip     Sturm Graz II v Rapid Wien II | 1x2/away @ 2.9000
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 1 candidates, best pair score 11
+skip     Sturm Graz II v Rapid Wien II | over_under_25/over @ 1.6462
+         fixture not offered by Coolbet: Sturm Graz II v Rapid Wien II — 1 candidates, best pair score 11
+skip     Brommapojkarna W v Piteå W | 1x2/draw @ 4.4500
+         fixture not offered by Coolbet: Brommapojkarna W v Piteå W — 1 candidates, best pair score 0
+skip     Nõmme United II v Elva | 1x2/away @ 2.4000
+         fixture not offered by Coolbet: Nõmme United II v Elva — 1 candidates, best pair score 20
+skip     Nõmme United II v Elva | over_under_35/under @ 2.0800
+         fixture not offered by Coolbet: Nõmme United II v Elva — 1 candidates, best pair score 20
+skip     Brommapojkarna W v Piteå W | 1x2/away @ 2.5992
+         fixture not offered by Coolbet: Brommapojkarna W v Piteå W — 1 candidates, best pair score 0
+skip     Panevėžys v FK Zalgiris Vilnius | 1x2/home @ 5.7500
+         fixture not offered by Coolbet: Panevėžys v FK Zalgiris Vilnius — 1 candidates, best pair score 8
+skip     Águila v Fuerte San Francisco | 1x2/draw @ 4.4000
+         fixture not offered by Coolbet: Águila v Fuerte San Francisco — 1 candidates, best pair score 18
+skip     San Carlos v Puntarenas FC | 1x2/away @ 4.4000
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     San Carlos v Puntarenas FC | 1x2/draw @ 3.7500
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     Atlético San Luis W v Atlas W | over_under_25/over @ 1.8500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+skip     Atlético San Luis W v Atlas W | 1x2/home @ 2.0500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+
+placed=0 staged=0 skipped=13 already-placed=4 — 13 attempt(s) recorded in the last hour
+WARNING: 17 picks processed but only 13 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 19 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     FC St. Pauli v 1. FC Kaiserslautern | 1x2/away @ 4.3000
+         fixture not offered by Coolbet: FC St. Pauli v 1. FC Kaiserslautern — 1 candidates, best pair score 16
+skip     Brommapojkarna W v Piteå W | 1x2/draw @ 4.4500
+         fixture not offered by Coolbet: Brommapojkarna W v Piteå W — 1 candidates, best pair score 0
+skip     Nõmme United II v Elva | 1x2/away @ 2.4000
+         fixture not offered by Coolbet: Nõmme United II v Elva — 1 candidates, best pair score 20
+skip     Nõmme United II v Elva | over_under_35/under @ 2.0800
+         fixture not offered by Coolbet: Nõmme United II v Elva — 1 candidates, best pair score 20
+skip     FC Sion v FC Lugano | 1x2/draw @ 3.7500
+         fixture not offered by Coolbet: FC Sion v FC Lugano — 1 candidates, best pair score 14
+skip     Brommapojkarna W v Piteå W | 1x2/away @ 2.5992
+         fixture not offered by Coolbet: Brommapojkarna W v Piteå W — 1 candidates, best pair score 0
+skip     Levanger v Lørenskog | over_under_35/under @ 2.0060
+         fixture not offered by Coolbet: Levanger v Lørenskog — 1 candidates, best pair score 29
+skip     Levanger v Lørenskog | over_under_25/under @ 3.3500
+         fixture not offered by Coolbet: Levanger v Lørenskog — 1 candidates, best pair score 29
+skip     Panevėžys v FK Zalgiris Vilnius | 1x2/home @ 5.7500
+         fixture not offered by Coolbet: Panevėžys v FK Zalgiris Vilnius — 1 candidates, best pair score 8
+skip     Al Kharaitiyat v Al-Khor | 1x2/away @ 4.3000
+         fixture not offered by Coolbet: Al Kharaitiyat v Al-Khor — 1 candidates, best pair score 17
+skip     Águila v Fuerte San Francisco | 1x2/draw @ 4.4000
+         fixture not offered by Coolbet: Águila v Fuerte San Francisco — 1 candidates, best pair score 18
+skip     San Carlos v Puntarenas FC | 1x2/draw @ 3.7500
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     San Carlos v Puntarenas FC | 1x2/away @ 4.4000
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     Atlético San Luis W v Atlas W | over_under_25/over @ 1.8500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+skip     Atlético San Luis W v Atlas W | 1x2/home @ 2.0500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+
+placed=0 staged=0 skipped=15 already-placed=4 — 16 attempt(s) recorded in the last hour
+WARNING: 19 picks processed but only 16 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/jalgpall
+✓ Already logged in (no email field on page)
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 24 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+still not logged in after auto-login — aborting
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/login
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 23 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     FC St. Pauli v 1. FC Kaiserslautern | 1x2/away @ 4.3000
+         fixture not offered by Coolbet: FC St. Pauli v 1. FC Kaiserslautern — 1 candidates, best pair score 16
+skip     Brommapojkarna W v Piteå W | 1x2/draw @ 4.4500
+         fixture not offered by Coolbet: Brommapojkarna W v Piteå W — 1 candidates, best pair score 0
+skip     Nõmme United II v Elva | 1x2/away @ 2.4000
+         fixture not offered by Coolbet: Nõmme United II v Elva — 1 candidates, best pair score 20
+skip     Nõmme United II v Elva | over_under_35/under @ 2.0800
+         fixture not offered by Coolbet: Nõmme United II v Elva — 1 candidates, best pair score 20
+skip     FC Sion v FC Lugano | 1x2/draw @ 3.7500
+         fixture not offered by Coolbet: FC Sion v FC Lugano — 1 candidates, best pair score 14
+skip     Brommapojkarna W v Piteå W | 1x2/away @ 2.5992
+         fixture not offered by Coolbet: Brommapojkarna W v Piteå W — 1 candidates, best pair score 0
+skip     Junkeren v Stjørdals-Blink | 1x2/away @ 2.4500
+         fixture not offered by Coolbet: Junkeren v Stjørdals-Blink — 1 candidates, best pair score 20
+skip     Levanger v Lørenskog | over_under_25/under @ 3.3500
+         fixture not offered by Coolbet: Levanger v Lørenskog — 1 candidates, best pair score 29
+skip     Esbjerg v Vendsyssel FF | 1x2/away @ 3.6000
+         fixture not offered by Coolbet: Esbjerg v Vendsyssel FF — 1 candidates, best pair score 22
+skip     Levanger v Lørenskog | over_under_35/under @ 2.0060
+         fixture not offered by Coolbet: Levanger v Lørenskog — 1 candidates, best pair score 29
+skip     Racing FC Union Luxembourg v Victoria Rosport | 1x2/away @ 5.2500
+         fixture not offered by Coolbet: Racing FC Union Luxembourg v Victoria Rosport — 1 candidates, best pair score 13
+skip     Randers FC v Aarhus | 1x2/away @ 2.2500
+         fixture not offered by Coolbet: Randers FC v Aarhus — 1 candidates, best pair score 18
+skip     Kapaz v Turan | 1x2/home @ 5.5000
+         fixture not offered by Coolbet: Kapaz v Turan — 1 candidates, best pair score 0
+skip     Panevėžys v FK Zalgiris Vilnius | 1x2/home @ 5.7500
+         fixture not offered by Coolbet: Panevėžys v FK Zalgiris Vilnius — 1 candidates, best pair score 8
+skip     Al Kharaitiyat v Al-Khor | 1x2/away @ 4.3000
+         fixture not offered by Coolbet: Al Kharaitiyat v Al-Khor — 1 candidates, best pair score 17
+skip     Águila v Fuerte San Francisco | 1x2/draw @ 4.4000
+         fixture not offered by Coolbet: Águila v Fuerte San Francisco — 1 candidates, best pair score 18
+skip     San Carlos v Puntarenas FC | 1x2/draw @ 3.7500
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     San Carlos v Puntarenas FC | 1x2/away @ 4.4000
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     Atlético San Luis W v Atlas W | 1x2/home @ 2.0500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+skip     Atlético San Luis W v Atlas W | over_under_25/over @ 1.8500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+
+placed=0 staged=0 skipped=20 already-placed=3 — 20 attempt(s) recorded in the last hour
+WARNING: 23 picks processed but only 20 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 16 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Junkeren v Stjørdals-Blink | 1x2/away @ 2.4500
+         fixture not offered by Coolbet: Junkeren v Stjørdals-Blink — 1 candidates, best pair score 20
+skip     Levanger v Lørenskog | over_under_25/under @ 3.3500
+         fixture not offered by Coolbet: Levanger v Lørenskog — 1 candidates, best pair score 29
+skip     Levanger v Lørenskog | over_under_35/under @ 2.0060
+         fixture not offered by Coolbet: Levanger v Lørenskog — 1 candidates, best pair score 29
+skip     Esbjerg v Vendsyssel FF | 1x2/away @ 3.6000
+         fixture not offered by Coolbet: Esbjerg v Vendsyssel FF — 1 candidates, best pair score 22
+skip     Kapaz v Turan | 1x2/home @ 5.5000
+         fixture not offered by Coolbet: Kapaz v Turan — 1 candidates, best pair score 0
+skip     Racing FC Union Luxembourg v Victoria Rosport | 1x2/away @ 5.2500
+         fixture not offered by Coolbet: Racing FC Union Luxembourg v Victoria Rosport — 1 candidates, best pair score 13
+skip     Randers FC v Aarhus | 1x2/away @ 2.2500
+         fixture not offered by Coolbet: Randers FC v Aarhus — 1 candidates, best pair score 18
+skip     Panevėžys v FK Zalgiris Vilnius | 1x2/home @ 5.7500
+         fixture not offered by Coolbet: Panevėžys v FK Zalgiris Vilnius — 1 candidates, best pair score 8
+skip     Al Kharaitiyat v Al-Khor | 1x2/away @ 4.3000
+         fixture not offered by Coolbet: Al Kharaitiyat v Al-Khor — 1 candidates, best pair score 17
+skip     Águila v Fuerte San Francisco | 1x2/draw @ 4.4000
+         fixture not offered by Coolbet: Águila v Fuerte San Francisco — 1 candidates, best pair score 18
+skip     San Carlos v Puntarenas FC | 1x2/draw @ 3.7500
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     San Carlos v Puntarenas FC | 1x2/away @ 4.4000
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     Atlético San Luis W v Atlas W | over_under_25/over @ 1.8500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+skip     Atlético San Luis W v Atlas W | 1x2/home @ 2.0500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+
+placed=0 staged=0 skipped=14 already-placed=2 — 20 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 13 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Hatta SC v Sharjah FC | 1x2/away @ 1.7500
+         fixture not offered by Coolbet: Hatta SC v Sharjah FC — 1 candidates, best pair score 13
+skip     Racing FC Union Luxembourg v Victoria Rosport | 1x2/away @ 5.2500
+         fixture not offered by Coolbet: Racing FC Union Luxembourg v Victoria Rosport — 1 candidates, best pair score 13
+skip     Kapaz v Turan | 1x2/home @ 5.5000
+         fixture not offered by Coolbet: Kapaz v Turan — 1 candidates, best pair score 0
+skip     Randers FC v Aarhus | 1x2/away @ 2.2500
+         fixture not offered by Coolbet: Randers FC v Aarhus — 1 candidates, best pair score 18
+skip     Panevėžys v FK Zalgiris Vilnius | 1x2/home @ 5.7500
+         fixture not offered by Coolbet: Panevėžys v FK Zalgiris Vilnius — 1 candidates, best pair score 8
+skip     Al Kharaitiyat v Al-Khor | 1x2/away @ 4.3000
+         fixture not offered by Coolbet: Al Kharaitiyat v Al-Khor — 1 candidates, best pair score 17
+skip     Águila v Fuerte San Francisco | 1x2/draw @ 4.4000
+         fixture not offered by Coolbet: Águila v Fuerte San Francisco — 1 candidates, best pair score 18
+skip     San Carlos v Puntarenas FC | 1x2/away @ 4.4000
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     San Carlos v Puntarenas FC | 1x2/draw @ 3.7500
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     Atlético San Luis W v Atlas W | over_under_25/over @ 1.8500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+skip     Atlético San Luis W v Atlas W | 1x2/home @ 2.0500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+
+placed=0 staged=0 skipped=11 already-placed=2 — 13 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 25 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Deportivo Alavés W v Valencia W | 1x2/home @ 2.4733
+         fixture not offered by Coolbet: Deportivo Alavés W v Valencia W — 1 candidates, best pair score 13
+skip     Ranheim v ODD Ballklubb | 1x2/away @ 3.1200
+         fixture not offered by Coolbet: Ranheim v ODD Ballklubb — 1 candidates, best pair score 11
+skip     Real Madrid v Malaga | over_under_25/under @ 4.3500
+         fixture not offered by Coolbet: Real Madrid v Malaga — 1 candidates, best pair score 12
+skip     Raufoss v Sandnes Ulf | 1x2/home @ 2.9700
+         fixture not offered by Coolbet: Raufoss v Sandnes Ulf — 1 candidates, best pair score 17
+skip     Deportivo Alavés W v Valencia W | over_under_25/over @ 2.5528
+         fixture not offered by Coolbet: Deportivo Alavés W v Valencia W — 1 candidates, best pair score 13
+skip     Jeunesse Sportive Omrane v ES Tunis | over_under_25/over @ 2.6000
+         fixture not offered by Coolbet: Jeunesse Sportive Omrane v ES Tunis — 1 candidates, best pair score 15
+skip     CS Hammam-Lif v CA Bizertin | 1x2/draw @ 2.5500
+         fixture not offered by Coolbet: CS Hammam-Lif v CA Bizertin — 1 candidates, best pair score 12
+skip     Al Nasar v Al Fahaheel | 1x2/home @ 2.3500
+         fixture not offered by Coolbet: Al Nasar v Al Fahaheel — 1 candidates, best pair score 12
+skip     Ironi Modi'in v Maccabi Kiryat Gat | over_under_25/under @ 1.9400
+         fixture not offered by Coolbet: Ironi Modi'in v Maccabi Kiryat Gat — 1 candidates, best pair score 9
+skip     Panevėžys v FK Zalgiris Vilnius | 1x2/home @ 5.7500
+         fixture not offered by Coolbet: Panevėžys v FK Zalgiris Vilnius — 1 candidates, best pair score 8
+skip     Eyüpspor v Alanyaspor | over_under_35/over @ 4.4000
+         fixture not offered by Coolbet: Eyüpspor v Alanyaspor — 1 candidates, best pair score 27
+skip     Eyüpspor v Alanyaspor | over_under_25/over @ 2.2800
+         fixture not offered by Coolbet: Eyüpspor v Alanyaspor — 1 candidates, best pair score 27
+skip     FC Nordsjaelland v Brondby | 1x2/away @ 3.2000
+         fixture not offered by Coolbet: FC Nordsjaelland v Brondby — 1 candidates, best pair score 10
+skip     Al Kharaitiyat v Al-Khor | 1x2/away @ 4.3000
+         fixture not offered by Coolbet: Al Kharaitiyat v Al-Khor — 1 candidates, best pair score 17
+skip     Dacia-Buiucani v Milsami Orhei | 1x2/home @ 5.0000
+         fixture not offered by Coolbet: Dacia-Buiucani v Milsami Orhei — 1 candidates, best pair score 11
+skip     Lillestrom v Fredrikstad | over_under_35/over @ 3.1500
+         fixture not offered by Coolbet: Lillestrom v Fredrikstad — 1 candidates, best pair score 12
+skip     Lillestrom v Fredrikstad | over_under_25/over @ 1.8593
+         fixture not offered by Coolbet: Lillestrom v Fredrikstad — 1 candidates, best pair score 12
+skip     Asteras Tripolis v Olympiakos Piraeus | 1x2/away @ 1.4700
+         fixture not offered by Coolbet: Asteras Tripolis v Olympiakos Piraeus — 1 candidates, best pair score 26
+skip     Águila v Fuerte San Francisco | 1x2/draw @ 4.4000
+         fixture not offered by Coolbet: Águila v Fuerte San Francisco — 1 candidates, best pair score 18
+skip     San Carlos v Puntarenas FC | 1x2/draw @ 3.7500
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     San Carlos v Puntarenas FC | 1x2/away @ 4.4000
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     Atlético San Luis W v Atlas W | over_under_25/over @ 1.8500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+skip     Atlético San Luis W v Atlas W | 1x2/home @ 2.0500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+
+placed=0 staged=0 skipped=23 already-placed=2 — 23 attempt(s) recorded in the last hour
+WARNING: 25 picks processed but only 23 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 22 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     CS Hammam-Lif v CA Bizertin | 1x2/draw @ 2.5500
+         fixture not offered by Coolbet: CS Hammam-Lif v CA Bizertin — 1 candidates, best pair score 12
+skip     Jeunesse Sportive Omrane v ES Tunis | over_under_25/over @ 2.6000
+         fixture not offered by Coolbet: Jeunesse Sportive Omrane v ES Tunis — 1 candidates, best pair score 15
+skip     Al Nasar v Al Fahaheel | 1x2/home @ 2.3500
+         fixture not offered by Coolbet: Al Nasar v Al Fahaheel — 1 candidates, best pair score 12
+skip     Eyüpspor v Alanyaspor | over_under_25/over @ 2.2800
+         fixture not offered by Coolbet: Eyüpspor v Alanyaspor — 1 candidates, best pair score 27
+skip     FC Nordsjaelland v Brondby | 1x2/away @ 3.2000
+         fixture not offered by Coolbet: FC Nordsjaelland v Brondby — 1 candidates, best pair score 10
+skip     Eyüpspor v Alanyaspor | over_under_35/over @ 4.4000
+         fixture not offered by Coolbet: Eyüpspor v Alanyaspor — 1 candidates, best pair score 27
+skip     Ironi Modi'in v Maccabi Kiryat Gat | over_under_25/under @ 1.9400
+         fixture not offered by Coolbet: Ironi Modi'in v Maccabi Kiryat Gat — 1 candidates, best pair score 9
+skip     Panevėžys v FK Zalgiris Vilnius | 1x2/home @ 5.7500
+         fixture not offered by Coolbet: Panevėžys v FK Zalgiris Vilnius — 1 candidates, best pair score 8
+skip     Al Kharaitiyat v Al-Khor | 1x2/away @ 4.3000
+         fixture not offered by Coolbet: Al Kharaitiyat v Al-Khor — 1 candidates, best pair score 17
+skip     Dacia-Buiucani v Milsami Orhei | 1x2/home @ 5.0000
+         fixture not offered by Coolbet: Dacia-Buiucani v Milsami Orhei — 1 candidates, best pair score 11
+skip     Lillestrom v Fredrikstad | over_under_25/over @ 1.8593
+         fixture not offered by Coolbet: Lillestrom v Fredrikstad — 1 candidates, best pair score 12
+skip     Lillestrom v Fredrikstad | over_under_35/over @ 3.1500
+         fixture not offered by Coolbet: Lillestrom v Fredrikstad — 1 candidates, best pair score 12
+skip     Asteras Tripolis v Olympiakos Piraeus | 1x2/away @ 1.4700
+         fixture not offered by Coolbet: Asteras Tripolis v Olympiakos Piraeus — 1 candidates, best pair score 26
+skip     Sport Boys v Sporting Cristal | 1x2/home @ 2.7168
+         fixture not offered by Coolbet: Sport Boys v Sporting Cristal — 1 candidates, best pair score 19
+skip     Águila v Fuerte San Francisco | 1x2/draw @ 4.4000
+         fixture not offered by Coolbet: Águila v Fuerte San Francisco — 1 candidates, best pair score 18
+skip     San Carlos v Puntarenas FC | 1x2/away @ 4.4000
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     San Carlos v Puntarenas FC | 1x2/draw @ 3.7500
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     Atlético San Luis W v Atlas W | over_under_25/over @ 1.8500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+skip     Atlético San Luis W v Atlas W | 1x2/home @ 2.0500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+skip     Sporting San Miguelito v Herrera | over_under_25/under @ 2.0800
+         fixture not offered by Coolbet: Sporting San Miguelito v Herrera — 1 candidates, best pair score 17
+
+placed=0 staged=0 skipped=20 already-placed=2 — 22 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 14 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Al Kharaitiyat v Al-Khor | 1x2/away @ 4.3000
+         fixture not offered by Coolbet: Al Kharaitiyat v Al-Khor — 1 candidates, best pair score 17
+skip     Dacia-Buiucani v Milsami Orhei | 1x2/home @ 5.0000
+         fixture not offered by Coolbet: Dacia-Buiucani v Milsami Orhei — 1 candidates, best pair score 11
+skip     Lillestrom v Fredrikstad | over_under_35/over @ 3.1500
+         fixture not offered by Coolbet: Lillestrom v Fredrikstad — 1 candidates, best pair score 12
+skip     Lillestrom v Fredrikstad | over_under_25/over @ 1.8593
+         fixture not offered by Coolbet: Lillestrom v Fredrikstad — 1 candidates, best pair score 12
+skip     Asteras Tripolis v Olympiakos Piraeus | 1x2/away @ 1.4700
+         fixture not offered by Coolbet: Asteras Tripolis v Olympiakos Piraeus — 1 candidates, best pair score 26
+skip     Sport Boys v Sporting Cristal | 1x2/home @ 2.7168
+         fixture not offered by Coolbet: Sport Boys v Sporting Cristal — 1 candidates, best pair score 19
+skip     Águila v Fuerte San Francisco | 1x2/draw @ 4.4000
+         fixture not offered by Coolbet: Águila v Fuerte San Francisco — 1 candidates, best pair score 18
+skip     San Carlos v Puntarenas FC | 1x2/away @ 4.4000
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     San Carlos v Puntarenas FC | 1x2/draw @ 3.7500
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     Atlético San Luis W v Atlas W | 1x2/home @ 2.0500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+skip     Atlético San Luis W v Atlas W | over_under_25/over @ 1.8500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+skip     Sporting San Miguelito v Herrera | over_under_25/under @ 2.0800
+         fixture not offered by Coolbet: Sporting San Miguelito v Herrera — 1 candidates, best pair score 17
+
+placed=0 staged=0 skipped=12 already-placed=2 — 20 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 11 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Lillestrom v Fredrikstad | over_under_25/over @ 1.8593
+         fixture not offered by Coolbet: Lillestrom v Fredrikstad — 1 candidates, best pair score 12
+skip     Lillestrom v Fredrikstad | over_under_35/over @ 3.1500
+         fixture not offered by Coolbet: Lillestrom v Fredrikstad — 1 candidates, best pair score 12
+skip     Asteras Tripolis v Olympiakos Piraeus | 1x2/away @ 1.4700
+         fixture not offered by Coolbet: Asteras Tripolis v Olympiakos Piraeus — 1 candidates, best pair score 26
+skip     Sport Boys v Sporting Cristal | 1x2/home @ 2.7168
+         fixture not offered by Coolbet: Sport Boys v Sporting Cristal — 1 candidates, best pair score 19
+skip     Águila v Fuerte San Francisco | 1x2/draw @ 4.4000
+         fixture not offered by Coolbet: Águila v Fuerte San Francisco — 1 candidates, best pair score 18
+skip     San Carlos v Puntarenas FC | 1x2/away @ 4.4000
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     San Carlos v Puntarenas FC | 1x2/draw @ 3.7500
+         fixture not offered by Coolbet: San Carlos v Puntarenas FC — 1 candidates, best pair score 11
+skip     Atlético San Luis W v Atlas W | 1x2/home @ 2.0500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+skip     Atlético San Luis W v Atlas W | over_under_25/over @ 1.8500
+         fixture not offered by Coolbet: Atlético San Luis W v Atlas W — 1 candidates, best pair score 17
+skip     Sporting San Miguelito v Herrera | over_under_25/under @ 2.0800
+         fixture not offered by Coolbet: Sporting San Miguelito v Herrera — 1 candidates, best pair score 17
+
+placed=0 staged=0 skipped=10 already-placed=1 — 12 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 10 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Avai v Atletico Goianiense | 1x2/home @ 2.8000
+         search returned no fixtures for 'Avai'
+skip     Sport Boys v Sporting Cristal | 1x2/home @ 2.7168
+         search returned no fixtures for 'Sport Boys'
+skip     Águila v Fuerte San Francisco | 1x2/draw @ 4.4000
+         search returned no fixtures for 'Águila'
+skip     Bolívar v The Strongest | 1x2/away @ 4.2000
+         search returned no fixtures for 'Bolívar'
+skip     San Carlos v Puntarenas FC | 1x2/draw @ 3.7500
+         search returned no fixtures for 'San Carlos'
+skip     San Carlos v Puntarenas FC | 1x2/away @ 4.4000
+         search returned no fixtures for 'San Carlos'
+skip     Atlético San Luis W v Atlas W | 1x2/home @ 2.0500
+         search returned no fixtures for 'Atlético San Luis W'
+skip     Atlético San Luis W v Atlas W | over_under_25/over @ 1.8500
+         search returned no fixtures for 'Atlético San Luis W'
+skip     Sporting San Miguelito v Herrera | over_under_25/under @ 2.0800
+         search returned no fixtures for 'Sporting San Miguelito'
+
+placed=0 staged=0 skipped=9 already-placed=1 — 10 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+No open picks for bot_coolbet_value_v1.
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+No open picks for bot_coolbet_value_v1.
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 1 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+PLACED   Airbus UK v Holywell | 1x2/away @ 4.4000
+         matched via query 'Airbus'; snapshot 9 prices; min_odds=4.27 coolbet=4.4; odds 4.4000 → 4.4 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Holywell Town 4.40; balance 308.90 -> 298.90
+
+placed=1 staged=0 skipped=0 already-placed=0 — 1 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/match/6043369
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 4 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+PLACED   FC WIL 1900 v FC Aarau | over_under_25/over @ 1.6400
+         matched via query 'WIL'; snapshot 7 prices; min_odds=1.62 coolbet=1.64; odds 1.6400 → 1.64 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Üle 2.5 1.64 Värav; balance 298.90 -> 288.90
+PLACED   FC WIL 1900 v FC Aarau | over_under_35/over @ 2.6300
+         matched via query 'WIL'; snapshot 7 prices; min_odds=2.49 coolbet=2.63; odds 2.6300 → 2.63 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Üle 3.5 2.63 Värav; balance 288.90 -> 278.90
+skip     Barcelona v Rayo Vallecano | over_under_25/under @ 3.9000
+         over_under_25/under not offered on this page
+
+placed=2 staged=0 skipped=1 already-placed=1 — 3 attempt(s) recorded in the last hour
+WARNING: 4 picks processed but only 3 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/match/6037474
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 4 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Barcelona v Rayo Vallecano | over_under_25/under @ 3.9000
+         over_under_25/under not offered on this page
+
+placed=0 staged=0 skipped=1 already-placed=3 — 4 attempt(s) recorded in the last hour
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/match/6037474
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 5 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Barcelona v Rayo Vallecano | over_under_25/under @ 3.9000
+         over_under_25/under not offered on this page
+PLACED   Barcelona v Rayo Vallecano | over_under_35/under @ 2.3000
+         snapshot 7 prices; min_odds=2.29 coolbet=2.3; odds 2.3000 → 2.3 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Alla 3.5 2.30 Vära; balance 278.90 -> 268.90
+
+placed=1 staged=0 skipped=1 already-placed=3 — 2 attempt(s) recorded in the last hour
+WARNING: 5 picks processed but only 2 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/match/6037474
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 7 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+PLACED   AFC Bournemouth U21 v Middlesbrough U21 | 1x2/away @ 2.8000
+         matched via query 'Bournemouth'; snapshot 9 prices; min_odds=2.79 coolbet=2.85; odds 2.8000 → 2.85 (-1.8pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Middlesbrough U21 ; balance 268.90 -> 258.90
+PLACED   FC Copenhagen v Sonderjyske | 1x2/draw @ 5.5000
+         matched via query 'Sonderjyske'; snapshot 10 prices; min_odds=5.46 coolbet=5.5; odds 5.5000 → 5.5 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Viik 5.50 Lõpptule; balance 258.90 -> 248.90
+OU row 0.5 pairs different market ids (disabled/663994079) — skipped
+OU row 1.0 pairs different market ids (disabled/663994078) — skipped
+PLACED   Barcelona v Rayo Vallecano | over_under_25/under @ 3.9000
+         snapshot 11 prices; min_odds=3.67 coolbet=4.05; odds 3.9000 → 4.05 (-3.8pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Alla 2.5 4.05 Vära; balance 248.90 -> 238.90
+
+placed=3 staged=0 skipped=0 already-placed=4 — 3 attempt(s) recorded in the last hour
+WARNING: 7 picks processed but only 3 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/match/6037474
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 9 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Novara v Folgore Caratese | 1x2/home @ 2.3000
+         search returned no fixtures for 'Novara'
+skip     Atletico Grau v FBC Melgar | 1x2/draw @ 3.1400
+         search returned no fixtures for 'Atletico Grau'
+
+placed=0 staged=0 skipped=2 already-placed=7 — 3 attempt(s) recorded in the last hour
+WARNING: 9 picks processed but only 3 recorded — audit trail is incomplete
+
+session lost — logging in…
+patchright unavailable — using vanilla playwright
+  reusing existing Coolbet tab: https://www.coolbet.com/et/sport/recommendations
+  Filling login form…
+  Clicking Logi sisse…
+  Submitted. Watching for login success (up to 300s).
+  If SMS appears in the browser, enter the code there.
+  ✓ logged in — page is now at https://www.coolbet.com/et/sport/recommendations
+session restored.
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 9 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+PLACED   Novara v Folgore Caratese | 1x2/home @ 2.3000
+         snapshot 9 prices; min_odds=2.29 coolbet=2.35; odds 2.3000 → 2.35 (-2.2pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Novara 2.35 Lõpptu; balance 238.90 -> 228.90
+MOVED FIXTURE accepted: Atletico Grau v FBC Melgar — Coolbet has it at '01 sept 23:00', we have 2026-08-31 20:00Z (name score 100, sole candidate). Betting it; OUR date is the suspect one.
+OU row 5.0 pairs different market ids (662550295/disabled) — skipped
+OU row 5.5 pairs different market ids (662550293/disabled) — skipped
+PLACED   Atletico Grau v FBC Melgar | 1x2/draw @ 3.1400
+         matched via query 'Grau'; MOVED FIXTURE: Coolbet has it 2026-09-01 20:00Z, our date 2026-08-31 20:00Z (24h apart) — betting Coolbet's; snapshot 13 prices; min_odds=3.09 coolbet=3.14; odds 3.1400 → 3.14 (+0.0pct); slip: 1 Pilet 0 Combo Card Üksik Mitmik Süsteem Viik 3.14 Lõpptule; balance 228.90 -> 218.90
+
+placed=2 staged=0 skipped=0 already-placed=7 — 4 attempt(s) recorded in the last hour
+WARNING: 9 picks processed but only 4 recorded — audit trail is incomplete
+
+DB pool created (2-20 connections)
+
+bot_coolbet_value_v1 — 9 pick(s) — stake EUR 10.00 flat — min-edge 3% — mode EXECUTE
+
+skip     Novara v Folgore Caratese | 1x2/draw @ 3.6000
+         below min odds: 3.0 < 3.36 (break-even at 3% edge)
+
+placed=0 staged=0 skipped=1 already-placed=8 — 3 attempt(s) recorded in the last hour
+WARNING: 9 picks processed but only 3 recorded — audit trail is incomplete
+

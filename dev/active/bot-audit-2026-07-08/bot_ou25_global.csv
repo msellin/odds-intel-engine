@@ -1,0 +1,137 @@
+bot,match_id,date,league,country,tier,season,market,selection,odds,model_prob,implied_prob,edge,stake,won,pnl,score_home,score_away
+bot_ou25_global,c85e1fd7-fa85-4109-8807-82ce7fe6b90f,2026-06-24T00:30:00+00:00,Copa Chile,Chile,1,2026,over_under_25,under,2.08,0.584,0.4808,0.1032,10.0,False,-10.0,1,3
+bot_ou25_global,b17d850a-c311-4a96-9176-f9170c077ff2,2026-06-24T08:45:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.49,0.5196,0.4016,0.118,10.0,True,14.9,0,0
+bot_ou25_global,b68f214f-fd94-4d3d-8ced-9e2bd37aeaf1,2026-06-24T11:00:00+00:00,League Two,China,3,2026,over_under_25,over,2.5,0.6216,0.4,0.2216,10.0,True,15.0,1,3
+bot_ou25_global,b6195dc5-4880-45e2-ac4d-664175dabe72,2026-06-24T11:30:00+00:00,League Two,China,3,2026,over_under_25,under,1.73,0.6308,0.578,0.0528,10.0,True,7.3,0,1
+bot_ou25_global,d484b4bd-b7a7-4024-8e21-8eabd9234b37,2026-06-24T11:30:00+00:00,League Two,China,3,2026,over_under_25,over,2.35,0.49,0.4255,0.0645,10.0,True,13.5,3,1
+bot_ou25_global,1c758873-605e-451c-bb83-0763ca21324b,2026-06-24T12:00:00+00:00,League Two,China,3,2026,over_under_25,over,2.4,0.5216,0.4167,0.1049,10.0,False,-10.0,0,0
+bot_ou25_global,ba4bfb8b-3d1c-4247-b09e-1df6b0601535,2026-06-24T13:00:00+00:00,Ligi kuu Bara,Tanzania,1,2025,over_under_25,over,2.1,0.5396,0.4762,0.0634,10.0,True,11.0,3,0
+bot_ou25_global,2e9aab13-d406-4dd7-929e-f9dd62486697,2026-06-24T17:30:00+00:00,Løgmanssteypid,Faroe-Islands,0,2026,over_under_25,over,1.85,0.7555,0.5405,0.215,10.0,True,8.5,4,2
+bot_ou25_global,043a2912-b9f4-4c92-bde2-8bbe30e85bb5,2026-06-24T18:45:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,over,1.77,0.7784,0.565,0.2134,10.0,False,-10.0,1,1
+bot_ou25_global,d5708cec-79f6-4704-8d99-05dfc289008f,2026-06-24T19:30:00+00:00,Copa Venezuela,Venezuela,1,2026,over_under_25,under,2.1,0.6389,0.4762,0.1627,10.0,True,11.0,0,1
+bot_ou25_global,e1acbf73-d519-4dc5-b71d-91f4ac03db10,2026-06-24T19:30:00+00:00,Copa Venezuela,Venezuela,1,2026,over_under_25,under,1.85,0.6325,0.5405,0.092,10.0,True,8.5,0,0
+bot_ou25_global,a13d5ee0-dd89-45da-8d5f-686ff40a9e37,2026-06-24T20:00:00+00:00,Copa Venezuela,Venezuela,1,2026,over_under_25,over,2.2,0.5469,0.4545,0.0924,10.0,False,-10.0,1,1
+bot_ou25_global,341366a8-e6cc-4b00-b72b-e99d801379d2,2026-06-24T20:00:00+00:00,Copa Venezuela,Venezuela,1,2026,over_under_25,over,2.2,0.591,0.4545,0.1365,10.0,False,-10.0,1,0
+bot_ou25_global,b4356768-a183-4181-a416-5429994f24b1,2026-06-24T21:00:00+00:00,Copa Venezuela,Venezuela,1,2026,over_under_25,under,2.42,0.5275,0.4132,0.1143,10.0,False,-10.0,6,1
+bot_ou25_global,650e109f-87b8-4ba0-8bec-c5a1a6e7cca7,2026-06-24T23:45:00+00:00,USL League Two,USA,4,2026,over_under_25,over,1.61,0.783,0.6211,0.1619,10.0,True,6.1,3,4
+bot_ou25_global,96d3e364-56ec-4305-b725-3b18c8c464b1,2026-06-25T00:30:00+00:00,USL League One,USA,3,2026,over_under_25,under,2.1,0.5465,0.4762,0.0703,10.0,True,11.0,0,0
+bot_ou25_global,737bffd8-5990-4f7c-a62a-b14744c9c72c,2026-06-25T01:00:00+00:00,USL League One,USA,3,2026,over_under_25,under,2.3,0.5972,0.4348,0.1624,10.0,False,-10.0,2,1
+bot_ou25_global,d36d0dde-5dc4-4380-80a9-c4fbea448513,2026-06-25T14:00:00+00:00,Virsliga,Latvia,1,2026,over_under_25,over,1.84,0.6483,0.5435,0.1048,10.0,False,-10.0,1,0
+bot_ou25_global,50c50673-b2ab-428f-917f-3bdac5947b60,2026-06-25T17:00:00+00:00,Virsliga,Latvia,1,2026,over_under_25,over,2.08,0.6788,0.4808,0.198,10.0,True,10.8,1,5
+bot_ou25_global,4dbf4d29-df73-4967-b6f7-68dbb2cdfb11,2026-06-25T17:30:00+00:00,Løgmanssteypid,Faroe-Islands,0,2026,over_under_25,over,1.8,0.7227,0.5556,0.1671,10.0,True,8.0,4,0
+bot_ou25_global,157e0dc6-9bb8-41f5-89ff-ce99edbccee4,2026-06-25T18:00:00+00:00,Brasileiro U20 A,Brazil,0,2026,over_under_25,over,2.31,0.5344,0.4329,0.1015,10.0,True,13.1,2,5
+bot_ou25_global,198fbdfa-50b7-4887-9e06-90670c16ecff,2026-06-25T18:45:00+00:00,Premier League,Kuwait,1,2025,over_under_25,under,1.86,0.6475,0.5376,0.1099,10.0,True,8.6,1,0
+bot_ou25_global,46c28c2a-2b58-4873-8e17-d44a179c44d3,2026-06-26T09:30:00+00:00,Victoria NPL,Australia,1,2026,over_under_25,under,2.21,0.5702,0.4525,0.1177,10.0,True,12.1,0,1
+bot_ou25_global,75b25956-9d17-444f-ba89-389c03ab9b85,2026-06-26T10:30:00+00:00,Victoria NPL,Australia,1,2026,over_under_25,over,1.9,0.7575,0.5263,0.2312,10.0,False,-10.0,0,1
+bot_ou25_global,5e25f713-8dc7-44b8-8d37-77a613cc1094,2026-06-26T12:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,1.9,0.652,0.5263,0.1257,10.0,True,9.0,1,1
+bot_ou25_global,fe615899-4fec-49f9-8af0-9a41de828ef6,2026-06-26T15:00:00+00:00,Virsliga,Latvia,1,2026,over_under_25,over,1.72,0.8108,0.5814,0.2294,10.0,True,7.2,3,2
+bot_ou25_global,0217dd73-82a1-4195-9048-b565d475ab71,2026-06-26T16:00:00+00:00,Ykkösliiga,Finland,1,2026,over_under_25,over,1.76,0.68,0.5682,0.1118,10.0,False,-10.0,2,0
+bot_ou25_global,9de12107-2ab2-4346-beca-d67752c56192,2026-06-26T16:00:00+00:00,Ykkösliiga,Finland,1,2026,over_under_25,over,2.05,0.706,0.4878,0.2182,10.0,True,10.5,2,1
+bot_ou25_global,f71ad36b-1169-4348-9661-6cce30e66cc8,2026-06-26T17:00:00+00:00,Meistriliiga,Estonia,1,2026,over_under_25,under,2.2,0.5429,0.4545,0.0884,10.0,True,12.0,1,0
+bot_ou25_global,0f031892-b588-4936-b287-01e32330c2ea,2026-06-26T17:00:00+00:00,Premier League,Belarus,1,2026,over_under_25,over,2.1,0.5835,0.4762,0.1073,10.0,False,-10.0,1,1
+bot_ou25_global,3b1008f0-4d3a-451b-b611-cf49ac07a97a,2026-06-26T17:45:00+00:00,Premier League,Kuwait,1,2025,over_under_25,over,2.02,0.6512,0.495,0.1562,10.0,True,10.2,1,3
+bot_ou25_global,ff3d3cb6-2f74-4fe4-9582-d7f1fae4d5c7,2026-06-26T17:45:00+00:00,Premier League,Kuwait,1,2025,over_under_25,under,2.25,0.5104,0.4444,0.066,10.0,True,12.5,1,1
+bot_ou25_global,e1489004-37c4-4dbd-9af5-2087a93a4fcf,2026-06-26T18:30:00+00:00,Premier Division,Ireland,1,2026,over_under_25,under,2.2,0.5743,0.4545,0.1198,10.0,False,-10.0,3,1
+bot_ou25_global,b04c4185-2ebb-448f-a410-5c48373e2649,2026-06-26T18:45:00+00:00,Premier Division,Ireland,1,2026,over_under_25,under,1.91,0.5957,0.5236,0.0721,10.0,True,9.1,2,0
+bot_ou25_global,52deaa28-183d-4581-b7be-5d77fe04fd6b,2026-06-26T18:45:00+00:00,First Division,Ireland,1,2026,over_under_25,under,1.95,0.5903,0.5128,0.0775,10.0,True,9.5,1,1
+bot_ou25_global,103b3255-a3ed-4dcb-a0f0-5b25be8be77c,2026-06-26T18:45:00+00:00,First Division,Ireland,1,2026,over_under_25,over,1.9,0.6865,0.5263,0.1602,10.0,False,-10.0,2,0
+bot_ou25_global,1e39c4ae-496d-47f2-9d1d-f0e56e6322a1,2026-06-29T15:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.05,0.6319,0.4878,0.1441,10.0,False,-10.0,4,3
+bot_ou25_global,69f86d66-a5aa-455c-ae9f-0e365e43b86b,2026-06-29T15:00:00+00:00,Virsliga,Latvia,1,2026,over_under_25,over,2.17,0.6604,0.4608,0.1996,10.0,False,-10.0,2,0
+bot_ou25_global,b497daf3-b078-478a-a66d-f0d8f800e315,2026-06-29T15:45:00+00:00,A Lyga,Lithuania,1,2026,over_under_25,over,2.1,0.5807,0.4762,0.1045,10.0,True,11.0,1,2
+bot_ou25_global,18aa91c4-b587-45c2-9c11-a427a631d550,2026-06-29T16:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.27,0.5211,0.4405,0.0806,10.0,True,12.7,1,1
+bot_ou25_global,2b41cbd8-a24e-44e4-9abe-5e88cb7d1f15,2026-06-29T16:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,over,1.78,0.6866,0.5618,0.1248,10.0,True,7.8,3,0
+bot_ou25_global,60fc380e-2f64-4a59-a746-a06683e5faa7,2026-06-29T17:00:00+00:00,World Cup,World,1,2026,over_under_25,over,2.3,0.6791,0.4348,0.2443,10.0,True,13.0,2,1
+bot_ou25_global,d41c4f7f-f450-43fb-bb53-a87e73a023b4,2026-06-29T17:30:00+00:00,Meistaradeildin,Faroe-Islands,1,2026,over_under_25,over,1.7,0.746,0.5882,0.1578,10.0,True,7.0,3,3
+bot_ou25_global,da7ed0c7-38b3-418b-93b1-ec9ee80192de,2026-06-29T17:45:00+00:00,Premier League,Kuwait,1,2025,over_under_25,over,1.9,0.5887,0.5263,0.0624,10.0,False,-10.0,0,0
+bot_ou25_global,e68d973d-2b5c-461a-a0f0-f39dd3437048,2026-06-29T17:45:00+00:00,Premier League,Kuwait,1,2025,over_under_25,under,2.45,0.4727,0.4082,0.0645,10.0,False,-10.0,3,0
+bot_ou25_global,1fe2cada-3d94-4846-96d5-464b0a176dd4,2026-06-29T18:00:00+00:00,Copa De La Liga,Peru,0,2026,over_under_25,under,2.1,0.594,0.4762,0.1178,10.0,True,11.0,0,0
+bot_ou25_global,91a6e431-84a7-4a8b-84ff-4773e85d5a45,2026-06-29T19:00:00+00:00,UEFA U19 Championship,World,1,2026,over_under_25,over,1.79,0.7929,0.5587,0.2342,10.0,True,7.9,1,3
+bot_ou25_global,1a10184c-138d-42e2-9bb2-98dcfd1c1ecc,2026-06-29T20:30:00+00:00,World Cup,World,1,2026,over_under_25,under,2.25,0.7387,0.4444,0.2943,10.0,True,12.5,1,1
+bot_ou25_global,725512b7-554c-4cb0-a80e-c33d8c407ca2,2026-06-29T23:00:00+00:00,Copa Chile,Chile,1,2026,over_under_25,under,2.4,0.5062,0.4167,0.0895,10.0,False,-10.0,0,3
+bot_ou25_global,7629b396-2026-43b3-bb89-ff8664375066,2026-06-30T18:30:00+00:00,Division Intermedia,Paraguay,2,2026,over_under_25,over,2.1,0.58,0.4762,0.1038,10.0,False,-10.0,1,0
+bot_ou25_global,5a186bbe-3be0-47ff-b79d-7902dd35e18f,2026-06-30T18:30:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.46,0.5,0.4065,0.0935,10.0,False,-10.0,0,3
+bot_ou25_global,f18532a3-fd30-42c0-9c95-e50320346f6e,2026-06-30T21:00:00+00:00,Division Intermedia,Paraguay,2,2026,over_under_25,under,1.8,0.7435,0.5556,0.1879,10.0,False,-10.0,1,2
+bot_ou25_global,7985434c-1091-4547-a06b-d61f8b21d302,2026-06-30T22:30:00+00:00,Serie C,Brazil,1,2026,over_under_25,under,1.81,0.7493,0.5525,0.1968,10.0,True,8.1,1,1
+bot_ou25_global,f6de2403-d6ab-4336-acd3-34775ce7f468,2026-07-01T08:30:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.38,0.5449,0.4202,0.1247,10.0,False,-10.0,2,1
+bot_ou25_global,ea8c9224-b0e4-4765-9a0b-f7e93a11a216,2026-07-01T10:30:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,over,1.73,0.6537,0.578,0.0757,10.0,True,7.3,2,3
+bot_ou25_global,1844e6e6-9a40-41e1-a210-5d8e7227d80e,2026-07-01T12:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,over,1.73,0.779,0.578,0.201,10.0,True,7.3,0,4
+bot_ou25_global,a4ae24be-34a3-448d-a4b5-7a7a25229a29,2026-07-01T14:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.46,0.5,0.4065,0.0935,10.0,False,-10.0,3,1
+bot_ou25_global,7be9d54c-bef5-4e8b-a857-5d6c9bf28e0a,2026-07-01T15:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,over,1.66,0.6842,0.6024,0.0818,10.0,True,6.6,4,1
+bot_ou25_global,bde4431e-21a9-4420-9eb2-2848516834a9,2026-07-01T15:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.4,0.5,0.4167,0.0833,10.0,True,14.0,0,0
+bot_ou25_global,fb0871ae-2942-4c4e-b2ae-00c19595a41c,2026-07-01T15:30:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.4,0.5,0.4167,0.0833,10.0,True,14.0,1,0
+bot_ou25_global,c8cf33df-1651-4e3b-a6be-b611acaf2f9a,2026-07-01T16:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,over,1.77,0.6251,0.565,0.0601,10.0,True,7.7,2,4
+bot_ou25_global,77d0f466-a39b-4794-9e00-ac0a6acff774,2026-07-01T17:00:00+00:00,Ettan - Södra,Sweden,3,2026,over_under_25,over,1.62,0.7318,0.6173,0.1145,10.0,True,6.2,3,2
+bot_ou25_global,45795899-6849-4e54-b4a3-9e279de01549,2026-07-01T18:00:00+00:00,Brasileiro U20 A,Brazil,0,2026,over_under_25,under,2.48,0.4706,0.4032,0.0674,10.0,False,-10.0,0,5
+bot_ou25_global,c198a6b5-6477-423f-a496-622f9e1f5906,2026-07-01T18:00:00+00:00,Brasileiro U20 A,Brazil,0,2026,over_under_25,under,2.18,0.6264,0.4587,0.1677,10.0,False,-10.0,3,1
+bot_ou25_global,f08d9ff2-0218-47d5-a29c-454e2a2b34e4,2026-07-01T18:00:00+00:00,Brasileiro U20 A,Brazil,0,2026,over_under_25,under,2.25,0.5426,0.4444,0.0982,10.0,True,12.5,1,0
+bot_ou25_global,f8431159-67a8-4a82-bf55-627a8b378c3a,2026-07-01T18:00:00+00:00,Mineiro - 2,Brazil,1,2026,over_under_25,over,2.5,0.5,0.4,0.1,10.0,True,15.0,2,1
+bot_ou25_global,716f3312-136a-4c7f-9777-cc619c170a30,2026-07-01T21:30:00+00:00,USL League One,USA,3,2026,over_under_25,under,2.5,0.5373,0.4,0.1373,10.0,False,-10.0,2,1
+bot_ou25_global,1b4202da-36f5-428d-99c3-42059385a34c,2026-07-01T23:00:00+00:00,USL League One,USA,3,2026,over_under_25,under,2.35,0.5003,0.4255,0.0748,10.0,True,13.5,2,0
+bot_ou25_global,a7d059e1-7d0a-4e75-88e9-7166feac4b73,2026-07-02T13:00:00+00:00,UEFA U19 Championship,World,1,2026,over_under_25,under,2.12,0.5961,0.4717,0.1244,10.0,True,11.2,0,0
+bot_ou25_global,9399c93c-e783-4627-9a1d-f1e531b01877,2026-07-02T15:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.3,0.55,0.4348,0.1152,10.0,False,-10.0,1,3
+bot_ou25_global,3aa8d08c-0ccc-4bfb-b913-6233948a5160,2026-07-02T15:00:00+00:00,1 Lyga,Lithuania,2,2026,over_under_25,over,1.83,0.6704,0.5464,0.124,10.0,True,8.3,3,0
+bot_ou25_global,3730688f-d08f-4baa-9958-e9c794c513c4,2026-07-02T15:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.3,0.5803,0.4348,0.1455,10.0,False,-10.0,4,1
+bot_ou25_global,5657d7da-211d-4165-a384-f3fb77089f90,2026-07-02T17:00:00+00:00,Botola Pro,Morocco,1,2025,over_under_25,over,2.4,0.4929,0.4167,0.0762,10.0,True,14.0,2,2
+bot_ou25_global,14c3e9eb-b23c-4da9-aaf9-3b374f1fe3d4,2026-07-02T17:00:00+00:00,Botola Pro,Morocco,1,2025,over_under_25,under,1.7,0.7124,0.5882,0.1242,10.0,False,-10.0,3,2
+bot_ou25_global,bd217fcc-fd96-4abe-8428-479f6d508c82,2026-07-03T03:00:00+00:00,World Cup,World,1,2026,over_under_25,over,2.28,0.638,0.4386,0.1994,10.0,False,-10.0,2,0
+bot_ou25_global,5f533b16-9479-4417-9588-121e733c57c2,2026-07-03T15:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.2,0.5547,0.4545,0.1002,10.0,False,-10.0,1,2
+bot_ou25_global,96d1ca4e-7bd6-45bd-b946-4dc68ef01c25,2026-07-03T15:30:00+00:00,Ykkösliiga,Finland,1,2026,over_under_25,over,2.19,0.6398,0.4566,0.1832,10.0,True,11.9,3,3
+bot_ou25_global,3957879a-6fea-41b1-91c1-0788f6892097,2026-07-03T15:30:00+00:00,Ykkösliiga,Finland,1,2026,over_under_25,over,1.71,0.6935,0.5848,0.1087,10.0,False,-10.0,1,0
+bot_ou25_global,40f9268b-da5c-4ee6-96cd-03eeeaa62555,2026-07-03T17:30:00+00:00,Division Intermedia,Paraguay,2,2026,over_under_25,over,2.5,0.5313,0.4,0.1313,10.0,False,-10.0,0,1
+bot_ou25_global,9ec99521-8604-4c18-9fa7-b69ff2836b7c,2026-07-03T18:00:00+00:00,Paulista - U20,Brazil,1,2026,over_under_25,over,1.8,0.793,0.5556,0.2374,10.0,False,-10.0,1,0
+bot_ou25_global,90080d94-30e2-4fad-b20a-724f23b2bcda,2026-07-03T18:00:00+00:00,Paulista - U20,Brazil,1,2026,over_under_25,over,1.8,0.793,0.5556,0.2374,10.0,False,-10.0,0,2
+bot_ou25_global,14576801-553f-453a-abda-c6f508a591cb,2026-07-03T18:00:00+00:00,Paulista - U20,Brazil,1,2026,over_under_25,over,1.7,0.793,0.5882,0.2048,10.0,False,-10.0,1,0
+bot_ou25_global,439d5884-cb48-4489-9540-e21b82e3f9e4,2026-07-03T18:00:00+00:00,Paulista - U20,Brazil,1,2026,over_under_25,over,1.95,0.6078,0.5128,0.095,10.0,True,9.5,2,2
+bot_ou25_global,22457055-16ef-494b-a34b-047f4bc252ce,2026-07-03T18:00:00+00:00,Paulista - U20,Brazil,1,2026,over_under_25,over,1.67,0.793,0.5988,0.1942,10.0,False,-10.0,2,0
+bot_ou25_global,9b837d96-e7ca-4043-be4d-8627b09f216b,2026-07-03T18:00:00+00:00,Paulista - U20,Brazil,1,2026,over_under_25,over,1.8,0.6771,0.5556,0.1215,10.0,False,-10.0,0,2
+bot_ou25_global,6a5bc480-fccf-4aa7-8eb7-ce881cda9cc4,2026-07-03T18:00:00+00:00,Meistaradeildin,Faroe-Islands,1,2026,over_under_25,over,1.67,0.7555,0.5988,0.1567,10.0,False,-10.0,0,0
+bot_ou25_global,1b6468a7-6a0c-47e4-9ee4-8dc1b91d2b06,2026-07-03T18:45:00+00:00,Premier Division,Ireland,1,2026,over_under_25,under,2.11,0.5899,0.4739,0.116,10.0,True,11.1,0,2
+bot_ou25_global,95ce2fad-c3ca-4011-92af-fac2241c59b9,2026-07-03T18:45:00+00:00,Premier Division,Ireland,1,2026,over_under_25,under,2.29,0.5222,0.4367,0.0855,10.0,False,-10.0,2,4
+bot_ou25_global,771ba3f9-2bf6-4e8d-9b24-461bf41bc96b,2026-07-03T18:45:00+00:00,First Division,Ireland,1,2026,over_under_25,under,2.36,0.5,0.4237,0.0763,10.0,True,13.6,1,0
+bot_ou25_global,8db99a6c-2dad-45a2-a92a-08576107a064,2026-07-03T18:45:00+00:00,First Division,Ireland,1,2026,over_under_25,under,1.79,0.7572,0.5587,0.1985,10.0,False,-10.0,2,1
+bot_ou25_global,67b359cc-14be-45a2-b0f2-cc52ceed5d9f,2026-07-03T19:00:00+00:00,Premier Division,Ireland,1,2026,over_under_25,under,2.3,0.5328,0.4348,0.098,10.0,False,-10.0,2,1
+bot_ou25_global,b7eaae89-2f91-4cf1-be3d-06fef9747e7a,2026-07-03T23:30:00+00:00,USL League One,USA,3,2026,over_under_25,under,2.08,0.6697,0.4808,0.1889,10.0,False,-10.0,2,3
+bot_ou25_global,94420434-8704-4bf8-aa26-8aca6ae3fa86,2026-07-03T23:30:00+00:00,USL League One,USA,3,2026,over_under_25,over,1.85,0.7287,0.5405,0.1882,10.0,False,-10.0,0,0
+bot_ou25_global,c5252513-d1d5-43e3-a205-e2c1323d0ca8,2026-07-04T01:30:00+00:00,NWSL Women,USA,0,2026,over_under_25,over,1.75,0.6593,0.5714,0.0879,10.0,True,7.5,0,3
+bot_ou25_global,b067a6bf-c2b6-4c5e-8b88-f6c80c3aff12,2026-07-04T05:00:00+00:00,Victoria NPL,Australia,1,2026,over_under_25,over,1.61,0.7607,0.6211,0.1396,10.0,True,6.1,2,3
+bot_ou25_global,dd3cfa62-f240-40ff-a81f-bd7b0d98e087,2026-07-04T07:00:00+00:00,Western Australia State League 1,Australia,1,2026,over_under_25,under,2.35,0.4888,0.4255,0.0633,10.0,False,-10.0,3,4
+bot_ou25_global,64ac2c8a-7ca7-4537-9118-c6bd910471bc,2026-07-04T07:30:00+00:00,New South Wales NPL,Australia,1,2026,over_under_25,under,2.4,0.5908,0.4167,0.1741,10.0,False,-10.0,3,2
+bot_ou25_global,1861e1cb-d248-4b66-bd0b-58b7ea6d2aef,2026-07-04T08:30:00+00:00,League Two,China,3,2026,over_under_25,over,1.85,0.7037,0.5405,0.1632,10.0,True,8.5,5,1
+bot_ou25_global,7dde3d6b-a6ae-4167-a469-113b8e70cce8,2026-07-04T10:00:00+00:00,League One,China,1,2026,over_under_25,over,2.23,0.6544,0.4484,0.206,10.0,True,12.3,3,0
+bot_ou25_global,1ae23c89-c9ee-41b8-b508-8d634fa18783,2026-07-04T10:30:00+00:00,K League 2,South-Korea,2,2026,over_under_25,over,2.11,0.6432,0.4739,0.1693,10.0,False,-10.0,0,1
+bot_ou25_global,37223aa8-d759-42f1-98b1-9a610d101aca,2026-07-04T10:30:00+00:00,K League 1,South-Korea,1,2026,over_under_25,over,2.48,0.5929,0.4032,0.1897,10.0,True,14.8,1,2
+bot_ou25_global,350da798-dda8-49ec-a31b-9d2da26194d9,2026-07-04T11:00:00+00:00,League One,China,1,2026,over_under_25,under,1.85,0.6545,0.5405,0.114,10.0,False,-10.0,2,2
+bot_ou25_global,c887da98-defd-4e3f-983d-1494d6869fff,2026-07-04T11:00:00+00:00,League One,China,1,2026,over_under_25,over,2.3,0.7306,0.4348,0.2958,10.0,True,13.0,2,1
+bot_ou25_global,e3a0e94e-84fd-4e63-ae32-0b1cfec58231,2026-07-04T11:00:00+00:00,League One,China,1,2026,over_under_25,under,1.8,0.7005,0.5556,0.1449,10.0,False,-10.0,2,1
+bot_ou25_global,bee8f23e-4ad5-4e34-9652-b76e1af305f1,2026-07-04T11:00:00+00:00,League One,China,1,2026,over_under_25,over,2.08,0.644,0.4808,0.1632,10.0,False,-10.0,0,0
+bot_ou25_global,6eece560-1d88-4e16-9cd6-ea01161e03b6,2026-07-04T11:30:00+00:00,League Two,China,3,2026,over_under_25,over,2.5,0.5552,0.4,0.1552,10.0,True,15.0,1,2
+bot_ou25_global,32bcf21c-84d8-4b08-a22f-6cae3c27aee9,2026-07-04T12:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.26,0.5229,0.4425,0.0804,10.0,True,12.6,0,0
+bot_ou25_global,e93f4ab0-57e1-4bb8-a257-29856e231996,2026-07-04T12:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,over,1.67,0.8214,0.5988,0.2226,10.0,True,6.7,2,3
+bot_ou25_global,9bdb70a2-fb63-4ad8-b58f-6579f5e8af33,2026-07-04T12:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,over,1.64,0.6968,0.6098,0.087,10.0,True,6.4,4,0
+bot_ou25_global,bcb9b6ba-bfc1-47ad-9793-89231f189848,2026-07-04T13:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.35,0.6621,0.4255,0.2366,10.0,False,-10.0,0,4
+bot_ou25_global,350a88f0-a6b7-4e34-9b1e-c9dc1792669c,2026-07-04T13:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,over,1.85,0.6196,0.5405,0.0791,10.0,False,-10.0,2,0
+bot_ou25_global,122dff56-4d74-42aa-b064-e5b761f5e7cd,2026-07-04T13:00:00+00:00,Premier League,Belarus,1,2026,over_under_25,over,2.22,0.5918,0.4505,0.1413,10.0,False,-10.0,1,0
+bot_ou25_global,c3c3cec1-3e54-4c0c-bba1-f525f4c819ba,2026-07-04T13:00:00+00:00,Allsvenskan,Sweden,1,2026,over_under_25,under,2.01,0.5819,0.4975,0.0844,10.0,False,-10.0,1,3
+bot_ou25_global,583c3269-3b02-48e4-ae1d-92b182b7a943,2026-07-04T13:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,over,1.6,0.7041,0.625,0.0791,10.0,False,-10.0,2,0
+bot_ou25_global,378dd6f7-2974-44ae-82ef-dd879a2fe167,2026-07-04T13:00:00+00:00,Ykkösliiga,Finland,1,2026,over_under_25,over,2.0,0.6249,0.5,0.1249,10.0,True,10.0,0,3
+bot_ou25_global,9e42bbd5-0c9d-446e-a1e4-72875db3226e,2026-07-04T13:00:00+00:00,A Lyga,Lithuania,1,2026,over_under_25,over,1.98,0.6312,0.5051,0.1261,10.0,False,-10.0,1,1
+bot_ou25_global,9fed06c4-5917-4fdb-ad7c-86e7b5fdad77,2026-07-04T14:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.1,0.5993,0.4762,0.1231,10.0,True,11.0,2,0
+bot_ou25_global,df72073e-7697-456e-aea8-00e33391363d,2026-07-04T14:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.5,0.5,0.4,0.1,10.0,False,-10.0,1,2
+bot_ou25_global,d0b012b6-8c9c-4c99-9221-1526fdb8a115,2026-07-04T14:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.4,0.6224,0.4167,0.2057,10.0,False,-10.0,1,2
+bot_ou25_global,2a41e285-7cb6-4c56-9220-b25049ceeda3,2026-07-04T14:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.3,0.5018,0.4348,0.067,10.0,False,-10.0,0,3
+bot_ou25_global,e717c0f3-82a2-48d7-8161-4c1168a564bb,2026-07-04T15:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.3,0.5171,0.4348,0.0823,10.0,True,13.0,1,1
+bot_ou25_global,15649deb-2c13-4613-b307-54bee98558fd,2026-07-04T15:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.35,0.5,0.4255,0.0745,10.0,False,-10.0,2,1
+bot_ou25_global,d0f7896e-e7f6-4d51-b9ad-a6352fca2abc,2026-07-04T15:30:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.13,0.6319,0.4695,0.1624,10.0,False,-10.0,0,3
+bot_ou25_global,df0f6912-20d5-43f8-8d5a-c38cbb8f238b,2026-07-04T16:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.35,0.5,0.4255,0.0745,10.0,False,-10.0,4,1
+bot_ou25_global,72e1ba66-fe2e-46e2-a40b-f970d24eec28,2026-07-04T16:00:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.15,0.5771,0.4651,0.112,10.0,True,11.5,1,1
+bot_ou25_global,849fd237-83dc-4972-a539-a4ee1b80e9c8,2026-07-04T16:00:00+00:00,1. Division,Norway,1,2026,over_under_25,under,2.45,0.5,0.4082,0.0918,10.0,True,14.5,1,1
+bot_ou25_global,2814eab8-8dc7-422a-b9aa-2e98f076baf4,2026-07-04T16:15:00+00:00,Meistaradeildin,Faroe-Islands,1,2026,over_under_25,over,1.75,0.7048,0.5714,0.1334,10.0,True,7.5,1,2
+bot_ou25_global,32f89dc4-35d9-4deb-abd7-7c15fa637a46,2026-07-04T16:30:00+00:00,Friendlies Clubs,World,1,2026,over_under_25,under,2.25,0.5374,0.4444,0.093,10.0,False,-10.0,2,1
+bot_ou25_global,fb3ab94c-3ee1-4dfc-b86d-2001cbe90e83,2026-07-04T17:00:00+00:00,Segunda División,Uruguay,2,2026,over_under_25,over,2.35,0.523,0.4255,0.0975,10.0,True,13.5,1,2
+bot_ou25_global,fd5bca1c-7bc5-4614-97ec-25bf224c5a80,2026-07-04T17:00:00+00:00,Super Liga,Moldova,1,2026,over_under_25,under,1.85,0.6474,0.5405,0.1069,10.0,False,-10.0,5,0
+bot_ou25_global,7739b2f5-6e2f-4b47-ab71-2b3927b8e0d4,2026-07-04T18:00:00+00:00,Primera C,Argentina,4,2026,over_under_25,over,2.5,0.4768,0.4,0.0768,10.0,False,-10.0,0,1
+bot_ou25_global,e75d3a5d-a4ae-4f73-9ac2-9b61d0b178a2,2026-07-04T18:00:00+00:00,Paulista - U20,Brazil,1,2026,over_under_25,over,1.8,0.6909,0.5556,0.1353,10.0,False,-10.0,0,0
+bot_ou25_global,3c1f27da-1cb6-41a8-81e3-8e17b4086d96,2026-07-04T18:00:00+00:00,Baiano U20,Brazil,1,2026,over_under_25,under,2.1,0.5607,0.4762,0.0845,10.0,False,-10.0,4,0
+bot_ou25_global,2d9b90d3-a8bc-468d-8821-f9643463ea96,2026-07-04T18:30:00+00:00,First Division,Ireland,1,2026,over_under_25,over,1.86,0.6308,0.5376,0.0932,10.0,True,8.6,2,1
+bot_ou25_global,2082d3ee-2b7d-4639-8322-be2bdda52bc0,2026-07-04T19:00:00+00:00,Liga Pro,Ecuador,1,2026,over_under_25,over,2.35,0.5595,0.4255,0.134,10.0,True,13.5,1,3
+bot_ou25_global,5885fc1d-d374-437f-af6a-ddd6c6ca0bc6,2026-07-04T19:00:00+00:00,Serie B,Brazil,1,2026,over_under_25,over,2.31,0.5407,0.4329,0.1078,10.0,False,-10.0,1,0

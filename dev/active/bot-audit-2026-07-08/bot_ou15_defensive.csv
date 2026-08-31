@@ -1,0 +1,7 @@
+bot,match_id,date,league,country,tier,season,market,selection,odds,model_prob,implied_prob,edge,stake,won,pnl,score_home,score_away
+bot_ou15_defensive,f18532a3-fd30-42c0-9c95-e50320346f6e,2026-06-30T21:00:00+00:00,Division Intermedia,Paraguay,2,2026,over_under_15,under,3.3,0.4628,0.303,0.1598,10.0,False,-10.0,1,2
+bot_ou15_defensive,7985434c-1091-4547-a06b-d61f8b21d302,2026-06-30T22:30:00+00:00,Serie C,Brazil,1,2026,over_under_15,under,3.4,0.4669,0.2941,0.1728,10.0,False,-10.0,1,1
+bot_ou15_defensive,14c3e9eb-b23c-4da9-aaf9-3b374f1fe3d4,2026-07-02T17:00:00+00:00,Botola Pro,Morocco,1,2025,over_under_15,under,3.0,0.4263,0.3333,0.093,10.0,False,-10.0,3,2
+bot_ou15_defensive,8db99a6c-2dad-45a2-a92a-08576107a064,2026-07-03T18:45:00+00:00,First Division,Ireland,1,2026,over_under_15,under,3.3,0.4763,0.303,0.1733,10.0,False,-10.0,2,1
+bot_ou15_defensive,fd5bca1c-7bc5-4614-97ec-25bf224c5a80,2026-07-04T17:00:00+00:00,Super Liga,Moldova,1,2026,over_under_15,under,3.28,0.3671,0.3049,0.0622,10.0,False,-10.0,5,0
+bot_ou15_defensive,5fe0d386-9648-48f0-9732-dd822c1d2fe1,2026-07-04T18:00:00+00:00,Primera Nacional,Argentina,2,2026,over_under_15,under,2.38,0.4749,0.4202,0.0547,10.0,False,-10.0,1,2

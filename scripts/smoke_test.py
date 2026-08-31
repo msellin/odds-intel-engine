@@ -26755,5 +26755,44 @@ def test_model_split_version_guard():
     return "per-market model routing intact (global/OU/1X2 may differ)"
 
 
+@test("WEEKLY-EVAL-PERMARKET-BASELINE — each market scored against the version that serves it")
+def test_weekly_eval_per_market_baseline():
+    """The weekly retrain email scored EVERY market against one global
+    MODEL_VERSION. Since 2026-07-19 that global has served no market head at
+    all (1X2 -> v20260823, OU -> v20260719, global -> v20260712), so every
+    weekly verdict compared against a model that was not live anywhere.
+    The 2026-08-26 fix only printed a warning; the table stayed wrong.
+
+    Also guards the no-skill column: a head that loses to a constant fixed at
+    the observed base rate has no skill regardless of how it scores against
+    the incumbent, which is how the OU 2.5 and BTTS heads stayed invisible.
+    """
+    import ast
+    from pathlib import Path as _P
+    src = _P(__file__).resolve().parent.parent / "scripts" / "weekly_eval_and_compare.py"
+    code = src.read_text()
+    ast.parse(code)  # must stay importable
+
+    # Per-market routing table, and every evaluated market must be mapped.
+    assert "MARKET_HEAD" in code, "eval must map each market to its model head"
+    for mkt in ("1x2_home", "over25", "btts_yes", "ah_home_+0.5"):
+        assert f'"{mkt}"' in code, f"{mkt} must appear in the market->head map"
+    assert "_resolve_version" in code, \
+        "baselines must be resolved the way inference resolves them, not from the global env"
+    assert "baseline_for" in code and "by_version" in code, \
+        "each distinct live baseline must be evaluated and applied per market"
+
+    # The legacy single-baseline path must remain reachable but opt-in.
+    assert "--single-baseline" in code, "legacy single-baseline mode must stay available"
+    assert 'default=False' in code.split("--single-baseline")[1][:400], \
+        "per-market baselines must be the DEFAULT; single-baseline is the escape hatch"
+
+    # No-skill guard.
+    assert "_no_skill" in code and "NO SKILL" in code, \
+        "eval must flag heads that lose to a base-rate constant"
+    assert "no_skill_markets" in code, "SUMMARY_JSON must carry the no-skill list for the digest"
+    return "per-market baselines are the default; no-skill heads are flagged"
+
+
 if __name__ == "__main__":
     main()

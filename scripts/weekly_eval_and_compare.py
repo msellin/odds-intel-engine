@@ -269,6 +269,16 @@ def main():
     # which is what happened to OU from 2026-07-19 onward.
     p.add_argument("--warn-split-baseline", action="store_true", default=True,
                    help="Warn when production is served by more than one version")
+    # WEEKLY-EVAL-PERMARKET-BASELINE-2026-08-31: warning about the split was
+    # never enough — the table still scored every market against the ONE
+    # version passed in. Since 2026-07-19 the global MODEL_VERSION has served
+    # no market head at all (1X2 -> v20260823, OU -> v20260719, global ->
+    # v20260712), so every weekly verdict was measured against a model that
+    # was not live anywhere. Now each market is scored against the version
+    # that actually serves it, resolved the way inference resolves it.
+    p.add_argument("--single-baseline", action="store_true", default=False,
+                   help="Legacy: score every market against the one `production` "
+                        "arg instead of its live per-market baseline")
     p.add_argument("--days", type=int, default=14, help="Held-out window in days (default 14)")
     args = p.parse_args()
 
@@ -294,40 +304,79 @@ def main():
     if not rows:
         console.print("[red]No held-out data — exiting[/red]"); sys.exit(0)
 
-    # Evaluate both
-    console.print(f"\n[bold]Evaluating {args.candidate}[/bold]")
-    cand_metrics = evaluate(args.candidate, rows)
-    console.print(f"[bold]Evaluating {args.production}[/bold]")
-    prod_metrics = evaluate(args.production, rows)
+    # Which live model version actually serves each evaluated market head.
+    # BTTS and AH are derived from the Poisson goal regressors, so they follow
+    # the 'goals' head; over/under follows 'ou'; the 1x2 outcomes follow '1x2'.
+    MARKET_HEAD = {
+        "1x2_home": "1x2", "1x2_draw": "1x2", "1x2_away": "1x2",
+        "over25": "ou", "under25": "ou",
+        "btts_yes": "goals", "btts_no": "goals",
+        "ah_home_-0.5": "goals", "ah_home_+0.5": "goals",
+        "ah_home_-1.5": "goals", "ah_home_+1.5": "goals",
+    }
 
-    if not cand_metrics or not prod_metrics:
-        console.print("[red]Could not evaluate one of the versions[/red]"); sys.exit(1)
-
-    # Persist
-    cand_note = f"OFFLINE eval vs production={args.production} (n={len(rows)})"
-    prod_note = f"OFFLINE eval baseline vs candidate={args.candidate} (n={len(rows)})"
-    _persist_metrics(args.candidate, (start.isoformat(), end.isoformat()), len(rows), cand_metrics, cand_note)
-    _persist_metrics(args.production, (start.isoformat(), end.isoformat()), len(rows), prod_metrics, prod_note)
-    console.print(f"\n[green]Persisted cv_metrics for both versions[/green]")
-
-    # Print comparison
-    if args.warn_split_baseline:
+    def _live_baselines() -> dict:
+        """market -> version actually serving it right now."""
+        if args.single_baseline:
+            return {m: args.production for m in MARKET_HEAD}
         try:
             from workers.model.xgboost_ensemble import _resolve_version as _rv
-            live = {k: _rv(k) for k in ("1x2", "ou", "goals")}
-            off = {k: v for k, v in live.items() if v != args.production}
-            if off:
-                console.print(
-                    f"[yellow]WARNING: production is split. These market heads are "
-                    f"NOT served by {args.production}: {off}. Their rows below "
-                    f"compare against a model that is not live.[/yellow]"
-                )
-        except Exception:
-            pass
+            head_version = {h: _rv(h) for h in ("1x2", "ou", "goals")}
+        except Exception as e:
+            console.print(f"[yellow]Could not resolve per-market versions ({e}) — "
+                          f"falling back to the single baseline {args.production}[/yellow]")
+            return {m: args.production for m in MARKET_HEAD}
+        return {m: head_version[h] for m, h in MARKET_HEAD.items()}
 
-    console.print(f"\n[bold]CANDIDATE {args.candidate} vs PRODUCTION {args.production}[/bold]\n")
-    print(f"  {'market':<16}{'log_loss_cand':>14}{'log_loss_prod':>15}{'Δll%':>8}{'Δbrier%':>10}{'verdict':>12}")
-    print("  " + "-" * 76)
+    baseline_for = _live_baselines()
+
+    # Evaluate the candidate once, and each DISTINCT baseline version once.
+    console.print(f"\n[bold]Evaluating {args.candidate}[/bold]")
+    cand_metrics = evaluate(args.candidate, rows)
+    if not cand_metrics:
+        console.print(f"[red]Could not evaluate candidate {args.candidate}[/red]"); sys.exit(1)
+
+    baseline_versions = sorted(set(baseline_for.values()))
+    by_version = {}
+    for v in baseline_versions:
+        console.print(f"[bold]Evaluating baseline {v}[/bold]")
+        m = evaluate(v, rows)
+        if not m:
+            console.print(f"[red]Could not evaluate baseline {v}[/red]"); sys.exit(1)
+        by_version[v] = m
+
+    # prod_metrics stays keyed by market, but each market now comes from the
+    # version that actually serves it.
+    prod_metrics = {}
+    for mkt, ver in baseline_for.items():
+        if mkt in by_version[ver]:
+            prod_metrics[mkt] = by_version[ver][mkt]
+
+    # Persist — the candidate, plus every distinct live baseline scored here.
+    win = (start.isoformat(), end.isoformat())
+    cand_note = (f"OFFLINE eval vs live per-market baselines "
+                 f"{ {m: baseline_for[m] for m in sorted(set(baseline_for))} } (n={len(rows)})"
+                 if not args.single_baseline else
+                 f"OFFLINE eval vs production={args.production} (n={len(rows)})")
+    _persist_metrics(args.candidate, win, len(rows), cand_metrics, cand_note)
+    for v, m in by_version.items():
+        _persist_metrics(v, win, len(rows), m,
+                         f"OFFLINE eval baseline vs candidate={args.candidate} (n={len(rows)})")
+    console.print(f"\n[green]Persisted cv_metrics for {args.candidate} "
+                  f"and {len(by_version)} baseline version(s)[/green]")
+
+    if args.single_baseline:
+        console.print(f"[yellow]--single-baseline: every market scored against "
+                      f"{args.production}; markets it does not serve are NOT a live "
+                      f"comparison.[/yellow]")
+    elif len(baseline_versions) > 1:
+        console.print(f"[cyan]Production is split across {len(baseline_versions)} versions; "
+                      f"each market below is scored against the one that serves it.[/cyan]")
+
+    console.print(f"\n[bold]CANDIDATE {args.candidate} vs LIVE PRODUCTION[/bold]\n")
+    print(f"  {'market':<16}{'baseline':>12}{'ll_cand':>10}{'ll_prod':>10}"
+          f"{'Δll%':>8}{'no_skill':>10}{'verdict':>12}")
+    print("  " + "-" * 78)
     market_verdicts = {}
     eval_markets = [
         "1x2_home", "1x2_draw", "1x2_away",
@@ -335,6 +384,19 @@ def main():
         "btts_yes", "btts_no",
         "ah_home_-0.5", "ah_home_+0.5", "ah_home_-1.5", "ah_home_+1.5",
     ]
+    # A model that cannot beat a constant fixed at the observed base rate has
+    # NO SKILL, whatever its absolute log loss looks like. Reporting this next
+    # to the head-to-head is what surfaced that the OU 2.5 and BTTS heads had
+    # been worse than guessing the average for months while looking merely
+    # "slightly behind" the incumbent. `hit_rate` here is the realised outcome
+    # rate for the market, so it IS the base rate.
+    def _no_skill(m):
+        pr = m.get("hit_rate")
+        if pr is None or not (0 < pr < 1):
+            return None
+        return -(pr * math.log(pr) + (1 - pr) * math.log(1 - pr))
+
+    no_skill_fails = []
     for mkt in eval_markets:
         c = cand_metrics.get(mkt); p = prod_metrics.get(mkt)
         if not c or not p:
@@ -343,7 +405,22 @@ def main():
         br_delta = 100 * (c["brier"] - p["brier"]) / p["brier"]
         verdict = "BETTER" if ll_delta < -1 else ("WORSE" if ll_delta > 1 else "TIE")
         market_verdicts[mkt] = verdict
-        print(f"  {mkt:<16}{c['log_loss']:>14.4f}{p['log_loss']:>15.4f}{ll_delta:>+7.1f}%{br_delta:>+9.1f}%{verdict:>12}")
+        ns = _no_skill(c)
+        ns_txt = "n/a"
+        if ns is not None:
+            beats = c["log_loss"] < ns
+            ns_txt = f"{ns:.4f}" + ("" if beats else " !")
+            if not beats:
+                no_skill_fails.append(mkt)
+        base = baseline_for.get(mkt, args.production)
+        print(f"  {mkt:<16}{base:>12}{c['log_loss']:>10.4f}{p['log_loss']:>10.4f}"
+              f"{ll_delta:>+7.1f}%{ns_txt:>10}{verdict:>12}")
+
+    if no_skill_fails:
+        console.print(
+            f"\n[red]NO SKILL: {', '.join(no_skill_fails)} — the candidate loses to a "
+            f"constant fixed at the base rate. Beating the incumbent on these markets "
+            f"is not evidence the head works.[/red]")
 
     # Headline summary for cron output
     better = sum(1 for v in market_verdicts.values() if v == "BETTER")
@@ -354,6 +431,9 @@ def main():
     print()
     print("SUMMARY_JSON:", json.dumps({
         "candidate": args.candidate, "production": args.production,
+        "baseline_per_market": baseline_for,
+        "baseline_versions": baseline_versions,
+        "no_skill_markets": no_skill_fails,
         "holdout_window": f"{start}..{end}", "n_matches": len(rows),
         "market_verdicts": market_verdicts,
         "candidate_metrics": cand_metrics, "production_metrics": prod_metrics,
