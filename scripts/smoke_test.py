@@ -26728,5 +26728,32 @@ def test_coolbet_moved_fixture_2026_08_31():
     return "a lone postponed fixture is bet; two legs still refused; squad guard unaffected"
 
 
+@test("MODEL-SPLIT-VERSION-GUARD — per-market model routing survives refactors")
+def test_model_split_version_guard():
+    """Production serves DIFFERENT model versions per market head, and the
+    weekly eval has already been burned once by assuming a single global
+    baseline (WEEKLY-EVAL-BASELINE-2026-08-26).
+
+    On 2026-08-31 the live split was global=v20260712 / OU=v20260719 /
+    1X2=v20260823 — i.e. the global MODEL_VERSION served NO market head, so
+    every weekly comparison scored candidates against a model that was not
+    live. Guard the resolver that makes the split expressible, so a refactor
+    that collapses it back to one global version fails loudly here.
+    """
+    import inspect
+    from workers.model import xgboost_ensemble as xe
+
+    assert hasattr(xe, "_resolve_version"), \
+        "per-market resolver _resolve_version must exist — production is split by market"
+    src = inspect.getsource(xe._resolve_version)
+    # Tier-specific OU override must be checked BEFORE the per-market one,
+    # and the bare global must remain the last-resort fallback.
+    for var in ("MODEL_VERSION_OU_T", "MODEL_VERSION_", "MODEL_VERSION"):
+        assert var in src, f"_resolve_version must consult {var}"
+    assert src.index("MODEL_VERSION_OU_T") < src.index("MODEL_VERSION_{"), \
+        "tier-specific OU override must be resolved before the generic per-market one"
+    return "per-market model routing intact (global/OU/1X2 may differ)"
+
+
 if __name__ == "__main__":
     main()
