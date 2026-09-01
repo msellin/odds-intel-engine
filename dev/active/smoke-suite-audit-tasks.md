@@ -339,6 +339,26 @@ un-pauses a live in-play bot. Both now assert against `INPLAY_BOTS`, the
 registry the dispatcher actually reads, plus a non-empty check so an empty
 registry cannot make the assertion vacuously true.
 
+**SHADOW-NO-BANKROLL** — shadow bets are virtual and must never move the real
+bots' bankroll. The test did `src.index("if shadow_mode:")` then searched the
+next 2000 characters for `"continue"`. There are **two** `if shadow_mode:`
+blocks in `run_morning`; `.index` finds the first, which does *not* end in
+`continue`, so the assertion was satisfied by spillover into unrelated code.
+
+| mutation | old grep test | new AST check |
+|---|---|---|
+| **drop the `continue` from the shadow block** | **PASS — missed** | FAIL (caught) |
+
+Without that `continue`, control falls through to `store_bet` and the bankroll
+mutation, so a virtual bet resizes the real bots' next stake.
+
+`run_morning` is far too I/O-heavy to drive, so this one stays static — but it
+now reads the **AST** rather than a character window: it locates the branch
+that actually appends to `_pending_shadow_rows`, asserts that branch terminates
+in `continue`, and asserts no `shadow_mode` branch assigns to anything
+bankroll-shaped. Not every improvement is "make it behavioural"; sometimes it
+is "make the static check semantic".
+
 ### Judged NOT worth converting (deliberate)
 
 - **REAL-BETS-EDGE-FORMULA-FIX** — the additive edge is computed inline inside

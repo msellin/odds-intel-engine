@@ -3193,21 +3193,66 @@ def _():
 def _():
     """Shadow bets are virtual — they MUST NOT subtract from _running_bankroll
     or trigger exposure caps. Otherwise a shadow run silently corrupts the
-    real bots' next bet sizing."""
-    import inspect
-    from workers.jobs.daily_pipeline_v2 import run_morning
-    src = inspect.getsource(run_morning)
+    real bots' next bet sizing.
 
-    # The shadow append block must be guarded by `if shadow_mode:` and
-    # `continue` (skipping the store_bet + bankroll mutation path).
-    shadow_block_idx = src.index("if shadow_mode:")
-    after_shadow = src[shadow_block_idx:shadow_block_idx + 2000]
-    assert "_pending_shadow_rows.append" in after_shadow, (
-        "shadow path must append to buffer instead of calling store_bet"
+    SMOKE-SUITE-AUDIT 2026-09-01: this took `src.index("if shadow_mode:")` and
+    searched the next 2000 characters for "continue". There are TWO
+    `if shadow_mode:` blocks in run_morning; `.index` finds the first, which
+    does NOT end in `continue`, so the assertion was satisfied by spillover
+    into unrelated code further down. It would have kept passing with the real
+    guard deleted.
+
+    run_morning is too I/O-heavy to drive, so this stays static — but it now
+    reads the AST instead of a character window, which is robust to
+    reformatting and actually scoped to the right block."""
+    import ast
+    import inspect
+    import textwrap
+    from workers.jobs.daily_pipeline_v2 import run_morning
+
+    src = inspect.getsource(run_morning)
+    fn = ast.parse(textwrap.dedent(src)).body[0]
+
+    shadow_ifs = [n for n in ast.walk(fn)
+                  if isinstance(n, ast.If)
+                  and isinstance(n.test, ast.Name) and n.test.id == "shadow_mode"]
+    assert shadow_ifs, "run_morning must branch on shadow_mode"
+
+    # The block that buffers the shadow row must terminate with `continue`, so
+    # control never reaches store_bet or the bankroll mutation below it.
+    def _buffers_shadow_row(node) -> bool:
+        """True if this branch appends to _pending_shadow_rows.
+
+        Matched structurally: ast.dump renders the call as
+        Attribute(value=Name(id='_pending_shadow_rows'), attr='append'), so a
+        substring search for "_pending_shadow_rows.append" never matches.
+        """
+        return any(
+            isinstance(a, ast.Attribute) and a.attr == "append"
+            and isinstance(a.value, ast.Name)
+            and a.value.id == "_pending_shadow_rows"
+            for a in ast.walk(node)
+        )
+
+    buffering = [n for n in shadow_ifs if _buffers_shadow_row(n)]
+    assert buffering, (
+        "shadow path must append to _pending_shadow_rows instead of calling store_bet"
     )
-    assert "continue" in after_shadow, (
-        "shadow path must `continue` past the real-bet store + bankroll mutation"
+    assert any(isinstance(b.body[-1], ast.Continue) for b in buffering), (
+        "the shadow buffering block must END with `continue` — otherwise control "
+        "falls through to store_bet and the real bots' bankroll is mutated by a "
+        "virtual bet"
     )
+
+    # No shadow_mode branch may write anything bankroll-shaped.
+    for blk in shadow_ifs:
+        stores = {n.id for stmt in blk.body for n in ast.walk(stmt)
+                  if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)}
+        bad = {n for n in stores if "bankroll" in n.lower()}
+        assert not bad, (
+            f"shadow_mode branch assigns to {sorted(bad)} — shadow bets are "
+            "virtual and must never move the real bots' bankroll"
+        )
 
     # Exposure cap must be gated by `not shadow_mode`.
     assert "not shadow_mode and _league_count >= 2" in src, (
