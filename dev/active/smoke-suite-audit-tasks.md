@@ -219,3 +219,54 @@ Both are real, and the tests are correct:
 
 **EMAIL-DIGEST-SMART** stays red pending the restore-vs-retire decision on
 `job_email_digest`.
+
+---
+
+## Final state — 2026-09-01 (CI-verified)
+
+| | start | end |
+|---|---|---|
+| tests | 762 | **726** |
+| passed | 685 | 668 |
+| **failed** | **23** | **3** |
+| skipped | 54 | 55 |
+| runtime | 175.1s | **95.5s** |
+
+**Zero new failures introduced at any point.** Verified by diffing failure sets
+by test ID across every CI run, not by comparing totals.
+
+The three still red are all correct — each is the suite reporting something
+true, and none should be "fixed" in the test:
+
+1. **BOT-BANKROLL-DRIFT** — needs `scripts/fix_bot_bankroll_drift.py --apply`
+   (production write). Filed as BOT-BANKROLL-DRIFT-APPLY.
+2. **COMPETITOR-AUDIT-FRESH** — 3 of 6 competitor rows on the landing page are
+   showing hardcoded fallbacks. Filed as COMPETITOR-SCRAPERS-DEGRADED.
+3. **EMAIL-DIGEST-SMART** — blocked on the restore-vs-retire decision for
+   `job_email_digest` (defined at `scheduler.py:646`, registered with no
+   trigger since 2026-07-07).
+
+## What the audit actually found
+
+Across 762 tests and 23 failures: **not one production regression.** Every
+failure was a test pinning a literal the code had deliberately moved past,
+most of them months earlier. The two worth remembering are pathologies, not
+drift:
+
+- The suite held **two tests demanding opposite things** about the Coolbet odds
+  scraper — one asserting a VPS cron id, the other asserting its absence.
+- One test was **standing pressure to weaken a safety control**: it demanded
+  `execute=True` on a daemon deliberately hardcoded paper-only, so the obvious
+  way to green it was to switch real-money placement on.
+
+Both survived because the gate had been red long enough that nobody read it.
+That is the real lesson: a permanently-red CI is worse than no CI, because it
+launders genuine signal into noise.
+
+## Still open
+
+**170 WEAKEN tests** — they assert only that a string still appears in a source
+file, so they pass whether the code works or not, and keep passing after the
+feature is deleted. This is why the suite could report 685 green while whole
+product areas were dead. Converting the top 20 to behavioural assertions is
+worth more than the 20 failures this pass fixed. Not started.
