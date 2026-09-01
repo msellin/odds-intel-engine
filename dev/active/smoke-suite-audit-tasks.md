@@ -402,6 +402,27 @@ access, so the test now calls the function with six invalid inputs and asserts
 each is rejected. The INSERT shape stays a source check — asserting *that*
 behaviourally would mean writing a real-money row in CI.
 
+**COOLBET-SEARCH-BLOCKED** — the `_do_search` half was two greps: that
+`raise CoolbetSearchBlocked` and `log.warning` appear in the function. Neither
+says whether the raise is *reachable*, whether a retryable status actually
+retries, or whether a hard block retries when it must not.
+
+| mutation | old grep test | new behavioural |
+|---|---|---|
+| **add 403 to `_SEARCH_RETRY_STATUSES`** | **PASS — missed** | FAIL (caught) |
+
+Retrying a 403 hammers an already-flagged IP, which is how a temporary Imperva
+block becomes a persistent one. `_do_search` takes the session as a parameter,
+so a fake session with a scripted status sequence exercises all three paths
+with no network: 403 raises after exactly **one** call, a persistent 500
+retries once then raises, and 500-then-200 recovers.
+
+*Method note:* the first mutation attempt was a **no-op** — the source reads
+`{429, 500, 502, 503, 504}` and the patch targeted a different ordering, so the
+"test passed the mutation" result was meaningless. Always assert the mutation
+actually applied before drawing a conclusion from it; a silently-failed patch
+looks exactly like a weak test.
+
 ### Honest accounting of the remaining 16 band-5
 
 Not all of them can become behavioural, and pretending otherwise would just

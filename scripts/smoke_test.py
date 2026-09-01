@@ -3599,15 +3599,70 @@ def test_coolbet_search_blocked():
 
     placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
 
-    # _do_search must raise (not swallow) on non-200
-    do_search = placer_src[placer_src.index("def _do_search"):
-                            placer_src.index("def search_coolbet_event")]
-    assert "raise CoolbetSearchBlocked" in do_search, (
-        "_do_search must raise CoolbetSearchBlocked on non-200, not return []"
-    )
-    assert "log.warning" in do_search, (
-        "_do_search must log non-200 at WARNING (not DEBUG) so blocks are visible"
-    )
+    # SMOKE-SUITE-AUDIT 2026-09-01: the _do_search half of this test was two
+    # greps — that "raise CoolbetSearchBlocked" and "log.warning" appear in the
+    # function. Neither says whether the raise is reachable, whether a
+    # retryable status actually retries, or whether a hard block retries when
+    # it must not. Getting that wrong turns a temporary Imperva block into a
+    # persistent one by hammering an already-flagged IP.
+    #
+    # _do_search takes the session as a parameter, so a fake session with a
+    # scripted status sequence exercises it with no network.
+    from workers.automation import coolbet_placer as cp
+
+    class _Resp:
+        def __init__(self, status, payload=None):
+            self.status_code = status
+            self.text = ""
+            self._payload = payload if payload is not None else []
+        def json(self):
+            return self._payload
+
+    class _FakeSession:
+        """Returns the scripted statuses in order; records how many calls."""
+        def __init__(self, *statuses):
+            self.statuses = list(statuses)
+            self.calls = 0
+        def get(self, *_a, **_kw):
+            self.calls += 1
+            st = self.statuses[min(self.calls - 1, len(self.statuses) - 1)]
+            if st == 200:
+                return _Resp(200, [])
+            return _Resp(st)
+
+    _orig_sleep = cp.time.sleep
+    cp.time.sleep = lambda *_a, **_kw: None   # do not pay the 1s backoff
+    try:
+        # 1. A hard block (403) must raise IMMEDIATELY — retrying a flagged IP
+        #    is how a temporary block becomes a persistent one.
+        sess = _FakeSession(403)
+        try:
+            cp._do_search(sess, "anything")
+            raise AssertionError("_do_search must raise CoolbetSearchBlocked on 403")
+        except cp.CoolbetSearchBlocked:
+            pass
+        assert sess.calls == 1, (
+            f"403 is not retryable — _do_search made {sess.calls} calls, must be 1"
+        )
+
+        # 2. A transient 500 retries once, then raises if it persists.
+        sess = _FakeSession(500, 500)
+        try:
+            cp._do_search(sess, "anything")
+            raise AssertionError("persistent 500 must still raise CoolbetSearchBlocked")
+        except cp.CoolbetSearchBlocked:
+            pass
+        assert sess.calls == 2, (
+            f"a retryable status must be retried exactly once; got {sess.calls} calls"
+        )
+
+        # 3. 500 then 200 recovers — a hiccup must not abort the batch.
+        sess = _FakeSession(500, 200)
+        out = cp._do_search(sess, "anything")
+        assert out == [], f"recovered search should parse cleanly, got {out!r}"
+        assert sess.calls == 2
+    finally:
+        cp.time.sleep = _orig_sleep
 
     # Singles loop must catch + mark remaining bets as search_blocked + break
     in_place_all = placer_src[placer_src.index("def place_all_bets"):]
