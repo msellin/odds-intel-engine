@@ -5858,28 +5858,59 @@ def test_coolbet_placement_paused_kill_switch():
     This pin locks the check inside place_all_bets so every execute-mode
     caller is gated (Mac daemon today, future placers tomorrow).
     --record (paper logging) is intentionally NOT gated so we keep the
-    audit trail of what would have been placed."""
-    import pathlib
-    src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
-    func = src[src.index("def place_all_bets("):src.index("def place_bet_by_id(")]
-    assert "is_placement_paused" in func, (
-        "place_all_bets must import is_placement_paused — the kill switch "
-        "check that prevents real-money placement when the operator paused."
-    )
-    # Must be checked under `if execute:` so --record paper logging is
-    # not blocked (we want the audit trail).
-    paused_idx = func.index("is_placement_paused")
-    preceding = func[:paused_idx]
-    # Walk backwards to find the most recent `if execute` guard.
-    last_if_execute = preceding.rfind("if execute:")
-    assert last_if_execute >= 0, (
-        "is_placement_paused check must be inside an `if execute:` block — "
-        "paper logging (--record) should still produce audit rows."
-    )
-    assert "return []" in func[paused_idx:paused_idx+500], (
-        "paused check must early-return [] (skip placement) — without the "
-        "return, the kill switch is decorative."
-    )
+    audit trail of what would have been placed.
+
+    SMOKE-SUITE-AUDIT 2026-09-01: this was three source-greps — that
+    `is_placement_paused` appears in the function, sits after an `if execute:`,
+    and has a `return []` within 500 chars. All three can hold while the switch
+    does nothing: the result can be computed and ignored, the `return` can
+    belong to a different branch, or a refactor can move the call somewhere it
+    never runs. For the control that stops real-money placement, "the string is
+    present" is not the assertion worth making.
+
+    Now exercised for real. `place_all_bets` checks the flag before it builds a
+    CoolbetSession, so substituting a raising session proves whether execution
+    short-circuits or proceeds — without touching the DB, the network or the
+    account."""
+    import workers.automation.coolbet_placer as cp
+    import workers.automation.coolbet_state as cs
+
+    class _ReachedPlacement(Exception):
+        """Raised if control gets past the kill switch to session setup."""
+
+    def _boom(*_a, **_kw):
+        raise _ReachedPlacement()
+
+    orig_paused = cs.is_placement_paused
+    orig_session = cp.CoolbetSession
+    try:
+        cs.is_placement_paused = lambda: (True, "smoke-test kill switch")
+        cp.CoolbetSession = _boom
+
+        # 1. execute=True while paused MUST short-circuit. If the guard is
+        #    removed or its result ignored, _boom fires and this raises.
+        out = cp.place_all_bets(record=True, execute=True)
+        assert out == [], (
+            f"place_all_bets(execute=True) must return [] while placement_paused "
+            f"is set — got {out!r}. The operator kill switch is the last thing "
+            "between a bad state and real money."
+        )
+
+        # 2. record-only (paper) must NOT be gated — the audit trail of what
+        #    WOULD have been placed is deliberately kept while paused. Reaching
+        #    session setup is the proof it was not short-circuited.
+        reached = False
+        try:
+            cp.place_all_bets(record=True, execute=False)
+        except _ReachedPlacement:
+            reached = True
+        assert reached, (
+            "record-only placement must NOT be blocked by placement_paused — "
+            "gating it loses the audit trail of what would have been placed."
+        )
+    finally:
+        cs.is_placement_paused = orig_paused
+        cp.CoolbetSession = orig_session
 
 
 @test("COOLBET-PLACER-FLARESOLVERR-WIRE — login script syncs Imperva cookies to .env so the placer can use them")
