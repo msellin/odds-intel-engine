@@ -326,6 +326,32 @@ in place.
 
 Both now call the code and read what it produces.
 
+**PAUSE-INPLAY-E / PAUSE-INPLAY-P-V2** — both asserted the literal
+`'\n    "inplay_e": {'` was absent, i.e. that the config key is not present at
+*exactly four spaces* of indentation.
+
+| mutation | old grep test | new behavioural |
+|---|---|---|
+| **re-add the key with a TAB indent** | **PASS — missed** | FAIL (caught) |
+
+Re-indenting the dict, or re-adding the key with any other whitespace, silently
+un-pauses a live in-play bot. Both now assert against `INPLAY_BOTS`, the
+registry the dispatcher actually reads, plus a non-empty check so an empty
+registry cannot make the assertion vacuously true.
+
+### Judged NOT worth converting (deliberate)
+
+- **REAL-BETS-EDGE-FORMULA-FIX** — the additive edge is computed inline inside
+  `store_real_bet`, between argument validation and the INSERT, with no seam
+  that does not require standing up the DB. The `live_edge` gate is likewise a
+  one-line expression inside `place_all_bets`, not a function.
+- **DUPE-FIX-2** — reaching the `ticket_id is None` branch means mocking the
+  session, `load_qualified_bets`, market resolution and the placement call. The
+  mock would encode more assumptions than the assertion is worth.
+
+Both stay as source guards. Forcing a conversion here would trade a weak test
+for a brittle one, which is not the point of the exercise.
+
 ### Remaining band-5 targets
 
 `SELF-USE-VALIDATION` (store_real_bet), `SETTLEMENT-POSTPONED-VOID`,

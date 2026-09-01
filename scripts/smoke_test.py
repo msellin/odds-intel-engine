@@ -21599,12 +21599,20 @@ def test_pause_inplay_e_2026_07_31():
     from pathlib import Path
     src = (Path(__file__).resolve().parent.parent / "workers" /
            "jobs" / "inplay_bot.py").read_text()
-    assert '\n    "inplay_e": {' not in src, (
-        "workers/jobs/inplay_bot.py still has an active \"inplay_e\" "
-        "config entry — PAUSE-INPLAY-E-2026-07-31 requires the config "
-        "block be commented out. If reviving, apply INPLAY-E-FIXTURE-FILTER "
-        "first (competition exclusion + prematch OU odds floor)."
+        # SMOKE-SUITE-AUDIT 2026-09-01: this asserted the literal
+    # '\n    "inplay_e": {' was absent from the source — i.e. that the config key
+    # is not present at exactly four spaces of indentation. Re-indenting the
+    # dict, or re-adding the key with any other whitespace, silently un-pauses
+    # the bot while the test stays green. Assert the registry the dispatcher
+    # actually reads instead.
+    from workers.jobs.inplay_bot import INPLAY_BOTS
+    assert "inplay_e" not in INPLAY_BOTS, (
+        "inplay_e is back in INPLAY_BOTS — it was paused 2026-07-31 and a bot in "
+        "this registry is dispatched. Re-enable deliberately, with the fixture-mix "
+        "analysis that paused it revisited, not as a config edit."
     )
+    assert INPLAY_BOTS, "INPLAY_BOTS must not be empty — an empty registry would "\
+        "make this assertion vacuously true and silently disable every inplay bot"
 
 
 @test("PAUSE-INPLAY-P-V2-2026-07-31 — inplay_p_v2 config commented out")
@@ -21623,13 +21631,20 @@ def test_pause_inplay_p_v2_2026_07_31():
     src = (Path(__file__).resolve().parent.parent / "workers" /
            "jobs" / "inplay_bot.py").read_text()
     # The active dict entry ("inplay_p_v2": {...}) must be commented out.
-    assert '\n    "inplay_p_v2": {' not in src, (
-        "workers/jobs/inplay_bot.py still has an active \"inplay_p_v2\" "
-        "config entry — PAUSE-INPLAY-P-V2-2026-07-31 requires the config "
-        "block be commented out (leading # on each line). If you're "
-        "reviving the bot, address the home-leg regression first and "
-        "update this smoke."
+        # SMOKE-SUITE-AUDIT 2026-09-01: this asserted the literal
+    # '\n    "inplay_p_v2": {' was absent from the source — i.e. that the config key
+    # is not present at exactly four spaces of indentation. Re-indenting the
+    # dict, or re-adding the key with any other whitespace, silently un-pauses
+    # the bot while the test stays green. Assert the registry the dispatcher
+    # actually reads instead.
+    from workers.jobs.inplay_bot import INPLAY_BOTS
+    assert "inplay_p_v2" not in INPLAY_BOTS, (
+        "inplay_p_v2 is back in INPLAY_BOTS — it was paused 2026-07-31 and a bot in "
+        "this registry is dispatched. Re-enable deliberately, with the fixture-mix "
+        "analysis that paused it revisited, not as a config edit."
     )
+    assert INPLAY_BOTS, "INPLAY_BOTS must not be empty — an empty registry would "\
+        "make this assertion vacuously true and silently disable every inplay bot"
 
 
 @test("RETIRED-BOT-LEAK-FIX-2026-07-31 — placer scanners filter is_active + retired_at")
