@@ -389,6 +389,37 @@ they still classified as WEAKEN after being converted. Both tidied.
 Both stay as source guards. Forcing a conversion here would trade a weak test
 for a brittle one, which is not the point of the exercise.
 
+**SELF-USE-VALIDATION (store_real_bet)** — the two validation assertions were
+greps for the error-message *strings*.
+
+| mutation | old grep test | new behavioural |
+|---|---|---|
+| **invert the stake guard, keep the message** | **PASS — missed** | FAIL (caught) |
+
+The message can sit in a branch that is never taken while a zero- or
+negative-stake real-money row is written. Both guards raise before any DB
+access, so the test now calls the function with six invalid inputs and asserts
+each is rejected. The INSERT shape stays a source check — asserting *that*
+behaviourally would mean writing a real-money row in CI.
+
+### Honest accounting of the remaining 16 band-5
+
+Not all of them can become behavioural, and pretending otherwise would just
+produce brittle tests:
+
+| category | n | why |
+|---|---|---|
+| Python candidates | 10 | genuinely convertible |
+| Frontend (TypeScript) | 2 | `PRO-TIER-V2`, `FLAT-ROI-EVERYWHERE` — read `.ts`; not drivable from Python |
+| Migration files | 2 | the SQL file *is* the artifact; reading it is the correct check |
+| Daemon loops | 2 | `COOLBET-DAEMON-SELFPAUSE`, `COOLBET-PLACER-STORES-SNAPSHOT` — need a long-running loop driven |
+
+Of the 10 Python candidates, 2 are already recorded below as deliberately
+declined, and `RETIRED-BOT-LEAK-FIX` is **still counted as WEAKEN and that is
+correct** — scoping it per-loader closed a real hole, but it remains a source
+check rather than a behavioural one. The count should not be gamed; the tool is
+measuring the right thing.
+
 ### Remaining band-5 targets
 
 `SELF-USE-VALIDATION` (store_real_bet), `SETTLEMENT-POSTPONED-VOID`,

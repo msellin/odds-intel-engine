@@ -618,12 +618,49 @@ def _():
 def _():
     """Source guard: store_real_bet must validate stake>0, actual_odds>1.0, and
     insert with the right column set. We inspect the function body rather than
-    making real INSERTs in CI to keep the smoke suite fast."""
+    making real INSERTs in CI to keep the smoke suite fast.
+
+    SMOKE-SUITE-AUDIT 2026-09-01: the two validation assertions were greps for
+    the error-message strings. Those hold whether or not the checks actually
+    reject anything — the message can sit in a branch that is never taken, or
+    the comparison can be inverted, and the grep stays green while a zero-stake
+    or sub-1.0-odds row lands in real_bets.
+
+    Both guards raise before any DB access, so they are exercised directly here:
+    every call below is expected to raise, and none reaches an INSERT. The
+    INSERT shape stays a source check — asserting that behaviourally would mean
+    writing a real-money row in CI."""
     import inspect
     from workers.api_clients import supabase_client
+
+    _ok = dict(match_id="00000000-0000-0000-0000-000000000000", market="1x2",
+               selection="home", bookmaker="Coolbet")
+
+    def _rejects(what, **override):
+        try:
+            supabase_client.store_real_bet(**{**_ok, "actual_odds": 2.0,
+                                              "stake": 10.0, **override})
+        except ValueError:
+            return True
+        except Exception as e:
+            raise AssertionError(
+                f"{what} must be rejected with ValueError before any DB work; "
+                f"got {type(e).__name__} — the guard is not running first"
+            ) from e
+        raise AssertionError(
+            f"{what} was ACCEPTED by store_real_bet. A real-money row with this "
+            "input would be written."
+        )
+
+    assert _rejects("stake=0", stake=0)
+    assert _rejects("negative stake", stake=-5)
+    assert _rejects("stake=None", stake=None)
+    assert _rejects("actual_odds=1.0 (no return)", actual_odds=1.0)
+    assert _rejects("actual_odds below 1.0", actual_odds=0.5)
+    assert _rejects("actual_odds=None", actual_odds=None)
+
+    # The INSERT shape stays a source assertion — see the docstring.
     src = inspect.getsource(supabase_client.store_real_bet)
-    assert "stake must be positive" in src, "stake validation missing"
-    assert "actual_odds must be > 1.0" in src, "odds validation missing"
     assert "INSERT INTO real_bets" in src, "writer must INSERT into real_bets"
     assert "RETURNING id" in src, "writer must return new bet UUID"
 
