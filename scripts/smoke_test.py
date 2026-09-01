@@ -25540,5 +25540,73 @@ def test_weekly_eval_per_market_baseline():
     return "per-market baselines are the default; no-skill heads are flagged"
 
 
+@test("COOLBET-UI-PLACER-AUDIT-WARN — audit reconciliation counts THIS run, not the last hour")
+def test_coolbet_ui_placer_audit_warn():
+    """The end-of-pass audit check must compare like with like.
+
+    It used to count coolbet_placement_attempts rows from the last HOUR across
+    all runs and compare that to len(picks). Both sides were wrong, so it
+    warned on nearly every pass:
+      - the job runs hourly, so a pass at :00 also counted the previous run's
+        rows;
+      - len(picks) counts every loaded pick, but three branches deliberately
+        write no attempt row — already_placed (the dedup that makes re-running
+        safe, so ANY prior placement guaranteed the warning), the
+        kickoff-cutoff skip, and the daily-cap break.
+
+    This matters because the check exists to catch the audit INSERT silently
+    rolling back, on the code path that places real money unattended. A
+    warning that is wrong nearly every run trains the operator to ignore the
+    one run where the audit trail really is broken ([[feedback_silent_failures]]).
+    """
+    import ast
+    from pathlib import Path as _P
+    src_path = _P(__file__).resolve().parent.parent / "scripts" / "place_coolbet_ui.py"
+    src = src_path.read_text()
+    ast.parse(src)
+
+    # The old, wrong shape must be gone on both sides.
+    assert "NOW() - INTERVAL '1 hour'" not in src, (
+        "audit reconciliation must not count the last hour across all runs — "
+        "the job runs hourly, so that folds in the previous pass"
+    )
+    assert "if recorded < len(picks):" not in src, (
+        "audit reconciliation must not compare against len(picks) — "
+        "already_placed / kickoff-cutoff / daily-cap write no attempt row"
+    )
+
+    # The corrected shape: a run-scoped lower bound, and an explicit counter.
+    assert "run_started" in src and "attempted_at >= %s" in src, (
+        "recorded count must be bounded by this run's start timestamp"
+    )
+    assert "if recorded < expected_rows:" in src, (
+        "the warning must fire on expected_rows, not on the pick count"
+    )
+
+    # expected_rows must be incremented at BOTH write points and nowhere the
+    # code writes no row. stage_bet writes on every exit; exposure_guard writes
+    # its own row. If a third write site appears without a matching increment,
+    # the warning silently under-counts and stops firing when it should.
+    tree = ast.parse(src)
+    main_fn = next(n for n in ast.walk(tree)
+                   if isinstance(n, ast.FunctionDef) and n.name == "main")
+    stores = [n.lineno for n in ast.walk(main_fn)
+              if isinstance(n, ast.Name) and n.id == "expected_rows"
+              and isinstance(n.ctx, ast.Store)]
+    assert len(stores) == 3, (
+        f"expected_rows should be initialised once and incremented at exactly "
+        f"the 2 attempt-writing sites (exposure_guard, stage_bet); found "
+        f"{len(stores)} assignments"
+    )
+
+    # Guard the invariant the whole fix rests on: the run-scoped window is only
+    # sound because the pass holds an exclusive non-blocking lock throughout.
+    assert "fcntl.LOCK_EX | fcntl.LOCK_NB" in src, (
+        "run-scoped counting assumes passes cannot overlap — keep the "
+        "exclusive single-run lock"
+    )
+    return "audit warning reconciles this run's rows against actual write sites"
+
+
 if __name__ == "__main__":
     main()

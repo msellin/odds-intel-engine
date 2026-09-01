@@ -435,6 +435,15 @@ def main() -> int:
 
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)
+        # COOLBET-UI-PLACER-AUDIT-WARN: `now` is stamped after the lock is held
+        # (LOCK_EX|LOCK_NB, for the whole pass), so no other run can interleave
+        # rows into this window — it is a safe lower bound for "this run".
+        run_started = now
+        # Incremented at exactly the points that write a
+        # coolbet_placement_attempts row, so the reconciliation at the end
+        # compares like with like. The old check counted len(picks), which
+        # includes branches that deliberately write no row.
+        expected_rows = 0
         n_today, stake_today = spent_today()
 
         # COOLBET-MATCH-EXPOSURE-GUARD: seed live per-match exposure once, then
@@ -467,6 +476,7 @@ def main() -> int:
                 # Recorded, not just skipped: a guard nobody can measure is
                 # indistinguishable from a guard that never fires
                 # ([[feedback_silent_failures]]).
+                expected_rows += 1
                 up.record_attempt(
                     p, outcome="rejected", stage="exposure_guard",
                     reason=conflict, stake_requested=args.stake,
@@ -484,6 +494,9 @@ def main() -> int:
                     print(f"STOP     daily stake cap reached (EUR {MAX_STAKE_PER_DAY:.2f})")
                     break
 
+            # stage_bet writes a coolbet_placement_attempts row on EVERY exit,
+            # including its own internal rejections — one call, one row.
+            expected_rows += 1
             res = up.stage_bet(
                 page, p, args.stake,
                 execute=args.execute,
@@ -529,18 +542,31 @@ def main() -> int:
     # this script printed "all N recorded" unconditionally while the audit
     # INSERT was silently rolling back — the exact failure shape the audit
     # table exists to expose.
+    # COOLBET-UI-PLACER-AUDIT-WARN (2026-09-01). This previously counted rows
+    # from the last HOUR across all runs and compared them to len(picks), so it
+    # was wrong on both sides and warned on nearly every pass:
+    #   - the job runs hourly, so a pass at :00 also counted the previous run's
+    #     rows;
+    #   - len(picks) includes three branches that deliberately write no row —
+    #     already_placed (the dedup that makes re-running safe, so ANY prior
+    #     placement guaranteed the warning), the kickoff-cutoff skip, and the
+    #     daily-cap break.
+    # The check exists because an earlier version printed "all N recorded"
+    # while the audit INSERT was silently rolling back. That is worth catching,
+    # which is exactly why it must not cry wolf every run.
     recorded = execute_query(
         """SELECT COUNT(*) AS n FROM coolbet_placement_attempts
-            WHERE attempted_at >= NOW() - INTERVAL '1 hour'"""
+            WHERE attempted_at >= %s""",
+        (run_started,),
     )[0]["n"]
     lock.__exit__(None, None, None)
 
     print(f"\nplaced={placed} staged={staged} skipped={rejected} "
           f"already-placed={skipped_done} "
-          f"— {recorded} attempt(s) recorded in the last hour")
-    if recorded < len(picks):
-        print(f"WARNING: {len(picks)} picks processed but only {recorded} recorded — "
-              f"audit trail is incomplete")
+          f"— {recorded}/{expected_rows} attempt(s) recorded this run")
+    if recorded < expected_rows:
+        print(f"WARNING: {expected_rows} attempt(s) should have been written but "
+              f"only {recorded} landed — audit trail is incomplete")
     print()
     return 0
 
