@@ -936,100 +936,10 @@ def job_weekly_bot_review():
     _run_job("weekly_bot_review", _bot_review)
 
 
-def job_tennis_scanner():
-    """TENNIS-SCANNER-DAILY: twice-daily tennis value scan.
-
-    Runs 06:00 + 14:00 UTC. Provider: The Odds API (Phase 1.3 swap).
-
-    SCHEDULER-FIX 2026-06-25: body moved INSIDE the _run_job wrapper. Earlier
-    pattern (env-var check → subprocess → _run_job at the end) silently lost
-    pipeline_runs rows when the env-var guard returned early or subprocess
-    raised — exactly how 7 days of tennis_scanner runs went invisible.
-    Putting the body inside _run_job means every fire writes a row, even on
-    skip / failure (the silent-failure tripwire per feedback_silent_failures).
-    """
-    def _scan():
-        import subprocess
-        if not (os.getenv("OA_KEY") or os.getenv("ODDS_API_KEY")):
-            console.print("[yellow]Tennis scanner skipped — no OA_KEY / ODDS_API_KEY env var[/yellow]")
-            # Raise so _run_job logs status='failed' rather than 'completed' —
-            # otherwise a misconfigured env looks like healthy runs.
-            raise RuntimeError("tennis_scanner: OA_KEY / ODDS_API_KEY missing")
-        console.print("[bold cyan]Tennis value scanner — Odds API scan[/bold cyan]")
-        result = subprocess.run(
-            [sys.executable, "scripts/tennis/odds_api_scanner.py"],
-            capture_output=True, text=True, timeout=300,
-        )
-        if result.returncode != 0:
-            console.print(f"[red]Tennis scanner error:[/red]\n{result.stderr[:500]}")
-            raise RuntimeError(
-                f"tennis_scanner subprocess exit {result.returncode}: "
-                f"{(result.stderr or '')[-500:]}"
-            )
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["SUMMARY", "events:", "logged", "remaining", "VALUE"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("tennis_scanner", _scan)
 
 
-def job_tennis_settlement():
-    """TENNIS-PAPER-BETS Phase 1.4 (2026-06-25): twice-daily tennis settlement.
-
-    Runs 02:00 + 14:15 UTC. For each active tennis sport, calls The Odds API
-    /scores?daysFrom=2, matches completed events to tennis_value_bets rows by
-    fixture_id, writes result + pnl.
-
-    SCHEDULER-FIX 2026-06-25: body inside _run_job so every fire logs.
-    """
-    def _settle():
-        import subprocess
-        if not (os.getenv("OA_KEY") or os.getenv("ODDS_API_KEY")):
-            console.print("[yellow]Tennis settlement skipped — no OA_KEY / ODDS_API_KEY env var[/yellow]")
-            raise RuntimeError("tennis_settlement: OA_KEY / ODDS_API_KEY missing")
-        console.print("[bold cyan]Tennis settlement — /scores per active sport[/bold cyan]")
-        result = subprocess.run(
-            [sys.executable, "scripts/tennis/settle_value_bets.py"],
-            capture_output=True, text=True, timeout=180,
-        )
-        if result.returncode != 0:
-            console.print(f"[red]Tennis settlement error:[/red]\n{result.stderr[:500]}")
-            raise RuntimeError(
-                f"tennis_settlement subprocess exit {result.returncode}: "
-                f"{(result.stderr or '')[-500:]}"
-            )
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["SUMMARY", "settled=", "Unsettled", "remaining", "Nothing"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("tennis_settlement", _settle)
 
 
-def job_tennis_closing_odds():
-    """TENNIS-PAPER-BETS Phase 1.5 (2026-06-25): capture Pinnacle closing odds
-    for imminent tennis fixtures, compute CLV per value-bet row.
-
-    Runs every 30 min during tennis hours (06:00–22:30 UTC).
-
-    SCHEDULER-FIX 2026-06-25: body inside _run_job so every fire logs.
-    """
-    def _capture():
-        import subprocess
-        if not (os.getenv("OA_KEY") or os.getenv("ODDS_API_KEY")):
-            console.print("[yellow]Tennis closing-odds skipped — no OA_KEY / ODDS_API_KEY env var[/yellow]")
-            raise RuntimeError("tennis_closing_odds: OA_KEY / ODDS_API_KEY missing")
-        result = subprocess.run(
-            [sys.executable, "scripts/tennis/capture_closing_odds.py"],
-            capture_output=True, text=True, timeout=120,
-        )
-        if result.returncode != 0:
-            console.print(f"[red]Tennis closing-odds error:[/red]\n{result.stderr[:500]}")
-            raise RuntimeError(
-                f"tennis_closing_odds subprocess exit {result.returncode}: "
-                f"{(result.stderr or '')[-500:]}"
-            )
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["imminent", "Nothing", "captured", "SUMMARY", "remaining", "rows updated"]):
-                console.print(f"[dim]{line}[/dim]")
-    _run_job("tennis_closing_odds", _capture)
 
 
 def job_coolbet_health_ping():
@@ -1273,23 +1183,6 @@ def job_flaresolverr_sweep():
     _run_job("flaresolverr_sweep", lambda: None)
 
 
-def job_coolbet_tennis_scanner():
-    """COOLBET-TENNIS-SCAN (2026-06-08): scan Coolbet tennis odds every 30 min,
-    log to tennis_value_bets (bookmaker='coolbet'). Public API, no JWT needed.
-    Runs 07:00-22:00 UTC at :08 and :38.
-    """
-    import subprocess
-    console.print("[bold cyan]Coolbet tennis scanner[/bold cyan]")
-    result = subprocess.run(
-        [sys.executable, "scripts/tennis/place_coolbet_tennis.py", "--record"],
-        capture_output=True, text=True, timeout=300,
-    )
-    if result.returncode != 0:
-        console.print(f"[red]Coolbet tennis scanner error:[/red]\n{result.stderr[:500]}")
-    else:
-        for line in result.stdout.splitlines():
-            if any(k in line for k in ["===", "Matches", "Observations", "Value", "Written"]):
-                console.print(f"[dim]{line}[/dim]")
 
 
 def job_league_clv_efficiency():
@@ -2415,10 +2308,13 @@ def main():
                       name="Weekly Bot Maturity Review Sunday 06:30",
                       max_instances=1, misfire_grace_time=1800)
 
-    # Tennis pipeline paused 2026-07-02 (focusing on soccer). Wrapper
-    # functions (job_tennis_scanner / _settlement / _closing_odds and
-    # job_coolbet_tennis_scanner) kept for manual invocation. Git history
-    # has the previous scheduler registrations.
+    # TENNIS-RETIRED-2026-09-01: the tennis pipeline was paused 2026-07-02
+    # (focusing on soccer) and its cron registrations removed then. The four
+    # wrapper functions were kept "for manual invocation" but were never
+    # invoked again — `tennis_scanner` last succeeded 2026-07-04, i.e. 59 days
+    # before removal, while `check_tennis_scanner_silent()` kept emailing about
+    # it every day. Wrappers, scanner scripts, health tripwires and smoke tests
+    # all removed together; git history has the lot if tennis comes back.
 
     # COOLBET-FS-SESSION-STABLE Step 1.5 — heartbeat every 5 min.
     # Updates coolbet_session_state.last_heartbeat_at + session_healthy.

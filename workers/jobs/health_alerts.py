@@ -226,109 +226,8 @@ def check_snapshot_staleness() -> None:
         )
 
 
-def check_tennis_scanner_silent() -> None:
-    """TENNIS-PAPER-BETS Phase 3 (2026-06-25): tennis_scanner has not run
-    successfully in > 12 hours. The scanner is scheduled at 06:00 + 14:00 UTC
-    so a healthy state means last success ≤ 12h ago in steady state. Catches:
-
-    - OA_KEY/ODDS_API_KEY missing/expired on the VPS
-    - Scheduler crash that skipped the tennis_scanner cron specifically
-    - subprocess timeout / The Odds API outage
-    - Quota exhaustion (the failure mode that bit OddsPapi at 250 req/mo;
-      The Odds API is 500 cred/mo so far more headroom, but still worth
-      monitoring — the alert subject covers it generically)
-
-    Why this matters: this is the exact silent-failure class the
-    `feedback_silent_failures` memory warns about — the OddsPapi scanner
-    had been writing 0 rows for ~a week before we noticed (table empty,
-    no alert). Don't let it happen again.
-    """
-    from datetime import timedelta
-    rows = execute_query(
-        """
-        SELECT MAX(started_at) AS last_success
-          FROM pipeline_runs
-         WHERE job_name = 'tennis_scanner'
-           AND status   = 'completed'
-        """
-    )
-    last_success = rows[0]["last_success"] if rows else None
-
-    if last_success is None:
-        # Never succeeded — could be brand-new deploy, hold off alerting until
-        # first 24h elapse to avoid spam on fresh installs.
-        console.print("[dim]health_alerts: tennis_scanner has no successful runs yet[/dim]")
-        return
-
-    now_utc = datetime.now(timezone.utc)
-    age_hours = (now_utc - last_success).total_seconds() / 3600.0
-    console.print(f"[dim]health_alerts: tennis_scanner last success {age_hours:.1f}h ago[/dim]")
-
-    if age_hours > 12:
-        _alert_once(
-            "tennis_scanner_silent",
-            f"Tennis scanner silent — last success {age_hours:.1f}h ago",
-            f"<p>The tennis scanner has not completed successfully in "
-            f"<b>{age_hours:.1f} hours</b> (last success "
-            f"{last_success.strftime('%Y-%m-%d %H:%M UTC')}).</p>"
-            f"<p>Scheduled at 06:00 + 14:00 UTC. Likely causes:</p>"
-            f"<ul>"
-            f"<li>OA_KEY / ODDS_API_KEY missing or invalid on the VPS</li>"
-            f"<li>The Odds API credit quota exhausted (500/mo free tier)</li>"
-            f"<li>Scheduler crashed or specific cron skipped</li>"
-            f"<li>subprocess timeout (>300s) — check logs</li>"
-            f"</ul>"
-            f"<p>Check: <code>SELECT * FROM pipeline_runs WHERE job_name='tennis_scanner' "
-            f"ORDER BY started_at DESC LIMIT 5</code></p>",
-        )
 
 
-def check_tennis_settlement_stale() -> None:
-    """TENNIS-PAPER-BETS Phase 3 (2026-06-25): N tennis_value_bets rows are
-    past kickoff + 6h with result still NULL. Settlement runs 02:00 + 14:15
-    UTC; a row >6h past kickoff should have been picked up. Catches:
-
-    - The Odds API /scores endpoint not returning the event (sport deactivated
-      after tournament ended, fixture postponed, lower-tier match never gets
-      a result in their feed)
-    - Settlement job crashed
-    - sport_title → sport_key resolution failed (rare — would need /sports
-      response to change format)
-
-    Threshold 5 — small enough that one stuck tournament triggers it, big
-    enough that the occasional walkover/retirement we couldn't settle doesn't.
-    """
-    from datetime import timedelta
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=6)
-    rows = execute_query(
-        """
-        SELECT COUNT(*) AS cnt
-          FROM tennis_value_bets
-         WHERE result IS NULL
-           AND kickoff_time < %s
-        """,
-        (cutoff,)
-    )
-    stale = (rows[0]["cnt"] if rows else 0) or 0
-    console.print(f"[dim]health_alerts: tennis_value_bets stale past KO+6h: {stale}[/dim]")
-
-    STALE_THRESHOLD = 5
-    if stale > STALE_THRESHOLD:
-        _alert_once(
-            "tennis_settlement_stale",
-            f"Tennis settlement gap — {stale} rows past KO+6h with NULL result",
-            f"<p>There are <b>{stale} rows</b> in tennis_value_bets with "
-            f"kickoff > 6 hours ago but <code>result IS NULL</code> "
-            f"(threshold: {STALE_THRESHOLD}).</p>"
-            f"<p>Settlement runs 02:00 + 14:15 UTC. If rows linger past 24h, "
-            f"The Odds API /scores likely didn't return those events (sport "
-            f"deactivated after tournament ended, fixture postponed/walkover, "
-            f"or lower-tier match never gets a feed result).</p>"
-            f"<p>Check the pending-settlement table on /admin/tennis or:</p>"
-            f"<p><code>SELECT fixture_id, tournament_name, player_home, player_away, kickoff_time "
-            f"FROM tennis_value_bets WHERE result IS NULL AND kickoff_time &lt; now() - interval '6 hours' "
-            f"ORDER BY kickoff_time DESC LIMIT 20</code></p>",
-        )
 
 
 def check_settlement() -> None:
@@ -850,15 +749,6 @@ def run_morning_checks() -> None:
         check_pinnacle_coverage()
     except Exception as e:
         console.print(f"[yellow]health_alerts pinnacle check error: {e}[/yellow]")
-    # TENNIS-PAPER-BETS Phase 3 — scanner silent-failure tripwire.
-    # 09:30 UTC slot fires AFTER the 06:00 UTC tennis_scanner run, so a
-    # successful 06:00 run keeps us inside the 12h window. Catches the
-    # OddsPapi-era silent failure mode that left tennis_value_bets empty
-    # for ~a week before we noticed.
-    try:
-        check_tennis_scanner_silent()
-    except Exception as e:
-        console.print(f"[yellow]health_alerts tennis scanner check error: {e}[/yellow]")
 
 
 def run_snapshot_check() -> None:
@@ -899,10 +789,3 @@ def run_settlement_check() -> None:
         check_odds_bloat()
     except Exception as e:
         console.print(f"[yellow]health_alerts odds bloat check error: {e}[/yellow]")
-    # TENNIS-PAPER-BETS Phase 3 — settlement staleness tripwire.
-    # 21:30 UTC slot runs ~7h after the 14:15 tennis settlement; anything
-    # past kickoff+6h still NULL means /scores didn't return the event.
-    try:
-        check_tennis_settlement_stale()
-    except Exception as e:
-        console.print(f"[yellow]health_alerts tennis settlement check error: {e}[/yellow]")

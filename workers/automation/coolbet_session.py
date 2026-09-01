@@ -390,8 +390,10 @@ class CoolbetSession:
 
         # ANON-READ-NO-FS (2026-06-25): when COOLBET_NO_FS=true, bootstrap
         # cookies from env vars + skip FS refresh entirely. Used for public-
-        # read scanners (e.g. scripts/tennis/place_coolbet_tennis.py) that
-        # only need Imperva clearance, never JWT auth. Also lets the scanner
+        # read scanners that only need Imperva clearance, never JWT auth.
+        # (The original caller was the tennis scanner, removed
+        # TENNIS-RETIRED-2026-09-01; the anon-read mode itself is still used.)
+        # Also lets the scanner
         # run on environments without a FlareSolverr instance (local dev,
         # VPS scheduler) — production Coolbet daemon on the Mac keeps
         # using FS as today. require_auth=True implicitly disables this
@@ -953,7 +955,7 @@ class CoolbetSession:
 
         ANON-READ-NO-FS (2026-06-25): when COOLBET_NO_FS=true, route through
         plain requests with the env cookies loaded at init. Public-read
-        scanners (tennis fixture/odds lookups) work this way; only the
+        scanners (public fixture/odds lookups) work this way; only the
         placement / JWT-authenticated paths require FS-fingerprinted Chrome.
         """
         self._ensure_auth()

@@ -31,7 +31,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from playwright.sync_api import sync_playwright
+# SMOKE-SUITE-AUDIT 2026-09-01: playwright is imported lazily, inside the one
+# function that actually drives a browser. It used to be a module-level import,
+# which meant simply reading a constant from this file — e.g.
+# `from scripts.place_coolbet_ui import EXECUTE_ALLOWED_BOTS`, which the
+# COOLBET-UI-PLACER smoke test does — required the browser driver to be
+# installed. playwright is not in requirements.txt, so that test failed in CI
+# with ModuleNotFoundError while passing locally. _session_alive() already
+# deferred its import this way; main() now matches.
 
 from workers.api_clients.db import execute_query, execute_write
 from workers.automation import coolbet_ui_placer as up
@@ -258,6 +265,7 @@ def main() -> int:
           f"— min-edge {threshold:.0%} — mode {mode}\n")
 
     placed = staged = rejected = skipped_done = 0
+    from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         browser, page = up.attach(pw)
         blocked = up.detect_block(page)
