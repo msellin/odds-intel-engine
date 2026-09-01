@@ -28,10 +28,14 @@ in step 2.
 | 1 | Morning Pipeline         | `morning_pipeline`    | daily 04:00 UTC               | 90 min             | 2 × 30 min         | **Yes** |
 | 2 | Betting Refresh          | `betting_refresh`     | every 30 min                  | 90 min             | 2 × 15 min         | **Yes** |
 | 3 | Settlement               | `settlement`          | daily 21:00 / 23:30 / 01:00   | 4 h                | 2 × 30 min         | **Yes** |
-| 4 | CS2 Bot                  | `cs2_bot`             | every 30 min                  | 90 min             | 2 × 15 min         | **Yes** |
-| 5 | CS2 v8 Predict           | `cs2_v8_predict`      | every 30 min, 10-23 UTC only  | 90 min             | 2 × 15 min         | **Yes** (with quiet 23-10 UTC) |
-| 6 | Coolbet Health Ping      | `coolbet_health_ping` | every 5 min                   | 15 min             | 2 × 5 min          | **Yes** |
-| 7 | Scheduler Heartbeat      | `healthcheck_ping`    | every 5 min                   | 15 min             | 2 × 5 min          | **Yes** (root-cause signal) |
+| 4 | Coolbet Health Ping      | `coolbet_health_ping` | every 5 min                   | 15 min             | 2 × 5 min          | **Yes** |
+| 5 | Scheduler Heartbeat      | `healthcheck_ping`    | every 5 min                   | 15 min             | 2 × 5 min          | **Yes** (root-cause signal) |
+
+> **CS2 monitors retired 2026-09-01.** `cs2_bot` and `cs2_v8_predict` were
+> Tier-1 until CS2-REMOVAL-2026-08-26 deleted the jobs. **Delete these two
+> monitors in the Kuma UI** — a push monitor whose job no longer exists goes
+> "down" forever and trains you to ignore the dashboard. Also drop their keys
+> from `KUMA_TOKENS`.
 
 **About "Heartbeat interval"** — Kuma's own term for how often it
 *checks* whether a push arrived. Set it to slightly less than the job's
@@ -56,7 +60,7 @@ Two env vars land in `/opt/odds-intel-engine/.env` on the VPS:
 
 ```bash
 KUMA_URL_BASE=https://status.oddsintel.app/api/push
-KUMA_TOKENS={"morning_pipeline":"AbCd1234","betting_refresh":"...","settlement":"...","cs2_bot":"...","cs2_v8_predict":"...","coolbet_health_ping":"...","healthcheck_ping":"..."}
+KUMA_TOKENS={"morning_pipeline":"AbCd1234","betting_refresh":"...","settlement":"...","coolbet_health_ping":"...","healthcheck_ping":"..."}
 ```
 
 `KUMA_TOKENS` is one JSON object on a single line. Missing keys = the
@@ -116,7 +120,6 @@ Not yet monitored — surface on the Kuma status page but no paging:
 - `news_checker` (5 slots daily)
 - `write_ops_snapshot` (hourly)
 - `weekly_retrain` + `weekly_meta_retrain` (Sundays)
-- `cs2_settlement` (hourly)
 - `pipeline_failure_alerter` (hourly)
 
 Add them the same way when you're ready — the scheduler side already

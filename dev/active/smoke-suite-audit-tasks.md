@@ -88,3 +88,44 @@ behavioural assertion is possible.
 2. Never change production code to make a test pass — especially COOLBET-MAC-DAEMON.
 3. One domain per commit, so any batch is revertible.
 4. Re-run the audit after each batch and update the counts above from its output.
+
+---
+
+## Progress — 2026-09-01
+
+Suite **762 → 751** tests. Failures **23 → 17** (4 fixed, 2 removed with their features).
+
+**Fixed (4)**
+- WEEKLY-EVAL-BASELINE — my own regression; also removed the dead `--warn-split-baseline` flag.
+- SUPABASE-TO-VPS — used `_web_path()`'s guard so CI records a *skip*, not a failure.
+- COOLBET-UI-PLACER — deferred playwright's import in `scripts/place_coolbet_ui.py` so
+  reading a constant no longer needs a browser driver. Its money-safety assertions now
+  actually run in CI instead of being masked by ModuleNotFoundError.
+- KUMA-TIER1-WIRED — CS2-REMOVAL-2026-08-26 dropped `cs2_bot` from the Tier-1 list but
+  missed `cs2_v8_predict`. Removed both; docs/KUMA_MONITORS.md updated to match.
+  **Manual step left for the operator: delete those two monitors in the Kuma UI and drop
+  their `KUMA_TOKENS` keys** — a push monitor whose job is gone sits "down" forever and
+  trains you to ignore the dashboard.
+
+**Removed with their features (11 tests)**
+- 8 × TENNIS-* — pipeline paused 2026-07-02, `tennis_scanner` last succeeded 2026-07-04.
+- LOL-ELO-SCANNER — `lol_bets` empty, last fixture 2026-06-14.
+- FS-AUTO-RECOVER-HLTV — HLTV has zero code files left.
+- WC-AI-PREVIEW-CRON — its cron registration was already removed and the WC 2026 window
+  (2026-06-04 → 07-19) has permanently passed.
+
+## Still open — needs a decision, not a patch
+
+- **World Cup surface.** 5 WC jobs are still registered and fire *daily*, self-gating to a
+  window that ended 2026-07-19 — so they no-op ~340 days a year until WC 2030. But
+  `wc_bracket_picks` holds **1,440 real user picks**, so this is user-facing data, not dead
+  code. Retire, or park properly with the crons unregistered? Not touched unilaterally.
+- **Email digest.** `job_email_digest` is defined at `scheduler.py:646` and registered with
+  **no trigger at all** since SCHEDULER-CLEANUP (da9bf97, 2026-07-07). Restore or retire?
+  EMAIL-DIGEST-SMART cannot be fixed until this is answered.
+
+## Remaining 17 failures
+
+Buckets A/D/E from the triage above. Bucket E (genuine drift) is the bulk and each needs
+its own investigation. Two carry the standing warnings: **COOLBET-MAC-DAEMON** (fix the
+test, never the paper-only default) and **BOT-BANKROLL-DRIFT** (a real data incident).

@@ -16596,34 +16596,6 @@ def _():
         "fixture-side query must filter on enum-valid scheduled+live statuses"
 
 
-@test("WC-AI-PREVIEW-CRON — scheduler registers wc_match_previews daily 07:30 UTC with WC-window gate")
-def _():
-    """WC-AI-PREVIEW cron: daily 07:30 UTC after fetch_predictions (04:00)
-    and the national-team predictor settle, before the email digest slots
-    (10:00+). Gated inside job_wc_match_previews to the 7-days-pre-WC
-    window (2026-06-04 → 2026-07-19) — APScheduler still fires it outside
-    the window but it exits before any Gemini call so quota isn't burned."""
-    src = _engine_path("workers/scheduler.py").read_text()
-
-    # Job function exists + delegates to the run callable.
-    assert "def job_wc_match_previews(" in src, \
-        "scheduler must define job_wc_match_previews()"
-    assert "from workers.jobs.wc_match_previews import run_wc_match_previews" in src, \
-        "scheduler must import run_wc_match_previews from the WC preview module"
-
-    # Window gate dates — starts 7d pre-tournament (2026-06-04), ends with the final.
-    assert "_WC_PREVIEW_WINDOW_START = date(2026, 6, 4)" in src, \
-        "WC preview window must start 2026-06-04 (7d pre-kickoff)"
-    assert "_WC_PREVIEW_WINDOW_END = date(2026, 7, 19)" in src, \
-        "WC preview window must end 2026-07-19 (FIFA final date)"
-
-    # Cron registration — 07:30 UTC daily.
-    assert "CronTrigger(hour=7, minute=30)" in src, \
-        "WC preview cron must fire daily at 07:30 UTC"
-    assert 'id="wc_match_previews"' in src, \
-        "WC preview cron must be registered with id='wc_match_previews'"
-
-
 @test("WC-GROUP-PREDICTOR-MIGRATION — migration 170 adds group predictions table + meta extensions")
 def _():
     """Migration 170 introduces the second WC game (group-standings predictor)
@@ -25077,13 +25049,16 @@ def test_coolbet_scrapers_moved_to_mac():
         )
 
 
-@test("KUMA-TIER1-WIRED — 7 Tier-1 jobs push to Uptime Kuma via _run_job or direct call")
+@test("KUMA-TIER1-WIRED — 5 Tier-1 jobs push to Uptime Kuma via _run_job or direct call")
 def test_kuma_tier1_wired():
-    """KUMA-TIER1-WIRED (2026-07-07): the 7 Tier-1 jobs must all reach
+    """KUMA-TIER1-WIRED (2026-07-07): the 5 Tier-1 jobs must all reach
     Uptime Kuma through one of two paths:
       1. `_run_job(name, ...)` — fires _kuma_push(name, status=up/down) at
-         end. Covers morning_pipeline, betting_refresh, settlement,
-         cs2_bot, cs2_v8_predict (via _run_subprocess_job → _run_job).
+         end. Covers morning_pipeline, betting_refresh, settlement.
+
+    Was 7. CS2-REMOVAL-2026-08-26 dropped `cs2_bot` from the list below but
+    left `cs2_v8_predict`, so this test kept asserting a job that no longer
+    exists and failed from that date on. Both removed 2026-09-01.
       2. Direct `_kuma_push(...)` calls in job_coolbet_health_ping and
          job_healthcheck_ping (both don't flow through _run_job on all
          code paths, so they need the explicit call).
@@ -25148,8 +25123,8 @@ def test_kuma_tier1_wired():
         "morning_pipeline",
         "betting_refresh",
         "settlement",
-        # "cs2_bot" removed by CS2-REMOVAL-2026-08-26 — no longer a job.
-        "cs2_v8_predict",
+        # "cs2_bot" and "cs2_v8_predict" both removed — CS2-REMOVAL-2026-08-26
+        # deleted the jobs; the second name was missed until 2026-09-01.
         "coolbet_health_ping",
         "healthcheck_ping",
     ):
