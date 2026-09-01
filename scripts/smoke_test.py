@@ -8264,18 +8264,34 @@ def _():
     land €1-10 with €5 median. Inplay was fixed €1, meaning the highest-ROI
     bots had near-zero weight in the headline ROI. Bumped to €5 so new bets
     contribute meaningfully. Guard the new constant so a refactor can't
-    silently roll it back to €1."""
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    # Find the bet_data block; stake must be 5.0
-    idx = src.find('"market": trigger["market"]')
-    assert idx >= 0, "bet_data block missing from inplay_bot.py"
-    block = src[idx:idx + 800]
-    assert '"stake": 5.0' in block, (
-        "inplay bet_data must set stake=5.0 (INPLAY-STAKE-5)"
+    silently roll it back to €1.
+
+    SMOKE-SUITE-AUDIT 2026-09-01: this searched an 800-character window after
+    a literal `"market": trigger["market"]` for the string `"stake": 5.0`.
+    Fragile in both directions — reordering the dict or growing it past 800
+    chars breaks the test without changing behaviour, and the string can sit
+    in the source while a later line overwrites the value. Stake size is
+    money; call the builder and read what it actually produces.
+
+    `_build_inplay_bet_data` is documented pure (no DB, no console), so this
+    is a direct call with a synthetic trigger."""
+    from workers.jobs.inplay_bot import _build_inplay_bet_data
+
+    bet = _build_inplay_bet_data(
+        trigger={"market": "O/U", "selection": "over 2.5", "odds": 2.10,
+                 "model_prob": 0.55, "edge": 8.0, "extra": {}},
+        cand={"minute": 23, "score_home": 0, "score_away": 1},
+        xg_h=1.2, xg_a=0.8, is_real=True, odds_age=12.0, bot_name="inplay_c",
     )
-    assert '"stake": 1.0' not in block, (
-        "inplay bet_data still has stake=1.0 — should be 5.0 after INPLAY-STAKE-5"
+    assert bet["stake"] == 5.0, (
+        f"inplay bet payload must stake 5.0, got {bet['stake']!r}. Pre-match "
+        "Kelly stakes land EUR 1-10 with a EUR 5 median; at EUR 1 the "
+        "highest-ROI bots carry near-zero weight in the headline ROI."
+    )
+    # Pin the type too — a stake of 5 (int) survives the equality check above
+    # but changes the DB column's numeric handling downstream.
+    assert isinstance(bet["stake"], float), (
+        f"stake must be a float, got {type(bet['stake']).__name__}"
     )
 
 
