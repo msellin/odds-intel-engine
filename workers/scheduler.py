@@ -244,15 +244,14 @@ def morning_pipeline():
     from workers.jobs.fetch_odds import run_odds
     from workers.jobs.fetch_predictions import run_predictions
     from workers.jobs.betting_pipeline import run_betting
-    # WC-PHASE-3-CRON (2026-06-02): national-team predictor writes WC + intl
-    # 1X2/OU/BTTS predictions after fixtures land + AF predictions run. Source
-    # = 'national_team_v1' so /world-cup picks up the rows.
+    # National-team predictor: 1X2/OU/BTTS for INTERNATIONAL fixtures, after
+    # fixtures land + AF predictions run. Source = 'national_team_v1'.
+    # WC-RETIRED-2026-09-01 kept this step: it is NOT World Cup-specific —
+    # over the last 60 days it priced ASEAN Championship and Friendlies as
+    # well, and last ran 2026-08-25. Only the WC-only *blended* variant
+    # (national_team_v1_blended, which needed wc_market_consensus and last
+    # produced anything 2026-07-18) was removed with the rest of the surface.
     from scripts.write_national_team_predictions import run_predictions as run_national_team_predictions
-    # WC-A4 (2026-06-04): blend own national-team 1X2 with market consensus from
-    # wc_market_consensus into source='national_team_v1_blended'. Runs AFTER the
-    # national-team step so it sees today's fresh own preds. Tolerates an empty
-    # consensus table — falls back to own-only output.
-    from scripts.write_blended_predictions import run_blended_predictions
 
     today = date.today().isoformat()
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
@@ -262,14 +261,13 @@ def morning_pipeline():
 
     import traceback
     steps = [
-        ("1/8", "Fixtures (today)",        lambda: run_fixtures(target_date=today, refresh_leagues=is_monday)),
-        ("2/8", "Fixtures (tomorrow rows)", lambda: fetch_and_store_fixtures(tomorrow)),
-        ("3/8", "Enrichment",              lambda: run_enrichment(target_date=today)),
-        ("4/8", "Odds",                    lambda: run_odds(target_date=today)),
-        ("5/8", "Predictions (club)",      lambda: run_predictions(target_date=today)),
-        ("6/8", "Predictions (national)",  lambda: run_national_team_predictions(days=30)),
-        ("7/8", "Predictions (blended)",   lambda: run_blended_predictions(days=30)),
-        ("8/8", "Betting",                 lambda: run_betting()),
+        ("1/7", "Fixtures (today)",        lambda: run_fixtures(target_date=today, refresh_leagues=is_monday)),
+        ("2/7", "Fixtures (tomorrow rows)", lambda: fetch_and_store_fixtures(tomorrow)),
+        ("3/7", "Enrichment",              lambda: run_enrichment(target_date=today)),
+        ("4/7", "Odds",                    lambda: run_odds(target_date=today)),
+        ("5/7", "Predictions (club)",      lambda: run_predictions(target_date=today)),
+        ("6/7", "Predictions (national)",  lambda: run_national_team_predictions(days=30)),
+        ("7/7", "Betting",                 lambda: run_betting()),
     ]
 
     failed_steps = []
@@ -563,34 +561,10 @@ def job_match_previews():
 # WC-AI-PREVIEW (2026-06-02): tournament-window gate. Runs only between
 # 7 days pre-tournament and the final inclusive (2026-06-04 → 2026-07-19).
 # Outside that window the job exits immediately as a no-op so APScheduler
-# isn't burning Gemini quota the other ~340 days of the year.
-_WC_PREVIEW_WINDOW_START = date(2026, 6, 4)
-_WC_PREVIEW_WINDOW_END = date(2026, 7, 19)
 
 
-def job_wc_match_previews():
-    """WC-AI-PREVIEW: daily Gemini-generated previews for every WC fixture
-    in the next 7 days. Gated to the WC window because there's nothing to
-    preview outside it. Idempotent — < 24h-old previews are skipped inside
-    the job itself."""
-    today = date.today()
-    if not (_WC_PREVIEW_WINDOW_START <= today <= _WC_PREVIEW_WINDOW_END):
-        return
-    from workers.jobs.wc_match_previews import run_wc_match_previews
-    _run_job("wc_match_previews", run_wc_match_previews)
 
 
-def job_wc_daily_email():
-    """WC-F4 (2026-06-04): daily WC preview email via Resend. Sends one
-    email per opted-in user per day during the WC window. Cron fires 07:30
-    UTC after morning_pipeline (04:00) + wc_market_consensus (06:00) +
-    wc_monte_carlo (06:30) so every fixture has the freshest predictions.
-    Idempotent via wc_email_log UNIQUE(user_id, email_date)."""
-    today = date.today()
-    if not (_WC_PREVIEW_WINDOW_START <= today <= _WC_PREVIEW_WINDOW_END):
-        return
-    from workers.jobs.wc_daily_email import run_wc_daily_email
-    _run_job("wc_daily_email", run_wc_daily_email)
 
 
 def job_publish_daily_picks():
@@ -602,45 +576,10 @@ def job_publish_daily_picks():
     _run_job("publish_daily_picks", run_publish_daily_picks)
 
 
-def job_wc_market_consensus():
-    """WC-A3 (2026-06-04): scrape 1X2 market consensus from 2-3 free public
-    sources (eloratings.net, forebet, oddsportal) for every upcoming WC2026
-    fixture. Vig-removes per source, aggregates by mean, upserts into
-    `wc_market_consensus`. Gated to the WC window for the same reason as
-    the AI preview job — nothing to scrape outside it. Polite scraping
-    (≥2s between requests, real UA) is enforced inside the script."""
-    today = date.today()
-    if not (_WC_PREVIEW_WINDOW_START <= today <= _WC_PREVIEW_WINDOW_END):
-        return
-    from scripts.scrape_wc_market_consensus import run_wc_market_consensus
-    _run_job("wc_market_consensus", run_wc_market_consensus)
 
 
-def job_wc_monte_carlo():
-    """WC-E1 (2026-06-04): nightly 10k Monte Carlo simulation of WC2026 —
-    per-team probabilities of advancing, R16, QF, SF, Final, Winner. Gated
-    to the WC window. Reads group-stage predictions from `predictions`
-    (national_team_v1_blended preferred, else national_team_v1) and ELO
-    from `team_elo_international` for knockout sims. Writes one snapshot
-    into `wc_monte_carlo_results`. Powers /world-cup/who-can-win."""
-    today = date.today()
-    if not (_WC_PREVIEW_WINDOW_START <= today <= _WC_PREVIEW_WINDOW_END):
-        return
-    from scripts.wc_monte_carlo import run_wc_monte_carlo
-    _run_job("wc_monte_carlo", run_wc_monte_carlo)
 
 
-def job_wc_insights():
-    """WC-E3-E4 (2026-06-04): Gemini-generated analytical SEO articles for
-    WC2026 — group of death, cinderella story, squad value vs model,
-    champions favourites. Daily at 08:00 UTC, after the Monte Carlo snapshot
-    (06:30 UTC) so the articles cite fresh numbers. Gated to the WC window
-    and idempotent inside the script via refresh_after (24h)."""
-    today = date.today()
-    if not (_WC_PREVIEW_WINDOW_START <= today <= _WC_PREVIEW_WINDOW_END):
-        return
-    from scripts.generate_wc_insights import run_wc_insights
-    _run_job("wc_insights", run_wc_insights)
 
 
 def job_email_digest():
@@ -1732,67 +1671,14 @@ def job_settle_reconcile():
 # the first kickoff date (2026-06-11) and the final date inclusive (2026-07-19).
 # Outside that window the job exits immediately as a no-op so APScheduler isn't
 # generating useless pipeline_runs rows for the other ~340 days of the year.
-_WC_SCORING_WINDOW_START = date(2026, 6, 11)
-_WC_SCORING_WINDOW_END = date(2026, 7, 19)
 
 
-def job_wc_bracket_scoring():
-    """WC-BRACKET-SCORING: recompute every user's bracket score + leaderboard
-    rank. Gated to the WC window because there's nothing to score outside it.
-    Idempotent — `recompute_all_brackets` is set-based, not accumulative."""
-    today = date.today()
-    if not (_WC_SCORING_WINDOW_START <= today <= _WC_SCORING_WINDOW_END):
-        return
-    from workers.jobs.wc_bracket_scoring import recompute_all_brackets
-    _run_job("wc_bracket_scoring", recompute_all_brackets)
 
 
-def job_wc_bracket_slot_sync():
-    """WC-BRACKET-STAGE-GATED: seed wc_bracket_slot_assignments from AF round
-    labels on `matches`, then refresh AI ghost picks for any round that
-    NEWLY seeded this run. Idempotent. Gated to WC window — pre-tournament
-    AF hasn't published knockout fixtures so this is a clean no-op."""
-    today = date.today()
-    if not (_WC_SCORING_WINDOW_START <= today <= _WC_SCORING_WINDOW_END):
-        return
-    from workers.jobs.wc_bracket_slot_sync import run_slot_sync_and_ai_refresh
-    _run_job("wc_bracket_slot_sync", run_slot_sync_and_ai_refresh)
 
 
-def job_wc_achievement_detection():
-    """WC-ACHIEVEMENTS (2026-06-02): scan current state + award badges in
-    wc_user_achievements. Idempotent via UNIQUE (user_id, slug). Gated to
-    the WC window — pre-tournament there's almost nothing to detect
-    (early_bird + first_to_lock can fire from the lock-in day onwards but
-    those are cheap enough to run inside the window). Cheap query — a few
-    table scans per run."""
-    today = date.today()
-    if not (_WC_SCORING_WINDOW_START <= today <= _WC_SCORING_WINDOW_END):
-        return
-    from workers.jobs.wc_achievement_detection import detect_for_all_users
-    _run_job("wc_achievement_detection", detect_for_all_users)
 
 
-def job_wc_lineup_refresh():
-    """WC-A5 (2026-06-04): T-60min lineup-aware prediction refresh.
-
-    Every 5 minutes during the WC live window (2026-06-11 → 2026-07-19), scan
-    for WC fixtures kicking off in the next 90min that already have a
-    confirmed starting XI (`matches.lineups_fetched_at IS NOT NULL`) but don't
-    yet have a `source='national_team_v1_lineup'` prediction row. For each
-    match, re-run the national-team predictor with a small ELO adjustment
-    based on actual_xi vs expected_xi from `team_roster_strength`, and write
-    a refreshed prediction.
-
-    Window-gated AND query-gated (defence in depth): outside the WC window
-    the job no-ops at the top; inside the window, the SQL filter is itself
-    a no-op when no fixture matches. Idempotent — re-running mid-window only
-    writes for fixtures whose `_lineup` row isn't there yet."""
-    today = date.today()
-    if not (_WC_SCORING_WINDOW_START <= today <= _WC_SCORING_WINDOW_END):
-        return
-    from workers.jobs.wc_lineup_refresh import run_wc_lineup_refresh
-    _run_job("wc_lineup_refresh", run_wc_lineup_refresh)
 
 
 def job_health_alerts_morning():
@@ -2010,7 +1896,7 @@ def main():
     # SCHEDULER-AF-429-DEADLOCK mitigation 2026-07-18: max_workers 4→12.
     # Two multi-hour hangs (Jul 12, Jul 15) both happened when 5 concurrent
     # AF-touching jobs (budget_sync, fetch_odds, odds_refresh, settle_ready,
-    # wc_bracket_slot_sync) blocked on AF 429s and drained the 4-worker
+    # bracket slot-sync) blocked on AF 429s and drained the 4-worker
     # pool. 12 gives headroom so a stuck cluster can't lock the scheduler.
     # Real fix is finite timeouts + rate limiter in api_football.py — P0.
     scheduler = BackgroundScheduler(
@@ -2216,23 +2102,7 @@ def main():
                           id=f"news_{hour:02d}{minute:02d}",
                           name=f"News {hour:02d}:{minute:02d}")
 
-    # WC-A3 (2026-06-04): Daily market consensus scrape — pulls 1X2
-    # implied probs from 2-3 free public sources (eloratings, forebet,
-    # oddsportal), vig-removes per source, aggregates by mean, upserts
-    # into `wc_market_consensus`. 06:00 UTC sits before the WC preview
-    # cron (07:30) so previews could one day include market context.
-    # Window-gated inside job_wc_market_consensus to 2026-06-04 → 2026-07-19.
-    scheduler.add_job(job_wc_market_consensus, CronTrigger(hour=6, minute=0),
-                      id="wc_market_consensus",
-                      name="WC Market Consensus 06:00 [WC window]")
 
-    # WC-E1 (2026-06-04): nightly Monte Carlo (10k sims) at 06:30 UTC, after
-    # the morning predictions refresh (04:00 → fetch_predictions + national-
-    # team predictor). Writes one snapshot to wc_monte_carlo_results which
-    # powers /world-cup/who-can-win. Gated inside the job to the WC window.
-    scheduler.add_job(job_wc_monte_carlo, CronTrigger(hour=6, minute=30),
-                      id="wc_monte_carlo",
-                      name="WC Monte Carlo 06:30 [WC window]")
 
     # GROWTH-ACCURACY-PICKS-LOG (2026-06-05): 06:45 UTC daily — after morning
     # predictions (04:00) and before the morning betting pipeline (~06:30 but
@@ -2242,14 +2112,6 @@ def main():
                       id="publish_daily_picks",
                       name="Accuracy: Publish Daily Picks (06:45 UTC)")
 
-    # WC-A5 (2026-06-04): T-60min lineup-aware refresh. Every 5min during the
-    # live window the job scans WC fixtures kicking off in the next 90min,
-    # re-runs the predictor with an actual_xi vs expected_xi ELO adjustment,
-    # and writes a `source='national_team_v1_lineup'` row. Defence-in-depth:
-    # gated inside the job AND by the SQL filter.
-    scheduler.add_job(job_wc_lineup_refresh, IntervalTrigger(minutes=5),
-                      id="wc_lineup_refresh",
-                      name="WC Lineup Refresh (5min) [WC window]")
 
     # ANON-AUTH PHASE 4 — prune anonymous users idle >90 days, Sunday 02:00 UTC.
     # Cascade removes their profile + favorites + picks. Hard cap of 10k rows
@@ -2595,36 +2457,8 @@ def main():
     scheduler.add_job(job_settle_reconcile, CronTrigger(hour=21, minute=30),
                       id="settle_reconcile", name="Settlement Reconcile 21:30")
 
-    # WC-BRACKET-SCORING (2026-06-02): recompute every user's bracket score +
-    # leaderboard rank every 30 minutes during the WC window (2026-06-11 →
-    # 2026-07-19, gated inside job_wc_bracket_scoring). Idempotent. Offset to
-    # :05/:35 — settlement / live tracker writes match results either via the
-    # live poller (real-time) or the :00 / :30 settlement runs, so :05/:35 is
-    # the freshest window. Cheap (~one read + one bulk upsert) so 30-min
-    # cadence is safe even though most slots pre-tournament are no-ops.
-    scheduler.add_job(job_wc_bracket_scoring, CronTrigger(hour="*", minute="5,35"),
-                      id="wc_bracket_scoring",
-                      name="WC Bracket Scoring [30min, WC window]")
 
-    # WC-BRACKET-STAGE-GATED (2026-06-02): seed wc_bracket_slot_assignments
-    # from AF round labels every 30 min during the WC window. Fires at
-    # :10/:40 — five minutes after wc_bracket_scoring so the slot map is the
-    # freshest possible for the *next* scoring run. After a NEW knockout
-    # round seeds, the job inline-fires generate_ai_brackets --round <r>.
-    scheduler.add_job(job_wc_bracket_slot_sync, CronTrigger(hour="*", minute="10,40"),
-                      id="wc_bracket_slot_sync",
-                      name="WC Bracket Slot Sync [30min, WC window]")
 
-    # WC-ACHIEVEMENTS (2026-06-02): detect + award WC bracket/streak badges
-    # every 15 min during the WC window. Idempotent — UNIQUE (user_id, slug)
-    # in wc_user_achievements means a badge is never double-awarded.
-    # Cheap (few table scans, per-user inserts on conflict-do-nothing).
-    # Fires at :00/:15/:30/:45 — offset from scoring (:05/:35) and slot sync
-    # (:10/:40) so the three WC jobs don't pile onto the same DB connections.
-    scheduler.add_job(job_wc_achievement_detection,
-                      CronTrigger(hour="*", minute="0,15,30,45"),
-                      id="wc_achievement_detection",
-                      name="WC Achievement Detection [15min, WC window]")
 
     # ── Start scheduler ────────────────────────────────────────────────
     scheduler.start()

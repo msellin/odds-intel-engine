@@ -25,6 +25,7 @@ import argparse
 import fcntl
 import logging
 import os
+import re
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -76,6 +77,37 @@ KICKOFF_CUTOFF_MIN = 3
 MAX_BETS_PER_DAY = 20
 MAX_STAKE_PER_DAY = 200.00
 
+# COOLBET-MATCH-EXPOSURE-GUARD (2026-09-01). Per-match ceilings, added after
+# 2026-08-31: 19 bets / EUR 190 for -EUR 92.80, with no per-match state of any
+# kind in this script. The daily caps above were the ONLY blast-radius limit
+# and the run stopped one bet short of MAX_BETS_PER_DAY.
+#
+# Two bets on one match is allowed, but they must be independent opinions —
+# see MARKET_FAMILY. What actually happened without that rule:
+#   Colwyn Bay v Llandudno  1x2/away @3.10 (13:03) AND 1x2/home @2.65 (16:00)
+#   Airbus UK v Holywell    1x2/away + U2.5 + U3.5  (6-2, all three lost)
+#   Barcelona v Rayo        U3.5 + U2.5              (5-2, both lost)
+MAX_BETS_PER_MATCH = 2
+MAX_STAKE_PER_MATCH = 20.00
+
+# Market families. At most ONE bet per (match, family): the two bets a match is
+# allowed must not be two forms of the same opinion.
+#
+# `result` groups 1x2 with the handicap/derived result markets on purpose —
+# double_chance, draw_no_bet and asian_handicap are all re-expressions of who
+# wins, so backing 1x2/home and draw_no_bet/home is one position, not two.
+# `totals` groups the whole over/under ladder for the same reason: under 2.5
+# and under 3.5 are one goals opinion staked twice, which is exactly how
+# Airbus UK cost EUR 30 on a single scoreline.
+MARKET_FAMILY = {
+    "1x2": "result",
+    "double_chance": "result",
+    "draw_no_bet": "result",
+    "asian_handicap": "result",
+    "o/u": "totals",
+    "btts": "btts",
+}
+
 # The operator's own row in profiles — pick marks are per-user UI state.
 OPERATOR_USER_ID = "c0b8031b-cb8a-4316-9969-81c8c7cfa794"
 
@@ -108,6 +140,16 @@ def already_placed(shadow_bet_id: str) -> bool:
     Guards the whole point of running periodically: re-running must never
     double-place. Keyed on a confirmed 'placed' row, and placement is only
     recorded as confirmed when the balance actually moved.
+
+    NOTE (COOLBET-MATCH-EXPOSURE-GUARD 2026-09-01): this is keyed on the pick's
+    UUID and that is NOT sufficient on its own. `shadow_bets_unique` emits
+    several ids for the same logical pick — on 2026-08-31, 359 rows collapsed
+    to 197 distinct (match_id, market, selection), so ~45pct were duplicate ids
+    that this function cannot recognise as duplicates. Colwyn Bay had two
+    1x2/home rows and two over_under_35/over rows; only run timing stopped a
+    double-place, and combos already double-placed twice in August. The real
+    dedup is exposure_conflict() on the normalised triple; this stays as the
+    cheap first check because it needs no per-match state.
     """
     rows = execute_query(
         """SELECT 1 FROM coolbet_placement_attempts
@@ -115,6 +157,118 @@ def already_placed(shadow_bet_id: str) -> bool:
         (shadow_bet_id,),
     )
     return bool(rows)
+
+
+# ── Per-match exposure (COOLBET-MATCH-EXPOSURE-GUARD 2026-09-01) ─────────────
+#
+# real_bets holds TWO vocabularies for the same bet, because two placers write
+# to it: coolbet_placer.py posts `o/u` + 'over 2.5', this UI placer writes
+# `over_under_25` + 'over'. Both appear in August. Any guard that reads
+# real_bets without collapsing them sees half the book and lets the other half
+# through, so every exposure check below goes through canon_bet() first.
+
+def canon_bet(market: str, selection: str) -> tuple[str, str] | None:
+    """Collapse either vocabulary onto (family, canonical_selection).
+
+    Returns None for rows that carry no per-match meaning:
+      - `combo`, whose match_id is only a placeholder for the first leg, so
+        counting it as exposure on that match would be wrong;
+      - anything unrecognised, which must not be silently treated as a match
+        for some other bet.
+    """
+    m = (market or "").strip().lower()
+    sel = (selection or "").strip().lower()
+    if not m or not sel or m == "combo":
+        return None
+
+    # over_under_25 / over_under_35 -> ('totals', 'over 2.5')
+    ou = re.fullmatch(r"over_under_(\d{2,3})", m)
+    if ou:
+        digits = ou.group(1)
+        line = float(f"{digits[0]}.{digits[1:]}") if len(digits) > 1 else float(digits)
+        if sel not in ("over", "under"):
+            return None
+        return ("totals", f"{sel} {line:g}")
+
+    # o/u + 'over 2.5' -> ('totals', 'over 2.5')
+    if m == "o/u":
+        parts = sel.split()
+        if len(parts) != 2 or parts[0] not in ("over", "under"):
+            return None
+        try:
+            return ("totals", f"{parts[0]} {float(parts[1]):g}")
+        except ValueError:
+            return None
+
+    family = MARKET_FAMILY.get(m)
+    if family is None:
+        return None
+    # Asian handicap selections carry a line ('home -1.0'); keep it in the
+    # canonical form so two different lines are not read as one bet. The
+    # family rule blocks a second result-family bet either way.
+    return (family, sel)
+
+
+def match_exposure(match_ids: list[str]) -> dict[str, list[dict]]:
+    """Existing real_bets exposure per match, keyed by match_id.
+
+    NOT filtered by placed_at or by result: a bet placed yesterday on a match
+    kicking off today is still exposure, which is the same reasoning the
+    coolbet_placer dedup records. Callers only ask about matches whose kickoff
+    is still ahead, so settled rows are not expected here anyway.
+    """
+    out: dict[str, list[dict]] = {mid: [] for mid in match_ids}
+    if not match_ids:
+        return out
+    rows = execute_query(
+        """SELECT match_id::text AS match_id, market, selection, stake
+             FROM real_bets
+            WHERE match_id = ANY(%s::uuid[])""",
+        (list(match_ids),),
+    )
+    for r in rows or []:
+        canon = canon_bet(r["market"], r["selection"])
+        if canon is None:
+            continue
+        out.setdefault(r["match_id"], []).append(
+            {"family": canon[0], "canon": canon[1], "stake": float(r["stake"] or 0)}
+        )
+    return out
+
+
+def exposure_conflict(pick: dict, held: list[dict], stake: float) -> str | None:
+    """Reason this pick must not be placed given what we already hold on the
+    match, or None if it is clear.
+
+    `held` is the live exposure list for the match — seeded from real_bets and
+    appended to as this pass places, because a DB-only check is racy within one
+    pass: Airbus UK's three bets landed at 13:00, 13:02 and 13:02.
+    """
+    canon = canon_bet(pick["market"], pick["selection"])
+    if canon is None:
+        return (f"unrecognised market/selection {pick['market']!r}/{pick['selection']!r} "
+                f"— cannot check per-match exposure, refusing")
+    family, sel = canon
+
+    for h in held:
+        if h["family"] == family and h["canon"] == sel:
+            return f"already hold this exact bet on the match ({family} {sel})"
+
+    for h in held:
+        if h["family"] == family:
+            return (f"already hold a {family} bet on this match ({h['canon']}); "
+                    f"{sel} is the same opinion, not a second one")
+
+    if len(held) >= MAX_BETS_PER_MATCH:
+        return (f"per-match bet cap reached ({MAX_BETS_PER_MATCH}): "
+                f"holding {', '.join(h['canon'] for h in held)}")
+
+    staked = sum(h["stake"] for h in held)
+    if staked + stake > MAX_STAKE_PER_MATCH:
+        return (f"per-match stake cap: EUR {staked:.2f} held + EUR {stake:.2f} "
+                f"exceeds EUR {MAX_STAKE_PER_MATCH:.2f}")
+
+    return None
 
 
 def spent_today() -> tuple[int, float]:
@@ -283,6 +437,11 @@ def main() -> int:
         now = datetime.now(timezone.utc)
         n_today, stake_today = spent_today()
 
+        # COOLBET-MATCH-EXPOSURE-GUARD: seed live per-match exposure once, then
+        # keep it current in memory as this pass places. Re-querying per pick
+        # would also work for the cross-pass case but not the within-pass one.
+        exposure = match_exposure([p["match_id"] for p in picks])
+
         for p in picks:
             label = (f"{p['home_team']} v {p['away_team']} | "
                      f"{p['market']}/{p['selection']} @ {p['odds_at_pick']}")
@@ -301,6 +460,22 @@ def main() -> int:
                 mark_pick(p["shadow_bet_id"], MARK_CHECKED)
                 continue
 
+            held = exposure.setdefault(p["match_id"], [])
+            conflict = exposure_conflict(p, held, args.stake)
+            if conflict:
+                rejected += 1
+                # Recorded, not just skipped: a guard nobody can measure is
+                # indistinguishable from a guard that never fires
+                # ([[feedback_silent_failures]]).
+                up.record_attempt(
+                    p, outcome="rejected", stage="exposure_guard",
+                    reason=conflict, stake_requested=args.stake,
+                    execute_mode=args.execute,
+                )
+                mark_pick(p["shadow_bet_id"], MARK_CHECKED)
+                print(f"skip     {label}\n         per-match exposure: {conflict}")
+                continue
+
             if args.execute:
                 if n_today + placed >= MAX_BETS_PER_DAY:
                     print(f"STOP     daily bet cap reached ({MAX_BETS_PER_DAY})")
@@ -316,10 +491,23 @@ def main() -> int:
             )
             if res.placed:
                 placed += 1
+                _canon = canon_bet(p["market"], p["selection"])
+                if _canon:
+                    held.append({"family": _canon[0], "canon": _canon[1],
+                                 "stake": float(res.stake_applied or args.stake)})
                 mark_pick(p["shadow_bet_id"], MARK_PLACED)
                 print(f"PLACED   {label}\n         {'; '.join(res.notes)}")
             elif res.ok:
                 staged += 1
+                # Without --execute nothing is placed, so in-run exposure would
+                # never grow and a dry run would clear every bet on a match —
+                # showing the opposite of what the guard does live. Count a
+                # would-place as exposure so dry runs are representative.
+                if not args.execute:
+                    _canon = canon_bet(p["market"], p["selection"])
+                    if _canon:
+                        held.append({"family": _canon[0], "canon": _canon[1],
+                                     "stake": float(res.stake_applied or args.stake)})
                 print(f"staged   {label}\n         {'; '.join(res.notes)}")
             elif res.reason.startswith("BLOCKED:"):
                 # Abort the ENTIRE pass. Continuing would send one search per
