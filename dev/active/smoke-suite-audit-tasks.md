@@ -91,9 +91,18 @@ behavioural assertion is possible.
 
 ---
 
-## Progress — 2026-09-01
+## Progress — 2026-09-01 (CI-verified)
 
-Suite **762 → 751** tests. Failures **23 → 17** (4 fixed, 2 removed with their features).
+| | before | after |
+|---|---|---|
+| tests | 762 | **751** |
+| passed | 685 | 681 |
+| **failed** | **23** | **15** |
+| skipped | 54 | 55 |
+| runtime | 175.1s | **100.3s** |
+
+Diffed the two CI runs: **9 failures resolved, 0 new**. Runtime down 43% — dead
+tests were not free.
 
 **Fixed (4)**
 - WEEKLY-EVAL-BASELINE — my own regression; also removed the dead `--warn-split-baseline` flag.
@@ -124,8 +133,28 @@ Suite **762 → 751** tests. Failures **23 → 17** (4 fixed, 2 removed with the
   **no trigger at all** since SCHEDULER-CLEANUP (da9bf97, 2026-07-07). Restore or retire?
   EMAIL-DIGEST-SMART cannot be fixed until this is answered.
 
-## Remaining 17 failures
+## Remaining 15 failures
 
 Buckets A/D/E from the triage above. Bucket E (genuine drift) is the bulk and each needs
 its own investigation. Two carry the standing warnings: **COOLBET-MAC-DAEMON** (fix the
 test, never the paper-only default) and **BOT-BANKROLL-DRIFT** (a real data incident).
+
+
+## Operator actions this cleanup cannot do
+
+1. **Kuma UI** — delete the `CS2 Bot` and `CS2 v8 Predict` push monitors and drop
+   their `KUMA_TOKENS` keys. Their jobs no longer exist, so both sit "down" forever.
+2. **BOT-BANKROLL-DRIFT** — the fix is written and dry-run clean, but applying it
+   writes to production and was blocked here:
+
+   ```
+   python3 scripts/fix_bot_bankroll_drift.py --apply
+   ```
+
+   Not cosmetic. `bots.current_bankroll` **overstates** results for most bots —
+   `bot_v10_all` stores €1607.41 against €1456.50 rebuilt from actual pnl
+   (+€150.91), `bot_opt_home_lower` +€43.81, `bot_lower_1x2` +€40.86. A few
+   understate (`bot_ou35_attacking` −€29.76). Stake sizing is unaffected (it uses a
+   hardcoded €1000 base), so this is display-only — but inflated bankrolls on a
+   product whose pitch is an honest track record is the wrong direction to be wrong
+   in. The script is idempotent and rebuilds from bet history.
