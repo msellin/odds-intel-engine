@@ -24973,6 +24973,111 @@ def test_coolbet_ui_placer_2026_08_27():
     return "Coolbet UI placer: selectors pinned, stage-only default, squad guard, stake read-back"
 
 
+@test("COOLBET-MATCH-EXPOSURE-GUARD")
+def test_coolbet_match_exposure_guard_2026_09_01():
+    """COOLBET-MATCH-EXPOSURE-GUARD-2026-09-01 — at most 2 real-money bets per
+    match, and the 2 must be independent opinions.
+
+    Filed after 2026-08-31: 19 bets / EUR 190 for -EUR 92.80 with no per-match
+    state of any kind in the UI placer. The daily caps were the only limit and
+    the run stopped one bet short of MAX_BETS_PER_DAY.
+    """
+    import inspect
+    import pathlib
+    from scripts.place_coolbet_ui import (
+        MARKET_FAMILY, MAX_BETS_PER_MATCH, MAX_STAKE_PER_MATCH,
+        canon_bet, exposure_conflict, main,
+    )
+
+    assert MAX_BETS_PER_MATCH == 2
+    assert MAX_STAKE_PER_MATCH == 20.00
+
+    # ── The two-writer vocabulary trap ────────────────────────────────────
+    # real_bets carries BOTH `over_under_25`+'over' (this UI placer) and
+    # `o/u`+'over 2.5' (coolbet_placer.py). A guard that does not collapse
+    # them reads half the book and lets the other half through.
+    assert canon_bet("over_under_25", "over") == ("totals", "over 2.5")
+    assert canon_bet("o/u", "over 2.5") == ("totals", "over 2.5")
+    assert canon_bet("over_under_35", "under") == canon_bet("o/u", "under 3.5")
+    assert canon_bet("1x2", "home") == ("result", "home")
+
+    # Combos must NOT count as exposure: their match_id is only a placeholder
+    # for the first leg, so counting one would block singles on that match.
+    assert canon_bet("combo", "straight") is None
+    # An unrecognised market must not silently collapse onto something else.
+    assert canon_bet("totally_new_market", "yes") is None
+
+    # ── Family grouping ───────────────────────────────────────────────────
+    # 1x2/DC/DNB/AH are all re-expressions of who wins; the OU ladder is one
+    # goals opinion. Backing two members of a family is one position staked
+    # twice, not two bets.
+    for m in ("1x2", "double_chance", "draw_no_bet", "asian_handicap"):
+        assert MARKET_FAMILY[m] == "result", m
+    assert canon_bet("over_under_25", "over")[0] == canon_bet("over_under_35", "over")[0]
+    assert MARKET_FAMILY["btts"] == "btts"
+
+    # ── The three faults from 2026-08-31, replayed ────────────────────────
+    # (1) Colwyn Bay v Llandudno: 1x2/away 13:03 then 1x2/home 16:00. The model
+    #     legitimately flipped on the 15:10 refresh and emitted a NEW uuid, so
+    #     the shadow_bet_id dedup could not see it.
+    held = [{"family": "result", "canon": "away", "stake": 10.0}]
+    why = exposure_conflict({"market": "1x2", "selection": "home"}, held, 10.0)
+    assert why and "same opinion" in why, why
+
+    # (2) Airbus UK v Holywell: U2.5 + U3.5 (match finished 6-2, both lost).
+    held = [{"family": "totals", "canon": "under 2.5", "stake": 10.0}]
+    why = exposure_conflict({"market": "over_under_35", "selection": "under"}, held, 10.0)
+    assert why and "same opinion" in why, why
+
+    # (3) Same logical pick twice. shadow_bets_unique emitted 359 rows on
+    #     08-31 that collapse to 197 distinct triples — ~45pct duplicate ids
+    #     the uuid-keyed already_placed() cannot recognise. Combos already
+    #     double-placed twice in August.
+    held = [{"family": "totals", "canon": "over 3.5", "stake": 10.0}]
+    why = exposure_conflict({"market": "o/u", "selection": "over 3.5"}, held, 10.0)
+    assert why and "already hold this exact bet" in why, why
+
+    # ── Two INDEPENDENT opinions on one match stay allowed ────────────────
+    held = [{"family": "result", "canon": "home", "stake": 10.0}]
+    assert exposure_conflict({"market": "over_under_35", "selection": "over"},
+                             held, 10.0) is None
+    # ...but a third does not, even from a fresh family.
+    held.append({"family": "totals", "canon": "over 3.5", "stake": 10.0})
+    why = exposure_conflict({"market": "btts", "selection": "yes"}, held, 10.0)
+    assert why and "per-match bet cap" in why, why
+
+    # Stake cap binds independently of the count cap.
+    held = [{"family": "result", "canon": "home", "stake": 15.0}]
+    why = exposure_conflict({"market": "btts", "selection": "yes"}, held, 10.0)
+    assert why and "per-match stake cap" in why, why
+
+    # ── Wiring: a guard that is never called is not a guard ───────────────
+    main_src = inspect.getsource(main)
+    assert "exposure_conflict(" in main_src, "guard must be called in the placement loop"
+    assert "match_exposure(" in main_src, "exposure must be seeded from real_bets"
+    # Airbus UK's three bets landed 13:00 / 13:02 / 13:02 — one pass. A DB-only
+    # check is racy, so the loop must keep the exposure map current in memory.
+    assert "held.append(" in main_src, "in-run placements must update exposure"
+    # Blocks must be recorded, not merely skipped, or the firing rate is
+    # unmeasurable ([[feedback_silent_failures]]).
+    assert "exposure_guard" in main_src, "blocks must write a placement-attempt row"
+
+    src = pathlib.Path("scripts/place_coolbet_ui.py").read_text()
+    assert "match_id = ANY(%s::uuid[])" in src
+    # Exposure must NOT be date- or result-filtered: a bet placed yesterday on
+    # a match kicking off today is still exposure. Check the SQL, not the
+    # docstring — the docstring says WHY it is unfiltered and names the column.
+    exp_sql = (src.split("def match_exposure")[1]
+                  .split("def exposure_conflict")[0]
+                  .split('"""')[2])
+    assert "placed_at" not in exp_sql, "must not date-filter exposure"
+    assert "result" not in exp_sql.split("execute_query")[1].split(")")[0], \
+        "must not filter exposure by settlement result"
+
+    return ("Coolbet per-match exposure: max 2 bets from distinct families, "
+            "both vocabularies collapsed, combos excluded, blocks recorded")
+
+
 @test("COOLBET-UI-SEARCH-PREFIX")
 def test_coolbet_ui_search_prefix_2026_08_31():
     """COOLBET-UI-PLACER-MATCHGAPS-2026-08-31 — prefix queries as a LAST RESORT

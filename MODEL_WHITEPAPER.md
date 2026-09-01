@@ -862,6 +862,35 @@ Source: `scripts/edge_threshold_backtest.py` (3,086 settled simulated_bets, 2026
 
 The change is operator-side only. `/value-bets` (subscriber-facing) continues to surface every bot pick at every edge — the per-market thresholds gate only the real-money placement decision. A port to `/value-bets` (probably as an opt-in Pro-tier filter) is deferred pending 4-6 weeks of post-change data. `/admin/real-bets` shows Era v1 (pre 2026-06-06T17:00:00Z) vs Era v2 (post) so the lift is measurable in isolation.
 
+### 8.3.7 Per-match exposure limits (COOLBET-MATCH-EXPOSURE-GUARD 2026-09-01)
+
+The thresholds in 8.3.6 gate each pick **in isolation**. Nothing gated the *portfolio*: until 2026-09-01 the UI placer (`scripts/place_coolbet_ui.py`, the writer behind every real-money row since 2026-08-27) held no per-match state at all, so any number of picks on one fixture were placed independently as long as each cleared its own floor and the daily caps held.
+
+Two failure modes followed, both observed on 2026-08-31 (19 bets / €190 / −€92.80):
+
+1. **Both sides of one market.** `already_placed()` is keyed on `shadow_bet_id`. When a later refresh legitimately flips the model, it emits a *new pick with a new UUID* — Colwyn Bay v Llandudno went `1x2/away` (calibrated_prob 0.3412, 13:03) then `1x2/home` (0.4333, 16:00). The dedup saw an unfamiliar id and placed both, paying vig on a partially self-cancelling position.
+2. **Correlated stacking.** Under 2.5 and under 3.5 are one goals opinion staked twice, not two bets. Airbus UK v Holywell took `1x2/away` + `U2.5` + `U3.5` and finished 6-2, losing €30 on a single scoreline; Barcelona v Rayo took `U3.5` + `U2.5` and finished 5-2. Flat staking — chosen so every row is equally weighted in the audit — silently becomes 2-3× staking on the fixtures where the model is most confident.
+
+The rule is now **at most 2 real-money bets per match, and at most one per market family**:
+
+| Family | Markets |
+|---|---|
+| `result` | 1X2, Double Chance, Draw No Bet, Asian Handicap |
+| `totals` | the whole over/under ladder (`over_under_*`, `o/u`) |
+| `btts` | BTTS |
+
+`result` groups the handicap and derived markets because DC, DNB and AH are all re-expressions of who wins; `totals` groups the whole ladder for the same reason. A per-match stake ceiling (`MAX_STAKE_PER_MATCH`, €20 at €10 flat) binds independently of the count.
+
+Three implementation constraints, each of which a naive version gets wrong:
+
+- **Two vocabularies.** `real_bets` stores `over_under_25` + `'over'` (UI placer) *and* `o/u` + `'over 2.5'` (`coolbet_placer.py`). Both are live. Exposure is read through `canon_bet()`, which collapses them; without it a guard sees half the book.
+- **Combos carry a placeholder `match_id`** (the first leg's), so they are excluded from per-match exposure entirely — counting one would block legitimate singles on that fixture.
+- **Exposure is tracked in memory across the pass, not re-read per pick.** Airbus UK's three bets landed at 13:00, 13:02 and 13:02 — within one pass — so a DB-only check is racy.
+
+Exposure is never filtered by `placed_at` or by settlement result: a bet placed yesterday on a match kicking off today is still exposure. Blocks are written to `coolbet_placement_attempts` with `stage='exposure_guard'` rather than silently skipped, so the firing rate is measurable.
+
+**Honest counterfactual.** Replayed over August's 79 settled singles, the guard blocks 8 bets that collectively returned **+€19.30 (+24.1% ROI)** — it would have cut the month from +€24.43 to +€5.13. At n=8 and average odds near 3.0 that is noise, not evidence, and the justification is not historical P&L: this is a **variance and sizing** control, not an edge control. It restores the flat-staking assumption the audit depends on and removes positions that pay vig against themselves. It should be re-evaluated on CLV once a few hundred blocked-vs-placed decisions exist.
+
 ### 8.4 Backtest Foundation
 
 Bot strategies are validated against a 354,518-match dataset (275 leagues, 2005-2015):
