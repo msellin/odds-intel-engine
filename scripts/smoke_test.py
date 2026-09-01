@@ -2516,16 +2516,33 @@ def _():
     )
 
 
-@test("POOL-FANOUT — APScheduler executor capped at 4 threads")
+@test("POOL-FANOUT — APScheduler executor thread cap stays bounded vs the DB pool")
 def _():
     # Source-read instead of import — apscheduler isn't always installed in
     # the smoke-test venv, but the source file is always in-tree.
     from pathlib import Path
     src = Path("workers/scheduler.py").read_text()
-    assert "APSThreadPoolExecutor(max_workers=4)" in src, (
-        "BackgroundScheduler must use APSThreadPoolExecutor(max_workers=4) — "
-        "default 10 threads × multiple conns/job can fan out to 15+ conns at "
-        "startup catch-up, exhausting the pool."
+    # Was pinned to 4. SCHEDULER-AF-429-DEADLOCK (2026-07-18) deliberately
+    # raised it to 12 after two multi-hour hangs where 5 AF-touching jobs
+    # blocked on 429s and drained the 4-worker pool. The test was not updated
+    # and has failed since.
+    #
+    # Pin the CONTRACT rather than the number: the cap must be set explicitly
+    # (never APScheduler's default 10) and must stay under the DB pool's
+    # maxconn=20, because each job can hold more than one connection and a
+    # startup catch-up burst fans out. That is the failure this test has
+    # always been about, and it survives the retune.
+    import re as _re
+    m = _re.search(r"APSThreadPoolExecutor\(max_workers=(\d+)\)", src)
+    assert m, (
+        "BackgroundScheduler must set APSThreadPoolExecutor(max_workers=N) "
+        "explicitly — APScheduler's default of 10 is not a deliberate choice."
+    )
+    workers_n = int(m.group(1))
+    assert workers_n <= 16, (
+        f"executor is {workers_n} threads against a DB pool of maxconn=20; "
+        "jobs holding >1 connection each will exhaust it on a catch-up burst. "
+        "Raise the pool before raising this."
     )
     assert 'executors={"default": APSThreadPoolExecutor' in src, (
         "BackgroundScheduler() must be passed the executor cap explicitly"
@@ -3220,7 +3237,7 @@ def _():
     )
 
 
-@test("SHADOW-SCHEDULER — 30-min interval shadow job registered (07:05–22:35 UTC)")
+@test("SHADOW-SCHEDULER — 30-min interval shadow job registered (24/7)")
 def _():
     """Shadow runs every 30 min after odds refresh. Cohort = HHMM time string.
     Replaces the old 3-slot design (06:30/11:30/15:30)."""
@@ -3228,7 +3245,15 @@ def _():
     src = pathlib.Path("workers/scheduler.py").read_text()
     assert "job_shadow_run_interval" in src, "missing interval shadow job function"
     assert "shadow_interval" in src, "missing shadow_interval job id"
-    assert '"7-22"' in src, "interval shadow must cover hours 7-22"
+    # SHADOW-24H-COVERAGE-2026-08-21 widened this from hour="7-22" to hour="*".
+    # The old window left an 8.5h overnight gap (22:40 -> 07:10 UTC) that missed
+    # MLS, A-League and early Asian kickoffs. This test still asserted the old
+    # window and has failed since. Assert 24/7 coverage, and keep a guard
+    # against silently re-clipping it.
+    assert 'CronTrigger(hour="*", minute="10,40")' in src, (
+        "interval shadow must run 24/7 (hour=\"*\") — a daytime-only window "
+        "drops overnight kickoffs the line-shopping shadow bots can price"
+    )
     assert '"5,35"' in src, "interval shadow must fire at :05 and :35"
 
 
@@ -3339,7 +3364,21 @@ def _():
     import pathlib
     src = pathlib.Path("workers/scheduler.py").read_text()
     assert "_coolbet_odds_snapshot_wrapper" in src, "missing wrapper function"
-    assert "coolbet_odds_interval" in src, "missing coolbet_odds_interval job id"
+    # Asserted a VPS cron id `coolbet_odds_interval`. COOLBET-SCRAPERS-MOVED-
+    # TO-MAC moved this scraper to the operator's Mac under launchd because
+    # Imperva 403s the VPS — and there is a PASSING test asserting the job is
+    # NOT registered on the VPS. The two tests demanded opposite things; this
+    # is the one that was wrong. The wrapper survives for manual runs.
+    assert "coolbet_odds_interval" not in src, (
+        "coolbet_odds_snapshot must NOT be a VPS cron — Imperva 403s the VPS. "
+        "It runs on the Mac via launchd (see COOLBET-SCRAPERS-MOVED-TO-MAC)."
+    )
+    _plist = (pathlib.Path(__file__).parent.parent /
+              "local/launchd/com.oddsintel.coolbet-odds-snapshot.plist")
+    assert _plist.exists(), (
+        "the Mac launchd plist that actually runs the odds snapshot must exist "
+        f"at {_plist.relative_to(pathlib.Path(__file__).parent.parent)}"
+    )
     assert '"3,33"' in src, "Coolbet snapshot must fire at :03 and :33"
 
     # Endpoint constants must exist (used by the new fetcher)
@@ -3578,9 +3617,24 @@ def _():
     # GET: routes via FS (real Chrome).
     get_block = src.split("    def get(self, url: str, **kwargs)")[1].split("    def ")[0]
     assert "self._fs_get(" in get_block, "CoolbetSession.get must route via FS"
-    assert "self._http.get(" not in get_block, (
-        "CoolbetSession.get must NOT use self._http.get — that's the plain-"
-        "requests path Imperva blocks for GETs."
+    # This used to forbid self._http.get outright. ANON-READ-NO-FS (2026-06-25)
+    # added a plain-requests branch for public reads that only need Imperva
+    # clearance, so the blanket ban became wrong and this failed from that date.
+    #
+    # The invariant that still matters: plain requests must be reachable ONLY
+    # behind the explicit self._no_fs opt-in. If it ever escapes that guard,
+    # the default GET path is silently the one Imperva blocks — the exact
+    # failure this assertion was written to catch.
+    for _ln in get_block.splitlines():
+        if "self._http.get(" in _ln:
+            _guard = get_block.split(_ln)[0]
+            assert "if self._no_fs:" in _guard, (
+                "CoolbetSession.get reaches self._http.get outside the "
+                "`if self._no_fs:` branch — that is the plain-requests path "
+                "Imperva blocks for GETs, and it must never be the default."
+            )
+    assert "if self._no_fs:" in get_block, (
+        "the plain-requests GET path must stay behind an explicit no-FS opt-in"
     )
 
     # POST: routes via plain requests, requires fresh FS-harvested cookies.
@@ -4340,7 +4394,16 @@ def test_retrain_healthcheck():
     )
     hook_idx = sched.index('id="retrain_healthcheck"')
     hook_block = sched[max(0, hook_idx - 500):hook_idx + 200]
-    assert 'day_of_week="mon,tue"' in hook_block, (
+    # Asserted the exact literal day_of_week="mon,tue". RETRAIN-HEALTHCHECK-
+    # CADENCE-2026-08-16 widened the cadence to mon-sat, which is a SUPERSET
+    # and satisfies the original intent, but the literal no longer matched so
+    # this failed from that date. Assert the requirement (both days covered)
+    # instead of one spelling of it.
+    import re as _re
+    _dow = _re.search(r'day_of_week="([^"]+)"', hook_block)
+    assert _dow, "retrain_healthcheck must pin an explicit day_of_week"
+    _days = {d.strip() for d in _dow.group(1).split(",")}
+    assert {"mon", "tue"} <= _days, (
         "schedule must run Mon AND Tue — Sunday-03:00 failures need a "
         "first-business-day alert; Mon-only would miss a Mon-failure "
         "until next Sunday."
@@ -5307,7 +5370,10 @@ def test_coolbet_daily_summary():
     must_surface = [
         ("Daemon", "tick age + last result (placed/errors)"),
         ("JWT",    "TTL — proactive-refresh visibility"),
-        ("the VPS HB", "VPS scheduler liveness"),
+        # Was "the VPS HB". The line is now emitted as "Scheduler HB:" — same
+        # pillar, renamed. The test pinned the prose rather than the signal and
+        # failed on the rename; match the current label.
+        ("Scheduler HB", "VPS scheduler liveness"),
         ("Catch-net",  "C2 heartbeat — confirms */5 cron firing"),
         ("24h",  "real-bet activity"),
         ("Today", "calibrated queue"),
@@ -11777,8 +11843,16 @@ def test_ah_veto_widen():
         "AH-VETO-WIDEN tag not found in daily_pipeline_v2.py"
     assert '_veto_gap = 0.22 if mkt in ("asian_handicap", "double_chance") else PINNACLE_VETO_GAP' in src, \
         "AH/DC veto-gap branch missing — bot_ah_away_dog will stay silent"
-    assert "(cal_prob - _veto_anchor) > _veto_gap" in src, \
-        "Veto check should use the per-market _veto_gap, not the fixed PINNACLE_VETO_GAP"
+    # Was "(cal_prob - _veto_anchor) > _veto_gap". The subtraction was later
+    # hoisted into a named `_anchor_gap` reused by the mid-band filter, so the
+    # inline expression vanished and this failed — while the behaviour it
+    # guards was unchanged. Assert the comparison against the per-market gap,
+    # which is the actual contract.
+    assert "if _anchor_gap > _veto_gap:" in src, \
+        "Veto check must compare the anchor gap against the per-market _veto_gap, "\
+        "not the fixed PINNACLE_VETO_GAP"
+    assert "_anchor_gap" in src and "_veto_anchor" in src, \
+        "the anchor-gap computation must still exist upstream of the veto"
 
 
 @test("ENUM-NOT-STARTED — fetch_weather and watchlist_alerts use valid match_status enum values")
