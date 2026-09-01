@@ -158,3 +158,64 @@ test, never the paper-only default) and **BOT-BANKROLL-DRIFT** (a real data inci
    hardcoded €1000 base), so this is display-only — but inflated bankrolls on a
    product whose pitch is an honest track record is the wrong direction to be wrong
    in. The script is idempotent and rebuilds from bet history.
+
+---
+
+## Session 2 — 2026-09-01: all remaining failures triaged
+
+Worked every failure to a root cause. **12 more resolved. Zero production
+regressions found** — every one was a test pinning a literal the code had
+deliberately moved past, usually months earlier. No production code changed in
+this pass.
+
+| Test | Superseded by | Landed |
+|---|---|---|
+| COOLBET-MAC-DAEMON | paper-only hardcode | 2026-07-06 |
+| PER-BOT-EDGE-THRESHOLD-APPLY | BTTS-CALIBRATION-GAP-LOOSEN | 2026-07-19 |
+| SPECIALIST-BOTS-WHITELIST | DNB-LEGACY-CONFIG-DROP | 2026-07-31 |
+| TIER-C-T3PLUS-GATE | TIER-C-T3PLUS-GATE-EXPAND | 2026-07-31 |
+| DRAW-CALIBRATION | extracted to `draw_calibration.py` | 2026-08 |
+| POOL-FANOUT | SCHEDULER-AF-429-DEADLOCK | 2026-07-18 |
+| SHADOW-SCHEDULER | SHADOW-24H-COVERAGE | 2026-08-21 |
+| RETRAIN-HEALTHCHECK | RETRAIN-HEALTHCHECK-CADENCE | 2026-08-16 |
+| AH-VETO-WIDEN | `_anchor_gap` hoisted to a variable | — |
+| COOLBET-DAILY-SUMMARY | line renamed to "Scheduler HB" | — |
+| COOLBET-FS-SESSION-STABLE | ANON-READ-NO-FS | 2026-06-25 |
+| COOLBET-ODDS-SNAPSHOT | COOLBET-SCRAPERS-MOVED-TO-MAC | — |
+
+### Two findings worth more than the fixes
+
+**The suite contradicted itself.** `COOLBET-ODDS-SNAPSHOT` asserted a VPS cron
+id that `COOLBET-SCRAPERS-MOVED-TO-MAC` — passing — asserted must NOT exist.
+Two tests demanding opposite things, coexisting because nobody could see the
+red one under the noise.
+
+**One test was pressure to weaken a safety control.** `COOLBET-MAC-DAEMON`
+demanded `execute=True` while the daemon is hardcoded `execute=False`, paper-only
+since 2026-07-06 specifically so an auth fix could not silently re-enable
+real-money placement. The obvious way to green it was to turn real money on.
+It is now inverted: flipping to `execute=True` fails there first.
+
+### Where fixes preserved the original intent rather than the literal
+
+- **POOL-FANOUT** — pins the *contract* (explicit cap, and below the DB pool's
+  `maxconn=20`) instead of `max_workers=4`, so a retune does not silently
+  reintroduce connection exhaustion.
+- **COOLBET-FS-SESSION-STABLE** — plain requests must stay behind the
+  `if self._no_fs:` opt-in; if it escapes, the default GET path is the one
+  Imperva blocks.
+- **DRAW-CALIBRATION** — additionally pins that inference *calls* the helper.
+  An unused helper would satisfy a source-grep while the shrink sat dead.
+- **SPECIALIST-BOTS-WHITELIST** — follows the invariant into the merged
+  profile rather than dropping the coverage.
+
+### Left red on purpose
+
+Both are real, and the tests are correct:
+- **BOT-BANKROLL-DRIFT** → filed as BOT-BANKROLL-DRIFT-APPLY (needs a
+  production write).
+- **COMPETITOR-AUDIT-FRESH** → filed as COMPETITOR-SCRAPERS-DEGRADED. Three of
+  six competitor rows on the landing page fall back to hardcoded values.
+
+**EMAIL-DIGEST-SMART** stays red pending the restore-vs-retire decision on
+`job_email_digest`.
