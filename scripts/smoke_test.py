@@ -21663,9 +21663,6 @@ def test_pause_inplay_e_2026_07_31():
     applied first (competition exclusion + odds floor) and update this
     test.
     """
-    from pathlib import Path
-    src = (Path(__file__).resolve().parent.parent / "workers" /
-           "jobs" / "inplay_bot.py").read_text()
         # SMOKE-SUITE-AUDIT 2026-09-01: this asserted the literal
     # '\n    "inplay_e": {' was absent from the source — i.e. that the config key
     # is not present at exactly four spaces of indentation. Re-indenting the
@@ -21694,11 +21691,7 @@ def test_pause_inplay_p_v2_2026_07_31():
     reviving inplay_p_v2 (or shipping inplay_p_v3), fix the home-leg
     regression first + update this test.
     """
-    from pathlib import Path
-    src = (Path(__file__).resolve().parent.parent / "workers" /
-           "jobs" / "inplay_bot.py").read_text()
-    # The active dict entry ("inplay_p_v2": {...}) must be commented out.
-        # SMOKE-SUITE-AUDIT 2026-09-01: this asserted the literal
+    # SMOKE-SUITE-AUDIT 2026-09-01: this asserted the literal
     # '\n    "inplay_p_v2": {' was absent from the source — i.e. that the config key
     # is not present at exactly four spaces of indentation. Re-indenting the
     # dict, or re-adding the key with any other whitespace, silently un-pauses
@@ -21729,26 +21722,34 @@ def test_retired_bot_leak_fix_2026_07_31():
     b.retired_at IS NULL` immediately after the edge filter, before
     the optional maturity clause. This smoke pins both filters so a
     future refactor can't silently drop them.
-    """
-    from pathlib import Path
-    src = (Path(__file__).resolve().parent.parent / "workers" /
-           "automation" / "coolbet_placer.py").read_text()
 
-    # There must be at least two occurrences of BOTH filter lines —
-    # one for singles (load_qualified_bets) and one for combos
-    # (load_qualified_combo_bets).
-    is_active_count = src.count("b.is_active IS TRUE")
-    retired_count = src.count("b.retired_at IS NULL")
-    assert is_active_count >= 2, (
-        f"Expected >=2 'b.is_active IS TRUE' filter clauses in "
-        f"coolbet_placer.py (one in singles scanner, one in combo). "
-        f"Got {is_active_count}. RETIRED-BOT-LEAK-FIX-2026-07-31."
-    )
-    assert retired_count >= 2, (
-        f"Expected >=2 'b.retired_at IS NULL' filter clauses in "
-        f"coolbet_placer.py. Got {retired_count}. "
-        f"RETIRED-BOT-LEAK-FIX-2026-07-31."
-    )
+    SMOKE-SUITE-AUDIT 2026-09-01: this counted occurrences of each filter
+    string across the WHOLE FILE and required >= 2 of each. That has a hole
+    shaped exactly like the bug it guards: if the singles query carried both
+    clauses twice and the combo query carried none, the counts still pass and
+    retired combo bots keep placing — which is the leak that bled ~$85 over
+    16 losing bets. A comment mentioning the clause would also satisfy it.
+
+    Now scoped per function: each loader is inspected on its own, so both
+    queries must carry both filters."""
+    import inspect
+    from workers.automation import coolbet_placer as cp
+
+    for fn_name in ("load_qualified_bets", "load_qualified_combo_bets"):
+        fn = getattr(cp, fn_name, None)
+        assert fn is not None, (
+            f"coolbet_placer.{fn_name} is gone — if a loader was renamed, this "
+            "guard must follow it, or retired bots can silently place again."
+        )
+        fsrc = inspect.getsource(fn)
+        assert "b.is_active IS TRUE" in fsrc, (
+            f"{fn_name} does not gate on b.is_active IS TRUE — retired bots "
+            "will be loaded for real-money placement (RETIRED-BOT-LEAK-FIX)."
+        )
+        assert "b.retired_at IS NULL" in fsrc, (
+            f"{fn_name} does not gate on b.retired_at IS NULL — retired bots "
+            "will be loaded for real-money placement (RETIRED-BOT-LEAK-FIX)."
+        )
 
 
 @test("MODEL-VERSION-RE-EVAL-2026-07-31 — OU override flip to v20260719 + eval docs on disk")

@@ -359,6 +359,23 @@ in `continue`, and asserts no `shadow_mode` branch assigns to anything
 bankroll-shaped. Not every improvement is "make it behavioural"; sometimes it
 is "make the static check semantic".
 
+**RETIRED-BOT-LEAK-FIX** — retired bots must not be loaded for real-money
+placement. The test counted `b.is_active IS TRUE` and `b.retired_at IS NULL`
+across the **whole file** and required >= 2 of each, one per loader.
+
+| mutation | old count test | new per-function |
+|---|---|---|
+| **strip both filters from the COMBO loader, keep file-wide counts at 2** | **PASS — missed** | FAIL (caught) |
+
+That hole is shaped exactly like the bug it guards: 5 retired acca/combo bots
+kept writing `real_bets` for seven weeks, 16 bets, 0 wins, ~$85 bled. A comment
+mentioning the clause would also have satisfied it. Now each loader is
+inspected on its own, so both queries must carry both filters.
+
+*Also cleaned:* the PAUSE-INPLAY conversions had left the original
+`read_text()` behind as dead code (and one mis-indented comment), which is why
+they still classified as WEAKEN after being converted. Both tidied.
+
 ### Judged NOT worth converting (deliberate)
 
 - **REAL-BETS-EDGE-FORMULA-FIX** — the additive edge is computed inline inside
