@@ -377,18 +377,6 @@ The `simulated_bets` table is the **public track-record chain** — the basis fo
 - Content is triple-duty: match detail page (Free sees teaser, Pro/Elite see full), email digest, social posts
 - Manual run: `python -m workers.jobs.match_previews --dry-run`
 
-### ⑲ WC AI Match Previews (`wc_match_previews.py`) — WC-AI-PREVIEW
-- Runs at 07:30 UTC daily, after fetch_predictions (04:00) + the national-team predictor have settled
-- **Window-gated**: no-op outside `2026-06-04 → 2026-07-19` so APScheduler doesn't burn Gemini quota the rest of the year
-- Selects every WC fixture (`leagues.api_football_id=1`) in the next 7 days
-- For each: pulls international ELO (`team_elo_international`), last-5 internationals form, H2H from `matches.h2h_*`, our model's 1X2 from `predictions` (`source='national_team_v1'`), venue, derived bracket stage
-- Calls Gemini 2.5 Flash-Lite: 80-120 word preview + 30-50 word teaser, OddsIntel voice, cliché blacklist baked into the prompt + scrubbed on output (no "clash of titans", no "should be a cracker", no "guaranteed")
-- **Idempotent**: skips fixtures whose existing preview is < 24h old; `--force` regenerates everything in the window
-- Rate-limited to 1 req/sec; Gemini errors caught + the loop continues (never crashes the cron)
-- Reuses the existing `match_previews` table (migration 033) — distinct match_ids so no clash with the daily club preview job. Frontend `getMatchPreview()` and `getWorldCupPreviews()` both pick this up automatically.
-- **Cost**: ~728 calls per tournament cycle (104 matches × ~7 refreshes each) at ~$0.01 / call on flash-lite ≈ **~$7 for the whole World Cup**
-- Manual run: `python -m workers.jobs.wc_match_previews --dry-run`
-
 ### ⑪ Email Digest + Value Bet Alerts (`email_digest.py`) — ENG-4 + N5
 
 **Smart-slot digest (10:00 / 12:00 / 14:00 / 16:00 UTC) — EMAIL-DIGEST-SMART:**
@@ -427,36 +415,36 @@ The `simulated_bets` table is the **public track-record chain** — the basis fo
 - Auto-disables via `backfill_complete.flag`; stale flag auto-removed if new phases have work
 - Manual run: `python scripts/backfill_historical.py --phase 4 --max-requests 5000 --batch-size 2000`
 
-### ⑫ WC Bracket + Group-Standings Scoring (`wc_bracket_scoring.py`) — WC-BRACKET-SCORING / WC-GROUP-PREDICTOR (2026-06-02)
-- Every 30 min at `:05/:35` UTC (lands after settlement + live-tracker writes at `:00/:30`)
-- Gated on `2026-06-11 ≤ today ≤ 2026-07-19` — APScheduler still fires outside the window but the job returns immediately with no DB work
-- **Bracket score** (max 122, includes Golden Boot 10): derive who advanced from finished WC matches (group stage by points → GD → GF; knockouts by match winner), score user picks using R32=1, R16=2, QF=4, SF=8, F=16, Champion=32
-- **Group-standings score** (max 192 across 12 groups): per-group 1st=5 / 2nd=3 / 3rd=2 / 4th=1, +5 perfect-group bonus. Gated on all six fixtures in the group being finished — partial standings would bounce mid-stage
-- Iterates over **both real users AND AI ghost entries** (rows with `ai_label IS NOT NULL`) in `wc_bracket_meta`. Writes `current_score` (bracket), `group_standings_score`, `total_score = sum`, `current_rank` (dense, combined ranking), `current_percentile` (Top X% — used by UI when total entries < 200)
-- Golden Boot actual winner read from `app_settings` key `wc_golden_boot_actual` (manual operator stamp); AF top-scorer endpoint automation filed as WC-GOLDEN-BOOT-AUTO
-- Manual run: `python -m workers.jobs.wc_bracket_scoring`
-
-### ⑫b WC Achievement Detection (`wc_achievement_detection.py`) — WC-ACHIEVEMENTS (2026-06-02)
-- Every 15 min at `:00/:15/:30/:45` UTC, gated on the same `2026-06-11 ≤ today ≤ 2026-07-19` window
-- PARALLEL to scoring — never mutates `wc_bracket_meta`; adds idempotent rows only to `wc_user_achievements`
-- 15-slug catalog: submission timing (`first_to_lock`, `early_bird`, `last_minute`), groups (`groups_perfect_one`, `groups_perfect_three`, `groups_all_perfect`), bracket skill (`r32_beat_ai` vs OddsIntel Elite AI, `final_called`, `champion_correct`, `called_the_upset` — lower-ELO winner from `team_elo_international`), per-match (`vs_you_streak_5`, `vs_you_streak_10`, `vs_you_perfect_day`), engagement (`viewed_all_groups` — reads optional `wc_group_views` table, silent no-op when absent), `golden_boot_correct`
-- AI ghosts excluded — achievements are a user-engagement loop, not a benchmark
-- Idempotent via UNIQUE (user_id, slug) in migration 172 — re-runs are safe
-- Manual run: `python -m workers.jobs.wc_achievement_detection`
-
-### One-shot: WC AI Ghost Generator (`generate_ai_brackets.py`) — WC-AI-GHOSTS (2026-06-02)
-- One-off, not on cron. Run before WC kickoff (2026-06-11 19:00 UTC) to seed the 5 AI ghost entries on the leaderboard
-- Strategies: `OddsIntel Elite AI`, `OddsIntel Pro AI`, `OddsIntel Free AI`, `Market Implied`, `Chalk` — each writes a complete bracket + 48-row group-standings prediction. AI rows have `ai_label` set and `user_id` NULL
-- Idempotent until lock: each re-run wipes-and-replaces AI rows. After lock the script refuses to overwrite (use `--force` for dev override)
-- Manual run: `python scripts/generate_ai_brackets.py` (all 5) · `--strategy chalk` · `--dry-run`
-
-### ⑨b Internationals Backfill (`backfill_internationals.py`) — WC-PHASE-2 (2026-06-02)
+### ⑨b Internationals Backfill (`backfill_internationals.py`) — general internationals, NOT World Cup-only
 - One-off script to pull historical national-team competition fixtures (WC 2018/2022, Euro 2020/2024, Copa America, AFCON, Asian Cup, Gold Cup, all UEFA Nations League editions, WC 2022 + 2026 qualifiers across all 6 confederations, Friendlies). Required because the regular date-mode `fetch_fixtures` only pulls today and never sees historical international matches.
 - 59 (league, season) tuples → ~3,000 finished matches.
 - Phase A: fixtures via `get_fixtures_by_league_season` + `bulk_store_matches` (idempotent upsert).
 - Phase B: nested data (lineups, events, statistics, player stats) via `get_fixtures_batch(20-at-a-time)` for finished matches only. Skips matches that already have a `match_stats` row.
 - Manual run: `python scripts/backfill_internationals.py` (full) or `--filter "World Cup,Euro"` for a subset, or `--dry-run` / `--no-enrichment` to scope down.
 - Not in the cron schedule — invoke once after each WC qualification cycle / major tournament finishes.
+
+### Retired surfaces
+
+**World Cup (WC-RETIRED-2026-09-01).** The tournament ended 2026-07-19 and the
+frontend has no `/world-cup` or bracket route — so six jobs (AI previews,
+bracket scoring, achievement detection, market consensus, monte carlo, and a
+5-minute lineup refresh) were firing daily against a self-gate that had
+expired, feeding a UI that no longer exists. Jobs, modules, scripts, the
+`wc_blender` / blended-predictions path and a WC recap hook inside
+`settlement.py` were all removed. `wc_*` **tables were left intact** — they
+hold 1,440 real user bracket picks.
+
+Kept: `write_national_team_predictions` (morning pipeline step 6/7) and
+`backfill_internationals.py` above. Despite their WC-PHASE tags neither is
+World Cup-specific — `source='national_team_v1'` priced ASEAN Championship and
+Friendlies in the last 60 days and last ran 2026-08-25.
+
+**Tennis (TENNIS-RETIRED-2026-09-01).** Paused 2026-07-02; `tennis_scanner`
+last succeeded 2026-07-04 while a health tripwire emailed about the silence
+daily for 59 days. Wrappers, 18 scripts and both tripwires removed.
+
+**CS2 / HLTV / Leetify / LoL.** Code and tables already gone; the remaining
+smoke tests and two stale Kuma monitors were cleaned up 2026-09-01.
 
 ### ⑩ Extended CSV Export (`generate_targets_extended.py`) — run after any new backfill
 - Exports all finished DB matches not already in `targets_poisson_history.csv` or `targets_global.csv` to `data/processed/targets_extended.csv`
