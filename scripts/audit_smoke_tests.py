@@ -174,6 +174,26 @@ def _source_only(body: str) -> bool:
     return True
 
 
+# Ranking WEAKEN by line number is useless — 194 of them is a backlog, not a
+# task list. What matters is blast radius: a source-grep guarding real-money
+# placement is a different problem from one guarding a doc string. Weight by
+# what the test's own name says it protects.
+STAKES = [
+    (5, re.compile(r'real.?money|real_bets|kill.?switch|execute|place(ment)?|stake|'
+                   r'bankroll|payout|pause', re.I)),
+    (4, re.compile(r'settle|void|clv|slippage|edge|threshold|veto|guard|cap|gate', re.I)),
+    (3, re.compile(r'calibrat|model|predict|ensemble|blend|elo|prob', re.I)),
+    (2, re.compile(r'schedul|cron|job|pipeline|migration|rls|auth|tier', re.I)),
+]
+
+
+def stakes_of(name: str) -> int:
+    for score, pat in STAKES:
+        if pat.search(name):
+            return score
+    return 1
+
+
 def classify(t: dict, status: str | None) -> tuple[str, str]:
     refs = t["refs"]
     dead_mods  = [m for m in refs["modules"] if not module_exists(m)]
@@ -207,6 +227,8 @@ def main():
     ap.add_argument("--status-json", help='JSON map {"test name": "pass|fail|skip"}')
     ap.add_argument("--csv", help="write per-test rows here")
     ap.add_argument("--verdict", help="only show this verdict")
+    ap.add_argument("--stakes", action="store_true",
+                    help="rank WEAKEN by blast radius instead of line order")
     args = ap.parse_args()
 
     src = SUITE.read_text(encoding="utf-8")
@@ -218,6 +240,7 @@ def main():
     for t in tests:
         t["refs"] = references(t["body"])
         t["verdict"], t["why"] = classify(t, status.get(t["name"]))
+        t["stakes"] = stakes_of(t["name"])
 
     order = ["DELETE", "FIX", "REVIEW", "WEAKEN", "KEEP"]
     counts = {v: 0 for v in order}
@@ -231,6 +254,25 @@ def main():
     for v in order:
         print(f"  {v:8} {counts[v]:>4}")
     print()
+
+    if args.stakes:
+        weak = sorted((t for t in tests if t["verdict"] == "WEAKEN"),
+                      key=lambda t: (-t["stakes"], t["line"]))
+        LABEL = {5: "5 REAL MONEY", 4: "4 settlement/edge", 3: "3 model",
+                 2: "2 infra", 1: "1 other"}
+        from collections import Counter
+        dist = Counter(t["stakes"] for t in weak)
+        print("WEAKEN by blast radius:")
+        for k in sorted(dist, reverse=True):
+            print(f"  {LABEL[k]:20} {dist[k]:>4}")
+        print()
+        cur = None
+        for t in weak:
+            if t["stakes"] != cur:
+                cur = t["stakes"]
+                print(f"--- {LABEL[cur]} " + "-" * 40)
+            print(f"  L{t['line']:<6} {t['name'][:76]}")
+        return
 
     for v in order:
         if args.verdict and v != args.verdict:
@@ -248,10 +290,10 @@ def main():
         import csv
         with open(args.csv, "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
-            w.writerow(["verdict", "line", "nlines", "name", "why",
+            w.writerow(["verdict", "stakes", "line", "nlines", "name", "why",
                         "modules", "paths", "migrations", "ci_status"])
             for t in sorted(tests, key=lambda x: (order.index(x["verdict"]), x["line"])):
-                w.writerow([t["verdict"], t["line"], t["nlines"], t["name"], t["why"],
+                w.writerow([t["verdict"], t["stakes"], t["line"], t["nlines"], t["name"], t["why"],
                             "|".join(t["refs"]["modules"]), "|".join(t["refs"]["paths"]),
                             "|".join(t["refs"]["migrations"]), status.get(t["name"], "")])
         print(f"wrote {args.csv}")

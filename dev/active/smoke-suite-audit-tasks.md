@@ -270,3 +270,65 @@ file, so they pass whether the code works or not, and keep passing after the
 feature is deleted. This is why the suite could report 685 green while whole
 product areas were dead. Converting the top 20 to behavioural assertions is
 worth more than the 20 failures this pass fixed. Not started.
+
+---
+
+## WEAKEN conversions — started 2026-09-01
+
+192 WEAKEN tests is a backlog, not a task list, so `audit_smoke_tests.py`
+gained `--stakes`: it ranks them by what the test's own name says it protects,
+because a source-grep guarding real-money placement is a different problem from
+one guarding a docstring.
+
+| band | count |
+|---|---|
+| **5 — real money** (place / stake / bankroll / kill switch / execute) | **20** |
+| 4 — settlement, CLV, edge, thresholds, guards | 46 |
+| 3 — model, calibration, predictions | 16 |
+| 2 — scheduler, migrations, auth, tiers | 30 |
+| 1 — everything else | 80 |
+
+Work band 5 first, then 4. Bands 1–2 are mostly config and cron registrations
+where a source check is the *only* honest option — those are not all wrong, and
+converting them for its own sake would be churn.
+
+### Method
+
+1. Find a seam that can be exercised without DB, network or account. Pure
+   builders and functions that short-circuit early are ideal.
+2. Assert the behaviour, and pin the type where a wrong type would pass an
+   equality check.
+3. **Mutation-check every conversion**, and record what the *old* test did with
+   the same mutations. A conversion that catches nothing the grep missed is not
+   worth the churn.
+
+### Converted so far
+
+**COOLBET-PLACEMENT-PAUSED-KILL-SWITCH** — the control that stops real-money
+placement. Was three greps: the string appears, it sits after `if execute:`,
+and a `return []` occurs within 500 chars.
+
+| mutation | old grep test | new behavioural |
+|---|---|---|
+| drop the `return []` | FAIL (caught) | FAIL (caught) |
+| **`if paused:` → `if False:`** | **PASS — missed** | FAIL (caught) |
+| **also gate paper/record** | **PASS — missed** | FAIL (caught) |
+
+The second disables the kill switch outright while every asserted string stays
+in place.
+
+**INPLAY-STAKE-5-NEW** — searched an 800-char window for `"stake": 5.0`.
+
+| mutation | old grep test | new behavioural |
+|---|---|---|
+| stake back to 1.0 | FAIL (caught) | FAIL (caught) |
+| **literal kept, value clobbered before return** | **PASS — missed** | FAIL (caught) |
+
+Both now call the code and read what it produces.
+
+### Remaining band-5 targets
+
+`SELF-USE-VALIDATION` (store_real_bet), `SETTLEMENT-POSTPONED-VOID`,
+`SHADOW-NO-BANKROLL`, `COOLBET-PLACER-NEW-SCHEMA`, `COOLBET-SEARCH-BLOCKED`,
+`COOLBET-DAEMON-SELFPAUSE`, `COOLBET-SLIPPAGE`, `COOLBET-PLACER-STORES-SNAPSHOT`,
+`ACCA-EDGE-PERCENT`, and 9 more — run `--stakes` for the current list.
