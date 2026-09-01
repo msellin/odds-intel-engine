@@ -30,11 +30,25 @@
       count + stake ceilings, pick marking (2=placed / 1=checked)
 - [x] launchd plist (`RunAtLoad=false` — loading must not place a bet)
 
-## Blocked
+## Done (2026-08-27 → 08-31, confirmed live 2026-09-01)
 
-- [ ] **Placement itself is operator-run.** The agent builds and verifies the
-      whole path but does not execute real-money placement, and will not load
-      the launchd job. `launchctl load` is the operator's step.
+- [x] **Placement is proven in production.** The operator loaded the launchd
+      job; `place_coolbet_ui.py` now runs hourly 06:00–21:00 UTC with
+      `--execute` (real money) out of this working directory. **51 real bets
+      placed 2026-08-27 → 08-31** (`real_bets.notes LIKE 'ui-placer%'`),
+      50 settled, **−€33.90 / −6.78% ROI**. 23 `place`-stage rows in
+      `coolbet_placement_attempts` in the last 3 days alone.
+- [x] **OU support on the UI path.** 18 of the 51 bets are OU
+      (`over_under_35` ×11, `over_under_25` ×7). AH is still open — see below.
+- [x] `placement_paused` cleared — currently `False`, no pause reason set.
+
+## Status check 2026-09-01
+
+This list had drifted badly and was **actively misleading on live real-money
+code**: it still claimed the first confirmed placement was unproven and that
+OU was unimplemented, while 51 real bets — including 18 OU — had already been
+placed. Both moved to Done above with the evidence. Verify against `real_bets`
+and `coolbet_placement_attempts` before trusting any line below.
 
 ## Open
 
@@ -45,20 +59,28 @@
       Fails SAFE: `stage_bet` refuses to run on a dirty slip rather than
       risking a wrong bet, so the cost is a blocked pass, not a bad wager.
       One manual click clears it. Try widening the window or the keyboard path.
-- [ ] **First confirmed placement is still unproven.** The two-step confirm is
-      written defensively against several button shapes because it can only be
-      observed mid-placement. A wrong guess reports "not confirmed" rather than
-      claiming a phantom bet, but the happy path has not been seen once.
 - [ ] Fix cold-Chrome dead-end: `cdp_auto_login` reuses a Coolbet tab but never
       opens one, so a pageless Chrome cannot be attached to at all
       (`Browser.setDownloadBehavior` protocol error). Open via `/json/new` first.
-- [ ] Add `playwright` (and optionally `patchright`) to `requirements.txt` —
-      neither is listed, which is how bug 1 drifted in unnoticed.
-- [ ] Diagnose the daemon's 7 consecutive errors **before** clearing
-      `placement_paused`. Do not clear it to make things look green.
+- [ ] `playwright` is still absent from `requirements.txt`. Partially
+      mitigated 2026-09-01: its import in `place_coolbet_ui.py` was made lazy,
+      so reading a constant no longer needs the driver and the smoke test runs
+      in CI. **Do not simply add it to `requirements.txt`** — that file is
+      installed on the VPS, which never drives a browser, and playwright pulls
+      browser binaries. It is a Mac-only dependency; pin it somewhere that
+      reflects that.
+- [ ] `session_healthy=False` with `last_error = "heartbeat: maintenance probe
+      returned non-200"` as of 2026-09-01 07:55, and `coolbet_health_ping` has
+      been failing every 5 min for days. Placement still works (the UI path has
+      no cookie-freshness dependency — that is the point of it), so this is a
+      **monitoring** signal that is permanently red rather than a placement
+      outage. A health check that is always red is not a health check.
 - [ ] Fresh-window read on `bot_coolbet_value_v1` before wiring picks → placement.
 - [ ] Finish COOLBET-SQUAD-GUARD — the API path
       (`coolbet_placer.fuzzy_match_event`) is still exposed; only the UI path
       is guarded.
-- [ ] OU/AH support on the UI path (Estonian `Üle/Alla 2.5` line matching).
+- [ ] **AH** support on the UI path. OU shipped; AH is still unimplemented
+      (no `asian_handicap` in `coolbet_ui_placer.py`) and raises rather than
+      guessing a line. Note `AH-NO-QUARTER`: Coolbet offers only full/half
+      lines.
 - [ ] Re-validate `inplay_l` on a fresh window; its last 48 bets are −3.4%.
