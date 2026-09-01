@@ -10312,6 +10312,28 @@ def main():
     else:
         registry = _registry
 
+    # SMOKE-SUITE-AUDIT 2026-09-01: warm the heavy scientific stack on ONE
+    # thread before the pool starts.
+    #
+    # Tests run 8-wide, and several import modules that pull in scipy/sklearn
+    # transitively. Python's import lock is per-module, so two threads taking
+    # the FIRST import of different scipy submodules simultaneously can each
+    # observe the other's half-built module — CI failed with
+    # "cannot import name 'minkowski' from partially initialized module
+    # 'scipy.spatial.distance' (most likely due to a circular import)".
+    #
+    # The race was always latent; adding behavioural tests that import
+    # workers.jobs.* is what made it reachable. Fix it once here rather than
+    # making every future test author think about import order. Failures are
+    # swallowed deliberately: an environment without scipy should skip those
+    # tests on their own terms, not die in the warm-up.
+    for _warm in ("scipy.spatial.distance", "scipy.stats", "sklearn.linear_model",
+                  "sklearn.calibration"):
+        try:
+            __import__(_warm)
+        except Exception:
+            pass
+
     t0 = time.monotonic()
 
     with ThreadPoolExecutor(max_workers=8) as pool:
