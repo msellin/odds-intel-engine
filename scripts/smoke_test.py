@@ -24997,7 +24997,26 @@ def _():
     assert 'id="epicbet_odds_snapshot"' in sched, "job must be registered, not just defined"
     assert 'CronTrigger(hour="*", minute="2,32")' in sched, \
         "Epicbet must fire at :02/:32 — before the :05/:35 betting refresh"
-    assert "Epicbet odds snapshot failed" in sched, "must be error-isolated"
+
+    # This assertion used to require "Epicbet odds snapshot failed" in the
+    # scheduler — i.e. that the job swallowed its own exceptions. That is
+    # exactly what EPICBET-403-FROM-VPS-2026-08-29 had to undo: catching
+    # everything meant _run_job recorded status='completed' and pinged Kuma
+    # "up" through 277 consecutive runs over six days that wrote zero rows.
+    # _run_job already isolates each job from the others, so the job re-raises
+    # and the failure is finally visible. Inverted rather than deleted, so the
+    # swallow cannot quietly come back.
+    job_src = sched[sched.index("def job_epicbet_odds_snapshot"):
+                    sched.index("def _epicbet_odds_snapshot_wrapper")]
+    assert "except Exception" not in job_src, (
+        "job_epicbet_odds_snapshot must NOT catch its own exceptions — that is "
+        "how six days of 403s reported success (EPICBET-403-FROM-VPS). "
+        "_run_job provides the isolation."
+    )
+    assert "_run_job(\"epicbet_odds_snapshot\"" in sched, (
+        "the job must still be wrapped by _run_job, which is what isolates it "
+        "from the other scheduler jobs now that it re-raises"
+    )
     return "Epicbet ingest: vocabulary pinned, reserve/youth false-matches blocked, :02/:32 slot"
 
 
