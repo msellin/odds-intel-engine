@@ -15,8 +15,8 @@
 - [x] suppress pick generation on disputed fixtures
 - [x] smoke
 
-## 3. BET365-EXECUTION-AUDIT
-- [ ] (blocked on 1)
+## 3. BET365-EXECUTION-AUDIT  [DONE 2026-09-02 — already shipped 2026-08-21; verified + closed]
+- [x] verified: 0 Bet365 picks since removal; no second Bet365 among accessible books
 
 ## 4. SWEEP-HOME-BOTS-CALIBRATION
 - [ ] (blocked on 1) confound already ruled out — go straight to model
