@@ -491,6 +491,30 @@ baseline test scores all matches, CLV scores only the filtered picks. Note
 also that a t of 38 on a +0.05% mean is statistical, not economic,
 significance; it will not cover the vig. Resolve the conflict before acting.
 
+## 25. Cross-book price comparison must match on `handicap_line`
+
+`odds_snapshots.selection` for `asian_handicap` is only `home` / `away` — the
+line lives in a separate `handicap_line` column. Joining two bookmakers on
+`(match_id, market, selection)` therefore compares a −0.5 quote against a −1.5
+quote.
+
+Measured 2026-09-02 on live Coolbet-vs-Epicbet data: the unmatched join
+reports Epicbet **+17.9% to +22.6%** better on AH. Line-matched, the real
+answer is **+0.86%**. Two soft books do not differ by 20% on the same line —
+if you see a double-digit cross-book difference, the join has come unmatched.
+
+Join with `IS NOT DISTINCT FROM`, never `=`: every non-handicap market carries
+`handicap_line IS NULL`, and `NULL = NULL` drops the whole row silently, so a
+plain equality quietly throws away 1X2, OU and BTTS.
+
+Also reduce to one quote per book per outcome (`DISTINCT ON … ORDER BY
+timestamp DESC`) before averaging, or fixtures that happened to be polled more
+often dominate the result.
+
+`scripts/book_uplift_report.py` does all three; smoke `BOOK-UPLIFT-REPORT`
+range-checks the AH figure so an unmatched join fails rather than reporting a
+flattering number. Sibling of gotcha 16 (AH CLV by fixed line is invalid).
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |

@@ -25952,5 +25952,58 @@ def test_epicbet_403_from_vps():
     return "403 falls back to FS once per run; job raises; watchdog registered"
 
 
+@test("BOOK-UPLIFT-REPORT — cross-book comparison matches on handicap_line")
+def test_book_uplift_report():
+    """The AH trap, guarded.
+
+    Asian-handicap `selection` is only 'home'/'away'; the line lives in a
+    separate `handicap_line` column. Joining two books on
+    (match, market, selection) alone compares a -0.5 quote against a -1.5 and
+    reports nonsense — the first run of this comparison claimed Epicbet was
+    +22.62% better on AH where the line-matched answer is +0.86%. Same class
+    as ANALYSIS_GOTCHAS #16.
+
+    Checks the join is line-matched, and then — when there is live data —
+    that the number it produces is physically plausible. An unmatched join
+    shows up as a double-digit "uplift", so the range assertion catches the
+    bug behaviourally rather than by reading the SQL.
+    """
+    import inspect
+    import scripts.book_uplift_report as rep
+
+    sql = rep._LATEST + inspect.getsource(rep.per_market)
+    assert "handicap_line IS NOT DISTINCT FROM" in sql, (
+        "cross-book join must match on handicap_line — without it, AH quotes "
+        "on different lines are compared and the result is meaningless"
+    )
+    assert "IS NOT DISTINCT FROM" in sql and "= y.handicap_line" not in sql, (
+        "use IS NOT DISTINCT FROM, not '=' — a plain equality drops every "
+        "non-handicap market, whose handicap_line is NULL"
+    )
+    # DISTINCT ON keeps one quote per book per outcome; without it, fixtures
+    # we happened to poll more often would dominate the average.
+    assert "DISTINCT ON" in rep._LATEST, (
+        "must reduce to the latest quote per (match, market, selection, line, "
+        "book) or polling frequency skews the comparison"
+    )
+
+    from workers.api_clients.db import get_conn
+    with get_conn() as conn, conn.cursor() as cur:
+        rows = rep.per_market(cur, 48, "Coolbet", "Epicbet", upcoming=False)
+    ah = [r for r in rows if r[0] == "asian_handicap"]
+    if not ah:
+        return "join is line-matched (no AH overlap in window to range-check)"
+    _m, n, _pct, avg_diff, uplift = ah[0]
+    assert abs(float(avg_diff)) < 10.0, (
+        f"AH average price difference is {avg_diff}% across {n} pairs. Two soft "
+        "books do not differ by that much on the same line — the join has "
+        "almost certainly come unmatched from handicap_line again."
+    )
+    assert 0.0 <= float(uplift) < 10.0, (
+        f"AH best-of-two uplift is {uplift}% — implausible for line-matched quotes"
+    )
+    return f"line-matched; AH avg diff {avg_diff}% over {n} pairs is plausible"
+
+
 if __name__ == "__main__":
     main()
