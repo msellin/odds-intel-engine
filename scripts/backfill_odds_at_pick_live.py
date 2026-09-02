@@ -101,7 +101,11 @@ def _counts(cur, table: str) -> dict:
                                  AND odds_at_pick_live IS NOT NULL) AS settled_filled
           FROM {table}
     """)
-    return dict(cur.fetchone())
+    # get_conn() hands back a plain tuple cursor, not a RealDictCursor —
+    # dict(row) raises here rather than returning columns.
+    total, settled, filled, settled_filled = cur.fetchone()
+    return {"total": total, "settled": settled, "filled": filled,
+            "settled_filled": settled_filled}
 
 
 def _roi(cur, table: str) -> list[tuple]:
@@ -124,6 +128,8 @@ def _roi(cur, table: str) -> list[tuple]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--apply", action="store_true", help="write (default: dry run)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="explicit no-op; the default already rolls back")
     ap.add_argument("--table", choices=TABLES, help="one table (default: both)")
     ap.add_argument("--all-rows", action="store_true",
                     help="include unsettled bets (default: settled only)")

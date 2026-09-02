@@ -173,41 +173,11 @@ def their_by_market(rows: list[dict]) -> dict:
 
 
 
-def our_stats(start: str, end: str) -> dict:
-    """Our matched cohort: production strategies, 1X2 + OU 2.5 only,
-    settled, in the same window. BTTS excluded to stay apples-to-apples
-    (WinnerOdds publishes a mixed-market feed; the per-bet table doesn't
-    cleanly separate BTTS for us to match it)."""
-    rows = execute_query(
-        """
-        SELECT
-          COUNT(*) AS n,
-          SUM(sb.pnl)::numeric AS pnl,
-          SUM(sb.stake)::numeric AS stake,
-          COUNT(*) FILTER (WHERE sb.result = 'won') AS won
-        FROM simulated_bets sb
-        JOIN bots b ON b.id = sb.bot_id
-        WHERE sb.result IN ('won', 'lost')
-          AND b.maturity_label IN ('calibrated', 'beta', 'active')
-          AND sb.market IN ('1x2', 'o/u', 'over_under_25')
-          AND sb.created_at >= %s::date
-          AND sb.created_at <  %s::date
-          AND b.name NOT LIKE 'inplay_%%'
-        """,
-        (start, end),
-    )
-    r = rows[0]
-    n = int(r["n"] or 0)
-    pnl = float(r["pnl"] or 0)
-    stake = float(r["stake"] or 0)
-    won = int(r["won"] or 0)
-    return {
-        "n": n,
-        "stake_total": round(stake, 2),
-        "pnl_total": round(pnl, 2),
-        "roi_pct": round(100 * pnl / stake, 2) if stake else 0,
-        "hit_rate_pct": round(100 * won / n, 2) if n else 0,
-    }
+# STALE-ODDS-HISTORY-RESTATE-2026-09-02: our side of the comparison now comes
+# from scripts/_our_stats.py, which prices at odds that were LIVE at pick time
+# rather than summing `pnl` (settled from the inflated `odds_at_pick`). Six
+# copies of this query existed; five would have kept publishing the old number.
+from scripts._our_stats import our_stats  # noqa: E402,F401
 
 
 def main() -> int:

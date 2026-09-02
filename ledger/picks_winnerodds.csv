@@ -1,4 +1,5 @@
 source,kickoff_date,league,home_team,away_team,market,pick,odds,result,pnl_per_unit,ref_url
+winnerodds,2026-08-28,Belarus,,,1x2,1,1.350,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-25,Sweden,,,1x2,2,3.650,won,2.6500,https://winnerodds.com
 winnerodds,2026-08-29,Germany,,,1x2,1,1.350,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-28,Germany,,,asian_handicap,ah-0_1,1.667,won,0.6670,https://winnerodds.com

@@ -1,12 +1,12 @@
 # P1 Sweep — task checklist
 
 ## 1. STALE-ODDS-HISTORY-RESTATE  [in progress]
-- [ ] migration: `odds_at_pick_live` on simulated_bets + shadow_bets
-- [ ] backfill script (latest-per-book max at pick_time, accessible books)
-- [ ] run backfill, report coverage
-- [ ] audit scripts publish live-priced ROI + coverage; keep claimed as secondary
+- [x] migration: `odds_at_pick_live` on simulated_bets + shadow_bets
+- [x] backfill script (latest-per-book max at pick_time, accessible books)
+- [x] run backfill, report coverage
+- [x] audit scripts publish live-priced ROI + coverage; keep claimed as secondary
 - [ ] landing reads restated figure
-- [ ] smoke test + mutation check
+- [x] smoke test + mutation check
 - [ ] docs (PRIORITY_QUEUE, ANALYSIS_GOTCHAS, MODEL_WHITEPAPER if model logic)
 
 ## 2. AF-STALE steps 2-4

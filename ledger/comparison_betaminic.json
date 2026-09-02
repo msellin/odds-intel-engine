@@ -1,7 +1,7 @@
 {
   "source": "Betaminic",
   "source_url": "https://www.betaminic.com/shootingbets/results/",
-  "snapshot_at_utc": "2026-09-02T09:10:04+00:00",
+  "snapshot_at_utc": "2026-09-02T16:38:09+00:00",
   "window": {
     "start": "2026-05-04",
     "end": "2026-09-03"
@@ -37,11 +37,18 @@
     }
   },
   "our_stats_same_window": {
-    "n": 692,
-    "stake_total": 4594.75,
-    "pnl_total": 635.1,
-    "roi_pct": 13.82,
-    "hit_rate_pct": 42.49,
-    "avg_odds": 2.868
+    "n": 529,
+    "stake_total": 5290.0,
+    "pnl_total": 563.22,
+    "roi_pct": 10.65,
+    "hit_rate_pct": 40.64,
+    "avg_odds": 2.877,
+    "priced_at": "best price live at pick time",
+    "n_total_settled": 693,
+    "coverage_pct": 76.3,
+    "roi_pct_recorded": 15.99,
+    "roi_pct_recorded_all_rows": 14.33,
+    "hit_rate_pct_recorded_all_rows": 42.57,
+    "restatement_note": "roi_pct is priced at odds that were live at pick time. roi_pct_recorded is the same bets at the stored odds_at_pick, which STALE-BEST-ODDS-2026-09-02 showed to be a high-water mark across the whole snapshot history rather than a price on offer."
   }
 }

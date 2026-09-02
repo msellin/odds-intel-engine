@@ -155,44 +155,11 @@ def signalodds_breakdown(rows: list[dict]) -> dict:
     return out
 
 
-def our_stats(start: str, end: str) -> dict:
-    """Pull our own calibrated production ROI in the same window. Matches
-    the public /api/v1/track-record scope (calibrated+beta+active maturity,
-    1x2 + OU + BTTS, settled bets)."""
-    rows = execute_query(
-        """
-        SELECT
-          sb.stake::float       AS stake,
-          sb.pnl::float         AS pnl,
-          sb.result::text       AS result,
-          sb.market,
-          sb.odds_at_pick::float AS odds,
-          b.maturity_label
-        FROM simulated_bets sb
-        JOIN bots b ON b.id = sb.bot_id
-        WHERE sb.created_at >= %s::date
-          AND sb.created_at <  %s::date
-          AND sb.result::text IN ('won','lost')
-          AND sb.market IN ('1x2','over_under_25','o/u')
-          AND b.maturity_label IN ('calibrated','beta','active')
-          AND b.name NOT LIKE 'inplay_%%'
-        """,
-        (start, end),
-    )
-    if not rows:
-        return {"n": 0}
-    stake_total = sum(float(r["stake"] or 0) for r in rows)
-    pnl_total = sum(float(r["pnl"] or 0) for r in rows)
-    won = sum(1 for r in rows if r["result"] == "won")
-    odds_vals = [float(r["odds"]) for r in rows if r.get("odds")]
-    return {
-        "n": len(rows),
-        "stake_total": round(stake_total, 2),
-        "pnl_total": round(pnl_total, 2),
-        "roi_pct": round(100.0 * pnl_total / stake_total, 2) if stake_total else 0.0,
-        "hit_rate_pct": round(100.0 * won / len(rows), 2),
-        "avg_odds": round(sum(odds_vals) / len(odds_vals), 3) if odds_vals else None,
-    }
+# STALE-ODDS-HISTORY-RESTATE-2026-09-02: our side of the comparison now comes
+# from scripts/_our_stats.py, which prices at odds that were LIVE at pick time
+# rather than summing `pnl` (settled from the inflated `odds_at_pick`). Six
+# copies of this query existed; five would have kept publishing the old number.
+from scripts._our_stats import our_stats  # noqa: E402,F401
 
 
 def _print_section(title: str, s: dict) -> None:

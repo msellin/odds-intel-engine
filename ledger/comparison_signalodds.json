@@ -1,7 +1,7 @@
 {
   "source": "SignalOdds",
   "source_url": "https://signalodds.com/predictions/past?sport=soccer",
-  "snapshot_at_utc": "2026-09-02T08:55:50+00:00",
+  "snapshot_at_utc": "2026-09-02T16:39:29+00:00",
   "window": {
     "start": "2026-05-04",
     "end": "2026-09-03"
@@ -11,46 +11,53 @@
   "scope_notes": "1X2 + OU 2.5 only, soccer, settled bets (Correct/Incorrect), open/non-paywalled picks only (premium/PRO cards excluded — their odds and exact pick are hidden), 10 EUR flat stake.",
   "reproducible_via": "scripts/scrape_signalodds.py + scripts/audit_vs_signalodds.py",
   "their_stats": {
-    "n": 111,
-    "stake_total": 1110.0,
-    "pnl_total": -71.5,
-    "roi_pct": -6.44,
-    "hit_rate_pct": 48.65,
-    "avg_odds": 1.996
+    "n": 131,
+    "stake_total": 1310.0,
+    "pnl_total": -46.5,
+    "roi_pct": -3.55,
+    "hit_rate_pct": 50.38,
+    "avg_odds": 1.983
   },
   "their_breakdown": {
     "by_model": {
       "The Pitch Master": {
-        "n": 111,
-        "stake_total": 1110.0,
-        "pnl_total": -71.5,
-        "roi_pct": -6.44,
-        "hit_rate_pct": 48.65,
-        "avg_odds": 1.996
+        "n": 131,
+        "stake_total": 1310.0,
+        "pnl_total": -46.5,
+        "roi_pct": -3.55,
+        "hit_rate_pct": 50.38,
+        "avg_odds": 1.983
       }
     },
     "by_market": {
       "1x2": {
-        "n": 111,
-        "stake_total": 1110.0,
-        "pnl_total": -71.5,
-        "roi_pct": -6.44,
-        "hit_rate_pct": 48.65,
-        "avg_odds": 1.996
+        "n": 131,
+        "stake_total": 1310.0,
+        "pnl_total": -46.5,
+        "roi_pct": -3.55,
+        "hit_rate_pct": 50.38,
+        "avg_odds": 1.983
       }
     }
   },
   "their_drop_reasons": {
-    "market_Both Teams To Score": 196,
-    "out_of_window": 56,
-    "premium_paywalled": 245
+    "market_Both Teams To Score": 225,
+    "out_of_window": 57,
+    "premium_paywalled": 276
   },
   "our_stats_same_window": {
-    "n": 692,
-    "stake_total": 4594.75,
-    "pnl_total": 635.1,
-    "roi_pct": 13.82,
-    "hit_rate_pct": 42.49,
-    "avg_odds": 2.868
+    "n": 529,
+    "stake_total": 5290.0,
+    "pnl_total": 563.22,
+    "roi_pct": 10.65,
+    "hit_rate_pct": 40.64,
+    "avg_odds": 2.877,
+    "priced_at": "best price live at pick time",
+    "n_total_settled": 693,
+    "coverage_pct": 76.3,
+    "roi_pct_recorded": 15.99,
+    "roi_pct_recorded_all_rows": 14.33,
+    "hit_rate_pct_recorded_all_rows": 42.57,
+    "restatement_note": "roi_pct is priced at odds that were live at pick time. roi_pct_recorded is the same bets at the stored odds_at_pick, which STALE-BEST-ODDS-2026-09-02 showed to be a high-water mark across the whole snapshot history rather than a price on offer."
   }
 }

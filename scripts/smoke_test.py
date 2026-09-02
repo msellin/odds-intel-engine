@@ -26535,5 +26535,75 @@ def _shadow_dedup_view():
     return "both pages on shadow_bets_deduped; card paginated; view keyed on 4 cols"
 
 
+@test("STALE-ODDS-HISTORY-RESTATE — published ROI is priced at odds that were live")
+def _restate():
+    """STALE-ODDS-HISTORY-RESTATE-2026-09-02. `simulated_bets.pnl` settles from
+    `odds_at_pick`, which STALE-BEST-ODDS showed to be a high-water mark across
+    a fixture's whole snapshot history rather than a price on offer. So every
+    ROI we published was inflated by the same mechanism we criticise Forebet
+    for: +15.99% recorded against +10.65% at prices actually live at pick time,
+    on the cohort the landing publishes.
+
+    Six audit scripts each carried their own copy of the cohort query. Any one
+    of them still summing `pnl` would quietly keep publishing the old number,
+    so the query now lives in one module and this pins that none of them
+    reintroduce a local copy.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+
+    helper = (root / "scripts" / "_our_stats.py").read_text()
+    # Check the SQL, not the file: an earlier draft asserted the substring
+    # anywhere in the module and passed while the SELECT had been changed to
+    # `NULL::float AS odds_live`, because the docstring still said the words.
+    sql_i = helper.index("_SQL = ")
+    sql = helper[sql_i:helper.index('"""', helper.index('"""', sql_i) + 3)]
+    assert "sb.odds_at_pick_live" in sql, (
+        "the cohort query must SELECT odds_at_pick_live — pricing from `pnl` "
+        "republishes the inflated figure (STALE-BEST-ODDS)"
+    )
+    assert "roi_pct_recorded" in helper, (
+        "the recorded figure must still be published alongside the restated "
+        "one — repricing a record without showing the original claim is not "
+        "transparency, and it is exactly what we fault Forebet for"
+    )
+    assert "coverage_pct" in helper, (
+        "a restated ROI must carry its coverage (ANALYSIS_GOTCHAS #29)"
+    )
+
+    for name in ("winnerodds", "signalodds", "deepbetting", "forebet",
+                 "tipstrr", "betaminic"):
+        src = (root / "scripts" / f"audit_vs_{name}.py").read_text()
+        assert "from scripts._our_stats import our_stats" in src, (
+            f"audit_vs_{name}.py must use the shared our_stats"
+        )
+        assert "def our_stats(" not in src, (
+            f"audit_vs_{name}.py defines its own our_stats again — that is how "
+            "five of six scripts would keep publishing the inflated number"
+        )
+
+    # The published ledgers must actually carry the restated shape.
+    for name in ("winnerodds", "forebet", "betaminic"):
+        led = root / "ledger" / f"comparison_{name}.json"
+        if not led.exists():
+            continue
+        ours = (_json.loads(led.read_text()).get("our_stats_same_window") or {})
+        if not ours.get("n"):
+            continue
+        assert ours.get("priced_at", "").startswith("best price live"), (
+            f"comparison_{name}.json still publishes an unrestated our_stats"
+        )
+        assert ours.get("roi_pct_recorded") is not None, (
+            f"comparison_{name}.json must keep the recorded figure for audit"
+        )
+        assert ours["roi_pct"] < ours["roi_pct_recorded"], (
+            f"comparison_{name}.json: restated ROI ({ours['roi_pct']}) should "
+            f"sit below the recorded one ({ours['roi_pct_recorded']}) — if not, "
+            "the repricing is doing nothing and needs re-examining"
+        )
+    return "our_stats shared + priced live; recorded figure and coverage retained"
+
+
 if __name__ == "__main__":
     main()
