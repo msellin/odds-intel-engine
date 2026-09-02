@@ -152,22 +152,48 @@ SOURCE_READ_RE = re.compile(r'\b(?:read_text|getsource|open\s*\()')
 
 
 def _source_only(body: str) -> bool:
-    """True when the test reads a source file and EVERY assertion is a
-    substring check against that text — i.e. it verifies that some code is
-    still *written*, never that it *works*. These keep passing after the
-    feature is deleted, so they are the ones inflating the pass count.
+    """True when the test reads a source file and never EXERCISES the code —
+    i.e. it verifies that something is still *written*, never that it *works*.
+    These keep passing after the feature is deleted, so they are the ones
+    inflating the pass count.
 
-    A test that also calls the thing under test (an assert containing a call)
-    is exercising behaviour and does not count, even if it greps too.
+    Corrected 2026-09-02: the first version only inspected `assert` lines, so a
+    test that computed a value on one line and asserted on it the next —
+
+        res = resolve_placement_target(markets, odds, "1X2", "Home")
+        assert res == (598381104, 1502758378, "uuid-h", 2.25)
+
+    — was misreported as source-only. COOLBET-PLACER-NEW-SCHEMA is fully
+    behavioural and was in the WEAKEN list purely because of that. Now the
+    whole body is scanned for a call to anything imported from the project.
     """
     if not SOURCE_READ_RE.search(body):
         return False
-    asserts = re.findall(r'^\s*assert\s+(.+)$', body, re.M)
-    if not asserts:
+    if not re.search(r'^\s*assert\b', body, re.M):
         return False
-    for a in asserts:
-        # An assertion that invokes something — foo(...) — is behavioural.
-        # `in src` / `not in src` / string comparisons are not.
+
+    # Names pulled in from the code under test: `from workers.x import a, b`
+    # and `import workers.x as y`.
+    local: set[str] = set()
+    for m in re.finditer(r'from\s+(?:workers|scripts)[.\w]*\s+import\s+([^\n#]+)', body):
+        for nm in re.split(r'[,\s]+', m.group(1).strip()):
+            nm = nm.strip("()")
+            if nm and nm.isidentifier() and nm != "import":
+                local.add(nm)
+    for m in re.finditer(r'import\s+(?:workers|scripts)[.\w]*\s+as\s+(\w+)', body):
+        local.add(m.group(1))
+
+    # Signal 1 — the test calls something imported from the code under test.
+    for nm in local:
+        if re.search(rf'\b{re.escape(nm)}\s*\(', body) or \
+           re.search(rf'\b{re.escape(nm)}\.\w+\s*\(', body):
+            return False
+
+    # Signal 2 (the original check) — an assertion that itself invokes
+    # something. Kept: dropping it in favour of signal 1 alone reclassified
+    # ~350 behavioural tests as source-only, because plenty of them exercise
+    # code without importing it under a name this regex sees.
+    for a in re.findall(r'^\s*assert\s+(.+)$', body, re.M):
         stripped = re.sub(r'\b(?:len|str|int|float|set|sorted|any|all)\s*\(', '', a)
         if re.search(r'\w\s*\(', stripped):
             return False
