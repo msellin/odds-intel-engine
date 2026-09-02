@@ -447,3 +447,57 @@ measuring the right thing.
 `SHADOW-NO-BANKROLL`, `COOLBET-PLACER-NEW-SCHEMA`, `COOLBET-SEARCH-BLOCKED`,
 `COOLBET-DAEMON-SELFPAUSE`, `COOLBET-SLIPPAGE`, `COOLBET-PLACER-STORES-SNAPSHOT`,
 `ACCA-EDGE-PERCENT`, and 9 more — run `--stakes` for the current list.
+
+---
+
+## WEAKEN work — state at 2026-09-02
+
+**9 conversions done.** CI: 670 passed / 3 failed / 55 skipped, no new failures
+at any point (one regression of my own, caught and fixed).
+
+| band | remaining |
+|---|---|
+| 5 real money | 14 |
+| 4 settlement/edge | 44 |
+| 3 model | 16 |
+| 2 infra | 30 |
+| 1 other | 79 |
+
+### Band 5 is finished, not abandoned
+
+Every one of the remaining 14 was checked for a callable seam. None has one:
+2 frontend TypeScript, 2 migration SQL (the file *is* the artifact), 1
+DB-bound, and 9 that grep whole files because what they guard sits inside
+large I/O functions. The 8 with real seams were converted.
+
+### The honest ceiling
+
+A scan of all 184 WEAKEN tests found only **6** with a pure, importable,
+inspectable target — and the best of those is now converted. Of the 61 in
+bands 3–4, **48 do not import anything at all**; they grep source because the
+behaviour lives inside DB writes, HTTP sessions, scheduler registrations and
+daemon loops.
+
+**Converting the remainder is a production refactor, not test work** —
+extracting pure logic out of those functions so a test can reach it. That
+carries real regression risk on live-money paths and should be an explicit
+decision, not a side effect of tidying tests.
+
+### Two corrections made to this exercise itself
+
+1. **The tool over-reported.** `_source_only` inspected only `assert` lines, so
+   a test that computed a value on one line and asserted on it the next read as
+   source-only. `COOLBET-PLACER-NEW-SCHEMA` is fully behavioural and sat in the
+   band-5 queue because of it. Fixed (188 → 184). Replacing the old signal
+   instead of adding to it pushed the count to 541 — both signals are needed.
+2. **A mutation check can lie in both directions.** A patch that silently fails
+   to apply looks exactly like a weak test; and a mutation that also trips the
+   OLD test proves nothing about the conversion. Both happened here. Every
+   mutation check must now assert the patch applied, and must satisfy the old
+   test's assertions while restoring the bug.
+
+### If this is resumed
+
+Do **not** work down the list by count. Re-run `--stakes`, look for a callable
+seam, and convert only where one exists. A conversion that catches nothing the
+grep missed is churn, and the count is not the goal.
