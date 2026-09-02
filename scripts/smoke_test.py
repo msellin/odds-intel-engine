@@ -26199,5 +26199,47 @@ def test_competitor_picks_stale():
             f"limit ({MAX_AGE_DAYS}d; tipstrr {MAX_AGE_BY_SOURCE['tipstrr']}d for month-grain)")
 
 
+@test("COMP-FALLBACK-DRIFT-GUARD — landing's offline competitor figures are guarded")
+def _comp_fallback_guard():
+    """The landing publishes named competitors' ROI, with COMP_FALLBACK in
+    page.tsx as the copy served when the live ledger fetch fails. That copy
+    silently rotted for two months (2026-07-05 -> 2026-09-02) because the
+    engine's refresh step is gated on a cross-repo PAT that is not set, and
+    exits 0 when it is missing. It published Tipstrr at -5.22% ROI while the
+    ledger said +1.49% — a sign error about a named competitor.
+
+    Source-inspection only: the guard itself lives in odds-intel-web and runs
+    in that repo's CI, which is the point (the ledger is public, so the check
+    needs no PAT and cannot be skipped for want of a credential). What this
+    test protects is the engine half — that betaminic is actually in the sync
+    key list, and that the PAT skip is loud rather than silent.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+    sync = (root / "scripts" / "update_frontend_comp_fallback.py").read_text()
+    keys = _re.search(r"LEDGER_KEYS\s*=\s*\[(.*?)\]", sync, _re.S)
+    assert keys, "LEDGER_KEYS not found in update_frontend_comp_fallback.py"
+    found = set(_re.findall(r'"(\w+)"', keys.group(1)))
+    expected = {"winnerodds", "signalodds", "deepbetting", "tipstrr",
+                "forebet", "betaminic"}
+    missing = expected - found
+    assert not missing, (
+        f"competitors missing from LEDGER_KEYS: {sorted(missing)}. A source on "
+        "the landing page but absent here never gets its fallback refreshed, so "
+        "it freezes at whatever was hardcoded and the page keeps publishing it "
+        "as current."
+    )
+
+    wf = (root / ".github" / "workflows" / "competitor_audits_weekly.yml").read_text()
+    assert "::warning title=COMP_FALLBACK" in wf, (
+        "the FRONTEND_REPO_TOKEN skip in competitor_audits_weekly.yml must emit "
+        "a ::warning annotation. A plain echo is invisible in the run summary, "
+        "which is exactly how this step skipped daily for two months unnoticed."
+    )
+    return (f"{len(expected)} sources in LEDGER_KEYS; PAT skip emits a "
+            "::warning annotation")
+
+
 if __name__ == "__main__":
     main()

@@ -551,6 +551,42 @@ Before proposing any feature work, run the status split. A feature that is
 `0.0%` on scheduled rows needs re-keying (team + as-of-date, so the value
 carries to the team's *next* fixture) or removing — never backfilling.
 
+## 27. Comparing a rival's published odds to "best price we saw" needs a MATCHED book
+
+Checking whether a tipster's claimed prices were ever reachable is the core of
+the Forebet fraud case. The obvious statistic — *how often does the claimed
+price exceed the best quote in `odds_snapshots`* — is **not comparable across
+sources**, and the first version of
+`scripts/verify_forebet_odds_cross_source.py` reported a number built on that
+mistake.
+
+The reason: Betaminic publishes the **Bet365** price, and Bet365 is the best
+price on the market only **19.3%** of the time (measured over 39,410
+match/market/selection groups, last 30d). So Betaminic's claimed odds sit below
+best-of-books *by construction*, its exception rate is structurally suppressed,
+and the resulting "Forebet is 1.9x the honest baseline" flattered our own case.
+Any source that quotes a sharp book will look honest on this test; any source
+that quotes a soft book will look guilty. It measures book choice, not honesty.
+
+**Two things do survive:**
+
+1. **Magnitude, not frequency.** Fuzzy fixture matching and snapshot timing
+   overshoot by a few percent; they do not overshoot by 50%. Use the tail of
+   `claimed / best`. Forebet claims **>1.5x the best price anywhere on 9.5%** of
+   picks; Betaminic on **0.7%**. That gap is not a book-choice artifact.
+2. **One shared reference book.** Measure every source against Bet365 and
+   nothing else. Then split by won/lost — a bettor cannot systematically obtain
+   better prices on the bets that happen to win, because the result is not
+   knowable at bet time. Forebet: **18.1%** of winners carry a >1.5x-Bet365
+   price against **8.4%** of losers (+9.8pp, p=2.4e-06). Betaminic: **0.8% vs
+   0.7%** (p=0.77) — flat, which is what an honest record looks like.
+
+Also note the winner/loser split is **not** clean on its own: Betaminic shows a
++12pp skew on the raw best-of-books version, because short-priced favourites
+both win more often and are quoted more tightly. Always run the control.
+
+Related: #25 (cross-book joins need `handicap_line`), #16.
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |

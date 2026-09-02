@@ -30,7 +30,8 @@ from datetime import date
 from pathlib import Path
 
 
-LEDGER_KEYS = ["winnerodds", "signalodds", "deepbetting", "tipstrr", "forebet"]
+LEDGER_KEYS = ["winnerodds", "signalodds", "deepbetting", "tipstrr", "forebet",
+               "betaminic"]
 
 
 def load_audit(engine_root: Path, key: str) -> dict[str, object]:

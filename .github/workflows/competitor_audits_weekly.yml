@@ -160,7 +160,11 @@ jobs:
             echo "has_pat=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_pat=false" >> "$GITHUB_OUTPUT"
-            echo "FRONTEND_REPO_TOKEN not set — will skip fallback refresh."
+            # ::warning surfaces in the run summary. A plain echo does not, and
+            # that is why nobody noticed this step skipping every day from
+            # 2026-07-05 to 2026-09-02 while the landing served stale
+            # competitor ROI (COMP-FALLBACK-DRIFT-GUARD).
+            echo "::warning title=COMP_FALLBACK not refreshed::FRONTEND_REPO_TOKEN is not set, so the landing page keeps its previous hardcoded competitor figures. odds-intel-web CI (comp_fallback_guard.yml) will fail once they rot past tolerance."
           fi
 
       - name: Checkout odds-intel-web
