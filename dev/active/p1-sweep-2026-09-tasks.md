@@ -5,11 +5,11 @@
 - [x] backfill script (latest-per-book max at pick_time, accessible books)
 - [x] run backfill, report coverage
 - [x] audit scripts publish live-priced ROI + coverage; keep claimed as secondary
-- [ ] landing reads restated figure
+- [x] landing reads restated figure
 - [x] smoke test + mutation check
-- [ ] docs (PRIORITY_QUEUE, ANALYSIS_GOTCHAS, MODEL_WHITEPAPER if model logic)
+- [x] docs (PRIORITY_QUEUE, ANALYSIS_GOTCHAS, MODEL_WHITEPAPER if model logic)
 
-## 2. AF-STALE steps 2-4
+## 2. AF-STALE steps 2-4  [in progress]
 - [ ] trust order: book date wins over AF for scheduled fixtures
 - [ ] `date_source` column surviving the 04:00 AF re-sync
 - [ ] suppress pick generation on disputed fixtures

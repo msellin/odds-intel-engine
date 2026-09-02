@@ -1,6 +1,19 @@
 # P1 Sweep — context
 
-## State: starting task 1 (STALE-ODDS-HISTORY-RESTATE)
+## State: task 1 DONE (2026-09-02). Next: task 2 (AF-STALE steps 2-4).
+
+### Task 1 outcome
+- migration 291 -> `odds_at_pick_live` on simulated_bets + shadow_bets (additive)
+- backfilled: simulated_bets 2,357/4,305 settled (54.8%), shadow_bets
+  115,855/139,612 (83.0%)
+- six audits now share `scripts/_our_stats.py`; local copies deleted
+- **published cohort restated +15.99% -> +10.65% (n=529, 76.3% coverage)**
+- landing + all six comparison JSONs republished; COMP_FALLBACK synced
+- smoke `STALE-ODDS-HISTORY-RESTATE` (+ COMPETITOR-PICKS-CSV updated to assert
+  the inplay/maturity cohort against the shared module)
+- gotcha: assert against the SQL, not the file — the first draft of the smoke
+  test passed while the SELECT was gutted, because the docstring still held
+  the column name
 
 ## Numbers established 2026-09-02 (do not re-derive)
 
