@@ -26473,5 +26473,67 @@ def _stale_best_odds():
             "dependency documented")
 
 
+@test("SHADOW-BOTS-DETAIL-TRUNCATION — both shadow-bot pages read the deduped view")
+def _shadow_dedup_view():
+    """SHADOW-BOTS-DETAIL-TRUNCATION-2026-09-02. The dashboard card and the
+    per-bot detail page disagreed wildly for the same bot —
+    bot_pin_1x2_home_v1 read +12.7% on the card and -11.8% on its detail page
+    — because each was aggregating a different fraction of the same ledger.
+
+    Shadow bots persist one row per (cohort x match x market x selection) and
+    cohorts fire every 30 minutes, so a pick carries ~10 rows. Both pages
+    deduplicated in JS AFTER the fetch, so the row cap bit on RAW rows:
+
+      detail: `.limit(500)` -> 24 of 41 bots truncated. bot_dc_value showed
+              48 of its 3,081 picks (1.6%); bot_pin_1x2_home_v1 61 of 304.
+      card:   no `.limit()` at all, which is NOT no limit — PostgREST caps at
+              db-max-rows, measured at 10,000 against 143,263 rows, so the
+              card aggregated 7% of the ledger. A capped response is
+              indistinguishable from a complete one, which is why this ran
+              unnoticed.
+
+    Migration 290 moves the dedup into `shadow_bets_deduped`, so both pages
+    aggregate the same population by construction.
+    """
+    from pathlib import Path as _Path
+    web = _Path(__file__).resolve().parent.parent.parent / "odds-intel-web"
+    if not web.exists():
+        raise SkipTest("odds-intel-web not present (CI single-repo checkout)")
+
+    mig = (_Path(__file__).resolve().parent.parent / "supabase" / "migrations"
+           / "290_shadow_bets_deduped_view.sql")
+    assert mig.exists(), "migration 290 (shadow_bets_deduped) is missing"
+    sql = mig.read_text()
+    assert "DISTINCT ON (sb.bot_id, sb.match_id, sb.market, sb.selection)" in sql, (
+        "the view must key on all four — dropping bot_id would merge two bots' "
+        "picks on the same match into one row"
+    )
+    assert "pick_time ASC" in sql, (
+        "dedup must keep the EARLIEST pick_time (first sighting of the edge), "
+        "matching what both pages did in JS before"
+    )
+
+    for rel in ("src/app/(app)/admin/shadow-bots/page.tsx",
+                "src/app/(app)/admin/shadow-bots/[bot]/page.tsx"):
+        src = (web / rel).read_text()
+        assert 'from("shadow_bets_deduped")' in src, (
+            f"{rel} must read the deduped view — reading shadow_bets directly "
+            "multiplies every pick by its cohort re-recordings and then lets a "
+            "row cap decide which picks count"
+        )
+        assert 'from("shadow_bets")' not in src, (
+            f"{rel} still reads the raw shadow_bets table somewhere; every "
+            "per-bot aggregate must come from the deduped view"
+        )
+
+    card = (web / "src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+    assert ".range(" in card, (
+        "the card must paginate: the deduped set is 13,955 rows against a "
+        "10,000 db-max-rows cap, so a single unpaginated read is silently "
+        "short — the exact failure being fixed"
+    )
+    return "both pages on shadow_bets_deduped; card paginated; view keyed on 4 cols"
+
+
 if __name__ == "__main__":
     main()
