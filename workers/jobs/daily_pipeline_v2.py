@@ -1929,13 +1929,32 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
     # (api-football synthetic, api-football-live in-play, William Hill line-shifted).
     # 1X2 and BTTS rows from the same bookmakers are kept — those markets are clean.
     odds_raw = execute_query(
-        """SELECT match_id, market, selection, odds, bookmaker, handicap_line
-           FROM odds_snapshots
-           WHERE match_id = ANY(%s::uuid[]) AND is_closing = false
-             AND NOT (
-               market LIKE 'over_under_%%'
-               AND bookmaker IN ('api-football', 'api-football-live', 'William Hill')
-             )""",
+        """
+        -- STALE-BEST-ODDS-2026-09-02. This query had NO recency
+        -- constraint, so it returned every non-closing snapshot ever written
+        -- for the fixture and the max() below picked the highest price ANY
+        -- book showed at ANY time -- a high-water mark, not an offer.
+        -- Dandenong City v Preston Lions: Betano showed 3.70 until 05:00,
+        -- crashed to 2.82, and we went on storing "3.70 at Betano" through
+        -- 05:08/05:14/05:44/06:15/06:44 while the best accessible price was
+        -- 10Bet 3.10. Every 30-min refresh re-derived the same stale peak
+        -- rather than correcting it. Measured before the fix: 45% of 1X2
+        -- selections on scheduled fixtures had a historical max above the
+        -- latest-per-book max, mean +3.1%, worst 2.26x; snapshot history runs
+        -- ~15 days because pruning only touches finished matches.
+        -- DISTINCT ON ... timestamp DESC = the latest quote per book, which
+        -- is what "best available" has to mean. Matches the pattern
+        -- _run_pin_1x2_shadow_pass already used correctly.
+        SELECT DISTINCT ON (match_id, market, selection, bookmaker, handicap_line)
+               match_id, market, selection, odds, bookmaker, handicap_line
+          FROM odds_snapshots
+         WHERE match_id = ANY(%s::uuid[]) AND is_closing = false
+           AND NOT (
+             market LIKE 'over_under_%%'
+             AND bookmaker IN ('api-football', 'api-football-live', 'William Hill')
+           )
+         ORDER BY match_id, market, selection, bookmaker, handicap_line,
+                  timestamp DESC""",
         (match_ids,),
     )
 
@@ -1998,6 +2017,16 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
     outlier_anchor: dict[str, dict[str, float]] = _dd(dict)
     for mid, keys in outlier_offers.items():
         for key, offers in keys.items():
+            # DEPENDS ON the DISTINCT ON ... timestamp DESC in the odds_raw
+            # query above (STALE-BEST-ODDS-2026-09-02). With one row per book
+            # this next() is the CURRENT Pinnacle price; without it, it was
+            # whichever Pinnacle row the unordered scan happened to yield
+            # first, which is how the outlier guard came to be defeated by the
+            # very staleness it exists to catch: on Dandenong it anchored to
+            # Pinnacle 2.81 (ceiling 3.79) and waved through Betano's stale
+            # 3.70, where the live 2.73 would have capped at 3.69 and rejected
+            # it. If the recency constraint is ever removed, restore it here
+            # explicitly rather than relying on scan order.
             pin = next((o for b, o in offers if b == "Pinnacle"), None)
             if pin is not None:
                 outlier_anchor[mid][key] = pin
@@ -4034,11 +4063,18 @@ def _run_no_pin_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
     # 3. Load 1X2 odds — INCLUDING Pinnacle rows so we can identify + skip
     # matches that DO have Pinnacle coverage (those are handled by prod bots).
     odds_raw = execute_query(
-        """SELECT match_id, selection, odds, bookmaker
-           FROM odds_snapshots
-           WHERE match_id = ANY(%s::uuid[])
-             AND is_closing = false
-             AND market = '1x2'""",
+        """
+        -- STALE-BEST-ODDS-2026-09-02: latest quote per book, not the
+        -- all-time high. Same defect as _load_today_from_db -- shadow passes
+        -- were NOT exempt, and bot_no_pin_home_v1's signals are followed with
+        -- real money.
+        SELECT DISTINCT ON (match_id, selection, bookmaker)
+               match_id, selection, odds, bookmaker
+          FROM odds_snapshots
+         WHERE match_id = ANY(%s::uuid[])
+           AND is_closing = false
+           AND market = '1x2'
+         ORDER BY match_id, selection, bookmaker, timestamp DESC""",
         (match_ids,),
     )
     if not odds_raw:
@@ -4353,11 +4389,16 @@ def _run_sweep_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_t
     # configs.
     odds_raw = execute_query(
         """
-        SELECT match_id::text, market, selection, odds, bookmaker
+        -- STALE-BEST-ODDS-2026-09-02: latest quote per book. The sweep bots
+        -- carry the same real-money exposure as the prod bots via shadow
+        -- signals, so they get the same recency constraint.
+        SELECT DISTINCT ON (match_id, market, selection, bookmaker)
+               match_id::text, market, selection, odds, bookmaker
           FROM odds_snapshots
          WHERE match_id = ANY(%s::uuid[])
            AND is_closing = false
            AND market IN ('1x2', 'btts')
+         ORDER BY match_id, market, selection, bookmaker, timestamp DESC
         """,
         (match_ids,),
     )

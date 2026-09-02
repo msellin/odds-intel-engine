@@ -26394,5 +26394,84 @@ def _forebet_reprice():
             f"{ts['n_total_picks']} picks vs claimed {claimed:+.2f}%")
 
 
+@test("STALE-BEST-ODDS — every odds query takes the LATEST quote per book, not the all-time high")
+def _stale_best_odds():
+    """STALE-BEST-ODDS-2026-09-02. `_load_today_from_db` selected every
+    non-closing snapshot ever written for a fixture with no recency
+    constraint, then took max() across the lot. So "best odds" meant the
+    highest price ANY book showed at ANY time, and `recommended_bookmaker`
+    named whoever posted that high-water mark hours earlier.
+
+    Dandenong City v Preston Lions: Betano showed 3.70 until 05:00, crashed to
+    2.82, and the pipeline stored "3.70 at Betano" at 05:08/05:14/05:44/06:15/
+    06:44 while the best accessible price was 10Bet 3.10. Each 30-min refresh
+    re-derived the stale peak instead of correcting it, because the refresh
+    re-runs this same query.
+
+    Measured on scheduled fixtures at fix time: 34.2% of 1X2 selections had a
+    historical max above the latest-per-book max, mean +6.3%, worst 2.27x.
+    Snapshot history runs ~15 days because pruning only touches finished
+    matches, so "any time" really is any time.
+
+    The shadow passes were NOT exempt: `_run_no_pin_shadow_pass` and
+    `_run_sweep_shadow_pass` carried the identical bug, and those bots'
+    signals are followed with real money.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    src = (_Path(__file__).resolve().parent.parent
+           / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+
+    # Every query that aggregates odds_snapshots into a "best price" must
+    # collapse to one row per bookmaker first. Checked structurally rather
+    # than by counting occurrences, so adding a new pass cannot slip through.
+    for fn_name in ("_load_today_from_db", "_run_no_pin_shadow_pass",
+                    "_run_sweep_shadow_pass"):
+        i = src.index(f"def {fn_name}")
+        # up to the next top-level def
+        m = _re.compile(r"\ndef ").search(src, i + 10)
+        body = src[i:m.start() if m else len(src)]
+        assert "FROM odds_snapshots" in body, f"{fn_name}: expected an odds query"
+        # Check the SELECT that actually reads odds_snapshots, not merely that
+        # the function contains a DISTINCT ON somewhere — _load_today_from_db
+        # has three, and an earlier version of this test passed while its odds
+        # query was unguarded.
+        for m2 in _re.finditer(r"FROM odds_snapshots", body):
+            head = body[max(0, m2.start() - 700):m2.start()]
+            sel = head.rfind("SELECT")
+            assert sel >= 0, f"{fn_name}: could not locate the SELECT"
+            clause = head[sel:]
+            dm = _re.search(r"DISTINCT ON \(([^)]*)\)", clause, _re.S)
+            assert dm, (
+                f"{fn_name} reads odds_snapshots without DISTINCT ON — it "
+                "takes the maximum price across the WHOLE polling history "
+                "instead of the latest quote per book, and stores a price no "
+                "book is offering (STALE-BEST-ODDS-2026-09-02)"
+            )
+            assert "bookmaker" in dm.group(1), (
+                f"{fn_name}: DISTINCT ON must key on bookmaker — collapsing "
+                f"without it drops books entirely. Got: {dm.group(1)!r}"
+            )
+            tail = body[m2.start():m2.start() + 900]
+            assert "timestamp DESC" in tail, (
+                f"{fn_name}: DISTINCT ON without ORDER BY ... timestamp DESC "
+                "picks an arbitrary row per book, not the current one"
+            )
+
+    # The outlier guard's Pinnacle anchor rides on that same recency: it does
+    # next(... if b == "Pinnacle") over the rows, so a history-wide result set
+    # anchors it to a stale Pinnacle price. On Dandenong it anchored to 2.81
+    # (ceiling 3.79) and waved through the stale 3.70; the live 2.73 caps at
+    # 3.69 and would have rejected it. The guard was defeated by the very
+    # staleness it exists to catch.
+    i = src.index("outlier_anchor: dict[str, dict[str, float]]")
+    assert "DEPENDS ON the DISTINCT ON" in src[i - 200:i + 900], (
+        "the outlier anchor's dependency on the recency constraint must stay "
+        "documented at the anchor — it is silent when broken"
+    )
+    return ("3 odds queries pinned to latest-per-book; outlier anchor "
+            "dependency documented")
+
+
 if __name__ == "__main__":
     main()

@@ -665,6 +665,58 @@ invites exactly the "your data is thin" dismissal this work exists to remove.
 
 Related: #27 (the reachability test itself), #28 (competitor ROI mismatches).
 
+## 30. "Best odds" from `odds_snapshots` means best EVER unless you say otherwise
+
+`odds_snapshots` is an append-only history. A query filtered only on
+`match_id` returns every quote ever polled for that fixture — and pruning does
+not save you, because `scripts/prune_odds_snapshots.py` only touches
+`status='finished'` matches. A scheduled fixture carries its full history
+(measured: ~15 days, mean 38.8 rows per match/book/market/selection, max 736).
+
+So `MAX(odds)` over that result set is a **high-water mark, not an offer**.
+This was live in the betting pipeline until 2026-09-02
+(`STALE-BEST-ODDS`): `_load_today_from_db`, `_run_no_pin_shadow_pass` and
+`_run_sweep_shadow_pass` all aggregated the unbounded history, so
+`simulated_bets.odds_at_pick` and `recommended_bookmaker` recorded whichever
+book had once peaked. Dandenong City v Preston Lions stored **3.70 at Betano**
+across five consecutive refreshes while Betano was showing 2.82 and the best
+accessible price was 10Bet 3.10.
+
+Two things make it worse than it first looks:
+
+- **Refreshes re-derive the stale peak.** `run_morning(skip_fetch=True, …)` on
+  the 30-minute betting refresh re-runs the same query, so the bad price is
+  rewritten rather than corrected.
+- **It defeats the outlier guard.** `ODDS-OUTLIER-FILTER` anchors on
+  `next((o for b, o in offers if b == "Pinnacle"), None)` — the *first*
+  Pinnacle row in an unordered scan. With history in the set that is a stale
+  Pinnacle price. On Dandenong it anchored to 2.81 (ceiling 3.79) and passed
+  the stale 3.70; the live 2.73 caps at 3.69 and would have rejected it.
+
+**The pattern to copy** (already used correctly by `_run_pin_1x2_shadow_pass`,
+`_run_pin_ou_shadow_pass` and the Coolbet pass):
+
+```sql
+SELECT DISTINCT ON (match_id, market, selection, bookmaker) ...
+  FROM odds_snapshots
+ WHERE ... AND is_closing = false
+ ORDER BY match_id, market, selection, bookmaker, timestamp DESC
+```
+
+`is_closing = false` does **not** bound recency — it excludes only the
+settlement-written closing row.
+
+**Scale, measured at fix time:** 34.2% of 1X2 selections on scheduled fixtures
+had a historical max above the latest-per-book max, mean +6.3%, worst 2.27x.
+On 488 settled bets over 90 days, ROI computed from stored `odds_at_pick` was
+**+9.47%** against **+4.43%** at the best price actually live at pick time —
+i.e. **roughly half our recorded edge on that cohort was stale-odds
+inflation**, in the same shape we criticise Forebet for (#27, #29). Historical
+`pnl` is settled from `odds_at_pick`, so the existing record is overstated and
+the fix is not retroactive — see `STALE-ODDS-HISTORY-RESTATE`.
+
+Related: #25, #29, #16.
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |
