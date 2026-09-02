@@ -1,4 +1,10 @@
 source,kickoff_date,league,home_team,away_team,market,pick,odds,result,pnl_per_unit,ref_url
+winnerodds,2026-08-25,Sweden,,,mixed,2,3.650,won,2.6500,https://winnerodds.com
+winnerodds,2026-08-29,Germany,,,mixed,1,1.350,,,https://winnerodds.com
+winnerodds,2026-08-28,Germany,,,mixed,ah-0_1,1.667,won,0.6670,https://winnerodds.com
+winnerodds,2026-08-28,Germany,,,mixed,ah-0_1,1.510,,,https://winnerodds.com
+winnerodds,2026-08-25,Germany,,,mixed,ah+0.5_1,1.430,,,https://winnerodds.com
+winnerodds,2026-08-25,Sweden,,,mixed,2,1.300,won,0.3000,https://winnerodds.com
 winnerodds,2026-08-19,Germany,,,mixed,1,2.230,,,https://winnerodds.com
 winnerodds,2026-08-27,China,,,mixed,ah-0_1,1.800,won,0.8000,https://winnerodds.com
 winnerodds,2026-08-28,Sweden,,,mixed,ah-0_2,2.150,won,1.1500,https://winnerodds.com
