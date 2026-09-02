@@ -26005,5 +26005,71 @@ def test_book_uplift_report():
     return f"line-matched; AH avg diff {avg_diff}% over {n} pairs is plausible"
 
 
+@test("COOLBET-SQUAD-GUARD-API — women/reserves/U21 cannot match a senior fixture")
+def test_coolbet_squad_guard_api_path():
+    """AF-STALE-FIXTURE-DATES-2026-08-31 was filed as an API-Football date
+    problem. Measuring it first — as the ticket asked — turned up something
+    worse behind it.
+
+    `coolbet_placer.fuzzy_match_event` had NO squad check. Only the UI placer
+    did, which is what "COOLBET-SQUAD-GUARD carries a partial fix; the API
+    path is still exposed" meant in practice. Verified before the fix: at an
+    identical kickoff it matched a women's fixture to the men's match (score
+    80) and a first team to its own reserves (score 100) — either would store
+    the wrong book's price under our fixture and hand it to the value bots.
+
+    It only ever looked safe because the date guard fired first: the real
+    'Seoul W vs Incheon Red Angels W' was being offered 'FC Seoul vs Incheon
+    United' at a different time, so it surfaced as a DATE MISMATCH warning
+    rather than as bad odds. Same kickoff and it goes straight through.
+
+    Both directions matter — over-rejecting would silently drop every genuine
+    women's or youth fixture, which is the same class of bug pointing the
+    other way.
+    """
+    from datetime import datetime, timezone
+    from workers.automation import coolbet_placer as cp
+
+    ko = datetime(2026, 9, 2, 10, 0, tzinfo=timezone.utc)
+
+    def offer(home, away):
+        return [{"name": f"{home} vs {away}", "home": home, "away": away,
+                 "start": ko.isoformat(), "match_start": ko.isoformat(), "id": "x"}]
+
+    # Must REJECT — squad qualifier differs, kickoff identical so the date
+    # guard cannot help.
+    for ours, theirs, why in [
+        (("Seoul W", "Incheon Red Angels W"), ("FC Seoul", "Incheon United"),
+         "women's fixture must not match the men's match"),
+        (("Atletico Grau", "FBC Melgar"), ("Atletico Grau Res.", "FBC Melgar Res."),
+         "first team must not match its own reserves"),
+        (("Man Utd U21", "Leicester U21"), ("Manchester United", "Leicester City"),
+         "U21 must not match the senior fixture"),
+    ]:
+        hit = cp.fuzzy_match_event(ours[0], ours[1], offer(*theirs), ko)
+        assert hit is None, (
+            f"{why} — matched '{hit.get('name')}' at the same kickoff. The wrong "
+            "book price would be stored against our fixture and priced by the bots."
+        )
+
+    # Must still MATCH — same squad on both sides.
+    for ours in [("FC Seoul", "Incheon United"),
+                 ("Real Sociedad W", "Chelsea W"),
+                 ("Man Utd U21", "Leicester U21")]:
+        assert cp.fuzzy_match_event(ours[0], ours[1], offer(*ours), ko) is not None, (
+            f"{ours} must still match its own squad level — over-rejecting "
+            "silently drops every genuine women's / youth fixture"
+        )
+
+    # The rejection has to be countable, or a guard that stops firing looks
+    # identical to one that never fires ([[feedback_silent_failures]]).
+    import inspect
+    src = inspect.getsource(cp.fuzzy_match_event)
+    assert "skipped_squad" in src and "squad-mismatched" in src, (
+        "squad rejections must be counted and logged"
+    )
+    return "women/reserves/U21 rejected at identical kickoff; same-squad still matches"
+
+
 if __name__ == "__main__":
     main()

@@ -1127,6 +1127,9 @@ def fuzzy_match_event(
     """
     if not events:
         return None
+    # Shared with the UI placer and the Epicbet explorer so all three matching
+    # paths agree on what counts as a different squad.
+    from workers.automation.epicbet_explorer import _squads_compatible
     # COOLBET-TEAM-ALIAS (2026-06-09): score each side against every known
     # alias and take the max — so Evergreen FC ↔ Northern Virginia FC clears
     # threshold even though the two strings share no tokens.
@@ -1143,6 +1146,7 @@ def fuzzy_match_event(
     best_event = None
     best_score = -1
     skipped_date = 0
+    skipped_squad = 0
     # Candidates rejected purely on date, kept so a postponement can be told
     # apart from Coolbet simply not offering the fixture. Both look like "no
     # coverage" otherwise, and they call for opposite responses.
@@ -1157,6 +1161,26 @@ def fuzzy_match_event(
                     continue
         ev_home = _ascii(ev.get("home") or "")
         ev_away = _ascii(ev.get("away") or "")
+
+        # COOLBET-SQUAD-GUARD on the API path (2026-09-02). This path had NO
+        # squad check at all — only the UI placer did — so a women's fixture
+        # scored 80 against the men's match and a first team scored 100
+        # against its own reserves. Both were verified to MATCH when the two
+        # kickoffs coincide, which would store the wrong book's price under
+        # our fixture and feed it straight to the value bots.
+        #
+        # It only ever looked safe because the date guard happened to fire
+        # first: 'Seoul W vs Incheon Red Angels W' was being offered
+        # 'FC Seoul vs Incheon United' at a different time, so the mismatch
+        # surfaced as a DATE MISMATCH warning rather than as bad odds. That is
+        # luck, not a guard — same kickoff and it goes through.
+        #
+        # Reject on squad qualifier BEFORE scoring: no fuzzy score should be
+        # able to bridge women/men, first team/reserves or U21/senior.
+        if not _squads_compatible(home, away, ev):
+            skipped_squad += 1
+            continue
+
         # Each side can match either Coolbet's home or away (handles flipped
         # fixtures) AND can match against any registered alias.
         home_score = max(
@@ -1199,13 +1223,16 @@ def fuzzy_match_event(
                 break
         best_label = f"{best_event['home']} {best_event['away']}" if best_event else "—"
         log.info(
-            "Fuzzy match FAILED for '%s vs %s' — best was '%s' (score %d < threshold %d, %d candidates rejected on date)",
-            home, away, best_label, best_score, _FUZZY_THRESHOLD, skipped_date,
+            "Fuzzy match FAILED for '%s vs %s' — best was '%s' (score %d < threshold %d, "
+            "%d rejected on date, %d rejected on squad)",
+            home, away, best_label, best_score, _FUZZY_THRESHOLD, skipped_date, skipped_squad,
         )
         return None
     log.info(
-        "Fuzzy matched '%s vs %s' → Coolbet '%s vs %s' (score %d, %d date-mismatched candidates skipped)",
+        "Fuzzy matched '%s vs %s' → Coolbet '%s vs %s' (score %d, %d date-mismatched, "
+        "%d squad-mismatched candidates skipped)",
         home, away, best_event["home"], best_event["away"], best_score, skipped_date,
+        skipped_squad,
     )
     return best_event
 
