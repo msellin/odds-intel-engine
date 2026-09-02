@@ -13589,13 +13589,23 @@ def _():
         "drift, narrow enough to reject different-day fixtures"
     )
 
+    # NOTE ON THE FIXTURE NAMES (2026-09-02): this test used to pit our
+    # "Racing Club Res." against Coolbet events named plain "Racing Club",
+    # which made it depend on TWO guards at once. COOLBET-SQUAD-GUARD-API then
+    # added _squads_compatible — a reserves fixture must not match a first-team
+    # event — and this test started failing for a reason that had nothing to do
+    # with dates. The squad guard is right (it was added because a women's
+    # fixture matched the men's match, which writes wrong odds under our
+    # match_id), so the FIXTURE was the bug, not the guard. Both sides now
+    # carry the same qualifier, and the squad interaction is asserted
+    # explicitly at the bottom instead of by accident.
     our_kickoff = datetime(2026, 5, 26, 21, 0, tzinfo=timezone.utc)
     events = [
         # Same teams, but Coolbet's fixture is tomorrow — must be rejected.
-        {"id": 1, "home": "Racing Club", "away": "Tigre",
+        {"id": 1, "home": "Racing Club Res.", "away": "Tigre Res.",
          "start": (our_kickoff + timedelta(hours=24)).isoformat()},
         # Same teams, same kickoff — must be accepted.
-        {"id": 2, "home": "Racing Club", "away": "Tigre",
+        {"id": 2, "home": "Racing Club Res.", "away": "Tigre Res.",
          "start": our_kickoff.isoformat()},
     ]
     matched = fuzzy_match_event("Racing Club Res.", "Tigre Res.", events, our_kickoff)
@@ -13605,7 +13615,7 @@ def _():
 
     # All candidates outside the window → no match (no fallback to name-only).
     far_events = [
-        {"id": 9, "home": "Racing Club", "away": "Tigre",
+        {"id": 9, "home": "Racing Club Res.", "away": "Tigre Res.",
          "start": (our_kickoff + timedelta(hours=24)).isoformat()},
     ]
     no_match = fuzzy_match_event("Racing Club Res.", "Tigre Res.", far_events, our_kickoff)
@@ -13616,11 +13626,27 @@ def _():
     # Missing match_date → date guard disabled, name match still works.
     legacy = fuzzy_match_event(
         "Racing Club Res.", "Tigre Res.",
-        [{"id": 3, "home": "Racing Club", "away": "Tigre", "start": None}],
+        [{"id": 3, "home": "Racing Club Res.", "away": "Tigre Res.", "start": None}],
         None,
     )
     assert legacy is not None and legacy["id"] == 3, (
         "no-date call must keep working (back-compat for callers without kickoff)"
+    )
+
+    # The squad guard must still bite INSIDE fuzzy_match_event, even when the
+    # date lines up perfectly. This is the case the old fixture was silently
+    # relying on being allowed: a first-team event offered for our reserves
+    # fixture, at exactly our kickoff.
+    first_team = fuzzy_match_event(
+        "Racing Club Res.", "Tigre Res.",
+        [{"id": 4, "home": "Racing Club", "away": "Tigre",
+          "start": our_kickoff.isoformat()}],
+        our_kickoff,
+    )
+    assert first_team is None, (
+        "a first-team event must not match our reserves fixture even on an "
+        f"exact date hit — that writes first-team odds under the reserves "
+        f"match_id (COOLBET-SQUAD-GUARD-API), got {first_team}"
     )
 
 
