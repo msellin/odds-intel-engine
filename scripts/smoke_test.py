@@ -25603,7 +25603,35 @@ def test_coolbet_date_guard_dead_2026_08_31():
     assert not [r for r in recs if r.levelno >= logging.WARNING], \
         "a wrong-name candidate is no coverage, not a date mismatch"
 
-    return "search/v2 kickoff read as match_start; date guard live; postponement warns loudly"
+    # DATE-MISMATCH-FALSE-ALARM (2026-09-02). `date_rejects` is filled by the
+    # date check at the top of the candidate loop, BEFORE the squad guard runs,
+    # so it holds candidates that could never have been this fixture at all.
+    # The warning block then re-scored them on NAME ONLY and announced our date
+    # as stale. Real firings from the snapshot log: 'Seoul W vs Incheon Red
+    # Angels W' reported against 'FC Seoul vs Incheon United', and 'Gremio U17'
+    # against 'Gremio FBPA'.
+    #
+    # This is load-bearing for AF-STALE-FIXTURE-DATES, which wants to alert off
+    # this warning: of 13 unique firings only 3 were genuine date
+    # discrepancies. An alert that is 77% false trains the operator to ignore
+    # the 23% that are real.
+    recs.clear()
+    mens = cp._parse_event({"id": 4, "name": "FC Seoul - Incheon United",
+                            "match_start": "2026-09-05T10:00:00.000Z"})
+    womens_ko = datetime(2026, 9, 2, 10, 0, tzinfo=timezone.utc)
+    cp.log.addHandler(h)
+    try:
+        res = cp.fuzzy_match_event("Seoul W", "Incheon Red Angels W", [mens], womens_ko)
+    finally:
+        cp.log.removeHandler(h)
+    assert res is None, "a men's fixture must never match our women's fixture"
+    assert not [r for r in recs if "DATE MISMATCH" in r.getMessage()], (
+        "a squad-incompatible candidate is a DIFFERENT FIXTURE, not evidence "
+        "that our date is stale — warning here poisons the AF-STALE signal"
+    )
+
+    return ("search/v2 kickoff read as match_start; date guard live; "
+            "postponement warns loudly; squad-incompatible candidates stay quiet")
 
 
 @test("COOLBET-UI-DATE-MISMATCH")

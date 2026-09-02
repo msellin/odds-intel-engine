@@ -1207,6 +1207,20 @@ def fuzzy_match_event(
         # pricing a fixture that is not played that night. Say so loudly rather
         # than letting it read as no coverage.
         for ev, ev_start in date_rejects:
+            # DATE-MISMATCH-FALSE-ALARM (2026-09-02). `date_rejects` is filled
+            # by the date check at the TOP of the loop, before the squad guard
+            # below it ever runs — so it still holds candidates that could
+            # never have been this fixture. Without this check the warning
+            # fired on 'Seoul W vs Incheon Red Angels W' offered as 'FC Seoul
+            # vs Incheon United', and on 'Gremio U17' offered as 'Grêmio
+            # FBPA', both reported as "our fixture date is probably stale".
+            #
+            # It matters because AF-STALE-FIXTURE-DATES wants to alert off
+            # this warning: of 13 unique firings in the logs, only 3 were real
+            # date discrepancies. An alert that is 77% false teaches the
+            # operator to ignore the 23% that are real.
+            if not _squads_compatible(home, away, ev):
+                continue
             name_score = min(
                 max(fuzz.partial_ratio(v, _ascii(ev.get("home") or "")) for v in home_variants),
                 max(fuzz.partial_ratio(v, _ascii(ev.get("away") or "")) for v in away_variants),
