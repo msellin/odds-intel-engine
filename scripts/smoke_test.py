@@ -1329,18 +1329,50 @@ def _():
 
 @test("OU-PARSE-BUG — parser uses exact match, not substring (source guard)")
 def _():
-    """Guard against revert to the substring 'Over/Under' in bet_name pattern."""
-    import inspect
-    from workers.api_clients import api_football
-    src = inspect.getsource(api_football.parse_fixture_odds)
-    # The buggy form was: "Over/Under" in bet_name
-    assert '"Over/Under" in bet_name' not in src, (
-        "OU-PARSE-BUG regressed: substring match is back in parse_fixture_odds. "
-        "Use exact `bet_name == \"Goals Over/Under\"` only."
+    """Guard against revert to the substring 'Over/Under' in bet_name pattern.
+
+    SMOKE-SUITE-AUDIT 2026-09-02: this asserted that the string
+    '"Over/Under" in bet_name' is absent and that 'bet_name == "Goals
+    Over/Under"' is present. Both hold if a *second*, looser branch is added
+    further down, or if the exact comparison is made against a variable that
+    was reassigned — the spelling survives while the behaviour reverts.
+
+    parse_fixture_odds is pure, so the distinction is directly observable:
+    feed it bet names that CONTAIN "Over/Under" but are not the full-time
+    goals market and assert nothing is emitted. "Goals Over/Under First Half"
+    is the one that matters — under substring matching, half-time lines were
+    ingested as full-time OU, which prices a completely different bet.
+    """
+    from workers.api_clients.api_football import parse_fixture_odds
+
+    def _raw(bet_name):
+        return [{"bookmakers": [{"name": "Pinnacle", "bets": [{
+            "name": bet_name,
+            "values": [{"value": "Over 2.5", "odd": "1.85"},
+                       {"value": "Under 2.5", "odd": "1.95"}],
+        }]}]}]
+
+    def _ou_rows(bet_name):
+        return [r for r in parse_fixture_odds(_raw(bet_name))
+                if str(r.get("market", "")).startswith("over_under")]
+
+    # The real full-time market still parses.
+    ft = _ou_rows("Goals Over/Under")
+    assert len(ft) == 2, f"FT Goals Over/Under must yield 2 rows, got {len(ft)}"
+    assert {r["market"] for r in ft} == {"over_under_25"}, (
+        f"FT OU 2.5 must map to over_under_25, got {{r['market'] for r in ft}}"
     )
-    assert 'bet_name == "Goals Over/Under"' in src, (
-        "OU-PARSE-BUG: expected exact match `bet_name == \"Goals Over/Under\"` in parser."
-    )
+
+    # Anything that merely CONTAINS the substring must not.
+    for impostor in ("Goals Over/Under First Half", "Over/Under Corners",
+                     "Asian Handicap Over/Under"):
+        rows = _ou_rows(impostor)
+        assert rows == [], (
+            f"{impostor!r} was parsed as a full-time Over/Under market "
+            f"({[r['market'] for r in rows]}). Substring matching is back — "
+            "half-time and corner lines would be ingested as full-time goals "
+            "odds, pricing a different bet entirely."
+        )
 
 
 @test("ODDS-QUALITY-CLEANUP — filter_garbage_ou_rows drops blacklisted bookmakers on OU only")
