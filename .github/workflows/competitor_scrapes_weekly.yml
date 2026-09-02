@@ -71,6 +71,10 @@ jobs:
         continue-on-error: true
         run: python3 scripts/scrape_tipstrr.py
 
+      - name: Scrape Betaminic (public ShootingBets results table)
+        continue-on-error: true
+        run: python3 scripts/scrape_betaminic.py --days 150
+
       - name: Commit + push if changed
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

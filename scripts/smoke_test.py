@@ -20644,11 +20644,29 @@ def _():
     )
 
     bm_src = (scripts / "scrape_betaminic.py").read_text()
-    assert "auth_required" in bm_src and "BETAMINIC_COOKIE" in bm_src, (
-        "scrape_betaminic.py must (a) emit an auth_required stub when no "
-        "logged-in cookie is present and (b) document the BETAMINIC_COOKIE "
-        "env var as the activation lever — anything else is a paywall bypass"
+    # BETAMINIC-PUBLIC-TABLE-2026-09-02. This used to demand the scraper emit
+    # an `auth_required` stub and document a BETAMINIC_COOKIE lever, on the
+    # 2026-06-24 finding that Betaminic's ROI sits behind a signup wall.
+    #
+    # That finding was about /betamin-builder/public-strategies/, and it holds
+    # for that page. It does not hold for the site: /shootingbets/results/
+    # serves the same outfit's settled bets through a public wpDataTables AJAX
+    # endpoint whose only gate is a nonce printed in the page HTML. No account,
+    # no session cookie, nothing bypassed.
+    #
+    # The anti-bypass intent is worth keeping, so it is asserted directly
+    # rather than via the stub: the scraper must not carry credentials or
+    # replay a logged-in session.
+    assert "shootingbets" in bm_src and "wdtNonceFrontendServerSide" in bm_src, (
+        "scrape_betaminic.py must read the PUBLIC ShootingBets results table "
+        "and take its nonce from the page"
     )
+    for forbidden in ("BETAMINIC_COOKIE", "BETAMINIC_PASSWORD", "wordpress_logged_in"):
+        assert forbidden not in bm_src, (
+            f"scrape_betaminic.py references {forbidden} — the public table "
+            "needs no credentials, and replaying a logged-in session to reach "
+            "gated data is a paywall bypass"
+        )
 
     for fn in ("audit_vs_forebet.py", "audit_vs_tipstrr.py",
                "audit_vs_betaminic.py"):
@@ -20672,15 +20690,37 @@ def _():
                  "their_stats", "our_stats_same_window"):
             assert k in d, f"ledger/{name} missing key {k!r}"
 
-    # Betaminic must publish as auth_required until an operator runs the
-    # signed-in scrape — protects against an agent quietly flipping it to "ok"
-    # with fabricated numbers.
+    # BETAMINIC-PUBLIC-TABLE-2026-09-02. This pinned status == 'auth_required'
+    # to stop an agent quietly flipping the row to 'ok' with invented numbers.
+    # The concern is right; the mechanism was wrong, and it became false the
+    # moment the public ShootingBets table was found.
+    #
+    # Enforce the actual intent instead: whatever Betaminic reports must
+    # reconcile against the per-bet rows the scraper wrote. Fabricated numbers
+    # cannot survive a row-count check against picks_betaminic.csv, and this
+    # keeps working now that the row is legitimately live.
+    import csv as _csv
     bm = json.loads((pathlib.Path("ledger") / "comparison_betaminic.json").read_text())
-    assert bm["status"] == "auth_required", (
-        "comparison_betaminic.json must stay at status='auth_required' "
-        "until the operator runs a logged-in scrape — flipping this to "
-        "'ok' silently is the failure mode we want to detect here"
-    )
+    n = (bm.get("their_stats") or {}).get("n", 0)
+    picks = pathlib.Path("ledger") / "picks_betaminic.csv"
+    if n:
+        assert picks.exists(), (
+            f"comparison_betaminic.json claims n={n} but there is no "
+            "picks_betaminic.csv behind it — published numbers must come from "
+            "scraped rows"
+        )
+        with picks.open() as fh:
+            n_rows = sum(1 for _ in _csv.DictReader(fh))
+        assert n_rows == n, (
+            f"comparison_betaminic.json reports n={n} but picks_betaminic.csv "
+            f"holds {n_rows} rows. The published figure must be exactly the "
+            "audited bets — a mismatch means it was not derived from data."
+        )
+    else:
+        assert bm.get("status") != "ok", (
+            "comparison_betaminic.json reports status 'ok' with n=0 — a row "
+            "with no bets behind it must not present as a live comparison"
+        )
 
     # CSV export should emit all five competitors
     csv_src = (scripts / "export_competitor_csvs.py").read_text()
@@ -21042,17 +21082,22 @@ def test_competitor_audits_fresh():
     max_age = timedelta(days=14)
     now = datetime.now(timezone.utc)
 
-    # Betaminic is intentionally auth-gated — check freshness but not
-    # status. The rest must be status=='ok' or the landing quietly
-    # falls back to the hardcoded COMP_FALLBACK.
+    # BETAMINIC-PUBLIC-TABLE-2026-09-02. Betaminic was `fresh_only` for months
+    # — freshness checked, status exempted — on the belief that its ROI sits
+    # behind a signup wall. That was true of the page the old scraper targeted
+    # (/betamin-builder/public-strategies/) but NOT of /shootingbets/results/,
+    # which serves per-bet results through a public wpDataTables AJAX endpoint
+    # needing only the nonce printed in the page. It is now scraped like the
+    # rest and must be status=='ok'.
     require_ok = {
         "comparison_winnerodds.json",
         "comparison_signalodds.json",
         "comparison_deepbetting.json",
         "comparison_forebet.json",
         "comparison_tipstrr.json",
+        "comparison_betaminic.json",
     }
-    fresh_only = {"comparison_betaminic.json"}
+    fresh_only: set[str] = set()
 
     for name in require_ok | fresh_only:
         p = ledger / name

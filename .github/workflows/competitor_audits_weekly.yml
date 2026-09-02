@@ -14,7 +14,8 @@ name: OddsIntel — Daily Competitor Audits
 #   - SignalOdds / DeepBetting / Forebet / Tipstrr → existing dev/active
 #     JSON snapshots (re-runs the math but not the scrape). Their ROI
 #     changes day-to-day only because OUR matched cohort grows daily.
-#   - Betaminic   → auth-walled, stays at status:"auth_required"
+#   - Betaminic   → public ShootingBets results table (wpDataTables AJAX,
+#                   no auth). Was believed auth-walled until 2026-09-02.
 #
 # Our cohort numbers DO update each run because OddsIntel keeps placing
 # new bets — every day the matched-window n/ROI bump up.
@@ -100,6 +101,10 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         continue-on-error: true
         run: python3 scripts/audit_vs_tipstrr.py
+
+      - name: Audit vs Betaminic
+        continue-on-error: true
+        run: python3 scripts/audit_vs_betaminic.py
 
       # COMPETITOR-PICKS-CSV (2026-08-01): the audits above emit per-source
       # picks_<src>.csv alongside comparison_*.json. Dump OddsIntel's own

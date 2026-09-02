@@ -1,25 +1,47 @@
 {
   "source": "Betaminic",
-  "source_url": "https://www.betaminic.com/betamin-builder/public-strategies/",
-  "snapshot_at_utc": "2026-06-24T20:38:38+00:00",
+  "source_url": "https://www.betaminic.com/shootingbets/results/",
+  "snapshot_at_utc": "2026-09-02T09:10:04+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-06-25"
+    "end": "2026-09-03"
   },
-  "status": "auth_required",
+  "status": "ok",
   "min_sample_each_side": 50,
-  "scope_notes": "Betaminic gates its strategy ROI behind a free-signup auth wall. Auto-signup is out of policy (no paywall bypass / no fabricated numbers). Comparison-block row should render as \"Betaminic — pending audit (signup required)\" until the operator runs scripts/scrape_betaminic.py with a logged-in BETAMINIC_COOKIE.",
+  "scope_notes": "Betaminic ShootingBets public results table (wpDataTables AJAX, no auth). Moneyline -> 1x2, Totals -> over_under_25 (other lines dropped, never compared against our 2.5 book). Settled W/L only, priced at the Bet365 value odds Betaminic publishes, 10 EUR flat.",
   "reproducible_via": "scripts/scrape_betaminic.py + scripts/audit_vs_betaminic.py",
   "their_stats": {
-    "n": 0,
-    "note": "auth-gate confirmed (Login + Register + Access Betamin strings present, body length 271783)"
+    "n": 3498,
+    "stake_total": 34980.0,
+    "pnl_total": 3708.4,
+    "roi_pct": 10.6,
+    "hit_rate_pct": 41.19,
+    "avg_odds": 3.094
+  },
+  "their_by_market": {
+    "1x2": {
+      "n": 3312,
+      "stake_total": 33120.0,
+      "pnl_total": 4011.5,
+      "roi_pct": 12.11,
+      "hit_rate_pct": 41.46,
+      "avg_odds": 3.13
+    },
+    "over_under_25": {
+      "n": 186,
+      "stake_total": 1860.0,
+      "pnl_total": -303.1,
+      "roi_pct": -16.3,
+      "hit_rate_pct": 36.56,
+      "avg_odds": 2.451
+    }
   },
   "our_stats_same_window": {
-    "n": 989,
-    "stake_total": 5458.92,
-    "pnl_total": 650.19,
-    "roi_pct": 11.91,
-    "hit_rate_pct": 46.21,
-    "avg_odds": 2.803
+    "n": 692,
+    "stake_total": 4594.75,
+    "pnl_total": 635.1,
+    "roi_pct": 13.82,
+    "hit_rate_pct": 42.49,
+    "avg_odds": 2.868
   }
 }
