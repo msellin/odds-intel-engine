@@ -1,1 +1,112 @@
 source,kickoff_date,league,home_team,away_team,market,pick,odds,result,pnl_per_unit,ref_url
+signalodds,2026-09-01,,FC Zurich,BSC Young Boys,Match Result,BSC Young Boys,1.620,won,0.6200,/predictions/the-pitch-master/fc-zurich-vs-bsc-young-boys-20260901/bsc-young-boys
+signalodds,2026-09-01,,Al-Hilal,Al-Ahli,Match Result,Al-Hilal,1.730,won,0.7300,/predictions/the-pitch-master/al-hilal-vs-al-ahli-20260901/al-hilal
+signalodds,2026-09-01,,Wolfsberger AC,LASK,Match Result,LASK,1.810,won,0.8100,/predictions/the-pitch-master/wolfsberger-ac-vs-lask-20260901/lask
+signalodds,2026-09-01,,Parma,Cremonese,Match Result,Parma,2.220,lost,-1.0000,/predictions/the-pitch-master/parma-vs-cremonese-20260901/parma
+signalodds,2026-08-31,,AC Oulu,SJK Seinäjoki,Match Result,AC Oulu,2.100,lost,-1.0000,/predictions/the-pitch-master/ac-oulu-vs-sjk-seinajoki-20260831/ac-oulu
+signalodds,2026-08-31,,Ilves Tampere,HJK Helsinki,Match Result,HJK Helsinki,1.960,won,0.9600,/predictions/the-pitch-master/ilves-tampere-vs-hjk-helsinki-20260831/hjk-helsinki
+signalodds,2026-08-31,,IFK Mariehamn,Jaro,Match Result,IFK Mariehamn,2.280,won,1.2800,/predictions/the-pitch-master/ifk-mariehamn-vs-jaro-20260831/ifk-mariehamn
+signalodds,2026-08-31,,VPS Vaasa,FC Lahti,Match Result,VPS Vaasa,2.200,lost,-1.0000,/predictions/the-pitch-master/vps-vaasa-vs-fc-lahti-20260831/vps-vaasa
+signalodds,2026-08-31,,Monterrey,Atlético San Luis,Match Result,Monterrey,1.670,lost,-1.0000,/predictions/the-pitch-master/monterrey-vs-atletico-san-luis-20260831/monterrey
+signalodds,2026-08-30,,Jeju United FC,Daejeon Citizen,Match Result,Daejeon Citizen,2.200,lost,-1.0000,/predictions/the-pitch-master/jeju-united-fc-vs-daejeon-citizen-20260830/daejeon-citizen
+signalodds,2026-08-30,,FC Utrecht,PSV Eindhoven,Match Result,PSV Eindhoven,1.650,won,0.6500,/predictions/the-pitch-master/fc-utrecht-vs-psv-eindhoven-20260830/psv-eindhoven
+signalodds,2026-08-30,,Santos Laguna,Tigres,Match Result,Tigres,1.820,lost,-1.0000,/predictions/the-pitch-master/santos-laguna-vs-tigres-20260830/tigres
+signalodds,2026-08-30,,Portland Timbers,Austin FC,Match Result,Portland Timbers,1.670,lost,-1.0000,/predictions/the-pitch-master/portland-timbers-vs-austin-fc-20260830/portland-timbers
+signalodds,2026-08-30,,San Diego FC,LA Galaxy,Match Result,San Diego FC,1.810,won,0.8100,/predictions/the-pitch-master/san-diego-fc-vs-la-galaxy-20260830/san-diego-fc
+signalodds,2026-08-29,,V-Varen Nagasaki,FC Tokyo,Match Result,FC Tokyo,1.730,won,0.7300,/predictions/the-pitch-master/v-varen-nagasaki-vs-fc-tokyo-20260829/fc-tokyo
+signalodds,2026-08-29,,Mito HollyHock,FC Machida Zelvia,Match Result,FC Machida Zelvia,1.940,lost,-1.0000,/predictions/the-pitch-master/mito-hollyhock-vs-fc-machida-zelvia-20260829/fc-machida-zelvia
+signalodds,2026-08-29,,Qingdao Hainiu FC,Wuhan Three Towns,Match Result,Wuhan Three Towns,2.550,won,1.5500,/predictions/the-pitch-master/qingdao-hainiu-fc-vs-wuhan-three-towns-20260829/wuhan-three-towns
+signalodds,2026-08-29,,Gamba Osaka,Hiroshima Sanfrecce FC,Match Result,Hiroshima Sanfrecce FC,1.670,lost,-1.0000,/predictions/the-pitch-master/gamba-osaka-vs-hiroshima-sanfrecce-fc-20260829/hiroshima-sanfrecce-fc
+signalodds,2026-08-29,,Tijuana,Pumas,Match Result,Tijuana,2.200,won,1.2000,/predictions/the-pitch-master/tijuana-vs-pumas-20260829/tijuana
+signalodds,2026-08-28,,Wisła Płock,Korona Kielce,Match Result,Korona Kielce,2.700,won,1.7000,/predictions/the-pitch-master/wisla-plock-vs-korona-kielce-20260828/korona-kielce
+signalodds,2026-08-28,,Al-Riyadh,Neom,Match Result,Neom,2.050,lost,-1.0000,/predictions/the-pitch-master/al-riyadh-vs-neom-20260828/neom
+signalodds,2026-08-28,,Shenzhen Peng City FC,Shanghai SIPG FC,Match Result,Shanghai SIPG FC,2.240,won,1.2400,/predictions/the-pitch-master/shenzhen-peng-city-fc-vs-shanghai-sipg-fc-20260828/shanghai-sipg-fc
+signalodds,2026-08-28,,Dalian Yingbo,Beijing FC,Match Result,Beijing FC,2.200,lost,-1.0000,/predictions/the-pitch-master/dalian-yingbo-vs-beijing-fc-20260828/beijing-fc
+signalodds,2026-08-28,,Shanghai Shenhua FC,Shandong Luneng Taishan FC,Match Result,Shanghai Shenhua FC,1.770,lost,-1.0000,/predictions/the-pitch-master/shanghai-shenhua-fc-vs-shandong-luneng-taishan-fc-20260828/shanghai-shenhua-fc
+signalodds,2026-08-27,,Fulham,Wimbledon,Match Result,Fulham,1.220,won,0.2200,/predictions/the-pitch-master/fulham-vs-wimbledon-20260827/fulham
+signalodds,2026-08-27,,Barcelona,Athletic Bilbao,Match Result,Barcelona,1.300,won,0.3000,/predictions/the-pitch-master/barcelona-vs-athletic-bilbao-20260827/barcelona
+signalodds,2026-08-27,,Celta Vigo,CA Osasuna,Match Result,Celta Vigo,2.030,lost,-1.0000,/predictions/the-pitch-master/celta-vigo-vs-ca-osasuna-20260827/celta-vigo
+signalodds,2026-08-27,,América,Columbus Crew SC,Match Result,América,1.850,won,0.8500,/predictions/the-pitch-master/america-vs-columbus-crew-sc-20260827/america
+signalodds,2026-08-26,,Al-Faisaly KSA FC,Al-Fateh,Match Result,Al-Faisaly KSA FC,2.580,lost,-1.0000,/predictions/the-pitch-master/al-faisaly-ksa-fc-soccer-vs-al-fateh-20260826/al-faisaly-ksa-fc
+signalodds,2026-08-26,,Gangwon FC,Gwangju FC,Match Result,Gangwon FC,1.550,lost,-1.0000,/predictions/the-pitch-master/gangwon-fc-vs-gwangju-fc-20260826/gangwon-fc
+signalodds,2026-08-26,,Daejeon Citizen,Ulsan Hyundai FC,Match Result,Daejeon Citizen,2.380,won,1.3800,/predictions/the-pitch-master/daejeon-citizen-vs-ulsan-hyundai-fc-20260826/daejeon-citizen
+signalodds,2026-08-26,,FC Anyang,Incheon United,Match Result,Incheon United,2.360,lost,-1.0000,/predictions/the-pitch-master/fc-anyang-vs-incheon-united-20260826/incheon-united
+signalodds,2026-08-26,,León,Real Salt Lake,Match Result,Real Salt Lake,2.380,lost,-1.0000,/predictions/the-pitch-master/leon-vs-real-salt-lake-20260826/real-salt-lake
+signalodds,2026-08-25,,Al-Taawoun,Al-Fayha,Match Result,Al-Taawoun,1.810,lost,-1.0000,/predictions/the-pitch-master/al-taawoun-vs-al-fayha-20260825/al-taawoun
+signalodds,2026-08-25,,Jeju United FC,Pohang Steelers,Match Result,Jeju United FC,2.520,lost,-1.0000,/predictions/the-pitch-master/jeju-united-fc-vs-pohang-steelers-20260825/jeju-united-fc
+signalodds,2026-08-25,,FC Seoul,Bucheon FC 1995,Match Result,FC Seoul,1.560,won,0.5600,/predictions/the-pitch-master/fc-seoul-vs-bucheon-fc-1995-soccer-20260825/fc-seoul
+signalodds,2026-08-24,,Bologna,Lazio,Match Result,Bologna,2.300,lost,-1.0000,/predictions/the-pitch-master/bologna-vs-lazio-20260824/bologna
+signalodds,2026-08-24,,FSV Mainz 05,Werder Bremen,Match Result,Werder Bremen,1.820,won,0.8200,/predictions/the-pitch-master/fsv-mainz-05-vs-werder-bremen-20260824/werder-bremen
+signalodds,2026-08-24,,FC Würzburger Kickers,1. FC Köln,Match Result,1. FC Köln,1.330,won,0.3300,/predictions/the-pitch-master/fc-wurzburger-kickers-soccer-vs-1-fc-koln-20260824/1-fc-koln
+signalodds,2026-08-24,,VSG Altglienicke,VfL Wolfsburg,Match Result,VfL Wolfsburg,1.210,lost,-1.0000,/predictions/the-pitch-master/vsg-altglienicke-soccer-vs-vfl-wolfsburg-20260824/vfl-wolfsburg
+signalodds,2026-08-24,,SC Verl,Hamburger SV,Match Result,Hamburger SV,1.520,won,0.5200,/predictions/the-pitch-master/sc-verl-vs-hamburger-sv-20260824/hamburger-sv
+signalodds,2026-08-23,,SonderjyskE,FC Nordsjaelland,Match Result,FC Nordsjaelland,1.820,won,0.8200,/predictions/the-pitch-master/sonderjyske-vs-fc-nordsjaelland-20260823/fc-nordsjaelland
+signalodds,2026-08-23,,Cruz Azul,Atlas,Match Result,Cruz Azul,1.660,lost,-1.0000,/predictions/the-pitch-master/cruz-azul-vs-atlas-20260823/cruz-azul
+signalodds,2026-08-23,,San Jose Earthquakes,Minnesota United FC,Match Result,San Jose Earthquakes,2.400,lost,-1.0000,/predictions/the-pitch-master/san-jose-earthquakes-vs-minnesota-united-fc-20260823/san-jose-earthquakes
+signalodds,2026-08-23,,Los Angeles FC,Portland Timbers,Match Result,Los Angeles FC,1.730,lost,-1.0000,/predictions/the-pitch-master/los-angeles-fc-vs-portland-timbers-20260823/los-angeles-fc
+signalodds,2026-08-23,,San Diego FC,Colorado Rapids,Match Result,San Diego FC,2.050,won,1.0500,/predictions/the-pitch-master/san-diego-fc-vs-colorado-rapids-20260823/san-diego-fc
+signalodds,2026-08-22,,Cerezo Osaka,Shimizu S Pulse,Match Result,Cerezo Osaka,2.340,won,1.3400,/predictions/the-pitch-master/cerezo-osaka-vs-shimizu-s-pulse-20260822/cerezo-osaka
+signalodds,2026-08-22,,Kashima Antlers,Avispa Fukuoka,Match Result,Kashima Antlers,1.790,won,0.7900,/predictions/the-pitch-master/kashima-antlers-vs-avispa-fukuoka-20260822/kashima-antlers
+signalodds,2026-08-22,,FC Juárez,América,Match Result,América,1.740,won,0.7400,/predictions/the-pitch-master/fc-juarez-vs-america-20260822/america
+signalodds,2026-08-21,,Waldhof Mannheim,1. FC Kaiserslautern,Match Result,1. FC Kaiserslautern,2.100,won,1.1000,/predictions/the-pitch-master/waldhof-mannheim-vs-1-fc-kaiserslautern-20260821/1-fc-kaiserslautern
+signalodds,2026-08-21,,SJK Seinäjoki,FC Lahti,Match Result,SJK Seinäjoki,2.680,lost,-1.0000,/predictions/the-pitch-master/sjk-seinajoki-vs-fc-lahti-20260821/sjk-seinajoki
+signalodds,2026-08-21,,FC Tokyo,JEF United Chiba,Match Result,FC Tokyo,1.570,won,0.5700,/predictions/the-pitch-master/fc-tokyo-vs-jef-united-chiba-20260821/fc-tokyo
+signalodds,2026-08-21,,Kashiwa Reysol,V-Varen Nagasaki,Match Result,Kashiwa Reysol,1.620,won,0.6200,/predictions/the-pitch-master/kashiwa-reysol-vs-v-varen-nagasaki-20260821/kashiwa-reysol
+signalodds,2026-08-20,,Sheffield Wednesday,Bradford City,Match Result,Sheffield Wednesday,2.540,lost,-1.0000,/predictions/the-pitch-master/sheffield-wednesday-vs-bradford-city-20260820/sheffield-wednesday
+signalodds,2026-08-20,,Al-Fayha,Al-Hilal,Match Result,Al-Hilal,1.250,won,0.2500,/predictions/the-pitch-master/al-fayha-vs-al-hilal-20260820/al-hilal
+signalodds,2026-08-20,,Portland Timbers,San Diego FC,Match Result,Portland Timbers,2.080,won,1.0800,/predictions/the-pitch-master/portland-timbers-vs-san-diego-fc-20260820/portland-timbers
+signalodds,2026-08-20,,Vancouver Whitecaps FC,Houston Dynamo,Match Result,Vancouver Whitecaps FC,1.620,lost,-1.0000,/predictions/the-pitch-master/vancouver-whitecaps-fc-vs-houston-dynamo-20260820/vancouver-whitecaps-fc
+signalodds,2026-08-20,,LA Galaxy,San Jose Earthquakes,Match Result,LA Galaxy,2.230,won,1.2300,/predictions/the-pitch-master/la-galaxy-vs-san-jose-earthquakes-20260820/la-galaxy
+signalodds,2026-08-19,,Atlético Madrid,Málaga,Match Result,Atlético Madrid,1.370,won,0.3700,/predictions/the-pitch-master/atletico-madrid-vs-malaga-20260819/atletico-madrid
+signalodds,2026-08-19,,Celtic,LASK,Match Result,Celtic,1.670,won,0.6700,/predictions/the-pitch-master/celtic-vs-lask-20260819/celtic
+signalodds,2026-08-19,,NEC Nijmegen,Bodø/Glimt,Match Result,Bodø/Glimt,2.660,won,1.6600,/predictions/the-pitch-master/nec-nijmegen-vs-bodo-glimt-20260819/bodo-glimt
+signalodds,2026-08-19,,ŠK Slovan Bratislava,NK Celje,Match Result,ŠK Slovan Bratislava,1.760,lost,-1.0000,/predictions/the-pitch-master/sk-slovan-bratislava-vs-nk-celje-20260819/sk-slovan-bratislava
+signalodds,2026-08-19,,Shanghai SIPG FC,Dalian Yingbo,Match Result,Shanghai SIPG FC,1.500,lost,-1.0000,/predictions/the-pitch-master/shanghai-sipg-fc-vs-dalian-yingbo-20260819/shanghai-sipg-fc
+signalodds,2026-08-18,,Fenerbahce,Lyon,Match Result,Fenerbahce,2.080,lost,-1.0000,/predictions/the-pitch-master/fenerbahce-vs-lyon-20260818/fenerbahce
+signalodds,2026-08-18,,PFC Levski Sofia,AEK Athens,Match Result,AEK Athens,2.620,lost,-1.0000,/predictions/the-pitch-master/pfc-levski-sofia-soccer-vs-aek-athens-20260818/aek-athens
+signalodds,2026-08-18,,Dinamo Zagreb,Viking FK,Match Result,Dinamo Zagreb,1.790,lost,-1.0000,/predictions/the-pitch-master/dinamo-zagreb-vs-viking-fk-20260818/dinamo-zagreb
+signalodds,2026-08-18,,Shanghai Shenhua FC,Beijing FC,Match Result,Shanghai Shenhua FC,2.160,lost,-1.0000,/predictions/the-pitch-master/shanghai-shenhua-fc-vs-beijing-fc-20260818/shanghai-shenhua-fc
+signalodds,2026-08-18,,Pachuca,Puebla,Match Result,Pachuca,1.620,lost,-1.0000,/predictions/the-pitch-master/pachuca-vs-puebla-20260818/pachuca
+signalodds,2026-08-17,,Sassuolo,Cesena FC,Match Result,Sassuolo,1.550,won,0.5500,/predictions/the-pitch-master/sassuolo-vs-cesena-fc-20260817/sassuolo
+signalodds,2026-08-17,,Pisa,Empoli,Match Result,Pisa,1.920,lost,-1.0000,/predictions/the-pitch-master/pisa-vs-empoli-20260817/pisa
+signalodds,2026-08-17,,IF Gnistan,Ilves Tampere,Match Result,IF Gnistan,2.620,won,1.6200,/predictions/the-pitch-master/if-gnistan-vs-ilves-tampere-20260817/if-gnistan
+signalodds,2026-08-17,,Tijuana,Cruz Azul,Match Result,Cruz Azul,2.380,lost,-1.0000,/predictions/the-pitch-master/tijuana-vs-cruz-azul-20260817/cruz-azul
+signalodds,2026-08-17,,Seattle Sounders FC,Vancouver Whitecaps FC,Match Result,Vancouver Whitecaps FC,2.000,won,1.0000,/predictions/the-pitch-master/seattle-sounders-fc-vs-vancouver-whitecaps-fc-20260817/vancouver-whitecaps-fc
+signalodds,2026-08-16,,Incheon United,Sangju Sangmu FC,Match Result,Incheon United,2.200,lost,-1.0000,/predictions/the-pitch-master/incheon-united-vs-sangju-sangmu-fc-20260816/incheon-united
+signalodds,2026-08-16,,ADO Den Haag,Groningen,Match Result,Groningen,2.560,won,1.5600,/predictions/the-pitch-master/ado-den-haag-soccer-vs-groningen-20260816/groningen
+signalodds,2026-08-16,,San Jose Earthquakes,St. Louis City SC,Match Result,San Jose Earthquakes,2.210,lost,-1.0000,/predictions/the-pitch-master/san-jose-earthquakes-vs-st-louis-city-sc-20260816/san-jose-earthquakes
+signalodds,2026-08-16,,Los Angeles FC,San Diego FC,Match Result,Los Angeles FC,1.720,lost,-1.0000,/predictions/the-pitch-master/los-angeles-fc-vs-san-diego-fc-20260816/los-angeles-fc
+signalodds,2026-08-15,,Urawa Red Diamonds,Hiroshima Sanfrecce FC,Match Result,Hiroshima Sanfrecce FC,2.020,won,1.0200,/predictions/the-pitch-master/urawa-red-diamonds-vs-hiroshima-sanfrecce-fc-20260815/hiroshima-sanfrecce-fc
+signalodds,2026-08-15,,Fagiano Okayama,V-Varen Nagasaki,Match Result,Fagiano Okayama,2.260,won,1.2600,/predictions/the-pitch-master/fagiano-okayama-vs-v-varen-nagasaki-20260815/fagiano-okayama
+signalodds,2026-08-15,,Shimizu S Pulse,Yokohama F Marinos,Match Result,Shimizu S Pulse,2.520,lost,-1.0000,/predictions/the-pitch-master/shimizu-s-pulse-vs-yokohama-f-marinos-20260815/shimizu-s-pulse
+signalodds,2026-08-15,,Mito HollyHock,Gamba Osaka,Match Result,Gamba Osaka,2.740,lost,-1.0000,/predictions/the-pitch-master/mito-hollyhock-vs-gamba-osaka-20260815/gamba-osaka
+signalodds,2026-08-15,,Kashima Antlers,Nagoya Grampus,Match Result,Kashima Antlers,1.890,won,0.8900,/predictions/the-pitch-master/kashima-antlers-vs-nagoya-grampus-20260815/kashima-antlers
+signalodds,2026-08-14,,Qingdao West Coast FC,Chongqing Tonglianglong FC,Match Result,Qingdao West Coast FC,2.160,lost,-1.0000,/predictions/the-pitch-master/qingdao-west-coast-fc-vs-chongqing-tonglianglong-fc-20260814/qingdao-west-coast-fc
+signalodds,2026-08-14,,Wuhan Three Towns,Shanghai SIPG FC,Match Result,Shanghai SIPG FC,2.080,won,1.0800,/predictions/the-pitch-master/wuhan-three-towns-vs-shanghai-sipg-fc-20260814/shanghai-sipg-fc
+signalodds,2026-08-14,,Shandong Luneng Taishan FC,Qingdao Hainiu FC,Match Result,Shandong Luneng Taishan FC,1.460,won,0.4600,/predictions/the-pitch-master/shandong-luneng-taishan-fc-vs-qingdao-hainiu-fc-20260814/shandong-luneng-taishan-fc
+signalodds,2026-08-14,,Tokyo Verdy,Kashiwa Reysol,Match Result,Kashiwa Reysol,2.020,won,1.0200,/predictions/the-pitch-master/tokyo-verdy-vs-kashiwa-reysol-20260814/kashiwa-reysol
+signalodds,2026-08-14,,Portland Timbers,Tijuana,Match Result,Portland Timbers,1.960,won,0.9600,/predictions/the-pitch-master/portland-timbers-vs-tijuana-20260814/portland-timbers
+signalodds,2026-08-13,,Al-Shabab,Al-Qadsiah,Match Result,Al-Qadsiah,1.550,won,0.5500,/predictions/the-pitch-master/al-shabab-vs-al-qadsiah-20260813/al-qadsiah
+signalodds,2026-08-13,,Abha Club,Al-Hazem,Match Result,Al-Hazem,2.660,won,1.6600,/predictions/the-pitch-master/abha-club-soccer-vs-al-hazem-20260813/al-hazem
+signalodds,2026-08-13,,Los Angeles FC,Querétaro,Match Result,Los Angeles FC,1.310,lost,-1.0000,/predictions/the-pitch-master/los-angeles-fc-vs-queretaro-20260813/los-angeles-fc
+signalodds,2026-08-13,,Seattle Sounders FC,Guadalajara,Match Result,Guadalajara,2.100,won,1.1000,/predictions/the-pitch-master/seattle-sounders-fc-vs-guadalajara-20260813/guadalajara
+signalodds,2026-08-13,,San Diego FC,Puebla,Match Result,San Diego FC,1.630,won,0.6300,/predictions/the-pitch-master/san-diego-fc-vs-puebla-20260813/san-diego-fc
+signalodds,2026-08-12,,Inter Miami CF,León,Match Result,Inter Miami CF,2.020,lost,-1.0000,/predictions/the-pitch-master/inter-miami-cf-vs-leon-20260812/inter-miami-cf
+signalodds,2026-08-12,,Platense,Coquimbo Unido,Match Result,Platense,1.980,lost,-1.0000,/predictions/the-pitch-master/platense-vs-coquimbo-unido-20260812/platense
+signalodds,2026-08-12,,Bragantino-SP,Clube Atlético Mineiro,Match Result,Bragantino-SP,2.100,lost,-1.0000,/predictions/the-pitch-master/bragantino-sp-vs-clube-atletico-mineiro-20260812/bragantino-sp
+signalodds,2026-08-12,,CA Tigre BA,Montevideo City Torque,Match Result,CA Tigre BA,1.870,lost,-1.0000,/predictions/the-pitch-master/ca-tigre-ba-vs-montevideo-city-torque-20260812/ca-tigre-ba
+signalodds,2026-08-12,,Palmeiras-SP,Cerro Porteño,Match Result,Palmeiras-SP,1.320,lost,-1.0000,/predictions/the-pitch-master/palmeiras-sp-vs-cerro-porteno-20260812/palmeiras-sp
+signalodds,2026-08-11,,FK Kauno Žalgiris,Dinamo Zagreb,Match Result,Dinamo Zagreb,1.450,won,0.4500,/predictions/the-pitch-master/fk-kauno-zalgiris-soccer-vs-dinamo-zagreb-20260811/dinamo-zagreb
+signalodds,2026-08-11,,Helsingborgs IF,IFK Värnamo,Match Result,Helsingborgs IF,2.440,lost,-1.0000,/predictions/the-pitch-master/helsingborgs-if-vs-ifk-varnamo-20260811/helsingborgs-if
+signalodds,2026-08-11,,Sabah FK,AGF Aarhus,Match Result,Sabah FK,2.120,won,1.1200,/predictions/the-pitch-master/sabah-fk-soccer-vs-agf-aarhus-20260811/sabah-fk
+signalodds,2026-08-11,,Bodø/Glimt,Union Saint-Gilloise,Match Result,Bodø/Glimt,1.690,won,0.6900,/predictions/the-pitch-master/bodo-glimt-vs-union-saint-gilloise-20260811/bodo-glimt
+signalodds,2026-08-11,,FC Kairat,PFC Levski Sofia,Match Result,FC Kairat,2.740,lost,-1.0000,/predictions/the-pitch-master/fc-kairat-vs-pfc-levski-sofia-soccer-20260811/fc-kairat
+signalodds,2026-08-10,,IK Sirius,IF Brommapojkarna,Match Result,IK Sirius,1.350,lost,-1.0000,/predictions/the-pitch-master/ik-sirius-vs-if-brommapojkarna-20260810/ik-sirius
+signalodds,2026-08-10,,Silkeborg IF,OB Odense BK,Match Result,OB Odense BK,2.620,lost,-1.0000,/predictions/the-pitch-master/silkeborg-if-vs-ob-odense-bk-20260810/ob-odense-bk
+signalodds,2026-08-10,,Norrby IF,Örebro SK,Match Result,Norrby IF,2.430,won,1.4300,/predictions/the-pitch-master/norrby-if-vs-orebro-sk-20260810/norrby-if
+signalodds,2026-08-10,,FC Fakel Voronezh,FC Akhmat Grozny,Match Result,FC Akhmat Grozny,2.340,lost,-1.0000,/predictions/the-pitch-master/fc-fakel-voronezh-soccer-vs-fc-akhmat-grozny-20260810/fc-akhmat-grozny
+signalodds,2026-08-10,,América,Portland Timbers,Match Result,América,2.250,won,1.2500,/predictions/the-pitch-master/america-vs-portland-timbers-20260810/america
+signalodds,2026-08-09,,Henan FC,Qingdao West Coast FC,Match Result,Henan FC,1.620,lost,-1.0000,/predictions/the-pitch-master/henan-fc-vs-qingdao-west-coast-fc-20260809/henan-fc
+signalodds,2026-08-09,,V-Varen Nagasaki,Kyoto Purple Sanga,Match Result,Kyoto Purple Sanga,2.600,lost,-1.0000,/predictions/the-pitch-master/v-varen-nagasaki-vs-kyoto-purple-sanga-20260809/kyoto-purple-sanga
+signalodds,2026-08-09,,Tokyo Verdy,Kawasaki Frontale,Match Result,Kawasaki Frontale,2.460,lost,-1.0000,/predictions/the-pitch-master/tokyo-verdy-vs-kawasaki-frontale-20260809/kawasaki-frontale
+signalodds,2026-08-09,,Toluca,Los Angeles FC,Match Result,Toluca,2.640,lost,-1.0000,/predictions/the-pitch-master/toluca-vs-los-angeles-fc-20260809/toluca

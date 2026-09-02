@@ -26071,5 +26071,88 @@ def test_coolbet_squad_guard_api_path():
     return "women/reserves/U21 rejected at identical kickoff; same-squad still matches"
 
 
+@test("COMPETITOR-PICKS-STALE — the scraped data itself must be recent, not just the JSON")
+def test_competitor_picks_stale():
+    """COMPETITOR-AUDIT-FRESH checks `snapshot_at_utc` and `status`. Neither
+    can see the failure mode that actually happened.
+
+    The audit workflow runs daily and recomputes comparison_*.json from
+    ledger/picks_*.csv. If a SCRAPER stops producing but the last-good picks
+    file is still on disk, the audit happily recomputes from month-old rows
+    and writes a snapshot stamped today with status 'ok'. Measured 2026-09-02:
+
+        winnerodds   1,852 rows   newest pick 2026-08-29   ok
+        deepbetting    479 rows   newest pick 2026-08-29   ok
+        forebet      1,832 rows   newest pick 2026-07-31   <-- 33 days stale,
+                                                               status STILL 'ok'
+        signalodds       0 rows   (header only)
+        tipstrr          0 rows   (header only)
+
+    Forebet was rendering month-old figures on the public landing page as
+    live, with today's date and no marker, because every signal the old test
+    looks at was green. The only honest check is the newest kickoff_date
+    INSIDE the picks file — file mtime is useless (git does not preserve it,
+    and CI checkout rewrites it).
+    """
+    import csv
+    import pathlib
+    import re
+    from datetime import date, timedelta
+
+    ledger = pathlib.Path(__file__).resolve().parent.parent / "ledger"
+    if not ledger.is_dir():
+        raise SkipTest("ledger/ not present")
+
+    # Generous: these are weekly scrapes of settled picks, so a fortnight of
+    # slack absorbs a skipped cron and a competitor's own reporting lag. The
+    # failure this guards against is measured in months.
+    MAX_AGE_DAYS = 21
+
+    # Tipstrr publishes at (tipster x month) grain — per-bet selections are not
+    # exposed — so every row is stamped the 1st of a month. Early in a month the
+    # newest complete bucket is inherently ~30-35 days old, which is not
+    # staleness. Give it a grain-aware allowance rather than excluding it, so a
+    # genuinely dead Tipstrr scrape still fails here.
+    MAX_AGE_BY_SOURCE = {"tipstrr": 50}
+
+    # Only books we scrape ourselves. Betaminic is auth-gated by design and
+    # has no picks file.
+    expect = ["winnerodds", "deepbetting", "forebet", "signalodds", "tipstrr"]
+    stale, empty = [], []
+    for key in expect:
+        f = ledger / f"picks_{key}.csv"
+        if not f.exists():
+            empty.append(f"{key} (no picks file)")
+            continue
+        with f.open() as fh:
+            rows = list(csv.DictReader(fh))
+        if not rows:
+            empty.append(f"{key} (0 rows)")
+            continue
+        newest = None
+        for r in rows:
+            v = (r.get("kickoff_date") or "")[:10]
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", v) and (newest is None or v > newest):
+                newest = v
+        if newest is None:
+            empty.append(f"{key} (no parseable kickoff_date)")
+        else:
+            limit = MAX_AGE_BY_SOURCE.get(key, MAX_AGE_DAYS)
+            age = (date.today() - date.fromisoformat(newest)).days
+            if age > limit:
+                stale.append(f"{key} (newest pick {newest}, {age}d old, limit {limit}d)")
+
+    problems = empty + stale
+    assert not problems, (
+        "competitor picks data is stale or empty: " + "; ".join(problems) +
+        ". The audit will keep recomputing a fresh-looking comparison_*.json "
+        "from these rows and the landing page will present them as current. "
+        "Fix the scraper, or drop the competitor from the comparison set — do "
+        "not let a stale row render as live."
+    )
+    return (f"all {len(expect)} scraped competitors within their freshness "
+            f"limit ({MAX_AGE_DAYS}d; tipstrr {MAX_AGE_BY_SOURCE['tipstrr']}d for month-grain)")
+
+
 if __name__ == "__main__":
     main()

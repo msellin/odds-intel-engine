@@ -1,20 +1,64 @@
 {
   "source": "Tipstrr",
   "source_url": "https://tipstrr.com/tipster/<slug>/stats",
-  "snapshot_at_utc": "2026-09-02T06:57:19+00:00",
+  "snapshot_at_utc": "2026-09-02T08:55:16+00:00",
   "window": {
     "start": "2026-05-04",
     "end": "2026-09-03"
   },
-  "status": "insufficient-data-pending",
+  "status": "ok",
   "min_sample_each_side": 50,
   "scope_notes": "Tipstrr public stats are at (tipster × month) grain — per-bet selection / market detail is paywalled. Their headline ROI here covers ALL football bet types (1X2, OU, AH, BTTS, …); ours covers 1X2 + OU 2.5 only. Window-fit: only month-buckets whose entire span falls inside [start, end) are counted (partial months dropped). Stake normalised to 10 EUR/bet for parity.",
   "reproducible_via": "scripts/scrape_tipstrr.py + scripts/audit_vs_tipstrr.py",
   "their_stats": {
-    "n": 0
+    "n": 454,
+    "stake_total": 4540.0,
+    "pnl_total": 67.77,
+    "roi_pct": 1.49,
+    "hit_rate_pct": 34.58,
+    "avg_odds": 2.962,
+    "tipsters_pooled": [
+      "star-tips",
+      "mls-value",
+      "main-draws-model-top-euros"
+    ]
   },
   "their_breakdown": {
-    "by_tipster": []
+    "by_tipster": [
+      {
+        "slug": "star-tips",
+        "name": "star tips",
+        "n": 336,
+        "months_in_window": 4,
+        "stake_total": 3360.0,
+        "pnl_total": 202.5,
+        "roi_pct": 6.03,
+        "hit_rate_pct": 35.71,
+        "avg_odds": 2.999
+      },
+      {
+        "slug": "mls-value",
+        "name": "MLS Value",
+        "n": 75,
+        "months_in_window": 4,
+        "stake_total": 750.0,
+        "pnl_total": -172.53,
+        "roi_pct": -23.0,
+        "hit_rate_pct": 33.33,
+        "avg_odds": 2.092
+      },
+      {
+        "slug": "main-draws-model-top-euros",
+        "name": "Main Draws Model - Top Euros",
+        "n": 43,
+        "months_in_window": 2,
+        "stake_total": 430.0,
+        "pnl_total": 37.8,
+        "roi_pct": 8.79,
+        "hit_rate_pct": 27.91,
+        "avg_odds": 4.191
+      }
+    ]
   },
   "our_stats_same_window": {
     "n": 692,

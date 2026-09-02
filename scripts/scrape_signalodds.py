@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 import sys
 import time
 from dataclasses import asdict, dataclass, field
@@ -336,19 +337,185 @@ def parse_card(card: Tag, page: int) -> Optional[Prediction]:
     )
 
 
+# ── Next.js streamed-payload parser (SIGNALODDS-CSR-2026-09-02) ──────────────
+#
+# SignalOdds moved from server-rendered HTML to client-side rendering. The card
+# shells are still in the DOM but EMPTY, so the card parser below returned a
+# row with every field None; all 9 cards on a page then collapsed to a single
+# all-None row on dedup, and picks_signalodds.csv has been header-only since
+# 2026-08-03 while the scraper kept exiting 0.
+#
+# The data is still served — Next.js App Router streams it as
+# self.__next_f.push([1,"<json fragment>"]) — and it is RICHER than the DOM
+# ever was: real numeric odds/EV/confidence, plus an `evaluation` object with
+# is_correct and profit_loss instead of the word "Correct".
+#
+# Note `?sport=soccer` does NOT filter the payload — page 1 carried 5 soccer,
+# 5 MMA, 1 baseball, 1 cricket. The sport filter is applied client-side, so it
+# has to be ours.
+
+_NEXT_CHUNK_RE = re.compile(r'self\.__next_f\.push\(\[1,"(.*?)"\]\)', re.S)
+
+
+def _decode_next_payload(html: str) -> str:
+    """Concatenate and unescape the streamed RSC chunks."""
+    blob = "".join(_NEXT_CHUNK_RE.findall(html))
+    if not blob:
+        return ""
+    try:
+        return json.loads('"' + blob + '"')
+    except Exception:
+        try:
+            return blob.encode().decode("unicode_escape")
+        except Exception:
+            return blob
+
+
+def _iter_json_objects(text: str, must_contain: str):
+    """Yield every balanced {...} in `text` that contains `must_contain`.
+
+    A brace-counting scan rather than a regex: prediction records nest event,
+    model, bookmaker and evaluation objects, so no flat pattern can bound them.
+    Quote/escape state is tracked so a brace inside a string never miscounts.
+    """
+    for m in re.finditer(r'\{"', text):
+        start = m.start()
+        depth = 0
+        in_str = False
+        esc = False
+        for i in range(start, min(len(text), start + 20000)):
+            ch = text[i]
+            if esc:
+                esc = False
+                continue
+            if ch == "\\":
+                esc = True
+                continue
+            if ch == '"':
+                in_str = not in_str
+                continue
+            if in_str:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    frag = text[start:i + 1]
+                    if must_contain in frag:
+                        try:
+                            yield json.loads(frag)
+                        except Exception:
+                            pass
+                    break
+
+
+# The audit (audit_vs_signalodds.py) keys on the market LABELS the old
+# server-rendered cards used. Those labels are the stable contract between
+# scraper and audit, so the translation belongs here — in the component whose
+# upstream format changed — rather than teaching the audit a second vocabulary
+# (ANALYSIS_GOTCHAS #3: do not hand-roll a second market mapping).
+#
+# Observed keys on soccer as of 2026-09-02: h2h (50), btts (98), "" (150 —
+# premium/locked cards expose no market). No Over/Under appeared at all, so
+# "totals" is mapped speculatively and will simply not match until it does.
+_MARKET_KEY_LABEL = {
+    "h2h": "Match Result",
+    "totals": "Over / Under",
+    "btts": "Both Teams To Score",   # not traded; audit drops it by design
+}
+
+
+def _f(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _record_to_prediction(r: dict, page: int) -> Optional[Prediction]:
+    ev = r.get("event") or {}
+    home = ev.get("home_team") or {}
+    away = ev.get("away_team") or {}
+    sport = ((home.get("sport") or {}).get("name")
+             or (away.get("sport") or {}).get("name") or "")
+    if sport.strip().lower() != "soccer":
+        return None
+
+    evaluation = r.get("evaluation") or {}
+    if evaluation.get("is_correct") is True:
+        status = "Correct"
+    elif evaluation.get("is_correct") is False:
+        status = "Incorrect"
+    else:
+        status = None
+
+    bm = r.get("bookmaker")
+    bookmaker = bm.get("name") if isinstance(bm, dict) else bm
+    model = r.get("model")
+    model_name = model.get("name") if isinstance(model, dict) else model
+
+    slug = r.get("slug") or ""
+    # EV arrives as a fraction (-0.0249); the DOM used to expose whole percent.
+    ev_raw = _f(r.get("expected_value"))
+    is_locked = bool(r.get("is_locked"))
+
+    return Prediction(
+        page=page,
+        is_premium=is_locked,
+        league=(ev.get("league") or {}).get("name") if isinstance(ev.get("league"), dict) else ev.get("league"),
+        league_url=None,
+        event_url=ev.get("id"),
+        # Stable per (model, event, selection) — the dedup key downstream.
+        detail_url=f"/predictions/{slug}" if slug else None,
+        kickoff_text=ev.get("commence_time"),
+        status=status,
+        home_team=home.get("full_name"),
+        away_team=away.get("full_name"),
+        score_home=evaluation.get("home_score", ev.get("home_score")),
+        score_away=evaluation.get("away_score", ev.get("away_score")),
+        market=_MARKET_KEY_LABEL.get(r.get("market_key") or "", r.get("market_key")),
+        pick=None if is_locked else r.get("outcome_name"),
+        ev_pct=None if (is_locked or ev_raw is None) else round(ev_raw * 100.0, 4),
+        ev_band=None,
+        confidence_pct=None if is_locked else _f(r.get("confidence")),
+        confidence_band=None,
+        model_name=model_name,
+        model_url=None,
+        odds=None if is_locked else _f(r.get("book_odds")),
+        bookmaker=bookmaker,
+    )
+
+
 def parse_page(html: str, page: int) -> list[Prediction]:
-    soup = BeautifulSoup(html, "lxml")
-    grid = _pick_cards_grid(soup)
-    if grid is None:
+    """Parse one listing page.
+
+    Reads the streamed Next.js payload. The old DOM path is kept in
+    `parse_card` for reference but is no longer reachable — the cards it
+    targeted render empty.
+    """
+    text = _decode_next_payload(html)
+    if not text:
+        print(f"  warn: page {page} carried no __next_f payload — "
+              f"SignalOdds may have changed rendering again", file=sys.stderr)
         return []
     out: list[Prediction] = []
-    for card in grid.find_all(recursive=False):
+    seen: set[str] = set()
+    for rec in _iter_json_objects(text, '"outcome_name"'):
+        if not isinstance(rec, dict) or "event" not in rec:
+            continue
+        rid = rec.get("id")
+        if rid and rid in seen:
+            continue
+        if rid:
+            seen.add(rid)
         try:
-            p = parse_card(card, page=page)
-            if p is not None:
-                out.append(p)
-        except Exception as e:  # parser-tolerant
-            print(f"  warn: card parse error on page {page}: {e}", file=sys.stderr)
+            p = _record_to_prediction(rec, page)
+        except Exception as e:
+            print(f"  warn: record parse error on page {page}: {e}", file=sys.stderr)
+            continue
+        if p is not None:
+            out.append(p)
     return out
 
 

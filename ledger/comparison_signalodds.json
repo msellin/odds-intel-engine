@@ -1,20 +1,50 @@
 {
   "source": "SignalOdds",
   "source_url": "https://signalodds.com/predictions/past?sport=soccer",
-  "snapshot_at_utc": "2026-09-02T06:57:12+00:00",
+  "snapshot_at_utc": "2026-09-02T08:55:50+00:00",
   "window": {
     "start": "2026-05-04",
     "end": "2026-09-03"
   },
-  "status": "insufficient-data-pending",
+  "status": "ok",
   "min_sample_each_side": 50,
   "scope_notes": "1X2 + OU 2.5 only, soccer, settled bets (Correct/Incorrect), open/non-paywalled picks only (premium/PRO cards excluded — their odds and exact pick are hidden), 10 EUR flat stake.",
   "reproducible_via": "scripts/scrape_signalodds.py + scripts/audit_vs_signalodds.py",
   "their_stats": {
-    "n": 0
+    "n": 111,
+    "stake_total": 1110.0,
+    "pnl_total": -71.5,
+    "roi_pct": -6.44,
+    "hit_rate_pct": 48.65,
+    "avg_odds": 1.996
   },
-  "their_breakdown": {},
-  "their_drop_reasons": {},
+  "their_breakdown": {
+    "by_model": {
+      "The Pitch Master": {
+        "n": 111,
+        "stake_total": 1110.0,
+        "pnl_total": -71.5,
+        "roi_pct": -6.44,
+        "hit_rate_pct": 48.65,
+        "avg_odds": 1.996
+      }
+    },
+    "by_market": {
+      "1x2": {
+        "n": 111,
+        "stake_total": 1110.0,
+        "pnl_total": -71.5,
+        "roi_pct": -6.44,
+        "hit_rate_pct": 48.65,
+        "avg_odds": 1.996
+      }
+    }
+  },
+  "their_drop_reasons": {
+    "market_Both Teams To Score": 196,
+    "out_of_window": 56,
+    "premium_paywalled": 245
+  },
   "our_stats_same_window": {
     "n": 692,
     "stake_total": 4594.75,
