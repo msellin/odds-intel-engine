@@ -1,6 +1,29 @@
 # P1 Sweep — context
 
-## State: task 1 DONE (2026-09-02). Next: task 2 (AF-STALE steps 2-4).
+## State: tasks 1-3 DONE. Queue sweep in progress. Remaining P1s: 4, 5, 6.
+
+### Queue sweep, 2026-09-02 (42 open items)
+Verified premises against code/DB rather than trusting ticket text, after six
+tickets in one day turned out to describe work already shipped.
+
+Closed / changed so far:
+- TENNIS-COVERAGE-EXPAND      CLOSED STALE (tennis retired, 0 modules left)
+- COOLBET-SQUAD-GUARD         DONE today (d3ab5f8)
+- PERF-CONFIG-THRESHOLDS-REVIEW  DONE 2026-08-21 (proposal doc shipped)
+- BET365-EXECUTION-AUDIT      DONE 2026-08-21 (b6cbee8)
+- BOT-GRADUATION-GATES-TIERED CHANGED — t-stat gate replaced it 2026-08-26
+- PICKS-DEDUPE / PICKS-COOLBET-COLUMN  PARTLY DONE
+- AF-QUOTA-REALLOCATION       P1 -> P2 (quota now 8-35%%/day, was 99.9%%)
+
+Key measurements taken (do not re-derive):
+- AF quota: ceiling hit Aug 1/2/8/9 (149,800). Since Aug 18 peak 74,861;
+  last 7d 8-35%%. Today 12,160 (8.1%%).
+- In-play bots: ZERO picks since 2026-08-21 (12 days), yet LivePoller still
+  starts by default. Establish WHY before cutting its data supply.
+- xG coverage: 6.2%% of 14,414 MFV rows since 2026-08-01 (UNDERSTAT stands).
+- Users: 52 profiles (51 free, 1 elite). Was ~30 in memory.
+- Active bots: beta 13 / experimental 6 / calibrated 4 / active 1.
+- PostgREST db-max-rows = 10000 (bites getAllBets, filed ALL-BETS-CEILING-DEAD).
 
 ### Task 1 outcome
 - migration 291 -> `odds_at_pick_live` on simulated_bets + shadow_bets (additive)
