@@ -1104,9 +1104,64 @@ def _parse_iso_start(start: str | None) -> datetime | None:
         return None
 
 
+def _record_date_dispute(match_id, book_start, our_date) -> None:
+    """Flag a fixture whose kickoff the book and API-Football disagree on.
+
+    Deliberately does NOT write `matches.date`. The book is usually right —
+    Coolbet moved with the Atlético Grau postponement and AF did not — but
+    "usually" is doing a lot of work when the input is a fuzzy name match. A
+    wrong correction moves a fixture we would otherwise have priced correctly
+    and is then believed over AF indefinitely, whereas suppressing costs a
+    handful of picks a week and cannot invent a wrong one.
+
+    Never raises: this runs inside the odds-snapshot path, and an alerting
+    side-effect must not take the snapshot down with it.
+    """
+    if match_id is None:
+        return
+    try:
+        from workers.api_clients.db import execute_write
+        execute_write(
+            """UPDATE matches
+                  SET date_disputed_at    = COALESCE(date_disputed_at, NOW()),
+                      date_dispute_source = %s,
+                      date_dispute_value  = %s
+                WHERE id = %s
+                  AND status = 'scheduled'""",
+            ("Coolbet", book_start, str(match_id)),
+        )
+        log.warning("  -> match %s flagged date-disputed; it will not be priced "
+                    "until the book and AF agree", match_id)
+    except Exception as e:                      # noqa: BLE001 - see docstring
+        log.warning("  -> could not record date dispute for %s: %s", match_id, e)
+
+
+def clear_date_dispute(match_id) -> None:
+    """Lift a dispute once the book and our date agree again.
+
+    Called from the matching path on success, so the flag is self-healing: a
+    genuine postponement that AF eventually picks up clears on the next
+    snapshot run rather than needing a human.
+    """
+    if match_id is None:
+        return
+    try:
+        from workers.api_clients.db import execute_write
+        execute_write(
+            """UPDATE matches
+                  SET date_disputed_at = NULL, date_dispute_source = NULL,
+                      date_dispute_value = NULL
+                WHERE id = %s AND date_disputed_at IS NOT NULL""",
+            (str(match_id),),
+        )
+    except Exception as e:                      # noqa: BLE001
+        log.debug("could not clear date dispute for %s: %s", match_id, e)
+
+
 def fuzzy_match_event(
     home: str, away: str, events: list[dict],
     match_date: datetime | None = None,
+    match_id: str | None = None,
 ) -> dict | None:
     """Find the Coolbet event whose home+away names best match ours.
 
@@ -1198,6 +1253,11 @@ def fuzzy_match_event(
             best_score = score
             best_event = ev
 
+    if best_event is not None and best_score >= _FUZZY_THRESHOLD and match_id:
+        # Book and AF agree again — lift any standing dispute so a fixture is
+        # not suppressed forever once AF catches up with a postponement.
+        clear_date_dispute(match_id)
+
     if best_event is None or best_score < _FUZZY_THRESHOLD:
         # A candidate that would have matched on NAME and lost only on date is
         # not "Coolbet does not offer this" — it is "Coolbet and we disagree
@@ -1234,6 +1294,10 @@ def fuzzy_match_event(
                     ev_start.isoformat(), match_date.isoformat(),
                     abs((ev_start - match_date).total_seconds()) / 3600,
                 )
+                # AF-STALE-FIXTURE-DATES step 4: a warning in a log nobody
+                # greps is not a control. Record the dispute so the betting
+                # pipeline stops PRICING a fixture we cannot date.
+                _record_date_dispute(match_id, ev_start, match_date)
                 break
         best_label = f"{best_event['home']} {best_event['away']}" if best_event else "—"
         log.info(

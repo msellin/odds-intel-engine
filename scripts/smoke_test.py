@@ -26621,5 +26621,70 @@ def _restate():
     return "our_stats shared + priced live; recorded figure and coverage retained"
 
 
+@test("AF-STALE-FIXTURE-DATES — disputed fixtures are recorded and never priced")
+def _af_stale_dispute():
+    """AF-STALE-FIXTURE-DATES-2026-08-31 steps 2-4. API-Football does not
+    always follow a postponement: Atletico Grau v FBC Melgar moved 31 Aug ->
+    1 Sept, Coolbet moved with it, AF kept returning the old kickoff at status
+    NS. We then price a fixture that is not played, raise a pick on it, and
+    settlement finds no result.
+
+    The design decision this pins: we record the DISPUTE and stop pricing,
+    rather than overwriting `matches.date` with the book's. The book is usually
+    right, but the input is a fuzzy name match, and a wrong correction moves a
+    fixture we would otherwise have priced correctly and is then believed over
+    AF indefinitely. Suppression costs a handful of picks a week and cannot
+    invent a wrong one.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+
+    mig = root / "supabase" / "migrations" / "292_match_date_disputed.sql"
+    assert mig.exists(), "migration 292 (match date dispute) is missing"
+    msql = mig.read_text()
+    for col in ("date_disputed_at", "date_dispute_source", "date_dispute_value"):
+        assert col in msql, f"migration 292 must add {col}"
+
+    # Every fixture-selection query in the betting pipeline must suppress.
+    pipe = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    n_sched = pipe.count("status = 'scheduled'")
+    n_supp = pipe.count("date_disputed_at IS NULL")
+    assert n_sched and n_supp >= n_sched, (
+        f"{n_sched} scheduled-fixture queries but only {n_supp} carry "
+        "`date_disputed_at IS NULL` — a query without it will price a fixture "
+        "whose kickoff we cannot trust"
+    )
+
+    placer = (root / "workers" / "automation" / "coolbet_placer.py").read_text()
+    assert "_record_date_dispute" in placer and "clear_date_dispute" in placer, (
+        "the placer must both raise and lift disputes — a flag that only ever "
+        "gets set suppresses the fixture forever once AF catches up"
+    )
+
+    # The load-bearing safety property: the recorder must never write the date.
+    i = placer.index("def _record_date_dispute")
+    body = placer[i:placer.index("def clear_date_dispute")]
+    assert _re.search(r"SET\s+date_disputed_at", body), (
+        "_record_date_dispute must set the dispute columns"
+    )
+    assert not _re.search(r"SET[^;]*\bdate\s*=", body), (
+        "_record_date_dispute must NOT write matches.date — overwriting AF "
+        "with a fuzzy-matched book date is the failure mode this design "
+        "deliberately avoids"
+    )
+    assert "status = 'scheduled'" in body, (
+        "only scheduled fixtures can be disputed; flagging a finished match "
+        "would suppress nothing and confuse settlement"
+    )
+
+    # Self-healing: cleared on a successful same-date match.
+    assert "clear_date_dispute(match_id)" in placer, (
+        "a successful match on the agreed date must lift the dispute"
+    )
+    return (f"{n_sched} fixture queries suppress disputed dates; recorder never "
+            "writes matches.date; dispute self-heals")
+
+
 if __name__ == "__main__":
     main()

@@ -1895,7 +1895,12 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
            JOIN teams ta ON m.away_team_id = ta.id
            LEFT JOIN leagues l ON m.league_id = l.id
            WHERE m.date >= %s AND m.date < %s
-             AND m.status = 'scheduled'""",
+             AND m.status = 'scheduled'
+             -- AF-STALE-FIXTURE-DATES: never price a fixture whose kickoff the
+             -- book and API-Football disagree on. AF does not always follow a
+             -- postponement, and pricing a match that is not played raises a
+             -- pick that can never settle.
+             AND m.date_disputed_at IS NULL""",
         (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
     )
 
@@ -4021,6 +4026,7 @@ def _run_no_pin_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
            JOIN leagues l ON l.id = m.league_id
            WHERE m.date >= %s AND m.date < %s
              AND m.status = 'scheduled'
+             AND m.date_disputed_at IS NULL  -- AF-STALE-FIXTURE-DATES
              AND (l.tier IS NULL OR l.tier > 0)""",
         (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
     )
@@ -4342,6 +4348,7 @@ def _run_sweep_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_t
           FROM matches m
           JOIN leagues l ON m.league_id = l.id
          WHERE m.date >= %s AND m.date < %s AND m.status = 'scheduled'
+           AND m.date_disputed_at IS NULL  -- AF-STALE-FIXTURE-DATES
            AND l.tier IS NOT NULL
         """,
         (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
@@ -4672,6 +4679,7 @@ def _run_coolbet_value_pass(today_str: str, cohort_tag: str = "morning",
         """SELECT m.id::text AS id, m.date, l.tier AS tier
              FROM matches m JOIN leagues l ON m.league_id = l.id
             WHERE m.date >= %s AND m.date < %s AND m.status = 'scheduled'
+              AND m.date_disputed_at IS NULL  -- AF-STALE-FIXTURE-DATES
               AND l.tier = ANY(%s)""",
         (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z",
          list(_LINESHOP_TIERS)),
@@ -4855,6 +4863,7 @@ def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
         """SELECT m.id::text AS id, m.date, l.tier AS tier
              FROM matches m JOIN leagues l ON m.league_id = l.id
             WHERE m.date >= %s AND m.date < %s AND m.status = 'scheduled'
+              AND m.date_disputed_at IS NULL  -- AF-STALE-FIXTURE-DATES
               AND l.tier IS NOT NULL""",
         (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
     )
@@ -5095,6 +5104,7 @@ def _run_pin_1x2_shadow_pass(today_str: str, cohort_tag: str = "morning", notify
         """SELECT m.id::text AS id, m.date, l.tier AS tier
              FROM matches m JOIN leagues l ON m.league_id = l.id
             WHERE m.date >= %s AND m.date < %s AND m.status = 'scheduled'
+              AND m.date_disputed_at IS NULL  -- AF-STALE-FIXTURE-DATES
               AND l.tier IS NOT NULL""",
         (f"{today_str}T00:00:00Z", f"{next_day_str}T00:00:00Z"),
     )

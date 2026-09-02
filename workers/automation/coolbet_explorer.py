@@ -1254,7 +1254,8 @@ def run_one_shot(match_id: str, raw: bool = False) -> None:
     if ev is None:
         console.print("[dim]Search miss — loading full fo-category[/dim]")
         try:
-            ev = fuzzy_match_event(m["home"], m["away"], fetch_coolbet_events(session), match_date)
+            ev = fuzzy_match_event(m["home"], m["away"], fetch_coolbet_events(session),
+                                   match_date, match_id=m.get("id"))
         except Exception as e:
             console.print(f"[yellow]fo-category unavailable ({e}). Search-only mode.[/yellow]")
             ev = None

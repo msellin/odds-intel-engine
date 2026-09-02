@@ -585,7 +585,8 @@ def _run_bulk_inner(sess, matches, days, sleep_s, dry_run):
         ]
         if not candidates:
             continue
-        ev = fuzzy_match_event(m["home"], m["away"], candidates, m.get("date"))
+        ev = fuzzy_match_event(m["home"], m["away"], candidates, m.get("date"),
+                               match_id=m.get("id"))
         if ev is not None:
             pairs.append((m, ev))
 

@@ -9,11 +9,11 @@
 - [x] smoke test + mutation check
 - [x] docs (PRIORITY_QUEUE, ANALYSIS_GOTCHAS, MODEL_WHITEPAPER if model logic)
 
-## 2. AF-STALE steps 2-4  [in progress]
-- [ ] trust order: book date wins over AF for scheduled fixtures
-- [ ] `date_source` column surviving the 04:00 AF re-sync
-- [ ] suppress pick generation on disputed fixtures
-- [ ] smoke
+## 2. AF-STALE steps 2-4  [DONE 2026-09-02]
+- [x] trust order: DECIDED — suppress, do not correct (see queue) over AF for scheduled fixtures
+- [x] ~`date_source` column~ — not built, deliberately surviving the 04:00 AF re-sync
+- [x] suppress pick generation on disputed fixtures
+- [x] smoke
 
 ## 3. BET365-EXECUTION-AUDIT
 - [ ] (blocked on 1)
