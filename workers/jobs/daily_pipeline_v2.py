@@ -4208,7 +4208,15 @@ def _run_no_pin_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
                 "selection": sel_lower,
                 "odds": best_odds,
                 "model_prob": prob,
-                "calibrated_prob": prob,  # ensemble output — no Platt on this shadow
+                # BTTS-PLATT-NOT-APPLIED-2026-09-02: NULL, not the raw value.
+                # This pass genuinely does not calibrate — that part was
+                # deliberate — but writing the raw ensemble output into a
+                # column named `calibrated_prob` told every downstream reader
+                # that Platt HAD been applied, including the public
+                # /methodology page, which states "the result is a
+                # calibrated_prob per market". NULL is the honest signal for
+                # "not calibrated"; the raw number is still in model_prob.
+                "calibrated_prob": None,
                 "edge": round(edge, 4),
                 "kelly_fraction": None,
                 "placed_at": now_iso,
@@ -4472,7 +4480,18 @@ def _run_sweep_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_t
                 "selection": cfg["selection"],
                 "odds": odds,
                 "model_prob": prob,
-                "calibrated_prob": prob,
+                # BTTS-PLATT-NOT-APPLIED-2026-09-02: see the no-pin pass. The
+                # sweep pass scores edge straight off the ensemble output, so
+                # there is no calibrated probability to record.
+                #
+                # Measured before changing this: applying the EXISTING Platt
+                # would not fix the over-confidence here. On settled deduped
+                # shadow rows, mean model_prob vs actual hit rate is +12.2pp
+                # for bot_sweep_btts_yes_v1 (no Platt) but +16.9pp for
+                # bot_btts_all and +12.6pp for bot_btts_conservative, both of
+                # which DO get Platt. The BTTS calibration is itself too weak,
+                # so "just apply Platt" is the wrong fix — tracked separately.
+                "calibrated_prob": None,
                 "edge": round(edge, 4),
                 "kelly_fraction": None,
                 "placed_at": now_iso,

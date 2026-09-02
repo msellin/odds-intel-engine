@@ -67,7 +67,10 @@ The 30-min refresh writes **one row per `shadow_cohort` per pick per day**, ~48
 rows for a single pick. Raw counts overstate n by roughly 16-50x.
 
 Use the **`shadow_bets_unique`** view (migration 282, re-keyed to *earliest*
-`pick_time` in 283 to match how both admin pages dedupe). Measured drift between
+`pick_time` in 283 to match how both admin pages dedupe). A second view,
+`shadow_bets_deduped`, was added on 2026-09-02 by someone who had not read
+this entry and dropped again the same day (migration 293) — the two were
+verified identical, 0 rows differing. One definition beats two. Measured drift between
 first and last cohort row is only +0.20%, so earliest-vs-latest barely moves a
 number — but one definition beats two.
 
@@ -299,7 +302,15 @@ rather than assuming the client is being blocked.
 
 ---
 
-## 18. A bot's paper ledger is EITHER `simulated_bets` OR `shadow_bets` — never both
+## 18. Pick ONE ledger per bot — do not union `simulated_bets` and `shadow_bets`
+
+> **Title corrected 2026-09-02.** This used to read *"a bot's paper ledger is
+> EITHER simulated_bets OR shadow_bets — never both"*, which contradicts its
+> own body: pipeline bots write to both, deliberately. The old title cost a
+> false P1 bug report (`BTTS-DUAL-LEDGER-VIOLATION`, filed and withdrawn the
+> same day) when a dual-writing bot was read as a data-integrity violation.
+> **27 of 41 bots write to both tables**, concurrently — that is the designed
+> behaviour, not a defect. The rule is about which one you *read*.
 
 Pipeline bots (`bot_v10_all`, `bot_btts_all`, `bot_opt_*`, `inplay_*`) write to
 `simulated_bets`. Sweep and shadow bots (`bot_sweep_*`, `bot_pin_*`,

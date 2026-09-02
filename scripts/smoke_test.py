@@ -26508,32 +26508,32 @@ def _shadow_dedup_view():
               indistinguishable from a complete one, which is why this ran
               unnoticed.
 
-    Migration 290 moves the dedup into `shadow_bets_deduped`, so both pages
-    aggregate the same population by construction.
+    Both pages now read the pre-existing `shadow_bets_unique` view (migrations
+    282/283), so they aggregate the same population by construction.
     """
     from pathlib import Path as _Path
     web = _Path(__file__).resolve().parent.parent.parent / "odds-intel-web"
     if not web.exists():
         raise SkipTest("odds-intel-web not present (CI single-repo checkout)")
 
-    mig = (_Path(__file__).resolve().parent.parent / "supabase" / "migrations"
-           / "290_shadow_bets_deduped_view.sql")
-    assert mig.exists(), "migration 290 (shadow_bets_deduped) is missing"
-    sql = mig.read_text()
-    assert "DISTINCT ON (sb.bot_id, sb.match_id, sb.market, sb.selection)" in sql, (
-        "the view must key on all four — dropping bot_id would merge two bots' "
-        "picks on the same match into one row"
-    )
-    assert "pick_time ASC" in sql, (
-        "dedup must keep the EARLIEST pick_time (first sighting of the edge), "
-        "matching what both pages did in JS before"
+    # SHADOW-VIEW-DUPLICATE-2026-09-02: migration 290 created a second dedup
+    # view before noticing `shadow_bets_unique` already existed (282/283) with
+    # identical semantics — verified 0 rows differed. Migration 293 drops the
+    # duplicate. ANALYSIS_GOTCHAS #5 already said to use shadow_bets_unique and
+    # ends with "one definition beats two"; shipping a second one is precisely
+    # what it warns against.
+    root2 = _Path(__file__).resolve().parent.parent
+    drop = root2 / "supabase" / "migrations" / "293_drop_shadow_bets_deduped.sql"
+    assert drop.exists(), "migration 293 (drop the duplicate view) is missing"
+    assert "DROP VIEW IF EXISTS shadow_bets_deduped" in drop.read_text(), (
+        "migration 293 must drop the duplicate view"
     )
 
     for rel in ("src/app/(app)/admin/shadow-bots/page.tsx",
                 "src/app/(app)/admin/shadow-bots/[bot]/page.tsx"):
         src = (web / rel).read_text()
-        assert 'from("shadow_bets_deduped")' in src, (
-            f"{rel} must read the deduped view — reading shadow_bets directly "
+        assert 'from("shadow_bets_unique")' in src, (
+            f"{rel} must read shadow_bets_unique — reading shadow_bets directly "
             "multiplies every pick by its cohort re-recordings and then lets a "
             "row cap decide which picks count"
         )
@@ -26548,7 +26548,7 @@ def _shadow_dedup_view():
         "10,000 db-max-rows cap, so a single unpaginated read is silently "
         "short — the exact failure being fixed"
     )
-    return "both pages on shadow_bets_deduped; card paginated; view keyed on 4 cols"
+    return "both pages on shadow_bets_unique; card paginated; duplicate view dropped"
 
 
 @test("STALE-ODDS-HISTORY-RESTATE — published ROI is priced at odds that were live")
@@ -26684,6 +26684,49 @@ def _af_stale_dispute():
     )
     return (f"{n_sched} fixture queries suppress disputed dates; recorder never "
             "writes matches.date; dispute self-heals")
+
+
+@test("BTTS-PLATT-NOT-APPLIED — an uncalibrated pass must not write to calibrated_prob")
+def _btts_platt():
+    """BTTS-PLATT-NOT-APPLIED-2026-09-02. The sweep and no-pin shadow passes
+    score edge straight off the ensemble output and never call
+    `calibrate_prob()`. That part is deliberate. What was not deliberate is
+    that they wrote the RAW probability into a column named `calibrated_prob`,
+    so every downstream reader — including the public /methodology page, which
+    tells users "the result is a calibrated_prob per market" — was told Platt
+    had been applied when it had not.
+
+    Measured on settled deduped shadow rows, mean model_prob minus actual hit
+    rate: bot_sweep_btts_yes_v1 +12.2pp (no Platt), bot_sweep_1x2_home_v1
+    +11.1pp, bot_no_pin_home_v1 +16.1pp — but bot_btts_all +16.9pp and
+    bot_btts_conservative +12.6pp, and those two DO get Platt. So applying the
+    existing calibration would not have fixed the over-confidence; the honest
+    fix is to stop mislabelling, and to treat the weak BTTS calibration as its
+    own problem.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    src = (_Path(__file__).resolve().parent.parent
+           / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+
+    # No pass may write a bare probability variable into calibrated_prob.
+    bad = _re.findall(r'"calibrated_prob":\s*(prob|raw_mp|model_prob)\b', src)
+    assert not bad, (
+        f"a pass writes a raw probability into calibrated_prob ({bad}). Either "
+        "call calibrate_prob() or record None — populating the column with an "
+        "uncalibrated value tells /methodology readers the model was "
+        "calibrated when it was not."
+    )
+    # And the passes that genuinely don't calibrate must say so with None.
+    for fn in ("_run_sweep_shadow_pass", "_run_no_pin_shadow_pass"):
+        i = src.index(f"def {fn}")
+        m = _re.compile(r"\ndef ").search(src, i + 10)
+        body = src[i:m.start() if m else len(src)]
+        assert '"calibrated_prob": None' in body, (
+            f"{fn} does not calibrate, so it must record calibrated_prob=None "
+            "rather than the raw ensemble output"
+        )
+    return "no pass writes a raw probability into calibrated_prob"
 
 
 if __name__ == "__main__":
