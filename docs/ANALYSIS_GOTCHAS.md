@@ -515,6 +515,42 @@ often dominate the result.
 range-checks the AH figure so an unmatched join fails rather than reporting a
 flattering number. Sibling of gotcha 16 (AH CLV by fixed line is invalid).
 
+## 26. Feature coverage must be split by `matches.status`, or it lies
+
+A feature's overall MFV coverage tells you nothing about whether the model can
+actually use it. Split by `matches.status` — **scheduled** rows are what
+inference sees, **finished** rows are what training sees.
+
+Measured 2026-09-02 (n=356 scheduled, 12,895 finished, since 2026-08-01):
+
+| feature | SCHEDULED | FINISHED |
+|---|---|---|
+| `injury_severity_score_home` | **0.0%** | 2.8% |
+| `xg_overperf_home` | **0.0%** | 6.7% |
+| `team_avg_player_rating_home` | **0.0%** | 6.9% |
+| `form_ppg_home` | 83.7% | 90.9% |
+| `weather_temp_c` | 14.9% | 8.6% |
+
+The first three are computed **post-match** and keyed to the settled match they
+were derived from, so they are structurally absent for the fixture being
+predicted. Their headline coverage (2–7%) looks merely weak; it is actually
+**zero where it counts**, and every populated row is in the training set only.
+
+Two consequences worth internalising:
+
+1. **Backfilling such a feature makes the model worse, not better.** It raises
+   training-side coverage while inference stays at zero, widening train/serve
+   skew. `FEATURE-COVERAGE-BACKFILL-2026-08-21` proposed exactly that for all
+   three and was stopped on this evidence.
+2. **A near-zero model coefficient is not proof a signal is weak.** The
+   2026-08-31 meta refit dropped these three as near-zero-coefficient. The
+   honest reading is not "no predictive value" but "never present at serve
+   time, so the model correctly ignored them".
+
+Before proposing any feature work, run the status split. A feature that is
+`0.0%` on scheduled rows needs re-keying (team + as-of-date, so the value
+carries to the team's *next* fixture) or removing — never backfilling.
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |
