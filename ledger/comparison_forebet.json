@@ -1,22 +1,67 @@
 {
   "source": "Forebet",
   "source_url": "https://www.forebet.com/en/football-predictions/predictions-1x2/<date>  (and /under-over-25-goals/<date>)",
-  "snapshot_at_utc": "2026-09-02T08:54:13+00:00",
+  "snapshot_at_utc": "2026-09-02T10:45:35+00:00",
   "window": {
     "start": "2026-05-04",
     "end": "2026-09-03"
   },
   "status": "ok",
   "min_sample_each_side": 50,
-  "scope_notes": "1X2 highest-prob pick + OU 2.5 pick only, soccer, settled rows (Forebet's own predict_y/predict_no flag), 10 EUR flat stake. Coverage limited to ~last 38 days because Forebet date URLs older than that silently fall back to today.",
+  "scope_notes": "1X2 highest-prob pick + OU 2.5 pick only, soccer, settled rows (Forebet's own predict_y/predict_no flag), 10 EUR flat stake. Coverage limited to ~last 38 days because Forebet date URLs older than that silently fall back to today. FOREBET-REPRICE-2026-09-02: their_stats is NOT Forebet's published ROI. Forebet's quoted odds are frequently unobtainable — see scripts/verify_forebet_odds_cross_source.py, which shows 9.5% of their picks claiming >1.5x the best price available anywhere against 0.7% for a third-party control, concentrated on winners (p=2.4e-06). their_stats therefore re-settles their own picks at the BEST closing price across our books — the most favourable realistic assumption for them — over the subset we can fixture-match. Their published figure is kept verbatim as their_stats_claimed_odds, and at_median_close / at_bet365_close in their_reprice show what an ordinary single account would get.",
   "reproducible_via": "scripts/scrape_forebet.py + scripts/audit_vs_forebet.py",
   "their_stats": {
+    "n": 1136,
+    "roi_pct": -0.18,
+    "hit_rate_pct": 50.26,
+    "pnl_total": -20.86,
+    "stake_total": 11360.0,
+    "priced_at": "best closing price across our books",
+    "n_total_picks": 1909,
+    "coverage_pct": 59.5
+  },
+  "their_stats_claimed_odds": {
     "n": 1909,
     "stake_total": 19090.0,
     "pnl_total": 2374.5,
     "roi_pct": 12.44,
     "hit_rate_pct": 52.54,
-    "avg_odds": 2.305
+    "avg_odds": 2.305,
+    "priced_at": "Forebet's own published odds"
+  },
+  "their_reprice": {
+    "n_total": 1909,
+    "n_repriced": 1136,
+    "coverage_pct": 59.5,
+    "median_books_at_close": 11,
+    "at_claimed_odds": {
+      "n": 1136,
+      "roi_pct": 8.97,
+      "hit_rate_pct": 50.26,
+      "pnl_total": 1018.8,
+      "stake_total": 11360.0
+    },
+    "at_best_close": {
+      "n": 1136,
+      "roi_pct": -0.18,
+      "hit_rate_pct": 50.26,
+      "pnl_total": -20.86,
+      "stake_total": 11360.0
+    },
+    "at_median_close": {
+      "n": 1136,
+      "roi_pct": -7.4,
+      "hit_rate_pct": 50.26,
+      "pnl_total": -840.32,
+      "stake_total": 11360.0
+    },
+    "at_bet365_close": {
+      "n": 1052,
+      "roi_pct": -6.54,
+      "hit_rate_pct": 50.1,
+      "pnl_total": -688.2,
+      "stake_total": 10520.0
+    }
   },
   "their_breakdown": {
     "by_market": {

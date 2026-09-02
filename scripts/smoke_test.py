@@ -26299,5 +26299,72 @@ def _comp_fallback_guard():
             "::warning annotation")
 
 
+@test("FOREBET-REPRICE — landing publishes Forebet's picks at real odds, not their claimed odds")
+def _forebet_reprice():
+    """FOREBET-ODDS-CROSS-SOURCE showed Forebet's quoted prices are frequently
+    unobtainable (9.5% of picks claim >1.5x the best price available anywhere,
+    against 0.7% for a third-party control, concentrated on winners at
+    p=2.4e-06). The landing nonetheless published +12.44% ROI — a number
+    computed entirely FROM those odds — while footnoting that the odds were not
+    real. This pins the fix: their_stats is the repriced record.
+
+    The trap being guarded is subtler than 'is a reprice present'. The
+    verification script prices bets at MAX(odds) over ALL snapshots ever, to be
+    maximally generous when asking 'was this reachable at all'. Reusing that as
+    an EXECUTION price rates Forebet at +37.66% — better than their own claim —
+    because nobody catches the all-time high of every line. Execution prices
+    must come from the CLOSING line, so that is asserted directly.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+
+    src = (root / "scripts" / "_competitor_reprice.py").read_text()
+    assert "o.timestamp <= m.date" in src, (
+        "repricing must use the closing line (last quote at or before "
+        "kickoff). A post-kickoff in-play quote is a different bet."
+    )
+    assert "DISTINCT ON (o.bookmaker)" in src, (
+        "one closing quote PER BOOK, or MAX() picks the all-time high across "
+        "every snapshot and rates the competitor better than they claim"
+    )
+    assert "MAX(odds) FILTER (WHERE bookmaker = 'Bet365')" in src
+
+    audit = (root / "scripts" / "audit_vs_forebet.py").read_text()
+    assert '"their_stats_claimed_odds"' in audit, (
+        "Forebet's own published figure must be kept verbatim and labelled — "
+        "we are repricing their picks, not hiding what they claim"
+    )
+    assert 'rep["at_best_close"]' in audit, (
+        "their_stats must publish the BEST closing price, the most favourable "
+        "realistic assumption for them. Publishing at_median_close would "
+        "overstate our case."
+    )
+
+    led = root / "ledger" / "comparison_forebet.json"
+    if not led.exists():
+        raise SkipTest("comparison_forebet.json not built yet")
+    j = _json.loads(led.read_text())
+    ts = j.get("their_stats") or {}
+    assert ts.get("priced_at", "").startswith("best closing"), (
+        f"their_stats must be the repriced figure, got priced_at="
+        f"{ts.get('priced_at')!r}"
+    )
+    assert "n_total_picks" in ts and "coverage_pct" in ts, (
+        "the repriced figure must state its own coverage — a recomputed "
+        "number whose sample is unstated invites the 'your data is thin' "
+        "dismissal this work exists to remove"
+    )
+    claimed = (j.get("their_stats_claimed_odds") or {}).get("roi_pct")
+    assert claimed is not None, "their claimed ROI must still be published"
+    assert ts.get("roi_pct") is not None and ts["roi_pct"] < claimed, (
+        f"repriced ROI ({ts.get('roi_pct')}%) should sit below their claimed "
+        f"ROI ({claimed}%) — if it does not, the repricing is not doing "
+        "anything and the finding needs re-examining, not shipping"
+    )
+    return (f"repriced {ts['roi_pct']:+.2f}% over {ts['n']} of "
+            f"{ts['n_total_picks']} picks vs claimed {claimed:+.2f}%")
+
+
 if __name__ == "__main__":
     main()

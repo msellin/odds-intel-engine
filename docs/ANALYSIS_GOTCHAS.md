@@ -631,6 +631,40 @@ three inactive, out of thousands).
 
 Related: #27 (cross-source odds verification), #3 (market vocabularies).
 
+## 29. MAX-ever odds is a REACHABILITY test, never an EXECUTION price
+
+`verify_forebet_odds_cross_source.py` prices each bet at `MAX(odds)` over every
+snapshot we ever recorded, deliberately: when asking *"was this claimed price
+reachable at all?"* the most generous possible benchmark makes the answer
+unarguable.
+
+Re-using that same number as the price a bettor would have GOT is a category
+error, and it produces a result obviously too good to be true. Settling
+Forebet's picks at MAX-ever rates them at **+37.66% ROI — better than the
++12.44% they claim themselves**. Nobody systematically catches the all-time
+high of every line across sixteen books.
+
+Execution prices come from the **closing line**: `DISTINCT ON (bookmaker)` the
+last quote at or before kickoff, then aggregate across books. On the same 1,136
+Forebet picks:
+
+| priced at | ROI |
+|---|---|
+| Forebet's own claimed odds | +8.97% |
+| best closing price across books (line shopper) | **−0.18%** |
+| Bet365 closing | −6.54% |
+| median closing price (typical single account) | −7.40% |
+
+Publish the **best** closing figure, not the median — it is the most
+favourable realistic assumption for the competitor, so the claim is
+conservative and survives challenge. Two more rules that make the number
+defensible: filter `timestamp <= m.date` (a post-kickoff in-play quote is a
+different bet), and always state coverage — only ~60% of Forebet's picks
+fuzzy-match to our fixtures, and a recomputed figure whose sample is unstated
+invites exactly the "your data is thin" dismissal this work exists to remove.
+
+Related: #27 (the reachability test itself), #28 (competitor ROI mismatches).
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |

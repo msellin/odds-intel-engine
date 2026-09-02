@@ -215,35 +215,9 @@ def main() -> int:
         print(f"\nNOTE: below MIN_SAMPLE={MIN_SAMPLE} on one side — "
               "publishing as insufficient-data-pending.")
 
-    LEDGER_DIR.mkdir(parents=True, exist_ok=True)
-    out = {
-        "source": "Forebet",
-        "source_url": (
-            "https://www.forebet.com/en/football-predictions/predictions-1x2/<date>  "
-            "(and /under-over-25-goals/<date>)"
-        ),
-        "snapshot_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "window": {"start": start, "end": end},
-        "status": status,
-        "min_sample_each_side": MIN_SAMPLE,
-        "scope_notes": (
-            "1X2 highest-prob pick + OU 2.5 pick only, soccer, settled rows "
-            "(Forebet's own predict_y/predict_no flag), 10 EUR flat stake. "
-            "Coverage limited to ~last 38 days because Forebet date URLs "
-            "older than that silently fall back to today."
-        ),
-        "reproducible_via": "scripts/scrape_forebet.py + scripts/audit_vs_forebet.py",
-        "their_stats": fb,
-        "their_breakdown": bd,
-        "their_drop_reasons": drops,
-        "our_stats_same_window": ours,
-    }
-    OUT_PATH.write_text(json.dumps(out, indent=2, ensure_ascii=False))
-    blob = json.dumps({k: v for k, v in out.items() if k != "snapshot_at_utc"},
-                      sort_keys=True).encode()
-    print(f"\nFingerprint: {hashlib.sha256(blob).hexdigest()[:16]}")
-    print(f"Wrote: {OUT_PATH}")
-
+    # Build the per-pick rows here rather than after the payload: the
+    # repricing below consumes them, and the published JSON must carry the
+    # repriced figures.
     from scripts._picks_csv import compute_pnl, write_picks_csv  # noqa: E402
     csv_rows = []
     for r in kept:
@@ -262,6 +236,76 @@ def main() -> int:
             "pnl_per_unit": compute_pnl(odds_f, result),
             "ref_url": f"https://www.forebet.com/en/football-predictions/predictions-1x2/{r.get('match_date','')}",
         })
+
+    # FOREBET-REPRICE-2026-09-02 — settle Forebet's own picks at prices that
+    # existed. Their published ROI is computed from the odds they SAY they
+    # took, and FOREBET-ODDS-CROSS-SOURCE showed those are frequently
+    # unobtainable (9.5% of picks claim >1.5x the best price anywhere, against
+    # 0.7% for a source that names its book, concentrated on winners at
+    # p=2.4e-06). Republishing their number with a caveat still presents
+    # fiction as a measurement, so we recompute it.
+    print("\nRepricing Forebet's picks at closing market odds ...")
+    from workers.api_clients.db import get_conn  # noqa: E402
+    from scripts._competitor_reprice import reprice  # noqa: E402
+    with get_conn() as _conn, _conn.cursor() as _cur:
+        rep = reprice(_cur, csv_rows, start, end)
+    print(f"  repriced {rep['n_repriced']}/{rep['n_total']} picks "
+          f"({rep['coverage_pct']}%), median {rep['median_books_at_close']} books at close")
+    for k in ("at_claimed_odds", "at_best_close", "at_median_close", "at_bet365_close"):
+        print(f"    {k:18} n={rep[k]['n']:5}  ROI {rep[k]['roi_pct']:+7.2f}%")
+
+    LEDGER_DIR.mkdir(parents=True, exist_ok=True)
+    out = {
+        "source": "Forebet",
+        "source_url": (
+            "https://www.forebet.com/en/football-predictions/predictions-1x2/<date>  "
+            "(and /under-over-25-goals/<date>)"
+        ),
+        "snapshot_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "window": {"start": start, "end": end},
+        "status": status,
+        "min_sample_each_side": MIN_SAMPLE,
+        "scope_notes": (
+            "1X2 highest-prob pick + OU 2.5 pick only, soccer, settled rows "
+            "(Forebet's own predict_y/predict_no flag), 10 EUR flat stake. "
+            "Coverage limited to ~last 38 days because Forebet date URLs "
+            "older than that silently fall back to today. "
+            "FOREBET-REPRICE-2026-09-02: their_stats is NOT Forebet's published "
+            "ROI. Forebet's quoted odds are frequently unobtainable — see "
+            "scripts/verify_forebet_odds_cross_source.py, which shows 9.5% of "
+            "their picks claiming >1.5x the best price available anywhere "
+            "against 0.7% for a third-party control, concentrated on winners "
+            "(p=2.4e-06). their_stats therefore re-settles their own picks at "
+            "the BEST closing price across our books — the most favourable "
+            "realistic assumption for them — over the subset we can "
+            "fixture-match. Their published figure is kept verbatim as "
+            "their_stats_claimed_odds, and at_median_close / at_bet365_close "
+            "in their_reprice show what an ordinary single account would get."
+        ),
+        "reproducible_via": "scripts/scrape_forebet.py + scripts/audit_vs_forebet.py",
+        # their_stats is what the landing renders. It is the REPRICED record —
+        # their picks at the best closing price available across our books,
+        # which is the most favourable realistic assumption for them. Their
+        # own claimed-odds figure is kept, clearly labelled, as
+        # their_stats_claimed_odds.
+        "their_stats": {
+            **rep["at_best_close"],
+            "priced_at": "best closing price across our books",
+            "n_total_picks": rep["n_total"],
+            "coverage_pct": rep["coverage_pct"],
+        },
+        "their_stats_claimed_odds": {**fb, "priced_at": "Forebet's own published odds"},
+        "their_reprice": rep,
+        "their_breakdown": bd,
+        "their_drop_reasons": drops,
+        "our_stats_same_window": ours,
+    }
+    OUT_PATH.write_text(json.dumps(out, indent=2, ensure_ascii=False))
+    blob = json.dumps({k: v for k, v in out.items() if k != "snapshot_at_utc"},
+                      sort_keys=True).encode()
+    print(f"\nFingerprint: {hashlib.sha256(blob).hexdigest()[:16]}")
+    print(f"Wrote: {OUT_PATH}")
+
     n_csv = write_picks_csv(PICKS_CSV_PATH, csv_rows)
     print(f"Wrote {n_csv} rows to {PICKS_CSV_PATH}")
     return 0
