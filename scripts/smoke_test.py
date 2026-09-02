@@ -22102,18 +22102,34 @@ def test_competitor_picks_csv_2026_08_01():
         assert "write_picks_csv" in atxt, (
             f"audit_vs_{src}.py must call write_picks_csv() from _picks_csv."
         )
-        # inplay exclusion in our_stats
-        assert "NOT LIKE 'inplay_%%'" in atxt, (
-            f"audit_vs_{src}.py our_stats must filter out inplay bots — "
-            "comparison is with pre-match tipsters."
-        )
+        # inplay exclusion — the invariant is unchanged, but since
+        # STALE-ODDS-HISTORY-RESTATE-2026-09-02 it is enforced once in
+        # scripts/_our_stats.py rather than re-typed in six audits. Asserted
+        # below against the shared module; a per-file check here would now
+        # fail on code that is correct.
+
+    # The OddsIntel cohort itself: one definition, shared by every audit.
+    ours = (repo / "scripts" / "_our_stats.py").read_text()
+    assert "NOT LIKE 'inplay_%%'" in ours, (
+        "scripts/_our_stats.py must exclude inplay bots from our cohort — the "
+        "comparison is against pre-match tipsters, and in-play is a different "
+        "game at a different venue. This moved out of the six audit scripts on "
+        "2026-09-02; it must not get lost in the move."
+    )
+    assert "maturity_label IN ('calibrated','beta','active')" in ours, (
+        "_our_stats.py must keep the production-maturity cohort — widening it "
+        "silently changes what every published comparison means"
+    )
 
     wo = (repo / "scripts" / "audit_vs_winnerodds.py").read_text()
     assert "picks_winnerodds.csv" in wo, (
         "audit_vs_winnerodds.py must emit ledger/picks_winnerodds.csv."
     )
-    assert "NOT LIKE 'inplay_%%'" in wo, (
-        "audit_vs_winnerodds.py our_stats must filter out inplay bots."
+    # (the inplay exclusion for winnerodds is covered by the _our_stats.py
+    #  assertion above — same move on 2026-09-02)
+    assert "from scripts._our_stats import our_stats" in wo, (
+        "audit_vs_winnerodds.py must use the shared cohort definition, which "
+        "is what carries the inplay exclusion."
     )
 
     dump = repo / "scripts" / "dump_oddsintel_picks_csv.py"
