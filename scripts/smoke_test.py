@@ -25862,5 +25862,95 @@ def test_coolbet_ui_placer_audit_warn():
     return "audit warning reconciles this run's rows against actual write sites"
 
 
+@test("EPICBET-403-FROM-VPS — FS fallback on 403, job raises, freshness watchdog wired")
+def test_epicbet_403_from_vps():
+    """EPICBET-403-FROM-VPS-2026-08-29 — two failures, not one.
+
+    1. Cloudflare 403s every Epicbet call from the VPS. EPICBET-ODDS-INGEST
+       claimed the site "hits no bot-protection"; that was only tested from a
+       residential IP. Cookie harvesting does NOT fix it — FlareSolverr earns a
+       cf_clearance but replaying it from plain requests still 403s, because
+       Cloudflare binds clearance to the browser's TLS fingerprint. So the
+       calls themselves route through FS, matching what the Coolbet odds
+       reader already does (API + named FS session; only PLACEMENT drives a
+       browser).
+
+    2. The job caught every exception and returned normally, so _run_job
+       recorded status='completed' and pinged Kuma up. 277 consecutive runs
+       over six days reported success while writing zero rows
+       ([[feedback_silent_failures]]).
+    """
+    import inspect
+    import pathlib
+    import requests as _rq
+    from workers.automation import epicbet_explorer as ee
+
+    # ── 1. transport: direct first, FS only after a block ────────────────
+    calls = {"fs_open": 0, "fs_get": 0}
+
+    class _Direct:
+        """Fake requests.Session yielding a scripted status."""
+        def __init__(self, status): self.status = status; self.hits = 0
+        def get(self, *_a, **_kw):
+            self.hits += 1
+            r = _rq.Response()
+            r.status_code = self.status
+            r._content = b'{"result":{"data":[1,2,3]}}'
+            if self.status != 200:
+                raise _rq.HTTPError(response=r)
+            return r
+
+    orig_open, orig_get = ee._fs_open, ee._fs_get_json
+    try:
+        ee._fs_open = lambda sess: (calls.__setitem__("fs_open", calls["fs_open"] + 1),
+                                    setattr(sess, "_fs_on", True))[0]
+        ee._fs_get_json = lambda url, **kw: (calls.__setitem__("fs_get", calls["fs_get"] + 1),
+                                             {"result": {"data": ["via-fs"]}})[1]
+
+        ok = _Direct(200)
+        assert ee._get(ok, "/x") == [1, 2, 3], "a 200 must be served directly"
+        assert calls["fs_open"] == 0, "FlareSolverr must NOT be used when direct works"
+
+        blocked = _Direct(403)
+        assert ee._get(blocked, "/x") == ["via-fs"], "a 403 must fall back to FlareSolverr"
+        assert calls["fs_open"] == 1 and calls["fs_get"] == 1
+
+        # Once blocked, the rest of the run stays on FS rather than re-probing.
+        assert ee._get(blocked, "/y") == ["via-fs"]
+        assert calls["fs_open"] == 1, "FS session must be created once per run, not per call"
+
+        # A non-block error must surface, not be masked as a bot-protection hit.
+        try:
+            ee._get(_Direct(500), "/x")
+            raise AssertionError("HTTP 500 must propagate, not silently route via FS")
+        except _rq.HTTPError:
+            pass
+    finally:
+        ee._fs_open, ee._fs_get_json = orig_open, orig_get
+
+    # Session teardown must exist and be safe on a session that never used FS.
+    ee.fs_close(_Direct(200))
+
+    # ── 2. the job must RAISE, not swallow ───────────────────────────────
+    sched = pathlib.Path(__file__).resolve().parent.parent / "workers/scheduler.py"
+    src = sched.read_text()
+    job = src[src.index("def job_epicbet_odds_snapshot("):
+              src.index("def _epicbet_odds_snapshot_wrapper(")]
+    assert "except Exception" not in job, (
+        "job_epicbet_odds_snapshot must not catch and return — that is what "
+        "recorded 277 'completed' runs while the feed was dead. _run_job "
+        "already isolates jobs from each other."
+    )
+
+    # ── 3. the watchdog that would have caught it in 2h, not 6 days ──────
+    from workers.jobs.odds_freshness import check_feed, FEEDS
+    assert "Epicbet" in FEEDS, "Epicbet must have a freshness profile"
+    assert 'id="epicbet_odds_freshness"' in src, "watchdog must be registered"
+    assert inspect.signature(check_feed).parameters["bookmaker"], (
+        "freshness check must be per-bookmaker so a third book is one call"
+    )
+    return "403 falls back to FS once per run; job raises; watchdog registered"
+
+
 if __name__ == "__main__":
     main()

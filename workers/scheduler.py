@@ -506,20 +506,38 @@ def job_epicbet_odds_snapshot():
     bots stop being priced against a single venue. Unlike Coolbet this needs no
     auth and hits no bot-protection, so it runs on the VPS rather than the Mac.
 
-    Sweeps Epicbet's football league listings in bulk (~140 calls), fuzzy-matches
-    against DB fixtures in the next 2 days, and stores 1X2 / OU / BTTS / AH into
+    Sweeps Epicbet's football league listings in bulk, fuzzy-matches against DB
+    fixtures in the next 2 days, and stores 1X2 / OU / BTTS / AH into
     odds_snapshots with bookmaker='Epicbet'. Fires 3 min before the :05/:35
     betting refresh so the same cycle sees fresh prices.
 
-    Error-isolated — an Epicbet outage never blocks other jobs.
+    EPICBET-403-FROM-VPS-2026-08-29: the original docstring claimed Epicbet
+    "needs no auth and hits no bot-protection, so it runs on the VPS rather
+    than the Mac". That was only ever true from the operator's residential IP.
+    From this host Cloudflare answers every call with a 403 interstitial, so
+    epicbet_explorer now falls back to FlareSolverr. The claim is corrected
+    here rather than deleted, because it is what made the job look safe to run
+    unattended on the VPS in the first place.
+
+    RAISES on failure. It previously caught everything and returned normally,
+    so _run_job recorded status='completed' and pinged Kuma "up" — 277
+    consecutive runs over six days reported success while writing zero rows.
+    _run_job already isolates each job from the others, so re-raising costs no
+    isolation and is the only thing that makes the failure visible
+    ([[feedback_silent_failures]]).
     """
     from workers.automation.epicbet_explorer import run_bulk
-    import traceback
-    try:
-        run_bulk(days=2, dry_run=False)
-    except Exception as e:
-        console.print(f"[red]Epicbet odds snapshot failed: {e}[/red]")
-        console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
+    res = run_bulk(days=2, dry_run=False)
+    # A run that stores nothing is not necessarily broken (quiet fixture
+    # window), so this is not an error — but it must be visible, because
+    # "completed" with zero rows is exactly what six days of failure looked
+    # like. The freshness watchdog is what actually alarms.
+    if res and not res.get("stored"):
+        console.print(
+            f"[yellow]Epicbet: stored 0 rows "
+            f"(db_matches={res.get('db_matches')} matched={res.get('matched')})[/yellow]"
+        )
+    return res
 
 
 def _epicbet_odds_snapshot_wrapper():
@@ -1079,6 +1097,22 @@ def job_coolbet_daemon_healthcheck():
             f"recovery_sent={counters['recovery_sent']}[/yellow]"
         )
     _run_job("coolbet_daemon_healthcheck", lambda: None)
+
+
+def job_epicbet_odds_freshness():
+    """EPICBET-403-FROM-VPS-2026-08-29 — DB-side staleness watchdog for the
+    Epicbet feed, the thing whose absence let a six-day outage pass unnoticed.
+
+    Coolbet has had one since 2026-07-03 (it caught a 7-day silent outage);
+    Epicbet did not, so 277 consecutive 'completed' runs writing zero rows
+    raised nothing. Reads odds_snapshots directly, so it is indifferent to
+    where the writer runs or whether the job reported success.
+    """
+    from workers.jobs.odds_freshness import check_feed
+    c = check_feed("Epicbet")
+    if c.get("alert_sent") or c.get("recovery_sent"):
+        console.print(f"[yellow]Epicbet freshness: {c['status']} — {c['reason']}[/yellow]")
+    _run_job("epicbet_odds_freshness", lambda: None)
 
 
 def job_coolbet_odds_freshness():
@@ -2273,6 +2307,15 @@ def main():
                       CronTrigger(minute="13,43"),
                       id="coolbet_odds_freshness",
                       name="Coolbet Odds Freshness Watchdog [30min]",
+                      max_instances=1, misfire_grace_time=600)
+
+    # EPICBET-403-FROM-VPS: same watchdog for the second book. :18/:48 sits
+    # well after the :02/:32 ingest so a slow run is not reported as stale,
+    # and clear of the Coolbet check at :13/:43.
+    scheduler.add_job(job_epicbet_odds_freshness,
+                      CronTrigger(minute="18,48"),
+                      id="epicbet_odds_freshness",
+                      name="Epicbet Odds Freshness Watchdog [30min]",
                       max_instances=1, misfire_grace_time=600)
 
     # COOLBET-FS-SESSION-STABLE sweeper — hourly, destroys stale FS sessions

@@ -52,6 +52,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -121,16 +122,128 @@ def _session() -> requests.Session:
     return s
 
 
+# ── FlareSolverr fallback (EPICBET-403-FROM-VPS-2026-08-29) ──────────────────
+#
+# EPICBET-ODDS-INGEST claimed Epicbet "hits no bot-protection". That was only
+# ever tested from the operator's residential IP. From the Hetzner VPS every
+# call returns 403 behind a Cloudflare "Just a moment..." interstitial, which
+# is why the job wrote nothing for six days while reporting success.
+#
+# Cookie harvesting — the pattern coolbet_session.py uses against Imperva —
+# does NOT work here. FlareSolverr does earn a `cf_clearance` cookie, but
+# replaying it from plain `requests` still 403s: Cloudflare binds clearance to
+# the browser's TLS fingerprint, not just IP + User-Agent. Verified on the box.
+#
+# So the calls themselves go through FlareSolverr. A *session* makes that
+# affordable: the first request pays the challenge (~11s), every subsequent
+# one is ~0.3s, because FS keeps the solved browser tab alive.
+# Same shape as the Coolbet odds snapshot, which is the proven pattern in this
+# repo: API calls through a NAMED FlareSolverr session, env-configurable
+# (com.oddsintel.coolbet-odds-snapshot.plist sets COOLBET_FLARE_SESSION=
+# coolbet_odds_reader). Only Coolbet *placement* drives a real browser; its
+# odds reader does exactly this.
+#
+# The difference is where it can run. Imperva refuses the datacenter IP even
+# through FS, which is why the Coolbet reader had to move to Mac launchd.
+# Cloudflare does not: FS from the VPS returns 200 and 552 categories,
+# verified on the box, so this stays server-side and needs no Mac.
+_FS_URL = os.getenv("FLARESOLVERR_URL", "http://localhost:8191").rstrip("/")
+_FS_SESSION_ID = os.getenv("EPICBET_FLARE_SESSION", "epicbet_odds_reader")
+# Only used when a direct call has already been refused, so the Mac path (which
+# reaches Epicbet fine) never pays the FS cost.
+_FS_PRE = re.compile(r"<pre[^>]*>(.*?)</pre>", re.S)
+
+
+def _fs_post(cmd: str, **kw):
+    r = requests.post(f"{_FS_URL}/v1", json={"cmd": cmd, **kw}, timeout=180)
+    r.raise_for_status()
+    return r.json()
+
+
+def _fs_open(sess: requests.Session) -> None:
+    """Create the shared FS session once per run; mark it on `sess`."""
+    if getattr(sess, "_fs_on", False):
+        return
+    try:
+        _fs_post("sessions.destroy", session=_FS_SESSION_ID)   # clear a stale one
+    except Exception:
+        pass
+    out = _fs_post("sessions.create", session=_FS_SESSION_ID)
+    if out.get("status") != "ok":
+        raise RuntimeError(f"FlareSolverr session create failed: {out.get('message')}")
+    sess._fs_on = True
+    log.info("Epicbet: direct calls are 403 from this host — routed via FlareSolverr")
+
+
+def fs_close(sess: requests.Session) -> None:
+    """Destroy the FS session. Safe to call when one was never opened —
+    leaking a session pins a Chrome tab until the sweeper reaps it."""
+    if not getattr(sess, "_fs_on", False):
+        return
+    try:
+        _fs_post("sessions.destroy", session=_FS_SESSION_ID)
+    except Exception as e:
+        log.warning("Epicbet: FS session destroy failed: %s", e)
+    sess._fs_on = False
+
+
+def _fs_get_json(url: str, *, _retry: bool = True):
+    """Fetch `url` through FlareSolverr and return the decoded JSON body.
+
+    FS returns the response wrapped in a rendered HTML page, so the JSON is
+    inside a <pre> block.
+
+    Recreates the session once if it has vanished. `sweep_stale_sessions.py`
+    runs hourly at :37 and destroys every session not in its whitelist
+    (coolbet_prod, hltv_*); this one is deliberately NOT whitelisted, because
+    it is created and destroyed per run and the sweeper is then a free
+    safety net for a leak after a crash. The cost is that a run overlapping
+    :37 can have its session pulled mid-flight — so recover instead of
+    failing the whole sweep.
+    """
+    out = _fs_post("request.get", url=url, session=_FS_SESSION_ID, maxTimeout=90000)
+    if out.get("status") != "ok":
+        msg = str(out.get("message") or "")
+        if _retry and "session" in msg.lower():
+            log.warning("Epicbet: FS session vanished mid-run (%s) — recreating", msg)
+            _fs_post("sessions.create", session=_FS_SESSION_ID)
+            return _fs_get_json(url, _retry=False)
+        raise RuntimeError(f"FlareSolverr: {msg}")
+    sol = out.get("solution") or {}
+    if sol.get("status") != 200:
+        raise requests.HTTPError(f"Epicbet returned {sol.get('status')} via FlareSolverr")
+    body = sol.get("response") or ""
+    m = _FS_PRE.search(body)
+    return json.loads(m.group(1) if m else body)
+
+
 def _get(sess: requests.Session, path: str, payload=None, *, timeout: int = 25):
-    """GET an Epicbet tRPC endpoint and unwrap `{"result":{"data":...}}`."""
+    """GET an Epicbet tRPC endpoint and unwrap `{"result":{"data":...}}`.
+
+    Tries a direct request first and falls back to FlareSolverr for the rest
+    of the run once one is refused — so the residential path stays fast and
+    the VPS still works.
+    """
     url = _BASE + path
     if payload is not None:
         url += "?input=" + urllib.parse.quote(
             json.dumps(payload, separators=(",", ":"))
         )
-    r = sess.get(url, timeout=timeout)
-    r.raise_for_status()
-    body = r.json()
+
+    if getattr(sess, "_fs_on", False):
+        body = _fs_get_json(url)
+    else:
+        try:
+            r = sess.get(url, timeout=timeout)
+            r.raise_for_status()
+            body = r.json()
+        except requests.HTTPError as e:
+            status = getattr(e.response, "status_code", None)
+            if status not in (403, 429, 503):
+                raise
+            _fs_open(sess)
+            body = _fs_get_json(url)
+
     if isinstance(body, dict) and "result" in body:
         return body["result"].get("data")
     return body
@@ -413,6 +526,16 @@ def run_bulk(
     )
 
     sess = _session()
+    try:
+        return _run_bulk_inner(sess, matches, days, sleep_s, dry_run)
+    finally:
+        # Always tear the FS session down. A leaked session pins a Chrome tab
+        # until the hourly flaresolverr_sweep reaps it, and repeated leaks are
+        # how FS ran out of memory before (see project_fs_sticking_pattern).
+        fs_close(sess)
+
+
+def _run_bulk_inner(sess, matches, days, sleep_s, dry_run):
     leagues = fetch_football_leagues(sess)
     console.print(f"[cyan]Epicbet football leagues with prematch: {len(leagues)}[/cyan]")
 

@@ -252,7 +252,17 @@ restart. No extra hosting cost on the VPS; blast radius isolated.
 - AF bulk odds via `/odds?date=` — ~178 fixtures, 13 bookmakers, all markets (1X2, O/U, BTTS, DC)
 - Bookmakers: 10Bet, 1xBet, 888Sport, Bet365, Betano, BetVictor, Betfair, Dafabet, Marathonbet, Pinnacle, SBO, Unibet, William Hill
 - Kambi removed 2026-05-06 — all leagues already covered by AF, no unique value
-- **Epicbet** ingested separately at :02/:32 UTC (`job_epicbet_odds_snapshot` → `workers/automation/epicbet_explorer.run_bulk`), landing 3 min before the :05/:35 betting refresh. Bulk league sweep, anonymous, VPS-side. Coolbet's equivalent runs on the operator's Mac because Imperva 403s the VPS; Epicbet has no such protection.
+- **Epicbet** ingested separately at :02/:32 UTC (`job_epicbet_odds_snapshot` → `workers/automation/epicbet_explorer.run_bulk`), landing 3 min before the :05/:35 betting refresh. Bulk league sweep over Epicbet's JSON API (~140 calls: leagues → fixtures per league → odds batched 250 market-ids at a time), VPS-side.
+  - **EPICBET-403-FROM-VPS-2026-09-02 — the "no such protection" claim was wrong.** It held only from the operator's residential IP. From the VPS, Cloudflare 403s every call behind a *Just a moment…* interstitial. The feed wrote nothing from **2026-08-27 06:10 to 2026-09-02** — **277 consecutive runs, every one recording `completed`** — because the job caught the exception and returned normally.
+  - Calls now route through **FlareSolverr on a named session** (`EPICBET_FLARE_SESSION`, default `epicbet_odds_reader`) after the first refusal, matching the Coolbet **odds reader** — which is also API + named FS session; only Coolbet *placement* drives a real browser. Direct is tried first, so the Mac path stays at 0.5s/call. Via FS the first call pays ~11s for the challenge and the rest are ~0.3s.
+  - Cookie harvesting does **not** work here: FS earns a `cf_clearance`, but replaying it from plain `requests` still 403s — Cloudflare binds clearance to the browser's TLS fingerprint, unlike Imperva which accepts cookie + UA. This is why Epicbet can stay on the VPS while Coolbet's reader had to move to the Mac.
+  - The session is created and destroyed per run and is deliberately **not** in the `sweep_stale_sessions.py` whitelist, so the hourly sweeper cleans up after a crash; a run overlapping the :37 sweep recreates the session rather than failing.
+  - The job now **raises** on failure. `_run_job` already isolates jobs from each other, so re-raising costs no isolation and is the only thing that makes the failure visible.
+
+### Odds freshness watchdogs — `workers/jobs/odds_freshness.py`
+
+DB-side staleness checks that read `odds_snapshots` directly, so they are indifferent to where the writer runs or whether the job claimed success. **Coolbet** at :13/:43 (`coolbet_odds_freshness.py`, caught a 7-day silent outage in 2026-07). **Epicbet** at :18/:48 — added 2026-09-02, because its absence is exactly why the six-day outage above passed unnoticed. Alerts once per 12h per incident, with a recovery message.
+Adding a third book is one `check_feed("Name")` call plus a `FEEDS` entry.
 - Stores all in `odds_snapshots` with `minutes_to_kickoff`
 - `--mark-closing` flag for pre-kickoff runs (13:30, 17:30, 20:00)
 - **OU quality gates (ODDS-QUALITY-CLEANUP, 2026-05-10)**: `filter_garbage_ou_rows` (in `workers/utils/odds_quality.py`) drops OU rows from blacklisted bookmakers (`api-football`, `api-football-live`, `William Hill`) and both sides of impossible `(over, under)` pairs (`1/over + 1/under < 1.02`). Applied at every write path. 1X2 / BTTS rows from the same bookmakers pass through unchanged. See `DATA_SOURCES.md` for the why.
