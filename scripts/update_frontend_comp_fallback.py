@@ -30,8 +30,12 @@ from datetime import date
 from pathlib import Path
 
 
-LEDGER_KEYS = ["winnerodds", "signalodds", "deepbetting", "tipstrr", "forebet",
-               "betaminic"]
+# TIPSTRR-DROPPED-2026-09-02: tipstrr is deliberately absent. Its audit still
+# runs and ledger/comparison_tipstrr.json is still written, but the landing no
+# longer presents it as a competitor (it is a marketplace, and the figure was a
+# consequence of which tipsters we listed). Keep it out of this list and out of
+# COMP_META together, or the drift guard fails on a key the page does not have.
+LEDGER_KEYS = ["winnerodds", "signalodds", "deepbetting", "forebet", "betaminic"]
 
 
 def load_audit(engine_root: Path, key: str) -> dict[str, object]:

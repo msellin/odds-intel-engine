@@ -587,6 +587,50 @@ both win more often and are quoted more tightly. Always run the control.
 
 Related: #25 (cross-book joins need `handicap_line`), #16.
 
+## 28. A competitor's headline ROI is rarely measuring the same thing as ours
+
+Before comparing any rival's ROI to ours, check three things. Every one of them
+was wrong for WinnerOdds until 2026-09-02, all in the same direction (we
+understated them, and so overstated our own lead).
+
+**(a) Which markets.** WinnerOdds' `apuesta` field is a compact pick code that
+fully identifies the market (`1`/`x`/`2`, `o2.5`/`u2.5`, `o3.5`/`u3.5`,
+`ah±0/0.5_1/2`), and we were discarding it as `market="mixed"`. Their published
+record is **47% Asian Handicap — a market we do not model at all** — plus 16%
+OU 3.5. Only **690 of 1,852** bets are in our 1X2 + OU 2.5 cohort. Their ROI on
+the comparable subset is **+7.67%**, not the +4.50% we were publishing.
+
+**(b) Which staking.** They stake Kelly-style (mean €37 over the window); we
+stake €10 flat. ROI is profit over turnover, so two staking schemes give two
+different ROIs for the identical set of bets. Re-settle their picks at our flat
+stake before comparing. Here it barely moved the number (+7.82% Kelly vs
++7.67% flat), which is luck, not a reason to skip it.
+
+**(c) The settlement vocabulary.** Their statuses are
+`WIN / LOOSE / HALF_WIN / HALF_LOSE / VOID` — note **`LOOSE`**, their spelling
+of a loss. `scripts/audit_vs_winnerodds.py` exported the picks CSV by testing
+for `"lose"`, so all **752 losses in the window silently became blank** and the
+published CSV — the file behind the landing's "Verify" link — contained only
+wins and voids. Recomputing ROI from it gave **+86%**. The aggregate JSON was
+fine because `wo_summary` used the correct vocabulary; the two paths had drifted.
+Derive both from one mapping.
+
+**Market-level vs product-level is a real choice, not an oversight.** Restricting
+to shared markets answers *"on the same bets, who prices better?"* — a claim
+about model skill. It is not the same as *"which subscription returns more?"*,
+where a rival's AH coverage is a feature rather than a confound. The landing
+publishes the market-level comparison; see `COMPETITOR-PRODUCT-VS-MARKET` in
+PRIORITY_QUEUE.md.
+
+**Not everything is fixable.** Tipstrr's per-bet market detail is genuinely
+paywalled — its data is (tipster × month) aggregate across all bet types, so no
+amount of parsing makes it like-for-like. It was dropped from the landing
+2026-09-02 rather than labelled, because it is a *marketplace*: any figure is a
+consequence of which tipsters you list (we pooled 3 of 8 hand-written slugs, all
+three inactive, out of thousands).
+
+Related: #27 (cross-source odds verification), #3 (market vocabularies).
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |

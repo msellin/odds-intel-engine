@@ -26266,14 +26266,27 @@ def _comp_fallback_guard():
     keys = _re.search(r"LEDGER_KEYS\s*=\s*\[(.*?)\]", sync, _re.S)
     assert keys, "LEDGER_KEYS not found in update_frontend_comp_fallback.py"
     found = set(_re.findall(r'"(\w+)"', keys.group(1)))
-    expected = {"winnerodds", "signalodds", "deepbetting", "tipstrr",
-                "forebet", "betaminic"}
+    expected = {"winnerodds", "signalodds", "deepbetting", "forebet", "betaminic"}
     missing = expected - found
     assert not missing, (
         f"competitors missing from LEDGER_KEYS: {sorted(missing)}. A source on "
         "the landing page but absent here never gets its fallback refreshed, so "
         "it freezes at whatever was hardcoded and the page keeps publishing it "
         "as current."
+    )
+    # TIPSTRR-DROPPED-2026-09-02. Pinned as an absence, not just deleted: the
+    # audit still runs and the ledger JSON is still written, so the key is
+    # sitting right there for someone to re-add without knowing why it went.
+    # Tipstrr is a MARKETPLACE — the figure we published was a consequence of
+    # which tipsters we happened to list (3 of 8 hand-written slugs out of
+    # thousands, all three inactive), pooled across all bet types at month
+    # grain because per-bet market detail is paywalled. It can never be made
+    # like-for-like with our 1X2 + OU 2.5 cohort.
+    assert "tipstrr" not in found, (
+        "tipstrr must stay out of LEDGER_KEYS — it is a tipster marketplace, "
+        "not a competitor product, and its figure cannot be market-matched to "
+        "ours. If it is being re-added deliberately, update this test and "
+        "COMP_META together."
     )
 
     wf = (root / ".github" / "workflows" / "competitor_audits_weekly.yml").read_text()

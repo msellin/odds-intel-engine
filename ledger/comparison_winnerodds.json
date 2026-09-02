@@ -8,18 +8,49 @@
     "stake_total": 4594.75
   },
   "reproducible_via": "scripts/audit_vs_winnerodds.py",
-  "scope_notes": "WinnerOdds picks pulled from their public GraphQL endpoint (period=12, FOOTBALL); their published unit-stake bets settled WIN/LOSE/VOID. OddsIntel cohort: production strategies (calibrated+beta+active maturity), 1X2 + OU 2.5 markets only, settled (won/lost). Both sides settled at \u20ac10 flat stake for apples-to-apples ROI.",
-  "snapshot_at_utc": "2026-09-02T06:57:09.338389+00:00",
+  "scope_notes": "WinnerOdds picks pulled from their public GraphQL endpoint (period=12, FOOTBALL). their_stats is the COMPARABLE subset: their 1X2 + OU 2.5 picks only, re-settled at \u20ac10 flat to match our staking. WINNERODDS-MARKET-RESOLVE 2026-09-02 \u2014 this used to publish their all-markets figure against our 1X2+OU2.5 figure, which is not the same measurement: 47% of their bets are Asian Handicap (a market we do not model) and 16% are OU 3.5, and they stake Kelly-style (mean \u20ac37) where we stake flat. Their all-markets number is kept as their_stats_all_markets, and the full split as their_by_market. OddsIntel cohort: production strategies (calibrated+beta+active maturity), 1X2 + OU 2.5, settled (won/lost), \u20ac10 flat, inplay_* excluded.",
+  "snapshot_at_utc": "2026-09-02T10:29:36.024256+00:00",
   "source": "WinnerOdds",
   "source_url": "https://winnerodds.com",
   "status": "ok",
+  "their_by_market": {
+    "1x2": {
+      "hit_rate_pct": 48.69,
+      "n": 421,
+      "roi_pct": 7.46
+    },
+    "asian_handicap": {
+      "hit_rate_pct": 62.82,
+      "n": 710,
+      "roi_pct": 4.22
+    },
+    "over_under_25": {
+      "hit_rate_pct": 51.67,
+      "n": 269,
+      "roi_pct": 7.98
+    },
+    "over_under_35": {
+      "hit_rate_pct": 52.67,
+      "n": 300,
+      "roi_pct": -5.02
+    }
+  },
   "their_stats": {
+    "avg_clv_pct": 0.0097,
+    "hit_rate_pct": 49.86,
+    "n": 690,
+    "pnl_total": 528.91,
+    "roi_pct": 7.67,
+    "stake_total": 6900.0
+  },
+  "their_stats_all_markets": {
     "avg_clv_pct": 0.0097,
     "hit_rate_pct": 55.76,
     "n": 1852,
     "pnl_total": 3113.77,
     "roi_pct": 4.5,
-    "stake_total": 69222.51
+    "stake_total": 69222.51,
+    "staking": "their own (Kelly-style, variable)"
   },
   "window": {
     "end": "2026-09-03",
