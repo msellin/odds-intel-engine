@@ -1943,10 +1943,19 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
         -- crashed to 2.82, and we went on storing "3.70 at Betano" through
         -- 05:08/05:14/05:44/06:15/06:44 while the best accessible price was
         -- 10Bet 3.10. Every 30-min refresh re-derived the same stale peak
-        -- rather than correcting it. Measured before the fix: 45% of 1X2
-        -- selections on scheduled fixtures had a historical max above the
-        -- latest-per-book max, mean +3.1%, worst 2.26x; snapshot history runs
-        -- ~15 days because pruning only touches finished matches.
+        -- rather than correcting it. Measured before the fix: roughly a third
+        -- of 1X2 selections on scheduled fixtures had a historical max above
+        -- the latest-per-book max (mean inflation ~6pp, worst 2.26x); the
+        -- snapshot history runs ~15 days because pruning only touches
+        -- finished matches.
+        --
+        -- NOTE: this comment deliberately contains no per-cent sign. It sits
+        -- inside a SQL string that psycopg2 parameterises, where a bare
+        -- per-cent character is read as a placeholder and raises
+        -- "IndexError: tuple index out of range" (ANALYSIS_GOTCHAS #6). That
+        -- is exactly how an earlier draft of this comment broke the 06:00
+        -- betting pipeline on 2026-09-03 -- including, on the first attempt,
+        -- the sentence warning about it.
         -- DISTINCT ON ... timestamp DESC = the latest quote per book, which
         -- is what "best available" has to mean. Matches the pattern
         -- _run_pin_1x2_shadow_pass already used correctly.

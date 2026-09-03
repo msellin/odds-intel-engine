@@ -26808,5 +26808,53 @@ def _inplay_retired():
     return "in-play opt-in only; LivePoller settlement intact; history kept"
 
 
+@test("SQL-PERCENT-GUARD — no bare per-cent sign inside a parameterised SQL literal")
+def _sql_percent_guard():
+    """ANALYSIS_GOTCHAS #6, enforced instead of just documented.
+
+    psycopg2 reads a bare per-cent character in a query string as the start of
+    a placeholder, so one in a SQL COMMENT raises "IndexError: tuple index out
+    of range" at execute time — with a traceback that points at the caller, not
+    at the comment. On 2026-09-03 this took down the 06:00 betting pipeline:
+    a rationale comment added to the odds_raw query in `_load_today_from_db`
+    quoted measurements like "45 per cent of 1X2 selections" and "mean +3.1
+    per cent". The first fix attempt reintroduced it inside the sentence
+    warning about it.
+
+    Documented for months and still shipped twice in one day, which is the
+    argument for a test rather than a doc line. Escaping as a doubled sign
+    works but renders oddly in logs; the rule here is simply not to use the
+    character in SQL comments.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+    offenders = []
+    for py in sorted((root / "workers").rglob("*.py")):
+        src = py.read_text()
+        for m in _re.finditer(r'"""((?:[^"]|"(?!""))*)"""', src):
+            body = m.group(1)
+            # Only literals that are actually SQL AND touch a table — this
+            # must not fire on ordinary docstrings that happen to cite a
+            # percentage.
+            if not _re.search(r"\b(SELECT|INSERT INTO|UPDATE|DELETE FROM)\b", body):
+                continue
+            if not _re.search(r"\bFROM\s+\w|\bINTO\s+\w|\bUPDATE\s+\w", body):
+                continue
+            for ln in body.splitlines():
+                if not ln.strip().startswith("--"):
+                    continue
+                if "%" in ln.replace("%s", "").replace("%%", ""):
+                    line_no = src[:m.start()].count("\n") + 1
+                    offenders.append(
+                        f"{py.relative_to(root)}:~{line_no}: {ln.strip()[:70]}")
+    assert not offenders, (
+        "bare per-cent sign in a SQL comment — psycopg2 will read it as a "
+        "placeholder and raise IndexError at execute time (ANALYSIS_GOTCHAS "
+        "#6):\n  " + "\n  ".join(offenders[:6])
+    )
+    return "no bare per-cent signs in SQL comments across workers/"
+
+
 if __name__ == "__main__":
     main()
