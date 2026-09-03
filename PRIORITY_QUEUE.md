@@ -1,5 +1,32 @@
 # OddsIntel — Master Priority Queue
 
+> **⬜ OU-SIGNAL-SEARCH-2026-09-03 (P2 — do it, but AFTER the feature density work; see why below)** — 1-2 days once unblocked — Can we mine everything gathered since May for O/U signals? **Yes in principle — the raw material is far bigger than anything we have analysed.** The universe is not our bets or even our predictions: it is **26,250 settled matches carrying O/U odds** since 2026-05-01, of which we predicted on only 56.0% (14,689) and bet 21.7% (5,698). Backtesting rules over the full universe is ~17x the data behind every O/U figure quoted so far.
+>
+> **Power is the binding constraint.** Per-bet return sd is 1.0973, so at 80% power / two-sided 5%:
+>
+> | bets the rule fires on | 1 hypothesis | 20 tested | 100 tested |
+> |---|---|---|---|
+> | 500 | 13.7% | 19.0% | 21.2% |
+> | 2,000 | 6.9% | 9.5% | 10.6% |
+> | 10,000 | 3.1% | 4.2% | 4.7% |
+>
+> A realistic exploitable edge is +3% to +5%. So **only broad rules are testable.** A narrow "league X + condition Y" bucket of a few hundred matches can only detect a +20-30% effect — precisely the range in which all three of 2026-09-03's withdrawn findings appeared. Any search must require the rule to fire on >=2,000 matches and must pre-register its hypothesis count, or it will manufacture exactly those artefacts at scale.
+>
+> **What actually blocks it: feature density, not data volume.** Coverage of `match_feature_vectors` on the universe (39,327 rows with a known result since May):
+>
+> | tier | features |
+> |---|---|
+> | **>=90% — usable** | `league_tier`, `elo_home/away/diff`, `lineup_confirmed`, outcomes |
+> | 40-90% — needs a coverage-matched control | `ensemble_prob_home` 87.7%, form 79-81%, `rest_days` 64%, `pinnacle_implied_over25` **43.3%**, `ou25_bookmaker_disagreement` 53.0% |
+> | <40% — a subset here is a DIFFERENT match population | `goals_for_avg_*` 28%, `season_progress` 24.5%, weather 10.1%, `referee_over25_pct` **5.6%**, `xg_overperf_*` **4.9%**, injuries 1.8-2.6% |
+>
+> The features anyone would actually want for total goals — team scoring rates, referee over-rate, xG, weather — are the sparse ones. Conditioning on them silently selects a different match population, which is ANALYSIS_GOTCHAS #33 with a feature attached rather than a line.
+>
+> **The one dense thing we do hold is the odds ladder: 25,728 of 26,250 matches (98.0%) carry 4+ O/U lines.** The full `over_under_XX` ladder encodes the market's own implied total-goals distribution, and it is dense enough to support a properly powered search on its own. That plus `elo` and `league_tier` is the honest starting feature set today.
+>
+> **Sequencing:** this is not an alternative to `UNDERSTAT-SCRAPER-BIG5-XG` — it is the job that xG work exists to feed. Densify features first, search second; searching now means searching over `elo` + ladder shape and little else. Run the ladder-only search first if we want an early read, with a locked time-split holdout (fit May-Jul, one shot at Aug-Sep) and <=10 pre-registered hypotheses.
+
+
 > **⛔ OU-OVER-UNDER-ASYMMETRY-2026-09-03 — WITHDRAWN the same day it was filed. It did not survive its own confirmation step.**
 >
 > Filed on two claims. Both fail.
