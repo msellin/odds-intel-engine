@@ -27194,5 +27194,59 @@ def _btts_retired():
     return "BTTS retired in placer, sweep pass, BOT_CONFIGS and DB; history kept"
 
 
+@test("PINNACLE-BEST-NO-EDGE — warned, scoped to tier 1, deliberately not a veto")
+def _pin_best():
+    """PINNACLE-BEST-NO-EDGE-2026-09-03. When `recommended_bookmaker` is
+    Pinnacle the SHARPEST book held the best price, so no soft book was
+    offering value — the edge is measured against a fair price and there is
+    nothing to take. On settled 1X2 picks at odds live at pick time:
+
+        tier 1  Pinnacle best n=112  ROI −23.5%  t=−1.72
+                soft best     n=338  ROI +26.6%
+        tier 2  Pinnacle best n= 47  ROI +11.1%   <- OPPOSITE SIGN
+
+    Two things pinned, and the second is the point. The warning must exist,
+    and it must stay SCOPED TO TIER 1 and display-only: a blanket
+    "Pinnacle best => skip" would remove profitable tier-2 picks, which is
+    exactly what BOT-GATE-OU-BTTS was filed to prevent, and t=−1.72 on n=112
+    does not justify a veto.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+    web = root.parent / "odds-intel-web"
+    if not web.exists():
+        raise SkipTest("odds-intel-web not present (CI single-repo checkout)")
+
+    page = (web / "src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+    i = page.index("PINNACLE-BEST-NO-EDGE")
+    blk = page[i:i + 2200]
+    assert 'u.recommended_bookmaker === "Pinnacle"' in blk, (
+        "the warning must key on Pinnacle holding the best price"
+    )
+    assert "tier === 1" in blk, (
+        "the warning must be SCOPED TO TIER 1 — tier 2 runs the other way "
+        "(+11.1%) and flagging it would repeat the BOT-GATE-OU-BTTS mistake"
+    )
+    assert 'u.market === "1x2"' in blk, (
+        "scoped to 1X2: the whole effect is in that market"
+    )
+    # It must remain a warning. A veto would suppress the bets that are still
+    # generating the evidence this rule needs.
+    assert 'level: "red"' in blk and "cFlag" in blk, (
+        "must be a display flag, not a suppression — the cohort is t=-1.72 and "
+        "still accruing"
+    )
+
+    tracker = root / "scripts" / "track_pinnacle_best.py"
+    assert tracker.exists(), "the tracking script must exist to re-measure the rule"
+    tsrc = tracker.read_text()
+    assert "odds_at_pick_live" in tsrc, (
+        "the tracker must price at odds that were live — odds_at_pick is a "
+        "high-water mark (STALE-BEST-ODDS) and would flatter every cohort"
+    )
+    return "tier-1 1X2 Pinnacle-best warned, display-only, tracker present"
+
+
 if __name__ == "__main__":
     main()
