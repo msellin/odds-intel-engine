@@ -466,6 +466,24 @@ are we actually betting". The unfiltered and filtered views disagree wildly:
 | btts | −7.14% (n=1,593) | **−6.36% (n=1,502)** |
 | double_chance | −6.39% (n=59,488) | **not bet at all** |
 
+**Update 2026-09-03 (migration 298).** Measured: **128,243 of 143,602 rows
+(89.3%)** of `shadow_bets` is retired-bot output, from 20 retired bots still
+writing. Those writes are deliberate and must stay — `SHADOW-RETIRED-OK`
+(2026-05-20) keeps them so the recovery criterion (">=30 bets at >=3% ROI in
+shadow_bets") stays measurable. Do not "fix" this by stopping them; that
+deletes the only evidence that can un-retire a strategy.
+
+`shadow_bets_unique` now carries `bot_retired_at`, `bot_is_active` and
+`bot_name`, so the choice is explicit at the point of use:
+
+    WHERE bot_retired_at IS NULL       -- performance analysis (the default)
+    WHERE bot_retired_at IS NOT NULL   -- alpha-recovery analysis
+
+An unqualified aggregate over the view is ~89% dead strategies and will
+mislead by more than its own sign: pooled shadow ROI reads -3.44% (t=-3.77),
+live-bots-only reads **+8.19% (t=+2.49)**.
+
+
 ## 23. Do NOT normalise the `1X2` / `1x2` case split — it is load-bearing
 
 It looks like a data-hygiene bug (older named bots write `1X2` / `O/U` / `BTTS`;

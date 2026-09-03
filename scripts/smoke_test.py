@@ -27627,5 +27627,66 @@ def _ou_live_price_blind():
     )
 
 
+@test("SHADOW-RETIRED-INVISIBLE — the canonical shadow view exposes bot retirement")
+def _shadow_retired_invisible():
+    """SHADOW-RETIRED-BOTS-INVISIBLE-2026-09-03. 89.3% of `shadow_bets`
+    (128,243 of 143,602 rows) comes from RETIRED bots, and 20 of them are still
+    writing — `bot_dc_specialist` produced 17,032 rows in the last 14 days and
+    was retired on 2026-06-01.
+
+    That is deliberate: SHADOW-RETIRED-OK (2026-05-20) keeps retired bots
+    producing shadow rows so the retirement-note recovery criterion — ">=30
+    bets at >=3% ROI in shadow_bets" — stays measurable. Stopping the writes
+    would delete the only evidence that could un-retire a strategy, so this
+    test must NOT assert that retired bots stop writing.
+
+    The defect is that retirement was invisible at the point of use.
+    `shadow_bets_unique` is the documented read path (ANALYSIS_GOTCHAS #5) and
+    a row in it carried no hint its bot had been dead since May — you had to
+    know to join `bots`. So the documented view's default behaviour was to
+    blend ~89% dead weight into any aggregate. On 2026-09-03 that turned a
+    retired market's -4.60% into a filed claim that the model itself was a
+    significant loser (MODEL-VS-MARKET-STRATEGY, withdrawn same day).
+
+    Migration 298 adds bot_retired_at / bot_is_active / bot_name to the view.
+    """
+    try:
+        from workers.api_clients.db import execute_query
+        cols = {r["column_name"] for r in execute_query(
+            """SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'shadow_bets_unique'""")}
+    except Exception as e:                       # noqa: BLE001
+        raise SkipTest(f"DB not reachable: {e}")
+
+    if not cols:
+        raise SkipTest("shadow_bets_unique not present")
+
+    for c in ("bot_retired_at", "bot_is_active"):
+        assert c in cols, (
+            f"shadow_bets_unique is missing `{c}` — without it the canonical "
+            "shadow view silently blends ~89% retired-bot rows into every "
+            "aggregate, which is how a retired market became a claim about "
+            "the model (migration 298)"
+        )
+
+    # The view must still expose retired rows, not filter them out: the writes
+    # exist so alpha-recovery stays measurable, and a filtering view would
+    # quietly delete that capability while looking like a fix.
+    row = execute_query(
+        """SELECT COUNT(*) AS tot,
+                  COUNT(*) FILTER (WHERE bot_retired_at IS NOT NULL) AS retired
+             FROM shadow_bets_unique"""
+    )[0]
+    if not row["tot"]:
+        raise SkipTest("no shadow rows")
+    assert row["retired"] > 0, (
+        "shadow_bets_unique no longer exposes any retired-bot rows — the view "
+        "must surface retirement, not filter it, or the alpha-recovery "
+        "criterion (SHADOW-RETIRED-OK) becomes unmeasurable"
+    )
+    return (f"view exposes retirement; {row['retired']} of {row['tot']} rows "
+            f"are retired-bot output")
+
+
 if __name__ == "__main__":
     main()
