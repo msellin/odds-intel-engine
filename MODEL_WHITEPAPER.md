@@ -74,6 +74,29 @@ All rolling statistics computed from the **10 most recent matches** per team, sp
 | **ELO** (at inference) | home ELO, away ELO, ELO differential, expected win probability from ELO | 4 |
 | **Form vs ELO Residual** | `form_vs_elo_expectation_home/away` = actual recent PPG minus ELO-predicted PPG (`3 × p_win + 0.27`) — isolates hot/cold streaks from baseline quality (FORM-ELO-RESIDUAL) | 2 |
 
+**Goal-rate provenance (TEAM-SCORING-RATES-OWN-RESULTS, 2026-09-03).** The four
+`goals_for_avg_*` / `goals_against_avg_*` features were sourced solely from
+`match_signals` and were populated on 46.2% of feature rows. They are now filled
+from our own settled-match history where the signal is absent: the average goals
+scored and conceded by each team across its own fixtures — home and away both
+count, so it is a property of the team, not the venue — over a trailing 365 days,
+requiring at least 5 prior matches (below that the value stays NULL and the
+`<col>_missing` indicator carries it). Coverage 46.2% -> 84.1%.
+
+The alternative considered and rejected was an Understat xG scraper
+(UNDERSTAT-SCRAPER-BIG5-XG). Understat covers Big-5 + RPL + Eredivisie, which is
+**1.62%** of our O/U universe and 3.19% of live-bot bets — our volume is
+Friendlies, J1 League, MLS Next Pro, Argentina Primera C, Brazil Serie D and
+Iceland 1. Deild. Our own results reach 45x that coverage with no external
+dependency.
+
+The window is strictly prior to kickoff, compared on the full timestamp, with an
+explicit self-exclusion guard. This matters more than the coverage gain: a goal
+rate contaminated by the fixture it describes improves every backtest and every
+calibration metric while losing money live, because the metrics are computed on
+the same leaked data. The smoke test therefore verifies the arithmetic against an
+independent recomputation rather than checking that the column is populated.
+
 **Defaults:** When insufficient history exists (new teams, new season), features default to league averages or neutral values (e.g. H2H defaults to 0.33 for 3-way split).
 
 ### 3.1b Feature Set — AF Retrain Model (`workers/model/train.py`)

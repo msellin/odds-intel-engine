@@ -27688,5 +27688,126 @@ def _shadow_retired_invisible():
             f"are retired-bot output")
 
 
+@test("TEAM-SCORING-RATES — rolling goal rates use only strictly-prior matches")
+def _team_scoring_rates():
+    """TEAM-SCORING-RATES-OWN-RESULTS-2026-09-03. `goals_for_avg_*` came from
+    `match_signals` and sat at 46.2% coverage. The queued fix
+    (UNDERSTAT-SCRAPER-BIG5-XG) covers 1.62% of the leagues we actually bet —
+    we bet Argentina Primera C and Iceland 1. Deild, not the Big 5. Computing
+    the rate from our own 163,901 settled matches reaches 84.1%.
+
+    LEAKAGE IS THE ENTIRE RISK. A rate that includes the fixture it describes,
+    or any fixture kicking off after it, backtests beautifully and loses money
+    live — and it is invisible in every aggregate metric, because the metric is
+    computed on the same leaked data. So this test does not check coverage; it
+    recomputes the feature independently from strictly-prior matches and
+    demands exact agreement.
+    """
+    from workers.model.team_scoring_rates import (
+        MIN_MATCHES, WINDOW_DAYS, build_sql,
+    )
+
+    sql = build_sql()
+    assert "p.date < t.kickoff" in sql, (
+        "the prior-match window must be STRICTLY before kickoff — `<=` admits "
+        "the fixture itself and every other match at the same timestamp"
+    )
+    assert "p.id <> t.mid" in sql, (
+        "the self-exclusion guard is gone; if the timestamp comparison is ever "
+        "loosened this is the only thing stopping a fixture describing itself"
+    )
+    assert "COALESCE(f.goals_for_avg_home" in sql, (
+        "existing signal-sourced values must win, or the column's provenance "
+        "depends on job ordering"
+    )
+    assert MIN_MATCHES >= 3 and WINDOW_DAYS >= 90
+
+    try:
+        from workers.api_clients.db import get_conn
+        from workers.model.team_scoring_rates import fill_window
+        conn_cm = get_conn()
+    except Exception as e:                       # noqa: BLE001
+        raise SkipTest(f"DB not reachable: {e}")
+
+    # Compare ONLY rows this logic produced. Pre-existing signal-sourced values
+    # follow different semantics and would otherwise force a `continue` that
+    # silently swallows real mismatches — the exact weak-assertion shape that
+    # let a broken test pass earlier the same day.
+    #
+    # So: inside a transaction, blank a recent window, refill it with the
+    # module, compare every filled row against an independent recomputation,
+    # then roll back. Nothing is written.
+    checked = 0
+    mismatches: list[str] = []
+    with conn_cm as conn, conn.cursor() as cur:
+        cur.execute("""SELECT to_char(CURRENT_DATE - 21, 'YYYY-MM-DD'),
+                              to_char(CURRENT_DATE + 1,  'YYYY-MM-DD')""")
+        since, until = cur.fetchone()
+        try:
+            cur.execute("""
+                UPDATE match_feature_vectors
+                   SET goals_for_avg_home = NULL, goals_against_avg_home = NULL,
+                       goals_for_avg_away = NULL, goals_against_avg_away = NULL
+                 WHERE match_date >= %s AND match_date < %s""", (since, until))
+            fill_window(cur, since, until)
+            cur.execute("""
+                SELECT f.match_id, m.date, m.home_team_id, m.away_team_id,
+                       f.goals_for_avg_home, f.goals_against_avg_home,
+                       f.goals_for_avg_away, f.goals_against_avg_away
+                  FROM match_feature_vectors f
+                  JOIN matches m ON m.id = f.match_id
+                 WHERE f.match_date >= %s AND f.match_date < %s
+                   AND f.goals_for_avg_home IS NOT NULL
+                 ORDER BY f.match_id LIMIT 25""", (since, until))
+            rows = cur.fetchall()
+            if not rows:
+                raise SkipTest("no fixtures in the last 21 days to verify")
+
+            for mid, ko, home, away, gf_h, ga_h, gf_a, ga_a in rows:
+                for tid, gf_db, ga_db in ((home, gf_h, ga_h), (away, gf_a, ga_a)):
+                    if tid is None or gf_db is None:
+                        continue
+                    # Independent recomputation — deliberately not reusing the
+                    # module's SQL, since a test built on the implementation
+                    # cannot detect the implementation being wrong.
+                    cur.execute("""
+                        SELECT AVG(gf)::numeric, AVG(ga)::numeric, COUNT(*) FROM (
+                          SELECT score_home AS gf, score_away AS ga FROM matches
+                           WHERE home_team_id = %s AND score_home IS NOT NULL
+                             AND date < %s
+                             AND date >= %s::timestamptz - (%s || ' days')::interval
+                             AND id <> %s
+                          UNION ALL
+                          SELECT score_away, score_home FROM matches
+                           WHERE away_team_id = %s AND score_home IS NOT NULL
+                             AND date < %s
+                             AND date >= %s::timestamptz - (%s || ' days')::interval
+                             AND id <> %s) z""",
+                        (tid, ko, ko, str(WINDOW_DAYS), mid,
+                         tid, ko, ko, str(WINDOW_DAYS), mid))
+                    gf_py, ga_py, n = cur.fetchone()
+                    checked += 1
+                    if gf_py is None or n < MIN_MATCHES:
+                        mismatches.append(
+                            f"{mid}/{tid}: written from {n} prior matches, below "
+                            f"the MIN_MATCHES={MIN_MATCHES} floor")
+                        continue
+                    if (abs(float(gf_db) - float(gf_py)) > 1e-6
+                            or abs(float(ga_db) - float(ga_py)) > 1e-6):
+                        mismatches.append(
+                            f"{mid}/{tid}: stored ({gf_db},{ga_db}) != "
+                            f"strictly-prior ({gf_py},{ga_py}) over n={n}")
+        finally:
+            conn.rollback()
+
+    assert checked > 0, "no rows were produced by the fill — is it running at all?"
+    assert not mismatches, (
+        "the rolling rate does not match a recomputation over strictly-prior "
+        "matches, which is what leakage looks like: "
+        + "; ".join(mismatches[:3])
+    )
+    return f"{checked} team-slots reproduced exactly from strictly-prior matches"
+
+
 if __name__ == "__main__":
     main()

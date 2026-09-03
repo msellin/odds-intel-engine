@@ -1558,6 +1558,42 @@ def job_mfv_v3_signals_propagate():
     _run_job("mfv_v3_signals_propagate", _run)
 
 
+def job_team_scoring_rates():
+    """TEAM-SCORING-RATES-OWN-RESULTS (2026-09-03): fill MFV goals_for/against
+    averages from our own 163,901 settled matches.
+
+    `goals_for_avg_*` is sourced from `match_signals` and sat at 46.2% coverage.
+    The queued alternative (UNDERSTAT-SCRAPER-BIG5-XG) covers 1.62% of the
+    leagues we actually bet — we bet Argentina Primera C and Iceland 1. Deild,
+    not the Big 5. Computing the rate from our own results reaches 84.1%.
+
+    Rolling 60d window so a cron misfire self-heals, and idempotent via COALESCE
+    (an existing signal-sourced value always wins). Runs at 23:40, after the v3
+    propagate at 23:30, so it only fills what the signals pipeline did not.
+    """
+    import subprocess
+    from datetime import date as _date, timedelta as _td
+
+    def _run():
+        since = (_date.today() - _td(days=60)).isoformat()
+        result = subprocess.run(
+            [sys.executable, "scripts/backfill_team_scoring_rates.py",
+             "--since", since, "--apply"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=900,
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[yellow]team_scoring_rates exit "
+                          f"{result.returncode}: {result.stderr[-1000:]}[/yellow]")
+            raise RuntimeError(
+                f"team_scoring_rates failed: exit {result.returncode}"
+            )
+        console.print(result.stdout[-1500:])
+
+    _run_job("team_scoring_rates", _run)
+
+
 def job_nightly_mfv_b_ml3_refresh():
     """MFV-B-ML3-V2-NIGHTLY-REFRESH (2026-05-25): re-runs the B-ML3 v2 feature
     backfill nightly so MFV rows for matches that just finished settle into
@@ -2518,6 +2554,15 @@ def main():
                       CronTrigger(hour=23, minute=30),
                       id="mfv_v3_signals_propagate",
                       name="MFV v3 Signals → MFV Propagate 23:30",
+                      max_instances=1, misfire_grace_time=1800)
+
+    # TEAM-SCORING-RATES-OWN-RESULTS (2026-09-03): fill MFV goals_for/against
+    # averages from our own settled matches. 23:40 — after the v3 propagate at
+    # 23:30, so signal-sourced values win and this only fills the gaps.
+    scheduler.add_job(job_team_scoring_rates,
+                      CronTrigger(hour=23, minute=40),
+                      id="team_scoring_rates",
+                      name="Team Scoring Rates → MFV 23:40",
                       max_instances=1, misfire_grace_time=1800)
 
     # ALN-AUTO (2026-05-25): 1st of each month at 03:30 UTC. Runs the
