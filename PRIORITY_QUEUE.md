@@ -1,5 +1,22 @@
 # OddsIntel — Master Priority Queue
 
+> **⬜ FEATURE-DENSIFY-ROUND-2-2026-09-03 (P1 — three more OU features are computable from data we already hold; strictly better payoff than xG)** — 1 day — `TEAM-SCORING-RATES` proved the pattern: a sparse feature whose inputs we already own. Feature importance on the new OU head (`v20260903_cut0820`) shows three more in exactly that state, with reachable coverage measured, not assumed:
+>
+> | feature | OU importance | coverage now | reachable from our own data |
+> |---|---|---|---|
+> | `rest_days_home` / `_away` | 1.35% | 31.2% | **84.5%** — days since each team's previous fixture, pure arithmetic on the fixture list |
+> | `season_progress` | 1.72% | 11.9% | **100%** — match position within its league season; `league_id` + `season` present on every row |
+> | `league_draw_rate_ytd` | 1.83% | 17.0% | high — 1,454 league-seasons with settled results since 2025 |
+>
+> Combined ~4.9% of OU importance at *current* sparse coverage, and importance is suppressed by sparsity — the model can only lean on what it has. For scale, the `goals_for_avg_*` family went from 5.99% importance at 46% coverage to **9.28% at 84%**, and that move is what produced the clean, significant OU gain (t=+7.17).
+>
+> **Same leakage discipline as TEAM-SCORING-RATES.** `rest_days` and `league_draw_rate_ytd` both look backward and must use a strictly-prior window; `season_progress` is safe (it is a position, not an outcome). Verify each against an independent recomputation rather than checking that the column is populated.
+>
+> **Explicitly deprioritised: xG.** `xg_overperf_away` carries 1.43% importance at **2.4%** coverage, needs an external source, and the obvious source (Understat) covers 1.62% of the leagues we bet — see the blocked UNDERSTAT ticket. It is the worst payoff of everything on this list, not the best.
+
+> **⬜ OU-TIER-C-EXCLUSION-RECHECK-2026-09-03 (P2 — we exclude 14 countries from OU training but bet 40.1% of our O/U volume in them)** — 3-4h — `OU_EXCLUDED_LEAGUE_COUNTRIES` (OU-LONGTERM-EXCLUDE-TIERC, 2026-06-25) drops Argentina, Austria, Brazil, China, Denmark, Finland, Ireland, Japan, Mexico, Norway, Poland, Russia, Sweden, USA from OU training only — 26,858 rows. The rationale was sound at the time: their scoring patterns differed from the T1-T2 European base the OU calibration was built on. **But 40.1% of our settled O/U shadow bets are in those very countries**, and 26.5% of the current eval holdout is, so we routinely price O/U in leagues the head never trained on. Measured on the holdout, the new head beats no-skill in BOTH groups (in-distribution 0.6651 vs no-skill 0.6747; excluded 0.6718 vs 0.6814), so the extrapolation is not obviously failing any more. `train.py` already has `--ou-include-tier-c`. **Re-run the exclusion decision now that the feature set is denser** — train both ways with the same cutoff and compare per-group on a clean holdout. If the exclusion no longer helps, we gain 26,858 training rows in exactly the leagues we bet.
+
+
 > **⬜ PROMOTE-OU-2026-09-03 (P1 — the LIVE O/U model is worse than a constant; a replacement that is not is sitting ready)** — operator decision, ~15 min — On a genuinely clean holdout (2026-08-20..09-03; candidate `v20260903_cut0820` trained with `--cutoff 2026-08-20` so it has never seen the window, baseline `v20260719` trained through 07-19), scored with the corrected O/U metric:
 >
 > | model | over25 log-loss | vs no-skill (0.6766) |
