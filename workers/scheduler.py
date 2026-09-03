@@ -288,6 +288,19 @@ def morning_pipeline():
         console.print(f"\n[red bold]Morning pipeline finished with {len(failed_steps)} failure(s): {', '.join(failed_steps)}[/red bold]")
     else:
         console.print("\n[bold green]Morning pipeline complete — all 8 steps succeeded.[/bold green]")
+        # SILENT-FAILURE-AUDIT-JOBS-2026-09-03. Per-step isolation above is
+        # CORRECT -- one bad step must not skip the rest. What was wrong is
+        # returning normally afterwards: `_run_job` then records
+        # status='completed' and Kuma is pinged "up", so a run where half
+        # the steps failed is indistinguishable from a clean one. Raise so
+        # the failure reaches pipeline_runs; the steps that DID succeed have
+        # already run and are not undone by this.
+        if failed_steps:
+            raise RuntimeError(
+                f"{len(failed_steps)} step(s) failed: "
+                f"{', '.join(failed_steps)}"
+            )
+
 
 
 def settlement_pipeline():
@@ -352,6 +365,19 @@ def settlement_pipeline():
         console.print(f"\n[red bold]Settlement finished with {len(failed_steps)} failure(s): {', '.join(failed_steps)}[/red bold]")
     else:
         console.print("\n[bold green]Settlement complete — all steps succeeded.[/bold green]")
+    # SILENT-FAILURE-AUDIT-JOBS-2026-09-03. Per-step isolation above is
+    # CORRECT -- one bad step must not skip the rest. What was wrong is
+    # returning normally afterwards: `_run_job` then records
+    # status='completed' and Kuma is pinged "up", so a run where half
+    # the steps failed is indistinguishable from a clean one. Raise so
+    # the failure reaches pipeline_runs; the steps that DID succeed have
+    # already run and are not undone by this.
+    if failed_steps:
+        raise RuntimeError(
+            f"{len(failed_steps)} step(s) failed: "
+            f"{', '.join(failed_steps)}"
+        )
+
 
 
 # ── Individual job wrappers ────────────────────────────────────────────────
@@ -455,12 +481,26 @@ def job_betting_refresh():
     except Exception as e:
         console.print(f"[red]Betting refresh failed: {e}[/red]")
         console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
+        # SILENT-FAILURE-AUDIT-JOBS-2026-09-03: re-raise so `_run_job`
+        # records status='failed'. Logging and returning made this look
+        # healthy in pipeline_runs while doing nothing -- the same shape
+        # as EPICBET-403 (277 green runs, zero rows) and _shadow_run
+        # (16 silent hours). `_run_job` already isolates jobs from each
+        # other, so re-raising costs no isolation.
+        raise
 
     try:
         write_dashboard_cache()
     except Exception as e:
         console.print(f"[red]Dashboard cache refresh failed: {e}[/red]")
         console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
+        # SILENT-FAILURE-AUDIT-JOBS-2026-09-03: re-raise so `_run_job`
+        # records status='failed'. Logging and returning made this look
+        # healthy in pipeline_runs while doing nothing -- the same shape
+        # as EPICBET-403 (277 green runs, zero rows) and _shadow_run
+        # (16 silent hours). `_run_job` already isolates jobs from each
+        # other, so re-raising costs no isolation.
+        raise
 
 
 def job_shadow_run_interval():
@@ -493,6 +533,13 @@ def job_coolbet_odds_snapshot():
     except Exception as e:
         console.print(f"[red]Coolbet odds snapshot failed: {e}[/red]")
         console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
+        # SILENT-FAILURE-AUDIT-JOBS-2026-09-03: re-raise so `_run_job`
+        # records status='failed'. Logging and returning made this look
+        # healthy in pipeline_runs while doing nothing -- the same shape
+        # as EPICBET-403 (277 green runs, zero rows) and _shadow_run
+        # (16 silent hours). `_run_job` already isolates jobs from each
+        # other, so re-raising costs no isolation.
+        raise
 
 
 def _coolbet_odds_snapshot_wrapper():

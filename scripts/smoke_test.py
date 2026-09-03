@@ -27452,5 +27452,103 @@ def _ou_platt():
     return "O/U 2.5 and 3.5 calibrated and reachable at the production keys"
 
 
+@test("SILENT-FAILURE-AUDIT-JOBS — no _run_job entrypoint reports success after failing")
+def _silent_jobs():
+    """SILENT-FAILURE-AUDIT-JOBS-2026-09-03. The same defect bit three times in
+    two days: EPICBET-403 (277 runs reporting `completed` with zero rows), the
+    FRONTEND_REPO_TOKEN skip (two months of stale competitor figures behind an
+    `exit 0`), and `_shadow_run` (16 hours of dead shadow cohorts reporting
+    `completed` while betting_pipeline, which re-raises, was fixed within the
+    hour of being noticed).
+
+    Scoped deliberately. There are ~430 `except Exception` blocks under
+    `workers/` and most are legitimate defensive code in inner loops — this is
+    NOT a rule against catching exceptions. It is a rule about one place: a
+    function passed to `_run_job` must not return normally after failing,
+    because `_run_job` writes `status='completed'` to pipeline_runs and pings
+    Kuma "up". A capped, empty or half-failed run then looks exactly like a
+    clean one.
+
+    Two shapes are both acceptable:
+      * single-purpose jobs re-raise;
+      * multi-step pipelines keep per-step isolation (one bad step must not
+        skip the rest) and raise at the END if any step failed.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    src = (_Path(__file__).resolve().parent.parent
+           / "workers" / "scheduler.py").read_text()
+
+    targets = set(_re.findall(r'_run_job\(\s*"[^"]+"\s*,\s*([A-Za-z_][\w.]*)', src))
+    assert len(targets) >= 20, f"expected many _run_job entrypoints, found {len(targets)}"
+
+    offenders = []
+    for name in sorted(targets):
+        i = src.find(f"def {name}(")
+        if i < 0:
+            continue                      # defined in another module
+        m = _re.compile(r"\ndef ").search(src, i + 10)
+        body = src[i:m.start() if m else len(src)]
+        # Check EACH except block, not just whether the word "raise" appears
+        # somewhere in the function. An earlier draft did the latter and passed
+        # with the raise deleted, because an unrelated branch still had one —
+        # exactly the kind of weak assertion that let these bugs live.
+        for m2 in _re.finditer(r"^(\s*)except Exception", body, _re.M):
+            indent = len(m2.group(1))
+            tail = body[m2.end():]
+            handled = False
+            for line in tail.splitlines()[1:]:
+                if not line.strip():
+                    continue
+                cur = len(line) - len(line.lstrip())
+                if cur <= indent:            # left the except block
+                    break
+                st = line.strip()
+                if st.startswith("raise") or st.startswith("failed_steps.append"):
+                    handled = True
+                    break
+                # Or the handler declares itself optional IN WORDS. The rule
+                # is not "never catch" — plenty of side effects (a digest
+                # email, a best-effort refit) genuinely should not fail the
+                # job. The rule is that a swallowed failure must be a stated
+                # decision rather than an accident, and the codebase already
+                # uses these words where that is the intent.
+                if any(w in line.lower() for w in
+                       ("non-blocking", "non-critical", "skipped", "best-effort",
+                        "optional")):
+                    handled = True
+                    break
+            if not handled:
+                offenders.append(name)
+                break
+    # Multi-step pipelines: per-step isolation is fine, but the function must
+    # raise at the END when any step failed. Checked separately because those
+    # per-step handlers are legitimately annotated as non-critical, so the
+    # block-level check above passes even with the final raise deleted.
+    for name in sorted(targets):
+        i = src.find(f"def {name}(")
+        if i < 0:
+            continue
+        m = _re.compile(r"\ndef ").search(src, i + 10)
+        body = src[i:m.start() if m else len(src)]
+        if "failed_steps.append" not in body:
+            continue
+        assert _re.search(r"if failed_steps:\s*\n\s*raise\b", body), (
+            f"{name} collects failed_steps but never raises on them — a run "
+            f"where half the steps failed is then recorded as "
+            f"status='completed'. Keep the per-step isolation and raise at the "
+            f"end when failed_steps is non-empty."
+        )
+
+    assert not offenders, (
+        f"these _run_job entrypoints swallow their exception and return "
+        f"normally, so pipeline_runs records status='completed' for a failed "
+        f"run: {offenders}. Either re-raise, or (for multi-step pipelines) "
+        f"keep per-step isolation and raise at the end when failed_steps is "
+        f"non-empty."
+    )
+    return f"all {len(targets)} _run_job entrypoints surface their failures"
+
+
 if __name__ == "__main__":
     main()
