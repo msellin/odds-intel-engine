@@ -26926,5 +26926,74 @@ def _shadow_view_drift():
     return f"view exposes all {len(base)} shadow_bets columns"
 
 
+@test("SIGNALS-STORE-ON-CHANGE — match_signals writes only on value change; dead signals dropped")
+def _signals_store_on_change():
+    """SIGNALS-STORE-ON-CHANGE + SIGNALS-NEVER-READ (2026-09-03).
+
+    `match_signals` was 49.3M rows / 13 GB — 35 per cent of a 39.6 GB database
+    — holding only 1.56M distinct (match, signal) pairs. Every pipeline run
+    re-inserted the entire signal set, so a single match accumulated 8,339 rows
+    with `elo_home`, `rest_days_home` and `league_position_home` each written
+    130 times at exactly one value.
+
+    Measured over 7 days: of 8,980,369 rows written, 508,962 differed from the
+    previous capture. Storing on change removes 94.3 per cent of writes and
+    takes the table to roughly 0.7 GB.
+
+    Separately, ten signals were written daily and read nowhere — not in the
+    production model's 67 features, not `match_feature_vectors` columns, and no
+    consumer in the engine, scripts or odds-intel-web. 3,892,256 rows of them.
+
+    Pinned because both are invisible when they regress: re-inserting unchanged
+    rows is not an error, it just quietly costs 12 GB again.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    src = (_Path(__file__).resolve().parent.parent
+           / "workers" / "api_clients" / "supabase_client.py").read_text()
+
+    i = src.index("def batch_write_morning_signals(")
+    m = _re.compile(r"\ndef ").search(src, i + 10)
+    body = src[i:m.start() if m else len(src)]
+
+    assert "prev[(mid, name)] == val" in body, (
+        "the writer must compare each signal against its previous stored value "
+        "and skip unchanged ones — without it match_signals grows ~31x"
+    )
+    assert "INSERT INTO match_signals" in body, (
+        "expected the bulk insert to still exist"
+    )
+    assert "changed,\n                    page_size=1000," in body, (
+        "the INSERT must write the FILTERED list, not the full signal set — "
+        "computing `changed` and then inserting `signals` would silently do "
+        "nothing at all"
+    )
+    assert "if name in _NEVER_READ_SIGNALS:" in body, (
+        "the never-read deny-list must be applied inside add()"
+    )
+
+    from workers.api_clients.supabase_client import _NEVER_READ_SIGNALS
+    assert len(_NEVER_READ_SIGNALS) >= 10
+    for n in ("form_vs_elo_expectation_home", "games_remaining_away",
+              "goals_for_venue_home", "injury_recurrence_away"):
+        assert n in _NEVER_READ_SIGNALS, f"{n} should be on the deny-list"
+    # Guard the guard: nothing on the deny-list may be a live model feature.
+    feats = _Path(__file__).resolve().parent.parent / "data" / "models"
+    if feats.exists():
+        import pickle
+        for fc in feats.rglob("feature_cols.pkl"):
+            try:
+                cols = set(pickle.load(open(fc, "rb")))
+            except Exception:
+                continue
+            clash = _NEVER_READ_SIGNALS & cols
+            assert not clash, (
+                f"{sorted(clash)} is on the never-read deny-list but IS a "
+                f"feature of {fc.parent.name} — dropping it would starve that "
+                "model. Remove it from the deny-list."
+            )
+    return "store-on-change wired; 10 never-read signals dropped; no model feature on the deny-list"
+
+
 if __name__ == "__main__":
     main()

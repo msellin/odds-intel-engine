@@ -4082,6 +4082,24 @@ def write_morning_signals(
         pass
 
 
+# SIGNALS-NEVER-READ-2026-09-03. Written by batch_write_morning_signals and read
+# by nothing: absent from the production model's feature list, absent from
+# match_feature_vectors, and grepping the engine, scripts and odds-intel-web
+# turns up no consumer beyond this module.
+#
+# Kept as an explicit deny-list rather than deleting the producing code: the
+# computations feeding them are interleaved with signals we DO use, so removing
+# them inline risks breaking live features for no extra gain. If one of these is
+# ever wanted, delete it from this set and it resumes.
+_NEVER_READ_SIGNALS: frozenset = frozenset({
+    "form_vs_elo_expectation_home", "form_vs_elo_expectation_away",
+    "games_remaining_home", "games_remaining_away",
+    "goals_for_venue_home", "goals_for_venue_away",
+    "goals_against_venue_home", "goals_against_venue_away",
+    "injury_recurrence_home", "injury_recurrence_away",
+})
+
+
 def batch_write_morning_signals(matches: list[dict]) -> int:
     """
     High-performance batch replacement for write_morning_signals.
@@ -4123,6 +4141,14 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
 
     def add(mid: str, name: str, val, group: str, source: str):
         if val is None:
+            return
+        # SIGNALS-NEVER-READ-2026-09-03: these ten were collected and never
+        # consumed anywhere -- not in the production model's 67-feature list,
+        # not as `match_feature_vectors` columns, and referenced in the
+        # codebase only by this writer. They had accumulated 3,892,256 rows
+        # (7.9 per cent of match_signals) and were still being written daily.
+        # Stop producing them rather than storing them more efficiently.
+        if name in _NEVER_READ_SIGNALS:
             return
         try:
             fval = float(val)
@@ -5084,11 +5110,56 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
     except Exception:
         pass
 
-    # ── 15. Bulk INSERT all signals ───────────────────────────────────────────
+    # ── 15. Bulk INSERT — store on CHANGE only ────────────────────────────────
+    # SIGNALS-STORE-ON-CHANGE-2026-09-03. Every pipeline run used to re-insert
+    # the whole signal set for every match, so `match_signals` reached 49.3M
+    # rows (13 GB, 35 per cent of the database) holding only 1.56M distinct
+    # (match, signal) pairs -- about 31 copies each, 130 on the busiest match.
+    # Most signals cannot change: elo_home, rest_days, league_position and
+    # fixture_importance had exactly one value per match across 130 captures.
+    #
+    # Measured over 7 days: of 8,980,369 rows written, only 508,962 carried a
+    # value different from the previous capture. Storing on change drops 94.3
+    # per cent of writes and takes the table from 13 GB to roughly 0.7 GB.
+    #
+    # Chosen over a static/varying NAME LIST deliberately: that list is
+    # threshold-sensitive (rest_days_home measured 1.05 values per match, right
+    # on the boundary) and would silently rot as signals are added. Comparing
+    # values needs no classification and keeps every genuine transition, so the
+    # time series for odds-derived signals is unaffected.
     if not signals:
         return 0
 
     try:
+        prev: dict[tuple[str, str], float | None] = {}
+        for row in execute_query(
+            """SELECT DISTINCT ON (match_id, signal_name)
+                      match_id::text AS match_id, signal_name, signal_value
+                 FROM match_signals
+                WHERE match_id = ANY(%s::uuid[])
+                ORDER BY match_id, signal_name, captured_at DESC""",
+            (match_ids,),
+        ):
+            prev[(row["match_id"], row["signal_name"])] = (
+                None if row["signal_value"] is None else float(row["signal_value"])
+            )
+
+        changed = []
+        for sig in signals:
+            mid, name, val = sig[0], sig[1], sig[2]
+            if (mid, name) in prev and prev[(mid, name)] == val:
+                continue          # unchanged since the last capture — skip
+            changed.append(sig)
+
+        skipped = len(signals) - len(changed)
+        if skipped:
+            console.print(
+                f"[dim]match_signals: {len(changed)} written, {skipped} unchanged "
+                f"({100.0 * skipped / len(signals):.0f}%% skipped)[/dim]"
+            )
+        if not changed:
+            return 0
+
         with get_conn() as conn:
             with conn.cursor() as cur:
                 execute_values(
@@ -5096,11 +5167,11 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
                     """INSERT INTO match_signals
                        (match_id, signal_name, signal_value, signal_group, data_source, captured_at)
                        VALUES %s""",
-                    signals,
+                    changed,
                     page_size=1000,
                 )
                 conn.commit()
-        return len(signals)
+        return len(changed)
     except Exception as e:
         console.print(f"[yellow]batch_write_morning_signals INSERT failed: {e}[/yellow]")
         return 0
