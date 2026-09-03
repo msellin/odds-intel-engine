@@ -6675,7 +6675,12 @@ def test_per_market_edge_thresholds():
     assert _MIN_EDGE_BY_MARKET["1x2"]            == 0.10, "1x2 floor must be 10% (backtest +14% ROI at ≥10%)"
     assert _MIN_EDGE_BY_MARKET["o/u"]            == 0.03, "o/u floor must be 3% (already profitable at floor)"
     assert _MIN_EDGE_BY_MARKET["asian_handicap"] == 0.05, "AH floor must be 5% (flat — moderate floor)"
-    assert _MIN_EDGE_BY_MARKET["btts"]           == 0.10, "BTTS floor must be 10% (only profitable ≥10%)"
+    # BTTS-RETIRED-2026-09-03: was `== 0.10`. BTTS is retired, not
+    # high-floored — shadow BTTS is n=427, ROI -12.76% at prices live at pick
+    # time, t=-2.87, and better calibration made the surviving picks worse.
+    # `None` means _min_edge_for returns infinity, so no BTTS bet can clear
+    # the gate. A numeric floor is a threshold someone can lower back.
+    assert _MIN_EDGE_BY_MARKET["btts"]           is None, "BTTS must be retired (n=427, -12.76%, t=-2.87)"
     assert _MIN_EDGE_BY_MARKET["double_chance"]  is None, "DC must be retired (losing at every threshold)"
 
     # Helper returns the right value for each market type.
