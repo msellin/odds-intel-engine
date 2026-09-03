@@ -27392,5 +27392,65 @@ def _teams_league_id():
     return "teams.league_id documented as a placeholder; no code joins leagues on it"
 
 
+@test("OU-PLATT-UNFITTABLE — O/U calibration exists and is reachable at the production key")
+def _ou_platt():
+    """OU-PLATT-UNFITTABLE-2026-09-03. `model_calibration` had never held a
+    single over_under row. `fit_platt.py` sources O/U from settled
+    `simulated_bets` and requires MIN_SAMPLES_OU=300; the live version has 21,
+    and the all-time max for any version is 175 — unreachable by design.
+
+    Two further traps were hit while fixing it, both of which produce a
+    calibration that loads cleanly and does nothing:
+
+      * VERSION RESOLUTION. Picking each market's model version by "most
+        recent row" is a race — several versions write concurrently — and it
+        split a market PAIR, resolving over25 to a version with 413 settled
+        rows while under25 got 5,351. Resolve by settled VOLUME instead.
+      * KEY VOCABULARY. `predictions` says "over25"; the pipeline asks
+        apply_platt for f"{os_market}_{os_selection}" = "over_under_25_over".
+        A fit written under the predictions name matches nothing at call time
+        and apply_platt silently returns its input.
+
+    So this test checks REACHABILITY at the production key, not merely that a
+    row exists.
+    """
+    from pathlib import Path as _Path
+    import workers.model.improvements as imp
+
+    src = (_Path(__file__).resolve().parent.parent / "scripts"
+           / "fit_calibration_from_predictions.py").read_text()
+    # Check the mapping is APPLIED, not merely defined — an earlier draft of
+    # this assertion looked for the dict name and passed with the lookup
+    # deleted, which is the exact bug it was written to catch.
+    assert "PRODUCTION_KEY.get(mkt, mkt)" in src, (
+        "the fitter must APPLY PRODUCTION_KEY when writing, translating "
+        "predictions-market names to the keys apply_platt is called with. "
+        "Defining the dict without using it writes an unreachable fit."
+    )
+    assert "ORDER BY p.market, COUNT(*) DESC" in src, (
+        "model version must be resolved by settled VOLUME per market — "
+        "'most recent row' is a race and splits market pairs across versions"
+    )
+
+    saved = imp._platt_params
+    try:
+        imp._platt_params = None                       # force a real load
+        params = imp.load_platt_params()
+        for key in ("over_under_25_over", "over_under_25_under"):
+            assert key in params, (
+                f"{key} missing from model_calibration — O/U 2.5 is the "
+                "highest-volume goals market and apply_platt is a silent "
+                "no-op without it"
+            )
+            out = imp.apply_platt(0.60, key)
+            assert abs(out - 0.60) > 1e-9, (
+                f"apply_platt is a NO-OP for {key} — the row exists but is not "
+                "reachable at the key production actually uses"
+            )
+    finally:
+        imp._platt_params = saved
+    return "O/U 2.5 and 3.5 calibrated and reachable at the production keys"
+
+
 if __name__ == "__main__":
     main()

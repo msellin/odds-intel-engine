@@ -55,6 +55,24 @@ console = Console()
 
 MARKETS = ("btts_yes", "btts_no", "over25", "under25",
            "over35", "under35", "over15", "under15")
+
+# `predictions.market` and the key `apply_platt` is CALLED with are not the
+# same vocabulary, and getting this wrong writes a calibration nobody reads.
+# The pipeline builds its key as f"{os_market}_{os_selection}" from the
+# odds-snapshot naming (`over_under_25` + `over`), so it asks for
+# "over_under_25_over" while `predictions` stores "over25". A fit written under
+# the predictions name loads fine, matches nothing at call time, and
+# apply_platt silently returns the input — the same failure mode as
+# PLATT-LIMIT-30-TRUNCATION, arrived at from the opposite direction.
+# BTTS needs no mapping: both sides already say btts_yes / btts_no.
+PRODUCTION_KEY = {
+    "over25":  "over_under_25_over",
+    "under25": "over_under_25_under",
+    "over35":  "over_under_35_over",
+    "under35": "over_under_35_under",
+    "over15":  "over_under_15_over",
+    "under15": "over_under_15_under",
+}
 MIN_N = 800            # below this a per-market curve is noise
 TRAIN_FRAC = 0.70
 # The refit must beat raw by more than this to be worth shipping. A margin
@@ -124,33 +142,70 @@ def _apply(p: float, a: float, b: float) -> float:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--apply", action="store_true", help="write to model_calibration")
-    ap.add_argument("--model-version", default="v20260712")
+    ap.add_argument("--model-version", default=None,
+                    help="pin one version for every market (default: resolve "
+                         "the live version PER MARKET)")
     args = ap.parse_args()
 
     from workers.api_clients.db import execute_query, execute_write
 
-    rows = execute_query(
-        """SELECT p.market, p.model_probability::float AS pr,
-                  m.score_home AS h, m.score_away AS a
+    # OU-PLATT-UNFITTABLE-2026-09-03: resolve the model version PER MARKET, not
+    # once globally. The engine routes per market (`_resolve_version`:
+    # MODEL_VERSION_OU_T{tier} -> MODEL_VERSION_{MARKET} -> global), so OU
+    # predictions are written under a different version from 1X2. Pinning the
+    # global version returned ZERO over25 rows and made OU look unfittable when
+    # 5,490 settled rows existed under the OU version.
+    #
+    # Resolve by SETTLED VOLUME in a recent window, not by "most recent row".
+    # Several model versions write predictions concurrently (shadow A/B), so
+    # the newest row is a race: it resolved over25 -> v20260705 (413 settled)
+    # while under25 -> v20260719 (5,351), splitting a market PAIR across two
+    # versions and making OU 2.5 look unfittable. Volume is stable and picks
+    # the version actually producing the data.
+    live = {}
+    for r in execute_query(
+        """SELECT DISTINCT ON (p.market) p.market, p.model_version, COUNT(*) AS n
              FROM predictions p
              JOIN matches m ON m.id = p.match_id
-            WHERE p.source = 'ensemble'
-              AND p.model_version = %s
-              AND m.status = 'finished'
-              AND m.score_home IS NOT NULL
+            WHERE p.source = 'ensemble' AND p.market = ANY(%s)
+              AND m.status = 'finished' AND m.score_home IS NOT NULL
               AND p.model_probability IS NOT NULL
-              AND p.market = ANY(%s)
-            ORDER BY m.date""",
-        (args.model_version, list(MARKETS)),
-    )
+              AND p.created_at >= NOW() - INTERVAL '120 days'
+            GROUP BY p.market, p.model_version
+            ORDER BY p.market, COUNT(*) DESC""",
+        (list(MARKETS),),
+    ):
+        live[r["market"]] = r["model_version"]
+
+    rows = []
+    for mkt in MARKETS:
+        version = args.model_version or live.get(mkt)
+        if not version:
+            continue
+        rows.extend(execute_query(
+            """SELECT p.market, p.model_probability::float AS pr,
+                      m.score_home AS h, m.score_away AS a
+                 FROM predictions p
+                 JOIN matches m ON m.id = p.match_id
+                WHERE p.source = 'ensemble'
+                  AND p.model_version = %s
+                  AND m.status = 'finished'
+                  AND m.score_home IS NOT NULL
+                  AND p.model_probability IS NOT NULL
+                  AND p.market = %s
+                ORDER BY m.date""",
+            (version, mkt),
+        ))
     buckets: dict[str, list] = defaultdict(list)
     for r in rows:
         w = _won(r["market"], r["h"], r["a"])
         if w is not None:
             buckets[r["market"]].append((r["pr"], 1.0 if w else 0.0))
 
+    vshown = args.model_version or ", ".join(
+        f"{m}={live[m]}" for m in MARKETS if m in live and live[m])
     console.print(f"\n[bold]Calibration fit from `predictions`[/bold] "
-                  f"({args.model_version}, {len(rows):,} settled rows)\n")
+                  f"({len(rows):,} settled rows)\n[dim]versions: {vshown}[/dim]\n")
 
     t = Table(show_header=True, header_style="bold")
     for c in ("market", "n", "slope a", "b", "ECE raw", "ECE refit", "ship?"):
@@ -188,6 +243,7 @@ def main() -> int:
         return 0
 
     for mkt, a, b, n, e_raw, e_new in ship:
+        mkt = PRODUCTION_KEY.get(mkt, mkt)   # write the key production asks for
         # ece_before/ece_after are the OUT-OF-SAMPLE figures, not the training
         # fit — a fitter that records its own training ECE always looks good.
         execute_write(
