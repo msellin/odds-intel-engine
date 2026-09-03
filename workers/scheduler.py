@@ -1594,6 +1594,40 @@ def job_team_scoring_rates():
     _run_job("team_scoring_rates", _run)
 
 
+def job_feature_densify():
+    """FEATURE-DENSIFY-ROUND-2 (2026-09-03): fill rest_days / season_progress /
+    league_draw_rate_ytd in MFV from data we already hold.
+
+    Same rationale as job_team_scoring_rates: these are features the O/U head
+    wants that sat sparse while their inputs were already in the database.
+    Backfill moved rest_days 32.0% -> 92.4%, season_progress 12.8% -> 98.7%,
+    league_draw_rate_ytd 18.2% -> 75.4%.
+
+    Runs at 23:45, after team scoring rates at 23:40 and the v3 propagate at
+    23:30, so signal-sourced values always win. Rolling 60d window so a cron
+    misfire self-heals; idempotent via COALESCE.
+    """
+    import subprocess
+    from datetime import date as _date, timedelta as _td
+
+    def _run():
+        since = (_date.today() - _td(days=60)).isoformat()
+        result = subprocess.run(
+            [sys.executable, "scripts/backfill_feature_densify.py",
+             "--since", since, "--apply"],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=900,
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[yellow]feature_densify exit "
+                          f"{result.returncode}: {result.stderr[-1000:]}[/yellow]")
+            raise RuntimeError(f"feature_densify failed: exit {result.returncode}")
+        console.print(result.stdout[-1500:])
+
+    _run_job("feature_densify", _run)
+
+
 def job_nightly_mfv_b_ml3_refresh():
     """MFV-B-ML3-V2-NIGHTLY-REFRESH (2026-05-25): re-runs the B-ML3 v2 feature
     backfill nightly so MFV rows for matches that just finished settle into
@@ -2563,6 +2597,14 @@ def main():
                       CronTrigger(hour=23, minute=40),
                       id="team_scoring_rates",
                       name="Team Scoring Rates → MFV 23:40",
+                      max_instances=1, misfire_grace_time=1800)
+
+    # FEATURE-DENSIFY-ROUND-2 (2026-09-03): rest_days / season_progress /
+    # league_draw_rate_ytd from our own data. 23:45 — after team scoring rates.
+    scheduler.add_job(job_feature_densify,
+                      CronTrigger(hour=23, minute=45),
+                      id="feature_densify",
+                      name="Feature Densify → MFV 23:45",
                       max_instances=1, misfire_grace_time=1800)
 
     # ALN-AUTO (2026-05-25): 1st of each month at 03:30 UTC. Runs the

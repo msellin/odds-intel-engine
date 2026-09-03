@@ -91,6 +91,18 @@ The deployed bundle is deliberately the cutoff model rather than the full-data
 P(over) sits further from the realised rate despite having trained on the
 evaluation window, and no clean evaluation of it is possible.
 
+**Schedule and rest features (FEATURE-DENSIFY-ROUND-2, 2026-09-03).** Three
+further features are now computed from data already held rather than left
+sparse: `rest_days_home/_away` (days since each team's previous played match,
+32% -> 92% coverage), `season_progress` (position of the fixture within its
+league-season schedule, 13% -> 99%) and `league_draw_rate_ytd` (draw rate in the
+league-season before kickoff, minimum 20 prior results, 18% -> 75%).
+
+The first and third are backward-looking and use a strictly-prior window with
+self-exclusion. `season_progress` is derived from schedule dates only and never
+reads a score, so it is not hindsight even though it uses the season's full
+span.
+
 **Goal-rate provenance (TEAM-SCORING-RATES-OWN-RESULTS, 2026-09-03).** The four
 `goals_for_avg_*` / `goals_against_avg_*` features were sourced solely from
 `match_signals` and were populated on 46.2% of feature rows. They are now filled

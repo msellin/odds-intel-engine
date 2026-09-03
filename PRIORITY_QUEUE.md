@@ -1,6 +1,6 @@
 # OddsIntel — Master Priority Queue
 
-> **⬜ FEATURE-DENSIFY-ROUND-2-2026-09-03 (P1 — three more OU features are computable from data we already hold; strictly better payoff than xG)** — 1 day — `TEAM-SCORING-RATES` proved the pattern: a sparse feature whose inputs we already own. Feature importance on the new OU head (`v20260903_cut0820`) shows three more in exactly that state, with reachable coverage measured, not assumed:
+> **✅ Done 2026-09-03 FEATURE-DENSIFY-ROUND-2-2026-09-03 (P1 — three more OU features are computable from data we already hold; strictly better payoff than xG)** — 1 day — `TEAM-SCORING-RATES` proved the pattern: a sparse feature whose inputs we already own. Feature importance on the new OU head (`v20260903_cut0820`) shows three more in exactly that state, with reachable coverage measured, not assumed:
 >
 > | feature | OU importance | coverage now | reachable from our own data |
 > |---|---|---|---|
@@ -13,6 +13,17 @@
 > **Same leakage discipline as TEAM-SCORING-RATES.** `rest_days` and `league_draw_rate_ytd` both look backward and must use a strictly-prior window; `season_progress` is safe (it is a position, not an outcome). Verify each against an independent recomputation rather than checking that the column is populated.
 >
 > **Explicitly deprioritised: xG.** `xg_overperf_away` carries 1.43% importance at **2.4%** coverage, needs an external source, and the obvious source (Understat) covers 1.62% of the leagues we bet — see the blocked UNDERSTAT ticket. It is the worst payoff of everything on this list, not the best.
+
+**Shipped.** `workers/model/feature_densify.py` (three server-side statements shared by backfill and cron), `scripts/backfill_feature_densify.py`, nightly job at **23:45** — after team scoring rates at 23:40 and the v3 propagate at 23:30, so signal-sourced values always win. Coverage on 83,439 rows, all three ahead of projection:
+
+| feature | before | after | projected |
+|---|---|---|---|
+| `rest_days_home` | 32.0% | **92.4%** | 84.5% |
+| `rest_days_away` | 32.3% | **92.6%** | 84.5% |
+| `season_progress` | 12.8% | **98.7%** | 100% |
+| `league_draw_rate_ytd` | 18.2% | **75.4%** | high |
+
+**Leakage discipline.** `rest_days` and `league_draw_rate_ytd` both look backward and use a strictly-prior window with an explicit self-exclusion; `league_draw_rate_ytd` additionally requires `MIN_LEAGUE_MATCHES=20` prior results. `season_progress` is safe by construction — it is a fixture's position in its league-season *schedule*, published in advance, and the SQL never touches a score. Verified before applying: 47 rest-day slots and 25 draw rates reproduced exactly from independent recomputation, and `corr(season_progress, this match's own goals) = 0.0015`. Smoke test blanks 21 days in a transaction, refills, recomputes and demands exact agreement; mutation-verified on both backward-looking fills.
 
 > **⬜ OU-TIER-C-EXCLUSION-RECHECK-2026-09-03 (P2 — we exclude 14 countries from OU training but bet 40.1% of our O/U volume in them)** — 3-4h — `OU_EXCLUDED_LEAGUE_COUNTRIES` (OU-LONGTERM-EXCLUDE-TIERC, 2026-06-25) drops Argentina, Austria, Brazil, China, Denmark, Finland, Ireland, Japan, Mexico, Norway, Poland, Russia, Sweden, USA from OU training only — 26,858 rows. The rationale was sound at the time: their scoring patterns differed from the T1-T2 European base the OU calibration was built on. **But 40.1% of our settled O/U shadow bets are in those very countries**, and 26.5% of the current eval holdout is, so we routinely price O/U in leagues the head never trained on. Measured on the holdout, the new head beats no-skill in BOTH groups (in-distribution 0.6651 vs no-skill 0.6747; excluded 0.6718 vs 0.6814), so the extrapolation is not obviously failing any more. `train.py` already has `--ou-include-tier-c`. **Re-run the exclusion decision now that the feature set is denser** — train both ways with the same cutoff and compare per-group on a clean holdout. If the exclusion no longer helps, we gain 26,858 training rows in exactly the leagues we bet.
 

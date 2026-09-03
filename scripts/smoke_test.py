@@ -27951,5 +27951,128 @@ def _weekly_eval_ou_inverted():
     return "over25 scored against P(over); truth vector is [over, under]"
 
 
+@test("FEATURE-DENSIFY-ROUND-2 — backward-looking fills use strictly-prior data")
+def _feature_densify_round2():
+    """FEATURE-DENSIFY-ROUND-2-2026-09-03. Three features the O/U head wants sat
+    sparse while their inputs were already in our database — the same shape as
+    TEAM-SCORING-RATES. Backfill moved rest_days 32.0%% -> 92.4%%,
+    season_progress 12.8%% -> 98.7%%, league_draw_rate_ytd 18.2%% -> 75.4%%.
+
+    Two of the three look backward and can leak; the third cannot:
+
+      * rest_days_*          — the team's previous PLAYED match, strictly before
+                               kickoff.
+      * league_draw_rate_ytd — results in the league-season strictly before
+                               kickoff, with a MIN_LEAGUE_MATCHES floor.
+      * season_progress      — a fixture's position in its league-season
+                               SCHEDULE. Published in advance, never touches a
+                               score, so using the season span is not hindsight.
+
+    As with the scoring rates, this does not check coverage: a leaked feature has
+    excellent coverage. It recomputes the backward-looking two from strictly-prior
+    data and demands exact agreement.
+    """
+    from workers.model.feature_densify import (
+        FILLS, MAX_REST_DAYS, MIN_LEAGUE_MATCHES,
+        LEAGUE_DRAW_RATE_SQL, REST_DAYS_SQL, SEASON_PROGRESS_SQL, fill_window,
+    )
+
+    assert "p.date < t.kickoff" in REST_DAYS_SQL and "p.id <> t.mid" in REST_DAYS_SQL, (
+        "rest_days must look strictly before kickoff and exclude the fixture itself")
+    assert "p.date < t.kickoff" in LEAGUE_DRAW_RATE_SQL, (
+        "league_draw_rate_ytd must only count results before kickoff — including "
+        "the fixture's own result is a direct leak of the thing being predicted")
+    assert "COUNT(*) >= %(min_matches)s" in LEAGUE_DRAW_RATE_SQL and MIN_LEAGUE_MATCHES >= 10
+    assert "score" not in SEASON_PROGRESS_SQL, (
+        "season_progress must be computed from schedule dates only")
+    assert MAX_REST_DAYS >= 14
+
+    try:
+        from workers.api_clients.db import get_conn
+        conn_cm = get_conn()
+    except Exception as e:                       # noqa: BLE001
+        raise SkipTest(f"DB not reachable: {e}")
+
+    checked = 0
+    mismatches: list[str] = []
+    with conn_cm as conn, conn.cursor() as cur:
+        cur.execute("""SELECT to_char(CURRENT_DATE - 21, 'YYYY-MM-DD'),
+                              to_char(CURRENT_DATE + 1,  'YYYY-MM-DD')""")
+        since, until = cur.fetchone()
+        try:
+            # Blank then refill, so only rows this logic produced are compared —
+            # signal-sourced values follow different semantics and would force a
+            # `continue` that swallows real mismatches.
+            cur.execute("""UPDATE match_feature_vectors
+                              SET rest_days_home = NULL, rest_days_away = NULL,
+                                  league_draw_rate_ytd = NULL
+                            WHERE match_date >= %s AND match_date < %s""",
+                        (since, until))
+            for name, sql in FILLS:
+                fill_window(cur, name, sql, since, until)
+
+            cur.execute("""SELECT f.match_id, m.date, m.home_team_id, m.away_team_id,
+                                  f.rest_days_home, f.rest_days_away
+                             FROM match_feature_vectors f
+                             JOIN matches m ON m.id = f.match_id
+                            WHERE f.match_date >= %s AND f.match_date < %s
+                              AND f.rest_days_home IS NOT NULL
+                            ORDER BY f.match_id LIMIT 20""", (since, until))
+            for mid, ko, home, away, rh, ra in cur.fetchall():
+                for tid, val in ((home, rh), (away, ra)):
+                    if tid is None or val is None:
+                        continue
+                    cur.execute("""SELECT MAX(p.date) FROM matches p
+                                    WHERE (p.home_team_id = %s OR p.away_team_id = %s)
+                                      AND p.score_home IS NOT NULL
+                                      AND p.date < %s
+                                      AND p.date >= %s::timestamptz
+                                                    - (%s || ' days')::interval
+                                      AND p.id <> %s""",
+                                (tid, tid, ko, ko, str(MAX_REST_DAYS), mid))
+                    last = cur.fetchone()[0]
+                    if last is None:
+                        mismatches.append(f"{mid}/{tid}: rest written with no prior match")
+                        continue
+                    checked += 1
+                    expected = round((ko - last).total_seconds() / 86400.0)
+                    if expected != val:
+                        mismatches.append(
+                            f"{mid}/{tid}: rest {val} != strictly-prior {expected}")
+
+            cur.execute("""SELECT f.match_id, m.date, m.league_id, m.season,
+                                  f.league_draw_rate_ytd
+                             FROM match_feature_vectors f
+                             JOIN matches m ON m.id = f.match_id
+                            WHERE f.match_date >= %s AND f.match_date < %s
+                              AND f.league_draw_rate_ytd IS NOT NULL
+                            ORDER BY f.match_id LIMIT 20""", (since, until))
+            for mid, ko, lg, se, dr in cur.fetchall():
+                cur.execute("""SELECT AVG(CASE WHEN score_home = score_away
+                                               THEN 1.0 ELSE 0.0 END), COUNT(*)
+                                 FROM matches
+                                WHERE league_id = %s AND season = %s
+                                  AND score_home IS NOT NULL
+                                  AND date < %s AND id <> %s""",
+                            (lg, se, ko, mid))
+                expected, n = cur.fetchone()
+                if n < MIN_LEAGUE_MATCHES:
+                    mismatches.append(f"{mid}: draw rate written from only {n} matches")
+                    continue
+                checked += 1
+                if abs(float(dr) - float(expected)) > 1e-9:
+                    mismatches.append(
+                        f"{mid}: draw rate {dr} != strictly-prior {expected}")
+        finally:
+            conn.rollback()
+
+    assert checked > 0, "the fills produced nothing — are they running at all?"
+    assert not mismatches, (
+        "a backward-looking fill does not match a recomputation over "
+        "strictly-prior data, which is what leakage looks like: "
+        + "; ".join(mismatches[:3]))
+    return f"{checked} values reproduced exactly from strictly-prior data"
+
+
 if __name__ == "__main__":
     main()
