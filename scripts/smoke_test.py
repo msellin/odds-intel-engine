@@ -1580,24 +1580,29 @@ def _():
     )
 
 
-@test("CONFIG-SWEEP-PHASE-D — sweep shadow pass fires 3 bots with tier-2-3 configs (1X2 home / draw / BTTS yes)")
+@test("CONFIG-SWEEP-PHASE-D — sweep shadow pass fires 2 bots with tier-2-3 configs (1X2 home / draw; BTTS retired)")
 def _():
     """Phase D shadow bots derived from CONFIG-SWEEP-2026-08-19. Guards:
       (1) three configs registered in _SWEEP_SHADOW_CONFIGS with correct
           markets and Pinnacle-required flags matching the sweep report,
-      (2) all three constrained to tier_filter = (2, 3) — the sweep's
+      (2) both surviving constrained to tier_filter = (2, 3) — the sweep's
           universal signal,
-      (3) all three write via bulk_store_shadow_bets (never simulated_bets),
+      (3) both surviving write via bulk_store_shadow_bets (never simulated_bets),
       (4) pass is invoked from run_morning, morning cohort only, skipped
           when shadow_mode=True,
-      (5) migration 272 registers all three bots with maturity_label='experimental'.
+      (5) migration 272 registers both surviving bots with maturity_label='experimental'.
     """
     import inspect
     from workers.jobs import daily_pipeline_v2
     cfgs = daily_pipeline_v2._SWEEP_SHADOW_CONFIGS
     names = {c["name"] for c in cfgs}
-    assert names == {"bot_sweep_1x2_home_v1", "bot_sweep_1x2_draw_v1", "bot_sweep_btts_yes_v1"}, (
-        f"sweep configs must register exactly the 3 winners, got {names}"
+    # BTTS-RETIRED-2026-09-03: was the three sweep winners including
+    # bot_sweep_btts_yes_v1. BTTS is retired at every layer — shadow BTTS
+    # measured n=427, ROI -12.76% at live prices, t=-2.87 (p<0.01), and
+    # recalibration made the surviving picks worse rather than better. The
+    # BTTS entry is asserted ABSENT below so it cannot quietly return.
+    assert names == {"bot_sweep_1x2_home_v1", "bot_sweep_1x2_draw_v1"}, (
+        f"sweep configs must register exactly the 2 surviving winners, got {names}"
     )
     for c in cfgs:
         assert c["tier_filter"] == (2, 3), (
@@ -1611,9 +1616,12 @@ def _():
     assert draw["edge_min"] == 0.05 and draw["require_pinnacle"] is True and draw["mkt_key"] == "1x2_draw", (
         "1X2 draw config drift from sweep result"
     )
-    btts = next(c for c in cfgs if c["name"] == "bot_sweep_btts_yes_v1")
-    assert btts["edge_min"] == 0.05 and btts["require_pinnacle"] is False and btts["mkt_key"] == "btts_yes", (
-        "BTTS yes config drift from sweep result"
+    # BTTS-RETIRED-2026-09-03: assert ABSENCE rather than config shape. The
+    # config existing at all is the regression now.
+    assert not any(c["name"] == "bot_sweep_btts_yes_v1" for c in cfgs), (
+        "bot_sweep_btts_yes_v1 is back in the sweep configs. BTTS is retired: "
+        "shadow BTTS is n=427, ROI -12.76% at live prices, t=-2.87, and better "
+        "calibration made the surviving picks worse, not better."
     )
     # Pass exists, uses bulk_store_shadow_bets, invoked from run_morning
     pass_src = inspect.getsource(daily_pipeline_v2._run_sweep_shadow_pass)
@@ -1621,7 +1629,7 @@ def _():
     assert "CONFIG-SWEEP-2026-08-19" in pass_src, "CONFIG-SWEEP marker missing from _run_sweep_shadow_pass"
     run_src = inspect.getsource(daily_pipeline_v2.run_morning)
     assert "_run_sweep_shadow_pass" in run_src, "sweep pass must be invoked from run_morning"
-    # Migration exists and inserts all three bots as experimental
+    # Migration exists and inserts both surviving bots as experimental
     import os
     mig_path = os.path.join(
         os.path.dirname(inspect.getfile(daily_pipeline_v2)),
@@ -1629,7 +1637,7 @@ def _():
     )
     with open(mig_path) as f:
         mig = f.read()
-    for name in ("bot_sweep_1x2_home_v1", "bot_sweep_1x2_draw_v1", "bot_sweep_btts_yes_v1"):
+    for name in ("bot_sweep_1x2_home_v1", "bot_sweep_1x2_draw_v1"):
         assert f"'{name}'" in mig, f"migration 272 must INSERT {name}"
     assert mig.count("'experimental'") >= 3, "migration 272 must set maturity_label='experimental' on all 3 bots"
 
@@ -27127,6 +27135,63 @@ def _ensemble_recal():
         "evaluation must use a held-out split, time-ordered and never shuffled"
     )
     return "fitter sources predictions, fits in probability space, ships only what beats raw"
+
+
+@test("BTTS-RETIRED — BTTS is off at every layer and cannot be placed")
+def _btts_retired():
+    """BTTS-RETIRED-2026-09-03. Shadow BTTS n=427, ROI -12.76% at live prices,
+    t=-2.87 (p<0.01). Recalibration did not rescue it: ENSEMBLE-RECALIBRATION
+    took BTTS ECE from 0.047 to 0.009 -- the best-calibrated market we have --
+    and re-scoring every settled pick under the new coefficients cut volume to
+    33% while making survivors WORSE (-20.73%). And it can never be
+    CLV-validated: 0 of 3,076,350 BTTS snapshots carry Pinnacle.
+
+    Pinned at every layer because a market turned off in one place has a habit
+    of coming back on in another.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+
+    # 1. The placer must treat it as retired, not merely as a high floor.
+    from workers.automation.coolbet_placer import _min_edge_for, _MIN_EDGE_BY_MARKET
+    assert _MIN_EDGE_BY_MARKET.get("btts") is None, (
+        "btts must be None (retired) in _MIN_EDGE_BY_MARKET, not a numeric "
+        "floor — a floor is a threshold someone can lower back"
+    )
+    assert _min_edge_for("btts") == float("inf"), (
+        "_min_edge_for('btts') must be infinite so no BTTS edge can clear it"
+    )
+
+    # 2. The sweep pass must not generate BTTS candidates.
+    pipe = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    i = pipe.index("_SWEEP_CONFIGS") if "_SWEEP_CONFIGS" in pipe else 0
+    assert '"name": "bot_sweep_btts_yes_v1"' not in pipe, (
+        "bot_sweep_btts_yes_v1 is back in the sweep configs — that bot is "
+        "-14.5% inside a market measured at t=-2.87"
+    )
+
+    # 3. The BOT_CONFIGS BTTS bots must be gated off.
+    for bot in ("bot_btts_all", "bot_btts_v2"):
+        j = pipe.index(f'    "{bot}": {{')
+        k = pipe.index("\n    },\n", j)
+        assert '"is_active": False' in pipe[j:k], (
+            f"{bot} must be is_active=False in BOT_CONFIGS (BTTS-RETIRED)"
+        )
+
+    mig = root / "supabase" / "migrations" / "296_retire_btts_bots.sql"
+    assert mig.exists(), "migration 296 (retire BTTS bots) is missing"
+    msql = mig.read_text()
+    assert "ILIKE '%btts%'" in msql, (
+        "the migration must sweep any bot named *btts*, not just the three "
+        "known names"
+    )
+    assert not _re.search(r"\bDELETE\s+FROM\b", "\n".join(
+        l for l in msql.splitlines() if not l.strip().startswith("--")), _re.I), (
+        "historical BTTS bets must NOT be deleted — they are the evidence for "
+        "this decision"
+    )
+    return "BTTS retired in placer, sweep pass, BOT_CONFIGS and DB; history kept"
 
 
 if __name__ == "__main__":
