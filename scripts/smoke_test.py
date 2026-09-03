@@ -6687,7 +6687,7 @@ def test_per_market_edge_thresholds():
     assert _min_edge_for("1x2")            == 0.10
     assert _min_edge_for("o/u")            == 0.03
     assert _min_edge_for("asian_handicap") == 0.05
-    assert _min_edge_for("btts")           == 0.10
+    assert _min_edge_for("btts")           == math.inf, "BTTS retired — no edge may pass"
     assert _min_edge_for("double_chance")  == math.inf, "retired markets must return inf so no edge passes"
     # Case-insensitive
     assert _min_edge_for("1X2")            == 0.10, "_min_edge_for must be case-insensitive"
@@ -6696,9 +6696,10 @@ def test_per_market_edge_thresholds():
     assert _min_edge_for(None)             == _MIN_EDGE
     assert _min_edge_for("")               == _MIN_EDGE
 
-    # Sanity: a DC bet with 50% edge still rejects.
-    assert not (0.50 >= _min_edge_for("double_chance")), \
-        "DC retirement must reject even absurd-edge bets"
+    # Sanity: a bet on a retired market with 50% edge still rejects.
+    for retired in ("double_chance", "btts"):
+        assert not (0.50 >= _min_edge_for(retired)), \
+            f"{retired} retirement must reject even absurd-edge bets"
 
     # Frontend mirror — the per-market map now lives in `coolbet-edge.ts`
     # (pure, client-safe — see COOLBET-EDGE-CLIENT-SAFE smoke) and is
