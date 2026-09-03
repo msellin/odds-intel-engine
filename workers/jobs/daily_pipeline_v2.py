@@ -337,6 +337,8 @@ BOTS_CONFIG = {
         },
         "odds_range": (1.80, 2.49),
         "min_prob": 0.35,
+        # BTTS-RETIRED-2026-09-03 — see BTTS-MARKET-VIABILITY.
+        "is_active": False,
     },
     "bot_btts_all": {
         # PER-BOT-SLICE-TIGHTEN reverted 2026-05-18: backtest said 2.00-2.50 loses (-6.5%),
@@ -368,6 +370,8 @@ BOTS_CONFIG = {
         },
         "odds_range": (2.00, 2.80),
         "min_prob": 0.30,
+        # BTTS-RETIRED-2026-09-03 — see BTTS-MARKET-VIABILITY.
+        "is_active": False,
     },
     "bot_btts_conservative": {
         # PER-BOT-SLICE-TIGHTEN 2026-05-17: odds 2.00-2.50 = -14.3% ROI (290 bets, -€415) → cap at 2.00.
@@ -4320,18 +4324,12 @@ _SWEEP_SHADOW_CONFIGS: tuple[dict, ...] = (
         "min_prob": 0.25,
         "require_pinnacle": True,
     },
-    {
-        "name": "bot_sweep_btts_yes_v1",
-        "market": "btts",
-        "selection": "yes",
-        "mkt_key": "btts_yes",
-        "tier_filter": (2, 3),
-        "edge_min": 0.05,
-        "odds_min": 2.00,
-        "odds_max": 2.50,
-        "min_prob": 0.25,
-        "require_pinnacle": False,
-    },
+    # BTTS-RETIRED-2026-09-03: bot_sweep_btts_yes_v1 removed. Shadow BTTS is
+    # n=427, ROI -12.76% at prices live at pick time, t=-2.87 (p<0.01), and
+    # this bot is -14.5% of that. Recalibration did not rescue the market —
+    # ECE went 0.047 -> 0.009 (best of any market) and re-scoring every settled
+    # pick under the new coefficients cut volume to 33% while making survivors
+    # WORSE. See BTTS-MARKET-VIABILITY.
 )
 
 

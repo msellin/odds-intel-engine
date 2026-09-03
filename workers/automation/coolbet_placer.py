@@ -76,7 +76,15 @@ _MIN_EDGE_BY_MARKET: dict[str, float | None] = {
     "1x2":            0.10,   # was 0.03 — backtest +14% ROI at ≥10%
     "o/u":            0.03,   # already profitable at floor — unchanged
     "asian_handicap": 0.05,   # non-monotonic — keep moderate floor
-    "btts":           0.10,   # was 0.03 — only profitable ≥10%
+    # BTTS-RETIRED-2026-09-03: shadow BTTS is n=427, ROI -12.76% at prices that
+    # were live at pick time, t=-2.87 (p<0.01). Recalibration did not rescue
+    # it — ENSEMBLE-RECALIBRATION took BTTS ECE from 0.047 to 0.009, the best
+    # of any market, and re-scoring every settled pick under the new
+    # coefficients cut volume to 33% while making survivors WORSE (-20.73%).
+    # Honest probabilities revealed the absence of edge rather than creating
+    # one. It also cannot be validated: 0 of 3,076,350 BTTS snapshots carry
+    # Pinnacle, so clv_pinnacle is permanently NULL for this market.
+    "btts":           None,   # retired — see BTTS-MARKET-VIABILITY
     "double_chance":  None,   # retired — losing at every threshold
     "combo":          0.10,   # combos use ensemble edge; gate like 1x2
     "draw_no_bet":    0.05,
@@ -451,12 +459,11 @@ def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
     dropped = before - len(results)
     if dropped:
         log.info("Per-market edge filter dropped %d/%d singles below floor "
-                 "(1x2≥%.0f%%/o/u≥%.0f%%/AH≥%.0f%%/BTTS≥%.0f%%/DC retired)",
+                 "(1x2≥%.0f%%/o/u≥%.0f%%/AH≥%.0f%%/BTTS+DC retired)",
                  dropped, before,
                  _MIN_EDGE_BY_MARKET["1x2"] * 100,
                  _MIN_EDGE_BY_MARKET["o/u"] * 100,
-                 _MIN_EDGE_BY_MARKET["asian_handicap"] * 100,
-                 _MIN_EDGE_BY_MARKET["btts"] * 100)
+                 _MIN_EDGE_BY_MARKET["asian_handicap"] * 100)
     for r in results:
         if int(r.get("bot_count", 1)) > 1:
             log.info("  %s vs %s | %s %s — %s bots agree, using highest-edge row",
