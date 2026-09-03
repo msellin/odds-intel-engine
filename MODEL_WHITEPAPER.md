@@ -74,6 +74,23 @@ All rolling statistics computed from the **10 most recent matches** per team, sp
 | **ELO** (at inference) | home ELO, away ELO, ELO differential, expected win probability from ELO | 4 |
 | **Form vs ELO Residual** | `form_vs_elo_expectation_home/away` = actual recent PPG minus ELO-predicted PPG (`3 × p_win + 0.27`) — isolates hot/cold streaks from baseline quality (FORM-ELO-RESIDUAL) | 2 |
 
+**O/U head promotion (2026-09-03).** `MODEL_VERSION_OU` moved from `v20260719`
+to `v20260903_cut0820`, the first bundle trained with the densified goal-rate
+features. On a clean holdout (2026-08-20..09-03; the bundle was trained with
+`--cutoff 2026-08-20` and the baseline through 07-19) over-2.5 log-loss is
+**0.6687 vs 0.6921**, a 3.4% improvement, paired t=+7.17 with a 95% bootstrap
+CI of [+0.017, +0.030] on per-match log-loss.
+
+The more important number is the no-skill line at 0.6766: **the previously live
+O/U head lost to a constant fixed at the base rate, and the new one does not.**
+That had been masked by WEEKLY-EVAL-OU-INVERTED, which scored the head against
+P(under) and inflated its log-loss for every weekly verdict.
+
+The deployed bundle is deliberately the cutoff model rather than the full-data
+`v20260903`: the latter predicts more extremely (sd 0.145 vs 0.105) and its mean
+P(over) sits further from the realised rate despite having trained on the
+evaluation window, and no clean evaluation of it is possible.
+
 **Goal-rate provenance (TEAM-SCORING-RATES-OWN-RESULTS, 2026-09-03).** The four
 `goals_for_avg_*` / `goals_against_avg_*` features were sourced solely from
 `match_signals` and were populated on 46.2% of feature rows. They are now filled
