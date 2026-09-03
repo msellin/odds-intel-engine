@@ -27062,5 +27062,72 @@ def _platt_limit():
     return f"all {len(in_db)} calibrated markets loadable"
 
 
+@test("ENSEMBLE-RECALIBRATION — calibration is fitted where it is applied, and only when it helps")
+def _ensemble_recal():
+    """ENSEMBLE-RECALIBRATION-2026-09-03.
+
+    Two defects this pins, both of which shipped harmful calibration:
+
+    1. WRONG SOURCE. `fit_platt.py` fits BTTS/OU from settled `simulated_bets`
+       — predictions that PASSED an edge filter, i.e. the tail where the model
+       most disagrees with the market. `btts_yes` got a=3.885/b=-2.563 from
+       n=261 that way, and applying it made calibration THREE TIMES WORSE:
+       ECE 0.0472 raw -> 0.1437. The new fitter sources `predictions`, which
+       is every fixture the model priced with no filter (9,066 settled BTTS
+       rows), the same source the 1x2 branch already uses successfully.
+
+    2. WRONG SPACE. `apply_platt` computes sigmoid(a * prob + b) — linear in
+       the probability. The first version of the fitter fitted on the LOGIT,
+       so its coefficients meant something production does not compute. It
+       showed as btts_no improving out-of-sample while getting worse through
+       the real path. Coefficients must be fitted in the space they are used
+       in, or the validation measures a function nobody runs.
+
+    Result through the production apply_platt path: btts 0.047 -> 0.009,
+    OU 3.5 0.075 -> 0.011, 1x2 unchanged at 0.002-0.004. OU 1.5 is left
+    UNCALIBRATED on purpose — its refit loses to raw out-of-sample, and
+    shipping a curve because it was fitted is defect 1 all over again.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    src = (_Path(__file__).resolve().parent.parent / "scripts"
+           / "fit_calibration_from_predictions.py").read_text()
+
+    assert "FROM predictions" in src and "source = 'ensemble'" in src, (
+        "the fitter must source `predictions`, not settled bets — a settled "
+        "bet is a filtered sample and fitting on it produced a curve that "
+        "tripled BTTS calibration error"
+    )
+    # Check SQL usage, not the word: the docstring explains at length why
+    # simulated_bets is the wrong source, and an earlier draft of this
+    # assertion tripped on that explanation — the third time today a guard
+    # fired on its own rationale (see the per-cent-sign and LIMIT incidents).
+    assert not _re.search(r"FROM\s+simulated_bets", src), (
+        "fitting from simulated_bets reintroduces the selection bias that "
+        "produced the harmful BTTS curve"
+    )
+    # Must fit in probability space, matching apply_platt's 1-feature branch.
+    i = src.index("def _fit_platt(")
+    m = _re.compile(r"\ndef ").search(src, i + 10)
+    body = src[i:m.start() if m else len(src)]
+    assert "math.log(z / (1 - z))" not in body, (
+        "the fitter must NOT work on the logit — apply_platt computes "
+        "sigmoid(a * prob + b) on the raw probability, so a logit fit ships "
+        "coefficients for a function production never evaluates"
+    )
+    assert _re.search(r"exp\(-\(a \* p \+ b\)\)", body), (
+        "expected the sigmoid(a * prob + b) form that apply_platt applies"
+    )
+    # And it must refuse to ship a fit that loses to raw.
+    assert "MIN_ECE_GAIN" in src and "e_new < e_raw - MIN_ECE_GAIN" in src, (
+        "a fit must beat the RAW probability out-of-sample before it is "
+        "written; OU 1.5 fails that test and must stay uncalibrated"
+    )
+    assert "TRAIN_FRAC" in src and "v[:cut], v[cut:]" in src, (
+        "evaluation must use a held-out split, time-ordered and never shuffled"
+    )
+    return "fitter sources predictions, fits in probability space, ships only what beats raw"
+
+
 if __name__ == "__main__":
     main()
