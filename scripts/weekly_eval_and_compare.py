@@ -178,8 +178,27 @@ def evaluate(version: str, rows: list) -> dict | None:
             m["ll"] += -_safe_log(p) if truth_3[i] else -_safe_log(1 - p)
             m["brier"] += (p - truth_3[i]) ** 2
             m["hits"] += truth_3[i]
-        for i, mkt in enumerate(["over25", "under25"]):
-            p = float(probs_ou[i])
+        # WEEKLY-EVAL-OU-INVERTED-2026-09-03: this used to zip ["over25",
+        # "under25"] against predict_proba's column order. The OU head is a
+        # BINARY classifier with classes_ = [0, 1] where the target y is the
+        # "over 2.5" indicator, so predict_proba returns
+        # [P(under), P(over)] — column 0 is UNDER. Pairing by position
+        # therefore scored P(under) as the over-2.5 probability and vice versa.
+        #
+        # It is invisible in the output: over25 and under25 are complementary,
+        # so their log-losses are identical either way and the table looks
+        # self-consistent. The tell is the predicted rate. On the 2026-08-20..
+        # 09-03 holdout the actual over rate was 0.5907; the swapped reading
+        # implied 0.4377 (off by 0.153) where the correct one implies 0.5623
+        # (off by 0.028).
+        #
+        # Impact: every weekly OU verdict since this script replaced
+        # compare_models.py was computed on inverted probabilities, which
+        # inflates OU log-loss enough to make a working head look like it has
+        # no skill. Re-check any OU promotion decision taken on this output.
+        for mkt, p in (("over25", float(probs_ou[1])),
+                       ("under25", float(probs_ou[0]))):
+            i = 0 if mkt == "over25" else 1
             m = metrics[mkt]
             m["n"] += 1
             m["pred_sum"] += p

@@ -27898,5 +27898,58 @@ def _odds_no_max_age():
             f"{ODDS_MAX_LAG_HOURS}h behind their peers")
 
 
+@test("WEEKLY-EVAL-OU-INVERTED — over25 is scored against P(over), not P(under)")
+def _weekly_eval_ou_inverted():
+    """WEEKLY-EVAL-OU-INVERTED-2026-09-03. `weekly_eval_and_compare.py` zipped
+    ["over25", "under25"] against `predict_proba`'s column order. The OU head is
+    binary with `classes_ = [0, 1]` where y is the *over 2.5* indicator, so
+    predict_proba returns [P(under), P(over)] — column 0 is UNDER. Pairing by
+    position scored P(under) as the over-2.5 probability.
+
+    It is invisible in the output. over25 and under25 are complementary, so
+    their log-losses are identical either way and the table looks
+    self-consistent. The tell is the predicted rate: on the 2026-08-20..09-03
+    holdout the actual over rate was 0.5907, while the swapped reading implied
+    0.4377 (off by 0.153) against 0.5623 for the correct one (off by 0.028).
+
+    Impact: every weekly OU verdict since this script replaced compare_models.py
+    was computed on inverted probabilities. It inflated OU log-loss enough to
+    flag a working head as NO SKILL, and v20260830 was rejected for OU
+    promotion on 2026-08-31 as "+11.0%% worse than v20260719" when the corrected
+    figure on the same holdout is -5.3%% BETTER.
+    """
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+    src = (root / "scripts" / "weekly_eval_and_compare.py").read_text()
+
+    assert 'enumerate(["over25", "under25"])' not in src, (
+        "over25/under25 are being paired with predict_proba by position again — "
+        "column 0 is P(under), so this scores the OU head inverted"
+    )
+    assert '("over25", float(probs_ou[1]))' in src, (
+        "over25 must take probs_ou[1]; classes_ = [0, 1] with y = over-2.5 "
+        "indicator, so column 1 is P(over)"
+    )
+    assert '_truth_ou25' in src
+
+    # The property that actually matters, checked numerically rather than by
+    # substring: the truth vector's first slot must be the OVER outcome, so
+    # that pairing over25 -> truth_2[0] is right.
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location(
+        "_wec_smoke", root / "scripts" / "weekly_eval_and_compare.py")
+    wec = _ilu.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(wec)
+    except Exception as e:                       # noqa: BLE001
+        raise SkipTest(f"cannot import weekly_eval_and_compare: {e}")
+
+    assert wec._truth_ou25(3, 1) == [1, 0], (
+        "a 4-goal game must read as over-2.5 in slot 0")
+    assert wec._truth_ou25(1, 1) == [0, 1], (
+        "a 2-goal game must read as under-2.5 in slot 1")
+    return "over25 scored against P(over); truth vector is [over, under]"
+
+
 if __name__ == "__main__":
     main()
