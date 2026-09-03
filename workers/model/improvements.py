@@ -251,8 +251,26 @@ def load_platt_params() -> dict[str, tuple[float, float, float | None]]:
 
     _platt_params = {}
     try:
+        # PLATT-LIMIT-30-TRUNCATION-2026-09-03. This was
+        # `ORDER BY fitted_at DESC LIMIT 30`. The daily settlement fit writes
+        # 16 rows per run and runs twice a day, so the 30-row window covered
+        # less than one day's fits — and `model_calibration` holds 29 distinct
+        # markets across 1,470 rows.
+        #
+        # Result: 13 markets were permanently invisible, including btts_yes,
+        # btts_no, double_chance_1x/x2 and asian_handicap*. `apply_platt` was a
+        # silent no-op for every one of them — it returns the input unchanged
+        # when the market is absent, so BTTS bets went to market on raw
+        # ensemble probabilities while the code, the DB and the fitting job all
+        # looked healthy. btts_yes had a perfectly good fit (a=3.885,
+        # b=-2.563, n=261, 2026-08-30) that could never be read.
+        #
+        # DISTINCT ON takes the newest row per market with no row cap, so
+        # adding a market can no longer push another one out of scope.
         rows = execute_query(
-            "SELECT market, platt_a, platt_b, platt_c FROM model_calibration ORDER BY fitted_at DESC LIMIT 30",
+            """SELECT DISTINCT ON (market) market, platt_a, platt_b, platt_c
+                 FROM model_calibration
+                ORDER BY market, fitted_at DESC""",
             [],
         )
         seen: set = set()

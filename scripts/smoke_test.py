@@ -26995,5 +26995,43 @@ def _signals_store_on_change():
     return "store-on-change wired; 10 never-read signals dropped; no model feature on the deny-list"
 
 
+@test("PLATT-LIMIT-30-TRUNCATION — every calibrated market is loadable")
+def _platt_limit():
+    """PLATT-LIMIT-30-TRUNCATION-2026-09-03. `load_platt_params()` read
+    `ORDER BY fitted_at DESC LIMIT 30`. The daily settlement fit writes 16 rows
+    per run twice a day, so that window covered under one day of fits while
+    `model_calibration` holds 29 distinct markets across 1,470 rows.
+
+    13 markets were therefore permanently invisible — btts_yes, btts_no,
+    double_chance_1x/x2, asian_handicap* and others. `apply_platt` returns its
+    input unchanged for an unknown market, so it was a **silent no-op**: BTTS
+    bets went to market on raw ensemble probabilities while the fitting job,
+    the DB and the code all looked healthy. btts_yes had a good fit sitting
+    unread (a=3.885, b=-2.563, n=261). At p=0.60 the correction is -15.8pp,
+    against a measured bot_btts_all over-confidence of +16.9pp.
+
+    Guarded behaviourally, not by grepping for the absence of `LIMIT`: what
+    matters is that every market in the table can actually be loaded, however
+    the query is written.
+    """
+    from workers.model.improvements import load_platt_params
+    from workers.api_clients.db import execute_query
+
+    in_db = {r["market"] for r in execute_query(
+        "SELECT DISTINCT market FROM model_calibration")}
+    loaded = set(load_platt_params().keys())
+    missing = in_db - loaded
+    assert not missing, (
+        f"{len(missing)} calibrated markets cannot be loaded: {sorted(missing)[:8]}. "
+        "A market absent from load_platt_params() makes apply_platt a silent "
+        "no-op for it — the bets still fire, on uncalibrated probabilities."
+    )
+    # The specific markets whose absence caused the incident.
+    for m in ("btts_yes", "btts_no"):
+        if m in in_db:
+            assert m in loaded, f"{m} must be loadable"
+    return f"all {len(in_db)} calibrated markets loadable"
+
+
 if __name__ == "__main__":
     main()
