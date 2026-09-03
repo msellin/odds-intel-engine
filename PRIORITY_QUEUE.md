@@ -1,5 +1,19 @@
 # OddsIntel — Master Priority Queue
 
+> **⬜ MODEL-VS-MARKET-STRATEGY Filed 2026-09-03 (P1 — the strategic finding of the whole calibration effort)** — decision, then 1-2 weeks — Splitting every settled shadow bet at prices that were live at pick time, by **what the bot anchors on**:
+>
+> | approach | n | ROI | t |
+> |---|---|---|---|
+> | **market-anchored** (our price vs the sharp line) | 1,033 | **+5.46%** | +1.33 |
+> | **model-driven** (our probability vs the market) | 8,006 | **−4.87%** | **−5.06** |
+>
+> The model-driven cohort is a **significant loser at p<0.001 on 8,006 bets**. The market-anchored cohort is positive on 1,033 and not yet significant, but it is the right sign and it contains the only two bots anywhere near promotable: `bot_pin_1x2_home_v1` **+12.89%** (t=+1.63) and `bot_coolbet_value_v1` **+6.95%**. **The bots that work are the ones that do not rely on our probability at all.**
+>
+> This is consistent with everything else measured on 2026-09-03: the ensemble's calibration slopes are 0.14-0.33 (over-dispersed ~3x), raw Brier skill is negative in every market and version, AUC is 0.53-0.57, and **de-vigged Pinnacle is calibrated to ±1-2pp at every level of model-vs-market disagreement including beyond 25pp** — the model's error *is* its disagreement, one-for-one. Calibration fixed the scale; it cannot create ranking power that is not there.
+>
+> **Decision to take:** whether the product's edge thesis is "our model finds mispriced games" (measured: −4.87%, t=−5.06) or "we find the best price for a game the sharp market has already priced" (measured: +5.46%). Those imply very different roadmaps. **If the latter:** retire or shadow-only the model-driven bots, and invest in book coverage, line-shopping breadth and execution speed rather than model features. **If the former:** the model needs discriminative power, not calibration — and the concrete lever there is `UNDERSTAT-SCRAPER-BIG5-XG`, since xG sits on **6.2%** of feature rows and shot quality is the single most predictive input for a goals model. **Do not do both half-heartedly** — the model-driven fleet is currently 8,006 bets of negative expectation being generated to test a thesis the data is rejecting.
+
+
 > **⬜ CLV-GATE-UNVALIDATED Filed 2026-09-03 (P1 — an unvalidated path can promote a losing bot)** — 3-4h — The promotion gate offers two routes: ROI (`MIN_SETTLED=200`, `PROMOTE_T=+1.65`) or, preferentially when `CLV_MIN_N=100` is met, de-vigged Pinnacle CLV. **The CLV route has never been validated against realised returns, and in our data it does not predict them.** Measured on shadow picks with both a live price and a Pinnacle CLV: correlation between CLV and realised return is **+0.0147** on 717 OU/value picks, with the highest-CLV quintile returning **−4.6%**; across cohorts the correlation runs −0.009 to +0.053 on n=285-989, none significant, and it **inverts** on `bot_pin_1x2_home_v1` (+17.6% low-CLV half vs +9.0% high-CLV half). Right now four shadow bots pass the CLV gate and none passes the ROI gate, so the CLV route is the only thing that would promote anything — on a metric with no demonstrated link to profit in our own data. **Decide:** (a) require BOTH gates rather than either; (b) keep CLV as a route but only above a much higher bar, validated first; or (c) drop the CLV route until it earns its place. **Do not simply raise `CLV_MIN_N`** — the problem is the correlation, not the sample size. Worth checking whether our CLV is measured correctly before concluding CLV is useless in general: it should converge faster than ROI in theory, so a flat correlation is as likely to indict our measurement as the metric.
 
 
