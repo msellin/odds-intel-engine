@@ -27254,5 +27254,49 @@ def _pin_best():
     return "tier-1 1X2 Pinnacle-best warned, display-only, tracker present"
 
 
+@test("ISOTONIC-BUNDLE-MISMATCH — the isotonic fallback must not drop the odds")
+def _isotonic_odds():
+    """ISOTONIC-BUNDLE-MISMATCH-2026-09-03. `STAGE2_CALIBRATOR=isotonic` is set
+    on the VPS, but the active bundle (v20260712) ships no isotonic_*.pkl — the
+    only ones on disk belong to v20260621 and older. So every stage-2 call fell
+    back to Platt, silently.
+
+    Worse, the fallback called `apply_platt(prob, market)` with no `odds`,
+    which disables Platt's 2-feature O/U logistic (a*prob + c*log(odds) + b) by
+    construction. The env var advertised isotonic and the code delivered
+    Platt-minus-odds — a configuration that looked deliberate from every angle
+    except the filesystem.
+
+    Behavioural test: with a 2-feature O/U calibration loaded and no isotonic
+    model present, passing different odds must produce different results. If
+    `odds` is dropped again they collapse to the same number.
+    """
+    import workers.model.improvements as imp
+    saved_p, saved_i = imp._platt_params, imp._isotonic_models
+    try:
+        imp._platt_params = {"over_under_25_over": (0.9, -0.3, 0.4)}  # c set => 2-feature
+        imp._isotonic_models = {}                                     # force the fallback
+        with_odds = imp.apply_isotonic(0.50, "over_under_25_over", odds=1.85)
+        no_odds = imp.apply_isotonic(0.50, "over_under_25_over", odds=None)
+        assert abs(with_odds - no_odds) > 1e-9, (
+            "apply_isotonic's Platt fallback dropped the odds — the 2-feature "
+            "O/U logistic is then dead and every O/U calibration silently "
+            "degrades to 1-feature"
+        )
+        # And different prices must move the result in the 2-feature path.
+        hi = imp.apply_isotonic(0.50, "over_under_25_over", odds=3.20)
+        assert abs(hi - with_odds) > 1e-9, "odds must actually reach the logistic"
+    finally:
+        imp._platt_params, imp._isotonic_models = saved_p, saved_i
+
+    src = (__import__("pathlib").Path(__file__).resolve().parent.parent
+           / "workers" / "model" / "improvements.py").read_text()
+    assert "_isotonic_mode_warned" in src, (
+        "asking for isotonic with no bundles present must warn once, not "
+        "degrade in silence — that silence is why this ran for weeks"
+    )
+    return "isotonic fallback forwards odds; missing-bundle mode warns"
+
+
 if __name__ == "__main__":
     main()

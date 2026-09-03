@@ -356,6 +356,7 @@ def reset_platt_cache():
 # Fit via scripts/fit_isotonic_offline.py — produces one .pkl per market.
 
 _isotonic_models: dict[str, object] | None = None
+_isotonic_mode_warned: bool = False
 _isotonic_missing_logged: set[str] = set()
 
 
@@ -392,9 +393,17 @@ def load_isotonic_models() -> dict[str, object]:
     return _isotonic_models
 
 
-def apply_isotonic(prob: float, market: str) -> float:
+def apply_isotonic(prob: float, market: str, odds: float | None = None) -> float:
     """Apply isotonic calibration for this market. Falls back to Platt
     if no isotonic model is loaded for the market.
+
+    ISOTONIC-BUNDLE-MISMATCH-2026-09-03: `odds` was previously not a parameter,
+    so both fallbacks called `apply_platt(prob, market)` and silently dropped
+    the price. That disables Platt's 2-feature O/U logistic
+    (`a*prob + c*log(odds) + b`) by construction — and since the active bundle
+    v20260712 ships NO isotonic models at all, every stage-2 call on the VPS
+    took that fallback. The env var said isotonic; the code delivered
+    Platt-minus-odds.
     """
     if not market:
         return prob
@@ -404,12 +413,12 @@ def apply_isotonic(prob: float, market: str) -> float:
         if market not in _isotonic_missing_logged:
             _isotonic_missing_logged.add(market)
             console.print(f"[dim]isotonic: no model for '{market}' — falling back to Platt[/dim]")
-        return apply_platt(prob, market)
+        return apply_platt(prob, market, odds=odds)
     try:
         calibrated = float(model.predict([prob])[0])
         return max(0.0, min(1.0, calibrated))
     except Exception:
-        return apply_platt(prob, market)
+        return apply_platt(prob, market, odds=odds)
 
 
 def reset_isotonic_cache():
@@ -426,7 +435,22 @@ def _apply_stage2(prob: float, market: str, odds: float | None = None) -> float:
     """
     mode = os.getenv("STAGE2_CALIBRATOR", "platt").lower()
     if mode == "isotonic":
-        return apply_isotonic(prob, market)
+        # ISOTONIC-BUNDLE-MISMATCH-2026-09-03: say so once when the env var
+        # asks for isotonic and the active bundle has none. Previously this
+        # degraded to Platt in complete silence, so the VPS ran for weeks with
+        # STAGE2_CALIBRATOR=isotonic and zero isotonic models — a configuration
+        # that looked deliberate from every angle except the filesystem.
+        global _isotonic_mode_warned
+        if not _isotonic_mode_warned and not load_isotonic_models():
+            _isotonic_mode_warned = True
+            console.print(
+                "[yellow]STAGE2_CALIBRATOR=isotonic but the active model "
+                "bundle ships no isotonic_*.pkl — every call is falling back "
+                "to Platt. Either fit isotonic models for this version "
+                "(scripts/fit_isotonic_offline.py) or set "
+                "STAGE2_CALIBRATOR=platt so the choice is explicit.[/yellow]"
+            )
+        return apply_isotonic(prob, market, odds=odds)
     return apply_platt(prob, market, odds=odds)
 
 
