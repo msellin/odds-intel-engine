@@ -27014,22 +27014,51 @@ def _platt_limit():
     matters is that every market in the table can actually be loaded, however
     the query is written.
     """
-    from workers.model.improvements import load_platt_params
+    import re as _re
+    from pathlib import Path as _Path
     from workers.api_clients.db import execute_query
+
+    # Deliberately NOT via load_platt_params(): it caches in a module global
+    # that other tests in this file stub, and it swallows query errors and
+    # returns {} — so calling it here made the test pass alone and fail in a
+    # group run, for reasons that had nothing to do with the bug. Assert on
+    # the SQL it issues, then run that SQL directly.
+    src = (_Path(__file__).resolve().parent.parent
+           / "workers" / "model" / "improvements.py").read_text()
+    i = src.index("def load_platt_params(")
+    m = _re.compile(r"\ndef ").search(src, i + 10)
+    body = src[i:m.start() if m else len(src)]
+    assert "DISTINCT ON (market)" in body, (
+        "load_platt_params must take the newest row PER MARKET. It used to read "
+        "ORDER BY fitted_at DESC LIMIT 30, and since the daily fit writes 16 "
+        "rows twice a day that window held under one day of fits — leaving 13 "
+        "of 29 markets permanently invisible."
+    )
+    # Strip Python comments first: the rationale block above the query names
+    # the old "LIMIT 30" verbatim, and an earlier draft of this assertion
+    # tripped on its own explanation — the same shape as the per-cent-sign
+    # incident earlier today.
+    code_only = "\n".join(
+        l for l in body.splitlines() if not l.strip().startswith("#"))
+    assert not _re.search(r"\bLIMIT\s+\d+", code_only), (
+        "no row cap in this query: any cap lets a newly fitted market silently "
+        "push another out of scope, which is the original defect"
+    )
 
     in_db = {r["market"] for r in execute_query(
         "SELECT DISTINCT market FROM model_calibration")}
-    loaded = set(load_platt_params().keys())
+    loaded = {r["market"] for r in execute_query(
+        """SELECT DISTINCT ON (market) market FROM model_calibration
+            ORDER BY market, fitted_at DESC""")}
     missing = in_db - loaded
     assert not missing, (
-        f"{len(missing)} calibrated markets cannot be loaded: {sorted(missing)[:8]}. "
-        "A market absent from load_platt_params() makes apply_platt a silent "
-        "no-op for it — the bets still fire, on uncalibrated probabilities."
+        f"{len(missing)} calibrated markets unreachable: {sorted(missing)[:8]}. "
+        "apply_platt is a silent no-op for a market it cannot load — the bets "
+        "still fire, on uncalibrated probabilities."
     )
-    # The specific markets whose absence caused the incident.
-    for m in ("btts_yes", "btts_no"):
-        if m in in_db:
-            assert m in loaded, f"{m} must be loadable"
+    for mk in ("btts_yes", "btts_no"):
+        if mk in in_db:
+            assert mk in loaded, f"{mk} must be loadable"
     return f"all {len(in_db)} calibrated markets loadable"
 
 
