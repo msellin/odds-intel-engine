@@ -26892,5 +26892,39 @@ def _shadow_silent():
     return "_shadow_run raises; failures reach pipeline_runs"
 
 
+@test("SHADOW-VIEW-COLUMN-DRIFT — shadow_bets_unique exposes every base-table column")
+def _shadow_view_drift():
+    """SHADOW-VIEW-COLUMN-DRIFT-2026-09-03. A Postgres view freezes its column
+    list at creation, so every ALTER TABLE that adds a column to shadow_bets
+    leaves the canonical dedup view a column short — silently, because it only
+    fails when somebody selects the missing column.
+
+    It happened twice before being noticed: `pair_gap_hours` (migration 289)
+    and `odds_at_pick_live` (291). The second bit immediately — an analysis of
+    the STALE-BEST-ODDS volume impact had to fall back to an inline DISTINCT ON
+    against the base table, which is precisely what ANALYSIS_GOTCHAS #5 exists
+    to prevent.
+
+    A DB test rather than a source check: the drift is between the live schema
+    and the live view, and no amount of reading migrations proves they agree.
+    """
+    from workers.api_clients.db import execute_query
+    base = {r["column_name"] for r in execute_query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'shadow_bets'")}
+    view = {r["column_name"] for r in execute_query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'shadow_bets_unique'")}
+    assert view, "shadow_bets_unique is missing entirely"
+    missing = base - view
+    assert not missing, (
+        f"shadow_bets_unique is missing {sorted(missing)}. A view freezes its "
+        "column list at creation — recreate it in the same migration that adds "
+        "a column to shadow_bets, or every consumer following ANALYSIS_GOTCHAS "
+        "#5 silently loses access to the new field."
+    )
+    return f"view exposes all {len(base)} shadow_bets columns"
+
+
 if __name__ == "__main__":
     main()
