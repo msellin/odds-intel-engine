@@ -728,6 +728,40 @@ the fix is not retroactive — see `STALE-ODDS-HISTORY-RESTATE`.
 
 Related: #25, #29, #16.
 
+## 31. `teams.league_id` is NOT the team's league — use `matches.league_id`
+
+It has never matched: **zero of 27,605** fixtures over 90 days have
+`teams.league_id = matches.league_id` for the home side. Not corruption — the
+column simply does not mean what its name says.
+
+`supabase_client.ensure_team()` creates every team with
+`ensure_league(f"{country} / Unknown", tier=0)`, so each team is assigned a
+per-**country** placeholder. All 11,633 teams point at one of 160 rows named
+`Unknown`; **none** point at a named league. Cagliari and Atalanta share an id,
+and it resolves to a league called "Unknown".
+
+Consequences if you join on it:
+
+- **Tier is always 0.** Any tier-based split silently collapses into one
+  bucket, which looks like "no effect" rather than like an error.
+- **League name is always "Unknown"**, so a per-league breakdown returns one
+  row.
+
+This has already cost real work: the cross-tier hypothesis in
+`SWEEP-HOME-BOTS-CALIBRATION` could not be tested as its ticket described,
+because the ticket assumed this column meant what it says. The workaround used
+there — each team's *modal* league tier over 365 days of actual fixtures — is
+the right shape if you genuinely need a per-team league.
+
+**Use `matches.league_id -> leagues`** for a fixture's league, name and tier.
+That column is populated and accurate.
+
+Not dropped or repointed on purpose: "the team's league" is not well defined
+(domestic, cups, continental), which is probably why it was given a placeholder
+to begin with. The column is documented at the DB level (migration 297) instead.
+
+Related: #26 (feature coverage must be split by status), #18.
+
 ## Re-runnable analysis scripts (all committed 2026-08-26)
 
 | script | answers |

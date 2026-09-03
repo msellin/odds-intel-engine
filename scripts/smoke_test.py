@@ -27346,5 +27346,51 @@ def _port_harden():
     return "health bind is non-fatal, SO_REUSEADDR set, unit clears the port first"
 
 
+@test("TEAMS-LEAGUE-ID-BROKEN — nothing may join teams.league_id to get a league or tier")
+def _teams_league_id():
+    """TEAMS-LEAGUE-ID-BROKEN-2026-09-03. `teams.league_id` never equals the
+    fixture's `matches.league_id` — zero of 27,605 over 90 days. Not
+    corruption: `ensure_team()` assigns a per-COUNTRY placeholder via
+    `ensure_league(f"{country} / Unknown", tier=0)`, so all 11,633 teams point
+    at one of 160 rows named 'Unknown' and none at a named league.
+
+    Joining on it returns tier 0 and league name "Unknown" for everything —
+    which reads as "no effect" rather than as an error, so it fails silently.
+    It already cost real work: the cross-tier hypothesis in
+    SWEEP-HOME-BOTS-CALIBRATION could not be tested as its ticket described.
+
+    Guards the DB comment (so the next person meets the warning where they meet
+    the column) and that no analysis script joins teams to leagues on it.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    from workers.api_clients.db import execute_query
+    root = _Path(__file__).resolve().parent.parent
+
+    rows = execute_query(
+        """SELECT col_description('teams'::regclass, ordinal_position) AS c
+             FROM information_schema.columns
+            WHERE table_name = 'teams' AND column_name = 'league_id'""")
+    comment = (rows[0]["c"] or "") if rows else ""
+    assert "NOT the team" in comment, (
+        "teams.league_id must carry a column comment warning that it is a "
+        "placeholder — the column name alone invites the wrong join and the "
+        "failure is silent (tier 0 everywhere)"
+    )
+
+    # No analysis script may join teams -> leagues on this column.
+    bad = []
+    for py in list((root / "scripts").glob("*.py")) + list((root / "workers").rglob("*.py")):
+        src = py.read_text()
+        if _re.search(r"leagues\s+\w*\s*ON\s+\w+\.id\s*=\s*t\.league_id", src, _re.I) \
+           or _re.search(r"JOIN\s+leagues[^\n]*t\.league_id", src, _re.I):
+            bad.append(str(py.relative_to(root)))
+    assert not bad, (
+        f"these join leagues on teams.league_id and will read placeholder "
+        f"rows (tier 0, name 'Unknown'): {bad}. Use matches.league_id instead."
+    )
+    return "teams.league_id documented as a placeholder; no code joins leagues on it"
+
+
 if __name__ == "__main__":
     main()
