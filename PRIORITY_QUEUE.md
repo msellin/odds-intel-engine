@@ -1,17 +1,27 @@
 # OddsIntel — Master Priority Queue
 
-> **⬜ MODEL-VS-MARKET-STRATEGY Filed 2026-09-03 (P1 — the strategic finding of the whole calibration effort)** — decision, then 1-2 weeks — Splitting every settled shadow bet at prices that were live at pick time, by **what the bot anchors on**:
+> **⬜ SHADOW-RETIRED-BOTS-STILL-WRITING Filed 2026-09-03 (P2 — poisons every market-level aggregate)** — 2-3h — The three `bot_dc_*` bots are retired (`is_active=false`, `retired_at` set) and `double_chance` is `None` in the placer, yet they have **100,661 shadow rows with the most recent dated today**. Retirement stops them being *bet*; it does not stop the shadow passes generating them. **Consequence:** they are **7,412 of 8,006** rows in any "model-driven bots" aggregate, which is how a −4.60% retired market became a false headline that the model itself was a significant loser (MODEL-VS-MARKET-STRATEGY, filed and withdrawn the same day). ANALYSIS_GOTCHAS #22 already documents the pattern — *"retired bots keep writing shadow_bets, market aggregates are 85% dead weight"* — so this is a known trap with no enforcement. **Two things to do:** (1) stop the shadow passes generating picks for retired bots at all — they cost writes, storage and analyst attention for a strategy nobody will run; (2) add a smoke test asserting no `shadow_bets` row is written for a bot with `retired_at IS NOT NULL`, so the invariant is enforced rather than documented. Note the interaction with `DB-RETENTION-POLICY`: 100k rows of retired-bot shadow output is also pure storage waste.
+
+
+> **⛔ MODEL-VS-MARKET-STRATEGY — WITHDRAWN 2026-09-03, hours after filing. My headline was an artefact of aggregating retired bots.**
 >
-> | approach | n | ROI | t |
+> I filed this claiming the model-driven cohort was a significant loser: n=8,006, ROI −4.87%, t=−5.06, against market-anchored +5.46%. **That number is 7,412 double-chance rows out of 8,006** — and all three `bot_dc_*` bots are **retired**, with `double_chance` already set to `None` in the placer ("retired — losing at every threshold"). I aggregated a market we had already stopped betting into a claim about the model, and then recommended a strategic pivot on it.
+>
+> **ANALYSIS_GOTCHAS #22 warns about exactly this** — *"retired bots keep writing shadow_bets — market aggregates are 85% dead weight"* — and I walked straight into it. The DC bots are still writing: 100,661 shadow rows, most recent 2026-09-03.
+>
+> **The corrected picture, at prices live at pick time:**
+>
+> | cohort | n | ROI | t |
 > |---|---|---|---|
-> | **market-anchored** (our price vs the sharp line) | 1,033 | **+5.46%** | +1.33 |
-> | **model-driven** (our probability vs the market) | 8,006 | **−4.87%** | **−5.06** |
+> | `bot_v10_all` (calibrated, **model-driven**) | 343 | **+12.50%** | +1.65 |
+> | market-anchored shadow bots | 1,033 | **+5.46%** | +1.33 |
+> | production, all maturities | 1,776 | +0.56% | +0.18 |
+> | retired production bots | 1,247 | −3.71% | −1.02 |
+> | double-chance (retired market) | 7,412 | −4.60% | −4.87 |
 >
-> The model-driven cohort is a **significant loser at p<0.001 on 8,006 bets**. The market-anchored cohort is positive on 1,033 and not yet significant, but it is the right sign and it contains the only two bots anywhere near promotable: `bot_pin_1x2_home_v1` **+12.89%** (t=+1.63) and `bot_coolbet_value_v1` **+6.95%**. **The bots that work are the ones that do not rely on our probability at all.**
+> **Both approaches work.** The flagship model-driven bot is the single best performer in the production ledger. The losses live in retired bots and a retired market, which is what a research fleet is supposed to look like — things get tried and switched off.
 >
-> This is consistent with everything else measured on 2026-09-03: the ensemble's calibration slopes are 0.14-0.33 (over-dispersed ~3x), raw Brier skill is negative in every market and version, AUC is 0.53-0.57, and **de-vigged Pinnacle is calibrated to ±1-2pp at every level of model-vs-market disagreement including beyond 25pp** — the model's error *is* its disagreement, one-for-one. Calibration fixed the scale; it cannot create ranking power that is not there.
->
-> **Decision to take:** whether the product's edge thesis is "our model finds mispriced games" (measured: −4.87%, t=−5.06) or "we find the best price for a game the sharp market has already priced" (measured: +5.46%). Those imply very different roadmaps. **If the latter:** retire or shadow-only the model-driven bots, and invest in book coverage, line-shopping breadth and execution speed rather than model features. **If the former:** the model needs discriminative power, not calibration — and the concrete lever there is `UNDERSTAT-SCRAPER-BIG5-XG`, since xG sits on **6.2%** of feature rows and shot quality is the single most predictive input for a goals model. **Do not do both half-heartedly** — the model-driven fleet is currently 8,006 bets of negative expectation being generated to test a thesis the data is rejecting.
+> There is no A-vs-B pivot to make. Superseded by SHADOW-RETIRED-BOTS-STILL-WRITING below, which is the real defect this surfaced.
 
 
 > **⬜ CLV-GATE-UNVALIDATED Filed 2026-09-03 (P1 — an unvalidated path can promote a losing bot)** — 3-4h — The promotion gate offers two routes: ROI (`MIN_SETTLED=200`, `PROMOTE_T=+1.65`) or, preferentially when `CLV_MIN_N=100` is met, de-vigged Pinnacle CLV. **The CLV route has never been validated against realised returns, and in our data it does not predict them.** Measured on shadow picks with both a live price and a Pinnacle CLV: correlation between CLV and realised return is **+0.0147** on 717 OU/value picks, with the highest-CLV quintile returning **−4.6%**; across cohorts the correlation runs −0.009 to +0.053 on n=285-989, none significant, and it **inverts** on `bot_pin_1x2_home_v1` (+17.6% low-CLV half vs +9.0% high-CLV half). Right now four shadow bots pass the CLV gate and none passes the ROI gate, so the CLV route is the only thing that would promote anything — on a metric with no demonstrated link to profit in our own data. **Decide:** (a) require BOTH gates rather than either; (b) keep CLV as a route but only above a much higher bar, validated first; or (c) drop the CLV route until it earns its place. **Do not simply raise `CLV_MIN_N`** — the problem is the correlation, not the sample size. Worth checking whether our CLV is measured correctly before concluding CLV is useless in general: it should converge faster than ROI in theory, so a flat correlation is as likely to indict our measurement as the metric.
