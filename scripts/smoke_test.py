@@ -26856,5 +26856,41 @@ def _sql_percent_guard():
     return "no bare per-cent signs in SQL comments across workers/"
 
 
+@test("SHADOW-SILENT-FAILURE — a failed shadow cohort must not report completed")
+def _shadow_silent():
+    """SHADOW-SILENT-FAILURE-2026-09-03. `_shadow_run` caught every exception
+    and returned normally, so `_run_job` recorded status='completed' and the
+    shadow cohorts looked healthy while writing nothing.
+
+    Demonstrated the hard way: a per-cent sign in a SQL comment broke
+    `_load_today_from_db` from 2026-09-02 14:57 UTC to 07:20 the next morning.
+    `betting_pipeline` re-raises, so it logged four loud failures and was fixed
+    within the hour of being noticed. Every shadow cohort over the same ~16
+    hours reported completed — shadow_bets fell from 3,269 rows the previous
+    day to 7, and nothing said so.
+
+    `_run_job` already isolates jobs from each other, so re-raising costs no
+    isolation. Same fix and same reasoning as job_epicbet_odds_snapshot after
+    EPICBET-403, where 277 runs reported success while writing zero rows.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    src = (_Path(__file__).resolve().parent.parent / "workers" / "scheduler.py").read_text()
+    i = src.index("def _shadow_run(")
+    m = _re.compile(r"\ndef ").search(src, i + 10)
+    body = src[i:m.start() if m else len(src)]
+    assert "except Exception" not in body, (
+        "_shadow_run must NOT swallow exceptions — that is how 16 hours of "
+        "dead shadow cohorts reported status='completed' on 2026-09-02/03. "
+        "_run_job provides the isolation."
+    )
+    assert "run_morning(" in body, "_shadow_run must still call run_morning"
+    # And it must remain wrapped, or re-raising would take the scheduler down.
+    assert "_shadow_run" in src.replace(body, ""), (
+        "_shadow_run must still be invoked via the scheduler's job wrapper"
+    )
+    return "_shadow_run raises; failures reach pipeline_runs"
+
+
 if __name__ == "__main__":
     main()

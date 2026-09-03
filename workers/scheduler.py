@@ -546,14 +546,27 @@ def _epicbet_odds_snapshot_wrapper():
 
 
 def _shadow_run(shadow_cohort: str):
-    """Run run_morning(shadow_mode=True, shadow_cohort=...) with error isolation."""
+    """Run run_morning(shadow_mode=True, shadow_cohort=...).
+
+    RAISES on failure. It used to catch everything and return normally, so
+    `_run_job` recorded status='completed' and the shadow cohorts looked
+    healthy while writing nothing.
+
+    SHADOW-SILENT-FAILURE-2026-09-03: that is not hypothetical. A per-cent sign
+    in a SQL comment broke `_load_today_from_db` from 2026-09-02 14:57 UTC
+    until 07:20 the next morning. `betting_pipeline` re-raises, so it showed
+    four loud failures and got noticed. Every shadow cohort in the same ~16
+    hours reported **completed** and wrote nothing — shadow_bets went from
+    3,269 rows the day before to 7. The one that told the truth is the one
+    that was fixed within the hour.
+
+    `_run_job` already isolates each job from the others, so re-raising costs
+    no isolation and is the only thing that makes the failure visible. Same
+    change, same reasoning, as job_epicbet_odds_snapshot after
+    EPICBET-403-FROM-VPS ([[feedback_silent_failures]]).
+    """
     from workers.jobs.daily_pipeline_v2 import run_morning
-    import traceback
-    try:
-        run_morning(skip_fetch=True, shadow_mode=True, shadow_cohort=shadow_cohort)
-    except Exception as e:
-        console.print(f"[red]Shadow run ({shadow_cohort}) failed: {e}[/red]")
-        console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
+    run_morning(skip_fetch=True, shadow_mode=True, shadow_cohort=shadow_cohort)
 
 
 def job_dashboard_cache_refresh():
