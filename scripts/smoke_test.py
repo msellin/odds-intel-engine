@@ -1927,24 +1927,49 @@ def _():
     )
 
 
-@test("EMAIL-DIGEST-SMART — scheduler has 4 slots at 10/12/14/16 UTC")
+@test("EMAIL-DIGEST-SMART — subscriber email stays off; operator alerts stay on")
 def _():
-    """Source guard: scheduler must register four email_digest slots."""
+    """EMAIL-DIGEST-RETIRED-2026-09-03. This test used to require four
+    registered `email_digest` slots at 10/12/14/16 UTC. Those were deliberately
+    removed on 2026-07-07 by SCHEDULER-CLEANUP (da9bf97 — "Delete 30 lines of
+    commented scheduler.add_job() across tennis (6), PMF-content (3), digests
+    (7)"). That commit rewrote the tennis and PMF-content tests to match the
+    new reality and missed this one, so it has failed on main ever since,
+    asserting a feature we had chosen to switch off.
+
+    Inverted rather than deleted, so the digest cannot come back unnoticed:
+    with 52 registered users (51 free), subscriber email is overhead, and the
+    module is kept for whenever there is an audience worth sending to.
+
+    The distinction that matters: SUBSCRIBER email is off, OPERATOR email is
+    not. The pipeline-failure digest, retrain report, threshold check and daily
+    perf email all still run — they are the monitoring that catches the silent
+    failures this repo keeps producing, and disabling them would be the
+    opposite of the intent here.
+    """
     src = open("workers/scheduler.py").read()
-    # The slot loop iterates hours; verify the loop with the right hours exists
-    assert "for hour in (10, 12, 14, 16):" in src, (
-        "Expected slot loop `for hour in (10, 12, 14, 16):` in scheduler"
-    )
-    assert 'id=f"email_digest_{hour:02d}"' in src, (
-        "Expected formatted slot id `id=f\"email_digest_{hour:02d}\"`"
-    )
-    # Old single 07:30 hardcoded email_digest entry must be gone. Anchor the
-    # check on the `email_digest` id — earlier loose `'CronTrigger(hour=7, minute=30)'`
-    # match misfired once WC-AI-PREVIEW added its own 07:30 cron for a
-    # totally unrelated job (wc_match_previews).
-    assert 'id="email_digest"' not in src and 'id=\'email_digest\'' not in src, (
-        "Old single email_digest cron is back — should be replaced by 4 slot entries"
-    )
+    for gone in ("for hour in (10, 12, 14, 16):", 'id=f"email_digest_{hour:02d}"',
+                 'id="email_digest"'):
+        assert gone not in src, (
+            f"subscriber email digest is being re-registered ({gone!r}). It was "
+            "retired 2026-09-03; if this is deliberate, update this test and "
+            "check there is an audience for it first."
+        )
+    for orphan in ("def job_email_digest", "def job_value_bet_alert_afternoon",
+                   "def job_value_bet_alert_evening"):
+        assert orphan not in src, (
+            f"{orphan} is a wrapper for a retired subscriber-email job and was "
+            "removed — re-adding it registers nothing but suggests the digest "
+            "is live when it is not"
+        )
+    # The operator-facing alerting must survive this retirement.
+    for keep in ("job_pipeline_runs_failure_digest", "job_weekly_threshold_check",
+                 "job_daily_real_perf_email"):
+        assert f"scheduler.add_job({keep}" in src, (
+            f"{keep} must stay registered — operator alerting is what catches "
+            "silent failures, and retiring the SUBSCRIBER digest must not take "
+            "it down"
+        )
 
 
 @test("EMAIL-DIGEST-SMART — run_email_digest gates on qualifies_today")
@@ -26727,6 +26752,60 @@ def _btts_platt():
             "rather than the raw ensemble output"
         )
     return "no pass writes a raw probability into calibrated_prob"
+
+
+@test("INPLAY-RETIRED — in-play betting is off by default; LivePoller settlement survives")
+def _inplay_retired():
+    """INPLAY-RETIRED-2026-09-03. Four months of in-play paper trading produced
+    n=1,246 settled at ROI −0.31%, t=−0.07 — no edge. Priced at odds actually
+    live at pick time the repriceable subset is −20.76%, because 76% of in-play
+    picks recorded a price no book was showing (an in-play line moves every few
+    seconds, so STALE-BEST-ODDS is at its worst here). `clv` is populated on 1
+    of 1,246 rows and Pinnacle has zero live coverage ever, so none of it can
+    be validated either.
+
+    Two things this pins, and the second matters more than the first:
+      1. the bot only runs behind an explicit opt-in env flag;
+      2. LivePoller is NOT removed. It is not an in-play-betting component —
+         _probe_finishing_matches and settle_finished_matches are how every bet
+         in the product gets settled. Deleting the poller to "remove in-play"
+         would silently stop settlement.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+    lp = (root / "workers" / "live_poller.py").read_text()
+
+    assert 'os.getenv("INPLAY_STRATEGIES_ENABLED", "false")' in lp, (
+        "in-play strategies must be opt-in — retired 2026-09-03 for having no "
+        "measurable edge"
+    )
+    # Anchor on the CODE, not the comment above it, which also names the flag.
+    i = lp.index('os.getenv("INPLAY_STRATEGIES_ENABLED"')
+    assert "run_inplay_strategies()" in lp[i:i + 400], (
+        "the run_inplay_strategies() call must sit INSIDE the env gate"
+    )
+    # The settlement path must survive the retirement.
+    for keep in ("_probe_finishing_matches", "settle_finished_matches"):
+        assert keep in lp, (
+            f"{keep} is missing from live_poller — settlement depends on it, "
+            "and removing the poller to retire in-play would stop every bet in "
+            "the product from settling"
+        )
+
+    mig = root / "supabase" / "migrations" / "294_retire_inplay_bots.sql"
+    assert mig.exists(), "migration 294 (retire in-play bots) is missing"
+    msql = mig.read_text()
+    assert "UPDATE bots" in msql and "retired" in msql
+    # Strip -- comment lines first: the rationale block legitimately contains
+    # the word "delete" (as in "never delete historical bets"), and an earlier
+    # draft of this assertion tripped on its own explanation.
+    sql_only = "\n".join(l for l in msql.splitlines() if not l.strip().startswith("--"))
+    assert not _re.search(r"\bDELETE\s+FROM\b", sql_only, _re.I), (
+        "historical in-play bets must NOT be deleted — they are evidence of "
+        "due diligence (OUT-OF-BETA-CUTOFF: never delete historical bets)"
+    )
+    return "in-play opt-in only; LivePoller settlement intact; history kept"
 
 
 if __name__ == "__main__":

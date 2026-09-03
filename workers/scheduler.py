@@ -600,9 +600,6 @@ def job_publish_daily_picks():
 
 
 
-def job_email_digest():
-    from workers.jobs.email_digest import run_email_digest
-    _run_job("email_digest", run_email_digest)
 
 
 def job_weekly_digest():
@@ -1548,15 +1545,25 @@ def job_watchlist_alerts():
     _run_job("watchlist_alerts", run_watchlist_alerts)
 
 
-def job_value_bet_alert_afternoon():
-    from workers.jobs.email_digest import run_value_bet_alert
-    _run_job("value_bet_alert_afternoon", lambda: run_value_bet_alert("afternoon"))
 
 
-def job_value_bet_alert_evening():
-    from workers.jobs.email_digest import run_value_bet_alert
-    _run_job("value_bet_alert_evening", lambda: run_value_bet_alert("evening"))
 
+
+# EMAIL-DIGEST-RETIRED-2026-09-03. The subscriber-facing email jobs
+# (job_email_digest, job_value_bet_alert_afternoon/evening) lived here as
+# wrappers long after SCHEDULER-CLEANUP (da9bf97, 2026-07-07) removed their
+# add_job() registrations, so they had not run for two months while still
+# reading as live code. Removed rather than left orphaned: with 52 registered
+# users (51 free) there is no audience for a digest, and a wrapper nobody calls
+# is a standing invitation to assume the feature works.
+#
+# workers/jobs/email_digest.py is deliberately KEPT — the prestige filter and
+# qualifies_today gate are still covered by smoke tests, and the module is what
+# a future paid tier would build on.
+#
+# OPERATOR email is unaffected and must stay: job_pipeline_runs_failure_digest,
+# job_weekly_threshold_check, job_daily_real_perf_email, retrain and meta
+# reports. That is the monitoring that surfaces silent failures.
 
 def job_settlement():
     # _log_run=False — settlement_pipeline's first sub-step already logs to

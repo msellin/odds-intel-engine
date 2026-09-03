@@ -22,6 +22,7 @@ API budget (AF Ultra 75K/day):
   - Total: ~8,000-12,000 calls/day (~25% reduction vs 30s fast / 2× medium)
 """
 
+import os
 import time
 import traceback
 from rich.console import Console
@@ -541,15 +542,33 @@ class LivePoller:
                 except Exception:
                     pass
 
-        # ── In-play paper trading bot ─────────────────────────────────────
-        # Runs after snapshots are stored — reads from DB, no extra API calls.
-        # Errors are isolated so they never disrupt the polling loop.
-        try:
-            from workers.jobs.inplay_bot import run_inplay_strategies
-            run_inplay_strategies()
-        except Exception as e:
-            console.print(f"[red]InplayBot error: {e}[/red]")
-            import traceback
-            traceback.print_exc()
+        # ── In-play paper trading bot — RETIRED 2026-09-03 ────────────────
+        # INPLAY-RETIRED-2026-09-03. Off unless INPLAY_STRATEGIES_ENABLED is
+        # explicitly set. Four months of paper trading produced no edge:
+        # n=1,246 settled, ROI −0.31%, t=−0.07 — indistinguishable from zero.
+        # Only 2 of 12 bots with n≥20 cleared |t|>1.65, and with 12 bots tested
+        # that is exactly what chance predicts; the one "winner" (inplay_o,
+        # +186% on n=25) is a 25-bet sample whose stored odds sit above the
+        # live price on most picks.
+        #
+        # And the recorded numbers flattered it. Priced at odds that were
+        # actually live at pick time, the repriceable subset goes −7.43% →
+        # −20.76%, because 76% of in-play picks recorded a price no book was
+        # showing — far worse than the 48% on prematch, which is expected when
+        # the line moves every few seconds (STALE-BEST-ODDS). There is also no
+        # way to validate any of it: `clv` is populated on 1 of 1,246 rows.
+        #
+        # LivePoller itself STAYS. It is not an in-play-betting component —
+        # `_probe_finishing_matches` + `settle_finished_matches` are how F/T is
+        # detected and bets are settled. Removing the poller would break
+        # settlement for the whole product.
+        if os.getenv("INPLAY_STRATEGIES_ENABLED", "false").lower() in ("true", "1", "yes"):
+            try:
+                from workers.jobs.inplay_bot import run_inplay_strategies
+                run_inplay_strategies()
+            except Exception as e:
+                console.print(f"[red]InplayBot error: {e}[/red]")
+                import traceback
+                traceback.print_exc()
 
         return True  # Live matches were found this cycle — use fast sleep interval
