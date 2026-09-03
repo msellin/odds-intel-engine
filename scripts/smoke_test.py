@@ -27550,5 +27550,82 @@ def _silent_jobs():
     return f"all {len(targets)} _run_job entrypoints surface their failures"
 
 
+@test("OU-LIVE-PRICE-BLIND — the live-price backfill normalises market vocabulary")
+def _ou_live_price_blind():
+    """OU-LIVE-PRICE-BLIND-2026-09-03. `backfill_odds_at_pick_live.py` joins
+    bets to `odds_snapshots` to recover the price that was actually on offer.
+    It joined the two `market`/`selection` pairs raw:
+
+        AND o.market    = b.market
+        AND o.selection = b.selection
+
+    The two tables do not share a vocabulary. Bets record
+    `market='o/u', selection='under 2.5'`; snapshots record
+    `market='over_under_25', selection='under'`. So for O/U the join matched
+    nothing, filled nothing, and reported success — 1,713 of 1,860 settled 1x2
+    bets priced against 0 of 1,111 settled O/U bets.
+
+    Nothing errored. The consequence was that every figure filtered on
+    `odds_at_pick_live IS NOT NULL` was silently ~96% 1x2, and O/U ROI could
+    only be computed on `odds_at_pick`, the high-water mark that overstates
+    1x2 ROI by +5.80pp. Model work on O/U would have been graded against a
+    metric with a large known upward bias.
+
+    ANALYSIS_GOTCHAS #3 is exactly this failure and the join predates it.
+    """
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+    src = (root / "scripts" / "backfill_odds_at_pick_live.py").read_text()
+
+    # Assert against the SQL, not the module: the docstring above describes the
+    # bug in detail, so a whole-file substring search matches the prose and
+    # passes with the join reverted.
+    i = src.index("_SQL = ")
+    sql = src[i:src.index('"""', src.index('"""', i) + 3)]
+
+    assert "LOWER(o.market)" in sql and "LOWER(o.selection)" in sql, (
+        "the snapshot side of the join must be case-normalised — shadow_bets "
+        "spells the same markets '1X2' and 'O/U', which match nothing raw"
+    )
+    assert "'over_under_' ||" in sql, (
+        "the bet side must remap 'o/u' + 'under 2.5' onto the snapshot's "
+        "'over_under_25' spelling, or O/U silently prices zero rows"
+    )
+    assert "REGEXP_REPLACE(t.selection" in sql, (
+        "the line must be stripped off the selection ('under 2.5' -> 'under'); "
+        "snapshots carry the line in the market name, not the selection"
+    )
+    # The precise bug: an unnormalised equality on either column.
+    for bad in ("o.market    = b.market", "o.market = b.market",
+                "o.selection = b.selection"):
+        assert bad not in sql, (
+            f"raw `{bad}` is back — this is the join that priced 0 of 1,111 "
+            "settled O/U bets while reporting success"
+        )
+
+    # Source inspection cannot see a backfill that runs but fills nothing, so
+    # check the outcome too where the DB is reachable.
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """SELECT COUNT(*) FILTER (WHERE odds_at_pick_live IS NOT NULL) AS priced,
+                      COUNT(*) AS settled
+                 FROM simulated_bets
+                WHERE result IN ('won','lost')
+                  AND (LOWER(market) IN ('o/u','ou')
+                       OR LOWER(market) LIKE 'over_under%%')"""
+        )
+    except Exception as e:                      # noqa: BLE001
+        raise SkipTest(f"DB not reachable: {e}")
+
+    if not rows or not rows[0]["settled"]:
+        raise SkipTest("no settled O/U bets to check")
+    priced, settled = rows[0]["priced"], rows[0]["settled"]
+    assert priced > 0, (
+        f"0 of {settled} settled O/U bets have a live price — the backfill is "
+        "matching nothing again, which is how this went unnoticed the first time"
+    )
+
+
 if __name__ == "__main__":
     main()

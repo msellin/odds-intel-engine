@@ -25,6 +25,15 @@ repricing in `_competitor_reprice.py`, so our numbers and theirs stay
 comparable — using a stricter rule on ourselves than on Forebet would be its
 own kind of dishonesty.
 
+MARKET VOCABULARY
+-----------------
+The bet tables and `odds_snapshots` do not spell markets the same way, so the
+join normalises both sides (see the CTE). O/U is the case that bit:
+`market='o/u', selection='under 2.5'` on one side, `market='over_under_25',
+selection='under'` on the other. Before OU-LIVE-PRICE-BLIND-2026-09-03 the join
+compared them raw, matched nothing, and reported success — 0 of 1,111 settled
+O/U bets priced, with no error anywhere. ANALYSIS_GOTCHAS #3.
+
 WHAT THIS DOES NOT DO
 ---------------------
 It never writes `odds_at_pick`, `pnl` or `bankroll_after`. Those stay as the
@@ -62,7 +71,38 @@ TABLES = ("simulated_bets", "shadow_bets")
 # ~40 minutes of round-trips; this runs server-side in one pass.
 _SQL = """
 WITH b AS (
-    SELECT t.id, t.match_id, t.market, t.selection, t.pick_time
+    -- OU-LIVE-PRICE-BLIND-2026-09-03: the bet tables and odds_snapshots do not
+    -- share a market vocabulary, so the join below has to normalise both sides
+    -- onto the snapshot's spelling. Getting this wrong is silent: an unmatched
+    -- market simply contributes no rows and the script reports success. That
+    -- is exactly how O/U sat at 0 of 1,111 settled bets while 1x2 worked.
+    --
+    --   bets       market 'o/u'          selection 'under 2.5'
+    --   snapshots  market 'over_under_25' selection 'under'
+    --
+    -- 1x2 already agreed on both sides; LOWER() additionally folds in
+    -- shadow_bets' uppercase '1X2' and 'O/U' variants, which had the same
+    -- problem for the same reason.
+    SELECT t.id, t.match_id, t.pick_time,
+           CASE
+             -- 'o/u' + 'under 2.5' -> 'over_under_25'. Only when the selection
+             -- actually carries a line: a bare 'over' cannot be resolved to one,
+             -- and inventing a default would silently price it off the wrong
+             -- ladder rung. Those rows stay NULL, which is the honest answer.
+             WHEN LOWER(t.market) IN ('o/u', 'ou') AND t.selection ~ '[0-9]'
+               THEN 'over_under_' || REPLACE(
+                      REGEXP_REPLACE(t.selection, '^[^0-9]*', ''), '.', '')
+             ELSE LOWER(t.market)
+           END AS market,
+           -- Strip any trailing line off the selection ('under 2.5' -> 'under').
+           -- Applies to markets already spelled 'over_under_NN' too, where the
+           -- market is right but the selection still carries the line.
+           CASE
+             WHEN LOWER(t.market) IN ('o/u', 'ou')
+               OR LOWER(t.market) LIKE 'over_under%%'
+               THEN LOWER(REGEXP_REPLACE(t.selection, '[[:space:]]*[0-9.]+[[:space:]]*$', ''))
+             ELSE LOWER(t.selection)
+           END AS selection
       FROM {table} t
      WHERE t.pick_time IS NOT NULL
        AND t.odds_at_pick_live IS NULL
@@ -73,8 +113,8 @@ live AS (
       FROM b
       JOIN odds_snapshots o
         ON  o.match_id  = b.match_id
-       AND  o.market    = b.market
-       AND  o.selection = b.selection
+       AND  LOWER(o.market)    = b.market
+       AND  LOWER(o.selection) = b.selection
        AND  o.is_closing = false
        AND  o.odds > 1
        AND  o.bookmaker = ANY(%(books)s)

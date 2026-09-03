@@ -780,3 +780,32 @@ Related: #26 (feature coverage must be split by status), #18.
 | `discretion_bleed_report.py` | placed vs untouched picks, day-clustered |
 | `ou_line_integrity_audit.py` | is a book's OU quote priced for its stated line |
 | `model_version_clv_scoreboard.py` | paired model-version comparison |
+
+## 32. `odds_at_pick_live` was 1x2-only until 2026-09-03 — check coverage per market
+
+`odds_at_pick_live` is the honest execution price (`odds_at_pick` is a
+high-water mark that overstates 1x2 ROI by +5.80pp). But the backfill that
+populates it joined `odds_snapshots` on raw `market`/`selection`, and the two
+tables do not share a vocabulary:
+
+    bets       market 'o/u'           selection 'under 2.5'
+    snapshots  market 'over_under_25' selection 'under'
+
+So O/U matched nothing: **1,713 of 1,860** settled 1x2 bets priced against
+**0 of 1,111** settled O/U bets, with no error and a success report. Any
+analysis filtered on `odds_at_pick_live IS NOT NULL` before 2026-09-03 was
+therefore silently ~96% 1x2, whatever it claimed to measure.
+
+Fixed in OU-LIVE-PRICE-BLIND-2026-09-03 and pinned by the smoke test of the
+same name. Two lasting rules:
+
+- **Restating anything for a date before 2026-09-03? Re-run the backfill
+  first.** Numbers computed then are 1x2 unless proven otherwise.
+- **Report per-market coverage, not just overall coverage.** 54.7% overall
+  looked like ordinary snapshot gaps; it was one market at 92% and another at
+  0%. An aggregate coverage number cannot show you a market that is entirely
+  missing.
+
+This is #3 (market vocabularies) with a silent failure mode attached — the
+join predates that entry and nobody re-checked it.
+
