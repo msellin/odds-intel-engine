@@ -1825,7 +1825,37 @@ class HealthHandler(BaseHTTPRequestHandler):
 
 
 def _start_health_server():
-    server = HTTPServer(("0.0.0.0", HEALTH_PORT), HealthHandler)
+    """Start the /health endpoint. NEVER fatal.
+
+    SCHEDULER-PORT-8080-HARDEN-2026-07-13. An orphaned `python
+    workers/scheduler.py` from the Jul 09 cutover held port 8080 for four days
+    and then hung on Jul 12 without restarting — 33 hours with no pipeline_runs
+    before the ops dashboard surfaced it. A duplicate systemd unit
+    (`odds-scheduler.service`, the pre-rename name) was crash-looping on the
+    same port every 15 seconds until it was masked.
+
+    Two changes, both about not letting a health endpoint take down the thing
+    it is supposed to report on:
+
+      * SO_REUSEADDR, so a socket left in TIME_WAIT by the previous process
+        does not block the new one.
+      * A bind failure logs and returns None instead of raising. The scheduler
+        exists to run jobs; losing /health degrades observability, but crashing
+        at startup because a stray process holds a port loses everything. The
+        health endpoint is the least important thing in this process.
+    """
+    try:
+        # Set on the class before instantiation — HTTPServer binds in __init__.
+        HTTPServer.allow_reuse_address = True
+        server = HTTPServer(("0.0.0.0", HEALTH_PORT), HealthHandler)
+    except OSError as e:
+        console.print(
+            f"[yellow]Health endpoint could not bind :{HEALTH_PORT} ({e}). "
+            f"Continuing without it — the scheduler runs, /health will not "
+            f"answer. Check for a stray process: `fuser -k {HEALTH_PORT}/tcp`."
+            f"[/yellow]"
+        )
+        return None
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     console.print(f"[dim]Health endpoint listening on :{HEALTH_PORT}/health[/dim]")

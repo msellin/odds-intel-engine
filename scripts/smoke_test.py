@@ -27298,5 +27298,53 @@ def _isotonic_odds():
     return "isotonic fallback forwards odds; missing-bundle mode warns"
 
 
+@test("SCHEDULER-PORT-8080-HARDEN — a stuck health port must not take the scheduler down")
+def _port_harden():
+    """SCHEDULER-PORT-8080-HARDEN (filed 2026-07-13, fixed 2026-09-03).
+
+    An orphaned `python workers/scheduler.py` from the Jul 09 cutover held port
+    8080 for four days, then hung on Jul 12 without restarting — 33 hours with
+    no pipeline_runs before the ops dashboard surfaced it. A duplicate systemd
+    unit under the pre-rename name was crash-looping on the same port every 15
+    seconds.
+
+    The principle: the health endpoint is the least important thing in this
+    process. Losing it costs observability; crashing the scheduler at startup
+    because a stray process holds a port costs everything the scheduler does.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+    src = (root / "workers" / "scheduler.py").read_text()
+    i = src.index("def _start_health_server(")
+    m = _re.compile(r"\ndef ").search(src, i + 10)
+    body = src[i:m.start() if m else len(src)]
+
+    assert "allow_reuse_address = True" in body, (
+        "SO_REUSEADDR must be set — without it a socket left in TIME_WAIT by "
+        "the previous process blocks the new one"
+    )
+    assert "except OSError" in body, (
+        "a bind failure must be caught: the scheduler exists to run jobs, and "
+        "it must not die at startup because /health cannot bind"
+    )
+    assert "return None" in body, (
+        "the bind-failure path must return rather than raise"
+    )
+
+    unit = root / "local" / "systemd" / "oddsintel-scheduler.service"
+    if unit.exists():
+        u = unit.read_text()
+        assert "ExecStartPre" in u and "8080/tcp" in u, (
+            "the unit must nudge a stray listener off :8080 before starting"
+        )
+        assert u.count("ExecStartPre=-") or "|| true" in u, (
+            "the ExecStartPre must not fail the unit on a clean box where "
+            "nothing holds the port — that turns hardening into a new way of "
+            "failing to start"
+        )
+    return "health bind is non-fatal, SO_REUSEADDR set, unit clears the port first"
+
+
 if __name__ == "__main__":
     main()

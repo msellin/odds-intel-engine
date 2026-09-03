@@ -1,5 +1,11 @@
 # RAILWAY-ELIMINATION (2026-06-29): systemd unit for the OddsIntel pipeline
-# scheduler on Hetzner VPS (2 vCPU / 4 GB RAM / €5.49/mo).
+# scheduler on Hetzner VPS.
+#
+# NOTE (2026-09-03): the header used to say "2 vCPU / 4 GB RAM". The box is
+# actually 8 vCPU / 15.6 GB, so SCHEDULER_PROCESS_MB_LIMIT below is calibrated
+# against a machine that no longer matches -- see the INFRASTRUCTURE.md spec
+# drift note. Left as-is rather than raised blind: a memory alarm that fires
+# early is safe, one raised without measuring is not.
 #
 # Install:
 #   cp local/systemd/oddsintel-scheduler.service /etc/systemd/system/
@@ -41,6 +47,16 @@ Environment=PYTHONUNBUFFERED=1
 Environment=FLARESOLVERR_URL=http://localhost:8191
 # Alert threshold calibrated for 4 GB RAM: warn at 3.4 GB (85%).
 Environment=SCHEDULER_PROCESS_MB_LIMIT=4096
+
+# SCHEDULER-PORT-8080-HARDEN-2026-07-13. An orphaned scheduler from the Jul 09
+# cutover held :8080 for four days, then hung on Jul 12 without restarting --
+# 33 hours with no pipeline_runs. A duplicate unit under the pre-rename name
+# (odds-scheduler.service) was crash-looping on the same port every 15s.
+#
+# Nudge any stray listener off the health port before starting. `|| true` so a
+# clean box, where nothing holds the port, is not treated as a failure -- that
+# would turn a hardening step into a new way of failing to start.
+ExecStartPre=-/bin/sh -c '/usr/bin/fuser -k 8080/tcp || true'
 
 ExecStart=/opt/odds-intel-engine/venv/bin/python3 -m workers.scheduler
 
