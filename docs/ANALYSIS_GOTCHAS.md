@@ -857,3 +857,29 @@ market *spelling* (`over_under_25`) against a pooled figure silently compares
 different bot mixes. Pool every spelling — see #3 — and run a within-group
 control before believing a cross-group difference.
 
+## 34. "Latest quote per book" is not "live quote" — check the lag, not the age
+
+`DISTINCT ON (match_id, market, selection, bookmaker) ... ORDER BY timestamp
+DESC` (gotcha #29/#30's fix) returns the newest row each book wrote. If that
+book's feed died, the newest row is its *last* row and stays newest forever.
+
+Coolbet's bulk scraper died at 08:00 UTC on 2026-09-03. By 18:40 the pipeline
+had raised **101 picks recommending Coolbet** on quotes up to 11h old. Nothing
+was wrong with the query — the feed was dead and the query cannot tell.
+
+**Do not reach for an absolute age cap.** The odds job runs 07-22 UTC while the
+morning cohort picks at 06:00, so morning picks legitimately use quotes at
+p95 = 10.0h and p99 = 16.4h old. A cap tight enough to catch an 11.5h-dead feed
+deletes the morning cohort entirely.
+
+Measure **lag against the other books on the same fixture**. Overnight all books
+age together and the lag stays near zero; a dead feed falls behind its peers.
+Coolbet was 11.5h stale while the market was 2.94h. At a 6h lag threshold this
+drops 100 of 102 Coolbet quotes and one 152h outlier, and touches nothing else.
+
+Related trap, same incident: a book can look fresh on `MAX(timestamp)` while its
+bulk feed is dead, because a second writer (the UI placer) keeps touching a
+handful of fixtures. `coolbet_feed_watchdog._hours_since_last_odds` measures
+bulk-sweep *breadth* for exactly this reason — a naive MAX said 8.6h stale where
+the truth was 11.7h.
+

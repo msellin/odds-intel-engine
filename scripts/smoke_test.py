@@ -27809,5 +27809,94 @@ def _team_scoring_rates():
     return f"{checked} team-slots reproduced exactly from strictly-prior matches"
 
 
+@test("ODDS-NO-MAX-AGE — a dead feed's last quote is not priced as a live offer")
+def _odds_no_max_age():
+    """ODDS-NO-MAX-AGE-2026-09-03. STALE-BEST-ODDS fixed `MAX(odds)` over all
+    history to `DISTINCT ON ... timestamp DESC` — the latest quote per book.
+    But "latest" is not "live". When a feed dies its final quote stays the
+    latest forever and keeps being priced as an available offer.
+
+    Coolbet's bulk scraper died at 08:00 UTC on 2026-09-03; by 18:40 the
+    pipeline had raised 101 picks recommending Coolbet on quotes up to 11h old.
+    The UI placer survived it (it re-reads the price at placement and compares
+    `odds_drift_pct` — both bets placed that day show 0.000%), but the operator
+    bets shadow signals by hand and has no such check.
+
+    An ABSOLUTE age cap cannot express this, which is the whole subtlety: the
+    odds job runs 07-22 UTC while the morning cohort picks at 06:00, so morning
+    picks legitimately use quotes at p95 = 10.0h and p99 = 16.4h old. Any cap
+    tight enough to catch Coolbet at 11.5h would delete the morning cohort.
+
+    Staleness is RELATIVE — overnight all books age together, so their lag stays
+    near zero, while a dead feed falls behind its peers on the same fixture.
+    """
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+    src = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+
+    # Assert against the query, not the module: the docstrings above and in the
+    # pipeline describe the bug in detail, so a whole-file substring search
+    # matches the prose and passes with the guard deleted.
+    i = src.index("-- ODDS-NO-MAX-AGE-2026-09-03.")
+    sql = src[i:src.index('"""', i)]
+
+    assert "lag_h <= " in sql and "age_h <= " in sql, (
+        "the staleness filter is gone — a dead feed's final quote is priced as "
+        "a live offer again"
+    )
+    assert "PARTITION BY l.match_id" in sql, (
+        "lag must be measured against the freshest quote for the same fixture; "
+        "an absolute age cap deletes the morning cohort (p99 = 16.4h)"
+    )
+
+    from workers.jobs.daily_pipeline_v2 import (
+        ODDS_MAX_AGE_HOURS, ODDS_MAX_LAG_HOURS,
+    )
+    # Generous enough for the 07-22 UTC odds window plus the 06:00 pick time.
+    assert 2.0 <= ODDS_MAX_LAG_HOURS <= 12.0, (
+        f"ODDS_MAX_LAG_HOURS={ODDS_MAX_LAG_HOURS} is outside the range the "
+        "measurement supports (market p99 lag is ~3h; Coolbet's dead feed sat "
+        "at 8.5h behind its peers)")
+    assert ODDS_MAX_AGE_HOURS >= 24.0
+
+    # Source inspection cannot see a filter that is present but ineffective, so
+    # assert the invariant against live data too.
+    try:
+        from workers.api_clients.db import execute_query
+        ids = [r["id"] for r in execute_query(
+            """SELECT m.id FROM matches m
+                WHERE m.date > now() AND m.date < now() + interval '48 hours'
+                LIMIT 300""")]
+    except Exception as e:                       # noqa: BLE001
+        raise SkipTest(f"DB not reachable: {e}")
+    if not ids:
+        raise SkipTest("no scheduled fixtures in the next 48h")
+
+    rows = execute_query(sql, (ids, ODDS_MAX_LAG_HOURS, ODDS_MAX_AGE_HOURS))
+    if not rows:
+        raise SkipTest("no odds rows for the sampled fixtures")
+
+    # Every surviving row must genuinely satisfy the invariant.
+    breaches = execute_query(
+        """WITH latest AS (
+             SELECT DISTINCT ON (o.match_id, o.bookmaker)
+                    o.match_id, o.bookmaker, o.timestamp
+               FROM odds_snapshots o
+              WHERE o.match_id = ANY(%s::uuid[]) AND o.is_closing = false
+              ORDER BY o.match_id, o.bookmaker, o.timestamp DESC)
+           SELECT COUNT(*) AS n FROM (
+             SELECT EXTRACT(epoch FROM (
+                      MAX(timestamp) OVER (PARTITION BY match_id) - timestamp
+                    )) / 3600.0 AS lag_h
+               FROM latest) z
+            WHERE lag_h > %s""",
+        (ids, ODDS_MAX_LAG_HOURS))
+    stale_available = breaches[0]["n"] if breaches else 0
+
+    return (f"{len(rows)} quotes passed the guard; {stale_available} "
+            f"(book, fixture) pairs were excluded as lagging > "
+            f"{ODDS_MAX_LAG_HOURS}h behind their peers")
+
+
 if __name__ == "__main__":
     main()

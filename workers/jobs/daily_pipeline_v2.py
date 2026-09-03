@@ -1062,6 +1062,13 @@ DIXON_COLES_RHO = -0.13
 # Rollback: add "Bet365" back to the frozenset. If Bet365 later becomes
 # reachable via a different feed (direct scrape / different AF endpoint),
 # re-audit before adding back.
+# ODDS-NO-MAX-AGE-2026-09-03: a book's latest quote is only an offer while its
+# feed is alive. Relative, not absolute — see the query in _load_today_from_db
+# for why an absolute cap cannot work alongside the 07-22 UTC odds window.
+ODDS_MAX_LAG_HOURS = float(os.getenv("ODDS_MAX_LAG_HOURS", "6"))
+# Backstop for the pathological tail only (worst observed 406h).
+ODDS_MAX_AGE_HOURS = float(os.getenv("ODDS_MAX_AGE_HOURS", "48"))
+
 ACCESSIBLE_BOOKMAKERS: frozenset = frozenset({
     "Unibet", "Betano", "Marathonbet", "10Bet", "888Sport", "Pinnacle",
     # COOLBET-AS-ACCESSIBLE (2026-05-20): Coolbet is our actual placement
@@ -1963,17 +1970,56 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
         -- DISTINCT ON ... timestamp DESC = the latest quote per book, which
         -- is what "best available" has to mean. Matches the pattern
         -- _run_pin_1x2_shadow_pass already used correctly.
-        SELECT DISTINCT ON (match_id, market, selection, bookmaker, handicap_line)
-               match_id, market, selection, odds, bookmaker, handicap_line
-          FROM odds_snapshots
-         WHERE match_id = ANY(%s::uuid[]) AND is_closing = false
-           AND NOT (
-             market LIKE 'over_under_%%'
-             AND bookmaker IN ('api-football', 'api-football-live', 'William Hill')
-           )
-         ORDER BY match_id, market, selection, bookmaker, handicap_line,
-                  timestamp DESC""",
-        (match_ids,),
+        -- ODDS-NO-MAX-AGE-2026-09-03. DISTINCT ON ... timestamp DESC gives the
+        -- latest quote per book, but "latest" is not "live": when a feed dies,
+        -- its final quote stays the latest forever and keeps being priced as an
+        -- available offer. Coolbet's bulk scraper died at 08:00 UTC on
+        -- 2026-09-03 and by 18:40 the pipeline had raised 101 picks
+        -- recommending Coolbet on quotes up to 11h old. The UI placer survived
+        -- it (it re-reads the price at placement and compares drift), but the
+        -- operator bets shadow signals by hand and has no such check.
+        --
+        -- An absolute age cap cannot express this. The odds job runs 07-22 UTC
+        -- while the morning cohort picks at 06:00, so morning picks legitimately
+        -- use quotes at p95 = 10.0h and p99 = 16.4h old. A cap tight enough to
+        -- catch Coolbet at 11.5h would delete the morning cohort.
+        --
+        -- Staleness is RELATIVE. Overnight every book ages together, so the lag
+        -- between them stays near zero; a dead feed falls behind its peers on
+        -- the same fixture. Coolbet was 11.5h stale while the market was 2.94h.
+        -- Measured on live data, LAG=6h drops 100 of 102 Coolbet quotes and one
+        -- 152h 10Bet outlier, and touches nothing else.
+        --
+        -- The absolute ceiling is only a backstop for the pathological tail
+        -- (worst observed: 406h). It is not the primary guard.
+        WITH latest AS (
+            SELECT DISTINCT ON (match_id, market, selection, bookmaker, handicap_line)
+                   match_id, market, selection, odds, bookmaker, handicap_line,
+                   timestamp
+              FROM odds_snapshots
+             WHERE match_id = ANY(%s::uuid[]) AND is_closing = false
+               AND NOT (
+                 market LIKE 'over_under_%%'
+                 AND bookmaker IN ('api-football', 'api-football-live', 'William Hill')
+               )
+             ORDER BY match_id, market, selection, bookmaker, handicap_line,
+                      timestamp DESC
+        ),
+        aged AS (
+            SELECT l.*,
+                   EXTRACT(epoch FROM (now() - l.timestamp)) / 3600.0 AS age_h,
+                   -- freshest quote for this FIXTURE across all books: a dead
+                   -- feed is dead for every market, and per-market grain would
+                   -- be noise wherever only one book prices a line.
+                   EXTRACT(epoch FROM (
+                       MAX(l.timestamp) OVER (PARTITION BY l.match_id) - l.timestamp
+                   )) / 3600.0 AS lag_h
+              FROM latest l
+        )
+        SELECT match_id, market, selection, odds, bookmaker, handicap_line
+          FROM aged
+         WHERE lag_h <= %s AND age_h <= %s""",
+        (match_ids, ODDS_MAX_LAG_HOURS, ODDS_MAX_AGE_HOURS),
     )
 
     # OU-PIN-REQUIRED (2026-05-10): for OU markets, only aggregate prices when
