@@ -809,3 +809,33 @@ same name. Two lasting rules:
 This is #3 (market vocabularies) with a silent failure mode attached — the
 join predates that entry and nobody re-checked it.
 
+## 33. Never compare markets or lines measured on different samples
+
+`predictions` does not cover every market for every match. In the bot era the
+over/under lines have **14,784 / 8,500 / 6,113** settled matches at 2.5 / 3.5 /
+1.5 — overlapping but very different populations, with different leagues and
+different date mixes.
+
+Comparing a per-line statistic across those samples measures the samples, not
+the model. Measured 2026-09-03, model P(over) minus actual:
+
+    line   own sample        common sample (n=3,532)
+    1.5    z = -2.9          z = -1.0
+    2.5    z = +4.6          z = +1.2
+    3.5    z = +6.1          z = -0.5
+
+Identical test, identical code. The apparent "the model understates goals at
+high lines and overstates at low lines" — a clean, mechanistic,
+very tellable story — is entirely composition. It was filed as a P1
+(OU-OVER-UNDER-ASYMMETRY) and withdrawn the same day.
+
+**Rule: before comparing any statistic across markets, lines, leagues or
+periods, restrict to rows present in all of the groups being compared, and
+report that common n.** If the effect only exists on the per-group samples, it
+is not an effect.
+
+The same failure in the betting ledgers has a second face: comparing one
+market *spelling* (`over_under_25`) against a pooled figure silently compares
+different bot mixes. Pool every spelling — see #3 — and run a within-group
+control before believing a cross-group difference.
+
