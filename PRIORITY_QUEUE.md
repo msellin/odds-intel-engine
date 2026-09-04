@@ -1,5 +1,18 @@
 # OddsIntel — Master Priority Queue
 
+> **⛔ EVENT-DRIVEN-BETTING-2026-09-04 — investigated and REJECTED the same day. The reasoning was sound; the data says no.** — Operator proposal: stop running betting as scheduled batch jobs against whatever odds happen to be current, and instead evaluate each fixture the moment its odds land, betting immediately when the gate clears (then marking it done so later odds runs skip it). The motivating example was real — a pick recorded at 4.45 when the live price was 3.15, because the price had drifted down hours earlier.
+>
+> **Two independent tests, both negative.**
+>
+> **1. Prices do not systematically drift down, so "bet earlier" is not free money.** On 1,285 settled picks with price history either side of the pick: best price >=2h *earlier* averaged **2.760**, the price we took **2.727**, and the best price *after* the pick **2.784**. Earlier was better on 44.5% of picks, waiting was better on 35.3%. Perfect early timing would give +10.85% against the +9.50% actually achieved — but perfect *late* timing gives **+13.25%**, and both require knowing the peak in advance. The peaks fall on both sides and cancel as an argument.
+>
+> **2. The matches we skip between windows are losers.** A 3% edge on O/U 2.5 existed at *some* pre-kickoff snapshot on **1,703** fixtures since 2026-08-01. We bet **90** of them (5.3%). Betting the other **1,613** at the **first** qualifying price — not the peak, which is what event-driven would actually get — returns **-4.65%, t=-1.85**.
+>
+> **Why: "the gate fired at some point" is not the same as "an opportunity".** Our selectivity is doing real work. The bot configs, odds ranges, league filters and cohort timing between them reject 94.7% of gate-clearing fixtures, and that rejected set loses money. Event-driven evaluation in its simple form would flood us with exactly those.
+>
+> **What survives of the idea, and it is worth having:** reducing *evaluation latency* for fixtures we would bet anyway. Quote age at pick time is currently p50 0.68h and p95 3.06h, so we routinely act on prices that have moved. That is an **execution** improvement — fewer placements failing the placer's drift check — not an edge improvement, and it should be scoped and valued as such. See `REFRESH-PICK-ODDS-PREKO`.
+
+
 > **⬜ SHADOW-PAGE-ROI-INFLATED-2026-09-04 (P1 — the admin shadow-bots page overstates ROI by 1.75pp)** — 2-3h — `odds-intel-web/src/app/(app)/admin/shadow-bots/page.tsx:254` computes `roi = pnl / stake * 100`. `pnl` is settled from **`odds_at_pick`**, the snapshot high-water mark STALE-BEST-ODDS showed was never on offer. On the current non-retired, pre-kickoff cohort (n=1,651) the same picks price three ways:
 >
 > | basis | ROI |
