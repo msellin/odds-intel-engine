@@ -1,4 +1,11 @@
 source,kickoff_date,league,home_team,away_team,market,pick,odds,result,pnl_per_unit,ref_url
+winnerodds,2026-08-28,Chile,,,asian_handicap,ah-0_1,2.100,void,0.0000,https://winnerodds.com
+winnerodds,2026-08-26,Croatia,,,1x2,2,1.437,lost,-1.0000,https://winnerodds.com
+winnerodds,2026-08-22,Austria,,,asian_handicap,ah-0.5_1,2.490,won,1.4900,https://winnerodds.com
+winnerodds,2026-08-28,Switzerland,,,over_under_35,u3.5,1.890,won,0.8900,https://winnerodds.com
+winnerodds,2026-08-24,Poland,,,asian_handicap,ah-0.5_1,2.400,won,1.4000,https://winnerodds.com
+winnerodds,2026-08-29,Belarus,,,asian_handicap,ah-0_2,1.750,won,0.7500,https://winnerodds.com
+winnerodds,2026-08-28,Switzerland,,,over_under_35,u3.5,1.460,won,0.4600,https://winnerodds.com
 winnerodds,2026-08-28,Germany,,,asian_handicap,ah-0_1,1.666,won,0.6660,https://winnerodds.com
 winnerodds,2026-08-28,Iceland,,,1x2,2,2.800,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-27,Scotland,,,asian_handicap,ah-0_1,1.385,won,0.3850,https://winnerodds.com
