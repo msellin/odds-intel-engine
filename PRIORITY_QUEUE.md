@@ -1,5 +1,35 @@
 # OddsIntel — Master Priority Queue
 
+> **⬜ SHADOW-PAGE-ROI-INFLATED-2026-09-04 (P1 — the admin shadow-bots page overstates ROI by 1.75pp)** — 2-3h — `odds-intel-web/src/app/(app)/admin/shadow-bots/page.tsx:254` computes `roi = pnl / stake * 100`. `pnl` is settled from **`odds_at_pick`**, the snapshot high-water mark STALE-BEST-ODDS showed was never on offer. On the current non-retired, pre-kickoff cohort (n=1,651) the same picks price three ways:
+>
+> | basis | ROI |
+> |---|---|
+> | stored `pnl` (what the page shows) | **+9.94%** |
+> | `odds_at_pick` (high-water mark) | +9.94% |
+> | `odds_at_pick_live` (honest) | **+8.19%** |
+>
+> **The page overstates by 1.75pp**, and it is the surface the operator reads before placing real money by hand. `odds_at_pick_live` now has 96.2% coverage on shadow rows, so the fix is switching the ROI computation to it (falling back to `pnl` only where the live price is absent) and labelling which basis is shown. Same class as the landing-page restatement — publishing a figure derived from a price nobody could have taken.
+
+> **✅ Done 2026-09-04 SHADOW-FLEET-FULL-AUDIT-2026-09-04 (P2 — all markets, pre-kickoff only, honest prices)** — Full audit of the shadow ledger restricted to **non-retired bots, picks strictly before kickoff, priced at `odds_at_pick_live`**. Verified clean: 0 in-play bots, 0 picks after kickoff.
+>
+> **TOTAL n=1,651, ROI +8.19%, t=+2.49.**
+>
+> | cut | n | ROI | t |
+> |---|---|---|---|
+> | **1x2** | 972 | **+11.13%** | +2.42 |
+> | **o/u** | 679 | +3.98% | +0.88 |
+> | `bot_pin_1x2_home_v1` | 303 | +13.58% | +1.74 |
+> | `bot_v10_all` | 430 | +10.38% | +1.64 |
+> | `bot_coolbet_value_v1` | 324 | +10.02% | +1.20 |
+> | `bot_sweep_ou35_v1` | 199 | +3.07% | +0.33 |
+> | `bot_sweep_ou25_v1` | 245 | +1.39% | +0.21 |
+> | `bot_opt_home_lower` | 52 | **−7.94%** | −0.39 |
+>
+> **Reads:** only two markets remain (1x2, o/u), which is the market selection working as intended. **1X2 carries the fleet** — +11.13% against o/u's +3.98%, consistent with 1X2 also being the cheapest market (4.83% margin vs 5.25%). The one loser, `bot_opt_home_lower`, is a near-duplicate of `bot_v10_all` (92% same picks) — see `DUPLICATE-BOTS-REVIEW`.
+>
+> **Two caveats that matter.** (1) **65% of the picks are from August** (1,066 of 1,651), so this is largely one month; June was −4.66%. (2) The set is *non-retired* bots and retirement follows performance, so it is survivorship-biased — already tested out-of-sample on 2026-09-03 (picks from 08-27, live set frozen as known then: +11.41%, t=+2.42), and it survived. Needs forward confirmation rather than more retrospective slicing.
+
+
 > **✅ Done 2026-09-04 EDGE-THRESHOLD-AUDIT-2026-09-04 (P2 — asked: are the min-odds/edge thresholds right yet?)** — **Answer: leave them alone, and the reason is not "not enough data".**
 >
 > **1. Our edge estimate does not rank bets.** On 1,651 settled live-bot picks at honest prices, `corr(edge_percent, realised return) = +0.0044, t=+0.18`. Quintiles run +11.60%, +15.44%, −4.44%, −0.94%, +19.26% — no gradient. A 13% edge pick does no better than a 3% one, so moving the threshold up or down has no systematic effect to exploit. **For contrast, repriced Pinnacle CLV on the same fleet is corr +0.0991, t=+10.23 with monotonic quintiles** — the ranking signal we have is CLV, not our own edge number.
