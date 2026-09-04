@@ -932,3 +932,30 @@ binary flags are involved, which is where the scary-looking stories live.
 Corroborated independently: the 2026-09-03 densification flipped many of these
 indicators and moved the promoted head's holdout log-loss by 0.0001.
 
+## 37. `is_live = false` does NOT mean pre-kickoff — 29.4% of those rows are post-KO
+
+API-Football keeps serving odds after a fixture starts without flipping
+`is_live`. Measured 2026-09-05 over 7 days: **3,836,644 of 13,058,592
+`is_live=false` rows (29.4%) carry a timestamp AFTER kickoff.** It is not one bad
+book — William Hill 35.5%, SBO 34.1%, Pinnacle 33.8%, 10Bet 33.8%, Superbet
+33.6%, BetVictor 33.3%.
+
+**The live pipeline is not affected**: when it runs, the fixture is still in the
+future, so every row that exists is genuinely pre-match. The damage is entirely
+retrospective — any backtest or audit that filters only on `is_live = false` and
+looks at settled fixtures silently mixes in-play prices with pre-match ones.
+
+This was found by comparing the AF `Unibet` feed against directly-scraped
+`Unibet-Kambi`. The first comparison showed AF "inflated" by +9.3% on average
+with wild outliers — a 1.45 quote on *under 1.5*, which is an in-play price on a
+goalless game. The direct feed had 0 post-KO rows of 326,804; the AF side had
+25%. The apparent inflation was the comparison, not the feed.
+
+**Rule: for anything retrospective, filter `o.timestamp <= m.date`. Never rely
+on `is_live` alone.** `is_closing` has the same character — it is a derived flag,
+not a guarantee about when the row was captured.
+
+Sibling of #29/#30 (a price must be one that was actually available *at the
+moment in question*) and of #33 (a filter that silently changes which rows you
+are looking at).
+

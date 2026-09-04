@@ -1,5 +1,12 @@
 # OddsIntel — Master Priority Queue
 
+> **⬜ AF-ISLIVE-UNRELIABLE-2026-09-05 (P1 — 29.4% of "pre-match" rows are post-kickoff)** — 3-4h — API-Football keeps serving odds after kickoff without flipping `is_live`. **3,836,644 of 13,058,592 `is_live=false` rows in 7 days (29.4%) are timestamped after kickoff**, across every book (William Hill 35.5%, Pinnacle 33.8%, Superbet 33.6%). The directly-scraped `Unibet-Kambi` feed has **0 of 326,804**.
+>
+> **The live pipeline is safe** — at run time the fixture is in the future, so every existing row is genuinely pre-match. **Retrospective work is not**: any backtest filtering only on `is_live=false` over settled fixtures mixes in-play prices into a pre-match sample. Today's O/U search, the complementarity table and the `odds_at_pick_live` backfill all used `timestamp <= m.date` and are unaffected; the first AF-vs-Kambi comparison did not, and reported a fictitious +9.3% AF inflation driven by in-play quotes like 1.45 on *under 1.5*.
+>
+> **Worth checking specifically:** `supabase_client.py:1486/1504/1523/3289/3315/4031` all filter on `is_live = false`. Line 1486 builds `pin_ou25_by_match`, the Pinnacle anchor behind the `OU-PIN-REQUIRED` guard. Live it is fine; anything that replays it historically is not. **Add `timestamp <= m.date` wherever the query can run over settled fixtures**, and consider a `pre_match` generated column so the correct filter is the easy one to reach for. See ANALYSIS_GOTCHAS #37.
+
+
 > **✅ Done 2026-09-04 COOLBET-GET-NO-TIMEOUT-2026-09-04 (P0 — the odds feed was dead for 15h and nothing could restart it)** — Coolbet stopped producing bulk sweeps after 07:00 UTC. Not a block, not Imperva: **the process was hung.** PID 64881, state `S`, elapsed **15h15m**, log silent 10:15 -> 23:48. Coverage of upcoming fixtures fell to **2.1%** (33 of 1,570) against Unibet-Kambi's 33.2%.
 >
 > **Root cause, and it is a one-line asymmetry.** `requests.Session` inherits no default timeout. The POST path in `coolbet_session.py` carried `kwargs.setdefault("timeout", 30)` with a comment explaining that it "would block forever" otherwise. **The GET path had no such line**, and four further call sites had neither. A GET on a half-open socket blocked indefinitely; because the process stayed alive, launchd considered the job still running and never restarted it.
