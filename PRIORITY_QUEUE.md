@@ -1,5 +1,23 @@
 # OddsIntel — Master Priority Queue
 
+> **✅ Done 2026-09-04 1X2-HOME-AUDIT-2026-09-04 (P1 — audited the cohort I had just called "the engine". It is not one.)** — Earlier today I reported 1X2-home as the most solid result in the system (n=817, **+12.75%, t=+2.62**) and recommended shifting effort onto it. **That does not survive a robustness check and the recommendation was premature.**
+>
+> | cut | n | ROI | t |
+> |---|---|---|---|
+> | all | 817 | +12.75% | +2.62 |
+> | excluding `World` fixtures | 752 | +8.79% | +1.77 |
+> | excluding August | 362 | +2.90% | +0.42 |
+> | **excluding both** | **331** | **−1.42%** | **−0.20** |
+>
+> **The entire result is August plus `World` fixtures.** August alone is 455 of 817 picks (56%) at +20.59%, against June −6.28% and July −1.00%. `World` is 65 picks at +58.63%.
+>
+> **What `World` actually is: 37 of 65 are Friendlies Clubs**, plus Europa League/Conference. Win rate **55.4%** at mean odds 2.97 (implied 37.9%) — a 17.5pp overperformance. Club friendlies are a genuinely soft market (unpredictable lineups, books price them lazily), so this is a **plausible real effect and the one lead worth pursuing** — but n=65 and it could as easily be variance. It should not be leaned on until it has its own out-of-sample window.
+>
+> **The honest reading: we do not have a demonstrated 1X2 edge. We have a good August and 65 friendlies.** That is consistent with everything else measured over these two days — best measurable edge +1.94pp against a ~2.5pp vig — and it is the same lesson as `SHADOW-FLEET-FULL-AUDIT`, whose +8.19% is 65% August.
+>
+> **Do not** rebuild strategy around 1X2-home on this evidence. **Do** consider a scoped friendlies investigation, with its own pre-registered holdout, and treat August as unexplained until a second season-start is observed.
+
+
 > **⛔ EVENT-DRIVEN-BETTING-2026-09-04 — investigated and REJECTED the same day. The reasoning was sound; the data says no.** — Operator proposal: stop running betting as scheduled batch jobs against whatever odds happen to be current, and instead evaluate each fixture the moment its odds land, betting immediately when the gate clears (then marking it done so later odds runs skip it). The motivating example was real — a pick recorded at 4.45 when the live price was 3.15, because the price had drifted down hours earlier.
 >
 > **Two independent tests, both negative.**
