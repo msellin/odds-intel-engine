@@ -1,5 +1,26 @@
 # OddsIntel — Master Priority Queue
 
+> **✅ Done 2026-09-04 UNIBET-KAMBI-ODDS-2026-09-04 (P1 — direct Unibet ingest, and the tool that settles step 0)** — `workers/automation/unibet_kambi.py` + a 30-min job at `:04/:34`. **Unibet is a Kambi operator, as is Coolbet** — which is why `coolbet_placer` already parses Kambi criterion labels. The offering API is **public, unauthenticated and has no bot protection**, so this needs none of Coolbet's 1,154-line Imperva session or Epicbet's FlareSolverr fallback. Plain JSON.
+>
+> ```
+> list:  https://eu-offering-api.kambicdn.com/offering/v2018/ub/listView/football.json?lang=et_EE&market=EE
+> event: https://eu-offering-api.kambicdn.com/offering/v2018/ub/betoffer/event/{id}.json?lang=et_EE&market=EE
+> ```
+>
+> Measured live: **699 football events, 569 pre-match, 186 leagues**; first dry run matched **55 of 120** DB fixtures and parsed **3,110 odds rows, 0 errors**. `jurisdiction=EE` is confirmed in Unibet's own calls.
+>
+> **It writes `bookmaker='Unibet-Kambi'`, not `'Unibet'` — deliberately.** We already receive Unibet through API-Football and that feed has never been checked against the real site. `BET365-EXECUTION-AUDIT-2026-08-21` found exactly that failure — AF-fed Bet365 inflated, CLV +10% against ROI −10%, book removed. **Keeping the feeds separate turns this module into the step-0 audit tool**: once a few days of overlap accumulate, one query settles whether AF's Unibet price is real. Merging them would have destroyed the only evidence that can answer it.
+>
+> **Three traps the API imposes, all pinned by the smoke test and mutation-verified:**
+> - **Odds and lines are milli-units** — `odds: 5750` is 5.75. Storing raw would make every edge calculation read a 5750-to-1 shot.
+> - **Parse on `outcome["type"]`, never labels** — with `lang=et_EE` the labels are Estonian ("Üle"/"Alla"). Label-matching breaks silently if anyone changes `lang`.
+> - **Asian quarter lines (2.25, 2.75) are skipped, not rounded** — `over_under_225` is not in our vocabulary and rounding to 2.5 would fabricate a price.
+>
+> **A wrong conclusion caught mid-research, worth recording:** a first pass sampled six fixtures and found almost no O/U 2.5 coverage on lower leagues. They had all kicked off — live totals are in-play adjusted. On genuinely pre-match fixtures, **8 of 8 sampled carried an O/U 2.5 line**, including Paulista U20, Campionato Primavera 2 and Kõrgliiga. `shape_candidates()` enforces pre-match only, and the smoke test pins it.
+>
+> **Not built: the placer.** Odds ingest is the easy half. Placement needs auth, stake handling and a limits story, is worth only **+0.81pp** on settled picks (weakest of the mainstream books — Marathonbet +1.58pp, Betano +1.30pp), and is gated on `ACCESSIBLE-SET-VERIFY`.
+
+
 > **✅ Done 2026-09-04 1X2-HOME-AUDIT-2026-09-04 (P1 — audited the cohort I had just called "the engine". It is not one.)** — Earlier today I reported 1X2-home as the most solid result in the system (n=817, **+12.75%, t=+2.62**) and recommended shifting effort onto it. **That does not survive a robustness check and the recommendation was premature.**
 >
 > | cut | n | ROI | t |

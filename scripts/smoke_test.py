@@ -28242,5 +28242,69 @@ def _clv_gate_priced_live():
     return (f"gate CLV basis resolves on {row['basis']} of {row['n']} picks")
 
 
+@test("UNIBET-KAMBI-ODDS — milli-unit odds, type-keyed parsing, separate bookmaker")
+def _unibet_kambi():
+    """UNIBET-KAMBI-ODDS-2026-09-04. Unibet is a Kambi operator and the offering
+    API is public and unauthenticated, so the ingest is plain JSON — no Imperva
+    session, no FlareSolverr. Measured on the EE market: 699 football events,
+    569 pre-match, 186 leagues.
+
+    Three things this pins, each of which silently corrupts the feed if lost:
+
+    1. **Odds and lines are milli-units.** `odds: 5750` is 5.75. Storing raw
+       would put 5750.0 into odds_snapshots and every edge calculation
+       downstream would read it as a 5750-to-1 shot.
+    2. **Parsing keys on `outcome["type"]`, not labels.** With `lang=et_EE` the
+       labels are Estonian ("Üle"/"Alla"). A label-matching parser silently
+       stops recognising markets the moment anyone changes the lang param.
+    3. **It writes `Unibet-Kambi`, not `Unibet`.** We already receive Unibet via
+       API-Football; that feed has never been checked against the real site, and
+       BET365-EXECUTION-AUDIT found exactly that failure (AF-fed Bet365 inflated,
+       CLV +10%% vs ROI -10%%). Merging the two would destroy the only evidence
+       that can settle it.
+    """
+    from workers.automation.unibet_kambi import (
+        _BOOKMAKER, _milli, parse_betoffers, shape_candidates,
+    )
+
+    assert _milli(5750) == 5.75, "odds must be divided by 1000"
+    assert _milli(4500) == 4.5, "lines must be divided by 1000"
+    assert _BOOKMAKER == "Unibet-Kambi", (
+        "must not write under 'Unibet' — that is the API-Football feed, and "
+        "keeping them separate is what allows the AF-vs-direct comparison")
+
+    rows = parse_betoffers([
+        {"outcomes": [{"type": "OT_ONE", "odds": 5750},
+                      {"type": "OT_CROSS", "odds": 1170},
+                      {"type": "OT_TWO", "odds": 12000}]},
+        {"outcomes": [{"type": "OT_OVER", "odds": 3950, "line": 2500},
+                      {"type": "OT_UNDER", "odds": 1180, "line": 2500}]},
+        # Asian quarter line — must be skipped, not rounded into a line we do
+        # not hold. `over_under_225` is not in the shared vocabulary.
+        {"outcomes": [{"type": "OT_OVER", "odds": 1900, "line": 2250},
+                      {"type": "OT_UNDER", "odds": 1900, "line": 2250}]},
+    ])
+    by = {(m, sel): o for m, sel, o, _ in rows}
+    assert by.get(("1x2", "home")) == 5.75, f"1x2 home mis-parsed: {rows}"
+    assert by.get(("over_under_25", "over")) == 3.95, f"O/U mis-parsed: {rows}"
+    assert not any(m.startswith("over_under_22") for m, _, _, _ in rows), (
+        "quarter lines must be skipped — over_under_225 is not a market this "
+        "repo stores, and rounding it to 2.5 would fabricate a price")
+
+    # Pre-match filter: a live event's totals are in-play adjusted. A first pass
+    # at this research sampled six already-kicked-off fixtures and wrongly
+    # concluded Unibet barely offers O/U 2.5 on lower leagues.
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    ev = lambda mins, group="Ligue 2": {"event": {
+        "id": 1, "name": "A - B", "group": group,
+        "start": (now + timedelta(minutes=mins)).isoformat().replace("+00:00", "Z")}}
+    got = shape_candidates([ev(-30), ev(120), ev(120, "Cyber Live Arena (2 x 5 min)")])
+    assert len(got) == 1, (
+        f"expected only the future non-virtual event, got {len(got)} — "
+        "live events and virtual football must both be excluded")
+    return "milli-units, type-keyed parsing, pre-match + virtual filters all pinned"
+
+
 if __name__ == "__main__":
     main()

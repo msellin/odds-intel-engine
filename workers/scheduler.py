@@ -1628,6 +1628,40 @@ def job_feature_densify():
     _run_job("feature_densify", _run)
 
 
+def job_unibet_kambi_odds():
+    """UNIBET-KAMBI-ODDS (2026-09-04) — 30-min direct Unibet ingest at :04/:34.
+
+    Unibet is a Kambi operator and the offering API is public, unauthenticated
+    and free of bot protection, so this needs none of Coolbet's Imperva session
+    machinery or Epicbet's FlareSolverr fallback. Plain JSON.
+
+    Writes `bookmaker='Unibet-Kambi'`, deliberately NOT `'Unibet'`. We already
+    receive Unibet through API-Football and that feed has never been checked
+    against the real site — BET365-EXECUTION-AUDIT found AF-fed Bet365 odds
+    inflated (CLV +10% vs ROI -10%) and Bet365 was dropped for it. Keeping the
+    two feeds separate is what makes that comparison possible; merging them
+    would destroy the evidence.
+
+    RAISES on failure, per SILENT-FAILURE-AUDIT-JOBS: a job that swallows its
+    exception records status='completed' and pings Kuma "up" while writing
+    nothing, which is how EPICBET-403 ran green for 277 consecutive runs.
+    """
+    def _run():
+        from workers.automation.unibet_kambi import run_bulk
+        res = run_bulk(days=2, dry_run=False)
+        console.print(f"  unibet-kambi: {res}")
+        if res.get("kambi_events", 0) == 0:
+            raise RuntimeError(
+                "unibet-kambi returned zero events — the offering API shape or "
+                "operator code changed, or the market was rejected")
+        if res.get("stored", 0) == 0:
+            console.print("[yellow]  unibet-kambi stored 0 rows — quiet window, "
+                          "or fuzzy matching has drifted. Not an error, but "
+                          "'completed' with zero rows is what six days of "
+                          "EPICBET-403 looked like.[/yellow]")
+    _run_job("unibet_kambi_odds", _run)
+
+
 def job_nightly_mfv_b_ml3_refresh():
     """MFV-B-ML3-V2-NIGHTLY-REFRESH (2026-05-25): re-runs the B-ML3 v2 feature
     backfill nightly so MFV rows for matches that just finished settle into
@@ -2606,6 +2640,15 @@ def main():
                       id="feature_densify",
                       name="Feature Densify → MFV 23:45",
                       max_instances=1, misfire_grace_time=1800)
+
+    # UNIBET-KAMBI-ODDS (2026-09-04): direct Unibet prices every 30 min at
+    # :04/:34, just before the :05/:35 betting refresh so the same cycle sees
+    # them. Public API, no auth, no bot protection.
+    scheduler.add_job(job_unibet_kambi_odds,
+                      CronTrigger(minute="4,34"),
+                      id="unibet_kambi_odds",
+                      name="Unibet (Kambi) odds :04/:34",
+                      max_instances=1, misfire_grace_time=600)
 
     # ALN-AUTO (2026-05-25): 1st of each month at 03:30 UTC. Runs the
     # alignment-bump tuner over a 60d window; emails a diff via Resend
