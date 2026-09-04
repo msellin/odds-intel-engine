@@ -177,3 +177,42 @@ those filters were tuned on the fixtures we do bet.
 **Revised recommendation:** the case for a second book is *price improvement on
 fixtures we already bet* (+2.5% uplift, §1), not *new fixtures*. That is a
 smaller prize than the coverage numbers suggest.
+
+---
+
+## 8. "Would adding Unibet automation help?" — the decision table
+
+The only version of the second-book case that survives §7 is *price improvement
+on bets we already place*. Measured directly: our 1,523 settled non-retired
+pre-kickoff picks, ROI **+8.31%** (t=+2.40) as priced. What each book would add
+if we could always take the better of the two:
+
+| add this book | prices our picks | beats our price | new ROI | **gain** |
+|---|---|---|---|---|
+| **Marathonbet** | 1,494 / 1,523 | 17% | +9.89% | **+1.58pp** |
+| **Betano** | 1,406 | 20% | +9.62% | **+1.30pp** |
+| Superbet | 1,294 | 20% | +9.28% | +0.97pp |
+| **Unibet** | 1,289 | **11%** | +9.12% | **+0.81pp** |
+| 10Bet | 1,111 | 10% | +8.86% | +0.54pp |
+| *all seven* | — | — | *+10.86%* | *+2.55pp* |
+
+**Unibet specifically: +0.81pp — real, but the weakest of the four mainstream
+candidates.** It beats our price on only 11% of picks, half as often as Betano
+or Superbet, which matches its −2.30% average price difference in §1. Unibet is
+the *best-reviewed* book in the set and the *worst-priced* one.
+
+**Marathonbet is the best single addition (+1.58pp)** — best coverage of our
+picks *and* a good hit rate. But its Estonian licensing is exactly what
+`ACCESSIBLE-SET-VERIFY` is open on.
+
+**Three reasons the gains above are upper bounds:**
+1. They assume the AF-fed price equals the real site price — unverified, and the
+   Bet365 failure mode was exactly this.
+2. They assume no account limits. Betano is reported to limit aggressively after
+   a few bets; Unibet is Kindred, which has the same reputation.
+3. They assume perfect execution at the better price, with no latency loss.
+
+**Verdict: adding Unibet alone is not worth a scraper.** +0.81pp against 1-2 days
+of build plus ongoing maintenance and breakage. If one book is added, it should
+be Marathonbet or Betano — and only after step 0 (AF-feed trust) and
+`ACCESSIBLE-SET-VERIFY` come back clean.
