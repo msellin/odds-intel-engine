@@ -10829,8 +10829,27 @@ def _():
     pipeline = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
     assert "ACCESSIBLE_BOOKMAKERS" in pipeline, "ACCESSIBLE_BOOKMAKERS must be defined"
     assert "frozenset" in pipeline, "ACCESSIBLE_BOOKMAKERS must be a frozenset"
-    assert "Bet365" in pipeline and "Unibet" in pipeline and "Pinnacle" in pipeline, \
-        "ACCESSIBLE_BOOKMAKERS must include Bet365, Unibet, Pinnacle"
+    # PINNACLE-NOT-ACCESSIBLE-2026-09-04: the placeable set and the price-reference
+    # set are now separate. Pinnacle is not placeable from Estonia (operator
+    # confirmed) but remains the sharp anchor for CLV/de-vigging, which reads its
+    # price without placing a bet. Bet365 left the placeable set on 2026-08-21
+    # (BET365-EXECUTION-AUDIT: AF feed inflates it, CLV +10% vs ROI -10%).
+    #
+    # This mattered: Pinnacle was best-accessible-price on 36.1% of fixtures and
+    # worth +0.77% of price uplift, so every figure published at "accessible
+    # prices" before this was optimistic by ~0.66pp.
+    assert "PRICE_REFERENCE_BOOKMAKERS" in pipeline, (
+        "the placeable set and the sharp-reference set must be separate constants — "
+        "conflating them is what let an unplaceable book inflate published prices")
+    _acc_block = pipeline[pipeline.index("ACCESSIBLE_BOOKMAKERS: frozenset"):
+                          pipeline.index("PRICE_REFERENCE_BOOKMAKERS")]
+    for bad in ("Pinnacle", "Bet365"):
+        assert f'"{bad}"' not in _acc_block, (
+            f"{bad} is back in the PLACEABLE set. Pinnacle is not accessible from "
+            "Estonia and Bet365's AF feed is inflated; either one silently "
+            "overstates every price we report.")
+    assert "Unibet" in _acc_block and "Coolbet" in _acc_block, \
+        "the placeable set must still contain the books we can actually bet"
     assert "best_bookmaker" in pipeline, "best_bookmaker dict must be declared"
     assert "bookmaker not in ACCESSIBLE_BOOKMAKERS" in pipeline, \
         "inaccessible bookmakers must be filtered in odds aggregation loop"

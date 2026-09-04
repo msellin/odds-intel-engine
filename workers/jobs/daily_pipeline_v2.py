@@ -1070,7 +1070,7 @@ ODDS_MAX_LAG_HOURS = float(os.getenv("ODDS_MAX_LAG_HOURS", "6"))
 ODDS_MAX_AGE_HOURS = float(os.getenv("ODDS_MAX_AGE_HOURS", "48"))
 
 ACCESSIBLE_BOOKMAKERS: frozenset = frozenset({
-    "Unibet", "Betano", "Marathonbet", "10Bet", "888Sport", "Pinnacle",
+    "Unibet", "Betano", "Marathonbet", "10Bet", "888Sport",
     # COOLBET-AS-ACCESSIBLE (2026-05-20): Coolbet is our actual placement
     # venue and now ingested every 30m by the daemon's wide odds mode. Adding
     # it here so its prices feed edge math — if Coolbet has the best price on
@@ -1079,6 +1079,25 @@ ACCESSIBLE_BOOKMAKERS: frozenset = frozenset({
     # generated → daemon places them at Coolbet (best available price).
     "Coolbet",
 })
+
+# PINNACLE-NOT-ACCESSIBLE-2026-09-04: Pinnacle REMOVED from the placeable set.
+# The operator confirmed Pinnacle and Betfair are not accessible from Estonia.
+# The old comment above claimed Pinnacle was "available via Pinnacle Sports .com
+# (manual)" — that was an assumption, and every figure we published at
+# "accessible prices" rested on it.
+#
+# It mattered: Pinnacle was the best accessible price on 36.1% of fixtures and
+# contributed +0.77% of average price uplift on its own. Restating the O/U
+# holdout rule: margin 4.99% -> 5.66%, ROI -1.10% -> -1.76%. Everything we
+# reported at accessible prices was optimistic by roughly 0.66pp.
+#
+# Pinnacle stays in PRICE_REFERENCE_BOOKMAKERS below. Using it as the sharp
+# anchor for CLV, de-vigging and the OU cap is still correct — that reads its
+# price, it does not require placing a bet there. The two uses were conflated in
+# one constant; they are now separate.
+PRICE_REFERENCE_BOOKMAKERS: frozenset = frozenset(
+    ACCESSIBLE_BOOKMAKERS | {"Pinnacle"}
+)
 
 # Cache: {league_tier (1-4): rho}. Loaded once per pipeline run.
 _dc_rho_cache: dict | None = None
@@ -4978,7 +4997,7 @@ def _run_pin_ou_shadow_pass(today_str: str, cohort_tag: str = "morning", notify_
         (
             match_ids,
             list(markets_wanted),
-            list(ACCESSIBLE_BOOKMAKERS),  # includes Pinnacle
+            list(PRICE_REFERENCE_BOOKMAKERS),  # anchor set: includes Pinnacle
         ),
     )
     if not odds_raw:
@@ -5208,7 +5227,8 @@ def _run_pin_1x2_shadow_pass(today_str: str, cohort_tag: str = "morning", notify
               AND market = '1x2'
               AND bookmaker = ANY(%s::text[])
             ORDER BY match_id, selection, bookmaker, timestamp DESC""",
-        (match_ids, list(ACCESSIBLE_BOOKMAKERS)),
+        # Pinnacle-anchored pass — reference set, not the placeable set.
+        (match_ids, list(PRICE_REFERENCE_BOOKMAKERS)),
     )
     if not odds_raw:
         return 0
