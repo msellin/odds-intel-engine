@@ -264,15 +264,28 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
     else:
         pnl = round((odds - 1) * stake if won else -stake, 2)
 
-    # CLV: positive = we got better odds than closing line
-    clv = None
+    # CLV: positive = we got better odds than closing line.
+    #
+    # CLV-GATE-UNVALIDATED-2026-09-04: `clv` keeps its historical definition
+    # (odds_at_pick), and `clv_live` prices the same thing at the quote that was
+    # actually on offer. odds_at_pick is a snapshot high-water mark
+    # (STALE-BEST-ODDS) overstating by a mean +0.2522 decimal points, so a CLV
+    # built on it measures partly the price and partly which peak the scraper
+    # caught. Repricing lifts the correlation with realised return from +0.0825
+    # to +0.0991 (t=+10.23, n=10,542). New column rather than a rewrite because
+    # `clv` is published on the performance pages — migration 291's precedent.
+    clv = clv_live = None
     if closing_odds and closing_odds > 0:
         clv = round((float(odds) / float(closing_odds)) - 1, 4)
+        _px_live = bet.get("odds_at_pick_live")
+        if _px_live:
+            clv_live = round((float(_px_live) / float(closing_odds)) - 1, 4)
 
     return {
         "result": "void" if won is None else ("won" if won else "lost"),
         "pnl": pnl,
         "clv": clv,
+        "clv_live": clv_live,
     }
 
 
@@ -2791,10 +2804,19 @@ def _settle_pending_shadow_bets(pending: list, finished: list) -> int:
         # The validator the bot is actually judged on. Pinnacle-anchored and
         # de-vigged, so 0 means Pinnacle-fair rather than Pinnacle-quoted.
         clv_pinnacle = None
+        clv_pinnacle_live = None
         try:
             true_p = get_devigged_pinnacle_close_prob(match_id, odds_market, odds_selection)
             if true_p:
+                # CLV-GATE-UNVALIDATED-2026-09-04: `clv_pinnacle` keeps its
+                # historical definition (odds_at_pick); `clv_pinnacle_live`
+                # prices the same de-vigged probability at the quote that was
+                # actually on offer. The gate reads the _live column — see
+                # migration 300 for the correlation evidence.
                 clv_pinnacle = round(float(bet["odds_at_pick"]) * true_p - 1.0, 4)
+                _px_live = bet.get("odds_at_pick_live")
+                if _px_live:
+                    clv_pinnacle_live = round(float(_px_live) * true_p - 1.0, 4)
         except Exception as _e:  # never let a CLV lookup block a settlement
             console.print(f"  [dim]devigged-pinnacle CLV failed for {bet['id']}: {_e}[/dim]")
 
@@ -2804,9 +2826,11 @@ def _settle_pending_shadow_bets(pending: list, finished: list) -> int:
             execute_write(
                 "UPDATE shadow_bets SET result = %s, pnl = %s, "
                 "closing_odds = %s, clv = %s, clv_pinnacle = %s, "
+                "clv_live = %s, clv_pinnacle_live = %s, "
                 "closing_bookmaker = %s WHERE id = %s",
                 [settlement["result"], settlement["pnl"],
                  closing_odds, settlement["clv"], clv_pinnacle,
+                 settlement.get("clv_live"), clv_pinnacle_live,
                  closing_bookmaker, bet["id"]]
             )
         except Exception as e:

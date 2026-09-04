@@ -19386,9 +19386,20 @@ def test_bot_gate_reachable():
         "must not SELECT from the raw shadow_bets table — it holds one row "
         "per timing cohort and inflates n by ~20x"
     )
-    assert "COALESCE(clv_pinnacle, clv)" in src, (
-        "shadow CLV must prefer clv_pinnacle — the plain `clv` column is "
-        "anchored on the pick's own book and is not comparable to "
+    # CLV-GATE-UNVALIDATED-2026-09-04: the preference order gained the *_live
+    # variants in front. `clv` / `clv_pinnacle` are priced at odds_at_pick, the
+    # snapshot high-water mark; repricing at odds_at_pick_live lifts the
+    # correlation with realised return from +0.0825 to +0.0991 (t=+10.23 on
+    # n=10,542). The old columns stay at the end of the COALESCE so picks that
+    # predate the live backfill still resolve a basis.
+    assert "clv_pinnacle_live" in src and "clv_live" in src, (
+        "the gate must prefer the *_live CLV columns — the originals are "
+        "priced at a high-water mark that was never on offer"
+    )
+    assert "COALESCE(clv_pinnacle_live, clv_live, clv_pinnacle, clv)" in src, (
+        "shadow CLV must prefer the repriced Pinnacle anchor, then the repriced "
+        "own-book CLV, then the originals as fallback — the plain `clv` column "
+        "is anchored on the pick's own book and is not comparable to "
         "simulated_bets.clv"
     )
     # ONE source per bot, never a union — the two ledgers spell markets
@@ -28143,6 +28154,73 @@ def _weekly_eval_holdout():
         + ", ".join(r["version"] for r in missing)
         + " — the holdout guard cannot verify these and will refuse to score them")
     return f"holdout guard present; MIN_HOLDOUT_ROWS={wec.MIN_HOLDOUT_ROWS}"
+
+
+@test("CLV-GATE — CLV is priced at the quote that was actually on offer")
+def _clv_gate_priced_live():
+    """CLV-GATE-UNVALIDATED-2026-09-04. The promotion gate can promote a bot on
+    de-vigged Pinnacle CLV alone. The ticket suspected that route was unsafe
+    because CLV did not predict returns — correlation +0.0147, top quintile
+    losing money. **That was measured on a 717-pick subset and is wrong.**
+
+    On all 10,542 settled shadow picks carrying a de-vigged Pinnacle close, CLV
+    predicts returns strongly even as stored (corr +0.0825, t=+8.50). The real
+    defect was the price feeding it: `clv` and `clv_pinnacle` are computed from
+    `odds_at_pick`, the snapshot high-water mark STALE-BEST-ODDS showed
+    overstates by a mean +0.2522 decimal points. Repricing at
+    `odds_at_pick_live` sharpens it to corr +0.0991 (t=+10.23) with quintiles
+    running monotonically from -17.10%% to +11.15%%.
+
+    So the CLV route is KEPT, not dropped, and this pins that the gate reads the
+    repriced columns. New columns rather than a rewrite (migration 291's
+    precedent) because `clv` is published on the performance pages.
+    """
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+
+    settle = (root / "workers" / "jobs" / "settlement.py").read_text()
+    assert "clv_live" in settle and "clv_pinnacle_live" in settle, (
+        "settlement must write the repriced CLV columns, or the gate's basis "
+        "silently stops updating for new picks")
+    assert 'bet.get("odds_at_pick_live")' in settle, (
+        "the repriced CLV must come from odds_at_pick_live")
+    assert 'clv = round((float(odds) / float(closing_odds)) - 1, 4)' in settle, (
+        "the original `clv` must keep its historical definition — it is "
+        "published, and silently restating a published figure is the thing we "
+        "fault competitors for")
+
+    review = (root / "scripts" / "weekly_bot_review.py").read_text()
+    assert "COALESCE(clv_pinnacle_live, clv_live, clv_pinnacle, clv)" in review, (
+        "the gate must prefer the repriced CLV, falling back to the originals "
+        "for picks that predate the backfill")
+
+    try:
+        from workers.api_clients.db import execute_query
+        cols = {r["column_name"] for r in execute_query(
+            """SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'shadow_bets_unique'""")}
+    except Exception as e:                       # noqa: BLE001
+        raise SkipTest(f"DB not reachable: {e}")
+    if not cols:
+        raise SkipTest("shadow_bets_unique not present")
+    for c in ("clv_live", "clv_pinnacle_live"):
+        assert c in cols, (
+            f"shadow_bets_unique is missing `{c}` — the gate reads the VIEW, and "
+            "a view freezes its column list at creation (migrations 295/298/300)")
+
+    row = execute_query(
+        """SELECT COUNT(*) AS n,
+                  COUNT(COALESCE(clv_pinnacle_live, clv_live,
+                                 clv_pinnacle, clv)) AS basis
+             FROM shadow_bets_unique
+            WHERE result IN ('won','lost','void')
+              AND created_at >= NOW() - INTERVAL '90 days'""")[0]
+    if not row["n"]:
+        raise SkipTest("no settled shadow picks in the gate window")
+    assert row["basis"] > 0, (
+        "the gate's CLV expression resolves on no rows — it would fall through "
+        "to the ROI route for every bot")
+    return (f"gate CLV basis resolves on {row['basis']} of {row['n']} picks")
 
 
 if __name__ == "__main__":

@@ -213,7 +213,16 @@ def _fetch_shadow_bets(cur, bot_id):
     """
     cur.execute("""
         SELECT created_at, result, stake, pnl,
-               COALESCE(clv_pinnacle, clv) AS clv
+               -- CLV-GATE-UNVALIDATED-2026-09-04: prefer the *_live variants,
+               -- priced at the quote that was actually on offer. `clv` and
+               -- `clv_pinnacle` are computed from odds_at_pick, the snapshot
+               -- high-water mark STALE-BEST-ODDS showed overstates by a mean
+               -- +0.2522 decimal points. Repricing lifts the correlation with
+               -- realised return from +0.0825 to +0.0991 (t=+10.23, n=10,542),
+               -- with quintiles running -17.10%% to +11.15%%. The old columns
+               -- remain as the fallback so a bot whose picks predate the live
+               -- backfill still has a basis.
+               COALESCE(clv_pinnacle_live, clv_live, clv_pinnacle, clv) AS clv
         FROM shadow_bets_unique
         WHERE bot_id = %s
           AND result IN ('won','lost','void')
