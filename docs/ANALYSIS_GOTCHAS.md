@@ -908,3 +908,27 @@ through the contaminated path — including the 2026-08-31 decision not to switc
 O/U, which also went through the inverted metric in #34's sibling
 WEEKLY-EVAL-OU-INVERTED.
 
+## 36. XGBoost gain importance overstates binary flags — permute before believing it
+
+The `_missing` indicators looked alarming on `feature_importances_`: 13-18% of
+total importance across heads, and three of the O/U head's top six. That reads
+as "the model is predicting from which data we happen to have, not from
+football" — a real fragility, since coverage changes every time we add a book or
+backfill a column.
+
+Permutation ablation says otherwise. On the O/U head (n=6,847):
+
+    permute all 15 _missing indicators          +0.0020 log-loss
+    permute 3 real features, equal importance   +0.0086 log-loss
+
+Actual dependence is **0.23x** that of real features carrying the same nominal
+weight. Gain-based importance rewards low-cardinality binary splits out of
+proportion to their predictive contribution — a property of the metric.
+
+**Rule: never conclude a model depends on a feature from `feature_importances_`
+alone. Permute it and measure the loss.** The two disagree most exactly where
+binary flags are involved, which is where the scary-looking stories live.
+
+Corroborated independently: the 2026-09-03 densification flipped many of these
+indicators and moved the promoted head's holdout log-loss by 0.0001.
+
