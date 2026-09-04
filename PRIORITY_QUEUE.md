@@ -27,7 +27,28 @@
 > - **(e) New data sources for signal, ranked by coverage of the leagues we ACTUALLY bet** — not by how good the source is in the abstract. `UNDERSTAT-SCRAPER-BIG5-XG` is the cautionary example: excellent data, 1.62% coverage of our volume. Any candidate source gets the coverage question asked first.
 > - **(f) Widening markets — only into cheaper ones.** The margin table is the filter. Corners/cards/player props are recreational markets with margins well above 7%, so they are the wrong direction on cost even though they look "softer". First-half O/U and other totals variants are the plausible candidates; measure their margin before building anything.
 >
-> **The through-line:** we spent two days making the model's inputs richer and the measurable O/U gain came from one of four attempts, while a 72-hour price comparison found more upside than all of it. Weight the audit accordingly.
+> > **(b) RUN 2026-09-04 — and it corrects the framing above. The rule does NOT become profitable at any book set, and Epicbet is not the lever.**
+>
+> Re-priced the `|elo_diff| >= 86` O/U rule on the Aug-Sep holdout under seven book sets. **None turns positive**; best was Coolbet+Epicbet at -0.55%. Two methodological corrections were needed on the way, both mine:
+>
+> - The first pass compared book sets across **different match samples** (n ranged 2,267-4,534), conflating price with composition — gotcha #33, written the day before. Redone on a common sample.
+> - **The +2.50% uplift figure is measured on the overlap only.** Epicbet prices **239 of 7,182** firing matches — **3.3%**. Coolbet covers 31.6%. So adding Epicbet moves the aggregate overround from 1.0499 to 1.0496: **0.03pp, nothing.** This is the same coverage error as `UNDERSTAT-SCRAPER-BIG5-XG` (excellent data, 1.62% of our volume) — and item (e) of this very ticket says to ask the coverage question first. I did not apply it to Epicbet.
+>
+> **What is solid and precisely measured** (overround is deterministic given prices, so unlike the ROI columns it is not noisy) — margin falls monotonically with the number of accessible books pricing the fixture:
+>
+> | accessible books | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+> |---|---|---|---|---|---|---|---|
+> | margin | 8.49% | 6.83% | 6.45% | 5.46% | 4.50% | 3.65% | **3.01%** |
+>
+> Each additional book is worth ~0.8pp. The rule's +1.94pp edge needs total overround below ~3.88%, i.e. **6+ books** — which only 38% of firing fixtures have.
+>
+> **The obvious filter was tested and rejected.** "Only bet fixtures priced by >=6 books" gives +0.68% on the holdout (t=+0.30) — but **+0.14% at >=6 and -0.37% at >=7 on TRAIN, while >=4 gives +8.03% there.** The sign flips between windows, which is the distrust criterion the pre-registration named. Noise.
+>
+> **Revised conclusion: the constraint is book COVERAGE of the fixtures we bet, not price comparison between two books we already have.** We bet obscure leagues because that is where the model finds edges — and those are precisely the leagues one or two books price, at 8.5% margin. The edge and the cost are correlated by construction. Line shopping only pays where books compete, and books do not compete on Argentina Primera C.
+>
+> Note `Bet365` covers 55.2% and is top-of-market 41.2%, but its removal (BET365-EXECUTION-AUDIT-2026-08-21) was correct — the AF feed inflates it, giving CLV +10% against ROI -10%. Its top-of-market rate is an artefact of that inflation, not a real price.
+>
+> **The through-line:** we spent two days making the model's inputs richer and the measurable O/U gain came from one of four attempts, while price comparison looked bigger than all of it — until the coverage question was asked. Weight the audit accordingly, and ask coverage first every time.
 
 
 > **✅ Done 2026-09-03 FEATURE-DENSIFY-ROUND-2-2026-09-03 (P1 — three more OU features are computable from data we already hold; strictly better payoff than xG)** — 1 day — `TEAM-SCORING-RATES` proved the pattern: a sparse feature whose inputs we already own. Feature importance on the new OU head (`v20260903_cut0820`) shows three more in exactly that state, with reachable coverage measured, not assumed:
