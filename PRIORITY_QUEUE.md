@@ -1,5 +1,18 @@
 # OddsIntel — Master Priority Queue
 
+> **✅ Done 2026-09-04 EDGE-THRESHOLD-AUDIT-2026-09-04 (P2 — asked: are the min-odds/edge thresholds right yet?)** — **Answer: leave them alone, and the reason is not "not enough data".**
+>
+> **1. Our edge estimate does not rank bets.** On 1,651 settled live-bot picks at honest prices, `corr(edge_percent, realised return) = +0.0044, t=+0.18`. Quintiles run +11.60%, +15.44%, −4.44%, −0.94%, +19.26% — no gradient. A 13% edge pick does no better than a 3% one, so moving the threshold up or down has no systematic effect to exploit. **For contrast, repriced Pinnacle CLV on the same fleet is corr +0.0991, t=+10.23 with monotonic quintiles** — the ranking signal we have is CLV, not our own edge number.
+>
+> **2. The counterfactual (games we never bet) looks like it disagrees, and it is an artefact.** Across 14,403 fixtures with a model probability and accessible prices — including the ~70% we never bet — `corr(model edge, return) = +0.1995, t=+24.43`, which would be a huge signal. It is not. Every edge band below +0.25 loses (−6.30%, −4.48%, −0.39%, −6.18%, −8.15%, −3.87%) and the entire correlation comes from the top band, whose profit is in turn entirely **210 rows at odds 5+ on O/U 2.5 returning +195.86%**. O/U 2.5 does not price at 5.0 — median is 1.85, p99 3.58, and the universe holds a **max of 51.00**. That band is mismatched or corrupt odds rows, not opportunity. Its overround also reads 1.0240 against 1.0606 elsewhere, which is the tell.
+>
+> **3. The existing `odds_range` caps are load-bearing.** Live bots placed **0** settled O/U bets above odds 5 and only 4 above 4.5, because the configured ranges (1.30-4.50 / 1.30-5.00 / 1.35-3.50 / 1.50-3.00) already exclude exactly where the bad data lives. They are not earning their keep by ranking — they are earning it by keeping us out of corrupt rows. **Do not widen them.**
+>
+> **4. "Do we just need more bets?" No — more of the same would not help.** The issue is not sample size on a weak-but-real gradient; it is that there is no gradient. n=1,651 is enough to see corr=+0.0044 is not hiding a +0.10. What would change the answer is a *better ranking signal*, and we already know which one that is: CLV. See `GATE-ON-PINNACLE-DISAGREEMENT`, which measured that when the model disagrees with Pinnacle its error equals the disagreement one-for-one.
+>
+> **Follow-on worth doing:** a hard sanity guard on O/U prices (reject `over_under_25` rows above ~4.5 outright at ingest) so the corrupt rows stop entering `odds_snapshots` at all, rather than being filtered per-bot downstream. 2,751 of 2.67M rows in 30 days.
+
+
 > **⬜ UNIBET-BETANO-DIRECT-SCRAPERS-2026-09-04 (P1 — the two books worth having, but do step 0 first)** — step 0: 2h · each scraper: 1-2 days — Direct odds ingest for Unibet and Betano, in the shape of `epicbet_explorer.py` (670 lines: bulk league sweep, fuzzy-match to DB fixtures, write 1X2/OU/BTTS/AH to `odds_snapshots`, FlareSolverr fallback, `RAISES` on failure) plus a 30-min scheduler job like `job_epicbet_odds_snapshot`.
 >
 > **Why these two.** Coverage of fixtures we actually bet: **Betano 95.1%**, **Unibet 87.4%**, against **Coolbet 68.5%** and **Epicbet 12.6%**. They are the only EMTA-licensed books with real coverage of our leagues. Both limit winning accounts, so the value is (a) fixtures placed before limits bite and (b) permanent **price discovery** — knowing where the best price is has value even when the bet goes on at Coolbet.
