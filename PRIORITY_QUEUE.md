@@ -133,7 +133,7 @@ Destroying every missingness signal costs 0.3% of log-loss — **0.23x** the dep
 **Only after this lands does `OU-SIGNAL-SEARCH` have a dense feature worth searching over** — today it would search elo and ladder shape alone.
 
 
-> **⬜ OU-SIGNAL-SEARCH-2026-09-03 (P2 — do it, but AFTER the feature density work; see why below)** — 1-2 days once unblocked — Can we mine everything gathered since May for O/U signals? **Yes in principle — the raw material is far bigger than anything we have analysed.** The universe is not our bets or even our predictions: it is **26,250 settled matches carrying O/U odds** since 2026-05-01, of which we predicted on only 56.0% (14,689) and bet 21.7% (5,698). Backtesting rules over the full universe is ~17x the data behind every O/U figure quoted so far.
+> **🔄 In Progress OU-SIGNAL-SEARCH-2026-09-03 (P2 — do it, but AFTER the feature density work; see why below)** — 1-2 days once unblocked — Can we mine everything gathered since May for O/U signals? **Yes in principle — the raw material is far bigger than anything we have analysed.** The universe is not our bets or even our predictions: it is **26,250 settled matches carrying O/U odds** since 2026-05-01, of which we predicted on only 56.0% (14,689) and bet 21.7% (5,698). Backtesting rules over the full universe is ~17x the data behind every O/U figure quoted so far.
 >
 > **Power is the binding constraint.** Per-bet return sd is 1.0973, so at 80% power / two-sided 5%:
 >
