@@ -45,6 +45,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
+from pathlib import Path
+import time
+import signal
 import subprocess
 from datetime import datetime, timezone
 
@@ -305,11 +309,96 @@ def _alert(state: str, reason: str) -> None:
         log.warning("telegram alert failed: %s", e)
 
 
+# COOLBET-STALL-KILL-2026-09-04. Timeouts prevent the hang we found; this
+# catches the ones we have not found yet.
+#
+# On 2026-09-04 the odds job wedged on a GET with no timeout: PID 64881 alive
+# 15h15m in state S, log silent 10:15 -> 23:48, no bulk sweep since 07:00,
+# Coolbet coverage of upcoming fixtures down to 2.1%. launchd will not restart a
+# job whose process is still alive, so it sat there. Meanwhile this watchdog ran
+# every 20 minutes, correctly reported STALE, and re-harvested cookies ~40 times
+# at a problem that had nothing to do with cookies.
+#
+# Detecting a stall and being unable to end it is not monitoring, it is
+# spectating. A process that has outlived several run cycles with a silent log
+# is hung by definition — killing it lets launchd start a clean one.
+_STALL_PROC_MATCH = "workers.automation.coolbet_explorer"
+_STALL_LOG = Path(__file__).resolve().parents[2] / "dev" / "active" / "coolbet-odds-snapshot.log"
+_STALL_MINUTES = float(os.getenv("COOLBET_STALL_MINUTES", "45"))
+
+
+def _stalled_pids() -> list[tuple[int, float]]:
+    """(pid, minutes_running) for odds-job processes older than the stall bound."""
+    try:
+        out = subprocess.run(["ps", "-eo", "pid,etimes,command"],
+                             capture_output=True, text=True, timeout=15).stdout
+    except Exception:                                    # noqa: BLE001
+        return []
+    hits = []
+    for line in out.splitlines():
+        if _STALL_PROC_MATCH not in line:
+            continue
+        parts = line.split(None, 2)
+        try:
+            pid, etimes = int(parts[0]), int(parts[1])
+        except (ValueError, IndexError):
+            continue
+        mins = etimes / 60.0
+        if mins >= _STALL_MINUTES:
+            hits.append((pid, mins))
+    return hits
+
+
+def _log_silent_minutes() -> float | None:
+    try:
+        return (time.time() - _STALL_LOG.stat().st_mtime) / 60.0
+    except OSError:
+        return None
+
+
+def kill_stalled_job(dry_run: bool = False) -> dict:
+    """Kill an odds-job process that is running but no longer writing.
+
+    Both conditions are required. A long run that is still logging is doing
+    work — the full sweep walks ~2,000 fixtures with deliberate pauses — and
+    killing it would turn a slow success into a guaranteed failure.
+    """
+    silent = _log_silent_minutes()
+    pids = _stalled_pids()
+    info = {"pids": [p for p, _ in pids], "log_silent_min": silent, "killed": []}
+    if not pids or silent is None or silent < _STALL_MINUTES:
+        return info
+    for pid, mins in pids:
+        if dry_run:
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+            info["killed"].append(pid)
+            log.warning("killed stalled coolbet odds job pid=%s (running %.0fmin, "
+                        "log silent %.0fmin)", pid, mins, silent)
+        except OSError as e:
+            log.warning("could not kill stalled pid %s: %s", pid, e)
+    return info
+
+
 def run(dry_run: bool = False) -> dict:
     state, reason = classify()
     result = {"state": state, "reason": reason, "action": "none",
               "checked_at": datetime.now(timezone.utc).isoformat()}
     log.info("coolbet feed watchdog: %s — %s", state, reason)
+
+    # Do this regardless of state: a wedged process starves the feed whether or
+    # not the classifier has noticed yet, and killing it is safe when the log is
+    # also silent.
+    stall = kill_stalled_job(dry_run=dry_run)
+    if stall["killed"]:
+        result["action"] = f"killed_stalled_pids={stall['killed']}"
+        result["stall"] = stall
+        _alert("STALLED",
+               f"odds job pid(s) {stall['killed']} were running with the log "
+               f"silent for {stall['log_silent_min']:.0f}min — killed so launchd "
+               f"can start a clean run")
+        return result
 
     if dry_run or state in ("HEALTHY", "UNKNOWN"):
         return result

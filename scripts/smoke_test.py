@@ -28306,5 +28306,67 @@ def _unibet_kambi():
     return "milli-units, type-keyed parsing, pre-match + virtual filters all pinned"
 
 
+@test("COOLBET-GET-NO-TIMEOUT — no request can hang the odds job forever")
+def _coolbet_get_timeout():
+    """COOLBET-GET-NO-TIMEOUT-2026-09-04. The Coolbet odds job hung for 15h15m.
+
+    `requests.Session` inherits no default timeout. The POST path in
+    `coolbet_session.py` had carried a `setdefault("timeout", 30)` for exactly
+    that reason; **the GET path had none**, and four other call sites had
+    neither. A GET on a half-open socket blocked forever, and because the
+    process stayed alive launchd considered the job still running and never
+    restarted it.
+
+    Measured: PID 64881, state S, elapsed 15h15m, log silent 10:15 -> 23:48, no
+    bulk sweep since 07:00, Coolbet coverage of upcoming fixtures down to 2.1%
+    against Unibet-Kambi's 33.2%. Throughout, the feed watchdog ran every 20
+    minutes, correctly reported STALE, and re-harvested cookies at a problem
+    that was never about cookies.
+
+    Two guards, because the first only fixes the hang we found:
+      1. `_TimeoutSession` defaults every request, so a new call site cannot
+         reintroduce this by omission.
+      2. `kill_stalled_job` ends a process that is running while its log is
+         silent, so launchd can start a clean one. Detecting a stall without
+         being able to end it is spectating, not monitoring.
+    """
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+    sess_src = (root / "workers" / "automation" / "coolbet_session.py").read_text()
+
+    assert "class _TimeoutSession(requests.Session)" in sess_src, (
+        "the session must default its own timeout — patching individual call "
+        "sites is what let the GET path go unguarded while POST was fixed")
+    assert "kwargs.setdefault(\"timeout\", self.default_timeout)" in sess_src, (
+        "_TimeoutSession must inject the default in request()")
+    # Check ASSIGNMENTS, not prose: two docstrings legitimately mention
+    # `requests.Session()` while describing why it was replaced, and an earlier
+    # draft of this assertion matched those and failed on correct code.
+    import re as _re
+    bare = _re.findall(r"=\s*requests\.Session\(\)", sess_src)
+    assert not bare, (
+        "a bare requests.Session() is being assigned again — it inherits no "
+        "timeout and can hang the job indefinitely")
+
+    from workers.automation.coolbet_session import _TimeoutSession
+    assert 5 <= _TimeoutSession.default_timeout <= 120, (
+        f"default_timeout={_TimeoutSession.default_timeout} is outside a sane "
+        "band; it must be well under the 30-minute job cadence so a wedged "
+        "request cannot outlive its own run")
+
+    wd = (root / "workers" / "jobs" / "coolbet_feed_watchdog.py").read_text()
+    assert "def kill_stalled_job" in wd and "SIGTERM" in wd, (
+        "the watchdog must be able to end a stalled job, not just report it")
+    assert "_log_silent_minutes" in wd, (
+        "the stall check must require a SILENT log as well as a long runtime — "
+        "the full sweep legitimately walks ~2,000 fixtures with pauses, and "
+        "killing a slow-but-working run turns it into a guaranteed failure")
+
+    from workers.jobs.coolbet_feed_watchdog import kill_stalled_job
+    out = kill_stalled_job(dry_run=True)
+    assert out.get("killed") == [], "dry_run must never actually kill"
+    return "session defaults a timeout; watchdog can end a stalled run"
+
+
 if __name__ == "__main__":
     main()

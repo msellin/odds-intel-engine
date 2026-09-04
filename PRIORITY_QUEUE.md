@@ -1,5 +1,20 @@
 # OddsIntel — Master Priority Queue
 
+> **✅ Done 2026-09-04 COOLBET-GET-NO-TIMEOUT-2026-09-04 (P0 — the odds feed was dead for 15h and nothing could restart it)** — Coolbet stopped producing bulk sweeps after 07:00 UTC. Not a block, not Imperva: **the process was hung.** PID 64881, state `S`, elapsed **15h15m**, log silent 10:15 -> 23:48. Coverage of upcoming fixtures fell to **2.1%** (33 of 1,570) against Unibet-Kambi's 33.2%.
+>
+> **Root cause, and it is a one-line asymmetry.** `requests.Session` inherits no default timeout. The POST path in `coolbet_session.py` carried `kwargs.setdefault("timeout", 30)` with a comment explaining that it "would block forever" otherwise. **The GET path had no such line**, and four further call sites had neither. A GET on a half-open socket blocked indefinitely; because the process stayed alive, launchd considered the job still running and never restarted it.
+>
+> **Why the watchdog did not save us.** It ran every 20 minutes throughout, correctly classified `STALE_COOKIES`, and re-harvested Imperva cookies ~40 times at a problem that was never about cookies. It could see the failure and do nothing about it — `COOLBET-WATCHDOG-CANNOT-ESCALATE` in its purest form.
+>
+> **Two fixes, because the first only covers the hang we found:**
+> 1. **`_TimeoutSession`** — a `requests.Session` subclass that defaults every request (45s, env-tunable). Applied at the Session, not per call site, so a new call site cannot reintroduce this by omission. Explicit per-call timeouts still win.
+> 2. **`kill_stalled_job()` in the feed watchdog** — ends an odds-job process that has run past `COOLBET_STALL_MINUTES` (45) **while its log is silent**. Both conditions required: the full sweep legitimately walks ~2,000 fixtures with deliberate pauses, and killing a slow-but-working run would turn it into a guaranteed failure. Fires regardless of classifier state, since a wedged process starves the feed whether or not the classifier has noticed.
+>
+> Immediate recovery: killed PID 64881 and triggered the job; it resumed and is writing. Smoke test mutation-verified. **Unibet-Kambi is not exposed to this** — both its requests carry an explicit `timeout=25`.
+>
+> **Note on the assertion:** the first version of the smoke test checked `"requests.Session()" not in src` and failed on correct code, because two docstrings mention it while explaining why it was replaced. Now scoped to assignments. Same lesson as the OU-INVERTED and STALE-ODDS tests — assert against the code, not the prose describing it.
+
+
 > **✅ Done 2026-09-04 UNIBET-KAMBI-ODDS-2026-09-04 (P1 — direct Unibet ingest, and the tool that settles step 0)** — `workers/automation/unibet_kambi.py` + a 30-min job at `:04/:34`. **Unibet is a Kambi operator, as is Coolbet** — which is why `coolbet_placer` already parses Kambi criterion labels. The offering API is **public, unauthenticated and has no bot protection**, so this needs none of Coolbet's 1,154-line Imperva session or Epicbet's FlareSolverr fallback. Plain JSON.
 >
 > ```

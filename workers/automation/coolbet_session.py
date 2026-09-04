@@ -279,6 +279,32 @@ class _FSResponse:
             )
 
 
+class _TimeoutSession(requests.Session):
+    """A requests.Session that refuses to wait forever.
+
+    COOLBET-GET-NO-TIMEOUT-2026-09-04. `requests.Session` inherits no default
+    timeout, so any call site that forgets one blocks on a half-open socket
+    indefinitely. That is not hypothetical here: the odds job hung for **15h15m**
+    (PID 64881, state S, log silent 10:15 -> 23:48) on exactly such a GET. The
+    process stayed alive, so launchd considered the job still running and never
+    restarted it, and Coolbet coverage of upcoming fixtures fell to 2.1% while
+    the feed watchdog re-harvested cookies at a problem that was never cookies.
+    The POST path had carried a `setdefault("timeout", 30)` for exactly this
+    reason; the GET path did not, and four other call sites had neither.
+
+    Defaulting at the Session means a new call site cannot reintroduce the bug
+    by omission. An explicit per-call timeout still wins.
+    """
+
+    #: Generous enough for FlareSolverr-backed calls, far below the 30-min job
+    #: cadence, so a wedged request can never outlive its own run.
+    default_timeout = float(os.getenv("COOLBET_HTTP_TIMEOUT_S", "45"))
+
+    def request(self, method, url, **kwargs):  # type: ignore[override]
+        kwargs.setdefault("timeout", self.default_timeout)
+        return super().request(method, url, **kwargs)
+
+
 class CoolbetSession:
     """Thread-safe(ish) Coolbet API session with auto JWT refresh.
 
@@ -369,7 +395,7 @@ class CoolbetSession:
 
         # HYBRID TRANSPORT (2026-06-11):
         # - GET ........ via FlareSolverr (real Chrome TLS, full Imperva pass)
-        # - POST (JSON). via plain requests.Session() WITH cookies harvested
+        # - POST (JSON). via _TimeoutSession() WITH cookies harvested
         #                from a FS GET. The reason: FlareSolverr force-encodes
         #                all POST bodies as application/x-www-form-urlencoded
         #                and TRUNCATES JSON bodies at the first separator.
@@ -382,7 +408,7 @@ class CoolbetSession:
 
         # The real transport for POST (and any legacy plain-requests path).
         # Cookies will be populated by _refresh_cookies_from_fs() on first use.
-        self._http = requests.Session()
+        self._http = _TimeoutSession()
         self._http.headers.update(_HEADERS_BASE)
         # Tracks whether we've done at least one FS-cookie harvest. Set to
         # False on init AND on any 401/403 to force re-harvest on next call.
@@ -963,6 +989,17 @@ class CoolbetSession:
         headers = self._build_auth_headers(kwargs.pop("headers", None))
         params = kwargs.pop("params", None)
         if self._no_fs:
+            # COOLBET-GET-NO-TIMEOUT-2026-09-04: mirror the setdefault the POST
+            # path has carried since it was fixed. requests.Session inherits no
+            # default timeout, so a GET here blocks FOREVER on a half-open
+            # socket — and because the process stays alive, launchd considers
+            # the job still running and never restarts it.
+            #
+            # Measured: PID 64881 sat in state S for 15h15m, log silent from
+            # 10:15 to 23:48, no bulk sweep since 07:00. Coolbet coverage of
+            # upcoming fixtures fell to 2.1% while the feed watchdog cheerfully
+            # re-harvested cookies at a problem that was never about cookies.
+            kwargs.setdefault("timeout", 30)
             resp = self._http.get(url, params=params, headers=headers, **kwargs)
             return _FSResponse({
                 "solution": {
@@ -974,7 +1011,7 @@ class CoolbetSession:
         return self._fs_get(url, headers=headers, params=params)
 
     def post(self, url: str, **kwargs) -> requests.Response:
-        """POST via plain requests.Session() WITH cookies harvested from FS.
+        """POST via _TimeoutSession() WITH cookies harvested from FS.
 
         Why not FlareSolverr: FS force-encodes POST bodies as application/x-www-
         form-urlencoded and truncates JSON to ~4 bytes (verified via httpbin
@@ -1096,7 +1133,7 @@ def coolbet_match_url(home: str, away: str) -> str | None:
     the caller.
     """
     try:
-        session = requests.Session()
+        session = _TimeoutSession()
         session.headers.update({
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
