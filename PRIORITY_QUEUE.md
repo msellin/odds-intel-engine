@@ -133,7 +133,7 @@ Destroying every missingness signal costs 0.3% of log-loss — **0.23x** the dep
 **Only after this lands does `OU-SIGNAL-SEARCH` have a dense feature worth searching over** — today it would search elo and ladder shape alone.
 
 
-> **🔄 In Progress OU-SIGNAL-SEARCH-2026-09-03 (P2 — do it, but AFTER the feature density work; see why below)** — 1-2 days once unblocked — Can we mine everything gathered since May for O/U signals? **Yes in principle — the raw material is far bigger than anything we have analysed.** The universe is not our bets or even our predictions: it is **26,250 settled matches carrying O/U odds** since 2026-05-01, of which we predicted on only 56.0% (14,689) and bet 21.7% (5,698). Backtesting rules over the full universe is ~17x the data behind every O/U figure quoted so far.
+> **✅ Done 2026-09-04 OU-SIGNAL-SEARCH-2026-09-03 (P2 — do it, but AFTER the feature density work; see why below)** — 1-2 days once unblocked — Can we mine everything gathered since May for O/U signals? **Yes in principle — the raw material is far bigger than anything we have analysed.** The universe is not our bets or even our predictions: it is **26,250 settled matches carrying O/U odds** since 2026-05-01, of which we predicted on only 56.0% (14,689) and bet 21.7% (5,698). Backtesting rules over the full universe is ~17x the data behind every O/U figure quoted so far.
 >
 > **Power is the binding constraint.** Per-bet return sd is 1.0973, so at 80% power / two-sided 5%:
 >
@@ -158,6 +158,32 @@ Destroying every missingness signal costs 0.3% of log-loss — **0.23x** the dep
 > **The one dense thing we do hold is the odds ladder: 25,728 of 26,250 matches (98.0%) carry 4+ O/U lines.** The full `over_under_XX` ladder encodes the market's own implied total-goals distribution, and it is dense enough to support a properly powered search on its own. That plus `elo` and `league_tier` is the honest starting feature set today.
 >
 > **Sequencing:** this is not an alternative to `UNDERSTAT-SCRAPER-BIG5-XG` — it is the job that xG work exists to feed. Densify features first, search second; searching now means searching over `elo` + ladder shape and little else. Run the ladder-only search first if we want an early read, with a locked time-split holdout (fit May-Jul, one shot at Aug-Sep) and <=10 pre-registered hypotheses.
+
+**RUN 2026-09-04. Pre-registration committed before the holdout was touched** (`dev/active/ou-signal-search-preregistration.md`, commit 55fa393). Universe 22,814 matches with paired pre-KO 2.5 prices; TRAIN 14,083 (May-Jul), HOLDOUT 8,731 (Aug-Sep). Benchmark is the **de-vigged market price**, not the base rate — a feature only counts if it predicts the residual `1[total>2.5] - p_mkt`.
+
+**Screen (TRAIN only, Bonferroni a=0.005): one of ten features survived.** `abs(elo_diff)` at corr +0.0375, t=+4.45, p=8.8e-06 — the market under-prices overs in mismatched fixtures. Everything else failed, including all four goal-rate features we densified the day before.
+
+**Rule:** back OVER 2.5 when `|elo_diff| >= 86` (top 40% on TRAIN; +5.37% TRAIN ROI, stable +5.0-6.7% across every threshold from top-50% to top-20%, so not a knife-edge fit). The top-20% band had the best TRAIN ROI but would have fired on ~1,750 holdout matches, **below the pre-registered 2,000 floor**, so it was not used.
+
+**HOLDOUT (one shot, n=4,528): ROI -1.04%, t=-0.76, 95% CI [-3.74%, +1.68%].** The rule does not replicate as profitable. **Reported as a null result per the stopping rule; no re-tuning.**
+
+**But the decomposition is the actually useful finding, and it is not a null:**
+
+| | |
+|---|---|
+| residual edge the rule finds (holdout) | **+1.94pp** |
+| vig paid at bookmaker prices (overround 1.0499) | **-2.50pp** |
+| net | **-0.56pp** (observed -1.04%, within noise) |
+
+The signal is **real and it survived out-of-sample** — the residual stayed positive (+0.0194 holdout vs +0.0279 train) and the non-firing control returned **-3.22%** against the rule's -1.04%, so the rule genuinely selected better-than-average bets by ~2.2pp. It is simply smaller than the margin. Priced at a zero-overround venue the same rule returns **+3.79% (t=+2.65)**, or **+2.86% (t=+2.02)** after 2% commission.
+
+**Conclusion for the platform: price is the binding constraint, not the model.** The best edge a disciplined search over everything we hold can find is ~1.9pp; the bookmaker margin is 2.5pp. More features will not close that gap — cheaper execution would. This is the same conclusion the O/U work kept arriving at from the other direction.
+
+**Caveat that limits the exchange number:** our volume is Argentina Primera C, Sweden, Australia, Norway — exchange liquidity there is thin to nonexistent, so +2.86% is an upper bound on a venue we may not be able to use at size. See `FREE-TIER-BETFAIR-EXCHANGE-NOTE` and `EXCHANGE-LIQUIDITY-CHECK` below.
+
+> **⬜ EXCHANGE-LIQUIDITY-CHECK-2026-09-04 (P2 — the one lead the signal search actually produced)** — 1-2 days — `OU-SIGNAL-SEARCH` established that our best measurable O/U edge (+1.94pp) is smaller than the bookmaker margin (2.50pp) but larger than a zero-overround venue's cost: the same rule returns +2.86% after 2% commission on n=4,528 out-of-sample (t=+2.02). **That makes execution price, not model quality, the binding constraint.** Before believing it, measure the thing that would kill it: **is there exchange liquidity in the leagues we actually bet?** Our volume is Friendlies, J1, MLS Next Pro, Argentina Primera C, Brazil Serie D, Iceland 1. Deild — Betfair O/U 2.5 markets there may be empty or a few hundred euro deep. **Measure matched volume and best-price depth per league**, then re-run the rule restricted to fixtures where a real stake could have been placed. If liquidity only exists in leagues where our edge does not, the answer is no — and that is worth knowing before any integration work.
+
+
 
 
 > **⛔ OU-OVER-UNDER-ASYMMETRY-2026-09-03 — WITHDRAWN the same day it was filed. It did not survive its own confirmation step.**
