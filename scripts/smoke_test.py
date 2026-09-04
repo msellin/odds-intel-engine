@@ -22908,7 +22908,17 @@ def _():
     )
     # Other legitimate accessible books must remain — a mass drop would
     # be a different (more dangerous) change and worth flagging.
-    for expected in ("Marathonbet", "Unibet", "Coolbet", "Pinnacle"):
+    #
+    # ACCESSIBLE-SET-VERIFY-2026-09-05: this list previously named Marathonbet
+    # and Pinnacle. Both are on EMTA's official blocked-domain list and are NOT
+    # reachable from Estonia, so asserting their presence was pinning the bug in
+    # place — the test was enforcing exactly the assumption that had inflated
+    # every published price. Marathonbet priced 99% of the fixtures we bet.
+    #
+    # What remains is the EMTA-verified core. Pinnacle keeps its place in
+    # PRICE_REFERENCE_BOOKMAKERS (reading its price for CLV needs no account),
+    # which the ACCESSIBLE-BM test covers separately.
+    for expected in ("Coolbet", "Betano", "Unibet"):
         assert f'"{expected}"' in contents, (
             f"{expected} unexpectedly missing from ACCESSIBLE_BOOKMAKERS. "
             f"If intentional, add a comment explaining why."
