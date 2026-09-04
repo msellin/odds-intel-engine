@@ -9,6 +9,7 @@ Tests target the exact functions that have broken silently in production.
 Exit code 0 = all pass, 1 = any failure.
 """
 
+import contextlib
 import sys
 import os
 import threading
@@ -721,34 +722,162 @@ def _():
     )
 
 
-@test("SETTLEMENT-POSTPONED-VOID — postponed/cancelled real_bets get auto-voided (source inspect)")
-def _():
-    """Singles real_bets on matches that move to status='postponed'/'cancelled'/
-    'abandoned' must be voided (result='void', pnl=0) on every 15-min sweep —
-    otherwise they sit pending forever (7 stuck bets on Estudiantes Mérida vs
-    Metropolitanos burned this on 2026-05-24). Bookmaker always refunds, so
-    voiding is the safe mirror.
+# ---------------------------------------------------------------------------
+# SMOKE-SUITE-AUDIT-2026-08-31 — harness for turning WEAKEN tests behavioural.
+#
+# The audit classified 188 tests as WEAKEN: "asserts source strings only —
+# would pass after deletion". They pin the *spelling* of an implementation, not
+# what it does, so they survive the logic being removed and break when it is
+# merely renamed. Both failure directions are worse than useless: one gives
+# false assurance, the other trains people to edit tests to make them pass.
+#
+# The blocker to fixing them has been that the code under test writes to the
+# database through module-level `execute_query` / `execute_write`, which open
+# their own connections — so a test cannot set up a fixture, observe the effect
+# and undo it.
+#
+# `module_db_txn` removes that blocker: it re-points a module's DB helpers at a
+# single caller-controlled transaction and rolls back at the end. The function
+# under test runs completely unmodified against real schema and real
+# constraints, and nothing persists.
+@contextlib.contextmanager
+def module_db_txn(module, *, helpers=("execute_query", "execute_write")):
+    """Run `module`'s DB calls inside one transaction, then roll it back.
+
+    Yields a cursor for fixture setup and assertions. Any write the module makes
+    is visible to that cursor and to nothing else.
     """
-    import inspect
+    from workers.api_clients.db import get_conn
+    conn_cm = get_conn()
+    conn = conn_cm.__enter__()
+    cur = conn.cursor()
+
+    def _q(sql, params=None):
+        cur.execute(sql, params or [])
+        if cur.description is None:
+            return []
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+    def _w(sql, params=None):
+        cur.execute(sql, params or [])
+        return cur.rowcount
+
+    saved = {}
+    for name in helpers:
+        if hasattr(module, name):
+            saved[name] = getattr(module, name)
+    for name in helpers:
+        if name in saved:
+            setattr(module, name, _q if name == "execute_query" else _w)
+    try:
+        yield cur
+    finally:
+        for name, fn in saved.items():
+            setattr(module, name, fn)
+        try:
+            conn.rollback()
+        finally:
+            conn_cm.__exit__(None, None, None)
+
+
+def _fixture_ids(cur) -> tuple:
+    """Two team ids and a league id, for building throwaway fixtures."""
+    cur.execute("SELECT id FROM teams LIMIT 2")
+    teams = [r[0] for r in cur.fetchall()]
+    cur.execute("SELECT id FROM leagues LIMIT 1")
+    league = cur.fetchone()[0]
+    if len(teams) < 2 or league is None:
+        raise SkipTest("no teams/leagues available to build a fixture")
+    return teams[0], teams[1], league
+
+@test("SETTLEMENT-POSTPONED-VOID — postponed real_bets are voided; combos and live bets are not")
+def _():
+    """Singles on matches that move to postponed/cancelled/abandoned must be
+    voided (result='void', pnl=0) on every 15-min sweep, or they sit pending
+    forever — 7 stuck bets on Estudiantes Mérida vs Metropolitanos burned this
+    on 2026-05-24. The bookmaker always refunds, so voiding is the safe mirror.
+
+    SMOKE-SUITE-AUDIT-2026-08-31: this was a WEAKEN test — it asserted that the
+    strings "postponed", "result='void'" and "combo_legs IS NULL" appeared in
+    the function source. That passes if the SQL is deleted and a comment
+    mentioning those words is left behind, and fails if the query is merely
+    reformatted. It pinned spelling, not behaviour.
+
+    Now it builds three real fixtures and runs the real function:
+      * single on a postponed match  -> must be voided, pnl 0
+      * single on a finished match   -> must be untouched
+      * COMBO on a postponed match   -> must be untouched, because
+        settle_combo_bet settles it on the remaining legs at reduced product
+        odds rather than flat-voiding it. Voiding combos here would silently
+        refund bets that should have settled.
+    """
     from workers.jobs import settlement
-    fn = inspect.getsource(settlement._void_real_bets_on_dead_matches)
-    assert "postponed" in fn and "cancelled" in fn, (
-        "_void_real_bets_on_dead_matches must cover postponed + cancelled "
-        "(the only dead match_status enum values; AF PST/CANC/ABD/WO/AWD all "
-        "collapse to 'postponed' in store_match)"
-    )
-    assert "result='void'" in fn and "pnl=0" in fn, (
-        "void must set result='void' AND pnl=0"
-    )
-    assert "combo_legs IS NULL" in fn, (
-        "must only void singles — combos use settle_combo_bet's reduced-product rule"
-    )
-    # Wired into the 15-min sweep so postponed matches don't need a separate
-    # finished-match trigger to clear.
-    sweep = inspect.getsource(settlement.settle_ready_matches)
-    assert "_void_real_bets_on_dead_matches" in sweep, (
-        "settle_ready_matches must call _void_real_bets_on_dead_matches"
-    )
+
+    try:
+        with module_db_txn(settlement) as cur:
+            home, away, league = _fixture_ids(cur)
+            made = {}
+            for label, status, combo in (
+                ("single_postponed", "postponed", None),
+                ("single_cancelled", "cancelled", None),
+                ("single_finished", "finished", None),
+                ("combo_postponed", "postponed", '[{"leg": 1}]'),
+            ):
+                cur.execute(
+                    """INSERT INTO matches (date, home_team_id, away_team_id,
+                                            league_id, season, status)
+                       VALUES (now() - interval '1 day', %s, %s, %s, 2026, %s)
+                       RETURNING id""",
+                    (home, away, league, status))
+                mid = cur.fetchone()[0]
+                cur.execute(
+                    """INSERT INTO real_bets (match_id, market, selection, bookmaker,
+                                              actual_odds, stake, result, combo_legs)
+                       VALUES (%s, '1x2', 'home', 'Coolbet', 2.0, 10, 'pending', %s::jsonb)
+                       RETURNING id""",
+                    (mid, combo))
+                made[label] = cur.fetchone()[0]
+
+            settlement._void_real_bets_on_dead_matches()
+
+            cur.execute("SELECT id, result, pnl FROM real_bets WHERE id = ANY(%s::uuid[])",
+                        ([v for v in made.values()],))
+            got = {r[0]: (r[1], r[2]) for r in cur.fetchall()}
+
+            for label in ("single_postponed", "single_cancelled"):
+                res, pnl = got[made[label]]
+                assert res == "void", (
+                    f"{label} should be voided, got result={res!r} — a pending bet "
+                    "on a dead match never resolves")
+                assert pnl is not None and float(pnl) == 0.0, (
+                    f"{label} voided with pnl={pnl!r}; a refund is zero P&L, and a "
+                    "non-zero value corrupts every ROI that sums pnl")
+
+            res, _ = got[made["single_finished"]]
+            assert res == "pending", (
+                f"a bet on a FINISHED match was touched (result={res!r}) — this "
+                "function must only act on dead matches")
+
+            res, _ = got[made["combo_postponed"]]
+            assert res == "pending", (
+                f"a COMBO was voided (result={res!r}). Combos settle on their "
+                "remaining legs at reduced product odds via settle_combo_bet; "
+                "flat-voiding them here silently refunds bets that should settle")
+    except SkipTest:
+        raise
+    except Exception as e:                       # noqa: BLE001
+        if "could not connect" in str(e).lower() or "connection" in str(e).lower():
+            raise SkipTest(f"DB not reachable: {e}")
+        raise
+
+    # The sweep must still call it, or the behaviour above never runs.
+    import inspect
+    assert "_void_real_bets_on_dead_matches" in inspect.getsource(
+        settlement.settle_ready_matches), (
+        "settle_ready_matches must call _void_real_bets_on_dead_matches, or "
+        "postponed bets need a separate finished-match trigger to clear")
+    return "voids postponed+cancelled singles, leaves finished bets and combos alone"
 
 
 @test("write_ops_snapshot — wired to ops_snapshots + pipeline_runs (source inspect)")
