@@ -1,5 +1,35 @@
 # OddsIntel — Master Priority Queue
 
+> **⬜ EDGE-STRATEGY-AUDIT-2026-09-04 (P1 — where the edge actually comes from; scoped from the operator's brainstorm, anchored in measurements taken 2026-09-04)** — 1 day of analysis, then it forks into concrete tickets — Structured audit of how we get better, rather than another feature round. Three findings from today already constrain the answer, and they all point the same way.
+>
+> **1. Our market selection is correct, and now on evidence rather than instinct.** Total market margin at the best price across `ACCESSIBLE_BOOKMAKERS` (n≈12k fixtures each, since 2026-07-01):
+>
+> | market | total margin | status |
+> |---|---|---|
+> | **1x2** | **4.83%** | live — cheapest market we can reach |
+> | **over_under 2.5** | **5.25%** | live |
+> | btts | 6.66% | retired — measured no-skill *and* the pricier market |
+> | draw_no_bet | 6.74% | not played |
+> | **asian_handicap** | **7.09%** | dropped — and the data says do NOT re-add |
+>
+> AH is the counterintuitive one. The literature calls AH the sharpest, lowest-margin market — but that is Pinnacle and the Asian books. At Estonian-legal recreational books it is a thin afterthought priced at **7.09%**, the most expensive thing on the board, and Coolbet only offers full/half lines (no quarters). Re-adding AH would mean needing a ~3.5pp edge per side when we cannot yet clear 2.6pp on O/U. **Double chance was retired on measured losses and is excluded from the table because its three selections overlap and do not form a book.** So: 1X2 + O/U was the right call, and the reason is cost, not model fit.
+>
+> **2. Price, not model, is the binding constraint — quantified.** `OU-SIGNAL-SEARCH` (today) found a real, out-of-sample O/U signal worth **+1.94pp** against a **2.50pp** vig: right about the football, still -0.56pp. A disciplined search over every feature we hold could not do better. More features will not close that gap.
+>
+> **3. The operator's line-shopping idea closes exactly that gap.** Measured Coolbet vs Epicbet, last 72h, n=2,296 matched pairs: **weighted uplift +2.50%** from taking the better of the two, and **+1.89% on over_under_25** specifically. That is larger than the 0.56pp deficit that made today's rule lose. **Line shopping is the single highest-value item we have, and it is bigger than anything in the model roadmap.**
+>
+> **Audit scope — the questions to answer, in value order:**
+>
+> - **(a) Multi-book price capture.** Add Epicbet/Unibet columns to the shadow-bot detail view alongside Coolbet, then measure per-league and per-market where each wins. Concrete first deliverable and it makes the uplift visible rather than theoretical. Note `book_uplift_report.py` already computes the aggregate — this is the per-bet surface.
+> - **(b) Re-run `OU-SIGNAL-SEARCH`'s rule priced at best-of-N books** instead of Coolbet alone. If +1.89% uplift turns -1.04% into positive, that is the whole thesis validated in one query, on data we already hold.
+> - **(c) Which books are actually reachable and at what stake** before account limits bite. `book_uplift_report.py`'s own warning applies: an edge that gets you limited is worth nothing. This gates everything above.
+> - **(d) `EXCHANGE-LIQUIDITY-CHECK`** (filed separately) — the zero-overround version of the same idea, worth +2.86% on the same rule if liquidity exists in our leagues.
+> - **(e) New data sources for signal, ranked by coverage of the leagues we ACTUALLY bet** — not by how good the source is in the abstract. `UNDERSTAT-SCRAPER-BIG5-XG` is the cautionary example: excellent data, 1.62% coverage of our volume. Any candidate source gets the coverage question asked first.
+> - **(f) Widening markets — only into cheaper ones.** The margin table is the filter. Corners/cards/player props are recreational markets with margins well above 7%, so they are the wrong direction on cost even though they look "softer". First-half O/U and other totals variants are the plausible candidates; measure their margin before building anything.
+>
+> **The through-line:** we spent two days making the model's inputs richer and the measurable O/U gain came from one of four attempts, while a 72-hour price comparison found more upside than all of it. Weight the audit accordingly.
+
+
 > **✅ Done 2026-09-03 FEATURE-DENSIFY-ROUND-2-2026-09-03 (P1 — three more OU features are computable from data we already hold; strictly better payoff than xG)** — 1 day — `TEAM-SCORING-RATES` proved the pattern: a sparse feature whose inputs we already own. Feature importance on the new OU head (`v20260903_cut0820`) shows three more in exactly that state, with reachable coverage measured, not assumed:
 >
 > | feature | OU importance | coverage now | reachable from our own data |
