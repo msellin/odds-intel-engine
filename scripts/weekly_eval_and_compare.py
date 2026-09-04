@@ -28,6 +28,14 @@ from rich.console import Console
 console = Console()
 MODELS_DIR = Path(__file__).resolve().parent.parent / "data" / "models" / "soccer"
 
+# WEEKLY-EVAL-HOLDOUT-NOT-HELD-OUT-2026-09-03. Enforcing an honest window is
+# only half the job: a candidate trained through yesterday leaves a *technically*
+# honest window of one day. The first run of that guard scored v20260903 on
+# EIGHT matches and printed a full verdict table with swings up to +32.5% and
+# six markets flagged NO SKILL — noise wearing the costume of a result. Refusing
+# a rigged verdict and then emitting a meaningless one is the same failure.
+MIN_HOLDOUT_ROWS = 200
+
 
 def _ensure_local(version: str) -> bool:
     bp = MODELS_DIR / version
@@ -352,38 +360,163 @@ def main():
 
     baseline_for = _live_baselines()
 
-    # Evaluate the candidate once, and each DISTINCT baseline version once.
-    console.print(f"\n[bold]Evaluating {args.candidate}[/bold]")
-    cand_metrics = evaluate(args.candidate, rows)
-    if not cand_metrics:
-        console.print(f"[red]Could not evaluate candidate {args.candidate}[/red]"); sys.exit(1)
+    # ---- WEEKLY-EVAL-HOLDOUT-NOT-HELD-OUT-2026-09-03 --------------------
+    # This script called its window "held out" while holding nothing out.
+    # `train.py` trains on everything up to the run date unless --cutoff is
+    # passed, and the weekly cron did not pass it. Measured 2026-09-03:
+    # v20260903 trained through 2026-09-03 and was scored on 2026-08-20..09-03
+    # — the ENTIRE window was in its training set. v20260830 had 10 of the 14
+    # days. Only the older baseline (v20260719, trained through 07-19) was
+    # honestly scored.
+    #
+    # So every weekly verdict compared a model that had memorised the test
+    # window against one that had not, and the newer model won by construction.
+    # That is the single mechanism most likely to promote a worse model, and it
+    # is invisible: the table looks normal and the winner looks decisive.
+    #
+    # The guard lives HERE rather than in the caller on purpose. Requiring the
+    # cron to pass --cutoff would work right up until someone forgets, and the
+    # failure is silent. Reading each version's real training window and
+    # refusing to score on data it has seen cannot be forgotten.
+    compared = [args.candidate] + sorted(set(baseline_for.values()))
+    _c = psycopg2.connect(os.environ["DATABASE_URL"])
+    _dc = _c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    _dc.execute("""SELECT version, training_window_end FROM model_versions
+                    WHERE version = ANY(%s)""", (compared,))
+    trained_through = {r["version"]: r["training_window_end"] for r in _dc.fetchall()}
+    _c.close()
 
-    baseline_versions = sorted(set(baseline_for.values()))
-    by_version = {}
-    for v in baseline_versions:
-        console.print(f"[bold]Evaluating baseline {v}[/bold]")
-        m = evaluate(v, rows)
-        if not m:
-            console.print(f"[red]Could not evaluate baseline {v}[/red]"); sys.exit(1)
-        by_version[v] = m
+    unknown = [v for v in compared if trained_through.get(v) is None]
+    if unknown:
+        # Refuse rather than assume. A version with no recorded training window
+        # might have been trained through today; guessing produces exactly the
+        # rigged comparison this guard exists to stop.
+        console.print(f"[red]No training_window_end recorded for: "
+                      f"{', '.join(unknown)}. Cannot prove the holdout is held "
+                      f"out for these versions, so refusing to score them. "
+                      f"Populate model_versions.training_window_end.[/red]")
+        sys.exit(2)
 
-    # prod_metrics stays keyed by market, but each market now comes from the
-    # version that actually serves it.
-    prod_metrics = {}
+    # PER-BASELINE windows, not one global window. Each market is scored
+    # against the version that serves it, so the honest window for a market is
+    # set by that pair alone — candidate and its own baseline.
+    #
+    # A global window is safe but wasteful, and wastefulness here is its own
+    # correctness problem: on 2026-09-04 a global rule cut 6,941 rows to 949
+    # because the 1X2 baseline v20260830 was contaminated, even though the O/U
+    # pair was honest across the whole span. An underpowered verdict is not a
+    # trustworthy verdict — it just fails to detect real differences instead of
+    # inventing fake ones.
+    def _honest_start(*versions):
+        return max(trained_through[v] for v in versions) + timedelta(days=1)
+
+    for v in compared:
+        console.print(f"[dim]  {v}: trained through {trained_through[v]}[/dim]")
+
+    def _load(win_start):
+        c = psycopg2.connect(os.environ["DATABASE_URL"])
+        c.cursor().execute("SET statement_timeout='180s'")
+        d = c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        d.execute("""
+            SELECT mfv.*, m.score_home, m.score_away, l.tier
+            FROM match_feature_vectors mfv
+            JOIN matches m ON m.id = mfv.match_id
+            LEFT JOIN leagues l ON l.id = m.league_id
+            WHERE mfv.match_date >= %s AND mfv.match_date <= %s
+              AND m.status='finished' AND m.score_home IS NOT NULL
+              AND m.score_away IS NOT NULL
+        """, (win_start.isoformat(), end.isoformat()))
+        r = d.fetchall()
+        c.close()
+        return r
+
+    # Group markets by the baseline serving them; one honest window per group.
+    by_baseline: dict[str, list[str]] = defaultdict(list)
     for mkt, ver in baseline_for.items():
-        if mkt in by_version[ver]:
-            prod_metrics[mkt] = by_version[ver][mkt]
+        by_baseline[ver].append(mkt)
+
+    windows = {}
+    for ver in by_baseline:
+        ws = max(_honest_start(args.candidate, ver), start)
+        if ws > end:
+            console.print(
+                f"[red]{ver}: no honest holdout — the newer of "
+                f"{args.candidate} ({trained_through[args.candidate]}) and {ver} "
+                f"({trained_through[ver]}) trained past the window end ({end}). "
+                f"Markets served by {ver} cannot be scored. Retrain the candidate "
+                f"with --cutoff so a genuine holdout exists.[/red]")
+        windows[ver] = ws
+    if all(w > end for w in windows.values()):
+        sys.exit(2)
+
+    # Evaluate per baseline group, each on ITS OWN honest window. The
+    # candidate is re-scored per group because the row set differs; that costs
+    # a few seconds and buys a comparison neither side has memorised.
+    baseline_versions = sorted(by_baseline)
+    cand_metrics, prod_metrics = {}, {}
+    market_window, market_n = {}, {}
+    by_version = {}
+    rows = []                      # widest set actually scored, for reporting
+    for ver in baseline_versions:
+        ws = windows[ver]
+        if ws > end:
+            continue               # already reported as unscoreable above
+        grp_rows = _load(ws)
+        if len(grp_rows) < MIN_HOLDOUT_ROWS:
+            console.print(
+                f"[red]{ver}: only {len(grp_rows)} settled rows in the honest "
+                f"window {ws}..{end} (need {MIN_HOLDOUT_ROWS}). Markets served "
+                f"by it are NOT scored — a verdict on this little data is noise, "
+                f"and printing it anyway is how a rigged comparison becomes a "
+                f"meaningless one. Retrain the candidate with an earlier "
+                f"--cutoff, or wait for fixtures to settle.[/red]")
+            continue
+        if len(grp_rows) > len(rows):
+            rows = grp_rows
+        console.print(f"\n[bold]Evaluating {args.candidate} vs {ver}[/bold] "
+                      f"on {ws} -> {end} ({len(grp_rows):,} rows)")
+        cm = evaluate(args.candidate, grp_rows)
+        bm = evaluate(ver, grp_rows)
+        if not cm or not bm:
+            console.print(f"[red]Could not evaluate {args.candidate} or {ver}[/red]")
+            sys.exit(1)
+        by_version[ver] = bm
+        for mkt in by_baseline[ver]:
+            if mkt in cm and mkt in bm:
+                cand_metrics[mkt] = cm[mkt]
+                prod_metrics[mkt] = bm[mkt]
+                market_window[mkt] = f"{ws}..{end}"
+                market_n[mkt] = len(grp_rows)
+
+    if not cand_metrics:
+        console.print("[red]No market could be scored on an honest window.[/red]")
+        sys.exit(2)
+    if len(set(market_window.values())) > 1:
+        console.print("\n[cyan]Markets were scored on different honest windows "
+                      "because their baselines were trained to different dates:"
+                      "[/cyan]")
+        for w in sorted(set(market_window.values())):
+            mk = sorted(m for m in market_window if market_window[m] == w)
+            console.print(f"[cyan]  {w}  n={market_n[mk[0]]:,}  "
+                          f"{', '.join(mk)}[/cyan]")
 
     # Persist — the candidate, plus every distinct live baseline scored here.
+    # Each version is persisted against the window it was ACTUALLY scored on.
+    # Recording one global window here would re-introduce the very claim this
+    # fix removes — that everything was measured on held-out data when it was
+    # not.
     win = (start.isoformat(), end.isoformat())
     cand_note = (f"OFFLINE eval vs live per-market baselines "
-                 f"{ {m: baseline_for[m] for m in sorted(set(baseline_for))} } (n={len(rows)})"
+                 f"{ {m: baseline_for[m] for m in sorted(set(baseline_for))} }; "
+                 f"honest windows {sorted(set(market_window.values()))}"
                  if not args.single_baseline else
                  f"OFFLINE eval vs production={args.production} (n={len(rows)})")
     _persist_metrics(args.candidate, win, len(rows), cand_metrics, cand_note)
     for v, m in by_version.items():
-        _persist_metrics(v, win, len(rows), m,
-                         f"OFFLINE eval baseline vs candidate={args.candidate} (n={len(rows)})")
+        vw = windows[v]
+        _persist_metrics(v, (vw.isoformat(), end.isoformat()), len(rows), m,
+                         f"OFFLINE eval baseline vs candidate={args.candidate} "
+                         f"on honest window {vw}..{end}")
     console.print(f"\n[green]Persisted cv_metrics for {args.candidate} "
                   f"and {len(by_version)} baseline version(s)[/green]")
 

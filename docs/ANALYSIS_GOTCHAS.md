@@ -883,3 +883,28 @@ handful of fixtures. `coolbet_feed_watchdog._hours_since_last_odds` measures
 bulk-sweep *breadth* for exactly this reason — a naive MAX said 8.6h stale where
 the truth was 11.7h.
 
+## 35. A "holdout" is only held out if you check the training window
+
+`weekly_eval_and_compare.py` scored candidate and baseline on the last 14 days
+of settled rows and called it held out. `train.py` trains through the run date
+unless `--cutoff` is passed, and the weekly cron never passed it — so the
+candidate had memorised the test set and won by construction. Measured
+2026-09-03: v20260903 trained through 09-03 and was scored on 08-20..09-03.
+
+Fixed in WEEKLY-EVAL-HOLDOUT-NOT-HELD-OUT. Three rules that came out of it:
+
+- **Read `model_versions.training_window_end`; start the day after.** Never
+  assume the caller passed a cutoff.
+- **Compute the window per comparison pair, not globally.** One global window
+  is safe but throws away data that is honest for the other markets — it cut
+  6,941 rows to 949 here. An underpowered verdict is its own kind of wrong.
+- **Enforce a minimum row count.** A candidate trained through yesterday leaves
+  a technically honest window of one day; the first run scored 8 matches and
+  printed swings of +32.5%. Refusing a rigged verdict and emitting a
+  meaningless one is the same failure.
+
+Any promotion decision taken on this script before 2026-09-04 was measured
+through the contaminated path — including the 2026-08-31 decision not to switch
+O/U, which also went through the inverted metric in #34's sibling
+WEEKLY-EVAL-OU-INVERTED.
+

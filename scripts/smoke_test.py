@@ -28074,5 +28074,76 @@ def _feature_densify_round2():
     return f"{checked} values reproduced exactly from strictly-prior data"
 
 
+@test("WEEKLY-EVAL-HOLDOUT — versions are never scored on their own training data")
+def _weekly_eval_holdout():
+    """WEEKLY-EVAL-HOLDOUT-NOT-HELD-OUT-2026-09-03. The weekly comparison scored
+    candidate and baseline on "the last 14 days of settled MFV rows" and called
+    it held out. It was not held out from the candidate: `train.py` trains
+    through the run date unless `--cutoff` is passed, and the cron did not pass
+    it. Measured — v20260903 trained through 2026-09-03 and was scored on
+    2026-08-20..09-03, the entire window; v20260830 had 10 of the 14 days. Only
+    the older baseline was honestly scored, so every verdict compared a model
+    that had memorised the test set against one that had not.
+
+    The guard reads `model_versions.training_window_end` and starts each
+    comparison the day after. It lives in the script, not the caller: requiring
+    the cron to pass `--cutoff` works until someone forgets, and that failure is
+    silent.
+
+    Two properties beyond "a guard exists", both learned by getting it wrong:
+
+      * PER-BASELINE windows. A single global window is safe but throws away
+        good data — the first version cut 6,941 rows to 949 because the 1X2
+        baseline was contaminated, even though the O/U pair was honest across
+        the whole span. An underpowered verdict is untrustworthy too.
+      * MIN_HOLDOUT_ROWS. A candidate trained through yesterday leaves a
+        technically honest window of one day; the first run scored EIGHT
+        matches and printed a full table with +32.5%% swings. Refusing a rigged
+        verdict and emitting a meaningless one is the same failure.
+    """
+    from pathlib import Path as _Path
+    root = _Path(__file__).resolve().parent.parent
+    src = (root / "scripts" / "weekly_eval_and_compare.py").read_text()
+
+    assert "training_window_end" in src, (
+        "the guard must read each version's real training window; without it "
+        "the comparison silently favours whichever model saw the test set")
+    assert "_honest_start" in src and "timedelta(days=1)" in src, (
+        "the honest window must start the day AFTER the newest training window")
+    assert "MIN_HOLDOUT_ROWS" in src, (
+        "without a minimum-rows floor the guard trades a rigged verdict for a "
+        "verdict on a handful of matches")
+    assert "by_baseline" in src and "windows[ver]" in src, (
+        "windows must be computed per baseline; a single global window discards "
+        "test data that is honest for the other markets")
+
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location(
+        "_wec_holdout", root / "scripts" / "weekly_eval_and_compare.py")
+    wec = _ilu.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(wec)
+    except Exception as e:                       # noqa: BLE001
+        raise SkipTest(f"cannot import weekly_eval_and_compare: {e}")
+    assert wec.MIN_HOLDOUT_ROWS >= 100, (
+        f"MIN_HOLDOUT_ROWS={wec.MIN_HOLDOUT_ROWS} is too low to distinguish a "
+        "real difference from noise")
+
+    # Every version that has ever been promoted must carry a training window,
+    # or the guard cannot prove anything about it and has to refuse.
+    try:
+        from workers.api_clients.db import execute_query
+        missing = execute_query(
+            """SELECT version FROM model_versions
+                WHERE promoted_at IS NOT NULL AND training_window_end IS NULL""")
+    except Exception as e:                       # noqa: BLE001
+        raise SkipTest(f"DB not reachable: {e}")
+    assert not missing, (
+        "promoted versions with no training_window_end: "
+        + ", ".join(r["version"] for r in missing)
+        + " — the holdout guard cannot verify these and will refuse to score them")
+    return f"holdout guard present; MIN_HOLDOUT_ROWS={wec.MIN_HOLDOUT_ROWS}"
+
+
 if __name__ == "__main__":
     main()
