@@ -136,7 +136,27 @@
 >
 > **Consequence for the whole price thesis.** Margin on the O/U rule by realistic book set: current-7 (with Pinnacle) **4.99%** · minus Pinnacle **5.66%** · confirmed-EE-licensed-only **6.53%** · Coolbet alone **7.27%**. Against a measured edge of +1.94pp, none of these is winnable. **Betfair was the only option that changed the economics, and it is unavailable.**
 
-> **⬜ ACCESSIBLE-SET-VERIFY-2026-09-04 (P1 — three more books in the placeable set are unverified)** — 1h, mostly the operator's to answer — Pinnacle turned out to be in the placeable set on an assumption. **`10Bet`, `888Sport` and `Marathonbet` are in it on the same basis** and none is obviously Estonian-licensed. Their coverage of fixtures we actually bet: Marathonbet **99.0%**, 10Bet 82.7%, 888Sport 12.9% — so if Marathonbet is not placeable, the restatement above is again materially too optimistic. Confirmed-EE-only pricing gives a **6.53%** margin against 5.66% for the current six, and that gap is entirely these three books. **The check is one question per book: can you deposit, bet and withdraw from Estonia?** Everything downstream — every ROI we publish, the placer's edge gate, the landing-page comparison — inherits the answer.
+> **✅ Done 2026-09-05 ACCESSIBLE-SET-VERIFY-2026-09-04 (P1 — three more books in the placeable set are unverified)** — 1h, mostly the operator's to answer — Pinnacle turned out to be in the placeable set on an assumption. **`10Bet`, `888Sport` and `Marathonbet` are in it on the same basis** and none is obviously Estonian-licensed. Their coverage of fixtures we actually bet: Marathonbet **99.0%**, 10Bet 82.7%, 888Sport 12.9% — so if Marathonbet is not placeable, the restatement above is again materially too optimistic. Confirmed-EE-only pricing gives a **6.53%** margin against 5.66% for the current six, and that gap is entirely these three books. **The check is one question per book: can you deposit, bet and withdraw from Estonia?** Everything downstream — every ROI we publish, the placer's edge gate, the landing-page comparison — inherits the answer.
+
+**ANSWERED 2026-09-05, and no account was needed — EMTA publishes the blocked-domain list.** Checked all three against it (2,307 entries):
+>
+> | domain | status |
+> |---|---|
+> | `marathonbet.com` | **BLOCKED** |
+> | `10bet.com` | **BLOCKED** |
+> | `888sport.com` | **BLOCKED** |
+> | `pinnacle.com`, `betfair.com` | blocked (confirms the operator's call) |
+> | `1xbet`, `williamhill`, `betvictor`, `sbobet`, `dafabet` | blocked |
+> | `coolbet`, `betano`, `olybet`, `optibet`, `epicbet`, `superbet` | **not blocked** |
+> | `unibet.ee` | **not blocked** — only `.co.uk` / `.net` are |
+>
+> **All three were unreachable, and Marathonbet priced 99% of the fixtures we bet** — so it was setting "best price" on a large share of every edge and ROI we have published.
+>
+> **Restatement.** O/U holdout rule: margin **5.66% -> 6.59%**, ROI **−1.76% -> −2.89%**. And **141 of 1,651 settled picks (8.5%) had no price at any legal book at all** — those bets were never placeable, at any price.
+>
+> `ACCESSIBLE_BOOKMAKERS` is now `{Coolbet, Betano, Unibet, Unibet-Kambi, Epicbet}` — five entries, all verified against the official list. Smoke test extended to all five blocked names and mutation-verified.
+>
+> **This is the third time an unverified assumption in this constant has inflated our numbers** (Bet365's feed, then Pinnacle, now these three). The set is now checkable against a published list rather than belief, and the test names that list.
 
 
 > **⬜ EDGE-STRATEGY-AUDIT-2026-09-04 (P1 — where the edge actually comes from; scoped from the operator's brainstorm, anchored in measurements taken 2026-09-04)** — 1 day of analysis, then it forks into concrete tickets — Structured audit of how we get better, rather than another feature round. Three findings from today already constrain the answer, and they all point the same way.

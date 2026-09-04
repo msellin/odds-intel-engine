@@ -10843,11 +10843,17 @@ def _():
         "conflating them is what let an unplaceable book inflate published prices")
     _acc_block = pipeline[pipeline.index("ACCESSIBLE_BOOKMAKERS: frozenset"):
                           pipeline.index("PRICE_REFERENCE_BOOKMAKERS")]
-    for bad in ("Pinnacle", "Bet365"):
+    # ACCESSIBLE-SET-VERIFY-2026-09-05: checked against EMTA's official blocked
+    # -domain list (2,307 entries). Marathonbet, 10Bet and 888Sport are all on
+    # it, as are Pinnacle and Betfair. Marathonbet priced 99% of the fixtures we
+    # bet, so it was setting "best price" on much of our reported edge while
+    # being unreachable — margin 5.66% -> 6.59% once removed, and 141 of 1,651
+    # settled picks turn out to have had no legal price at all.
+    for bad in ("Pinnacle", "Bet365", "Marathonbet", "10Bet", "888Sport"):
         assert f'"{bad}"' not in _acc_block, (
-            f"{bad} is back in the PLACEABLE set. Pinnacle is not accessible from "
-            "Estonia and Bet365's AF feed is inflated; either one silently "
-            "overstates every price we report.")
+            f"{bad} is back in the PLACEABLE set. It is on EMTA's blocked-domain "
+            "list (or, for Bet365, its AF feed is inflated) — either way it "
+            "silently overstates every price we report and every edge we gate on.")
     assert "Unibet" in _acc_block and "Coolbet" in _acc_block, \
         "the placeable set must still contain the books we can actually bet"
     assert "best_bookmaker" in pipeline, "best_bookmaker dict must be declared"

@@ -1070,14 +1070,27 @@ ODDS_MAX_LAG_HOURS = float(os.getenv("ODDS_MAX_LAG_HOURS", "6"))
 ODDS_MAX_AGE_HOURS = float(os.getenv("ODDS_MAX_AGE_HOURS", "48"))
 
 ACCESSIBLE_BOOKMAKERS: frozenset = frozenset({
-    "Unibet", "Betano", "Marathonbet", "10Bet", "888Sport",
-    # COOLBET-AS-ACCESSIBLE (2026-05-20): Coolbet is our actual placement
-    # venue and now ingested every 30m by the daemon's wide odds mode. Adding
-    # it here so its prices feed edge math — if Coolbet has the best price on
-    # a match where soft books are weaker, that becomes a real bet candidate.
-    # The feedback loop: Coolbet odds in → new edges discovered → bets
-    # generated → daemon places them at Coolbet (best available price).
-    "Coolbet",
+    # ACCESSIBLE-SET-VERIFY-2026-09-05: checked against EMTA's official blocked
+    # -domain list (2,307 entries). Only books absent from that list are here.
+    #
+    # REMOVED as EMTA-BLOCKED: Marathonbet, 10Bet, 888Sport. They had been in
+    # this set on the same unverified assumption that put Pinnacle here, and
+    # Marathonbet in particular priced 99% of the fixtures we bet — so it was
+    # setting the "best price" on a large share of our reported edge while being
+    # unreachable from Estonia. Also confirmed blocked: pinnacle.com,
+    # betfair.com, 1xbet, williamhill, betvictor, sbobet, dafabet.
+    #
+    # Effect of the correction on the O/U holdout rule: margin 5.66% -> 6.59%,
+    # ROI -1.76% -> -2.89%. And 141 of 1,651 settled picks (8.5%) turn out to
+    # have had NO price at any legal book — they were never placeable.
+    #
+    # Unibet stays: only unibet.co.uk and unibet.net are blocked; unibet.ee is
+    # licensed, which its own calls confirm (jurisdiction=EE).
+    "Coolbet",        # placement venue
+    "Betano",         # EMTA-licensed, 95.1% coverage of fixtures we bet
+    "Unibet",         # EMTA-licensed (.ee), via API-Football
+    "Unibet-Kambi",   # same book, direct feed — provably pre-match
+    "Epicbet",        # EMTA-licensed, thin coverage but genuinely reachable
 })
 
 # PINNACLE-NOT-ACCESSIBLE-2026-09-04: Pinnacle REMOVED from the placeable set.
