@@ -22106,49 +22106,115 @@ def test_pause_inplay_p_v2_2026_07_31():
         "make this assertion vacuously true and silently disable every inplay bot"
 
 
-@test("RETIRED-BOT-LEAK-FIX-2026-07-31 — placer scanners filter is_active + retired_at")
+@test("RETIRED-BOT-LEAK-FIX-2026-07-31 — the placer loader will not return a retired bot's bet")
 def test_retired_bot_leak_fix_2026_07_31():
-    """RETIRED-BOT-LEAK-FIX-2026-07-31: 5 acca/combo bots retired
-    2026-06-06 (is_active=False, retired_at set, maturity_label='retired')
-    kept writing real_bets between 2026-06-09 and 2026-07-30 (16 bets,
-    0 wins, ~$85 bled).
+    """Five acca/combo bots retired 2026-06-06 kept writing real_bets until
+    2026-07-30 — 16 bets, 0 wins, ~$85 bled — because `load_qualified_bets()`
+    and `load_qualified_combo_bets()` joined `bots` without gating on
+    `is_active` / `retired_at`.
 
-    Root cause: `load_qualified_combo_bets()` (and its singles twin
-    `load_qualified_bets()`) in `workers/automation/coolbet_placer.py`
-    join bots but never gate on `b.is_active` / `b.retired_at`.
+    SMOKE-SUITE-AUDIT: this test has now been strengthened twice and was still
+    a WEAKEN. v1 counted filter strings across the whole file (so the singles
+    query could carry both clauses twice while the combo query carried none —
+    exactly the shape of the bug). v2 scoped the count per function, which is
+    better but still only proves the words are present: a query that carries
+    the clause inside a comment, or that ANDs it against something always true,
+    passes.
 
-    Fix: both queries now include `AND b.is_active IS TRUE AND
-    b.retired_at IS NULL` immediately after the edge filter, before
-    the optional maturity clause. This smoke pins both filters so a
-    future refactor can't silently drop them.
-
-    SMOKE-SUITE-AUDIT 2026-09-01: this counted occurrences of each filter
-    string across the WHOLE FILE and required >= 2 of each. That has a hole
-    shaped exactly like the bug it guards: if the singles query carried both
-    clauses twice and the combo query carried none, the counts still pass and
-    retired combo bots keep placing — which is the leak that bled ~$85 over
-    16 losing bets. A comment mentioning the clause would also satisfy it.
-
-    Now scoped per function: each loader is inspected on its own, so both
-    queries must carry both filters."""
-    import inspect
+    v3 runs the loader. A retired bot and an active bot each get their own
+    fixture match and a qualifying pending bet; the loader must return one and
+    not the other. That cannot be satisfied by any amount of correct-looking
+    source.
+    """
     from workers.automation import coolbet_placer as cp
 
-    for fn_name in ("load_qualified_bets", "load_qualified_combo_bets"):
-        fn = getattr(cp, fn_name, None)
-        assert fn is not None, (
-            f"coolbet_placer.{fn_name} is gone — if a loader was renamed, this "
-            "guard must follow it, or retired bots can silently place again."
-        )
-        fsrc = inspect.getsource(fn)
-        assert "b.is_active IS TRUE" in fsrc, (
-            f"{fn_name} does not gate on b.is_active IS TRUE — retired bots "
-            "will be loaded for real-money placement (RETIRED-BOT-LEAK-FIX)."
-        )
-        assert "b.retired_at IS NULL" in fsrc, (
-            f"{fn_name} does not gate on b.retired_at IS NULL — retired bots "
-            "will be loaded for real-money placement (RETIRED-BOT-LEAK-FIX)."
-        )
+    with module_db_txn(cp) as cur:
+        # The loader requires DATE(m.date) = CURRENT_DATE *and* m.date > NOW(),
+        # so the fixture kickoff has to land later today. Near midnight there is
+        # no such time and the test cannot be built — skip rather than assert on
+        # an empty result, which would pass for the wrong reason.
+        cur.execute("SELECT (CURRENT_DATE + interval '1 day') - now()")
+        room = cur.fetchone()[0]
+        if room.total_seconds() < 900:
+            raise SkipTest("less than 15 min left in the UTC day; no valid "
+                           "same-day future kickoff to build a fixture with")
+        kickoff_sql = ("now() + LEAST(interval '1 hour', "
+                       "((CURRENT_DATE + interval '1 day') - now()) / 2)")
+
+        home, away, league = _fixture_ids(cur)
+        cur.execute("SELECT id FROM teams LIMIT 4")
+        teams = [r[0] for r in cur.fetchall()]
+        if len(teams) < 4:
+            raise SkipTest("need 4 teams to build two distinct fixtures")
+
+        # The loader carries two guards, `b.is_active IS TRUE` and
+        # `b.retired_at IS NULL`, but they CANNOT be exercised independently:
+        # the `bots_maturity_retired_invariant` trigger sets retired_at=now()
+        # and maturity_label='retired' whenever is_active is set false. An
+        # inactive-but-not-retired bot is therefore unrepresentable, and
+        # `retired_at IS NULL` alone is load-bearing — `is_active IS TRUE` is
+        # defensive redundancy.
+        #
+        # This is why an earlier version of this conversion looked strong and
+        # was not: it used one bot with both flags set, so removing either guard
+        # left the other excluding it and the test passed on broken code.
+        made = {}
+        for n, (label, active, retired) in enumerate(
+                (("active", True, False),
+                 ("retired", True, True))):
+            # Separate matches: the loader de-duplicates by
+            # (match, market, selection), so two bets on one fixture collapse
+            # into a single row and the test would prove nothing.
+            cur.execute(
+                f"""INSERT INTO matches (date, home_team_id, away_team_id,
+                                         league_id, season, status)
+                    VALUES ({kickoff_sql}, %s, %s, %s, 2026, 'scheduled')
+                    RETURNING id""",
+                (teams[n * 2], teams[n * 2 + 1], league))
+            mid = cur.fetchone()[0]
+            cur.execute(
+                """INSERT INTO bots (name, strategy, is_active, retired_at,
+                                     maturity_label)
+                   VALUES (%s, 'test', %s,
+                           CASE WHEN %s THEN now() ELSE NULL END, 'calibrated')
+                   RETURNING id""",
+                (f"zz_smoke_{label}", active, retired))
+            bid = cur.fetchone()[0]
+            cur.execute(
+                """INSERT INTO simulated_bets (bot_id, match_id, market, selection,
+                       odds_at_pick, stake, model_probability, edge_percent, result)
+                   VALUES (%s, %s, '1x2', 'home', 2.50, 10, 0.50, 0.25, 'pending')
+                   RETURNING id""",
+                (bid, mid))
+            made[label] = str(cur.fetchone()[0])
+
+        returned = {str(r["simulated_bet_id"]) for r in cp.load_qualified_bets()}
+
+        assert made["active"] in returned, (
+            "the ACTIVE bot's qualifying bet was not returned — the fixture no "
+            "longer satisfies the loader's filters, so this test would pass "
+            "even with the retired-bot guard deleted. Fix the fixture, not the "
+            "assertion.")
+        assert made["retired"] not in returned, (
+            "a bet from a bot with retired_at set was returned — the "
+            "`b.retired_at IS NULL` guard is gone. This is the exact leak of "
+            "RETIRED-BOT-LEAK-FIX: 16 bets, 0 wins, ~$85 bled over seven weeks "
+            "before anyone noticed.")
+
+        # Pin the invariant the reasoning above depends on. If the trigger is
+        # ever dropped, an inactive-but-not-retired bot becomes possible and
+        # `is_active IS TRUE` stops being redundant — at which point this test
+        # needs a third fixture to cover it.
+        cur.execute("""SELECT COUNT(*) FROM pg_trigger t JOIN pg_class c
+                        ON c.oid = t.tgrelid
+                       WHERE c.relname = 'bots' AND NOT t.tgisinternal
+                         AND t.tgname = 'bots_maturity_retired_invariant'""")
+        assert cur.fetchone()[0] == 1, (
+            "bots_maturity_retired_invariant is gone. An inactive-but-not-retired "
+            "bot is now possible, so `is_active IS TRUE` is no longer redundant "
+            "and needs its own fixture in this test.")
+
+    return "loader excludes retired bots; invariant trigger pinned"
 
 
 @test("MODEL-VERSION-RE-EVAL-2026-07-31 — OU override flip to v20260719 + eval docs on disk")
