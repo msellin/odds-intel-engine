@@ -134,3 +134,46 @@ checked.** That audit is 2h and gates everything else — see
 - Whether OlyBet/Optibet accept password-only auth (needs an account — yours)
 - Optibet's odds API (needs a consented session)
 - Actual account limits at Betano/Unibet at your stake sizes
+
+---
+
+## 7. Addendum — "but Coolbet doesn't price 56% of outcomes, so wouldn't another book give us gate-clearing bets there?"
+
+Good question, and the right one to ask of §1: coverage only matters if it turns
+into *bettable* opportunities, not just data. Tested directly.
+
+Universe: 9,034 fixtures since 2026-06-01 with a model probability and O/U 2.5
+prices. **Coolbet prices 2,819; it does not price 6,215.** For that gap, applying
+the same gate the placer uses (model edge >= 3%, i.e. `odds >= (1+edge)/prob` —
+the `min_odds` rule):
+
+| book — gap fixtures only | gate-clearing bets | ROI | t |
+|---|---|---|---|
+| Marathonbet | 3,759 | −6.86% | −3.99 |
+| Superbet | 2,999 | −6.61% | −3.44 |
+| Betano | 2,985 | −7.48% | −4.01 |
+| 10Bet | 2,765 | −6.96% | −3.52 |
+| Unibet | 2,726 | −6.58% | −3.28 |
+| 888Sport | 781 | −2.43% | −0.64 |
+| **best-of-all-seven** | **4,307** | **−4.46%** | **−2.73** |
+| *Coolbet, on fixtures it DOES price* | *1,849* | ***−8.40%*** | *−3.37* |
+
+**The extra coverage does not convert into profitable bets.** But the last row is
+the point: **the naive gate loses money on Coolbet's own fixtures too, and by
+more.** The gap fixtures are not uniquely bad — the 3% edge gate is simply not
+profitable on its own, anywhere.
+
+This matches the earlier `EVENT-DRIVEN-BETTING` result (betting every
+gate-clearing O/U fixture returned −4.65%). Our live bots return **+8.19%** not
+because the gate is good but because the bot configs, odds ranges, league filters
+and cohort timing reject 94.7% of what clears it.
+
+**So: adding books would add losing bets unless the full bot logic is applied to
+the new fixtures too.** That is not tested here and is the only version of this
+idea still open — but there is no evidence yet that the selective filters
+transfer to leagues Coolbet does not cover, and some reason to doubt it, since
+those filters were tuned on the fixtures we do bet.
+
+**Revised recommendation:** the case for a second book is *price improvement on
+fixtures we already bet* (+2.5% uplift, §1), not *new fixtures*. That is a
+smaller prize than the coverage numbers suggest.
