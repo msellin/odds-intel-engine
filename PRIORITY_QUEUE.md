@@ -1,5 +1,16 @@
 # OddsIntel — Master Priority Queue
 
+> **⬜ UNIBET-BETANO-DIRECT-SCRAPERS-2026-09-04 (P1 — the two books worth having, but do step 0 first)** — step 0: 2h · each scraper: 1-2 days — Direct odds ingest for Unibet and Betano, in the shape of `epicbet_explorer.py` (670 lines: bulk league sweep, fuzzy-match to DB fixtures, write 1X2/OU/BTTS/AH to `odds_snapshots`, FlareSolverr fallback, `RAISES` on failure) plus a 30-min scheduler job like `job_epicbet_odds_snapshot`.
+>
+> **Why these two.** Coverage of fixtures we actually bet: **Betano 95.1%**, **Unibet 87.4%**, against **Coolbet 68.5%** and **Epicbet 12.6%**. They are the only EMTA-licensed books with real coverage of our leagues. Both limit winning accounts, so the value is (a) fixtures placed before limits bite and (b) permanent **price discovery** — knowing where the best price is has value even when the bet goes on at Coolbet.
+>
+> **STEP 0, AND IT MAY KILL THE TICKET: we already receive Betano and Unibet prices through API-Football.** The coverage figures above come from `odds_snapshots`. So the case for scraping is not coverage — it is whether the AF-fed price is the price the `.ee` site actually shows. **`BET365-EXECUTION-AUDIT-2026-08-21` found exactly that failure**: AF-fed Bet365 odds were systematically inflated, giving CLV +10% against ROI -10%, a 20pp realisation gap no other book showed, and Bet365 was removed as a result. Betano and Unibet carry the same risk and have never been checked.
+>
+> Run the Bet365 audit methodology per bookmaker before writing a line of scraper: **CLV-to-ROI realisation gap on settled picks, by `recommended_bookmaker`.** If Betano/Unibet look like Bet365 did, the AF feed is inflating them, they should leave the placeable set, and the scrapers become urgent rather than optional. If the feed is honest, scrapers are a smaller win — still worth it for freshness and for prices AF does not carry, but not P1.
+>
+> **Sequence:** step 0 audit -> `ACCESSIBLE-SET-VERIFY` (can we legally place at them at all) -> only then build. Building a scraper for a book we cannot use, or whose AF price was fine, is the same mistake as the Understat scraper.
+
+
 > **✅ Done 2026-09-04 PINNACLE-NOT-ACCESSIBLE-2026-09-04 (P0 — an unplaceable book was inflating every published price)** — `ACCESSIBLE_BOOKMAKERS` contained Pinnacle on the strength of a code comment: *"available via Pinnacle Sports .com (manual)"*. The operator confirmed **Pinnacle and Betfair are both inaccessible from Estonia**. That assumption was load-bearing: Pinnacle was the best accessible price on **36.1%** of fixtures and worth **+0.77%** of average price uplift on its own — more than Epicbet contributes in total.
 >
 > **Restatement of the O/U holdout rule:** margin **4.99% -> 5.66%**, ROI **-1.10% -> -1.76%**. Everything published at "accessible prices" was optimistic by roughly **0.66pp**, including figures reported earlier the same day.
