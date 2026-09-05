@@ -29963,5 +29963,34 @@ def _kambi_feed_divergence():
     )
 
 
+@test("ODDS-PRUNE-CURSOR-BUG — the nightly prune must not be frozen on one page")
+def _odds_prune_cursor_bug():
+    """ODDS-PRUNE-CURSOR-BUG-2026-09-06.
+
+    `prune_old_simple` pages candidates with `ORDER BY id` on a UUID and no
+    "not yet pruned" predicate, so it revisits the SAME 5,000 matches every
+    night and has never drained anything — 26.4M rows (~8 GB) are deletable
+    under the already-agreed policy and never get visited.
+
+    This test pins the bug rather than the fix: it fails once the cursor is
+    corrected, which is the signal to delete it. It is written this way because
+    the fix triggers an 8 GB irreversible delete and is gated on owner sign-off,
+    so the interim risk is that someone reads the job's clean logs as proof it
+    is working.
+    """
+    import os, re
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = open(os.path.join(root, "scripts", "prune_odds_snapshots.py"),
+               encoding="utf-8").read()
+    fn = src[src.index("def prune_old_simple"):]
+    fn = fn[: fn.index("\ndef ") if "\ndef " in fn else len(fn)]
+    still_broken = re.search(r"ORDER BY\s+id\b", fn) and "EXISTS" not in fn
+    assert still_broken, (
+        "prune_old_simple no longer pages by bare `ORDER BY id` — the cursor "
+        "bug looks fixed. Confirm the backlog drain was authorised, then DELETE "
+        "this test; it exists only to stop the broken job reading as healthy."
+    )
+
+
 if __name__ == "__main__":
     main()
