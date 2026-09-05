@@ -29065,5 +29065,53 @@ def test_clv_devig_uses_executable_price():
 
 
 
+@test("BUDGET-SEED-COLUMN — the AF budget seed query must run, not fail silently")
+def test_budget_seed_query_valid():
+    """BudgetTracker._seed_from_db queried api_budget_log.created_at. The column
+    is `logged_at` — `created_at` does not exist.
+
+    The method wraps everything in `except Exception: pass`, so it failed on every
+    scheduler restart with no error anywhere, silently zeroing the cumulative
+    per-endpoint breakdown. Symptom seen 2026-09-05: calls_today = 35,032 while
+    endpoint_breakdown_today summed to 754. That makes every per-endpoint quota
+    number a lower bound, which is how wasted-quota work gets mis-sized.
+
+    Exactly the silent-failure trap: nothing raises, the fallback "works", and a
+    near-empty breakdown looks plausible.
+    """
+    from workers.api_clients.db import execute_query
+
+    cols = {r["column_name"] for r in execute_query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'api_budget_log'"
+    )}
+    assert cols, "api_budget_log not found"
+    assert "logged_at" in cols and "log_date" in cols, (
+        f"api_budget_log timestamp columns changed: {sorted(cols)}"
+    )
+
+    # Behavioural: the seed query itself must execute against the real schema.
+    # A column typo here is invisible at runtime because the caller swallows it.
+    execute_query(
+        """SELECT endpoint_breakdown_today, log_date
+             FROM api_budget_log
+            WHERE endpoint_breakdown_today IS NOT NULL
+            ORDER BY logged_at DESC
+            LIMIT 1"""
+    )
+
+    # And the source must not have reverted to a non-existent column.
+    import os
+    src = open(os.path.join(os.path.dirname(__file__), "..", "workers",
+                            "api_clients", "api_football.py"), encoding="utf-8").read()
+    seed = src[src.index("def _seed_from_db"):]
+    seed = seed[:seed.index("def ", 10)]
+    assert "created_at" not in seed, (
+        "the budget seed references created_at, which does not exist on "
+        "api_budget_log — it will fail silently under the bare except"
+    )
+
+
+
 if __name__ == "__main__":
     main()

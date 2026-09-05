@@ -87,10 +87,10 @@ class BudgetTracker:
             from workers.api_clients.db import execute_query
             rows = execute_query(
                 """
-                SELECT endpoint_breakdown_today, created_at::date AS log_date
+                SELECT endpoint_breakdown_today, log_date
                 FROM api_budget_log
                 WHERE endpoint_breakdown_today IS NOT NULL
-                ORDER BY created_at DESC
+                ORDER BY logged_at DESC
                 LIMIT 1
                 """
             )
