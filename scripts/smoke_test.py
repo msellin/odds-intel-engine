@@ -9827,13 +9827,32 @@ def _():
     the day-to-date counter."""
     from workers.api_clients.api_football import BudgetTracker
 
+    # BT-SEED-NOW-WORKS-2026-09-06: this asserted a fresh tracker's day map
+    # equals exactly what we just recorded — i.e. that it starts EMPTY. That
+    # held only because `_seed_from_db` was silently broken (it queried a
+    # `created_at` column that does not exist on `api_budget_log`, so seeding
+    # always failed and the map was always empty). Fixing the column name made
+    # seeding actually work, and this test began failing in CI with real
+    # production counts: {'odds': 672, 'fixtures/lineups': 1010, ...}.
+    #
+    # The seeding is the desired behaviour — a tracker created after a
+    # scheduler restart must know what today already spent, or the daily budget
+    # resets to zero on every restart. So measure the DELTA the calls produce,
+    # which is the actual invariant, instead of assuming an empty starting map.
     bt = BudgetTracker(daily_limit=1000)
+    baseline = dict(bt.endpoint_counts_today())
+    baseline_calls = bt.calls_today
+
     for ep in ("fixtures", "fixtures", "odds/live", "fixtures/statistics", "fixtures"):
         bt.record_call(ep)
 
     today = bt.endpoint_counts_today()
-    assert today == {"fixtures": 3, "odds/live": 1, "fixtures/statistics": 1}, today
-    assert bt.calls_today == 5, bt.calls_today
+    delta = {k: v - baseline.get(k, 0) for k, v in today.items()
+             if v - baseline.get(k, 0) != 0}
+    assert delta == {"fixtures": 3, "odds/live": 1, "fixtures/statistics": 1}, (
+        f"delta={delta} baseline={baseline} today={today}"
+    )
+    assert bt.calls_today - baseline_calls == 5, bt.calls_today
 
     # Drain the per-interval map (private but exercised by sync_with_server)
     snap = bt._drain_endpoint_counts()
@@ -9845,7 +9864,8 @@ def _():
     snap2 = bt._drain_endpoint_counts()
     assert snap2 == {"predictions": 1}, snap2
     today2 = bt.endpoint_counts_today()
-    assert today2["predictions"] == 1 and today2["fixtures"] == 3, today2
+    assert today2["predictions"] - baseline.get("predictions", 0) == 1, today2
+    assert today2["fixtures"] - baseline.get("fixtures", 0) == 3, today2
 
 
 @test("BT-SEED-FIX — BudgetTracker has _seed_from_db method that seeds _endpoint_counts_today")
