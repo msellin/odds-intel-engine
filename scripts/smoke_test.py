@@ -28579,5 +28579,63 @@ def _coolbet_get_timeout():
     return "session defaults a timeout; watchdog can end a stalled run"
 
 
+@test("AF-BUDGET-STATUS-DEADLOCK — budget.status() must not self-deadlock on its own lock")
+def test_af_budget_status_no_deadlock():
+    """Behavioural: call status() on a real BudgetTracker and require it to return.
+
+    2026-09-05: status() held self._lock and then called self.usage_pct(), which
+    takes the same lock. With a plain threading.Lock that is a permanent
+    self-deadlock — and the lock is never released, so every later can_call() /
+    remaining() blocks forever. One HTTP hit on the scheduler's /health endpoint
+    wedged fetch_odds, odds_refresh, settle_ready and fetch_fixtures for hours
+    and drained the 12-worker APScheduler pool, starving the non-AF feeds
+    (Unibet-Kambi, Epicbet) that merely needed a worker.
+
+    Mutation-verified 2026-09-05: restoring the original bug (plain Lock AND the
+    nested self.usage_pct() call) fails this test on the 5s join timeout. Either
+    half of the fix alone is sufficient, so reverting just one still passes —
+    both are kept deliberately: the RLock is the blanket guard against any future
+    nested accessor, the inline computation removes the re-entrancy that existed.
+    """
+    import threading as _th
+    from workers.api_clients.api_football import BudgetTracker
+
+    tracker = BudgetTracker()
+    result = {}
+
+    def _call():
+        try:
+            result["status"] = tracker.status()
+        except Exception as exc:  # pragma: no cover - surfaced via the assert below
+            result["error"] = exc
+
+    worker = _th.Thread(target=_call, daemon=True)
+    worker.start()
+    worker.join(timeout=5.0)
+
+    assert not worker.is_alive(), (
+        "budget.status() did not return within 5s — it self-deadlocked on _lock. "
+        "status() must not call another _lock-taking accessor while holding _lock."
+    )
+    assert "error" not in result, f"budget.status() raised: {result.get('error')}"
+    assert "usage_pct" in result["status"], "status() returned without usage_pct"
+
+    # The lock must be free afterwards: a deadlocked status() leaves it held,
+    # which is what actually starved the scheduler.
+    followup = {}
+
+    def _followup():
+        followup["remaining"] = tracker.remaining()
+
+    t2 = _th.Thread(target=_followup, daemon=True)
+    t2.start()
+    t2.join(timeout=5.0)
+    assert not t2.is_alive(), (
+        "budget.remaining() blocked after status() — the budget lock was left held. "
+        "This is the exact failure mode that wedged every AF job."
+    )
+
+
+
 if __name__ == "__main__":
     main()

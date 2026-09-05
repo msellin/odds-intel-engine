@@ -959,3 +959,41 @@ Sibling of #29/#30 (a price must be one that was actually available *at the
 moment in question*) and of #33 (a filter that silently changes which rows you
 are looking at).
 
+
+## 38. A stalled feed is usually a starved feed — check the pool before the fetcher
+
+**2026-09-05.** Unibet-Kambi and Epicbet both stopped writing odds. Neither
+fetcher was broken and neither touches API-Football. The actual cause was three
+levels away:
+
+`BudgetTracker.status()` held `self._lock` and then called `self.usage_pct()`,
+which takes the same lock. `_lock` was a plain `threading.Lock`, so this was a
+permanent self-deadlock — and the lock was never released. One HTTP request to
+the scheduler's `/health` endpoint (which calls `budget.status()`) was enough.
+
+Every AF-touching job then blocked forever in `can_call()` / `remaining()`:
+`fetch_odds`, `odds_refresh`, `settle_ready`, `fetch_fixtures`, `injuries_morning`,
+`fetch_enrichment` — six-plus jobs sat in `pipeline_runs` as `running` for 85–165
+minutes. APScheduler's executor caps at `max_workers=12`, so those wedged jobs
+consumed the pool, and the non-AF feeds simply never got a worker.
+
+**What this means for diagnosis:**
+
+- **The feed that stopped is usually not the feed that broke.** Unibet-Kambi and
+  Epicbet were victims. Confirm a fetcher is actually running before debugging it.
+- **`pipeline_runs` rows stuck in `running` > 5 min are the real signal.** The
+  scheduler already logs `SCHEDULER WARNING max_instances blocked` and points at
+  this — believe it.
+- **`py-spy dump --pid <scheduler>` identifies the holder in one shot, and the
+  evidence is destroyed by a restart.** Capture it *before* restarting. Here the
+  stack named the deadlock exactly: `usage_pct (api_football.py:143)` under
+  `status (api_football.py:195)`.
+- **A healthy-looking scheduler proves nothing.** `systemctl` reported `active`,
+  `NRestarts=0`, uptime days. Postgres was fine (24/100 conns, 0 ungranted locks).
+  A deadlocked thread pool is invisible to every liveness check we had.
+- **Coolbet was healthy throughout**, which is what made this look like a
+  Kambi-specific problem. It isn't scheduler-hosted the same way.
+
+Fix: `_lock` is now an `RLock`, and `status()` computes `usage_pct` inline so it
+never re-enters. Pinned by the behavioural smoke test
+`AF-BUDGET-STATUS-DEADLOCK`, which fails on a 5s join timeout if the bug returns.

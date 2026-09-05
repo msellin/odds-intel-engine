@@ -63,7 +63,12 @@ class BudgetTracker:
         self.reserve = reserve  # Keep reserve for manual runs / settlement
         self.calls_today = 0
         self.reset_date = date.today()
-        self._lock = threading.Lock()
+        # AF-BUDGET-STATUS-DEADLOCK 2026-09-05: RLock, not Lock. status() holds
+        # this while building its dict; any nested accessor (usage_pct, remaining)
+        # would self-deadlock on a plain Lock and hold it forever, wedging every
+        # AF-touching scheduler thread behind can_call(). One /health hit did
+        # exactly that and starved the whole 12-worker pool for hours.
+        self._lock = threading.RLock()
         # endpoint → calls since the most recent hourly sync. Snapshotted + reset by sync_with_server.
         self._endpoint_counts: dict[str, int] = {}
         # endpoint → cumulative calls today. Reset only on new UTC day.
@@ -192,7 +197,11 @@ class BudgetTracker:
                 "calls_today": self.calls_today,
                 "daily_limit": self.daily_limit,
                 "remaining": max(0, self.daily_limit - self.calls_today),
-                "usage_pct": round(self.usage_pct(), 1),
+                # Computed inline, NOT via self.usage_pct() — see the RLock note
+                # above. Keep it lock-free so status() never re-enters.
+                "usage_pct": round(
+                    (self.calls_today / self.daily_limit) * 100 if self.daily_limit else 0.0, 1
+                ),
                 "can_call": self.calls_today < (self.daily_limit - self.reserve),
             }
 
