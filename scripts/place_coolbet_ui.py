@@ -74,8 +74,32 @@ KICKOFF_CUTOFF_MIN = 3
 
 # Unattended spend ceilings. A UI bug that loops is the realistic failure mode,
 # not a bad pick, so cap the blast radius by count AND by money.
-MAX_BETS_PER_DAY = 20
-MAX_STAKE_PER_DAY = 200.00
+#
+# COOLBET-DAILY-CAP-RAISE (2026-09-05). Raised 20 -> 80 bets and EUR 200 -> 800.
+# The old pair was not acting as a blast-radius guard, it was the binding
+# constraint on normal trading: it capped output on 9 of the 11 active days in
+# the preceding fortnight, turning away 13-49 qualified picks a day (46 picks
+# available 2026-09-05, 65 on 08-30, 69 on 08-29). Observed daily maximum is 69,
+# so 80 clears real volume with headroom while still bounding a runaway loop.
+#
+# Note the two caps bound at the SAME point at a EUR 10 flat stake (20 x 10 =
+# 200), so raising only the count would have moved the wall by nothing. They are
+# raised together and must stay consistent if the stake changes.
+#
+# What still limits the blast radius after this change:
+#   * MAX_BETS_PER_MATCH / MAX_STAKE_PER_MATCH (2 bets, EUR 20) — added
+#     2026-09-01 after the 2026-08-31 incident (19 bets / EUR 190 / -EUR 92.80).
+#     That incident's mechanism was repeated bets on ONE match, which is now
+#     guarded directly rather than incidentally by the daily count.
+#   * EXECUTE_ALLOWED_BOTS — only bot_coolbet_value_v1 may ever place.
+#   * MARKET_FAMILY — at most one bet per (match, family).
+#   * KICKOFF_CUTOFF_MIN — nothing placed inside 3 min of kickoff.
+# Residual risk accepted by the owner 2026-09-05: a loop spanning MANY distinct
+# matches is now bounded at EUR 800/day rather than EUR 200/day.
+#
+# Both are env-overridable so the ceiling can be tuned without a deploy.
+MAX_BETS_PER_DAY = int(os.getenv("COOLBET_MAX_BETS_PER_DAY", "80"))
+MAX_STAKE_PER_DAY = float(os.getenv("COOLBET_MAX_STAKE_PER_DAY", "800.00"))
 
 # COOLBET-MATCH-EXPOSURE-GUARD (2026-09-01). Per-match ceilings, added after
 # 2026-08-31: 19 bets / EUR 190 for -EUR 92.80, with no per-match state of any

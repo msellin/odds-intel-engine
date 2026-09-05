@@ -28709,5 +28709,69 @@ def test_shadow_detail_page_uses_exec_odds():
 
 
 
+@test("COOLBET-DAILY-CAP-RAISE — daily caps must clear real pick volume and stay mutually consistent")
+def test_coolbet_daily_caps():
+    """The daily caps were the binding constraint on trading, not a safety net.
+
+    Measured 2026-09-05 for bot_coolbet_value_v1: the old cap of 20 turned away
+    qualified picks on 9 of the 11 active days in the preceding fortnight —
+    46 picks available that day, 65 on 08-30, 69 on 08-29. Both caps bound at the
+    same point at a EUR 10 flat stake (20 x 10 = 200), so raising the count alone
+    would have moved nothing.
+
+    This test pins three things: the caps clear observed volume, they stay
+    consistent with each other at the flat stake, and they remain real ceilings
+    rather than being removed outright.
+    """
+    import importlib.util, os
+    path = os.path.join(os.path.dirname(__file__), "place_coolbet_ui.py")
+    spec = importlib.util.spec_from_file_location("_place_cb", path)
+    mod = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+    except SystemExit:
+        pass
+
+    bets = mod.MAX_BETS_PER_DAY
+    stake_cap = mod.MAX_STAKE_PER_DAY
+
+    # 1. Still a real ceiling — never unbounded.
+    assert isinstance(bets, int) and bets > 0, "MAX_BETS_PER_DAY must be a positive int"
+    assert stake_cap > 0, "MAX_STAKE_PER_DAY must stay a real ceiling"
+    assert bets <= 500 and stake_cap <= 5000, (
+        "daily caps look removed rather than raised — they are the blast-radius "
+        "guard against a UI loop spanning many matches"
+    )
+
+    # 2. Must clear the observed daily maximum (69 on 2026-08-29) or it is still
+    #    the binding constraint on normal trading rather than a safety net.
+    assert bets >= 70, (
+        f"MAX_BETS_PER_DAY={bets} does not clear the observed daily maximum of 69 "
+        f"qualified picks — the cap would still be truncating normal trading"
+    )
+
+    # 3. The two caps must not contradict: at the EUR 10 flat stake the money cap
+    #    must not bite before the count cap, or raising the count achieves nothing.
+    flat = 10.0
+    assert stake_cap >= bets * flat, (
+        f"MAX_STAKE_PER_DAY={stake_cap} binds before MAX_BETS_PER_DAY={bets} at a "
+        f"EUR {flat:.0f} stake ({bets} x {flat:.0f} = {bets*flat:.0f}) — the money "
+        f"cap becomes the real wall and the count raise is inert"
+    )
+
+    # 4. Per-match guards must survive — they are what actually addresses the
+    #    2026-08-31 incident (19 bets / EUR 190 / -EUR 92.80 on repeated matches).
+    assert getattr(mod, "MAX_BETS_PER_MATCH", 0) > 0, "per-match count guard missing"
+    assert getattr(mod, "MAX_STAKE_PER_MATCH", 0) > 0, "per-match stake guard missing"
+    assert mod.MAX_BETS_PER_MATCH < bets, "per-match guard must be tighter than the daily cap"
+
+    # 5. Only the one vetted bot may ever execute.
+    assert mod.EXECUTE_ALLOWED_BOTS == {"bot_coolbet_value_v1"}, (
+        "EXECUTE_ALLOWED_BOTS changed — real money may only be placed by the "
+        "explicitly vetted bot"
+    )
+
+
+
 if __name__ == "__main__":
     main()
