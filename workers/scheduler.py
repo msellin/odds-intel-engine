@@ -808,6 +808,16 @@ def job_weekly_meta_retrain():
     Train script writes the bundle to data/models/meta/<version>/. No
     promotion — the operator inspects the new bundle's threshold.json and
     decides whether to flip META_B_ML3_VERSION in /opt/odds-intel-engine/.env (then restart oddsintel-scheduler).
+
+    META-RETRAIN-WRONG-LABEL-2026-09-06: the training flags below are not
+    tuning. See the comment on the argv list — the default path is fitted to a
+    target that inverts the quantity being gated on. Nothing here promotes a
+    bundle, so this changes what gets WRITTEN each Sunday and nothing else.
+    Note also that `job_weekly_meta_validate` (05:00) is still commented out at
+    the registration site after SCHEDULER-META-VALIDATE-SEGFAULT, so no
+    automated check would have caught the wrong label either.
+
+    Revert: delete everything after `"--version", version` in the argv list.
     """
     import subprocess
     from datetime import date as _date
@@ -816,7 +826,36 @@ def job_weekly_meta_retrain():
         version = f"v_{_date.today().strftime('%Y%m%d')}_meta"
         console.print(f"[bold cyan]Weekly META retrain → {version}[/bold cyan]")
         result = subprocess.run(
-            [sys.executable, "scripts/train_b_ml3.py", "--version", version],
+            [
+                sys.executable, "scripts/train_b_ml3.py",
+                "--version", version,
+                # META-RETRAIN-WRONG-LABEL-2026-09-06. Everything after
+                # `--version` is here because the default path trains against
+                # `mfv.pseudo_clv_home`, which is ANTI-correlated with the real
+                # `clv_pinnacle_devig` the gate exists to protect: r=-0.036
+                # (n=1,266) since 2026-05-06 and r=-0.638 (n=162) since
+                # 2026-08-01. A bundle trained that way learns the correct sign
+                # for the proxy and therefore the WRONG sign for what we bet on
+                # — `odds_drift_home_at_t6h` predicts real CLV at r=+0.374 and
+                # the old bundles learned it at coef -1.198.
+                #
+                # `--bets-mode` labels on the real settled `clv_pinnacle_devig`
+                # instead. Measured out-of-sample (trained < 2026-08-01, scored
+                # on picks after it, n=185): the default path scores r=-0.354
+                # against real CLV; this combination scores r=+0.307 (t=+4.36),
+                # Q4-Q1 +9.19pp, with the drift coefficient flipped to +0.857.
+                #
+                # `--feature-set lean --missing-mode none` are needed WITH the
+                # label switch, not instead of it: pruning alone moved the
+                # default path from r=-0.354 to r=-0.298, i.e. less harmful and
+                # still useless, while the label switch alone (44 columns) only
+                # reached r=-0.066. Only the pair crosses zero. Dropping the
+                # `*_missing` indicators also removes a data-coverage leak — 5
+                # of the old top-14 coefficients were "does this fixture have
+                # complete data", which is not edge.
+                "--bets-mode", "--bets-days", "160",
+                "--feature-set", "lean", "--missing-mode", "none",
+            ],
             cwd=str(Path(__file__).parent.parent),
             timeout=900,
             capture_output=True,

@@ -29992,5 +29992,51 @@ def _odds_prune_cursor_bug():
     )
 
 
+@test("META-RETRAIN-WRONG-LABEL — the weekly meta retrain must use the real CLV label")
+def _meta_retrain_label():
+    """META-RETRAIN-WRONG-LABEL-2026-09-06.
+
+    The Sunday 04:00 retrain called `train_b_ml3.py --version X` with no label
+    flag, i.e. the default `mfv.pseudo_clv_home` target, which is
+    anti-correlated with the `clv_pinnacle_devig` the gate protects. It would
+    have written a fresh inverted bundle every week, and
+    `job_weekly_meta_validate` is still disabled, so nothing would have caught
+    it.
+
+    Asserted against the argv list itself rather than the file's text, because
+    a substring check would also pass on a flag that only appears in a
+    docstring or in some other function (gotcha 41).
+    """
+    import ast
+    import os
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    tree = ast.parse(
+        open(os.path.join(root, "workers", "scheduler.py"), encoding="utf-8").read()
+    )
+    fn = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef) and n.name == "job_weekly_meta_retrain"
+    )
+    argv = None
+    for call in (n for n in ast.walk(fn) if isinstance(n, ast.Call)):
+        for arg in call.args:
+            if isinstance(arg, ast.List) and any(
+                isinstance(e, ast.Constant) and e.value == "scripts/train_b_ml3.py"
+                for e in arg.elts
+            ):
+                argv = [e.value for e in arg.elts if isinstance(e, ast.Constant)]
+    assert argv is not None, "could not find the train_b_ml3 argv in the retrain job"
+    assert "--bets-mode" in argv, (
+        "the weekly meta retrain no longer passes --bets-mode: it is back to "
+        "training on mfv.pseudo_clv_home, which inverts the gated quantity"
+    )
+    assert argv[argv.index("--feature-set") + 1] == "lean"
+    assert argv[argv.index("--missing-mode") + 1] == "none", (
+        "--missing-mode is not 'none': the *_missing indicators are back, and "
+        "the label switch only crosses zero when paired with the pruning"
+    )
+
+
 if __name__ == "__main__":
     main()
