@@ -29643,5 +29643,62 @@ def test_placeable_books_extra_markets():
 
 
 
+@test("REALMONEY-ODDS-BAND-MISMATCH — the placer must refuse odds bands where CLV is negative")
+def test_placer_odds_floor():
+    """The placer had NO odds gate, so it would place at 1.40 in a band where our
+    own de-vigged Pinnacle CLV is decisively negative.
+
+    CLV by band at executable prices, n=729 settled prematch singles:
+        < 2.0    -2.62%  n=88   t=-5.64
+        2.0-2.8  -2.90%  n=204  t=-3.99
+        2.8-3.5  -0.99%  n=211  t=-1.10
+        3.5+     +9.95%  n=111  t=+3.64
+    Two days of real money agreed directionally: -66.0% below 2.0, -37.3% at
+    2.0-2.8, +5.0% at 3.5+ (which beat its expected win count). 22 of 36 real
+    bets sat in the two decisively-negative bands.
+    """
+    import importlib.util, os
+    path = os.path.join(os.path.dirname(__file__), "place_coolbet_ui.py")
+    spec = importlib.util.spec_from_file_location("_pc", path)
+    mod = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+    except SystemExit:
+        pass
+
+    floor = mod.MIN_ODDS_FOR_PLACEMENT
+    assert floor >= 2.80, (
+        f"placement odds floor is {floor}, below 2.80. Bands under 2.8 carry "
+        f"CLV of -2.62% (t=-5.64) and -2.90% (t=-3.99) — decisively negative."
+    )
+    assert floor <= 4.0, (
+        f"floor {floor} is above 4.0, which would cut nearly all volume and "
+        f"concentrate every stake into the widest-variance band"
+    )
+
+    src = open(path, encoding="utf-8").read()
+    # The gate must actually run in the placement loop, not merely be defined.
+    assert "MIN_ODDS_FOR_PLACEMENT" in src.split("def main")[-1] or \
+           src.count("MIN_ODDS_FOR_PLACEMENT") >= 2, (
+        "the floor constant is defined but never compared against a pick"
+    )
+    assert 'stage="odds_floor"' in src, (
+        "rejections must be RECORDED, not silently skipped — a guard nobody can "
+        "measure is indistinguishable from one that never fires"
+    )
+    # It must gate on odds_at_pick: the basis the CLV analysis bucketed on.
+    idx = src.index('stage="odds_floor"')
+    window = src[max(0, idx - 900):idx]
+    assert "odds_at_pick" in window, (
+        "the floor must compare odds_at_pick — gating on a different price than "
+        "the evidence was measured at is how this repo has fooled itself before"
+    )
+
+    # The other real-money guards must survive alongside it.
+    assert mod.EXECUTE_ALLOWED_BOTS == {"bot_coolbet_value_v1"}
+    assert mod.MAX_BETS_PER_MATCH > 0 and mod.MAX_STAKE_PER_MATCH > 0
+
+
+
 if __name__ == "__main__":
     main()

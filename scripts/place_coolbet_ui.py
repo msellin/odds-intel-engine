@@ -67,6 +67,37 @@ DEFAULT_BOT = "bot_coolbet_value_v1"
 EXECUTE_ALLOWED_BOTS = {"bot_coolbet_value_v1"}
 
 
+# REALMONEY-ODDS-BAND-MISMATCH-2026-09-05 — minimum odds for real placement.
+#
+# The placer had NO odds gate: it checked min-edge, per-match exposure, the daily
+# cap and the kickoff cutoff, but nothing on price level. It would therefore
+# place at 1.40 in a band where our own de-vigged Pinnacle CLV is decisively
+# negative.
+#
+# CLV by odds band, n=729 settled prematch singles from non-retired bots,
+# recomputed at EXECUTABLE prices (the stored column was stale-priced — see
+# CLV-DEVIG-COLUMN-REBUILD):
+#
+#     < 2.0     -2.62%   n=88    t = -5.64   <- decisively negative
+#     2.0-2.8   -2.90%   n=204   t = -3.99   <- decisively negative
+#     2.8-3.5   -0.99%   n=211   t = -1.10      not distinguishable from zero
+#     3.5+      +9.95%   n=111   t = +3.64      positive
+#
+# Corroborated independently by two days of real money: <2.0 returned -66.0%
+# and 2.0-2.8 -37.3%, while 3.5+ returned +5.0% and BEAT its expected win count.
+# 22 of those 36 bets (61%) sat in the two decisively-negative bands.
+#
+# The floor is set at 2.80, not 3.50, deliberately. 2.80 excludes only the bands
+# where CLV is decisively negative (t < -3.9). The 2.8-3.5 band is merely
+# unproven, not proven bad, and cutting to 3.50 would keep just 11 of 36 recent
+# bets while concentrating every stake into the widest-variance band on n=111
+# that still carries an unresolved longshot de-vig question.
+#
+# CLV is the right basis for this decision: it needs ~334 bets to conclude where
+# ROI needs ~19,400 (per-bet unit-return sd 1.421). Do NOT re-tune this on a few
+# days of ROI.
+MIN_ODDS_FOR_PLACEMENT = float(os.getenv("COOLBET_MIN_ODDS", "2.80"))
+
 # Never place inside this window before kickoff — Coolbet suspends markets
 # around the start and a placement racing the whistle is the worst time to be
 # trusting a DOM.
@@ -491,6 +522,34 @@ def main() -> int:
                 print(f"skip     {label}\n         inside {KICKOFF_CUTOFF_MIN}min "
                       f"kickoff cutoff (KO {ko:%H:%M} UTC)")
                 mark_pick(p["shadow_bet_id"], MARK_CHECKED)
+                continue
+
+            # REALMONEY-ODDS-BAND-MISMATCH-2026-09-05: reject bands where our own
+            # de-vigged CLV is decisively negative. Gated on `odds_at_pick`
+            # because that is the basis the CLV analysis bucketed on — gating on
+            # a different price than the one the evidence was measured at is how
+            # this codebase has repeatedly fooled itself.
+            #
+            # Slippage caveat: the executed price can land below this floor even
+            # when the pick clears it. That is bounded by the placer's own
+            # min-odds check downstream, and is a smaller error than placing in a
+            # band with t = -5.64 CLV by design.
+            try:
+                _pick_odds = float(p.get("odds_at_pick") or 0)
+            except (TypeError, ValueError):
+                _pick_odds = 0.0
+            if _pick_odds < MIN_ODDS_FOR_PLACEMENT:
+                rejected += 1
+                expected_rows += 1
+                up.record_attempt(
+                    p, outcome="rejected", stage="odds_floor",
+                    reason=(f"odds {_pick_odds:.2f} < floor "
+                            f"{MIN_ODDS_FOR_PLACEMENT:.2f} (CLV negative below 2.8)"),
+                    stake_requested=args.stake, execute_mode=args.execute,
+                )
+                mark_pick(p["shadow_bet_id"], MARK_CHECKED)
+                print(f"skip     {label}\n         odds {_pick_odds:.2f} below floor "
+                      f"{MIN_ODDS_FOR_PLACEMENT:.2f} — CLV in this band is negative")
                 continue
 
             held = exposure.setdefault(p["match_id"], [])
