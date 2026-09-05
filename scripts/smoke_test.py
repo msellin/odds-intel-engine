@@ -29700,5 +29700,32 @@ def test_placer_odds_floor():
 
 
 
+@test("PROJECT-DIRECTION-RULE — CLAUDE.md must define the two project directions")
+def test_project_direction_rule_documented():
+    """The project has two directions - automate the operator's own betting, and
+    give customers the best picks - and work that serves one can be worthless to
+    the other. Tasks were repeatedly prioritised as if they served both.
+
+    The rule lives in CLAUDE.md so it survives across sessions rather than
+    depending on whoever is in the conversation.
+    """
+    import os
+    md = open(os.path.join(os.path.dirname(__file__), "..", "CLAUDE.md"),
+              encoding="utf-8").read()
+    assert "Project direction" in md, "CLAUDE.md must define the project directions"
+    for token in ("OWN", "PICKS", "BOTH"):
+        assert token in md, f"direction tag {token} is not documented"
+    assert "Direction column" in md, (
+        "CLAUDE.md must require a Direction column on task tables presented to "
+        "the owner"
+    )
+    # The rule is only useful if it says the directions can CONFLICT.
+    assert "conflict" in md.lower(), (
+        "the rule must state that the two directions can conflict and that the "
+        "trade-off is the owner's call - otherwise 'both' becomes a default"
+    )
+
+
+
 if __name__ == "__main__":
     main()

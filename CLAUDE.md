@@ -87,6 +87,41 @@ Then commit docs **in the same commit as the code**. Never separate them — a c
 | 🔄 In Progress | Claimed — another agent must not start this |
 | ✅ Done YYYY-MM-DD | Complete and documented |
 
+### Project direction — tag every task with it
+
+This project has **two directions**. They overlap but they are not the same, and
+work that serves one can be worthless or even harmful to the other. Every task
+must say which it serves and *how*.
+
+| Tag | Direction | What "good" means |
+|---|---|---|
+| **🤖 OWN** | Automate the operator's own betting and make it as profitable as possible | Executable price, real placement, bankroll, blast-radius limits. Judged on money actually staked and CLV on placed bets. |
+| **👥 PICKS** | Offer customers the best possible picks, backed by our own data and numbers | Honest published figures, coverage, clarity, defensible claims. Judged on whether a reader can act on it and whether the number survives scrutiny. |
+| **🤖👥 BOTH** | Serves both | Say how it serves each — they usually differ. |
+
+**Write the tag AND a short "how" on the task row.** "Both" on its own is not
+useful; `🤖👥 BOTH — sharper placement gate for us, and the same floor makes the
+public pick honest` is.
+
+**Why this rule exists.** Several times work has been prioritised as if it
+helped both when it only helped one:
+
+- An odds floor on the placer is **🤖 OWN** — it changes what we stake. Publishing
+  a break-even price to readers is **👥 PICKS** — it changes what they trust. The
+  same number, two different jobs, and they can want different values.
+- Collecting a market we cannot bet is **👥 PICKS** at best.
+- A prettier `/performance` page does nothing for **🤖 OWN**.
+- Fixing a stale price basis is **🤖👥 BOTH**, but for different reasons: we would
+  stake on a phantom price, *and* we would publish an inflated track record.
+
+**When the two directions conflict, say so explicitly in the task** rather than
+silently optimising for one. Restricting picks to a narrow profitable band is
+good for **🤖 OWN** and bad for **👥 PICKS** (fewer picks to show), and that
+trade-off is the owner's call, not an implementation detail.
+
+**Any task-list table presented to the owner must carry a Direction column**
+alongside Priority, Estimate and Status.
+
 ## Keeping Docs Updated
 
 Do not let docs drift from reality. If you notice something marked TODO that is already done, fix it. If you notice a doc describing behaviour that no longer matches the code, fix the doc in the same commit.
