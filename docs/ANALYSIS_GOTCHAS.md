@@ -997,3 +997,50 @@ consumed the pool, and the non-AF feeds simply never got a worker.
 Fix: `_lock` is now an `RLock`, and `status()` computes `usage_pct` inline so it
 never re-enters. Pinned by the behavioural smoke test
 `AF-BUDGET-STATUS-DEADLOCK`, which fails on a 5s join timeout if the bug returns.
+
+## 39. Never measure calibration across a window that straddles a calibration change
+
+**2026-09-05.** I measured `calibrated_prob` against realised win rate over
+2026-05-04..2026-09-05 and reported **+6.21pp overconfidence (n=729, z=-3.39)**,
+then derived a shrink factor k=0.884 and recommended applying it.
+
+The number reproduced exactly on an independent recompute, which is precisely
+why it was convincing. It was still wrong as a statement about the current
+model: **ENSEMBLE-RECALIBRATION shipped on 2026-09-03**, inside the window.
+
+Split on the fix date:
+
+| window | n | predicted | actual | overconfidence |
+|---|---|---|---|---|
+| before 2026-09-03 | 694 | 0.4916 | 0.4265 | **+6.51pp** |
+| on/after 2026-09-03 | 35 | 0.4312 | 0.4286 | **+0.26pp** |
+
+The pooled figure was a pre-fix measurement wearing a current-date label.
+Applying k=0.884 on top of the recalibration that already shipped would have
+**double-corrected** the model.
+
+This is gotcha #35's shape in a different costume: there, a holdout was only a
+holdout if you checked the training window; here, a calibration measurement is
+only current if you check the calibration-change dates inside its window.
+
+**Rules:**
+
+- Before quoting any model-quality metric, list the model/calibration changes
+  that landed inside the sample window. `git log --oneline --since=<window start>`
+  on `workers/model/` takes seconds.
+- Split on every such date and report the segments, not the pool. If the
+  post-change segment is too small to conclude, **say that** — do not fall back
+  to the pooled number, which is the pre-change answer.
+- The same contamination applies to anything else derived from that window. The
+  realised-edge-at-closing figure (+1.26pp) came from the same pooled sample and
+  is equally a pre-fix number.
+- A figure reproducing exactly on recompute proves the arithmetic, not the
+  sample. Both of my computations shared the same window bug.
+
+Corollary for task hygiene: this was found while auditing stale 🔄 locks. Two of
+four "In Progress" tasks were not in progress — one was **finished** on
+2026-09-03 and never marked (ENSEMBLE-RECALIBRATION), and one was **moot**
+because the whole BTTS market had been retired underneath it. A stale lock does
+not just block other agents; it also broadcasts a false picture of the system's
+current state, which is what put "the model is worse than a base rate" into my
+own priority list on the day it had already been fixed.
