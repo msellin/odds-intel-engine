@@ -29436,5 +29436,82 @@ def test_settlement_enrichment_coverage_gate():
 
 
 
+@test("AF-PINNACLE-EXTRA-MARKETS — team totals parse into their own namespace")
+def test_pinnacle_team_totals():
+    """Pinnacle quotes 19 bet types in the bulk /odds response we already fetch;
+    we kept 6. `Total - Home` / `Total - Away` de-vig to Pinnacle's
+    (lambda_home, lambda_away) - a sharp reference on the goal SPLIT, the one
+    axis our Poisson is never anchored on. Zero extra API calls.
+
+    Validated live 2026-09-05: lambda_home + lambda_away agreed with Pinnacle's
+    own match total to within +/-0.08 goals on 6 of 6 fixtures, with the split
+    ranging lambda_home 1.49-2.49 against lambda_away 1.02-1.64.
+
+    The namespace matters more than the parse. The `Goals Over/Under` branch
+    carries a comment recording what happened when a team-specific line last
+    leaked into the full-time bucket: best-price selection compared a team-total
+    price against a full-match model probability and produced fake double-digit
+    edges. This test pins that separation.
+    """
+    from workers.api_clients.api_football import parse_fixture_odds
+
+    payload = [{
+        "bookmakers": [
+            {"name": "Pinnacle", "bets": [
+                {"id": 5, "name": "Goals Over/Under", "values": [
+                    {"value": "Over 2.5", "odd": "1.38"},
+                    {"value": "Under 2.5", "odd": "3.18"}]},
+                {"id": 16, "name": "Total - Home", "values": [
+                    {"value": "Over 1.5", "odd": "1.51"},
+                    {"value": "Under 1.5", "odd": "2.57"}]},
+                {"id": 17, "name": "Total - Away", "values": [
+                    {"value": "Over 1.5", "odd": "2.19"},
+                    {"value": "Under 1.5", "odd": "1.71"}]},
+            ]},
+            # A non-sharp book must NOT have its team totals stored by default —
+            # the mechanism needs Pinnacle and odds_snapshots is already 45.8M rows.
+            {"name": "Bet365", "bets": [
+                {"id": 16, "name": "Total - Home", "values": [
+                    {"value": "Over 1.5", "odd": "1.44"},
+                    {"value": "Under 1.5", "odd": "2.70"}]},
+            ]},
+        ]
+    }]
+
+    rows = parse_fixture_odds(payload)
+    tt = [r for r in rows if r["market"].startswith("team_total")]
+
+    assert tt, "team totals were not parsed at all"
+    assert {r["bookmaker"] for r in tt} == {"Pinnacle"}, (
+        f"team totals stored for unexpected books: "
+        f"{sorted({r['bookmaker'] for r in tt})} - default is Pinnacle only"
+    )
+
+    got = {(r["market"], r["selection"]): r["odds"] for r in tt}
+    assert got.get(("team_total_home_15", "over")) == 1.51, got
+    assert got.get(("team_total_home_15", "under")) == 2.57, got
+    assert got.get(("team_total_away_15", "over")) == 2.19, got
+
+    # THE critical property: a team total must never land in the full-time bucket.
+    ft = {(r["market"], r["selection"]) for r in rows
+          if r["market"].startswith("over_under")}
+    assert ("over_under_15", "over") not in ft, (
+        "a 1.5 TEAM total leaked into over_under_15 - best-price selection would "
+        "compare it against a full-match model probability and fabricate edge"
+    )
+    ou = {(r["market"], r["selection"]): r["odds"] for r in rows
+          if r["market"] == "over_under_25"}
+    assert ou.get(("over_under_25", "over")) == 1.38, (
+        f"the real match total was altered by the new branch: {ou}"
+    )
+    assert not (ft & set(got)), "team-total and over_under namespaces overlap"
+
+    # Home and away must not collapse into one another.
+    assert got.get(("team_total_home_15", "over")) != got.get(("team_total_away_15", "over")), (
+        "home and away team totals resolved to the same value - side detection is broken"
+    )
+
+
+
 if __name__ == "__main__":
     main()

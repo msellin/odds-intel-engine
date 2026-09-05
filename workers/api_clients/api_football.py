@@ -223,6 +223,14 @@ def _headers() -> dict:
     return {"x-apisports-key": API_KEY}
 
 
+# AF-PINNACLE-EXTRA-MARKETS-2026-09-05: which books' team totals we store.
+# Pinnacle only by default — the lambda-split mechanism needs the sharp book, and
+# every extra book multiplies rows in an already-45.8M-row table.
+_TEAM_TOTAL_BOOKMAKERS = frozenset(
+    b.strip() for b in os.getenv("TEAM_TOTAL_BOOKMAKERS", "Pinnacle").split(",")
+    if b.strip()
+)
+
 _HARD_QUOTA_FLOOR = 200  # Never burn below this — keeps settlement alive
 
 
@@ -660,6 +668,54 @@ def parse_fixture_odds(odds_response: list[dict]) -> list[dict]:
                                 rows.append({
                                     "bookmaker": bm_name,
                                     "market": line_label,
+                                    "selection": direction.lower(),
+                                    "odds": float(val["odd"]),
+                                })
+                            except ValueError:
+                                pass
+
+                elif bet_name in ("Total - Home", "Total - Away"):
+                    # AF-PINNACLE-EXTRA-MARKETS-2026-09-05. Pinnacle quotes 19
+                    # bet types in the bulk /odds response we ALREADY fetch; we
+                    # kept 6. These two are the valuable pair: de-vigged,
+                    # `Total - Home` and `Total - Away` ARE Pinnacle's
+                    # (lambda_home, lambda_away).
+                    #
+                    # Our Poisson emits that same pair but is anchored only on
+                    # 1X2 and the MATCH TOTAL — never on the SPLIT. So this is a
+                    # sharp per-fixture reference on the one axis nothing
+                    # currently constrains, usable as a placement-time rejection
+                    # gate (kill a 1X2/OU pick whose implied split is far from
+                    # Pinnacle's). It attacks price selection rather than feature
+                    # count, which is the constraint repeatedly measured as
+                    # binding here. Costs ZERO extra API calls.
+                    #
+                    # Deliberately a SEPARATE market namespace. The comment on
+                    # "Goals Over/Under" above records what happened last time a
+                    # team-specific line leaked into the FT bucket: best-price
+                    # selection compared a team-total price against a full-match
+                    # model probability and produced fake double-digit edges.
+                    # `team_total_home_25` can never collide with
+                    # `over_under_25`.
+                    #
+                    # Stored for the sharp book only by default — the mechanism
+                    # needs Pinnacle, and `odds_snapshots` is already 45.8M rows
+                    # (see DB-RETENTION-POLICY). Widen via env if a use appears.
+                    if bm_name in _TEAM_TOTAL_BOOKMAKERS:
+                        side = "home" if bet_name.endswith("Home") else "away"
+                        for val in bet.get("values", []):
+                            v = val["value"]  # "Over 1.5" / "Under 0.5"
+                            if " " not in v:
+                                continue
+                            direction, line = v.split(" ", 1)
+                            if direction.lower() not in ("over", "under"):
+                                continue
+                            try:
+                                line_num = float(line)
+                                rows.append({
+                                    "bookmaker": bm_name,
+                                    "market": f"team_total_{side}_"
+                                              f"{str(line_num).replace('.', '')}",
                                     "selection": direction.lower(),
                                     "odds": float(val["odd"]),
                                 })

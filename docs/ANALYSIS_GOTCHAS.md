@@ -1262,3 +1262,42 @@ was computed from `odds_at_pick`, a MAX() high-water mark. Because the error is
 - **Pre-register.** The predictions and decision rule were written to
   `dev/active/devig-artefact-check-plan.md` before measuring, so "de-vig was
   innocent" could not be quietly reinterpreted as a win.
+
+
+## 45. Pinnacle sends 19 bet types through API-Football, not 8
+
+**2026-09-05.** Section 4 of this file said Pinnacle quotes only 8 bet types via
+API-Football. Enumerated live from the bulk `/odds` response we already fetch,
+it sends **19**:
+
+Match Winner · Asian Handicap · Goals O/U · Goals O/U First Half · First Half
+Winner · **Total - Home (id 16)** · **Total - Away (id 17)** · Asian Handicap
+First Half · Corners O/U · Home/Away Team Total Goals (1st Half) · Corners AH ·
+Home Corners O/U · Away Corners O/U · Total Corners (1st Half) · Cards O/U ·
+Cards AH · Exact Score · Correct Score First Half.
+
+BTTS and double_chance really are absent — that part of section 4 stands, and it
+is still why `clv_pinnacle` is permanently NULL for BTTS.
+
+**Why it matters:** we parsed 6 of the 19 and discarded the rest, in a response
+we already pay for. `Total - Home` and `Total - Away` de-vig to Pinnacle's
+(λ_home, λ_away). Our Poisson emits that same pair but is anchored only on 1X2
+and the match TOTAL, never on the SPLIT — so this is a sharp per-fixture
+reference on an axis nothing else constrains, at zero additional quota.
+
+Validated on live data: λ_home + λ_away matched Pinnacle's own match-total λ to
+within **±0.08 goals on 6 of 6 fixtures**, while the split itself varied widely
+(λ_home 1.49–2.49 vs λ_away 1.02–1.64).
+
+**Rule:** before concluding a feed lacks something, enumerate what it actually
+returns. Both the "8 bet types" claim and the belief that we needed more data
+sources survived unchallenged because nobody printed the response. The same
+audit found `AF_ENDPOINT_FREQUENCY.md` and the `DATA_SOURCES.md` budget table
+both materially out of date, so treat vendor-capability notes in this repo as
+stale until re-probed.
+
+**And keep team-specific lines in their own namespace.** The `Goals Over/Under`
+parser carries a comment about a previous incident where a team-specific line
+leaked into the full-time bucket and best-price selection compared it against a
+full-match model probability, fabricating double-digit edges. Team totals are
+stored as `team_total_{home,away}_{line}` for exactly that reason.
