@@ -44,6 +44,99 @@ AF_MAX_ATTEMPTS = int(os.getenv("AF_MAX_ATTEMPTS", "3"))
 AF_RETRY_BUDGET_S = float(os.getenv("AF_RETRY_BUDGET_S", "45"))
 AF_MAX_BACKOFF_S = float(os.getenv("AF_MAX_BACKOFF_S", "8"))
 
+# ── AF-RATE-LIMIT-TELEMETRY (2026-09-06) ──────────────────────────────────
+# Every AF response carries the live per-minute allowance in its headers and we
+# read NONE of them. That gap is why AF-429-BURST-SHAPE could not be sized: the
+# ticket assumed we were exceeding a documented 900/min, but MIN_REQUEST_INTERVAL
+# caps a single process at 500/min, and the scheduler IS a single process
+# (LivePoller is a thread inside it, not a separate one). So either the true
+# ceiling is below 500, or AF meters over a sub-minute burst window. Guessing
+# between those was going to cost 3-4h of building a token bucket on an
+# unverified number; one matchday of these headers answers it for free.
+#
+# The counter that matters is `x-ratelimit-requests-remaining` (per-minute).
+# `x-ratelimit-requests-limit` is the daily plan cap, which we already track.
+_rate_headers_lock = threading.Lock()
+_last_rate_headers: dict = {}
+_rate_headers_low_water: dict = {}
+
+# Log a line whenever the per-minute allowance drops at or below this. Set to a
+# large number to log every response while characterising the burst shape.
+AF_RATE_HEADER_LOG_BELOW = int(os.getenv("AF_RATE_HEADER_LOG_BELOW", "20"))
+
+
+def _record_rate_headers(endpoint: str, resp) -> None:
+    """Capture AF's per-minute allowance headers. Never raises.
+
+    Telemetry only — this must not be able to break a request, so every failure
+    path is swallowed. Header names are lowercased because `requests` gives a
+    case-insensitive mapping but a plain dict copy would not.
+    """
+    try:
+        vals = {}
+        for k, v in resp.headers.items():
+            lk = k.lower()
+            if lk.startswith("x-ratelimit"):
+                try:
+                    vals[lk] = int(float(v))
+                except (TypeError, ValueError):
+                    vals[lk] = v
+        if not vals:
+            return
+        remaining = vals.get("x-ratelimit-requests-remaining")
+        with _rate_headers_lock:
+            _last_rate_headers.clear()
+            _last_rate_headers.update(vals)
+            _last_rate_headers["endpoint"] = endpoint
+            _last_rate_headers["at"] = time.time()
+            if isinstance(remaining, int):
+                prev = _rate_headers_low_water.get("min_remaining")
+                if prev is None or remaining < prev:
+                    _rate_headers_low_water["min_remaining"] = remaining
+                    _rate_headers_low_water["at_endpoint"] = endpoint
+                    _rate_headers_low_water["at"] = time.time()
+        if isinstance(remaining, int) and remaining <= AF_RATE_HEADER_LOG_BELOW:
+            console.print(
+                f"[yellow]AF rate headers /{endpoint}: "
+                f"per-minute remaining={remaining} {vals}[/yellow]"
+            )
+    except Exception:
+        pass
+
+
+def rate_header_snapshot() -> dict:
+    """Last-seen AF rate headers plus the low-water mark since process start.
+
+    Read this after a matchday to get the real per-minute ceiling and the burst
+    shape, instead of inferring either from journal greps — the last attempt at
+    that produced a 100-2,300/day figure that turned out to be UUID fragments.
+    """
+    with _rate_headers_lock:
+        return {"last": dict(_last_rate_headers),
+                "low_water": dict(_rate_headers_low_water)}
+
+
+def _rate_limit_error(data: dict):
+    """Return AF's rate-limit message if this 200 response is really a throttle.
+
+    AF-429-BODY-FORM (2026-09-06): AF does NOT return HTTP 429 to us. Verified
+    over the whole journal window (2026-08-05 onward, 1.8M lines): zero
+    `429 Client Error`, zero `Too Many Requests` statuses, and the 429 retry
+    branch in `_get` has never once fired. What AF actually returns is
+    **HTTP 200 with `{"errors": {"rateLimit": "Too many requests..."}}`**.
+
+    So the one rate-limit variant we handled was the one that never happens,
+    while the variant that does happen fell through to the generic
+    `raise ValueError` below `budget.record_call` — charging quota AND losing
+    the data permanently, with no retry. Real volume is 0-655/day.
+    """
+    errors = data.get("errors")
+    if isinstance(errors, dict):
+        msg = errors.get("rateLimit")
+        if msg:
+            return str(msg)
+    return None
+
 
 # ── Budget Tracker ─────────────────────────────────────────────────────────
 # Tracks daily API call count in-memory. Syncs with AF /status endpoint hourly.
@@ -354,6 +447,7 @@ def _get(endpoint: str, params: dict = None) -> dict:
         try:
             resp = requests.get(url, headers=_headers(), params=params,
                                 timeout=AF_TIMEOUT_S)
+            _record_rate_headers(endpoint, resp)
             if resp.status_code in (429, 503) and not is_last:
                 last_exc = requests.exceptions.HTTPError(
                     f"AF {resp.status_code} on /{endpoint}", response=resp)
@@ -361,6 +455,25 @@ def _get(endpoint: str, params: dict = None) -> dict:
                     continue
                 raise last_exc
             resp.raise_for_status()
+
+            # AF-429-BODY-FORM: the throttle arrives as HTTP 200 with a
+            # `rateLimit` error body, so it has to be caught HERE, inside the
+            # retry loop, and not by the generic error check further down —
+            # which sits below `budget.record_call` and has no retry, i.e. it
+            # burns quota and drops the data. See `_rate_limit_error`.
+            try:
+                data = resp.json()
+            except ValueError:
+                data = None
+            if data is not None:
+                throttled = _rate_limit_error(data)
+                if throttled:
+                    last_exc = requests.exceptions.HTTPError(
+                        f"AF rate limit (200 body) on /{endpoint}: {throttled}",
+                        response=resp)
+                    if not is_last and _sleep_before_retry(attempt, deadline, resp):
+                        continue
+                    raise last_exc
             break
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
             last_exc = exc
@@ -370,9 +483,18 @@ def _get(endpoint: str, params: dict = None) -> dict:
         raise last_exc
 
     # Track budget — endpoint label powers per-endpoint attribution in api_budget_log
+    #
+    # Known undercount, unchanged by AF-429-BODY-FORM: retried attempts are not
+    # recorded, so a call that is throttled twice and succeeds on the third try
+    # counts as one. That was already true of the 429/503 branch; it is called
+    # out here only so the next person reading api_budget_log knows the number
+    # is a floor, not an exact count.
     budget.record_call(endpoint)
 
-    data = resp.json()
+    # Already parsed inside the retry loop — reuse it rather than paying a
+    # second json decode on every one of ~40k daily calls.
+    if data is None:
+        data = resp.json()
     if data.get("errors") and len(data["errors"]) > 0:
         errors = data["errors"]
         if isinstance(errors, dict) and errors:

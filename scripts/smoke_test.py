@@ -30110,5 +30110,78 @@ def _match_events_write_path():
     )
 
 
+@test("AF-429-BODY-FORM — the throttle AF actually sends must be retried, not swallowed")
+def _af_429_body_form():
+    """AF-429-BODY-FORM + AF-RATE-LIMIT-TELEMETRY 2026-09-06.
+
+    AF does NOT return HTTP 429 to us — verified over the whole journal window,
+    zero `429 Client Error` and zero `Too Many Requests` statuses, and the 429
+    retry branch has never fired. What it returns is HTTP 200 with
+    `{"errors": {"rateLimit": "..."}}`. That fell through to a generic raise
+    BELOW `budget.record_call`, so a throttled call burned quota AND lost its
+    data permanently, with no retry.
+
+    Behavioural: drives the real classifier over the real payload shapes rather
+    than asserting that a string appears in the file.
+    """
+    from workers.api_clients import api_football as af
+
+    # The shape AF actually sends.
+    hit = af._rate_limit_error(
+        {"errors": {"rateLimit": "Too many requests. You have exceeded the limit"}}
+    )
+    assert hit and "Too many requests" in hit, (
+        "_rate_limit_error no longer recognises AF's body-form throttle"
+    )
+    # Must not fire on anything else, or every genuine API error becomes a retry.
+    assert af._rate_limit_error({"errors": []}) is None
+    assert af._rate_limit_error({"errors": {"token": "bad key"}}) is None
+    assert af._rate_limit_error({"response": [1, 2, 3]}) is None
+
+    # The retry must be wired into the loop, above the quota charge — otherwise
+    # the fix is inert. Checked structurally: `continue` on the throttle branch
+    # has to appear before `budget.record_call` in the source of `_get`.
+    #
+    # Comment lines are stripped first. The first draft of this assertion
+    # compared raw `str.index` positions and failed against `_get`'s own
+    # explanatory comment, which names `budget.record_call` above the code —
+    # i.e. it matched prose, not the call (gotcha 41). Same trap, one level up.
+    import inspect
+
+    code_lines = [
+        ln for ln in inspect.getsource(af._get).split("\n")
+        if not ln.lstrip().startswith("#")
+    ]
+    check_at = next(
+        (i for i, ln in enumerate(code_lines) if "_rate_limit_error(" in ln), None
+    )
+    charge_at = next(
+        (i for i, ln in enumerate(code_lines) if "budget.record_call(" in ln), None
+    )
+    assert check_at is not None, "the throttle check is not wired into _get"
+    assert charge_at is not None, "budget.record_call vanished from _get"
+    assert check_at < charge_at, (
+        "the body-form throttle is handled AFTER budget.record_call — that is "
+        "the original bug: quota charged, data lost, no retry"
+    )
+
+    # Header telemetry must survive a junk response without raising, since it
+    # runs on the hot path of every AF call.
+    class _Junk:
+        headers = None
+
+    af._record_rate_headers("smoke", _Junk())  # must not raise
+
+    class _Resp:
+        headers = {"x-ratelimit-requests-remaining": "3"}
+
+    af._record_rate_headers("smoke", _Resp())
+    snap = af.rate_header_snapshot()
+    assert snap["low_water"].get("min_remaining") is not None, (
+        "rate header low-water mark is not being recorded — the whole point is "
+        "to learn the real per-minute ceiling from a matchday of real responses"
+    )
+
+
 if __name__ == "__main__":
     main()
