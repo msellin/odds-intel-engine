@@ -90,6 +90,90 @@ def _web_path(relative: str) -> _pathlib.Path:
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
+# ── Tombstones: tests removed because the feature was deliberately deleted ────
+#
+# SMOKE-SUITE-AUDIT-2026-08-31, second pass (2026-09-06).
+#
+# Fixing the CI checkout of the sibling `odds-intel-web` repo un-masked 26
+# tests that had been silently skipping. Sixteen of them guarded product
+# surface that was deliberately removed. They are listed here rather than
+# quietly deleted so nobody re-adds them believing the feature still exists,
+# and so the *reason* survives the next `git log` archaeology session.
+#
+# Removing commits / decisions:
+#
+#   odds-intel-web f6d3648 "PRODUCT-COLLAPSE — strip ~40k LoC of dead public
+#   surface" (2026-06-24). Deleted /matches, /value-bets, /live, /accuracy,
+#   /pricing, the WC suite, ~60 components and the whole marketing landing,
+#   which was replaced by the minimal /preview page. ~30 users, pre-PMF,
+#   nothing on the broad surface was converting.
+#
+#   /performance hero rework (2026-07-06, header comment in
+#   performance-hero.tsx) — the 8-tile "spreadsheet" hero, the cohort-split
+#   tiles, the Model-V2 banner and NextModelCallout were cut as jargon on a
+#   marketing surface.
+#
+#   PERF-CHART-CONSOLIDATE (2026-08-21) — the hero equity sparkline and the
+#   90d card were replaced by one chart with a 7d/30d/90d toggle.
+#
+# Removed, with what each used to guard:
+#
+#   BOOKMAKER-DISPLAY-V2        3-book odds line on value-bets-live.tsx
+#   PERF-HERO-COHORT-SPLIT      pre-match / in-play ROI tiles in the hero
+#   PERF-HERO-RECENT-WINS       RecentWinsReel (component deleted)
+#   PERF-HERO-NEXT-MODEL        NextModelCallout "next upgrade" chips
+#   PERF-HERO-RECENTLY-PROMOTED green "Model updated" variant of that callout
+#   PERF-HERO-WINDOW-LABEL      "· last 30d" subtitles + reel country flags
+#   SEO-SITEMAP-MATCHES         /matches/[id] sitemap entries
+#   MOBILE-LANDING-P2-CLEANUP   old landing hero mockup + Telegram CTA copy
+#   GROWTH-APP-NAV-SYNC         nav links to /live, /accuracy, /pricing
+#   GROWTH-COPY-DENSITY Day 1   cumulative-CLV hero number on the old landing
+#   GROWTH-COPY-DENSITY Day 2   old landing copy cuts (FAQ count, microcopy)
+#   GROWTH-DIRECTORY-STACK      "Featured on" reciprocal-backlink badge row
+#   GROWTH-LANDING-REFACTOR     "Beat the bookmakers" hero contract
+#   GROWTH-LANDING-DEPOLLUTE    old landing pricing/methodology arrangement
+#   GROWTH-CLAIMS-PARITY        75%-accuracy FAQ framing on the old landing
+#   GROWTH-DESKTOP-DASHBOARD-DENSITY  match-detail-free.tsx grid layout
+#
+# Removed in the same pass, but for a WORSE reason — these five were
+# PASSING. Each opens with `if not <deleted file>.exists(): return`, so
+# every one of them had been green since 2026-06-24 without executing a
+# single assertion. A test that cannot fail is worse than no test: it shows
+# a ✓ in the count and buys confidence nothing is paying for.
+#
+#   COOLBET-FIRST-SORT          value-bets Coolbet-first ordering
+#   PRO-TIER-V2 (cohort)        value-bets cohort selection by tier
+#   PRO-TIER-V2 (community)     community-vote absent from match detail
+#   VB-CONSENSUS-CLV-BESTBOOK   value-bets consensus + best-book row
+#   SEO-MATCH-DETAIL-JSONLD     SportsEvent JSON-LD on /matches/[id]
+#
+# The `if not X.exists(): return` idiom is the root cause and should not be
+# used for new tests. `_web_path()` raises SkipTest when the sibling repo is
+# genuinely absent, which is the honest way to handle CI; a per-file exists()
+# check cannot tell "repo not checked out" from "feature deleted", and
+# silently reports the second as success.
+#
+# Two of the removals carry live consequences that are NOT test problems and
+# are tracked outside this file:
+#
+#   * GROWTH-DIRECTORY-STACK — the badge row has now been decided TWICE, so
+#     do not "restore" it a third time without new evidence. PRODUCT-COLLAPSE
+#     cut it as collateral; odds-intel-web 2f99a11 "LANDING-RESTORE-BADGES"
+#     (2026-06-25) put it back precisely because the directories poll for the
+#     badge and delist when it vanishes; odds-intel-web 2a73f9c (2026-07-06)
+#     removed it again and overruled that reasoning on the record — the
+#     badges were near-invisible on mobile, and at pre-PMF user count the
+#     reciprocal-backlink drip does not pay for the space. Delisting was
+#     priced in, not overlooked. (next.config.ts still permits the badge
+#     domains in img-src; cosmetic dead config, not an unfinished removal.)
+#   * SEO-SITEMAP-MATCHES — see the ORGANIC-TRAFFIC-SURFACE task (engine
+#     commit 1b31e49), filed for exactly this: we deleted our own SEO surface.
+#
+# Before re-adding any test above, confirm the feature actually came back.
+# Prior art: engine commit 4f429f3 removed 54 tests for the same reason.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 @test("DB connection — basic query")
 def _():
     from workers.api_clients.db import execute_query
@@ -7423,24 +7507,39 @@ def _():
 def _():
     """Source-inspect /performance: PerformanceClient owns the toggle and
     feeds both hero + leaderboard so every metric on the page updates."""
-    import pathlib
-    p = _web_path("src/components/performance-client.tsx")
-    if not p.exists():
-        return
-    src = p.read_text()
-    # Updated 2026-06-01 — the original `filterQuality` / `qualityOnly` toggle
-    # was refactored out; PerformanceClient now recomputes via
-    # buildPerformanceStats + buildPublicBotStats and gates retired bots via
-    # activeBotNames. The CWD-anchor fix to _web_path exposed that the old
-    # assertions had been silently skipping.
-    assert "buildPerformanceStats" in src, (
-        "PerformanceClient must recompute hero stats via buildPerformanceStats"
-    )
+    src = _web_path("src/components/performance-client.tsx").read_text()
+
+    # SMOKE-SUITE-AUDIT 2026-09-06 — rewritten to assert the INVARIANT, not
+    # the spelling. The previous version demanded the literal helper names
+    # `buildPerformanceStats` and `activeBotNames`. Both were legitimately
+    # refactored away: UI-METRIC-SOT (2026-06-06) moved the hero onto
+    # dashboard_cache so it no longer recomputes anything, and the retired
+    # filter became an explicit `!b.retiredAt` predicate. The test then
+    # failed on correct changes while still passing if the leaderboard had
+    # silently started showing experimental or retired bots — the exact
+    # inversion this audit exists to remove.
+    #
+    # What must stay true, whatever the helpers are called:
+    #   1. The leaderboard is recomputed CLIENT-SIDE from raw bets, so a
+    #      retirement or a fresh pick shows without waiting on the 30-min
+    #      dashboard_cache refresh.
+    #   2. Experimental bots never reach that public leaderboard.
+    #   3. Retired bots are excluded from the "strategies live" count.
+    #   4. /performance passes the unsanitized aggregate bets in, or the
+    #      recompute silently works off display-rounded numbers.
     assert "buildPublicBotStats" in src, (
-        "PerformanceClient must recompute leaderboard via buildPublicBotStats"
+        "PerformanceClient must recompute the public leaderboard client-side "
+        "from raw bets — reading only a cached aggregate reintroduces the "
+        "30-minute staleness this component exists to avoid"
     )
-    assert "activeBotNames" in src, (
-        "PerformanceClient must filter to non-retired bots via activeBotNames"
+    assert "filterExperimental" in src, (
+        "PerformanceClient must strip experimental-maturity bots before "
+        "building the public leaderboard — an unproven bot on the public "
+        "page is a published claim we cannot defend"
+    )
+    assert "retiredAt" in src, (
+        "PerformanceClient must know about retirement — the live/retired "
+        "strategy counts on the hero are derived from it"
     )
     page = _web_path("src/app/(app)/performance/page.tsx").read_text()
     assert "PerformanceClient" in page, (
@@ -7736,70 +7835,6 @@ def _():
             _os.environ["CAL_ALPHA_ODDS_V2_ENABLED"] = prev
 
 
-@test("COOLBET-FIRST-SORT — value-bets sorts Coolbet-recommended first, then edge desc")
-def _():
-    """COOLBET-FIRST-SORT 2026-05-25 — /value-bets puts Coolbet-recommended
-    bets ahead of others (within group, edge desc preserved). Reduces
-    placement friction for the operator who uses Coolbet as primary venue.
-
-    Updated 2026-06-01 — original assertions checked literal strings
-    ("COOLBET-FIRST-SORT", "recommendedBookmaker", "aCoolbet !== bCoolbet")
-    that were removed in a value-bets refactor; the silent CWD-skip was
-    masking the rot. Reasserting against the current Coolbet sort signal
-    (the page sorts by `coolbet_available` flag before edge)."""
-    page = _web_path("src/app/(app)/value-bets/page.tsx")
-    if not page.exists():
-        print("  [skip] odds-intel-web not present in CI")
-        return
-    src = page.read_text()
-    coolbet_lower = "coolbet" in src.lower()
-    assert coolbet_lower, "value-bets/page.tsx must reference coolbet in some form"
-
-
-@test("PRO-TIER-V2 — page selects cohort by tier (calibrated for Pro, active for Elite)")
-def _():
-    """PRO-TIER-V2 2026-06-02 — /value-bets gates the BOT cohort server-side
-    per tier. Pro → calibrated bots only; Elite → all active bots. Free →
-    legacy prematch teaser. The page must (a) read tier server-side, (b)
-    pass a cohort literal into getTodayBets(), (c) cover both 'calibrated'
-    and 'active' branches.
-
-    Source-inspect — engine doesn't have the web build runner; we ensure
-    the wiring exists and won't silently drift back to a tier-blind query.
-    """
-    page = _web_path("src/app/(app)/value-bets/page.tsx")
-    if not page.exists():
-        print("  [skip] odds-intel-web not present in CI")
-        return
-    src = page.read_text()
-    # Cohort literal MUST appear and be tied to the tier branches
-    assert '"calibrated"' in src, "Pro cohort literal 'calibrated' must be present"
-    assert '"active"' in src, "Elite cohort literal 'active' must be present"
-    # Tier resolution must run on the server
-    assert "getUserTier" in src, "page must call getUserTier (server-side tier resolution)"
-    # getTodayBets must accept the cohort
-    assert "getTodayBets(cohort)" in src or "getTodayBets( cohort )" in src, (
-        "page must thread the cohort var through getTodayBets()"
-    )
-
-    # engine-data.ts: the function signature + DB filter must match
-    engine = _web_path("src/lib/engine-data.ts")
-    assert engine.exists(), "engine-data.ts must exist"
-    edata = engine.read_text()
-    assert "BetCohort" in edata, "BetCohort type union must be exported"
-    assert 'maturity_label' in edata and 'is_active' in edata, (
-        "engine-data must filter bots by maturity_label + is_active for tier cohorts"
-    )
-    assert "'calibrated'" in edata, "calibrated literal must appear in the cohort filter"
-
-    # Page must no longer strip Pro fields the way the legacy sanitizeBets did
-    # (selection/odds/modelProb set to 0/'' for Pro). Guard against regression
-    # by asserting the old strip-block is gone.
-    assert 'selection: "",\n      odds: 0,\n      modelProb: 0,' not in src, (
-        "Legacy Pro field-strip block must be removed — Pro now sees full pick data"
-    )
-
-
 @test("PRO-TIER-V2 — TIER_ACCESS_MATRIX updated with calibrated + active cohort rows")
 def _():
     """PRO-TIER-V2 2026-06-02 — the matrix must reflect what Pro / Elite
@@ -7839,23 +7874,6 @@ def _():
     assert "maturity_label = 'calibrated'" in s_src, (
         "Pro cohort query must filter to maturity_label='calibrated'"
     )
-
-
-@test("PRO-TIER-V2 — community-vote removed from match-detail page render")
-def _():
-    """PRO-TIER-V2 2026-06-02 — CommunityVote no longer renders on match
-    detail. Component file kept for potential WC re-introduction. Only check
-    that the page no longer renders <CommunityVote.../>.
-    """
-    page = _web_path("src/app/(app)/matches/[id]/page.tsx")
-    if not page.exists():
-        print("  [skip] odds-intel-web not present in CI")
-        return
-    src = page.read_text()
-    # Allow comments to mention it; the render itself must be gone
-    import re
-    rendered = re.search(r"^\s*<CommunityVote\b", src, re.MULTILINE)
-    assert rendered is None, "CommunityVote must NOT be rendered on the regular match detail page"
 
 
 @test("PRO-TIER-V2 — /bankroll unlinked from nav user dropdown (desktop + mobile)")
@@ -11139,29 +11157,6 @@ def test_inplay_bot_report():
     assert "--days" in src, "must support --days filter"
 
 
-@test("BOOKMAKER-DISPLAY-V2 — BookOddsLine shows Pinnacle + current edge + stale dimming (source inspect)")
-def test_bookmaker_display_v2():
-    """BOOKMAKER-DISPLAY-V2 (2026-05-12): value-bets component shows 3-bookmaker live odds + current edge."""
-    import pathlib
-    root = pathlib.Path(__file__).resolve().parent.parent
-    web = root.parent / "odds-intel-web"
-    if not web.exists():
-        print("  [skip] odds-intel-web not present in CI")
-        return
-    src = (web / "src" / "components" / "value-bets-live.tsx").read_text()
-    assert "pinnacle" in src.lower(), "must include Pinnacle in bookmaker display"
-    assert "getBestNow" in src, "must have getBestNow helper to find best current odds"
-    # isEdgeStale helper removed during a simplification — staleness is no
-    # longer surfaced in BookOddsLine. Keep modelProb check to guard the
-    # current-edge wire.
-    assert "modelProb" in src, "BookOddsLine must receive modelProb to calculate current edge"
-    assert "BookOddsLine" in src, "must export BookOddsLine component"
-
-    edata = (web / "src" / "lib" / "engine-data.ts").read_text()
-    assert 'pinnacle: number | null' in edata, "BookOddsEntry must have pinnacle field"
-    assert '"Pinnacle"' in edata, "getValueBetBookOdds must fetch Pinnacle from odds_snapshots"
-
-
 @test("AH-CALIBRATED-PROB — value-bets uses calibrated_prob not raw model_probability (source inspect)")
 def test_ah_calibrated_prob_display():
     """AH-DISPLAY-FIX: modelProb must use calibrated_prob so AH push-normalization doesn't inflate the display."""
@@ -14181,75 +14176,68 @@ def test_admin_real_bets_insights():
 def test_public_performance_extras():
     """Public-page upgrade: /performance shows a 90-day cumulative P&L chart at
     the top, plus streak badges and a calibration table. Visible to all tiers."""
-    import pathlib
-    root = pathlib.Path(__file__).resolve().parents[1]
-    web = root.parent / "odds-intel-web" / "src"
-    page = web / "app" / "(app)" / "performance" / "page.tsx"
-    extras = web / "components" / "performance-extras.tsx"
-    chart = web / "components" / "performance-pnl-chart.tsx"
-    engine_data = web / "lib" / "engine-data.ts"
-    retired = web / "components" / "retired-strategies-section.tsx"
-    if not page.exists() or not engine_data.exists():
-        print("  [skip] odds-intel-web not present in CI")
-        return
+    # SMOKE-SUITE-AUDIT 2026-09-06 — rewritten against the invariants.
+    #
+    # The old version failed on three legitimate changes and would have
+    # passed through a real one:
+    #   * `<PerformanceExtras data={extras} />` was an exact-JSX match. The
+    #     component correctly gained a `cache` prop (UI-METRIC-SOT) and the
+    #     assertion broke on a prop addition — while a page that stopped
+    #     rendering the component entirely under a different spelling would
+    #     have broken it identically. Useless signal either way.
+    #   * `performance-pnl-chart.tsx` became `performance-pnl-chart-toggle.tsx`
+    #     in PERF-CHART-CONSOLIDATE (2026-08-21), one chart with a 7d/30d/90d
+    #     toggle replacing the sparkline and the 90d card.
+    #   * "Variance is real" was lowercased to "variance is real". The
+    #     disclaimer — the honest part — never went anywhere.
+    #   * retired-strategies-section.tsx was deleted by PRODUCT-COLLAPSE
+    #     (odds-intel-web f6d3648, 2026-06-24).
+    #
+    # What must stay true: /performance publishes the cumulative P&L curve,
+    # the calibration table and the streaks — including the losing-streak
+    # number and the variance caveat next to it. Those exist so a reader is
+    # not sold a smooth line; dropping them is a trust regression, and that
+    # is what this test is for.
+    page_src = _web_path("src/app/(app)/performance/page.tsx").read_text()
+    ed = _web_path("src/lib/engine-data.ts").read_text()
 
-    ed = engine_data.read_text()
     assert "getPublicPerformanceExtras" in ed, "engine-data must export getPublicPerformanceExtras"
     assert "PublicPnlPoint" in ed and "CalibrationBucket" in ed and "Streaks" in ed, (
         "engine-data must export PublicPnlPoint + CalibrationBucket + Streaks"
     )
     assert "botRecentRoi" in ed, "extras must compute per-bot 30-day ROI map"
 
-    page_src = page.read_text()
     assert "getPublicPerformanceExtras" in page_src, "page must call getPublicPerformanceExtras"
-    assert "<PerformanceExtras data={extras} />" in page_src, "page must render <PerformanceExtras>"
+    # Rendered, not merely imported — an unused import type-checks fine.
+    assert "<PerformanceExtras" in page_src, (
+        "/performance must render <PerformanceExtras> — the cumulative curve, "
+        "calibration table and streaks are the page's evidence section"
+    )
 
-    assert extras.exists() and chart.exists(), "performance-extras + chart components must exist"
-    extras_src = extras.read_text()
-    assert "PerformancePnlChart" in extras_src, "extras must render the chart"
-    assert "Streaks" in extras_src and "Calibration" in extras_src, "extras must include both cards"
-    assert "longestWin" in extras_src and "longestLoss" in extras_src, "streaks must surface longest W and L"
-    assert "Variance is real" in extras_src, "streak card must include variance disclaimer"
-
-    chart_src = chart.read_text()
+    extras_src = _web_path("src/components/performance-extras.tsx").read_text()
+    # The chart is whatever component the extras block renders; pin the
+    # behaviour (a responsive client-side chart driven by the cached curve)
+    # rather than a filename that has already changed once.
+    import re as _re
+    m = _re.search(r'from "@/components/(performance-pnl-chart[\w-]*)"', extras_src)
+    assert m, (
+        "performance-extras must import the cumulative P&L chart component — "
+        "the curve is the single most load-bearing number on the page"
+    )
+    chart_src = _web_path(f"src/components/{m.group(1)}.tsx").read_text()
     assert '"use client"' in chart_src, "chart must be a client component"
     assert "ResponsiveContainer" in chart_src, "chart must be responsive (mobile)"
 
-    retired_src = retired.read_text()
-    assert "useState(true)" in retired_src, "retired-strategies section must default open"
-
-
-@test("VB-CONSENSUS-CLV-BESTBOOK — consensus, line direction, kickoff/best-book on /value-bets (source inspect)")
-def test_value_bets_consensus_clv():
-    """Value-bets public-page upgrade: bot consensus chip + line direction arrow
-    on every row (all tiers), time-to-kickoff + best book in compact row header,
-    and a per-bot 30-day ROI hook on the free tier's single unmasked pick."""
-    import pathlib
-    root = pathlib.Path(__file__).resolve().parents[1]
-    web = root.parent / "odds-intel-web" / "src"
-    live = web / "components" / "value-bets-live.tsx"
-    page = web / "app" / "(app)" / "value-bets" / "page.tsx"
-    if not live.exists() or not page.exists():
-        print("  [skip] odds-intel-web not present in CI")
-        return
-
-    live_src = live.read_text()
-    page_src = page.read_text()
-
-    assert "botRecentRoi={extras.botRecentRoi}" in page_src, (
-        "page must pass botRecentRoi to ValueBetsLive"
+    assert "Streaks" in extras_src and "Calibration" in extras_src, "extras must include both cards"
+    assert "longestWin" in extras_src and "longestLoss" in extras_src, (
+        "streaks must surface the longest LOSING run as well as the winning "
+        "one — publishing only the winning streak is the dishonest half"
     )
-    assert "fetchBookOdds" in page_src, (
-        "page must compute fetchBookOdds so Pro/Free also get current market odds"
+    assert "variance is real" in extras_src.lower(), (
+        "the streaks card must keep its variance caveat — without it a "
+        "double-digit losing run reads as the model breaking rather than as "
+        "the expected behaviour of a +5% edge"
     )
-
-    # Updated 2026-06-01 — original "<N> bots agree" copy + LineDirChip names
-    # were refactored. Current implementation uses `{botCount} strategies`
-    # as the consensus chip text. CWD-anchor fix exposed the stale assertions.
-    assert "botCount" in live_src, "consensus chip data must use botCount"
-    assert "strategies" in live_src, "consensus chip copy must mention 'strategies'"
-    assert "botRoi.roi" in live_src, "free-tier teaser must surface the bot's recent ROI"
-    assert "30d" in live_src, "ROI hook must label the window (e.g. '30d')"
 
 
 @test("COMBO-FIX-1 — proven variants merge ou15 into scan when require_ou15 set")
@@ -14919,16 +14907,32 @@ def test_user_tele_notify():
         "inplay_bot.py must call send_telegram_to_users for user bet alerts"
 
     # Webhook route exists in frontend (source-inspect via relative path guess)
-    web_root = root.parent / "odds-intel-web"
-    if web_root.exists():
-        webhook = web_root / "src" / "app" / "api" / "telegram" / "webhook" / "route.ts"
-        disconnect = web_root / "src" / "app" / "api" / "telegram" / "disconnect" / "route.ts"
-        assert webhook.exists(), "webhook route.ts must exist at /api/telegram/webhook"
-        assert disconnect.exists(), "disconnect route.ts must exist at /api/telegram/disconnect"
-        webhook_src = webhook.read_text()
-        assert "/start" in webhook_src, "webhook must handle /start command"
-        assert "/stop" in webhook_src, "webhook must handle /stop command"
-        assert "telegram_chat_id" in webhook_src, "webhook must update telegram_chat_id"
+    # SMOKE-SUITE-AUDIT 2026-09-06 — the `/api/telegram/disconnect` route
+    # assertion is gone. PRODUCT-COLLAPSE (odds-intel-web f6d3648,
+    # 2026-06-24) deleted that route along with the /profile settings UI
+    # that called it. The user-facing capability it provided did NOT go
+    # away: /stop in the webhook is how a subscriber opts out now, and that
+    # is the thing worth pinning, so it is asserted below rather than the
+    # route file that happened to also offer it. Do not re-add the route
+    # assertion without re-adding a UI that calls it.
+    webhook = _web_path("src/app/api/telegram/webhook/route.ts")
+    assert webhook.exists(), "webhook route.ts must exist at /api/telegram/webhook"
+    webhook_src = webhook.read_text()
+    assert "/start" in webhook_src, "webhook must handle /start command"
+    assert "/stop" in webhook_src, (
+        "webhook must handle /stop — it is the ONLY remaining way a user can "
+        "unsubscribe since the /api/telegram/disconnect route was removed. "
+        "Losing it means we keep messaging people who asked us to stop."
+    )
+    assert "telegram_chat_id" in webhook_src, "webhook must update telegram_chat_id"
+    # /stop must actually CLEAR the chat id, not just reply politely. A
+    # handler that answers "Disconnected" while leaving the row populated
+    # keeps sending alerts and is worse than no handler.
+    stop_block = webhook_src[webhook_src.index('text === "/stop"'):][:900]
+    assert "telegram_chat_id: null" in stop_block, (
+        "/stop must null out profiles.telegram_chat_id — replying "
+        "'Disconnected' without clearing the row keeps the alerts flowing"
+    )
 
 
 @test("PROVEN-LEAGUES-V2 — migration 142 retires old league bots; creates bot_proven_leagues_v2 with Italy/France/USA + Austria/Belgium beta")
@@ -15770,71 +15774,26 @@ def _():
         "bot_lower_1x2 description must be prefixed [RETIRED 2026-06-01]"
 
 
-@test("PERF-HERO-COHORT-SPLIT — dashboard_cache stores pre-match + in-play ROI; hero renders split tiles")
+@test("PERF-PNL-CURVE — dashboard_cache stores daily cumulative P&L; /performance renders it")
 def _():
-    """Last-30d data check (run 2026-06-01): in-play +14.5% ROI on n=861,
-    pre-match -1.2% on n=1,974. The 15.7pp gap is stable across 7/14/30d
-    windows. Splitting the hero tile surfaces in-play instead of averaging it
-    away. Migration 157 adds the rollup columns; settlement.py computes them
-    (excludes experimental + retired bots, 30d window); hero.tsx renders two
-    tiles when both fields are present. Falls back to combined "System ROI"
-    when cohort fields are null (legacy cache rows)."""
-    import pathlib
+    """The cumulative P&L curve published on /performance, end to end.
 
-    mig = pathlib.Path("supabase/migrations/157_dashboard_cache_cohort_split.sql").read_text()
-    for col in ("prematch_settled_bets", "prematch_roi_pct", "prematch_avg_clv",
-                "inplay_settled_bets",  "inplay_roi_pct"):
-        assert col in mig, f"Migration 157 must add column {col}"
-    # In-play CLV intentionally NOT in the schema
-    assert "inplay_avg_clv" not in mig, \
-        "Migration 157 must NOT add inplay_avg_clv (semantics differ — pre/live closing line)"
+    Migration 158 adds daily_pnl_curve_30d, migration 188 the 90d twin;
+    settlement.py builds both from ONE query (UI-METRIC-SOT 2026-06-06 — the
+    30d array is the tail of the 90d one, so the two cannot disagree);
+    PerformanceExtras renders them behind a 7d/30d/90d toggle.
 
-    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
-    assert "PERF-HERO-COHORT-SPLIT" in settle, \
-        "settlement.py must reference the cohort split task tag"
-    assert "LIKE 'inplay_%%'" in settle, \
-        "settlement.py must classify cohort via bot name LIKE 'inplay_%'"
-    # The cohort query must respect the existing active+non-experimental scope
-    cohort_idx = settle.index("PERF-HERO-COHORT-SPLIT")
-    cohort_block = settle[cohort_idx:cohort_idx + 2500]
-    assert "b.is_active = true" in cohort_block, \
-        "cohort query must filter b.is_active = true"
-    assert "b.retired_at IS NULL" in cohort_block, \
-        "cohort query must exclude retired bots"
-    assert "maturity_label != 'experimental'" in cohort_block, \
-        "cohort query must exclude experimental bots"
-    assert "interval '30 days'" in cohort_block, \
-        "cohort query must be a 30-day rolling window"
-    # The INSERT must include the new columns
-    insert_idx = settle.index("INTO dashboard_cache")
-    insert_block = settle[insert_idx:insert_idx + 2500]
-    for col in ("prematch_roi_pct", "inplay_roi_pct"):
-        assert col in insert_block, f"INSERT must include {col}"
-
-    hero = _web_path("src/components/performance-hero.tsx").read_text()
-    assert "hasCohortSplit" in hero, \
-        "performance-hero must gate split tiles on hasCohortSplit"
-    assert "Pre-match ROI · 30d" in hero, \
-        "performance-hero must render the Pre-match tile"
-    assert "In-play ROI · 30d" in hero, \
-        "performance-hero must render the In-play tile"
-    # Combined "System ROI" tile remains as the legacy fallback
-    assert "System ROI" in hero, \
-        "performance-hero must keep the combined System ROI fallback for legacy cache rows"
-
-    data = _web_path("src/lib/engine-data.ts").read_text()
-    for col in ("prematch_roi_pct", "prematch_settled_bets",
-                "inplay_roi_pct",   "inplay_settled_bets"):
-        assert col in data, f"DashboardCache interface must include {col}"
-
-
-@test("PERF-HERO-EQUITY-SPARKLINE — dashboard_cache stores daily cumulative P&L; hero renders sparkline")
-def _():
-    """Data check (run 2026-06-01): cumulative P&L over last 30d = +€815 with
-    a clean upward trajectory (dip to -€127 May 7, recovery + growth thereafter).
-    Migration 158 adds daily_pnl_curve_30d JSONB; settlement.py builds the
-    array (active+non-experimental, settled bets only); EquitySparkline
-    component renders an inline SVG with no chart library."""
+    SMOKE-SUITE-AUDIT 2026-09-06 — renamed from PERF-HERO-EQUITY-SPARKLINE
+    and the render half rewritten. The hero sparkline and
+    `equity-sparkline.tsx` were deliberately removed by PERF-CHART-CONSOLIDATE
+    (2026-08-21), which replaced the sparkline AND the separate 90d card with
+    a single toggled chart lower on the page. The old test asserted the
+    component filename, so it went red on that consolidation while remaining
+    perfectly happy if settlement had started publishing raw daily P&L
+    instead of the running total — which is the part a reader actually reads.
+    The DATA contract is what this test defends now; which component draws
+    it is a design decision.
+    """
     import pathlib
 
     mig = pathlib.Path("supabase/migrations/158_dashboard_cache_equity_curve.sql").read_text()
@@ -15842,97 +15801,41 @@ def _():
     assert "JSONB" in mig, "daily_pnl_curve_30d must be JSONB"
 
     settle = pathlib.Path("workers/jobs/settlement.py").read_text()
-    assert "PERF-HERO-EQUITY-SPARKLINE" in settle, \
-        "settlement.py must reference the equity sparkline task"
     assert "daily_pnl_curve_30d" in settle, \
         "settlement.py must build the daily_pnl_curve_30d array"
-    # Must respect the same scope as the cohort split (active+non-experimental,
-    # settled-only) so the headline tile and sparkline tell the same story
-    sparkline_idx = settle.index("PERF-HERO-EQUITY-SPARKLINE")
-    sparkline_block = settle[sparkline_idx:sparkline_idx + 2500]
-    assert "b.is_active = true" in sparkline_block, "sparkline must filter active bots"
-    assert "b.retired_at IS NULL" in sparkline_block, "sparkline must exclude retired"
-    assert "maturity_label != 'experimental'" in sparkline_block, \
-        "sparkline must exclude experimental"
-    # UI-METRIC-SOT (2026-06-06): the 30d hero sparkline is now the tail of a
-    # single 90d query that also drives the PerformanceExtras chart. Either
-    # an explicit 30-day interval (legacy) or a 90-day query with tail-slice
-    # (current) satisfies the SoT contract.
-    assert ("interval '30 days'" in sparkline_block
-            or "interval '90 days'" in sparkline_block), (
-        "sparkline window must come from a 30d or 90d settlement query"
+    # Anchor comment — the block is found by it, so it has to stay put.
+    assert "PERF-HERO-EQUITY-SPARKLINE" in settle, \
+        "settlement.py must keep the task tag anchoring the curve block"
+    curve_idx = settle.index("PERF-HERO-EQUITY-SPARKLINE")
+    curve_block = settle[curve_idx:curve_idx + 2500]
+    # Cohort: identical to every other published aggregate, or the chart and
+    # the ROI headline above it describe different sets of bets.
+    assert "b.is_active = true" in curve_block, "curve must filter active bots"
+    assert "b.retired_at IS NULL" in curve_block, "curve must exclude retired"
+    assert "maturity_label != 'experimental'" in curve_block, \
+        "curve must exclude experimental"
+    assert ("interval '30 days'" in curve_block
+            or "interval '90 days'" in curve_block), (
+        "curve window must come from a 30d or 90d settlement query"
     )
-    # cumulative not raw daily — the visual story is the running total
-    assert '"cum": round(cum' in sparkline_block, \
-        "sparkline payload must store cumulative P&L, not raw daily values"
+    # Cumulative, not raw daily. A chart of daily P&L is noise; the running
+    # total is the claim. This is the assertion that must survive.
+    assert '"cum": round(cum' in curve_block, \
+        "curve payload must store cumulative P&L, not raw daily values"
 
-    # Frontend component exists and is wired
-    spark = _web_path("src/components/equity-sparkline.tsx").read_text()
-    assert "<polyline" in spark, "EquitySparkline must render an SVG polyline"
-    assert "preserveAspectRatio" in spark, "SVG must use viewBox + preserveAspectRatio for responsive rendering"
-    assert 'role="img"' in spark, "Sparkline must expose role and aria-label for accessibility"
-    assert "curve.length < 2" in spark, "Sparkline must early-return on insufficient data"
-
-    hero = _web_path("src/components/performance-hero.tsx").read_text()
-    assert "EquitySparkline" in hero, "performance-hero must import EquitySparkline"
-    assert "cache?.daily_pnl_curve_30d" in hero, \
-        "performance-hero must pass daily_pnl_curve_30d to the sparkline"
+    # Render half: some component on /performance must consume the curve.
+    # Pinned as "the page renders it" rather than "this file exists", because
+    # the chart has already been renamed once and will be again.
+    extras = _web_path("src/components/performance-extras.tsx").read_text()
+    assert "daily_pnl_curve_30d" in extras and "daily_pnl_curve_90d" in extras, (
+        "performance-extras must consume BOTH curves from dashboard_cache — "
+        "the 30d array is the tail of the 90d one (UI-METRIC-SOT), so a "
+        "component reading only one window can silently drift from the other"
+    )
 
     data = _web_path("src/lib/engine-data.ts").read_text()
     assert "daily_pnl_curve_30d" in data, \
         "DashboardCache interface must include daily_pnl_curve_30d"
-
-
-@test("PERF-HERO-RECENT-WINS — dashboard_cache stores top-8 14d wins; /performance renders RecentWinsReel")
-def _():
-    """Data check (run 2026-06-01): top 8 deduped wins last 14d span 8 countries
-    (Argentina, UAE, Paraguay, World Friendlies, Netherlands, Ecuador, Australia,
-    Sweden), CLV +30% to +55%, odds 1.78 to 4.25. Concrete "model picked these"
-    stories for new visitors.
-
-    Migration 159 adds recent_top_wins JSONB; settlement.py builds the array
-    with DISTINCT ON (match, market, selection) so same call from multiple bots
-    appears once; RecentWinsReel renders a 4-column grid (free-tier visible —
-    no stake/P&L exposed)."""
-    import pathlib
-
-    mig = pathlib.Path("supabase/migrations/159_dashboard_cache_recent_wins.sql").read_text()
-    assert "recent_top_wins" in mig, "Migration 159 must add recent_top_wins"
-    assert "JSONB" in mig, "recent_top_wins must be JSONB"
-
-    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
-    assert "PERF-HERO-RECENT-WINS" in settle, \
-        "settlement.py must reference the recent-wins task"
-    wins_idx = settle.index("PERF-HERO-RECENT-WINS")
-    wins_block = settle[wins_idx:wins_idx + 3500]
-    assert "DISTINCT ON (sb.match_id, sb.market, sb.selection)" in wins_block, \
-        "wins query must dedupe by (match, market, selection)"
-    assert "interval '14 days'" in wins_block, "wins window must be 14 days"
-    assert "result = 'won'" in wins_block, "must filter to wins only"
-    assert "maturity_label != 'experimental'" in wins_block, \
-        "must exclude experimental bots"
-    assert "LIMIT 8" in wins_block, "must limit to 8 wins"
-    # P&L / stake must NOT be included in the payload (free-tier visible)
-    payload_idx = settle.index("recent_top_wins = [", wins_idx)
-    payload_block = settle[payload_idx:payload_idx + 1200]
-    assert '"pnl"' not in payload_block and '"stake"' not in payload_block, \
-        "recent_top_wins payload must NOT include pnl or stake (free-tier visible)"
-
-    reel = _web_path("src/components/recent-wins-reel.tsx").read_text()
-    assert "interface RecentWin" in reel, "RecentWin interface required"
-    assert "wins.length === 0" in reel, "Reel must early-return on empty list"
-    assert "marketLabel" in reel, "Must translate market codes to human labels"
-    # No stake/pnl rendering
-    assert "stake" not in reel.lower(), "Reel must not show stake (free-tier visible)"
-    assert "pnl" not in reel.lower(), "Reel must not show P&L (free-tier visible)"
-
-    page = _web_path("src/app/(app)/performance/page.tsx").read_text()
-    assert "RecentWinsReel" in page, "performance/page.tsx must render RecentWinsReel"
-    assert "cache?.recent_top_wins" in page, \
-        "performance/page.tsx must pass cache.recent_top_wins to the reel"
-
-    data = _web_path("src/lib/engine-data.ts").read_text()
-    assert "recent_top_wins" in data, "DashboardCache interface must include recent_top_wins"
 
 
 @test("RETIRE-BOT-AGGRESSIVE — migration 160 flips bot_aggressive is_active=false; preserves retired_reason from migration 104")
@@ -15964,117 +15867,6 @@ def _():
     block = pipeline_src[block_start:block_end]
     assert "[RETIRED 2026-06-01]" in block, \
         "bot_aggressive description must be prefixed [RETIRED 2026-06-01]"
-
-
-@test("PERF-HERO-NEXT-MODEL — dashboard_cache surfaces unpromoted model offline-eval; hero renders Next upgrade callout")
-def _():
-    """Live offline-eval check (2026-06-01): v20260531 beats v20260524_market
-    on 9/11 markets, 1X2 avg log_loss -10%, AH -2.6%, BTTS -1.3%, OU +2.7%.
-    Migration 161 adds upcoming_model_summary JSONB; settlement.py builds it
-    from model_versions.cv_metrics; performance-hero NextModelCallout renders
-    the deltas with an honest 'offline tests' caveat."""
-    import pathlib
-
-    mig = pathlib.Path("supabase/migrations/161_dashboard_cache_upcoming_model.sql").read_text()
-    assert "upcoming_model_summary" in mig, "Migration 161 must add upcoming_model_summary"
-    assert "JSONB" in mig, "upcoming_model_summary must be JSONB"
-
-    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
-    assert "_build_upcoming_model_summary" in settle, \
-        "settlement.py must define the helper"
-    helper_idx = settle.index("def _build_upcoming_model_summary")
-    helper_block = settle[helper_idx:helper_idx + 4500]
-    # Must derive production version from env (operator-controlled)
-    assert 'os.environ.get("MODEL_VERSION"' in helper_block, \
-        "helper must read production version from MODEL_VERSION env"
-    # Must skip promoted/demoted candidates
-    assert "promoted_at IS NULL" in helper_block, \
-        "helper must exclude promoted candidates"
-    assert "demoted_at IS NULL" in helper_block, \
-        "helper must exclude demoted candidates"
-    # Must compare on log_loss
-    assert "log_loss" in helper_block, "helper must compute log_loss deltas"
-    # Must group by head (1x2, ah, btts, ou) — these are the user-facing labels
-    for head in ("1x2", "ah", "btts", "ou"):
-        assert f'"{head}"' in helper_block, f"helper must group market {head}"
-    # Must return None when no candidate is better
-    assert "if better == 0" in helper_block, \
-        "helper must return None when zero markets improve (avoid misleading callout)"
-
-    # Hero renders the callout
-    hero = _web_path("src/components/performance-hero.tsx").read_text()
-    assert "NextModelCallout" in hero, "performance-hero must include NextModelCallout"
-    assert "cache?.upcoming_model_summary" in hero, \
-        "hero must read upcoming_model_summary from cache"
-    # Honest framing required — "offline" caveat present
-    assert "offline tests" in hero, \
-        "callout copy must include 'offline tests' caveat (not yet live data)"
-    # Must show better/worse counts (no cherry-picking)
-    assert "markets_better" in hero and "markets_worse" in hero, \
-        "callout must surface markets_worse so the OU regression isn't hidden"
-    # PERF-HERO-NEXT-MODEL-DETAIL (2026-06-06) — render per-group deltas, not
-    # only the headline best head. Reading "1X2 -10% / AH -2.6% / BTTS -1.3%
-    # / OU +2.7%" tells the user the whole story at a glance and makes the
-    # OU regression unmissable. Lock in the group order and the chip-array
-    # construction so a future refactor can't drop back to single-head.
-    assert 'const groupOrder = ["1x2", "ah", "btts", "ou"]' in hero, \
-        "callout must declare explicit group order so render is stable"
-    assert "chips.map" in hero, \
-        "callout must render every group as a chip (not just the headline)"
-    # Regressions must be visually distinct (rose) from improvements (sky).
-    assert "text-rose-300" in hero and "text-sky-300" in hero, \
-        "regressed groups must render in a distinct colour (honest signal)"
-
-    data = _web_path("src/lib/engine-data.ts").read_text()
-    assert "upcoming_model_summary" in data, \
-        "DashboardCache interface must include upcoming_model_summary"
-
-
-@test("PERF-HERO-RECENTLY-PROMOTED — settlement shows green callout for 7d after promotion; hero handles mode=recently_promoted")
-def _():
-    """PERF-HERO-ADVERTISE-MODEL (2026-06-07): after v20260607 was promoted to
-    production, the upcoming candidate no longer exists, so _build_upcoming_model_summary
-    must fall through to the 'recently_promoted' path (7-day window). The hero's
-    NextModelCallout must render the green 'Model updated' strip, not the sky-blue
-    'Next upgrade'. previous_production is stored in model_versions.notes so the
-    function can compare promoted vs prior bundle."""
-    import pathlib
-
-    settle = pathlib.Path("workers/jobs/settlement.py").read_text()
-    func_idx = settle.index("def _build_upcoming_model_summary")
-    func_block = settle[func_idx:func_idx + 6000]
-
-    # recently_promoted path must exist
-    assert "recently_promoted" in func_block, \
-        "settlement.py must implement the recently_promoted fallback path"
-    # Must check promoted_at age (7-day window)
-    assert "promoted_at" in func_block, \
-        "recently_promoted path must read promoted_at from model_versions"
-    assert ".days < 7" in func_block, \
-        "recently_promoted window must be 7 days"
-    # Must read previous_production from notes
-    assert "previous_production=" in func_block, \
-        "must parse previous_production= from notes to find the baseline"
-    # Mode key must be emitted
-    assert '"mode"' in func_block or "'mode'" in func_block, \
-        "summary dict must include a mode key"
-
-    hero = _web_path("src/components/performance-hero.tsx").read_text()
-    # Hero must detect and branch on the recently_promoted mode
-    assert "isPromoted" in hero, \
-        "NextModelCallout must detect mode=recently_promoted via isPromoted"
-    assert "recently_promoted" in hero, \
-        "NextModelCallout must check for 'recently_promoted' string"
-    # Green callout must exist (distinct from sky-blue upcoming)
-    assert "emerald-500" in hero or "emerald-400" in hero, \
-        "recently_promoted render must use emerald colours (green = model updated)"
-    assert "Model updated" in hero, \
-        "recently_promoted callout must say 'Model updated'"
-    # Both branches must show markets_better / markets_worse counts
-    assert hero.count("markets_better") >= 2, \
-        "both callout branches must surface markets_better (no cherry-picking)"
-    assert hero.count("markets_worse") >= 2, \
-        "both callout branches must surface markets_worse"
 
 
 @test("BTTS-RE-EVAL-JUNE8 — bot_btts_v2 config wired with narrow 1.80-2.49 odds window + experimental label")
@@ -16250,34 +16042,6 @@ def _():
     assert "fn_rate < 0.05" in src, \
         "Verdict must use <5% FN-rate threshold for SAFE TO GATE"
     assert "DO NOT GATE" in src, "Verdict must include the do-not-gate copy"
-
-
-@test("PERF-HERO-WINDOW-LABEL + RECENT-WINS-FLAGS — cohort tiles say 'last 30d' in subtitle; reel shows country flags")
-def _():
-    """Two tiny perf-page polish items:
-    P — cohort tile subtitles need "last 30d" so the n-count doesn't look like
-        a lifetime number (the same confusion that triggered today's audit).
-    Q — RecentWinsReel renders a country flag emoji next to the country name
-        for visual punch on the "edge globally" story.
-    """
-    import pathlib
-    hero = _web_path("src/components/performance-hero.tsx").read_text()
-    assert "before kickoff · last 30d" in hero, \
-        "Pre-match subtitle must include '· last 30d'"
-    assert "during the match · last 30d" in hero, \
-        "In-play subtitle must include '· last 30d'"
-
-    reel = _web_path("src/components/recent-wins-reel.tsx").read_text()
-    assert "COUNTRY_FLAGS" in reel, "RecentWinsReel must define COUNTRY_FLAGS map"
-    assert "flagFor" in reel, "RecentWinsReel must use a flagFor() helper"
-    # Spot-check a few flag mappings (these specific countries appeared in
-    # today's top-8 wins reel, so they must be in the map)
-    for country in ("Argentina", "Paraguay", "Netherlands", "Ecuador", "Sweden",
-                    "United-Arab-Emirates", "Australia", "Uruguay", "Brazil"):
-        assert country in reel, f"COUNTRY_FLAGS must include {country}"
-    # World fallback for "World Friendlies" league wins
-    assert '"World": "🌍"' in reel or "'World': '🌍'" in reel, \
-        "World → 🌍 mapping required (covers World Friendlies)"
 
 
 @test("BOT-HIGH-ALIGNMENT-TRIGGER — explicit retirement gate recorded in PRIORITY_QUEUE")
@@ -17062,87 +16826,6 @@ def _():
     )
 
 
-@test("SEO-SITEMAP-MATCHES — sitemap.ts includes match detail URLs from getMatchIdsForSitemap")
-def _():
-    """Pre-fix: sitemap only listed static + predictions + glossary pages, so
-    Google had no way to discover /matches/[id] URLs — the highest-volume
-    indexable surface. Symptom: low coverage in Search Console.
-
-    Fix: sitemap.ts calls getMatchIdsForSitemap() (a 44-day window helper in
-    engine-data.ts) and emits one entry per fixture with the row's real
-    updated_at as lastModified. Sitemap revalidates hourly."""
-    sitemap = _web_path("src/app/sitemap.ts")
-    if not sitemap.exists():
-        print("  [skip] odds-intel-web not present in CI")
-        return
-    src = sitemap.read_text()
-    assert "getMatchIdsForSitemap" in src, "sitemap.ts must import getMatchIdsForSitemap"
-    assert "matchPages" in src or "/matches/${" in src, \
-        "sitemap.ts must emit per-match URLs"
-    assert "export const revalidate" in src, \
-        "sitemap.ts must export `revalidate` so new fixtures appear without a redeploy"
-
-    helper = _web_path("src/lib/engine-data.ts").read_text()
-    assert "export async function getMatchIdsForSitemap" in helper, \
-        "engine-data.ts must export getMatchIdsForSitemap()"
-    # Helper must filter to active leagues — otherwise sitemap fills with
-    # fixtures from leagues we don't actually surface in the UI.
-    helper_fn_start = helper.index("export async function getMatchIdsForSitemap")
-    helper_fn_block = helper[helper_fn_start:helper_fn_start + 1200]
-    assert "is_active" in helper_fn_block, \
-        "getMatchIdsForSitemap must filter to is_active leagues"
-
-
-@test("SEO-MATCH-DETAIL-JSONLD — /matches/[id] emits SportsEvent + BreadcrumbList structured data")
-def _():
-    """Pre-fix: only Organization JSON-LD existed (in root layout). Match detail
-    pages — the highest-traffic SEO surface — had no per-page structured data,
-    so they were ineligible for SportsEvent rich results in Google.
-
-    Fix: inject SportsEvent (homeTeam/awayTeam/startDate/location) and
-    BreadcrumbList (Home → Matches → fixture) into the page's JSX."""
-    page = _web_path("src/app/(app)/matches/[id]/page.tsx")
-    if not page.exists():
-        print("  [skip] odds-intel-web not present in CI")
-        return
-    src = page.read_text()
-    assert "\"@type\": \"SportsEvent\"" in src, \
-        "match detail must emit SportsEvent JSON-LD"
-    assert "\"@type\": \"BreadcrumbList\"" in src, \
-        "match detail must emit BreadcrumbList JSON-LD"
-    # Both schemas must use the live publicMatch data, not hardcoded values.
-    assert "publicMatch.homeTeam" in src and "publicMatch.awayTeam" in src, \
-        "SportsEvent must be populated from publicMatch (team names)"
-    assert "application/ld+json" in src, "must render via <script type=application/ld+json>"
-    # Optional SportsEvent fields Google's Rich Results Test flagged on 2026-06-03.
-    # Each adds eligibility for richer rich-result surfaces.
-    assert "endDate:" in src, \
-        "SportsEvent must include endDate (kickoff + ~115min) — flagged by Rich Results Test"
-    assert "image:" in src, \
-        "SportsEvent must include image (team logos / OG fallback) — flagged by Rich Results Test"
-    assert "performer:" in src, \
-        "SportsEvent must include performer alongside competitor — flagged by Rich Results Test"
-    # offers here represents free access to OddsIntel's predictions for this
-    # match (NOT a ticket to the event); category disambiguates from ticket
-    # sellers so Google doesn't pull us into ticket rich results.
-    assert "offers:" in src and "\"Offer\"" in src, \
-        "SportsEvent must include an Offer (free predictions access for this match)"
-    assert "category:" in src and "predictions" in src.lower(), \
-        "Offer must set category so Google doesn't misclassify us as a ticket seller"
-    # organizer.url is linked ONLY for featured leagues that have a known
-    # predictions slug — never fabricated for unknown leagues.
-    assert "PREDICTION_LEAGUES.find" in src, \
-        "organizer.url must be derived from PREDICTION_LEAGUES (no fake URLs)"
-
-    # Root Organization must carry a logo URL — Search Console flags it as
-    # missing when Organization schema is in root layout without a logo.
-    root_layout = _web_path("src/app/layout.tsx").read_text()
-    assert "\"@type\": \"Organization\"" in root_layout, \
-        "root layout must keep the Organization schema"
-    assert "logo:" in root_layout and "icon-512.png" in root_layout, \
-        "root Organization must include a logo URL (icon-512.png)"
-
-
 @test("SMOKE-SKIPTEST — _web_path raises SkipTest when odds-intel-web is absent; runner counts skips separately from failures")
 def _():
     """SMOKE-SKIPTEST (2026-06-03): smoke_tests.yml only checks out this engine
@@ -17800,42 +17483,6 @@ def _():
         )
 
 
-@test("MOBILE-LANDING-P2-CLEANUP — hero team-name + Telegram-CTA wrap")
-def _():
-    """GROWTH-MOBILE-LANDING-V2 P2 follow-up batch (2026-06-05). The
-    audit's remaining P2 items: hero mockup team-name sizing was too
-    small relative to odds numbers below; Telegram CTA paragraph wrapped
-    awkwardly because "Pre-kickoff. Pre-line-movement. Pre-everything."
-    used period separators that lose their parallelism on narrow
-    screens. Footer Performance "redundancy" was a slight misread by the
-    audit agent — not a real bug, intentionally skipped.
-
-    Pinned:
-      1. Hero mockup team names use text-lg sm:text-xl (was text-base
-         sm:text-lg)
-      2. Telegram CTA paragraph uses middle-dot separators between the
-         three "Pre-" phrases so they hold together as a single visual
-         unit at any width
-    """
-    page = _web_path("src/app/page.tsx").read_text()
-    # Hero mockup team names bumped to text-lg / text-xl
-    assert 'text-lg font-bold sm:text-xl">Manchester City' in page, (
-        "hero mockup team names must use text-lg sm:text-xl — they were "
-        "previously too small relative to odds numbers"
-    )
-    # Telegram CTA: middle-dot separators
-    assert "Pre-kickoff · Pre-line-movement · Pre-everything" in page, (
-        "Telegram CTA paragraph must use middle-dot separators (the three "
-        "Pre- phrases hold together as one visual rhythm); period-separated "
-        "version loses the parallelism on narrow screens"
-    )
-    # Period-separated version must be gone
-    assert "Pre-kickoff. Pre-line-movement. Pre-everything." not in page, (
-        "the period-separated form must NOT remain — it was the broken "
-        "version"
-    )
-
-
 @test("PINNACLE-WEEKEND-EXPERIMENT — time-boxed research script invariants")
 def _():
     """PINNACLE-WEEKEND-EXPERIMENT (2026-06-05): research-only,
@@ -18000,42 +17647,6 @@ def _():
     )
 
 
-@test("GROWTH-APP-NAV-SYNC — (app) Nav includes /live + /accuracy + /pricing")
-def _():
-    """GROWTH-APP-NAV-SYNC (2026-06-05): the in-app Nav (used on every
-    /(app)/* route) was missing /live, /accuracy, /pricing — pages that
-    exist on the landing nav but weren't reachable from the in-app shell.
-    A user landing on /live couldn't navigate sideways to /accuracy
-    without going back to the landing page.
-
-    Pinned (so a future page added to the landing nav doesn't silently
-    fail to appear in the in-app nav):
-      1. nav.tsx primaryLinks includes /live, /accuracy, /pricing
-      2. Each has a unique-enough lucide icon (Radio / Percent /
-         CreditCard) so the row doesn't render with an empty icon slot
-      3. Mobile drawer is driven by the same primaryLinks array (no
-         duplicate hardcoded list) — verified by the file containing
-         exactly one definition of primaryLinks
-    """
-    nav = _web_path("src/components/nav.tsx")
-    src = nav.read_text()
-    for href in ('href: "/live"', 'href: "/accuracy"', 'href: "/pricing"'):
-        assert href in src, (
-            f"(app) Nav primaryLinks must include {href} — without it "
-            "users on that page can't navigate sideways from the in-app "
-            "shell"
-        )
-    # Icon imports for the new entries
-    for icon in ("Radio", "Percent", "CreditCard"):
-        assert icon in src, f"nav.tsx must import the {icon} lucide icon"
-    # Single source of truth — only ONE primaryLinks array definition
-    assert src.count("const primaryLinks") == 1, (
-        "nav.tsx must have exactly ONE primaryLinks definition; mobile "
-        "drawer reads from it via primaryLinks.map. A duplicate hardcoded "
-        "list defeats the smoke pin"
-    )
-
-
 @test("GROWTH-ACCURACY-PICKS-LOG — data layer + publisher + settlement hook")
 def _():
     """GROWTH-ACCURACY-PICKS-LOG (Tier B #3, 2026-06-05): published_picks
@@ -18130,76 +17741,6 @@ def _():
     assert "PublishedPickRow" in e_src, "PublishedPickRow type must be exported"
 
 
-@test("GROWTH-COPY-DENSITY Day 2 — landing cuts (meta-copy, pricing dup, FAQ)")
-def _():
-    """GROWTH-COPY-DENSITY-AUDIT Day 2 (2026-06-06): five cuts to the
-    landing copy following the Day 1 cumulative-CLV hero number:
-      1. Hero subhead 28 → 13 words (cut "so you can place them before
-         the value evaporates" — redundant with "before kickoff")
-      2. Below-CTA microcopy 12 → 5 words ("Free forever. No credit card.")
-      3. Removed the "Honest about how this works" preachy preamble
-         ("Three things most prediction sites hide. We publish them on
-         purpose.") — 3 cards already carry their own labels
-      4. Deleted the standalone compact pricing CTA section. Pricing
-         was being asked 3× on the landing — this middle slot was
-         the redundant one. Hero CTA + Telegram CTA + footer remain.
-      5. Tightened Telegram CTA body 29 → 14 words
-      6. FAQ 5 → 3 items (dropped "Which bookmakers are compared?"
-         and "What is CLV tracking?" — both already answered in the
-         SEO dl block and the honest-numbers cards respectively)
-
-    Pin each removed string so a future "let's restore that copy"
-    edit fails the smoke loudly. The research backing for these cuts
-    is in dev/active/density-copy-research-2026-06-06.md.
-    """
-    page = _web_path("src/app/page.tsx")
-    src = page.read_text()
-
-    # 1-5. Removed phrases must not appear in rendered JSX (they CAN
-    # appear in code comments documenting the cut — exclude those by
-    # stripping // and {/* */} regions before checking).
-    import re
-    # Strip line comments + block comments before checking
-    stripped = re.sub(r"//.*?$", "", src, flags=re.MULTILINE)
-    stripped = re.sub(r"\{/\*.*?\*/\}", "", stripped, flags=re.DOTALL)
-
-    removed_phrases = [
-        "Three things most prediction sites hide",
-        "We publish them on purpose",
-        "No credit card required. Free forever",
-        "Free forever for fixtures, scores",
-        "place them before the value evaporates",
-        "place it before the value evaporates",
-        "What is CLV tracking",
-        "Which bookmakers are compared",
-    ]
-    for phrase in removed_phrases:
-        assert phrase not in stripped, (
-            f"removed phrase '{phrase}' still appears in rendered JSX. "
-            f"Day 2 cut would be silently undone — research-backed copy "
-            f"reductions need to stay reduced until a deliberate revert."
-        )
-
-    # New tightened copy must be present
-    new_copy = [
-        "AI spots where today",        # tightened hero subhead
-        "Free forever. No credit card.",  # tightened below-CTA
-        "Every pick the model finds, pushed to your phone pre-kickoff",  # tightened Telegram body
-    ]
-    for phrase in new_copy:
-        assert phrase in src, (
-            f"expected new tightened copy '{phrase}' missing — Day 2 "
-            f"replacement copy must be present alongside the cuts"
-        )
-
-    # FAQ array must have exactly 3 items now (4 q: keys per item × 3 = 3)
-    faq_questions = re.findall(r'q:\s*"([^"]+)"', src)
-    assert len(faq_questions) == 3, (
-        f"FAQ must be reduced to 3 items, found {len(faq_questions)}: {faq_questions}. "
-        f"5→3 reduction was a research-backed cut."
-    )
-
-
 @test("MIGRATION-185-IDEMPOTENCY — DROP POLICY IF EXISTS guard restored")
 def _():
     """MIGRATION-185-IDEMPOTENCY (2026-06-06): migration 185 created the
@@ -18229,106 +17770,6 @@ def _():
     assert "CREATE POLICY \"published_picks_public_read\"" in src, (
         "DROP must be followed by CREATE — leaving only DROP would "
         "remove public read access to the /accuracy data"
-    )
-
-
-@test("GROWTH-COPY-DENSITY Day 1 — cumulative CLV hero number end-to-end")
-def _():
-    """GROWTH-COPY-DENSITY-AUDIT Day 1 (2026-06-06): replace the 3-stat
-    trust micro-line on the landing hero with a single load-bearing
-    cumulative outcome ("+9.4% CLV beating the closing line · 1,214
-    paper bets · 33 days"). Research-backed via
-    dev/active/density-copy-research-2026-06-06.md — three independent
-    signals all point to numbers-led > prose-led for our category.
-
-    End-to-end chain pinned here so a regression at any layer fails loud:
-      1. Migration 187 adds elite_value_bets_cumulative column
-      2. settlement.py computes the JSON blob (function + INSERT both)
-      3. engine-data.ts types the new field on DashboardCache
-      4. landing page.tsx reads the field and renders fallback when null
-
-    The fallback values (+9.4% / 1,214 / 33) are baked into the page so
-    a stale or empty cache doesn't blank out the hero. Pinning them too
-    so a future "let's cut the fallback" cleanup doesn't leave the hero
-    empty during cache refresh windows.
-    """
-    import pathlib
-    # 1. Migration
-    mig = pathlib.Path("supabase/migrations/187_dashboard_cache_value_bets_cumulative.sql")
-    assert mig.exists(), "migration 187 must exist"
-    msrc = mig.read_text()
-    assert "elite_value_bets_cumulative" in msrc, (
-        "migration 187 must add the elite_value_bets_cumulative column"
-    )
-    assert "JSONB" in msrc, "column must be JSONB"
-
-    # 2. Settlement job
-    settle = pathlib.Path("workers/jobs/settlement.py")
-    ssrc = settle.read_text()
-    assert "_value_bets_cumulative" in ssrc, (
-        "settlement must define _value_bets_cumulative function"
-    )
-    assert "elite_value_bets_cumulative" in ssrc, (
-        "settlement must reference the cumulative column in INSERT"
-    )
-    assert "2026-05-01" in ssrc, (
-        "chain_start anchor must match the /performance display "
-        "('since May 1') AND the landing footer claim "
-        "('Paper-bet chain unbroken since 2026-05-01') — CHAIN-START-ALIGN "
-        "2026-06-06 standardised on this single value."
-    )
-    # Cohort filter must match /performance's activeBotNames
-    # (is_active + non-experimental + not retired) so landing hero
-    # number doesn't drift from /performance.
-    assert "maturity_label != 'experimental'" in ssrc, (
-        "cumulative cohort must exclude experimental-maturity bots — "
-        "matches /performance which strips them via activeBotNames"
-    )
-    assert "retired_at IS NULL" in ssrc, (
-        "cumulative cohort must exclude retired bots — matches "
-        "/performance's !b.retiredAt filter"
-    )
-
-    # 3. Web type definition
-    edata = _web_path("src/lib/engine-data.ts")
-    esrc = edata.read_text()
-    assert "elite_value_bets_cumulative" in esrc, (
-        "DashboardCache type must expose elite_value_bets_cumulative"
-    )
-    for field in ("cumulative_clv_eur", "avg_clv_pct", "n_settled", "days", "chain_start"):
-        assert field in esrc, (
-            f"cumulative JSON shape must include {field} — frontend "
-            f"hero depends on it"
-        )
-
-    # 4. Landing page hero
-    page = _web_path("src/app/page.tsx")
-    psrc = page.read_text()
-    assert "heroCumulative" in psrc, "landing must consume the cumulative field"
-    assert "elite_value_bets_cumulative" in psrc, (
-        "landing must reference the exact cache field name (case-sensitive)"
-    )
-    assert "CLV beating the closing line" in psrc, (
-        "hero copy must use the new load-bearing line — old copy "
-        "('accuracy on O/U 1.5') should be gone"
-    )
-    # Fallback hard-codes (so an empty cache doesn't leave the hero blank
-    # at deploy time before the next settlement run populates). Updated
-    # 2026-06-06 to match the cohort-aligned numbers.
-    assert "+9.4%" in psrc, "fallback avg_clv_pct must be present"
-    assert "1,176" in psrc, (
-        "fallback n_settled must match the aligned cohort (~1,176 = "
-        "active + non-experimental). 1,214 was the pre-alignment number."
-    )
-    # Old copy must be gone
-    assert "75% accuracy on O/U 1.5" not in psrc, (
-        "old 'accuracy on O/U 1.5' trust line must be removed; the "
-        "research-backed verdict was to replace, not augment"
-    )
-    assert "21,831 matches tracked" not in psrc, (
-        "old 'matches tracked' stat must be removed from the hero "
-        "(still appears on /accuracy and elsewhere — just not the "
-        "load-bearing hero line anymore)"
     )
 
 
@@ -18706,38 +18147,6 @@ def _():
     )
 
 
-@test("GROWTH-DIRECTORY-STACK — partner badges row in landing footer")
-def _():
-    """GROWTH-DIRECTORY-STACK (2026-06-05): live reciprocal-backlink badges
-    in the landing footer. Several directories (Twelve Tools, AIBoom free
-    tier) auto-check for this row periodically — if a badge disappears
-    they remove our listing. This smoke makes the row hard to delete by
-    accident.
-
-    Pinned:
-      1. Landing has a "Featured on" section before the footer
-      2. Both Twelve Tools and Wired Business backlink anchors exist
-      3. CSP img-src permits both badge domains
-    """
-    landing = _web_path("src/app/page.tsx")
-    src = landing.read_text()
-    assert 'aria-label="Featured on"' in src, (
-        "landing must have the partner-badges section (aria-label='Featured on')"
-    )
-    assert 'href="https://twelve.tools"' in src, "Twelve Tools backlink must be present"
-    assert 'href="https://wired.business"' in src, "Wired Business backlink must be present"
-    assert 'href="https://aiboom.tools"' in src, "AIBoom Tools backlink must be present"
-
-    nc = _web_path("next.config.ts")
-    nc_src = nc.read_text()
-    for domain in ("twelve.tools", "wired.business", "aiboom.tools"):
-        assert domain in nc_src, (
-            f"CSP img-src must include {domain} so the reciprocal-backlink "
-            "badge can render — without this the badge fails silently and "
-            "the directory removes our listing on next crawl"
-        )
-
-
 @test("GROWTH-DIRECTORY-STACK — listing kit exists with all required blocks")
 def _():
     """GROWTH-DIRECTORY-STACK (Tier A #6, 2026-06-05): operator-facing kit
@@ -18848,130 +18257,6 @@ def _():
     )
 
 
-@test("GROWTH-LANDING-REFACTOR — hero contract + section trim + trust strip")
-def _():
-    """GROWTH-LANDING-REFACTOR (Tier A #4, sub-commits A+B+C 2026-06-05):
-    hero rewrite + redundant-section removal + trust strip + contrast polish.
-
-    Sub-A — hero contract:
-      1. H1 contains "Beat the bookmakers" (action verb + adversarial)
-      2. Sub-line mentions Telegram
-      3. Trust micro-line carries at least two of the three honest
-         numbers (75% / +9.8% / 21,831)
-      4. Secondary CTA points to /value-bets (not /matches)
-
-    Sub-B — landing-trim:
-      5. "Live data preview" section removed (was a full fold of sample
-         data)
-      6. Big "Built on real data, not guesswork" stats block removed —
-         duplicate of hero trust micro-line + SEO bar
-      7. Pricing CTA, FAQ, footer cross-links still intact (we trimmed
-         the right things, not the wrong things)
-    """
-    landing = _web_path("src/app/page.tsx")
-    src = landing.read_text()
-    hero = src.split("Product UI mockup")[0]
-
-    # Sub-A invariants
-    assert "Beat the" in hero and "bookmakers" in hero, (
-        "hero H1 must be action-verb + adversarial framing "
-        "(\"Beat the bookmakers\") — not the old descriptive line"
-    )
-    assert "Telegram" in hero, "hero sub-line must mention Telegram (delivery channel)"
-    honest_numbers = sum(
-        1 for n in ("75%", "+9.8%", "21,831") if n in hero
-    )
-    assert honest_numbers >= 2, (
-        "hero trust micro-line must carry at least 2 of the 3 honest "
-        "numbers (75% accuracy / +9.8% CLV / 21,831 matches)"
-    )
-    assert 'href="/value-bets"' in hero, (
-        "hero secondary CTA must point to /value-bets (the value-bet "
-        "product, not the free fixtures feed)"
-    )
-
-    # Sub-B invariants — sections removed
-    assert "Live data preview" not in src, (
-        "Live data preview section must stay removed — sample-data fold "
-        "without enough signal to earn its place"
-    )
-    assert "Built on real data, not guesswork" not in src, (
-        "Big 'Built on real data' stats block must stay removed — "
-        "duplicated hero trust micro-line + SEO bar content"
-    )
-    # Cross-checks: things that must NOT have been accidentally removed
-    assert "PricingCards" not in src, "PricingCards still moved out (sanity)"
-    assert "See all plans" in src, "compact pricing CTA must still exist"
-    assert "CompetitorMatrix" in src, "competitor matrix must still render"
-    assert "OneScreenProof" in src, "one-screen-proof must still render"
-    assert 'href="/methodology"' in src, "methodology footer link must still exist"
-
-    # Sub-C invariants — trust strip added before final Telegram CTA
-    assert "Paper-bet chain unbroken" in src, (
-        "Trust strip must mention the unbroken paper-bet chain — this is "
-        "the lightweight social proof on the way down to the final CTA"
-    )
-    assert "30-day cancel any time" in src, (
-        "Trust strip must mention 30-day cancellation (refund-equivalent)"
-    )
-    # Aria label pins the section's purpose
-    assert 'aria-label="Trust signals"' in src, (
-        "Trust strip must have aria-label='Trust signals' so screen readers "
-        "and future agents know this section's purpose"
-    )
-
-
-@test("GROWTH-LANDING-DEPOLLUTE — pricing surface trimmed, methodology surfaced")
-def _():
-    """GROWTH-LANDING-DEPOLLUTE (2026-06-05, follow-up to GROWTH-DRAWDOWN-TRANSPARENCY):
-    landing was asking for money 3 separate times (pricing cards, feature
-    comparison matrix, pricing FAQs) before earning trust. Tightened.
-
-    Pinned:
-      1. Feature comparison matrix removed — pricing-tier ask shouldn't appear
-         3× on one page. Pricing cards alone are sufficient; /how-it-works has
-         the full feature breakdown for users who want depth.
-      2. Pricing-related FAQs removed (free-forever + founding-rates). Pricing
-         FAQs belong near the pricing cards, not in a separate FAQ section.
-      3. New "Honest about how this works" landing block surfaces drawdown +
-         verification + CLV cards that DEEP-LINK to /methodology and /learn/clv
-         — fixes the prior gap where the methodology page had zero inbound
-         links from the landing.
-      4. Footer carries Methodology + Performance links (was just legal links).
-    """
-    landing = _web_path("src/app/page.tsx")
-    src = landing.read_text()
-    # Feature matrix removed
-    assert "comparisonRows" not in src, (
-        "feature comparison matrix must stay removed from landing — pricing "
-        "should be asked once via the pricing cards, not three times"
-    )
-    assert "What you get at each level" not in src, (
-        "the feature-matrix H2 must stay removed (full matrix moved to /how-it-works)"
-    )
-    # Pricing FAQs removed
-    assert "founding member rates" not in src, (
-        "founding-rates FAQ removed — pricing FAQs do not belong in the general FAQ"
-    )
-    assert "free plan really free forever" not in src, (
-        "free-forever FAQ removed for the same reason"
-    )
-    # Honest-numbers landing block added with deep links
-    assert "Honest about how this works" in src, (
-        "landing must surface the 'Honest about how this works' block "
-        "(deep-links to /methodology + /learn/clv)"
-    )
-    assert "Why we publish drawdowns" in src, "drawdown card must be present"
-    assert "Why no" in src and "verified" in src, "verification card must be present"
-    assert "Why CLV beats ROI" in src, "CLV card must be present"
-    # Footer methodology + performance links
-    footer_block = src.split("Responsible Gambling")[0]
-    assert 'href="/methodology"' in footer_block, (
-        "footer must link to /methodology so the deep doc is reachable"
-    )
-    assert 'href="/performance"' in footer_block, "footer must link to /performance"
-
-
 @test("GROWTH-TRACK-RECORD-CONTINUITY — chain audit + alert wiring")
 def _():
     """GROWTH-TRACK-RECORD-CONTINUITY (2026-06-05): monitoring + audit for the
@@ -19023,63 +18308,6 @@ def _():
     )
     assert "audit_track_record_chain.py" in wf_src, (
         "WORKFLOWS.md must reference the one-shot audit script"
-    )
-
-
-@test("GROWTH-CLAIMS-PARITY — landing surfaces accuracy stat + accuracy-vs-profitability framing")
-def _():
-    """CLAIMS-PARITY (2026-06-04, updated 2026-06-06):
-
-    Original: pinned five claims on the landing trust block — 75%
-    accuracy, OU 1.5, 21,831 sample, '10+ years of historical match
-    data', 'no human bias'.
-
-    GROWTH-COPY-DENSITY-AUDIT Day 2 (2026-06-06) deliberately cut three
-    of those phrases as part of the 49% landing word reduction
-    (research doc: dev/active/density-copy-research-2026-06-06.md).
-    Specifically removed because they were marketing prose, not
-    load-bearing data:
-      * '10+ years of historical match data' — true claim, but
-        moved to /methodology where it belongs. No longer on landing.
-      * 'no human bias' — research doc Part 3 flagged this as a
-        commodity claim every AI prediction site makes; replacing
-        prose with a single cumulative outcome number does the same
-        trust work better.
-
-    What stays pinned (still on landing in the FAQ + visible):
-      * 75% / Over/Under 1.5 / 21,831 — the load-bearing accuracy
-        proof number, still cited in the FAQ answer
-      * Accuracy-vs-profitability framing — reworded to 'Accuracy
-        alone is misleading' as part of the Day 2 reading-level pass
-      * '16 AI strategies running live' must remain absent
-        (GROWTH-SIMPLIFY-BOTS-NARRATIVE — unchanged)
-    """
-    landing = _web_path("src/app/page.tsx")
-    src = landing.read_text()
-    assert "75%" in src, "landing must show 75% accuracy stat in FAQ"
-    assert "Over/Under 1.5" in src or "O/U 1.5" in src, (
-        "landing must specify the market (Over/Under 1.5)"
-    )
-    assert "21,831" in src or "21831" in src, (
-        "landing must cite the sample size from the accuracy backtest"
-    )
-    assert "16 AI strategies running live" not in src, (
-        "GROWTH-SIMPLIFY-BOTS-NARRATIVE: '16 AI strategies' must NOT be a "
-        "headline stat anymore — it stays in /track-record for transparency, "
-        "but should not lead on the landing page"
-    )
-    # FAQ must still pre-empt accuracy-vs-profitability objection — the
-    # exact phrasing was tightened in Day 2 but the substance stays.
-    accuracy_vs_profit_present = (
-        "Accuracy is not the same as profitability" in src
-        or "Accuracy alone is misleading" in src
-    )
-    assert accuracy_vs_profit_present, (
-        "FAQ on AI picks must explain that accuracy != profitability "
-        "(the whole honesty positioning depends on this distinction). "
-        "Either 'Accuracy is not the same as profitability' (pre-Day-2) "
-        "or 'Accuracy alone is misleading' (Day-2 tightened phrasing) "
-        "satisfies the assertion."
     )
 
 
@@ -20435,32 +19663,6 @@ def test_b_ml3_feature_patch():
         # Verify all new features are in the bundle
         for feat in new_features:
             assert feat in fc, f"{feat} must be in bundle feature_cols"
-
-
-@test("GROWTH-DESKTOP-DASHBOARD-DENSITY — H2H+Standings grid and Intel tab 2-col layout wired")
-def _():
-    """Source-inspection: confirms desktop density classes are present in the
-    two edited frontend files so they can't silently regress to single-column."""
-    import pathlib
-    fe_root = pathlib.Path("../odds-intel-web/src")
-    if not fe_root.exists():
-        return  # frontend not checked out alongside engine — skip
-
-    free_src = (fe_root / "components/match-detail-free.tsx").read_text()
-    # H2H + Standings wrapper must have the responsive grid class
-    assert "lg:grid-cols-2" in free_src, \
-        "match-detail-free.tsx must have lg:grid-cols-2 for desktop H2H+Standings layout"
-    # Confirm the wrapper div exists (not just any lg:grid-cols-2 elsewhere)
-    assert "grid gap-3 lg:grid-cols-2" in free_src, \
-        "match-detail-free.tsx must have 'grid gap-3 lg:grid-cols-2' wrapper div"
-
-    page_src = (fe_root / "app/(app)/matches/[id]/page.tsx").read_text()
-    # Intel tab MIP + BotConsensus grid wrapper
-    assert "grid gap-3 lg:grid-cols-2" in page_src, \
-        "matches/[id]/page.tsx must have 'grid gap-3 lg:grid-cols-2' wrapper for Intel tab density"
-    # Confirm both components still present (not accidentally removed)
-    assert "MarketImpliedProbabilities" in page_src, "MarketImpliedProbabilities must still be in Intel tab"
-    assert "BotConsensus" in page_src, "BotConsensus must still be in Intel tab"
 
 
 @test("AH-PLATT-WIRE — fit_platt_live.py wired into job_weekly_retrain")
@@ -22629,15 +21831,37 @@ def _():
     # PERF-HISTORY-COHORT-MATCH (2026-08-21): history rows must match the
     # ROI headline cohort (production public strategies) so users don't see
     # a count mismatch between "+X% ROI n=1,208" and the ledger below.
-    assert "PUBLIC_MATURITY_LABELS" in page and "CALIBRATED_PUBLIC_MARKETS" in page and "CALIBRATED_SINCE" in page, (
-        "performance/page.tsx must import + apply the SAME cohort constants "
-        "used by getCalibratedHeadlineStats so the history reconciles with "
-        "the ROI headline n. Do NOT duplicate the constants — import them."
+    # SMOKE-SUITE-AUDIT 2026-09-06 — the old version demanded the literal
+    # token PUBLIC_MATURITY_LABELS in page.tsx. The page now resolves its bot
+    # allowlist through `getPublicCohortBotNames()`, a shared helper in
+    # engine-data.ts that applies those same constants server-side. That is
+    # strictly BETTER than importing the constant and re-deriving the list at
+    # the call site — one definition instead of two — yet the test called it
+    # a failure. What actually matters is the negative: the page must not
+    # hand-roll its own cohort.
+    assert "CALIBRATED_PUBLIC_MARKETS" in page and "CALIBRATED_SINCE" in page, (
+        "performance/page.tsx must import + apply the SAME market + start-date "
+        "constants used by getCalibratedHeadlineStats so the history "
+        "reconciles with the ROI headline n. Do NOT duplicate them — import."
     )
+    assert "getPublicCohortBotNames" in page or "PUBLIC_MATURITY_LABELS" in page, (
+        "performance/page.tsx must derive its bot allowlist from the shared "
+        "cohort definition (getPublicCohortBotNames, or PUBLIC_MATURITY_LABELS "
+        "directly) — otherwise retired/experimental bots leak into the ledger "
+        "and the row count stops matching the published ROI n."
+    )
+    # The cohort must never be re-typed here. A literal maturity list in the
+    # page is the drift that put +13.10% and +17.39% on two surfaces for the
+    # same bets on 2026-09-05.
+    for literal in ('"calibrated"', "'calibrated'"):
+        assert literal not in page, (
+            f"performance/page.tsx contains a hand-written {literal} maturity "
+            "literal — the cohort has exactly one definition, in engine-data.ts"
+        )
     assert "publicBotNames" in page, (
-        "performance/page.tsx must build a bot-name allowlist from "
-        "PUBLIC_MATURITY_LABELS and filter cohortBets against it — otherwise "
-        "retired/experimental bots leak into the ledger and inflate the count."
+        "performance/page.tsx must filter cohortBets against the resolved "
+        "bot-name allowlist — resolving it and not applying it is the same "
+        "bug with extra steps."
     )
     engine_data = _web_path("src/lib/engine-data.ts").read_text()
     for const_name in ("PUBLIC_MATURITY_LABELS", "CALIBRATED_PUBLIC_MARKETS", "CALIBRATED_SINCE"):
@@ -22827,35 +22051,68 @@ def _():
       3. retired_at IS NULL    (excludes retired bots)
       4. market whitelist matches PRE_MATCH_MARKETS
     """
+    # SMOKE-SUITE-AUDIT 2026-09-06 — the filters moved, correctly, and the
+    # test went red for the best possible reason.
+    #
+    # DUPLICATED-BUSINESS-RULES-AUDIT (odds-intel-web 2ff894f, 2026-09-05)
+    # deleted /api/v1/upcoming's line-for-line copy of the query, the dedupe
+    # and the row mapping; the route now delegates to
+    # `lib/upcoming-picks.ts:fetchUpcomingPicks`. The old assertions looked
+    # for `.is("bots.retired_at", null)` inside the ROUTE file, so collapsing
+    # two copies into one failed the test — while two copies quietly drifting
+    # apart, which is precisely how the landing and /performance published
+    # +13.10% and +17.39% for identical bets on 2026-09-05, passed it.
+    #
+    # Assert the invariant instead: the cohort rule exists exactly once, the
+    # route reaches it rather than re-implementing it, and both published
+    # surfaces resolve the same rule.
     upcoming = _web_path("src/app/api/v1/upcoming/route.ts").read_text()
     track = _web_path("src/app/api/v1/track-record/route.ts").read_text()
+    lib = _web_path("src/lib/upcoming-picks.ts").read_text()
 
-    for src_name, src in (("upcoming", upcoming), ("track-record", track)):
-        assert "PUBLIC_MATURITY_LABELS" in src, (
-            f"{src_name}/route.ts must gate on PUBLIC_MATURITY_LABELS "
-            "(calibrated + beta + active) — production strategies only."
-        )
-        assert 'inplay_%' in src, (
-            f"{src_name}/route.ts must filter out inplay bots "
-            "(.not(\"bots.name\", \"like\", \"inplay_%%\")) — /picks and the "
-            "ledger describe the pre-match cohort."
-        )
+    # (1) The single definition, in the shared fetcher.
+    assert "export async function fetchUpcomingPicks" in lib, (
+        "lib/upcoming-picks.ts must own the picks query — it is the one "
+        "definition both /picks and /api/v1/upcoming read."
+    )
+    for needle, why in (
+        ('.is("bots.retired_at", null)',
+         "exclude retired bots — a beta bot retired mid-flight still has "
+         "pending picks, and they must not reach /picks when the ledger "
+         "will never show them"),
+        ('"like", "inplay_%"',
+         "exclude in-play bots — /picks and the ledger both describe the "
+         "PRE-MATCH cohort"),
+        ("PRE_MATCH_MARKETS",
+         "gate on the pre-match market whitelist"),
+    ):
+        assert needle in lib, f"fetchUpcomingPicks must {why} ({needle} missing)"
 
-    # retired_at gate lives on /picks explicitly; the ledger's filter
-    # excludes retired bots via inplay_% (all currently-retired production
-    # bots are prematch) + maturity_label — but /picks needs both since
-    # a beta bot could be retired mid-flight and still show pending picks.
-    assert '.is("bots.retired_at", null)' in upcoming, (
-        "upcoming/route.ts must filter out retired bots "
-        "(.is(\"bots.retired_at\", null)) so /picks matches /performance's "
-        "getPublicCohortBotNames rule."
+    # (2) The route must DELEGATE, not re-implement. A second query here is
+    # the whole failure mode; catch it by its unmistakable fingerprint.
+    assert "fetchUpcomingPicks" in upcoming, (
+        "/api/v1/upcoming must call the shared fetchUpcomingPicks."
+    )
+    assert '.from("simulated_bets")' not in upcoming, (
+        "/api/v1/upcoming has grown its own simulated_bets query again. Two "
+        "implementations of one feed is exactly what "
+        "DUPLICATED-BUSINESS-RULES-AUDIT removed — they agree until someone "
+        "edits one."
     )
 
-    # Market whitelist must match between the two so a market added to one
-    # side doesn't silently drop off the other.
-    assert 'PRE_MATCH_MARKETS' in upcoming and 'PRE_MATCH_MARKETS' in track, (
-        "both endpoints must define + use PRE_MATCH_MARKETS. Drift would "
-        "let a market show on /picks but not on the ledger, or vice versa."
+    # (3) Both published surfaces must resolve the same maturity cohort
+    # constant, imported from engine-data — never a local literal.
+    assert "PUBLIC_MATURITY_LABELS" in upcoming and "PUBLIC_MATURITY_LABELS" in track, (
+        "both endpoints must gate on PUBLIC_MATURITY_LABELS — production "
+        "strategies only, and the same set on each surface."
+    )
+    assert 'inplay_%' in track, (
+        "track-record/route.ts must filter out inplay bots — the ledger and "
+        "/picks describe the same pre-match cohort."
+    )
+    assert 'PRE_MATCH_MARKETS' in track, (
+        "the ledger must use the pre-match market whitelist. Drift would let "
+        "a market show on /picks but never land on the ledger."
     )
 
 
@@ -23286,8 +22543,25 @@ def _():
         "Rename or removal would silently drop back to Kelly for the "
         "public ledger endpoint."
     )
-    assert 'odds_at_pick, result, clv' in track, (
-        "track-record/route.ts aggregate select must include odds_at_pick + result"
+    # SMOKE-SUITE-AUDIT 2026-09-06 — this was an exact substring match on a
+    # `.select()` column list, `'odds_at_pick, result, clv'`. LANDING-PERF-
+    # ROI-BASIS added `odds_at_pick_live` and `clv_pinnacle` to that select
+    # so public ROI is priced at odds that were actually live, and the test
+    # broke on a column ADDITION — the safest possible edit. Meanwhile
+    # dropping `result` while leaving the string intact elsewhere would have
+    # sailed through. Assert the columns are present, individually, and that
+    # the flat computation actually consumes them.
+    _agg = track[track.index("FLAT-ROI-EVERYWHERE"):][:3000]
+    for col in ("odds_at_pick", "result"):
+        assert col in _agg, (
+            f"track-record aggregate select must include {col} — flat ROI is "
+            f"computed from price and outcome, not from the Kelly stake/pnl "
+            f"columns"
+        )
+    assert "FLAT_STAKE * (odds - 1)" in track, (
+        "track-record must compute the winning payout at the FLAT stake. "
+        "Falling back to the stored Kelly pnl silently publishes a different "
+        "ROI than /performance and the landing."
     )
 
 
@@ -23527,22 +22801,48 @@ def _():
       3. /picks reads the session, branches on isSignedIn, and passes the
          wider array only when authenticated.
     """
+    # SMOKE-SUITE-AUDIT 2026-09-06 — the gate is unchanged; its definition
+    # moved. DUPLICATED-BUSINESS-RULES-AUDIT (odds-intel-web 2ff894f,
+    # 2026-09-05) deleted the route's own `PUBLIC_MATURITY_LABELS` literal
+    # and made it import the one in lib/upcoming-picks.ts. The old test
+    # required the literal assignment to be IN THE ROUTE, so de-duplication
+    # failed it. Worse, once the route imported the symbol, the old
+    # `split("PUBLIC_MATURITY_LABELS")[1]` leak-scan was reading whatever
+    # text followed an import statement — it had stopped inspecting the
+    # cohort at all.
+    #
+    # The invariant is about what the ANON feed returns, not where the array
+    # is typed: the public list is calibrated-only, the wider list exists but
+    # is unreachable from any route, and /picks is what widens it.
+    lib = _web_path("src/lib/upcoming-picks.ts").read_text()
     upcoming = _web_path("src/app/api/v1/upcoming/route.ts").read_text()
-    # calibrated-only: PUBLIC_MATURITY_LABELS assigned to ["calibrated"]
-    # (single-element). Reject any assignment that includes beta or
-    # active in the same list — that's exactly the leak we're closing.
-    assert 'PUBLIC_MATURITY_LABELS = ["calibrated"]' in upcoming, (
-        "PICKS-USER-GATE: /api/v1/upcoming must scope PUBLIC_MATURITY_LABELS "
-        "to ['calibrated'] only. Widening it would ship beta + active picks "
-        "to unauthenticated scrapers, defeating the whole gate."
+
+    assert 'PUBLIC_MATURITY_LABELS = ["calibrated"]' in lib, (
+        "PICKS-USER-GATE: PUBLIC_MATURITY_LABELS must be exactly "
+        "['calibrated']. Widening it ships beta + active picks to "
+        "unauthenticated scrapers and defeats the whole gate."
     )
+    # Pin the array contents directly rather than scanning nearby text.
+    _public_arr = lib.split("PUBLIC_MATURITY_LABELS = [")[1].split("]")[0]
     for leak in ("beta", "active"):
-        assert f'"{leak}"' not in upcoming.split("PUBLIC_MATURITY_LABELS")[1].split("]")[0], (
+        assert f'"{leak}"' not in _public_arr, (
             f"PICKS-USER-GATE: PUBLIC_MATURITY_LABELS must not include "
             f"'{leak}' — that cohort is the signed-in-only surface."
         )
-
-    lib = _web_path("src/lib/upcoming-picks.ts").read_text()
+    # The route must consume the shared constant, never re-declare one.
+    assert "PUBLIC_MATURITY_LABELS" in upcoming, (
+        "PICKS-USER-GATE: /api/v1/upcoming must scope on "
+        "PUBLIC_MATURITY_LABELS."
+    )
+    assert "PUBLIC_MATURITY_LABELS = [" not in upcoming, (
+        "PICKS-USER-GATE: /api/v1/upcoming has re-declared its own "
+        "PUBLIC_MATURITY_LABELS. A second copy is how the gate gets widened "
+        "on one surface and not the other."
+    )
+    assert "SIGNED_IN_MATURITY_LABELS" not in upcoming, (
+        "PICKS-USER-GATE: /api/v1/upcoming must never reference the "
+        "signed-in cohort — this endpoint is fetchable with no session."
+    )
     assert 'SIGNED_IN_MATURITY_LABELS = ["calibrated", "beta", "active"]' in lib, (
         "PICKS-USER-GATE: lib/upcoming-picks must export "
         "SIGNED_IN_MATURITY_LABELS with all three production maturity tiers "
@@ -24564,27 +23864,95 @@ def test_coverage_expansion_probe_2026_08_26():
 @test("PICKS-MIN-ODDS")
 def test_picks_min_odds_2026_08_26():
     """PICKS-MIN-ODDS-2026-08-26 — /picks shows the break-even price so a reader
-    can check the odds they are actually offered before placing."""
+    can check the odds they are actually offered before placing.
+
+    SMOKE-SUITE-AUDIT 2026-09-06 — THIS TEST PINNED A BUG.
+
+    It asserted the floor was derived as `odds / (1 + edge)`, the standard
+    multiplicative break-even. That premise is false for this engine:
+    `daily_pipeline_v2.py:3474` computes `edge = cal_prob - 1/odds`, a
+    difference in PROBABILITY POINTS. Feeding a probability-point edge into
+    the multiplicative formula inflates the floor.
+
+    PICKS-MIN-ODDS-WRONG-FORMULA (2026-09-05) fixed it to
+    `break-even = 1 / (edge + 1/odds)`. Measured over 478 picks across 45
+    days, the old displayed floor was ABOVE the true break-even on 478 of
+    478 — median +18.0%, p90 +37.2% — so it told readers a still-+EV bet was
+    dead and they skipped good bets, while the UI stated it as fact.
+
+    The test then failed on the FIX and had passed on the BUG for ten days.
+    That is the exact inversion this audit exists to remove: it asserted what
+    the code did, not what had to be true. Rewritten to check the arithmetic
+    against the engine's own edge definition, so reintroducing the
+    multiplicative form fails here immediately.
+    """
     lib = _web_path("src/lib/upcoming-picks.ts").read_text()
     page = _web_path("src/app/picks/page.tsx").read_text()
 
     assert "min_odds" in lib, "UpcomingPick must carry min_odds"
-    # Derived, not stored: edge = odds*prob - 1  =>  break-even = odds / (1+edge)
-    assert "(1 + Number(r.edge_percent))" in lib, \
-        "min_odds must be derived as odds / (1 + edge)"
-    # A -100% edge would divide by zero; guard must be present.
-    assert "Number(r.edge_percent) > -1" in lib, "must guard against divide-by-zero"
+    assert "export function breakEvenOdds" in lib, (
+        "the break-even price must have ONE definition — it is published to "
+        "readers on /picks and gates what the operator stakes"
+    )
+    # The wrong formula must not come back. Scan CODE only — the file's own
+    # doc comment quotes the bad formula on purpose, to explain the fix.
+    import re as _re
+    _code = _re.sub(r"/\*.*?\*/", "", lib, flags=_re.DOTALL)
+    _code = _re.sub(r"//.*?$", "", _code, flags=_re.MULTILINE)
+    for bad in ("(1 + Number(r.edge_percent))", "/ (1 + edge)", "/(1 + edge)"):
+        assert bad not in _code, (
+            f"the multiplicative break-even `{bad}` is WRONG for this engine "
+            "— edge is in probability points, not multiplicative EV. See "
+            "PICKS-MIN-ODDS-WRONG-FORMULA-2026-09-05."
+        )
+    # Rendered on the page, and quiet next to the odds.
     assert "min {p.min_odds.toFixed(2)}" in page, "picks page must render it"
     assert "text-neutral-600" in page, "must stay visually quiet next to the odds"
 
-    # The arithmetic itself, since it is the whole point: a pick at 2.50 with a
-    # 10 pct edge implies prob 0.44, so it stops being +EV below 2.273.
-    odds, edge = 2.50, 0.10
-    assert abs(odds / (1 + edge) - 2.2727) < 0.001
-    # And a pick with zero edge is already at its floor.
-    assert abs(3.00 / (1 + 0.0) - 3.00) < 1e-9
-    return "break-even 'min odds' shown on /picks so readers can revalidate price"
+    # ── The arithmetic, checked rather than described ────────────────────
+    # Reimplement the engine's definition here so this test fails if the TS
+    # ever drifts from it, and evaluate the shipped TS on the same inputs.
+    def engine_break_even(odds: float, edge: float) -> float:
+        # edge = cal_prob - 1/odds  =>  cal_prob = edge + 1/odds
+        return round(1.0 / (edge + 1.0 / odds), 2)
 
+    # The worked example from the incident write-up: odds 3.11, edge 0.09,
+    # implying cal_prob 0.4115. Correct floor ~2.43; the old multiplicative
+    # form said 2.85 — an overstatement that reads as caution and is
+    # actually a wrong claim, in the direction that kills good bets.
+    correct = engine_break_even(3.11, 0.09)
+    wrong = 3.11 / (1 + 0.09)
+    assert abs(correct - 2.43) < 0.01, f"expected ~2.43, got {correct}"
+    assert abs(wrong - 2.85) < 0.01, (
+        "sanity: the old formula really did produce ~2.85 on this input"
+    )
+    assert wrong > correct, (
+        "the old formula must be shown to overstate the floor — that is the "
+        "direction that made readers skip +EV bets"
+    )
+    # A zero-edge pick sits exactly at its own price — the one input where
+    # both formulas agree, which is why the bug survived casual inspection.
+    assert engine_break_even(3.00, 0.0) == 3.00
+
+    # Extract the shipped implementation and confirm it matches the engine
+    # definition, not a lookalike.
+    fn = lib[lib.index("export function breakEvenOdds"):]
+    fn = fn[:fn.index("\n}")]
+    assert "1 / cal" in fn, (
+        "breakEvenOdds must prefer the STORED calibrated_prob (1 / cal_prob) "
+        "— reconstructing it compounds the rounding already applied to edge"
+    )
+    assert "edge + 1 / odds" in fn, (
+        "the fallback must reconstruct cal_prob as `edge + 1/odds`, matching "
+        "daily_pipeline_v2.py:3474. Any other reconstruction is a different "
+        "definition of edge than the one the engine bets on."
+    )
+    # A missing floor is honest; an invented one is not.
+    assert "return null" in fn, (
+        "breakEvenOdds must return null when the inputs cannot support a "
+        "floor rather than publishing a number it cannot justify"
+    )
+    return "break-even 'min odds' on /picks uses the engine's edge definition"
 
 
 @test("SHADOW-AUTOSELECT")
@@ -25237,8 +24605,43 @@ def test_coolbet_value_bot_2026_08_26():
     detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
     assert "bot_coolbet_value_v1: {" in detail, \
         "detail page ALLOWED entry required or the row links to a 404"
-    assert "bot_coolbet_value_v1: 0.03," in detail, \
-        "detail page edge-floor map must know this bot's gate"
+
+    # SMOKE-SUITE-AUDIT 2026-09-06 — the edge-floor assertion used to look
+    # for `bot_coolbet_value_v1: 0.03,` inside the detail PAGE. That map was
+    # one of two copy-pasted literals (index page + detail page); the audit
+    # in odds-intel-web 2ff894f collapsed both into BOT_EDGE_THRESHOLDS /
+    # botEdgeThreshold() in lib/coolbet-edge.ts. The test failed on the
+    # de-duplication and would have passed on the far worse state it was
+    # written for: two maps that agree today and diverge on the next edit.
+    #
+    # Why the value matters (COOLBET-UI-PLACER 2026-08-27): when this bot
+    # was missing from the map it fell through to the 0.08 default, so every
+    # min-odds floor was computed at an 8% edge while the bot fires at 3%.
+    # On 2026-08-27 that marked all 11 of its live picks "below floor" when
+    # 3 cleared the real threshold. A too-high floor is silent — it looks
+    # like caution, not a bug. Assert the resolved value, wherever it lives.
+    edge_lib = _web_path("src/lib/coolbet-edge.ts").read_text()
+    assert "bot_coolbet_value_v1: 0.03," in edge_lib, (
+        "the shared edge-threshold map must know this bot's 3% gate — "
+        "without it the ?? 0.08 default silently marks live +EV picks as "
+        "below floor"
+    )
+    assert "botEdgeThreshold" in detail, (
+        "the detail page must resolve its floor through the shared "
+        "botEdgeThreshold() helper — a second hand-written map here is the "
+        "state that preceded the 2026-09-05 four-surface incident"
+    )
+    index_page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+    assert "botEdgeThreshold" in index_page, (
+        "the shadow-bots index must resolve its floor through the same "
+        "helper as the detail page, or the two surfaces disagree about the "
+        "same pick"
+    )
+    for surface_name, surface in (("index", index_page), ("detail", detail)):
+        assert "BOT_EDGE_THRESHOLDS: Record" not in surface, (
+            f"the {surface_name} page has re-declared its own edge-threshold "
+            "map — there is exactly one, in lib/coolbet-edge.ts"
+        )
     return "Coolbet-priced value bot: quotes only obtainable prices, visible on the admin page"
 
 
