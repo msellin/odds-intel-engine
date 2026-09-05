@@ -25432,10 +25432,32 @@ def test_coolbet_ui_placer_2026_08_27():
     assert "read_ou_grid" in stage_src_ou, "stage_bet must use the ladder for totals"
 
     # Price gate is MIN-ODDS, not a drift percentage: a pick can sit below its
-    # break-even price without having drifted at all, and taking it is negative
-    # EV by the bot's own criterion.
-    assert "min_odds_for" in stage_src_ou, "must gate on break-even price"
-    assert abs(up.min_odds_for({"model_probability": 0.336}, 0.03) - 3.065) < 0.01
+    # floor without having drifted at all, and taking it fails the bot's own
+    # criterion.
+    #
+    # MIN-ODDS-WRONG-FORMULA-PLACER-2026-09-06: the expected value here was
+    # 3.065 = (1 + 0.03) / 0.336, the pre-fix multiplicative formula. That
+    # premise is false for this engine — `edge = cal_prob - 1/odds` is in
+    # probability POINTS (gotcha 42) — so the gate floor is
+    # `1 / (cal_prob - threshold)` = 1 / (0.336 - 0.03) = 3.268.
+    #
+    # This test PINNED THE BUG IN PLACE: it was written from the implementation
+    # rather than from the definition, so it passed for as long as the code
+    # stayed wrong and would have failed the moment it was fixed. That is the
+    # same shape as the assertion that pinned the blocked-books bug (8a30eec).
+    assert "min_odds_for" in stage_src_ou, "must gate on the min-odds floor"
+    assert abs(up.min_odds_for({"calibrated_prob": 0.336}, 0.03) - 3.268) < 0.01, (
+        "gate floor must be 1/(cal_prob - threshold), not the multiplicative form"
+    )
+    # calibrated_prob must WIN over model_probability — the raw model output is
+    # measured overconfident, so preferring it lowers the floor and green-lights
+    # prices the bot would reject.
+    assert abs(
+        up.min_odds_for({"calibrated_prob": 0.336, "model_probability": 0.50}, 0.03)
+        - 3.268
+    ) < 0.01, "model_probability is overriding calibrated_prob again"
+    # Fail closed when no price can clear the threshold.
+    assert up.min_odds_for({"calibrated_prob": 0.02}, 0.03) is None
 
     # Slip hygiene. Coolbet remembers selections across navigation, so blanking
     # the stake is not enough — on 2026-08-27 three staged picks left a slip
@@ -26261,11 +26283,35 @@ def test_coolbet_ui_placer_audit_warn():
     stores = [n.lineno for n in ast.walk(main_fn)
               if isinstance(n, ast.Name) and n.id == "expected_rows"
               and isinstance(n.ctx, ast.Store)]
-    assert len(stores) == 3, (
-        f"expected_rows should be initialised once and incremented at exactly "
-        f"the 2 attempt-writing sites (exposure_guard, stage_bet); found "
-        f"{len(stores)} assignments"
+    # PLACER-AUDIT-COUNT-STALE-2026-09-06: this asserted a hardcoded
+    # `len(stores) == 3`, so it went RED the moment REALMONEY-ODDS-BAND-MISMATCH
+    # added a legitimate third write site (the `odds_floor` rejection). A test
+    # that has to be edited every time the code correctly grows is a test that
+    # gets edited to whatever number makes it pass — and it was sitting red on
+    # main, which hides every real failure behind it.
+    #
+    # Assert the actual invariant instead: every `record_attempt` call inside
+    # main() must have a matching `expected_rows` increment, so a new write site
+    # without one still fails, and a new write site WITH one does not.
+    # Two kinds of row-writing site inside main(): a direct `record_attempt`
+    # call, and a `stage_bet` call — stage_bet writes exactly one row on EVERY
+    # exit path, including its own internal rejections. Both must be counted.
+    row_writers = [
+        n.lineno for n in ast.walk(main_fn)
+        if isinstance(n, ast.Call)
+        and getattr(n.func, "attr", "") in ("record_attempt", "stage_bet")
+    ]
+    increments = len(stores) - 1  # one of the stores is the `= 0` initialiser
+    assert increments == len(row_writers), (
+        f"expected_rows is incremented {increments} times but main() writes "
+        f"{len(row_writers)} attempt rows (lines {row_writers}). Every "
+        "recorded attempt must be counted, or the reconciliation warning "
+        "under-counts and stops firing when it should."
     )
+    assert any(
+        isinstance(n, ast.Name) and n.id == "expected_rows"
+        and isinstance(n.ctx, ast.Store) for n in ast.walk(main_fn)
+    ), "expected_rows initialiser is gone"
 
     # Guard the invariant the whole fix rests on: the run-scoped window is only
     # sound because the pass holds an exclusive non-blocking lock throughout.

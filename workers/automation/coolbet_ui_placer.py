@@ -1276,18 +1276,56 @@ def record_attempt(
 
 
 def min_odds_for(bet: dict, threshold: float) -> float | None:
-    """Break-even price for this pick: (1 + threshold) / model probability.
+    """Lowest price at which this pick still clears the bot's edge threshold:
+    `1 / (cal_prob - threshold)`.
 
-    Same formula the /picks page and the shadow-bots admin use. Below this the
-    edge is gone and the bet is negative EV, so it is the authoritative gate —
-    a generic "odds dropped less than X pct" check is not equivalent, because a
-    pick can be under its floor at pick time without having drifted at all.
+    ── MIN-ODDS-WRONG-FORMULA-PLACER-2026-09-06 ────────────────────────────
+    This carried the pre-fix formula `(1 + threshold) / prob`, and its old
+    docstring — "same formula the /picks page and the shadow-bots admin use" —
+    had become false on both counts after PICKS-MIN-ODDS-WRONG-FORMULA fixed
+    those two surfaces on 2026-09-05 and missed this one.
+
+    The old form assumes the standard multiplicative definition
+    `edge = odds x prob - 1`. That premise is false here:
+    `daily_pipeline_v2.py:3474` computes `edge = cal_prob - 1/odds`, a
+    difference in PROBABILITY POINTS (gotcha 42). Solving the real gate
+    `cal_prob - 1/odds >= threshold` for odds gives `1 / (cal_prob - threshold)`.
+
+    Measured against the old formula on 236 recent picks: the old floor was
+    **too permissive on 79 (33%) and too strict on 157 (67%)**, median +5.00%.
+    Wrong in both directions, which is why nobody noticed it from the outputs.
+
+    **NOTE THE TWO DIFFERENT QUANTITIES — they are easy to conflate and the
+    first draft of this fix did exactly that.**
+        break-even  = 1 / cal_prob                 (below this the bet is -EV)
+        gate floor  = 1 / (cal_prob - threshold)   (below this the bot would
+                                                    not have fired at all)
+    The gate floor is always the higher of the two. THIS FUNCTION IS THE GATE
+    FLOOR, because its one caller (`:1521`) uses it to decide whether to place
+    real money — rejecting anything the bot's own edge threshold would reject.
+    Using break-even here would silently LOOSEN the placer to accept picks with
+    positive but sub-threshold edge. `breakEvenOdds()` in
+    odds-intel-web/src/lib/upcoming-picks.ts is the other quantity and is what
+    /picks publishes to readers; the admin index page uses this one.
+
+    Second defect, independent of the formula: it preferred `model_probability`
+    over `calibrated_prob`, the opposite of every fixed surface. The calibrated
+    probability is the one the engine actually bets, and the raw model output is
+    measured overconfident (CALIBRATION-SHRINK: the model claimed 2.7-5.9x the
+    edge it delivered), so the raw number makes the floor too low — green-
+    lighting prices the bot itself would reject, on the path that places money.
     """
-    prob = bet.get("model_probability") or bet.get("calibrated_prob")
+    prob = bet.get("calibrated_prob") or bet.get("model_probability")
     if not prob:
         return None
     prob = float(prob)
-    return (1.0 + threshold) / prob if prob > 0 else None
+    if prob <= 0 or prob > 1:
+        return None
+    if prob <= threshold:
+        # No price clears the threshold; fail closed rather than return a
+        # negative or infinite floor that would compare as "always fine".
+        return None
+    return 1.0 / (prob - threshold)
 
 
 # ── orchestration ─────────────────────────────────────────────────────────────
