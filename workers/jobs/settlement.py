@@ -727,7 +727,7 @@ def fetch_post_match_enrichment() -> dict:
     # rows (0.4%); with coverage_statistics_players=false, 2,790 matches yielded
     # ZERO player rows (0.0%).
     db_finished = execute_query(
-        "SELECT m.id, m.api_football_id, "
+        "SELECT m.id, m.api_football_id, m.home_team_api_id, "
         "       COALESCE(l.coverage_statistics_fixtures, false) AS cov_stats, "
         "       COALESCE(l.coverage_statistics_players, false)  AS cov_players "
         "  FROM matches m LEFT JOIN leagues l ON l.id = m.league_id "
@@ -747,7 +747,19 @@ def fetch_post_match_enrichment() -> dict:
     )
     match_ids_with_stats = {r["match_id"] for r in existing_stats}
 
-    # Batch query: look up home_team_api_id from match_injuries for all matches
+    # MATCH-EVENTS-SILENT-WRITE-FAILURE-2026-09-06: `matches.home_team_api_id`
+    # is the authoritative source and it is 100% populated (6,929 of 6,929
+    # finished matches over 14 days). The old path derived it from
+    # `match_injuries` home rows, which resolve for only **221 of 6,929 (3.2%)**
+    # — so on 96.8% of matches `home_team_api_id` came back None, every event
+    # was written with team='unknown', and `chk_match_events_team` (which allows
+    # only 'home'/'away') rejected the row. Combined with the swallowed
+    # exception in store_match_events_af that produced 16 days of writing
+    # nothing while still paying AF for the calls.
+    #
+    # Verified before switching: on the 1,525 matches where both sources exist
+    # they agree, with ZERO disagreements. The injuries table remains as a
+    # fallback purely for old rows predating the column.
     inj_rows = execute_query(
         "SELECT match_id, team_api_id FROM match_injuries "
         "WHERE match_id = ANY(%s::uuid[]) AND team_side = 'home'",
@@ -756,6 +768,9 @@ def fetch_post_match_enrichment() -> dict:
     home_api_id_by_match: dict[str, int] = {
         r["match_id"]: r["team_api_id"] for r in inj_rows if r.get("team_api_id")
     }
+    for _m in db_finished:
+        if _m.get("home_team_api_id"):
+            home_api_id_by_match[_m["id"]] = _m["home_team_api_id"]
 
     # Filter to matches that need enrichment
     to_enrich = []

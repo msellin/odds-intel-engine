@@ -2606,14 +2606,52 @@ def store_match_events_af(match_id: str, events: list[dict],
     Store match events sourced from API-Football.
     Resolves team side (home/away) from team_api_id.
     Returns count of newly stored events.
+
+    ── MATCH-EVENTS-SILENT-WRITE-FAILURE-2026-09-06 ────────────────────────
+    This function wrote NOTHING for 16 days. `match_events` holds 1.7M rows
+    and the newest is 2026-08-21, while settlement and live_tracker both kept
+    calling it nightly — burning AF quota on `/fixtures/events` and discarding
+    every response.
+
+    Root cause: `idx_match_events_af_dedup` is a PARTIAL unique index —
+        CREATE UNIQUE INDEX ... (match_id, af_event_order)
+          WHERE (af_event_order IS NOT NULL)
+    Postgres only matches a partial unique index to an `ON CONFLICT` clause
+    when the statement REPEATS the predicate. Without it every insert raised
+        InvalidColumnReference: there is no unique or exclusion constraint
+        matching the ON CONFLICT specification
+    ...and the bare `except Exception: pass` below swallowed all of them, so
+    `stored` stayed 0 and the caller logged a perfectly normal "events: 0".
+    Fetch and parse were never broken — verified 2026-09-06, three recent
+    fixtures returned 21, 15 and 4 correctly parsed events.
+
+    Two fixes, and the second matters more than the first:
+      1. the `WHERE af_event_order IS NOT NULL` predicate is now on the
+         ON CONFLICT clause, so the index actually matches;
+      2. the exception handler no longer swallows silently. A write path that
+         cannot fail loudly will eventually fail silently for weeks — that is
+         this repo's single most expensive recurring pattern (the InplayBot
+         UUID bug burned 11 days the same way).
+
+    Note `af_event_order` is the dedup key, so an event with a NULL order can
+    never satisfy the index; those are skipped explicitly rather than being
+    attempted and swallowed.
     """
     stored = 0
+    failures = 0
+    first_error = None
 
     for ev in events:
         # Resolve home/away from team_api_id
         team_side = "unknown"
         if home_team_api_id and ev.get("team_api_id"):
             team_side = "home" if ev["team_api_id"] == home_team_api_id else "away"
+
+        # The dedup index is partial on `af_event_order IS NOT NULL`, so a row
+        # without one cannot be upserted at all. Skip it deliberately instead
+        # of letting it raise into a handler.
+        if ev.get("af_event_order") is None:
+            continue
 
         row = (
             match_id,
@@ -2635,7 +2673,9 @@ def store_match_events_af(match_id: str, events: list[dict],
                            (match_id, minute, added_time, event_type, team,
                             player_name, detail, af_event_order, created_at)
                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                           ON CONFLICT (match_id, af_event_order) DO UPDATE SET
+                           ON CONFLICT (match_id, af_event_order)
+                             WHERE af_event_order IS NOT NULL
+                           DO UPDATE SET
                             minute = EXCLUDED.minute,
                             added_time = EXCLUDED.added_time,
                             event_type = EXCLUDED.event_type,
@@ -2646,8 +2686,18 @@ def store_match_events_af(match_id: str, events: list[dict],
                     )
                     conn.commit()
             stored += 1
-        except Exception:
-            pass
+        except Exception as exc:
+            failures += 1
+            if first_error is None:
+                first_error = exc
+
+    if failures:
+        # Loud on purpose. The silent version of this line cost 16 days.
+        console.print(
+            f"[red]store_match_events_af: {failures}/{len(events)} events failed "
+            f"for match {match_id} — first error: "
+            f"{type(first_error).__name__}: {first_error}[/red]"
+        )
 
     return stored
 

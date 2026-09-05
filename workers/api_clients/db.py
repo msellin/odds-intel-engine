@@ -441,10 +441,24 @@ def store_match_events_batch(match_id: str, events: list[dict],
     now = datetime.now(timezone.utc).isoformat()
 
     rows = []
+    skipped_unresolved = 0
     for ev in events:
-        team_side = "home"  # Default to home (DB CHECK constraint requires home/away)
-        if home_team_api_id and ev.get("team_api_id"):
-            team_side = "home" if ev["team_api_id"] == home_team_api_id else "away"
+        # MATCH-EVENTS-SILENT-WRITE-FAILURE-2026-09-06: defaulting to "home"
+        # satisfies chk_match_events_team but INVENTS a side. Every event of a
+        # match with an unresolved home_team_api_id was being recorded as a home
+        # event — silently wrong data, which is worse than a missing row,
+        # because nothing downstream can tell it apart from a real one.
+        # Skip instead, and report the count.
+        if not (home_team_api_id and ev.get("team_api_id")):
+            skipped_unresolved += 1
+            continue
+        team_side = "home" if ev["team_api_id"] == home_team_api_id else "away"
+
+        if ev.get("af_event_order") is None:
+            # Cannot satisfy the partial dedup index; would insert a duplicate
+            # on every re-poll of a live match.
+            skipped_unresolved += 1
+            continue
 
         rows.append((
             match_id,
@@ -463,10 +477,34 @@ def store_match_events_batch(match_id: str, events: list[dict],
     # match, multiplied by ~30 live matches per LivePoller cycle). If the batch
     # fails (rare — bad row, e.g. NULL on a NOT NULL column), fall back to the
     # per-row loop so a single bad event doesn't poison the whole match.
+    if not rows:
+        if skipped_unresolved:
+            console.print(
+                f"[yellow]store_match_events_batch: skipped all "
+                f"{skipped_unresolved} events for match {match_id} — "
+                f"unresolved home_team_api_id or missing af_event_order[/yellow]"
+            )
+        return 0
+
     columns = ("match_id", "minute", "added_time", "event_type", "team",
                "player_name", "detail", "af_event_order", "created_at")
     cols = ", ".join(columns)
-    bulk_sql = f"INSERT INTO match_events ({cols}) VALUES %s"
+    # MATCH-EVENTS-SILENT-WRITE-FAILURE-2026-09-06: this was a bare INSERT
+    # against a UNIQUE partial index, so every re-poll of a live match raised a
+    # unique violation, failed the whole batch, then failed all N per-row
+    # retries too — returning 0 and logging nothing. Upsert instead. The
+    # `WHERE af_event_order IS NOT NULL` predicate is REQUIRED: Postgres will
+    # not match a partial unique index to ON CONFLICT without it.
+    bulk_sql = (
+        f"INSERT INTO match_events ({cols}) VALUES %s "
+        "ON CONFLICT (match_id, af_event_order) WHERE af_event_order IS NOT NULL "
+        "DO UPDATE SET minute = EXCLUDED.minute, "
+        "              added_time = EXCLUDED.added_time, "
+        "              event_type = EXCLUDED.event_type, "
+        "              team = EXCLUDED.team, "
+        "              player_name = EXCLUDED.player_name, "
+        "              detail = EXCLUDED.detail"
+    )
     with get_conn() as conn:
         with conn.cursor() as cur:
             try:

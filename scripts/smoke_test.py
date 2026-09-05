@@ -30038,5 +30038,77 @@ def _meta_retrain_label():
     )
 
 
+@test("MATCH-EVENTS-WRITE-PATH — both event writers must upsert on the partial index")
+def _match_events_write_path():
+    """MATCH-EVENTS-SILENT-WRITE-FAILURE-2026-09-06.
+
+    `match_events` took no writes for 16 days (1.7M rows, newest 2026-08-21)
+    while settlement kept paying AF for `/fixtures/events` every night. Three
+    defects, each independently sufficient:
+
+      1. `store_match_events_af` used ON CONFLICT without the partial index's
+         `WHERE af_event_order IS NOT NULL` predicate, so Postgres refused to
+         match it and every insert raised InvalidColumnReference.
+      2. `except Exception: pass` swallowed all of them.
+      3. settlement resolved home_team_api_id from `match_injuries` (3.2%
+         coverage) instead of `matches.home_team_api_id` (100%), so team side
+         was 'unknown' and the CHECK constraint rejected the row.
+
+    Asserted behaviourally where possible. The source assertions target the
+    exact SQL clause rather than the file, because a file-wide substring check
+    would pass on the predicate appearing in a comment (gotcha 41).
+    """
+    import os
+    import re
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # 1. Both writers must carry the partial-index predicate on ON CONFLICT.
+    for rel in (("workers", "api_clients", "supabase_client.py"),
+                ("workers", "api_clients", "db.py")):
+        src = open(os.path.join(root, *rel), encoding="utf-8").read()
+        conflicts = re.findall(
+            r"ON CONFLICT \(match_id, af_event_order\)\s*"
+            r"(?:\"?\s*\n?\s*\"?)?\s*WHERE af_event_order IS NOT NULL",
+            src,
+        )
+        assert conflicts, (
+            f"{rel[-1]}: ON CONFLICT (match_id, af_event_order) is missing the "
+            "`WHERE af_event_order IS NOT NULL` predicate. idx_match_events_af_dedup "
+            "is PARTIAL, and Postgres will reject every insert without it."
+        )
+
+    # 2. The silent swallow must not come back.
+    sc = open(os.path.join(root, "workers", "api_clients", "supabase_client.py"),
+              encoding="utf-8").read()
+    fn = sc[sc.index("def store_match_events_af"):]
+    fn = fn[: fn.index("\ndef ", 1)]
+    assert "except Exception:\n            pass" not in fn, (
+        "store_match_events_af swallows exceptions silently again — that is "
+        "what turned a one-line SQL bug into a 16-day outage"
+    )
+
+    # 3. Settlement must read the authoritative home id, not the injuries table.
+    st = open(os.path.join(root, "workers", "jobs", "settlement.py"),
+              encoding="utf-8").read()
+    assert "m.home_team_api_id" in st, (
+        "settlement no longer selects matches.home_team_api_id — it is back to "
+        "deriving home side from match_injuries, which covers 3.2% of matches"
+    )
+
+    # 4. Behavioural guard: the index really is partial. If someone rebuilds it
+    #    as a plain unique index the predicate above becomes a syntax error, so
+    #    this test must fail loudly rather than pin a stale assumption.
+    from workers.api_clients.db import execute_query
+    idx = execute_query(
+        "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_match_events_af_dedup'"
+    )
+    assert idx, "idx_match_events_af_dedup is gone — the upsert target no longer exists"
+    assert "WHERE (af_event_order IS NOT NULL)" in idx[0]["indexdef"], (
+        "idx_match_events_af_dedup is no longer partial. The ON CONFLICT "
+        "predicate in both writers must be removed to match."
+    )
+
+
 if __name__ == "__main__":
     main()
