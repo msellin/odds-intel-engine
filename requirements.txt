@@ -1,8 +1,18 @@
 # OddsIntel Engine - Python Dependencies
 
 # Data manipulation
-pandas>=2.2.0
-numpy>=2.0.0
+# PANDAS-DRIFT-SEGFAULT-2026-09-06: this was `pandas>=2.2.0`, an open upper
+# bound, so the VPS drifted unattended onto the pandas 3.0 line. On 3.0.4 a
+# groupby over a datetime64[us, UTC] column segfaults inside
+# BlockManager.take, which killed job_weekly_meta_validate with exit -11 for
+# SEVEN WEEKS while the cause was misattributed to XGBoost.
+#
+# The validator no longer builds such frames, so this ceiling is belt-and-
+# braces rather than the fix — but an unbounded major-version range on a C
+# extension is how a working box silently becomes a broken one. Raise the
+# ceiling deliberately, after testing, not by redeploying.
+pandas>=2.2.0,<3.1.0
+numpy>=2.0.0,<3.0.0
 
 # HTTP & scraping
 requests>=2.32.0

@@ -30395,5 +30395,67 @@ def _epicbet_sidebets_corners():
     )
 
 
+@test("META-VALIDATE-REENABLED — the validator must be scheduled and judge real CLV")
+def _meta_validate_reenabled():
+    """META-VALIDATE-DISABLED-2026-08-31, fixed and re-enabled 2026-09-06.
+
+    Seven weeks with no meta validation because `exit -11` was blamed on
+    XGBoost. It was pandas: a groupby over a datetime64[us, UTC] column
+    segfaulting in BlockManager.take, AFTER scoring — the misdiagnosis came
+    from reading the last flushed log line, which is printed before the scorer
+    runs.
+
+    Three things must hold together, and the third is the one that matters:
+    the job is registered, it cannot build object-dtype frames again, and it
+    judges the CLV we actually bet rather than the pseudo proxy. A validator
+    that certifies bundles against the inverted label is worse than none —
+    the fixed one immediately graded 10 of 12 bundles INVERTED.
+    """
+    import ast
+    import os
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # 1. Registered, not commented out. Parsed, so a commented line cannot pass.
+    tree = ast.parse(open(os.path.join(root, "workers", "scheduler.py"),
+                          encoding="utf-8").read())
+    registered = any(
+        isinstance(n, ast.Call)
+        and getattr(n.func, "attr", "") == "add_job"
+        and any(getattr(a, "id", "") == "job_weekly_meta_validate" for a in n.args)
+        for n in ast.walk(tree)
+    )
+    assert registered, (
+        "job_weekly_meta_validate is not registered with the scheduler — meta "
+        "validation is off again"
+    )
+
+    # 2. The segfault shape must stay impossible: columns cast in SQL.
+    v = open(os.path.join(root, "scripts", "validate_meta_b_ml3.py"),
+             encoding="utf-8").read()
+    assert "pick_time::text" in v, (
+        "validate_meta_b_ml3.py no longer casts pick_time in SQL — a raw "
+        "psycopg2 datetime frame is what segfaulted pandas for seven weeks"
+    )
+
+    # 3. It must judge the real de-vigged CLV, and be able to say INVERTED.
+    assert "clv_pinnacle_devig" in v, (
+        "the validator no longer judges clv_pinnacle_devig — if it is back on "
+        "mfv.pseudo_clv it certifies bundles against a target that inverts the "
+        "quantity being gated on"
+    )
+    assert "INVERTED" in v, (
+        "the INVERTED verdict is gone; an anti-correlated bundle would now be "
+        "reported as merely failing"
+    )
+
+    # 4. The dependency ceiling that let the box drift there must stay.
+    req = open(os.path.join(root, "requirements.txt"), encoding="utf-8").read()
+    assert "pandas>=2.2.0,<3.1.0" in req, (
+        "the pandas upper bound is gone — an open major-version range on a C "
+        "extension is how a working box silently becomes a broken one"
+    )
+
+
 if __name__ == "__main__":
     main()

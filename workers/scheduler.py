@@ -2415,13 +2415,29 @@ def main():
     # META-VALIDATE-WEEKLY (2026-06-01) — runs Sunday 05:00 UTC after
     # weekly_meta_retrain finishes, scores all bundles on real settled bets
     # and emails the verdict. Replaces the 2026-06-10 manual checkpoint.
-    # DISABLED 2026-07-18 (SCHEDULER-META-VALIDATE-SEGFAULT): job has been
-    # failing with `exit -11` (SIGSEGV) for at least 2 weeks — suspected
-    # XGBoost lib / bundle mismatch. Quarantined during 2026-07-18 → -08-01
-    # vacation window so it doesn't spam alerts. Re-enable + fix on return.
-    # scheduler.add_job(job_weekly_meta_validate, CronTrigger(day_of_week="sun", hour=5, minute=0),
-    #                   id="weekly_meta_validate", name="Weekly META Validate Sunday 05:00",
-    #                   max_instances=1, misfire_grace_time=1800)
+    # RE-ENABLED 2026-09-06 (META-VALIDATE-DISABLED-2026-08-31). It was
+    # quarantined 2026-07-18 with `exit -11` blamed on an "XGBoost lib / bundle
+    # mismatch". That diagnosis was wrong and cost seven weeks of no validation.
+    #
+    # The real cause, from a faulthandler stack on the live VPS crash, was
+    # pandas: BlockManager.take -> reindex_indexer, reached from a groupby on a
+    # datetime64[us, UTC] column in the QUINTILE loop — i.e. after scoring, not
+    # during it. Every previous attempt read the last flushed log line
+    # ("scoring with <bundle>..."), which is printed BEFORE the scorer runs, and
+    # concluded the scorer was at fault. It reproduces with sklearn and xgboost
+    # never imported. All 12 bundles load and predict cleanly.
+    #
+    # The validator no longer builds object-dtype frames (every column is cast
+    # in SQL), judges real `clv_pinnacle_devig` on pre-match bets only, and
+    # grades each bundle strictly out-of-sample against its own training cutoff.
+    # Verified RC=0 on the VPS across all 12 bundles.
+    #
+    # It runs an hour after weekly_meta_retrain, so a freshly written bundle
+    # correctly reports INSUFFICIENT-OOS on its own birthday and becomes
+    # gradeable a week later. That is intended, not a bug to fix.
+    scheduler.add_job(job_weekly_meta_validate, CronTrigger(day_of_week="sun", hour=5, minute=0),
+                      id="weekly_meta_validate", name="Weekly META Validate Sunday 05:00",
+                      max_instances=1, misfire_grace_time=1800)
 
     # THRESHOLD-CHECK-WEEKLY (2026-06-06) — Sunday 06:00 UTC, after the
     # retrain/meta_retrain/meta_validate chain finishes. Runs threshold_check.py
