@@ -1089,7 +1089,40 @@ ACCESSIBLE_BOOKMAKERS: frozenset = frozenset({
     "Coolbet",        # placement venue
     "Betano",         # EMTA-licensed, 95.1% coverage of fixtures we bet
     "Unibet",         # EMTA-licensed (.ee), via API-Football
-    "Unibet-Kambi",   # same book, direct feed — provably pre-match
+    # KAMBI-FEED-DIVERGENCE-2026-09-06 — "Unibet-Kambi" REMOVED from the
+    # placeable set. unibet.ee has moved off the Kambi offering API this feed
+    # reads: its event pages render against Kindred's own sportsbff-ams host,
+    # make zero requests to kambicdn.com, and the Kambi event id appears
+    # nowhere in the page. The comment this replaces — "same book, direct feed"
+    # — is no longer true.
+    #
+    # Measured on 31 fixtures / 155 markets / 341 selections: on 130/341 (38%)
+    # our stored price is HIGHER than the site offers, median +3.3%, p90
+    # +10.3%, max +23.5%, and identically 38% at both <6h and >15h to kickoff,
+    # so it is feed divergence rather than staleness. That is the Bet365
+    # failure mode — edge computed on a price nobody can take — and the
+    # operator stakes real money manually on these signals.
+    #
+    # A haircut was considered and REJECTED as not well defined: the error is
+    # centred on zero (mean +0.02%, median -0.69%) with sd 4.63%, and the best
+    # in-sample market x price-level correction leaves residual sd 3.76% —
+    # larger than the 3.15% median benefit the whole book provides. A flat
+    # -3.3% haircut would still overstate on 18% of selections (max +19.5%)
+    # while destroying the price on the other 82%.
+    #
+    # Cost of removal, measured on post-fix rows only: Kambi is strictly best
+    # on 1,135 of 4,972 co-priced selections (22.8%), and dropping it moves the
+    # mean best price by -1.20%. ZERO clean picks are lost — the feed was added
+    # 2026-09-04, every one of its 19 pipeline picks was raised before the
+    # criterion fix on 09-05, and it has produced no pipeline picks since. It
+    # is also a below-average book most of the time (median 1x2 overround
+    # 11.72% vs Coolbet 7.92% / Epicbet 7.96% / Betano 8.65%); its value was
+    # entirely in a +33-61% p99 tail, which is exactly where a divergent feed
+    # is least trustworthy and exactly what line shopping selects for.
+    #
+    # KEEP INGESTING IT. workers/automation/unibet_kambi.py is untouched: the
+    # data is what makes the KSP-feed fix measurable. This constant governs
+    # what we will BET, not what we will store.
     "Epicbet",        # EMTA-licensed, thin coverage but genuinely reachable
 })
 
@@ -2100,7 +2133,24 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
         if market not in _OUTLIER_MULT:
             continue
         bookmaker = row.get("bookmaker") or "unknown"
-        if bookmaker not in ACCESSIBLE_BOOKMAKERS:
+        # OUTLIER-ANCHOR-PINNACLE-DEAD-2026-09-06: this filtered on
+        # ACCESSIBLE_BOOKMAKERS, and PINNACLE-NOT-ACCESSIBLE-2026-09-04 removed
+        # Pinnacle from that set. So the `pin = next(... == "Pinnacle")` lookup
+        # below became UNREACHABLE — Pinnacle was filtered out before it could
+        # ever be found, and every anchor silently fell back to the median of
+        # >= 3 accessible books.
+        #
+        # This is the guard whose entire purpose is to catch a single book
+        # quoting a price the sharp line does not support, so losing the sharp
+        # anchor gutted it. Measured over 3 days of 1x2/BTTS/DC: 2,052
+        # selections (16.1%) have fewer than 3 accessible books but DO have a
+        # Pinnacle price, and were being rejected for want of an anchor that
+        # was sitting right there.
+        #
+        # The anchor set is a REFERENCE set, not a placeable set — we do not
+        # need to be able to bet Pinnacle for its price to tell us what a
+        # selection is worth. PRICE_REFERENCE_BOOKMAKERS is exactly that.
+        if bookmaker not in PRICE_REFERENCE_BOOKMAKERS:
             continue
         try:
             odds_val = float(row["odds"])

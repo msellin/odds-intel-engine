@@ -29953,14 +29953,80 @@ def _kambi_feed_divergence():
     )
     assert "DO NOT TREAT THIS PRICE AS PLACEABLE" in src
 
-    # Guard: the warning is only worth pinning while the book is still in the
-    # accessible set. If it gets dropped, this test should be revisited, not
-    # left asserting a comment about a book we no longer price.
+    # DECIDED 2026-09-06: the book is DROPPED from the placeable set. This
+    # assertion was inverted from `in` to `not in` when that shipped — the
+    # earlier version's own docstring called for exactly that revisit.
+    #
+    # Cost of removal was measured, not assumed: strictly best on 22.8% of
+    # co-priced selections, -1.20% mean best price, and ZERO clean picks lost
+    # (all 19 of its pipeline picks predate the criterion fix). A haircut was
+    # rejected because the error is zero-centred with sd 4.63%, larger than the
+    # 3.15% median benefit the book provides.
     from workers.jobs.daily_pipeline_v2 import ACCESSIBLE_BOOKMAKERS
-    assert "Unibet-Kambi" in ACCESSIBLE_BOOKMAKERS, (
-        "Unibet-Kambi left ACCESSIBLE_BOOKMAKERS — revisit KAMBI-FEED-DIVERGENCE; "
-        "the source warning may no longer be the right control"
+    assert "Unibet-Kambi" not in ACCESSIBLE_BOOKMAKERS, (
+        "Unibet-Kambi is back in ACCESSIBLE_BOOKMAKERS. Its stored price is "
+        "higher than unibet.ee offers on 38% of selections (median +3.3%, max "
+        "+23.5%), so treating it as placeable manufactures edge that cannot be "
+        "taken — and the operator stakes real money on these signals."
     )
+    # ...but it must still be INGESTED. The divergence work needs the data, and
+    # the two concerns were conflated once already.
+    assert _BOOKMAKER_CONST_PRESENT(), (
+        "unibet_kambi.py no longer writes the Unibet-Kambi bookmaker — "
+        "ingestion was supposed to continue after the placeability drop"
+    )
+
+
+def _BOOKMAKER_CONST_PRESENT() -> bool:
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = open(os.path.join(root, "workers", "automation", "unibet_kambi.py"),
+               encoding="utf-8").read()
+    return '_BOOKMAKER = "Unibet-Kambi"' in src
+
+
+@test("OUTLIER-ANCHOR-PINNACLE — the outlier guard must anchor on the sharp price")
+def _outlier_anchor_pinnacle():
+    """OUTLIER-ANCHOR-PINNACLE-DEAD-2026-09-06.
+
+    The outlier guard built its offer set by filtering on ACCESSIBLE_BOOKMAKERS,
+    and PINNACLE-NOT-ACCESSIBLE-2026-09-04 removed Pinnacle from that set. The
+    `next(... == "Pinnacle")` anchor lookup therefore became unreachable: the
+    sharp price was filtered out before it could be found, and every anchor
+    silently fell back to a median of accessible books. On 3 days of
+    1x2/BTTS/DC, 2,052 selections (16.1%) had a Pinnacle price but fewer than
+    3 accessible books, and were rejected for want of an anchor that existed.
+
+    The anchor set is a REFERENCE set, not a placeable one — reading Pinnacle's
+    price does not require being able to bet there.
+    """
+    import ast
+    import os
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = open(os.path.join(root, "workers", "jobs", "daily_pipeline_v2.py"),
+               encoding="utf-8").read()
+
+    # Find the guard's own filter, not any other use of the constant.
+    anchor_block = src[src.index("outlier_offers[mid][key].append") - 2000:
+                       src.index("outlier_offers[mid][key].append")]
+    assert "PRICE_REFERENCE_BOOKMAKERS" in anchor_block, (
+        "the outlier guard filters its offer set on something other than "
+        "PRICE_REFERENCE_BOOKMAKERS — if that is ACCESSIBLE_BOOKMAKERS again, "
+        "the Pinnacle anchor below it is unreachable and the guard is inert"
+    )
+
+    # Behavioural: the two sets must actually differ by the sharp book, or the
+    # fix is cosmetic and this test proves nothing.
+    from workers.jobs.daily_pipeline_v2 import (
+        ACCESSIBLE_BOOKMAKERS, PRICE_REFERENCE_BOOKMAKERS,
+    )
+    assert "Pinnacle" in PRICE_REFERENCE_BOOKMAKERS
+    assert "Pinnacle" not in ACCESSIBLE_BOOKMAKERS, (
+        "Pinnacle is back in ACCESSIBLE_BOOKMAKERS — it is not placeable from "
+        "Estonia; see PINNACLE-NOT-ACCESSIBLE-2026-09-04"
+    )
+    assert PRICE_REFERENCE_BOOKMAKERS - ACCESSIBLE_BOOKMAKERS == {"Pinnacle"}
 
 
 @test("ODDS-PRUNE-CURSOR-BUG — the nightly prune must not be frozen on one page")
@@ -30181,6 +30247,64 @@ def _af_429_body_form():
         "rate header low-water mark is not being recorded — the whole point is "
         "to learn the real per-minute ceiling from a matchday of real responses"
     )
+
+
+@test("LEDGER-EXEC-PRICE-BASIS — the signed public ledger must publish executable prices")
+def _ledger_exec_price_basis():
+    """LEDGER-EXEC-PRICE-BASIS-2026-09-06.
+
+    `export_track_record_snapshot.py` was the FIFTH copy of the executable-price
+    rule and the one missed on 2026-09-05 when the same rule was fixed four
+    times in one day. It published `odds_at_pick` — the STALE-BEST-ODDS
+    high-water mark (gotcha 30) — giving +18.54% against an executable +14.23%,
+    a 4.31pp overstatement, in the GPG-signed artefact a skeptic clones to
+    check us. Signing a number does not make it true, it makes it durable.
+
+    Behavioural: runs the real query and compares the two bases on real rows,
+    rather than asserting that a column name appears in the file.
+    """
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from scripts.export_track_record_snapshot import pull_calibrated_ledger
+
+    rows = pull_calibrated_ledger("2026-05-04")
+    assert len(rows) > 100, f"ledger cohort collapsed to {len(rows)} rows"
+
+    # Every row must expose both inputs, so the executable price is
+    # reproducible from the published file instead of taken on trust.
+    for key in ("placed_odds", "odds_at_pick", "odds_at_pick_live",
+                "price_basis", "pnl", "pnl_stored"):
+        assert key in rows[0], f"ledger row lost the `{key}` field"
+
+    # placed_odds must BE the executable rule, on every row.
+    for r in rows:
+        live = r["odds_at_pick_live"]
+        expected = live if (live or 0) > 1 else r["odds_at_pick"]
+        assert abs((r["placed_odds"] or 0) - (expected or 0)) < 1e-6, (
+            f"placed_odds {r['placed_odds']} is not the executable price "
+            f"({expected}) on row {r['id']} — the ledger is back on the "
+            "stale high-water mark"
+        )
+
+    # The live re-quote has to actually be doing something, or this test is
+    # pinning an inert rule that would pass on pick-time prices alone.
+    n_live = sum(1 for r in rows if r["price_basis"] == "live_requote")
+    assert n_live > len(rows) * 0.5, (
+        f"only {n_live}/{len(rows)} rows have a live re-quote — the executable "
+        "basis is no longer meaningfully different from the pick-time one, so "
+        "this test can no longer detect the regression it exists for"
+    )
+
+    # Cohort must match the other public surfaces: no in-play, no retired bots.
+    src = open(root / "scripts" / "export_track_record_snapshot.py",
+               encoding="utf-8").read()
+    q = src[src.index("FROM simulated_bets sb"):src.index("ORDER BY sb.created_at")]
+    assert "retired_at IS NULL" in q, "retired bots leak back into the public ledger"
+    assert "inplay" in q, "in-play bots leak back into the public ledger"
 
 
 if __name__ == "__main__":

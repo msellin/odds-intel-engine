@@ -57,6 +57,41 @@ def _num(v, digits: int | None = None) -> float | None:
 
 
 def pull_calibrated_ledger(since: str) -> list[dict]:
+    """Pull the public ledger cohort at EXECUTABLE prices.
+
+    ── LEDGER-EXEC-PRICE-BASIS-2026-09-06 ──────────────────────────────────
+    This was the FIFTH copy of the executable-price rule and the one nobody
+    found on 2026-09-05, when the same rule was fixed four times in one day
+    (admin index, admin detail, /api/v1/track-record, /performance).
+
+    It published `placed_odds = sb.odds_at_pick` and `pnl = sb.pnl`, both
+    derived from the STALE-BEST-ODDS high-water mark (gotcha 30 — the odds
+    tables are append-only, so a MAX is not a price anyone could have taken).
+
+    Measured on this script's own cohort (n=553, calibrated, settled,
+    since 2026-05-04):
+
+        published here (flat EUR 10 on odds_at_pick)   +18.54%
+        its stored Kelly pnl/stake                     +17.72%
+        executable (odds_at_pick_live)                 +14.23%
+
+    So the artefact the docstring calls "the GitHub-signed-commits leg of the
+    verification stack" — the one a skeptic clones to check us — overstated
+    ROI by 4.31 percentage points. That is the worst possible place for this
+    bug, because signing a number does not make it true; it just makes it
+    durable.
+
+    Two other cohort defects, both of which made this ledger disagree with
+    every other public surface:
+      * no `inplay_%` exclusion — in-play bots are not part of the published
+        pre-match record anywhere else;
+      * no `retired_at IS NULL` — retired bots leak in, which is exactly the
+        selection bias RETIRED-BOT-LEAK-FIX exists to prevent.
+
+    The raw stored values are still emitted alongside, under explicit names,
+    so the ledger stays auditable rather than merely restated: a reader can
+    reproduce both numbers and see which basis produced which.
+    """
     rows = execute_query(
         """
         SELECT
@@ -64,10 +99,32 @@ def pull_calibrated_ledger(since: str) -> list[dict]:
           sb.match_id::text AS match_id,
           sb.created_at AS placed_at_utc,
           sb.market, sb.selection,
-          sb.odds_at_pick::float       AS placed_odds,
+          -- Executable price: the live re-quote when we have one, else the
+          -- pick-time price. Mirrors execOdds() in odds-intel-web/src/lib/
+          -- engine-data.ts exactly; see LEDGER-EXEC-PRICE-BASIS above.
+          CASE WHEN sb.odds_at_pick_live IS NOT NULL AND sb.odds_at_pick_live > 1
+               THEN sb.odds_at_pick_live::float
+               ELSE sb.odds_at_pick::float
+          END                          AS placed_odds,
+          sb.odds_at_pick::float       AS odds_at_pick_raw,
+          sb.odds_at_pick_live::float  AS odds_at_pick_live,
           sb.recommended_bookmaker     AS bookmaker,
           sb.stake::float              AS stake,
-          sb.pnl::float                AS pnl,
+          -- P&L repriced at the executable odds, mirroring execPnl(). Combos
+          -- keep their stored pnl: odds_at_pick_live describes ONE selection,
+          -- so repricing a multi-leg bet off a single leg would be worse than
+          -- the bug being fixed.
+          CASE
+            WHEN sb.combo_legs IS NOT NULL THEN sb.pnl::float
+            WHEN sb.stake IS NULL OR sb.stake <= 0 THEN sb.pnl::float
+            WHEN sb.result = 'won' THEN
+              (CASE WHEN sb.odds_at_pick_live IS NOT NULL AND sb.odds_at_pick_live > 1
+                    THEN sb.odds_at_pick_live::float
+                    ELSE sb.odds_at_pick::float END - 1) * sb.stake::float
+            WHEN sb.result = 'lost' THEN -sb.stake::float
+            ELSE sb.pnl::float
+          END                          AS pnl,
+          sb.pnl::float                AS pnl_stored,
           sb.result                    AS result,
           sb.closing_odds::float       AS closing_odds,
           sb.clv::float                AS clv_any,
@@ -82,6 +139,8 @@ def pull_calibrated_ledger(since: str) -> list[dict]:
         JOIN matches m   ON m.id = sb.match_id
         LEFT JOIN leagues l ON l.id = m.league_id
         WHERE b.maturity_label = 'calibrated'
+          AND b.retired_at IS NULL
+          AND b.name NOT LIKE 'inplay\\_%%'
           AND sb.market IN ('1x2','o/u','over_under_25','btts')
           AND sb.result IN ('won','lost')
           AND sb.created_at >= %s::date
@@ -103,6 +162,15 @@ def pull_calibrated_ledger(since: str) -> list[dict]:
             "market": r["market"],
             "selection": r["selection"],
             "placed_odds": _num(r["placed_odds"], 4),
+            # LEDGER-EXEC-PRICE-BASIS: both inputs are published so the
+            # executable price is reproducible from the ledger itself rather
+            # than taken on trust. `placed_odds` == odds_at_pick_live when
+            # present and > 1, else odds_at_pick.
+            "price_basis": ("live_requote"
+                            if (r["odds_at_pick_live"] or 0) > 1
+                            else "pick_time"),
+            "odds_at_pick": _num(r["odds_at_pick_raw"], 4),
+            "odds_at_pick_live": _num(r["odds_at_pick_live"], 4),
             "bookmaker": r["bookmaker"],
             "placed_at_utc": _to_iso(r["placed_at_utc"]),
             "closing_odds": _num(r["closing_odds"], 4),
@@ -112,6 +180,7 @@ def pull_calibrated_ledger(since: str) -> list[dict]:
                 if r["clv_pin"] is not None else None,
             "stake": _num(r["stake"], 4),
             "pnl": _num(r["pnl"], 4),
+            "pnl_stored": _num(r["pnl_stored"], 4),
             "result": r["result"],
             "score": score,
             "bot": r["bot"],
