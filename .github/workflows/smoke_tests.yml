@@ -36,6 +36,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # CI-SMOKE-CROSS-REPO-BLIND-2026-09-06 — the second way this gate died.
+      #
+      # Five tests read the FRONTEND source through `../../odds-intel-web/...`
+      # (EXEC-ODDS-SINGLE-SOURCE, LANDING-PERF-ROI-BASIS,
+      # LANDING-PERF-COHORT-SHARED, PICKS-MIN-ODDS-WRONG-FORMULA,
+      # SHADOW-PAGE-ROI-INFLATED). That repo was never checked out here, so all
+      # five failed with FileNotFoundError on every run.
+      #
+      # Worse than merely failing: EXEC-ODDS-SINGLE-SOURCE asserts the
+      # executable-price rule "is implemented exactly once" and reported
+      # "implemented 0 times" — a test written specifically to stop the
+      # four-surfaces-one-number bug, reduced to noise. Those tests exist
+      # because the same rule was fixed four times in one day on 2026-09-05,
+      # and they could not have caught a fifth. A fifth is exactly what turned
+      # up on 2026-09-06 in the signed public ledger.
+      #
+      # The sibling layout is what the tests assume, so reproduce it: check the
+      # web repo out inside the workspace, then symlink it to the sibling path.
+      # `path:` cannot escape the workspace, hence the symlink rather than
+      # `path: ../odds-intel-web`.
+      - name: Check out odds-intel-web (frontend, for cross-repo assertions)
+        uses: actions/checkout@v4
+        with:
+          repository: msellin/odds-intel-web
+          path: _web
+      - name: Place it at the sibling path the tests expect
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE/_web" "$(dirname "$GITHUB_WORKSPACE")/odds-intel-web"
+          test -f "$(dirname "$GITHUB_WORKSPACE")/odds-intel-web/src/lib/engine-data.ts" \
+            || { echo "::error::frontend checkout is not where the tests look"; exit 1; }
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

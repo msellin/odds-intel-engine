@@ -1450,9 +1450,21 @@ def _():
         }]
     }]
     rows = parse_fixture_odds(raw)
-    bad = [r for r in rows if r["market"].startswith("over_under_")]
+    # OU-PREFIX-COLLISION-2026-09-06: this used `startswith("over_under_")` to
+    # mean "a full-time goals bucket". That stopped being true when
+    # AF-PINNACLE-EXTRA-MARKETS started capturing first-half goals into
+    # `over_under_1h_*` ON PURPOSE — the prefix now matches a legitimate,
+    # separately-namespaced market, so the test failed on correct behaviour.
+    #
+    # The bug it guards is still real and must stay guarded: a half-time or
+    # team-total line written into a FULL-TIME bucket prices a different bet
+    # entirely. So match the full-time buckets exactly instead of by prefix.
+    import re as _re_ou
+    _FT_OU = _re_ou.compile(r"^over_under_\d+$")
+    bad = [r for r in rows if _FT_OU.match(r["market"])]
     assert len(bad) == 0, (
-        f"OU-PARSE-BUG: non-FT OU markets leaked into over_under_* buckets: {bad}"
+        f"OU-PARSE-BUG: non-FT OU markets leaked into full-time over_under_NN "
+        f"buckets: {bad}"
     )
 
 
@@ -1481,9 +1493,17 @@ def _():
                        {"value": "Under 2.5", "odd": "1.95"}],
         }]}]}]
 
+    # OU-PREFIX-COLLISION-2026-09-06: "full-time OU bucket" is `over_under_NN`
+    # exactly. `startswith("over_under")` also matches `over_under_1h_25`, which
+    # AF-PINNACLE-EXTRA-MARKETS now writes deliberately, so the prefix form made
+    # this test fail on correct behaviour while still claiming substring
+    # matching was back.
+    import re as _re_ou
+    _FT_OU_RE = _re_ou.compile(r"^over_under_\d+$")
+
     def _ou_rows(bet_name):
         return [r for r in parse_fixture_odds(_raw(bet_name))
-                if str(r.get("market", "")).startswith("over_under")]
+                if _FT_OU_RE.match(str(r.get("market", "")))]
 
     # The real full-time market still parses.
     ft = _ou_rows("Goals Over/Under")
@@ -24298,8 +24318,24 @@ def test_shadow_clv_bookmaker_2026_08_26():
 
     src = pathlib.Path("workers/jobs/settlement.py").read_text()
     # Ties on timestamp made the old query non-deterministic across runs.
-    assert "ORDER BY timestamp DESC, bookmaker LIMIT 1" in src, \
-        "closing-odds lookup must have a deterministic tie-break"
+    #
+    # SHADOW-CLV-TIEBREAK-ALIAS-2026-09-06: this matched the literal
+    # "ORDER BY timestamp DESC, bookmaker LIMIT 1" and went red when
+    # AF-ISLIVE-CALLSITE-FIXES added a `matches` join and qualified every column
+    # with an `os.` alias. The tie-break was never removed — only renamed — so
+    # the test was reporting a regression that had not happened, which is the
+    # most expensive kind of red test because it trains people to ignore it.
+    # Matched alias-agnostically now.
+    import re as _re_tb
+    tiebreaks = _re_tb.findall(
+        r"ORDER BY\s+(?:\w+\.)?timestamp DESC,\s*(?:\w+\.)?bookmaker\s+LIMIT 1", src
+    )
+    assert tiebreaks, (
+        "closing-odds lookup must have a deterministic tie-break "
+        "(ORDER BY timestamp DESC, bookmaker LIMIT 1) — ties on timestamp made "
+        "the result vary between runs, since books are written in one batch and "
+        "share a timestamp"
+    )
     assert "clv_pinnacle = %s" in src and "closing_bookmaker = %s" in src, \
         "shadow settlement must persist clv_pinnacle and closing_bookmaker"
     assert "sb.recommended_bookmaker" in src, \
@@ -28530,17 +28566,42 @@ def _unibet_kambi():
         "must not write under 'Unibet' — that is the API-Football feed, and "
         "keeping them separate is what allows the AF-vs-direct comparison")
 
+    # KAMBI-FIXTURE-NO-CRITERION-STALE-2026-09-06: these offers used to carry
+    # no `criterion` at all, because when this test was written `outcome.type`
+    # alone decided the market. KAMBI-CRITERION-CONTAMINATION changed that —
+    # every branch now gates on `criterion.englishLabel` and FAILS CLOSED,
+    # because `OT_OVER` is emitted for goals, corners, cards and team totals
+    # alike, and trusting it served corner prices as `over_under_25`.
+    #
+    # So a criterion-less offer correctly produces nothing now, and this
+    # fixture was asserting the old, unsafe behaviour. Labels added rather than
+    # the gate loosened: the fail-closed default is the fix, not a side effect.
     rows = parse_betoffers([
-        {"outcomes": [{"type": "OT_ONE", "odds": 5750},
+        {"criterion": {"englishLabel": "Full Time"},
+         "betOfferType": {"englishName": "Match"},
+         "outcomes": [{"type": "OT_ONE", "odds": 5750},
                       {"type": "OT_CROSS", "odds": 1170},
                       {"type": "OT_TWO", "odds": 12000}]},
-        {"outcomes": [{"type": "OT_OVER", "odds": 3950, "line": 2500},
+        {"criterion": {"englishLabel": "Total Goals"},
+         "betOfferType": {"englishName": "Over/Under"},
+         "outcomes": [{"type": "OT_OVER", "odds": 3950, "line": 2500},
                       {"type": "OT_UNDER", "odds": 1180, "line": 2500}]},
         # Asian quarter line — must be skipped, not rounded into a line we do
         # not hold. `over_under_225` is not in the shared vocabulary.
-        {"outcomes": [{"type": "OT_OVER", "odds": 1900, "line": 2250},
+        {"criterion": {"englishLabel": "Total Goals"},
+         "betOfferType": {"englishName": "Over/Under"},
+         "outcomes": [{"type": "OT_OVER", "odds": 1900, "line": 2250},
                       {"type": "OT_UNDER", "odds": 1900, "line": 2250}]},
+        # And the fail-closed default itself is now part of what this test
+        # pins: no criterion => no rows, however familiar the outcome types.
+        {"outcomes": [{"type": "OT_ONE", "odds": 4000},
+                      {"type": "OT_CROSS", "odds": 4000},
+                      {"type": "OT_TWO", "odds": 4000}]},
     ])
+    assert 4.0 not in {o for _, _, o, _ in rows}, (
+        "a criterion-less offer produced rows — the parser must fail closed, "
+        "since OT_OVER/OT_ONE are emitted for corners and half-time too"
+    )
     by = {(m, sel): o for m, sel, o, _ in rows}
     assert by.get(("1x2", "home")) == 5.75, f"1x2 home mis-parsed: {rows}"
     assert by.get(("over_under_25", "over")) == 3.95, f"O/U mis-parsed: {rows}"
@@ -28707,13 +28768,36 @@ def test_shadow_detail_page_uses_exec_odds():
         raise AssertionError(f"shadow-bots detail page not found at {detail}")
     src = open(detail, encoding="utf-8").read()
 
-    # 1. The helper must exist and prefer the live price.
+    # 1. The page must price at the executable odds.
+    #
+    # EXEC-ODDS-DELEGATION-2026-09-06: this used to assert the page contained
+    # its own inline `return Number(b.odds_at_pick ?? 0)` fallback. That is the
+    # DUPLICATION the sibling test EXEC-ODDS-SINGLE-SOURCE exists to forbid, so
+    # the two tests were pulling in opposite directions — and this one went red
+    # the moment the rule was correctly consolidated into engine-data.ts.
+    #
+    # Assert delegation instead, and check the fallback where it now lives.
     assert "function execOdds(" in src, "detail page must define execOdds()"
     helper = src[src.index("function execOdds("):]
     helper = helper[:helper.index("\n}")]
-    assert "odds_at_pick_live" in helper, "execOdds must consider odds_at_pick_live"
-    assert "return Number(b.odds_at_pick ?? 0)" in helper, (
-        "execOdds must still fall back to odds_at_pick rather than dropping the row"
+    assert "sharedExecOdds" in helper, (
+        "the detail page must delegate to execOdds() in lib/engine-data.ts "
+        "rather than re-implementing the rule — re-implementing it is how four "
+        "surfaces ended up on different price bases, and then a fifth"
+    )
+    shared = open(
+        os.path.join(os.path.dirname(__file__), "..", "..", "odds-intel-web",
+                     "src", "lib", "engine-data.ts"),
+        encoding="utf-8",
+    ).read()
+    shared_fn = shared[shared.index("export function execOdds("):]
+    shared_fn = shared_fn[:shared_fn.index("\n}")]
+    assert "odds_at_pick" in shared_fn.lower() or "oddsAtPick" in shared_fn, (
+        "the shared execOdds no longer references the pick-time price"
+    )
+    assert "return Number(oddsAtPick ?? 0)" in shared_fn, (
+        "shared execOdds must still fall back to the pick-time price rather "
+        "than dropping the row — dropping rows silently changes the cohort"
     )
 
     # 2. The P&L that feeds ROI must go through it, not read odds_at_pick raw.
@@ -29258,14 +29342,47 @@ def test_kambi_parser_criterion_gated():
     assert got.get(("over_under_25", "over")) == 1.90, f"match total lost or wrong: {got}"
     assert got.get(("btts", "yes")) == 1.80, f"btts lost or wrong: {got}"
 
-    # 3. No contaminant price appears anywhere in the output.
+    # 3. No contaminant price appears in a GOALS market.
+    #
+    # KAMBI-CONTAMINANT-LIST-STALE-2026-09-06: this used to assert the price
+    # appeared nowhere in the output at all, and went red when NEW-MARKETS-
+    # LINESHOP started deliberately capturing corners and team totals. "Total
+    # Corners" at 1.85 is no longer a contaminant — it is a market we now
+    # collect on purpose, into `corners_ou_25`.
+    #
+    # The invariant was never "these prices must not exist". It was "these
+    # prices must not land in the GOALS namespaces", because the production
+    # symptom was a corners price being served as `over_under_25` and making
+    # Unibet-Kambi the top recommended bookmaker at prices that did not exist
+    # for that market. So assert that, and let a correctly-namespaced corners
+    # row through.
+    _GOALS_NS = {"1x2", "btts"}
+    goals_prices = {
+        o for m, _, o, _ in rows
+        if m in _GOALS_NS or m.startswith("over_under_")
+    }
     for bad in (5.00, 4.20, 1.40, 2.60, 4.50, 12.0, 6.50, 1.30, 7.00, 1.85, 3.90, 1.22, 2.05):
-        assert bad not in {o for _, _, o, _ in rows}, (
-            f"contaminant price {bad} survived the criterion whitelist"
+        assert bad not in goals_prices, (
+            f"contaminant price {bad} landed in a goals/1x2/btts market"
         )
 
-    # 4. Exactly the three legitimate offers produced rows (3 + 2 + 2 = 7).
-    assert len(rows) == 7, f"expected 7 rows from 3 legitimate offers, got {len(rows)}: {rows}"
+    # 4. Exactly the wanted offers produced rows, and nothing else did.
+    #
+    # Asserted as a SET of (market, selection) rather than a row count, because
+    # the count went stale the moment corners were added deliberately. A set
+    # says what the parser is expected to emit; a count says only how much, and
+    # has to be hand-edited every time the vocabulary legitimately grows —
+    # which is how it comes to be edited to whatever number makes it pass.
+    #
+    # 1x2 x3, goals O/U x2, BTTS x2, and corners O/U x2 (a market this repo now
+    # collects on purpose — NEW-MARKETS-LINESHOP). The four unknown-criterion
+    # and half-time offers must still contribute nothing.
+    assert {(m, sel) for m, sel, _, _ in rows} == {
+        ("1x2", "home"), ("1x2", "draw"), ("1x2", "away"),
+        ("over_under_25", "over"), ("over_under_25", "under"),
+        ("btts", "yes"), ("btts", "no"),
+        ("corners_ou_25", "over"), ("corners_ou_25", "under"),
+    }, f"parser emitted an unexpected set of markets: {sorted(set((m, s) for m, s, _, _ in rows))}"
 
     # 5. Esports Battle must be treated as virtual.
     from workers.automation.unibet_kambi import is_virtual
