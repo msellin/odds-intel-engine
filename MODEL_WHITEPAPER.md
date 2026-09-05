@@ -236,6 +236,43 @@ ELO ratings are updated daily during settlement (21:00 UTC) after match results 
 
 This subsection documents the **B-ML3** meta-model — Stage-3 classifier that scores each emitted bet on `P(this bet beats closing line)` and gates placement. The meta-model is a downstream filter; it does NOT replace the primary 1X2/OU/BTTS/AH heads.
 
+> **⚠️ CORRECTION 2026-09-06 (META-MFV-TARGET-INVERTED) — two things this section
+> has always described inaccurately. Both were verified against the live DB.**
+>
+> **1. The model is HOME-ONLY. It has never been a three-selection model.**
+> The training path unpivots `match_feature_vectors` into one row per
+> (match × selection), but `ensemble_prob_draw` and `ensemble_prob_away` are
+> **100% NULL — 0 of 46,626 rows over 160 days**. The unpivot silently drops
+> draw and away, so every "match × selection" row is a *home* row, and
+> `pd.get_dummies(..., drop_first=True)` therefore emits no selection columns
+> at all — which is why `selection_draw` / `selection_away` appear in no
+> bundle's `coefficients.json`. Any description here of scoring three
+> selections describes something that has never existed. Note the model was
+> nonetheless applied at inference to draw and away picks.
+>
+> **2. The default training label inverts the quantity being gated.**
+> `P(mfv.pseudo_clv_home > 0)` runs **negative** against the real
+> `clv_pinnacle_devig` the gate exists to protect: r = −0.036 (n=1,266) since
+> 2026-05-06 and **r = −0.638 (n=162) since 2026-08-01**. The individual market
+> features predict real CLV strongly and *positively* — `odds_drift_home_at_t6h`
+> at r = +0.374 (t=+11.84) — and the baseline bundle learned that same feature
+> at coefficient **−1.198**, i.e. the correct sign for the proxy and the wrong
+> sign for what we bet. That, not the dead features, is why the meta score has
+> no measurable link to return. §3.5b's independent finding that **10 of 12
+> bundles are `INVERTED`** is the same fact reached from another direction.
+>
+> **Consequence for the pipeline (shipped 2026-09-06):**
+> `job_weekly_meta_retrain` (Sunday 04:00 UTC) now passes
+> `--bets-mode --bets-days 160 --feature-set lean --missing-mode none`, so it
+> trains against real settled CLV instead of the proxy. Out-of-sample
+> (trained < 2026-08-01, scored on later picks, n=185) that combination scores
+> r = +0.307 (t=+4.36) against real CLV where the default path scores −0.354.
+> **The pruning is required WITH the label switch, not instead of it:** pruning
+> alone only reached −0.298, and the label switch alone (44 columns) −0.066;
+> only the pair crosses zero. Nothing is promoted automatically —
+> `META_B_ML3_VERSION` remains a manual env flip and `META_B_ML3_ENABLED` has
+> been `false` on the VPS since 2026-09-05.
+
 **Critical finding — inverted signal (2026-06-07 B-ML3-BETS-MODE):** The v21/v22/v23_xgb bundles trained on all 7K+ MFV rows had an **inverted signal** in production: high meta score → lower Pinnacle CLV (Q5 vs Q1 spread was −14.9pp). Root cause: distribution mismatch. The training set was all MFV rows (`target = pseudo_clv > 0`), but inference targets only bots' actually-fired bets — a completely different regime.
 
 **Fix — `--bets-mode` training:** Bundle `v_20260607_bets` (production as of 2026-06-07) trains on actual bot-fired bets with **real Pinnacle closing-line CLV** as the label. Key differences:
