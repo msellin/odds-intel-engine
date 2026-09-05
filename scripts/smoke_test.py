@@ -28977,5 +28977,42 @@ def test_public_cohort_shared():
 
 
 
+@test("EXEC-ODDS-SINGLE-SOURCE — the executable-price rule must exist exactly once")
+def test_exec_odds_single_definition():
+    """Four surfaces priced ROI from a stale high-water mark, and each was found
+    only after the previous "complete" fix shipped: the admin index (2026-09-04),
+    the admin detail page, the public track-record API, and /performance's
+    headline (all 2026-09-05).
+
+    The root cause was copy-paste: byte-identical private copies of the same
+    three-line rule, so fixing one moved nothing else. This test fails if the
+    logic is duplicated again.
+    """
+    import os, re
+    web = os.path.join(os.path.dirname(__file__), "..", "..", "odds-intel-web", "src")
+    hits = []
+    for dirpath, _dirs, files in os.walk(web):
+        if "node_modules" in dirpath:
+            continue
+        for fn in files:
+            if not fn.endswith((".ts", ".tsx")):
+                continue
+            path = os.path.join(dirpath, fn)
+            src = open(path, encoding="utf-8", errors="ignore").read()
+            # the distinctive body of the rule, not the function name — a
+            # re-export wrapper is fine, a second implementation is not
+            if "if (live != null && live > 1) return live;" in src:
+                hits.append(os.path.relpath(path, web))
+    assert len(hits) == 1, (
+        f"the executable-price rule is implemented {len(hits)} times: {hits}. "
+        f"It must live once in lib/engine-data.ts; other files import it. "
+        f"Duplicating it is how four surfaces ended up on different price bases."
+    )
+    assert hits[0].replace("\\", "/") == "lib/engine-data.ts", (
+        f"the single definition should be in lib/engine-data.ts, found in {hits[0]}"
+    )
+
+
+
 if __name__ == "__main__":
     main()

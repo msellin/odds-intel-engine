@@ -1153,3 +1153,40 @@ directions:
 If the pipeline's edge definition ever changes, every one of these is wrong
 again — the smoke test asserts `edge = cal_prob - ip` is still present for
 exactly that reason.
+
+## 43. If a number appears on N screens, assume there are N implementations
+
+**2026-09-05.** The rule "price a settled bet at the odds that were actually
+available" was fixed **four times in one day**, and each surface was discovered
+only after the previous fix had shipped as "complete":
+
+1. admin shadow-bots index (fixed 09-04)
+2. admin shadow-bots detail page — clicking a bot showed a *different* ROI
+3. `/api/v1/track-record` — the public landing headline
+4. `getCalibratedHeadlineStats` — `/performance`
+
+Between fix 3 and fix 4, the landing page and `/performance` published
+**+13.10% and +17.39% for the same bets**, because half the app had been
+corrected. Fixing a shared rule on one surface actively *creates* an
+inconsistency until every surface is found.
+
+The same day, the min-odds floor turned out to exist as three different
+formulas, none correct, wrong in **opposite directions** — the public floor too
+high by 18.1%, the real-money admin gate too permissive by 11.2%.
+
+**Rules:**
+
+- Before fixing a displayed number, grep for every place it is computed — by the
+  *arithmetic*, not the helper name. `grep -rn "odds_at_pick" | grep -iE "pnl|roi"`
+  found surfaces that a search for `execOdds` or `bot-aggregates` missed entirely.
+- Then check the copies are *reached the same way*. Two of the four surfaces
+  bypassed the shared mapper and queried the table directly.
+- Consolidate to one definition and **add a test that fails on re-duplication**
+  (see `EXEC-ODDS-SINGLE-SOURCE`). Match on the distinctive body of the rule, not
+  the function name, so a re-export wrapper passes and a second implementation
+  does not.
+- Duplicated *constants* are as dangerous as duplicated logic. The two public
+  cohorts were byte-identical literals in separate files — they agreed by luck,
+  and nothing would have caught them drifting.
+- Cross-language pairs (TypeScript UI, Python workers) cannot share an import.
+  Assert numeric agreement on real rows instead.
