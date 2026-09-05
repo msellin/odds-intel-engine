@@ -28637,5 +28637,77 @@ def test_af_budget_status_no_deadlock():
 
 
 
+@test("SHADOW-PAGE-ROI-INFLATED — the bot DETAIL page must price ROI at the executable odds")
+def test_shadow_detail_page_uses_exec_odds():
+    """The index page was fixed 2026-09-04; the per-bot detail page was not, so
+    clicking into a bot showed a different, inflated ROI than the row you clicked.
+
+    `odds_at_pick` is a high-water mark (STALE-BEST-ODDS: MAX() across a fixture's
+    whole snapshot history), not a price anyone could have taken. This page is what
+    the operator reads before placing real money by hand.
+
+    Measured at fix time, non-retired bots with n>=40 settled:
+      bot_v10_all          17.04% -> 12.07%  (-4.97pp)
+      bot_opt_home_lower   -0.86% ->  -4.72% (-3.86pp)
+      bot_pin_1x2_home_v1   9.41% ->   9.41% (unchanged)
+
+    Mutation-verified: reverting the wonPnl line to Number(b.odds_at_pick) fails this.
+    """
+    import os
+    base = os.path.join(os.path.dirname(__file__), "..", "..", "odds-intel-web",
+                        "src", "app", "(app)", "admin", "shadow-bots")
+    detail = os.path.join(base, "[bot]", "page.tsx")
+    if not os.path.exists(detail):
+        raise AssertionError(f"shadow-bots detail page not found at {detail}")
+    src = open(detail, encoding="utf-8").read()
+
+    # 1. The helper must exist and prefer the live price.
+    assert "function execOdds(" in src, "detail page must define execOdds()"
+    helper = src[src.index("function execOdds("):]
+    helper = helper[:helper.index("\n}")]
+    assert "odds_at_pick_live" in helper, "execOdds must consider odds_at_pick_live"
+    assert "return Number(b.odds_at_pick ?? 0)" in helper, (
+        "execOdds must still fall back to odds_at_pick rather than dropping the row"
+    )
+
+    # 2. The P&L that feeds ROI must go through it, not read odds_at_pick raw.
+    pnl_lines = [l for l in src.splitlines() if "wonPnl" in l and "reduce" in l]
+    assert pnl_lines, "could not find the wonPnl reduce that feeds ROI"
+    pnl_line = pnl_lines[0]
+    assert "execOdds(b)" in pnl_line, (
+        f"wonPnl must price winners at execOdds(b); got: {pnl_line.strip()}"
+    )
+    assert "odds_at_pick" not in pnl_line, (
+        f"wonPnl must not read odds_at_pick directly; got: {pnl_line.strip()}"
+    )
+
+    # 3. The column has to be selected or execOdds silently always falls back.
+    assert "odds_at_pick_live" in src[:src.index("function execOdds(")] or \
+           "odds_at_pick_live, model_probability" in src, \
+           "odds_at_pick_live must be in the PostgREST select"
+
+    # 4. The basis must be labelled - an unlabelled return figure is what made
+    #    the old number misleading in the first place.
+    assert "exec" in src.lower(), "the page must say which price basis it shows"
+
+    # 5. Guard that this test is meaningful: the two bases must actually differ
+    #    on live data, otherwise it would pass even against a broken page.
+    from workers.api_clients.db import execute_query
+    row = execute_query(
+        """SELECT count(*) n,
+                  sum(CASE WHEN odds_at_pick_live IS NOT NULL
+                            AND abs(odds_at_pick_live - odds_at_pick) > 0.01
+                           THEN 1 ELSE 0 END) differing
+             FROM shadow_bets_unique
+            WHERE result IN ('won','lost')"""
+    )[0]
+    assert row["n"] > 0, "no settled shadow rows to validate against"
+    assert row["differing"] > 0, (
+        "no row has a live price differing from odds_at_pick - the bases are "
+        "identical, so this test cannot detect the bug it exists to pin"
+    )
+
+
+
 if __name__ == "__main__":
     main()

@@ -1044,3 +1044,39 @@ because the whole BTTS market had been retired underneath it. A stale lock does
 not just block other agents; it also broadcasts a false picture of the system's
 current state, which is what put "the model is worse than a base rate" into my
 own priority list on the day it had already been fixed.
+
+## 40. Fixing a metric on the summary page does not fix it on the detail page
+
+**2026-09-05.** SHADOW-PAGE-ROI-INFLATED was filed and half-fixed on 2026-09-04:
+the shadow-bots index page got an `execOdds()` helper so ROI is priced at
+`odds_at_pick_live` (the quote actually available at pick time) instead of
+`odds_at_pick` (a MAX() high-water mark across the fixture's whole snapshot
+history). The page totals were correct because they aggregate `summarise()`.
+
+The per-bot **detail** page was never touched. It had zero references to
+`execOdds` or `odds_at_pick_live` and computed `wonPnl` directly from
+`odds_at_pick`. So the operator could click a bot showing +12.07% and land on a
+page showing +17.04% for the same picks — with no indication which was right.
+
+Correction on non-retired bots, n>=40 settled:
+
+| bot | old basis | exec basis | delta |
+|---|---|---|---|
+| `bot_v10_all` | 17.04% | 12.07% | **-4.97pp** |
+| `bot_opt_home_lower` | -0.86% | -4.72% | -3.86pp |
+| `bot_sweep_ou25_v1` | 4.16% | 3.67% | -0.49pp |
+| `bot_coolbet_value_v1` | 4.98% | 5.68% | **+0.70pp** |
+| `bot_pin_1x2_home_v1` | 9.41% | 9.41% | 0.00pp |
+
+**Rules:**
+
+- When a metric is wrong, grep for **every** surface that computes it before
+  closing the ticket — index, detail, API route, export, Telegram. A one-line
+  `grep -c execOdds` per file would have caught this immediately.
+- The correction is **not uniformly downward**. `bot_coolbet_value_v1` improved
+  by +0.70pp and `bot_pin_1x2_home_v1` did not move at all. Do not assume a
+  stale-price fix always lowers the number, and do not "sanity check" a fix by
+  expecting every bot to drop.
+- **Always label the basis next to the figure.** Both pages showed a bare "ROI"
+  with no statement of which price it used, which is precisely why two different
+  numbers for the same bot could coexist for a day without anyone noticing.
