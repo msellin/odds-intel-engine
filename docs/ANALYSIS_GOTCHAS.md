@@ -1301,3 +1301,36 @@ parser carries a comment about a previous incident where a team-specific line
 leaked into the full-time bucket and best-price selection compared it against a
 full-match model probability, fabricating double-digit edges. Team totals are
 stored as `team_total_{home,away}_{line}` for exactly that reason.
+
+## 46. `git add -A` while a background agent is editing the tree misattributes commits
+
+**2026-09-05.** Two background agents were fixing `docs/AF_ENDPOINT_FREQUENCY.md`
++ `DATA_SOURCES.md` and `workers/automation/coolbet_placer.py`, each told not to
+commit. Meanwhile the main session ran `git add -A && git commit` for its own
+unrelated work — twice.
+
+Result: nothing was lost, but the history is wrong.
+
+| Commit | Message says | Actually contained |
+|---|---|---|
+| `edd704f` | Coolbet sidebets limit + CLV rebuild | ...plus **both agents' in-flight edits** to `coolbet_placer.py`, `AF_ENDPOINT_FREQUENCY.md` and half of `DATA_SOURCES.md` |
+| `8961ebc` | `fuzzy_match_event` KeyError fix | ...plus the **rest** of `DATA_SOURCES.md` |
+
+So two commits describe changes they do not contain and contain changes they do
+not describe, and one agent's doc rewrite is split across two unrelated commits.
+In a repo where the commit message is the audit trail — and where CLAUDE.md
+requires docs and code to land together — that is a real cost, even though every
+line of work survived.
+
+**Rules when running background agents that edit the working tree:**
+
+- **Never `git add -A` while an agent is live.** Stage explicit paths:
+  `git add workers/api_clients/api_football.py scripts/smoke_test.py`.
+- Telling an agent "do not commit" does **not** protect you — it leaves the work
+  in the tree precisely where a blanket `add -A` will scoop it up.
+- Check `git status --short` before committing and confirm every listed path is
+  yours. An unexpected file is the signal.
+- Prefer giving agents `isolation: "worktree"` when they will edit files, so
+  their changes cannot appear in your tree at all.
+- If it happens: do not rewrite already-pushed history to tidy it. Record what
+  actually landed where, as this entry does, and move on.
