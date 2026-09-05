@@ -809,6 +809,7 @@ Related: #26 (feature coverage must be split by status), #18.
 | `promotion_gate_simulation.py` | Monte-Carlo of the graduation gate |
 | `lineshop_replay.py` | point-in-time replay of any bot config |
 | `clv_slice_search.py` | search market x tier x odds for a positive-CLV slice |
+| `odds_band_by_market.py` | CLV by market x odds band x bot x tier, with placebo (gotcha 47) |
 | `coverage_expansion_probe.py` | would the best model work in leagues it does not bet |
 | `anchor_comparison_backtest.py` | Pinnacle vs consensus anchors |
 | `bookmaker_sharpness_rank.py` | per-book calibration, paired |
@@ -1353,3 +1354,68 @@ line of work survived.
   their changes cannot appear in your tree at all.
 - If it happens: do not rewrite already-pushed history to tidy it. Record what
   actually landed where, as this entry does, and move on.
+
+## 47. An odds-band effect is a BOT effect until you split by bot
+
+**2026-09-06, ODDS-BAND-BY-MARKET-AUDIT.** The question was whether each market
+has its own profitable odds range. The answer is that the conditioning variable
+is wrong: **the same market and the same band point in opposite directions for
+different bots**, decisively, on samples large enough to settle it.
+
+1X2 at 3.5-5.0, de-vigged Pinnacle CLV at executable prices:
+
+| bot | n | CLV | t (clustered on match) |
+|---|---|---|---|
+| `bot_v10_all` | 89 | **+6.42%** | +4.69 |
+| `bot_high_alignment` | 34 | **+5.51%** | +3.27 |
+| `bot_aggressive` | 379 | **-6.50%** | -9.53 |
+| `bot_no_pin_shadow_v1` | 38 | -9.71% | -4.52 |
+| pooled over model-driven bots | 630 | -3.44% | -5.14 |
+
+The pooled row is the average of bots that disagree, so it describes none of
+them. A price floor cannot express "this bot's long shots are good and that
+bot's are not", which is what the data actually says — so a market-aware odds
+floor is the wrong instrument for this finding.
+
+**Three traps this audit walked into, all worth avoiding by default:**
+
+- **A line-shop bot's CLV is its own entry rule.** `bot_pin_1x2_home_v1`,
+  `bot_sweep_ou25_v1`, `bot_sweep_ou35_v1`, `bot_coolbet_value_v1` and
+  `bot_pin_1x2_draw_tier4_v1` fire when a soft price beats the *de-vigged
+  Pinnacle* probability by `_LINESHOP_TRUE_EDGE_MIN`. Measuring their de-vigged
+  Pinnacle CLV re-measures the admission test. They read +2.5% to +8.6% in
+  **every** band of **every** market, and any table pooling them with
+  model-driven bots inherits that as a fake band effect. Over/under 3.5-5.0
+  reads +7.08% fleet-wide and the cell is 85% line-shop rows; among
+  model-driven bots over/under has no positive band at any price.
+- **Centre within market before permuting.** A first placebo shuffled raw CLV
+  and produced a null whose median max-|t| was **71.8** — because
+  `double_chance` sits at -5.8% across every band, so any large subset of it
+  inherits a huge |t| that has nothing to do with price. Centring within market
+  drops the null's median max-|t| to 1.66 and makes the test mean something.
+- **A one-cell grid is not a placebo.** `bot_dc_strong_fav` returned "p=0.0040"
+  on a -0.03pp deviation, because only one of its cells reached min-n so the
+  shuffled max-|t| collapsed to ~0. Require at least two surviving cells.
+
+**Two data defects the audit surfaced:**
+
+- **`simulated_bets.clv_pinnacle_live` is not the same quantity as
+  `shadow_bets.clv_pinnacle_live`.** Nothing in the codebase writes the
+  simulated one; `settlement.py` writes only the shadow column, from the
+  **de-vigged** Pinnacle probability. The simulated column was populated once
+  by rescaling the **raw** `clv_pinnacle` to the live price, so it still carries
+  Pinnacle's overround — it reads **+8.40pp higher** than an honest recompute on
+  the same 1,642 rows, with individual values as absurd as +129% (implying a
+  Pinnacle "over 2.5" close of 1.19). `weekly_bot_review.py` pools the two via
+  `COALESCE(clv_pinnacle_live, clv_live, clv_pinnacle, clv)` and is therefore
+  averaging a de-vigged number with a vigged one.
+- **`odds_at_pick_live` has never been backfilled for `asian_handicap`** — 0 of
+  2,013 settled AH rows carry it, so AH cannot be judged on the basis every
+  other market is judged on. The *anchor* is not the problem: pairing Pinnacle's
+  home/away quotes at the same `handicap_line` is a clean 2-way de-vig and
+  yields a true probability for 963 of those rows. Only the executable price is
+  missing.
+
+Related: #44 (a multiplicative price error fakes an odds slope — the reason this
+had to be recomputed at executable prices before it could be read at all), #8
+(gate on CLV), #33 (never compare across samples).
