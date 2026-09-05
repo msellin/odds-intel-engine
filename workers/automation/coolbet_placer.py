@@ -1821,6 +1821,33 @@ def place_all_bets(
             except Exception as e:
                 log.warning("Failed to store Coolbet odds snapshot: %s", e)
 
+        # ── PLACER-ODDS-FLOOR-BOTH-PATHS-2026-09-06 ─────────────────────────
+        # `REALMONEY-ODDS-BAND-MISMATCH` shipped a 2.80 price floor on
+        # 2026-09-05, but ONLY in `scripts/place_coolbet_ui.py`. This module is
+        # the path `coolbet_mac_daemon.py:499` actually calls, and it had no
+        # price gate at all — so the guard existed on the path that is not run
+        # and was absent from the path that is.
+        #
+        # It is paper-only today (`execute=False` is hardcoded in the daemon),
+        # so nothing was lost. The point is that this is the path that flips
+        # first when real-money placement is turned on, and a safety gate that
+        # is missing precisely where it will first matter is worse than one
+        # that was never written — it reads as present.
+        #
+        # Same env var and default as the UI placer, deliberately, so the two
+        # cannot drift: one number, two call sites, read from one place.
+        _floor = float(os.getenv("COOLBET_MIN_ODDS", "2.80"))
+        if ev_odds and float(ev_odds) < _floor:
+            log.info(
+                "skip %s — Coolbet %.3f is below the %.2f odds floor "
+                "(CLV measured negative below it)", label, float(ev_odds), _floor,
+            )
+            results.append({
+                **bet, "outcome": "rejected", "stage": "odds_floor",
+                "reason": f"odds {float(ev_odds):.2f} < floor {_floor:.2f}",
+            })
+            continue
+
         # COOLBET-SAFETY-GUARDRAILS: stake comes from the guard
         # (Kelly-derived or fixed, capped by --max-stake-per-bet).
         stake = guard.stake_for(bet)

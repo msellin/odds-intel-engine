@@ -30139,5 +30139,61 @@ def _edge_unit_collision():
         )
 
 
+@test("PLACER-ODDS-FLOOR-BOTH-PATHS — the price floor must exist on the path that runs")
+def _placer_odds_floor_both_paths():
+    """PLACER-ODDS-FLOOR-BOTH-PATHS-2026-09-06.
+
+    REALMONEY-ODDS-BAND-MISMATCH shipped a 2.80 price floor on 2026-09-05, but
+    only into `scripts/place_coolbet_ui.py`. `workers/automation/coolbet_placer.py`
+    is the module `coolbet_mac_daemon.py:499` actually calls, and it had no
+    price gate at all — so the guard lived on the path that is not run and was
+    absent from the path that is.
+
+    Paper-only today (`execute=False` is hardcoded in the daemon), so nothing
+    was lost. It matters because that is the path that flips first when
+    real-money placement is enabled, and a safety gate missing precisely where
+    it will first matter is worse than one never written: it reads as present.
+
+    Asserted against the source of the RELEVANT FUNCTION, not the file, since a
+    file-wide substring check would pass on the constant appearing in a comment
+    (gotcha 41).
+    """
+    import inspect
+    import os
+    import re
+
+    from workers.automation.coolbet_placer import place_all_bets
+
+    placer_src = inspect.getsource(place_all_bets)
+    assert 'os.getenv("COOLBET_MIN_ODDS"' in placer_src, (
+        "coolbet_placer.place_all_bets has no COOLBET_MIN_ODDS floor — this is "
+        "the path the Mac daemon actually calls"
+    )
+    # The rejection must be RECORDED, not silently skipped: a guard nobody can
+    # measure is indistinguishable from a guard that never fires.
+    assert '"odds_floor"' in placer_src or "'odds_floor'" in placer_src, (
+        "the placer's price rejection is not recorded with stage 'odds_floor'"
+    )
+
+    # Both paths must read the SAME env var with the SAME default, or the two
+    # numbers drift and we are back to one rule with two implementations.
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ui_src = open(os.path.join(root, "scripts", "place_coolbet_ui.py"),
+                  encoding="utf-8").read()
+
+    def _default(src):
+        m = re.search(r'os\.getenv\(\s*"COOLBET_MIN_ODDS"\s*,\s*"([0-9.]+)"\s*\)', src)
+        return m.group(1) if m else None
+
+    ui_default = _default(ui_src)
+    placer_default = _default(placer_src)
+    assert ui_default is not None, "place_coolbet_ui.py lost its COOLBET_MIN_ODDS floor"
+    assert placer_default == ui_default, (
+        f"the two placement paths disagree on the odds floor default "
+        f"(ui={ui_default}, placer={placer_default}) — one number, two call "
+        "sites, and they must read it from the same place"
+    )
+
+
 if __name__ == "__main__":
     main()
