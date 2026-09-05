@@ -29868,5 +29868,67 @@ def test_islive_callsites_bounded():
 
 
 
+@test("META-MFV-HOME-ONLY — the meta training target is home-only and anti-correlated")
+def _meta_mfv_home_only():
+    """META-MFV-TARGET-INVERTED-2026-09-06.
+
+    Two facts that invalidate every meta bundle trained in the default
+    (`pseudo_clv`) mode. Both are behavioural, measured against the live DB,
+    because both were previously asserted in docs and both were wrong.
+
+    1. `match_feature_vectors.ensemble_prob_draw` / `_away` are 100% NULL, so
+       the unpivot in `train_b_ml3.py` silently drops draw and away and the
+       "3 rows per match" model in MODEL_WHITEPAPER 3.4 has never existed.
+    2. `pseudo_clv_home`, the default training label, runs NEGATIVE against the
+       real `clv_pinnacle_devig` the gate is supposed to protect.
+
+    If either ever stops holding, the meta model can be revisited — so this
+    test failing is good news, not a regression.
+    """
+    from workers.api_clients.db import execute_query
+
+    mfv = execute_query(
+        """SELECT count(*) n, count(ensemble_prob_home) h,
+                  count(ensemble_prob_draw) d, count(ensemble_prob_away) a
+             FROM match_feature_vectors
+            WHERE match_date >= current_date - 160"""
+    )[0]
+    assert mfv["n"] > 1000, "MFV window is empty — cannot assert anything"
+    assert mfv["h"] > 0, "ensemble_prob_home is also NULL — MFV is not being written"
+    assert mfv["d"] == 0 and mfv["a"] == 0, (
+        f"draw/away ensemble probs are now populated (d={mfv['d']}, a={mfv['a']}). "
+        "The meta model is no longer home-only — re-read MODEL_WHITEPAPER 3.4 "
+        "and re-run the label audit before training anything."
+    )
+
+    lab = execute_query(
+        """SELECT count(*) n, corr(m.pseudo_clv_home, b.clv_pinnacle_devig) r
+             FROM simulated_bets b
+             JOIN match_feature_vectors m ON m.match_id = b.match_id
+            WHERE b.market = '1x2' AND b.result IN ('won','lost')
+              AND b.clv_pinnacle_devig IS NOT NULL
+              AND m.pseudo_clv_home IS NOT NULL
+              AND b.created_at >= '2026-08-01'"""
+    )[0]
+    assert lab["n"] >= 100, f"only {lab['n']} settled scored picks — too thin to assert"
+    assert lab["r"] is not None and float(lab["r"]) < 0, (
+        f"pseudo_clv_home vs clv_pinnacle_devig is now r={lab['r']} (n={lab['n']}). "
+        "The default training label no longer inverts the gated quantity."
+    )
+
+    # And the flags that let us train around it must still exist.
+    import os
+    src = open(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "train_b_ml3.py"),
+        encoding="utf-8",
+    ).read()
+    for flag in ("--feature-set", "--missing-mode", "--cutoff"):
+        assert f'ap.add_argument("{flag}"' in src, f"{flag} is gone from train_b_ml3"
+    assert 'ap.add_argument("--feature-set", choices=tuple(FEATURE_SETS), default="full"' in src, (
+        "--feature-set no longer defaults to full — the historical path is no "
+        "longer reproducible, which breaks every comparison against old bundles"
+    )
+
+
 if __name__ == "__main__":
     main()

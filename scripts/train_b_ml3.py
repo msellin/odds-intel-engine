@@ -20,6 +20,15 @@ Usage:
     python3 scripts/train_b_ml3.py                       # default v_YYYYMMDD tag
     python3 scripts/train_b_ml3.py --version v_first
     python3 scripts/train_b_ml3.py --dry-run             # train but don't save
+
+META-FEATURE-PRUNE (2026-09-05) adds three flags, all defaulting to the
+historical behaviour:
+    --feature-set  full | lean | core | micro   (drop near-zero-coef features)
+    --missing-mode all | none | structural      (drop the data-coverage leak)
+    --cutoff YYYY-MM-DD                          (hold out a real OOS window)
+
+    python3 scripts/train_b_ml3.py --version v_EXP_lean_none \
+        --feature-set lean --missing-mode none --cutoff 2026-08-01
 """
 from __future__ import annotations
 import sys, json, argparse
@@ -105,6 +114,89 @@ SELECTION_AWARE_V2 = [
 # Categorical features one-hot-encoded post-build.
 CATEGORICAL_FEATURES = ["selection_home", "selection_draw", "selection_away"]
 # league_tier is also categorical but stored as int (1-4); we treat as ordinal numeric.
+
+
+# ---------------------------------------------------------------------------
+# META-FEATURE-PRUNE (2026-09-05) — reduced feature sets + missingness modes.
+#
+# Two defects motivated this, both read off v_PEEK_clvfix/coefficients.json:
+#
+#   (1) 29 of 44 features carry |coef| < 0.05 (injuries, lineups, form, xG,
+#       player ratings, rest days, fixture importance, season progress,
+#       league position). They add no signal and enlarge the overfitting
+#       surface on a model whose CV folds already span AUC 0.587-0.785.
+#       Note gotcha #26: several of them are 0.0% covered on SCHEDULED rows,
+#       so they are structurally absent at serve time — a near-zero
+#       coefficient there means "never present", not "no predictive value".
+#
+#   (2) 5 of the top 14 coefficients are `*_missing` indicator flags.
+#       Missingness of the sharp-book features tracks league tier and book
+#       coverage, so the model partly learns WHICH FIXTURES HAVE COMPLETE
+#       DATA rather than which bets have edge. That is a coverage artefact,
+#       and it moves whenever we add a book or backfill a column.
+#
+# `--feature-set full --missing-mode all` reproduces the historical behaviour
+# exactly and stays the default; nothing on the production path changes.
+# ---------------------------------------------------------------------------
+
+# Always-present core (selection-aware market terms). Never pruned.
+_ALWAYS = ["edge_proxy", "ensemble_prob", "opening_implied"]
+
+FEATURE_SETS: dict[str, list[str] | None] = {
+    # None = every feature the historical path builds (44 cols with indicators).
+    "full": None,
+
+    # Keep only what the baseline logistic actually leaned on: the features
+    # whose |coef| >= 0.05 in v_PEEK_clvfix, excluding the _missing flags.
+    "lean": _ALWAYS + [
+        "pinnacle_line_move",
+        "sharp_consensus",
+        "odds_drift_home_at_t6h",
+        "line_velocity",
+        "pinnacle_ah_line_at_t6h",
+        "elo_diff",
+        "form_ppg_home",
+    ],
+
+    # Market microstructure only — no football/context features at all.
+    # Tests directly whether the team-quality block contributes anything.
+    "core": _ALWAYS + [
+        "pinnacle_line_move",
+        "sharp_consensus",
+        "odds_volatility",
+        "odds_drift_home_at_t6h",
+        "steam_move_at_t6h",
+        "line_velocity",
+        "pinnacle_ah_line_at_t6h",
+        "pinnacle_ah_line_move",
+        "bookmaker_disagreement",
+    ],
+
+    # The four largest-magnitude market terms only. Deliberate extreme:
+    # if this matches the 44-feature model, the other 40 are decoration.
+    "micro": ["edge_proxy", "pinnacle_line_move",
+              "odds_drift_home_at_t6h", "line_velocity"],
+}
+
+# Which columns get a companion `<col>_missing` indicator.
+#   all        — historical behaviour (11 indicators)
+#   none       — median-impute silently, no indicator at all
+#   structural — only the indicators whose missingness is NOT sharp-book
+#                coverage. rest_days comes from our own fixture history, so
+#                its absence is a data-completeness fact about the team's
+#                schedule rather than about which books quote the league.
+_MISSING_ALL = [
+    "bookmaker_disagreement", "fixture_importance",
+    "league_position_home", "rest_days_home", "rest_days_away",
+    "pinnacle_line_move", "sharp_consensus", "odds_volatility",
+    "odds_drift_home_at_t6h",
+    "pinnacle_ah_line_at_t6h", "pinnacle_ah_line_move",
+]
+MISSING_MODES: dict[str, list[str]] = {
+    "all": _MISSING_ALL,
+    "none": [],
+    "structural": ["rest_days_home", "rest_days_away"],
+}
 
 
 def _load_training_data():
@@ -206,8 +298,18 @@ def _load_training_data():
     return long_df
 
 
-def _build_feature_matrix(long_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, list[str]]:
-    """Build X, y, feature_cols. Numerics imputed with median; bools cast to int."""
+def _build_feature_matrix(long_df: pd.DataFrame,
+                          feature_set: str = "full",
+                          missing_mode: str = "all") -> tuple[pd.DataFrame, pd.Series, list[str]]:
+    """Build X, y, feature_cols. Numerics imputed with median; bools cast to int.
+
+    META-FEATURE-PRUNE (2026-09-05):
+      feature_set  — key into FEATURE_SETS. "full" (default) keeps every column
+                     and reproduces the historical bundle byte-for-byte.
+      missing_mode — key into MISSING_MODES. "all" (default) is historical;
+                     "none" imputes with the median and adds no indicator, so
+                     the model cannot learn which fixtures have complete data.
+    """
     # One-hot selection (drop one to avoid multicollinearity in logistic regression)
     sel_dummies = pd.get_dummies(long_df["selection"], prefix="selection", drop_first=True)
 
@@ -234,19 +336,34 @@ def _build_feature_matrix(long_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Serie
     # (depends on Pinnacle / sharp / accessible book presence per match).
     # Their missingness is informative (matches without sharp-book coverage are
     # systematically different) so we add indicators for them too.
-    THIN_FEATURES_FOR_INDICATORS = [
-        "bookmaker_disagreement", "fixture_importance",
-        "league_position_home", "rest_days_home", "rest_days_away",
-        "pinnacle_line_move", "sharp_consensus", "odds_volatility",
-        "odds_drift_home_at_t6h",
-        # B-ML3 v2.2: low-coverage market features get missing indicators
-        "pinnacle_ah_line_at_t6h", "pinnacle_ah_line_move",
-    ]
+    #
+    # META-FEATURE-PRUNE (2026-09-05): that "informative missingness" argument
+    # is exactly the leak. Sharp-book presence tracks league tier and our own
+    # ingestion coverage, not the bet's edge — so `missing_mode="none"` is
+    # available to drop the indicators entirely.
+    THIN_FEATURES_FOR_INDICATORS = MISSING_MODES[missing_mode]
     for col in THIN_FEATURES_FOR_INDICATORS:
         if col in feature_frame.columns:
             feature_frame[f"{col}_missing"] = feature_frame[col].isna().astype(int)
 
     feature_frame = feature_frame.fillna(feature_frame.median(numeric_only=True))
+    # A column that is 100pct NULL leaves NaN after a median fill (the median of an
+    # all-NaN column is NaN). Zero it so the fit cannot fail on an empty feature.
+    feature_frame = feature_frame.fillna(0.0)
+
+    # Prune to the requested feature set. Selection dummies and the retained
+    # missingness indicators always survive the prune.
+    keep = FEATURE_SETS[feature_set]
+    if keep is not None:
+        allowed = set(keep)
+        allowed |= {f"{c}_missing" for c in THIN_FEATURES_FOR_INDICATORS if c in allowed}
+        allowed |= set(sel_dummies.columns)
+        dropped = [c for c in feature_frame.columns if c not in allowed]
+        feature_frame = feature_frame[[c for c in feature_frame.columns if c in allowed]]
+        console.print(f"  [cyan]feature-set={feature_set}: kept {feature_frame.shape[1]} cols, "
+                      f"dropped {len(dropped)}[/cyan]")
+    console.print(f"  [cyan]missing-mode={missing_mode}: "
+                  f"{len(THIN_FEATURES_FOR_INDICATORS)} indicator column(s)[/cyan]")
 
     feature_cols = list(feature_frame.columns)
     X = feature_frame
@@ -565,6 +682,20 @@ def main():
                          "old mode trained on all MFV rows, not the bets that actually fired.")
     ap.add_argument("--bets-days", type=int, default=60,
                     help="Look-back window in days for --bets-mode (default 60)")
+    # META-FEATURE-PRUNE (2026-09-05) — all three default to the historical path.
+    ap.add_argument("--feature-set", choices=tuple(FEATURE_SETS), default="full",
+                    help="Which feature block to train on. 'full' = historical 44-col "
+                         "behaviour (default). 'lean'/'core'/'micro' progressively drop "
+                         "the near-zero-coefficient features.")
+    ap.add_argument("--missing-mode", choices=tuple(MISSING_MODES), default="all",
+                    help="How to handle missingness. 'all' = historical 11 indicator "
+                         "flags (default). 'none' = median-impute with no indicator, "
+                         "removing the data-coverage leak. 'structural' = keep only "
+                         "the non-book-coverage indicators.")
+    ap.add_argument("--cutoff", default=None,
+                    help="Exclude rows with match_date >= this ISO date from training. "
+                         "Required for any honest out-of-sample evaluation — see "
+                         "ANALYSIS_GOTCHAS #35.")
     args = ap.parse_args()
 
     if args.bets_mode:
@@ -574,11 +705,20 @@ def main():
         long_df = _load_training_data()
         min_rows = 1000
 
+    if args.cutoff:
+        before = len(long_df)
+        cut = pd.to_datetime(args.cutoff).date()
+        keep_mask = pd.to_datetime(long_df["match_date"]).dt.date < cut
+        long_df = long_df[keep_mask].reset_index(drop=True)
+        console.print(f"  [cyan]--cutoff {args.cutoff}: {before:,} -> {len(long_df):,} "
+                      f"training rows (match_date < cutoff)[/cyan]")
+
     if len(long_df) < min_rows:
         console.print(f"[red]Only {len(long_df)} training rows — need ≥{min_rows}. Aborting.[/red]")
         sys.exit(1)
 
-    X, y, feature_cols = _build_feature_matrix(long_df)
+    X, y, feature_cols = _build_feature_matrix(
+        long_df, feature_set=args.feature_set, missing_mode=args.missing_mode)
     console.print(f"\n[bold]Feature matrix: {X.shape[0]:,} rows × {X.shape[1]} features[/bold]")
     console.print(f"  Features: {feature_cols}")
 
@@ -607,6 +747,10 @@ def main():
         json.dump({
             "chosen_threshold": thresh["threshold"],
             "threshold_metrics": thresh["metrics"],
+            "feature_set": args.feature_set,
+            "missing_mode": args.missing_mode,
+            "training_cutoff": args.cutoff,
+            "bets_mode": bool(args.bets_mode),
             **metrics,
         }, f, indent=2)
     with open(out_dir / "coefficients.json", "w") as f:
