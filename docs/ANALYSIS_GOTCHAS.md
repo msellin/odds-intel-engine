@@ -1080,3 +1080,39 @@ Correction on non-retired bots, n>=40 settled:
 - **Always label the basis next to the figure.** Both pages showed a bare "ROI"
   with no statement of which price it used, which is precisely why two different
   numbers for the same bot could coexist for a day without anyone noticing.
+
+## 41. A file-wide substring assertion is not a test of the thing you changed
+
+**2026-09-05.** Writing the smoke test for LANDING-PERF-ROI-BASIS I asserted:
+
+```python
+assert "execOdds(r.odds_at_pick, r.odds_at_pick_live)" in api_src
+```
+
+Then mutation-tested it by reverting the public headline back to
+`Number(r.odds_at_pick ?? 0)` — **and the test passed.** The per-bet ledger loop
+in the same file also calls `execOdds`, so the substring was still present while
+the headline, the thing the test exists to protect, was broken.
+
+The fix was to scope the assertion to the block that actually computes the
+headline, find the variable the P&L accumulation reads, and assert *that
+variable's declaration* is execOdds-derived. The mutation then failed correctly:
+
+```
+AssertionError: the headline ROI is computed from `odds`, which is not
+execOdds-derived: const odds = Number(r.odds_at_pick ?? 0);
+```
+
+**Rules:**
+
+- A substring check proves a string exists somewhere in a file. It does not
+  prove the code path you care about uses it. When the same helper is called
+  from several places, a file-wide check is guaranteed to be weak.
+- Scope assertions to the block, function, or statement under test — slice the
+  source between known anchors and assert inside the slice.
+- **Mutation-test the specific revert, not a convenient one.** My first mutation
+  replaced every occurrence and would have "passed" the mutation check; only
+  reverting the single headline line exposed the weakness.
+- This is the exact defect class SMOKE-SUITE-AUDIT is cataloguing (170 tests
+  asserting only that a string appears in a source file). It is easy to write
+  one by accident while fixing something else.

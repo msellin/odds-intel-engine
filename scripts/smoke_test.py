@@ -28773,5 +28773,95 @@ def test_coolbet_daily_caps():
 
 
 
+@test("LANDING-PERF-ROI-BASIS — public ROI must be priced at executable odds, with an interval")
+def test_landing_perf_roi_basis():
+    """The public headline and /api/v1/track-record priced ROI off odds_at_pick.
+
+    odds_at_pick is a MAX() high-water mark across a fixture's whole snapshot
+    history (STALE-BEST-ODDS), not a price anyone could take. Measured on the
+    API's own cohort (calibrated+beta+active, non-inplay, pre-match markets,
+    since 2026-05-04, n=738): published +17.39% vs executable +13.10%, a
+    -4.29pp restatement.
+
+    Also pins the interval: unit-return sd is ~1.4, so n=738 still leaves
+    se +/-5.06pp. A bare ROI reads as precision the record does not have.
+    """
+    import os, re
+    web = os.path.join(os.path.dirname(__file__), "..", "..", "odds-intel-web", "src")
+    api = os.path.join(web, "app", "api", "v1", "track-record", "route.ts")
+    lib = os.path.join(web, "lib", "engine-data.ts")
+    landing = os.path.join(web, "app", "page.tsx")
+    for f in (api, lib, landing):
+        assert os.path.exists(f), f"missing {f}"
+    api_src = open(api, encoding="utf-8").read()
+    lib_src = open(lib, encoding="utf-8").read()
+    land_src = open(landing, encoding="utf-8").read()
+
+    # 1. Shared helper exists and prefers the live price.
+    assert "export function execOdds(" in lib_src, "engine-data must export execOdds"
+    assert "export function execPnl(" in lib_src, "engine-data must export execPnl"
+
+    # 2. Combos must NOT be repriced off a single leg's price.
+    ep = lib_src[lib_src.index("export function execPnl("):]
+    ep = ep[:ep.index("\nexport ")] if "\nexport " in ep else ep[:2000]
+    assert "combo_legs" in ep, "execPnl must leave combo bets on their stored pnl"
+
+    # 3. The public HEADLINE loop specifically must price at executable odds.
+    #    Checking the whole file is not enough: the per-bet ledger also calls
+    #    execOdds, so a file-wide substring check passes even when the headline
+    #    aggregate is reverted. Scope the assertion to the aggregate block.
+    start = api_src.index("let total = 0;")
+    end = api_src.index("function median(")
+    agg_block = api_src[start:end]
+    assert "pnl +=" in agg_block, "could not locate the headline P&L accumulation"
+    pnl_stmt = [l for l in agg_block.splitlines() if "pnl +=" in l][0]
+    odds_var = pnl_stmt.split("FLAT_STAKE * (")[1].split(" -")[0].strip()
+    decl = [l for l in agg_block.splitlines()
+            if f"const {odds_var} =" in l or f"let {odds_var} =" in l]
+    assert decl, f"could not find the declaration of `{odds_var}` in the headline loop"
+    assert "execOdds(" in decl[0], (
+        f"the headline ROI is computed from `{odds_var}`, which is not execOdds-derived: "
+        f"{decl[0].strip()}"
+    )
+    assert "odds_at_pick_live" in agg_block, (
+        "the headline aggregate must consider odds_at_pick_live"
+    )
+    assert "odds_at_pick_live" in api_src, "the API must select odds_at_pick_live"
+
+    # 4. The headline must ship with an interval and a stated basis.
+    for key in ("roi_ci_low_pct", "roi_ci_high_pct", "roi_se_pct", "price_basis"):
+        assert key in api_src, f"track-record meta must publish {key}"
+    assert "roi_ci_low_pct" in land_src and "95% CI" in land_src, (
+        "the landing hero must render the confidence interval next to the ROI"
+    )
+
+    # 5. No surviving raw-odds ROI arithmetic in the API.
+    bad = re.findall(r"FLAT_STAKE \* \(Number\(r\.odds_at_pick[^_]", api_src)
+    assert not bad, f"raw odds_at_pick still used for ROI arithmetic: {bad}"
+
+    # 6. Meaningfulness guard: the two bases must actually differ on the real
+    #    public cohort, else this test could pass against a broken app.
+    from workers.api_clients.db import execute_query
+    r = execute_query(
+        """SELECT count(*) n,
+             sum(CASE WHEN sb.result='won' THEN 10*(sb.odds_at_pick-1) ELSE -10 END) old_pnl,
+             sum(CASE WHEN sb.result='won'
+                 THEN 10*(COALESCE(NULLIF(sb.odds_at_pick_live,0),sb.odds_at_pick)-1)
+                 ELSE -10 END) new_pnl
+           FROM simulated_bets sb JOIN bots bt ON bt.id=sb.bot_id
+          WHERE bt.maturity_label IN ('calibrated','beta','active')
+            AND bt.name NOT LIKE 'inplay_%'
+            AND sb.market IN ('1x2','over_under_25','o/u','btts')
+            AND sb.result IN ('won','lost')
+            AND sb.created_at >= '2026-05-04'"""
+    )[0]
+    assert r["n"] > 0, "no public-cohort rows to validate against"
+    assert float(r["old_pnl"]) != float(r["new_pnl"]), (
+        "the two price bases give identical P&L on the public cohort — this test "
+        "cannot detect the bug it exists to pin"
+    )
+
+
+
 if __name__ == "__main__":
     main()
