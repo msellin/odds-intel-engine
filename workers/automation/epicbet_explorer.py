@@ -31,20 +31,42 @@ API shape (tRPC-style — every request is `?input=<url-encoded JSON>`):
                            marketGroups:[{id,name,viewType,markets:[...]}]}],
            hasMore}
 
+    /s/core-proxy/public/sport-base/match.getSidebets
+        {"matchId":2007487,"language":"en","country":"EE","marketType":"main"}
+        → the SAME match shape as the league listing, but with `marketGroups`
+          fully populated (~178 groups / ~420 markets on a top fixture).
+          `marketType` is an enum main|all|bet-builder|players; "all" returns
+          ~2,400 groups, the extra ~2,000 being player props we do not price.
+
     /s/core-proxy/public/sport-odds/activeOdds.getPreMatchByMarketIds
         [137120331, 137120908, ...]
         → [{outcomeId, status, value}, ...]
 
-**Market coverage is deliberately narrower than Coolbet's.** The league listing
-returns only the top market groups: 1X2 (group 45), Match Total Goals (15), Both
-to Score (69) and Goals Handicap (19). Double chance is NOT in the listing, so
-Epicbet writes no `double_chance` rows — Coolbet still does. Adding DC needs a
-per-match markets endpoint we have not located; not worth blocking the ingest
-for a market that is arithmetically implied by 1X2 anyway.
+**The league listing is a shallow board, not Epicbet's real one**
+(EPICBET-SIDEBETS-CORNERS-2026-09-06). Across 204 fixtures in 198 leagues
+`match.getFoByLeague` has only ever emitted group ids 45, 15, 19, 69, 96, 2055,
+98, 6, 65, 413, 5, 7, 67, 47 — so the group whitelist was never the reason
+corners were missing, they were simply never fetched. The module used to claim
+Epicbet has no double chance; that was wrong too (group 96 is on 12/12 fixtures,
+just absent from the listing).
+
+`match.getSidebets` is where the rest lives, and it is priced: total corners
+(101), team corners (133/102), corners handicap (86), total cards (79), team
+cards (77/82), 1st-half goals (6) and 1st-half 1X2 (98), team goal totals (7/5)
+and double chance (96) all resolve through `activeOdds`. It costs one extra call
+per MATCHED fixture, which is why it is bounded by `EPICBET_SIDEBETS_LIMIT`.
+
+Coverage is depth-dependent, so a fixture with no corners is normal rather than
+a bug: measured over 30 fixtures, corners on 13, cards on 5, 1H markets on 23,
+team totals on 24.
 
 Epicbet also prices quarter lines (0.75, 1.25, 2.25 …) that Coolbet does not
-carry at all. `_ou_market_for_line` keeps only the .5 lines we have a column
-vocabulary for; AH quarter lines ARE kept, since `handicap_line` is a float.
+carry at all. `_ou_market_for_line` keeps only the .5 lines we have a goals
+column vocabulary for; AH quarter lines ARE kept, since `handicap_line` is a
+float. Corners and cards get `_alt_total_tag` INSTEAD — their ladders contain
+legitimate whole-number push lines (6, 7, 8, 10, 11) that the goals vocabulary
+would reject exactly as it rejects quarter lines, silently binning most of the
+ladder.
 """
 
 from __future__ import annotations
@@ -81,6 +103,7 @@ BOOKMAKER = "Epicbet"
 _BASE = "https://epicbet.com"
 _CATEGORIES_URL = "/s/core-proxy/public/sport-base/foCategory.getByCountry"
 _LEAGUE_MATCHES_URL = "/s/core-proxy/public/sport-base/match.getFoByLeague"
+_SIDEBETS_URL = "/s/core-proxy/public/sport-base/match.getSidebets"
 _ODDS_URL = "/s/core-proxy/public/sport-odds/activeOdds.getPreMatchByMarketIds"
 
 _FOOTBALL_SPORT_ID = 1
@@ -106,6 +129,103 @@ _GROUP_1X2 = 45
 _GROUP_OU = 15
 _GROUP_BTTS = 69
 _GROUP_AH = 19
+
+# ── sidebet families (EPICBET-SIDEBETS-CORNERS-2026-09-06) ────────────────────
+#
+# group id → market namespace prefix. Every one of these was verified priced via
+# activeOdds.getPreMatchByMarketIds on 2026-09-06 (Troyes v Strasbourg, Ligue 1).
+#
+# The prefixes deliberately match what `api_football.py::_EXTRA_OU_MARKETS` and
+# `unibet_kambi.py::_CRITERION_EXTRA_OU` already write. That is the entire point
+# of collecting these: the line shop is `best_accessible × devig(Pinnacle) − 1`,
+# and Pinnacle only reaches us through the AF parser. An Epicbet corners row in
+# a namespace Pinnacle never writes has no anchor and is dead weight.
+#
+# NOTE (reported, not fixed here — this file may not touch coolbet_explorer.py):
+# Coolbet writes TEAM corners as `corners_ou_home_*` while AF writes
+# `corners_home_ou_*`. We follow AF, because AF carries the sharp side.
+_GROUP_CORNERS = 101            # "Match Total Corners"
+_GROUP_CORNERS_HOME = 133       # team-scoped; side resolved from market.teamName
+_GROUP_CORNERS_AWAY = 102
+_GROUP_CORNERS_AH = 86          # "Corners Handicap"
+_GROUP_CARDS = 79               # "Match Total Cards"
+_GROUP_CARDS_A = 77             # team-scoped; side resolved from market.teamName
+_GROUP_CARDS_B = 82
+_GROUP_OU_1H = 6                # "1. half: Total Goals"
+_GROUP_1X2_1H = 98              # " 1. half: Goals 1x2" — note the LEADING SPACE
+_GROUP_TEAM_TOTAL_A = 7         # team-scoped; side resolved from market.teamName
+_GROUP_TEAM_TOTAL_B = 5
+_GROUP_DC = 96                  # "Double Chance"
+
+# Groups whose over/under ladder is NOT the full-match goals ladder, and so uses
+# `_alt_total_tag` (whole lines allowed) rather than `_ou_market_for_line`.
+# A "{side}" in the template means the group is team-scoped and the side is
+# filled in from `market.teamName` — never from the group id, which is not a
+# stable home/away polarity (7 was home and 5 away on the sampled fixture, but
+# nothing in the API promises that).
+_ALT_TOTAL_GROUPS: dict[int, str] = {
+    _GROUP_CORNERS: "corners_ou",
+    _GROUP_CORNERS_HOME: "corners_{side}_ou",
+    _GROUP_CORNERS_AWAY: "corners_{side}_ou",
+    _GROUP_CARDS: "cards_ou",
+    _GROUP_CARDS_A: "cards_{side}_ou",
+    _GROUP_CARDS_B: "cards_{side}_ou",
+    _GROUP_TEAM_TOTAL_A: "team_total_{side}",
+    _GROUP_TEAM_TOTAL_B: "team_total_{side}",
+}
+
+# Every group the parser understands. Anything not here is skipped, so widening
+# the fetch is a one-line change and never silently reaches the goals slot.
+_WANTED_GROUPS: frozenset[int] = frozenset(
+    {_GROUP_1X2, _GROUP_OU, _GROUP_BTTS, _GROUP_AH,
+     _GROUP_CORNERS_AH, _GROUP_OU_1H, _GROUP_1X2_1H, _GROUP_DC}
+    | set(_ALT_TOTAL_GROUPS)
+)
+
+# Family kill switch, same env var and semantics as
+# `api_football.py::_EXTRA_MARKETS_DISABLED` — one shared list across the
+# ingesters so a family can be turned off fleet-wide without a deploy. The name
+# checked is the namespace PREFIX ("corners_ou", "cards_home_ou", "1x2_1h",
+# "double_chance", "corners_handicap", "over_under_1h", "team_total_home").
+# Empty/unset = everything on. The four original league-listing families
+# (1x2 / over_under / btts / asian_handicap) are NOT gateable — they are the
+# ingest, not an extra.
+_EXTRA_MARKETS_DISABLED = frozenset(
+    x.strip() for x in os.getenv("EXTRA_MARKETS_DISABLED", "").split(",") if x.strip()
+)
+
+
+def _extra_enabled(prefix: str) -> bool:
+    return prefix not in _EXTRA_MARKETS_DISABLED
+
+
+# How many MATCHED fixtures may pay a per-fixture `match.getSidebets` call.
+# Bounded on purpose: the sweep goes from ~140 league calls to ~140 + one per
+# matched fixture, and on the VPS every one of those is a FlareSolverr request
+# against a live Chrome tab. FS tab exhaustion is a recurring failure mode in
+# this repo (project_fs_sticking_pattern), so this is the blast-radius limit.
+# Env-tunable in the style of COOLBET_SIDEBETS_LIMIT. 0 disables sidebets
+# entirely and returns the job to its pre-2026-09-06 behaviour.
+#
+# Measured 2026-09-06: 328 ms per call direct, and a 488 KB JSON body that FS
+# has to render into a <pre> block and hand back — which is why marketType is
+# "main" and not "all" (1.95 MB, 4x the body, for player props we never price).
+# A full days=2 sweep matches ~517 fixtures, so an unbounded run would be ~517
+# extra FS requests and ~250 MB of rendered bodies every 30 minutes.
+_SIDEBETS_LIMIT = int(os.getenv("EPICBET_SIDEBETS_LIMIT", "250"))
+
+# Full-match GOALS over/under names, i.e. exactly what `_ou_market_for_line`
+# emits. The monotonicity guard must be restricted to these: it keys on the last
+# underscore-separated token, so `over_under_1h_15` would collide with
+# `over_under_15` and a first-half under price (far longer than the full-match
+# one) would look like a non-monotone ladder and drop every real OU row.
+_FT_OU_MARKETS: frozenset[str] = frozenset(
+    f"over_under_{c:02d}" for c in (5, 15, 25, 35, 45)
+)
+
+# Sort key for a pair whose kickoff will not parse — send it to the back of the
+# sidebets queue rather than crashing the sort or jumping it to the front.
+_FAR_FUTURE = datetime(2100, 1, 1, tzinfo=timezone.utc)
 
 
 # ── transport ─────────────────────────────────────────────────────────────────
@@ -324,11 +444,82 @@ def _normalise_start(raw: str | None) -> str:
 # ── odds ──────────────────────────────────────────────────────────────────────
 
 
+def fetch_sidebets(sess: requests.Session, match_id: int) -> dict | None:
+    """Full main-board market groups for one fixture, or None on failure.
+
+    Returns the same match shape the league listing yields (homeTeamName /
+    awayTeamName / marketGroups), so the caller can drop it straight in as
+    `event["raw"]` and the parser needs no second code path.
+
+    `marketType="main"` and not "all": "all" adds ~2,000 player-prop groups we
+    do not price, for the same one call but a far larger body through
+    FlareSolverr.
+    """
+    try:
+        data = _get(sess, _SIDEBETS_URL, {
+            "matchId": int(match_id),
+            "language": "en",
+            "country": "EE",
+            "marketType": "main",
+        })
+    except Exception as e:
+        log.warning("epicbet sidebets failed for match %s: %s", match_id, e)
+        return None
+    if not isinstance(data, dict) or not data.get("marketGroups"):
+        return None
+    return data
+
+
+def enrich_with_sidebets(sess: requests.Session, pairs: list[tuple[dict, dict]],
+                         *, limit: int | None = None,
+                         sleep_s: float = 0.15) -> int:
+    """Replace `event["raw"]` with the deep board for up to `limit` matched pairs.
+
+    Matched pairs ONLY — an unmatched fixture is never stored, so paying a call
+    for it is pure FlareSolverr load. Returns how many fixtures were enriched.
+
+    Failures are non-fatal by design: the event keeps its league-listing `raw`,
+    so the four original market families still ingest exactly as before. A
+    sidebets outage degrades coverage, it does not break the sweep.
+
+    Spent SOONEST-KICKOFF FIRST, which is what makes the budget safe rather than
+    just cheap. A full days=2 sweep matches ~517 fixtures (measured 2026-09-06),
+    so the default budget covers roughly half of them — but the job runs every
+    30 minutes, so a fixture truncated out today is picked up on a later sweep
+    as it moves up the queue. Truncation therefore only ever costs early history
+    on distant fixtures, never the near-kickoff price a placer would act on.
+    Spending the budget in DB order instead would drop an arbitrary half.
+    """
+    budget = _SIDEBETS_LIMIT if limit is None else limit
+    if budget <= 0:
+        return 0
+    ordered = sorted(
+        pairs,
+        key=lambda p: (_parse_iso_start(p[1].get("start")) or _FAR_FUTURE),
+    )
+    done = 0
+    for _m, ev in ordered:
+        if done >= budget:
+            log.info("epicbet: sidebets budget %d reached — %d matched fixtures "
+                     "keep listing-only markets", budget, len(pairs) - done)
+            break
+        mid = ev.get("id")
+        if mid is None:
+            continue
+        deep = fetch_sidebets(sess, int(mid))
+        done += 1
+        if deep is not None:
+            ev["raw"] = deep
+        if done < budget:
+            time.sleep(sleep_s)
+    return done
+
+
 def collect_market_ids(event: dict) -> list[int]:
     """Market ids for the groups we ingest, for one Epicbet event."""
     ids: list[int] = []
     for g in (event.get("raw") or {}).get("marketGroups") or []:
-        if g.get("id") not in (_GROUP_1X2, _GROUP_OU, _GROUP_BTTS, _GROUP_AH):
+        if g.get("id") not in _WANTED_GROUPS:
             continue
         for mkt in g.get("markets") or []:
             if mkt.get("id") is not None:
@@ -437,7 +628,131 @@ def parse_event_markets(
                         # Store the away row against the same home-perspective
                         # line so both sides of one market share a key.
                         add("asian_handicap", "away", oc.get("id"), -oc_line)
+
+            # ── sidebet families (EPICBET-SIDEBETS-CORNERS-2026-09-06) ───────
+            #
+            # Everything below only ever appears when `enrich_with_sidebets`
+            # replaced `raw` with the deep board; on a listing-only event these
+            # branches simply never fire.
+
+            elif gid in _ALT_TOTAL_GROUPS:
+                template = _ALT_TOTAL_GROUPS[gid]
+                if "{side}" in template:
+                    side = _side_for(mkt, home_name, away_name)
+                    if side is None:
+                        continue        # unattributable — never guess the side
+                    prefix = template.format(side=side)
+                else:
+                    prefix = template
+                if not _extra_enabled(prefix):
+                    continue
+                market = _alt_total_tag(prefix, _as_float(mkt.get("line")))
+                if market is None:
+                    continue
+                for oc in outcomes:
+                    nm = (oc.get("name") or "").strip().lower()
+                    if nm in ("over", "under"):
+                        add(market, nm, oc.get("id"))
+
+            elif gid == _GROUP_CORNERS_AH and _extra_enabled("corners_handicap"):
+                # Same home-perspective convention as the goals AH above, and
+                # the same reason for reading the line off each outcome rather
+                # than the market: outcome lines are signed per row ("-3.0" on
+                # the home side, "+3.0" on the away one).
+                for oc in outcomes:
+                    nm = (oc.get("name") or "").strip()
+                    oc_line = _as_float(oc.get("line"))
+                    if oc_line is None:
+                        continue
+                    if nm == home_name:
+                        add("corners_handicap", "home", oc.get("id"), oc_line)
+                    elif nm == away_name:
+                        add("corners_handicap", "away", oc.get("id"), -oc_line)
+
+            elif gid == _GROUP_OU_1H and _extra_enabled("over_under_1h"):
+                # First-half GOALS, so the goals vocabulary is right here — the
+                # ladder is 0.5/1/1.5/2/2.5 and the whole lines are pushes we do
+                # not hold a column for. Namespace matches the AF parser's
+                # "Goals Over/Under First Half" → over_under_1h.
+                market = _ou_market_for_line(_as_float(mkt.get("line")))
+                if market is None:
+                    continue
+                market = market.replace("over_under_", "over_under_1h_", 1)
+                for oc in outcomes:
+                    nm = (oc.get("name") or "").strip().lower()
+                    if nm in ("over", "under"):
+                        add(market, nm, oc.get("id"))
+
+            elif gid == _GROUP_1X2_1H and _extra_enabled("1x2_1h"):
+                # Group name is " 1. half: Goals 1x2" — with a LEADING SPACE.
+                # Matched on group id precisely so that does not matter.
+                for oc in outcomes:
+                    nm = (oc.get("name") or "").strip()
+                    if nm.lower() == "draw":
+                        add("1x2_1h", "draw", oc.get("id"))
+                    elif nm == home_name:
+                        add("1x2_1h", "home", oc.get("id"))
+                    elif nm == away_name:
+                        add("1x2_1h", "away", oc.get("id"))
+
+            elif gid == _GROUP_DC and _extra_enabled("double_chance"):
+                # The module docstring used to say Epicbet has no double chance.
+                # It does — group 96, on every fixture sampled; it is merely
+                # absent from the shallow league listing.
+                for oc in outcomes:
+                    nm = (oc.get("name") or "").strip().lower().replace(" ", "")
+                    sel = {"1orx": "1x", "xor2": "x2", "1or2": "12"}.get(nm)
+                    if sel:
+                        add("double_chance", sel, oc.get("id"))
     return rows
+
+
+def _alt_total_tag(prefix: str, line: float | None) -> str | None:
+    """Namespace tag for a NON-goals total line, e.g. ("corners_ou", 10.0) →
+    "corners_ou_100".
+
+    Corners and cards need this instead of `_ou_market_for_line`, and the reason
+    is the whole reason EPICBET-SIDEBETS-CORNERS exists as a task rather than a
+    whitelist edit. Epicbet's corners ladder is 6, 6.5, 7, 7.5, 8 … — the WHOLE
+    numbers are real, bettable push lines, not artefacts. `_ou_market_for_line`
+    only accepts {0.5, 1.5, 2.5, 3.5, 4.5}, so reusing it here would keep the
+    half lines, silently bin every push line, and look exactly like "Epicbet has
+    a thin corners board".
+
+    Quarter lines are still rejected: `handicap_line` is not carried on totals
+    rows, so a 6.25 line has nowhere to record its quarter-ness and would be
+    indistinguishable from a 6.5 one at read time.
+
+    The formatting (`str(float(line))` with the dot stripped) is byte-identical
+    to what `api_football.py`, `unibet_kambi.py` and `coolbet_explorer.py`
+    produce for the same line, which is what makes cross-book line shopping on
+    these markets possible at all.
+    """
+    if line is None:
+        return None
+    if abs(line * 2 - round(line * 2)) > 1e-9:      # quarter line
+        return None
+    if line <= 0 or line > 40:                      # nothing real lives outside
+        return None
+    return f"{prefix}_{str(float(line)).replace('.', '')}"
+
+
+def _side_for(mkt: dict, home_name: str, away_name: str) -> str | None:
+    """"home"/"away" for a team-scoped market, from `market.teamName`.
+
+    Never from the group id. Epicbet's team-scoped groups come in pairs
+    (133/102 corners, 77/82 cards, 7/5 goals) and the pairing is not a stable
+    home/away polarity — `teamName` is populated on every one of them and is the
+    only thing that actually says which side is priced.
+    """
+    tn = (mkt.get("teamName") or "").strip()
+    if not tn:
+        return None
+    if tn == home_name:
+        return "home"
+    if tn == away_name:
+        return "away"
+    return None
 
 
 def _as_float(v) -> float | None:
@@ -590,12 +905,18 @@ def _run_bulk_inner(sess, matches, days, sleep_s, dry_run):
         if ev is not None:
             pairs.append((m, ev))
 
+    # EPICBET-SIDEBETS-CORNERS-2026-09-06: deepen the board for matched pairs
+    # only, before market ids are collected. Corners/cards/1H/team totals/DC
+    # exist ONLY in this payload — the league listing never carries them.
+    enriched = enrich_with_sidebets(sess, pairs, sleep_s=sleep_s)
+
     market_ids: list[int] = []
     for _m, ev in pairs:
         market_ids.extend(collect_market_ids(ev))
     odds_map = fetch_odds(sess, market_ids) if market_ids else {}
     console.print(
         f"[cyan]Matched {len(pairs)}/{len(matches)} · "
+        f"{enriched} sidebet fetches · "
         f"{len(set(market_ids))} markets · {len(odds_map)} live outcomes[/cyan]"
     )
 
@@ -612,12 +933,19 @@ def _run_bulk_inner(sess, matches, days, sleep_s, dry_run):
         # (COOLBET-OU-LINE-MISLABEL-2026-08-22): a non-monotone Under-probability
         # across lines is mathematically impossible, so the labelling is wrong
         # and zero OU data beats lying OU data.
-        ou_rows = [r for r in rows if r[0].startswith("over_under_")]
+        #
+        # Restricted to the FULL-MATCH goals ladder, not `startswith
+        # ("over_under_")`. `_ou_rows_monotone` keys on the last
+        # underscore-separated token, so `over_under_1h_15` parses as cents=15
+        # and collides with `over_under_15`; a first-half under price is far
+        # longer than the full-match one, so mixing them fabricates a
+        # non-monotone ladder and drops perfectly good full-match rows.
+        ou_rows = [r for r in rows if r[0] in _FT_OU_MARKETS]
         if ou_rows and not _ou_rows_monotone([(a, b, c) for a, b, c, _ in ou_rows]):
             log.warning("epicbet-ou-monotonicity: dropping %d OU rows for match %s",
                         len(ou_rows), m["id"])
             dropped_ou += len(ou_rows)
-            rows = [r for r in rows if not r[0].startswith("over_under_")]
+            rows = [r for r in rows if r[0] not in _FT_OU_MARKETS]
 
         for market, _sel, _odds, _line in rows:
             by_market[market] = by_market.get(market, 0) + 1
@@ -636,6 +964,7 @@ def _run_bulk_inner(sess, matches, days, sleep_s, dry_run):
     t.add_column("Value", justify="right")
     t.add_row("Matches in DB window", str(len(matches)))
     t.add_row("Matched on Epicbet", str(len(pairs)))
+    t.add_row("Sidebet calls (deep board)", str(enriched))
     t.add_row("Rows parsed", str(parsed_total))
     t.add_row("OU rows dropped (monotonicity)", str(dropped_ou))
     t.add_row("Rows stored", "0 (dry-run)" if dry_run else str(stored_total))
@@ -646,6 +975,7 @@ def _run_bulk_inner(sess, matches, days, sleep_s, dry_run):
     return {
         "db_matches": len(matches),
         "matched": len(pairs),
+        "sidebet_calls": enriched,
         "parsed": parsed_total,
         "stored": stored_total,
         "by_market": by_market,
