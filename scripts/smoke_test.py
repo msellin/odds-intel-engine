@@ -29383,5 +29383,58 @@ def test_halftime_stats_param():
 
 
 
+@test("AF-WASTE-SETTLEMENT-FANOUT — post-match enrichment must gate on league coverage")
+def test_settlement_enrichment_coverage_gate():
+    """Settlement fanned out /fixtures/statistics and /fixtures/players per
+    finished match with no coverage gate.
+
+    Measured over 7 days: in leagues with coverage_statistics_fixtures=false,
+    2,692 finished matches produced 12 stats rows (0.4%); with
+    coverage_statistics_players=false, 2,790 matches produced ZERO player rows.
+
+    The batch path is untouched, so wherever AF actually has data we still use it.
+    """
+    import os, re
+    src = open(os.path.join(os.path.dirname(__file__), "..", "workers", "jobs",
+                            "settlement.py"), encoding="utf-8").read()
+
+    # The match rows must carry the flags, or the gate silently skips everything.
+    q = src[src.index("db_finished = execute_query"):]
+    q = q[:q.index(")\n", 200) + 1]
+    assert "coverage_statistics_fixtures" in q and "coverage_statistics_players" in q, (
+        "the enrichment query must select both coverage flags"
+    )
+    assert "COALESCE" in q, "NULL coverage must be treated as not-covered (fail closed)"
+
+    # The per-fixture fallbacks must be gated, not unconditional.
+    for call, flag in (("get_fixture_statistics(af_id)", "cov_stats"),
+                       ("get_fixture_players(af_id)", "cov_players")):
+        idx = src.index(call)
+        window = src[max(0, idx - 400):idx]
+        assert f'match.get("{flag}")' in window, (
+            f"{call} is not gated on {flag} — it will keep firing for leagues "
+            f"AF does not cover, which return nothing 99.6-100% of the time"
+        )
+
+    # Guard: the flags must actually discriminate on live data, else the gate is
+    # either inert or would silently drop everything.
+    from workers.api_clients.db import execute_query
+    r = execute_query(
+        """SELECT count(*) FILTER (WHERE COALESCE(l.coverage_statistics_players,false)) covered,
+                  count(*) FILTER (WHERE NOT COALESCE(l.coverage_statistics_players,false)) uncovered
+             FROM matches m LEFT JOIN leagues l ON l.id = m.league_id
+            WHERE m.status = 'finished' AND m.date > now() - interval '7 days'"""
+    )[0]
+    assert r["covered"] > 0, (
+        "no finished match is in a player-covered league — the gate would skip "
+        "everything, so it must not ship in this state"
+    )
+    assert r["uncovered"] > 0, (
+        "every league is covered, so this gate saves nothing and the test cannot "
+        "detect a regression"
+    )
+
+
+
 if __name__ == "__main__":
     main()

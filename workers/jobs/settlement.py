@@ -700,9 +700,19 @@ def fetch_post_match_enrichment() -> dict:
     today_str = date.today().isoformat()
 
     # Get recently finished matches with AF IDs
+    # AF-WASTE-SETTLEMENT-FANOUT-2026-09-05: carry the league coverage flags so the
+    # per-fixture fallbacks below can skip leagues API-Football does not cover.
+    # Without them this fanned out /fixtures/statistics and /fixtures/players for
+    # every finished match regardless. Measured over 7 days: in leagues with
+    # coverage_statistics_fixtures=false, 2,692 finished matches yielded 12 stats
+    # rows (0.4%); with coverage_statistics_players=false, 2,790 matches yielded
+    # ZERO player rows (0.0%).
     db_finished = execute_query(
-        "SELECT id, api_football_id FROM matches WHERE status = 'finished' "
-        "AND date >= %s AND date <= %s",
+        "SELECT m.id, m.api_football_id, "
+        "       COALESCE(l.coverage_statistics_fixtures, false) AS cov_stats, "
+        "       COALESCE(l.coverage_statistics_players, false)  AS cov_players "
+        "  FROM matches m LEFT JOIN leagues l ON l.id = m.league_id "
+        " WHERE m.status = 'finished' AND m.date >= %s AND m.date <= %s",
         [f"{yesterday_str}T00:00:00", f"{today_str}T23:59:59"]
     )
 
@@ -781,8 +791,13 @@ def fetch_post_match_enrichment() -> dict:
         try:
             if batch_fix and batch_fix.get("statistics"):
                 raw_full = batch_fix["statistics"]
-            else:
+            elif match.get("cov_stats"):
                 raw_full = get_fixture_statistics(af_id)
+            else:
+                # League has no fixture-statistics coverage — the call returns
+                # nothing 99.6% of the time. Batch data above is still used when
+                # present, so nothing is lost where AF actually has data.
+                raw_full = []
             full_stats = parse_fixture_stats(raw_full)
 
             # AF-WASTE-HALFTIME-STATS-2026-09-05: no second call. The full-stats
@@ -828,8 +843,13 @@ def fetch_post_match_enrichment() -> dict:
         try:
             if batch_fix and batch_fix.get("players"):
                 raw_players = batch_fix["players"]
-            else:
+            elif match.get("cov_players"):
                 raw_players = get_fixture_players(af_id)
+            else:
+                # No player-statistics coverage: measured 0 rows from 2,790
+                # finished matches over 7 days. Every one of those calls was
+                # guaranteed to return nothing.
+                raw_players = []
             parsed_players = parse_fixture_players(
                 raw_players, home_team_api_id=home_api_id
             )
