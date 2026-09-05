@@ -474,13 +474,26 @@ def notify_shadow_picks(bot_name: str, rows: list[dict]) -> str | None:
         sel = r.get("selection", "?")
         odds = r.get("odds")
         edge = r.get("edge")
-        prob = r.get("model_prob") or r.get("calibrated_prob")
+        # PICKS-MIN-ODDS-WRONG-FORMULA-2026-09-05: one definition of the floor.
+        #
+        # This was `(1 + thr) / prob` with `thr` set from `edge`. That treats a
+        # PROBABILITY-POINT edge (this engine computes `edge = cal_prob - 1/odds`,
+        # daily_pipeline_v2.py:3474) as if it were a multiplicative EV threshold,
+        # mixing units and inflating the floor. Three call sites each had a
+        # different formula and none matched break-even.
+        #
+        # Break-even is simply 1 / cal_prob. Prefer the calibrated probability
+        # (that is what the edge and the pick were derived from); fall back to
+        # reconstructing it from the edge as cal_prob = edge + 1/odds.
+        prob = r.get("calibrated_prob") or r.get("model_prob")
         min_odds = None
         try:
-            if prob and float(prob) > 0:
-                thr = float(edge) if edge is not None else 0.05
-                min_odds = (1.0 + thr) / float(prob)
-        except (TypeError, ValueError):
+            p = float(prob) if prob else None
+            if (p is None or p <= 0) and edge is not None and odds and float(odds) > 1:
+                p = float(edge) + 1.0 / float(odds)
+            if p and 0 < p <= 1:
+                min_odds = 1.0 / p
+        except (TypeError, ValueError, ZeroDivisionError):
             pass
         odds_str = f"@ {float(odds):.2f}" if odds else ""
         min_str = f" (min ≥{min_odds:.2f})" if min_odds else ""

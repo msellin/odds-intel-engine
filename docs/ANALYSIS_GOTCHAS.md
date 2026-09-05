@@ -1116,3 +1116,40 @@ execOdds-derived: const odds = Number(r.odds_at_pick ?? 0);
 - This is the exact defect class SMOKE-SUITE-AUDIT is cataloguing (170 tests
   asserting only that a string appears in a source file). It is easy to write
   one by accident while fixing something else.
+
+## 42. Our `edge` is probability points, not EV — every formula built on it must know that
+
+**2026-09-05.** `daily_pipeline_v2.py:3474` computes:
+
+```python
+edge = cal_prob - ip        # ip = 1 / odds
+```
+
+That is a difference in **probability points**. It is NOT the standard
+multiplicative edge `odds * prob - 1`, which is what almost every betting
+reference means by "edge". Three separate call sites had each independently
+assumed the standard definition, and all three were wrong — in two different
+directions:
+
+| site | had | correct | error |
+|---|---|---|---|
+| `/picks` public floor | `odds / (1 + edge)` | `1 / cal_prob` | too HIGH on 482/482, median +18.1% |
+| admin shadow-bots gate | `(1 + thr) / prob` | `1 / (cal_prob - thr)` | too PERMISSIVE, median 11.2% |
+| `telegram.py` shadow alert | `(1 + edge) / prob` | `1 / cal_prob` | 2.44 vs 2.22 |
+
+**Consequences to keep in mind:**
+
+- **Displayed "edge +11%" is not an 11% return.** The model's own EV is
+  `edge * odds`, so 0.112 at 2.29 is ~26%. Anyone reading the number as ROI is
+  reading it wrong — see TELEGRAM-EDGE-LABEL.
+- **Break-even is `1/cal_prob`**, equivalently `1/(edge + 1/odds)`.
+- **A threshold floor is `1/(cal_prob - threshold)`**, from solving
+  `cal_prob - 1/odds >= threshold`. It is a different, stricter quantity than
+  break-even, and mixing them up is how the real-money panel ended up permissive.
+- **The error direction is not predictable.** The same unit confusion made the
+  public floor too conservative and the operator's floor too loose. Do not
+  assume a units bug errs safely.
+
+If the pipeline's edge definition ever changes, every one of these is wrong
+again — the smoke test asserts `edge = cal_prob - ip` is still present for
+exactly that reason.

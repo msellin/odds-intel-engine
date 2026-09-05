@@ -28863,5 +28863,119 @@ def test_landing_perf_roi_basis():
 
 
 
+@test("PICKS-MIN-ODDS-WRONG-FORMULA — all min-odds floors use the engine's edge definition")
+def test_min_odds_formula():
+    """Three call sites each had a different floor and none matched break-even.
+
+    This engine computes `edge = cal_prob - 1/odds` (daily_pipeline_v2.py:3474),
+    a PROBABILITY-POINT difference, not the standard multiplicative
+    `edge = odds*prob - 1`. Formulas assuming the latter are wrong here.
+
+    Measured on 482 picks over 45 days:
+      /picks   odds/(1+edge)  -> 1/cal_prob        floor was too HIGH on 482/482,
+                                                    median +18.1% (users skipped
+                                                    still-+EV bets)
+      admin    (1+thr)/prob   -> 1/(cal_prob-thr)  floor was too PERMISSIVE by
+                                                    median 11.2% (real-money gate)
+      telegram (1+edge)/prob  -> 1/cal_prob        median 2.44 -> 2.22
+    """
+    import os, re
+    root = os.path.join(os.path.dirname(__file__), "..")
+    web = os.path.join(root, "..", "odds-intel-web", "src")
+
+    # 1. The engine's edge definition must still be what we assume. If this
+    #    changes, every floor below is wrong again.
+    pipe = open(os.path.join(root, "workers", "jobs", "daily_pipeline_v2.py"),
+                encoding="utf-8").read()
+    assert "edge = cal_prob - ip" in pipe, (
+        "the edge definition changed — every min-odds formula must be revisited"
+    )
+
+    # 2. /picks must use the break-even derivation, not the multiplicative one.
+    up = open(os.path.join(web, "lib", "upcoming-picks.ts"), encoding="utf-8").read()
+    assert "export function breakEvenOdds(" in up, "breakEvenOdds helper missing"
+    assert "min_odds: breakEvenOdds(" in up, "picks must derive min_odds via breakEvenOdds"
+    assert "odds_at_pick) / (1 + Number(r.edge_percent))" not in up, (
+        "the multiplicative break-even formula is back in upcoming-picks"
+    )
+    be = up[up.index("export function breakEvenOdds("):]
+    be = be[:be.index("\n}\n")]
+    assert "1 / cal" in be or "1 / impliedProb" in be, (
+        "breakEvenOdds must invert a probability, not divide odds by (1+edge)"
+    )
+
+    # 3. Telegram must not use the mixed-unit form.
+    tg = open(os.path.join(root, "workers", "notify", "telegram.py"),
+              encoding="utf-8").read()
+    assert "(1.0 + thr) / float(prob)" not in tg, (
+        "telegram still mixes a probability-point edge into a multiplicative floor"
+    )
+    assert "min_odds = 1.0 / p" in tg, "telegram must publish 1/cal_prob as the floor"
+
+    # 4. Admin qualifying floor must solve the gate correctly.
+    adm = open(os.path.join(web, "app", "(app)", "admin", "shadow-bots", "page.tsx"),
+               encoding="utf-8").read()
+    assert "(1 + threshold) / modelProb" not in adm, (
+        "admin floor still uses the mixed-unit form — it reads too permissive, "
+        "which is the dangerous direction for a real-money gate"
+    )
+    assert "1 / (modelProb - threshold)" in adm, (
+        "admin floor must be 1/(cal_prob - threshold), from edge >= threshold"
+    )
+
+    # 5. Numeric check of the corrected relationships on a worked example.
+    odds, edge = 3.11, 0.09
+    cal = edge + 1 / odds
+    assert abs(cal - 0.4115) < 0.01, "cal_prob reconstruction drifted"
+    assert abs((1 / cal) - 2.43) < 0.02, "break-even should be ~2.43, not 2.85"
+    assert abs((odds / (1 + edge)) - 2.85) < 0.02, "old formula reference drifted"
+    thr = 0.08
+    assert 1 / (cal - thr) > (1 + thr) / cal, (
+        "the corrected qualifying floor must be STRICTER than the old one"
+    )
+
+
+@test("LANDING-PERF-COHORT-SHARED — the two public ROI surfaces must share cohort and basis")
+def test_public_cohort_shared():
+    """/performance and /api/v1/track-record publish ROI for the same bets.
+
+    They had duplicated cohort literals that happened to agree, and diverging
+    price bases that did not: on 2026-09-05 the API was corrected to executable
+    odds while /performance was left on odds_at_pick, so the two public pages
+    briefly reported +13.10% and +17.39% for identical bets.
+    """
+    import os
+    web = os.path.join(os.path.dirname(__file__), "..", "..", "odds-intel-web", "src")
+    api = open(os.path.join(web, "app", "api", "v1", "track-record", "route.ts"),
+               encoding="utf-8").read()
+    lib = open(os.path.join(web, "lib", "engine-data.ts"), encoding="utf-8").read()
+
+    # Cohort must be imported, not re-declared as literals.
+    assert 'const PRE_MATCH_MARKETS = ["1x2"' not in api, (
+        "track-record re-declares the market cohort — import it so the two "
+        "public surfaces cannot silently diverge"
+    )
+    assert 'const PUBLIC_MATURITY_LABELS = ["calibrated"' not in api, (
+        "track-record re-declares maturity labels instead of importing them"
+    )
+    for name in ("CALIBRATED_SINCE", "CALIBRATED_PUBLIC_MARKETS", "FLAT_STAKE_EUR"):
+        assert name in api, f"track-record must import {name} from engine-data"
+
+    # Both must price at executable odds.
+    assert "execOdds(r.odds_at_pick, r.odds_at_pick_live)" in api, (
+        "track-record headline must price at executable odds"
+    )
+    head = lib[lib.index("_getCalibratedHeadlineStatsUncached"):]
+    head = head[:head.index("export const getCalibratedHeadlineStats")]
+    assert "execOdds(r.odds_at_pick, r.odds_at_pick_live)" in head, (
+        "/performance headline must price at executable odds too, or the two "
+        "public pages report different ROI for the same bets"
+    )
+    assert "Number(r.odds_at_pick ?? 0)" not in head, (
+        "/performance headline still reads raw odds_at_pick"
+    )
+
+
+
 if __name__ == "__main__":
     main()
