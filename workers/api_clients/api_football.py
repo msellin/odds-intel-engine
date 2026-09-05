@@ -253,6 +253,22 @@ def _extra_enabled(prefix: str) -> bool:
     return prefix not in _EXTRA_MARKETS_DISABLED
 
 
+# AF-EXACT-SCORE-2026-09-05. Pinnacle quotes ~70 scorelines — a near-complete
+# JOINT goal distribution, strictly more information than any marginal. It is the
+# only route to a Pinnacle BTTS anchor: Pinnacle never quotes BTTS through AF, so
+# `clv_pinnacle` is permanently NULL for it and no BTTS bot can clear the
+# CLV-gated promotion path (PINNACLE-BTTS-ZERO-COVERAGE).
+#
+# OFF by default, and that is a volume decision rather than a value judgement:
+# 70 rows x ~1,000 fixtures x 47 sweeps/day is ~3.3M rows/day on a table already
+# at 74M, right after we grew it 88%. The backfill script turns it on for a
+# one-shot historical pull, which is where the value is — AF drops odds after 7
+# days, so the history is perishable while the live capture is not.
+#
+# Pinnacle only: the sharp grid is the point. A soft book's correct-score prices
+# carry enormous margin and would be noise.
+_CAPTURE_EXACT_SCORE = os.getenv("CAPTURE_EXACT_SCORE", "0") == "1"
+
 _EXTRA_OU_MARKETS = {
     "Goals Over/Under First Half":       "over_under_1h",
     "Corners Over Under":                "corners_ou",
@@ -791,6 +807,28 @@ def parse_fixture_odds(odds_response: list[dict]) -> list[dict]:
                                 "odds": float(val["odd"]),
                             })
                         except ValueError:
+                            pass
+
+                elif (bet_name == "Exact Score" and _CAPTURE_EXACT_SCORE
+                      and bm_name in _TEAM_TOTAL_BOOKMAKERS):
+                    # Own namespace; selection is the scoreline itself ("2:1").
+                    # Never merged with anything — a correct-score price has no
+                    # relationship to a 1x2 or totals line at the same number.
+                    for val in bet.get("values", []):
+                        v = str(val.get("value") or "").strip()
+                        if ":" not in v:
+                            continue
+                        h, _, a = v.partition(":")
+                        if not (h.strip().isdigit() and a.strip().isdigit()):
+                            continue
+                        try:
+                            rows.append({
+                                "bookmaker": bm_name,
+                                "market": "correct_score",
+                                "selection": f"{int(h)}:{int(a)}",
+                                "odds": float(val["odd"]),
+                            })
+                        except (ValueError, TypeError, KeyError):
                             pass
 
                 elif bet_name == "First Half Winner" and _extra_enabled("1x2_1h"):

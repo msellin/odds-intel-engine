@@ -47,12 +47,19 @@ from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+os.environ.setdefault("CAPTURE_EXACT_SCORE", "1")  # before the parser import
 from workers.api_clients.api_football import get_odds_by_date, parse_fixture_odds  # noqa: E402
 from workers.api_clients.db import execute_query, execute_write  # noqa: E402
 
 # Families that did not exist before 2026-09-05 and therefore have no history to
 # disturb. Anything not matching these prefixes is skipped.
-NEW_PREFIXES = ("corners_", "cards_", "team_total_", "over_under_1h", "1x2_1h")
+NEW_PREFIXES = ("corners_", "cards_", "team_total_", "over_under_1h", "1x2_1h",
+                "correct_score")
+
+# AF-EXACT-SCORE-2026-09-05: the ~70-scoreline grid is OFF in live collection
+# (3.3M rows/day) but ON here — the history is perishable and the one-shot pull
+# is not. Set before importing the parser so the module-level flag picks it up.
+os.environ.setdefault("CAPTURE_EXACT_SCORE", "1")
 
 # AF retains odds for exactly 7 days; beyond that the endpoint returns nothing.
 MAX_DAYS = 7
@@ -66,6 +73,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=MAX_DAYS)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--exact-score", action="store_true",
+                    help="extra per-fixture pass for the correct-score grid")
     args = ap.parse_args()
     days = min(args.days, MAX_DAYS)
 
@@ -127,6 +136,51 @@ def main() -> int:
         print(f"      wrote {len(payload):,}")
 
     print(f"\n{'would write' if args.dry_run else 'wrote'} {total_rows:,} rows total")
+
+    if args.exact_score:
+        # AF-EXACT-SCORE-2026-09-05: the ~70-scoreline grid is present on only
+        # ~1 in 40 fixtures via the bulk date sweep, but on most fixtures via the
+        # per-fixture endpoint. So it needs its own pass: ~1 call per fixture,
+        # roughly 2,200 for the window, against a 150,000/day limit used at
+        # 9-23%. Worth it because AF drops odds after 7 days and this grid is the
+        # only route to a Pinnacle BTTS anchor.
+        from workers.api_clients.api_football import _get
+        fixtures = execute_query(
+            """SELECT m.api_football_id afid, m.id::text mid, m.date
+                 FROM matches m
+                WHERE m.api_football_id IS NOT NULL
+                  AND m.date::date BETWEEN %s AND %s""",
+            [(date.today() - timedelta(days=days)).isoformat(),
+             (date.today() - timedelta(days=1)).isoformat()],
+        )
+        print(f"\nexact-score pass: {len(fixtures):,} fixtures")
+        wrote = 0
+        for i, f in enumerate(fixtures, 1):
+            try:
+                resp = _get("odds", {"fixture": int(f["afid"])})
+            except Exception:
+                continue
+            payload = []
+            for parsed in parse_fixture_odds(resp.get("response") or []):
+                if parsed["market"] != "correct_score":
+                    continue
+                payload.append((f["mid"], parsed["bookmaker"], parsed["market"],
+                                parsed["selection"], float(parsed["odds"]), f["date"]))
+            if payload and not args.dry_run:
+                execute_write(
+                    """INSERT INTO odds_snapshots
+                         (match_id, bookmaker, market, selection, odds,
+                          timestamp, minutes_to_kickoff, is_closing, is_live)
+                       SELECT v.mid::uuid, v.bk, v.mkt, v.sel, v.odds,
+                              v.ko - interval '1 minute', 1, FALSE, FALSE
+                         FROM (VALUES %s) AS v(mid, bk, mkt, sel, odds, ko)"""
+                    % ",".join(["(%s,%s,%s,%s,%s,%s)"] * len(payload)),
+                    [x for row in payload for x in row],
+                )
+            wrote += len(payload)
+            if i % 250 == 0:
+                print(f"  {i}/{len(fixtures)} fixtures, {wrote:,} scoreline rows")
+        print(f"exact-score: {'would write' if args.dry_run else 'wrote'} {wrote:,} rows")
     return 0
 
 
