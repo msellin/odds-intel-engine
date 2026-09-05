@@ -29014,5 +29014,56 @@ def test_exec_odds_single_definition():
 
 
 
+@test("CLV-DEVIG-STALE-PRICE — CLV must be priced at executable odds, not the high-water mark")
+def test_clv_devig_uses_executable_price():
+    """The CLV-by-odds slope that read as "our edge lives above 2.8" was a
+    stale-price artefact, not a de-vig artefact.
+
+    clv_pinnacle_devig = odds * devig(Pinnacle close) - 1, and the backfill used
+    `odds_at_pick` — a MAX() high-water mark across the fixture's entire snapshot
+    history. Because the error is multiplicative, it scales with odds, which
+    manufactured a rising slope. Recomputed at odds_at_pick_live:
+
+        bucket      stored      executable
+        1.0-1.8     +1.29%      -1.46%
+        1.8-2.2     +0.91%      -3.22%
+        2.2-2.8     +0.53%      -3.07%
+        2.8-3.5     +4.70%      -0.99%   (t 4.16 -> -1.10)
+        3.5+       +16.57%      +9.95%   (t 5.78 -> 3.64)
+
+    Four of five buckets flip negative. This matters beyond the analysis: the
+    column is the meta-model's training label (train_b_ml3.py:435), so the label
+    itself carries the inflation.
+    """
+    import os
+    root = os.path.dirname(__file__)
+    src = open(os.path.join(root, "backfill_simulated_clv_devig.py"), encoding="utf-8").read()
+
+    # The SELECT that feeds the CLV arithmetic must use the executable price.
+    sel = src[src.index("SELECT id, match_id"):src.index("FROM simulated_bets")]
+    assert "odds_at_pick_live" in sel, (
+        "the devig CLV backfill must price at odds_at_pick_live (falling back to "
+        "odds_at_pick), not the raw high-water mark"
+    )
+    assert "COALESCE" in sel, "must fall back to odds_at_pick where no live price exists"
+
+    # Guard: the two bases must actually differ, else this cannot detect the bug.
+    from workers.api_clients.db import execute_query
+    r = execute_query(
+        """SELECT count(*) n,
+                  sum(CASE WHEN odds_at_pick_live IS NOT NULL
+                            AND abs(odds_at_pick_live - odds_at_pick) > 0.01
+                           THEN 1 ELSE 0 END) differing
+             FROM simulated_bets
+            WHERE result IN ('won','lost') AND clv_pinnacle_devig IS NOT NULL"""
+    )[0]
+    assert r["n"] > 0, "no settled rows with a devig CLV to validate against"
+    assert r["differing"] > 0, (
+        "no row has a live price differing from odds_at_pick — this test cannot "
+        "detect the bug it exists to pin"
+    )
+
+
+
 if __name__ == "__main__":
     main()

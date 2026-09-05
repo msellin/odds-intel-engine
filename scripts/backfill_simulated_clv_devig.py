@@ -45,7 +45,14 @@ def main() -> int:
 
     bets = execute_query(
         """
-        SELECT id, match_id, market, selection, odds_at_pick
+        -- CLV-DEVIG-STALE-PRICE-2026-09-05: price the CLV at the odds that were
+        -- actually available, not `odds_at_pick`, which STALE-BEST-ODDS showed is a
+        -- MAX() high-water mark across the fixture's whole snapshot history. Pricing
+        -- CLV off a price nobody could take inflates it, and the inflation SCALES
+        -- WITH ODDS (measured -2.75pp at 1.0-1.8 rising to -6.62pp at 3.5+), which
+        -- manufactured a fake "our edge lives at long odds" slope.
+        SELECT id, match_id, market, selection,
+               COALESCE(NULLIF(odds_at_pick_live, 0), odds_at_pick) AS odds_at_pick
           FROM simulated_bets
          WHERE result IN ('won','lost') AND clv_pinnacle_devig IS NULL
         """,

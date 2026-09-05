@@ -1190,3 +1190,47 @@ high by 18.1%, the real-money admin gate too permissive by 11.2%.
   and nothing would have caught them drifting.
 - Cross-language pairs (TypeScript UI, Python workers) cannot share an import.
   Assert numeric agreement on real rows instead.
+
+## 44. A stale price contaminates CLV *proportionally*, so it fakes an odds slope
+
+**2026-09-05.** A CLV-by-odds table read as "our edge lives above ~2.8 and is
+zero below it" — monotone, t=+4.16 and +5.78 in the top two buckets. It was
+about to be used to change real staking.
+
+The suspicion was Shin de-vig residual bias at longshots. **That was wrong**, and
+two tests said so:
+
+- **Placebo**: selections we did NOT pick, on the same matches, get *worse* with
+  odds under Shin (−6.92% → −9.84%). A methodological longshot bias would have
+  lifted them too.
+- **Method sensitivity**: proportional de-vig tilts longshots UP (−6.03% →
+  −3.38%) while Shin does not — Shin is correcting in the right direction, as
+  `workers/model/devig.py` claims.
+
+The actual cause was the stale price. `clv_pinnacle_devig = odds × devig(close) − 1`
+was computed from `odds_at_pick`, a MAX() high-water mark. Because the error is
+**multiplicative**, its absolute size grows with odds:
+
+| bucket | stored | at executable price | shift |
+|---|---|---|---|
+| 1.0–1.8 | +1.29% | −1.46% | −2.75pp |
+| 1.8–2.2 | +0.91% | −3.22% | −4.13pp |
+| 2.2–2.8 | +0.53% | −3.07% | −3.60pp |
+| 2.8–3.5 | +4.70% (t=4.16) | −0.99% (t=−1.10) | −5.69pp |
+| 3.5+ | +16.57% (t=5.78) | +9.95% (t=3.64) | −6.62pp |
+
+**Rules:**
+
+- **A multiplicative price error masquerades as an odds effect.** Any metric of
+  the form `odds × p − 1` inherits the price error scaled by odds, so a constant
+  relative price bias becomes a *slope* in odds. Before believing any
+  "edge varies with odds/line/price" finding, recompute it at the executable
+  price.
+- **Check what actually populates the column.** `clv_pinnacle_devig` is written
+  only by a one-off backfill script, never by settlement — so it silently
+  reflects whatever price basis that script used on the day it ran.
+- **Placebo and method-sensitivity tests are cheap and they earn their keep.**
+  Here they *exonerated* the suspected cause, which stopped a wrong fix.
+- **Pre-register.** The predictions and decision rule were written to
+  `dev/active/devig-artefact-check-plan.md` before measuring, so "de-vig was
+  innocent" could not be quietly reinterpreted as a win.
