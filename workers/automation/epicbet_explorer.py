@@ -466,6 +466,30 @@ def fetch_sidebets(sess: requests.Session, match_id: int) -> dict | None:
         log.warning("epicbet sidebets failed for match %s: %s", match_id, e)
         return None
     if not isinstance(data, dict) or not data.get("marketGroups"):
+        # EPICBET-SIDEBETS-VPS-SILENT-EMPTY-2026-09-06: this used to `return
+        # None` with no log, and that hid a total feature outage.
+        #
+        # Measured: from the operator's residential IP the deep board works —
+        # 12 fixtures produced 584 rows including 96 corners and the whole-line
+        # push ladder. From the VPS, the same code makes its full 250 sidebets
+        # calls per sweep, logs only 2-3 FlareSolverr 500s, and writes ZERO
+        # corners and ZERO deep-board rows: 12,217 and 12,108 Epicbet rows in
+        # the 20:00 and 21:00 UTC hours, corners=0 in both. So the calls are
+        # not erroring — they are returning a body this branch rejects, and
+        # rejecting it silently made a shipped feature look present.
+        #
+        # Exactly the failure family as EPICBET-403-FROM-VPS, which wrote
+        # nothing for 277 consecutive runs while every one recorded
+        # `completed`. Log the shape so the next person sees it in one journal
+        # grep instead of inferring it from a row count.
+        log.warning(
+            "epicbet sidebets returned no marketGroups for match %s "
+            "(type=%s, keys=%s) — deep board unavailable, falling back to the "
+            "shallow league listing; see EPICBET-SIDEBETS-VPS-SILENT-EMPTY",
+            match_id,
+            type(data).__name__,
+            sorted(data.keys())[:12] if isinstance(data, dict) else "n/a",
+        )
         return None
     return data
 
