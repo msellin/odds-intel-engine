@@ -486,34 +486,48 @@ def get_closing_odds(
                 hl = float(hl_str)
             except ValueError:
                 return None
-            bm_clause = "AND bookmaker = %s " if bookmaker else ""
+            bm_clause = "AND os.bookmaker = %s " if bookmaker else ""
             bm_args = [bookmaker] if bookmaker else []
+            # AF-ISLIVE-CALLSITE-FIXES-2026-09-05: the is_closing PRIMARY path had
+            # no kickoff bound while CLOSING-PRE-KO-FALLBACK below did — backwards.
+            # is_closing rows can be stamped post-kickoff (gotcha 37), so bound both.
             result = execute_query(
-                "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
-                "AND selection = %s AND handicap_line = %s AND is_closing = TRUE "
+                "SELECT os.odds FROM odds_snapshots os "
+                "JOIN matches m ON m.id = os.match_id "
+                "WHERE os.match_id = %s AND os.market = %s "
+                "AND os.selection = %s AND os.handicap_line = %s AND os.is_closing = TRUE "
+                "AND os.timestamp <= m.date "
                 f"{bm_clause}"
-                "ORDER BY timestamp DESC, bookmaker LIMIT 1",
+                "ORDER BY os.timestamp DESC, os.bookmaker LIMIT 1",
                 [match_id, market, sel_team, hl] + bm_args
             )
             if result:
                 return float(result[0]["odds"])
             result2 = execute_query(
-                "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
-                "AND selection = %s AND handicap_line = %s "
+                "SELECT os.odds FROM odds_snapshots os "
+                "JOIN matches m ON m.id = os.match_id "
+                "WHERE os.match_id = %s AND os.market = %s "
+                "AND os.selection = %s AND os.handicap_line = %s "
+                "AND os.timestamp <= m.date "
                 f"{bm_clause}"
-                "ORDER BY timestamp DESC, bookmaker LIMIT 1",
+                "ORDER BY os.timestamp DESC, os.bookmaker LIMIT 1",
                 [match_id, market, sel_team, hl] + bm_args
             )
             return float(result2[0]["odds"]) if result2 else None
         return None
 
-    bm_clause = "AND bookmaker = %s " if bookmaker else ""
+    bm_clause = "AND os.bookmaker = %s " if bookmaker else ""
     bm_args = [bookmaker] if bookmaker else []
+    # AF-ISLIVE-CALLSITE-FIXES-2026-09-05: kickoff bound on the is_closing PRIMARY
+    # path, matching the CLOSING-PRE-KO-FALLBACK below (gotcha 37).
     result = execute_query(
-        "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
-        "AND selection = %s AND is_closing = TRUE "
+        "SELECT os.odds FROM odds_snapshots os "
+        "JOIN matches m ON m.id = os.match_id "
+        "WHERE os.match_id = %s AND os.market = %s "
+        "AND os.selection = %s AND os.is_closing = TRUE "
+        "AND os.timestamp <= m.date "
         f"{bm_clause}"
-        "ORDER BY timestamp DESC, bookmaker LIMIT 1",
+        "ORDER BY os.timestamp DESC, os.bookmaker LIMIT 1",
         [match_id, market, selection] + bm_args
     )
     if result:
@@ -639,10 +653,15 @@ def get_pinnacle_closing_odds(match_id: str, market: str, selection: str) -> flo
     Pinnacle CLV is the industry-standard bet model validator — consistently
     positive = finding edge before sharp money moves the line.
     Falls back to latest Pinnacle snapshot if is_closing not marked."""
+    # AF-ISLIVE-CALLSITE-FIXES-2026-09-05: same asymmetry as get_closing_odds —
+    # PIN-CLOSE-PRE-KO-FALLBACK below bounds by kickoff, this primary path did not.
     result = execute_query(
-        "SELECT odds FROM odds_snapshots WHERE match_id = %s AND market = %s "
-        "AND selection = %s AND bookmaker = 'Pinnacle' AND is_closing = TRUE "
-        "ORDER BY timestamp DESC LIMIT 1",
+        "SELECT os.odds FROM odds_snapshots os "
+        "JOIN matches m ON m.id = os.match_id "
+        "WHERE os.match_id = %s AND os.market = %s "
+        "AND os.selection = %s AND os.bookmaker = 'Pinnacle' AND os.is_closing = TRUE "
+        "AND os.timestamp <= m.date "
+        "ORDER BY os.timestamp DESC LIMIT 1",
         [match_id, market, selection]
     )
     if result:

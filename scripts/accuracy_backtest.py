@@ -238,7 +238,12 @@ def market_baseline_1x2(since: str | None, match_ids: set) -> dict:
     FROM odds_snapshots o
     WHERE o.match_id = ANY(%s::uuid[])
       AND o.market = '1x2'
+      -- AF-ISLIVE-CALLSITE-FIXES-2026-09-05 / gotcha 37: `is_live = false` is not
+      -- a pre-match filter, it only drops the 'api-football-live' pseudo-book.
+      -- Measured impact of this fix on the headline: 52.30% -> 52.37% (+0.07pp),
+      -- i.e. hygiene only — the market-favourite baseline conclusion is unchanged.
       AND COALESCE(o.is_live, FALSE) = FALSE
+      AND o.minutes_to_kickoff > 0
     GROUP BY o.match_id, o.selection
     """
     fav: dict[str, tuple[str, float]] = {}

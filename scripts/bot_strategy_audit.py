@@ -160,6 +160,11 @@ def _prematch_funnel(bot_name: str, config: dict, days: int, conn) -> dict:
               AND os.market = %(osm)s
               AND os.bookmaker NOT IN ('api-football','api-football-live','Pinnacle')
               AND os.is_closing = false
+              -- AF-ISLIVE-CALLSITE-FIXES-2026-09-05 / gotcha 37: pre-match bound.
+              -- `is_live = false` never meant pre-kickoff; 26% of those rows are
+              -- post-KO. minutes_to_kickoff > 0 is the verified-safe predicate
+              -- (indexed); NULL (0.23% of rows) is excluded by the comparison.
+              AND os.minutes_to_kickoff > 0
         ) best ON TRUE
         WHERE m.date >= NOW() - INTERVAL %(d)s
           AND m.date < NOW()
@@ -187,6 +192,7 @@ def _prematch_funnel(bot_name: str, config: dict, days: int, conn) -> dict:
             WHERE os.match_id = m.id AND os.market = %(osm)s
               AND os.bookmaker NOT IN ('api-football','api-football-live','Pinnacle')
               AND os.is_closing = false
+              AND os.minutes_to_kickoff > 0  -- pre-match bound, see gotcha 37
         ) best ON TRUE
         WHERE m.date >= NOW() - INTERVAL %(d)s
           AND m.date < NOW()
@@ -219,6 +225,7 @@ def _prematch_funnel(bot_name: str, config: dict, days: int, conn) -> dict:
             WHERE os.match_id = m.id AND os.market = %(osm)s
               AND os.bookmaker NOT IN ('api-football','api-football-live','Pinnacle')
               AND os.is_closing = false
+              AND os.minutes_to_kickoff > 0  -- pre-match bound, see gotcha 37
         ) best ON TRUE
         WHERE m.date >= NOW() - INTERVAL %(d)s
           AND m.date < NOW()
@@ -246,6 +253,7 @@ def _prematch_funnel(bot_name: str, config: dict, days: int, conn) -> dict:
             WHERE os.match_id = m.id AND os.market = %(osm)s
               AND os.bookmaker NOT IN ('api-football','api-football-live','Pinnacle')
               AND os.is_closing = false
+              AND os.minutes_to_kickoff > 0  -- pre-match bound, see gotcha 37
         ) best ON TRUE
         LEFT JOIN LATERAL (
             SELECT MAX(odds) AS pin_odds
@@ -253,6 +261,7 @@ def _prematch_funnel(bot_name: str, config: dict, days: int, conn) -> dict:
             WHERE os.match_id = m.id AND os.market = %(osm)s
               AND os.bookmaker = 'Pinnacle'
               AND os.is_closing = false
+              AND os.minutes_to_kickoff > 0  -- pre-match bound, see gotcha 37
         ) pin ON TRUE
         WHERE m.date >= NOW() - INTERVAL %(d)s
           AND m.date < NOW()

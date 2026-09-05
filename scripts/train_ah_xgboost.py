@@ -122,9 +122,13 @@ def _load_training_rows() -> pd.DataFrame:
             FROM odds_snapshots os
             WHERE os.market = 'asian_handicap'
               AND os.selection = 'home'
+              -- is_live only excludes the 'api-football-live' pseudo-book; it is
+              -- NOT a pre-match filter (gotcha 37). Kept for that narrow purpose.
               AND os.is_live = FALSE
               AND os.minutes_to_kickoff IS NOT NULL
-              AND os.minutes_to_kickoff BETWEEN -30 AND 720
+              -- AF-ISLIVE-CALLSITE-FIXES-2026-09-05: lower bound was -30, which
+              -- deliberately admitted 30 minutes of in-play prices into training.
+              AND os.minutes_to_kickoff BETWEEN 1 AND 720
               AND os.odds BETWEEN 1.40 AND 3.00
               AND os.handicap_line IS NOT NULL
             ORDER BY os.match_id, os.handicap_line, os.minutes_to_kickoff ASC

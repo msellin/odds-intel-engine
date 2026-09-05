@@ -139,6 +139,9 @@ def main():
         FROM odds_snapshots
         WHERE match_id = ANY(%s::uuid[])
           AND is_closing = false
+          -- AF-ISLIVE-CALLSITE-FIXES-2026-09-05 / gotcha 37: pre-match bound.
+          -- MAX(odds) over post-KO rows fabricates edge (p99 +4.10pp).
+          AND minutes_to_kickoff > 0
           AND odds BETWEEN 1.05 AND 30.0
           AND bookmaker = ANY(%s)
         GROUP BY match_id, market, selection, handicap_line

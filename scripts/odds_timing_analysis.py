@@ -255,6 +255,10 @@ def analysis_time_of_day(days: int, market_filter: str) -> None:
         "os.odds > 1.0",
         "os.odds < 20.0",  # filter outliers
         "m.status = 'finished'",  # only finished matches have full-day data
+        # AF-ISLIVE-CALLSITE-FIXES-2026-09-05 / gotcha 37: this whole analysis is
+        # about hour-of-day, and post-kickoff rows cluster in specific hours — so
+        # leaving them in did not just add noise, it biased the shape.
+        "os.timestamp <= m.date",
     ]
     params: list = [cutoff]
 
@@ -399,15 +403,17 @@ def analysis_recent_intraday(days: int, market_filter: str, n_matches: int = 10)
         # Get per-hour odds for this match (best bookmaker per hour)
         hourly = execute_query("""
             SELECT
-                EXTRACT(HOUR FROM timestamp)::int AS hour_utc,
-                MAX(odds)::float AS best_odds,
-                COUNT(DISTINCT bookmaker)::int AS n_books
-            FROM odds_snapshots
-            WHERE match_id = %s
-              AND market = %s
-              AND selection = %s
-              AND odds > 1.0
-            GROUP BY EXTRACT(HOUR FROM timestamp)::int
+                EXTRACT(HOUR FROM os.timestamp)::int AS hour_utc,
+                MAX(os.odds)::float AS best_odds,
+                COUNT(DISTINCT os.bookmaker)::int AS n_books
+            FROM odds_snapshots os
+            JOIN matches m ON m.id = os.match_id
+            WHERE os.match_id = %s
+              AND os.market = %s
+              AND os.selection = %s
+              AND os.odds > 1.0
+              AND os.timestamp <= m.date  -- pre-match only, gotcha 37
+            GROUP BY EXTRACT(HOUR FROM os.timestamp)::int
             ORDER BY hour_utc
         """, [match["match_id"], snap_m, snap_s])
 

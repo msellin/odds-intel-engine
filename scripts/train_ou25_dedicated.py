@@ -62,19 +62,28 @@ def load_dataset() -> pd.DataFrame:
     """Pinnacle paired OU 2.5 closing + finished match + MFV + Pinnacle OU 2.5 implied."""
     feat_sql = ", ".join(f"mfv.{c}" for c in FEATURE_COLS)
     sql = f"""
+        -- AF-ISLIVE-CALLSITE-FIXES-2026-09-05 / gotcha 37: is_closing does NOT
+        -- imply pre-kickoff (2.87% of is_closing rows land >5 min after KO), so
+        -- bound both CTEs by the fixture date before taking the closing price.
         WITH paired AS (
-            SELECT match_id
-            FROM odds_snapshots
-            WHERE market='over_under_25' AND is_closing=TRUE AND bookmaker='Pinnacle'
-            GROUP BY match_id HAVING COUNT(DISTINCT selection)=2
+            SELECT os.match_id
+            FROM odds_snapshots os
+            JOIN matches mm ON mm.id = os.match_id
+            WHERE os.market='over_under_25' AND os.is_closing=TRUE
+              AND os.bookmaker='Pinnacle'
+              AND os.timestamp <= mm.date
+            GROUP BY os.match_id HAVING COUNT(DISTINCT os.selection)=2
         ),
         pin_ou AS (
-            SELECT match_id,
-                   MAX(odds) FILTER (WHERE selection='over')  AS pin_over_odds,
-                   MAX(odds) FILTER (WHERE selection='under') AS pin_under_odds
-            FROM odds_snapshots
-            WHERE market='over_under_25' AND is_closing=TRUE AND bookmaker='Pinnacle'
-            GROUP BY match_id
+            SELECT os.match_id,
+                   MAX(os.odds) FILTER (WHERE os.selection='over')  AS pin_over_odds,
+                   MAX(os.odds) FILTER (WHERE os.selection='under') AS pin_under_odds
+            FROM odds_snapshots os
+            JOIN matches mm ON mm.id = os.match_id
+            WHERE os.market='over_under_25' AND os.is_closing=TRUE
+              AND os.bookmaker='Pinnacle'
+              AND os.timestamp <= mm.date
+            GROUP BY os.match_id
         )
         SELECT m.id AS match_id,
                m.date,

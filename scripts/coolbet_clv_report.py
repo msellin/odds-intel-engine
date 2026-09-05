@@ -62,20 +62,27 @@ def fetch_coolbet_bets(days: int | None):
 def pinnacle_closing(match_id: str, market: str, selection: str) -> float | None:
     """Closing Pinnacle odds for (match, market, selection). Falls back to
     latest Pinnacle snapshot if is_closing isn't marked."""
+    # AF-ISLIVE-CALLSITE-FIXES-2026-09-05 / gotcha 37: neither branch had a
+    # kickoff bound. The fallback in particular could return an in-play tick as
+    # the "closing" line, which is real-money-facing CLV. Bound both by m.date.
     rows = execute_query(
-        """SELECT odds FROM odds_snapshots
-           WHERE match_id = %s AND market = %s AND selection = %s
-             AND bookmaker = 'Pinnacle' AND is_closing = TRUE
-           ORDER BY timestamp DESC LIMIT 1""",
+        """SELECT os.odds FROM odds_snapshots os
+           JOIN matches m ON m.id = os.match_id
+           WHERE os.match_id = %s AND os.market = %s AND os.selection = %s
+             AND os.bookmaker = 'Pinnacle' AND os.is_closing = TRUE
+             AND os.timestamp <= m.date
+           ORDER BY os.timestamp DESC LIMIT 1""",
         [match_id, market, selection],
     )
     if rows:
         return float(rows[0]["odds"])
     rows = execute_query(
-        """SELECT odds FROM odds_snapshots
-           WHERE match_id = %s AND market = %s AND selection = %s
-             AND bookmaker = 'Pinnacle'
-           ORDER BY timestamp DESC LIMIT 1""",
+        """SELECT os.odds FROM odds_snapshots os
+           JOIN matches m ON m.id = os.match_id
+           WHERE os.match_id = %s AND os.market = %s AND os.selection = %s
+             AND os.bookmaker = 'Pinnacle'
+             AND os.timestamp <= m.date
+           ORDER BY os.timestamp DESC LIMIT 1""",
         [match_id, market, selection],
     )
     return float(rows[0]["odds"]) if rows else None

@@ -58,7 +58,13 @@ _LATEST = """
 
 
 def _q(hours: int, a: str, b: str, upcoming: bool):
-    return _LATEST.format(upcoming="AND m.date > NOW()" if upcoming else "")
+    # AF-ISLIVE-CALLSITE-FIXES-2026-09-05 / gotcha 37: the historical branch had
+    # no kickoff bound, so "latest quote" could be a post-kickoff AF row. That is
+    # the branch used to justify adding books, so it needs the pre-match bound;
+    # the upcoming branch is pre-kickoff by construction.
+    return _LATEST.format(
+        upcoming="AND m.date > NOW()" if upcoming else "AND o.timestamp <= m.date"
+    )
 
 
 def coverage(cur, hours: int, a: str, b: str, upcoming: bool) -> dict:

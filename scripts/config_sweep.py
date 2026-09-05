@@ -158,6 +158,10 @@ def load_backtest_frame(start: str, end: str) -> pd.DataFrame:
          WHERE m.date >= %s AND m.date < %s
            AND m.status = 'finished'
            AND o.is_closing = false
+           -- AF-ISLIVE-CALLSITE-FIXES-2026-09-05 / gotcha 37: real pre-match bound.
+           -- 26% of `is_live = false` rows are post-kickoff; this query already
+           -- joins matches, so use the authoritative form (survives reschedules).
+           AND o.timestamp <= m.date
            AND o.market IN ('1x2', 'over_under_25', 'btts')
            AND o.bookmaker = ANY(%s)
         """,

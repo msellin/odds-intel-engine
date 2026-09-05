@@ -79,6 +79,9 @@ dict_cur.execute("""
       AND market='asian_handicap'
       AND selection='away'
       AND handicap_line IN (-1.5,-1.0,-0.5,0.0,0.5,1.0,1.5)
+      -- AF-ISLIVE-CALLSITE-FIXES-2026-09-05 / gotcha 37: pre-match bound.
+      -- MAX(odds) over post-KO rows fabricates edge (p99 +4.10pp).
+      AND minutes_to_kickoff > 0
     GROUP BY 1,2,3
 """, (match_ids,))
 odds_rows = dict_cur.fetchall()

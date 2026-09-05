@@ -89,8 +89,12 @@ def a2_pinnacle_ou25() -> None:
                    match_id, selection, odds
             FROM odds_snapshots
             WHERE bookmaker = 'Pinnacle' AND market = 'over_under_25'
+              -- is_live only drops the 'api-football-live' pseudo-book (gotcha 37)
               AND is_live = false
               AND timestamp >= NOW() - INTERVAL '30 days'
+              -- AF-ISLIVE-CALLSITE-FIXES-2026-09-05: the actual pre-match bound.
+              -- Indexed, so it keeps the deliberate no-JOIN-to-matches shape.
+              AND minutes_to_kickoff > 0
             ORDER BY match_id, selection, timestamp DESC
         ),
         paired AS (
@@ -130,8 +134,12 @@ def a2_pinnacle_ou25() -> None:
             SELECT DISTINCT ON (match_id, selection) match_id, selection, odds
             FROM odds_snapshots
             WHERE bookmaker = 'Pinnacle' AND market = 'over_under_25'
+              -- is_live only drops the 'api-football-live' pseudo-book (gotcha 37)
               AND is_live = false
               AND timestamp >= NOW() - INTERVAL '30 days'
+              -- AF-ISLIVE-CALLSITE-FIXES-2026-09-05: the actual pre-match bound.
+              -- Indexed, so it keeps the deliberate no-JOIN-to-matches shape.
+              AND minutes_to_kickoff > 0
             ORDER BY match_id, selection, timestamp DESC
         ),
         paired AS (
@@ -179,8 +187,12 @@ def a3_pinnacle_btts() -> None:
             SELECT DISTINCT ON (match_id, selection) match_id, selection, odds
             FROM odds_snapshots
             WHERE bookmaker = 'Pinnacle' AND market = 'btts'
+              -- is_live only drops the 'api-football-live' pseudo-book (gotcha 37)
               AND is_live = false
               AND timestamp >= NOW() - INTERVAL '30 days'
+              -- AF-ISLIVE-CALLSITE-FIXES-2026-09-05: the actual pre-match bound.
+              -- Indexed, so it keeps the deliberate no-JOIN-to-matches shape.
+              AND minutes_to_kickoff > 0
             ORDER BY match_id, selection, timestamp DESC
         ),
         paired AS (
@@ -263,7 +275,9 @@ def a5_coverage() -> None:
             SELECT COUNT(DISTINCT os.match_id) AS n
             FROM odds_snapshots os
             JOIN matches m ON m.id = os.match_id
-            WHERE os.bookmaker = 'Pinnacle' AND os.market = %s AND os.is_live = false
+            WHERE os.bookmaker = 'Pinnacle' AND os.market = %s
+              AND os.is_live = false  -- pseudo-book only, not a pre-match filter
+              AND os.minutes_to_kickoff > 0  -- pre-match bound, gotcha 37
               AND os.timestamp >= NOW() - INTERVAL '120 days'
               AND m.status = 'finished'
               AND m.date >= NOW() - INTERVAL '90 days'
@@ -300,8 +314,12 @@ def a2b_ou25_timestamp_skew() -> None:
                    match_id, selection, odds, timestamp
             FROM odds_snapshots
             WHERE bookmaker = 'Pinnacle' AND market = 'over_under_25'
+              -- is_live only drops the 'api-football-live' pseudo-book (gotcha 37)
               AND is_live = false
               AND timestamp >= NOW() - INTERVAL '30 days'
+              -- AF-ISLIVE-CALLSITE-FIXES-2026-09-05: the actual pre-match bound.
+              -- Indexed, so it keeps the deliberate no-JOIN-to-matches shape.
+              AND minutes_to_kickoff > 0
             ORDER BY match_id, selection, timestamp DESC
         ),
         paired AS (

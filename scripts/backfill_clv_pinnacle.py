@@ -71,14 +71,18 @@ def run():
 
     match_ids = list({b["match_id"] for b in bets})
     snap_rows = execute_query(
-        """SELECT DISTINCT ON (match_id, market, selection)
-               match_id, market, selection, odds
-           FROM odds_snapshots
-           WHERE match_id = ANY(%s::uuid[])
-             AND bookmaker = 'Pinnacle'
-             AND odds > 1.0
-           ORDER BY match_id, market, selection,
-                    is_closing DESC, timestamp DESC""",
+        """SELECT DISTINCT ON (os.match_id, os.market, os.selection)
+               os.match_id, os.market, os.selection, os.odds
+           FROM odds_snapshots os
+           JOIN matches m ON m.id = os.match_id
+           WHERE os.match_id = ANY(%s::uuid[])
+             AND os.bookmaker = 'Pinnacle'
+             AND os.odds > 1.0
+             -- AF-ISLIVE-CALLSITE-FIXES-2026-09-05 / gotcha 37: without this the
+             -- DISTINCT ON could return an in-play tick as the "closing" price.
+             AND os.timestamp <= m.date
+           ORDER BY os.match_id, os.market, os.selection,
+                    os.is_closing DESC, os.timestamp DESC""",
         (match_ids,),
     )
 

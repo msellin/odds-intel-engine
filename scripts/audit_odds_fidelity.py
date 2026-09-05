@@ -233,6 +233,10 @@ def section_implied_sum_sanity(cur) -> str:
           WHERE market = '1x2'
             AND timestamp >= NOW() - INTERVAL %s
             AND odds > 1.0
+            -- AF-ISLIVE-CALLSITE-FIXES-2026-09-05 / gotcha 37: 'latest snapshot'
+            -- is post-kickoff for 26% of rows. minutes_to_kickoff > 0 is the
+            -- verified-safe pre-match predicate and is indexed (no join needed).
+            AND minutes_to_kickoff > 0
           ORDER BY match_id, bookmaker, selection, timestamp DESC
         ),
         per_book AS (
@@ -304,6 +308,7 @@ def section_cross_book_consistency(cur) -> str:
             AND bookmaker IN ({books_csv})
             AND timestamp >= NOW() - INTERVAL %s
             AND odds > 1.0
+            AND minutes_to_kickoff > 0  -- pre-match only, gotcha 37
           ORDER BY match_id, bookmaker, timestamp DESC
         ),
         per_match AS (

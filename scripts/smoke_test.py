@@ -29810,5 +29810,63 @@ def test_fuzzy_match_event_shapes():
 
 
 
+@test("AF-ISLIVE-CALLSITE-FIXES — retrospective odds queries must bound on kickoff")
+def test_islive_callsites_bounded():
+    """`is_live` was never a pre-match filter — all 695,534 is_live=true rows are
+    the `api-football-live` pseudo-book. 26.15% of is_live=false rows are
+    post-kickoff (30-40% for every AF-fed book, 0.0% for every direct scrape).
+
+    The damage lands in MAX(odds) best-price arithmetic. Measured on
+    bot_strategy_audit over 30 days, n=8,259 matches: 417 (5.0%) had ONLY
+    post-kickoff snapshots, mean best-odds inflation +0.212 odds points with a
+    max of +243.0 (an in-play blowout entering a "best price" MAX), and picks
+    qualifying at edge >= 5% fell 2,261 -> 2,015 — 246 fabricated selections
+    removed.
+
+    Pins that the highest-damage sites carry a kickoff bound.
+    """
+    import os, re
+    root = os.path.dirname(__file__)
+
+    # The MAX(odds) backtests — the only class with measurable fabricated edge.
+    for fn in ("bot_strategy_audit.py", "config_sweep.py", "backtest_tier_unlocked.py",
+               "backtest_ah_silent_period.py", "backtest_ah_low_conf.py"):
+        src = open(os.path.join(root, fn), encoding="utf-8").read()
+        assert ("minutes_to_kickoff > 0" in src or "timestamp <= m.date" in src
+                or "timestamp <= mm.date" in src), (
+            f"{fn} has no kickoff bound — MAX(odds) there can take an in-play "
+            f"price as a 'best price'"
+        )
+
+    # settlement.py: the is_closing PRIMARY paths, not just their fallbacks.
+    s = open(os.path.join(root, "..", "workers", "jobs", "settlement.py"),
+             encoding="utf-8").read()
+    assert s.count("timestamp <= m.date") >= 3, (
+        "settlement's is_closing primary paths must carry the same kickoff bound "
+        "their own fallbacks already had — the asymmetry was backwards"
+    )
+
+    # The one site that deliberately admitted in-play must no longer do so.
+    ah = open(os.path.join(root, "train_ah_xgboost.py"), encoding="utf-8").read()
+    assert "BETWEEN -30 AND" not in ah, (
+        "train_ah_xgboost still admits 30 minutes of in-play into training"
+    )
+
+    # Guard: the predicate must actually discriminate on live data, or this test
+    # is pinning something inert.
+    from workers.api_clients.db import execute_query
+    r = execute_query(
+        """SELECT count(*) n,
+                  sum(CASE WHEN o.timestamp > m.date THEN 1 ELSE 0 END) post_ko
+             FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
+            WHERE o.timestamp > now() - interval '2 days'"""
+    )[0]
+    assert r["n"] > 0 and r["post_ko"] > 0, (
+        "no post-kickoff rows exist in the recent window — this test cannot "
+        "detect the contamination it exists to pin"
+    )
+
+
+
 if __name__ == "__main__":
     main()
