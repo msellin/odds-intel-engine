@@ -181,6 +181,23 @@ _CRITERION_1X2 = "full time"
 _CRITERION_TOTALS = "total goals"
 _CRITERION_BTTS = "both teams to score"
 
+# NEW-MARKETS-LINESHOP-2026-09-05: over/under-shaped markets Kambi offers that we
+# previously discarded. Same exact-match, fail-closed discipline as above — the
+# criterion is the ONLY thing that distinguishes a match corner total from a
+# per-team or interval one, and getting that wrong is exactly what caused the
+# KAMBI-CRITERION-CONTAMINATION incident.
+#
+# Worth capturing because the margin structure favours it: measured 2026-09-05,
+# Kambi charges 8.95% on corners against 10.14% on match goals, while Pinnacle
+# charges 5.97% on corners against 5.68% on goals. So the gap to the sharp price
+# is NARROWER on corners (2.98pp) than on goals (4.46pp) — the opposite of the
+# API-Football soft books, where 1xBet loads +2.65pp extra on corners.
+_CRITERION_EXTRA_OU = {
+    "total corners":            "corners_ou",
+    "total cards":              "cards_ou",
+    "total bookings":           "cards_ou",
+}
+
 
 def _criterion_key(offer: dict) -> str:
     """Language-stable criterion label, lowercased. Empty string if absent."""
@@ -239,6 +256,23 @@ def parse_betoffers(offers: list[dict]) -> list[tuple[str, str, float, float | N
                 if sel and odds and odds > 1:
                     rows.append((tag, sel, odds, None))
             continue
+
+        # Corners / cards — exact criterion match, own namespace. A per-team
+        # ("Total Corners by <Team>") or interval ("Total Corners Interval -
+        # 60:00-74:59") criterion is NOT in the map and is therefore skipped,
+        # which is the whole point: those price far apart from the match line.
+        if ("OT_OVER" in types and "OT_UNDER" in types
+                and crit_en in _CRITERION_EXTRA_OU):
+            line = _milli(outs[0].get("line"))
+            if line is not None:
+                prefix = _CRITERION_EXTRA_OU[crit_en]
+                tag = f"{prefix}_{str(line).replace('.', '')}"
+                for x in outs:
+                    sel = {"OT_OVER": "over", "OT_UNDER": "under"}.get(str(x.get("type")))
+                    odds = _milli(x.get("odds"))
+                    if sel and odds and odds > 1:
+                        rows.append((tag, sel, odds, None))
+                continue
 
         # BTTS — exact criterion match. The previous substring test on the
         # LOCALISED label ("jah"/"both"/"mõlemad") would accept any yes/no offer

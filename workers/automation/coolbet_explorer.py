@@ -391,6 +391,29 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
                or (not sub_period and ("match result" in name or "1x2" in name
                                        or "match winner" in name)))
     non_goals_total = _looks_like_non_goals_total(name)
+
+    # NEW-MARKETS-LINESHOP-2026-09-05: corners and cards are over/under-shaped
+    # markets Coolbet DOES offer — `_NON_GOALS_TOTAL_HINTS` exists precisely
+    # because they were reaching the goals slot and clobbering it (see the
+    # COOLBET-OU-LINE-SHIFT note there: a team total stored `over 4.5` at 17.00
+    # against Pinnacle's 4.19, +306%).
+    #
+    # They are captured here into their OWN namespaces. The filter above is left
+    # completely untouched — the goals path must keep rejecting them. Anyone
+    # tempted to "fix" this by relaxing _NON_GOALS_TOTAL_HINTS would reproduce
+    # that phantom price on a real-money surface.
+    #
+    # Why bother: Pinnacle prices corners at a 5.97% margin vs 5.68% on goals,
+    # so the sharp anchor is just as good there, while Kambi charges 8.95% on
+    # corners against 10.14% on goals. The gap to the sharp price is therefore
+    # NARROWER on corners (2.98pp) than on goals (4.46pp) — measured 2026-09-05.
+    is_corners = (not combined
+                  and any(h in name for h in ("corner",))
+                  and ("total" in name or "over" in name or "under" in name))
+    is_cards = (not combined
+                and any(h in name for h in ("card", "booking"))
+                and ("total" in name or "over" in name or "under" in name))
+
     is_ou   = (mtid in _MTID_OU
                or (not sub_period and not combined and not non_goals_total
                    and ("total goals" in name
@@ -415,6 +438,29 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
                 _add("1x2", "draw", oc.get("id"))
             elif rk == "Away":
                 _add("1x2", "away", oc.get("id"))
+        return rows
+
+    if (is_corners or is_cards) and line_val is not None:
+        prefix = "corners_ou" if is_corners else "cards_ou"
+        # Team-specific corner/card totals get their own side-scoped namespace
+        # rather than being merged into the match line.
+        if "[home]" in name or "home " in name:
+            prefix += "_home"
+        elif "[away]" in name or "away " in name:
+            prefix += "_away"
+        if _looks_like_sub_period(name):
+            prefix += "_1h"
+        tag = f"{prefix}_{str(line_val).replace('.', '').replace('-', 'm')}"
+        for oc in mkt.get("outcomes") or []:
+            rk = (oc.get("result_key") or oc.get("name") or "").strip().lower()
+            sel = "over" if rk.startswith("over") or rk == "o" else \
+                  "under" if rk.startswith("under") or rk == "u" else None
+            od = odds_map.get(oc.get("id"))
+            if sel and od and od.get("value"):
+                try:
+                    rows.append((tag, sel, float(od["value"]), None))
+                except (TypeError, ValueError):
+                    pass
         return rows
 
     if is_ou:

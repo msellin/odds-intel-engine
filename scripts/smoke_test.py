@@ -29550,5 +29550,98 @@ def test_pinnacle_team_totals():
 
 
 
+@test("NEW-MARKETS-LINESHOP — Coolbet and Kambi capture corners/cards without touching goals")
+def test_placeable_books_extra_markets():
+    """Pinnacle prices corners at a 5.97% margin vs 5.68% on goals, so the sharp
+    anchor is as good there. Kambi charges 8.95% on corners vs 10.14% on goals,
+    so the gap to the sharp price is NARROWER on corners (2.98pp) than on goals
+    (4.46pp) - measured 2026-09-05. That is why these are worth capturing at the
+    books we can actually bet.
+
+    The hazard is the same one that has now bitten this codebase three times: a
+    market whose NAME contains ours, at a LINE that collides with ours.
+      - COOLBET-OU-LINE-SHIFT: a team total stored `over 4.5` at 17.00 against
+        Pinnacle's 4.19 (+306%).
+      - KAMBI-CRITERION-CONTAMINATION: half-time prices stored as full-match.
+      - The AF `Goals Over/Under` branch comment.
+    So this test's real job is proving the namespaces stay separate.
+    """
+    from workers.automation.coolbet_explorer import (
+        parse_market, _looks_like_non_goals_total,
+    )
+    from workers.automation.unibet_kambi import parse_betoffers
+
+    # --- Coolbet -----------------------------------------------------------
+    # The goals-path filter must STILL reject corners/cards. Capturing them
+    # elsewhere must not have relaxed it.
+    for nm in ("total corners", "corners over/under", "total cards",
+               "total bookings", "[home] total goals"):
+        assert _looks_like_non_goals_total(nm), (
+            f"'{nm}' no longer rejected by the goals-path filter - relaxing "
+            f"_NON_GOALS_TOTAL_HINTS reintroduces the +306% phantom price"
+        )
+
+    def cb(name, line, mtid=None):
+        return {"name": name, "line": line, "market_type_id": mtid,
+                "outcomes": [{"id": 1, "result_key": "over"},
+                             {"id": 2, "result_key": "under"}]}
+    # fetch_odds_for_markets yields floats; the pre-existing _add() helper does
+    # not coerce, so the test must match production rather than the other way.
+    om = {1: {"value": 1.85}, 2: {"value": 1.95}}
+
+    corners = parse_market(cb("Total Corners", 9.5), om)
+    assert corners, "Coolbet corners not captured"
+    assert all(m.startswith("corners_ou") for m, *_ in corners), corners
+    assert not any(m.startswith("over_under") for m, *_ in corners), (
+        "Coolbet corners leaked into the goals over_under namespace"
+    )
+
+    cards = parse_market(cb("Total Cards", 3.5), om)
+    assert cards and all(m.startswith("cards_ou") for m, *_ in cards), cards
+
+    # A real goals market must be unaffected by the new branches.
+    goals = parse_market(cb("Total Goals", 2.5, mtid=818), om)
+    assert goals, "the real goals market stopped parsing"
+    assert all(m.startswith("over_under") for m, *_ in goals), goals
+
+    # --- Kambi -------------------------------------------------------------
+    def ko(crit, otype_line, line=None):
+        return {"criterion": {"englishLabel": crit, "label": "localised"},
+                "outcomes": [{"type": t, "odds": int(o * 1000),
+                              **({"line": int(line * 1000)} if line is not None else {})}
+                             for t, o in otype_line]}
+    OU = [("OT_OVER", 1.90), ("OT_UNDER", 1.95)]
+    offers = [
+        ko("Total Goals", OU, line=2.5),
+        ko("Total Corners", [("OT_OVER", 1.83), ("OT_UNDER", 1.97)], line=9.5),
+        ko("Total Cards", [("OT_OVER", 2.10), ("OT_UNDER", 1.70)], line=3.5),
+        # These must be REJECTED - they price far apart from the match line.
+        ko("Total Corners by FC Utrecht", [("OT_OVER", 3.40), ("OT_UNDER", 1.28)], line=9.5),
+        ko("Total Corners Interval - 60:00-74:59", [("OT_OVER", 4.50), ("OT_UNDER", 1.18)], line=9.5),
+        ko("Total Goals by Go Ahead Eagles", [("OT_OVER", 5.00), ("OT_UNDER", 1.15)], line=2.5),
+    ]
+    krows = parse_betoffers(offers)
+    got = {(m, s): o for m, s, o, _ in krows}
+
+    assert got.get(("corners_ou_95", "over")) == 1.83, f"Kambi corners missing: {sorted(got)}"
+    assert got.get(("cards_ou_35", "over")) == 2.10, f"Kambi cards missing: {sorted(got)}"
+    assert got.get(("over_under_25", "over")) == 1.90, "the real goals line was altered"
+
+    # One price per (market, selection) - the production symptom of contamination.
+    seen = {}
+    for m, s, o, _ in krows:
+        seen.setdefault((m, s), set()).add(o)
+    multi = {k: v for k, v in seen.items() if len(v) > 1}
+    assert not multi, (
+        f"more than one price for the same selection: {multi} - a per-team or "
+        f"interval criterion was accepted into a match-level market"
+    )
+    for bad in (3.40, 4.50, 5.00, 1.28, 1.18, 1.15):
+        assert bad not in {o for _, _, o, _ in krows}, (
+            f"per-team/interval price {bad} survived the criterion whitelist"
+        )
+
+
+
 if __name__ == "__main__":
     main()
