@@ -32,31 +32,51 @@ Three odds caveats worth knowing before planning against this feed:
 
 ---
 
-## Daily Request Budget (API-Football Ultra — 75K/day limit)
+## Daily Request Budget (API-Football **Mega** — 150,000/day, 900/min)
 
-| Operation | Calls/day | Pipeline |
+Verified 2026-09-05 from live `/status` headers. The old version of this table was
+headed "Ultra — 75K/day limit" and every percentage in it was computed against
+75,000; the real daily ceiling is **150,000** and has been for as long as
+`api_budget_log` goes back.
+
+**Measured** account-wide usage over recent days: **9–23% of the daily limit**
+(roughly 13,700–35,000 calls/day). That measured total is the number to trust —
+the per-operation rows below are **estimates last derived 2026-04/05 and not
+re-measured**, so they no longer sum to the observed total (pre-match odds in
+particular now runs every 30 min 24/7 rather than every 2h, so its ~400 is low).
+
+| Operation | Calls/day (estimate) | Pipeline |
 |-----------|-----------|----------|
 | Fixtures | ~5 | Morning |
-| Pre-match odds (T1 + odds) | ~400 | Morning + every 2h |
+| Pre-match odds (T1 + odds) | ~400 (stale — now every 30 min, 24/7) | Morning + every 30 min |
 | Predictions (T1) | ~130 | Morning |
 | Team stats (T2) | ~80 | Morning |
 | Injuries (T3) | ~7 | Morning |
 | Standings (T9) | ~40 | Morning |
 | H2H (T10) | ~130 | Morning |
-| Live fixtures (T6) | ~5,280 | LivePoller fast tier (30s, bulk) |
-| Live odds (T5) | ~5,280 | LivePoller fast tier (30s, bulk) |
-| Live stats (T6) | ~4,300 | LivePoller medium tier (60s, per-match) |
-| Events (T8) | ~4,300 | LivePoller medium tier (60s, per-match) + settlement |
-| Lineups (T7) | ~50 | LivePoller slow tier (5min, pre-KO) |
+| Live fixtures (T6) | ~3,500 (derived from cadence, not measured) | LivePoller fast tier (45s live / 120s idle, bulk) |
+| Live odds (T5) | **0** | Gated off 2026-08-21 (`INPLAY_LIVE_ODDS_POLL_ENABLED`) |
+| Live stats (T6) | **0** | Gated off 2026-08-21 (`INPLAY_STATS_EVENTS_POLL_ENABLED`) |
+| Live events (T8) | **0** live; still fetched at settlement | Gated off 2026-08-21 |
+| Lineups (T7) | ~50 | LivePoller slow tier (7.5 min, pre-KO) |
 | Post-match stats (T4) | ~120 | Settlement |
 | Player stats (T12) | ~120 | Settlement |
-| **Total** | **~10K-15K** | **13-20% of 75K limit** |
+| **Measured total** | **~13,700–35,000** | **9–23% of 150,000** |
 
-Remaining headroom: ~60K req/day. AF Ultra required — **do NOT downgrade to Pro** (7.5K limit).
+Before the 2026-08-21 gates the ceiling was genuinely hit — 149,800/150,000 on
+Aug 1/2/8/9. The in-play product is retired: no in-play bot picks and no
+`is_live=true` odds rows since 2026-08-21. Reviving it means re-enabling those
+env gates and re-accepting the quota cost.
+
+Headroom is therefore large: ~115K–136K req/day unused. **Do not downgrade** —
+the cheaper AF tiers are an order of magnitude smaller (the old Pro tier was
+7,500 req/day). Exact current tier names and prices were **not** re-verified in
+this pass; check AF's pricing page before acting on any downgrade.
 
 ### Per-minute limit is the binding constraint, not the daily quota (2026-08-24)
 
-The daily quota has never been the problem — the VPS sits at ~8K/150K by mid-morning.
+The daily quota is not the problem *today* — usage runs 9–23% of the 150,000/day
+limit (it did hit the ceiling in early August, before the 2026-08-21 in-play gates).
 The **per-minute** limit is what actually bites: `journalctl -u oddsintel-scheduler`
 shows 100–2,300 HTTP 429 `"exceeded the limit of requests per minute"` responses
 *every day*, and those 429s are what fed both scheduler hangs (SCHEDULER-AF-429-DEADLOCK,
@@ -89,10 +109,10 @@ simply fewer callers) is not yet filed as its own task — see AF-QUOTA-REALLOCA
 | T2 | `/teams/statistics` | Morning | ✅ Done |
 | T3 | `/injuries` (batched 20/call) | Morning | ✅ Done |
 | T4 | `/fixtures/statistics?half=1/2` | Settlement | ✅ Done |
-| T5 | `/odds/live` | Live tracker | ✅ Done |
-| T6 | `/fixtures?live=all` | Live tracker | ✅ Done |
+| T5 | `/odds/live` | Live tracker | ⏸️ Built, **gated off** 2026-08-21 (`INPLAY_LIVE_ODDS_POLL_ENABLED`, default false) |
+| T6 | `/fixtures?live=all` | Live tracker | ✅ Done — still polling |
 | T7 | `/fixtures/lineups` | Live tracker (pre-KO) | ✅ Done |
-| T8 | `/fixtures/events` | Live tracker + settlement | ✅ Done |
+| T8 | `/fixtures/events` | Live tracker + settlement | ⏸️ Live polling **gated off** 2026-08-21 (`INPLAY_STATS_EVENTS_POLL_ENABLED`); settlement path still runs |
 | T9 | `/standings` | Morning | ✅ Done |
 | T10 | `/fixtures/headtohead` | Morning | ✅ Done |
 | T11 | `/sidelined` | Backfill script | ✅ Done |
@@ -218,7 +238,7 @@ AH-bot prototype follow-up (`scripts/backtest_ah_bot_prototype.py`, 5,254 deriva
 - [x] ~~Remove `betexplorer_odds.py`~~ Done 2026-04-29
 - [x] ~~Remove Sofascore scrapers~~ Done 2026-04-29
 - [x] ~~Activate The Odds API for Pinnacle odds~~ Done 2026-06-06 (ODDS-API-WC) → retired 2026-06-25 (WC commercial value minimal). Key + client repurposed for tennis (TENNIS-PAPER-BETS).
-- [ ] Evaluate API-Football Pro ($19/mo, 7.5K req/day) after 4–6 weeks once we know which leagues are profitable
+- [ ] ~~Evaluate API-Football Pro ($19/mo, 7.5K req/day)~~ — dropped 2026-09-05. Written when we believed the plan was 75K/day; we are on **Mega (150K/day)** and use 9–23% of it, but 7.5K/day is far below even that floor, so a downgrade to a Pro-sized tier is not viable. Tier names/prices unverified — re-check AF pricing if this is ever revisited.
 
 ---
 

@@ -29758,5 +29758,57 @@ def test_project_direction_rule_documented():
 
 
 
+@test("COOLBET-EVENT-SHAPE-LOG — fuzzy_match_event survives raw fo-category candidates")
+def test_fuzzy_match_event_shapes():
+    """Two candidate shapes reach fuzzy_match_event and only one has home/away.
+
+      parsed shape       {id, home, away, start, ...}      from _parse_event
+      raw fo-category    {id, name, home_team_name, ...}   no `home` key at all
+
+    The scoring loop is tolerant (`ev.get("home") or ""`) so a raw candidate
+    scores 0 — but best_score seeds at -1, so 0 > -1 and it still becomes
+    best_event. Five log lines then indexed best_event["home"] directly and
+    raised KeyError, meaning the diagnostic crashed the matcher it exists to
+    explain, on exactly the path it is for (a failed match).
+
+    Worse, the same assumption sat on the PLACEMENT path, building the bet
+    ticket's match_name — a KeyError there aborts mid-placement, not mid-log.
+
+    Matching semantics are deliberately unchanged: a raw-shape candidate still
+    scores 0 and is still rejected. Teaching the scorer the raw shape would make
+    it returnable into downstream code that expects the parsed shape.
+    """
+    from workers.automation.coolbet_placer import fuzzy_match_event, _event_side_names
+
+    raw = [{"id": 1, "name": "Laval - Rouen", "home_team_name": "Stade Lavallois",
+            "away_team_name": "FC Rouen", "match_start": None, "status": "OPEN"}]
+    parsed = [{"id": 2, "home": "Stade Lavallois", "away": "FC Rouen", "start": None}]
+
+    # The crash: building the near-miss log line for a raw-shape candidate.
+    assert fuzzy_match_event("Laval", "Rouen", raw) is None, (
+        "a raw-shape candidate scores 0 and must not be returned as a match"
+    )
+    # Parsed shape still matches — behaviour must be unchanged.
+    assert (fuzzy_match_event("Laval", "Rouen", parsed) or {}).get("id") == 2
+    assert (fuzzy_match_event("Laval", "Rouen", raw + parsed) or {}).get("id") == 2
+
+    # The accessor degrades rather than raising, on every shape.
+    assert _event_side_names(raw[0]) == ("Stade Lavallois", "FC Rouen")
+    assert _event_side_names(parsed[0]) == ("Stade Lavallois", "FC Rouen")
+    assert _event_side_names({}) == ("?", "?")
+    assert _event_side_names(None) == ("?", "?")
+
+    # The placement path must not index the shape directly either — a KeyError
+    # there aborts a real-money placement rather than a log line.
+    import os
+    src = open(os.path.join(os.path.dirname(__file__), "..", "workers", "automation",
+                            "coolbet_placer.py"), encoding="utf-8").read()
+    assert 'f"{ev[\'home\']} - {ev[\'away\']}"' not in src, (
+        "the placement path still builds match_name by indexing ev['home'] — that "
+        "raises mid-placement on a raw-shape candidate"
+    )
+
+
+
 if __name__ == "__main__":
     main()
