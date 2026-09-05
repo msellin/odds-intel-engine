@@ -31,10 +31,18 @@ GOTCHAS THE API IMPOSES
 -----------------------
 * **Odds and lines are milli-units.** `odds: 5750` is 5.75; `line: 4500` is 4.5.
   Storing them raw would put 5750.0 into `odds_snapshots`.
-* **Match on `outcome["type"]`, never on labels.** With `lang=et_EE` the labels
-  come back Estonian ("Üle"/"Alla", "Normaalaeg", "Jah/Ei"). The types
-  (`OT_ONE`, `OT_CROSS`, `OT_TWO`, `OT_OVER`, `OT_UNDER`) are language-stable.
-  A label-matching parser breaks the moment anyone changes `lang`.
+* **Match on `outcome["type"]` AND `criterion.englishLabel`. The type alone is
+  NOT enough** — this rule, as originally written, caused a production incident.
+  With `lang=et_EE` the localised `criterion.label` comes back Estonian
+  ("Üle"/"Alla", "Normaalaeg", "Jah/Ei"), so it must not be matched on. But the
+  outcome types are reused across completely different offers: `OT_ONE/CROSS/TWO`
+  also appears on 3-Way Handicap, 2nd Half, First Goal, Next Goal and every
+  Interval Winner window; `OT_OVER/OT_UNDER` also appears on Total Corners,
+  Asian Total and per-team totals. Keying on type alone therefore wrote half-time
+  and team-total prices into full-match `1x2` and `over_under_XX`.
+  `criterion.englishLabel` is the correct discriminator: it is English regardless
+  of the `lang` parameter, so it is both language-stable AND sufficient. See
+  KAMBI-CRITERION-CONTAMINATION below.
 * **`listView` only carries the MAIN total line**, which is often not 2.5 — the
   per-event endpoint is required for the full ladder.
 * **Live events carry in-play-adjusted lines.** A first pass at this sampled
@@ -60,8 +68,13 @@ _BOOKMAKER = "Unibet-Kambi"
 
 # Virtual/simulated football. Real fixtures only — these have no counterpart in
 # our `matches` table and would burn fuzzy-match attempts.
+# KAMBI-VIRTUAL-MARKERS-2026-09-05: "esports battle" / "e-spordi lahing" were
+# missing, so 49 of 465 pre-match candidates carried the esoccer player-handle
+# signature ("Trabzonspor (Dicca) v Besiktas (chevare)"). Those fuzzy-match to the
+# REAL fixture of the same name and write virtual prices onto a real match.
 _VIRTUAL_MARKERS = ("cyber live arena", "cla ", "cla world cup", "esoccer",
-                    "e-soccer", "virtual")
+                    "e-soccer", "virtual", "esports battle", "e-spordi lahing",
+                    "esports", "e-sport")
 
 _TIMEOUT = 25
 _SLEEP_S = float(os.getenv("UNIBET_KAMBI_SLEEP_S", "0.12"))
@@ -137,10 +150,51 @@ def shape_candidates(events: list[dict], *, min_lead_minutes: int = 5) -> list[d
     return out
 
 
+# KAMBI-CRITERION-CONTAMINATION-2026-09-05 — the outcome TYPE does not identify
+# the market; the PERIOD and SUBJECT live in the criterion.
+#
+# parse_betoffers originally keyed only on `outcome["type"]`, following the
+# module docstring's "types are language-stable, labels are not" rule. That rule
+# is right about language and wrong about sufficiency: Kambi reuses the same
+# outcome types across completely different offers. Measured on 25 live events,
+# type-only matching swept these into our full-match vocabulary:
+#
+#   -> stored as `1x2`:   3-Way Handicap, 2nd Half, First Goal, Next Goal (2/3/5),
+#                         Interval Winner - 45:00-89:59 (nine variants), Most Corners
+#   -> stored as `o/u`:   Total Corners, Asian Total, Total Corners by <Team>,
+#                         Total Goals by <Team>  (per-team totals, ~30 variants)
+#
+# Result in production: 51.0% of Unibet-Kambi (match, market, selection, line,
+# timestamp) groups held MORE THAN ONE price, worst case 29 distinct values for
+# one selection at one instant. Every other book measured 0.0-0.2%. Because a
+# best-price selector takes the MAXIMUM, and half-time / team-total lines are
+# systematically longer than the full-match price, `Unibet-Kambi` became the #1
+# `recommended_bookmaker` (403 of 1,015 picks in 3 days) at prices that do not
+# exist for that market. The operator places real money on those signals.
+#
+# The fix keeps the language-stability principle but applies it to the right
+# field: `criterion.englishLabel` is English regardless of the `lang` parameter.
+# It is an exact-match WHITELIST and it FAILS CLOSED — an offer whose criterion
+# is missing or unrecognised is skipped, not guessed at. A new Kambi market
+# silently entering our feed is exactly what went wrong here.
+_CRITERION_1X2 = "full time"
+_CRITERION_TOTALS = "total goals"
+_CRITERION_BTTS = "both teams to score"
+
+
+def _criterion_key(offer: dict) -> str:
+    """Language-stable criterion label, lowercased. Empty string if absent."""
+    crit = offer.get("criterion") or {}
+    # englishLabel is present regardless of the `lang` query parameter; `label`
+    # is localised and must never be used for matching.
+    return str(crit.get("englishLabel") or "").strip().lower()
+
+
 def parse_betoffers(offers: list[dict]) -> list[tuple[str, str, float, float | None]]:
     """(market, selection, odds, handicap_line) in this repo's shared vocabulary.
 
-    Keyed on `outcome["type"]` rather than labels — see the module docstring.
+    Keyed on `outcome["type"]` AND `criterion.englishLabel` — the type alone
+    does not identify the market. See KAMBI-CRITERION-CONTAMINATION above.
     """
     rows: list[tuple[str, str, float, float | None]] = []
     for o in offers:
@@ -148,9 +202,12 @@ def parse_betoffers(offers: list[dict]) -> list[tuple[str, str, float, float | N
         if not outs:
             continue
         types = {str(x.get("type") or "") for x in outs}
+        crit_en = _criterion_key(o)
 
-        # 1X2 — exactly the three-way result offer.
-        if {"OT_ONE", "OT_CROSS", "OT_TWO"} <= types:
+        # 1X2 — exactly the three-way FULL TIME result offer. Without the
+        # criterion check this also matched 3-Way Handicap, 2nd Half, First
+        # Goal, Next Goal and every Interval Winner window.
+        if {"OT_ONE", "OT_CROSS", "OT_TWO"} <= types and crit_en == _CRITERION_1X2:
             for x in outs:
                 sel = {"OT_ONE": "home", "OT_CROSS": "draw",
                        "OT_TWO": "away"}.get(str(x.get("type")))
@@ -163,7 +220,11 @@ def parse_betoffers(offers: list[dict]) -> list[tuple[str, str, float, float | N
         # OT_OVER/OT_UNDER shape; only whole/half lines map onto our
         # `over_under_XX` vocabulary, so quarter lines are skipped rather than
         # rounded into a line we do not actually hold.
-        if "OT_OVER" in types and "OT_UNDER" in types:
+        # Totals — MATCH total goals only. Without the criterion check this also
+        # matched Total Corners, Asian Total, and per-team totals ("Total Goals
+        # by <Team>"), all of which price far longer than the match total.
+        if ("OT_OVER" in types and "OT_UNDER" in types
+                and crit_en == _CRITERION_TOTALS):
             line = _milli(outs[0].get("line"))
             if line is None:
                 continue
@@ -179,10 +240,10 @@ def parse_betoffers(offers: list[dict]) -> list[tuple[str, str, float, float | N
                     rows.append((tag, sel, odds, None))
             continue
 
-        # BTTS — a yes/no offer whose criterion mentions both teams scoring.
-        crit = ((o.get("criterion") or {}).get("label") or "").lower()
-        if types <= {"OT_YES", "OT_NO"} and types and (
-                "jah" in crit or "both" in crit or "mõlemad" in crit):
+        # BTTS — exact criterion match. The previous substring test on the
+        # LOCALISED label ("jah"/"both"/"mõlemad") would accept any yes/no offer
+        # whose Estonian label happened to contain "jah".
+        if types <= {"OT_YES", "OT_NO"} and types and crit_en == _CRITERION_BTTS:
             for x in outs:
                 sel = {"OT_YES": "yes", "OT_NO": "no"}.get(str(x.get("type")))
                 odds = _milli(x.get("odds"))

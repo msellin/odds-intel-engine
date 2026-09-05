@@ -29113,5 +29113,90 @@ def test_budget_seed_query_valid():
 
 
 
+@test("KAMBI-CRITERION-CONTAMINATION — one price per selection, no half-time or team totals")
+def test_kambi_parser_criterion_gated():
+    """parse_betoffers keyed only on outcome["type"], which Kambi reuses across
+    unrelated offers. 3-Way Handicap, 2nd Half, First Goal, Next Goal and nine
+    Interval Winner windows all landed in `1x2`; Total Corners, Asian Total and
+    ~30 per-team totals landed in `over_under_XX`.
+
+    Production impact: 51.0% of Unibet-Kambi (match, market, selection, line,
+    timestamp) groups held more than one price, worst case 29 distinct values for
+    one selection at one instant, against 0.0-0.2% for every other book. Because
+    best-price takes the MAXIMUM and those lines price longer, Unibet-Kambi became
+    the #1 recommended_bookmaker (403 of 1,015 picks in 3 days) at prices that do
+    not exist for that market — on signals the operator bets real money on.
+
+    Behavioural: feeds realistic offers through the real parser and asserts one
+    price per (market, selection).
+    """
+    from workers.automation.unibet_kambi import parse_betoffers
+
+    def offer(otype, crit_en, outs, line=None):
+        return {"criterion": {"englishLabel": crit_en, "label": "localised"},
+                "betOfferType": {"englishName": otype},
+                "outcomes": [{"type": t, "odds": int(o * 1000),
+                              **({"line": int(line * 1000)} if line is not None else {})}
+                             for t, o in outs]}
+
+    THREE = [("OT_ONE", 2.00), ("OT_CROSS", 3.40), ("OT_TWO", 3.80)]
+    OU = [("OT_OVER", 1.90), ("OT_UNDER", 1.95)]
+
+    offers = [
+        # legitimate
+        offer("Match", "Full Time", THREE),
+        offer("Over/Under", "Total Goals", OU, line=2.5),
+        offer("Yes/No", "Both Teams To Score", [("OT_YES", 1.80), ("OT_NO", 1.95)]),
+        # contaminants that previously landed in 1x2
+        offer("3-Way Handicap", "3-Way Handicap", [("OT_ONE", 5.00), ("OT_CROSS", 4.20), ("OT_TWO", 1.40)]),
+        offer("Match", "2nd Half", [("OT_ONE", 2.60), ("OT_CROSS", 2.10), ("OT_TWO", 4.50)]),
+        offer("Match", "First Goal (Draw: No Goals)", [("OT_ONE", 1.90), ("OT_CROSS", 12.0), ("OT_TWO", 2.30)]),
+        offer("Match", "Interval Winner - 75:00-89:59", [("OT_ONE", 6.50), ("OT_CROSS", 1.30), ("OT_TWO", 7.00)]),
+        # contaminants that previously landed in over_under_XX
+        offer("Over/Under", "Total Corners", [("OT_OVER", 1.85), ("OT_UNDER", 1.90)], line=2.5),
+        offer("Over/Under", "Total Goals by Al Fateh", [("OT_OVER", 3.90), ("OT_UNDER", 1.22)], line=2.5),
+        offer("Asian Over/Under", "Asian Total", [("OT_OVER", 2.05), ("OT_UNDER", 1.80)], line=2.5),
+        # unknown criterion must FAIL CLOSED, not be guessed at
+        offer("Match", "Some New Kambi Market", THREE),
+        offer("Match", None, THREE),
+    ]
+
+    rows = parse_betoffers(offers)
+
+    # 1. Exactly one price per (market, selection) — the actual production symptom.
+    seen = {}
+    for market, sel, odds, _line in rows:
+        seen.setdefault((market, sel), set()).add(odds)
+    multi = {k: v for k, v in seen.items() if len(v) > 1}
+    assert not multi, (
+        f"more than one price for the same (market, selection): {multi}. "
+        f"This is the contamination that made Unibet-Kambi the top recommended "
+        f"bookmaker at prices that do not exist."
+    )
+
+    # 2. Only the legitimate offers survive, with their own prices.
+    got = {(m, s): o for m, s, o, _ in rows}
+    assert got.get(("1x2", "home")) == 2.00, f"full-time 1x2 home lost or wrong: {got}"
+    assert got.get(("1x2", "away")) == 3.80, f"full-time 1x2 away lost or wrong: {got}"
+    assert got.get(("over_under_25", "over")) == 1.90, f"match total lost or wrong: {got}"
+    assert got.get(("btts", "yes")) == 1.80, f"btts lost or wrong: {got}"
+
+    # 3. No contaminant price appears anywhere in the output.
+    for bad in (5.00, 4.20, 1.40, 2.60, 4.50, 12.0, 6.50, 1.30, 7.00, 1.85, 3.90, 1.22, 2.05):
+        assert bad not in {o for _, _, o, _ in rows}, (
+            f"contaminant price {bad} survived the criterion whitelist"
+        )
+
+    # 4. Exactly the three legitimate offers produced rows (3 + 2 + 2 = 7).
+    assert len(rows) == 7, f"expected 7 rows from 3 legitimate offers, got {len(rows)}: {rows}"
+
+    # 5. Esports Battle must be treated as virtual.
+    from workers.automation.unibet_kambi import is_virtual
+    assert is_virtual("Esports Battle"), "Esports Battle must be excluded as virtual"
+    assert is_virtual("E-spordi lahing"), "Estonian esports label must be excluded"
+    assert not is_virtual("Premier League"), "real leagues must not be excluded"
+
+
+
 if __name__ == "__main__":
     main()
