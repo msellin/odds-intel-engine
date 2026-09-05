@@ -66,6 +66,37 @@ _MARKET = os.getenv("UNIBET_KAMBI_MARKET", "EE")
 _LANG = os.getenv("UNIBET_KAMBI_LANG", "et_EE")
 _BOOKMAKER = "Unibet-Kambi"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# KAMBI-FEED-DIVERGENCE-2026-09-06 — DO NOT TREAT THIS PRICE AS PLACEABLE.
+#
+# unibet.ee no longer runs on the Kambi offering API this module reads. Its
+# event pages are rendered by `ksp-contest-page-app` against Kindred's own
+# `sportsbff-ams.kindredext.net/sports-api/api/v2`, keyed by an opaque 32-hex
+# `contestKey`; an event page issues ZERO requests to kambicdn.com, and the
+# Kambi event id appears nowhere in its HTML.
+#
+# Measured 2026-09-06 on 31 fixtures / 155 markets / 341 selections, each site
+# page read from the DOM and the API pulled within ~10-30s of the render:
+#
+#   * The margin gap is real and one-directional. Site overround is CHEAPER on
+#     142/155 markets (92%): median 6.03% site vs 6.64% API, +0.89pp.
+#   * The per-selection direction is NOT. On 130/341 selections (38%) the price
+#     THIS MODULE STORES IS HIGHER THAN THE SITE ACTUALLY OFFERS — median +3.3%,
+#     p90 +10.3%, max +23.5%. Unchanged at <6h to kickoff vs >15h (38% both), so
+#     it is feed divergence, not staleness.
+#
+# That is the Bet365 failure mode — edge computed on a price that cannot be
+# taken — at ~1/3 the magnitude but on more than a third of selections. The
+# operator places real money manually on shadow signals, so an inflated best
+# price here is a live risk, not an analysis artefact.
+#
+# No offering-API parameter closes the gap: market EE/SE/GB/FI/MT/ROW, operator
+# path ub/ubse, client_id, channel_id and lang were all tried and all return the
+# identical triple. Closing it means reading the KSP feed behind DataDome, which
+# is a FlareSolverr-class job, not a URL change. See KAMBI-FEED-DIVERGENCE in
+# PRIORITY_QUEUE.md before changing anything here.
+# ─────────────────────────────────────────────────────────────────────────────
+
 # Virtual/simulated football. Real fixtures only — these have no counterpart in
 # our `matches` table and would burn fuzzy-match attempts.
 # KAMBI-VIRTUAL-MARKERS-2026-09-05: "esports battle" / "e-spordi lahing" were

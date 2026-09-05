@@ -29930,5 +29930,38 @@ def _meta_mfv_home_only():
     )
 
 
+@test("KAMBI-FEED-DIVERGENCE — the Unibet-Kambi price must stay marked unplaceable")
+def _kambi_feed_divergence():
+    """KAMBI-FEED-DIVERGENCE-2026-09-06.
+
+    unibet.ee moved off the Kambi offering API. On 38% of selections the price
+    this feed stores is HIGHER than the site offers (median +3.3%, max +23.5%),
+    so treating it as a placeable best price manufactures edge that cannot be
+    taken. Until the KSP feed is read or the book is dropped, the warning has to
+    survive in the source — a future reader who deletes it is exactly the
+    failure this pins.
+    """
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = open(
+        os.path.join(root, "workers", "automation", "unibet_kambi.py"),
+        encoding="utf-8",
+    ).read()
+    assert "KAMBI-FEED-DIVERGENCE-2026-09-06" in src, (
+        "the Unibet-Kambi divergence warning has been removed from "
+        "unibet_kambi.py — the stored price is not the site's price"
+    )
+    assert "DO NOT TREAT THIS PRICE AS PLACEABLE" in src
+
+    # Guard: the warning is only worth pinning while the book is still in the
+    # accessible set. If it gets dropped, this test should be revisited, not
+    # left asserting a comment about a book we no longer price.
+    from workers.jobs.daily_pipeline_v2 import ACCESSIBLE_BOOKMAKERS
+    assert "Unibet-Kambi" in ACCESSIBLE_BOOKMAKERS, (
+        "Unibet-Kambi left ACCESSIBLE_BOOKMAKERS — revisit KAMBI-FEED-DIVERGENCE; "
+        "the source warning may no longer be the right control"
+    )
+
+
 if __name__ == "__main__":
     main()
