@@ -463,8 +463,17 @@ def get_fixture_statistics(fixture_id: int) -> list[dict]:
     """
     Get match statistics (shots, possession, corners, etc.).
     Returns list of team stat objects.
+
+    AF-WASTE-HALFTIME-STATS-2026-09-05: `half=true` makes AF return
+    `statistics_1h` and `statistics_2h` alongside the full-match `statistics`,
+    in the SAME response and for the SAME single call. Verified live against
+    fixture 1597925 — without the parameter a team object carries only
+    ['statistics', 'team']; with it, ['statistics', 'statistics_1h',
+    'statistics_2h', 'team'].
+
+    This is why `get_fixture_statistics_halftime` no longer makes its own calls.
     """
-    data = _get("fixtures/statistics", {"fixture": fixture_id})
+    data = _get("fixtures/statistics", {"fixture": fixture_id, "half": "true"})
     return data.get("response", [])
 
 
@@ -555,12 +564,45 @@ def get_odds_by_date(date_str: str, max_workers: int = 8) -> dict[int, list[dict
 
     if total_pages > 1:
         remaining = list(range(2, total_pages + 1))
+
+        # AF-ODDS-SWEEP-SILENT-TRUNCATION-2026-09-05.
+        #
+        # This was `for data in ex.map(lambda p: _get(...), remaining)`.
+        # ThreadPoolExecutor.map yields results IN ORDER and re-raises on
+        # consumption, so a single failing page aborted the loop and every LATER
+        # page was silently discarded — no error recorded against them, and the
+        # sweep returned a partial result indistinguishable from a complete one.
+        #
+        # Not hypothetical: we take 100-2,300 AF 429s/day and `_get` raises once
+        # its retry budget is spent. On a 77-page day, failing at page 5 would
+        # drop ~93% of the day's odds while looking like a normal run.
+        #
+        # Now each page is isolated: a failure is logged and skipped, the rest of
+        # the sweep continues, and the caller is told how much it actually got.
+        failed_pages: list[int] = []
+
+        def _fetch_page(p: int) -> dict | None:
+            try:
+                return _get("odds", {"date": date_str, "page": p})
+            except Exception as exc:
+                console.print(f"[yellow]odds sweep {date_str}: page {p}/{total_pages} "
+                              f"failed ({exc})[/yellow]")
+                failed_pages.append(p)
+                return None
+
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            for data in ex.map(
-                lambda p: _get("odds", {"date": date_str, "page": p}),
-                remaining,
-            ):
-                pages_data.append(data)
+            for data in ex.map(_fetch_page, remaining):
+                if data is not None:
+                    pages_data.append(data)
+
+        if failed_pages:
+            # A partial sweep must be visible. Silence here is what let the old
+            # behaviour hide: "0 new odds" looks identical to "nothing changed".
+            console.print(
+                f"[red]odds sweep {date_str} INCOMPLETE: {len(pages_data)}/{total_pages} "
+                f"pages fetched, {len(failed_pages)} failed "
+                f"{sorted(failed_pages)[:10]}[/red]"
+            )
 
     for data in pages_data:
         for entry in data.get("response", []):
@@ -1067,31 +1109,58 @@ def get_fixture_statistics_halftime(fixture_id: int) -> dict:
     Get fixture statistics split by half.
     Returns {first_half: [team_stats], second_half: [team_stats]}
     or empty dict if not available.
+
+    AF-WASTE-HALFTIME-STATS-2026-09-05 — this used to send `half=1` and then
+    `half=2`. **API-Football rejects both**, with
+    `{"half": "The Half field must be one of: true,false."}`. The code guessed
+    ("Some docs suggest half=1 / half=2") and the bare `except Exception: return {}`
+    hid the rejection, so it ran for months at a 100% failure rate: **two
+    guaranteed-error calls per finished match, roughly 300-2,700 wasted calls a
+    day**, and `match_stats` held **0 of 1,929** rows with `shots_home_ht`.
+
+    It now makes ONE correct call and, better, callers that already fetched full
+    stats should pass that response to `parse_fixture_stats_halftime` directly —
+    `get_fixture_statistics` sends `half=true`, so the half splits are already in
+    hand and this function need not be called at all.
     """
     try:
-        # Some docs suggest half=1 / half=2 for each period
-        data_1h = _get("fixtures/statistics", {"fixture": fixture_id, "half": "1"})
-        resp_1h = data_1h.get("response", [])
-        data_2h = _get("fixtures/statistics", {"fixture": fixture_id, "half": "2"})
-        resp_2h = data_2h.get("response", [])
-        return {"first_half": resp_1h, "second_half": resp_2h}
+        data = _get("fixtures/statistics", {"fixture": fixture_id, "half": "true"})
+        resp = data.get("response", [])
+        return {"first_half": resp, "second_half": resp}
     except Exception:
         return {}
 
 
-def parse_fixture_stats_halftime(halftime_response: dict) -> dict:
+def parse_fixture_stats_halftime(halftime_response) -> dict:
     """
-    Parse half-time stats response into flat dict with _ht suffix.
-    Returns dict with keys like shots_home_ht, possession_home_ht, etc.
+    Parse half-time stats into a flat dict with the `_ht` suffix.
+    Returns keys like shots_home_ht, possession_home_ht, etc.
+
+    AF-WASTE-HALFTIME-STATS-2026-09-05: reads AF's real shape. Each team object
+    from a `half=true` call carries `statistics_1h` (and `statistics_2h`)
+    alongside the full-match `statistics`; the old code looked for a
+    `{"first_half": [...]}` wrapper that AF has never returned, so this parser
+    could not have produced a row even if the fetch had worked.
+
+    Accepts either the raw `response` list (preferred — the caller already has it
+    from `get_fixture_statistics`) or the legacy `{"first_half": [...]}` dict.
     """
-    first_half = halftime_response.get("first_half", [])
-    if not first_half:
+    if isinstance(halftime_response, dict):
+        teams = halftime_response.get("first_half") or []
+    else:
+        teams = halftime_response or []
+    if not teams:
         return {}
 
     result = {}
-    for i, team_data in enumerate(first_half):
+    for i, team_data in enumerate(teams):
         prefix = "home" if i == 0 else "away"
-        stats = {s["type"]: s["value"] for s in team_data.get("statistics", [])}
+        # `statistics_1h` is the first-half split; fall back to `statistics` only
+        # when a caller passed a genuinely half-scoped payload.
+        half_stats = team_data.get("statistics_1h")
+        if half_stats is None:
+            half_stats = team_data.get("statistics", [])
+        stats = {s["type"]: s["value"] for s in half_stats}
 
         result[f"shots_{prefix}_ht"] = _parse_int(stats.get("Total Shots"))
         result[f"shots_on_target_{prefix}_ht"] = _parse_int(stats.get("Shots on Goal"))

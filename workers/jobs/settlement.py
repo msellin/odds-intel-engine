@@ -785,8 +785,21 @@ def fetch_post_match_enrichment() -> dict:
                 raw_full = get_fixture_statistics(af_id)
             full_stats = parse_fixture_stats(raw_full)
 
-            ht_response = get_fixture_statistics_halftime(af_id)
-            ht_stats = parse_fixture_stats_halftime(ht_response)
+            # AF-WASTE-HALFTIME-STATS-2026-09-05: no second call. The full-stats
+            # fetch above sends `half=true`, so `raw_full` already carries
+            # `statistics_1h` per team. This previously made TWO extra calls per
+            # finished match with `half=1`/`half=2`, both of which AF rejects
+            # outright ("The Half field must be one of: true,false") — a 100%
+            # failure rate hidden by a bare except, costing roughly 300-2,700
+            # calls a day and yielding 0 of 1,929 rows with half-time stats.
+            #
+            # The batch path can supply `raw_full` without the half splits; in
+            # that case parse returns {} and we fall back to one correct call.
+            ht_stats = parse_fixture_stats_halftime(raw_full)
+            if not ht_stats:
+                ht_stats = parse_fixture_stats_halftime(
+                    get_fixture_statistics_halftime(af_id)
+                )
 
             merged_stats = {**full_stats, **ht_stats}
             if merged_stats:

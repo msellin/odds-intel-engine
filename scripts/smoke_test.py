@@ -29279,5 +29279,109 @@ def test_lineup_fetch_gated():
 
 
 
+@test("AF-ODDS-SWEEP-SILENT-TRUNCATION — one failed page must not discard the rest")
+def test_odds_sweep_page_isolation():
+    """get_odds_by_date fetched pages 2..N with `for data in ex.map(...)`.
+
+    ThreadPoolExecutor.map yields in order and re-raises on consumption, so a
+    single failing page aborted the loop and every LATER page was silently
+    dropped - no error recorded, and a partial sweep looked identical to a
+    complete one. We take 100-2,300 AF 429s/day and _get raises once its retry
+    budget is spent, so on a 77-page day a failure at page 5 would have
+    discarded ~93% of the day's odds while appearing normal.
+
+    Behavioural: drives the real function with a stub that fails one page.
+    """
+    import workers.api_clients.api_football as af
+
+    attempted = []
+
+    def fake_get(endpoint, params=None, **kw):
+        page = (params or {}).get("page", 1)
+        attempted.append(page)
+        if page == 3:
+            raise RuntimeError("simulated 429 budget exhaustion")
+        return {"paging": {"total": 6},
+                "response": [{"fixture": {"id": 100 + page}, "bookmakers": []}]}
+
+    orig = af._get
+    af._get = fake_get
+    try:
+        result = af.get_odds_by_date("2026-09-06", max_workers=2)
+    finally:
+        af._get = orig
+
+    assert sorted(attempted) == [1, 2, 3, 4, 5, 6], (
+        f"every page must be attempted; got {sorted(attempted)}"
+    )
+    assert sorted(result) == [101, 102, 104, 105, 106], (
+        f"pages after the failure were discarded: got fixtures {sorted(result)}, "
+        f"expected 1,2,4,5,6 to survive a failure on page 3"
+    )
+
+
+@test("AF-WASTE-HALFTIME-STATS — half-time stats must come from half=true, not half=1/2")
+def test_halftime_stats_param():
+    """The code sent half=1 then half=2. API-Football rejects both with
+    {"half": "The Half field must be one of: true,false."} and a bare
+    `except Exception: return {}` hid it, so it ran for months at a 100% failure
+    rate - two guaranteed-error calls per finished match, ~300-2,700/day, and
+    match_stats held 0 of 1,929 rows with shots_home_ht.
+
+    half=true returns statistics_1h and statistics_2h inline in the SAME response
+    as the full-match statistics, so the correct fix costs zero extra calls.
+    Verified live on fixture 1597925: full shots_home=13 vs shots_home_ht=7,
+    possession 39% vs 55%.
+    """
+    import inspect
+    import workers.api_clients.api_football as af
+
+    for fn in (af.get_fixture_statistics, af.get_fixture_statistics_halftime):
+        src = inspect.getsource(fn)
+        assert '"half": "1"' not in src and '"half": "2"' not in src, (
+            f"{fn.__name__} still sends half=1/half=2, which AF rejects outright"
+        )
+    assert '"half": "true"' in inspect.getsource(af.get_fixture_statistics), (
+        "get_fixture_statistics must request half=true so the half splits arrive "
+        "in the same call it already makes"
+    )
+
+    # The parser must read AF's real shape, not the wrapper AF never returns.
+    psrc = inspect.getsource(af.parse_fixture_stats_halftime)
+    assert "statistics_1h" in psrc, (
+        "parser must read statistics_1h; the old code looked for a first_half "
+        "wrapper that AF has never sent, so it could not have produced a row"
+    )
+
+    # Behavioural: a realistic half=true payload must yield distinct HT values.
+    payload = [
+        {"team": {"id": 1}, "statistics": [{"type": "Total Shots", "value": 13},
+                                           {"type": "Ball Possession", "value": "39%"}],
+         "statistics_1h": [{"type": "Total Shots", "value": 7},
+                           {"type": "Ball Possession", "value": "55%"}]},
+        {"team": {"id": 2}, "statistics": [{"type": "Total Shots", "value": 9},
+                                           {"type": "Ball Possession", "value": "61%"}],
+         "statistics_1h": [{"type": "Total Shots", "value": 4},
+                           {"type": "Ball Possession", "value": "45%"}]},
+    ]
+    ht = af.parse_fixture_stats_halftime(payload)
+    assert ht.get("shots_home_ht") == 7, f"expected HT shots 7, got {ht.get('shots_home_ht')}"
+    assert ht.get("shots_away_ht") == 4, f"expected HT away shots 4, got {ht.get('shots_away_ht')}"
+    assert ht.get("possession_home_ht") == 55, (
+        f"HT possession must come from statistics_1h (55), got "
+        f"{ht.get('possession_home_ht')} - reading `statistics` would give 39"
+    )
+
+    # Settlement must not pay for a second call when it already has the data.
+    import os
+    ssrc = open(os.path.join(os.path.dirname(__file__), "..", "workers", "jobs",
+                             "settlement.py"), encoding="utf-8").read()
+    assert "parse_fixture_stats_halftime(raw_full)" in ssrc, (
+        "settlement should parse half-time stats from the full-stats response it "
+        "already fetched, not make another call"
+    )
+
+
+
 if __name__ == "__main__":
     main()
