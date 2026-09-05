@@ -226,6 +226,44 @@ def _headers() -> dict:
 # AF-PINNACLE-EXTRA-MARKETS-2026-09-05: which books' team totals we store.
 # Pinnacle only by default — the lambda-split mechanism needs the sharp book, and
 # every extra book multiplies rows in an already-45.8M-row table.
+# AF-PINNACLE-EXTRA-MARKETS-2026-09-05 (widened). Over/under-shaped bet types we
+# already receive and previously discarded, mapped to their OWN namespace.
+#
+# Why capture them for every book rather than only the sharp one: our measured
+# binding constraint is PRICE, not model quality (+1.26pp realised at close
+# against a ~2.50% vig). Pinnacle prices corners/cards/first-half, and Kambi —
+# which we can actually bet — quotes Total Corners, Total Cards and Correct Score
+# (verified live 2026-09-05). So these markets are line-shoppable against a sharp
+# anchor with NO model: edge = best_accessible x devig(Pinnacle) - 1.
+#
+# Every prefix is distinct from `over_under_` on purpose. The comment on the
+# "Goals Over/Under" branch records the incident where a non-FT line leaked into
+# the FT bucket and best-price selection fabricated double-digit edges.
+# Per-family kill switch. Capturing all of these adds ~88% to odds_snapshots row
+# volume (measured 2026-09-05 over 10 fixtures: 2,462 existing rows -> 4,637).
+# Quota is NOT the constraint here — storage is, on a 74M-row table — so each
+# family can be disabled independently without a deploy if it proves unused.
+# Empty/unset = everything on.
+_EXTRA_MARKETS_DISABLED = frozenset(
+    x.strip() for x in os.getenv("EXTRA_MARKETS_DISABLED", "").split(",") if x.strip()
+)
+
+
+def _extra_enabled(prefix: str) -> bool:
+    return prefix not in _EXTRA_MARKETS_DISABLED
+
+
+_EXTRA_OU_MARKETS = {
+    "Goals Over/Under First Half":       "over_under_1h",
+    "Corners Over Under":                "corners_ou",
+    "Home Corners Over/Under":           "corners_home_ou",
+    "Away Corners Over/Under":           "corners_away_ou",
+    "Total Corners (1st Half)":          "corners_1h_ou",
+    "Cards Over/Under":                  "cards_ou",
+    "Home Team Total Goals(1st Half)":   "team_total_1h_home",
+    "Away Team Total Goals(1st Half)":   "team_total_1h_away",
+}
+
 _TEAM_TOTAL_BOOKMAKERS = frozenset(
     b.strip() for b in os.getenv("TEAM_TOTAL_BOOKMAKERS", "Pinnacle").split(",")
     if b.strip()
@@ -720,6 +758,56 @@ def parse_fixture_odds(odds_response: list[dict]) -> list[dict]:
                                     "odds": float(val["odd"]),
                                 })
                             except ValueError:
+                                pass
+
+                elif bet_name in _EXTRA_OU_MARKETS and _extra_enabled(
+                        _EXTRA_OU_MARKETS[bet_name]):
+                    # AF-PINNACLE-EXTRA-MARKETS-2026-09-05 (widened). These are
+                    # over/under-shaped markets we already receive and used to
+                    # discard. Captured for EVERY book, not just Pinnacle,
+                    # because the point is line shopping: Pinnacle prices the
+                    # sharp version and Kambi/Coolbet price a bettable one, so
+                    # edge = best_accessible x devig(Pinnacle) - 1 needs no model
+                    # at all. Verified 2026-09-05 that Kambi quotes Total
+                    # Corners, Total Cards and Correct Score.
+                    #
+                    # Each gets its OWN namespace prefix — never the FT goals
+                    # bucket. See the "Goals Over/Under" comment above for what
+                    # happened last time a non-FT line leaked in.
+                    prefix = _EXTRA_OU_MARKETS[bet_name]
+                    for val in bet.get("values", []):
+                        v = val["value"]
+                        if " " not in v:
+                            continue
+                        direction, line = v.split(" ", 1)
+                        if direction.lower() not in ("over", "under"):
+                            continue
+                        try:
+                            line_num = float(line)
+                            rows.append({
+                                "bookmaker": bm_name,
+                                "market": f"{prefix}_{str(line_num).replace('.', '')}",
+                                "selection": direction.lower(),
+                                "odds": float(val["odd"]),
+                            })
+                        except ValueError:
+                            pass
+
+                elif bet_name == "First Half Winner" and _extra_enabled("1x2_1h"):
+                    # 1X2 for the first half. Distinct namespace so it can never
+                    # be compared against a full-match model probability.
+                    for val in bet.get("values", []):
+                        sel = {"Home": "home", "Draw": "draw",
+                               "Away": "away"}.get(val["value"])
+                        if sel:
+                            try:
+                                rows.append({
+                                    "bookmaker": bm_name,
+                                    "market": "1x2_1h",
+                                    "selection": sel,
+                                    "odds": float(val["odd"]),
+                                })
+                            except (ValueError, TypeError):
                                 pass
 
                 elif bet_name == "Both Teams Score":

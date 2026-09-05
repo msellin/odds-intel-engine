@@ -29511,6 +29511,43 @@ def test_pinnacle_team_totals():
         "home and away team totals resolved to the same value - side detection is broken"
     )
 
+    # Widened 2026-09-05: corners / cards / first-half markets are captured for
+    # EVERY book, because the point is line shopping against the sharp anchor
+    # rather than modelling. Kambi (accessible) quotes Total Corners, Total Cards
+    # and Correct Score, so these are bettable with no model at all.
+    wide = [{
+        "bookmakers": [{"name": "Bet365", "bets": [
+            {"name": "Goals Over/Under", "values": [
+                {"value": "Over 2.5", "odd": "1.90"}, {"value": "Under 2.5", "odd": "1.95"}]},
+            {"name": "Goals Over/Under First Half", "values": [
+                {"value": "Over 1.5", "odd": "2.40"}, {"value": "Under 1.5", "odd": "1.55"}]},
+            {"name": "Corners Over Under", "values": [
+                {"value": "Over 8.5", "odd": "1.46"}, {"value": "Under 8.5", "odd": "2.57"}]},
+            {"name": "Cards Over/Under", "values": [
+                {"value": "Over 3.5", "odd": "1.87"}, {"value": "Under 3.5", "odd": "1.92"}]},
+            {"name": "First Half Winner", "values": [
+                {"value": "Home", "odd": "2.30"}, {"value": "Draw", "odd": "2.80"},
+                {"value": "Away", "odd": "4.04"}]},
+        ]}]
+    }]
+    wrows = parse_fixture_odds(wide)
+    wm = {(r["market"], r["selection"]): r["odds"] for r in wrows}
+
+    assert wm.get(("corners_ou_85", "over")) == 1.46, f"corners not captured: {sorted(wm)}"
+    assert wm.get(("cards_ou_35", "over")) == 1.87, f"cards not captured: {sorted(wm)}"
+    assert wm.get(("over_under_1h_15", "over")) == 2.40, f"1H goals not captured: {sorted(wm)}"
+    assert wm.get(("1x2_1h", "home")) == 2.30, f"1H winner not captured: {sorted(wm)}"
+
+    # THE property that matters: none of these may pollute full-time buckets.
+    assert wm.get(("over_under_25", "over")) == 1.90, "the real FT total was altered"
+    assert ("over_under_15", "over") not in wm, (
+        "a FIRST-HALF 1.5 line leaked into the full-time over_under_15 bucket - "
+        "this is the exact incident the Goals Over/Under comment records"
+    )
+    assert ("over_under_85", "over") not in wm, "a CORNERS line leaked into FT goals"
+    assert ("over_under_35", "over") not in wm, "a CARDS line leaked into FT goals"
+    assert wm.get(("1x2", "home")) is None, "first-half 1x2 leaked into full-time 1x2"
+
 
 
 if __name__ == "__main__":
