@@ -30503,5 +30503,121 @@ def _meta_validate_reenabled():
     )
 
 
+@test("MIN-ODDS-SINGLE-SOURCE — the pre-fix multiplicative floor must not come back")
+def _min_odds_single_source():
+    """MIN-ODDS-WRONG-FORMULA family, 2026-09-05 and 2026-09-06.
+
+    The min-odds floor existed as three different formulas, none correct, wrong
+    in two opposite directions. /picks was fixed 2026-09-05, the admin index the
+    same day, and two more survived until 2026-09-06 — the shadow-bots DETAIL
+    page (below the index's floor on 9,296 of 9,583 picks) and the Coolbet
+    placer, which gates real money.
+
+    This is the grep-shaped guard the EXEC-ODDS-SINGLE-SOURCE pattern uses: fail
+    if the multiplicative form `(1 + <something>) / <probability>` reappears
+    anywhere. It cannot prove correctness, but it makes the specific wrong
+    formula impossible to reintroduce silently, which is what actually happened
+    four times.
+    """
+    import os
+    import re
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    web = os.path.join(os.path.dirname(root), "odds-intel-web", "src")
+
+    # `(1 + x) / prob` in any spelling, ignoring comment lines (the fixed sites
+    # all quote the old formula in their explanatory comments, which is the
+    # point of those comments).
+    bad = re.compile(r"\(\s*1(?:\.0)?\s*\+\s*\w+\s*\)\s*/\s*\w*[Pp]rob")
+    offenders = []
+    for base, exts in ((root, (".py",)), (web, (".ts", ".tsx"))):
+        if not os.path.isdir(base):
+            continue
+        for dirpath, dirnames, filenames in os.walk(base):
+            dirnames[:] = [d for d in dirnames
+                           if d not in ("node_modules", ".next", "__pycache__", ".git")]
+            for fn in filenames:
+                if not fn.endswith(exts) or fn == "smoke_test.py":
+                    continue
+                path = os.path.join(dirpath, fn)
+                try:
+                    lines = open(path, encoding="utf-8").read().split("\n")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                # Skip comments AND docstring/block-comment bodies. Every site
+                # fixed on 2026-09-05/06 quotes the old formula in its
+                # explanatory prose — that is the point of those comments, and
+                # the first version of this test flagged them all.
+                in_doc = False
+                for i, ln in enumerate(lines, 1):
+                    st = ln.lstrip()
+                    triples = ln.count('"""') + ln.count("'''")
+                    was_in_doc = in_doc
+                    if triples % 2 == 1:
+                        in_doc = not in_doc
+                    if was_in_doc or in_doc:
+                        continue
+                    if st.startswith("#") or st.startswith("//") or st.startswith("*"):
+                        continue
+                    if bad.search(ln):
+                        offenders.append(f"{os.path.relpath(path, root)}:{i}: {st[:90]}")
+
+    assert not offenders, (
+        "the pre-fix multiplicative min-odds formula `(1 + threshold) / prob` is "
+        "back. This engine's edge is in PROBABILITY POINTS "
+        "(edge = cal_prob - 1/odds), so the gate floor is "
+        "1/(cal_prob - threshold) and the break-even is 1/cal_prob:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
+@test("EDGE-UNIT-COLLISION — edge_percent is a fraction, never divide it by 100")
+def _edge_unit_collision():
+    """EDGE-UNIT-COLLISION-2026-09-06.
+
+    `simulated_bets.edge_percent` is stored as a DECIMAL FRACTION despite its
+    name — measured range 0.02-1.36, median 0.11. `engine-data.ts` divided it by
+    100 on its way into `detectBetFlags`, so the `high-edge-uncalibrated`
+    (> 0.20) and `edge-implausibly-high` (> 0.50) guards could never fire on a
+    page the operator reads before staking real money.
+
+    Behavioural on the DB side — asserts the column really is a fraction, so
+    this test fails loudly if the storage convention ever changes rather than
+    silently pinning the wrong one.
+    """
+    import os
+    import re
+
+    from workers.api_clients.db import execute_query
+
+    r = execute_query(
+        """SELECT min(edge_percent) lo, max(edge_percent) hi,
+                  percentile_cont(0.5) WITHIN GROUP (ORDER BY edge_percent) med
+             FROM simulated_bets
+            WHERE edge_percent IS NOT NULL
+              AND created_at >= now() - interval '30 days'"""
+    )[0]
+    assert r["med"] is not None and float(r["med"]) < 1.0, (
+        f"edge_percent median is {r['med']} — it is no longer a decimal "
+        "fraction, so every consumer's unit assumption needs rechecking"
+    )
+
+    web = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "odds-intel-web", "src", "lib", "engine-data.ts",
+    )
+    if os.path.exists(web):
+        src = open(web, encoding="utf-8").read()
+        offenders = [
+            ln.strip() for ln in src.split("\n")
+            if re.search(r"pickEdge\s*/\s*100", ln)
+            and not ln.lstrip().startswith(("//", "*"))
+        ]
+        assert not offenders, (
+            "pickEdge is being divided by 100 again — edge_percent is already a "
+            f"fraction, so this makes the over-confidence flags unfireable: {offenders}"
+        )
+
+
 if __name__ == "__main__":
     main()
