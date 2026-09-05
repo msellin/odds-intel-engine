@@ -255,7 +255,7 @@ restart. No extra hosting cost on the VPS; blast radius isolated.
 - AF bulk odds via `/odds?date=` — ~178 fixtures, 13 bookmakers, all markets (1X2, O/U, BTTS, DC)
 - Bookmakers: 10Bet, 1xBet, 888Sport, Bet365, Betano, BetVictor, Betfair, Dafabet, Marathonbet, Pinnacle, SBO, Unibet, William Hill
 - Kambi removed 2026-05-06 — all leagues already covered by AF, no unique value
-- **Epicbet** ingested separately at :02/:32 UTC (`job_epicbet_odds_snapshot` → `workers/automation/epicbet_explorer.run_bulk`), landing 3 min before the :05/:35 betting refresh. Bulk league sweep over Epicbet's JSON API (~140 calls: leagues → fixtures per league → odds batched 250 market-ids at a time), VPS-side.
+- **Epicbet** ingested separately at :02/:32 UTC (`job_epicbet_odds_snapshot` → `workers/automation/epicbet_explorer.run_bulk`), landing 3 min before the :05/:35 betting refresh. Bulk league sweep over Epicbet's JSON API, VPS-side. **~140 calls (leagues → fixtures per league) + up to `EPICBET_SIDEBETS_LIMIT` (default 250) deep-board calls, one per matched fixture, spent soonest-kickoff first + odds batched 250 market-ids at a time** (EPICBET-SIDEBETS-CORNERS-2026-09-06). A sidebets call is ~328 ms / ~488 KB; `marketType=all` was rejected at 1.95 MB for player props we never price. `EPICBET_SIDEBETS_LIMIT=0` restores the pre-2026-09-06 shallow behaviour exactly.
   - **EPICBET-403-FROM-VPS-2026-09-02 — the "no such protection" claim was wrong.** It held only from the operator's residential IP. From the VPS, Cloudflare 403s every call behind a *Just a moment…* interstitial. The feed wrote nothing from **2026-08-27 06:10 to 2026-09-02** — **277 consecutive runs, every one recording `completed`** — because the job caught the exception and returned normally.
   - Calls now route through **FlareSolverr on a named session** (`EPICBET_FLARE_SESSION`, default `epicbet_odds_reader`) after the first refusal, matching the Coolbet **odds reader** — which is also API + named FS session; only Coolbet *placement* drives a real browser. Direct is tried first, so the Mac path stays at 0.5s/call. Via FS the first call pays ~11s for the challenge and the rest are ~0.3s.
   - Cookie harvesting does **not** work here: FS earns a `cf_clearance`, but replaying it from plain `requests` still 403s — Cloudflare binds clearance to the browser's TLS fingerprint, unlike Imperva which accepts cookie + UA. This is why Epicbet can stay on the VPS while Coolbet's reader had to move to the Mac.
@@ -496,7 +496,7 @@ After step 5: bets are placed, value bets page has data.
 |--------|------|------|
 | **API-Football Ultra** | Primary: fixtures, odds (13 bookmakers), predictions, injuries, lineups, standings, H2H, stats, live | $29/mo |
 | ~~**Kambi**~~ | Removed 2026-05-06 — AF already covers all 41 Kambi leagues with 13 bookmakers | — |
-| **Epicbet** | Second EMTA-licensed, operator-reachable book — 1X2/OU/BTTS/AH, anonymous REST feed | Free |
+| **Epicbet** | Second EMTA-licensed, operator-reachable book — 1X2/OU/BTTS/AH plus corners, cards, 1H markets, team totals and DC via the deep board (2026-09-06), anonymous REST feed | Free |
 | **ESPN** | Settlement results backup | Free |
 | **Gemini 2.5 Flash** | AI news analysis (qualitative signals) + match previews (ENG-3) | ~$0.05/day |
 | **Resend** | Email digest delivery (ENG-4) | Free to 3,000 emails/mo |

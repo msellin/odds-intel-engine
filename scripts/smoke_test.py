@@ -30307,5 +30307,93 @@ def _ledger_exec_price_basis():
     assert "inplay" in q, "in-play bots leak back into the public ledger"
 
 
+@test("EPICBET-SIDEBETS-CORNERS — corners keep their whole-line ladder")
+def _epicbet_sidebets_corners():
+    """EPICBET-SIDEBETS-CORNERS-2026-09-06.
+
+    Epicbet's corners were never being filtered out — they were never fetched.
+    `match.getFoByLeague` has never returned a corners group for any of 204
+    sampled fixtures; the deep board only exists on `match.getSidebets`.
+
+    The trap this test exists for: corners and cards ladders contain WHOLE
+    numbers (6, 7, 8, 10, 11) which are real, bettable push lines. The goals
+    vocabulary `_ou_market_for_line` accepts only {0.5 … 4.5}, so reusing it
+    would silently bin half the board and look exactly like "Epicbet has a thin
+    corners market". Behavioural, no network — a stub board through the real
+    parser.
+    """
+    import os
+    import sys
+    from pathlib import Path
+
+    root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from workers.automation.epicbet_explorer import (
+        _GROUP_CORNERS, _GROUP_CORNERS_AWAY, _alt_total_tag, parse_event_markets,
+    )
+
+    # Quarter lines must still be rejected — totals rows carry no handicap_line,
+    # so a 6.25 would be indistinguishable from 6.5 at read time.
+    assert _alt_total_tag("corners_ou", 6.25) is None
+    assert _alt_total_tag("corners_ou", 6.0) == "corners_ou_60"
+    assert _alt_total_tag("corners_ou", 10.0) == "corners_ou_100"
+
+    def _tot(gid, line, over_id, under_id, team=None):
+        m = {"line": line, "outcomes": [{"id": over_id, "name": "Over"},
+                                        {"id": under_id, "name": "Under"}]}
+        if team:
+            m["teamName"] = team
+        return {"id": gid, "markets": [m]}
+
+    event = {"raw": {
+        "homeTeamName": "Troyes", "awayTeamName": "Strasbourg",
+        "marketGroups": [
+            _tot(_GROUP_CORNERS, 6.0, 1, 2),      # whole push line
+            _tot(_GROUP_CORNERS, 6.5, 3, 4),      # half line
+            _tot(_GROUP_CORNERS, 10.0, 5, 6),     # whole, above the goals range
+            _tot(_GROUP_CORNERS_AWAY, 4.5, 7, 8, team="Strasbourg"),
+        ],
+    }}
+    odds_map = {i: 1.5 + i / 10 for i in range(1, 9)}
+    rows = parse_event_markets(event, odds_map)
+    markets = {r[0] for r in rows}
+
+    for expected in ("corners_ou_60", "corners_ou_65", "corners_ou_100"):
+        assert expected in markets, (
+            f"{expected} missing — the corners ladder is being filtered through "
+            "the goals line vocabulary, which drops every whole-number push line"
+        )
+    for m in ("corners_ou_60", "corners_ou_65", "corners_ou_100"):
+        sides = {r[1] for r in rows if r[0] == m}
+        assert sides == {"over", "under"}, f"{m} has sides {sides}"
+
+    # Team side must come from `market.teamName`, never group-id polarity.
+    assert "corners_away_ou_45" in markets, (
+        "team corners resolved to the wrong side — group ids do not carry a "
+        f"stable home/away polarity. Got: {sorted(markets)}"
+    )
+    assert "corners_home_ou_45" not in markets
+
+    # The monotonicity guard must key on an exact full-match set. Keying on
+    # startswith("over_under_") makes `over_under_1h_15` parse as cents=15 and
+    # collide with `over_under_15`; a 1H under is far longer than the full-match
+    # one, so the ladder looks non-monotone and every real FT OU row is dropped.
+    src = open(root / "workers" / "automation" / "epicbet_explorer.py",
+               encoding="utf-8").read()
+    assert 'r[0] in _FT_OU_MARKETS' in src, (
+        "the OU monotonicity guard no longer filters on the exact "
+        "_FT_OU_MARKETS set — first-half lines will collide with full-match ones"
+    )
+    assert 'startswith("over_under_")' not in src
+
+    # The per-fixture call must be bounded and spent on matched pairs only.
+    assert 'os.getenv("EPICBET_SIDEBETS_LIMIT"' in src, (
+        "the sidebets fan-out lost its bound — unbounded it is ~517 FlareSolverr "
+        "requests and ~250MB of bodies every 30 minutes, and FS tab crashes are "
+        "a recurring failure here"
+    )
+
+
 if __name__ == "__main__":
     main()

@@ -143,13 +143,32 @@ file instead.
 
 ---
 
-## 13. Not every book prices every market — Epicbet has no `double_chance`
+## 13. A book's market list describes OUR PARSER, not the book — corrected 2026-09-06
 
-`odds_snapshots` gained **Epicbet** on 2026-08-27 (EPICBET-ODDS-INGEST), the
-second EMTA-licensed book the operator can actually place at. It does **not**
-write `double_chance` rows: the bulk league listing we ingest from only carries
-market groups 45 (1X2), 15 (Match Total Goals), 69 (Both to Score) and 19 (Goals
-Handicap). Coolbet writes DC, Epicbet does not.
+**This entry used to say "Epicbet has no `double_chance`". That was wrong, and
+the way it was wrong is the reusable lesson.**
+
+`odds_snapshots` gained **Epicbet** on 2026-08-27 (EPICBET-ODDS-INGEST). We read
+its bulk league listing (`match.getFoByLeague`), which across 204 sampled
+fixtures in 198 leagues has only ever emitted market groups 45, 15, 19, 69, 96,
+2055, 98, 6, 65, 413, 5, 7, 67, 47. From that we concluded the book did not
+offer DC, corners or cards.
+
+The book offers all of them. They live on a different endpoint —
+`match.getSidebets?marketType=main`, which returns **192 groups / 422 markets**
+for a top fixture against the listing's handful. Double chance is group 96 and
+was present on **12 of 12** fixtures sampled. Corners, cards, first-half
+markets, team totals and correct score are all there too (241 distinct group
+ids). EPICBET-SIDEBETS-CORNERS-2026-09-06 now reads it.
+
+**The rule: "book X does not offer market Y" is almost never a fact about the
+book.** It is a fact about the endpoint you asked, the parameters you sent, and
+the groups your parser whitelists. Before writing that sentence anywhere — a
+doc, a gotcha, a task's premise — open the book's own site, watch what the page
+fetches, and confirm the market is genuinely absent rather than merely
+unrequested. The same mistake cost us the Coolbet corners limit (`limit: 13`
+where 60 was available) and the assumption that AF sends 8 bet types when it
+sends 19.
 
 So a query of the form "books that price DC" silently excludes Epicbet, and a
 per-book coverage ratio computed across all markets will make Epicbet look
