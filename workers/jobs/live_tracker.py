@@ -13,6 +13,7 @@ Usage:
   python live_tracker.py --test   # Dry run, print what would be stored
 """
 
+import os
 import sys
 import argparse
 from pathlib import Path
@@ -252,20 +253,49 @@ def _build_af_id_map() -> dict[int, dict]:
 # T7: Lineup fetcher (called for pre-match matches within 60min of KO)
 # ============================================================
 
+# AF-WASTE-LINEUPS-2026-09-05: per-process attempt cap for lineup misses.
+#
+# A miss must NOT be recorded in `matches.lineups_fetched_at`, because
+# `supabase_client.py:1723` derives `lineup_confirmed = lineups_fetched_at is not
+# None`. Marking a miss there would fabricate a confirmed lineup on a match that
+# has none, and that signal is worth +8.1% vs -4.5% ROI — far more damage than
+# the quota it would save. So misses are tracked in-process instead.
+#
+# The poller is long-lived, so this dict is effectively the retry ledger. The
+# one-shot live_tracker path simply starts empty, which is correct: it makes at
+# most _MAX_LINEUP_ATTEMPTS calls per match per run.
+_lineup_attempts: dict[int, int] = {}
+_MAX_LINEUP_ATTEMPTS = int(os.getenv("LINEUP_MAX_ATTEMPTS", "4"))
+_LINEUP_WINDOW_MIN = int(os.getenv("LINEUP_WINDOW_MIN", "90"))
+
+
 def _fetch_lineups_for_upcoming(af_id_map: dict[int, dict], dry_run: bool = False):
     """
     T7: For matches starting within the next N minutes that don't yet have
     lineups, fetch and store them.
 
-    FEATURE-COVERAGE-BACKFILL-2026-08-21: widened window from 60→180 min.
-    Lineups confirm anywhere from 30 to 90 min pre-KO across leagues (some
-    quick to publish, some slow). Old 60-min window meant we'd miss any
-    lineup published in the 60-90 pre-KO band because the poller might
-    only have one 45s cycle in that band; widening to 180 gives 2-3
-    attempts per match. LineUp coverage sat at 9.7% pre-widening;
-    expected to rise to 20-30% going forward with same match volume.
-    AF quota cost: same as before (idempotent — lineups_fetched_at gate
-    prevents duplicate fetches once we have them).
+    AF-WASTE-LINEUPS-2026-09-05 — this was the single largest AF quota consumer
+    and ~95% of its calls could not succeed. Measured: lineups were **79.5% of
+    all AF calls** (20,483 on 2026-09-05, 44-81% every day that week), and over
+    8 days **~72,731 calls produced 800 stored formations — ~91 calls per
+    lineup**. Only 1,038 of 6,653 matches ever got `lineups_fetched_at` set.
+
+    Three causes, all fixed here:
+
+    1. **No coverage gate.** `/fixtures/events` has gated on `coverage_events`
+       since LIVEPOLLER-EVENTS-GATE-IMPL; lineups never gained the equivalent.
+       Only 687 of 1,405 upcoming matches (48.9%) sit in leagues AF covers for
+       lineups, so more than half the calls were impossible by construction.
+    2. **A miss was never recorded.** `if not raw: continue` left the match
+       eligible again on the very next cycle, so a match with no lineup was
+       retried for the whole window — up to ~24 times. The old docstring's
+       idempotency claim held only *once a lineup existed*.
+    3. **The window was twice as wide as the publication band.** It was widened
+       60->180 min by FEATURE-COVERAGE-BACKFILL-2026-08-21 to catch slow leagues,
+       but lineups confirm 30-90 min pre-KO, so T-180..T-90 could only ever miss.
+
+    The feature itself is worth keeping — `lineup_confirmed` is +8.1% vs -4.5%
+    ROI (n=1,752). The goal is the same lineups at a fraction of the calls.
     """
     now = datetime.now(timezone.utc)
     lineups_fetched = 0
@@ -277,6 +307,15 @@ def _fetch_lineups_for_upcoming(af_id_map: dict[int, dict], dry_run: bool = Fals
         if match.get("status") != "scheduled":
             continue  # Only pre-match
 
+        # (1) Coverage gate — AF publishes no lineups for this league at all.
+        if not match.get("coverage_lineups"):
+            continue
+
+        # (2) Attempt cap — see _lineup_attempts above for why a miss cannot be
+        # recorded in the DB column.
+        if _lineup_attempts.get(af_id, 0) >= _MAX_LINEUP_ATTEMPTS:
+            continue
+
         # Check if kickoff is within window
         try:
             match_date = match["date"]
@@ -287,8 +326,10 @@ def _fetch_lineups_for_upcoming(af_id_map: dict[int, dict], dry_run: bool = Fals
         except (ValueError, KeyError, TypeError):
             continue
 
+        # (3) Publication band only. Lineups confirm 30-90 min pre-KO; the
+        # T-180..T-90 half of the old window could only ever return nothing.
         mins_to_ko = (kickoff - now).total_seconds() / 60
-        if not (0 < mins_to_ko <= 180):
+        if not (0 < mins_to_ko <= _LINEUP_WINDOW_MIN):
             continue
 
         if dry_run:
@@ -297,6 +338,7 @@ def _fetch_lineups_for_upcoming(af_id_map: dict[int, dict], dry_run: bool = Fals
             continue
 
         try:
+            _lineup_attempts[af_id] = _lineup_attempts.get(af_id, 0) + 1
             raw = get_fixture_lineups(af_id)
             if not raw:
                 continue

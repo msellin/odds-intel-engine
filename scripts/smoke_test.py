@@ -29198,5 +29198,86 @@ def test_kambi_parser_criterion_gated():
 
 
 
+@test("AF-WASTE-LINEUPS — lineup fetch must be coverage-gated and attempt-capped")
+def test_lineup_fetch_gated():
+    """Lineups were 79.5% of all AF calls and ~91 calls per lineup obtained.
+
+    Three causes: no coverage_lineups gate (only 48.9% of upcoming matches sit in
+    leagues AF covers), a miss was never recorded so a match retried every cycle
+    for the whole window, and the window was 180 min against a 30-90 min
+    publication band. Projected reduction on the current 36h cohort: ~91.9%.
+
+    A miss must NOT be written to matches.lineups_fetched_at — supabase_client
+    derives `lineup_confirmed = lineups_fetched_at is not None`, and that signal
+    is worth +8.1% vs -4.5% ROI (n=1,752). Faking it would cost far more than the
+    quota saved. This test pins that too.
+    """
+    import os, importlib
+    import workers.jobs.live_tracker as lt
+    importlib.reload(lt)
+
+    # The map must actually carry the coverage flag, or the gate is inert.
+    from workers.api_clients.db import execute_query
+    src_db = open(os.path.join(os.path.dirname(__file__), "..", "workers",
+                               "api_clients", "db.py"), encoding="utf-8").read()
+    amap = src_db[src_db.index("def build_af_id_map"):]
+    amap = amap[:amap.index("\ndef ", 5)]
+    assert "coverage_lineups" in amap, (
+        "build_af_id_map must select coverage_lineups or the gate reads None for "
+        "every match and silently skips everything"
+    )
+
+    # Behavioural: drive the real function with a synthetic map.
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    calls = []
+
+    def fake_get(af_id):
+        calls.append(af_id)
+        return None  # simulate "no lineup published"
+
+    orig = lt.get_fixture_lineups
+    lt.get_fixture_lineups = fake_get
+    lt._lineup_attempts.clear()
+    try:
+        base = {"status": "scheduled", "lineups_fetched_at": None,
+                "date": now + timedelta(minutes=45), "id": "x"}
+        amap_in = {
+            1: {**base, "coverage_lineups": True},    # eligible
+            2: {**base, "coverage_lineups": False},   # league not covered
+            3: {**base, "coverage_lineups": None},    # unknown -> treat as not covered
+            4: {**base, "coverage_lineups": True,
+                "date": now + timedelta(minutes=150)},  # outside 90-min band
+        }
+        # Run more cycles than the cap allows.
+        for _ in range(10):
+            lt._fetch_lineups_for_upcoming(amap_in)
+
+        assert 2 not in calls, "called for a league with coverage_lineups=False"
+        assert 3 not in calls, "called for a league with unknown coverage"
+        assert 4 not in calls, (
+            f"called outside the {lt._LINEUP_WINDOW_MIN}-min publication band"
+        )
+        n1 = calls.count(1)
+        assert n1 == lt._MAX_LINEUP_ATTEMPTS, (
+            f"eligible match called {n1} times across 10 cycles; the cap is "
+            f"{lt._MAX_LINEUP_ATTEMPTS}. Without it a lineup-less match retries "
+            f"every cycle for the whole window (~24 calls)."
+        )
+    finally:
+        lt.get_fixture_lineups = orig
+        lt._lineup_attempts.clear()
+
+    # A miss must never fabricate lineup_confirmed.
+    src_lt = open(lt.__file__, encoding="utf-8").read()
+    miss = src_lt[src_lt.index("if not raw:"):]
+    miss = miss[:200]
+    assert "lineups_fetched_at" not in miss, (
+        "a lineup MISS must not set lineups_fetched_at — lineup_confirmed is "
+        "derived from it and is worth +8.1% vs -4.5% ROI"
+    )
+
+
+
 if __name__ == "__main__":
     main()

@@ -322,10 +322,13 @@ def build_af_id_map(target_date: str = None) -> dict[int, dict]:
     yesterday = (date.fromisoformat(today) - timedelta(days=1)).isoformat()
     # LIVEPOLLER-EVENTS-GATE-IMPL (2026-05-25): league_id added so live_tracker
     # can gate /fixtures/events fetch by league coverage_events flag.
+    # AF-WASTE-LINEUPS (2026-09-05): coverage_lineups added for the same reason —
+    # the lineup fetch had no such gate and was calling for leagues AF does not
+    # cover, which cannot succeed by construction.
     rows = execute_query(
         """SELECT m.id, m.api_football_id, m.home_team_id, m.away_team_id,
                   m.date, m.status, m.lineups_fetched_at,
-                  m.league_id, l.coverage_events
+                  m.league_id, l.coverage_events, l.coverage_lineups
            FROM matches m
            LEFT JOIN leagues l ON l.id = m.league_id
            WHERE m.date::date IN (%s, %s)
