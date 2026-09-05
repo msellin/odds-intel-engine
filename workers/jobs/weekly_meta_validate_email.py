@@ -5,9 +5,10 @@ Parses the rich Table output (per-bundle verdict + activation summary) and
 emails an HTML digest to ADMIN_ALERT_EMAIL via Resend so the 2026-06-10
 activation decision is no longer a manual run.
 
-Best-effort parser: pulls the per-bundle row that contains 'PASS', 'MARGINAL',
-or 'FAIL' from the script's verdict block. If no bundle PASSes, the digest
-still ships with the current best-Δ for tracking over time.
+Best-effort parser: pulls the per-bundle row carrying a verdict token
+(PASS / MARGINAL / FAIL / INVERTED / INSUFFICIENT-OOS) from the script's
+verdict block. If no bundle PASSes, the digest still ships with the current
+best-Δ for tracking over time.
 """
 from __future__ import annotations
 import os
@@ -21,37 +22,46 @@ FROM_EMAIL        = os.getenv("DIGEST_FROM_EMAIL", "OddsIntel <digest@oddsintel.
 ADMIN_ALERT_EMAIL = os.getenv("ADMIN_ALERT_EMAIL", "")
 
 
+VERDICTS = ("PASS", "MARGINAL", "FAIL", "INVERTED", "INSUFFICIENT-OOS")
+
+
 def _parse_summary(stdout: str) -> list[dict]:
     """Extract per-bundle verdicts from the script's stdout.
 
-    Looks for lines matching the "Activation verdict per bundle" table:
-      bundle name | model_type | top % | bot % | Δpp | verdict
-    Returns list of dicts ordered by Δpp descending.
+    Handles both table shapes:
+      legacy (pre-2026-09-06): bundle | type | top% | bottom% | Δpp | verdict
+      current:  bundle | type | n(OOS) | r | t | Q1 CLV% | Q5 CLV% | Δpp | verdict
+
+    Columns are read from the RIGHT (verdict last, Δpp second-last, and the
+    two CLV columns before that), which is stable across both shapes.
     """
     rows: list[dict] = []
     in_verdict_table = False
     for line in stdout.splitlines():
-        if "Activation verdict per bundle" in line:
+        if "verdict per bundle" in line.lower():
             in_verdict_table = True
             continue
         if not in_verdict_table:
             continue
-        if line.startswith("│") and "PASS" in line or "MARGINAL" in line or "FAIL" in line:
-            cells = [c.strip() for c in line.strip("│").split("│")]
-            if len(cells) < 6:
-                continue
-            try:
-                delta_pp = float(re.sub(r"[^\d.+\-]", "", cells[4]))
-            except (ValueError, IndexError):
-                continue
-            rows.append({
-                "bundle":    cells[0],
-                "type":      cells[1],
-                "top_pct":   cells[2],
-                "bot_pct":   cells[3],
-                "delta_pp":  delta_pp,
-                "verdict":   cells[5] if len(cells) > 5 else "?",
-            })
+        if not line.lstrip().startswith("\u2502"):
+            continue
+        if not any(v in line for v in VERDICTS):
+            continue
+        cells = [c.strip() for c in line.strip().strip("\u2502").split("\u2502")]
+        if len(cells) < 6:
+            continue
+        try:
+            delta_pp = float(re.sub(r"[^\d.+\-]", "", cells[-2]))
+        except (ValueError, IndexError):
+            continue
+        rows.append({
+            "bundle":   cells[0],
+            "type":     cells[1],
+            "top_pct":  cells[-4],
+            "bot_pct":  cells[-3],
+            "delta_pp": delta_pp,
+            "verdict":  cells[-1],
+        })
     rows.sort(key=lambda r: -r["delta_pp"])
     return rows
 
@@ -88,8 +98,8 @@ def _render_html(rows: list[dict], recommendation: str) -> str:
           <tr>
             <th style='padding:8px 12px'>bundle</th>
             <th style='padding:8px 12px'>type</th>
-            <th style='padding:8px 12px;text-align:right'>top<br/>CLV-beat%</th>
-            <th style='padding:8px 12px;text-align:right'>bottom<br/>CLV-beat%</th>
+            <th style='padding:8px 12px;text-align:right'>Q1<br/>CLV%</th>
+            <th style='padding:8px 12px;text-align:right'>Q5<br/>CLV%</th>
             <th style='padding:8px 12px;text-align:right'>Δpp</th>
             <th style='padding:8px 12px'>verdict</th>
           </tr>
@@ -97,7 +107,7 @@ def _render_html(rows: list[dict], recommendation: str) -> str:
         <tbody>{body_rows}</tbody>
       </table>
       <p style='color:#888;font-size:13px;margin-top:16px'>
-        Activation gate: top-quintile CLV-beat ≥ bottom + 5pp (PASS). Re-run any time:
+        Gate (rewritten 2026-09-06): out-of-sample Pearson t ≥ +2.0 of meta score against real <code>clv_pinnacle_devig</code>, Q5−Q1 spread ≥ +2pp, n ≥ 200, no odds-mix warning. <b>INVERTED</b> means the score is anti-correlated with real CLV — gating on it is worse than no gate. Re-run any time:
         <code>python3 scripts/validate_meta_b_ml3.py --since 2026-05-25</code>
       </p>
     </div>

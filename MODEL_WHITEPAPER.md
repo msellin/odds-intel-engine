@@ -319,11 +319,35 @@ The original June 10 gating plan was based on validating the old v21–v23 bundl
 
 **Threshold choice:** 0.52 (conservative start). The training-set optimal threshold is 0.65 (fires 148/305 bets at precision=1.0 on training set — likely overfit). 0.52 filters only the clearest Q1 bets (meta score < 0.52 = bottom ~25%) while letting most of the volume through. Tighten toward 0.65 once 200+ OOS bets confirm the quintile spread holds.
 
-**Original methodology** (still valid for weekly regression checks):
+**Original methodology** (SUPERSEDED 2026-09-06 — kept for provenance):
 1. Cohort: settled bets with `meta_clv_score` populated from the current bundle.
 2. Quintile binning: 5 bins by score, compute `mean_clv`, `hit_rate`, `roi_per_bet` per bin.
 3. Signal holds if Q5 vs Q1 `mean_clv` spread stays ≥ +5pp. If it drops to < 2pp over a rolling 30d window, flip `META_B_ML3_ENABLED=false` and investigate.
 4. Retrain bets-mode bundle weekly: `python3 scripts/train_b_ml3.py --bets-mode --model xgboost --version v_YYYYMMDD_bets` (as more bets accumulate real Pinnacle CLV, n grows, AUC stabilizes).
+
+#### 3.5b Current gate (rewritten 2026-09-06, META-VALIDATE-DISABLED-2026-08-31)
+
+`scripts/validate_meta_b_ml3.py` was rewritten after `weekly_meta_validate` was found to have been crashing with SIGSEGV since ~2026-07-04 and disabled since 2026-07-18. Three things changed.
+
+**(a) The segfault was pandas, not XGBoost.** Reproduced on the VPS under `-X faulthandler`: the crash is inside `BlockManager.take`, reached from the quintile `df.groupby("bin")` loop, and it reproduces with sklearn and xgboost never imported. Column bisection isolated it to the `pick_time` column (`datetime64[us, UTC]`) in a frame built by `pd.DataFrame(list-of-psycopg2-dicts)` under pandas 3.0.4 / numpy 2.4.6. Every meta bundle on the VPS loads and `predict_proba`s cleanly, batch and single. The three previous workarounds (bundle skip-list, row-at-a-time inference, avoid-`.loc`) were all misdiagnoses — the crash was read off the last flushed log line, which was printed *before* scoring and the crash happened *after* it. The script now selects only `float8`/`text` columns from SQL, so no object-dtype block ever reaches pandas.
+
+**(b) The metric changed.** The old gate binned on `clv_pinnacle` (raw, vigged) falling back to `clv`, scored the binary "CLV > 0" rate, and passed at a 5pp top-vs-bottom spread. That is not a test: the beat indicator has SD ~0.5, so at ~180 bets/bin a 5pp difference has SE ~5.3pp. It also included `inplay_*` bots — 35% of the raw 1X2 cohort — whose price was taken mid-match, so comparing it to a pre-match close is not CLV at all. The gate now judges the **real `clv_pinnacle_devig`** on **pre-match bets only** (per-bet SD 0.090, so n≈78 buys ±2%).
+
+**(c) Verdicts are graded out-of-sample.** Each bundle is scored only on bets settled after its training cutoff, inferred from the `v_YYYYMMDD_*` version name (else the pickle mtime). On the 2026-09-06 run this took `v_20260706_bets_xgb` from an in-sample r=+0.519 / t=+15.19 to an honest r=+0.285 / t=+4.21 on n=202.
+
+**Gate:**
+
+| verdict | rule (all on out-of-sample, real de-vigged Pinnacle CLV) |
+|---|---|
+| `INVERTED` | Pearson t ≤ −2.0. The score picks the *worse* bets; gating on it is worse than no gate. |
+| `PASS` | t ≥ +2.0 **and** Q5−Q1 mean-CLV spread ≥ +2.0pp **and** n ≥ 200 **and** no odds-mix warning. |
+| `MARGINAL` | t ≥ +1.0 but one of the PASS conditions unmet. |
+| `FAIL` | t < +1.0. |
+| `INSUFFICIENT-OOS` | fewer than 20 bets settled after the bundle's training cutoff — the bundle is newer than the evidence. Never a PASS. |
+
+**Guards.** Bets with `|clv_pinnacle_devig| > 0.35` are dropped (gotcha 9: the production 1X2 odds guard is soft ≤ Pinnacle × 1.35, and `clv_devig = odds × devig(close) − 1`, so a de-vigged CLV above +0.35 *is* a price 35% above the de-vigged close — a mislabelled line, not an edge). Per-bin mean odds is printed and a Q5/Q1 odds ratio outside 0.80–1.25 raises an odds-mix warning that blocks PASS, because `clv_pinnacle_devig` is written from `odds_at_pick` (a MAX high-water mark) and a multiplicative price error scaled by odds can manufacture a quintile spread (gotcha 44).
+
+**2026-09-06 result (n=628 pre-match 1X2 bets since 2026-05-25, all `home` selections):** 10 of 12 bundles are `INVERTED`, including every weekly `v_*_meta` bundle from `v_20260705_meta` to `v_20260831_meta` (t between −4.09 and −5.54). Only the two bets-mode bundles trained on real settled CLV pass — `v_20260607_bets` (r=+0.430, t=+9.44, n=395) and `v_20260706_bets_xgb` (r=+0.285, t=+4.21, n=202). This is the direct empirical confirmation of §3.4 / META-MFV-TARGET-INVERTED-2026-09-06: bundles fitted on the `pseudo_clv_home` proxy are anti-correlated with the CLV we actually bet on. `META_B_ML3_ENABLED` is `false` on the VPS, so nothing was gated on them.
 
 ### 3.6 B-ML3 v3 — Null Result on MFV-V3 Features (2026-05-25)
 
