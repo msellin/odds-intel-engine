@@ -109,9 +109,22 @@ def fetch_match_markets(
 
     # sidebets: side markets. Response groups individual line-markets under
     # `markets[].markets[]` (group → line variants). Flatten.
+    # COOLBET-CORNERS-NOT-FLOWING-2026-09-05: `limit` caps how many market GROUPS
+    # the sidebets endpoint returns. It was hardcoded to 13, copied from the
+    # browser's LIVE-page request (see the docstring above) — and a live page
+    # shows far fewer groups than a pre-match one. Corner and card groups sit
+    # beyond the first 13 on pre-match fixtures, so they were never returned and
+    # the parser never saw them. Symptom: after the corners parser shipped,
+    # Coolbet wrote 9 market families and ZERO corners for three hours, while
+    # Unibet-Kambi wrote corners on 183 fixtures and Pinnacle on 301.
+    #
+    # LIVE keeps 13 — that request shape is copied from a real browser call and
+    # the live page genuinely offers fewer groups; widening it there would change
+    # in-play behaviour for no benefit, and in-play is retired anyway.
     r = session.get(_SIDEBETS_URL, params={
         "matchId": match_id, "country": "EE", "language": "en",
-        "layout": "EUROPEAN", "limit": 13,
+        "layout": "EUROPEAN",
+        "limit": 13 if live else _SIDEBETS_PREMATCH_LIMIT,
         "matchStatus": "LIVE" if live else "OPEN",
     })
     if r.status_code == 200:
@@ -210,6 +223,13 @@ def _harvest_odds(payload, into: dict[int, dict]) -> None:
 #   81  → Match Result (1X2)
 #   818 → Total Goals Over / Under
 # More will be added as we observe them.
+
+# COOLBET-CORNERS-NOT-FLOWING-2026-09-05: how many sidebet GROUPS to request for
+# a PRE-MATCH fixture. Env-tunable because the right number is a property of
+# Coolbet's board, not of our code — if they add market groups this may need to
+# rise again, and a silent truncation looks exactly like "the book does not offer
+# that market".
+_SIDEBETS_PREMATCH_LIMIT = int(os.getenv("COOLBET_SIDEBETS_LIMIT", "60"))
 
 _MTID_1X2  = {81}
 _MTID_OU   = {818}

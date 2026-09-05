@@ -770,6 +770,36 @@ def _parse_event(ev: dict) -> dict | None:
     }
 
 
+
+def _event_side_names(ev: dict | None) -> tuple[str, str]:
+    """Best-effort (home, away) display names for a Coolbet candidate.
+
+    COOLBET-EVENT-SHAPE-LOG (2026-09-05): two candidate shapes reach the
+    matcher. The parsed shape from `_parse_event` / `fetch_events_for_league`
+    carries {"home", "away"}; the RAW fo-category match dict carries
+    {"home_team_name", "away_team_name", "name"} and no "home" key at all.
+    The scoring loop in `fuzzy_match_event` reads names with `.get()`, so a
+    raw-shape candidate scores 0 yet still becomes `best_event` (0 beats the
+    -1 seed) — and the log lines then indexed `best_event["home"]` and raised
+    `KeyError: 'home'`. A diagnostic was crashing the matcher it exists to
+    explain, which made `fuzzy_match_event` unusable from scripts.
+
+    Read both shapes, fall back to splitting the combined `name` on " - ",
+    and return "?" for a side we cannot name — never raise.
+    """
+    if not isinstance(ev, dict):
+        return "?", "?"
+    home = (ev.get("home") or ev.get("home_team_name") or "").strip()
+    away = (ev.get("away") or ev.get("away_team_name") or "").strip()
+    if not (home and away):
+        name = (ev.get("name") or "").strip()
+        if " - " in name:
+            n_home, n_away = (part.strip() for part in name.split(" - ", 1))
+            home = home or n_home
+            away = away or n_away
+    return home or "?", away or "?"
+
+
 class CoolbetSearchBlocked(Exception):
     """Coolbet /search/v2 refused the request (non-200).
 
@@ -904,9 +934,10 @@ def search_coolbet_event(
                 continue
         match = fuzzy_match_event(home, away, list(aggregate.values()), match_date) if aggregate else None
         if match:
+            m_home, m_away = _event_side_names(match)
             log.info("Search matched '%s vs %s' → Coolbet '%s vs %s' (id=%s) "
                      "via query=%r (queries tried=%d, candidates=%d)",
-                     home, away, match["home"], match["away"], match["id"],
+                     home, away, m_home, m_away, match.get("id"),
                      q, queries.index(q) + 1, len(aggregate))
             return match
 
@@ -914,7 +945,8 @@ def search_coolbet_event(
     best = "—"
     if aggregate:
         sample = next(iter(aggregate.values()))
-        best = f"{sample['home']} vs {sample['away']}"
+        s_home, s_away = _event_side_names(sample)
+        best = f"{s_home} vs {s_away}"
     log.info("Search exhausted %d queries for '%s vs %s' — best candidate '%s' "
              "(%d unique events scanned)",
              len(queries), home, away, best, len(aggregate))
@@ -1297,7 +1329,7 @@ def fuzzy_match_event(
                     "DATE MISMATCH for '%s vs %s' — Coolbet offers '%s vs %s' (score %d) at %s, "
                     "we have %s (%.1fh apart). OUR fixture date is probably stale; "
                     "no odds stored and no bet placeable until it is corrected.",
-                    home, away, ev.get("home"), ev.get("away"), name_score,
+                    home, away, *_event_side_names(ev), name_score,
                     ev_start.isoformat(), match_date.isoformat(),
                     abs((ev_start - match_date).total_seconds()) / 3600,
                 )
@@ -1306,17 +1338,22 @@ def fuzzy_match_event(
                 # pipeline stops PRICING a fixture we cannot date.
                 _record_date_dispute(match_id, ev_start, match_date)
                 break
-        best_label = f"{best_event['home']} {best_event['away']}" if best_event else "—"
+        if best_event is not None:
+            b_home, b_away = _event_side_names(best_event)
+            best_label = f"{b_home} {b_away}"
+        else:
+            best_label = "—"
         log.info(
             "Fuzzy match FAILED for '%s vs %s' — best was '%s' (score %d < threshold %d, "
             "%d rejected on date, %d rejected on squad)",
             home, away, best_label, best_score, _FUZZY_THRESHOLD, skipped_date, skipped_squad,
         )
         return None
+    matched_home, matched_away = _event_side_names(best_event)
     log.info(
         "Fuzzy matched '%s vs %s' → Coolbet '%s vs %s' (score %d, %d date-mismatched, "
         "%d squad-mismatched candidates skipped)",
-        home, away, best_event["home"], best_event["away"], best_score, skipped_date,
+        home, away, matched_home, matched_away, best_score, skipped_date,
         skipped_squad,
     )
     return best_event
@@ -1848,7 +1885,11 @@ def place_all_bets(
                 log.info("Skip %s — confirm declined / no TTY for --require-confirm", label)
                 results.append({**bet, "outcome": "confirm_declined"})
                 continue
-            match_name = f"{ev['home']} - {ev['away']}"
+            # Same two-shape assumption as the matcher logs — read via the
+            # tolerant accessor so a raw fo-category candidate cannot KeyError
+            # in the middle of placement.
+            _ev_home, _ev_away = _event_side_names(ev)
+            match_name = f"{_ev_home} - {_ev_away}"
             # Look up Coolbet's real marketName from markets data.
             # outcomeName is sent as "" to match a captured browser bet.
             cb_market_name = ""

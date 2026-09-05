@@ -1,6 +1,8 @@
 # OddsIntel — Data Sources
 
-> Last updated: 2026-06-25 — WC odds sweep retired (was filling AF's WC gap; WC is over and ongoing value is minimal). The Odds API key + client retained — pivoted to tennis odds + settlement (TENNIS-PAPER-BETS).
+> Last updated: 2026-09-05 — AF plan, limits and request-budget table corrected (AF-DOCS-STALE-2026-09-05). Previous substantive change 2026-06-25: WC odds sweep retired; The Odds API key + client retained, pivoted to tennis odds + settlement (TENNIS-PAPER-BETS).
+>
+> **Last verified 2026-09-05 and how:** AF plan name, expiry and both rate limits read from live `/status` response headers; usage percentages from `api_budget_log`; schedules and env gates read from `workers/scheduler.py`, `workers/live_poller.py` and `workers/jobs/live_tracker.py`. Sections below the request-budget table (backfill state, CSV ingest, dedup) were **not** re-verified in this pass and carry their own dates.
 
 ---
 
@@ -8,16 +10,25 @@
 
 | Source | Role | Status |
 |--------|------|--------|
-| **API-Football Ultra** ($39/mo, 150K tier) | PRIMARY — all structured data | ✅ Active |
+| **API-Football Mega** (150,000 req/day, 900 req/min; plan active to 2026-11-28) | PRIMARY — all structured data | ✅ Active. Plan name + both limits verified from live `/status` headers 2026-09-05. This row previously said "Ultra ($39/mo, 150K tier)" — the plan name was wrong; the **monthly price has not been re-verified**, so no figure is carried forward. |
 | **The Odds API** (free 500/mo) | Tennis odds + settlement via `/sports/tennis_*` and `/scores` endpoints. Pinnacle confirmed across all 3 active tour tournaments (100% coverage on probe 2026-06-25). | ✅ Active. WC sweep retired 2026-06-25. |
 | **OddsPapi** (free 250/mo) | Historical Pinnacle closing-odds backfill for soccer CLV (one-shot via `scripts/ingest_oddspapi_pinnacle_closes.py`). | ⚠️ Quota exhausted 2026-06-25 — tennis scanner that was burning the budget is being replaced by The Odds API. Last backfill 2026-06-15 (12,218 rows / 219 matches into `odds_snapshots`). |
 | **football-data.co.uk** (free) | Historical odds + secondary stats CSVs (CSV-FULL-EXTRACT 2026-06-04 captures 9 bookmakers × 1X2 + OU 2.5 + AH, open + close) | ✅ Active. ~80-120K net-new rows per season-set ingest. |
 | ESPN (free) | Settlement result backup | ✅ Active (backup) |
 | **Epicbet** (free, EE-licensed) | Second operator-reachable book in `odds_snapshots` (EPICBET-ODDS-INGEST-2026-08-27). Anonymous REST JSON — no auth, no bot-protection, runs VPS-side via `workers/automation/epicbet_explorer.py`. Markets: 1X2, OU 0.5–4.5, BTTS, AH. **No `double_chance`** — the league listing only carries market groups 45/15/69/19. | ✅ Active. ~5.6K rows / 229 matches per 30-min sweep. |
-| ~~Kambi API (free)~~ | Supplementary odds — removed 2026-05-06 (all 41 leagues already covered by AF; "ub"/"paf" bookmakers provided <5% best-odds and "ub" is just Unibet which AF covers separately) | Removed |
+| **Unibet via Kambi** (free) | Direct Unibet pre-match prices every 30 min at :04/:34 (UNIBET-KAMBI-ODDS 2026-09-04, `workers/automation/unibet_kambi.py`). Public unauthenticated JSON. Writes `bookmaker='Unibet-Kambi'`, deliberately kept separate from AF's own `Unibet` feed so the two can be compared. **Not** a live/in-play source. | ✅ Active |
+| ~~Kambi API — original 41-league sweep~~ | Supplementary odds — removed 2026-05-06 (all 41 leagues already covered by AF; "ub"/"paf" bookmakers provided <5% best-odds). Superseded by the narrower Unibet-only ingest above. | Removed |
 | ~~BetExplorer~~ | Gap league odds — removed 2026-04-29 (fragile HTML scraping, low value) | Removed |
 
-**What API-Football covers:** fixtures, 13-bookmaker odds, live scores, lineups, injuries, standings, H2H, match events, player stats, team stats, transfers, xG (post-match via /fixtures/statistics). 1,236 leagues.
+**What API-Football covers:** fixtures, odds, live scores, lineups, injuries, standings, H2H, match events, player stats, team stats, transfers, xG (post-match via /fixtures/statistics). 1,236 leagues (figure not re-verified since 2026-04; treat as approximate).
+
+We call **18** of the ~37 endpoints the plan exposes (`workers/api_clients/api_football.py`).
+
+Three odds caveats worth knowing before planning against this feed:
+
+- **Bookmaker coverage is partitioned per fixture.** "13 bookmakers" is an account-level ceiling, not what any given fixture returns. Unibet and Betano lost forward coverage for fixtures dated 2026-09-06 onward.
+- **AF retains odds for exactly 7 days**, then drops them. Anything older must come from our own `odds_snapshots` or a historical source.
+- **Pinnacle sends 19 bet types through the bulk `/odds` response, not 8 — we parse 15.** See `docs/ANALYSIS_GOTCHAS.md` § 45.
 
 ---
 

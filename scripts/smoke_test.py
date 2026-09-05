@@ -29063,6 +29063,37 @@ def test_clv_devig_uses_executable_price():
         "detect the bug it exists to pin"
     )
 
+    # CLV-DEVIG-COLUMN-REBUILD-2026-09-05: the STORED column must be consistent
+    # with executable pricing, not just the script that writes it. Rebuilt
+    # 2026-09-05: mean CLV moved +4.58% -> -3.10%, median -2.70% -> -4.30%, and
+    # 24.1% of rows had their BINARY training label flip — train_b_ml3
+    # thresholds on the median, so a quarter of the meta-model's training set
+    # carried the wrong label.
+    stored = execute_query(
+        """SELECT count(*) n,
+                  sum(CASE WHEN abs(odds_at_pick_live - odds_at_pick) > 0.05
+                            AND abs((clv_pinnacle_devig + 1) / odds_at_pick_live
+                                    - (clv_pinnacle_devig + 1) / odds_at_pick) < 1e-9
+                           THEN 1 ELSE 0 END) AS impossible
+             FROM simulated_bets
+            WHERE result IN ('won','lost') AND clv_pinnacle_devig IS NOT NULL
+              AND odds_at_pick_live IS NOT NULL AND odds_at_pick_live > 1
+              AND odds_at_pick > 1"""
+    )[0]
+    assert stored["n"] > 0, "no rebuilt rows to check"
+    # Sanity: the stored mean must sit near the executable-price value, not the
+    # inflated stale-price one. Stale basis had a POSITIVE mean; executable is
+    # negative, so the sign alone separates them.
+    mean_row = execute_query(
+        """SELECT avg(clv_pinnacle_devig) m FROM simulated_bets
+            WHERE result IN ('won','lost') AND clv_pinnacle_devig IS NOT NULL"""
+    )[0]
+    assert float(mean_row["m"]) < 0.01, (
+        f"stored mean clv_pinnacle_devig is {100*float(mean_row['m']):+.2f}% — the "
+        f"stale-price basis read +4.58% and the executable basis reads -3.10%, so "
+        f"a clearly positive mean means the column was rebuilt from odds_at_pick"
+    )
+
 
 
 @test("BUDGET-SEED-COLUMN — the AF budget seed query must run, not fail silently")
