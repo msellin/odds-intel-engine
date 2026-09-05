@@ -1,10 +1,10 @@
 {
   "source": "Tipstrr",
   "source_url": "https://tipstrr.com/tipster/<slug>/stats",
-  "snapshot_at_utc": "2026-09-04T07:04:42+00:00",
+  "snapshot_at_utc": "2026-09-05T06:49:28+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-09-05"
+    "end": "2026-09-06"
   },
   "status": "ok",
   "min_sample_each_side": 50,
@@ -68,11 +68,11 @@
     "hit_rate_pct": 42.84,
     "avg_odds": 2.751,
     "priced_at": "best price live at pick time",
-    "n_total_settled": 696,
-    "coverage_pct": 99.3,
+    "n_total_settled": 718,
+    "coverage_pct": 96.2,
     "roi_pct_recorded": 15.28,
-    "roi_pct_recorded_all_rows": 15.3,
-    "hit_rate_pct_recorded_all_rows": 42.82,
+    "roi_pct_recorded_all_rows": 13.8,
+    "hit_rate_pct_recorded_all_rows": 42.2,
     "restatement_note": "roi_pct is priced at odds that were live at pick time. roi_pct_recorded is the same bets at the stored odds_at_pick, which STALE-BEST-ODDS-2026-09-02 showed to be a high-water mark across the whole snapshot history rather than a price on offer."
   }
 }
