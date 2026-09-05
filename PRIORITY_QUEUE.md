@@ -74,7 +74,7 @@
 > **What survives of the idea, and it is worth having:** reducing *evaluation latency* for fixtures we would bet anyway. Quote age at pick time is currently p50 0.68h and p95 3.06h, so we routinely act on prices that have moved. That is an **execution** improvement — fewer placements failing the placer's drift check — not an edge improvement, and it should be scoped and valued as such. See `REFRESH-PICK-ODDS-PREKO`.
 
 
-> **⬜ SHADOW-PAGE-ROI-INFLATED-2026-09-04 (P1 — the admin shadow-bots page overstates ROI by 1.75pp)** — 2-3h — `odds-intel-web/src/app/(app)/admin/shadow-bots/page.tsx:254` computes `roi = pnl / stake * 100`. `pnl` is settled from **`odds_at_pick`**, the snapshot high-water mark STALE-BEST-ODDS showed was never on offer. On the current non-retired, pre-kickoff cohort (n=1,651) the same picks price three ways:
+> **🔄 In Progress 2026-09-05 — SHADOW-PAGE-ROI-INFLATED-2026-09-04 (P1 — the admin shadow-bots page overstates ROI by 1.75pp)** — 2-3h — `odds-intel-web/src/app/(app)/admin/shadow-bots/page.tsx:254` computes `roi = pnl / stake * 100`. `pnl` is settled from **`odds_at_pick`**, the snapshot high-water mark STALE-BEST-ODDS showed was never on offer. On the current non-retired, pre-kickoff cohort (n=1,651) the same picks price three ways:
 >
 > | basis | ROI |
 > |---|---|
