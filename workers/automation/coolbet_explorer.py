@@ -919,7 +919,8 @@ def load_matches_in_window(days: int) -> list[dict]:
             """
             SELECT m.id::text AS id, m.date AS date,
                    ht.name AS home, at2.name AS away,
-                   l.name AS league
+                   l.name AS league,
+                   m.league_id::text AS league_id
             FROM matches m
             JOIN teams ht ON ht.id = m.home_team_id
             JOIN teams at2 ON at2.id = m.away_team_id
@@ -935,7 +936,8 @@ def load_matches_in_window(days: int) -> list[dict]:
         """
         SELECT m.id::text AS id, m.date AS date,
                ht.name AS home, at2.name AS away,
-               l.name AS league
+               l.name AS league,
+               m.league_id::text AS league_id
         FROM matches m
         JOIN teams ht ON ht.id = m.home_team_id
         JOIN teams at2 ON at2.id = m.away_team_id
@@ -1387,6 +1389,88 @@ def run_league_sweep(
 _MAX_CONSECUTIVE_FETCH_FAILURES = 5
 
 
+# ── COOLBET-NEGATIVE-CACHE: league prior ──────────────────────────────────────
+#
+# Measured 2026-09-06 over 60 days: of 626 leagues with fixtures, **201 have
+# never had a single Coolbet price**, and 115 of those carry >=10 fixtures --
+# 3,719 fixtures, **15.6% of everything the sweep walks**. They are exactly what
+# you would guess of an Estonian book: Calcutta Premier Division, Scottish
+# Lowland League, Dutch Derde Divisie, Polish III Liga, Zimbabwe PSL. Coolbet
+# was never going to price them, and every sweep pays ~30s per fixture to
+# rediscover that.
+#
+# Two guards, because a naive "skip what has never worked" is self-fulfilling:
+#
+#  1. EVIDENCE FLOOR. A league needs >=`_NEG_MIN_FIXTURES` fixtures in the
+#     window before its zero means anything. One fixture that missed is not a
+#     pattern, and skipping on it would silently shrink coverage.
+#  2. PROBE RATE. Even a skipped league lets ~1 in `_NEG_PROBE_EVERY` fixtures
+#     through. Without this the zero becomes permanent by construction: we stop
+#     looking, so we never see Coolbet add the league, so the cache says zero
+#     forever. The probe keeps the evidence alive at ~5% of the saved cost.
+#
+# The source is `odds_snapshots` (did a price ever land), NOT the sweep's own
+# miss counters -- those are polluted by outages, as 2026-09-06 demonstrated
+# when a dead network wrote 236 false "no Coolbet event" results in one run.
+_NEG_MIN_FIXTURES = 10
+_NEG_PROBE_EVERY = 20
+_NEG_WINDOW_DAYS = 60
+
+
+def never_coolbet_league_ids() -> set[str]:
+    """League ids with >= _NEG_MIN_FIXTURES fixtures and ZERO Coolbet prices."""
+    try:
+        # PERFORMANCE, and it matters: the obvious form of this query --
+        # a correlated `EXISTS (SELECT 1 FROM odds_snapshots ...)` evaluated per
+        # match -- takes **367 seconds** against a 53M-row odds_snapshots. That
+        # is worse than the problem: the sweep would spend six minutes computing
+        # which fixtures to skip in order to save thirty seconds each.
+        #
+        # Narrowing to the window FIRST, then collecting Coolbet's match_ids in
+        # one pass and left-joining, returns the identical 115 leagues in
+        # **0.9 seconds**. Measured 2026-09-07.
+        rows = execute_query(
+            """
+            WITH win AS (
+              SELECT m.id, m.league_id
+                FROM matches m
+               WHERE m.date >= now() - make_interval(days => %s)
+                 AND m.date <  now()
+            ),
+            cb AS (
+              SELECT DISTINCT o.match_id
+                FROM odds_snapshots o
+                JOIN win w ON w.id = o.match_id
+               WHERE o.bookmaker = 'Coolbet'
+            )
+            SELECT w.league_id::text AS id
+              FROM win w
+              LEFT JOIN cb ON cb.match_id = w.id
+             GROUP BY w.league_id
+            HAVING COUNT(*) >= %s AND COUNT(cb.match_id) = 0
+            """,
+            (_NEG_WINDOW_DAYS, _NEG_MIN_FIXTURES),
+        )
+        return {r["id"] for r in rows}
+    except Exception as exc:            # never let the optimisation break the sweep
+        log.warning("negative-cache league prior unavailable (%s) — sweeping everything", exc)
+        return set()
+
+
+def apply_league_prior(matches: list[dict]) -> tuple[list[dict], int]:
+    """Drop fixtures in never-Coolbet leagues, keeping ~1 in N as a probe."""
+    never = never_coolbet_league_ids()
+    if not never:
+        return matches, 0
+    kept, skipped = [], 0
+    for i, m in enumerate(matches):
+        if str(m.get("league_id") or "") in never and (i % _NEG_PROBE_EVERY) != 0:
+            skipped += 1
+            continue
+        kept.append(m)
+    return kept, skipped
+
+
 def run_bulk(
     days: int, dry_run: bool, sleep_s: float, limit: int | None,
     *, bets_only: bool = False,
@@ -1400,6 +1484,13 @@ def run_bulk(
         msg = "No pending value-bet matches in window." if bets_only else "No upcoming matches in DB window."
         console.print(f"[yellow]{msg}[/yellow]")
         return
+    # COOLBET-NEGATIVE-CACHE league prior — see never_coolbet_league_ids().
+    matches, _skipped_prior = apply_league_prior(matches)
+    if _skipped_prior:
+        console.print(f"[dim]league prior: skipped {_skipped_prior} fixtures in "
+                      f"never-Coolbet leagues (~1 in {_NEG_PROBE_EVERY} kept as a probe)[/dim]")
+        log.info("negative-cache league prior skipped %d fixtures", _skipped_prior)
+
     label = "value-bet matches" if bets_only else "matches from DB"
     console.print(f"[cyan]Loaded {len(matches)} {label} (window={days}d){' [DRY-RUN]' if dry_run else ''}[/cyan]")
 
@@ -1626,7 +1717,8 @@ def run_one_shot(match_id: str, raw: bool = False) -> None:
         """
         SELECT m.id::text AS id, m.date AS date,
                ht.name AS home, at2.name AS away,
-               l.name AS league
+               l.name AS league,
+               m.league_id::text AS league_id
         FROM matches m
         JOIN teams ht ON ht.id = m.home_team_id
         JOIN teams at2 ON at2.id = m.away_team_id

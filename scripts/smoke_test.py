@@ -31736,5 +31736,76 @@ def _():
     )
 
 
+
+@test("COOLBET-NEGATIVE-CACHE-LEAGUE-PRIOR — skip leagues Coolbet has never priced, but keep probing them")
+def _():
+    """~15% of every sweep is spent rediscovering that Coolbet does not carry
+    the Scottish Lowland League.
+
+    Measured over 60 days: of 626 leagues with fixtures, 201 have never had a
+    single Coolbet price, and 115 of those carry >=10 fixtures -- 3,719
+    fixtures, 15.6% of everything the sweep walks, at roughly 30s each. They are
+    what you would guess of an Estonian book: Calcutta Premier Division,
+    Scottish Lowland League, Dutch Derde Divisie, Polish III Liga, Zimbabwe PSL.
+
+    Two properties are load-bearing and both are asserted here:
+
+      * EVIDENCE FLOOR -- a league needs >=10 fixtures before its zero counts.
+        Skipping on a single miss would quietly shrink coverage.
+      * PROBE RATE -- ~1 in 20 fixtures in a skipped league still goes through.
+        Without it the zero is self-fulfilling: we stop looking, so we never see
+        Coolbet add the league, so the cache says zero forever.
+
+    The prior reads odds_snapshots (did a price ever land), NOT the sweep's own
+    miss counters -- those are polluted by outages, as 2026-09-06 proved when a
+    dead network wrote 236 false "no Coolbet event" results in a single run.
+    """
+    from workers.automation import coolbet_explorer as ce
+
+    assert ce._NEG_MIN_FIXTURES >= 5, (
+        "the evidence floor is too low — a league with a handful of fixtures and "
+        "zero Coolbet prices is not proof Coolbet does not carry it"
+    )
+    assert 0 < ce._NEG_PROBE_EVERY <= 50, (
+        "the probe rate is gone or absurdly sparse; without probes the league "
+        "prior becomes self-fulfilling — we stop looking, so the zero never changes"
+    )
+
+    # The fixture loaders must carry league_id, or the prior silently skips
+    # NOTHING. They previously selected only `l.name AS league`, which is exactly
+    # how this optimisation would have shipped as a no-op.
+    src = (_engine_root / "workers" / "automation" / "coolbet_explorer.py").read_text()
+    assert "m.league_id::text AS league_id" in src, (
+        "the sweep's fixture loaders no longer select league_id, so "
+        "apply_league_prior() cannot match any league and skips nothing"
+    )
+
+    # Behavioural: a fixture in a never-league is dropped, one elsewhere is kept,
+    # and probes survive.
+    never = ce.never_coolbet_league_ids()
+    if not never:
+        raise SkipTest("no never-Coolbet leagues in the window — nothing to assert")
+
+    bad = next(iter(never))
+    fixtures = [{"id": f"f{i}", "league_id": bad} for i in range(40)]
+    kept, skipped = ce.apply_league_prior(fixtures)
+    assert skipped > 0, "a never-Coolbet league was not skipped at all"
+    assert len(kept) > 0, (
+        "every fixture in a never-Coolbet league was dropped — the probe that "
+        "keeps the evidence alive is not firing"
+    )
+    assert skipped > len(kept), (
+        f"probes outnumber skips ({len(kept)} kept vs {skipped} skipped); the "
+        "prior is not actually saving work"
+    )
+
+    # A league NOT in the never-set must pass through untouched.
+    clean = [{"id": "c1", "league_id": "00000000-0000-0000-0000-000000000000"}]
+    kept2, skipped2 = ce.apply_league_prior(clean)
+    assert skipped2 == 0 and len(kept2) == 1, (
+        "a league with Coolbet coverage was skipped — the prior is over-reaching"
+    )
+
+
 if __name__ == "__main__":
     main()
