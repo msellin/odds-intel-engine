@@ -30891,5 +30891,62 @@ def _():
     )
 
 
+
+@test("COOLBET-MARKET-FETCH-UNGUARDED — a transient timeout costs one fixture, not the whole sweep")
+def _():
+    """A single ReadTimeout must not abandon a 650-fixture sweep.
+
+    2026-09-06 16:52 local: `fetch_match_markets` raised ReadTimeout straight
+    out of run_bulk and killed the run mid-sweep. launchd restarted it at 17:03
+    into a Coolbet that was still unreachable, and that restart is the run which
+    produced 236 of 236 false "no Coolbet event" results.
+
+    Both sweep loops call fetch_match_markets + fetch_odds_for_markets. Neither
+    had any exception handling. Assert both are guarded and that repeated
+    failures abort rather than grinding ~30s per fixture through a dead
+    endpoint.
+    """
+    import ast
+
+    src = (_engine_root / "workers" / "automation" / "coolbet_explorer.py").read_text()
+    tree = ast.parse(src)
+
+    for fname in ("run_bulk", "run_league_sweep"):
+        fn = next((n for n in ast.walk(tree)
+                   if isinstance(n, ast.FunctionDef) and n.name == fname), None)
+        assert fn is not None, f"{fname}() not found"
+
+        calls = [n for n in ast.walk(fn)
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                 and n.func.id == "fetch_match_markets"]
+        assert calls, f"{fname} no longer calls fetch_match_markets"
+
+        guarded = any(
+            any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+                and c.func.id == "fetch_match_markets"
+                for c in ast.walk(tr))
+            for tr in ast.walk(fn) if isinstance(tr, ast.Try)
+        )
+        assert guarded, (
+            f"{fname}: fetch_match_markets is not inside a try — one transient "
+            "ReadTimeout will abandon the entire sweep"
+        )
+
+    # Repeated failures must terminate the sweep, not merely be skipped: at a
+    # ~30s read timeout per fixture, grinding on costs hours to learn nothing.
+    assert "_MAX_CONSECUTIVE_FETCH_FAILURES" in src, (
+        "no consecutive-failure ceiling — a dead Coolbet would be retried "
+        "once per fixture for the length of the sweep"
+    )
+    for fname in ("run_bulk", "run_league_sweep"):
+        fn = next(n for n in ast.walk(tree)
+                  if isinstance(n, ast.FunctionDef) and n.name == fname)
+        uses_ceiling = any(
+            isinstance(n, ast.Name) and n.id == "_MAX_CONSECUTIVE_FETCH_FAILURES"
+            for n in ast.walk(fn)
+        )
+        assert uses_ceiling, f"{fname} does not enforce the consecutive-failure ceiling"
+
+
 if __name__ == "__main__":
     main()

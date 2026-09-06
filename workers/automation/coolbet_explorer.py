@@ -1285,6 +1285,7 @@ def run_league_sweep(
     by_market: dict[str, int] = {}
 
     seen_cb_ids: set[int] = set()  # dedup if same CB league mapped from multiple AF leagues
+    league_fetch_failures = 0
 
     for i, league in enumerate(active, 1):
         cb_id = league["cb_league_id"]
@@ -1331,8 +1332,26 @@ def run_league_sweep(
 
             matched_total += 1
             # Pull markets+odds, store
-            markets = fetch_match_markets(session, int(best["id"]))
-            odds_map = fetch_odds_for_markets(session, markets)
+            # Same guard as run_bulk — an unhandled ReadTimeout here would
+            # abandon every remaining league in the sweep.
+            try:
+                markets = fetch_match_markets(session, int(best["id"]))
+                odds_map = fetch_odds_for_markets(session, markets)
+            except Exception as e:
+                league_fetch_failures += 1
+                log.warning("market fetch failed for %s vs %s (%s) — fixture "
+                            "UNRESOLVED (%d in a row)",
+                            af_m.get("home"), af_m.get("away"), e,
+                            league_fetch_failures)
+                if league_fetch_failures >= _MAX_CONSECUTIVE_FETCH_FAILURES:
+                    log.error("Coolbet unreachable: %d consecutive market fetches "
+                              "failed — aborting the league sweep.",
+                              league_fetch_failures)
+                    console.print("[red]Coolbet unreachable — league sweep aborted.[/red]")
+                    return
+                time.sleep(sleep_s)
+                continue
+            league_fetch_failures = 0
             parsed, stored, mkt_counts = store_coolbet_snapshots_for_match(
                 af_m["id"], markets, odds_map,
                 dry_run=dry_run, kickoff_iso=best.get("start") or "",
@@ -1360,6 +1379,12 @@ def run_league_sweep(
 
 
 # ── Bulk + one-shot drivers ───────────────────────────────────────────────────
+
+
+# How many market fetches may fail back-to-back before we conclude Coolbet is
+# gone. Each failure costs a ~30s read timeout, so grinding a 650-fixture sweep
+# through a dead endpoint burns 5+ hours to learn nothing.
+_MAX_CONSECUTIVE_FETCH_FAILURES = 5
 
 
 def run_bulk(
@@ -1395,6 +1420,7 @@ def run_bulk(
     # strictly apart from genuine "Coolbet does not list this game" misses.
     unresolved_leagues: dict[str, int] = {}
     matched_leagues: dict[str, int] = {}
+    consecutive_fetch_failures = 0
 
     for i, m in enumerate(matches, 1):
         home, away = m["home"], m["away"]
@@ -1495,8 +1521,33 @@ def run_bulk(
 
             # New flow: fetch markets (fo-match + sidebets), then fetch odds
             # (split by simple vs line endpoint), then stitch.
-            markets = fetch_match_markets(session, int(ev["id"]))
-            odds_map = fetch_odds_for_markets(session, markets)
+            # COOLBET-MARKET-FETCH-UNGUARDED (2026-09-06): these two calls had
+            # no exception handling, so a single transient ReadTimeout raised
+            # straight out of run_bulk and killed the whole sweep — which is
+            # exactly what happened at 16:52 local, abandoning 650 fixtures
+            # mid-run. A per-fixture network failure must cost that fixture,
+            # not the sweep.
+            try:
+                markets = fetch_match_markets(session, int(ev["id"]))
+                odds_map = fetch_odds_for_markets(session, markets)
+            except Exception as e:
+                consecutive_fetch_failures += 1
+                unresolved_leagues[league] = unresolved_leagues.get(league, 0) + 1
+                log.warning("[%d/%d] market fetch failed for %s vs %s (%s) — "
+                            "fixture UNRESOLVED (%d in a row)",
+                            i, len(matches), home, away, e,
+                            consecutive_fetch_failures)
+                if consecutive_fetch_failures >= _MAX_CONSECUTIVE_FETCH_FAILURES:
+                    log.error("Coolbet unreachable: %d consecutive market fetches "
+                              "failed. Aborting the sweep rather than spending "
+                              "~30s per fixture on a dead endpoint.",
+                              consecutive_fetch_failures)
+                    console.print("[red]Coolbet unreachable — sweep aborted "
+                                  f"at {i}/{len(matches)}.[/red]")
+                    break
+                time.sleep(sleep_s)
+                continue
+            consecutive_fetch_failures = 0
             parsed, stored, mkt_counts = store_coolbet_snapshots_for_match(
                 m["id"], markets, odds_map,
                 dry_run=dry_run, kickoff_iso=ev.get("start") or "",
