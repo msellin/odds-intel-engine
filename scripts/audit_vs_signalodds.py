@@ -51,7 +51,9 @@ LEDGER_DIR = ROOT / "ledger"
 OUT_PATH = LEDGER_DIR / "comparison_signalodds.json"
 PICKS_CSV_PATH = LEDGER_DIR / "picks_signalodds.csv"
 
-STAKE = 10.0
+# DUPLICATED-RULES-REMAINING-2026-09-06: was a local `STAKE = 10.0`.
+# The publication flat stake has one definition; see _our_stats.
+from scripts._our_stats import PUBLICATION_FLAT_STAKE_EUR as STAKE  # noqa: E402
 MIN_SAMPLE = 50
 
 # Map SignalOdds market labels to our internal market vocabulary.

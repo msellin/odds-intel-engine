@@ -31609,5 +31609,56 @@ def _():
     )
 
 
+
+@test("PUBLICATION-STAKE-ONE-DEFINITION — the published flat stake has one home, and only the right things share it")
+def _():
+    """Four copies of `STAKE = 10.0` for the published comparison basis.
+
+    The €10-per-pick basis exists so head-to-head comparison with WinnerOdds,
+    Tipstrr, SignalOdds and Forebet is apples-to-apples. It was re-typed in each
+    competitor audit, so the figures agreed by luck.
+
+    The interesting half is what must NOT be unified. Three different concepts
+    share the value 10.0 today:
+
+      * _our_stats.PUBLICATION_FLAT_STAKE_EUR — the published/comparative basis
+      * place_coolbet_ui.DEFAULT_STAKE        — REAL MONEY actually placed
+      * daily_pipeline_v2.STAKE               — the simulated per-bot basis
+
+    Coupling them would be the same duplication bug in reverse: binding things
+    that are only accidentally equal, so the day the real stake changes the
+    published methodology silently moves with it.
+    """
+    import importlib
+
+    ours = importlib.import_module("scripts._our_stats")
+    assert hasattr(ours, "PUBLICATION_FLAT_STAKE_EUR"), (
+        "_our_stats must export PUBLICATION_FLAT_STAKE_EUR as the single "
+        "definition of the published flat stake"
+    )
+
+    # Every competitor audit must READ it, not re-type it.
+    for name in ("audit_vs_betaminic", "audit_vs_signalodds", "_competitor_reprice"):
+        src = (_engine_root / "scripts" / f"{name}.py").read_text()
+        import re as _re
+        code = _re.sub(r"#.*?$", "", src, flags=_re.M)
+        assert not _re.search(r"^\s*STAKE\s*=\s*10\.0\s*$", code, flags=_re.M), (
+            f"{name}.py re-declares STAKE = 10.0 instead of importing "
+            "PUBLICATION_FLAT_STAKE_EUR from _our_stats"
+        )
+        mod = importlib.import_module(f"scripts.{name}")
+        assert getattr(mod, "STAKE", None) == ours.PUBLICATION_FLAT_STAKE_EUR, (
+            f"{name}.STAKE does not resolve to the canonical publication stake"
+        )
+
+    # And the real-money stake must stay INDEPENDENT.
+    placer = (_engine_root / "scripts" / "place_coolbet_ui.py").read_text()
+    assert "PUBLICATION_FLAT_STAKE_EUR" not in placer, (
+        "place_coolbet_ui imports the PUBLICATION stake — that is real money "
+        "actually placed and must be free to change without moving the "
+        "published methodology. These two are only accidentally equal."
+    )
+
+
 if __name__ == "__main__":
     main()

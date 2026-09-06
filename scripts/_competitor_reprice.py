@@ -43,8 +43,9 @@ from datetime import date, timedelta
 
 from rapidfuzz import fuzz
 
-STAKE = 10.0
-
+# DUPLICATED-RULES-REMAINING-2026-09-06: was a local `STAKE = 10.0`.
+# The publication flat stake has one definition; see _our_stats.
+from scripts._our_stats import PUBLICATION_FLAT_STAKE_EUR as STAKE  # noqa: E402
 # Shared across sources: Forebet writes 1/X/2, Betaminic Home/Draw/Away.
 # Comparing a "1" to a "Home" by equality matches nothing SILENTLY and every
 # downstream number then looks clean (ANALYSIS_GOTCHAS #3).

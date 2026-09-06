@@ -35,7 +35,9 @@ INPUT_PATH = ROOT / "dev" / "active" / "betaminic_raw.json"
 LEDGER_DIR = ROOT / "ledger"
 OUT_PATH = LEDGER_DIR / "comparison_betaminic.json"
 
-STAKE = 10.0
+# DUPLICATED-RULES-REMAINING-2026-09-06: was a local `STAKE = 10.0`.
+# The publication flat stake has one definition; see _our_stats.
+from scripts._our_stats import PUBLICATION_FLAT_STAKE_EUR as STAKE  # noqa: E402
 MIN_SAMPLE = 50
 DEFAULT_START = "2026-05-04"
 

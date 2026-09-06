@@ -29,7 +29,26 @@ FOREBET-ODDS-CROSS-SOURCE existed to remove — see ANALYSIS_GOTCHAS #29.
 """
 from __future__ import annotations
 
-STAKE = 10.0
+# DUPLICATED-RULES-REMAINING-2026-09-06. THE canonical flat stake for PUBLISHED
+# and COMPARATIVE figures — the €10-per-pick basis that matches how WinnerOdds,
+# Tipstrr, SignalOdds and Forebet publish, so head-to-head comparison is
+# apples-to-apples. Every competitor audit imports this rather than re-typing
+# `STAKE = 10.0`, which is how the four copies came to exist.
+#
+# ⚠️ DO NOT couple the other two 10.0s in this repo to it. Three different
+# concepts happen to share a value today, and unifying them would be the same
+# duplication bug in reverse — coupling things that are only accidentally equal:
+#
+#   * `place_coolbet_ui.DEFAULT_STAKE` is REAL MONEY actually placed. It must be
+#     free to change without moving the published methodology.
+#   * `daily_pipeline_v2.STAKE` is the simulated per-bot stake basis; the bots
+#     stake proportional to divergence (Kelly) internally.
+#
+# Only the PUBLICATION basis lives here.
+PUBLICATION_FLAT_STAKE_EUR = 10.0
+
+# Back-compat alias for callers that already read `STAKE` from this module.
+STAKE = PUBLICATION_FLAT_STAKE_EUR
 
 # The public cohort: production maturities, the markets we compare on,
 # settled, excluding the in-play bots (different game, different venue).
