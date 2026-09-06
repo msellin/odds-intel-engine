@@ -19306,11 +19306,18 @@ def _():
     assert "daily_pnl_curve_30d" in sot_block, (
         "The 30d curve must be derived in the same block as the 90d curve"
     )
-    # And the cache INSERT must carry the new column
-    insert_idx = settle.index("INSERT INTO dashboard_cache")
-    insert_block = settle[insert_idx:insert_idx + 3000]
-    assert "daily_pnl_curve_90d" in insert_block, (
-        "dashboard_cache INSERT must include the new daily_pnl_curve_90d column"
+    # And the cache write must carry the new column.
+    #
+    # DASHBOARD-CACHE-NAMED-PARAMS (2026-09-06): this used to slice 3,000 chars
+    # after "INSERT INTO dashboard_cache" and grep the literal SQL. The
+    # statement is now GENERATED from an ordered `payload` dict (columns,
+    # placeholders and values all derive from it, so they cannot drift apart),
+    # so there is no literal column list to grep — the column lives in the dict
+    # instead. Assert against the payload, which is where the truth moved.
+    payload_idx = settle.index("payload = {")
+    payload_block = settle[payload_idx:settle.index("_cols =", payload_idx)]
+    assert '"daily_pnl_curve_90d"' in payload_block, (
+        "dashboard_cache payload must include the daily_pnl_curve_90d column"
     )
 
     # ── (3) Frontend: getTrackRecordStats reads active_avg_clv ──────────
@@ -29469,7 +29476,7 @@ def test_islive_callsites_bounded():
 
 
 
-@test("META-MFV-HOME-ONLY — the meta training target is home-only and anti-correlated")
+@test("META-MFV-HOME-ONLY — the meta training target is home-only, and its label must not invert")
 def _meta_mfv_home_only():
     """META-MFV-TARGET-INVERTED-2026-09-06.
 
@@ -29512,8 +29519,25 @@ def _meta_mfv_home_only():
               AND b.created_at >= '2026-08-01'"""
     )[0]
     assert lab["n"] >= 100, f"only {lab['n']} settled scored picks — too thin to assert"
-    assert lab["r"] is not None and float(lab["r"]) < 0, (
-        f"pseudo_clv_home vs clv_pinnacle_devig is now r={lab['r']} (n={lab['n']}). "
+    # META-MFV-TARGET-INVERTED (fixed 2026-09-06, migrations 303 + 305). This
+    # assertion used to require r < 0, pinning the anti-correlation as a known
+    # defect. That defect is now REPAIRED: pseudo_clv was computed as
+    # closing/opening - 1 (positive when the price drifts OUT) where real CLV is
+    # positive when you BEAT the close. The two are exact reciprocals, so the
+    # training label was the precise opposite of its target.
+    #
+    # Migration 303 corrected `matches` and 305 re-synced the
+    # match_feature_vectors copy the model actually trains on. Post-fix the same
+    # cohort reads r=+0.509 (n=168) and the binary label +0.391.
+    #
+    # So the assertion INVERTS with the fix: the label must now correlate
+    # POSITIVELY with the quantity the gate protects. If this ever goes negative
+    # again, the sign bug is back — check settlement.py's opening/closing order
+    # and whether MFV has drifted from matches (see MFV-PSEUDO-CLV-IN-SYNC).
+    assert lab["r"] is not None and float(lab["r"]) > 0, (
+        f"pseudo_clv_home vs clv_pinnacle_devig is r={lab['r']} (n={lab['n']}) — "
+        f"NEGATIVE, so the sign inversion META-MFV-TARGET-INVERTED fixed has "
+        f"returned and the meta model is training on the opposite of its target. "
         "The default training label no longer inverts the gated quantity."
     )
 
