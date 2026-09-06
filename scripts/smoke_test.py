@@ -30811,5 +30811,85 @@ def _():
 
 
 
+
+@test("COOLBET-SEARCH-BLOCKED-FALSE-NEGATIVES — a blocked search stops the sweep instead of faking no-events")
+def _():
+    """A dead Coolbet must not be recorded as "Coolbet does not have this game".
+
+    2026-09-06: the 17:03 sweep ran 125 minutes and produced 236 of 236 "no
+    Coolbet event" results -- Valencia vs Barcelona (La Liga) among them, which
+    Coolbet certainly carries. Cause: `search_blocked` was set on the first
+    failure but never READ, so every remaining fixture still called search and
+    timed out at ~31s, while `if not search_blocked` suppressed the warning.
+    A network outage was silently converted into 236 coverage conclusions.
+
+    Guarded on the source of the loop rather than by running a sweep (which
+    needs a live Coolbet session and 2 hours). The assertions target the control
+    FLOW -- that the latch gates the call, that unreachable fixtures are counted
+    apart from misses, and that an unmatchable sweep breaks -- so they fail if
+    the logic is removed, not merely if it is reworded.
+    """
+    import ast
+
+    src = (_engine_root / "workers" / "automation" / "coolbet_explorer.py").read_text()
+    tree = ast.parse(src)
+
+    fn = next((n for n in ast.walk(tree)
+               if isinstance(n, ast.FunctionDef) and n.name == "run_bulk"), None)
+    assert fn is not None, "run_bulk() not found in coolbet_explorer.py"
+
+    # 1. The latch must gate the search call, not merely silence a log line.
+    calls_guarded = False
+    for node in ast.walk(fn):
+        if isinstance(node, ast.If):
+            names = {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}
+            if "search_blocked" not in names:
+                continue
+            body_calls = {
+                n.func.id for n in ast.walk(ast.Module(body=node.body, type_ignores=[]))
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            }
+            if "search_coolbet_event" in body_calls:
+                calls_guarded = True
+    assert calls_guarded, (
+        "search_coolbet_event is not gated on `search_blocked` — after the first "
+        "failure the sweep will keep calling a dead endpoint and record every "
+        "timeout as a genuine no-event"
+    )
+
+    # 2. Unreachable fixtures must not be counted as coverage misses.
+    assert "unresolved_leagues" in src, (
+        "no separate unresolved counter — an outage would poison missed_leagues, "
+        "which is what any league-coverage prior is built from"
+    )
+    assigns_missed_under_unreachable = False
+    for node in ast.walk(fn):
+        if isinstance(node, ast.If):
+            names = {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}
+            if "unreachable" not in names:
+                continue
+            for sub in ast.walk(ast.Module(body=node.body, type_ignores=[])):
+                if isinstance(sub, ast.Subscript) and isinstance(sub.value, ast.Name) \
+                        and sub.value.id == "missed_leagues" and isinstance(sub.ctx, ast.Store):
+                    assigns_missed_under_unreachable = True
+    assert not assigns_missed_under_unreachable, (
+        "an unreachable fixture is still being written into missed_leagues"
+    )
+
+    # 3. No listing AND no search = no possible match: the sweep must stop.
+    has_break = False
+    for node in ast.walk(fn):
+        if isinstance(node, ast.If):
+            names = {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}
+            if {"search_blocked", "category_cache"} <= names:
+                if any(isinstance(n, ast.Break) for n in node.body):
+                    has_break = True
+    assert has_break, (
+        "sweep does not abort when the bulk listing is empty and search is "
+        "blocked — with no matching path left, every remaining fixture becomes "
+        "a false 'no Coolbet event'"
+    )
+
+
 if __name__ == "__main__":
     main()

@@ -1391,6 +1391,9 @@ def run_bulk(
     stored_total = 0
     by_market: dict[str, int] = {}
     missed_leagues: dict[str, int] = {}
+    # Fixtures we could not resolve because Coolbet was unreachable — kept
+    # strictly apart from genuine "Coolbet does not list this game" misses.
+    unresolved_leagues: dict[str, int] = {}
     matched_leagues: dict[str, int] = {}
 
     for i, m in enumerate(matches, 1):
@@ -1443,20 +1446,50 @@ def run_bulk(
                 category_cache = []
 
         ev = fuzzy_match_event(home, away, category_cache, match_date) if category_cache else None
-        if ev is None:
+        unreachable = False
+        if ev is None and not search_blocked:
             # Residue only. A block here must NOT kill the sweep — everything
             # matched from the listing is still worth storing.
             try:
                 ev = search_coolbet_event(session, home, away, match_date)
             except Exception as e:
-                if not search_blocked:
-                    log.warning("Coolbet search unavailable (%s) — continuing on the "
-                                "bulk listing alone for the rest of this sweep", e)
-                    search_blocked = True
+                log.warning("Coolbet search unavailable (%s) — no further searches "
+                            "this sweep; remaining fixtures are UNRESOLVED, not absent", e)
+                search_blocked = True
                 ev = None
+        if ev is None and search_blocked and not category_cache:
+            # No bulk listing AND no search: there is no path by which any
+            # remaining fixture could ever match. Grinding on would spend hours
+            # manufacturing false "no Coolbet event" rows. Stop loudly.
+            log.error(
+                "Coolbet unreachable: bulk listing empty and search blocked at "
+                "fixture %d/%d. Aborting the sweep — every remaining fixture "
+                "would be recorded as absent when it is merely unresolved.",
+                i, len(matches),
+            )
+            console.print("[red]Coolbet unreachable — sweep aborted "
+                          f"at {i}/{len(matches)} (no listing, no search).[/red]")
+            break
+        if ev is None and search_blocked:
+            # COOLBET-SEARCH-BLOCKED-FALSE-NEGATIVES (2026-09-06): the latch was
+            # set here but never read, so every remaining fixture still called
+            # search — each one timing out at ~31s — while `if not
+            # search_blocked` suppressed the warning. The 2026-09-06 17:03 sweep
+            # spent 125 minutes producing 236 of 236 "no Coolbet event" results,
+            # Valencia vs Barcelona among them. A dead network was silently
+            # recorded as "Coolbet does not have this game".
+            unreachable = True
         if ev is None:
-            missed_leagues[league] = missed_leagues.get(league, 0) + 1
-            log.info("[%d/%d] no Coolbet event: %s vs %s (%s)", i, len(matches), home, away, league)
+            if unreachable:
+                # NOT a miss. Counting it as one would poison `missed_leagues`,
+                # which is the statistic the league-coverage prior is built on —
+                # an outage would teach us that La Liga has no Coolbet coverage.
+                unresolved_leagues[league] = unresolved_leagues.get(league, 0) + 1
+                log.info("[%d/%d] UNRESOLVED (search blocked): %s vs %s (%s)",
+                         i, len(matches), home, away, league)
+            else:
+                missed_leagues[league] = missed_leagues.get(league, 0) + 1
+                log.info("[%d/%d] no Coolbet event: %s vs %s (%s)", i, len(matches), home, away, league)
         else:
             matched_leagues[league] = matched_leagues.get(league, 0) + 1
 
@@ -1509,19 +1542,32 @@ def run_bulk(
 
     # League-level match/miss split — most actionable view for "what does
     # Coolbet actually cover for us".
-    all_leagues = sorted(set(matched_leagues) | set(missed_leagues))
+    all_leagues = sorted(set(matched_leagues) | set(missed_leagues) | set(unresolved_leagues))
     if all_leagues:
-        t3 = Table(show_header=True, title="By league (matched / missed)")
+        t3 = Table(show_header=True, title="By league (matched / missed / unresolved)")
         t3.add_column("League")
         t3.add_column("Matched", justify="right")
         t3.add_column("Missed", justify="right")
+        t3.add_column("Unresolved", justify="right")
         t3.add_column("Match %", justify="right")
         for lg in all_leagues:
             mt = matched_leagues.get(lg, 0)
             ms = missed_leagues.get(lg, 0)
+            un = unresolved_leagues.get(lg, 0)
+            # Match % is computed over RESOLVED fixtures only. Including
+            # unreachable ones would read as poor Coolbet coverage when the
+            # truth is that we never got to ask.
             pct = 100.0 * mt / (mt + ms) if (mt + ms) else 0
-            t3.add_row(lg, str(mt), str(ms), f"{pct:.0f}%")
+            t3.add_row(lg, str(mt), str(ms), str(un), f"{pct:.0f}%")
         console.print(t3)
+
+    total_unresolved = sum(unresolved_leagues.values())
+    if total_unresolved:
+        console.print(
+            f"[yellow]{total_unresolved} fixtures UNRESOLVED (Coolbet unreachable) — "
+            "these are not evidence of missing coverage and must not be fed to any "
+            "league-coverage prior.[/yellow]"
+        )
 
 
 def run_one_shot(match_id: str, raw: bool = False) -> None:
