@@ -31807,5 +31807,62 @@ def _():
     )
 
 
+
+@test("COOLBET-SEARCH-LADDER-CAP — the deep end of the search ladder is where wrong matches come from")
+def _():
+    """Capping the ladder is a PRECISION fix that happens to also save calls.
+
+    Measured across ~34,200 logged searches, match quality degrades
+    monotonically with ladder depth, because later queries are shorter prefixes
+    of aliases and trawl weaker evidence:
+
+        depth 1  n=23,960  mean 94.7   7.7% below 80
+        depth 4  n= 2,653  mean 91.0  16.8%
+        depth 5  n=   575  mean 91.1  12.7%
+        depth 6  n=   183  mean 86.8  34.4%
+        depth 7  n= 1,176  mean 83.9  38.1%
+        depth 8  n=    92  mean 75.0  73.9%
+
+    Depth 6-8 is where wrong-fixture matches live: at depth 8 nearly three
+    quarters of "hits" score below 80, and the confirmed-wrong
+    `Acatlan vs Guerreros` -> `Atlas vs Queretaro` scored 70.6.
+
+    The cap is 5 rather than the 4 originally proposed: depth 5 is as clean as
+    depths 3-4, so cutting at 4 would discard 575 good matches for no precision
+    gain. The quality cliff sits between 5 and 6.
+
+    Cost side: 86% of MISSES currently burn all 8 queries, and 95.8% of hits
+    land by depth 5.
+    """
+    import ast
+    import re
+
+    from workers.automation import coolbet_placer as cp
+
+    assert hasattr(cp, "_SEARCH_LADDER_MAX"), (
+        "_SEARCH_LADDER_MAX is gone — the search ladder is unbounded again, and "
+        "its deep end is the false-positive tier"
+    )
+    assert cp._SEARCH_LADDER_MAX <= 6, (
+        f"_SEARCH_LADDER_MAX={cp._SEARCH_LADDER_MAX} reaches into depth 6+, where "
+        "34-74% of matches score below 80. Raising this trades precision for "
+        "coverage on the WORST candidates — do not loosen it without re-measuring "
+        "score-by-depth."
+    )
+    assert cp._SEARCH_LADDER_MAX >= 5, (
+        f"_SEARCH_LADDER_MAX={cp._SEARCH_LADDER_MAX} cuts below depth 5, which "
+        "measured as clean as depths 3-4 (mean 91.1, 12.7% below 80). Cutting "
+        "there discards ~575 good matches for no precision gain."
+    )
+
+    # And the cap must actually be applied to the query list, not merely defined.
+    src = (_engine_root / "workers" / "automation" / "coolbet_placer.py").read_text()
+    code = ast.unparse(ast.parse(src))
+    assert re.search(r"queries\s*=\s*queries\[:_SEARCH_LADDER_MAX\]", code), (
+        "_SEARCH_LADDER_MAX is defined but never truncates `queries` — the cap "
+        "would be a no-op and the ladder still runs to depth 8"
+    )
+
+
 if __name__ == "__main__":
     main()

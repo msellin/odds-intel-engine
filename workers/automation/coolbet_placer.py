@@ -833,6 +833,10 @@ class CoolbetSearchBlocked(Exception):
 
 _SEARCH_RETRY_STATUSES = {429, 500, 502, 503, 504}
 
+# Max query variants tried per fixture — see the block in
+# search_coolbet_event() for the measured quality-vs-depth table.
+_SEARCH_LADDER_MAX = 5
+
 
 def _do_search(session: CoolbetSession, query: str) -> list[dict]:
     """Single search call. Returns parsed event candidates (possibly empty).
@@ -942,6 +946,34 @@ def search_coolbet_event(
 
     if not queries:
         return None
+
+    # COOLBET-NEGATIVE-CACHE layer 3 (2026-09-07): cap the ladder.
+    #
+    # Measured across ~34,200 logged searches, match quality degrades
+    # MONOTONICALLY with ladder depth — later queries are shorter prefixes of
+    # aliases, so they trawl progressively weaker evidence:
+    #
+    #   depth  n        mean score   below 80
+    #     1    23,960      94.7         7.7%
+    #     4     2,653      91.0        16.8%
+    #     5       575      91.1        12.7%
+    #     6       183      86.8        34.4%
+    #     7     1,176      83.9        38.1%
+    #     8        92      75.0        73.9%
+    #
+    # So this is NOT only a cost cut. Depth 6-8 is where wrong-fixture matches
+    # live: at depth 8, 74% of "hits" score below 80, and the confirmed-wrong
+    # `Acatlan vs Guerreros` -> `Atlas vs Querétaro` scored 70.6. Truncating the
+    # ladder removes the tier that produces false positives.
+    #
+    # Cut at 5, not the 4 the ticket proposed: depth 5 is as clean as depths 3-4
+    # (mean 91.1, 12.7% below 80) and capping at 4 would discard 575 good
+    # matches for nothing. The quality cliff is between 5 and 6.
+    #
+    # Cost: 86% of MISSES currently burn all 8 queries, so this is 3 fewer
+    # search calls on the majority of the sweep. 95.8% of hits land by depth 5.
+    if len(queries) > _SEARCH_LADDER_MAX:
+        queries = queries[:_SEARCH_LADDER_MAX]
 
     # Run progressively. Stop as soon as fuzzy match clears threshold.
     aggregate: dict[int, dict] = {}  # de-dup by event id
