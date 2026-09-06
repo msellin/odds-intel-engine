@@ -2526,47 +2526,70 @@ def write_dashboard_cache():
         alignment_settled = execute_query("SELECT COUNT(*) as n FROM simulated_bets WHERE result IN ('won','lost') AND alignment_class IS NOT NULL", [])[0]["n"]
 
         import json
-        execute_write("""
-            INSERT INTO dashboard_cache (
-                total_bets, settled_bets, pending_bets, won_bets, lost_bets,
-                hit_rate, total_staked, total_pnl, roi_pct, avg_clv,
-                bot_breakdown, market_breakdown,
-                model_accuracy_pct, prediction_sample_size,
-                pseudo_clv_count, live_snapshot_matches, alignment_settled_count,
-                active_total_bets, active_settled_bets, active_won_bets, active_lost_bets,
-                active_total_staked, active_total_pnl, active_roi_pct, active_avg_clv,
-                retired_bot_breakdown,
-                prematch_settled_bets, prematch_won_bets, prematch_total_staked,
-                prematch_total_pnl, prematch_roi_pct, prematch_avg_clv,
-                inplay_settled_bets, inplay_won_bets, inplay_total_staked,
-                inplay_total_pnl, inplay_roi_pct,
-                daily_pnl_curve_30d, daily_pnl_curve_90d,
-                recent_top_wins,
-                upcoming_model_summary,
-                pro_value_bets_30d,
-                elite_value_bets_30d,
-                elite_value_bets_cumulative
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """, [
-            int(total_bets), int(settled_bets), int(pending_bets), int(won), int(lost),
-            hit_rate, total_staked, total_pnl, roi_pct, avg_clv,
-            json.dumps(bot_breakdown), json.dumps(market_breakdown),
-            model_accuracy_pct, n,
-            int(pseudo_clv_count), int(live_snapshot_matches), int(alignment_settled),
-            active_total_bets, active_settled, active_won, active_lost,
-            active_staked, active_pnl, active_roi_pct, active_avg_clv,
-            json.dumps(retired_bot_breakdown),
-            prematch_settled, prematch_won, prematch_staked,
-            prematch_pnl, prematch_roi, prematch_clv,
-            inplay_settled, inplay_won, inplay_staked,
-            inplay_pnl, inplay_roi,
-            json.dumps(daily_pnl_curve_30d), json.dumps(daily_pnl_curve_90d),
-            json.dumps(recent_top_wins),
-            json.dumps(upcoming_model_summary) if upcoming_model_summary else None,
-            json.dumps(pro_value_bets_30d) if pro_value_bets_30d else None,
-            json.dumps(elite_value_bets_30d) if elite_value_bets_30d else None,
-            json.dumps(elite_value_bets_cumulative) if elite_value_bets_cumulative else None,
-        ])
+
+        # DASHBOARD-CACHE-NAMED-PARAMS (2026-09-06). This was a 44-placeholder
+        # positional INSERT: a hand-written column list, a hand-written run of
+        # 44 `%s`, and a hand-ordered value list, kept in agreement by nothing
+        # but care. Deleting one dead field meant editing three places in step,
+        # and getting it wrong shifts every subsequent column SILENTLY into the
+        # neighbouring one — same type, no error, wrong data. That risk is why
+        # DEAD-DASHBOARD-CACHE-COMPUTE was filed as "not batch work".
+        #
+        # Building the statement FROM the payload removes the class of bug:
+        # columns, placeholders and values all derive from one ordered dict, so
+        # they cannot disagree. Removing a field is now a one-line deletion.
+        payload = {
+            "total_bets": int(total_bets),
+            "settled_bets": int(settled_bets),
+            "pending_bets": int(pending_bets),
+            "won_bets": int(won),
+            "lost_bets": int(lost),
+            "hit_rate": hit_rate,
+            "total_staked": total_staked,
+            "total_pnl": total_pnl,
+            "roi_pct": roi_pct,
+            "avg_clv": avg_clv,
+            "bot_breakdown": json.dumps(bot_breakdown),
+            "market_breakdown": json.dumps(market_breakdown),
+            "model_accuracy_pct": model_accuracy_pct,
+            "prediction_sample_size": n,
+            "pseudo_clv_count": int(pseudo_clv_count),
+            "live_snapshot_matches": int(live_snapshot_matches),
+            "alignment_settled_count": int(alignment_settled),
+            "active_total_bets": active_total_bets,
+            "active_settled_bets": active_settled,
+            "active_won_bets": active_won,
+            "active_lost_bets": active_lost,
+            "active_total_staked": active_staked,
+            "active_total_pnl": active_pnl,
+            "active_roi_pct": active_roi_pct,
+            "active_avg_clv": active_avg_clv,
+            "retired_bot_breakdown": json.dumps(retired_bot_breakdown),
+            "prematch_settled_bets": prematch_settled,
+            "prematch_won_bets": prematch_won,
+            "prematch_total_staked": prematch_staked,
+            "prematch_total_pnl": prematch_pnl,
+            "prematch_roi_pct": prematch_roi,
+            "prematch_avg_clv": prematch_clv,
+            "inplay_settled_bets": inplay_settled,
+            "inplay_won_bets": inplay_won,
+            "inplay_total_staked": inplay_staked,
+            "inplay_total_pnl": inplay_pnl,
+            "inplay_roi_pct": inplay_roi,
+            "daily_pnl_curve_30d": json.dumps(daily_pnl_curve_30d),
+            "daily_pnl_curve_90d": json.dumps(daily_pnl_curve_90d),
+            "recent_top_wins": json.dumps(recent_top_wins),
+            "upcoming_model_summary": json.dumps(upcoming_model_summary) if upcoming_model_summary else None,
+            "pro_value_bets_30d": json.dumps(pro_value_bets_30d) if pro_value_bets_30d else None,
+            "elite_value_bets_30d": json.dumps(elite_value_bets_30d) if elite_value_bets_30d else None,
+            "elite_value_bets_cumulative": json.dumps(elite_value_bets_cumulative) if elite_value_bets_cumulative else None,
+        }
+        _cols = ", ".join(payload)
+        _vals = ", ".join(f"%({k})s" for k in payload)
+        execute_write(
+            f"INSERT INTO dashboard_cache ({_cols}) VALUES ({_vals})",
+            payload,
+        )
         console.print(
             f"  Dashboard cache written: {int(settled_bets)} settled bets (all-time) · "
             f"{active_settled} active · accuracy={model_accuracy_pct}%"

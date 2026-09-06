@@ -31502,5 +31502,50 @@ def _():
     )
 
 
+
+@test("DASHBOARD-CACHE-NAMED-PARAMS — the dashboard INSERT cannot silently shift columns")
+def _():
+    """A 44-placeholder positional INSERT is a column-shift waiting to happen.
+
+    The statement was a hand-written column list, a hand-written run of 44 `%s`,
+    and a hand-ordered value list, kept in agreement by nothing but care.
+    Deleting one field meant editing three places in step; getting it wrong
+    shifts every subsequent column into its neighbour -- same type, no error,
+    wrong data written nightly. That risk is exactly why
+    DEAD-DASHBOARD-CACHE-COMPUTE was filed as "not batch work".
+
+    Building the statement FROM the payload removes the class of bug: columns,
+    placeholders and values all derive from one ordered dict and cannot
+    disagree.
+    """
+    import ast
+    import re
+
+    src = (_engine_root / "workers" / "jobs" / "settlement.py").read_text()
+
+    # No positional run may survive. Match the ARITHMETIC of it, not a comment:
+    # the fix note legitimately mentions the old shape (gotcha 41).
+    code_only = ast.unparse(ast.parse(src))
+    assert not re.search(r"%s,\s*%s,\s*%s,\s*%s,\s*%s", code_only), (
+        "a long positional placeholder run is back in settlement.py -- the "
+        "dashboard INSERT must derive its placeholders from the payload"
+    )
+    assert 'INSERT INTO dashboard_cache ({_cols}) VALUES ({_vals})' in src, (
+        "the dashboard INSERT is no longer generated from the payload dict"
+    )
+    assert '_cols = ", ".join(payload)' in src and '_vals = ", ".join(' in src, (
+        "columns and placeholders must both derive from `payload`, or they can "
+        "drift apart again"
+    )
+
+    # And the live consumer must keep being written. elite_value_bets_30d is
+    # read by workers/notify/telegram.py:53 -- it is NOT a dead field, despite
+    # DEAD-DASHBOARD-CACHE-COMPUTE having listed it as interface-only.
+    assert '"elite_value_bets_30d"' in src, (
+        "elite_value_bets_30d dropped from the dashboard payload, but "
+        "workers/notify/telegram.py reads it live -- Telegram would go silent"
+    )
+
+
 if __name__ == "__main__":
     main()
