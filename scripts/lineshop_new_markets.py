@@ -303,14 +303,21 @@ def ambiguous_count() -> int:
 # ---------------------------------------------------------------------------
 # Settlement
 # ---------------------------------------------------------------------------
-# `yellows_home` / `reds_home` are LEGACY AND ENTIRELY NULL (0 of 1,537 finished
-# matches in the last 20 days). The live columns are `yellow_cards_*` /
-# `red_cards_*`. Verified 2026-09-06 — settling cards on `yellows_home` would
-# have produced zero rows and looked like "cards are not collected".
+# `yellows_home` / `reds_home` are NOT the live columns — use `yellow_cards_*` /
+# `red_cards_*`. Settling on `yellows_home` produces almost nothing and looks
+# like "cards are not collected".
+#
+# CORRECTION 2026-09-06: this comment previously said they were "LEGACY AND
+# ENTIRELY NULL (0 of 1,537 …)". That is wrong — **13,081 of 54,166 rows are
+# populated**. They are written by `scripts/ingest_football_data_csvs.py` (the
+# football-data.co.uk backfill, which stopped in 2026-05), always in lockstep
+# with `yellow_cards_*`. A backfill that stopped is not a dead column, and
+# calling it one is gotcha 38 in miniature — the same mistake that has produced
+# three wrong conclusions on this project.
 CARDS_DEFS = {
     "yellow":     "match_stats yellow only",
     "yellow_red": "match_stats yellow + red (a red is one card)",
-    "points":     "match_stats card points (yellow=1, red=2)",
+    "points":     "bookmaker convention: yellow=1, red=2, second yellow=3",
     "events":     "count of yellow_card/red_card rows in match_events",
 }
 
@@ -320,7 +327,16 @@ def _cards_total(st: dict, how: str, half: bool = False,
     if how == "events":
         if ev is None:
             return None
-        return float(ev[1] if half else ev[0])
+        if half:
+            return float(ev[1])
+        # Bookmaker convention is yellow=1, red=2, and a player sent off for a
+        # SECOND yellow totals 3 — and the raw row count already gets that case
+        # right for free: his two yellows and his red are three separate rows.
+        # A STRAIGHT red is the one that is short, appearing as a single row
+        # where the convention wants 2. So the correction is +1 per straight
+        # red, not a blanket doubling.
+        straight_reds = ev[3] if len(ev) > 3 else 0
+        return float(ev[0] + straight_reds)
     if half:
         y = _sum2(st.get("yellow_cards_home_ht"), st.get("yellow_cards_away_ht"))
         return y                       # no per-half red column exists
@@ -330,10 +346,34 @@ def _cards_total(st: dict, how: str, half: bool = False,
     if how == "yellow":
         return y
     # A NULL red count means "AF reported no reds", not "unknown" — AF omits the
-    # row at zero. Checked: red_cards_* is populated on 742 of 1,491 matches
-    # with yellows, and never populated with a 0.
+    # row at zero. The COALESCE is right, but its stated justification was not:
+    # this claimed red_cards_* is "never populated with a 0", and in fact
+    # `red_cards_home = 0` appears in 8,474 AF rows (measured 2026-09-06). The
+    # real support for treating NULL as zero is that where red is NULL, the
+    # events table shows zero reds in 2,446 of 2,476 cases (98.8%).
     r = (st.get("red_cards_home") or 0) + (st.get("red_cards_away") or 0)
-    return y + r if how == "yellow_red" else y + 2 * r
+    if how == "yellow_red":
+        return y + r
+    # CARDS-SECOND-YELLOW-2026-09-06. `points` is the bookmaker convention
+    # (yellow=1, red=2), but a naive y + 2r DOUBLE-COUNTS a second yellow: that
+    # player already contributed his first yellow to `y`, and the second yellow
+    # AND the red are both recorded again.
+    #
+    # How AF actually encodes it, measured over the whole 1.79M-row events
+    # table: `event_type` has exactly two card values, `yellow_card` (443,467)
+    # and `red_card` (29,589). There are **ZERO `yellow_red_card` rows** — the
+    # mapping in api_football.py for "Yellow Red Card" / "Second Yellow card" is
+    # dead code, because AF never sends those strings. A second yellow arrives
+    # as THREE events: a yellow at minute a, then a yellow AND a red at minute b
+    # for the same player. 8,731 players hold exactly 2Y+1R in one match, ~30%
+    # of all reds — the correct real-world share.
+    #
+    # So the convention is `y + 2r - second_yellows`, and `ev` carries the
+    # second-yellow count when the events path supplied it. Without events we
+    # cannot identify them from match_stats alone, so fall back to y + 2r and
+    # accept a small overcount (~0.07 cards/match) rather than guess.
+    second_yellows = ev[2] if (ev is not None and len(ev) > 2 and ev[2] is not None) else 0
+    return y + 2 * r - second_yellows
 
 
 def _sum2(a, b):
@@ -439,7 +479,7 @@ def load_matches(days: int) -> dict:
 
     ev = execute_query(
         """
-        SELECT me.match_id, me.minute, me.team, me.event_type
+        SELECT me.match_id, me.minute, me.team, me.event_type, me.player_name
           FROM match_events me
           JOIN matches m ON m.id = me.match_id
          WHERE me.event_type IN ('goal', 'penalty_scored', 'own_goal',
@@ -450,13 +490,29 @@ def load_matches(days: int) -> dict:
         [days],
     )
     tally = defaultdict(lambda: [0, 0, 0, 0])   # ft_h, ft_a, h1_h, h1_a
-    cards = defaultdict(lambda: [0, 0])         # ft_cards, h1_cards
+    # ft_cards, h1_cards, second_yellows, straight_reds
+    cards = defaultdict(lambda: [0, 0, 0, 0])
+
+    # CARDS-SECOND-YELLOW-2026-09-06. A second yellow arrives from AF as a
+    # yellow AND a red at the same minute for the same player (there are ZERO
+    # `yellow_red_card` rows in the entire 1.79M-row table — AF never sends that
+    # string). Identify those pairs so both settlement paths can apply the
+    # bookmaker convention correctly.
+    yellow_keys = {
+        (e["match_id"], e.get("player_name"), e["minute"])
+        for e in ev if e["event_type"] == "yellow_card"
+    }
     for e in ev:
         if e["event_type"] in ("yellow_card", "red_card"):
             c = cards[e["match_id"]]
             c[0] += 1
             if (e["minute"] or 0) <= 45:
                 c[1] += 1
+            if e["event_type"] == "red_card":
+                if (e["match_id"], e.get("player_name"), e["minute"]) in yellow_keys:
+                    c[2] += 1        # second yellow
+                else:
+                    c[3] += 1        # straight red
             continue
         t = tally[e["match_id"]]
         # An own goal is credited to the team it was scored AGAINST.
@@ -966,7 +1022,10 @@ def main():
                     help="multiplicative edge floor: odds x devig(Pinnacle) - 1")
     ap.add_argument("--devig", choices=("shin", "proportional"), default="shin")
     ap.add_argument("--family", default=None, help="restrict to one family")
-    ap.add_argument("--cards-def", choices=tuple(CARDS_DEFS), default="yellow_red")
+    # CARDS-SECOND-YELLOW-2026-09-06: was "yellow_red", which scores a red as
+    # ONE card and is the least correct of the four. "points" is the bookmaker
+    # convention (yellow=1, red=2, second yellow=3).
+    ap.add_argument("--cards-def", choices=tuple(CARDS_DEFS), default="points")
     ap.add_argument("--outlier-mult", type=float, default=1.30,
                     help="reject an accessible price above Pinnacle x this "
                          "(gotcha 9 — a 4.5+ quote on a 2.5 line is a "

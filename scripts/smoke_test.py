@@ -31441,5 +31441,66 @@ def _():
     )
 
 
+
+@test("CARDS-SECOND-YELLOW — a sending-off for two yellows scores 3, and a straight red scores 2")
+def _():
+    """The bookmaker convention, applied identically from both data sources.
+
+    AF encodes a second yellow as a yellow AND a red at the same minute for the
+    same player -- there are ZERO `yellow_red_card` rows in the whole 1.79M-row
+    events table, so the mapping for "Yellow Red Card" in api_football.py is
+    dead code. 8,731 players hold exactly 2Y+1R in one match, ~30% of all reds,
+    which is the correct real-world share.
+
+    That makes the two paths asymmetric in a way that is easy to get backwards:
+
+      * match_stats: y + 2r DOUBLE-COUNTS a second yellow (his first yellow is
+        already inside y), so the rule is y + 2r - second_yellows.
+      * events: the raw row count already scores a second yellow correctly at 3
+        (two yellows plus a red are three rows). It is the STRAIGHT red that is
+        short -- one row where the convention wants 2 -- so the correction is
+        +1 per straight red, NOT a blanket doubling.
+
+    Verified against 5,718 finished matches (30d): both rules land on 4.195
+    cards/match. The old default `yellow_red` gave 3.972, a 0.22 undercount.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "lsnm", _engine_root / "scripts" / "lineshop_new_markets.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    # One match: 4 yellows, 2 reds, one of which is a second yellow.
+    # Convention: 4*1 + 2*2 - 1 = 7.
+    st = {"yellow_cards_home": 2, "yellow_cards_away": 2,
+          "red_cards_home": 1, "red_cards_away": 1}
+    ev = (6, 0, 1, 1)   # rows, h1, second_yellows, straight_reds
+
+    got = m._cards_total(st, "points", half=False, ev=ev)
+    assert got == 7, (
+        f"match_stats 'points' gave {got}, expected 7 (4 yellows + 2 reds*2 - 1 "
+        "second yellow). A plain y+2r double-counts the second yellow's first card."
+    )
+
+    # events path: 6 rows (4Y + 2R) + 1 straight red = 7. Same answer.
+    got_ev = m._cards_total(st, "events", half=False, ev=ev)
+    assert got_ev == 7, (
+        f"events path gave {got_ev}, expected 7. The row count already scores a "
+        "second yellow at 3; only the straight red needs +1."
+    )
+    assert got == got_ev, (
+        f"the two sources disagree ({got} vs {got_ev}) -- they implement the same "
+        "convention and must agree, or cards settlement depends on which path ran"
+    )
+
+    # The default must be the convention, not the option that scores a red as 1.
+    src = (_engine_root / "scripts" / "lineshop_new_markets.py").read_text()
+    assert 'default="points"' in src, (
+        "--cards-def no longer defaults to 'points'; 'yellow_red' scores a red as "
+        "ONE card and is the least correct of the four options"
+    )
+
+
 if __name__ == "__main__":
     main()
