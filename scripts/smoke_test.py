@@ -30448,5 +30448,48 @@ def _coolbet_resilience():
     )
 
 
+@test("COOLBET-CORNERS-LIMIT — the sidebets limit must clear a full board")
+def _coolbet_corners_limit():
+    """COOLBET-CORNERS-LIMIT-STILL-TOO-LOW-2026-09-06.
+
+    Coolbet wrote ZERO corners rows all-time. The cause was neither the parser
+    nor the namespace: corners simply sit beyond the requested group limit on a
+    deep board. Measured on Birmingham v Wolves (event 6073447):
+
+        limit=13     47 markets,  0 corner/card
+        limit=60     99 markets,  0 corner/card   <- what production ran
+        limit=300   195 markets, 65 corner/card
+
+    The 13 -> 60 change had the right diagnosis, too small a number, and a
+    comment claiming it was fixed. This test pins the number so the same
+    silent truncation cannot come back — a truncated board is indistinguishable
+    from "the book does not offer that market", which is precisely how this
+    survived.
+    """
+    from workers.automation import coolbet_explorer as ce
+
+    assert ce._SIDEBETS_PREMATCH_LIMIT >= 200, (
+        f"COOLBET_SIDEBETS_LIMIT is {ce._SIDEBETS_PREMATCH_LIMIT}; a full "
+        "pre-match board is ~195 groups and corners sit past position 60, so "
+        "anything below ~200 silently drops them and looks like Coolbet not "
+        "offering corners at all"
+    )
+
+    # The parser must handle what the wider fetch returns — proven on the real
+    # market shapes Coolbet sends for cards/corners.
+    rows = ce.parse_market(
+        {"name": "[Home] Total Cards", "market_type_id": 1715, "line": 2.5,
+         "outcomes": [{"id": 1, "result_key": "Over"},
+                      {"id": 2, "result_key": "Under"}]},
+        {1: {"value": "1.70"}, 2: {"value": "2.03"}},
+    )
+    assert {r[0] for r in rows} == {"cards_home_ou_25"}, (
+        f"team cards market mis-parsed: {rows}"
+    )
+    assert all(r[3] == 2.5 for r in rows), (
+        f"cards rows lost the numeric line: {rows}"
+    )
+
+
 if __name__ == "__main__":
     main()

@@ -229,7 +229,34 @@ def _harvest_odds(payload, into: dict[int, dict]) -> None:
 # Coolbet's board, not of our code — if they add market groups this may need to
 # rise again, and a silent truncation looks exactly like "the book does not offer
 # that market".
-_SIDEBETS_PREMATCH_LIMIT = int(os.getenv("COOLBET_SIDEBETS_LIMIT", "60"))
+# COOLBET-CORNERS-LIMIT-STILL-TOO-LOW-2026-09-06: raised 60 -> 300. The 13 -> 60
+# change had the right diagnosis and too small a number, and its comment claimed
+# the problem was fixed without checking — Coolbet wrote ZERO corners rows in the
+# entire time it was live.
+#
+# Measured on Birmingham v Wolves (Championship, coolbet_event_id 6073447), the
+# deepest fixture available, all three in one sitting:
+#
+#     COOLBET_SIDEBETS_LIMIT=13    47 markets total,  0 corner/card
+#     COOLBET_SIDEBETS_LIMIT=60    99 markets total,  0 corner/card   <- prod
+#     COOLBET_SIDEBETS_LIMIT=300  195 markets total, 65 corner/card
+#
+# So corners sit beyond position 60 on a deep board. The parser was never the
+# problem — feeding those 65 markets through `parse_market` yields 72 correctly
+# namespaced rows (`cards_ou_15`, `corners_ou_*`, …) on the first try.
+#
+# Why it looked like "Coolbet does not offer corners": a thin fixture genuinely
+# has none, and on 2026-09-06 (an international break) the sweep's deepest
+# fixtures were 23-46 markets. Sampling those alone reproduces a confident and
+# completely wrong conclusion — which is exactly what happened before this
+# measurement.
+#
+# 300 is chosen to sit clear of the ~195 a full board currently returns, so the
+# next market family Coolbet adds does not silently truncate again. Cost is one
+# request per fixture either way (it is a query parameter); what grows is the
+# odds fetch, roughly 99 -> 195 market ids on deep fixtures, and that is already
+# chunked.
+_SIDEBETS_PREMATCH_LIMIT = int(os.getenv("COOLBET_SIDEBETS_LIMIT", "300"))
 
 _MTID_1X2  = {81}
 _MTID_OU   = {818}
