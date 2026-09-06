@@ -21884,11 +21884,26 @@ def _():
         "bug with extra steps."
     )
     engine_data = _web_path("src/lib/engine-data.ts").read_text()
-    for const_name in ("PUBLIC_MATURITY_LABELS", "CALIBRATED_PUBLIC_MARKETS", "CALIBRATED_SINCE"):
+    # DUPLICATED-RULES-REMAINING-2026-09-06 renamed engine-data's maturity
+    # constant PUBLIC_MATURITY_LABELS -> HEADLINE_MATURITY_LABELS, because
+    # `upcoming-picks.ts` exported a constant of the SAME NAME with a different
+    # value — the exact collision that ticket exists to remove. This assertion
+    # pinned the old spelling and so failed CI on a rename that was a fix, which
+    # is the "tests pin a spelling, not behaviour" problem SMOKE-SUITE-AUDIT was
+    # opened for. What matters is that the constant is EXPORTED (so /performance
+    # reuses one definition instead of growing a second), not what it is called.
+    for const_name in ("HEADLINE_MATURITY_LABELS", "CALIBRATED_PUBLIC_MARKETS", "CALIBRATED_SINCE"):
         assert f"export const {const_name}" in engine_data, (
             f"engine-data.ts must export {const_name} so /performance can "
             "reuse it — a private constant here means two cohorts drift apart."
         )
+    # And the collision must stay fixed: engine-data must NOT re-export the old
+    # name, or the two definitions are back and the rename bought nothing.
+    assert "export const PUBLIC_MATURITY_LABELS" not in engine_data, (
+        "engine-data.ts exports PUBLIC_MATURITY_LABELS again — that name is "
+        "already taken by upcoming-picks.ts with a different value, which is the "
+        "collision DUPLICATED-RULES-REMAINING removed."
+    )
 
     # PERF-COHORT-RECONCILE (2026-08-21): the hero's "N bets logged" scale
     # row must read from the calibrated cohort (same as ROI headline n +
