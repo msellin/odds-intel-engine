@@ -813,7 +813,10 @@ def job_weekly_meta_retrain():
     tuning. See the comment on the argv list — the default path is fitted to a
     target that inverts the quantity being gated on. Nothing here promotes a
     bundle, so this changes what gets WRITTEN each Sunday and nothing else.
-    Note also that `job_weekly_meta_validate` (05:00) is still commented out at
+    Note: `job_weekly_meta_validate` (05:00) WAS commented out here; it was
+    re-registered on 2026-09-06 once META-VALIDATE-SEGFAULT-ROOT-CAUSE found
+    the crash was pandas 3.0 rather than XGBoost. It is live at the
+    scheduler.add_job call below — this note said otherwise until 2026-09-06.
     the registration site after SCHEDULER-META-VALIDATE-SEGFAULT, so no
     automated check would have caught the wrong label either.
 
@@ -831,7 +834,13 @@ def job_weekly_meta_retrain():
                 "--version", version,
                 # META-RETRAIN-WRONG-LABEL-2026-09-06. Everything after
                 # `--version` is here because the default path trains against
-                # `mfv.pseudo_clv_home`, which is ANTI-correlated with the real
+                # `mfv.pseudo_clv_home`. NOTE 2026-09-06: the anti-correlation
+                # below was a SIGN INVERSION in the pseudo_clv formula, fixed
+                # that day by META-MFV-TARGET-INVERTED (the corrected label now
+                # correlates +0.282/+0.380 with real CLV). The switch to the
+                # real-CLV label is KEPT regardless: a measured label beats a
+                # proxy. The figures below describe the pre-fix state.
+                # `mfv.pseudo_clv_home`, which WAS anti-correlated with the real
                 # `clv_pinnacle_devig` the gate exists to protect: r=-0.036
                 # (n=1,266) since 2026-05-06 and r=-0.638 (n=162) since
                 # 2026-08-01. A bundle trained that way learns the correct sign

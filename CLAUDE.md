@@ -79,6 +79,38 @@ Update **all** of the following that apply. "Not relevant" is almost never true 
 
 Then commit docs **in the same commit as the code**. Never separate them — a code commit without doc update is an incomplete task.
 
+### Don't file what you can fix — the queue is not a diary
+
+Added 2026-09-06 after the owner observed the backlog was growing faster than it
+was shrinking. The measurement that day: **46 rows created, 36 closed, net +10**,
+with 22 of the new rows still open at the end of it.
+
+Most of that residue was avoidable. Three rules:
+
+1. **Under ~30 minutes: fix it, don't file it.** A stale comment, a wrong doc
+   line, a dead enum branch, a one-line grading error — filing these costs more
+   total effort than fixing them and converts a 5-minute job into a permanent
+   row someone has to read and re-triage forever.
+2. **One project is one row.** Six Coolbet ingest tickets made the backlog read
+   six times larger than it was and split one investigation's history across six
+   places. If the work packages share a blocker, an owner and a week, they are
+   sub-items of an epic, not peers.
+3. **A decision is not a task.** "Do not build this", "negative result",
+   "superseded by X", "merged into Y", "revisit at n=30" are all CLOSED with a
+   reason and (where relevant) a trigger. They were sitting in the open count
+   for weeks; closing nine of them took under an hour and lost nothing.
+
+**None of this means stop looking.** The same day's audits found a live model
+signal running at half strength, an inverted meta-model training label, and a
+public CLV figure showing +9.5% where the honest number is -3.0% — none of which
+were on any list that morning. Diagnostic work is the point. The rule is to
+FINISH what it turns up, not to file it and move on.
+
+**When triaging, close with evidence, never by assumption.** Every closure in
+the 2026-09-06 pass was verified first — against the DB, the code, or the
+scheduler registration — because several tickets' own bodies described a state
+that was no longer true in either direction.
+
 ### Status values for PRIORITY_QUEUE.md
 
 | Symbol | Meaning |
