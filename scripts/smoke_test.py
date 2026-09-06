@@ -31660,5 +31660,57 @@ def _():
     )
 
 
+
+@test("MFV-PSEUDO-CLV-IN-SYNC — the training label must match its source in `matches`")
+def _():
+    """`match_feature_vectors` holds a COPY of pseudo_clv, and the model trains
+    on the copy.
+
+    META-MFV-TARGET-INVERTED fixed a sign inversion in `matches` (migration 303)
+    and that was NOT enough: MFV carries its own pseudo_clv_home/draw/away,
+    populated from `matches` at feature-build time, and the meta model reads the
+    MFV copy. So the source was corrected while the training label stayed
+    inverted -- of 19,593 overlapping rows only 3,063 agreed, and the label's
+    correlation with real clv_pinnacle_devig was still NEGATIVE (r=-0.264).
+    Migration 305 re-synced 18,197 rows and the label flipped to +0.265.
+
+    Re-copy, never re-invert: applying 1/(1+x)-1 twice returns a value to its
+    original, so a transform-based repair would silently re-break every row the
+    previous migration had already fixed.
+
+    This test exists because the drift was invisible: both columns are named
+    identically, both are populated, and nothing reconciled them.
+    """
+    from workers.api_clients.db import execute_query
+
+    rows = execute_query(
+        """
+        SELECT COUNT(*) AS n,
+               COUNT(*) FILTER (
+                   WHERE f.pseudo_clv_home IS DISTINCT FROM m.pseudo_clv_home
+               ) AS drifted
+          FROM matches m
+          JOIN match_feature_vectors f ON f.match_id = m.id
+         WHERE m.pseudo_clv_home IS NOT NULL
+        """
+    )
+    r = rows[0]
+    n, drifted = r["n"] or 0, r["drifted"] or 0
+    if n < 500:
+        raise SkipTest(f"only {n} overlapping rows — nothing to reconcile")
+
+    # A small tail is tolerable: a match can be re-settled after its feature
+    # vector was built. A large one means the two copies have diverged again.
+    pct = 100.0 * drifted / n
+    assert pct < 5.0, (
+        f"{drifted} of {n} rows ({pct:.1f}%) disagree between matches."
+        "pseudo_clv_home and match_feature_vectors.pseudo_clv_home. The model "
+        "trains on the MFV copy, so a divergence here means the training label "
+        "is not the quantity settlement computes. Re-sync from `matches` "
+        "(migration 305's UPDATE is idempotent); do NOT re-apply the sign "
+        "transform, which would double-invert already-correct rows."
+    )
+
+
 if __name__ == "__main__":
     main()
