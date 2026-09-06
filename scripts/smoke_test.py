@@ -30663,5 +30663,71 @@ def _coolbet_match_corners():
     assert all(r[3] == 10.5 for r in rows), f"line lost: {rows}"
 
 
+@test("COOLBET-FUZZY-CORROBORATION — accepted matches must log kickoff delta and margin")
+def _coolbet_fuzzy_corroboration():
+    """COOLBET-FUZZY-MATCH-FALSE-POSITIVES-2026-09-06, step 1 of 2.
+
+    We match fixtures Coolbet does not carry — 'Acatlan vs Guerreros', verified
+    absent from Coolbet by the owner, was matched to 'Atlas vs Queretaro' on 4
+    sweeps and its prices stored against ours.
+
+    A threshold cannot fix it: the confirmed-WRONG pair and a confirmed-RIGHT
+    transliteration both score partial 70.6 / token_set 66.7, and no
+    combination of partial>=70..95 with token_set>=0..95 separates 8 known-bad
+    from 7 known-good pairs.
+
+    So the fix needs a corroborating signal, and its threshold must come from a
+    measured distribution rather than a guess — guessing produced three wrong
+    values for the sidebets limit today alone. This step emits the two
+    candidate signals on every accepted match and rejects nothing yet.
+
+    Behavioural: drives the real matcher and asserts both signals are computed.
+    """
+    import logging
+    from datetime import datetime, timedelta, timezone
+
+    from workers.automation.coolbet_placer import fuzzy_match_event
+
+    now = datetime(2026, 9, 6, 15, 0, tzinfo=timezone.utc)
+
+    def ev(i, h, a, mins):
+        return {"id": i, "home": h, "away": a,
+                "start": (now + timedelta(minutes=mins)).isoformat().replace("+00:00", "Z")}
+
+    events = [ev(1, "Albukiryah", "Al-Anwar Club", 3),
+              ev(2, "Atlas", "Queretaro", 240)]
+
+    records = []
+
+    class _Cap(logging.Handler):
+        def emit(self, r):
+            records.append(r.getMessage())
+
+    lg = logging.getLogger("workers.automation.coolbet_placer")
+    h = _Cap()
+    lg.addHandler(h)
+    lg.setLevel(logging.INFO)
+    try:
+        got = fuzzy_match_event("Al Bukayriyah", "Al Anwar", events, now)
+    finally:
+        lg.removeHandler(h)
+
+    assert got is not None and got["id"] == 1, (
+        f"matched the wrong event: {got}"
+    )
+    line = next((m for m in records if "Fuzzy matched" in m), "")
+    assert "ko_delta_min" in line, (
+        "accepted matches no longer log the kickoff delta — step 2 cannot pick "
+        f"a tolerance without that distribution. Got: {line!r}"
+    )
+    assert "margin" in line, (
+        "accepted matches no longer log the runner-up margin, which is the "
+        "ambiguity signal the absolute score demonstrably is not"
+    )
+    # The kickoff delta must be a real number, not a placeholder — a correct
+    # match here is 3 minutes apart.
+    assert "ko_delta_min 3.0" in line, f"kickoff delta mis-computed: {line!r}"
+
+
 if __name__ == "__main__":
     main()

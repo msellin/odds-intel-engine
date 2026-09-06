@@ -322,6 +322,10 @@ _MTID_AH   = {1086}         # "Asian Handicap"
 # Deliberately NOT captured, for want of an anchor: 'most corners (3-way)'
 # (451), 'first corner' (1753), 'last corner' (1754), 'half with most corners'
 # (1807), '2nd half corners' (1755), and the cards handicap/most-cards family.
+# Names already reported as unmatched this process — keeps the inventory log
+# to one line per distinct (name, mtid) instead of one per fixture.
+_UNMATCHED_SEEN: set = set()
+
 _MTID_CORNERS_MATCH = {826}     # "Match Corners"        -> corners_ou_NN
 _MTID_CORNERS_1H    = {1752}    # "1st Half Corners"     -> corners_1h_ou_NN
 _MTID_CORNERS_AH    = {1724}    # "Corners Handicap (2 way)" -> corners_handicap
@@ -693,15 +697,30 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
     # name turns the next 30-minute sweep into the diagnostic instead. Kept at
     # DEBUG for everything EXCEPT the families we are actively chasing, so this
     # does not spam the journal with every exotic Coolbet market.
+    # COOLBET-MARKET-INVENTORY-2026-09-06. Owner: "we should fetch all that we
+    # can from Coolbet, we have no idea today what markets we will eventually
+    # bet on." Agreed — but we cannot capture what we have never inventoried,
+    # and until now everything except corners/cards dropped at DEBUG, i.e.
+    # invisibly.
+    #
+    # So log EVERY unmatched market name once per process, deduplicated. One
+    # sweep then yields the complete menu of what Coolbet offers and we throw
+    # away, which is the input to deciding what is worth storing. Deduplicated
+    # because a full sweep touches ~1,200 fixtures and would otherwise emit
+    # hundreds of thousands of identical lines.
+    #
+    # This is deliberately an inventory, not a capture: a market with no
+    # Pinnacle counterpart cannot be de-vigged and so cannot be priced against
+    # a sharp line today. The owner's point stands anyway — optionality is
+    # worth having, and the cost of knowing is one log line per distinct name.
     _n = name or ""
-    if any(h in _n for h in ("corner", "card", "booking")):
+    _key = (_n, mtid)
+    if _key not in _UNMATCHED_SEEN:
+        _UNMATCHED_SEEN.add(_key)
         log.warning(
-            "coolbet: UNMATCHED corners/cards market — name=%r market_type_id=%r "
-            "line=%r (see COOLBET-CORNERS-NEVER-WRITTEN; this is why Coolbet "
-            "writes no corners rows)", _n, mtid, line_val,
+            "coolbet: UNMATCHED market (first sighting) name=%r market_type_id=%r "
+            "line=%r — inventory for COOLBET-MARKET-INVENTORY", _n, mtid, line_val,
         )
-    else:
-        log.debug("coolbet: unmatched market name=%r market_type_id=%r", _n, mtid)
     return rows
 
 

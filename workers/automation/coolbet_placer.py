@@ -1239,6 +1239,37 @@ def fuzzy_match_event(
 
     best_event = None
     best_score = -1
+    # ── COOLBET-FUZZY-MATCH-FALSE-POSITIVES-2026-09-06, step 1 of 2 ────────
+    # We are matching fixtures Coolbet does not carry: 'Acatlan vs Guerreros'
+    # (owner-verified absent from Coolbet) was matched to 'Atlas vs Queretaro'
+    # on 4 sweeps and its prices stored against our fixture.
+    #
+    # A threshold cannot fix it. Scored per-side with min(home, away), the
+    # confirmed-WRONG 'Acatlan v Guerreros -> Atlas v Queretaro' and the
+    # confirmed-RIGHT 'Al Bukayriyah v Al Anwar -> Albukiryah v Al-Anwar Club'
+    # BOTH score partial 70.6 / token_set 66.7 — identical on both metrics. A
+    # sweep of every combination of partial>=70..95 and token_set>=0..95
+    # against 8 confirmed-bad and 7 confirmed-good pairs finds no separating
+    # rule, so name similarity has no information left to give.
+    #
+    # The fix therefore has to be a corroborating signal, and picking its
+    # threshold by guessing is exactly the mistake that produced three wrong
+    # values for the sidebets limit today. So: MEASURE FIRST. These two
+    # trackers are logged on every accepted match and cost nothing:
+    #
+    #   * kickoff delta — the date guard tolerates +/-6h, which is a whole
+    #     afternoon of fixtures, and both feeds schedule to the minute. If
+    #     correct matches cluster inside a few minutes, tightening this kills
+    #     same-day impostors at near-zero cost to real coverage.
+    #   * runner-up margin — a correct match usually stands clear of the
+    #     field, while an impostor is one of several equally-mediocre
+    #     candidates. A thin margin is a better ambiguity signal than a low
+    #     absolute score, because the absolute score demonstrably is not one.
+    #
+    # Step 2 tightens using the distributions this produces. Nothing is
+    # rejected on these yet — this commit only makes the decision measurable.
+    runner_up_score = -1
+    best_start: datetime | None = None
     skipped_date = 0
     skipped_squad = 0
     # Candidates rejected purely on date, kept so a postponement can be told
@@ -1246,8 +1277,11 @@ def fuzzy_match_event(
     # coverage" otherwise, and they call for opposite responses.
     date_rejects: list[tuple[dict, datetime]] = []
     for ev in events:
+        # Parsed unconditionally so the kickoff delta can be logged even when
+        # no match_date was supplied by the caller.
+        ev_start_seen = _parse_iso_start(ev.get("start"))
         if match_date is not None:
-            ev_start = _parse_iso_start(ev.get("start"))
+            ev_start = ev_start_seen
             if ev_start is not None:
                 if abs((ev_start - match_date).total_seconds()) > tol_seconds:
                     skipped_date += 1
@@ -1289,8 +1323,12 @@ def fuzzy_match_event(
         )
         score = min(home_score, away_score)
         if score > best_score:
+            runner_up_score = best_score      # the score this one just beat
             best_score = score
             best_event = ev
+            best_start = ev_start_seen
+        elif score > runner_up_score:
+            runner_up_score = score
 
     if best_event is not None and best_score >= _FUZZY_THRESHOLD and match_id:
         # Book and AF agree again — lift any standing dispute so a fixture is
@@ -1350,11 +1388,21 @@ def fuzzy_match_event(
         )
         return None
     matched_home, matched_away = _event_side_names(best_event)
+    # COOLBET-FUZZY-MATCH-FALSE-POSITIVES step 1: emit the two corroborating
+    # signals on every accepted match so step 2 can pick their thresholds from
+    # a distribution instead of a guess. `ko_delta_min` is minutes between our
+    # kickoff and Coolbet's; `margin` is how far the winner beat the runner-up.
+    ko_delta_min = None
+    if match_date is not None and best_start is not None:
+        ko_delta_min = round(abs((best_start - match_date).total_seconds()) / 60.0, 1)
+    margin = round(best_score - runner_up_score, 1) if runner_up_score >= 0 else None
     log.info(
-        "Fuzzy matched '%s vs %s' → Coolbet '%s vs %s' (score %d, %d date-mismatched, "
-        "%d squad-mismatched candidates skipped)",
-        home, away, matched_home, matched_away, best_score, skipped_date,
-        skipped_squad,
+        "Fuzzy matched '%s vs %s' → Coolbet '%s vs %s' (score %d, margin %s, "
+        "ko_delta_min %s, %d date-mismatched, %d squad-mismatched candidates skipped)",
+        home, away, matched_home, matched_away, best_score,
+        "n/a" if margin is None else margin,
+        "n/a" if ko_delta_min is None else ko_delta_min,
+        skipped_date, skipped_squad,
     )
     return best_event
 
