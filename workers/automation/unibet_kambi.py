@@ -285,7 +285,9 @@ def parse_betoffers(offers: list[dict]) -> list[tuple[str, str, float, float | N
                 sel = {"OT_OVER": "over", "OT_UNDER": "under"}.get(str(x.get("type")))
                 odds = _milli(x.get("odds"))
                 if sel and odds and odds > 1:
-                    rows.append((tag, sel, odds, None))
+                    # MARKET-LINE-ENCODING-LOSSY-2026-09-06 — carry the numeric
+                    # line, the market-name encoding is not reversible.
+                    rows.append((tag, sel, odds, line))
             continue
 
         # Corners / cards — exact criterion match, own namespace. A per-team
@@ -302,7 +304,11 @@ def parse_betoffers(offers: list[dict]) -> list[tuple[str, str, float, float | N
                     sel = {"OT_OVER": "over", "OT_UNDER": "under"}.get(str(x.get("type")))
                     odds = _milli(x.get("odds"))
                     if sel and odds and odds > 1:
-                        rows.append((tag, sel, odds, None))
+                        # MARKET-LINE-ENCODING-LOSSY-2026-09-06: corners/cards
+                        # ladders carry whole-number push lines, so the tag
+                        # collides across families (`125` = 12.5 corners OR
+                        # 1.25 first-half goals). Store the number too.
+                        rows.append((tag, sel, odds, line))
                 continue
 
         # BTTS — exact criterion match. The previous substring test on the

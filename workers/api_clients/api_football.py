@@ -927,6 +927,28 @@ def parse_fixture_odds(odds_response: list[dict]) -> list[dict]:
                                 "market": f"{prefix}_{str(line_num).replace('.', '')}",
                                 "selection": direction.lower(),
                                 "odds": float(val["odd"]),
+                                # MARKET-LINE-ENCODING-LOSSY-2026-09-06: the
+                                # name encoding is NOT reversible —
+                                # `str(float(l)).replace('.','')` maps both 10.5
+                                # and 1.25 to "125", and this parser is the main
+                                # producer of the ambiguous tags (1xBet,
+                                # Marathonbet, Pinnacle, Bet365, BetVictor, SBO
+                                # all arrive through here). Four distinct live
+                                # markets already share the token "125".
+                                #
+                                # It has already cost us: a backtest read
+                                # `over_under_1h_125` as a 12.5-goal first-half
+                                # line, settled 634 bets against it and lost
+                                # every one — caught only because a 0.000 hit
+                                # rate is impossible. A subtler collision would
+                                # have looked like real edge.
+                                #
+                                # `handicap_line` needs no migration: it exists
+                                # and is 100% populated for asian_handicap, and
+                                # was simply NULL for every totals family.
+                                # Nothing keys on it being NULL (checked across
+                                # both repos).
+                                "handicap_line": line_num,
                             })
                         except ValueError:
                             pass

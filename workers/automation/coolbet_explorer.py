@@ -493,7 +493,21 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
             od = odds_map.get(oc.get("id"))
             if sel and od and od.get("value"):
                 try:
-                    rows.append((tag, sel, float(od["value"]), None))
+                    # MARKET-LINE-ENCODING-LOSSY-2026-09-06: carry the line
+                    # NUMERICALLY, not only inside the market name. The name
+                    # encoding is not reversible — `str(line).replace('.','')`
+                    # maps both 10.5 and 1.25 to "125", and 4 distinct live
+                    # markets already share the token "125". That ambiguity
+                    # produced 634 fabricated losing bets when a backtest read
+                    # over_under_1h_125 as a 12.5-goal first-half line.
+                    #
+                    # `handicap_line` already exists and is 100% populated for
+                    # asian_handicap, so this needs no migration; it was simply
+                    # NULL for every totals family. Nothing keys on it being
+                    # NULL (checked across both repos), and the pipeline's
+                    # DISTINCT ON already includes it, where the line is 1:1
+                    # with the market name — so dedup is unchanged.
+                    rows.append((tag, sel, float(od["value"]), line_val))
                 except (TypeError, ValueError):
                     pass
         return rows
@@ -1237,6 +1251,9 @@ def run_bulk(
         # COOLBET-INGEST-ANON: see run_league_sweep — reads-only path.
         session = CoolbetSession(require_auth=False)
     category_cache: list[dict] | None = None
+    # COOLBET-BULK-LISTING-FIRST: latch so a blocked search logs once, not
+    # ~1,200 times, and never aborts the sweep.
+    search_blocked = False
 
     matched = 0
     parsed_total = 0
@@ -1252,19 +1269,47 @@ def run_bulk(
         # same-team different-day candidates (reserves vs first team, multi-leg
         # ties, women vs men).
         match_date = m.get("date")
-        ev = search_coolbet_event(session, home, away, match_date)
+        # ── COOLBET-BULK-LISTING-FIRST-2026-09-06 ──────────────────────────
+        # This used to call `search_coolbet_event` FIRST, for EVERY match, and
+        # only load the bulk fo-category listing on a miss. With a 2-day window
+        # that is ~1,200 search requests per sweep, every 30 minutes, against
+        # one endpoint — versus ONE request for the whole listing.
+        #
+        # Two problems with search-first, both observed in production today:
+        #   1. `_do_search` raises CoolbetSearchBlocked on a 403, which is NOT
+        #      caught here — so a single blocked search killed the entire sweep
+        #      and lost all ~1,200 matches. That is exactly how the feed died
+        #      this morning ("search/v2 returned HTTP 403 for query 'Vik'").
+        #   2. Hammering one endpoint ~1,200 times per sweep is the behaviour
+        #      most likely to attract rate-based blocking in the first place.
+        #
+        # Bulk-first fixes both and is strictly less load on Coolbet. The
+        # fuzzy matcher used against the listing is the same one that was
+        # already trusted as the fallback path, so match quality is unchanged;
+        # search is now only consulted for the residue the listing misses.
+        if category_cache is None:
+            try:
+                category_cache = fetch_coolbet_events(session)
+                console.print(f"[dim]fo-category listing: {len(category_cache)} events "
+                              f"(1 request, replaces ~{len(matches)} searches)[/dim]")
+            except Exception as e:
+                # fo-category has 404'd in production at least once (Coolbet
+                # seems to have moved or retired it). Degrade to search-only.
+                log.warning("fo-category unavailable (%s) — falling back to search-only", e)
+                category_cache = []
+
+        ev = fuzzy_match_event(home, away, category_cache, match_date) if category_cache else None
         if ev is None:
-            if category_cache is None:
-                console.print("[dim]Search miss — loading full fo-category once[/dim]")
-                try:
-                    category_cache = fetch_coolbet_events(session)
-                except Exception as e:
-                    # fo-category endpoint has 404'd in production at least once
-                    # (Coolbet seems to have moved or retired it). Degrade to
-                    # search-only — matches the search misses are skipped.
-                    log.warning("fo-category unavailable (%s) — falling back to search-only", e)
-                    category_cache = []
-            ev = fuzzy_match_event(home, away, category_cache, match_date) if category_cache else None
+            # Residue only. A block here must NOT kill the sweep — everything
+            # matched from the listing is still worth storing.
+            try:
+                ev = search_coolbet_event(session, home, away, match_date)
+            except Exception as e:
+                if not search_blocked:
+                    log.warning("Coolbet search unavailable (%s) — continuing on the "
+                                "bulk listing alone for the rest of this sweep", e)
+                    search_blocked = True
+                ev = None
         if ev is None:
             missed_leagues[league] = missed_leagues.get(league, 0) + 1
             log.info("[%d/%d] no Coolbet event: %s vs %s (%s)", i, len(matches), home, away, league)

@@ -30300,5 +30300,153 @@ def _corners_namespace_shared():
     )
 
 
+@test("MARKET-LINE-ENCODING-LOSSY — every totals writer must carry the numeric line")
+def _market_line_encoding_lossy():
+    """MARKET-LINE-ENCODING-LOSSY-2026-09-06.
+
+    `str(float(line)).replace('.', '')` is not reversible: 10.5 and 1.25 both
+    encode to "125". Four distinct live markets already share that token, and
+    the ambiguity has already cost us — a backtest read `over_under_1h_125` as a
+    12.5-goal first-half line, settled 634 bets against it and lost every one.
+    It was caught only because a 0.000 hit rate is impossible; a subtler
+    collision would have looked like real edge.
+
+    The fix is to store the line NUMERICALLY in `handicap_line` alongside the
+    name. No migration: the column exists and is 100% populated for
+    asian_handicap, and was simply NULL for every totals family.
+
+    Behavioural where the parser can be driven, and it checks the DB too, so
+    this fails if a writer silently stops populating the column in production.
+    """
+    from workers.automation.coolbet_explorer import parse_market
+    from workers.automation.epicbet_explorer import (
+        _GROUP_CORNERS, parse_event_markets,
+    )
+
+    # Coolbet: a corners total must carry its line as the 4th tuple element.
+    cb = parse_market(
+        {"name": "Total Corners", "line": 10.5, "market_type_id": 99999,
+         "outcomes": [{"id": 1, "result_key": "Over"},
+                      {"id": 2, "result_key": "Under"}]},
+        {1: {"value": "1.90"}, 2: {"value": "1.95"}},
+    )
+    assert cb and all(r[3] == 10.5 for r in cb), (
+        f"Coolbet totals lost the numeric line: {cb}. The market name alone "
+        "cannot distinguish 10.5 from 1.25."
+    )
+
+    # Epicbet: same, through its own parser.
+    ev = {"raw": {"homeTeamName": "A", "awayTeamName": "B", "marketGroups": [
+        {"id": _GROUP_CORNERS, "markets": [
+            {"line": 12.5, "outcomes": [{"id": 7, "name": "Over"},
+                                        {"id": 8, "name": "Under"}]}]}]}}
+    ep = parse_event_markets(ev, {7: 1.8, 8: 2.0})
+    assert ep and all(r[3] == 12.5 for r in ep), (
+        f"Epicbet totals lost the numeric line: {ep}"
+    )
+
+    # API-Football is the biggest producer of the ambiguous tags.
+    from workers.api_clients.api_football import parse_fixture_odds
+
+    af = parse_fixture_odds([{
+        "bookmakers": [{"name": "Pinnacle", "bets": [
+            {"name": "Corners Over Under", "values": [
+                {"value": "Over 10.5", "odd": "1.90"},
+                {"value": "Under 10.5", "odd": "1.95"}]}]}]}])
+    corner_rows = [r for r in af if r["market"].startswith("corners_ou")]
+    assert corner_rows, f"AF corners parse produced nothing: {af}"
+    assert all(r.get("handicap_line") == 10.5 for r in corner_rows), (
+        f"api_football totals rows lost handicap_line: {corner_rows}"
+    )
+
+    # And it must actually be landing in production, not merely be in the code.
+    from workers.api_clients.db import execute_query
+
+    # Only rows written AFTER the fix shipped can carry it — everything older
+    # predates the change and would fail forever. This assertion therefore arms
+    # itself as fresh data arrives rather than failing on history.
+    #
+    # It is deliberately vacuous when no recent rows exist (a feed outage must
+    # not turn into a red suite). The parser assertions above are the guard that
+    # always runs; this one catches the case where the parsers are right but the
+    # value is dropped somewhere between parse and insert.
+    live = execute_query(
+        """SELECT count(*) n, count(handicap_line) with_line
+             FROM odds_snapshots
+            WHERE market LIKE 'corners_ou_%'
+              AND timestamp >= GREATEST(
+                    TIMESTAMPTZ '2026-09-06 10:00:00+00',
+                    now() - interval '2 days')"""
+    )[0]
+    if live["n"] > 5_000:
+        assert live["with_line"] > 0, (
+            f"{live['n']:,} corners rows written since the fix and NOT ONE "
+            "carries handicap_line — the parsers populate it but it is being "
+            "dropped between parse and insert"
+        )
+
+
+@test("COOLBET-RESILIENCE — bulk listing first, blocked search must not kill the sweep")
+def _coolbet_resilience():
+    """COOLBET-BULK-LISTING-FIRST + COOLBET-COOKIE-SELF-REVIVE, 2026-09-06.
+
+    Two failure modes that together took the Coolbet feed down for most of
+    2026-09-06 and produced its "intermittent" pattern:
+
+      1. `run_bulk` called `search_coolbet_event` per match (~1,200 requests
+         per 30-min sweep) BEFORE trying the one-request bulk listing, and
+         `_do_search` raises CoolbetSearchBlocked on a 403 — uncaught, so one
+         blocked search discarded the whole sweep.
+      2. Stale Imperva cookies returned None and fell through to even older
+         env cookies, guaranteeing that 403. The harvest was owned by a
+         separate daemon which had been stopped since 2026-08-23.
+
+    Source-inspected: both are control-flow properties of a network path that
+    cannot be driven offline. Assertions target the specific structures, and
+    comment lines are stripped so the explanations above cannot satisfy them
+    (gotcha 41).
+    """
+    import inspect
+
+    from workers.automation.coolbet_explorer import run_bulk
+    from workers.automation.coolbet_session import (
+        _load_fresh_imperva_cookies_from_db,
+    )
+
+    def _code(fn):
+        return "\n".join(
+            ln for ln in inspect.getsource(fn).split("\n")
+            if not ln.lstrip().startswith("#")
+        )
+
+    rb = _code(run_bulk)
+    # Bulk listing must be fetched before search is consulted.
+    assert "fetch_coolbet_events" in rb and "search_coolbet_event" in rb
+    assert rb.index("fetch_coolbet_events") < rb.index("search_coolbet_event"), (
+        "run_bulk consults search_coolbet_event before the bulk fo-category "
+        "listing — that is ~1,200 requests per sweep instead of 1, and it is "
+        "the ordering that let one 403 kill the whole run"
+    )
+    # And the search call must be guarded.
+    tail = rb[rb.index("search_coolbet_event"):]
+    assert "except" in tail, (
+        "search_coolbet_event is called unguarded — CoolbetSearchBlocked will "
+        "propagate and discard every match already matched from the listing"
+    )
+
+    # Cookie staleness must attempt a refresh, not just give up.
+    ck = _code(_load_fresh_imperva_cookies_from_db)
+    assert "extract_imperva_cookies_from_cdp" in ck, (
+        "stale Imperva cookies no longer trigger an on-demand refresh — the "
+        "feed will again depend on a separate daemon being alive, and will 403 "
+        "for however long that daemon stays down"
+    )
+    # Fail-soft is the property that makes the refresh safe to attempt inline.
+    assert ck.count("return None") >= 2, (
+        "the refresh path lost its fail-soft returns; a CDP problem must fall "
+        "back to env cookies exactly as before, never raise into session init"
+    )
+
+
 if __name__ == "__main__":
     main()

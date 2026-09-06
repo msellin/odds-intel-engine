@@ -141,9 +141,49 @@ def _load_fresh_imperva_cookies_from_db(*, max_age_hours: float = 2.0) -> dict[s
     if payload is None or age_s is None:
         return None
     if float(age_s) > max_age_hours * 3600:
-        log.info("Imperva cookies in DB are %.1fh stale (> %.1fh) — using env fallback",
-                 float(age_s) / 3600, max_age_hours)
-        return None
+        log.info("Imperva cookies in DB are %.1fh stale (> %.1fh) — refreshing "
+                 "from CDP-Chrome", float(age_s) / 3600, max_age_hours)
+        # ── COOLBET-COOKIE-SELF-REVIVE-2026-09-06 ──────────────────────────
+        # This used to `return None` and let the caller fall back to the env
+        # cookies, which are older still — so a stale snapshot meant a
+        # guaranteed 403 and the whole sweep died on its first search.
+        #
+        # Measured 2026-09-06: the harvest is done by the Mac daemon's tick,
+        # and that daemon had been stopped since 2026-08-23. With nothing
+        # refreshing them, the cookies aged past this 2h window and the odds
+        # feed worked only in the ~2h after some other job happened to refresh
+        # them — which is the whole of the day's "intermittent" pattern (hours
+        # of 11/21/35 rows between hours of 4,000).
+        #
+        # Depending on a separate long-lived daemon for a value THIS function
+        # needs is the fragile part. Harvest on demand instead: read the
+        # cookies straight from the operator's own CDP-Chrome, which is the
+        # same source the daemon uses. Note this is session REUSE from a real
+        # browser the operator is signed into — deliberately not FlareSolverr,
+        # whose Docker Chrome fails Imperva anyway on a different fingerprint.
+        #
+        # Fail-soft throughout: any problem returns None and the caller keeps
+        # its existing env fallback, exactly as before.
+        try:
+            from workers.automation.coolbet_browser_sync import (
+                extract_imperva_cookies_from_cdp,
+            )
+            fresh = extract_imperva_cookies_from_cdp()
+        except Exception as e:                       # CDP down, import error…
+            log.info("CDP cookie refresh unavailable (%s) — using env fallback", e)
+            return None
+        if not fresh:
+            log.info("CDP returned no Imperva cookies — using env fallback")
+            return None
+        try:
+            _state().persist_imperva_cookies(fresh, source="on_demand_refresh")
+            log.info("Imperva cookies refreshed on demand from CDP-Chrome (%d cookies)",
+                     len(fresh))
+        except Exception as e:
+            # Persisting is a convenience for the next caller; the cookies we
+            # just harvested are still good for THIS run.
+            log.debug("could not persist refreshed cookies: %s", e)
+        return {k: v for k, v in fresh.items() if not k.startswith("_") and v}
     # Strip metadata keys before returning — only the actual cookie names.
     return {k: v for k, v in payload.items() if not k.startswith("_") and v}
 

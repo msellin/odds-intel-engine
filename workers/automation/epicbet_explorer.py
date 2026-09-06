@@ -618,13 +618,20 @@ def parse_event_markets(
                         add("1x2", "away", oc.get("id"))
 
             elif gid == _GROUP_OU:
-                market = _ou_market_for_line(_as_float(mkt.get("line")))
+                _line = _as_float(mkt.get("line"))
+                market = _ou_market_for_line(_line)
                 if market is None:
                     continue          # quarter line, or a line we don't store
                 for oc in outcomes:
                     nm = (oc.get("name") or "").strip().lower()
                     if nm in ("over", "under"):
-                        add(market, nm, oc.get("id"))
+                        # MARKET-LINE-ENCODING-LOSSY-2026-09-06: carry the line
+                        # NUMERICALLY as well as in the market name. The name
+                        # encoding is not reversible — `str(float(l)).replace('.','')`
+                        # maps both 10.5 and 1.25 to "125" — and that ambiguity
+                        # already produced 634 fabricated losing bets when a
+                        # backtest read over_under_1h_125 as a 12.5-goal line.
+                        add(market, nm, oc.get("id"), _line)
 
             elif gid == _GROUP_BTTS:
                 for oc in outcomes:
@@ -670,13 +677,14 @@ def parse_event_markets(
                     prefix = template
                 if not _extra_enabled(prefix):
                     continue
-                market = _alt_total_tag(prefix, _as_float(mkt.get("line")))
+                _line = _as_float(mkt.get("line"))
+                market = _alt_total_tag(prefix, _line)
                 if market is None:
                     continue
                 for oc in outcomes:
                     nm = (oc.get("name") or "").strip().lower()
                     if nm in ("over", "under"):
-                        add(market, nm, oc.get("id"))
+                        add(market, nm, oc.get("id"), _line)   # see MARKET-LINE-ENCODING-LOSSY
 
             elif gid == _GROUP_CORNERS_AH and _extra_enabled("corners_handicap"):
                 # Same home-perspective convention as the goals AH above, and
@@ -698,14 +706,17 @@ def parse_event_markets(
                 # ladder is 0.5/1/1.5/2/2.5 and the whole lines are pushes we do
                 # not hold a column for. Namespace matches the AF parser's
                 # "Goals Over/Under First Half" → over_under_1h.
-                market = _ou_market_for_line(_as_float(mkt.get("line")))
+                _line = _as_float(mkt.get("line"))
+                market = _ou_market_for_line(_line)
                 if market is None:
                     continue
                 market = market.replace("over_under_", "over_under_1h_", 1)
                 for oc in outcomes:
                     nm = (oc.get("name") or "").strip().lower()
                     if nm in ("over", "under"):
-                        add(market, nm, oc.get("id"))
+                        # This family is the one the collision actually bit:
+                        # over_under_1h_125 is a 1.25 line, not 12.5.
+                        add(market, nm, oc.get("id"), _line)
 
             elif gid == _GROUP_1X2_1H and _extra_enabled("1x2_1h"):
                 # Group name is " 1. half: Goals 1x2" — with a LEADING SPACE.
