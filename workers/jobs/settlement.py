@@ -1913,7 +1913,24 @@ def _compute_pseudo_clv_batched(fetch_dates: list[str]) -> tuple[int, int]:
                 pseudo_clvs[sel] = None
                 continue
 
-            clv = round((1.0 / opening_odds) / (1.0 / closing_odds) - 1, 5)
+            # META-MFV-TARGET-INVERTED (2026-09-06): this was
+            #     (1/opening) / (1/closing) - 1   ==  closing/opening - 1
+            # which is POSITIVE when the price DRIFTS OUT. Real CLV is positive
+            # when you BEAT the close — when the price shortens after you bet.
+            # The two are exact reciprocals, so the stored label was the precise
+            # opposite of the quantity the meta-model exists to predict.
+            #
+            # Measured against the real `clv_pinnacle_devig` on matched bets:
+            #   stored      r=-0.029 (since 2026-05-06), r=-0.559 (since 08-01)
+            #   binary label r=-0.275                  , r=-0.365
+            #   sign-corrected r=+0.235                , r=+0.567
+            #   corrected label r=+0.282               , r=+0.380
+            # The model was being taught the inverted sign on its most
+            # predictive feature (`odds_drift_home_at_t6h` predicts real CLV at
+            # r=+0.335, and the baseline learned it at coef -1.198).
+            #
+            # Taken price is the opening; the anchor is the close.
+            clv = round(opening_odds / closing_odds - 1, 5)
             # Discard implausible values — almost certainly a data artifact
             pseudo_clvs[sel] = clv if abs(clv) <= 0.5 else None
 

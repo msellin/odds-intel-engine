@@ -31130,5 +31130,59 @@ def _():
     )
 
 
+
+@test("META-MFV-TARGET-INVERTED — pseudo_clv measures beating the close, not drifting out")
+def _():
+    """The meta-model's default training label was the exact opposite of its target.
+
+    pseudo_clv was computed as `(1/opening) / (1/closing) - 1`, i.e.
+    `closing/opening - 1`, which is POSITIVE when the price DRIFTS OUT. Real CLV
+    is positive when you BEAT the close -- when the price shortens after you bet.
+    The two are exact reciprocals.
+
+    Measured against real clv_pinnacle_devig on matched settled bets:
+        stored value    r=-0.029 (since 05-06)  r=-0.559 (since 08-01)
+        binary label    r=-0.275                r=-0.365
+        sign-corrected  r=+0.235                r=+0.567
+    So the model was taught the inverted sign on its most predictive feature
+    (odds_drift_home_at_t6h predicts real CLV at r=+0.335; the baseline learned
+    it at coef -1.198).
+
+    Behavioural: drive the real arithmetic. A bet struck at 2.00 that closes at
+    1.80 BEAT the close and must score positive.
+    """
+    # Taken 2.00, closed 1.80 -> the price shortened -> we beat the close.
+    opening, closing = 2.00, 1.80
+    correct = round(opening / closing - 1, 5)
+    assert correct > 0, "test's own fixture is wrong"
+
+    src = (_engine_root / "workers" / "jobs" / "settlement.py").read_text()
+    import ast, re
+
+    # The inverted form must be gone. Match the ARITHMETIC, not a comment: the
+    # docstring and the fix note both legitimately mention the old expression
+    # (gotcha 41), so strip comments and strings before looking.
+    tree = ast.parse(src)
+    code_only = ast.unparse(tree)
+    bad = re.search(r"1\.?0?\s*/\s*opening_odds\s*\)\s*/\s*\(\s*1\.?0?\s*/\s*closing_odds",
+                    code_only)
+    assert bad is None, (
+        "pseudo_clv is computing closing/opening again -- that is positive when "
+        "the price drifts OUT, the exact opposite of beating the close"
+    )
+    assert re.search(r"opening_odds\s*/\s*closing_odds", code_only), (
+        "pseudo_clv no longer computes opening/closing -- CLV is the taken price "
+        "over the closing price"
+    )
+
+    # The history backfill must exist, and must re-apply the plausibility guard
+    # in the CORRECTED space: |old| <= 0.5 maps to [-0.333, +1.0] once inverted.
+    mig = _engine_root / "supabase" / "migrations" / "303_pseudo_clv_sign.sql"
+    assert mig.exists(), "migration 303 (pseudo_clv sign backfill) is missing"
+    msrc = mig.read_text()
+    assert "1.0 / (1.0 + pseudo_clv_home)" in msrc, "backfill does not invert the stored value"
+    assert "> 0.5" in msrc, "backfill does not re-apply the plausibility guard after inverting"
+
+
 if __name__ == "__main__":
     main()
