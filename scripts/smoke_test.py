@@ -30557,5 +30557,58 @@ def _corners_edge_backtest():
     )
 
 
+@test("PUBLIC-COHORT-ONE-DEFINITION — a cohort name must mean one thing")
+def _public_cohort_one_definition():
+    """DUPLICATED-RULES-REMAINING-2026-09-06.
+
+    `PUBLIC_MATURITY_LABELS` was exported from TWO modules in the same app with
+    DIFFERENT values — `["calibrated"]` in upcoming-picks.ts and
+    `["calibrated","beta","active"]` in engine-data.ts. Both were correct for
+    their own surface, which is what made it dangerous: one wrong auto-import
+    either widens the ANONYMOUS picks feed to beta/active bots or narrows the
+    published track record, and the code compiles either way.
+
+    engine-data's is now HEADLINE_MATURITY_LABELS. This test keeps the two
+    cohorts distinguishable by name.
+    """
+    import os
+    import re
+
+    web = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "odds-intel-web", "src",
+    )
+    if not os.path.isdir(web):
+        raise SkipTest("odds-intel-web not checked out")
+
+    decls = []
+    for dirpath, dirnames, filenames in os.walk(web):
+        dirnames[:] = [d for d in dirnames if d not in ("node_modules", ".next")]
+        for fn in filenames:
+            if not fn.endswith((".ts", ".tsx")):
+                continue
+            path = os.path.join(dirpath, fn)
+            src = open(path, encoding="utf-8").read()
+            for m in re.finditer(r"export const (PUBLIC_MATURITY_LABELS)\s*=", src):
+                decls.append(os.path.relpath(path, web))
+
+    assert len(decls) <= 1, (
+        f"PUBLIC_MATURITY_LABELS is exported from {len(decls)} modules "
+        f"({decls}). Two cohorts under one name is how the anonymous picks feed "
+        "silently widens or the track record silently narrows — name them for "
+        "what they are instead."
+    )
+
+    # And the two cohorts must still actually differ, or the split is pointless.
+    up = open(os.path.join(web, "lib", "upcoming-picks.ts"), encoding="utf-8").read()
+    ed = open(os.path.join(web, "lib", "engine-data.ts"), encoding="utf-8").read()
+    assert 'export const PUBLIC_MATURITY_LABELS = ["calibrated"]' in up, (
+        "the anonymous picks cohort is no longer calibrated-only (PICKS-USER-GATE)"
+    )
+    assert "export const HEADLINE_MATURITY_LABELS" in ed, (
+        "engine-data no longer names its headline cohort distinctly"
+    )
+
+
 if __name__ == "__main__":
     main()
