@@ -3473,7 +3473,10 @@ def build_referee_stats() -> int:
     from collections import defaultdict
     stats: dict[str, dict] = defaultdict(lambda: {
         "total": 0, "home": 0, "draw": 0, "away": 0,
-        "over25": 0, "yellow": 0, "red": 0,
+        # `card_matches` counts only the matches that actually returned a
+        # match_stats row — see REFEREE-CARDS-DENOMINATOR below. It is NOT the
+        # same as `total` and must never be substituted for it.
+        "over25": 0, "yellow": 0, "red": 0, "card_matches": 0,
     })
 
     for m in matches_r:
@@ -3522,6 +3525,8 @@ def build_referee_stats() -> int:
                 ra = row.get("red_cards_away") or 0
                 stats[ref]["yellow"] += yh + ya
                 stats[ref]["red"] += rh + ra
+                # Count the matches the numerator is actually built from.
+                stats[ref]["card_matches"] += 1
 
     upserted = 0
     for ref, s in stats.items():
@@ -3529,6 +3534,21 @@ def build_referee_stats() -> int:
         if total < 3:
             continue
         cards_total = s["yellow"] + s["red"]
+        # REFEREE-CARDS-DENOMINATOR (2026-09-06): cards were summed ONLY over
+        # matches that returned a match_stats row, then divided by `total` —
+        # every match the referee officiated. Card stats are sparse, so this
+        # divided a partial numerator by a full denominator and produced a
+        # systematic undercount: mean cards_per_game read 2.24 against a real
+        # ~4.2, and 2,078 of 5,673 referees read exactly 0.00 because none of
+        # their matches had a stats row at all. This is not cosmetic — it feeds
+        # the live model signal `referee_cards_avg` (see get_referee_cards_avg),
+        # so the model has been reading a half-strength, often-zero signal.
+        # Divide by the matches the numerator came from, and publish NULL rather
+        # than a fake 0.00 when there are too few to mean anything.
+        card_matches = s["card_matches"]
+        cards_per_game = (
+            round(cards_total / card_matches, 2) if card_matches >= 3 else None
+        )
         row = {
             "referee_name": ref,
             "matches_total": total,
@@ -3536,7 +3556,8 @@ def build_referee_stats() -> int:
             "draws_count": s["draw"],
             "away_wins": s["away"],
             "home_win_pct": round(s["home"] / total, 4),
-            "cards_per_game": round(cards_total / total, 2),
+            "cards_per_game": cards_per_game,
+            "card_matches": card_matches,
             "over_25_count": s["over25"],
             "over_25_pct": round(s["over25"] / total, 4),
             "yellow_total": s["yellow"],

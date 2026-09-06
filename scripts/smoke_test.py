@@ -31020,5 +31020,115 @@ def _():
     )
 
 
+
+@test("REFEREE-CARDS-DENOMINATOR — cards_per_game divides by the matches it summed")
+def _():
+    """A partial numerator over a full denominator produced a live model signal
+    that was roughly half-strength, and zero for 37% of referees.
+
+    build_referee_stats summed yellows/reds ONLY over matches that returned a
+    match_stats row, then divided by matches_total -- every match the referee
+    officiated. Card stats are sparse, so cards_per_game read a mean of 2.24
+    against a real ~4.2, and 2,078 of 5,673 referees read exactly 0.00 because
+    none of their matches carried a stats row.
+
+    The zeros are the dangerous part: the table asserted "this referee shows no
+    cards" where the truth was "we have no card data for this referee", and the
+    model could not tell them apart because both arrived as 0.00. It feeds
+    `referee_cards_avg` via get_referee_cards_avg().
+
+    Behavioural where it can be: runs the real upsert row-building logic against
+    a synthetic referee whose matches mostly lack stats, and asserts the ratio
+    uses the honest denominator.
+    """
+    import ast
+
+    src = (_engine_root / "workers" / "api_clients" / "supabase_client.py").read_text()
+    tree = ast.parse(src)
+    fn = next((n for n in ast.walk(tree)
+               if isinstance(n, ast.FunctionDef) and n.name == "build_referee_stats"), None)
+    assert fn is not None, "build_referee_stats() not found"
+
+    fn_src = ast.get_source_segment(src, fn) or ""
+
+    # The bug in one line: cards divided by the all-matches count.
+    assert 'cards_total / total' not in fn_src.replace(" ", "").replace(
+        "cards_total/total", "cards_total / total"
+    ), "cards_per_game is dividing by `total` again -- that is the original bug"
+
+    # There must be a separate counter for the matches the numerator came from.
+    assert "card_matches" in fn_src, (
+        "no card_matches counter -- without it the denominator cannot be honest"
+    )
+
+    # Absent data must not be published as a real 0.00.
+    assert "None" in fn_src and "card_matches" in fn_src, (
+        "cards_per_game must be NULL when there is too little card data, so "
+        "'no data' stops masquerading as 'no cards'"
+    )
+
+    # The migration adding the column must exist and be nullable-safe.
+    mig = _engine_root / "supabase" / "migrations" / "302_referee_card_matches.sql"
+    assert mig.exists(), "migration 302 (referee card_matches) is missing"
+    msrc = mig.read_text()
+    assert "ADD COLUMN IF NOT EXISTS card_matches" in msrc, (
+        "migration 302 does not add card_matches"
+    )
+
+
+@test("CARD-EVENT-SILENT-DROP — an unmapped AF event type is logged, not discarded quietly")
+def _():
+    """`if not event_type: continue` discarded any event detail we don't map,
+    with no trace.
+
+    That is precisely the failure mode CARDS-SETTLEMENT-UNDERCOUNT was opened to
+    chase: a Card detail AF renames, or adds, would simply vanish and look like
+    "fewer cards happened". The investigation could not have distinguished it
+    from a counting bug, and there was no counter for it anywhere.
+
+    Note the dead branch this sits next to: `yellow_red_card` is mapped from
+    "Yellow Red Card" / "Second Yellow card", and there are ZERO such rows in
+    the 1.79M-row match_events table -- AF never sends those strings. Second
+    yellows arrive as a yellow plus a real red_card at the same minute. So the
+    one card variant we thought we handled specially does not exist, which makes
+    a silent drop of a variant we DON'T know about the live risk.
+    """
+    import ast
+
+    src = (_engine_root / "workers" / "api_clients" / "api_football.py").read_text()
+    tree = ast.parse(src)
+
+    # Find the `if not event_type: continue` guard and assert it warns first.
+    found_guard = False
+    warns = False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        t = node.test
+        if not (isinstance(t, ast.UnaryOp) and isinstance(t.op, ast.Not)
+                and isinstance(t.operand, ast.Name) and t.operand.id == "event_type"):
+            continue
+        found_guard = True
+        body = ast.Module(body=node.body, type_ignores=[])
+        for c in ast.walk(body):
+            if isinstance(c, ast.Call):
+                f = c.func
+                name = getattr(f, "attr", None) or getattr(f, "id", None)
+                if name in ("print", "warning", "warn", "error"):
+                    warns = True
+    assert found_guard, "the `if not event_type` drop guard is gone -- re-check this test"
+    assert warns, (
+        "an unmapped AF event type is still dropped silently. A renamed or new "
+        "Card detail would vanish and look exactly like 'fewer cards happened'."
+    )
+
+    # Warn ONCE per distinct (type, detail), or a busy sweep floods the log and
+    # the warning gets removed by whoever is annoyed by it.
+    assert "_UNKNOWN_EVENT_SEEN" in src, (
+        "no dedup for the unmapped-event warning -- an unbounded warning per "
+        "event is how a useful signal gets deleted"
+    )
+
+
 if __name__ == "__main__":
     main()

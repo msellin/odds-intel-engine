@@ -1698,6 +1698,9 @@ def get_fixture_events(fixture_id: int) -> list[dict]:
 # No production consumer is affected today — the only `match_events` readers in
 # workers/ are inplay_bot's red-card lookups. This exists so the next analysis
 # does not rediscover it: NEW-MARKETS-LINESHOP already hit it once.
+# Dedup for CARD-EVENT-SILENT-DROP: warn once per unseen (type, detail).
+_UNKNOWN_EVENT_SEEN: set[tuple[str, str]] = set()
+
 GOAL_EVENT_TYPES: frozenset[str] = frozenset({"goal", "penalty_scored", "own_goal"})
 GOAL_EVENT_TYPES_SQL = "('goal','penalty_scored','own_goal')"
 
@@ -1744,6 +1747,22 @@ def parse_fixture_events(events_response: list[dict]) -> list[dict]:
             event_type = "var_decision"
 
         if not event_type:
+            # CARD-EVENT-SILENT-DROP (2026-09-06): an unrecognised detail string
+            # was discarded with no trace. That is the exact failure mode that
+            # produces a settlement undercount — a Card detail AF renames, or a
+            # new one, would vanish and simply look like "fewer cards happened".
+            # CARDS-SETTLEMENT-UNDERCOUNT was investigated on the assumption of
+            # a counting bug; a silent drop here would have been indistinguishable
+            # from one and had no counter at all. Log it once per distinct
+            # (type, detail) so a vocabulary change is loud instead of invisible.
+            key = (ev_type or "?", ev_detail or "?")
+            if key not in _UNKNOWN_EVENT_SEEN:
+                _UNKNOWN_EVENT_SEEN.add(key)
+                console.print(
+                    f"[yellow]UNMAPPED match event dropped: type={ev_type!r} "
+                    f"detail={ev_detail!r} — if this is a card or goal variant, "
+                    f"every count downstream is short by it[/yellow]"
+                )
             continue
 
         rows.append({
