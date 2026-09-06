@@ -1419,3 +1419,71 @@ floor is the wrong instrument for this finding.
 Related: #44 (a multiplicative price error fakes an odds slope — the reason this
 had to be recomputed at executable prices before it could be read at all), #8
 (gate on CLV), #33 (never compare across samples).
+
+---
+
+## 48. `edge_percent` is a rounded DECIMAL FRACTION — never reconstruct `cal_prob` from it
+
+Two separate traps in one column name, both live.
+
+**It is a fraction, not a percentage.** Despite being called `edge_percent`,
+`simulated_bets.edge_percent` stores `0.11` for an 11% edge — measured range
+0.02–1.36, median 0.11. Anything that multiplies or divides it by 100 is wrong.
+This bit us on 2026-09-06: `engine-data.ts` divided it by 100 on its way into
+`detectBetFlags`, so the `high-edge-uncalibrated` (> 0.20) and
+`edge-implausibly-high` (> 0.50) guards **could never fire** — on the admin page
+read before staking real money. The column name is the trap: it survives review
+because the reader trusts the name over the data.
+
+**It is also ROUNDED, so reconstructing the calibrated probability from it is
+unsafe.** The engine computes `edge = cal_prob − 1/odds` in probability POINTS
+(`daily_pipeline_v2.py:3474`), so it is algebraically true that
+`cal_prob = edge + 1/odds`. But on 90 days of pre-match rows that reconstruction
+has a **p99 absolute error of 1.98** — not imprecise, nonsense. Every
+`breakEvenOdds`-style helper carries that reconstruction as a fallback.
+
+**Rule: always read `calibrated_prob` directly. Treat the `edge + 1/odds`
+fallback as a last resort that must never be relied on**, and prefer returning
+null over returning a reconstructed number. The fallback does not fire today
+only because `calibrated_prob` is never NULL — which is one schema change away
+from being false.
+
+Related: gotcha 42 (our `edge` is probability points, not multiplicative EV) and
+the MIN-ODDS-WRONG-FORMULA family, where the same confusion produced a
+break-even price that was wrong on 478 of 478 picks.
+
+---
+
+## 49. A goal is not only `event_type = 'goal'`
+
+`match_events` splits API-Football's single "Goal" bet type into four of our
+own event types, and `detail` is always `"Normal Goal"`, so it cannot be used to
+recover the distinction afterwards. Filtering on `'goal'` alone silently
+undercounts.
+
+Measured on **134,731 finished matches** with both events and a stored score,
+comparing the event count against `score_home + score_away`:
+
+| counting | matches agreeing | |
+|---|---|---|
+| `'goal'` only | 100,580 | **74.7%** |
+| `'goal'`, `'penalty_scored'`, `'own_goal'` | 129,825 | **96.4%** |
+
+Use `GOAL_EVENT_TYPES` / `GOAL_EVENT_TYPES_SQL` from
+`workers/api_clients/api_football.py` rather than retyping the set.
+`penalty_missed` is deliberately excluded — it is a shot, not a goal.
+
+**Own goals count for the OTHER side.** `match_events.team` records who the
+event happened *to*, so `event_type='own_goal'` with `team='home'` is a goal for
+**away**. A match total does not care; any per-team split must flip it.
+
+No production consumer is affected today — the only `match_events` readers under
+`workers/` are `inplay_bot`'s red-card lookups. This entry exists because
+NEW-MARKETS-LINESHOP hit it once already while settling first-half totals, and
+anything deriving goals from events (1H totals, team totals, timing analysis,
+in-play reconstruction) will hit it again.
+
+Compounding factor worth knowing: `match_events` took **no writes at all between
+2026-08-21 and 2026-09-06** (MATCH-EVENTS-SILENT-WRITE-FAILURE, since
+backfilled), so any events-derived number computed in that window is suspect for
+a second, unrelated reason.

@@ -1675,6 +1675,33 @@ def get_fixture_events(fixture_id: int) -> list[dict]:
     return data.get("response", [])
 
 
+# ── GOAL-EVENT-TYPES-INCOMPLETE-2026-09-06 ───────────────────────────────────
+# A goal is NOT only `event_type = 'goal'`. `parse_fixture_events` below splits
+# AF's "Goal" bet type into four of our own types, and `detail` is always
+# "Normal Goal" so it cannot be used to tell them apart afterwards.
+#
+# Measured on 134,731 finished matches with both events and a stored score,
+# comparing the event count against `score_home + score_away`:
+#
+#     counting only 'goal'                       100,580 agree  (74.7%)
+#     counting goal + penalty_scored + own_goal  129,825 agree  (96.4%)
+#
+# So anything deriving goals from `match_events` — first-half totals, team
+# totals, timing analysis, in-play reconstruction — undercounts by ~25% of
+# matches if it filters on 'goal' alone. `penalty_missed` is deliberately NOT
+# in the set: it is a shot, not a goal.
+#
+# OWN GOALS COUNT FOR THE OTHER SIDE. `match_events.team` records who the event
+# happened TO, so a row with event_type='own_goal' and team='home' is a goal for
+# AWAY. Any per-team split must flip it; a match-total does not care.
+#
+# No production consumer is affected today — the only `match_events` readers in
+# workers/ are inplay_bot's red-card lookups. This exists so the next analysis
+# does not rediscover it: NEW-MARKETS-LINESHOP already hit it once.
+GOAL_EVENT_TYPES: frozenset[str] = frozenset({"goal", "penalty_scored", "own_goal"})
+GOAL_EVENT_TYPES_SQL = "('goal','penalty_scored','own_goal')"
+
+
 def parse_fixture_events(events_response: list[dict]) -> list[dict]:
     """
     Parse API-Football events into flat dicts compatible with match_events table.

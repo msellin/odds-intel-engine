@@ -1,0 +1,56 @@
+-- 301_index_reclaim.sql
+-- INDEX-RECLAIM-301-2026-09-06
+--
+-- Reclaims ~3.9 GB of index without deleting a single row. Every index dropped
+-- here is either never used, or a strict key-PREFIX of an index that stays — so
+-- the planner loses no access path, it just stops maintaining a second copy of
+-- the same leading columns on write.
+--
+-- Verified live on 2026-09-06 (pg_stat_user_indexes; stats have never been
+-- reset on this database):
+--
+--   idx_odds_snapshots_is_opening         0 scans          379 MB  -- never used
+--   idx_match_signals_match_id            808,389 scans    456 MB  -- prefix
+--   idx_odds_snapshots_match_id           3,488,610 scans  1508 MB -- prefix
+--   idx_odds_snapshots_match_market       5,306,185 scans  1682 MB -- prefix
+--                                                         ─────────
+--                                                          4,025 MB
+--
+-- and the supersets that absorb them, confirmed by reading indexdef rather
+-- than assuming from the name:
+--
+--   idx_match_signals_match_signal_time   (match_id, signal_name, captured_at DESC)
+--   idx_odds_snapshots_match_market_ts    (match_id, market, "timestamp" DESC)
+--
+-- A B-tree on (a, b, c) serves any query that could use (a) or (a, b), so the
+-- three "prefix" indexes above are redundant by construction. The scan counts
+-- are high precisely BECAUSE they are the narrower option the planner reaches
+-- for first — that is not evidence they are needed, and dropping them simply
+-- moves those scans onto the superset. The superset is wider (2,791 MB vs
+-- 1,508/1,682), so individual scans cost marginally more; the trade is one
+-- fewer index to maintain on every insert into a table taking millions of rows
+-- a day, plus the reclaimed space.
+--
+-- `idx_odds_snapshots_is_opening` is the uncomplicated one: zero recorded scans
+-- ever. The opening/closing read paths use idx_odds_snapshots_closing, and
+-- prune_odds_snapshots filters on the boolean column directly.
+--
+-- NOT INCLUDED, deliberately: dropping match_signals_pkey (0 scans, ~2 GB,
+-- surrogate gen_random_uuid() id with zero foreign keys referencing it). That
+-- one needs PostgREST checked first — it is filed separately rather than
+-- smuggled in here, because "free" and "reversible in one command" is the bar
+-- for this migration and dropping a primary key is neither.
+--
+-- REVERSIBILITY: each of these is `CREATE INDEX CONCURRENTLY` away from being
+-- restored, with no data loss in either direction. If query latency regresses,
+-- recreate the specific one that mattered rather than all four.
+--
+-- CONCURRENTLY is safe here: .github/workflows/migrate.yml applies files with
+-- `psql -v ON_ERROR_STOP=1 -f "$f"` and NOT `--single-transaction`, so each
+-- statement runs in its own implicit transaction. CONCURRENTLY cannot run
+-- inside an explicit transaction block, so do not wrap this file in BEGIN/COMMIT.
+
+DROP INDEX CONCURRENTLY IF EXISTS idx_match_signals_match_id;
+DROP INDEX CONCURRENTLY IF EXISTS idx_odds_snapshots_match_id;
+DROP INDEX CONCURRENTLY IF EXISTS idx_odds_snapshots_match_market;
+DROP INDEX CONCURRENTLY IF EXISTS idx_odds_snapshots_is_opening;
