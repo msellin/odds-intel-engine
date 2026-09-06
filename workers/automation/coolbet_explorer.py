@@ -128,12 +128,32 @@ def fetch_match_markets(
         "matchStatus": "LIVE" if live else "OPEN",
     })
     if r.status_code == 200:
-        for group in (r.json().get("markets") or []):
+        groups = r.json().get("markets") or []
+        for group in groups:
             mtid = group.get("market_type_id")
             for sub in (group.get("markets") or []):
                 if mtid and "market_type_id" not in sub:
                     sub["market_type_id"] = mtid
                 flat.append(sub)
+        # ── COOLBET-SIDEBETS-LIMIT-IS-NOT-A-CAP-2026-09-06 ────────────────
+        # There is deliberately no truncation detector here, and the reason is
+        # worth writing down because the obvious one does not work.
+        #
+        # `limit` does NOT behave as "return up to N groups". Measured on
+        # Birmingham v Wolves (event 6073447), asking the endpoint directly:
+        #
+        #     limit=60    ->  29 groups,  84 markets
+        #     limit=300   ->  52 groups, 180 markets
+        #     limit=1200  ->  52 groups, 180 markets
+        #
+        # At 60 it returns 29 groups — FEWER than the limit — and is still
+        # truncating. So `len(groups) >= limit` can never fire, and no
+        # group-count test can distinguish truncated from complete.
+        #
+        # The fix is therefore not a better detector or a better guess: it is a
+        # limit high enough that it cannot bind. 300 and 1200 return identical
+        # payloads, so a large value costs nothing — the response stops growing
+        # once the board is exhausted. See _SIDEBETS_PREMATCH_LIMIT.
     else:
         log.warning("sidebets %s (live=%s) returned %d", match_id, live, r.status_code)
     return flat
@@ -256,7 +276,15 @@ def _harvest_odds(payload, into: dict[int, dict]) -> None:
 # request per fixture either way (it is a query parameter); what grows is the
 # odds fetch, roughly 99 -> 195 market ids on deep fixtures, and that is already
 # chunked.
-_SIDEBETS_PREMATCH_LIMIT = int(os.getenv("COOLBET_SIDEBETS_LIMIT", "300"))
+# Set FAR above any observed board rather than tuned to one, because `limit` is
+# not a simple cap (see the note in fetch_match_markets) and because guessing it
+# has now failed twice — 13, then 60 — each time producing zero rows, no error,
+# and a symptom identical to "Coolbet does not offer that market".
+#
+# Measured: 300 and 1200 return byte-identical payloads (52 groups / 180
+# markets), so the response stops growing once the board is exhausted and a
+# large value costs nothing. 1000 is chosen to be unreachable in practice.
+_SIDEBETS_PREMATCH_LIMIT = int(os.getenv("COOLBET_SIDEBETS_LIMIT", "1000"))
 
 _MTID_1X2  = {81}
 _MTID_OU   = {818}

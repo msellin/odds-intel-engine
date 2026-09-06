@@ -30468,11 +30468,16 @@ def _coolbet_corners_limit():
     """
     from workers.automation import coolbet_explorer as ce
 
-    assert ce._SIDEBETS_PREMATCH_LIMIT >= 200, (
-        f"COOLBET_SIDEBETS_LIMIT is {ce._SIDEBETS_PREMATCH_LIMIT}; a full "
-        "pre-match board is ~195 groups and corners sit past position 60, so "
-        "anything below ~200 silently drops them and looks like Coolbet not "
-        "offering corners at all"
+    # Set far above any observed board, NOT tuned to one. `limit` is not a
+    # simple cap: at limit=60 the endpoint returns 29 groups (fewer than the
+    # limit) and is still truncating, so no group-count check can detect it and
+    # the only safe value is one that cannot bind. 300 and 1200 return identical
+    # payloads, so a large number is free.
+    assert ce._SIDEBETS_PREMATCH_LIMIT >= 500, (
+        f"COOLBET_SIDEBETS_LIMIT is {ce._SIDEBETS_PREMATCH_LIMIT}. Guessing "
+        "this number has failed twice (13, then 60), each time yielding zero "
+        "rows with no error — indistinguishable from Coolbet not offering the "
+        "market. Keep it far above any real board rather than tuned to one."
     )
 
     # The parser must handle what the wider fetch returns — proven on the real
