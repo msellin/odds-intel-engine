@@ -193,6 +193,97 @@ def check_pinnacle_coverage() -> None:
         )
 
 
+def check_bookmaker_disappearance() -> None:
+    """A bookmaker that was writing yesterday has stopped — the failure of 2026-09-05.
+
+    On 2026-09-05 API-Football silently stopped serving SEVEN of thirteen
+    bookmakers. Queries returned `results: 0` with an EMPTY `errors` array: no
+    exception, no log line, no alert. Two of the seven (Betano, Unibet) were in
+    ACCESSIBLE_BOOKMAKERS -- books we can legally bet from Estonia -- and with
+    Coolbet tarpitted the same afternoon, three of four PLACEABLE books went
+    dark within 15 hours. It ran for over a day before anyone looked.
+
+    Why nothing existing caught it: every metric that would alarm stayed put.
+    Fixture-level coverage read 65%, ABOVE the prior week's 59.8%, because the
+    surviving books still quoted most fixtures. Pick volume was 24 against 22
+    two days earlier. What actually collapsed was composition -- 79% of picks
+    priced at one thin book -- and no check looked at composition.
+
+    Measured cost of the two lost accessible books, on 2,456 co-priced
+    selections from 01-04 Sep: 17.9% of selections lost EVERY accessible price,
+    and 29.4% got a worse one, averaging 8.20% worse. At edges in low single
+    digits, an 8% worse price is the difference between a bet and no bet.
+
+    So this checks per-BOOKMAKER continuity, not aggregate coverage, and treats
+    the accessible set as the severe case: those are the only books we can
+    actually stake at.
+    """
+    rows = execute_query(
+        """
+        SELECT bookmaker,
+               COUNT(*) FILTER (WHERE timestamp >= now() - interval '24 hours') AS rows_24h,
+               COUNT(*) FILTER (WHERE timestamp >= now() - interval '7 days'
+                                  AND timestamp <  now() - interval '24 hours') AS rows_prior
+          FROM odds_snapshots
+         WHERE timestamp >= now() - interval '7 days'
+         GROUP BY bookmaker
+        """
+    )
+    # Detect COLLAPSE, not just silence. A pure `rows_24h == 0` test misses the
+    # real shape of the 2026-09-05 incident: Betano and Unibet kept writing until
+    # 23:00 that evening, so for the following 17 hours they still had a non-zero
+    # 24h count -- 96 and 120 rows -- against a 30-day total of 2.26M. Obviously
+    # dead, invisible to an equality test, and it would have stayed invisible for
+    # most of a day. Compare against the book's own prior daily rate instead:
+    # anything under 5% of its normal volume is a collapse regardless of whether
+    # it has technically reached zero.
+    gone = []
+    for r in rows:
+        prior = r["rows_prior"] or 0
+        recent = r["rows_24h"] or 0
+        if prior < 1000:          # never wrote enough for silence to mean anything
+            continue
+        prior_daily = prior / 6.0  # rows_prior spans days 2-7
+        if recent < 0.05 * prior_daily:
+            gone.append(r["bookmaker"])
+    if not gone:
+        return
+
+    try:
+        from workers.jobs.daily_pipeline_v2 import ACCESSIBLE_BOOKMAKERS
+        accessible = set(ACCESSIBLE_BOOKMAKERS)
+    except Exception:
+        accessible = set()
+
+    gone_accessible = sorted(set(gone) & accessible)
+    still_up = sorted(accessible - set(gone))
+    console.print(f"[dim]health_alerts: {len(gone)} bookmaker(s) stopped writing: {gone}[/dim]")
+
+    if gone_accessible:
+        # PLACEABLE books. This is the severe case: it changes what we can stake,
+        # and it changes `best_accessible` price silently.
+        _alert_once(
+            "accessible_book_gone",
+            f"PLACEABLE bookmaker(s) stopped: {', '.join(gone_accessible)}",
+            f"<p><b>{', '.join(gone_accessible)}</b> wrote under 5% of their normal daily "
+            f"volume in the last 24h, having been active in the preceding 6 days.</p>"
+            f"<p>These are in ACCESSIBLE_BOOKMAKERS, so best-accessible price, edge and "
+            f"recommended_bookmaker are all now computed on a degraded set. "
+            f"Still writing: {', '.join(still_up) if still_up else '<b>NONE</b>'}.</p>"
+            f"<p>Aggregate coverage will NOT look wrong — check composition, not totals. "
+            f"See AF-UNIBET-BETANO-FEED-COLLAPSE-2026-09-05.</p>",
+        )
+    else:
+        _alert_once(
+            "book_gone",
+            f"{len(gone)} bookmaker(s) stopped: {', '.join(sorted(gone))}",
+            f"<p>{', '.join(sorted(gone))} wrote under 5% of their normal daily volume in "
+            f"the last 24h, having been active in the preceding 6 days.</p>"
+            f"<p>Not in the accessible set, so placement is unaffected, but the line "
+            f"shop and any de-vig consensus are now thinner.</p>",
+        )
+
+
 def check_snapshot_staleness() -> None:
     """No live snapshot in last 25 min during 10-23 UTC — LivePoller may be down."""
     now_utc = datetime.now(timezone.utc)
@@ -747,6 +838,7 @@ def run_morning_checks() -> None:
         console.print(f"[yellow]health_alerts continuity check error: {e}[/yellow]")
     try:
         check_pinnacle_coverage()
+        check_bookmaker_disappearance()
     except Exception as e:
         console.print(f"[yellow]health_alerts pinnacle check error: {e}[/yellow]")
 

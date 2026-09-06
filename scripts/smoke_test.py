@@ -31332,5 +31332,70 @@ def _():
     )
 
 
+
+@test("BOOK-DISAPPEARANCE-ALERT — a bookmaker going quiet must alert, and a PLACEABLE one must escalate")
+def _():
+    """Nothing caught the 2026-09-05 book collapse for over a day.
+
+    API-Football silently stopped serving seven of thirteen bookmakers --
+    `results: 0` with an EMPTY errors array, so no exception and no log line.
+    Two of them (Betano, Unibet) were in ACCESSIBLE_BOOKMAKERS, and with Coolbet
+    tarpitted the same afternoon three of four PLACEABLE books went dark inside
+    15 hours.
+
+    Every metric that would have alarmed stayed put: fixture coverage read 65%,
+    ABOVE the prior week's 59.8%, and pick volume was 24 against 22 two days
+    earlier. What collapsed was composition -- 79% of picks priced at one thin
+    book -- and nothing looked at composition.
+
+    Behavioural: drive the real check with synthetic row-counts.
+    """
+    import workers.jobs.health_alerts as ha
+
+    fired = []
+    orig_q, orig_send = ha.execute_query, ha._send_alert
+    ha._send_alert = lambda subj, body: fired.append((subj, body))
+
+    def run(rows):
+        fired.clear()
+        ha._alerted_today.clear()
+        ha.execute_query = lambda *a, **k: rows
+        ha.check_bookmaker_disappearance()
+
+    try:
+        # 1. Steady book -> silence.
+        run([{"bookmaker": "Pinnacle", "rows_24h": 100_000, "rows_prior": 600_000}])
+        assert not fired, f"a healthy book alerted: {fired}"
+
+        # 2. A NON-placeable book collapsing -> alert, but not the severe one.
+        run([{"bookmaker": "Pinnacle", "rows_24h": 100_000, "rows_prior": 600_000},
+             {"bookmaker": "Betfair",  "rows_24h": 0,       "rows_prior": 600_000}])
+        assert fired, "a book that stopped writing did not alert at all"
+        assert "Betfair" in fired[0][0]
+
+        # 3. A PLACEABLE book collapsing -> must escalate and name it.
+        run([{"bookmaker": "Pinnacle", "rows_24h": 100_000, "rows_prior": 600_000},
+             {"bookmaker": "Betano",   "rows_24h": 0,       "rows_prior": 600_000}])
+        assert fired, "a PLACEABLE book stopping did not alert"
+        subj = fired[0][0]
+        assert "PLACEABLE" in subj.upper() and "Betano" in subj, (
+            f"an accessible book stopping must escalate and be named; got {subj!r}"
+        )
+
+        # 4. THE REGRESSION THAT MATTERS: collapse, not silence. Betano wrote 96
+        #    rows in the 24h before dying against ~376k/day prior. An equality
+        #    test on zero misses this for most of a day -- which is exactly how
+        #    the real incident stayed invisible.
+        run([{"bookmaker": "Betano", "rows_24h": 96, "rows_prior": 2_256_000}])
+        assert fired, (
+            "a book at 96 rows/day against ~376k/day prior was NOT flagged -- the "
+            "check is testing for silence instead of collapse, and would have "
+            "missed the 2026-09-05 incident for 17 hours"
+        )
+    finally:
+        ha.execute_query, ha._send_alert = orig_q, orig_send
+        ha._alerted_today.clear()
+
+
 if __name__ == "__main__":
     main()
