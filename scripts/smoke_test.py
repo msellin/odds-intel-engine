@@ -30496,5 +30496,66 @@ def _coolbet_corners_limit():
     )
 
 
+@test("CORNERS-EDGE-BACKTEST — the placebo must be the fair one, and the market filter exact")
+def _corners_edge_backtest():
+    """CORNERS-EDGE-TAIL-2026-09-05, re-run 2026-09-06.
+
+    Two things in this script are load-bearing and both were got wrong first
+    time, so both are pinned:
+
+      1. The market filter must be `^corners_ou_[0-9]+$`. A prefix match also
+         catches `corners_home_ou_*` / `corners_1h_ou_*`, settling per-team and
+         first-half markets against FULL-MATCH corner counts — that inflated
+         the first pass from 2,652 to 5,862 sides.
+      2. The placebo must draw (odds, outcome) PAIRS from the stratum. Keeping
+         each pick's own best price and pairing it with a random outcome scores
+         best-price x base-rate, which is favourable for free: it returned
+         +14.54% against a bet-everything baseline of -4.42%, i.e. the null was
+         assuming half the thing under test. Corrected, the null lands on the
+         vig (-2.57%) as it must.
+    """
+    import inspect
+
+    from scripts.corners_edge_backtest import (
+        build_picks, decode_line, load_rows, placebo_outcome_permutation,
+    )
+
+    # 1. Exact market anchor, and the stale-price guard.
+    src = inspect.getsource(load_rows)
+    assert "'^corners_ou_[0-9]+$'" in src, (
+        "the corners filter is no longer anchored — a prefix match settles "
+        "per-team and first-half markets against full-match corner counts"
+    )
+    assert "DISTINCT ON" in src and "timestamp DESC" in src, (
+        "odds are no longer latest-per-book; a MAX over an append-only table is "
+        "a high-water mark, not a price (gotcha 30)"
+    )
+    assert "o.timestamp <= m.date" in src, "odds are not bounded to pre-kickoff"
+
+    # 2. The placebo must sample pairs, not reuse the pick's own price.
+    pl = inspect.getsource(placebo_outcome_permutation)
+    assert "(float(price), won)" in pl, (
+        "the placebo no longer draws (odds, outcome) pairs — pairing our best "
+        "price with someone else's outcome makes the null favourable for free"
+    )
+
+    # 3. Line decoding must resolve the lossy encoding for this family.
+    assert decode_line("corners_ou_105") == 10.5
+    assert decode_line("corners_ou_95") == 9.5
+    assert decode_line("corners_ou_125") == 12.5
+    assert decode_line("corners_handicap") is None
+
+    # 4. Behavioural: a losing over must settle as a loss.
+    rows = [{
+        "match_id": "x", "market": "corners_ou_105", "selection": "over",
+        "best_acc": 2.10, "best_any": 2.10, "acc_book": "Epicbet",
+        "pin_over": 2.00, "pin_under": 1.80, "corners_total": 8, "date": None,
+    }]
+    picks = build_picks(rows, -9.0, accessible_only=True)
+    assert len(picks) == 1 and picks[0]["won"] is False, (
+        f"8 corners must LOSE an over-10.5: {picks}"
+    )
+
+
 if __name__ == "__main__":
     main()
