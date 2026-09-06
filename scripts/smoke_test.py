@@ -29615,32 +29615,55 @@ def _outlier_anchor_pinnacle():
     assert PRICE_REFERENCE_BOOKMAKERS - ACCESSIBLE_BOOKMAKERS == {"Pinnacle"}
 
 
-@test("ODDS-PRUNE-CURSOR-BUG — the nightly prune must not be frozen on one page")
-def _odds_prune_cursor_bug():
-    """ODDS-PRUNE-CURSOR-BUG-2026-09-06.
+@test("ODDS-PRUNE-CURSOR — the nightly prune must advance, not revisit one page")
+def _odds_prune_cursor():
+    """ODDS-PRUNE-CURSOR-BUG-2026-09-06 — fixed and drained with owner sign-off.
 
-    `prune_old_simple` pages candidates with `ORDER BY id` on a UUID and no
-    "not yet pruned" predicate, so it revisits the SAME 5,000 matches every
-    night and has never drained anything — 26.4M rows (~8 GB) are deletable
-    under the already-agreed policy and never get visited.
+    `prune_old_simple` paged candidates with `ORDER BY id` on a UUID and no
+    predicate excluding already-pruned matches, so it returned the SAME 5,000
+    matches every night and drained nothing. 151,154 old finished matches
+    existed; it saw the same 3.3% forever, while 26,374,272 rows (~8 GB) sat
+    condemned by an already-agreed retention policy and never got visited.
 
-    This test pins the bug rather than the fix: it fails once the cursor is
-    corrected, which is the signal to delete it. It is written this way because
-    the fix triggers an 8 GB irreversible delete and is gated on owner sign-off,
-    so the interim risk is that someone reads the job's clean logs as proof it
-    is working.
+    The earlier version of this test deliberately PINNED THE BUG, so that a
+    clean nightly log could not be mistaken for a working job while the fix was
+    waiting on authorisation. That job is done; it now asserts the fix.
+
+    The EXISTS clause is the load-bearing part — ordering by date alone would
+    still revisit compacted matches forever, just in a different order.
     """
-    import os, re
+    import os
+
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     src = open(os.path.join(root, "scripts", "prune_odds_snapshots.py"),
                encoding="utf-8").read()
     fn = src[src.index("def prune_old_simple"):]
-    fn = fn[: fn.index("\ndef ") if "\ndef " in fn else len(fn)]
-    still_broken = re.search(r"ORDER BY\s+id\b", fn) and "EXISTS" not in fn
-    assert still_broken, (
-        "prune_old_simple no longer pages by bare `ORDER BY id` — the cursor "
-        "bug looks fixed. Confirm the backlog drain was authorised, then DELETE "
-        "this test; it exists only to stop the broken job reading as healthy."
+    fn = fn[: fn.index("\ndef ", 1)] if "\ndef " in fn[1:] else fn
+    # Strip comments, so the explanation of the old bug cannot satisfy the
+    # assertions (gotcha 41 — the trap that caught another test earlier today).
+    code = "\n".join(ln for ln in fn.split("\n") if not ln.lstrip().startswith("#"))
+
+    assert "ORDER BY m.date ASC" in code, (
+        "prune_old_simple no longer orders candidates by date — if it is back "
+        "on `ORDER BY id` over a UUID it will revisit the same page forever"
+    )
+    assert "EXISTS" in code and "NOT COALESCE(o.is_closing" in code, (
+        "the candidate query no longer excludes matches with nothing left to "
+        "prune, so the cursor cannot advance past already-compacted matches"
+    )
+    assert "is_opening" in code, "the prune no longer protects is_opening rows"
+
+    # Behavioural guard on the thing the policy exists to PRESERVE. If a future
+    # change starts deleting closing lines this fails loudly, rather than
+    # silently destroying every CLV anchor we hold.
+    from workers.api_clients.db import execute_query
+
+    closing = execute_query(
+        "SELECT count(*) n FROM odds_snapshots WHERE COALESCE(is_closing, false)"
+    )[0]["n"]
+    assert closing > 10_000_000, (
+        f"only {closing:,} is_closing rows remain — the prune is deleting the "
+        "closing lines it exists to preserve, and CLV depends on them"
     )
 
 

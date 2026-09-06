@@ -169,11 +169,33 @@ def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
     cur = conn.cursor()
 
     cur.execute("SET LOCAL statement_timeout = '10min'")
+    # ── ODDS-PRUNE-CURSOR-BUG-2026-09-06 ────────────────────────────────────
+    # This was `ORDER BY id LIMIT %s` on a UUID primary key, with NO predicate
+    # excluding matches that are already pruned. A UUID ordering is stable and
+    # arbitrary, so the query returned THE SAME 5,000 matches every single
+    # night since the job shipped, and the nightly cron drained nothing.
+    #
+    # Measured 2026-09-06: 151,154 finished matches older than 30 days exist,
+    # so the job saw 3.3% of them — always the same 3.3%. Prunable rows inside
+    # that frozen window were 8,313; prunable rows across the whole backlog were
+    # 26,374,272, roughly 35% of the table and ~8 GB, all of it condemned by a
+    # retention policy that was agreed and implemented at the time.
+    #
+    # Two changes, and the EXISTS clause is the important one: ordering by date
+    # alone would still re-visit already-compacted matches forever, just in a
+    # different order. Excluding matches with nothing left to prune is what
+    # makes the cursor actually advance.
     cur.execute("""
-        SELECT id FROM matches
-        WHERE status = 'finished'
-          AND date < NOW() - INTERVAL '30 days'
-        ORDER BY id
+        SELECT m.id FROM matches m
+        WHERE m.status = 'finished'
+          AND m.date < NOW() - INTERVAL '30 days'
+          AND EXISTS (
+                SELECT 1 FROM odds_snapshots o
+                 WHERE o.match_id = m.id
+                   AND NOT COALESCE(o.is_closing, false)
+                   AND NOT COALESCE(o.is_opening, false)
+              )
+        ORDER BY m.date ASC
         LIMIT %s
     """, (max_matches,))
     match_ids = [str(r[0]) for r in cur.fetchall()]
