@@ -461,13 +461,28 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
         return rows
 
     if (is_corners or is_cards) and line_val is not None:
-        prefix = "corners_ou" if is_corners else "cards_ou"
-        # Team-specific corner/card totals get their own side-scoped namespace
-        # rather than being merged into the match line.
+        # ── EPICBET-COOLBET-CORNERS-NAMESPACE-CLASH-2026-09-06 ──────────────
+        # This built `corners_ou` and appended the side, producing
+        # `corners_ou_home`. API-Football writes `corners_home_ou` (see the
+        # market map in api_football.py) and Epicbet followed AF, because AF is
+        # the feed that carries Pinnacle and Pinnacle is the de-vig anchor.
+        #
+        # Two spellings means per-team corners CANNOT be joined across books,
+        # which defeats the entire point of collecting them: the line shop needs
+        # the same key on both sides. Match totals (`corners_ou_*`, `cards_ou_*`)
+        # were always consistent; only the side-scoped families clashed.
+        #
+        # Fixing it now is free — Coolbet has written ZERO corners rows all-time
+        # (COOLBET-CORNERS-NEVER-WRITTEN), so there is nothing to migrate or
+        # relabel. Doing it after rows accumulate would need a backfill.
+        family = "corners" if is_corners else "cards"
+        side = None
         if "[home]" in name or "home " in name:
-            prefix += "_home"
+            side = "home"
         elif "[away]" in name or "away " in name:
-            prefix += "_away"
+            side = "away"
+        # AF convention: <family>[_<side>]_ou[_1h]
+        prefix = f"{family}_{side}_ou" if side else f"{family}_ou"
         if _looks_like_sub_period(name):
             prefix += "_1h"
         tag = f"{prefix}_{str(line_val).replace('.', '').replace('-', 'm')}"
@@ -534,7 +549,34 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
                 _add("asian_handicap", "away", oc.get("id"), line_val)
         return rows
 
-    return rows  # Unknown — degrade silently
+    # ── COOLBET-CORNERS-NEVER-WRITTEN-2026-09-06 ────────────────────────────
+    # "Degrade silently" is how a shipped feature can produce nothing for days
+    # without a single log line. Coolbet has written ZERO corners rows all-time
+    # while writing 55,376 rows across 9 healthy families in 24h, and the
+    # `limit: 13 -> 60` fix that was supposed to solve it is deployed and did
+    # not. The market is reaching this function and matching no branch.
+    #
+    # Most likely: `is_corners` above requires the name to contain "corner"
+    # AND one of total/over/under, while `_NON_GOALS_TOTAL_HINTS` (which
+    # contains "corner") already excludes it from the goals path. A group named
+    # plainly "Corners" is therefore excluded from goals, matches nothing else,
+    # and lands here — dropped with no error and no row.
+    #
+    # FlareSolverr's coolbet_prod session refuses ad-hoc calls while serving the
+    # scheduled job, so this cannot be probed by hand. Logging the unmatched
+    # name turns the next 30-minute sweep into the diagnostic instead. Kept at
+    # DEBUG for everything EXCEPT the families we are actively chasing, so this
+    # does not spam the journal with every exotic Coolbet market.
+    _n = name or ""
+    if any(h in _n for h in ("corner", "card", "booking")):
+        log.warning(
+            "coolbet: UNMATCHED corners/cards market — name=%r market_type_id=%r "
+            "line=%r (see COOLBET-CORNERS-NEVER-WRITTEN; this is why Coolbet "
+            "writes no corners rows)", _n, mtid, line_val,
+        )
+    else:
+        log.debug("coolbet: unmatched market name=%r market_type_id=%r", _n, mtid)
+    return rows
 
 
 def resolve_placement_target(

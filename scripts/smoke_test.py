@@ -30238,5 +30238,67 @@ def _placer_odds_floor_both_paths():
     )
 
 
+@test("CORNERS-NAMESPACE-SHARED — every book must write corners under one key")
+def _corners_namespace_shared():
+    """EPICBET-COOLBET-CORNERS-NAMESPACE-CLASH-2026-09-06.
+
+    Coolbet wrote team corners as `corners_ou_home_*` while API-Football and
+    Epicbet write `corners_home_ou_*`. Two spellings means per-team corners
+    cannot be joined across books — which defeats the point of collecting them,
+    since the line shop needs the same key on both sides. AF is the convention
+    to follow because AF is the feed carrying Pinnacle, the de-vig anchor.
+
+    Behavioural for Coolbet (drives the real parser), source-checked for the
+    other two, since their mapping is a literal table.
+    """
+    import os
+
+    from workers.automation.coolbet_explorer import parse_market
+
+    def _mkt(name, line, home_id=1, away_id=2):
+        return {
+            "name": name, "line": line, "market_type_id": 99999,
+            "outcomes": [{"id": home_id, "result_key": "Over"},
+                         {"id": away_id, "result_key": "Under"}],
+        }
+
+    odds_map = {1: {"value": "1.90"}, 2: {"value": "1.95"}}
+
+    got = {r[0] for r in parse_market(_mkt("Total Corners [home]", 4.5), odds_map)}
+    assert got == {"corners_home_ou_45"}, (
+        f"Coolbet team corners must use the AF convention corners_home_ou_NN, "
+        f"got {got or 'nothing'}. `corners_ou_home_*` cannot be joined to AF or "
+        "Epicbet rows, which is the whole purpose of collecting corners."
+    )
+    got_away = {r[0] for r in parse_market(_mkt("Total Corners [away]", 4.5), odds_map)}
+    assert got_away == {"corners_away_ou_45"}, got_away
+    # Match totals were always consistent — make sure the fix did not move them.
+    got_match = {r[0] for r in parse_market(_mkt("Total Corners", 9.5), odds_map)}
+    assert got_match == {"corners_ou_95"}, got_match
+
+    # The other two writers must keep the same convention.
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    af = open(os.path.join(root, "workers", "api_clients", "api_football.py"),
+              encoding="utf-8").read()
+    assert '"corners_home_ou"' in af and '"corners_away_ou"' in af, (
+        "api_football.py changed its corners namespace — it is the anchor "
+        "convention and the other books follow it"
+    )
+    epi = open(os.path.join(root, "workers", "automation", "epicbet_explorer.py"),
+               encoding="utf-8").read()
+    assert '"corners_{side}_ou"' in epi, (
+        "epicbet_explorer.py no longer writes corners_<side>_ou"
+    )
+    # Comment lines stripped: epicbet_explorer.py's own comment QUOTES the old
+    # Coolbet spelling to explain why it chose the AF one, and a raw substring
+    # check matches that prose (gotcha 41 — third time today).
+    epi_code = "\n".join(
+        ln for ln in epi.split("\n") if not ln.lstrip().startswith("#")
+    )
+    assert "corners_ou_{side}" not in epi_code and "corners_ou_home" not in epi_code, (
+        "epicbet_explorer.py has a corners_ou_<side> spelling in live code"
+    )
+
+
 if __name__ == "__main__":
     main()
