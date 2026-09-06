@@ -1287,6 +1287,19 @@ def run_bulk(
         # fuzzy matcher used against the listing is the same one that was
         # already trusted as the fallback path, so match quality is unchanged;
         # search is now only consulted for the residue the listing misses.
+        #
+        # ⚠️ CORRECTION 2026-09-06, same day: `fo-category` currently returns
+        # **404, not 403** — with valid cookies, so the request reaches Coolbet
+        # and the path simply does not exist. The endpoint is retired, exactly
+        # as the `except` below always suspected. So the 1,200-requests-to-1
+        # saving is NOT being realised today; the listing fetch costs one failed
+        # request per sweep and every match still goes through search.
+        #
+        # The ordering is kept deliberately rather than reverted, because the
+        # half that DOES pay off is the resilience below — a blocked search no
+        # longer discards the whole sweep — and because if Coolbet restores a
+        # bulk listing (or one is found at a new path) this becomes correct for
+        # free. Finding the current bulk endpoint is filed as a follow-up.
         if category_cache is None:
             try:
                 category_cache = fetch_coolbet_events(session)
