@@ -31184,5 +31184,44 @@ def _():
     assert "> 0.5" in msrc, "backfill does not re-apply the plausibility guard after inverting"
 
 
+
+@test("PERF-BOT-COUNT-INTENTIONAL-DELTA — the public/admin bot-count gap is documented as deliberate")
+def _():
+    """The public leaderboard counts fewer bots than /admin/bots, on purpose.
+
+    PERF-BOT-COUNT-RECONCILE-ADMIN sat open from 2026-08-21 because the two
+    numbers disagree and nothing said whether that was a bug. It is not: the
+    public "production strategies" cohort is pre-match only, which is what the
+    landing page claims, so in-play bots are filtered out of the leaderboard and
+    kept in /admin where the operator can audit them.
+
+    This pins the EXPLANATION rather than the numbers -- the counts move daily,
+    but a future auditor comparing them must be able to find out, from the code,
+    that the delta is intended and equals the in-play bot count. Without that
+    note the natural reading is "one of these is wrong", which is how a phantom
+    bug gets chased.
+    """
+    src = _web_path("src/components/performance-leaderboard.tsx").read_text()
+
+    # The filter itself must still exist -- if it goes, in-play bots leak into
+    # the public cohort and the landing claim becomes false.
+    assert "isLiveBot" in src and "tabFilteredBots" in src, (
+        "the in-play filter on the public leaderboard is gone; the public cohort "
+        "is supposed to be pre-match only"
+    )
+
+    # And the deliberate-discrepancy note must be there, naming /admin/bots so
+    # the person comparing the two numbers actually finds it.
+    assert "PERF-BOT-COUNT-RECONCILE-ADMIN" in src, (
+        "the note explaining that the public counts intentionally differ from "
+        "/admin/bots has been removed -- restore it, or a future audit will "
+        "treat the gap as a bug"
+    )
+    assert "/admin/bots" in src, (
+        "the discrepancy note no longer names /admin/bots, which is the page "
+        "someone would be comparing against"
+    )
+
+
 if __name__ == "__main__":
     main()
