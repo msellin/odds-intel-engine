@@ -31562,5 +31562,52 @@ def _():
     )
 
 
+
+@test("CALIBRATED-SINCE-ONE-DEFINITION — the cohort start date is imported, never re-typed")
+def _():
+    """Five copies of "2026-05-04" agreed only by coincidence.
+
+    DUPLICATED-RULES-REMAINING: the calibrated-cohort start was a bare literal in
+    the landing page, the performance hero, the methodology page and the export
+    script, alongside the exported CALIBRATED_SINCE. They matched by luck, and
+    the day one moved was the day the public cohort silently split -- the
+    headline ROI computed over one window and the history table over another,
+    with nothing to reveal the difference.
+
+    Deliberately NOT flagged: the identical literal inside COMP_FALLBACK on the
+    landing page. Those are each competitor's own comparison window, which
+    happens to start the same day and must be free to diverge from ours. Pinning
+    them to CALIBRATED_SINCE would be the same mistake in the other direction --
+    coupling two things that are only accidentally equal.
+    """
+    hero = _web_path("src/components/performance-hero.tsx").read_text()
+    landing = _web_path("src/app/page.tsx").read_text()
+
+    assert "CALIBRATED_SINCE" in hero, (
+        "performance-hero.tsx no longer references CALIBRATED_SINCE — it is "
+        "back to a hardcoded cohort start"
+    )
+    # The hero has no reason to carry the literal in CODE. Strip comments first:
+    # the note explaining the removal legitimately quotes the old literal, and
+    # matching it there is gotcha 41 -- which this test hit on its first run.
+    import re as _re
+    hero_code = _re.sub(r"//.*?$", "", hero, flags=_re.M)
+    hero_code = _re.sub(r"/\*.*?\*/", "", hero_code, flags=_re.S)
+    assert '"2026-05-04"' not in hero_code, (
+        "performance-hero.tsx contains a bare cohort-start literal in code again; "
+        "import CALIBRATED_SINCE instead"
+    )
+
+    # The landing must import it, and its own `since` must use it. The
+    # COMP_FALLBACK literals may remain -- see the docstring.
+    assert "CALIBRATED_SINCE" in landing, (
+        "landing page no longer imports CALIBRATED_SINCE"
+    )
+    assert "meta?.since ?? CALIBRATED_SINCE" in landing, (
+        "the landing's cohort start fell back to a literal again rather than "
+        "CALIBRATED_SINCE"
+    )
+
+
 if __name__ == "__main__":
     main()
