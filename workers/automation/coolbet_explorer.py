@@ -292,6 +292,40 @@ _MTID_BTTS = {1377}         # "Both Teams To Score"
 _MTID_DC   = {1484}         # "Double Chance"
 _MTID_AH   = {1086}         # "Asian Handicap"
 
+# ── COOLBET-MATCH-CORNERS-NAME-2026-09-06 ────────────────────────────────────
+# Coolbet's MATCH-TOTAL corners market is called **"Match Corners"**, and that
+# single fact is why Coolbet wrote per-team corners but never the match line
+# the corners strategy actually trades.
+#
+# `is_corners` below requires the name to contain "corner" AND one of
+# total/over/under. "[Home] Total Corners" satisfies it; "Match Corners" does
+# not — so it matched no branch, hit the silent `return rows` at the bottom,
+# and vanished. Cards were unaffected because Coolbet DOES call theirs "Total
+# Cards", which is why `cards_ou_*` landed while `corners_ou_*` stayed at zero
+# and made it look like a corners-specific outage.
+#
+# Found by the unmatched-market WARNING added earlier the same day, which is
+# the only reason this was diagnosable at all: 248 warnings, naming
+# 'match corners' (826) with lines 9.5-12.5 across the sweep. Worth noting the
+# hypothesis was raised and then wrongly REFUTED hours earlier by sampling
+# international-break fixtures that offered no corners whatsoever.
+#
+# Keyed by market_type_id, not name, following this file's own stated rule that
+# mtids are locale-independent while names are not. The name test stays as a
+# fallback for books/leagues that spell it differently.
+#
+# Only families with an EXISTING cross-book namespace are captured — a row in a
+# namespace Pinnacle never writes has no de-vig anchor and is dead weight:
+#     corners_ou_*      10 books today   <- the one the strategy needs
+#     corners_1h_ou_*    8 books today
+#     corners_handicap   Epicbet
+# Deliberately NOT captured, for want of an anchor: 'most corners (3-way)'
+# (451), 'first corner' (1753), 'last corner' (1754), 'half with most corners'
+# (1807), '2nd half corners' (1755), and the cards handicap/most-cards family.
+_MTID_CORNERS_MATCH = {826}     # "Match Corners"        -> corners_ou_NN
+_MTID_CORNERS_1H    = {1752}    # "1st Half Corners"     -> corners_1h_ou_NN
+_MTID_CORNERS_AH    = {1724}    # "Corners Handicap (2 way)" -> corners_handicap
+
 
 def _ou_market_for_line(line: float) -> str | None:
     """OU .5 lines we ingest: 0.5, 1.5, 2.5, 3.5, 4.5."""
@@ -482,9 +516,17 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
     # so the sharp anchor is just as good there, while Kambi charges 8.95% on
     # corners against 10.14% on goals. The gap to the sharp price is therefore
     # NARROWER on corners (2.98pp) than on goals (4.46pp) — measured 2026-09-05.
+    # COOLBET-MATCH-CORNERS-NAME-2026-09-06: mtid FIRST. Coolbet calls the
+    # match-total market "Match Corners", which contains no total/over/under
+    # and so failed the name test below — the reason corners_ou_* was empty
+    # while corners_home_ou_* and cards_ou_* both worked. See the _MTID_CORNERS_*
+    # block for the full vocabulary and what is deliberately left out.
     is_corners = (not combined
-                  and any(h in name for h in ("corner",))
-                  and ("total" in name or "over" in name or "under" in name))
+                  and (mtid in _MTID_CORNERS_MATCH
+                       or mtid in _MTID_CORNERS_1H
+                       or (any(h in name for h in ("corner",))
+                           and ("total" in name or "over" in name
+                                or "under" in name))))
     is_cards = (not combined
                 and any(h in name for h in ("card", "booking"))
                 and ("total" in name or "over" in name or "under" in name))
@@ -536,10 +578,25 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
             side = "home"
         elif "[away]" in name or "away " in name:
             side = "away"
-        # AF convention: <family>[_<side>]_ou[_1h]
-        prefix = f"{family}_{side}_ou" if side else f"{family}_ou"
-        if _looks_like_sub_period(name):
-            prefix += "_1h"
+        # AF convention: the qualifier sits BEFORE `_ou`, never after —
+        # `corners_home_ou_45`, `corners_1h_ou_45`. Appending "_1h" to the end
+        # would produce `corners_ou_1h_45`, which is a namespace AF/Kambi/
+        # Epicbet never write, so the rows would have no de-vig anchor and be
+        # dead weight — the same clash the side qualifier had (see above), and
+        # caught here before any row was written rather than after.
+        #
+        # A market cannot be both team-scoped and first-half in the vocabulary
+        # we share with AF, so 1H wins and a "2nd half [home] cards" style
+        # market is left unmatched deliberately: there is no cross-book
+        # namespace for it.
+        # Detect 1H by MTID first. `_HALF_MATCH_HINTS` entries all carry a
+        # LEADING SPACE (" 1st half"), deliberately, so a name that STARTS with
+        # the qualifier — which is exactly how Coolbet spells it, "1st Half
+        # Corners" — does not match. That is load-bearing for the goals path
+        # and must not be loosened here; the mtid is the reliable key anyway.
+        qualifier = ("1h" if (mtid in _MTID_CORNERS_1H or _looks_like_sub_period(name))
+                     else side)
+        prefix = f"{family}_{qualifier}_ou" if qualifier else f"{family}_ou"
         tag = f"{prefix}_{str(line_val).replace('.', '').replace('-', 'm')}"
         for oc in mkt.get("outcomes") or []:
             rk = (oc.get("result_key") or oc.get("name") or "").strip().lower()

@@ -30610,5 +30610,58 @@ def _public_cohort_one_definition():
     )
 
 
+@test("COOLBET-MATCH-CORNERS — 'Match Corners' must reach corners_ou, keyed by mtid")
+def _coolbet_match_corners():
+    """COOLBET-MATCH-CORNERS-NAME-2026-09-06.
+
+    Coolbet calls its match-total corners market **"Match Corners"**. The name
+    test required "corner" AND one of total/over/under, so it matched nothing,
+    hit the silent fallthrough, and was dropped — which is why `corners_ou_*`
+    sat at zero while `corners_home_ou_*` and `cards_ou_*` both landed. Cards
+    were unaffected only because Coolbet spells theirs "Total Cards".
+
+    Keyed on market_type_id now, per this module's own rule that mtids are
+    locale-independent and names are not.
+
+    Also pins the qualifier POSITION: AF writes `corners_1h_ou_45` and
+    `corners_home_ou_45`, never `corners_ou_1h_45`. A row in a namespace no
+    other book writes has no de-vig anchor and is dead weight.
+    """
+    from workers.automation.coolbet_explorer import (
+        _MTID_CORNERS_1H, _MTID_CORNERS_MATCH, parse_market,
+    )
+
+    odds = {1: {"value": "1.90"}, 2: {"value": "1.95"}}
+
+    def mk(name, mtid, line):
+        return {"name": name, "market_type_id": mtid, "line": line,
+                "outcomes": [{"id": 1, "result_key": "Over"},
+                             {"id": 2, "result_key": "Under"}]}
+
+    cases = [
+        ("Match Corners",        826,  10.5, "corners_ou_105"),
+        ("1st Half Corners",     1752, 4.5,  "corners_1h_ou_45"),
+        ("[Home] Total Corners", 1715, 4.5,  "corners_home_ou_45"),
+        ("[Away] Total Corners", 1715, 5.5,  "corners_away_ou_55"),
+        ("Total Cards",          1704, 3.5,  "cards_ou_35"),
+        ("[Home] Total Cards",   1715, 2.5,  "cards_home_ou_25"),
+    ]
+    for name, mtid, line, want in cases:
+        got = {r[0] for r in parse_market(mk(name, mtid, line), odds)}
+        assert got == {want}, (
+            f"{name!r} (mtid {mtid}) parsed to {got or 'nothing'}, expected "
+            f"{{{want}}}. A corners market in the wrong namespace has no "
+            "Pinnacle anchor and cannot be line-shopped."
+        )
+
+    # The mtid sets must stay populated — the name path alone cannot catch
+    # "Match Corners", which is the whole point.
+    assert 826 in _MTID_CORNERS_MATCH and 1752 in _MTID_CORNERS_1H
+
+    # And the numeric line must ride along (MARKET-LINE-ENCODING-LOSSY).
+    rows = parse_market(mk("Match Corners", 826, 10.5), odds)
+    assert all(r[3] == 10.5 for r in rows), f"line lost: {rows}"
+
+
 if __name__ == "__main__":
     main()
