@@ -654,9 +654,29 @@ def fetch_coolbet_leagues(session: CoolbetSession) -> list[dict]:
                 for e in payload if e.get("id")
             ]
     # Live endpoint failed (403 Imperva, network, schema change) — fall back.
-    log.info("fetch_coolbet_leagues — live endpoint returned %d, falling back to cache",
-             resp.status_code)
-    return _load_leagues_cache()
+    #
+    # COOLBET-LEAGUE-CACHE-SILENT-STALE (2026-09-06): this was logged at INFO,
+    # so a fallback that has apparently been permanent since 2026-05-20 never
+    # surfaced. The consequence is not cosmetic — the cached list holds 132
+    # leagues and none of the high-volume ones Coolbet actually carries (J1
+    # League, Süper Lig, Segunda División, Serie C), so `coolbet_league_mapping`
+    # could never grow past them. That is why 79% of our fixtures fall through
+    # to the cross-league `search_coolbet_event` path, which is the path that
+    # priced Liga MX's Atlas vs Querétaro onto Liga Premier Serie A's Acatlan vs
+    # Guerreros. WARNING, with the cache age, so the staleness is visible.
+    cached = _load_leagues_cache()
+    try:
+        age_days = (time.time() - _LEAGUES_CACHE_PATH.stat().st_mtime) / 86400.0
+        age = f"{age_days:.0f}d old"
+    except OSError:
+        age = "age unknown"
+    log.warning(
+        "fetch_coolbet_leagues — live endpoint returned %d, FALLING BACK TO "
+        "STALE CACHE (%d leagues, %s). League-scoped ingest is limited to that "
+        "list; everything else degrades to cross-league search.",
+        resp.status_code, len(cached), age,
+    )
+    return cached
 
 
 def fetch_events_for_league(

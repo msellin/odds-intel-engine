@@ -30729,5 +30729,87 @@ def _coolbet_fuzzy_corroboration():
     assert "ko_delta_min 3.0" in line, f"kickoff delta mis-computed: {line!r}"
 
 
+@test("COOLBET-LEAGUE-CACHE-SILENT-STALE — cache fallback warns loudly and the proposal tool refuses stale input")
+def _():
+    """Two behavioural guards on the same defect.
+
+    COOLBET-FUZZY-MATCH-FALSE-POSITIVES (2026-09-06): `fetch_coolbet_leagues`
+    falls back to a static league cache whenever the live endpoint fails, and
+    that fallback was logged at INFO. It has apparently been permanent since
+    2026-05-20, and nothing surfaced it. The consequence is not cosmetic: the
+    cache holds 132 leagues and none of the high-volume ones Coolbet actually
+    carries, so `coolbet_league_mapping.json` could never grow past them, so
+    79% of our fixtures fall through to the cross-league `search_coolbet_event`
+    path -- the path that priced Liga MX's Atlas vs Queretaro onto Liga Premier
+    Serie A's Acatlan vs Guerreros across four sweeps.
+
+    Behavioural, not a source grep: drive the real function with a session whose
+    POST returns 403 and assert a WARNING is actually emitted. A source check
+    would pass on the word "warning" appearing in a comment (gotcha 41) and
+    would survive the log call being deleted.
+    """
+    import logging
+    from workers.automation import coolbet_placer as cp
+
+    class _Resp:
+        status_code = 403
+        text = "denied"
+
+        def json(self):
+            return {}
+
+    class _Session:
+        def post(self, *a, **k):
+            return _Resp()
+
+    records = []
+
+    class _Cap(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    logger = logging.getLogger(cp.__name__)
+    handler = _Cap()
+    logger.addHandler(handler)
+    prev = logger.level
+    logger.setLevel(logging.INFO)
+    try:
+        leagues = cp.fetch_coolbet_leagues(_Session())
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(prev)
+
+    assert leagues, "cache fallback returned nothing — the cache file is missing"
+    warned = [r for r in records if r.levelno >= logging.WARNING]
+    if not warned:
+        raise AssertionError(
+            "fetch_coolbet_leagues fell back to the static cache but emitted no "
+            "WARNING — a permanently stale league list is exactly the silent "
+            "failure this guards"
+        )
+    msg = " ".join(r.getMessage() for r in warned).lower()
+    assert "cache" in msg, f"fallback warning does not name the cache: {msg[:200]}"
+
+    # The proposal tool must refuse to emit mappings built on that stale cache:
+    # a WRONG league mapping silently prices the wrong competition, which is
+    # strictly worse than the missing mapping it would replace.
+    src = (_engine_root / "scripts" / "coolbet_league_mapping.py").read_text()
+    import ast
+    tree = ast.parse(src)
+    fns = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    for required in ("load_coolbet_leagues", "unmapped_leagues_by_coolbet_yield", "propose"):
+        assert required in fns, f"coolbet_league_mapping.py lost {required}()"
+    # load_coolbet_leagues must return a liveness flag, not just the list —
+    # that flag is the whole point of the staleness guard.
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "load_coolbet_leagues")
+    returns_tuple = any(
+        isinstance(n, ast.Return) and isinstance(n.value, ast.Tuple) and len(n.value.elts) == 2
+        for n in ast.walk(fn)
+    )
+    assert returns_tuple, "load_coolbet_leagues must return (leagues, is_live)"
+
+
+
 if __name__ == "__main__":
     main()
