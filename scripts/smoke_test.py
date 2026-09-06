@@ -31397,5 +31397,49 @@ def _():
         ha._alerted_today.clear()
 
 
+
+@test("BOT-MATURITY-UNEARNED — no bot may be 'calibrated' without a real sample")
+def _():
+    """`calibrated` gates the PUBLIC Telegram channel, not just a badge.
+
+    coolbet_signaler.py:92 promotes a pick to the public channel when any bot in
+    its group is calibrated, and the operator places real money manually on those
+    signals. Measured 2026-09-06, two active bots held the label with no evidence:
+    bot_dnb_specialist with 0 settled bets ever, and bot_1x2_specialist with 8.
+    So bot_dnb_specialist's first ever pick would have gone out labelled proven.
+
+    Behavioural, against the live DB: assert no active calibrated bot sits below
+    a minimum sample. The floor is deliberately low -- this catches "never
+    traded", not "not yet significant".
+    """
+    from workers.api_clients.db import execute_query
+
+    MIN_SETTLED = 30
+    rows = execute_query(
+        """
+        SELECT b.name,
+               COUNT(s.id) FILTER (WHERE s.result IN ('won','lost')) AS settled
+          FROM bots b
+          LEFT JOIN simulated_bets s ON s.bot_id = b.id
+         WHERE b.maturity_label = 'calibrated'
+           AND b.retired_at IS NULL
+           AND b.is_active = TRUE
+         GROUP BY b.name
+        """
+    )
+    if not rows:
+        raise SkipTest("no active calibrated bots to check")
+
+    thin = [(r["name"], r["settled"] or 0) for r in rows if (r["settled"] or 0) < MIN_SETTLED]
+    assert not thin, (
+        "active bot(s) labelled 'calibrated' without the evidence: "
+        + ", ".join(f"{n} (n={c})" for n, c in thin)
+        + f". 'calibrated' gates promotion to the PUBLIC Telegram channel that the "
+          f"operator stakes real money from, so it must mean a strategy has traded "
+          f"at least {MIN_SETTLED} settled bets. Demote to 'beta' (which keeps the "
+          f"bot running and publicly visible) rather than loosening this test."
+    )
+
+
 if __name__ == "__main__":
     main()
