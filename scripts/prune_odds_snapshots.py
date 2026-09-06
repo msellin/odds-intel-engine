@@ -147,6 +147,20 @@ def prune(dry_run: bool = True, mode: str = "hourly") -> int:
     return total_deleted
 
 
+# DB-RETENTION-VOLUME-2026-09-06. The window was hard-coded at 30 days, which
+# was survivable at ~311k rows/day. The corners/cards/first-half capture
+# widening on 2026-09-05 took inflow to 8,623,272 rows/day (~28x in five days),
+# and at 395 bytes/row including indexes a 30-day hot window projects to
+# 258.7M rows / ~102 GB. The box has 118 GB free of 301 GB. At 7 days the same
+# window is ~24 GB.
+#
+# Intra-day tick history older than a week is read by nothing we run: CLV and
+# settlement resolve against the opening/closing anchors (which this job never
+# deletes), and the model's line-velocity / drift features are computed at pick
+# time, not from history.
+RETENTION_DAYS = int(os.getenv("ODDS_RETENTION_DAYS", "7"))
+
+
 def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
     """
     Fast backlog cleaner for finished matches older than 30 days.
@@ -188,7 +202,7 @@ def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
     cur.execute("""
         SELECT m.id FROM matches m
         WHERE m.status = 'finished'
-          AND m.date < NOW() - INTERVAL '30 days'
+          AND m.date < NOW() - make_interval(days => %s)
           AND EXISTS (
                 SELECT 1 FROM odds_snapshots o
                  WHERE o.match_id = m.id
@@ -197,7 +211,7 @@ def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
               )
         ORDER BY m.date ASC
         LIMIT %s
-    """, (max_matches,))
+    """, (RETENTION_DAYS, max_matches))
     match_ids = [str(r[0]) for r in cur.fetchall()]
     conn.commit()
 
@@ -217,20 +231,59 @@ def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
             try:
                 cur.execute("SET LOCAL statement_timeout = '10min'")
                 if not dry_run:
+                    # DB-RETENTION-ANCHORLESS-2026-09-06. This used to delete
+                    # every non-anchor row unconditionally, which silently
+                    # destroyed the ENTIRE price history of any match that has
+                    # no is_closing / is_opening row at all. That is not rare:
+                    # measured across 10,664 finished matches with odds in 30
+                    # days, 1,151 (10.8%) carry NO anchor of either kind, and 11
+                    # of 284 bet-carrying matches are among them. For those the
+                    # job was not compacting history, it was erasing it — and
+                    # since settlement resolves closing odds on is_closing=TRUE,
+                    # an anchorless match has no CLV either, so nothing would
+                    # ever have noticed.
+                    #
+                    # Keep, per (market, selection, bookmaker, handicap_line),
+                    # the latest PRE-KICKOFF row — a closing price in all but
+                    # the flag. A match can now always be re-priced.
                     cur.execute("""
-                        DELETE FROM odds_snapshots
-                        WHERE match_id = ANY(%s::uuid[])
-                          AND NOT COALESCE(is_closing, false)
-                          AND NOT COALESCE(is_opening, false)
+                        DELETE FROM odds_snapshots o
+                        WHERE o.match_id = ANY(%s::uuid[])
+                          AND NOT COALESCE(o.is_closing, false)
+                          AND NOT COALESCE(o.is_opening, false)
+                          AND o.id <> (
+                                SELECT k.id FROM odds_snapshots k
+                                 JOIN matches m ON m.id = k.match_id
+                                WHERE k.match_id  = o.match_id
+                                  AND k.market    = o.market
+                                  AND k.selection = o.selection
+                                  AND k.bookmaker = o.bookmaker
+                                  AND k.handicap_line IS NOT DISTINCT FROM o.handicap_line
+                                  AND k.timestamp <= m.date
+                                ORDER BY k.timestamp DESC
+                                LIMIT 1
+                          )
                     """, (batch,))
                     deleted = cur.rowcount
                     conn.commit()
                 else:
                     cur.execute("""
-                        SELECT COUNT(*) FROM odds_snapshots
-                        WHERE match_id = ANY(%s::uuid[])
-                          AND NOT COALESCE(is_closing, false)
-                          AND NOT COALESCE(is_opening, false)
+                        SELECT COUNT(*) FROM odds_snapshots o
+                        WHERE o.match_id = ANY(%s::uuid[])
+                          AND NOT COALESCE(o.is_closing, false)
+                          AND NOT COALESCE(o.is_opening, false)
+                          AND o.id <> (
+                                SELECT k.id FROM odds_snapshots k
+                                 JOIN matches m ON m.id = k.match_id
+                                WHERE k.match_id  = o.match_id
+                                  AND k.market    = o.market
+                                  AND k.selection = o.selection
+                                  AND k.bookmaker = o.bookmaker
+                                  AND k.handicap_line IS NOT DISTINCT FROM o.handicap_line
+                                  AND k.timestamp <= m.date
+                                ORDER BY k.timestamp DESC
+                                LIMIT 1
+                          )
                     """, (batch,))
                     deleted = cur.fetchone()[0]
                     conn.rollback()

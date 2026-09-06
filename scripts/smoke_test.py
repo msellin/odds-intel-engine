@@ -31278,5 +31278,59 @@ def _():
     )
 
 
+
+@test("DB-RETENTION-ANCHORLESS — the prune can never erase a match's entire price history")
+def _():
+    """The prune used to delete every non-anchor row unconditionally.
+
+    That silently destroyed the ENTIRE odds history of any match carrying no
+    is_closing / is_opening row. Not rare: across 10,664 finished matches with
+    odds in 30 days, 1,151 (10.8%) have no anchor of either kind, and 11 of 284
+    bet-carrying matches are among them. For those the job was not compacting
+    history, it was erasing it -- and because settlement resolves closing odds
+    on is_closing=TRUE, an anchorless match has no CLV either, so nothing
+    downstream would ever have noticed the loss.
+
+    The fix keeps, per (market, selection, bookmaker, handicap_line), the latest
+    PRE-KICKOFF row: a closing price in all but the flag.
+
+    Guarded on the SQL predicate rather than by running a destructive job.
+    """
+    src = (_engine_root / "scripts" / "prune_odds_snapshots.py").read_text()
+
+    # The retention window must be a named, overridable constant -- it was
+    # hard-coded at 30 days, which is ~102 GB at the post-2026-09-05 inflow.
+    assert "RETENTION_DAYS" in src, (
+        "the retention window is hard-coded again; it must be tunable without "
+        "editing the delete path"
+    )
+    assert "ODDS_RETENTION_DAYS" in src, "RETENTION_DAYS is not env-overridable"
+    assert "INTERVAL '30 days'" not in src, (
+        "the 30-day literal is back -- at 8.6M rows/day that projects to ~102 GB "
+        "against 118 GB free"
+    )
+
+    # The survivor clause must be present in the DELETE, keyed on the full
+    # market identity. Dropping handicap_line from the key would collapse every
+    # AH line into one series and keep only one of them.
+    assert "DELETE FROM odds_snapshots o" in src, "the delete is no longer aliased"
+    assert "k.handicap_line IS NOT DISTINCT FROM o.handicap_line" in src, (
+        "the survivor key omits handicap_line -- every Asian-handicap line would "
+        "collapse into one series and all but one line would be deleted"
+    )
+    assert "k.timestamp <= m.date" in src, (
+        "the survivor is not bounded to PRE-kickoff, so an in-play tick could be "
+        "kept as the retained 'closing' price (gotcha 37)"
+    )
+    assert "ORDER BY k.timestamp DESC" in src, "the survivor is not the LATEST row"
+
+    # The dry-run count must use the same predicate, or --dry-run lies about
+    # what --apply will do.
+    assert src.count("k.handicap_line IS NOT DISTINCT FROM o.handicap_line") >= 2, (
+        "the dry-run count does not use the same survivor clause as the delete, "
+        "so the reported row count would not match what is actually removed"
+    )
+
+
 if __name__ == "__main__":
     main()
