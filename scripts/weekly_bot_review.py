@@ -207,9 +207,35 @@ def _fetch_shadow_bets(cur, bot_id):
     holds one row per timing cohort (~20 per pick), so the base table inflates
     n by ~20x and skews ROI toward whichever cohorts settled.
 
-    CLV: prefer `clv_pinnacle` (Pinnacle-anchored, comparable to
-    simulated_bets.clv). Falls back to `clv`, which is anchored on the pick's
-    own book, when the Pinnacle anchor is missing.
+    ⚠️ CLV IS NOT COMPARABLE ACROSS THE TWO LEDGERS — CLV-PINNACLE-LIVE-TWO-
+    DEFINITIONS (2026-09-06). The sentence that stood here claimed
+    `clv_pinnacle` was "Pinnacle-anchored, comparable to simulated_bets.clv".
+    Both halves of that are false:
+
+      * `simulated_bets.clv` is anchored on the pick's OWN BOOK, not Pinnacle,
+        and carries that book's overround, priced at `odds_at_pick` — a MAX
+        high-water mark rather than an executable quote (gotcha 44).
+      * `shadow_bets.clv_pinnacle_live`, which the COALESCE below prefers, is
+        DE-VIGGED and priced at the live executable quote
+        (`settlement.py:2883` writes `odds_at_pick * true_p - 1`).
+      * `simulated_bets.clv_pinnacle` is a THIRD thing again — RAW, keeping
+        Pinnacle's overround (`settlement.py:2759` writes
+        `odds_at_pick / pinnacle_closing - 1`). Same column name as the shadow
+        one, different quantity. Measured divergence: +8.34pp on 2,356
+        overlapping rows, agreeing within 0.2pp on 0.8% of them.
+
+    So a sim-ledger bot and a shadow-ledger bot reaching `CLV_MIN_N` are scored
+    on genuinely different scales and then compared against the SAME threshold
+    and t-stat to decide promotion or retirement. A vigged number is
+    systematically lower than a de-vigged one, so sim-ledger bots are held to a
+    harsher bar than shadow-ledger bots purely by which table they write to.
+
+    Not fixed here, deliberately: making the sim ledger comparable means
+    redefining `simulated_bets.clv_pinnacle` to be de-vigged, and the PUBLIC
+    track record reads that exact column (`track-record/route.ts:159`), so the
+    fix restates a published figure from +9.52% to -3.00%. That is
+    CLV-PUBLISHED-VIGGED, an owner decision. Until it lands, this function
+    reports its CLV basis so the reader knows which scale a bot was judged on.
     """
     cur.execute("""
         SELECT created_at, result, stake, pnl,
@@ -356,7 +382,32 @@ def _gate_inputs(paper_rows, days, now):
     return None, basis, n_have, observation_days
 
 
-def _verdict(maturity, gate_t, basis, n_basis, observation_days, real60):
+def _clv_basis_note(basis, ledger):
+    """Name the CLV scale a verdict was reached on, or return "".
+
+    CLV-PINNACLE-LIVE-TWO-DEFINITIONS (2026-09-06): "CLV" means two different
+    quantities depending on which ledger a bot writes to. The sim ledger's `clv`
+    is anchored on the pick's OWN BOOK, keeps that book's overround, and is
+    priced at `odds_at_pick` (a high-water mark). The shadow ledger's
+    `clv_pinnacle_live` is DE-VIGGED and priced at the executable quote. A
+    vigged number is systematically lower, so an identical threshold is a
+    harsher bar for sim-ledger bots purely because of where they write.
+
+    Until CLV-PUBLISHED-VIGGED redefines the sim column (it cannot be done here:
+    the public track record reads it), the honest mitigation is to say which
+    scale produced the verdict, so nobody compares two bots' t-stats without
+    knowing they are on different rulers.
+    """
+    if basis != "clv" or not ledger:
+        return ""
+    if ledger == "sim":
+        return " [CLV basis: sim ledger — own-book anchored, VIGGED, high-water price]"
+    if ledger == "shadow":
+        return " [CLV basis: shadow ledger — Pinnacle DE-VIGGED, executable price]"
+    return f" [CLV basis: {ledger}]"
+
+
+def _verdict(maturity, gate_t, basis, n_basis, observation_days, real60, ledger=None):
     """Compute PROMOTE / DEMOTE / HOLD.
 
     Returns (verdict, reason) — reason names WHICH rule fired, or which
@@ -394,7 +445,8 @@ def _verdict(maturity, gate_t, basis, n_basis, observation_days, real60):
         # Applies at ANY maturity. Before BOT-GATE-REACHABLE this was
         # calibrated-only, so a losing beta bot stayed beta — and beta is
         # visible to every signed-in user on /picks.
-        return "DEMOTE", f"{basis} t={gate_t:+.2f} <= {RETIRE_T:+.2f} on n={n_basis}"
+        return "DEMOTE", (f"{basis} t={gate_t:+.2f} <= {RETIRE_T:+.2f} on n={n_basis}"
+                          f"{_clv_basis_note(basis, ledger)}")
     if gate_t >= PROMOTE_T:
         if is_calibrated:
             return "HOLD", f"already calibrated ({basis} t={gate_t:+.2f})"
@@ -556,8 +608,10 @@ def main():
 
         gate_t, basis, n_basis, obs_days = _gate_inputs(
             sim_rows, VERDICT_WINDOW_DAYS, ran_at)
+        # `source` is the ledger _fetch_paper_bets chose, and therefore the
+        # CLV definition this verdict rests on — see _clv_basis_note.
         verdict, reason = _verdict(
-            maturity, gate_t, basis, n_basis, obs_days, real60)
+            maturity, gate_t, basis, n_basis, obs_days, real60, ledger=source)
         verdict_counts[verdict] += 1
 
         block = (name, maturity, verdict, reason, source,

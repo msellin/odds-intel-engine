@@ -31223,5 +31223,60 @@ def _():
     )
 
 
+
+@test("CLV-BASIS-NOT-COMPARABLE — a CLV verdict must say which ledger's CLV it used")
+def _():
+    """"CLV" means two different quantities depending on the ledger.
+
+    CLV-PINNACLE-LIVE-TWO-DEFINITIONS (2026-09-06): simulated_bets.clv is
+    anchored on the pick's OWN book, keeps that book's overround, and is priced
+    at odds_at_pick (a high-water mark). shadow_bets.clv_pinnacle_live is
+    DE-VIGGED and priced at the executable quote. weekly_bot_review feeds both
+    to the same CLV_MIN_N threshold and t-stat to decide promotion and
+    retirement, so a vigged number -- systematically lower -- holds sim-ledger
+    bots to a harsher bar purely because of which table they write to.
+
+    The root fix is to redefine simulated_bets.clv_pinnacle as de-vigged, but
+    the PUBLIC track record reads that exact column, so it restates a published
+    figure and is an owner decision (CLV-PUBLISHED-VIGGED). Until then the
+    verdict must at least NAME the scale it was reached on.
+
+    Behavioural: call the real helper.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "wbr", _engine_root / "scripts" / "weekly_bot_review.py")
+    wbr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wbr)
+
+    assert hasattr(wbr, "_clv_basis_note"), (
+        "_clv_basis_note is gone -- CLV verdicts no longer say which of the two "
+        "incomparable CLV definitions produced them"
+    )
+
+    sim = wbr._clv_basis_note("clv", "sim")
+    shadow = wbr._clv_basis_note("clv", "shadow")
+    assert sim and shadow and sim != shadow, (
+        f"the two ledgers must produce DIFFERENT basis notes; got {sim!r} / {shadow!r}"
+    )
+    # The distinction that matters is vigged vs de-vigged -- if the note does not
+    # carry it, the reader cannot tell the rulers apart.
+    assert "VIGGED" in sim.upper() and "DE-VIGGED" in shadow.upper(), (
+        "the basis note must state vigged (sim) vs de-vigged (shadow); that is "
+        "the whole reason the two t-stats are not comparable"
+    )
+    # An ROI-basis verdict has no CLV scale to disclose.
+    assert wbr._clv_basis_note("roi", "sim") == "", (
+        "an ROI-basis verdict should not claim a CLV basis"
+    )
+
+    # And the verdict path must actually receive the ledger.
+    import inspect
+    assert "ledger" in inspect.signature(wbr._verdict).parameters, (
+        "_verdict no longer accepts the ledger, so it cannot disclose the basis"
+    )
+
+
 if __name__ == "__main__":
     main()
