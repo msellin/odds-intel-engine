@@ -30948,5 +30948,77 @@ def _():
         assert uses_ceiling, f"{fname} does not enforce the consecutive-failure ceiling"
 
 
+
+@test("CLV-RETURN-CANON — the CLV-vs-return correlation stays positive and quotable")
+def _():
+    """The statistic that justifies evaluating on CLV rather than ROI.
+
+    Before CLV-FINDING-REMEASURED it had three ad-hoc implementations disagreeing
+    by 30% on the same day. Those were three COHORTS, not three datasets: the
+    morning r=+0.1381/n=721 and evening r=+0.0980/n=713 differ by eight rows
+    dropped by an outlier guard, and at that size a single row moves r by up to
+    0.027.
+
+    The bounds are deliberately WIDE. The job is to catch a sign flip, a cohort
+    collapse, or a silent switch back to a stored column -- not to pin a value
+    that ordinary data drift will move.
+
+    Measured 2026-09-06: r=+0.0636, n=2,641, t_clu=+2.55.
+    """
+    import scripts.clv_return_correlation as clv
+
+    h = clv.headline()
+
+    # 1. Sign. This is the claim the whole CLV-over-ROI strategy rests on.
+    assert h["r"] > 0, (
+        f"CLV no longer predicts realised return: r={h['r']:+.4f} on n={h['n']}. "
+        "Every promotion gate and the public methodology assume this is positive. "
+        "Do NOT loosen this assertion -- investigate."
+    )
+
+    # 2. Enough rows to mean anything. At n=721 a SINGLE row moved r by 0.027.
+    assert h["n"] >= 1200, (
+        f"cohort collapsed to n={h['n']} (was 2,641 on 2026-09-06, floor 1,200). "
+        "Most likely a bot-retirement wave, or odds_at_pick_live / Pinnacle-close "
+        "coverage regressing. The correlation is not quotable below this."
+    )
+
+    # 3. Cluster-robust significance, with slack. Must be the CLUSTERED figure:
+    #    several bots bet the same match+selection, so naive t overstates ~30%.
+    assert h["t_clustered"] > 1.5, (
+        f"t_clustered={h['t_clustered']:+.2f} on n={h['n']} -- the correlation is no "
+        "longer distinguishable from noise. Re-run scripts/clv_return_correlation.py "
+        "and read the sensitivity block before changing any CLV gate."
+    )
+
+    # 4. Odds level must keep predicting nothing, or the 'odds-band gating was
+    #    only a proxy for CLV gating' conclusion is contaminated (gotcha 44: a
+    #    multiplicative price error masquerades as an odds slope).
+    assert abs(h["r_odds_return"]) < 0.10, (
+        f"r(odds, return)={h['r_odds_return']:+.4f} -- odds level now predicts return."
+    )
+
+    # 5. The guard is part of the definition (it moves r by ~30%), so assert it
+    #    is still applied AND still reported both ways.
+    assert h["guard"] == 0.5 and h["unguarded"]["n"] >= h["n"], (
+        "the outlier guard changed shape; it is part of the cohort definition, "
+        "not a footnote."
+    )
+
+    # 6. Anti-re-duplication (gotcha 43): the number must be RECOMPUTED, never
+    #    read from a stored column. simulated_bets.clv_pinnacle is RAW while
+    #    shadow_bets.clv_pinnacle is DE-VIGGED -- one name, two quantities.
+    src = (_engine_root / "scripts" / "clv_return_correlation.py").read_text()
+    for col in ("clv_pinnacle_devig", "clv_pinnacle_live", "clv_live"):
+        assert f"s.{col}" not in src, (
+            f"clv_return_correlation.py reads the stored `{col}`. It must recompute "
+            "from odds_snapshots, or two runs of it are not comparable."
+        )
+    assert "o.timestamp <= m.date" in src, (
+        "the Pinnacle close is not bounded by kickoff (gotcha 37) -- `is_live=false` "
+        "only excludes the api-football-live pseudo-book."
+    )
+
+
 if __name__ == "__main__":
     main()
