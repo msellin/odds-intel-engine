@@ -32,7 +32,25 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # CI-SMOKE-GATE-TIMEOUT-2026-09-06 — the THIRD way this gate has died, and
+    # the quietest. The suite grew past 10 minutes, so every run from ~19:24 on
+    # 2026-09-06 was killed at exactly 10:20 with conclusion `cancelled`. That
+    # reads like a concurrency cancellation rather than a failure, so the gate
+    # looked merely noisy while actually testing nothing — no red X, no failing
+    # assertion, just an absence. The last run that completed took 547.6s (9.1
+    # min) at 788 tests; roughly a dozen tests added that evening, several of
+    # them querying the live VPS database from a GitHub runner, took it over.
+    #
+    # Raised to 25 rather than 12 deliberately: a limit that sits just above the
+    # current runtime guarantees this recurs on the next handful of tests, and
+    # the failure mode is silent. The suite is the gate for two repos and is
+    # allowed to take twenty minutes; what is NOT allowed is for it to stop
+    # running without saying so.
+    #
+    # If it ever approaches this, the fix is to make the DB-backed tests cheaper
+    # (CLV-RETURN-CANON fetches every Pinnacle close for ~1,700 matches), not to
+    # keep raising the number.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
