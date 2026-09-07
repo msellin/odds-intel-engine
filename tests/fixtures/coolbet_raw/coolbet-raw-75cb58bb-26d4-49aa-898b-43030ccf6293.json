@@ -1,0 +1,567 @@
+{
+  "match_id": "75cb58bb-26d4-49aa-898b-43030ccf6293",
+  "captured_at": "2026-08-26T17:41:48.198939+00:00",
+  "reason": "ou_monotonicity_guard_fired",
+  "markets": [
+    {
+      "name": "Match Result (1X2)",
+      "market_type_id": 81,
+      "line": 0,
+      "raw_line": 0,
+      "outcomes": [
+        {
+          "id": 1678534480,
+          "name": "Al Salmiya",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1678534481,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1678534482,
+          "name": "Al Naser",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "2",
+      "raw_line": 2,
+      "outcomes": [
+        {
+          "id": 1678534491,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534492,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "2.5",
+      "raw_line": 2.5,
+      "outcomes": [
+        {
+          "id": 1678534421,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534422,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "1.5",
+      "raw_line": 1.5,
+      "outcomes": [
+        {
+          "id": 1678534429,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534430,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "3.5",
+      "raw_line": 3.5,
+      "outcomes": [
+        {
+          "id": 1678534493,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534494,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "3",
+      "raw_line": 3,
+      "outcomes": [
+        {
+          "id": 1678534515,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534516,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "0 - 1",
+      "raw_line": -1,
+      "outcomes": [
+        {
+          "id": 1678534431,
+          "name": "Al Salmiya",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1678534432,
+          "name": "Al Naser",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Match Result (1X2)",
+      "market_type_id": 81,
+      "line": 0,
+      "raw_line": 0,
+      "outcomes": [
+        {
+          "id": 1678534480,
+          "name": "Al Salmiya",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1678534481,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1678534482,
+          "name": "Al Naser",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "1.5",
+      "raw_line": 1.5,
+      "outcomes": [
+        {
+          "id": 1678534429,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534430,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "2",
+      "raw_line": 2,
+      "outcomes": [
+        {
+          "id": 1678534491,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534492,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "2.5",
+      "raw_line": 2.5,
+      "outcomes": [
+        {
+          "id": 1678534421,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534422,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "3",
+      "raw_line": 3,
+      "outcomes": [
+        {
+          "id": 1678534515,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534516,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "3.5",
+      "raw_line": 3.5,
+      "outcomes": [
+        {
+          "id": 1678534493,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534494,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "0 - 1",
+      "raw_line": -1,
+      "outcomes": [
+        {
+          "id": 1678534431,
+          "name": "Al Salmiya",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1678534432,
+          "name": "Al Naser",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Handicap (3 Way)",
+      "market_type_id": 1011,
+      "line": "0 - 2",
+      "raw_line": -2,
+      "outcomes": [
+        {
+          "id": 1678534791,
+          "name": "Al Salmiya",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1678534792,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1678534793,
+          "name": "Al Naser",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Handicap (3 Way)",
+      "market_type_id": 1011,
+      "line": "0 - 1",
+      "raw_line": -1,
+      "outcomes": [
+        {
+          "id": 1678534426,
+          "name": "Al Salmiya",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1678534427,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1678534428,
+          "name": "Al Naser",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Handicap (3 Way)",
+      "market_type_id": 1011,
+      "line": "1 - 0",
+      "raw_line": 1,
+      "outcomes": [
+        {
+          "id": 1678534796,
+          "name": "Al Salmiya",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1678534797,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1678534798,
+          "name": "Al Naser",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Both Teams To Score",
+      "market_type_id": 1377,
+      "line": 0,
+      "raw_line": 0,
+      "outcomes": [
+        {
+          "id": 1678534476,
+          "name": "Yes",
+          "result_key": "Yes"
+        },
+        {
+          "id": 1678534477,
+          "name": "No",
+          "result_key": "No"
+        }
+      ]
+    },
+    {
+      "name": "Draw No Bet",
+      "market_type_id": 70,
+      "line": 0,
+      "raw_line": 0,
+      "outcomes": [
+        {
+          "id": 1678534487,
+          "name": "Al Salmiya",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1678534488,
+          "name": "Al Naser",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Double Chance",
+      "market_type_id": 1484,
+      "line": 0,
+      "raw_line": 0,
+      "outcomes": [
+        {
+          "id": 1678534473,
+          "name": "Al Salmiya/Draw",
+          "result_key": "[Home]/Draw"
+        },
+        {
+          "id": 1678534474,
+          "name": "Al Naser/Draw",
+          "result_key": "[Away]/Draw"
+        },
+        {
+          "id": 1678534475,
+          "name": "Al Salmiya/Al Naser",
+          "result_key": "[Home]/[Away]"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "0.5",
+      "raw_line": 0.5,
+      "outcomes": [
+        {
+          "id": 1678534497,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534498,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "1",
+      "raw_line": 1,
+      "outcomes": [
+        {
+          "id": 1678534803,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534804,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "1.5",
+      "raw_line": 1.5,
+      "outcomes": [
+        {
+          "id": 1678534543,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534544,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "2",
+      "raw_line": 2,
+      "outcomes": [
+        {
+          "id": 1678534809,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1678534810,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    }
+  ],
+  "parsed_ou_rows": [
+    {
+      "market": "over_under_25",
+      "selection": "over",
+      "odds": 2.03,
+      "line": null
+    },
+    {
+      "market": "over_under_25",
+      "selection": "under",
+      "odds": 1.7,
+      "line": null
+    },
+    {
+      "market": "over_under_15",
+      "selection": "over",
+      "odds": 1.35,
+      "line": null
+    },
+    {
+      "market": "over_under_15",
+      "selection": "under",
+      "odds": 2.95,
+      "line": null
+    },
+    {
+      "market": "over_under_35",
+      "selection": "over",
+      "odds": 3.55,
+      "line": null
+    },
+    {
+      "market": "over_under_35",
+      "selection": "under",
+      "odds": 1.25,
+      "line": null
+    },
+    {
+      "market": "over_under_15",
+      "selection": "over",
+      "odds": 1.35,
+      "line": null
+    },
+    {
+      "market": "over_under_15",
+      "selection": "under",
+      "odds": 2.95,
+      "line": null
+    },
+    {
+      "market": "over_under_25",
+      "selection": "over",
+      "odds": 2.03,
+      "line": null
+    },
+    {
+      "market": "over_under_25",
+      "selection": "under",
+      "odds": 1.7,
+      "line": null
+    },
+    {
+      "market": "over_under_35",
+      "selection": "over",
+      "odds": 3.55,
+      "line": null
+    },
+    {
+      "market": "over_under_35",
+      "selection": "under",
+      "odds": 1.25,
+      "line": null
+    },
+    {
+      "market": "over_under_05",
+      "selection": "over",
+      "odds": 1.28,
+      "line": null
+    },
+    {
+      "market": "over_under_05",
+      "selection": "under",
+      "odds": 3.35,
+      "line": null
+    },
+    {
+      "market": "over_under_15",
+      "selection": "over",
+      "odds": 2.25,
+      "line": null
+    },
+    {
+      "market": "over_under_15",
+      "selection": "under",
+      "odds": 1.57,
+      "line": null
+    }
+  ]
+}

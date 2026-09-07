@@ -1,0 +1,1331 @@
+{
+  "match_id": "9d6f625c-6644-4d51-b5f7-031233aced60",
+  "captured_at": "2026-08-26T18:05:01.109521+00:00",
+  "reason": "ou_monotonicity_guard_fired",
+  "markets": [
+    {
+      "name": "Match Result (1X2)",
+      "market_type_id": 81,
+      "line": 0,
+      "raw_line": 0,
+      "outcomes": [
+        {
+          "id": 1666090967,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666090968,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1666090969,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "3",
+      "raw_line": 3,
+      "outcomes": [
+        {
+          "id": 1666089044,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666089045,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "4.5",
+      "raw_line": 4.5,
+      "outcomes": [
+        {
+          "id": 1666089355,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666089356,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "1.5",
+      "raw_line": 1.5,
+      "outcomes": [
+        {
+          "id": 1666089048,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666089049,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "2",
+      "raw_line": 2,
+      "outcomes": [
+        {
+          "id": 1666090773,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666090774,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "2.5",
+      "raw_line": 2.5,
+      "outcomes": [
+        {
+          "id": 1666091166,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666091167,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "3.5",
+      "raw_line": 3.5,
+      "outcomes": [
+        {
+          "id": 1666091164,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666091165,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "1",
+      "raw_line": 1,
+      "outcomes": [
+        {
+          "id": 1666090791,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666090792,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "4",
+      "raw_line": 4,
+      "outcomes": [
+        {
+          "id": 1666090793,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666090794,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "5",
+      "raw_line": 5,
+      "outcomes": [
+        {
+          "id": 1666090785,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666090786,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "0.5",
+      "raw_line": 0.5,
+      "outcomes": [
+        {
+          "id": 1666088945,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666088946,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "5.5",
+      "raw_line": 5.5,
+      "outcomes": [
+        {
+          "id": 1676872733,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1676872734,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "0 - 1.5",
+      "raw_line": -1.5,
+      "outcomes": [
+        {
+          "id": 1666089815,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666089816,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "0 - 2.5",
+      "raw_line": -2.5,
+      "outcomes": [
+        {
+          "id": 1676874375,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1676874376,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "2 - 0",
+      "raw_line": 2,
+      "outcomes": [
+        {
+          "id": 1666091312,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666091313,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "1 - 0",
+      "raw_line": 1,
+      "outcomes": [
+        {
+          "id": 1666091060,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666091061,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "1.5 - 0",
+      "raw_line": 1.5,
+      "outcomes": [
+        {
+          "id": 1666091140,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666091141,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "0 - 2",
+      "raw_line": -2,
+      "outcomes": [
+        {
+          "id": 1676874379,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1676874380,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "2.5 - 0",
+      "raw_line": 2.5,
+      "outcomes": [
+        {
+          "id": 1666089827,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666089828,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "0 - 1",
+      "raw_line": -1,
+      "outcomes": [
+        {
+          "id": 1666089831,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666089832,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Match Result (1X2)",
+      "market_type_id": 81,
+      "line": 0,
+      "raw_line": 0,
+      "outcomes": [
+        {
+          "id": 1666090967,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666090968,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1666090969,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "0.5",
+      "raw_line": 0.5,
+      "outcomes": [
+        {
+          "id": 1666088945,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666088946,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "1",
+      "raw_line": 1,
+      "outcomes": [
+        {
+          "id": 1666090791,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666090792,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "1.5",
+      "raw_line": 1.5,
+      "outcomes": [
+        {
+          "id": 1666089048,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666089049,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "2",
+      "raw_line": 2,
+      "outcomes": [
+        {
+          "id": 1666090773,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666090774,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "2.5",
+      "raw_line": 2.5,
+      "outcomes": [
+        {
+          "id": 1666091166,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666091167,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "3",
+      "raw_line": 3,
+      "outcomes": [
+        {
+          "id": 1666089044,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666089045,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "3.5",
+      "raw_line": 3.5,
+      "outcomes": [
+        {
+          "id": 1666091164,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666091165,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "4",
+      "raw_line": 4,
+      "outcomes": [
+        {
+          "id": 1666090793,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666090794,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "4.5",
+      "raw_line": 4.5,
+      "outcomes": [
+        {
+          "id": 1666089355,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666089356,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "5",
+      "raw_line": 5,
+      "outcomes": [
+        {
+          "id": 1666090785,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666090786,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Total Goals Over / Under",
+      "market_type_id": 818,
+      "line": "5.5",
+      "raw_line": 5.5,
+      "outcomes": [
+        {
+          "id": 1676872733,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1676872734,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "0 - 2.5",
+      "raw_line": -2.5,
+      "outcomes": [
+        {
+          "id": 1676874375,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1676874376,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "0 - 2",
+      "raw_line": -2,
+      "outcomes": [
+        {
+          "id": 1676874379,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1676874380,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "0 - 1.5",
+      "raw_line": -1.5,
+      "outcomes": [
+        {
+          "id": 1666089815,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666089816,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "0 - 1",
+      "raw_line": -1,
+      "outcomes": [
+        {
+          "id": 1666089831,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666089832,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "1 - 0",
+      "raw_line": 1,
+      "outcomes": [
+        {
+          "id": 1666091060,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666091061,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "1.5 - 0",
+      "raw_line": 1.5,
+      "outcomes": [
+        {
+          "id": 1666091140,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666091141,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "2 - 0",
+      "raw_line": 2,
+      "outcomes": [
+        {
+          "id": 1666091312,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666091313,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Asian Handicap",
+      "market_type_id": 1086,
+      "line": "2.5 - 0",
+      "raw_line": 2.5,
+      "outcomes": [
+        {
+          "id": 1666089827,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666089828,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Handicap (3 Way)",
+      "market_type_id": 1011,
+      "line": "0 - 3",
+      "raw_line": -3,
+      "outcomes": [
+        {
+          "id": 1666089330,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666089331,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1666089332,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Handicap (3 Way)",
+      "market_type_id": 1011,
+      "line": "0 - 2",
+      "raw_line": -2,
+      "outcomes": [
+        {
+          "id": 1666089819,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666089820,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1666089821,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Handicap (3 Way)",
+      "market_type_id": 1011,
+      "line": "0 - 1",
+      "raw_line": -1,
+      "outcomes": [
+        {
+          "id": 1666090918,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666090919,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1666090920,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Handicap (3 Way)",
+      "market_type_id": 1011,
+      "line": "1 - 0",
+      "raw_line": 1,
+      "outcomes": [
+        {
+          "id": 1666091187,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666091188,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1666091189,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Handicap (3 Way)",
+      "market_type_id": 1011,
+      "line": "2 - 0",
+      "raw_line": 2,
+      "outcomes": [
+        {
+          "id": 1666091182,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666091183,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1666091184,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Handicap (3 Way)",
+      "market_type_id": 1011,
+      "line": "3 - 0",
+      "raw_line": 3,
+      "outcomes": [
+        {
+          "id": 1666091213,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666091214,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1666091215,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Early Win - Match Result (1X2)",
+      "market_type_id": 13273,
+      "line": 0,
+      "raw_line": 0,
+      "outcomes": [
+        {
+          "id": 1666905570,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666905571,
+          "name": "Draw",
+          "result_key": "Draw"
+        },
+        {
+          "id": 1666905572,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Both Teams To Score",
+      "market_type_id": 1377,
+      "line": 0,
+      "raw_line": 0,
+      "outcomes": [
+        {
+          "id": 1666089367,
+          "name": "Yes",
+          "result_key": "Yes"
+        },
+        {
+          "id": 1666089368,
+          "name": "No",
+          "result_key": "No"
+        }
+      ]
+    },
+    {
+      "name": "Draw No Bet",
+      "market_type_id": 70,
+      "line": 0,
+      "raw_line": 0,
+      "outcomes": [
+        {
+          "id": 1666090401,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666090402,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "To Qualify",
+      "market_type_id": 455,
+      "line": 0,
+      "raw_line": 0,
+      "outcomes": [
+        {
+          "id": 1666905568,
+          "name": "Viking FK",
+          "result_key": "[Home]"
+        },
+        {
+          "id": 1666905569,
+          "name": "Dinamo Zagreb",
+          "result_key": "[Away]"
+        }
+      ]
+    },
+    {
+      "name": "Double Chance",
+      "market_type_id": 1484,
+      "line": 0,
+      "raw_line": 0,
+      "outcomes": [
+        {
+          "id": 1666090909,
+          "name": "Viking FK/Draw",
+          "result_key": "[Home]/Draw"
+        },
+        {
+          "id": 1666090910,
+          "name": "Dinamo Zagreb/Draw",
+          "result_key": "[Away]/Draw"
+        },
+        {
+          "id": 1666090911,
+          "name": "Viking FK/Dinamo Zagreb",
+          "result_key": "[Home]/[Away]"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "0.5",
+      "raw_line": 0.5,
+      "outcomes": [
+        {
+          "id": 1666091421,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666091422,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "1",
+      "raw_line": 1,
+      "outcomes": [
+        {
+          "id": 1666091423,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666091424,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "1.5",
+      "raw_line": 1.5,
+      "outcomes": [
+        {
+          "id": 1666090471,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666090472,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "2",
+      "raw_line": 2,
+      "outcomes": [
+        {
+          "id": 1666091418,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666091419,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "2.5",
+      "raw_line": 2.5,
+      "outcomes": [
+        {
+          "id": 1666091316,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666091317,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "3",
+      "raw_line": 3,
+      "outcomes": [
+        {
+          "id": 1666091221,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666091222,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "3.5",
+      "raw_line": 3.5,
+      "outcomes": [
+        {
+          "id": 1666090072,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666090073,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "4",
+      "raw_line": 4,
+      "outcomes": [
+        {
+          "id": 1666091427,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666091428,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "4.5",
+      "raw_line": 4.5,
+      "outcomes": [
+        {
+          "id": 1666091318,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666091319,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    },
+    {
+      "name": "[Home] Total Goals",
+      "market_type_id": 1551,
+      "line": "5",
+      "raw_line": 5,
+      "outcomes": [
+        {
+          "id": 1666090684,
+          "name": "Over",
+          "result_key": "Over"
+        },
+        {
+          "id": 1666090685,
+          "name": "Under",
+          "result_key": "Under"
+        }
+      ]
+    }
+  ],
+  "parsed_ou_rows": [
+    {
+      "market": "over_under_45",
+      "selection": "over",
+      "odds": 4.6,
+      "line": null
+    },
+    {
+      "market": "over_under_45",
+      "selection": "under",
+      "odds": 1.229454,
+      "line": null
+    },
+    {
+      "market": "over_under_15",
+      "selection": "over",
+      "odds": 1.199206,
+      "line": null
+    },
+    {
+      "market": "over_under_15",
+      "selection": "under",
+      "odds": 5.1,
+      "line": null
+    },
+    {
+      "market": "over_under_25",
+      "selection": "over",
+      "odds": 1.618547,
+      "line": null
+    },
+    {
+      "market": "over_under_25",
+      "selection": "under",
+      "odds": 2.426232,
+      "line": null
+    },
+    {
+      "market": "over_under_35",
+      "selection": "over",
+      "odds": 2.50319,
+      "line": null
+    },
+    {
+      "market": "over_under_35",
+      "selection": "under",
+      "odds": 1.586018,
+      "line": null
+    },
+    {
+      "market": "over_under_05",
+      "selection": "over",
+      "odds": 1.03613,
+      "line": null
+    },
+    {
+      "market": "over_under_05",
+      "selection": "under",
+      "odds": 15.5,
+      "line": null
+    },
+    {
+      "market": "over_under_05",
+      "selection": "over",
+      "odds": 1.03613,
+      "line": null
+    },
+    {
+      "market": "over_under_05",
+      "selection": "under",
+      "odds": 15.5,
+      "line": null
+    },
+    {
+      "market": "over_under_15",
+      "selection": "over",
+      "odds": 1.199206,
+      "line": null
+    },
+    {
+      "market": "over_under_15",
+      "selection": "under",
+      "odds": 5.1,
+      "line": null
+    },
+    {
+      "market": "over_under_25",
+      "selection": "over",
+      "odds": 1.618547,
+      "line": null
+    },
+    {
+      "market": "over_under_25",
+      "selection": "under",
+      "odds": 2.426232,
+      "line": null
+    },
+    {
+      "market": "over_under_35",
+      "selection": "over",
+      "odds": 2.50319,
+      "line": null
+    },
+    {
+      "market": "over_under_35",
+      "selection": "under",
+      "odds": 1.586018,
+      "line": null
+    },
+    {
+      "market": "over_under_45",
+      "selection": "over",
+      "odds": 4.6,
+      "line": null
+    },
+    {
+      "market": "over_under_45",
+      "selection": "under",
+      "odds": 1.229454,
+      "line": null
+    },
+    {
+      "market": "over_under_05",
+      "selection": "over",
+      "odds": 1.201662,
+      "line": null
+    },
+    {
+      "market": "over_under_05",
+      "selection": "under",
+      "odds": 4.55,
+      "line": null
+    },
+    {
+      "market": "over_under_15",
+      "selection": "over",
+      "odds": 1.975128,
+      "line": null
+    },
+    {
+      "market": "over_under_15",
+      "selection": "under",
+      "odds": 1.830819,
+      "line": null
+    },
+    {
+      "market": "over_under_25",
+      "selection": "over",
+      "odds": 4.0,
+      "line": null
+    },
+    {
+      "market": "over_under_25",
+      "selection": "under",
+      "odds": 1.244841,
+      "line": null
+    },
+    {
+      "market": "over_under_35",
+      "selection": "over",
+      "odds": 9.2,
+      "line": null
+    },
+    {
+      "market": "over_under_35",
+      "selection": "under",
+      "odds": 1.060102,
+      "line": null
+    },
+    {
+      "market": "over_under_45",
+      "selection": "over",
+      "odds": 19.5,
+      "line": null
+    }
+  ]
+}

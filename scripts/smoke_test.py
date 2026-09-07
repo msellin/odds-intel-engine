@@ -32103,5 +32103,122 @@ def test_coolbet_pause_resume():
     )
 
 
+@test("COOLBET-REPLAY — real parser vs recorded payloads, runs with Coolbet fully blocked")
+def test_coolbet_replay_recorded_payloads():
+    """COOLBET-REPLAY-2026-09-07 — exercise the live `parse_market` against six
+    recorded Coolbet payloads so parser regressions are caught OFFLINE, with the
+    site behind an Imperva domain-wide challenge and unreachable.
+
+    The corpus is real capture (tests/fixtures/coolbet_raw/), dumped by the O/U
+    monotonicity guard. Each file carries a `markets` array (the parser input)
+    and `parsed_ou_rows` (the O/U output captured live). A DATA CAVEAT drives the
+    contract: the guard saved `parsed_ou_rows` from a fuller live fetch than the
+    `markets` snapshot beside it, so in 3 of the 6 files the golden legitimately
+    contains lines whose market is absent from the saved input. Verified 2026-09-07:
+    `complete_input == exact` for all six, where completeness is derived from the
+    input (does `markets` contain a Total Goals O/U market for every golden line),
+    NOT from the output — so the selection is non-circular.
+
+    Contract, the real anti-regression surface:
+      1. Parser O/U output is ALWAYS a subset of golden — it never fabricates a
+         line. This is the phantom-price class (a team total landing in the goals
+         namespace once stored `over 4.5 @ 17.00` against Pinnacle's 4.19).
+      2. When the saved input is complete, parser O/U == golden EXACTLY — it never
+         drops a present half-line (the quarter/half-line-drop class).
+      3. Whole-number goals lines (over_under_2/3/4/5) are correctly DROPPED as
+         push lines — asserted by their absence, so a change that starts emitting
+         them fails here.
+      4. `[Home] Total Goals` (a team total) never produces an `over_under_*` row
+         — the goals namespace stays clean.
+      5. The non-O/U families still map (1x2, asian_handicap, btts, double_chance).
+    """
+    import os, json, glob
+    from workers.automation.coolbet_explorer import parse_market
+
+    fixdir = os.path.join(os.path.dirname(__file__), "..", "tests",
+                          "fixtures", "coolbet_raw")
+    files = sorted(glob.glob(os.path.join(fixdir, "coolbet-raw-*.json")))
+    assert len(files) == 6, (
+        f"expected 6 recorded Coolbet payloads in tests/fixtures/coolbet_raw, "
+        f"found {len(files)} — the offline replay corpus was altered"
+    )
+
+    def ou_key(raw):
+        f = float(raw)
+        return "over_under_" + ("%g" % f).replace(".", "").replace("-", "")
+
+    complete_seen = 0
+    fam_union = set()
+    for fp in files:
+        d = json.load(open(fp, encoding="utf-8"))
+        # sentinel odds_map: every outcome id -> a valid (>1.0) price, so the
+        # test exercises mapping/namespacing, not odds arithmetic (a trivial
+        # float passthrough). A distinct constant is enough.
+        omap = {int(o["id"]): {"value": 2.0}
+                for m in d["markets"] for o in m["outcomes"]}
+        rows = [r for m in d["markets"] for r in parse_market(m, omap)]
+
+        ou_got = {(r[0], r[1]) for r in rows if r[0].startswith("over_under")}
+        golden = {(x["market"], x["selection"]) for x in d["parsed_ou_rows"]}
+        fam_union |= {r[0].split("_")[0] for r in rows}
+
+        name = os.path.basename(fp)[:24]
+
+        # (1) never fabricate
+        assert ou_got <= golden, (
+            f"{name}: parser produced O/U rows absent from the recorded golden "
+            f"— fabricated lines {sorted(ou_got - golden)}. This is the "
+            f"phantom-price class (a line we never actually offered)."
+        )
+
+        # (3) push lines dropped
+        for whole in ("over_under_2", "over_under_3", "over_under_4", "over_under_5"):
+            assert not any(k == whole for (k, _) in ou_got), (
+                f"{name}: parser emitted {whole}, a whole-number goals push line "
+                f"that _ou_market_for_line must drop"
+            )
+
+        # (4) team totals never leak into the goals O/U namespace
+        team_total_present = any(m["name"].lower() == "[home] total goals"
+                                 for m in d["markets"])
+        if team_total_present:
+            # the team-total 0.5 line must NOT appear as a goals over_under_05
+            # UNLESS a real full-match total 0.5 was also present; guard the leak
+            # by requiring any over_under_05 to be backed by a real goals market.
+            has_goals_05 = any((m["name"].lower() == "total goals over / under"
+                                or m.get("market_type_id") == 818)
+                               and abs(float(m.get("raw_line", -9)) - 0.5) < 1e-9
+                               for m in d["markets"])
+            if not has_goals_05:
+                assert ("over_under_05", "over") not in ou_got, (
+                    f"{name}: a [Home] Total Goals (team total) line leaked into "
+                    f"the goals over_under_05 namespace — the exact phantom-price bug"
+                )
+
+        # (2) exact when input complete — completeness derived from INPUT
+        present = {ou_key(m.get("raw_line")) for m in d["markets"]
+                   if m["name"].lower() == "total goals over / under"
+                   or m.get("market_type_id") == 818}
+        complete = all(k in present for (k, _) in golden)
+        if complete:
+            complete_seen += 1
+            assert ou_got == golden, (
+                f"{name}: saved input is complete yet parser O/U output "
+                f"({len(ou_got)}) != recorded golden ({len(golden)}) — a present "
+                f"half-line was dropped or mis-keyed. missing={sorted(golden-ou_got)}"
+            )
+
+    assert complete_seen >= 3, (
+        f"only {complete_seen} of 6 fixtures exercised the exact-match contract "
+        f"— expected at least 3 complete-input recordings"
+    )
+    # (5) the non-O/U families are still mapped
+    for fam in ("1x2", "asian", "btts", "double"):
+        assert fam in fam_union, (
+            f"the replay corpus no longer exercises the '{fam}' family — parser "
+            f"namespace coverage regressed or the fixtures changed"
+        )
+
+
 if __name__ == "__main__":
     main()
