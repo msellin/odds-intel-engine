@@ -463,26 +463,41 @@ def check_af_quota() -> None:
     exceeds 80% of the cap with >6h left in the UTC day, alert — the rest of
     the day's jobs may halt mid-stride. Reads from api_budget_log.
     """
+    from datetime import timedelta
     now_utc = datetime.now(timezone.utc)
-    hours_remaining = 24 - now_utc.hour
+    # AF-QUOTA-DAY-BOUNDARY-2026-09-07: AF's quota counter resets at ~01:00 UTC,
+    # NOT midnight. Two bugs fixed here:
+    #  (1) the query summed `calls_made`, a column that does not exist, so this
+    #      whole check raised every run and the quota alert NEVER fired — a
+    #      silent failure in the alert meant to prevent silent quota exhaustion.
+    #  (2) it grouped on `log_date = CURRENT_DATE` (our calendar day), which
+    #      straddles the 01:00 reset, so `used` was wrong for the first/last hour.
+    # `calls_today` is AF's own cumulative counter for AF's quota day, so MAX of
+    # it over the current quota-day window (since the last 01:00 UTC) is the
+    # authoritative usage. Hours-remaining counts down to the next 01:00 reset.
+    quota_day_start = now_utc.replace(hour=1, minute=0, second=0, microsecond=0)
+    if now_utc.hour < 1:
+        quota_day_start = quota_day_start - timedelta(days=1)
+    next_reset = quota_day_start + timedelta(days=1)
+    hours_remaining = (next_reset - now_utc).total_seconds() / 3600.0
     if hours_remaining < 6:
-        return  # Late in the day — too late to throttle, alert would be noise
+        return  # Close to reset — too late to throttle, alert would be noise
 
     rows = execute_query("""
-        SELECT COALESCE(SUM(calls_made), 0) AS used
+        SELECT COALESCE(MAX(calls_today), 0) AS used
         FROM api_budget_log
-        WHERE log_date = CURRENT_DATE
-    """)
+        WHERE logged_at >= %s
+    """, (quota_day_start,))
     used = (rows[0]["used"] if rows else 0) or 0
     cap = int(os.getenv("AF_DAILY_QUOTA", "150000"))
     pct = used / cap * 100
-    console.print(f"[dim]health_alerts: AF quota = {used:,} / {cap:,} ({pct:.0f}%), {hours_remaining}h remaining[/dim]")
+    console.print(f"[dim]health_alerts: AF quota = {used:,} / {cap:,} ({pct:.0f}%), {hours_remaining:.1f}h to reset[/dim]")
     if pct >= 80:
         _alert_once(
             "af_quota_high",
-            f"AF quota at {pct:.0f}% with {hours_remaining}h remaining",
+            f"AF quota at {pct:.0f}% with {hours_remaining:.1f}h to AF reset",
             f"<p>API-Football usage is <b>{used:,} / {cap:,}</b> ({pct:.0f}%) at "
-            f"{now_utc.strftime('%H:%M UTC')}. {hours_remaining}h remain in the UTC day.</p>"
+            f"{now_utc.strftime('%H:%M UTC')}. {hours_remaining:.1f}h remain until AF's quota reset (~01:00 UTC).</p>"
             f"<p>If usage trends linear, today's odds-refresh + settlement-enrichment jobs may "
             f"exhaust the budget before completing. Consider pausing non-critical fetches.</p>",
         )

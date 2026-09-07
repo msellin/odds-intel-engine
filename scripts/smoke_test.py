@@ -32025,6 +32025,28 @@ def test_af_quota_day_boundary():
     )
     assert "01:00" in q, "the 01:00 UTC reset time is no longer recorded"
 
+    # check_af_quota must query calls_today (not the non-existent calls_made that
+    # made it raise every run) and window on the AF quota day, not log_date.
+    import re as _re2
+    ha = open(os.path.join(os.path.dirname(__file__), "..", "workers", "jobs",
+                           "health_alerts.py"), encoding="utf-8").read()
+    m = _re2.search(r"def check_af_quota\(.*?\n\ndef ", ha, flags=_re2.S)
+    assert m, "check_af_quota not found"
+    body = m.group(0)
+    body_code = _re2.sub(r"#.*?$", "", body, flags=_re2.M)
+    assert "calls_made" not in body_code, (
+        "check_af_quota references calls_made again — that column does not exist, "
+        "so the AF quota alert raises every run and never fires (silent failure)"
+    )
+    assert "MAX(calls_today)" in body_code, (
+        "check_af_quota no longer reads MAX(calls_today) — that is AF's own "
+        "cumulative counter, the authoritative usage for the quota day"
+    )
+    assert "log_date = CURRENT_DATE" not in body_code, (
+        "check_af_quota grouped on log_date = CURRENT_DATE again — our calendar "
+        "day straddles AF's 01:00 reset (AF-QUOTA-DAY-BOUNDARY)"
+    )
+
 
 @test("ODDS-API-KEY-NAME — the client must read OA_KEY, the name the key is stored under")
 def test_odds_api_key_name():
