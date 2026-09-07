@@ -32062,5 +32062,46 @@ def test_odds_api_key_name():
     )
 
 
+@test("COOLBET-FOOTPRINT-PAUSE — pausing the Coolbet jobs must arm a self-removing resume")
+def test_coolbet_pause_resume():
+    """COOLBET-FOOTPRINT-PAUSE-2026-09-07 — the two Coolbet launchd jobs were
+    unloaded to stop ~96 requests/day firing into an Imperva wall while the IP
+    flag decays.
+
+    A pause with no guaranteed resume is how a deliberate stop becomes a silent
+    multi-day outage -- exactly the failure class that burned 47h on the Epicbet
+    403 and 11 days on the InplayBot UUID bug. So the resume is a launchd job,
+    not a human's memory, and it removes itself after running so a stale agent
+    cannot re-load jobs someone later retired on purpose.
+
+    Verified live 2026-09-07 by running the resume path for real (both jobs
+    reloaded, agent self-removed) before re-applying the pause.
+    """
+    import os, re
+    sh = os.path.join(os.path.dirname(__file__), "ops", "coolbet_pause_resume.sh")
+    assert os.path.exists(sh), (
+        "scripts/ops/coolbet_pause_resume.sh is gone -- the Coolbet jobs can be "
+        "paused but nothing restores them"
+    )
+    src = open(sh, encoding="utf-8").read()
+    # gotcha 41: the header comment explains the resume, so strip comments first.
+    code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+
+    for verb in ("pause)", "resume)", "status)"):
+        assert verb in code, f"the {verb[:-1]} subcommand vanished from the pause/resume script"
+
+    for job in ("com.oddsintel.coolbet-odds-snapshot",
+                "com.oddsintel.coolbet-feed-watchdog"):
+        assert job in code, f"{job} is no longer managed by the pause/resume script"
+
+    # The resume must both reload AND tear down its own agent.
+    resume = code.split("resume)")[1].split(";;")[0]
+    assert "launchctl load" in resume, "resume no longer reloads the jobs"
+    assert "coolbet-resume.plist" in resume and "rm -f" in resume, (
+        "the resume no longer removes its own launchd agent -- a stale one-shot "
+        "would silently re-load jobs that were later retired on purpose"
+    )
+
+
 if __name__ == "__main__":
     main()
