@@ -32702,5 +32702,32 @@ def test_clv_pinnacle_one_definition():
     )
 
 
+@test("CLV-EXECUTABLE-PRICE-SUBSET — the executable + within-bot control stays in the CLV analysis")
+def test_clv_executable_within_bot_control():
+    """CLV-EXECUTABLE-PRICE-SUBSET-2026-09-06. The decisive finding: CLV does NOT
+    predict realised return on bets we can actually strike. On the executable
+    subset (rows with a real odds_at_pick_live) the correlation is r=+0.0375,
+    t_clu=+1.14 (not significant), and it stays null after fully removing the bot
+    confound (bot-demeaned, match-clustered: r=+0.0483, t_clu=+1.40). The whole
+    measurable effect lives in un-takeable high-water-priced rows.
+
+    This pins the two controls into the canonical script so the conclusion can't
+    be silently walked back: (1) an executable-price split, (2) a within-bot
+    (bot-demeaned) measurement on that subset.
+    """
+    import os
+    src = open(os.path.join(os.path.dirname(__file__), "clv_return_correlation.py"),
+               encoding="utf-8").read()
+    assert 'px_live' in src and "HAS an executable price" in src, (
+        "the CLV script no longer splits on executable price (px_live) — the "
+        "executable-subset finding that CLV doesn't predict strikeable return "
+        "can't be reproduced"
+    )
+    assert "bot-demeaned" in src and "WITHIN-BOT" in src, (
+        "the within-bot (bot-demeaned) control on the executable subset is gone "
+        "— that is the decisive test that rules out the gotcha-47 bot confound"
+    )
+
+
 if __name__ == "__main__":
     main()

@@ -279,6 +279,37 @@ def main() -> int:
         m = measure(ss)
         print(f"  {bot:26s} n={m['n']:5d}  r={m['r']:+.4f}  t={m['t']:+6.2f}  "
               f"meanCLV={m['mean_clv']:+.4f}  ROI={m['mean_return']:+.4f}")
+
+    # CLV-EXECUTABLE-PRICE-SUBSET-2026-09-06: the decisive control. The executable
+    # subset's null could be a bot-mix artefact (gotcha 47: 'has an executable
+    # price' proxies 'which bot'). Demean clv and return WITHIN each bot, then
+    # correlate — this removes all between-bot variance, leaving only whether a
+    # HIGHER-than-its-bot's-average CLV pick returns more than that bot's average.
+    # Match-clustered t is preserved. If this is null, CLV does not predict
+    # executable return even after fully controlling for bot.
+    print("\nWITHIN-BOT on the executable subset (bot-demeaned — removes the gotcha-47 confound)")
+    exe = [r for r in g(CLV_GUARD) if r["px_live"]]
+    byb = defaultdict(list)
+    for r in exe:
+        byb[r["bot"]].append(r)
+    dem = []
+    for bot, ss in byb.items():
+        if len(ss) < 5:
+            continue
+        mc = sum(x["clv"] for x in ss) / len(ss)
+        mr = sum(x["ret"] for x in ss) / len(ss)
+        for r in ss:
+            dem.append({"clv": r["clv"] - mc, "ret": r["ret"] - mr,
+                        "match_id": r["match_id"], "px": r["px"]})
+    if len(dem) >= 30:
+        rr = pearson([d["clv"] for d in dem], [d["ret"] for d in dem])
+        _, tc = clustered_t(dem, "clv")
+        nb = len({d2 for ss in byb.values() if len(ss) >= 5 for d2 in [id(ss)]})
+        print(f"  executable + bot-demeaned  n={len(dem):6d}  r={rr:+.4f}  "
+              f"t_clu={tc:+.2f}  ({sum(1 for ss in byb.values() if len(ss)>=5)} bots)")
+        print(f"  => |t_clu|<2 means CLV does NOT predict executable return even within bot.")
+    else:
+        print(f"  too few executable rows for a within-bot fit (n={len(dem)})")
     return 0
 
 
