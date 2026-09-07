@@ -1505,5 +1505,12 @@ goal-type count.
 Also: cards live in TWO parallel columns — `yellow_cards_*`/`red_cards_*` (AF
 path, ~97% populated) and `yellows_*`/`reds_*` (football-data CSV ingest, ~24%).
 Query the `*_cards_*` names for AF-era coverage; the short names silently return
-near-zero. And card settlement: only the `events` definition settles correctly
-(-0.6pp); `yellow`/`yellow_red`/`points` manufacture -3 to -7pp phantom under-edge.
+near-zero. And card settlement is an UNRESOLVED convention question (2026-09-07): the
+established work (CARDS-SECOND-YELLOW) uses `points` (yellow=1, red=2, with the
+second-yellow double-count fixed) because that is how bookmakers settle cards
+O/U; but a NEW-MARKET auditor measured `events` (raw card count) agreeing better
+with de-vigged Pinnacle P(over) (-0.6pp vs -3.1pp for points). These measure
+different things and the answer is BOOK-SPECIFIC (do Coolbet/Betano/Unibet/Epicbet
+settle cards O/U on points or on count?). Do NOT flip the default to `events`
+without confirming the placeable books' actual settlement rule — see
+CARDS-SETTLEMENT-EVENTS-DEF-GUARD.
