@@ -31941,5 +31941,90 @@ def _():
     )
 
 
+@test("AF-QUOTA-DAY-BOUNDARY — AF's quota day resets at 01:00 UTC, not midnight")
+def test_af_quota_day_boundary():
+    """AF-QUOTA-DAY-BOUNDARY-2026-09-07 — AF's quota counter resets at ~01:00
+    UTC, not at UTC midnight, so `api_budget_log.log_date` straddles the reset.
+
+    Measured 2026-09-07 from the raw series: calls_today reaches 20,743 /
+    62,734 / 23,517 at 00:00 UTC on three consecutive days and drops to
+    400 / 391 / 176 at 01:00. Reading "the last row of a log_date" therefore
+    reports the first hour of the NEXT quota day: for 2026-09-06 that reads
+    19,981 against a true 62,734, a 3.1x understatement.
+
+    This test is arithmetic on a synthetic series shaped like the real one --
+    no DB -- and pins two things: that the naive reading understates, and that
+    grouping on (logged_at - 1 hour) recovers the true peak. If AF ever moves
+    the reset, the first assertion is what should be revisited.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    # Synthetic series: quota day runs 01:00 -> 01:00, climbing all day.
+    # The two quota days MUST have different peaks. With an identical ramp on
+    # both, grouping on the wrong boundary still yields the right number by
+    # coincidence -- it attributes day N's peak to day N+1 and the test cannot
+    # see it. Modelled on the real pair: 2026-09-06 peaked at 62,734 and
+    # 2026-09-07 at 23,517.
+    rows = []
+    base = datetime(2026, 9, 5, 1, 0, tzinfo=timezone.utc)
+    daily_peak = {}
+    for day, climb in enumerate((2600, 950)):           # -> 60,200 then 22,250
+        d = (base + timedelta(days=day)).date()
+        for h in range(24):
+            ts = base + timedelta(days=day, hours=h)
+            rows.append((ts, 400 + h * climb))
+        daily_peak[d] = 400 + 23 * climb
+    peak = max(daily_peak.values())
+
+    # Naive: "the last row of a log_date is that day's total" -- the reading
+    # every existing report used. Compare it PER DAY against the true quota-day
+    # peak; a global max would accidentally pick up the next day's 00:00 tail
+    # and hide the bug, which is exactly how it went unnoticed.
+    from collections import defaultdict
+    naive_last = {}
+    for ts, v in rows:
+        d = ts.date()
+        if d not in naive_last or ts > naive_last[d][0]:
+            naive_last[d] = (ts, v)
+
+    true_peak = defaultdict(int)
+    for ts, v in rows:
+        d = (ts - timedelta(hours=1)).date()
+        true_peak[d] = max(true_peak[d], v)
+
+    # 2026-09-06 is the one quota day fully inside the synthetic window.
+    day = datetime(2026, 9, 6).date()
+    assert naive_last[day][1] < true_peak[day], (
+        f"the naive log_date reading no longer understates on {day} "
+        f"({naive_last[day][1]} vs {true_peak[day]}) -- either the synthetic "
+        "series stopped modelling the 01:00 reset, or AF moved it. Re-measure "
+        "before quoting any daily AF usage figure."
+    )
+    assert naive_last[day][0].hour == 23, (
+        "the naive reading is no longer landing on the 23:00 row -- the "
+        "understatement it models depends on that being the last row before "
+        "the calendar rolls, an hour BEFORE the quota resets"
+    )
+    for d, expected in daily_peak.items():
+        assert true_peak[d] == expected, (
+            f"the (logged_at - 1 hour) grouping put {true_peak[d]} on quota day "
+            f"{d} instead of {expected} -- it is attributing one quota day's "
+            "peak to another. This is the grouping AF-USAGE-AUDIT's figures "
+            "depend on."
+        )
+
+    # The finding must stay documented -- strip table pipes are irrelevant here,
+    # but guard against matching our own explanatory prose elsewhere by
+    # requiring the ticket id itself.
+    import os
+    q = open(os.path.join(os.path.dirname(__file__), "..", "PRIORITY_QUEUE.md"),
+             encoding="utf-8").read()
+    assert "AF-QUOTA-DAY-BOUNDARY-2026-09-07" in q, (
+        "the quota-day boundary ticket vanished from PRIORITY_QUEUE -- the "
+        "corrected AF usage figures have no home without it"
+    )
+    assert "01:00" in q, "the 01:00 UTC reset time is no longer recorded"
+
+
 if __name__ == "__main__":
     main()
