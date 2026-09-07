@@ -50,7 +50,9 @@ LEDGER_DIR = ROOT / "ledger"
 OUT_PATH = LEDGER_DIR / "comparison_tipstrr.json"
 PICKS_CSV_PATH = LEDGER_DIR / "picks_tipstrr.csv"
 
-STAKE = 10.0
+# DUPLICATED-BUSINESS-RULES-AUDIT-2026-09-07: was a local `STAKE = 10.0`.
+# The published flat-stake basis has ONE definition; see _our_stats.
+from scripts._our_stats import PUBLICATION_FLAT_STAKE_EUR as STAKE  # noqa: E402
 MIN_SAMPLE = 50
 DEFAULT_START = "2026-05-04"   # calibrated tier launch
 

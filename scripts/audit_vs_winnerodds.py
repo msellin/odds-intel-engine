@@ -42,7 +42,9 @@ WINDOW_START_DEFAULT = "2026-05-04"
 # comparison card grows daily instead of staying frozen at the 2026-06-25 value
 # hardcoded during initial scaffolding.
 WINDOW_END_DEFAULT = (date.today() + timedelta(days=1)).isoformat()
-STAKE = 10.0
+# DUPLICATED-BUSINESS-RULES-AUDIT-2026-09-07: was a local `STAKE = 10.0`.
+# The published flat-stake basis has ONE definition; see _our_stats.
+from scripts._our_stats import PUBLICATION_FLAT_STAKE_EUR as STAKE  # noqa: E402
 MIN_SAMPLE = 50
 
 

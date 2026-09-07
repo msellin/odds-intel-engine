@@ -31662,7 +31662,18 @@ def _():
     )
 
     # Every competitor audit must READ it, not re-type it.
-    for name in ("audit_vs_betaminic", "audit_vs_signalodds", "_competitor_reprice"):
+    #
+    # DISCOVERED BY GLOB, NOT BY LIST (2026-09-07). The first version of this
+    # test named three modules explicitly — the three that had been converted —
+    # and therefore passed while FOUR more (audit_vs_winnerodds, _forebet,
+    # _deepbetting, _tipstrr) still carried their own `STAKE = 10.0`. A test
+    # that enumerates the files it knows about cannot catch the file nobody
+    # remembered, which is the entire failure mode this ticket exists to remove.
+    audits = sorted(
+        f.stem for f in (_engine_root / "scripts").glob("audit_vs_*.py")
+    ) + ["_competitor_reprice"]
+    assert len(audits) >= 5, f"expected several competitor audits, found {audits}"
+    for name in audits:
         src = (_engine_root / "scripts" / f"{name}.py").read_text()
         import re as _re
         code = _re.sub(r"#.*?$", "", src, flags=_re.M)
