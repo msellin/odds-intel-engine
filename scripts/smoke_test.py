@@ -32220,5 +32220,52 @@ def test_coolbet_replay_recorded_payloads():
         )
 
 
+@test("CLV-PUBLIC-WITHDRAWN-COMPLETE — no CLV per-row cell reaches the public performance ledger")
+def test_clv_public_withdrawn_complete():
+    """CLV-PUBLISHED-VIGGED-2026-09-06 / completed 2026-09-07.
+
+    The CLV withdrawal removed the headline tiles (hero + landing) and the meta
+    + per-row CLV fields from the auth-free /api/v1/track-record route, but the
+    per-row `clv` on the /performance PAGE ledger survived UNGATED — sanitizeBets
+    passed `clv: b.clv` to every visitor while its siblings (stake, closingOdds,
+    edge, bankrollAfter) were all `isElite ? … : null`. That value is
+    simulated_bets.clv: odds_at_pick / closing − 1, raw, un-de-vigged, priced at
+    a MAX high-water mark — the same wrong number the tiles showed, just moved to
+    a table cell. Same incomplete-withdrawal shape as the endpoint leak that had
+    to be caught by reading the live API.
+
+    Pins that the public performance page gates per-row clv behind isElite, and
+    that the auth-free route still emits no derived CLV field.
+    """
+    page = _web_path("src/app/(app)/performance/page.tsx").read_text()
+
+    import re
+    # gotcha 41: the fix carries an explanatory comment quoting the old bug.
+    code = re.sub(r"//.*?$", "", page, flags=re.M)
+    code = re.sub(r"/\*.*?\*/", "", code, flags=re.S)
+
+    # The sanitizeBets clv assignment must be Elite-gated, exactly like its
+    # siblings. A bare `clv: b.clv` (no isElite) is the regression.
+    m = re.search(r"clv:\s*([^,\n]+)", code)
+    assert m, "sanitizeBets no longer assigns clv at all — structure changed, re-audit"
+    rhs = m.group(1)
+    assert "isElite" in rhs, (
+        "per-row clv on the PUBLIC /performance ledger is no longer gated behind "
+        "isElite — it renders simulated_bets.clv (raw, un-de-vigged, high-water) "
+        "to anonymous visitors, reintroducing CLV-PUBLISHED-VIGGED"
+    )
+
+    # The auth-free JSON route must still emit no derived CLV field.
+    route = _web_path("src/app/api/v1/track-record/route.ts").read_text()
+    rcode = re.sub(r"//.*?$", "", route, flags=re.M)
+    rcode = re.sub(r"/\*.*?\*/", "", rcode, flags=re.S)
+    for field in ("clv_any_pct", "clv_pin_pct", "median_clv_pct",
+                  "mean_clv_pct", "median_clv_pin_pct", "clv_beat_pct"):
+        assert f"{field}:" not in rcode, (
+            f"the auth-free track-record feed emits `{field}` again — CLV stays "
+            f"off every public surface until it is positive and validated"
+        )
+
+
 if __name__ == "__main__":
     main()
