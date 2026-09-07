@@ -19316,6 +19316,26 @@ def _():
     # instead. Assert against the payload, which is where the truth moved.
     payload_idx = settle.index("payload = {")
     payload_block = settle[payload_idx:settle.index("_cols =", payload_idx)]
+
+    # DEAD-DASHBOARD-CACHE-COMPUTE (2026-09-07): the 14 write-only fields were
+    # removed after verifying field by field, across BOTH repos, that nothing
+    # read them. Assert they stay gone — re-adding one costs a nightly query
+    # and a wire payload for no reader.
+    for dead in ("prematch_settled_bets", "inplay_settled_bets",
+                 "recent_top_wins", "upcoming_model_summary",
+                 "elite_value_bets_cumulative"):
+        assert f'"{dead}"' not in payload_block, (
+            f"dashboard_cache is writing `{dead}` again — it was removed as "
+            "write-only. If something now reads it, say so here; otherwise this "
+            "is dead nightly compute."
+        )
+    # And the live ones must survive. elite_value_bets_30d in particular is read
+    # by workers/notify/telegram.py:53 and was WRONGLY listed as dead.
+    for live in ("elite_value_bets_30d", "pro_value_bets_30d"):
+        assert f'"{live}"' in payload_block, (
+            f"`{live}` dropped from the payload, but it has a live consumer"
+        )
+
     assert '"daily_pnl_curve_90d"' in payload_block, (
         "dashboard_cache payload must include the daily_pnl_curve_90d column"
     )

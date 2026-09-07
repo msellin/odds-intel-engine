@@ -2233,12 +2233,10 @@ def write_dashboard_cache():
             clv = float(r["avg_clv"]) if include_clv and r.get("avg_clv") is not None else None
             return settled, won, staked, pnl, roi, clv
 
-        prematch_settled, prematch_won, prematch_staked, prematch_pnl, prematch_roi, prematch_clv = \
-            _cohort_fields("prematch", include_clv=True)
-        # Inplay CLV intentionally excluded — semantics differ (live closing vs
-        # pre-match closing) and produce misleading aggregates.
-        inplay_settled,  inplay_won,  inplay_staked,  inplay_pnl,  inplay_roi,  _ = \
-            _cohort_fields("inplay", include_clv=False)
+        # DEAD-DASHBOARD-CACHE-COMPUTE (2026-09-07): the prematch_* and inplay_*
+        # cohort aggregates were computed nightly and written to dashboard_cache,
+        # where NOTHING read them — verified field by field across both repos.
+        # `_cohort_fields` is now unreferenced and can go in a follow-up.
 
         # PERF-HERO-EQUITY-SPARKLINE (2026-06-01) — daily cumulative P&L on the
         # active+non-experimental cohort. The hero "Last 31d" sparkline reads
@@ -2281,57 +2279,13 @@ def write_dashboard_cache():
             cum_30 += p["daily"]
             daily_pnl_curve_30d.append({"d": p["d"], "cum": round(cum_30, 2)})
 
-        # PERF-HERO-RECENT-WINS (2026-06-01) — top 8 unique wins last 14d by
-        # CLV beat. Story = "model picked these and was right + beat closing
-        # line by X%". Deduplicated by (match, market, selection) so the same
-        # call from multiple bots renders once. No P&L / stake (free-tier
-        # visible).
-        recent_top_wins_rows = execute_query("""
-            WITH ranked AS (
-                SELECT DISTINCT ON (sb.match_id, sb.market, sb.selection)
-                    sb.id,
-                    sb.market,
-                    sb.selection,
-                    sb.odds_at_pick AS odds,
-                    COALESCE(sb.clv_pinnacle, sb.clv) AS clv_used,
-                    ht.name AS home,
-                    at2.name AS away,
-                    l.name AS league,
-                    l.country AS country,
-                    sb.pick_time
-                FROM simulated_bets sb
-                JOIN bots b ON b.id = sb.bot_id
-                JOIN matches m ON m.id = sb.match_id
-                JOIN teams ht ON ht.id = m.home_team_id
-                JOIN teams at2 ON at2.id = m.away_team_id
-                LEFT JOIN leagues l ON l.id = m.league_id
-                WHERE sb.result = 'won'
-                  AND sb.pick_time >= now() - interval '14 days'
-                  AND b.is_active = true AND b.retired_at IS NULL
-                  AND b.maturity_label != 'experimental'
-                  AND COALESCE(sb.clv_pinnacle, sb.clv) IS NOT NULL
-                  AND sb.odds_at_pick >= 1.50
-                ORDER BY sb.match_id, sb.market, sb.selection,
-                         COALESCE(sb.clv_pinnacle, sb.clv) DESC
-            )
-            SELECT * FROM ranked
-            ORDER BY clv_used DESC
-            LIMIT 8
-        """, [])
-        recent_top_wins = [
-            {
-                "home":      r["home"],
-                "away":      r["away"],
-                "league":    r["league"],
-                "country":   r["country"],
-                "market":    r["market"],
-                "selection": r["selection"],
-                "odds":      float(r["odds"] or 0),
-                "clv":       float(r["clv_used"] or 0),
-                "pick_time": r["pick_time"].isoformat() if r["pick_time"] else None,
-            }
-            for r in recent_top_wins_rows
-        ]
+        # DEAD-DASHBOARD-CACHE-COMPUTE (2026-09-07): PERF-HERO-RECENT-WINS built
+        # a top-8 'recent wins' list nightly — a DISTINCT ON query with a CTE
+        # over 14 days, plus a comprehension — and wrote it to
+        # dashboard_cache.recent_top_wins, which NOTHING read. Verified field by
+        # field across both repos: the only mention outside settlement.py was a
+        # TypeScript interface declaration. This was the single largest piece of
+        # the dead nightly compute.
 
         # PERF-HERO-NEXT-MODEL (2026-06-01) — build summary of the most-recent
         # candidate model's offline eval vs production. Surfaces the "next
@@ -2339,7 +2293,8 @@ def write_dashboard_cache():
         # exists. Production model is identified by MODEL_VERSION env (the
         # operator-controlled flag); candidate is the latest model_versions
         # row newer than production with cv_metrics populated.
-        upcoming_model_summary = _build_upcoming_model_summary()
+        # DEAD-DASHBOARD-CACHE-COMPUTE (2026-09-07): written, never read.
+        # `_build_upcoming_model_summary` is now unreferenced.
 
         # PRO-TIER-V2 (2026-06-02) — rolling-30d hero stats per /value-bets tier.
         # Pro hero shows calibrated-cohort stats; Elite hero shows all-active.
@@ -2451,7 +2406,8 @@ def write_dashboard_cache():
                 "days":              days,
             }
 
-        elite_value_bets_cumulative = _value_bets_cumulative()
+        # DEAD-DASHBOARD-CACHE-COMPUTE (2026-09-07): written, never read.
+        # `_value_bets_cumulative` itself stays — it still feeds the 30d fields.
 
         bot_breakdown = []
         for r in bot_rows:
@@ -2565,24 +2521,10 @@ def write_dashboard_cache():
             "active_roi_pct": active_roi_pct,
             "active_avg_clv": active_avg_clv,
             "retired_bot_breakdown": json.dumps(retired_bot_breakdown),
-            "prematch_settled_bets": prematch_settled,
-            "prematch_won_bets": prematch_won,
-            "prematch_total_staked": prematch_staked,
-            "prematch_total_pnl": prematch_pnl,
-            "prematch_roi_pct": prematch_roi,
-            "prematch_avg_clv": prematch_clv,
-            "inplay_settled_bets": inplay_settled,
-            "inplay_won_bets": inplay_won,
-            "inplay_total_staked": inplay_staked,
-            "inplay_total_pnl": inplay_pnl,
-            "inplay_roi_pct": inplay_roi,
             "daily_pnl_curve_30d": json.dumps(daily_pnl_curve_30d),
             "daily_pnl_curve_90d": json.dumps(daily_pnl_curve_90d),
-            "recent_top_wins": json.dumps(recent_top_wins),
-            "upcoming_model_summary": json.dumps(upcoming_model_summary) if upcoming_model_summary else None,
             "pro_value_bets_30d": json.dumps(pro_value_bets_30d) if pro_value_bets_30d else None,
             "elite_value_bets_30d": json.dumps(elite_value_bets_30d) if elite_value_bets_30d else None,
-            "elite_value_bets_cumulative": json.dumps(elite_value_bets_cumulative) if elite_value_bets_cumulative else None,
         }
         _cols = ", ".join(payload)
         _vals = ", ".join(f"%({k})s" for k in payload)
