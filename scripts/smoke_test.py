@@ -7930,16 +7930,8 @@ def _():
     """
     import json
     from workers.api_clients.db import execute_query
-    cache = execute_query("""
-        SELECT bot_breakdown FROM dashboard_cache
-        ORDER BY computed_at DESC LIMIT 1
-    """)
-    if not cache or not cache[0]["bot_breakdown"]:
-        return  # no cache row yet — skip
-    breakdown = cache[0]["bot_breakdown"]
-    if isinstance(breakdown, str):
-        breakdown = json.loads(breakdown)
-    live = execute_query("""
+
+    _LIVE_SQL = """
         SELECT b.name,
                COUNT(sb.id) FILTER (WHERE sb.result IN ('won','lost')) as settled,
                COALESCE(SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')), 0) as total_pnl
@@ -7949,21 +7941,57 @@ def _():
           AND b.name NOT LIKE 'bot_acca%%'
           AND b.name NOT LIKE 'bot_combo%%'
         GROUP BY b.id, b.name
-    """)
-    live_by_name = {r["name"]: r for r in live}
-    drifted = []
-    for c in breakdown:
-        name = c.get("name")
-        l = live_by_name.get(name)
-        if not l:
-            continue
-        c_pnl = float(c.get("total_pnl") or 0)
-        l_pnl = float(l["total_pnl"])
-        # Allow €1 absolute slack OR 1% relative
-        if abs(c_pnl - l_pnl) > max(1.0, abs(l_pnl) * 0.01):
-            drifted.append((name, c_pnl, l_pnl))
+    """
+
+    def _read_cache():
+        rows = execute_query("""
+            SELECT bot_breakdown, computed_at FROM dashboard_cache
+            ORDER BY computed_at DESC LIMIT 1
+        """)
+        if not rows or not rows[0]["bot_breakdown"]:
+            return None, None
+        bd = rows[0]["bot_breakdown"]
+        if isinstance(bd, str):
+            bd = json.loads(bd)
+        return bd, rows[0]["computed_at"]
+
+    def _drift(breakdown, live):
+        live_by_name = {r["name"]: r for r in live}
+        out = []
+        for c in breakdown:
+            l = live_by_name.get(c.get("name"))
+            if not l:
+                continue
+            c_pnl = float(c.get("total_pnl") or 0)
+            l_pnl = float(l["total_pnl"])
+            if abs(c_pnl - l_pnl) > max(1.0, abs(l_pnl) * 0.01):  # €1 abs OR 1% rel
+                out.append((c.get("name"), c_pnl, l_pnl))
+        return out
+
+    # BOT-AGGREGATES-SSOT-FLAKY-2026-09-06: the cache is rebuilt every 30 min
+    # (:15/:45) while simulated_bets settle continuously. A bet settling BETWEEN
+    # the cache write and this live read moves `live` off the cached snapshot and
+    # trips the tolerance — a false failure (the 20:42 UTC flake). simulated_bets
+    # has no settled_at to bound the live read, so instead make the check
+    # snapshot-stable: a drift only counts if the cache row's computed_at did NOT
+    # advance across the read. If a rebuild landed mid-test, re-read once against
+    # the fresh snapshot and re-judge.
+    breakdown, cache_ts = _read_cache()
+    if breakdown is None:
+        return  # no cache row yet — skip
+    drifted = _drift(breakdown, execute_query(_LIVE_SQL))
+
+    if drifted:
+        _, cache_ts2 = _read_cache()
+        if cache_ts2 != cache_ts:
+            # a cache rebuild ran during the test — the first comparison raced a
+            # moving target. Re-read both against the newer snapshot and re-judge.
+            breakdown, cache_ts = _read_cache()
+            drifted = _drift(breakdown, execute_query(_LIVE_SQL))
+
     assert not drifted, (
-        f"dashboard_cache.bot_breakdown drift on {len(drifted)} bots: "
+        f"dashboard_cache.bot_breakdown drift on {len(drifted)} bots vs a stable "
+        f"computed_at ({cache_ts}): "
         f"{[(n, f'{c:.2f}→{l:.2f}') for n,c,l in drifted[:5]]}"
     )
 
