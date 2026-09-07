@@ -31864,5 +31864,51 @@ def _():
     )
 
 
+
+@test("CLV-PUBLIC-WITHDRAWN — no CLV on the public feed, in meta OR on individual rows")
+def _():
+    """Withdrawing an aggregate while still publishing every row is not a
+    withdrawal.
+
+    The first pass (2026-09-06) removed median_clv_pct, mean_clv_pct,
+    median_clv_pin_pct, clv_coverage_pct and clv_beat_pct from `meta`, and left
+    clv_any_pct / clv_pin_pct on every bet in the `bets` array. /api/v1/
+    track-record is AUTH-FREE, so those rows are published, and clv_pin_pct
+    derives from simulated_bets.clv_pinnacle -- the raw, vigged column priced at
+    a high-water mark, the one reading +9.49% against an honest -3.22%. Anyone
+    could have averaged the rows and reconstructed the withdrawn headline.
+
+    Caught by reading the LIVE endpoint, not the build. The build was green and
+    the pages showed nothing; the API was still serving it.
+
+    `closing_odds` deliberately stays: an observed price is not a derived CLV
+    claim, and a reader re-settling the ledger needs it.
+    """
+    route = _web_path("src/app/api/v1/track-record/route.ts").read_text()
+
+    import re as _re
+    code = _re.sub(r"//.*?$", "", route, flags=_re.M)
+    code = _re.sub(r"/\*.*?\*/", "", code, flags=_re.S)
+
+    for field in ("clv_any_pct", "clv_pin_pct", "median_clv_pct",
+                  "mean_clv_pct", "median_clv_pin_pct", "clv_beat_pct"):
+        assert f"{field}:" not in code, (
+            f"the public track-record feed emits `{field}` again. This endpoint "
+            "is auth-free, so anything it returns is published — including "
+            "per-row values that can be averaged back into the withdrawn "
+            "headline. CLV stays off the public surface until it is both "
+            "positive and shown to predict return (CLV-EXECUTABLE-PRICE-SUBSET)."
+        )
+
+    # ROI must be unaffected — it is a different number and never touched
+    # clv_pinnacle.
+    assert "roi_pct:" in code, "roi_pct disappeared from the public feed"
+    assert "roi_n:" in code, (
+        "roi_n is gone — the landing renders it as the pick count beside roi_pct, "
+        "and without it the count reverts to total_bets and overstates the "
+        "evidence base again"
+    )
+
+
 if __name__ == "__main__":
     main()
