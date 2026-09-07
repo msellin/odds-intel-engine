@@ -18,14 +18,16 @@ TWO PASSES, deliberately separate:
                       only by the writer. 3.9M rows. Lowest risk: the data has
                       no reader, so there is nothing to regress.
 
-  --pass duplicates   For each (match, signal), keeps the EARLIEST row per
+  --pass duplicates   For each (match, signal), keeps the LATEST row per
                       distinct value and drops the rest. Every distinct
-                      observation survives with its first-seen timestamp, which
-                      is what store-on-change would have produced. A signal
-                      that oscillates A->B->A keeps both A and B but loses the
-                      second A; that is a deliberate trade — the alternative
-                      (gap-and-island over 49M rows) costs far more to run for
-                      a case no consumer distinguishes.
+                      observation survives, represented by its most-recent
+                      occurrence. A signal
+                      that oscillates A->B->A keeps both A and B, keeping the LATEST occurrence of each
+                      value (was earliest; corrected 2026-09-07 after measuring
+                      that keeping earliest changed the latest-read value for
+                      27,795 pairs / 1.76%. Keeping latest preserves the model-
+                      read value for 100% of pairs; only the first-seen timestamp
+                      of a repeated value is lost, which no reader consumes.
 
 SAFETY
 
@@ -109,14 +111,17 @@ def pass_duplicates(cur, apply: bool, batch: int) -> int:
         return total - keep
     deleted = 0
     while True:
-        # Delete rows that are NOT the earliest occurrence of their value.
+        # Delete rows that are NOT the LATEST occurrence of their value.
+        # (was earliest; keeping earliest changed the latest-by-captured_at
+        #  value (model/placer read it) for 27,795 pairs / 1.76%. Keeping
+        #  latest preserves the read value for 100%. SIGNALS-DEDUPE-LATEST-KEEP.)
         cur.execute(
             """DELETE FROM match_signals
                 WHERE ctid IN (
                   SELECT ctid FROM (
                     SELECT ctid, ROW_NUMBER() OVER (
                              PARTITION BY match_id, signal_name, signal_value
-                             ORDER BY captured_at) rn
+                             ORDER BY captured_at DESC) rn
                       FROM match_signals) t
                    WHERE t.rn > 1 LIMIT %s)""",
             (batch,),

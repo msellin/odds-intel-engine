@@ -32320,5 +32320,42 @@ def test_signals_store_on_change_complete():
     )
 
 
+@test("SIGNALS-DEDUPE-LATEST-KEEP — the dedupe prune keeps the LATEST row per value, not earliest")
+def test_prune_match_signals_keeps_latest():
+    """SIGNALS-DEDUPE-LATEST-KEEP-2026-09-07. prune_match_signals.py --pass
+    duplicates used to keep the EARLIEST row per distinct value. Measured on the
+    live table: that changed the latest-by-captured_at value — the field the
+    model and placer read via ORDER BY captured_at DESC LIMIT 1 — for 27,795
+    (match, signal) pairs, 1.76%. An irreversible 42.8M-row delete would have
+    silently corrupted 1.76% of the signals the model trains and bets on.
+
+    The fix keeps the LATEST occurrence per value (ORDER BY captured_at DESC),
+    which preserves the read value for 100% of pairs by construction: the
+    globally-latest row is always the latest occurrence of its own value, so it
+    always survives. Row count kept is identical (one per distinct triple).
+
+    Pins that the DELETE's window ranks by captured_at DESC.
+    """
+    import os, re
+    src = open(os.path.join(os.path.dirname(__file__), "prune_match_signals.py"),
+               encoding="utf-8").read()
+
+    # Locate the DELETE in pass_duplicates and its ROW_NUMBER window.
+    m = re.search(r"DELETE FROM match_signals.*?WHERE t\.rn > 1", src, flags=re.S)
+    assert m, "the pass_duplicates DELETE block is gone or restructured — re-audit"
+    block = m.group(0)
+
+    assert "ORDER BY captured_at DESC) rn" in block, (
+        "the dedupe DELETE no longer ranks by captured_at DESC — it is keeping "
+        "the EARLIEST row per value again, which corrupts the latest-value read "
+        "for ~1.76% of (match, signal) pairs (SIGNALS-DEDUPE-LATEST-KEEP)"
+    )
+    # Guard the specific regression: a bare ascending ORDER BY captured_at.
+    assert "ORDER BY captured_at) rn" not in block, (
+        "the DELETE window ranks by ascending captured_at (earliest-keep) — the "
+        "exact bug that flips 27,795 pairs' latest value"
+    )
+
+
 if __name__ == "__main__":
     main()
