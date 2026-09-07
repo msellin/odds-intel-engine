@@ -346,6 +346,16 @@ The `simulated_bets` table is the **public track-record chain** — the basis fo
 
 ### ⑧ Settlement (`settlement.py`)
 
+**Grading is a resolver registry (SETTLEMENT-RESOLVER-REGISTRY, 2026-09-07).**
+`settle_bet_result()` dispatches each bet to a market resolver (`1x2`, goals O/U,
+`btts`, `double_chance`, `asian_handicap`, `draw_no_bet`, `corners_ou_*`). Corners
+grade from the corner COUNT via `stats={corners_home,corners_away}`, not the goal
+score. **An unknown or ungradeable market returns `result='skip'`** — the row is
+left pending and a deduplicated alert fires; it is NEVER graded 'lost' (the old
+if/elif default silently lost every unrecognised market on the goal score). Adding
+a market family means adding a resolver. Behaviour on all existing markets is
+pinned by the SETTLEMENT-GOLDEN smoke fixture. See ANALYSIS_GOTCHAS §50.
+
 **Two modes:**
 
 1. **Per-match (instant):** `settle_finished_matches(match_ids)` — called by LivePoller the moment it detects FT/AET/PEN status. Writes final score + result to `matches` table, settles pending bets + user picks for that match immediately. No delay.

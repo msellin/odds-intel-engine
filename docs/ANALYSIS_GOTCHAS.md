@@ -1514,3 +1514,37 @@ different things and the answer is BOOK-SPECIFIC (do Coolbet/Betano/Unibet/Epicb
 settle cards O/U on points or on count?). Do NOT flip the default to `events`
 without confirming the placeable books' actual settlement rule — see
 CARDS-SETTLEMENT-EVENTS-DEF-GUARD.
+
+## 50. Settlement is a resolver REGISTRY — an unknown market SKIPs, it is not "lost"
+
+`settle_bet_result()` (workers/jobs/settlement.py) grades every bet — simulated,
+shadow and real — through a **market→resolver registry** (SETTLEMENT-RESOLVER-REGISTRY,
+2026-09-07). Two things to know before touching it:
+
+1. **An unrecognised market returns `result='skip'` (pnl=None), NOT a loss.** The
+   old if/elif chain initialised `won=False`, so any market it had no branch for
+   was silently graded **lost** on the goal score — corners `over` AND `under`
+   both came back `lost`. That is the exact trap the registry removes: unknown or
+   ungradeable → skip + a deduplicated Telegram, and the row is left pending. So
+   **if you add a market family, add a resolver** or it will pile up as pending
+   (by design) rather than be mis-settled (the old failure).
+
+2. **A resolver may need a non-goal statistic, passed via `stats=`.** Corners are
+   settled from `stats={'corners_home','corners_away'}` (the corner COUNT, not the
+   goal score). Callers that do not pass `stats` get `skip` for those markets —
+   which is why the generic goals-based shadow/sim settlers leave `corners_ou_*`
+   pending for `corners_paper_bot` to settle. The generic `_PENDING_SHADOW_BETS_SQL`
+   also excludes `corners_ou_%` outright so those rows never even reach the
+   registry there (no spurious "unsettleable" alerts for a market we settle on
+   purpose).
+
+Behaviour on all existing markets (1x2, o/u, over_under_*, asian_handicap, btts,
+double_chance, draw_no_bet) is pinned byte-for-byte by the **SETTLEMENT-GOLDEN**
+smoke fixture (`scripts/fixtures/settlement_golden.json`, 1,935 grid rows of the
+pre-refactor verdicts). If you change a resolver and that test fails, you changed
+a real settlement outcome — regenerate the fixture only if the change is intended.
+
+**Cards is deliberately NOT registered** — the card count undercounts the books'
+line by ~0.8/match (CARDS-SETTLEMENT), so a cards bet skips rather than
+manufacturing edge on every under. The registry is where "which markets can we
+grade" is documented in code.

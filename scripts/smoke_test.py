@@ -32830,5 +32830,109 @@ def test_corners_paper_forward():
     )
 
 
+@test("SETTLEMENT-GOLDEN — registry refactor grades every known market byte-identically")
+def test_settlement_golden():
+    """SETTLEMENT-RESOLVER-REGISTRY-2026-09-07. The settlement resolver registry
+    replaced a hardcoded if/elif chain that ALL bet grading runs through. This is
+    the differential guard: a golden fixture (scripts/fixtures/settlement_golden.json)
+    holds the PRE-refactor verdicts on an exhaustive grid of every known market x
+    selection x score x closing-odds. settle_bet_result() must still reproduce
+    every row's result+pnl+clv exactly. A single mismatch means the refactor
+    changed a real settlement outcome — fail loudly.
+    """
+    import os, json
+    from workers.jobs.settlement import settle_bet_result
+    fx = os.path.join(os.path.dirname(__file__), "fixtures", "settlement_golden.json")
+    assert os.path.exists(fx), "golden settlement fixture is gone — the differential guard cannot run"
+    golden = json.load(open(fx, encoding="utf-8"))
+    assert len(golden) >= 1500, f"golden fixture shrank to {len(golden)} rows — coverage lost"
+    mismatches = []
+    for gcase in golden:
+        bet = {"market": gcase["market"], "selection": gcase["selection"], "stake": 10.0,
+               "odds_at_pick": 2.00, "odds_at_pick_live": 1.95}
+        out = settle_bet_result(bet, gcase["hg"], gcase["ag"], gcase["closing"])
+        if out != gcase["out"]:
+            mismatches.append((gcase["market"], gcase["selection"], gcase["hg"], gcase["ag"],
+                               gcase["out"], out))
+    assert not mismatches, (
+        f"{len(mismatches)} settlement outcomes changed vs the golden fixture — "
+        f"first: {mismatches[0]}"
+    )
+
+
+@test("SETTLEMENT-REGISTRY — corners settle from stats; unknown/no-stat markets SKIP not lost")
+def test_settlement_registry_skip():
+    """SETTLEMENT-RESOLVER-REGISTRY-2026-09-07. Two new guarantees beyond the
+    golden differential: (1) corners_ou_* grade from corner counts passed via
+    `stats`, and (2) a market the registry cannot grade (unknown, or corners with
+    no stats) returns result='skip' with pnl=None — NEVER a silent 'lost' (the old
+    default), so an unsettleable market is left pending and alerted, not wrongly
+    graded. Also pins that the settlement callers guard against writing 'skip'.
+    """
+    from workers.jobs.settlement import settle_bet_result
+    st = {"corners_home": 6, "corners_away": 5}  # 11 corners
+    over = settle_bet_result({"market": "corners_ou_105", "selection": "over", "stake": 10.0,
+                              "odds_at_pick": 2.0}, 0, 0, None, stats=st)
+    under = settle_bet_result({"market": "corners_ou_105", "selection": "under", "stake": 10.0,
+                               "odds_at_pick": 2.0}, 0, 0, None, stats=st)
+    assert over["result"] == "won" and under["result"] == "lost", (
+        "corners no longer settle from the corner count in stats"
+    )
+    # no stats -> cannot grade -> skip, not lost
+    nostat = settle_bet_result({"market": "corners_ou_105", "selection": "over", "stake": 10.0,
+                                "odds_at_pick": 2.0}, 0, 0, None)
+    assert nostat["result"] == "skip" and nostat["pnl"] is None, (
+        "corners without corner stats must SKIP (was previously graded 'lost' on the goal score)"
+    )
+    # a genuinely unknown market must skip, never be graded lost
+    unk = settle_bet_result({"market": "cards_ou_45", "selection": "over", "stake": 10.0,
+                             "odds_at_pick": 2.0}, 3, 1, None)
+    assert unk["result"] == "skip", (
+        "an unknown market is being GRADED instead of skipped — the exact silent-loss "
+        "bug the registry exists to prevent"
+    )
+    # combo legs use the glued 'ou25' encoding (NOT 'over_under_25'); it must grade
+    # from the goal total, not fall through to a silent 'lost' (the pre-refactor
+    # bug that graded every O/U combo leg as a loss → all combos lost).
+    from workers.jobs.settlement import settle_combo_bet, _parse_ou_line
+    assert _parse_ou_line("ou25", "over") == 2.5, "glued combo-leg O/U encoding no longer parses"
+    assert settle_bet_result({"market": "ou25", "selection": "over", "stake": 10.0,
+                              "odds_at_pick": 2.0}, 3, 0, None)["result"] == "won", (
+        "'ou25' combo-leg O/U no longer grades from the goal total"
+    )
+    combo = settle_combo_bet(
+        {"combo_legs": [{"market": "ou15", "selection": "over", "odds": 1.4, "match_id": "M"},
+                        {"market": "ou25", "selection": "over", "odds": 1.8, "match_id": "M"}],
+         "stake": 10.0, "system_type": None},
+        {"M": (3, 0)},
+    )
+    assert combo["result"] == "won", "an all-O/U combo no longer settles (regressed to skip/lost)"
+    # a combo with an ungradeable leg must return skip, never a silent non-win
+    combo_skip = settle_combo_bet(
+        {"combo_legs": [{"market": "ou25", "selection": "over", "odds": 1.8, "match_id": "M"},
+                        {"market": "totally_unknown", "selection": "x", "odds": 1.5, "match_id": "M"}],
+         "stake": 10.0, "system_type": None},
+        {"M": (3, 0)},
+    )
+    assert combo_skip["result"] == "skip", "a combo with an ungradeable leg must skip"
+
+    # every settlement caller must refuse to WRITE a 'skip' — including the real
+    # combo path, which writes into a text column and so would silently persist it.
+    src = open(os.path.join(os.path.dirname(__file__), "..", "workers", "jobs", "settlement.py"),
+               encoding="utf-8").read()
+    # single-bet paths (sim/shadow/real single) + void-resettle + both combo paths
+    assert src.count('"skip"') >= 6, (
+        "settlement.py lost skip-guards — every caller must leave an unsettleable "
+        "market pending, never write result='skip' or feed a None pnl into bankroll math"
+    )
+    # the real combo write must be preceded by a skip guard (finding from review)
+    real_combo = src.split("UPDATE real_bets SET result=%s, pnl=%s, resolved_at=NOW()")[0]
+    assert real_combo.rsplit("outcome[", 1)[-1].startswith('"result"] == "skip"') \
+        or 'outcome["result"] == "skip"' in real_combo[-400:], (
+        "the real combo settlement path (_settle_real_combo_bets) writes without a "
+        "skip guard — a skip would be persisted to real_bets.result (text column)"
+    )
+
+
 if __name__ == "__main__":
     main()

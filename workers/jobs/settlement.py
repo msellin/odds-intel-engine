@@ -13,6 +13,7 @@ Usage:
 import sys
 import os
 import math
+import re
 import time
 import argparse
 import json
@@ -163,6 +164,18 @@ def _parse_ou_line(market: str, selection: str) -> float | None:
     for token in market.replace("/", "_").split("_") + selection.split():
         if token in ("over", "under", "o", "u", ""):
             continue
+        # Legacy glued combo-leg encoding: 'ou25' -> 2.5, 'ou15' -> 1.5, 'ou35'
+        # -> 3.5. Daily-pipeline SINGLES store O/U as 'over_under_25' (handled by
+        # the split above), but COMBO LEGS store it as 'ou25', which never parsed
+        # here — so every O/U combo leg fell through to a silent 'lost'. Mirrors
+        # the two-digit '25'->2.5 rule below. (corners_ou_* has its own resolver
+        # and never reaches this function.)
+        gm = re.match(r"^ou(\d{2})$", token)
+        if gm:
+            v = int(gm.group(1)) / 10
+            if 0 < v < 10:
+                return v
+            continue
         try:
             if "." in token:
                 v = float(token)
@@ -177,98 +190,214 @@ def _parse_ou_line(market: str, selection: str) -> float | None:
     return None
 
 
+# ─── Settlement resolver registry (SETTLEMENT-RESOLVER-REGISTRY-2026-09-07) ───
+#
+# Each resolver grades ONE market family and returns:
+#   True  -> won        False -> lost        None -> push/void (stake returned)
+#   _UNSETTLEABLE       -> this settler cannot grade this bet (market not known,
+#                          or the statistic it needs was not supplied) — the
+#                          caller must LEAVE IT PENDING and alert, never write it.
+#
+# The registry replaces a hardcoded if/elif chain whose default for an
+# unrecognised market was `won=False` → a silent 'lost' on every pick (verified:
+# corners over AND under both graded lost). "Settle everything" is unsafe; the
+# safe form settles only what it can grade correctly and refuses the rest. So a
+# new market is a SKIP with an alert, not a guessed loss.
+#
+# Resolvers below are the previous branches extracted VERBATIM (behaviour is
+# pinned byte-for-byte by the SETTLEMENT-GOLDEN smoke fixture) plus corners
+# (needs corner counts via `stats`). Cards is deliberately NOT registered — its
+# count undercounts the books' line by ~0.8/match (CARDS-SETTLEMENT), so it must
+# skip, not manufacture edge on every under.
+
+_UNSETTLEABLE = object()
+
+
+def _r_1x2(market, selection, home_goals, away_goals, stats):
+    if selection == "home" and home_goals > away_goals:
+        return True
+    if selection in ("draw", "x") and home_goals == away_goals:
+        return True
+    if selection == "away" and away_goals > home_goals:
+        return True
+    return False
+
+
+def _r_ou_goals(market, selection, home_goals, away_goals, stats):
+    total_goals = home_goals + away_goals
+    line = _parse_ou_line(market, selection)
+    if line is not None:
+        if "over" in selection and total_goals > line:
+            return True
+        if "under" in selection and total_goals < line:
+            return True
+    return False
+
+
+def _r_btts(market, selection, home_goals, away_goals, stats):
+    both_scored = home_goals >= 1 and away_goals >= 1
+    if selection == "yes" and both_scored:
+        return True
+    if selection == "no" and not both_scored:
+        return True
+    return False
+
+
+def _r_double_chance(market, selection, home_goals, away_goals, stats):
+    home_wins = home_goals > away_goals
+    draw = home_goals == away_goals
+    away_wins = away_goals > home_goals
+    if selection == "1x" and (home_wins or draw):
+        return True
+    if selection == "x2" and (draw or away_wins):
+        return True
+    if selection == "12" and (home_wins or away_wins):
+        return True
+    return False
+
+
+def _r_asian_handicap(market, selection, home_goals, away_goals, stats):
+    # selection = "home -1.25" or "away +0.5" (team + handicap in one string)
+    parts = selection.split(" ", 1)
+    if len(parts) != 2:
+        return False
+    sel_team, hl_str = parts[0], parts[1]
+    try:
+        hl = float(hl_str)
+    except ValueError:
+        return False
+    spread = -hl  # goals home must win by; negative spread = home receives goals
+    margin = home_goals - away_goals
+    floor_s = math.floor(spread)
+    frac = spread - floor_s  # [0, 1)
+    if frac < 0.01:  # whole line — push at margin == spread
+        spread_int = round(spread)
+        if sel_team == "home":
+            if margin > spread_int:
+                return True
+            if margin == spread_int:
+                return None  # push → void (stake returned)
+            return False
+        else:  # away
+            if margin < spread_int:
+                return True
+            if margin == spread_int:
+                return None  # push → void
+            return False
+    # Half or quarter line — strict comparison, no push
+    if sel_team == "home":
+        return margin > spread
+    return margin < spread
+
+
+def _r_draw_no_bet(market, selection, home_goals, away_goals, stats):
+    # Draw → void (stake returned); home/away win → won/lost as normal
+    home_wins = home_goals > away_goals
+    draw = home_goals == away_goals
+    away_wins = away_goals > home_goals
+    if draw:
+        return None
+    if selection == "home":
+        return home_wins
+    return away_wins  # away
+
+
+def _decode_corners_line(market: str) -> float | None:
+    """corners_ou_105 -> 10.5 (0.5-stepped, encoded without the dot)."""
+    m = re.match(r"^corners_ou_(\d+)$", market)
+    return int(m.group(1)) / 10.0 if m else None
+
+
+def _r_corners_ou(market, selection, home_goals, away_goals, stats):
+    """Corners are settled from the corner COUNT, not the goal score. Needs
+    stats={'corners_home','corners_away'} — without it we cannot grade, so SKIP
+    (this is why the generic goals-path, which passes no stats, leaves corners
+    pending for corners_paper_bot to settle)."""
+    if not stats:
+        return _UNSETTLEABLE
+    ch, ca = stats.get("corners_home"), stats.get("corners_away")
+    if ch is None or ca is None:
+        return _UNSETTLEABLE
+    line = _decode_corners_line(market)
+    if line is None:
+        return _UNSETTLEABLE
+    total = int(ch) + int(ca)
+    over = total > line  # .5-stepped lines never push
+    if "over" in selection:
+        return over
+    if "under" in selection:
+        return not over
+    return _UNSETTLEABLE
+
+
+# Ordered so the first matching predicate wins — mirrors the previous elif chain
+# exactly (1x2 exact before the OU substring test, etc.). corners_ou_* contains
+# neither 'over_under' nor 'o/u', so it never collides with the goals-OU branch.
+_SETTLEMENT_REGISTRY = [
+    (lambda m: m == "1x2", _r_1x2),
+    (lambda m: "over_under" in m or "o/u" in m or m == "ou"
+               or re.match(r"^ou\d{2}$", m) is not None, _r_ou_goals),
+    (lambda m: m == "btts", _r_btts),
+    (lambda m: m == "double_chance", _r_double_chance),
+    (lambda m: m == "asian_handicap", _r_asian_handicap),
+    (lambda m: m == "draw_no_bet", _r_draw_no_bet),
+    (lambda m: re.match(r"^corners_ou_\d+$", m) is not None, _r_corners_ou),
+]
+
+# The skip verdict: a market this settler must not grade. `result='skip'` is NOT
+# a bet outcome — callers must leave the row pending and never UPDATE it to this.
+_SKIP_RESULT = {"result": "skip", "pnl": None, "clv": None, "clv_live": None}
+
+
+def _alert_unsettleable(bet: dict) -> None:
+    """A market the settlement registry cannot grade reached a settler. Log it and
+    send a DEDUPLICATED Telegram (per-market, 6h window) so a new or ungradeable
+    market is noticed rather than silently piling up as pending. Never raises."""
+    market = str(bet.get("market", "?"))
+    try:
+        console.print(f"  [yellow]settle: SKIP ungradeable market {market!r} "
+                      f"(bet {bet.get('id')}) — left pending[/yellow]")
+    except Exception:
+        pass
+    try:
+        from workers.notify.telegram import send_telegram
+        send_telegram(
+            f"⚠️ <b>Unsettleable market</b>\n\nThe settlement registry has no resolver "
+            f"for <code>{market}</code> (or it lacks the statistic it needs). Bets on it "
+            f"are being LEFT PENDING, not graded. Add a resolver in settle_bet_result() "
+            f"or confirm the market should not settle here.",
+            dedup_key=f"unsettleable-{market}",
+            dedup_window_s=6 * 3600,
+        )
+    except Exception:
+        pass
+
+
 def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
-                      closing_odds: float | None) -> dict:
+                      closing_odds: float | None, stats: dict | None = None) -> dict:
     """
-    Determine if a bet won or lost.
-    Returns dict with result, pnl, clv.
+    Determine if a bet won or lost, via the settlement resolver registry.
+    Returns dict with result, pnl, clv, clv_live. `stats` carries non-goal
+    outcome statistics (e.g. corners_home/corners_away) for markets that need
+    them; goals markets ignore it. An unrecognised or ungradeable market returns
+    result='skip' (leave pending + alert) — it is NEVER graded as a loss.
     """
     market = bet["market"].lower().strip()
     selection = bet["selection"].lower().strip()
     stake = float(bet["stake"])
     odds = float(bet["odds_at_pick"])
-    total_goals = home_goals + away_goals
 
-    won = False
+    resolver = None
+    for pred, fn in _SETTLEMENT_REGISTRY:
+        if pred(market):
+            resolver = fn
+            break
+    if resolver is None:
+        return dict(_SKIP_RESULT)  # unknown market — do not guess-grade
 
-    if market == "1x2":
-        if selection == "home" and home_goals > away_goals:
-            won = True
-        elif selection in ("draw", "x") and home_goals == away_goals:
-            won = True
-        elif selection == "away" and away_goals > home_goals:
-            won = True
-
-    elif "over_under" in market or "o/u" in market or market == "ou":
-        line = _parse_ou_line(market, selection)
-        if line is not None:
-            if "over" in selection and total_goals > line:
-                won = True
-            elif "under" in selection and total_goals < line:
-                won = True
-
-    elif market == "btts":
-        both_scored = home_goals >= 1 and away_goals >= 1
-        if selection == "yes" and both_scored:
-            won = True
-        elif selection == "no" and not both_scored:
-            won = True
-
-    elif market == "double_chance":
-        home_wins = home_goals > away_goals
-        draw = home_goals == away_goals
-        away_wins = away_goals > home_goals
-        if selection == "1x" and (home_wins or draw):
-            won = True
-        elif selection == "x2" and (draw or away_wins):
-            won = True
-        elif selection == "12" and (home_wins or away_wins):
-            won = True
-
-    elif market == "asian_handicap":
-        # selection = "home -1.25" or "away +0.5" (team + handicap in one string)
-        parts = selection.split(" ", 1)
-        if len(parts) == 2:
-            sel_team, hl_str = parts[0], parts[1]
-            try:
-                hl = float(hl_str)
-            except ValueError:
-                pass
-            else:
-                spread = -hl  # goals home must win by; negative spread = home receives goals
-                margin = home_goals - away_goals
-                floor_s = math.floor(spread)
-                frac = spread - floor_s  # [0, 1)
-                if frac < 0.01:  # whole line — push at margin == spread
-                    spread_int = round(spread)
-                    if sel_team == "home":
-                        if margin > spread_int:
-                            won = True
-                        elif margin == spread_int:
-                            won = None  # push → void (stake returned)
-                    else:  # away
-                        if margin < spread_int:
-                            won = True
-                        elif margin == spread_int:
-                            won = None  # push → void
-                else:
-                    # Half or quarter line — strict comparison, no push
-                    if sel_team == "home":
-                        won = margin > spread
-                    else:
-                        won = margin < spread
-
-    elif market == "draw_no_bet":
-        # Draw → void (stake returned); home/away win → won/lost as normal
-        home_wins = home_goals > away_goals
-        draw = home_goals == away_goals
-        away_wins = away_goals > home_goals
-        if draw:
-            won = None
-        elif selection == "home":
-            won = home_wins
-        else:  # away
-            won = away_wins
+    won = resolver(market, selection, home_goals, away_goals, stats)
+    if won is _UNSETTLEABLE:
+        return dict(_SKIP_RESULT)  # known family but not gradeable here (no stats)
 
     if won is None:
         pnl = 0.0  # push — stake returned
@@ -346,6 +475,10 @@ def settle_combo_bet(combo_bet: dict, match_scores: dict) -> dict | None:
             "odds_at_pick": float(leg["odds"]),
         }
         leg_settled = settle_bet_result(synthetic, score_h, score_a, None)
+        # SETTLEMENT-RESOLVER-REGISTRY: a leg the registry cannot grade makes the
+        # whole combo ungradeable — never treat a skip as a silent non-win.
+        if leg_settled["result"] == "skip":
+            return {"result": "skip", "pnl": None, "clv": None}
         leg_results.append((leg, leg_settled["result"]))
 
     if system_type == "no_singles":
@@ -1053,6 +1186,11 @@ def _settle_real_bets_for_matches(match_ids: list[str]):
                 int(bet["score_away"]),
                 closing_odds,
             )
+            # SETTLEMENT-RESOLVER-REGISTRY: don't write 'skip' — leave the real
+            # bet pending and alert so an unsettleable market is investigated.
+            if outcome["result"] == "skip":
+                _alert_unsettleable(bet)
+                continue
             execute_write(
                 """UPDATE real_bets SET result=%s, pnl=%s, resolved_at=NOW(),
                                         clv=%s
@@ -1156,6 +1294,13 @@ def _settle_real_combo_bets() -> int:
                 match_scores,
             )
             if outcome is None:
+                continue
+            # SETTLEMENT-RESOLVER-REGISTRY: a combo with an ungradeable leg comes
+            # back result='skip' (pnl=None). real_bets.result is a text column, so
+            # writing that would silently persist a bogus row and drop the bet from
+            # the pending set. Leave it pending and alert instead.
+            if outcome["result"] == "skip":
+                _alert_unsettleable({"market": "combo", "id": bet["id"]})
                 continue
             execute_write(
                 """UPDATE real_bets SET result=%s, pnl=%s, resolved_at=NOW()
@@ -1458,8 +1603,9 @@ def resettle_wrongly_voided_bets(limit: int = 2000, dry_run: bool = False) -> di
                 console.print(f"  [yellow]Void-integrity recompute failed for {bet['id']}: {e}[/yellow]")
                 continue
 
-            if settlement["result"] == "void":
+            if settlement["result"] in ("void", "skip"):
                 # Genuine push (AH whole line / DNB draw) — leave it alone.
+                # 'skip' = registry cannot regrade this market here; also leave it.
                 continue
 
             # A market that cannot push resolving to void means the row was
@@ -2769,6 +2915,14 @@ def _settle_pending_bets(pending: list, finished: list):
                 console.print(f"  [dim]devigged-pinnacle CLV failed for {bet.get('id')}: {_e}[/dim]")
             settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
 
+        # SETTLEMENT-RESOLVER-REGISTRY: 'skip' = the registry cannot grade this
+        # market (unknown, or missing the statistic it needs). Leave the row
+        # pending — never write 'skip' and never feed a None pnl into bankroll.
+        if settlement["result"] == "skip":
+            _alert_unsettleable(bet)
+            skipped += 1
+            continue
+
         # Bot bankroll tracking
         if bot_id not in by_bot:
             by_bot[bot_id] = {"bankroll": 1000.0, "name": "unknown"}
@@ -2895,6 +3049,14 @@ def _settle_pending_shadow_bets(pending: list, finished: list) -> int:
             console.print(f"  [dim]devigged-pinnacle CLV failed for {bet['id']}: {_e}[/dim]")
 
         settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
+
+        # SETTLEMENT-RESOLVER-REGISTRY: leave ungradeable markets pending (the
+        # corners paper bot settles corners_ou itself; anything else unknown must
+        # not be written as 'skip' or feed a None pnl into the totals).
+        if settlement["result"] == "skip":
+            _alert_unsettleable(bet)
+            skipped += 1
+            continue
 
         try:
             execute_write(
