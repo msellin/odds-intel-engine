@@ -42,6 +42,8 @@
 :03/:33 ⑱ Coolbet Odds    (MAC LAUNCHD)              Every 30 min, between AF odds (:00/:30) and betting refresh (:05/:35). Walks Coolbet fo-category + per-match sidebets, stores Coolbet OU/1X2/BTTS/AH/DC odds in odds_snapshots. **Runs on the operator's Mac** via launchd (`com.oddsintel.coolbet-odds-snapshot`), NOT the VPS — Coolbet's Imperva 403's the VPS Linux Chrome + Hetzner IP (silent outage 2026-06-26 → 2026-07-03). See Mac-side jobs section below.
 :05/:35 ⑨ Betting Refresh betting_refresh()         Every 30 min, 5 min after odds refresh, 24/7 (WC-OVERNIGHT-COVERAGE 2026-06-12 — was 07:05–22:35 UTC). DB-only, 0 AF calls. Dedup prevents duplicates. Cohort auto-detected from UTC hour.
 :05/:35 ⑰ Shadow Run     job_shadow_run_interval() Every 30 min, concurrent with betting refresh. ALL bots evaluated → shadow_bets. Cohort = 'HHMM' UTC string. 32 snapshots/day.
+8/12/16/20:20 Corners Paper Pick  job_corners_paper_pick()  Shadow bot bot_corners_paper_shadow_v1 — records corners_ou paper picks (best Betano/Unibet price beats de-vigged Pinnacle) → shadow_bets, cohort 'corners_paper'. Tracks on /admin/shadow-bots, off public pages.
+:50    Corners Paper Settle job_corners_paper_settle() Grades the above from match_stats corners (over/under, .5 lines never push). The generic goals-based shadow settler skips corners_ou_% by design.
 08:00  ② Enrichment      run_enrichment()          Injuries only — single morning fetch (AF-INJURIES-LATE 2026-06-01)
 10:45  ① Fixtures        run_fixtures()            Status refresh — catches morning postponements
 12:30  ⑦ News Checker    run_news_checker()

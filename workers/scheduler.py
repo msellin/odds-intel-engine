@@ -1897,6 +1897,28 @@ def job_budget_sync():
     _run_job("budget_sync", budget.sync_with_server)
 
 
+def job_corners_paper_pick():
+    """CORNERS-PAPER-FORWARD (2026-09-07): record paper corners picks for upcoming
+    fixtures where the best Betano/Unibet price beats de-vigged Pinnacle. Runs as
+    the shadow bot bot_corners_paper_shadow_v1 (writes shadow_bets, tracked on
+    /admin/shadow-bots, off the public pages); paper-only until the edge proves."""
+    from workers.jobs.corners_paper_bot import generate_picks
+    c = generate_picks()
+    if c.get("picked"):
+        console.print(f"[cyan]corners paper: {c['picked']} new picks ({c['scanned']} scanned)[/cyan]")
+    _run_job("corners_paper_pick", lambda: None)
+
+
+def job_corners_paper_settle():
+    """CORNERS-PAPER-FORWARD: grade pending corners paper picks from finished
+    match_stats corner counts."""
+    from workers.jobs.corners_paper_bot import settle_picks
+    c = settle_picks()
+    if c.get("settled"):
+        console.print(f"[cyan]corners paper: settled {c['settled']} ({c['won']}W/{c['lost']}L)[/cyan]")
+    _run_job("corners_paper_settle", lambda: None)
+
+
 def job_coolbet_price_sanity():
     """COOLBET-CROSS-BOOK-SANITY-GUARD (2026-09-07): flags Coolbet 1x2 prices
     whose favourite is inverted vs Pinnacle — the signature of a fuzzy-match
@@ -2774,6 +2796,11 @@ def main():
     # COOLBET-CROSS-BOOK-SANITY-GUARD: :25/:55, after AF (:00/:30) + Coolbet (:03/:33) sweeps land.
     scheduler.add_job(job_coolbet_price_sanity, CronTrigger(minute="25,55"),
                       id="coolbet_price_sanity", name="Coolbet Price Sanity")
+    # CORNERS-PAPER-FORWARD: pick across the day (odds update), settle after matches finish.
+    scheduler.add_job(job_corners_paper_pick, CronTrigger(hour="8,12,16,20", minute=20),
+                      id="corners_paper_pick", name="Corners Paper Pick")
+    scheduler.add_job(job_corners_paper_settle, CronTrigger(minute=50),
+                      id="corners_paper_settle", name="Corners Paper Settle")
     # AF-ENDPOINT-ATTRIBUTION flush: every 5 min except :00 (sync owns :00). No AF call.
     scheduler.add_job(job_budget_attribution_flush,
                       CronTrigger(minute="5,10,15,20,25,30,35,40,45,50,55"),

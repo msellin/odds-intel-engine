@@ -32763,5 +32763,72 @@ def test_coolbet_price_sanity():
     )
 
 
+@test("CORNERS-PAPER-FORWARD — corners line-shop as a shadow bot, tracked on /admin/shadow-bots, off public pages")
+def test_corners_paper_forward():
+    """CORNERS-PAPER-FORWARD-2026-09-07. The corners line-shop edge did not
+    reproduce at executable prices, so it is validated FORWARD as a SHADOW bot
+    (bot_corners_paper_shadow_v1) before any real money. Writing to shadow_bets
+    (never simulated_bets) is what puts it on /admin/shadow-bots and keeps it off
+    the public performance/picks pages. Pins: (1) migration 308 registers the bot
+    and widens the shadow_cohort check for 'corners_paper'; (2) the bot writes to
+    shadow_bets gated to Betano/Unibet, de-vigging Pinnacle; (3) the generic
+    goals-based shadow settler is taught to SKIP corners_ou_% (it would VOID them
+    on the goal score); (4) it is PAPER — it never posts a real bet.
+    """
+    import os, re
+    root = os.path.dirname(__file__)
+
+    # (1) migration 308 registers the bot + widens the cohort check.
+    mig = os.path.join(root, "..", "supabase", "migrations", "308_bot_corners_paper_shadow.sql")
+    assert os.path.exists(mig), "migration 308_bot_corners_paper_shadow.sql is gone"
+    msql = open(mig, encoding="utf-8").read()
+    assert "bot_corners_paper_shadow_v1" in msql, "bot registration is gone from migration 308"
+    assert "'corners_paper'" in msql and "shadow_bets_shadow_cohort_check" in msql, (
+        "the shadow_cohort check no longer admits 'corners_paper' — inserts would "
+        "violate the constraint and the bot would silently record nothing"
+    )
+    # the throwaway first-cut table must be cleaned up, not left behind.
+    assert "DROP TABLE IF EXISTS corners_paper_picks" in msql
+
+    code = open(os.path.join(root, "..", "workers", "jobs", "corners_paper_bot.py"),
+                encoding="utf-8").read()
+    # (2) writes to shadow_bets (the shadow ledger, never simulated_bets), gated
+    # to the placement books, de-vigging Pinnacle. Match on write VERBS, not the
+    # bare table name — gotcha 41: the docstring names simulated_bets to say it
+    # never writes it, and both table names appear in the shadow_bets SQL / prose.
+    assert "INSERT INTO shadow_bets" in code, (
+        "the corners bot no longer writes to shadow_bets — it would not appear on "
+        "/admin/shadow-bots"
+    )
+    assert "INTO simulated_bets" not in code and "UPDATE simulated_bets" not in code, (
+        "the corners bot must NEVER write simulated_bets — that would surface it on "
+        "the public performance/picks pages"
+    )
+    assert 'PLACEMENT_BOOKS = ("Betano", "Unibet")' in code, (
+        "the paper bot no longer gates to Betano/Unibet — the audit's edge was "
+        "entirely at those two books (Epicbet negative)"
+    )
+    assert "_devig_two_way" in code and "Pinnacle" in code, (
+        "the paper bot no longer de-vigs Pinnacle — edge would be measured "
+        "against a vigged line"
+    )
+    assert "ms.corners_home" in code, "the settle path no longer reads match_stats corners"
+    # PAPER ONLY: it must never touch the real placer / post a bet.
+    assert "place_all_bets" not in code and "execute=True" not in code, (
+        "the corners paper bot references real placement — it must stay paper-only"
+    )
+
+    # (3) the generic goals-based shadow settler MUST exclude corners_ou_% or it
+    # grades them on the goal score and silently voids every corners pick. The
+    # wildcard is doubled because the SQL string is bound with params at every
+    # call site (a lone percent is read as a parameter marker).
+    st = open(os.path.join(root, "..", "workers", "jobs", "settlement.py"), encoding="utf-8").read()
+    assert "_PENDING_SHADOW_BETS_SQL" in st
+    assert "NOT LIKE 'corners_ou_%%'" in st, (
+        "the generic shadow settler no longer excludes corners_ou markets (or the "
+        "wildcard is not doubled) — it would void the corners paper bot's picks"
+    )
+
+
 if __name__ == "__main__":
     main()

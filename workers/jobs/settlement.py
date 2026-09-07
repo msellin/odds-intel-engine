@@ -88,6 +88,17 @@ LEFT JOIN matches m ON sb.match_id = m.id
 LEFT JOIN teams ht ON m.home_team_id = ht.id
 LEFT JOIN teams ta ON m.away_team_id = ta.id
 WHERE sb.result = 'pending'
+-- CORNERS-PAPER-FORWARD-2026-09-07: bot_corners_paper_shadow_v1 writes
+-- market='corners_ou_<line>' rows. settle_bet_result() grades on the GOAL
+-- score and matches none of its branches, so it would silently VOID every
+-- corners pick. Those rows are settled from match_stats corners by
+-- workers/jobs/corners_paper_bot.settle_picks() instead — keep the generic
+-- goals settler away from them.
+-- NB: the LIKE pattern doubles its wildcard char. This SQL string is passed to
+-- psycopg2 with bound params at every call site, so a literal percent sign must
+-- be doubled or it is read as a parameter marker (IndexError at runtime). For
+-- the same reason this comment must not contain a lone percent sign either.
+  AND sb.market NOT LIKE 'corners_ou_%%'
 """
 
 
