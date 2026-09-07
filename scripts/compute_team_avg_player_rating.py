@@ -119,6 +119,11 @@ def main():
         return
 
     console.print(f"\n[bold]Inserting {len(write_rows):,} rows into match_signals...[/bold]")
+    from workers.api_clients.supabase_client import filter_unchanged_signals
+    write_rows = filter_unchanged_signals(write_rows)
+    if not write_rows:
+        console.print("[dim]match_signals: all values unchanged since last capture — nothing to write[/dim]")
+        return
     inserted = 0
     with get_conn() as conn:
         with conn.cursor() as cur:

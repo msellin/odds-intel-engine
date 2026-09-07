@@ -148,6 +148,10 @@ def main():
                 # the latest run wins. Idempotency: re-running today inserts
                 # duplicate-for-today rows — acceptable; the table is meant
                 # to be append-only history. Periodic cleanup if needed.
+                from workers.api_clients.supabase_client import filter_unchanged_signals
+                tuples = filter_unchanged_signals(tuples)
+                if not tuples:
+                    continue
                 execute_values(
                     cur,
                     """INSERT INTO match_signals

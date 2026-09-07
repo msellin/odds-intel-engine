@@ -1113,6 +1113,56 @@ def bulk_update_match_af_predictions(rows: list[tuple[str, str]]) -> int:
     return len(rows)
 
 
+def filter_unchanged_signals(rows: list[tuple]) -> list[tuple]:
+    """Store-on-change filter for the nightly compute_* scripts.
+
+    SIGNALS-DEDUPE-BACKLOG-2026-09-06: the batch morning writer gained a
+    store-on-change guard in SIGNALS-STORE-ON-CHANGE-2026-09-03, but seven
+    nightly `compute_*` scripts and the single-row `store_match_signal()` kept
+    inserting unconditionally, which is most of the residual ~137k rows/day.
+    They all build the SAME 5-tuple shape
+    `(match_id, signal_name, signal_value, signal_group, data_source)`, so one
+    helper covers them.
+
+    Returns only the rows whose value differs from the most recent stored value
+    for that (match_id, signal_name) — or that have no prior at all. Every
+    genuine transition survives; only a byte-identical repeat of the latest
+    value is dropped. Comparison matches the batch guard exactly: float-cast,
+    None-aware. On any DB error it returns the input unchanged — a dedupe helper
+    must never be the reason a signal fails to persist.
+    """
+    if not rows:
+        return rows
+    try:
+        match_ids = list({r[0] for r in rows})
+        prev: dict[tuple[str, str], float | None] = {}
+        for row in execute_query(
+            """SELECT DISTINCT ON (match_id, signal_name)
+                      match_id::text AS match_id, signal_name, signal_value
+                 FROM match_signals
+                WHERE match_id = ANY(%s::uuid[])
+                ORDER BY match_id, signal_name, captured_at DESC""",
+            (match_ids,),
+        ):
+            prev[(row["match_id"], row["signal_name"])] = (
+                None if row["signal_value"] is None else float(row["signal_value"])
+            )
+
+        def _norm(v):
+            return None if v is None else float(v)
+
+        changed = []
+        for r in rows:
+            mid, name, val = str(r[0]), r[1], _norm(r[2])
+            if (mid, name) in prev and prev[(mid, name)] == val:
+                continue
+            changed.append(r)
+        return changed
+    except Exception as e:
+        console.print(f"[yellow]filter_unchanged_signals failed ({e}) — writing all rows[/yellow]")
+        return rows
+
+
 def store_match_signal(match_id: str, signal_name: str, signal_value: float | None,
                        signal_group: str, data_source: str = "derived",
                        signal_text: str | None = None,
@@ -1132,6 +1182,14 @@ def store_match_signal(match_id: str, signal_name: str, signal_value: float | No
     }
     if captured_at:
         row["captured_at"] = captured_at
+
+    # SIGNALS-DEDUPE-BACKLOG-2026-09-06: store-on-change. Skip the INSERT when
+    # this value is byte-identical to the latest stored value for
+    # (match_id, signal_name) — the same guard the batch writer and the nightly
+    # compute_* scripts use, so single-row callers stop being a dedupe hole.
+    tup = (match_id, signal_name, signal_value, signal_group, data_source)
+    if not filter_unchanged_signals([tup]):
+        return
 
     columns = list(row.keys())
     col_str = ", ".join(columns)

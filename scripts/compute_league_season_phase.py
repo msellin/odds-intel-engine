@@ -173,6 +173,11 @@ def write_today_signals():
     rows_to_write = [(mid, prog) for mid, prog in phases.items() if mid in upcoming_ids]
     if not rows_to_write:
         return
+    from workers.api_clients.supabase_client import filter_unchanged_signals
+    tuples = filter_unchanged_signals(tuples)
+    if not tuples:
+        console.print("[dim]match_signals: all values unchanged since last capture — nothing to write[/dim]")
+        return
     tuples = [(mid, "season_progress", float(p), "league", "derived") for mid, p in rows_to_write]
     with get_conn() as conn:
         with conn.cursor() as cur:

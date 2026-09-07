@@ -200,6 +200,11 @@ def write_today_signals():
     if not velocities:
         return
     console.print(f"\nWriting {len(velocities):,} line_velocity rows...")
+    from workers.api_clients.supabase_client import filter_unchanged_signals
+    tuples = filter_unchanged_signals(tuples)
+    if not tuples:
+        console.print("[dim]match_signals: all values unchanged since last capture — nothing to write[/dim]")
+        return
     tuples = [(mid, "line_velocity", v, "market", "derived") for mid, v in velocities.items()]
     with get_conn() as conn:
         with conn.cursor() as cur:

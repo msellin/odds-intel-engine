@@ -32267,5 +32267,58 @@ def test_clv_public_withdrawn_complete():
         )
 
 
+@test("SIGNALS-STORE-ON-CHANGE-COMPLETE — every match_signals writer routes through the dedupe guard")
+def test_signals_store_on_change_complete():
+    """SIGNALS-DEDUPE-BACKLOG-2026-09-06: SIGNALS-STORE-ON-CHANGE-2026-09-03
+    guarded the batch morning writer, but seven nightly compute_* scripts and
+    the single-row store_match_signal() kept inserting unconditionally — most of
+    the residual ~137k rows/day. They now all route their 5-tuple rows through
+    filter_unchanged_signals() before the INSERT.
+
+    Pins that each writer both imports and calls the guard, and that
+    store_match_signal short-circuits on it. Source inspection with comments
+    stripped (gotcha 41 — the fix carries explanatory comments naming the guard).
+    """
+    import os, re
+    root = os.path.dirname(__file__)
+
+    scripts = [
+        "compute_injury_severity.py", "compute_xg_overperformance.py",
+        "compute_league_season_phase.py", "compute_team_avg_player_rating.py",
+        "compute_line_velocity.py", "compute_league_clv_efficiency.py",
+        "compute_league_draw_rate.py",
+    ]
+    for fn in scripts:
+        src = open(os.path.join(root, fn), encoding="utf-8").read()
+        code = re.sub(r"#.*?$", "", src, flags=re.M)
+        assert "filter_unchanged_signals(" in code, (
+            f"{fn} no longer routes its match_signals rows through "
+            f"filter_unchanged_signals — it inserts unconditionally again, the "
+            f"exact SIGNALS-DEDUPE-BACKLOG bleed"
+        )
+        # the call must precede the INSERT, not trail it
+        call_i = code.index("filter_unchanged_signals(")
+        ins_i = code.index("INSERT INTO match_signals")
+        assert call_i < ins_i, (
+            f"{fn} calls filter_unchanged_signals AFTER its INSERT — the filter "
+            f"must gate the write, not follow it"
+        )
+
+    # store_match_signal() must short-circuit on the guard
+    sc = open(os.path.join(root, "..", "workers", "api_clients",
+                           "supabase_client.py"), encoding="utf-8").read()
+    code = re.sub(r"#.*?$", "", sc, flags=re.M)
+    m = re.search(r"def store_match_signal\(.*?def ", code, flags=re.S)
+    assert m, "store_match_signal() not found"
+    body = m.group(0)
+    assert "filter_unchanged_signals(" in body, (
+        "store_match_signal() no longer checks filter_unchanged_signals — the "
+        "single-row write path is a dedupe hole again"
+    )
+    assert "def filter_unchanged_signals(" in code, (
+        "the shared filter_unchanged_signals helper is gone from supabase_client"
+    )
+
+
 if __name__ == "__main__":
     main()
