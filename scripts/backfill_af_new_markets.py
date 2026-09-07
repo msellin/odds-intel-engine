@@ -65,6 +65,31 @@ os.environ.setdefault("CAPTURE_EXACT_SCORE", "1")
 MAX_DAYS = 7
 
 
+
+def _observation_ts(entries: list, kickoff):
+    """BACKFILL-TIMESTAMP-BLINDS-CLV: the timestamp to stamp a backfilled odds
+    row with. Prefer AF's per-fixture `update` (when it precedes kickoff — a
+    genuine pre-close observation); otherwise ko-1min. Never returns a value at
+    or after kickoff, so a backfilled row is never mistaken for an in-play price
+    (gotcha 37)."""
+    from datetime import timedelta as _td, datetime as _dt
+    fallback = kickoff - _td(minutes=1)
+    raw = None
+    for e in (entries or []):
+        raw = e.get("update")
+        if raw:
+            break
+    if not raw:
+        return fallback
+    try:
+        upd = _dt.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return fallback
+    if upd.tzinfo is None and kickoff.tzinfo is not None:
+        upd = upd.replace(tzinfo=kickoff.tzinfo)
+    return upd if upd < kickoff else fallback
+
+
 def is_new_market(market: str) -> bool:
     return any(market.startswith(p) for p in NEW_PREFIXES)
 
@@ -107,12 +132,20 @@ def main() -> int:
             mid, kickoff = hit
             if kickoff is None:
                 continue
+            # BACKFILL-TIMESTAMP-BLINDS-CLV-2026-09-06: use AF's own `update`
+            # timestamp as the observation time instead of a flat ko-1min, so a
+            # backfilled row can carry a real pre-close window (pick price and
+            # closing anchor no longer collapse onto one row). Guard gotcha 37:
+            # an `update` at/after kickoff is an in-play observation masquerading
+            # as a close — fall back to ko-1min there. Same fallback when `update`
+            # is missing or unparseable.
+            obs_ts = _observation_ts(entries, kickoff)
             for parsed in parse_fixture_odds(entries):
                 if not is_new_market(parsed["market"]):
                     continue
                 payload.append((
                     mid, parsed["bookmaker"], parsed["market"],
-                    parsed["selection"], float(parsed["odds"]), kickoff,
+                    parsed["selection"], float(parsed["odds"]), obs_ts,
                 ))
 
         print(f"{d}: {len(by_fixture)} fixtures, {len(meta)} matched, "
@@ -128,8 +161,8 @@ def main() -> int:
                      (match_id, bookmaker, market, selection, odds,
                       timestamp, minutes_to_kickoff, is_closing, is_live)
                    SELECT v.mid::uuid, v.bk, v.mkt, v.sel, v.odds,
-                          v.ko - interval '1 minute', 1, FALSE, FALSE
-                     FROM (VALUES %s) AS v(mid, bk, mkt, sel, odds, ko)"""
+                          v.obs_ts, 1, FALSE, FALSE
+                     FROM (VALUES %s) AS v(mid, bk, mkt, sel, odds, obs_ts)"""
                 % ",".join(["(%s,%s,%s,%s,%s,%s)"] * len(chunk)),
                 [x for row in chunk for x in row],
             )

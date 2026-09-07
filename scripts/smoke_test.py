@@ -32624,5 +32624,47 @@ def test_coolbet_market_inventory():
     )
 
 
+@test("BACKFILL-TIMESTAMP-BLINDS-CLV — backfilled odds use AF's update ts, capped before kickoff")
+def test_backfill_observation_ts():
+    """BACKFILL-TIMESTAMP-BLINDS-CLV-2026-09-06. backfill_af_new_markets stamped
+    every backfilled row at ko-1min, so the pick price and the closing anchor
+    collapsed onto one row and no backfilled window could yield CLV. AF's odds
+    entries already carry a top-level `update` timestamp (get_odds_by_date keeps
+    the full entry), so the fix uses it — but only when it precedes kickoff (an
+    `update` at/after KO is an in-play observation, gotcha 37), else ko-1min.
+
+    Tests the _observation_ts helper directly across the four cases.
+    """
+    import os, re
+    from datetime import datetime, timezone, timedelta
+    src = open(os.path.join(os.path.dirname(__file__), "backfill_af_new_markets.py"),
+               encoding="utf-8").read()
+
+    # the INSERT must no longer hard-code ko-1min
+    assert "v.ko - interval '1 minute'" not in src, (
+        "backfill still writes v.ko - interval '1 minute' — the CLV blindness is "
+        "back; it must stamp the per-fixture observation ts"
+    )
+    assert "_observation_ts" in src, "the _observation_ts helper is gone"
+
+    m = re.search(r"def _observation_ts.*?(?=\ndef |\nif __name__)", src, re.S)
+    assert m, "could not isolate _observation_ts"
+    ns = {}
+    exec("from datetime import timedelta, datetime\n" + m.group(0), ns)
+    obs = ns["_observation_ts"]
+    ko = datetime(2026, 9, 10, 15, 0, tzinfo=timezone.utc)
+
+    # pre-close update is used verbatim
+    assert obs([{"update": "2026-09-10T13:00:00+00:00"}], ko) == \
+        datetime(2026, 9, 10, 13, 0, tzinfo=timezone.utc), "pre-close update not used"
+    # in-play (>= KO), missing, and unparseable all fall back to ko-1min
+    fb = ko - timedelta(minutes=1)
+    assert obs([{"update": "2026-09-10T15:30:00+00:00"}], ko) == fb, "in-play update not capped"
+    assert obs([{}], ko) == fb, "missing update did not fall back"
+    assert obs([{"update": "garbage"}], ko) == fb, "unparseable update did not fall back"
+    # never returns a ts at/after kickoff
+    assert obs([{"update": "2026-09-10T15:00:00+00:00"}], ko) < ko, "returned ts at kickoff"
+
+
 if __name__ == "__main__":
     main()
