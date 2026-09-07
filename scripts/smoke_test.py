@@ -32585,5 +32585,44 @@ def test_af_attribution_flush():
     )
 
 
+@test("COOLBET-MARKET-INVENTORY — unmatched markets persist to a durable catalog")
+def test_coolbet_market_inventory():
+    """COOLBET-MARKET-INVENTORY-2026-09-06. Unmatched Coolbet markets used to hit
+    only an in-memory _UNMATCHED_SEEN set + a log line — lost on restart, never
+    queryable. Now the unmatched branch also upserts into coolbet_market_inventory
+    (migration 306), best-effort, one upsert per distinct (mtid, name) per process.
+    Pins the migration and the upsert wiring (source inspection — no live sweep).
+    """
+    import os, re
+    root = os.path.dirname(__file__)
+    mig = os.path.join(root, "..", "supabase", "migrations",
+                       "306_coolbet_market_inventory.sql")
+    assert os.path.exists(mig), "migration 306_coolbet_market_inventory.sql is gone"
+    msql = open(mig, encoding="utf-8").read()
+    assert "CREATE TABLE IF NOT EXISTS coolbet_market_inventory" in msql
+    assert "PRIMARY KEY (market_type_id, name)" in msql, (
+        "the inventory PK changed — the ON CONFLICT upsert target must match"
+    )
+
+    exp = open(os.path.join(root, "..", "workers", "automation",
+                            "coolbet_explorer.py"), encoding="utf-8").read()
+    code = re.sub(r"#.*?$", "", exp, flags=re.M)
+    # the upsert must live inside the unmatched branch (gated by _UNMATCHED_SEEN)
+    assert "INSERT INTO coolbet_market_inventory" in code, (
+        "coolbet_explorer no longer upserts unmatched markets into the durable "
+        "catalog — the inventory reverts to log-only, lost on restart"
+    )
+    assert "ON CONFLICT (market_type_id, name) DO UPDATE" in code, (
+        "the inventory upsert lost its ON CONFLICT — repeat sightings would error "
+        "or duplicate instead of incrementing times_seen"
+    )
+    # must be best-effort (a catalog write must never break the sweep)
+    seg = code.split("INSERT INTO coolbet_market_inventory")[0][-400:]
+    assert "try:" in seg, (
+        "the inventory upsert is no longer wrapped in try/except — a catalog write "
+        "must never break the odds sweep"
+    )
+
+
 if __name__ == "__main__":
     main()

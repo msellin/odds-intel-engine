@@ -721,6 +721,26 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
             "coolbet: UNMATCHED market (first sighting) name=%r market_type_id=%r "
             "line=%r — inventory for COOLBET-MARKET-INVENTORY", _n, mtid, line_val,
         )
+        # COOLBET-MARKET-INVENTORY-2026-09-06: also persist to a durable catalog
+        # so the "what do we not capture" menu survives restarts and is
+        # queryable. One upsert per distinct (mtid, name) per process (gated by
+        # the same _UNMATCHED_SEEN dedup), best-effort — a catalog write must
+        # never break the sweep.
+        if mtid is not None:
+            try:
+                from workers.api_clients.db import execute_write
+                execute_write(
+                    """INSERT INTO coolbet_market_inventory
+                           (market_type_id, name, sample_line, first_seen, last_seen, times_seen)
+                       VALUES (%s, %s, %s, now(), now(), 1)
+                       ON CONFLICT (market_type_id, name) DO UPDATE
+                          SET last_seen = now(),
+                              times_seen = coolbet_market_inventory.times_seen + 1,
+                              sample_line = COALESCE(coolbet_market_inventory.sample_line, EXCLUDED.sample_line)""",
+                    [mtid, _n, line_val],
+                )
+            except Exception:
+                pass  # best-effort inventory; never break the sweep
     return rows
 
 
