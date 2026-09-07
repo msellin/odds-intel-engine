@@ -77,6 +77,17 @@ Pause/resume the two footprint jobs safely (auto-resume built in):
 The trap: **FS-down, Imperva-challenge, expired-session, and no-fixtures all
 present differently but can each stop collection.** Diagnose in this order.
 
+## FlareSolverr resilience (runs 24/7, self-revives)
+
+Three layers keep FS up without a human — added 2026-09-07 after it was down for
+a day:
+
+1. **`restart: always`** on the container (`local/flaresolverr/docker-compose.yml`) — Docker restarts it after any crash and on Docker-daemon start.
+2. **launchd keepalive** `com.oddsintel.flaresolverr-keepalive` runs `scripts/ops/flaresolverr_keepalive.sh` **every 180s + at load**. It probes `:8191`; if down it checks the Docker daemon (launches Docker.app if that is down too), then `docker compose up -d`, then re-probes. Revive measured at ~5s for a torn-down container. Log: `dev/active/flaresolverr-keepalive.log`.
+3. **daemon-tick health alert** (`workers/jobs/flaresolverr_health.py`) — if revival keeps failing, the mac-daemon pages with the fix command.
+
+So the only case needing a human is Docker itself being unstartable (the alert says so). Verify the stack: `launchctl list | grep flaresolverr` and `docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' oi_local_flaresolverr` (→ `always`).
+
 ### 1. FlareSolverr is down  → HTTP **404** (authenticated) on every endpoint
 - **Symptom:** sweep logs `fo-category unavailable (HTTP Error 404)` + `search unavailable (HTTP Error 404)` then `Coolbet unreachable — sweep aborted`. But the **browser** gets 200 on the same URLs.
 - **Tell:** `curl http://localhost:8191/` → connection refused. `docker ps` shows no `oi_local_flaresolverr`.

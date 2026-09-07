@@ -32440,5 +32440,57 @@ def test_flaresolverr_health_watchdog():
     )
 
 
+@test("FLARESOLVERR-KEEPALIVE — FS must auto-revive, not just alert")
+def test_flaresolverr_keepalive():
+    """COOLBET-FS-WATCHDOG-AND-ENV / FS-24-7 (2026-09-07). The outage was FS down
+    for ~a day; alerting alone is not enough. Three layers now keep FS up:
+    (1) container restart:always, (2) a launchd keepalive that REVIVES it every
+    180s, (3) the daemon-tick health alert as escalation. Verified live 2026-09-07
+    by tearing the container down and watching the keepalive rebuild it in ~5s.
+
+    Pins the reviver's structure and that the compose restart policy is `always`.
+    """
+    import os
+    root = os.path.dirname(__file__)
+    repo = os.path.join(root, "..")
+
+    sh = os.path.join(root, "ops", "flaresolverr_keepalive.sh")
+    assert os.path.exists(sh), "the FS keepalive/reviver script is gone"
+    src = open(sh, encoding="utf-8").read()
+    code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+    # it must PROBE, and on failure REVIVE (docker compose up), not just report
+    assert "FlareSolverr is ready" in code, "keepalive no longer probes FS readiness"
+    assert "compose up -d" in code, (
+        "keepalive no longer runs `docker compose up -d` — it would alert but not "
+        "revive, which is the whole gap this closed"
+    )
+    assert "docker info" in code or "info >" in code, (
+        "keepalive no longer checks the Docker daemon — if Docker itself is down "
+        "it can't revive and must say so"
+    )
+    assert "/usr/local/bin/docker" in code, (
+        "keepalive calls `docker` without an absolute path — launchd's minimal "
+        "PATH won't find it, so the reviver silently no-ops"
+    )
+
+    # launchd agent: runs on load AND on an interval
+    plist = os.path.join(repo, "local", "launchd",
+                         "com.oddsintel.flaresolverr-keepalive.plist")
+    assert os.path.exists(plist), "the FS keepalive launchd plist is missing"
+    pl = open(plist, encoding="utf-8").read()
+    assert "RunAtLoad" in pl and "StartInterval" in pl, (
+        "the keepalive agent no longer runs at load + on an interval — it must "
+        "both revive on boot and keep checking"
+    )
+
+    # compose restart policy must be `always` (survives Docker daemon restart)
+    compose = open(os.path.join(repo, "local", "flaresolverr",
+                                "docker-compose.yml"), encoding="utf-8").read()
+    assert "restart: always" in compose, (
+        "the FS container restart policy is no longer `always` — it must come "
+        "back on its own after a crash or a Docker restart"
+    )
+
+
 if __name__ == "__main__":
     main()

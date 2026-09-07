@@ -36,7 +36,7 @@ services:
       # Without this, every `docker compose down` would lose the device
       # trust cookie + Imperva markers and force another SMS round.
       - flaresolverr_profile:/app/profiles
-    restart: unless-stopped
+    restart: always
     # Memory cap so a Chrome leak doesn't take down the Mac. 1GB is
     # plenty for one session juggling 2-3 Coolbet pages.
     mem_limit: 1g
