@@ -1897,6 +1897,16 @@ def job_budget_sync():
     _run_job("budget_sync", budget.sync_with_server)
 
 
+def job_budget_attribution_flush():
+    """AF-ENDPOINT-ATTRIBUTION-LOST-ON-RESTART-2026-09-07: every 5 min, persist
+    the cumulative per-endpoint counter to api_budget_log WITHOUT an AF call.
+    Hourly budget_sync is the only other writer, so on restart-heavy days the
+    sub-hour attribution was lost (22-41% capture). This flush bounds the loss
+    to one 5-min interval. No network — safe to run frequently."""
+    from workers.api_clients.api_football import budget
+    _run_job("budget_attribution_flush", budget.persist_attribution_snapshot)
+
+
 def job_ops_snapshot():
     """Hourly fallback ops snapshot — captures state if no pipeline ran this hour.
 
@@ -2748,6 +2758,10 @@ def main():
     # Budget sync: hourly
     scheduler.add_job(job_budget_sync, CronTrigger(minute=0),
                       id="budget_sync", name="Budget Sync")
+    # AF-ENDPOINT-ATTRIBUTION flush: every 5 min except :00 (sync owns :00). No AF call.
+    scheduler.add_job(job_budget_attribution_flush,
+                      CronTrigger(minute="5,10,15,20,25,30,35,40,45,50,55"),
+                      id="budget_attribution_flush", name="Budget Attribution Flush")
 
     # Ops snapshot fallback: every hour at :30 — captures state if no pipeline ran
     scheduler.add_job(job_ops_snapshot, CronTrigger(minute=30),

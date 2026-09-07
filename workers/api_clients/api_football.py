@@ -282,6 +282,45 @@ class BudgetTracker:
         except Exception as e:
             console.print(f"[yellow]Budget sync failed: {e}[/yellow]")
 
+    def persist_attribution_snapshot(self) -> bool:
+        """AF-ENDPOINT-ATTRIBUTION-LOST-ON-RESTART-2026-09-07: persist the
+        cumulative per-endpoint counter WITHOUT calling AF /status.
+
+        sync_with_server (the only writer of endpoint_breakdown_today) runs
+        hourly and does a network call, so on restart-heavy days most sub-hour
+        intervals never flush and _seed_from_db can only restore what was
+        written — capturing 22-41% of the day's attribution. This is the cheap
+        ~5-min flush: a source='flush' row carrying the CURRENT cumulative
+        endpoint_breakdown_today and calls_today, no network. _seed_from_db
+        already merges from the latest row of any source, so a restart now loses
+        at most one flush interval of attribution instead of up to an hour.
+
+        Does NOT touch calls_today (that stays AF-authoritative via sync) and
+        does NOT drain the per-interval counter (sync owns that). Never raises.
+        Returns True if a row was written.
+        """
+        try:
+            import json as _json
+            from workers.api_clients.db import execute_write
+            with self._lock:
+                self._maybe_reset()
+                calls = self.calls_today
+                today_breakdown = dict(self._endpoint_counts_today)
+            if not today_breakdown:
+                return False  # nothing attributed yet this quota day — skip
+            execute_write(
+                """INSERT INTO api_budget_log
+                   (calls_today, remaining, daily_limit, source,
+                    endpoint_breakdown_today)
+                   VALUES (%s, %s, %s, %s, %s::jsonb)""",
+                [calls, max(0, self.daily_limit - calls), self.daily_limit,
+                 "flush", _json.dumps(today_breakdown)],
+            )
+            return True
+        except Exception as e:
+            console.print(f"[dim]attribution flush failed: {e}[/dim]")
+            return False
+
     def status(self) -> dict:
         """Return budget status dict for health endpoint."""
         with self._lock:

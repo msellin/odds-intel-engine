@@ -32542,5 +32542,48 @@ def test_flaresolverr_keepalive():
     )
 
 
+@test("AF-ENDPOINT-ATTRIBUTION-FLUSH — a no-AF-call flush persists per-endpoint attribution every 5 min")
+def test_af_attribution_flush():
+    """AF-ENDPOINT-ATTRIBUTION-LOST-ON-RESTART-2026-09-07. endpoint_breakdown_today
+    was only persisted inside the hourly (AF-calling) sync_with_server, so on
+    restart-heavy days most sub-hour intervals never flushed and _seed_from_db
+    could only restore 22-41% of the day's attribution. The fix is a 5-min flush
+    that writes the cumulative breakdown WITHOUT an AF call.
+
+    Pins: (1) BudgetTracker has persist_attribution_snapshot that INSERTs a
+    source='flush' row and does NOT call get_remaining_requests; (2) the
+    scheduler registers a budget_attribution_flush job on a 5-min cadence.
+    """
+    import os, re
+    af = open(os.path.join(os.path.dirname(__file__), "..", "workers",
+                           "api_clients", "api_football.py"), encoding="utf-8").read()
+    m = re.search(r"def persist_attribution_snapshot\(.*?\n    def ", af, flags=re.S)
+    assert m, "persist_attribution_snapshot vanished from BudgetTracker"
+    body = m.group(0)
+    assert "get_remaining_requests" not in body, (
+        "the attribution flush now calls get_remaining_requests — it must NOT hit "
+        "AF; the whole point is a cheap 5-min persist without a network call"
+    )
+    assert "'flush'" in body or '"flush"' in body, (
+        "the flush no longer tags its row source='flush'"
+    )
+    assert "endpoint_breakdown_today" in body and "INSERT INTO api_budget_log" in body, (
+        "the flush no longer INSERTs endpoint_breakdown_today into api_budget_log"
+    )
+
+    sched = open(os.path.join(os.path.dirname(__file__), "..", "workers",
+                              "scheduler.py"), encoding="utf-8").read()
+    assert "job_budget_attribution_flush" in sched, (
+        "the budget_attribution_flush job is not registered in the scheduler — "
+        "attribution reverts to hourly-only capture"
+    )
+    # it must be on a sub-hourly (5-min) cadence, not just hourly
+    reg = re.search(r"job_budget_attribution_flush,\s*\n\s*CronTrigger\(minute=([^)]+)\)", sched)
+    assert reg, "budget_attribution_flush is registered without a 5-min CronTrigger"
+    assert "5" in reg.group(1) and "," in reg.group(1), (
+        "budget_attribution_flush is no longer on a multi-per-hour cadence"
+    )
+
+
 if __name__ == "__main__":
     main()
