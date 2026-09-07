@@ -32026,5 +32026,41 @@ def test_af_quota_day_boundary():
     assert "01:00" in q, "the 01:00 UTC reset time is no longer recorded"
 
 
+@test("ODDS-API-KEY-NAME — the client must read OA_KEY, the name the key is stored under")
+def test_odds_api_key_name():
+    """ODDS-VENDOR-COSTING-2026-09-07 — `odds_api.py` read `ODDS_API_KEY`,
+    which has never been set in .env or in GitHub Actions. The key is stored as
+    `OA_KEY` (32 hex chars, referenced by tennis_daily.yml and documented in
+    backtest_mlb_elo.py). So the module printed "ODDS_API_KEY not set" while a
+    valid free-tier key with all 500 credits unused sat in .env, and the vendor
+    evaluation was written up as "we have never seen a response" when we could
+    have called it at any time.
+
+    Pins that OA_KEY is read and is preferred, since that is the name two other
+    live consumers already use.
+    """
+    import os, re
+    src = open(os.path.join(os.path.dirname(__file__), "..", "workers",
+                            "api_clients", "odds_api.py"), encoding="utf-8").read()
+    # gotcha 41: strip comments/docstrings before asserting on substrings --
+    # the explanation above is quoted in the module's own comment block.
+    code = re.sub(r"#.*?$", "", src, flags=re.M)
+    code = re.sub(r'"""".*?"""', "", code, flags=re.S)
+
+    assert 'getenv("OA_KEY"' in code, (
+        "odds_api.py no longer reads OA_KEY -- that is the name the key is "
+        "actually stored under in .env and in Actions secrets, so this reverts "
+        "the client to reporting 'not set' with a valid key present"
+    )
+    m = re.search(r'API_KEY\s*=\s*(.+)', code)
+    assert m, "API_KEY assignment vanished from odds_api.py"
+    assign = m.group(1)
+    assert assign.index("OA_KEY") < (assign.index("ODDS_API_KEY")
+                                     if "ODDS_API_KEY" in assign else len(assign)), (
+        "ODDS_API_KEY is now checked before OA_KEY -- if both are ever set, the "
+        "unused name would win"
+    )
+
+
 if __name__ == "__main__":
     main()

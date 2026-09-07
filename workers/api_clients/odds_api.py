@@ -12,7 +12,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_KEY = os.getenv("ODDS_API_KEY", "")
+# OA_KEY is the name the key is actually stored under -- in .env and in the
+# GitHub Actions secrets used by tennis_daily.yml. This module was written
+# against ODDS_API_KEY, which has never been set anywhere, so the client
+# reported "not set" while a valid key sat in .env the whole time. Read OA_KEY
+# first and keep ODDS_API_KEY as a fallback rather than renaming one of two
+# live secrets. (ODDS-VENDOR-COSTING-2026-09-07)
+API_KEY = os.getenv("OA_KEY", "") or os.getenv("ODDS_API_KEY", "")
 BASE_URL = "https://api.the-odds-api.com/v4"
 
 # Sport keys for football leagues
@@ -52,7 +58,7 @@ PRIORITY_BOOKMAKERS = [
 def _request(endpoint: str, params: dict = None) -> dict | None:
     """Make a request to The Odds API"""
     if not API_KEY:
-        print("WARNING: ODDS_API_KEY not set. Set it in .env")
+        print("WARNING: no Odds API key. Set OA_KEY (or ODDS_API_KEY) in .env")
         return None
 
     base_params = {"apiKey": API_KEY}
