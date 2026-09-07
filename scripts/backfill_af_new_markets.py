@@ -193,20 +193,23 @@ def main() -> int:
                 resp = _get("odds", {"fixture": int(f["afid"])})
             except Exception:
                 continue
+            # BACKFILL-TIMESTAMP-BLINDS-CLV: same fix as the bulk pass — stamp
+            # the per-fixture AF `update` (capped before kickoff), not ko-1min.
+            obs_ts = _observation_ts(resp.get("response") or [], f["date"])
             payload = []
             for parsed in parse_fixture_odds(resp.get("response") or []):
                 if parsed["market"] != "correct_score":
                     continue
                 payload.append((f["mid"], parsed["bookmaker"], parsed["market"],
-                                parsed["selection"], float(parsed["odds"]), f["date"]))
+                                parsed["selection"], float(parsed["odds"]), obs_ts))
             if payload and not args.dry_run:
                 execute_write(
                     """INSERT INTO odds_snapshots
                          (match_id, bookmaker, market, selection, odds,
                           timestamp, minutes_to_kickoff, is_closing, is_live)
                        SELECT v.mid::uuid, v.bk, v.mkt, v.sel, v.odds,
-                              v.ko - interval '1 minute', 1, FALSE, FALSE
-                         FROM (VALUES %s) AS v(mid, bk, mkt, sel, odds, ko)"""
+                              v.obs_ts, 1, FALSE, FALSE
+                         FROM (VALUES %s) AS v(mid, bk, mkt, sel, odds, obs_ts)"""
                     % ",".join(["(%s,%s,%s,%s,%s,%s)"] * len(payload)),
                     [x for row in payload for x in row],
                 )
