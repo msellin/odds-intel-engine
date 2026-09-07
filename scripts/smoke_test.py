@@ -32357,5 +32357,88 @@ def test_prune_match_signals_keeps_latest():
     )
 
 
+@test("ODDS-FLOOR-SKIP-NOT-ERROR — the daemon must not count legitimate declines as errors")
+def test_daemon_decline_not_error():
+    """ODDS-FLOOR-SKIP-NOT-ERROR-2026-09-07. The Coolbet mac-daemon self-pauses
+    after SELFPAUSE_AFTER_MINUTES of consecutive errored ticks — its only job is
+    to stop hammering Coolbet's auth chain during an OUTAGE. But the tick
+    classified every non-placed, non-(short skip list) outcome as an error,
+    and an odds-floor skip returns outcome="rejected". So a day whose candidates
+    are all below the 2.80 floor (a normal event, observed 2026-09-07) racked up
+    "errors" and would FALSELY self-pause a perfectly healthy daemon.
+
+    The fix inverts the classification: only genuine failures (`error`,
+    `search_blocked`) and a raised exception count as errors; every other
+    outcome — including `rejected` — is a skip. Pins that a `rejected` outcome
+    does NOT reach the error counter, and that `search_blocked` still does (real
+    outages must still pause).
+    """
+    import os, re
+    src = open(os.path.join(os.path.dirname(__file__), "..", "workers",
+                            "automation", "coolbet_mac_daemon.py"), encoding="utf-8").read()
+    code = re.sub(r"#.*?$", "", src, flags=re.M)
+
+    # The error branch must be an explicit allow-list, and must NOT be the
+    # catch-all else. Find the outcome-classification block.
+    m = re.search(r'if outcome == "placed":.*?counters\["skipped"\] \+= 1',
+                  code, flags=re.S)
+    assert m, "the daemon outcome-classification block changed shape — re-audit"
+    block = m.group(0)
+
+    # error branch names error/search_blocked explicitly
+    assert re.search(r'outcome in \([^)]*"search_blocked"[^)]*\):\s*\n\s*counters\["errors"\]',
+                     block), (
+        "the error branch no longer explicitly lists search_blocked — a real "
+        "outage might stop pausing, or the branch reverted to a catch-all"
+    )
+    # the CATCH-ALL else must increment skipped, not errors
+    tail_lines = block.strip().splitlines()[-2:]
+    joined = " ".join(l.strip() for l in tail_lines)
+    assert joined.startswith("else:") and 'counters["skipped"]' in joined, (
+        "the catch-all else no longer defaults to skipped — a `rejected` "
+        "odds-floor decline would count as an error again and falsely self-pause "
+        "the daemon (ODDS-FLOOR-SKIP-NOT-ERROR)"
+    )
+
+
+@test("FLARESOLVERR-HEALTH-WATCHDOG — FS-down alert probes the resolved URLs and never raises")
+def test_flaresolverr_health_watchdog():
+    """COOLBET-FS-WATCHDOG-AND-ENV-2026-09-07. The Coolbet outage went unalerted
+    for a day because FlareSolverr being down produced a soft 404, not an alert.
+    This watchdog probes the same URLs coolbet_session resolves and pages with
+    the one-line fix. Pins its structure and that it degrades safely.
+    """
+    from workers.jobs import flaresolverr_health as fh
+
+    # candidate URL resolution: honours COOLBET_FS_LOCAL_URL + FLARESOLVERR_URL,
+    # de-duplicates, always includes the localhost default.
+    import os
+    old = {k: os.environ.get(k) for k in ("COOLBET_FS_LOCAL_URL", "FLARESOLVERR_URL")}
+    try:
+        os.environ["COOLBET_FS_LOCAL_URL"] = "http://localhost:8191"
+        os.environ["FLARESOLVERR_URL"] = "http://localhost:8191"  # dup on purpose
+        urls = fh._candidate_urls()
+        assert urls == ["http://localhost:8191"], (
+            f"candidate URL de-dup broke: {urls}")
+        os.environ["FLARESOLVERR_URL"] = "https://remote-fs.example/"
+        urls = fh._candidate_urls()
+        assert urls[0] == "http://localhost:8191", "local FS must be tried first"
+        assert "https://remote-fs.example" in urls, "remote FS URL dropped"
+    finally:
+        for k, v in old.items():
+            if v is None: os.environ.pop(k, None)
+            else: os.environ[k] = v
+
+    # a probe of an unreachable URL returns False, never raises
+    assert fh._probe("http://127.0.0.1:59999", timeout=1) is False
+
+    # the alert message carries the actual remedy
+    msg = fh._format_alert(["http://localhost:8191"])
+    assert "docker compose up -d" in msg, (
+        "the FS-down alert no longer contains the fix command — the whole point "
+        "is that the alert tells the operator exactly what to run"
+    )
+
+
 if __name__ == "__main__":
     main()

@@ -468,8 +468,28 @@ def _tick(*, dry_run: bool = False) -> dict:
         "errors": 0,
         "skipped": 0,
         "elapsed_s": 0.0,
+        "fs_alert_sent": False,
     }
     try:
+        # FLARESOLVERR-HEALTH (2026-09-07, COOLBET-FS-WATCHDOG-AND-ENV): probe
+        # FS reachability FIRST, on the Mac where FS actually lives (the VPS
+        # scheduler can't — it would check its own localhost). On 2026-09-07 the
+        # local FS container was simply down, every Coolbet request soft-404'd,
+        # and nothing paged for ~a day. This alert names the one-line fix
+        # (docker compose up -d) BEFORE the generic self-pause fires, so the
+        # operator sees the actionable cause, not just "Coolbet unreachable".
+        # Non-fatal + self-deduped; it never blocks the tick.
+        try:
+            from workers.jobs.flaresolverr_health import run_flaresolverr_health_check
+            fs = run_flaresolverr_health_check(dry_run=dry_run)
+            counters["fs_alert_sent"] = bool(fs.get("alert_sent"))
+            if fs.get("status") == "down":
+                log.warning("FlareSolverr unreachable at %s — Coolbet requests "
+                            "will 404; fix: cd local/flaresolverr && docker compose up -d",
+                            fs.get("checked"))
+        except Exception as e:
+            log.debug("FS health check skipped: %s", e)
+
         # COOLBET-CDP-COOKIE-EXPORT (2026-07-08): harvest fresh Imperva
         # cookies from CDP-Chrome BEFORE the SILENT-WHEN-EMPTY early
         # return. Every :03/:33 the odds-snapshot + cs2-coolbet-scanner
@@ -584,11 +604,27 @@ def _tick(*, dry_run: bool = False) -> dict:
                     _notify_placement(r, dry_run=dry_run)
                 except Exception as e:
                     log.debug("placement Telegram notify failed: %s", e)
-            elif outcome in ("dry_run", "no_event", "no_market",
-                             "edge_eroded", "guard_skip"):
-                counters["skipped"] += 1
-            else:
+            elif outcome in ("error", "search_blocked"):
+                # ODDS-FLOOR-SKIP-NOT-ERROR (2026-09-07): only genuine
+                # connectivity/auth failures count as errors, because errors
+                # drive the self-pause (SELFPAUSE_AFTER_MINUTES) whose ONLY job
+                # is to stop hammering Coolbet's auth chain during an outage.
+                # `search_blocked` (Imperva/FS block) and `error` (explicit
+                # failure) are those outage signals; a raised exception below is
+                # the third. Everything else — `rejected` (odds_floor, drift,
+                # exposure_guard…), `already_recorded`, `confirm_declined`,
+                # `not_found`, `not_placed`, and the old skip list — is a
+                # LEGITIMATE DECLINE, not a failure. The bug this fixes: an
+                # odds-floor skip returns outcome="rejected", which fell into
+                # the old `else` and counted as an error, so a day whose
+                # candidates are all below the 2.80 floor (a normal event) would
+                # rack up "errors" and FALSELY self-pause the daemon — exactly
+                # what happened 2026-09-07. Defaulting unknown outcomes to skip
+                # (not error) also means a future decline reason can't silently
+                # re-introduce the false pause.
                 counters["errors"] += 1
+            else:
+                counters["skipped"] += 1
     except Exception as e:
         log.exception("mac daemon tick failed: %s", e)
         counters["errors"] += 1
