@@ -32729,5 +32729,39 @@ def test_clv_executable_within_bot_control():
     )
 
 
+@test("COOLBET-CROSS-BOOK-SANITY-GUARD — a monitor flags Coolbet prices that invert Pinnacle's favourite")
+def test_coolbet_price_sanity():
+    """COOLBET-CROSS-BOOK-SANITY-GUARD-2026-09-07. The fuzzy matcher has no
+    cross-book price check, so a wrong-fixture match writes another game's odds.
+    This monitor re-derives per match whether Coolbet's 1x2 favourite is inverted
+    vs Pinnacle (the wrong-fixture signature) and alerts. Verified live: with a
+    72h window it caught exactly the 3 known corruptions. Detect + alert only,
+    never deletes (a false positive must not silently drop a real price).
+
+    Pins the detector logic (inversion + divergence, never a delete) and its
+    scheduler registration.
+    """
+    import os, re
+    src = open(os.path.join(os.path.dirname(__file__), "..", "workers", "jobs",
+                            "coolbet_price_sanity.py"), encoding="utf-8").read()
+    code = re.sub(r"#.*?$", "", src, flags=re.M)
+    # it must compare Coolbet vs Pinnacle and test favourite inversion
+    assert "bookmaker='Coolbet'" in code and "bookmaker='Pinnacle'" in code, (
+        "the sanity monitor no longer compares Coolbet against Pinnacle"
+    )
+    assert "inverted" in code, "the favourite-inversion test is gone — that is the wrong-fixture signature"
+    # it must NOT delete rows (safety: false positive must not drop a real price)
+    # gotcha 41: match the SQL delete, not the word "deleted" in the docstring.
+    assert "DELETE FROM" not in code.upper(), (
+        "the sanity monitor now DELETEs rows — it must only flag/alert; a false "
+        "positive must never silently drop a legitimate Coolbet price"
+    )
+    sched = open(os.path.join(os.path.dirname(__file__), "..", "workers",
+                              "scheduler.py"), encoding="utf-8").read()
+    assert "job_coolbet_price_sanity" in sched, (
+        "the coolbet price-sanity job is not registered in the scheduler"
+    )
+
+
 if __name__ == "__main__":
     main()

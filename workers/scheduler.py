@@ -1897,6 +1897,19 @@ def job_budget_sync():
     _run_job("budget_sync", budget.sync_with_server)
 
 
+def job_coolbet_price_sanity():
+    """COOLBET-CROSS-BOOK-SANITY-GUARD (2026-09-07): flags Coolbet 1x2 prices
+    whose favourite is inverted vs Pinnacle — the signature of a fuzzy-match
+    wrong-fixture false positive writing another game's odds into odds_snapshots.
+    Detect + alert only; never deletes. Read-only DB, runs VPS-side."""
+    from workers.jobs.coolbet_price_sanity import run_coolbet_price_sanity_check
+    c = run_coolbet_price_sanity_check()
+    if c.get("suspects"):
+        console.print(f"[yellow]coolbet price-sanity: {c['suspects']} suspects, "
+                      f"alert_sent={c['alert_sent']}[/yellow]")
+    _run_job("coolbet_price_sanity", lambda: None)
+
+
 def job_budget_attribution_flush():
     """AF-ENDPOINT-ATTRIBUTION-LOST-ON-RESTART-2026-09-07: every 5 min, persist
     the cumulative per-endpoint counter to api_budget_log WITHOUT an AF call.
@@ -2758,6 +2771,9 @@ def main():
     # Budget sync: hourly
     scheduler.add_job(job_budget_sync, CronTrigger(minute=0),
                       id="budget_sync", name="Budget Sync")
+    # COOLBET-CROSS-BOOK-SANITY-GUARD: :25/:55, after AF (:00/:30) + Coolbet (:03/:33) sweeps land.
+    scheduler.add_job(job_coolbet_price_sanity, CronTrigger(minute="25,55"),
+                      id="coolbet_price_sanity", name="Coolbet Price Sanity")
     # AF-ENDPOINT-ATTRIBUTION flush: every 5 min except :00 (sync owns :00). No AF call.
     scheduler.add_job(job_budget_attribution_flush,
                       CronTrigger(minute="5,10,15,20,25,30,35,40,45,50,55"),
