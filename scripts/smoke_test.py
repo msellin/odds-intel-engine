@@ -32666,5 +32666,41 @@ def test_backfill_observation_ts():
     assert obs([{"update": "2026-09-10T15:00:00+00:00"}], ko) < ko, "returned ts at kickoff"
 
 
+@test("CLV-PINNACLE-ONE-DEFINITION — both settlement paths write de-vigged Pinnacle CLV")
+def test_clv_pinnacle_one_definition():
+    """CLV-PINNACLE-LIVE-TWO-DEFINITIONS-2026-09-07. The simulated-settlement path
+    wrote clv_pinnacle as the RAW ratio (odds_at_pick / pinnacle_closing - 1, vig
+    still in it) while the shadow path wrote the DE-VIGGED odds_at_pick * true_p - 1.
+    One column, two quantities. Unified on the de-vigged definition (CLV = odds x
+    P(true) - 1) and backfilled the 1,892 resolvable historical rows (mean
+    +0.1905 vigged -> +0.0862 de-vigged).
+
+    Pins that neither settlement path computes clv_pinnacle as the raw
+    odds/pinnacle_closing ratio any more, and that the simulated path now also
+    writes clv_pinnacle_live.
+    """
+    import os, re
+    src = open(os.path.join(os.path.dirname(__file__), "..", "workers", "jobs",
+                            "settlement.py"), encoding="utf-8").read()
+    code = re.sub(r"#.*?$", "", src, flags=re.M)
+
+    # the raw vigged ratio must be gone from the settlement write paths
+    assert "odds_at_pick / pinnacle_closing" not in code and \
+           "(odds_at_pick / pinnacle_closing)" not in code, (
+        "settlement still computes clv_pinnacle as the raw odds_at_pick / "
+        "pinnacle_closing ratio (vigged) — the two-definitions bug is back"
+    )
+    # both paths must use the de-vigged probability
+    assert code.count("get_devigged_pinnacle_close_prob(") >= 2, (
+        "a settlement path no longer de-vigs the Pinnacle close before computing "
+        "clv_pinnacle"
+    )
+    # the simulated UPDATE must persist clv_pinnacle_live too
+    assert re.search(r"UPDATE simulated_bets SET.*clv_pinnacle_live", code, re.S), (
+        "the simulated settlement UPDATE no longer writes clv_pinnacle_live — the "
+        "executable-price CLV the gate reads is lost on that path"
+    )
+
+
 if __name__ == "__main__":
     main()

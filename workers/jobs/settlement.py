@@ -2735,14 +2735,27 @@ def _settle_pending_bets(pending: list, finished: list):
             settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
         else:
             closing_odds = get_closing_odds(match_id, odds_market, odds_selection)
-            # PIN-5: Pinnacle-anchored CLV — the industry-standard EV validator
-            pinnacle_closing = get_pinnacle_closing_odds(match_id, odds_market, odds_selection)
+            # PIN-5 / CLV-PINNACLE-LIVE-TWO-DEFINITIONS-2026-09-07: Pinnacle-anchored
+            # CLV, DE-VIGGED. This path used to write the RAW ratio
+            # `odds_at_pick / pinnacle_closing - 1` (Pinnacle's vig still in it),
+            # while the shadow-settlement path wrote the de-vigged
+            # `odds_at_pick * devig(p) - 1`. The same column `clv_pinnacle` thus
+            # held two different quantities depending on which path settled the
+            # bet. Unify on the de-vigged definition (the honest one — CLV is
+            # odds x P(true) - 1) so both paths agree, and add clv_pinnacle_live
+            # priced at the executable quote, matching the shadow path.
             odds_at_pick = float(bet["odds_at_pick"])
-            clv_pinnacle = (
-                round((odds_at_pick / pinnacle_closing) - 1, 4)
-                if pinnacle_closing and pinnacle_closing > 1.0
-                else None
-            )
+            clv_pinnacle = None
+            clv_pinnacle_live = None
+            try:
+                true_p = get_devigged_pinnacle_close_prob(match_id, odds_market, odds_selection)
+                if true_p:
+                    clv_pinnacle = round(odds_at_pick * true_p - 1.0, 4)
+                    _px_live = bet.get("odds_at_pick_live")
+                    if _px_live:
+                        clv_pinnacle_live = round(float(_px_live) * true_p - 1.0, 4)
+            except Exception as _e:  # never let a CLV lookup block a settlement
+                console.print(f"  [dim]devigged-pinnacle CLV failed for {bet.get('id')}: {_e}[/dim]")
             settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
 
         # Bot bankroll tracking
@@ -2755,9 +2768,10 @@ def _settle_pending_bets(pending: list, finished: list):
         # Update DB
         execute_write(
             "UPDATE simulated_bets SET result = %s, pnl = %s, bankroll_after = %s, "
-            "closing_odds = %s, clv = %s, clv_pinnacle = %s WHERE id = %s",
+            "closing_odds = %s, clv = %s, clv_pinnacle = %s, clv_pinnacle_live = %s "
+            "WHERE id = %s",
             [settlement["result"], settlement["pnl"], new_bankroll,
-             closing_odds, settlement["clv"], clv_pinnacle, bet["id"]]
+             closing_odds, settlement["clv"], clv_pinnacle, clv_pinnacle_live, bet["id"]]
         )
 
         settled += 1
