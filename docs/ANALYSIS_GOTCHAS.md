@@ -1487,3 +1487,23 @@ Compounding factor worth knowing: `match_events` took **no writes at all between
 2026-08-21 and 2026-09-06** (MATCH-EVENTS-SILENT-WRITE-FAILURE, since
 backfilled), so any events-derived number computed in that window is suspect for
 a second, unrelated reason.
+
+## Goals are three event types, not one (verified 2026-09-07)
+
+`match_events.event_type` splits goals into `goal` (~336k), `penalty_scored`
+(~33k) and `own_goal` (~8k). Counting only `event_type = 'goal'` reconstructs the
+stored full-time score for just **76.1%** of matches; counting all three reaches
+**89.5%**. Any event-based score reconstruction (first-half scores, 1H settlement)
+MUST use all three — the ready constant is `api_football.GOAL_EVENT_TYPES_SQL =
+"('goal','penalty_scored','own_goal')"`. Status as of 2026-09-07: no production
+reader has the bare-`'goal'` bug — `lineshop_new_markets.py` already uses all
+three, and production settlement reads AF's halftime STATS (not events), so it is
+unaffected. The residual ~10-37% gap is AF EVENT COVERAGE (many matches carry no
+events at all), not a filter bug — that is the real first-half blocker, not the
+goal-type count.
+
+Also: cards live in TWO parallel columns — `yellow_cards_*`/`red_cards_*` (AF
+path, ~97% populated) and `yellows_*`/`reds_*` (football-data CSV ingest, ~24%).
+Query the `*_cards_*` names for AF-era coverage; the short names silently return
+near-zero. And card settlement: only the `events` definition settles correctly
+(-0.6pp); `yellow`/`yellow_red`/`points` manufacture -3 to -7pp phantom under-edge.
