@@ -4046,6 +4046,26 @@ def test_coolbet_own_betting_arch():
     assert "COOLBET-REALMONEY-EDGE-GATE-RECONCILE" in doc, "doc must flag the unreconciled real-money edge-gate decision"
 
 
+@test("SHADOW-BOT-CONSOLIDATION-RETIRE — the 3 dead/duplicate beta bots are retired")
+def test_shadow_bot_consolidation_retire():
+    """SHADOW-BOT-CONSOLIDATION (2026-09-08, owner-approved): retire the 3 still-
+    active beta bots with no fold-robust profitable 2D frame + no coverage
+    (proven_leagues_v2 -36%; opt_home_lower + conservative = 91-92% v10 dups).
+    Pin migration 311 so the retire isn't lost, and that no complement-candidate
+    (btts_all/ah_away_dog/sweep_ou35/ou15/sweep_1x2_home) is retired by it."""
+    import os
+    mig = os.path.join(os.path.dirname(__file__), "..", "supabase", "migrations",
+                       "311_retire_deadframe_beta_bots.sql")
+    src = open(mig, encoding="utf-8").read()
+    for b in ("bot_proven_leagues_v2", "bot_opt_home_lower", "bot_conservative"):
+        assert b in src, f"migration 311 must retire {b}"
+    assert "retired_at = COALESCE(retired_at, NOW())" in src, "must set retired_at"
+    # complement candidates must NOT be retired here
+    for keep in ("bot_btts_all", "bot_ah_away_dog", "bot_sweep_ou35_v1",
+                 "bot_ou15_defensive", "bot_sweep_1x2_home_v1", "bot_v10_all"):
+        assert keep not in src, f"{keep} has a profitable frame — must NOT be retired here"
+
+
 @test("STOP-LINESHOP-OU-GENERATION — line-shop bot is 1x2-only")
 def test_stop_lineshop_ou_generation():
     """STOP-LINESHOP-OU-GENERATION (2026-09-08): the line-shop bot
