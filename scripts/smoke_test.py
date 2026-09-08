@@ -4046,6 +4046,25 @@ def test_coolbet_own_betting_arch():
     assert "COOLBET-REALMONEY-EDGE-GATE-RECONCILE" in doc, "doc must flag the unreconciled real-money edge-gate decision"
 
 
+@test("BOT-2D-AUDIT — the Step-1 OOS audit tool holds its shape")
+def test_bot_2d_audit():
+    """BOT-2D-AUDIT (2026-09-08): the durable Step-1 consolidation tool. Its
+    whole value is HELD-OUT out-of-sample discipline (select a frame on TRAIN,
+    validate on untouched TEST) + PER-MARKET auditing (a bot great in one market
+    and bad in another must not get a blended verdict — the line-shop lesson).
+    Pin both so the rigor can't be quietly dropped."""
+    import os, inspect
+    import scripts.bot_2d_audit as m
+    src = inspect.getsource(m)
+    assert "train, test = picks[:cut], picks[cut:]" in src, "must hold out a TEST window (not just time-folds)"
+    assert "the TRAIN-selected frame to the untouched TEST" in src or "untouched TEST" in src, (
+        "the frame must be selected on TRAIN and validated on the held-out TEST"
+    )
+    assert "def _mfam(" in src and "per (bot × market)" in src, "audit must be PER MARKET, not blended per bot"
+    # _mfam collapses the O/U spellings and keeps 1x2 separate (the line-shop split)
+    assert m._mfam("over_under_25") == "o/u" and m._mfam("o/u") == "o/u" and m._mfam("1x2") == "1x2"
+
+
 @test("SHADOW-BOT-CONSOLIDATION-RETIRE — the 3 dead/duplicate beta bots are retired")
 def test_shadow_bot_consolidation_retire():
     """SHADOW-BOT-CONSOLIDATION (2026-09-08, owner-approved): retire the 3 still-
