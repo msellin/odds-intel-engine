@@ -218,3 +218,23 @@ cells; +tier ~5600). The HELD-OUT OOS split in bot_2d_audit is mandatory at 3-4D
 Past ~4 axes the honest instrument is a regularized model (the ensemble already is one), not a grid.
 Connects to: MARKET-EXPANSION (new bettable markets), SHADOW-BOT-CONSOLIDATION (find each market's
 best config), and the (signal × market) bot refactor.
+
+## FULL COMBINATORIAL CONFIG-DISCOVERY (owner, 2026-09-08) — the big version
+Extend the audit to sweep the POWER SET of dimensions, not just 2D:
+  dims = {edge%, odds-floor, league-tier, market, signal, [more...]}
+  → every 1D, every 2D subset, every 3D, 4D, up to the full 5D set, and for each
+    dimension all possible values. Very long sweep.
+KEY ARCHITECTURAL INSIGHT: don't need BOTS for discovery — run the sweep DIRECTLY on
+  ALL games/data we have (fixtures × odds × model prediction × outcome), across time
+  frames. A "bot" is just a discovered config; discover first on raw data, instantiate
+  winners as bots after. Decouples config-search from the bot fleet.
+  → discovers great configs for markets we ALREADY have.
+SECOND WORKSTREAM: NEW markets (BTTS anchor, corners, cards, 1H, ...) = collect/fetch
+  the data they need first (MARKET-EXPANSION), then include them in the sweep.
+OVERFITTING (the hard part, scales brutally): power-set × all-values × all-markets =
+  potentially millions of configs → held-out OOS ALONE is not enough (with millions of
+  tries you get false winners by count = multiple-comparisons). Need: nested CV, accept
+  only configs robust across MULTIPLE independent held-out windows, multiple-testing
+  correction, and mechanism priors. Past ~4-5 axes the honest instrument is a REGULARIZED
+  MODEL (the ensemble already is one) with the sweep as hypothesis-generation, not truth.
+  Design the discovery engine so a "winner" must clear a very high, multiplicity-aware bar.
