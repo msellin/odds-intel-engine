@@ -3888,6 +3888,42 @@ def test_bot_config_golden_middle_1x2_floor():
     )
 
 
+@test("COOLBET-OWN-BETTING-ARCH — the two placers stay as documented (real-money = UI/line-shop)")
+def test_coolbet_own_betting_arch():
+    """COOLBET-OWN-BETTING-ARCH (2026-09-08): docs/COOLBET_OWN_BETTING.md is the
+    single source of truth and it was wrong for months — it described the paper
+    API placer (coolbet_placer.py / simulated_bets / per-market model edge floor)
+    as the real-money path. The REAL-money path is scripts/place_coolbet_ui.py:
+    it reads shadow_bets_unique for bot_coolbet_value_v1 ONLY, gates on that
+    bot's flat 3% LINE-SHOP edge (never _min_edge_for), and shares only the
+    per-market ODDS floor with the API placer. Pin these facts so the doc and the
+    code cannot drift apart again."""
+    import os
+    ui = open(os.path.join(os.path.dirname(__file__), "place_coolbet_ui.py"), encoding="utf-8").read()
+    # real-money allowlist is exactly the one line-shop bot
+    assert 'EXECUTE_ALLOWED_BOTS = {"bot_coolbet_value_v1"}' in ui, (
+        "the real-money allowlist must be exactly {bot_coolbet_value_v1} — any other "
+        "bot reaching --execute is an unproven strategy staking real money"
+    )
+    # source is the shadow_bets view, NOT simulated_bets
+    assert "FROM shadow_bets_unique" in ui, "UI placer must load from shadow_bets_unique"
+    assert "FROM simulated_bets" not in ui, "UI placer must NOT read simulated_bets (that is the paper API placer)"
+    # edge gate is the bot's flat 3%, and it must NOT use the per-market model floor
+    assert 'BOT_THRESHOLDS = {"bot_coolbet_value_v1": 0.03}' in ui, "UI placer edge gate must be the bot's flat 3% line-shop edge"
+    assert "_min_edge_for" not in ui, (
+        "UI placer must NOT use the per-market model edge floor — real money is gated on "
+        "the line-shop edge, and conflating the two is the exact confusion this test guards"
+    )
+    # but it DOES share the per-market odds floor with the API placer
+    assert "from workers.automation.coolbet_placer import _min_odds_for" in ui, "UI placer must share _min_odds_for (per-market odds floor)"
+    # the doc names both paths and the reconcile gap
+    doc = open(os.path.join(os.path.dirname(__file__), "..", "docs", "COOLBET_OWN_BETTING.md"), encoding="utf-8").read()
+    assert "TWO placers" in doc and "shadow_bets_unique" in doc and "bot_coolbet_value_v1" in doc, (
+        "COOLBET_OWN_BETTING.md must document the two-placer split and the real-money source"
+    )
+    assert "COOLBET-REALMONEY-EDGE-GATE-RECONCILE" in doc, "doc must flag the unreconciled real-money edge-gate decision"
+
+
 @test("2D-GATE-PER-MARKET-ODDS-FLOOR — placer odds floor is per-market, both paths")
 def test_2d_gate_per_market_odds_floor():
     """2D-GATE-PER-MARKET-ODDS-FLOOR (2026-09-08): the placement PRICE floor used
