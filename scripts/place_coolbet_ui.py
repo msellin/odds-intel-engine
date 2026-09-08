@@ -60,6 +60,12 @@ BOT_THRESHOLDS = {
     # EDGE_FLOOR). The placer's live-edge gate 1/(cal_prob - threshold) uses this,
     # so it MUST be 0.08 or the min-odds floor would be computed at the wrong edge.
     "bot_coolbet_ou_model_v1": 0.08,
+    # COOLBET-MODEL-1X2-SHADOW-BOT-2026-09-08: the model-edge 1x2 bot fires at a
+    # 13% calibrated edge (mirrors _MIN_EDGE_BY_MARKET['1x2'] and the mirror job's
+    # EDGE_FLOOR). The placer's live-edge gate 1/(cal_prob - threshold) uses this,
+    # so it MUST be 0.13 — the validated 2D gate is edge>=13% AND odds>=2.80
+    # (per-market floor _min_odds_for('1x2')=2.80). Replaces the paused line-shop 1x2.
+    "bot_coolbet_1x2_model_v1": 0.13,
 }
 DEFAULT_BOT = "bot_coolbet_value_v1"
 
@@ -90,7 +96,7 @@ DEFAULT_BOT = "bot_coolbet_value_v1"
 # pipeline — matching, pricing, snapshots, audit rows — WITHOUT any path by
 # which an unproven strategy reaches the account. A default is not a guard;
 # --bot could name any bot and --execute would have honoured it.
-PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}
+PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}
 
 
 def ui_place_enabled_bots() -> set[str]:

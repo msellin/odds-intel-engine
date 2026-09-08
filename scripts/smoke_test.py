@@ -3975,7 +3975,7 @@ def test_coolbet_model_ou_shadow():
     ui = open(os.path.join(base, "place_coolbet_ui.py"), encoding="utf-8").read()
     assert '"bot_coolbet_ou_model_v1": 0.08' in ui, "the model-edge O/U bot must be in BOT_THRESHOLDS at 0.08"
     # the model bot must be PLACEABLE (allowed to place once enabled) …
-    assert 'PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}' in ui, (
+    assert 'PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in ui, (
         "bot_coolbet_ou_model_v1 must be in PLACEABLE_BOTS so the DB toggle can enable it"
     )
     # … but the retired env CODE PATH must NOT come back — that gate is gone.
@@ -3998,6 +3998,84 @@ def test_coolbet_model_ou_shadow():
     )
 
 
+@test("COOLBET-MODEL-1X2-SHADOW — model-edge 1x2 bot: mirror job + off-by-default real-money wiring")
+def test_coolbet_model_1x2_shadow():
+    """COOLBET-MODEL-1X2-SHADOW-BOT (2026-09-08): bot_coolbet_1x2_model_v1 mirrors
+    the calibrated model's 1x2 picks (edge>=13% on calibrated_prob) into
+    shadow_bets WITHOUT vocabulary conversion (market stays '1x2', selection stays
+    home/draw/away) so they place through the Coolbet UI placer with the validated
+    2D gate (edge>=13%, odds>=2.80). It REPLACES the paused line-shop 1x2. Real
+    money is OFF unless the coolbet_placer_bots toggle is flipped ON. Pin all of
+    this so a regression cannot silently (a) change the source/edge, (b) sneak in
+    a vocabulary conversion, or (c) let the bot place real money by default."""
+    import os
+    base = os.path.dirname(__file__)
+
+    # ── the mirror job ────────────────────────────────────────────────────────
+    job = open(os.path.join(base, "..", "workers", "jobs", "coolbet_model_1x2_shadow.py"),
+               encoding="utf-8").read()
+    assert 'BOT_NAME = "bot_coolbet_1x2_model_v1"' in job, "mirror job must write under bot_coolbet_1x2_model_v1"
+    assert 'SHADOW_COHORT = "coolbet_1x2_model"' in job, "mirror job must use the coolbet_1x2_model cohort"
+    # source: calibrated cohort, market='1x2', edge>=0.13 (FRACTION), calibrated_prob not null
+    assert "b.maturity_label = 'calibrated'" in job, "source must be the calibrated cohort"
+    assert "sb.market = '1x2'" in job, "source market must be '1x2'"
+    assert "sb.calibrated_prob IS NOT NULL" in job, "source must require a calibrated_prob (the placer's live-edge gate reads it)"
+    assert "sb.edge_percent >= %s" in job and 'EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_1X2_EDGE_FLOOR", "0.13"))' in job, (
+        "edge floor must be 0.13 as a FRACTION (edge_percent is stored as a fraction, not a percentage)"
+    )
+    assert "sb.result = 'pending'" in job and "m.date > NOW()" in job, "only pending, future-kickoff picks"
+    assert "sb.user_placed_at IS NULL" in job and "sb.user_skipped_at IS NULL" in job, "skip operator-placed/skipped picks"
+    assert "DISTINCT ON (sb.match_id, sb.selection)" in job, "one row per (match, selection), highest edge"
+    # NO vocabulary conversion — write market='1x2' + home/draw/away straight through.
+    assert '"1x2"' in job, "must write market='1x2' straight through — no conversion"
+    assert 'in ("home", "draw", "away")' in job, "selection must be one of the three 1x2 outcomes, written straight through"
+    # guard against a copied-in O/U conversion leaking into this job
+    assert "over_under" not in job and "_SUPPORTED_LINES" not in job and "_convert(" not in job, (
+        "the 1x2 mirror must NOT contain any O/U vocabulary conversion — 1x2 needs none"
+    )
+    assert "INSERT INTO shadow_bets" in job and "ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)" in job, (
+        "must upsert on the shadow_bets unique key so re-runs update, not duplicate"
+    )
+    # it must NOT invent a settler — '1x2' grades via the generic match-result resolver
+    assert "def settle" not in job, "no custom settler — '1x2' settles via the generic match-result resolver"
+
+    # ── migration 312: cohort in the CHECK, bot registered, toggle seeded OFF ──
+    mig = open(os.path.join(base, "..", "supabase", "migrations",
+               "312_bot_coolbet_1x2_model_shadow.sql"), encoding="utf-8").read()
+    # the new cohort is added AND the prior cohorts are kept (no CHECK regression)
+    assert "'coolbet_1x2_model'" in mig, "migration 312 must allow the coolbet_1x2_model shadow_cohort"
+    for kept in ("'morning'", "'midday'", "'pre_ko'", "'corners_paper'", "'coolbet_ou_model'"):
+        assert kept in mig, f"migration 312 must KEEP the existing shadow_cohort value {kept}"
+    assert "'bot_coolbet_1x2_model_v1'" in mig and "'experimental'" in mig, "migration must register the bot as experimental"
+    import re as _re
+    seed = _re.search(r"\('bot_coolbet_1x2_model_v1',\s*false", mig)
+    assert seed is not None, (
+        "migration 312 must seed bot_coolbet_1x2_model_v1 with ui_place_enabled=false "
+        "— the model-edge 1x2 bot must NOT place real money by default"
+    )
+
+    # ── UI placer: threshold present at 0.13, bot PLACEABLE, real money OFF ────
+    ui = open(os.path.join(base, "place_coolbet_ui.py"), encoding="utf-8").read()
+    assert '"bot_coolbet_1x2_model_v1": 0.13' in ui, (
+        "the model-edge 1x2 bot must be in BOT_THRESHOLDS at 0.13 — the placer's "
+        "live-edge gate reads this and the validated gate is edge>=13%"
+    )
+    assert 'PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in ui, (
+        "bot_coolbet_1x2_model_v1 must be in PLACEABLE_BOTS so the DB toggle can enable it"
+    )
+    # the line-shop O/U stop must stay SCOPED to value_v1 — it must never block 1x2
+    assert 'bot_name == "bot_coolbet_value_v1"' in ui, (
+        "the line-shop O/U stop must stay scoped to bot_coolbet_value_v1 — it must "
+        "not affect the model-edge 1x2 bot"
+    )
+
+    # ── the scheduler runs the 1x2 mirror alongside the O/U mirror ────────────
+    sched = open(os.path.join(base, "..", "workers", "scheduler.py"), encoding="utf-8").read()
+    assert "job_coolbet_model_1x2_shadow" in sched and 'id="coolbet_model_1x2_shadow"' in sched, (
+        "the 1x2 mirror job must be registered in the scheduler"
+    )
+
+
 @test("COOLBET-OWN-BETTING-ARCH — the two placers stay as documented (real-money = UI/line-shop)")
 def test_coolbet_own_betting_arch():
     """COOLBET-OWN-BETTING-ARCH (2026-09-08): docs/COOLBET_OWN_BETTING.md is the
@@ -4015,7 +4093,7 @@ def test_coolbet_own_betting_arch():
     # toggle. PLACEABLE_BOTS bounds what may EVER place; the toggle (seeded
     # value_v1 ON, ou_model_v1 OFF) decides what does right now. value_v1 stays
     # the only bot that places by default.
-    assert 'PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}' in ui, (
+    assert 'PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in ui, (
         "PLACEABLE_BOTS is the hard code-level boundary on what may ever stake real money"
     )
     assert "PLACEABLE_BOTS & ui_place_enabled_bots()" in ui, (
@@ -4027,9 +4105,18 @@ def test_coolbet_own_betting_arch():
     assert "('bot_coolbet_value_v1',    true" in mig or "('bot_coolbet_value_v1', true" in mig, (
         "migration 310 must seed bot_coolbet_value_v1 ON so the line-shop bot keeps placing by default"
     )
-    # source is the shadow_bets view, NOT simulated_bets
+    # PICKS come from the shadow_bets view, NOT simulated_bets. Scope the ban to
+    # the load_picks body — the UI placer legitimately queries simulated_bets in
+    # reconcile_account_to_real_bets to resolve the operator's Coolbet account
+    # tickets to fixtures (matching, not pick-loading; COOLBET-ACCOUNT-VERIFY-GATE).
     assert "FROM shadow_bets_unique" in ui, "UI placer must load from shadow_bets_unique"
-    assert "FROM simulated_bets" not in ui, "UI placer must NOT read simulated_bets (that is the paper API placer)"
+    _lp_start = ui.index("def load_picks")
+    _lp_end = ui.index("\ndef ", _lp_start)
+    _lp = ui[_lp_start:_lp_end]
+    assert "shadow_bets_unique" in _lp and "simulated_bets" not in _lp, (
+        "load_picks must source PICKS from shadow_bets_unique only — simulated_bets "
+        "may appear elsewhere in the file only for account reconciliation, never as a pick source"
+    )
     # edge gate is the bot's flat 3%, and it must NOT use the per-market model floor
     assert '"bot_coolbet_value_v1": 0.03' in ui, "UI placer edge gate must be the bot's flat 3% line-shop edge"
     assert "_min_edge_for" not in ui, (
@@ -4182,7 +4269,7 @@ def test_coolbet_placer_control():
     m = importlib.import_module("scripts.place_coolbet_ui")
 
     # PLACEABLE_BOTS is exactly the two Coolbet placement bots.
-    assert m.PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}, (
+    assert m.PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, (
         "PLACEABLE_BOTS must be exactly the two Coolbet placement bots"
     )
 
@@ -5090,7 +5177,9 @@ def test_coolbet_mac_daemon():
         "docker-compose must mount a persistent profile volume — without "
         "it, every restart loses Chrome's device-trust cookie."
     )
-    assert "restart: unless-stopped" in fs_compose, (
+    # `restart: always` (02e48c8, FS 24/7 self-heal) or `unless-stopped` — either
+    # auto-restarts so a crash doesn't leave the daemon on a dead endpoint.
+    assert ("restart: always" in fs_compose or "restart: unless-stopped" in fs_compose), (
         "FS container must auto-restart so a crash doesn't leave the "
         "daemon talking to a dead endpoint."
     )
@@ -9551,55 +9640,6 @@ def _():
     )
 
 
-@test("COMBO-PROVEN-VARIANTS — bot_acca_proven + bot_combo_proven_system registered")
-def _():
-    """Two whitelist-restricted variants that combine legs ONLY from
-    highest-ROI markets. ACCA-REDESIGN (2026-05-20): whitelist is now
-    market-based (PROVEN_MARKETS_WHITELIST: ou25/ou35/btts) rather than
-    bot-name-based — the acca bot scans predictions+odds_snapshots directly
-    so retired source bots can't cause silent 0-leg runs."""
-    import pathlib
-    mig = pathlib.Path("supabase/migrations/110_combo_proven_variants.sql").read_text()
-    assert "'bot_acca_proven'" in mig and "'bot_combo_proven_system'" in mig
-    bot = pathlib.Path("workers/jobs/acca_bot.py").read_text()
-    # ACCA-REDESIGN: whitelist is now PROVEN_MARKETS_WHITELIST (market-based)
-    assert "PROVEN_MARKETS_WHITELIST" in bot, "market whitelist constant must be defined"
-    # bot_ou15_defensive must NOT be in whitelist (retired 2026-05-20)
-    assert '"bot_ou15_defensive"' not in bot or "PROVEN_BOTS" not in bot, (
-        "ACCA-REDESIGN: bot_ou15_defensive removed from PROVEN_BOTS_WHITELIST "
-        "(retired 2026-05-20); whitelist is now market-based"
-    )
-    # New scan function must exist
-    assert "def _scan_todays_candidates(" in bot, (
-        "ACCA-REDESIGN: _scan_todays_candidates must replace _fetch_todays_singles"
-    )
-    # run_acca_pass must cache scan results
-    assert "scan_cache" in bot, "run_acca_pass must cache scan results per market_whitelist"
-
-
-@test("COMBO-SYSTEM-BOT-PRESENT — bot_combo_system module + migration 109 shipped")
-def _():
-    """Mirror of bot_acca_value but uses no-singles system stake distribution
-    (Trixie/Yankee/Canadian/Heinz depending on N picks). Same picks per day
-    so the two bots run as paper-parallel comparison."""
-    import pathlib
-    mig = pathlib.Path("supabase/migrations/109_combo_system_type.sql").read_text()
-    assert "ADD COLUMN IF NOT EXISTS system_type TEXT" in mig
-    assert "'bot_combo_system'" in mig, "migration 109 must register bot_combo_system"
-    bot = pathlib.Path("workers/jobs/acca_bot.py").read_text()
-    assert "ACCA_VARIANTS" in bot, "acca_bot must define both variants in one dict"
-    assert '"bot_acca_value"' in bot and '"bot_combo_system"' in bot, (
-        "Both variants must be present as ACCA_VARIANTS keys"
-    )
-    assert '"no_singles"' in bot, "bot_combo_system must use structure=no_singles"
-    assert "_subcombo_count" in bot, "must define sub-combo enumeration helper"
-    # Critical: picks are shared across variants. run_acca_pass must pick legs
-    # ONCE then place a bet per variant on the same legs.
-    assert "for bot_name, cfg in ACCA_VARIANTS.items():" in bot, (
-        "run_acca_pass must iterate ACCA_VARIANTS placing each on the same picks"
-    )
-
-
 @test("COMBO-SETTLE-SYSTEM-NO-SINGLES — system bet enumerates sub-combos")
 def _():
     """No-singles system settlement: 4 picks → 11 sub-combos (Yankee). If 3/4
@@ -13793,90 +13833,6 @@ def _():
         "bulk_store_shadow_bets ON CONFLICT must use cohort-scoped key, not shadow_run_id"
 
 
-@test("ACCA-REDESIGN — _scan_todays_candidates replaces _fetch_todays_singles")
-def _():
-    """ACCA-REDESIGN (2026-05-20): acca bot now queries predictions+odds_snapshots
-    directly instead of reading simulated_bets from other bots. This eliminates
-    silent coupling where retired/slow source bots produce 0 legs.
-
-    Verifies:
-    - _scan_todays_candidates function exists and returns a list
-    - old _fetch_todays_singles is no longer the primary data source
-    - bot_ou15_defensive removed from any proven whitelist
-    - market_whitelist key used instead of bot_whitelist
-    - ACCA_ELIGIBLE_MARKETS and PROVEN_MARKETS_WHITELIST defined
-    """
-    import pathlib
-    import importlib
-    import sys
-
-    bot_path = pathlib.Path("workers/jobs/acca_bot.py")
-    assert bot_path.exists(), "workers/jobs/acca_bot.py must exist"
-    bot_src = bot_path.read_text()
-
-    # New function must exist
-    assert "def _scan_todays_candidates(" in bot_src, (
-        "_scan_todays_candidates() must be defined"
-    )
-
-    # Old function must not be the primary fetch function
-    assert "_fetch_todays_singles" not in bot_src or \
-           bot_src.count("def _fetch_todays_singles") == 0, (
-        "_fetch_todays_singles must be removed — replaced by _scan_todays_candidates"
-    )
-
-    # Market constants must be defined
-    assert "ACCA_ELIGIBLE_MARKETS" in bot_src, (
-        "ACCA_ELIGIBLE_MARKETS frozenset must be defined"
-    )
-    assert "PROVEN_MARKETS_WHITELIST" in bot_src, (
-        "PROVEN_MARKETS_WHITELIST frozenset must be defined"
-    )
-
-    # market_whitelist key must be used (not bot_whitelist)
-    assert "market_whitelist" in bot_src, (
-        "ACCA_VARIANTS must use market_whitelist key (not bot_whitelist)"
-    )
-    assert "bot_whitelist" not in bot_src, (
-        "bot_whitelist key must be removed — replaced by market_whitelist"
-    )
-
-    # bot_ou15_defensive must not appear in any whitelist context
-    assert '"bot_ou15_defensive"' not in bot_src, (
-        "bot_ou15_defensive must be removed — it was retired 2026-05-20"
-    )
-
-    # scan_cache pattern must be used in run_acca_pass
-    assert "scan_cache" in bot_src, (
-        "run_acca_pass must use scan_cache (cached per market_whitelist)"
-    )
-
-    # _MARKET_SPEC must define the market mappings
-    assert "_MARKET_SPEC" in bot_src, (
-        "_MARKET_SPEC must define (acca_key, pred_market, snap_market, selection, prob_field) tuples"
-    )
-
-    # Import + call _scan_todays_candidates (source inspection only — no DB)
-    # Verify the function is callable and its signature accepts market_whitelist
-    import ast
-    tree = ast.parse(bot_src)
-    scan_func = next(
-        (node for node in ast.walk(tree)
-         if isinstance(node, ast.FunctionDef) and node.name == "_scan_todays_candidates"),
-        None,
-    )
-    assert scan_func is not None, "_scan_todays_candidates must be a def in acca_bot.py"
-    # Check it has a market_whitelist parameter
-    arg_names = [a.arg for a in scan_func.args.args]
-    assert "market_whitelist" in arg_names, (
-        "_scan_todays_candidates must accept market_whitelist parameter"
-    )
-
-    # All 4 ACCA_VARIANTS must still be present
-    for variant in ("bot_acca_value", "bot_combo_system", "bot_acca_proven", "bot_combo_proven_system"):
-        assert variant in bot_src, f"ACCA_VARIANTS must still include {variant}"
-
-
 @test("FDCO-ANALYSIS — fdco analysis script structure and CLV mappings")
 def _():
     """FDCO-ANALYSIS (2026-05-21): analyse_football_data_co_uk.py runs offline
@@ -14081,48 +14037,6 @@ def _():
     )
 
 
-@test("ACCA-EDGE-PERCENT — acca/combo _place_one INSERT includes edge_percent")
-def _():
-    """_place_one was missing edge_percent in its INSERT column list, causing a
-    NOT NULL constraint violation on every combo bet placed."""
-    import pathlib
-    src = (pathlib.Path(__file__).resolve().parent.parent /
-           "workers" / "jobs" / "acca_bot.py").read_text()
-    insert_start = src.index("INSERT INTO simulated_bets")
-    insert_block = src[insert_start: insert_start + 400]
-    assert "edge_percent" in insert_block, \
-        "acca_bot._place_one INSERT must include edge_percent in column list"
-
-
-@test("ACCA-LEG-SHADOW — run_acca_pass writes each leg to shadow_bets via _write_legs_as_shadow")
-def _():
-    """ACCA-LEG-SHADOW (2026-05-25): every leg picked by any acca variant gets
-    logged as a shadow_bets row attributed to virtual bot bot_acca_leg_shadow.
-    Lets us measure, after settlement, whether the legs the acca catches
-    would have been +EV if singles bots had picked them up. Revisit cadence
-    tracked under ACCA-LEG-SHADOW-EVAL in PRIORITY_QUEUE.md."""
-    import pathlib
-    src = (pathlib.Path(__file__).resolve().parent.parent /
-           "workers" / "jobs" / "acca_bot.py").read_text()
-
-    assert "_write_legs_as_shadow" in src, \
-        "acca_bot.py must define _write_legs_as_shadow"
-    assert "bot_acca_leg_shadow" in src, \
-        "acca_bot.py must reference virtual bot bot_acca_leg_shadow"
-    assert "bulk_store_shadow_bets" in src, \
-        "_write_legs_as_shadow must call bulk_store_shadow_bets"
-    assert "_write_legs_as_shadow(legs_by_variant)" in src, \
-        "run_acca_pass must call _write_legs_as_shadow(legs_by_variant) after placing variants"
-    assert "(leg.match_id, leg.market, leg.selection)" in src, \
-        "_write_legs_as_shadow must dedup legs by (match_id, market, selection)"
-
-    mig = (pathlib.Path(__file__).resolve().parent.parent /
-           "supabase" / "migrations" / "131_bot_acca_leg_shadow.sql").read_text()
-    assert "bot_acca_leg_shadow" in mig, "migration 131 must register bot_acca_leg_shadow"
-    assert "ON CONFLICT (name) DO NOTHING" in mig, \
-        "migration 131 must be idempotent (re-runnable)"
-
-
 @test("SIM-BETS-COHORT-CHECK — simulated_bets timing_cohort constraint allows 'all'")
 def _():
     """Migration 116 guard: BOT-COHORTS-ALL sets timing_cohort='all' on every bot.
@@ -14134,30 +14048,6 @@ def _():
     assert "'all'" in src, "migration 116 must include 'all' in the timing_cohort check"
     assert "simulated_bets" in src, "migration 116 must target simulated_bets"
     assert "DROP CONSTRAINT" in src, "migration 116 must drop the old constraint first"
-
-
-@test("COMBO-RESTRUCTURE-BOT-CONFIG — all 4 combo variants N=5, require_ou15, correct structure")
-def _():
-    """COMBO-RESTRUCTURE (2026-05-22): all 4 combo bots restructured to require N=5 legs,
-    OU15/over in pool, and either straight (acca variants) or fours_up (system variants)."""
-    import pathlib
-    src = (pathlib.Path(__file__).resolve().parent.parent /
-           "workers" / "jobs" / "acca_bot.py").read_text()
-
-    for variant in ("bot_acca_value", "bot_acca_proven", "bot_combo_system", "bot_combo_proven_system"):
-        assert variant in src, f"ACCA_VARIANTS must contain {variant}"
-
-    assert '"require_ou15"' in src and "True" in src, \
-        "ACCA_VARIANTS must have require_ou15=True for combo bots"
-
-    assert '"min_legs"' in src and "5" in src, \
-        "ACCA_VARIANTS must set min_legs=5 for all variants"
-
-    assert '"structure"' in src and '"fours_up"' in src, \
-        "ACCA_VARIANTS must have at least one fours_up structure variant"
-
-    assert '"structure"' in src and '"straight"' in src, \
-        "ACCA_VARIANTS must have at least one straight structure variant"
 
 
 @test("COMBO-RESTRUCTURE-FOURS-UP-SETTLEMENT — settlement.py handles fours_up system bets")
@@ -15063,50 +14953,6 @@ def test_public_performance_extras():
         "double-digit losing run reads as the model breaking rather than as "
         "the expected behaviour of a +5% edge"
     )
-
-
-@test("COMBO-FIX-1 — proven variants merge ou15 into scan when require_ou15 set")
-def test_combo_proven_ou15_fix():
-    """bot_acca_proven + bot_combo_proven_system had market_whitelist excluding
-    ou15 but require_ou15=True → mutually exclusive, never fired. _scan_todays_
-    candidates now accepts always_include_markets so the proven variants can
-    merge ou15 into their candidate pool just for the gate."""
-    import inspect
-    from workers.jobs import acca_bot
-    src = inspect.getsource(acca_bot._scan_todays_candidates)
-    assert "always_include_markets" in src, (
-        "_scan_todays_candidates must accept always_include_markets kwarg"
-    )
-    assert "base_eligible | (always_include_markets or frozenset())" in src, (
-        "scan must union always_include_markets into eligible set"
-    )
-    run_src = inspect.getsource(acca_bot.run_acca_pass)
-    assert 'cfg.get("require_ou15")' in run_src and 'frozenset({"ou15"})' in run_src, (
-        "run_acca_pass must pass always_include={'ou15'} when require_ou15=True"
-    )
-
-
-@test("COMBO-NEW — bot_acca_coolbet config + Coolbet match filter")
-def test_combo_acca_coolbet():
-    """New variant whose candidate pool is limited to matches in Coolbet
-    leagues (per coolbet_leagues_cache.json). Gates relaxed (no require_ou15,
-    min_per_leg_odds=1.25) because Coolbet's top-league pool prices OU15 below
-    1.40; documented as paper-only until ≥30 settled combos."""
-    from workers.jobs.acca_bot import ACCA_VARIANTS, _coolbet_match_ids
-    assert "bot_acca_coolbet" in ACCA_VARIANTS, "bot_acca_coolbet must be in ACCA_VARIANTS"
-    cfg = ACCA_VARIANTS["bot_acca_coolbet"]
-    assert cfg.get("coolbet_only") is True, "config must have coolbet_only=True"
-    assert cfg["min_per_leg_odds"] == 1.25, (
-        "min_per_leg_odds must be relaxed to 1.25 (Coolbet OU15 prices below 1.40)"
-    )
-    assert cfg["require_ou15"] is False, (
-        "require_ou15 must be False on Coolbet variant (OU15 unavailable in pool)"
-    )
-    import pathlib
-    mig = pathlib.Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "124_bot_acca_coolbet.sql"
-    assert mig.exists(), "migration 124 must register bot_acca_coolbet"
-    assert "bot_acca_coolbet" in mig.read_text(), "migration 124 must insert the bot row"
-    assert callable(_coolbet_match_ids), "_coolbet_match_ids helper must be exported"
 
 
 @test("DUPE-FIX-1 — /api/admin/real-bet has NOT EXISTS dedup guard")
@@ -22538,37 +22384,6 @@ def test_scheduler_drain_timeout_2026_08_16():
     )
 
 
-@test("ACCA-RETIRED-LEAK-FIX-2026-08-16 — run_acca_pass skips is_active=False variants")
-def test_acca_retired_leak_fix_2026_08_16():
-    """ACCA-RETIRED-LEAK-FIX-2026-08-16: 5 acca/combo bots retired 2026-06-06
-    (is_active=False + retired_at + maturity_label='retired') kept placing
-    NEW simulated_bets every morning because run_acca_pass() in
-    workers/jobs/acca_bot.py iterated the hardcoded ACCA_VARIANTS dict
-    without consulting the bots table. Sim-side analog to the
-    RETIRED-BOT-LEAK-FIX-2026-07-31 that fixed only the real-money placer.
-
-    Fix: query bots for is_active=TRUE AND retired_at IS NULL, intersect
-    with ACCA_VARIANTS keys, skip everything else with reason=bot_retired.
-    """
-    from pathlib import Path
-    repo = Path(__file__).resolve().parent.parent
-    acca = (repo / "workers" / "jobs" / "acca_bot.py").read_text()
-    assert "ACCA-RETIRED-LEAK-FIX-2026-08-16" in acca, (
-        "acca_bot.py must document the leak fix inline."
-    )
-    assert "is_active IS TRUE AND retired_at IS NULL" in acca, (
-        "acca_bot.py must query the bots table for is_active + retired_at "
-        "guards — otherwise the retired variants can silently return."
-    )
-    assert "active_variant_names" in acca, (
-        "run_acca_pass must build an active_variant_names set from the "
-        "bots table and gate ACCA_VARIANTS iteration on it."
-    )
-    assert '"reason": "bot_retired"' in acca, (
-        "retired variants must produce reason=bot_retired for audit clarity."
-    )
-
-
 @test("DRAW-CALIBRATION-2026-08-16 — post-hoc DRAW_CAL_FACTOR shrink + renormalize in xgboost_ensemble")
 def test_draw_calibration_2026_08_16():
     """DRAW-CALIBRATION-2026-08-16: 4 consecutive weekly retrains
@@ -25882,7 +25697,7 @@ def test_coolbet_ui_placer_2026_08_27():
     # never execute. Per-bot the runner forces dry when a bot is not in the
     # effective allowlist.
     from scripts.place_coolbet_ui import PLACEABLE_BOTS  # noqa: F401
-    assert PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}, \
+    assert PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, \
         "PLACEABLE_BOTS is the hard boundary on what may ever place real money"
     assert "PLACEABLE_BOTS & ui_place_enabled_bots()" in runner, \
         "the effective allowlist must intersect the code whitelist with the DB toggle"
@@ -26027,15 +25842,19 @@ def test_coolbet_match_exposure_guard_2026_09_01():
     assert why and "per-match stake cap" in why, why
 
     # ── Wiring: a guard that is never called is not a guard ───────────────
-    main_src = inspect.getsource(main)
-    assert "exposure_conflict(" in main_src, "guard must be called in the placement loop"
-    assert "match_exposure(" in main_src, "exposure must be seeded from real_bets"
+    # COOLBET-PLACER-CONTROL-2026-09-08 moved the per-pick placement loop out of
+    # main() into place_for_bot() (so --all-enabled can drive several bots through
+    # one session). The exposure guard is called there now, not in main().
+    from scripts.place_coolbet_ui import place_for_bot
+    loop_src = inspect.getsource(place_for_bot)
+    assert "exposure_conflict(" in loop_src, "guard must be called in the per-pick placement loop"
+    assert "match_exposure(" in loop_src, "exposure must be seeded from real_bets"
     # Airbus UK's three bets landed 13:00 / 13:02 / 13:02 — one pass. A DB-only
     # check is racy, so the loop must keep the exposure map current in memory.
-    assert "held.append(" in main_src, "in-run placements must update exposure"
+    assert "held.append(" in loop_src, "in-run placements must update exposure"
     # Blocks must be recorded, not merely skipped, or the firing rate is
     # unmeasurable ([[feedback_silent_failures]]).
-    assert "exposure_guard" in main_src, "blocks must write a placement-attempt row"
+    assert "exposure_guard" in loop_src, "blocks must write a placement-attempt row"
 
     src = pathlib.Path("scripts/place_coolbet_ui.py").read_text()
     assert "match_id = ANY(%s::uuid[])" in src
@@ -29183,7 +29002,7 @@ def test_coolbet_daily_caps():
     # 5. The hard code-level boundary on what may ever execute must survive.
     #    COOLBET-PLACER-CONTROL: PLACEABLE_BOTS ∩ the coolbet_placer_bots DB
     #    toggle is the effective allowlist; PLACEABLE_BOTS bounds it.
-    assert mod.PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}, (
+    assert mod.PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, (
         "PLACEABLE_BOTS changed — real money may only ever be placed by a bot in "
         "the code-level hard whitelist (∩ the coolbet_placer_bots DB toggle)"
     )
@@ -30184,7 +30003,7 @@ def test_placer_odds_floor():
     # The other real-money guards must survive alongside it.
     # COOLBET-PLACER-CONTROL: PLACEABLE_BOTS is the hard code-level boundary
     # (∩ the coolbet_placer_bots DB toggle = the effective allowlist).
-    assert mod.PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}
+    assert mod.PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}
     assert mod.MAX_BETS_PER_MATCH > 0 and mod.MAX_STAKE_PER_MATCH > 0
 
 

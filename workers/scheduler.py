@@ -1949,6 +1949,23 @@ def job_coolbet_model_ou_shadow():
     _run_job("coolbet_model_ou_shadow", lambda: None)
 
 
+def job_coolbet_model_1x2_shadow():
+    """COOLBET-MODEL-1X2-SHADOW-BOT (2026-09-08): mirror the calibrated model's
+    1x2 picks (edge>=13% on calibrated_prob) into shadow_bets under
+    bot_coolbet_1x2_model_v1, WITHOUT vocabulary conversion (market stays '1x2',
+    selection stays home/draw/away), so they place through the Coolbet UI placer
+    with the validated 2D gate (edge>=13%, odds>=2.80). Replaces the paused
+    line-shop 1x2. Writes shadow_bets only; real-money placement for this bot is
+    OFF by default and toggled via the coolbet_placer_bots table
+    (COOLBET-PLACER-CONTROL)."""
+    from workers.jobs.coolbet_model_1x2_shadow import generate_picks
+    c = generate_picks()
+    if c.get("written"):
+        console.print(f"[cyan]model-1x2 shadow: {c['written']} picks written/updated "
+                      f"({c['scanned']} scanned)[/cyan]")
+    _run_job("coolbet_model_1x2_shadow", lambda: None)
+
+
 def job_coolbet_price_sanity():
     """COOLBET-CROSS-BOOK-SANITY-GUARD (2026-09-07): flags Coolbet 1x2 prices
     whose favourite is inverted vs Pinnacle — the signature of a fuzzy-match
@@ -2839,6 +2856,13 @@ def main():
     # over_under_25/35 grade via the generic goals O/U resolver.
     scheduler.add_job(job_coolbet_model_ou_shadow, CronTrigger(hour="*", minute="10,40"),
                       id="coolbet_model_ou_shadow", name="Coolbet Model O/U Shadow")
+    # COOLBET-MODEL-1X2-SHADOW-BOT: mirror calibrated model 1x2 picks into
+    # shadow_bets at :10/:40, same cadence as the O/U mirror, so the model-edge
+    # 1x2 picks the UI placer reads stay current. No settler branch — '1x2'
+    # grades via the generic match-result resolver. Replaces the paused
+    # line-shop 1x2 real-money path.
+    scheduler.add_job(job_coolbet_model_1x2_shadow, CronTrigger(hour="*", minute="10,40"),
+                      id="coolbet_model_1x2_shadow", name="Coolbet Model 1x2 Shadow")
     # AF-ENDPOINT-ATTRIBUTION flush: every 5 min except :00 (sync owns :00). No AF call.
     scheduler.add_job(job_budget_attribution_flush,
                       CronTrigger(minute="5,10,15,20,25,30,35,40,45,50,55"),
