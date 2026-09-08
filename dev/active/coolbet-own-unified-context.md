@@ -74,3 +74,27 @@ Recommendation: unified real-money flow should place on MODEL-EDGE + validated p
 must STOP betting O/U (−17%, every month). Tradeoff = fewer bets (quality cohort). Validate the
 exact switch out-of-sample before flipping real money (15%-overfit discipline; model-edge per-month
 O/U n=15-47, strength is consistency not any window; calibrated cohort has some selection favorability).
+
+## OPERATIONAL STATE (2026-09-08 ~16:40 UTC) — Coolbet brought back up
+- Imperva lifted (11:44 log: cookie refresh + live event match OK). FlareSolverr up.
+- CDP Chrome relaunched (:9222), operator auto-logged-in via --cdp-auto-login, JWT refreshed
+  (fresh, ~30m TTL, kept alive by mac-daemon CDP sync). session_healthy=✓, placing enabled.
+- launchd loaded: coolbet-odds-snapshot, coolbet-feed-watchdog, coolbet-mac-daemon (paper),
+  coolbet-ui-placer (REAL, hourly, --execute).
+- SHIPPED COOLBET-LINESHOP-OU-STOP (369fea8): UI placer no longer places line-shop O/U
+  (−17% leak); places 1x2 line-shop only. Dry-run confirmed the stop fires + all gates work.
+- Double-bet safety: the 2 manual O/U bets (Smouha over2.5, Gala under2.5) — bot_coolbet_value_v1
+  has 0 pending picks on those matches, AND O/U placement is stopped → no double possible.
+
+## MODEL-EDGE O/U — VALIDATED for real-money placement (2026-09-08)
+Calibrated cohort (what /picks + paper placer use), gate edge>=8% & odds>=1.8:
+  n=170, ROI +19.0%, CLV +5.75, fold-robust (+14/+7/+41), monthly +14/+13/−1/+5/+43, ~4.1/day.
+Each 1D component also robust. This is the profitable O/U path to wire into the UI placer.
+
+## NEXT BUILD (unified placer, #3): add model-edge O/U as a real-money source in the UI placer
+- Load calibrated simulated_bets O/U picks (pending, prematch, edge>=8%, not already placed).
+- Feed same placement loop: live Coolbet re-price → re-check edge=cal_prob−1/coolbet_odds >= 0.08
+  → odds floor _min_odds_for('o/u')=1.8 → exposure/dedup → place.
+- Gate behind env flag OFF by default (e.g. COOLBET_UI_MODEL_EDGE_OU=1); build + smoke + DRY-RUN
+  shown to owner BEFORE first real execute. Then 1x2 line-shop + model-edge O/U both live.
+- End-state (epic): model-edge for BOTH markets through the UI placer + one placement-of-record.
