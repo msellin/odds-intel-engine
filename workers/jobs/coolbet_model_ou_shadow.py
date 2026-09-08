@@ -33,9 +33,10 @@ settler (settlement.py _r_ou_goals, matched by the resolver registry's
 line-shop bot's identical markets — the corners_ou_% skip in
 _PENDING_SHADOW_BETS_SQL does NOT touch over_under_%. No settler branch here.
 
-Real money is OFF BY DEFAULT: the UI placer only adds this bot to
-EXECUTE_ALLOWED_BOTS when COOLBET_UI_MODEL_EDGE_OU=1. This job only writes
-shadow_bets; it never places or touches a bankroll.
+Real money is OFF BY DEFAULT: the UI placer only stakes this bot when its
+coolbet_placer_bots row is toggled ui_place_enabled=true (superadmin, and only
+for a bot in the code-level PLACEABLE_BOTS whitelist — COOLBET-PLACER-CONTROL).
+This job only writes shadow_bets; it never places or touches a bankroll.
 
 Idempotent: ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)
 updates the carried fields on re-run rather than duplicating. Run as:

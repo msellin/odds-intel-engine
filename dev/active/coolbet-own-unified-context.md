@@ -123,3 +123,16 @@ tag each by LAYER (customer model-edge / OWN line-shop / retired). Grounded in:
 - DUPLICATE-BOTS-REVIEW (filed): bot_opt_home_lower 92% + bot_conservative 91% dupes of v10 → retire.
 - Retired-market bots (BTTS/DC/combo/acca) still clutter the list.
 Close each bot with evidence (retire/keep/relabel), map to the two-layer framework.
+
+## QUEUED 2026-09-08 (owner-requested; formalize in PRIORITY_QUEUE after control-panel build lands)
+2. STOP-LINESHOP-OU-GENERATION — stop bot_coolbet_value_v1 generating O/U shadow picks (placement already
+   stopped; generation is now pure page-noise since model-edge O/U won). Cleans the shadow-bots overlap.
+3. SHADOW-BOT-CONSOLIDATION — audit all ~40 bots: hide/retire dead (BTTS/DC/draws/tier4), tag survivors by
+   layer (OWN line-shop / PICKS model-edge / retired). Grounded in SHADOW-BOT-PROMOTION-REVIEW + DUPLICATE-BOTS-REVIEW.
+4. COOLBET-1X2-MODEL-EDGE-2ND-BOT — evaluate adding model-edge 1x2 as a 2nd Coolbet OWN bot. Overlap with
+   line-shop 1x2 is only 2% (8 picks), both ~+14% → complementary coverage, not redundant. Mirror like the OU bot.
++ PROMOTION-GATE: do NOT promote any shadow bot to Telegram/customers without explicit owner sign-off. Owner decides.
++ PERFORMANCE-BOT-AUDIT — audit the bots feeding /performance (calibrated+beta+active cohort): what beta/
+  underperforming bots are in it, retire or hold. Note: track-record is CORRECT/live (verified DB=API=page=791/691/
+  10.7%/€739 on 2026-09-08) — NOT frozen; it looks static only because volume is ~2-6 settled picks/day on a
+  691-bet/€6910 base. Real issue = low public-pick VOLUME (MARKET-EXPANSION), not a caching bug.

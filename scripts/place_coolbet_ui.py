@@ -35,8 +35,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # SMOKE-SUITE-AUDIT 2026-09-01: playwright is imported lazily, inside the one
 # function that actually drives a browser. It used to be a module-level import,
 # which meant simply reading a constant from this file — e.g.
-# `from scripts.place_coolbet_ui import EXECUTE_ALLOWED_BOTS`, which the
-# COOLBET-UI-PLACER smoke test does — required the browser driver to be
+# `from scripts.place_coolbet_ui import PLACEABLE_BOTS`, which the
+# COOLBET-PLACER-CONTROL smoke test does — required the browser driver to be
 # installed. playwright is not in requirements.txt, so that test failed in CI
 # with ModuleNotFoundError while passing locally. _session_alive() already
 # deferred its import this way; main() now matches.
@@ -63,25 +63,65 @@ BOT_THRESHOLDS = {
 }
 DEFAULT_BOT = "bot_coolbet_value_v1"
 
-# REAL-MONEY ALLOWLIST. Only these bots may ever be placed with --execute.
-# Everything else is forced to dry-run no matter what flags are passed.
+# ── REAL-MONEY ALLOWLIST — two layers (COOLBET-PLACER-CONTROL-2026-09-08) ─────
 #
-# Added 2026-08-28 when scoping bot_coolbet_dc_v1 and bot_coolbet_ah_v1: new
-# experimental bots must be able to run through the whole pipeline — matching,
-# pricing, snapshots, audit rows — WITHOUT any path by which an unproven
-# strategy reaches the account. A default is not a guard; --bot could name any
-# bot and --execute would have honoured it.
-EXECUTE_ALLOWED_BOTS = {"bot_coolbet_value_v1"}
+# The effective allowlist is an INTERSECTION of two independent gates:
+#
+#   PLACEABLE_BOTS  ∩  ui_place_enabled_bots()
+#   └ code-level        └ runtime DB toggle (coolbet_placer_bots)
+#
+# PLACEABLE_BOTS is the hard boundary: the complete set of bots that may EVER
+# stake real money. It is source code, changed only by a deploy + review. A bot
+# outside it can NEVER place, no matter what the DB says — so inserting an
+# enabled row in coolbet_placer_bots for some experimental bot does nothing.
+#
+# ui_place_enabled_bots() reads the runtime toggle. A superadmin flips a bot on
+# or off from /admin/shadow-bots without a deploy and without touching pick
+# generation. Because it is intersected with PLACEABLE_BOTS, the DB can only
+# ever REDUCE what places — never widen it past what the code already trusts.
+#
+# This replaces the old code-level set EXECUTE_ALLOWED_BOTS and the
+# COOLBET_UI_MODEL_EDGE_OU env flag. The seed (migration 310) keeps
+# bot_coolbet_value_v1 ON and bot_coolbet_ou_model_v1 OFF, so behaviour is
+# unchanged on day one: only the line-shop bot places by default.
+#
+# Added 2026-08-28 (as EXECUTE_ALLOWED_BOTS) when scoping bot_coolbet_dc_v1 and
+# bot_coolbet_ah_v1: new experimental bots must be able to run the whole
+# pipeline — matching, pricing, snapshots, audit rows — WITHOUT any path by
+# which an unproven strategy reaches the account. A default is not a guard;
+# --bot could name any bot and --execute would have honoured it.
+PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}
 
-# COOLBET-MODEL-OU-SHADOW-BOT-2026-09-08. The model-edge O/U bot
-# (bot_coolbet_ou_model_v1) may place REAL money ONLY when explicitly enabled by
-# env COOLBET_UI_MODEL_EDGE_OU=1. Unset/anything-else, it is NOT in the allowlist
-# and --execute is forced to dry-run exactly like any other unproven bot — the
-# whole pipeline (matching, pricing, snapshots, audit rows, staging) still runs.
-# The flip to real money is owner-gated on fold-robust out-of-sample evidence
-# (COOLBET-OWN-UNIFIED-FLOW-EPIC guardrail); the default is OFF by design.
-if os.getenv("COOLBET_UI_MODEL_EDGE_OU") == "1":
-    EXECUTE_ALLOWED_BOTS = EXECUTE_ALLOWED_BOTS | {"bot_coolbet_ou_model_v1"}
+
+def ui_place_enabled_bots() -> set[str]:
+    """Bots flipped ON for real-money UI placement in coolbet_placer_bots.
+
+    FAILS CLOSED. On ANY database error this returns the EMPTY set — the placer
+    then places nothing. That is the SAFE direction here: unlike a kill-switch
+    (where a read failure must not silently disable the stop), this gate ENABLES
+    real money, so a read failure must not silently enable it. "Can't read the
+    toggle" resolves to "place nothing", never "place everything".
+
+    Note the row set is intersected with PLACEABLE_BOTS by the caller, so even a
+    corrupted/injected row can only enable a bot the code already trusts.
+    """
+    try:
+        rows = execute_query(
+            "SELECT bot_name FROM coolbet_placer_bots WHERE ui_place_enabled = true"
+        )
+        return {r["bot_name"] for r in (rows or [])}
+    except Exception as e:
+        log.error(
+            "ui_place_enabled_bots: DB read failed — failing CLOSED (placing "
+            "nothing this run): %s", e
+        )
+        return set()
+
+
+def effective_allowlist() -> set[str]:
+    """The set of bots that may place REAL money right now: the code-level hard
+    whitelist intersected with the runtime DB toggle."""
+    return PLACEABLE_BOTS & ui_place_enabled_bots()
 
 # COOLBET-LINESHOP-OU-STOP-2026-09-08. The real-money line-shop bot
 # (bot_coolbet_value_v1) LOSES on O/U: realized -17.0% ROI over n=1109 settled,
@@ -158,7 +198,8 @@ KICKOFF_CUTOFF_MIN = 3
 #     2026-09-01 after the 2026-08-31 incident (19 bets / EUR 190 / -EUR 92.80).
 #     That incident's mechanism was repeated bets on ONE match, which is now
 #     guarded directly rather than incidentally by the daily count.
-#   * EXECUTE_ALLOWED_BOTS — only bot_coolbet_value_v1 may ever place.
+#   * PLACEABLE_BOTS ∩ coolbet_placer_bots toggle — only enabled, code-trusted
+#     bots may ever place (value_v1 seeded ON, ou_model_v1 seeded OFF).
 #   * MARKET_FAMILY — at most one bet per (match, family).
 #   * KICKOFF_CUTOFF_MIN — nothing placed inside 3 min of kickoff.
 # Residual risk accepted by the owner 2026-09-05: a loop spanning MANY distinct
@@ -451,6 +492,189 @@ def _session_alive() -> bool:
         return False
 
 
+def place_for_bot(page, bot_name: str, picks: list[dict], execute: bool,
+                  stake: float, now) -> dict:
+    """Run the existing per-bot placement flow for one bot over `picks`.
+
+    Extracted from main() so a single run can drive several enabled bots through
+    the SAME browser session and lock (COOLBET-PLACER-CONTROL-2026-09-08). Every
+    gate is unchanged — dedup, line-shop O/U stop (scoped to value_v1), kickoff
+    cutoff, per-market odds floor, per-match exposure, daily caps — and each is
+    evaluated per bot with that bot's own edge threshold.
+
+    Returns a dict of counts plus `abort`: True means the WHOLE run must stop
+    (a daily cap was hit, or Coolbet served an interstitial). Both are run-level
+    conditions — the daily cap is global, and continuing after a block would
+    send more traffic from an already-flagged IP — so the driver breaks out of
+    the bot loop rather than moving to the next bot.
+    """
+    from datetime import timedelta
+
+    threshold = BOT_THRESHOLDS.get(bot_name, 0.03)
+    placed = staged = rejected = skipped_done = 0
+    expected_rows = 0
+    abort = False
+
+    # Daily caps are GLOBAL across bots. spent_today() re-reads confirmed
+    # 'placed' rows from the DB, and each --execute placement commits its row
+    # before the next pick, so re-reading here makes a second bot see the first
+    # bot's placements — the EUR 800/day ceiling bounds the whole run, not each
+    # bot separately.
+    n_today, stake_today = spent_today()
+
+    # COOLBET-MATCH-EXPOSURE-GUARD: seed live per-match exposure once, then keep
+    # it current in memory as this pass places. Re-querying per pick would also
+    # work for the cross-pass case but not the within-pass one.
+    exposure = match_exposure([p["match_id"] for p in picks])
+
+    for p in picks:
+        label = (f"{p['home_team']} v {p['away_team']} | "
+                 f"{p['market']}/{p['selection']} @ {p['odds_at_pick']}")
+
+        # Re-running through the day is the whole design, so the dedup
+        # check comes first — a confirmed placement is never repeated.
+        if already_placed(p["shadow_bet_id"]):
+            skipped_done += 1
+            continue
+
+        # COOLBET-LINESHOP-OU-STOP-2026-09-08: never place line-shop O/U real
+        # money (realized -17% ROI, negative every month). See the constant.
+        # SCOPED to bot_coolbet_value_v1 ONLY (COOLBET-MODEL-OU-SHADOW-BOT):
+        # the O/U leak is the LINE-SHOP bot's, not the model-edge O/U bot's
+        # (bot_coolbet_ou_model_v1, +15% fold-robust). This stop must never
+        # block the model-edge O/U bot, whose entire purpose is to place O/U.
+        _mkt = (p.get("market") or "").lower()
+        if (bot_name == "bot_coolbet_value_v1"
+                and any(_mkt.startswith(pre) for pre in REALMONEY_SKIP_MARKET_PREFIXES)):
+            rejected += 1
+            expected_rows += 1
+            up.record_attempt(
+                p, outcome="rejected", stage="lineshop_ou_stop",
+                reason="line-shop O/U real-money placement disabled (-17% ROI); "
+                       "model-edge O/U is the unified-flow path",
+                stake_requested=stake, execute_mode=execute,
+            )
+            mark_pick(p["shadow_bet_id"], MARK_CHECKED)
+            print(f"skip     {label}\n         line-shop O/U placement disabled "
+                  f"(-17% ROI; COOLBET_UI_PLACE_OU=1 to override)")
+            continue
+
+        ko = p["match_date"]
+        if ko and ko - timedelta(minutes=KICKOFF_CUTOFF_MIN) <= now:
+            rejected += 1
+            print(f"skip     {label}\n         inside {KICKOFF_CUTOFF_MIN}min "
+                  f"kickoff cutoff (KO {ko:%H:%M} UTC)")
+            mark_pick(p["shadow_bet_id"], MARK_CHECKED)
+            continue
+
+        # REALMONEY-ODDS-BAND-MISMATCH-2026-09-05: reject bands where our own
+        # de-vigged CLV is decisively negative. Gated on `odds_at_pick`
+        # because that is the basis the CLV analysis bucketed on — gating on
+        # a different price than the one the evidence was measured at is how
+        # this codebase has repeatedly fooled itself.
+        #
+        # Slippage caveat: the executed price can land below this floor even
+        # when the pick clears it. That is bounded by the placer's own
+        # min-odds check downstream, and is a smaller error than placing in a
+        # band with t = -5.64 CLV by design.
+        try:
+            _pick_odds = float(p.get("odds_at_pick") or 0)
+        except (TypeError, ValueError):
+            _pick_odds = 0.0
+        _floor = _min_odds_for(p.get("market"))
+        if _pick_odds < _floor:
+            rejected += 1
+            expected_rows += 1
+            up.record_attempt(
+                p, outcome="rejected", stage="odds_floor",
+                reason=(f"odds {_pick_odds:.2f} < {p.get('market')} floor "
+                        f"{_floor:.2f} (CLV negative below it)"),
+                stake_requested=stake, execute_mode=execute,
+            )
+            mark_pick(p["shadow_bet_id"], MARK_CHECKED)
+            print(f"skip     {label}\n         odds {_pick_odds:.2f} below "
+                  f"{p.get('market')} floor {_floor:.2f} — CLV in this band is negative")
+            continue
+
+        held = exposure.setdefault(p["match_id"], [])
+        conflict = exposure_conflict(p, held, stake)
+        if conflict:
+            rejected += 1
+            # Recorded, not just skipped: a guard nobody can measure is
+            # indistinguishable from a guard that never fires
+            # ([[feedback_silent_failures]]).
+            expected_rows += 1
+            up.record_attempt(
+                p, outcome="rejected", stage="exposure_guard",
+                reason=conflict, stake_requested=stake,
+                execute_mode=execute,
+            )
+            mark_pick(p["shadow_bet_id"], MARK_CHECKED)
+            print(f"skip     {label}\n         per-match exposure: {conflict}")
+            continue
+
+        if execute:
+            if n_today + placed >= MAX_BETS_PER_DAY:
+                print(f"STOP     daily bet cap reached ({MAX_BETS_PER_DAY})")
+                abort = True
+                break
+            if stake_today + (placed * stake) + stake > MAX_STAKE_PER_DAY:
+                print(f"STOP     daily stake cap reached (EUR {MAX_STAKE_PER_DAY:.2f})")
+                abort = True
+                break
+
+        # stage_bet writes a coolbet_placement_attempts row on EVERY exit,
+        # including its own internal rejections — one call, one row.
+        expected_rows += 1
+        res = up.stage_bet(
+            page, p, stake,
+            execute=execute,
+            edge_threshold=threshold,
+        )
+        if res.placed:
+            placed += 1
+            _canon = canon_bet(p["market"], p["selection"])
+            if _canon:
+                held.append({"family": _canon[0], "canon": _canon[1],
+                             "stake": float(res.stake_applied or stake)})
+            mark_pick(p["shadow_bet_id"], MARK_PLACED)
+            print(f"PLACED   {label}\n         {'; '.join(res.notes)}")
+        elif res.ok:
+            staged += 1
+            # Without --execute nothing is placed, so in-run exposure would
+            # never grow and a dry run would clear every bet on a match —
+            # showing the opposite of what the guard does live. Count a
+            # would-place as exposure so dry runs are representative.
+            if not execute:
+                _canon = canon_bet(p["market"], p["selection"])
+                if _canon:
+                    held.append({"family": _canon[0], "canon": _canon[1],
+                                 "stake": float(res.stake_applied or stake)})
+            print(f"staged   {label}\n         {'; '.join(res.notes)}")
+        elif res.reason.startswith("BLOCKED:"):
+            # Abort the ENTIRE pass. Continuing would send one search per
+            # remaining pick from an IP Coolbet has already flagged, which
+            # is how a temporary block becomes a persistent one. The job
+            # stays scheduled so it recovers by itself once the block
+            # lifts — one cheap check per pass instead of ~30.
+            print(f"ABORT    {res.reason}")
+            print("         stopping this pass; the job will retry next slot.")
+            abort = True
+            break
+        else:
+            rejected += 1
+            # Below-floor now can clear later, so mark it reviewed rather
+            # than placed — the next pass re-checks it.
+            mark_pick(p["shadow_bet_id"], MARK_CHECKED)
+            print(f"skip     {label}\n         {res.reason}")
+
+    return {
+        "placed": placed, "staged": staged, "rejected": rejected,
+        "skipped_done": skipped_done, "expected_rows": expected_rows,
+        "abort": abort,
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--bot", default=DEFAULT_BOT)
@@ -460,15 +684,56 @@ def main() -> int:
     ap.add_argument("--execute", action="store_true",
                     help="PLACE REAL BETS. Operator action.")
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--all-enabled", action="store_true",
+                    help="place ALL bots currently enabled in coolbet_placer_bots "
+                         "(intersected with PLACEABLE_BOTS) in one run, sharing one "
+                         "browser session and one lock. Ignores --bot.")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    threshold = BOT_THRESHOLDS.get(args.bot, 0.03)
 
-    if args.execute and args.bot not in EXECUTE_ALLOWED_BOTS:
-        print(f"REFUSING --execute for {args.bot!r}: not in the real-money allowlist "
-              f"({', '.join(sorted(EXECUTE_ALLOWED_BOTS))}). Running dry instead.")
-        args.execute = False
+    # Effective real-money allowlist for THIS run: PLACEABLE_BOTS (code-level
+    # hard whitelist) ∩ the DB toggle (coolbet_placer_bots). Read once; every
+    # per-bot execute decision below checks against it. Fails CLOSED (empty set)
+    # on any DB error, so a toggle we can't read means "place nothing".
+    allowed = effective_allowlist()
+
+    if args.all_enabled:
+        # Only enabled + placeable bots run. They are all in `allowed`, so
+        # --execute is honoured for each; --bot is ignored in this mode.
+        bots_to_run = sorted(allowed)
+        if not bots_to_run:
+            print("no bots enabled for real-money UI placement in "
+                  "coolbet_placer_bots (∩ PLACEABLE_BOTS) — nothing to do.")
+            return 0
+    else:
+        bots_to_run = [args.bot]
+
+    # Per-bot execute gate. A bot outside the effective allowlist is forced to
+    # dry-run no matter what flags are passed — the same rule the single-bot
+    # path always enforced, now sourced from PLACEABLE_BOTS ∩ DB toggle rather
+    # than a lone code constant. --stage/--execute still print & record; they
+    # just never touch the account for a disallowed bot.
+    bot_execute = {b: (args.execute and b in allowed) for b in bots_to_run}
+    for b in bots_to_run:
+        if args.execute and not bot_execute[b]:
+            reason = ("not in PLACEABLE_BOTS (hard code-level whitelist)"
+                      if b not in PLACEABLE_BOTS
+                      else "ui_place_enabled is OFF in coolbet_placer_bots")
+            print(f"REFUSING --execute for {b!r}: {reason}. "
+                  f"Running dry for this bot instead.")
+
+    # Pre-load picks per bot BEFORE opening the browser or taking the lock, so a
+    # run with nothing to do stays cheap — no session heal, no lock contention.
+    picks_by_bot: dict[str, list[dict]] = {}
+    for b in bots_to_run:
+        pk = load_picks(b)
+        if args.limit:
+            pk = pk[: args.limit]
+        picks_by_bot[b] = pk
+    if not any(picks_by_bot.values()):
+        print(f"No open picks for {', '.join(bots_to_run)}.")
+        return 0
 
     # Self-heal the session BEFORE opening the run's browser context.
     # cdp_auto_login opens its own sync_playwright, and Playwright refuses a
@@ -491,13 +756,6 @@ def main() -> int:
             return 2
         print("session restored.")
 
-    picks = load_picks(args.bot)
-    if args.limit:
-        picks = picks[: args.limit]
-    if not picks:
-        print(f"No open picks for {args.bot}.")
-        return 0
-
     try:
         lock = single_run_lock()
         lock.__enter__()
@@ -505,209 +763,73 @@ def main() -> int:
         print(f"SKIP — {e}")
         return 0
 
-    mode = "EXECUTE" if args.execute else ("STAGE" if args.stage else "DRY-RUN")
-    print(f"\n{args.bot} — {len(picks)} pick(s) — stake EUR {args.stake:.2f} flat "
-          f"— min-edge {threshold:.0%} — mode {mode}\n")
-
-    placed = staged = rejected = skipped_done = 0
+    totals = {"placed": 0, "staged": 0, "rejected": 0, "skipped_done": 0}
+    expected_total = 0
+    recorded = 0
+    from datetime import datetime, timezone
     from playwright.sync_api import sync_playwright
-    with sync_playwright() as pw:
-        browser, page = up.attach(pw)
-        blocked = up.detect_block(page)
-        if blocked:
-            print(f"ABORT — {blocked}")
-            print("  Coolbet is serving an interstitial to this IP. Do NOT retry or "
-                  "re-login; both add traffic from an already-flagged address. The "
-                  "job stays scheduled and will recover on its own once it lifts.")
-            return 0
-        if not up.is_logged_in(page):
-            print("still not logged in after auto-login — aborting")
-            return 2
+    try:
+        with sync_playwright() as pw:
+            browser, page = up.attach(pw)
+            blocked = up.detect_block(page)
+            if blocked:
+                print(f"ABORT — {blocked}")
+                print("  Coolbet is serving an interstitial to this IP. Do NOT retry or "
+                      "re-login; both add traffic from an already-flagged address. The "
+                      "job stays scheduled and will recover on its own once it lifts.")
+                return 0
+            if not up.is_logged_in(page):
+                print("still not logged in after auto-login — aborting")
+                return 2
 
-        from datetime import datetime, timedelta, timezone
-        now = datetime.now(timezone.utc)
-        # COOLBET-UI-PLACER-AUDIT-WARN: `now` is stamped after the lock is held
-        # (LOCK_EX|LOCK_NB, for the whole pass), so no other run can interleave
-        # rows into this window — it is a safe lower bound for "this run".
-        run_started = now
-        # Incremented at exactly the points that write a
-        # coolbet_placement_attempts row, so the reconciliation at the end
-        # compares like with like. The old check counted len(picks), which
-        # includes branches that deliberately write no row.
-        expected_rows = 0
-        n_today, stake_today = spent_today()
+            now = datetime.now(timezone.utc)
+            # COOLBET-UI-PLACER-AUDIT-WARN: `now` is stamped after the lock is held
+            # (LOCK_EX|LOCK_NB, for the whole run), so no other run can interleave
+            # rows into this window — it is a safe lower bound for "this run",
+            # across every bot placed in it.
+            run_started = now
 
-        # COOLBET-MATCH-EXPOSURE-GUARD: seed live per-match exposure once, then
-        # keep it current in memory as this pass places. Re-querying per pick
-        # would also work for the cross-pass case but not the within-pass one.
-        exposure = match_exposure([p["match_id"] for p in picks])
-
-        for p in picks:
-            label = (f"{p['home_team']} v {p['away_team']} | "
-                     f"{p['market']}/{p['selection']} @ {p['odds_at_pick']}")
-
-            # Re-running through the day is the whole design, so the dedup
-            # check comes first — a confirmed placement is never repeated.
-            if already_placed(p["shadow_bet_id"]):
-                skipped_done += 1
-                continue
-
-            # COOLBET-LINESHOP-OU-STOP-2026-09-08: never place line-shop O/U real
-            # money (realized -17% ROI, negative every month). See the constant.
-            # SCOPED to bot_coolbet_value_v1 ONLY (COOLBET-MODEL-OU-SHADOW-BOT):
-            # the O/U leak is the LINE-SHOP bot's, not the model-edge O/U bot's
-            # (bot_coolbet_ou_model_v1, +15% fold-robust). This stop must never
-            # block the model-edge O/U bot, whose entire purpose is to place O/U.
-            _mkt = (p.get("market") or "").lower()
-            if (args.bot == "bot_coolbet_value_v1"
-                    and any(_mkt.startswith(pre) for pre in REALMONEY_SKIP_MARKET_PREFIXES)):
-                rejected += 1
-                expected_rows += 1
-                up.record_attempt(
-                    p, outcome="rejected", stage="lineshop_ou_stop",
-                    reason="line-shop O/U real-money placement disabled (-17% ROI); "
-                           "model-edge O/U is the unified-flow path",
-                    stake_requested=args.stake, execute_mode=args.execute,
-                )
-                mark_pick(p["shadow_bet_id"], MARK_CHECKED)
-                print(f"skip     {label}\n         line-shop O/U placement disabled "
-                      f"(-17% ROI; COOLBET_UI_PLACE_OU=1 to override)")
-                continue
-
-            ko = p["match_date"]
-            if ko and ko - timedelta(minutes=KICKOFF_CUTOFF_MIN) <= now:
-                rejected += 1
-                print(f"skip     {label}\n         inside {KICKOFF_CUTOFF_MIN}min "
-                      f"kickoff cutoff (KO {ko:%H:%M} UTC)")
-                mark_pick(p["shadow_bet_id"], MARK_CHECKED)
-                continue
-
-            # REALMONEY-ODDS-BAND-MISMATCH-2026-09-05: reject bands where our own
-            # de-vigged CLV is decisively negative. Gated on `odds_at_pick`
-            # because that is the basis the CLV analysis bucketed on — gating on
-            # a different price than the one the evidence was measured at is how
-            # this codebase has repeatedly fooled itself.
-            #
-            # Slippage caveat: the executed price can land below this floor even
-            # when the pick clears it. That is bounded by the placer's own
-            # min-odds check downstream, and is a smaller error than placing in a
-            # band with t = -5.64 CLV by design.
-            try:
-                _pick_odds = float(p.get("odds_at_pick") or 0)
-            except (TypeError, ValueError):
-                _pick_odds = 0.0
-            _floor = _min_odds_for(p.get("market"))
-            if _pick_odds < _floor:
-                rejected += 1
-                expected_rows += 1
-                up.record_attempt(
-                    p, outcome="rejected", stage="odds_floor",
-                    reason=(f"odds {_pick_odds:.2f} < {p.get('market')} floor "
-                            f"{_floor:.2f} (CLV negative below it)"),
-                    stake_requested=args.stake, execute_mode=args.execute,
-                )
-                mark_pick(p["shadow_bet_id"], MARK_CHECKED)
-                print(f"skip     {label}\n         odds {_pick_odds:.2f} below "
-                      f"{p.get('market')} floor {_floor:.2f} — CLV in this band is negative")
-                continue
-
-            held = exposure.setdefault(p["match_id"], [])
-            conflict = exposure_conflict(p, held, args.stake)
-            if conflict:
-                rejected += 1
-                # Recorded, not just skipped: a guard nobody can measure is
-                # indistinguishable from a guard that never fires
-                # ([[feedback_silent_failures]]).
-                expected_rows += 1
-                up.record_attempt(
-                    p, outcome="rejected", stage="exposure_guard",
-                    reason=conflict, stake_requested=args.stake,
-                    execute_mode=args.execute,
-                )
-                mark_pick(p["shadow_bet_id"], MARK_CHECKED)
-                print(f"skip     {label}\n         per-match exposure: {conflict}")
-                continue
-
-            if args.execute:
-                if n_today + placed >= MAX_BETS_PER_DAY:
-                    print(f"STOP     daily bet cap reached ({MAX_BETS_PER_DAY})")
-                    break
-                if stake_today + (placed * args.stake) + args.stake > MAX_STAKE_PER_DAY:
-                    print(f"STOP     daily stake cap reached (EUR {MAX_STAKE_PER_DAY:.2f})")
+            # One browser session, one lock, each enabled bot in turn. Daily caps
+            # and Coolbet blocks are run-level, so a bot returning abort=True stops
+            # the whole run rather than advancing to the next bot.
+            for b in bots_to_run:
+                picks = picks_by_bot[b]
+                if not picks:
+                    continue
+                exec_b = bot_execute[b]
+                threshold = BOT_THRESHOLDS.get(b, 0.03)
+                mode = "EXECUTE" if exec_b else ("STAGE" if args.stage else "DRY-RUN")
+                print(f"\n{b} — {len(picks)} pick(s) — stake EUR {args.stake:.2f} flat "
+                      f"— min-edge {threshold:.0%} — mode {mode}\n")
+                counts = place_for_bot(page, b, picks, exec_b, args.stake, now)
+                for k in totals:
+                    totals[k] += counts[k]
+                expected_total += counts["expected_rows"]
+                if counts["abort"]:
                     break
 
-            # stage_bet writes a coolbet_placement_attempts row on EVERY exit,
-            # including its own internal rejections — one call, one row.
-            expected_rows += 1
-            res = up.stage_bet(
-                page, p, args.stake,
-                execute=args.execute,
-                edge_threshold=threshold,
-            )
-            if res.placed:
-                placed += 1
-                _canon = canon_bet(p["market"], p["selection"])
-                if _canon:
-                    held.append({"family": _canon[0], "canon": _canon[1],
-                                 "stake": float(res.stake_applied or args.stake)})
-                mark_pick(p["shadow_bet_id"], MARK_PLACED)
-                print(f"PLACED   {label}\n         {'; '.join(res.notes)}")
-            elif res.ok:
-                staged += 1
-                # Without --execute nothing is placed, so in-run exposure would
-                # never grow and a dry run would clear every bet on a match —
-                # showing the opposite of what the guard does live. Count a
-                # would-place as exposure so dry runs are representative.
-                if not args.execute:
-                    _canon = canon_bet(p["market"], p["selection"])
-                    if _canon:
-                        held.append({"family": _canon[0], "canon": _canon[1],
-                                     "stake": float(res.stake_applied or args.stake)})
-                print(f"staged   {label}\n         {'; '.join(res.notes)}")
-            elif res.reason.startswith("BLOCKED:"):
-                # Abort the ENTIRE pass. Continuing would send one search per
-                # remaining pick from an IP Coolbet has already flagged, which
-                # is how a temporary block becomes a persistent one. The job
-                # stays scheduled so it recovers by itself once the block
-                # lifts — one cheap check per pass instead of ~30.
-                print(f"ABORT    {res.reason}")
-                print("         stopping this pass; the job will retry next slot.")
-                break
-            else:
-                rejected += 1
-                # Below-floor now can clear later, so mark it reviewed rather
-                # than placed — the next pass re-checks it.
-                mark_pick(p["shadow_bet_id"], MARK_CHECKED)
-                print(f"skip     {label}\n         {res.reason}")
+            # Count what actually landed rather than asserting it. The first
+            # version of this script printed "all N recorded" unconditionally
+            # while the audit INSERT was silently rolling back — the exact
+            # failure shape the audit table exists to expose.
+            # COOLBET-UI-PLACER-AUDIT-WARN (2026-09-01): scoped to attempts
+            # written at/after run_started so a run at :00 does not count the
+            # previous hourly run's rows, and compared against expected_total
+            # (rows the loop actually tried to write, summed across bots) rather
+            # than len(picks), which includes branches that write no row.
+            recorded = execute_query(
+                """SELECT COUNT(*) AS n FROM coolbet_placement_attempts
+                    WHERE attempted_at >= %s""",
+                (run_started,),
+            )[0]["n"]
+    finally:
+        lock.__exit__(None, None, None)
 
-    # Count what actually landed rather than asserting it. The first version of
-    # this script printed "all N recorded" unconditionally while the audit
-    # INSERT was silently rolling back — the exact failure shape the audit
-    # table exists to expose.
-    # COOLBET-UI-PLACER-AUDIT-WARN (2026-09-01). This previously counted rows
-    # from the last HOUR across all runs and compared them to len(picks), so it
-    # was wrong on both sides and warned on nearly every pass:
-    #   - the job runs hourly, so a pass at :00 also counted the previous run's
-    #     rows;
-    #   - len(picks) includes three branches that deliberately write no row —
-    #     already_placed (the dedup that makes re-running safe, so ANY prior
-    #     placement guaranteed the warning), the kickoff-cutoff skip, and the
-    #     daily-cap break.
-    # The check exists because an earlier version printed "all N recorded"
-    # while the audit INSERT was silently rolling back. That is worth catching,
-    # which is exactly why it must not cry wolf every run.
-    recorded = execute_query(
-        """SELECT COUNT(*) AS n FROM coolbet_placement_attempts
-            WHERE attempted_at >= %s""",
-        (run_started,),
-    )[0]["n"]
-    lock.__exit__(None, None, None)
-
-    print(f"\nplaced={placed} staged={staged} skipped={rejected} "
-          f"already-placed={skipped_done} "
-          f"— {recorded}/{expected_rows} attempt(s) recorded this run")
-    if recorded < expected_rows:
-        print(f"WARNING: {expected_rows} attempt(s) should have been written but "
+    print(f"\nplaced={totals['placed']} staged={totals['staged']} "
+          f"skipped={totals['rejected']} already-placed={totals['skipped_done']} "
+          f"— {recorded}/{expected_total} attempt(s) recorded this run")
+    if recorded < expected_total:
+        print(f"WARNING: {expected_total} attempt(s) should have been written but "
               f"only {recorded} landed — audit trail is incomplete")
     print()
     return 0

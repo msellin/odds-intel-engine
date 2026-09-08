@@ -25,11 +25,11 @@ floor helper.
 | File | `scripts/place_coolbet_ui.py` (+ `coolbet_ui_placer.py` driver) | `workers/automation/coolbet_placer.py` |
 | launchd job | **`com.oddsintel.coolbet-ui-placer`** — hourly 06:00–21:00, runs with `--execute` | `com.oddsintel.coolbet-mac-daemon` — continuous |
 | Source table | **`shadow_bets_unique`** (view over `shadow_bets`) | `simulated_bets` |
-| Which bot(s) | **only `bot_coolbet_value_v1`** (`EXECUTE_ALLOWED_BOTS`) | all model bots, gated to `calibrated` maturity |
+| Which bot(s) | code whitelist `PLACEABLE_BOTS` ∩ DB toggle `coolbet_placer_bots` — seeded **`bot_coolbet_value_v1` ON, `bot_coolbet_ou_model_v1` OFF** | all model bots, gated to `calibrated` maturity |
 | Edge basis | **Coolbet's OWN price vs de-vigged Pinnacle** (line-shop) | model ensemble vs de-vigged Pinnacle at best-accessible book |
 | Edge floor | **flat 3%** (`BOT_THRESHOLDS`, the bot's `_LINESHOP_TRUE_EDGE_MIN`). Does **NOT** call `_min_edge_for`. | per-market `_min_edge_for` — **1x2 13% · O/U 8%** |
 | Odds floor | `_min_odds_for` ✓ (shared) | `_min_odds_for` ✓ (shared) |
-| Places real money? | **YES** — `--execute` in the plist; writer behind every `real_bets` row since 2026-08-27, incl. the 2026-08-31 −€92.80 incident | **No** — `execute=False` hardcoded in the daemon |
+| Places real money? | **YES** — `--execute` in the plist; writer behind every `real_bets` row since 2026-08-27, incl. the 2026-08-31 −€92.80 incident. Per-bot on/off is the runtime `coolbet_placer_bots` toggle (superadmin, `/admin/shadow-bots`) | **No** — `execute=False` hardcoded in the daemon |
 | Uses our model? | **No** — pure line-shop against Pinnacle | Yes — the calibrated ensemble |
 
 **The consequence you must internalise:** the per-market EDGE-floor work
@@ -90,7 +90,7 @@ DC). ~3,000 picks since 2026-08-26. `shadow_bets_unique` is a dedup VIEW over
 | 4 | **Odds floor** (per-market) | `_min_odds_for(market)` — **shared with the API placer** | **1x2 ≥ 2.80 · O/U ≥ 1.80 · unknown ≥ 2.80** |
 | 5 | **Per-match exposure** | COOLBET-MATCH-EXPOSURE-GUARD | caps concurrent stake on one fixture |
 | 6 | **Edge threshold** | `BOT_THRESHOLDS[bot]` = **0.03** | the bot's flat 3% line-shop edge — **NOT** `_min_edge_for` |
-| 7 | **Real-money allowlist** | `EXECUTE_ALLOWED_BOTS` | `bot_coolbet_value_v1` always; `bot_coolbet_ou_model_v1` **only** when `COOLBET_UI_MODEL_EDGE_OU=1` (off by default). Any other bot → forced dry-run |
+| 7 | **Real-money allowlist** (COOLBET-PLACER-CONTROL) | `PLACEABLE_BOTS ∩ ui_place_enabled_bots()` | code-level hard whitelist `PLACEABLE_BOTS = {value_v1, ou_model_v1}` intersected with the runtime DB toggle `coolbet_placer_bots` (superadmin flips it at `/admin/shadow-bots`). Seed: value_v1 ON, ou_model_v1 OFF. **Fails CLOSED** (places nothing) on any DB read error. A bot outside `PLACEABLE_BOTS` can never place even if a row enables it. Any disallowed bot → forced dry-run |
 | 8 | **Kill switch** | `coolbet_state.is_placement_paused()` | DB flag halts the whole placement loop |
 
 **Line-shop O/U stop (`lineshop_ou_stop`) — scoped to `bot_coolbet_value_v1`
@@ -98,7 +98,7 @@ only.** The line-shop bot loses on O/U (realized −17% ROI, negative every mont
 so its O/U picks are skipped at placement (`REALMONEY_SKIP_MARKET_PREFIXES`,
 override `COOLBET_UI_PLACE_OU=1`). As of COOLBET-MODEL-OU-SHADOW-BOT this skip is
 gated on `args.bot == "bot_coolbet_value_v1"` and does **not** apply to the
-model-edge O/U bot below.
+model-edge O/U bot below. (The scope check reads `bot_name` inside the extracted per-bot flow `place_for_bot`.)
 
 **`bot_coolbet_ou_model_v1` — the model-edge O/U real-money vehicle (off by
 default).** `workers/jobs/coolbet_model_ou_shadow.py` (scheduled :10/:40) mirrors
@@ -108,8 +108,9 @@ vocabulary (`over_under_25`/`over_under_35` + `over`/`under`), so they load and
 place through this same Path-A UI placer with the validated per-market gates
 (edge≥8% via `BOT_THRESHOLDS[bot]=0.08` feeding `min_odds_for`, odds≥1.80 via
 `_min_odds_for('o/u')`). It settles via the generic goals O/U resolver — no
-custom settler. Real money stays OFF until `COOLBET_UI_MODEL_EDGE_OU=1` is set
-with explicit owner authorization; this is the built vehicle for the
+custom settler. Real money stays OFF until its `coolbet_placer_bots` row is
+toggled `ui_place_enabled=true` (superadmin, `/admin/shadow-bots`) with explicit
+owner authorization — it is seeded OFF; this is the built vehicle for the
 `COOLBET-REALMONEY-EDGE-GATE-RECONCILE` decision below.
 
 4. **Drive the browser:** search the match (`input[name="sportSearch"]`) → click
@@ -168,12 +169,20 @@ floor (Path A gate 4 / Path B gate 6).
 | per-market edge floors | `_MIN_EDGE_BY_MARKET` (Path B) | 1x2 0.13 · o/u 0.08 · ah 0.05 · dnb 0.05 |
 | per-market odds floors | `_MIN_ODDS_BY_MARKET` (both) | 1x2 2.80 · o/u 1.80 · ah/dnb 1.00 |
 
+Per-bot real-money on/off is **not** env — it is the DB table `coolbet_placer_bots`
+(`ui_place_enabled` per bot), toggled by a superadmin at `/admin/shadow-bots`
+(COOLBET-PLACER-CONTROL). The old `COOLBET_UI_MODEL_EDGE_OU` env flag was removed;
+the toggle replaces it. `COOLBET_UI_PLACE_OU=1` (line-shop O/U restore) still exists.
+
 ## Not to be confused with
 
-- **`/admin/shadow-bots` page** — a DISPLAY reading `shadow_bets` (many
-  experimental bots). Where the operator eyeballs picks for MANUAL placement.
-  Its `bot_coolbet_value_v1` rows ARE Path A's real-money source; the other bots
-  on that page are not placed by anything.
+- **`/admin/shadow-bots` page** — mostly a DISPLAY reading `shadow_bets` (many
+  experimental bots), where the operator eyeballs picks for MANUAL placement.
+  Its `bot_coolbet_value_v1` rows ARE Path A's real-money source; the other
+  experimental bots on that page are not placed by anything. **It also carries
+  the `Coolbet UI Placer — Control` panel** (COOLBET-PLACER-CONTROL): the
+  superadmin toggle that flips `coolbet_placer_bots.ui_place_enabled` and so
+  governs which bots this Path-A placer stakes real money on.
 - **`/picks` / `/value-bets`** — the 👥 PICKS customer product. Different cohort,
   different purpose.
 
@@ -195,6 +204,12 @@ floor (Path A gate 4 / Path B gate 6).
   Path B's `simulated_bets`, not on Path A's line-shop picks.
 - **Asian Handicap has no fold-robust floor** — `AH-VIABILITY-REVIEW`. (Path A
   doesn't bet AH anyway.)
+- **Which bots place is now a runtime toggle (`COOLBET-PLACER-CONTROL`, 2026-09-08).**
+  `coolbet_placer_bots` (DB) ∩ code-level `PLACEABLE_BOTS` is the effective
+  real-money allowlist; the placer reads it each run and **fails closed** (places
+  nothing) if the read errors. `bot_coolbet_value_v1` seeded ON, `bot_coolbet_ou_model_v1`
+  seeded OFF. Superadmin flips it at `/admin/shadow-bots`. The launchd plist can
+  move to `--all-enabled` (place every enabled bot in one pass) — not yet done.
 - **Real-money automation posture:** Path A already places real money when its
   plist is loaded and the kill switch is clear; Path B is paper. Both are paused
   right now (Imperva tarpit — `launchctl list` shows no Coolbet jobs).

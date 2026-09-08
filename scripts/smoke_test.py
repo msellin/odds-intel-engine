@@ -3907,13 +3907,16 @@ def test_lineshop_ou_stop():
     # purpose is to place O/U real money once enabled. Assert the guard reads
     # args.bot == "bot_coolbet_value_v1" on the same skip branch.
     import re as _re
+    # COOLBET-PLACER-CONTROL-2026-09-08: the per-bot loop was extracted into
+    # place_for_bot(page, bot_name, ...), so the scope guard now reads
+    # `bot_name`, not `args.bot`. The scoping requirement is unchanged.
     stop_branch = _re.search(
-        r'if \(args\.bot == "bot_coolbet_value_v1"\s*\n\s*and any\(_mkt\.startswith\(pre\) '
+        r'if \(bot_name == "bot_coolbet_value_v1"\s*\n\s*and any\(_mkt\.startswith\(pre\) '
         r'for pre in REALMONEY_SKIP_MARKET_PREFIXES\)\):',
         ui,
     )
     assert stop_branch is not None, (
-        "the lineshop_ou_stop must be scoped to args.bot == 'bot_coolbet_value_v1' — "
+        "the lineshop_ou_stop must be scoped to bot_name == 'bot_coolbet_value_v1' — "
         "unscoped, it would block bot_coolbet_ou_model_v1, whose purpose is to place O/U"
     )
 
@@ -3962,21 +3965,36 @@ def test_coolbet_model_ou_shadow():
     assert "over_under" in settle, "the goals O/U resolver must still match over_under markets"
 
     # ── UI placer: threshold present at 0.08, real money OFF by default ───────
+    # COOLBET-PLACER-CONTROL-2026-09-08: real-money enablement moved from the
+    # code constant EXECUTE_ALLOWED_BOTS + env flag COOLBET_UI_MODEL_EDGE_OU to a
+    # runtime DB toggle (coolbet_placer_bots) intersected with the code-level
+    # hard whitelist PLACEABLE_BOTS. The model bot is now PLACEABLE but seeded
+    # OFF in migration 310 — off by default, flippable by a superadmin, and the
+    # env flag is gone. (Fail-closed + intersection semantics are pinned by the
+    # dedicated COOLBET-PLACER-CONTROL test.)
     ui = open(os.path.join(base, "place_coolbet_ui.py"), encoding="utf-8").read()
     assert '"bot_coolbet_ou_model_v1": 0.08' in ui, "the model-edge O/U bot must be in BOT_THRESHOLDS at 0.08"
-    # the base allowlist must NOT contain the model bot — it only joins under the flag
-    assert 'EXECUTE_ALLOWED_BOTS = {"bot_coolbet_value_v1"}' in ui, "base allowlist must be exactly the line-shop bot"
-    assert 'os.getenv("COOLBET_UI_MODEL_EDGE_OU") == "1"' in ui, "model-edge O/U real money must be gated behind COOLBET_UI_MODEL_EDGE_OU=1"
-    # the ONLY place bot_coolbet_ou_model_v1 reaches the allowlist is inside that env guard
-    import re as _re
-    guard = _re.search(
-        r'if os\.getenv\("COOLBET_UI_MODEL_EDGE_OU"\) == "1":\s*\n\s*'
-        r'EXECUTE_ALLOWED_BOTS = EXECUTE_ALLOWED_BOTS \| \{"bot_coolbet_ou_model_v1"\}',
-        ui,
+    # the model bot must be PLACEABLE (allowed to place once enabled) …
+    assert 'PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}' in ui, (
+        "bot_coolbet_ou_model_v1 must be in PLACEABLE_BOTS so the DB toggle can enable it"
     )
-    assert guard is not None, (
-        "bot_coolbet_ou_model_v1 may join EXECUTE_ALLOWED_BOTS ONLY inside the "
-        "COOLBET_UI_MODEL_EDGE_OU==1 guard — never unconditionally"
+    # … but the retired env CODE PATH must NOT come back — that gate is gone.
+    # (Scoped to os.getenv, not the bare name: a comment legitimately mentions
+    # the retired flag to explain the change — assert against the code, not the
+    # prose describing it, per the OU-INVERTED/STALE-ODDS lesson.)
+    assert 'os.getenv("COOLBET_UI_MODEL_EDGE_OU")' not in ui, (
+        "the COOLBET_UI_MODEL_EDGE_OU env path was replaced by the DB toggle and "
+        "must not linger — the toggle is the single enable/disable source"
+    )
+    assert "EXECUTE_ALLOWED_BOTS =" not in ui, "the old code-level allowlist assignment must be gone"
+    # … and it must be seeded OFF in migration 310 (real money off by default).
+    mig = open(os.path.join(base, "..", "supabase", "migrations",
+               "310_coolbet_placer_bots.sql"), encoding="utf-8").read()
+    import re as _re
+    ou_seed = _re.search(r"\('bot_coolbet_ou_model_v1',\s*false", mig)
+    assert ou_seed is not None, (
+        "migration 310 must seed bot_coolbet_ou_model_v1 with ui_place_enabled=false "
+        "— the model-edge O/U bot must NOT place real money by default"
     )
 
 
@@ -3992,10 +4010,22 @@ def test_coolbet_own_betting_arch():
     code cannot drift apart again."""
     import os
     ui = open(os.path.join(os.path.dirname(__file__), "place_coolbet_ui.py"), encoding="utf-8").read()
-    # real-money allowlist is exactly the one line-shop bot
-    assert 'EXECUTE_ALLOWED_BOTS = {"bot_coolbet_value_v1"}' in ui, (
-        "the real-money allowlist must be exactly {bot_coolbet_value_v1} — any other "
-        "bot reaching --execute is an unproven strategy staking real money"
+    # COOLBET-PLACER-CONTROL-2026-09-08: the real-money allowlist is now
+    # PLACEABLE_BOTS (code-level hard whitelist) ∩ the coolbet_placer_bots DB
+    # toggle. PLACEABLE_BOTS bounds what may EVER place; the toggle (seeded
+    # value_v1 ON, ou_model_v1 OFF) decides what does right now. value_v1 stays
+    # the only bot that places by default.
+    assert 'PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}' in ui, (
+        "PLACEABLE_BOTS is the hard code-level boundary on what may ever stake real money"
+    )
+    assert "PLACEABLE_BOTS & ui_place_enabled_bots()" in ui, (
+        "the effective allowlist must be PLACEABLE_BOTS ∩ the DB toggle — the DB can "
+        "only ever reduce placement, never widen it past the code-trusted set"
+    )
+    mig = open(os.path.join(os.path.dirname(__file__), "..", "supabase", "migrations",
+               "310_coolbet_placer_bots.sql"), encoding="utf-8").read()
+    assert "('bot_coolbet_value_v1',    true" in mig or "('bot_coolbet_value_v1', true" in mig, (
+        "migration 310 must seed bot_coolbet_value_v1 ON so the line-shop bot keeps placing by default"
     )
     # source is the shadow_bets view, NOT simulated_bets
     assert "FROM shadow_bets_unique" in ui, "UI placer must load from shadow_bets_unique"
@@ -4014,6 +4044,96 @@ def test_coolbet_own_betting_arch():
         "COOLBET_OWN_BETTING.md must document the two-placer split and the real-money source"
     )
     assert "COOLBET-REALMONEY-EDGE-GATE-RECONCILE" in doc, "doc must flag the unreconciled real-money edge-gate decision"
+
+
+@test("COOLBET-PLACER-CONTROL — effective allowlist = PLACEABLE_BOTS ∩ DB toggle, fail-closed")
+def test_coolbet_placer_control():
+    """COOLBET-PLACER-CONTROL (2026-09-08): which bots the Coolbet UI placer may
+    stake REAL money on is now a runtime DB toggle (coolbet_placer_bots) rather
+    than a code constant. This is real-money control code, so pin the safety
+    properties as BEHAVIOUR, not just source strings:
+
+      1. effective allowlist == PLACEABLE_BOTS ∩ ui_place_enabled_bots()
+      2. ui_place_enabled_bots() FAILS CLOSED (empty set) on any DB error —
+         failing closed here means "place nothing", the safe direction for a
+         gate that ENABLES real money
+      3. PLACEABLE_BOTS is the hard boundary — a bot the DB enables but the code
+         does not trust can NEVER place
+      4. migration 310 seeds value_v1 ON and ou_model_v1 OFF (O/U stays off by
+         default) and is idempotent (ON CONFLICT DO NOTHING, so a re-run never
+         clobbers a human-set value)
+    """
+    import importlib, os
+    m = importlib.import_module("scripts.place_coolbet_ui")
+
+    # PLACEABLE_BOTS is exactly the two Coolbet placement bots.
+    assert m.PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}, (
+        "PLACEABLE_BOTS must be exactly the two Coolbet placement bots"
+    )
+
+    _orig_query = m.execute_query
+    _orig_enabled = m.ui_place_enabled_bots
+    try:
+        # (2) fail closed: any DB error → empty set (place nothing).
+        def _boom(*a, **k):
+            raise RuntimeError("simulated DB outage")
+        m.execute_query = _boom
+        assert m.ui_place_enabled_bots() == set(), (
+            "ui_place_enabled_bots MUST return the empty set on a DB error — a "
+            "toggle we cannot read must never enable real money"
+        )
+        # …and effective_allowlist inherits the fail-closed empty set.
+        assert m.effective_allowlist() == set(), "effective_allowlist must be empty when the toggle read fails"
+
+        # (1) intersection: effective == PLACEABLE_BOTS ∩ enabled.
+        m.ui_place_enabled_bots = lambda: {"bot_coolbet_value_v1"}
+        assert m.effective_allowlist() == {"bot_coolbet_value_v1"}, (
+            "with only value_v1 enabled, the effective allowlist must be exactly {value_v1}"
+        )
+        m.ui_place_enabled_bots = lambda: {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}
+        assert m.effective_allowlist() == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}, (
+            "with both placeable bots enabled, both must be in the effective allowlist"
+        )
+
+        # (3) hard boundary: an enabled row for a NON-placeable bot can never place.
+        m.ui_place_enabled_bots = lambda: {"bot_coolbet_value_v1", "bot_evil_experimental_v1"}
+        assert m.effective_allowlist() == {"bot_coolbet_value_v1"}, (
+            "a bot the DB enables but that is NOT in PLACEABLE_BOTS must never reach the "
+            "effective allowlist — the code-level whitelist is the hard boundary"
+        )
+    finally:
+        m.execute_query = _orig_query
+        m.ui_place_enabled_bots = _orig_enabled
+
+    # (4) migration 310 seed values + idempotency.
+    mig_path = os.path.join(os.path.dirname(__file__), "..", "supabase",
+                            "migrations", "310_coolbet_placer_bots.sql")
+    mig = open(mig_path, encoding="utf-8").read()
+    assert "CREATE TABLE IF NOT EXISTS coolbet_placer_bots" in mig, "migration must create coolbet_placer_bots"
+    assert "bot_name         text        PRIMARY KEY" in mig or "bot_name text PRIMARY KEY" in mig or \
+           "bot_name" in mig and "PRIMARY KEY" in mig, "bot_name must be the primary key"
+    import re as _re
+    val_on = _re.search(r"\('bot_coolbet_value_v1',\s*true", mig)
+    ou_off = _re.search(r"\('bot_coolbet_ou_model_v1',\s*false", mig)
+    assert val_on is not None, "value_v1 must be seeded ui_place_enabled=true (line-shop places by default)"
+    assert ou_off is not None, (
+        "ou_model_v1 must be seeded ui_place_enabled=false — O/U real money OFF by default "
+        "pending dedup/placement-of-record"
+    )
+    assert "ON CONFLICT (bot_name) DO NOTHING" in mig, (
+        "the seed must be ON CONFLICT DO NOTHING so re-applying the migration never "
+        "clobbers a value a human has since toggled"
+    )
+    # RLS lockdown: a real-money control table exposed via PostgREST must deny the
+    # anon/authenticated roles, so only the superadmin server route (service role,
+    # which bypasses RLS) can write it. Without this, a direct anon PostgREST call
+    # could flip a toggle and enable real-money placement past the superadmin gate.
+    assert "ENABLE ROW LEVEL SECURITY" in mig, "coolbet_placer_bots must enable RLS"
+    assert "TO anon, authenticated" in mig and "USING (false)" in mig and \
+           "WITH CHECK (false)" in mig, (
+        "coolbet_placer_bots must deny anon + authenticated direct access (deny-all "
+        "policy) — the superadmin route is the only intended writer"
+    )
 
 
 @test("2D-GATE-PER-MARKET-ODDS-FLOOR — placer odds floor is per-market, both paths")
@@ -25486,11 +25606,18 @@ def test_coolbet_ui_placer_2026_08_27():
     # the whole pipeline — matching, pricing, snapshots, audit rows — with no
     # path to the account. A default bot name is not a guard: --bot could name
     # anything and --execute would have honoured it.
-    from scripts.place_coolbet_ui import EXECUTE_ALLOWED_BOTS  # noqa: F401
-    assert EXECUTE_ALLOWED_BOTS == {"bot_coolbet_value_v1"}, \
-        "only the proven bot may place real money"
-    assert "not in EXECUTE_ALLOWED_BOTS" in runner
-    assert "args.execute = False" in runner, "a disallowed bot must be forced dry"
+    # COOLBET-PLACER-CONTROL-2026-09-08: the real-money allowlist is now the
+    # code-level hard whitelist PLACEABLE_BOTS ∩ the coolbet_placer_bots DB
+    # toggle. PLACEABLE_BOTS bounds what may EVER place; a bot outside it can
+    # never execute. Per-bot the runner forces dry when a bot is not in the
+    # effective allowlist.
+    from scripts.place_coolbet_ui import PLACEABLE_BOTS  # noqa: F401
+    assert PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}, \
+        "PLACEABLE_BOTS is the hard boundary on what may ever place real money"
+    assert "PLACEABLE_BOTS & ui_place_enabled_bots()" in runner, \
+        "the effective allowlist must intersect the code whitelist with the DB toggle"
+    assert "b in allowed" in runner, "per-bot execute must be gated on the effective allowlist"
+    assert "Running dry for this bot instead" in runner, "a disallowed bot must be forced dry"
 
     # Coolbet's search does not tolerate our full DB team names. Verified live:
     # "Ararat-Armenia" returned 10 results NOT containing the fixture, while
@@ -26185,17 +26312,25 @@ def test_coolbet_ui_placer_audit_warn():
     assert "run_started" in src and "attempted_at >= %s" in src, (
         "recorded count must be bounded by this run's start timestamp"
     )
-    assert "if recorded < expected_rows:" in src, (
-        "the warning must fire on expected_rows, not on the pick count"
+    # COOLBET-PLACER-CONTROL-2026-09-08: the per-bot loop moved into
+    # place_for_bot, which returns its own expected_rows; main() sums those into
+    # a run-level expected_total and reconciles the recorded count against THAT.
+    assert "if recorded < expected_total:" in src, (
+        "the warning must fire on expected_total (summed across bots), not the pick count"
+    )
+    assert 'expected_total += counts["expected_rows"]' in src, (
+        "main() must accumulate each bot's expected_rows into expected_total — "
+        "otherwise a multi-bot run under-counts and the warning stops firing"
     )
 
     # expected_rows must be incremented at BOTH write points and nowhere the
     # code writes no row. stage_bet writes on every exit; exposure_guard writes
     # its own row. If a third write site appears without a matching increment,
-    # the warning silently under-counts and stops firing when it should.
+    # the warning silently under-counts and stops firing when it should. The
+    # per-bot counting now lives in place_for_bot, so inspect it there.
     tree = ast.parse(src)
     main_fn = next(n for n in ast.walk(tree)
-                   if isinstance(n, ast.FunctionDef) and n.name == "main")
+                   if isinstance(n, ast.FunctionDef) and n.name == "place_for_bot")
     stores = [n.lineno for n in ast.walk(main_fn)
               if isinstance(n, ast.Name) and n.id == "expected_rows"
               and isinstance(n.ctx, ast.Store)]
@@ -28775,10 +28910,12 @@ def test_coolbet_daily_caps():
     assert getattr(mod, "MAX_STAKE_PER_MATCH", 0) > 0, "per-match stake guard missing"
     assert mod.MAX_BETS_PER_MATCH < bets, "per-match guard must be tighter than the daily cap"
 
-    # 5. Only the one vetted bot may ever execute.
-    assert mod.EXECUTE_ALLOWED_BOTS == {"bot_coolbet_value_v1"}, (
-        "EXECUTE_ALLOWED_BOTS changed — real money may only be placed by the "
-        "explicitly vetted bot"
+    # 5. The hard code-level boundary on what may ever execute must survive.
+    #    COOLBET-PLACER-CONTROL: PLACEABLE_BOTS ∩ the coolbet_placer_bots DB
+    #    toggle is the effective allowlist; PLACEABLE_BOTS bounds it.
+    assert mod.PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}, (
+        "PLACEABLE_BOTS changed — real money may only ever be placed by a bot in "
+        "the code-level hard whitelist (∩ the coolbet_placer_bots DB toggle)"
     )
 
 
@@ -29751,10 +29888,16 @@ def test_placer_odds_floor():
     )
 
     src = open(path, encoding="utf-8").read()
-    # The gate must actually run in the placement loop, not merely be defined.
-    assert "MIN_ODDS_FOR_PLACEMENT" in src.split("def main")[-1] or \
-           src.count("MIN_ODDS_FOR_PLACEMENT") >= 2, (
-        "the floor constant is defined but never compared against a pick"
+    # The gate must actually run in the placement flow, not merely be defined.
+    # 2D-GATE-PER-MARKET-ODDS-FLOOR replaced the global MIN_ODDS_FOR_PLACEMENT
+    # comparison with the per-market helper _min_odds_for; the live comparison is
+    # `_floor = _min_odds_for(...)` / `_pick_odds < _floor` in the placement flow
+    # (place_for_bot as of COOLBET-PLACER-CONTROL). (The old assertion pinned the
+    # now-back-compat constant MIN_ODDS_FOR_PLACEMENT and went stale when the
+    # 2D-gate landed — assert the real comparison instead.)
+    assert "_floor = _min_odds_for(" in src and "_pick_odds < _floor" in src, (
+        "the per-market odds floor must be compared against each pick's odds in "
+        "the placement flow, not merely defined"
     )
     assert 'stage="odds_floor"' in src, (
         "rejections must be RECORDED, not silently skipped — a guard nobody can "
@@ -29769,7 +29912,9 @@ def test_placer_odds_floor():
     )
 
     # The other real-money guards must survive alongside it.
-    assert mod.EXECUTE_ALLOWED_BOTS == {"bot_coolbet_value_v1"}
+    # COOLBET-PLACER-CONTROL: PLACEABLE_BOTS is the hard code-level boundary
+    # (∩ the coolbet_placer_bots DB toggle = the effective allowlist).
+    assert mod.PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}
     assert mod.MAX_BETS_PER_MATCH > 0 and mod.MAX_STAKE_PER_MATCH > 0
 
 

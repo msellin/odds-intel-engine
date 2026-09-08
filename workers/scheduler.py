@@ -1924,7 +1924,8 @@ def job_coolbet_model_ou_shadow():
     Over/Under picks (edge>=8% on calibrated_prob, lines 2.5/3.5) into shadow_bets
     under bot_coolbet_ou_model_v1 in the line-shop vocabulary (over_under_25/35),
     so they place through the Coolbet UI placer with the validated per-market
-    gates. Writes shadow_bets only; real money is OFF unless COOLBET_UI_MODEL_EDGE_OU=1."""
+    gates. Writes shadow_bets only; real-money placement for this bot is OFF by
+    default and toggled via the coolbet_placer_bots table (COOLBET-PLACER-CONTROL)."""
     from workers.jobs.coolbet_model_ou_shadow import generate_picks
     c = generate_picks()
     if c.get("written"):
