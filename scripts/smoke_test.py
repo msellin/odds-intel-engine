@@ -3981,6 +3981,31 @@ def test_lineshop_ou_stop():
     )
 
 
+@test("OU35-MODEL-SHADOW — O/U 3.5 paper bot: single-book gate, calibration, never real-money")
+def test_ou35_model_shadow():
+    """OU35-MODEL-SHADOW-BOT (2026-09-08): forward paper tracker for the O/U 3.5
+    line OU-LINES-EDGE-TEST flagged (mirrors live 2.5). It must (1) gate on the
+    SINGLE-BOOK Coolbet price, never best-of-books (§55 — best-of-books + a gate
+    is the line-shop artifact); (2) fit its own calibration (the pipeline doesn't
+    calibrate 3.5); (3) be PAPER ONLY — not in PLACEABLE_BOTS, no placer toggle."""
+    import inspect
+    from workers.jobs import ou35_model_shadow as m
+    src = inspect.getsource(m)
+    assert "o.bookmaker = 'Coolbet'" in src, "must use the single-book Coolbet price, not best-of-books"
+    assert "IsotonicRegression" in src and "_fit_calibrator" in src, "must fit its own 3.5 calibration"
+    assert m.MARKET == "over_under_35" and m.EDGE_FLOOR == 0.08, "market/edge floor pinned"
+    # PAPER ONLY: the bot must NOT be in the real-money placer whitelist
+    from scripts.place_coolbet_ui import PLACEABLE_BOTS
+    assert "bot_ou35_model_v1" not in PLACEABLE_BOTS, (
+        "the O/U 3.5 bot must NOT be placeable — it is a paper tracker until fold-robust"
+    )
+    # migration 316 registers the bot and the ou35_model cohort
+    from pathlib import Path
+    mig = (Path(__file__).parent.parent / "supabase" / "migrations" / "316_bot_ou35_model_shadow.sql").read_text()
+    assert "bot_ou35_model_v1" in mig and "ou35_model" in mig, "migration must register bot + cohort"
+    assert "INSERT INTO coolbet_placer_bots" not in mig, "must NOT seed a real-money placer toggle row"
+
+
 @test("COOLBET-MODEL-OU-SHADOW — model-edge O/U bot: mirror job + off-by-default real-money wiring")
 def test_coolbet_model_ou_shadow():
     """COOLBET-MODEL-OU-SHADOW-BOT (2026-09-08): bot_coolbet_ou_model_v1 mirrors the

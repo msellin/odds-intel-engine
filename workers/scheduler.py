@@ -1964,6 +1964,20 @@ def job_coolbet_model_ou_shadow():
     _run_job("coolbet_model_ou_shadow", lambda: None)
 
 
+def job_ou35_model_shadow():
+    """OU35-MODEL-SHADOW-BOT (2026-09-08): generate O/U 3.5 model-edge picks
+    (calibrated over35 prob vs the single-book Coolbet price, edge>=8%) into
+    shadow_bets under bot_ou35_model_v1. Forward paper tracker for the line
+    OU-LINES-EDGE-TEST flagged (mirrors the live 2.5, +7.8% not-yet-robust).
+    PAPER ONLY — never stakes money; a PICKS/OWN candidate once fold-robust."""
+    from workers.jobs.ou35_model_shadow import generate_picks
+    c = generate_picks()
+    if c.get("written"):
+        console.print(f"[cyan]ou35 shadow: {c['written']} picks written/updated "
+                      f"({c['scanned']} scanned)[/cyan]")
+    _run_job("ou35_model_shadow", lambda: None)
+
+
 def job_coolbet_model_1x2_shadow():
     """COOLBET-MODEL-1X2-SHADOW-BOT (2026-09-08): mirror the calibrated model's
     1x2 picks (edge>=13% on calibrated_prob) into shadow_bets under
@@ -2880,6 +2894,11 @@ def main():
     # line-shop 1x2 real-money path.
     scheduler.add_job(job_coolbet_model_1x2_shadow, CronTrigger(hour="*", minute="10,40"),
                       id="coolbet_model_1x2_shadow", name="Coolbet Model 1x2 Shadow")
+    # OU35-MODEL-SHADOW-BOT: forward paper tracker for O/U 3.5 model-edge, same
+    # :10/:40 cadence. PAPER ONLY (not in PLACEABLE_BOTS, no placer toggle) — a
+    # PICKS/OWN candidate once fold-robust. Settled by the generic goals-O/U resolver.
+    scheduler.add_job(job_ou35_model_shadow, CronTrigger(hour="*", minute="10,40"),
+                      id="ou35_model_shadow", name="O/U 3.5 Model Shadow")
     # AF-ENDPOINT-ATTRIBUTION flush: every 5 min except :00 (sync owns :00). No AF call.
     scheduler.add_job(job_budget_attribution_flush,
                       CronTrigger(minute="5,10,15,20,25,30,35,40,45,50,55"),
