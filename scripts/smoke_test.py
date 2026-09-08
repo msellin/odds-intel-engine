@@ -1305,6 +1305,38 @@ def _():
 
 # ── AF-VENUES ─────────────────────────────────────────────────────────────────
 
+@test("CARDS-SETTLEMENT-EVENTS-DEF-GUARD — cards pinned to the events definition, still unsettleable")
+def test_cards_settlement_events_def():
+    """CARDS-SETTLEMENT-EVENTS-DEF-GUARD (2026-09-08). Cards are NOT cleanly
+    settleable (thin Pinnacle anchor), so they must SKIP in the settlement
+    registry. But the ONE correct definition is pinned so a future cards resolver
+    can't manufacture phantom edge: the EVENTS count (yellow_card + red_card rows
+    in match_events), never 'points'/'yellow'-only, and never the NULL short-name
+    match_stats columns. Measured: events settles closest to the sharp line;
+    every other def undercounts by -4.8 to -9.8pp.
+    """
+    from workers.jobs.settlement import (settle_bet_result, CARDS_SETTLEMENT_DEF,
+                                         CARD_EVENT_TYPES, cards_total_from_events)
+    # cards must SKIP (not be graded on the goal score)
+    r = settle_bet_result({"market": "cards_ou_45", "selection": "over", "stake": 10.0,
+                           "odds_at_pick": 2.0}, 3, 1, None)
+    assert r["result"] == "skip", "cards_ou is being graded — it must skip (unsettleable)"
+    # the pinned definition is events (card-event rows), not points/yellow/short-names
+    assert CARDS_SETTLEMENT_DEF == "events", "cards settlement definition drifted off 'events'"
+    assert set(CARD_EVENT_TYPES) == {"yellow_card", "red_card"}, (
+        "card event types changed — the events def counts yellow_card + red_card rows"
+    )
+    # the helper must count from match_events, and must NOT reference the NULL
+    # short-name columns yellows_*/reds_* (a query on those silently under-counts)
+    import inspect
+    src = inspect.getsource(cards_total_from_events)
+    assert "match_events" in src, "cards_total_from_events no longer reads match_events"
+    assert "yellows_" not in src and "reds_" not in src, (
+        "cards helper references the NULL short-name columns — it must use the "
+        "card-EVENT rows, not match_stats.yellows_*/reds_*"
+    )
+
+
 @test("AF-429-BURST-SHAPE — rate-limit observability + no wasted-budget bursts")
 def test_af_429_burst_shape():
     """AF-429-BURST-SHAPE (re-scoped 2026-09-06 to P3). The '429 burst' was a

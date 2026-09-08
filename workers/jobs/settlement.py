@@ -342,7 +342,54 @@ _SETTLEMENT_REGISTRY = [
     (lambda m: m == "asian_handicap", _r_asian_handicap),
     (lambda m: m == "draw_no_bet", _r_draw_no_bet),
     (lambda m: re.match(r"^corners_ou_\d+$", m) is not None, _r_corners_ou),
+    # cards_ou is DELIBERATELY absent — see CARDS-SETTLEMENT-EVENTS-DEF-GUARD
+    # below. Cards are not cleanly settleable yet (thin Pinnacle anchor), so they
+    # SKIP. When that changes, a resolver MUST use cards_total_from_events().
 ]
+
+
+# ── CARDS-SETTLEMENT-EVENTS-DEF-GUARD (2026-09-08) ────────────────────────────
+#
+# Cards are intentionally NOT in the registry above (they skip), because they are
+# not cleanly settleable: thin Pinnacle anchor (~28% coverage) and a residual
+# settlement bias even under the best definition. This block pins the ONE correct
+# definition so that if a cards resolver is ever built, it cannot silently pick a
+# wrong one and manufacture phantom edge.
+#
+# THE definition is EVENTS — the count of yellow_card + red_card rows in
+# match_events. Measured 2026-09-08 on 999 settled Pinnacle cards_ou fixtures,
+# settlement bias (realised over-rate − de-vigged implied):
+#     events (card-event rows)  mean 4.08  bias -3.6pp   <- least biased, ≈ line
+#     points  (yc + 2·rc)       mean 4.10  bias -4.8pp
+#     yellow_red (stats yc+rc)  mean 3.95  bias -6.9pp
+#     yellow only               mean 3.80  bias -9.8pp
+#   (mean Pinnacle line 4.04). Every non-events definition undercounts MORE,
+#   which makes every UNDER look like a winner — phantom edge on cards unders.
+#
+# Two traps this guard also closes:
+#  • Use match_stats.yellow_cards_*/red_cards_* (populated ~97%/47%), NEVER the
+#    short-name columns match_stats.yellows_*/reds_* — those are ~78% NULL and a
+#    query on them silently returns near-zero (see ANALYSIS_GOTCHAS).
+#  • The events count is the settlement basis, but even it is only -3.6pp here vs
+#    -0.6pp on the audit's central-line subset — so this is a CORRECTNESS guard,
+#    not a green light to bet cards (they still die at Q2 on the thin anchor).
+CARDS_SETTLEMENT_DEF = "events"
+CARD_EVENT_TYPES = ("yellow_card", "red_card")
+
+
+def cards_total_from_events(match_id) -> int | None:
+    """THE pinned cards settlement basis: count of card-event rows (yellow_card +
+    red_card) in match_events. Returns None when no card events are recorded.
+    Never settle cards from 'points'/'yellow'-only, nor from the NULL short-name
+    match_stats columns — see CARDS-SETTLEMENT-EVENTS-DEF-GUARD."""
+    from workers.api_clients.db import execute_query
+    r = execute_query(
+        "SELECT count(*) AS n FROM match_events WHERE match_id=%s AND event_type = ANY(%s)",
+        [str(match_id), list(CARD_EVENT_TYPES)],
+    )
+    n = r[0]["n"] if r else None
+    return int(n) if n is not None else None
+
 
 # The skip verdict: a market this settler must not grade. `result='skip'` is NOT
 # a bet outcome — callers must leave the row pending and never UPDATE it to this.

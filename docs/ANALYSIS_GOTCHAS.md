@@ -1548,3 +1548,23 @@ a real settlement outcome — regenerate the fixture only if the change is inten
 line by ~0.8/match (CARDS-SETTLEMENT), so a cards bet skips rather than
 manufacturing edge on every under. The registry is where "which markets can we
 grade" is documented in code.
+
+## 51. `match_stats` cards: the SHORT-name columns are mostly NULL
+
+`match_stats` has TWO sets of card columns and they are not interchangeable:
+
+- **Use these (populated):** `yellow_cards_home`/`yellow_cards_away` (~97% non-null),
+  `red_cards_home`/`red_cards_away` (~47%). These are the real per-match counts.
+- **NOT these (mostly NULL):** `yellows_home`/`yellows_away`/`reds_home`/`reds_away`
+  are ~78% NULL. A query on the short names silently returns near-zero and looks
+  like "hardly any cards", not like an error.
+
+And for SETTLEMENT specifically, the correct card total is neither of the above:
+it is the **EVENTS** definition — the count of `yellow_card` + `red_card` rows in
+`match_events` — pinned as `settlement.CARDS_SETTLEMENT_DEF` /
+`cards_total_from_events()`. Measured 2026-09-08 (n=999 Pinnacle cards_ou
+fixtures) the events def settles closest to the sharp line (mean 4.08 vs line
+4.04); `points`/`yellow_red`/`yellow`-only undercount by −4.8 to −9.8pp and
+manufacture phantom under-edge. See CARDS-SETTLEMENT-EVENTS-DEF-GUARD. Cards are
+still deliberately unsettleable in the registry (thin anchor) — this is a
+correctness guard, not a green light to bet cards.
