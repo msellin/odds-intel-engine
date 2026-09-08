@@ -73,14 +73,17 @@ _FUZZY_THRESHOLD = 70
 # place real money on this market". `_min_edge_for(market)` returns
 # `math.inf` for None so the gate trivially rejects.
 _MIN_EDGE_BY_MARKET: dict[str, float | None] = {
-    # BOT-CONFIG-GOLDEN-MIDDLE-2026-09-08: raised 0.10 -> 0.15. Measured on
-    # settled 1x2 picks at EXECUTABLE prices, post the 2026-06-06 threshold
-    # freeze: the 10-15% edge band loses -4.04% on n=266, while the 15%+ band is
-    # +42.10% (n=90). The old 10% floor was placing the losing 10-15% band. At a
-    # 15% floor the placed 1x2 cohort goes +9.2% (n=358) -> +47% (n=92) — far
-    # higher ROI on ~1/4 the volume. Placement-only floor: customer picks are
-    # unaffected. (History: 0.03 -> 0.10 on the original ≥10% backtest.)
-    "1x2":            0.15,
+    # BOT-CONFIG-GOLDEN-MIDDLE-2026-09-08: kept at 0.10 after a full-history
+    # backtest OVERTURNED a brief raise to 0.15. On the placer universe
+    # (active/calibrated bots, n=576, executable prices), a 0.15 floor LOST
+    # -21.6% in-sample (pre the 2026-06-06 freeze) and was statistically
+    # indistinguishable from 0.13 out-of-sample (bootstrap 90% CI includes 0).
+    # The +47% at 0.15 seen on one small post-freeze slice did not survive. On
+    # ABSOLUTE profit at flat stake, 0.10 wins (€589 vs €337 at 0.15) — it is the
+    # only floor solidly positive in BOTH periods (+22.5% in / +9.2% out), and
+    # the higher volume beats the noisy high-floor ROI. Do not raise without a
+    # robust out-of-sample edge, not a single favourable window.
+    "1x2":            0.10,
     "o/u":            0.03,   # already profitable at floor — unchanged
     "asian_handicap": 0.05,   # non-monotonic — keep moderate floor
     # BTTS-RETIRED-2026-09-03: shadow BTTS is n=427, ROI -12.76% at prices that
