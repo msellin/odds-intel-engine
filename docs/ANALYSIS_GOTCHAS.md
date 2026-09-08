@@ -1696,7 +1696,7 @@ corners (`scripts/backfill_match_stats_af.py`, `/fixtures?ids=` with inline
 statistics) returned corner stats for only **748 — 96% came back empty.** The
 `coverage_statistics_fixtures` flag is a LEAGUE-level promise, not a per-fixture
 guarantee: within a cov=TRUE league, lower divisions / older / lesser fixtures
-frequently have no statistics object at all. So corners AND cards are an **AF
+frequently have no statistics object at all. **The AF v3.9.3 docs confirm this explicitly** (/leagues coverage section): "values set to True do not guarantee 100% data availability", coverage "can vary from season to season", and for some competitions "the data available may differ depending on the match, including ... statistics". The flag is a league-level indicator, not a per-fixture guarantee — treating it as one was the audit's error. So corners AND cards are an **AF
 ceiling (~32%), not a collection gap** — they can only grow via a non-AF source
 (football-data CSV `HC`/`HY`/`HR`). Lesson: verify a coverage-flag claim by
 actually fetching a sample before scoping a "cheap backfill" on it.
