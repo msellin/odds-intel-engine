@@ -1389,7 +1389,7 @@ def fix_stale_live_matches():
 
     Called by settle_ready_matches() so it runs on the same 15-min cadence.
     """
-    from workers.api_clients.api_football import get_fixtures_batch
+    from workers.api_clients.api_football import get_fixtures_batch, extract_half_scores
     from workers.api_clients.supabase_client import update_match_result
 
     stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=95)
@@ -1472,7 +1472,9 @@ def fix_stale_live_matches():
                         home_goals, away_goals = 0, 0
                     else:
                         continue
-                update_match_result(match_id, int(home_goals), int(away_goals))
+                ht_h, ht_a, _, _ = extract_half_scores(fixture)
+                update_match_result(match_id, int(home_goals), int(away_goals),
+                                    ht_home=ht_h, ht_away=ht_a)
                 console.print(f"[green]Fixed stale match {match_id} ({db_status}→finished): "
                               f"{status_short} {home_goals}-{away_goals}[/green]")
                 fixed += 1

@@ -1901,6 +1901,21 @@ def job_backfill_live_prices():
     _run_job("backfill_live_prices", _run)
 
 
+def job_backfill_half_scores():
+    """1H-HT-GOALS sweep — daily. Fills matches.ht_score_*/h2_score_* for finished
+    matches still missing them, from AF /fixtures (score.halftime + score.fulltime),
+    20 fixtures per API call. The forward finish-path already writes HT via
+    update_match_result; this sweep is the safety net that catches any finish-path
+    that didn't (ESPN-sourced, older rows). Only touches NULL rows, so it's cheap
+    once caught up — a handful of AF calls a day."""
+    def _run():
+        from scripts.backfill_half_scores import apply_backfill
+        s = apply_backfill(limit=2000)  # newly-finished slice; NULL-only so self-limiting
+        import logging
+        logging.getLogger("scheduler").info("backfill_half_scores %s", s)
+    _run_job("backfill_half_scores", _run)
+
+
 def job_live_tracker():
     from workers.jobs.live_tracker import run_live_tracker
     _run_job("live_tracker", run_live_tracker)
@@ -2327,6 +2342,8 @@ def main():
                       id="backfill_transfers", name="Transfers Backfill")
     scheduler.add_job(job_backfill_live_prices, IntervalTrigger(minutes=30),
                       id="backfill_live_prices", name="odds_at_pick_live producer")
+    scheduler.add_job(job_backfill_half_scores, CronTrigger(hour=22, minute=30),
+                      id="backfill_half_scores", name="1H/2H half-score sweep")
 
     # Fixture status refresh: 6× daily, 15 min before each betting window
     # Re-fetches today's fixtures to catch postponements/cancellations/time changes.

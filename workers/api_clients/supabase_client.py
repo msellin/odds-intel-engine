@@ -3296,16 +3296,32 @@ def update_bot_bankroll(bot_id: str, new_bankroll: float):
 # MATCH RESULTS
 # ============================================================
 
-def update_match_result(match_id: str, home_goals: int, away_goals: int):
-    """Update a match with its final score"""
+def update_match_result(match_id: str, home_goals: int, away_goals: int,
+                         ht_home: int = None, ht_away: int = None):
+    """Update a match with its final score (and, when provided, half-by-half goals).
+
+    ht_home/ht_away are the 1st-half cumulative goals; the 2nd half is stored
+    explicitly as FT - HT (1H-HT-GOALS). Half columns are only written when the
+    HT score is supplied, so existing callers are unaffected."""
     result = "home" if home_goals > away_goals else "away" if away_goals > home_goals else "draw"
 
-    execute_write(
-        """UPDATE matches
-           SET score_home = %s, score_away = %s, result = %s, status = 'finished'
-           WHERE id = %s""",
-        (home_goals, away_goals, result, match_id),
-    )
+    if ht_home is not None and ht_away is not None:
+        execute_write(
+            """UPDATE matches
+               SET score_home = %s, score_away = %s, result = %s, status = 'finished',
+                   ht_score_home = %s, ht_score_away = %s,
+                   h2_score_home = %s, h2_score_away = %s
+               WHERE id = %s""",
+            (home_goals, away_goals, result, int(ht_home), int(ht_away),
+             int(home_goals) - int(ht_home), int(away_goals) - int(ht_away), match_id),
+        )
+    else:
+        execute_write(
+            """UPDATE matches
+               SET score_home = %s, score_away = %s, result = %s, status = 'finished'
+               WHERE id = %s""",
+            (home_goals, away_goals, result, match_id),
+        )
 
 
 # ============================================================

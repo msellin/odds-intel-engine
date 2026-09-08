@@ -2209,8 +2209,37 @@ def fixture_to_match_dict(fixture: dict) -> dict:
     if af_status in ("FT", "AET", "PEN") and goals.get("home") is not None:
         match_dict["home_goals"] = goals["home"]
         match_dict["away_goals"] = goals["away"]
+        # Half-by-half goals (1H-HT-GOALS): AF score.halftime is 1st-half cumulative;
+        # 2nd half = fulltime - halftime. Zero extra API calls — already in this payload.
+        ht_h, ht_a, h2_h, h2_a = extract_half_scores(fixture)
+        if ht_h is not None:
+            match_dict["ht_score_home"] = ht_h
+            match_dict["ht_score_away"] = ht_a
+            match_dict["h2_score_home"] = h2_h
+            match_dict["h2_score_away"] = h2_a
 
     return match_dict
+
+
+def extract_half_scores(fixture: dict):
+    """(ht_home, ht_away, h2_home, h2_away) from an AF fixture, or (None,)*4.
+
+    AF `score.halftime.{home,away}` is the 1st-half cumulative score; 2nd-half
+    goals are `score.fulltime - score.halftime` (regulation only; we fall back to
+    top-level `goals` for the full-time total when `score.fulltime` is absent).
+    Returns Nones when the halftime score is missing so callers can skip cleanly."""
+    score = fixture.get("score") or {}
+    ht = score.get("halftime") or {}
+    ht_h, ht_a = ht.get("home"), ht.get("away")
+    if ht_h is None or ht_a is None:
+        return None, None, None, None
+    ft = score.get("fulltime") or {}
+    goals = fixture.get("goals") or {}
+    ft_h = ft.get("home") if ft.get("home") is not None else goals.get("home")
+    ft_a = ft.get("away") if ft.get("away") is not None else goals.get("away")
+    if ft_h is None or ft_a is None:
+        return int(ht_h), int(ht_a), None, None
+    return int(ht_h), int(ht_a), int(ft_h) - int(ht_h), int(ft_a) - int(ht_a)
 
 
 if __name__ == "__main__":

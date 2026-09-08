@@ -449,6 +449,31 @@ def _():
     assert isinstance(candidates, list), f"Expected list, got {type(candidates)}"
 
 
+@test("1H-HT-GOALS — extract_half_scores parses HT + derives 2H = FT-HT")
+def _():
+    from workers.api_clients.api_football import extract_half_scores
+    # normal fixture: HT 1-0, FT 2-1 -> 2H must be 1-1
+    fx = {"goals": {"home": 2, "away": 1},
+          "score": {"halftime": {"home": 1, "away": 0}, "fulltime": {"home": 2, "away": 1}}}
+    assert extract_half_scores(fx) == (1, 0, 1, 1), "2H must be FT-HT"
+    # missing halftime -> all None (caller skips), never a crash
+    assert extract_half_scores({"goals": {"home": 1, "away": 1}, "score": {}}) == (None, None, None, None)
+    # fulltime absent -> fall back to top-level goals for the FT total
+    fx2 = {"goals": {"home": 3, "away": 0}, "score": {"halftime": {"home": 1, "away": 0}}}
+    assert extract_half_scores(fx2) == (1, 0, 2, 0)
+    # the writer stores half goals only when HT is supplied (source inspect)
+    import inspect
+    from workers.api_clients import supabase_client
+    src = inspect.getsource(supabase_client.update_match_result)
+    assert "ht_score_home" in src and "h2_score_home = %s" in src, "update_match_result must persist HT + derived 2H"
+    assert "int(home_goals) - int(ht_home)" in src, "2H must be stored as FT-HT, not re-fetched"
+    # the migration adds all four columns
+    from pathlib import Path
+    mig = (Path(__file__).parent.parent / "supabase" / "migrations" / "315_half_scores.sql").read_text()
+    for c in ("ht_score_home", "ht_score_away", "h2_score_home", "h2_score_away"):
+        assert c in mig, f"migration 315 must add {c}"
+
+
 @test("settlement — post_mortem bets query runs without error")
 def _():
     from workers.api_clients.db import execute_query

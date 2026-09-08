@@ -20,6 +20,7 @@
 ```
 02:00  ⓪ Hist Backfill   run_backfill()            Historical fixtures/stats/events (self-stops once complete)
 :00/:30 LivePrice Backfill apply_backfill()        odds_at_pick_live producer (SCHEDULED-LIVE-PRICE-PRODUCER 2026-09-08): fills the EXECUTABLE price the published ROI is priced at, for settled bets still NULL. Was a manual restate only → base froze 2026-09-04. Only touches NULL rows.
+22:30  HalfScore Sweep    backfill_half_scores      1H-HT-GOALS (2026-09-08): fills matches.ht_score_*/h2_score_* for finished matches still NULL, from AF /fixtures score.halftime+fulltime (20/call). Forward finish-path also writes HT via update_match_result; this is the safety-net sweep. NULL-only → cheap once caught up.
 04:00  ① Fixtures        run_fixtures()            AF fixtures + league coverage (weekly Mon)
        ② Enrichment      run_enrichment()          Standings, H2H, team stats, injuries (full)
        ③ Odds            run_odds()                AF bulk odds (13 bookmakers)
