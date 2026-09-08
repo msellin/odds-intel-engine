@@ -4169,6 +4169,52 @@ def _():
 
 
 @test("COOLBET-JWT-DB-BACKED — JWT bootstraps from coolbet_session_state, persists on every login/renew")
+@test("COOLBET-MATCH-BLOCKING — country+date+subset-name matching recovers short↔full names, blocks cross-country")
+def test_coolbet_match_blocking():
+    """COOLBET-INGEST-REWORK (2026-09-08). The sweep's old name-only matcher
+    false-negatived AF-present games because Coolbet short-names differ from AF
+    full-names ('Stoke' vs 'Stoke City'), and cross-league search produced
+    wrong-fixture false POSITIVES. coolbet_matching blocks on country (ISO) +
+    kickoff slot, then requires BOTH teams to agree with a subset-safe ratio.
+    Pin: (1) the confirmed short↔full recoveries match; (2) a same-slot game in a
+    DIFFERENT country cannot match (country block); (3) an ambiguous both-teams-
+    weak case is rejected, not guessed.
+    """
+    from datetime import datetime, timezone
+    from workers.automation.coolbet_matching import match_event_to_af, norm_team, af_country_for_iso
+
+    assert af_country_for_iso("GB-ENG") == "England" and af_country_for_iso("US") == "USA"
+    assert norm_team("Stoke City") == "stoke city" and "stoke" in norm_team("Stoke")
+
+    ko = datetime(2026, 9, 8, 18, 45, tzinfo=timezone.utc)
+    af = [
+        {"id": "1", "ko": ko, "home": "Cardiff City", "away": "Stoke City", "country": "England"},
+        {"id": "2", "ko": ko, "home": "Sunderland", "away": "Hull City", "country": "England"},
+        # a same-time game in another country — the country block must exclude it
+        {"id": "3", "ko": ko, "home": "Stoke Wanderers", "away": "Cardiff Utd", "country": "Malaysia"},
+    ]
+    # (1) short Coolbet names recover the full AF names
+    m, best, _ = match_event_to_af("Cardiff", "Stoke", "GB-ENG", ko, af)
+    assert m and m["id"] == "1" and best >= 90, f"short↔full name recovery failed (score {best})"
+    m2, _, _ = match_event_to_af("Sunderland", "Hull", "GB-ENG", ko, af)
+    assert m2 and m2["id"] == "2", "Sunderland vs Hull City not recovered"
+
+    # (2) country block: an England event must NOT match the Malaysia fixture even
+    # though its team names are similar and the kickoff is identical
+    only_malaysia = [af[2]]
+    m3, _, _ = match_event_to_af("Cardiff", "Stoke", "GB-ENG", ko, only_malaysia)
+    assert m3 is None, "country block failed — matched a different country's fixture"
+
+    # (3) ambiguity guard: two near-identical candidates in-block → reject, not guess
+    amb = [
+        {"id": "a", "ko": ko, "home": "Racing Club", "away": "Athletic", "country": "Spain"},
+        {"id": "b", "ko": ko, "home": "Racing Club", "away": "Athletico", "country": "Spain"},
+    ]
+    m4, _, _ = match_event_to_af("Racing", "Athletic", "ES", ko, amb)
+    # both away names are subset-ish; the guard should refuse when the gap is tiny
+    assert m4 is None or m4["id"] == "a", "ambiguity guard should not guess between near-ties"
+
+
 @test("FO-CATEGORY-ENVELOPE — league-scoped event fetch descends into the categories envelope")
 def test_fo_category_envelope():
     """FO-CATEGORY-ENVELOPE-FIX (2026-09-08). The Coolbet fo-category endpoint

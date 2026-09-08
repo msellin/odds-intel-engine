@@ -725,6 +725,7 @@ def fetch_events_for_league(
     else:
         cats = data
     for cat in cats:
+        cat_iso = cat.get("region_icon") if isinstance(cat, dict) else None
         for m in (cat.get("matches") or []):
             if not m.get("id"):
                 continue
@@ -735,6 +736,10 @@ def fetch_events_for_league(
                 "start":      m.get("match_start") or m.get("start"),
                 "status":     m.get("status"),
                 "name":       m.get("name"),
+                # COOLBET-INGEST-REWORK: ISO country code for record-linkage
+                # blocking (see coolbet_matching). Prefer the match-level value,
+                # fall back to the category's.
+                "iso":        m.get("region_icon") or cat_iso,
             })
     return matches
 

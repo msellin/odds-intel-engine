@@ -47,3 +47,36 @@
   Challenge Cup, National League N/S + Cup, youth/reserve leagues (some Coolbet won't carry).
 - NEXT: build fo-tree map-growth tool (walk children, match unmapped anchored AF leagues
   to Coolbet categoryId by name); grow map; THEN wire run_league_sweep as primary.
+
+## MATCHING DESIGN + TRIPLE-CHECK (2026-09-08) — decisive findings
+Owner directive: skip games AF doesn't provide, but TRIPLE CHECK first.
+
+Board reality: Coolbet ~816 open events (140 categories). Decomposition within our
+AF fixture horizon (~41h): 121 virtual (exclude), 460 real BEYOND horizon (Coolbet
+prices weeks ahead; no match_id), 235 within horizon. AF is far WIDER overall
+(1,460 leagues / 588 active vs Coolbet ~140); Coolbet-only = bottom tier only
+(Finnish Nelonen 4th / Kolmonen 3rd — AF has 0 ever; "Lower Leagues" bucket).
+
+Coolbet-only games are UNBETTABLE by any bot: no AF features (model input) AND no
+Pinnacle anchor. NB 5/13 active bots are LINE-SHOP (no model): bot_coolbet_value,
+bot_pin_1x2_home, bot_sweep_ou25/35, bot_corners_paper_shadow — but they too need
+Pinnacle. So skipping Coolbet-only loses nothing bettable.
+
+MULTI-SIGNAL MATCH (owner's idea) — the signal is there: region_icon is an ISO
+country code (GB-ENG, US, GB-SCT). Block on COUNTRY -> DATE-SLOT -> team names.
+Country+date blocking lifted near-term coverage 77% -> 83% vs pure fuzzy.
+
+⚠️ TRIPLE-CHECK CAUGHT A REAL PROBLEM: "unmatched != absent". Naive fuzzy
+false-negatives real AF-present games because Coolbet short-names vs AF full-names:
+Cardiff vs "Cardiff City", Hull vs "Hull City", West Ham vs "West Ham United".
+Verified AF HAS Cardiff-Stoke, Bolton-West Ham, Sunderland-Hull tonight, yet the
+naive classifier marked them skippable. => CANNOT skip-on-non-match until the
+matcher is HARDENED.
+
+FIX (build order): harden the matcher FIRST, THEN enable skipping.
+- token_set_ratio / partial_ratio (subset-safe: "stoke" ⊂ "stoke city") instead of
+  token_sort_ratio, applied WITHIN a country+date block (small candidate set -> safe).
+- persist confirmed matches via matches.coolbet_match_id (already a column) so the
+  join is one-time, and build a Coolbet-team -> AF-team-id alias table over time.
+- near-term filter: drop Coolbet events with start > horizon (skips the 460 future).
+- only AFTER matcher hardened is "unmatched => genuinely AF-absent => skip" safe.
