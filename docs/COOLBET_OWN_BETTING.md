@@ -1,5 +1,28 @@
 # Coolbet Own-Betting — Flow & Architecture (single source of truth)
 
+## CURRENT STATE (2026-09-08) — RESOLVED: model-edge on both markets
+
+The old open question ("line-shop 3% vs model per-market floor governs real
+money") is **decided by evidence** (BOT-2D-AUDIT, held-out OOS): line-shop loses
+out-of-sample (1x2 −24%, O/U −17%, sweep/pin all negative — a best-of-books
+selection artifact); model-edge holds (v10 +28% 1x2 / +34% O/U OOS). So:
+
+| Bot | Signal | Market | Real money |
+|---|---|---|---|
+| `bot_coolbet_ou_model_v1` | model-edge | O/U | **ON** |
+| `bot_coolbet_1x2_model_v1` | model-edge | 1x2 | **ON** |
+| `bot_coolbet_value_v1` | line-shop | 1x2 | **OFF** (paused) |
+
+- Placement = `place_coolbet_ui.py --all-enabled --execute` (launchd), placing
+  every bot in `PLACEABLE_BOTS ∩ coolbet_placer_bots(ui_place_enabled=true)`.
+- Every run first VERIFIES the real Coolbet account (panuste ajalugu), reconciles
+  it into `real_bets`, and FAILS CLOSED if it can't — so no manual/auto bet is
+  ever double-placed (COOLBET-ACCOUNT-VERIFY-GATE).
+- Per-bot on/off toggles live on `/admin/shadow-bots` (COOLBET-PLACER-CONTROL).
+- The gate-stack sections below still describe the line-shop path for history;
+  the ACTIVE real-money bots are the two model-edge ones above.
+
+
 **Purpose.** One place that defines exactly how WE bet our own money on Coolbet:
 which bot, which picks, which edges, which floors, and what actually places the
 money. Rewritten 2026-09-08 after a long-running confusion was finally pinned:
