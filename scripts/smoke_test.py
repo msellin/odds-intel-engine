@@ -4152,6 +4152,25 @@ def test_bot_2d_audit():
     assert m._mfam("over_under_25") == "o/u" and m._mfam("o/u") == "o/u" and m._mfam("1x2") == "1x2"
 
 
+@test("MARKET-DATA-AF-AUDIT — AF-capability findings are documented, stale 17% figure corrected")
+def test_market_data_af_audit():
+    """MARKET-DATA-AF-AUDIT (2026-09-08): the read-only audit found the corners/
+    cards coverage figure was stale (~31% not 17%, and the named 'AF-ceiling'
+    leagues actually have coverage=TRUE) and that the cheap wins are AF-native:
+    HT-goals via /fixtures score.halftime (zero extra calls), corners/cards
+    cov=TRUE backfill, and /fixtures?ids= batching (20 fixtures/call). Pin the
+    doc so these findings + the correction aren't silently reverted."""
+    from pathlib import Path
+    doc = (Path(__file__).parent.parent / "docs" / "MARKET_DATA_MAP.md").read_text()
+    # the correction: the old "~17%" claim must be gone from the corners/cards rows
+    assert "~17% coverage" not in doc, "stale 17% coverage claim must be corrected to ~31%"
+    assert "MARKET-DATA-AF-AUDIT" in doc and "resolved 2026-09-08" in doc, "audit findings must be recorded"
+    # the AF-native HT-goals route (the highest value-per-effort win)
+    assert "score.halftime" in doc, "must document the AF-native HT-goals route (/fixtures score.halftime)"
+    # the true ceilings must still be named (don't over-claim everything is fixable)
+    assert "Pinnacle BTTS marginal" in doc, "must keep the real AF ceilings honest (BTTS marginal)"
+
+
 @test("SHADOW-BOT-CONSOLIDATION-RETIRE — the 3 dead/duplicate beta bots are retired")
 def test_shadow_bot_consolidation_retire():
     """SHADOW-BOT-CONSOLIDATION (2026-09-08, owner-approved): retire the 3 still-
