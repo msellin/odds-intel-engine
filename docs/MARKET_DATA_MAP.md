@@ -90,6 +90,16 @@ K League·Veikkausliiga" claim was wrong — all four are `statistics_fixtures=T
 
 ## Edge-sweep verdict (MARKET-EDGE-SWEEP-EXISTING-DATA — resolved 2026-09-08)
 
+> **⚠️ BASIS CORRECTION (2026-09-08, later same day).** The ROI figures below use
+> the *best-of-accessible* price + an edge gate, which re-creates the line-shop
+> selection artifact and is biased ~4–7pp LOW — it shows even our profitable O/U
+> 2.5 as −1.6% (see ANALYSIS_GOTCHAS §55). Re-judge on the SINGLE-BOOK Coolbet
+> executable basis: **AH/DC stay negative → DEAD holds (softer). BTTS shifts to
+> ~marginal — not a clean ROI-dead; its real blocker is NO Pinnacle anchor +
+> model AUC ≈ coin (discrimination), which still says "not worth it."** The
+> discrimination facts below are solid; the best-of-books ROI magnitudes are not.
+
+
 Multi-dimensional held-out-OOS sweep (isotonic calibrated on TRAIN only, applied
 to untouched TEST; edge-floor × odds-floor × tier; walk-forward folds), on the
 canonical accessible book set {Coolbet, Betano, Unibet, Epicbet}, pre-match only.
@@ -151,3 +161,19 @@ cross-regime holdout yet. Only the idealized (best-of-books mirage) basis has
 depth — and it loses. **No phase-2 odds-reachability check is warranted:** nothing
 cleared the bar. If BTTS is ever revisited, it needs (1) a Coolbet BTTS
 price-fidelity audit and (2) far more executable history first.
+
+## O/U extra lines 1.5 / 3.5 (TIER A — tested 2026-09-08, `scripts/ou_lines_edge_test.py`)
+
+The goals model already emits over/under 1.5 & 3.5 predictions (same machinery as
+the live 2.5) — no new model/data. Tested calibrated model-edge on the SINGLE-BOOK
+Coolbet executable price (the correct basis, §55), edge≥8%, held-out TEST:
+
+| line | Coolbet-exec ROI @edge≥8% | fold-robust? | verdict |
+|---|---|---|---|
+| O/U 2.5 (control, live) | +5.6% | no (n≈3.4k, ~6mo Coolbet history) | our baseline |
+| **O/U 3.5** | **+7.8%** | no (folds −14/+36/−3) | **candidate — mirrors 2.5; run as paper/shadow bot, gate on robustness** |
+| O/U 1.5 | −18% | no | dead |
+
+Key caveat: **nothing is fold-robust yet, including the live 2.5**, because Coolbet
+history is only ~6 months. 3.5 should accrue as a paper bot and flip to real money
+only once fold-robust — same discipline as every other line.

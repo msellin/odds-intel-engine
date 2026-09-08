@@ -1661,3 +1661,28 @@ rows that exist most fields are ~90%+ populated — the gap is match_stats
 pre-match inputs** — they can only feed a pre-match model as aggregated team
 rates/form, never as per-match features. Any model using them needs a fallback
 for the ~60–70% of matches without a stats row.
+
+## §55 — Model-edge ROI must use a SINGLE-BOOK executable price, never best-of-books (2026-09-08)
+
+Validating a model-edge strategy by ROI at **best-odds-across-books + an edge
+gate** silently re-creates the line-shop selection artifact (§52): the gate
+selects whichever book is the outlier-high price, which is exactly the
+stale/mispriced quote that loses OOS. **Proof by control:** the O/U 2.5 market we
+bet profitably comes out NEGATIVE (−1.6%) on best-of-accessible calibrated
+model-edge — a test that condemns a market we make money on is not measuring the
+right thing. Switching to the **single-book Coolbet executable price** (the
+actual placement venue), calibrated model-edge at edge≥8% shows 2.5 **+5.6%**,
+and O/U 3.5 **+7.8%** (mirrors 2.5), O/U 1.5 dead.
+
+**Two consequences.**
+1. Any "market X is dead by ROI" verdict computed on best-of-books is unreliable
+   and biased ~4–7pp LOW. This includes MARKET-EDGE-SWEEP's BTTS/DC/AH numbers
+   (they used "idealized best-of-accessible"). After the correction AH/DC stay
+   negative (dead holds), but **BTTS shifts to ~marginal** — its real problem is
+   NO Pinnacle anchor + model AUC ≈ coin (discrimination), not a clean ROI-dead.
+   Trust the *discrimination* facts (AUC model-vs-market), not best-of-books ROI.
+2. **Nothing is fold-robust on Coolbet-executable yet — including the live 2.5 —
+   because Coolbet history is only ~6 months** (n≈3.4k for 2.5). Confidence in
+   ALL Coolbet-executable edges is n-limited; new lines (3.5) should accrue as
+   paper/shadow bots and gate on fold-robustness before real money, exactly like
+   the existing ones. Tool: `scripts/ou_lines_edge_test.py`.
