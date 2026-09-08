@@ -8888,32 +8888,22 @@ def _():
     )
 
 
-@test("COMBO-ACCA-BOT-PRESENT — bot_acca_value module + migration shipped")
+@test("COMBO-BOTS-RETIRED — accumulator/combo generation is removed for good")
 def _():
-    """COMBO-RESEARCH-PHASE-D: paper acca bot generates a multi-leg combo from
-    today's top-edge singles. Source-inspect the module + migration so a
-    refactor can't silently drop the integration."""
+    """COMBO-BOTS-RETIRED (2026-09-08, owner decision): every combo/acca bot was
+    a net loser (real-money -121.35 EUR / 30 bets, sim all-lost) and an
+    accumulator multiplies the vig against us. The generation is removed for
+    good — no new combo bets can ever be created. Guard against a revival: the
+    acca_bot module is gone and daily_pipeline_v2 no longer calls it."""
     import pathlib
-    mig = pathlib.Path("supabase/migrations/108_combo_legs.sql").read_text()
-    assert "ADD COLUMN IF NOT EXISTS combo_legs JSONB" in mig, (
-        "migration 108 must add combo_legs JSONB column"
+    assert not pathlib.Path("workers/jobs/acca_bot.py").exists(), (
+        "acca_bot.py is back — combo generation must stay removed"
     )
-    assert "ADD COLUMN IF NOT EXISTS combo_size INTEGER" in mig, (
-        "migration 108 must add combo_size INTEGER column"
-    )
-    assert "INSERT INTO bots" in mig and "'bot_acca_value'" in mig, (
-        "migration 108 must register bot_acca_value"
-    )
-    bot = pathlib.Path("workers/jobs/acca_bot.py").read_text()
-    assert "def run_acca_pass" in bot, "acca_bot.py must define run_acca_pass"
-    assert "min_legs" in bot and "max_legs" in bot, "ACCA_CONFIG must define min/max legs"
-    # Independence enforcement: must dedupe by match_id
-    assert "seen_matches" in bot, "Acca bot must enforce one leg per match (independence)"
-    # Hook in daily_pipeline_v2
     pipeline = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
-    assert "from workers.jobs.acca_bot import run_acca_pass" in pipeline, (
-        "daily_pipeline_v2 must call run_acca_pass after singles are placed"
+    assert "run_acca_pass" not in pipeline, (
+        "daily_pipeline_v2 calls the acca bot again — combo generation is un-retired"
     )
+    assert "COMBO-BOTS-RETIRED" in pipeline, "the retirement rationale note was dropped"
 
 
 @test("COMBO-HIDE-FROM-PUBLIC — combo bots filtered out of dashboard_cache bot_breakdown")

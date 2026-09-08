@@ -4049,17 +4049,14 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             silent=True,
         )
 
-    # COMBO-PHASE-D: after singles are placed, run the cross-match acca bot.
-    # It reads today's pending singles, picks top-edge independent legs, and
-    # places one combo bet. Only fires when ≥3 qualifying legs exist.
-    # Limited to the morning cohort (or no cohort = full run) — refresh cohorts
-    # don't generate enough new pending singles to materially change the menu.
-    if cohort in (None, "morning"):
-        try:
-            from workers.jobs.acca_bot import run_acca_pass
-            run_acca_pass()
-        except Exception as e:
-            console.print(f"[yellow]Acca bot failed (non-critical): {e}[/yellow]")
+    # COMBO-BOTS-RETIRED (2026-09-08): the accumulator / combo bots are retired
+    # for good (owner decision). All six combo/acca bots were already retired
+    # (2026-06-06), but the generation call above still ran daily — it is now
+    # removed so no new combo bets are ever created. Every combo strategy was a
+    # net loser (real-money combos -121.35 EUR / 30 bets, sim all-lost), and
+    # accumulators multiply the vig against us. acca_bot.py is deleted. The
+    # combo settlement plumbing (settle_combo_bet) is left as harmless dead code
+    # — 0 combos are pending, so it can never fire again.
 
     # SHADOW-BOTS-MULTI-COHORT-2026-08-21: shadow-bet writers now fire on
     # BOTH the morning cohort AND the 30-min shadow_mode refresh runs
