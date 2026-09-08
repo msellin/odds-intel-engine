@@ -1886,6 +1886,21 @@ def job_backfill_transfers():
     _run_job("backfill_transfers", run_batch, batch_size=25)
 
 
+def job_backfill_live_prices():
+    """odds_at_pick_live producer — every 30min. SCHEDULED-LIVE-PRICE-PRODUCER-2026-09-08.
+    Fills the executable price (odds_at_pick_live) for settled bets where it is still
+    NULL, from snapshot history. This is the ongoing producer for the PUBLISHED ROI
+    basis (/api/v1/track-record prices at odds_at_pick_live). It was a manual restate
+    script only, so new bets silently dropped out of the published base after the last
+    manual run (froze 2026-09-04). Only touches NULL rows, so runs are cheap once caught up."""
+    def _run():
+        from scripts.backfill_odds_at_pick_live import apply_backfill
+        n = apply_backfill()  # settled-only, both tables (simulated_bets + shadow_bets)
+        import logging
+        logging.getLogger("scheduler").info("backfill_live_prices updated %s", n)
+    _run_job("backfill_live_prices", _run)
+
+
 def job_live_tracker():
     from workers.jobs.live_tracker import run_live_tracker
     _run_job("live_tracker", run_live_tracker)
@@ -2293,6 +2308,8 @@ def main():
                       id="backfill_coaches", name="Coaches Backfill")
     scheduler.add_job(job_backfill_transfers, IntervalTrigger(minutes=25),
                       id="backfill_transfers", name="Transfers Backfill")
+    scheduler.add_job(job_backfill_live_prices, IntervalTrigger(minutes=30),
+                      id="backfill_live_prices", name="odds_at_pick_live producer")
 
     # Fixture status refresh: 6× daily, 15 min before each betting window
     # Re-fetches today's fixtures to catch postponements/cancellations/time changes.

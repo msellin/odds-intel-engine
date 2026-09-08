@@ -132,6 +132,33 @@ UPDATE {table} t
 """
 
 
+def apply_backfill(tables: tuple[str, ...] = TABLES, all_rows: bool = False) -> dict[str, int]:
+    """Populate `odds_at_pick_live` for rows where it is still NULL, from
+    snapshot history (latest quote per accessible book at/before pick_time, max
+    across books). Commits. Returns {table: rows_updated}.
+
+    SCHEDULED-LIVE-PRICE-PRODUCER-2026-09-08: this is the ONGOING producer for
+    the executable-pricing basis. Previously `odds_at_pick_live` was filled ONLY
+    by manual `--apply` runs of this script, so after the last manual run every
+    new bet had a NULL live price and silently dropped out of the PUBLISHED ROI
+    base (`/api/v1/track-record` prices at `odds_at_pick_live`) — the base froze
+    on 2026-09-04 while `total_bets` kept climbing. `job_backfill_live_prices`
+    in the scheduler now calls this so new bets are always priced. Settled-only
+    by default, matching the manual runs that produced the published record.
+    """
+    from workers.api_clients.db import get_conn
+    books = sorted(ACCESSIBLE_BOOKMAKERS)
+    only_settled = "" if all_rows else "AND t.result IN ('won','lost')"
+    updated: dict[str, int] = {}
+    for table in tables:
+        sql = _SQL.format(table=table, only_settled=only_settled)
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(sql, {"books": books})
+            updated[table] = cur.rowcount
+            conn.commit()
+    return updated
+
+
 def _counts(cur, table: str) -> dict:
     cur.execute(f"""
         SELECT COUNT(*) AS total,

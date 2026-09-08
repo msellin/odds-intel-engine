@@ -4046,6 +4046,30 @@ def test_coolbet_own_betting_arch():
     assert "COOLBET-REALMONEY-EDGE-GATE-RECONCILE" in doc, "doc must flag the unreconciled real-money edge-gate decision"
 
 
+@test("SCHEDULED-LIVE-PRICE-PRODUCER — odds_at_pick_live is produced on a schedule, not manually")
+def test_scheduled_live_price_producer():
+    """SCHEDULED-LIVE-PRICE-PRODUCER (2026-09-08): the published ROI
+    (/api/v1/track-record) prices at odds_at_pick_live. That column was filled
+    ONLY by manual `--apply` runs of scripts/backfill_odds_at_pick_live.py, so
+    after the last manual run every new settled bet had a NULL executable price
+    and silently dropped out of the published base — it froze on 2026-09-04. The
+    fix is an ongoing producer: apply_backfill() + a scheduler job. Pin both so
+    the producer can't be removed and the base can't silently re-freeze."""
+    import os, inspect
+    bf = os.path.join(os.path.dirname(__file__), "backfill_odds_at_pick_live.py")
+    src = open(bf, encoding="utf-8").read()
+    assert "def apply_backfill(" in src, "the schedulable apply_backfill() callable is gone"
+    # it must COMMIT (a dry-run producer would price nothing)
+    assert "conn.commit()" in src, "apply_backfill must commit"
+    from scripts.backfill_odds_at_pick_live import apply_backfill
+    assert callable(apply_backfill)
+    sched = open(os.path.join(os.path.dirname(__file__), "..", "workers", "scheduler.py"), encoding="utf-8").read()
+    assert "job_backfill_live_prices" in sched and "apply_backfill" in sched, (
+        "the scheduler must register a job that calls apply_backfill()"
+    )
+    assert 'id="backfill_live_prices"' in sched, "the live-price producer job must be registered on the scheduler"
+
+
 @test("COOLBET-PLACER-CONTROL — effective allowlist = PLACEABLE_BOTS ∩ DB toggle, fail-closed")
 def test_coolbet_placer_control():
     """COOLBET-PLACER-CONTROL (2026-09-08): which bots the Coolbet UI placer may
