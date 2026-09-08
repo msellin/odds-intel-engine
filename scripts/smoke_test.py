@@ -4218,6 +4218,10 @@ def test_coolbet_match_blocking():
 
     assert af_country_for_iso("GB-ENG") == "England" and af_country_for_iso("US") == "USA"
     assert norm_team("Stoke City") == "stoke city" and "stoke" in norm_team("Stoke")
+    # HTML entities in Coolbet names must be unescaped, or the '&' becomes a junk
+    # 'amp' token that sinks the match (real cause of an AF-present FA Cup miss).
+    assert "amp" not in norm_team("Havant &amp; Waterlooville").split(), "html entity not unescaped"
+    assert norm_team("Brighton &amp; Hove Albion") == "brighton hove albion"
 
     ko = datetime(2026, 9, 8, 18, 45, tzinfo=timezone.utc)
     af = [

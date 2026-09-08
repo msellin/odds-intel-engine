@@ -27,6 +27,7 @@ old global cross-league search.
 """
 from __future__ import annotations
 
+import html
 import re
 import unicodedata
 
@@ -67,8 +68,14 @@ DEFAULT_MIN_GAP = 8  # required margin best-vs-runner-up (unless best is near-pe
 
 
 def norm_team(name: str | None) -> str:
-    """Lowercase, strip accents and club-form tokens → a comparable team key."""
-    s = unicodedata.normalize("NFKD", (name or "").lower()).encode("ascii", "ignore").decode()
+    """Lowercase, strip accents and club-form tokens → a comparable team key.
+
+    HTML-unescape FIRST: Coolbet ships '&amp;' in names like 'Havant &amp;
+    Waterlooville', and without unescaping the '&' the token 'amp' survives and
+    sinks the match (measured: it was one cause of a genuine matcher-miss on an
+    AF-present FA Cup tie)."""
+    s = html.unescape(name or "")
+    s = unicodedata.normalize("NFKD", s.lower()).encode("ascii", "ignore").decode()
     s = re.sub(r"[^a-z0-9 ]", " ", s)
     return " ".join(t for t in s.split() if t and t not in _STRIP_TOKENS).strip()
 

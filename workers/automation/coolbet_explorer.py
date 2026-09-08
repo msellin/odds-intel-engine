@@ -2004,10 +2004,19 @@ def main() -> None:
                          "_MTID_* sets can be updated.")
     ap.add_argument("--bets-only", action="store_true",
                     help="Bulk only over matches that have a pending value bet (active bots)")
+    ap.add_argument("--board", action="store_true",
+                    help="COOLBET-INGEST-REWORK: walk Coolbet's OWN category tree (100%% of the "
+                         "board, no league map) and match to AF via country+date+names, instead "
+                         "of per-match cross-league search. Supersedes the default bulk sweep.")
+    ap.add_argument("--horizon-hours", type=float, default=96.0,
+                    help="With --board: only consider Coolbet events kicking off within this many "
+                         "hours (near-term filter; default 96)")
     args = ap.parse_args()
 
     if args.match_id:
         run_one_shot(args.match_id, raw=args.raw)
+    elif args.board:
+        run_board_sweep(dry_run=args.dry_run, horizon_hours=args.horizon_hours, sleep_s=args.sleep)
     else:
         run_bulk(args.days, args.dry_run, args.sleep, args.limit, bets_only=args.bets_only)
 
