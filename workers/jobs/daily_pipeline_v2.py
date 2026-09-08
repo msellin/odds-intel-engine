@@ -3972,13 +3972,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             _run_pin_1x2_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=False)
         except Exception as _e:
             console.print(f"[yellow]Pin-1X2 shadow bots failed (non-critical): {_e}[/yellow]")
-        try:
-            # COOLBET-VALUE-BOT-2026-08-26: the only bot whose price the operator
-            # can actually take. Error-isolated like its siblings — a Coolbet
-            # feed outage must never take the pipeline down with it.
-            _run_coolbet_value_pass(today_str, _shadow_cohort_tag, notify_telegram=False)
-        except Exception as _e:
-            console.print(f"[yellow]Coolbet-value bot failed (non-critical): {_e}[/yellow]")
+        # COOLBET-LINESHOP-BOT-RETIRED-2026-09-08: the line-shop bot
+        # (bot_coolbet_value_v1) is retired — line-shop loses out-of-sample and the
+        # two model-edge bots (ou_model / 1x2_model) are the real-money path now.
+        # Generation stopped so it no longer writes noise shadow_bets.
         # Skip exposure check + ops_snapshot — shadow runs piggyback on the real run's snapshot.
         return
 
@@ -4095,10 +4092,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             _run_pin_1x2_shadow_pass(today_str, "morning", notify_telegram=True)
         except Exception as e:
             console.print(f"[yellow]Pin-1X2 shadow bots failed (non-critical): {e}[/yellow]")
-        try:
-            _run_coolbet_value_pass(today_str, "morning", notify_telegram=True)
-        except Exception as e:
-            console.print(f"[yellow]Coolbet-value bot failed (non-critical): {e}[/yellow]")
+        # COOLBET-LINESHOP-BOT-RETIRED-2026-09-08: line-shop generation stopped
+        # (bot_coolbet_value_v1 retired; model-edge bots are the real-money path).
 
     # 11.6: Cross-match correlation check — warn about concentrated exposure
     _check_exposure_concentration()

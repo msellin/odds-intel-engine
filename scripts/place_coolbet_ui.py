@@ -54,7 +54,7 @@ DEFAULT_STAKE = 10.00
 # Keep this in step with BOT_EDGE_THRESHOLDS on the shadow-bots admin page —
 # they drifted apart once already and every min-odds floor was wrong.
 BOT_THRESHOLDS = {
-    "bot_coolbet_value_v1": 0.03,
+    # bot_coolbet_value_v1 (line-shop) RETIRED 2026-09-08 — removed from the map.
     # COOLBET-MODEL-OU-SHADOW-BOT-2026-09-08: the model-edge O/U bot fires at an
     # 8% calibrated edge (mirrors _MIN_EDGE_BY_MARKET['o/u'] and the mirror job's
     # EDGE_FLOOR). The placer's live-edge gate 1/(cal_prob - threshold) uses this,
@@ -67,7 +67,7 @@ BOT_THRESHOLDS = {
     # (per-market floor _min_odds_for('1x2')=2.80). Replaces the paused line-shop 1x2.
     "bot_coolbet_1x2_model_v1": 0.13,
 }
-DEFAULT_BOT = "bot_coolbet_value_v1"
+DEFAULT_BOT = "bot_coolbet_ou_model_v1"  # value_v1 (line-shop) retired 2026-09-08
 
 # ── REAL-MONEY ALLOWLIST — two layers (COOLBET-PLACER-CONTROL-2026-09-08) ─────
 #
@@ -96,7 +96,7 @@ DEFAULT_BOT = "bot_coolbet_value_v1"
 # pipeline — matching, pricing, snapshots, audit rows — WITHOUT any path by
 # which an unproven strategy reaches the account. A default is not a guard;
 # --bot could name any bot and --execute would have honoured it.
-PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}
+PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}  # value_v1 (line-shop) retired 2026-09-08
 
 
 def ui_place_enabled_bots() -> set[str]:

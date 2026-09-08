@@ -4059,9 +4059,13 @@ def test_coolbet_model_ou_shadow():
     # dedicated COOLBET-PLACER-CONTROL test.)
     ui = open(os.path.join(base, "place_coolbet_ui.py"), encoding="utf-8").read()
     assert '"bot_coolbet_ou_model_v1": 0.08' in ui, "the model-edge O/U bot must be in BOT_THRESHOLDS at 0.08"
-    # the model bot must be PLACEABLE (allowed to place once enabled) …
-    assert 'PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in ui, (
-        "bot_coolbet_ou_model_v1 must be in PLACEABLE_BOTS so the DB toggle can enable it"
+    # the two model bots must be PLACEABLE (allowed to place once enabled); the
+    # line-shop bot_coolbet_value_v1 was RETIRED 2026-09-08 and removed from the set.
+    assert 'PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in ui, (
+        "PLACEABLE_BOTS must be exactly the two model bots (line-shop value_v1 retired)"
+    )
+    assert '"bot_coolbet_value_v1"' not in ui.split("PLACEABLE_BOTS")[1][:200], (
+        "the retired line-shop bot must not be in PLACEABLE_BOTS"
     )
     # … but the retired env CODE PATH must NOT come back — that gate is gone.
     # (Scoped to os.getenv, not the bare name: a comment legitimately mentions
@@ -4145,7 +4149,7 @@ def test_coolbet_model_1x2_shadow():
         "the model-edge 1x2 bot must be in BOT_THRESHOLDS at 0.13 — the placer's "
         "live-edge gate reads this and the validated gate is edge>=13%"
     )
-    assert 'PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in ui, (
+    assert 'PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in ui, (
         "bot_coolbet_1x2_model_v1 must be in PLACEABLE_BOTS so the DB toggle can enable it"
     )
     # the line-shop O/U stop must stay SCOPED to value_v1 — it must never block 1x2
@@ -4178,7 +4182,7 @@ def test_coolbet_own_betting_arch():
     # toggle. PLACEABLE_BOTS bounds what may EVER place; the toggle (seeded
     # value_v1 ON, ou_model_v1 OFF) decides what does right now. value_v1 stays
     # the only bot that places by default.
-    assert 'PLACEABLE_BOTS = {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in ui, (
+    assert 'PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in ui, (
         "PLACEABLE_BOTS is the hard code-level boundary on what may ever stake real money"
     )
     assert "PLACEABLE_BOTS & ui_place_enabled_bots()" in ui, (
@@ -4394,7 +4398,7 @@ def test_coolbet_placer_control():
     m = importlib.import_module("scripts.place_coolbet_ui")
 
     # PLACEABLE_BOTS is exactly the two Coolbet placement bots.
-    assert m.PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, (
+    assert m.PLACEABLE_BOTS == {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, (
         "PLACEABLE_BOTS must be exactly the two Coolbet placement bots"
     )
 
@@ -4413,20 +4417,23 @@ def test_coolbet_placer_control():
         assert m.effective_allowlist() == set(), "effective_allowlist must be empty when the toggle read fails"
 
         # (1) intersection: effective == PLACEABLE_BOTS ∩ enabled.
-        m.ui_place_enabled_bots = lambda: {"bot_coolbet_value_v1"}
-        assert m.effective_allowlist() == {"bot_coolbet_value_v1"}, (
-            "with only value_v1 enabled, the effective allowlist must be exactly {value_v1}"
+        m.ui_place_enabled_bots = lambda: {"bot_coolbet_ou_model_v1"}
+        assert m.effective_allowlist() == {"bot_coolbet_ou_model_v1"}, (
+            "with only the O/U model bot enabled, the effective allowlist must be exactly that bot"
         )
-        m.ui_place_enabled_bots = lambda: {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}
-        assert m.effective_allowlist() == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1"}, (
+        m.ui_place_enabled_bots = lambda: {"bot_coolbet_1x2_model_v1", "bot_coolbet_ou_model_v1"}
+        assert m.effective_allowlist() == {"bot_coolbet_1x2_model_v1", "bot_coolbet_ou_model_v1"}, (
             "with both placeable bots enabled, both must be in the effective allowlist"
         )
 
         # (3) hard boundary: an enabled row for a NON-placeable bot can never place.
-        m.ui_place_enabled_bots = lambda: {"bot_coolbet_value_v1", "bot_evil_experimental_v1"}
-        assert m.effective_allowlist() == {"bot_coolbet_value_v1"}, (
-            "a bot the DB enables but that is NOT in PLACEABLE_BOTS must never reach the "
-            "effective allowlist — the code-level whitelist is the hard boundary"
+        # Uses the retired line-shop bot as the non-placeable one — after retirement
+        # it is enabled-mockable but must be filtered out by the code whitelist.
+        m.ui_place_enabled_bots = lambda: {"bot_coolbet_ou_model_v1", "bot_coolbet_value_v1", "bot_evil_experimental_v1"}
+        assert m.effective_allowlist() == {"bot_coolbet_ou_model_v1"}, (
+            "a bot the DB enables but that is NOT in PLACEABLE_BOTS (retired value_v1, "
+            "or an unknown bot) must never reach the effective allowlist — the "
+            "code-level whitelist is the hard boundary"
         )
     finally:
         m.execute_query = _orig_query
@@ -25822,7 +25829,7 @@ def test_coolbet_ui_placer_2026_08_27():
     # never execute. Per-bot the runner forces dry when a bot is not in the
     # effective allowlist.
     from scripts.place_coolbet_ui import PLACEABLE_BOTS  # noqa: F401
-    assert PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, \
+    assert PLACEABLE_BOTS == {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, \
         "PLACEABLE_BOTS is the hard boundary on what may ever place real money"
     assert "PLACEABLE_BOTS & ui_place_enabled_bots()" in runner, \
         "the effective allowlist must intersect the code whitelist with the DB toggle"
@@ -29127,7 +29134,7 @@ def test_coolbet_daily_caps():
     # 5. The hard code-level boundary on what may ever execute must survive.
     #    COOLBET-PLACER-CONTROL: PLACEABLE_BOTS ∩ the coolbet_placer_bots DB
     #    toggle is the effective allowlist; PLACEABLE_BOTS bounds it.
-    assert mod.PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, (
+    assert mod.PLACEABLE_BOTS == {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, (
         "PLACEABLE_BOTS changed — real money may only ever be placed by a bot in "
         "the code-level hard whitelist (∩ the coolbet_placer_bots DB toggle)"
     )
@@ -30128,7 +30135,7 @@ def test_placer_odds_floor():
     # The other real-money guards must survive alongside it.
     # COOLBET-PLACER-CONTROL: PLACEABLE_BOTS is the hard code-level boundary
     # (∩ the coolbet_placer_bots DB toggle = the effective allowlist).
-    assert mod.PLACEABLE_BOTS == {"bot_coolbet_value_v1", "bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}
+    assert mod.PLACEABLE_BOTS == {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}
     assert mod.MAX_BETS_PER_MATCH > 0 and mod.MAX_STAKE_PER_MATCH > 0
 
 
