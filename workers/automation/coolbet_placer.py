@@ -82,8 +82,17 @@ _MIN_EDGE_BY_MARKET: dict[str, float | None] = {
     # executable views). Re-run the script before changing this — do not chase a
     # single favourable window (the 0.15 mistake).
     "1x2":            0.13,
-    "o/u":            0.03,   # already profitable at floor — unchanged
-    "asian_handicap": 0.05,   # non-monotonic — keep moderate floor
+    # EDGE-FLOORS-OTHER-MARKETS-2026-09-08: raised 0.03 -> 0.08 via
+    # edge_floor_backtest.py. 0.08 is robust in EVERY walk-forward fold across
+    # all bases (executable all-bots +14.3% n=831, active +20.5% n=202, idealized
+    # 182k +107.6%) and maximises executable profit (€1185). Overturns the old
+    # "higher O/U gates don't improve expectation" note — they do.
+    "o/u":            0.08,
+    # ⚠ EDGE-FLOORS-OTHER-MARKETS-2026-09-08: AH has NO fold-robust floor — the
+    # recent fold is negative at EVERY level (the BTTS-retirement pattern). Left
+    # at 0.05 rather than tuned to a non-robust result (the 1x2-15% overfit
+    # lesson); flagged for a viability review (AH-VIABILITY-REVIEW).
+    "asian_handicap": 0.05,
     # BTTS-RETIRED-2026-09-03: shadow BTTS is n=427, ROI -12.76% at prices that
     # were live at pick time, t=-2.87 (p<0.01). Recalibration did not rescue
     # it — ENSEMBLE-RECALIBRATION took BTTS ECE from 0.047 to 0.009, the best

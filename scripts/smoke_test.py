@@ -3875,7 +3875,7 @@ def test_bot_config_golden_middle_1x2_floor():
         "edge_floor_backtest.py as robust in every walk-forward fold and basis. "
         "0.15 was overfit and 0.10 was not robust; re-run the backtest before changing."
     )
-    assert _min_edge_for("1x2") == 0.13 and _min_edge_for("o/u") == 0.03, (
+    assert _min_edge_for("1x2") == 0.13 and _min_edge_for("o/u") == 0.08, (
         "per-market floor lookup no longer returns the pinned values"
     )
     # the backtest tool that set the floor must exist and keep its guardrails

@@ -962,11 +962,13 @@ Bots create `simulated_bets` for every pick that clears the bot's own edge floor
 | Market | Real-money floor | Rationale |
 |---|---|---|
 | 1X2 | **13%** (2026-09-08) | BOT-CONFIG-GOLDEN-MIDDLE: set by `scripts/edge_floor_backtest.py` (walk-forward, 3 folds, all price bases). **13% is the only 1X2 floor positive in EVERY time fold across EVERY basis**: executable all-bots (n=1901) +8.7%, executable active/calibrated (n=576) +15.7%, idealized fixture-level (n=104k) +14.2%. **15% was overfit** (a fold went −22%/−13% on executable data); **10% is not robust either** (negative in a fold in both executable views). A brief hasty raise to 15% was reverted; 13% is the validated middle. |
-| O/U | 3% | Profitable at every floor (≥3%: +3.1% ROI); higher gates lose volume without improving expectation |
+| O/U | **8%** (raised 2026-09-08) | EDGE-FLOORS-OTHER-MARKETS: walk-forward backtest overturns the old 'higher gates don't help' note. 0.08 is robust in EVERY fold across all bases (executable all-bots +14.3% n=831, active +20.5%, idealized 182k +107.6%) and maximises executable profit (€1185). |
 | Asian Handicap | 5% | Edge non-monotonic; flat ROI ~5% across thresholds — moderate floor preserves volume |
 | BTTS | 10% | Backtest negative at ≥3-7% (−5% ROI); needs ≥10% to recover (+2.7% on n=63 — thin, monitored) |
 | Double Chance | Retired | Losing at every threshold tested (≥3%: −10.8%, ≥10%: −17.2%). Paper-tracking continues; real-money placement stopped |
 | Combo / DNB | 10% / 5% | Combos gate like 1X2; DNB shares structure with single-outcome 1X2 |
+
+**⚠ Asian Handicap (2026-09-08):** the edge-floor backtest found NO fold-robust floor — the recent fold is negative at every level (the BTTS-retirement pattern). Left at 5% (not tuned to a non-robust result) and flagged for a viability review — AH may no longer carry edge. DNB is untestable (n=7 ever).
 
 Source: `scripts/edge_threshold_backtest.py` (3,086 settled simulated_bets, 2026-05-01 → 2026-06-06). Implemented as `_MIN_EDGE_BY_MARKET` in `workers/automation/coolbet_placer.py`; frontend badge mirror in `src/lib/engine-data.ts` (`COOLBET_AUTO_MIN_EDGE_BY_MARKET`). The per-market floor is applied in two places:
 
