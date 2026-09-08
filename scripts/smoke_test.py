@@ -4169,6 +4169,39 @@ def _():
 
 
 @test("COOLBET-JWT-DB-BACKED — JWT bootstraps from coolbet_session_state, persists on every login/renew")
+@test("COOLBET-BOARD-SWEEP — walk-based sweep enumerates the whole board, near-term filter, matcher-gated, abortable")
+def test_coolbet_board_sweep():
+    """COOLBET-INGEST-REWORK (2026-09-08). run_board_sweep walks Coolbet's own
+    fo-tree (100% of the board, no AF→CB league map), drops virtual/simulated
+    categories and events beyond the near-term horizon, matches each survivor to
+    an AF fixture via the record-linkage matcher (never cross-league search), and
+    aborts if Coolbet goes unreachable. Source-inspection (it hits live Coolbet).
+    """
+    import os
+    src = open(os.path.join(os.path.dirname(__file__), "..", "workers", "automation",
+                            "coolbet_explorer.py"), encoding="utf-8").read()
+    body = src.split("def run_board_sweep", 1)
+    assert len(body) == 2, "run_board_sweep is gone"
+    # bound to run_board_sweep's own body — stop at the next top-level def/comment
+    import re as _re
+    fn = _re.split(r"\n(?:def |# ── )", body[1], maxsplit=1)[0]
+    assert "enumerate_coolbet_football_categories" in src, "board sweep no longer enumerates the tree"
+    assert "match_event_to_af" in fn, (
+        "board sweep no longer uses the record-linkage matcher — a regression to "
+        "name-only / cross-league matching would reintroduce wrong-fixture prices"
+    )
+    assert "search_coolbet_event" not in fn and "search/v2" not in fn, (
+        "board sweep must NOT fall back to cross-league search (the FP source)"
+    )
+    assert "> horizon" in fn or "horizon_hours" in fn, "the near-term filter is gone"
+    assert "_MAX_CONSECUTIVE_FETCH_FAILURES" in fn, "the Coolbet-unreachable abort guard is gone"
+    # virtual/simulated categories must be excluded at enumeration (behavioural)
+    from workers.automation.coolbet_explorer import _is_virtual_category
+    assert _is_virtual_category("Absolute Legends eFootball 3"), "eFootball not excluded"
+    assert _is_virtual_category("Champions League (2x6 min)"), "2x6-min virtual not excluded"
+    assert not _is_virtual_category("Premier League"), "real league wrongly excluded"
+
+
 @test("COOLBET-MATCH-BLOCKING — country+date+subset-name matching recovers short↔full names, blocks cross-country")
 def test_coolbet_match_blocking():
     """COOLBET-INGEST-REWORK (2026-09-08). The sweep's old name-only matcher

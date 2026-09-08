@@ -1400,6 +1400,184 @@ def run_league_sweep(
         console.print(t2)
 
 
+# ── Board sweep (COOLBET-INGEST-REWORK 2026-09-08) ────────────────────────────
+#
+# Walks COOLBET'S OWN category tree instead of AF's leagues, so it enumerates
+# 100% of Coolbet's football board (~140 categories) in one pass and needs no
+# hand-maintained AF→Coolbet league map for coverage. Each event is matched back
+# to an AF fixture by the record-linkage matcher (country + kickoff slot + both
+# team names, subset-safe) — cross-league false positives are impossible, and
+# Coolbet's short names ('Stoke') match AF's full ones ('Stoke City').
+#
+# Two coverage limits, both on the AF side, not the sweep's (measured 2026-09-08):
+#   • AF ingests a short fixture horizon; Coolbet prices weeks ahead. The
+#     near-term filter drops Coolbet events beyond `horizon_hours` so we do not
+#     waste calls on games AF has no fixture for yet.
+#   • A handful of bottom-tier leagues (Finnish Nelonen/Kolmonen) exist on
+#     Coolbet but never in AF, and carry no Pinnacle anchor, so they are
+#     unbettable and correctly left unmatched.
+
+_VIRTUAL_CATEGORY_HINTS = (
+    "esoccer", "esports", "battle", "cyber", "efootball", "week #",
+    "(2x", "min)", "legends", "valhalla", "valkyrie", "h2h gg",
+)
+_FO_TREE_URL = "https://www.coolbet.com/s/sbgate/category/fo-tree/et"
+
+
+def _is_virtual_category(name: str | None) -> bool:
+    n = (name or "").lower()
+    return any(h in n for h in _VIRTUAL_CATEGORY_HINTS)
+
+
+def enumerate_coolbet_football_categories(session: "CoolbetSession") -> list[dict]:
+    """Walk Coolbet's fo-tree and return every real (non-virtual) football leaf
+    category as {id, name}. This is the whole board's index in ONE request."""
+    try:
+        resp = session.get(_FO_TREE_URL, params={"country": "EE"})
+        tree = resp.json()
+    except Exception as e:
+        log.warning("fo-tree unavailable (%s) — cannot enumerate the board", e)
+        return []
+
+    def _find_football(node: dict):
+        if node.get("name") == "Jalgpall":
+            return node
+        for c in node.get("children") or []:
+            hit = _find_football(c)
+            if hit:
+                return hit
+        return None
+
+    roots = tree if isinstance(tree, list) else [tree]
+    football = next((f for f in (_find_football(r) for r in roots) if f), None)
+    if not football:
+        log.warning("fo-tree carried no football subtree")
+        return []
+
+    leaves: list[dict] = []
+
+    def _walk(node: dict):
+        kids = node.get("children") or []
+        if not kids and node.get("id"):
+            if not _is_virtual_category(node.get("name")):
+                leaves.append({"id": int(node["id"]), "name": node.get("name")})
+        for c in kids:
+            _walk(c)
+
+    _walk(football)
+    return leaves
+
+
+def _load_af_candidates(horizon_hours: float) -> list[dict]:
+    """AF fixtures from now-6h to now+horizon, with country — the candidate set
+    the matcher blocks over. tz-aware kickoff for the slot comparison."""
+    rows = execute_query(
+        """
+        SELECT m.id::text AS id, m.date AS ko, ht.name AS home, at2.name AS away,
+               l.country AS country
+        FROM matches m
+        JOIN teams ht ON ht.id = m.home_team_id
+        JOIN teams at2 ON at2.id = m.away_team_id
+        JOIN leagues l ON l.id = m.league_id
+        WHERE m.date > NOW() - INTERVAL '6 hours'
+          AND m.date < NOW() + (%s || ' hours')::interval
+        """,
+        (str(horizon_hours),),
+    )
+    for r in rows:
+        if r["ko"] is not None and getattr(r["ko"], "tzinfo", None) is None:
+            r["ko"] = r["ko"].replace(tzinfo=timezone.utc)
+    return rows
+
+
+def run_board_sweep(
+    *,
+    dry_run: bool = False,
+    horizon_hours: float = 96.0,
+    sleep_s: float = 0.4,
+    session: "CoolbetSession | None" = None,
+) -> dict:
+    """Enumerate Coolbet's whole football board → match each near-term event to
+    an AF fixture (country+date+names) → store its markets. Returns a counters
+    dict. Never raises out of the scheduler wrapper. Aborts if Coolbet goes
+    unreachable (consecutive market-fetch failures)."""
+    from workers.automation.coolbet_session import CoolbetSession
+    from workers.automation.coolbet_matching import match_event_to_af
+    from workers.automation.coolbet_placer import fetch_events_for_league, _parse_iso_start
+
+    c = {"categories": 0, "events_seen": 0, "near_term": 0, "matched": 0,
+         "stored_rows": 0, "unmatched": 0, "fetch_fails": 0}
+    if session is None:
+        session = CoolbetSession(require_auth=False)
+
+    cats = enumerate_coolbet_football_categories(session)
+    if not cats:
+        console.print("[yellow]Board sweep: no categories enumerated.[/yellow]")
+        return c
+    af = _load_af_candidates(horizon_hours)
+    log.info("Board sweep — %d Coolbet categories, %d AF candidate fixtures (horizon %.0fh)",
+             len(cats), len(af), horizon_hours)
+
+    now = datetime.now(timezone.utc)
+    horizon = now + timedelta(hours=horizon_hours)
+    consecutive_fails = 0
+
+    for idx, cat in enumerate(cats, 1):
+        try:
+            events = fetch_events_for_league(session, cat["id"])
+        except Exception as e:
+            log.warning("category %s events fetch failed (%s)", cat["name"], e)
+            continue
+        for ev in events:
+            c["events_seen"] += 1
+            if (ev.get("status") not in (None, "OPEN")) or not ev.get("home") or not ev.get("away"):
+                continue
+            cb_start = _parse_iso_start(ev.get("start"))
+            # near-term filter: skip games AF cannot have a fixture for yet
+            if cb_start is not None and cb_start > horizon:
+                continue
+            c["near_term"] += 1
+            af_row, score, _second = match_event_to_af(
+                ev["home"], ev["away"], ev.get("iso"), cb_start, af,
+            )
+            if af_row is None:
+                c["unmatched"] += 1  # genuinely AF-absent OR beyond confidence — leave it
+                continue
+            c["matched"] += 1
+            try:
+                markets = fetch_match_markets(session, int(ev["id"]))
+                odds_map = fetch_odds_for_markets(session, markets)
+            except Exception as e:
+                consecutive_fails += 1
+                c["fetch_fails"] += 1
+                log.warning("market fetch failed for %s vs %s (%s) — %d in a row",
+                            ev["home"], ev["away"], e, consecutive_fails)
+                if consecutive_fails >= _MAX_CONSECUTIVE_FETCH_FAILURES:
+                    log.error("Coolbet unreachable: %d consecutive fetch failures — aborting board sweep.",
+                              consecutive_fails)
+                    console.print("[red]Coolbet unreachable — board sweep aborted.[/red]")
+                    return c
+                time.sleep(sleep_s)
+                continue
+            consecutive_fails = 0
+            _parsed, stored, _bm = store_coolbet_snapshots_for_match(
+                af_row["id"], markets, odds_map,
+                dry_run=dry_run, kickoff_iso=ev.get("start") or "",
+            )
+            c["stored_rows"] += stored
+        if idx % 40 == 0:
+            log.info("  …%d/%d categories, matched=%d stored=%d", idx, len(cats), c["matched"], c["stored_rows"])
+        time.sleep(sleep_s)
+
+    console.print(
+        f"[cyan]Board sweep {'[DRY-RUN] ' if dry_run else ''}— {c['categories'] or len(cats)} categories, "
+        f"{c['events_seen']} events ({c['near_term']} near-term), matched {c['matched']}, "
+        f"unmatched {c['unmatched']}, stored {c['stored_rows']} rows[/cyan]"
+    )
+    c["categories"] = len(cats)
+    return c
+
+
 # ── Bulk + one-shot drivers ───────────────────────────────────────────────────
 
 
