@@ -96,6 +96,14 @@ EXECUTE_ALLOWED_BOTS = {"bot_coolbet_value_v1"}
 # CLV is the right basis for this decision: it needs ~334 bets to conclude where
 # ROI needs ~19,400 (per-bet unit-return sd 1.421). Do NOT re-tune this on a few
 # days of ROI.
+# 2D-GATE-PER-MARKET-ODDS-FLOOR-2026-09-08: the price floor is now per-market,
+# not a single global 2.80. The real-money CLV evidence above was measured on a
+# 1x2-dominated sample, so 2.80 is kept for 1x2/default; O/U's own executable +
+# CLV evidence puts its safe floor at 1.80 (it beats the close at 1.8+ and only
+# turns negative below). `_min_odds_for` is the single source of truth shared
+# with `coolbet_placer.py` so the two placement paths cannot drift.
+from workers.automation.coolbet_placer import _min_odds_for
+# Back-compat: the 1x2/default floor, still env-tunable via COOLBET_MIN_ODDS.
 MIN_ODDS_FOR_PLACEMENT = float(os.getenv("COOLBET_MIN_ODDS", "2.80"))
 
 # Never place inside this window before kickoff — Coolbet suspends markets
@@ -538,18 +546,19 @@ def main() -> int:
                 _pick_odds = float(p.get("odds_at_pick") or 0)
             except (TypeError, ValueError):
                 _pick_odds = 0.0
-            if _pick_odds < MIN_ODDS_FOR_PLACEMENT:
+            _floor = _min_odds_for(p.get("market"))
+            if _pick_odds < _floor:
                 rejected += 1
                 expected_rows += 1
                 up.record_attempt(
                     p, outcome="rejected", stage="odds_floor",
-                    reason=(f"odds {_pick_odds:.2f} < floor "
-                            f"{MIN_ODDS_FOR_PLACEMENT:.2f} (CLV negative below 2.8)"),
+                    reason=(f"odds {_pick_odds:.2f} < {p.get('market')} floor "
+                            f"{_floor:.2f} (CLV negative below it)"),
                     stake_requested=args.stake, execute_mode=args.execute,
                 )
                 mark_pick(p["shadow_bet_id"], MARK_CHECKED)
-                print(f"skip     {label}\n         odds {_pick_odds:.2f} below floor "
-                      f"{MIN_ODDS_FOR_PLACEMENT:.2f} — CLV in this band is negative")
+                print(f"skip     {label}\n         odds {_pick_odds:.2f} below "
+                      f"{p.get('market')} floor {_floor:.2f} — CLV in this band is negative")
                 continue
 
             held = exposure.setdefault(p["match_id"], [])

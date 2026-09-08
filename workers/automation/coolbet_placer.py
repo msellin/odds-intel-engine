@@ -120,6 +120,47 @@ def _min_edge_for(market: str | None) -> float:
     return val
 
 
+# ── 2D-GATE-PER-MARKET-ODDS-FLOOR-2026-09-08 ─────────────────────────────────
+# The odds floor used to be a single global `COOLBET_MIN_ODDS` (2.80) applied
+# to every market. That number was derived from a 1x2-only CLV finding
+# (REALMONEY-ODDS-BAND-MISMATCH: 1x2 CLV goes negative above ~2.8 ungated, and
+# the profitable 1x2 gate lives at odds>=2.8). Blanket-applying it to O/U was
+# an error: O/U prices cluster at ~1.8-2.2 (median 2.15), so a 2.80 floor
+# rejected 84% of O/U bets and left ~€1,100 of profit on the table
+# (executable: edge>=8% & odds>=2.8 -> €544, vs edge>=8% & odds>=1.8 -> €1663,
+# both fold-robust). The joint (edge x odds) sweep in edge_floor_backtest.py
+# (--joint) shows each market has its OWN profit ridge:
+#   1x2  peak robust cell = edge>=0.13 & odds>=3.0 (€1082); 2.8 is within noise
+#        (€1063) so kept at 2.80 — the validated 2D gate.
+#   o/u  peak robust cell = edge>=0.08 & odds>=1.8 (€1663); floor lowered to 1.8.
+#        Independently confirmed by CLV: O/U beats the close in every band at
+#        1.8+ (CLV +1.7% to +5.8%) and only turns negative BELOW 1.8
+#        (CLV +0.8%, ROI -4.7%) — so 1.8 is the safety line for O/U, not 2.8.
+#   asian_handicap has no fold-robust cell at any odds floor (marginal at best,
+#        edge>=0.17 only) — a 2.8 floor merely killed it (-€64). Left ungated
+#        on odds (1.0) pending AH-VIABILITY-REVIEW; the edge floor governs.
+#   draw_no_bet n=7 settled — no evidence for any odds floor; left ungated.
+# Unknown markets keep the conservative global 2.80. `COOLBET_MIN_ODDS` still
+# sets the 1x2/default value so the env override keeps working.
+_MIN_ODDS_BY_MARKET: dict[str, float] = {
+    "1x2":            2.80,
+    "o/u":            1.80,
+    "asian_handicap": 1.00,
+    "draw_no_bet":    1.00,
+}
+
+
+def _min_odds_for(market: str | None) -> float:
+    """Per-market minimum-odds (price) floor. Falls back to the global
+    `COOLBET_MIN_ODDS` (default 2.80) for 1x2, unknown, and unset markets so
+    the existing env override still tunes the conservative default. Mirrors
+    `_min_edge_for` — see `_MIN_ODDS_BY_MARKET` for the per-market evidence."""
+    default = float(os.getenv("COOLBET_MIN_ODDS", "2.80"))
+    if not market:
+        return default
+    return _MIN_ODDS_BY_MARKET.get(str(market).lower(), default)
+
+
 # CHERRY-PICK-PLACER (2026-06-01) — gate the placer's bet loaders by the
 # `bots.maturity_label` column so the curated subset of strategies (default:
 # 'calibrated' only) reaches real_bets while every bot keeps firing into
@@ -1972,7 +2013,10 @@ def place_all_bets(
         #
         # Same env var and default as the UI placer, deliberately, so the two
         # cannot drift: one number, two call sites, read from one place.
-        _floor = float(os.getenv("COOLBET_MIN_ODDS", "2.80"))
+        # 2D-GATE-PER-MARKET-ODDS-FLOOR-2026-09-08: per-market price floor
+        # (was a single global COOLBET_MIN_ODDS for every market). See
+        # _MIN_ODDS_BY_MARKET / _min_odds_for for the per-market evidence.
+        _floor = _min_odds_for(bet.get("market"))
         if ev_odds and float(ev_odds) < _floor:
             log.info(
                 "skip %s — Coolbet %.3f is below the %.2f odds floor "

@@ -3888,6 +3888,48 @@ def test_bot_config_golden_middle_1x2_floor():
     )
 
 
+@test("2D-GATE-PER-MARKET-ODDS-FLOOR — placer odds floor is per-market, both paths")
+def test_2d_gate_per_market_odds_floor():
+    """2D-GATE-PER-MARKET-ODDS-FLOOR (2026-09-08): the placement PRICE floor used
+    to be a single global COOLBET_MIN_ODDS (2.80) applied to every market — a
+    1x2-derived number. The joint edge×odds sweep showed each market has its own
+    profit ridge: on executable data 1x2 peaks at odds≥2.8 (€1063, edge≥13%)
+    while O/U peaks at odds≥1.8 (€1663 vs €544 at the 2.8 floor — the global
+    floor threw away ~€1,100 of O/U profit by rejecting 84% of O/U bets). O/U
+    also beats the closing line in every band at 1.8+ and only turns negative
+    below, so 1.8 is O/U's safety line. Pin the per-market floors and that BOTH
+    placement paths read the same helper (no drift — gotcha 43)."""
+    from workers.automation.coolbet_placer import _MIN_ODDS_BY_MARKET, _min_odds_for
+    # 1x2 / default stay at the validated 2.80; O/U lowered to 1.80.
+    assert _MIN_ODDS_BY_MARKET["1x2"] == 2.80, "1x2 odds floor must stay 2.80 (validated 2D peak)"
+    assert _MIN_ODDS_BY_MARKET["o/u"] == 1.80, (
+        "O/U odds floor must be 1.80 — the global 2.80 rejected 84% of O/U bets "
+        "and left ~€1,100 of fold-robust profit unplaced"
+    )
+    assert _min_odds_for("o/u") == 1.80 and _min_odds_for("O/U") == 1.80, "O/U lookup/case"
+    assert _min_odds_for("1x2") == 2.80, "1x2 lookup"
+    # Unknown / retired / None fall back to the CONSERVATIVE default (2.80), never
+    # a lower one — a market with no evidence must not get a looser gate.
+    assert _min_odds_for("btts") == 2.80 and _min_odds_for(None) == 2.80 and \
+           _min_odds_for("unknown_mkt") == 2.80, "fallback must be the conservative 2.80"
+    # AH / DNB are ungated on odds (their edge floor governs); AH had no robust
+    # odds cell and DNB is n=7. They must be < the default, i.e. explicitly set.
+    assert _MIN_ODDS_BY_MARKET["asian_handicap"] == 1.00, "AH odds-ungated pending AH-VIABILITY-REVIEW"
+    # Both placement paths must resolve the floor through the shared helper, so a
+    # future change to one market's floor cannot land on only one path.
+    import os
+    placer = open(os.path.join(os.path.dirname(__file__), "..", "workers",
+                  "automation", "coolbet_placer.py"), encoding="utf-8").read()
+    assert "_floor = _min_odds_for(bet.get(\"market\"))" in placer, (
+        "coolbet_placer gate must call _min_odds_for(market), not a global constant"
+    )
+    ui = open(os.path.join(os.path.dirname(__file__), "place_coolbet_ui.py"), encoding="utf-8").read()
+    assert "from workers.automation.coolbet_placer import _min_odds_for" in ui and \
+           "_floor = _min_odds_for(p.get(\"market\"))" in ui, (
+        "place_coolbet_ui must import and use the SAME _min_odds_for helper (no drift)"
+    )
+
+
 @test("COOLBET-PLACER-NEW-SCHEMA — resolve_placement_target + placer wired to new helpers")
 def _():
     """COOLBET-PLACER-NEW-SCHEMA (2026-05-20) — Coolbet split markets and odds
@@ -7126,10 +7168,13 @@ def test_per_market_edge_thresholds():
         _MIN_EDGE_BY_MARKET, _MIN_EDGE, _min_edge_for,
     )
 
-    # Backtest values from dev/active/per-market-thresholds-plan.md.
-    assert _MIN_EDGE_BY_MARKET["1x2"]            == 0.10, "1x2 floor must be 10% (backtest +14% ROI at ≥10%)"
-    assert _MIN_EDGE_BY_MARKET["o/u"]            == 0.03, "o/u floor must be 3% (already profitable at floor)"
-    assert _MIN_EDGE_BY_MARKET["asian_handicap"] == 0.05, "AH floor must be 5% (flat — moderate floor)"
+    # BOT-CONFIG-GOLDEN-MIDDLE + EDGE-FLOORS-OTHER-MARKETS (2026-09-08):
+    # floors re-validated by edge_floor_backtest.py (walk-forward, all bases).
+    # 1x2 0.10->0.13 (0.10 not fold-robust), o/u 0.03->0.08. See the dedicated
+    # BOT-CONFIG-GOLDEN-MIDDLE test for the full rationale.
+    assert _MIN_EDGE_BY_MARKET["1x2"]            == 0.13, "1x2 floor must be 13% (only fold-robust 1x2 floor)"
+    assert _MIN_EDGE_BY_MARKET["o/u"]            == 0.08, "o/u floor must be 8% (robust in every fold/basis)"
+    assert _MIN_EDGE_BY_MARKET["asian_handicap"] == 0.05, "AH floor must be 5% (no robust floor — flagged for review)"
     # BTTS-RETIRED-2026-09-03: was `== 0.10`. BTTS is retired, not
     # high-floored — shadow BTTS is n=427, ROI -12.76% at prices live at pick
     # time, t=-2.87, and better calibration made the surviving picks worse.
@@ -7139,13 +7184,13 @@ def test_per_market_edge_thresholds():
     assert _MIN_EDGE_BY_MARKET["double_chance"]  is None, "DC must be retired (losing at every threshold)"
 
     # Helper returns the right value for each market type.
-    assert _min_edge_for("1x2")            == 0.10
-    assert _min_edge_for("o/u")            == 0.03
+    assert _min_edge_for("1x2")            == 0.13
+    assert _min_edge_for("o/u")            == 0.08
     assert _min_edge_for("asian_handicap") == 0.05
     assert _min_edge_for("btts")           == math.inf, "BTTS retired — no edge may pass"
     assert _min_edge_for("double_chance")  == math.inf, "retired markets must return inf so no edge passes"
     # Case-insensitive
-    assert _min_edge_for("1X2")            == 0.10, "_min_edge_for must be case-insensitive"
+    assert _min_edge_for("1X2")            == 0.13, "_min_edge_for must be case-insensitive"
     # Unknown / null markets fall back to the global default
     assert _min_edge_for("unknown_market") == _MIN_EDGE
     assert _min_edge_for(None)             == _MIN_EDGE
@@ -7167,8 +7212,10 @@ def test_per_market_edge_thresholds():
         src = edge.read_text()
         assert "COOLBET_AUTO_MIN_EDGE_BY_MARKET" in src, \
             "coolbet-edge must export COOLBET_AUTO_MIN_EDGE_BY_MARKET"
-        assert '"1x2":            0.10' in src or '"1x2": 0.10' in src, \
-            "coolbet-edge 1x2 floor must mirror engine (0.10)"
+        assert '"1x2":            0.13' in src or '"1x2": 0.13' in src, \
+            "coolbet-edge 1x2 floor must mirror engine (0.13)"
+        assert '"o/u":            0.08' in src or '"o/u": 0.08' in src, \
+            "coolbet-edge o/u floor must mirror engine (0.08)"
         assert '"double_chance":  null' in src or '"double_chance": null' in src, \
             "coolbet-edge must mark double_chance as retired (null)"
         assert "MARKET_THRESHOLDS_V2_EPOCH" in src, \

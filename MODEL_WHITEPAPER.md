@@ -977,6 +977,19 @@ Source: `scripts/edge_threshold_backtest.py` (3,086 settled simulated_bets, 2026
 
 The change is operator-side only. `/value-bets` (subscriber-facing) continues to surface every bot pick at every edge — the per-market thresholds gate only the real-money placement decision. A port to `/value-bets` (probably as an opt-in Pro-tier filter) is deferred pending 4-6 weeks of post-change data. `/admin/real-bets` shows Era v1 (pre 2026-06-06T17:00:00Z) vs Era v2 (post) so the lift is measurable in isolation.
 
+#### 8.3.6.1 Per-market ODDS (price) floor — the second gate axis (2D-GATE-PER-MARKET-ODDS-FLOOR 2026-09-08)
+
+The edge floor above is one axis; the placer also applies a minimum-**odds** (price) floor. Until 2026-09-08 this was a single global `COOLBET_MIN_ODDS` = 2.80 applied to **every** market — a value derived from a 1X2-only CLV finding (REALMONEY-ODDS-BAND-MISMATCH). A joint edge×odds sweep showed that is wrong: **each market has its own profit ridge**, so the floor is now per-market (`_MIN_ODDS_BY_MARKET` / `_min_odds_for(market)`).
+
+| Market | Odds floor | Evidence (executable `simulated_bets`, flat €10, fold-robust) |
+|---|---|---|
+| 1X2 | **2.80** | Profit peaks at odds≥2.8-3.0. edge≥13% **alone** = €563 (8.7%); edge≥13% **AND odds≥2.8** = €1063 (22.9%); odds≥2.8 alone = −€18. The 2D gate beats BOTH 1D gates — the odds floor is doing real work on executable prices even though the idealized 104k set shows it flat (best-of-books rescues low-odds picks we cannot actually take). |
+| O/U | **1.80** (was 2.80) | O/U prices cluster at ~1.8-2.2 (median 2.15). The global 2.80 rejected **84%** of O/U bets: edge≥8% & odds≥2.8 = €544, vs edge≥8% & odds≥1.8 = **€1663** — the global floor discarded ~€1.1k of fold-robust profit. CLV confirms the safety line: O/U beats the close in every band at 1.8+ (CLV +1.7% to +5.8%) and only turns negative below 1.8 (ROI −4.7%). |
+| Asian Handicap / DNB | ungated (1.0) | AH has no fold-robust odds cell (marginal, edge≥17% only); a 2.80 floor merely killed it (−€64). DNB n=7. The edge floor governs; flagged for AH-VIABILITY-REVIEW. |
+| unknown / retired (BTTS, DC) | 2.80 (conservative default) | No evidence ⇒ never a looser gate than the validated 1X2 default. |
+
+**Why not just the edge floor?** The edge floor answers "is this +EV?"; the odds floor answers "even among +EV picks, the low-odds ones don't survive executable prices + vig." On 1X2 that is worth ~€500 (half the profit). The two axes cut different failures, which is why the optimum is per-market and 2D, not a single global number on either axis. Applied identically in both placement paths (`coolbet_placer.py` and `scripts/place_coolbet_ui.py`) via the shared `_min_odds_for` helper. Idealized 104k/182k confirms the **edge** floors are robust at scale but is structurally blind to the odds effect, so the odds floor is validated on executable + CLV. Smoke: `2D-GATE-PER-MARKET-ODDS-FLOOR`.
+
 ### 8.3.7 Per-match exposure limits (COOLBET-MATCH-EXPOSURE-GUARD 2026-09-01)
 
 The thresholds in 8.3.6 gate each pick **in isolation**. Nothing gated the *portfolio*: until 2026-09-01 the UI placer (`scripts/place_coolbet_ui.py`, the writer behind every real-money row since 2026-08-27) held no per-match state at all, so any number of picks on one fixture were placed independently as long as each cleared its own floor and the daily caps held.
