@@ -4046,6 +4046,22 @@ def test_coolbet_own_betting_arch():
     assert "COOLBET-REALMONEY-EDGE-GATE-RECONCILE" in doc, "doc must flag the unreconciled real-money edge-gate decision"
 
 
+@test("POSTGREST-SCHEMA-RELOAD — migrations reload PostgREST so new tables don't 500")
+def test_postgrest_schema_reload():
+    """POSTGREST-SCHEMA-RELOAD (2026-09-08): PostgREST caches the DB schema, so a
+    migration that CREATES a table leaves the API 500ing until PostgREST reloads.
+    It bit twice (migration 278 user_pick_marks, 310 coolbet_placer_bots). The
+    migrate workflow must signal a reload after applying. Pin it so the step
+    isn't dropped."""
+    import os
+    mig = os.path.join(os.path.dirname(__file__), "..", ".github", "workflows", "migrate.yml")
+    src = open(mig, encoding="utf-8").read()
+    assert "NOTIFY pgrst" in src and "reload schema" in src, (
+        "migrate.yml must NOTIFY pgrst 'reload schema' after applying migrations, "
+        "or a new table 500s the API until a manual reload"
+    )
+
+
 @test("SCHEDULED-LIVE-PRICE-PRODUCER — odds_at_pick_live is produced on a schedule, not manually")
 def test_scheduled_live_price_producer():
     """SCHEDULED-LIVE-PRICE-PRODUCER (2026-09-08): the published ROI

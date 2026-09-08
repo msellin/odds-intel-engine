@@ -146,3 +146,19 @@ jobs:
             applied=$((applied + 1))
           done
           echo "Applied $applied new migration(s)."
+
+      # POSTGREST-SCHEMA-RELOAD-2026-09-08: PostgREST caches the DB schema, so a
+      # migration that CREATES a table leaves the API 500ing ("could not find
+      # the table in the schema cache") until PostgREST reloads. This has bitten
+      # twice — migration 278 (user_pick_marks) and 310 (coolbet_placer_bots) —
+      # both shipped a table the frontend immediately POSTed to and both 500ed.
+      # PostgREST listens on the `pgrst` channel (db-channel-enabled, default),
+      # so one NOTIFY on the same DB makes it reload. Cheap, idempotent, safe to
+      # run every migration.
+      - name: Reload PostgREST schema cache
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -tAc "NOTIFY pgrst, 'reload schema';" \
+            && echo "PostgREST schema reload signalled" \
+            || echo "WARNING: schema reload NOTIFY failed (non-fatal)"
