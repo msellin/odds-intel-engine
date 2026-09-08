@@ -4191,6 +4191,20 @@ def test_stop_lineshop_ou_generation():
     )
 
 
+@test("COOLBET-PLACER-CONTROL-DROP-LINESHOP — line-shop 1x2 removed from the control block")
+def test_placer_control_drop_lineshop():
+    """COOLBET-PLACER-CONTROL-2026-09-08: the paused line-shop 1x2 bot is removed
+    from the placer control panel (its coolbet_placer_bots row deleted) — it loses
+    OOS and model-edge places 1x2 now. Pin migration 314 so it isn't resurrected."""
+    import os
+    mig = os.path.join(os.path.dirname(__file__), "..", "supabase", "migrations",
+                       "314_drop_lineshop_from_placer_control.sql")
+    src = open(mig, encoding="utf-8").read()
+    assert "DELETE FROM coolbet_placer_bots" in src and "bot_coolbet_value_v1" in src, (
+        "migration 314 must delete the line-shop bot's coolbet_placer_bots row"
+    )
+
+
 @test("COOLBET-UI-PLACER-ALL-ENABLED — the scheduled job runs every toggled-on bot")
 def test_ui_placer_all_enabled():
     """COOLBET-UI-PLACER-ALL-ENABLED (2026-09-08): the launchd job must run
