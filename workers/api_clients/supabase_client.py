@@ -1535,14 +1535,16 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
     pin_ou25_by_match: dict[str, dict] = {}
     for chunk in _chunk_list(all_match_ids, 200):
         pr = execute_query(
-            """SELECT DISTINCT ON (match_id, selection)
-                      match_id, selection, odds
-               FROM odds_snapshots
-               WHERE match_id = ANY(%s::uuid[])
-                 AND bookmaker = 'Pinnacle'
-                 AND market = 'over_under_25'
-                 AND is_live = false
-               ORDER BY match_id, selection, timestamp DESC""",
+            """SELECT DISTINCT ON (o.match_id, o.selection)
+                      o.match_id, o.selection, o.odds
+               FROM odds_snapshots o
+               JOIN matches m ON m.id = o.match_id
+               WHERE o.match_id = ANY(%s::uuid[])
+                 AND o.bookmaker = 'Pinnacle'
+                 AND o.market = 'over_under_25'
+                 AND o.is_live = false
+                 AND o.timestamp <= m.date
+               ORDER BY o.match_id, o.selection, o.timestamp DESC""",
             (chunk,),
         )
         for r in pr:
@@ -1553,15 +1555,17 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
     ou25_over_by_match: dict[str, list] = {}
     for chunk in _chunk_list(all_match_ids, 200):
         or_ = execute_query(
-            """SELECT DISTINCT ON (match_id, bookmaker)
-                      match_id, bookmaker, odds
-               FROM odds_snapshots
-               WHERE match_id = ANY(%s::uuid[])
-                 AND market = 'over_under_25'
-                 AND selection = 'over'
-                 AND is_live = false
-                 AND bookmaker NOT IN ('api-football', 'api-football-live', 'William Hill')
-               ORDER BY match_id, bookmaker, timestamp DESC""",
+            """SELECT DISTINCT ON (o.match_id, o.bookmaker)
+                      o.match_id, o.bookmaker, o.odds
+               FROM odds_snapshots o
+               JOIN matches m ON m.id = o.match_id
+               WHERE o.match_id = ANY(%s::uuid[])
+                 AND o.market = 'over_under_25'
+                 AND o.selection = 'over'
+                 AND o.is_live = false
+                 AND o.bookmaker NOT IN ('api-football', 'api-football-live', 'William Hill')
+                 AND o.timestamp <= m.date
+               ORDER BY o.match_id, o.bookmaker, o.timestamp DESC""",
             (chunk,),
         )
         for r in or_:
@@ -1572,14 +1576,16 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
     btts_yes_by_match: dict[str, list] = {}
     for chunk in _chunk_list(all_match_ids, 200):
         br = execute_query(
-            """SELECT DISTINCT ON (match_id, bookmaker)
-                      match_id, bookmaker, odds
-               FROM odds_snapshots
-               WHERE match_id = ANY(%s::uuid[])
-                 AND market = 'btts'
-                 AND selection = 'yes'
-                 AND is_live = false
-               ORDER BY match_id, bookmaker, timestamp DESC""",
+            """SELECT DISTINCT ON (o.match_id, o.bookmaker)
+                      o.match_id, o.bookmaker, o.odds
+               FROM odds_snapshots o
+               JOIN matches m ON m.id = o.match_id
+               WHERE o.match_id = ANY(%s::uuid[])
+                 AND o.market = 'btts'
+                 AND o.selection = 'yes'
+                 AND o.is_live = false
+                 AND o.timestamp <= m.date
+               ORDER BY o.match_id, o.bookmaker, o.timestamp DESC""",
             (chunk,),
         )
         for r in br:
@@ -3391,12 +3397,14 @@ def compute_ou25_bookmaker_disagreement(match_id: str) -> float | None:
     Uses the most recent snapshot per bookmaker. Blacklist-filtered.
     Requires >=2 distinct bookmakers."""
     rows = execute_query(
-        """SELECT bookmaker, odds, timestamp
-           FROM odds_snapshots
-           WHERE match_id = %s AND market = 'over_under_25' AND selection = 'over'
-             AND is_live = false
-             AND bookmaker NOT IN ('api-football', 'api-football-live', 'William Hill')
-           ORDER BY timestamp DESC
+        """SELECT o.bookmaker, o.odds, o.timestamp
+           FROM odds_snapshots o
+           JOIN matches m ON m.id = o.match_id
+           WHERE o.match_id = %s AND o.market = 'over_under_25' AND o.selection = 'over'
+             AND o.is_live = false
+             AND o.bookmaker NOT IN ('api-football', 'api-football-live', 'William Hill')
+             AND o.timestamp <= m.date
+           ORDER BY o.timestamp DESC
            LIMIT 200""",
         (match_id,),
     )
@@ -3417,11 +3425,13 @@ def compute_market_implied_btts_yes(match_id: str) -> float | None:
     """Average 1/yes_odds across distinct bookmakers for BTTS.
     Uses the most recent snapshot per bookmaker."""
     rows = execute_query(
-        """SELECT bookmaker, odds, timestamp
-           FROM odds_snapshots
-           WHERE match_id = %s AND market = 'btts' AND selection = 'yes'
-             AND is_live = false
-           ORDER BY timestamp DESC
+        """SELECT o.bookmaker, o.odds, o.timestamp
+           FROM odds_snapshots o
+           JOIN matches m ON m.id = o.match_id
+           WHERE o.match_id = %s AND o.market = 'btts' AND o.selection = 'yes'
+             AND o.is_live = false
+             AND o.timestamp <= m.date
+           ORDER BY o.timestamp DESC
            LIMIT 200""",
         (match_id,),
     )
@@ -4155,9 +4165,11 @@ def write_morning_signals(
         from datetime import timedelta
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
         vol_r = execute_query(
-            """SELECT odds FROM odds_snapshots
-               WHERE match_id = %s AND market = '1x2' AND selection = 'home'
-                 AND is_live = false AND timestamp >= %s""",
+            """SELECT o.odds FROM odds_snapshots o
+               JOIN matches m ON m.id = o.match_id
+               WHERE o.match_id = %s AND o.market = '1x2' AND o.selection = 'home'
+                 AND o.is_live = false AND o.timestamp >= %s
+                 AND o.timestamp <= m.date""",
             (match_id, cutoff),
         )
         if vol_r and len(vol_r) >= 3:
@@ -4365,12 +4377,14 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
         midnight_utc = f"{today_str}T00:00:00+00:00"
 
         snap_rows = execute_query(
-            """SELECT match_id, bookmaker, odds, timestamp
-               FROM odds_snapshots
-               WHERE match_id = ANY(%s::uuid[])
-                 AND market = '1x2' AND selection = 'home'
-                 AND bookmaker IS NOT NULL AND is_live = false
-               ORDER BY match_id, timestamp DESC""",
+            """SELECT o.match_id, o.bookmaker, o.odds, o.timestamp
+               FROM odds_snapshots o
+               JOIN matches m ON m.id = o.match_id
+               WHERE o.match_id = ANY(%s::uuid[])
+                 AND o.market = '1x2' AND o.selection = 'home'
+                 AND o.bookmaker IS NOT NULL AND o.is_live = false
+                 AND o.timestamp <= m.date
+               ORDER BY o.match_id, o.timestamp DESC""",
             (match_ids,),
         )
         snaps_by_match: dict[str, list] = defaultdict(list)
@@ -4431,13 +4445,15 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
     try:
         for _sel in ("draw", "away"):
             _sel_snaps = execute_query(
-                """SELECT DISTINCT ON (match_id, bookmaker)
-                       match_id, bookmaker, odds
-                   FROM odds_snapshots
-                   WHERE match_id = ANY(%s::uuid[])
-                     AND market = '1x2' AND selection = %s
-                     AND bookmaker IS NOT NULL AND is_live = false
-                   ORDER BY match_id, bookmaker, timestamp DESC""",
+                """SELECT DISTINCT ON (o.match_id, o.bookmaker)
+                       o.match_id, o.bookmaker, o.odds
+                   FROM odds_snapshots o
+                   JOIN matches m ON m.id = o.match_id
+                   WHERE o.match_id = ANY(%s::uuid[])
+                     AND o.market = '1x2' AND o.selection = %s
+                     AND o.bookmaker IS NOT NULL AND o.is_live = false
+                     AND o.timestamp <= m.date
+                   ORDER BY o.match_id, o.bookmaker, o.timestamp DESC""",
                 (match_ids, _sel),
             )
             _by_match_sel: dict[str, dict[str, float]] = defaultdict(dict)
@@ -4463,13 +4479,15 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
     # Line movements kept as raw diffs — direction is what matters, vig is stable intraday.
     try:
         pin_1x2_all = execute_query(
-            """SELECT match_id, selection, odds, timestamp
-               FROM odds_snapshots
-               WHERE match_id = ANY(%s::uuid[])
-                 AND market = '1x2'
-                 AND bookmaker = 'Pinnacle'
-                 AND odds > 1.0 AND is_live = false
-               ORDER BY match_id, selection, timestamp DESC""",
+            """SELECT o.match_id, o.selection, o.odds, o.timestamp
+               FROM odds_snapshots o
+               JOIN matches m ON m.id = o.match_id
+               WHERE o.match_id = ANY(%s::uuid[])
+                 AND o.market = '1x2'
+                 AND o.bookmaker = 'Pinnacle'
+                 AND o.odds > 1.0 AND o.is_live = false
+                 AND o.timestamp <= m.date
+               ORDER BY o.match_id, o.selection, o.timestamp DESC""",
             (match_ids,),
         )
         # Group: match_id → selection → rows (DESC by timestamp, so [0]=newest, [-1]=oldest)
@@ -4503,13 +4521,15 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
     # O/U 2.5: normalize over+under pair
     try:
         pin_ou_all = execute_query(
-            """SELECT DISTINCT ON (match_id, selection) match_id, selection, odds
-               FROM odds_snapshots
-               WHERE match_id = ANY(%s::uuid[])
-                 AND market = 'over_under_25'
-                 AND bookmaker = 'Pinnacle'
-                 AND odds > 1.0 AND is_live = false
-               ORDER BY match_id, selection, timestamp DESC""",
+            """SELECT DISTINCT ON (o.match_id, o.selection) o.match_id, o.selection, o.odds
+               FROM odds_snapshots o
+               JOIN matches m ON m.id = o.match_id
+               WHERE o.match_id = ANY(%s::uuid[])
+                 AND o.market = 'over_under_25'
+                 AND o.bookmaker = 'Pinnacle'
+                 AND o.odds > 1.0 AND o.is_live = false
+                 AND o.timestamp <= m.date
+               ORDER BY o.match_id, o.selection, o.timestamp DESC""",
             (match_ids,),
         )
         ou_by_match: dict[str, dict[str, float]] = defaultdict(dict)
@@ -4571,15 +4591,17 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
     try:
         # Latest AH snapshot per bookmaker (home selection = home team's handicap)
         ah_latest = execute_query(
-            """SELECT DISTINCT ON (match_id, bookmaker)
-                   match_id, bookmaker, handicap_line
-               FROM odds_snapshots
-               WHERE match_id = ANY(%s::uuid[])
-                 AND market = 'asian_handicap'
-                 AND selection = 'home'
-                 AND handicap_line IS NOT NULL
-                 AND is_live = false
-               ORDER BY match_id, bookmaker, timestamp DESC""",
+            """SELECT DISTINCT ON (o.match_id, o.bookmaker)
+                   o.match_id, o.bookmaker, o.handicap_line
+               FROM odds_snapshots o
+               JOIN matches m ON m.id = o.match_id
+               WHERE o.match_id = ANY(%s::uuid[])
+                 AND o.market = 'asian_handicap'
+                 AND o.selection = 'home'
+                 AND o.handicap_line IS NOT NULL
+                 AND o.is_live = false
+                 AND o.timestamp <= m.date
+               ORDER BY o.match_id, o.bookmaker, o.timestamp DESC""",
             (match_ids,),
         )
         ah_by_match: dict[str, list] = defaultdict(list)
@@ -4599,15 +4621,17 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
 
         # AH line move: first vs latest Pinnacle snapshot today
         ah_all = execute_query(
-            """SELECT match_id, handicap_line, timestamp
-               FROM odds_snapshots
-               WHERE match_id = ANY(%s::uuid[])
-                 AND market = 'asian_handicap'
-                 AND selection = 'home'
-                 AND bookmaker = 'Pinnacle'
-                 AND handicap_line IS NOT NULL
-                 AND is_live = false
-               ORDER BY match_id, timestamp DESC""",
+            """SELECT o.match_id, o.handicap_line, o.timestamp
+               FROM odds_snapshots o
+               JOIN matches m ON m.id = o.match_id
+               WHERE o.match_id = ANY(%s::uuid[])
+                 AND o.market = 'asian_handicap'
+                 AND o.selection = 'home'
+                 AND o.bookmaker = 'Pinnacle'
+                 AND o.handicap_line IS NOT NULL
+                 AND o.is_live = false
+                 AND o.timestamp <= m.date
+               ORDER BY o.match_id, o.timestamp DESC""",
             (match_ids,),
         )
         ah_all_by_match: dict[str, list] = defaultdict(list)
@@ -4625,14 +4649,16 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
     # ── 3e. BTTS-SIGNAL: Pinnacle BTTS yes probability (vig-normalized) ──────
     try:
         btts_rows = execute_query(
-            """SELECT DISTINCT ON (match_id, selection)
-                   match_id, selection, odds
-               FROM odds_snapshots
-               WHERE match_id = ANY(%s::uuid[])
-                 AND market = 'btts'
-                 AND bookmaker = 'Pinnacle'
-                 AND odds > 1.0 AND is_live = false
-               ORDER BY match_id, selection, timestamp DESC""",
+            """SELECT DISTINCT ON (o.match_id, o.selection)
+                   o.match_id, o.selection, o.odds
+               FROM odds_snapshots o
+               JOIN matches m ON m.id = o.match_id
+               WHERE o.match_id = ANY(%s::uuid[])
+                 AND o.market = 'btts'
+                 AND o.bookmaker = 'Pinnacle'
+                 AND o.odds > 1.0 AND o.is_live = false
+                 AND o.timestamp <= m.date
+               ORDER BY o.match_id, o.selection, o.timestamp DESC""",
             (match_ids,),
         )
         btts_by_match: dict[str, dict] = defaultdict(dict)

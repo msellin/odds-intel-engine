@@ -33569,5 +33569,31 @@ def test_settlement_registry_skip():
     )
 
 
+@test("AF-ISLIVE-PREMATCH-GUARD — every is_live=false read is bounded by timestamp <= m.date")
+def _():
+    # AF-ISLIVE-UNRELIABLE: `is_live=false` is NOT a pre-kickoff filter — API-Football
+    # keeps serving odds after kickoff without flipping is_live (~29% of is_live=false
+    # rows in a 7-day sample are timestamped after KO). Any production read that filters
+    # only on is_live=false and can run over settled fixtures mixes in-play prices into a
+    # "pre-match" sample. The fix: pair every is_live=false with a real kickoff bound
+    # (a matches join + `timestamp <= m.date`). This test pins that invariant so a future
+    # query cannot reintroduce an unbounded is_live=false read.
+    for rel in ("workers/api_clients/supabase_client.py",
+                "workers/model/pin_cross_drift_veto.py"):
+        src = _engine_path(rel).read_text(encoding="utf-8")
+        # Split into per-SELECT segments; each segment is one SELECT's body up to the
+        # next SELECT. The kickoff bound lives in the same statement as its is_live filter
+        # (usually on the following line), so the whole segment is the right scope.
+        segments = src.split("SELECT")
+        for seg in segments:
+            if "is_live = false" not in seg:
+                continue
+            assert "m.date" in seg, (
+                f"{rel}: an `is_live = false` query has no kickoff bound "
+                f"(`timestamp <= m.date`) in the same statement — is_live=false alone is "
+                f"not pre-match. Add `JOIN matches m ...` + `AND <alias>.timestamp <= m.date`."
+            )
+
+
 if __name__ == "__main__":
     main()

@@ -149,13 +149,15 @@ def get_live_pinnacle_drift(match_id: str) -> dict[str, Optional[float]]:
     from workers.api_clients.db import execute_query
 
     rows = execute_query(
-        """SELECT selection, odds, timestamp
-           FROM odds_snapshots
-           WHERE match_id = %s::uuid
-             AND market = '1x2'
-             AND bookmaker = 'Pinnacle'
-             AND odds > 1.0 AND is_live = false
-           ORDER BY selection, timestamp DESC""",
+        """SELECT o.selection, o.odds, o.timestamp
+           FROM odds_snapshots o
+           JOIN matches m ON m.id = o.match_id
+           WHERE o.match_id = %s::uuid
+             AND o.market = '1x2'
+             AND o.bookmaker = 'Pinnacle'
+             AND o.odds > 1.0 AND o.is_live = false
+             AND o.timestamp <= m.date
+           ORDER BY o.selection, o.timestamp DESC""",
         [match_id],
     )
     by_sel: dict[str, list] = {}

@@ -1008,6 +1008,20 @@ would go stale on reschedule, reproducing this exact bug.
 Good news worth recording: **the training path is clean.** All four odds queries
 in `workers/model/train.py` already carry `os.timestamp < m.date`.
 
+**FIXED 2026-09-08 (AF-ISLIVE-UNRELIABLE) — the production read paths are now
+guarded.** `is_live = false` alone is not a pre-kickoff filter; **always pair it
+with a kickoff bound** (`JOIN matches m` + `AND <odds_alias>.timestamp <= m.date`).
+A genuine pre-match row always has `timestamp <= kickoff`, so the bound never
+drops a valid row, and on a live/future fixture it is a harmless no-op — so it is
+safe to add everywhere. Every `is_live = false` read in
+`workers/api_clients/supabase_client.py` (the batched Pinnacle/OU/BTTS anchor
+loaders behind OU-PIN-REQUIRED, the per-match disagreement/volatility signals,
+and the bulk 1x2/OU/AH/BTTS signal builders — 13 statements) and in
+`workers/model/pin_cross_drift_veto.py` (`get_live_pinnacle_drift`) now carries
+`o.timestamp <= m.date`. `train.py` always had it and was not touched. Pinned by
+smoke test `AF-ISLIVE-PREMATCH-GUARD`, which asserts no `is_live = false` appears
+in a statement lacking `m.date` in those two files.
+
 ## 38. A stalled feed is usually a starved feed — check the pool before the fetcher
 
 **2026-09-05.** Unibet-Kambi and Epicbet both stopped writing odds. Neither
