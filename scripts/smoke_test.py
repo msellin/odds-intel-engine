@@ -4060,10 +4060,16 @@ def test_shadow_bot_consolidation_retire():
     for b in ("bot_proven_leagues_v2", "bot_opt_home_lower", "bot_conservative"):
         assert b in src, f"migration 311 must retire {b}"
     assert "retired_at = COALESCE(retired_at, NOW())" in src, "must set retired_at"
-    # complement candidates must NOT be retired here
+    # complement candidates must NOT be in the WHERE ... IN (...) retire list.
+    # (Scope to the IN clause — the comment names bot_v10_all as the dup
+    # reference, so a whole-file check would false-match. gotcha 41.)
+    import re
+    m = re.search(r"WHERE name IN \(([^)]*)\)", src)
+    assert m, "migration must retire via WHERE name IN (...)"
+    in_list = m.group(1)
     for keep in ("bot_btts_all", "bot_ah_away_dog", "bot_sweep_ou35_v1",
                  "bot_ou15_defensive", "bot_sweep_1x2_home_v1", "bot_v10_all"):
-        assert keep not in src, f"{keep} has a profitable frame — must NOT be retired here"
+        assert keep not in in_list, f"{keep} has a profitable frame — must NOT be in the retire list"
 
 
 @test("STOP-LINESHOP-OU-GENERATION — line-shop bot is 1x2-only")
