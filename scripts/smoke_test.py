@@ -4160,6 +4160,161 @@ def test_coolbet_placer_control():
     )
 
 
+@test("COOLBET-ACCOUNT-VERIFY-GATE — placer verifies the real account, fails closed, skips held bets")
+def test_coolbet_account_verify_gate():
+    """COOLBET-ACCOUNT-VERIFY-GATE (2026-09-08): the real-money UI placer now
+    reads the operator's ACTUAL Coolbet account before placing, so it never
+    places a bet already on the account (manual or auto) and FAILS CLOSED when
+    the account can't be read. Real-money safety code — pin the properties as
+    BEHAVIOUR, not source strings:
+
+      1. fetch_account_holds() returns (False, []) — cannot verify — on ANY
+         error: when the CDP navigate fails (returns False) AND when anything
+         inside raises. (False, ...) is the "no real money this run" signal.
+      2. main() fails closed on an unverified account: the branch that forces
+         EVERY bot to dry-run when account is unverified must exist and run
+         BEFORE the placement loop.
+      3. place_for_bot() skips a pick already held on the account — a real
+         hold + a matching pick must be rejected at stage
+         'already_on_coolbet_account', and record NO placement.
+    """
+    import importlib
+    m = importlib.import_module("scripts.place_coolbet_ui")
+
+    # ── (1) fetch_account_holds fails closed ─────────────────────────────────
+    # It now drives the placer's own playwright `page` (page.expect_response +
+    # page.goto) — NO nested asyncio (that raised inside sync_playwright and made
+    # the gate fail closed on every run). Simulate with fake pages.
+    class _RaisingPage:
+        url = "https://www.coolbet.com/et/sport"
+        def expect_response(self, *a, **k):
+            raise RuntimeError("simulated CDP/read outage")
+        def goto(self, *a, **k):
+            pass
+    verified, holds = m.fetch_account_holds(_RaisingPage())
+    assert verified is False and holds == [], (
+        "fetch_account_holds must fail CLOSED (False, []) when the history feed "
+        "can't be read — a read error must never be mistaken for 'no bets'"
+    )
+
+    class _Ctx:
+        def __init__(self, body): self._body = body
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        @property
+        def value(self):
+            body = self._body
+            return type("R", (), {"json": staticmethod(lambda: body)})()
+    class _WrongUrlPage:
+        url = "https://www.coolbet.com/et/sport"   # readable feed but NOT history
+        def expect_response(self, *a, **k): return _Ctx({"tickets": []})
+        def goto(self, *a, **k): pass
+    verified, holds = m.fetch_account_holds(_WrongUrlPage())
+    assert verified is False and holds == [], (
+        "even with a readable feed, a tab NOT confirmed on the history page must "
+        "not be trusted as a verified empty account — fail closed"
+    )
+
+    # ── (2) main() forces dry-run on an unverified account (source inspect) ──
+    # The fail-closed branch is inside the browser session block, so it can't be
+    # exercised without a live CDP-Chrome. Assert the branch exists, forces
+    # every bot to dry-run, and is wired before the placement loop.
+    import inspect
+    main_src = inspect.getsource(m.main)
+    v_idx = main_src.find("fetch_account_holds(page)")
+    assert v_idx != -1, "main() must call fetch_account_holds(page) once per run"
+    # the fail-closed reassignment: every bot forced to dry-run when unverified
+    assert "if not account_verified:" in main_src, (
+        "main() must branch on an unverified account"
+    )
+    assert "bot_execute = {b: False for b in bots_to_run}" in main_src, (
+        "on an UNVERIFIED account, main() must force EVERY bot to dry-run "
+        "(bot_execute all False) — cannot-verify must never place real money"
+    )
+    # the verification must happen before the per-bot placement loop
+    loop_idx = main_src.find("for b in bots_to_run:\n                picks = picks_by_bot[b]")
+    if loop_idx == -1:
+        loop_idx = main_src.rfind("for b in bots_to_run:")
+    assert loop_idx != -1 and v_idx < loop_idx, (
+        "account verification must run BEFORE the placement loop, or a bot could "
+        "place before the account was ever checked"
+    )
+    # and reconcile-into-real_bets on the verified path
+    assert "reconcile_account_to_real_bets(account_holds)" in main_src, (
+        "on a VERIFIED account, main() must reconcile the holds into real_bets "
+        "so exposure dedup + the picks 'placed' column reflect the real account"
+    )
+
+    # ── (3) place_for_bot skips a pick already held on the account ───────────
+    from datetime import datetime, timezone
+    pick = {
+        "shadow_bet_id": "00000000-0000-0000-0000-000000000001",
+        "bot_id": None, "bot_name": "bot_coolbet_value_v1",
+        "match_id": "00000000-0000-0000-0000-0000000000aa",
+        "market": "1x2", "selection": "home",
+        "odds_at_pick": 3.10, "model_probability": 0.5, "calibrated_prob": 0.5,
+        "home_team": "Arsenal", "away_team": "Chelsea",
+        "match_date": datetime(2999, 1, 1, tzinfo=timezone.utc),
+    }
+    # A normalized Coolbet ticket (as normalize_for_dedup would produce) for the
+    # SAME fixture + market + selection.
+    hold = {
+        "match_name": "Arsenal - Chelsea", "market": "Match Result",
+        "selection": "Arsenal", "is_combo": False, "ticket_id": "TCK-1",
+        "stake": 10.0, "odds": 3.10, "status": "PENDING", "placed_at": None,
+    }
+
+    captured = {}
+    _orig = {
+        "already_placed": m.already_placed,
+        "match_exposure": m.match_exposure,
+        "spent_today": m.spent_today,
+        "mark_pick": m.mark_pick,
+        "record_attempt": m.up.record_attempt,
+        "stage_bet": m.up.stage_bet,
+    }
+    try:
+        m.already_placed = lambda _sid: False          # not a prior confirmed place
+        m.match_exposure = lambda _mids: {}            # no real_bets exposure seeded
+        m.spent_today = lambda: (0, 0.0)               # no DB dependency in the test
+        m.mark_pick = lambda *_a, **_k: None
+        def _rec(bet, *, outcome, stage, **k):
+            captured["outcome"] = outcome
+            captured["stage"] = stage
+            return "rec-id"
+        m.up.record_attempt = _rec
+        def _should_not_place(*a, **k):
+            raise AssertionError(
+                "stage_bet was reached — a pick already on the account must be "
+                "skipped BEFORE any placement attempt"
+            )
+        m.up.stage_bet = _should_not_place
+
+        counts = m.place_for_bot(
+            page=None, bot_name="bot_coolbet_value_v1", picks=[pick],
+            execute=True, stake=10.0, now=datetime.now(timezone.utc),
+            account_holds=[hold],
+        )
+        assert captured.get("stage") == "already_on_coolbet_account", (
+            f"a pick already held on the account must be rejected at stage "
+            f"'already_on_coolbet_account', got {captured.get('stage')!r}"
+        )
+        assert captured.get("outcome") == "rejected", "the held pick must be recorded as rejected"
+        assert counts["placed"] == 0 and counts["rejected"] >= 1, (
+            f"the held pick must not place (placed={counts['placed']}, "
+            f"rejected={counts['rejected']})"
+        )
+    finally:
+        m.already_placed = _orig["already_placed"]
+        m.match_exposure = _orig["match_exposure"]
+        m.spent_today = _orig["spent_today"]
+        m.mark_pick = _orig["mark_pick"]
+        m.up.record_attempt = _orig["record_attempt"]
+        m.up.stage_bet = _orig["stage_bet"]
+
+    return "fails closed on unverified account; reconciles on verify; skips held bets"
+
+
 @test("2D-GATE-PER-MARKET-ODDS-FLOOR — placer odds floor is per-market, both paths")
 def test_2d_gate_per_market_odds_floor():
     """2D-GATE-PER-MARKET-ODDS-FLOOR (2026-09-08): the placement PRICE floor used

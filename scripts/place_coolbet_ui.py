@@ -414,6 +414,205 @@ def spent_today() -> tuple[int, float]:
     return int(r["n"]), float(r["s"])
 
 
+# ── ACCOUNT VERIFICATION — FIRST real-money gate (COOLBET-ACCOUNT-VERIFY-GATE) ──
+#
+# 2026-09-08. Before ANY bot places real money, read the operator's ACTUAL
+# Coolbet account (its pending single tickets) and do two things:
+#
+#   1. Reconcile those tickets into `real_bets`, so a bet placed MANUALLY (or by
+#      a prior run) is visible to the per-match exposure dedup and to the picks
+#      "placed" column. The mac daemon marks `simulated_bets.user_placed_at` for
+#      this, but the UI placer never reads that column — that was the gap.
+#   2. Refuse to place any pick already held on the account.
+#
+# FAIL CLOSED. If the account cannot be READ AND VERIFIED — the tab is not on the
+# history page, the session is not logged in, CDP is unreachable, or anything
+# raises — the whole run is forced to dry-run. "Cannot verify the account" must
+# never place real money. A verified-but-empty read is a trustworthy "no pending
+# bets" and is NOT a failure.
+
+
+def fetch_account_holds(page) -> tuple[bool, list[dict]]:
+    """Read the operator's ACTUAL Coolbet pending single bets.
+
+    Returns (verified, holds):
+      * (True, [norms]) — the account was READ AND VERIFIED: the tab is
+        confirmed on the history page AND the session is logged in. An EMPTY
+        list here is a trustworthy "the account has no pending bets".
+      * (False, [])     — could NOT verify (tab not on history, not logged in,
+        CDP error, or any exception). The caller MUST fail closed: no real
+        money this run.
+
+    Only single tickets are returned; combo tickets are logged and skipped
+    (single-bet dedup only). Wraps everything in try/except — any failure
+    resolves to (False, []), never a raise, so a read problem can never place.
+    """
+    from workers.automation.coolbet_browser_sync import normalize_for_dedup, HISTORY_PAGE
+    try:
+        # Drive the placer's OWN playwright tab (same CDP Chrome) to the history
+        # page and capture the app's /s/sbgate/bets/history XHR via the sync
+        # API. Raw-CDP asyncio.run() CANNOT be used here — the sync_playwright
+        # context already runs an event loop, so asyncio.run() raises
+        # "cannot be called from a running event loop" and the gate would fail
+        # closed on every run (halting even the working 1x2 bot).
+        try:
+            with page.expect_response(
+                lambda r: "/s/sbgate/bets/history" in r.url and r.status == 200,
+                timeout=25000,
+            ) as resp_info:
+                page.goto(HISTORY_PAGE, wait_until="commit", timeout=30000)
+            body = resp_info.value.json()
+        except Exception as e:
+            log.warning("account-verify: history XHR not captured: %s", e)
+            print(f"account-verify: could not read the Coolbet history feed "
+                  f"({type(e).__name__}) — cannot verify account")
+            return (False, [])
+
+        # CONFIRM we are on the history page AND logged in — else an empty read
+        # cannot be trusted as "no bets" — fail closed.
+        cur_url = page.url or ""
+        if "panuste-ajalugu" not in cur_url:
+            print(f"account-verify: tab not on history page (url={cur_url[:80]!r}) "
+                  f"— cannot verify account")
+            return (False, [])
+        try:
+            logged_in = up.is_logged_in(page)
+        except Exception as e:
+            log.warning("account-verify: is_logged_in raised: %s", e)
+            return (False, [])
+        if not logged_in:
+            print("account-verify: session not logged in on the history page — "
+                  "cannot verify account")
+            return (False, [])
+
+        # Parse the tickets; keep singles, log+drop combos.
+        items = ((body.get("tickets") or body.get("data") or body.get("results")
+                  or body.get("items") or []) if isinstance(body, dict)
+                 else (body if isinstance(body, list) else []))
+        holds: list[dict] = []
+        combos = 0
+        for t in items:
+            norm = normalize_for_dedup(t)
+            if not norm:
+                continue
+            if norm.get("is_combo"):
+                combos += 1
+                continue
+            holds.append(norm)
+        if combos:
+            print(f"account-verify: {combos} combo ticket(s) present on the "
+                  f"account — skipped from single-bet holds (logged only)")
+        print(f"account-verify: VERIFIED — {len(holds)} single pending bet(s) "
+              f"on the account")
+        return (True, holds)
+    except Exception as e:
+        log.error("account-verify: fetch_account_holds failed — failing CLOSED: %s", e)
+        print(f"account-verify: read FAILED ({type(e).__name__}: {str(e)[:120]}) "
+              f"— failing closed, no real-money placement this run")
+        return (False, [])
+
+
+def reconcile_account_to_real_bets(norms: list[dict]) -> int:
+    """Make `real_bets` reflect the operator's ACTUAL Coolbet account.
+
+    For each verified single ticket, resolve it to a fixture bet (match_id +
+    market/selection) via `match_coolbet_to_simulated` over upcoming-fixture
+    candidates, and INSERT a `real_bets` row if none already exists for that
+    canonical (match, family, selection) key. Idempotent — a ticket already
+    represented in `real_bets` (in EITHER market vocabulary, via `canon_bet`)
+    is skipped. Returns the number of rows inserted.
+
+    This is what feeds BOTH the per-match exposure dedup (`match_exposure`
+    reads `real_bets`) and the picks "placed" column, so a manually-placed bet
+    — or one from a prior run — is seen by every downstream gate.
+    """
+    if not norms:
+        return 0
+    from datetime import datetime, timezone
+    from workers.automation.coolbet_browser_sync import match_coolbet_to_simulated
+
+    # Candidates: upcoming-fixture bets from BOTH simulated_bets and shadow_bets
+    # — enough to resolve match_id + market/selection for a Coolbet ticket.
+    # Mirrors the mac daemon's candidate shape, widened to shadow_bets and to
+    # m.date > NOW() - 6h (a just-kicked-off bet is still real exposure).
+    candidates = execute_query(
+        """SELECT match_id, market, selection, bot_id,
+                  home_team, away_team, match_date FROM (
+              SELECT sb.match_id::text AS match_id, sb.market, sb.selection,
+                     sb.bot_id::text   AS bot_id,
+                     ht.name AS home_team, at2.name AS away_team,
+                     m.date  AS match_date
+                FROM simulated_bets sb
+                JOIN matches m   ON m.id  = sb.match_id
+                JOIN teams   ht  ON ht.id = m.home_team_id
+                JOIN teams   at2 ON at2.id = m.away_team_id
+               WHERE m.date > NOW() - INTERVAL '6 hours'
+              UNION ALL
+              SELECT s.match_id::text AS match_id, s.market, s.selection,
+                     s.bot_id::text   AS bot_id,
+                     ht.name AS home_team, at2.name AS away_team,
+                     m.date  AS match_date
+                FROM shadow_bets s
+                JOIN matches m   ON m.id  = s.match_id
+                JOIN teams   ht  ON ht.id = m.home_team_id
+                JOIN teams   at2 ON at2.id = m.away_team_id
+               WHERE m.date > NOW() - INTERVAL '6 hours'
+           ) c"""
+    )
+    candidates = [dict(r) for r in (candidates or [])]
+    if not candidates:
+        return 0
+
+    inserted = 0
+    for norm in norms:
+        matched = match_coolbet_to_simulated(norm, candidates)
+        if not matched:
+            log.info("account-verify: no fixture match for account ticket %s (%s) "
+                     "— cannot reconcile to real_bets",
+                     norm.get("ticket_id"), norm.get("match_name"))
+            continue
+        canon = canon_bet(matched.get("market"), matched.get("selection"))
+        if canon is None:
+            continue
+        # Idempotent: skip if real_bets already holds this canonical bet on the
+        # match (match_exposure canonicalises BOTH vocabularies, so a row
+        # written by either placer is recognised).
+        held = match_exposure([matched["match_id"]]).get(matched["match_id"], [])
+        if any(h["family"] == canon[0] and h["canon"] == canon[1] for h in held):
+            continue
+
+        try:
+            stake_val = float(norm.get("stake") or 0)
+        except (TypeError, ValueError):
+            stake_val = 0.0
+        try:
+            odds_val = float(norm.get("odds") or 0)
+        except (TypeError, ValueError):
+            odds_val = 0.0
+        note = (f"coolbet-account-sync ticket #{norm.get('ticket_id')} "
+                f"(self-verified {datetime.now(timezone.utc):%Y-%m-%d})")
+        try:
+            # slippage_pct is a GENERATED column — never inserted.
+            execute_write(
+                """INSERT INTO real_bets
+                       (bot_id, match_id, market, selection, bookmaker,
+                        captured_odds, actual_odds, stake, placed_at,
+                        result, notes)
+                   VALUES (%s, %s, %s, %s, 'Coolbet',
+                           %s, %s, %s, NOW(), 'pending', %s)""",
+                (matched.get("bot_id"), matched["match_id"], matched["market"],
+                 matched["selection"], odds_val, odds_val, stake_val, note),
+            )
+            inserted += 1
+            print(f"account-verify: reconciled {matched['home_team']} v "
+                  f"{matched['away_team']} | {matched['market']}/"
+                  f"{matched['selection']} → real_bets (ticket #{norm.get('ticket_id')})")
+        except Exception as e:
+            log.warning("account-verify: real_bets insert failed for ticket %s: %s",
+                        norm.get("ticket_id"), e)
+    return inserted
+
+
 def load_picks(bot_name: str) -> list[dict]:
     """Unsettled picks for `bot_name` whose kickoff is still ahead."""
     return execute_query(
@@ -493,7 +692,7 @@ def _session_alive() -> bool:
 
 
 def place_for_bot(page, bot_name: str, picks: list[dict], execute: bool,
-                  stake: float, now) -> dict:
+                  stake: float, now, account_holds: list[dict] | None = None) -> dict:
     """Run the existing per-bot placement flow for one bot over `picks`.
 
     Extracted from main() so a single run can drive several enabled bots through
@@ -509,7 +708,9 @@ def place_for_bot(page, bot_name: str, picks: list[dict], execute: bool,
     the bot loop rather than moving to the next bot.
     """
     from datetime import timedelta
+    from workers.automation.coolbet_browser_sync import match_coolbet_to_simulated
 
+    account_holds = account_holds or []
     threshold = BOT_THRESHOLDS.get(bot_name, 0.03)
     placed = staged = rejected = skipped_done = 0
     expected_rows = 0
@@ -535,6 +736,26 @@ def place_for_bot(page, bot_name: str, picks: list[dict], execute: bool,
         # check comes first — a confirmed placement is never repeated.
         if already_placed(p["shadow_bet_id"]):
             skipped_done += 1
+            continue
+
+        # COOLBET-ACCOUNT-VERIFY-GATE-2026-09-08: belt-and-suspenders on top of
+        # exposure_conflict. Refuse any pick already held on the ACTUAL Coolbet
+        # account (manual or a prior placement). `account_holds` was read once
+        # at run start and reconciled into real_bets; this per-pick check also
+        # catches a bet that landed on the account between that reconcile and
+        # now. Uses the same conservative fuzzy matcher as the reconcile.
+        if account_holds and any(
+                match_coolbet_to_simulated(h, [p]) for h in account_holds):
+            rejected += 1
+            expected_rows += 1
+            up.record_attempt(
+                p, outcome="rejected", stage="already_on_coolbet_account",
+                reason="already held on the Coolbet account (manual or prior placement)",
+                stake_requested=stake, execute_mode=execute,
+            )
+            mark_pick(p["shadow_bet_id"], MARK_CHECKED)
+            print(f"skip     {label}\n         already on the Coolbet account "
+                  f"(manual or prior placement)")
             continue
 
         # COOLBET-LINESHOP-OU-STOP-2026-09-08: never place line-shop O/U real
@@ -782,6 +1003,27 @@ def main() -> int:
                 print("still not logged in after auto-login — aborting")
                 return 2
 
+            # ── ACCOUNT VERIFICATION — FIRST real-money gate ──────────────────
+            # Read the operator's ACTUAL account ONCE per run. This is the first
+            # gate real money passes through.
+            #   • UNVERIFIED  -> FAIL CLOSED: force EVERY bot to dry-run for this
+            #     run, so nothing is staked when we cannot see the account. The
+            #     run still proceeds as a dry-run so matching/pricing/audit rows
+            #     are produced.
+            #   • VERIFIED    -> reconcile the account's pending tickets into
+            #     real_bets (so exposure dedup + the picks "placed" column are
+            #     current) and pass the holds into every bot's per-pick gate.
+            account_verified, account_holds = fetch_account_holds(page)
+            if not account_verified:
+                print("\n*** account UNVERIFIED — failing closed, no real-money "
+                      "placement this run. Every bot forced to DRY-RUN. ***\n")
+                bot_execute = {b: False for b in bots_to_run}
+            else:
+                n_reconciled = reconcile_account_to_real_bets(account_holds)
+                if n_reconciled:
+                    print(f"account-verify: reconciled {n_reconciled} account "
+                          f"ticket(s) into real_bets before placing")
+
             now = datetime.now(timezone.utc)
             # COOLBET-UI-PLACER-AUDIT-WARN: `now` is stamped after the lock is held
             # (LOCK_EX|LOCK_NB, for the whole run), so no other run can interleave
@@ -801,7 +1043,8 @@ def main() -> int:
                 mode = "EXECUTE" if exec_b else ("STAGE" if args.stage else "DRY-RUN")
                 print(f"\n{b} — {len(picks)} pick(s) — stake EUR {args.stake:.2f} flat "
                       f"— min-edge {threshold:.0%} — mode {mode}\n")
-                counts = place_for_bot(page, b, picks, exec_b, args.stake, now)
+                counts = place_for_bot(page, b, picks, exec_b, args.stake, now,
+                                       account_holds=account_holds)
                 for k in totals:
                     totals[k] += counts[k]
                 expected_total += counts["expected_rows"]

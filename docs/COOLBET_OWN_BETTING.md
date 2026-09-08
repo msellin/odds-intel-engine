@@ -84,7 +84,8 @@ DC). ~3,000 picks since 2026-08-26. `shadow_bets_unique` is a dedup VIEW over
 
 | # | Gate | Where | Value / rule |
 |---|------|-------|--------------|
-| 1 | **Already placed** (dedup) | `already_placed` (`coolbet_placement_attempts`) + `exposure_conflict` vs `real_bets` | one bet per pick. NB the UI placer does **not** read `simulated_bets.user_placed_at/skipped_at` (those are Path B only); it writes `user_pick_marks` but does not read it back. UUID dedup alone misses ~45% of `shadow_bets_unique` dupes — `exposure_conflict` against `real_bets` (in-memory within a pass) is the real guard |
+| 0 | **Account verification** (COOLBET-ACCOUNT-VERIFY-GATE, the FIRST real-money gate) | `fetch_account_holds(page)` in `main()`, once per run | Reads the operator's ACTUAL Coolbet account (pending single tickets) via CDP: navigate the tab to `HISTORY_PAGE`, confirm the tab URL contains `panuste-ajalugu` **AND** `is_logged_in`, then `fetch_pending_bets_via_cdp` + `normalize_for_dedup`. **FAILS CLOSED**: if the account can't be read+verified (tab not on history, not logged in, CDP error, any exception) the whole run is forced to **dry-run** (`bot_execute` all `False`) — cannot-verify never stakes. On success, `reconcile_account_to_real_bets` inserts a `real_bets` row (`bookmaker='Coolbet'`, stake/odds from the ticket, `result='pending'`) for any account ticket not already represented — so `real_bets` reflects the real account each run, feeding both the exposure dedup and the picks "placed" column. Combos are logged and skipped (single-bet dedup only) |
+| 1 | **Already placed** (dedup) | `already_placed` (`coolbet_placement_attempts`) + per-pick **account-hold check** (`already_on_coolbet_account`, matches the pick against the verified `account_holds`) + `exposure_conflict` vs `real_bets` | one bet per pick. NB the UI placer does **not** read `simulated_bets.user_placed_at/skipped_at` (those are Path B only); it writes `user_pick_marks` but does not read it back. UUID dedup alone misses ~45% of `shadow_bets_unique` dupes — `exposure_conflict` against `real_bets` (in-memory within a pass) is the real guard, and gate 0's reconcile keeps `real_bets` aligned with the actual account so a **manually-placed** bet is deduped too. The per-pick account-hold check is belt-and-suspenders: it catches a bet that lands on the account between the run-start reconcile and this pick |
 | 2 | **Kickoff cutoff** | `KICKOFF_CUTOFF_MIN` | never place inside N min of KO (Coolbet suspends markets pre-KO) |
 | 3 | **Odds-band (CLV)** | REALMONEY-ODDS-BAND-MISMATCH, gated on `odds_at_pick` | reject bands whose de-vigged CLV is decisively negative |
 | 4 | **Odds floor** (per-market) | `_min_odds_for(market)` — **shared with the API placer** | **1x2 ≥ 2.80 · O/U ≥ 1.80 · unknown ≥ 2.80** |
@@ -124,8 +125,12 @@ owner authorization — it is seeded OFF; this is the built vehicle for the
    **balance delta** (reads Coolbet balance before/after `place()`, refuses to
    record `placed` unless it moved by the stake) — there is **no ticket-id
    readback** (Coolbet returns no ticket id in this UI flow), so overlapping
-   placements can fool the delta check. (This is why manual
-   placements have no recorded odds — the job that captures them wasn't running.)
+   placements can fool the delta check. Manual placements are now captured a
+   different way: gate 0's `reconcile_account_to_real_bets` reads them off the
+   actual account each verified run and writes a `real_bets` row with the
+   ticket's odds (`captured_odds = actual_odds = first_bet_odds`, notes
+   `coolbet-account-sync ticket #<id> (self-verified <date>)`), so a hand-placed
+   bet both appears in the track record and dedups future placement.
 
 ---
 

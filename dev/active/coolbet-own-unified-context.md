@@ -136,3 +136,19 @@ Close each bot with evidence (retire/keep/relabel), map to the two-layer framewo
   underperforming bots are in it, retire or hold. Note: track-record is CORRECT/live (verified DB=API=page=791/691/
   10.7%/€739 on 2026-09-08) — NOT frozen; it looks static only because volume is ~2-6 settled picks/day on a
   691-bet/€6910 base. Real issue = low public-pick VOLUME (MARKET-EXPANSION), not a caching bug.
+
+## FUTURE ARCHITECTURE VISION (owner, 2026-09-08) — market × book matrix
+End state when Unibet (and more) join: ONE bot PER MARKET (e.g. "1x2 bot", "O/U bot") with its
+own rules, and each market has a set of BOOKS it's enabled on (Coolbet, Unibet, ...). Operator
+configures which market-bots are active on which books. Some markets exist on only one book
+(not supported on both), so enablement is per (market, book) cell — a matrix, not a flat per-bot list.
+Implication for the control model:
+- Today's `coolbet_placer_bots` (per-bot on/off) is the v1. Evolve to per-(market, book) enablement.
+- Current bots are Coolbet-specific (bot_coolbet_value_v1 = 1x2 line-shop @ Coolbet;
+  bot_coolbet_ou_model_v1 = O/U model-edge @ Coolbet). Future: a market bot places on N books.
+- The control panel should present MARKET-first with the BOOK shown (Coolbet now), so a Unibet
+  column/toggle slots in later without a redesign.
+- Line-shop is inherently per-book (it exploits THAT book's mispricing); model-edge is book-agnostic
+  signal placed at whichever book(s) are enabled + clear the gates. Keep that distinction in the matrix.
+NOTE: Unibet UI placer does not exist yet (UNIBET-KAMBI odds ingest exists; no placer). This is the
+target to build toward, not now.
