@@ -1568,3 +1568,32 @@ fixtures) the events def settles closest to the sharp line (mean 4.08 vs line
 manufacture phantom under-edge. See CARDS-SETTLEMENT-EVENTS-DEF-GUARD. Cards are
 still deliberately unsettleable in the registry (thin anchor) — this is a
 correctness guard, not a green light to bet cards.
+
+## §52 — Line-shop "edge" is a measurement mirage; evaluate OOS + executable (2026-09-08)
+
+The sweep/pin line-shop bots (`bot_sweep_ou25/35_v1`, `bot_pin_1x2_home_v1`,
+`bot_coolbet_value_v1`) showed strong in-sample ROI (~+7% "on the page") and for
+a while made it look like the ensemble model was pointless — you could just
+line-shop the best soft price vs de-vigged Pinnacle. **It was a measurement
+artifact, exposed only by honest evaluation.**
+
+Two compounding biases inflated line-shop:
+1. **Best-of-books selection.** Taking the MAX across soft books structurally
+   selects whichever book is most *mispriced* (worst-calibrated) — you're
+   betting into the book that's most wrong, and calling its error your edge.
+   `daily_pipeline_v2` ~L4797: 57 of 58 live picks were −EV at Coolbet despite
+   showing +7%. The edge measured is not the edge received.
+2. **In-sample selection.** No held-out window, so any favourable cell (or the
+   whole bot) can look good by construction.
+
+Evaluated the honest way — **held-out out-of-sample split** (select on TRAIN,
+validate on untouched TEST) at **executable prices** (`odds_at_pick_live`,
+deduped) — via `scripts/bot_2d_audit.py`:
+- line-shop dies: `pin_1x2_home` +14% train → **−32% test**; `sweep_ou35` +24%
+  in-sample → **−1% test**; line-shop 1x2 at its live 3% gate → **−24% test**.
+- **model-edge holds: `bot_v10_all` +28% (1x2) / +34% (O/U) out-of-sample.**
+
+Lesson (same family as the 15%-floor overfit and the STALE-BEST-ODDS +4.29pp
+inflation): **how you measure decides what you believe.** Never evaluate a
+strategy on in-sample best-of-books ROI. Always: held-out OOS + executable
+price + dedup. The model is the moat; line-shop was the mirage.
