@@ -66,6 +66,17 @@ DEFAULT_BOT = "bot_coolbet_value_v1"
 # bot and --execute would have honoured it.
 EXECUTE_ALLOWED_BOTS = {"bot_coolbet_value_v1"}
 
+# COOLBET-LINESHOP-OU-STOP-2026-09-08. The real-money line-shop bot
+# (bot_coolbet_value_v1) LOSES on O/U: realized -17.0% ROI over n=1109 settled,
+# negative in EVERY time fold AND every month (Aug -24%, Sep -10%), while its
+# 1x2 is +13.4% (n=1910). O/U is ~37% of its volume — a steady money leak.
+# Model-edge O/U is +15% (fold-robust) on the same market, so the fix is to stop
+# placing line-shop O/U real money (the model-edge O/U path is the unified-flow
+# work, COOLBET-REALMONEY-EDGE-GATE-RECONCILE). Gated at PLACEMENT, not
+# generation, so O/U keeps writing to shadow_bets for the ongoing comparison.
+# Env override RESTORES it if ever needed: COOLBET_UI_PLACE_OU=1.
+REALMONEY_SKIP_MARKET_PREFIXES = () if os.getenv("COOLBET_UI_PLACE_OU") == "1" else ("over_under", "o/u")
+
 
 # REALMONEY-ODDS-BAND-MISMATCH-2026-09-05 — minimum odds for real placement.
 #
@@ -522,6 +533,23 @@ def main() -> int:
             # check comes first — a confirmed placement is never repeated.
             if already_placed(p["shadow_bet_id"]):
                 skipped_done += 1
+                continue
+
+            # COOLBET-LINESHOP-OU-STOP-2026-09-08: never place line-shop O/U real
+            # money (realized -17% ROI, negative every month). See the constant.
+            _mkt = (p.get("market") or "").lower()
+            if any(_mkt.startswith(pre) for pre in REALMONEY_SKIP_MARKET_PREFIXES):
+                rejected += 1
+                expected_rows += 1
+                up.record_attempt(
+                    p, outcome="rejected", stage="lineshop_ou_stop",
+                    reason="line-shop O/U real-money placement disabled (-17% ROI); "
+                           "model-edge O/U is the unified-flow path",
+                    stake_requested=args.stake, execute_mode=args.execute,
+                )
+                mark_pick(p["shadow_bet_id"], MARK_CHECKED)
+                print(f"skip     {label}\n         line-shop O/U placement disabled "
+                      f"(-17% ROI; COOLBET_UI_PLACE_OU=1 to override)")
                 continue
 
             ko = p["match_date"]

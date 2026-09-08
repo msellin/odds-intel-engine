@@ -3888,6 +3888,22 @@ def test_bot_config_golden_middle_1x2_floor():
     )
 
 
+@test("COOLBET-LINESHOP-OU-STOP — real-money UI placer no longer places line-shop O/U")
+def test_lineshop_ou_stop():
+    """COOLBET-LINESHOP-OU-STOP (2026-09-08): the real-money line-shop bot loses on
+    O/U (realized -17% ROI, n=1109, negative every month) while its 1x2 is +13%.
+    The UI placer must skip O/U real-money placement (gated at placement, so O/U
+    still writes shadow_bets for the model-edge comparison). Env override
+    COOLBET_UI_PLACE_OU=1 restores it. Pin the skip so it can't silently regress."""
+    import os
+    ui = open(os.path.join(os.path.dirname(__file__), "place_coolbet_ui.py"), encoding="utf-8").read()
+    assert "REALMONEY_SKIP_MARKET_PREFIXES" in ui, "the O/U real-money skip constant is gone"
+    assert 'COOLBET_UI_PLACE_OU' in ui, "the override env must exist so O/U can be restored deliberately"
+    assert 'stage="lineshop_ou_stop"' in ui, "the loop must record a lineshop_ou_stop rejection for audit"
+    # the default (no override) must skip both O/U vocabularies
+    assert '("over_under", "o/u")' in ui, "default skip must cover both O/U market spellings"
+
+
 @test("COOLBET-OWN-BETTING-ARCH — the two placers stay as documented (real-money = UI/line-shop)")
 def test_coolbet_own_betting_arch():
     """COOLBET-OWN-BETTING-ARCH (2026-09-08): docs/COOLBET_OWN_BETTING.md is the
