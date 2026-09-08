@@ -1611,3 +1611,23 @@ Lesson (same family as the 15%-floor overfit and the STALE-BEST-ODDS +4.29pp
 inflation): **how you measure decides what you believe.** Never evaluate a
 strategy on in-sample best-of-books ROI. Always: held-out OOS + executable
 price + dedup. The model is the moat; line-shop was the mirage.
+
+## §53 — `odds_snapshots.handicap_line` is stored HOME-perspective for BOTH selections (2026-09-08)
+
+The AH edge-sweep first reported **+142% TEST ROI** — impossible. Root cause: the
+AH line in `handicap_line` is the **home team's** line, and it is written that way
+for the away selection too. `daily_pipeline_v2._ah_model_prob` computes the away
+side as `1 − home_prob` of the *same home line*, and prediction rows are written
+as `ah_{sel}_{home_line}`. Grading the away bet as if the stored line were the
+away team's own handicap flips the sign and grades the away side against a
+different line than it was priced on — manufacturing huge phantom edges.
+
+**Correct grading:** `spread = −handicap_line`; with `margin = score_home −
+score_away`, the **home** side wins iff `margin > spread`, the **away** side wins
+iff `margin < spread`, push iff equal. Both selections use the SAME (home-perspective)
+`handicap_line`. The join to predictions was correct all along — only the outcome
+grading was wrong. Any future AH work must use the home-perspective convention.
+
+(Result, once fixed: AH collapses to uniformly negative — see MARKET_DATA_MAP.md
+edge-sweep verdict. This gotcha is why "ah_away_dog +2%" in bot_2d_audit's first
+pass was a bug, not an edge.)

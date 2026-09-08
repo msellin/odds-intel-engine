@@ -88,9 +88,41 @@ cheap; the true ceilings are narrow.**
 K League·Veikkausliiga" claim was wrong — all four are `statistics_fixtures=TRUE`
 (Saudi 99%, Ecuador 93% already collected); true overall coverage is ~31%.
 
-## Open audit (2026-09-08)
+## Edge-sweep verdict (MARKET-EDGE-SWEEP-EXISTING-DATA — resolved 2026-09-08)
 
-- **MARKET-EDGE-SWEEP-EXISTING-DATA** — for the goals-derivable markets (BTTS/DC/
-  AH), run a multi-dimensional, held-out-OOS sweep over ~100k fixtures to see if
-  a real edge exists; then check whether the required odds are actually
-  reachable at Coolbet/Unibet (UI-safer) before building anything. *(running)*
+Multi-dimensional held-out-OOS sweep (isotonic calibrated on TRAIN only, applied
+to untouched TEST; edge-floor × odds-floor × tier; walk-forward folds), on the
+canonical accessible book set {Coolbet, Betano, Unibet, Epicbet}, pre-match only.
+
+**All three goals-derivable candidate markets are DEAD — do NOT build models for
+them.** The decisive number is the calibrated ROI on the *idealized best-of-books*
+price (which structurally **inflates** ROI — you pick whichever accessible book is
+most mispriced), on the held-out TEST split:
+
+| edge floor | BTTS | Double Chance | Asian Handicap |
+|---|---|---|---|
+| ≥0% | −5.6% (n=3827) | −9.7% (n=6489) | −9.6% (n=6593) |
+| ≥10% | −2.1% (n=1793) | −11.4% (n=4662) | −10.2% (n=5007) |
+| ≥20% | −3.0% (n=858) | −11.9% (n=3413) | −10.9% (n=3802) |
+
+They fail *even the ceiling*; the executable reality is worse.
+
+- **BTTS — THIN at best, do not build.** The only non-negative frame (BTTS-yes,
+  odds ≥2.6, +54% pooled) exists only in a 6-week Coolbet window with a 52%
+  win-rate at 3.14 odds (breakeven 31.9%) — a price-fidelity artifact, not an
+  edge. Dies under calibration (−3.1%).
+- **Double Chance — DEAD.** Negative everywhere, both price bases, all selections.
+- **Asian Handicap — DEAD.** Negative everywhere after a grading-sign fix (see
+  ANALYSIS_GOTCHAS AH-HANDICAP-HOME-PERSPECTIVE). An early fake +142% was a bug,
+  not an edge.
+
+**Reconciliation with bot_2d_audit's first pass:** its "btts_all +12%" and
+"ah_away_dog +2%" were both OVERTURNED here — the first is raw/uncalibrated and
+confined to the 6-week window; the second was the AH grading-sign bug.
+
+**Data limitation for the executable question:** Coolbet odds for these markets
+only exist from ~Aug 2026 (~6 weeks), so the *executable* basis has no real
+cross-regime holdout yet. Only the idealized (best-of-books mirage) basis has
+depth — and it loses. **No phase-2 odds-reachability check is warranted:** nothing
+cleared the bar. If BTTS is ever revisited, it needs (1) a Coolbet BTTS
+price-fidelity audit and (2) far more executable history first.

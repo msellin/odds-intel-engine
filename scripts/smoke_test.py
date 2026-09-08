@@ -4169,6 +4169,13 @@ def test_market_data_af_audit():
     assert "score.halftime" in doc, "must document the AF-native HT-goals route (/fixtures score.halftime)"
     # the true ceilings must still be named (don't over-claim everything is fixable)
     assert "Pinnacle BTTS marginal" in doc, "must keep the real AF ceilings honest (BTTS marginal)"
+    # MARKET-EDGE-SWEEP verdict: BTTS/DC/AH are DEAD on honest calibrated held-out OOS
+    assert "all three goals-derivable candidate markets are dead" in doc.lower(), (
+        "edge-sweep verdict (BTTS/DC/AH DEAD) must be recorded so we don't re-scope them"
+    )
+    assert "AH-HANDICAP-HOME-PERSPECTIVE" in doc or "handicap_line" in doc.lower() or "grading-sign" in doc.lower(), (
+        "must reference the AH grading-sign fix that overturned the fake +142%"
+    )
 
 
 @test("SHADOW-BOT-CONSOLIDATION-RETIRE — the 3 dead/duplicate beta bots are retired")
