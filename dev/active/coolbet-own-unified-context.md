@@ -185,3 +185,22 @@ cells → more spurious "robust" frames (2D was already ~1400 cells → the +120
 could be tens of thousands). Rule at 3D/4D: axes must be MECHANISM-grounded hypotheses, not
 blind grid, and validated on a HELD-OUT window (not just time-folds). Past ~2 axes the honest
 tool is a regularized model (the ensemble already is one), not a finer grid.
+
+## SHADOW-BOT-CONSOLIDATION — canonical 2-step method (owner, 2026-09-08)
+Applies to BOTH surfaces: /performance active bots (calibrated/beta/active in simulated_bets)
+AND shadow-bots page (experimental in shadow_bets).
+STEP 1 — UNIFIED AUDIT: every bot × full 2D (edge×odds) matrix, fold-robust + OOS. A bot
+  profitable NOWHERE (no robust frame at any cell) → easy retire. [first pass done: retired
+  the 3 active dead-frame beta bots (mig 311) + confirmed 14 already retired. TODO: comprehensive
+  re-run across ALL bots incl small-n, with held-out OOS not just time-folds.]
+STEP 2 — AUDIT SURVIVORS TOGETHER: for bots with edge somewhere, cross-audit — which DUPLICATE
+  each other (same games/correlated), what edge×odds configs are COMMON (a shared frame is
+  stronger evidence than one bot's matrix-mined cell), merge/consolidate the redundant.
+  Then PROMOTE each survivor by route: → /picks + Telegram (👥 PICKS) OR → Coolbet/Unibet
+  auto-placement (🤖 OWN). Both owner-gated.
+GOAL: clean /performance (real strategies only) + clean shadow page (distinct experiments only)
+  + a clear pipeline validated-shadow-bot → customer picks and/or automated placement.
+Surface map (2026-09-08): /performance = v10_all(calibrated core) + beta bots (3 retiring now →
+  leaves high_roi_global_v2, summer_specialist). Shadow-only = coolbet_value_v1(1x2 OWN),
+  coolbet_ou_model_v1(O/U OWN), pin_1x2_home, sweep_ou25, sweep_ou35. Profitable-frame candidates
+  btts_all/ah_away_dog/ou15/sweep_1x2_home are RETIRED (frames historical → revival needs strong OOS).
