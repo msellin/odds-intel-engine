@@ -47,6 +47,7 @@
     <array>
         <string>/Users/margussellin/www/odds-intel-engine/venv/bin/python</string>
         <string>scripts/place_coolbet_ui.py</string>
+        <string>--all-enabled</string>
         <string>--execute</string>
     </array>
 

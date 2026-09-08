@@ -4046,6 +4046,23 @@ def test_coolbet_own_betting_arch():
     assert "COOLBET-REALMONEY-EDGE-GATE-RECONCILE" in doc, "doc must flag the unreconciled real-money edge-gate decision"
 
 
+@test("COOLBET-UI-PLACER-ALL-ENABLED — the scheduled job runs every toggled-on bot")
+def test_ui_placer_all_enabled():
+    """COOLBET-UI-PLACER-ALL-ENABLED (2026-09-08): the launchd job must run
+    place_coolbet_ui.py with --all-enabled so it places EVERY DB-enabled bot
+    (PLACEABLE_BOTS ∩ toggle), not just the single default --bot. Without it,
+    flipping a bot ON in the control panel has no effect — the job would still
+    only run the default bot. Pin the repo plist copy."""
+    import os
+    plist = os.path.join(os.path.dirname(__file__), "..", "local", "launchd",
+                         "com.oddsintel.coolbet-ui-placer.plist")
+    src = open(plist, encoding="utf-8").read()
+    assert "--all-enabled" in src and "--execute" in src, (
+        "the ui-placer plist must run place_coolbet_ui.py --all-enabled --execute "
+        "so every toggled-on bot is placed"
+    )
+
+
 @test("POSTGREST-SCHEMA-RELOAD — migrations reload PostgREST so new tables don't 500")
 def test_postgrest_schema_reload():
     """POSTGREST-SCHEMA-RELOAD (2026-09-08): PostgREST caches the DB schema, so a
