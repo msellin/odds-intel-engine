@@ -474,6 +474,18 @@ def _():
         assert c in mig, f"migration 315 must add {c}"
 
 
+@test("OU-LINES-EDGE-TEST — single-book executable + calibration, NOT best-of-books")
+def _():
+    import inspect, scripts.ou_lines_edge_test as m
+    src = inspect.getsource(m)
+    # the whole point (§55): ROI must use a single-book executable price, not best-of-books,
+    # which + an edge gate re-creates the line-shop artifact that shows even 2.5 as negative
+    assert 'od.bookmaker == "Coolbet"' in src, "ROI must use the single-book (Coolbet) executable price"
+    assert "IsotonicRegression" in src, "model-edge must use CALIBRATED probs (raw are over-confident)"
+    assert "line-shop selection artifact" in src, "must document why best-of-books is wrong here"
+    assert '"25": 2.5' in src, "must keep O/U 2.5 as the known-good control"
+
+
 @test("1H-MODEL-EDGE-TEST — fits on TRAIN only, validates held-out, reuses joint-prob")
 def _():
     import inspect, scripts.first_half_edge_test as m
