@@ -4809,7 +4809,12 @@ def _ou_line_is_consistent(
 # never look mispriced against itself. Coolbet decides what we pay; Pinnacle
 # decides what it is worth. Only the first has to be reachable.
 _COOLBET_VALUE_BOT = "bot_coolbet_value_v1"
-_COOLBET_MARKETS = ("1x2", "over_under_25", "over_under_35")
+# STOP-LINESHOP-OU-GENERATION-2026-09-08: line-shop O/U was retired — it lost
+# -17% ROI (negative every month, n~1109) where model-edge O/U makes +19%
+# (bot_coolbet_ou_model_v1 now places O/U instead). Placement was already stopped
+# (COOLBET-LINESHOP-OU-STOP); stop GENERATING the O/U shadow picks too, since they
+# only added noise to /admin/shadow-bots and the shadow ledger. This bot is 1x2-only.
+_COOLBET_MARKETS = ("1x2",)
 _COOLBET_ODDS_MIN, _COOLBET_ODDS_MAX = 1.30, 6.00
 
 

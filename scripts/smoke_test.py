@@ -4046,6 +4046,19 @@ def test_coolbet_own_betting_arch():
     assert "COOLBET-REALMONEY-EDGE-GATE-RECONCILE" in doc, "doc must flag the unreconciled real-money edge-gate decision"
 
 
+@test("STOP-LINESHOP-OU-GENERATION — line-shop bot is 1x2-only")
+def test_stop_lineshop_ou_generation():
+    """STOP-LINESHOP-OU-GENERATION (2026-09-08): the line-shop bot
+    (bot_coolbet_value_v1) lost -17% on O/U; model-edge O/U (+19%) replaced it.
+    Placement was already stopped; generation is now stopped too so its O/U
+    shadow picks don't add noise. Pin the market list to 1x2-only."""
+    import workers.jobs.daily_pipeline_v2 as dp
+    assert dp._COOLBET_MARKETS == ("1x2",), (
+        "the line-shop value bot must generate 1x2 ONLY — O/U generation was "
+        "retired (model-edge O/U places O/U instead)"
+    )
+
+
 @test("COOLBET-UI-PLACER-ALL-ENABLED — the scheduled job runs every toggled-on bot")
 def test_ui_placer_all_enabled():
     """COOLBET-UI-PLACER-ALL-ENABLED (2026-09-08): the launchd job must run
