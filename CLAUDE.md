@@ -35,6 +35,7 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 | `docs/API-Football_Documentation_v3.9.3.pdf` | Full API-Football v3.9.3 docs (130 pages) — **local only** (gitignored, 7.1MB) |
 | `docs/VPS_NEXTJS_MIGRATION_RUNBOOK.md` | Vercel→VPS Next.js migration playbook — used for odds-intel-web 2026-07-07, reusable for future sites |
 | `docs/COOLBET_RUNBOOK.md` | **Coolbet troubleshooting** — transport chain (Mac→FS→Imperva→API), live endpoint map, and symptom→cause→fix for every Coolbet failure mode. Read first when Coolbet collection or placement breaks. |
+| `docs/COOLBET_OWN_BETTING.md` | **Coolbet own-betting flow & architecture (single source of truth)** — what generates the picks we place with our own money, the full gate stack (maturity → per-market edge floor → 2.80 odds floor → live-edge → blast-radius), pre-match-only, paper-vs-real, and the placer-vs-shadow-bots-page distinction. **Read/update before touching any Coolbet placement gate or floor.** |
 | `docs/ANALYSIS_GOTCHAS.md` | **Read before writing any analysis query.** Table/source vocabularies, capabilities that already exist (model A/B via `SHADOW_MODEL_VERSION`), dedup rules, outlier guards, and the CLV-vs-ROI variance numbers. Every entry is something that was guessed wrong or rediscovered the hard way. |
 
 ## Task Lifecycle — Every Task Must Follow This Exactly
