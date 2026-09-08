@@ -15,17 +15,17 @@ actually store today. "Can we model it, settle it, and anchor its edge?"
 
 ## The map (as of 2026-09-08)
 
-| Market | Model source | Settlement data (status) | Pinnacle anchor | Real blocker |
-|---|---|---|---|---|
-| 1x2, O/U 2.5/3.5 | goals model (LIVE) | final score ✅ | ✅ | none — live |
-| **BTTS** | derivable from goals model — P(both score) | final score ✅ | ❌ **none** (AF Pinnacle feed has no BTTS) | **anchor** — need soft-book consensus anchor |
-| **Double chance** | derivable from 1x2 — P(home∪draw) | final score ✅ | via 1x2 devig ✅ | *economics* (retired for losing), not data |
-| **Asian Handicap** | derivable from goals model — P(margin ≥ line) | final score ✅ | ✅ (top Pinnacle market) | *economics* — 7.09% recreational margin; Coolbet full/half lines only |
-| **Corners** | NEW corner-rate Poisson | `match_stats.corners_*` **31% overall / 75% in AF-coverage=TRUE leagues** | ✅ (corners_ou_90/95, corners_1h) | **collection backfill** over cov=TRUE leagues (not an AF ceiling for bettable leagues) — CORNERS-SETTLEMENT-DATA-GAP |
-| **Cards** | NEW card-rate model (+ referee) | `match_stats.*cards_*` **~32%** (same stats row as corners); settlement uses `/fixtures/events` count | limited | **collection backfill** (same cov=TRUE fix as corners) — §51 |
-| **1H (1x2, O/U)** | NEW first-half goals model | **HT SCORE — not stored** ❌ but AF-native: `/fixtures` `score.halftime.{home,away}`, full history, zero extra calls | ✅ (`1x2_1h`, `team_total_1h`, `over_under_1h`) | **half-time goals** — add `matches.ht_score_*` col + extract (CSV-HT-GOALS; AF is the cheap route). NB **HT/FT has NO Pinnacle anchor** (not among AF's 19 Pinnacle bet types) |
-| **Team totals** | derivable from goals model | final score ✅ | ✅ (`team_total_*`) | economics/validation only |
-| **Player props** | NEW player model | player events + lineups (partial) | mostly none | biggest data lift — defer |
+| Market | Status | Model source | Settlement data (status) | Pinnacle anchor | Real blocker |
+|---|---|---|---|---|---|
+| 1x2, O/U 2.5/3.5 | ✅ **LIVE** | goals model (LIVE) | final score ✅ | ✅ | none — live |
+| **BTTS** | ❌ **DEAD — do not build** | derivable from goals model — P(both score) | final score ✅ | ❌ **none** (AF Pinnacle feed has no BTTS) | **NO EDGE (2026-09-08 diag, n≤41k):** BTTS is barely predictable by anyone — even the full market consensus is AUC 0.59 (≈coin); our model 0.54 adds *zero* info beyond the price. Not a fixable derivation/anchor gap. |
+| **Double chance** | ❌ **DEAD — no model possible** | *arithmetic* off 1x2 — P(home∪draw)=P(H)+P(D) | final score ✅ | via 1x2 devig ✅ | **Deterministic collapse of 1x2** — a separate DC model is incoherent (it can't beat the 1x2 model on DC). Loses everywhere on OOS ceiling (−10→−12%). Retired. |
+| **Asian Handicap** | ❌ **DEAD — market owns it** | derivable from goals model — P(margin ≥ line) | ✅ (top Pinnacle market) | final score ✅ | **MARKET-BEATS-MODEL (2026-09-08 diag, n=74k obs):** AH margins ARE predictable, but within-line market AUC 0.70–0.75 vs our model 0.55 (adds zero info); + 7% recreational vig wall; Coolbet full/half lines only. A dedicated margin model would have to *beat* 0.72 — no evidence we can. |
+| **Corners** | 🔬 **backfill first** | NEW corner-rate Poisson | `match_stats.corners_*` **31% overall / 75% in AF-coverage=TRUE leagues** | ✅ (corners_ou_90/95, corners_1h) | **collection backfill** over cov=TRUE leagues (not an AF ceiling for bettable leagues) — CORNERS-SETTLEMENT-DATA-GAP |
+| **Cards** | 🔬 **backfill first** | NEW card-rate model (+ referee) | `match_stats.*cards_*` **~32%** (same stats row as corners); settlement uses `/fixtures/events` count | limited | **collection backfill** (same cov=TRUE fix as corners) — §51 |
+| **1H (1x2, O/U)** | 🟡 **CANDIDATE — untested** | NEW first-half goals model | **HT SCORE — not stored** ❌ but AF-native: `/fixtures` `score.halftime.{home,away}`, full history, zero extra calls | ✅ (`1x2_1h`, `team_total_1h`, `over_under_1h`) | **half-time goals** — add `matches.ht_score_*` col + extract (AF is the cheap route). The one live expansion candidate; edge NOT yet tested (can't, until HT goals stored). NB HT/FT has NO Pinnacle anchor. |
+| **Team totals** | 🟡 derivable, unvalidated | derivable from goals model | final score ✅ | ✅ (`team_total_*`) | economics/validation only |
+| **Player props** | ⏸ defer | NEW player model | player events + lineups (partial) | mostly none | biggest data lift — defer |
 
 ## The three takeaways
 
