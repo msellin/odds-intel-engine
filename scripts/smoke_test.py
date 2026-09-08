@@ -3902,6 +3902,82 @@ def test_lineshop_ou_stop():
     assert 'stage="lineshop_ou_stop"' in ui, "the loop must record a lineshop_ou_stop rejection for audit"
     # the default (no override) must skip both O/U vocabularies
     assert '("over_under", "o/u")' in ui, "default skip must cover both O/U market spellings"
+    # COOLBET-MODEL-OU-SHADOW-BOT-2026-09-08: the O/U stop must be SCOPED to the
+    # line-shop bot only. It must NOT block the model-edge O/U bot, whose whole
+    # purpose is to place O/U real money once enabled. Assert the guard reads
+    # args.bot == "bot_coolbet_value_v1" on the same skip branch.
+    import re as _re
+    stop_branch = _re.search(
+        r'if \(args\.bot == "bot_coolbet_value_v1"\s*\n\s*and any\(_mkt\.startswith\(pre\) '
+        r'for pre in REALMONEY_SKIP_MARKET_PREFIXES\)\):',
+        ui,
+    )
+    assert stop_branch is not None, (
+        "the lineshop_ou_stop must be scoped to args.bot == 'bot_coolbet_value_v1' — "
+        "unscoped, it would block bot_coolbet_ou_model_v1, whose purpose is to place O/U"
+    )
+
+
+@test("COOLBET-MODEL-OU-SHADOW — model-edge O/U bot: mirror job + off-by-default real-money wiring")
+def test_coolbet_model_ou_shadow():
+    """COOLBET-MODEL-OU-SHADOW-BOT (2026-09-08): bot_coolbet_ou_model_v1 mirrors the
+    calibrated model's O/U picks (edge>=8% on calibrated_prob, lines 2.5/3.5 only)
+    into shadow_bets in the line-shop vocabulary (over_under_25/35 + over/under) so
+    they place through the Coolbet UI placer with the validated per-market gates.
+    Real money is OFF unless COOLBET_UI_MODEL_EDGE_OU=1. Pin all of this so a
+    regression cannot silently (a) change the source/edge, (b) widen the O/U lines,
+    or (c) let the bot place real money by default."""
+    import os
+    base = os.path.dirname(__file__)
+
+    # ── the mirror job ────────────────────────────────────────────────────────
+    job = open(os.path.join(base, "..", "workers", "jobs", "coolbet_model_ou_shadow.py"),
+               encoding="utf-8").read()
+    assert 'BOT_NAME = "bot_coolbet_ou_model_v1"' in job, "mirror job must write under bot_coolbet_ou_model_v1"
+    assert 'SHADOW_COHORT = "coolbet_ou_model"' in job, "mirror job must use the coolbet_ou_model cohort"
+    # source: calibrated cohort, market='o/u', edge>=0.08 (FRACTION), calibrated_prob not null
+    assert "b.maturity_label = 'calibrated'" in job, "source must be the calibrated cohort"
+    assert "sb.market = 'o/u'" in job, "source market must be the model's lowercase 'o/u'"
+    assert "sb.calibrated_prob IS NOT NULL" in job, "source must require a calibrated_prob (the placer's live-edge gate reads it)"
+    assert "sb.edge_percent >= %s" in job and 'EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_OU_EDGE_FLOOR", "0.08"))' in job, (
+        "edge floor must be 0.08 as a FRACTION (edge_percent is stored as a fraction, not a percentage)"
+    )
+    assert "sb.result = 'pending'" in job and "m.date > NOW()" in job, "only pending, future-kickoff picks"
+    assert "sb.user_placed_at IS NULL" in job and "sb.user_skipped_at IS NULL" in job, "skip operator-placed/skipped picks"
+    assert "DISTINCT ON (sb.match_id, sb.selection)" in job, "one row per (match, line, side), highest edge"
+    # vocabulary conversion: only 2.5/3.5 supported, written as over_under_25/35 + over/under
+    assert '_SUPPORTED_LINES = {"2.5": "over_under_25", "3.5": "over_under_35"}' in job, (
+        "only lines 2.5 and 3.5 may be mirrored — writing any other line fabricates a price/settlement line"
+    )
+    assert "INSERT INTO shadow_bets" in job and "ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)" in job, (
+        "must upsert on the shadow_bets unique key so re-runs update, not duplicate"
+    )
+    # it must NOT invent a settler — over_under_25/35 grade via the generic resolver
+    assert "def settle" not in job, "no custom settler — over_under_25/35 settle via the generic goals O/U resolver"
+
+    # ── the generic settler DOES grade over_under_ shadow rows (not skipped) ──
+    settle = open(os.path.join(base, "..", "workers", "jobs", "settlement.py"), encoding="utf-8").read()
+    # the shadow settler only excludes corners_ou_%, never over_under_%
+    assert "sb.market NOT LIKE 'corners_ou_%%'" in settle, "shadow settler still scoped to skip corners only"
+    assert "over_under" in settle, "the goals O/U resolver must still match over_under markets"
+
+    # ── UI placer: threshold present at 0.08, real money OFF by default ───────
+    ui = open(os.path.join(base, "place_coolbet_ui.py"), encoding="utf-8").read()
+    assert '"bot_coolbet_ou_model_v1": 0.08' in ui, "the model-edge O/U bot must be in BOT_THRESHOLDS at 0.08"
+    # the base allowlist must NOT contain the model bot — it only joins under the flag
+    assert 'EXECUTE_ALLOWED_BOTS = {"bot_coolbet_value_v1"}' in ui, "base allowlist must be exactly the line-shop bot"
+    assert 'os.getenv("COOLBET_UI_MODEL_EDGE_OU") == "1"' in ui, "model-edge O/U real money must be gated behind COOLBET_UI_MODEL_EDGE_OU=1"
+    # the ONLY place bot_coolbet_ou_model_v1 reaches the allowlist is inside that env guard
+    import re as _re
+    guard = _re.search(
+        r'if os\.getenv\("COOLBET_UI_MODEL_EDGE_OU"\) == "1":\s*\n\s*'
+        r'EXECUTE_ALLOWED_BOTS = EXECUTE_ALLOWED_BOTS \| \{"bot_coolbet_ou_model_v1"\}',
+        ui,
+    )
+    assert guard is not None, (
+        "bot_coolbet_ou_model_v1 may join EXECUTE_ALLOWED_BOTS ONLY inside the "
+        "COOLBET_UI_MODEL_EDGE_OU==1 guard — never unconditionally"
+    )
 
 
 @test("COOLBET-OWN-BETTING-ARCH — the two placers stay as documented (real-money = UI/line-shop)")
@@ -3925,7 +4001,7 @@ def test_coolbet_own_betting_arch():
     assert "FROM shadow_bets_unique" in ui, "UI placer must load from shadow_bets_unique"
     assert "FROM simulated_bets" not in ui, "UI placer must NOT read simulated_bets (that is the paper API placer)"
     # edge gate is the bot's flat 3%, and it must NOT use the per-market model floor
-    assert 'BOT_THRESHOLDS = {"bot_coolbet_value_v1": 0.03}' in ui, "UI placer edge gate must be the bot's flat 3% line-shop edge"
+    assert '"bot_coolbet_value_v1": 0.03' in ui, "UI placer edge gate must be the bot's flat 3% line-shop edge"
     assert "_min_edge_for" not in ui, (
         "UI placer must NOT use the per-market model edge floor — real money is gated on "
         "the line-shop edge, and conflating the two is the exact confusion this test guards"

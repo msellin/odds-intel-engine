@@ -1919,6 +1919,20 @@ def job_corners_paper_settle():
     _run_job("corners_paper_settle", lambda: None)
 
 
+def job_coolbet_model_ou_shadow():
+    """COOLBET-MODEL-OU-SHADOW-BOT (2026-09-08): mirror the calibrated model's
+    Over/Under picks (edge>=8% on calibrated_prob, lines 2.5/3.5) into shadow_bets
+    under bot_coolbet_ou_model_v1 in the line-shop vocabulary (over_under_25/35),
+    so they place through the Coolbet UI placer with the validated per-market
+    gates. Writes shadow_bets only; real money is OFF unless COOLBET_UI_MODEL_EDGE_OU=1."""
+    from workers.jobs.coolbet_model_ou_shadow import generate_picks
+    c = generate_picks()
+    if c.get("written"):
+        console.print(f"[cyan]model-ou shadow: {c['written']} picks written/updated "
+                      f"({c['scanned']} scanned)[/cyan]")
+    _run_job("coolbet_model_ou_shadow", lambda: None)
+
+
 def job_coolbet_price_sanity():
     """COOLBET-CROSS-BOOK-SANITY-GUARD (2026-09-07): flags Coolbet 1x2 prices
     whose favourite is inverted vs Pinnacle — the signature of a fuzzy-match
@@ -2801,6 +2815,12 @@ def main():
                       id="corners_paper_pick", name="Corners Paper Pick")
     scheduler.add_job(job_corners_paper_settle, CronTrigger(minute=50),
                       id="corners_paper_settle", name="Corners Paper Settle")
+    # COOLBET-MODEL-OU-SHADOW-BOT: mirror calibrated model O/U picks into
+    # shadow_bets at :10/:40, alongside the shadow interval run, so the
+    # model-edge O/U picks the UI placer reads stay current. No settler branch —
+    # over_under_25/35 grade via the generic goals O/U resolver.
+    scheduler.add_job(job_coolbet_model_ou_shadow, CronTrigger(hour="*", minute="10,40"),
+                      id="coolbet_model_ou_shadow", name="Coolbet Model O/U Shadow")
     # AF-ENDPOINT-ATTRIBUTION flush: every 5 min except :00 (sync owns :00). No AF call.
     scheduler.add_job(job_budget_attribution_flush,
                       CronTrigger(minute="5,10,15,20,25,30,35,40,45,50,55"),

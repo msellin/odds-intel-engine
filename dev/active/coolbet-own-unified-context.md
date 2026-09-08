@@ -98,3 +98,28 @@ Each 1D component also robust. This is the profitable O/U path to wire into the 
 - Gate behind env flag OFF by default (e.g. COOLBET_UI_MODEL_EDGE_OU=1); build + smoke + DRY-RUN
   shown to owner BEFORE first real execute. Then 1x2 line-shop + model-edge O/U both live.
 - End-state (epic): model-edge for BOTH markets through the UI placer + one placement-of-record.
+
+## STRATEGIC FRAMING (owner, 2026-09-08) — how PICKS and OWN relate
+Two directions, and the data says how they merge:
+- 👥 PICKS (customers): model-edge ONLY (honest/defensible). "More markets, better picks."
+- 🤖 OWN (Coolbet, soon Unibet — ONLY Estonia-automatable books): whatever makes money AT that book.
+Two-layer model:
+  - MODEL-EDGE (shared by PICKS + OWN): our model vs market. Customers get this; we bet this.
+  - LINE-SHOP (OWN-ONLY): Coolbet's own price beats the sharp (Pinnacle). Bookmaker-specific,
+    model-free by design — never a customer pick. This is why "Coolbet doesn't use the model
+    in some cases": the line-shop layer is intentionally model-free.
+Per-market merge (from our backtest):
+  - O/U: model-edge wins (+19% vs line-shop −17%) → OWN uses model-edge O/U (building). Line-shop O/U retired.
+  - 1x2: ~tie (~+13%), line-shop ~10x volume → run BOTH or converge on model-edge (higher CLV). OPEN CALL.
+  - New markets: whichever validates for that book (same discipline).
+Unified OWN placer = model-edge core (shared w/ /picks) + line-shop overlay where Coolbet mis-prices.
+"Same but don't have to be" = shared model-edge core; OWN adds the line-shop overlay.
+
+## SHADOW-BOT-CONSOLIDATION (queue under this epic)
+~40 bots is messy but partly diagnosed. Audit ALL bots → retire dupes + dead-market, keep distinct,
+tag each by LAYER (customer model-edge / OWN line-shop / retired). Grounded in:
+- SHADOW-BOT-PROMOTION-REVIEW (done 2026-09-03): promote nothing yet; 4 line-shop/pin bots genuinely
+  distinct (0-5% v10 overlap).
+- DUPLICATE-BOTS-REVIEW (filed): bot_opt_home_lower 92% + bot_conservative 91% dupes of v10 → retire.
+- Retired-market bots (BTTS/DC/combo/acca) still clutter the list.
+Close each bot with evidence (retire/keep/relabel), map to the two-layer framework.

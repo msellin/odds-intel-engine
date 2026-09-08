@@ -44,6 +44,7 @@
 :05/:35 ⑰ Shadow Run     job_shadow_run_interval() Every 30 min, concurrent with betting refresh. ALL bots evaluated → shadow_bets. Cohort = 'HHMM' UTC string. 32 snapshots/day.
 8/12/16/20:20 Corners Paper Pick  job_corners_paper_pick()  Shadow bot bot_corners_paper_shadow_v1 — records corners_ou paper picks (best Betano/Unibet price beats de-vigged Pinnacle) → shadow_bets, cohort 'corners_paper'. Tracks on /admin/shadow-bots, off public pages.
 :50    Corners Paper Settle job_corners_paper_settle() Grades the above from match_stats corners (over/under, .5 lines never push). The generic goals-based shadow settler skips corners_ou_% by design.
+:10/:40 Coolbet Model O/U Shadow job_coolbet_model_ou_shadow() Shadow bot bot_coolbet_ou_model_v1 — mirrors the calibrated model's O/U picks (market='o/u', edge≥0.08 on calibrated_prob, lines 2.5/3.5) into shadow_bets as over_under_25/35 + over/under, cohort 'coolbet_ou_model', so they place via the Coolbet UI placer with the validated per-market gates. Real money OFF unless COOLBET_UI_MODEL_EDGE_OU=1. Settles via the generic goals O/U resolver (no custom settler).
 08:00  ② Enrichment      run_enrichment()          Injuries only — single morning fetch (AF-INJURIES-LATE 2026-06-01)
 10:45  ① Fixtures        run_fixtures()            Status refresh — catches morning postponements
 12:30  ⑦ News Checker    run_news_checker()

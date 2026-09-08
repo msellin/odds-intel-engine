@@ -53,7 +53,14 @@ DEFAULT_STAKE = 10.00
 # The bot fires at a 3pct true edge (daily_pipeline_v2 _LINESHOP_TRUE_EDGE_MIN).
 # Keep this in step with BOT_EDGE_THRESHOLDS on the shadow-bots admin page —
 # they drifted apart once already and every min-odds floor was wrong.
-BOT_THRESHOLDS = {"bot_coolbet_value_v1": 0.03}
+BOT_THRESHOLDS = {
+    "bot_coolbet_value_v1": 0.03,
+    # COOLBET-MODEL-OU-SHADOW-BOT-2026-09-08: the model-edge O/U bot fires at an
+    # 8% calibrated edge (mirrors _MIN_EDGE_BY_MARKET['o/u'] and the mirror job's
+    # EDGE_FLOOR). The placer's live-edge gate 1/(cal_prob - threshold) uses this,
+    # so it MUST be 0.08 or the min-odds floor would be computed at the wrong edge.
+    "bot_coolbet_ou_model_v1": 0.08,
+}
 DEFAULT_BOT = "bot_coolbet_value_v1"
 
 # REAL-MONEY ALLOWLIST. Only these bots may ever be placed with --execute.
@@ -65,6 +72,16 @@ DEFAULT_BOT = "bot_coolbet_value_v1"
 # strategy reaches the account. A default is not a guard; --bot could name any
 # bot and --execute would have honoured it.
 EXECUTE_ALLOWED_BOTS = {"bot_coolbet_value_v1"}
+
+# COOLBET-MODEL-OU-SHADOW-BOT-2026-09-08. The model-edge O/U bot
+# (bot_coolbet_ou_model_v1) may place REAL money ONLY when explicitly enabled by
+# env COOLBET_UI_MODEL_EDGE_OU=1. Unset/anything-else, it is NOT in the allowlist
+# and --execute is forced to dry-run exactly like any other unproven bot — the
+# whole pipeline (matching, pricing, snapshots, audit rows, staging) still runs.
+# The flip to real money is owner-gated on fold-robust out-of-sample evidence
+# (COOLBET-OWN-UNIFIED-FLOW-EPIC guardrail); the default is OFF by design.
+if os.getenv("COOLBET_UI_MODEL_EDGE_OU") == "1":
+    EXECUTE_ALLOWED_BOTS = EXECUTE_ALLOWED_BOTS | {"bot_coolbet_ou_model_v1"}
 
 # COOLBET-LINESHOP-OU-STOP-2026-09-08. The real-money line-shop bot
 # (bot_coolbet_value_v1) LOSES on O/U: realized -17.0% ROI over n=1109 settled,
@@ -537,8 +554,13 @@ def main() -> int:
 
             # COOLBET-LINESHOP-OU-STOP-2026-09-08: never place line-shop O/U real
             # money (realized -17% ROI, negative every month). See the constant.
+            # SCOPED to bot_coolbet_value_v1 ONLY (COOLBET-MODEL-OU-SHADOW-BOT):
+            # the O/U leak is the LINE-SHOP bot's, not the model-edge O/U bot's
+            # (bot_coolbet_ou_model_v1, +15% fold-robust). This stop must never
+            # block the model-edge O/U bot, whose entire purpose is to place O/U.
             _mkt = (p.get("market") or "").lower()
-            if any(_mkt.startswith(pre) for pre in REALMONEY_SKIP_MARKET_PREFIXES):
+            if (args.bot == "bot_coolbet_value_v1"
+                    and any(_mkt.startswith(pre) for pre in REALMONEY_SKIP_MARKET_PREFIXES)):
                 rejected += 1
                 expected_rows += 1
                 up.record_attempt(

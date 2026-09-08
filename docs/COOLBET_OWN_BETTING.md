@@ -90,8 +90,27 @@ DC). ~3,000 picks since 2026-08-26. `shadow_bets_unique` is a dedup VIEW over
 | 4 | **Odds floor** (per-market) | `_min_odds_for(market)` — **shared with the API placer** | **1x2 ≥ 2.80 · O/U ≥ 1.80 · unknown ≥ 2.80** |
 | 5 | **Per-match exposure** | COOLBET-MATCH-EXPOSURE-GUARD | caps concurrent stake on one fixture |
 | 6 | **Edge threshold** | `BOT_THRESHOLDS[bot]` = **0.03** | the bot's flat 3% line-shop edge — **NOT** `_min_edge_for` |
-| 7 | **Real-money allowlist** | `EXECUTE_ALLOWED_BOTS` | only `bot_coolbet_value_v1` may ever place with `--execute` |
+| 7 | **Real-money allowlist** | `EXECUTE_ALLOWED_BOTS` | `bot_coolbet_value_v1` always; `bot_coolbet_ou_model_v1` **only** when `COOLBET_UI_MODEL_EDGE_OU=1` (off by default). Any other bot → forced dry-run |
 | 8 | **Kill switch** | `coolbet_state.is_placement_paused()` | DB flag halts the whole placement loop |
+
+**Line-shop O/U stop (`lineshop_ou_stop`) — scoped to `bot_coolbet_value_v1`
+only.** The line-shop bot loses on O/U (realized −17% ROI, negative every month),
+so its O/U picks are skipped at placement (`REALMONEY_SKIP_MARKET_PREFIXES`,
+override `COOLBET_UI_PLACE_OU=1`). As of COOLBET-MODEL-OU-SHADOW-BOT this skip is
+gated on `args.bot == "bot_coolbet_value_v1"` and does **not** apply to the
+model-edge O/U bot below.
+
+**`bot_coolbet_ou_model_v1` — the model-edge O/U real-money vehicle (off by
+default).** `workers/jobs/coolbet_model_ou_shadow.py` (scheduled :10/:40) mirrors
+the calibrated model's O/U picks (`simulated_bets` market=`o/u`, edge≥0.08 on
+`calibrated_prob`, lines 2.5/3.5 only) into `shadow_bets` in the line-shop
+vocabulary (`over_under_25`/`over_under_35` + `over`/`under`), so they load and
+place through this same Path-A UI placer with the validated per-market gates
+(edge≥8% via `BOT_THRESHOLDS[bot]=0.08` feeding `min_odds_for`, odds≥1.80 via
+`_min_odds_for('o/u')`). It settles via the generic goals O/U resolver — no
+custom settler. Real money stays OFF until `COOLBET_UI_MODEL_EDGE_OU=1` is set
+with explicit owner authorization; this is the built vehicle for the
+`COOLBET-REALMONEY-EDGE-GATE-RECONCILE` decision below.
 
 4. **Drive the browser:** search the match (`input[name="sportSearch"]`) → click
    the match → find the market's odds button (`button-odds-<marketId>`) → **read
