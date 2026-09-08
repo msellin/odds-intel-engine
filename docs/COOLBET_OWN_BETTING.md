@@ -23,7 +23,7 @@ floor helper.
 | | **UI placer — REAL MONEY** | API placer — paper |
 |---|---|---|
 | File | `scripts/place_coolbet_ui.py` (+ `coolbet_ui_placer.py` driver) | `workers/automation/coolbet_placer.py` |
-| launchd job | **`com.oddsintel.coolbet-ui-placer`** — hourly 06:00–19:00, runs with `--execute` | `com.oddsintel.coolbet-mac-daemon` — continuous |
+| launchd job | **`com.oddsintel.coolbet-ui-placer`** — hourly 06:00–21:00, runs with `--execute` | `com.oddsintel.coolbet-mac-daemon` — continuous |
 | Source table | **`shadow_bets_unique`** (view over `shadow_bets`) | `simulated_bets` |
 | Which bot(s) | **only `bot_coolbet_value_v1`** (`EXECUTE_ALLOWED_BOTS`) | all model bots, gated to `calibrated` maturity |
 | Edge basis | **Coolbet's OWN price vs de-vigged Pinnacle** (line-shop) | model ensemble vs de-vigged Pinnacle at best-accessible book |
@@ -69,7 +69,7 @@ Markets it covers today: **1x2, over_under_25, over_under_35** (no AH / BTTS /
 DC). ~3,000 picks since 2026-08-26. `shadow_bets_unique` is a dedup VIEW over
 `shadow_bets`.
 
-### A2. What the UI job does, per pass (hourly 06:00–19:00)
+### A2. What the UI job does, per pass (hourly 06:00–21:00)
 
 `scripts/place_coolbet_ui.py --execute`, driven by `coolbet_ui_placer.py`:
 
@@ -84,7 +84,7 @@ DC). ~3,000 picks since 2026-08-26. `shadow_bets_unique` is a dedup VIEW over
 
 | # | Gate | Where | Value / rule |
 |---|------|-------|--------------|
-| 1 | **Already placed** (dedup) | `already_placed` + `user_placed_at`/`user_skipped_at` | one bet per pick; respects the operator's Telegram ✅/⏭ marks |
+| 1 | **Already placed** (dedup) | `already_placed` (`coolbet_placement_attempts`) + `exposure_conflict` vs `real_bets` | one bet per pick. NB the UI placer does **not** read `simulated_bets.user_placed_at/skipped_at` (those are Path B only); it writes `user_pick_marks` but does not read it back. UUID dedup alone misses ~45% of `shadow_bets_unique` dupes — `exposure_conflict` against `real_bets` (in-memory within a pass) is the real guard |
 | 2 | **Kickoff cutoff** | `KICKOFF_CUTOFF_MIN` | never place inside N min of KO (Coolbet suspends markets pre-KO) |
 | 3 | **Odds-band (CLV)** | REALMONEY-ODDS-BAND-MISMATCH, gated on `odds_at_pick` | reject bands whose de-vigged CLV is decisively negative |
 | 4 | **Odds floor** (per-market) | `_min_odds_for(market)` — **shared with the API placer** | **1x2 ≥ 2.80 · O/U ≥ 1.80 · unknown ≥ 2.80** |
@@ -100,7 +100,11 @@ DC). ~3,000 picks since 2026-08-26. `shadow_bets_unique` is a dedup VIEW over
    **`--execute` clicks place-bet (real money); `--stage` leaves it in the slip;
    default dry-run does neither.**
 5. **Record:** every attempt → `coolbet_placement_attempts`; a successful place →
-   a `real_bets` row **with the actual placed odds**. (This is why manual
+   a `real_bets` row **with the actual placed odds**. Self-verification is by
+   **balance delta** (reads Coolbet balance before/after `place()`, refuses to
+   record `placed` unless it moved by the stake) — there is **no ticket-id
+   readback** (Coolbet returns no ticket id in this UI flow), so overlapping
+   placements can fool the delta check. (This is why manual
    placements have no recorded odds — the job that captures them wasn't running.)
 
 ---
