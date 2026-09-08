@@ -961,7 +961,7 @@ Bots create `simulated_bets` for every pick that clears the bot's own edge floor
 
 | Market | Real-money floor | Rationale |
 |---|---|---|
-| 1X2 | 10% | Backtest of 1,207 settled 1X2 simulated_bets shows ROI +2.9% at ≥5% threshold vs **+14.1%** at ≥10% — edge is strongly predictive |
+| 1X2 | **15%** (was 10%, raised 2026-09-08) | BOT-CONFIG-GOLDEN-MIDDLE: re-measured at EXECUTABLE prices post the 2026-06-06 freeze, the 10-15% edge band lost **−4.04% (n=266)** while the 15%+ band was **+42.10% (n=90)** — the 10% floor was placing the losing band. At 15% the placed 1X2 cohort goes +9.2% (n=358) → +47% (n=92): far higher ROI on ~¼ the volume. (Original 10% came from a ≥10% backtest at high-water prices.) |
 | O/U | 3% | Profitable at every floor (≥3%: +3.1% ROI); higher gates lose volume without improving expectation |
 | Asian Handicap | 5% | Edge non-monotonic; flat ROI ~5% across thresholds — moderate floor preserves volume |
 | BTTS | 10% | Backtest negative at ≥3-7% (−5% ROI); needs ≥10% to recover (+2.7% on n=63 — thin, monitored) |

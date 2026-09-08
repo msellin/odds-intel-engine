@@ -73,7 +73,14 @@ _FUZZY_THRESHOLD = 70
 # place real money on this market". `_min_edge_for(market)` returns
 # `math.inf` for None so the gate trivially rejects.
 _MIN_EDGE_BY_MARKET: dict[str, float | None] = {
-    "1x2":            0.10,   # was 0.03 — backtest +14% ROI at ≥10%
+    # BOT-CONFIG-GOLDEN-MIDDLE-2026-09-08: raised 0.10 -> 0.15. Measured on
+    # settled 1x2 picks at EXECUTABLE prices, post the 2026-06-06 threshold
+    # freeze: the 10-15% edge band loses -4.04% on n=266, while the 15%+ band is
+    # +42.10% (n=90). The old 10% floor was placing the losing 10-15% band. At a
+    # 15% floor the placed 1x2 cohort goes +9.2% (n=358) -> +47% (n=92) — far
+    # higher ROI on ~1/4 the volume. Placement-only floor: customer picks are
+    # unaffected. (History: 0.03 -> 0.10 on the original ≥10% backtest.)
+    "1x2":            0.15,
     "o/u":            0.03,   # already profitable at floor — unchanged
     "asian_handicap": 0.05,   # non-monotonic — keep moderate floor
     # BTTS-RETIRED-2026-09-03: shadow BTTS is n=427, ROI -12.76% at prices that

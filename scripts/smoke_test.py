@@ -3859,6 +3859,24 @@ def _():
     assert "random.uniform" in src, "_throttle must use jitter (random.uniform), not constant gap"
 
 
+@test("BOT-CONFIG-GOLDEN-MIDDLE — 1x2 placement edge floor raised to 15%")
+def test_bot_config_golden_middle_1x2_floor():
+    """BOT-CONFIG-GOLDEN-MIDDLE (2026-09-08): the 1x2 PLACEMENT edge floor was
+    raised 0.10 -> 0.15. Measured on settled 1x2 picks at executable prices,
+    post the 2026-06-06 threshold freeze: the 10-15% edge band loses -4.04%
+    (n=266) while the 15%+ band is +42.10% (n=90) — the old 10% floor was placing
+    the losing band. This is a PLACEMENT-only floor (customer picks unaffected).
+    Pin it so it can't silently regress to 10%.
+    """
+    from workers.automation.coolbet_placer import _MIN_EDGE_BY_MARKET, _min_edge_for
+    assert _MIN_EDGE_BY_MARKET["1x2"] == 0.15, (
+        "the 1x2 placement edge floor drifted off 0.15 — the 10-15% band loses money"
+    )
+    assert _min_edge_for("1x2") == 0.15 and _min_edge_for("o/u") == 0.03, (
+        "per-market floor lookup no longer returns the pinned values"
+    )
+
+
 @test("COOLBET-PLACER-NEW-SCHEMA — resolve_placement_target + placer wired to new helpers")
 def _():
     """COOLBET-PLACER-NEW-SCHEMA (2026-05-20) — Coolbet split markets and odds
