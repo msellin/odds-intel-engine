@@ -21,8 +21,8 @@ actually store today. "Can we model it, settle it, and anchor its edge?"
 | **BTTS** | ❌ **DEAD — do not build** | derivable from goals model — P(both score) | final score ✅ | ❌ **none** (AF Pinnacle feed has no BTTS) | **NO EDGE (2026-09-08 diag, n≤41k):** BTTS is barely predictable by anyone — even the full market consensus is AUC 0.59 (≈coin); our model 0.54 adds *zero* info beyond the price. Not a fixable derivation/anchor gap. |
 | **Double chance** | ❌ **DEAD — no model possible** | *arithmetic* off 1x2 — P(home∪draw)=P(H)+P(D) | final score ✅ | via 1x2 devig ✅ | **Deterministic collapse of 1x2** — a separate DC model is incoherent (it can't beat the 1x2 model on DC). Loses everywhere on OOS ceiling (−10→−12%). Retired. |
 | **Asian Handicap** | ❌ **DEAD — market owns it** | derivable from goals model — P(margin ≥ line) | ✅ (top Pinnacle market) | final score ✅ | **MARKET-BEATS-MODEL (2026-09-08 diag, n=74k obs):** AH margins ARE predictable, but within-line market AUC 0.70–0.75 vs our model 0.55 (adds zero info); + 7% recreational vig wall; Coolbet full/half lines only. A dedicated margin model would have to *beat* 0.72 — no evidence we can. |
-| **Corners** | 🔬 **backfill first** | NEW corner-rate Poisson | `match_stats.corners_*` **31% overall / 75% in AF-coverage=TRUE leagues** | ✅ (corners_ou_90/95, corners_1h) | **collection backfill** over cov=TRUE leagues (not an AF ceiling for bettable leagues) — CORNERS-SETTLEMENT-DATA-GAP |
-| **Cards** | 🔬 **backfill first** | NEW card-rate model (+ referee) | `match_stats.*cards_*` **~32%** (same stats row as corners); settlement uses `/fixtures/events` count | limited | **collection backfill** (same cov=TRUE fix as corners) — §51 |
+| **Corners** | ⛔ **AF CEILING (backfill tried, failed)** | NEW corner-rate Poisson | `match_stats.corners_*` **~32%, stuck** | ✅ (corners_ou_90/95, corners_1h) | **AF ceiling, NOT a collection gap** — backfill of 19,677 cov=TRUE fixtures missing corners returned stats for only **748 (96% empty)**: the `coverage_statistics_fixtures` flag is league-level & optimistic; AF lacks per-fixture stats for the rest. Non-AF source (football-data CSV `HC`) needed to grow it — CORNERS-SETTLEMENT-DATA-GAP |
+| **Cards** | ⛔ **AF CEILING (same)** | NEW card-rate model (+ referee) | `match_stats.*cards_*` **~32%, stuck** (same stats row as corners) | limited | **same AF ceiling as corners** (748/19,677 fillable); `/fixtures/events` card count is the settlement path but the training-label coverage can't grow via AF — §51 |
 | **1H / 2H** | 🟡 **model built, edge test PENDING full backfill** | first-half Dixon-Coles Poisson (`scripts/first_half_edge_test.py`) | **HT/2H SCORE STORED ✅** (2026-09-08): `matches.ht_score_*` + `h2_score_*` (2H=FT−HT), AF `/fixtures` zero extra calls; forward-wired + daily sweep | ✅ (`1x2_1h`, `over_under_1h_*`, `team_total_1h_*`); **no native 2H line** | **First-pass discrimination (starved fit, ~6.5k): 1H market is SHARP (AUC 0.63/0.64), naive 1H model behind (~0.50), adds no OOS info** — like AH. VERDICT PENDING re-run after the ~128k HT backfill fits robust team rates. Descriptive 2H skew (55.3% of goals, 2H>1H 44% vs 30%) is real+robust but market-known (flat-back = vig). See §54. |
 | **Team totals** | 🟡 derivable, unvalidated | derivable from goals model | final score ✅ | ✅ (`team_total_*`) | economics/validation only |
 | **Player props** | ⏸ defer | NEW player model | player events + lineups (partial) | mostly none | biggest data lift — defer |
@@ -32,14 +32,14 @@ actually store today. "Can we model it, settle it, and anchor its edge?"
 1. **Goals-based markets are almost free.** BTTS, DC, AH, team-totals are
    projections of the one goals model we already run — no new model, no new
    settlement data. Their only gaps are *anchor* (BTTS) or *economics* (AH/DC).
-2. **Stat markets (corners, cards) need a historical BACKFILL, not new plumbing.**
-   We have the columns, the odds, a Pinnacle anchor, and the enrichment gate is
-   already correct (skips AF-false-coverage leagues). Corners land for **31%**
-   of finished fixtures overall but **75% inside AF-coverage=TRUE leagues** — the
-   gap is ~13k cov=TRUE fixtures that finished outside a backfill window (K League
-   34%, Veikkausliiga 18%). One `/fixtures/statistics` call per fixture fills
-   corners AND cards together. The `statistics_fixtures=false` tail (~59% of
-   fixtures) is a real AF ceiling → football-data CSV (HC/HY/HR) is the fallback.
+2. **Stat markets (corners, cards) are an AF CEILING — CORRECTED 2026-09-08.**
+   The AF audit predicted a cheap ~13k cov=TRUE backfill would lift corners to
+   ~40%. Empirically it did NOT: fetching all 19,677 cov=TRUE fixtures missing
+   corners returned stats for only **748 (96% empty)**. The
+   `coverage_statistics_fixtures` flag is league-level and optimistic; AF simply
+   lacks per-fixture stats for the rest. Corners/cards stay ~32% and can only grow
+   via a NON-AF source (football-data CSV `HC`/`HY`/`HR`). This is a real ceiling,
+   not a collection gap.
 3. **1H needs one dataset: half-time goals.** We store HT stats but not HT
    score. Pinnacle already prices 1H, so once HT goals are collected the model
    is the same machinery as full-match.

@@ -1686,3 +1686,17 @@ and O/U 3.5 **+7.8%** (mirrors 2.5), O/U 1.5 dead.
    ALL Coolbet-executable edges is n-limited; new lines (3.5) should accrue as
    paper/shadow bots and gate on fold-robustness before real money, exactly like
    the existing ones. Tool: `scripts/ou_lines_edge_test.py`.
+
+## §56 — `coverage_statistics_fixtures=TRUE` is league-level and optimistic; corners is an AF ceiling (2026-09-08)
+
+MARKET-DATA-AF-AUDIT predicted corners was "mostly a fixable collection gap" —
+backfill the ~13k cov=TRUE fixtures missing corners and coverage jumps 31%→~40%.
+**Empirically false.** Fetching all **19,677** cov=TRUE finished fixtures missing
+corners (`scripts/backfill_match_stats_af.py`, `/fixtures?ids=` with inline
+statistics) returned corner stats for only **748 — 96% came back empty.** The
+`coverage_statistics_fixtures` flag is a LEAGUE-level promise, not a per-fixture
+guarantee: within a cov=TRUE league, lower divisions / older / lesser fixtures
+frequently have no statistics object at all. So corners AND cards are an **AF
+ceiling (~32%), not a collection gap** — they can only grow via a non-AF source
+(football-data CSV `HC`/`HY`/`HR`). Lesson: verify a coverage-flag claim by
+actually fetching a sample before scoping a "cheap backfill" on it.
