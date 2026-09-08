@@ -73,17 +73,15 @@ _FUZZY_THRESHOLD = 70
 # place real money on this market". `_min_edge_for(market)` returns
 # `math.inf` for None so the gate trivially rejects.
 _MIN_EDGE_BY_MARKET: dict[str, float | None] = {
-    # BOT-CONFIG-GOLDEN-MIDDLE-2026-09-08: kept at 0.10 after a full-history
-    # backtest OVERTURNED a brief raise to 0.15. On the placer universe
-    # (active/calibrated bots, n=576, executable prices), a 0.15 floor LOST
-    # -21.6% in-sample (pre the 2026-06-06 freeze) and was statistically
-    # indistinguishable from 0.13 out-of-sample (bootstrap 90% CI includes 0).
-    # The +47% at 0.15 seen on one small post-freeze slice did not survive. On
-    # ABSOLUTE profit at flat stake, 0.10 wins (€589 vs €337 at 0.15) — it is the
-    # only floor solidly positive in BOTH periods (+22.5% in / +9.2% out), and
-    # the higher volume beats the noisy high-floor ROI. Do not raise without a
-    # robust out-of-sample edge, not a single favourable window.
-    "1x2":            0.10,
+    # BOT-CONFIG-GOLDEN-MIDDLE-2026-09-08: 0.13, set by scripts/edge_floor_backtest.py
+    # (walk-forward, 3 folds, all price bases). 0.13 is the ONLY 1x2 floor that is
+    # positive in EVERY time fold across EVERY basis: executable all-bots (n=1901)
+    # +8.7%, executable active/calibrated (n=576) +15.7%, and the idealized
+    # fixture-level (n=104k) +14.2%. 0.15 was OVERFIT (a fold went -22%/-13% on
+    # executable data) and 0.10 is NOT robust either (negative in a fold in both
+    # executable views). Re-run the script before changing this — do not chase a
+    # single favourable window (the 0.15 mistake).
+    "1x2":            0.13,
     "o/u":            0.03,   # already profitable at floor — unchanged
     "asian_handicap": 0.05,   # non-monotonic — keep moderate floor
     # BTTS-RETIRED-2026-09-03: shadow BTTS is n=427, ROI -12.76% at prices that

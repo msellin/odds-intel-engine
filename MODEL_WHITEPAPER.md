@@ -961,7 +961,7 @@ Bots create `simulated_bets` for every pick that clears the bot's own edge floor
 
 | Market | Real-money floor | Rationale |
 |---|---|---|
-| 1X2 | 10% | BOT-CONFIG-GOLDEN-MIDDLE: a 2026-09-08 raise to 15% was OVERTURNED by a full-history backtest (placer universe, active/calibrated bots, n=576, executable prices). 15% lost **−21.6% in-sample** and was statistically indistinguishable from 13% out-of-sample (bootstrap 90% CI includes 0); the +47% seen on one small post-freeze slice did not survive. On absolute profit at flat stake, **10% wins (€589 vs €337 at 15%)** and is the only floor solidly positive in both periods (+22.5% / +9.2%). Higher volume beats the noisy high-floor ROI. |
+| 1X2 | **13%** (2026-09-08) | BOT-CONFIG-GOLDEN-MIDDLE: set by `scripts/edge_floor_backtest.py` (walk-forward, 3 folds, all price bases). **13% is the only 1X2 floor positive in EVERY time fold across EVERY basis**: executable all-bots (n=1901) +8.7%, executable active/calibrated (n=576) +15.7%, idealized fixture-level (n=104k) +14.2%. **15% was overfit** (a fold went −22%/−13% on executable data); **10% is not robust either** (negative in a fold in both executable views). A brief hasty raise to 15% was reverted; 13% is the validated middle. |
 | O/U | 3% | Profitable at every floor (≥3%: +3.1% ROI); higher gates lose volume without improving expectation |
 | Asian Handicap | 5% | Edge non-monotonic; flat ROI ~5% across thresholds — moderate floor preserves volume |
 | BTTS | 10% | Backtest negative at ≥3-7% (−5% ROI); needs ≥10% to recover (+2.7% on n=63 — thin, monitored) |

@@ -3870,12 +3870,21 @@ def test_bot_config_golden_middle_1x2_floor():
     is not raised again without a robust out-of-sample edge.
     """
     from workers.automation.coolbet_placer import _MIN_EDGE_BY_MARKET, _min_edge_for
-    assert _MIN_EDGE_BY_MARKET["1x2"] == 0.10, (
-        "the 1x2 placement edge floor moved off 0.10 — a raise needs a robust "
-        "out-of-sample edge (the 0.15 raise was overfit to one window)"
+    assert _MIN_EDGE_BY_MARKET["1x2"] == 0.13, (
+        "the 1x2 placement edge floor moved off 0.13 — the value validated by "
+        "edge_floor_backtest.py as robust in every walk-forward fold and basis. "
+        "0.15 was overfit and 0.10 was not robust; re-run the backtest before changing."
     )
-    assert _min_edge_for("1x2") == 0.10 and _min_edge_for("o/u") == 0.03, (
+    assert _min_edge_for("1x2") == 0.13 and _min_edge_for("o/u") == 0.03, (
         "per-market floor lookup no longer returns the pinned values"
+    )
+    # the backtest tool that set the floor must exist and keep its guardrails
+    import os
+    bt = open(os.path.join(os.path.dirname(__file__), "edge_floor_backtest.py"), encoding="utf-8").read()
+    assert "robust" in bt and "fold" in bt.lower(), "edge_floor_backtest lost its walk-forward folds"
+    assert "STALE-BEST-ODDS" in bt and "DISTINCT ON" in bt, (
+        "edge_floor_backtest dropped the high-water-mark guard (must use latest-per-book, "
+        "never max(odds) over all time)"
     )
 
 
