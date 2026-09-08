@@ -1631,3 +1631,33 @@ grading was wrong. Any future AH work must use the home-perspective convention.
 (Result, once fixed: AH collapses to uniformly negative — see MARKET_DATA_MAP.md
 edge-sweep verdict. This gotcha is why "ah_away_dog +2%" in bot_2d_audit's first
 pass was a bug, not an edge.)
+
+## §54 — Half-goals & match-stat signals: what's real, what's usable (2026-09-08)
+
+From 1H-HT-GOALS (`matches.ht_score_*`/`h2_score_*` now stored) + the match_stats
+coverage audit. Documented per owner request ("if you find signals that could
+improve any market model, document it").
+
+**The 2nd-half goal skew is real and robust — but market-known.** Over 3,837
+matches: 2nd half averages **1.61 goals vs 1.30 in the 1st (+24%)**, **55.3% of
+all goals fall after HT**, and 2H>1H in **44%** of matches vs 30% the other way,
+**consistent across every tier** (2H>1H 41–47%). Useful as a *prior* in any
+first-half/second-half model. NOT an edge by itself: flat-backing 1H 1x2 just
+pays the vig (−9 to −13%), i.e. the books already price the skew.
+
+**The 1H 1x2 market is SHARP.** First-pass discrimination: market AUC **0.63
+(home) / 0.64 (away)** — 1H results are quite predictable and the market prices
+them well. A naive first-half Poisson (rates fit on ~6.5k matches while the HT
+backfill was still filling) scored only ~0.50 and added no OOS info. Verdict
+PENDING a re-run once the full HT backfill (~128k) allows a non-starved rate fit
+— but the bar is high (beat 0.63 + clear vig). See 1H-MODEL-EDGE-TEST.
+
+**Match-stat features are ~31% covered and mostly POST-match.** corners, cards,
+shots, possession, fouls, offsides, saves, passes ≈ 29–32% of finished matches
+(rising toward ~40% as the cov=TRUE backfill runs); **xG and red cards ~15%
+overall (~47% of stat-rows) — xG is top-leagues-only.** Two traps: (1) within
+rows that exist most fields are ~90%+ populated — the gap is match_stats
+*existing*, not fields empty; (2) **shots/possession/xG are match OUTCOMES, not
+pre-match inputs** — they can only feed a pre-match model as aggregated team
+rates/form, never as per-match features. Any model using them needs a fallback
+for the ~60–70% of matches without a stats row.

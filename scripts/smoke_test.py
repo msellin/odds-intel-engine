@@ -474,6 +474,29 @@ def _():
         assert c in mig, f"migration 315 must add {c}"
 
 
+@test("1H-MODEL-EDGE-TEST — fits on TRAIN only, validates held-out, reuses joint-prob")
+def _():
+    import inspect, scripts.first_half_edge_test as m
+    src = inspect.getsource(m)
+    # rates must be fit on TRAIN dates only (no leakage), tested on the later window
+    assert "train = ht[ht.date<=cut_date]" in src and "ht[ht.date>cut_date]" in src, \
+        "must split chronologically and fit rates on TRAIN only"
+    assert "build_joint_matrix" in src and "prob_event" in src, "must reuse the joint-prob machinery"
+    # the two questions BTTS/AH used: discrimination (AUC) + incremental info (nested logit)
+    assert "roc_auc_score" in src and "market vs market+model" in src, \
+        "must test both discrimination AND incremental info beyond the market"
+
+
+@test("MATCH-STATS-BACKFILL — corners+cards together via batched /fixtures, cov=TRUE + NULL-only")
+def _():
+    import inspect, scripts.backfill_match_stats_af as m
+    src = inspect.getsource(m)
+    assert "get_fixtures_batch" in src and "parse_fixture_stats" in src and "store_match_stats" in src, \
+        "must batch 20/call and reuse the real parse+upsert (corners AND cards in one row)"
+    assert "coverage_statistics_fixtures = TRUE" in src, "must only fetch AF-coverage=TRUE leagues"
+    assert "corners_home IS NOT NULL" in src, "must be NULL-only (idempotent, no double-fetch)"
+
+
 @test("settlement — post_mortem bets query runs without error")
 def _():
     from workers.api_clients.db import execute_query
