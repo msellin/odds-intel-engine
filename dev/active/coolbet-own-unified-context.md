@@ -204,3 +204,17 @@ Surface map (2026-09-08): /performance = v10_all(calibrated core) + beta bots (3
   leaves high_roi_global_v2, summer_specialist). Shadow-only = coolbet_value_v1(1x2 OWN),
   coolbet_ou_model_v1(O/U OWN), pin_1x2_home, sweep_ou25, sweep_ou35. Profitable-frame candidates
   btts_all/ah_away_dog/ou15/sweep_1x2_home are RETIRED (frames historical → revival needs strong OOS).
+
+## END GOAL + N-D sweep (owner, 2026-09-08)
+END GOAL: a profitable bot/config in EVERY market (1x2, O/U, BTTS, AH, corners, cards, 1H, ...).
+Reframe: not "salvage each existing bot" but "find a profitable CONFIGURATION per market". A bot is
+a (signal × market × config) point. Search space (>= these axes):
+  market × signal(model|line-shop) × edge% × odds-floor × league-tier × [more]
+Current tool scripts/bot_2d_audit.py sweeps only edge × odds per (bot × market). NEXT: add a TIER
+axis (3D) — mechanism-grounded (lower tiers softer/less efficient; tier-3/4 concentrates losses), so
+a market dead in 2D may have a live frame gated on tier∈{1,2}. Then league-type etc.
+DISCIPLINE (scales with dims): each axis multiplies cells → multiplies spurious frames (2D ~1400
+cells; +tier ~5600). The HELD-OUT OOS split in bot_2d_audit is mandatory at 3-4D, not optional.
+Past ~4 axes the honest instrument is a regularized model (the ensemble already is one), not a grid.
+Connects to: MARKET-EXPANSION (new bettable markets), SHADOW-BOT-CONSOLIDATION (find each market's
+best config), and the (signal × market) bot refactor.
