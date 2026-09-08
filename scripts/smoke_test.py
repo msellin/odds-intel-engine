@@ -1305,6 +1305,47 @@ def _():
 
 # ── AF-VENUES ─────────────────────────────────────────────────────────────────
 
+@test("AF-429-BURST-SHAPE — rate-limit observability + no wasted-budget bursts")
+def test_af_429_burst_shape():
+    """AF-429-BURST-SHAPE (re-scoped 2026-09-06 to P3). The '429 burst' was a
+    grep artefact (AF returns HTTP 200 with a `rateLimit` body, never 429). The
+    real, cheap fixes: (1) log x-ratelimit-* headers, (3) route the body-form
+    throttle through backoff instead of charging quota + losing data, (2) gate
+    the per-fixture /fixtures/events settlement fan-out, (4) count a lineup
+    attempt only AFTER the call completes so a transient throttle can't burn one
+    of the 4 attempts. Pin all four.
+    """
+    import os, re
+    af = open(os.path.join(os.path.dirname(__file__), "..", "workers", "api_clients",
+                           "api_football.py"), encoding="utf-8").read()
+    # (1) headers captured on every response
+    assert "_record_rate_headers" in af and "x-ratelimit" in af, "AF rate headers no longer captured"
+    # (3) body-form throttle detected AND retried (inside the loop, above the charge)
+    assert "_rate_limit_error" in af, "body-form rate-limit detector gone"
+    getfn = af.split("def _get(", 1)[1].split("\ndef ", 1)[0]
+    assert "_rate_limit_error(data)" in getfn and "_sleep_before_retry" in getfn, (
+        "body-form throttle no longer routed through retry/backoff — a rate-limited "
+        "call would charge quota AND lose its data"
+    )
+    # (4) lineup attempt counted AFTER the call, not before
+    lt = open(os.path.join(os.path.dirname(__file__), "..", "workers", "jobs",
+                           "live_tracker.py"), encoding="utf-8").read()
+    seg = lt.split("raw = get_fixture_lineups(af_id)", 1)
+    assert len(seg) == 2, "live_tracker lineup fetch shape changed"
+    before = seg[0].rsplit("try:", 1)[-1]
+    assert "_lineup_attempts[af_id]" not in before, (
+        "lineup attempt is incremented BEFORE the call again — a transient throttle "
+        "would permanently burn one of the 4 attempts"
+    )
+    assert "_lineup_attempts[af_id]" in seg[1][:500], "attempt no longer counted after a completed call"
+    # (2) settlement per-fixture events fallback is budget-gated
+    st = open(os.path.join(os.path.dirname(__file__), "..", "workers", "jobs",
+                           "settlement.py"), encoding="utf-8").read()
+    assert re.search(r"budget\.can_call\(\)[\s\S]{0,500}get_fixture_events", st), (
+        "the per-fixture /fixtures/events settlement fan-out is no longer budget-gated"
+    )
+
+
 @test("AF-VENUES — parse_venue extracts surface and capacity correctly")
 def _():
     from workers.api_clients.api_football import parse_venue

@@ -855,6 +855,7 @@ def fetch_post_match_enrichment() -> dict:
         get_fixture_statistics_halftime, parse_fixture_stats_halftime,
         get_fixture_events, parse_fixture_events,
         get_fixture_players, parse_fixture_players,
+        budget,
     )
 
     counts = {"stats": 0, "halftime": 0, "events": 0, "players": 0, "skipped": 0}
@@ -1007,9 +1008,17 @@ def fetch_post_match_enrichment() -> dict:
         try:
             if batch_fix and batch_fix.get("events"):
                 raw_events = batch_fix["events"]
-            else:
+            elif budget.can_call():
+                # AF-429-BURST-SHAPE #2: gate the per-fixture events fallback.
+                # This fan-out (ungated by AF-WASTE-SETTLEMENT-FANOUT) produced a
+                # 21:01-21:02 burst. Events are post-match enrichment — when the
+                # batch didn't carry them and budget is tight, skip rather than
+                # add a burst of per-fixture calls to a constrained window.
                 raw_events = get_fixture_events(af_id)
-            parsed_events = parse_fixture_events(raw_events)
+            else:
+                raw_events = None
+                counts["skipped"] += 1
+            parsed_events = parse_fixture_events(raw_events) if raw_events else None
             if parsed_events:
                 result["events"] = store_match_events_af(
                     match_id, parsed_events, home_team_api_id=home_api_id

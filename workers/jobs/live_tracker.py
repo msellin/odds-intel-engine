@@ -338,8 +338,12 @@ def _fetch_lineups_for_upcoming(af_id_map: dict[int, dict], dry_run: bool = Fals
             continue
 
         try:
-            _lineup_attempts[af_id] = _lineup_attempts.get(af_id, 0) + 1
             raw = get_fixture_lineups(af_id)
+            # AF-429-BURST-SHAPE #4: count the attempt only AFTER the call
+            # completes (a real AF answer, empty or not). Incrementing before the
+            # call let a transient throttle/timeout — which raises below and never
+            # reached AF — permanently burn one of only _MAX_LINEUP_ATTEMPTS.
+            _lineup_attempts[af_id] = _lineup_attempts.get(af_id, 0) + 1
             if not raw:
                 continue
             parsed = parse_fixture_lineups(raw)
