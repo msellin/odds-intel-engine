@@ -152,3 +152,26 @@ Implication for the control model:
   signal placed at whichever book(s) are enabled + clear the gates. Keep that distinction in the matrix.
 NOTE: Unibet UI placer does not exist yet (UNIBET-KAMBI odds ingest exists; no placer). This is the
 target to build toward, not now.
+
+## SHADOW-BOT-CONSOLIDATION — method (owner, 2026-09-08) + first-pass results
+TWO STEPS per bot:
+1. 2D MATRIX: does any (edge floor × odds floor) frame make it fold-robust profitable?
+   (whole-bot break-even/negative can hide a profitable sub-frame). Guard HARD against
+   overfitting — searching ~42 cells × 34 bots ≈ 1400 chances → spurious "robust" cells.
+   A profitable frame is a LEAD, validate out-of-sample before acting.
+2. COMPLEMENT vs DUPLICATE: does the frame add NEW coverage to /picks (customers) or our
+   Coolbet/Unibet OWN bets, or is it the same games (correlated exposure = no value)?
+   Retire duplicates even if marginally positive; keep complements only if they add coverage
+   AND are placeable at Coolbet/Unibet.
+
+First-pass 2D matrix (shadow_bets settled, fold-robust, n>=80):
+- RETIRE (no frame): dc_value/dc_specialist/dc_strong_fav, aggressive/_v2, ah_home_fav,
+  ou25_global, sweep_btts_yes(-25%), sweep_1x2_draw(-23%), no_pin_home, pin_1x2_draw_tier4,
+  ou35_attacking(-80%), AND the dups opt_home_lower + conservative (91-92% v10, no frame).
+- CORE/KEEP: bot_v10_all (edge>=3%/odds>=1.8 +11% €4451 — IS /picks + Coolbet model-edge);
+  bot_coolbet_value_v1 (line-shop 1x2, OWN).
+- COMPLEMENT CANDIDATES (frame in a market we don't offer — validate OOS + check placeable):
+  btts_all (10%/2.2 +27%), ah_away_dog (13%/2.2 +23%), sweep_ou35 (5%/2.8 +21%),
+  ou15_defensive (3%/2.6 +13%), sweep_1x2_home (13%/2.8 +18%).
+- OVERFIT-SUSPECT (small n, ignore): high_roi_global_v2 (+120%), summer_specialist (+60%).
+These complement candidates are the bridge to MARKET-EXPANSION (BTTS/AH/OU1.5 not offered today).
