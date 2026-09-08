@@ -107,6 +107,17 @@ most mispriced), on the held-out TEST split:
 
 They fail *even the ceiling*; the executable reality is worse.
 
+**Validation (2026-09-08, after the CSVs were questioned):** the BTTS diagnostic
+was independently re-derived straight from the DB (model prob from `predictions`,
+market from `odds_snapshots`) — it reproduced the scratch CSV exactly (model-prob
+corr 0.994, odds corr 1.000, outcomes 100%). The AH diagnostic was rebuilt from
+the DB with outcomes graded from raw scores (no reliance on the CSV `won` column).
+Both verdicts survive at maximum available scale — BTTS's data ceiling is 41,020
+matches (only ~41k finished matches carry a BTTS model prediction; ~28k carry BTTS
+odds), AH's is ~22,720; the model AUC is flat (~0.54 BTTS, ~0.55 AH) across every
+sample size, so it is not a small-n artifact. (100k+ history exists only for the
+core 1x2/O/U markets, not these.)
+
 - **BTTS — THIN at best, do not build.** The only non-negative frame (BTTS-yes,
   odds ≥2.6, +54% pooled) exists only in a 6-week Coolbet window with a 52%
   win-rate at 3.14 odds (breakeven 31.9%) — a price-fidelity artifact, not an
@@ -121,8 +132,14 @@ They fail *even the ceiling*; the executable reality is worse.
   not a wrong-model artifact.
 - **Double Chance — DEAD.** Negative everywhere, both price bases, all selections.
 - **Asian Handicap — DEAD.** Negative everywhere after a grading-sign fix (see
-  ANALYSIS_GOTCHAS AH-HANDICAP-HOME-PERSPECTIVE). An early fake +142% was a bug,
-  not an edge.
+  ANALYSIS_GOTCHAS §53). An early fake +142% was a bug, not an edge.
+  **Discrimination diagnostic (2026-09-08, DB-rebuilt + self-graded from raw
+  scores, n=74,021 home-cover obs / 18,500 matches, all-book consensus):** unlike
+  BTTS, AH margins ARE predictable — but the MARKET owns it. Within-line market
+  AUC 0.70–0.75 vs our model 0.55 (Δ=−0.16), and the model adds ZERO incremental
+  info OOS (nested-logistic 0.5363→0.5365, model coef 0.028 vs market 1.114). A
+  dedicated margin model could lift our 0.55, but the bar is the market's ~0.72
+  and we show no signal it lacks. Not worth building.
 
 **Reconciliation with bot_2d_audit's first pass:** its "btts_all +12%" and
 "ah_away_dog +2%" were both OVERTURNED here — the first is raw/uncalibrated and
