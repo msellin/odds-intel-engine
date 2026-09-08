@@ -4169,6 +4169,43 @@ def _():
 
 
 @test("COOLBET-JWT-DB-BACKED — JWT bootstraps from coolbet_session_state, persists on every login/renew")
+@test("FO-CATEGORY-ENVELOPE — league-scoped event fetch descends into the categories envelope")
+def test_fo_category_envelope():
+    """FO-CATEGORY-ENVELOPE-FIX (2026-09-08). The Coolbet fo-category endpoint
+    now wraps its category list in an envelope {"categories":[{...,"matches":[…]}],
+    "filterUsed":…}. The old parser read `.matches` off the TOP-level dict, which
+    does not exist there, so fetch_events_for_league returned 0 events for EVERY
+    league — silently disabling the league-scoped sweep (run_league_sweep) and
+    forcing the fallback onto cross-league search (the wrong-fixture-price source
+    the COOLBET-INGEST-REWORK epic exists to kill). Pin that the parser now
+    descends into `categories` (and still accepts the legacy bare-list shape).
+    """
+    from workers.automation.coolbet_placer import fetch_events_for_league
+
+    class _Resp:
+        status_code = 200
+        def __init__(self, payload): self._p = payload
+        def json(self): return self._p
+
+    class _FakeSession:
+        def __init__(self, payload): self._p = payload
+        def get(self, *a, **k): return _Resp(self._p)
+
+    match = {"id": 6071792, "home_team_name": "AEK Athens", "away_team_name": "LASK Linz",
+             "match_start": "2026-09-08T16:45:00+00:00", "status": "OPEN", "name": "AEK Athens - LASK Linz"}
+    # the CURRENT envelope shape
+    env = {"categories": [{"id": 19128, "matches": [match]}],
+           "filterUsed": None, "availableFilters": []}
+    ev = fetch_events_for_league(_FakeSession(env), 19128)
+    assert len(ev) == 1 and ev[0]["home"] == "AEK Athens" and ev[0]["away"] == "LASK Linz", (
+        "fetch_events_for_league no longer descends into the categories envelope — "
+        "the league-scoped sweep will silently return 0 events for every league"
+    )
+    # legacy bare-list shape must still parse (defensive)
+    ev2 = fetch_events_for_league(_FakeSession([{"id": 19128, "matches": [match]}]), 19128)
+    assert len(ev2) == 1, "legacy bare-list category shape no longer parses"
+
+
 def test_coolbet_jwt_db_backed():
     """COOLBET-JWT-DB-BACKED (2026-06-12): Imperva 403's /s/auth/login from
     cloud IPs (the VPS) but accepts it from residential IPs (local). Before

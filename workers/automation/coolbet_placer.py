@@ -709,8 +709,22 @@ def fetch_events_for_league(
         return []
     data = resp.json()
     matches: list[dict] = []
-    # Response is a list of category objects, each with a matches[] array.
-    for cat in (data if isinstance(data, list) else [data]):
+    # FO-CATEGORY-ENVELOPE-FIX (2026-09-08): the endpoint now wraps its category
+    # list in an envelope — {"categories":[{...,"matches":[...]}], "filterUsed":…,
+    # "availableFilters":…}. The old code treated the whole dict as ONE category
+    # and read `.matches` off the TOP level, which does not exist there, so it
+    # returned 0 events for EVERY league. That silently disabled the entire
+    # league-scoped sweep (run_league_sweep) and forced the fallback onto
+    # cross-league search/v2 — the source of the wrong-fixture prices this rework
+    # exists to kill. Descend into `categories`; still accept a bare list or a
+    # single category object for older/other shapes.
+    if isinstance(data, dict):
+        cats = data.get("categories")
+        if cats is None:
+            cats = [data]
+    else:
+        cats = data
+    for cat in cats:
         for m in (cat.get("matches") or []):
             if not m.get("id"):
                 continue
