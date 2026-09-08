@@ -3981,6 +3981,22 @@ def test_lineshop_ou_stop():
     )
 
 
+@test("LINESHOP-FAMILY-RETIRED — no generation pass runs for a retired line-shop bot")
+def test_lineshop_family_retired():
+    """LINESHOP-FAMILY-RETIRED-2026-09-08: bot_coolbet_value_v1 (retired mig 317),
+    bot_pin_1x2_home_v1 + bot_sweep_ou25/35_v1 (retired mig 313) all lose OOS.
+    Their generation passes must NOT be called from the pipeline — a retired bot
+    that still writes shadow_bets is pure noise. The pass FUNCTIONS may remain
+    defined (dead), but no CALL site may."""
+    import os, re
+    src = open(os.path.join(os.path.dirname(__file__), "..", "workers", "jobs",
+                            "daily_pipeline_v2.py"), encoding="utf-8").read()
+    for fn in ("_run_coolbet_value_pass", "_run_pin_1x2_shadow_pass", "_run_pin_ou_shadow_pass"):
+        # a call is `fn(today_str...` NOT preceded by 'def '
+        calls = [m for m in re.findall(rf"(def )?{fn}\(today_str", src) if m != "def "]
+        assert not calls, f"{fn} must not be CALLED — its line-shop bot is retired"
+
+
 @test("OU35-MODEL-SHADOW — O/U 3.5 paper bot: single-book gate, calibration, never real-money")
 def test_ou35_model_shadow():
     """OU35-MODEL-SHADOW-BOT (2026-09-08): forward paper tracker for the O/U 3.5

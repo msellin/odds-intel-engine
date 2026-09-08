@@ -3964,14 +3964,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             _run_sweep_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=False)
         except Exception as _e:
             console.print(f"[yellow]Sweep shadow bots failed (non-critical): {_e}[/yellow]")
-        try:
-            _run_pin_ou_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=False)
-        except Exception as _e:
-            console.print(f"[yellow]Pin-OU shadow bots failed (non-critical): {_e}[/yellow]")
-        try:
-            _run_pin_1x2_shadow_pass(today_str, _shadow_cohort_tag, notify_telegram=False)
-        except Exception as _e:
-            console.print(f"[yellow]Pin-1X2 shadow bots failed (non-critical): {_e}[/yellow]")
+        # LINESHOP-FAMILY-RETIRED-2026-09-08: the pin-OU (bot_sweep_ou25/35_v1) and
+        # pin-1x2 (bot_pin_1x2_home_v1) line-shop shadow passes are stopped — those
+        # bots were retired in migration 313 (line-shop loses OOS) but their
+        # generation was left running, writing noise shadow_bets for retired bots.
         # COOLBET-LINESHOP-BOT-RETIRED-2026-09-08: the line-shop bot
         # (bot_coolbet_value_v1) is retired — line-shop loses out-of-sample and the
         # two model-edge bots (ou_model / 1x2_model) are the real-money path now.
@@ -4084,14 +4080,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             _run_sweep_shadow_pass(today_str, "morning", notify_telegram=True)
         except Exception as e:
             console.print(f"[yellow]Sweep shadow bots failed (non-critical): {e}[/yellow]")
-        try:
-            _run_pin_ou_shadow_pass(today_str, "morning", notify_telegram=True)
-        except Exception as e:
-            console.print(f"[yellow]Pin-OU shadow bots failed (non-critical): {e}[/yellow]")
-        try:
-            _run_pin_1x2_shadow_pass(today_str, "morning", notify_telegram=True)
-        except Exception as e:
-            console.print(f"[yellow]Pin-1X2 shadow bots failed (non-critical): {e}[/yellow]")
+        # LINESHOP-FAMILY-RETIRED-2026-09-08: pin-OU (sweep_ou25/35) + pin-1x2
+        # (pin_1x2_home) line-shop shadow passes stopped — bots retired in mig 313.
         # COOLBET-LINESHOP-BOT-RETIRED-2026-09-08: line-shop generation stopped
         # (bot_coolbet_value_v1 retired; model-edge bots are the real-money path).
 
