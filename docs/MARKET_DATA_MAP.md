@@ -110,7 +110,15 @@ They fail *even the ceiling*; the executable reality is worse.
 - **BTTS — THIN at best, do not build.** The only non-negative frame (BTTS-yes,
   odds ≥2.6, +54% pooled) exists only in a 6-week Coolbet window with a 52%
   win-rate at 3.14 odds (breakeven 31.9%) — a price-fidelity artifact, not an
-  edge. Dies under calibration (−3.1%).
+  edge. Dies under calibration (−3.1%). **Discrimination diagnostic (2026-09-08,
+  n=16,505 held-out): NOT a fixable derivation problem.** Our model's BTTS AUC is
+  0.540 vs the market's 0.588 (we under-rank), and adding our model to the market
+  price gives ZERO incremental info out-of-sample (nested-logistic TEST log-loss
+  0.6788→0.6791, model coef 0.089 vs market 0.846). A dedicated BTTS head could
+  close the 0.540→0.588 gap but the market itself is barely above a coin (0.588),
+  so the best realistic outcome is "match a market we can't even anchor" (no
+  Pinnacle BTTS). It's genuine near-efficiency + intrinsic BTTS unpredictability,
+  not a wrong-model artifact.
 - **Double Chance — DEAD.** Negative everywhere, both price bases, all selections.
 - **Asian Handicap — DEAD.** Negative everywhere after a grading-sign fix (see
   ANALYSIS_GOTCHAS AH-HANDICAP-HOME-PERSPECTIVE). An early fake +142% was a bug,
