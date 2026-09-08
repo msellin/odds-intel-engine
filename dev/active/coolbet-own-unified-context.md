@@ -175,3 +175,13 @@ First-pass 2D matrix (shadow_bets settled, fold-robust, n>=80):
   ou15_defensive (3%/2.6 +13%), sweep_1x2_home (13%/2.8 +18%).
 - OVERFIT-SUSPECT (small n, ignore): high_roi_global_v2 (+120%), summer_specialist (+60%).
 These complement candidates are the bridge to MARKET-EXPANSION (BTTS/AH/OU1.5 not offered today).
+
+## FUTURE: N-D gate search (owner idea, 2026-09-08)
+2D (edge × odds) is the foundation; extend to 3D/4D someday with axes like tier (1-4),
+time-to-KO, league type (friendlies vs domestic), Pinnacle anchor-gap. Real signal exists
+(e.g. 1x2-home edge was mostly friendlies + one hot month — a league-type axis isolates it;
+tier-3/4 concentrates the bleed). CAVEAT that scales with dimensionality: more axes → more
+cells → more spurious "robust" frames (2D was already ~1400 cells → the +120% artifact; 4D
+could be tens of thousands). Rule at 3D/4D: axes must be MECHANISM-grounded hypotheses, not
+blind grid, and validated on a HELD-OUT window (not just time-folds). Past ~2 axes the honest
+tool is a regularized model (the ensemble already is one), not a finer grid.
