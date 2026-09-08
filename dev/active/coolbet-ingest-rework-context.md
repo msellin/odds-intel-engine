@@ -80,3 +80,29 @@ FIX (build order): harden the matcher FIRST, THEN enable skipping.
   join is one-time, and build a Coolbet-team -> AF-team-id alias table over time.
 - near-term filter: drop Coolbet events with start > horizon (skips the 460 future).
 - only AFTER matcher hardened is "unmatched => genuinely AF-absent => skip" safe.
+
+## WALK-SWEEP BUILT + LIVE-VALIDATED 2026-09-08
+- run_board_sweep + enumerate_coolbet_football_categories + coolbet_matching module shipped.
+- --board / --horizon-hours entrypoint added (default run_bulk unchanged; nothing flipped).
+- LIVE run (18h horizon): 7,306 rows / 97 matches in ~31 min. Recovered games got CORRECT
+  prices (Cardiff 2.15 vs Pin 2.17; Bolton 5.25 vs 5.28; Sunderland 1.72 vs 1.71 — favourites agree).
+  vs run_bulk baseline: 61 upcoming matches, 197min-13h staleness. Board sweep: +59% coverage,
+  ~31min staleness, FP-free (country-blocked), no wasted calls on unmatchable fixtures.
+- html.unescape fix in norm_team ('Havant &amp; Waterlooville' junk 'amp' token).
+
+## "ABSENT" RE-VERIFIED (owner challenge — naive classifier had wrongly flagged Stoke)
+- The "~43 absent" was NOT reliable. Hardened-matcher residual (~55 near-term unmatched):
+  ~40 TRULY-ABSENT (bottom-tier Finnish Nelonen/Kolmonen + reserve/U21 — AF doesn't know the
+  teams, no anchor, unbettable); a few genuine misses AF HAS (Havant-Chippenham, Al-Ittihad)
+  recoverable via name handling; my own verification method also over-counted (Rangers->U21 false hit).
+- DESIGN RULE CONFIRMED: never mark a game permanently "absent". run_board_sweep leaves unmatched
+  events unstored and RETRIES next cycle; a negative-cache (layer 2) must use backoff, never permanent.
+
+## REMAINING
+- THE FLIP (real-money feed): point launchd com.oddsintel.coolbet-odds-snapshot at
+  `--board --horizon-hours <N>`. Duration/horizon tradeoff: 18h~31min/97, 48h~longer. Pick a
+  horizon that fits the ~30min cadence (or add batching = COOLBET-SWEEP-ARCHITECTURE later).
+  CHECKPOINT: operator-facing launchd reload — get explicit go-ahead.
+- Then: SWEEP-ARCHITECTURE (batch/re-sort for even fresher near-KO), INGEST-HARDENING
+  (output-based health, canonical vocab), NEGATIVE-CACHE layer 2 (retry queue). FUZZY-MATCH-FP
+  effectively solved by country blocking.

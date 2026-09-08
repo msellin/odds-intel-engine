@@ -37,8 +37,9 @@
         <string>/opt/homebrew/bin/python3</string>
         <string>-m</string>
         <string>workers.automation.coolbet_explorer</string>
-        <string>--days</string>
-        <string>2</string>
+        <string>--board</string>
+        <string>--horizon-hours</string>
+        <string>24</string>
     </array>
 
     <key>WorkingDirectory</key>

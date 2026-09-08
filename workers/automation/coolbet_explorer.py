@@ -1431,12 +1431,22 @@ def _is_virtual_category(name: str | None) -> bool:
 
 def enumerate_coolbet_football_categories(session: "CoolbetSession") -> list[dict]:
     """Walk Coolbet's fo-tree and return every real (non-virtual) football leaf
-    category as {id, name}. This is the whole board's index in ONE request."""
-    try:
-        resp = session.get(_FO_TREE_URL, params={"country": "EE"})
-        tree = resp.json()
-    except Exception as e:
-        log.warning("fo-tree unavailable (%s) — cannot enumerate the board", e)
+    category as {id, name}. This is the whole board's index in ONE request —
+    which makes it a single point of failure for the whole board sweep, so the
+    fetch is RETRIED: an Imperva-fronted endpoint throws transient 30s read
+    timeouts under load, and a single miss must not silently zero a whole pass."""
+    tree = None
+    for attempt in range(3):
+        try:
+            resp = session.get(_FO_TREE_URL, params={"country": "EE"})
+            tree = resp.json()
+            break
+        except Exception as e:
+            log.warning("fo-tree fetch failed (attempt %d/3): %s", attempt + 1, e)
+            if attempt < 2:
+                time.sleep(3 * (attempt + 1))
+    if tree is None:
+        log.error("fo-tree unreachable after 3 attempts — board NOT enumerated this pass")
         return []
 
     def _find_football(node: dict):
@@ -1512,7 +1522,12 @@ def run_board_sweep(
 
     cats = enumerate_coolbet_football_categories(session)
     if not cats:
-        console.print("[yellow]Board sweep: no categories enumerated.[/yellow]")
+        # Loud, not silent: an empty enumeration means the whole pass wrote
+        # nothing, which starves the placement price feed. Surface it as an
+        # ERROR so log/output monitoring catches it (the next :03/:33 run retries).
+        log.error("Board sweep enumerated 0 categories — NO Coolbet odds written this pass "
+                  "(fo-tree unreachable). Feed will be stale until the next pass succeeds.")
+        console.print("[red]Board sweep: no categories enumerated — nothing written.[/red]")
         return c
     af = _load_af_candidates(horizon_hours)
     log.info("Board sweep — %d Coolbet categories, %d AF candidate fixtures (horizon %.0fh)",
