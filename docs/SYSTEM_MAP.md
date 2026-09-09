@@ -38,6 +38,14 @@ ruler each bot uses.
 more margin from longshots than a naive proportional de-vig, which matters for 3-way
 1x2). See `docs/BETTING_GATE_DECISIONS.md` for how the model floors were decided.
 
+> **The two anchors are NOT fully independent.** The model *itself* ingests Pinnacle
+> as input features (`pinnacle_home/draw/away_odds` + sharp-consensus in
+> `workers/model/features.py`), so `cal_prob` is already sharp-**informed** — the
+> sharp line is an ingredient of the model number, not a separate opinion. Consequence
+> for the trigger head-to-head: where the model and sharp anchors agree, part of that
+> is the model "knowing" Pinnacle; the sharp anchor's distinct value is where it
+> **disagrees** with the model (Coolbet beats Pinnacle on a pick the model didn't flag).
+
 ---
 
 ## 2. Every active bot, by family
