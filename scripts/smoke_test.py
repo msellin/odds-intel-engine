@@ -4798,6 +4798,26 @@ def test_coolbet_account_verify_gate():
     return "fails closed on unverified account; reconciles on verify; skips held bets"
 
 
+@test("PLACER-RECONCILE-ATTRIB — reconciled manual bets attributed to the placeable bot")
+def test_placer_reconcile_attrib():
+    """PLACER-RECONCILE-ATTRIB-2026-09-09: a manually-placed Coolbet ticket usually
+    matches BOTH a reference bot's pick (bot_v10_all, simulated_bets) and the
+    PLACEABLE bot's mirror (bot_coolbet_ou_model_v1, shadow_bets). The reconcile
+    picks one candidate; if it's the reference bot, the real-money card's 'placed
+    today' (filtered by the placeable bot's id) misses the manual bet and shows
+    'placed 1' when the account holds 3. Pin that the reconcile re-attributes to a
+    PLACEABLE bot when one holds the same canonical bet on the same fixture."""
+    import inspect
+    from scripts import place_coolbet_ui as m
+    src = inspect.getsource(m.reconcile_account_to_real_bets)
+    assert "_placeable_bot_ids" in src, "reconcile must know which bots are placeable"
+    assert "PLACEABLE_BOTS" in src, "placeable ids must come from PLACEABLE_BOTS"
+    # the override must be gated on same match + same canonical bet, not blind.
+    assert "canon_bet(c.get(\"market\"), c.get(\"selection\")) == canon" in src, (
+        "re-attribution must require the placeable bot to hold the SAME canonical bet"
+    )
+
+
 @test("2D-GATE-PER-MARKET-ODDS-FLOOR — placer odds floor is per-market, both paths")
 def test_2d_gate_per_market_odds_floor():
     """2D-GATE-PER-MARKET-ODDS-FLOOR (2026-09-08): the placement PRICE floor used
@@ -4818,6 +4838,16 @@ def test_2d_gate_per_market_odds_floor():
     )
     assert _min_odds_for("o/u") == 1.80 and _min_odds_for("O/U") == 1.80, "O/U lookup/case"
     assert _min_odds_for("1x2") == 2.80, "1x2 lookup"
+    # PLACER-OU-VOCAB-FLOOR-2026-09-09: the O/U MODEL bot writes picks as
+    # `over_under_25` / `over_under_35`, but the floor maps key O/U as `o/u`.
+    # Before the _canon_market fix, `_min_odds_for('over_under_25')` fell through
+    # to the 2.80 default and the placer silently rejected the whole 1.80-2.80
+    # O/U band (median price ~2.15) — caught live 2026-09-09 skipping a +8% @2.42.
+    # These MUST resolve identically to the canonical `o/u`.
+    from workers.automation.coolbet_placer import _min_edge_for
+    for mk in ("over_under_25", "over_under_35", "OVER_UNDER_25", "ou"):
+        assert _min_odds_for(mk) == 1.80, f"{mk} odds floor must canonicalise to O/U 1.80, not 2.80"
+        assert abs(_min_edge_for(mk) - 0.08) < 1e-9, f"{mk} edge floor must canonicalise to O/U 0.08"
     # Unknown / retired / None fall back to the CONSERVATIVE default (2.80), never
     # a lower one — a market with no evidence must not get a looser gate.
     assert _min_odds_for("btts") == 2.80 and _min_odds_for(None) == 2.80 and \

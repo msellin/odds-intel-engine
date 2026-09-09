@@ -108,13 +108,34 @@ _MIN_EDGE_BY_MARKET: dict[str, float | None] = {
 }
 
 
+def _canon_market(market: str | None) -> str | None:
+    """Normalise a pick's market vocabulary to the canonical floor keys used by
+    `_MIN_EDGE_BY_MARKET` / `_MIN_ODDS_BY_MARKET`.
+
+    PLACER-OU-VOCAB-FLOOR-2026-09-09: the O/U model bot writes picks as
+    `over_under_25` / `over_under_35` (the line-shop vocab), but the floor maps
+    key O/U as `o/u`. Without this, `_min_odds_for('over_under_25')` fell through
+    to the 2.80 default instead of the validated 1.80, so the placer silently
+    rejected the entire 1.80-2.80 O/U band (median O/U price ~2.15) — exactly the
+    REALMONEY-ODDS-BAND-MISMATCH the 2D-GATE fix was meant to end, re-emerging
+    through the vocab gap. Caught live 2026-09-09 (a clean +8% O/U @ 2.42 skipped
+    as 'below floor 2.80')."""
+    if not market:
+        return market
+    m = str(market).lower()
+    if m.startswith("over_under") or m == "ou":
+        return "o/u"
+    return m
+
+
 def _min_edge_for(market: str | None) -> float:
     """Per-market edge floor (decimal fraction). Returns `math.inf` for
     retired markets so any comparison `edge >= floor` is False. Unknown
-    markets fall back to `_MIN_EDGE` (global default). Lowercase-matches."""
+    markets fall back to `_MIN_EDGE` (global default). Canonicalises the
+    market vocab first (see `_canon_market`)."""
     if not market:
         return _MIN_EDGE
-    val = _MIN_EDGE_BY_MARKET.get(str(market).lower(), _MIN_EDGE)
+    val = _MIN_EDGE_BY_MARKET.get(_canon_market(market), _MIN_EDGE)
     if val is None:
         return float("inf")
     return val
@@ -158,7 +179,7 @@ def _min_odds_for(market: str | None) -> float:
     default = float(os.getenv("COOLBET_MIN_ODDS", "2.80"))
     if not market:
         return default
-    return _MIN_ODDS_BY_MARKET.get(str(market).lower(), default)
+    return _MIN_ODDS_BY_MARKET.get(_canon_market(market), default)
 
 
 # CHERRY-PICK-PLACER (2026-06-01) — gate the placer's bet loaders by the

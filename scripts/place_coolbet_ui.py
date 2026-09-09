@@ -569,6 +569,24 @@ def reconcile_account_to_real_bets(norms: list[dict]) -> int:
     if not candidates:
         return 0
 
+    # PLACER-RECONCILE-ATTRIB-2026-09-09: a manual ticket usually matches BOTH a
+    # reference bot's pick (bot_v10_all in simulated_bets) and the PLACEABLE bot's
+    # mirror (bot_coolbet_ou_model_v1 in shadow_bets). match_coolbet_to_simulated
+    # returns just one, and if it's the reference bot the real-money card's
+    # "placed today" (filtered by the placeable bot's id) misses the manual bet —
+    # the operator sees "placed 1" when the account holds 3. So when a PLACEABLE
+    # bot has the SAME canonical bet on the same fixture, attribute the reconciled
+    # row to it, so the real-money count reflects the account.
+    _placeable_bot_ids: set[str] = set()
+    try:
+        _pb = execute_query(
+            "SELECT id::text AS id FROM bots WHERE name = ANY(%s)",
+            [list(PLACEABLE_BOTS)],
+        )
+        _placeable_bot_ids = {r["id"] for r in (_pb or [])}
+    except Exception:
+        _placeable_bot_ids = set()
+
     inserted = 0
     for norm in norms:
         matched = match_coolbet_to_simulated(norm, candidates)
@@ -580,6 +598,16 @@ def reconcile_account_to_real_bets(norms: list[dict]) -> int:
         canon = canon_bet(matched.get("market"), matched.get("selection"))
         if canon is None:
             continue
+        # Prefer a placeable bot's pick for the same fixture bet (see above).
+        if matched.get("bot_id") not in _placeable_bot_ids:
+            for c in candidates:
+                if (
+                    c.get("match_id") == matched["match_id"]
+                    and c.get("bot_id") in _placeable_bot_ids
+                    and canon_bet(c.get("market"), c.get("selection")) == canon
+                ):
+                    matched = {**matched, "bot_id": c["bot_id"]}
+                    break
         # Idempotent: skip if real_bets already holds this canonical bet on the
         # match (match_exposure canonicalises BOTH vocabularies, so a row
         # written by either placer is recognised).
