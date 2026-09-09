@@ -31,13 +31,21 @@ import time
 log = logging.getLogger(__name__)
 
 CDP_URL = os.getenv("UNIBET_CHROME_CDP_URL", "http://localhost:9222")
-LOGIN_URL = "https://www.unibet.ee/login"
-SPORT_URL = "https://www.unibet.ee/betting/odds/football/matches"
-_MYACCOUNT = "myaccount"
+# NB: there is NO /login page on unibet.ee — it 404s. Login is a MODAL opened by the
+# header login button. Navigate to the sportsbook, then open the modal.
+SPORT_URL = "https://www.unibet.ee/betting/odds"
 
-# The spending-limit interstitial. Estonian "Ei, aitäh" = "No, thanks" (declines the
-# limit prompt — a benign dismissal, not a consent). We also accept the X/close.
+# Stable login-modal selectors (data-test-name — the site uses these, not hashed classes)
+_LOGIN_OPEN = '[data-test-name="header-login-button"]'
+_LOGIN_USER = '[data-test-name="kaf-username-email-field"]'
+_LOGIN_PASS = '[data-test-name="kaf-password-field"]'
+_LOGIN_SUBMIT = '[data-test-name="kaf-submit-credentials-button"]'
+
+# The spending-limit interstitial ("Panustamise limiit"). "Ei, aitäh" = "No, thanks"
+# (declines the limit prompt — a benign dismissal), Escape also closes it.
 _DISMISS_TEXT = re.compile(r"ei,?\s*aitäh|hiljem|sulge", re.I)
+# OneTrust cookie banner — reject non-essential (privacy-preserving) so it stops blocking.
+_COOKIE_REJECT = re.compile(r"lükka kõik tagasi", re.I)
 # A logged-in page shows the balance "Põhisaldo … 100,00 €"; the login page shows a
 # password field. Either is a reliable state signal.
 _BALANCE_RE = re.compile(r"Põhisaldo|Bonus\s*€|\d{1,3},\d{2}\s*€")
@@ -62,6 +70,20 @@ def _unibet_page(ctx, *, navigate: bool = False):
     if navigate:
         pg.goto(SPORT_URL, wait_until="domcontentloaded", timeout=30000)
     return pg
+
+
+def dismiss_cookie_banner(page) -> bool:
+    """Reject non-essential cookies (OneTrust) if the banner is present — privacy-
+    preserving, and it otherwise overlays the login modal. Best-effort."""
+    try:
+        btn = page.get_by_text(_COOKIE_REJECT).first
+        if btn.count() > 0 and btn.is_visible(timeout=1500):
+            btn.click(timeout=2000)
+            page.wait_for_timeout(800)
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def dismiss_limit_modal(page, *, tries: int = 3) -> bool:
@@ -106,6 +128,42 @@ def is_logged_in(page) -> bool:
         return False
 
 
+def login_via_modal(page, *, max_wait_s: int = 180) -> bool:
+    """Do the modal login on an EXISTING page (no playwright management, so it is safe
+    to call from inside another playwright context, e.g. the placer). Reads creds from
+    the environment (UNIBET_USER/UNIBET_PASS, or the _EMAIL/_PASSWORD aliases). Returns
+    True once logged in. The operator completes any SMS/2FA in the browser."""
+    email = os.getenv("UNIBET_USER") or os.getenv("UNIBET_EMAIL")
+    pw_val = os.getenv("UNIBET_PASS") or os.getenv("UNIBET_PASSWORD")
+    if not email or not pw_val:
+        print("unibet-login: UNIBET_USER / UNIBET_PASS not set in .env — cannot auto-login")
+        return False
+    try:
+        page.goto(SPORT_URL, wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(3000)
+        dismiss_cookie_banner(page)
+        dismiss_limit_modal(page)
+        if page.locator(_LOGIN_USER).count() == 0:
+            page.locator(_LOGIN_OPEN).first.click(timeout=5000)
+        page.wait_for_selector(_LOGIN_USER, timeout=8000)
+        page.locator(_LOGIN_USER).first.fill(email, timeout=8000)
+        page.locator(_LOGIN_PASS).first.fill(pw_val, timeout=8000)
+        page.locator(_LOGIN_SUBMIT).first.click(timeout=5000)
+        print("unibet-login: submitted; watching for logged-in "
+              f"(up to {max_wait_s}s; complete SMS/2FA in the browser if asked)")
+    except Exception as e:  # noqa: BLE001
+        log.warning("unibet-login: modal login failed (%s)", e)
+        return False
+    import time as _t
+    deadline = _t.time() + max_wait_s
+    while _t.time() < deadline:
+        page.wait_for_timeout(2500)
+        if is_logged_in(page):
+            dismiss_limit_modal(page)
+            return True
+    return False
+
+
 def cdp_auto_login(*, max_wait_s: int = 180) -> int:
     """Ensure unibet.ee is logged in in the operator's CDP-Chrome.
 
@@ -137,46 +195,14 @@ def cdp_auto_login(*, max_wait_s: int = 180) -> int:
         except Exception:
             pass
 
-        email = os.getenv("UNIBET_EMAIL")
-        pw_val = os.getenv("UNIBET_PASSWORD")
-        if not email or not pw_val:
-            print("unibet-login: UNIBET_EMAIL / UNIBET_PASSWORD not set in .env — "
-                  "cannot auto-login. (already-logged-in path still works.)")
+        # .env uses UNIBET_USER / UNIBET_PASS (aliases accepted by login_via_modal).
+        if not (os.getenv("UNIBET_USER") or os.getenv("UNIBET_EMAIL")) or \
+           not (os.getenv("UNIBET_PASS") or os.getenv("UNIBET_PASSWORD")):
+            print("unibet-login: UNIBET_USER / UNIBET_PASS not set in .env — cannot auto-login")
             return 2
-
-        try:
-            page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(2500)
-            dismiss_limit_modal(page)
-            # Selectors are best-effort against unibet.ee's bespoke form; refined when
-            # a real logged-out form is observed. Try common shapes, most specific first.
-            user_sel = ('input[name="username" i], input[name="email" i], '
-                        'input[type="email"], input[autocomplete="username"]')
-            pass_sel = 'input[type="password"], input[name="password" i]'
-            page.locator(user_sel).first.fill(email, timeout=8000)
-            page.locator(pass_sel).first.fill(pw_val, timeout=8000)
-            # submit: the login button, else Enter
-            try:
-                page.get_by_role("button", name=re.compile(r"logi sisse|sisene|login", re.I)).first.click(timeout=4000)
-            except Exception:
-                page.locator(pass_sel).first.press("Enter")
-            print("unibet-login: submitted; watching for logged-in state "
-                  f"(up to {max_wait_s}s; complete SMS/2FA in the browser if asked)")
-        except Exception as e:  # noqa: BLE001
-            log.warning("unibet-login: form fill failed (%s) — selectors may need "
-                        "refinement against the live form", e)
-            return 5
-
-        deadline = time.time() + max_wait_s
-        while time.time() < deadline:
-            page.wait_for_timeout(2500)
-            try:
-                if is_logged_in(page):
-                    dismiss_limit_modal(page)
-                    print("unibet-login: logged in ✓")
-                    return 0
-            except Exception:
-                pass
+        if login_via_modal(page, max_wait_s=max_wait_s):
+            print("unibet-login: logged in ✓")
+            return 0
         print("unibet-login: could not confirm login within timeout")
         return 5
 

@@ -4068,6 +4068,26 @@ def test_pick_triggers_stage_a():
     assert "pick_triggers" in mig and "min_odds" in mig and "max_odds" in mig, "migration 319 defines the table"
 
 
+@test("UNIBET-PLACER-STAKE-AND-SAFETY — €10 flat stake + fail-closed gates")
+def test_unibet_placer():
+    """UNIBET-UI-PLACER (2026-09-09): the Unibet bet-slip driver. Pin: (1) €10 flat
+    stake like Coolbet; (2) it fails closed (must be logged in, single-leg guarantee,
+    live-odds eligibility gate before placing); (3) execute=False is PAPER (stages,
+    never clicks Tee panus). Source-inspection — the driver hits the real site."""
+    import inspect
+    from workers.automation import unibet_placer as up
+    assert up.STAKE_EUR == 10.0, "Unibet stake must be €10 flat, matching Coolbet"
+    src = inspect.getsource(up.place_bet)
+    assert "if not execute:" in src and "PAPER" in src, "execute=False must stage, not place"
+    assert "is_logged_in" in src and "refusing to place" in src, "must fail closed if not logged in"
+    assert "single leg" in src.lower() or "len(legs) != 1" in src, "single-leg guarantee required"
+    assert "min_odds" in src and "not eligible" in src, "must re-check eligibility at live odds"
+    from workers.automation import unibet_browser_sync as ubs
+    # login is a modal (no /login page — it 404s); creds from UNIBET_USER/UNIBET_PASS
+    lsrc = inspect.getsource(ubs.login_via_modal)
+    assert "UNIBET_USER" in lsrc and "kaf-submit-credentials-button" in lsrc, "modal login + real selectors"
+
+
 @test("BETA-BOTS-RETIRED — dead beta bots (dnb, summer) retired by migration 323")
 def test_beta_bots_retired():
     """BETA-BOT-AUDIT 2026-09-09: the gradeability sweep found bot_dnb_specialist
