@@ -165,6 +165,14 @@ book, with one placement-of-record — adding a 3rd book is config, not a rewrit
    ONE placement-of-record  (real_bets, with `bookmaker` + a proof flag)        │  ← no phantom rows
 ```
 
+**Router decision rule (owner, 2026-09-09) — verbatim, the invariant to enforce:**
+for each `(match, market, selection)`:
+1. both books have a gate-clearing price → place **once**, at the **better** price;
+2. only one book has a price (or only one clears) → place **once**, at that book;
+3. **never two bets on the same `(match, market, selection)`** — a cross-book exposure
+   check runs before every placement (`match_exposure`/`real_bets` span books), so once
+   it is placed at either book the other is blocked.
+
 Design rules for the target:
 - **One canonical market vocabulary** (`1x2`/home,draw,away · `over_under_25`/over,under · …) used by
   every writer and reader. Kill the `o/u`↔`over_under_25`↔`over 2.5` triple-spelling. A single
