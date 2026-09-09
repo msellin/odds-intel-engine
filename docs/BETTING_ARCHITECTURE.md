@@ -165,6 +165,19 @@ book, with one placement-of-record — adding a 3rd book is config, not a rewrit
    ONE placement-of-record  (real_bets, with `bookmaker` + a proof flag)        │  ← no phantom rows
 ```
 
+**Gate on PER-PLACEABLE-BOOK edge, not best-accessible (owner, 2026-09-09).** Today the
+mirror jobs gate on `simulated_bets.edge_percent` = edge at the MAX odds across ALL accessible
+books (Coolbet, Betano, Unibet, Epicbet) — but we only place at some of them. Two picks get
+missed: (1) the best book is Betano/Epicbet @≥13% but Coolbet is <13% → mirror passes, placer
+live-re-check skips → placed nowhere; (2) best-accessible is Coolbet @<13% → not mirrored →
+shown on /picks, placed nowhere. Both are picks a PLACEABLE book might have taken. The router
+fixes it: for each pick, compute the edge at EACH placeable book's OWN live odds; place at any
+book that clears the floor (edge ≥ 13%/8% ⟺ odds ≥ that book's `min_odds`), choosing the best
+such price. Gate = `max(edge@Coolbet, edge@Unibet) ≥ floor`, on live per-book odds — NOT the
+best-accessible edge. This is also what lets a soft book rescue a sub-floor reference pick
+(Derby: 11% at reference, Grade-A at Unibet 3.50). (The /picks 8–13% display gap is a separate,
+honesty concern → PICKS-GRADING-ROLLOUT.)
+
 **Router decision rule (owner, 2026-09-09) — verbatim, the invariant to enforce:**
 for each `(match, market, selection)`:
 1. both books have a gate-clearing price → place **once**, at the **better** price;
