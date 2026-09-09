@@ -200,14 +200,45 @@ def cdp_auto_login(*, max_wait_s: int = 300) -> int:
         page.goto(LOGIN_PAGE, wait_until="domcontentloaded", timeout=20000)
         page.wait_for_timeout(2000)
 
-        # If we're already logged in (no login form), report and exit.
-        # Heuristic: the login page shows "Logi sisse" as a submit button;
-        # if we don't find it after a brief wait, assume logged in.
+        # If we're already logged in, the login form (email field) is absent —
+        # BUT absence alone is NOT proof of login. An Imperva wall, a changed
+        # email selector, or a slow render also produce no email field, and
+        # treating that as "logged in" made the placer loop forever (this
+        # returns 0 → caller finds no JWT via is_logged_in() → aborts → the
+        # daemon restarts → repeat). So require a POSITIVE signal: a live cbauth
+        # JWT in localStorage (the exact token the placer needs). No email field
+        # AND no valid JWT ⇒ the login form did not render — surface it as a real
+        # failure with the operator remedy, don't fake success.
         try:
             page.wait_for_selector("input[type='email'], input[name='email']", timeout=5000)
         except Exception:
-            print("✓ Already logged in (no email field on page)")
-            return 0
+            jwt = None
+            try:
+                store = page.evaluate(
+                    "() => Object.fromEntries(Object.keys(localStorage)"
+                    ".map(k => [k, localStorage.getItem(k)]))"
+                ) or {}
+                for k in _JWT_LOCALSTORAGE_KEYS:
+                    v = store.get(k)
+                    if not v:
+                        continue
+                    tok = v[7:] if isinstance(v, str) and v.startswith("Bearer ") else v
+                    if _looks_like_jwt(tok) and _jwt_still_valid(tok):
+                        jwt = tok
+                        break
+            except Exception:
+                pass
+            if jwt:
+                print("✓ Already logged in (valid cbauth JWT present)")
+                return 0
+            print("✗ login form did not render AND no valid cbauth JWT in "
+                  "localStorage — the Coolbet session is logged OUT and the login "
+                  "page is not showing the email field (likely an Imperva challenge "
+                  "or a changed selector). NOT assuming logged in. Fix: open "
+                  "coolbet.com/et/login in a FOREGROUND CDP-Chrome (:9222) window "
+                  "and log in by hand (complete SMS/Imperva); the JWT then lands in "
+                  "localStorage['cbauth'] and the placer recovers.")
+            return 5
 
         print("  Filling login form…")
         try:

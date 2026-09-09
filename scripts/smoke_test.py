@@ -5453,6 +5453,28 @@ def test_coolbet_no_auto_login():
     )
 
 
+@test("COOLBET-LOGIN-NO-FALSE-POSITIVE — cdp_auto_login requires a JWT, not just a missing email field")
+def test_coolbet_login_no_false_positive():
+    """COOLBET-LOGIN-FALSE-POSITIVE-FIX (2026-09-09): cdp_auto_login treated a
+    missing email field as 'already logged in' and returned 0 — but the field is
+    also absent on a stale/walled page, so the placer looped (return 0 → caller's
+    is_logged_in() fails → abort → retry forever) with no JWT. The no-email branch
+    must now VERIFY a live cbauth JWT before claiming success, and surface a real
+    failure (non-zero) otherwise."""
+    import inspect
+    from workers.automation import coolbet_browser_sync as m
+    src = inspect.getsource(m.cdp_auto_login)
+    # the no-email branch must consult the JWT keys + validity, not blindly succeed
+    assert "_JWT_LOCALSTORAGE_KEYS" in src and "_jwt_still_valid" in src, (
+        "the 'no email field' branch must verify a real cbauth JWT before returning success"
+    )
+    assert "return 5" in src, "no email field AND no valid JWT must be a real failure, not return 0"
+    # the old blind success string must be gone
+    assert "Already logged in (no email field on page)" not in src, (
+        "the false-positive 'no email field = logged in' path must be removed"
+    )
+
+
 @test("COOLBET-CDP-JWT-EXTRACT — _login tries CDP-Chrome localStorage before raising SMS-error")
 def test_coolbet_cdp_jwt_extract():
     """COOLBET-CDP-JWT-EXTRACT (2026-06-12): CoolbetSession._login() must try
