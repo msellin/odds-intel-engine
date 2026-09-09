@@ -36,6 +36,36 @@ This is the **🤖 OWN** path only. It is NOT the customer `/picks` product.
 
 ---
 
+## DATA FLOW — the definitive table map (audited & verified 2026-09-09)
+
+The recurring "which table do picks/bets come from?" confusion, settled with a full
+code+DB trace (COOLBET-PICK-TABLE-AUDIT). **Four tables, and they are NOT interchangeable:**
+
+| Table | Written by | Read by | What it is |
+|---|---|---|---|
+| `simulated_bets` | `daily_pipeline_v2.py` (the model pipeline) for internal/anchor bots incl. **`bot_v10_all`** | **`/picks` + `/performance`** (customer-facing), and the **paper** mac-daemon (`coolbet_placer.load_qualified_bets`) | Primary paper ledger. Bankroll/EV picks. Market spelled `o/u` / selection `over 2.5`. |
+| `shadow_bets` | per-bot mirror jobs: `coolbet_model_ou_shadow.py`, `coolbet_model_1x2_shadow.py`, trigger matcher, etc. | via the view below | Append-only shadow ledger. Holds the **placeable model-edge bot rows**. Market re-spelled `over_under_25` / selection `over`. |
+| `shadow_bets_unique` (VIEW) | — (DISTINCT ON bot×match×market×selection over `shadow_bets`; def in migration 298) | **`place_coolbet_ui.py` `load_picks()` — the LIVE REAL-MONEY placer**, and `/admin/shadow-bots` | The canonical real-money read path. |
+| `real_bets` | `place_coolbet_ui.py`/`coolbet_ui_placer.py` (real, balance-confirmed) **AND** the paper daemon (`record=True, execute=False` → phantom rows) **AND** manual-bet reconciliation | `/performance` overlay | Placement ledger — **dual-purpose; a row alone does NOT prove money moved.** Only a `coolbet_placement_attempts` row with `outcome='placed'` proves a real stake. |
+
+**The one sentence that removes the confusion:**
+> Real money is placed by **`place_coolbet_ui.py`** (launchd, hourly 06:00–21:00 UTC), reading **`shadow_bets_unique`**, for **`PLACEABLE_BOTS = {bot_coolbet_ou_model_v1, bot_coolbet_1x2_model_v1}` ∩ the `coolbet_placer_bots` toggle**. Those placeable rows are a filtered, re-labelled **copy of `bot_v10_all`'s `simulated_bets` picks** (mirror jobs select `maturity_label='calibrated'`, per-market edge floor, `result='pending'`). Everything else is paper or customer-facing.
+
+**Placement schedules (both books):**
+| Placer | Schedule | Reads | Real money? |
+|---|---|---|---|
+| Coolbet UI placer (`place_coolbet_ui.py --all-enabled --execute`) | launchd hourly **06:00–21:00 UTC** | `shadow_bets_unique` | **YES** (execute=True, balance-confirmed) |
+| Coolbet mac daemon (`coolbet_mac_daemon` → `coolbet_placer`) | every 30 min (was stale since 2026-08-23 — verify) | `simulated_bets` | **NO** — paper (`execute=False`), but `record=True` writes phantom `real_bets` rows |
+| **Unibet placer (`unibet_placer.place_bet`)** | **NONE — no launchd job; manual only** | **no pick table — takes `event_url`+outcome as args** | manual only; real-money Unibet automation is **not live** |
+
+**Known inconsistencies this audit surfaced (see COOLBET-PICK-TABLE-AUDIT in PRIORITY_QUEUE):**
+1. Two placers read two different tables (paper→`simulated_bets`, real→`shadow_bets_unique`); the API/`coolbet_placer` path is now effectively paper-only dead-weight for real money.
+2. **Customer `/picks` + `/performance` show `simulated_bets` (`bot_v10_all`), NOT the rows we actually stake** (the shadow model-edge bots) — except where `real_bets` is overlaid.
+3. **One logical bet carries three market spellings** (`o/u`→`over_under_25`, selection `over 2.5`→`over`, floor dict keyed `o/u`) depending on the table.
+4. `real_bets` mixes real + manual + phantom-paper rows (10 of the last 15 rows had no `outcome='placed'` attempt); use `coolbet_placement_attempts` to prove a real stake.
+
+---
+
 ## ⚠ Read this first — there are TWO placers, and they are different
 
 Both write to the `real_bets` table (that table deliberately holds two market
