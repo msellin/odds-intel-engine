@@ -34158,5 +34158,46 @@ def test_canonical_market_vocab():
 
 
 
+@test("REAL-BETS-PLACED-REAL — real_bets tags real vs paper; paper never blocks a real bet")
+def test_real_bets_placed_real():
+    """COOLBET-PICK-TABLE-AUDIT Stage 2 (2026-09-09): real_bets.placed_real makes the
+    money ledger trustworthy. TRUE=real (UI-placer balance-confirmed / reconciled
+    manual bet), FALSE=paper (paper daemon record=True/execute=False), NULL=legacy.
+    Pins: the column + backfill exist; every writer tags correctly; the real placer's
+    dedup and the admin overlays exclude paper (placed_real IS NOT FALSE)."""
+    import inspect
+    from pathlib import Path
+    root = Path(__file__).parent.parent
+
+    mig = (root / "supabase" / "migrations" / "325_real_bets_placed_real.sql").read_text()
+    assert "ADD COLUMN IF NOT EXISTS placed_real BOOLEAN" in mig, "migration must add the column"
+    assert "coolbet_placement_attempts" in mig and "outcome" in mig and "= TRUE" in mig, (
+        "backfill must mark proven-placed rows real via placement_attempts")
+    assert "DELETE FROM" not in mig.upper(), "Stage 2 tags, it must NOT delete money records"
+
+    # writer: store_real_bet takes + writes placed_real
+    from workers.api_clients import supabase_client as sc
+    assert "placed_real" in inspect.signature(sc.store_real_bet).parameters, "store_real_bet must accept placed_real"
+    src = inspect.getsource(sc.store_real_bet)
+    assert "placed_real)" in src and "placed_real," in src, "store_real_bet must INSERT placed_real"
+
+    # paper daemon path tags placed_real=execute (paper when execute=False)
+    cp = inspect.getsource(__import__("workers.automation.coolbet_placer", fromlist=["x"]))
+    assert cp.count("placed_real=execute") >= 3, "all 3 coolbet_placer writes must tag placed_real=execute"
+    # UI placer (balance-confirmed) tags True
+    up = inspect.getsource(__import__("workers.automation.coolbet_ui_placer", fromlist=["x"]))
+    assert "placed_real=True" in up, "UI placer (balance-confirmed) must tag placed_real=True"
+    # reconcile (mirrors the real account) tags TRUE; real placer dedup excludes paper
+    pcu = (root / "scripts" / "place_coolbet_ui.py").read_text()
+    assert "result, notes, placed_real)" in pcu and "NOW(), 'pending', %s, TRUE)" in pcu, "reconciled manual bets tag TRUE"
+    assert "placed_real IS NOT FALSE" in pcu, "real placer exposure/dedup must exclude paper rows"
+
+    # frontend admin overlays exclude paper
+    ed = (root.parent / "odds-intel-web" / "src" / "lib" / "engine-data.ts")
+    if ed.exists():
+        t = ed.read_text()
+        assert t.count('.not("placed_real", "is", false)') >= 2, (
+            "getRealBets + getPlaceableBets must exclude paper rows")
+
 if __name__ == "__main__":
     main()

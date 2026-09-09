@@ -359,9 +359,14 @@ def match_exposure(match_ids: list[str]) -> dict[str, list[dict]]:
     if not match_ids:
         return out
     rows = execute_query(
+        # Stage 2 (COOLBET-PICK-TABLE-AUDIT): a PAPER row (placed_real = FALSE, the
+        # paper daemon's record=True/execute=False write) is NOT real exposure and
+        # must never block a real placement via this dedup. Keep real (TRUE) + legacy
+        # (NULL, unverified) as exposure; exclude only known-paper.
         """SELECT match_id::text AS match_id, market, selection, stake
              FROM real_bets
-            WHERE match_id = ANY(%s::uuid[])""",
+            WHERE match_id = ANY(%s::uuid[])
+              AND placed_real IS NOT FALSE""",
         (list(match_ids),),
     )
     for r in rows or []:
@@ -628,12 +633,14 @@ def reconcile_account_to_real_bets(norms: list[dict]) -> int:
         try:
             # slippage_pct is a GENERATED column — never inserted.
             execute_write(
+                # Stage 2: this row mirrors the operator's ACTUAL Coolbet account
+                # (a real, money-moved bet) → placed_real = TRUE.
                 """INSERT INTO real_bets
                        (bot_id, match_id, market, selection, bookmaker,
                         captured_odds, actual_odds, stake, placed_at,
-                        result, notes)
+                        result, notes, placed_real)
                    VALUES (%s, %s, %s, %s, 'Coolbet',
-                           %s, %s, %s, NOW(), 'pending', %s)""",
+                           %s, %s, %s, NOW(), 'pending', %s, TRUE)""",
                 (matched.get("bot_id"), matched["match_id"], matched["market"],
                  matched["selection"], odds_val, odds_val, stake_val, note),
             )

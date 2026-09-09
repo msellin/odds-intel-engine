@@ -2160,6 +2160,7 @@ def place_all_bets(
             bot_id=str(bet["bot_id"]),
             simulated_bet_id=str(bet["simulated_bet_id"]),
             notes=f"auto ticket={ticket_id} edge={edge_pct:+.2f}%",
+            placed_real=execute,  # Stage 2: execute=False (paper daemon) => paper row, not real money
         )
         # Track the placement against rate-limit + total-stake counters
         guard.record_placement(stake)
@@ -2363,6 +2364,7 @@ def _place_combo_bets(
             notes=f"auto-combo ticket={ticket_id} edge={edge_pct:+.2f}% legs={len(resolved_legs)}",
             combo_legs=resolved_legs,
             system_type=system_type,
+            placed_real=execute,  # Stage 2: paper unless actually executed
         )
         guard.record_placement(stake)
         log.info("✓ Recorded %s  combined live=%.3f  stake=€%.2f  real_bet=%s",
@@ -2598,6 +2600,7 @@ def place_all_inplay_bets(
             bot_id=bot_id,
             simulated_bet_id=sim_id,
             notes=f"inplay-auto edge={edge_pct:+.2f}% cb_match={cb_match_id}",
+            placed_real=execute,  # Stage 2: paper unless actually executed
         )
         guard.record_placement(stake)
         log.info("✓ Inplay recorded %s @ %.3f  stake=€%.2f  real_bet=%s",

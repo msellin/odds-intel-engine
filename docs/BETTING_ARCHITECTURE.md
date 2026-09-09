@@ -190,7 +190,7 @@ require explicit owner go before the cutover.**
 | # | Stage | Risk | Owner-gate |
 |---|---|---|---|
 | 1 | ✅ **DONE 2026-09-09** — `workers/canonical_market.py` is the one source: `market_family()` (floor-key family, = the old `_canon_market`) + `ou_selection_to_storage()` (line encoding, = the old `_convert`). `coolbet_placer._canon_market` and `coolbet_model_ou_shadow._convert` now delegate to it; smoke `CANONICAL-MARKET-VOCAB` proves behaviour-preservation. (Frontend `coolbet-edge.ts` stays a documented mirror — TS can't import the Python module.) | low | no |
-| 2 | **`real_bets` purity**: tag rows with a placement-proof flag; make `/performance`'s real-money overlay read only proven-placed rows; stop the paper daemon writing to `real_bets` (paper → paper table). | med (touches /performance) | **yes** |
+| 2 | ✅ **DONE 2026-09-09** — `real_bets.placed_real` (migration 325): TRUE=real (UI-placer balance-confirmed / reconciled manual bet), FALSE=paper (daemon record=True/execute=False), NULL=legacy. Every writer tags at write time (`store_real_bet` param; `coolbet_placer` ×3 = `execute`; UI placer = True; reconcile = TRUE). Real placer's dedup + admin overlays (`getRealBets`/`getPlaceableBets`) exclude `placed_real IS FALSE` — a paper row can no longer block a real bet. Backfill: 123 proven-real tagged TRUE, 847 legacy left NULL (not falsely marked paper — some are real manual bets). Public /performance unaffected (reads simulated_bets). Owner chose tag-not-delete. Smoke `REAL-BETS-PLACED-REAL`. | med | ✅ owner-approved |
 | 3 | **Promote the trigger engine to the real-money source**: populate `pick_trigger_matcher.BOOK_MARKET_BOTS` with Unibet; retire the best-accessible mirror-shadow jobs once trigger-sourced picks match. | med (changes what feeds the placer) | **yes** |
 | 4 | **Placer registry + unified best-price router** (BEST-PRICE-EXECUTION-ROUTER): route each cleared trigger to the best book, place once, one placement-of-record. Retire the standalone Coolbet-only selection path. | high (real money, both books) | **yes, per cutover** |
 | 5 | **Per-book config registry** (books/gates/line-support/PLACEABLE); add Unibet placer to a schedule with its own PLACEABLE set. | med | **yes** |
@@ -204,7 +204,7 @@ source table without explicit owner authorization + a dry-run + fold-robust evid
 ## 9. THE INCONSISTENCIES THIS DOC EXISTS TO REMOVE (checklist)
 
 - [x] Three market spellings (`o/u` / `over_under_25` / `over 2.5`) → one canonical vocab (Stage 1 ✅ 2026-09-09, `workers/canonical_market.py`).
-- [ ] `real_bets` mixes real + phantom-paper + manual → proof-tagged, paper out (Stage 2).
+- [x] `real_bets` mixes real + phantom-paper + manual → proof-tagged via `placed_real`, paper excluded from dedup + overlays (Stage 2 ✅ 2026-09-09, migration 325).
 - [ ] `/performance` shows `simulated_bets`, not what we stake → grade-pin + real overlay clarity (Stage 2 + PICKS-GRADING).
 - [ ] Two placers read two tables → one trigger-sourced path (Stages 3,6).
 - [ ] Single-book coupling in 5 places (§6) → placer registry + per-book config (Stages 4,5).

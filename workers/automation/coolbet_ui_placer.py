@@ -1623,6 +1623,7 @@ def stage_bet(
             bookmaker="Coolbet", captured_odds=float(captured) if captured else outcome.odds,
             actual_odds=outcome.odds, stake=applied, bot_id=str(bet["bot_id"]) if bet.get("bot_id") else None,
             notes=f"ui-placer edge_threshold={edge_threshold:.2%}",
+            placed_real=True,  # Stage 2: this write only happens AFTER the balance-delta confirms a real stake
         )
     except Exception as e:
         # The bet is already placed at Coolbet at this point. Losing the
