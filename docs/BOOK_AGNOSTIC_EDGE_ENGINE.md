@@ -223,6 +223,15 @@ The engine now runs **two anchors** side by side (see `docs/SYSTEM_MAP.md` §1):
   `pick_triggers.cal_prob` holds P_sharp for these rows, so Stage B computes
   `edge = P_sharp − 1/book_odds` unchanged.
 
+  > **DRAWS ARE THE SHARP ANCHOR'S BIG UNTAPPED EDGE (2026-09-09).** The model-edge
+  > bots bet ZERO draws — our calibrated model under-rates the draw, so
+  > `cal_prob − 1/odds` never clears the floor (§57, FAVLONG-SPLIT-FLOOR-BACKTEST).
+  > But at fixture level the draw is fold-robust profitable in the **8–12%** band when
+  > fair-valued against **de-vig Pinnacle** — i.e. soft books misprice draws, which is
+  > exactly a `sharp_1x2` opportunity. When promoting the sharp triggers, expect the
+  > DRAW selection to carry disproportionate edge (the model side can't). See
+  > BETTING_GATE_DECISIONS.md "1x2 by selection type" + ANALYSIS_GOTCHAS §57.
+
 Stage A (`_emit_sharp_anchor`) writes `sharp_1x2` / `sharp_ou25` windows for every
 upcoming fixture with a full Pinnacle line, using **sharp floors** (3% edge, 1.50
 odds — deliberately different from the model floors, see BETTING_GATE_DECISIONS.md).

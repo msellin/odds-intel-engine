@@ -1700,3 +1700,25 @@ frequently have no statistics object at all. **The AF v3.9.3 docs confirm this e
 ceiling (~32%), not a collection gap** — they can only grow via a non-AF source
 (football-data CSV `HC`/`HY`/`HR`). Lesson: verify a coverage-flag claim by
 actually fetching a sample before scoping a "cheap backfill" on it.
+
+## §57 — Draws are a SHARP edge, not a model edge; our model structurally can't bet them (2026-09-09)
+
+FAVLONG-SPLIT-FLOOR-BACKTEST decomposed 1x2 by selection and found the model bets
+**zero draws**: across all bots 96 draw picks exist but **0 clear the 12% edge floor**
+(home 599, away 227). The calibrated bot generates **no draw rows at all**.
+
+**Why:** model edge = `cal_prob − 1/odds`. Draw odds are ~3.0–3.5 (implied ~29–33%),
+but the model's calibrated draw prob is lower (draws are hard; calibration shrinks the
+middle outcome), so `cal_prob − 1/odds` is rarely positive and never ≥12%. Our model
+**systematically under-rates draws** — it cannot produce a draw pick that clears the gate.
+
+**But the IDEALIZED draw edge is real** (robust +12→+21% in the 8–12% band). That basis
+prices best-accessible odds against **de-vigged Pinnacle**, i.e. it measures the SHARP
+edge (soft books mispricing draws vs Pinnacle), NOT the model edge. So:
+
+**The draw edge exists but belongs to the SHARP-ANCHORED trigger bots** (which fair-value
+against de-vigged Pinnacle — `pick_triggers` `sharp_*` strategies), NOT the model-edge
+bots. When you work on the trigger bots, this is where draw profit lives. Do NOT try to
+"fix" the model to bet draws — it's the wrong instrument for this edge. Model 1x2 edge =
+home-underdogs; draw edge = sharp triggers. See BETTING_GATE_DECISIONS.md (1x2 by type)
+and docs/BOOK_AGNOSTIC_EDGE_ENGINE.md (sharp anchor).

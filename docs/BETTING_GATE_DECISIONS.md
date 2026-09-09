@@ -117,3 +117,23 @@ hides this because longshots dominate the count. **We currently place + publish 
 placement + the published record): exclude home favourites from placement (or set their floor
 unreachably), keep longs at 13% (explore 15%). Confirm first with the pure odds-band cut
 (odds<2.0 either side) since this cut mirrors generation and pools away-favourites into 'long'.
+
+## 1x2 by SELECTION TYPE — the fold-robust edge is home-underdogs only (2026-09-09)
+
+FAVLONG-SPLIT-FLOOR-BACKTEST, extended to all four 1x2 types × floors × sample sizes
+(cohort + idealized 10k/25k/35k) + an odds×edge cut on the placed (odds≥2.80) universe.
+Interactive matrix: the floor-by-type artifact. Verdict per type:
+
+| Type | Verdict | Evidence |
+|---|---|---|
+| **home-fav** (home <2.0) | **exclude** — loses at every floor we bet | idealized edge only at 5–8%, dead ≥10% (−7→−12%); cohort negative. Already excluded from real money by the 2.80 odds floor; the change is to the PUBLISHED record. |
+| **home-underdog** (home ≥2.80) | **BET — floor 10%** | the one fold-robust engine. On odds≥2.80: robust in BOTH bases from ~8%; 10% is the sweet spot — cohort +21% (n206), idealized +24% (n1198), ~50% more volume than 13%. The 2.80 odds floor already strips the losing low-odds picks. |
+| **draw** | **not a model bet — route to sharp triggers** | model bets 0 draws (under-rates them, never clears 12% — §57). The idealized draw edge (8–12% band) is a SHARP/soft-book-mispricing edge vs de-vig Pinnacle, not a model edge → sharp-anchored trigger bots' territory. |
+| **away** | **exclude** — no fold-robust edge | idealized away robust at NO floor/size; the cohort's +43→+105% is 10–18 bets of luck. Unreliable → don't stake. |
+
+**Resulting real-money 1x2 policy (OWNER-GATED — changes placement + published record):**
+`bet 1x2 iff selection=home AND odds ≥ 2.80 AND edge ≥ 10%` (home-underdogs only). Exclude
+home-favs + aways; draws handled by the sharp trigger family (paper). O/U 2.5 unchanged (8%).
+Expected effect: higher ROI AND more bets, concentrated on the robust engine. The pooled
+"13% is best" result was correct only because home-underdogs dominate the pooled count and
+dragged the favourite/away noise positive.
