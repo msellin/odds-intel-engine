@@ -213,3 +213,29 @@ make it bettable one of these must happen first, each proven on this backtest:
 The paper matcher + backtest are now the instruments to find that gate. Until one
 of the above validates, the live real-money path stays the existing (narrow)
 model-edge bots, and the trigger engine only accrues paper for measurement.
+
+## Sharp anchor (2026-09-09)
+
+The engine now runs **two anchors** side by side (see `docs/SYSTEM_MAP.md` §1):
+
+- **model_*** — fair value = our calibrated model probability (the original engine).
+- **sharp_*** — fair value = the Shin-de-vigged **Pinnacle** price (`workers.model.devig`).
+  `pick_triggers.cal_prob` holds P_sharp for these rows, so Stage B computes
+  `edge = P_sharp − 1/book_odds` unchanged.
+
+Stage A (`_emit_sharp_anchor`) writes `sharp_1x2` / `sharp_ou25` windows for every
+upcoming fixture with a full Pinnacle line, using **sharp floors** (3% edge, 1.50
+odds — deliberately different from the model floors, see BETTING_GATE_DECISIONS.md).
+Stage B routes by **(book, market, strategy)** so the model and sharp anchors emit
+into separate paper bots and never blend:
+
+| strategy | bot |
+|---|---|
+| model_1x2  | `bot_coolbet_trigger_1x2_v1` |
+| sharp_1x2  | `bot_coolbet_trigger_sharp_1x2_v1` |
+| model_ou25 | `bot_coolbet_trigger_ou_v1` |
+| sharp_ou25 | `bot_coolbet_trigger_sharp_ou_v1` |
+
+All four are PAPER (never in `PLACEABLE_BOTS`). The sharp bots fire rarely — Coolbet ≈
+Pinnacle, so a 3%+ overlay vs the sharp line is uncommon — which is itself the finding
+the head-to-head is measuring.

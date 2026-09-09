@@ -16,6 +16,13 @@ swept odds against this window.
 
 Markets: 1x2 + O/U 2.5 (the only markets we bet today — this also keeps the sweep
 scope tight). Idempotent upsert on (match_id, market, selection, strategy).
+
+Two ANCHORS, written side by side (the `strategy` column distinguishes them, and
+Stage B routes each to its own paper bot):
+  * model_* — fair value = our calibrated model probability (cal_prob).
+  * sharp_* — fair value = Shin-de-vigged Pinnacle price (P_sharp). Same window
+    math, same floors; only the reference number differs. See _emit_sharp_anchor.
+
 Never places, never touches money. Run:  python3 -m workers.jobs.pick_triggers
 """
 from __future__ import annotations
@@ -26,13 +33,43 @@ log = logging.getLogger(__name__)
 
 OUTLIER_MULT = 1.6  # a book price above min_odds×this is likely stale, not a gift
 
-# (strategy, placer market, placer floor-key, odds-snapshot market, {selection: prediction market})
+# MODEL anchor: (strategy, placer market, placer floor-key, {selection: prediction market})
+# Fair value = OUR calibrated model probability.
 _STRATEGIES = [
     ("model_1x2", "1x2", "1x2",
      {"home": "1x2_home", "draw": "1x2_draw", "away": "1x2_away"}),
     ("model_ou25", "over_under_25", "o/u",
      {"over": "over25", "under": "under25"}),
 ]
+
+# SHARP anchor: (strategy, market = pick_triggers.market AND odds-snapshot market,
+#                placer floor-key, selections in de-vig order)
+# Fair value = Shin-de-vigged Pinnacle price (workers.model.devig.devig). Same
+# window math and SAME floors as the model anchor, so model-vs-sharp is a clean
+# same-gate comparison — only the anchor differs. Scope mirrors _STRATEGIES
+# (1x2 + O/U 2.5) so each sharp bot has a model-anchored twin.
+_SHARP_ANCHOR_BOOK = "Pinnacle"
+_SHARP_MODEL_VERSION = "pinnacle_shin_devig"  # sentinel: not a model bundle
+_SHARP_STRATEGIES = [
+    ("sharp_1x2", "1x2", "1x2", ["home", "draw", "away"]),
+    ("sharp_ou25", "over_under_25", "o/u", ["over", "under"]),
+]
+
+# SHARP floors — deliberately DIFFERENT from the model floors, on principle.
+#   * EDGE 3%: a sharp edge (P_sharp − 1/book_odds) is measured against the
+#     near-true de-vigged Pinnacle line, so 3% is a REAL 3% overlay. The model
+#     floors (13%/8%) would demand a 13% overlay vs Pinnacle — nearly impossible
+#     (max observed +6.6%) — so the sharp bots would never fire.
+#   * ODDS 1.50 (light sanity floor), NOT the model twin's 2.80/1.80. The model's
+#     high odds floor is an anti-LONGSHOT guard for the model's over-confidence on
+#     dogs — a model failure mode that does NOT apply to a sharp anchor, whose best
+#     signal is often at FAVOURITE prices (Coolbet shading a short price). Importing
+#     2.80 would throw the sharp bot's best picks away (e.g. +6.6% edge sat at 1.92).
+#     1.50 only screens out near-certainties where de-vig noise and tiny payoff
+#     dominate. Paper bots; owner-adjustable. See docs/SYSTEM_MAP.md and
+#     docs/BETTING_GATE_DECISIONS.md (sharp-anchor note).
+_SHARP_MIN_EDGE_BY_MARKET = {"1x2": 0.03, "o/u": 0.03}
+_SHARP_MIN_ODDS_BY_MARKET = {"1x2": 1.50, "o/u": 1.50}
 
 
 def _window(cal: float, edge_floor: float, odds_floor: float):
@@ -78,6 +115,73 @@ def _fit_calibrator(kind: str):
         return None
     iso = IsotonicRegression(out_of_bounds="clip").fit(xs, ys)
     return lambda p: float(iso.predict([p])[0])
+
+
+def _emit_sharp_anchor(counters: dict) -> None:
+    """Write SHARP-anchor trigger windows: fair value = Shin-de-vigged Pinnacle.
+
+    For each upcoming fixture with a full Pinnacle line on the market, de-vig it
+    to P_sharp per selection and write a window with the SAME edge/odds floors as
+    the model anchor. `cal_prob` holds P_sharp so Stage B computes
+    edge = P_sharp − 1/book_odds unchanged. Never raises (best-effort sibling)."""
+    from workers.api_clients.db import execute_query, execute_write
+    from workers.automation.coolbet_placer import _min_edge_for, _min_odds_for
+    from workers.model.devig import devig
+
+    for strategy, market, floor_key, sides in _SHARP_STRATEGIES:
+        # SHARP floors: small edge vs a near-true line + a light sanity odds floor
+        edge_floor = float(_SHARP_MIN_EDGE_BY_MARKET.get(floor_key, _min_edge_for(floor_key)))
+        odds_floor = float(_SHARP_MIN_ODDS_BY_MARKET.get(floor_key, _min_odds_for(floor_key)))
+        counters["strategies"] += 1
+        # latest pre-match Pinnacle price per (match, selection) for this market
+        rows = execute_query(
+            """
+            SELECT DISTINCT ON (o.match_id, o.selection)
+                   o.match_id::text AS mid, o.selection, o.odds::float AS odds,
+                   m.date AS kickoff
+              FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
+             WHERE o.bookmaker = %s AND o.market = %s
+               AND o.timestamp <= m.date AND m.date > NOW() AND m.status = 'scheduled'
+             ORDER BY o.match_id, o.selection, o.timestamp DESC
+            """,
+            [_SHARP_ANCHOR_BOOK, market],
+        )
+        # group into full markets: {mid: {selection: odds}} + kickoff
+        by_match: dict[str, dict] = {}
+        for r in rows:
+            m = by_match.setdefault(r["mid"], {"odds": {}, "kickoff": r["kickoff"]})
+            m["odds"][r["selection"]] = r["odds"]
+        for mid, m in by_match.items():
+            quotes = [m["odds"].get(s) for s in sides]
+            if any(q is None or q <= 1.0 for q in quotes):
+                continue  # need the complete line to de-vig honestly
+            probs = devig(quotes)  # Shin, order matches `sides`
+            if probs is None:
+                continue
+            for sel, p_sharp in zip(sides, probs):
+                win = _window(p_sharp, edge_floor, odds_floor)
+                if win is None:
+                    counters["skipped_no_edge"] += 1
+                    continue
+                min_odds, max_odds = win
+                execute_write(
+                    """INSERT INTO pick_triggers
+                          (match_id, market, selection, strategy, cal_prob,
+                           edge_floor, odds_floor, min_odds, max_odds, model_version, kickoff_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (match_id, market, selection, strategy)
+                       DO UPDATE SET cal_prob=EXCLUDED.cal_prob,
+                                     edge_floor=EXCLUDED.edge_floor,
+                                     odds_floor=EXCLUDED.odds_floor,
+                                     min_odds=EXCLUDED.min_odds,
+                                     max_odds=EXCLUDED.max_odds,
+                                     model_version=EXCLUDED.model_version,
+                                     kickoff_at=EXCLUDED.kickoff_at,
+                                     computed_at=NOW()""",
+                    [mid, market, sel, strategy, p_sharp, edge_floor, odds_floor,
+                     min_odds, max_odds, _SHARP_MODEL_VERSION, m["kickoff"]],
+                )
+                counters["written"] += 1
 
 
 def compute_triggers() -> dict:
@@ -155,6 +259,13 @@ def compute_triggers() -> dict:
                      min_odds, max_odds, r["mv"], r["kickoff"]],
                 )
                 counters["written"] += 1
+
+        # SHARP anchor (Pinnacle de-vig) — sibling strategies, best-effort
+        try:
+            _emit_sharp_anchor(counters)
+        except Exception as e:  # noqa: BLE001
+            log.warning("pick_triggers sharp-anchor raised (non-fatal): %s", e)
+
         log.info("pick_triggers: %s", counters)
     except Exception as e:  # noqa: BLE001
         log.warning("pick_triggers compute_triggers raised (non-fatal): %s", e)

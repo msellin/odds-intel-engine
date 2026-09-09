@@ -58,6 +58,25 @@ what feels like "the same test." Fixing the axes (executable · fold-robust ROI 
 full universe) makes the answer stable and reproducible. That is the whole point
 of this doc.
 
+## Sharp-anchor trigger floors (paper, 2026-09-09)
+
+The sharp-anchor trigger bots (`bot_coolbet_trigger_sharp_1x2_v1` / `_ou_v1`) gate on
+a **different edge** — `P_sharp − 1/book_odds` (de-vigged Pinnacle), not the model —
+so the 13%/8% model floors do NOT apply to them. A sharp edge is measured against a
+near-true line, so its floor is necessarily small.
+
+| Sharp bot | Edge floor | Odds floor | Rationale |
+|---|---|---|---|
+| sharp 1x2 | **3%** | **1.50** | 3% overlay vs Pinnacle is real (max observed +6.6%); 13% would never fire. Odds floor is a light sanity floor, NOT the model twin's 2.80 — the model's high odds floor is an anti-longshot guard for model over-confidence, which does not apply to a sharp anchor (whose value is often at favourite prices). |
+| sharp O/U 2.5 | **3%** | **1.50** | same reasoning; the model twin's 1.80 would exclude sharp edges on shorter prices. |
+
+These are **paper** starting floors, not validated on the executable basis (that's the
+whole reason the bots run — to measure whether the sharp anchor finds anything). They
+are owner-adjustable and sourced from `workers/jobs/pick_triggers.py`
+`_SHARP_MIN_EDGE_BY_MARKET` / `_SHARP_MIN_ODDS_BY_MARKET`. When there is enough
+settled volume, decide a real floor with the canonical method above (on the sharp
+basis) and record it here. See `docs/SYSTEM_MAP.md` §1 for the two-edges distinction.
+
 ## Related
 - `scripts/edge_floor_backtest.py` — the canonical tool (executable + idealized +
   walk-forward folds + the STALE-BEST-ODDS / DISTINCT-ON guards).

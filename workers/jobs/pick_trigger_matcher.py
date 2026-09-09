@@ -21,11 +21,16 @@ import uuid
 log = logging.getLogger(__name__)
 
 STAKE_EUR = 10.0
-# (book, odds-snapshot market) → the paper bot its trigger matches emit into.
-# One bot per (book × market) so each market's ROI is tracked/gated independently.
+# (book, odds-snapshot market, pick_triggers.strategy) → the paper bot its matches
+# emit into. One bot per (book × market × anchor) so each combo's ROI is tracked
+# and gated independently. The `strategy` key is what keeps the model anchor and
+# the sharp (de-vigged Pinnacle) anchor in separate bots even though they share a
+# fixture, market and Coolbet price — see docs/BOOK_AGNOSTIC_EDGE_ENGINE.md.
 BOOK_MARKET_BOTS = {
-    ("Coolbet", "1x2"):           "bot_coolbet_trigger_1x2_v1",
-    ("Coolbet", "over_under_25"): "bot_coolbet_trigger_ou_v1",
+    ("Coolbet", "1x2",           "model_1x2"):  "bot_coolbet_trigger_1x2_v1",
+    ("Coolbet", "over_under_25", "model_ou25"): "bot_coolbet_trigger_ou_v1",
+    ("Coolbet", "1x2",           "sharp_1x2"):  "bot_coolbet_trigger_sharp_1x2_v1",
+    ("Coolbet", "over_under_25", "sharp_ou25"): "bot_coolbet_trigger_sharp_ou_v1",
 }
 
 
@@ -35,10 +40,11 @@ def _bot_id(name: str) -> str | None:
     return r[0]["id"] if r else None
 
 
-def match_and_emit(book: str, market: str, bot_name: str) -> dict:
+def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict:
     """Emit shadow_bets for every upcoming fixture whose `book` `market` price lands
-    inside its Stage A trigger window, under `bot_name`. Never raises."""
-    counters = {"book": book, "market": market, "matched": 0, "written": 0}
+    inside its Stage A `strategy` trigger window, under `bot_name`. Never raises."""
+    counters = {"book": book, "market": market, "strategy": strategy,
+                "matched": 0, "written": 0}
     try:
         from workers.api_clients.db import execute_query, execute_write
         bot_id = _bot_id(bot_name)
@@ -61,11 +67,11 @@ def match_and_emit(book: str, market: str, bot_name: str) -> dict:
                    t.cal_prob::float AS cal, l.odds AS book_odds
               FROM pick_triggers t
               JOIN latest l ON l.mid = t.match_id::text AND l.selection = t.selection
-             WHERE t.market = %s AND t.kickoff_at > NOW()
+             WHERE t.market = %s AND t.strategy = %s AND t.kickoff_at > NOW()
                AND l.odds >= t.min_odds
                AND (t.max_odds IS NULL OR l.odds <= t.max_odds)
             """,
-            [book, market, market],
+            [book, market, market, strategy],
         )
         counters["matched"] = len(rows)
         run_id = str(uuid.uuid4())
@@ -90,7 +96,7 @@ def match_and_emit(book: str, market: str, bot_name: str) -> dict:
                  price, price, STAKE_EUR, r["cal"], r["cal"], edge],
             )
             counters["written"] += 1
-        log.info("trigger matcher (%s/%s): %s", book, market, counters)
+        log.info("trigger matcher (%s/%s/%s): %s", book, market, strategy, counters)
     except Exception as e:  # noqa: BLE001
         log.warning("trigger matcher raised (non-fatal): %s", e)
     return counters
@@ -98,8 +104,8 @@ def match_and_emit(book: str, market: str, bot_name: str) -> dict:
 
 def run_all() -> dict:
     out = {}
-    for (book, market), bot_name in BOOK_MARKET_BOTS.items():
-        out[bot_name] = match_and_emit(book, market, bot_name)
+    for (book, market, strategy), bot_name in BOOK_MARKET_BOTS.items():
+        out[bot_name] = match_and_emit(book, market, strategy, bot_name)
     return out
 
 

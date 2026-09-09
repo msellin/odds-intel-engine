@@ -4012,11 +4012,18 @@ def test_trigger_matcher_stage_b():
     src = inspect.getsource(m)
     assert "pick_triggers" in src and "l.odds >= t.min_odds" in src, "must join the book price against the window"
     assert "cal\"]) - 1.0 / price" in src or "- 1.0 / price" in src, "edge must be computed at the BOOK's own price"
-    # SAFETY: the per-(book×market) trigger bots must NOT be in the real-money whitelist
+    # SAFETY: the per-(book×market×anchor) trigger bots must NOT be in the real-money whitelist
     from scripts.place_coolbet_ui import PLACEABLE_BOTS
     bots = set(m.BOOK_MARKET_BOTS.values())
-    assert bots == {"bot_coolbet_trigger_1x2_v1", "bot_coolbet_trigger_ou_v1"}, (
-        "one paper bot per (book × market) — split so each market's ROI is tracked separately"
+    assert bots == {
+        "bot_coolbet_trigger_1x2_v1", "bot_coolbet_trigger_ou_v1",
+        "bot_coolbet_trigger_sharp_1x2_v1", "bot_coolbet_trigger_sharp_ou_v1",
+    }, "one paper bot per (book × market × anchor) — model + sharp twins, ROI tracked separately"
+    # the routing key must include the strategy, else model & sharp windows blend into one bot
+    assert all(len(k) == 3 for k in m.BOOK_MARKET_BOTS), "route by (book, market, strategy)"
+    strategies = {k[2] for k in m.BOOK_MARKET_BOTS}
+    assert strategies == {"model_1x2", "model_ou25", "sharp_1x2", "sharp_ou25"}, (
+        "both anchors routed: model_* and sharp_*"
     )
     for bot in bots:
         assert bot not in PLACEABLE_BOTS, f"{bot} must be PAPER — never in PLACEABLE_BOTS"
@@ -4047,9 +4054,80 @@ def test_pick_triggers_stage_a():
     # only the markets we bet (keeps sweep scope tight)
     strats = {s[0] for s in m._STRATEGIES}
     assert strats == {"model_1x2", "model_ou25"}, "Stage A covers 1x2 + O/U 2.5 (the markets we bet)"
+    # SHARP anchor: sibling strategies, de-vigged Pinnacle, SMALL edge floor (a sharp
+    # edge vs a near-true line is real at 3%; the 13%/8% model floors would never fire).
+    sharp = {s[0] for s in m._SHARP_STRATEGIES}
+    assert sharp == {"sharp_1x2", "sharp_ou25"}, "sharp anchor mirrors the model markets"
+    assert "devig" in src, "sharp anchor must de-vig the Pinnacle line (workers.model.devig)"
+    from workers.automation.coolbet_placer import _min_edge_for
+    assert m._SHARP_MIN_EDGE_BY_MARKET["1x2"] < _min_edge_for("1x2"), (
+        "sharp edge floor must be SMALLER than the model floor — different edge, different ruler"
+    )
     from pathlib import Path
     mig = (Path(__file__).parent.parent / "supabase" / "migrations" / "319_pick_triggers.sql").read_text()
     assert "pick_triggers" in mig and "min_odds" in mig and "max_odds" in mig, "migration 319 defines the table"
+
+
+@test("SYSTEM-MAP-REGISTRY-NOT-DRIFTED — the bot registry matches code, DB and the map")
+def test_system_map_registry_not_drifted():
+    """SYSTEM-MAP (2026-09-09): workers/registry/bot_registry.py is the single source
+    of truth for what every bot IS, and docs/SYSTEM_MAP.md is its human form. This
+    test is what stops them rotting into fiction — it fails CI when the registry
+    disagrees with the live code / DB, or when a registered bot is missing from the
+    map. If you changed a bot/floor/anchor and this failed: update the registry AND
+    docs/SYSTEM_MAP.md in the same commit (the CLAUDE.md rule)."""
+    from pathlib import Path
+    from workers.registry.bot_registry import (
+        BOTS, active_names, placeable_names, ANCHOR_MODEL, ANCHOR_SHARP,
+    )
+
+    # 1. real-money set MUST equal the hardcoded safety whitelist (defense-in-depth:
+    #    PLACEABLE_BOTS stays hardcoded in the placer; the registry only mirrors it).
+    from scripts.place_coolbet_ui import PLACEABLE_BOTS
+    assert placeable_names() == set(PLACEABLE_BOTS), (
+        f"registry real_money {placeable_names()} != PLACEABLE_BOTS {set(PLACEABLE_BOTS)}"
+    )
+
+    # 2. model-bot / trigger floors MUST equal the placer's enforced floors.
+    from workers.automation.coolbet_placer import _min_edge_for, _min_odds_for
+    fk = {"1x2": "1x2", "O/U 2.5": "o/u"}  # registry market label -> placer floor key
+    for b in BOTS:
+        if b.anchor == ANCHOR_MODEL and b.market in fk and b.edge_floor is not None:
+            assert abs(b.edge_floor - _min_edge_for(fk[b.market])) < 1e-9, (
+                f"{b.name} edge_floor {b.edge_floor} != placer {_min_edge_for(fk[b.market])}"
+            )
+            assert abs(b.odds_floor - _min_odds_for(fk[b.market])) < 1e-9, (
+                f"{b.name} odds_floor {b.odds_floor} != placer {_min_odds_for(fk[b.market])}"
+            )
+
+    # 3. sharp trigger floors MUST match the Stage-A sharp config (registry == code).
+    from workers.jobs import pick_triggers as pt
+    for b in BOTS:
+        if b.anchor == ANCHOR_SHARP and b.market in fk:
+            assert abs(b.edge_floor - pt._SHARP_MIN_EDGE_BY_MARKET[fk[b.market]]) < 1e-9, (
+                f"{b.name} sharp edge_floor drifted from pick_triggers"
+            )
+            assert abs(b.odds_floor - pt._SHARP_MIN_ODDS_BY_MARKET[fk[b.market]]) < 1e-9, (
+                f"{b.name} sharp odds_floor drifted from pick_triggers"
+            )
+
+    # 4. every registry bot must be documented in the map (no silent bots).
+    smap = (Path(__file__).parent.parent / "docs" / "SYSTEM_MAP.md").read_text()
+    for name in active_names():
+        assert name in smap, f"{name} is in the registry but missing from docs/SYSTEM_MAP.md"
+
+    # 5. registry active set MUST equal the DB's active bots (skip cleanly offline).
+    try:
+        from workers.api_clients.db import execute_query
+        db = {r["name"] for r in execute_query(
+            "SELECT name FROM bots WHERE retired_at IS NULL")}
+    except Exception:
+        db = None
+    if db:
+        assert active_names() == db, (
+            f"registry active {active_names() ^ db} differs from bots table — "
+            "add/retire the bot in the registry (and SYSTEM_MAP.md) in the same change"
+        )
 
 
 @test("COOLBET-DAEMONS-PAUSE — footprint daemons honor the global daemons_paused switch")

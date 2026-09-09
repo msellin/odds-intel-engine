@@ -15,6 +15,7 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 | File | Purpose |
 |------|---------|
 | `PRIORITY_QUEUE.md` | **Master task list** — all open tasks across all docs, in priority order. Update status here first. |
+| `docs/SYSTEM_MAP.md` | **The map — read first.** Single index for how picks, bots and every % work: the two edges (model vs sharp), every bot (anchor/floor/paper-or-real), the %-glossary, the gate stack. Built on `workers/registry/bot_registry.py`; machine-checked by smoke test `SYSTEM-MAP-REGISTRY-NOT-DRIFTED`. |
 | `ROADMAP.md` | Product vision, tier structure, milestones, system state, bot strategy, launch checklist |
 | `MODEL_ANALYSIS.md` | Prediction model architecture, AI evaluations, improvement roadmap |
 | `MODEL_WHITEPAPER.md` | **Technical whitepaper** — full model description for data scientists and external review. **Must be updated whenever model logic changes.** |
@@ -77,6 +78,7 @@ Update **all** of the following that apply. "Not relevant" is almost never true 
 | `WORKFLOWS.md` | Any change to pipeline jobs or schedule |
 | `DATA_SOURCES.md` | Any change to data sources or coverage |
 | `INFRASTRUCTURE.md` | Any change to costs, services, or infra |
+| `docs/SYSTEM_MAP.md` + `workers/registry/bot_registry.py` | **Any change to a bot, an edge definition, a floor, or a model version** — update BOTH in the same commit. The drift test `SYSTEM-MAP-REGISTRY-NOT-DRIFTED` fails CI otherwise. |
 | `MODEL_WHITEPAPER.md` | **Any change to model logic** — calibration, features, ensemble, sizing, signals, ELO, or bot strategies |
 
 Then commit docs **in the same commit as the code**. Never separate them — a code commit without doc update is an incomplete task.
