@@ -4068,6 +4068,22 @@ def test_pick_triggers_stage_a():
     assert "pick_triggers" in mig and "min_odds" in mig and "max_odds" in mig, "migration 319 defines the table"
 
 
+@test("BETA-BOTS-RETIRED — dead beta bots (dnb, summer) retired by migration 323")
+def test_beta_bots_retired():
+    """BETA-BOT-AUDIT 2026-09-09: the gradeability sweep found bot_dnb_specialist
+    never fires (0 settled ever) and bot_summer_specialist loses (-5.7% ROI, -2.0%
+    CLV, 52% v10 duplicate). Owner-authorized retire via migration 323. Pin that
+    the migration retires exactly those two and keeps the two nurture candidates."""
+    from pathlib import Path
+    mig = (Path(__file__).parent.parent / "supabase" / "migrations"
+           / "323_retire_dead_beta_bots.sql").read_text()
+    assert "is_active = FALSE" in mig and "retired_at = NOW()" in mig, "must retire"
+    assert "bot_dnb_specialist" in mig and "bot_summer_specialist" in mig, "the two dead bots"
+    # must NOT retire the keepers
+    assert "bot_high_roi_global_v2" not in mig.split("WHERE")[1], "keeper must not be in WHERE"
+    assert "bot_1x2_specialist" not in mig.split("WHERE")[1], "keeper must not be in WHERE"
+
+
 @test("SYSTEM-MAP-REGISTRY-NOT-DRIFTED — the bot registry matches code, DB and the map")
 def test_system_map_registry_not_drifted():
     """SYSTEM-MAP (2026-09-09): workers/registry/bot_registry.py is the single source
