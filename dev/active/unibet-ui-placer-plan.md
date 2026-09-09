@@ -173,3 +173,9 @@ and risks a behavioral block. Whether it is ever needed hinges on the divergence
   + read Coolbet, place ONCE at the better clearing book, mark placed (no duplicates).
 - **Kambi-vs-site divergence measurement** → decides if the Kambi screen is trustworthy or
   a broad site sweep is actually required for the trigger bots.
+
+
+## 3c — fixture→URL resolver: the SLUG is the wall (2026-09-09)
+`find_event(home,away,date)` is SOLVED: injected-fetch the search API `sports-api/api/v2/search?_typ=GetSearchResults&query=<team>` (same transport as the odds feed) → `SearchContest{contestKey, category, name, startDateTimeUtc}`, fuzzy-match on home+away. Proven live.
+
+**BUT the placer needs the navigable SLUG URL** (e.g. `/betting/odds/football/england/championship/derby-county-vs-west-brom`), and the slug is NOT obtainable: not in the search/lobby/contest-page JSON (no url/slug/path/seoUrl field), and not in the rendered category-page DOM (no event anchors/hrefs — the SPA renders events via virtualized/onClick components; slug lives only in client state). Slug construction from name is unreliable ('West Bromwich' → 'west-brom'). So contestKey→URL is a live-R&D problem, same class as the odds feed. Options (for when Unibet placement is actually wired, Stage 5): (a) drive a real click on the event element + read the landed `location.href` (hard to target the element reliably); (b) read the SPA's internal router/store state via Runtime.evaluate (fragile); (c) accept operator-supplied URLs for the small candidate set (what we did for the Derby €10 bet). NOT blocking 3b (paper triggers) or the odds feed — only the placement executor arm. Recommendation: defer the slug resolver to Stage 5 (placement wiring, owner-gated) and proceed with 3b now.
