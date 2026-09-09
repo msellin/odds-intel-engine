@@ -3919,18 +3919,21 @@ def _():
     assert "random.uniform" in src, "_throttle must use jitter (random.uniform), not constant gap"
 
 
-@test("BOT-CONFIG-GOLDEN-MIDDLE — 1x2 placement edge floor stays at 13% (fold-robust)")
+@test("BOT-CONFIG-GOLDEN-MIDDLE — GLOBAL/pooled 1x2 floor stays 13% (paper daemon + triggers)")
 def test_bot_config_golden_middle_1x2_floor():
-    """1x2 PLACEMENT edge floor = 0.13, the fold-robust value on the EXECUTABLE
-    basis. Re-confirmed 2026-09-09 (docs/BETTING_GATE_DECISIONS.md): on
-    `edge_floor_backtest --market 1x2` executable, ≥13% is positive in every
-    walk-forward fold (all-bots +8.3% ✓, calibrated +15.9% ✓) while ≥10% is NOT
-    (all-bots f1 −1.8%, calibrated f2 −3.6%) and ≥15% overfits. 10% makes more
-    TOTAL profit (more volume) but is a volume-for-robustness trade, not an edge
-    win — decide floors on fold-robust executable ROI, never total profit or the
-    inflated idealized/best-of-books basis. (This test's title/docstring once said
-    10%, contradicting its own 0.13 assertion — reconciled here to the executable
-    truth.) Do not change without re-running the backtest AND updating the doc.
+    """`_MIN_EDGE_BY_MARKET['1x2']` = 0.13 — the POOLED 1x2 floor, fold-robust on the
+    executable basis (all-bots +8.3% ✓, calibrated +15.9% ✓; pooled ≥10% is NOT robust).
+    This floor governs the PAPER paths (coolbet_placer/daemon + the model trigger windows),
+    which are all-selection/pooled — so it correctly stays 13%.
+
+    FAVLONG-CUTS-2026-09-09 refined this WITHOUT changing it: the by-SELECTION backtest
+    (BETTING_GATE_DECISIONS '1x2 by type', ANALYSIS_GOTCHAS §57) found the pooled 10%-isn't-
+    robust result was caused by home-favs (losers) + aways (not robust) dragging it down;
+    HOME-UNDERDOGS alone (odds≥2.80) ARE robust to 10% (cohort +21%, idealized +24%). So the
+    REAL-MONEY placeable bot moved to home-underdog @10% via its PER-BOT threshold
+    (BOT_THRESHOLDS['bot_coolbet_1x2_model_v1']=0.10, covered by COOLBET-MODEL-1X2-SHADOW),
+    NOT by lowering this global pooled floor. The two are deliberately distinct now.
+    Don't change THIS value without re-running the pooled backtest + updating the doc.
     """
     from workers.automation.coolbet_placer import _MIN_EDGE_BY_MARKET, _min_edge_for
     assert _MIN_EDGE_BY_MARKET["1x2"] == 0.13, (
@@ -4176,13 +4179,21 @@ def test_system_map_registry_not_drifted():
         f"registry real_money {placeable_names()} != PLACEABLE_BOTS {set(PLACEABLE_BOTS)}"
     )
 
-    # 2. model-bot / trigger floors MUST equal the placer's enforced floors.
+    # 2. model-bot floors MUST equal the floor actually enforced for that bot.
+    #    FAVLONG-CUTS-2026-09-09: a REAL-MONEY placeable bot is gated by its PER-BOT
+    #    threshold (scripts.place_coolbet_ui.BOT_THRESHOLDS), which can now differ from
+    #    the pooled global floor — e.g. bot_coolbet_1x2_model_v1 is home-underdog @10%
+    #    while the pooled/paper _MIN_EDGE_BY_MARKET['1x2'] stays 13%. Trigger/paper model
+    #    bots are still gated by the global _min_edge_for. Odds floor is per-market for all.
     from workers.automation.coolbet_placer import _min_edge_for, _min_odds_for
+    from scripts.place_coolbet_ui import BOT_THRESHOLDS as _BT
     fk = {"1x2": "1x2", "O/U 2.5": "o/u"}  # registry market label -> placer floor key
     for b in BOTS:
         if b.anchor == ANCHOR_MODEL and b.market in fk and b.edge_floor is not None:
-            assert abs(b.edge_floor - _min_edge_for(fk[b.market])) < 1e-9, (
-                f"{b.name} edge_floor {b.edge_floor} != placer {_min_edge_for(fk[b.market])}"
+            expected = _BT[b.name] if b.name in placeable_names() else _min_edge_for(fk[b.market])
+            src = "BOT_THRESHOLDS" if b.name in placeable_names() else "placer _min_edge_for"
+            assert abs(b.edge_floor - expected) < 1e-9, (
+                f"{b.name} edge_floor {b.edge_floor} != {src} {expected}"
             )
             assert abs(b.odds_floor - _min_odds_for(fk[b.market])) < 1e-9, (
                 f"{b.name} odds_floor {b.odds_floor} != placer {_min_odds_for(fk[b.market])}"
@@ -4374,9 +4385,16 @@ def test_coolbet_model_1x2_shadow():
     assert "b.maturity_label = 'calibrated'" in job, "source must be the calibrated cohort"
     assert "sb.market = '1x2'" in job, "source market must be '1x2'"
     assert "sb.calibrated_prob IS NOT NULL" in job, "source must require a calibrated_prob (the placer's live-edge gate reads it)"
-    assert "sb.edge_percent >= %s" in job and 'EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_1X2_EDGE_FLOOR", "0.13"))' in job, (
-        "edge floor must be 0.13 as a FRACTION (edge_percent is stored as a fraction, not a percentage)"
+    assert "sb.edge_percent >= %s" in job and 'EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_1X2_EDGE_FLOOR", "0.10"))' in job, (
+        "edge floor must be 0.10 as a FRACTION — FAVLONG-CUTS-2026-09-09: home-underdogs are "
+        "robust to 10% (BETTING_GATE_DECISIONS 1x2 by type); edge_percent is a fraction"
     )
+    # FAVLONG-CUTS-2026-09-09: real-money 1x2 = HOME-UNDERDOGS only (home + odds>=2.80).
+    assert "lower(sb.selection) = 'home'" in job, (
+        "mirror must restrict to home picks — home-favs lose, aways aren't robust, draws are "
+        "a sharp edge (ANALYSIS_GOTCHAS §57)")
+    assert "COALESCE(sb.odds_at_pick_live, sb.odds_at_pick) >= 2.80" in job, (
+        "mirror must require odds>=2.80 (excludes home-favourites; matches the placer odds floor)")
     assert "sb.result = 'pending'" in job and "m.date > NOW()" in job, "only pending, future-kickoff picks"
     assert "sb.user_placed_at IS NULL" in job and "sb.user_skipped_at IS NULL" in job, "skip operator-placed/skipped picks"
     assert "DISTINCT ON (sb.match_id, sb.selection)" in job, "one row per (match, selection), highest edge"
@@ -4408,11 +4426,12 @@ def test_coolbet_model_1x2_shadow():
         "— the model-edge 1x2 bot must NOT place real money by default"
     )
 
-    # ── UI placer: threshold present at 0.13, bot PLACEABLE, real money OFF ────
+    # ── UI placer: threshold present at 0.10 (FAVLONG-CUTS), bot PLACEABLE ────
     ui = open(os.path.join(base, "place_coolbet_ui.py"), encoding="utf-8").read()
-    assert '"bot_coolbet_1x2_model_v1": 0.13' in ui, (
-        "the model-edge 1x2 bot must be in BOT_THRESHOLDS at 0.13 — the placer's "
-        "live-edge gate reads this and the validated gate is edge>=13%"
+    assert '"bot_coolbet_1x2_model_v1": 0.10' in ui, (
+        "the model-edge 1x2 bot must be in BOT_THRESHOLDS at 0.10 — FAVLONG-CUTS-2026-09-09: "
+        "home-underdogs are the fold-robust 1x2 engine, robust to 10% on odds>=2.80. The "
+        "placer's live-edge gate 1/(cal_prob-threshold) reads this."
     )
     assert 'PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in ui, (
         "bot_coolbet_1x2_model_v1 must be in PLACEABLE_BOTS so the DB toggle can enable it"

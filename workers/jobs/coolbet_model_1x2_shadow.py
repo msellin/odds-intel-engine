@@ -49,7 +49,7 @@ BOT_NAME = "bot_coolbet_1x2_model_v1"
 SHADOW_COHORT = "coolbet_1x2_model"
 STAKE_EUR = 10.0
 # Mirrors _MIN_EDGE_BY_MARKET['1x2'] in coolbet_placer.py (fraction, not pct).
-EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_1X2_EDGE_FLOOR", "0.13"))
+EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_1X2_EDGE_FLOOR", "0.10"))  # FAVLONG-CUTS-2026-09-09: home-underdogs robust to 10%
 
 
 def _bot_id() -> str | None:
@@ -86,6 +86,14 @@ def generate_picks() -> dict:
               JOIN matches m ON m.id = sb.match_id
              WHERE b.maturity_label = 'calibrated'
                AND sb.market = '1x2'
+               -- FAVLONG-CUTS-2026-09-09: real-money 1x2 = HOME-UNDERDOGS ONLY.
+               -- The by-selection backtest found home-underdogs are the one fold-robust
+               -- 1x2 engine (robust to ~10% on odds>=2.80); home-favs lose, aways aren't
+               -- robust, draws are a sharp edge the model can't see (ANALYSIS_GOTCHAS §57,
+               -- BETTING_GATE_DECISIONS "1x2 by type"). odds>=2.80 also excludes home-favs
+               -- (odds<2.0) belt-and-braces with the placer's _min_odds_for('1x2')=2.80.
+               AND lower(sb.selection) = 'home'
+               AND COALESCE(sb.odds_at_pick_live, sb.odds_at_pick) >= 2.80
                AND sb.result = 'pending'
                AND sb.combo_legs IS NULL
                AND sb.calibrated_prob IS NOT NULL

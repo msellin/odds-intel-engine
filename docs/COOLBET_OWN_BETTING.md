@@ -10,8 +10,17 @@ selection artifact); model-edge holds (v10 +28% 1x2 / +34% O/U OOS). So:
 | Bot | Signal | Market | Real money |
 |---|---|---|---|
 | `bot_coolbet_ou_model_v1` | model-edge | O/U | **ON** |
-| `bot_coolbet_1x2_model_v1` | model-edge | 1x2 | **ON** |
-| `bot_coolbet_value_v1` | line-shop | 1x2 | **OFF** (paused) |
+| `bot_coolbet_1x2_model_v1` | model-edge | 1x2 (**home-underdogs @10%, odds≥2.80**) | **ON** |
+| `bot_coolbet_ou_model_v1` | model-edge | O/U 2.5 (8%, odds≥1.80) | **ON** |
+| `bot_coolbet_value_v1` | line-shop | 1x2 | **RETIRED** |
+
+> **FAVLONG-CUTS-2026-09-09:** the real-money 1x2 bot now bets **home-underdogs only, edge ≥10%,
+> odds ≥2.80** (per-bot `BOT_THRESHOLDS`=0.10 + a home+odds≥2.80 filter in the mirror job). The
+> by-selection backtest found home-underdogs are the one fold-robust 1x2 engine; home-favs lose,
+> aways aren't robust, draws are a sharp-trigger edge the model can't see (ANALYSIS_GOTCHAS §57,
+> BETTING_GATE_DECISIONS "1x2 by type"). The **pooled/paper `_MIN_EDGE_BY_MARKET['1x2']` stays 13%**
+> (the coolbet_placer/daemon Path B + trigger windows are all-selection) — the tables below that
+> say "1x2 13%" describe that paper path, not the real-money placeable bot.
 
 - Placement = `place_coolbet_ui.py --all-enabled --execute` (launchd), placing
   every bot in `PLACEABLE_BOTS ∩ coolbet_placer_bots(ui_place_enabled=true)`.

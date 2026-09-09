@@ -59,7 +59,7 @@ registry and regenerate.
 
 | Bot | Market | Anchor | Edge floor | Odds floor | Money | What it does |
 |---|---|---|---|---|---|---|
-| `bot_coolbet_1x2_model_v1` | 1x2 | model | 13% | 2.80 | **REAL** | Places our calibrated model's 1x2 picks at Coolbet's own price when model edge ≥13% & odds ≥2.80. Real money, per-bot toggle. |
+| `bot_coolbet_1x2_model_v1` | 1x2 | model | **10%** | 2.80 | **REAL** | **FAVLONG-CUTS-2026-09-09: HOME-UNDERDOGS ONLY** at model edge ≥10% & odds ≥2.80. Home-favs lose, aways aren't fold-robust, draws are a sharp edge the model can't see (§57) → the one robust 1x2 engine is home-underdogs, robust to 10%. Real money, per-bot toggle. (NB the pooled/paper `_MIN_EDGE_BY_MARKET['1x2']` stays 13% — see below.) |
 | `bot_coolbet_ou_model_v1` | O/U 2.5 | model | 8% | 1.80 | **REAL** | Places our calibrated model's O/U picks at Coolbet's own price when model edge ≥8% & odds ≥1.80. Real money, per-bot toggle. |
 
 ### Trigger engine · model vs sharp anchor (paper)
@@ -115,7 +115,10 @@ A pick becomes a real staked bet ONLY if it clears every gate, in order. Miss an
    paper bots can never reach here.
 2. **Per-bot real-money toggle ON** — `coolbet_placer_bots.ui_place_enabled`.
 3. **Not globally paused** — `placement_paused` / `daemons_paused` both false.
-4. **Per-market edge floor** — model edge ≥ `_MIN_EDGE_BY_MARKET` (13% 1x2 / 8% O/U).
+4. **Per-market edge floor** — model edge ≥ the floor for that bot. Pooled/paper floor
+   `_MIN_EDGE_BY_MARKET` = 13% 1x2 / 8% O/U. **The real-money placeable 1x2 bot is the
+   exception (FAVLONG-CUTS-2026-09-09): home-underdogs @10% via its per-bot
+   `BOT_THRESHOLDS` gate** (home-favs + aways excluded; draws→sharp triggers). O/U 8%.
 5. **Per-market odds floor** — odds ≥ `_MIN_ODDS_BY_MARKET` (2.80 / 1.80).
 6. **Live-edge re-check** at current price, **maturity**, **pre-match only**,
    **blast-radius** caps.

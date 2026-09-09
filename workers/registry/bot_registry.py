@@ -61,8 +61,8 @@ class BotSpec:
 BOTS: list[BotSpec] = [
     # Real-money capable — anchor = MODEL, validated floors 13%/8% + odds 2.80/1.80
     BotSpec("bot_coolbet_1x2_model_v1", FAM_COOLBET_REAL, "1x2", ANCHOR_MODEL,
-            0.13, 2.80, True,
-            "Places our calibrated model's 1x2 picks at Coolbet's own price when model edge ≥13% & odds ≥2.80. Real money, per-bot toggle."),
+            0.10, 2.80, True,
+            "Places our calibrated model's HOME-UNDERDOG 1x2 picks at Coolbet's own price when model edge ≥10% & odds ≥2.80. Real money, per-bot toggle. FAVLONG-CUTS-2026-09-09: restricted to home-underdogs @10% (the one fold-robust 1x2 engine); home-favs + aways excluded, draws are a sharp-trigger edge (§57)."),
     BotSpec("bot_coolbet_ou_model_v1", FAM_COOLBET_REAL, "O/U 2.5", ANCHOR_MODEL,
             0.08, 1.80, True,
             "Places our calibrated model's O/U picks at Coolbet's own price when model edge ≥8% & odds ≥1.80. Real money, per-bot toggle."),
@@ -95,18 +95,13 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_v10_all", FAM_INTERNAL, "mixed", ANCHOR_MODEL,
             None, None, False,
             "The calibrated reference bot: v10 model across target leagues, tier-adjusted thresholds. Honestly calibrated, +11–13% — the yardstick other bots are read against."),
-    BotSpec("bot_1x2_specialist", FAM_INTERNAL, "1x2", ANCHOR_NONE,
-            None, None, False,
-            "1x2 home/away value specialist with per-strategy league whitelists. Internal paper strategy validator."),
-    BotSpec("bot_dnb_specialist", FAM_INTERNAL, "DNB", ANCHOR_NONE,
-            None, None, False,
-            "Draw-no-bet home+away specialist with per-strategy league whitelists. Internal paper strategy validator."),
+    # REGISTRY-DRIFT-FIX-2026-09-09: bot_1x2_specialist, bot_dnb_specialist and
+    # bot_summer_specialist were retired in the DB (migrations 323/324, 2026-09-09
+    # 10:25–10:41) but left in the registry — removed here so active_names() matches
+    # the DB (SYSTEM-MAP-REGISTRY-NOT-DRIFTED section 5).
     BotSpec("bot_high_roi_global_v2", FAM_INTERNAL, "1x2", ANCHOR_NONE,
             None, None, False,
             "1x2 home/away in Spain/Australia/Iceland, odds 1.50–5.50. Internal paper strategy validator."),
-    BotSpec("bot_summer_specialist", FAM_INTERNAL, "mixed", ANCHOR_NONE,
-            None, None, False,
-            "League-whitelist summer-season specialist. Internal paper strategy validator."),
 ]
 
 

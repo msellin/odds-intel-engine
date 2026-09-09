@@ -60,12 +60,16 @@ BOT_THRESHOLDS = {
     # EDGE_FLOOR). The placer's live-edge gate 1/(cal_prob - threshold) uses this,
     # so it MUST be 0.08 or the min-odds floor would be computed at the wrong edge.
     "bot_coolbet_ou_model_v1": 0.08,
-    # COOLBET-MODEL-1X2-SHADOW-BOT-2026-09-08: the model-edge 1x2 bot fires at a
-    # 13% calibrated edge (mirrors _MIN_EDGE_BY_MARKET['1x2'] and the mirror job's
-    # EDGE_FLOOR). The placer's live-edge gate 1/(cal_prob - threshold) uses this,
-    # so it MUST be 0.13 — the validated 2D gate is edge>=13% AND odds>=2.80
-    # (per-market floor _min_odds_for('1x2')=2.80). Replaces the paused line-shop 1x2.
-    "bot_coolbet_1x2_model_v1": 0.13,
+    # FAVLONG-CUTS-2026-09-09: the model-edge 1x2 bot now bets HOME-UNDERDOGS ONLY at
+    # a 10% calibrated edge (odds>=2.80). The by-selection backtest (BETTING_GATE_DECISIONS
+    # "1x2 by type" + ANALYSIS_GOTCHAS §57) found home-underdogs are the one fold-robust 1x2
+    # engine and robust down to ~10% on the odds>=2.80 universe (cohort +21%, idealized +24%);
+    # home-favs lose, aways aren't robust, draws are a sharp edge the model can't see. The
+    # mirror job (coolbet_model_1x2_shadow) enforces the home + odds>=2.80 selection; this
+    # threshold is the placer's live-edge gate 1/(cal_prob - threshold), so it MUST be 0.10.
+    # NB the global _MIN_EDGE_BY_MARKET['1x2'] stays 0.13 (the paper daemon + trigger windows,
+    # which are all-selection/pooled) — the real-money placeable bot is deliberately distinct.
+    "bot_coolbet_1x2_model_v1": 0.10,
 }
 DEFAULT_BOT = "bot_coolbet_ou_model_v1"  # value_v1 (line-shop) retired 2026-09-08
 
