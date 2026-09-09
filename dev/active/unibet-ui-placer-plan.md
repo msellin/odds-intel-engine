@@ -123,3 +123,53 @@ prefetch each event (SPA fetches contest-page → capture), parse propositions �
 odds_snapshots as bookmaker `Unibet-Site` (NOT the divergent `Unibet`/`Unibet-Kambi` Kambi feed).
 Rate-limit + reuse the operator's session (DataDome). ~half-day focused build. THIS unblocks:
 Unibet bots → best-price router → Unibet trigger bots.
+
+## Odds feed — BUILT (2026-09-09) — `workers/automation/unibet_odds_feed.py`
+Build-step 1 landed. `fetch_event_odds(event_url, *, match_id, write, minutes_to_kickoff)`
+captures the SPA's OWN `contest-page` response via a RAW CDP Network session on the
+operator's established tab, parses 1x2 + O/U-2.5 (keyed on the language-stable
+`propositionType`, contamination-proof), and writes bookmaker `Unibet-Site` via the
+shared `store_book_odds_snapshots`. Offline smoke test `UNIBET-SITE-ODDS-PARSE` on a
+committed fixture (`tests/fixtures/unibet_contest_derby.json`). Read-only; never places.
+
+### DEFINITIVE transport matrix (all tested live 2026-09-09, supersedes the guesses above)
+| Method | Result | Why |
+|---|---|---|
+| RAW-CDP capture of the SPA's own contest-page (established tab) | ✅ 200, true prices | rides the SPA's real XHR (DataDome token + headers + params) |
+| Fresh / background CDP tab | ❌ 500/204 | DataDome degrades non-established tabs |
+| Injected `fetch()` from the established page | ❌ CORS "Failed to fetch" | Kindred sends no ACAO for injected XHR |
+| **FlareSolverr → the Kindred API** (Coolbet's odds pattern) | ❌ **HTTP 400 "Bad request"** | FS passes DataDome, but a bare browser GET lacks the SPA's required XHR headers/params |
+**Conclusion:** the Coolbet ODDS path (FlareSolverr → a plain JSON API) does NOT transfer.
+Coolbet exposes a plain JSON API FS can hit; Unibet's Kindred API rejects everything but
+the SPA's own fully-formed XHR. Only reading the SPA's own responses works. Coolbet
+BETTING is CDP+JWT; Coolbet ODDS is FS+API. Unibet BETTING is CDP (unibet_placer); Unibet
+ODDS is CDP-capture (this module) — there is no FS+API shortcut.
+
+### KAMBI-FEED-DIVERGENCE — now measured with 3 books in the DB (Derby, 2026-09-09)
+1x2 home: **Unibet-Kambi 3.20 · Coolbet 3.30 · Unibet-Site 3.50**. The site reads
+HIGHER than both the public Kambi feed AND Coolbet — the site is the best price and
+where best-price routing would place. The Kambi feed UNDERSTATES the site by 0.30, so a
+Kambi-only screen would MISS this soft edge. This is the evidence for the divergence task.
+
+### DESIGN CONSEQUENCE — two-stage, low-volume (parity with the placer)
+True site odds cost ONE tab navigation per event (no API, no derivable slug, no navigable
+contestKey). And aggressive repeated navigation trips DataDome behavioral throttling
+(observed: after ~8 probe navigations the contest-page started 500-ing). So:
+1. **Broad soft-book screen (cheap)** = the existing public Kambi feed (`unibet_kambi.py`,
+   `Unibet-Kambi`, ~700 events) — the substrate for Unibet TRIGGER bots, exactly as
+   Coolbet's broad API sweep feeds Coolbet trigger bots.
+2. **Targeted site confirm (raw-CDP, low-volume)** = this module, called per CANDIDATE
+   fixture the router/placer is acting on — confirms the true placeable price before
+   writing/placing (the placer already re-checks live odds).
+A book-wide `Unibet-Site` sweep is deliberately NOT built: it would need ~700 navigations
+and risks a behavioral block. Whether it is ever needed hinges on the divergence measure.
+
+### Remaining for the router (next)
+- **Fixture → event_url resolver** (shared with the placer; ~the "matcher" in the phased
+  plan) so the router can call `fetch_event_odds(url)` for an arbitrary DB fixture. The
+  placer today takes an event_url directly; resolution (site search → event page) is the
+  missing shared piece.
+- **Unified best-price router** (Stage B real money): per trigger/pick, capture Unibet-Site
+  + read Coolbet, place ONCE at the better clearing book, mark placed (no duplicates).
+- **Kambi-vs-site divergence measurement** → decides if the Kambi screen is trustworthy or
+  a broad site sweep is actually required for the trigger bots.

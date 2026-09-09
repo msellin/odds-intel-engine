@@ -1,0 +1,868 @@
+{
+ "contest": {
+  "name": "Derby County vs West Bromwich",
+  "startDateTimeUtc": {
+   "_typ": "Date",
+   "unixms": 1788979500000,
+   "value": "2026-09-09T18:45:00.000Z"
+  },
+  "propositions": [
+   {
+    "propositionType": "1x2",
+    "displayName": "Normaalaja tulemus",
+    "options": [
+     {
+      "optionDisplayName": "1",
+      "price": 3.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "X",
+      "price": 3.3,
+      "total": null
+     },
+     {
+      "optionDisplayName": "2",
+      "price": 2.08,
+      "total": null
+     }
+    ]
+   },
+   {
+    "propositionType": "1x2_{xup}up",
+    "displayName": "Normaalaja tulemus (2up)",
+    "options": [
+     {
+      "optionDisplayName": "Derby County",
+      "price": 3.4,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Viik",
+      "price": 3.3,
+      "total": null
+     },
+     {
+      "optionDisplayName": "West Bromwich",
+      "price": 2.05,
+      "total": null
+     }
+    ]
+   },
+   {
+    "propositionType": "total",
+    "displayName": "Kokku väravaid",
+    "options": [
+     {
+      "optionDisplayName": "Üle",
+      "price": 2,
+      "total": 2.5
+     },
+     {
+      "optionDisplayName": "Alla",
+      "price": 1.8,
+      "total": 2.5
+     }
+    ]
+   },
+   {
+    "propositionType": "1st_half_total",
+    "displayName": "Kokku väravaid - 1. poolaeg",
+    "options": [
+     {
+      "optionDisplayName": "Üle",
+      "price": 2.75,
+      "total": 1.5
+     },
+     {
+      "optionDisplayName": "Alla",
+      "price": 1.42,
+      "total": 1.5
+     }
+    ]
+   },
+   {
+    "propositionType": "both_teams_to_score",
+    "displayName": "Mõlemad võistkonnad skoorivad",
+    "options": [
+     {
+      "optionDisplayName": "Jah",
+      "price": 1.75,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Ei",
+      "price": 1.98,
+      "total": null
+     }
+    ]
+   },
+   {
+    "propositionType": "double_chance",
+    "displayName": "Topeltvõimalus",
+    "options": [
+     {
+      "optionDisplayName": "1X",
+      "price": 1.7,
+      "total": null
+     },
+     {
+      "optionDisplayName": "12",
+      "price": 1.33,
+      "total": null
+     },
+     {
+      "optionDisplayName": "X2",
+      "price": 1.29,
+      "total": null
+     }
+    ]
+   },
+   {
+    "propositionType": "{competitor1}_total",
+    "displayName": "Derby County kokku väravaid",
+    "options": [
+     {
+      "optionDisplayName": "Üle",
+      "price": 1.45,
+      "total": 0.5
+     },
+     {
+      "optionDisplayName": "Alla",
+      "price": 2.8,
+      "total": 0.5
+     }
+    ]
+   },
+   {
+    "propositionType": "{competitor2}_total",
+    "displayName": "West Bromwich kokku väravaid",
+    "options": [
+     {
+      "optionDisplayName": "Üle",
+      "price": 2.15,
+      "total": 1.5
+     },
+     {
+      "optionDisplayName": "Alla",
+      "price": 1.7,
+      "total": 1.5
+     }
+    ]
+   },
+   {
+    "propositionType": "anytime_goalscorer_supersub",
+    "displayName": "Mis tahes ajal väravalööja - Power Sub",
+    "options": [
+     {
+      "optionDisplayName": "Jimmy Morgan",
+      "price": 2.75,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Barney Stewart",
+      "price": 2.9,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Carlton Morris",
+      "price": 3,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Aune Heggebo",
+      "price": 3,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Patrick Agyemang",
+      "price": 3.2,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Filip Bilbija",
+      "price": 3.4,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Lars-Jorgen Salvesen",
+      "price": 3.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Henrik Meister",
+      "price": 3.6,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Isaac Price",
+      "price": 3.7,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Tammer Bany",
+      "price": 3.75,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Rhian Brewster",
+      "price": 4,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Mikey Johnston",
+      "price": 4.2,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Mohammed Fuseini",
+      "price": 4.2,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Sammie Szmodics",
+      "price": 4.35,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Kareem Tunde",
+      "price": 4.35,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Felix Horn Myhre",
+      "price": 4.75,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Corey Blackett-Taylor",
+      "price": 5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Bobby Clark",
+      "price": 5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Oliver Bostock",
+      "price": 5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Kenzo Goudmijn",
+      "price": 5.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Harry Whitwell",
+      "price": 5.75,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Ryan Hedges",
+      "price": 6.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Jayson Molumby",
+      "price": 6.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Oscar Fraulo",
+      "price": 7,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Alex Mowatt",
+      "price": 7.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Ousmane Diakite",
+      "price": 7.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Toby Collyer",
+      "price": 7.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Rabby Nzingoula",
+      "price": 8,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Charlie Smith",
+      "price": 8,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Matthew Crowther",
+      "price": 8,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Callum Styles",
+      "price": 8.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Nat Phillips",
+      "price": 8.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Derry Murkin",
+      "price": 9,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Craig Forsyth",
+      "price": 9.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Sondre Langas",
+      "price": 10,
+      "total": null
+     },
+     {
+      "optionDisplayName": "David Ozoh",
+      "price": 10,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Matt Clarke",
+      "price": 10.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "George Campbell",
+      "price": 10.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Lewis Travis",
+      "price": 11,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Charlie Taylor",
+      "price": 12,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Conor Townsend",
+      "price": 12,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Chris Mepham",
+      "price": 12,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Joe Ward",
+      "price": 12,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Brayann Pereira",
+      "price": 12,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Nolan Galves",
+      "price": 12,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Raymond Offor",
+      "price": 12,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Eiran Cashin",
+      "price": 13,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Max Johnston",
+      "price": 13,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Dion Sanderson",
+      "price": 14,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Ryan Nyambe",
+      "price": 17,
+      "total": null
+     }
+    ]
+   },
+   {
+    "propositionType": "total_corners",
+    "displayName": "Nurgalöökide koguarv",
+    "options": [
+     {
+      "optionDisplayName": "Üle",
+      "price": 1.8,
+      "total": 9.5
+     },
+     {
+      "optionDisplayName": "Alla",
+      "price": 1.93,
+      "total": 9.5
+     }
+    ]
+   },
+   {
+    "propositionType": "1st_half_total_corners",
+    "displayName": "Nurgalöökide koguarv - 1. poolaeg",
+    "options": [
+     {
+      "optionDisplayName": "Üle",
+      "price": 1.88,
+      "total": 4.5
+     },
+     {
+      "optionDisplayName": "Alla",
+      "price": 1.85,
+      "total": 4.5
+     }
+    ]
+   },
+   {
+    "propositionType": "total_bookings",
+    "displayName": "Kaartide koguarv",
+    "options": [
+     {
+      "optionDisplayName": "Üle",
+      "price": 1.84,
+      "total": 3.5
+     },
+     {
+      "optionDisplayName": "Alla",
+      "price": 1.88,
+      "total": 3.5
+     }
+    ]
+   },
+   {
+    "propositionType": "correct_score_below_5_5",
+    "displayName": "Õige skoor",
+    "options": [
+     {
+      "optionDisplayName": "1:0",
+      "price": 10,
+      "total": null
+     },
+     {
+      "optionDisplayName": "2:0",
+      "price": 19,
+      "total": null
+     },
+     {
+      "optionDisplayName": "2:1",
+      "price": 12,
+      "total": null
+     },
+     {
+      "optionDisplayName": "3:0",
+      "price": 51,
+      "total": null
+     },
+     {
+      "optionDisplayName": "3:1",
+      "price": 31,
+      "total": null
+     },
+     {
+      "optionDisplayName": "3:2",
+      "price": 34,
+      "total": null
+     },
+     {
+      "optionDisplayName": "4:0",
+      "price": 131,
+      "total": null
+     },
+     {
+      "optionDisplayName": "4:1",
+      "price": 81,
+      "total": null
+     },
+     {
+      "optionDisplayName": "4:2",
+      "price": 81,
+      "total": null
+     },
+     {
+      "optionDisplayName": "4:3",
+      "price": 111,
+      "total": null
+     },
+     {
+      "optionDisplayName": "5:0",
+      "price": 251,
+      "total": null
+     },
+     {
+      "optionDisplayName": "5:1",
+      "price": 226,
+      "total": null
+     },
+     {
+      "optionDisplayName": "5:2",
+      "price": 201,
+      "total": null
+     },
+     {
+      "optionDisplayName": "5:3",
+      "price": 251,
+      "total": null
+     },
+     {
+      "optionDisplayName": "5:4",
+      "price": 251,
+      "total": null
+     },
+     {
+      "optionDisplayName": "0:0",
+      "price": 9,
+      "total": null
+     },
+     {
+      "optionDisplayName": "1:1",
+      "price": 6.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "2:2",
+      "price": 15,
+      "total": null
+     },
+     {
+      "optionDisplayName": "3:3",
+      "price": 51,
+      "total": null
+     },
+     {
+      "optionDisplayName": "4:4",
+      "price": 181,
+      "total": null
+     },
+     {
+      "optionDisplayName": "0:1",
+      "price": 7,
+      "total": null
+     },
+     {
+      "optionDisplayName": "0:2",
+      "price": 10.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "1:2",
+      "price": 9,
+      "total": null
+     },
+     {
+      "optionDisplayName": "0:3",
+      "price": 21,
+      "total": null
+     },
+     {
+      "optionDisplayName": "1:3",
+      "price": 17,
+      "total": null
+     },
+     {
+      "optionDisplayName": "2:3",
+      "price": 26,
+      "total": null
+     },
+     {
+      "optionDisplayName": "0:4",
+      "price": 51,
+      "total": null
+     },
+     {
+      "optionDisplayName": "1:4",
+      "price": 41,
+      "total": null
+     },
+     {
+      "optionDisplayName": "2:4",
+      "price": 51,
+      "total": null
+     },
+     {
+      "optionDisplayName": "3:4",
+      "price": 91,
+      "total": null
+     },
+     {
+      "optionDisplayName": "0:5",
+      "price": 126,
+      "total": null
+     },
+     {
+      "optionDisplayName": "1:5",
+      "price": 101,
+      "total": null
+     },
+     {
+      "optionDisplayName": "2:5",
+      "price": 111,
+      "total": null
+     },
+     {
+      "optionDisplayName": "3:5",
+      "price": 181,
+      "total": null
+     },
+     {
+      "optionDisplayName": "4:5",
+      "price": 251,
+      "total": null
+     }
+    ]
+   },
+   {
+    "propositionType": "half_time_full_time",
+    "displayName": "Poolaeg/normaalaeg",
+    "options": [
+     {
+      "optionDisplayName": "West Bromwich/West Bromwich",
+      "price": 3.3,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Viik/West Bromwich",
+      "price": 5.25,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Viik/viik",
+      "price": 5.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Derby County/Derby County",
+      "price": 5.75,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Viik/Derby County",
+      "price": 7.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "West Bromwich/viik",
+      "price": 15,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Derby County/viik",
+      "price": 16,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Derby County/West Bromwich",
+      "price": 29,
+      "total": null
+     },
+     {
+      "optionDisplayName": "West Bromwich/Derby County",
+      "price": 36,
+      "total": null
+     }
+    ]
+   },
+   {
+    "propositionType": "2_way_handicap",
+    "displayName": "Aasia händikäp",
+    "options": [
+     {
+      "optionDisplayName": "1",
+      "price": 2,
+      "total": null
+     },
+     {
+      "optionDisplayName": "2",
+      "price": 1.78,
+      "total": null
+     }
+    ]
+   },
+   {
+    "propositionType": "3_way_handicap",
+    "displayName": "3 valikut händikäp",
+    "options": [
+     {
+      "optionDisplayName": "1",
+      "price": 1.7,
+      "total": null
+     },
+     {
+      "optionDisplayName": "X",
+      "price": 3.6,
+      "total": null
+     },
+     {
+      "optionDisplayName": "2",
+      "price": 4.2,
+      "total": null
+     }
+    ]
+   },
+   {
+    "propositionType": "1x2_both_teams_to_score",
+    "displayName": "Tulemus & mõlemad võistkonnad skoorivad",
+    "options": [
+     {
+      "optionDisplayName": "West Bromwich & ei",
+      "price": 3.4,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Viik & jah",
+      "price": 4.35,
+      "total": null
+     },
+     {
+      "optionDisplayName": "West Bromwich & jah",
+      "price": 4.35,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Derby County & ei",
+      "price": 6,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Derby County & jah",
+      "price": 7,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Viik & ei",
+      "price": 10,
+      "total": null
+     }
+    ]
+   },
+   {
+    "propositionType": "draw_no_bet",
+    "displayName": "Viik ei loe",
+    "options": [
+     {
+      "optionDisplayName": "1",
+      "price": 2.5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "2",
+      "price": 1.5,
+      "total": null
+     }
+    ]
+   },
+   {
+    "propositionType": "{goalnr}_goal",
+    "displayName": "1. värav",
+    "options": [
+     {
+      "optionDisplayName": "West Bromwich",
+      "price": 1.78,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Derby County",
+      "price": 2.38,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Puudub",
+      "price": 10.5,
+      "total": null
+     }
+    ]
+   },
+   {
+    "propositionType": "winning_margin_3",
+    "displayName": "Võidumarginaal",
+    "options": [
+     {
+      "optionDisplayName": "Viik",
+      "price": 3,
+      "total": null
+     },
+     {
+      "optionDisplayName": "West Bromwich 1 võrra",
+      "price": 3.7,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Derby County 1 võrra",
+      "price": 5,
+      "total": null
+     },
+     {
+      "optionDisplayName": "West Bromwich 2 võrra",
+      "price": 6,
+      "total": null
+     },
+     {
+      "optionDisplayName": "West Bromwich 3+ võrra",
+      "price": 9,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Derby County 2 võrra",
+      "price": 11,
+      "total": null
+     },
+     {
+      "optionDisplayName": "Derby County 3+ võrra",
+      "price": 26,
+      "total": null
+     }
+    ]
+   },
+   {
+    "propositionType": "goal_range",
+    "displayName": "Väravate vahemik",
+    "options": [
+     {
+      "optionDisplayName": "2-3",
+      "price": 1.98,
+      "total": null
+     },
+     {
+      "optionDisplayName": "0-1",
+      "price": 3.3,
+      "total": null
+     },
+     {
+      "optionDisplayName": "4-6",
+      "price": 3.6,
+      "total": null
+     },
+     {
+      "optionDisplayName": "7+",
+      "price": 19,
+      "total": null
+     }
+    ]
+   }
+  ]
+ }
+}

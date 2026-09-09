@@ -4091,6 +4091,51 @@ def test_unibet_placer():
     assert 'SPORT_URL = "https://www.unibet.ee/betting/odds"' in msrc, "no /login page (it 404s) — modal flow"
 
 
+@test("UNIBET-SITE-ODDS-PARSE — contest-page parser is clean + contamination-proof")
+def test_unibet_site_odds_parse():
+    """UNIBET-UI-PLACER build-step 1 (2026-09-09): the Unibet SITE odds feed
+    (bookmaker `Unibet-Site`). Two pins:
+
+    (1) `parse_contest` extracts EXACTLY match 1x2 + O/U-2.5 from a real captured
+        contest-page body and NOTHING else — the Estonian feed ships `1x2_{xup}up`,
+        `3_way_handicap`, `1st_half_total`, competitor totals, `total_corners`,
+        `total_bookings` alongside, and keying on `propositionType` must reject all
+        of them. Runs offline against the committed fixture (Derby, home=3.50 =
+        the real site price, not the 3.20 Kambi feed).
+    (2) Source-inspection: the module writes `Unibet-Site` (distinct from the
+        divergent `Unibet-Kambi`), captures via RAW CDP (not a fresh tab / injected
+        fetch / FlareSolverr — all proven blocked), and is read-only (no placement)."""
+    import inspect
+    import json
+    from pathlib import Path
+    from workers.automation import unibet_odds_feed as uof
+
+    fx = Path(__file__).parent.parent / "tests" / "fixtures" / "unibet_contest_derby.json"
+    rows = uof.parse_contest(json.loads(fx.read_text()))
+    markets = {r[0] for r in rows}
+    assert markets == {"1x2", "over_under_25"}, (
+        f"parser must yield ONLY 1x2 + over_under_25, got {markets} — a contaminant "
+        "market (halves/corners/bookings/handicap/2-up) leaked through")
+    assert ("1x2", "home", 3.5, None) in rows, "Derby site home must be 3.50 (site, not 3.20 Kambi)"
+    assert ("1x2", "draw", 3.3, None) in rows and ("1x2", "away", 2.08, None) in rows
+    assert ("over_under_25", "over", 2.0, 2.5) in rows, "O/U 2.5 over must parse with numeric line"
+    assert ("over_under_25", "under", 1.8, 2.5) in rows
+    assert len(rows) == 5, f"exactly 3x1x2 + 2xOU25 = 5 clean rows, got {len(rows)}: {rows}"
+
+    assert uof._BOOKMAKER == "Unibet-Site", "must write as Unibet-Site (not the Kambi feed)"
+    msrc = inspect.getsource(uof)
+    assert "Network.getResponseBody" in msrc and "websockets" in msrc, (
+        "must capture the SPA's own response via RAW CDP (retains bodies)")
+    assert "propositionType" in inspect.getsource(uof.parse_contest), (
+        "parser must key on the language-stable propositionType, not displayName")
+    # read-only: never selects/stakes/places
+    assert not any(k in msrc for k in ("Tee panus", "propositionOptionBtn", "def place")), (
+        "the odds feed is READ-ONLY — placement belongs to unibet_placer")
+    # transport reality documented so a future dev doesn't retry the blocked paths
+    assert "FlareSolverr" in msrc and "400" in msrc, (
+        "document that FlareSolverr->API returns 400 (the Coolbet odds pattern does not transfer)")
+
+
 @test("BETA-BOTS-RETIRED — dead beta bots (dnb, summer) retired by migration 323")
 def test_beta_bots_retired():
     """BETA-BOT-AUDIT 2026-09-09: the gradeability sweep found bot_dnb_specialist
