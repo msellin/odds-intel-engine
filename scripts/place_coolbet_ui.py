@@ -672,6 +672,40 @@ def load_picks(bot_name: str) -> list[dict]:
     )
 
 
+def _alert_placer_lockout(reason: str, picks_by_bot: dict, *, execute: bool) -> None:
+    """COOLBET-PLACER-LOCKOUT-ALERT (2026-09-09): Telegram the operator the moment a
+    real-money run cannot place because the Coolbet session is logged out / auto-login
+    failed — the Al-Nassr vs Abha class, where placement silently stopped and a valid
+    bet was missed until the owner noticed. Only fires when this is an EXECUTE run with
+    pending picks (a dry run or an empty queue failing to log in is not a money problem).
+    Deduped to one alert per 3h via send_telegram's dedup_key, so an hours-long lockout
+    pings once, not every hourly pass. Never raises — alerting must not break the placer."""
+    try:
+        if not execute:
+            return
+        pending = [(b, len(pk)) for b, pk in (picks_by_bot or {}).items() if pk]
+        n = sum(c for _, c in pending)
+        if n <= 0:
+            return
+        sample = []
+        for b, pk in (picks_by_bot or {}).items():
+            for p in pk[:3]:
+                sample.append(f"• {p.get('home_team')} v {p.get('away_team')} "
+                              f"{p.get('market')}/{p.get('selection')} @ {p.get('odds_at_pick')}")
+        from workers.notify.telegram import send_telegram
+        msg = ("⚠️ <b>Coolbet placer LOCKED OUT</b>\n"
+               f"{reason}\n"
+               f"<b>{n}</b> pending real-money pick(s) NOT placed and blocked until the "
+               "session is restored.\n"
+               "Fix: open coolbet.com/et/login in the foreground CDP-Chrome (:9222) and "
+               "complete SMS/Imperva; the placer recovers on its next run.\n\n"
+               + "\n".join(sample[:6]))
+        send_telegram(msg, dedup_key="coolbet-placer-lockout", dedup_window_s=10800)
+        print(f"lockout alert sent (Telegram) — {n} pending pick(s) blocked")
+    except Exception as e:  # noqa: BLE001
+        print(f"lockout alert failed (non-fatal): {type(e).__name__}: {str(e)[:120]}")
+
+
 LOCK_PATH = Path.home() / ".coolbet-daemon" / "ui-placer.lock"
 
 
@@ -1008,6 +1042,9 @@ def main() -> int:
         if rc != 0:
             print("AUTO-LOGIN FAILED — if Coolbet asked for SMS, complete it in "
                   "the browser; otherwise check COOLBET_USER/COOLBET_PASS.")
+            _alert_placer_lockout("Auto-login failed (session logged out — likely an "
+                                  "Imperva challenge or expired JWT).",
+                                  picks_by_bot, execute=args.execute)
             return 2
         print("session restored.")
 
@@ -1035,6 +1072,9 @@ def main() -> int:
                 return 0
             if not up.is_logged_in(page):
                 print("still not logged in after auto-login — aborting")
+                _alert_placer_lockout("Session still logged out after auto-login "
+                                      "(page did not reach a logged-in state).",
+                                      picks_by_bot, execute=args.execute)
                 return 2
 
             # ── ACCOUNT VERIFICATION — FIRST real-money gate ──────────────────

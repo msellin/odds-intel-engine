@@ -34063,5 +34063,47 @@ def test_betting_architecture_doc():
             "must be updated to reflect the multi-book population")
 
 
+@test("COOLBET-PLACER-LOCKOUT-ALERT — alerts on lockout, only when it costs a real bet")
+def test_coolbet_placer_lockout_alert():
+    """COOLBET-PLACER-LOCKOUT-ALERT (2026-09-09): the durable fix for the Al-Nassr vs
+    Abha class — when the Coolbet session is logged out and auto-login fails, the placer
+    must Telegram the operator instead of silently placing nothing. Behavioural: fires
+    on an EXECUTE run with pending picks; stays silent on a dry run or an empty queue;
+    deduped so an hours-long lockout pings once. Never raises."""
+    import inspect
+    import scripts.place_coolbet_ui as pcu
+    from workers.notify import telegram as tg
+
+    sent = []
+    orig = tg.send_telegram
+    tg.send_telegram = lambda msg, **kw: (sent.append((msg, kw)) or 1)
+    try:
+        picks = {"bot_coolbet_ou_model_v1": [
+            {"home_team": "Al-Nassr", "away_team": "Abha", "market": "over_under_25",
+             "selection": "under", "odds_at_pick": 3.35}]}
+        # execute + pending picks -> exactly one alert, with the dedup key + 3h window
+        pcu._alert_placer_lockout("test lockout", picks, execute=True)
+        assert len(sent) == 1, "execute run with pending picks must alert once"
+        assert sent[0][1].get("dedup_key") == "coolbet-placer-lockout", "must dedup by lockout key"
+        assert sent[0][1].get("dedup_window_s", 0) >= 3600, "cooldown must be >= 1h (hourly placer)"
+        assert "Al-Nassr" in sent[0][0] and "NOT placed" in sent[0][0], "message names the blocked bet(s)"
+        # dry run -> no alert (not a money problem)
+        sent.clear(); pcu._alert_placer_lockout("test", picks, execute=False)
+        assert not sent, "dry run must NOT alert"
+        # empty queue -> no alert (nothing to miss)
+        pcu._alert_placer_lockout("test", {}, execute=True)
+        assert not sent, "empty queue must NOT alert"
+    finally:
+        tg.send_telegram = orig
+
+    # wired at both failure points, and fail-safe
+    src = inspect.getsource(pcu)
+    assert src.count("_alert_placer_lockout(") >= 3, "helper must be defined + called at both login-fail points"
+    assert "AUTO-LOGIN FAILED" in src and "still not logged in after auto-login" in src, "both lockout paths present"
+    hsrc = inspect.getsource(pcu._alert_placer_lockout)
+    assert "except Exception" in hsrc, "alert must be fail-safe (never break the placer)"
+
+
+
 if __name__ == "__main__":
     main()
