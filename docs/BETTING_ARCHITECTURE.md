@@ -173,6 +173,22 @@ for each `(match, market, selection)`:
    check runs before every placement (`match_exposure`/`real_bets` span books), so once
    it is placed at either book the other is blocked.
 
+**Coordination — how the "two placers" decide who bets (owner Q, 2026-09-09):** they DON'T
+coordinate. There is **one router (the decider) and two dumb executor arms**
+(`coolbet_ui_placer`, `unibet_placer`). Both arms run on the same Mac (both drive
+CDP-Chrome), so the router is one local process calling two functions — no lock, no
+inter-process messaging, no time-window race. Per pick: read both books' fresh odds → keep
+those that clear the gate → if none, skip → if exposure already exists on
+`(match,market,selection)`, skip → else place at the **max-odds** candidate's executor (tie →
+a fixed, configurable book preference) → write ONE placement-of-record. Edge cases fall out:
+one book's session down = it has no fresh odds = the router places at the other book (if it
+clears) + fires that book's lockout alert, so a down book never costs the bet; both down =
+skip + alert. Double-bet is impossible (one decision, one record, cross-book exposure check).
+The rejected alternative — two independent placers coordinating via a DB claim
+(`UNIQUE(match,market,selection)` + `INSERT ON CONFLICT DO NOTHING`) — is first-come, not
+best-price, and adding a two-phase odds window to fix that just adds race surface. One router
+deciding is strictly simpler and more robust.
+
 Design rules for the target:
 - **One canonical market vocabulary** (`1x2`/home,draw,away · `over_under_25`/over,under · …) used by
   every writer and reader. Kill the `o/u`↔`over_under_25`↔`over 2.5` triple-spelling. A single
@@ -225,13 +241,27 @@ alongside Coolbet — that would double-bet the same fixture at two books. Inste
   PLACEABLE set + cross-book dedup (`match_exposure`/`real_bets` already read across
   books, so no double-bet — but "which book" is first-come, not best-price). Not the plan.
 
-**Bot lifecycle — the load-bearing rule (owner, 2026-09-09):** REAL MONEY = the two proven
-Coolbet bots (`bot_coolbet_1x2_model_v1`, `bot_coolbet_ou_model_v1`), and it **stays that way**.
-Every other bot — Coolbet triggers (model + sharp), any line-shop bot, and ALL Unibet bots — runs
-**paper**, accumulating settled picks. A bot is promoted to a placer ONLY when (a) it has enough
-settled history to be calibrated and compared against the two live bots, AND (b) the owner decides
-to. Stages 3a–3c build the paper substrate for Unibet; they do NOT stake real money. Promotion,
-best-price routing and any placer collapse are all downstream of the owner's data-gated decision.
+**Bot lifecycle — TWO families, only one is data-gated (owner, 2026-09-09; corrects an
+earlier draft):**
+
+- **Family 1 — the `/picks` real-money bots (NOT data-gated).** The placeable bots
+  (`bot_coolbet_1x2_model_v1`, `bot_coolbet_ou_model_v1`) ARE the current `/picks`/model
+  output, executed at a book. They were never promoted through a data gate — `/picks` is
+  the validated product. So **extending them to Unibet is not data-gated** either: same
+  `/picks` signal, executed at the better-priced book. The target here is **one
+  book-agnostic bot per market** (`bot_model_1x2`, `bot_model_ou`) placed by the
+  **best-price router** across {Coolbet, Unibet} — the near-term real-money goal, which
+  does NOT wait on trigger accumulation. (Still owner-gated on the usual real-money
+  discipline: the Unibet executor proven + a dry-run before it stakes.)
+- **Family 2 — the trigger-engine bots (DATA-GATED).** `bot_*_trigger_*` (model + sharp),
+  per-book soft-odds scanning, Coolbet AND Unibet, run **paper**, accumulating settled
+  picks. Promoted to a placer ONLY when (a) enough settled history to calibrate + compare,
+  AND (b) the owner decides. Stage 3b builds the Unibet paper triggers; they do NOT stake.
+
+So: Family 1 = the `/picks` product, best-price-routed across books (near-term real money,
+one bet per selection); Family 2 = paper research bots, data-gated. The Unibet UI placer is
+the execution arm for BOTH — it stakes Family-1 routed bets once live, and never stakes a
+Family-2 bot until that bot is promoted.
 
 **Guardrail (unchanged):** never flip `execute`, change a real-money floor, add a bot to a
 PLACEABLE set, or repoint a placer's source without explicit owner authorization + a dry-run +
