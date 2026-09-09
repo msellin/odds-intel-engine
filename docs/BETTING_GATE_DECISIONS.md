@@ -97,3 +97,23 @@ basis) and record it here. See `docs/SYSTEM_MAP.md` §1 for the two-edges distin
 - The placer reads these floors from `coolbet_placer._MIN_EDGE_BY_MARKET` /
   `_MIN_ODDS_BY_MARKET`; the mirror jobs mirror them; the smoke test
   `BOT-CONFIG-GOLDEN-MIDDLE` pins the 1x2 value.
+
+## 1x2 fav/long split — favourites are a robust loser (FAVLONG-SPLIT-FLOOR-BACKTEST, 2026-09-09)
+
+The "13% is the best 1x2 floor" result was measured on POOLED 1x2. Splitting by the
+generation cut (fav = home pick odds <2.0; long = draws/aways/home ≥2.0) via
+`scripts/favlong_floor_backtest.py` (same walk-forward `_sweep`, executable price, 3 folds):
+
+| Side | n (all / cohort) | Best fold-robust floor | ROI at 13% | Shape |
+|---|---|---|---|---|
+| **FAV** (home <2.0) | 137 / 49 | **NONE robust at any floor** | −36% / −17% | negative everywhere; **worse as the floor rises** (high-"edge" favourites are the biggest model errors) |
+| **LONG** (draw/away/home ≥2.0) | 1772 / 370 | **13% robust ✓** (also 15/18) | +10.8% / +17.0% | carries all the profit |
+| POOLED | 1909 / 419 | 13% robust ✓ | +8.3% / +15.8% | positive only because longs are 93% of picks |
+
+**Conclusion:** the model has **no real edge on home favourites** — they are a fold-robust
+loss at every floor, and higher favourite "edge" is noise, not signal. The pooled 13% floor
+hides this because longshots dominate the count. **We currently place + publish home-favourite
+1x2 bets that clear 13% and they lose.** Candidate remediation (OWNER-GATED — changes real-money
+placement + the published record): exclude home favourites from placement (or set their floor
+unreachably), keep longs at 13% (explore 15%). Confirm first with the pure odds-band cut
+(odds<2.0 either side) since this cut mirrors generation and pools away-favourites into 'long'.

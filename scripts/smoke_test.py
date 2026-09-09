@@ -34229,5 +34229,23 @@ def test_unibet_site_sweep():
     # read-only w.r.t. placement — the sweep never places
     assert "place" not in src.lower() or "placeholder" in src.lower() or "placed" not in src.lower() or True
 
+@test("FAVLONG-FLOOR-BACKTEST — 1x2 fav/long split reuses the canonical sweep, measures only")
+def test_favlong_floor_backtest():
+    """FAVLONG-SPLIT-FLOOR-BACKTEST (2026-09-09): the fav/long split floor sweep must
+    reuse the canonical walk-forward sweep + robustness logic (edge_floor_backtest._sweep),
+    use the executable price basis, classify fav exactly as generation does (home < 2.0),
+    and MEASURE only (never mutate a floor or place)."""
+    import inspect
+    import scripts.favlong_floor_backtest as fl
+    from scripts.edge_floor_backtest import _sweep as canonical_sweep
+    assert fl._sweep is canonical_sweep, "must reuse the canonical _sweep (same robustness rule)"
+    # fav cut matches daily_pipeline_v2.py:3375 (home pick under 2.0)
+    assert fl._is_fav("home", 1.8) is True and fl._is_fav("home", 2.5) is False
+    assert fl._is_fav("away", 1.5) is False and fl._is_fav("draw", 1.9) is False
+    src = inspect.getsource(fl)
+    assert "odds_at_pick_live" in src and "result IN ('won','lost')" in src, "executable basis, settled only"
+    assert "UPDATE" not in src.upper() and "INSERT" not in src.upper() and "_MIN_EDGE" not in src, (
+        "analysis only — must not mutate any floor or ledger")
+
 if __name__ == "__main__":
     main()
