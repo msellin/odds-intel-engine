@@ -101,3 +101,25 @@ REPLACED by unified bots (e.g. bot_model_1x2_v1 / bot_model_ou_v1) that route to
    already reads `real_bets`).
 4. **Unibet TRIGGER bots (paper)** — mirror the Coolbet trigger family (model + sharp anchors)
    for Unibet, once the site odds feed exists — for watching, like the Coolbet triggers.
+
+## Odds feed — findings (2026-09-09) — it's an anti-bot task, do it right
+The Unibet SITE odds live in the Kindred API `sportsbff-ams.kindredext.net/sports-api/api/v2/
+views/contest-page?_typ=GetContestWithPricesReq&contestKey=<eventKey>` (listings via
+`quickbrowse` / `az-menu`). Response shape: `contest` → propositions → options with
+`optionDisplayName` ("1"/"X"/"2", "Üle"/"Alla") + `"price"` (decimal) + `"line"`. Confirmed
+the REAL prices are here (Derby home price 3.5 — matches the site, not the 3.20 Kambi feed).
+
+Getting the JSON is the hard part (all three tried this session):
+- **Direct fetch** (page.evaluate / ctx.request) → CORS + DataDome block ("Failed to fetch" /
+  503). The SPA's own requests carry a DataDome token; injected fetches don't.
+- **Playwright response-body capture** (connect_over_cdp) → flaky, bodies evicted before read.
+- **DOM scrape** → works for targeted placement but SPA lazy-renders markets → bulk returns {}.
+
+**DECISION — the reliable approach:** capture the SPA's OWN `contest-page` responses via a RAW
+CDP Network-domain session (Network.enable + Network.responseReceived + Network.getResponseBody
+called promptly), like coolbet_session.py's raw-CDP websocket usage — raw CDP retains bodies.
+Feed loop: navigate the football listing (SPA fetches listings → contestKeys), then navigate/
+prefetch each event (SPA fetches contest-page → capture), parse propositions → write
+odds_snapshots as bookmaker `Unibet-Site` (NOT the divergent `Unibet`/`Unibet-Kambi` Kambi feed).
+Rate-limit + reuse the operator's session (DataDome). ~half-day focused build. THIS unblocks:
+Unibet bots → best-price router → Unibet trigger bots.
