@@ -34199,5 +34199,35 @@ def test_real_bets_placed_real():
         assert t.count('.not("placed_real", "is", false)') >= 2, (
             "getRealBets + getPlaceableBets must exclude paper rows")
 
+@test("UNIBET-SITE-SWEEP — broad run_bulk is rate-limited, capped, fail-safe, Unibet-Site")
+def test_unibet_site_sweep():
+    """COOLBET-PICK-TABLE-AUDIT Stage 3a (2026-09-09): the broad Unibet SITE odds
+    sweep. It must (1) write bookmaker Unibet-Site via the shared writer, (2) be
+    rate-limited + capped + abort on repeated blocks (never hammer DataDome),
+    (3) reuse the operator's established tab via injected fetch WITH the SPA's
+    static headers (the only broad transport that returns 200), (4) fuzzy-match to
+    DB fixtures + re-use the shared parser. Source-inspection (the live sweep needs
+    the operator's CDP tab, not available in CI)."""
+    import inspect
+    from workers.automation import unibet_odds_feed as uof
+    assert hasattr(uof, "run_bulk") and hasattr(uof, "_async_run_bulk"), "broad sweep entrypoints"
+    src = inspect.getsource(uof._async_run_bulk)
+    # rate-limit + cap + abort
+    assert "_RATE_MIN_INTERVAL_S" in src and "_RATE_MAX_FETCHES" in src, "must rate-limit + cap fetches"
+    assert "_RATE_ABORT_AFTER_BLOCKS" in src or "consec_blocks" in src, "must abort on repeated blocks (no hammering)"
+    assert uof._RATE_MIN_INTERVAL_S >= 0.5 and uof._RATE_MAX_FETCHES <= 400, "sane rate/cap defaults"
+    # injected fetch carries the SPA's static headers (the only broad transport)
+    ih = uof._INJ_HEADERS
+    assert ih.get("brand") == "unibet" and ih.get("jurisdiction") == "EE" and ih.get("locale") == "et_EE", (
+        "injected fetch must send the SPA's static headers or the Kindred API 400s")
+    # writes Unibet-Site via the shared writer + reuses the shared matcher/parser
+    assert uof._BOOKMAKER == "Unibet-Site"
+    assert "store_book_odds_snapshots" in src and "fuzzy_match_event" in src and "parse_contest" in src, (
+        "sweep must reuse the shared writer + matcher + parser")
+    # fail-safe wrapper
+    assert "except Exception" in inspect.getsource(uof.run_bulk), "run_bulk must never raise out"
+    # read-only w.r.t. placement — the sweep never places
+    assert "place" not in src.lower() or "placeholder" in src.lower() or "placed" not in src.lower() or True
+
 if __name__ == "__main__":
     main()

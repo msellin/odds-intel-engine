@@ -29,6 +29,7 @@ never selects an outcome, sets a stake, or places anything — that is `unibet_p
 from __future__ import annotations
 
 import logging
+import os
 
 from workers.automation import unibet_browser_sync as ubs
 
@@ -287,17 +288,259 @@ def fetch_event_odds(event_url: str, *, match_id: str | None = None,
     return out
 
 
+# ---------------------------------------------------------------------------
+# 3a — BROAD sweep: write Unibet-Site odds for DB fixtures via injected fetch.
+# ---------------------------------------------------------------------------
+# The Kindred API rejects a bare request (HTTP 400) and DataDome blocks headless
+# tabs, so the ONLY broad transport is the operator's established tab making the
+# SPA's OWN fetch — an injected fetch WITH the SPA's static headers returns 200
+# with true prices (proven 2026-09-09 across events). We enumerate site events
+# per league via the lobby view, match them to DB fixtures, then injected-fetch
+# each matched event's contest-page. Everything is rate-limited so we never
+# hammer DataDome (aggressive navigation was observed to trip a behavioural block).
+_SPORTSBFF = "https://sportsbff-ams.kindredext.net/sports-api/api/v2"
+_INJ_HEADERS = {"accept": "application/json", "content-type": "application/json",
+                "ksp_jurisdiction": "mga", "jurisdiction": "EE",
+                "locale": "et_EE", "brand": "unibet"}
+_RATE_MIN_INTERVAL_S = float(os.getenv("UNIBET_SITE_RATE_S", "1.2"))  # between injected fetches
+_RATE_MAX_FETCHES = int(os.getenv("UNIBET_SITE_MAX_FETCHES", "180"))  # hard cap per run
+_RATE_ABORT_AFTER_BLOCKS = 4  # consecutive non-200 → stop (do not hammer a block)
+
+
+def _inject_expr(url: str) -> str:
+    import json
+    return (f"(async()=>{{try{{const r=await fetch({json.dumps(url)},"
+            f"{{credentials:'include',headers:{json.dumps(_INJ_HEADERS)}}});"
+            "const t=await r.text();return JSON.stringify({s:r.status,b:t});}"
+            "catch(e){return JSON.stringify({s:0,e:String(e)});}})()")
+
+
+def _lobby_events(lobby_json: dict) -> list[dict]:
+    """Extract [{name, contest_key, start}] from a views/lobby response."""
+    out: list[dict] = []
+    def walk(o):
+        if isinstance(o, dict):
+            if o.get("contestKey") and o.get("name") and str(o.get("_typ", "")).endswith("FixtureContest"):
+                out.append({"name": o["name"], "contest_key": o["contestKey"],
+                            "start": (o.get("startDateTimeUtc") or {}).get("value")})
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(lobby_json)
+    # dedup by key
+    seen = {}
+    for e in out:
+        seen[e["contest_key"]] = e
+    return list(seen.values())
+
+
+async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
+    """Sweep Unibet SITE odds for DB fixtures within `days`, writing `Unibet-Site`.
+    Rate-limited + fail-safe. Returns counters. Never raises out."""
+    import asyncio
+    import json
+    import time
+    from datetime import datetime, timezone
+
+    import websockets
+    from rapidfuzz import fuzz
+
+    from workers.api_clients.db import execute_query
+    from workers.api_clients.supabase_client import store_book_odds_snapshots
+    from workers.automation.coolbet_placer import fuzzy_match_event
+
+    c = {"db_fixtures": 0, "leagues_swept": 0, "site_events": 0, "matched": 0,
+         "stored": 0, "fetches": 0, "blocks": 0, "reason": None}
+
+    # 1) find the operator's established unibet tab
+    try:
+        targets = await asyncio.wait_for(_http_get_json(f"{ubs.CDP_URL}/json/list"), timeout=8)
+    except Exception as e:  # noqa: BLE001
+        c["reason"] = f"CDP unreachable: {e}"; return c
+    tab = next((t for t in (targets or []) if t.get("type") == "page"
+                and "unibet.ee" in (t.get("url") or "").lower()), None)
+    if not tab or not tab.get("webSocketDebuggerUrl"):
+        c["reason"] = "no logged-in unibet.ee tab open (a fresh tab is DataDome-degraded)"; return c
+
+    # 2) DB fixtures within `days`
+    fixtures = execute_query(
+        """SELECT m.id::text id, m.date, ht.name home, at2.name away,
+                  l.name league, l.country country
+             FROM matches m
+             LEFT JOIN teams ht ON ht.id=m.home_team_id
+             LEFT JOIN teams at2 ON at2.id=m.away_team_id
+             LEFT JOIN leagues l ON l.id=m.league_id
+            WHERE m.date > now() AND m.date < now() + (%s || ' days')::interval
+              AND m.date_disputed_at IS NULL AND ht.name IS NOT NULL AND at2.name IS NOT NULL
+            ORDER BY m.date""",
+        (str(days),))
+    if limit:
+        fixtures = fixtures[:limit]
+    c["db_fixtures"] = len(fixtures)
+    if not fixtures:
+        c["reason"] = "no DB fixtures in window"; return c
+
+    last_fetch = [0.0]
+    consec_blocks = [0]
+
+    async with websockets.connect(tab["webSocketDebuggerUrl"], max_size=40_000_000) as ws:
+        nid = [0]
+        async def inj(url: str) -> dict | None:
+            # rate-limit + cap + abort-on-repeated-block
+            if c["fetches"] >= _RATE_MAX_FETCHES:
+                return None
+            wait = _RATE_MIN_INTERVAL_S - (time.monotonic() - last_fetch[0])
+            if wait > 0:
+                await asyncio.sleep(wait + 0.15 * (nid[0] % 3))  # small jitter
+            nid[0] += 1; rid = nid[0]
+            await ws.send(json.dumps({"id": rid, "method": "Runtime.evaluate",
+                                      "params": {"expression": _inject_expr(url),
+                                                 "awaitPromise": True, "returnByValue": True}}))
+            last_fetch[0] = time.monotonic(); c["fetches"] += 1
+            t0 = asyncio.get_event_loop().time()
+            while asyncio.get_event_loop().time() - t0 < 20:
+                try:
+                    msg = await asyncio.wait_for(ws.recv(), timeout=3.0)
+                except asyncio.TimeoutError:
+                    continue
+                evt = json.loads(msg)
+                if evt.get("id") != rid:
+                    continue
+                val = ((evt.get("result") or {}).get("result") or {}).get("value")
+                if not val:
+                    return None
+                try:
+                    d = json.loads(val)
+                except Exception:  # noqa: BLE001
+                    return None
+                if d.get("s") != 200:
+                    c["blocks"] += 1; consec_blocks[0] += 1
+                    return None
+                consec_blocks[0] = 0
+                try:
+                    return json.loads(d.get("b") or "")
+                except Exception:  # noqa: BLE001
+                    return None
+            return None
+
+        # 3) COUNTRY RNs from quickbrowse (football:<country>, depth 1). The root
+        # quickbrowse returns country level, and views/lobby at the country level
+        # returns ALL that country's events across its leagues — so we enumerate by
+        # country (fewer fetches, and country names fuzzy-map more reliably than
+        # league names), then fuzzy-match home/away within the country.
+        qb = await inj(f"{_SPORTSBFF}/quickbrowse?_typ=GetQuickBrowse&categoryRn=football&clientOffset=-180")
+        rns: set[str] = set()
+        def walk_rn(o):
+            if isinstance(o, dict):
+                rn = o.get("categoryRn")
+                if isinstance(rn, str) and rn.startswith("football:") and rn.count(":") == 1:
+                    rns.add(rn)
+                for v in o.values():
+                    walk_rn(v)
+            elif isinstance(o, list):
+                for v in o:
+                    walk_rn(v)
+        walk_rn(qb or {})
+        if not rns:
+            c["reason"] = "quickbrowse returned no country RNs (session blocked?)"; return c
+
+        def country_of(rn: str) -> str:
+            return rn.split(":", 1)[1].replace("_", " ")
+        rn_list = [(rn, country_of(rn)) for rn in rns]
+
+        # group DB fixtures by COUNTRY and fuzzy-map each to a Unibet country RN
+        groups: dict[str, list] = {}
+        for f in fixtures:
+            groups.setdefault(f.get("country") or "", []).append(f)
+
+        for country, fx in groups.items():
+            if consec_blocks[0] >= _RATE_ABORT_AFTER_BLOCKS:
+                c["reason"] = "aborted — repeated non-200 (DataDome throttling); stopping to not hammer"; break
+            if c["fetches"] >= _RATE_MAX_FETCHES:
+                c["reason"] = f"hit fetch cap {_RATE_MAX_FETCHES}"; break
+            target = (country or "").lower().strip()
+            best, best_rn = 0, None
+            for rn, cn in rn_list:
+                sc = fuzz.token_set_ratio(target, cn.lower())
+                if sc > best:
+                    best, best_rn = sc, rn
+            if not best_rn or best < 80:
+                continue  # no confident country match → skip (Kambi still covers it)
+            lobby = await inj(f"{_SPORTSBFF}/views/lobby?_typ=GetLobbyPageView&category={best_rn}&clientOffset=-180")
+            if not lobby:
+                continue
+            c["leagues_swept"] += 1
+            events = _lobby_events(lobby)
+            c["site_events"] += len(events)
+            # shape candidates for fuzzy_match_event (expects {home, away, date, raw})
+            cands = []
+            for e in events:
+                nm = e["name"]
+                if " vs " not in nm:
+                    continue
+                h, a = nm.split(" vs ", 1)
+                cands.append({"home": h.strip(), "away": a.strip(),
+                              "start": e.get("start"), "raw": {"contest_key": e["contest_key"]}})
+            for f in fx:
+                if consec_blocks[0] >= _RATE_ABORT_AFTER_BLOCKS or c["fetches"] >= _RATE_MAX_FETCHES:
+                    break
+                ev = fuzzy_match_event(f["home"], f["away"], cands, f.get("date"), str(f["id"]))
+                if not ev:
+                    continue
+                key = (ev.get("raw") or {}).get("contest_key")
+                if not key:
+                    continue
+                c["matched"] += 1
+                contest = await inj(f"{_SPORTSBFF}/views/contest-page?_typ=GetContestWithPricesReq&contestKey={key}")
+                if not contest or not (contest.get("contest") or {}).get("propositions"):
+                    continue
+                rows = parse_contest(contest)
+                if rows and not dry_run:
+                    mins = int((f["date"] - datetime.now(timezone.utc)).total_seconds() // 60)
+                    c["stored"] += store_book_odds_snapshots(_BOOKMAKER, str(f["id"]), rows,
+                                                             minutes_to_kickoff=mins)
+                elif rows:
+                    c["stored"] += len(rows)
+    if c["reason"] is None:
+        c["reason"] = "ok"
+    return c
+
+
+def run_bulk(days: int = 2, dry_run: bool = False, limit: int | None = None) -> dict:
+    """Broad Unibet SITE odds sweep for DB fixtures within `days` → `Unibet-Site`.
+    Rate-limited (env UNIBET_SITE_RATE_S / _MAX_FETCHES), fail-safe. Requires the
+    operator's logged-in unibet.ee tab in CDP-Chrome. Never raises."""
+    import asyncio
+    try:
+        return asyncio.run(_async_run_bulk(days, limit, dry_run))
+    except Exception as e:  # noqa: BLE001
+        log.warning("unibet-site run_bulk failed: %s", e)
+        return {"reason": f"run_bulk error: {e}", "stored": 0}
+
+
 def main() -> int:
     import argparse
     import json
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    ap = argparse.ArgumentParser(description="Capture Unibet SITE odds for one event (Unibet-Site).")
-    ap.add_argument("--event", required=True, help="unibet.ee event page URL")
-    ap.add_argument("--match-id", help="DB match id to store under")
-    ap.add_argument("--write", action="store_true", help="write rows to odds_snapshots")
-    ap.add_argument("--minutes", type=int, default=None, help="minutes to kickoff")
+    ap = argparse.ArgumentParser(description="Capture Unibet SITE odds (Unibet-Site).")
+    ap.add_argument("--event", help="unibet.ee event page URL (single-event targeted capture)")
+    ap.add_argument("--bulk", action="store_true", help="broad sweep of DB fixtures within --days")
+    ap.add_argument("--days", type=int, default=2)
+    ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--match-id", help="single-event: DB match id to store under")
+    ap.add_argument("--write", action="store_true", help="single-event: write rows to odds_snapshots")
+    ap.add_argument("--minutes", type=int, default=None, help="single-event: minutes to kickoff")
     args = ap.parse_args()
+    if args.bulk:
+        print(json.dumps(run_bulk(days=args.days, dry_run=args.dry_run, limit=args.limit),
+                         indent=2, ensure_ascii=False))
+        return 0
+    if not args.event:
+        ap.error("pass --event <url> for a single capture, or --bulk for the sweep")
     res = fetch_event_odds(args.event, match_id=args.match_id, write=args.write,
                            minutes_to_kickoff=args.minutes)
     print(json.dumps(res, indent=2, ensure_ascii=False))
