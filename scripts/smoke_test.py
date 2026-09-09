@@ -3997,6 +3997,32 @@ def test_lineshop_family_retired():
         assert not calls, f"{fn} must not be CALLED — its line-shop bot is retired"
 
 
+@test("PICK-TRIGGERS-STAGE-A — book-agnostic trigger windows: calibrated, placer-sourced floors")
+def test_pick_triggers_stage_a():
+    """BOOK-AGNOSTIC-EDGE-ENGINE Stage A (2026-09-09): the model publishes a
+    trigger window per fixture×market×selection so each book can match its own
+    odds. Pin the invariants that make it correct: (1) it CALIBRATES (raw probs
+    are over-confident); (2) the edge/odds floors come from the placer so the
+    trigger and the placement gate can't drift; (3) the window formula is
+    min_odds=max(1/(cal−floor), odds_floor); (4) migration 319 has the table."""
+    import inspect
+    from workers.jobs import pick_triggers as m
+    src = inspect.getsource(m)
+    assert "IsotonicRegression" in src and "_fit_calibrator" in src, "must calibrate — raw probs are over-confident"
+    assert "_min_edge_for" in src and "_min_odds_for" in src, (
+        "edge/odds floors must be sourced from coolbet_placer so trigger and placer can't drift"
+    )
+    # the window math
+    assert "1.0 / (cal - edge_floor)" in src and "max(" in src, "min_odds = max(1/(cal−floor), odds_floor)"
+    assert m.OUTLIER_MULT > 1.0, "max_odds must cap outliers above min_odds"
+    # only the markets we bet (keeps sweep scope tight)
+    strats = {s[0] for s in m._STRATEGIES}
+    assert strats == {"model_1x2", "model_ou25"}, "Stage A covers 1x2 + O/U 2.5 (the markets we bet)"
+    from pathlib import Path
+    mig = (Path(__file__).parent.parent / "supabase" / "migrations" / "319_pick_triggers.sql").read_text()
+    assert "pick_triggers" in mig and "min_odds" in mig and "max_odds" in mig, "migration 319 defines the table"
+
+
 @test("COOLBET-DAEMONS-PAUSE — footprint daemons honor the global daemons_paused switch")
 def test_coolbet_daemons_pause():
     """COOLBET-DAEMONS-PAUSE-2026-09-09: the /admin/shadow-bots 'Pause daemons'

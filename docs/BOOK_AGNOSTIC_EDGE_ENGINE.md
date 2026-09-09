@@ -149,10 +149,11 @@ inside every generator, and let a shared matcher (Stage B) serve every book.
 
 ## Implementation plan (paper-first, no real-money change without validation)
 
-1. **Stage A:** migration for `coolbet_pick_triggers` (or the more general
-   `pick_triggers`) + a betting-phase step that writes a window per predicted
-   (match, market, selection) for the enabled model bots. Start with 1x2 + O/U 2.5
-   (the only markets we bet — this also trims the sweep scope).
+1. **Stage A ✅ BUILT 2026-09-09:** `pick_triggers` table (migration 319) +
+   `workers/jobs/pick_triggers.py` (`compute_triggers`), scheduled hourly at :05.
+   Calibrates (isotonic on settled history), sources the edge/odds floors from
+   the placer (`_min_edge_for`/`_min_odds_for` — no drift), writes a window per
+   upcoming 1x2 + O/U 2.5 fixture×selection. First run: 1,002 windows.
 2. **Stage B:** a post-sweep matcher job that emits `shadow_bets` for in-window
    book prices. Run it **paper/OFF** alongside the current mirror.
 3. **VALIDATE:** backtest realized OOS ROI on the Coolbet-native set at the

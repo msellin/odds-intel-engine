@@ -1964,6 +1964,19 @@ def job_coolbet_model_ou_shadow():
     _run_job("coolbet_model_ou_shadow", lambda: None)
 
 
+def job_pick_triggers():
+    """BOOK-AGNOSTIC-EDGE-ENGINE Stage A (2026-09-09): recompute the per-fixture
+    trigger windows (calibrated fair value + [min_odds,max_odds]) for upcoming
+    1x2 + O/U 2.5 fixtures into pick_triggers. Book-agnostic; Stage B matches each
+    book's swept odds against these. Cheap (isotonic fit + upserts), no HTTP, no
+    money. docs/BOOK_AGNOSTIC_EDGE_ENGINE.md."""
+    from workers.jobs.pick_triggers import compute_triggers
+    c = compute_triggers()
+    if c.get("written"):
+        console.print(f"[cyan]pick_triggers: {c['written']} windows written[/cyan]")
+    _run_job("pick_triggers", lambda: None)
+
+
 def job_ou35_model_shadow():
     """OU35-MODEL-SHADOW-BOT (2026-09-08): generate O/U 3.5 model-edge picks
     (calibrated over35 prob vs the single-book Coolbet price, edge>=8%) into
@@ -2899,6 +2912,10 @@ def main():
     # PICKS/OWN candidate once fold-robust. Settled by the generic goals-O/U resolver.
     scheduler.add_job(job_ou35_model_shadow, CronTrigger(hour="*", minute="10,40"),
                       id="ou35_model_shadow", name="O/U 3.5 Model Shadow")
+    # BOOK-AGNOSTIC-EDGE-ENGINE Stage A: refresh trigger windows hourly at :05
+    # (before the :10 model-shadow jobs), so Stage B always matches fresh windows.
+    scheduler.add_job(job_pick_triggers, CronTrigger(hour="*", minute="5"),
+                      id="pick_triggers", name="Pick Triggers (Stage A)")
     # AF-ENDPOINT-ATTRIBUTION flush: every 5 min except :00 (sync owns :00). No AF call.
     scheduler.add_job(job_budget_attribution_flush,
                       CronTrigger(minute="5,10,15,20,25,30,35,40,45,50,55"),
