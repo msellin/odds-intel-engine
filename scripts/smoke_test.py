@@ -3919,21 +3919,24 @@ def _():
     assert "random.uniform" in src, "_throttle must use jitter (random.uniform), not constant gap"
 
 
-@test("BOT-CONFIG-GOLDEN-MIDDLE — 1x2 placement edge floor stays at 10% (15% overfit)")
+@test("BOT-CONFIG-GOLDEN-MIDDLE — 1x2 placement edge floor stays at 13% (fold-robust)")
 def test_bot_config_golden_middle_1x2_floor():
-    """BOT-CONFIG-GOLDEN-MIDDLE (2026-09-08): a brief raise of the 1x2 PLACEMENT
-    floor to 0.15 was OVERTURNED by a full-history backtest — on the placer
-    universe (active/calibrated bots, n=576, executable prices) 0.15 lost -21.6%
-    in-sample and was indistinguishable from 0.13 out-of-sample (bootstrap CI
-    includes 0). On absolute profit at flat stake 0.10 wins (€589 vs €337) and is
-    the only floor solidly positive in both periods. Pin the floor at 0.10 so it
-    is not raised again without a robust out-of-sample edge.
+    """1x2 PLACEMENT edge floor = 0.13, the fold-robust value on the EXECUTABLE
+    basis. Re-confirmed 2026-09-09 (docs/BETTING_GATE_DECISIONS.md): on
+    `edge_floor_backtest --market 1x2` executable, ≥13% is positive in every
+    walk-forward fold (all-bots +8.3% ✓, calibrated +15.9% ✓) while ≥10% is NOT
+    (all-bots f1 −1.8%, calibrated f2 −3.6%) and ≥15% overfits. 10% makes more
+    TOTAL profit (more volume) but is a volume-for-robustness trade, not an edge
+    win — decide floors on fold-robust executable ROI, never total profit or the
+    inflated idealized/best-of-books basis. (This test's title/docstring once said
+    10%, contradicting its own 0.13 assertion — reconciled here to the executable
+    truth.) Do not change without re-running the backtest AND updating the doc.
     """
     from workers.automation.coolbet_placer import _MIN_EDGE_BY_MARKET, _min_edge_for
     assert _MIN_EDGE_BY_MARKET["1x2"] == 0.13, (
-        "the 1x2 placement edge floor moved off 0.13 — the value validated by "
-        "edge_floor_backtest.py as robust in every walk-forward fold and basis. "
-        "0.15 was overfit and 0.10 was not robust; re-run the backtest before changing."
+        "the 1x2 placement edge floor moved off 0.13 — the fold-robust value on the "
+        "EXECUTABLE basis (edge_floor_backtest --market 1x2). 10% is NOT fold-robust "
+        "(negative fold); 15% overfit. See docs/BETTING_GATE_DECISIONS.md before changing."
     )
     assert _min_edge_for("1x2") == 0.13 and _min_edge_for("o/u") == 0.08, (
         "per-market floor lookup no longer returns the pinned values"
