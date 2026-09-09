@@ -3997,6 +3997,27 @@ def test_lineshop_family_retired():
         assert not calls, f"{fn} must not be CALLED — its line-shop bot is retired"
 
 
+@test("TRIGGER-MATCHER-STAGE-B — paper matcher: in-window join, never placeable")
+def test_trigger_matcher_stage_b():
+    """BOOK-AGNOSTIC-EDGE-ENGINE Stage B: match book odds against the Stage A
+    windows and emit shadow_bets — PAPER. Pin: (1) it matches min_odds ≤ odds ≤
+    max_odds against pick_triggers; (2) the emit bot is NOT placeable (can never
+    stake money — the owner's bankroll concern); (3) it records the edge at the
+    BOOK's own price."""
+    import inspect
+    from workers.jobs import pick_trigger_matcher as m
+    src = inspect.getsource(m)
+    assert "pick_triggers" in src and "l.odds >= t.min_odds" in src, "must join the book price against the window"
+    assert "cal\"]) - 1.0 / price" in src or "- 1.0 / price" in src, "edge must be computed at the BOOK's own price"
+    # SAFETY: the trigger bot must NOT be in the real-money placer whitelist
+    from scripts.place_coolbet_ui import PLACEABLE_BOTS
+    for bot in m.BOOKS.values():
+        assert bot not in PLACEABLE_BOTS, f"{bot} must be PAPER — never in PLACEABLE_BOTS"
+    from pathlib import Path
+    mig = (Path(__file__).parent.parent / "supabase" / "migrations" / "320_bot_trigger_matcher.sql").read_text()
+    assert "INSERT INTO coolbet_placer_bots" not in mig, "must NOT seed a real-money placer toggle"
+
+
 @test("PICK-TRIGGERS-STAGE-A — book-agnostic trigger windows: calibrated, placer-sourced floors")
 def test_pick_triggers_stage_a():
     """BOOK-AGNOSTIC-EDGE-ENGINE Stage A (2026-09-09): the model publishes a

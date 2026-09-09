@@ -1964,6 +1964,22 @@ def job_coolbet_model_ou_shadow():
     _run_job("coolbet_model_ou_shadow", lambda: None)
 
 
+def job_pick_trigger_matcher():
+    """BOOK-AGNOSTIC-EDGE-ENGINE Stage B (2026-09-09, PAPER): match each book's
+    latest swept odds against the Stage A trigger windows and emit shadow_bets for
+    in-window prices (bot_coolbet_trigger_v1). PAPER — not in PLACEABLE_BOTS, can
+    never stake money. Runs :15/:45 after the sweep (:03/:33) + triggers (:05).
+    NB the OOS backtest (scripts/trigger_engine_backtest.py) shows the wide 1x2
+    selection loses (−21%); this stays paper until a gate that validates is found.
+    docs/BOOK_AGNOSTIC_EDGE_ENGINE.md."""
+    from workers.jobs.pick_trigger_matcher import run_all
+    c = run_all()
+    tot = sum(v.get("written", 0) for v in c.values())
+    if tot:
+        console.print(f"[cyan]trigger matcher (paper): {tot} picks written[/cyan]")
+    _run_job("pick_trigger_matcher", lambda: None)
+
+
 def job_pick_triggers():
     """BOOK-AGNOSTIC-EDGE-ENGINE Stage A (2026-09-09): recompute the per-fixture
     trigger windows (calibrated fair value + [min_odds,max_odds]) for upcoming
@@ -2916,6 +2932,10 @@ def main():
     # (before the :10 model-shadow jobs), so Stage B always matches fresh windows.
     scheduler.add_job(job_pick_triggers, CronTrigger(hour="*", minute="5"),
                       id="pick_triggers", name="Pick Triggers (Stage A)")
+    # Stage B (PAPER): match book odds against the windows at :15/:45 (after the
+    # sweep + triggers). Emits shadow_bets only; never places (not in PLACEABLE_BOTS).
+    scheduler.add_job(job_pick_trigger_matcher, CronTrigger(hour="*", minute="15,45"),
+                      id="pick_trigger_matcher", name="Trigger Matcher (Stage B, paper)")
     # AF-ENDPOINT-ATTRIBUTION flush: every 5 min except :00 (sync owns :00). No AF call.
     scheduler.add_job(job_budget_attribution_flush,
                       CronTrigger(minute="5,10,15,20,25,30,35,40,45,50,55"),

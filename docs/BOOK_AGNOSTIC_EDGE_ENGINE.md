@@ -178,3 +178,34 @@ inside every generator, and let a shared matcher (Stage B) serve every book.
 - **Trims the FS footprint** indirectly: Stage A knowing we only bet 1x2 + O/U
   means the sweep only needs those markets' odds, not the whole 1000-market
   sidebets board (ties into COOLBET-SWEEP-SCOPE-REDESIGN + the Imperva work).
+
+## Backtest result — the wide selection is NOT profitable at current gates (2026-09-09)
+
+`scripts/trigger_engine_backtest.py` — held-out OOS (calibration fit on TRAIN,
+windows + Coolbet's historical odds + grading on untouched TEST):
+
+| Market | Picks (TEST) | ROI (OOS) | Win% | Avg odds | Fold-robust? |
+|---|---|---|---|---|---|
+| **1x2** | 1,470 | **−21.2%** | 14% | 5.87 | ❌ negative every fold |
+| **O/U 2.5** | 228 | +4.3% | 39% | 2.69 | ❌ not robust (+15/+2/−5) |
+
+**The naive wide 1x2 trigger selection LOSES −21% out of sample** — the caveat
+above, realised. At Coolbet's higher odds many more games clear "13% edge," but
+they are exactly the spots where the model over-estimates vs the sharper market
+(it wins 14% at 5.87 odds where it needs 17%). **You cannot profitably widen
+selection with a model that is less accurate than the book** (our 1x2/OU AUC is
+below the market's). This also deflates the earlier narrow "+48% 1x2" number as a
+small-n / selection-favourable cohort artifact.
+
+**Consequence — Stage B stays PAPER; do NOT promote it to real money.** The
+architecture is right, but the wide selection at the current gates is a loser. To
+make it bettable one of these must happen first, each proven on this backtest:
+1. **A much tighter gate** (higher edge floor AND/OR a narrower odds band) that
+   isolates a fold-robust profitable core — the backtest is the search tool.
+2. **A sharper model** (features/calibration — MODEL-EDGE-IMPROVEMENT) so the
+   model actually beats the book on the wider set.
+3. Accept that only a NARROW band is profitable and gate to it.
+
+The paper matcher + backtest are now the instruments to find that gate. Until one
+of the above validates, the live real-money path stays the existing (narrow)
+model-edge bots, and the trigger engine only accrues paper for measurement.
