@@ -4079,6 +4079,10 @@ def test_beta_bots_retired():
            / "323_retire_dead_beta_bots.sql").read_text()
     assert "is_active = FALSE" in mig and "retired_at = NOW()" in mig, "must retire"
     assert "bot_dnb_specialist" in mig and "bot_summer_specialist" in mig, "the two dead bots"
+    mig324 = (Path(__file__).parent.parent / "supabase" / "migrations"
+              / "324_retire_1x2_specialist.sql").read_text()
+    assert "bot_1x2_specialist" in mig324 and "is_active = FALSE" in mig324, (
+        "324 retires bot_1x2_specialist (negative CLV even at base, per widening audit)")
     # must NOT retire the keepers
     assert "bot_high_roi_global_v2" not in mig.split("WHERE")[1], "keeper must not be in WHERE"
     assert "bot_1x2_specialist" not in mig.split("WHERE")[1], "keeper must not be in WHERE"
