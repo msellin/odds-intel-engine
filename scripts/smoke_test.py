@@ -4085,7 +4085,10 @@ def test_unibet_placer():
     from workers.automation import unibet_browser_sync as ubs
     # login is a modal (no /login page — it 404s); creds from UNIBET_USER/UNIBET_PASS
     lsrc = inspect.getsource(ubs.login_via_modal)
-    assert "UNIBET_USER" in lsrc and "kaf-submit-credentials-button" in lsrc, "modal login + real selectors"
+    assert "UNIBET_USER" in lsrc and "_LOGIN_SUBMIT" in lsrc, "modal login uses env creds + submit button"
+    msrc = inspect.getsource(ubs)
+    assert "kaf-submit-credentials-button" in msrc and "kaf-username-email-field" in msrc, "real modal selectors present"
+    assert 'SPORT_URL = "https://www.unibet.ee/betting/odds"' in msrc, "no /login page (it 404s) — modal flow"
 
 
 @test("BETA-BOTS-RETIRED — dead beta bots (dnb, summer) retired by migration 323")
