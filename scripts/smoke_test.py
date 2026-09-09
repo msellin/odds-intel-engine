@@ -4009,13 +4009,18 @@ def test_trigger_matcher_stage_b():
     src = inspect.getsource(m)
     assert "pick_triggers" in src and "l.odds >= t.min_odds" in src, "must join the book price against the window"
     assert "cal\"]) - 1.0 / price" in src or "- 1.0 / price" in src, "edge must be computed at the BOOK's own price"
-    # SAFETY: the trigger bot must NOT be in the real-money placer whitelist
+    # SAFETY: the per-(book×market) trigger bots must NOT be in the real-money whitelist
     from scripts.place_coolbet_ui import PLACEABLE_BOTS
-    for bot in m.BOOKS.values():
+    bots = set(m.BOOK_MARKET_BOTS.values())
+    assert bots == {"bot_coolbet_trigger_1x2_v1", "bot_coolbet_trigger_ou_v1"}, (
+        "one paper bot per (book × market) — split so each market's ROI is tracked separately"
+    )
+    for bot in bots:
         assert bot not in PLACEABLE_BOTS, f"{bot} must be PAPER — never in PLACEABLE_BOTS"
     from pathlib import Path
-    mig = (Path(__file__).parent.parent / "supabase" / "migrations" / "320_bot_trigger_matcher.sql").read_text()
-    assert "INSERT INTO coolbet_placer_bots" not in mig, "must NOT seed a real-money placer toggle"
+    for migf in ("320_bot_trigger_matcher.sql", "321_split_trigger_bots.sql"):
+        mig = (Path(__file__).parent.parent / "supabase" / "migrations" / migf).read_text()
+        assert "INSERT INTO coolbet_placer_bots" not in mig, "must NOT seed a real-money placer toggle"
 
 
 @test("PICK-TRIGGERS-STAGE-A — book-agnostic trigger windows: calibrated, placer-sourced floors")

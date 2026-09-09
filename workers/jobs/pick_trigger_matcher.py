@@ -21,9 +21,12 @@ import uuid
 log = logging.getLogger(__name__)
 
 STAKE_EUR = 10.0
-TRIGGER_MARKETS = ("1x2", "over_under_25")
-# book (odds_snapshots.bookmaker) → the paper bot its trigger matches emit into
-BOOKS = {"Coolbet": "bot_coolbet_trigger_v1"}
+# (book, odds-snapshot market) → the paper bot its trigger matches emit into.
+# One bot per (book × market) so each market's ROI is tracked/gated independently.
+BOOK_MARKET_BOTS = {
+    ("Coolbet", "1x2"):           "bot_coolbet_trigger_1x2_v1",
+    ("Coolbet", "over_under_25"): "bot_coolbet_trigger_ou_v1",
+}
 
 
 def _bot_id(name: str) -> str | None:
@@ -32,40 +35,37 @@ def _bot_id(name: str) -> str | None:
     return r[0]["id"] if r else None
 
 
-def match_and_emit(book: str = "Coolbet") -> dict:
-    """Emit shadow_bets for every upcoming fixture whose `book` price lands inside
-    its Stage A trigger window. Never raises."""
-    counters = {"book": book, "matched": 0, "written": 0}
+def match_and_emit(book: str, market: str, bot_name: str) -> dict:
+    """Emit shadow_bets for every upcoming fixture whose `book` `market` price lands
+    inside its Stage A trigger window, under `bot_name`. Never raises."""
+    counters = {"book": book, "market": market, "matched": 0, "written": 0}
     try:
         from workers.api_clients.db import execute_query, execute_write
-        bot_name = BOOKS.get(book)
-        bot_id = _bot_id(bot_name) if bot_name else None
+        bot_id = _bot_id(bot_name)
         if not bot_id:
-            log.warning("trigger matcher: bot for %s not registered (migration 320?)", book)
+            log.warning("trigger matcher: bot %s not registered (migration 321?)", bot_name)
             return counters
         cohort = "coolbet_trigger"
 
         rows = execute_query(
             """
-            WITH latest AS (  -- latest pre-match price per (match, market, selection) for this book
-              SELECT DISTINCT ON (o.match_id, o.market, o.selection)
-                     o.match_id::text AS mid, o.market, o.selection, o.odds::float AS odds
+            WITH latest AS (  -- latest pre-match price per (match, selection) for this book+market
+              SELECT DISTINCT ON (o.match_id, o.selection)
+                     o.match_id::text AS mid, o.selection, o.odds::float AS odds
                 FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
-               WHERE o.bookmaker = %s AND o.market = ANY(%s)
+               WHERE o.bookmaker = %s AND o.market = %s
                  AND o.timestamp <= m.date AND m.date > NOW()
-               ORDER BY o.match_id, o.market, o.selection, o.timestamp DESC
+               ORDER BY o.match_id, o.selection, o.timestamp DESC
             )
             SELECT t.match_id::text AS mid, t.market, t.selection,
-                   t.cal_prob::float AS cal, t.min_odds::float AS mino,
-                   t.max_odds::float AS maxo, l.odds AS book_odds
+                   t.cal_prob::float AS cal, l.odds AS book_odds
               FROM pick_triggers t
-              JOIN latest l
-                ON l.mid = t.match_id::text AND l.market = t.market AND l.selection = t.selection
-             WHERE t.kickoff_at > NOW()
+              JOIN latest l ON l.mid = t.match_id::text AND l.selection = t.selection
+             WHERE t.market = %s AND t.kickoff_at > NOW()
                AND l.odds >= t.min_odds
                AND (t.max_odds IS NULL OR l.odds <= t.max_odds)
             """,
-            [book, list(TRIGGER_MARKETS)],
+            [book, market, market],
         )
         counters["matched"] = len(rows)
         run_id = str(uuid.uuid4())
@@ -90,7 +90,7 @@ def match_and_emit(book: str = "Coolbet") -> dict:
                  price, price, STAKE_EUR, r["cal"], r["cal"], edge],
             )
             counters["written"] += 1
-        log.info("trigger matcher (%s): %s", book, counters)
+        log.info("trigger matcher (%s/%s): %s", book, market, counters)
     except Exception as e:  # noqa: BLE001
         log.warning("trigger matcher raised (non-fatal): %s", e)
     return counters
@@ -98,8 +98,8 @@ def match_and_emit(book: str = "Coolbet") -> dict:
 
 def run_all() -> dict:
     out = {}
-    for book in BOOKS:
-        out[book] = match_and_emit(book)
+    for (book, market), bot_name in BOOK_MARKET_BOTS.items():
+        out[bot_name] = match_and_emit(book, market, bot_name)
     return out
 
 
