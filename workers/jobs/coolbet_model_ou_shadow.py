@@ -46,7 +46,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import uuid
 
 log = logging.getLogger(__name__)
@@ -59,20 +58,14 @@ EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_OU_EDGE_FLOOR", "0.08"))
 
 # 'o/u' selection ("over 2.5" / "under 3.5") -> (over_under market, side).
 # Only 2.5 and 3.5 are supported; every other line returns None and is skipped.
-_SUPPORTED_LINES = {"2.5": "over_under_25", "3.5": "over_under_35"}
-_SEL_RE = re.compile(r"^\s*(over|under)\s+(\d+(?:\.\d+)?)\s*$", re.IGNORECASE)
+# CANONICAL-MARKET-VOCAB-2026-09-09: the O/U line encoding now lives in the shared
+# workers.canonical_market.ou_selection_to_storage (COOLBET-PICK-TABLE-AUDIT Stage 1).
 
 
 def _convert(selection: str) -> tuple[str, str] | None:
     """'over 2.5' -> ('over_under_25', 'over'); unsupported line -> None."""
-    m = _SEL_RE.match(selection or "")
-    if not m:
-        return None
-    side = m.group(1).lower()
-    market = _SUPPORTED_LINES.get(m.group(2))
-    if market is None:
-        return None
-    return market, side
+    from workers.canonical_market import ou_selection_to_storage
+    return ou_selection_to_storage(selection)
 
 
 def _bot_id() -> str | None:

@@ -119,13 +119,13 @@ def _canon_market(market: str | None) -> str | None:
     rejected the entire 1.80-2.80 O/U band (median O/U price ~2.15) — exactly the
     REALMONEY-ODDS-BAND-MISMATCH the 2D-GATE fix was meant to end, re-emerging
     through the vocab gap. Caught live 2026-09-09 (a clean +8% O/U @ 2.42 skipped
-    as 'below floor 2.80')."""
-    if not market:
-        return market
-    m = str(market).lower()
-    if m.startswith("over_under") or m == "ou":
-        return "o/u"
-    return m
+    as 'below floor 2.80').
+
+    CANONICAL-MARKET-VOCAB-2026-09-09: the mapping now lives in the shared
+    `workers.canonical_market.market_family` (COOLBET-PICK-TABLE-AUDIT Stage 1);
+    this delegates to it so the placer and every other caller use one source."""
+    from workers.canonical_market import market_family
+    return market_family(market)
 
 
 def _min_edge_for(market: str | None) -> float:

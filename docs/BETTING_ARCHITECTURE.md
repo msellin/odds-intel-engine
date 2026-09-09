@@ -189,7 +189,7 @@ require explicit owner go before the cutover.**
 
 | # | Stage | Risk | Owner-gate |
 |---|---|---|---|
-| 1 | **Canonical market vocabulary** module + smoke; wire readers/writers to it incrementally (behaviour-preserving). Removes the triple-spelling. | low | no |
+| 1 | ✅ **DONE 2026-09-09** — `workers/canonical_market.py` is the one source: `market_family()` (floor-key family, = the old `_canon_market`) + `ou_selection_to_storage()` (line encoding, = the old `_convert`). `coolbet_placer._canon_market` and `coolbet_model_ou_shadow._convert` now delegate to it; smoke `CANONICAL-MARKET-VOCAB` proves behaviour-preservation. (Frontend `coolbet-edge.ts` stays a documented mirror — TS can't import the Python module.) | low | no |
 | 2 | **`real_bets` purity**: tag rows with a placement-proof flag; make `/performance`'s real-money overlay read only proven-placed rows; stop the paper daemon writing to `real_bets` (paper → paper table). | med (touches /performance) | **yes** |
 | 3 | **Promote the trigger engine to the real-money source**: populate `pick_trigger_matcher.BOOK_MARKET_BOTS` with Unibet; retire the best-accessible mirror-shadow jobs once trigger-sourced picks match. | med (changes what feeds the placer) | **yes** |
 | 4 | **Placer registry + unified best-price router** (BEST-PRICE-EXECUTION-ROUTER): route each cleared trigger to the best book, place once, one placement-of-record. Retire the standalone Coolbet-only selection path. | high (real money, both books) | **yes, per cutover** |
@@ -203,7 +203,7 @@ source table without explicit owner authorization + a dry-run + fold-robust evid
 
 ## 9. THE INCONSISTENCIES THIS DOC EXISTS TO REMOVE (checklist)
 
-- [ ] Three market spellings (`o/u` / `over_under_25` / `over 2.5`) → one canonical vocab (Stage 1).
+- [x] Three market spellings (`o/u` / `over_under_25` / `over 2.5`) → one canonical vocab (Stage 1 ✅ 2026-09-09, `workers/canonical_market.py`).
 - [ ] `real_bets` mixes real + phantom-paper + manual → proof-tagged, paper out (Stage 2).
 - [ ] `/performance` shows `simulated_bets`, not what we stake → grade-pin + real overlay clarity (Stage 2 + PICKS-GRADING).
 - [ ] Two placers read two tables → one trigger-sourced path (Stages 3,6).

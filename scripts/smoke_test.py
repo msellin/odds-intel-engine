@@ -4294,10 +4294,14 @@ def test_coolbet_model_ou_shadow():
     assert "sb.result = 'pending'" in job and "m.date > NOW()" in job, "only pending, future-kickoff picks"
     assert "sb.user_placed_at IS NULL" in job and "sb.user_skipped_at IS NULL" in job, "skip operator-placed/skipped picks"
     assert "DISTINCT ON (sb.match_id, sb.selection)" in job, "one row per (match, line, side), highest edge"
-    # vocabulary conversion: only 2.5/3.5 supported, written as over_under_25/35 + over/under
-    assert '_SUPPORTED_LINES = {"2.5": "over_under_25", "3.5": "over_under_35"}' in job, (
-        "only lines 2.5 and 3.5 may be mirrored — writing any other line fabricates a price/settlement line"
-    )
+    # vocabulary conversion: only 2.5/3.5 supported, written as over_under_25/35 + over/under.
+    # CANONICAL-MARKET-VOCAB-2026-09-09: the mapping moved to workers/canonical_market.py
+    # (one source); the mirror now delegates. Pin the invariant at its new home + the delegation.
+    from workers.canonical_market import _OU_SUPPORTED_LINES, ou_selection_to_storage
+    assert _OU_SUPPORTED_LINES == {"2.5": "over_under_25", "3.5": "over_under_35"}, (
+        "only lines 2.5 and 3.5 may be mirrored — writing any other line fabricates a price/settlement line")
+    assert ou_selection_to_storage("over 1.5") is None and ou_selection_to_storage("over 2.5") == ("over_under_25", "over")
+    assert "ou_selection_to_storage" in job, "the mirror must delegate to the shared canonical vocab"
     assert "INSERT INTO shadow_bets" in job and "ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)" in job, (
         "must upsert on the shadow_bets unique key so re-runs update, not duplicate"
     )
@@ -34102,6 +34106,55 @@ def test_coolbet_placer_lockout_alert():
     assert "AUTO-LOGIN FAILED" in src and "still not logged in after auto-login" in src, "both lockout paths present"
     hsrc = inspect.getsource(pcu._alert_placer_lockout)
     assert "except Exception" in hsrc, "alert must be fail-safe (never break the placer)"
+
+
+
+@test("CANONICAL-MARKET-VOCAB — one source for market/selection spelling (behaviour-preserving)")
+def test_canonical_market_vocab():
+    """COOLBET-PICK-TABLE-AUDIT Stage 1 (2026-09-09): the market-vocabulary mess
+    (o/u vs over_under_25 vs 'over 2.5') is centralised in workers/canonical_market.py.
+    This proves the shared helpers reproduce the OLD inline logic EXACTLY (so wiring
+    coolbet_placer._canon_market + coolbet_model_ou_shadow._convert to them changed
+    nothing), and that both callers now delegate to the shared source."""
+    import inspect
+    from workers.canonical_market import market_family, ou_selection_to_storage
+
+    # 1) market_family reproduces the old _canon_market logic for a battery of inputs
+    def old_canon(market):
+        if not market: return market
+        m=str(market).lower()
+        if m.startswith("over_under") or m=="ou": return "o/u"
+        return m
+    for mk in ["1x2","o/u","O/U","ou","over_under_25","over_under_35","OVER_UNDER_25",
+               "asian_handicap","draw_no_bet","btts","double_chance",None,"","corners_ou_95"]:
+        assert market_family(mk)==old_canon(mk), f"market_family drifted from _canon_market on {mk!r}"
+    # the floor keys must resolve through it
+    assert market_family("over_under_25")=="o/u" and market_family("1x2")=="1x2"
+
+    # 2) ou_selection_to_storage reproduces the old _convert logic
+    import re as _re
+    _SEL=_re.compile(r"^\s*(over|under)\s+(\d+(?:\.\d+)?)\s*$", _re.IGNORECASE)
+    _LINES={"2.5":"over_under_25","3.5":"over_under_35"}
+    def old_convert(sel):
+        m=_SEL.match(sel or "")
+        if not m: return None
+        side=m.group(1).lower(); mk=_LINES.get(m.group(2))
+        return None if mk is None else (mk,side)
+    for s in ["over 2.5","under 2.5","OVER 3.5","under 3.5"," over 2.5 ","over 1.5",
+              "over 4.5","home","",None,"over"]:
+        assert ou_selection_to_storage(s)==old_convert(s), f"ou_selection_to_storage drifted on {s!r}"
+    assert ou_selection_to_storage("over 2.5")==("over_under_25","over")
+
+    # 3) both callers now DELEGATE to the shared module (no re-duplicated logic)
+    from workers.automation import coolbet_placer as cp
+    assert cp._canon_market("over_under_25")=="o/u", "placer floor-key still resolves O/U"
+    assert "market_family" in inspect.getsource(cp._canon_market), "placer must delegate to shared module"
+    from workers.jobs import coolbet_model_ou_shadow as ou
+    assert ou._convert("over 2.5")==("over_under_25","over"), "mirror convert still works"
+    assert "ou_selection_to_storage" in inspect.getsource(ou._convert), "mirror must delegate to shared module"
+    # the placer floors still resolve correctly THROUGH the shared canonicaliser
+    assert cp._min_odds_for("over_under_25")==1.80, "O/U odds floor must resolve to 1.80 via shared vocab"
+    assert cp._min_edge_for("over_under_25")==0.08, "O/U edge floor must resolve to 0.08 via shared vocab"
 
 
 
