@@ -196,6 +196,27 @@ require explicit owner go before the cutover.**
 | 5 | **Best-price router + placer registry** (BEST-PRICE-EXECUTION-ROUTER) — build ONLY for bots promoted in Stage 4: route a cleared pick to the best clearing book, place once, one placement-of-record. Per-book config (books/gates/line-support/PLACEABLE). | high (real money, both books) | **yes, per cutover** |
 | 6 | **Collapse the two placers** — one source, paper/real split by an explicit flag not by table. Do only after Stage 5 is live and stable. | high | **yes** |
 
+**Where do the "Unibet UI-placer bots" fit? (owner Q, 2026-09-09).** Coolbet has TWO
+bot families: the **placeable real-money bots** (`bot_coolbet_1x2_model_v1`,
+`bot_coolbet_ou_model_v1` — best-accessible edge, fed by mirror jobs, placed by the UI
+placer) and the **trigger bots** (`bot_coolbet_trigger_*` — per-book edge, paper). The
+Unibet equivalents are NOT a second parallel placeable set that places independently
+alongside Coolbet — that would double-bet the same fixture at two books. Instead:
+- **Paper precursor = 3b.** The Unibet trigger bots' `model_*` strategy measures the
+  model edge at **Unibet's own price** — the Unibet counterpart of the Coolbet placeable
+  bots' signal (and a better basis than the best-accessible mirror bots). It accumulates
+  paper for validation.
+- **The Unibet UI placer (3c) is the executor**, the counterpart of `coolbet_ui_placer`
+  — not a bot.
+- **End state = unified best-price routing (§7).** ONE bot per market
+  (`bot_model_1x2` / `bot_model_ou`) checks both books and places ONCE at the better
+  price; the Coolbet + Unibet placers are execution arms the router calls; there is NO
+  standalone Unibet PLACEABLE set. Today's 2 Coolbet placeable bots are the interim and
+  get replaced by the unified per-market bots when the router (Stage 5) lands.
+- **Interim-only alternative** (if Unibet ever had to place before the router): its own
+  PLACEABLE set + cross-book dedup (`match_exposure`/`real_bets` already read across
+  books, so no double-bet — but "which book" is first-come, not best-price). Not the plan.
+
 **Bot lifecycle — the load-bearing rule (owner, 2026-09-09):** REAL MONEY = the two proven
 Coolbet bots (`bot_coolbet_1x2_model_v1`, `bot_coolbet_ou_model_v1`), and it **stays that way**.
 Every other bot — Coolbet triggers (model + sharp), any line-shop bot, and ALL Unibet bots — runs
