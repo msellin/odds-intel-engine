@@ -179,3 +179,14 @@ and risks a behavioral block. Whether it is ever needed hinges on the divergence
 `find_event(home,away,date)` is SOLVED: injected-fetch the search API `sports-api/api/v2/search?_typ=GetSearchResults&query=<team>` (same transport as the odds feed) → `SearchContest{contestKey, category, name, startDateTimeUtc}`, fuzzy-match on home+away. Proven live.
 
 **BUT the placer needs the navigable SLUG URL** (e.g. `/betting/odds/football/england/championship/derby-county-vs-west-brom`), and the slug is NOT obtainable: not in the search/lobby/contest-page JSON (no url/slug/path/seoUrl field), and not in the rendered category-page DOM (no event anchors/hrefs — the SPA renders events via virtualized/onClick components; slug lives only in client state). Slug construction from name is unreliable ('West Bromwich' → 'west-brom'). So contestKey→URL is a live-R&D problem, same class as the odds feed. Options (for when Unibet placement is actually wired, Stage 5): (a) drive a real click on the event element + read the landed `location.href` (hard to target the element reliably); (b) read the SPA's internal router/store state via Runtime.evaluate (fragile); (c) accept operator-supplied URLs for the small candidate set (what we did for the Derby €10 bet). NOT blocking 3b (paper triggers) or the odds feed — only the placement executor arm. Recommendation: defer the slug resolver to Stage 5 (placement wiring, owner-gated) and proceed with 3b now.
+
+### 3c — SOLVED 2026-09-09: the URL is constructible (contestKey routes)
+The owner's example `/betting/odds/football/england/championship/derby-county-vs-west-bromwich/
+17863292b0e17b03a260b456e755bfd8` revealed the format: `/betting/odds/<category-path>/<slug>/<contestKey>`.
+PROVEN the SPA routes on the trailing **contestKey** — a garbage slug (`xxx-vs-yyy/<key>`) still loads
+the right event (contest-page 200). So no slug scraping is needed. `unibet_odds_feed.resolve_event_url(
+home, away, date)`: injected-fetch the search API (`search?_typ=GetSearchResults&query=<team>`) → nested
+`SearchContest{contestKey, category, name}` → `fuzzy_match_event` → `build_event_url(category, name, key)`.
+Validated live: resolve("Derby","West Brom") → exact URL (fuzzy 100), and navigating it → contest-page 200.
+Smoke `UNIBET-EVENT-URL-RESOLVER`. The placer's executor arm can now be handed a resolved URL for any DB
+fixture. (Placement itself — driving the slip with real money — is Stage 5, owner-gated.)

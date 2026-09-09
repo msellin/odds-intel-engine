@@ -520,6 +520,139 @@ def run_bulk(days: int = 2, dry_run: bool = False, limit: int | None = None) -> 
         return {"reason": f"run_bulk error: {e}", "stored": 0}
 
 
+# ---------------------------------------------------------------------------
+# 3c — fixture → event-URL resolver (for the placer's executor arm).
+# ---------------------------------------------------------------------------
+# The unibet.ee event URL is /betting/odds/<category-path>/<slug>/<contestKey>.
+# PROVEN 2026-09-09: the SPA routes on the trailing contestKey — a garbage slug
+# (xxx-vs-yyy) still loads the right event (contest-page 200) — so the URL is fully
+# CONSTRUCTIBLE from `category` + `contestKey`, both of which the search/lobby APIs
+# give us. `find_event` uses the search API (injected fetch, same transport as the
+# odds feed): search a team → its nested contests → fuzzy-match the fixture.
+import re as _re
+import unicodedata as _ud
+
+
+def slugify(name: str) -> str:
+    """Cosmetic event slug from the contest name (the SPA ignores it — it routes on
+    the trailing contestKey — but a real slug keeps URLs readable in logs)."""
+    n = _ud.normalize("NFKD", name or "").encode("ascii", "ignore").decode()
+    return _re.sub(r"-+", "-", _re.sub(r"[^a-z0-9]+", "-", n.lower())).strip("-") or "x"
+
+
+def build_event_url(category: str, name: str, contest_key: str) -> str:
+    """/betting/odds/<category path>/<slug>/<contestKey> — routes on the contestKey."""
+    return (f"https://www.unibet.ee/betting/odds/{(category or 'football').replace(':', '/')}"
+            f"/{slugify(name)}/{contest_key}")
+
+
+def parse_search_contests(search_json: dict) -> list[dict]:
+    """Extract [{contest_key, name, category, start}] from a SearchResponse (contests
+    are nested categories→searchResultsGroup→result→contests). Walks defensively."""
+    out: dict[str, dict] = {}
+    def walk(o):
+        if isinstance(o, dict):
+            if o.get("_typ") == "SearchContest" or (o.get("contestKey") and o.get("name")):
+                out[o["contestKey"]] = {
+                    "contest_key": o["contestKey"], "name": o.get("name"),
+                    "category": o.get("category"),
+                    "start": (o.get("startDateTimeUtc") or {}).get("value")}
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(search_json)
+    return list(out.values())
+
+
+async def _async_inject_get(url: str, *, timeout_s: float = 20.0) -> dict | None:
+    """One injected fetch of a Kindred API `url` (WITH the SPA headers) from the
+    operator's established unibet.ee tab. Returns parsed JSON or None. This is the
+    single-shot sibling of the sweep's rate-limited injected fetch."""
+    import asyncio
+    import json
+    import websockets
+    try:
+        targets = await asyncio.wait_for(_http_get_json(f"{ubs.CDP_URL}/json/list"), timeout=timeout_s)
+    except Exception:  # noqa: BLE001
+        return None
+    tab = next((t for t in (targets or []) if t.get("type") == "page"
+                and "unibet.ee" in (t.get("url") or "").lower()), None)
+    if not tab or not tab.get("webSocketDebuggerUrl"):
+        return None
+    expr = (f"(async()=>{{try{{const r=await fetch({json.dumps(url)},"
+            f"{{credentials:'include',headers:{json.dumps(_INJ_HEADERS)}}});"
+            "const t=await r.text();return JSON.stringify({s:r.status,b:t});}"
+            "catch(e){return JSON.stringify({s:0});}})()")
+    try:
+        async with websockets.connect(tab["webSocketDebuggerUrl"], open_timeout=timeout_s, max_size=30_000_000) as ws:
+            await ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate",
+                                      "params": {"expression": expr, "awaitPromise": True, "returnByValue": True}}))
+            loop = asyncio.get_event_loop(); t0 = loop.time()
+            while loop.time() - t0 < timeout_s:
+                try:
+                    msg = await asyncio.wait_for(ws.recv(), timeout=3.0)
+                except asyncio.TimeoutError:
+                    continue
+                evt = json.loads(msg)
+                if evt.get("id") != 1:
+                    continue
+                val = ((evt.get("result") or {}).get("result") or {}).get("value")
+                if not val:
+                    return None
+                d = json.loads(val)
+                if d.get("s") != 200:
+                    return None
+                try:
+                    return json.loads(d.get("b") or "")
+                except Exception:  # noqa: BLE001
+                    return None
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def search_events(query: str) -> list[dict]:
+    """Injected-fetch the Unibet search API for `query`; return its contests."""
+    import asyncio
+    import urllib.parse
+    url = (f"{_SPORTSBFF}/search?_typ=GetSearchResults&query="
+           f"{urllib.parse.quote(query)}")
+    try:
+        d = asyncio.run(_async_inject_get(url))
+    except Exception:  # noqa: BLE001
+        return []
+    return parse_search_contests(d or {})
+
+
+def resolve_event_url(home: str, away: str, match_date=None) -> dict:
+    """Resolve a DB fixture → its unibet.ee event URL via the search API + fuzzy match.
+    Returns {'url','contest_key','name','category','matched'}; url None if no match.
+    Never raises. The URL routes on the contestKey (slug is cosmetic)."""
+    from workers.automation.coolbet_placer import fuzzy_match_event
+    out = {"url": None, "contest_key": None, "name": None, "category": None, "matched": False}
+    contests = search_events(home) or search_events(away)
+    cands = []
+    for c in contests:
+        nm = c.get("name") or ""
+        if " vs " not in nm:
+            continue
+        h, a = nm.split(" vs ", 1)
+        cands.append({"home": h.strip(), "away": a.strip(), "start": c.get("start"),
+                      "raw": {"contest_key": c["contest_key"], "category": c.get("category"), "name": nm}})
+    ev = fuzzy_match_event(home, away, cands, match_date, None)
+    if not ev:
+        return out
+    raw = ev.get("raw") or {}
+    key = raw.get("contest_key")
+    if not key:
+        return out
+    out.update(matched=True, contest_key=key, name=raw.get("name"), category=raw.get("category"),
+               url=build_event_url(raw.get("category"), raw.get("name") or "", key))
+    return out
+
+
 def main() -> int:
     import argparse
     import json
@@ -534,13 +667,18 @@ def main() -> int:
     ap.add_argument("--match-id", help="single-event: DB match id to store under")
     ap.add_argument("--write", action="store_true", help="single-event: write rows to odds_snapshots")
     ap.add_argument("--minutes", type=int, default=None, help="single-event: minutes to kickoff")
+    ap.add_argument("--resolve", help='resolve a fixture to its event URL: "Home vs Away"')
     args = ap.parse_args()
+    if args.resolve:
+        h, _, a = args.resolve.partition(" vs ")
+        print(json.dumps(resolve_event_url(h.strip(), a.strip()), indent=2, ensure_ascii=False))
+        return 0
     if args.bulk:
         print(json.dumps(run_bulk(days=args.days, dry_run=args.dry_run, limit=args.limit),
                          indent=2, ensure_ascii=False))
         return 0
     if not args.event:
-        ap.error("pass --event <url> for a single capture, or --bulk for the sweep")
+        ap.error("pass --event <url> (capture), --bulk (sweep), or --resolve 'Home vs Away'")
     res = fetch_event_odds(args.event, match_id=args.match_id, write=args.write,
                            minutes_to_kickoff=args.minutes)
     print(json.dumps(res, indent=2, ensure_ascii=False))

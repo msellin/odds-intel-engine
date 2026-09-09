@@ -34266,5 +34266,38 @@ def test_favlong_floor_backtest():
     assert "UPDATE" not in src.upper() and "INSERT" not in src.upper() and "_MIN_EDGE" not in src, (
         "analysis only — must not mutate any floor or ledger")
 
+@test("UNIBET-EVENT-URL-RESOLVER — fixture→URL is constructible from search (contestKey routes)")
+def test_unibet_event_url_resolver():
+    """COOLBET-PICK-TABLE-AUDIT Stage 3c (2026-09-09): the Unibet fixture→event-URL
+    resolver. The URL is /betting/odds/<category>/<slug>/<contestKey> and PROVEN to
+    route on the trailing contestKey (a garbage slug still loads the right event), so
+    it is CONSTRUCTIBLE from the search API's contestKey+category+name — no slug
+    scraping. Offline: parse a real search response, build the URL, assert it matches
+    the owner's confirmed example exactly. (Live search + fuzzy match validated
+    manually; can't hit CDP in CI.)"""
+    import json
+    from pathlib import Path
+    from workers.automation.unibet_odds_feed import (
+        parse_search_contests, build_event_url, slugify)
+    fx = Path(__file__).parent.parent / "tests" / "fixtures" / "unibet_search_derby.json"
+    cs = parse_search_contests(json.loads(fx.read_text()))
+    assert cs, "must parse SearchContest items out of the search response"
+    derby = next((c for c in cs if "derby" in (c["name"] or "").lower()
+                  and "brom" in (c["name"] or "").lower()), None)
+    assert derby and derby["contest_key"] == "17863292b0e17b03a260b456e755bfd8", "found the Derby contest+key"
+    assert derby["category"] == "football:england:championship"
+    url = build_event_url(derby["category"], derby["name"], derby["contest_key"])
+    assert url == ("https://www.unibet.ee/betting/odds/football/england/championship/"
+                   "derby-county-vs-west-bromwich/17863292b0e17b03a260b456e755bfd8"), (
+        f"built URL must match the owner-confirmed format, got {url}")
+    # slug is cosmetic (routes on contestKey) but must be a clean slug of the name
+    assert slugify("Derby County vs West Bromwich") == "derby-county-vs-west-bromwich"
+    assert slugify("Nõmme Kalju FC vs Narva") == "nomme-kalju-fc-vs-narva", "accents/■ folded to ascii"
+    # resolver + search use the injected-fetch transport (read-only, never places)
+    import inspect
+    from workers.automation import unibet_odds_feed as uof
+    src = inspect.getsource(uof.resolve_event_url) + inspect.getsource(uof.search_events)
+    assert "fuzzy_match_event" in src and "build_event_url" in src and "_typ=GetSearchResults" in inspect.getsource(uof.search_events)
+
 if __name__ == "__main__":
     main()
