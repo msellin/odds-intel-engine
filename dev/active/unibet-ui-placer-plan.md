@@ -39,3 +39,32 @@ upcoming fixtures than Coolbet — 115 vs 93).
 - Real money on a new transport — paper-first, fail-closed, blast-radius caps from day one.
 - Do NOT reuse Coolbet's PLACEABLE_BOTS; Unibet needs its own explicit set so a Coolbet bot
   can never accidentally place on Unibet and vice versa.
+
+## Phase-0 spike findings (2026-09-09, live CDP :9222 session)
+GO — feasible, but a genuine from-scratch build (comparable to the Coolbet placer, NOT a copy).
+1. **Drivable via the real CDP session** — login works (balance €100,00 visible), the operator's
+   session passes protection.
+2. **Bot protection = DataDome** (cookie present) — same class as Coolbet's Imperva: must drive
+   the REAL logged-in browser, rate-limited, behavioral-block risk. No headless/fresh automation.
+3. **Bespoke sportsbook, NOT Kambi** — no kambi global/script/iframe. So Coolbet's Kambi criterion
+   parsing is NOT reusable; the bet-slip driver is fresh Unibet-specific work. (This is exactly the
+   KAMBI-FEED-DIVERGENCE the odds module warned about.)
+4. **Estonian locale** — odds are `2,50` (comma), balances `100,00 €`. Every parser/matcher must
+   handle comma decimals.
+5. **A "kulutamiste limiit" (spending-limit) modal** interstitials the sportsbook — the driver must
+   dismiss it ("Ei, aitäh") on load, like Coolbet's cookie/limit interstitials.
+6. **DOM introspection is non-trivial** — odds did not surface in a PROGRAMMATICALLY-opened tab even
+   after dismissing the modal (0 elements), while the operator's own navigated tab renders them.
+   Likely cause: a fresh CDP-opened tab is degraded by DataDome / the SPA doesn't fully init, OR the
+   odds live in shadow DOM / web components. IMPLICATION: the driver should operate on the operator's
+   LIVE-navigated tab (not spawn fresh tabs), use Playwright locators (which pierce open shadow DOM),
+   and map selectors interactively against a real rendered event — this is Phase 1-2 work.
+
+## Revised effort estimate
+- Auto-login (reads UNIBET_* from .env, drives the form, dismisses the limit modal): ~0.5 day.
+- Bet-slip driver (select outcome → set stake → place; Unibet-bespoke selectors, live tab, shadow
+  DOM handling): 1.5-2 days — the bulk.
+- pick→unibet-event matcher (comma locale, site ids ≠ feed ids): ~1 day.
+- Gate reuse + reconcile/dedup/fail-closed + paper placer: ~1 day (mostly reuse).
+- Real-money enablement (own PLACEABLE set + toggles + dry-run): ~0.5 day, owner-gated.
+Total ~4-5 days, phased, paper-first.
