@@ -3997,6 +3997,30 @@ def test_lineshop_family_retired():
         assert not calls, f"{fn} must not be CALLED — its line-shop bot is retired"
 
 
+@test("COOLBET-DAEMONS-PAUSE — footprint daemons honor the global daemons_paused switch")
+def test_coolbet_daemons_pause():
+    """COOLBET-DAEMONS-PAUSE-2026-09-09: the /admin/shadow-bots 'Pause daemons'
+    button flips coolbet_session_state.daemons_paused to calm Imperva. It only
+    works if the FOOTPRINT daemons actually poll it and skip. Pin: the helper
+    exists, migration 318 adds the column, and all three footprint entry points
+    (odds-snapshot=coolbet_explorer, feed-watchdog, mac-daemon tick) check it."""
+    import inspect
+    from workers.automation import coolbet_state as st
+    assert hasattr(st, "is_daemons_paused") and hasattr(st, "set_daemons_paused"), (
+        "coolbet_state must expose is_daemons_paused/set_daemons_paused"
+    )
+    from pathlib import Path
+    base = Path(__file__).parent.parent
+    mig = (base / "supabase" / "migrations" / "318_coolbet_daemons_pause.sql").read_text()
+    assert "daemons_paused" in mig, "migration 318 must add daemons_paused"
+    # every footprint daemon must consult the switch
+    for mod in ("workers/automation/coolbet_explorer.py",
+                "workers/jobs/coolbet_feed_watchdog.py",
+                "workers/automation/coolbet_mac_daemon.py"):
+        src = (base / mod).read_text()
+        assert "is_daemons_paused" in src, f"{mod} must check is_daemons_paused to honor the pause"
+
+
 @test("OU35-MODEL-SHADOW — O/U 3.5 paper bot: single-book gate, calibration, never real-money")
 def test_ou35_model_shadow():
     """OU35-MODEL-SHADOW-BOT (2026-09-08): forward paper tracker for the O/U 3.5

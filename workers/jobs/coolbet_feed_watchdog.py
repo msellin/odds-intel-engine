@@ -382,6 +382,17 @@ def kill_stalled_job(dry_run: bool = False) -> dict:
 
 
 def run(dry_run: bool = False) -> dict:
+    # COOLBET-DAEMONS-PAUSE: honor the global footprint pause. When the operator
+    # has paused Coolbet daemons (to calm Imperva), the odds-snapshot job is not
+    # running, so there is nothing to watchdog — skip to avoid adding footprint.
+    from workers.automation.coolbet_state import is_daemons_paused
+    d_paused, d_reason = is_daemons_paused()
+    if d_paused:
+        log.info("coolbet feed watchdog: daemons PAUSED (%s) — skipping", d_reason)
+        return {"state": "paused", "reason": d_reason or "daemons_paused",
+                "action": "none",
+                "checked_at": datetime.now(timezone.utc).isoformat()}
+
     state, reason = classify()
     result = {"state": state, "reason": reason, "action": "none",
               "checked_at": datetime.now(timezone.utc).isoformat()}

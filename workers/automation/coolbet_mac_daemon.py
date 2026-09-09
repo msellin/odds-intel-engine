@@ -680,6 +680,24 @@ def run_forever() -> None:
     clear_check_pending = True
     while not _stop:
         tick_count += 1
+        # COOLBET-DAEMONS-PAUSE: global footprint pause (set from /admin/shadow-bots
+        # to calm Imperva). Skip the entire tick — no JWT harvest, no placement, no
+        # Coolbet HTTP — while paused, but keep the normal poll cadence (don't
+        # busy-loop the DB check).
+        try:
+            from workers.automation.coolbet_state import is_daemons_paused
+            _dp, _dr = is_daemons_paused()
+        except Exception:
+            _dp = False
+        if _dp:
+            if tick_count % 20 == 1:
+                log.info("tick %d — daemons PAUSED (%s) — skipping Coolbet work",
+                         tick_count, _dr)
+            slept = 0
+            while slept < POLL_INTERVAL_S and not _stop:
+                time.sleep(1.0)
+                slept += 1
+            continue
         c = _tick()
         if c["qualified"] or c["errors"]:
             log.info(

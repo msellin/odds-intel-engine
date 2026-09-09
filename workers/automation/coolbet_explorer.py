@@ -2028,6 +2028,17 @@ def main() -> None:
                          "hours (near-term filter; default 96)")
     args = ap.parse_args()
 
+    # COOLBET-DAEMONS-PAUSE: the global footprint pause (set from /admin/shadow-bots
+    # to calm Imperva). Skip the sweep runs — a manual --match-id inspect is still
+    # allowed for debugging.
+    if not args.match_id:
+        from workers.automation.coolbet_state import is_daemons_paused
+        paused, reason = is_daemons_paused()
+        if paused:
+            print(f"coolbet daemons PAUSED ({reason or 'no reason'}) — skipping Coolbet "
+                  f"sweep to reduce Imperva footprint")
+            return
+
     if args.match_id:
         run_one_shot(args.match_id, raw=args.raw)
     elif args.board:

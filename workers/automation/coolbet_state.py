@@ -360,6 +360,45 @@ def set_placement_paused(paused: bool, *, reason: str | None = None) -> None:
     )
 
 
+def is_daemons_paused() -> tuple[bool, str | None]:
+    """Returns (paused, reason) for the GLOBAL Coolbet footprint pause
+    (COOLBET-DAEMONS-PAUSE). Every Coolbet footprint daemon — odds-snapshot
+    (coolbet_explorer --board), feed-watchdog, and the mac-daemon tick — calls
+    this at the start of its run and skips ALL Coolbet HTTP work when True, so
+    the operator can drop the request footprint from the /admin/shadow-bots
+    dashboard when Imperva escalates (the "STAY COOL" wall).
+
+    Distinct from is_placement_paused (that only stops real-money PLACEMENT;
+    this stops the footprint that provokes Imperva). Falls OPEN (not paused) on
+    DB error, mirroring is_placement_paused — a transient lookup failure must not
+    silently freeze collection; the operator verifies state in the dashboard."""
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT daemons_paused, daemons_paused_reason FROM coolbet_session_state WHERE id = 1"
+        )
+        if not rows:
+            return (False, None)
+        return (bool(rows[0].get("daemons_paused")),
+                rows[0].get("daemons_paused_reason"))
+    except Exception as e:
+        log.warning("daemons_paused read failed (defaulting to NOT paused): %s", e)
+        return (False, None)
+
+
+def set_daemons_paused(paused: bool, *, reason: str | None = None) -> None:
+    """Set the global Coolbet footprint pause. Written by the dashboard API and
+    the ops CLI. Plain UPDATE — the operator owns this switch."""
+    _safe_write(
+        """UPDATE coolbet_session_state
+           SET daemons_paused = %s,
+               daemons_paused_at = CASE WHEN %s THEN NOW() ELSE NULL END,
+               daemons_paused_reason = %s
+           WHERE id = 1""",
+        (paused, paused, reason if paused else None),
+    )
+
+
 def get_or_create_device_id() -> str:
     """Return the bot's stable Coolbet deviceId. Auto-generates on first
     call and persists to coolbet_session_state.device_id so subsequent
