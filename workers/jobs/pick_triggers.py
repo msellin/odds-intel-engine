@@ -60,16 +60,16 @@ _SHARP_STRATEGIES = [
 #     near-true de-vigged Pinnacle line, so 3% is a REAL 3% overlay. The model
 #     floors (13%/8%) would demand a 13% overlay vs Pinnacle — nearly impossible
 #     (max observed +6.6%) — so the sharp bots would never fire.
-#   * ODDS 1.50 (light sanity floor), NOT the model twin's 2.80/1.80. The model's
-#     high odds floor is an anti-LONGSHOT guard for the model's over-confidence on
-#     dogs — a model failure mode that does NOT apply to a sharp anchor, whose best
-#     signal is often at FAVOURITE prices (Coolbet shading a short price). Importing
-#     2.80 would throw the sharp bot's best picks away (e.g. +6.6% edge sat at 1.92).
-#     1.50 only screens out near-certainties where de-vig noise and tiny payoff
-#     dominate. Paper bots; owner-adjustable. See docs/SYSTEM_MAP.md and
+#   * ODDS 1.01 (effectively OFF), NOT the model twin's 2.80/1.80. These are
+#     EXPERIMENTAL paper bots whose whole job is to OBSERVE where the sharp anchor
+#     finds value — a pre-set odds floor pre-judges which bands are bad before we
+#     have any settled data. So we capture the full sharp-edge distribution across
+#     ALL odds (favourites and longshots alike) and set a data-driven odds floor
+#     per band LATER, once picks settle. Zero risk (paper). The 1.01 only rejects
+#     degenerate ≤1.0 prices. Owner decision 2026-09-09. See docs/SYSTEM_MAP.md and
 #     docs/BETTING_GATE_DECISIONS.md (sharp-anchor note).
 _SHARP_MIN_EDGE_BY_MARKET = {"1x2": 0.03, "o/u": 0.03}
-_SHARP_MIN_ODDS_BY_MARKET = {"1x2": 1.50, "o/u": 1.50}
+_SHARP_MIN_ODDS_BY_MARKET = {"1x2": 1.01, "o/u": 1.01}
 
 
 def _window(cal: float, edge_floor: float, odds_floor: float):

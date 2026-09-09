@@ -67,8 +67,8 @@ near-true line, so its floor is necessarily small.
 
 | Sharp bot | Edge floor | Odds floor | Rationale |
 |---|---|---|---|
-| sharp 1x2 | **3%** | **1.50** | 3% overlay vs Pinnacle is real (max observed +6.6%); 13% would never fire. Odds floor is a light sanity floor, NOT the model twin's 2.80 — the model's high odds floor is an anti-longshot guard for model over-confidence, which does not apply to a sharp anchor (whose value is often at favourite prices). |
-| sharp O/U 2.5 | **3%** | **1.50** | same reasoning; the model twin's 1.80 would exclude sharp edges on shorter prices. |
+| sharp 1x2 | **3%** | **1.01** (off) | 3% overlay vs Pinnacle is real (max observed +6.6%); 13% would never fire. Odds floor is a no odds floor (experimental — observing all bands), NOT the model twin's 2.80 — the model's high odds floor is an anti-longshot guard for model over-confidence, which does not apply to a sharp anchor (whose value is often at favourite prices). |
+| sharp O/U 2.5 | **3%** | **1.01** (off) | same reasoning; the model twin's 1.80 would exclude sharp edges on shorter prices. |
 
 These are **paper** starting floors, not validated on the executable basis (that's the
 whole reason the bots run — to measure whether the sharp anchor finds anything). They
