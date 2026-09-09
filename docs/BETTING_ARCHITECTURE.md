@@ -191,13 +191,22 @@ require explicit owner go before the cutover.**
 |---|---|---|---|
 | 1 | ✅ **DONE 2026-09-09** — `workers/canonical_market.py` is the one source: `market_family()` (floor-key family, = the old `_canon_market`) + `ou_selection_to_storage()` (line encoding, = the old `_convert`). `coolbet_placer._canon_market` and `coolbet_model_ou_shadow._convert` now delegate to it; smoke `CANONICAL-MARKET-VOCAB` proves behaviour-preservation. (Frontend `coolbet-edge.ts` stays a documented mirror — TS can't import the Python module.) | low | no |
 | 2 | ✅ **DONE 2026-09-09** — `real_bets.placed_real` (migration 325): TRUE=real (UI-placer balance-confirmed / reconciled manual bet), FALSE=paper (daemon record=True/execute=False), NULL=legacy. Every writer tags at write time (`store_real_bet` param; `coolbet_placer` ×3 = `execute`; UI placer = True; reconcile = TRUE). Real placer's dedup + admin overlays (`getRealBets`/`getPlaceableBets`) exclude `placed_real IS FALSE` — a paper row can no longer block a real bet. Backfill: 123 proven-real tagged TRUE, 847 legacy left NULL (not falsely marked paper — some are real manual bets). Public /performance unaffected (reads simulated_bets). Owner chose tag-not-delete. Smoke `REAL-BETS-PLACED-REAL`. | med | ✅ owner-approved |
-| 3 | **Promote the trigger engine to the real-money source**: populate `pick_trigger_matcher.BOOK_MARKET_BOTS` with Unibet; retire the best-accessible mirror-shadow jobs once trigger-sourced picks match. | med (changes what feeds the placer) | **yes** |
-| 4 | **Placer registry + unified best-price router** (BEST-PRICE-EXECUTION-ROUTER): route each cleared trigger to the best book, place once, one placement-of-record. Retire the standalone Coolbet-only selection path. | high (real money, both books) | **yes, per cutover** |
-| 5 | **Per-book config registry** (books/gates/line-support/PLACEABLE); add Unibet placer to a schedule with its own PLACEABLE set. | med | **yes** |
-| 6 | **Collapse the two placers**: the paper daemon and the real placer stop reading two different tables; one source (trigger-sourced shadow rows), one paper/real split by an explicit execute flag, not by table. | high | **yes** |
+| 3 | **Unibet PAPER build-out (NOT a real-money change).** 3a: broad `Unibet-Site` odds sweep → `odds_snapshots`. 3b: add Unibet to `pick_trigger_matcher.BOOK_MARKET_BOTS` (1x2/ou × model/sharp) → **paper** trigger bots that accumulate settled picks, mirroring Coolbet. 3c: Unibet UI placer → fully working (fixture→URL resolver) but **NOT auto-wired to place for any bot**. Coolbet real-money 2-bot set untouched. | low-med (all paper) | no (paper only) |
+| 4 | **DATA-GATED PROMOTION (future, owner decision).** Once a candidate bot (a Coolbet/Unibet trigger, a line-shop bot) has enough SETTLED paper picks to calibrate and compare against the 2 live Coolbet bots, the owner decides: promote / merge / route / leave paper. Only what the owner promotes ever reaches a placer. | — | **yes — the whole point is the owner's call** |
+| 5 | **Best-price router + placer registry** (BEST-PRICE-EXECUTION-ROUTER) — build ONLY for bots promoted in Stage 4: route a cleared pick to the best clearing book, place once, one placement-of-record. Per-book config (books/gates/line-support/PLACEABLE). | high (real money, both books) | **yes, per cutover** |
+| 6 | **Collapse the two placers** — one source, paper/real split by an explicit flag not by table. Do only after Stage 5 is live and stable. | high | **yes** |
 
-**Guardrail (unchanged):** never flip `execute`, change a real-money floor, or repoint the placer's
-source table without explicit owner authorization + a dry-run + fold-robust evidence.
+**Bot lifecycle — the load-bearing rule (owner, 2026-09-09):** REAL MONEY = the two proven
+Coolbet bots (`bot_coolbet_1x2_model_v1`, `bot_coolbet_ou_model_v1`), and it **stays that way**.
+Every other bot — Coolbet triggers (model + sharp), any line-shop bot, and ALL Unibet bots — runs
+**paper**, accumulating settled picks. A bot is promoted to a placer ONLY when (a) it has enough
+settled history to be calibrated and compared against the two live bots, AND (b) the owner decides
+to. Stages 3a–3c build the paper substrate for Unibet; they do NOT stake real money. Promotion,
+best-price routing and any placer collapse are all downstream of the owner's data-gated decision.
+
+**Guardrail (unchanged):** never flip `execute`, change a real-money floor, add a bot to a
+PLACEABLE set, or repoint a placer's source without explicit owner authorization + a dry-run +
+fold-robust evidence.
 
 ---
 
