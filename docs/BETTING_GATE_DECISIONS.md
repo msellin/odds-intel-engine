@@ -37,6 +37,17 @@ idealized basis disagree, the executable basis wins.
 | **O/U 2.5** | **8%** | **1.80** | **8% fold-robust** (and robust down to ~5%). Keep 8%. | `edge_floor_backtest --market o/u`: exec all-bots ≥8% +13.8% ✓ / calibrated ≥8% +18.5% ✓; 13% breaks (f3 −5.3%) |
 | Asian handicap | — (not placed) | — | No fold-robust cell at any floor → not placed | see AH-VIABILITY-REVIEW (closed) |
 
+### 11% and 12% also tested (2026-09-09) — neither is fold-robust
+Owner asked whether 11% or 12% would let us keep more 1x2 volume without dropping to
+13%. Re-ran `edge_floor_backtest` logic with the floor set widened to {9,10,11,12,13,14}%,
+folds 3/4/5, both executable slices + the idealized basis. Result: **13% remains the
+lowest fold-robust floor.** 11% fails (all-bots f3 −3.1%, calibrated f2 −8.8%). 12% is a
+*false pass* — barely positive on one folds=3 fold (+0.2%), collapses to −25.4% at
+folds=4, and fails the calibrated slice (f2 −6.0%). The idealized 104k-fixture basis
+passes everything ≥8% (best-of-books mirage, §52/§55) — executable basis wins, and it
+says 13%. Volume forgone by staying at 13%: ~+18% picks at 12%, ~+41% at 11%, each with
+a demonstrated negative fold. **Do not lower below 13%.**
+
 ### The 1x2 10-vs-13 tradeoff, recorded so it isn't re-litigated
 10% makes **more total profit** (more volume — it fires ~45% more often, which is
 why the live 1x2 bot "finds 0" at 13% on a quiet day) but is **not fold-robust**
