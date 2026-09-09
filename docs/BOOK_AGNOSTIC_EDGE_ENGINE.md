@@ -1,11 +1,15 @@
 # Book-Agnostic Edge Engine — the correct architecture for OWN betting
 
-**Status: Stage A BUILT (2026-09-09); Stage B (matcher) + validation pending.**
-This is the target architecture for how we decide what to bet with our own money
-at Coolbet (and, next, Unibet). It replaces the current "mirror the /picks page
-into Coolbet bots" approach, which selects the wrong universe of bets. Stage A
-(`pick_triggers` table + `workers/jobs/pick_triggers.py`, migration 319) writes
-the fair-value windows hourly; it is paper — no book odds, no placement.
+**Status: Stage A + B BUILT (2026-09-09), PAPER. Backtest says the wide selection
+loses at current gates — see the backtest section — so it stays paper; the live
+real-money path remains the existing narrow model-edge bots.** This is the target
+architecture for how we decide what to bet with our own money at Coolbet (and,
+next, Unibet). It replaces "mirror the /picks page into Coolbet bots" (wrong
+universe). Stage A (`pick_triggers` + `workers/jobs/pick_triggers.py`, mig 319)
+writes fair-value windows hourly; Stage B (`workers/jobs/pick_trigger_matcher.py`,
+mig 320, `bot_coolbet_trigger_v1`) matches each book's swept odds against them and
+emits paper `shadow_bets` — never placeable. Validation:
+`scripts/trigger_engine_backtest.py`.
 
 ## The one-line idea
 
