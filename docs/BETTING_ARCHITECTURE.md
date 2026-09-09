@@ -1,0 +1,211 @@
+# Betting Architecture — how picks are generated and how bets are made (multi-bookmaker)
+
+**Single source of truth for the whole betting data flow**, across BOTH directions
+(👥 PICKS = what customers see, 🤖 OWN = what we stake) and ALL bookmakers (Coolbet
+live; Unibet in progress; future books). Written 2026-09-09 for COOLBET-PICK-TABLE-AUDIT
+after a full code+DB trace, because the flow had drifted into "which table do picks/bets
+come from?" confusion. If you change generation, a surface, or a placement path, update
+this file in the same commit.
+
+Companion docs: `docs/SYSTEM_MAP.md` (the index + the two edges), `docs/COOLBET_OWN_BETTING.md`
+(the Coolbet real-money placer specifics), `docs/BOOK_AGNOSTIC_EDGE_ENGINE.md` (the trigger
+engine design). This doc is the **book-agnostic** umbrella they hang under.
+
+---
+
+## 0. The one-paragraph summary
+
+One model pipeline generates picks **once per fixture** and writes them to **`simulated_bets`**,
+pricing each at the **best odds across the books we can actually bet** (`ACCESSIBLE_BOOKMAKERS`).
+Those rows feed **everything customers see** (`/picks`, Telegram, `/performance`, landing).
+For **our own real money**, a second layer re-projects a filtered subset into **`shadow_bets`**
+(the placeable bots) which the **real-money UI placer** stakes at one book. A parallel
+**trigger engine** (`pick_triggers` → `pick_trigger_matcher`) is the *book-agnostic* future:
+it already computes book-independent price windows and evaluates each book's own price — it is
+the thing a multi-bookmaker setup grows from. The mess this doc exists to remove: **three market
+spellings, two placers reading two tables, a `real_bets` ledger that mixes real+paper, and a
+public `/performance` that shows `simulated_bets` (not the rows we actually stake).**
+
+---
+
+## 1. GENERATION — how a pick is produced (one path, one table)
+
+**Entry point:** `workers/jobs/daily_pipeline_v2.py::run_morning()` (scheduler jobs ⑤ Betting 06:00
+and ⑨ Betting Refresh; a 30-min `_shadow_run` mirrors it in shadow mode). `workers/jobs/betting_pipeline.py::run_betting()` is the wrapper.
+
+| Step | What happens | Where |
+|---|---|---|
+| Odds basis | For each market/selection, take the **MAX price across `ACCESSIBLE_BOOKMAKERS`** (a best-of-books line-shop, NOT one book, NOT a vig consensus). Record which book held it as `recommended_bookmaker`. | `daily_pipeline_v2.py:2234-2236` |
+| Calibrate | Raw model prob → `cal_prob = calibrate_prob(...)` (isotonic/Platt), shrunk toward the **Pinnacle** sharp anchor. | `:3502-3512` |
+| Edge | **`edge = cal_prob − 1/odds`**, where `odds` = the best-accessible price above. | `:3524` |
+| Gate (generation) | Per-**bot**, per-**tier**, per-**market** `edge_thresholds` + tier bumps + Pinnacle-disagreement veto. **NOT the 13%/8% floor** — that's placement-side (§4). | `:3525-3536`, `:62-995` |
+| Write | `store_bet()` → **`INSERT INTO simulated_bets`**, under **every** bot in `BOTS_CONFIG` (each its own `bot_id`; `bot_v10_all` is the flagship). Columns: `odds_at_pick` (=best-accessible), `edge_percent`, `calibrated_prob`, `recommended_bookmaker`. | `:3821` → `supabase_client.py:2110` |
+
+**The two edges** (see SYSTEM_MAP §1): the **model edge** above (`cal_prob − 1/book_odds`) is the
+generation/placement ruler. The **sharp edge** (`P_sharp − 1/book_odds`, P_sharp = Shin-de-vigged
+Pinnacle) is a *second* anchor used only by the trigger engine (§3b). They are different rulers —
+never compare their numbers.
+
+**Anchor note:** Pinnacle drives calibration, the veto, CLV and de-vig, but **Pinnacle is not
+placeable** (not in `ACCESSIBLE_BOOKMAKERS`). `PRICE_REFERENCE_BOOKMAKERS = ACCESSIBLE ∪ {Pinnacle}`.
+
+`ACCESSIBLE_BOOKMAKERS = {Coolbet, Betano, Unibet, Epicbet}` (`daily_pipeline_v2.py:1072-1130`).
+Pinnacle/Marathonbet/10Bet/888Sport removed (EMTA-blocked); `Unibet-Kambi` removed (feed-divergent).
+
+---
+
+## 2. THE TABLES — what holds picks and bets (five + one)
+
+| Table | Written by | Read by | Role |
+|---|---|---|---|
+| **`simulated_bets`** | the generation pipeline (§1), all bots | **/picks · Telegram · /performance · landing** + the paper daemon | The **primary pick ledger**. One row per bot×fixture×market×selection. Market spelled `o/u` / selection `over 2.5`. Bankroll/EV aware. |
+| **`shadow_bets`** | mirror jobs (§3) + trigger matcher (§3b) + BET-TIMING monitor | via the view ↓ | Secondary ledger holding the **placeable** model-edge bot rows + all trigger/shadow bots. Market re-spelled `over_under_25` / selection `over`. |
+| **`shadow_bets_unique`** (VIEW) | — (DISTINCT ON bot×match×market×selection; migration 298) | **the real-money UI placer** + `/admin/shadow-bots` | Canonical dedup read of `shadow_bets`. |
+| **`pick_triggers`** | Stage A (`pick_triggers.py`) | Stage B matcher | **Book-independent** price windows per fixture×market×selection×anchor. The multi-book core (§3b). |
+| **`real_bets`** | the real UI placer (real, balance-confirmed) **+ the paper daemon (`record=True,execute=False` → phantom) + manual reconciliation** | `/performance` overlay (admin), leaderboard | **Placement ledger — dual-purpose.** A row alone does NOT prove money moved. |
+| `coolbet_placement_attempts` | the UI placer (`coolbet_ui_placer.record_attempt`) | dedup + audit | The **only** proof of a real stake: `outcome='placed'`. |
+
+---
+
+## 3. RE-PROJECTION — simulated_bets → shadow_bets (the placeable bots)
+
+Two mirror jobs (added 2026-09-08) route the calibrated model's own picks through the proven
+Coolbet placer. They **carry the best-accessible edge/price straight through** (do NOT recompute
+against a specific book — they trust the placer to re-check the live book price downstream):
+
+- `workers/jobs/coolbet_model_ou_shadow.py` → bot `bot_coolbet_ou_model_v1`, `EDGE_FLOOR=0.08`,
+  vocabulary convert `over 2.5 → over_under_25/over` (2.5/3.5 only).
+- `workers/jobs/coolbet_model_1x2_shadow.py` → bot `bot_coolbet_1x2_model_v1`, `EDGE_FLOOR=0.13`,
+  no conversion (home/draw/away straight through).
+
+Also writing `shadow_bets`: `ou35_model_shadow.py`, `corners_paper_bot.py`, and the pipeline's
+`bulk_store_shadow_bets()` (BET-TIMING-MONITOR — every bot at every refresh, flat €10).
+
+## 3b. THE TRIGGER ENGINE — the book-agnostic future (already built, Coolbet-only so far)
+
+This is the component a multi-bookmaker setup grows from. It is already designed correctly; it is
+just not populated with non-Coolbet books.
+
+- **Stage A — `workers/jobs/pick_triggers.py`** writes **book-INDEPENDENT** windows into
+  `pick_triggers`: `min_odds = max(1/(cal_prob − edge_floor), odds_floor)`, `max_odds = min_odds×1.6`.
+  Floors imported from `coolbet_placer._min_edge_for/_min_odds_for` (can't drift). **Two anchors
+  side by side**, `strategy` column = `model_*` (calibrated model) or `sharp_*` (Shin-de-vig Pinnacle).
+  Markets: 1x2 + O/U 2.5.
+- **Stage B — `workers/jobs/pick_trigger_matcher.py`** joins each book's latest `odds_snapshots`
+  against the window and writes `shadow_bets`, **recomputing edge at that book's OWN price**
+  (`edge = cal − 1/price`, `:82`), one bot per `(book × market × anchor)`. `BOOK_MARKET_BOTS`
+  currently enumerates **only Coolbet** (4 bots). **Add a book = add rows to that dict** — the edge
+  math is already per-book.
+
+---
+
+## 4. SURFACES — exactly what each reads and gates on
+
+| Surface | Table | Cohort / gate | Edge floor | Price basis | Real money? |
+|---|---|---|---|---|---|
+| **/picks** (`upcoming-picks.ts`) | `simulated_bets` | maturity `['calibrated']` public / `+beta,active` signed-in; retired excl.; date window | **NONE** (dedup highest-edge; shows a per-pick break-even `min_odds`; `placeMinOdds` 13/8+2.8/1.8 admin-only) | `odds_at_pick` | no |
+| **Telegram** (`daily_pipeline_v2:3992` + `notify/telegram.py`) | `simulated_bets` (the `_tele_bets` just-written rows) | **each bot's OWN config threshold**, all cohorts (broader than /picks); admin alert + Pro broadcast | per-bot | `odds_at_pick` | no |
+| **/performance + landing** (`engine-data.ts:3448`) | **`simulated_bets` ONLY** | `['calibrated','beta','active']`, markets `1x2/o/u/over_under_25/btts`, `result∈(won,lost)` | **NONE** on headline | `odds_at_pick_live` (executable, MAX-across-accessible), unplaceable rows excluded, flat €10 | **no — excludes `real_bets`** |
+| **/admin/shadow-bots** | `shadow_bets_unique` | placeable + all shadow bots | placer floors | live | shows the real-money bots |
+
+**Two disagreements this creates (the "messy" symptom):**
+1. **/performance shows `simulated_bets` (bot_v10_all etc.), NOT the `shadow_bets` rows we actually
+   stake.** Public track record ≠ real-money track record (except the admin `real_bets` overlay).
+2. **Floors disagree by surface:** /picks = none, /performance = none, Telegram = per-bot,
+   placer = 13/8. `PICKS-GRADING-ROLLOUT` is the intended reconciler (A=13/8, pin /performance to A).
+
+---
+
+## 5. BET-MAKING — the three placement paths + both books' schedules
+
+| Path | Reads | Schedule | Real money? | Writes |
+|---|---|---|---|---|
+| **Paper daemon** (`coolbet_mac_daemon` → `coolbet_placer.load_qualified_bets`) | `simulated_bets` | every 30 min (was stale since 2026-08-23 — verify) | **NO** — `execute=False`; but `record=True` writes **phantom `real_bets`** | `real_bets` (phantom) |
+| **Real-money UI placer** (`place_coolbet_ui.py --all-enabled --execute` → `coolbet_ui_placer.place_and_record`) | `shadow_bets_unique`, for `PLACEABLE_BOTS ∩ coolbet_placer_bots(ui_place_enabled)` | launchd hourly **06:00–21:00 UTC** | **YES** (balance-confirmed) | `real_bets` (real) + `coolbet_placement_attempts` |
+| **Unibet placer** (`unibet_placer.place_bet`) | **no pick table — args only** | **none — manual** | manual only | `real_bets` |
+
+`PLACEABLE_BOTS = {bot_coolbet_ou_model_v1, bot_coolbet_1x2_model_v1}`. Gates (Coolbet placer):
+maturity → per-market edge floor (`_MIN_EDGE_BY_MARKET`: 1x2 0.13 / o/u 0.08) → per-market odds
+floor (`_MIN_ODDS_BY_MARKET`: 1x2 2.80 / o/u 1.80) → live-edge re-check → single-leg → account-verify
+dedup. Pre-match only.
+
+---
+
+## 6. WHERE IT'S HARD-COUPLED TO ONE BOOK (what multi-book must generalize)
+
+1. **Placement gates + placer stack are Coolbet-only** (`coolbet_placer.py`, `coolbet_ui_placer.py`,
+   the whole `coolbet_*` daemon/session stack).
+2. **Mirror shadow jobs carry the best-accessible price**, not a per-book price — they assume the
+   Coolbet placer re-checks the live Coolbet price downstream. Wrong basis for a second book.
+3. **`pick_trigger_matcher.BOOK_MARKET_BOTS` = Coolbet only** — the one component already per-book.
+4. **`AH-NO-QUARTER`** filter hard-codes Coolbet's full/half-line support.
+5. **Edge is computed on the MAX-across-accessible price** in the primary pipeline; only the trigger
+   engine computes a true per-book edge.
+
+---
+
+## 7. TARGET — the multi-bookmaker design
+
+The end state the owner asked for: **generate once, price per book, place once at the best clearing
+book, with one placement-of-record — adding a 3rd book is config, not a rewrite.**
+
+```
+                    ┌─ generation (unchanged): model → cal_prob, per fixture ─┐
+                    ▼                                                          │
+   pick_triggers  (book-INDEPENDENT window per fixture×market×selection×anchor) │  ← Stage A, exists
+                    ▼                                                          │
+   per-book matcher: for each book in BOOKS, evaluate its OWN odds_snapshots    │  ← Stage B, exists
+      against the window → per-book edge → candidate (book, price, edge)        │     (Coolbet only today)
+                    ▼
+   UNIFIED best-price ROUTER: across all books whose candidate clears the gate, │  ← BEST-PRICE-EXECUTION-ROUTER
+      pick the BEST price → route to THAT book's placer → place ONCE            │     (to build)
+                    ▼
+   placer REGISTRY: {Coolbet: coolbet_ui_placer, Unibet: unibet_placer, …}      │  ← per-book executor
+                    ▼
+   ONE placement-of-record  (real_bets, with `bookmaker` + a proof flag)        │  ← no phantom rows
+```
+
+Design rules for the target:
+- **One canonical market vocabulary** (`1x2`/home,draw,away · `over_under_25`/over,under · …) used by
+  every writer and reader. Kill the `o/u`↔`over_under_25`↔`over 2.5` triple-spelling. A single
+  `canon_market()`/`canon_selection()` helper, smoke-tested, is the source.
+- **Per-book edge** is the basis for placement selection (the trigger matcher already does this);
+  the best-accessible line-shop stays only for the *published /picks* number (👥), never for 🤖 routing.
+- **One placement-of-record.** `real_bets` holds only genuinely-placed bets, tagged with `bookmaker`
+  and a proof flag (a `coolbet_placement_attempts`-style confirmation per book). Paper stays in a
+  paper table, never in `real_bets`.
+- **Placer registry**, not a Coolbet-only path: the router picks the book, looks up its placer,
+  each placer fails closed independently, dedup is cross-book (`match_exposure` already reads
+  `real_bets` across books).
+- **Per-book config** (books list, gates, line-support like AH-NO-QUARTER, PLACEABLE set) lives in
+  one registry keyed by book, so a new book is a config row.
+
+---
+
+## 8. MIGRATION PLAN — current → target (staged; real-money steps are OWNER-GATED)
+
+Each stage is independently shippable and testable. **Stages touching real money or `/performance`
+require explicit owner go before the cutover.**
+
+| # | Stage | Risk | Owner-gate |
+|---|---|---|---|
+| 1 | **Canonical market vocabulary** module + smoke; wire readers/writers to it incrementally (behaviour-preserving). Removes the triple-spelling. | low | no |
+| 2 | **`real_bets` purity**: tag rows with a placement-proof flag; make `/performance`'s real-money overlay read only proven-placed rows; stop the paper daemon writing to `real_bets` (paper → paper table). | med (touches /performance) | **yes** |
+| 3 | **Promote the trigger engine to the real-money source**: populate `pick_trigger_matcher.BOOK_MARKET_BOTS` with Unibet; retire the best-accessible mirror-shadow jobs once trigger-sourced picks match. | med (changes what feeds the placer) | **yes** |
+| 4 | **Placer registry + unified best-price router** (BEST-PRICE-EXECUTION-ROUTER): route each cleared trigger to the best book, place once, one placement-of-record. Retire the standalone Coolbet-only selection path. | high (real money, both books) | **yes, per cutover** |
+| 5 | **Per-book config registry** (books/gates/line-support/PLACEABLE); add Unibet placer to a schedule with its own PLACEABLE set. | med | **yes** |
+| 6 | **Collapse the two placers**: the paper daemon and the real placer stop reading two different tables; one source (trigger-sourced shadow rows), one paper/real split by an explicit execute flag, not by table. | high | **yes** |
+
+**Guardrail (unchanged):** never flip `execute`, change a real-money floor, or repoint the placer's
+source table without explicit owner authorization + a dry-run + fold-robust evidence.
+
+---
+
+## 9. THE INCONSISTENCIES THIS DOC EXISTS TO REMOVE (checklist)
+
+- [ ] Three market spellings (`o/u` / `over_under_25` / `over 2.5`) → one canonical vocab (Stage 1).
+- [ ] `real_bets` mixes real + phantom-paper + manual → proof-tagged, paper out (Stage 2).
+- [ ] `/performance` shows `simulated_bets`, not what we stake → grade-pin + real overlay clarity (Stage 2 + PICKS-GRADING).
+- [ ] Two placers read two tables → one trigger-sourced path (Stages 3,6).
+- [ ] Single-book coupling in 5 places (§6) → placer registry + per-book config (Stages 4,5).
+- [ ] Floors disagree by surface → PICKS-GRADING-ROLLOUT (A=13/8, pin /performance to A).

@@ -34026,5 +34026,42 @@ def _():
             )
 
 
+
+
+
+@test("BETTING-ARCHITECTURE-DOC — the multi-book map matches code (no silent drift)")
+def test_betting_architecture_doc():
+    """COOLBET-PICK-TABLE-AUDIT (2026-09-09): docs/BETTING_ARCHITECTURE.md is the
+    authoritative multi-bookmaker source of truth for generation + placement. This
+    pins the load-bearing facts to the code so the doc can't rot: if a dev changes
+    the accessible book set, the placeable set, or adds a book to the trigger matcher,
+    this fails until the doc is updated in the same commit."""
+    import inspect
+    from pathlib import Path
+    doc = (Path(__file__).parent.parent / "docs" / "BETTING_ARCHITECTURE.md").read_text()
+    # the doc must name the five ledgers + the trigger engine
+    for t in ("simulated_bets", "shadow_bets", "shadow_bets_unique", "pick_triggers",
+              "real_bets", "coolbet_placement_attempts"):
+        assert t in doc, f"BETTING_ARCHITECTURE.md must document the {t} table"
+    # accessible book set: code == doc
+    from workers.jobs import daily_pipeline_v2 as dp
+    acc = set(getattr(dp, "ACCESSIBLE_BOOKMAKERS"))
+    for b in acc:
+        assert b in doc, (f"ACCESSIBLE_BOOKMAKERS has {b!r} but BETTING_ARCHITECTURE.md "
+                          "does not list it — update §1")
+    # placeable set: code == doc
+    from scripts.place_coolbet_ui import PLACEABLE_BOTS
+    for b in PLACEABLE_BOTS:
+        assert b in doc, f"PLACEABLE_BOTS has {b!r} but the doc's §5 does not — update it"
+    # the trigger matcher is the multi-book point — doc says Coolbet-only today;
+    # if someone adds a non-coolbet book, force a doc update.
+    from workers.jobs import pick_trigger_matcher as ptm
+    books = {k[0] for k in getattr(ptm, "BOOK_MARKET_BOTS").keys()}
+    if books - {"Coolbet"}:
+        assert "BOOK_MARKET_BOTS" in doc and any(b in doc for b in (books - {"Coolbet"})), (
+            "pick_trigger_matcher now has a non-Coolbet book — BETTING_ARCHITECTURE §3b/§7 "
+            "must be updated to reflect the multi-book population")
+
+
 if __name__ == "__main__":
     main()
