@@ -83,6 +83,24 @@ BOTS: list[BotSpec] = [
             "Sharp twin: fires when Coolbet's O/U 2.5 price beats the de-vigged Pinnacle line by ≥3% (no odds floor — experimental, observing all bands). Paper. Head-to-head vs the model twin.",
             twin="bot_coolbet_trigger_ou_v1"),
 
+    # UNIBET-TRIGGER-BOTS-2026-09-09 (Stage 3b) — the Unibet twins, reading the
+    # broad Unibet-Site odds sweep. Paper. The DRAW edge the model can't see lives
+    # on the sharp anchor here (soft-book mispricing vs de-vig Pinnacle, §57).
+    BotSpec("bot_unibet_trigger_1x2_v1", FAM_TRIGGER, "1x2", ANCHOR_MODEL,
+            0.13, 2.80, False,
+            "Fires when Unibet's 1x2 site price lands in the MODEL trigger window (model edge ≥13% at Unibet's own odds). Paper. Unibet twin of the Coolbet 1x2 trigger."),
+    BotSpec("bot_unibet_trigger_sharp_1x2_v1", FAM_TRIGGER, "1x2", ANCHOR_SHARP,
+            0.03, 1.01, False,
+            "Sharp twin: fires when Unibet's 1x2 site price beats the de-vigged Pinnacle line by ≥3% (no odds floor). Paper. Where the draw edge should surface (§57).",
+            twin="bot_unibet_trigger_1x2_v1"),
+    BotSpec("bot_unibet_trigger_ou_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_MODEL,
+            0.08, 1.80, False,
+            "Fires when Unibet's O/U 2.5 site price lands in the MODEL trigger window (model edge ≥8% at Unibet's own odds). Paper. Unibet twin of the Coolbet O/U trigger."),
+    BotSpec("bot_unibet_trigger_sharp_ou_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_SHARP,
+            0.03, 1.01, False,
+            "Sharp twin: fires when Unibet's O/U 2.5 site price beats the de-vigged Pinnacle line by ≥3% (no odds floor). Paper.",
+            twin="bot_unibet_trigger_ou_v1"),
+
     # Coolbet own-price paper bots
     BotSpec("bot_ou35_model_v1", FAM_COOLBET_PAPER, "O/U 3.5", ANCHOR_MODEL,
             0.08, 1.80, False,

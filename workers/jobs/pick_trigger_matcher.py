@@ -31,7 +31,20 @@ BOOK_MARKET_BOTS = {
     ("Coolbet", "over_under_25", "model_ou25"): "bot_coolbet_trigger_ou_v1",
     ("Coolbet", "1x2",           "sharp_1x2"):  "bot_coolbet_trigger_sharp_1x2_v1",
     ("Coolbet", "over_under_25", "sharp_ou25"): "bot_coolbet_trigger_sharp_ou_v1",
+    # UNIBET-TRIGGER-BOTS-2026-09-09 (Stage 3b): same trigger engine, second book.
+    # Reads odds_snapshots bookmaker='Unibet-Site' (the broad site sweep). Paper.
+    # NB the DRAW edge — which the model can't see — lives here on the SHARP anchor
+    # (soft-book mispricing vs de-vig Pinnacle); see ANALYSIS_GOTCHAS §57.
+    ("Unibet-Site", "1x2",           "model_1x2"):  "bot_unibet_trigger_1x2_v1",
+    ("Unibet-Site", "over_under_25", "model_ou25"): "bot_unibet_trigger_ou_v1",
+    ("Unibet-Site", "1x2",           "sharp_1x2"):  "bot_unibet_trigger_sharp_1x2_v1",
+    ("Unibet-Site", "over_under_25", "sharp_ou25"): "bot_unibet_trigger_sharp_ou_v1",
 }
+
+
+def _cohort_for(book: str) -> str:
+    """shadow_cohort per book so each book's trigger picks group + settle separately."""
+    return "unibet_trigger" if book.lower().startswith("unibet") else "coolbet_trigger"
 
 
 def _bot_id(name: str) -> str | None:
@@ -51,7 +64,7 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
         if not bot_id:
             log.warning("trigger matcher: bot %s not registered (migration 321?)", bot_name)
             return counters
-        cohort = "coolbet_trigger"
+        cohort = _cohort_for(book)
 
         rows = execute_query(
             """

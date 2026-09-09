@@ -34299,5 +34299,36 @@ def test_unibet_event_url_resolver():
     src = inspect.getsource(uof.resolve_event_url) + inspect.getsource(uof.search_events)
     assert "fuzzy_match_event" in src and "build_event_url" in src and "_typ=GetSearchResults" in inspect.getsource(uof.search_events)
 
+@test("UNIBET-TRIGGER-BOTS — second book on the trigger engine (paper), book-aware cohort")
+def test_unibet_trigger_bots():
+    """COOLBET-PICK-TABLE-AUDIT Stage 3b (2026-09-09): the Unibet twins of the 4 Coolbet
+    trigger bots, reading the broad Unibet-Site odds sweep. All PAPER. Pins: the matcher
+    enumerates the 4 Unibet-Site (book×market×anchor) bots; the shadow_cohort is book-aware
+    (unibet_trigger vs coolbet_trigger) so picks group/settle separately; migration 326
+    registers the 4 bots + allows the cohort; the registry lists them (drift-checked)."""
+    from pathlib import Path
+    from workers.jobs import pick_trigger_matcher as ptm
+    books = {k[0] for k in ptm.BOOK_MARKET_BOTS}
+    assert "Unibet-Site" in books, "matcher must enumerate Unibet-Site trigger bots"
+    ub = {v for k, v in ptm.BOOK_MARKET_BOTS.items() if k[0] == "Unibet-Site"}
+    assert ub == {"bot_unibet_trigger_1x2_v1", "bot_unibet_trigger_ou_v1",
+                  "bot_unibet_trigger_sharp_1x2_v1", "bot_unibet_trigger_sharp_ou_v1"}, (
+        f"the 4 Unibet trigger bots must be wired, got {ub}")
+    # book-aware cohort (else Unibet picks would mislabel as coolbet_trigger)
+    assert ptm._cohort_for("Unibet-Site") == "unibet_trigger"
+    assert ptm._cohort_for("Coolbet") == "coolbet_trigger"
+    # migration 326: cohort added to the CHECK + all 4 bots registered
+    mig = (Path(__file__).parent.parent / "supabase" / "migrations"
+           / "326_unibet_trigger_bots.sql").read_text()
+    assert "'unibet_trigger'" in mig and "shadow_cohort_check" in mig, "migration must allow the unibet_trigger cohort"
+    for b in ub:
+        assert f"'{b}'" in mig, f"migration must register {b}"
+    assert mig.count("'experimental'") >= 1, "Unibet triggers must register as experimental (paper)"
+    # registry has them (paper, right anchors/floors — drift test cross-checks the values)
+    from workers.registry.bot_registry import active_names
+    assert ub <= active_names(), "registry must list the 4 Unibet trigger bots"
+    from workers.registry.bot_registry import placeable_names
+    assert not (ub & placeable_names()), "Unibet triggers must NOT be placeable (paper)"
+
 if __name__ == "__main__":
     main()
