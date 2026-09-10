@@ -34330,5 +34330,32 @@ def test_unibet_trigger_bots():
     from workers.registry.bot_registry import placeable_names
     assert not (ub & placeable_names()), "Unibet triggers must NOT be placeable (paper)"
 
+@test("BEST-PRICE-ROUTER — routes to the better clearing book; dry-run by default")
+def test_best_price_router():
+    """COOLBET-PICK-TABLE-AUDIT Stage 5 (2026-09-10): the best-price router. Pins the
+    decision rule (one bet per selection at the better clearing book; book-down never
+    costs the bet) on the real Derby numbers + edge cases, and that it is DRY-RUN by
+    default with the execute path deliberately NOT wired (owner-gated cutover)."""
+    import inspect
+    from workers.automation import best_price_router as bpr
+    db = bpr.decide_book
+    # Derby home: Coolbet 3.30 / Unibet 3.50, cal 0.4221, 1x2 floor 10%/2.80 → Unibet wins
+    d = db(0.4221, 0.10, 2.80, {"Coolbet": 3.30, "Unibet-Site": 3.50})
+    assert d["winner"] == "Unibet-Site" and d["winner_odds"] == 3.50, "route to the better clearing price"
+    assert set(d["clearing"]) == {"Coolbet", "Unibet-Site"}
+    # only one clears (Coolbet below the 2.80 odds floor)
+    assert db(0.40, 0.10, 2.80, {"Coolbet": 2.50, "Unibet-Site": 3.50})["winner"] == "Unibet-Site"
+    # neither clears → no bet
+    assert db(0.30, 0.10, 2.80, {"Coolbet": 3.10, "Unibet-Site": 3.15})["winner"] is None
+    # a book with no odds must not cost the bet — the other still routes
+    assert db(0.4221, 0.10, 2.80, {"Coolbet": 3.30})["winner"] == "Coolbet"
+    # tie breaks to the first-preference book
+    assert db(0.4221, 0.10, 2.80, {"Coolbet": 3.40, "Unibet-Site": 3.40})["winner"] == "Coolbet"
+    # dry-run + execute NOT wired (owner-gated); cross-book dedup uses placed_real IS NOT FALSE
+    src = inspect.getsource(bpr)
+    assert "placed_real IS NOT FALSE" in src, "cross-book dedup must ignore paper rows"
+    assert "execute: bool = False" in src, "router must default to DRY-RUN"
+    assert "not wired" in src.lower(), "execute path must be explicitly not-wired (owner-gated cutover)"
+
 if __name__ == "__main__":
     main()
