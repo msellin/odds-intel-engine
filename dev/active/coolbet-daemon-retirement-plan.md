@@ -29,7 +29,7 @@ no daemon, periodic sweeps + `ensure_logged_in` heal + on-demand placer.
       (`bot_coolbet_value_v1`, retired 2026-09-08) → false-alarm spam every 20min.
       Point at a live bot + guard retired. Reduce "Pipeline complete — 0 new bets".
 - [ ] STAGE 2 — converge `coolbet_placer` matching onto `coolbet_matching`.
-- [ ] STAGE 3 — move session-heal into `coolbet_feed_watchdog`.
+- [x] STAGE 3 — move session-heal into `coolbet_feed_watchdog`.
 - [ ] STAGE 4 — retire launchd `coolbet-mac-daemon` + `coolbet-daemon-keepalive`;
       remove the now-moot `coolbet_daemon_healthcheck` alert.
 - [ ] STAGE 5 — docs (BETTING_ARCHITECTURE, COOLBET_RUNBOOK, WORKFLOWS, SYSTEM_MAP)

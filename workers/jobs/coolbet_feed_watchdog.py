@@ -414,8 +414,24 @@ def run(dry_run: bool = False) -> dict:
                 "action": "none",
                 "checked_at": datetime.now(timezone.utc).isoformat()}
 
+    # SESSION-KEEP (DAEMON-RETIREMENT 2026-09-10): heal the placement JWT here, on
+    # the :20/:50 cadence, so the ~30-min token can't lapse on a quiet day. This is
+    # the permanent home for what the retired coolbet_mac_daemon did per tick; the
+    # UI placer (real money) has no heal of its own. Cheap when valid; never raises.
+    if not dry_run:
+        try:
+            from workers.automation.coolbet_browser_sync import ensure_session_live
+            result_session = ensure_session_live()
+            log.info("coolbet feed watchdog: session-keep → %s", result_session)
+        except Exception as e:  # noqa: BLE001
+            log.debug("coolbet feed watchdog: session-keep skipped (non-fatal): %s", e)
+            result_session = f"error:{e}"
+    else:
+        result_session = "dry_run_skipped"
+
     state, reason = classify()
     result = {"state": state, "reason": reason, "action": "none",
+              "session_keep": result_session,
               "checked_at": datetime.now(timezone.utc).isoformat()}
     log.info("coolbet feed watchdog: %s — %s", state, reason)
 

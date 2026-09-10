@@ -34890,6 +34890,24 @@ def test_coolbet_feed_watchdog_no_retired_bot():
     guard = inspect.getsource(w._picks_bot_active)
     assert "return False" in guard and "is_active" in guard, "guard must check is_active and fail closed to quiet"
 
+@test("COOLBET-SESSION-KEEP-MIGRATED — the JWT heal lives in browser_sync + runs from the feed-watchdog")
+def test_coolbet_session_keep_migrated():
+    """DAEMON-RETIREMENT (2026-09-10): the mac-daemon's per-tick session heal moves to
+    the permanent, daemon-independent home — coolbet_browser_sync.ensure_session_live()
+    (probe JWT → proactive refresh when valid, else the tested auto_self_heal) — and the
+    feed-watchdog (:20/:50) calls it so the ~30-min JWT can't lapse on a quiet day without
+    the paper daemon. Mirrors Unibet's ensure_logged_in (both books heal from a periodic
+    job, no dedicated daemon)."""
+    import inspect
+    from workers.automation import coolbet_browser_sync as cbs
+    from workers.jobs import coolbet_feed_watchdog as w
+    assert hasattr(cbs, "ensure_session_live"), "browser_sync must expose ensure_session_live()"
+    esl = inspect.getsource(cbs.ensure_session_live)
+    assert "auto_self_heal" in esl and "proactive_jwt_refresh" in esl,         "ensure_session_live must refresh when valid and auto_self_heal otherwise"
+    runsrc = inspect.getsource(w.run)
+    assert "ensure_session_live" in runsrc, "the feed-watchdog run() must call the session-keep heal"
+    assert "not dry_run" in runsrc, "session-keep must be skipped on a dry run"
+
 
 if __name__ == "__main__":
     main()

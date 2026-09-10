@@ -999,6 +999,40 @@ def cdp_reload_coolbet_tab(*, timeout_s: int = 10,
         return {"ok": False, "message": f"reload orchestration failed: {e}"}
 
 
+def ensure_session_live(*, dry_run: bool = False) -> str:
+    """Keep the CDP Coolbet placement session logged in (the JWT-heal half of
+    COOLBET-DAEMON-DEATH-RECURRING). Cheap when valid: one JWT decode
+    (`diagnose_cdp_jwt_state`) + an idempotent DB-JWT refresh (`proactive_jwt_refresh`).
+    Only when NOT valid does it invoke the tested `auto_self_heal` state machine
+    (jwt_expired→reload, logged_out→`cdp_auto_login` when COOLBET_AUTO_LOGIN_ON_HEAL
+    is set; `auto_self_heal` carries its own 1/h SMS rate-limit). Idempotent, never
+    raises. Returns a short status string.
+
+    This is the PERIODIC session-keeper — the permanent home for what the retired
+    `coolbet_mac_daemon._ensure_session_live` did per-tick. It is called from the
+    feed-watchdog's :20/:50 run so the ~30-min JWT can no longer lapse on a quiet
+    (no-candidate) day. Mirrors Unibet's `unibet_browser_sync.ensure_logged_in`
+    (both books self-heal from a periodic job, no dedicated daemon). [DAEMON-RETIREMENT 2026-09-10]
+    """
+    try:
+        state = (diagnose_cdp_jwt_state() or {}).get("state")
+    except Exception as e:  # noqa: BLE001
+        log.debug("ensure_session_live probe raised: %s", e)
+        return "probe_error"
+    if state == "valid":
+        try:
+            proactive_jwt_refresh()  # keep the DB JWT fresh even with nothing to place
+        except Exception as e:  # noqa: BLE001
+            log.debug("ensure_session_live proactive_jwt_refresh raised: %s", e)
+        return "valid"
+    try:
+        heal = auto_self_heal(dry_run=dry_run, triggered_by="watchdog")
+    except Exception as e:  # noqa: BLE001
+        log.warning("ensure_session_live auto_self_heal raised: %s", e)
+        return f"{state}->heal_error"
+    return f"{state}->{'recovered' if heal.get('recovered') else heal.get('state_after')}"
+
+
 def auto_self_heal(*, dry_run: bool = False,
                      triggered_by: str = "auto") -> dict:
     """Orchestrate the full CDP-JWT recovery chain. Goal: get from any
