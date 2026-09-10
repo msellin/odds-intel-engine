@@ -35030,6 +35030,58 @@ def test_coolbet_feed_watchdog_no_retired_bot():
     guard = inspect.getsource(w._picks_bot_active)
     assert "return False" in guard and "is_active" in guard, "guard must check is_active and fail closed to quiet"
 
+@test("COOLBET-LOGIN-NO-RENDER-DIAGNOSE — the login-failure message names the actual cause")
+def test_coolbet_login_no_render_diagnose():
+    """LOGIN-FORM-NO-RENDER-DIAGNOSE-2026-09-10. When cdp_auto_login finds no email
+    field and no valid cbauth JWT, the old message said "likely an Imperva challenge
+    or a changed selector" — too vague; it cost hours on 2026-09-10, when the real
+    cause was patchright missing from the placer's venv (vanilla-Playwright fingerprint
+    → Coolbet served the empty 'STAY COOL' shell to the automation browser while normal
+    Chrome on the same machine worked). The three real causes have distinct page
+    signatures; _diagnose_login_no_render must read them and name the actual one, so the
+    next occurrence is a one-line answer, not a re-investigation. This is pure
+    OBSERVABILITY — it diagnoses the failure, it does not defeat any detection."""
+    import inspect
+    from workers.automation import coolbet_browser_sync as cbs
+
+    assert hasattr(cbs, "_diagnose_login_no_render") and hasattr(cbs, "_runtime_has_patchright"), (
+        "the login-no-render diagnosis + runtime patchright check must exist"
+    )
+    # The vague old wording must be gone from the auto-login failure path.
+    src = inspect.getsource(cbs.cdp_auto_login)
+    assert "_diagnose_login_no_render(" in src, "cdp_auto_login must route its no-render failure through the diagnosis"
+    assert "Imperva challenge or a changed selector" not in src, (
+        "the vague dual-cause message must be replaced by the signature-based diagnosis"
+    )
+
+    class _FakePage:
+        def __init__(self, sig): self._sig = sig
+        def evaluate(self, js): return self._sig
+
+    # Imperva challenge page → says so.
+    m = cbs._diagnose_login_no_render(_FakePage({"n_inputs": 0, "imperva": True, "shell": False}))
+    assert "IMPERVA CHALLENGE" in m, f"imperva signature must be named, got: {m[:80]}"
+
+    # App shell with zero inputs → automation-fingerprint story, and it must mention
+    # patchright either way (present vs missing) so venv-drift is instantly visible.
+    m = cbs._diagnose_login_no_render(_FakePage({"n_inputs": 0, "imperva": False, "shell": True}))
+    assert "shell loaded" in m and "patchright" in m.lower(), (
+        f"empty-shell signature must name the automation-fingerprint cause + patchright, got: {m[:100]}"
+    )
+
+    # Inputs present but no email match → changed-selector story (not Imperva).
+    m = cbs._diagnose_login_no_render(_FakePage({"n_inputs": 3, "imperva": False, "shell": False}))
+    assert "SELECTOR" in m.upper() and "IMPERVA CHALLENGE" not in m.upper(), (
+        f"inputs-but-no-email must point at a selector change, not an Imperva challenge, got: {m[:100]}"
+    )
+
+    # Never raises, even if the page inspection itself fails.
+    class _BoomPage:
+        def evaluate(self, js): raise RuntimeError("cdp gone")
+    m = cbs._diagnose_login_no_render(_BoomPage())
+    assert "could not inspect" in m, "diagnosis must degrade gracefully, not raise a second failure"
+
+
 @test("COOLBET-SESSION-KEEP-MIGRATED — the JWT heal lives in browser_sync + runs from the feed-watchdog")
 def test_coolbet_session_keep_migrated():
     """DAEMON-RETIREMENT (2026-09-10): the mac-daemon's per-tick session heal moves to

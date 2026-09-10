@@ -172,6 +172,67 @@ def interactive_login() -> int:
     return 0
 
 
+def _runtime_has_patchright() -> bool:
+    """Is the anti-detection Playwright fork importable in THIS interpreter?
+    The launchd placer runs under venv/bin/python; when patchright is absent
+    there, `_sync_playwright_factory` silently falls back to vanilla Playwright,
+    whose automation fingerprint Coolbet detects → the empty 'STAY COOL' shell.
+    On 2026-09-10 that fallback was silent and cost hours; this makes it legible."""
+    try:
+        import patchright.sync_api  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def _diagnose_login_no_render(page) -> str:
+    """Name the ACTUAL reason the Coolbet login form did not render, from the
+    page's own signature, instead of the old vague "Imperva challenge or a
+    changed selector". Best-effort and never raises — diagnosis must not add a
+    second failure on top of the first."""
+    remedy = ("Fix: log in by hand in a FOREGROUND CDP-Chrome (:9222) window "
+              "(complete SMS/Imperva); cbauth then lands in localStorage and the "
+              "placer recovers. Durable fix: a cleaner Coolbet transport/IP.")
+    try:
+        sig = page.evaluate(
+            """() => {
+                const body = document.body ? document.body.innerText : '';
+                return {
+                    n_inputs: document.querySelectorAll('input').length,
+                    imperva: /Incapsula|Request unsuccessful|_Incapsula_|Pardon the interruption|unusual traffic|are you a robot/i.test(body),
+                    shell: /STAY COOL/i.test(body) && body.trim().length < 40,
+                };
+            }"""
+        ) or {}
+    except Exception as e:  # noqa: BLE001
+        return f"(could not inspect page: {e}). {remedy}"
+
+    if sig.get("imperva"):
+        return ("An IMPERVA CHALLENGE PAGE was served (Incapsula markers present) "
+                f"— this browser/IP is being actively challenged. {remedy}")
+    if sig.get("shell"):
+        # App shell loaded but the login route never mounted — the SPA's own API
+        # calls are being blocked, which is what happens when the AUTOMATION
+        # browser is fingerprinted as a bot. The #1 cause is the stealth fork
+        # missing from the runtime, so check it and say so outright.
+        if not _runtime_has_patchright():
+            return ("Coolbet app shell loaded but the login form never mounted, and "
+                    "patchright (the anti-detection fork) is NOT importable in this "
+                    "runtime — so the automation browser is running as vanilla "
+                    "Playwright and being fingerprinted as a bot. Restore it in the "
+                    "placer's venv: `venv/bin/pip install patchright`. " + remedy)
+        return ("Coolbet app shell loaded but the login form never mounted, even "
+                "though patchright IS present — so detection has moved on or this "
+                "CDP profile is flagged (normal Chrome on the same machine still "
+                f"works). Not a selector issue. {remedy}")
+    if sig.get("n_inputs", 0) > 0:
+        return (f"The page rendered {sig['n_inputs']} input(s) but none matched the "
+                "email selector — a CHANGED LOGIN SELECTOR is likely; update the "
+                f"email/password selectors in cdp_auto_login. {remedy}")
+    return ("The login page did not show the email field and shows no known "
+            f"Imperva/shell signature. {remedy}")
+
+
 def cdp_auto_login(*, max_wait_s: int = 300) -> int:
     """Fill the Coolbet login form in the CDP-Chrome window + click
     the login button automatically. If SMS is required, the operator
@@ -239,13 +300,13 @@ def cdp_auto_login(*, max_wait_s: int = 300) -> int:
             if jwt:
                 print("✓ Already logged in (valid cbauth JWT present)")
                 return 0
-            print("✗ login form did not render AND no valid cbauth JWT in "
-                  "localStorage — the Coolbet session is logged OUT and the login "
-                  "page is not showing the email field (likely an Imperva challenge "
-                  "or a changed selector). NOT assuming logged in. Fix: open "
-                  "coolbet.com/et/login in a FOREGROUND CDP-Chrome (:9222) window "
-                  "and log in by hand (complete SMS/Imperva); the JWT then lands in "
-                  "localStorage['cbauth'] and the placer recovers.")
+            # LOGIN-FORM-NO-RENDER-DIAGNOSE-2026-09-10: the old message named two
+            # causes vaguely and cost hours. The real causes (Imperva page, bot-
+            # fingerprinted automation shell, changed selector) have distinct page
+            # signatures; read them and name the actual one so the next occurrence
+            # is a one-line answer, not a re-investigation.
+            print(f"✗ login form did not render AND no valid cbauth JWT — "
+                  f"session logged OUT. {_diagnose_login_no_render(page)}")
             return 5
 
         print("  Filling login form…")
