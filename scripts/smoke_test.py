@@ -35166,6 +35166,39 @@ def test_team_total_paper_bot():
     assert "job_team_total_paper_pick" in sched and "job_team_total_paper_settle" in sched
 
 
+@test("TEAM-TOTAL-SETTLEMENT — the registry grades team_total from the final score, no pending pile-up")
+def test_team_total_settlement():
+    """TEAM-TOTAL-SETTLEMENT-2026-09-10. bot_team_total_paper_shadow_v1 wrote
+    team_total_{home,away}_{line} into shadow_bets, but the settlement resolver
+    registry had NO team_total resolver — so the generic pass hit every one, matched
+    no predicate, and fired the 'Unsettleable market' Telegram while leaving the bets
+    PENDING (never graded). team_total settles cleanly from the FINAL score (which
+    settle_bet_result already has), exactly like 1x2/o/u/btts — so it belongs in the
+    registry. Pins: full-match team_total grades over/under from the score, and the
+    1H variant is NOT graded off the full-time score (stays a skip)."""
+    from workers.jobs.settlement import settle_bet_result
+
+    def _bet(mkt, sel):
+        return {"market": mkt, "selection": sel, "stake": 10.0, "odds_at_pick": 2.0, "id": 1}
+
+    # away scored 3: away O/U 2.5 → over wins, under loses
+    assert settle_bet_result(_bet("team_total_away_25", "over"), 1, 3, None)["result"] == "won"
+    assert settle_bet_result(_bet("team_total_away_25", "under"), 1, 3, None)["result"] == "lost"
+    # home scored 1: home O/U 1.5 → over loses, under wins (line decodes _15 -> 1.5)
+    assert settle_bet_result(_bet("team_total_home_15", "over"), 1, 3, None)["result"] == "lost"
+    assert settle_bet_result(_bet("team_total_home_15", "under"), 1, 3, None)["result"] == "won"
+    # the market that alerted must now grade, NOT skip
+    assert settle_bet_result(_bet("team_total_away_25", "over"), 0, 3, None)["result"] != "skip", (
+        "team_total_away_25 must be gradeable — this is the exact market that fired the "
+        "'Unsettleable market' alert; leaving it 'skip' means bets keep piling up pending"
+    )
+    # the 1H variant needs the HALF-TIME score (not passed here) → must stay a skip,
+    # never be graded off the full-time score
+    assert settle_bet_result(_bet("team_total_1h_home_05", "over"), 1, 3, None)["result"] == "skip", (
+        "team_total_1h_* must NOT be graded from the full-time score — it stays pending/skip"
+    )
+
+
 @test("FIRST-HALF-1X2-PAPER-BOT — 3-way sharp-anchor first-half-result shadow bot (USE-COLLECTED-MARKETS #2)")
 def test_first_half_1x2_paper_bot():
     """USE-COLLECTED-MARKETS #2 (2026-09-10): 1x2_1h (first-half result), a 3-way market

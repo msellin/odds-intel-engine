@@ -302,6 +302,37 @@ def _r_draw_no_bet(market, selection, home_goals, away_goals, stats):
     return away_wins  # away
 
 
+_TEAM_TOTAL_RE = re.compile(r"^team_total_(home|away)_(\d+)$")
+
+
+def _r_team_total(market, selection, home_goals, away_goals, stats):
+    """Full-match team total: team_total_home_15 = home team over/under 1.5 goals
+    (line encoded without the dot, so _25 -> 2.5). Settles from the FINAL SCORE —
+    home_goals/away_goals, which every finished match has — so no stats needed and
+    no coverage gap. selection is 'over'/'under'; .5-stepped lines never push.
+    The 1H variant (team_total_1h_*) is deliberately NOT matched here — it would
+    need the half-time score, which this resolver isn't passed; it stays pending
+    (and correctly alerts) rather than being graded off the full-time score.
+
+    TEAM-TOTAL-SETTLEMENT-2026-09-10: bot_team_total_paper_shadow_v1 wrote these
+    into shadow_bets but the registry had no resolver, so the generic settlement
+    pass flagged every team_total row as 'Unsettleable' and left it pending. This
+    resolver makes the standard path grade them (its own settle_picks becomes
+    redundant belt-and-braces)."""
+    m = _TEAM_TOTAL_RE.match(market)
+    if not m:
+        return _UNSETTLEABLE
+    side, digits = m.group(1), m.group(2)
+    line = int(digits) / 10.0
+    goals = home_goals if side == "home" else away_goals
+    over = goals > line  # .5-stepped lines never push
+    if "over" in selection:
+        return over
+    if "under" in selection:
+        return not over
+    return _UNSETTLEABLE
+
+
 def _decode_corners_line(market: str) -> float | None:
     """corners_ou_105 -> 10.5 (0.5-stepped, encoded without the dot)."""
     m = re.match(r"^corners_ou_(\d+)$", market)
@@ -342,6 +373,7 @@ _SETTLEMENT_REGISTRY = [
     (lambda m: m == "asian_handicap", _r_asian_handicap),
     (lambda m: m == "draw_no_bet", _r_draw_no_bet),
     (lambda m: re.match(r"^corners_ou_\d+$", m) is not None, _r_corners_ou),
+    (lambda m: _TEAM_TOTAL_RE.match(m) is not None, _r_team_total),
     # cards_ou is DELIBERATELY absent — see CARDS-SETTLEMENT-EVENTS-DEF-GUARD
     # below. Cards are not cleanly settleable yet (thin Pinnacle anchor), so they
     # SKIP. When that changes, a resolver MUST use cards_total_from_events().
