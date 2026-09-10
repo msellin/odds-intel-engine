@@ -34535,6 +34535,32 @@ def test_market_vocab_enforced():
         assert not bad, ("these stored (market,selection) values are outside the canonical "
                          f"vocabulary — add them to canonical_market.normalize(): {bad[:20]}")
 
+    # (4) STRICT (MARKET-VOCAB-CANONICAL Phase 2 complete 2026-09-10): the bet tables must
+    # store ONLY the canonical spelling — a legacy spelling reappearing (a writer regressing
+    # to '1X2'/'O/U'/'over 2.5') fails CI. Implausible SOURCE typos (e.g. 'over 25' ->
+    # over_under_250) are exempt: they were left untouched for manual review, not rewritten.
+    import re as _re
+
+    def _implausible_ou(nm):
+        mm = _re.match(r"^over_under_(\d{2,3})$", nm or "")
+        return bool(mm) and int(mm.group(1)) / 10 > 10.5
+
+    try:
+        from workers.api_clients.db import execute_query as _eq
+        strict_rows = []
+        for _tbl in ("simulated_bets", "shadow_bets", "real_bets"):
+            for r in _eq(f"SELECT DISTINCT market, selection FROM {_tbl}"):
+                strict_rows.append((_tbl, r["market"], r["selection"]))
+    except Exception as e:  # noqa: BLE001
+        print(f"    (DB unreachable — skipped strict half: {e})")
+        strict_rows = None
+    if strict_rows is not None:
+        bad2 = [(t, m, s) for (t, m, s) in strict_rows if m and s
+                and cm.canonicalize_for_storage(m, s) != (m, s)
+                and not _implausible_ou(cm.canonicalize_for_storage(m, s)[0])]
+        assert not bad2, ("bet tables must store ONLY canonical vocab (Phase 2 strict) — legacy "
+                          f"spellings found (writer regression? re-run scripts/backfill_canonicalize_vocab.py): {bad2[:20]}")
+
 
 @test("MARKET-VOCAB-WRITE-CANONICAL — bet-table writers store the canonical spelling (AH/combo preserved)")
 def test_market_vocab_write_canonical():
