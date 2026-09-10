@@ -141,7 +141,11 @@ dragged the favourite/away noise positive.
 **IMPLEMENTED 2026-09-09 (FAVLONG-CUTS, owner-approved).** Real-money 1x2 = home-underdogs
 @10%, odds≥2.80. Changed: `coolbet_model_1x2_shadow` (mirror) → home + odds≥2.80 + edge≥10%;
 `place_coolbet_ui.BOT_THRESHOLDS['bot_coolbet_1x2_model_v1']` 0.13→0.10 (the real-money gate);
-`bot_registry` edge_floor 0.13→0.10; frontend `coolbet-edge.ts` 0.13→0.10. The pooled/paper
+`bot_registry` edge_floor 0.13→0.10; frontend PER-BOT `coolbet-edge.ts BOT_EDGE_THRESHOLDS['bot_coolbet_1x2_model_v1']` 0.13→0.10.
+**PER-MARKET-EDGE-MIRROR-FIX-2026-09-10:** the frontend also has a POOLED, selection-agnostic mirror
+`COOLBET_AUTO_MIN_EDGE_BY_MARKET['1x2']` (the auto-place badge, via `autoMinEdgeFor(market)`); commit 2d86b9c
+erroneously dropped THAT to 0.10 too, which made the badge greenlight 1x2 of any selection at 10%. Reverted
+to 0.13 — it must mirror the engine's pooled floor, not the per-bot one. The pooled/paper
 `_MIN_EDGE_BY_MARKET['1x2']` stays 13% (trigger windows, all-selection; the paper daemon that also read this floor is retired 2026-09-10). Home-favs
 already excluded by the 2.80 odds floor; aways/draws excluded by the home-only mirror. O/U unchanged.
 Takes effect on the next placer run (bot is toggled ON). Publication side (/performance, grades) →
