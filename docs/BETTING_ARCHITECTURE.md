@@ -58,11 +58,11 @@ Pinnacle/Marathonbet/10Bet/888Sport removed (EMTA-blocked); `Unibet-Kambi` remov
 
 | Table | Written by | Read by | Role |
 |---|---|---|---|
-| **`simulated_bets`** | the generation pipeline (§1), all bots | **/picks · Telegram · /performance · landing** + the paper daemon | The **primary pick ledger**. One row per bot×fixture×market×selection. Market spelled `o/u` / selection `over 2.5`. Bankroll/EV aware. |
+| **`simulated_bets`** | the generation pipeline (§1), all bots | **/picks · Telegram · /performance · landing** (the paper daemon that also read this is retired 2026-09-10) | The **primary pick ledger**. One row per bot×fixture×market×selection. Market spelled `o/u` / selection `over 2.5`. Bankroll/EV aware. |
 | **`shadow_bets`** | mirror jobs (§3) + trigger matcher (§3b) + BET-TIMING monitor | via the view ↓ | Secondary ledger holding the **placeable** model-edge bot rows + all trigger/shadow bots. Market re-spelled `over_under_25` / selection `over`. |
 | **`shadow_bets_unique`** (VIEW) | — (DISTINCT ON bot×match×market×selection; migration 298) | **the real-money UI placer** + `/admin/shadow-bots` | Canonical dedup read of `shadow_bets`. |
 | **`pick_triggers`** | Stage A (`pick_triggers.py`) | Stage B matcher | **Book-independent** price windows per fixture×market×selection×anchor. The multi-book core (§3b). |
-| **`real_bets`** | the real UI placer (real, balance-confirmed) **+ the paper daemon (`record=True,execute=False` → phantom) + manual reconciliation** | `/performance` overlay (admin), leaderboard | **Placement ledger — dual-purpose.** A row alone does NOT prove money moved. |
+| **`real_bets`** | the real UI placer (real, balance-confirmed) + manual reconciliation (the paper daemon that wrote phantom rows is retired 2026-09-10) | `/performance` overlay (admin), leaderboard | **Placement ledger — dual-purpose.** A row alone does NOT prove money moved. |
 | `coolbet_placement_attempts` | the UI placer (`coolbet_ui_placer.record_attempt`) | dedup + audit | The **only** proof of a real stake: `outcome='placed'`. |
 
 ---
@@ -121,7 +121,7 @@ just not populated with non-Coolbet books.
 
 | Path | Reads | Schedule | Real money? | Writes |
 |---|---|---|---|---|
-| **Paper daemon** (`coolbet_mac_daemon` → `coolbet_placer.load_qualified_bets`) | `simulated_bets` | every 30 min (was stale since 2026-08-23 — verify) | **NO** — `execute=False`; but `record=True` writes **phantom `real_bets`** | `real_bets` (phantom) |
+| ~~**Paper daemon** (`coolbet_mac_daemon`)~~ **RETIRED 2026-09-10** | — | — | — | Paper placement duplicated the pipeline's `simulated_bets`/`shadow_bets` (model refinement) + the real-money UI placer; phantom `real_bets` were noise. Session-keep + operator control moved to the feed-watchdog. See COOLBET_RUNBOOK "PAPER-DAEMON RETIRED". |
 | **Real-money UI placer** (`place_coolbet_ui.py --all-enabled --execute` → `coolbet_ui_placer.place_and_record`) | `shadow_bets_unique`, for `PLACEABLE_BOTS ∩ coolbet_placer_bots(ui_place_enabled)` | launchd hourly **06:00–21:00 UTC** | **YES** (balance-confirmed) | `real_bets` (real) + `coolbet_placement_attempts` |
 | **Unibet placer** (`unibet_placer.place_bet`) | **no pick table — args only** | **none — manual** | manual only | `real_bets` |
 

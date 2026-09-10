@@ -30,9 +30,9 @@ no daemon, periodic sweeps + `ensure_logged_in` heal + on-demand placer.
       Point at a live bot + guard retired. Reduce "Pipeline complete — 0 new bets".
 - [ ] STAGE 2 — converge `coolbet_placer` matching onto `coolbet_matching`.
 - [x] STAGE 3 — move session-heal into `coolbet_feed_watchdog`.
-- [ ] STAGE 4 — retire launchd `coolbet-mac-daemon` + `coolbet-daemon-keepalive`;
+- [x] STAGE 4 — retire launchd `coolbet-mac-daemon` + `coolbet-daemon-keepalive`;
       remove the now-moot `coolbet_daemon_healthcheck` alert.
-- [ ] STAGE 5 — docs (BETTING_ARCHITECTURE, COOLBET_RUNBOOK, WORKFLOWS, SYSTEM_MAP)
+- [x] STAGE 5 — docs (BETTING_ARCHITECTURE, COOLBET_RUNBOOK, WORKFLOWS, SYSTEM_MAP)
       + smoke tests + PRIORITY_QUEUE.
 
 ## Safety

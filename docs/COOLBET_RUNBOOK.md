@@ -58,13 +58,13 @@ logged in) to a competition page + a `/et/sport/match/<id>` page with
 
 | Label | Cadence | What |
 |-------|---------|------|
-| `com.oddsintel.coolbet-daemon-keepalive` | StartInterval 300s + at load | **DAEMON-DEATH-RECURRING fix (2026-09-10):** kickstarts the mac-daemon if its process is dead but the job is still loaded. StartInterval fires on wake (KeepAlive doesn't reliably respawn after sleep; `load -w` doesn't start it — only `kickstart` does). Respects a deliberate `unload` (won't fight it). Log: `dev/active/coolbet-daemon-keepalive.log`. |
-| `com.oddsintel.coolbet-mac-daemon` | poll every 30 min (continuous) | placement daemon — reads qualified `simulated_bets`, matches to Coolbet, places (PAPER: `execute=False`) + Telegram-signals. Probes FS health at the top of each tick. |
 | `com.oddsintel.coolbet-odds-snapshot` | :03 / :33 | `coolbet_explorer --days 2` — bulk odds into `odds_snapshots`. |
-| `com.oddsintel.coolbet-feed-watchdog` | :20 / :50 | cookie refresh + staleness. |
+| `com.oddsintel.coolbet-feed-watchdog` | :20 / :50 | cookie refresh + odds-feed staleness **+ session-keep (JWT heal via `coolbet_browser_sync.ensure_session_live`) + operator Telegram heal-command drain** — took these over when the paper mac-daemon was retired 2026-09-10 (pause/resume stay on the webhook). |
 | `com.oddsintel.coolbet-ui-placer` | — | UI-driven placement path. |
 
 `cs2-coolbet-scanner` was **removed 2026-09-07** (referenced deleted esports code).
+
+> **PAPER-DAEMON RETIRED 2026-09-10.** `coolbet-mac-daemon` (paper, `execute=False`) and its `coolbet-daemon-keepalive` were legacy and are gone (plists archived in `~/Library/LaunchAgents/retired-2026-09-10/`). Paper simulation for model refinement is the PIPELINE's `simulated_bets`/`shadow_bets` (VPS), NOT the daemon; real money is the **UI placer** (`coolbet-ui-placer`). The daemon's only unique roles (session-keep + operator heal control) moved to the feed-watchdog. This matches Unibet (no daemon; periodic `ensure_logged_in` heal). "Can I place real money now?" → `python3 -m workers.automation.coolbet_control --status`.
 
 Manage: `launchctl list | grep oddsintel` · `launchctl kickstart -k gui/$(id -u)/<label>` · `tail -f dev/active/<name>.log`.
 
