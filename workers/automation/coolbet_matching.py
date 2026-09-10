@@ -62,6 +62,18 @@ _STRIP_TOKENS = {
     "aa", "ao", "ks", "mfk", "gd", "od", "hb", "bsc", "vfb", "vfl", "tsv", "fsv", "spvgg",
 }
 
+# Reserve/youth side markers. Providers spell the SAME reserve team differently —
+# AF writes "II", Coolbet writes "U21" (measured on FCI Levadia II ↔ Tallinna FC
+# Levadia U21, 2026-09-10: min-of-both name score 71.4 < 75 → a real matcher miss,
+# no Coolbet odds ever written for an AF-present fixture). Canonicalise every such
+# marker to ONE token so the reserve sides agree — but KEEP the token present, so a
+# SENIOR side ("Levadia") never collapses onto its RESERVE ("Levadia II"). [2026-09-10]
+_RESERVE_CANON: dict[str, str] = {
+    "u23": "ii", "u22": "ii", "u21": "ii", "u20": "ii", "u19": "ii", "u18": "ii",
+    "reserves": "ii", "reserve": "ii", "res": "ii", "youth": "ii", "acad": "ii", "academy": "ii",
+    "2": "ii",  # some feeds write the reserve side as "<club> 2"
+}
+
 DEFAULT_NAME_THRESHOLD = 75
 DEFAULT_SLOT_HOURS = 3.5
 DEFAULT_MIN_GAP = 8  # required margin best-vs-runner-up (unless best is near-perfect)
@@ -77,13 +89,51 @@ def norm_team(name: str | None) -> str:
     s = html.unescape(name or "")
     s = unicodedata.normalize("NFKD", s.lower()).encode("ascii", "ignore").decode()
     s = re.sub(r"[^a-z0-9 ]", " ", s)
-    return " ".join(t for t in s.split() if t and t not in _STRIP_TOKENS).strip()
+    return " ".join(_RESERVE_CANON.get(t, t) for t in s.split()
+                    if t and t not in _STRIP_TOKENS).strip()
+
+
+# after norm_team, every reserve/youth side carries one of these canonical markers
+_RESERVE_MARKERS = {"ii", "iii"}
+
+
+def _is_reserve(name: str) -> bool:
+    return any(t in _RESERVE_MARKERS for t in name.split())
 
 
 def team_sim(a: str, b: str) -> float:
     """Subset-safe similarity: 'stoke' vs 'stoke city' scores high (token_set /
-    partial), where token_sort_ratio would not."""
-    return max(fuzz.token_set_ratio(a, b), fuzz.partial_ratio(a, b))
+    partial), where token_sort_ratio would not.
+
+    Reserve-aware: the subset boost that lets 'stoke' ⊂ 'stoke city' through is
+    exactly what would let a SENIOR side ('levadia') match its RESERVE ('levadia
+    ii') — the senior name is a subset of the reserve name. So when exactly one
+    side carries a reserve marker, drop the subset boost and penalise, keeping
+    senior and reserve distinct."""
+    base = max(fuzz.token_set_ratio(a, b), fuzz.partial_ratio(a, b))
+    if _is_reserve(a) != _is_reserve(b):
+        base = min(base, fuzz.token_sort_ratio(a, b)) - 15.0
+    return max(0.0, base)
+
+
+# One side matching this well already pins the fixture inside the country+slot
+# block; a corroborating (not necessarily perfect) partner then clears the pair.
+_STRONG_ANCHOR = 90.0
+_ANCHOR_PARTNER_FLOOR = 55.0
+
+
+def _pair_score(s1: float, s2: float) -> float:
+    """Combine the two per-team similarities into one pair score. Normally the
+    MIN (both teams must agree). But when one side is a near-certain anchor
+    (≥ _STRONG_ANCHOR) and the other still corroborates (≥ _ANCHOR_PARTNER_FLOOR),
+    average them so a strong anchor + decent partner clears threshold even if the
+    partner's spelling diverges (reserve suffixes, alternate club forms) — while a
+    poor partner still can't. Country + kickoff-slot are already blocked upstream,
+    and reserve/senior are kept apart by team_sim, so this stays high-precision."""
+    lo, hi = min(s1, s2), max(s1, s2)
+    if hi >= _STRONG_ANCHOR and lo >= _ANCHOR_PARTNER_FLOOR:
+        return (hi + lo) / 2.0
+    return lo
 
 
 def af_country_for_iso(region_icon: str | None) -> str | None:
@@ -118,8 +168,16 @@ def match_event_to_af(
         if afc is not None and a.get("country") and a["country"] != afc:
             continue  # country block
         ah, aw = norm_team(a["home"]), norm_team(a["away"])
-        direct = min(team_sim(eh, ah), team_sim(ea, aw))
-        swapped = min(team_sim(eh, aw), team_sim(ea, ah))
+        # Score BOTH sides, then take the better orientation. The pair score is
+        # normally min(home,away) — both teams must agree. BUT once we are inside
+        # the country + kickoff-slot block, one side matching near-perfectly
+        # already pins the fixture (there is not a second "Welco" kicking off in
+        # Estonia at 16:00), so a strong anchor lets a weaker — but still
+        # corroborating — partner through. This is record linkage on
+        # country+date+one-distinctive-team, and does NOT depend on enumerating
+        # every reserve-suffix spelling. [STRONG-ANCHOR 2026-09-10]
+        direct = _pair_score(team_sim(eh, ah), team_sim(ea, aw))
+        swapped = _pair_score(team_sim(eh, aw), team_sim(ea, ah))
         sc = max(direct, swapped)
         if sc > best_score:
             second = best_score

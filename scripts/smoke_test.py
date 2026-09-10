@@ -5461,6 +5461,41 @@ def test_coolbet_match_blocking():
     assert m4 is None or m4["id"] == "a", "ambiguity guard should not guess between near-ties"
 
 
+@test("COOLBET-STRONG-ANCHOR-MATCH — country+slot+one distinctive team pins the fixture (not both-name-dependent)")
+def test_coolbet_strong_anchor_match():
+    """COOLBET-STRONG-ANCHOR-MATCH (2026-09-10). AF-present FCI Levadia II vs Tartu
+    Welco got NO Coolbet odds for a whole matchday: Coolbet named the reserve side
+    'Tallinna FC Levadia U21' vs AF's 'FCI Levadia II', min-of-both name score 71.4
+    < 75 — the away 'Welco' matched 100 but the U21↔II home divergence sank the pair.
+    Fix (owner steer 'league+date+time+the matched other team are more precise than
+    both names'): a STRONG-ANCHOR rule — inside the country + kickoff-slot block, one
+    near-certain team (≥90) + a corroborating partner (≥55) clears the pair. It does
+    NOT depend on enumerating reserve spellings; team_sim stays reserve-aware so a
+    SENIOR side never collapses onto its reserve."""
+    import datetime as _dt
+    from workers.automation.coolbet_matching import (
+        match_event_to_af, team_sim, norm_team, _pair_score, _STRONG_ANCHOR)
+    ko = _dt.datetime(2026, 9, 10, 16, 0, tzinfo=_dt.timezone.utc)
+    af = [{"id": "lev", "ko": ko, "home": "FCI Levadia II", "away": "Tartu Welco", "country": "Estonia"},
+          {"id": "kal", "ko": ko, "home": "Nõmme Kalju II", "away": "Tallinna Flora II", "country": "Estonia"}]
+    # the real Coolbet naming now matches
+    m, best, _ = match_event_to_af("Tallinna FC Levadia U21", "Tartu JK Welco", "EE", ko, af)
+    assert m is not None and m["id"] == "lev" and best >= 75, f"reserve fixture must match (best={best})"
+    # ROBUSTNESS: an UNKNOWN home spelling still matches via the distinctive away anchor
+    m2, _, _ = match_event_to_af("Levadia Tallinn Youth XYZ", "Tartu JK Welco", "EE", ko, af)
+    assert m2 is not None and m2["id"] == "lev", "the away anchor + country + slot must pin it despite an unknown home name"
+    # PRECISION: a SENIOR side must NOT match the reserve fixture
+    ms, _, _ = match_event_to_af("Tallinna FC Levadia", "Tartu JK Welco", "EE", ko, af)
+    assert ms is None or ms["id"] != "lev", "a senior side must not collapse onto its reserve fixture"
+    # PRECISION: the distinctive OTHER team still has to correspond
+    mw, _, _ = match_event_to_af("Tallinna FC Levadia U21", "Parnu JK Vaprus", "EE", ko, af)
+    assert mw is None or mw["id"] != "lev", "a wrong away team must be rejected (the other side carries identity)"
+    # the anchor blend only fires with a real anchor; a weak+weak pair stays min()
+    assert _pair_score(60, 100) > 60 and _pair_score(60, 80) == 60, "anchor blend needs a ≥90 side"
+    assert team_sim(norm_team("FCI Levadia"), norm_team("Tallinna FC Levadia U21")) < 75, \
+        "reserve-aware team_sim keeps senior vs reserve apart"
+
+
 @test("FO-CATEGORY-ENVELOPE — league-scoped event fetch descends into the categories envelope")
 def test_fo_category_envelope():
     """FO-CATEGORY-ENVELOPE-FIX (2026-09-08). The Coolbet fo-category endpoint
