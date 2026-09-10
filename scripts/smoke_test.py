@@ -7191,7 +7191,11 @@ def test_coolbet_daily_summary():
     fmt_block = job[job.index("def _format_summary("):
                     job.index("def run_daily_summary(")]
     must_surface = [
-        ("Daemon", "tick age + last result (placed/errors)"),
+        # DAEMON-RETIREMENT 2026-09-10: the paper mac-daemon is retired, so the
+        # "🤖 Daemon: tick…" line is gone. The UI-placer PLACEMENT readiness line
+        # (coolbet_control.placement_readiness) is its replacement — that is the
+        # real "can we place real money now?" signal.
+        ("PLACEMENT", "UI-placer readiness — replaces the retired daemon tick line"),
         ("JWT",    "TTL — proactive-refresh visibility"),
         # Was "the VPS HB". The line is now emitted as "Scheduler HB:" — same
         # pillar, renamed. The test pinned the prose rather than the signal and
