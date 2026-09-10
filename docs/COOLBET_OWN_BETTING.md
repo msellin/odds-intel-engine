@@ -1,5 +1,9 @@
 # Coolbet Own-Betting — Flow & Architecture (single source of truth)
 
+> **⚠️ PAPER MAC-DAEMON RETIRED 2026-09-10.** Every reference below to the `coolbet_mac_daemon` / "paper daemon" / `coolbet-mac-daemon` describes a RETIRED component. It is gone (booted out, plist archived). Its paper placement duplicated the pipeline's `simulated_bets`/`shadow_bets` (model refinement) and the real-money **UI placer** (`coolbet-ui-placer`); its session-keep (JWT heal) moved to `coolbet-feed-watchdog` (`coolbet_browser_sync.ensure_session_live`), operator control to the webhook. Correct architecture: **pipeline = paper sim, UI placer = real money, feed-watchdog = session-keep** (Unibet parity). Readiness: `python3 -m workers.automation.coolbet_control --status`. Sentences below that call the daemon "continuous"/live are stale as of that date. See COOLBET_RUNBOOK "PAPER-DAEMON RETIRED".
+
+
+
 ## CURRENT STATE (2026-09-08) — RESOLVED: model-edge on both markets
 
 The old open question ("line-shop 3% vs model per-market floor governs real

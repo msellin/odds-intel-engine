@@ -4036,11 +4036,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             f"🎯 {total_bets} value bet(s) found{cohort_label}",
             silent=True,
         )
-    else:
-        send_telegram(
-            f"📭 Pipeline complete{cohort_label} — 0 new bets",
-            silent=True,
-        )
+    # OPS-CHANNEL-CLEANUP 2026-09-10: dropped the "📭 Pipeline complete — 0 new bets"
+    # ping. It fired on every cohort with no picks (several times a day) — a
+    # "nothing happened" message that only added noise. Silence is the signal now;
+    # the positive "value bet(s) found" line still fires when there ARE picks.
 
     # COMBO-BOTS-RETIRED (2026-09-08): the accumulator / combo bots are retired
     # for good (owner decision). All six combo/acca bots were already retired

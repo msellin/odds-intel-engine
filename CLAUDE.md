@@ -165,6 +165,38 @@ Do not let docs drift from reality. If you notice something marked TODO that is 
 - Manual steps and launch checklist live in `ROADMAP.md` (Launch Checklist section)
 - Retired docs (BACKLOG, PROGRESS, NEXT_STEPS, research_findings) have been deleted — history is in git
 
+### Explain what/why/where, and ripple-check the docs (added 2026-09-10)
+
+The clearer the picture of **what** each part does, **why** it exists, and **where** it
+runs, the faster and safer this product grows. Two obligations follow, and they are not
+optional:
+
+1. **Document what you do and why — in the same commit as the change.** Not just *that*
+   you changed something, but the reasoning: what was wrong, what the correct model is,
+   why this fix over alternatives. A future reader (including you) must be able to
+   reconstruct the decision without re-deriving it. Prefer a short "why" sentence in the
+   code/doc over a clever silent change. The single sources of truth are load-bearing —
+   when you touch generation, a surface, a placement path, a gate, a job, or a bot,
+   update the doc that owns it (see the "When done" checklist table) in that commit.
+
+2. **Ripple-check: a change that makes one doc right often makes others wrong.** Before
+   you finish, actively hunt for the OTHER docs your change just made stale, and fix or
+   flag them in the same commit. This is a required step, not a nicety — do it explicitly:
+
+   ```bash
+   # after renaming/retiring/moving anything, grep the whole docs surface for it:
+   grep -rln "<the thing you changed>" docs/ *.md
+   ```
+
+   Then, for every hit: correct it, or add a dated "RETIRED/CHANGED YYYY-MM-DD" banner if a
+   full rewrite is out of scope — never leave a doc asserting the old reality with no
+   marker. A doc that confidently describes a component you just deleted is worse than no
+   doc: it actively misleads. **Real example (2026-09-10): retiring the Coolbet paper
+   daemon left EIGHT docs describing it as live; the grep above found them, and each was
+   fixed or banner-flagged in the same pass.** If you cannot fix them all now, list the
+   remaining stale docs in `PRIORITY_QUEUE.md` before moving on — a known-stale doc is a
+   tracked task, never a silent lie.
+
 ## Deployment — three paths, all automated
 
 Everything below fires on push to `main`. **Do not hand-deploy**; if something

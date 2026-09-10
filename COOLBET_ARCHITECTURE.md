@@ -62,6 +62,8 @@ Imperva-bypass proxy used by both Coolbet and HLTV scrapers.
 
 ### 1. Mac daemon — `workers/automation/coolbet_mac_daemon.py`
 
+> **RETIRED 2026-09-10.** This paper daemon (`execute=False`) is gone. Paper simulation for model refinement is the pipeline's `simulated_bets`/`shadow_bets`; real money is the **UI placer** (`coolbet-ui-placer`); session-keep (JWT heal) moved to `coolbet-feed-watchdog` (`coolbet_browser_sync.ensure_session_live`). The section below is historical. See COOLBET_RUNBOOK "PAPER-DAEMON RETIRED".
+
 **Process:** launchd job `com.oddsintel.coolbet-mac-daemon` (plist at
 `local/launchd/com.oddsintel.coolbet-mac-daemon.plist`). One Python process,
 lives forever, polls every `COOLBET_MAC_POLL_S=1800` (30 min). launchd

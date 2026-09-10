@@ -129,7 +129,7 @@ Coolbet's Imperva blocks the VPS Linux Chrome fingerprint + Hetzner IP. Anything
 
 | Label | Runs | Purpose |
 |-------|------|---------|
-| `com.oddsintel.coolbet-mac-daemon` | continuous (poll every 30 min) | Placement daemon. Reads qualified bets from `cs2_simulated_bets` / bet queue, refreshes JWT via CDP-Chrome, places on Coolbet. Only writer for `cs2_real_bets` (`paper=true` unless `--execute` gate is passed). |
+| ~~`com.oddsintel.coolbet-mac-daemon`~~ **RETIRED 2026-09-10** | — | Paper daemon (`execute=False`) — retired as legacy. Real money = `coolbet-ui-placer`; paper sim = pipeline `simulated_bets`/`shadow_bets`; session-keep (JWT heal) moved to `coolbet-feed-watchdog`. See COOLBET_RUNBOOK. |
 | `com.oddsintel.coolbet-odds-snapshot` | :03 and :33 every hour | `python -m workers.automation.coolbet_explorer --days 2` — bulk-scans Coolbet match markets and writes 1X2/OU/BTTS/AH into `odds_snapshots(bookmaker='Coolbet')`. Feeds the betting refresh at :05/:35. **Moved off VPS 2026-07-03** after 7-day silent Imperva 403 outage. |
 | `com.oddsintel.cs2-coolbet-scanner` | **REMOVED 2026-09-07** (referenced deleted esports code) | `scripts/esports/cs2_coolbet_scanner.py --record` — writes `cs2_upcoming_matches.coolbet_odds1/2` + 1+map + total-maps O/U + map1-winner markets. Feeds `cs2_coolbet_placer` (which stays on VPS, `--record`-only, DB-reads-only). **Moved off VPS 2026-07-03** — same reason. |
 

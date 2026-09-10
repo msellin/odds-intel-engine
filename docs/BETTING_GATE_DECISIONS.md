@@ -142,7 +142,7 @@ dragged the favourite/away noise positive.
 @10%, odds≥2.80. Changed: `coolbet_model_1x2_shadow` (mirror) → home + odds≥2.80 + edge≥10%;
 `place_coolbet_ui.BOT_THRESHOLDS['bot_coolbet_1x2_model_v1']` 0.13→0.10 (the real-money gate);
 `bot_registry` edge_floor 0.13→0.10; frontend `coolbet-edge.ts` 0.13→0.10. The pooled/paper
-`_MIN_EDGE_BY_MARKET['1x2']` stays 13% (paper daemon + trigger windows, all-selection). Home-favs
+`_MIN_EDGE_BY_MARKET['1x2']` stays 13% (trigger windows, all-selection; the paper daemon that also read this floor is retired 2026-09-10). Home-favs
 already excluded by the 2.80 odds floor; aways/draws excluded by the home-only mirror. O/U unchanged.
 Takes effect on the next placer run (bot is toggled ON). Publication side (/performance, grades) →
 PICKS-GRADING.
