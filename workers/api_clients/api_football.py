@@ -1091,6 +1091,18 @@ def parse_fixture_odds(odds_response: list[dict]) -> list[dict]:
                         except (ValueError, TypeError):
                             pass
 
+    # API-FOOTBALL-CANONICAL-VOCAB (2026-09-10): route every parsed (market,
+    # selection) through the ONE canonical vocabulary so AF-ingested odds use the
+    # same spelling as everything else the pipeline writes (store_bet /
+    # bulk_store_shadow_bets / store_real_bet already canonicalize on write).
+    # canonicalize_for_storage is idempotent and non-destructive: unrecognised
+    # markets pass through unchanged, and AH/combo selections (where the line lives
+    # in the selection) are preserved verbatim — so this only unifies spelling,
+    # never changes bet semantics.
+    from workers.canonical_market import canonicalize_for_storage
+    for r in rows:
+        r["market"], r["selection"] = canonicalize_for_storage(r.get("market"), r.get("selection"))
+
     return rows
 
 

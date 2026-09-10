@@ -1590,6 +1590,28 @@ def run_board_sweep(
         f"unmatched {c['unmatched']}, stored {c['stored_rows']} rows[/cyan]"
     )
     c["categories"] = len(cats)
+
+    # COOLBET-SWEEP-ROWS-WRITTEN-ALARM (2026-09-10): output-based health check for
+    # the silent-failure class this epic exists to kill. A sweep that WALKED the
+    # board (events_seen > 0) but wrote NOTHING (stored_rows == 0) looks identical
+    # to "Coolbet genuinely offers nothing" from the outside — but it almost always
+    # means a matcher or parser regression, not a real coverage gap. Fire a deduped
+    # Telegram alert (3h window) so it can't spam. Never raises. Only the hard-zero
+    # case; near-zero is deliberately out of scope. Skipped in dry_run (writes 0 by
+    # design) — the `not dry_run` guard is load-bearing.
+    try:
+        if not dry_run and c["events_seen"] > 0 and c["stored_rows"] == 0:
+            from workers.notify.telegram import send_telegram
+            send_telegram(
+                f"🟠 Coolbet board sweep ran but stored 0 rows — likely a matcher/parse regression, "
+                f"not a coverage gap. events_seen={c['events_seen']}, "
+                f"near_term={c['near_term']}, matched={c['matched']}, "
+                f"stored_rows={c['stored_rows']}. The placement price feed is starving "
+                f"until a later pass writes rows.",
+                dedup_key="coolbet-sweep-zero-rows", dedup_window_s=10800)
+    except Exception as e:  # noqa: BLE001
+        log.debug("coolbet zero-rows alarm failed (non-fatal): %s", e)
+
     return c
 
 
