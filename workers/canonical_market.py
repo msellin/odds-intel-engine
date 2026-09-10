@@ -72,7 +72,7 @@ class Selection(str, Enum):
 # --- axis 1: market family (floor key) -------------------------------------
 # The canonical family keys used by the per-market floor dicts and grade bands.
 MARKET_FAMILIES = ("1x2", "o/u", "asian_handicap", "draw_no_bet", "btts", "double_chance",
-                   "corners_ou")
+                   "corners_ou", "combo")
 
 
 def market_family(market: str | None) -> str | None:
@@ -187,9 +187,20 @@ def normalize(market: str | None, selection: str | None) -> dict | None:
     if m == "double_chance":
         return {"family": "double_chance", "market": Market.DOUBLE_CHANCE.value,
                 "selection": s, "line": None} if s in ("1x", "12", "x2") else None
-    if m in ("asian_handicap", "draw_no_bet"):
-        return {"family": m, "market": m, "selection": s,
-                "line": None} if s in ("home", "away") else None
+    if m == "asian_handicap":
+        # selection carries the handicap line: 'home -1.5', 'away +0.5', or bare 'home'
+        am = re.match(r"^(home|away)\s*([+-]?\d+(?:\.\d+)?)?$", s)
+        if am:
+            return {"family": "asian_handicap", "market": Market.ASIAN_HANDICAP.value,
+                    "selection": am.group(1),
+                    "line": float(am.group(2)) if am.group(2) not in (None, "") else None}
+        return None
+    if m == "draw_no_bet":
+        return {"family": "draw_no_bet", "market": Market.DRAW_NO_BET.value,
+                "selection": s, "line": None} if s in ("home", "away") else None
+    if m == "combo":
+        # accumulator/combo bets — no single market/selection; passthrough the label.
+        return {"family": "combo", "market": "combo", "selection": s, "line": None} if s else None
     return None
 
 
