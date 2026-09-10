@@ -208,3 +208,32 @@ def is_canonical(market: str | None, selection: str | None) -> bool:
     """True iff the input is recognised by `normalize`. The enforcement test uses
     this over the DB's distinct (market, selection) values."""
     return normalize(market, selection) is not None
+
+
+# Families whose LINE lives in the selection (there is no line column), so the
+# selection must be preserved verbatim on write rather than reduced to home/away.
+_LINE_IN_SELECTION_FAMILIES = ("asian_handicap", "combo")
+
+
+def canonicalize_for_storage(market: str | None, selection: str | None) -> tuple:
+    """The write-side canonicaliser (MARKET-VOCAB-CANONICAL Phase 2). Returns the
+    (market, selection) pair to STORE, in the one canonical spelling.
+
+    Rules, chosen to be non-destructive:
+      * Unrecognised vocab passes through UNCHANGED — we never corrupt a value we
+        don't understand (e.g. an exotic AF market, a predictions key).
+      * O/U with no resolvable line passes through unchanged (can't safely rewrite).
+      * asian_handicap / combo keep their ORIGINAL selection (the line/label lives in
+        the selection; there is no line column) — only the market is canonicalised
+        (already 'asian_handicap'/'combo', so effectively a no-op).
+      * Everything else (1x2, o/u with a line, btts, double_chance, draw_no_bet,
+        parametric *_ou) is rewritten to the canonical market + selection.
+
+    Idempotent: canonical input returns unchanged. Apply at every bet-table write.
+    """
+    c = normalize(market, selection)
+    if c is None or not c.get("market"):
+        return market, selection
+    if c["family"] in _LINE_IN_SELECTION_FAMILIES:
+        return c["market"], selection
+    return c["market"], c["selection"]

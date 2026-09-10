@@ -34536,6 +34536,28 @@ def test_market_vocab_enforced():
                          f"vocabulary — add them to canonical_market.normalize(): {bad[:20]}")
 
 
+@test("MARKET-VOCAB-WRITE-CANONICAL — bet-table writers store the canonical spelling (AH/combo preserved)")
+def test_market_vocab_write_canonical():
+    """MARKET-VOCAB-CANONICAL Phase 2 step 3: every bet-table write goes through
+    canonicalize_for_storage so the DB stores ONE spelling. Non-destructive: unknown
+    vocab passes through, AH/combo keep their selection (line lives there). Pin the
+    helper's contract + that the store chokepoints delegate to it."""
+    import inspect
+    from workers.canonical_market import canonicalize_for_storage as c
+    assert c("o/u", "over 2.5") == ("over_under_25", "over")
+    assert c("1X2", "home") == ("1x2", "home")
+    assert c("BTTS", "yes") == ("btts", "yes")
+    assert c("asian_handicap", "home -1.5") == ("asian_handicap", "home -1.5"), "AH selection (line) preserved"
+    assert c("combo", "straight") == ("combo", "straight"), "combo passthrough"
+    assert c("over_under_25", "over") == ("over_under_25", "over"), "idempotent on canonical"
+    assert c("ht_ft", "home/draw") == ("ht_ft", "home/draw"), "unknown vocab never corrupted"
+    # the three store chokepoints must delegate to it
+    from workers.api_clients import supabase_client as sc
+    for fn in ("store_bet", "bulk_store_shadow_bets", "store_real_bet"):
+        assert "canonicalize_for_storage" in inspect.getsource(getattr(sc, fn)), \
+            f"{fn} must canonicalize market/selection on write"
+
+
 @test("EXECUTABLE-SHADOW-EVAL — per-book executable ROI ledger routes vocab through canonical_market")
 def test_executable_shadow_eval():
     """EXECUTABLE-SHADOW-EVAL (2026-09-10): the honest validation ledger — attaches

@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from workers.api_clients.db import get_conn, execute_query, execute_write, execute_write_returning, bulk_upsert
+from workers.canonical_market import canonicalize_for_storage
 
 load_dotenv()
 
@@ -2091,6 +2092,10 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
         if field in bet_data and bet_data[field] is not None:
             row[field] = bet_data[field]
 
+    # MARKET-VOCAB-CANONICAL: store the ONE canonical spelling (o/u+'over 2.5' ->
+    # over_under_25+'over', 1X2 -> 1x2, …). AH/combo keep their selection. Idempotent.
+    row["market"], row["selection"] = canonicalize_for_storage(row["market"], row["selection"])
+
     # Sanitize all values: numpy types -> native Python, NaN/Inf -> None
     row = {k: _sanitize_for_json(v) for k, v in row.items()}
 
@@ -2145,13 +2150,18 @@ def bulk_store_shadow_bets(rows: list[dict], shadow_run_id: str, shadow_cohort: 
         prob = _sanitize_for_json(r["model_prob"])
         if prob is None:
             continue  # NOT NULL constraint
+        # MARKET-VOCAB-CANONICAL: canonical spelling on write (AH/combo keep selection).
+        _mkt, _sel = canonicalize_for_storage(
+            r["market"],
+            r["selection"].lower() if isinstance(r["selection"], str) else r["selection"],
+        )
         tuples.append((
             shadow_run_id,
             shadow_cohort,
             r["bot_id"],
             r["match_id"],
-            r["market"],
-            r["selection"].lower() if isinstance(r["selection"], str) else r["selection"],
+            _mkt,
+            _sel,
             _sanitize_for_json(r["odds"]),
             r.get("placed_at", datetime.now().isoformat()),
             SHADOW_STAKE,
@@ -5437,6 +5447,9 @@ def store_real_bet(
                     float(prob_raw) - 1.0 / float(actual_odds), 5
                 )
 
+    # MARKET-VOCAB-CANONICAL: store the canonical spelling (AH/combo keep selection).
+    market, selection = canonicalize_for_storage(
+        market, selection.lower() if isinstance(selection, str) else selection)
     rows = execute_write_returning(
         """INSERT INTO real_bets
            (match_id, market, selection, bookmaker, captured_odds, actual_odds,

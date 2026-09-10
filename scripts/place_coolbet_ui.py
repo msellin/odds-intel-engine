@@ -635,6 +635,9 @@ def reconcile_account_to_real_bets(norms: list[dict]) -> int:
         note = (f"coolbet-account-sync ticket #{norm.get('ticket_id')} "
                 f"(self-verified {datetime.now(timezone.utc):%Y-%m-%d})")
         try:
+            # MARKET-VOCAB-CANONICAL: store the canonical spelling (AH/combo keep selection).
+            from workers.canonical_market import canonicalize_for_storage
+            _mkt, _sel = canonicalize_for_storage(matched["market"], matched["selection"])
             # slippage_pct is a GENERATED column — never inserted.
             execute_write(
                 # Stage 2: this row mirrors the operator's ACTUAL Coolbet account
@@ -645,8 +648,8 @@ def reconcile_account_to_real_bets(norms: list[dict]) -> int:
                         result, notes, placed_real)
                    VALUES (%s, %s, %s, %s, 'Coolbet',
                            %s, %s, %s, NOW(), 'pending', %s, TRUE)""",
-                (matched.get("bot_id"), matched["match_id"], matched["market"],
-                 matched["selection"], odds_val, odds_val, stake_val, note),
+                (matched.get("bot_id"), matched["match_id"], _mkt,
+                 _sel, odds_val, odds_val, stake_val, note),
             )
             inserted += 1
             print(f"account-verify: reconciled {matched['home_team']} v "
