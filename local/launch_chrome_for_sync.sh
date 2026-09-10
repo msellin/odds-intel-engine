@@ -64,12 +64,29 @@ echo "✓ Launching CDP-Chrome on port $PORT (separate from your normal Chrome)"
 # --profile-directory="Default" hard-pins to the seeded profile so Chrome
 # never boots into chrome://profile-picker/ (which CDP cannot DOM-drive,
 # stalling auto_self_heal at the chrome_at_profile_picker bailout).
+#
+# COOLBET-SESSION-FREEZE-FIX (2026-09-10, COOLBET-DAEMON-DEATH-RECURRING): the
+# three --disable-*background* flags are the ROOT-CAUSE fix for the recurring
+# logged-out session. This is an automation window the operator never looks at,
+# so it is permanently occluded; without these flags Chrome backgrounds and
+# then FREEZES the hidden renderer after ~5 min, which suspends Coolbet's SPA
+# renew-token timer (~20-min cadence). The ~30-min JWT then lapses and the
+# frontend clears `cbauth` in localStorage IN PLACE (no redirect to /login —
+# which is why the operator saw the STAY-COOL page with the token simply gone).
+# Diagnosed 2026-09-10: cbauth flapped on a ~30-min cycle, reappearing only when
+# the daemon's CDP read woke the frozen renderer. These flags keep the tab's
+# JS running at full speed so renew-token fires on schedule and the session
+# stays alive on its own. NB: takes effect only on the NEXT launch — after
+# adding them you must quit this CDP-Chrome, re-run this script, and log in once.
 "$CHROME" \
     --remote-debugging-port=$PORT \
     --user-data-dir="$CDP_PROFILE" \
     --profile-directory="Default" \
     --no-first-run \
     --no-default-browser-check \
+    --disable-background-timer-throttling \
+    --disable-backgrounding-occluded-windows \
+    --disable-renderer-backgrounding \
     >/dev/null 2>&1 &
 
 # Poll the CDP endpoint until it accepts connections.

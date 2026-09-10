@@ -101,6 +101,14 @@ def _launch_context(p, *, headless: bool):
             "--disable-blink-features=AutomationControlled",
             "--no-default-browser-check",
             "--disable-features=IsolateOrigins,site-per-process",
+            # COOLBET-SESSION-FREEZE-FIX (2026-09-10): keep the backgrounded
+            # automation tab's JS alive so Coolbet's SPA renew-token timer keeps
+            # firing — otherwise Chrome freezes the occluded renderer after ~5min
+            # and the ~30-min JWT lapses (cbauth cleared in place). Mirrors the
+            # flags in local/launch_chrome_for_sync.sh (the operational launcher).
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
         ],
         # Strip Playwright's default --enable-automation so navigator.webdriver
         # stays false. patchright does this too but belt-and-suspenders.

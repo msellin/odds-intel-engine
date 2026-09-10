@@ -34373,5 +34373,60 @@ def test_coolbet_daemon_keepalive():
     assert "not loaded" in sh.lower() and ("launchctl list" in sh or "grep" in sh), (
         "must skip revival when the daemon was deliberately unloaded")
 
+
+@test("COOLBET-SESSION-LIVENESS — daemon checks/heals the CDP session EVERY tick, before the no-candidate early return")
+def test_coolbet_session_liveness():
+    """COOLBET-DAEMON-DEATH-RECURRING session half (2026-09-10): the daemon sat
+    logged_out for 2 days (operator killed it on the STAY-COOL page) because the
+    tick only looked at the session when it had a pick to place — the
+    SILENT-WHEN-EMPTY `if not candidates: return` early-exits BEFORE any session
+    check, so on a quiet day the ~30-min JWT lapsed unnoticed. Fix: a per-tick
+    _ensure_session_live() heartbeat that runs BEFORE that early return, probes
+    cheaply, and heals via auto_self_heal when not valid. Pin the ordering (the
+    whole bug) and the heartbeat's behaviour."""
+    import inspect
+    from workers.automation import coolbet_mac_daemon as d
+
+    assert hasattr(d, "_ensure_session_live"), "the liveness heartbeat helper must exist"
+
+    tick_src = inspect.getsource(d._tick)
+    call_pos = tick_src.find("_ensure_session_live(")
+    early_return_pos = tick_src.find("if not candidates:")
+    assert call_pos != -1, "_tick must call _ensure_session_live()"
+    assert early_return_pos != -1, "_tick must still have the SILENT-WHEN-EMPTY early return"
+    assert call_pos < early_return_pos, (
+        "_ensure_session_live() must be called BEFORE the `if not candidates` early "
+        "return — otherwise a quiet day skips the session check (the original bug)")
+
+    heal_src = inspect.getsource(d._ensure_session_live)
+    # cheap probe first, full heal only when not valid, keep DB JWT fresh when valid
+    assert "diagnose_cdp_jwt_state" in heal_src, "must probe session state cheaply first"
+    assert "proactive_jwt_refresh" in heal_src, (
+        "must refresh the DB JWT when valid (the write skipped on no-candidate days)")
+    assert "auto_self_heal" in heal_src, "must invoke the tested recovery state machine when not valid"
+    assert "_LIVENESS_HEAL_MIN_GAP_S" in heal_src, "heal escalation must be throttled on a persistent outage"
+
+
+@test("COOLBET-SESSION-FREEZE-FIX — CDP-Chrome launches with background-throttling disabled so renew-token keeps firing")
+def test_coolbet_session_freeze_fix():
+    """COOLBET-DAEMON-DEATH-RECURRING root cause (2026-09-10): the CDP-Chrome is
+    an always-occluded automation window; without these flags Chrome freezes the
+    hidden renderer after ~5min, suspending Coolbet's SPA renew-token timer, so
+    the ~30-min JWT lapses and cbauth is cleared in place (STAY-COOL page, token
+    gone, no /login redirect). Pin the three flags in BOTH the operational
+    launcher and the playwright fallback so a future edit can't drop them."""
+    from pathlib import Path
+    import inspect
+    from workers.automation import coolbet_browser_sync as bs
+    FLAGS = ("--disable-background-timer-throttling",
+             "--disable-backgrounding-occluded-windows",
+             "--disable-renderer-backgrounding")
+    launcher = (Path(__file__).parent.parent / "local" / "launch_chrome_for_sync.sh").read_text()
+    for f in FLAGS:
+        assert f in launcher, f"operational launcher must pass {f} (keeps renew-token alive)"
+    ctx_src = inspect.getsource(bs._launch_context)
+    for f in FLAGS:
+        assert f in ctx_src, f"playwright fallback _launch_context must also pass {f}"
+
 if __name__ == "__main__":
     main()

@@ -455,6 +455,61 @@ def _sync_placed_bets_from_coolbet() -> int:
     return marked
 
 
+# COOLBET-SESSION-LIVENESS (2026-09-10, COOLBET-DAEMON-DEATH-RECURRING): don't
+# run the full heal state machine more than once per this gap when the session
+# is persistently not-valid. auto_self_heal's own cdp_auto_login is already
+# 1/h-rate-limited; this bounds the reload/probe/heal-log churn on a quiet
+# logged-out day (where no placement error ever fires the self-pause).
+_LIVENESS_HEAL_MIN_GAP_S = 300
+_last_liveness_heal_at: float = 0.0
+
+
+def _ensure_session_live(*, dry_run: bool = False) -> str:
+    """Keep the CDP Coolbet session logged in — the SESSION-liveness half of
+    COOLBET-DAEMON-DEATH-RECURRING. Runs EVERY tick BEFORE the SILENT-WHEN-EMPTY
+    early return, so a quiet (no-candidate) stretch can no longer let the
+    ~30-min JWT lapse unnoticed (it is kept alive only by the SPA's renew-token
+    while a live Coolbet tab exists; on 2026-09-08→10 it lapsed and sat
+    logged_out for 2 days until the operator saw the STAY-COOL login page and
+    killed the daemon).
+
+    Cheap when healthy: one local JWT decode (`diagnose_cdp_jwt_state`) + an
+    idempotent DB-JWT refresh (the write that was being skipped on no-candidate
+    days, leaving the DB token 2 days stale). Only when the session is NOT valid
+    do we invoke the tested `auto_self_heal` state machine — jwt_expired→reload,
+    logged_out→`cdp_auto_login` from .env creds when COOLBET_AUTO_LOGIN_ON_HEAL
+    is enabled (its 1/h rate-limit + CDP device-trust bound SMS exposure) —
+    throttled to once per `_LIVENESS_HEAL_MIN_GAP_S`. Returns a short status
+    string for the tick counters; never raises.
+    """
+    global _last_liveness_heal_at
+    from workers.automation.coolbet_browser_sync import (
+        diagnose_cdp_jwt_state, proactive_jwt_refresh, auto_self_heal,
+    )
+    try:
+        state = (diagnose_cdp_jwt_state() or {}).get("state")
+    except Exception as e:  # noqa: BLE001
+        log.debug("liveness probe raised: %s", e)
+        return "probe_error"
+    if state == "valid":
+        try:
+            proactive_jwt_refresh()  # keep DB JWT fresh even with nothing to place
+        except Exception as e:  # noqa: BLE001
+            log.debug("liveness proactive_jwt_refresh raised: %s", e)
+        return "valid"
+    now = time.time()
+    if now - _last_liveness_heal_at < _LIVENESS_HEAL_MIN_GAP_S:
+        return f"{state}->heal_throttled"
+    _last_liveness_heal_at = now
+    try:
+        heal = auto_self_heal(dry_run=dry_run)
+    except Exception as e:  # noqa: BLE001
+        log.warning("liveness auto_self_heal raised: %s", e)
+        return f"{state}->heal_error"
+    outcome = "recovered" if heal.get("recovered") else heal.get("state_after")
+    return f"{state}->{outcome}"
+
+
 def _tick(*, dry_run: bool = False) -> dict:
     """One placement pass. Returns counters so the loop can decide whether
     to log loudly or silently this round. Catches all exceptions — a
@@ -510,6 +565,19 @@ def _tick(*, dry_run: bool = False) -> dict:
         except Exception as e:
             log.debug("imperva cookie harvest failed (non-fatal): %s", e)
             counters["imperva_cookies_harvested"] = 0
+
+        # COOLBET-SESSION-LIVENESS (2026-09-10, COOLBET-DAEMON-DEATH-RECURRING):
+        # self-heal a logged-out CDP session EVERY tick, BEFORE the
+        # SILENT-WHEN-EMPTY early return below. This is what was missing: the
+        # tick only ever looked at the session when it had a pick to place, so
+        # on a quiet day the JWT lapsed and the session sat logged_out for days
+        # (operator had to kill the daemon on the STAY-COOL page). See
+        # _ensure_session_live. Cheap when healthy; never fatal to the tick.
+        try:
+            counters["session_liveness"] = _ensure_session_live(dry_run=dry_run)
+        except Exception as e:
+            log.debug("session liveness heartbeat failed (non-fatal): %s", e)
+            counters["session_liveness"] = "error"
 
         # SILENT-WHEN-EMPTY (2026-06-12): cheap DB check first — if no
         # qualifying picks exist, exit the tick before touching Coolbet
