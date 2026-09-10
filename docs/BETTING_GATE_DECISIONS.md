@@ -150,3 +150,16 @@ to 0.13 — it must mirror the engine's pooled floor, not the per-bot one. The p
 already excluded by the 2.80 odds floor; aways/draws excluded by the home-only mirror. O/U unchanged.
 Takes effect on the next placer run (bot is toggled ON). Publication side (/performance, grades) →
 PICKS-GRADING.
+
+**SIGNAL-PLACER-1X2-ALIGN (2026-09-10).** The Telegram SIGNAL path
+(`coolbet_placer.load_qualified_bets`) was still gating 1x2 on the pooled 13%
+floor, so home-underdogs in the 10–13% band were placed with real money but never
+signaled (Stevenage v Luton, Home @3.48, +12%). Fixed with a selection-aware
+signal floor `_signal_min_edge_for`: 1x2 home-underdog (`selection=home AND
+odds≥2.80`) → 10% (shares `COOLBET_MODEL_1X2_EDGE_FLOOR` with the mirror);
+everything else → the pooled `_min_edge_for`. **The pooled `_MIN_EDGE_BY_MARKET['1x2']`
+is unchanged at 13%** — only the signal path gained the home-underdog carve-out, so
+draws/aways (not fold-robust at 10%) and the trigger windows are untouched. Home-favs
+still fall on the pooled 13% floor for signals and stay excluded from real money by
+the 2.80 odds floor; dropping home-favs from SIGNALS too is a separate published-picks
+call (see line 116, OWNER-GATED) and was not done here.

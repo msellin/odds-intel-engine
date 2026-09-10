@@ -107,6 +107,18 @@ paper/trigger path. So the per-market edge-floor work now DOES reach real money 
 `bot_coolbet_value_v1` was retired and real money moved to the model bots. The odds
 floor (`_min_odds_for`) remains shared across both placers.
 
+**SIGNAL-PLACER-1X2-ALIGN (2026-09-10):** the Telegram SIGNAL path
+(`coolbet_placer.load_qualified_bets`) used to gate every 1x2 selection on the
+pooled `_min_edge_for('1x2')=0.13`, while the real-money placer fires 1x2
+home-underdogs at 10%. Result: a home-underdog in the 10–13% band (Stevenage v
+Luton, Home @3.48, edge +12%) was **placed with real money but never signaled**.
+The signal floor is now selection-aware (`_signal_min_edge_for`): 1x2
+home-underdogs (`selection=home AND odds≥2.80`) signal at 10%, matching the
+placer, so we signal exactly what we place; draws/aways/home-favs stay on the
+pooled 13% floor (not fold-robust at 10%), and the pooled `_min_edge_for('1x2')`
+is unchanged at 13% (still governs the trigger windows). One env var
+(`COOLBET_MODEL_1X2_EDGE_FLOOR`) is shared with the mirror so the two cannot drift.
+
 ---
 
 ## Path A — the REAL-MONEY placer (the one that matters)

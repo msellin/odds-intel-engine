@@ -3954,6 +3954,54 @@ def test_bot_config_golden_middle_1x2_floor():
     )
 
 
+@test("SIGNAL-PLACER-1X2-ALIGN — Telegram signals home-underdog 1x2 at the placer's 10%")
+def test_signal_placer_1x2_align():
+    """SIGNAL-PLACER-1X2-ALIGN-2026-09-10. The Telegram signaler used the pooled,
+    selection-blind _min_edge_for (1x2=0.13) while the real-money placer fires 1x2
+    home-underdogs at 0.10 (odds>=2.80). So a home-underdog in the 10-13% band
+    (Stevenage v Luton: Home @3.48, edge +12%) was PLACED with real money but never
+    SIGNALED. The signal floor is now selection-aware and matches the placer:
+
+      * 1x2 home-underdog (selection=home AND odds>=2.80) -> 10% (COOLBET_MODEL_1X2_EDGE_FLOOR)
+      * everything else (draws, aways, home-favs, other markets) -> pooled _min_edge_for
+      * the pooled _min_edge_for('1x2') itself stays 0.13 (BOT-CONFIG-GOLDEN-MIDDLE) —
+        draws/aways are NOT fold-robust at 10%, and the trigger windows read it.
+
+    One env var (COOLBET_MODEL_1X2_EDGE_FLOOR) is shared with the mirror job so the
+    signal and placement floors cannot drift apart.
+    """
+    import inspect
+    from workers.automation import coolbet_placer as cp
+
+    # home-underdog drops to 10%; every other case keeps the pooled floor.
+    assert cp._signal_min_edge_for("1x2", "home", 3.48) == cp._MODEL_1X2_HOME_FLOOR == 0.10, (
+        "a 1x2 home-underdog (odds>=2.80) must signal at the placer's 10% floor, "
+        "or the bets we place with real money never reach Telegram (Stevenage v Luton)"
+    )
+    assert cp._signal_min_edge_for("1x2", "home", 2.00) == 0.13, (
+        "a home-FAVOURITE (odds<2.80) must stay on the pooled 13% floor — it is not "
+        "a fold-robust bet and is excluded from real money by the odds floor"
+    )
+    assert cp._signal_min_edge_for("1x2", "home", None) == 0.13, "no odds -> cannot confirm underdog -> pooled floor"
+    assert cp._signal_min_edge_for("1x2", "away", 5.0) == 0.13, "aways stay on the pooled floor (not robust at 10%)"
+    assert cp._signal_min_edge_for("1x2", "draw", 3.1) == 0.13, "draws stay on the pooled floor (route to sharp, not a 10% model bet)"
+    assert cp._signal_min_edge_for("over_under_25", "over", 2.0) == 0.08, "O/U unchanged — pooled per-market floor"
+
+    # the pooled floor is untouched (BOT-CONFIG-GOLDEN-MIDDLE still green)
+    assert cp._min_edge_for("1x2") == 0.13, "the pooled _min_edge_for('1x2') must NOT move — only the signal carve-out is selection-aware"
+
+    # the odds gate reuses the placement odds floor, so a signaled home-underdog is placeable
+    assert cp._MODEL_1X2_HOME_FLOOR == float(__import__("os").getenv("COOLBET_MODEL_1X2_EDGE_FLOOR", "0.10")), \
+        "signal home-underdog floor must read the SAME env var as the mirror (coolbet_model_1x2_shadow)"
+
+    # the selection-aware floor must actually be wired into the signal loader
+    loader = inspect.getsource(cp.load_qualified_bets)
+    assert "_signal_min_edge_for(" in loader, (
+        "load_qualified_bets must gate on _signal_min_edge_for — otherwise the "
+        "selection-aware carve-out exists but the signal path never uses it"
+    )
+
+
 @test("COOLBET-LINESHOP-OU-STOP — real-money UI placer no longer places line-shop O/U")
 def test_lineshop_ou_stop():
     """COOLBET-LINESHOP-OU-STOP (2026-09-08): the real-money line-shop bot loses on
