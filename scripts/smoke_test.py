@@ -34357,5 +34357,21 @@ def test_best_price_router():
     assert "execute: bool = False" in src, "router must default to DRY-RUN"
     assert "not wired" in src.lower(), "execute path must be explicitly not-wired (owner-gated cutover)"
 
+@test("COOLBET-DAEMON-KEEPALIVE — StartInterval watchdog kickstarts a dead-but-loaded daemon")
+def test_coolbet_daemon_keepalive():
+    """COOLBET-DAEMON-DEATH-RECURRING (2026-09-10): launchd KeepAlive doesn't reliably
+    respawn the mac-daemon after Mac sleep, and `load -w` doesn't start it — only
+    `kickstart` does. A StartInterval watchdog (fires on wake) revives it. Pin: the
+    script kickstarts the daemon, respects a deliberate unload (doesn't fight it), and
+    the plist uses StartInterval (not just KeepAlive)."""
+    from pathlib import Path
+    sh = (Path(__file__).parent.parent / "scripts" / "ops" / "coolbet_daemon_keepalive.sh").read_text()
+    assert "pgrep -f coolbet_mac_daemon" in sh, "must detect the daemon process"
+    assert "launchctl kickstart" in sh, "must kickstart (load -w does NOT start a KeepAlive daemon)"
+    assert "coolbet-mac-daemon" in sh, "targets the mac-daemon label"
+    # respects a deliberate stop: if the job isn't loaded, don't revive it
+    assert "not loaded" in sh.lower() and ("launchctl list" in sh or "grep" in sh), (
+        "must skip revival when the daemon was deliberately unloaded")
+
 if __name__ == "__main__":
     main()

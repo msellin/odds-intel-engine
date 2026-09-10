@@ -58,6 +58,7 @@ logged in) to a competition page + a `/et/sport/match/<id>` page with
 
 | Label | Cadence | What |
 |-------|---------|------|
+| `com.oddsintel.coolbet-daemon-keepalive` | StartInterval 300s + at load | **DAEMON-DEATH-RECURRING fix (2026-09-10):** kickstarts the mac-daemon if its process is dead but the job is still loaded. StartInterval fires on wake (KeepAlive doesn't reliably respawn after sleep; `load -w` doesn't start it — only `kickstart` does). Respects a deliberate `unload` (won't fight it). Log: `dev/active/coolbet-daemon-keepalive.log`. |
 | `com.oddsintel.coolbet-mac-daemon` | poll every 30 min (continuous) | placement daemon — reads qualified `simulated_bets`, matches to Coolbet, places (PAPER: `execute=False`) + Telegram-signals. Probes FS health at the top of each tick. |
 | `com.oddsintel.coolbet-odds-snapshot` | :03 / :33 | `coolbet_explorer --days 2` — bulk odds into `odds_snapshots`. |
 | `com.oddsintel.coolbet-feed-watchdog` | :20 / :50 | cookie refresh + staleness. |
