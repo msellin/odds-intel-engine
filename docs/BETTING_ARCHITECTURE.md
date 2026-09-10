@@ -130,6 +130,19 @@ maturity → per-market edge floor (`_MIN_EDGE_BY_MARKET`: 1x2 0.13 / o/u 0.08) 
 floor (`_MIN_ODDS_BY_MARKET`: 1x2 2.80 / o/u 1.80) → live-edge re-check → single-leg → account-verify
 dedup. Pre-match only.
 
+**Readiness surface (READ-ONLY) — "can I place real money right now?"**
+`workers/automation/coolbet_control.placement_readiness()` aggregates every
+placement gate into one dict: `can_place_now` (bool) + `blockers` (list). It is
+`True` only when NOT `placement_paused`, NOT `daemons_paused`, `session_healthy`,
+JWT valid (`jwt_exp_at` in the future), ≥1 bot `ui_place_enabled`, and the Mac
+daemon tick is fresh (≤60 min). The decision is the pure helper
+`_evaluate_readiness(state, bots, now)` (DB-free, unit-tested). CLI:
+`python3 -m workers.automation.coolbet_control --status`. It is surfaced in the
+daily Telegram summary as a `PLACEMENT READY ✅ / BLOCKED ⛔ (reasons)` line
+(`coolbet_daily_summary`). This surface **only reports** the state the placer's
+own gates already enforce — it never places, toggles, or changes a floor.
+Smoke: `COOLBET-PLACEMENT-READINESS`.
+
 ---
 
 ## 6. WHERE IT'S HARD-COUPLED TO ONE BOOK (what multi-book must generalize)

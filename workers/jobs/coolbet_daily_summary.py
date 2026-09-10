@@ -114,6 +114,12 @@ def _gather_state() -> dict:
     )
     out["queue_today"] = dict(queue[0]) if queue else {}
 
+    # COOLBET-PLACEMENT-READINESS: the single "can I place real money now?"
+    # verdict, aggregated from the same session-state + placer-bot toggles.
+    # Read-only; never raises (returns can_place_now=False on any DB error).
+    from workers.automation.coolbet_control import placement_readiness
+    out["placement_readiness"] = placement_readiness()
+
     return out
 
 
@@ -186,8 +192,17 @@ def _format_summary(s: dict) -> str:
 
     glyph = "🟢" if not warnings else ("🟡" if all(w.startswith("⚠") for w in warnings) else "🔴")
 
+    # COOLBET-PLACEMENT-READINESS: one authoritative "can real money be placed
+    # right now?" line, aggregated across all gates. Escaped because blocker
+    # reasons are free text (operator-set pause reasons, last_error strings).
+    readiness = s.get("placement_readiness") or {}
+    from workers.automation.coolbet_control import readiness_summary_line
+    readiness_line = _html.escape(readiness_summary_line(readiness), quote=False)
+
     lines = [
         f"{glyph} <b>Coolbet daily — {datetime.now(timezone.utc).strftime('%Y-%m-%d')}</b>",
+        f"",
+        readiness_line,
         f"",
         f"🤖 Daemon: tick {_fmt_age(daemon_age)} ago · last: placed={daemon_placed} errors={daemon_errs}",
         f"🔑 JWT: TTL {_fmt_age(jwt_ttl) if (jwt_ttl is not None and jwt_ttl > 0) else 'expired'}",

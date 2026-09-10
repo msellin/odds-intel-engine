@@ -34757,5 +34757,96 @@ def test_unibet_self_revive():
     assert "dedup_key" in rb, "the failure alert must stay deduped (one per outage window)"
 
 
+@test("COOLBET-PLACEMENT-READINESS — one surface aggregates every placement gate; pauses report not-ready")
+def test_coolbet_placement_readiness():
+    """COOLBET-PLACEMENT-READINESS (2026-09-10, COOLBET-OWN-UNIFIED-FLOW-EPIC #20):
+    a single read-only surface answers "can I place real money right now?" by
+    aggregating placement_paused + daemons_paused + session_healthy + JWT TTL +
+    ui_place_enabled bots + daemon tick freshness. The decision logic lives in
+    the pure helper `_evaluate_readiness(state, bots, now)` so it needs no DB.
+
+    Guards: required keys present, correct types, and — the property that
+    matters — a paused kill switch (or expired JWT, or no enabled bot, or stale
+    daemon) MUST report can_place_now=False with a matching blocker."""
+    from datetime import datetime, timezone, timedelta
+    from workers.automation import coolbet_control as cc
+
+    now = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+    REQUIRED_KEYS = {
+        "can_place_now", "blockers", "jwt_exp_at", "jwt_valid", "jwt_ttl_minutes",
+        "placement_paused", "placement_paused_reason", "daemons_paused",
+        "daemons_paused_reason", "session_healthy", "last_error",
+        "daemon_last_tick_at", "daemon_last_tick_result", "daemon_tick_age_min",
+        "enabled_bots", "disabled_bots",
+    }
+
+    # A fully-green state → READY, no blockers.
+    green_state = {
+        "jwt_exp_at": now + timedelta(hours=2),
+        "session_healthy": True,
+        "placement_paused": False,
+        "daemons_paused": False,
+        "mac_daemon_last_tick_at": now - timedelta(minutes=5),
+        "mac_daemon_last_tick_result": {"placed": 1, "errors": 0},
+        "last_error": None,
+    }
+    green_bots = [
+        {"bot_name": "bot_coolbet_ou_model_v1", "ui_place_enabled": True},
+        {"bot_name": "bot_coolbet_1x2_model_v1", "ui_place_enabled": False},
+    ]
+    green = cc._evaluate_readiness(green_state, green_bots, now)
+    assert REQUIRED_KEYS.issubset(green.keys()), \
+        f"missing keys: {REQUIRED_KEYS - set(green.keys())}"
+    assert isinstance(green["can_place_now"], bool), "can_place_now must be a bool"
+    assert isinstance(green["blockers"], list), "blockers must be a list"
+    assert green["can_place_now"] is True, f"green state should be READY, got {green['blockers']}"
+    assert green["blockers"] == [], f"green state should have no blockers, got {green['blockers']}"
+    assert green["enabled_bots"] == ["bot_coolbet_ou_model_v1"]
+    assert green["jwt_valid"] is True
+
+    # placement_paused=True → NOT ready, and a blocker names the pause.
+    paused = cc._evaluate_readiness(
+        {**green_state, "placement_paused": True,
+         "placement_paused_reason": "operator test pause"},
+        green_bots, now,
+    )
+    assert paused["can_place_now"] is False, "paused state must NOT be ready"
+    assert any("paus" in b.lower() for b in paused["blockers"]), \
+        f"a blocker must mention the pause, got {paused['blockers']}"
+
+    # Expired JWT → not ready with a JWT blocker.
+    expired = cc._evaluate_readiness(
+        {**green_state, "jwt_exp_at": now - timedelta(minutes=30)}, green_bots, now)
+    assert expired["can_place_now"] is False and expired["jwt_valid"] is False
+    assert any("jwt" in b.lower() for b in expired["blockers"])
+
+    # No enabled bot → not ready.
+    no_bots = cc._evaluate_readiness(
+        green_state,
+        [{"bot_name": "bot_coolbet_ou_model_v1", "ui_place_enabled": False}], now)
+    assert no_bots["can_place_now"] is False
+    assert any("bot" in b.lower() for b in no_bots["blockers"])
+
+    # Stale daemon tick → not ready.
+    stale = cc._evaluate_readiness(
+        {**green_state, "mac_daemon_last_tick_at": now - timedelta(hours=3)},
+        green_bots, now)
+    assert stale["can_place_now"] is False
+    assert any("daemon" in b.lower() for b in stale["blockers"])
+
+    # The real DB-backed entrypoint must never raise and must keep the contract.
+    live = cc.placement_readiness()
+    assert REQUIRED_KEYS.issubset(live.keys()), \
+        f"live result missing keys: {REQUIRED_KEYS - set(live.keys())}"
+    assert isinstance(live["can_place_now"], bool)
+    assert isinstance(live["blockers"], list)
+
+    # It must NOT introduce any real-money place/execute path — read-only surface.
+    import inspect
+    src = inspect.getsource(cc)
+    assert "execute=True" not in src and "place_and_record" not in src and "stage_bet" not in src, \
+        "readiness surface must stay read-only — no placement/execute path"
+
+
 if __name__ == "__main__":
     main()
