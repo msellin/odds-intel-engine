@@ -87,10 +87,10 @@ registry and regenerate.
 | Bot | Market | Anchor | Edge floor | Odds floor | Money | What it does |
 |---|---|---|---|---|---|---|
 | `bot_v10_all` | mixed | model | — | — | paper | The calibrated reference bot: v10 model across target leagues, tier-adjusted thresholds. Honestly calibrated, +11–13% — the yardstick other bots are read against. |
-| `bot_1x2_specialist` | 1x2 | — | — | — | paper | 1x2 home/away value specialist with per-strategy league whitelists. Internal paper strategy validator. |
-| `bot_dnb_specialist` | DNB | — | — | — | paper | Draw-no-bet home+away specialist with per-strategy league whitelists. Internal paper strategy validator. |
 | `bot_high_roi_global_v2` | 1x2 | — | — | — | paper | 1x2 home/away in Spain/Australia/Iceland, odds 1.50–5.50. Internal paper strategy validator. |
-| `bot_summer_specialist` | mixed | — | — | — | paper | League-whitelist summer-season specialist. Internal paper strategy validator. |
+<!-- bot_1x2_specialist, bot_dnb_specialist, bot_summer_specialist RETIRED 2026-09-09 (migrations 323/324) and removed from bot_registry.py:116-119 — do not re-add. -->
+<!-- NB: bot generation stores best-of-books odds for these general bots (recommended_bookmaker), NOT the Coolbet/Unibet executable price — the SHADOW-PAGE-ROI-INFLATED gap; per-book executable ROI/CLV is the EXECUTABLE-SHADOW-EVAL work. -->
+
 ---
 
 ## 3. What each % means on each screen

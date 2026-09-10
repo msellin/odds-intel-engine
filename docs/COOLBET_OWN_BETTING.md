@@ -87,21 +87,21 @@ floor helper.
 | File | `scripts/place_coolbet_ui.py` (+ `coolbet_ui_placer.py` driver) | `workers/automation/coolbet_placer.py` |
 | launchd job | **`com.oddsintel.coolbet-ui-placer`** — hourly 06:00–21:00, runs with `--execute` | `com.oddsintel.coolbet-mac-daemon` — continuous |
 | Source table | **`shadow_bets_unique`** (view over `shadow_bets`) | `simulated_bets` |
-| Which bot(s) | code whitelist `PLACEABLE_BOTS` ∩ DB toggle `coolbet_placer_bots` — seeded **`bot_coolbet_value_v1` ON, `bot_coolbet_ou_model_v1` OFF** | all model bots, gated to `calibrated` maturity |
-| Edge basis | **Coolbet's OWN price vs de-vigged Pinnacle** (line-shop) | model ensemble vs de-vigged Pinnacle at best-accessible book |
-| Edge floor | **flat 3%** (`BOT_THRESHOLDS`, the bot's `_LINESHOP_TRUE_EDGE_MIN`). Does **NOT** call `_min_edge_for`. | per-market `_min_edge_for` — **1x2 13% · O/U 8%** |
+| Which bot(s) | code whitelist `PLACEABLE_BOTS` ∩ DB toggle `coolbet_placer_bots` — currently **`bot_coolbet_1x2_model_v1` + `bot_coolbet_ou_model_v1`, BOTH `ui_place_enabled=TRUE`**. (**`bot_coolbet_value_v1` was RETIRED 2026-09-08** — it is no longer a placer; the flat-3% line-shop path is gone.) | all model bots, gated to `calibrated` maturity |
+| Edge basis | **our calibrated MODEL vs Coolbet's OWN price** (MODEL edge = `cal_prob − 1/coolbet_odds`) | model ensemble vs de-vigged Pinnacle at best-accessible book |
+| Edge floor | **per-bot `BOT_THRESHOLDS` — 1x2 10% (home-underdogs only, odds≥2.80; FAVLONG-CUTS-2026-09-09) · O/U 8%** | per-market `_min_edge_for` — **1x2 13% · O/U 8%** |
 | Odds floor | `_min_odds_for` ✓ (shared) | `_min_odds_for` ✓ (shared) |
 | Places real money? | **YES** — `--execute` in the plist; writer behind every `real_bets` row since 2026-08-27, incl. the 2026-08-31 −€92.80 incident. Per-bot on/off is the runtime `coolbet_placer_bots` toggle (superadmin, `/admin/shadow-bots`) | **No** — `execute=False` hardcoded in the daemon |
-| Uses our model? | **No** — pure line-shop against Pinnacle | Yes — the calibrated ensemble |
+| Uses our model? | **Yes** — the calibrated ensemble, priced at Coolbet's own odds | Yes — the calibrated ensemble |
 
-**The consequence you must internalise:** the per-market EDGE-floor work
-(`BOT-CONFIG-GOLDEN-MIDDLE` 1x2=13%, `EDGE-FLOORS-OTHER-MARKETS` O/U=8%,
-`2D-GATE-PER-MARKET-ODDS-FLOOR`) lives in the **API/paper** placer. It does
-**not** gate the money we actually stake. Real money rides on
-`bot_coolbet_value_v1`'s flat **3%** line-shop edge. The only one of our recent
-tuning changes that reaches real money is the per-market **odds** floor, because
-both placers call the same `_min_odds_for`. This divergence is tracked as
-`COOLBET-REALMONEY-EDGE-GATE-RECONCILE` (see Known-open).
+**The consequence you must internalise:** real money is staked on the **MODEL-edge**
+bots, gated by the **per-bot `BOT_THRESHOLDS`** (1x2 **10%** home-underdogs @≥2.80,
+O/U **8%**) — NOT by the pooled `_MIN_EDGE_BY_MARKET` (13%/8%), which governs the
+paper/trigger path. So the per-market edge-floor work now DOES reach real money via
+`BOT_THRESHOLDS`. **`COOLBET-REALMONEY-EDGE-GATE-RECONCILE` is RESOLVED
+(2026-09-08→09):** the old flat-3% line-shop divergence disappeared when
+`bot_coolbet_value_v1` was retired and real money moved to the model bots. The odds
+floor (`_min_odds_for`) remains shared across both placers.
 
 ---
 

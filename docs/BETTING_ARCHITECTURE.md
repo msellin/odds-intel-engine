@@ -82,7 +82,7 @@ against a specific book — they trust the placer to re-check the live book pric
 Also writing `shadow_bets`: `ou35_model_shadow.py`, `corners_paper_bot.py`, and the pipeline's
 `bulk_store_shadow_bets()` (BET-TIMING-MONITOR — every bot at every refresh, flat €10).
 
-## 3b. THE TRIGGER ENGINE — the book-agnostic future (already built, Coolbet-only so far)
+## 3b. THE TRIGGER ENGINE — the book-agnostic paper engine (built; Coolbet + Unibet-Site, 8 bots)
 
 This is the component a multi-bookmaker setup grows from. It is already designed correctly; it is
 just not populated with non-Coolbet books.
@@ -158,7 +158,7 @@ book, with one placement-of-record — adding a 3rd book is config, not a rewrit
    per-book matcher: for each book in BOOKS, evaluate its OWN odds_snapshots    │  ← Stage B, exists
       against the window → per-book edge → candidate (book, price, edge)        │     (Coolbet only today)
                     ▼
-   UNIFIED best-price ROUTER: across all books whose candidate clears the gate, │  ← BEST-PRICE-EXECUTION-ROUTER
+   UNIFIED best-price ROUTER: across all books whose candidate clears the gate, │  ← best_price_router.py (execute-wired 2026-09-10; real money owner-gated)
       pick the BEST price → route to THAT book's placer → place ONCE            │     (to build)
                     ▼
    placer REGISTRY: {Coolbet: coolbet_ui_placer, Unibet: unibet_placer, …}      │  ← per-book executor

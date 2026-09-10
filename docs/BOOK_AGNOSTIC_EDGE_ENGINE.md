@@ -1,5 +1,15 @@
 # Book-Agnostic Edge Engine — the correct architecture for OWN betting
 
+> **SCOPE (read this first — the term is overloaded elsewhere).** "Book-agnostic
+> edge engine" = **this PAPER trigger engine only** (`pick_triggers` → `pick_trigger_matcher`,
+> 8 paper bots across Coolbet + Unibet-Site). It is a **measurement** system. It is
+> NOT the real-money path (that is the separate mirror → `shadow_bets_unique` →
+> `place_coolbet_ui` chain on 2 model bots) and NOT the multi-book executor
+> (`workers/automation/best_price_router.py`). `BETTING_ARCHITECTURE.md` uses
+> "book-agnostic" more loosely as an umbrella for the whole flow — that is a broader
+> label, not this engine. The "planned merger" (fold the mirror bots in + source
+> per-book trigger edge through the router) is future work, not built.
+
 **Status: Stage A + B BUILT (2026-09-09), PAPER. Backtest says the wide selection
 loses at current gates — see the backtest section — so it stays paper; the live
 real-money path remains the existing narrow model-edge bots.** This is the target
