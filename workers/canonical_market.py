@@ -117,6 +117,8 @@ _OU_MARKET_RE = re.compile(r"^over_under_(\d{2,3})$")
 # corners_ou_95, corners_home_ou_75, corners_1h_ou_45, cards_ou_30, cards_away_ou_20…
 # Captured family stem keeps the '_ou' suffix (e.g. 'corners_home_ou').
 _GENERIC_OU_RE = re.compile(r"^([a-z0-9]+(?:_[a-z0-9]+)*_ou)_(\d{2,3})$")
+# team goal totals: team_total_home_15 / team_total_1h_away_05 (side + line, over/under).
+_TEAM_TOTAL_RE = re.compile(r"^team_total(?:_1h)?_(?:home|away)_(?P<line>\d{2,3})$")
 _ONE_X_TWO_SEL = {"1": "home", "x": "draw", "2": "away",
                   "home": "home", "draw": "draw", "away": "away"}
 
@@ -144,11 +146,12 @@ def normalize(market: str | None, selection: str | None) -> dict | None:
     m = str(market).strip().lower()
     s = ("" if selection is None else str(selection)).strip().lower()
 
-    # 1X2
-    if m == "1x2":
+    # 1X2 — full match, and the first-half variant (1x2_1h) modelled by
+    # bot_1h_1x2_paper_shadow_v1 (USE-COLLECTED-MARKETS). Same home/draw/away
+    # selections; a distinct family so its floors/grades track separately.
+    if m in ("1x2", "1x2_1h"):
         sel = _ONE_X_TWO_SEL.get(s)
-        return {"family": "1x2", "market": Market.ONE_X_TWO.value,
-                "selection": sel, "line": None} if sel else None
+        return {"family": m, "market": m, "selection": sel, "line": None} if sel else None
 
     # Over/Under total goals — the line may live in the MARKET (over_under_25) or in
     # the SELECTION ('over 2.5'), depending on which table wrote it.
@@ -180,6 +183,14 @@ def normalize(market: str | None, selection: str | None) -> dict | None:
     if cm:
         return {"family": cm.group(1), "market": m, "selection": s,
                 "line": _digits_to_line(cm.group(2))} if s in ("over", "under") else None
+
+    # team goal totals — team_total_home_15 / team_total_away_25 (and the 1H
+    # variant team_total_1h_home_05). side+line in the market, over/under selection.
+    # Modelled by bot_team_total_paper_shadow_v1 (USE-COLLECTED-MARKETS).
+    tt = _TEAM_TOTAL_RE.match(m)
+    if tt:
+        return {"family": "team_total", "market": m, "selection": s,
+                "line": _digits_to_line(tt.group("line"))} if s in ("over", "under") else None
 
     if m == "btts":
         return {"family": "btts", "market": Market.BTTS.value, "selection": s,
