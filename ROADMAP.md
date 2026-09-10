@@ -65,7 +65,7 @@ Annual: Pro €39.99/yr (€3.33/mo) · Elite €119.99/yr (€9.99/mo)
 - Match events timeline (goals, cards, subs)
 - Value bets page — directional (match + selection + edge tier, no exact %)
 
-**Elite** ← ✅ Open for subscriptions (60+ settled bets, positive ROI confirmed 2026-05-27)
+**Elite** ← ❌ **Subscriptions CLOSED (product collapsed 2026-06-24).** No paid tier is sold; the frontend Pro/Elite surface was deleted. The features below are historical. (Was briefly open 2026-05-27.)
 - Everything in Pro
 - Full value bets page: exact odds, model probability %, edge %, Kelly stake
 - Natural language bet explanations — "Why this pick?" powered by Gemini (BET-EXPLAIN)
@@ -183,7 +183,30 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ---
 
-## Current System State (2026-06-15)
+## Current System State (2026-06-15) — ⚠️ HISTORICAL SNAPSHOT, SUPERSEDED
+
+> **⚠️ This entire section is a 2026-06-15 snapshot and is stale in several
+> load-bearing ways. Do NOT treat its model version, bot roster, deploy
+> platform, or tier claims as current.** For current truth read, in order:
+> `docs/SYSTEM_MAP.md` (the map), `workers/registry/bot_registry.py` (machine-
+> checked active-bot source of truth), the **Current System State (2026-06-24)**
+> section above, and `INFRASTRUCTURE.md`. Specifically now WRONG below:
+> - **Model version** — no longer `v20260607`. Live versions are env-driven on
+>   the VPS: main **~v20260712**, OU **~v20260903_cut0820**, meta
+>   **v_20260706_bets_xgb**. See `docs/MODEL_HISTORY.md`.
+> - **"24 paper bots incl. in-play (inplay_l/o/a/…)"** — **in-play betting was
+>   retired 2026-08-21** (LivePoller still feeds scores, InplayBot places
+>   nothing). CS2/HLTV bots removed 2026-08-26. The current betting architecture
+>   is the **model-vs-sharp trigger engine + Unibet/Kambi paper twins**, with
+>   **2 real-money Coolbet MODEL bots**: `bot_coolbet_1x2_model_v1`
+>   (home-underdog, edge ≥10% @ ≥2.80) and `bot_coolbet_ou_model_v1`
+>   (edge ≥8% @ ≥1.80), placed via `scripts/place_coolbet_ui.py`.
+> - **Deploy** — not Vercel/Railway. Engine on **VPS systemd
+>   `oddsintel-scheduler`**; frontend on **VPS pm2**. Railway eliminated
+>   2026-06-29, Vercel dropped 2026-07-07.
+> - **Retired specialists shown as "calibrated"** — several rows below list
+>   retired bots as active/calibrated; `bot_registry.py` is authoritative.
+> - **Tiers / Stripe / Elite** — no paid product since 2026-06-24.
 
 ### Backend
 | Component | Status |
@@ -262,9 +285,15 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ## Launch Checklist (manual steps — only Margus can do these)
 
+> ⚠️ **Historical (pre-2026-06-24).** The Vercel/Railway/Stripe items below
+> describe the original launch. Reality now: engine + web both deploy to the
+> **Hetzner VPS** (systemd `oddsintel-scheduler` + pm2) automatically on push
+> to main; Vercel dropped 2026-07-07, Railway eliminated 2026-06-29; the paid
+> product (Stripe checkout) was collapsed 2026-06-24. Kept for record only.
+
 - [x] Gemini API key — created in AI Studio for OddsIntel project
-- [x] Deploy to Vercel — project linked, env vars set
-- [x] Domain — oddsintel.app bought and connected to Vercel
+- [x] ~~Deploy to Vercel~~ → now VPS pm2 (project linked, env vars set) — was Vercel pre-2026-07-07
+- [x] Domain — oddsintel.app bought; now pointed at VPS nginx (was Vercel)
 - [x] Google Search Console — verified, sitemap submitted
 - [x] Migration 009 applied in Supabase SQL editor
 - [x] **Stripe** — production mode live 2026-05-04. Products + prices created (Pro €4.99, Elite €14.99 + annual + founding). Checkout + webhook + portal built.
@@ -301,6 +330,16 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 ---
 
 ## Bot Strategy
+
+> ⚠️ **SUPERSEDED — see `workers/registry/bot_registry.py` (machine-checked
+> source of truth) and `docs/SYSTEM_MAP.md`.** The "24 bots incl. 8 in-play"
+> framing below is stale: **in-play betting was retired 2026-08-21** (InplayBot
+> places nothing) and CS2/HLTV bots were removed 2026-08-26. The current
+> architecture is the **model-vs-sharp trigger engine + Unibet/Kambi paper
+> twins**, with **2 real-money Coolbet MODEL bots** (`bot_coolbet_1x2_model_v1`
+> home-underdog edge ≥10% @ ≥2.80, `bot_coolbet_ou_model_v1` edge ≥8% @ ≥1.80)
+> placed via `scripts/place_coolbet_ui.py`. The historical narrative below is
+> kept for context only.
 
 **24 paper trading bots** running across two categories (8 retired, 16 pre-match + 8 in-play active):
 
