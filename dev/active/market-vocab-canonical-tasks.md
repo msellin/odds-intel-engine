@@ -1,7 +1,7 @@
 # MARKET-VOCAB-CANONICAL Phase 2 — TASKS
 
 ## Step 1 — Frontend tolerant (additive, breaks nothing)
-- [ ] Create odds-intel-web/src/lib/market-vocab.ts (normalizeMarket + marketLabel), mirror canonical_market
+- [x] Create odds-intel-web/src/lib/market-vocab.ts (normalizeMarket + marketLabel) — DONE, verified parity, pushed 8426ecb (dead code until wired)
 - [ ] Route PRE_MATCH_MARKETS + CALIBRATED_PUBLIC_MARKETS to include canonical AND legacy (or normalize on read)
 - [ ] Route _mapPaperToSnapshotKey + calibrationKey through the normalizer (no more silent null on canonical)
 - [ ] Fix the 2 non-lowercased compares (engine-data.ts:3051, picks/page.tsx:42)
