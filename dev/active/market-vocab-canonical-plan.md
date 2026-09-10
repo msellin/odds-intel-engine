@@ -47,6 +47,16 @@ writers (`coolbet_placer.py`, `coolbet_ui_placer.py`). odds_snapshots writers al
 - Forward-compat helpers already list BOTH spellings → survive canonicalization.
 - Frontend deploys to prod on push (pm2) — changes are live immediately.
 
+
+## DECISION 2026-09-10: Option 2 — canonicalize ALL THREE bot tables (the complete, cleaner solution)
+Owner asked "which is correct / more complete". simulated_bets is the last place the O/U line lives
+in the SELECTION ('over 2.5'); everywhere else it's in the MARKET ('over_under_25'). Option 1 (leave
+simulated_bets) makes that split permanent (normalize-on-read forever). Option 2 removes it: ONE
+encoding everywhere, and the O/U mirror becomes a straight passthrough like the 1x2 mirror (drop
+_convert). Cost = it changes real-money O/U generation → GATE on a before/after pick-equivalence check
+that bot_coolbet_ou_model_v1 produces the SAME picks. AH selection keeps its line (no line column) —
+'one encoding' applies to the O/U family, AH stays line-in-selection by necessity.
+
 ## Staged sequence (readers-first — nothing breaks mid-flight)
 
 1. **Frontend shared normalizer** — new `src/lib/market-vocab.ts` mirroring canonical_market

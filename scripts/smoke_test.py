@@ -4297,22 +4297,29 @@ def test_coolbet_model_ou_shadow():
     assert 'SHADOW_COHORT = "coolbet_ou_model"' in job, "mirror job must use the coolbet_ou_model cohort"
     # source: calibrated cohort, market='o/u', edge>=0.08 (FRACTION), calibrated_prob not null
     assert "b.maturity_label = 'calibrated'" in job, "source must be the calibrated cohort"
-    assert "sb.market = 'o/u'" in job, "source market must be the model's lowercase 'o/u'"
+    # MARKET-VOCAB-CANONICAL Phase 2 step 2: the mirror now accepts BOTH legacy 'o/u'
+    # AND canonical 'over_under_25'/'35' so it keeps feeding the real-money O/U bot across
+    # the DB canonicalization (verified pick-equivalent on legacy data).
+    assert "lower(sb.market) IN ('o/u', 'over_under_25', 'over_under_35')" in job, (
+        "source market filter must accept both legacy 'o/u' and canonical over_under_25/35")
     assert "sb.calibrated_prob IS NOT NULL" in job, "source must require a calibrated_prob (the placer's live-edge gate reads it)"
     assert "sb.edge_percent >= %s" in job and 'EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_OU_EDGE_FLOOR", "0.08"))' in job, (
         "edge floor must be 0.08 as a FRACTION (edge_percent is stored as a fraction, not a percentage)"
     )
     assert "sb.result = 'pending'" in job and "m.date > NOW()" in job, "only pending, future-kickoff picks"
     assert "sb.user_placed_at IS NULL" in job and "sb.user_skipped_at IS NULL" in job, "skip operator-placed/skipped picks"
-    assert "DISTINCT ON (sb.match_id, sb.selection)" in job, "one row per (match, line, side), highest edge"
+    assert "DISTINCT ON (sb.match_id, sb.market, sb.selection)" in job, (
+        "one row per (match, market, line-side) — market included so the line is distinguished "
+        "whether it lives in the market (canonical) or the selection (legacy)")
     # vocabulary conversion: only 2.5/3.5 supported, written as over_under_25/35 + over/under.
-    # CANONICAL-MARKET-VOCAB-2026-09-09: the mapping moved to workers/canonical_market.py
-    # (one source); the mirror now delegates. Pin the invariant at its new home + the delegation.
-    from workers.canonical_market import _OU_SUPPORTED_LINES, ou_selection_to_storage
-    assert _OU_SUPPORTED_LINES == {"2.5": "over_under_25", "3.5": "over_under_35"}, (
-        "only lines 2.5 and 3.5 may be mirrored — writing any other line fabricates a price/settlement line")
-    assert ou_selection_to_storage("over 1.5") is None and ou_selection_to_storage("over 2.5") == ("over_under_25", "over")
-    assert "ou_selection_to_storage" in job, "the mirror must delegate to the shared canonical vocab"
+    # MARKET-VOCAB-CANONICAL: the mirror delegates to the ONE normalizer, which handles both
+    # the legacy ('o/u'+'over 2.5') and canonical ('over_under_25'+'over') encodings.
+    from workers.canonical_market import normalize
+    assert "from workers.canonical_market import normalize" in job, "the mirror must delegate to the shared canonical normalizer"
+    assert '("over_under_25", "over_under_35")' in job, "only the placeable 2.5/3.5 lines may be mirrored"
+    # both encodings collapse to the same canonical O/U pick
+    assert normalize("o/u", "over 2.5") == normalize("over_under_25", "over"), "legacy and canonical O/U must collapse"
+    assert normalize("o/u", "over 1.5")["market"] == "over_under_15", "1.5 recognised but excluded by the mirror's 25/35 guard"
     assert "INSERT INTO shadow_bets" in job and "ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)" in job, (
         "must upsert on the shadow_bets unique key so re-runs update, not duplicate"
     )
@@ -34169,8 +34176,12 @@ def test_canonical_market_vocab():
     assert cp._canon_market("over_under_25")=="o/u", "placer floor-key still resolves O/U"
     assert "market_family" in inspect.getsource(cp._canon_market), "placer must delegate to shared module"
     from workers.jobs import coolbet_model_ou_shadow as ou
-    assert ou._convert("over 2.5")==("over_under_25","over"), "mirror convert still works"
-    assert "ou_selection_to_storage" in inspect.getsource(ou._convert), "mirror must delegate to shared module"
+    # MARKET-VOCAB-CANONICAL Phase 2: _convert now takes (market, selection) and routes
+    # through normalize(), accepting BOTH legacy 'o/u'+'over 2.5' and canonical 'over_under_25'+'over'.
+    assert ou._convert("o/u", "over 2.5")==("over_under_25","over"), "mirror convert (legacy) still works"
+    assert ou._convert("over_under_25", "over")==("over_under_25","over"), "mirror convert (canonical) works"
+    assert ou._convert("o/u", "over 1.5") is None, "unsupported line (1.5) not mirrored"
+    assert "normalize" in inspect.getsource(ou._convert), "mirror must delegate to shared normalizer"
     # the placer floors still resolve correctly THROUGH the shared canonicaliser
     assert cp._min_odds_for("over_under_25")==1.80, "O/U odds floor must resolve to 1.80 via shared vocab"
     assert cp._min_edge_for("over_under_25")==0.08, "O/U edge floor must resolve to 0.08 via shared vocab"

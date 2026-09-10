@@ -62,10 +62,19 @@ EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_OU_EDGE_FLOOR", "0.08"))
 # workers.canonical_market.ou_selection_to_storage (COOLBET-PICK-TABLE-AUDIT Stage 1).
 
 
-def _convert(selection: str) -> tuple[str, str] | None:
-    """'over 2.5' -> ('over_under_25', 'over'); unsupported line -> None."""
-    from workers.canonical_market import ou_selection_to_storage
-    return ou_selection_to_storage(selection)
+def _convert(market: str, selection: str) -> tuple[str, str] | None:
+    """Return (over_under_market, side) for a supported O/U pick, else None.
+
+    MARKET-VOCAB-CANONICAL: routes through the ONE normalizer so it accepts BOTH
+    the legacy simulated_bets encoding ('o/u' + 'over 2.5') AND the canonical one
+    ('over_under_25' + 'over') — behaviour-identical on legacy data, correct after
+    the writer/backfill flip. Only the placeable 2.5 / 3.5 lines are supported.
+    """
+    from workers.canonical_market import normalize
+    c = normalize(market, selection)
+    if not c or c["family"] != "o/u" or c["market"] not in ("over_under_25", "over_under_35"):
+        return None
+    return c["market"], c["selection"]
 
 
 def _bot_id() -> str | None:
@@ -91,8 +100,9 @@ def generate_picks() -> dict:
         # (match, line, side). Convert to the line-shop vocabulary below.
         rows = execute_query(
             """
-            SELECT DISTINCT ON (sb.match_id, sb.selection)
+            SELECT DISTINCT ON (sb.match_id, sb.market, sb.selection)
                    sb.match_id::text AS match_id,
+                   sb.market,
                    sb.selection,
                    COALESCE(sb.odds_at_pick_live, sb.odds_at_pick) AS odds_at_pick,
                    sb.calibrated_prob,
@@ -102,7 +112,12 @@ def generate_picks() -> dict:
               JOIN bots    b ON b.id = sb.bot_id
               JOIN matches m ON m.id = sb.match_id
              WHERE b.maturity_label = 'calibrated'
-               AND sb.market = 'o/u'
+               -- MARKET-VOCAB-CANONICAL: accept BOTH legacy ('o/u') and canonical
+               -- ('over_under_25'/'35') O/U spellings so this keeps feeding the
+               -- real-money O/U bot across the migration. DISTINCT ON now includes
+               -- market so the line is distinguished whether it lives in the
+               -- market (canonical) or the selection (legacy).
+               AND lower(sb.market) IN ('o/u', 'over_under_25', 'over_under_35')
                AND sb.result = 'pending'
                AND sb.combo_legs IS NULL
                AND sb.calibrated_prob IS NOT NULL
@@ -110,14 +125,14 @@ def generate_picks() -> dict:
                AND sb.user_placed_at IS NULL
                AND sb.user_skipped_at IS NULL
                AND m.date > NOW()
-             ORDER BY sb.match_id, sb.selection, sb.edge_percent DESC
+             ORDER BY sb.match_id, sb.market, sb.selection, sb.edge_percent DESC
             """,
             [EDGE_FLOOR],
         )
 
         run_id = str(uuid.uuid4())
         for r in rows:
-            conv = _convert(r["selection"])
+            conv = _convert(r["market"], r["selection"])
             if conv is None:
                 counters["skipped_unsupported_line"] += 1
                 continue
