@@ -34931,5 +34931,24 @@ def test_coolbet_daemon_retired():
     assert "Daemon: tick" not in fmt, "daily summary must not report the retired daemon tick"
 
 
+
+@test("CORNERS-SETTLEMENT-GATE — corners bot only bets leagues where corner stats reliably settle")
+def test_corners_settlement_gate():
+    """CORNERS-SETTLEMENT-DATA-GAP (2026-09-10). AF publishes corner counts for only
+    ~17% of finished fixtures (a hard ceiling, gotcha 56), but the bot bet wherever a
+    corners PRICE existed — so ~83% of picks could never settle (6/73 graded), leaving
+    no honest track record. Fix: generate_picks() gates to leagues with >=80% trailing-30d
+    corner coverage (dynamic, self-maintaining) so every pick is gradeable. Fails CLOSED —
+    no settleable leagues -> 0 picks, never bets blind."""
+    import inspect
+    from workers.jobs import corners_paper_bot as cp
+    assert hasattr(cp, "_settleable_league_ids"), "must expose the dynamic settleable-league gate"
+    gsrc = inspect.getsource(cp._settleable_league_ids)
+    assert "corners_home IS NOT NULL" in gsrc and "match_stats" in gsrc, "gate keys on real corner-stat coverage"
+    assert "return []" in gsrc, "gate must fail closed (empty on error)"
+    gp = inspect.getsource(cp.generate_picks)
+    assert "_settleable_league_ids()" in gp and "league_id" in gp, "generate_picks must filter to settleable leagues"
+    assert "no settleable leagues" in gp, "generate_picks must bet nothing when the settleable set is empty"
+
 if __name__ == "__main__":
     main()

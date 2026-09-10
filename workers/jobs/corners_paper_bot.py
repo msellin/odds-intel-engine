@@ -57,6 +57,44 @@ def _devig_two_way(o_over: float, o_under: float) -> tuple[float, float]:
     return io / s, iu / s
 
 
+# CORNERS-SETTLEMENT-GATE (2026-09-10): AF publishes corner counts for only ~17-32%
+# of finished fixtures — a hard ceiling that can't be grown (§56). Betting where a
+# corners PRICE exists but no corner STAT ever arrives produces bets that can NEVER
+# settle (6/73 settled before this), so the bot had no honest track record. Gate
+# picks to leagues where corner stats reliably land, computed DYNAMICALLY on a
+# trailing window so it self-maintains as coverage shifts. An unsettleable paper bet
+# is worthless for measuring the market.
+_SETTLEABLE_MIN_PCT = 80.0     # a league must settle >= this % of its finished games
+_SETTLEABLE_MIN_FINISHED = 8   # ...over at least this many finished games
+_SETTLEABLE_WINDOW_DAYS = 30
+
+
+def _settleable_league_ids() -> list:
+    """League ids whose finished games reliably carry AF corner stats (the only
+    leagues where a corners paper bet can actually be graded). Empty list on any
+    error → generate_picks then no-ops for the run (never bets blind)."""
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """
+            SELECT m.league_id
+              FROM matches m
+              LEFT JOIN match_stats ms ON ms.match_id = m.id
+             WHERE m.status = 'finished'
+               AND m.date > now() - (%s || ' days')::interval
+             GROUP BY m.league_id
+            HAVING count(*) >= %s
+               AND 100.0 * count(*) FILTER (WHERE ms.corners_home IS NOT NULL)
+                       / count(*) >= %s
+            """,
+            [str(_SETTLEABLE_WINDOW_DAYS), _SETTLEABLE_MIN_FINISHED, _SETTLEABLE_MIN_PCT],
+        )
+        return [str(r["league_id"]) for r in rows if r.get("league_id") is not None]
+    except Exception as e:  # noqa: BLE001
+        log.warning("corners paper: _settleable_league_ids failed (%s) — betting nothing this run", e)
+        return []
+
+
 def _bot_id() -> str | None:
     from workers.api_clients.db import execute_query
     r = execute_query("SELECT id::text AS id FROM bots WHERE name=%s", [BOT_NAME])
@@ -77,7 +115,15 @@ def generate_picks() -> dict:
             return counters
 
         # latest price per (match, market, selection, bookmaker) for upcoming
-        # fixtures with a corners O/U market, restricted to the books we need.
+        # CORNERS-SETTLEMENT-GATE: only bet leagues whose corner stats reliably land,
+        # so every pick can be graded (see _settleable_league_ids). No settleable
+        # leagues → bet nothing this run rather than place ungradeable paper.
+        settleable = _settleable_league_ids()
+        if not settleable:
+            log.info("corners paper: no settleable leagues this run — 0 picks")
+            return counters
+        # fixtures with a corners O/U market, restricted to the books we need AND to
+        # the corner-settleable leagues.
         rows = execute_query(
             """
             SELECT DISTINCT ON (o.match_id, o.market, o.selection, o.bookmaker)
@@ -87,10 +133,12 @@ def generate_picks() -> dict:
               JOIN matches m ON m.id = o.match_id
              WHERE o.market ~ '^corners_ou_[0-9]+$'
                AND m.date > now()
+               AND m.league_id::text = ANY(%s)
                AND o.bookmaker IN ('Betano','Unibet','Pinnacle')
                AND o.selection IN ('over','under')
              ORDER BY o.match_id, o.market, o.selection, o.bookmaker, o."timestamp" DESC
-            """
+            """,
+            [settleable],
         )
         # group by (match, market): {selection: {book: odds}}
         by_mkt: dict[tuple, dict] = defaultdict(lambda: {"over": {}, "under": {}})
