@@ -1949,6 +1949,28 @@ def job_corners_paper_settle():
     _run_job("corners_paper_settle", lambda: None)
 
 
+def job_team_total_paper_pick():
+    """USE-COLLECTED-MARKETS / TEAM-TOTAL-PAPER (2026-09-10): record paper picks for
+    upcoming fixtures where the best Epicbet/Betano/Unibet full-match team-total price
+    beats de-vigged Pinnacle. Shadow bot bot_team_total_paper_shadow_v1 (shadow_bets,
+    off the public pages). Harvests a market we already collect but never modelled."""
+    from workers.jobs.team_total_paper_bot import generate_picks
+    c = generate_picks()
+    if c.get("picked"):
+        console.print(f"[cyan]team-total paper: {c['picked']} new picks ({c['scanned']} scanned)[/cyan]")
+    _run_job("team_total_paper_pick", lambda: None)
+
+
+def job_team_total_paper_settle():
+    """TEAM-TOTAL-PAPER: grade pending team-total picks from the final score
+    (matches.score_home/away) — no settlement-coverage gap."""
+    from workers.jobs.team_total_paper_bot import settle_picks
+    c = settle_picks()
+    if c.get("settled"):
+        console.print(f"[cyan]team-total paper: settled {c['settled']} ({c['won']}W/{c['lost']}L)[/cyan]")
+    _run_job("team_total_paper_settle", lambda: None)
+
+
 def job_coolbet_model_ou_shadow():
     """COOLBET-MODEL-OU-SHADOW-BOT (2026-09-08): mirror the calibrated model's
     Over/Under picks (edge>=8% on calibrated_prob, lines 2.5/3.5) into shadow_bets
@@ -2915,6 +2937,10 @@ def main():
                       id="corners_paper_pick", name="Corners Paper Pick")
     scheduler.add_job(job_corners_paper_settle, CronTrigger(minute=50),
                       id="corners_paper_settle", name="Corners Paper Settle")
+    scheduler.add_job(job_team_total_paper_pick, CronTrigger(hour="8,12,16,20", minute=25),
+                      id="team_total_paper_pick", name="Team Total Paper Pick")
+    scheduler.add_job(job_team_total_paper_settle, CronTrigger(minute=55),
+                      id="team_total_paper_settle", name="Team Total Paper Settle")
     # COOLBET-MODEL-OU-SHADOW-BOT: mirror calibrated model O/U picks into
     # shadow_bets at :10/:40, alongside the shadow interval run, so the
     # model-edge O/U picks the UI placer reads stay current. No settler branch —

@@ -108,6 +108,9 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_corners_paper_shadow_v1", FAM_COOLBET_PAPER, "corners", ANCHOR_SHARP,
             0.0, None, False,
             "Best Betano/Unibet corners price vs de-vigged Pinnacle corners line (sharp edge ≥0%). Forward paper test on executable corners books."),
+    BotSpec("bot_team_total_paper_shadow_v1", FAM_COOLBET_PAPER, "team totals", ANCHOR_SHARP,
+            0.0, None, False,
+            "Best Epicbet/Betano/Unibet full-match team-total price vs de-vigged Pinnacle line (sharp edge ≥0%). USE-COLLECTED-MARKETS: a market we collect but never modelled; settles from the final score (no coverage gap). Paper, accruing forward."),
 
     # Internal model / strategy validators (paper, not a Coolbet placement path)
     BotSpec("bot_v10_all", FAM_INTERNAL, "mixed", ANCHOR_MODEL,

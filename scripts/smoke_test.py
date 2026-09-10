@@ -34950,5 +34950,28 @@ def test_corners_settlement_gate():
     assert "_settleable_league_ids()" in gp and "league_id" in gp, "generate_picks must filter to settleable leagues"
     assert "no settleable leagues" in gp, "generate_picks must bet nothing when the settleable set is empty"
 
+
+@test("TEAM-TOTAL-PAPER-BOT — sharp-anchor team-total shadow bot (USE-COLLECTED-MARKETS #1)")
+def test_team_total_paper_bot():
+    """USE-COLLECTED-MARKETS (2026-09-10): first bot on a market we collect but never
+    modelled. Full-match team totals: best Epicbet/Betano/Unibet price vs de-vigged
+    Pinnacle → shadow_bets; settles from the FINAL score (no coverage gap, unlike
+    corners/cards). Pins the module contract + that it's registered (drift test)."""
+    import inspect
+    from workers.jobs import team_total_paper_bot as tt
+    assert tt.BOT_NAME == "bot_team_total_paper_shadow_v1"
+    assert tt._decode("team_total_home_15") == ("home", 1.5), "line decode"
+    assert tt._decode("team_total_1h_home_05") is None, "must EXCLUDE first-half team totals"
+    gp = inspect.getsource(tt.generate_picks)
+    assert "team_total_(home|away)_[0-9]+" in gp and "Pinnacle" in gp, "line-shop vs Pinnacle sharp anchor"
+    sp = inspect.getsource(tt.settle_picks)
+    assert "score_home" in sp and "score_away" in sp, "settles from the final score (no gap)"
+    # registered in the bot registry (SYSTEM-MAP drift)
+    reg = open("workers/registry/bot_registry.py").read()
+    assert "bot_team_total_paper_shadow_v1" in reg, "must be in the bot registry"
+    # scheduled (pick + settle)
+    sched = open("workers/scheduler.py").read()
+    assert "job_team_total_paper_pick" in sched and "job_team_total_paper_settle" in sched
+
 if __name__ == "__main__":
     main()

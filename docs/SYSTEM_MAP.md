@@ -84,6 +84,7 @@ registry and regenerate.
 |---|---|---|---|---|---|---|
 | `bot_ou35_model_v1` | O/U 3.5 | model | 8% | 1.80 | paper | Model-edge O/U 3.5 vs Coolbet's own 3.5 price (own isotonic calibration). Paper. +7.8% not-robust, accruing forward. |
 | `bot_corners_paper_shadow_v1` | corners | sharp | 0% | — | paper | Best Betano/Unibet corners price vs de-vigged Pinnacle corners line (sharp edge ≥0%). Forward paper test on executable corners books. |
+| `bot_team_total_paper_shadow_v1` | team totals | sharp | 0% | — | paper | Best Epicbet/Betano/Unibet full-match team-total price vs de-vigged Pinnacle line (sharp edge ≥0%). USE-COLLECTED-MARKETS: a market we collect but never modelled; settles from the final score (no coverage gap). Paper, accruing forward. |
 
 ### Internal model / strategy validators (paper)
 
