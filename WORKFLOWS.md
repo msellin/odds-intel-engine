@@ -1,7 +1,8 @@
 # OddsIntel — Workflows & Pipeline Architecture
 
 > Single source of truth for all scheduled jobs, their order, and manual run instructions.
-> Last updated: 2026-05-12 — AF caches shipped: H2H 7-day cross-match cache (saves ~360 calls/day), team_stats same-day DB cache (saves ~150 calls/day), standings moved to 23:30 UTC nightly (saves ~40 calls/day). Intraday enrichment refresh now injuries-only; full enrichment at 13:00 is injuries+H2H+team_stats. Total saving: ~550 AF calls/day.
+> Last updated: 2026-09-10 — pruned jobs that no longer have `add_job()` registrations in `workers/scheduler.py`: Email Digest + Value Bet Alert (EMAIL-DIGEST-RETIRED-2026-09-03), Weekly Digest + Watchlist Alerts (removed in SCHEDULER-CLEANUP 2026-07-07, never re-registered), and CS2/HLTV/InplayBot (in-play retired 2026-08-21, CS2 removed 2026-08-26). Lines below marked **[RETIRED]** are kept only so old references resolve — `workers/scheduler.py` is authoritative.
+> Earlier: 2026-05-12 — AF caches shipped: H2H 7-day cross-match cache (saves ~360 calls/day), team_stats same-day DB cache (saves ~150 calls/day), standings moved to 23:30 UTC nightly (saves ~40 calls/day). Intraday enrichment refresh now injuries-only; full enrichment at 13:00 is injuries+H2H+team_stats. Total saving: ~550 AF calls/day.
 
 ### ✅ Hetzner Scheduler (systemd) — active since 2026-06-29
 
@@ -35,10 +36,10 @@
                                                     Also fixed: fetch_odds.py was hardcoding is_closing=False; now computes from minutes_to_kickoff.
 07:15  ⑩ Match Previews  (PMF-PAUSED 2026-07-03)   Top 10 matches → Gemini 200-word previews (ENG-3). **Paused** at ~0 users — pure UI content with no readers. Job function preserved for manual re-run; re-enable when user count > 0.
 07:30  ⑲ WC AI Previews  (PMF-PAUSED 2026-07-03)   Every WC fixture in next 7d → Gemini 80-120 word previews. **Paused** — same rationale. WC window ends 2026-07-19 anyway.
-10/12/14/16  ⑪ Email Digest Slots  run_email_digest()  Smart-slot digest — first slot whose pending-bet signal score ≥ EMAIL_DIGEST_MIN_SIGNAL sends; later slots see per-user lock and skip (ENG-4 / EMAIL-DIGEST-SMART)
+10/12/14/16  ⑪ Email Digest Slots  [RETIRED 2026-09-03] run_email_digest()  EMAIL-DIGEST-RETIRED — unregistered; no audience (51/52 users free). email_digest.py module kept for smoke tests + a future paid tier, but nothing schedules it.
 03:00  ⑭ Weekly Retrain  job_weekly_retrain()      Sunday only — runs `train.py --version v{YYYYMMDD}` then auto-`compare_models.py {new} {production}`. Promotion stays manual (operator flips MODEL_VERSION env). ML-PIPELINE-UNIFY Stage 5a/5b.
-08:00  ⑫ Weekly Digest   run_weekly_digest()       Monday only — model week review + upcoming matches (ENG-10)
-08:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
+08:00  ⑫ Weekly Digest   [RETIRED] run_weekly_digest()  Never had an add_job() registration (removed SCHEDULER-CLEANUP 2026-07-07); function preserved, not scheduled.
+08:30  Watchlist Alerts  [RETIRED] run_watchlist_alerts()  Never registered (SCHEDULER-CLEANUP 2026-07-07); function preserved, not scheduled.
 09:00  ⑦ News Checker    run_news_checker()        Injury/lineup/news signals (Gemini)
 09:15  ① Fixtures        run_fixtures()            Status refresh — catches morning postponements
 :03/:33 ⑱ Coolbet Odds    (MAC LAUNCHD)              Every 30 min, between AF odds (:00/:30) and betting refresh (:05/:35). Walks Coolbet fo-category + per-match sidebets, stores Coolbet OU/1X2/BTTS/AH/DC odds in odds_snapshots. **Runs on the operator's Mac** via launchd (`com.oddsintel.coolbet-odds-snapshot`), NOT the VPS — Coolbet's Imperva 403's the VPS Linux Chrome + Hetzner IP (silent outage 2026-06-26 → 2026-07-03). See Mac-side jobs section below.
@@ -52,16 +53,16 @@
 12:30  ⑦ News Checker    run_news_checker()
 12:45  ① Fixtures        run_fixtures()            Status refresh
 13:00  ② Enrichment      run_enrichment()          H2H + team_stats (injuries moved to 08:00, standings nightly only)
-14:30  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts (ENG-8)
+14:30  Watchlist Alerts  [RETIRED] run_watchlist_alerts()  Never registered — see 08:30 line.
 14:30  ⑦ News Checker    run_news_checker()
 14:45  ① Fixtures        run_fixtures()            Status refresh
-16:00  ⑪ Value Bet Alert run_value_bet_alert('afternoon')  New bets since 10:00 UTC → Pro/Elite (N5)
+16:00  ⑪ Value Bet Alert [RETIRED 2026-09-03] run_value_bet_alert('afternoon')  EMAIL-DIGEST-RETIRED — unregistered subscriber email, no audience.
 16:30  ⑦ News Checker    run_news_checker()
 17:15  ① Fixtures        run_fixtures()            Status refresh
 18:30  ⑦ News Checker    run_news_checker()        Feeds evening betting
 18:45  ① Fixtures        run_fixtures()            Status refresh — before European evening betting
-20:35  Watchlist Alerts  run_watchlist_alerts()    Kickoff reminders + odds movement alerts — after betting (ENG-8)
-20:45  ⑪ Value Bet Alert run_value_bet_alert('evening')    New bets since 17:00 UTC → Pro/Elite (N5)
+20:35  Watchlist Alerts  [RETIRED] run_watchlist_alerts()  Never registered — see 08:30 line.
+20:45  ⑪ Value Bet Alert [RETIRED 2026-09-03] run_value_bet_alert('evening')    EMAIL-DIGEST-RETIRED — unregistered subscriber email.
          ⑧a Live settle   settle_finished_matches()  Per-match: triggered by LivePoller on FT (instant, 24/7)
 21:00  ⑧b Settlement      settlement_pipeline()     Bulk: settle bets, post-match stats, ELO, CLV, prune
                                                     + Platt recalibration + blend refit (Wed + Sun)
@@ -93,10 +94,10 @@ Sun 04:00 ㉛ Meta retrain job_weekly_meta_retrain()      META-RETRAIN 2026-05-2
 Sun 05:00 ㉜ Meta validate job_weekly_meta_validate()     META-VALIDATE-WEEKLY 2026-06-01 — validate_meta_b_ml3 against settled bets, emails verdict
 Sun 06:00 ㉝ Threshold chk job_weekly_threshold_check()   THRESHOLD-CHECK-WEEKLY 2026-06-06 — runs scripts/threshold_check.py and emails the gate-count snapshot. Prevents the "Key Thresholds to Watch" counts in PRIORITY_QUEUE.md from going stale.
 Sun 06:30 ㉟ Bot review   job_weekly_bot_review()         BOT-MATURITY-REVIEW-WEEKLY 2026-06-15 — runs scripts/weekly_bot_review.py and emails per-bot 30/60/90d hit/ROI/CLV/sim-vs-real-divergence + PROMOTE/DEMOTE/HOLD verdict. Closes the manual-promotion loop that let bot_high_alignment (beta, -€56 over 50 real bets) auto-place real money in the 2026-06-13 incident.
-Sun 03:00 ㊶ CS2 map stats job_cs2_compute_map_stats()    CS2-MAP-STATS-EXPAND 2026-06-30 — compute per-team-per-map win% from cs2_hltv_match_maps history (no HLTV auth). 827 teams → cs2_computed_team_map_stats; load_map_winrate_map() unions with scraped 248-team table giving 845 total. Activates v9 veto features on far more upcoming matches.
-*/2 :05  ⑳ CS2 HLTV ups  job_cs2_hltv_upcoming()         Every 2h at :05 — scrape hltv.org/matches, upsert upcoming fixtures + ELO-enrich. CS2-UPCOMING-VETO-SCRAPE 2026-06-30: also fetches individual match pages and writes veto sequences to cs2_hltv_match_veto. CS2-MAP1-WINNER 2026-07-02: also runs enrich_map1_winner() — blends map-specific win rates (65%) with ELO (35%) to write fair_odds_m1w1/m1w2 + veto_map1 for bot_cs2_map1_winner_v1.
-24/7   ⑥ LivePoller      live_poller.py            45s when live (scores+odds+stats), 120s idle — no time gate
-         ⑫ InplayBot      inplay_bot.py             Paper trading: 8 strategies (A-F + A2 + C_home), runs after each LivePoller snapshot store; sends Telegram DMs to connected Pro/Elite users on new bets
+[REMOVED 2026-08-26] Sun 03:00 ㊶ CS2 map stats job_cs2_compute_map_stats()  CS2-REMOVAL — CS2 surface deleted; job no longer registered.
+[REMOVED 2026-08-26] */2 :05  ⑳ CS2 HLTV ups  job_cs2_hltv_upcoming()  CS2-REMOVAL — HLTV scrape deleted; job no longer registered.
+24/7   ⑥ LivePoller      live_poller.py            Still runs (background thread, LIVE_POLLER_IN_SCHEDULER default ON): 45s live scores/odds/stats, 120s idle. Feeds live scores + settlement, NOT in-play betting.
+[RETIRED 2026-08-21] ⑫ InplayBot  inplay_bot.py  In-play betting retired: /odds/live gated off, INPLAY_* poll gates default OFF, no in-play placement. Pre-match only.
 */30   ⑯ Dash Cache Ref  write_dashboard_cache()   Rebuilds dashboard_cache at :15 and :45 — keeps /performance fresh
 */5    ⑭ Healthcheck     job_healthcheck_ping()    Pings healthchecks.io every 5min — external dead-man's switch
 */5    ㊷ Stall watchdog  job_stall_watchdog()      SCHEDULER-STALL-RCA 2026-08-24 — dumps the stack of any job that has held its worker thread >JOB_STALL_WARN_S (45min) and Telegrams once per hang. NOT wrapped in _run_job so it keeps working while every other worker is wedged. Exists because the 2026-08-22 settle_ready hang (06:15→11:45) left only "max_instances blocked" in the journal — proof a job was stuck, no clue where.

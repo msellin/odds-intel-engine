@@ -207,20 +207,26 @@ ssh root@204.168.199.8 'cd /opt/odds-intel-engine && git pull --ff-only \
 ## Architecture
 
 ```
-API-Football Ultra ($29/mo)  -> PRIMARY: fixtures, odds (13 bookmakers), live data,
+API-Football Mega (150K/day)  -> PRIMARY: fixtures, odds (13 bookmakers), live data,
                                 lineups, injuries, standings, H2H, events, player stats
-Kambi API (free)             -> Supplementary odds for 41 leagues
+Kambi API (free)             -> Supplementary odds (41-league sweep removed 2026-05-06;
+                                Unibet/Kambi now only feeds paper-twin odds via job_unibet_kambi_odds)
 ESPN (free)                  -> Settlement results backup
                                          |
-                    ① Fixtures    (04:00 UTC) — AF fixtures + league coverage (weekly)
-                    ② Enrichment  (04:15/12:00/16:00 UTC) — standings, H2H, team stats, injuries
-                    ③ Odds        (every 30min 07-22 UTC) — AF bulk odds (13 bookmakers)
-                    ④ Predictions (05:30 UTC) — AF predictions
-                    ⑤ Betting     (06:00 UTC) — Poisson/XGBoost model + signals + bet placement (morning cohort)
-                    ⑥ Live Tracker (30s/60s/5min tiered, 10-23 UTC) — live scores, odds, events, lineups
-                    ⑦ News Checker (09:00/12:30/16:30/19:30 UTC) — Gemini AI analysis
-                    ⑧ Settlement  (21:00 UTC) — settle bets, post-match stats, ELO, CLV
-                    ⑨ Betting Refresh (09:30/11:00/13:30/15:00/17:30/19:00/20:30 UTC) — re-evaluation with fresh odds per KO window
+     ── MORNING CHAIN — ONE sequential job at 04:00 UTC (morning_pipeline) ──
+                    ① Fixtures    — AF fixtures (today + tomorrow rows; league refresh Mon)
+                    ② Enrichment  — standings, H2H, team stats, injuries
+                    ③ Odds        — AF bulk odds (13 bookmakers) for today
+                    ④ Predictions — club model + AF predictions + national-team predictor
+                    ⑤ Betting     — Poisson/XGBoost model + signals + trigger engine (morning cohort)
+                                         |
+     ── STANDALONE SCHEDULED JOBS ──
+                    Odds refresh   (24/7, every :00/:30 — NOT windowed) — AF bulk odds
+                    ⑥ LivePoller    (24/7 background thread, 45s live/120s idle) — live scores/odds/stats for settlement; in-play BETTING retired 2026-08-21 (/odds/live gated off, InplayBot not placing)
+                    ⑦ News Checker  (09:00/12:30/14:30/16:30/18:30 UTC) — Gemini AI analysis
+                    ⑧ Settlement    (21:00/23:30/01:00 UTC) — settle bets, post-match stats, ELO, CLV
+                    ⑨ Betting Refresh (hourly at :05/:35, 24/7) — re-evaluation with fresh odds
+                       (schedules are authoritative in workers/scheduler.py)
                                          |
                     VPS Postgres 17 (Hetzner 204.168.199.8) — public schema, 134 tables
                     (migrated from Supabase 2026-07-09 — SUPABASE-TO-VPS)
