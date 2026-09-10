@@ -34236,6 +34236,28 @@ def test_real_bets_placed_real():
         assert t.count('.not("placed_real", "is", false)') >= 2, (
             "getRealBets + getPlaceableBets must exclude paper rows")
 
+
+@test("SHADOW-BOT-REAL-BADGE-NO-OVERLAY — the '€ real' marker lives in the wide match cell, not the 60px result cell")
+def test_shadow_bot_real_badge_no_overlay():
+    """SHADOW-BOT-REAL-BADGE (2026-09-10): the placed-real badge first shipped inside
+    the row's 60px Result cell alongside <ResultBadge>, so it wrapped into a blob and
+    overlaid the Min-odds column (owner screenshot). Fixed by moving it into the wide
+    1fr Match cell as a shrink-0 chip beside the truncating match name — it can no longer
+    overflow. Pin that placement so it doesn't regress."""
+    p = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx")
+    if not p.exists():
+        skip("odds-intel-web not checked out")
+    src = p.read_text()
+    # the marker sits in a flex row with the truncating name and is shrink-0 (can't overflow)
+    idx = src.find("€ real")
+    assert idx != -1, "the '€ real' marker must exist"
+    ctx = src[max(0, idx - 700):idx]
+    assert "shrink-0" in ctx, "the '€ real' chip must be shrink-0 (name truncates, chip stays)"
+    assert "truncate text-sm text-neutral-100" in ctx, "the chip must sit beside the truncating match name"
+    # and it must NOT be crammed back into the Result cell next to <ResultBadge>
+    after = src[idx:idx + 400]
+    assert "<ResultBadge" not in after, "the marker must not share the cramped Result cell with <ResultBadge>"
+
 @test("UNIBET-SITE-SWEEP — broad run_bulk is rate-limited, capped, fail-safe, Unibet-Site")
 def test_unibet_site_sweep():
     """COOLBET-PICK-TABLE-AUDIT Stage 3a (2026-09-09): the broad Unibet SITE odds
