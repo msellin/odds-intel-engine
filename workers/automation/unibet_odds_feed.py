@@ -362,7 +362,7 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
     tab = next((t for t in (targets or []) if t.get("type") == "page"
                 and "unibet.ee" in (t.get("url") or "").lower()), None)
     if not tab or not tab.get("webSocketDebuggerUrl"):
-        c["reason"] = "no logged-in unibet.ee tab open (a fresh tab is DataDome-degraded)"; return c
+        c["reason"] = "no unibet.ee tab open in CDP-Chrome (self-revive will open + log one in)"; return c
 
     # 2) DB fixtures within `days`
     fixtures = execute_query(
@@ -513,23 +513,40 @@ def run_bulk(days: int = 2, dry_run: bool = False, limit: int | None = None) -> 
     Rate-limited (env UNIBET_SITE_RATE_S / _MAX_FETCHES), fail-safe. Requires the
     operator's logged-in unibet.ee tab in CDP-Chrome. Never raises."""
     import asyncio
+    # UNIBET-SELF-REVIVE (2026-09-10): before sweeping, self-login if the CDP
+    # unibet.ee session went logged-out — the same way the Coolbet daemon heals.
+    # Root cause of the earlier "stale for hours": unibet_browser_sync didn't load
+    # .env (creds invisible → auto-login no-op) + a login-button click race. Both
+    # fixed; auto-login through DataDome works (verified logged_in ✓). Rate-limited
+    # to once/30min. Never raises.
+    heal = "skipped"
+    try:
+        from workers.automation import unibet_browser_sync as ubs
+        heal = ubs.ensure_logged_in(min_gap_min=30)
+        if heal == "logged_in":
+            log.info("unibet-site: session self-revived (logged back in)")
+    except Exception as e:  # noqa: BLE001
+        log.debug("unibet-site self-revive skipped (non-fatal): %s", e)
     try:
         res = asyncio.run(_async_run_bulk(days, limit, dry_run))
     except Exception as e:  # noqa: BLE001
         log.warning("unibet-site run_bulk failed: %s", e)
         res = {"reason": f"run_bulk error: {e}", "stored": 0}
-    # UNIBET-SITE-STALE-ALERT (2026-09-10): the sweep silently returned 0 rows for
-    # hours because there was no logged-in unibet.ee tab in CDP-Chrome (a fresh tab is
-    # DataDome-degraded, and Unibet auto-login fails on DataDome — needs a MANUAL login,
-    # unlike Coolbet). Alert once per 3h so the feed can't rot the Unibet-Site odds (and
-    # the best-price router's Unibet arm) unnoticed. Deduped; never raises.
+    res["self_revive"] = heal
+    # UNIBET-SITE-STALE-ALERT (2026-09-10): only page a human when self-revive
+    # could NOT recover — i.e. the auto-login genuinely failed or creds are missing
+    # (a real SMS/2FA/selector break), not on a routine logged-out tick that healed
+    # itself. Deduped 3h so it can't spam; never raises.
     try:
         reason = (res or {}).get("reason") or ""
-        if not dry_run and (res or {}).get("stored", 0) == 0 and "unibet.ee tab" in reason:
+        stale = (res or {}).get("stored", 0) == 0 and "unibet.ee tab" in reason
+        if not dry_run and stale and heal in ("failed", "no_creds"):
             from workers.notify.telegram import send_telegram
+            detail = ("auto-login FAILED (SMS/2FA or a changed login selector) — open unibet.ee "
+                      "in CDP-Chrome (:9222) and log in by hand" if heal == "failed"
+                      else "UNIBET_USER / UNIBET_PASS not set in .env — add them so the feed can self-login")
             send_telegram(
-                "🟠 Unibet-Site odds feed STALE — no logged-in unibet.ee tab in CDP-Chrome. "
-                "Open unibet.ee in the CDP-Chrome (:9222) and log in (DataDome blocks auto-login). "
+                f"🟠 Unibet-Site odds feed STALE and self-revive could not recover: {detail}. "
                 "Until then the Unibet-Site sweep writes 0 rows and the best-price router can't route to Unibet.",
                 dedup_key="unibet-site-no-tab", dedup_window_s=10800)
     except Exception as e:  # noqa: BLE001

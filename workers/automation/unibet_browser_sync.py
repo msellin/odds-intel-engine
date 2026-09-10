@@ -27,6 +27,19 @@ import logging
 import os
 import re
 import time
+from pathlib import Path
+
+# Load .env eagerly so cdp_auto_login / login_via_modal (which read
+# UNIBET_USER / UNIBET_PASS) get the right values regardless of how this module
+# is invoked (`python -m …` from the repo root, launchd plist, the odds-feed
+# self-revive path, ad-hoc shell). Without this the creds are invisible and
+# auto-login returns "missing credentials" — misread on 2026-09-10 as DataDome
+# blocking. Mirrors coolbet_browser_sync.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 log = logging.getLogger(__name__)
 
@@ -144,8 +157,12 @@ def login_via_modal(page, *, max_wait_s: int = 180) -> bool:
         dismiss_cookie_banner(page)
         dismiss_limit_modal(page)
         if page.locator(_LOGIN_USER).count() == 0:
-            page.locator(_LOGIN_OPEN).first.click(timeout=5000)
-        page.wait_for_selector(_LOGIN_USER, timeout=8000)
+            # After the goto reload the header button attaches a beat late; a bare
+            # .click(timeout=5000) races it and times out (misread 2026-09-10 as a
+            # DataDome block — it is not). Wait for it to be VISIBLE first.
+            page.wait_for_selector(_LOGIN_OPEN, state="visible", timeout=15000)
+            page.locator(_LOGIN_OPEN).first.click(timeout=8000)
+        page.wait_for_selector(_LOGIN_USER, timeout=10000)
         page.locator(_LOGIN_USER).first.fill(email, timeout=8000)
         page.locator(_LOGIN_PASS).first.fill(pw_val, timeout=8000)
         page.locator(_LOGIN_SUBMIT).first.click(timeout=5000)
@@ -205,6 +222,57 @@ def cdp_auto_login(*, max_wait_s: int = 180) -> int:
             return 0
         print("unibet-login: could not confirm login within timeout")
         return 5
+
+
+# Rate-limit stamp for the self-revive auto-login — bounds re-login attempts the
+# same way coolbet_state.auto_login_recently_attempted bounds Coolbet's. A file
+# (not a DB row) because the odds-feed launchd job is a fresh process each tick.
+_AUTO_LOGIN_STAMP = Path.home() / ".config" / "oddsintel" / "unibet_auto_login_last"
+
+
+def _auto_login_recently(min_gap_min: int) -> bool:
+    """True if a self-revive auto-login was attempted within min_gap_min."""
+    try:
+        return (time.time() - _AUTO_LOGIN_STAMP.stat().st_mtime) < min_gap_min * 60
+    except FileNotFoundError:
+        return False
+    except Exception as e:  # noqa: BLE001
+        log.debug("unibet _auto_login_recently check failed: %s", e)
+        return False
+
+
+def ensure_logged_in(*, min_gap_min: int = 30, max_wait_s: int = 150) -> str:
+    """Self-revive: if the CDP unibet.ee session is logged OUT, attempt cdp_auto_login
+    (rate-limited to once per `min_gap_min`). Idempotent and never raises. This is the
+    Unibet analogue of coolbet's auto_self_heal auto-login step — so every book
+    self-logins/self-revives on a schedule, not just at manual/placement time.
+
+    Returns: 'already' (was logged in) | 'logged_in' (just revived) | 'rate_limited'
+    | 'failed' (auto-login ran, could not confirm) | 'no_creds' | 'error'."""
+    try:
+        st = diagnose()
+    except Exception as e:  # noqa: BLE001
+        log.warning("unibet ensure_logged_in: diagnose failed: %s", e)
+        return "error"
+    if not st.get("connected"):
+        return "error"
+    if st.get("logged_in"):
+        return "already"
+    if not (os.getenv("UNIBET_USER") or os.getenv("UNIBET_EMAIL")):
+        return "no_creds"
+    if _auto_login_recently(min_gap_min):
+        return "rate_limited"
+    try:  # stamp BEFORE the attempt so a hang still rate-limits the next tick
+        _AUTO_LOGIN_STAMP.parent.mkdir(parents=True, exist_ok=True)
+        _AUTO_LOGIN_STAMP.touch()
+    except Exception as e:  # noqa: BLE001
+        log.debug("unibet ensure_logged_in: stamp failed (non-fatal): %s", e)
+    try:
+        rc = cdp_auto_login(max_wait_s=max_wait_s)
+    except Exception as e:  # noqa: BLE001
+        log.warning("unibet ensure_logged_in: cdp_auto_login raised: %s", e)
+        return "failed"
+    return "logged_in" if rc == 0 else "failed"
 
 
 def diagnose() -> dict:

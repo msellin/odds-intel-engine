@@ -34654,17 +34654,38 @@ def test_best_price_router_monitor():
         assert "best_price_router" in plist.read_text() and "--monitor" in plist.read_text()
 
 
-@test("UNIBET-SITE-STALE-ALERT — the sweep alerts (not silent) when there's no logged-in unibet.ee tab")
-def test_unibet_site_stale_alert():
-    """UNIBET-SITE-STALE-ALERT (2026-09-10): the Unibet-Site sweep silently wrote 0 rows
-    for hours because there was no logged-in unibet.ee tab in CDP-Chrome (DataDome blocks
-    auto-login → needs manual login). Pin that run_bulk now Telegram-alerts (deduped) on
-    that failure so the feed — and the router's Unibet arm — can't rot unnoticed."""
+@test("UNIBET-SELF-REVIVE — every book self-logins/self-revives; alert only when that FAILS")
+def test_unibet_self_revive():
+    """UNIBET-SELF-REVIVE (2026-09-10): the Unibet-Site feed went stale for hours and was
+    misdiagnosed as 'DataDome blocks auto-login → manual only'. The REAL causes:
+    (1) unibet_browser_sync never loaded .env, so UNIBET_USER/PASS were invisible and
+        cdp_auto_login no-op'd (missing creds);
+    (2) login_via_modal raced the header-login button (bare 5s click) → timeout.
+    Both fixed → auto-login through DataDome works (verified logged_in ✓). run_bulk now
+    SELF-REVIVES (ensure_logged_in, rate-limited) like the Coolbet daemon, and only
+    Telegram-alerts when self-revive genuinely can't recover — so all books self-heal,
+    not just alert-and-rot."""
     import inspect
+    from workers.automation import unibet_browser_sync as ubs
     from workers.automation import unibet_odds_feed as uof
-    src = inspect.getsource(uof.run_bulk)
-    assert "send_telegram" in src and "unibet.ee tab" in src, "run_bulk must alert on the no-tab stale case"
-    assert "dedup_key" in src, "alert must be deduped (one per outage window, not every :15/:45)"
+    # (1) .env is loaded eagerly so creds are visible however the module is invoked
+    assert "load_dotenv()" in inspect.getsource(ubs), \
+        "unibet_browser_sync must eagerly load .env (creds were invisible)"
+    # (2) login_via_modal waits for the button to be VISIBLE before clicking (no race)
+    modal = inspect.getsource(ubs.login_via_modal)
+    assert 'state="visible"' in modal or "state='visible'" in modal, \
+        "login_via_modal must wait for the login button to be visible (fixes the click race)"
+    # (3) a rate-limited self-revive helper exists, mirroring coolbet's heal step
+    assert hasattr(ubs, "ensure_logged_in"), "unibet_browser_sync must expose ensure_logged_in()"
+    er = inspect.getsource(ubs.ensure_logged_in)
+    assert "cdp_auto_login" in er and "_auto_login_recently" in er, \
+        "ensure_logged_in must attempt cdp_auto_login, rate-limited"
+    # (4) run_bulk calls self-revive BEFORE sweeping, and only alerts when it FAILS
+    rb = inspect.getsource(uof.run_bulk)
+    assert "ensure_logged_in" in rb, "run_bulk must self-revive the session before sweeping"
+    assert 'heal in ("failed", "no_creds")' in rb, \
+        "run_bulk must alert ONLY when self-revive could not recover (not on a healed tick)"
+    assert "dedup_key" in rb, "the failure alert must stay deduped (one per outage window)"
 
 
 if __name__ == "__main__":
