@@ -34973,5 +34973,25 @@ def test_team_total_paper_bot():
     sched = open("workers/scheduler.py").read()
     assert "job_team_total_paper_pick" in sched and "job_team_total_paper_settle" in sched
 
+
+@test("FIRST-HALF-1X2-PAPER-BOT — 3-way sharp-anchor first-half-result shadow bot (USE-COLLECTED-MARKETS #2)")
+def test_first_half_1x2_paper_bot():
+    """USE-COLLECTED-MARKETS #2 (2026-09-10): 1x2_1h (first-half result), a 3-way market
+    we collect but never modelled. Best Epicbet/Betano/Unibet 1H 1X2 price vs Shin-de-vigged
+    Pinnacle triple → shadow_bets; settles from the HT score (matches.ht_score_*, 98% covered,
+    no gap). (over_under_1h was deferred — sparse Pinnacle upcoming + Asian lines need push logic.)"""
+    import inspect
+    from workers.jobs import first_half_1x2_paper_bot as b
+    assert b.BOT_NAME == "bot_1h_1x2_paper_shadow_v1"
+    gp = inspect.getsource(b.generate_picks)
+    assert "devig(" in gp and "1x2_1h" in gp, "must Shin-de-vig the Pinnacle 1H triple (3-way sharp anchor)"
+    assert "home" in gp and "draw" in gp and "away" in gp, "3-way selections"
+    sp = inspect.getsource(b.settle_picks)
+    assert "ht_score_home" in sp and "ht_score_away" in sp, "settles from the HT score"
+    reg = open("workers/registry/bot_registry.py").read()
+    assert "bot_1h_1x2_paper_shadow_v1" in reg, "must be in the bot registry"
+    sched = open("workers/scheduler.py").read()
+    assert "job_fh_1x2_paper_pick" in sched and "job_fh_1x2_paper_settle" in sched
+
 if __name__ == "__main__":
     main()

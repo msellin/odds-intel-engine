@@ -1971,6 +1971,26 @@ def job_team_total_paper_settle():
     _run_job("team_total_paper_settle", lambda: None)
 
 
+def job_fh_1x2_paper_pick():
+    """USE-COLLECTED-MARKETS / FIRST-HALF-1X2 (2026-09-10): record paper picks for the
+    first-half result where the best Epicbet/Betano/Unibet 1H 1X2 price beats
+    Shin-de-vigged Pinnacle. Shadow bot bot_1h_1x2_paper_shadow_v1."""
+    from workers.jobs.first_half_1x2_paper_bot import generate_picks
+    c = generate_picks()
+    if c.get("picked"):
+        console.print(f"[cyan]fh-1x2 paper: {c['picked']} new picks ({c['scanned']} scanned)[/cyan]")
+    _run_job("fh_1x2_paper_pick", lambda: None)
+
+
+def job_fh_1x2_paper_settle():
+    """FIRST-HALF-1X2: grade pending picks from the HT score (no gap)."""
+    from workers.jobs.first_half_1x2_paper_bot import settle_picks
+    c = settle_picks()
+    if c.get("settled"):
+        console.print(f"[cyan]fh-1x2 paper: settled {c['settled']} ({c['won']}W/{c['lost']}L)[/cyan]")
+    _run_job("fh_1x2_paper_settle", lambda: None)
+
+
 def job_coolbet_model_ou_shadow():
     """COOLBET-MODEL-OU-SHADOW-BOT (2026-09-08): mirror the calibrated model's
     Over/Under picks (edge>=8% on calibrated_prob, lines 2.5/3.5) into shadow_bets
@@ -2941,6 +2961,10 @@ def main():
                       id="team_total_paper_pick", name="Team Total Paper Pick")
     scheduler.add_job(job_team_total_paper_settle, CronTrigger(minute=55),
                       id="team_total_paper_settle", name="Team Total Paper Settle")
+    scheduler.add_job(job_fh_1x2_paper_pick, CronTrigger(hour="8,12,16,20", minute=27),
+                      id="fh_1x2_paper_pick", name="First-Half 1x2 Paper Pick")
+    scheduler.add_job(job_fh_1x2_paper_settle, CronTrigger(minute=57),
+                      id="fh_1x2_paper_settle", name="First-Half 1x2 Paper Settle")
     # COOLBET-MODEL-OU-SHADOW-BOT: mirror calibrated model O/U picks into
     # shadow_bets at :10/:40, alongside the shadow interval run, so the
     # model-edge O/U picks the UI placer reads stay current. No settler branch —

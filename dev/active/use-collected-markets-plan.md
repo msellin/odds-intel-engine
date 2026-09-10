@@ -25,3 +25,10 @@ team_total_paper_bot. Floor 0 → accumulate → multi-dim sweep later.
   + scheduler + smoke TEAM-TOTAL-PAPER-BOT. Committed 020da95.
 - capability matrix: docs/DATA_SOURCE_CAPABILITY_MATRIX.md.
 - NEXT: verify HT-score settlement → 1x2_1h bot → over_under_1h bot → follow-up task.
+
+## DECISION 2026-09-10 — ou_1h DEFERRED, 1x2_1h built instead
+- over_under_1h has 0 UPCOMING Pinnacle two-way volume (Pinnacle prices 1H O/U late/sparse) AND is
+  mostly ASIAN lines (_10/_125/_075) — a .5-only bot sits idle, capturing the market needs whole/quarter
+  push+half-win logic. Deferred to a follow-up (needs push handling + a reason Pinnacle 1H O/U is thin).
+- 1x2_1h has 115 upcoming Pinnacle matches, is a clean 3-way (no line/push), settles from HT result.
+  → building bot_1x2_1h_paper_shadow_v1 as USE-COLLECTED-MARKETS #2.

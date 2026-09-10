@@ -111,6 +111,9 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_team_total_paper_shadow_v1", FAM_COOLBET_PAPER, "team totals", ANCHOR_SHARP,
             0.0, None, False,
             "Best Epicbet/Betano/Unibet full-match team-total price vs de-vigged Pinnacle line (sharp edge ≥0%). USE-COLLECTED-MARKETS: a market we collect but never modelled; settles from the final score (no coverage gap). Paper, accruing forward."),
+    BotSpec("bot_1h_1x2_paper_shadow_v1", FAM_COOLBET_PAPER, "1H 1x2", ANCHOR_SHARP,
+            0.0, None, False,
+            "Best Epicbet/Betano/Unibet first-half 1X2 price vs Shin-de-vigged Pinnacle 1H triple (sharp edge ≥0%). USE-COLLECTED-MARKETS: a 3-way market we collect but never modelled; settles from the HT score (no gap). Paper, accruing forward."),
 
     # Internal model / strategy validators (paper, not a Coolbet placement path)
     BotSpec("bot_v10_all", FAM_INTERNAL, "mixed", ANCHOR_MODEL,
