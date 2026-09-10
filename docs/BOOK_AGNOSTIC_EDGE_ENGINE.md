@@ -10,13 +10,15 @@
 > label, not this engine. The "planned merger" (fold the mirror bots in + source
 > per-book trigger edge through the router) is future work, not built.
 
-**Status: Stage A + B BUILT (2026-09-09), PAPER — and the gate-redesign question is
-now RESOLVED (2026-09-10, see the VERDICT at the bottom): no gate/type restriction
-rescues the wide selection (home-underdogs @10% still −19.8% OOS, not-robust) — it is
-a MODEL-QUALITY limit (the trigger over-selects longshots where our AUC < the market's),
-not a gate-tuning one. Stays PAPER; do NOT promote the model-anchored trigger to real
-money until a sharper model. The live real-money path remains the narrow model-edge
-mirror bots (which capture the profitable home-underdog slice at moderate odds).** This is the target
+**Status: Stage A + B BUILT (2026-09-09), PAPER. Config search DONE 2026-09-10 (see the
+two-part VERDICT at the bottom — read the UPDATE, it corrects the first pass). The
+multi-dimensional sweep (odds floor × ceiling × edge floor × market × bet-type, held-out
+OOS) found: home/away/all model triggers are DEAD at every gate, BUT **1x2 DRAW · odds
+2.8–3.3 · edge ≥5% is a consistently-positive CANDIDATE** (+4/+17/+11% across splits, n
+168-300) — converging with §57 (the model under-rates draws, so a LOW floor catches a
+real edge the 13% floor kills). Candidate, not proven (n moderate, §52 multiple-comparisons).
+NEXT: set the draw trigger to that config, accrue forward as paper, confirm before any
+real money (owner-gated). Real-money path stays the narrow mirror bots for now.** This is the target
 architecture for how we decide what to bet with our own money at Coolbet (and,
 next, Unibet). It replaces "mirror the /picks page into Coolbet bots" (wrong
 universe). Stage A (`pick_triggers` + `workers/jobs/pick_triggers.py`, mig 319)
@@ -297,3 +299,29 @@ mirror. Remaining value of the engine: (1) the SHARP-anchored triggers (a differ
 the draw edge should surface, §57), (2) a research instrument, (3) it scales to Unibet for
 measurement at zero model cost. **Unblock trigger for real money only after a sharper model
 (higher AUC than the market on the longshot band it selects) — not a gate change.**
+
+### UPDATE 2026-09-10 — the multi-dimensional SWEEP corrects the premature verdict
+
+The verdict above was too broad. The TASK was to *search* for a profitable trigger config across
+odds-floor × odds-ceiling × edge-floor × market × bet-type — not validate one floor. Ran that sweep
+(`scripts/trigger_engine_backtest.py` `sweep()`, held-out OOS, calibration on TRAIN, 3 folds, and
+stress-tested at splits 0.5/0.6/0.7). The space is **NOT uniformly negative** — it has structure:
+
+| market · bet-type · odds band · edge | OOS ROI (n) | verdict |
+|---|---|---|
+| 1x2 **home** / **all** — every band/floor | −4% to −33% | dead (as before) |
+| 1x2 **away** longshots (≥5.5) · edge ≥16% | +10 to +19% (n 259-484) | positive but **NOT fold-robust** — unreliable |
+| **1x2 DRAW · odds 2.8–3.3 · edge ≥5%** | **+4 / +17 / +11% across splits 0.5/0.6/0.7 (n 168-300), ROBUST+ at 0.7** | **CANDIDATE — pursue** |
+
+**The finding: a low edge floor (~5%) on DRAWS at moderate odds (2.8–3.3) is consistently positive
+out-of-sample.** This converges with §57 (the model under-rates draws, so the 13% floor kills them —
+−77% — but a low floor on evenly-matched games catches a real edge). Home/away model triggers stay
+dead; the model-anchored 1x2 wide selection is NOT viable — but the trigger ENGINE is, for draws at
+the right config.
+
+**Status: CANDIDATE, not proven.** Caveats before promotion: (1) n~200-300 is moderate; (2) ~150
+cells were swept, so multiple-comparisons (§52) applies — one ROBUST+ cell can be luck; (3) fold-
+robustness varied by split (ROBUST+ at 0.7, only "pos" at 0.5/0.6). NEXT: set the draw trigger's
+config to `1x2 draw · odds∈[2.8,3.3] · edge≥5%`, accrue it FORWARD as paper, and confirm on fresh
+settled data before any real-money consideration (owner-gated). Also worth: run the same sweep for
+the SHARP-anchor triggers (edge vs de-vig Pinnacle), where the draw edge is theorised to live.

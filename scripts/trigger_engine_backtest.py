@@ -59,6 +59,64 @@ def _load(market: str):
     return execute_query(sql)
 
 
+def _cells(market, recs, split, folds, sel_filter, edge, odds_lo, odds_hi):
+    """One sweep cell: (edge floor, odds band [lo,hi], selection) -> (n, roi, robust).
+    Calibrator fit on TRAIN (all selections); the cell only narrows what we BET."""
+    n = len(recs)
+    cut = int(n * split)
+    train, test = recs[:cut], recs[cut:]
+    iso = IsotonicRegression(out_of_bounds="clip").fit([r[1] for r in train], [r[3] for r in train])
+    of = float(_min_odds_for("1x2" if market == "1x2" else "o/u"))
+    rets = []
+    for d, praw, odds, won, sel in test:
+        if sel_filter and sel != sel_filter:
+            continue
+        if not (odds_lo <= odds <= odds_hi):
+            continue
+        cal = float(iso.predict([praw])[0])
+        if cal <= edge or cal >= 1.0:
+            continue
+        min_odds = max(1.0 / (cal - edge), of)
+        if odds >= min_odds:                       # cleared the edge at this price
+            rets.append((odds - 1.0) if won else -1.0)
+    if len(rets) < 20:
+        return len(rets), None, "underpowered"
+    arr = np.array(rets)
+    roi = arr.mean() * 100
+    fsz = max(1, len(arr) // folds)
+    fr = [arr[i:i + fsz].mean() * 100 for i in range(0, len(arr), fsz) if len(arr[i:i + fsz]) >= 15]
+    robust = "ROBUST+" if fr and all(x > 0 for x in fr) else ("pos" if roi > 0 else "neg")
+    return len(rets), roi, robust
+
+
+def sweep(market: str, split: float, folds: int, sel_filter: str | None):
+    """2D search for a fold-robust profitable cell: edge floor × odds band."""
+    rows = _load(market)
+    recs = []
+    for r in rows:
+        if market == "1x2":
+            if r["praw"] is None:
+                continue
+            recs.append((r["date"], float(r["praw"]), float(r["odds"]), int(r["won"]), r["selection"]))
+        else:
+            if r["praw_over"] is None:
+                continue
+            praw = float(r["praw_over"]) if r["selection"] == "over" else 1.0 - float(r["praw_over"])
+            won = int(r["over_hit"]) if r["selection"] == "over" else 1 - int(r["over_hit"])
+            recs.append((r["date"], praw, float(r["odds"]), won, r["selection"]))
+    recs.sort(key=lambda x: x[0])
+    edges = [0.05, 0.08, 0.10, 0.13, 0.16, 0.20]
+    bands = [(2.80, 3.30), (3.30, 4.00), (4.00, 5.50), (5.50, 12.0), (2.80, 12.0)]
+    print(f"\nSWEEP {market} [{sel_filter or 'all'}] — cell = ROI%(n){{robust}}, blank if <20 picks")
+    print("  band \\ edge   " + "".join(f"{int(e*100):>13d}%" for e in edges))
+    for lo, hi in bands:
+        cells = []
+        for e in edges:
+            nn, roi, rob = _cells(market, recs, split, folds, sel_filter, e, lo, hi)
+            cells.append("            ." if roi is None else f"{roi:+6.0f}%({nn}){rob[:4]}")
+        print(f"  [{lo:>4.1f},{hi:>4.1f}]  " + "".join(f"{c:>14s}" for c in cells))
+
+
 def backtest_market(market: str, split: float, folds: int,
                     sel_filter: str | None = None, edge_override: float | None = None,
                     odds_cap: float | None = None):
@@ -138,8 +196,12 @@ def main():
     backtest_market("1x2", a.split, a.folds, sel_filter="away")               # away only (should be weak)
     print()
     backtest_market("over_under_25", a.split, a.folds)
-    print("\nNote: a pick fires when Coolbet's historical price landed in [min_odds, max_odds]."
-          "\n'home' @10% = the FAVLONG real-money gate applied to the book-agnostic universe.")
+    # THE ACTUAL SEARCH: sweep edge × odds band × selection for a fold-robust profitable cell.
+    for sel in (None, "home", "away", "draw"):
+        sweep("1x2", a.split, a.folds, sel)
+    sweep("over_under_25", a.split, a.folds, None)
+    print("\nNote: cell = OOS ROI%(n){robust}. ROBUST+ = positive in every chronological fold."
+          "\nLooking for ANY fold-robust positive cell with adequate n — that would be a viable trigger setup.")
     return 0
 
 
