@@ -5804,9 +5804,21 @@ def test_coolbet_signaler():
     for fn in ("load_signal_candidates", "_format_signal", "_mark_signaled",
                 "_resolve_coolbet_match_id", "signal_all_bets"):
         assert f"def {fn}(" in sig_src, f"coolbet_signaler must expose {fn}()"
-    assert "from workers.automation.coolbet_placer import _min_edge_for, _MIN_EDGE" in sig_src, (
-        "signaler must reuse _min_edge_for + _MIN_EDGE from the placer so "
-        "per-market floors stay in lock-step."
+    # UPDATED 2026-09-10: this pinned the OLD selection-blind `_min_edge_for`.
+    # SIGNAL-PLACER-1X2-ALIGN replaced it with `min_edge_for_pick`, the ONE
+    # selection-aware floor. The bug that motivated it: the signaler used the
+    # pooled 13% while the placer used 10% for home-underdogs, so those picks
+    # were PLACED with real money but never signalled to Telegram (Stevenage v
+    # Luton). Pin the shared utility, not the old name.
+    assert "from workers.automation.coolbet_placer import min_edge_for_pick, _MIN_EDGE" in sig_src, (
+        "signaler must reuse min_edge_for_pick + _MIN_EDGE from the placer so "
+        "per-market floors stay in lock-step. It must NOT re-derive a floor "
+        "locally, and must NOT fall back to the selection-blind _min_edge_for."
+    )
+    assert "_min_edge_for(" not in sig_src, (
+        "signaler must not call the selection-blind _min_edge_for — that is "
+        "exactly the mismatch that placed home-underdogs without signalling "
+        "them. Use min_edge_for_pick(market, selection, odds)."
     )
     mark_block = sig_src[sig_src.index("def _mark_signaled("):sig_src.index("def signal_all_bets(")]
     assert "WHERE match_id" in mark_block and "AND market" in mark_block and "AND selection" in mark_block, (
@@ -22141,25 +22153,82 @@ def test_coolbet_cdp_cookie_export():
     for col in ("imperva_cookies_json", "imperva_cookies_refreshed_at"):
         assert col in mig_src, f"Migration 269 must add {col} column."
 
-    # 6. Both LaunchAgent plists set COOLBET_NO_FS=true. Sibling repo not
-    # checked out in CI, so only assert if the plist paths exist locally.
+    # 6. REVERSED 2026-09-10 (COOLBET-NO-FS-PLIST-DRIFT). This step used to
+    # assert the odds-snapshot LaunchAgent SET COOLBET_NO_FS=true. That was
+    # correct in 2026-07 when the only FlareSolverr was a dead Railway host,
+    # so direct plain-requests genuinely was the better of two bad options.
+    # It is now wrong and was actively causing an outage: a local FS runs on
+    # :8191, and direct requests carrying a replayed reese84 cookie get
+    # BLACKHOLED by Imperva (the token is TLS-bound), which presents as a 30s
+    # read timeout, not a 403. Measured A/B on fo-tree 2026-09-10:
+    #     direct (NO_FS)   -> 30.5s ReadTimeout
+    #     via FlareSolverr ->  0.6s HTTP 200, 181KB
+    # So the repo plist must NOT set COOLBET_NO_FS at all.
+    repo_plist = pathlib.Path(
+        "local/launchd/com.oddsintel.coolbet-odds-snapshot.plist")
+    repo_src = repo_plist.read_text()
+    assert "<key>COOLBET_NO_FS</key>" not in repo_src, (
+        "odds-snapshot plist must NOT set COOLBET_NO_FS — direct "
+        "plain-requests is blackholed by Imperva (30s timeouts, no odds "
+        "written). Route through local FlareSolverr instead."
+    )
+    assert "http://localhost:8191" in repo_src, (
+        "odds-snapshot plist must pin FLARESOLVERR_URL to the LOCAL FS so "
+        "it can never inherit the dead Railway URL still sitting in .env."
+    )
+
+    # 7. INSTALLED-vs-REPO DRIFT. The 5.3h outage on 2026-09-10 was NOT a
+    # code bug — the repo plist was already correct. The plist launchd was
+    # actually running was the stale 2026-07-08 copy in ~/Library/LaunchAgents
+    # that still set COOLBET_NO_FS=true, because editing the repo file does
+    # not reload launchd. Nothing detected that for weeks. Operator-env only;
+    # CI has no LaunchAgents dir.
     import os
-    home = pathlib.Path(os.path.expanduser("~"))
-    for name in ("com.oddsintel.coolbet-odds-snapshot.plist",):
-        plist = home / "Library/LaunchAgents" / name
-        if not plist.exists():
-            continue  # CI / non-operator env
-        pl_src = plist.read_text()
-        assert "<key>COOLBET_NO_FS</key>" in pl_src, (
-            f"{name}: LaunchAgent must set COOLBET_NO_FS=true so it "
-            "routes through the new CDP-cookie path. Without this, FS "
-            "gets used, Imperva challenges the fingerprint, and the "
-            "job fails silently for days."
+    installed = (pathlib.Path(os.path.expanduser("~"))
+                 / "Library/LaunchAgents" / repo_plist.name)
+    if installed.exists():
+        assert installed.read_text() == repo_src, (
+            f"{repo_plist.name}: INSTALLED plist has drifted from the repo "
+            "copy. Editing local/launchd/*.plist does not reload launchd — "
+            "the stale installed copy keeps running. Fix:\n"
+            f"  cp {repo_plist} ~/Library/LaunchAgents/\n"
+            f"  launchctl unload ~/Library/LaunchAgents/{repo_plist.name}\n"
+            f"  launchctl load   ~/Library/LaunchAgents/{repo_plist.name}"
         )
-        idx = pl_src.find("<key>COOLBET_NO_FS</key>")
-        assert "<string>true</string>" in pl_src[idx:idx+200], (
-            f"{name}: COOLBET_NO_FS must be exactly the string 'true'."
-        )
+
+
+@test("JWT-REFRESH-WINDOW — proactive refresh threshold exceeds its caller's cadence")
+def test_jwt_refresh_window_2026_09_10():
+    """JWT-REFRESH-WINDOW (2026-09-10). `proactive_jwt_refresh` skips the
+    refresh when the persisted token still has more than `min_ttl_s` left.
+    Its only caller is the feed-watchdog, which runs every 20 MINUTES
+    (:20/:50). With the old min_ttl_s=300 (5 min), a token at ~10 min TTL was
+    judged "fresh", skipped, and expired before the next tick — the refresh
+    was a coin-flip against the clock. The threshold must therefore exceed
+    the caller's period, or the window can never close.
+
+    This does NOT fix the recurring daily logout (that is Coolbet's own
+    inactivity timeout — runbook §3); it closes a genuine but separate race.
+    """
+    import inspect
+    import pathlib
+    from workers.automation import coolbet_browser_sync as cbs
+
+    sig = inspect.signature(cbs.proactive_jwt_refresh)
+    min_ttl = sig.parameters["min_ttl_s"].default
+    WATCHDOG_PERIOD_S = 20 * 60
+    assert min_ttl >= WATCHDOG_PERIOD_S, (
+        f"proactive_jwt_refresh(min_ttl_s={min_ttl}) is below the "
+        f"{WATCHDOG_PERIOD_S}s feed-watchdog cadence — a token with less "
+        "than one tick of life left will be judged fresh and skipped."
+    )
+
+    plist = pathlib.Path(
+        "local/launchd/com.oddsintel.coolbet-feed-watchdog.plist").read_text()
+    assert "<integer>20</integer>" in plist or "<integer>50</integer>" in plist, (
+        "feed-watchdog cadence changed — re-derive min_ttl_s against it."
+    )
+    return f"min_ttl_s={min_ttl}s covers the {WATCHDOG_PERIOD_S}s watchdog tick"
 
 
 @test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")
@@ -25752,12 +25821,22 @@ def test_coolbet_feed_watchdog_2026_08_26():
                      "BLOCKED", "UNKNOWN"), f"unexpected state {state}"
     assert reason
 
-    plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-feed-watchdog.plist").read_text()
-    assert "<key>COOLBET_NO_FS</key>" in plist, (
-        "the watchdog must use the same direct-request path as the odds job; "
-        "without it the session routes through FlareSolverr and measures a "
-        "different failure surface"
+    # CORRECTED 2026-09-10: this used to assert the watchdog plist sets
+    # COOLBET_NO_FS "so it uses the same direct-request path as the odds
+    # job". Both halves of that were wrong. The odds job no longer uses the
+    # direct path at all (it is blackholed by Imperva — see
+    # COOLBET-CDP-COOKIE-EXPORT step 6), and the watchdog makes NO Coolbet
+    # HTTP calls whatsoever: it reads DB freshness and harvests cookies over
+    # CDP. COOLBET_NO_FS is inert here, so pinning it asserted a transport
+    # this module never uses. Pin the real invariant instead: the watchdog
+    # judges the feed from the DB, so it must not acquire an HTTP client.
+    wd_src = pathlib.Path("workers/jobs/coolbet_feed_watchdog.py").read_text()
+    assert "CoolbetSession" not in wd_src, (
+        "the feed watchdog must judge the feed by its OUTPUT (DB rows), not "
+        "by making its own Coolbet request — otherwise it reports on a "
+        "transport the odds job does not use and invents false alarms."
     )
+    plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-feed-watchdog.plist").read_text()
     assert "coolbet_feed_watchdog" in plist
     return "coolbet feed watchdog judges output, self-heals only what it can"
 

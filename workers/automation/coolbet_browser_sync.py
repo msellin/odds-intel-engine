@@ -787,7 +787,7 @@ def diagnose_cdp_jwt_state(*, timeout_ms: int = 8000) -> dict:
             "ttl_s": None}
 
 
-def proactive_jwt_refresh(*, min_ttl_s: int = 300) -> dict:
+def proactive_jwt_refresh(*, min_ttl_s: int = 1200) -> dict:
     """Pull a fresh JWT from CDP-Chrome and persist it to DB when the
     currently-persisted token's TTL is below `min_ttl_s`. No-op when the
     DB JWT is comfortably fresh.
@@ -809,6 +809,17 @@ def proactive_jwt_refresh(*, min_ttl_s: int = 300) -> dict:
          "ttl_after_s":  int | None,
          "reason": one of fresh / refreshed / cdp_unavailable /
                           cdp_returned_expired / persist_failed / no_db_jwt}
+
+    JWT-REFRESH-WINDOW (2026-09-10): min_ttl_s was 300 (5 min) while the
+    only caller — the feed-watchdog — runs on a 20-MINUTE cadence (:20/:50).
+    A token sitting at ~10 min TTL was therefore judged "fresh", skipped, and
+    dead before the next tick ever ran. The threshold must exceed the caller's
+    period or the refresh is a coin-flip against the clock; 1200s means every
+    tick that sees a sub-20-min token refreshes it.
+
+    NOTE: this is a real race but it is NOT the cause of the recurring daily
+    logout — that is Coolbet's own inactivity timeout (runbook §3). A fresher
+    JWT does not help when the application deliberately signs you out.
 
     Cost: 1 short DB SELECT every call; CDP probe + UPDATE only when stale."""
     import time as _t

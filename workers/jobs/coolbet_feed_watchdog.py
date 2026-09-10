@@ -273,10 +273,21 @@ def classify() -> tuple[str, str]:
                 f"no Coolbet odds for {odds_h:.1f}h and Imperva cookies are "
                 f"{cookie_h:.1f}h old" if cookie_h is not None else
                 f"no Coolbet odds for {odds_h:.1f}h and cookie age is unknown")
+    # FRESH COOKIES + DEAD FEED = TRANSPORT, NOT COOKIES (2026-09-10).
+    # Re-harvesting is still attempted (cheap, idempotent), but the message
+    # must stop asserting a cookie cause it has no evidence for. Twice now a
+    # transport fault has been misread as a cookie problem while the watchdog
+    # re-harvested for hours: COOLBET-GET-NO-TIMEOUT-2026-09-04, and the 5.3h
+    # outage on 2026-09-10 whose real cause was COOLBET_NO_FS=true in a stale
+    # INSTALLED plist (direct plain-requests is blackholed by Imperva because
+    # reese84 is TLS-bound). When cookies are fresh, say transport first.
     return ("STALE_COOKIES",
             f"no Coolbet odds for {odds_h:.1f}h despite cookies only "
-            f"{cookie_h:.1f}h old — Imperva re-challenges far faster than they "
-            f"expire, so re-harvesting is tried before calling this blocked")
+            f"{cookie_h:.1f}h old — so this is probably NOT the cookies. "
+            f"Check TRANSPORT first (runbook §6): is the sweep logging "
+            f"'NO_FS mode'? is FlareSolverr up on :8191? has the INSTALLED "
+            f"plist drifted from local/launchd/? A re-harvest is tried anyway "
+            f"because it is cheap, but do not let it mask a transport fault")
 
     # Unreachable today, kept for the escalation path in run().
     return ("BLOCKED",

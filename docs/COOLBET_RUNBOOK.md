@@ -106,6 +106,36 @@ So the only case needing a human is Docker itself being unstartable (the alert s
 - **Fix:** log into coolbet.com in CDP-Chrome (:9222). Auto-login: `--cdp-auto-login` (reads `COOLBET_USER/PASS`, waits for SMS). Then `--full-heal` persists the JWT and clears `placement_paused`. Reading odds does **not** need the JWT (anon-read); only placement does.
 - **ROOT CAUSE of the recurring daily logout (diagnosed 2026-09-10, COOLBET-DAEMON-DEATH-RECURRING).** Do **not** confuse this with the Imperva wall in §2. Here the tab stays on a normal page (e.g. `/et/sport/recommendations`) and `cbauth` is simply **gone from localStorage** ("34 keys present, cbauth missing") — no redirect to `/login`, though the logged-out page shows Coolbet's "STAY COOL" brand slogan, which is what made it look like the §2 wall. The Coolbet JWT is only ~30-min TTL and is kept alive **solely** by the SPA's in-page renew-token timer (~20-min cadence). The CDP-Chrome is an automation window the operator never focuses, so it is permanently **occluded**; Chrome backgrounds and then **freezes** a hidden renderer after ~5 min, which suspends that renew timer → the JWT lapses → the frontend clears `cbauth` in place. Evidence: `cbauth` flapped on a ~30-min cycle in the daemon log, reappearing only on the ticks where the daemon's CDP read woke the frozen renderer. **Two-layer fix now in place:**
   1. **Prevention (the real fix) — ✅ VALIDATED 2026-09-10:** `local/launch_chrome_for_sync.sh` now launches with `--disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding`, so the tab's JS keeps running and renew-token fires on schedule. **Proof:** with the flags live, the session was left untouched (no daemon/probe/login) for 33 min and stayed `valid` with the JWT TTL *rising* 1349s→1677s (renew-token self-fired). Before the flags it lapsed within ~30 min. **Takes effect only on the next launch — quit the CDP-Chrome, re-run the launcher, log in once.** Verify: `ps aux | grep remote-debugging-port=9222` shows the three flags.
+  1b. **THE PREVENTION FIX WAS ONLY HALF THE STORY — corrected 2026-09-10 (evening).**
+   The renderer-freeze diagnosis above is real and the flags do work, but they do
+   NOT stop the recurring logout, and the session kept dying with the flags
+   verified live. The remaining cause is **Coolbet's own inactivity timeout**, and
+   it is an application feature, not a browser bug or bot-detection. Evidence,
+   read straight out of the CDP tab's localStorage while it sat logged out:
+   ```
+   localStorage keys              = 35        (a full, real SPA — NOT an Imperva shell)
+   cbauth                         = missing
+   lastActiveRoute                = "/et/sport/match/6102801"
+   isTwoMinuteWarningModalVisible = "true"    ← Coolbet's own 2-min warning fired
+   isLogoutInProgress             = "true"    ← Coolbet logged US out
+   lastActivityTime               = 2026-09-10T14:03:26Z
+   ```
+   The watchdog log shows the matching shape: `valid` at 16:20 → `logged_out` at
+   16:40 → **`valid` again at 17:20** (right after the operator touched the browser
+   at 17:03) → `logged_out` at 17:40, then permanently. The session survives ~30-40
+   min after *human* activity and then Coolbet signs it out. **The watchdog's 20-min
+   CDP read does not count as activity** — it reads localStorage without generating
+   any user input.
+   **Consequence for diagnosis:** the logged-out page shows Coolbet's "STAY COOL"
+   brand slogan, which is why this keeps getting misfiled as the §2 Imperva wall.
+   Use the key count to tell them apart: **35 keys = inactivity logout; a ~9-char
+   body = the real wall.**
+   **Consequence for fixes:** a fresher JWT cannot help, because the app is
+   deliberately ending the session. Do not try to defeat the timeout by synthesising
+   user activity — it is a responsible-gambling control. Make **re-login** cheap and
+   unattended instead: set `COOLBET_AUTO_LOGIN_ON_HEAL=true` in `.env` so
+   `ensure_session_live()` self-relogins via device-trust (no SMS, rate-limited 1/h).
+
   2. **Recovery (defense in depth):** the daemon now runs `_ensure_session_live()` **every tick, before the no-candidate early return** (previously the session was only checked when a pick was ready to place, so on a quiet day the lapse went unnoticed for days). On `logged_out` it self-relogins via `cdp_auto_login` **when `COOLBET_AUTO_LOGIN_ON_HEAL=true`** in `.env` (device-trust → no SMS; rate-limited 1/h). Set that flag on to make recovery unattended.
 
 ### 4. Placement self-paused  → daemon runs but places nothing
@@ -113,6 +143,43 @@ So the only case needing a human is Docker itself being unstartable (the alert s
 - **Cause:** the daemon self-pauses after `SELFPAUSE_AFTER_MINUTES` of errored ticks to stop hammering Coolbet during an outage. Once the outage is fixed the pause stays **latched** until cleared.
 - **Fix (once session healthy + odds flowing):** `UPDATE coolbet_session_state SET placement_paused=false WHERE id=1;` or `--full-heal` (clears it on a state transition). A daemon **restart** also clears it.
 - **Note:** only genuine failures (`error`, `search_blocked`) count toward the self-pause. Legitimate declines — odds-floor, drift, exposure — are **skips, not errors** (fixed 2026-09-07 in ODDS-FLOOR-SKIP-NOT-ERROR; before that a below-floor day falsely self-paused a healthy daemon).
+
+### 6. Odds dead for hours, `fo-tree` 30s read timeouts  → COOLBET_NO_FS + stale installed plist
+- **Symptom:** `fo-tree fetch failed (attempt N/3): Read timed out (read timeout=30)`
+  → `Board sweep enumerated 0 categories`. Repeats every :03/:33. Meanwhile the
+  watchdog logs `STALE_COOKIES — Imperva re-challenges…` and re-harvests cookies
+  every 20 min. **The cookies are innocent.** This is transport.
+- **Tell:** the sweep log contains `CoolbetSession NO_FS mode — 6 cookies from db`.
+  Confirm with a 2-request A/B on one endpoint:
+  ```
+  COOLBET_NO_FS=true  → 30.5s ReadTimeout
+  COOLBET_NO_FS=false →  0.6s HTTP 200, 181KB   (measured 2026-09-10)
+  ```
+- **Cause:** `COOLBET_NO_FS=true` sends plain `requests` carrying a `reese84`
+  cookie replayed out of CDP-Chrome. That token is **TLS-bound**, so Imperva
+  rejects the mismatched client — and it **blackholes rather than 403s**, which is
+  why a block presents as a network hang and reads like an outage. NO_FS was the
+  right call in 2026-07 when the only FlareSolverr was a dead Railway host; it
+  became wrong the moment a local FS existed on :8191.
+- **THE ACTUAL TRAP (2026-09-10, 5.3h of no odds):** the repo plist was **already
+  correct**. The plist *launchd was running* was the stale 2026-07-08 copy in
+  `~/Library/LaunchAgents/` that still set `COOLBET_NO_FS=true`. **Editing
+  `local/launchd/*.plist` does not reload launchd.** Nothing detected the drift.
+- **Fix:**
+  ```bash
+  cp local/launchd/com.oddsintel.coolbet-odds-snapshot.plist ~/Library/LaunchAgents/
+  launchctl unload ~/Library/LaunchAgents/com.oddsintel.coolbet-odds-snapshot.plist
+  launchctl load   ~/Library/LaunchAgents/com.oddsintel.coolbet-odds-snapshot.plist
+  launchctl kickstart -k gui/$(id -u)/com.oddsintel.coolbet-odds-snapshot
+  ```
+  Verified: `Board sweep — 189 Coolbet categories` (was 0 all evening).
+- **Guard:** smoke `COOLBET-CDP-COOKIE-EXPORT` step 7 now diffs the INSTALLED plist
+  against the repo copy and fails on drift. Check every plist at once with:
+  `for f in local/launchd/*.plist; do diff -q "$f" ~/Library/LaunchAgents/$(basename $f); done`
+- **Note the repeat offence:** `COOLBET-GET-NO-TIMEOUT-2026-09-04` recorded the
+  identical misattribution — *"the feed watchdog cheerfully re-harvested cookies at
+  a problem that was never about cookies."* When odds die, check TRANSPORT before
+  cookies.
 
 ### 5. No placeable bet today  → this is CORRECT, not a failure
 - **Symptom:** daemon tick logs `qualified=N` but `placed=0`, every candidate `skip … below the 2.80 odds floor`.
