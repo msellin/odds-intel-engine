@@ -10,9 +10,13 @@
 > label, not this engine. The "planned merger" (fold the mirror bots in + source
 > per-book trigger edge through the router) is future work, not built.
 
-**Status: Stage A + B BUILT (2026-09-09), PAPER. Backtest says the wide selection
-loses at current gates — see the backtest section — so it stays paper; the live
-real-money path remains the existing narrow model-edge bots.** This is the target
+**Status: Stage A + B BUILT (2026-09-09), PAPER — and the gate-redesign question is
+now RESOLVED (2026-09-10, see the VERDICT at the bottom): no gate/type restriction
+rescues the wide selection (home-underdogs @10% still −19.8% OOS, not-robust) — it is
+a MODEL-QUALITY limit (the trigger over-selects longshots where our AUC < the market's),
+not a gate-tuning one. Stays PAPER; do NOT promote the model-anchored trigger to real
+money until a sharper model. The live real-money path remains the narrow model-edge
+mirror bots (which capture the profitable home-underdog slice at moderate odds).** This is the target
 architecture for how we decide what to bet with our own money at Coolbet (and,
 next, Unibet). It replaces "mirror the /picks page into Coolbet bots" (wrong
 universe). Stage A (`pick_triggers` + `workers/jobs/pick_triggers.py`, mig 319)
@@ -258,3 +262,38 @@ into separate paper bots and never blend:
 All four are PAPER (never in `PLACEABLE_BOTS`). The sharp bots fire rarely — Coolbet ≈
 Pinnacle, so a 3%+ overlay vs the sharp line is uncommon — which is itself the finding
 the head-to-head is measuring.
+
+---
+
+## VERDICT 2026-09-10 — the gate-redesign does NOT rescue the wide selection (model-quality bound)
+
+The open question was "wide 1x2 selection loses −21% OOS → needs a tighter gate OR a sharper
+model." Ran `scripts/trigger_engine_backtest.py` (held-out OOS, calibration on TRAIN, windows +
+grading on untouched TEST, 3 folds) across every candidate tightening. **A tighter gate does not
+work — no variant is fold-robust or positive:**
+
+| Selection | gate | n | ROI | avg odds | folds |
+|---|---|---|---|---|---|
+| 1x2 all | 13% | 1566 | **−23.2%** | 5.87 | not-robust |
+| 1x2 home | 13% | 225 | −16.9% | 5.90 | not-robust |
+| 1x2 home | **10% (FAVLONG)** | 319 | **−19.8%** | 5.12 | not-robust |
+| 1x2 home ≤3.8 odds | 10% | 56 | −37.9% | 3.54 | not-robust |
+| 1x2 away | 13% | 796 | −20.2% | 6.11 | not-robust |
+| O/U 2.5 all | 8% | 244 | −0.4% | 2.70 | not-robust |
+
+**Why the FAVLONG restriction (which works on the mirror) fails here:** the trigger evaluates
+edge at **Coolbet's OWN (higher) odds**, so a 10-13% edge only clears on **extreme longshots**
+(avg odds **5.1–5.9**), where the model is badly over-confident (wins 14-16% at prices implying
+~18%). FAVLONG's home-underdog edge is real at the **moderate** odds the mirror bets (2.8–3.7,
+best-of-books) but evaporates in the trigger's longshot-dominated universe. Odds-capping to the
+mirror band (≤3.8) doesn't help either (−37.9%, n=56).
+
+**Conclusion:** the book-agnostic trigger selection is a **fold-robust loser at every gate/type**
+because it structurally over-selects the band where our **model's AUC < the market's**. This is a
+**model-quality** limit, not a gate-tuning one — no gate rescues it. **BOOK-AGNOSTIC-EDGE-ENGINE
+stays PAPER; do NOT promote the model-anchored trigger to real money.** The profitable slice
+(home-underdogs at moderate odds) is already captured by the honestly-calibrated `bot_v10_all`
+mirror. Remaining value of the engine: (1) the SHARP-anchored triggers (a different anchor — where
+the draw edge should surface, §57), (2) a research instrument, (3) it scales to Unibet for
+measurement at zero model cost. **Unblock trigger for real money only after a sharper model
+(higher AUC than the market on the longshot band it selects) — not a gate change.**

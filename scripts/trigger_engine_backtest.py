@@ -59,38 +59,46 @@ def _load(market: str):
     return execute_query(sql)
 
 
-def backtest_market(market: str, split: float, folds: int):
+def backtest_market(market: str, split: float, folds: int,
+                    sel_filter: str | None = None, edge_override: float | None = None,
+                    odds_cap: float | None = None):
     rows = _load(market)
-    # normalise to (date, praw_of_selection, odds, won)
+    # normalise to (date, praw_of_selection, odds, won, selection)
     recs = []
     for r in rows:
         if market == "1x2":
             if r["praw"] is None:
                 continue
-            recs.append((r["date"], float(r["praw"]), float(r["odds"]), int(r["won"])))
+            recs.append((r["date"], float(r["praw"]), float(r["odds"]), int(r["won"]), r["selection"]))
         else:
             if r["praw_over"] is None:
                 continue
             praw = float(r["praw_over"]) if r["selection"] == "over" else 1.0 - float(r["praw_over"])
             won = int(r["over_hit"]) if r["selection"] == "over" else 1 - int(r["over_hit"])
-            recs.append((r["date"], praw, float(r["odds"]), won))
+            recs.append((r["date"], praw, float(r["odds"]), won, r["selection"]))
     recs.sort(key=lambda x: x[0])
     n = len(recs)
     if n < 400:
         print(f"  {market}: only {n} rows — skip"); return
     cut = int(n * split)
     train, test = recs[:cut], recs[cut:]
-    # calibrate on TRAIN (raw prob of the SELECTION → did it happen)
+    # calibrate on TRAIN (raw prob of the SELECTION → did it happen) — on ALL selections,
+    # so the calibrator is unchanged; the selection filter only narrows what we BET.
     iso = IsotonicRegression(out_of_bounds="clip").fit([r[1] for r in train], [r[3] for r in train])
-    ef, of = float(_min_edge_for("1x2" if market == "1x2" else "o/u")), float(_min_odds_for("1x2" if market == "1x2" else "o/u"))
+    ef = edge_override if edge_override is not None else float(_min_edge_for("1x2" if market == "1x2" else "o/u"))
+    of = float(_min_odds_for("1x2" if market == "1x2" else "o/u"))
 
     picks = []  # (date, odds, ret)
-    for d, praw, odds, won in test:
+    for d, praw, odds, won, sel in test:
+        if sel_filter and sel != sel_filter:
+            continue
         cal = float(iso.predict([praw])[0])
         if cal <= ef or cal >= 1.0:
             continue
         min_odds = max(1.0 / (cal - ef), of)
         max_odds = min_odds * OUTLIER_MULT
+        if odds_cap is not None:
+            max_odds = min(max_odds, odds_cap)
         if min_odds <= odds <= max_odds:
             ret = (odds - 1.0) if won else -1.0
             picks.append((d, odds, ret))
@@ -109,9 +117,10 @@ def backtest_market(market: str, split: float, folds: int):
         if len(f) >= 15:
             fr.append(f.mean() * 100)
     robust = "ROBUST" if fr and all(x > 0 for x in fr) else "not-robust"
-    print(f"  {market:15s} gate edge≥{ef:.0%}/odds≥{of:.1f}: "
+    label = f"{market}[{sel_filter or 'all'}]" + (f"≤{odds_cap}" if odds_cap else "")
+    print(f"  {label:22s} edge≥{ef:.0%}/odds≥{of:.1f}: "
           f"n={len(picks):5d}  ROI {roi:+.1f}%  win {wr:.0f}%  avg_odds {avg_odds:.2f}  "
-          f"folds={[f'{x:+.0f}' for x in fr]} {robust}  (TEST n={len(test)})")
+          f"folds={[f'{x:+.0f}' for x in fr]} {robust}")
 
 
 def main():
@@ -121,9 +130,16 @@ def main():
     a = ap.parse_args()
     print("TRIGGER-ENGINE-BACKTEST — Coolbet-native selection at Coolbet's own odds, held-out OOS")
     print("(calibration fit on TRAIN only; windows + grading on untouched TEST)\n")
-    for market in ("1x2", "over_under_25"):
-        backtest_market(market, a.split, a.folds)
-    print("\nNote: a pick fires when Coolbet's historical price landed in [min_odds, max_odds].")
+    print("BOOK-AGNOSTIC verdict — does the FAVLONG restriction rescue the wide trigger selection?")
+    backtest_market("1x2", a.split, a.folds)                                  # wide, pooled 13% (the -21% baseline)
+    backtest_market("1x2", a.split, a.folds, sel_filter="home")               # home only, 13%
+    backtest_market("1x2", a.split, a.folds, sel_filter="home", edge_override=0.10)  # home-underdogs @10% (FAVLONG)
+    backtest_market("1x2", a.split, a.folds, sel_filter="home", edge_override=0.10, odds_cap=3.8)  # moderate home-dogs (mirror universe)
+    backtest_market("1x2", a.split, a.folds, sel_filter="away")               # away only (should be weak)
+    print()
+    backtest_market("over_under_25", a.split, a.folds)
+    print("\nNote: a pick fires when Coolbet's historical price landed in [min_odds, max_odds]."
+          "\n'home' @10% = the FAVLONG real-money gate applied to the book-agnostic universe.")
     return 0
 
 

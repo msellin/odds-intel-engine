@@ -34607,5 +34607,24 @@ def test_executable_shadow_eval():
     assert "odds_at_pick" in src, "executable ROI compares against the recorded pick odds"
 
 
+@test("BOOK-AGNOSTIC-GATE-VERDICT — the gate-redesign backtest + the documented negative result")
+def test_book_agnostic_gate_verdict():
+    """BOOK-AGNOSTIC-EDGE-ENGINE gate verdict (2026-09-10): the wide trigger selection
+    loses OOS and NO gate/type restriction rescues it (home-underdogs @10% still
+    −19.8%, not-robust) — a model-quality limit, not a gate one. Pin that the backtest
+    tool can run the FAVLONG comparison (selection filter + edge override + odds cap)
+    and that the verdict is documented so it isn't re-litigated."""
+    import inspect
+    from pathlib import Path
+    from scripts import trigger_engine_backtest as teb
+    sig = inspect.signature(teb.backtest_market).parameters
+    assert "sel_filter" in sig and "edge_override" in sig and "odds_cap" in sig, (
+        "backtest_market must support the FAVLONG comparison (selection filter, edge override, odds cap)")
+    doc = (Path(__file__).parent.parent / "docs" / "BOOK_AGNOSTIC_EDGE_ENGINE.md").read_text()
+    assert "VERDICT 2026-09-10" in doc, "the gate-redesign verdict must be documented"
+    assert "model-quality" in doc.lower() and "not-robust" in doc, (
+        "verdict must record that it's a model-quality limit, not a gate-tuning one")
+
+
 if __name__ == "__main__":
     main()
