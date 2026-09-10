@@ -2009,10 +2009,11 @@ def job_ou35_model_shadow():
 
 def job_coolbet_model_1x2_shadow():
     """COOLBET-MODEL-1X2-SHADOW-BOT (2026-09-08): mirror the calibrated model's
-    1x2 picks (edge>=13% on calibrated_prob) into shadow_bets under
-    bot_coolbet_1x2_model_v1, WITHOUT vocabulary conversion (market stays '1x2',
-    selection stays home/draw/away), so they place through the Coolbet UI placer
-    with the validated 2D gate (edge>=13%, odds>=2.80). Replaces the paused
+    1x2 HOME-UNDERDOG picks (edge>=10% on calibrated_prob, odds>=2.80) into
+    shadow_bets under bot_coolbet_1x2_model_v1, WITHOUT vocabulary conversion
+    (market stays '1x2', selection stays 'home'), so they place through the Coolbet
+    UI placer. FAVLONG-CUTS-2026-09-09: home-underdogs @10% is the one fold-robust
+    1x2 engine; home-favs/aways/draws excluded. Replaces the paused
     line-shop 1x2. Writes shadow_bets only; real-money placement for this bot is
     OFF by default and toggled via the coolbet_placer_bots table
     (COOLBET-PLACER-CONTROL)."""

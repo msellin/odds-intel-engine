@@ -73,14 +73,16 @@ _FUZZY_THRESHOLD = 70
 # place real money on this market". `_min_edge_for(market)` returns
 # `math.inf` for None so the gate trivially rejects.
 _MIN_EDGE_BY_MARKET: dict[str, float | None] = {
-    # BOT-CONFIG-GOLDEN-MIDDLE-2026-09-08: 0.13, set by scripts/edge_floor_backtest.py
-    # (walk-forward, 3 folds, all price bases). 0.13 is the ONLY 1x2 floor that is
-    # positive in EVERY time fold across EVERY basis: executable all-bots (n=1901)
-    # +8.7%, executable active/calibrated (n=576) +15.7%, and the idealized
-    # fixture-level (n=104k) +14.2%. 0.15 was OVERFIT (a fold went -22%/-13% on
-    # executable data) and 0.10 is NOT robust either (negative in a fold in both
-    # executable views). Re-run the script before changing this — do not chase a
-    # single favourable window (the 0.15 mistake).
+    # BOT-CONFIG-GOLDEN-MIDDLE-2026-09-08: 0.13 for the POOLED 1x2 floor (all
+    # selections), set by scripts/edge_floor_backtest.py (walk-forward, 3 folds).
+    # 0.13 is the only POOLED 1x2 floor robust in every fold/basis; pooled 0.10 was
+    # NOT (negative fold). This is the paper-daemon + trigger-window floor.
+    # ⚠️ FAVLONG-CUTS-2026-09-09: the pooled result HID that home-FAVOURITES are a
+    # fold-robust loser at every floor; split by SELECTION TYPE, home-underdogs are
+    # the one fold-robust engine and win at 0.10 (odds>=2.80). So the REAL-MONEY 1x2
+    # bot does NOT use this pooled 0.13 — it uses its per-bot BOT_THRESHOLDS=0.10
+    # (home-underdogs only) in scripts/place_coolbet_ui.py. This pooled value stays
+    # 0.13. See docs/BETTING_GATE_DECISIONS.md "1x2 by SELECTION TYPE".
     "1x2":            0.13,
     # EDGE-FLOORS-OTHER-MARKETS-2026-09-08: raised 0.03 -> 0.08 via
     # edge_floor_backtest.py. 0.08 is robust in EVERY walk-forward fold across
