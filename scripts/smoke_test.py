@@ -34351,11 +34351,53 @@ def test_best_price_router():
     assert db(0.4221, 0.10, 2.80, {"Coolbet": 3.30})["winner"] == "Coolbet"
     # tie breaks to the first-preference book
     assert db(0.4221, 0.10, 2.80, {"Coolbet": 3.40, "Unibet-Site": 3.40})["winner"] == "Coolbet"
-    # dry-run + execute NOT wired (owner-gated); cross-book dedup uses placed_real IS NOT FALSE
+    # dry-run by default; cross-book dedup uses placed_real IS NOT FALSE
     src = inspect.getsource(bpr)
     assert "placed_real IS NOT FALSE" in src, "cross-book dedup must ignore paper rows"
     assert "execute: bool = False" in src, "router must default to DRY-RUN"
-    assert "not wired" in src.lower(), "execute path must be explicitly not-wired (owner-gated cutover)"
+
+
+@test("BEST-PRICE-ROUTER-EXECUTE-WIRING — stage/execute dispatch to the right arm; real money double-gated")
+def test_best_price_router_execute_wiring():
+    """COOLBET-PICK-TABLE-AUDIT Stage 5 execute wiring (2026-09-10): route() now
+    dispatches each routed pick to the winning book's executor. Pin (1) the
+    Unibet outcome-name mapping, (2) real money is DOUBLE-gated (execute=True is
+    refused to report-only unless env ROUTER_ALLOW_REAL is set — a stray
+    execute=True can't move money), (3) _dispatch routes to the correct arm, and
+    (4) the dry-test-in-action mode exists."""
+    import inspect, os
+    from workers.automation import best_price_router as bpr
+
+    # (1) outcome-name mapping (the site labels: team / X / Üle / Alla)
+    f = bpr._unibet_outcome_name
+    assert f("1x2", "home", "Derby", "WBA") == "Derby"
+    assert f("1x2", "draw", "Derby", "WBA") == "X"
+    assert f("over_under_25", "over", "A", "B") == "Üle"
+    assert f("over_under_25", "under", "A", "B") == "Alla"
+    assert f("corners", "over", "A", "B") is None
+
+    # (2) real-money double-gate: execute=True with ROUTER_ALLOW_REAL unset must
+    # NOT enter real mode and must dispatch nothing.
+    os.environ.pop("ROUTER_ALLOW_REAL", None)
+    r = bpr.route(execute=True)
+    assert r["mode"] == "report", "execute=True without ROUTER_ALLOW_REAL must degrade to report"
+    assert r["dispatched"] == 0, "no dispatch without the real-money env gate"
+    assert "real_refused" in r, "must record that real money was refused"
+
+    # (3) _dispatch routes to the correct arm (monkeypatch the arms — no browser)
+    calls = {}
+    bpr._dispatch_unibet = lambda pick, dec, *, execute: calls.setdefault("uni", execute) or {"ok": True}
+    bpr._dispatch_coolbet = lambda pick, *, execute: calls.setdefault("cb", execute) or {"ok": True}
+    bpr._dispatch("Unibet-Site", {}, {}, execute=False)
+    bpr._dispatch("Coolbet", {}, {}, execute=False)
+    assert "uni" in calls and "cb" in calls, "_dispatch must route Unibet-Site and Coolbet to their arms"
+
+    # (4) dry-test-in-action + the executor arms are named in source
+    src = inspect.getsource(bpr)
+    assert "stage: bool = False" in src, "route() must expose the stage (dry-test-in-action) mode"
+    assert "ROUTER_ALLOW_REAL" in src, "real money must be env-gated"
+    assert "stage_bet" in src and "place_bet" in src, "both executor arms must be wired"
+
 
 @test("COOLBET-DAEMON-KEEPALIVE — StartInterval watchdog kickstarts a dead-but-loaded daemon")
 def test_coolbet_daemon_keepalive():
