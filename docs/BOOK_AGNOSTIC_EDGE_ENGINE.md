@@ -360,3 +360,41 @@ The plan is to **let all four trigger bots keep accruing FORWARD as paper**, and
 two-part sweep (model + sharp) once we have 500+ settled trigger bets** — then decide the config on a
 fresh, larger, forward sample rather than curve-fitting the current backtest. No real-money
 consideration until then (owner-gated). Trigger: **≥500 settled `shadow_bets` rows across the trigger bots**. `bot_id` is a UUID FK — join `bots` (`WHERE b.name ILIKE '%trigger%'`, count `result IS NOT NULL AND result NOT IN ('pending','')`). **Baseline 2026-09-10: 150 settled / 237 total** across the 9 trigger bots (Coolbet 1x2 63, OU 53, sharp 1x2 14, sharp OU 6; Unibet arms just started, single digits each). ~3–4× more needed — a few weeks of forward paper.
+
+### UPDATE 2026-09-10 (#3) — WIDE-WINDOW audit: the candidates DON'T survive on the books we can test wide
+
+The #1/#2 positives all sat in a **narrow, recent** window. The owner asked the right question:
+can we widen the test, and are the older prices even the real odds we'd get? Answered with
+`scripts/trigger_widen_audit.py` (date-based train/test split, per bookmaker, month+fold detail;
+re-runnable). Snapshot: `dev/active/trigger-widen-audit-2026-09-10.txt`.
+
+**Two data facts frame everything (settled 1x2 odds coverage):**
+- **Coolbet** has real prices back to 2026-05-20, but **~37% of them are in the last 10 days** and only **22 rows before Aug 1** — the full-board sweep only started ~Sep 8, so older Coolbet is a *biased league subset*, not the board we now bet. **The model anchor CANNOT be widened on Coolbet** (a calibrator can't be fit on 22 rows). Forward accrual is the only path.
+- **Unibet**: the only *placeable* feed (`Unibet-Site`) has **~50 settled matches** — not testable. The deep `Unibet` (AF) feed is 17k back to April but is **not a price we can take**.
+- **Betano** is the one book that is *both* deep (back to Apr 30) *and* placeable (in `ACCESSIBLE_BOOKMAKERS`) — the honest wide-window instrument.
+
+**Result — on the books that CAN be tested wide (deduped to latest model_version), nothing holds:**
+
+| anchor · book · cell | wide-window OOS ROI (n) | verdict |
+|---|---|---|
+| MODEL · **Betano** · DRAW 2.8–3.3 · 5% | **−9.2% (218)**, Aug −15% / Sep +53%(n19) | **not robust — candidate FAILS wide** |
+| MODEL · Unibet(AF) · DRAW 2.8–3.3 · 5% | −19.1% (246) | fails |
+| MODEL · Coolbet · DRAW 2.8–3.3 · 5% | *un-widenable (22 train rows)* | can't test |
+| SHARP · **Betano** · HOME 1.0–3.3 · 2% | **+4.9% (448), NOT robust** (May+2 Jun+10 Jul−5 Aug+27 Sep−3) | weak, not robust |
+| SHARP · Coolbet · HOME 1.0–3.3 · 2% | +17% (153) ROBUST — but only Aug 7–Sep 10 | recent-window only |
+| SHARP · **Betano** · ALL 5.5–12 · 5% (mirage) | **−100% (27), 0 wins** | **confirms the longshot cell is pure variance** |
+
+**Synthesis:** the earlier positives (model draw +10%, sharp home +17%, sharp draw +33%) are **all
+Coolbet-specific and recent**. When the same rules are tested over months on a deep placeable book
+(Betano), the draw candidate is **negative** and the sharp home cell is **weakly positive but not
+fold-robust**; the +266% longshot cell **loses 100%**. This does NOT prove Coolbet has no edge —
+Coolbet is a softer book and may genuinely price draws/home looser — but it removes all wide-window
+support, so the only positives left are on windows too short to trust. **This makes the standing
+decision the only honest one: do not limit/configure the trigger bots on these numbers; accrue
+forward on Coolbet and re-run at 500+ settled trigger bets** (`trigger_widen_audit.py` for Coolbet
+once its full-board history deepens, and for `Unibet-Site` once it has 300+ settled).
+
+**Also fixed a real bug:** the 1x2 model loader (both `trigger_engine_backtest.py` and the audit)
+plain-JOINed `predictions`, which holds ~16 model_versions per fixture — counting each match ~1.9×
+and leaking matches across folds. Now `DISTINCT`/`LATERAL` latest-version. Earlier #1/#2 1x2 n's were
+inflated ~1.9× (ROIs directional, robustness overstated); the deduped audit above supersedes them.

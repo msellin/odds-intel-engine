@@ -34653,6 +34653,18 @@ def test_book_agnostic_config_search():
         "the sharp-sweep variance interpretation + the 500-settled re-round trigger must be documented")
     assert "do NOT limit" in doc or "do not limit" in doc.lower(), (
         "the decision to NOT limit the trigger bots yet must be recorded")
+    # #3 wide-window audit: re-runnable tool + the honest "fails wide" finding + the version-dedup fix
+    from scripts import trigger_widen_audit as twa
+    assert hasattr(twa, "model_cells") and hasattr(twa, "sharp_cells"), \
+        "trigger_widen_audit must expose the per-book wide-window audit"
+    assert "UPDATE 2026-09-10 (#3)" in doc and "WIDE-WINDOW" in doc, \
+        "the wide-window audit finding must be documented"
+    assert "Betano" in doc and "un-widenable" in doc, \
+        "must record that Coolbet can't be widened and Betano is the deep placeable book"
+    # the version-duplication fix in the original sweep loader
+    teb_src = inspect.getsource(teb._load)
+    assert "ORDER BY model_version DESC LIMIT 1" in teb_src, \
+        "the 1x2 model loader must pick the latest model_version (no ~16x duplication)"
 
 
 @test("BEST-PRICE-ROUTER-MONITOR — report-only 'check both books' monitor + launchd, no money")

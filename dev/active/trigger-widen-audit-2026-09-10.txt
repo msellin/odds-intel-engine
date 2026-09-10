@@ -1,0 +1,67 @@
+==============================================================================
+TRIGGER-WIDEN-AUDIT — date-split TEST >= 2026-08-01, real odds per book
+==============================================================================
+DB pool created (2-20 connections)
+
+### MODEL-ANCHOR · Coolbet  (TRAIN 22 rows <2026-08-01; TEST 18211 rows >=2026-08-01)
+    ⛔ CANNOT WIDEN — only 22 pre-2026-08-01 rows to fit the calibrator on. Coolbet history is too short/recent for a wide-window model test; forward accrual is the only path.
+
+### MODEL-ANCHOR · Betano  (TRAIN 36564 rows <2026-08-01; TEST 24318 rows >=2026-08-01)
+
+  DRAW · 2.8-3.3 · 5% [candidate]
+    OVERALL n=218  ROI -9.2%  win 28%  avg_odds 3.25  span 2026-08-01..2026-09-09
+    MONTHLY  2026-08:-15%(n199) | 2026-09:+53%(n19)
+    FOLDS    2026-08-01..2026-08-08:-9%(n72)  2026-08-08..2026-08-22:-19%(n72)  2026-08-22..2026-09-05:-2%(n72)  not-robust
+
+  ALL  · 2.8-12  · 13% [baseline]
+    OVERALL n=2177  ROI -27.2%  win 13%  avg_odds 6.06  span 2026-08-01..2026-09-10
+    MONTHLY  2026-08:-27%(n1813) | 2026-09:-30%(n364)
+    FOLDS    2026-08-01..2026-08-12:-30%(n725)  2026-08-12..2026-08-27:-30%(n725)  2026-08-27..2026-09-10:-22%(n725)  not-robust
+
+### MODEL-ANCHOR · Unibet  (TRAIN 30165 rows <2026-08-01; TEST 20797 rows >=2026-08-01)
+
+  DRAW · 2.8-3.3 · 5% [candidate]
+    OVERALL n=246  ROI -19.1%  win 25%  avg_odds 3.26  span 2026-08-01..2026-09-09
+    MONTHLY  2026-08:-16%(n224) | 2026-09:-55%(n22)
+    FOLDS    2026-08-01..2026-08-08:-20%(n82)  2026-08-08..2026-08-22:-9%(n82)  2026-08-22..2026-09-09:-29%(n82)  not-robust
+
+  ALL  · 2.8-12  · 13% [baseline]
+    OVERALL n=1728  ROI -26.7%  win 13%  avg_odds 6.21  span 2026-08-01..2026-09-10
+    MONTHLY  2026-08:-27%(n1402) | 2026-09:-24%(n326)
+    FOLDS    2026-08-01..2026-08-16:-25%(n576)  2026-08-16..2026-08-28:-33%(n576)  2026-08-28..2026-09-10:-23%(n576)  not-robust
+
+### SHARP-ANCHOR · Coolbet  (edge=P_sharp[devig Pinnacle]-1/Coolbet_odds; 15673 rows, full span)
+
+  HOME · 1.0-3.3 · 2% [trustworthy]
+    OVERALL n=153  ROI +17.1%  win 54%  avg_odds 2.30  span 2026-08-07..2026-09-09
+    MONTHLY  2026-08:+21%(n108) | 2026-09:+7%(n45)
+    FOLDS    2026-08-07..2026-08-23:+28%(n51)  2026-08-23..2026-08-31:+20%(n51)  2026-08-31..2026-09-09:+4%(n51)  ROBUST+
+
+  DRAW · 1.0-12  · 2%
+    OVERALL n=102  ROI +33.0%  win 28%  avg_odds 4.88  span 2026-08-07..2026-09-10
+    MONTHLY  2026-08:+38%(n73) | 2026-09:+21%(n29)
+    FOLDS    2026-08-07..2026-08-19:+27%(n34)  2026-08-19..2026-08-30:+58%(n34)  2026-08-31..2026-09-10:+14%(n34)  ROBUST+
+
+  ALL  · 5.5-12  · 5% [mirage check]
+    OVERALL n=75  ROI +266.4%  win 43%  avg_odds 8.10  span 2026-06-06..2026-09-06
+    MONTHLY  2026-06:-100%(n1) | 2026-08:+290%(n69) | 2026-09:+10%(n5)
+    FOLDS    2026-06-06..2026-08-16:+347%(n25)  2026-08-16..2026-08-22:+257%(n25)  2026-08-22..2026-09-06:+195%(n25)  ROBUST+
+
+### SHARP-ANCHOR · Betano  (edge=P_sharp[devig Pinnacle]-1/Betano_odds; 58713 rows, full span)
+
+  HOME · 1.0-3.3 · 2% [trustworthy]
+    OVERALL n=448  ROI +4.9%  win 54%  avg_odds 2.06  span 2026-04-30..2026-09-08
+    MONTHLY  2026-04:+140%(n1) | 2026-05:+2%(n197) | 2026-06:+10%(n80) | 2026-07:-5%(n68) | 2026-08:+27%(n56) | 2026-09:-3%(n46)
+    FOLDS    2026-04-30..2026-05-24:-4%(n149)  2026-05-24..2026-07-06:+12%(n149)  2026-07-08..2026-09-08:+6%(n149)  not-robust
+
+  DRAW · 1.0-12  · 2%
+    OVERALL n=66  ROI -22.6%  win 23%  avg_odds 3.47  span 2026-05-02..2026-09-03
+    MONTHLY  2026-05:-9%(n29) | 2026-06:-23%(n16) | 2026-07:-41%(n10) | 2026-08:-70%(n10) | 2026-09:+245%(n1)
+    FOLDS    2026-05-02..2026-05-26:-8%(n22)  2026-05-27..2026-06-25:-16%(n22)  2026-06-25..2026-09-03:-44%(n22)  not-robust
+
+  ALL  · 5.5-12  · 5% [mirage check]
+    OVERALL n=27  ROI -100.0%  win 0%  avg_odds 7.01  span 2026-05-06..2026-08-01
+    MONTHLY  2026-05:-100%(n10) | 2026-06:-100%(n3) | 2026-07:-100%(n11) | 2026-08:-100%(n3)
+    FOLDS      not-robust
+
+NOTE: `Unibet` above is the AF feed (deep but NOT the placeable price). `Unibet-Site` (real) has ~50 settled matches — re-run this when it has 300+.

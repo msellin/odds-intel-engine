@@ -39,7 +39,12 @@ def _load(market: str):
                p.model_probability::float praw,
                (cb.selection = m.result::text)::int won
           FROM cb JOIN matches m ON m.id::text=cb.mid
-          JOIN predictions p ON p.match_id=m.id AND p.market='1x2_'||cb.selection
+          -- LATEST model_version only: predictions holds ~16 versions per fixture,
+          -- and a plain JOIN counted each match ~1.9x (inflated n + cross-fold match
+          -- leakage). Pick one row per (match, selection). [TRIGGER-WIDEN-AUDIT 2026-09-10]
+          JOIN LATERAL (SELECT model_probability FROM predictions
+                         WHERE match_id=m.id AND market='1x2_'||cb.selection
+                         ORDER BY model_version DESC LIMIT 1) p ON true
         """
     else:  # over_under_25
         sql = """
