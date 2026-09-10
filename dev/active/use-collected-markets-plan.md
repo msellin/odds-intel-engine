@@ -39,3 +39,14 @@ team_total_paper_bot. Floor 0 → accumulate → multi-dim sweep later.
 - ⏸ ou_1h — deferred → follow-up OU-1H-PAPER-PUSH-HANDLING (Asian-line push logic + Pinnacle timing).
 - ⏸ cards / corner-variants — deferred (settlement/anchor problems).
 - NEXT (needs time): accrue → multi-dim sweep at ~300+ settled/bot → profitable slice → owner-gated real-money graduation (Epicbet EMTA-bettable).
+
+## AUTONOMOUS STRETCH CLOSE 2026-09-10
+Built + shipped (all committed/pushed, deploy-safe):
+- 2 new sharp-anchor paper bots: team_total (mig 327) + 1h_1x2 (mig 328) — LIVE on VPS scheduler, accruing.
+- ou_1h deferred → follow-up OU-1H-PAPER-PUSH-HANDLING.
+- docs/DATA_SOURCE_CAPABILITY_MATRIX.md (AF vs Epicbet).
+- EPICBET-INPLAY spike done (live odds confirmed feasible) → decision surfaced (cadence/retention vs DB growth).
+- Ripple docs: Epicbet added to DATA_SOURCES/INFRASTRUCTURE/SYSTEM_MAP + dashboard task.
+Fixed MY regressions found via full-suite run: COOLBET-DAILY-SUMMARY + MARKET-VOCAB-ENFORCED (added
+team_total + 1x2_1h to canonical vocab). Filed SMOKE-SUITE-RED-TRIAGE (P1 — CI red all day, 15 pre-existing).
+BLOCKED on owner: inplay cadence/retention, real-money graduation, stale-test triage. WAITING on time: the sweep at 300+ settled.
