@@ -175,10 +175,9 @@ def _format_summary(s: dict) -> str:
     warnings: list[str] = []
     if s.get("placement_paused"):
         warnings.append(f"⛔ placement_paused: {s.get('placement_paused_reason') or 'unknown'}")
-    if daemon_age is None or daemon_age > DAEMON_STALE_MIN * 60:
-        warnings.append(f"🛑 daemon last tick {_fmt_age(daemon_age)} ago (stale)")
-    elif daemon_errs > 0:
-        warnings.append(f"⚠ daemon last tick errored")
+    # DAEMON-RETIREMENT 2026-09-10: the PAPER mac-daemon is retired; its tick is no
+    # longer a health signal (real-money placement = the UI placer, surfaced by the
+    # PLACEMENT READY/BLOCKED readiness line above). No daemon-stale warning here.
     if hb_age is None or hb_age > SCHEDULER_HB_STALE_MIN * 60:
         warnings.append(f"🛑 Scheduler heartbeat {_fmt_age(hb_age)} ago (stale)")
     if prekickoff_age is not None and prekickoff_age > CATCHNET_STALE_MIN * 60:
@@ -204,7 +203,6 @@ def _format_summary(s: dict) -> str:
         f"",
         readiness_line,
         f"",
-        f"🤖 Daemon: tick {_fmt_age(daemon_age)} ago · last: placed={daemon_placed} errors={daemon_errs}",
         f"🔑 JWT: TTL {_fmt_age(jwt_ttl) if (jwt_ttl is not None and jwt_ttl > 0) else 'expired'}",
         f"🛰 Scheduler HB: {_fmt_age(hb_age)} ago · ok={bool(s.get('last_heartbeat_ok'))}",
         f"🚨 Catch-net: {_fmt_age(prekickoff_age)} ago · sent={prek_sent}",

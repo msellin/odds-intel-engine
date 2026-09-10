@@ -2712,11 +2712,15 @@ def main():
     # COOLBET-DAEMON-HEALTHCHECK (2026-06-21) — every 30 min, VPS-side
     # safety net. Independent of the Mac daemon's in-process alert (which
     # left a 3-day outage silent on 2026-06-18 → 21).
-    scheduler.add_job(job_coolbet_daemon_healthcheck,
-                      CronTrigger(minute="3,33"),  # offset off the half-hour to avoid pileups
-                      id="coolbet_daemon_healthcheck",
-                      name="Coolbet Daemon Healthcheck [30min]",
-                      max_instances=1, misfire_grace_time=600)
+    # DAEMON-RETIREMENT 2026-09-10: the Coolbet PAPER mac-daemon is retired (its
+    # paper placement was redundant with the pipeline's simulated_bets/shadow_bets
+    # and the real-money UI placer; its session-keep moved to the feed-watchdog).
+    # This healthcheck alerted when the daemon's tick went stale — with no daemon it
+    # would fire forever, flooding the ops channel. Placement readiness is now the
+    # UI-placer path (`coolbet_control.placement_readiness`, surfaced in the daily
+    # summary). Job de-registered.
+    # scheduler.add_job(job_coolbet_daemon_healthcheck, CronTrigger(minute="3,33"),
+    #                   id="coolbet_daemon_healthcheck", ...)  # RETIRED
 
     # COOLBET-ODDS-FRESHNESS-WATCHDOG (2026-07-03) — 30-min freshness
     # check on odds_snapshots(bookmaker='Coolbet'). :13/:43 lands ~10 min

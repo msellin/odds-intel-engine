@@ -426,6 +426,18 @@ def run(dry_run: bool = False) -> dict:
         except Exception as e:  # noqa: BLE001
             log.debug("coolbet feed watchdog: session-keep skipped (non-fatal): %s", e)
             result_session = f"error:{e}"
+        # OPERATOR-CONTROL (DAEMON-RETIREMENT 2026-09-10): drain Telegram heal-button
+        # commands here too (pause/resume are direct webhook DB writes and unaffected).
+        # The retired daemon drained these every ~30s; on the :20/:50 cadence a heal
+        # tap can take up to that long, but the watchdog also AUTO-heals each run, so
+        # the button is now a convenience, not the only recovery path. Never fatal.
+        try:
+            from workers.automation.coolbet_mac_daemon import _drain_operator_commands
+            drained = _drain_operator_commands()
+            if drained:
+                log.info("coolbet feed watchdog: drained %d operator command(s)", drained)
+        except Exception as e:  # noqa: BLE001
+            log.debug("coolbet feed watchdog: operator-command drain skipped (non-fatal): %s", e)
     else:
         result_session = "dry_run_skipped"
 

@@ -34908,6 +34908,28 @@ def test_coolbet_session_keep_migrated():
     assert "ensure_session_live" in runsrc, "the feed-watchdog run() must call the session-keep heal"
     assert "not dry_run" in runsrc, "session-keep must be skipped on a dry run"
 
+@test("COOLBET-DAEMON-RETIRED — paper daemon healthcheck de-scheduled; heal + control moved off it")
+def test_coolbet_daemon_retired():
+    """DAEMON-RETIREMENT (2026-09-10): the Coolbet PAPER mac-daemon + keepalive are retired
+    (paper placement was redundant with the pipeline's simulated_bets/shadow_bets + the
+    real-money UI placer). Its unique roles moved BEFORE removal: session-keep + operator
+    heal-button → feed-watchdog; pause/resume already on the webhook. The VPS
+    daemon-healthcheck is de-scheduled (with no daemon it would flood), and the daily
+    summary no longer treats the daemon tick as a health signal."""
+    import inspect
+    from workers.jobs import coolbet_feed_watchdog as w, coolbet_daily_summary as ds
+    sched = open("workers/scheduler.py").read()
+    # the healthcheck add_job is commented out / not active
+    active = [ln for ln in sched.splitlines()
+              if "coolbet_daemon_healthcheck" in ln and "add_job" in ln and not ln.strip().startswith("#")]
+    assert not active, "the daemon healthcheck must not be actively scheduled after retirement"
+    # watchdog carries both session-keep and the operator command drain
+    runsrc = inspect.getsource(w.run)
+    assert "ensure_session_live" in runsrc and "_drain_operator_commands" in runsrc,         "feed-watchdog must own session-keep + operator command drain after retirement"
+    # daily summary dropped the daemon-tick health line
+    fmt = inspect.getsource(ds._format_summary)
+    assert "Daemon: tick" not in fmt, "daily summary must not report the retired daemon tick"
+
 
 if __name__ == "__main__":
     main()
