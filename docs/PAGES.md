@@ -1,6 +1,23 @@
 # OddsIntel Web — All Pages Reference
 
-Last updated: 2026-05-05
+> **⚠️ DEPRECATED 2026-06-24** — This document describes the pre-collapse
+> tiered product (Free/Pro/Elite pages, `/login` + `/signup` + OAuth, Stripe
+> checkout/portal routes, `/matches`, `/value-bets`, 16 paper bots). That
+> surface no longer exists. The tiered product was collapsed 2026-06-24 (see
+> `TIER_ACCESS_MATRIX.md` and `ROADMAP.md` → "Current System State").
+>
+> **The live public surface is 5 pages, free for everyone, no tier gating:**
+> `/` (landing), `/picks`, `/performance`, `/privacy`, `/terms`. Stripe is
+> webhook-only for 2 legacy subscribers. The betting engine is the model-vs-sharp
+> trigger engine with 2 real-money Coolbet model bots + Unibet paper twins — not
+> the 16-bot fleet described below.
+>
+> Everything below is preserved verbatim as a historical record. Do not treat
+> any route or tier claim here as current.
+
+---
+
+Last updated: 2026-05-05 (pre-collapse — see banner above)
 
 ---
 

@@ -2,18 +2,40 @@
 
 > **For "what model is currently in production"**: don't read this doc — call
 > `workers.api_clients.supabase_client._active_model_version()` (reads the
-> `MODEL_VERSION` env var, defaults to v14). Scripts should ALWAYS use that
-> function; never hardcode a model version name.
+> `MODEL_VERSION` env var). Scripts should ALWAYS use that function; never
+> hardcode a model version name.
 >
 > This doc captures the *history* of what each model version had so we can
 > reason about backtest comparisons, calibration choices, and bot config
 > decisions years from now.
+>
+> **⚠️ The version-history list below is truncated at v14 (2026-05-13)** and
+> does not track the many promotions since. The env-driven live versions are
+> now set on the **VPS `.env`**, not Railway (Railway eliminated 2026-06-29),
+> and applied with `systemctl restart oddsintel-scheduler`.
 
 ---
 
-## Current production: `v14`
+## Current production (env-driven on the VPS)
 
-Set via Railway env `MODEL_VERSION=v14`. Active since approximately 2026-05-13.
+Set via `/opt/odds-intel-engine/.env` on the Hetzner VPS, then
+`systemctl restart oddsintel-scheduler`. As of 2026-09 the live versions are
+approximately:
+
+| Env var | Value | Market |
+|---|---|---|
+| `MODEL_VERSION` (main 1X2) | `~v20260712` | 1X2 / core |
+| OU model version | `~v20260903_cut0820` | Over/Under |
+| meta-model version | `v_20260706_bets_xgb` | meta / stake selection |
+
+The properties table below describes the v14-era architecture and is kept for
+historical calibration/backtest reasoning; the ensemble shape (Poisson + XGBoost
+blend, per-tier Platt/Dixon-Coles) still holds but the trained bundles have moved
+on many versions.
+
+---
+
+## Historical snapshot — `v14` (2026-05-13, then set via Railway)
 
 | Property | Value |
 |---|---|
@@ -83,8 +105,8 @@ training data fed into `compute_prediction()`.
 1. Train a new bundle (`scripts/train_xgboost.py` or similar)
 2. Upload via `ML-BUNDLE-STORAGE` flow → registers in `model_versions` table
 3. Validate via `scripts/offline_eval.py vA vB` — confirms new model beats current on log_loss + ROI metrics
-4. Update Railway env: `MODEL_VERSION=v15`
-5. Redeploy — next cold-start auto-pulls the new bundle from Storage
+4. Update the VPS env (`/opt/odds-intel-engine/.env`): `MODEL_VERSION=v15`
+5. `systemctl restart oddsintel-scheduler` — next start auto-pulls the new bundle from Storage
 6. Add an entry above documenting what changed
 
 ### How scripts should reference the active model

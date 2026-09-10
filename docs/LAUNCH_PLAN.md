@@ -1,5 +1,11 @@
 # OddsIntel — Launch Plan
 
+> **🗄️ ARCHIVED 2026-09-10 — describes a past launch and a dead stack.** This
+> plan assumes the tiered Stripe product (collapsed 2026-06-24) and Vercel
+> hosting (migrated to VPS pm2 2026-07-07). The organic launch it describes has
+> been and gone. Kept for historical reference only — do not follow its infra or
+> pricing steps.
+
 > Written 2026-04-29. Updated 2026-05-06 (full status sync from PRIORITY_QUEUE).
 > Use this doc to brief another agent or plan the next phase.
 > Detailed Reddit execution: `docs/REDDIT_LAUNCH.md`. ENG task tracking: `PRIORITY_QUEUE.md`.

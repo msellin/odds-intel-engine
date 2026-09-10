@@ -1,5 +1,11 @@
 # OddsIntel — Meta Ads Plan
 
+> **🗄️ ARCHIVED 2026-09-10 — never executed, obsolete.** This plan was written
+> pre-PMF (user count ~30) and assumes the tiered Free/Pro/Elite Stripe product
+> that was collapsed 2026-06-24. No paid ads were ever run. Kept for reference
+> only; do not action any of it. If paid acquisition is revisited, plan it
+> against the current free 5-page surface (`/`, `/picks`, `/performance`).
+
 > Created 2026-05-08. Status: Ready to launch.
 
 ---

@@ -18,7 +18,7 @@ Full audit of every endpoint in the API, mapped against our current usage. Based
 | `/fixtures/headtohead` | `h2h`, `last` | `fetch_enrichment.py` | H2H history between two teams |
 | `/standings` | `league+season` | `fetch_enrichment.py` | League table and form |
 | `/odds` | `fixture`, `date+page` | `fetch_odds.py` | Pre-match odds from 13 bookmakers; 10 results/page |
-| `/odds/live` | bare (all) | `live_tracker.py` | In-play odds; updated every 5–60s; no history stored |
+| `/odds/live` | bare (all) | `live_tracker.py` | **GATED OFF since 2026-08-21** (in-play betting retired) — not polled; in-play odds; updated every 5–60s; no history stored |
 | `/predictions` | `fixture` | `fetch_predictions.py` | AF's own prediction scores and win % |
 | `/injuries` | `fixture`, `ids` (batch up to 20) | `fetch_enrichment.py` | Current injury/suspension list per match |
 | `/teams` | `search` | `api_football.py` | Team lookup by name |

@@ -14,7 +14,7 @@ for 72h — check Stripe → Developers → Webhooks → your endpoint → Recen
 
 **Recovery:**
 1. Confirm the charge exists in Stripe → Customers → [customer] → Payments.
-2. Check `processed_events` in Supabase for the session's event ID. If absent, the webhook never fired.
+2. Check `processed_events` in VPS Postgres (`psql` on 204.168.199.8 — the public schema was dropped from Supabase 2026-07-13) for the session's event ID. If absent, the webhook never fired.
 3. Fix the tier manually:
    ```sql
    UPDATE profiles

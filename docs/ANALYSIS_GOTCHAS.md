@@ -49,6 +49,11 @@ raised de-vigged-Pinnacle coverage in one backtest from 1,489 rows to 3,448.
 
 ## 4. Pinnacle quotes only 8 bet types through API-Football
 
+> **⚠️ SUPERSEDED by §45 (2026-09-05)** — Pinnacle actually sends **19** bet
+> types through API-Football, not 8. The "8 bet types" claim below was wrong;
+> read §45 for the corrected list and the follow-on consequences. Kept here so
+> older references to this section resolve.
+
 Confirmed live against the AF endpoint: Match Winner, Asian Handicap, Asian
 Handicap First Half, Goals Over/Under, Goals Over/Under First Half, Total-Home,
 Total-Away, Away Team Total 1st Half.

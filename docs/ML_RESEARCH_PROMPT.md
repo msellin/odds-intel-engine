@@ -1,5 +1,11 @@
 # OddsIntel — ML Research Prompt
 
+> **🗄️ ARCHIVED 2026-09-10 — describes an obsolete model stack.** The model has
+> moved many versions on since this was written (live versions are env-driven on
+> the VPS — main ~v20260712, OU ~v20260903_cut0820, meta v_20260706_bets_xgb).
+> The framing and task list here no longer match the current architecture (the
+> model-vs-sharp trigger engine). Kept for historical reference only.
+
 Send this prompt to Gemini 1.5 Pro, GPT-4o, Claude Opus, or any strong reasoning model.
 Synthesise findings and add new tasks to PRIORITY_QUEUE.md under "ML Model Improvements".
 

@@ -1,9 +1,10 @@
 # Uptime Kuma — Push Monitor Setup (Tier 1)
 
 The scheduler is wired to push heartbeats to Uptime Kuma from
-`workers/utils/kuma.py`. This doc lists the 7 monitors to create in the
+`workers/utils/kuma.py`. This doc lists the 5 monitors to create in the
 Kuma UI and how to configure the VPS environment so the pushes actually
-land.
+land. (Was 7 before CS2-REMOVAL-2026-08-26 deleted the two CS2 monitors —
+see the note under the table.)
 
 - **Kuma dashboard:** https://status.oddsintel.app
 - **Helper:** `workers/utils/kuma.py::push(job_id, ...)`
@@ -43,13 +44,13 @@ own cadence so a single missed fire doesn't page. **Retries × interval**
 sets the grace window after Kuma first notices silence before it fires
 the notification.
 
-**CS2 v8 quiet hours:** monitor 5's job only runs 10-23 UTC. Kuma will
-alert every night at 23:00+ if you don't set a maintenance window. In
-Kuma → Monitor 5 → **Maintenance**, add a daily recurring window
-`23:00-10:00 UTC` so overnight silence doesn't page.
+**Quiet hours:** monitor 5 (Scheduler Heartbeat) fires every 5 min
+around the clock and needs no maintenance window. (The old CS2 v8
+`10-23 UTC` quiet-hours note was removed with CS2-REMOVAL-2026-08-26 —
+there is no longer a Tier-1 monitor gated to match hours.)
 
 **Notify targets:** configure once in Kuma → **Settings → Notifications**
-(Telegram / email / etc.) and select for each of the 7 monitors. Kuma
+(Telegram / email / etc.) and select for each of the 5 monitors. Kuma
 handles de-dup so a stuck monitor pages once, not every retry.
 
 ---
@@ -103,7 +104,7 @@ push('healthcheck_ping', status='up', msg='manual verify')
 "
 ```
 
-That should turn monitor #7 green within a few seconds.
+That should turn monitor 5 (Scheduler Heartbeat) green within a few seconds.
 
 ---
 
