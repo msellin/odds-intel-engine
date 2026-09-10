@@ -34757,5 +34757,50 @@ def test_unibet_self_revive():
     assert "dedup_key" in rb, "the failure alert must stay deduped (one per outage window)"
 
 
+@test("COOLBET-SWEEP-ROWS-WRITTEN-ALARM — sweep that ran but stored 0 rows pages a human")
+def test_coolbet_sweep_rows_written_alarm():
+    """COOLBET-INGEST-HARDENING (2026-09-10): a Coolbet board sweep that WALKED the
+    board (events_seen > 0) but wrote NOTHING (stored_rows == 0) is the silent-failure
+    class the epic exists to kill — from the outside it looks identical to "Coolbet
+    offers nothing". run_board_sweep must fire a deduped Telegram alert on the hard-zero
+    case, guarded by `not dry_run`, and it must never raise."""
+    import inspect
+    from workers.automation import coolbet_explorer as ce
+    src = inspect.getsource(ce.run_board_sweep)
+    # (1) the alarm is guarded by not dry_run AND the events_seen>0 / stored_rows==0 condition
+    assert "not dry_run" in src and 'c["events_seen"] > 0' in src and 'c["stored_rows"] == 0' in src, \
+        "run_board_sweep must alarm only when NOT dry_run, events_seen>0 and stored_rows==0"
+    # (2) it routes through the shared deduped Telegram helper with the agreed key + 3h window
+    assert 'dedup_key="coolbet-sweep-zero-rows"' in src, "alarm must use dedup_key='coolbet-sweep-zero-rows'"
+    assert "dedup_window_s=10800" in src, "alarm must dedup on a 3h (10800s) window"
+    assert "send_telegram" in src, "alarm must send via workers.notify.telegram.send_telegram"
+    # (3) it names the counters and the diagnosis
+    assert "matcher/parse regression" in src, "alarm message must say it's likely a matcher/parse regression, not a coverage gap"
+    # (4) it can NEVER raise out of the sweep — wrapped in try/except with a debug log
+    assert "except Exception" in src and "non-fatal" in src, "alarm must be wrapped so it never raises"
+
+
+@test("API-FOOTBALL-CANONICAL-VOCAB — AF odds ingest writes the shared canonical market vocabulary")
+def test_api_football_canonical_vocab():
+    """COOLBET-INGEST-HARDENING (2026-09-10): AF-ingested odds_snapshots rows must use the
+    same canonical (market, selection) spelling as every other writer. parse_fixture_odds
+    routes each parsed row through workers.canonical_market.canonicalize_for_storage, which
+    is idempotent and non-destructive (AH/combo selections preserved verbatim)."""
+    import inspect
+    from workers.api_clients import api_football as af
+    src = inspect.getsource(af.parse_fixture_odds)
+    # (1) source inspection: the AF write path calls the shared canonicaliser
+    assert "canonicalize_for_storage" in src, \
+        "parse_fixture_odds must route (market, selection) through canonicalize_for_storage"
+    assert "from workers.canonical_market import canonicalize_for_storage" in src, \
+        "parse_fixture_odds must import the shared canonical vocabulary helper"
+    # (2) behavioural: canonicalize_for_storage is idempotent on representative samples
+    from workers.canonical_market import canonicalize_for_storage as c
+    for m, s in (("1x2", "home"), ("o/u", "over 2.5"), ("over_under_25", "over"),
+                 ("asian_handicap", "home"), ("btts", "yes")):
+        once = c(m, s)
+        assert c(*once) == once, f"canonicalize_for_storage not idempotent on {(m, s)!r}: {once!r} -> {c(*once)!r}"
+
+
 if __name__ == "__main__":
     main()
