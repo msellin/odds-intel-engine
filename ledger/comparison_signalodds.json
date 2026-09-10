@@ -1,10 +1,10 @@
 {
   "source": "SignalOdds",
   "source_url": "https://signalodds.com/predictions/past?sport=soccer",
-  "snapshot_at_utc": "2026-09-09T07:12:17+00:00",
+  "snapshot_at_utc": "2026-09-10T07:08:25+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-09-10"
+    "end": "2026-09-11"
   },
   "status": "ok",
   "min_sample_each_side": 50,
@@ -55,18 +55,18 @@
     "status_None": 3
   },
   "our_stats_same_window": {
-    "n": 661,
-    "stake_total": 6610.0,
-    "pnl_total": 858.24,
-    "roi_pct": 12.98,
-    "hit_rate_pct": 43.87,
-    "avg_odds": 2.724,
+    "n": 635,
+    "stake_total": 6350.0,
+    "pnl_total": 739.84,
+    "roi_pct": 11.65,
+    "hit_rate_pct": 43.46,
+    "avg_odds": 2.722,
     "priced_at": "best price live at pick time",
-    "n_total_settled": 666,
+    "n_total_settled": 640,
     "coverage_pct": 99.2,
-    "roi_pct_recorded": 17.28,
-    "roi_pct_recorded_all_rows": 17.24,
-    "hit_rate_pct_recorded_all_rows": 43.84,
+    "roi_pct_recorded": 15.99,
+    "roi_pct_recorded_all_rows": 15.96,
+    "hit_rate_pct_recorded_all_rows": 43.44,
     "restatement_note": "roi_pct is priced at odds that were live at pick time. roi_pct_recorded is the same bets at the stored odds_at_pick, which STALE-BEST-ODDS-2026-09-02 showed to be a high-water mark across the whole snapshot history rather than a price on offer."
   }
 }
