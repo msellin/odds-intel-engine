@@ -131,17 +131,23 @@ floor (`_MIN_ODDS_BY_MARKET`: 1x2 2.80 / o/u 1.80) → live-edge re-check → si
 dedup. Pre-match only.
 
 **Readiness surface (READ-ONLY) — "can I place real money right now?"**
-`workers/automation/coolbet_control.placement_readiness()` aggregates every
-placement gate into one dict: `can_place_now` (bool) + `blockers` (list). It is
-`True` only when NOT `placement_paused`, NOT `daemons_paused`, `session_healthy`,
-JWT valid (`jwt_exp_at` in the future), ≥1 bot `ui_place_enabled`, and the Mac
-daemon tick is fresh (≤60 min). The decision is the pure helper
-`_evaluate_readiness(state, bots, now)` (DB-free, unit-tested). CLI:
-`python3 -m workers.automation.coolbet_control --status`. It is surfaced in the
-daily Telegram summary as a `PLACEMENT READY ✅ / BLOCKED ⛔ (reasons)` line
-(`coolbet_daily_summary`). This surface **only reports** the state the placer's
-own gates already enforce — it never places, toggles, or changes a floor.
-Smoke: `COOLBET-PLACEMENT-READINESS`.
+`workers/automation/coolbet_control.placement_readiness()` aggregates into one
+dict: `can_place_now` (bool) + `blockers` + `warnings`. **It models the REAL
+placement path — the UI placer (`place_coolbet_ui.py`), which stakes via the
+operator's LOGGED-IN CDP-Chrome browser session.** So the gates are exactly what
+that placer enforces: NOT `placement_paused`, NOT `daemons_paused`, and ≥1 bot
+`ui_place_enabled`. Liveness is the UI placer's own attempt ledger
+(`coolbet_placement_attempts` — last attempt = the hourly job ran; last
+`outcome='placed'` = real money moved, so the browser was logged in); a stale
+attempt is a **warning** (no candidates ≠ down), not a blocker. **The API/
+FlareSolverr JWT (`jwt_exp_at`), `session_healthy`, and the PAPER mac-daemon tick
+are reported as non-gating CONTEXT only** — they belong to the odds/API + paper
+path, NOT to browser-driven UI placement. (READINESS-PATH-FIX 2026-09-10: the
+first version blocked on those and reported BLOCKED while real money was being
+placed fine through the browser.) Pure helper `_evaluate_readiness(state, bots,
+now)` (DB-free, unit-tested). CLI: `python3 -m workers.automation.coolbet_control
+--status`. Surfaced in the daily Telegram summary (`coolbet_daily_summary`).
+Read-only — never places, toggles, or changes a floor. Smoke: `COOLBET-PLACEMENT-READINESS`.
 
 ---
 

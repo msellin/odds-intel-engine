@@ -34757,91 +34757,73 @@ def test_unibet_self_revive():
     assert "dedup_key" in rb, "the failure alert must stay deduped (one per outage window)"
 
 
-@test("COOLBET-PLACEMENT-READINESS — one surface aggregates every placement gate; pauses report not-ready")
+@test("COOLBET-PLACEMENT-READINESS — real-money gate = UI-placer path, NOT the paper daemon / API JWT")
 def test_coolbet_placement_readiness():
-    """COOLBET-PLACEMENT-READINESS (2026-09-10, COOLBET-OWN-UNIFIED-FLOW-EPIC #20):
-    a single read-only surface answers "can I place real money right now?" by
-    aggregating placement_paused + daemons_paused + session_healthy + JWT TTL +
-    ui_place_enabled bots + daemon tick freshness. The decision logic lives in
-    the pure helper `_evaluate_readiness(state, bots, now)` so it needs no DB.
-
-    Guards: required keys present, correct types, and — the property that
-    matters — a paused kill switch (or expired JWT, or no enabled bot, or stale
-    daemon) MUST report can_place_now=False with a matching blocker."""
+    """COOLBET-PLACEMENT-READINESS (2026-09-10, COOLBET-OWN-UNIFIED-FLOW-EPIC #20;
+    READINESS-PATH-FIX same day). "Can I place real money now?" is answered for the
+    REAL path — the UI placer (place_coolbet_ui.py) that stakes via the operator's
+    logged-in CDP-Chrome browser. The v1 wrongly blocked on the API/FlareSolverr JWT
+    and the PAPER mac-daemon tick, and cried BLOCKED while real money was being placed
+    fine through the browser. So the gates are exactly: placement_paused, daemons_paused,
+    ≥1 ui_place_enabled bot. JWT/session_healthy/paper-daemon are non-gating CONTEXT.
+    Pure `_evaluate_readiness(state, bots, now)` — no DB."""
     from datetime import datetime, timezone, timedelta
     from workers.automation import coolbet_control as cc
 
     now = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
     REQUIRED_KEYS = {
-        "can_place_now", "blockers", "jwt_exp_at", "jwt_valid", "jwt_ttl_minutes",
-        "placement_paused", "placement_paused_reason", "daemons_paused",
-        "daemons_paused_reason", "session_healthy", "last_error",
-        "daemon_last_tick_at", "daemon_last_tick_result", "daemon_tick_age_min",
-        "enabled_bots", "disabled_bots",
+        "can_place_now", "blockers", "warnings", "placement_paused",
+        "placement_paused_reason", "daemons_paused", "daemons_paused_reason",
+        "enabled_bots", "disabled_bots", "last_ui_attempt_at",
+        "ui_attempt_age_min", "last_real_placement_at", "odds_api_path",
     }
-
-    # A fully-green state → READY, no blockers.
     green_state = {
-        "jwt_exp_at": now + timedelta(hours=2),
-        "session_healthy": True,
         "placement_paused": False,
         "daemons_paused": False,
-        "mac_daemon_last_tick_at": now - timedelta(minutes=5),
-        "mac_daemon_last_tick_result": {"placed": 1, "errors": 0},
-        "last_error": None,
+        "last_ui_attempt_at": now - timedelta(minutes=11),
+        "last_real_placement_at": now - timedelta(hours=2),
+        # deliberately BAD odds/API-path values — these must NOT block real money:
+        "jwt_exp_at": now - timedelta(minutes=289),
+        "session_healthy": False,
+        "mac_daemon_last_tick_at": now - timedelta(hours=6),
     }
     green_bots = [
         {"bot_name": "bot_coolbet_ou_model_v1", "ui_place_enabled": True},
-        {"bot_name": "bot_coolbet_1x2_model_v1", "ui_place_enabled": False},
+        {"bot_name": "bot_coolbet_1x2_model_v1", "ui_place_enabled": True},
     ]
     green = cc._evaluate_readiness(green_state, green_bots, now)
-    assert REQUIRED_KEYS.issubset(green.keys()), \
-        f"missing keys: {REQUIRED_KEYS - set(green.keys())}"
-    assert isinstance(green["can_place_now"], bool), "can_place_now must be a bool"
-    assert isinstance(green["blockers"], list), "blockers must be a list"
-    assert green["can_place_now"] is True, f"green state should be READY, got {green['blockers']}"
-    assert green["blockers"] == [], f"green state should have no blockers, got {green['blockers']}"
-    assert green["enabled_bots"] == ["bot_coolbet_ou_model_v1"]
-    assert green["jwt_valid"] is True
+    assert REQUIRED_KEYS.issubset(green.keys()), f"missing keys: {REQUIRED_KEYS - set(green.keys())}"
+    assert isinstance(green["can_place_now"], bool) and isinstance(green["blockers"], list)
+    # THE key property: expired API JWT + unhealthy session + dead paper daemon must
+    # STILL be READY, because none of those gate the browser-driven UI placer.
+    assert green["can_place_now"] is True, f"expired-JWT/paper-down must stay READY, got {green['blockers']}"
+    assert green["blockers"] == []
+    assert green["odds_api_path"]["jwt_valid"] is False, "JWT is reported as context…"
+    assert green["enabled_bots"] == ["bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"]
 
-    # placement_paused=True → NOT ready, and a blocker names the pause.
-    paused = cc._evaluate_readiness(
-        {**green_state, "placement_paused": True,
-         "placement_paused_reason": "operator test pause"},
-        green_bots, now,
-    )
-    assert paused["can_place_now"] is False, "paused state must NOT be ready"
-    assert any("paus" in b.lower() for b in paused["blockers"]), \
-        f"a blocker must mention the pause, got {paused['blockers']}"
-
-    # Expired JWT → not ready with a JWT blocker.
-    expired = cc._evaluate_readiness(
-        {**green_state, "jwt_exp_at": now - timedelta(minutes=30)}, green_bots, now)
-    assert expired["can_place_now"] is False and expired["jwt_valid"] is False
-    assert any("jwt" in b.lower() for b in expired["blockers"])
-
-    # No enabled bot → not ready.
-    no_bots = cc._evaluate_readiness(
-        green_state,
+    # placement_paused → BLOCKED with a matching blocker.
+    paused = cc._evaluate_readiness({**green_state, "placement_paused": True,
+                                     "placement_paused_reason": "operator test"}, green_bots, now)
+    assert paused["can_place_now"] is False and any("paus" in b.lower() for b in paused["blockers"])
+    # daemons_paused (global footprint kill switch) → BLOCKED.
+    dpaused = cc._evaluate_readiness({**green_state, "daemons_paused": True,
+                                      "daemons_paused_reason": "footprint"}, green_bots, now)
+    assert dpaused["can_place_now"] is False and any("daemon" in b.lower() for b in dpaused["blockers"])
+    # no enabled bot → BLOCKED.
+    no_bots = cc._evaluate_readiness(green_state,
         [{"bot_name": "bot_coolbet_ou_model_v1", "ui_place_enabled": False}], now)
-    assert no_bots["can_place_now"] is False
-    assert any("bot" in b.lower() for b in no_bots["blockers"])
+    assert no_bots["can_place_now"] is False and any("bot" in b.lower() for b in no_bots["blockers"])
+    # stale UI-placer attempt → still READY (no candidates ≠ down) but a WARNING fires.
+    staleui = cc._evaluate_readiness({**green_state, "last_ui_attempt_at": now - timedelta(hours=5)},
+                                     green_bots, now)
+    assert staleui["can_place_now"] is True and staleui["warnings"], "stale UI attempt is a warning, not a blocker"
 
-    # Stale daemon tick → not ready.
-    stale = cc._evaluate_readiness(
-        {**green_state, "mac_daemon_last_tick_at": now - timedelta(hours=3)},
-        green_bots, now)
-    assert stale["can_place_now"] is False
-    assert any("daemon" in b.lower() for b in stale["blockers"])
-
-    # The real DB-backed entrypoint must never raise and must keep the contract.
+    # Live DB entrypoint never raises, keeps the contract.
     live = cc.placement_readiness()
-    assert REQUIRED_KEYS.issubset(live.keys()), \
-        f"live result missing keys: {REQUIRED_KEYS - set(live.keys())}"
+    assert REQUIRED_KEYS.issubset(live.keys()), f"live missing keys: {REQUIRED_KEYS - set(live.keys())}"
     assert isinstance(live["can_place_now"], bool)
-    assert isinstance(live["blockers"], list)
 
-    # It must NOT introduce any real-money place/execute path — read-only surface.
+    # Read-only surface — no place/execute path.
     import inspect
     src = inspect.getsource(cc)
     assert "execute=True" not in src and "place_and_record" not in src and "stage_bet" not in src, \

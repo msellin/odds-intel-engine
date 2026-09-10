@@ -42,6 +42,9 @@ log = logging.getLogger(__name__)
 # placement is actually happening even if every other gate is green. Matches
 # the daily-summary DAEMON_STALE_MIN default.
 TICK_FRESH_MIN = int(os.getenv("COOLBET_READINESS_TICK_FRESH_MIN", "60"))
+# The UI placer runs hourly and records an attempt per candidate. Older than this
+# with no attempt is a warning (no picks, or the job/browser is down) — not a gate.
+UI_ATTEMPT_STALE_MIN = int(os.getenv("COOLBET_READINESS_UI_ATTEMPT_STALE_MIN", "90"))
 
 
 def _as_utc(dt: datetime | None) -> datetime | None:
@@ -75,30 +78,20 @@ def _evaluate_readiness(state: dict, bots: list[dict], now: datetime | None = No
     state = state or {}
     bots = bots or []
 
-    # ── JWT ──────────────────────────────────────────────────────────────
-    jwt_exp_at = _as_utc(state.get("jwt_exp_at"))
-    jwt_ttl_minutes = _age_minutes(now, jwt_exp_at) if jwt_exp_at else None
-    #  _age_minutes(now, exp) = (exp - now) in minutes → positive == time left.
-    jwt_valid = jwt_ttl_minutes is not None and jwt_ttl_minutes > 0
-
-    # ── pauses / session ─────────────────────────────────────────────────
+    # ── REAL-MONEY gates — exactly what the UI placer (place_coolbet_ui.py
+    #    --all-enabled --execute) enforces. It stakes via the operator's LOGGED-IN
+    #    CDP-Chrome browser session, NOT the API/FlareSolverr JWT and NOT the paper
+    #    mac-daemon. So JWT/session_healthy/paper-daemon-tick are reported below as
+    #    non-gating CONTEXT, never as real-money blockers. (READINESS-PATH-FIX
+    #    2026-09-10: the first version blocked on those and cried wolf while real
+    #    money was being placed fine through the browser.)
     placement_paused = bool(state.get("placement_paused"))
     placement_paused_reason = state.get("placement_paused_reason")
     daemons_paused = bool(state.get("daemons_paused"))
     daemons_paused_reason = state.get("daemons_paused_reason")
-    session_healthy = bool(state.get("session_healthy"))
-    last_error = state.get("last_error")
-
-    # ── daemon liveness ──────────────────────────────────────────────────
-    daemon_last_tick_at = _as_utc(state.get("mac_daemon_last_tick_at"))
-    daemon_tick_age_min = _age_minutes(daemon_last_tick_at, now)
-    tick_fresh = daemon_tick_age_min is not None and daemon_tick_age_min <= TICK_FRESH_MIN
-
-    # ── enabled bots ─────────────────────────────────────────────────────
     enabled_bots = [b.get("bot_name") for b in bots if b.get("ui_place_enabled")]
     disabled_bots = [b.get("bot_name") for b in bots if not b.get("ui_place_enabled")]
 
-    # ── blockers (one human-readable string per failing condition) ───────
     blockers: list[str] = []
     if placement_paused:
         blockers.append(
@@ -108,46 +101,58 @@ def _evaluate_readiness(state: dict, bots: list[dict], now: datetime | None = No
         blockers.append(
             f"daemons paused (global footprint kill switch): {daemons_paused_reason or 'no reason given'}"
         )
-    if not session_healthy:
-        blockers.append(
-            f"session not healthy: {last_error or 'no error recorded'}"
-        )
-    if not jwt_valid:
-        if jwt_exp_at is None:
-            blockers.append("JWT missing (no jwt_exp_at recorded)")
-        else:
-            blockers.append(
-                f"JWT expired (expired {abs(jwt_ttl_minutes):.0f} min ago)"
-            )
     if not enabled_bots:
         blockers.append("no bot toggled ON for placement (coolbet_placer_bots.ui_place_enabled)")
-    if not tick_fresh:
-        if daemon_tick_age_min is None:
-            blockers.append("Mac daemon has never ticked (mac_daemon_last_tick_at is NULL)")
-        else:
-            blockers.append(
-                f"Mac daemon tick stale ({daemon_tick_age_min:.0f} min ago > {TICK_FRESH_MIN} min)"
-            )
-
     can_place_now = not blockers
+
+    # ── UI-placer liveness (the real path) ───────────────────────────────
+    # The hourly UI placer records a coolbet_placement_attempts row per candidate.
+    # No recent attempt means EITHER no qualifying picks OR the job/browser session
+    # is down — we can't tell those apart from the DB, so it is a WARNING (surfaced),
+    # never a hard blocker. A recent real placement proves the browser is logged in.
+    last_ui_attempt_at = _as_utc(state.get("last_ui_attempt_at"))
+    ui_attempt_age_min = _age_minutes(last_ui_attempt_at, now)
+    last_real_placement_at = _as_utc(state.get("last_real_placement_at"))
+    warnings: list[str] = []
+    if ui_attempt_age_min is None:
+        warnings.append(
+            "UI placer has no recorded attempts — verify coolbet-ui-placer is loaded and the Coolbet tab is logged in"
+        )
+    elif ui_attempt_age_min > UI_ATTEMPT_STALE_MIN:
+        warnings.append(
+            f"UI placer's last attempt was {ui_attempt_age_min:.0f} min ago (>{UI_ATTEMPT_STALE_MIN}) — "
+            "likely just no qualifying picks, but check coolbet-ui-placer + the browser session if unexpected"
+        )
+
+    # ── odds/API-path CONTEXT — NOT real-money placement gates ───────────
+    jwt_exp_at = _as_utc(state.get("jwt_exp_at"))
+    jwt_ttl_minutes = _age_minutes(now, jwt_exp_at) if jwt_exp_at else None  # +ve == time left
+    jwt_valid = jwt_ttl_minutes is not None and jwt_ttl_minutes > 0
+    session_healthy = bool(state.get("session_healthy"))
+    daemon_last_tick_at = _as_utc(state.get("mac_daemon_last_tick_at"))
+    daemon_tick_age_min = _age_minutes(daemon_last_tick_at, now)
 
     return {
         "can_place_now": can_place_now,
         "blockers": blockers,
-        "jwt_exp_at": jwt_exp_at,
-        "jwt_valid": jwt_valid,
-        "jwt_ttl_minutes": round(jwt_ttl_minutes, 1) if jwt_ttl_minutes is not None else None,
+        "warnings": warnings,
         "placement_paused": placement_paused,
         "placement_paused_reason": placement_paused_reason,
         "daemons_paused": daemons_paused,
         "daemons_paused_reason": daemons_paused_reason,
-        "session_healthy": session_healthy,
-        "last_error": last_error,
-        "daemon_last_tick_at": daemon_last_tick_at,
-        "daemon_last_tick_result": state.get("mac_daemon_last_tick_result"),
-        "daemon_tick_age_min": round(daemon_tick_age_min, 1) if daemon_tick_age_min is not None else None,
         "enabled_bots": enabled_bots,
         "disabled_bots": disabled_bots,
+        "last_ui_attempt_at": last_ui_attempt_at,
+        "ui_attempt_age_min": round(ui_attempt_age_min, 1) if ui_attempt_age_min is not None else None,
+        "last_real_placement_at": last_real_placement_at,
+        # informational only — the odds/API path, which does NOT gate UI placement
+        "odds_api_path": {
+            "jwt_valid": jwt_valid,
+            "jwt_ttl_minutes": round(jwt_ttl_minutes, 1) if jwt_ttl_minutes is not None else None,
+            "session_healthy": session_healthy,
+            "last_error": state.get("last_error"),
+            "paper_daemon_tick_age_min": round(daemon_tick_age_min, 1) if daemon_tick_age_min is not None else None,
+        },
     }
 
 
@@ -177,6 +182,18 @@ def placement_readiness() -> dict:
         )
         state = dict(rows[0]) if rows else {}
 
+        # The REAL-money liveness signal: the UI placer's own attempt ledger
+        # (coolbet_placement_attempts). last attempt = job/browser ran; last
+        # outcome='placed' = real money actually moved (browser was logged in).
+        att = execute_query(
+            """SELECT max(attempted_at) AS last_ui_attempt_at,
+                      max(attempted_at) FILTER (WHERE outcome = 'placed') AS last_real_placement_at
+                 FROM coolbet_placement_attempts"""
+        )
+        if att:
+            state["last_ui_attempt_at"] = att[0].get("last_ui_attempt_at")
+            state["last_real_placement_at"] = att[0].get("last_real_placement_at")
+
         bots = execute_query(
             "SELECT bot_name, ui_place_enabled, note FROM coolbet_placer_bots ORDER BY bot_name"
         ) or []
@@ -188,20 +205,19 @@ def placement_readiness() -> dict:
         return {
             "can_place_now": False,
             "blockers": [f"status read failed: {e}"],
-            "jwt_exp_at": None,
-            "jwt_valid": False,
-            "jwt_ttl_minutes": None,
+            "warnings": [],
             "placement_paused": None,
             "placement_paused_reason": None,
             "daemons_paused": None,
             "daemons_paused_reason": None,
-            "session_healthy": None,
-            "last_error": None,
-            "daemon_last_tick_at": None,
-            "daemon_last_tick_result": None,
-            "daemon_tick_age_min": None,
             "enabled_bots": [],
             "disabled_bots": [],
+            "last_ui_attempt_at": None,
+            "ui_attempt_age_min": None,
+            "last_real_placement_at": None,
+            "odds_api_path": {"jwt_valid": False, "jwt_ttl_minutes": None,
+                              "session_healthy": None, "last_error": None,
+                              "paper_daemon_tick_age_min": None},
         }
 
 
@@ -215,17 +231,12 @@ def format_readiness(r: dict) -> str:
     """Pretty multi-line rendering for the CLI and for the daily summary's
     one-liner source. Kept here so both callers stay in sync."""
     verdict = "READY ✅" if r.get("can_place_now") else "BLOCKED ⛔"
-    lines = [f"Coolbet real-money placement: {verdict}"]
-    if r.get("blockers"):
-        for b in r["blockers"]:
-            lines.append(f"  ⛔ {b}")
+    lines = [f"Coolbet real-money placement (UI placer): {verdict}"]
+    for b in (r.get("blockers") or []):
+        lines.append(f"  ⛔ {b}")
+    for w in (r.get("warnings") or []):
+        lines.append(f"  ⚠️ {w}")
     lines.append("")
-    ttl = r.get("jwt_ttl_minutes")
-    lines.append(
-        f"  JWT: {'valid' if r.get('jwt_valid') else 'INVALID'}"
-        + (f" (TTL {ttl:.0f} min, exp {_fmt_dt(r.get('jwt_exp_at'))})" if ttl is not None else "")
-    )
-    lines.append(f"  session_healthy: {r.get('session_healthy')}")
     lines.append(
         f"  placement_paused: {r.get('placement_paused')}"
         + (f" — {r.get('placement_paused_reason')}" if r.get('placement_paused') else "")
@@ -234,15 +245,26 @@ def format_readiness(r: dict) -> str:
         f"  daemons_paused: {r.get('daemons_paused')}"
         + (f" — {r.get('daemons_paused_reason')}" if r.get('daemons_paused') else "")
     )
-    age = r.get("daemon_tick_age_min")
-    lines.append(
-        f"  daemon last tick: {_fmt_dt(r.get('daemon_last_tick_at'))}"
-        + (f" ({age:.0f} min ago)" if age is not None else "")
-    )
     lines.append(f"  enabled bots:  {', '.join(r.get('enabled_bots') or []) or '(none)'}")
     lines.append(f"  disabled bots: {', '.join(r.get('disabled_bots') or []) or '(none)'}")
-    if r.get("last_error"):
-        lines.append(f"  last_error: {r.get('last_error')}")
+    age = r.get("ui_attempt_age_min")
+    lines.append(
+        f"  UI placer last attempt: {_fmt_dt(r.get('last_ui_attempt_at'))}"
+        + (f" ({age:.0f} min ago)" if age is not None else "")
+    )
+    lines.append(f"  last REAL placement: {_fmt_dt(r.get('last_real_placement_at'))}")
+    # odds/API path — informational, does NOT gate UI placement
+    api = r.get("odds_api_path") or {}
+    ttl = api.get("jwt_ttl_minutes")
+    lines.append("")
+    lines.append("  ── odds/API path (NOT a real-money placement gate) ──")
+    lines.append(
+        f"  API JWT: {'valid' if api.get('jwt_valid') else 'expired/absent'}"
+        + (f" (TTL {ttl:.0f} min)" if ttl is not None else "")
+        + f" · session_healthy={api.get('session_healthy')}"
+    )
+    pd = api.get("paper_daemon_tick_age_min")
+    lines.append(f"  paper daemon last tick: {f'{pd:.0f} min ago' if pd is not None else 'never'}")
     return "\n".join(lines)
 
 
@@ -250,7 +272,8 @@ def readiness_summary_line(r: dict) -> str:
     """One compact line for the daily Telegram summary. Lead with the verdict
     glyph, then the blocker reasons (or 'all gates green')."""
     if r.get("can_place_now"):
-        return "🟢 PLACEMENT READY ✅ — all gates green"
+        warn = f" (⚠️ {'; '.join(r['warnings'])})" if r.get("warnings") else ""
+        return f"🟢 PLACEMENT READY ✅ — kill switches clear, {len(r.get('enabled_bots') or [])} bot(s) ON{warn}"
     reasons = "; ".join(r.get("blockers") or ["unknown"])
     return f"⛔ PLACEMENT BLOCKED — {reasons}"
 
