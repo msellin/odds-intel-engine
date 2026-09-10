@@ -12,7 +12,7 @@
 | Service | Role | Plan | Status |
 |---------|------|------|--------|
 | **Supabase** | **Auth only** (52 users in `auth.users`) + **Storage** (`models` bucket, 222 MB / 233 objects). Data plane migrated to Hetzner VPS Postgres 17 on 2026-07-09 (SUPABASE-TO-VPS). `public` schema dropped 2026-07-13 (SUPABASE-CLEANUP-DROP). | **Free ($0)** since 2026-07-13 | Downgraded from Pro. DB 18 MB / 500 MB cap; models bucket 222 MB / 1 GB cap. |
-| **Hetzner VPS** | Pipeline scheduler + LivePoller + InplayBot (long-running process) + FlareSolverr (HLTV/CS2 scraping) + **odds-intel-web Next.js frontend (pm2 + nginx)** since 2026-07-07 | **€5.49/mo** | Active since 2026-06-29 (RAILWAY-ELIMINATION). 2 vCPU / 4 GB RAM / 40 GB disk. systemd unit `oddsintel-scheduler.service` — `Restart=always`, venv Python, TZ=UTC. FlareSolverr in Docker (no persistent profile — HLTV sessions are ephemeral). Frontend at `/opt/odds-intel-web`, pm2 process `odds-intel-web` on port 3000, nginx reverse proxy on 80. GitHub Actions auto-deploy on push to main. See `docs/VPS_NEXTJS_MIGRATION_RUNBOOK.md` for the playbook to move more sites. After code push: `git pull && venv/bin/pip install -r requirements.txt && systemctl restart oddsintel-scheduler`. |
+| **Hetzner VPS** | Pipeline scheduler + LivePoller (long-running process; in-play betting/InplayBot retired 2026-08-21) + FlareSolverr (Coolbet transport; HLTV/CS2 scraping removed 2026-08-26) + **odds-intel-web Next.js frontend (pm2 + nginx)** since 2026-07-07 | **€5.49/mo** | Active since 2026-06-29 (RAILWAY-ELIMINATION). 2 vCPU / 4 GB RAM / 40 GB disk. systemd unit `oddsintel-scheduler.service` — `Restart=always`, venv Python, TZ=UTC. FlareSolverr in Docker (no persistent profile — HLTV sessions are ephemeral). Frontend at `/opt/odds-intel-web`, pm2 process `odds-intel-web` on port 3000, nginx reverse proxy on 80. GitHub Actions auto-deploy on push to main. See `docs/VPS_NEXTJS_MIGRATION_RUNBOOK.md` for the playbook to move more sites. After code push: `git pull && venv/bin/pip install -r requirements.txt && systemctl restart oddsintel-scheduler`. |
 | **GitHub Actions** | Manual workflow_dispatch + DB migrations only | Free (public repos) | Active — crons disabled, ~100 min/month |
 | **GitHub** | Source control (2 repos, both public) | Free | Active |
 | **Vercel** | ~~Frontend hosting~~ | Free (paused 2026-07-07 at 301% of Fluid CPU quota) | **oddsintel.app migrated off Vercel to VPS 2026-07-07.** Vercel account still holds `box-ranking` and `procurement-intel` projects but service is paused. Kept as fallback until VPS-hosted frontend has 48h of clean operation, then delete. |
@@ -21,18 +21,18 @@
 | **ESPN API** | Settlement results backup (public) | Free (no key) | Active |
 | **API-Football** | PRIMARY: fixtures, results, odds, lineups, injuries, live stats | **150K tier ($39/mo)** | Active — ⚠️ **Do NOT downgrade to Pro** — 15s live polling needs 18K-45K calls/day (Pro limit: 7.5K) |
 | **Sentry** | Error monitoring & alerting (frontend only) | Free (5K errors/mo) | Active — removed from engine/Railway (cron monitors were exceeding free budget) |
-| **healthchecks.io** | External scheduler heartbeat — pings every 5min, emails if Railway goes silent | Free | Active 2026-05-08. `HEALTHCHECKS_IO_PING_URL` env var (was on Railway). Would have caught the 2026-05-08 pool outage in 5 min vs 11h. **Note 2026-07-18**: URL env var NOT currently set on VPS `.env` (post-Railway migration gap); replaced by VPS-side Telegram heartbeat below during pre-vacation reliability sprint. |
+| **healthchecks.io** | External scheduler heartbeat — pings every 5min, emails if the VPS scheduler goes silent | Free | Active 2026-05-08. `HEALTHCHECKS_IO_PING_URL` env var (was on Railway). Would have caught the 2026-05-08 pool outage in 5 min vs 11h. **Note 2026-07-18**: URL env var NOT currently set on VPS `.env` (post-Railway migration gap); replaced by VPS-side Telegram heartbeat below during pre-vacation reliability sprint. |
 | **VPS Telegram heartbeat** | Standalone systemd timer `oddsintel-heartbeat.timer` runs `/opt/oddsintel/pipeline-heartbeat-alert.sh` every 15min. Queries `pipeline_runs.max(started_at)`; sends Telegram alert if silent >30min. Independent of the scheduler process, so a full scheduler crash still fires. Source in `deploy/vps/`. | Free (uses existing TELEGRAM_BOT_TOKEN) | Active 2026-07-18. Idempotent state at `/var/lib/oddsintel-heartbeat.state`. Covers 2-week owner-vacation window (2026-07-18 → -08-01). |
-| **Stripe** | Payment processing (Pro/Elite tiers) | No monthly fee | **Live mode** ✅ — production keys active 2026-05-04. Pro €4.99/mo, Elite €14.99/mo + annual + founding rates. Promo code `REDDIT` (100% off first month). Webhook idempotency added 2026-05-08 (processed_events table). |
-| **Domain** | oddsintel.app | Registered + connected to Vercel | Active |
+| **Stripe** | ~~Payment processing (Pro/Elite tiers)~~ **Webhook-only** | No monthly fee | **Product COLLAPSED 2026-06-24.** Checkout/upgrade/portal endpoints deleted; the tiered product no longer sells. Only the `/api/stripe/webhook` handler is retained to honor the tier column for **2 legacy paid subscribers**. No new subscriptions. Historical: live keys 2026-05-04, Pro €4.99/Elite €14.99, webhook idempotency via processed_events. |
+| **Domain** | oddsintel.app | Registered + connected to VPS nginx (Cloudflare in front) | Active — was Vercel until 2026-07-07 |
 
 ### Active (free tier)
 
 | Service | Role | Plan | Notes |
 |---------|------|------|-------|
 | **Resend** | Email digest + value bet alerts + pipeline health alerts + weekly retrain verdict + weekly threshold check (2026-06-06) + weekly bot maturity review (2026-06-15) | Free (3K emails/mo) | Active since 2026-05-01. `RESEND_API_KEY` + `ADMIN_ALERT_EMAIL` in `/opt/odds-intel-engine/.env` on the VPS. Sunday 06:00 + 06:30 emails added 2026-06-15. |
-| **The Odds API** | WC 2026 odds (AF coverage_odds=false for the WC league) | Free (500 credits/mo) | Active since 2026-06-06 — gated to 2026-06-11 → 2026-07-19 WC window. 3 credits/sweep × ~38 sweeps = ~114 credits / 500 quota. `OA_KEY` env in `/opt/odds-intel-engine/.env` on the VPS. |
-| **Cloudflare Turnstile** | Invisible captcha on anonymous Supabase signup (ANON-AUTH-PHASE-4) | Free | Active since 2026-06-10. `NEXT_PUBLIC_TURNSTILE_SITE_KEY` in Vercel envs. Supabase Auth → Attack Protection captcha toggled on. |
+| **The Odds API** | WC 2026 odds (AF coverage_odds=false for the WC league) | Free (500 credits/mo) | **RETIRED 2026-06-25** — WC-only feed; WC window closed and WC surface removed. Not polled. Historical: active 2026-06-06, `OA_KEY` env on the VPS. |
+| **Cloudflare Turnstile** | Invisible captcha on anonymous Supabase signup (ANON-AUTH-PHASE-4) | Free | Active since 2026-06-10. `NEXT_PUBLIC_TURNSTILE_SITE_KEY` baked at build time in the VPS frontend build (was Vercel envs pre-2026-07-07). Supabase Auth → Attack Protection captcha toggled on. |
 | **CDP-Chrome (operator's Mac)** | Coolbet JWT auto-renew via `--remote-debugging-port=9222` | Free (runs on operator's existing Mac) | Active since 2026-06-12. Separate Chrome profile `Chrome-CDP-OddsIntel`. JWT auto-renews every ~20min via Coolbet's `/s/auth/renew-token`. `workers/automation/coolbet_mac_daemon.py` reads via raw websockets. launchd-managed. |
 | **Mac launchd (Coolbet HTTP jobs)** | All jobs that hit Coolbet HTTP — cannot run on VPS (Imperva 403's the Linux Chrome fingerprint + Hetzner IP) | Free (operator's Mac) | Three LaunchAgents in `local/launchd/`: `com.oddsintel.coolbet-mac-daemon` (continuous placement), `com.oddsintel.coolbet-odds-snapshot` (:03/:33 bulk odds → `odds_snapshots`), `com.oddsintel.cs2-coolbet-scanner` (:17/:47 CS2 markets → `cs2_upcoming_matches`). Both scanners moved off VPS 2026-07-03 after silent 7-day 403 outage. `oi_local_flaresolverr` Docker on `localhost:8191` handles the CF/Imperva challenge with real-Mac fingerprint. Guardrail: `test_coolbet_scrapers_moved_to_mac` smoke test. |
 
@@ -42,7 +42,13 @@
 |---------|------|-------------|------|-----------|
 | **Plausible** | Alternative to Vercel Analytics if more depth needed | Optional | Cloud | €9/mo (10K pageviews) |
 
-### Stripe — production setup ✅ Done 2026-05-04
+### Stripe — production setup ✅ Done 2026-05-04 (product later COLLAPSED 2026-06-24)
+
+> **⚠️ The paid product was collapsed 2026-06-24.** Checkout/upgrade/portal
+> routes were deleted; only the webhook remains for 2 legacy subscribers. The
+> "next steps" below are the original setup record and are no longer live
+> product surface — Vercel env references are historical (frontend is on the
+> VPS since 2026-07-07).
 
 All steps complete:
 
@@ -99,7 +105,7 @@ All scheduled jobs run on Hetzner VPS (systemd). GitHub Actions used only for ma
 
 > Gemini cost: ~75 calls/day × ~500 tokens/call = ~1.1M tokens/month. Flash at $0.15/1M input + $0.60/1M output ≈ $0.20-0.30/mo. Essentially free but billing must be enabled — free tier RPD cap is only 20/day.
 
-All other services (Vercel, GitHub Actions, Sentry, Kambi, ESPN) on free tiers.
+All other services (GitHub Actions, Sentry, Kambi, ESPN) on free tiers. (Vercel no longer used — frontend on VPS pm2 since 2026-07-07.)
 
 ### Verification stack (added 2026-06-24, zero monthly cost)
 | Service | Purpose | Cost |
@@ -117,9 +123,16 @@ See `DATA_SOURCES.md` for full data architecture, migration plan, and alternativ
 
 ## Cost Projections by Phase
 
-### Phase 1 + Phase 2: Current State (Milestone 1 live, Milestone 2 ready)
+> **⚠️ HISTORICAL / SUPERSEDED.** The tables in this section were written for
+> the pre-collapse tiered product (Supabase Pro, Vercel, live Stripe). The
+> **actual current cost is ~€40/mo** — see "Current Monthly Cost" above.
+> Supabase is Free (not Pro €23), Vercel is gone (frontend on VPS), and Stripe
+> is webhook-only (no per-txn revenue). Treat everything below as scenario
+> planning that predates 2026-06-24, not current state.
 
-> Supabase Pro was added proactively before Stripe production keys — no longer a separate phase cost event.
+### Phase 1 + Phase 2: (was "Current State" pre-2026-06-24)
+
+> Supabase Pro was added proactively before Stripe production keys — no longer a separate phase cost event. (Supabase downgraded to Free 2026-07-13; this table is historical.)
 
 | Service | Plan | Monthly Cost |
 |---------|------|-------------|
@@ -193,14 +206,14 @@ The live tracker (132 runs/day, ~9,900 min/month) is the expensive workflow. Git
 
 **Now:** Stay public (Option C). The competitive moat is in the data (Supabase) and execution speed, not the code. A Poisson+XGBoost pipeline with scrapers isn't worth protecting with $74/mo.
 
-**After LIVE-INFRA migration:** All pipeline jobs move to Railway ($5/mo). GH Actions is used only for manual triggers + backfill. Going private becomes nearly free — remaining GH Actions usage drops to <100 min/month (manual triggers only). The $74/mo concern is eliminated.
+**Done (RAILWAY-ELIMINATION 2026-06-29):** All pipeline jobs run on the **Hetzner VPS** (systemd `oddsintel-scheduler`, €5.49/mo) — the Railway step described here was superseded; Railway was never the final home and is cancelled. GH Actions is used only for deploy/migrate/drift workflows + manual triggers. The $74/mo public-vs-private concern is moot.
 
 ---
 
 ## Key Decisions & Notes
 
 - **Repos are public** — keeps GitHub Actions free (saves ~$74/mo). No secrets in code; all credentials in `.env` (gitignored) and GitHub Secrets.
-- **Supabase Pro** — upgraded 2026-04-29. Daily backups + PITR active. 8 GB DB limit vs 500 MB free.
+- **Supabase Free** — downgraded from Pro 2026-07-13 (SUPABASE-CLEANUP-DROP). Public schema dropped; only Auth + Storage remain, well under Free caps. The DB/data plane is now VPS Postgres 17 (own daily backup at 03:30 UTC → Hetzner Storage Box). The old Pro 8 GB limit / PITR no longer apply.
 - **No paid odds APIs yet** — Kambi is free/public. OddAlerts or BSD Sports Data API are candidates if we need broader bookmaker coverage later.
 - **Gemini billing enabled 2026-05-05** — free tier RPD cap is only 20/day; news_checker alone needs 64+/day. Pay-as-you-go cost is ~$0.20-0.30/mo (negligible). Engine jobs use `gemini-2.5-flash`; bet-explain uses `gemini-2.5-flash-lite` (separate quota bucket).
-- **Live tracker is the heaviest workflow** — 132 runs/day. If GitHub ever throttles, move to Railway/Fly.io free tier or a €5/mo VPS.
+- **Live polling is the heaviest workflow** — runs on the VPS as an in-process LivePoller thread (in-play *betting* retired 2026-08-21; the poller still feeds live scores + settlement). No longer on GitHub Actions, so the old "move off Actions" note is obsolete.
