@@ -117,6 +117,68 @@ def sweep(market: str, split: float, folds: int, sel_filter: str | None):
         print(f"  [{lo:>4.1f},{hi:>4.1f}]  " + "".join(f"{c:>14s}" for c in cells))
 
 
+def _load_sharp():
+    """Settled matches with Coolbet 1x2 (per selection) + Pinnacle home/draw/away —
+    for the SHARP anchor (edge = de-vigged Pinnacle P_sharp − 1/Coolbet_odds). No model,
+    no calibration/train-test needed (P_sharp is not fit to results)."""
+    return execute_query("""
+      WITH cb AS (
+        SELECT DISTINCT ON (o.match_id,o.selection) o.match_id::text mid, o.selection, o.odds::float odds
+          FROM odds_snapshots o JOIN matches m ON m.id=o.match_id
+         WHERE o.market='1x2' AND o.bookmaker='Coolbet' AND o.timestamp<=m.date
+           AND m.status='finished' AND m.result IS NOT NULL
+         ORDER BY o.match_id,o.selection,o.timestamp DESC),
+      pinraw AS (
+        SELECT DISTINCT ON (o.match_id,o.selection) o.match_id::text mid, o.selection, o.odds::float odds
+          FROM odds_snapshots o JOIN matches m ON m.id=o.match_id
+         WHERE o.market='1x2' AND o.bookmaker='Pinnacle' AND o.timestamp<=m.date AND m.status='finished'
+         ORDER BY o.match_id,o.selection,o.timestamp DESC),
+      pin AS (
+        SELECT mid, max(odds) FILTER (WHERE selection='home') ph,
+                    max(odds) FILTER (WHERE selection='draw') pd,
+                    max(odds) FILTER (WHERE selection='away') pa
+          FROM pinraw GROUP BY mid)
+      SELECT m.date, cb.selection, cb.odds, pin.ph, pin.pd, pin.pa, m.result::text AS result
+        FROM cb JOIN matches m ON m.id::text=cb.mid JOIN pin ON pin.mid=cb.mid
+       WHERE pin.ph IS NOT NULL AND pin.pd IS NOT NULL AND pin.pa IS NOT NULL
+    """)
+
+
+def sweep_sharp(folds: int, sel_filter: str | None):
+    """SHARP-anchor sweep: edge = P_sharp(de-vig Pinnacle) − 1/Coolbet_odds, over
+    edge floor × odds band × bet-type. This is where §57 says the draw edge lives."""
+    from workers.model.devig import devig
+    rows = _load_sharp()
+    recs = []  # (date, selection, coolbet_odds, won, sharp_edge)
+    for r in rows:
+        probs = devig([float(r["ph"]), float(r["pd"]), float(r["pa"])])  # [home,draw,away]
+        if not probs:
+            continue
+        idx = {"home": 0, "draw": 1, "away": 2}[r["selection"]]
+        p_sharp = probs[idx]
+        odds = float(r["odds"])
+        recs.append((r["date"], r["selection"], odds, int(r["selection"] == r["result"]),
+                     p_sharp - 1.0 / odds))
+    recs.sort(key=lambda x: x[0])
+    edges = [0.02, 0.03, 0.05, 0.08, 0.12]           # sharp floors are LOW (~3%)
+    bands = [(1.01, 3.30), (3.30, 4.00), (4.00, 5.50), (5.50, 12.0), (1.01, 12.0)]
+    print(f"\nSHARP-SWEEP 1x2 [{sel_filter or 'all'}] — edge = P_sharp(devig Pinnacle) − 1/coolbet_odds")
+    print("  band \\ edge   " + "".join(f"{int(e*100):>13d}%" for e in edges))
+    for lo, hi in bands:
+        cells = []
+        for e in edges:
+            rr = [(-1.0 if not w else o - 1.0) for (d, s, o, w, se) in recs
+                  if (not sel_filter or s == sel_filter) and lo <= o <= hi and se >= e]
+            if len(rr) < 20:
+                cells.append("            ."); continue
+            arr = np.array(rr); roi = arr.mean() * 100
+            fsz = max(1, len(arr) // folds)
+            fr = [arr[i:i+fsz].mean()*100 for i in range(0, len(arr), fsz) if len(arr[i:i+fsz]) >= 15]
+            rob = "ROBUST+" if fr and all(x > 0 for x in fr) else ("pos" if roi > 0 else "neg")
+            cells.append(f"{roi:+6.0f}%({len(arr)}){rob[:4]}")
+        print(f"  [{lo:>4.1f},{hi:>4.1f}]  " + "".join(f"{c:>14s}" for c in cells))
+
+
 def backtest_market(market: str, split: float, folds: int,
                     sel_filter: str | None = None, edge_override: float | None = None,
                     odds_cap: float | None = None):

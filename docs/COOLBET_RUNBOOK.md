@@ -139,3 +139,9 @@ psql "$DATABASE_URL" -c "select max(\"timestamp\"), count(*) from odds_snapshots
 # FS health check (the alert, dry)
 python3 -m workers.jobs.flaresolverr_health --dry-run
 ```
+
+### 6. Unibet-Site odds feed STALE  → no logged-in unibet.ee tab
+- **Symptom:** `odds_snapshots` `Unibet-Site` rows stop landing; newest age grows past ~90 min; the best-price router shows 0 Unibet candidates. The `unibet-site-odds.log` shows `reason: "no logged-in unibet.ee tab open (a fresh tab is DataDome-degraded)"`.
+- **Cause:** the Unibet-Site sweep (`unibet_odds_feed.run_bulk`, launchd `com.oddsintel.unibet-site-odds` :15/:45) injects fetches on the operator's ESTABLISHED, logged-in unibet.ee tab in CDP-Chrome (:9222). If that tab is gone (e.g. after a CDP-Chrome relaunch) the sweep writes 0 rows. **Unlike Coolbet, Unibet auto-login FAILS** — unibet.ee is behind **DataDome**, which degrades a fresh/automated tab (the header-login button never renders), so `unibet_browser_sync.cdp_auto_login` times out.
+- **Fix (operator, manual — required):** open **https://www.unibet.ee** in the CDP-Chrome (:9222) window and log in by hand (dismiss the cookie + spending-limit modals). The next :15/:45 sweep uses that tab. A Telegram alert now fires (deduped 3h, `unibet-site-no-tab`) so this no longer rots silently (`UNIBET-SITE-STALE-ALERT`).
+- **NB:** this is the Unibet analogue of the Coolbet session — a permanently-logged-in tab is the price of the injected-fetch sweep. When the Unibet real-money placer/router arm runs unattended it will need the same session-liveness care (a heartbeat), but auto-login is manual-login-bounded here.

@@ -34626,5 +34626,39 @@ def test_book_agnostic_config_search():
         "the draw candidate config (odds 2.8-3.3, low floor) must be recorded")
 
 
+@test("BEST-PRICE-ROUTER-MONITOR — report-only 'check both books' monitor + launchd, no money")
+def test_best_price_router_monitor():
+    """BEST-PRICE-ROUTER wired as a scheduled REPORT-ONLY monitor (2026-09-10): makes
+    'always check both books' real before the owner-gated real-money cutover. It runs
+    route() in report mode, logs per-pick routing, and alerts on picks better/only at
+    Unibet (which the Coolbet-only placer misses). Pin: monitor() exists + is report-only
+    (never execute/stage), the --monitor CLI flag, and the launchd job runs it."""
+    import inspect
+    from pathlib import Path
+    from workers.automation import best_price_router as bpr
+    assert hasattr(bpr, "monitor"), "the router must expose monitor()"
+    src = inspect.getsource(bpr.monitor)
+    assert "route()" in src and "execute" not in src and "stage" not in src, \
+        "monitor must be REPORT-ONLY — never execute or stage (no money)"
+    assert "unibet_wins" in src and "send_telegram" in src, "must alert on Unibet-win divergences"
+    assert "--monitor" in inspect.getsource(bpr.main)
+    plist = Path.home() / "Library/LaunchAgents/com.oddsintel.best-price-router-monitor.plist"
+    if plist.exists():  # operator-machine only — don't fail CI where LaunchAgents differ
+        assert "best_price_router" in plist.read_text() and "--monitor" in plist.read_text()
+
+
+@test("UNIBET-SITE-STALE-ALERT — the sweep alerts (not silent) when there's no logged-in unibet.ee tab")
+def test_unibet_site_stale_alert():
+    """UNIBET-SITE-STALE-ALERT (2026-09-10): the Unibet-Site sweep silently wrote 0 rows
+    for hours because there was no logged-in unibet.ee tab in CDP-Chrome (DataDome blocks
+    auto-login → needs manual login). Pin that run_bulk now Telegram-alerts (deduped) on
+    that failure so the feed — and the router's Unibet arm — can't rot unnoticed."""
+    import inspect
+    from workers.automation import unibet_odds_feed as uof
+    src = inspect.getsource(uof.run_bulk)
+    assert "send_telegram" in src and "unibet.ee tab" in src, "run_bulk must alert on the no-tab stale case"
+    assert "dedup_key" in src, "alert must be deduped (one per outage window, not every :15/:45)"
+
+
 if __name__ == "__main__":
     main()

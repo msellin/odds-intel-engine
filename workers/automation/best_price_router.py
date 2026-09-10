@@ -280,6 +280,37 @@ def route(execute: bool = False, *, stage: bool = False, limit: int | None = Non
     return out
 
 
+def monitor(alert: bool = True) -> dict:
+    """The 'always check both books' visibility layer (REPORT-ONLY, no money). Runs
+    route() in report mode, logs the per-pick routing, and Telegram-alerts when the
+    Coolbet-only placer would MISS or under-price a pick — i.e. the best clearing book
+    is Unibet-Site (Coolbet absent, lower, or doesn't clear). This is the safe monitor
+    that makes "check both" real BEFORE the owner-gated real-money cutover."""
+    res = route()  # report mode — DB only, touches nothing
+    unibet_wins = []
+    for d in res["would_place"]:
+        if d["winner"] == "Unibet-Site":
+            cb = d["all_clearing"].get("Coolbet")
+            why = "Coolbet absent/doesn't clear" if not cb else f"Coolbet {cb['odds']} < Unibet {d['winner_odds']}"
+            unibet_wins.append(f"{d['pick']} → UNIBET @ {d['winner_odds']} (edge {d['winner_edge']:.1%}; {why})")
+    log.info("router-monitor: candidates=%d routed=%d already_placed=%d no_book_clears=%d | UNIBET-wins=%d",
+             res["candidates"], res["routed"], res["already_placed"], res["no_book_clears"], len(unibet_wins))
+    for u in unibet_wins:
+        log.info("  ⇢ %s", u)
+    if alert and unibet_wins:
+        try:
+            from workers.notify.telegram import send_telegram
+            send_telegram(
+                "🔵 Best-price router — %d pick(s) better/ONLY at UNIBET, which the Coolbet-only "
+                "placer MISSES:\n%s\n(These need the router / Unibet placer to be captured.)" % (
+                    len(unibet_wins), "\n".join("• " + x for x in unibet_wins[:8])),
+                dedup_key="router-unibet-divergence", dedup_window_s=3600)
+        except Exception as e:  # noqa: BLE001
+            log.debug("router-monitor alert failed (non-fatal): %s", e)
+    return {"candidates": res["candidates"], "routed": res["routed"],
+            "already_placed": res["already_placed"], "unibet_wins": unibet_wins}
+
+
 def main() -> int:
     import argparse
     import json
@@ -293,7 +324,12 @@ def main() -> int:
                          "env ROUTER_ALLOW_REAL=true; otherwise degrades to report-only")
     ap.add_argument("--limit", type=int, default=None,
                     help="cap how many routed picks are actually driven (stage/execute)")
+    ap.add_argument("--monitor", action="store_true",
+                    help="REPORT-ONLY 'always check both books' monitor + Telegram alert on Unibet-wins (no money)")
     a = ap.parse_args()
+    if a.monitor:
+        print(json.dumps(monitor(), indent=2, ensure_ascii=False, default=str))
+        return 0
     res = route(execute=a.execute, stage=a.stage, limit=a.limit)
     print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
     return 0

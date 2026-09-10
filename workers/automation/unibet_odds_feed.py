@@ -514,10 +514,27 @@ def run_bulk(days: int = 2, dry_run: bool = False, limit: int | None = None) -> 
     operator's logged-in unibet.ee tab in CDP-Chrome. Never raises."""
     import asyncio
     try:
-        return asyncio.run(_async_run_bulk(days, limit, dry_run))
+        res = asyncio.run(_async_run_bulk(days, limit, dry_run))
     except Exception as e:  # noqa: BLE001
         log.warning("unibet-site run_bulk failed: %s", e)
-        return {"reason": f"run_bulk error: {e}", "stored": 0}
+        res = {"reason": f"run_bulk error: {e}", "stored": 0}
+    # UNIBET-SITE-STALE-ALERT (2026-09-10): the sweep silently returned 0 rows for
+    # hours because there was no logged-in unibet.ee tab in CDP-Chrome (a fresh tab is
+    # DataDome-degraded, and Unibet auto-login fails on DataDome — needs a MANUAL login,
+    # unlike Coolbet). Alert once per 3h so the feed can't rot the Unibet-Site odds (and
+    # the best-price router's Unibet arm) unnoticed. Deduped; never raises.
+    try:
+        reason = (res or {}).get("reason") or ""
+        if not dry_run and (res or {}).get("stored", 0) == 0 and "unibet.ee tab" in reason:
+            from workers.notify.telegram import send_telegram
+            send_telegram(
+                "🟠 Unibet-Site odds feed STALE — no logged-in unibet.ee tab in CDP-Chrome. "
+                "Open unibet.ee in the CDP-Chrome (:9222) and log in (DataDome blocks auto-login). "
+                "Until then the Unibet-Site sweep writes 0 rows and the best-price router can't route to Unibet.",
+                dedup_key="unibet-site-no-tab", dedup_window_s=10800)
+    except Exception as e:  # noqa: BLE001
+        log.debug("unibet-site stale alert failed (non-fatal): %s", e)
+    return res
 
 
 # ---------------------------------------------------------------------------
