@@ -1722,3 +1722,33 @@ bots. When you work on the trigger bots, this is where draw profit lives. Do NOT
 "fix" the model to bet draws — it's the wrong instrument for this edge. Model 1x2 edge =
 home-underdogs; draw edge = sharp triggers. See BETTING_GATE_DECISIONS.md (1x2 by type)
 and docs/BOOK_AGNOSTIC_EDGE_ENGINE.md (sharp anchor).
+
+## §58 — ONE canonical market/selection vocabulary; validate at the EXECUTABLE per-book price (2026-09-10)
+
+Two linked facts, both now enforced/tooled.
+
+**(a) There is ONE vocabulary — `workers/canonical_market.py`.** The same bet was
+written four ways (`1X2`/`home`, `1x2`/`home`, `O/U`/`over 2.5`, `over_under_25`/`over`),
+which broke joins repeatedly (it is one of the five 2026-09-06 Coolbet ingest defects).
+`canonical_market` is now the single source: `Market`/`Selection` str-enums + `normalize(market, selection)`
+which collapses every observed spelling to one canonical `{family, market, selection, line}`
+(handles the parametric `*_ou_<line>` families too — corners/cards/half). **Route every
+reader/writer through `normalize`; do not hardcode the strings.** The smoke test
+**MARKET-VOCAB-ENFORCED** fails the build if (i) any (market,selection) our active bots have
+picked — or any Coolbet/Unibet-Site odds pair — can't be normalized (rogue/new vocab), or
+(ii) the enums get re-declared outside `canonical_market.py`. **Phase 2 (gated, not done):
+migrate the WRITERS to emit only canonical strings + backfill historical rows, then flip the
+test to strict "DB contains only canonical values." That rewrites stored data and touches
+grading + /performance, so it is a staged migration, not a one-shot.**
+
+**(b) Validate bots at the EXECUTABLE per-book price (operationalizes §55).**
+`scripts/executable_shadow_eval.py` attaches the Coolbet + Unibet-Site price (nearest
+snapshot to pick_time) to every active bot's settled picks and reports per-book ROI vs the
+recorded best-of-books ROI. The odds already exist in `odds_snapshots` (the sweeps fill them
+per match, for any bot's fixture) — they were simply never attached to the general bots'
+pick rows, which store one best-of-books `recommended_bookmaker` instead. Measured 2026-09-10:
+**`bot_v10_all` 15.2% recorded (best-of-books) vs 7.8% executable-Coolbet** (n=1952, 69%
+Coolbet-covered) — the reference price nearly doubles the honest number. Coverage bound:
+Coolbet quotes ~87 and Unibet-Site ~132 of ~262 upcoming fixtures, so validation is
+"executable performance on the covered subset" — which is the number that matters for real
+money anyway. Use CLV, not ROI, at small n (per-bet return sd ≈ 1.42).

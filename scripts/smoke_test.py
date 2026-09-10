@@ -34470,5 +34470,76 @@ def test_coolbet_session_freeze_fix():
     for f in FLAGS:
         assert f in ctx_src, f"playwright fallback _launch_context must also pass {f}"
 
+
+@test("MARKET-VOCAB-ENFORCED — one canonical vocabulary; DB values must normalize; constants defined once")
+def test_market_vocab_enforced():
+    """MARKET-VOCAB-CANONICAL Phase 1 (2026-09-10): the same bet was written 4 ways
+    (1X2/1x2, O/U+'over 2.5' / over_under_25+'over'). `workers/canonical_market`
+    is now the ONE vocabulary (Market/Selection enums + normalize()). This test
+    FORCES it: (1) the 4 spellings collapse to one canonical form; (2) every
+    (market,selection) our ACTIVE bots have picked, and every Coolbet/Unibet-Site
+    odds pair we'd join, must `normalize()` — a rogue/new spelling fails the build;
+    (3) the enums are defined in exactly one module (no re-declared vocabulary)."""
+    import inspect
+    from pathlib import Path
+    from workers import canonical_market as cm
+
+    # (1) the collapse — the core property
+    a = cm.normalize("1X2", "home"); b = cm.normalize("1x2", "home")
+    c = cm.normalize("O/U", "over 2.5"); d = cm.normalize("over_under_25", "over")
+    assert a == b and a["market"] == "1x2" and a["selection"] == "home", "1X2/1x2 must collapse"
+    assert c == d and c["market"] == "over_under_25" and c["selection"] == "over", "O/U spellings must collapse"
+    assert cm.normalize("cards_home_ou_20", "over")["family"] == "cards_home_ou", "parametric OU families covered"
+    assert cm.normalize("totally_made_up", "x") is None, "unknown vocab must return None"
+    # enums subclass str so equality with the literal still holds
+    assert cm.Market.OVER_UNDER_25 == "over_under_25" and cm.Selection.HOME == "home"
+
+    # (3) single definition — the vocabulary must not be re-declared elsewhere
+    root = Path(__file__).parent.parent
+    defs = []
+    for p in list((root / "workers").rglob("*.py")) + list((root / "scripts").rglob("*.py")):
+        if p.name in ("canonical_market.py", "smoke_test.py"):
+            continue
+        txt = p.read_text(errors="ignore")
+        if "class Market(str, Enum)" in txt or "class Selection(str, Enum)" in txt:
+            defs.append(str(p.relative_to(root)))
+    assert not defs, f"Market/Selection enums must be defined ONLY in canonical_market.py; found in {defs}"
+
+    # (2) DB conformance — the bet universe + placeable-book odds must all normalize.
+    # Infra-guarded: a DB outage skips this half rather than failing on connectivity.
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query("""SELECT DISTINCT market, selection FROM shadow_bets s
+             JOIN bots b ON b.id=s.bot_id
+            WHERE b.retired_at IS NULL AND s.pick_time > now()-interval '90 days'
+            UNION
+            SELECT DISTINCT market, selection FROM odds_snapshots
+            WHERE bookmaker IN ('Coolbet','Unibet-Site') AND timestamp > now()-interval '2 days'""")
+    except Exception as e:  # noqa: BLE001
+        print(f"    (DB unreachable — skipped conformance half: {e})")
+        rows = None
+    if rows is not None:
+        bad = [(r["market"], r["selection"]) for r in rows
+               if cm.normalize(r["market"], r["selection"]) is None]
+        assert not bad, ("these stored (market,selection) values are outside the canonical "
+                         f"vocabulary — add them to canonical_market.normalize(): {bad[:20]}")
+
+
+@test("EXECUTABLE-SHADOW-EVAL — per-book executable ROI ledger routes vocab through canonical_market")
+def test_executable_shadow_eval():
+    """EXECUTABLE-SHADOW-EVAL (2026-09-10): the honest validation ledger — attaches
+    the executable Coolbet/Unibet-Site price to every active bot's settled picks and
+    computes per-book ROI, exposing the best-of-books inflation (bot_v10_all measured
+    15.2% recorded vs 7.8% executable-Coolbet). Pin: it dogfoods the canonical
+    vocabulary (normalize) rather than hardcoding spellings, and reports per-book ROI."""
+    import inspect
+    from scripts import executable_shadow_eval as ese
+    src = inspect.getsource(ese)
+    assert "from workers.canonical_market import normalize" in src or "canonical_market" in src, \
+        "must route market/selection through the canonical vocabulary, not hardcode spellings"
+    assert "cb_roi" in src and "ub_roi" in src, "must compute per-book (Coolbet + Unibet) executable ROI"
+    assert "odds_at_pick" in src, "executable ROI compares against the recorded pick odds"
+
+
 if __name__ == "__main__":
     main()
