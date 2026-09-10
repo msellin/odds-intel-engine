@@ -17,9 +17,8 @@ Owner chose FULL canonicalization (2026-09-10), "make sure you are careful."
 - combo = passthrough. predictions '1x2_home' = separate namespace, exclude.
 - Frontend auto-deploys on push (pm2). Frontend at ../odds-intel-web.
 
-## Sequence + where we are
-1. Frontend shared normalizer (src/lib/market-vocab.ts) + route 5 high-risk filters/bridges +
-   4 label fns through it (accept BOTH spellings). ADDITIVE. ← START HERE
+## Sequence + where we are — NEXT: step 2 (engine readers)
+1. Frontend shared normalizer + route at-risk sites. ✅ DONE + VALIDATED IN PROD (8426ecb, c865ee1).
 2. Engine readers via normalize(); retire settlement dup normalizer; settlement golden must pass.
 3. Engine writers (daily_pipeline_v2 + placers) emit canonical.
 4. Backfill migration (3 bot tables; AH/combo preserved); verify /picks + /performance populate.
