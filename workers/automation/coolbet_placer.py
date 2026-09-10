@@ -184,30 +184,35 @@ def _min_odds_for(market: str | None) -> float:
     return _MIN_ODDS_BY_MARKET.get(_canon_market(market), default)
 
 
-# ── SIGNAL-PLACER-1X2-ALIGN-2026-09-10 ───────────────────────────────────────
-# The Telegram SIGNAL path used the pooled, selection-blind `_min_edge_for`
-# (1x2 = 0.13), while the real-money PLACER (coolbet_model_1x2_shadow +
-# BOT_THRESHOLDS) fires 1x2 home-underdogs at 0.10 (odds>=2.80). Consequence:
-# a home-underdog in the 10-13% band (e.g. Stevenage v Luton, Home @3.48,
-# edge +12%) was PLACED with real money but NEVER SIGNALED — the operator
-# staked a bet Telegram never told them about. Fix: the signal floor is now
-# selection-aware and matches the placer, so we signal exactly what we place.
-# Only the home-underdog SLICE drops to 0.10 — the pooled/all-selection floor
-# `_min_edge_for` stays 0.13 (draws/aways are NOT fold-robust at 10%, and the
-# trigger windows still read the pooled value); home-favs are left on the
-# pooled floor and remain excluded from real money by the 2.80 odds floor.
-# One env var (COOLBET_MODEL_1X2_EDGE_FLOOR) shared with the mirror job so the
-# signal and placement floors can never drift apart.
+# ── SIGNAL-PLACER-1X2-ALIGN-2026-09-10 / EDGE-FLOOR-ONE-UTILITY-2026-09-10 ───
+# `min_edge_for_pick` is THE single, selection-aware edge-floor decision for one
+# concrete pick. EVERY pick-level gate (the Telegram signaler, the Mac-daemon
+# candidate loader, the live-price re-eval) MUST call it, so the rule lives in
+# ONE place and changing it here changes it everywhere. Do NOT re-derive a
+# per-pick floor from `_min_edge_for` (market-only) at a call site again — that
+# is how the two signalers drifted (coolbet_signaler stayed blind at 13% while
+# the placer moved to 10%, so home-underdogs in the 10-13% band were placed but
+# never signaled — Stevenage v Luton, Home @3.48, +12%).
+#
+# The policy it encodes (docs/BETTING_GATE_DECISIONS.md "1x2 by SELECTION TYPE"):
+#   * 1x2 home-underdog (selection=home AND odds>=2.80) -> 10% — the ONE
+#     fold-robust 1x2 engine, robust down to 10%; shares the mirror's env var.
+#   * everything else -> the pooled per-market `_min_edge_for`. The pooled 1x2
+#     floor stays 13% ON PURPOSE: the same backtest that found 10% for
+#     home-underdogs found pooled 10% is a fold-robust LOSER (home-favs lose at
+#     every floor, aways aren't robust), and the paper trigger windows read the
+#     pooled value. Home-favs therefore stay on 13% and remain excluded from
+#     real money by the 2.80 odds floor.
 _MODEL_1X2_HOME_FLOOR = float(os.getenv("COOLBET_MODEL_1X2_EDGE_FLOOR", "0.10"))
 
 
-def _signal_min_edge_for(market: str | None, selection: str | None,
-                         odds: float | None) -> float:
-    """SIGNAL-path edge floor, selection-aware so a Telegram signal fires on
-    exactly what the real-money placer will place. 1x2 home-underdogs
-    (selection=home AND odds>=2.80) are the one fold-robust 1x2 slice down to
-    10% (BETTING_GATE_DECISIONS "1x2 by SELECTION TYPE"); everything else keeps
-    the pooled per-market floor `_min_edge_for`."""
+def min_edge_for_pick(market: str | None, selection: str | None,
+                      odds: float | None) -> float:
+    """THE selection-aware edge floor for one pick — the single source of truth
+    every pick-level gate (signaler, daemon loader, live re-eval) must use so
+    the signal set and the placement set apply the same rule. 1x2
+    home-underdogs (selection=home AND odds>=2.80) get the placer's 10% floor;
+    everything else falls back to the pooled per-market `_min_edge_for`."""
     if (_canon_market(market) == "1x2"
             and (selection or "").strip().lower() == "home"
             and odds is not None and float(odds) >= _min_odds_for("1x2")):
@@ -565,14 +570,14 @@ def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
                  allowed_maturity, len(results))
     # PER-MARKET-EDGE-V2 (2026-06-06): SQL gates at the global 3% floor;
     # apply the per-market floor here. See _MIN_EDGE_BY_MARKET above.
-    # SIGNAL-PLACER-1X2-ALIGN-2026-09-10: the floor is now selection-aware —
-    # 1x2 home-underdogs (home, odds>=2.80) drop to 10% to match the real-money
-    # placer, so the bets we place also signal. See _signal_min_edge_for.
+    # SIGNAL-PLACER-1X2-ALIGN-2026-09-10: selection-aware floor via the shared
+    # min_edge_for_pick — 1x2 home-underdogs (home, odds>=2.80) at 10% to match
+    # the real-money placer. Same utility the Telegram signaler uses.
     before = len(results)
     results = [r for r in results
                if float(r.get("edge_percent") or 0)
-               >= _signal_min_edge_for(r.get("market"), r.get("selection"),
-                                       r.get("model_odds"))]
+               >= min_edge_for_pick(r.get("market"), r.get("selection"),
+                                    r.get("model_odds"))]
     dropped = before - len(results)
     if dropped:
         log.info("Per-market edge filter dropped %d/%d singles below floor "
@@ -2125,11 +2130,14 @@ def place_all_bets(
             cal_prob = float(bet.get("model_probability") or 0)
         live_odds = ev_odds
         live_edge = (cal_prob - 1.0 / ev_odds) if (cal_prob > 0 and ev_odds > 1.0) else None
-        # PER-MARKET-EDGE-V2 (2026-06-06): live-edge floor is per-market too.
+        # PER-MARKET-EDGE-V2 (2026-06-06): live-edge floor is per-market.
+        # EDGE-FLOOR-ONE-UTILITY-2026-09-10: selection-aware via the shared
+        # min_edge_for_pick (home-underdog 1x2 -> 10%), priced at the LIVE odds
+        # so the re-eval uses the same rule as the signal + daemon loader.
         # Fail closed: when live_edge is uncomputable (missing calibrated_prob +
         # model_probability) we can't verify the live price still has edge, so
         # skip rather than record a bet we never would have taken.
-        live_floor = _min_edge_for(mkt)
+        live_floor = min_edge_for_pick(mkt, bet.get("selection"), ev_odds)
         if live_edge is None or live_edge < live_floor:
             if live_edge is None:
                 log.info("Skip %s — live_edge uncomputable (no cal_prob/model_prob)", label)

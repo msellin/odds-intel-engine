@@ -22,8 +22,11 @@ DEDUP: `simulated_bets.signaled_at` (mig 246) is the single source of
 truth. Set on successful send. Never resignal. If the operator restarts
 the pipeline, already-signaled rows are skipped.
 
-EDGE GATES: same per-market floors as the placer (`_MIN_EDGE_BY_MARKET`)
-so we don't spam picks the auto-placer would have rejected anyway.
+EDGE GATES: the ONE shared selection-aware floor `min_edge_for_pick`
+(coolbet_placer) — the same utility the placer/daemon use, so the signal set
+and the placement set apply an identical rule and cannot drift. In particular
+1x2 home-underdogs (home, odds>=2.80) gate at 10%, matching the real-money bot,
+so a bet we place also signals (EDGE-FLOOR-ONE-UTILITY-2026-09-10).
 """
 from __future__ import annotations
 
@@ -32,7 +35,7 @@ import os
 from datetime import datetime, timezone
 
 from workers.api_clients.db import execute_query, execute_write
-from workers.automation.coolbet_placer import _min_edge_for, _MIN_EDGE
+from workers.automation.coolbet_placer import min_edge_for_pick, _MIN_EDGE
 from workers.notify.telegram import send_telegram, send_telegram_public
 
 log = logging.getLogger(__name__)
@@ -118,9 +121,14 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
     out: list[dict] = []
     for r in rows:
         d = dict(r)
-        # Per-market floor in Python — mirrors the placer's gating exactly
-        # so the signal set is a superset-then-filter of the placement set.
-        floor = _min_edge_for(d.get("market"))
+        # EDGE-FLOOR-ONE-UTILITY-2026-09-10: the SINGLE selection-aware floor
+        # shared with the placer — 1x2 home-underdogs (home, odds>=2.80) at 10%,
+        # everything else at the pooled per-market floor. This is the LIVE
+        # Telegram path; it previously called the blind market-only _min_edge_for
+        # and so never signaled home-underdogs in the 10-13% band that the placer
+        # would place (Stevenage v Luton). One utility now, so the two can't drift.
+        floor = min_edge_for_pick(d.get("market"), d.get("selection"),
+                                  d.get("odds_at_pick"))
         if (d.get("edge_percent") or 0) < floor:
             continue
         out.append(d)

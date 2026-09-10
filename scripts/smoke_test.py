@@ -3972,34 +3972,50 @@ def test_signal_placer_1x2_align():
     """
     import inspect
     from workers.automation import coolbet_placer as cp
+    from workers.automation import coolbet_signaler as sg
 
     # home-underdog drops to 10%; every other case keeps the pooled floor.
-    assert cp._signal_min_edge_for("1x2", "home", 3.48) == cp._MODEL_1X2_HOME_FLOOR == 0.10, (
-        "a 1x2 home-underdog (odds>=2.80) must signal at the placer's 10% floor, "
+    assert cp.min_edge_for_pick("1x2", "home", 3.48) == cp._MODEL_1X2_HOME_FLOOR == 0.10, (
+        "a 1x2 home-underdog (odds>=2.80) must gate at the placer's 10% floor, "
         "or the bets we place with real money never reach Telegram (Stevenage v Luton)"
     )
-    assert cp._signal_min_edge_for("1x2", "home", 2.00) == 0.13, (
+    assert cp.min_edge_for_pick("1x2", "home", 2.00) == 0.13, (
         "a home-FAVOURITE (odds<2.80) must stay on the pooled 13% floor — it is not "
         "a fold-robust bet and is excluded from real money by the odds floor"
     )
-    assert cp._signal_min_edge_for("1x2", "home", None) == 0.13, "no odds -> cannot confirm underdog -> pooled floor"
-    assert cp._signal_min_edge_for("1x2", "away", 5.0) == 0.13, "aways stay on the pooled floor (not robust at 10%)"
-    assert cp._signal_min_edge_for("1x2", "draw", 3.1) == 0.13, "draws stay on the pooled floor (route to sharp, not a 10% model bet)"
-    assert cp._signal_min_edge_for("over_under_25", "over", 2.0) == 0.08, "O/U unchanged — pooled per-market floor"
+    assert cp.min_edge_for_pick("1x2", "home", None) == 0.13, "no odds -> cannot confirm underdog -> pooled floor"
+    assert cp.min_edge_for_pick("1x2", "away", 5.0) == 0.13, "aways stay on the pooled floor (not robust at 10%)"
+    assert cp.min_edge_for_pick("1x2", "draw", 3.1) == 0.13, "draws stay on the pooled floor (route to sharp, not a 10% model bet)"
+    assert cp.min_edge_for_pick("over_under_25", "over", 2.0) == 0.08, "O/U unchanged — pooled per-market floor"
 
     # the pooled floor is untouched (BOT-CONFIG-GOLDEN-MIDDLE still green)
-    assert cp._min_edge_for("1x2") == 0.13, "the pooled _min_edge_for('1x2') must NOT move — only the signal carve-out is selection-aware"
+    assert cp._min_edge_for("1x2") == 0.13, "the pooled _min_edge_for('1x2') must NOT move — only the per-pick carve-out is selection-aware"
 
     # the odds gate reuses the placement odds floor, so a signaled home-underdog is placeable
     assert cp._MODEL_1X2_HOME_FLOOR == float(__import__("os").getenv("COOLBET_MODEL_1X2_EDGE_FLOOR", "0.10")), \
-        "signal home-underdog floor must read the SAME env var as the mirror (coolbet_model_1x2_shadow)"
+        "per-pick home-underdog floor must read the SAME env var as the mirror (coolbet_model_1x2_shadow)"
 
-    # the selection-aware floor must actually be wired into the signal loader
-    loader = inspect.getsource(cp.load_qualified_bets)
-    assert "_signal_min_edge_for(" in loader, (
-        "load_qualified_bets must gate on _signal_min_edge_for — otherwise the "
-        "selection-aware carve-out exists but the signal path never uses it"
-    )
+    # EDGE-FLOOR-ONE-UTILITY: every pick-level gate must route through the ONE
+    # utility min_edge_for_pick, so the signal set and placement set can never
+    # drift apart again (they did: coolbet_signaler stayed blind at 13% while the
+    # placer moved to 10%). Pin all three call sites by source inspection, and
+    # assert NONE of them re-derives a per-pick floor from the market-only
+    # _min_edge_for (that is exactly the blindness we removed).
+    signaler_src = inspect.getsource(sg.load_signal_candidates)  # the LIVE Telegram path
+    loader_src = inspect.getsource(cp.load_qualified_bets)       # the Mac-daemon candidate loader
+    placer_src = inspect.getsource(cp.place_all_bets)            # the live-price re-eval
+    for name, src in (("coolbet_signaler.load_signal_candidates", signaler_src),
+                      ("coolbet_placer.load_qualified_bets", loader_src),
+                      ("coolbet_placer.place_all_bets (live re-eval)", placer_src)):
+        assert "min_edge_for_pick(" in src, (
+            f"{name} must gate picks on the shared min_edge_for_pick — a blind "
+            "market-only floor here is how the two signalers drifted (home-underdogs "
+            "placed but never signaled)."
+        )
+        assert "_min_edge_for(" not in src.replace("min_edge_for_pick(", ""), (
+            f"{name} still calls the market-only _min_edge_for for a per-pick "
+            "decision — route it through min_edge_for_pick so the rule lives in one place."
+        )
 
 
 @test("COOLBET-LINESHOP-OU-STOP — real-money UI placer no longer places line-shop O/U")
