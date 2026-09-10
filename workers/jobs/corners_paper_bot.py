@@ -198,12 +198,36 @@ def settle_picks() -> dict:
     """Grade this bot's pending corners picks whose match has a finished corner
     count. Writes result + pnl into shadow_bets (clv columns stay NULL — no
     corners closing anchor is wired). Never raises."""
-    counters = {"settled": 0, "won": 0, "lost": 0}
+    counters = {"settled": 0, "won": 0, "lost": 0, "voided": 0}
     try:
         from workers.api_clients.db import execute_query, execute_write
         bot_id = _bot_id()
         if not bot_id:
             return counters
+
+        # AUTO-VOID stale unsettleable picks (CORNERS-SETTLEMENT-GATE 2026-09-10): a
+        # match finished >1 day ago with no AF corner stats will NEVER settle (the ~83%
+        # AF ceiling / a non-reporting league). Void it — excluded from ROI and cleared
+        # from the pending list — rather than leave it "waiting" forever. The league
+        # gate stops NEW ones; this cleans the historical tail so pending == truly-open.
+        voided = execute_write(
+            """UPDATE shadow_bets sb SET result='void',
+                      void_reason='corners unsettleable — no AF corner stats (non-reporting league)'
+                 FROM matches m
+                WHERE sb.match_id = m.id
+                  AND sb.bot_id = %s
+                  AND sb.result = 'pending'
+                  AND sb.market LIKE 'corners_ou_%%'
+                  AND m.status = 'finished'
+                  AND m.date < now() - interval '1 day'
+                  AND NOT EXISTS (SELECT 1 FROM match_stats ms
+                                   WHERE ms.match_id = sb.match_id AND ms.corners_home IS NOT NULL)""",
+            [bot_id],
+        )
+        counters["voided"] = voided or 0
+        if counters["voided"]:
+            log.info("corners paper: voided %d stale unsettleable picks", counters["voided"])
+
         rows = execute_query(
             """
             SELECT sb.id, sb.market, sb.selection, sb.odds_at_pick,
