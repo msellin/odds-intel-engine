@@ -247,7 +247,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", type=float, default=0.7)
     ap.add_argument("--folds", type=int, default=3)
+    ap.add_argument("--sharp", action="store_true",
+                    help="run the SHARP-anchor sweep (edge = P_sharp[devig Pinnacle] - 1/coolbet_odds) instead of the model sweep")
     a = ap.parse_args()
+    if a.sharp:
+        print("SHARP-ANCHOR SWEEP — edge vs Shin-de-vigged Pinnacle at Coolbet's own odds, held-out OOS")
+        print("WARNING: longshot bands (odds>=4.0, esp >=5.5) show absurd ROI = VARIANCE, not edge.")
+        print("Trust only moderate-odds ([1.0,3.3]) fold-ROBUST cells with adequate n.\n")
+        for sel in (None, "home", "away", "draw"):
+            sweep_sharp(a.folds, sel)
+        return 0
     print("TRIGGER-ENGINE-BACKTEST — Coolbet-native selection at Coolbet's own odds, held-out OOS")
     print("(calibration fit on TRAIN only; windows + grading on untouched TEST)\n")
     print("BOOK-AGNOSTIC verdict — does the FAVLONG restriction rescue the wide trigger selection?")

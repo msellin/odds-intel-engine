@@ -325,3 +325,38 @@ robustness varied by split (ROBUST+ at 0.7, only "pos" at 0.5/0.6). NEXT: set th
 config to `1x2 draw · odds∈[2.8,3.3] · edge≥5%`, accrue it FORWARD as paper, and confirm on fresh
 settled data before any real-money consideration (owner-gated). Also worth: run the same sweep for
 the SHARP-anchor triggers (edge vs de-vig Pinnacle), where the draw edge is theorised to live.
+
+### UPDATE 2026-09-10 (#2) — the SHARP-anchor sweep: mostly variance, one trustworthy cell, DO NOT limit bots yet
+
+Ran the same multi-dimensional sweep against the **sharp** anchor
+(`scripts/trigger_engine_backtest.py --sharp`; `sweep_sharp()`; edge = P_sharp
+[Shin-de-vig Pinnacle] − 1/coolbet_odds, held-out OOS, 3 folds). **Read these numbers
+skeptically — most of the grid is a longshot-variance mirage, not edge.**
+
+The tell that it is variance, not signal: OOS ROI rises **monotonically** with BOTH the
+odds band and the edge floor, exploding in the longshot bands:
+
+| band (all sels) | edge 2% | edge 5% | edge 12% |
+|---|---|---|---|
+| [1.0, 3.3] | +13%(242) ROBUST | +32%(80) | +74%(29) |
+| [4.0, 5.5] | +43%(118) | +87%(56) | +189%(26) |
+| **[5.5, 12.0]** | **+150%(118)** | **+266%(75)** | **+348%(48)** |
+
+A "sustainable +348% ROI" does not exist. Those cells are a handful of high-odds winners
+dominating thin samples — the exact longshot-variance / multiple-comparisons trap (§52), made
+worse because "big overlay vs the sharp line at odds 8–12" is precisely where a couple of hits
+swamp the average. **Ignore every band ≥4.0.**
+
+**The ONE trustworthy signal:** `1x2 home · odds [1.0,3.3] · edge ≥2%` → **+17% (n=153) ROBUST**
+(and +23% n=102 at 3%). Moderate odds, adequate n, positive in every fold. It converges with the
+model-side draw/moderate-odds finding (#1) and §57: the real edge lives at **evenly-matched,
+moderate-odds games**, not longshots. But it comes with a hard caveat — the sharp anchor needs a
+live Pinnacle line (not placeable), and Coolbet ≈ Pinnacle, so a 2%+ overlay vs the sharp line is
+**rare going forward** (the sharp bots fire seldom by design).
+
+**DECISION (owner, 2026-09-10): do NOT limit / reconfigure the trigger bots yet.** Both the #1 draw
+candidate and this #2 home-moderate cell are CANDIDATES on n~150–300 with multiple-comparisons risk.
+The plan is to **let all four trigger bots keep accruing FORWARD as paper**, and **re-run this exact
+two-part sweep (model + sharp) once we have 500+ settled trigger bets** — then decide the config on a
+fresh, larger, forward sample rather than curve-fitting the current backtest. No real-money
+consideration until then (owner-gated). Trigger: **≥500 settled `shadow_bets` rows across the trigger bots**. `bot_id` is a UUID FK — join `bots` (`WHERE b.name ILIKE '%trigger%'`, count `result IS NOT NULL AND result NOT IN ('pending','')`). **Baseline 2026-09-10: 150 settled / 237 total** across the 9 trigger bots (Coolbet 1x2 63, OU 53, sharp 1x2 14, sharp OU 6; Unibet arms just started, single digits each). ~3–4× more needed — a few weeks of forward paper.

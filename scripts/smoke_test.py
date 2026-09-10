@@ -34618,12 +34618,19 @@ def test_book_agnostic_config_search():
     from pathlib import Path
     from scripts import trigger_engine_backtest as teb
     assert hasattr(teb, "sweep"), "the tool must expose the multi-dimensional sweep()"
+    assert hasattr(teb, "sweep_sharp"), "the tool must expose the sharp-anchor sweep_sharp()"
+    assert "--sharp" in inspect.getsource(teb.main), "main() must expose --sharp to run the sharp sweep"
     sig = inspect.signature(teb.backtest_market).parameters
     assert "sel_filter" in sig and "edge_override" in sig and "odds_cap" in sig
     doc = (Path(__file__).parent.parent / "docs" / "BOOK_AGNOSTIC_EDGE_ENGINE.md").read_text()
     assert "UPDATE 2026-09-10" in doc, "the sweep correction to the verdict must be documented"
     assert "DRAW" in doc and "2.8" in doc and "CANDIDATE" in doc, (
         "the draw candidate config (odds 2.8-3.3, low floor) must be recorded")
+    # #2 sharp sweep: the longshot ROI must be documented as VARIANCE, and the decision recorded
+    assert "variance" in doc.lower() and "500" in doc, (
+        "the sharp-sweep variance interpretation + the 500-settled re-round trigger must be documented")
+    assert "do NOT limit" in doc or "do not limit" in doc.lower(), (
+        "the decision to NOT limit the trigger bots yet must be recorded")
 
 
 @test("BEST-PRICE-ROUTER-MONITOR — report-only 'check both books' monitor + launchd, no money")
