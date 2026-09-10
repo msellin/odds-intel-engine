@@ -82,7 +82,13 @@ BULK_SWEEP_MIN_MATCHES = 25
 # was nothing to bet.
 PICKS_STALE_H = 14.0
 PICKS_MIN_PRICED_MATCHES = 20
-PICKS_BOT = "bot_coolbet_value_v1"
+# The bot whose pick-cadence proxies "is the pipeline evaluating at all?". MUST be
+# an ACTIVE, high-volume bot. Was `bot_coolbet_value_v1` — RETIRED 2026-09-08 — which
+# made the NO_PICKS check alarm every ~20min about a dead bot that CORRECTLY writes
+# nothing (a legacy false-alarm that flooded the ops channel). `bot_v10_all` is the
+# live flagship (writes shadow_bets every refresh). The `_picks_bot_active()` guard
+# below makes this class of bug impossible to reintroduce silently. [2026-09-10]
+PICKS_BOT = "bot_v10_all"
 
 # Alert at most this often per state, so a multi-day block sends a handful of
 # messages rather than one every run.
@@ -146,6 +152,21 @@ def _hours_since_cookies() -> float | None:
     except Exception as e:
         log.warning("cookie-age lookup failed: %s", e)
     return None
+
+
+def _picks_bot_active() -> bool:
+    """True only if PICKS_BOT is an ACTIVE bot. A retired bot correctly writes no
+    picks, so alarming on its silence is a false alarm (the bot_coolbet_value_v1
+    ops-channel flood, 2026-09-08→10). Fails CLOSED (returns False → stay quiet)
+    on any error — a broken lookup must never manufacture a NO_PICKS incident."""
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT is_active FROM bots WHERE name = %s", [PICKS_BOT])
+        return bool(rows and rows[0].get("is_active"))
+    except Exception as e:  # noqa: BLE001
+        log.debug("_picks_bot_active check failed (staying quiet): %s", e)
+        return False
 
 
 def _picks_gap() -> tuple[float | None, int]:
@@ -214,7 +235,7 @@ def classify() -> tuple[str, str]:
         # Feed is fine — but is the BOT producing? A healthy feed with a silent
         # bot is the failure this check exists for.
         picks_h, priced = _picks_gap()
-        if (picks_h is not None and picks_h > PICKS_STALE_H
+        if (_picks_bot_active() and picks_h is not None and picks_h > PICKS_STALE_H
                 and priced >= PICKS_MIN_PRICED_MATCHES):
             return ("NO_PICKS",
                     f"feed healthy ({odds_h:.1f}h) but {PICKS_BOT} has written no "

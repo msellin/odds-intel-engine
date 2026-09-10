@@ -34872,6 +34872,24 @@ def test_api_football_canonical_vocab():
         once = c(m, s)
         assert c(*once) == once, f"canonicalize_for_storage not idempotent on {(m, s)!r}: {once!r} -> {c(*once)!r}"
 
+@test("COOLBET-FEED-WATCHDOG-NO-RETIRED-BOT — NO_PICKS never alarms on a retired bot")
+def test_coolbet_feed_watchdog_no_retired_bot():
+    """OPS-CHANNEL-CLEANUP (2026-09-10): the feed watchdog's NO_PICKS check tracked
+    bot_coolbet_value_v1, RETIRED 2026-09-08 — so it Telegram-alerted every ~20min
+    that "the pipeline is not evaluating" about a dead bot that CORRECTLY writes
+    nothing (a flood of false alarms in the ops channel). Fix: track the live
+    flagship bot_v10_all, and guard with _picks_bot_active() so a retired PICKS_BOT
+    can never manufacture a NO_PICKS incident again (fails closed → stays quiet)."""
+    import inspect
+    from workers.jobs import coolbet_feed_watchdog as w
+    assert w.PICKS_BOT == "bot_v10_all", "NO_PICKS must track an ACTIVE flagship, not a retired bot"
+    assert hasattr(w, "_picks_bot_active"), "must guard the NO_PICKS alert with a retired-bot check"
+    src = inspect.getsource(w.classify)
+    assert "_picks_bot_active()" in src, "classify() must gate NO_PICKS on _picks_bot_active()"
+    # the guard fails closed (returns False → quiet) on error
+    guard = inspect.getsource(w._picks_bot_active)
+    assert "return False" in guard and "is_active" in guard, "guard must check is_active and fail closed to quiet"
+
 
 if __name__ == "__main__":
     main()
