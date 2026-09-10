@@ -32,3 +32,10 @@ team_total_paper_bot. Floor 0 → accumulate → multi-dim sweep later.
   push+half-win logic. Deferred to a follow-up (needs push handling + a reason Pinnacle 1H O/U is thin).
 - 1x2_1h has 115 upcoming Pinnacle matches, is a clean 3-way (no line/push), settles from HT result.
   → building bot_1x2_1h_paper_shadow_v1 as USE-COLLECTED-MARKETS #2.
+
+## STATUS 2026-09-10 (end of autonomous build stretch)
+- ✅ bot_team_total_paper_shadow_v1 — LIVE (mig 327), 38 picks. Settles from final score.
+- ✅ bot_1h_1x2_paper_shadow_v1 — LIVE (mig 328), 15 picks. Settles from HT score (Shin-de-vig 3-way).
+- ⏸ ou_1h — deferred → follow-up OU-1H-PAPER-PUSH-HANDLING (Asian-line push logic + Pinnacle timing).
+- ⏸ cards / corner-variants — deferred (settlement/anchor problems).
+- NEXT (needs time): accrue → multi-dim sweep at ~300+ settled/bot → profitable slice → owner-gated real-money graduation (Epicbet EMTA-bettable).
