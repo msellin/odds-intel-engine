@@ -88,7 +88,7 @@ def generate_picks() -> dict:
                AND sb.market = '1x2'
                -- FAVLONG-CUTS-2026-09-09: real-money 1x2 = HOME-UNDERDOGS ONLY.
                -- The by-selection backtest found home-underdogs are the one fold-robust
-               -- 1x2 engine (robust to ~10% on odds>=2.80); home-favs lose, aways aren't
+               -- 1x2 engine (robust to ~0.10 edge on odds>=2.80); home-favs lose, aways aren't
                -- robust, draws are a sharp edge the model can't see (ANALYSIS_GOTCHAS §57,
                -- BETTING_GATE_DECISIONS "1x2 by type"). odds>=2.80 also excludes home-favs
                -- (odds<2.0) belt-and-braces with the placer's _min_odds_for('1x2')=2.80.

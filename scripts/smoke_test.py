@@ -4388,6 +4388,13 @@ def test_coolbet_model_1x2_shadow():
                encoding="utf-8").read()
     assert 'BOT_NAME = "bot_coolbet_1x2_model_v1"' in job, "mirror job must write under bot_coolbet_1x2_model_v1"
     assert 'SHADOW_COHORT = "coolbet_1x2_model"' in job, "mirror job must use the coolbet_1x2_model cohort"
+    # SQL-PERCENT-GUARD (2026-09-10): a bare '%' in the query string — even in a SQL
+    # comment — is read by psycopg2 as a format placeholder, throws "list index out of
+    # range", and the non-fatal catch swallowed it → the real-money 1x2 bot silently
+    # wrote 0 picks since 2026-09-08. Forbid bare '%' in this job's SQL comments.
+    for _ln in job.splitlines():
+        if _ln.strip().startswith("--") and "%" in _ln:
+            raise AssertionError(f"bare '%' in a SQL comment breaks psycopg2 — reword/escape: {_ln.strip()!r}")
     # source: calibrated cohort, market='1x2', edge>=0.13 (FRACTION), calibrated_prob not null
     assert "b.maturity_label = 'calibrated'" in job, "source must be the calibrated cohort"
     assert "sb.market = '1x2'" in job, "source market must be '1x2'"
