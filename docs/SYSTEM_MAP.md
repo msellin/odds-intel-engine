@@ -1,5 +1,8 @@
 # SYSTEM MAP — the one place that explains picks, bots, and every %
 
+> **Direct live-odds books (3, into `odds_snapshots`):** **Coolbet** (Imperva → Mac), **Unibet-Site** (DataDome → Mac), **Epicbet** (Cloudflare → VPS via FlareSolverr, the most robust; 119 markets, EPICBET-ODDS-INGEST-2026-08-27) — plus AF's 13-book feed. We COLLECT 15 market families but model/pick on only 7 (see USE-COLLECTED-MARKETS in PRIORITY_QUEUE).
+
+
 **This is the index. Read this first; everything else is a deep-dive it links to.**
 
 It exists because the betting system kept getting *harder* to understand every time
