@@ -36571,5 +36571,57 @@ def test_favlong_per_selection_groups():
     )
 
 
+
+@test("PREKICKOFF-SELECTION-AWARE-FLOOR — the catch-net can see the band the placer actually stakes")
+def test_prekickoff_selection_aware_floor():
+    """EDGE-FLOOR-ALL-CALLERS, completing the pass (2026-09-11).
+
+    `coolbet_prekickoff_alert` was MISSED when every other edge gate was routed
+    through `clears_edge_floor`. It read the market-only `_min_edge_for`, which
+    is selection-blind, and that made the catch-net wrong in BOTH directions at
+    the one site whose entire job is "we are about to miss a bet we should have
+    placed":
+
+      * a home-UNDERDOG @3.30 at 11% edge — which the real-money placer DOES
+        stake, its floor being 10% — did NOT alert, because the pooled floor is
+        13%. The safety net was blind to exactly the band it exists to cover.
+        Identical defect to Stevenage v Luton, fourth location.
+      * a home-FAV @1.80 at 14% DID alert, and home-favs publish at -34.8%.
+
+    This pins the first (the miss), which is the real-money-relevant half. The
+    second is not fixed here and deliberately so: `min_edge_for_pick` still
+    falls back to the pooled 13% for home-favs until POOLED-1X2-FLOOR-RETIRE is
+    owner-approved.
+    """
+    import inspect
+    import re
+    from workers.jobs import coolbet_prekickoff_alert as pk
+    import workers.automation.coolbet_placer as cp
+
+    # Inspect CODE, not comments — the comment above legitimately names the
+    # old call, and matching prose is how this style of test forbids its own
+    # explanation.
+    code = "\n".join(l for l in inspect.getsource(pk).splitlines()
+                     if not l.lstrip().startswith("#"))
+    assert "clears_edge_floor(" in code, (
+        "the catch-net must gate on the shared selection-aware predicate"
+    )
+    assert not re.search(r"floor\s*=\s*_min_edge_for\(", code), (
+        "the catch-net must not make a market-only floor decision — that is "
+        "what blinded it to the 10-13% home-underdog band the placer stakes."
+    )
+
+    # The behavioural invariant: anything the real-money placer would stake
+    # MUST be visible to the catch-net. Otherwise the net cannot do its job.
+    for odds, edge in ((3.30, 0.11), (3.30, 0.10), (2.80, 0.105), (4.00, 0.16)):
+        staked = cp.clears_edge_floor("1x2", "home", odds, edge)
+        assert staked, f"fixture wrong: placer should stake home @{odds} at {edge}"
+        assert cp.clears_edge_floor("1x2", "home", odds, edge), (
+            f"home-underdog @{odds} edge {edge:.0%} is staked with REAL MONEY "
+            f"but would be invisible to the pre-kickoff catch-net — the net "
+            f"must never be stricter than the placer it is guarding."
+        )
+
+
 if __name__ == "__main__":
     main()

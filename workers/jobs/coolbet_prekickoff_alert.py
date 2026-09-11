@@ -112,7 +112,7 @@ def load_prekickoff_candidates() -> list[dict]:
 
     Returns rows sorted by KO ascending so the urgent picks render first."""
     from workers.api_clients.db import execute_query
-    from workers.automation.coolbet_placer import _min_edge_for, _MIN_EDGE
+    from workers.automation.coolbet_placer import _min_edge_for, clears_edge_floor, _MIN_EDGE
 
     allowed = _allowed_maturity_labels()
     rows = execute_query(
@@ -163,8 +163,24 @@ def load_prekickoff_candidates() -> list[dict]:
     out: list[dict] = []
     for r in rows:
         d = dict(r)
-        floor = _min_edge_for(d.get("market"))
-        if float(d.get("edge_percent") or 0) < floor:
+        # EDGE-FLOOR-ALL-CALLERS (completing the 2026-09-09/11 pass — this
+        # caller was MISSED). This read the market-only `_min_edge_for`, which
+        # is selection-blind, and that made the catch-net wrong in BOTH
+        # directions at the one site whose whole job is "we are about to miss a
+        # bet we should have placed":
+        #   * a home-UNDERDOG @3.30 at 11% edge — which the real-money placer
+        #     DOES stake (its floor is 10%) — did NOT alert here, because the
+        #     pooled floor is 13%. The safety net was blind to exactly the band
+        #     it is supposed to cover. Same defect as Stevenage v Luton, fourth
+        #     location.
+        #   * a home-FAV @1.80 at 14% DID alert, and home-favs publish at
+        #     -34.8%.
+        # Routing through the shared predicate fixes the first (the miss).
+        # The second needs the pooled floor itself decided — see
+        # POOLED-1X2-FLOOR-RETIRE; `min_edge_for_pick` still falls back to the
+        # pooled 13% for home-favs, by design, until that is owner-approved.
+        if not clears_edge_floor(d.get("market"), d.get("selection"),
+                                 d.get("odds_at_pick"), d.get("edge_percent")):
             continue
         out.append(d)
     out.sort(key=lambda x: x.get("match_date") or datetime.max.replace(tzinfo=timezone.utc))

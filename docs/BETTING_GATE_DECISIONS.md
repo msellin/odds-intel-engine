@@ -187,6 +187,64 @@ canonical method says executable, so **34 / 22% is the number.** (An even earlie
 "47%" was measured across ALL `simulated_bets` including non-published bots —
 wrong population entirely.)
 
+### WHERE the pooled 13% is actually consumed — and it is NOT "better" at any of them
+
+Owner asked, fairly: *"where we use pooled and why its better to use pooled there
+than the 10% with exclusions?"* Traced all four consumers on 2026-09-11. **The
+honest answer is that pooled is not better anywhere — it is the unfixed
+remainder of the same selection-blindness we have been closing, and at three of
+the four sites it is demonstrably wrong.**
+
+| # | consumer | has selection? | is pooled defensible? |
+|---|---|---|---|
+| 1 | `min_edge_for_pick` fallback → signaler, daemon loader, live re-evals, router | **yes** (and odds) | **No.** It only governs home-MID / home-FAV / away / draw — and those read −12.0% / −17.3% / n=18 no-evidence / n=0. The correct rule for them is exclusion, not a floor. |
+| 2 | `pick_triggers._emit_model_anchor` (`model_1x2` windows, **paper**) | **yes** | **No, for home.** See below — a structural argument that looks valid and isn't. |
+| 3 | `coolbet_prekickoff_alert` (the real-money catch-net) | **yes** (and odds) | **No — wrong in BOTH directions.** Fixed 2026-09-11. |
+| 4 | `gen_frontend_floors` → `ENGINE_MIN_EDGE_BY_MARKET['1x2']`, auto-place badge mirror | n/a | Mirrors the pooled value **by design** — it is a mirror, so it is right iff the engine value is right. |
+
+**Site 2 — the one argument that sounds like a reason for pooled, and why it
+fails.** Trigger windows compute `min_odds = max(1/(cal − edge_floor),
+odds_floor)`. The odds are the **output**, so you cannot condition the floor on
+odds the way `min_edge_for_pick` does — which looks like a genuine reason to fall
+back to a selection-blind number. It isn't, because **`odds_floor` for 1x2 is
+already 2.80**, so *every emitted 1x2 window starts at ≥ 2.80* — meaning a HOME
+window lies entirely inside home-underdog territory, where the validated floor is
+10%. Using 13% there simply never emits the band between:
+
+| cal_prob | min_odds @13% | min_odds @10% | band never emitted |
+|---|---|---|---|
+| 0.30 | 5.88 | 5.00 | 5.00–5.88 |
+| 0.35 | 4.55 | 4.00 | 4.00–4.55 |
+| 0.40 | 3.70 | 3.33 | 3.33–3.70 |
+| 0.45 | 3.12 | 2.86 | 2.86–3.12 |
+
+That is the 10–13% edge band on the **one selection with a proven fold-robust
+edge** — the same miss as Stevenage v Luton, third location. Paper-only, so it
+costs research volume rather than money. Draw/away windows should keep 13%.
+
+**Site 3 — fixed, because it was a real-money safety net that could not see the
+real-money band.** `coolbet_prekickoff_alert` exists to shout "this kicks off
+soon and the placer is NOT placing it". It gated on the market-only
+`_min_edge_for`, so:
+
+* a home-underdog @3.30 with **11% edge — which the placer DOES stake** (floor
+  10%) — **did not alert** (pooled floor 13%). The net was blind to exactly the
+  band it guards.
+* a home-FAV @1.80 with 14% **did** alert, and home-favs publish at −34.8%.
+
+Routed through `clears_edge_floor` — completing EDGE-FLOOR-ALL-CALLERS, which had
+missed this caller. That fixes the **miss**. The over-alerting on home-favs is
+NOT fixed by it, deliberately: `min_edge_for_pick` still falls back to pooled 13%
+for home-favs until POOLED-1X2-FLOOR-RETIRE is approved. Smoke
+`PREKICKOFF-SELECTION-AWARE-FLOOR` pins the invariant that **the catch-net must
+never be stricter than the placer it guards.**
+
+**So the pooled floor's remaining job, stated plainly:** hold the line for
+draw/away trigger windows (where 13% is right and there is no better number yet),
+and act as the fallback for selections whose real answer is "don't publish at
+all". The second half is the part that wants retiring — a floor standing in for
+an exclusion.
+
 ### ⚠️ THIS RUN MOSTLY REPRODUCED WORK ALREADY DONE — read before running another
 
 The home-underdog result here (**+21.0%, n=212, robust in all folds**) is the same
