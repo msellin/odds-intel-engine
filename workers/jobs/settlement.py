@@ -225,13 +225,25 @@ def _r_1x2(market, selection, home_goals, away_goals, stats):
 
 def _ht_score(match_id) -> tuple[int, int] | None:
     """(ht_home, ht_away) for a match, or None when the half-time score is not
-    recorded. Read lazily because 1H bets are rare (a handful a day), so one
+    available. Read lazily because 1H bets are rare (a handful a day), so one
     small query per 1H bet is cheaper than threading half-time state through
-    every settlement caller."""
+    every settlement caller.
+
+    HT-SCORE-FETCH-ON-SETTLE (2026-09-11): when the DB has no HT score for a
+    FINISHED match, fetch it from AF and store it before grading. The live
+    poller finishes matches via `finish_match_sql`, which writes only the
+    full-time score; the HT columns were filled only by the 22:30 sweep. So
+    EVERY 1x2_1h bet sat UNSETTLEABLE (and alerted) from full-time until
+    22:30 even though AF already had the half-time score — Nürnberg v Hannover
+    (AF 1576176, HT 1-1) alerted this way on 2026-09-11, the second such bet
+    that day. One AF call per affected match, only for 1H bets, only while the
+    column is empty; a genuinely absent AF score still returns None (skip +
+    alert, then `void_ungradeable_1h_bets`)."""
     try:
         from workers.api_clients.supabase_client import execute_query
         rows = execute_query(
-            "SELECT ht_score_home, ht_score_away FROM matches WHERE id = %s",
+            "SELECT ht_score_home, ht_score_away, status, api_football_id "
+            "FROM matches WHERE id = %s",
             (str(match_id),),
         )
     except Exception as e:  # noqa: BLE001 — a lookup failure must SKIP, not grade
@@ -239,10 +251,32 @@ def _ht_score(match_id) -> tuple[int, int] | None:
         return None
     if not rows:
         return None
-    h, a = rows[0].get("ht_score_home"), rows[0].get("ht_score_away")
-    if h is None or a is None:
+    row = rows[0]
+    h, a = row.get("ht_score_home"), row.get("ht_score_away")
+    if h is not None and a is not None:
+        return int(h), int(a)
+    if row.get("status") != "finished" or not row.get("api_football_id"):
         return None
-    return int(h), int(a)
+    try:
+        from workers.api_clients.api_football import get_fixture_by_id, extract_half_scores
+        from workers.api_clients.db import execute_write
+        fixture = get_fixture_by_id(int(row["api_football_id"]))
+        if not fixture:
+            return None
+        ht_h, ht_a, h2_h, h2_a = extract_half_scores(fixture)
+        if ht_h is None:
+            return None
+        execute_write(
+            """UPDATE matches
+                  SET ht_score_home = %s, ht_score_away = %s,
+                      h2_score_home = %s, h2_score_away = %s
+                WHERE id = %s AND ht_score_home IS NULL""",
+            (ht_h, ht_a, h2_h, h2_a, str(match_id)),
+        )
+        return ht_h, ht_a
+    except Exception as e:  # noqa: BLE001 — a fetch failure must SKIP, not grade
+        console.print(f"  [dim]ht score AF fetch failed for {match_id}: {e}[/dim]")
+        return None
 
 
 def _r_1x2_1h(market, selection, home_goals, away_goals, stats):
@@ -1739,17 +1773,16 @@ _HT_VOID_REASON = "no_ht_score"
 # voided, EVERY settlement run re-grades it as UNSETTLEABLE and fires the
 # "Unsettleable market" Telegram (deduped 6h, so ~4 alerts a day).
 #
-# Worked example, the bet that prompted this: Nürnberg v Hannover kicked off
-# 16:30 and finished with no HT score. The 22:30 backfill gets its chance SIX
-# HOURS later, the same evening — but at a 30h gate the void could not run
-# until 22:30 the NEXT day, so the alert would have fired for ~29 hours about
-# a bet we had already decided was ungradeable.
+# CORRECTION (HT-SCORE-FETCH-ON-SETTLE, 2026-09-11): the bet that prompted the
+# 14h gate — Nürnberg v Hannover — was NOT a permanent gap. AF had its HT score
+# (1-1) all along; we simply had not fetched it, because the live poller's
+# finish path writes only the full-time score. `_ht_score` now fetches from AF
+# at settlement time, so the transient case no longer reaches this sweep at
+# all, and the 22:30 sweep is no longer what the gate is waiting for.
 #
-# 14h instead: comfortably past the first 22:30 sweep for any kickoff (the
-# worst case is a 23:00 kickoff, whose first sweep is 23.5h later — still
-# inside the gate because the gate is measured from KICKOFF and the row cannot
-# be ungradeable-and-finished before the match ends). It buys the backfill a
-# full cycle and stops manufacturing a day of alerts about a known outcome.
+# What is left for this sweep is only the genuinely-absent AF score. 14h gives
+# AF's own late data corrections several settlement passes (every 15 min, each
+# re-trying the AF fetch) before we void — and the void stays reversible.
 _HT_VOID_AFTER_H = 14
 
 

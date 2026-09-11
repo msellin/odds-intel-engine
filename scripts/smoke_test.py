@@ -36384,11 +36384,53 @@ def test_ht_score_never_arrives_void():
         "void_ungradeable_1h_bets must run AFTER resettle_wrongly_voided_bets, "
         "or a bet the HT backfill just rescued gets voided on the same pass."
     )
-    assert s._HT_VOID_AFTER_H > 24, (
-        f"_HT_VOID_AFTER_H={s._HT_VOID_AFTER_H} must exceed the 24h gap between "
-        "22:30 half-score sweeps, so the backfill gets a full cycle to fill the "
-        "gap before anything is voided."
+    # Was `> 24` (wait out a full 22:30 sweep cycle). HT-SCORE-FETCH-ON-SETTLE
+    # made `_ht_score` fetch from AF itself, so the gate no longer waits on the
+    # sweep — it only needs several settle passes to retry AF before voiding.
+    assert 6 <= s._HT_VOID_AFTER_H <= 30, (
+        f"_HT_VOID_AFTER_H={s._HT_VOID_AFTER_H}: must give several 15-min settle "
+        "passes to re-fetch AF before voiding, without alerting for over a day."
     )
+
+
+@test("HT-SCORE-FETCH-ON-SETTLE — a finished match missing its HT score is fetched from AF, not left alerting")
+def test_ht_score_fetch_on_settle():
+    """HT-SCORE-FETCH-ON-SETTLE (2026-09-11). The live poller finishes matches via
+    finish_match_sql, which writes ONLY the full-time score; HT columns were filled
+    only by the 22:30 sweep. So every 1x2_1h bet re-alerted "Unsettleable market"
+    from full-time until 22:30 although AF already had the score (Nürnberg v
+    Hannover, AF 1576176, HT 1-1). `_ht_score` must fetch + store it for finished
+    matches, and still return None (skip, never guess) when AF has none."""
+    from unittest import mock
+    from workers.jobs import settlement as s
+
+    base = {"status": "finished", "api_football_id": 1576176,
+            "ht_score_home": None, "ht_score_away": None}
+    fx = {"score": {"halftime": {"home": 1, "away": 1}, "fulltime": {"home": 2, "away": 1}},
+          "goals": {"home": 2, "away": 1}}
+    writes = []
+    with mock.patch("workers.api_clients.supabase_client.execute_query", return_value=[base]), \
+         mock.patch("workers.api_clients.api_football.get_fixture_by_id", return_value=fx) as gf, \
+         mock.patch("workers.api_clients.db.execute_write", side_effect=lambda q, p: writes.append(p)):
+        assert s._ht_score("m1") == (1, 1), "must return AF's HT score for a finished match"
+        gf.assert_called_once_with(1576176)
+        assert writes and writes[0][:4] == (1, 1, 1, 0), f"must store HT + 2H goals: {writes}"
+
+    # AF has no halftime score -> None (skip + alert), never a full-time guess.
+    with mock.patch("workers.api_clients.supabase_client.execute_query", return_value=[base]), \
+         mock.patch("workers.api_clients.api_football.get_fixture_by_id",
+                    return_value={"score": {"halftime": {"home": None, "away": None}}}), \
+         mock.patch("workers.api_clients.db.execute_write") as w:
+        assert s._ht_score("m1") is None
+        w.assert_not_called()
+
+    # Not finished -> no AF call at all (nothing to grade yet).
+    with mock.patch("workers.api_clients.supabase_client.execute_query",
+                    return_value=[dict(base, status="live")]), \
+         mock.patch("workers.api_clients.api_football.get_fixture_by_id") as gf2:
+        assert s._ht_score("m1") is None
+        gf2.assert_not_called()
+    return "finished match w/o HT score -> fetched from AF + stored; absent AF score -> skip"
 
 
 @test("LAUNCHD-DRIFT-SEMANTIC — the installed-vs-repo guard compares parsed plists, not bytes")
