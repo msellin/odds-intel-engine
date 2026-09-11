@@ -1776,6 +1776,69 @@ Coolbet quotes ~87 and Unibet-Site ~132 of ~262 upcoming fixtures, so validation
 "executable performance on the covered subset" — which is the number that matters for real
 money anyway. Use CLV, not ROI, at small n (per-bet return sd ≈ 1.42).
 
+## §61 — Books disagree on whether `over_under_*` stores `handicap_line`, and the key you were told to use silently deletes the comparison (2026-09-11)
+
+Found running `scripts/book_dimension_sweep.py`. §25 says a cross-book price
+comparison must match on `handicap_line`. True for Asian handicap. **False —
+and actively destructive — for every `over_under_*` market**, where the line is
+already in the market name and the books split into two camps:
+
+| convention | books |
+|---|---|
+| `handicap_line` **NULL** | Coolbet, Pinnacle |
+| `handicap_line` = the line (`2.5`) | Epicbet, Unibet-Site |
+
+Measured over 24h: `over_under_25` is 100 pct NULL at Coolbet and Pinnacle,
+0 pct NULL at Epicbet and Unibet-Site, on every O/U line from 0.5 to 4.5.
+
+Each book is internally **consistent**, so nothing looks broken anywhere. A key
+of `(match, market, selection, COALESCE(handicap_line, -999))` simply returns
+**zero** cross-camp O/U pairs, and a three-book sweep silently collapses to
+1x2-only — which is what it did: 525 series, all 1x2, with no error and no empty
+result to notice. Correcting the key took it to 859 and brought both O/U markets
+back.
+
+**Rule:** include `handicap_line` in a cross-book key only for `asian_handicap`
+and the `*_handicap` families. For the parametric `*_ou_<line>` / `over_under_*`
+families the market name IS the line.
+
+**This is an analysis trap, not a production bug** — verified, not assumed:
+live code carries the line in the market name and never joins across books on
+`handicap_line` (`pick_triggers._emit_sharp_anchor` keys on `(match, selection)`
+for a fixed `market`; `settlement`'s `os.handicap_line = %s` equality is on
+AH selections only; `daily_pipeline_v2`'s `DISTINCT ON (... , handicap_line)` is
+a per-book grouping key, where a consistent NULL is harmless). Normalising the
+stored values is a writer migration + backfill, i.e. §58's staged Phase 2, not a
+one-line fix — which is why the rule above is the fix.
+
+## §62 — An odds-band effect is a MARKET effect until you split by market (2026-09-11)
+
+§47's sibling, found the same day. The 3.00-5.00 odds band looked like a decisive
+**Coolbet** win (+1.46 pct per series, t=+3.4, n=245) on the three-book universe —
+which is 1x2-only for the reason in §61 — and a decisive **Epicbet** win
+(+0.37 pct, t=+3.4, n=3,267) on the two-book all-market universe. Both are
+correctly computed. They are different markets wearing the same band label.
+
+Neither survived as a *finding*: measured on the placer's actual gate (1x2 home,
+odds >= 2.80) over 14 days, n=400, the gap is +0.34 pct at t=+0.9 — noise, exactly
+as §60 predicts for a point estimate lifted off an underpowered slice. **Measure
+the gate the money runs through, never a band average.**
+
+What did survive, same run, same method: O/U 2.5 at odds >= 1.80 — the O/U
+mirror's gate — is **Epicbet best on 65 pct of series, median +0.55 pct, mean
++0.89 pct, t=+8.5, n=1,429**, and it reproduces on the three-book subset
+(58 pct, +0.82 pct median, t=+3.0, n=191). The market split is the real
+structure: Coolbet prices 1x2 / double-chance / BTTS better, Epicbet prices
+totals / corners / Asian handicap better.
+
+One more guard that mattered: before an outlier filter, `asian_handicap` read
+**Coolbet +6.63 pct, t=+9.8** — while Epicbet held the best price more often, a
+contradiction that is the tell for §9. Dropping pairs more than 25 pct apart
+(line mismatches and bad quotes, 1,279 of 19,137) flipped it to the true
+**Epicbet +0.83 pct median, t=+12.3**. A mean and a best-price rate that
+disagree is never a subtle finding; it is outliers.
+
+
 ## 59. Retention keeps the LATEST pre-kickoff row — and until 2026-09-11 it kept nothing else at the books we bet
 
 Two facts to know before writing any query against historical `odds_snapshots`.

@@ -37831,5 +37831,57 @@ def test_trigger_calibrator_watch():
     )
 
 
+@test("UB-COLUMN-NOT-PLACEABLE")
+def test_ub_column_is_the_placeable_feed():
+    """UB-COLUMN-NOT-PLACEABLE-2026-09-11 — the admin "Now UB" column quoted a
+    price the operator cannot take.
+
+    Both shadow-bot surfaces read `["Unibet", "Unibet-Kambi"]` and took whichever
+    was newest. That was correct when written on 2026-09-05. It became wrong on
+    2026-09-06, when unibet.ee LEFT the Kambi API (KAMBI-FEED-DIVERGENCE) and
+    Kambi was dropped from ACCESSIBLE_BOOKMAKERS — but the code kept working,
+    because a feed that is wrong is not a feed that is empty.
+
+    Measured 2026-09-11 on 1,390 paired 1x2 + O/U 2.5 quotes inside the pages'
+    own 12h window: Kambi disagrees with the site on 91.0 pct and reads HIGHER on
+    29.0 pct. On today's mirror picks, 7 of 9 UB cells were served by Kambi and
+    only 2 by the placeable feed. The operator places by hand off these screens
+    (project_realmoney_shadow_signals), so the column was pricing real money at a
+    venue quote that does not exist.
+
+    `Unibet-Site` (workers/automation/unibet_odds_feed.py) is the placeable feed.
+    It covers less — 380 upcoming fixtures against Kambi's 573 — and that is the
+    right trade: a blank cell costs a missed bet, a phantom price costs a placed
+    one.
+    """
+    for rel in ("src/app/(app)/admin/shadow-bots/page.tsx",
+                "src/app/(app)/admin/shadow-bots/[bot]/page.tsx"):
+        src = _web_path(rel).read_text()
+        # the bookmaker allowlist is the load-bearing line; comments may still
+        # (and should) name Kambi to explain why it is absent.
+        #
+        # §41 — a file-wide substring assertion is not a test of the thing you
+        # changed. Count the lines we actually inspected: if the call is ever
+        # reformatted across lines this loop would inspect NOTHING and pass
+        # vacuously, which is the failure mode this counter exists to catch.
+        checked = 0
+        for line in src.splitlines():
+            if '.in("bookmaker"' not in line:
+                continue
+            checked += 1
+            assert "Unibet-Kambi" not in line and '"Unibet"' not in line, (
+                f"{rel} still reads a NON-PLACEABLE Unibet feed in {line.strip()} — "
+                "unibet.ee left the Kambi API on 2026-09-06 and it disagrees with "
+                "the site on 91 pct of quotes; the placeable feed is 'Unibet-Site'"
+            )
+            assert "Unibet-Site" in line, (
+                f"{rel} must read the placeable 'Unibet-Site' feed in {line.strip()}"
+            )
+        assert checked >= 1, (
+            f"{rel}: found no single-line `.in(\"bookmaker\", [...])` call to check — "
+            "the query was reformatted and this test is now asserting nothing"
+        )
+
+
 if __name__ == "__main__":
     main()
