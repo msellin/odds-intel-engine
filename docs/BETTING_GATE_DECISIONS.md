@@ -57,6 +57,73 @@ supports the same reading: at edge>=10%, home CLV is *highest* at the low floors
 not earning its keep on CLV at all; its whole justification is removing home-favs,
 and 2.00 does that too.
 
+#### ⛔ FINAL — 2.80 vs 2.00 IS NOT ANSWERABLE FROM DATA. STOP RE-RUNNING IT.
+
+Owner, after being given three different answers: *"you just said 2.0 is better,
+then run audit and now say 2.8 is better? if i ask you to do it third time, will
+you again change your mind? ... data has been the same always, so why are you
+changing your mind every time?"* — and *"largest n = 377, its like a data of one
+match day?"*
+
+Both observations are correct, and this section exists so nobody re-opens this.
+
+**Why the answer kept moving.** The data never changed. The METHOD did, and each
+added test moved the point estimate:
+
+| # | claim | what was missing |
+|---|---|---|
+| 1 | "odds floor wants 3.20" | no significance test; per-GROUP folds (a bug) |
+| 2 | "2.80 too high, 2.00 supported" | no folds, no significance — a bare ROI on n=509 |
+| 3 | "keep 2.80" | applied fold-robustness to the CHALLENGER ONLY |
+
+Claim 3 was the worst of the three, because the test was **asymmetric**. Run it
+on both gates, on one shared timeline:
+
+| gate | n | ROI | f1 | f2 | f3 | fold-robust? |
+|---|---|---|---|---|---|---|
+| A odds>=2.80 | 1,475 | +11.4% | +2.9 | **−2.7** | +28.0 | **no** |
+| B odds>=2.00 | 1,984 | +11.8% | +8.9 | **−0.3** | +23.8 | **no** |
+| (no odds floor) | 2,207 | +9.6% | +9.4 | −3.2 | +22.6 | no |
+
+**NEITHER gate is fold-robust.** Rejecting the challenger for failing a bar the
+incumbent also fails is status-quo bias wearing the costume of rigour.
+
+**Why it is unanswerable — the power calculation.** Returns have sd ≈ 1.5-1.6 at
+these prices, and the observed A-vs-B gap is **+0.33 pp of ROI**:
+
+| to detect a difference of | bets needed PER ARM (80% power) |
+|---|---|
+| 0.4 pp (what we observe) | **2,551,717** |
+| 1.0 pp | 408,275 |
+| 2.0 pp | 102,069 |
+| *we have* | *1,475 / 1,984* |
+
+At ~1,000 fixtures a day and our pick rate, the honest figure is **centuries**.
+This is not "hard" or "needs more data soon" — **the A-vs-B question cannot be
+settled by ROI, ever.** Every point estimate any sweep produces for it is noise,
+which is exactly why three sweeps gave three answers.
+
+**The one nearby question that IS reachable:** whether the marginal 2.00-2.80
+band differs from ZERO needs **736 bets**. We have **509**. That is ~45% more,
+i.e. months, not centuries. It is the only version of this worth waiting for.
+
+**THE DECISION RULE, therefore, is not ROI.** Pick on a basis the data can
+actually support:
+* **CLV** — the band beats the kept band in every dataset (+8.7% vs +3.8% pooled),
+  and CLV converges ~28x faster. This favours **2.00**.
+* **Volume vs concentration** — 2.00 adds ~35% more bets at an indistinguishable
+  ROI. A preference, not a finding.
+* **Blast radius** — 2.80 stakes fewer, longer-priced bets.
+
+**Recorded position: keep 2.80, because nothing justifies the churn of changing
+it — NOT because it is better.** It is not better. It is indistinguishable, and
+it will remain indistinguishable. If the owner prefers 2.00 for the CLV or the
+volume, that is a fully legitimate call and needs no further backtest.
+
+**Do not re-run this comparison expecting a different answer.** If someone does,
+the result they get will differ from all of the above, and that variation IS the
+finding.
+
 #### RESOLVED 2026-09-11 — `scripts/odds_floor_ab.py`, every dataset size
 
 Owner: *"theres a big diff on 2.0 vs 2.8, can you just run a sweep. 10%, 2.8 vs

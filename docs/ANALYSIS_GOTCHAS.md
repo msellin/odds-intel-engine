@@ -1801,3 +1801,38 @@ psycopg2 parses `%` as a parameter placeholder, so one in a *comment* raises
 `IndexError` per batch — and `prune_old_simple` caught the exception and printed
 "Would delete: 0 rows", which reads exactly like a clean database. Smoke
 `ODDS-PRUNE-INPLAY-PROTECTED` now scans the module's SQL strings for it.
+
+## 60. Compute the POWER before reporting a difference — or you will report noise three times
+
+Added 2026-09-11 after giving the owner three different answers to one question
+(1x2 odds floor 3.20, then 2.00, then 2.80) on **data that never changed**.
+
+The data was not the problem and neither was any single analysis. The problem was
+reporting a point estimate from an underpowered slice as if it were a finding.
+Each subsequent test moved the estimate, so each re-run produced a new "answer",
+and the owner correctly asked whether a fourth run would produce a fourth.
+
+**The number that ends it:** returns at these prices have sd ≈ 1.5-1.6, and the
+observed gap between the two gates was **0.33 pp of ROI**. Detecting that at 80%
+power needs **2.5 MILLION bets per arm**. Even a 2 pp difference needs 102,000.
+We had 1,475 and 1,984 — and the marginal band the whole thing hinged on was
+n=377-509, which the owner rightly described as *"like a data of one match day"*.
+
+**So the rule: before reporting that A beats B, compute the n required to detect
+the difference you just measured.** One line:
+
+```python
+n_per_arm = 2 * ((1.96 + 0.84) * sd / observed_difference) ** 2
+```
+
+If that number exceeds what you have — and for ROI differences under ~2 pp it
+always will — the honest output is **"indistinguishable"**, not the sign of the
+point estimate. Say so and move to a metric that converges: CLV needs ~334
+settled bets where ROI needs ~9,300.
+
+**The second trap in the same episode: an ASYMMETRIC test.** The third answer
+("keep 2.80") came from applying fold-robustness to the CHALLENGER only. Run on
+both, neither gate was fold-robust (A: +2.9/−2.7/+28.0, B: +8.9/−0.3/+23.8).
+Rejecting a change for failing a bar the incumbent also fails is status-quo bias
+dressed as rigour. **Whatever test you apply to the proposal, apply to the
+incumbent in the same run and print both.**
