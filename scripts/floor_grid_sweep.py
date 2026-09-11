@@ -115,6 +115,36 @@ DATASETS = [
     ("shadow/all-prematch", "shadow_bets_unique", "all"),
 ]
 
+# ── the SCALE dataset, and its one hard limitation ───────────────────────────
+# Added 2026-09-11 after the owner asked the right question of an earlier
+# answer: "on what dataset? 1k fixtures? 25k? 50k? 100k?"
+#
+# The honest size of the four datasets above is ~18,700 settled pre-match picks
+# across ALL markets and both ledgers — for 1x2 alone it is ~4,500, and the
+# individual grid CELLS that produced the headline numbers were n=100-260. The
+# repo's own precision note says ~9,300 settled bets are needed for +/-2% on
+# ROI (~334 on CLV). So a cell of 130 bets is suggestive, never decisive, and
+# calling three overlapping windows "every dataset agreeing" overstated it.
+#
+# This dataset is fixture-level instead of pick-level: for every FINISHED
+# fixture (167,957 in the DB) where both Pinnacle and an accessible book priced
+# the market, take the best accessible price and score it against the
+# Shin-de-vigged Pinnacle probability. That reaches ~100k+ synthetic bets.
+#
+# ⚠️ IT IS BLIND TO THE ODDS AXIS, AND THAT IS NOT A NUANCE.
+# Taking the best of many books systematically RESCUES low-odds picks we could
+# never actually have taken at that price (ANALYSIS_GOTCHAS §52/§55, the
+# line-shop mirage). So its absolute ROI is fantasy, and — critically for this
+# tool — the distortion lands ON the odds dimension. The repo already recorded
+# this: "Idealized 104k/182k confirms the edge floors are robust at scale but is
+# blind to the odds effect ... which is why the odds floor is validated on
+# executable + CLV, not idealized."
+#
+# Therefore: use `idealized/fixture-level` for the EDGE axis at scale, and NEVER
+# to choose an odds floor. `--metric clv_pinnacle` on the executable datasets is
+# the sanctioned way to probe the odds question at our real sample size.
+IDEALIZED_LABEL = "idealized/fixture-level"
+
 # `roi` is the default and the only basis a floor decision should rest on. The
 # CLV metrics are for DIAGNOSIS: CLV converges far faster than ROI (~334 settled
 # bets for +/-2% vs ~9,300), so on a thin market CLV can say "there is an edge
@@ -314,49 +344,131 @@ def _sql(table: str, maturity: str) -> str:
     """
 
 
-def load(datasets=None) -> list[dict]:
+def _load_idealized(market_pred: str, sels: tuple, fam: str) -> list[dict]:
+    """Fixture-level synthetic bets: best accessible price vs de-vig Pinnacle.
+
+    Reuses `edge_floor_backtest`'s own SQL shape and `_devig` so there is no
+    second implementation of the idealized basis. Unlike that version this one
+    KEEPS selection and odds, which is what lets the cube group it by selection
+    band — but see IDEALIZED_LABEL above: the odds axis is not trustworthy here.
+    """
+    from scripts.edge_floor_backtest import _devig, _ACCESSIBLE
+    books = ",".join("'%s'" % b for b in _ACCESSIBLE)
+    rows = execute_query(f"""
+        WITH fin AS (
+          SELECT id, date, score_home, score_away,
+                 CASE WHEN score_home>score_away THEN 'home'
+                      WHEN score_home<score_away THEN 'away' ELSE 'draw' END winner,
+                 (score_home+score_away) total
+            FROM matches WHERE status='finished'
+              AND score_home IS NOT NULL AND score_away IS NOT NULL),
+        lat AS (
+          SELECT DISTINCT ON (o.match_id,o.market,o.selection,o.bookmaker)
+                 o.match_id, o.market, o.selection, o.bookmaker, o.odds
+            FROM odds_snapshots o
+           WHERE {market_pred} AND o.selection IN ({','.join("'%s'" % s for s in sels)})
+             AND o.bookmaker IN ('Pinnacle',{books})
+           ORDER BY o.match_id,o.market,o.selection,o.bookmaker,o."timestamp" DESC),
+        agg AS (
+          SELECT match_id, market, selection,
+                 max(odds) FILTER (WHERE bookmaker='Pinnacle') pin,
+                 max(odds) FILTER (WHERE bookmaker!='Pinnacle') best
+            FROM lat GROUP BY 1,2,3)
+        SELECT a.match_id::text mid, a.market, a.selection,
+               a.pin::float pin, a.best::float best,
+               f.date, f.winner, f.total
+          FROM agg a JOIN fin f ON f.id=a.match_id
+         WHERE a.pin IS NOT NULL AND a.best IS NOT NULL AND a.pin>1 AND a.best>1
+    """)
+    from collections import defaultdict
+    grp, meta = defaultdict(dict), {}
+    for r in rows:
+        grp[(r["mid"], r["market"])][r["selection"]] = {"pin": r["pin"], "best": r["best"]}
+        meta[(r["mid"], r["market"])] = r
+    out = []
+    for key, od in grp.items():
+        if not all(s in od for s in sels):
+            continue
+        truep = _devig({s: od[s]["pin"] for s in sels})
+        r = meta[key]
+        for s in sels:
+            best = od[s]["best"]
+            edge = best * truep.get(s, 0) - 1
+            if fam == "1x2":
+                won = (r["winner"] == s)
+                line = None
+            else:
+                line = int(r["market"].split("_")[-1]) / 10.0
+                won = (r["total"] > line) if s == "over" else (r["total"] < line)
+            out.append({
+                "market": r["market"], "selection": s, "ep": edge, "odds": best,
+                "pick_time": r["date"], "kickoff": r["date"],
+                "result": "won" if won else "lost",
+                "ret": (best - 1) if won else -1,
+                "clv": None, "clv_pinnacle": None, "clv_live": None,
+                "bookmaker": "best-of-accessible", "closing_book": "?",
+                "model_version": "devig_pinnacle", "timing_cohort": "?",
+                "strategy": "?", "bot": "(fixture-level)", "maturity": "n/a",
+                "retired": False, "league": "?", "league_country": "?",
+                "league_tier": None,
+            })
+    return out
+
+
+def load(datasets=None, include_idealized: bool = True) -> list[dict]:
     out: list[dict] = []
+    raw: list[tuple[str, dict]] = []
     for label, table, maturity in DATASETS:
         if datasets and label not in datasets:
             continue
         for r in execute_query(_sql(table, maturity)):
-            d = dict(r)
-            d["dataset"] = label
-            fam, line, side = parse_market(d["market"], d["selection"])
-            d["family"], d["line"], d["side"] = fam, line, side
-            d["bet_type"] = fam if line == "-" else f"{fam} {line}"
-            d["sel_band"] = _sel_band(fam, d["selection"], d["odds"], side)
-            d["odds_band"] = _bucket(d["odds"], [1.8, 2.2, 2.8, 3.2, 4.0],
-                                     ["<1.8", "1.8-2.2", "2.2-2.8", "2.8-3.2",
-                                      "3.2-4.0", "4.0+"])
-            d["edge_band"] = _bucket(d["ep"], [0.05, 0.08, 0.10, 0.13, 0.18],
-                                     ["<5%", "5-8%", "8-10%", "10-13%",
-                                      "13-18%", "18%+"])
-            # EDGE-UNIT-GUARD (2026-09-11). `edge_percent` is a decimal FRACTION
-            # by convention (0.10 = 10%, gotcha 48) — but six bots violate it,
-            # storing values up to 30.7 (corners) and 67.9 (team totals):
-            #   bot_corners_paper_shadow_v1, bot_team_total_paper_shadow_v1,
-            #   bot_1h_1x2_paper_shadow_v1, bot_no_pin_shadow_v1,
-            #   bot_no_pin_home_v1, bot_sweep_1x2_home_v1
-            # Three of those are 1x2 bots, so pooling them silently CORRUPTS the
-            # edge axis: every one of their picks clears even a 20% floor, which
-            # inflates exactly the high-floor cells a sweep is most tempted to
-            # adopt. Flagged as a dimension AND excluded by default.
-            d["edge_scale"] = "fraction" if -1.0 <= d["ep"] <= 1.0 else "SUSPECT"
-            d["edge_kind"] = _edge_kind(d["bot"], d.get("model_version"))
+            raw.append((label, dict(r)))
+    # ON BY DEFAULT. The pick-level ledgers total ~18,700 settled bets across
+    # ALL markets, so the cells that decide a floor are 100-260 bets — noise on
+    # a slate that runs ~1,000 fixtures a day. The fixture-level basis is the
+    # only one at real scale, so it loads unless explicitly skipped.
+    if include_idealized and (not datasets or IDEALIZED_LABEL in datasets):
+        for r in _load_idealized("o.market='1x2'", ("home", "draw", "away"), "1x2"):
+            raw.append((IDEALIZED_LABEL, r))
+        for r in _load_idealized("o.market ~ '^over_under_[0-9]+$'",
+                                 ("over", "under"), "o/u"):
+            raw.append((IDEALIZED_LABEL, r))
+    for label, d in raw:
+        fam, line, side = parse_market(d["market"], d["selection"])
+        d["family"], d["line"], d["side"] = fam, line, side
+        d["bet_type"] = fam if line == "-" else f"{fam} {line}"
+        d["sel_band"] = _sel_band(fam, d["selection"], d["odds"], side)
+        d["odds_band"] = _bucket(d["odds"], [1.8, 2.2, 2.8, 3.2, 4.0],
+                                 ["<1.8", "1.8-2.2", "2.2-2.8", "2.8-3.2",
+                                  "3.2-4.0", "4.0+"])
+        d["edge_band"] = _bucket(d["ep"], [0.05, 0.08, 0.10, 0.13, 0.18],
+                                 ["<5%", "5-8%", "8-10%", "10-13%",
+                                  "13-18%", "18%+"])
+        # EDGE-UNIT-GUARD (2026-09-11). `edge_percent` is a decimal FRACTION
+        # by convention (0.10 = 10%, gotcha 48) — but six bots violate it,
+        # storing values up to 30.7 (corners) and 67.9 (team totals):
+        #   bot_corners_paper_shadow_v1, bot_team_total_paper_shadow_v1,
+        #   bot_1h_1x2_paper_shadow_v1, bot_no_pin_shadow_v1,
+        #   bot_no_pin_home_v1, bot_sweep_1x2_home_v1
+        # Three of those are 1x2 bots, so pooling them silently CORRUPTS the
+        # edge axis: every one of their picks clears even a 20% floor, which
+        # inflates exactly the high-floor cells a sweep is most tempted to
+        # adopt. Flagged as a dimension AND excluded by default.
+        d["edge_scale"] = "fraction" if -1.0 <= d["ep"] <= 1.0 else "SUSPECT"
+        d["edge_kind"] = _edge_kind(d["bot"], d.get("model_version"))
 
-            d["month"] = d["pick_time"].strftime("%Y-%m") if d.get("pick_time") else "?"
-            ko = d.get("kickoff")
-            d["dow"] = ko.strftime("%a") if ko else "?"
-            d["ko_hour"] = (_bucket(ko.hour, [6, 12, 18],
-                                    ["00-05", "06-11", "12-17", "18-23"])
-                            if ko else "?")
-            d["league_tier"] = f"t{d['league_tier']}" if d.get("league_tier") else "t?"
-            d["retired"] = "y" if d.get("retired") else "n"
-            for k in ("bookmaker", "closing_book", "model_version",
-                      "timing_cohort", "strategy", "league", "league_country"):
-                d[k] = d.get(k) or "?"
-            out.append(d)
+        d["month"] = d["pick_time"].strftime("%Y-%m") if d.get("pick_time") else "?"
+        ko = d.get("kickoff")
+        d["dow"] = ko.strftime("%a") if ko else "?"
+        d["ko_hour"] = (_bucket(ko.hour, [6, 12, 18],
+                                ["00-05", "06-11", "12-17", "18-23"])
+                        if ko else "?")
+        d["league_tier"] = f"t{d['league_tier']}" if d.get("league_tier") else "t?"
+        d["retired"] = "y" if d.get("retired") else "n"
+        for k in ("bookmaker", "closing_book", "model_version",
+                  "timing_cohort", "strategy", "league", "league_country"):
+            d[k] = d.get(k) or "?"
+        out.append(d)
     return out
 
 
@@ -532,6 +644,10 @@ def main() -> int:
                          "different unit (up to 67.9), so every pick of theirs "
                          "clears any floor and the edge axis becomes "
                          "meaningless. Only use this to STUDY the offenders.")
+    ap.add_argument("--no-idealized", action="store_true",
+                    help="skip the fixture-level basis (it is the only dataset "
+                         "at real scale, so only skip it when you specifically "
+                         "want the pick-level ledgers)")
     ap.add_argument("--dump")
     a = ap.parse_args()
 
@@ -549,7 +665,7 @@ def main() -> int:
             print(f"  {lab:21} {tbl} · maturity={mat}")
         return 0
 
-    rows = load(a.dataset or None)
+    rows = load(a.dataset or None, include_idealized=not a.no_idealized)
     if a.market:
         rows = [r for r in rows if r["market"] in a.market]
     if a.family:
