@@ -72,7 +72,25 @@ The 30-min refresh writes **one row per `shadow_cohort` per pick per day**, ~48
 rows for a single pick. Raw counts overstate n by roughly 16-50x.
 
 Use the **`shadow_bets_unique`** view (migration 282, re-keyed to *earliest*
-`pick_time` in 283 to match how both admin pages dedupe). A second view,
+`pick_time` in 283 to match how both admin pages dedupe).
+
+**It is not only n — the duplication is OUTCOME-CORRELATED, so it moves the ROI
+itself** (added 2026-09-11 after `executable_shadow_eval.py` was found reading
+the base table). Measured over 60 days on `bot_high_roi_global_v2`: winners
+carried a mean **22.71 copies** against **7.55** for losers, so 18 distinct
+settled picks at +33.3% presented as **"242 bets at +122.7%", t = 11.70** — a
+t-stat sports betting does not produce, and the tell that something is
+structural rather than skilful. Its executable-Coolbet number went from 92.3%
+to **0.8%** once deduped. Two lessons beyond "use the view":
+
+* **a bot whose duplication is EVEN hides the bug.** `bot_v10_all` dedupes
+  2,179 rows to 221 picks with ROI moving only 25.8% → 25.6%, so a spot-check on
+  the flagship says "fine". Check a bot with a suspiciously high ROI instead.
+* **any per-pick JOIN is affected twice over.** The same eval matched each
+  duplicate to the nearest book snapshot *to that copy's* `pick_time`, so the
+  executable price silently averaged over the price path: `bot_v10_all`'s
+  executable-Coolbet ROI moved 15.2% → **9.7%** on dedup. If you join anything
+  time-sensitive onto shadow rows, dedupe FIRST. A second view,
 `shadow_bets_deduped`, was added on 2026-09-02 by someone who had not read
 this entry and dropped again the same day (migration 293) — the two were
 verified identical, 0 rows differing. One definition beats two. Measured drift between

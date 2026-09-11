@@ -37305,5 +37305,117 @@ def test_odds_floor_ab():
     assert s["lo"] < 0 < s["hi"], "a zero-mean sample's CI must span zero"
 
 
+
+@test("INCAPSULA-SELF-RESOLVES — a challenge interstitial is retried, not returned as the answer")
+def test_incapsula_self_resolves():
+    """INCAPSULA-SELF-RESOLVES (2026-09-11) — the fix for a 15-hour "outage"
+    that was never an outage.
+
+    Imperva/Incapsula answers the FIRST request on a fresh browser context with
+    HTTP **200** and a ~900-byte interstitial that loads `/_Incapsula_Resource`.
+    That is not a block. It is the standard JS challenge and it is
+    SELF-RESOLVING: FlareSolverr's browser runs the script, gets the `reese84`
+    cookie, and the very next request on the SAME session returns real content.
+    Measured on the day:
+
+        attempt 1:     886 bytes, _Incapsula_Resource present
+        attempt 2: 217,615 bytes, parseable board
+
+    We had no retry, so the interstitial was handed to callers as if it were the
+    answer. Every consumer reported "Coolbet unreachable", the footprint was
+    paused for 15h waiting for an escalation to decay, and the probe kept
+    confirming CHALLENGED — because every probe was a first request on a fresh
+    context and therefore always got the interstitial. **The pause was the one
+    thing guaranteeing it could never clear**, since the challenge only resolves
+    by making a second request.
+
+    Why the 200 matters: FlareSolverr only attempts a solve when it DETECTS a
+    challenge, and its detection targets Cloudflare. A 200 with a normal-looking
+    body sails through, so FS returns the interstitial as a success.
+
+    Pins: the detector is narrow (marker AND small body, so it cannot fire on a
+    real board), the retry happens on the SAME session, and it is bounded.
+    """
+    import inspect
+    from workers.automation import coolbet_session as cs
+
+    assert hasattr(cs, "_looks_like_incapsula"), (
+        "the Incapsula interstitial detector must exist — without it a "
+        "challenge page is returned to callers as real content."
+    )
+
+    class _R:
+        def __init__(self, t): self.text = t
+
+    challenge = '<html><head><script src="/_Incapsula_Resource?SWJIYLWA=x">' + " " * 400
+    assert cs._looks_like_incapsula(_R(challenge)) is True, (
+        "must detect the ~900-byte interstitial"
+    )
+    # MUST NOT fire on a real board, even one mentioning the string — that would
+    # turn every successful fetch into a retry storm.
+    assert cs._looks_like_incapsula(_R("x" * 200000)) is False
+    assert cs._looks_like_incapsula(_R('{"ok":1}' + "_Incapsula_Resource" + "y" * 9000)) is False, (
+        "a LARGE body must never be treated as an interstitial — the size "
+        "guard is what makes this detector safe."
+    )
+    assert cs._looks_like_incapsula(_R("")) is False
+
+    # The retry must be bounded and reuse the SAME FS session: a new session per
+    # attempt would restart the challenge every time and never resolve.
+    assert 1 <= cs._INCAP_RETRIES <= 4, (
+        f"_INCAP_RETRIES={cs._INCAP_RETRIES} — one retry suffices in practice; "
+        "an unbounded loop would turn a genuine block into a request storm, "
+        "which is what got us flagged in the first place."
+    )
+    assert cs._INCAP_BACKOFF_S >= 2.0, "give the JS challenge time to settle"
+    gsrc = inspect.getsource(cs.CoolbetSession._fs_get)
+    assert "_looks_like_incapsula" in gsrc, (
+        "the GET path must apply the check — it is the path the odds feed uses"
+    )
+    assert "self._fs_session_name" in gsrc, (
+        "the retry must reuse the same FS session; a fresh session per attempt "
+        "restarts the challenge and can never resolve it."
+    )
+
+
+@test("SHADOW-EVAL-DEDUP — the executable eval reads the deduped view, never the base table")
+def test_shadow_eval_dedup():
+    """SHADOW-EVAL-DEDUP-2026-09-11. `executable_shadow_eval.py` read the RAW
+    `shadow_bets` table, which ANALYSIS_GOTCHAS gotcha 5 forbids: the 30-minute
+    refresh writes one row per shadow_cohort per pick per day, so raw counts
+    overstate n by 16-50x. Six other scripts already used the view.
+
+    It was not merely an inflated n. The duplication is OUTCOME-CORRELATED, so
+    it moves the ROI. Measured over 60 days on `bot_high_roi_global_v2`: winners
+    carried a mean 22.71 copies against 7.55 for losers, turning 18 distinct
+    settled picks at +33.3% into "242 bets at +122.7%" — t = 11.70, a number
+    sports betting does not produce. Its executable-Coolbet figure went from
+    92.3% to 0.8% once deduped.
+
+    And it moved the flagship too, which is what makes this worth a test rather
+    than a one-line fix: `bot_v10_all` went from 2,179 rows to 221 picks, and
+    its executable-Coolbet ROI from 15.2% to 9.7% — because each duplicate was
+    matched to a different nearest book snapshot, quietly averaging over the
+    price path. This tool is slated to become the real-money promotion gate, so
+    a 5.5pp error in the executable number is a bet-sizing error.
+    """
+    import inspect
+    from scripts import executable_shadow_eval as ese
+
+    src = inspect.getsource(ese.run)
+    assert "FROM shadow_bets_unique" in src, (
+        "the executable eval must read the shadow_bets_unique VIEW. The raw "
+        "table carries one row per cohort per pick per day; because the "
+        "duplication is outcome-correlated it inflates ROI, not just n."
+    )
+    assert "FROM shadow_bets s" not in src and "FROM shadow_bets\n" not in src, (
+        "no path in this tool may read the base shadow_bets table"
+    )
+    assert "bot_retired_at" in src, (
+        "the view exposes bot_retired_at/bot_name — use them rather than "
+        "re-joining bots, which is how the base table crept back in."
+    )
+
+
 if __name__ == "__main__":
     main()

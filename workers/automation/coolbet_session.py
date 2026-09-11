@@ -345,6 +345,27 @@ class _TimeoutSession(requests.Session):
         return super().request(method, url, **kwargs)
 
 
+# INCAPSULA-SELF-RESOLVES (2026-09-11). One retry is enough in practice (the
+# challenge clears on the second request); two gives headroom for a slow solve
+# without turning a genuine block into a retry storm.
+_INCAP_RETRIES = 2
+_INCAP_BACKOFF_S = 6.0
+
+
+def _looks_like_incapsula(resp) -> bool:
+    """Is this an Incapsula JS interstitial rather than real content?
+
+    Deliberately narrow. It must NOT fire on a real board that happens to
+    mention the string, so it requires the marker AND a small body — the
+    interstitial is ~900 bytes while a real fo-tree response is ~200KB.
+    """
+    try:
+        body = getattr(resp, "text", "") or ""
+    except Exception:  # noqa: BLE001
+        return False
+    return len(body) < 5000 and "_Incapsula_Resource" in body
+
+
 class CoolbetSession:
     """Thread-safe(ish) Coolbet API session with auto JWT refresh.
 
@@ -997,7 +1018,43 @@ class CoolbetSession:
         }
         if headers:
             body["headers"] = headers
-        return _FSResponse(_fs_call(body))
+        resp = _FSResponse(_fs_call(body))
+
+        # INCAPSULA-SELF-RESOLVES (2026-09-11) — the fix for a 15-hour "outage"
+        # that was never an outage.
+        #
+        # Imperva/Incapsula answers the FIRST request on a fresh browser context
+        # with HTTP **200** and a ~900-byte interstitial that loads
+        # `/_Incapsula_Resource`. That is not a block — it is the standard JS
+        # challenge, and it is SELF-RESOLVING: FlareSolverr's browser executes
+        # the script, receives the `reese84` cookie, and the very next request on
+        # the SAME session returns the real payload. Measured 2026-09-11:
+        #     attempt 1:     886 bytes, _Incapsula_Resource present
+        #     attempt 2: 217,615 bytes, parseable board
+        #
+        # We had no retry, so a challenge response was returned to callers as if
+        # it were the answer. Every consumer then reported "Coolbet unreachable",
+        # the footprint was paused for 15h waiting for an "escalation" to decay,
+        # and the probe kept confirming CHALLENGED — because every probe was a
+        # first request on a fresh context and therefore always got the
+        # interstitial. The pause was the one thing guaranteeing it never cleared.
+        #
+        # Why HTTP 200 matters: FlareSolverr only attempts a solve when it
+        # DETECTS a challenge, and its detection is built for Cloudflare. A 200
+        # with a normal-looking body sails through, so FS hands the interstitial
+        # back as a success. Hence we detect it ourselves.
+        #
+        # This is not evasion — it is completing the challenge exactly as a
+        # browser does, on our own session, with no extra identity. It costs one
+        # extra request per fresh session, not per call.
+        for _ in range(_INCAP_RETRIES):
+            if not _looks_like_incapsula(resp):
+                break
+            log.info("Incapsula interstitial on %s — letting the JS challenge "
+                     "settle and retrying on the same FS session", url[:80])
+            time.sleep(_INCAP_BACKOFF_S)
+            resp = _FSResponse(_fs_call(body))
+        return resp
 
     def _fs_post(self, url: str, *, headers: dict | None = None,
                  json_body: dict | None = None,

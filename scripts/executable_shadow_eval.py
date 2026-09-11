@@ -35,11 +35,28 @@ def run(days: int = 45):
     from workers.canonical_market import normalize
 
     picks = execute_query(
+        # SHADOW-EVAL-DEDUP-2026-09-11. This read the RAW `shadow_bets` table,
+        # which ANALYSIS_GOTCHAS gotcha 5 forbids in bold: the 30-minute refresh
+        # writes one row per shadow_cohort per pick per day, so raw counts
+        # overstate n by 16-50x. Six other scripts already read the view; this
+        # one did not, and it was about to become the real-money promotion gate.
+        #
+        # It is not merely an inflated n. The duplication is OUTCOME-CORRELATED,
+        # so it moves the ROI itself. Measured 2026-09-11 over 60 days on
+        # `bot_high_roi_global_v2`: winners carried a mean 22.71 copies against
+        # 7.55 for losers, turning 18 distinct settled picks at +33.3% into
+        # "242 bets at +122.7%" — a t-stat of 11.70, which is not a number
+        # sports betting produces. `bot_v10_all` happens to duplicate evenly
+        # (2,179 rows -> 221 picks, ROI 25.8% -> 25.6%), which is exactly why
+        # this survived a look: the flagship bot looked fine.
+        #
+        # The view keys on (bot_id, match_id, market, selection) and keeps the
+        # EARLIEST pick_time (migration 283), matching both admin pages.
         """SELECT s.id, s.match_id::text AS mid, s.pick_time, s.result,
                   COALESCE(s.odds_at_pick_live, s.odds_at_pick)::float AS rec_odds,
-                  s.market, s.selection, b.name AS bot
-             FROM shadow_bets s JOIN bots b ON b.id = s.bot_id
-            WHERE b.retired_at IS NULL AND s.result IN ('won','lost')
+                  s.market, s.selection, s.bot_name AS bot
+             FROM shadow_bets_unique s
+            WHERE s.bot_retired_at IS NULL AND s.result IN ('won','lost')
               AND s.pick_time > now() - (%s || ' days')::interval""",
         (str(days),),
     )
