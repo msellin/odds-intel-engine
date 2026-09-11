@@ -131,6 +131,72 @@ Interactive matrix: the floor-by-type artifact. Verdict per type:
 | **draw** | **not a model bet — route to sharp triggers** | model bets 0 draws (under-rates them, never clears 12% — §57). The idealized draw edge (8–12% band) is a SHARP/soft-book-mispricing edge vs de-vig Pinnacle, not a model edge → sharp-anchored trigger bots' territory. |
 | **away** | **exclude** — no fold-robust edge | idealized away robust at NO floor/size; the cohort's +43→+105% is 10–18 bets of luck. Unreliable → don't stake. |
 
+### PER-SELECTION RE-RUN 2026-09-11 — the pooled floor's remaining job is to admit losers
+
+Owner: *"we shouldn't have the pooled edge floor anymore as it was introducing
+home favs."* Re-ran the same methodology **per selection** rather than fav-vs-long
+(`scripts/favlong_floor_backtest.py --by-selection`, executable price
+`COALESCE(odds_at_pick_live, odds_at_pick)`, walk-forward 3 folds,
+active/calibrated cohort n=425). The fav/long split could not answer the question
+because LONG lumps AWAYS in with home-underdogs — the two selections it turns on.
+
+| selection | n | ROI @13% (the pooled gate) | robust at any floor? |
+|---|---|---|---|
+| **home-UNDERDOG** (≥2.80) | 236 | +16.0% (and **+21.0% @10%**, n=212) | **✓ at 0-13% and 18%** |
+| **home-MID** (2.00–2.80) | 122 | **−12.0%** | ✗ never — every floor has a losing fold |
+| **home-FAV** (<2.00) | 49 | **−17.3%** | ✗ never |
+| **AWAY** | 18 | +104.9% | flagged ✓ but see below |
+| **DRAW** | 0 | — | model bets no draws (as documented) |
+
+**Two findings.**
+
+1. **The 10% home-underdog floor is emphatically validated** — +21.0% on 212
+   executable bets, positive in all three folds (12.1 / 23.1 / 26.7), and the
+   sweet spot of the sweep. Nothing to change there.
+
+2. **A band belongs to NEITHER existing cut.** FAVLONG-CUTS defines home-fav as
+   `<2.00` and home-underdog as `≥2.80`, so **home picks between 2.00 and 2.80
+   fall through to the pooled floor** — and that band is the largest losing group
+   we have: n=122, −12.0% at the pooled gate, with **no robust floor at any
+   level** (it degrades as the floor rises: +13.3% @8% → +3.2% @12% → −12.0%
+   @13%). Nobody had named it. Smoke `FAVLONG-PER-SELECTION` now asserts the
+   selection cuts are exhaustive and non-overlapping so a band cannot silently
+   fall through again.
+
+**On AWAY: do not read the ✓.** n=18 total, and the "robust" rows are n=10 and
+n=8 with fold ROIs of +1.0% / +92.5% / +169.2% — one or two long-odds winners.
+This is the identical artefact FAVLONG-CUTS already called out ("the cohort's
++43→+105% is 10–18 bets of luck"), and the robustness flag is not meaningful at
+that sample size. No evidence either way; the conservative call stands.
+
+**So the pooled 13% floor now has no defensible job on the publication side:**
+every group it admits is either measurably losing on executable pricing
+(home-MID −12.0%, home-FAV −17.3%) or carries no evidence (AWAY n=18, DRAW n=0).
+Real money is unaffected either way — the 2.80 odds floor plus the home-only
+mirror already restrict placement to home-underdogs.
+
+**Cost of retiring it: 20 of 152 published 1x2 picks over 90d (13%).** NB an
+earlier read of "47%" was measured across ALL `simulated_bets` including
+non-published bots; on what actually reaches the channel it is 13%.
+
+**STILL OWNER-GATED, and deliberately not implemented yet** — "retire the pooled
+floor" means four different things to its four consumers, one of which would die
+silently:
+
+| consumer | effect of `_MIN_EDGE_BY_MARKET['1x2'] = None` |
+|---|---|
+| `min_edge_for_pick` fallback → signaler / loaders / live re-evals / router | non-home-underdog 1x2 excluded — **the intent** |
+| `pick_triggers._emit_model_anchor` (line ~204) | **kills the `model_1x2` trigger family outright** (paper research bots). Needs its own explicit floor first. |
+| `coolbet_prekickoff_alert` (line ~166) | selection-blind `_min_edge_for` — would exclude all non-underdog 1x2 |
+| `coolbet_placer` log line (~614) | `None * 100` → **TypeError**; must be made None-safe |
+| `gen_frontend_floors.py` → `ENGINE_MIN_EDGE_BY_MARKET['1x2']` | becomes `null`; the auto-place badge mirror `COOLBET_AUTO_MIN_EDGE_BY_MARKET['1x2']` expects 0.13 |
+
+Recommended shape when approved: **per-selection floors, not a single pooled
+number** — i.e. express the policy as "home-fav: excluded, home-mid: excluded,
+away: excluded, draw: sharp-only" rather than one value that happens to gate four
+different populations. That matches the standing design rule (callers pass WHO
+THEY ARE, never a floor) and makes the home-MID band impossible to overlook again.
+
 **Resulting real-money 1x2 policy (OWNER-GATED — changes placement + published record):**
 `bet 1x2 iff selection=home AND odds ≥ 2.80 AND edge ≥ 10%` (home-underdogs only). Exclude
 home-favs + aways; draws handled by the sharp trigger family (paper). O/U 2.5 unchanged (8%).

@@ -49,6 +49,61 @@ def _is_fav(sel: str, odds: float) -> bool:
     return sel == "home" and odds is not None and odds < 2.0
 
 
+# ── PER-SELECTION MODE (--by-selection) ──────────────────────────────────────
+# Added 2026-09-11 on the owner's request ("show me the per-selection numbers
+# first") while deciding whether to retire the pooled 1x2 floor.
+#
+# WHY the fav/long split above is not enough to answer it: LONG lumps AWAYS in
+# with home-underdogs, and those are the two selections the decision turns on.
+# The pooled floor's remaining job is to gate home-FAVS, AWAYS and DRAWS — the
+# three the FAVLONG-CUTS verdict says to exclude or route elsewhere — so each
+# needs its own robustness column, not a shared one that home-underdogs
+# (n=307, the one real engine) dominates.
+#
+# Same methodology throughout: `_sweep` from edge_floor_backtest (walk-forward
+# folds + the robustness column) on EXECUTABLE price
+# `COALESCE(odds_at_pick_live, odds_at_pick)`.
+#
+# READ THE ROBUSTNESS COLUMN, NOT THE ROI. Splitting four ways cuts the cells
+# small — a 9-bet cell showing +21% is noise, and treating it as evidence is
+# exactly the mistake FAVLONG-CUTS was written to stop ("the cohort's +43→+105%
+# is 10–18 bets of luck"). A selection earns a floor only if it is positive in
+# EVERY fold; otherwise the conservative call stands.
+_SEL_GROUPS = [
+    ("home-UNDERDOG (home, odds ≥ 2.80) — today BETS at 10%",
+     lambda sel, o: sel == "home" and o is not None and o >= 2.80),
+    ("home-MID (home, 2.00 ≤ odds < 2.80) — neither cut covers this",
+     lambda sel, o: sel == "home" and o is not None and 2.00 <= o < 2.80),
+    ("home-FAV (home, odds < 2.00) — backtest says exclude",
+     lambda sel, o: sel == "home" and o is not None and o < 2.00),
+    ("AWAY (any odds) — backtest says exclude",
+     lambda sel, o: sel == "away"),
+    ("DRAW (any odds) — 'not a model bet, route to sharp triggers'",
+     lambda sel, o: sel in ("draw", "x")),
+]
+
+
+def run_by_selection(n_folds: int, stake: float):
+    """Sweep floors for each 1x2 SELECTION TYPE separately."""
+    for active_only in (False, True):
+        cohort = ("active/calibrated cohort (real-money-relevant)"
+                  if active_only else "ALL bots")
+        rows = _rows(active_only)
+        print(f"\n{'='*78}\n1x2 PER-SELECTION floor sweep — {cohort} — "
+              f"n={len(rows)}\n"
+              f"executable price = COALESCE(odds_at_pick_live, odds_at_pick); "
+              f"walk-forward {n_folds} folds\n{'='*78}")
+        for label, pred in _SEL_GROUPS:
+            grp = [(r["ep"], r["ret"], r["pick_time"]) for r in rows
+                   if pred(r["sel"], r["odds"])]
+            print(f"\n--- {label}  (n={len(grp)}) ---")
+            if len(grp) < 10:
+                print(f"  (n={len(grp)} — too few to sweep; no evidence either "
+                      f"way, so this cell decides nothing)")
+                continue
+            _sweep(grp, n_folds, stake)
+
+
 def run(n_folds: int, stake: float):
     for active_only in (False, True):
         cohort = "active/calibrated cohort (real-money-relevant)" if active_only else "ALL bots"
@@ -76,8 +131,16 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="1x2 fav/long split floor backtest")
     ap.add_argument("--folds", type=int, default=3)
     ap.add_argument("--stake", type=float, default=10.0)
+    ap.add_argument("--by-selection", action="store_true",
+                    help="sweep each 1x2 SELECTION TYPE separately "
+                         "(home-underdog / home-mid / home-fav / away / draw) "
+                         "instead of the fav-vs-long split. Use this to decide "
+                         "whether the pooled floor still has a job.")
     a = ap.parse_args()
-    run(a.folds, a.stake)
+    if a.by_selection:
+        run_by_selection(a.folds, a.stake)
+    else:
+        run(a.folds, a.stake)
     return 0
 
 

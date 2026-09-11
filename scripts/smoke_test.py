@@ -36509,5 +36509,67 @@ def test_signaler_public_only():
     )
 
 
+
+@test("FAVLONG-PER-SELECTION — the 1x2 selection cuts are exhaustive and non-overlapping")
+def test_favlong_per_selection_groups():
+    """FAVLONG-PER-SELECTION (2026-09-11). Added while answering "should the
+    pooled 1x2 floor still exist?" — the fav/long split could not answer it
+    because LONG lumps AWAYS in with home-underdogs, the two selections the
+    decision actually turns on.
+
+    Running it per selection surfaced a gap nobody had named: FAVLONG-CUTS
+    defines home-FAV as `odds < 2.00` and home-UNDERDOG as `odds >= 2.80`, so
+    **home picks between 2.00 and 2.80 belong to neither cut** and fall through
+    to the pooled floor. That band is n=122 and reads -12.0% ROI at the pooled
+    13% gate with NO robust floor at any level — i.e. the pooled floor's main
+    practical effect is admitting a measurably losing group.
+
+    A gap like that is invisible unless the groups are checked for being
+    exhaustive, so this test checks exactly that: every (selection, odds)
+    combination lands in exactly ONE group. It does NOT assert any ROI — those
+    move with every settled bet, and pinning them would make this a test of the
+    data rather than of the partition.
+    """
+    import importlib.util
+    import pathlib as _pl
+
+    spec = importlib.util.spec_from_file_location(
+        "_favlong", _pl.Path("scripts/favlong_floor_backtest.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    groups = mod._SEL_GROUPS
+    assert len(groups) >= 5, (
+        "the per-selection sweep must cover home-underdog, home-mid, home-fav, "
+        "away and draw — collapsing any two is how the home-2.00-2.80 band "
+        "stayed invisible."
+    )
+    # Every plausible (selection, odds) pair must match EXACTLY one group.
+    for sel in ("home", "away", "draw"):
+        for odds in (1.01, 1.50, 1.99, 2.00, 2.40, 2.79, 2.80, 3.50, 12.0):
+            hits = [label for label, pred in groups if pred(sel, odds)]
+            assert len(hits) == 1, (
+                f"selection={sel!r} odds={odds} matched {len(hits)} groups "
+                f"({hits}) — the partition must be exhaustive AND "
+                f"non-overlapping, or a whole band silently falls through to "
+                f"the pooled floor unexamined (which is what happened to "
+                f"home 2.00-2.80)."
+            )
+    # The boundaries must be the ones FAVLONG-CUTS actually uses.
+    ud = next(pred for label, pred in groups if "UNDERDOG" in label)
+    assert ud("home", 2.80) and not ud("home", 2.79), (
+        "the home-underdog cut must be odds >= 2.80 — the same constant the "
+        "real-money gate uses (_min_odds_for('1x2'))."
+    )
+    fav = next(pred for label, pred in groups if "FAV" in label)
+    assert fav("home", 1.99) and not fav("home", 2.00), (
+        "the home-fav cut must be odds < 2.00, matching the generation split"
+    )
+    assert mod._SEL_GROUPS is not None and hasattr(mod, "run_by_selection"), (
+        "--by-selection mode must stay available; it is the evidence base for "
+        "the pooled-floor decision."
+    )
+
+
 if __name__ == "__main__":
     main()
