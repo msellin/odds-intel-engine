@@ -730,8 +730,11 @@ def check_signal_silence() -> None:
          calling load_signal_candidates() — the signaler's own selection
          query — rather than reimplementing its WHERE clause here. That
          matters: the candidate set has non-obvious gating (per-market
-         edge floors, the 36h lookahead, real_bets dedup, combo exclusion,
-         DISTINCT ON collapsing multi-bot picks). A hand-rolled copy would
+         edge floors, the 36h lookahead, combo exclusion, DISTINCT ON
+         collapsing multi-bot picks), then `is_public_eligible` narrows it
+         to picks that would actually be POSTED. (Until 2026-09-11 the
+         query also deduped against `real_bets`; it no longer does — that
+         suppression belonged only to the operator prompt.) A hand-rolled copy would
          drift from the real gate and alert on picks that were never
          eligible. If the signaler's definition changes, this check
          follows it for free.
@@ -778,8 +781,21 @@ def check_signal_silence() -> None:
 
     # --- Condition A: eligible picks are not being signaled -----------
     try:
-        from workers.automation.coolbet_signaler import load_signal_candidates
-        candidates = load_signal_candidates()
+        from workers.automation.coolbet_signaler import (
+            load_signal_candidates, is_public_eligible,
+        )
+        # SIGNALER-PUBLIC-ONLY (2026-09-11): only count candidates that would
+        # actually be PUBLISHED. Two things changed under this check on that
+        # date: the candidate query stopped filtering on `real_bets` (so
+        # already-placed picks are candidates again, by design), and the
+        # operator prompt went off by default (so a non-public-eligible pick —
+        # beta bot, or a market outside _PUBLIC_MARKETS — now has no sink and is
+        # deliberately left unmarked, in case a calibrated bot joins its group
+        # before kickoff). Without this filter those picks accumulate forever
+        # and this alert fires every day on picks that were never going
+        # anywhere. `is_public_eligible` is imported rather than re-derived so
+        # this check cannot drift from what the signaler actually posts.
+        candidates = [c for c in load_signal_candidates() if is_public_eligible(c)]
     except Exception as e:
         console.print(f"[yellow]health_alerts signal-silence load error: {e}[/yellow]")
         return

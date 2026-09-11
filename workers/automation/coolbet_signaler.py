@@ -11,16 +11,35 @@ from their phone. Zero Coolbet API calls. Zero auth. Cannot break from
 upstream Coolbet changes.
 
 WHERE IT FITS:
-- Stage 1 (now): primary path is signal-only. Pipeline detects edge →
-  signaler fires → operator places manually. Auto-placement disabled.
-- Stage 2 (next): a Mac-at-home daemon (option B) will consume the same
-  qualified-bets queue and auto-place from a residential IP. The signal
-  stays on as a safety net — even if the daemon misses, you still see
-  the bet on your phone.
+- Stage 1 (2026-06, HISTORICAL): primary path was signal-only. Pipeline
+  detects edge → signaler fires → operator places manually.
+- Stage 2 (CURRENT): the UI placer places real money unattended from the
+  operator's Mac. The manual prompt is therefore no longer the primary path,
+  and as of 2026-09-11 it is off by default — see SIGNALER-PUBLIC-ONLY below.
+  ⚠️ Consequence the owner accepted: there is no manual fallback PROMPT if the
+  placer stops. Placement readiness is monitored separately
+  (`coolbet_control --status`, the feed watchdog).
 
 DEDUP: `simulated_bets.signaled_at` (mig 246) is the single source of
 truth. Set on successful send. Never resignal. If the operator restarts
 the pipeline, already-signaled rows are skipped.
+
+WHAT IT SENDS NOW (SIGNALER-PUBLIC-ONLY + PUBLIC-CHANNEL-DECOUPLED, 2026-09-11):
+the public @oddsintelpicks channel is the ONLY sink. The operator's private
+per-pick prompt is off by default (`SIGNALER_OPERATOR_PROMPT`) — auto-placement
+works now, so it had become a duplicate of every public pick in the owner's own
+chat. It is kept behind the flag for a possible paid invite-only channel later.
+
+Two bugs fixed at the same time, both of which made the CUSTOMER feed a function
+of OUR OWN staking — the exact opposite of what it should be:
+  * the candidate query excluded anything already in `real_bets`, so a pick we
+    had backed with real money never reached customers. Those are our
+    highest-conviction picks (8 lost in 30d, edges 0.08-0.15), and placing every
+    pick on a given day would have left the channel EMPTY.
+  * the public post was nested inside the operator send's success branch, so an
+    operator-side dedup-skip or missing operator creds silently dropped a
+    customer pick with nothing logged as a failure.
+Publishing a pick we staked is if anything MORE warranted, not less.
 
 EDGE GATES: the ONE shared selection-aware floor `min_edge_for_pick`
 (coolbet_placer) — the same utility the placer/daemon use, so the signal set
@@ -42,14 +61,28 @@ from workers.notify.telegram import send_telegram, send_telegram_public
 
 log = logging.getLogger(__name__)
 
+# SIGNALER-PUBLIC-ONLY (2026-09-11). The operator's private per-pick prompt is
+# OFF by default: the UI placer now places unattended, so the prompt had become
+# a duplicate of every public pick in the owner's own chat. Kept behind a flag
+# rather than deleted because the owner named a likely future use — a private
+# invite-only channel for a paid tier. Set SIGNALER_OPERATOR_PROMPT=true to
+# restore it (the ✅ Placed / ⏭ Skip buttons and their webhook handler still
+# work; nothing else needs changing).
+_OPERATOR_PROMPT_ENABLED = (
+    os.getenv("SIGNALER_OPERATOR_PROMPT", "").strip().lower()
+    in ("true", "1", "yes")
+)
+
 
 def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
     """Return simulated_bets that should trigger a signal:
       - match hasn't kicked off (+ within next `lookahead_hours`)
       - edge_percent passes the global floor (per-market floors checked in Python)
       - signaled_at IS NULL (never signaled)
-      - NOT EXISTS in real_bets (operator may have already placed it manually
-        and clicked /confirm — that path inserts a real_bets row)
+      - NOT filtered on real_bets. Already-placed picks ARE returned, carrying
+        `already_placed=True`, because that fact must only suppress the
+        OPERATOR prompt — never the customer post (PUBLIC-CHANNEL-DECOUPLED
+        2026-09-11; see the note in the WHERE clause and the send loop).
       - combo singles only (combos handled separately for now)
 
     Returns dicts with the fields the Telegram message renderer expects:
@@ -89,6 +122,15 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
                  l.name            AS league,
                  l.country         AS country,
                  COUNT(*) OVER (PARTITION BY sb.match_id, sb.market, sb.selection) AS bot_count,
+                 -- Per-row, NOT a filter (see PUBLIC-CHANNEL-DECOUPLED below):
+                 -- the operator does not need a manual-placement prompt for a
+                 -- bet already placed, but the audience still gets the pick.
+                 EXISTS (
+                   SELECT 1 FROM real_bets rb
+                    WHERE rb.match_id  = sb.match_id
+                      AND rb.market    = sb.market
+                      AND rb.selection = sb.selection
+                 ) AS already_placed,
                  -- SIGNALER-MATURITY-SHADOWING (2026-08-28): whether ANY bot in
                  -- this (match, market, selection) group is calibrated — not
                  -- just the canonical highest-edge row DISTINCT ON happens to
@@ -108,12 +150,18 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
             AND sb.edge_percent >= %s
             AND m.date > NOW()
             AND m.date < NOW() + (%s * INTERVAL '1 hour')
-            AND NOT EXISTS (
-                SELECT 1 FROM real_bets rb
-                WHERE rb.match_id  = sb.match_id
-                  AND rb.market    = sb.market
-                  AND rb.selection = sb.selection
-            )
+            -- PUBLIC-CHANNEL-DECOUPLED (2026-09-11): this used to be
+            -- `AND NOT EXISTS (... real_bets ...)`, which silently made the
+            -- CUSTOMER channel a function of OUR OWN staking. Suppressing an
+            -- already-placed pick is right for the operator's manual-placement
+            -- prompt and WRONG for the audience feed: a pick we backed with real
+            -- money is our highest-conviction pick, so customers were denied
+            -- exactly the best ones (measured: 8 publishable picks in 30d, edges
+            -- 0.08-0.15). In the limit, placing all of today's picks would have
+            -- left the public channel EMPTY. So it is no longer a filter on the
+            -- candidate set — it is surfaced per row and applied ONLY to the
+            -- operator send below.
+            AND TRUE
           ORDER BY sb.match_id, sb.market, sb.selection, sb.edge_percent DESC
         ) q
         ORDER BY q.match_date ASC, q.edge_percent DESC
@@ -139,6 +187,22 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
             continue
         out.append(d)
     return out
+
+
+def is_public_eligible(b: dict) -> bool:
+    """Would this candidate actually be POSTED to the public channel?
+
+    Extracted 2026-09-11. The public channel is the only sink now, so "is this
+    pick going anywhere?" is a question two callers need — the send loop and
+    `health_alerts.check_signal_silence`, which measures publishable picks that
+    are stuck. Both must ask it the same way: a second hand-rolled copy of this
+    rule is precisely how the floors and the gates drifted everywhere else.
+
+    Gates on whether ANY bot in the group is calibrated (SIGNALER-MATURITY-
+    SHADOWING 2026-08-28), not the canonical row's own maturity.
+    """
+    return (bool(b.get("group_has_calibrated"))
+            and b.get("market") in _PUBLIC_MARKETS)
 
 
 def _format_signal(b: dict) -> str:
@@ -330,11 +394,21 @@ def signal_all_bets(*, lookahead_hours: int = 36,
 
         msg = _format_signal(b)
         if dry_run:
+            # Preview what would ACTUALLY be sent. Until 2026-09-11 this always
+            # previewed the OPERATOR message even though the public channel is
+            # the only sink by default — a dry run that shows a message the real
+            # run would not send is worse than no preview.
+            _pub_ok = is_public_eligible(b)
             results.append({
                 "simulated_bet_id": b["simulated_bet_id"],
                 "outcome": "dry_run",
                 "telegram_message_id": None,
-                "preview": msg,
+                "would_post_public": _pub_ok,
+                "would_prompt_operator": bool(
+                    _OPERATOR_PROMPT_ENABLED and not b.get("already_placed")),
+                "preview": (_format_public_signal(b) if _pub_ok
+                            else "(not public-eligible — nothing would be sent)"),
+                "preview_operator": msg if _OPERATOR_PROMPT_ENABLED else None,
             })
             continue
         # Inline buttons so the operator can mark placed / skipped with one
@@ -349,14 +423,42 @@ def signal_all_bets(*, lookahead_hours: int = 36,
                 {"text": "⏭ Skip",    "callback_data": f"sigskip:{sim_id}"},
             ]],
         }
-        tg_id = send_telegram(
-            msg,
-            dedup_key=f"signal-{sim_id}",
-            dedup_window_s=900,
-            reply_markup=reply_markup,
-        )
+        # ── OPERATOR PROMPT — OFF BY DEFAULT since 2026-09-11 ────────────
+        # SIGNALER-PUBLIC-ONLY (owner decision 2026-09-11): "not sure we need
+        # that at all, its legacy... we wanna send picks to our public channel,
+        # no need to duplicate this to my own private channel."
+        #
+        # It IS legacy: this module was built in 2026-06 when auto-placement was
+        # disabled and a manual prompt on the operator's phone was the PRIMARY
+        # path. The UI placer now places real money unattended (7 bets the day
+        # this was switched off), so the prompt had become a duplicate of every
+        # public pick landing in the owner's private chat.
+        #
+        # KEPT, not deleted, and deliberately: the owner flagged a likely future
+        # use — "maybe someday when we have private channel with invites (paid
+        # tier?)". Deleting it would also orphan three things that still work:
+        # `_format_signal`, the ✅ Placed / ⏭ Skip inline buttons handled by
+        # odds-intel-web `/api/telegram/webhook` (sigplaced:/sigskip:), and the
+        # `signal_message_id` the handler edits. So it is one env flag away.
+        #
+        # ⚠️ Trade-off the owner accepted: with this off there is no manual
+        # fallback prompt if the auto-placer stops — that safety net was the
+        # module's original reason for existing. Placement readiness is
+        # monitored separately (`coolbet_control --status`, the feed watchdog).
+        #
+        # NOTE the owner's private chat ALSO receives a per-pick alert from
+        # daily_pipeline_v2 (the `[OI] 🎯 PRE-MATCH` messages recorded in
+        # bet_telegram_alerts — 10 of them the same day). That is a SEPARATE
+        # path and is untouched here; silencing it is its own decision.
+        tg_id = None
+        if _OPERATOR_PROMPT_ENABLED and not b.get("already_placed"):
+            tg_id = send_telegram(
+                msg,
+                dedup_key=f"signal-{sim_id}",
+                dedup_window_s=900,
+                reply_markup=reply_markup,
+            )
         if tg_id is not None:
-            _mark_signaled(b["match_id"], b["market"], b["selection"])
             # Cache the message_id so the callback handler can edit the
             # original message to add a placement-status footer.
             try:
@@ -368,54 +470,56 @@ def signal_all_bets(*, lookahead_hours: int = 36,
             except Exception as e:
                 log.debug("cache signal_message_id failed (non-fatal): %s", e)
 
-            # PUBLIC-CHANNEL-POST: if this is a calibrated-tier pre-match
-            # pick on a public market, also post to @oddsintelpicks. The
-            # public channel is the audience-facing surface — beta/active/
-            # experimental picks stay in the operator channel only. Failure
-            # is non-fatal (operator-side signal already succeeded).
-            public_msg_id = None
-            # SIGNALER-MATURITY-SHADOWING (2026-08-28) — gate on whether ANY
-            # bot in the group is calibrated, NOT on the canonical row's own
-            # maturity.
-            #
-            # load_signal_candidates collapses multi-bot picks with
-            # DISTINCT ON (...) ORDER BY edge_percent DESC, so the canonical
-            # row is simply the highest-edge one. When a BETA bot happened to
-            # quote a higher edge than a calibrated bot on the identical
-            # (match, market, selection), `b["maturity"]` read 'beta' and the
-            # public post was silently skipped — even though a calibrated bot
-            # backed exactly that pick. Nothing logged: the operator post
-            # succeeded normally, so the only symptom was a pick missing from
-            # @oddsintelpicks. Measured over 60d before the fix: 7 of 109
-            # calibrated picks (6.4%) suppressed this way.
-            #
-            # The canonical row still supplies the message CONTENT (odds, edge).
-            # It is the same pick either way, and leaving row selection alone
-            # keeps the per-market edge floor in load_signal_candidates behaving
-            # exactly as before — re-ordering to prefer calibrated rows would
-            # have let a lower-edge calibrated row fall under the floor and drop
-            # the pick entirely.
-            if (
-                b.get("group_has_calibrated")
-                and b.get("market") in _PUBLIC_MARKETS
-            ):
-                try:
-                    public_msg = _format_public_signal(b)
-                    public_msg_id = send_telegram_public(public_msg)
-                    if public_msg_id is None:
-                        log.warning(
-                            "PUBLIC-CHANNEL-POST: send_telegram_public "
-                            "returned None for sim_id=%s — check that "
-                            "TELEGRAM_PUBLIC_CHANNEL is set and the bot "
-                            "is an admin of the channel.",
-                            sim_id,
-                        )
-                except Exception as e:
+        # ── PUBLIC CHANNEL — the audience surface, and now the ONLY sink ─────
+        # PUBLIC-CHANNEL-DECOUPLED (2026-09-11). This used to be nested inside
+        # `if tg_id is not None`, which made the customer feed a side-effect of
+        # the operator message in two silent ways:
+        #   * a pick we had already placed with real money never reached
+        #     customers at all — and those are our HIGHEST-conviction picks, the
+        #     ones we backed with our own money (measured: 8 publishable picks in
+        #     30d, edges 0.08-0.15). Placing every pick on a given day would have
+        #     left the public channel EMPTY.
+        #   * an operator-side dedup-skip or missing operator creds
+        #     (`send_telegram` returns None for both) dropped a customer pick
+        #     with nothing logged as a failure.
+        # Publishing a pick we staked is if anything MORE warranted, not less.
+        #
+        # SIGNALER-MATURITY-SHADOWING (2026-08-28) — gate on whether ANY bot in
+        # the group is calibrated, NOT the canonical row's own maturity.
+        # load_signal_candidates collapses multi-bot picks with DISTINCT ON ...
+        # ORDER BY edge_percent DESC, so the canonical row is just the
+        # highest-edge one. When a BETA bot quoted a higher edge than a
+        # calibrated bot on the identical (match, market, selection),
+        # `b["maturity"]` read 'beta' and the public post was silently skipped
+        # even though a calibrated bot backed that exact pick — 7 of 109
+        # calibrated picks (6.4%) over 60d. The canonical row still supplies the
+        # message CONTENT; re-ordering to prefer calibrated rows would have let a
+        # lower-edge calibrated row fall under the floor and drop the pick.
+        public_eligible = is_public_eligible(b)
+        public_msg_id = None
+        if public_eligible:
+            try:
+                public_msg_id = send_telegram_public(_format_public_signal(b))
+                if public_msg_id is None:
                     log.warning(
-                        "PUBLIC-CHANNEL-POST failed for sim_id=%s "
-                        "(non-fatal): %s", sim_id, e,
+                        "PUBLIC-CHANNEL-POST: send_telegram_public returned "
+                        "None for sim_id=%s — check that "
+                        "TELEGRAM_PUBLIC_CHANNEL is set and the bot is an "
+                        "admin of the channel.", sim_id,
                     )
+            except Exception as e:
+                log.warning("PUBLIC-CHANNEL-POST failed for sim_id=%s "
+                            "(non-fatal): %s", sim_id, e)
 
+        # ── DEDUP BOOKKEEPING ────────────────────────────────────────────────
+        # `signaled_at` retires a pick from the candidate set. Mark it when a
+        # send actually landed. A pick that is NOT public-eligible is left
+        # unmarked on purpose: `group_has_calibrated` can flip to true before
+        # kickoff (a calibrated bot joins the group), and marking it now would
+        # permanently deny a pick that becomes publishable later.
+        delivered = (tg_id is not None) or (public_msg_id is not None)
+        if delivered:
+            _mark_signaled(b["match_id"], b["market"], b["selection"])
             results.append({
                 "simulated_bet_id": b["simulated_bet_id"],
                 "outcome": "signaled",
@@ -423,11 +527,10 @@ def signal_all_bets(*, lookahead_hours: int = 36,
                 "public_channel_message_id": public_msg_id,
             })
         else:
-            # send_telegram returns None on dedup-skip OR on missing creds.
-            # In both cases we DON'T mark signaled_at — caller can retry.
             results.append({
                 "simulated_bet_id": b["simulated_bet_id"],
-                "outcome": "skipped",
+                "outcome": "not_public" if not public_eligible else "skipped",
                 "telegram_message_id": None,
+                "public_channel_message_id": None,
             })
     return results

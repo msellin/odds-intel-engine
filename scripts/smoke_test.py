@@ -36396,5 +36396,99 @@ def test_data_task_audit_numbers():
         "stops the 75k ceiling and the 30x duplication figure coming back."
     )
 
+
+@test("SIGNALER-PUBLIC-ONLY — the customer channel is never a function of our own staking")
+def test_signaler_public_only():
+    """SIGNALER-PUBLIC-ONLY + PUBLIC-CHANNEL-DECOUPLED (2026-09-11).
+
+    The public @oddsintelpicks post used to be NESTED inside the operator
+    send's success branch, and the candidate query excluded anything already in
+    `real_bets`. Together those made the CUSTOMER feed a function of OUR OWN
+    staking — backwards, since a pick we back with real money is our
+    highest-conviction pick. Two silent consequences:
+
+      * an already-placed pick never reached customers at all. Measured over
+        30d: 8 publishable picks lost, edges 0.08-0.15. Placing every pick on a
+        given day would have left the channel EMPTY — which is exactly what the
+        owner asked about.
+      * `send_telegram` returns None on dedup-skip AND on missing creds, so an
+        operator-side hiccup dropped a customer pick with nothing logged.
+
+    The owner also retired the private per-pick prompt ("its legacy... no need
+    to duplicate this to my own private channel"), kept behind an off-by-default
+    flag for a possible paid invite-only channel later.
+
+    Pins the shape, not the wording: real_bets must not filter the candidate
+    set; the public post must not be gated on the operator message; and the
+    operator prompt must default OFF.
+    """
+    import inspect
+    import os
+    from workers.automation import coolbet_signaler as sig
+
+    # 1. The operator prompt is opt-IN, not opt-out.
+    assert sig._OPERATOR_PROMPT_ENABLED is False or os.getenv(
+        "SIGNALER_OPERATOR_PROMPT"), (
+        "_OPERATOR_PROMPT_ENABLED must default to False — the private per-pick "
+        "prompt duplicates every public pick now that the placer is unattended. "
+        "Only SIGNALER_OPERATOR_PROMPT may switch it on."
+    )
+    src_all = inspect.getsource(sig)
+    assert 'os.getenv("SIGNALER_OPERATOR_PROMPT"' in src_all, (
+        "the operator prompt must stay reachable behind an env flag — the owner "
+        "named a future use (private invite-only channel for a paid tier), and "
+        "deleting it would orphan _format_signal, the sigplaced:/sigskip: "
+        "webhook handler and signal_message_id."
+    )
+
+    # 2. real_bets must NOT filter the candidate set.
+    cand = inspect.getsource(sig.load_signal_candidates)
+    # Assert on CODE, not prose: the docstring and SQL comments legitimately
+    # describe the filter that was REMOVED, and matching those is how a
+    # source-inspection test ends up forbidding its own explanation.
+    cand_code = "\n".join(
+        ln for ln in cand.splitlines()
+        if not ln.lstrip().startswith(("--", "#"))
+    )
+    _doc = sig.load_signal_candidates.__doc__ or ""
+    cand_code = cand_code.replace(_doc, "")
+    assert "AND NOT EXISTS" not in cand_code, (
+        "load_signal_candidates must not exclude picks already in real_bets — "
+        "that suppression belongs ONLY on the operator prompt. Filtering here "
+        "silently denies customers the picks we staked (8 in 30d)."
+    )
+    assert "AS already_placed" in cand_code, (
+        "the query must surface already_placed as a per-ROW field (not a "
+        "filter) so that only the operator prompt can act on it."
+    )
+
+    # 3. The public post must not sit inside the operator-send success branch.
+    send = inspect.getsource(sig.signal_all_bets)
+    pub_idx = send.find("send_telegram_public(")
+    op_guard = send.find("if tg_id is not None:")
+    assert pub_idx > 0 and op_guard > 0, "both send paths must exist"
+    # Everything between the guard and the public call, at the guard's own
+    # indent level, proves the public call is NOT nested under it.
+    between = send[op_guard:pub_idx]
+    assert "\n        public_eligible" in between or "\n        # ──" in between, (
+        "the public post must be DEDENTED out of `if tg_id is not None:` — "
+        "nested, an operator dedup-skip or credential failure silently drops a "
+        "customer pick."
+    )
+
+    # 4. Marking signaled must not depend on the operator message alone.
+    assert "delivered = (tg_id is not None) or (public_msg_id is not None)" in send, (
+        "signaled_at must be marked when EITHER channel delivered; keying it to "
+        "the operator send alone would re-post publicly forever once the "
+        "operator prompt is off."
+    )
+
+    # 5. A dry run must preview what would ACTUALLY be sent.
+    assert "would_post_public" in send, (
+        "dry_run must report whether the PUBLIC post would fire — it used to "
+        "preview only the operator message, which the real run no longer sends."
+    )
+
+
 if __name__ == "__main__":
     main()
