@@ -885,6 +885,27 @@ def parse_fixture_odds(odds_response: list[dict]) -> list[dict]:
                                     "market": line_label,
                                     "selection": direction.lower(),
                                     "odds": float(val["odd"]),
+                                    # OU-LINE-BACKFILL-2026-09-11: MARKET-LINE-ENCODING-LOSSY
+                                    # (2026-09-06) made every totals writer carry the numeric
+                                    # line — but only the SIDE totals below were changed. This
+                                    # branch, the MAIN goals ladder and the single biggest
+                                    # producer of over_under_* rows, kept writing NULL. Measured
+                                    # before the fix: handicap_line was set on 100 pct of
+                                    # corners_ou_*, cards_ou_* and team_total_* rows at every
+                                    # book, and on 0 pct of over_under_* at all 13 AF books
+                                    # while Epicbet/Unibet-Site/Unibet-Kambi (their own
+                                    # scrapers, whose generic OU path already carried it) were
+                                    # at 100 pct. It read as a per-book convention split; it was
+                                    # one fix applied to some branches and not others.
+                                    #
+                                    # The ambiguity is REAL here, not theoretical: `str(1.25)`
+                                    # and `str(12.5)` both encode to "125", and we hold 26,030
+                                    # over_under_125 rows plus 15,419 over_under_1h_125 ones
+                                    # whose true line is now unrecoverable from the name alone.
+                                    # That exact token is what settled 634 fabricated losing
+                                    # bets. Writing the number is the only thing that fixes it
+                                    # going forward.
+                                    "handicap_line": line_num,
                                 })
                             except ValueError:
                                 pass
@@ -1639,6 +1660,11 @@ def parse_live_odds(live_odds_response: list[dict]) -> dict[int, list[dict]]:
                             "selection": direction.lower(),
                             "odds": float(val["odd"]),
                             "minute": minute,
+                            # OU-LINE-BACKFILL-2026-09-11: same omission on the live
+                            # ladder. In-play rows are now retained indefinitely
+                            # (downsampled, migration 329), so they outlive the
+                            # pre-match ones and need the number just as much.
+                            "handicap_line": line_num,
                         })
                     except ValueError:
                         pass

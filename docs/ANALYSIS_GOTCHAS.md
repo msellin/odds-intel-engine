@@ -1776,40 +1776,63 @@ Coolbet quotes ~87 and Unibet-Site ~132 of ~262 upcoming fixtures, so validation
 "executable performance on the covered subset" — which is the number that matters for real
 money anyway. Use CLV, not ROI, at small n (per-bet return sd ≈ 1.42).
 
-## §61 — Books disagree on whether `over_under_*` stores `handicap_line`, and the key you were told to use silently deletes the comparison (2026-09-11)
+## §61 — `over_under_*` carried no numeric line at 13 of 16 books, and §25's key silently deleted every cross-book O/U comparison (2026-09-11)
 
-Found running `scripts/book_dimension_sweep.py`. §25 says a cross-book price
-comparison must match on `handicap_line`. True for Asian handicap. **False —
-and actively destructive — for every `over_under_*` market**, where the line is
-already in the market name and the books split into two camps:
+**CORRECTED 2026-09-11, same day.** This entry first said "the books disagree on
+a convention". They do not. It is **one fix applied to some code branches and not
+others**, and the corrected version is the useful one — a convention split is
+nobody's bug, an incomplete fix has an owner.
 
-| convention | books |
+**The symptom.** §25 says a cross-book comparison must match on `handicap_line`.
+Do that for O/U and you get **zero** rows across two camps, with no error:
+
+| `handicap_line` on `over_under_*` | books |
 |---|---|
-| `handicap_line` **NULL** | Coolbet, Pinnacle |
-| `handicap_line` = the line (`2.5`) | Epicbet, Unibet-Site |
+| NULL | Coolbet, Pinnacle, and all 13 API-Football books |
+| the line (`2.5`) | Epicbet, Unibet-Site, Unibet-Kambi |
 
-Measured over 24h: `over_under_25` is 100 pct NULL at Coolbet and Pinnacle,
-0 pct NULL at Epicbet and Unibet-Site, on every O/U line from 0.5 to 4.5.
+`scripts/book_dimension_sweep.py` silently collapsed to 1x2-only — 525 series
+instead of 859 — and looked like it had simply found nothing else to compare.
 
-Each book is internally **consistent**, so nothing looks broken anywhere. A key
-of `(match, market, selection, COALESCE(handicap_line, -999))` simply returns
-**zero** cross-camp O/U pairs, and a three-book sweep silently collapses to
-1x2-only — which is what it did: 525 series, all 1x2, with no error and no empty
-result to notice. Correcting the key took it to 859 and brought both O/U markets
-back.
+**The cause.** MARKET-LINE-ENCODING-LOSSY (2026-09-06) established that every
+totals writer must store the line numerically, because
+`str(float(line)).replace('.','')` is not reversible (`1.25` and `12.5` both give
+`"125"`) — an ambiguity that had already settled **634 fabricated losing bets**.
+That fix was applied to the SIDE totals branches and to the direct scrapers'
+generic OU path. It **missed the main goals ladder** in `api_football.py`
+(`elif bet_name == "Goals Over/Under"`) and `coolbet_explorer.py` (the `is_ou`
+branch, which had `line_val` in hand and just did not pass it to `_add`). So:
+`corners_ou_*`, `cards_ou_*` and `team_total_*` are 100 pct populated at every
+book, `over_under_*` was 0 pct at the AF books — and only our own three scrapers,
+whose OU path was generic, looked "different".
 
-**Rule:** include `handicap_line` in a cross-book key only for `asian_handicap`
-and the `*_handicap` families. For the parametric `*_ou_<line>` / `over_under_*`
-families the market name IS the line.
+The existing smoke test `MARKET-LINE-ENCODING-LOSSY` drove each parser through a
+**corners** market, so it passed throughout. §41, again: the test did not test the
+thing that broke.
 
-**This is an analysis trap, not a production bug** — verified, not assumed:
-live code carries the line in the market name and never joins across books on
-`handicap_line` (`pick_triggers._emit_sharp_anchor` keys on `(match, selection)`
-for a fixed `market`; `settlement`'s `os.handicap_line = %s` equality is on
-AH selections only; `daily_pipeline_v2`'s `DISTINCT ON (... , handicap_line)` is
-a per-book grouping key, where a consistent NULL is harmless). Normalising the
-stored values is a writer migration + backfill, i.e. §58's staged Phase 2, not a
-one-line fix — which is why the rule above is the fix.
+**Fixed** (writers, 2026-09-11): both branches now emit the number, so every new
+row is unambiguous. `scripts/backfill_ou_handicap_line.py` backfills the 7.79M
+historical rows whose name determines the line. New test: `OU-LINE-GOALS-LADDER`.
+
+**251,969 rows are deliberately left NULL** — every 3-digit token without a
+leading zero (`over_under_275`, `_225`, `_175`, `_125`, …) is genuinely
+ambiguous, because a line below 1.0 keeps its leading zero (`str(0.75)` → `"075"`)
+but `1.25` and `12.5` do not differ at all. 27.5 goals is absurd and 2.75 is
+obviously intended — and "obviously intended" is exactly the reasoning that
+produced the 634 bets, since that backtest also picked the reading that looked
+obvious. **Honestly absent beats confidently wrong.**
+
+**Two portable lessons.**
+1. When books split cleanly into "ours" and "theirs" on some field, suspect a
+   partially-applied fix before a convention difference. The split follows the
+   CODE PATH, not the vendor.
+2. The backfill belongs in a **script**, not a migration. Written as migration
+   332 first: `migrate.yml` sets `statement_timeout=600000` inside a 15-minute
+   job, and the single UPDATE was still running at 6 minutes on the first of two
+   statements — it would have timed out, failed, and left the table half-done
+   with the file unmarked. `odds_snapshots` is also hot (four writers), so one
+   8M-row transaction stalls live ingestion. Batched, committed per batch,
+   resumable, run out-of-band.
 
 ## §62 — An odds-band effect is a MARKET effect until you split by market (2026-09-11)
 

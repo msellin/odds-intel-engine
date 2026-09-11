@@ -634,10 +634,17 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
             return rows
         for oc in mkt.get("outcomes") or []:
             rk = (oc.get("result_key") or "").lower()
+            # OU-LINE-BACKFILL-2026-09-11: `_add` takes the numeric line as its
+            # 4th argument and the side-totals branch above passes it; this one,
+            # the main goals ladder, did not — so Coolbet wrote handicap_line on
+            # 100 pct of its corners/cards totals and 0 pct of its over_under_*.
+            # `line_val` is right here and already validated by
+            # _ou_market_for_line. See MARKET-LINE-ENCODING-LOSSY-2026-09-06 for
+            # why the name alone is not enough.
             if rk == "over":
-                _add(market, "over", oc.get("id"))
+                _add(market, "over", oc.get("id"), line_val)
             elif rk == "under":
-                _add(market, "under", oc.get("id"))
+                _add(market, "under", oc.get("id"), line_val)
         return rows
 
     if is_btts:
