@@ -181,6 +181,39 @@ So the only case needing a human is Docker itself being unstartable (the alert s
   a problem that was never about cookies."* When odds die, check TRANSPORT before
   cookies.
 
+### 7. The feed dies most days → WE are very likely the cause (footprint)
+- **Symptom:** the Imperva challenge (§2) recurs daily no matter what is patched.
+  FlareSolverr's own log is the tell:
+  ```
+  fresh FS session → "Challenge not detected!"               200 in 1.5s
+  reused session   → "Error solving the challenge. Timeout"  500 after 60s
+  ```
+- **Cause (2026-09-11):** our own request volume. The board sweep fetched EVERY
+  football category's event list every pass, then discarded events beyond
+  `--horizon-hours` — **802 events fetched, 215 near-term**, i.e. ~192 category
+  requests every 30 min with ~73% of the payload thrown away. Passes take long
+  enough to overlap, so the sweep is effectively a continuous request stream at
+  one bookmaker from one residential IP, all day. The runbook has always said
+  §2 is "usually triggered by our own request volume from one IP" — we simply
+  never reduced the volume, which is why it came back daily.
+- **Fix (BOARD-SWEEP-NEARTERM-SKIP):** remember categories with nothing
+  near-term and stop paying for them every pass. Two safeguards, both essential:
+  **never permanent** (re-probed every `_CAT_PROBE_EVERY`=6 passes, ~3h at
+  :03/:33 — otherwise the zero becomes true by construction) and **fail open**
+  (a missing/corrupt memo sweeps everything; failing closed would look exactly
+  like "Coolbet offers nothing"). A failed fetch is never recorded as empty, so
+  an outage cannot teach the cache that a healthy league is dead.
+- **Also available:** `--kickoff-band LO:HI` on the bulk path scopes a pass to
+  fixtures kicking off in that window. Measured 2026-09-11 over 48h / 2,026
+  fixtures: `0-6h`=64, `6-24h`=373, `24-48h`=1589 — i.e. **78% of the bulk load
+  was fixtures a day or more away**, whose prices move entirely before we bet.
+- **Immediate lever when it IS escalated:** `scripts/ops/coolbet_pause_resume.sh
+  pause` (auto-resume armed). Leave the UI placer running — it is the real-money
+  path and is not what draws the challenge.
+- **Do NOT** "fix" this with more IPs or by rotating FS sessions to get a fresh
+  un-escalated context. That dodges the detection instead of removing what
+  triggers it, and it leaves the load — the actual problem — in place.
+
 ### 5. No placeable bet today  → this is CORRECT, not a failure
 - **Symptom:** daemon tick logs `qualified=N` but `placed=0`, every candidate `skip … below the 2.80 odds floor`.
 - **Cause:** all qualifying candidates are priced below the executable odds floor (CLV goes negative below ~2.80). The bot is correctly declining -EV prices.

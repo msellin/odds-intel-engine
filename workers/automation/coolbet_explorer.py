@@ -1550,6 +1550,61 @@ def _load_af_candidates(horizon_hours: float) -> list[dict]:
     return rows
 
 
+# ── CATEGORY NEAR-TERM MEMO (BOARD-SWEEP-NEARTERM-SKIP, 2026-09-11) ──────────
+#
+# The board sweep fetched EVERY football category's event list on every pass,
+# then discarded events beyond `--horizon-hours`. Measured on the live log:
+# 802 events fetched, 215 near-term — we paid for 192 category requests every
+# 30 minutes and threw away ~73% of the payload. `--horizon-hours` filtered
+# AFTER the network cost, not before.
+#
+# That volume is very likely what keeps triggering the Imperva escalation: the
+# runbook's §2 challenge is "usually triggered by our own request volume from
+# one IP", and FlareSolverr's logs show a FRESH session passing while a REUSED
+# one is challenged and times out at 60s. We were treating a self-inflicted
+# load problem as an external block, which is why it recurred daily.
+#
+# So remember which categories had NOTHING near-term and stop paying for them
+# every pass. Same shape as the league negative cache above, and the same two
+# safeguards, for the same reason:
+#
+#   1. NEVER PERMANENT. A skipped category is re-probed every
+#      `_CAT_PROBE_EVERY` passes. Without that the zero becomes true by
+#      construction — we stop looking, so we never see Coolbet add fixtures,
+#      so it stays zero forever.
+#   2. FAIL OPEN. Any memo problem (missing, unreadable, corrupt) sweeps
+#      EVERYTHING. A cache that fails closed would silently stop collecting
+#      odds and look exactly like "Coolbet offers nothing" — the silent-failure
+#      class this whole ingest epic exists to kill.
+_CAT_MEMO_PATH = Path.home() / ".config" / "oddsintel" / "coolbet-category-nearterm.json"
+_CAT_PROBE_EVERY = 6          # at :03/:33 this re-probes an empty category ~3-hourly
+
+
+def _load_cat_memo() -> dict:
+    """category_id -> consecutive passes with zero near-term events. Fail open."""
+    try:
+        import json as _json
+        return _json.loads(_CAT_MEMO_PATH.read_text())
+    except Exception:  # noqa: BLE001 — missing/corrupt memo must sweep everything
+        return {}
+
+
+def _save_cat_memo(memo: dict) -> None:
+    try:
+        import json as _json
+        _CAT_MEMO_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _CAT_MEMO_PATH.write_text(_json.dumps(memo, separators=(",", ":")))
+    except Exception as e:  # noqa: BLE001 — never let bookkeeping break a sweep
+        log.debug("category memo save failed (non-fatal): %s", e)
+
+
+def _cat_should_skip(memo: dict, cat_id) -> bool:
+    """True when this category has been empty for a while and this is not a
+    probe pass. Probes on every _CAT_PROBE_EVERY-th consecutive empty streak."""
+    streak = int(memo.get(str(cat_id), 0) or 0)
+    return streak > 0 and (streak % _CAT_PROBE_EVERY) != 0
+
+
 def run_board_sweep(
     *,
     dry_run: bool = False,
@@ -1587,12 +1642,21 @@ def run_board_sweep(
     horizon = now + timedelta(hours=horizon_hours)
     consecutive_fails = 0
 
+    # BOARD-SWEEP-NEARTERM-SKIP (2026-09-11) — see _load_cat_memo above.
+    cat_memo = _load_cat_memo()
+    c["cats_skipped_empty"] = 0
     for idx, cat in enumerate(cats, 1):
+        if _cat_should_skip(cat_memo, cat["id"]):
+            # Still count the streak up so the probe fires on schedule.
+            cat_memo[str(cat["id"])] = int(cat_memo.get(str(cat["id"]), 0) or 0) + 1
+            c["cats_skipped_empty"] += 1
+            continue
         try:
             events = fetch_events_for_league(session, cat["id"])
         except Exception as e:
             log.warning("category %s events fetch failed (%s)", cat["name"], e)
             continue
+        cat_near_term = 0
         for ev in events:
             c["events_seen"] += 1
             if (ev.get("status") not in (None, "OPEN")) or not ev.get("home") or not ev.get("away"):
@@ -1602,6 +1666,7 @@ def run_board_sweep(
             if cb_start is not None and cb_start > horizon:
                 continue
             c["near_term"] += 1
+            cat_near_term += 1
             af_row, score, _second = match_event_to_af(
                 ev["home"], ev["away"], ev.get("iso"), cb_start, af,
             )
@@ -1630,9 +1695,18 @@ def run_board_sweep(
                 dry_run=dry_run, kickoff_iso=ev.get("start") or "",
             )
             c["stored_rows"] += stored
+        # Empty streak: reset the moment anything near-term shows up, so a
+        # category that starts carrying fixtures is swept again immediately.
+        cat_memo[str(cat["id"])] = 0 if cat_near_term else \
+            int(cat_memo.get(str(cat["id"]), 0) or 0) + 1
         if idx % 40 == 0:
             log.info("  …%d/%d categories, matched=%d stored=%d", idx, len(cats), c["matched"], c["stored_rows"])
         time.sleep(sleep_s)
+    _save_cat_memo(cat_memo)
+    if c["cats_skipped_empty"]:
+        log.info("board sweep: skipped %d/%d categories with no near-term "
+                 "fixtures (re-probed every %d passes)",
+                 c["cats_skipped_empty"], len(cats), _CAT_PROBE_EVERY)
 
     console.print(
         f"[cyan]Board sweep {'[DRY-RUN] ' if dry_run else ''}— {c['categories'] or len(cats)} categories, "

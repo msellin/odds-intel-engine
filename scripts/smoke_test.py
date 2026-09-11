@@ -22417,6 +22417,77 @@ def test_kickoff_band_sweep_2026_09_11():
     return "sweep can be scoped to a kickoff band; bands tile half-open"
 
 
+@test("BOARD-SWEEP-NEARTERM-SKIP — stop paying for categories with nothing near-term")
+def test_board_sweep_nearterm_skip_2026_09_11():
+    """BOARD-SWEEP-NEARTERM-SKIP (2026-09-11). The board sweep fetched EVERY
+    football category's event list on every pass and then discarded events
+    beyond --horizon-hours. Measured on the live log: 802 events fetched, 215
+    near-term — 192 category requests every 30 minutes, ~73% of the payload
+    thrown away. The horizon filtered AFTER the network cost, not before.
+
+    That volume is very likely what kept triggering the Imperva escalation
+    (runbook §2: "usually triggered by our own request volume from one IP";
+    FlareSolverr logs show a FRESH session passing while a REUSED one is
+    challenged and times out). We were treating a self-inflicted load problem
+    as an external block, which is why it recurred daily.
+
+    The two safeguards are the point of the test — a naive cache here would be
+    worse than the problem:
+      * NEVER PERMANENT — an empty category is re-probed, or the zero becomes
+        true by construction (we stop looking, so we never see Coolbet add
+        fixtures, so it stays zero forever).
+      * FAIL OPEN — a missing/corrupt memo sweeps EVERYTHING. Failing closed
+        would silently stop collecting odds and look identical to "Coolbet
+        offers nothing", which is the silent-failure class this ingest epic
+        exists to kill.
+    """
+    import inspect
+    from workers.automation import coolbet_explorer as ce
+
+    # 1. A category that has never been empty is ALWAYS swept.
+    assert ce._cat_should_skip({}, "never-seen") is False, (
+        "an unknown category must be swept, not skipped"
+    )
+    assert ce._cat_should_skip({"A": 0}, "A") is False, (
+        "a category that had near-term fixtures last pass must be swept"
+    )
+
+    # 2. Skipping is never permanent — the probe must fire on schedule.
+    n = ce._CAT_PROBE_EVERY
+    assert n >= 2, "a probe every pass would defeat the saving"
+    skipped = [k for k in range(1, 4 * n + 1) if ce._cat_should_skip({"B": k}, "B")]
+    probes = [k for k in range(1, 4 * n + 1) if not ce._cat_should_skip({"B": k}, "B")]
+    assert probes, "an empty category must eventually be re-probed"
+    assert probes == [n, 2 * n, 3 * n, 4 * n], (
+        f"probe must fire every {n}th pass, got {probes}"
+    )
+    assert len(skipped) > len(probes), "the skip must actually save requests"
+
+    # 3. FAIL OPEN. A corrupt/missing memo sweeps everything.
+    src = inspect.getsource(ce._load_cat_memo)
+    assert "return {}" in src, (
+        "an unreadable memo must return empty (= sweep everything), never a "
+        "partial or fabricated skip list"
+    )
+    # an empty memo skips nothing, by construction
+    assert ce._cat_should_skip(ce._load_cat_memo() and {} or {}, "anything") is False
+
+    # 4. The streak must RESET the moment a category carries something again,
+    #    or a league that starts being offered stays skipped.
+    body = inspect.getsource(ce.run_board_sweep)
+    assert "0 if cat_near_term else" in body, (
+        "the empty streak must reset to 0 as soon as near-term events appear"
+    )
+    # and a FETCH FAILURE must not be recorded as 'empty' — that would let an
+    # outage teach the cache that a healthy league is dead (the 2026-09-06
+    # missed_leagues lesson).
+    assert body.index("events fetch failed") < body.index("cat_near_term = 0"), (
+        "a failed fetch must `continue` BEFORE the near-term counter, so an "
+        "outage never writes an empty streak"
+    )
+    return f"empty categories skipped {ce._CAT_PROBE_EVERY - 1}/{ce._CAT_PROBE_EVERY} passes, fail-open"
+
+
 @test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")
 def test_kuma_push_helper():
     """KUMA-PUSH-HELPER (2026-07-07): workers/utils/kuma.py is the
