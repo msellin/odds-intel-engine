@@ -330,6 +330,18 @@ _MTID_CORNERS_MATCH = {826}     # "Match Corners"        -> corners_ou_NN
 _MTID_CORNERS_1H    = {1752}    # "1st Half Corners"     -> corners_1h_ou_NN
 _MTID_CORNERS_AH    = {1724}    # "Corners Handicap (2 way)" -> corners_handicap
 
+# CB-UB-1H-TT-COLUMNS-2026-09-11: the two families the shadow bots
+# bot_1h_1x2_paper_shadow_v1 / bot_team_total_paper_shadow_v1 pick, and which
+# Coolbet DOES offer — both were sitting in coolbet_market_inventory as
+# unmatched (seen on every sweep), so the per-bot "Now CB" column was blank.
+# Written in the exact vocabulary Epicbet/AF already use (`1x2_1h`,
+# `team_total_{side}_{NN}` with a numeric handicap_line) so they join across
+# books. mtid-keyed, with an EXACT-name fallback: "1st half result and 1st half
+# both teams to score" (1549) and "1st half [home] goals" (844) must not match.
+_MTID_1X2_1H       = {98}      # "1st half result"     -> 1x2_1h
+_MTID_TEAM_TOTAL   = {1551: "home", 1547: "away"}  # "[home]/[away] total goals"
+_NAME_TEAM_TOTAL   = {"[home] total goals": "home", "[away] total goals": "away"}
+
 
 def _ou_market_for_line(line: float) -> str | None:
     """OU .5 lines we ingest: 0.5, 1.5, 2.5, 3.5, 4.5."""
@@ -544,6 +556,30 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
                    and ("both teams to score" in name or "btts" in name)))
     is_dc   = mtid in _MTID_DC   or (not sub_period and "double chance" in name)
     is_ah   = mtid in _MTID_AH   or (not sub_period and "asian handicap" in name)
+
+    # CB-UB-1H-TT-COLUMNS-2026-09-11 — see _MTID_1X2_1H. Checked before is_1x2
+    # so a 1st-half result can never fall into the full-match slot.
+    if mtid in _MTID_1X2_1H or name.strip() == "1st half result":
+        for oc in mkt.get("outcomes") or []:
+            rk = (oc.get("result_key") or "").strip("[]").lower()
+            if rk in ("home", "draw", "away"):
+                _add("1x2_1h", rk, oc.get("id"))
+        return rows
+
+    tt_side = _MTID_TEAM_TOTAL.get(mtid) or _NAME_TEAM_TOTAL.get(name.strip())
+    if tt_side:
+        # .0/.5 lines only: the name encoding is lossy for quarters
+        # (MARKET-LINE-ENCODING-LOSSY-2026-09-06), and Coolbet ships none.
+        if line_val is None or abs(line_val * 2 - round(line_val * 2)) > 1e-9:
+            return rows
+        tag = f"team_total_{tt_side}_{round(line_val * 10):02d}"
+        for oc in mkt.get("outcomes") or []:
+            rk = (oc.get("result_key") or oc.get("name") or "").strip().lower()
+            if rk.startswith("over"):
+                _add(tag, "over", oc.get("id"), line_val)
+            elif rk.startswith("under"):
+                _add(tag, "under", oc.get("id"), line_val)
+        return rows
 
     if is_1x2:
         # COOLBET-SELECTION-CASE (2026-06-03): emit lowercase to match every

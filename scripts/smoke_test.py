@@ -4191,6 +4191,53 @@ def test_unibet_placer():
     assert 'SPORT_URL = "https://www.unibet.ee/betting/odds"' in msrc, "no /login page (it 404s) — modal flow"
 
 
+@test("CB-UB-1H-TT-COLUMNS — Coolbet writes 1x2_1h + team totals, Unibet-Site team totals")
+def test_cb_ub_1h_tt_columns():
+    """CB-UB-1H-TT-COLUMNS-2026-09-11. Owner: make the Unibet and Coolbet feeds
+    populate the "Now UB" / "Now CB" columns for bot_1h_1x2_paper_shadow_v1 and
+    bot_team_total_paper_shadow_v1. Both columns read odds_snapshots by
+    (match, market, selection), and neither feed wrote `1x2_1h` or
+    `team_total_{side}_{NN}` — Coolbet offered both ("1st half result" mtid 98,
+    "[home]/[away] total goals" mtid 1551/1547) but dropped them as unmatched;
+    Unibet-Site ships `{competitor1}_total`/`{competitor2}_total` but ignored them.
+
+    Pins: the vocabulary matches Epicbet's (so the columns join); the look-alike
+    markets (1H result + BTTS combo, 1st-half team goals) do NOT match; the
+    full-match 1x2 and O/U slots are untouched."""
+    import json
+    from pathlib import Path
+    from workers.automation.coolbet_explorer import parse_market
+    from workers.automation import unibet_odds_feed as uof
+
+    om = {i: {"value": v, "odds_id": str(i), "market_id": 1, "status": "OPEN"}
+          for i, v in {1: 3.1, 2: 2.05, 3: 3.4, 4: 1.8, 5: 2.0}.items()}
+    fh = parse_market({"id": 1, "line": 0, "name": "1st Half Result", "market_type_id": 98,
+                       "outcomes": [{"id": 1, "result_key": "[Home]"},
+                                    {"id": 2, "result_key": "Draw"},
+                                    {"id": 3, "result_key": "[Away]"}]}, om)
+    assert fh == [("1x2_1h", "home", 3.1, None), ("1x2_1h", "draw", 2.05, None),
+                  ("1x2_1h", "away", 3.4, None)], f"1H result parse wrong: {fh}"
+    tt = parse_market({"id": 2, "line": "1.5", "name": "[Away] Total Goals", "market_type_id": 1547,
+                       "outcomes": [{"id": 4, "result_key": "Over"},
+                                    {"id": 5, "result_key": "Under"}]}, om)
+    assert tt == [("team_total_away_15", "over", 1.8, 1.5),
+                  ("team_total_away_15", "under", 2.0, 1.5)], f"team total parse wrong: {tt}"
+    # look-alikes must not land in either namespace (or the full-match slots)
+    for name, mtid in (("1st half result and 1st half both teams to score", 1549),
+                       ("1st half [home] goals", 844)):
+        got = parse_market({"id": 3, "line": "0.5", "name": name, "market_type_id": mtid,
+                            "outcomes": [{"id": 1, "result_key": "[Home]"},
+                                         {"id": 4, "result_key": "Over"}]}, om)
+        assert got == [], f"{name!r} must stay unmatched, got {got}"
+
+    fx = Path(__file__).parent.parent / "tests" / "fixtures" / "unibet_contest_derby.json"
+    ub = [r for r in uof.parse_contest(json.loads(fx.read_text())) if r[0].startswith("team_total_")]
+    assert sorted(ub) == sorted([
+        ("team_total_home_05", "over", 1.45, 0.5), ("team_total_home_05", "under", 2.8, 0.5),
+        ("team_total_away_15", "over", 2.15, 1.5), ("team_total_away_15", "under", 1.7, 1.5),
+    ]), f"Unibet-Site competitor totals wrong: {ub}"
+
+
 @test("UNIBET-SITE-ODDS-PARSE — contest-page parser is clean + contamination-proof")
 def test_unibet_site_odds_parse():
     """UNIBET-UI-PLACER build-step 1 (2026-09-09): the Unibet SITE odds feed
@@ -4211,7 +4258,11 @@ def test_unibet_site_odds_parse():
     from workers.automation import unibet_odds_feed as uof
 
     fx = Path(__file__).parent.parent / "tests" / "fixtures" / "unibet_contest_derby.json"
-    rows = uof.parse_contest(json.loads(fx.read_text()))
+    all_rows = uof.parse_contest(json.loads(fx.read_text()))
+    # CB-UB-1H-TT-COLUMNS-2026-09-11: competitor totals are now captured on
+    # purpose (team_total_*, pinned by CB-UB-1H-TT-COLUMNS). The contamination pin
+    # below still holds for everything else.
+    rows = [r for r in all_rows if not r[0].startswith("team_total_")]
     markets = {r[0] for r in rows}
     assert markets == {"1x2", "over_under_25"}, (
         f"parser must yield ONLY 1x2 + over_under_25, got {markets} — a contaminant "

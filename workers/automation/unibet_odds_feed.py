@@ -113,6 +113,26 @@ def parse_contest(contest_json: dict) -> list[tuple[str, str, float, float | Non
                 if sel and odds:
                     rows.append((tag, sel, odds, line))
             continue
+
+        # Team goal totals — CB-UB-1H-TT-COLUMNS-2026-09-11, so the per-bot
+        # "Now UB" column fills for bot_team_total_paper_shadow_v1. competitor1 is
+        # the home side (Derby fixture: Derby County = competitor1 = home 3.50).
+        # Same vocabulary as Epicbet: team_total_{side}_{NN}, numeric line.
+        # There is no first-half 1x2 propositionType on the contest page (only
+        # `half_time_full_time`), so 1x2_1h cannot come from this feed.
+        side = {"{competitor1}_total": "home", "{competitor2}_total": "away"}.get(ptype)
+        if side:
+            line = _total_line(opts)
+            if line is None or abs(line * 2 - round(line * 2)) > 1e-9:
+                continue
+            tag = f"team_total_{side}_{round(line * 10):02d}"
+            m = {"Üle": "over", "Alla": "under"}
+            for o in opts:
+                sel = m.get(str(o.get("optionDisplayName")))
+                odds = _price(o.get("price"))
+                if sel and odds:
+                    rows.append((tag, sel, odds, line))
+            continue
     return rows
 
 
