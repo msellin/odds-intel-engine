@@ -36390,8 +36390,14 @@ def test_data_task_audit_numbers():
     # (3) the drift feature: its >=30% coverage trigger is meaningless while
     #     nothing writes the column. If someone schedules the backfill, the
     #     ticket must stop describing a dead writer.
+    # This guard fired for real on 2026-09-11 when DRIFT-FEATURE-WRITER
+    # scheduled the backfill — which is exactly what it was written for. The
+    # only flaw was the literal, case-sensitive match: the queue had been
+    # updated to "WRITER FIXED". Compare case-insensitively so the tripwire
+    # tests the CONDITION (the ticket no longer describes a dead writer) rather
+    # than one spelling of it.
     if "backfill_pinnacle_drift" in Path("workers/scheduler.py").read_text():
-        assert "writer fixed" in Path("PRIORITY_QUEUE.md").read_text(), (
+        assert "writer fixed" in Path("PRIORITY_QUEUE.md").read_text().lower(), (
             "backfill_pinnacle_drift is now scheduled, so pinnacle_drift_home "
             "coverage can grow again — update DRIFT-FEATURE-REENABLE, which is "
             "currently documented as a dead writer (last populated 2026-06-06)."
