@@ -79,14 +79,28 @@ reuse but **not** to the filesystem — `df` only changes after a `VACUUM FULL`,
 which takes an exclusive lock and ~15 GB of temp space and is deliberately not
 part of the nightly job.
 
-Still open (owner decision, see DB-ANCHOR-GROWTH in `PRIORITY_QUEUE.md`): of
-20,607,450 permanent anchor rows, **16,172,516 (78.5%, ~6.6 GB)** belong to
-books we can neither bet nor use as the sharp anchor. Dropping only their
-`is_opening` rows is safe and worth ~3.3 GB; dropping their `is_closing` rows
-too would silently shift two production model features
-(`ou25_bookmaker_disagreement`, `market_implied_btts_yes`) that are recomputed
-from full history on every Sunday retrain, and would make CONSENSUS-ANCHOR-BOT
-unbacktestable.
+**Reference-book openings: trimmed 2026-09-11** (owner-approved). Of 20,607,450
+permanent anchor rows, 16,172,516 belong to books we can neither bet nor anchor
+on. Their `is_opening` rows now expire with the retention window — **1,767,302
+rows ≈ 760 MB** eligible at the time, and ~6.5 GB/yr of avoided growth. That is
+far less than the ~3.3 GB one-off first estimated, because two guards keep most
+of them: `market='1x2'` is exempt (the MFV builder reads the earliest 1x2 row
+across all books, not the flag) and a price series must retain another row.
+Their `is_closing` rows are deliberately kept — dropping those would silently
+shift `ou25_bookmaker_disagreement` and `market_implied_btts_yes`, which are
+recomputed from full history on every Sunday retrain, and would make
+CONSENSUS-ANCHOR-BOT unbacktestable.
+
+**Context (VPS audit 2026-09-11):** OddsIntel is *not* the main tenant on this
+box. Of 159 GB used, CrossRank's live DB is 39 GB against OddsIntel's 24 GB
+(20 GB of which is `odds_snapshots`), and roughly **30 GB is unrotated logs** —
+15 GB of Postgres slow-query log in `pgdata/log` that logrotate's
+`postgresql-common` entry never touches, plus a 15 GB unrotated Docker
+container log. So the cheapest disk recovery on this box is log rotation, not
+odds rows; the retention work above is about bounding OddsIntel's own growth
+rate, not about this quarter's free space. The ~480-day runway figure quoted
+earlier assumed the whole 131 GB was available to `odds_snapshots`, which it is
+not.
 
 ## GitHub Actions Usage
 

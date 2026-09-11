@@ -187,6 +187,39 @@ POSTPONED_RETENTION_DAYS = int(os.getenv("ODDS_POSTPONED_RETENTION_DAYS", "30"))
 # full resolution in `odds_snapshots_inplay_archive` (migration 329).
 INPLAY_BUCKET = os.getenv("ODDS_INPLAY_BUCKET", "minute")
 
+# REFERENCE-BOOK-OPENING-TRIM-2026-09-11 (owner-approved). Of 20,607,450
+# permanent anchor rows, 16,172,516 belong to books we can neither bet from
+# Estonia nor use as the sharp anchor. Their CLOSING prices must stay — the
+# published best-of-books comparison reads them, and two production model
+# features (`ou25_bookmaker_disagreement`, `market_implied_btts_yes`) are
+# recomputed from full history on every Sunday retrain across all books. Their
+# OPENING rows, however, have no reader at all: training never selects
+# is_opening, the frontend has zero references to it, and `book_bias_probe`
+# orders by timestamp DESC.
+#
+# Two guards make "no reader" actually true, and both cost most of the savings:
+#
+#   * market='1x2' is EXEMPT. The MFV builder derives `opening_implied_*`,
+#     `odds_drift_home` and `steam_move` from the EARLIEST 1x2 row per match
+#     across ALL books (supabase_client.py ~1475, `ORDER BY timestamp ASC`,
+#     snaps[0]) — not from the is_opening flag. Live builds happen while the
+#     match is inside the hot window so they are unaffected, but a historical
+#     MFV re-backfill would silently shift those three features. 854,007 rows
+#     stay for that reason alone.
+#   * a series must keep at least one other row. 1.37M reference openings are
+#     the ONLY surviving row of their price series, so deleting them would
+#     erase that series entirely — the same failure DB-RETENTION-ANCHORLESS
+#     was written to prevent.
+#
+# Measured after both guards: 1,767,302 rows eligible today (~760 MB, NOT the
+# ~3.3 GB first estimated — that figure wrongly halved a 6.6 GB number covering
+# both anchor kinds), plus ~74k/day of new reference openings written, of which
+# roughly the same 56 percent become eligible once their series has a second row.
+BETTABLE_OR_ANCHOR_BOOKS = (
+    "Betano", "Coolbet", "Epicbet", "Unibet", "Unibet-Site", "Pinnacle",
+)
+TRIM_REFERENCE_OPENINGS = os.getenv("ODDS_TRIM_REFERENCE_OPENINGS", "true").lower() == "true"
+
 
 def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
     """
@@ -374,6 +407,14 @@ def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
 
     print(f"  {'Would delete' if dry_run else 'Deleted'}: {total_deleted:,} rows from {len(match_ids):,} matches")
 
+    # REFERENCE-BOOK-OPENING-TRIM-2026-09-11 — same cursor, same grace period.
+    ref_deleted = 0
+    if TRIM_REFERENCE_OPENINGS:
+        ref_deleted = _trim_reference_openings(cur, conn, match_ids, dry_run=dry_run)
+        if ref_deleted:
+            print(f"  reference-book openings {'would trim' if dry_run else 'trimmed'}: "
+                  f"{ref_deleted:,} rows")
+
     # ODDS-INPLAY-RETENTION-2026-09-11 — downsample instead of delete. Runs on
     # the same match cursor so it inherits the same batching and grace period.
     inplay_deleted = _prune_inplay_downsample(cur, conn, match_ids, dry_run=dry_run)
@@ -382,7 +423,60 @@ def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
               f"{inplay_deleted:,} sub-minute rows dropped")
 
     conn.close()
-    return total_deleted + inplay_deleted
+    return total_deleted + inplay_deleted + ref_deleted
+
+
+def _trim_reference_openings(cur, conn, match_ids: list[str], dry_run: bool = False) -> int:
+    """Drop `is_opening` rows for books we can neither bet nor anchor on.
+
+    See REFERENCE-BOOK-OPENING-TRIM-2026-09-11 above for why the closing rows
+    stay and why market='1x2' is exempt. The EXISTS clause is not an
+    optimisation: without it this would erase the entire price history of any
+    series whose only surviving row happens to be its opening.
+    """
+    if not match_ids:
+        return 0
+
+    sql = """
+        DELETE FROM odds_snapshots o
+        WHERE o.match_id = ANY(%s::uuid[])
+          AND o.is_opening
+          AND NOT COALESCE(o.is_closing, false)
+          AND NOT COALESCE(o.is_live, false)
+          AND o.market <> '1x2'
+          AND o.bookmaker <> ALL(%s)
+          AND EXISTS (
+                SELECT 1 FROM odds_snapshots k
+                 WHERE k.match_id  = o.match_id
+                   AND k.bookmaker = o.bookmaker
+                   AND k.market    = o.market
+                   AND k.selection = o.selection
+                   AND k.handicap_line IS NOT DISTINCT FROM o.handicap_line
+                   AND k.id <> o.id
+          )
+    """
+    count_sql = sql.replace("DELETE FROM odds_snapshots o",
+                            "SELECT COUNT(*) FROM odds_snapshots o", 1)
+
+    total = 0
+    BATCH = 100
+    books = list(BETTABLE_OR_ANCHOR_BOOKS)
+    for i in range(0, len(match_ids), BATCH):
+        batch = match_ids[i:i + BATCH]
+        try:
+            cur.execute("SET LOCAL statement_timeout = '10min'")
+            if dry_run:
+                cur.execute(count_sql, (batch, books))
+                total += cur.fetchone()[0]
+                conn.rollback()
+            else:
+                cur.execute(sql, (batch, books))
+                total += cur.rowcount
+                conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"  reference-opening batch {i} skipped: {type(e).__name__}: {e}")
+    return total
 
 
 def _prune_inplay_downsample(cur, conn, match_ids: list[str], dry_run: bool = False) -> int:

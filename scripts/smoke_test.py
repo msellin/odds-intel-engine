@@ -36937,5 +36937,61 @@ def test_floor_grid_cube():
         )
 
 
+@test("REFERENCE-BOOK-OPENING-TRIM — drops only openings nothing reads, and never the last row of a series")
+def test_reference_book_opening_trim():
+    """REFERENCE-BOOK-OPENING-TRIM-2026-09-11 (owner-approved). Reference books
+    — the ones we can neither bet from Estonia nor use as the sharp anchor —
+    hold openings with no reader: training never selects `is_opening`, the
+    frontend has zero references to it, `book_bias_probe` orders by timestamp
+    DESC. Their CLOSING rows are a different matter and must stay.
+
+    Two guards are what make "no reader" true, and this pins both because
+    removing either turns a safe cleanup into silent data loss:
+
+      * market='1x2' is exempt. The MFV builder takes `opening_implied_*`,
+        `odds_drift_home` and `steam_move` from the EARLIEST 1x2 row per match
+        across ALL books (ORDER BY timestamp ASC, snaps[0]) — not from the flag
+        — so trimming 1x2 openings would shift three features on any historical
+        MFV re-backfill.
+      * a series must keep another row. 1.37M reference openings are the ONLY
+        surviving row of their price series; deleting those erases the series,
+        the exact failure DB-RETENTION-ANCHORLESS exists to prevent.
+
+    Measured on 400 matches: 28,615 eligible, versus 36,287 without the guards
+    — they protect 21.1 per cent of what a naive version would have deleted.
+    """
+    import inspect
+    from scripts import prune_odds_snapshots as pr
+
+    assert hasattr(pr, "_trim_reference_openings")
+    src = inspect.getsource(pr._trim_reference_openings)
+
+    assert "o.market <> '1x2'" in src, (
+        "1x2 openings must be exempt — the MFV builder derives "
+        "opening_implied_*/odds_drift_home/steam_move from the earliest 1x2 row "
+        "across all books, regardless of the is_opening flag."
+    )
+    assert "EXISTS (" in src and "k.id <> o.id" in src, (
+        "the trim must require another surviving row in the same price series, "
+        "or it erases the whole history of any series whose only row is its "
+        "opening (1.37M such rows exist)."
+    )
+    assert "NOT COALESCE(o.is_closing, false)" in src, (
+        "closing rows must never be trimmed: the published best-of-books "
+        "comparison reads them, and ou25_bookmaker_disagreement + "
+        "market_implied_btts_yes are recomputed from full history across all "
+        "books on every Sunday retrain."
+    )
+    assert "NOT COALESCE(o.is_live, false)" in src, (
+        "in-play rows belong to the downsampler, not here."
+    )
+
+    for book in ("Coolbet", "Epicbet", "Unibet-Site", "Pinnacle", "Betano"):
+        assert book in pr.BETTABLE_OR_ANCHOR_BOOKS, (
+            f"{book} is bettable from Estonia or is the sharp anchor — its "
+            "openings must never be trimmed. Coolbet/Epicbet/Unibet-Site only "
+            "started getting openings at all on 2026-09-11."
+        )
+
 if __name__ == "__main__":
     main()

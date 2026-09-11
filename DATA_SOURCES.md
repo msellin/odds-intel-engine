@@ -65,6 +65,20 @@ writers now use the 15-minute window and compute `is_opening` in the INSERT
 **Historical openings are unrecoverable** — those early rows are already pruned;
 this only accrues forward, at ~24k rows/day.
 
+**REFERENCE-BOOK-OPENING-TRIM-2026-09-11 (owner-approved).** Books we can
+neither bet from Estonia nor use as the sharp anchor no longer keep `is_opening`
+rows past the retention window. Their **closing** rows stay — the published
+best-of-books comparison reads them, and `ou25_bookmaker_disagreement` +
+`market_implied_btts_yes` are recomputed from full history across all books on
+every Sunday retrain. Two exemptions make this safe and cost most of the saving:
+`market='1x2'` is untouched (the MFV builder takes `opening_implied_*`,
+`odds_drift_home` and `steam_move` from the earliest 1x2 row across all books,
+not from the flag), and a series must keep at least one other row. Eligible
+today: **1,767,302 rows ≈ 760 MB**, plus ~74k reference openings written per day
+of which roughly 56% become eligible — about **6.5 GB/yr** of avoided permanent
+growth. (An earlier estimate of ~3.3 GB for the one-off was wrong: it halved a
+6.6 GB figure that covered both anchor kinds.)
+
 CLV was never affected: `CLOSING-PRE-KO-FALLBACK` (settlement.py) resolves
 against the surviving pre-kickoff row, and measured coverage is `real_bets`
 Coolbet 930/977 = 95.2%, `shadow_bets` 30d Coolbet 100.0% / Epicbet 99.4%.
