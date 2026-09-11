@@ -4494,7 +4494,24 @@ def test_coolbet_model_1x2_shadow():
     assert "sb.market = '1x2'" in job, "source market must be '1x2'"
     assert "sb.calibrated_prob IS NOT NULL" in job, "source must require a calibrated_prob (the placer's live-edge gate reads it)"
     # FLOORS-ONE-SOURCE (2026-09-11): derived from _MODEL_1X2_HOME_FLOOR now.
-    assert "sb.edge_percent >= %s" in job, "edge floor must be a bound parameter"
+    # MIRROR-PRICES-AT-ITS-OWN-BOOKS (2026-09-11): this used to assert
+    # `sb.edge_percent >= %s`, i.e. that the mirror pre-filtered on the
+    # PIPELINE's stored edge. That is exactly the bug — the stored edge belongs
+    # to whichever book `recommended_bookmaker` was, not to a book this bot can
+    # bet, and it had drifted from its own price on 9 of 11 pending picks.
+    # Nancy v Reims was rejected on Betano's 3.15 while Coolbet was live at 3.25
+    # and clearing. The floor is now applied by `decide_book` against each
+    # PLACEABLE book's live price, so the only sound SQL pre-filter left is the
+    # necessary condition: edge < cal_prob, so nothing can clear unless
+    # cal_prob > floor.
+    assert "sb.calibrated_prob > %s" in job, (
+        "edge floor must reach the SQL as a bound parameter on cal_prob — the "
+        "necessary condition — not as a filter on the pipeline's stored edge."
+    )
+    assert "sb.edge_percent >=" not in job, (
+        "the 1x2 mirror must NOT pre-filter on the pipeline's stored edge; it "
+        "re-prices at the placeable books instead."
+    )
     assert 'COOLBET_MODEL_1X2_EDGE_FLOOR' in job and '_MODEL_1X2_HOME_FLOOR' in job, (
         "the 1x2 mirror must derive its default floor from the engine registry "
         "(env override may remain), not re-type a literal"
@@ -4503,11 +4520,20 @@ def test_coolbet_model_1x2_shadow():
     assert "lower(sb.selection) = 'home'" in job, (
         "mirror must restrict to home picks — home-favs lose, aways aren't robust, draws are "
         "a sharp edge (ANALYSIS_GOTCHAS §57)")
-    # FLOORS-ONE-SOURCE (2026-09-11): was a hardcoded `>= 2.80` inside the SQL,
-    # unreachable from any constant. Now a bound parameter fed by MIN_ODDS,
-    # which derives from the placer's _min_odds_for('1x2').
-    assert "COALESCE(sb.odds_at_pick_live, sb.odds_at_pick) >= %s" in job, (
-        "mirror must bind its odds floor as a parameter, not inline a literal")
+    # FLOORS-ONE-SOURCE (2026-09-11): the odds floor was once a hardcoded
+    # `>= 2.80` inside the SQL, unreachable from any constant; then a bound
+    # parameter fed by MIN_ODDS.
+    # MIRROR-PRICES-AT-ITS-OWN-BOOKS (2026-09-11): it is no longer an SQL filter
+    # at all, and must not be — filtering there tests the PIPELINE's price, not
+    # the price at a book this bot can bet. The floor now reaches `decide_book`,
+    # which applies it to each placeable book's own live quote. Still one
+    # source: MIN_ODDS derives from the placer's _min_odds_for('1x2').
+    assert "decide_book(" in job and "MIN_ODDS" in job, (
+        "the odds floor must be passed to decide_book and applied per book, "
+        "not pre-filtered in SQL against the pipeline's price")
+    assert "COALESCE(sb.odds_at_pick_live, sb.odds_at_pick) >= %s" not in job, (
+        "the mirror must not pre-filter on the pipeline's odds — that is how "
+        "Nancy was dropped on Betano's 3.15 while Coolbet showed 3.25")
     assert "_min_odds_for" in job, (
         "the mirror's odds floor must derive from the placer's registry so it "
         "cannot drift from the gate that actually stakes money")
@@ -37414,6 +37440,74 @@ def test_shadow_eval_dedup():
     assert "bot_retired_at" in src, (
         "the view exposes bot_retired_at/bot_name — use them rather than "
         "re-joining bots, which is how the base table crept back in."
+    )
+
+
+
+@test("MIRROR-PRICES-AT-ITS-OWN-BOOKS — the mirror re-prices at the books we bet, not the pipeline's")
+def test_mirror_prices_at_its_own_books():
+    """MIRROR-PRICES-AT-ITS-OWN-BOOKS (2026-09-11), from the owner spotting that
+    Nancy v Reims never reached the Coolbet bot.
+
+    The mirror used to COPY `odds_at_pick` + `edge_percent` out of
+    simulated_bets. Both are wrong for a bot that bets at specific books:
+
+      1. WRONG BOOK. The carried price is whichever book the pipeline
+         recommended. Nancy was rejected on Betano's 3.15 (edge 0.092) while
+         Coolbet was live at 3.25 (edge 0.102, clears). The placer re-checks at
+         the live price so it can never STAKE a bad one — but it can only ever
+         NARROW this set, so a pick that clears at OUR book and not at the
+         pipeline's is lost before the placer sees it.
+      2. STALE EDGE. `edge_percent` is stored independently of price and
+         probability and had drifted on 9 of 11 pending picks
+         (EDGE-IS-DERIVED-NOT-STORED).
+
+    Now the ONLY thing inherited from the pipeline is `calibrated_prob` — the
+    sole model output. Price, edge and gate come from the books this bot bets
+    at, via the router's own `_latest_book_odds` (180-min freshness cap) and
+    `decide_book`, reused rather than re-implemented.
+
+    The bot is shared across BOTH placeable books (owner: "this 1x2 bot is for
+    both unibet and coolbet"), so the winning book is recorded as provenance —
+    the placer still re-decides on live odds at placement time.
+    """
+    import inspect
+    import pathlib as _pl
+    from workers.jobs import coolbet_model_1x2_shadow as M
+
+    gsrc = inspect.getsource(M.generate_picks)
+
+    # It must re-price, not copy.
+    assert "_latest_book_odds" in gsrc and "decide_book" in gsrc, (
+        "the mirror must price against the placeable books via the router's "
+        "own helpers — not carry the pipeline's recommended-book price."
+    )
+    assert 'r["edge_percent"]' not in gsrc, (
+        "edge must be DERIVED from the winning price, never copied from "
+        "simulated_bets, or it can disagree with the odds in the same row."
+    )
+    assert "cal_prob - 1.0 / price" in gsrc, "edge must be computed from the winning price"
+
+    # The SQL pre-filter must not gate on a foreign price. The only sound
+    # pre-filter is the necessary condition cal_prob > floor.
+    assert "sb.calibrated_prob > %s" in gsrc, (
+        "pre-filter on cal_prob > floor (necessary, since edge < cal_prob); "
+        "filtering on the pipeline's odds/edge is what lost the bet."
+    )
+    assert "sb.edge_percent >=" not in gsrc, (
+        "the mirror must not pre-filter on the pipeline's stored edge"
+    )
+
+    # psycopg2 scans the WHOLE query for placeholders, comments included, so a
+    # literal per-cent sign in an SQL comment raises IndexError before the DB
+    # sees it. This bit twice while writing the fix.
+    i = gsrc.index("SELECT DISTINCT ON")
+    j = gsrc.index('"""', i)
+    sql = gsrc[i:j]
+    assert sql.count("%") == sql.count("%s"), (
+        "literal per-cent sign in the mirror's SQL (comments included) — "
+        "psycopg2 parses it as a parameter placeholder and raises "
+        "'list index out of range' before the query runs."
     )
 
 

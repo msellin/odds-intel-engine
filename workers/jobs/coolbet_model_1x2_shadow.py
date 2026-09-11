@@ -110,19 +110,32 @@ def generate_picks() -> dict:
                -- BETTING_GATE_DECISIONS "1x2 by type"). odds>=2.80 also excludes home-favs
                -- (odds<2.0) belt-and-braces with the placer's _min_odds_for('1x2')=2.80.
                AND lower(sb.selection) = 'home'
-               AND COALESCE(sb.odds_at_pick_live, sb.odds_at_pick) >= %s
+               -- MIRROR-PRICES-AT-ITS-OWN-BOOKS (2026-09-11): the odds/edge
+               -- pre-filters that used to sit here are GONE. They filtered on
+               -- the PIPELINE's price — whichever book `recommended_bookmaker`
+               -- happened to be — which is not a book this bot can bet. Nancy
+               -- v Reims was rejected on Betano's 3.15 (edge 0.092) while
+               -- Coolbet was live at 3.25 (edge 0.102, CLEARS). The bet was
+               -- lost before the placer ever saw it.
+               -- (NB: keep literal per-cent signs OUT of this comment.
+               --  psycopg2 scans the ENTIRE query string for parameter
+               --  placeholders, SQL comments included, so a stray one raises
+               --  IndexError before the database ever sees the statement.)
+               --
+               -- The only sound pre-filter is the one that is mathematically
+               -- necessary: edge = cal_prob - 1/odds < cal_prob, so no price
+               -- whatsoever can clear unless cal_prob > the floor. That bounds
+               -- the candidate set without pre-judging a price.
+               AND sb.calibrated_prob > %s
                AND sb.result = 'pending'
                AND sb.combo_legs IS NULL
                AND sb.calibrated_prob IS NOT NULL
-               AND sb.edge_percent >= %s
                AND sb.user_placed_at IS NULL
                AND sb.user_skipped_at IS NULL
                AND m.date > NOW()
              ORDER BY sb.match_id, sb.selection, sb.edge_percent DESC
             """,
-            # NOTE the order: the odds placeholder appears BEFORE the edge one
-            # in the SQL above.
-            [MIN_ODDS, EDGE_FLOOR],
+            [EDGE_FLOOR],
         )
 
         run_id = str(uuid.uuid4())
@@ -134,11 +147,69 @@ def generate_picks() -> dict:
                 continue
             counters["scanned"] += 1
 
-            price = r["odds_at_pick"]
-            if price is None or float(price) <= 1.0:
-                # No usable executable price to carry — skip rather than write a
-                # pick the placer's drift check cannot anchor.
+            # ── MIRROR-PRICES-AT-ITS-OWN-BOOKS (2026-09-11) ──────────────
+            # Re-price the model's probability against the books we can ACTUALLY
+            # BET, and gate on THAT edge. Previously this copied
+            # `odds_at_pick` + `edge_percent` straight from simulated_bets,
+            # which meant two defects at once:
+            #
+            #   1. WRONG BOOK. The carried price is whichever book the pipeline
+            #      recommended. Nancy v Reims: rejected on Betano's 3.15
+            #      (edge 9.2%) while Coolbet was live at 3.25 (edge 10.2%,
+            #      clears). The placer re-checks at the live Coolbet price, so
+            #      it can never STAKE a bad price — but it can only ever NARROW
+            #      this set, so a pick that clears at our book and not at the
+            #      pipeline's is lost before the placer sees it.
+            #   2. STALE EDGE. `edge_percent` is stored independently of price
+            #      and probability and had drifted on 9 of 11 pending picks
+            #      (EDGE-IS-DERIVED-NOT-STORED). Clermont's O/U row carried
+            #      edge 0.0800 against a price of 2.49 whose true edge is
+            #      0.0766 — the gate passed on a number belonging to a
+            #      different price.
+            #
+            # Both die here: the ONLY thing inherited from the pipeline is
+            # `calibrated_prob` (the sole model output). Price, edge and gate
+            # all come from the books this bot bets at. Reuses the router's own
+            # `_latest_book_odds` (180-min freshness cap, so a stale quote never
+            # competes) and `decide_book` (edge per book, best clearing price
+            # wins) rather than re-implementing either — the same one-predicate
+            # discipline as clears_edge_floor.
+            from workers.automation.best_price_router import (
+                _latest_book_odds, decide_book,
+            )
+            cal_prob = float(r["calibrated_prob"] or 0)
+            book_odds = _latest_book_odds(r["match_id"], "1x2", selection)
+            if not book_odds:
+                counters["no_book_price"] = counters.get("no_book_price", 0) + 1
                 continue
+            decision = decide_book(
+                cal_prob, EDGE_FLOOR, MIN_ODDS,
+                {b: v["odds"] for b, v in book_odds.items()},
+                market="1x2", selection=selection,
+            )
+            # WHICH book won. This bot is shared across BOTH placeable books
+            # (owner 2026-09-11: "we share the bot for the books we place, this
+            # 1x2 bot is for both unibet and coolbet"), so the row records where
+            # its price came from and the PLACER routes from there — otherwise
+            # it would assume Coolbet from the bot's name alone. NB the bot and
+            # this job keep their `coolbet_*` names for history: the NAME is
+            # Coolbet, the SCOPE is both books.
+            won_book = decision.get("winner")          # book NAME, e.g. 'Coolbet'
+            if not won_book:
+                counters["no_book_clears"] = counters.get("no_book_clears", 0) + 1
+                continue
+            price = float(decision["winner_odds"])
+            # WHICH book won. This bot is shared across BOTH placeable books
+            # (owner, 2026-09-11: "we share the bot for the books we place, this
+            # 1x2 bot is for both unibet and coolbet"), so the row must say where
+            # its price came from — otherwise the placer/router cannot route it
+            # and would assume Coolbet from the bot's name alone. NB the bot and
+            # this job are still named `coolbet_*` for history; the NAME is
+            # Coolbet, the SCOPE is both books.
+            # Derived from the winning price, never copied — so `edge_percent`
+            # cannot disagree with `odds_at_pick` the way it did on 9 of 11
+            # pending picks (EDGE-IS-DERIVED-NOT-STORED).
+            edge_at_price = cal_prob - 1.0 / price
 
             # odds_at_pick == odds_at_pick_live: we already source the live
             # (executable) quote via the COALESCE above, so there is no
@@ -148,18 +219,21 @@ def generate_picks() -> dict:
                 """INSERT INTO shadow_bets
                        (shadow_run_id, shadow_cohort, bot_id, match_id, market, selection,
                         odds_at_pick, odds_at_pick_live, pick_time, stake,
-                        model_probability, calibrated_prob, edge_percent)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s)
+                        model_probability, calibrated_prob, edge_percent,
+                        recommended_bookmaker)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s,%s)
                    ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)
                    DO UPDATE SET
                         odds_at_pick      = EXCLUDED.odds_at_pick,
                         odds_at_pick_live = EXCLUDED.odds_at_pick_live,
                         model_probability = EXCLUDED.model_probability,
                         calibrated_prob   = EXCLUDED.calibrated_prob,
-                        edge_percent      = EXCLUDED.edge_percent""",
+                        edge_percent      = EXCLUDED.edge_percent,
+                        recommended_bookmaker = EXCLUDED.recommended_bookmaker""",
                 [run_id, SHADOW_COHORT, bot_id, r["match_id"], "1x2", selection,
                  price, price, STAKE_EUR,
-                 r["model_probability"], r["calibrated_prob"], r["edge_percent"]],
+                 r["model_probability"], r["calibrated_prob"], edge_at_price,
+                 won_book],
             )
             counters["written"] += 1
 
