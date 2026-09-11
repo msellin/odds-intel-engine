@@ -125,7 +125,39 @@ A daemon self-pause means the Mac daemon hit a sustained Coolbet outage — a pl
 
 > **Troubleshooting: see [`docs/COOLBET_RUNBOOK.md`](docs/COOLBET_RUNBOOK.md)** — the full transport chain, the current API endpoints, and symptom→cause→fix for every Coolbet failure mode (FS-down, Imperva challenge, expired session, self-pause, below-floor days). Written after the 2026-09-07 outage whose 404 symptom looked like four different problems.
 
-Coolbet's Imperva blocks the VPS Linux Chrome fingerprint + Hetzner IP. Anything that hits Coolbet HTTP directly has to run from the Mac's residential IP with the local FS Docker (`oi_local_flaresolverr`). Three launchd LaunchAgents:
+Coolbet's Imperva blocks the VPS Linux Chrome fingerprint + Hetzner IP. Anything that hits Coolbet HTTP directly has to run from the Mac's residential IP with the local FS Docker (`oi_local_flaresolverr`).
+
+**This table is the Mac-side architecture inventory — keep it true. It is the
+input for the local operations dashboard**, so a job missing here is a job the
+dashboard cannot show. Verified against `launchctl list` on 2026-09-11.
+
+| Label | Runs | Purpose | Source |
+|---|---|---|---|
+| `com.oddsintel.coolbet-odds-snapshot` | :03 / :33 | `coolbet_explorer --days 2` — bulk Coolbet odds → `odds_snapshots`. Routes through local FS (**must NOT set `COOLBET_NO_FS`** — see runbook §6). | ✅ repo |
+| `com.oddsintel.coolbet-feed-watchdog` | :20 / :50 | Cookie refresh, odds-staleness verdict, JWT session-keep (`ensure_session_live`), operator Telegram heal-drain. Makes **no** Coolbet HTTP calls — judges from the DB. | ✅ repo |
+| `com.oddsintel.coolbet-ui-placer` | on demand | **The real-money path.** UI-driven Coolbet placement. | ✅ repo |
+| `com.oddsintel.flaresolverr-keepalive` | every 180s + at load | Probes :8191, restarts Docker/container if down. | ✅ repo |
+| `com.oddsintel.unibet-site-odds` | :15 / :45 | `unibet_odds_feed --bulk --days 2` — true unibet.ee site prices → `Unibet-Site`. Self-revives its session via `ensure_logged_in()`. | ⚠️ **no repo plist** |
+| `com.oddsintel.best-price-router-monitor` | :20 / :50 | `best_price_router --monitor` — report-only; checks BOTH books per real-money candidate, alerts when Unibet is better/only. No money moves. | ⚠️ **no repo plist** |
+| `com.oddsintel.vps-postgres-tunnel` | KeepAlive | `autossh` tunnel to the VPS Postgres. | ⚠️ **no repo plist** |
+
+> **⚠️ THREE JOBS RUN WITH NO PLIST IN THE REPO** (2026-09-11). They exist only on
+> the operator's Mac: if that disk dies they are unreproducible, and nothing in git
+> records what they do. Filed as `MAC-PLIST-ORPHANS` in PRIORITY_QUEUE.md. Check with:
+> ```bash
+> for l in $(launchctl list | grep -o "com\.oddsintel\.[a-z0-9-]*"); do
+>   [ -f "local/launchd/$l.plist" ] || echo "NO-SOURCE $l"; done
+> ```
+
+**Why Coolbet has three jobs and Unibet one.** Not arbitrary: (a) Coolbet is the only
+book we auto-place at, which buys it a placer *and* a session watchdog; (b) Coolbet's
+session rots (Imperva + ~30-min JWT + Coolbet's own inactivity logout) while the Unibet
+feed self-heals inside its own sweep; (c) Unibet's Kambi odds come from the **VPS** (no
+auth, no bot-protection), so only the site-odds capture needs the Mac. `unibet_placer`
+exists and has placed real money, but has **no launchd job and no pick table** — it
+takes `event_url` + outcome as args, so Unibet placement is manual by design.
+
+Retired/removed entries:
 
 | Label | Runs | Purpose |
 |-------|------|---------|
@@ -136,11 +168,29 @@ Coolbet's Imperva blocks the VPS Linux Chrome fingerprint + Hetzner IP. Anything
 Install / manage each:
 ```bash
 cp local/launchd/<name>.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/<name>.plist
+launchctl unload ~/Library/LaunchAgents/<name>.plist   # REQUIRED to pick up edits
+launchctl load   ~/Library/LaunchAgents/<name>.plist
 launchctl list | grep oddsintel                     # verify loaded
 launchctl kickstart -k gui/$(id -u)/<label>          # force restart
 tail -f dev/active/<name>.log                        # observe
 ```
+
+> **⚠️ EDITING `local/launchd/*.plist` DOES NOTHING ON ITS OWN.** launchd runs the
+> INSTALLED copy in `~/Library/LaunchAgents/`. You must copy it over AND
+> unload/load. **This caused a 5.3h real-money-feed outage on 2026-09-10**: the repo
+> plist was already correct, but launchd kept running a stale July copy that set
+> `COOLBET_NO_FS=true`, so every sweep was blackholed by Imperva and wrote zero odds.
+> Nothing detected it for weeks. **Guard:** smoke `COOLBET-CDP-COOKIE-EXPORT` step 7
+> now diffs the installed plist against the repo copy and fails on drift. Audit all
+> of them at once:
+> ```bash
+> for f in local/launchd/*.plist; do
+>   diff -q "$f" ~/Library/LaunchAgents/$(basename "$f") >/dev/null 2>&1 \
+>     && echo "OK      $(basename "$f")" || echo "DRIFTED $(basename "$f")"; done
+> ```
+> **For the local dashboard:** this drift check is currently a *smoke test only* — it
+> runs in CI, not as a live health signal. Surfacing it (plus FS session health and
+> plist-vs-repo state) is a dashboard input worth wiring.
 
 Guardrail: `test_coolbet_scrapers_moved_to_mac` in `scripts/smoke_test.py` blocks accidentally re-enabling either scraper on the VPS scheduler.
 
