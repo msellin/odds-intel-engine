@@ -34,22 +34,57 @@ evidence available to us:
 | **home-underdog** | **1,966** | **12-13%** (live: 10% real-money / 13% pooled) | **2.80, keep** | ✅ **REAL EDGE — the only one we have.** ROI and CLV both rise monotonically: 0% -> +5.0/+2.7 · 10% -> +11.4/+4.8 · 12% -> +16.9/+8.7 · 13% -> +19.8/+10.2 · 15% -> +20.8/+12.3 (n=802 at 13%). The 10% real-money floor is the *volume* end of a real gradient, not a mistake — but 12-13% is where CLV roughly doubles. |
 | **draw** | 381 | **do not bet** | — | ❌ **DEAD.** ROI −18% to −38% AND **CLV NEGATIVE at every floor** (−3.1 to −4.4). Negative CLV means we take worse prices than the close, so no floor rescues it. NB the 105k fixture-level basis shows a broad positive DRAW frame — that is a **de-vig/line-shop** edge, not ours (see the scale section). Our model has no draw edge. |
 | **away** | 1,603 | **hold, do not bet, do not retire** | — | ⚠️ **THE INTERESTING ONE.** ROI negative (−6.5% -> −1.2%) but **CLV strongly positive and rising: +6.0 -> +14.9 -> +16.9 -> +20.3%**. That is the "edge is real, variance has not converged" signature, and the standing kill rule does not fire (it needs CLV < 0 too). Let it accrue as paper; revisit at n≈3,000. |
-| **home-mid 2.00-2.80** | 1,201 | **do not bet** | excluded by the 2.80 odds floor | ❌ No robust frame in any dataset; −12.0% at the pooled gate in the earlier per-selection run. The 2.80 odds floor already removes it — no separate rule needed. |
+| **home-mid 2.00-2.80** | 1,201 | ⚠️ **CORRECTED 2026-09-11 — see below** | currently excluded by the 2.80 odds floor | ⚠️ **My earlier "−12.0%, do not bet" was measured at the 13% floor and does NOT hold at the live 10% floor.** At **edge >= 10%** this band reads **+12.7% ROI / +8.9% CLV on n=509** — better than home-underdog on BOTH metrics (+11.4/+4.8) — and positive in both large datasets independently (+14.7% n=217 shadow, +13.0% n=160 sim/all). It is NOT fold-robust in either, so it is a volume-vs-robustness trade, not a free win. But it is not a losing band at 10%, and the 2.80 odds floor is currently excluding it. |
 | **home-fav <2.00** | 336 | **do not bet** | excluded by the 2.80 odds floor | ❌ Zero robust cells in all four datasets; −17.3% at 13%. Excluded automatically by the odds floor. |
 
-**So the whole 1x2 policy is: `home AND odds >= 2.80 AND edge >= 10-13%`** — which
-is what the real-money bot already does. The odds floor does the selection work;
-no exclusion list is needed.
+**So the whole 1x2 policy is: `home AND odds >= <floor> AND edge >= 10-13%`.** The
+odds floor does the selection work and no exclusion list is needed — the owner's
+original insight, and it holds. **But what that floor should BE is now an open
+question, and 2.80 looks too high.**
+
+#### The 1x2 odds floor: what 2.80 actually excludes, at the live 10% edge floor
+
+| odds band | n | ROI | CLVpin | excluded by 2.80? |
+|---|---|---|---|---|
+| **<2.00 home-fav** | 223 | **−9.7%** | +9.7% | yes — **correct**, negative in both large datasets (−6.8%, −14.4%) |
+| **2.00–2.80 home-mid** | 509 | **+12.7%** | **+8.9%** | yes — **and that looks like a mistake** |
+| >=2.80 home-dog | 1,475 | +11.4% | +4.8% | no (kept) |
+
+**Only the <2.00 band earns exclusion.** A **2.00** odds floor would remove
+exactly the losing band and keep ~509 bets reading +12.7%/+8.9%. The odds LADDER
+supports the same reading: at edge>=10%, home CLV is *highest* at the low floors
+(+6.2% at 1.80) and **declines** as the floor rises (+4.8% at 2.80) — so 2.80 is
+not earning its keep on CLV at all; its whole justification is removing home-favs,
+and 2.00 does that too.
+
+⚠️ **Not a recommendation to change it yet.** home-mid is positive and consistent
+but NOT fold-robust in either dataset, which is precisely the volume-for-
+robustness trade this document says is an owner decision, never a "the backtest
+said so" change. Flagged, quantified, owner-gated.
 
 ### O/U goals
 
 | bet type | n | edge floor | odds floor | verdict |
 |---|---|---|---|---|
-| **o/u 2.5** | **2,129** | **8-12% (live 8% is sound; do NOT go above 12%)** | **1.80, keep** | ✅ Real but narrower than 1x2. ROI 0% -> +2.1 · 8% -> +6.4 · 10% -> +5.8 · 12% -> **+11.5** · then **COLLAPSES: 13% -> −9.6, 15% -> −18.9**. CLV peaks ~+3.3 at 12%. The collapse above 12% is the important part — a higher floor is NOT safer here. |
+| **o/u 2.5** | **2,129** | **8-12% (live 8% is sound; do NOT go above 12%)** | **1.80 — CONFIRMED, it earns its keep** | ✅ Real but narrower than 1x2. ROI 0% -> +2.1 · 8% -> +6.4 · 10% -> +5.8 · 12% -> **+11.5** · then **COLLAPSES: 13% -> −9.6, 15% -> −18.9**. CLV peaks ~+3.3 at 12%. The collapse above 12% is the important part — a higher floor is NOT safer here. |
 | o/u 2.5 **under** | 1,278 | 8% | 2.20 in two datasets | Carries most of the signal (+27.0% @8%/2.20, n=162, 17 robust cells in sim/all). |
 | o/u 2.5 **over** | 851 | — | — | Weak: zero robust cells on n=462 in the largest ledger. |
 | **o/u 3.5** | **312** | **do not bet** | — | ❌ Zero robust cells in any dataset, either side. `bot_ou35_model_v1` shipped promotion-pending and is **still unvalidated**. |
 | **o/u 1.5** | 143 | **do not bet** | — | ❌ Zero robust cells. Never activated; leave it that way. |
+
+#### The O/U odds floor: 1.80 is confirmed
+
+| odds band | n | ROI | CLVpin |
+|---|---|---|---|
+| **<1.80 (excluded now)** | 222 | **−1.1%** | +1.0% |
+| **>=1.80 (kept)** | 1,269 | **+7.7%** | +0.9% |
+
+It excludes a band that is ROI-negative and keeps one at +7.7%, so it does real
+work. **And there is no case for moving it up:** above 1.80 the ladder is
+NON-MONOTONIC — +7.7 (1.80) → +7.1 (2.00) → +11.9 (2.20) → **+4.0 (2.50)** →
++15.3 (2.80) — while CLV stays flat at ~+1% throughout. A metric that zigzags
+while its faster-converging companion stays flat is noise, not a threshold.
+That is also why the earlier "O/U wants 2.20" claim was withdrawn.
 
 ### Markets we do not bet — and whether the data agrees
 
