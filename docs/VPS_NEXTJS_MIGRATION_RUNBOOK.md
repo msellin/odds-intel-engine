@@ -287,6 +287,6 @@ Hetzner Cloud Console only shows VM-level metrics. For app-level visibility on t
 
 - **Vercel free tier**: 4 CPU-hours Fluid compute / month → **paused at 301%** after 3 projects
 - **Vercel Pro**: $20/mo → 1000 CPU-hours
-- **This VPS**: €5.49/mo, hosts scheduler + FlareSolverr + N Next.js apps until resource limits (~4 GB RAM, 2 vCPU)
+- **This VPS**: €5.49/mo, hosts scheduler + FlareSolverr + N Next.js apps until resource limits (**15 GB RAM / 301 GB disk** after resizing — the `ubuntu-4gb-hel1-1` hostname and any "4 GB" figure elsewhere are the original 2026-06 spec). Note RAM is the real ceiling, not disk: CrossRank's daily refresh already OOMs this box every morning — see CROSSRANK-REFRESH-OOM-PRESSURES-OUR-BOX in `PRIORITY_QUEUE.md` before adding another app.
 
 For 30-user scale sites, VPS wins on both cost and control.
