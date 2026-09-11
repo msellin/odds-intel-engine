@@ -37657,5 +37657,69 @@ def test_trigger_calibrator_per_selection():
         )
 
 
+@test("SHADOW-DETAIL-THREE-BOOKS-AND-BET-MADE")
+def test_shadow_detail_three_books_and_bet_made():
+    """PER-BOT-EPICBET-ODDS + BET-MADE-COLUMN + HEADER-ALIGN (2026-09-11).
+
+    Three assertions about the shadow-bot detail ledger, each pinning a thing
+    that was actually wrong on the screen:
+
+    1. HEADER ALIGNMENT. The header grid and the row grid must use the SAME
+       column template AND the same `sm:gap-3`. The header was missing the gap
+       class, so its `1fr` Match column silently absorbed the 11 gaps the rows
+       spend (~132px) and every label from "Tier" rightwards sat to the right
+       of the data it named ("Prob" and "Book" even ran together as
+       "PROBBOOK"). Two grids describing one table must not drift.
+
+    2. THREE BOOKS. Epicbet is an accessible Estonian venue we already ingest
+       every 30 min with the same market/selection vocabulary as Coolbet, so
+       the operator price-shopping a pending pick should see all three without
+       opening the site.
+
+    3. BET MADE. The real placement's price and its venue belong in ONE cell.
+       They used to be split — the "€ real 3.25" badge inline next to the team
+       names, the book in a separate "Book" column — which cost a column of
+       width and still did not answer "did we stake this, where, at what
+       price?" in one place.
+    """
+    detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
+
+    # --- 1. header grid == row grid, gap included ---
+    import re
+    grids = re.findall(r"sm:grid-cols-\[([^\]]+)\]", detail)
+    assert len(grids) >= 2, "expected both a header grid and a row grid on the detail page"
+    assert len(set(grids)) == 1, (
+        f"header and row grid templates have drifted: {sorted(set(grids))} — "
+        "they describe the same table and must be identical"
+    )
+    for block in re.findall(r"sm:grid-cols-\[[^\]]+\][^\n]*", detail):
+        assert "sm:gap-3" in block, (
+            "every grid on the detail ledger must carry sm:gap-3 — the header "
+            "missing it is what pushed all its labels right of their columns"
+        )
+
+    # --- 2. Epicbet is fetched AND rendered ---
+    assert '"Epicbet"' in detail and "epicbetNow" in detail, (
+        "the detail page must fetch Epicbet prices alongside Coolbet/Unibet"
+    )
+    assert "Now EB" in detail, "the Epicbet price needs its own column header"
+    for header in ("Now CB", "Now UB", "Now EB"):
+        assert header in detail, f"missing book column: {header}"
+
+    # --- 3. one 'Bet made' cell carrying odds + venue ---
+    assert "Bet made" in detail, "the merged placement column must be headed 'Bet made'"
+    assert "placedBook" in detail and "real_bets" in detail, (
+        "'Bet made' must read the venue from real_bets.bookmaker, not infer it"
+    )
+    assert "bookmaker" in detail.split('.from("real_bets")')[1][:300], (
+        "the real_bets select must actually request the bookmaker column"
+    )
+    assert "€ real{placedOdds" not in detail, (
+        "the inline '€ real' badge next to the team names is superseded by the "
+        "'Bet made' column — two places showing half the placement each is the "
+        "state this change removed"
+    )
+
+
 if __name__ == "__main__":
     main()
