@@ -22753,6 +22753,57 @@ def test_edge_floor_decimal_boundary_2026_09_11():
     return "one predicate: at-floor passes, and no caller re-implements it"
 
 
+@test("PLACER-EDGE-GATE-FAILED-OPEN — no computable floor must REFUSE, never place")
+def test_placer_edge_gate_fails_closed_2026_09_11():
+    """PLACER-EDGE-GATE-FAILED-OPEN (2026-09-11). Found by a full gate audit.
+
+    `place_coolbet_ui.py` contains NO edge comparison of its own — it passes the
+    bot's threshold down to `stage_bet`, where `min_odds_for()` converts it into
+    a minimum price. That price check is therefore the ONLY edge gate on the
+    real-money UI path.
+
+    It read `if floor is not None and outcome.odds < floor` — so when the floor
+    could not be computed the gate was SKIPPED and the bet placed with no edge
+    check at all. Fail-open on the one gate that must fail closed.
+
+    And the None cases are precisely the wrong ones to wave through:
+      * no calibrated_prob AND no model_probability -> edge is unpriceable
+      * prob <= 0 or prob > 1                       -> probability is corrupt
+      * prob <= threshold                           -> the pick can NEVER clear
+                                                       the bot's threshold at
+                                                       ANY price
+    The third is the exact set the gate exists to stop, and it was the set most
+    certain to be placed.
+    """
+    import inspect
+    from workers.automation import coolbet_ui_placer as up
+
+    # the three None paths still exist and still return None (this is correct —
+    # the bug was what stage_bet DID with that None)
+    assert up.min_odds_for({}, 0.10) is None, "no probability -> no floor"
+    assert up.min_odds_for({"calibrated_prob": 0.09}, 0.10) is None, (
+        "prob at/below threshold can never clear -> no floor"
+    )
+    assert up.min_odds_for({"calibrated_prob": 0.0}, 0.10) is None
+    assert up.min_odds_for({"calibrated_prob": 1.5}, 0.10) is None
+    # a valid pick still prices normally: 1/(0.40-0.10) = 3.33
+    assert round(up.min_odds_for({"calibrated_prob": 0.40}, 0.10), 2) == 3.33
+
+    src = inspect.getsource(up.stage_bet)
+    assert "if floor is None:" in src, (
+        "stage_bet must REFUSE when no min-odds floor is computable"
+    )
+    assert "floor is not None and outcome.odds < floor" not in src, (
+        "the fail-open form must not come back: `floor is not None and ...` "
+        "silently skips the only edge gate on the real-money path"
+    )
+    # the refusal must come BEFORE any stake is typed or placed
+    assert src.index("if floor is None:") < src.index("set_stake"), (
+        "refuse before touching the slip, not after"
+    )
+    return "no computable floor now refuses the bet instead of placing it ungated"
+
+
 @test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")
 def test_kuma_push_helper():
     """KUMA-PUSH-HELPER (2026-07-07): workers/utils/kuma.py is the

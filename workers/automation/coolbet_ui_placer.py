@@ -1526,15 +1526,45 @@ def stage_bet(
 
     # ── price gates ──────────────────────────────────────────────────────────
     floor = min_odds_for(bet, edge_threshold)
-    if floor is not None and outcome.odds < floor:
+
+    # PLACER-EDGE-GATE-FAILED-OPEN (fixed 2026-09-11). `floor is None` used to
+    # mean "skip the price gate", so a pick with no usable floor was placed with
+    # NO edge check at all. This is the ONLY edge gate on the real-money UI path
+    # — place_coolbet_ui.py itself contains no edge comparison, it just passes
+    # the threshold down here — so failing open here means placing ungated.
+    #
+    # Worse, look at WHEN min_odds_for returns None (see its body):
+    #   * no calibrated_prob AND no model_probability  -> we cannot price the edge
+    #   * prob <= 0 or prob > 1                        -> the probability is corrupt
+    #   * prob <= threshold                            -> the pick can NEVER clear
+    #                                                     the bot's threshold at
+    #                                                     ANY price
+    # The third case is the exact set of picks the gate exists to stop, and it
+    # was the set most certain to be placed. Fail CLOSED: no floor, no bet.
+    #
+    # This mirrors the rule the rest of the stack already follows — confirm by
+    # evidence, never by absence of a check (see the balance-delta confirmation
+    # below, and RELIABILITY_LEDGER pattern 5).
+    if floor is None:
+        prob = bet.get("calibrated_prob") or bet.get("model_probability")
+        return _fail(
+            "drift",
+            f"no min-odds floor computable (prob={prob!r}, "
+            f"threshold={edge_threshold:.2%}) — refusing to place an ungated "
+            "bet. A pick whose probability is at or below the bot's threshold "
+            "can never clear it at any price.",
+            ev, outcome,
+        )
+
+    if outcome.odds < floor:
         return _fail(
             "drift",
             f"below min odds: {outcome.odds} < {floor:.2f} "
             f"(break-even at {edge_threshold:.0%} edge)",
             ev, outcome,
         )
-    if floor is not None:
-        notes.append(f"min_odds={floor:.2f} coolbet={outcome.odds}")
+    # floor is guaranteed non-None here — the None case now fails closed above.
+    notes.append(f"min_odds={floor:.2f} coolbet={outcome.odds}")
 
     captured = bet.get("odds_at_pick") or bet.get("odds") or bet.get("captured_odds")
     if captured:
