@@ -161,12 +161,51 @@ def place_bet(event_url: str, outcome_name: str, min_odds: float,
             return out
         page.wait_for_timeout(6000)
         out["balance_after"] = _balance(page)
-        # a real placement must drop the balance by ~stake
-        try:
-            bb = float((out["balance_before"] or "0").replace(".", "").replace(",", "."))
-            ba = float((out["balance_after"] or "0").replace(".", "").replace(",", "."))
-            out["placed"] = (bb - ba) >= stake - 0.01
-            out["reason"] = "placed ✓" if out["placed"] else "clicked Tee panus but balance unchanged — verify manually"
-        except Exception:
-            out["reason"] = "placed (balance parse failed — verify manually)"
+
+        # UNIBET-UNCERTAIN-PLACEMENT (2026-09-11). "Tee panus" has been CLICKED
+        # by this point — money may well have moved. The old code reported
+        # placed=False whenever the balance could not be parsed (bare except),
+        # and `(balance or "0")` turned an unreadable balance into 0.0 so the
+        # delta check failed silently without even raising.
+        #
+        # That is the double-bet bug by another route: the router only records a
+        # real_bets row when placed=True, so an unconfirmed-but-real placement is
+        # invisible to the cross-book dedup and the next pass places it AGAIN.
+        #
+        # So there are THREE outcomes here, not two, and the third must not be
+        # collapsed into "didn't happen":
+        #   placed=True              confirmed by a balance delta
+        #   placed=False             confirmed NOT placed (balance read, unchanged)
+        #   placed=False+uncertain   we clicked and CANNOT tell — treat as
+        #                            exposure, never retry, ask a human
+        def _eur(v):
+            """Parse the Estonian-locale balance string. Returns None — never a
+            silent 0.0, which would fake a 'balance unchanged' verdict."""
+            if v is None:
+                return None
+            try:
+                return float(str(v).replace("\u00a0", "").replace(" ", "")
+                             .replace(".", "").replace(",", "."))
+            except Exception:  # noqa: BLE001
+                return None
+
+        bb, ba = _eur(out["balance_before"]), _eur(out["balance_after"])
+        if bb is None or ba is None:
+            out["placed"] = False
+            out["uncertain"] = True
+            out["reason"] = ("clicked Tee panus but the balance could not be read "
+                             f"(before={out['balance_before']!r}, "
+                             f"after={out['balance_after']!r}) — the bet MAY be "
+                             "live; treat as exposure and verify manually. Do "
+                             "NOT retry this selection.")
+        elif (bb - ba) >= stake - 0.01:
+            out["placed"] = True
+            out["reason"] = "placed ✓"
+        else:
+            # Balance read cleanly and did not move by the stake. The click did
+            # not take — safe to say so, and safe to retry later.
+            out["placed"] = False
+            out["uncertain"] = False
+            out["reason"] = (f"clicked Tee panus but balance moved "
+                             f"{bb - ba:.2f} < stake {stake:.2f} — not placed")
         return out

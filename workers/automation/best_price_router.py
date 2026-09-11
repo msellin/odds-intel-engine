@@ -225,8 +225,16 @@ def _dispatch_unibet(pick: dict, decision: dict, *, execute: bool) -> dict:
     # delta confirms — same contract as the Coolbet arm (placed_real=True only
     # after evidence, never on absence of an exception). A recording failure is
     # logged but must NOT turn a placed bet into a reported failure.
+    # UNIBET-UNCERTAIN-PLACEMENT (2026-09-11): "Tee panus" was clicked but the
+    # balance could not be read, so we do not know whether money moved. This
+    # MUST still create exposure or the next pass re-places it — that is the
+    # double-bet bug by another route. Record it with placed_real=None, which
+    # means "unverified" and which match_exposure counts as exposure (it filters
+    # `placed_real IS NOT FALSE`). So the retry is blocked WITHOUT claiming a
+    # confirmed real bet we cannot evidence. A human reconciles it.
+    uncertain = bool(res.get("uncertain"))
     real_bet_id = None
-    if placed:
+    if placed or uncertain:
         try:
             from workers.api_clients.supabase_client import store_real_bet
             real_bet_id = store_real_bet(
@@ -240,9 +248,18 @@ def _dispatch_unibet(pick: dict, decision: dict, *, execute: bool) -> dict:
                                if pick.get("odds_at_pick") else None),
                 bot_id=pick.get("bot_id"),
                 simulated_bet_id=pick.get("shadow_bet_id"),
-                notes=_routing_note(decision),
-                placed_real=True,
+                notes=(_routing_note(decision) if placed else
+                       "UNVERIFIED: clicked Tee panus, balance unreadable. "
+                       "Recorded to block a retry; confirm on the account. "
+                       + _routing_note(decision)),
+                placed_real=True if placed else None,
             )
+            if uncertain:
+                log.error("UNIBET UNCERTAIN placement on %s %s/%s — recorded "
+                          "real_bets %s with placed_real=NULL to block a retry. "
+                          "VERIFY THIS ON THE ACCOUNT.",
+                          pick.get("match_id"), pick.get("market"),
+                          pick.get("selection"), real_bet_id)
         except Exception as e:  # noqa: BLE001
             log.error("UNIBET PLACED but real_bets write FAILED (%s) — the "
                       "cross-book dedup is blind to this bet until it is "
@@ -251,7 +268,7 @@ def _dispatch_unibet(pick: dict, decision: dict, *, execute: bool) -> dict:
 
     return {"book": "Unibet-Site", "ok": placed or staged, "event_url": r["url"],
             "outcome": name, "placed": placed, "staged": staged,
-            "real_bet_id": real_bet_id, "result": res}
+            "uncertain": uncertain, "real_bet_id": real_bet_id, "result": res}
 
 
 def _dispatch_coolbet(pick: dict, *, execute: bool,
@@ -497,7 +514,11 @@ def route(execute: bool = False, *, stage: bool = False, limit: int | None = Non
             # inside one run — the Airbus UK incident put three bets on one match
             # at 13:00, 13:02 and 13:02 because each check re-read a table that
             # had not caught up yet.
-            if disp.get("placed"):
+            # An UNCERTAIN placement counts exactly like a placed one here:
+            # money may have moved, so it must occupy the per-match guard and
+            # the daily caps. Treating it as "didn't happen" is how a run
+            # double-bets itself.
+            if disp.get("placed") or disp.get("uncertain"):
                 canon = None
                 try:
                     from scripts.place_coolbet_ui import canon_bet

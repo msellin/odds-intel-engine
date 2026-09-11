@@ -7,6 +7,10 @@ the architecture, the failure modes, and the one-line fix for each. Written
 hour to find because the symptom (HTTP 404 on every endpoint) looked like three
 other things.
 
+**Recurring patterns:** if this incident feels familiar, it probably is — see
+[`RELIABILITY_LEDGER.md`](RELIABILITY_LEDGER.md) for the failure patterns that have
+each bitten more than once (and the guards that now exist) before re-deriving one.
+
 Companion docs: `WORKFLOWS.md` → "🍎 Mac-side jobs" (the launchd table);
 `project_coolbet_limitations` and `feedback_*coolbet*` memories (behavioural
 rules).

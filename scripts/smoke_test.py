@@ -22329,8 +22329,12 @@ def test_router_unibet_parity_2026_09_11():
         "_has_exposure() reads that table and is the ONLY double-bet guard."
     )
     assert "placed_real=True" in ud, "record real money as real, by evidence"
-    assert ud.index("if placed:") < ud.index("store_real_bet("), (
-        "record only AFTER the balance-delta confirmation, never on absence "
+    # Recording is gated on the placement outcome, never on "no exception was
+    # raised". Widened 2026-09-11 to `placed or uncertain` — see
+    # UNIBET-UNCERTAIN-PLACEMENT: a clicked-but-unconfirmable bet must also
+    # record (as placed_real=NULL) or the next pass re-places it.
+    assert ud.index("if placed or uncertain:") < ud.index("store_real_bet("), (
+        "record only AFTER the placement outcome is decided, never on absence "
         "of an exception."
     )
 
@@ -22573,6 +22577,60 @@ def test_coolbet_probe_2026_09_11():
         "answer 'has the flag decayed?' while the footprint is paused"
     )
     return "probe is one request, states distinguishable, runs while paused"
+
+
+@test("UNIBET-UNCERTAIN-PLACEMENT — an unconfirmable click must block a retry")
+def test_unibet_uncertain_placement_2026_09_11():
+    """UNIBET-UNCERTAIN-PLACEMENT (2026-09-11). By the time the balance is read,
+    "Tee panus" has ALREADY been clicked — money may have moved. The old code
+    reported placed=False whenever the balance could not be parsed (a bare
+    except), and `(balance or "0")` turned an unreadable balance into 0.0, so
+    the delta check failed silently without even raising.
+
+    That is the double-bet bug by another route: the router records a real_bets
+    row only when placed=True, so an unconfirmed-but-real placement is invisible
+    to the cross-book dedup and the NEXT pass places it again.
+
+    There are THREE outcomes, and the third must never collapse into "didn't
+    happen":
+        placed=True             confirmed by a balance delta
+        placed=False            confirmed NOT placed (balance read, unchanged)
+        placed=False+uncertain  clicked, cannot tell -> exposure, never retry
+    """
+    import inspect
+    from workers.automation import unibet_placer as up
+    from workers.automation import best_price_router as bpr
+
+    src = inspect.getsource(up.place_bet)
+    assert "uncertain" in src, "the third state must exist"
+    # the silent-zero fallback is the subtle half of the bug
+    assert '(out["balance_before"] or "0")' not in src, (
+        "an unreadable balance must not become 0.0 — that fakes a "
+        "'balance unchanged' verdict and reports a live bet as not placed"
+    )
+
+    ud = inspect.getsource(bpr._dispatch_unibet)
+    # uncertain must still write a row, or the retry is not blocked
+    assert "placed or uncertain" in ud, (
+        "an uncertain placement must still record exposure, or the next pass "
+        "re-places a bet that may already be live"
+    )
+    # ...but must NOT claim it was confirmed real
+    assert "placed_real=True if placed else None" in ud, (
+        "uncertain must record placed_real=NULL (unverified), which "
+        "match_exposure counts as exposure (placed_real IS NOT FALSE) while "
+        "NOT claiming a confirmed real bet we cannot evidence"
+    )
+    # and a human must be told
+    assert "VERIFY THIS ON THE ACCOUNT" in ud, "an uncertain bet must alert loudly"
+
+    # in-pass guards must treat uncertain as spent, too
+    rsrc = inspect.getsource(bpr.route)
+    assert 'disp.get("placed") or disp.get("uncertain")' in rsrc, (
+        "an uncertain placement must occupy the per-match guard and the daily "
+        "caps — money may have moved"
+    )
+    return "uncertain placements create exposure without claiming confirmation"
 
 
 @test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")
