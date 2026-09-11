@@ -37917,6 +37917,111 @@ def test_trigger_calibrator_watch():
     )
 
 
+@test("SHADOW-INDEX-EPICBET-COLUMN — the third price column cannot blank the other two")
+def test_shadow_index_epicbet_column():
+    """SHADOW-INDEX-EPICBET-COLUMN (2026-09-11). The /admin/shadow-bots INDEX
+    table gained a `Now @ EB` column to match the detail page.
+
+    THE THING THIS TEST GUARDS IS NOT THE COLUMN — it is the row ceiling.
+    PostgREST caps responses at db-max-rows = 10,000 (ALL-BETS-CEILING-DEAD) and
+    the snapshot query orders NEWEST-FIRST, so a response over the cap silently
+    drops the OLDEST rows. A naive `.in("bookmaker", [..., "Epicbet"])` would
+    therefore have BLANKED the Coolbet column as a side effect of adding
+    Epicbet, with no error anywhere — Epicbet quotes 110+ markets per fixture
+    and dwarfs the other two. Measured on this page's own filters (pending
+    picks' fixtures, non-live, 12h window): Epicbet 31,160 · Coolbet 5,229 ·
+    Unibet-Site 385 = 36,774 rows, 3.7x the cap. Constrained to the markets the
+    table actually renders: 7,493 · 1,003 · 385.
+
+    That trap already bit the per-bot detail page once, which is why this is a
+    test and not a comment. Two independent guards are pinned:
+
+      1. PER-BOOK FETCH — each book gets its OWN 10,000-row budget, so one book
+         overflowing can no longer erase another. This is the structural fix;
+         the market filter alone would still leave three books sharing a cap.
+      2. MARKET FILTER — the fetch is narrowed to the distinct markets of the
+         rendered picks. Every column we do not draw is a row we must not
+         fetch.
+
+    Plus: a book that DOES hit its cap must be reported, because a truncated
+    price column is visually identical to a book with no coverage, and the
+    operator places real money off this table.
+
+    Asserted against the page source with the substrings SCOPED to the fetch
+    block, not the whole file (§41: a file-wide substring check is not a test
+    of the thing you changed — the words "Epicbet" and "10000" both appear in
+    prose elsewhere on the page).
+    """
+    import os
+    import re
+    page = os.path.join(os.path.dirname(__file__), "..", "..", "odds-intel-web",
+                        "src", "app", "(app)", "admin", "shadow-bots", "page.tsx")
+    src = open(page, encoding="utf-8").read()
+
+    # Scope to the snapshot fetch, so nothing here can pass on a comment
+    # elsewhere in a 1,600-line file.
+    start = src.index("const SNAPSHOT_BOOKS")
+    end = src.index("const cbSnapshots", start)
+    fetch = src[start:end]
+
+    # (1) per-book fetch: one bookmaker per query, never a shared .in() list.
+    assert '.eq("bookmaker", book)' in fetch, (
+        "each book must be fetched with its OWN query so it gets its own "
+        "10,000-row budget — a shared .in(\"bookmaker\", [...]) means Epicbet's "
+        "volume silently truncates Coolbet's column"
+    )
+    # Absence assertions read CODE only: the comment right above the fetch
+    # legitimately explains the shared-ceiling bug it replaced, and matching
+    # that is the trap that has bitten this suite six times.
+    fetch_code = "\n".join(
+        ln for ln in fetch.splitlines() if not ln.lstrip().startswith("//")
+    )
+    assert '.in("bookmaker"' not in fetch_code, (
+        "a multi-book bookmaker .in() reintroduces the shared ceiling"
+    )
+    # (2) the market filter — the row-ceiling guard.
+    assert '.in("market", pendingMarkets)' in fetch, (
+        "the fetch must be constrained to the markets the table renders; "
+        "without it Epicbet alone is 31,160 rows against a 10,000 cap"
+    )
+    assert re.search(r"const pendingMarkets\s*=", src), (
+        "pendingMarkets must be derived from the rendered picks, not hardcoded"
+    )
+    assert "u.market.toLowerCase()" in src, (
+        "markets must be lowercased: shadow_bets stores both `1x2` and `1X2` "
+        "while odds_snapshots only ever writes `1x2` (ANALYSIS_GOTCHAS 23)"
+    )
+    # (3) truncation must be visible, not silent.
+    assert "truncatedBooks" in src and "SNAPSHOT_ROW_CAP" in src, (
+        "a book that hits its cap must be reported — a truncated column looks "
+        "exactly like a book with no coverage"
+    )
+
+    # The placeable-feed rule still holds for the book list itself.
+    books = re.search(r"const SNAPSHOT_BOOKS = \[([^\]]*)\]", src)
+    assert books, "SNAPSHOT_BOOKS must be a literal list this test can read"
+    assert '"Unibet-Site"' in books.group(1), "the placeable Unibet feed"
+    assert '"Unibet"' not in books.group(1).replace('"Unibet-Site"', ""), (
+        "never the AF `Unibet` or `Unibet-Kambi` feed — unibet.ee left Kambi "
+        "on 2026-09-06 and it disagrees with the site on 91 pct of quotes"
+    )
+    assert '"Epicbet"' in books.group(1), "the new column's book"
+
+    # Header and rows must share the SAME grid template, gap included — the
+    # detail page shipped with a header missing the rows' gap and every label
+    # sat right of its own data.
+    grids = re.findall(r"sm:grid-cols-\[([0-9a-zA-Z_,()\-]+)\]", src)
+    wide = [g for g in grids if g.count("_") >= 10]
+    assert len(wide) == 2 and wide[0] == wide[1], (
+        f"the upcoming-picks header and row grid templates must be identical; "
+        f"found {wide}"
+    )
+    assert wide[0].count("_") == 13, (
+        "the table must have 14 columns after adding Now @ EB — a column added "
+        "to one template and not the other shifts every label"
+    )
+
+
 @test("UB-COLUMN-NOT-PLACEABLE")
 def test_ub_column_is_the_placeable_feed():
     """UB-COLUMN-NOT-PLACEABLE-2026-09-11 — the admin "Now UB" column quoted a
