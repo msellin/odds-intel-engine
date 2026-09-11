@@ -77,6 +77,22 @@ registry and regenerate.
 | `bot_unibet_trigger_sharp_1x2_v1` | 1x2 | sharp | 3% | 1.01 | paper | Unibet 1x2 sharp trigger. **Where the DRAW edge the model can't see should surface** (soft-book mispricing vs de-vig Pinnacle, §57). Paper. |
 | `bot_unibet_trigger_ou_v1` | O/U 2.5 | model | 8% | 1.80 | paper | Stage 3b — Unibet O/U 2.5 model trigger. Paper twin of the Coolbet O/U trigger. |
 | `bot_unibet_trigger_sharp_ou_v1` | O/U 2.5 | sharp | 3% | 1.01 | paper | Unibet O/U 2.5 sharp trigger. Paper. |
+| `bot_trigger_1x2_model_v1` | 1x2 | model | 13% | 2.80 | paper | **MERGE-TRIGGER-BOTS 2026-09-11** — book-agnostic MODEL 1x2 trigger: fires when ANY book we place at prices a modelled fixture into the window. Replaces the two 1x2 model twins above. |
+| `bot_trigger_1x2_sharp_v1` | 1x2 | sharp | 3% | 1.01 | paper | Book-agnostic SHARP 1x2 trigger. The 3% floor is set EXPLICITLY, not inherited: a sharp edge is measured against a near-true line and is never comparable to a model floor (a 13% overlay on Pinnacle is nearly unobservable — max seen +6.6% — so the bot would simply never fire). |
+| `bot_trigger_ou_model_v1` | O/U 2.5 | model | 8% | 1.80 | paper | Book-agnostic MODEL O/U 2.5 trigger. Replaces the two O/U model twins above. |
+| `bot_trigger_ou_sharp_v1` | O/U 2.5 | sharp | 3% | 1.01 | paper | Book-agnostic SHARP O/U 2.5 trigger. |
+
+> **Why eight bots became four, and why all twelve are listed here right now.**
+> The eight above are 2 anchors × 2 books × 2 markets, but the **book is a venue,
+> not a strategy**: `pick_generator` already compares across every book a bot may
+> use and records the winner in `recommended_bookmaker`, so book is a column to
+> GROUP BY rather than an identity — and the split would have become **twelve
+> bots the moment Epicbet joined**. The four merged configs are on the two real
+> axes. The eight are **deliberately not retired yet**: the pooled-vs-per-selection
+> calibrator measurement is mid-flight, and retiring them now would make that
+> comparison span a bot change AND a calibrator change, answering neither. A
+> follow-up migration retires them once `trigger_calibrator_watch` pages its
+> verdict, taking the active count from 18 to 10.
 
 ### Coolbet own-price paper bots
 
@@ -220,9 +236,9 @@ hint, the trigger bots, and this map all read."* Audited 2026-09-11:
 
 | Policy | Copies | Where |
 |---|---|---|
-| Edge floors 0.10 / 0.08 | **6** | `_MIN_EDGE_BY_MARKET`, `_MODEL_1X2_HOME_FLOOR`, `BOT_THRESHOLDS`, `coolbet_model_1x2_shadow.EDGE_FLOOR`, `coolbet_model_ou_shadow.EDGE_FLOOR`, `upcoming-picks.ts` |
-| Odds floors 2.80 / 1.80 | **4** | `_MIN_ODDS_BY_MARKET`, `MIN_ODDS_FOR_PLACEMENT`, `coolbet_model_1x2_shadow` SQL, `upcoming-picks.ts` |
-| Home-underdog rule | **3 implementations** | `min_edge_for_pick` (Python), shadow-mirror SQL, `upcoming-picks.ts` (TypeScript) |
+| Edge floors 0.10 / 0.08 | **6 → 3** | `_MIN_EDGE_BY_MARKET`, `_MODEL_1X2_HOME_FLOOR`, `BOT_THRESHOLDS`; the two mirrors' `EDGE_FLOOR` are now *derived* readouts (2026-09-11 PICK-GENERATOR-DELEGATION — the modules hold no gate of their own), and `upcoming-picks.ts` is generated from Python |
+| Odds floors 2.80 / 1.80 | **4 → 2** | `_MIN_ODDS_BY_MARKET`, `MIN_ODDS_FOR_PLACEMENT`; the 1x2 mirror's inlined SQL floor is GONE with its SQL, and `upcoming-picks.ts` is generated |
+| Home-underdog rule | **3 → 2 implementations** | `min_edge_for_pick` (Python) and the generated `upcoming-picks.ts` (TypeScript). The shadow-mirror SQL copy is gone: the rule is now `selections=("home",)` on a `BotConfig`, gated by the one Python predicate. |
 
 **Status of each copy (updated 2026-09-11):**
 
@@ -254,6 +270,18 @@ hint, the trigger bots, and this map all read."* Audited 2026-09-11:
   is retired (`None`) rather than substituting a number — a paper bot quietly
   selecting on a resurrected floor is the same silent-wrong-floor failure in
   miniature.
+- ✅ **…and then the mirrors stopped holding a mechanism at all**
+  (2026-09-11, PICK-GENERATOR-DELEGATION). Deriving the floors removed the
+  *drift*; it did not remove the *second copy of the loop*, and the loop was the
+  reason the two mirrors diverged in the first place — one pre-filtered on the
+  pipeline's odds (dropping Nancy v Reims on Betano's 3.15 while Coolbet was live
+  at 3.25 and clearing), the other applied no odds floor at all. Both modules are
+  now ~120 lines of entry point and explanation: the mechanism is
+  `pick_generator.generate` (one copy, for every bot) and each bot is a
+  `BotConfig` in `bot_configs.py`. `EDGE_FLOOR` / `MIN_ODDS` survive as *derived
+  readouts* via the generator's own `_floors`, so a number reported there cannot
+  differ from the number that gates a pick. Run `python3 scripts/bots_describe.py`
+  to see every bot's gates side by side.
 
 **All copies from the 2026-09-11 audit are now closed** — Python callers, the
 frontend, and the shadow mirrors. What remains is not duplication but *policy*:

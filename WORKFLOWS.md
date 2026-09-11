@@ -49,7 +49,7 @@
 :05/:35 ⑰ Shadow Run     job_shadow_run_interval() Every 30 min, concurrent with betting refresh. ALL bots evaluated → shadow_bets. Cohort = 'HHMM' UTC string. 32 snapshots/day.
 8/12/16/20:20 Corners Paper Pick  job_corners_paper_pick()  Shadow bot bot_corners_paper_shadow_v1 — records corners_ou paper picks (best Betano/Unibet price beats de-vigged Pinnacle) → shadow_bets, cohort 'corners_paper'. Tracks on /admin/shadow-bots, off public pages.
 :50    Corners Paper Settle job_corners_paper_settle() Grades the above from match_stats corners (over/under, .5 lines never push). The generic goals-based shadow settler skips corners_ou_% by design.
-:10/:40 Coolbet Model O/U Shadow job_coolbet_model_ou_shadow() Shadow bot bot_coolbet_ou_model_v1 — mirrors the calibrated model's O/U picks (market='o/u', edge≥0.08 on calibrated_prob, lines 2.5/3.5) into shadow_bets as over_under_25/35 + over/under, cohort 'coolbet_ou_model', so they place via the Coolbet UI placer with the validated per-market gates. Real money OFF unless COOLBET_UI_MODEL_EDGE_OU=1. Settles via the generic goals O/U resolver (no custom settler).
+:10/:40 Coolbet Model O/U Shadow job_coolbet_model_ou_shadow() Shadow bot bot_coolbet_ou_model_v1 — runs pick_generator.generate() on the bot's BotConfig (PICK-GENERATOR-DELEGATION 2026-09-11; the job module no longer holds the loop): calibrated-model O/U probabilities, lines 2.5/3.5, RE-PRICED at every placeable book, edge derived from the winning price and gated at the registry floors (0.08 / 1.80). Written to shadow_bets as over_under_25/35 + over/under, cohort 'coolbet_ou_model', so they place via the Coolbet UI placer. Real money OFF until the coolbet_placer_bots toggle is flipped (the old COOLBET_UI_MODEL_EDGE_OU env flag is retired). Settles via the generic goals O/U resolver (no custom settler). Also fires on the odds-arrival hook when either book writes prices.
 08:00  ② Enrichment      run_enrichment()          Injuries only — single morning fetch (AF-INJURIES-LATE 2026-06-01)
 10:45  ① Fixtures        run_fixtures()            Status refresh — catches morning postponements
 12:30  ⑦ News Checker    run_news_checker()
@@ -135,11 +135,11 @@ dashboard cannot show. Verified against `launchctl list` on 2026-09-11.
 
 | Label | Runs | Purpose | Source |
 |---|---|---|---|
-| `com.oddsintel.coolbet-odds-snapshot` | :03 / :33 | `coolbet_explorer --days 2` — bulk Coolbet odds → `odds_snapshots`. Routes through local FS (**must NOT set `COOLBET_NO_FS`** — see runbook §6). | ✅ repo |
+| `com.oddsintel.coolbet-odds-snapshot` | :03 / :33 | `coolbet_explorer --days 2` — bulk Coolbet odds → `odds_snapshots`. Routes through local FS (**must NOT set `COOLBET_NO_FS`** — see runbook §6). Fires the **odds-arrival hook** (`pick_generator.on_odds_written`) when it wrote rows, so picks are re-derived at price-arrival rather than on a :10/:40 clock. | ✅ repo |
 | `com.oddsintel.coolbet-feed-watchdog` | :20 / :50 | Cookie refresh, odds-staleness verdict, JWT session-keep (`ensure_session_live`), operator Telegram heal-drain. Makes **no** Coolbet HTTP calls — judges from the DB. | ✅ repo |
 | `com.oddsintel.coolbet-ui-placer` | on demand | **The real-money path.** UI-driven Coolbet placement. | ✅ repo |
 | `com.oddsintel.flaresolverr-keepalive` | every 180s + at load | Probes :8191, restarts Docker/container if down. | ✅ repo |
-| `com.oddsintel.unibet-site-odds` | :15 / :45 | `unibet_odds_feed --bulk --days 2` — true unibet.ee site prices → `Unibet-Site`. Self-revives its session via `ensure_logged_in()`. | ⚠️ **no repo plist** |
+| `com.oddsintel.unibet-site-odds` | :15 / :45 | `unibet_odds_feed --bulk --days 2` — true unibet.ee site prices → `Unibet-Site`. Self-revives its session via `ensure_logged_in()`. Fires the **odds-arrival hook** (`pick_generator.on_odds_written`) when it wrote rows — before 2026-09-11 a qualifying Unibet price waited ~25 min for the next generator poll. | ⚠️ **no repo plist** |
 | `com.oddsintel.best-price-router-monitor` | :20 / :50 | `best_price_router --monitor` — report-only; checks BOTH books per real-money candidate, alerts when Unibet is better/only. No money moves. | ⚠️ **no repo plist** |
 | `com.oddsintel.vps-postgres-tunnel` | KeepAlive | `autossh` tunnel to the VPS Postgres. | ⚠️ **no repo plist** |
 

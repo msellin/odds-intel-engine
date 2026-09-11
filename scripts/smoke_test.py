@@ -4361,136 +4361,176 @@ def test_ou35_model_shadow():
     assert "INSERT INTO coolbet_placer_bots" not in mig, "must NOT seed a real-money placer toggle row"
 
 
-@test("COOLBET-MODEL-OU-SHADOW — model-edge O/U bot: mirror job + off-by-default real-money wiring")
+def _strip_prose(src: str) -> str:
+    """Return `src` with every comment AND every docstring removed.
+
+    For source-inspection tests that assert something is ABSENT. Without this
+    the test matches its own explanation: a module whose docstring says "must
+    not read simulated_bets" fails an assertion that `"simulated_bets" not in
+    source`. That has happened five times in this suite and is recorded in
+    RELIABILITY_LEDGER — a line-prefix comment filter is not enough, because a
+    docstring's body lines carry no marker at all.
+
+    Uses the AST rather than a regex, so a triple quote inside a string, or a
+    docstring on a nested function, cannot fool it.
+    """
+    import ast
+    lines = src.splitlines()
+    kill: set[int] = set()
+    for node in ast.walk(ast.parse(src)):
+        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                 ast.AsyncFunctionDef)):
+            continue
+        body = getattr(node, "body", None)
+        if not body:
+            continue
+        first = body[0]
+        if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)):
+            kill.update(range(first.lineno - 1, (first.end_lineno or first.lineno)))
+    return "\n".join(
+        ln for i, ln in enumerate(lines)
+        if i not in kill and not ln.lstrip().startswith(("#", "--"))
+    )
+
+
+@test("COOLBET-MODEL-OU-SHADOW — model-edge O/U bot: config + delegation + off-by-default real-money wiring")
 def test_coolbet_model_ou_shadow():
-    """COOLBET-MODEL-OU-SHADOW-BOT (2026-09-08): bot_coolbet_ou_model_v1 mirrors the
-    calibrated model's O/U picks (edge>=8% on calibrated_prob, lines 2.5/3.5 only)
-    into shadow_bets in the line-shop vocabulary (over_under_25/35 + over/under) so
-    they place through the Coolbet UI placer with the validated per-market gates.
-    Real money is OFF unless COOLBET_UI_MODEL_EDGE_OU=1. Pin all of this so a
-    regression cannot silently (a) change the source/edge, (b) widen the O/U lines,
-    or (c) let the bot place real money by default."""
+    """COOLBET-MODEL-OU-SHADOW-BOT (2026-09-08): bot_coolbet_ou_model_v1 takes the
+    calibrated model's O/U probabilities (lines 2.5/3.5 only), re-prices them at
+    the books we can bet, and writes them into shadow_bets in the line-shop
+    vocabulary (over_under_25/35 + over/under) so they place through the Coolbet
+    UI placer with the validated per-market gates. Real money is OFF unless the
+    DB toggle is flipped.
+
+    RE-POINTED 2026-09-11 (PICK-GENERATOR-DELEGATION). This test used to read the
+    job file and assert its SQL, its re-pricing loop and its upsert line by line.
+    That job file no longer holds any of them: the mechanism moved to the single
+    `pick_generator.generate`, and the bot became a `BotConfig`. Keeping the old
+    assertions would have pinned the OLD REALITY — the most-repeated failure in
+    this suite (RELIABILITY_LEDGER "tests pinning the old reality") — so each one
+    is re-asserted at its new owner instead of deleted:
+
+        the bot's GATES        -> the BotConfig (one statement, and the same one
+                                  scripts/bots_describe.py prints)
+        the MECHANISM          -> pick_generator's source (asserted once, for
+                                  every bot at once, by PICK-GENERATOR)
+        DELEGATION itself      -> the job file must contain no second copy
+
+    Nothing is now pinned in two places, which is the whole point of the move:
+    the two mirrors drifted apart precisely because each held its own copy.
+    """
+    import inspect
     import os
     base = os.path.dirname(__file__)
+    from workers.jobs import coolbet_model_ou_shadow as mou
+    from workers.automation import coolbet_placer as _cp_ou
+    from workers.automation import pick_generator as _pg
+    from workers.automation.best_price_router import PLACEABLE_BOOKS
 
-    # ── the mirror job ────────────────────────────────────────────────────────
+    # ── the job module: an entry point, not a mechanism ──────────────────────
     job = open(os.path.join(base, "..", "workers", "jobs", "coolbet_model_ou_shadow.py"),
                encoding="utf-8").read()
-    assert 'BOT_NAME = "bot_coolbet_ou_model_v1"' in job, "mirror job must write under bot_coolbet_ou_model_v1"
-    assert 'SHADOW_COHORT = "coolbet_ou_model"' in job, "mirror job must use the coolbet_ou_model cohort"
-    # source: calibrated cohort, market='o/u', edge>=0.08 (FRACTION), calibrated_prob not null
-    assert "b.maturity_label = 'calibrated'" in job, "source must be the calibrated cohort"
-    # MARKET-VOCAB-CANONICAL Phase 2 step 2: the mirror now accepts BOTH legacy 'o/u'
-    # AND canonical 'over_under_25'/'35' so it keeps feeding the real-money O/U bot across
-    # the DB canonicalization (verified pick-equivalent on legacy data).
-    assert "lower(sb.market) IN ('o/u', 'over_under_25', 'over_under_35')" in job, (
-        "source market filter must accept both legacy 'o/u' and canonical over_under_25/35")
-    assert "sb.calibrated_prob IS NOT NULL" in job, "source must require a calibrated_prob (the placer's live-edge gate reads it)"
-    # FLOORS-ONE-SOURCE (2026-09-11): the default is now DERIVED from
-    # _MIN_EDGE_BY_MARKET['o/u'], not the literal "0.08". Pin the derivation and
-    # the resulting VALUE, not the old source text.
-    from workers.jobs import coolbet_model_ou_shadow as _mou
-    from workers.automation import coolbet_placer as _cp_ou
-    # MIRROR-PRICES-AT-ITS-OWN-BOOKS (2026-09-11): re-pointed, same as the 1x2
-    # mirror. This used to assert the job pre-filtered on `sb.edge_percent` —
-    # the PIPELINE's stored edge, which belongs to whichever book
-    # `recommended_bookmaker` was and had drifted from its own price on 9 of 11
-    # pending picks. The floor is now applied by `decide_book` against each
-    # PLACEABLE book's live quote, so the only sound SQL pre-filter left is the
-    # necessary condition (edge is always below cal_prob).
-    assert "sb.calibrated_prob > %s" in job, (
-        "edge floor must reach the SQL as a bound parameter on cal_prob — the "
-        "necessary condition — not as a filter on the pipeline's stored edge."
-    )
-    # Strip comments and the module docstring before asserting on ABSENCE: both
-    # legitimately describe the pre-filter that was REMOVED, and matching them
-    # is how a source-inspection test ends up forbidding its own explanation.
-    # (This is the most-repeated trap in this suite — see RELIABILITY_LEDGER.)
-    _job_code = "\n".join(
-        ln for ln in job.splitlines()
-        if not ln.lstrip().startswith(("--", "#"))
-    )
+    assert 'BOT_NAME = "bot_coolbet_ou_model_v1"' in job
+    assert 'SHADOW_COHORT = "coolbet_ou_model"' in job
     import re as _re
-    _job_code = _re.sub(r'"""', "", _job_code, count=2)
-    assert "sb.edge_percent >=" not in _job_code, (
-        "the O/U mirror must not pre-filter on the pipeline's stored edge; it "
-        "re-prices at the placeable books instead."
-    )
-    assert "decide_book(" in job and "_latest_book_odds(" in job, (
-        "the O/U mirror must price against the books we bet, via the router's "
-        "own helpers"
-    )
-    # The book lookup MUST use the CONVERTED canonical market/selection: a
-    # lookup on the legacy 'o/u' + 'over 2.5' spelling matches nothing in
-    # odds_snapshots and would silently drop every pick.
-    assert "_latest_book_odds(r[\"match_id\"], market, side)" in job, (
-        "book lookup must use the converted canonical market/selection"
-    )
-    assert 'COOLBET_MODEL_OU_EDGE_FLOOR' in job and '_MIN_EDGE_BY_MARKET' in job, (
-        "the o/u mirror must derive its default floor from the engine registry "
-        "(env override may remain), not re-type a literal"
-    )
-    assert _mou.EDGE_FLOOR == _cp_ou._MIN_EDGE_BY_MARKET["o/u"], (
-        "edge floor must equal the engine's o/u floor, as a FRACTION "
-        "(edge_percent is stored as a fraction, not a percentage)"
-    )
-    assert "sb.result = 'pending'" in job and "m.date > NOW()" in job, "only pending, future-kickoff picks"
-    assert "sb.user_placed_at IS NULL" in job and "sb.user_skipped_at IS NULL" in job, "skip operator-placed/skipped picks"
-    assert "DISTINCT ON (sb.match_id, sb.market, sb.selection)" in job, (
-        "one row per (match, market, line-side) — market included so the line is distinguished "
-        "whether it lives in the market (canonical) or the selection (legacy)")
-    # vocabulary conversion: only 2.5/3.5 supported, written as over_under_25/35 + over/under.
-    # MARKET-VOCAB-CANONICAL: the mirror delegates to the ONE normalizer, which handles both
-    # the legacy ('o/u'+'over 2.5') and canonical ('over_under_25'+'over') encodings.
-    from workers.canonical_market import normalize
-    assert "from workers.canonical_market import normalize" in job, "the mirror must delegate to the shared canonical normalizer"
-    assert '("over_under_25", "over_under_35")' in job, "only the placeable 2.5/3.5 lines may be mirrored"
-    # both encodings collapse to the same canonical O/U pick
-    assert normalize("o/u", "over 2.5") == normalize("over_under_25", "over"), "legacy and canonical O/U must collapse"
-    assert normalize("o/u", "over 1.5")["market"] == "over_under_15", "1.5 recognised but excluded by the mirror's 25/35 guard"
-    assert "INSERT INTO shadow_bets" in job and "ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)" in job, (
-        "must upsert on the shadow_bets unique key so re-runs update, not duplicate"
+    _job_code = _strip_prose(job)
+    for forbidden in ("INSERT INTO shadow_bets", "simulated_bets",
+                      "decide_book", "_latest_book_odds", "ON CONFLICT"):
+        assert forbidden not in _job_code, (
+            f"the O/U mirror must DELEGATE to pick_generator — a second copy of "
+            f"{forbidden!r} here is how this bot and the 1x2 one drifted apart "
+            f"(this one applied no odds floor at all, the other pre-filtered on "
+            f"the pipeline's price)"
+        )
+    assert "from workers.automation.pick_generator import generate" in (
+        inspect.getsource(mou.generate_picks)), (
+        "generate_picks must run the shared mechanism"
     )
     # it must NOT invent a settler — over_under_25/35 grade via the generic resolver
     assert "def settle" not in job, "no custom settler — over_under_25/35 settle via the generic goals O/U resolver"
 
+    # ── the bot's gates, read off the config the scheduler actually runs ─────
+    cfg = mou.config()
+    assert cfg.bot_name == "bot_coolbet_ou_model_v1"
+    assert cfg.shadow_cohort == "coolbet_ou_model"
+    assert cfg.prob_source == "pipeline", (
+        "the real-money O/U bot must stay on the probability it was VALIDATED "
+        "on; the wide-source experiment is the separate paper twin"
+    )
+    assert cfg.maturity == ("calibrated",), "source must be the calibrated cohort"
+    # Accepts BOTH the legacy 'o/u' spelling and the canonical ones so it keeps
+    # feeding through the DB vocabulary migration (MARKET-VOCAB-CANONICAL).
+    assert set(cfg.markets) == {"o/u", "over_under_25", "over_under_35"}, cfg.markets
+    assert tuple(cfg.books) == tuple(PLACEABLE_BOOKS), (
+        "the bot is shared across every placeable book — its coolbet_* NAME is "
+        "history, its SCOPE is both books"
+    )
+
+    # FLOORS-ONE-SOURCE: the floors are the ENGINE's, not re-typed here. The
+    # config carries None (= registry) and the effective value is derived.
+    assert cfg.edge_floor is None and cfg.odds_floor is None, (
+        "the O/U bot must inherit the registry floors — a number in the config "
+        "is a deliberate deviation and there is none here"
+    )
+    assert mou.EDGE_FLOOR == _cp_ou._MIN_EDGE_BY_MARKET["o/u"], (
+        "edge floor must equal the engine's o/u floor, as a FRACTION "
+        "(edge_percent is stored as a fraction, not a percentage)"
+    )
+    assert mou.MIN_ODDS == _cp_ou._min_odds_for("o/u"), (
+        "MIRROR-PRICES-AT-ITS-OWN-BOOKS: this mirror once applied NO odds floor "
+        "at all — it must now take the placer's registry floor"
+    )
+    # The retired-market guard must survive the refactor: a None registry floor
+    # means the market is retired and this bot must stop, not substitute one.
+    assert "is None" in job and "RuntimeError" in job, (
+        "the fail-loud guard for a retired o/u floor must not be lost"
+    )
+
+    # ── vocabulary conversion: only 2.5/3.5, via the ONE normalizer ──────────
+    from workers.canonical_market import normalize
+    assert cfg.convert is not None, "the O/U bot must declare its conversion"
+    assert cfg.convert("o/u", "over 2.5") == ("over_under_25", "over")
+    assert cfg.convert("o/u", "under 3.5") == ("over_under_35", "under")
+    assert cfg.convert("o/u", "over 1.5") is None, (
+        "1.5 is recognised by the normalizer but must be SKIPPED, never rounded "
+        "— rounding fabricates both a price and a settlement line"
+    )
+    assert cfg.convert("o/u", "over 4.5") is None
+    # the module's own _convert must be the same function's output, not a copy
+    assert mou._convert("o/u", "over 2.5") == cfg.convert("o/u", "over 2.5")
+    assert "from workers.automation.bot_configs import _ou_convert" in (
+        inspect.getsource(mou._convert)), "must delegate, not re-implement"
+    assert normalize("o/u", "over 2.5") == normalize("over_under_25", "over"), (
+        "legacy and canonical O/U must collapse to the same canonical pick")
+
     # ── the generic settler DOES grade over_under_ shadow rows (not skipped) ──
     settle = open(os.path.join(base, "..", "workers", "jobs", "settlement.py"), encoding="utf-8").read()
-    # the shadow settler only excludes corners_ou_%, never over_under_%
     assert "sb.market NOT LIKE 'corners_ou_%%'" in settle, "shadow settler still scoped to skip corners only"
     assert "over_under" in settle, "the goals O/U resolver must still match over_under markets"
 
     # ── UI placer: threshold present at 0.08, real money OFF by default ───────
-    # COOLBET-PLACER-CONTROL-2026-09-08: real-money enablement moved from the
-    # code constant EXECUTE_ALLOWED_BOTS + env flag COOLBET_UI_MODEL_EDGE_OU to a
-    # runtime DB toggle (coolbet_placer_bots) intersected with the code-level
-    # hard whitelist PLACEABLE_BOTS. The model bot is now PLACEABLE but seeded
-    # OFF in migration 310 — off by default, flippable by a superadmin, and the
-    # env flag is gone. (Fail-closed + intersection semantics are pinned by the
-    # dedicated COOLBET-PLACER-CONTROL test.)
+    # COOLBET-PLACER-CONTROL-2026-09-08: real-money enablement is a runtime DB
+    # toggle (coolbet_placer_bots) intersected with the code-level hard
+    # whitelist PLACEABLE_BOTS. The model bot is PLACEABLE but seeded OFF in
+    # migration 310, and the old COOLBET_UI_MODEL_EDGE_OU env flag is gone.
     ui = open(os.path.join(base, "place_coolbet_ui.py"), encoding="utf-8").read()
     assert '"bot_coolbet_ou_model_v1": 0.08' in ui, "the model-edge O/U bot must be in BOT_THRESHOLDS at 0.08"
-    # the two model bots must be PLACEABLE (allowed to place once enabled); the
-    # line-shop bot_coolbet_value_v1 was RETIRED 2026-09-08 and removed from the set.
     assert 'PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in ui, (
         "PLACEABLE_BOTS must be exactly the two model bots (line-shop value_v1 retired)"
     )
     assert '"bot_coolbet_value_v1"' not in ui.split("PLACEABLE_BOTS")[1][:200], (
         "the retired line-shop bot must not be in PLACEABLE_BOTS"
     )
-    # … but the retired env CODE PATH must NOT come back — that gate is gone.
-    # (Scoped to os.getenv, not the bare name: a comment legitimately mentions
-    # the retired flag to explain the change — assert against the code, not the
-    # prose describing it, per the OU-INVERTED/STALE-ODDS lesson.)
+    # Scoped to os.getenv, not the bare name: a comment legitimately mentions
+    # the retired flag to explain the change.
     assert 'os.getenv("COOLBET_UI_MODEL_EDGE_OU")' not in ui, (
         "the COOLBET_UI_MODEL_EDGE_OU env path was replaced by the DB toggle and "
         "must not linger — the toggle is the single enable/disable source"
     )
     assert "EXECUTE_ALLOWED_BOTS =" not in ui, "the old code-level allowlist assignment must be gone"
-    # … and it must be seeded OFF in migration 310 (real money off by default).
     mig = open(os.path.join(base, "..", "supabase", "migrations",
                "310_coolbet_placer_bots.sql"), encoding="utf-8").read()
-    import re as _re
     ou_seed = _re.search(r"\('bot_coolbet_ou_model_v1',\s*false", mig)
     assert ou_seed is not None, (
         "migration 310 must seed bot_coolbet_ou_model_v1 with ui_place_enabled=false "
@@ -4498,104 +4538,111 @@ def test_coolbet_model_ou_shadow():
     )
 
 
-@test("COOLBET-MODEL-1X2-SHADOW — model-edge 1x2 bot: mirror job + off-by-default real-money wiring")
+@test("COOLBET-MODEL-1X2-SHADOW — model-edge 1x2 bot: config + delegation + off-by-default real-money wiring")
 def test_coolbet_model_1x2_shadow():
-    """COOLBET-MODEL-1X2-SHADOW-BOT (2026-09-08): bot_coolbet_1x2_model_v1 mirrors
-    the calibrated model's 1x2 picks (edge>=13% on calibrated_prob) into
-    shadow_bets WITHOUT vocabulary conversion (market stays '1x2', selection stays
-    home/draw/away) so they place through the Coolbet UI placer with the validated
-    2D gate (edge>=13%, odds>=2.80). It REPLACES the paused line-shop 1x2. Real
-    money is OFF unless the coolbet_placer_bots toggle is flipped ON. Pin all of
-    this so a regression cannot silently (a) change the source/edge, (b) sneak in
-    a vocabulary conversion, or (c) let the bot place real money by default."""
-    import os
-    base = os.path.dirname(__file__)
+    """COOLBET-MODEL-1X2-SHADOW-BOT (2026-09-08): bot_coolbet_1x2_model_v1 takes
+    the calibrated model's 1x2 probabilities for HOME picks, re-prices them at the
+    books we can bet, and writes market='1x2' + home straight through (no
+    vocabulary conversion) so they place through the UI placer with the validated
+    2D gate. It REPLACES the paused line-shop 1x2. Real money is OFF unless the
+    DB toggle is flipped.
 
-    # ── the mirror job ────────────────────────────────────────────────────────
+    RE-POINTED 2026-09-11 (PICK-GENERATOR-DELEGATION) — same move as the O/U
+    test above: the job file no longer holds the SQL, the re-pricing loop or the
+    upsert, so every assertion about those is re-asserted at its new owner (the
+    BotConfig for gates, pick_generator's source for the mechanism) rather than
+    left pinning the old reality.
+
+    FAVLONG-CUTS-2026-09-09 is the load-bearing gate here and it is now TWO
+    config fields rather than a hand-written SQL clause: `selections=("home",)`
+    plus the registry odds floor. Home-underdogs are the one fold-robust 1x2
+    engine; home-favs lose at every floor, aways are not robust, and draws are a
+    sharp edge the model cannot see (ANALYSIS_GOTCHAS 57). The 2.80 floor then
+    excludes home-favs by construction.
+    """
+    import inspect
+    import os
+    import re as _re
+    base = os.path.dirname(__file__)
+    from workers.jobs import coolbet_model_1x2_shadow as m1
+    from workers.automation import coolbet_placer as _cp
+    from workers.automation.best_price_router import PLACEABLE_BOOKS
+
+    # ── the job module: an entry point, not a mechanism ──────────────────────
     job = open(os.path.join(base, "..", "workers", "jobs", "coolbet_model_1x2_shadow.py"),
                encoding="utf-8").read()
-    assert 'BOT_NAME = "bot_coolbet_1x2_model_v1"' in job, "mirror job must write under bot_coolbet_1x2_model_v1"
-    assert 'SHADOW_COHORT = "coolbet_1x2_model"' in job, "mirror job must use the coolbet_1x2_model cohort"
-    # SQL-PERCENT-GUARD (2026-09-10): a bare '%' in the query string — even in a SQL
-    # comment — is read by psycopg2 as a format placeholder, throws "list index out of
-    # range", and the non-fatal catch swallowed it → the real-money 1x2 bot silently
-    # wrote 0 picks since 2026-09-08. Forbid bare '%' in this job's SQL comments.
+    assert 'BOT_NAME = "bot_coolbet_1x2_model_v1"' in job
+    assert 'SHADOW_COHORT = "coolbet_1x2_model"' in job
+    # SQL-PERCENT-GUARD (2026-09-10): a bare '%' in a query string — SQL comments
+    # included — is read by psycopg2 as a format placeholder, throws "list index
+    # out of range", and the non-fatal catch swallowed it, so the real-money 1x2
+    # bot silently wrote 0 picks for two days. This job holds no SQL any more,
+    # but the guard stays: it costs nothing and the class recurs.
     for _ln in job.splitlines():
         if _ln.strip().startswith("--") and "%" in _ln:
             raise AssertionError(f"bare '%' in a SQL comment breaks psycopg2 — reword/escape: {_ln.strip()!r}")
-    # source: calibrated cohort, market='1x2', edge>=0.13 (FRACTION), calibrated_prob not null
-    assert "b.maturity_label = 'calibrated'" in job, "source must be the calibrated cohort"
-    assert "sb.market = '1x2'" in job, "source market must be '1x2'"
-    assert "sb.calibrated_prob IS NOT NULL" in job, "source must require a calibrated_prob (the placer's live-edge gate reads it)"
-    # FLOORS-ONE-SOURCE (2026-09-11): derived from _MODEL_1X2_HOME_FLOOR now.
-    # MIRROR-PRICES-AT-ITS-OWN-BOOKS (2026-09-11): this used to assert
-    # `sb.edge_percent >= %s`, i.e. that the mirror pre-filtered on the
-    # PIPELINE's stored edge. That is exactly the bug — the stored edge belongs
-    # to whichever book `recommended_bookmaker` was, not to a book this bot can
-    # bet, and it had drifted from its own price on 9 of 11 pending picks.
-    # Nancy v Reims was rejected on Betano's 3.15 while Coolbet was live at 3.25
-    # and clearing. The floor is now applied by `decide_book` against each
-    # PLACEABLE book's live price, so the only sound SQL pre-filter left is the
-    # necessary condition: edge < cal_prob, so nothing can clear unless
-    # cal_prob > floor.
-    assert "sb.calibrated_prob > %s" in job, (
-        "edge floor must reach the SQL as a bound parameter on cal_prob — the "
-        "necessary condition — not as a filter on the pipeline's stored edge."
+    _job_code = _strip_prose(job)
+    for forbidden in ("INSERT INTO shadow_bets", "simulated_bets",
+                      "decide_book", "_latest_book_odds", "ON CONFLICT"):
+        assert forbidden not in _job_code, (
+            f"the 1x2 mirror must DELEGATE to pick_generator — a second copy of "
+            f"{forbidden!r} here is how this bot and the O/U one drifted apart"
+        )
+    assert "from workers.automation.pick_generator import generate" in (
+        inspect.getsource(m1.generate_picks)), (
+        "generate_picks must run the shared mechanism"
     )
-    assert "sb.edge_percent >=" not in job, (
-        "the 1x2 mirror must NOT pre-filter on the pipeline's stored edge; it "
-        "re-prices at the placeable books instead."
-    )
-    assert 'COOLBET_MODEL_1X2_EDGE_FLOOR' in job and '_MODEL_1X2_HOME_FLOOR' in job, (
-        "the 1x2 mirror must derive its default floor from the engine registry "
-        "(env override may remain), not re-type a literal"
-    )
-    # FAVLONG-CUTS-2026-09-09: real-money 1x2 = HOME-UNDERDOGS only (home + odds>=2.80).
-    assert "lower(sb.selection) = 'home'" in job, (
-        "mirror must restrict to home picks — home-favs lose, aways aren't robust, draws are "
-        "a sharp edge (ANALYSIS_GOTCHAS §57)")
-    # FLOORS-ONE-SOURCE (2026-09-11): the odds floor was once a hardcoded
-    # `>= 2.80` inside the SQL, unreachable from any constant; then a bound
-    # parameter fed by MIN_ODDS.
-    # MIRROR-PRICES-AT-ITS-OWN-BOOKS (2026-09-11): it is no longer an SQL filter
-    # at all, and must not be — filtering there tests the PIPELINE's price, not
-    # the price at a book this bot can bet. The floor now reaches `decide_book`,
-    # which applies it to each placeable book's own live quote. Still one
-    # source: MIN_ODDS derives from the placer's _min_odds_for('1x2').
-    assert "decide_book(" in job and "MIN_ODDS" in job, (
-        "the odds floor must be passed to decide_book and applied per book, "
-        "not pre-filtered in SQL against the pipeline's price")
-    assert "COALESCE(sb.odds_at_pick_live, sb.odds_at_pick) >= %s" not in job, (
-        "the mirror must not pre-filter on the pipeline's odds — that is how "
-        "Nancy was dropped on Betano's 3.15 while Coolbet showed 3.25")
-    assert "_min_odds_for" in job, (
-        "the mirror's odds floor must derive from the placer's registry so it "
-        "cannot drift from the gate that actually stakes money")
-    assert "sb.result = 'pending'" in job and "m.date > NOW()" in job, "only pending, future-kickoff picks"
-    assert "sb.user_placed_at IS NULL" in job and "sb.user_skipped_at IS NULL" in job, "skip operator-placed/skipped picks"
-    assert "DISTINCT ON (sb.match_id, sb.selection)" in job, "one row per (match, selection), highest edge"
-    # NO vocabulary conversion — write market='1x2' + home/draw/away straight through.
-    assert '"1x2"' in job, "must write market='1x2' straight through — no conversion"
-    assert 'in ("home", "draw", "away")' in job, "selection must be one of the three 1x2 outcomes, written straight through"
-    # guard against a copied-in O/U conversion leaking into this job
-    assert "over_under" not in job and "_SUPPORTED_LINES" not in job and "_convert(" not in job, (
-        "the 1x2 mirror must NOT contain any O/U vocabulary conversion — 1x2 needs none"
-    )
-    assert "INSERT INTO shadow_bets" in job and "ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)" in job, (
-        "must upsert on the shadow_bets unique key so re-runs update, not duplicate"
-    )
-    # it must NOT invent a settler — '1x2' grades via the generic match-result resolver
     assert "def settle" not in job, "no custom settler — '1x2' settles via the generic match-result resolver"
+
+    # ── the bot's gates, read off the config the scheduler actually runs ─────
+    cfg = m1.config()
+    assert cfg.bot_name == "bot_coolbet_1x2_model_v1"
+    assert cfg.shadow_cohort == "coolbet_1x2_model"
+    assert cfg.prob_source == "pipeline", (
+        "the real-money 1x2 bot must stay on the probability it was VALIDATED on"
+    )
+    assert cfg.maturity == ("calibrated",), "source must be the calibrated cohort"
+    assert cfg.markets == ("1x2",), "market is written straight through — no conversion"
+    assert cfg.convert is None, (
+        "the 1x2 bot must NOT carry a vocabulary conversion — 1x2 is already "
+        "the placer's market and home/draw/away already its selections"
+    )
+    # FAVLONG-CUTS-2026-09-09: HOME ONLY.
+    assert cfg.selections == ("home",), (
+        "real-money 1x2 is home-underdogs only — home-favs lose, aways aren't "
+        "robust, draws are a sharp edge the model can't see (ANALYSIS_GOTCHAS 57)"
+    )
+    assert tuple(cfg.books) == tuple(PLACEABLE_BOOKS), (
+        "the bot is shared across every placeable book — its coolbet_* NAME is "
+        "history, its SCOPE is both books"
+    )
+
+    # FLOORS-ONE-SOURCE: registry-derived, not re-typed. The 1x2 edge floor once
+    # had SIX independent copies across the stack.
+    assert cfg.edge_floor is None and cfg.odds_floor is None, (
+        "the 1x2 bot must inherit the selection-aware registry floor"
+    )
+    assert m1.EDGE_FLOOR == _cp._MODEL_1X2_HOME_FLOOR, (
+        "the 1x2 mirror's edge floor must derive from _MODEL_1X2_HOME_FLOOR"
+    )
+    assert m1.MIN_ODDS == _cp._min_odds_for("1x2"), (
+        "the odds floor must derive from the placer's registry; it used to be a "
+        "`>= 2.80` literal inside the SQL where no constant reached it"
+    )
+    # The floor the bot applies must be the SELECTION-AWARE one, not the pooled
+    # 13% — the pooled floor was admitting home-favs and dropping profitable
+    # 10-13% home-underdogs, which is why min_edge_for_pick exists.
+    assert m1.EDGE_FLOOR == _cp.min_edge_for_pick("1x2", "home", m1.MIN_ODDS), (
+        "the 1x2 bot's floor must come from the one selection-aware predicate"
+    )
 
     # ── migration 312: cohort in the CHECK, bot registered, toggle seeded OFF ──
     mig = open(os.path.join(base, "..", "supabase", "migrations",
                "312_bot_coolbet_1x2_model_shadow.sql"), encoding="utf-8").read()
-    # the new cohort is added AND the prior cohorts are kept (no CHECK regression)
     assert "'coolbet_1x2_model'" in mig, "migration 312 must allow the coolbet_1x2_model shadow_cohort"
     for kept in ("'morning'", "'midday'", "'pre_ko'", "'corners_paper'", "'coolbet_ou_model'"):
         assert kept in mig, f"migration 312 must KEEP the existing shadow_cohort value {kept}"
     assert "'bot_coolbet_1x2_model_v1'" in mig and "'experimental'" in mig, "migration must register the bot as experimental"
-    import re as _re
     seed = _re.search(r"\('bot_coolbet_1x2_model_v1',\s*false", mig)
     assert seed is not None, (
         "migration 312 must seed bot_coolbet_1x2_model_v1 with ui_place_enabled=false "
@@ -4605,14 +4652,13 @@ def test_coolbet_model_1x2_shadow():
     # ── UI placer: threshold present at 0.10 (FAVLONG-CUTS), bot PLACEABLE ────
     ui = open(os.path.join(base, "place_coolbet_ui.py"), encoding="utf-8").read()
     assert '"bot_coolbet_1x2_model_v1": 0.10' in ui, (
-        "the model-edge 1x2 bot must be in BOT_THRESHOLDS at 0.10 — FAVLONG-CUTS-2026-09-09: "
-        "home-underdogs are the fold-robust 1x2 engine, robust to 10% on odds>=2.80. The "
-        "placer's live-edge gate 1/(cal_prob-threshold) reads this."
+        "the model-edge 1x2 bot must be in BOT_THRESHOLDS at 0.10 — FAVLONG-CUTS: "
+        "home-underdogs are the fold-robust 1x2 engine, robust to 10% on odds>=2.80. "
+        "The placer's live-edge gate 1/(cal_prob-threshold) reads this."
     )
     assert 'PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in ui, (
         "bot_coolbet_1x2_model_v1 must be in PLACEABLE_BOTS so the DB toggle can enable it"
     )
-    # the line-shop O/U stop must stay SCOPED to value_v1 — it must never block 1x2
     assert 'bot_name == "bot_coolbet_value_v1"' in ui, (
         "the line-shop O/U stop must stay scoped to bot_coolbet_value_v1 — it must "
         "not affect the model-edge 1x2 bot"
@@ -37527,19 +37573,22 @@ def test_mirror_prices_at_its_own_books():
     at, via the router's own `_latest_book_odds` (180-min freshness cap) and
     `decide_book`, reused rather than re-implemented.
 
-    The bot is shared across BOTH placeable books (owner: "this 1x2 bot is for
-    both unibet and coolbet"), so the winning book is recorded as provenance —
-    the placer still re-decides on live odds at placement time.
+    RE-POINTED 2026-09-11 (PICK-GENERATOR-DELEGATION). This read
+    `coolbet_model_1x2_shadow.generate_picks`, because that function held its
+    own copy of the loop. It now delegates, so the assertions point at the ONE
+    mechanism — which is strictly stronger: the property is no longer "the 1x2
+    mirror re-prices" but "every bot re-prices, because there is only one way
+    for a bot to emit a pick at all".
     """
     import inspect
-    import pathlib as _pl
-    from workers.jobs import coolbet_model_1x2_shadow as M
+    from workers.automation import pick_generator as pg
+    from workers.automation.bot_configs import ALL_CONFIGS
 
-    gsrc = inspect.getsource(M.generate_picks)
+    gsrc = _strip_prose(inspect.getsource(pg))
 
     # It must re-price, not copy.
     assert "_latest_book_odds" in gsrc and "decide_book" in gsrc, (
-        "the mirror must price against the placeable books via the router's "
+        "the mechanism must price against the placeable books via the router's "
         "own helpers — not carry the pipeline's recommended-book price."
     )
     assert 'r["edge_percent"]' not in gsrc, (
@@ -37547,6 +37596,11 @@ def test_mirror_prices_at_its_own_books():
         "simulated_bets, or it can disagree with the odds in the same row."
     )
     assert "cal_prob - 1.0 / price" in gsrc, "edge must be computed from the winning price"
+    assert "recommended_bookmaker" in gsrc, (
+        "the winning book must be recorded — the bots are shared across BOTH "
+        "placeable books, so the row is the only thing that tells the placer "
+        "where the qualifying price came from"
+    )
 
     # The SQL pre-filter must not gate on a foreign price. The only sound
     # pre-filter is the necessary condition cal_prob > floor.
@@ -37555,21 +37609,27 @@ def test_mirror_prices_at_its_own_books():
         "filtering on the pipeline's odds/edge is what lost the bet."
     )
     assert "sb.edge_percent >=" not in gsrc, (
-        "the mirror must not pre-filter on the pipeline's stored edge"
+        "the mechanism must not pre-filter on the pipeline's stored edge"
+    )
+    assert "COALESCE(sb.odds_at_pick_live, sb.odds_at_pick) >=" not in gsrc, (
+        "no pre-filter on the pipeline's price — that is how Nancy was dropped "
+        "on Betano's 3.15 while Coolbet showed 3.25"
     )
 
     # psycopg2 scans the WHOLE query for placeholders, comments included, so a
     # literal per-cent sign in an SQL comment raises IndexError before the DB
-    # sees it. This bit twice while writing the fix.
-    i = gsrc.index("SELECT DISTINCT ON")
-    j = gsrc.index('"""', i)
-    sql = gsrc[i:j]
-    assert sql.count("%") == sql.count("%s"), (
-        "literal per-cent sign in the mirror's SQL (comments included) — "
-        "psycopg2 parses it as a parameter placeholder and raises "
-        "'list index out of range' before the query runs."
-    )
+    # sees it. This bit twice while writing the original fix, and it had already
+    # silently zeroed the real-money 1x2 bot for two days (SQL-PERCENT-GUARD).
+    for _ln in inspect.getsource(pg).splitlines():
+        if _ln.strip().startswith("--") and "%" in _ln:
+            raise AssertionError(
+                f"bare '%' in a SQL comment breaks psycopg2 — reword/escape: "
+                f"{_ln.strip()!r}"
+            )
 
+    # And no bot can opt out: a config carries gates, never a price or an edge.
+    for c in ALL_CONFIGS:
+        assert c.books, f"{c.bot_name} must declare which books it may bet"
 
 
 @test("TRIGGER-FLOOR-SELECTION-AWARE — trigger windows use the same floor as the bot they shadow")
@@ -37994,6 +38054,59 @@ def test_pick_generator():
         assert c.prob_source in ("pipeline", "predictions"), c.prob_source
 
 
+@test("ODDS-ARRIVAL-HOOK-BOTH-SWEEPS — every book we place at fires the generator")
+def test_odds_arrival_hook_both_sweeps():
+    """A hook wired on one of two books is a bug that only shows up as latency.
+
+    The generators used to run on a :10/:40 clock while the sweeps land at
+    :03/:33 (Coolbet) and :15/:45 (Unibet-Site). So a qualifying price sat
+    unused for up to ~30 minutes, which for a match kicking off in 40 was the
+    whole window. Nancy was the concrete cost: gated on a 14.8h-old Coolbet
+    quote of 3.10 while the live price was 3.25 and clearing.
+
+    Coolbet's hook shipped first. This test exists because wiring only that
+    one leaves the Unibet half silently on the old clock — and the mirrors
+    price across BOTH books, so a new Unibet quote can change which book wins
+    a pick the bots already hold. Nothing errors when the hook is missing;
+    picks just arrive late. Hence a test rather than a comment.
+
+    Pinned per sweep:
+      * it calls on_odds_written
+      * guarded on rows actually written — a swept-but-wrote-nothing tick
+        (logged-out tab, rate limit, dry run) changes no price and so cannot
+        change a decision
+      * imported INSIDE the function, so an import-time failure in the
+        generator can never stop odds collection
+    """
+    import inspect
+    from workers.automation import coolbet_explorer as ce
+    from workers.automation import unibet_odds_feed as uf
+
+    sweeps = [
+        ("Coolbet", inspect.getsource(ce.run_board_sweep), 'stored_rows'),
+        ("Unibet-Site", inspect.getsource(uf.run_bulk), '"stored"'),
+    ]
+    for book, src, guard in sweeps:
+        assert "on_odds_written" in src, (
+            f"the {book} sweep must fire the odds-arrival hook when prices "
+            f"land, not leave the generator on a 30-minute clock"
+        )
+        assert guard in src, (
+            f"the {book} hook must be guarded on rows actually written "
+            f"(expected {guard} in the guard)"
+        )
+        # The import has to be local to the call site.
+        hook_line = next(i for i, l in enumerate(src.splitlines())
+                         if "on_odds_written" in l and "import" in l)
+        indent = len(src.splitlines()[hook_line]) - len(
+            src.splitlines()[hook_line].lstrip())
+        assert indent > 0, (
+            f"the {book} sweep must import on_odds_written INSIDE the "
+            f"function — a module-level import makes a generator import "
+            f"error stop odds collection itself"
+        )
+
+
 @test("EVERY-REGISTRY-BOT-IS-VISIBLE")
 def test_every_registry_bot_is_visible():
     """PAPER-BOTS-INVISIBLE-2026-09-11 — a bot nobody can see is a bot nobody checks.
@@ -38255,6 +38368,87 @@ def test_odds_freshness_dedup_column_2026_09_11():
                       (probe,))
 
     return "dedup row writes to last_alert_reason and round-trips"
+
+
+@test("OU-LINE-GOALS-LADDER — the MAIN goals over/under must carry the numeric line too")
+def test_ou_line_goals_ladder():
+    """OU-LINE-BACKFILL-2026-09-11 — MARKET-LINE-ENCODING-LOSSY was applied to
+    the SIDE totals and missed the family it matters most for.
+
+    The 2026-09-06 rule is "every totals writer must carry the numeric line",
+    and MARKET-LINE-ENCODING-LOSSY tests it — but only through a **corners**
+    market on each parser. Both parsers reach corners by a different branch than
+    the main goals ladder, so the test passed while `over_under_*` wrote NULL at
+    Coolbet and at all 13 API-Football books. §41 exactly: the test did not test
+    the thing.
+
+    Measured 2026-09-11 over 48h before the fix — `handicap_line` set on:
+
+        corners_ou_*, cards_ou_*, team_total_*   100 pct at every book
+        over_under_*                               0 pct at all 13 AF books
+        over_under_*                             100 pct at Epicbet /
+                                                 Unibet-Site / Unibet-Kambi
+
+    Those three are our own scrapers, whose generic OU path already carried it.
+    So it read as a per-book convention split — and any cross-book O/U join keyed
+    on handicap_line silently returned ZERO rows across the two camps
+    (ANALYSIS_GOTCHAS §61). It is not a convention split. It is one fix applied
+    to some branches and not others.
+
+    It is not cosmetic here: `str(1.25)` and `str(12.5)` both encode to "125",
+    and we hold 26,030 `over_under_125` rows plus 15,419 `over_under_1h_125`
+    whose true line is now unrecoverable from the name. That is the same token
+    that settled 634 fabricated losing bets. Migration 332 backfills the 8.28M
+    rows the name DOES determine and deliberately leaves 251,953 ambiguous ones
+    NULL rather than guessing.
+    """
+    import inspect
+    from workers.automation.coolbet_explorer import parse_market
+    from workers.api_clients import api_football as af
+
+    # Coolbet: drive the MAIN goals branch (not corners) and demand the line.
+    cb = parse_market(
+        {"name": "Total Goals", "line": 2.5, "market_type_id": 5,
+         "outcomes": [{"id": 1, "result_key": "Over"},
+                      {"id": 2, "result_key": "Under"}]},
+        # floats, not strings: _add() compares `odds > 1.0` directly, where the
+        # corners branch does its own float() — so a string fixture TypeErrors
+        # here while passing there. Production supplies floats.
+        {1: {"value": 1.90}, 2: {"value": 1.95}},
+    )
+    if cb:  # the market-type dispatch must have recognised it as OU
+        assert all(r[0] == "over_under_25" for r in cb), f"expected goals OU, got {cb}"
+        assert all(r[3] == 2.5 for r in cb), (
+            f"Coolbet's MAIN goals ladder lost the numeric line: {cb}. The side "
+            "totals branch passes it to _add(); this branch must too."
+        )
+
+    # API-Football: the biggest producer of over_under_* rows. Source-inspect the
+    # "Goals Over/Under" branch — it needs a live payload to drive, and the point
+    # is that the dict it appends carries handicap_line.
+    src = inspect.getsource(af)
+    i = src.find('elif bet_name == "Goals Over/Under":')
+    assert i != -1, "the Goals Over/Under branch moved — re-point this test"
+    # bound the branch at the NEXT elif rather than a character count — the
+    # explanatory comment inside it is long, and a fixed window silently
+    # excluded the very line being asserted.
+    nxt = src.find("                elif bet_name", i + 10)
+    branch = src[i:nxt if nxt != -1 else i + 6000]
+    assert '"handicap_line": line_num' in branch, (
+        "the API-Football Goals Over/Under branch must emit handicap_line — it "
+        "is the single biggest producer of over_under_* rows and wrote NULL on "
+        "100 pct of them until 2026-09-11"
+    )
+
+    # The migration must NOT guess at the ambiguous tokens.
+    import pathlib as _pl
+    mig = _pl.Path("scripts/backfill_ou_handicap_line.py").read_text()
+    assert "NOT LIKE '0%'" in mig, (
+        "the backfill must EXCLUDE 3-digit tokens that do not start with 0 — "
+        "'275' is 2.75 or 27.5 and the name cannot say which. Guessing the "
+        "plausible reading is precisely what produced the 634 bets."
+    )
+
 
 if __name__ == "__main__":
     main()

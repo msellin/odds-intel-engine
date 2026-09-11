@@ -551,6 +551,24 @@ def run_bulk(days: int = 2, dry_run: bool = False, limit: int | None = None) -> 
                 dedup_key="unibet-site-no-tab", dedup_window_s=10800)
     except Exception as e:  # noqa: BLE001
         log.debug("unibet-site stale alert failed (non-fatal): %s", e)
+
+    # ODDS-ARRIVAL HOOK (2026-09-11) — the Unibet half of what Coolbet's
+    # `run_board_sweep` already does. Fresh Unibet prices have just landed, so
+    # re-derive the candidates NOW rather than at the next :10/:40 generator
+    # poll. This matters MORE on this side than on Coolbet's: Unibet sweeps
+    # :15/:45 and the generators ran :10/:40, so a qualifying Unibet price
+    # waited ~25 minutes every single time — and the mirrors price across BOTH
+    # books, so a new Unibet quote can change which book wins a pick the bots
+    # already hold.
+    #
+    # Guarded on `stored` because a swept-but-wrote-nothing tick (logged-out
+    # tab, rate limit, dry run) changes no price and so cannot change any
+    # decision. `on_odds_written` never raises — collecting odds is this
+    # function's job and must survive a pick-generation failure.
+    if not dry_run and (res or {}).get("stored", 0):
+        from workers.automation.pick_generator import on_odds_written
+        on_odds_written("Unibet-Site")
+
     return res
 
 

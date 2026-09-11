@@ -69,15 +69,35 @@ Pinnacle/Marathonbet/10Bet/888Sport removed (EMTA-blocked); `Unibet-Kambi` remov
 
 ## 3. RE-PROJECTION — simulated_bets → shadow_bets (the placeable bots)
 
-Two mirror jobs (added 2026-09-08) route the calibrated model's own picks through the proven
-Coolbet placer. They **carry the best-accessible edge/price straight through** (do NOT recompute
-against a specific book — they trust the placer to re-check the live book price downstream):
+Two mirror bots (added 2026-09-08) route the calibrated model's own picks through the proven
+Coolbet placer.
 
-- `workers/jobs/coolbet_model_ou_shadow.py` → bot `bot_coolbet_ou_model_v1`, `EDGE_FLOOR=0.08`,
-  vocabulary convert `over 2.5 → over_under_25/over` (2.5/3.5 only).
-- `workers/jobs/coolbet_model_1x2_shadow.py` → bot `bot_coolbet_1x2_model_v1`. **FAVLONG-CUTS-2026-09-09:
-  HOME-UNDERDOGS ONLY** — `selection=home AND odds≥2.80 AND edge≥0.10` (home-favs lose, aways aren't
-  fold-robust, draws are a sharp edge; §57 + BETTING_GATE_DECISIONS "1x2 by type"). No vocabulary conversion.
+⚠️ **CORRECTED 2026-09-11.** This section used to say they *"carry the best-accessible edge/price
+straight through (do NOT recompute against a specific book — they trust the placer to re-check the
+live book price downstream)"*. That was the description of a **bug**, not a design. The carried
+price is whichever book the pipeline recommended, which is usually not a book we can bet: Nancy v
+Reims was dropped on Betano's 3.15 while Coolbet was live at 3.25 and clearing. The placer
+re-checking downstream can only ever NARROW the set, so a pick that clears at OUR book and not at
+the pipeline's was lost before the placer ever saw it. Both bots now **re-price at every book they
+may bet and derive the edge from the winning price** (MIRROR-PRICES-AT-ITS-OWN-BOOKS).
+
+**And since PICK-GENERATOR-DELEGATION (2026-09-11) neither job file holds a mechanism.** The two
+were near-identical 250-line modules that had already drifted apart — one pre-filtering on the
+pipeline's odds, the other applying no odds floor at all — so the loop moved to the single
+`workers/automation/pick_generator.generate` and each bot became a `BotConfig` in
+`workers/automation/bot_configs.py`. The job modules are entry points; `scripts/bots_describe.py`
+prints every bot's gates side by side.
+
+- `bot_coolbet_ou_model_v1` (`workers/jobs/coolbet_model_ou_shadow.py`) — goals O/U, registry floors
+  (edge 0.08, odds 1.80), vocabulary convert `over 2.5 → over_under_25/over` (2.5/3.5 only; any other
+  line is SKIPPED, never rounded).
+- `bot_coolbet_1x2_model_v1` (`workers/jobs/coolbet_model_1x2_shadow.py`) — **FAVLONG-CUTS-2026-09-09:
+  HOME-UNDERDOGS ONLY**, which is now two config fields (`selections=("home",)` plus the registry's
+  2.80 odds floor) rather than a hand-written SQL clause: home-favs lose, aways aren't fold-robust,
+  draws are a sharp edge (§57 + BETTING_GATE_DECISIONS "1x2 by type"). No vocabulary conversion.
+
+Both bet at **every placeable book**, not just Coolbet — the `coolbet_*` names are history. The
+winning book is recorded on each row as `recommended_bookmaker` and the placer routes from there.
 
 Also writing `shadow_bets`: `ou35_model_shadow.py`, `corners_paper_bot.py`, and the pipeline's
 `bulk_store_shadow_bets()` (BET-TIMING-MONITOR — every bot at every refresh, flat €10).

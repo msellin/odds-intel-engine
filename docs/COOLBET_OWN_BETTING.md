@@ -57,7 +57,7 @@ code+DB trace (COOLBET-PICK-TABLE-AUDIT). **Four tables, and they are NOT interc
 | Table | Written by | Read by | What it is |
 |---|---|---|---|
 | `simulated_bets` | `daily_pipeline_v2.py` (the model pipeline) for internal/anchor bots incl. **`bot_v10_all`** | **`/picks` + `/performance`** (customer-facing), and the **paper** mac-daemon (`coolbet_placer.load_qualified_bets`) | Primary paper ledger. Bankroll/EV picks. Market spelled `o/u` / selection `over 2.5`. |
-| `shadow_bets` | per-bot mirror jobs: `coolbet_model_ou_shadow.py`, `coolbet_model_1x2_shadow.py`, trigger matcher, etc. | via the view below | Append-only shadow ledger. Holds the **placeable model-edge bot rows**. Market re-spelled `over_under_25` / selection `over`. |
+| `shadow_bets` | `pick_generator.generate` (one mechanism, driven by the per-bot `BotConfig`s in `bot_configs.py`; entry points `coolbet_model_ou_shadow.py` / `coolbet_model_1x2_shadow.py`), trigger matcher, etc. | via the view below | Append-only shadow ledger. Holds the **placeable model-edge bot rows**. Market re-spelled `over_under_25` / selection `over`. |
 | `shadow_bets_unique` (VIEW) | — (DISTINCT ON bot×match×market×selection over `shadow_bets`; def in migration 298) | **`place_coolbet_ui.py` `load_picks()` — the LIVE REAL-MONEY placer**, and `/admin/shadow-bots` | The canonical real-money read path. |
 | `real_bets` | `place_coolbet_ui.py`/`coolbet_ui_placer.py` (real, balance-confirmed) **AND** the paper daemon (`record=True, execute=False` → phantom rows) **AND** manual-bet reconciliation | `/performance` overlay | Placement ledger — **dual-purpose; a row alone does NOT prove money moved.** Only a `coolbet_placement_attempts` row with `outcome='placed'` proves a real stake. |
 
@@ -180,10 +180,14 @@ gated on `args.bot == "bot_coolbet_value_v1"` and does **not** apply to the
 model-edge O/U bot below. (The scope check reads `bot_name` inside the extracted per-bot flow `place_for_bot`.)
 
 **`bot_coolbet_ou_model_v1` — the model-edge O/U real-money vehicle (off by
-default).** `workers/jobs/coolbet_model_ou_shadow.py` (scheduled :10/:40) mirrors
-the calibrated model's O/U picks (`simulated_bets` market=`o/u`, edge≥0.08 on
-`calibrated_prob`, lines 2.5/3.5 only) into `shadow_bets` in the line-shop
-vocabulary (`over_under_25`/`over_under_35` + `over`/`under`), so they load and
+default).** `workers/jobs/coolbet_model_ou_shadow.py` (scheduled :10/:40) is the
+entry point; since PICK-GENERATOR-DELEGATION (2026-09-11) the mechanism itself is
+`workers/automation/pick_generator.generate` and the bot's gates are a `BotConfig`
+in `workers/automation/bot_configs.py`. It takes the calibrated model's O/U
+probabilities (`simulated_bets` calibrated cohort, lines 2.5/3.5 only),
+**re-prices them at every book it may bet** and derives the edge from the winning
+price (edge≥0.08 — the registry floor, not a copy), then writes them into
+`shadow_bets` in the line-shop vocabulary (`over_under_25`/`over_under_35` + `over`/`under`), so they load and
 place through this same Path-A UI placer with the validated per-market gates
 (edge≥8% via `BOT_THRESHOLDS[bot]=0.08` feeding `min_odds_for`, odds≥1.80 via
 `_min_odds_for('o/u')`). It settles via the generic goals O/U resolver — no

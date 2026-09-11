@@ -101,6 +101,34 @@ BOTS: list[BotSpec] = [
             "Sharp twin: fires when Unibet's O/U 2.5 site price beats the de-vigged Pinnacle line by ≥3% (no odds floor). Paper.",
             twin="bot_unibet_trigger_ou_v1"),
 
+    # MERGE-TRIGGER-BOTS-2026-09-11 — the book-agnostic replacements for the
+    # eight above. The eight were 2 anchors x 2 books x 2 markets, but the BOOK
+    # is a venue, not a strategy: `pick_generator` already compares across every
+    # book a bot may use and records the winner as `recommended_bookmaker`, so
+    # book is a column to GROUP BY, not an identity (and the split would have
+    # become 12 bots the moment Epicbet joined). These four are on the two real
+    # axes, anchor x market.
+    #
+    # The eight are DELIBERATELY still active alongside them: the pooled-vs-
+    # per-selection calibrator measurement is mid-flight, and retiring them now
+    # would make that comparison span a bot change AND a calibrator change.
+    # A follow-up migration retires them once `trigger_calibrator_watch` pages
+    # the verdict.
+    BotSpec("bot_trigger_1x2_model_v1", FAM_TRIGGER, "1x2", ANCHOR_MODEL,
+            0.13, 2.80, False,
+            "Book-agnostic MODEL 1x2 trigger: fires when ANY book we place at prices a modelled fixture into the window. Paper. Replaces the Coolbet+Unibet 1x2 model twins."),
+    BotSpec("bot_trigger_1x2_sharp_v1", FAM_TRIGGER, "1x2", ANCHOR_SHARP,
+            0.03, 1.01, False,
+            "Book-agnostic SHARP 1x2 trigger: any placeable book beating the de-vigged Pinnacle line by >=3% (no odds floor). Paper. The 3% floor is set EXPLICITLY — a sharp edge is measured against a near-true line and is never comparable to a model floor.",
+            twin="bot_trigger_1x2_model_v1"),
+    BotSpec("bot_trigger_ou_model_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_MODEL,
+            0.08, 1.80, False,
+            "Book-agnostic MODEL O/U 2.5 trigger: fires when ANY book we place at prices a modelled fixture into the window. Paper. Replaces the Coolbet+Unibet O/U model twins."),
+    BotSpec("bot_trigger_ou_sharp_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_SHARP,
+            0.03, 1.01, False,
+            "Book-agnostic SHARP O/U 2.5 trigger: any placeable book beating the de-vigged Pinnacle line by >=3% (no odds floor). Paper.",
+            twin="bot_trigger_ou_model_v1"),
+
     # Coolbet own-price paper bots
     BotSpec("bot_ou35_model_v1", FAM_COOLBET_PAPER, "O/U 3.5", ANCHOR_MODEL,
             0.08, 1.80, False,
