@@ -187,6 +187,95 @@ canonical method says executable, so **34 / 22% is the number.** (An even earlie
 "47%" was measured across ALL `simulated_bets` including non-published bots —
 wrong population entirely.)
 
+### FULL GRID SWEEP 2026-09-11 — `scripts/floor_grid_sweep.py`, every market, PRE-MATCH only
+
+The definitive run. Owner: *"do a proper full sweep again, 1x2 and ou markets...
+separate bet types as well... use all edge % dimensions and all odds floors...
+present it all as very detailed table where all possible combinations are
+tested, also over different data sets, up to the largest we can do"*, then *"you
+can even include other markets and bet types... even the ones we dont offer
+picks [for] or bet on, e.g. AH, corners, cards"*.
+
+`floor_grid_sweep.py` is a **dimensional cube**, not another report: the
+(edge x odds) grid inside any grouping of any dimension, over all four
+datasets. Use it instead of writing a new script — a new script is how
+basis/metric/sample drifted between runs and moved the 1x2 floor four times.
+`--list-dims` lists what can be asked; `--dump` writes the fact table so
+anything can be asked offline.
+
+**Four method invariants, each added because its absence produced a wrong answer
+that same day** (smoke `FLOOR-GRID-CUBE`):
+
+1. **PRE-MATCH ONLY**, enforced in SQL with no override flag. Retired in-play
+   bots faked an away result: +15.4% "robust" on n=364 that was really in-play,
+   one bot n=14 at +452%.
+2. **ONE FOLD PARTITION per scope.** Folds built per group made the robust flag
+   depend on the grouping — the SAME 129 bets read robust as `HOME-DOG` and
+   not-robust as `HOME (all odds)`.
+3. **EDGE-UNIT GUARD.** Six bots store `edge_percent` outside the 0..1 fraction
+   convention (up to 67.9): `bot_corners_paper_shadow_v1`,
+   `bot_team_total_paper_shadow_v1`, `bot_1h_1x2_paper_shadow_v1`,
+   `bot_no_pin_shadow_v1`, `bot_no_pin_home_v1`, `bot_sweep_1x2_home_v1`.
+   Three are 1x2 bots, so pooling them clears every floor and inflates exactly
+   the high-floor cells. Excluded by default, reported loudly.
+4. **EDGE-KIND is a dimension.** Model edge, sharp-anchor edge and line-shop
+   edge are different quantities (which is why sharp floors are 3% and model
+   floors 13%/8%). Splitting showed **line-shop 1x2 has ZERO robust cells on
+   n=920** while model 1x2 is robust — pooled, that was invisible.
+
+#### RESULT — what has a robust frame (model edge, n>=50, positive in all 3 folds)
+
+| dataset | bet type | best cell | ROI | n | #robust cells |
+|---|---|---|---|---|---|
+| sim/cohort | 1x2 | **10% @ 3.20** | +32.9% | 132 | 27 |
+| sim/calibrated | 1x2 | **12% @ 3.20** | +32.3% | 101 | 16 |
+| sim/all-prematch | 1x2 | **13% @ 3.20** | +22.8% | 225 | 16 |
+| sim/calibrated + cohort | o/u 2.5 | **8% @ 2.20** | +14.3% | 151 | 19 |
+| sim/all-prematch | o/u 2.5 | 10% @ 2.20 | +19.4% | 115 | 13 |
+| shadow/all-prematch | o/u 2.5 | 5% @ 2.80 | +13.8% | 153 | 9 |
+
+**Two live gates look improvable, and every dataset agrees on the direction:**
+* **1x2 odds floor 3.20, not the live 2.80** — the best cell in all three
+  `simulated_bets` datasets, independently.
+* **O/U odds floor 2.20, not the live 1.80** — best in calibrated, cohort and
+  all-prematch.
+Both are OWNER-GATED (they change placement and the published record) and both
+want a volume estimate before adoption.
+
+#### RESULT — 1x2 by selection (model edge only)
+
+| selection | n (largest set) | verdict |
+|---|---|---|
+| **home-dog >=2.80** | 201–222 | **13% @ 3.20 robust in BOTH large datasets** (+37.6% / +19.0%, 16 and 24 robust cells) |
+| home-mid 2.00–2.80 | 77–140 | fragile — 10 robust cells in shadow, 1 in sim. Not adoptable |
+| home-fav <2.00 | 90–150 | 3 cells in shadow only; nothing in sim. Not adoptable |
+| **AWAY** | **329** | **ZERO robust cells anywhere in the 90-cell grid, in all four datasets** |
+| **DRAW** | **286** | **ZERO robust cells anywhere, in all four datasets** |
+
+That closes the draw/away question with real volume: not "we have no data" —
+n=329 and n=286 of pre-match model-edge picks, and **no (edge x odds)
+combination at all** produces a fold-robust positive frame.
+
+#### RESULT — markets we do NOT bet or publish: all dead on this evidence
+
+| bet type | n | robust cells |
+|---|---|---|
+| **double_chance** | **7,859** — the largest group we have | **0** |
+| **asian_handicap** — EVERY line (-0.5 n=449, +0.5 n=366, 0 n=165, -1 n=154, -1.5 n=153, …) | 1,573 total | **0 at any line** |
+| **btts** | 575 | **0** |
+| **o/u 3.5** | 277 | **0** |
+| **o/u 1.5** | 123 | **0** |
+| corners (all lines) | <=12 per line | no data — its bot is one of the edge-unit offenders |
+| team_total / 1x2_1h / draw_no_bet | <=15 | too thin to sweep |
+
+DC and BTTS are already retired, so this confirms those calls on far more data.
+**AH is the actionable one:** it still carries a 5% floor in
+`_MIN_EDGE_BY_MARKET` and is flagged "no fold-robust floor" — this sweep says
+the same thing across 1,573 picks and every individual line, so retiring it
+(`None`) is now evidence-backed rather than pending. **O/U 3.5 matters too:**
+`bot_ou35_model_v1` was shipped on a promotion-pending basis and 277 settled
+picks produce no robust frame.
+
 ### UNIFIED-GATE test (owner hypothesis, 2026-09-11) — the MECHANISM is right, the draw/away claim is not
 
 Owner: *"we have 10% floor, but don't bet on home favs (their odds are below 2.8

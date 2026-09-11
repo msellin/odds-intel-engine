@@ -36843,5 +36843,99 @@ def test_inplay_odds_archive():
         "copy of the pre-2026-08-21 in-play history."
     )
 
+
+@test("FLOOR-GRID-CUBE — the dimensional sweep keeps its four method invariants")
+def test_floor_grid_cube():
+    """FLOOR-GRID-SWEEP (2026-09-11). A general (edge floor x odds floor) cube
+    over every market, groupable by any dimension, so the next floor question
+    does not need new code — new code is what let basis/metric/sample drift
+    silently between runs and moved the 1x2 floor four times.
+
+    Pins the four invariants that make its output trustworthy. Each one exists
+    because its absence produced a WRONG ANSWER on the day it was written:
+
+    1. PRE-MATCH ONLY. Retired in-play bots faked an away result: +15.4%
+       "robust" on n=364 that was really in-play, one bot n=14 at +452%.
+    2. ONE FOLD PARTITION per scope. Building folds per group made the robust
+       flag depend on the grouping — the SAME 129 bets read robust as
+       "HOME-DOG" and not-robust as "HOME (all odds)".
+    3. EDGE-UNIT GUARD. Six bots store edge_percent outside the 0..1 fraction
+       convention (up to 67.9); three are 1x2 bots, so pooling them clears
+       every floor and inflates exactly the high-floor cells.
+    4. EDGE-KIND. Model edge, sharp-anchor edge and line-shop edge are
+       different quantities — a 3% sharp overlay vs a de-vigged Pinnacle line
+       is real where a 3% model edge is noise, which is why the sharp floors
+       are 3% and the model floors 13%/8%. Pooling them asks a question with
+       no answer. (Splitting revealed line-shop 1x2 has ZERO robust cells on
+       n=920, while model 1x2 is robust — pooled, that was invisible.)
+
+    Asserts no ROI: those move with every settled bet.
+    """
+    import importlib.util
+    import inspect
+    import pathlib as _pl
+
+    spec = importlib.util.spec_from_file_location(
+        "_cube", _pl.Path("scripts/floor_grid_sweep.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # 1. pre-match only, enforced in SQL with no override
+    sql = mod._sql("simulated_bets", "all")
+    assert "NOT LIKE 'inplay" in sql, (
+        "the cube must exclude in-play bots in SQL. They are a different bet "
+        "type and they faked an away-selection result once already."
+    )
+    src_all = inspect.getsource(mod)
+    assert "include-inplay" not in src_all and "include_inplay" not in src_all, (
+        "there must be NO flag to re-admit in-play picks — it is not a "
+        "preference, it is a correctness constraint."
+    )
+
+    # 2. executable price everywhere
+    assert "odds_at_pick_live, x.odds_at_pick" in sql, (
+        "must price at COALESCE(odds_at_pick_live, odds_at_pick); bare "
+        "odds_at_pick is a high-water snapshot we could not have taken."
+    )
+
+    # 3. one fold partition, and an empty fold fails robustness
+    cs = inspect.getsource(mod.cell)
+    assert "bounds" in inspect.signature(mod.cell).parameters, (
+        "cell() must be scored against externally supplied fold bounds, not "
+        "bounds it derives from its own group."
+    )
+    assert "f is not None and f > 0" in cs, (
+        "robust must require every fold to HAVE bets and be positive — an "
+        "empty fold must fail, not pass by vacuity."
+    )
+    bounds = mod.fold_bounds([{"pick_time": i} for i in range(9)], 3)
+    assert len(bounds) == 2, f"3 folds need 2 cutoffs, got {bounds}"
+
+    # 4. the edge-unit guard and the edge-kind split both exist
+    assert "edge_scale" in mod.DIMENSIONS and "edge_kind" in mod.DIMENSIONS
+    assert mod._edge_kind("bot_pin_1x2_home_v1", "v1") == "line-shop"
+    assert mod._edge_kind("bot_v10_all", "v20260712") == "model"
+    assert mod._edge_kind("x", mod._SHARP_MV) == "sharp-anchor", (
+        "the pinnacle_shin_devig sentinel must mark sharp-anchored rows"
+    )
+
+    # line/family parsing: the line lives in a different place per family, and
+    # getting that wrong silently merges distinct bet types into one cell.
+    for market, sel, want_fam, want_line in (
+        ("over_under_25", "over",  "o/u",            "2.5"),
+        ("over_under_35", "under", "o/u",            "3.5"),
+        ("corners_ou_95", "over",  "corners_ou",     "9.5"),
+        ("corners_ou_105", "over", "corners_ou",     "10.5"),
+        ("team_total_home_15", "over", "team_total", "1.5"),
+        ("asian_handicap", "home -0.5", "asian_handicap", "-0.5"),
+        ("1x2", "home", "1x2", "-"),
+    ):
+        fam, line, _side = mod.parse_market(market, sel)
+        assert (fam, line) == (want_fam, want_line), (
+            f"parse_market({market!r},{sel!r}) -> {(fam,line)}, want "
+            f"{(want_fam, want_line)}"
+        )
+
+
 if __name__ == "__main__":
     main()
