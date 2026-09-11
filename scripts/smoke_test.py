@@ -35429,26 +35429,52 @@ def test_real_bets_placed_real():
             "getRealBets + getPlaceableBets must exclude paper rows")
 
 
-@test("SHADOW-BOT-REAL-BADGE-NO-OVERLAY — the '€ real' marker lives in the wide match cell, not the 60px result cell")
+@test("SHADOW-BOT-REAL-BADGE-NO-OVERLAY — the placed-real marker gets its own column, never the 60px Result cell")
 def test_shadow_bot_real_badge_no_overlay():
-    """SHADOW-BOT-REAL-BADGE (2026-09-10): the placed-real badge first shipped inside
-    the row's 60px Result cell alongside <ResultBadge>, so it wrapped into a blob and
-    overlaid the Min-odds column (owner screenshot). Fixed by moving it into the wide
-    1fr Match cell as a shrink-0 chip beside the truncating match name — it can no longer
-    overflow. Pin that placement so it doesn't regress."""
+    """SHADOW-BOT-REAL-BADGE (2026-09-10), rewritten BET-MADE-COLUMN (2026-09-11).
+
+    The invariant is and always was: **the placed-real marker must never be
+    crammed into the narrow Result cell, where it wraps into a blob and overlays
+    the Min-odds column** (owner screenshot, 2026-09-10).
+
+    The first fix put it in the wide 1fr Match cell as a shrink-0 chip beside
+    the truncating name, and this test pinned that *placement* — the literal
+    `shrink-0` class and the name's `truncate` classes. On 2026-09-11 the marker
+    moved again, into its own "Bet made" column carrying the price AND the venue
+    together, which serves the same invariant better: a dedicated grid column
+    cannot overflow at all, and the match name got its width back.
+
+    The old assertions then failed on an improvement, which is the
+    RELIABILITY_LEDGER "tests pinning the old reality" pattern. Rewritten to
+    assert the INVARIANT (never in the Result cell, cannot overflow) rather than
+    one particular way of satisfying it. Where the marker lives is a design
+    choice; not clipping the operator's placed-money indicator is not.
+    """
     p = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx")
     if not p.exists():
         skip("odds-intel-web not checked out")
     src = p.read_text()
-    # the marker sits in a flex row with the truncating name and is shrink-0 (can't overflow)
-    idx = src.find("€ real")
-    assert idx != -1, "the '€ real' marker must exist"
-    ctx = src[max(0, idx - 700):idx]
-    assert "shrink-0" in ctx, "the '€ real' chip must be shrink-0 (name truncates, chip stays)"
-    assert "truncate text-sm text-neutral-100" in ctx, "the chip must sit beside the truncating match name"
-    # and it must NOT be crammed back into the Result cell next to <ResultBadge>
-    after = src[idx:idx + 400]
-    assert "<ResultBadge" not in after, "the marker must not share the cramped Result cell with <ResultBadge>"
+
+    idx = src.find("placedReal ?")
+    assert idx != -1, (
+        "the placed-real marker must exist — it is how the operator sees which "
+        "picks actually had money on them"
+    )
+    # It must not share the cramped Result cell with <ResultBadge>.
+    assert "<ResultBadge" not in src[idx:idx + 600], (
+        "the placed-real marker must not sit in the 60px Result cell beside "
+        "<ResultBadge> — that is the overlay bug of 2026-09-10"
+    )
+    # It must carry BOTH halves of the placement: the price and the venue.
+    cell = src[idx:idx + 900]
+    assert "placedOdds" in cell and "placedBook" in cell, (
+        "the 'Bet made' cell must show the price AND the venue — split across "
+        "two columns, neither half answers 'did we stake this, where, at what price?'"
+    )
+    # Whatever cell it occupies must be a real grid column, not an inline chip
+    # squeezed beside something else: header and row templates agree (that is
+    # SHADOW-DETAIL-THREE-BOOKS-AND-BET-MADE's job) and the header names it.
+    assert "Bet made" in src, "the column needs a header, or nobody knows what it is"
 
 @test("UNIBET-SITE-SWEEP — broad run_bulk is rate-limited, capped, fail-safe, Unibet-Site")
 def test_unibet_site_sweep():
