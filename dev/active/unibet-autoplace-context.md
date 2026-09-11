@@ -40,15 +40,16 @@ failure patterns) and **`docs/SYSTEM_MAP.md` §4** (the gate stack, rewritten).
 |---|---|---|
 | Coolbet footprint | ⏸ **PAUSED** (odds-snapshot + feed-watchdog unloaded) | `bash scripts/ops/coolbet_pause_resume.sh status` |
 | Auto-resume | **ARMED** — it can resume on its own | same command |
-| Coolbet reachability | **CHALLENGED** (Imperva flag had not decayed) | `python3 -m workers.automation.coolbet_explorer --probe` |
+| Coolbet reachability | **CHALLENGED** — re-verified 2026-09-11 on a fresh session (1.8s, 881-byte challenge page) | `coolbet_explorer --probe --fresh-session` (2s; plain `--probe` takes 60s and reports `wedged`) |
 | Coolbet UI placer | ✅ **LIVE, placing real money** — never paused | `python3 -m workers.automation.coolbet_control --status` |
 | 24h real bets | 7 placed, €70 staked | daily summary, now accurate |
 | `ROUTER_ALLOW_REAL` | **UNSET** — router is report-only | owner gate, do not set |
-| `COOLBET_AUTO_LOGIN_ON_HEAL` | **UNSET** — operator TODO (see below) | `grep COOLBET_AUTO_LOGIN_ON_HEAL .env` |
+| `COOLBET_AUTO_LOGIN_ON_HEAL` | ✅ **SET 2026-09-11** in the feed-watchdog plist (NOT `.env` — see the operator step at the top; it was DEAD before, set only in the retired daemon's plist) | `python3 scripts/ops/launchd_drift_check.py` |
 
 ⚠️ **The Coolbet feed is paused deliberately, not broken.** Do not "fix" it by
 resuming the sweep to see if it works — that is what sustains the escalation.
-Use `--probe` (ONE request, safe while paused). Resume only after it says `OK`.
+Use `--probe --fresh-session` (ONE request, ~2s, safe while paused). Resume only
+after it says `OK`.
 
 ⚠️ **The 🔄 Heal button in Telegram is inert while the watchdog is paused** — its
 drain lives in `coolbet_feed_watchdog.py:446`. Pause/Resume still work (direct DB
@@ -63,7 +64,7 @@ Three phases. Phase 1 is done, phase 2 is most of the way, phase 3 is unstarted.
 1. **MAP** — understand every place a pick is gated/floored/limited. ✅ Done;
    the result is `SYSTEM_MAP.md` §4 (rewritten) + §4e (generation-stage gates).
 2. **CONSOLIDATE** — remove hardcoded copies so one change reaches everywhere.
-   ✅ Python done, ✅ frontend done, ⬜ shadow-mirror SQL remains.
+   ✅ Python done, ✅ frontend done, ✅ shadow-mirror SQL done — **phase 2 COMPLETE**.
 3. **CONFIGURE** — make limits editable from a local dashboard (e.g. separate
    "picks → Telegram" policy from "picks → real money" policy).
 
