@@ -2028,11 +2028,20 @@ def job_pick_triggers():
     1x2 + O/U 2.5 fixtures into pick_triggers. Book-agnostic; Stage B matches each
     book's swept odds against these. Cheap (isotonic fit + upserts), no HTTP, no
     money. docs/BOOK_AGNOSTIC_EDGE_ENGINE.md."""
-    from workers.jobs.pick_triggers import compute_triggers
-    c = compute_triggers()
-    if c.get("written"):
-        console.print(f"[cyan]pick_triggers: {c['written']} windows written[/cyan]")
-    _run_job("pick_triggers", lambda: None)
+    # PICK-TRIGGERS-UNWRAPPED (fixed 2026-09-11): the real work used to run
+    # OUTSIDE _run_job, with `_run_job("pick_triggers", lambda: None)` called
+    # after it. That broke observability in both directions — if
+    # compute_triggers() raised, the _run_job line was never reached, so
+    # pipeline_runs got NO row and the job looked like it had never run; if it
+    # succeeded, the row recorded a no-op lambda rather than the work. Either
+    # way the ops dashboard's "all jobs" view was lying about this one, which is
+    # the OBS-LOG-ALL-JOBS invariant _run_job exists to provide.
+    def _run():
+        from workers.jobs.pick_triggers import compute_triggers
+        c = compute_triggers()
+        if c.get("written"):
+            console.print(f"[cyan]pick_triggers: {c['written']} windows written[/cyan]")
+    _run_job("pick_triggers", _run)
 
 
 def job_ou35_model_shadow():
