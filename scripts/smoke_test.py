@@ -37246,5 +37246,64 @@ def test_drift_not_in_retrain():
     )
 
 
+
+@test("ODDS-FLOOR-AB — the 2.80-vs-2.00 comparison tests the MARGINAL band, with significance")
+def test_odds_floor_ab():
+    """ODDS-FLOOR-AB (2026-09-11). Owner: "theres a big diff on 2.0 vs 2.8, can
+    you just run a sweep".
+
+    The trap this tool exists to avoid: comparing GATE A (odds>=2.80) to GATE B
+    (odds>=2.00) head-to-head is the WRONG test, because B is exactly A plus the
+    2.00-2.80 band. B is therefore a volume-weighted blend of A and the band and
+    is pulled toward A by construction — it will always look "similar to A" no
+    matter how good or bad the band is. The entire difference between the two
+    gates IS the marginal band, so the band is what must be measured.
+
+    The second trap: reporting the band's ROI without a standard error. Betting
+    returns are high-variance (one 4.00 winner moves a 100-bet ROI by three
+    points) and ~9,300 settled bets are needed for +/-2% on ROI, so a bare
+    "+13.9%" on n=377 is not a finding. Hence a t-stat and a bootstrap CI, with
+    a FIXED seed so the interval is reproducible.
+
+    Pins the shape, not the numbers — those move with every settled bet.
+    """
+    import importlib.util
+    import inspect
+    import pathlib as _pl
+
+    spec = importlib.util.spec_from_file_location(
+        "_ab", _pl.Path("scripts/odds_floor_ab.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    rsrc = inspect.getsource(mod.run)
+    assert "MARGINAL" in rsrc, (
+        "the marginal band must be reported on its own — it is the whole "
+        "difference between the two gates, and comparing A to B directly is "
+        "mathematically rigged toward 'no difference'."
+    )
+    ssrc = inspect.getsource(mod._stats)
+    for need in ("se", "boot", "t"):
+        assert need in ssrc, (
+            f"_stats must report {need!r}: an ROI without a standard error "
+            "cannot support a floor change at these sample sizes."
+        )
+    assert "Random(" in ssrc, (
+        "the bootstrap must use a FIXED seed, or the confidence interval "
+        "changes between runs and the record cannot be reproduced."
+    )
+    # A band that lost in any fold must not be reported as robust.
+    assert "not fold-robust" in rsrc and "ROBUST" in rsrc, (
+        "per-fold detail must be shown: the pooled ROI of this band is carried "
+        "by one early window and it LOST in a later one, which is invisible in "
+        "the aggregate."
+    )
+    # Sanity: the statistics themselves.
+    s = mod._stats([{"ret": 1.0, "clv_pinnacle": None},
+                    {"ret": -1.0, "clv_pinnacle": None}] * 50)
+    assert s["n"] == 100 and abs(s["roi"]) < 1e-9, "zero-mean input must read ~0 ROI"
+    assert s["lo"] < 0 < s["hi"], "a zero-mean sample's CI must span zero"
+
+
 if __name__ == "__main__":
     main()

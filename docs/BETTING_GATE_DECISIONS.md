@@ -57,6 +57,55 @@ supports the same reading: at edge>=10%, home CLV is *highest* at the low floors
 not earning its keep on CLV at all; its whole justification is removing home-favs,
 and 2.00 does that too.
 
+#### RESOLVED 2026-09-11 — `scripts/odds_floor_ab.py`, every dataset size
+
+Owner: *"theres a big diff on 2.0 vs 2.8, can you just run a sweep. 10%, 2.8 vs
+2.0 odds floor on every size of data, up to 100k."*
+
+**Comparing GATE A to GATE B head-to-head is the wrong test.** B is exactly A
+plus the 2.00–2.80 band, so B is a volume-weighted blend of A and the band and
+is pulled toward A by construction — it will look "similar to A" however good
+or bad the band is. **The entire difference IS the marginal band**, so that is
+what the tool measures, with a standard error and a bootstrap CI (fixed seed).
+
+**The marginal 2.00–2.80 band at edge >= 10%:**
+
+| dataset | n | ROI | SE | t | CLVpin | bootstrap 95% CI | folds |
+|---|---|---|---|---|---|---|---|
+| sim/calibrated | 58 | +5.4% | 16.2 | 0.33 | +9.8% | [−27.1, +36.6] | +58.1 / −34.8 / −1.6 |
+| sim/cohort | 74 | +12.2% | 14.3 | 0.85 | +8.9% | [−16.2, +39.9] | +56.5 / −18.3 / −1.8 |
+| sim/all-prematch | 160 | +13.0% | 9.7 | 1.33 | +8.0% | [−5.9, +32.0] | +41.9 / −14.0 / +8.7 |
+| shadow/all-prematch | 217 | +14.7% | 8.4 | 1.74 | +9.2% | [−1.3, +30.2] | +38.7 / −3.1 / +10.0 |
+| **PICK-LEVEL POOLED** | **377** | **+13.9%** | 6.4 | **2.19** | **+8.7%** | **[+1.8, +26.3]** | +53.8 / −21.0 / +9.0 |
+| idealized 105k *(odds-blind)* | 139 | +9.9% | 10.1 | 0.98 | n/a | [−10.4, +30.0] | +6.7 / +5.2 / +14.7 |
+
+**VERDICT: keep 2.80. The band is suggestive but fails the standing rule.**
+
+* **It is NOT fold-robust in ANY pick-level dataset.** The pattern is identical
+  everywhere — a large positive first window, then a **negative** one, then a
+  small positive: pooled `+53.8 / −21.0 / +9.0`. One early window carries the
+  whole result, and it lost money in a later one. This repo's rule is that a
+  floor is adoptable only if positive in EVERY fold, written precisely after a
+  15% floor was adopted and reverted inside a day.
+* Only the POOLED row clears |t| > 2, and **pooling is not extra evidence
+  here** — it unions `sim/all-prematch` and `shadow/all-prematch`, which cover
+  the same period and largely the same fixtures under different bots. The four
+  rows are not four independent confirmations; the consistent fold shape across
+  them is one regime seen four times.
+* **What genuinely argues FOR the band: CLV.** It beats the kept band on CLV in
+  every single dataset (+8.0 to +9.8 vs GATE A's +2.9 to +7.7), and CLV
+  converges ~28x faster than ROI. That is a real signal and the reason this is
+  logged as a live question rather than closed.
+
+**So it stays 2.80, and this is now a quantified owner override rather than an
+open question:** moving to 2.00 buys ~377 extra bets at a pooled +13.9% whose
+confidence interval only just clears zero and which lost in one of three time
+windows. That is a volume-for-robustness trade — the owner's call by this
+document's own rule, never a "the backtest said so" change.
+
+**Re-run:** `python3 scripts/odds_floor_ab.py --edge 10` (or `--edge 13`,
+`--lo/--hi` for other pairs). Smoke `ODDS-FLOOR-AB`.
+
 ⚠️ **Not a recommendation to change it yet.** home-mid is positive and consistent
 but NOT fold-robust in either dataset, which is precisely the volume-for-
 robustness trade this document says is an owner decision, never a "the backtest
