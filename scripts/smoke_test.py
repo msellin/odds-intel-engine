@@ -22231,6 +22231,53 @@ def test_jwt_refresh_window_2026_09_10():
     return f"min_ttl_s={min_ttl}s covers the {WATCHDOG_PERIOD_S}s watchdog tick"
 
 
+@test("KAMBI-NOT-PLACEABLE — the divergent Unibet feed can never re-enter the placeable set")
+def test_kambi_not_placeable_2026_09_11():
+    """KAMBI-FEED-DIVERGENCE (2026-09-06) removed `Unibet-Kambi` from the
+    placeable set: unibet.ee moved off the Kambi offering API, so on 130/341
+    sampled selections (38%) our stored Kambi price reads HIGHER than the site
+    actually offers — median +3.3%, max +23.5%. Staking on it means staking on
+    a price that does not exist.
+
+    Pinned 2026-09-11 after finding the rule had already leaked back in two
+    places: `scripts/lineshop_new_markets.py` carried a hardcoded FALLBACK set
+    that still listed Unibet-Kambi (under a comment claiming the two "can never
+    drift"), and CLAUDE.md/WORKFLOWS.md described the feed with no
+    not-placeable warning at all — enough to mislead a reader into treating it
+    as the usable Unibet feed. The placeable Unibet feed is `Unibet-Site`.
+    """
+    import pathlib
+    from workers.jobs.daily_pipeline_v2 import ACCESSIBLE_BOOKMAKERS
+
+    assert "Unibet-Kambi" not in ACCESSIBLE_BOOKMAKERS, (
+        "Unibet-Kambi is NOT placeable (KAMBI-FEED-DIVERGENCE 2026-09-06) — "
+        f"it must never be in ACCESSIBLE_BOOKMAKERS. Got: {sorted(ACCESSIBLE_BOOKMAKERS)}"
+    )
+
+    # No module may re-type the placeable set — that is how it drifted before.
+    # Inspect CODE only: comments are allowed (and expected) to name the feed
+    # while explaining why it is excluded.
+    ls_lines = pathlib.Path("scripts/lineshop_new_markets.py").read_text().splitlines()
+    ls_code = "\n".join(l for l in ls_lines if not l.lstrip().startswith("#"))
+    assert '"Unibet-Kambi"' not in ls_code, (
+        "lineshop_new_markets.py must not name Unibet-Kambi as placeable in "
+        "CODE; import ACCESSIBLE_BOOKMAKERS and fail loudly rather than "
+        "falling back to a hardcoded list."
+    )
+
+    # The two docs a reader meets first must carry the warning, not a neutral
+    # description that reads as an endorsement.
+    for doc in ("CLAUDE.md", "WORKFLOWS.md"):
+        src = pathlib.Path(doc).read_text()
+        head = src[:src.index("Unibet-Kambi") + 2000] if "Unibet-Kambi" in src else src
+        assert "NOT PLACEABLE" in src.upper() or "NOT A PLACEABLE" in src.upper(), (
+            f"{doc} describes the Kambi feed without a not-placeable warning — "
+            "that is exactly what misled a reader into treating it as the "
+            "usable Unibet feed."
+        )
+    return "Unibet-Kambi is reference-only in code and in docs"
+
+
 @test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")
 def test_kuma_push_helper():
     """KUMA-PUSH-HELPER (2026-07-07): workers/utils/kuma.py is the

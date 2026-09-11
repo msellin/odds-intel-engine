@@ -84,7 +84,7 @@
 23:30  ㉘ Daily perf     job_daily_real_perf_email()     DAILY-REAL-PERF-EMAIL — yesterday + 7d real-bet ROI split (placer vs manual) via Resend
 23:40  ㉙ Team rates     job_team_scoring_rates()        TEAM-SCORING-RATES — rolling 365d goals-for/against per team from our own settled matches into MFV. Runs after the 23:30 v3 propagate so signal-sourced values win; rolling 60d window so a misfire self-heals. Coverage 46.2% → 84.1%.
 23:45  ㉚ Densify       job_feature_densify()           FEATURE-DENSIFY-ROUND-2 — rest_days / season_progress / league_draw_rate_ytd into MFV from our own data. After 23:40 so signal-sourced values win. Coverage 32%→92%, 13%→99%, 18%→75%.
-:04/:34 ㉛ Unibet odds  job_unibet_kambi_odds()        UNIBET-KAMBI-ODDS — direct Unibet prices from the public Kambi offering API (no auth, no bot protection). Writes bookmaker='Unibet-Kambi', deliberately separate from the API-Football 'Unibet' feed so the two can be compared (BET365-EXECUTION-AUDIT failure mode). 699 events / 569 pre-match / 186 leagues at build time.
+:04/:34 ㉛ Unibet odds  job_unibet_kambi_odds()        UNIBET-KAMBI-ODDS — ⚠️ REFERENCE ONLY, NOT A PLACEABLE PRICE (KAMBI-FEED-DIVERGENCE 2026-09-06: unibet.ee left this API; 38% of stored prices read HIGHER than the site, median +3.3%, max +23.5%). Excluded from ACCESSIBLE_BOOKMAKERS. The placeable Unibet feed is 'Unibet-Site' (com.oddsintel.unibet-site-odds, :15/:45). Public unauthenticated JSON, no auth/bot-protection — which is why it is cheap, and why it is the feed we can afford to keep as a paper twin. Writes bookmaker='Unibet-Kambi', deliberately separate from the API-Football 'Unibet' feed so the two can be compared (BET365-EXECUTION-AUDIT failure mode). 699 events / 569 pre-match / 186 leagues at build time.
 01:00  ⑧d Settlement      settlement_pipeline()     Overnight catch-up: 21:30+ KOs finishing after extra time
 1st 03:30 ㉙ ALN auto    job_aln_auto_tune()             ALN-AUTO 2026-05-25 — monthly alignment-bump retune; emails diff if any class needs |Δ|≥0.005 with n≥100
 Sun 01:00 ㊵ Competitor scrapes .github/workflows/competitor_scrapes_weekly.yml  COMPETITOR-SCRAPES-WEEKLY 2026-08-01 — re-scrapes DeepBetting/SignalOdds/Forebet/Tipstrr into `dev/active/*.json` so the Sunday-02:00 audit re-runs against fresh picks instead of the 5-week-frozen snapshot the daily cron was previously reusing. WinnerOdds intentionally NOT here — its audit already fetches live via GraphQL. Forebet scraper merges fresh picks into the existing snapshot to preserve historical breadth (their public strip has shrunk to ~7 days).
@@ -152,8 +152,12 @@ dashboard cannot show. Verified against `launchctl list` on 2026-09-11.
 **Why Coolbet has three jobs and Unibet one.** Not arbitrary: (a) Coolbet is the only
 book we auto-place at, which buys it a placer *and* a session watchdog; (b) Coolbet's
 session rots (Imperva + ~30-min JWT + Coolbet's own inactivity logout) while the Unibet
-feed self-heals inside its own sweep; (c) Unibet's Kambi odds come from the **VPS** (no
-auth, no bot-protection), so only the site-odds capture needs the Mac. `unibet_placer`
+feed self-heals inside its own sweep; (c) the **reference** Kambi odds come from the
+**VPS** (no auth, no bot-protection), so only the site-odds capture needs the Mac.
+⚠️ Do not read (c) as "Unibet is easy to scrape": the easy feed (`Unibet-Kambi`) is
+the one we must NOT place on, and the placeable feed (`Unibet-Site`) needs the
+operator's logged-in tab behind DataDome — i.e. the same class of difficulty as
+Coolbet. Like-for-like, placeable vs placeable, the two books are comparably hard. `unibet_placer`
 exists and has placed real money, but has **no launchd job and no pick table** — it
 takes `event_url` + outcome as args, so Unibet placement is manual by design.
 

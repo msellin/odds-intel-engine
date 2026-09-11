@@ -241,8 +241,14 @@ ssh root@204.168.199.8 'cd /opt/odds-intel-engine && git pull --ff-only \
 ```
 API-Football Mega (150K/day)  -> PRIMARY: fixtures, odds (13 bookmakers), live data,
                                 lineups, injuries, standings, H2H, events, player stats
-Kambi API (free)             -> Supplementary odds (41-league sweep removed 2026-05-06;
-                                Unibet/Kambi now only feeds paper-twin odds via job_unibet_kambi_odds)
+Kambi API (free)             -> REFERENCE ONLY, ⚠️ NOT PLACEABLE. 41-league sweep removed
+                                2026-05-06; job_unibet_kambi_odds writes bookmaker='Unibet-Kambi'
+                                as paper-twin odds. unibet.ee LEFT the Kambi API (2026-09-06,
+                                KAMBI-FEED-DIVERGENCE): 38% of our stored Kambi prices read
+                                HIGHER than the site (median +3.3%, max +23.5%), so staking on
+                                them means staking on a price that does not exist. Excluded from
+                                ACCESSIBLE_BOOKMAKERS. The PLACEABLE Unibet feed is
+                                'Unibet-Site' (workers/automation/unibet_odds_feed.py).
 ESPN (free)                  -> Settlement results backup
                                          |
      ── MORNING CHAIN — ONE sequential job at 04:00 UTC (morning_pipeline) ──

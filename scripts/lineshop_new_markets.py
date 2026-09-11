@@ -6,7 +6,13 @@ The premise, and why there is no model in here
 Our binding constraint is repeatedly measured as PRICE, not model quality
 (+1.26pp realised edge at closing against a ~2.50% vig). Pinnacle prices
 corners, cards and first-half markets, and books we can actually place at
-(Coolbet / Unibet-Kambi / Betano / Unibet / Epicbet) quote them too. So
+(Coolbet / Betano / Unibet / Epicbet) quote them too. So
+
+  NOTE: `Unibet-Kambi` is NOT one of them. It was removed from the placeable
+  set in KAMBI-FEED-DIVERGENCE-2026-09-06 — unibet.ee moved off the Kambi
+  offering API, so on 38% of selections our stored Kambi price is HIGHER than
+  the site actually offers (median +3.3%, max +23.5%). The placeable Unibet
+  feed is `Unibet-Site` (`workers/automation/unibet_odds_feed.py`).
 
     edge = best_accessible_price x devig(Pinnacle) - 1
 
@@ -145,9 +151,18 @@ console = Console(width=190)
 # rather than re-typed so the two can never drift.
 try:
     from workers.jobs.daily_pipeline_v2 import ACCESSIBLE_BOOKMAKERS
-except Exception:                                            # pragma: no cover
-    ACCESSIBLE_BOOKMAKERS = frozenset(
-        {"Coolbet", "Betano", "Unibet", "Unibet-Kambi", "Epicbet"})
+except Exception as _e:                                      # pragma: no cover
+    # DRIFTED-FALLBACK-FIX (2026-09-11): this fallback still listed
+    # "Unibet-Kambi" — a DO-NOT-PLACE feed removed from the canonical set on
+    # 2026-09-06 — while the comment above claimed the two "can never drift".
+    # A silent import failure would therefore have line-shopped against prices
+    # that do not exist at the book (38% of Kambi selections read HIGHER than
+    # unibet.ee, median +3.3%). Do not guess the set: fail loudly instead.
+    raise RuntimeError(
+        "Cannot import ACCESSIBLE_BOOKMAKERS from daily_pipeline_v2 — refusing "
+        "to fall back to a hardcoded book list, which silently went stale once "
+        "already (Unibet-Kambi). Fix the import; do not re-type the set."
+    ) from _e
 
 SHARP = "Pinnacle"
 
