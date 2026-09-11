@@ -99,6 +99,37 @@ So the only case needing a human is Docker itself being unstartable (the alert s
 - **Fix:** `cd local/flaresolverr && docker compose up -d` — verify `curl http://localhost:8191/` returns `{"msg":"FlareSolverr is ready!"}`. Container has `restart: unless-stopped`.
 - **Alert:** `workers/jobs/flaresolverr_health.py`, called from the daemon tick — pages with this exact fix. Added after 2026-09-07 when this went unalerted for a day.
 
+### 1b. ⭐ Incapsula INTERSTITIAL (HTTP 200, ~900 bytes) → NOT a block. It self-resolves.
+
+**Read this before ever pausing the footprint again.** On 2026-09-11 this cost a
+**15-hour "outage" that was never an outage**, and the pause was what kept it
+broken.
+
+- **Symptom:** every Coolbet fetch returns a small body and nothing parses;
+  `--probe` says CHALLENGED; logs say "fo-tree unreachable — board NOT
+  enumerated". Looks exactly like an escalation.
+- **Tell:** the response is **HTTP 200** (not 403), ~900 bytes, and the body
+  contains `_Incapsula_Resource` plus an `incident_id` and your own `cip=<ip>`.
+- **Cause:** that is Imperva's standard **JS challenge**, served on the FIRST
+  request of a fresh browser context. It is **self-resolving** — FlareSolverr's
+  browser executes the script, receives `reese84`, and the **next request on the
+  same FS session returns real content**. Measured: attempt 1 = 886 bytes,
+  attempt 2 = **217,615 bytes**.
+- **Why it looked permanent:** we had no retry, so the interstitial was returned
+  to callers as the answer. And every `--probe` was a *first* request on a fresh
+  context, so it always saw the interstitial and always reported CHALLENGED.
+  **Pausing the sweep guaranteed it could never clear**, because the only thing
+  that clears it is making a second request.
+- **Why FlareSolverr does not solve it:** FS attempts a solve only when it
+  DETECTS a challenge, and its detection targets Cloudflare. An HTTP 200 with a
+  normal-looking body sails straight through as a success.
+- **Fix (shipped):** `coolbet_session._looks_like_incapsula` + a bounded retry on
+  the SAME session in `_fs_get`. One extra request per fresh session, not per
+  call. Smoke `INCAPSULA-SELF-RESOLVES`.
+- **This is NOT §2.** §2 is the real wall: a ~9-char `STAY COOL` body, or
+  `Pardon Our Interruption`, usually with a 403. If you see HTTP 200 +
+  `_Incapsula_Resource`, you are here, not there — **do not pause the feed.**
+
 ### 2. Imperva challenge  → the "STAY COOL" / "Pardon Our Interruption" wall
 - **Symptom:** the browser page body is ~9 chars (`STAY COOL`) or contains `Pardon Our Interruption`; `x-iinfo` response header present.
 - **Tell:** raw `curl` of `coolbet.com` returns the interstitial HTML even at HTTP 200.

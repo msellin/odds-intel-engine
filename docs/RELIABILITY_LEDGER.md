@@ -185,3 +185,36 @@ explaining a bug tripped the assertion forbidding it.
 | Router dry-test never run green | the Coolbet arm was dead the whole time; `route(stage=True)` has never completed end-to-end |
 | Coolbet arm stores no routing note | book-choice analysis is Unibet-only today |
 | `ROUTER_ALLOW_REAL` | owner gate — deliberately unset |
+
+## 10. The remedy that guarantees the fault persists
+
+**2026-09-11.** Coolbet's odds feed was "blocked by Imperva" for 15 hours. It
+was not blocked. Imperva served its ordinary JS challenge — HTTP **200**, ~900
+bytes, `_Incapsula_Resource` — which **self-resolves on the next request to the
+same browser session**. We had no retry, so the challenge page was returned to
+callers as the answer.
+
+**The diagnosis then closed the loop on itself:**
+1. Feed fails -> "Imperva escalation, our request volume is the cause."
+2. Remedy -> pause the footprint and wait for the flag to decay.
+3. `--probe` to check -> every probe is a FIRST request on a fresh context, so
+   it always gets the interstitial and always reports CHALLENGED.
+4. Still challenged -> keep waiting. Go to 2.
+
+**The pause was the one thing preventing recovery**, because the only thing that
+clears the challenge is making a second request. Every piece of evidence
+confirmed the theory, and the theory prescribed the action that sustained the
+symptom.
+
+**The tell we had all along and did not look at: HTTP 200.** A block is a 403 or
+a ~9-char `STAY COOL` body. We had a 200 with a 900-byte body for 15 hours and
+never printed it. The fix took 4 lines once the body was on screen.
+
+**Guard:** `INCAPSULA-SELF-RESOLVES` + runbook §1b, which says explicitly *do
+not pause the feed* for this signature.
+
+**The pattern, stated generally:** when a remedy is "stop doing the thing and
+wait", ask what evidence would distinguish *recovering* from *never having been
+broken*. If the check you are using to decide is itself suppressed by the
+remedy, you cannot tell the two apart — and you will wait forever. **Print the
+raw response before theorising about who is blocking you.**
