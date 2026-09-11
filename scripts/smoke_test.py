@@ -37968,5 +37968,54 @@ def test_pick_generator():
         assert c.prob_source in ("pipeline", "predictions"), c.prob_source
 
 
+@test("EVERY-REGISTRY-BOT-IS-VISIBLE")
+def test_every_registry_bot_is_visible():
+    """PAPER-BOTS-INVISIBLE-2026-09-11 — a bot nobody can see is a bot nobody checks.
+
+    This is the THIRD time the same hardcoded-allowlist miss has hidden live
+    bots, so it gets a test instead of another fix:
+
+      * 2026-08-24  bot_coolbet_value_v1 shipped and the detail page 404'd,
+                    because being in SHADOW_BOTS is not the same as being in
+                    the detail page's own ALLOWED map — there are TWO lists.
+      * 2026-09-11  the four Unibet trigger bots had been writing since
+                    2026-09-09 while absent from SHADOW_BOTS
+                    (TRIGGER-BOTS-VISIBLE-AND-WIDER).
+      * 2026-09-11  bot_team_total_paper_shadow_v1 and bot_1h_1x2_paper_shadow_v1
+                    had been writing since 2026-09-10 and appeared on NEITHER
+                    list. Found only because the owner asked where to look at
+                    them while discussing EPICBET-AS-A-VENUE — i.e. by luck, in
+                    conversation, not by any check.
+
+    The failure is silent by construction: the bot runs, writes picks, settles
+    them, and the only symptom is an absence on a page. Nothing errors.
+
+    workers/registry/bot_registry.py is already the single source of truth for
+    what exists (SYSTEM-MAP-REGISTRY-NOT-DRIFTED pins the docs to it). Pin the
+    two operator surfaces to it as well, and the class of bug closes: adding a
+    bot to the registry without listing it fails the build.
+    """
+    from workers.registry.bot_registry import BOTS
+
+    index = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+    detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
+
+    missing_index = [b.name for b in BOTS if f'"{b.name}"' not in index]
+    # the detail page keys its ALLOWED map bare, not quoted
+    missing_detail = [b.name for b in BOTS if f"{b.name}: {{" not in detail]
+
+    assert not missing_index, (
+        "these registry bots are writing picks but are absent from the "
+        f"/admin/shadow-bots SHADOW_BOTS list, so they render nowhere: {missing_index}"
+    )
+    assert not missing_detail, (
+        "these registry bots have no entry in the [bot] detail page's ALLOWED "
+        f"map, so the index links to a 404: {missing_detail}"
+    )
+    # Guard the guard: if the registry is ever emptied or the import silently
+    # yields nothing, the two assertions above pass while checking nothing.
+    assert len(BOTS) >= 14, f"registry looks truncated ({len(BOTS)} bots) — this test would be vacuous"
+
+
 if __name__ == "__main__":
     main()
