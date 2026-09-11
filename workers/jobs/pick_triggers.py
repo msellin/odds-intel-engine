@@ -82,20 +82,78 @@ def _window(cal: float, edge_floor: float, odds_floor: float):
 
 
 def _fit_calibrator(kind: str):
-    """Isotonic P(outcome) from raw model prob, fit on settled matches. kind is
-    '1x2' (pooled over home/draw/away) or 'ou25' (over 2.5). Returns a callable
-    or None if too little history / sklearn missing."""
+    """Isotonic P(outcome) from raw model prob, fit on settled matches.
+
+    TRIGGER-CALIBRATOR-POOLED-BIAS (2026-09-11) — this was fit POOLED across
+    home/draw/away and that is a systematic, one-directional error, not a
+    granularity nicety. The model's reliability differs sharply by outcome, on
+    113k settled rows each:
+
+        market      n        actual hit rate   avg predicted
+        1x2_away    113,424  0.3110            0.3019
+        1x2_draw    113,434  0.2452            0.3554   <- over-predicted +11pp
+        1x2_home    113,434  0.4438            0.3424   <- under-predicted -10pp
+
+    One monotone function cannot say both "0.35 means 24.5%" (draw) and "0.34
+    means 44.4%" (home), so a pooled fit splits the difference and is wrong for
+    every selection. Measured against per-selection fits:
+
+        raw    pooled   home(true)   error
+        0.25   0.2784   0.3764       -9.8pp
+        0.45   0.3669   0.5186      -15.2pp
+
+    HOME — the one selection the real-money bot bets — was under-estimated by
+    ~10-15pp everywhere. Since edge = cal_prob - 1/odds, that shifts the whole
+    window: the emitter demands a far higher price before a home pick clears, so
+    the bot fires only on longshots. That is exactly the recorded symptom in
+    SYSTEM_MAP ("selects longshots - do not promote") and the likeliest cause of
+    these bots' negative CLV. The same fit over-estimates draws, firing on draws
+    that have no edge.
+
+    It also explains the quantisation seen in pick_triggers (1,326 rows -> 125
+    distinct cal_prob, one value shared by 216 fixtures): `pooled(0.25)` is
+    0.2784, the exact shared value. NB granularity itself was NOT the problem —
+    per-selection fits have the same ~33 steps. The bias was.
+
+    Returns a callable. For '1x2' it takes (praw, selection) and dispatches to
+    the per-selection fit; for 'ou25' it takes (praw) as before. None if too
+    little history or sklearn is missing.
+    """
     from workers.api_clients.db import execute_query
     if kind == "1x2":
         rows = execute_query(
-            """SELECT p.model_probability::float AS praw,
+            """SELECT p.market AS mk,
+                      p.model_probability::float AS praw,
                       (CASE WHEN replace(p.market,'1x2_','') = m.result::text THEN 1 ELSE 0 END) AS y
                  FROM predictions p JOIN matches m ON m.id = p.match_id
                 WHERE p.market IN ('1x2_home','1x2_draw','1x2_away')
-                  AND m.status='finished' AND m.result IS NOT NULL"""
+                  AND m.status='finished' AND m.result IS NOT NULL
+                  AND p.model_probability IS NOT NULL"""
         )
-    else:  # ou25
-        rows = execute_query(
+        try:
+            from sklearn.isotonic import IsotonicRegression
+        except Exception as e:  # noqa: BLE001
+            log.warning("pick_triggers: sklearn unavailable (%s) — cannot calibrate 1x2", e)
+            return None
+        fits: dict[str, object] = {}
+        for sel in ("home", "draw", "away"):
+            sub = [r for r in rows if r["mk"] == f"1x2_{sel}"]
+            if len(sub) < 500:
+                log.warning("pick_triggers: only %d settled rows for 1x2_%s — "
+                            "refusing to calibrate it rather than falling back "
+                            "to the pooled fit that caused the home bias",
+                            len(sub), sel)
+                return None
+            fits[sel] = IsotonicRegression(out_of_bounds="clip").fit(
+                [r["praw"] for r in sub], [r["y"] for r in sub])
+        def _cal_1x2(praw: float, selection: str):
+            f = fits.get((selection or "").strip().lower())
+            return float(f.predict([praw])[0]) if f is not None else None
+        return _cal_1x2
+    # ou25: over/under are complements of one event, so a single fit is sound
+    # here — unlike 1x2, where home/draw/away are three DIFFERENT events whose
+    # reliability diverges by ~20pp (see above).
+    rows = execute_query(
             """SELECT po.model_probability::float AS praw,
                       ((m.score_home + m.score_away) > 2.5)::int AS y
                  FROM matches m
@@ -230,7 +288,11 @@ def compute_triggers() -> dict:
                     continue
                 # calibrate
                 if strategy == "model_1x2":
-                    cal = cal_1x2(r["praw"]) if cal_1x2 else None
+                    # TRIGGER-CALIBRATOR-POOLED-BIAS (2026-09-11): the 1x2
+                    # calibrator is now PER SELECTION, so it needs to know which
+                    # one. Pooled, home was under-estimated ~10-15pp and the
+                    # windows only ever fired on longshots.
+                    cal = cal_1x2(r["praw"], sel) if cal_1x2 else None
                 else:  # over/under 2.5 — calibrate 'over', derive 'under' as 1-over
                     if not cal_ou:
                         cal = None

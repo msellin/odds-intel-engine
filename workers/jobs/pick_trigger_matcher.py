@@ -97,16 +97,30 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
                 """INSERT INTO shadow_bets
                        (shadow_run_id, shadow_cohort, bot_id, match_id, market, selection,
                         odds_at_pick, odds_at_pick_live, pick_time, stake,
-                        model_probability, calibrated_prob, edge_percent)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s)
+                        model_probability, calibrated_prob, edge_percent,
+                        recommended_bookmaker)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s,%s)
                    ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)
                    DO UPDATE SET
                         odds_at_pick      = EXCLUDED.odds_at_pick,
                         odds_at_pick_live = EXCLUDED.odds_at_pick_live,
                         calibrated_prob   = EXCLUDED.calibrated_prob,
-                        edge_percent      = EXCLUDED.edge_percent""",
+                        edge_percent      = EXCLUDED.edge_percent,
+                        recommended_bookmaker = EXCLUDED.recommended_bookmaker""",
+                # TRIGGER-BOOK-UNATTRIBUTED (2026-09-11): every trigger row was
+                # written with recommended_bookmaker NULL — 100% of them, 639 of
+                # a 950-pick sample landing in the unattributed bucket. `book`
+                # has been right here in scope the whole time. Three things were
+                # broken by the omission: per-book analysis was impossible for
+                # two-thirds of the data; cross-book dedup had nothing to key on
+                # (the same failure class as unibet_placer writing nothing —
+                # two bots raising the same pick at two books with neither
+                # recording which); and settlement's closing-price lookup is
+                # per-book, so with none it fell back to "any book" and computed
+                # CLV against a price we never had. That last one matters most
+                # here, because CLV is the metric these bots are judged on.
                 [run_id, cohort, bot_id, r["mid"], r["market"], r["selection"],
-                 price, price, STAKE_EUR, r["cal"], r["cal"], edge],
+                 price, price, STAKE_EUR, r["cal"], r["cal"], edge, book],
             )
             counters["written"] += 1
         log.info("trigger matcher (%s/%s/%s): %s", book, market, strategy, counters)

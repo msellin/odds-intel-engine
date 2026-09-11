@@ -358,8 +358,23 @@ def _load_idealized(market_pred: str, sels: tuple, fam: str) -> list[dict]:
     KEEPS selection and odds, which is what lets the cube group it by selection
     band — but see IDEALIZED_LABEL above: the odds axis is not trustworthy here.
     """
-    from scripts.edge_floor_backtest import _devig, _ACCESSIBLE
-    books = ",".join("'%s'" % b for b in _ACCESSIBLE)
+    from scripts.edge_floor_backtest import _devig
+    # ACCESSIBLE-BOOKS-ONE-SOURCE (2026-09-11). This used
+    # `edge_floor_backtest._ACCESSIBLE`, a nine-book tuple of which SIX we
+    # cannot bet from Estonia (10Bet, 1xBet, Bet365, Betfair, Marathonbet,
+    # William Hill) and which omits Epicbet, now our widest feed. Best-of-nine
+    # beats best-of-four, so every "idealized" number built on it overstates
+    # what was reachable — and overstatement on this basis biases a floor
+    # choice DOWNWARD, toward taking more bets than the evidence supports.
+    #
+    # There were two contradictory definitions of "books we can bet" in the
+    # repo; this is the real one, and it is now the only one this tool reads.
+    # NB the floors currently recommended in BETTING_GATE_DECISIONS do NOT rest
+    # on this basis — they come from the pick-level executable ROI+CLV ladders,
+    # and that document already forbids deriving a floor from the idealized
+    # basis at all. So this corrects the tool, not those conclusions.
+    from workers.jobs.daily_pipeline_v2 import ACCESSIBLE_BOOKMAKERS
+    books = ",".join("'%s'" % b for b in sorted(ACCESSIBLE_BOOKMAKERS))
     rows = execute_query(f"""
         WITH fin AS (
           SELECT id, date, score_home, score_away,

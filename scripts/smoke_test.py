@@ -37592,5 +37592,70 @@ def test_trigger_floor_selection_aware():
         )
 
 
+
+@test("TRIGGER-CALIBRATOR-POOLED-BIAS — 1x2 is calibrated PER SELECTION, not pooled")
+def test_trigger_calibrator_per_selection():
+    """TRIGGER-CALIBRATOR-POOLED-BIAS (2026-09-11).
+
+    `pick_triggers._fit_calibrator('1x2')` fit ONE isotonic curve pooled across
+    home/draw/away. The model's reliability differs sharply by outcome, on 113k
+    settled rows each:
+
+        1x2_away   hit 0.3110  predicted 0.3019
+        1x2_draw   hit 0.2452  predicted 0.3554   over-predicted +11pp
+        1x2_home   hit 0.4438  predicted 0.3424   under-predicted -10pp
+
+    One monotone function cannot say both "0.35 means 24.5%" (draw) and "0.34
+    means 44.4%" (home), so the pooled fit split the difference and was wrong
+    for every selection:
+
+        raw 0.25 -> pooled 0.2784 vs home 0.3764   (-9.8pp)
+        raw 0.45 -> pooled 0.3669 vs home 0.5186  (-15.2pp)
+
+    HOME is the selection the real-money bot bets. Under-estimating it by
+    10-15pp shifts the whole window, since edge = cal_prob - 1/odds: the emitter
+    demanded a far higher price before a home pick cleared, so the bot fired
+    only on longshots. That is precisely the symptom recorded in SYSTEM_MAP
+    ("selects longshots - do not promote") and the leading candidate for these
+    bots' negative CLV.
+
+    It also explains the quantisation seen in the table: 1,326 rows mapped to
+    125 distinct cal_prob with ONE value (0.2784) shared by 216 fixtures —
+    0.2784 is exactly pooled(0.25). Granularity itself was NOT the problem;
+    per-selection fits have the same ~33 steps. The BIAS was.
+    """
+    import inspect
+    from workers.jobs import pick_triggers as pt
+
+    fsrc = inspect.getsource(pt._fit_calibrator)
+    assert "for sel in (\"home\", \"draw\", \"away\")" in fsrc, (
+        "the 1x2 calibrator must be fit PER SELECTION — pooling three different "
+        "events whose hit rates span 0.245 to 0.444 biases every one of them."
+    )
+    # the model-anchor emitter lives inside compute_triggers (the sharp one is
+    # the separately-named _emit_sharp_anchor)
+    esrc = inspect.getsource(pt.compute_triggers)
+    assert 'cal_1x2(r["praw"], sel)' in esrc, (
+        "the emitter must pass the selection so the per-selection fit is used"
+    )
+    # It must REFUSE rather than silently fall back to the pooled fit.
+    assert "refusing to calibrate" in fsrc, (
+        "on too little data for one selection the calibrator must return None, "
+        "not quietly fall back to a pooled fit — that fallback IS the bug."
+    )
+
+    cal = pt._fit_calibrator("1x2")
+    if cal is None:
+        return  # no sklearn / too little history in this environment
+    for raw in (0.25, 0.35, 0.45):
+        h, d = cal(raw, "home"), cal(raw, "draw")
+        assert h is not None and d is not None
+        assert h > d, (
+            f"at raw={raw} home ({h:.4f}) must calibrate ABOVE draw ({d:.4f}) — "
+            "home wins 44.4% of the time and draws 24.5%, so any fit that "
+            "cannot separate them is the pooled bug returning."
+        )
+
+
 if __name__ == "__main__":
     main()
