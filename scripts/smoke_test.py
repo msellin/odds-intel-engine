@@ -38122,5 +38122,60 @@ def test_wide_source_twins():
         )
 
 
+
+@test("BOTS-DESCRIBE — the bot comparison exists and is honest about what it cannot state")
+def test_bots_describe():
+    """BOTS-DESCRIBE (2026-09-11). Owner, on two more bots being added: "we
+    created more bots now? can we later understand how the bots differ?"
+
+    Sixteen active bots and rising, of which only the ones on `BotConfig` state
+    their gates declaratively. The rest keep them scattered across a job file —
+    which is exactly how the two mirrors drifted apart badly enough to cost real
+    bets (one pre-filtered on the pipeline's odds, the other applied no odds
+    floor at all).
+
+    So the tool prints the gates side by side AND marks the bots it cannot
+    state, because that column is the honest measure of the pick_generator
+    migration rather than a formatting gap. A tool that silently rendered "?" as
+    a blank would make the backlog invisible, which is the failure mode.
+
+    Pins the axes that constitute a real difference. Anything outside them is
+    not a difference and should not become a new bot.
+    """
+    import inspect
+    import importlib.util
+    import pathlib as _pl
+
+    spec = importlib.util.spec_from_file_location(
+        "_bd", _pl.Path("scripts/bots_describe.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    dsrc = inspect.getsource(mod)
+    # It must SAY which bots it cannot describe, not quietly omit them.
+    assert "still in code" in dsrc, (
+        "the tool must name the bots whose gates are not declarative — that "
+        "list IS the migration backlog, and hiding it hides the drift risk."
+    )
+    assert "(in code)" in dsrc, "non-declarative bots must be marked, not blank"
+
+    # The axes that actually change behaviour.
+    for axis in ("anchor", "source", "market", "sel", "edge", "odds"):
+        assert axis in dsrc, f"the comparison must show {axis!r}"
+    # Anchor kinds must not be conflated: a 3% sharp floor and a 13% model floor
+    # are both correct, and a table that implies otherwise misleads.
+    assert "sharp/de-vig" in dsrc and "line-shop" in dsrc and "model" in dsrc, (
+        "anchors must be distinguished — edge floors are NOT comparable across "
+        "anchor kinds"
+    )
+    # Real-money eligibility must be read from the code allowlist, not guessed
+    # from a name or a DB flag.
+    assert "PLACEABLE_BOTS" in dsrc, (
+        "money eligibility must come from the code-level allowlist"
+    )
+
+    assert mod.run(active_only=True, show_sql=False) == 0, "the tool must run"
+
+
 if __name__ == "__main__":
     main()
