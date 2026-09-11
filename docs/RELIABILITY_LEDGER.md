@@ -218,3 +218,65 @@ wait", ask what evidence would distinguish *recovering* from *never having been
 broken*. If the check you are using to decide is itself suppressed by the
 remedy, you cannot tell the two apart — and you will wait forever. **Print the
 raw response before theorising about who is blocking you.**
+
+## 11. A number that looks impossible is usually stale, not wrong
+
+Added 2026-09-11 after making this mistake twice in one morning while auditing
+the data-task backlog.
+
+`DB-RETENTION-POLICY` claimed `match_signals` held **45,807,706 rows at 30.0x
+duplication**. Measured, it held 3,381,601 at 2.07x. The gap was so large that
+the obvious inference was a measurement error — and it happened that
+`odds_snapshots` sat at 46.2M, close enough to 45.8M that "the ticket measured
+the wrong table" looked like the answer. It was filed as exactly that.
+
+**It was not a measurement error. The number was correct when written, and a fix
+had shipped in between** — `SIGNALS-STORE-ON-CHANGE-2026-09-03` stopped the
+re-insertion and `scripts/prune_match_signals.py` reclaimed the history. The
+ticket was not wrong, it was *done*.
+
+**The tell:** an old ticket quoting a figure that today's data contradicts by an
+order of magnitude. **The guard:** before concluding a past measurement was
+wrong, run `git log --since=<measurement date> -- <the relevant paths>` and read
+what shipped. A stale ticket is far more common than a bad measurement, and the
+two have opposite fixes — one is "close it as done", the other is "re-measure
+and correct the premise".
+
+The same pass made the inverse error on `DB-ANCHOR-GROWTH`: total inflow (~1.8M
+rows/day) was reported as the permanent-anchor growth the ticket was actually
+about (484k/day), turning 76 GB/yr into a claimed 310. **Both errors share a
+cause — comparing a fresh measurement against an old claim without first
+checking that the two measure the same thing.**
+
+## 12. A column filled by a nightly backfill can never be a model feature
+
+Added 2026-09-11, after two features were proposed for the production ensemble
+on the same false premise and neither could have been served.
+
+* `pinnacle_drift_*` is `1/closing_odds − 1/opening_odds`. It needs the CLOSING
+  price, so it cannot exist when we predict. **100% missing at inference.**
+* the `*_at_t6h` family looked safe by contrast — genuinely pre-kickoff
+  quantities. But they are populated by `job_nightly_mfv_b_ml3_refresh` at
+  **22:30 UTC, for matches that finished that day**, precisely because the live
+  MFV builder has "ordering issues with T-6h snapshot availability at build
+  time" (its own comment). Measured: MFV rows are built a median **14.7 hours**
+  before kickoff and only **166 of 4,030 (4.1%)** inside T−6h — so **~96%
+  missing at inference.**
+
+Training on either fits coefficients in the presence of information the model
+will never have at serve time, and biases every *other* coefficient too. The
+`<col>_missing` indicator handles *informative* missingness (weather runs ~50%
+missing and is legitimate); it does not rescue a feature that is absent almost
+always.
+
+**The tell:** the feature's writer is a `scripts/backfill_*.py` on a cron, or the
+column's only non-NULL rows belong to finished matches. **The guard:** before
+adding any feature, ask which code path populates it *for an upcoming match*,
+and measure its non-NULL rate on rows built before kickoff — not on the table as
+a whole. Where the quantity is genuinely pre-kickoff, compute it live at serve
+time instead: `PIN-CROSS-DRIFT-T6H-LIVE` did exactly that for the veto, sourcing
+drift from `odds_snapshots` rather than the MFV columns.
+
+Corollary worth checking whenever a post-hoc column has a live consumer: the
+meta-model scores at pick time and reads three `*_at_t6h` columns, and
+`meta_clv_score` lands on only **13.8%** of shadow picks.
