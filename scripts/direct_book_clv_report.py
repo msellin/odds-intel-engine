@@ -55,12 +55,21 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=None)
     ap.add_argument("--max-min", type=int, default=60, help="freshness bound for a close")
+    ap.add_argument("--include-paper", action="store_true",
+                    help="also include placed_real=false rows (the retired paper daemon)")
     args = ap.parse_args()
 
     days = f"AND rb.placed_at >= NOW() - INTERVAL '{int(args.days)} days'" if args.days else ""
+    # Same rule as /admin/real-bets: exclude placed_real=false (paper daemon),
+    # keep TRUE (verified real money, from 2026-08-27) and legacy NULL
+    # (unverified, May-Sep). The two groups behave very differently — measured
+    # 2026-09-11: de-vigged Pinnacle CLV median -0.1% (TRUE, n=127) vs -6.8%
+    # (NULL, n=817) — so the summary below is also split by group.
+    if not args.include_paper:
+        days += " AND rb.placed_real IS NOT FALSE"
     bets = execute_query(
         f"""SELECT rb.id, rb.match_id::text AS match_id, rb.market, rb.selection,
-                   rb.bookmaker, rb.actual_odds, rb.placed_at, m.date AS kickoff
+                   rb.bookmaker, rb.actual_odds, rb.placed_at, rb.placed_real, m.date AS kickoff
               FROM real_bets rb JOIN matches m ON m.id = rb.match_id
              WHERE rb.combo_legs IS NULL AND rb.actual_odds IS NOT NULL
                AND m.date < NOW() {days}
@@ -110,6 +119,13 @@ def main():
     print(summarise("own-book CLV", [r["own_clv"] for r in rows]))
     print(summarise("vs best direct close", [r["best_clv"] for r in rows]))
     print(summarise("Pinnacle CLV (de-vig)", [r["pin_clv"] for r in rows]))
+
+    print("\n— Split by placed_real (TRUE = verified real money; NULL = legacy, unverified) —")
+    for flag, label in ((True, "TRUE"), (None, "NULL"), (False, "FALSE (paper)")):
+        grp = [r for r in rows if r["b"]["placed_real"] is flag]
+        if grp:
+            print(summarise(f"own-book  [{label}]", [r["own_clv"] for r in grp]))
+            print(summarise(f"Pinnacle  [{label}]", [r["pin_clv"] for r in grp]))
 
     print("\n— Own-book CLV by how early we bet (negative = the price drifted out after we bet) —")
     for hi, label in BUCKETS:

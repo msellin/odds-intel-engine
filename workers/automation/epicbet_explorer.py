@@ -913,8 +913,8 @@ def drop_non_monotone_ft_ou(rows: list[tuple], match_id) -> tuple[list[tuple], i
     across lines is mathematically impossible, so the labelling is wrong and
     zero OU data beats lying OU data.
 
-    Restricted to the FULL-MATCH goals ladder, not `startswith("over_under_")`.
-    `_ou_rows_monotone` keys on the last underscore-separated token, so
+    Restricted to the FULL-MATCH goals ladder, not a prefix match on
+    "over_under_". `_ou_rows_monotone` keys on the last underscore-separated token, so
     `over_under_1h_15` parses as cents=15 and collides with `over_under_15`; a
     first-half under price is far longer than the full-match one, so mixing them
     fabricates a non-monotone ladder and drops perfectly good full-match rows.
