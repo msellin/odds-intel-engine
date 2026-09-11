@@ -22278,6 +22278,96 @@ def test_kambi_not_placeable_2026_09_11():
     return "Unibet-Kambi is reference-only in code and in docs"
 
 
+@test("ROUTER-UNIBET-PARITY — the Unibet arm records, heals, and cannot double-bet")
+def test_router_unibet_parity_2026_09_11():
+    """UNIBET-AUTOPLACE (2026-09-11). Brings the router's Unibet executor arm to
+    the same standard as the Coolbet arm before real money is routed to it.
+
+    Three defects found by reconnaissance, all pinned here:
+
+    1. THE DOUBLE-BET BUG. `unibet_placer` wrote NOTHING anywhere, but the
+       router's only cross-book dedup is `_has_exposure()`, which reads
+       `real_bets`. A confirmed real Unibet placement was therefore invisible
+       to the guard and the NEXT pass would place the same
+       (match, market, selection) again. At 3-5 picks/day a duplicate is a
+       LARGER share of exposure, not a smaller one.
+    2. THE DEAD COOLBET ARM. `page = up.attach(pw)` — but attach() returns
+       (browser, page). stage_bet got a tuple, raised, and the except swallowed
+       it into {"ok": False}, indistinguishable from a legitimate decline. The
+       router could never place or stage at Coolbet at all.
+    3. THE LOOSENED SECOND GATE. `stage_bet` was called without
+       `edge_threshold`, so its independent live-price re-check used the 0.03
+       default instead of the bot's 0.08/0.10 — defeating the whole point of
+       re-verifying at the live price.
+    """
+    import inspect, pathlib
+    from workers.automation import best_price_router as r
+
+    src = pathlib.Path("workers/automation/best_price_router.py").read_text()
+
+    # 1. Coolbet arm must unpack attach()'s (browser, page) tuple.
+    # CODE lines only — comments legitimately quote the buggy form to explain it.
+    attach_lines = [l.strip() for l in src.splitlines()
+                    if "up.attach(pw)" in l and not l.strip().startswith("#")]
+    assert attach_lines, "the Coolbet arm must still attach to CDP-Chrome"
+    for l in attach_lines:
+        assert l.startswith("_browser, page ="), (
+            "attach() returns (browser, page) — assigning it straight to `page` "
+            f"hands stage_bet a tuple and silently kills the Coolbet arm: {l!r}"
+        )
+
+    # 2. The bot's real threshold must reach stage_bet's live-price re-check.
+    assert "edge_threshold=edge_threshold" in src, (
+        "stage_bet must receive the bot's edge_threshold, not its 0.03 default."
+    )
+
+    # 3. A confirmed real Unibet placement must write real_bets, or the
+    #    cross-book dedup is blind to it.
+    ud = src[src.index("def _dispatch_unibet"):src.index("def _dispatch_coolbet")]
+    assert "store_real_bet(" in ud and 'bookmaker="Unibet-Site"' in ud, (
+        "the Unibet arm must record a confirmed placement to real_bets — "
+        "_has_exposure() reads that table and is the ONLY double-bet guard."
+    )
+    assert "placed_real=True" in ud, "record real money as real, by evidence"
+    assert ud.index("if placed:") < ud.index("store_real_bet("), (
+        "record only AFTER the balance-delta confirmation, never on absence "
+        "of an exception."
+    )
+
+    # 4. The unattended arm must revive its session BEFORE placing.
+    assert "ensure_logged_in(" in ud, (
+        "routing real money to Unibet creates the unattended loop that rotted "
+        "Coolbet; the session heartbeat must run before placement."
+    )
+    assert ud.index("ensure_logged_in(") < ud.index("place_bet("), (
+        "heal BEFORE placing, not after."
+    )
+
+    # 5. Routing rationale must capture EVERY book priced, not just winners —
+    #    otherwise it cannot answer 'was the other book close?' later.
+    d = r.decide_book(0.40, 0.10, 2.80, {"Coolbet": 3.30, "Unibet-Site": 3.50})
+    assert d["winner"] == "Unibet-Site"
+    considered = d.get("considered") or {}
+    assert set(considered) == {"Coolbet", "Unibet-Site"}, (
+        "every book PRICED must appear in the audit, including losers."
+    )
+    assert considered["Coolbet"]["cleared"] is False
+    assert "threshold" in considered["Coolbet"]["reason"], (
+        "a losing book must say WHY it lost (floor vs threshold)."
+    )
+    # losers are recorded even when nothing clears at all
+    d2 = r.decide_book(0.30, 0.10, 2.80, {"Coolbet": 2.90})
+    assert d2["winner"] is None and (d2.get("considered") or {}), (
+        "a pick where no book clears must still record what was considered."
+    )
+
+    # 6. The real-money switch stays an explicit env gate.
+    assert "ROUTER_ALLOW_REAL" in src, "the real-money double-gate must remain"
+    rsig = inspect.signature(r.route)
+    assert rsig.parameters["execute"].default is False, "execute defaults off"
+    return "Unibet arm records + heals; Coolbet arm live; routing rationale stored"
+
+
 @test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")
 def test_kuma_push_helper():
     """KUMA-PUSH-HELPER (2026-07-07): workers/utils/kuma.py is the
@@ -34728,7 +34818,10 @@ def test_best_price_router_execute_wiring():
     # (3) _dispatch routes to the correct arm (monkeypatch the arms — no browser)
     calls = {}
     bpr._dispatch_unibet = lambda pick, dec, *, execute: calls.setdefault("uni", execute) or {"ok": True}
-    bpr._dispatch_coolbet = lambda pick, *, execute: calls.setdefault("cb", execute) or {"ok": True}
+    # accepts edge_threshold (added 2026-09-11 so the bot's real 0.08/0.10 floor
+    # reaches stage_bet's live-price re-check instead of its 0.03 default)
+    bpr._dispatch_coolbet = (lambda pick, *, execute, edge_threshold=0.03:
+                             calls.setdefault("cb", execute) or {"ok": True})
     bpr._dispatch("Unibet-Site", {}, {}, execute=False)
     bpr._dispatch("Coolbet", {}, {}, execute=False)
     assert "uni" in calls and "cb" in calls, "_dispatch must route Unibet-Site and Coolbet to their arms"

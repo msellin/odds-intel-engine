@@ -90,18 +90,60 @@ def decide_book(cal_prob: float, threshold: float, odds_floor: float,
     (cal_prob − 1/odds) ≥ threshold AND odds ≥ odds_floor. Winner = best clearing
     price; ties break by PLACEABLE_BOOKS order. Returns {clearing, winner, ...}."""
     clearing = {}
+    # ROUTER-AUDIT (2026-09-11): keep every book we PRICED, not just the ones
+    # that cleared. Without the losers the stored rationale cannot answer the
+    # question worth asking later — was the other book close, absent, or just
+    # below floor? `reason` is the first failing condition, in gate order.
+    considered = {}
     for book, o in book_odds.items():
         if not o or o <= 1:
+            considered[book] = {"odds": o, "cleared": False, "reason": "no usable price"}
             continue
         edge = cal_prob - 1.0 / o
-        if o >= odds_floor and edge >= threshold:
+        if o < odds_floor:
+            reason = f"below odds floor ({o} < {odds_floor})"
+        elif edge < threshold:
+            reason = f"edge {edge:.4f} < threshold {threshold}"
+        else:
+            reason = None
+        considered[book] = {"odds": o, "edge": round(edge, 4),
+                            "cleared": reason is None, "reason": reason}
+        if reason is None:
             clearing[book] = {"odds": o, "edge": round(edge, 4)}
     if not clearing:
-        return {"clearing": {}, "winner": None}
+        return {"clearing": {}, "winner": None, "considered": considered}
     winner = max(clearing, key=lambda b: (clearing[b]["odds"],
                  -(PLACEABLE_BOOKS.index(b) if b in PLACEABLE_BOOKS else 99)))
-    return {"clearing": clearing, "winner": winner,
+    return {"clearing": clearing, "winner": winner, "considered": considered,
             "winner_odds": clearing[winner]["odds"], "winner_edge": clearing[winner]["edge"]}
+
+
+def _routing_note(decision: dict) -> str:
+    """Compact, queryable record of WHY this book won, stored on the real_bets
+    row (owner request 2026-09-11: "turn it on so we can later analyze why
+    which book was chosen").
+
+    Written as JSON inside `notes` so it is analyzable in SQL without a
+    migration, e.g.:
+        SELECT notes::json->'router'->>'winner', count(*)
+          FROM real_bets WHERE notes LIKE '{"router"%' GROUP BY 1;
+
+    Captures every book we PRICED and whether it cleared — not just the
+    winner. Without the losers the record cannot answer the question that
+    matters later: was the other book close, absent, or merely below floor?
+    """
+    import json as _json
+    clearing = decision.get("clearing") or {}
+    return _json.dumps({"router": {
+        "winner": decision.get("winner"),
+        "winner_odds": decision.get("winner_odds"),
+        "winner_edge": decision.get("winner_edge"),
+        "threshold": decision.get("threshold"),
+        "odds_floor": decision.get("odds_floor"),
+        # every book considered: its price, its edge, and whether it cleared
+        "considered": decision.get("considered") or {},
+        "clearing": {b: v for b, v in clearing.items()},
+    }}, separators=(",", ":"), default=str)
 
 
 def _unibet_outcome_name(market: str, selection: str, home: str, away: str):
@@ -147,6 +189,22 @@ def _dispatch_unibet(pick: dict, decision: dict, *, execute: bool) -> dict:
         return {"book": "Unibet-Site", "ok": False, "reason": f"resolve_event_url raised: {e}"}
     if not r.get("url"):
         return {"book": "Unibet-Site", "ok": False, "reason": "resolve_event_url: no Unibet event URL"}
+    # UNIBET-UNATTENDED-SESSION (2026-09-11): revive the session BEFORE placing.
+    # Unibet did not rot only because nothing ran it unattended; routing real
+    # money here creates exactly the loop that rotted Coolbet. ensure_logged_in
+    # is idempotent, never raises, and is rate-limited (1/30min) with the stamp
+    # written BEFORE the attempt, so a hung login still rate-limits the next tick.
+    try:
+        from workers.automation import unibet_browser_sync as _ubs
+        heal = _ubs.ensure_logged_in(min_gap_min=30)
+        if heal in ("failed", "no_creds", "error"):
+            return {"book": "Unibet-Site", "ok": False,
+                    "reason": f"unibet session not live (ensure_logged_in={heal})",
+                    "event_url": r["url"], "outcome": name}
+    except Exception as e:  # noqa: BLE001
+        return {"book": "Unibet-Site", "ok": False,
+                "reason": f"ensure_logged_in raised: {e}"}
+
     o = float(decision["winner_odds"])
     lo, hi = round(o * (1 - _ODDS_BAND_PCT), 2), round(o * (1 + _ODDS_BAND_PCT), 2)
     try:
@@ -158,11 +216,46 @@ def _dispatch_unibet(pick: dict, decision: dict, *, execute: bool) -> dict:
                 "event_url": r["url"], "outcome": name}
     placed = bool(res.get("placed"))
     staged = (not execute) and bool(res.get("reason") and "PAPER" in str(res.get("reason")))
+
+    # UNIBET-NO-REAL-BETS-ROW (fixed 2026-09-11) — THE DOUBLE-BET BUG.
+    # unibet_placer writes nothing anywhere. The router's ONLY cross-book dedup
+    # is _has_exposure(), which reads `real_bets`. So a confirmed real Unibet
+    # placement was invisible to the guard and the NEXT pass would place the
+    # same (match, market, selection) again. Record it the moment the balance
+    # delta confirms — same contract as the Coolbet arm (placed_real=True only
+    # after evidence, never on absence of an exception). A recording failure is
+    # logged but must NOT turn a placed bet into a reported failure.
+    real_bet_id = None
+    if placed:
+        try:
+            from workers.api_clients.supabase_client import store_real_bet
+            real_bet_id = store_real_bet(
+                match_id=str(pick["match_id"]),
+                market=pick["market"],
+                selection=pick["selection"],
+                bookmaker="Unibet-Site",
+                actual_odds=float(res.get("odds") or o),
+                stake=float(STAKE_EUR),
+                captured_odds=(float(pick["odds_at_pick"])
+                               if pick.get("odds_at_pick") else None),
+                bot_id=pick.get("bot_id"),
+                simulated_bet_id=pick.get("shadow_bet_id"),
+                notes=_routing_note(decision),
+                placed_real=True,
+            )
+        except Exception as e:  # noqa: BLE001
+            log.error("UNIBET PLACED but real_bets write FAILED (%s) — the "
+                      "cross-book dedup is blind to this bet until it is "
+                      "recorded by hand: match=%s %s/%s", e,
+                      pick.get("match_id"), pick.get("market"), pick.get("selection"))
+
     return {"book": "Unibet-Site", "ok": placed or staged, "event_url": r["url"],
-            "outcome": name, "placed": placed, "staged": staged, "result": res}
+            "outcome": name, "placed": placed, "staged": staged,
+            "real_bet_id": real_bet_id, "result": res}
 
 
-def _dispatch_coolbet(pick: dict, *, execute: bool) -> dict:
+def _dispatch_coolbet(pick: dict, *, execute: bool,
+                      edge_threshold: float = 0.03) -> dict:
     """Drive the winning Coolbet slip via coolbet_ui_placer.stage_bet.
     execute=False STAGES the slip (dry-test-in-action, a complete no-op against
     the account); execute=True places for real. Never raises."""
@@ -173,8 +266,22 @@ def _dispatch_coolbet(pick: dict, *, execute: bool) -> dict:
         return {"book": "Coolbet", "ok": False, "reason": f"import failed: {e}"}
     try:
         with sync_playwright() as pw:
-            page = up.attach(pw)
-            res = up.stage_bet(page, pick, STAKE_EUR, execute=execute)
+            # ROUTER-COOLBET-ARM-DEAD (fixed 2026-09-11): this was
+            # `page = up.attach(pw)`, but attach() returns (browser, page).
+            # stage_bet then received a TUPLE as its page, raised, and the
+            # except below swallowed it into a plain {"ok": False} — so the
+            # router's Coolbet arm could never stage or place ANYTHING, and
+            # said so in a way indistinguishable from a legitimate decline.
+            _browser, page = up.attach(pw)
+            # ROUTER-EDGE-THRESHOLD (fixed 2026-09-11): edge_threshold was not
+            # passed, so stage_bet's independent live-price re-check fell back
+            # to its 0.03 default instead of the bot's 0.08/0.10. The router's
+            # own decide_book() uses the right threshold, so this silently
+            # loosened the SECOND gate — the one whose entire purpose is to
+            # re-verify at the live price. The value is already computed and
+            # sitting in `decision`; pass it.
+            res = up.stage_bet(page, pick, STAKE_EUR, execute=execute,
+                               edge_threshold=edge_threshold)
     except Exception as e:  # noqa: BLE001
         return {"book": "Coolbet", "ok": False, "reason": f"stage_bet raised: {e}"}
     placed = bool(getattr(res, "placed", False))
@@ -189,7 +296,8 @@ def _dispatch(winner: str, pick: dict, decision: dict, *, execute: bool) -> dict
     if winner == "Unibet-Site":
         return _dispatch_unibet(pick, decision, execute=execute)
     if winner == "Coolbet":
-        return _dispatch_coolbet(pick, execute=execute)
+        return _dispatch_coolbet(pick, execute=execute,
+                                 edge_threshold=float(decision.get("threshold") or 0.03))
     return {"book": winner, "ok": False, "reason": f"no executor arm for book {winner}"}
 
 
@@ -257,6 +365,7 @@ def route(execute: bool = False, *, stage: bool = False, limit: int | None = Non
             out["no_book_clears"] += 1
             out["skipped"].append({"pick": label, "reason": "no book clears the gate",
                                    "books": {b: d["odds"] for b, d in books.items()},
+                                   "considered": dec.get("considered") or {},
                                    "threshold": threshold, "odds_floor": odds_floor,
                                    "cal_prob": round(cal, 4)})
             continue
@@ -265,7 +374,9 @@ def route(execute: bool = False, *, stage: bool = False, limit: int | None = Non
         decision = {"pick": label, "bot": bot, "cal_prob": round(cal, 4),
                     "winner": winner, "winner_odds": dec["winner_odds"],
                     "winner_edge": dec["winner_edge"],
-                    "all_clearing": dec["clearing"], "threshold": threshold, "odds_floor": odds_floor}
+                    "all_clearing": dec["clearing"], "clearing": dec["clearing"],
+                    "considered": dec.get("considered") or {},
+                    "threshold": threshold, "odds_floor": odds_floor}
         out["would_place"].append(decision)
 
         # Dispatch to the winning book's executor when staging (dry-drive) or
