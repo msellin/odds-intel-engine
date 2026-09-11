@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.oddsintel.vps-postgres-tunnel</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/autossh</string>
+		<string>-M</string>
+		<string>0</string>
+		<string>-N</string>
+		<string>-o</string>
+		<string>ServerAliveInterval=30</string>
+		<string>-o</string>
+		<string>ServerAliveCountMax=3</string>
+		<string>-o</string>
+		<string>ExitOnForwardFailure=yes</string>
+		<string>-o</string>
+		<string>StrictHostKeyChecking=accept-new</string>
+		<string>-i</string>
+		<string>__SSH_IDENTITY__</string>
+		<string>-L</string>
+		<string>5433:localhost:5432</string>
+		<string>__SSH_USER_AT_HOST__</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>AUTOSSH_GATETIME</key>
+		<string>0</string>
+		<key>AUTOSSH_LOGFILE</key>
+		<string>/Users/margussellin/www/odds-intel-engine/dev/active/vps-postgres-tunnel.log</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+	<key>StandardOutPath</key>
+	<string>/Users/margussellin/www/odds-intel-engine/dev/active/vps-postgres-tunnel.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/margussellin/www/odds-intel-engine/dev/active/vps-postgres-tunnel.log</string>
+</dict>
+</plist>

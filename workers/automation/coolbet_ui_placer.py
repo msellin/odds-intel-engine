@@ -1351,6 +1351,7 @@ def stage_bet(
     execute: bool = False,
     edge_threshold: float = 0.03,
     max_odds_drop_pct: float = 100.0,
+    extra_notes: str | None = None,
 ) -> StageResult:
     """Drive one qualified pick through the UI up to (optionally) placement.
 
@@ -1622,7 +1623,13 @@ def stage_bet(
             match_id=str(bet["match_id"]), market=bet["market"], selection=bet["selection"],
             bookmaker="Coolbet", captured_odds=float(captured) if captured else outcome.odds,
             actual_odds=outcome.odds, stake=applied, bot_id=str(bet["bot_id"]) if bet.get("bot_id") else None,
-            notes=f"ui-placer edge_threshold={edge_threshold:.2%}",
+            # ROUTER-AUDIT-BOTH-ARMS (2026-09-11): `extra_notes` lets the
+            # best-price router record WHY this book won on the Coolbet row
+            # too. Without it the book-choice analysis was one-sided — only
+            # Unibet placements carried the rationale — so "was the other book
+            # close?" was unanswerable for exactly the book we place at most.
+            notes=(f"ui-placer edge_threshold={edge_threshold:.2%}"
+                   + (f" | {extra_notes}" if extra_notes else "")),
             placed_real=True,  # Stage 2: this write only happens AFTER the balance-delta confirms a real stake
         )
     except Exception as e:

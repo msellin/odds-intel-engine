@@ -22184,6 +22184,36 @@ def test_coolbet_cdp_cookie_export():
     # not reload launchd. Nothing detected that for weeks. Operator-env only;
     # CI has no LaunchAgents dir.
     import os
+    # 8. EVERY RUNNING JOB MUST HAVE A SOURCE (MAC-PLIST-ORPHANS, 2026-09-11).
+    # Step 7 only checks that the plists we HAVE still match. It cannot see a
+    # job running with no repo plist at all — and 3 of 7 were in exactly that
+    # state: unibet-site-odds (the placeable Unibet price feed),
+    # best-price-router-monitor (the both-book check that catches picks Coolbet
+    # would miss) and vps-postgres-tunnel. They existed only on the operator's
+    # Mac, so a dead disk loses them and nothing in git says what they did.
+    # A `.template` counts as a source: the tunnel's real plist carries a root
+    # SSH endpoint and identity path, which do not belong in a PUBLIC repo.
+    import subprocess
+    try:
+        listing = subprocess.run(["launchctl", "list"], capture_output=True,
+                                 text=True, timeout=10).stdout
+    except Exception:  # noqa: BLE001 — CI / non-macOS has no launchctl
+        listing = ""
+    if listing:
+        repo_dir = pathlib.Path("local/launchd")
+        have = {f.name.replace(".template", "") for f in repo_dir.glob("*.plist*")}
+        running = {ln.split()[-1] for ln in listing.splitlines()
+                   if ln.strip().endswith(tuple("0123456789abcdefghijklmnopqrstuvwxyz-"))
+                   and "com.oddsintel." in ln}
+        orphans = sorted(lbl for lbl in running
+                         if f"{lbl}.plist" not in have)
+        assert not orphans, (
+            "these launchd jobs are RUNNING with no plist in local/launchd/ — "
+            "they exist only on this Mac and are unreproducible from git: "
+            f"{orphans}. Export each with `plutil -convert xml1`, scrubbing any "
+            "secret or host into a .template."
+        )
+
     installed = (pathlib.Path(os.path.expanduser("~"))
                  / "Library/LaunchAgents" / repo_plist.name)
     if installed.exists():
@@ -22321,6 +22351,20 @@ def test_router_unibet_parity_2026_09_11():
         "stage_bet must receive the bot's edge_threshold, not its 0.03 default."
     )
 
+    # 2b. BOTH arms must record WHY the book won, or the book-choice analysis
+    # is one-sided. Unibet wrote the rationale into real_bets.notes from the
+    # start; the Coolbet arm (the book we place at most) did not, which made
+    # "was the other book close?" unanswerable for the majority of bets.
+    import inspect as _i
+    from workers.automation import coolbet_ui_placer as _up
+    assert "extra_notes" in _i.signature(_up.stage_bet).parameters, (
+        "stage_bet must accept extra_notes so the router can record the "
+        "routing rationale on the Coolbet real_bets row too"
+    )
+    assert "extra_notes=routing_note" in src, (
+        "the Coolbet arm must pass the routing rationale through"
+    )
+
     # 3. A confirmed real Unibet placement must write real_bets, or the
     #    cross-book dedup is blind to it.
     ud = src[src.index("def _dispatch_unibet"):src.index("def _dispatch_coolbet")]
@@ -22358,6 +22402,18 @@ def test_router_unibet_parity_2026_09_11():
     assert considered["Coolbet"]["cleared"] is False
     assert "threshold" in considered["Coolbet"]["reason"], (
         "a losing book must say WHY it lost (floor vs threshold)."
+    )
+
+    # A book with NO price must still appear, distinguishably. "No quote" and
+    # "quoted but below floor" are different answers to "why not the other
+    # book?", and a book that never entered book_odds would otherwise vanish
+    # from the audit entirely.
+    only_one = r.decide_book(0.4239, 0.08, 1.8, {"Coolbet": 2.99})
+    absent = (only_one.get("considered") or {}).get("Unibet-Site")
+    assert absent is not None, "an unpriced book must still be recorded"
+    assert absent["odds"] is None and absent["cleared"] is False
+    assert "no fresh price" in absent["reason"], (
+        "an absent book must say it had no price, not merely fail to appear"
     )
     # losers are recorded even when nothing clears at all
     d2 = r.decide_book(0.30, 0.10, 2.80, {"Coolbet": 2.90})
@@ -35085,7 +35141,8 @@ def test_best_price_router_execute_wiring():
     bpr._dispatch_unibet = lambda pick, dec, *, execute: calls.setdefault("uni", execute) or {"ok": True}
     # accepts edge_threshold (added 2026-09-11 so the bot's real 0.08/0.10 floor
     # reaches stage_bet's live-price re-check instead of its 0.03 default)
-    bpr._dispatch_coolbet = (lambda pick, *, execute, edge_threshold=0.03:
+    bpr._dispatch_coolbet = (lambda pick, *, execute, edge_threshold=0.03,
+                             routing_note=None:
                              calls.setdefault("cb", execute) or {"ok": True})
     bpr._dispatch("Unibet-Site", {}, {}, execute=False)
     bpr._dispatch("Coolbet", {}, {}, execute=False)

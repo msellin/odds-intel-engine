@@ -110,6 +110,15 @@ def decide_book(cal_prob: float, threshold: float, odds_floor: float,
                             "cleared": reason is None, "reason": reason}
         if reason is None:
             clearing[book] = {"odds": o, "edge": round(edge, 4)}
+    # A book with NO fresh price never entered book_odds, so it would be absent
+    # from the audit entirely — and "no quote" vs "quoted but below floor" are
+    # different answers to "why didn't we use the other book?". Record the
+    # expected books we got nothing for, explicitly.
+    for book in PLACEABLE_BOOKS:
+        considered.setdefault(book, {"odds": None, "cleared": False,
+                                     "reason": "no fresh price within the "
+                                               "freshness window"})
+
     if not clearing:
         return {"clearing": {}, "winner": None, "considered": considered}
     winner = max(clearing, key=lambda b: (clearing[b]["odds"],
@@ -272,7 +281,8 @@ def _dispatch_unibet(pick: dict, decision: dict, *, execute: bool) -> dict:
 
 
 def _dispatch_coolbet(pick: dict, *, execute: bool,
-                      edge_threshold: float = 0.03) -> dict:
+                      edge_threshold: float = 0.03,
+                      routing_note: str | None = None) -> dict:
     """Drive the winning Coolbet slip via coolbet_ui_placer.stage_bet.
     execute=False STAGES the slip (dry-test-in-action, a complete no-op against
     the account); execute=True places for real. Never raises."""
@@ -298,7 +308,8 @@ def _dispatch_coolbet(pick: dict, *, execute: bool,
             # re-verify at the live price. The value is already computed and
             # sitting in `decision`; pass it.
             res = up.stage_bet(page, pick, STAKE_EUR, execute=execute,
-                               edge_threshold=edge_threshold)
+                               edge_threshold=edge_threshold,
+                               extra_notes=routing_note)
     except Exception as e:  # noqa: BLE001
         return {"book": "Coolbet", "ok": False, "reason": f"stage_bet raised: {e}"}
     placed = bool(getattr(res, "placed", False))
@@ -314,7 +325,8 @@ def _dispatch(winner: str, pick: dict, decision: dict, *, execute: bool) -> dict
         return _dispatch_unibet(pick, decision, execute=execute)
     if winner == "Coolbet":
         return _dispatch_coolbet(pick, execute=execute,
-                                 edge_threshold=float(decision.get("threshold") or 0.03))
+                                 edge_threshold=float(decision.get("threshold") or 0.03),
+                                 routing_note=_routing_note(decision))
     return {"book": winner, "ok": False, "reason": f"no executor arm for book {winner}"}
 
 

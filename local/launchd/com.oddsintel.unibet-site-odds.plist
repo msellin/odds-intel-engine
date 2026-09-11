@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.oddsintel.unibet-site-odds</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/python3</string>
+		<string>-m</string>
+		<string>workers.automation.unibet_odds_feed</string>
+		<string>--bulk</string>
+		<string>--days</string>
+		<string>2</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PYTHONUNBUFFERED</key>
+		<string>1</string>
+	</dict>
+	<key>WorkingDirectory</key>
+	<string>/Users/margussellin/www/odds-intel-engine</string>
+	<key>StandardOutPath</key>
+	<string>/Users/margussellin/www/odds-intel-engine/dev/active/unibet-site-odds.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/margussellin/www/odds-intel-engine/dev/active/unibet-site-odds.log</string>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict>
+			<key>Minute</key>
+			<integer>15</integer>
+		</dict>
+		<dict>
+			<key>Minute</key>
+			<integer>45</integer>
+		</dict>
+	</array>
+</dict>
+</plist>
