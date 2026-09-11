@@ -241,13 +241,13 @@ def main() -> int:
     # SMS 2FA — operator-in-the-loop). Use --cleanup-all to override.
     if args.cleanup or args.cleanup_only or args.cleanup_all:
         existing = results["steps"]["reachability"].get("sessions_visible") or []
-        # Production-whitelist — mirrors scripts/coolbet/sweep_stale_sessions.py
-        # so both tools enforce the same rule. Kept in sync manually for now;
-        # if the list grows, factor into a shared constant.
-        WHITELIST_EXACT = {"coolbet_prod", "coolbet_dev"}
-        WHITELIST_PREFIXES = ("hltv_",)
-        def _is_whitelisted(name: str) -> bool:
-            return name in WHITELIST_EXACT or any(name.startswith(p) for p in WHITELIST_PREFIXES)
+        # FS-SWEEP-WHITELIST-INCOMPLETE (2026-09-11): this WAS a hand-kept copy,
+        # with its own comment saying "kept in sync manually for now; if the
+        # list grows, factor into a shared constant". The list grew, and the
+        # two copies had already diverged — `coolbet_dev` was whitelisted here
+        # and not in the sweeper, so the sweeper would have destroyed the
+        # session holding the SMS-2FA enrolment. Imported now; one definition.
+        from scripts.coolbet.sweep_stale_sessions import is_whitelisted as _is_whitelisted
 
         if args.cleanup_all:
             to_destroy = list(existing)

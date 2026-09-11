@@ -32,8 +32,27 @@ from datetime import datetime, timezone
 
 FS_URL_DEFAULT = os.getenv("FLARESOLVERR_URL", "http://localhost:8191")
 
+# FS-SWEEP-WHITELIST-INCOMPLETE (2026-09-11). This listed `coolbet_prod` only,
+# which was true of the VPS FlareSolverr this job actually runs against — and a
+# landmine for the OPERATOR'S MAC FS, where Coolbet and Epicbet really route
+# (COOLBET_NO_FS must stay unset; see docs/COOLBET_RUNBOOK.md). On that box the
+# live session names are `coolbet_odds_reader` (set in
+# local/launchd/com.oddsintel.coolbet-odds-snapshot.plist) and
+# `epicbet_odds_reader` (epicbet_explorer._FS_SESSION_ID). Pointing this sweeper
+# at the Mac — the obvious remedy the day someone notices the Mac FS is never
+# swept — would have destroyed both mid-run, every hour, and looked like a
+# scraper bug rather than a sweeper one.
+#
+# Whitelist the NAMES OF LIVE FEEDS, not the names one host happens to have.
 WHITELIST_EXACT = {
-    "coolbet_prod",
+    "coolbet_prod",          # Coolbet placement session (real money)
+    "coolbet_odds_reader",   # Coolbet odds sweep, :03/:33 on the Mac
+    "epicbet_odds_reader",   # Epicbet odds sweep, :02/:32
+    # `coolbet_dev` holds the SMS-2FA enrolment (flaresolverr_login_enroll.py
+    # defaults to it). Destroying it means an operator-in-the-loop re-enrol.
+    # It was whitelisted in scripts/diagnose/flaresolverr.py and NOT here — the
+    # exact divergence that file's own comment warned about.
+    "coolbet_dev",
 }
 WHITELIST_PREFIXES = (
     "hltv_",

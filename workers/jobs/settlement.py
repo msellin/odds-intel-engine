@@ -1732,7 +1732,25 @@ LIMIT %s
 # backfills the score. A void records "we could not grade this", which is the
 # truth; a loss would manufacture a track record out of a match we never scored.
 _HT_VOID_REASON = "no_ht_score"
-_HT_VOID_AFTER_H = 30  # > the 24h gap between 22:30 HT sweeps, so the sweep gets a full go
+# HT-VOID-AGE-GATE (revised 2026-09-11). This was 30h, justified as "> the 24h
+# gap between 22:30 HT sweeps, so the sweep gets a full go". The premise is
+# right — never void before the half-time backfill has had a real chance — but
+# 30h is far more than that costs, and the gap is not free: until the bet is
+# voided, EVERY settlement run re-grades it as UNSETTLEABLE and fires the
+# "Unsettleable market" Telegram (deduped 6h, so ~4 alerts a day).
+#
+# Worked example, the bet that prompted this: Nürnberg v Hannover kicked off
+# 16:30 and finished with no HT score. The 22:30 backfill gets its chance SIX
+# HOURS later, the same evening — but at a 30h gate the void could not run
+# until 22:30 the NEXT day, so the alert would have fired for ~29 hours about
+# a bet we had already decided was ungradeable.
+#
+# 14h instead: comfortably past the first 22:30 sweep for any kickoff (the
+# worst case is a 23:00 kickoff, whose first sweep is 23.5h later — still
+# inside the gate because the gate is measured from KICKOFF and the row cannot
+# be ungradeable-and-finished before the match ends). It buys the backfill a
+# full cycle and stops manufacturing a day of alerts about a known outcome.
+_HT_VOID_AFTER_H = 14
 
 
 def void_ungradeable_1h_bets(min_age_h: int = _HT_VOID_AFTER_H,
@@ -1751,7 +1769,12 @@ def void_ungradeable_1h_bets(min_age_h: int = _HT_VOID_AFTER_H,
                      WHERE b.result = 'pending'
                        AND (b.market LIKE %s OR b.market LIKE %s)
                        AND m.status = 'finished'
-                       AND m.score_home IS NOT NULL
+                       -- Both halves of the full-time score, matching
+                       -- `_WRONGLY_VOIDED_SQL` exactly. These two sweeps are
+                       -- meant to be inverses of each other, and an asymmetric
+                       -- predicate is how a pair like that drifts: this one
+                       -- checked only score_home.
+                       AND m.score_home IS NOT NULL AND m.score_away IS NOT NULL
                        AND (m.ht_score_home IS NULL OR m.ht_score_away IS NULL)
                        AND m.date < NOW() - (%s * INTERVAL '1 hour')""",
                 [r"%\_1h", r"%\_1h\_%", min_age_h],

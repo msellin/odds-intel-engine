@@ -274,10 +274,62 @@ _FS_SESSION_ID = os.getenv("EPICBET_FLARE_SESSION", "epicbet_odds_reader")
 _FS_PRE = re.compile(r"<pre[^>]*>(.*?)</pre>", re.S)
 
 
+# EPICBET-FS-500 (2026-09-11). FlareSolverr returns HTTP 500 from /v1 when it
+# cannot allocate a new Chrome context — not when it is down. The container
+# reports `Up (healthy)` and `sessions.list` answers `ok` throughout, so every
+# liveness check says fine while `sessions.create` fails.
+#
+# That happened for ~3h: an orphaned `unibet_test` session (a diagnostic
+# leftover, never reaped because the hourly sweeper runs on the VPS and this FS
+# is on the operator's Mac) held enough of the 1 GiB cap that Epicbet could not
+# open its own. Destroying that one session fixed it — FS was never restarted
+# and `coolbet_prod` was never touched.
+#
+# Memory frees as tabs finish, so a create that fails now often succeeds
+# seconds later. One 500 used to kill an entire 30-minute ingest cycle. Retry
+# is bounded and applies ONLY to session creation: a request-level 500 means
+# something else and must still surface.
+_FS_CREATE_RETRIES = 3
+_FS_CREATE_BACKOFF_S = 8.0
+
+
 def _fs_post(cmd: str, **kw):
     r = requests.post(f"{_FS_URL}/v1", json={"cmd": cmd, **kw}, timeout=180)
     r.raise_for_status()
     return r.json()
+
+
+def _fs_create_with_retry(session_id: str):
+    """`sessions.create`, retried on a 500 — see EPICBET-FS-500 above.
+
+    Raises the LAST error if every attempt fails, so the job still fails loudly
+    (this ingest deliberately re-raises rather than logging a silent zero) — but
+    it fails after FS has genuinely had time to free a tab, not on the first
+    unlucky moment.
+    """
+    import time as _t
+    last = None
+    for attempt in range(1, _FS_CREATE_RETRIES + 1):
+        try:
+            out = _fs_post("sessions.create", session=session_id)
+            if out.get("status") == "ok":
+                return out
+            last = RuntimeError(
+                f"FlareSolverr session create failed: {out.get('message')}")
+        except requests.HTTPError as e:
+            status = getattr(e.response, "status_code", None)
+            if status != 500:
+                raise           # 4xx is our bug; only a 500 is worth waiting on
+            last = e
+        if attempt < _FS_CREATE_RETRIES:
+            log.warning("Epicbet: FlareSolverr could not allocate a session "
+                        "(attempt %d/%d) — retrying in %.0fs. If this persists, "
+                        "check for orphaned sessions "
+                        "(`python3 scripts/diagnose/flaresolverr_recover.py --list`) "
+                        "before restarting FS, which would kill coolbet_prod.",
+                        attempt, _FS_CREATE_RETRIES, _FS_CREATE_BACKOFF_S)
+            _t.sleep(_FS_CREATE_BACKOFF_S)
+    raise last if last else RuntimeError("FlareSolverr session create failed")
 
 
 def _fs_open(sess: requests.Session) -> None:
@@ -288,9 +340,7 @@ def _fs_open(sess: requests.Session) -> None:
         _fs_post("sessions.destroy", session=_FS_SESSION_ID)   # clear a stale one
     except Exception:
         pass
-    out = _fs_post("sessions.create", session=_FS_SESSION_ID)
-    if out.get("status") != "ok":
-        raise RuntimeError(f"FlareSolverr session create failed: {out.get('message')}")
+    _fs_create_with_retry(_FS_SESSION_ID)
     sess._fs_on = True
     log.info("Epicbet: direct calls are 403 from this host — routed via FlareSolverr")
 
@@ -326,7 +376,11 @@ def _fs_get_json(url: str, *, _retry: bool = True):
         msg = str(out.get("message") or "")
         if _retry and "session" in msg.lower():
             log.warning("Epicbet: FS session vanished mid-run (%s) — recreating", msg)
-            _fs_post("sessions.create", session=_FS_SESSION_ID)
+            # Same retry as the opening create: the reason a session vanished
+            # mid-run and the reason a new one cannot be allocated are often
+            # the same memory pressure, so a bare create here would fail for
+            # exactly the case this recovery path exists to survive.
+            _fs_create_with_retry(_FS_SESSION_ID)
             return _fs_get_json(url, _retry=False)
         raise RuntimeError(f"FlareSolverr: {msg}")
     sol = out.get("solution") or {}

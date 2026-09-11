@@ -42,6 +42,13 @@ log = logging.getLogger(__name__)
 # the named browser session — we no longer need to sync them to .env.
 _FS_URL_DEFAULT = "http://localhost:8191"
 _FS_SESSION_NAME = os.getenv("COOLBET_FLARE_SESSION", "coolbet_prod")
+
+# JWT-ADOPT-TTL-FLOOR (2026-09-11): the minimum life a token must have LEFT
+# before `_adopt_manual_jwt` will accept it and write it to the DB as canonical.
+# Deliberately equal to `_ensure_auth`'s re-login margin below — a token this
+# close to expiry would be discarded by the very next auth check, so adopting it
+# produces nothing but a DB row every other process will bootstrap from.
+_MIN_ADOPT_TTL_S = 120.0
 _FS_TIMEOUT_MS = int(os.getenv("COOLBET_FS_TIMEOUT_MS", "60000"))
 
 _LOGIN_URL = "https://www.coolbet.com/s/auth/login"
@@ -668,9 +675,29 @@ class CoolbetSession:
             except Exception:
                 self._jwt_renewal_ts = 0.0
         ttl = self._jwt_exp - time.time()
-        if ttl <= 0:
+        # JWT-ADOPT-TTL-FLOOR (2026-09-11). This read `if ttl <= 0`, i.e. the
+        # only token it refused was one ALREADY dead. Observed consequence at
+        # 18:30 that day: the session adopted a token whose own `exp` was
+        # 18:30:09 — NINE SECONDS of life — and stamped it into the DB as the
+        # canonical JWT (`jwt_set_by='adopt_manual_jwt'`,
+        # `jwt_current_set_at=18:30:00`). Every later reader then bootstrapped
+        # from a token that was dead before it finished being written.
+        #
+        # The floor matches `_ensure_auth`'s existing 120s safety margin: that
+        # method re-logs-in at `exp - 120`, so adopting anything under 120s is
+        # work whose only product is a poisoned DB row. One threshold, two
+        # places that must agree.
+        #
+        # The word "expired" is a ROUTING CONTRACT, not prose: `_login` does
+        # `if "expired" not in str(e).lower(): raise`, so keeping it means a
+        # near-dead token falls through the existing self-heal ladder — CDP
+        # extraction first, then the honest "no usable JWT" error, then the SMS
+        # path — instead of becoming a hard failure here.
+        if ttl <= _MIN_ADOPT_TTL_S:
             raise RuntimeError(
-                f"Persisted JWT is expired (exp={datetime.fromtimestamp(self._jwt_exp, tz=timezone.utc).isoformat()}). "
+                f"Persisted JWT is expired or too close to it "
+                f"(ttl={ttl:.0f}s, floor={_MIN_ADOPT_TTL_S}s, "
+                f"exp={datetime.fromtimestamp(self._jwt_exp, tz=timezone.utc).isoformat()}). "
                 "Run `--full-heal` to attempt auto-recovery, or "
                 "`flaresolverr_login_enroll.py start` for SMS cold-start."
             )
@@ -950,7 +977,10 @@ class CoolbetSession:
     def _ensure_auth(self) -> None:
         if not self._require_auth:
             return  # anon-read mode: Imperva cookies only, no JWT needed
-        if self._jwt is None or time.time() > self._jwt_exp - 120:
+        # Same constant as the adopt floor, deliberately: a token this close
+        # to expiry is re-logged-in here, so `_adopt_manual_jwt` must not
+        # have written it to the DB as canonical in the first place.
+        if self._jwt is None or time.time() > self._jwt_exp - _MIN_ADOPT_TTL_S:
             self._login()
         # Coolbet rejects JWTs once past their `renewal_date` (~5–6 min after
         # issue) with 401 "Token has expired", even though `exp` is far out.

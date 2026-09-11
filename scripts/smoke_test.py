@@ -4375,6 +4375,10 @@ def _strip_prose(src: str) -> str:
     docstring on a nested function, cannot fool it.
     """
     import ast
+    import textwrap
+    # A method's own source is indented, which ast.parse rejects. Dedent first
+    # so this works on inspect.getsource(SomeClass.method), not just modules.
+    src = textwrap.dedent(src)
     lines = src.splitlines()
     kill: set[int] = set()
     for node in ast.walk(ast.parse(src)):
@@ -38239,6 +38243,150 @@ def test_predictions_source_ou():
     assert "inert" not in ou.notes, (
         "the config note must stop saying the bot is inert once it generates — "
         "a stale note is how a known-zero bot stays invisible"
+    )
+
+
+@test("JWT-ADOPT-TTL-FLOOR — a near-dead token must not become the canonical one")
+def test_jwt_adopt_ttl_floor():
+    """JWT-ADOPT-TTL-FLOOR (2026-09-11). `_adopt_manual_jwt` refused only a
+    token that was ALREADY dead (`if ttl <= 0`). Observed that day: the session
+    adopted a JWT whose own `exp` was 18:30:09 — NINE SECONDS of life — and
+    stamped it into `coolbet_session_state` as canonical
+    (`jwt_set_by='adopt_manual_jwt'`, `jwt_current_set_at=18:30:00`). Every
+    other process bootstraps from that row, so a token dead before it finished
+    being written became the thing the whole system trusted.
+
+    Why 120s and not some new number: `_ensure_auth` already re-logs-in at
+    `exp - 120`. Anything under that floor would be discarded by the very next
+    auth check, so adopting it produces nothing except a poisoned row. The two
+    must be the SAME constant — a hand-typed 120 in both places is how six
+    copies of the edge floor happened.
+
+    The word "expired" in the raised message is a ROUTING CONTRACT, not prose:
+    `_login` does `if "expired" not in str(e).lower(): raise`, so keeping it is
+    what lets a near-dead token fall through the existing self-heal ladder
+    (CDP extraction, then the honest no-usable-JWT error, then SMS) instead of
+    becoming a hard failure. A future edit that "tidies" that word breaks the
+    recovery path silently, which is why it is asserted.
+    """
+    import inspect
+    from workers.automation import coolbet_session as cs
+
+    assert cs._MIN_ADOPT_TTL_S == 120.0, cs._MIN_ADOPT_TTL_S
+    adopt = _strip_prose(inspect.getsource(cs.CoolbetSession._adopt_manual_jwt))
+    assert "_MIN_ADOPT_TTL_S" in adopt, (
+        "the adopt path must gate on the shared floor, not on `ttl <= 0`"
+    )
+    assert "if ttl <= 0" not in adopt, "the zero floor is what let a 9s token through"
+    assert "expired" in adopt.lower(), (
+        "the raised message must keep the word 'expired' — `_login` routes the "
+        "self-heal ladder on that substring"
+    )
+    # The guard must fire BEFORE anything is recorded or persisted, or the DB
+    # row is written and only then objected to — which is exactly what happened.
+    i_raise = adopt.index("_MIN_ADOPT_TTL_S")
+    for after in ("mark_login_success", "persist_jwt"):
+        assert adopt.index(after) > i_raise, (
+            f"{after} must come AFTER the TTL guard — at 18:30 both fired "
+            f"before anything could object, which is how jwt_current_set_at "
+            f"got stamped against a 9-second token"
+        )
+    # One constant, two consumers.
+    ensure = _strip_prose(inspect.getsource(cs.CoolbetSession._ensure_auth))
+    assert "_MIN_ADOPT_TTL_S" in ensure and "_jwt_exp - 120" not in ensure, (
+        "_ensure_auth's re-login margin and the adopt floor must be the SAME "
+        "constant — they are the same policy stated twice"
+    )
+
+
+@test("FS-SWEEP-WHITELIST — the session sweeper must not destroy a live feed")
+def test_fs_sweep_whitelist():
+    """FS-SWEEP-WHITELIST-INCOMPLETE (2026-09-11), found while fixing EPICBET-FS-500.
+
+    `sweep_stale_sessions.py` destroys every FlareSolverr session not on its
+    whitelist, hourly. The whitelist held `coolbet_prod` + `hltv_*` — correct
+    for the VPS FlareSolverr it actually runs against, and a LANDMINE for the
+    operator's Mac FS, which is where Coolbet and Epicbet really route. The live
+    names there are `coolbet_odds_reader` (set in the coolbet-odds-snapshot
+    plist) and `epicbet_odds_reader`. Pointing the sweeper at the Mac — the
+    obvious thing to do the day someone notices that FS is never swept — would
+    have destroyed both mid-run, every hour, and presented as a scraper bug.
+
+    A second copy of the list lived in `scripts/diagnose/flaresolverr.py` with a
+    comment promising to keep it in sync by hand. The two had ALREADY diverged:
+    that copy whitelisted `coolbet_dev` — the session holding the SMS-2FA
+    enrolment — and the sweeper did not, so the sweeper would have forced an
+    operator-in-the-loop re-enrolment. Now one definition, imported.
+    """
+    import inspect
+    from scripts.coolbet.sweep_stale_sessions import is_whitelisted
+
+    # Every live feed session, by the name the code/plist actually uses.
+    from workers.automation.epicbet_explorer import _FS_SESSION_ID as EPICBET_FS
+    for live in ("coolbet_prod", "coolbet_odds_reader", EPICBET_FS,
+                 "coolbet_dev", "hltv_anything"):
+        assert is_whitelisted(live), (
+            f"{live} is a LIVE FlareSolverr session — sweeping it kills a feed "
+            f"(or forces an SMS re-enrolment) mid-run"
+        )
+    # …and genuine leftovers still get swept, or the guard is worthless.
+    for junk in ("unibet_test", "coolbet_probe_1757600000", "random"):
+        assert not is_whitelisted(junk), (
+            f"{junk} must still be reaped — an orphaned session holding Chrome "
+            f"memory is exactly what starved the Epicbet feed for 3h"
+        )
+    # ONE definition. A second hand-kept copy is what diverged.
+    diag = open(inspect.getsourcefile(
+        __import__("scripts.diagnose.flaresolverr", fromlist=["x"])
+    ), encoding="utf-8").read()
+    assert "from scripts.coolbet.sweep_stale_sessions import is_whitelisted" in diag, (
+        "the diagnostic tool must IMPORT the whitelist, not re-type it — its "
+        "own comment promised manual sync and the copies had already diverged"
+    )
+
+
+@test("EPICBET-FS-500 — a FlareSolverr allocation failure must not kill the cycle")
+def test_epicbet_fs_500():
+    """EPICBET-FS-500 (2026-09-11). The Epicbet feed wrote nothing for ~3h:
+    `sessions.create` returned HTTP 500 and `raise_for_status()` propagated out
+    of the whole run.
+
+    THE DIAGNOSTIC POINT WORTH KEEPING: FlareSolverr returns 500 when it cannot
+    allocate a new Chrome context, NOT when it is down. Throughout the outage
+    the container reported `Up 6 weeks (healthy)` and `sessions.list` answered
+    `ok` — every liveness check said fine. The cause was an orphaned
+    `unibet_test` session (a diagnostic leftover, never reaped because the
+    hourly sweeper runs on the VPS while this FS is on the Mac) holding enough
+    of the 1 GiB cap that Epicbet could not open its own. Destroying that ONE
+    session fixed it; FS was never restarted and `coolbet_prod` — the
+    real-money session — was never touched.
+
+    Memory frees as tabs finish, so a create that fails now often succeeds
+    seconds later. Hence a bounded retry, scoped to session CREATION only: a
+    request-level 500 means something else and must still surface. And the
+    retry must not become a silent-zero — this job deliberately re-raises, so
+    after the last attempt the original error is raised, not swallowed.
+    """
+    import inspect
+    from workers.automation import epicbet_explorer as ee
+
+    assert ee._FS_CREATE_RETRIES >= 2 and ee._FS_CREATE_BACKOFF_S >= 2.0
+    src = _strip_prose(inspect.getsource(ee))
+    # Exactly ONE place may create a session, and it is the retrying one.
+    assert src.count('_fs_post("sessions.create"') == 1, (
+        "every session creation must go through _fs_create_with_retry — the "
+        "mid-run recovery path failed for the same memory pressure the retry "
+        "exists to survive"
+    )
+    retry = _strip_prose(inspect.getsource(ee._fs_create_with_retry))
+    assert "status != 500" in retry or "!= 500" in retry, (
+        "only a 500 is worth waiting on — a 4xx is our bug and must surface "
+        "immediately rather than after three sleeps"
+    )
+    assert "raise last" in retry, (
+        "after the last attempt the ORIGINAL error must be raised — this "
+        "ingest re-raises by design, and a retry that returns quietly turns a "
+        "loud failure into a silent zero"
     )
 
 
