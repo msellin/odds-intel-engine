@@ -64,8 +64,10 @@ Imperva-bypass proxy used by both Coolbet and HLTV scrapers.
 
 > **RETIRED 2026-09-10.** This paper daemon (`execute=False`) is gone. Paper simulation for model refinement is the pipeline's `simulated_bets`/`shadow_bets`; real money is the **UI placer** (`coolbet-ui-placer`); session-keep (JWT heal) moved to `coolbet-feed-watchdog` (`coolbet_browser_sync.ensure_session_live`). The section below is historical. See COOLBET_RUNBOOK "PAPER-DAEMON RETIRED".
 
-**Process:** launchd job `com.oddsintel.coolbet-mac-daemon` (plist at
-`local/launchd/com.oddsintel.coolbet-mac-daemon.plist`). One Python process,
+**Process:** launchd job `com.oddsintel.coolbet-mac-daemon` (plist ARCHIVED
+2026-09-11 at `local/launchd/retired/com.oddsintel.coolbet-mac-daemon.plist` —
+moved out of the live plist dir so the launchd drift guard stops reporting a
+deliberately-retired job as MISSING). One Python process,
 lives forever, polls every `COOLBET_MAC_POLL_S=1800` (30 min). launchd
 auto-restarts on crash; `ThrottleInterval=30` prevents busy-loop on config error.
 
@@ -279,7 +281,7 @@ placer path read this and short-circuit.
 | `scripts/coolbet/flaresolverr_login_enroll.py` | SMS enrollment — emergency only |
 | `scripts/coolbet/health_ping.py` | Heartbeat (Railway) |
 | `scripts/coolbet/sweep_stale_sessions.py` | FS GC (Railway) |
-| `local/launchd/com.oddsintel.coolbet-mac-daemon.plist` | launchd job definition |
+| `local/launchd/retired/com.oddsintel.coolbet-mac-daemon.plist` | launchd job definition — **RETIRED 2026-09-10**, archived 2026-09-11. The MODULE `workers/automation/coolbet_mac_daemon.py` is still present and is NOT dead code: `workers/jobs/coolbet_feed_watchdog.py` imports `_drain_operator_commands` from it for the Telegram heal button. |
 | `local/launch_chrome_for_sync.sh` | CDP-Chrome launcher |
 
 ### Deleted in COOLBET-DEAD-FILE-CLEANUP (2026-06-12)

@@ -188,10 +188,14 @@ tail -f dev/active/<name>.log                        # observe
 > now diffs the installed plist against the repo copy and fails on drift. Audit all
 > of them at once:
 > ```bash
-> for f in local/launchd/*.plist; do
->   diff -q "$f" ~/Library/LaunchAgents/$(basename "$f") >/dev/null 2>&1 \
->     && echo "OK      $(basename "$f")" || echo "DRIFTED $(basename "$f")"; done
+> python3 scripts/ops/launchd_drift_check.py --verbose
 > ```
+> **Replaced the `diff -q` one-liner 2026-09-11.** Byte-comparing reported 3 false
+> alarms out of 7 lines (two plists differed only in indentation, which launchd
+> cannot see; one was a deliberately retired job), and a guard that is mostly noise
+> gets skimmed past. The script compares parsed plists, names the offending keys,
+> skips `local/launchd/retired/`, and exits 1 on real drift. Smoke
+> `LAUNCHD-DRIFT-SEMANTIC`.
 > **For the local dashboard:** this drift check is currently a *smoke test only* — it
 > runs in CI, not as a live health signal. Surfacing it (plus FS session health and
 > plist-vs-repo state) is a dashboard input worth wiring.

@@ -137,10 +137,19 @@ So the only case needing a human is Docker itself being unstartable (the alert s
    **Consequence for fixes:** a fresher JWT cannot help, because the app is
    deliberately ending the session. Do not try to defeat the timeout by synthesising
    user activity — it is a responsible-gambling control. Make **re-login** cheap and
-   unattended instead: set `COOLBET_AUTO_LOGIN_ON_HEAL=true` in `.env` so
-   `ensure_session_live()` self-relogins via device-trust (no SMS, rate-limited 1/h).
+   unattended instead: `COOLBET_AUTO_LOGIN_ON_HEAL=true` makes
+   `ensure_session_live()` self-relogin via device-trust (no SMS, rate-limited 1/h).
+   **ENABLED 2026-09-11 — and note where.** It is set in the **feed-watchdog's
+   launchd plist** (`local/launchd/com.oddsintel.coolbet-feed-watchdog.plist`),
+   not `.env`: the watchdog is the process that calls `ensure_session_live()`
+   since it inherited session-keep on 2026-09-10, and a plist is reproducible
+   from git where `.env` is not. **Until then the capability was DEAD** — the
+   only plist setting it belonged to the RETIRED paper mac-daemon, and `.env`
+   never had it, so every "just set this flag" recommendation had been landing
+   in a file no running process read. Takes effect on the watchdog's next load
+   (it is currently unloaded by the footprint pause).
 
-  2. **Recovery (defense in depth):** the daemon now runs `_ensure_session_live()` **every tick, before the no-candidate early return** (previously the session was only checked when a pick was ready to place, so on a quiet day the lapse went unnoticed for days). On `logged_out` it self-relogins via `cdp_auto_login` **when `COOLBET_AUTO_LOGIN_ON_HEAL=true`** in `.env` (device-trust → no SMS; rate-limited 1/h). Set that flag on to make recovery unattended.
+  2. **Recovery (defense in depth):** the daemon now runs `_ensure_session_live()` **every tick, before the no-candidate early return** (previously the session was only checked when a pick was ready to place, so on a quiet day the lapse went unnoticed for days). On `logged_out` it self-relogins via `cdp_auto_login` **when `COOLBET_AUTO_LOGIN_ON_HEAL=true`** (device-trust → no SMS; rate-limited 1/h). ⚠️ That daemon is RETIRED (2026-09-10) — the live equivalent is the feed-watchdog calling `ensure_session_live()`, and the flag is now set in **its** plist (see §3 above), not `.env`.
 
 ### 4. Placement self-paused  → daemon runs but places nothing
 - **Symptom:** signals generate, odds flow, but 0 placements. `coolbet_session_state.placement_paused=true`, reason `daemon self-pause: N consecutive errors`.
@@ -179,7 +188,14 @@ So the only case needing a human is Docker itself being unstartable (the alert s
   Verified: `Board sweep — 189 Coolbet categories` (was 0 all evening).
 - **Guard:** smoke `COOLBET-CDP-COOKIE-EXPORT` step 7 now diffs the INSTALLED plist
   against the repo copy and fails on drift. Check every plist at once with:
-  `for f in local/launchd/*.plist; do diff -q "$f" ~/Library/LaunchAgents/$(basename $f); done`
+  ```bash
+  python3 scripts/ops/launchd_drift_check.py --verbose
+  ```
+  It compares **parsed** plists, so reindentation is not reported as drift and the
+  offending KEYS are named. The old `diff -q` one-liner byte-compared and produced
+  3 false alarms out of 7 lines on 2026-09-11 (two whitespace-only, one
+  deliberately-retired job) — see `RELIABILITY_LEDGER.md` #3 for why a noisy guard
+  is a broken guard.
 - **Note the repeat offence:** `COOLBET-GET-NO-TIMEOUT-2026-09-04` recorded the
   identical misattribution — *"the feed watchdog cheerfully re-harvested cookies at
   a problem that was never about cookies."* When odds die, check TRANSPORT before

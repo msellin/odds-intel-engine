@@ -31,11 +31,32 @@
 
     <key>EnvironmentVariables</key>
     <dict>
-        <!-- Same direct-request path the odds job uses. Without this the
-             session routes through FlareSolverr, which is a different failure
-             surface entirely and not what this watchdog is measuring. -->
+        <!-- NOT parity with the odds job anymore (comment corrected
+             2026-09-11). COOLBET-NO-FS-PLIST-DRIFT moved the odds sweep OFF
+             NO_FS, because direct plain-requests carrying a replayed reese84
+             are blackholed by Imperva (the token is TLS-bound) — measured 30.5s
+             ReadTimeout vs 0.6s/HTTP 200 via FlareSolverr. The old comment
+             justified this key by a parity that no longer exists.
+             It is harmless HERE only because every Coolbet call this watchdog
+             makes is CDP or DB, never HTTP: extract_imperva_cookies_from_cdp,
+             and ensure_session_live -> diagnose_cdp_jwt_state /
+             extract_jwt_from_cdp / cdp_auto_login. If this job is ever given an
+             HTTP fetch, DROP this key first or that fetch will hang ~30s. -->
         <key>COOLBET_NO_FS</key>
         <string>true</string>
+
+        <!-- COOLBET-AUTO-LOGIN-ON-HEAL (2026-09-11). ensure_session_live() only
+             self-relogins when this is set, and this watchdog INHERITED
+             session-keep when the paper mac-daemon was retired 2026-09-10 — but
+             the opt-in was left behind in that retired daemon's plist and is
+             absent from .env, so the capability was DEAD: nothing still running
+             set it. Recommended to the owner repeatedly and validated
+             2026-09-10 (browser-form login, rate-limited 1/h, device-trusted so
+             no SMS 2FA). Pinned here rather than .env so it is reproducible
+             from git. -->
+        <key>COOLBET_AUTO_LOGIN_ON_HEAL</key>
+        <string>true</string>
+
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
         <key>PYTHONPATH</key>

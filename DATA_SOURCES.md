@@ -230,7 +230,7 @@ Backtest verdicts (`scripts/backtest_csv_full_extract.py`, results in `dev/activ
 
 1. **Pinnacle vs Betfair Exchange anchor** (7,328 paired matches) — identical to 4 decimals (Brier 0.5886/0.5887, LogLoss 0.9862). **Keep Pinnacle anchor** (CAL-PIN-SHRINK).
 2. **AH market sanity** (8,868 paired matches) — flat home ROI −5.4%, away +0.9%. Market efficient at Pinnacle close. Backtest universe now exists for future AH bot development.
-3. **Pinnacle open→close drift** (8,850 paired matches) — strong monotonic signal, **+8.76pp WR spread** top vs bottom quintile. New `pinnacle_drift_home/draw/away` columns added in migration 179; backfill via `scripts/backfill_pinnacle_drift.py`.
+3. **Pinnacle open→close drift** (8,850 paired matches) — strong monotonic signal, **+8.76pp WR spread** top vs bottom quintile. New `pinnacle_drift_home/draw/away` columns added in migration 179; backfill via `scripts/backfill_pinnacle_drift.py`. ⚠️ **NOT CURRENTLY COLLECTED — flagged 2026-09-11 (DATA-TASK-AUDIT):** the backfill script is the only writer and it is not scheduled, so the column stopped being populated on **2026-06-06** (0 of 22,401 MFV rows in the last 60 days). The backtested value above is real but unrealised; treat this row as a known gap, not a live source.
 
 AH-bot prototype follow-up (`scripts/backtest_ah_bot_prototype.py`, 5,254 derivable-line matches) showed naive "ensemble 1X2 → AH derivation" loses to vig at every edge threshold (ROI worsens as filter tightens — signature of noise). A real AH bot requires a dedicated goals model — shelved for now.
 

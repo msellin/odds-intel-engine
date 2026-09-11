@@ -1,5 +1,33 @@
 # UNIBET-AUTOPLACE + GATE CONSOLIDATION — context / handoff
 
+> ## ⚠️ OPERATOR STEP OUTSTANDING (2026-09-11)
+> One command, needs your shell (installing a launchd agent is not something the
+> agent does):
+> ```bash
+> cp local/launchd/com.oddsintel.coolbet-feed-watchdog.plist ~/Library/LaunchAgents/
+> ```
+> It is already unloaded by the footprint pause, so `coolbet_pause_resume.sh
+> resume` will pick up the new copy — no separate unload/load needed. Verify with
+> `python3 scripts/ops/launchd_drift_check.py`.
+>
+> **What it turns on:** `COOLBET_AUTO_LOGIN_ON_HEAL=true`, so the daily
+> inactivity logout self-heals. **Why it was never actually on:** the only plist
+> setting it belonged to the paper mac-daemon **retired 2026-09-10**, and `.env`
+> never carried it — so every past "just set this flag" recommendation landed in
+> a file no running process read. Session-keep now lives in the feed-watchdog,
+> which is why the flag now lives in the watchdog's plist.
+>
+> ## Coolbet: still challenged, but check it the fast way now
+> ```bash
+> python3 -m workers.automation.coolbet_explorer --probe --fresh-session   # ~2s
+> ```
+> Re-verified 2026-09-11: **1.8s, 881-byte challenge page** — the flag is LIVE,
+> so the footprint stays paused. The plain `--probe` burns 60.4s and returns 0
+> bytes because the long-lived `coolbet_prod` FS session is *also* wedged; that
+> was a second, separate fault hiding behind the same "challenged" label, and it
+> now reports as `wedged` (exit 3). A fresh session showing `challenged` is the
+> real verdict — and cycling sessions is NOT a way around it.
+
 **Handoff written 2026-09-11.** Read this first, then `-tasks.md`.
 Single most useful companion: **`docs/RELIABILITY_LEDGER.md`** (the recurring
 failure patterns) and **`docs/SYSTEM_MAP.md` §4** (the gate stack, rewritten).
@@ -102,7 +130,9 @@ python3 -m workers.automation.best_price_router
 python3 scripts/gen_frontend_floors.py
 
 # installed-vs-repo launchd drift (bit us for 5.3h)
-for f in local/launchd/*.plist; do
-  diff -q "$f" ~/Library/LaunchAgents/$(basename "$f") >/dev/null 2>&1 \
-    && echo "OK      $(basename "$f")" || echo "DRIFTED $(basename "$f")"; done
+# Replaced the `diff -q` one-liner 2026-09-11: it byte-compared, so 3 of its 7
+# lines were false alarms (two plists differed only in INDENTATION, which launchd
+# cannot see; one was a deliberately retired job). This parses the plists, names
+# the offending keys, skips retired/, and exits 1 on real drift.
+python3 scripts/ops/launchd_drift_check.py --verbose
 ```

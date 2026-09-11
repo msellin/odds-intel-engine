@@ -17,7 +17,7 @@
 
   PREREQUISITES — this drives the operator's real Chrome, not a headless one:
     ./local/launch_chrome_for_sync.sh          # CDP Chrome on :9222, one tab open
-    venv/bin/python -m workers.automation.coolbet_browser_sync --cdp-auto-login
+    venv/bin/python -m workers.automation.coolbet_browser_sync (with the cdp-auto-login flag)
 
   Install once (THIS ENABLES REAL-MONEY PLACEMENT — operator action):
     cp local/launchd/com.oddsintel.coolbet-ui-placer.plist ~/Library/LaunchAgents/

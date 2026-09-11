@@ -1605,6 +1605,12 @@ def _cat_should_skip(memo: dict, cat_id) -> bool:
     return streak > 0 and (streak % _CAT_PROBE_EVERY) != 0
 
 
+# A genuine Coolbet challenge answers in ~2s with a body. Anything that burns
+# this long and returns nothing is our own stuck FS session (2026-09-11: every
+# probe read exactly 60.4s / 0 bytes, which is a timeout, not a verdict).
+_WEDGED_AFTER_S = 20.0
+
+
 def probe_coolbet_reachable(*, session_name: str | None = None) -> dict:
     """ONE request. Is Coolbet answering this machine right now?
 
@@ -1620,19 +1626,36 @@ def probe_coolbet_reachable(*, session_name: str | None = None) -> dict:
 
     Distinguishes the three states that look alike from the outside:
       * `ok`        — answered with a usable body
-      * `challenged`— FlareSolverr reached it but could not solve the Imperva
-                      challenge (HTTP 500 / "Error solving the challenge"), or
-                      the direct path was BLACKHOLED into a read timeout.
-                      This is §2/§6: still flagged, keep waiting.
+      * `challenged`— Coolbet answered, but with a challenge page instead of a
+                      board (small, unparseable body). This is §2/§6: still
+                      flagged, keep waiting.
+      * `wedged`    — the FS session itself is stuck: HTTP 500 after a long
+                      fixed delay, with ZERO bytes back. Distinguished from
+                      `challenged` on 2026-09-11 (see below) because the remedy
+                      differs — waiting for a flag to decay does nothing for a
+                      broken session.
       * `down`      — our own plumbing (FS not running, import failure). Ours
                       to fix, nothing to do with Coolbet.
+
+    WHY `wedged` IS A SEPARATE STATE (2026-09-11). Every probe that day returned
+    "challenged, 60.4s, 0 bytes". The identical duration was the tell: 60.4s is
+    a fixed timeout, not a verdict Coolbet rendered. Probing on a FRESH FS
+    session instead answered in 1.8s with an 881-byte challenge page — a real
+    answer. So two different things were being reported under one name, and the
+    long-lived `coolbet_prod` session was ALSO broken on top of the live
+    challenge. Collapsing them hid one behind the other.
+
+    `session_name` overrides the FS session for this probe only. It exists so
+    the two states above can be told apart; it is NOT a way to cycle sessions
+    past a challenge, and a fresh session showing `challenged` (as it did on
+    2026-09-11) means the flag is live and the footprint must stay paused.
 
     Returns {"state", "detail", "elapsed_s", "bytes"}. Never raises.
     """
     import time as _t
     t0 = _t.time()
     try:
-        sess = CoolbetSession(require_auth=False)
+        sess = CoolbetSession(require_auth=False, fs_session_name=session_name)
     except Exception as e:  # noqa: BLE001
         return {"state": "down", "detail": f"session init failed: {e}",
                 "elapsed_s": round(_t.time() - t0, 1), "bytes": 0}
@@ -1655,11 +1678,25 @@ def probe_coolbet_reachable(*, session_name: str | None = None) -> dict:
                 "elapsed_s": round(_t.time() - t0, 1), "bytes": n}
     except Exception as e:  # noqa: BLE001
         msg = str(e)
-        challenged = ("500" in msg or "timed out" in msg.lower()
-                      or "timeout" in msg.lower())
-        return {"state": "challenged" if challenged else "down",
-                "detail": msg[:200],
-                "elapsed_s": round(_t.time() - t0, 1), "bytes": 0}
+        elapsed = round(_t.time() - t0, 1)
+        looks_blocked = ("500" in msg or "timed out" in msg.lower()
+                         or "timeout" in msg.lower())
+        if not looks_blocked:
+            return {"state": "down", "detail": msg[:200],
+                    "elapsed_s": elapsed, "bytes": 0}
+        # A long, zero-byte failure is the FS session being stuck, not Coolbet
+        # rendering a verdict — Coolbet's own challenge comes back in ~2s with a
+        # body. Re-probing a wedged session forever teaches nothing.
+        if elapsed >= _WEDGED_AFTER_S:
+            return {"state": "wedged",
+                    "detail": f"{msg[:160]} — {elapsed}s with 0 bytes on FS "
+                              f"session {getattr(sess, '_fs_session_name', '?')!r}; "
+                              f"that is a stuck session, not a challenge verdict. "
+                              f"Re-probe with --fresh-session to see what Coolbet "
+                              f"itself says before concluding anything about the flag",
+                    "elapsed_s": elapsed, "bytes": 0}
+        return {"state": "challenged", "detail": msg[:200],
+                "elapsed_s": elapsed, "bytes": 0}
 
 
 def run_board_sweep(
@@ -2227,8 +2264,15 @@ def main() -> None:
     ap.add_argument("--days", type=int, default=2, help="Bulk window in days (default 2)")
     ap.add_argument("--probe", action="store_true",
                     help="ONE request: is Coolbet answering right now? Prints "
-                         "ok|challenged|down. Safe to poll while paused — it "
-                         "does not rebuild the footprint. Exit 0=ok, 1=challenged, 2=down.")
+                         "ok|challenged|wedged|down. Safe to poll while paused — it "
+                         "does not rebuild the footprint. "
+                         "Exit 0=ok, 1=challenged, 2=down, 3=wedged.")
+    ap.add_argument("--fresh-session", action="store_true",
+                    help="With --probe: use a throwaway FS session instead of the "
+                         "long-lived one. DIAGNOSTIC ONLY — it tells a wedged "
+                         "session apart from a live challenge. A fresh session that "
+                         "still reports `challenged` means the flag IS live and the "
+                         "footprint must stay paused; this is not a way around it.")
     ap.add_argument("--kickoff-band", metavar="LO:HI",
                     help="Sweep only fixtures kicking off in [LO,HI) hours from "
                          "now, e.g. '0:6'. Overrides --days. Cuts footprint AND "
@@ -2257,14 +2301,35 @@ def main() -> None:
     # otherwise the only way to find out is to resume the sweep, which is what
     # sustains the escalation in the first place. One request; safe to poll.
     if getattr(args, "probe", False):
-        r = probe_coolbet_reachable()
-        colour = {"ok": "green", "challenged": "yellow", "down": "red"}[r["state"]]
+        _sess = None
+        if getattr(args, "fresh_session", False):
+            import time as _time
+            _sess = f"coolbet_probe_{int(_time.time())}"
+        try:
+            r = probe_coolbet_reachable(session_name=_sess)
+        finally:
+            # A throwaway session must actually be thrown away — otherwise each
+            # diagnostic run leaves a Chrome context behind in FlareSolverr and
+            # a habit of probing slowly exhausts it.
+            if _sess:
+                try:
+                    from workers.automation.coolbet_session import _fs_call
+                    _fs_call({"cmd": "sessions.destroy", "session": _sess},
+                             timeout_s=30)
+                except Exception:  # noqa: BLE001 — best-effort cleanup
+                    pass
+        colour = {"ok": "green", "challenged": "yellow",
+                  "wedged": "magenta", "down": "red"}[r["state"]]
         console.print(f"[{colour}]coolbet probe: {r['state'].upper()}[/{colour}] "
                       f"({r['elapsed_s']}s, {r['bytes']} bytes) — {r['detail']}")
         if r["state"] == "challenged":
             console.print("[dim]still flagged — keep the footprint paused and "
                           "re-probe later; do NOT resume the sweep to test it[/dim]")
-        sys.exit({"ok": 0, "challenged": 1, "down": 2}[r["state"]])
+        elif r["state"] == "wedged":
+            console.print("[dim]our own FS session is stuck — this says NOTHING "
+                          "about whether the flag decayed. Re-run with "
+                          "--fresh-session to get Coolbet's actual answer.[/dim]")
+        sys.exit({"ok": 0, "challenged": 1, "down": 2, "wedged": 3}[r["state"]])
 
     # COOLBET-DAEMONS-PAUSE: the global footprint pause (set from /admin/shadow-bots
     # to calm Imperva). Skip the sweep runs — a manual --match-id inspect is still

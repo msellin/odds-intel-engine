@@ -355,8 +355,16 @@ class CoolbetSession:
     """
 
     def __init__(self, *, require_auth: bool = True,
-                 allow_api_login: bool | None = None):
+                 allow_api_login: bool | None = None,
+                 fs_session_name: str | None = None):
+        # `fs_session_name` overrides COOLBET_FLARE_SESSION for THIS session
+        # object only. Added 2026-09-11 for the reachability probe, which needs
+        # to tell "our long-lived coolbet_prod session is wedged" apart from
+        # "Coolbet is challenging this machine" — two states that look identical
+        # from the outside and have completely different remedies. DIAGNOSTIC
+        # USE ONLY: this is not a way to cycle sessions past a challenge.
         self._require_auth = require_auth
+        self._fs_session_override = fs_session_name
 
         # COOLBET-NO-AUTO-LOGIN (2026-06-12): /s/auth/login triggers SMS 2FA
         # every call from any IP that hasn't been device-trusted in the
@@ -443,7 +451,7 @@ class CoolbetSession:
         #                cookies are real (FS-issued, fresh).
         # See COOLBET-FS-SESSION-STABLE diagnostic logs 2026-06-11 for the
         # httpbin echo that proved FS truncates JSON to 4 bytes.
-        self._fs_session_name = _FS_SESSION_NAME
+        self._fs_session_name = self._fs_session_override or _FS_SESSION_NAME
         _fs_session_ensure(self._fs_session_name)
 
         # The real transport for POST (and any legacy plain-requests path).

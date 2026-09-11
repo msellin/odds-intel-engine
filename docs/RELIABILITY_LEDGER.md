@@ -56,12 +56,30 @@ silently inverts the bet (HT 1-0 / FT 1-2 is a 1H *win*).
 **Guard:** smoke `COOLBET-CDP-COOKIE-EXPORT` step 7 diffs installed vs repo and
 fails on drift. Audit all at once:
 ```bash
-for f in local/launchd/*.plist; do
-  diff -q "$f" ~/Library/LaunchAgents/$(basename "$f") >/dev/null 2>&1 \
-    && echo "OK      $(basename "$f")" || echo "DRIFTED $(basename "$f")"; done
+python3 scripts/ops/launchd_drift_check.py --verbose
 ```
-**Related, still open (`MAC-PLIST-ORPHANS`):** 3 of 7 running Mac jobs have **no
-repo plist at all** — they exist only on the operator's Mac.
+**The `diff -q` one-liner this replaced was actively harmful (2026-09-11).** It
+byte-compared, so on 2026-09-11 it reported 7 lines of which **3 were false
+alarms**: `best-price-router-monitor` and `unibet-site-odds` differed ONLY in
+indentation (tabs vs 2 spaces — launchd parses plists as data and cannot see
+whitespace), and `coolbet-mac-daemon` read MISSING because it had been
+deliberately retired the day before. A guard whose output is mostly noise gets
+skimmed, and the single real line — a stale INSTALLED plist — is exactly the one
+that gets skimmed past. That is not a hypothetical: it is pattern #3 itself.
+
+The replacement compares **parsed** plists (formatting invisible, and it names
+the offending keys), skips `local/launchd/retired/`, and falls back to `plutil`
+when Python's parser is stricter than Apple's. That last part matters: it found
+`coolbet-ui-placer.plist` — the plist of the job that places **real money** —
+carrying a `--` inside an XML comment, which XML forbids. Apple's lenient parser
+accepted it so launchd ran it happily, while every strict tool went blind on the
+single most safety-critical file. **A guard must never go dark on a file launchd
+is running.** Exit code 1 on real drift, so it can page. Smoke:
+`LAUNCHD-DRIFT-SEMANTIC`.
+
+**Related (`MAC-PLIST-ORPHANS`):** running Mac jobs with **no repo plist at
+all** — they exist only on the operator's Mac, so a dead disk loses them. Smoke
+`COOLBET-CDP-COOKIE-EXPORT` step 8 now fails on any such orphan.
 
 ## 4. A second code path to the same money inherits none of the first one's gates
 

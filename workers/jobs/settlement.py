@@ -1682,6 +1682,15 @@ def settle_ready_matches():
     except Exception as e:
         console.print(f"  [yellow]Void-integrity sweep error (non-fatal): {e}[/yellow]")
 
+    # HT-SCORE-NEVER-ARRIVES-2026-09-11 — void 1H bets whose half-time score
+    # never arrived, so a permanently ungradeable bet stops re-alerting every
+    # 6h. Runs AFTER resettle so a row the backfill just rescued is graded
+    # rather than voided on the same pass.
+    try:
+        void_ungradeable_1h_bets()
+    except Exception as e:
+        console.print(f"  [yellow]1H void sweep error (non-fatal): {e}[/yellow]")
+
 
 _WRONGLY_VOIDED_SQL = """
 SELECT
@@ -1701,6 +1710,78 @@ WHERE sb.result = 'void'
 ORDER BY sb.match_id
 LIMIT %s
 """
+
+
+# HT-SCORE-NEVER-ARRIVES (2026-09-11) — the 1% that alerts forever.
+#
+# `_r_1x2_1h` correctly refuses to grade a first-half bet without the HT score
+# (a full-time fallback would silently invert HT 1-0 / FT 1-2), so it returns
+# _UNSETTLEABLE: leave pending + alert. That is right for a *transient* gap —
+# the HT sweep runs at 22:30 and usually fills it in.
+#
+# It is wrong for a PERMANENT gap. AF simply has no halftime score for some
+# fixtures: the 2026-09-11 backfill scanned 9 finished matches carrying 1H odds
+# and came back `no_ht=7`. For those, "leave pending and alert" means a bet that
+# can never be graded re-fires the 6h-deduped Telegram indefinitely, which is
+# how a real alert becomes background noise nobody reads.
+#
+# So: after the HT sweep has had a full cycle to do its job, void it. The void
+# is deliberately narrow — only 1H markets, only finished matches, only when the
+# HT score is actually absent — and it is REVERSIBLE: the reason string is
+# distinct, so `resettle_wrongly_voided_bets` re-grades the row if AF ever
+# backfills the score. A void records "we could not grade this", which is the
+# truth; a loss would manufacture a track record out of a match we never scored.
+_HT_VOID_REASON = "no_ht_score"
+_HT_VOID_AFTER_H = 30  # > the 24h gap between 22:30 HT sweeps, so the sweep gets a full go
+
+
+def void_ungradeable_1h_bets(min_age_h: int = _HT_VOID_AFTER_H,
+                             dry_run: bool = False) -> dict:
+    """Void 1H bets on finished matches whose half-time score never arrived.
+
+    Returns {'voided', 'matches'}. Never raises out of the scheduler wrapper.
+    Steady state does zero writes.
+    """
+    out = {"voided": 0, "matches": 0}
+    for table in ("shadow_bets", "simulated_bets"):
+        try:
+            rows = execute_query(
+                f"""SELECT b.id, b.match_id, b.market
+                      FROM {table} b JOIN matches m ON m.id = b.match_id
+                     WHERE b.result = 'pending'
+                       AND (b.market LIKE %s OR b.market LIKE %s)
+                       AND m.status = 'finished'
+                       AND m.score_home IS NOT NULL
+                       AND (m.ht_score_home IS NULL OR m.ht_score_away IS NULL)
+                       AND m.date < NOW() - (%s * INTERVAL '1 hour')""",
+                [r"%\_1h", r"%\_1h\_%", min_age_h],
+            ) or []
+        except Exception as e:  # noqa: BLE001
+            console.print(f"  [yellow]1H void sweep query error ({table}): {e}[/yellow]")
+            continue
+        if not rows:
+            continue
+        out["matches"] += len({r["match_id"] for r in rows})
+        if dry_run:
+            out["voided"] += len(rows)
+            continue
+        try:
+            n = execute_write(
+                f"""UPDATE {table}
+                       SET result='void', pnl=0, void_reason=%s
+                     WHERE id = ANY(%s) AND result='pending'""",
+                [_HT_VOID_REASON, [r["id"] for r in rows]],
+            ) or 0
+            out["voided"] += n
+        except Exception as e:  # noqa: BLE001
+            console.print(f"  [yellow]1H void sweep write error ({table}): {e}[/yellow]")
+    if out["voided"]:
+        console.print(
+            f"[yellow]1H void sweep: voided {out['voided']} ungradeable bet(s) "
+            f"across {out['matches']} match(es) with no HT score "
+            f"(reason={_HT_VOID_REASON}, reversible if AF backfills)[/yellow]"
+        )
+    return out
 
 
 def resettle_wrongly_voided_bets(limit: int = 2000, dry_run: bool = False) -> dict:

@@ -5789,7 +5789,18 @@ def test_coolbet_mac_daemon():
     )
 
     # launchd plist exists and references the daemon module.
-    plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-mac-daemon.plist").read_text()
+    #
+    # RE-POINTED 2026-09-11 to local/launchd/retired/. The daemon was RETIRED
+    # 2026-09-10 (booted out, no longer installed), so its plist was moved out
+    # of the live plist dir — otherwise the launchd drift guard reports it
+    # MISSING forever and the guard's whole value is precision.
+    # The plist is still pinned, in its archived location, for two reasons:
+    # the daemon MODULE is not dead code (workers/jobs/coolbet_feed_watchdog.py
+    # imports `_drain_operator_commands` from it for the Telegram heal button),
+    # and the paper-only invariants asserted above still matter if anyone ever
+    # revives it.
+    plist = pathlib.Path(
+        "local/launchd/retired/com.oddsintel.coolbet-mac-daemon.plist").read_text()
     assert "workers.automation.coolbet_mac_daemon" in plist, (
         "launchd plist must invoke the daemon via -m workers.automation.coolbet_mac_daemon"
     )
@@ -6743,10 +6754,32 @@ def test_coolbet_auto_login_on_heal():
 
     # Plist enablement — the operator's deliberate opt-in lives here, not
     # in code defaults. Pinned so a future plist refresh can't lose it.
-    plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-mac-daemon.plist").read_text()
-    assert "COOLBET_AUTO_LOGIN_ON_HEAL" in plist and "<string>true</string>" in plist, (
-        "Mac daemon plist must set COOLBET_AUTO_LOGIN_ON_HEAL=true — the "
-        "operator's explicit opt-in to browser-form auto-login on logged_out."
+    #
+    # RE-POINTED 2026-09-11. This used to read the PAPER MAC-DAEMON's plist,
+    # which was retired 2026-09-10 — so the test was pinning a component that
+    # no longer runs, and passing only because the dead file was still lying in
+    # local/launchd/. Worse, it made the capability look enabled when it was
+    # DEAD: session-keep moved to the feed-watchdog, and nothing still running
+    # set the variable (it is not in .env either). The opt-in must live on the
+    # plist of whatever process actually calls ensure_session_live() — today the
+    # feed-watchdog. A test that pins the old reality is worse than no test.
+    plist = pathlib.Path(
+        "local/launchd/com.oddsintel.coolbet-feed-watchdog.plist").read_text()
+    assert "COOLBET_AUTO_LOGIN_ON_HEAL" in plist, (
+        "the feed-watchdog plist must set COOLBET_AUTO_LOGIN_ON_HEAL — it "
+        "inherited session-keep (ensure_session_live) when the paper mac-daemon "
+        "was retired 2026-09-10, and ensure_session_live only self-relogins "
+        "when this var is set in ITS environment. Setting it anywhere else "
+        "(e.g. the retired daemon's plist) leaves the capability dead."
+    )
+    import plistlib as _plistlib
+    _wd = _plistlib.load(
+        open("local/launchd/com.oddsintel.coolbet-feed-watchdog.plist", "rb"))
+    assert (_wd.get("EnvironmentVariables") or {}).get(
+        "COOLBET_AUTO_LOGIN_ON_HEAL") == "true", (
+        "COOLBET_AUTO_LOGIN_ON_HEAL must be the string 'true' in the "
+        "feed-watchdog's EnvironmentVariables — coolbet_browser_sync accepts "
+        "only true/1/yes, so a typo silently disables the self-heal."
     )
 
 
@@ -7612,40 +7645,71 @@ def test_coolbet_prekickoff_catchnet():
     )
 
 
-@test("COOLBET-MATURITY-GATE-IN-PLIST — Mac daemon plist sets COOLBET_RECORD_ALLOWED_MATURITY=calibrated")
-def test_coolbet_maturity_gate_in_plist():
-    """COOLBET-MATURITY-GATE-IN-PLIST (2026-06-12): the VPS has
-    COOLBET_RECORD_ALLOWED_MATURITY=calibrated set, but the VPS env
-    does not reach the Mac-side daemon — only the daemon's own
-    process env (launchd plist + local .env) does. The gap let beta
-    bots auto-place real money on 2026-06-12 (bot_high_alignment
-    placed two real bets that the operator did not authorise).
+@test("COOLBET-MATURITY-GATE-LIVE-CONSUMERS — the maturity gate is pinned where it still runs")
+def test_coolbet_maturity_gate_live_consumers():
+    """COOLBET-MATURITY-GATE (2026-06-12) / RE-POINTED 2026-09-11.
 
-    Pin the gate in the plist so a future re-install can't lose it.
-    `.env` is intentionally NOT the source of truth here — plist is
-    process-bound, explicit, and survives developer-local .env
-    edits."""
+    ORIGINALLY: the VPS had COOLBET_RECORD_ALLOWED_MATURITY=calibrated but the
+    VPS env did not reach the Mac paper daemon, and that gap let beta bots
+    auto-place real money on 2026-06-12. The fix pinned the gate in the DAEMON's
+    launchd plist.
+
+    THAT DAEMON WAS RETIRED 2026-09-10, so this test was asserting on a file
+    belonging to a component that no longer exists — and it only kept passing
+    because the dead plist was still sitting in local/launchd/. Once the plist
+    was moved to local/launchd/retired/ (2026-09-11) it failed with
+    FileNotFoundError, which is the honest signal: the thing it guarded is gone.
+
+    Re-pointed at what is actually load-bearing TODAY. Two live consumers read
+    COOLBET_RECORD_ALLOWED_MATURITY (`grep` 2026-09-11):
+      * `coolbet_placer._allowed_maturity_labels` — the API/paper path, which is
+        no longer the real-money route;
+      * `coolbet_prekickoff_alert._allowed_maturity_labels` — a LIVE VPS job
+        whose default must stay fail-SAFE.
+    And real money is now gated by an explicit code allowlist in the UI placer,
+    not by a maturity label at all. So pin those three facts instead.
+    """
     import pathlib
-    plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-mac-daemon.plist").read_text()
-    assert "COOLBET_RECORD_ALLOWED_MATURITY" in plist, (
-        "Plist must set COOLBET_RECORD_ALLOWED_MATURITY — without it, "
-        "every active bot (beta/experimental) can place real money."
+    import inspect
+
+    # 1. The retired daemon's plist must NOT be back in the live plist dir.
+    assert not pathlib.Path(
+        "local/launchd/com.oddsintel.coolbet-mac-daemon.plist").exists(), (
+        "the paper mac-daemon was retired 2026-09-10; its plist belongs in "
+        "local/launchd/retired/. Re-adding it would resurrect a dead gate and "
+        "re-break the launchd drift guard."
     )
-    # Find the value tag immediately after the key.
-    # Find the actual <key> occurrence, not the first mention in a comment.
-    idx = plist.index("<key>COOLBET_RECORD_ALLOWED_MATURITY</key>")
-    snippet = plist[idx:idx + 400]
-    # COOLBET-MATURITY-GATE-WIDENED (2026-07-06): daemon is paper-only, so
-    # the maturity gate no longer serves as a real-money safety. Widened
-    # to `*` (all active bots) to maximize paper coverage + admin queue
-    # richness. If this ever narrows again, the daemon must also be
-    # flipped to execute=True on a specific proven bot slice — and the
-    # `PAPER-ONLY-DAEMON` smoke test needs the mirrored update.
-    assert "<string>*</string>" in snippet, (
-        "Plist gate must be '*' — daemon is paper-only so we want every "
-        "candidate captured for the admin suggestion queue + per-bot ROI. "
-        "If narrowing, coordinate with the PAPER-ONLY-DAEMON smoke and "
-        "the memory `feedback_real_money_future`."
+
+    # 2. The one LIVE reader's default must fail safe. If the env var is unset
+    #    (the normal state on the Mac), the catch-net alert must restrict itself
+    #    to the real-money tier rather than firing on every bot.
+    from workers.jobs import coolbet_prekickoff_alert as pka
+    pk_src = inspect.getsource(pka._allowed_maturity_labels)
+    assert '["calibrated"]' in pk_src, (
+        "coolbet_prekickoff_alert._allowed_maturity_labels must DEFAULT to "
+        "['calibrated'] when COOLBET_RECORD_ALLOWED_MATURITY is unset — this is "
+        "a money-at-risk catch-net, so an unset env must narrow it, not widen it."
+    )
+    import os as _os
+    _saved = _os.environ.pop("COOLBET_RECORD_ALLOWED_MATURITY", None)
+    try:
+        assert pka._allowed_maturity_labels() == ["calibrated"], (
+            "with the env unset the catch-net must resolve to ['calibrated']"
+        )
+    finally:
+        if _saved is not None:
+            _os.environ["COOLBET_RECORD_ALLOWED_MATURITY"] = _saved
+
+    # 3. Real money is gated by an explicit code allowlist, not a maturity label.
+    from scripts.place_coolbet_ui import PLACEABLE_BOTS
+    assert PLACEABLE_BOTS, (
+        "PLACEABLE_BOTS is the hard boundary on which bots may EVER place real "
+        "money. It replaced the maturity label as the real-money gate; if it is "
+        "ever emptied or removed, say so deliberately."
+    )
+    assert all(b.startswith("bot_coolbet_") for b in PLACEABLE_BOTS), (
+        f"unexpected member in PLACEABLE_BOTS: {sorted(PLACEABLE_BOTS)} — every "
+        "real-money-eligible bot should be an explicit coolbet model bot."
     )
 
 
@@ -36106,6 +36170,231 @@ def test_first_half_1x2_paper_bot():
     assert "bot_1h_1x2_paper_shadow_v1" in reg, "must be in the bot registry"
     sched = open("workers/scheduler.py").read()
     assert "job_fh_1x2_paper_pick" in sched and "job_fh_1x2_paper_settle" in sched
+
+
+@test("HT-SCORE-NEVER-ARRIVES — 1H bets with no half-time score get VOIDED, not re-alerted forever")
+def test_ht_score_never_arrives_void():
+    """HT-SCORE-NEVER-ARRIVES (2026-09-11). `_r_1x2_1h` rightly refuses to grade a
+    first-half bet without the HT score (a full-time fallback would invert
+    HT 1-0 / FT 1-2), returning _UNSETTLEABLE => leave pending + alert.
+
+    Correct for a TRANSIENT gap; wrong for a PERMANENT one. AF has no halftime
+    score for some fixtures at all — the 2026-09-11 backfill scanned 9 finished
+    matches carrying 1H odds and returned `no_ht=7`. For those, "leave pending
+    and alert" re-fires the 6h-deduped Telegram indefinitely, which is how a
+    real alert decays into noise.
+
+    Pins: the sweep exists, runs in the settlement pass AFTER resettle (so a row
+    the backfill just rescued is graded, not voided), targets ONLY 1H markets on
+    finished matches with an actually-absent HT score, and is REVERSIBLE — its
+    void_reason is distinct and not 'quarantine', so resettle_wrongly_voided_bets
+    re-grades the row if AF ever backfills the score.
+    """
+    import inspect
+    from workers.jobs import settlement as s
+
+    assert hasattr(s, "void_ungradeable_1h_bets"), (
+        "settlement must expose void_ungradeable_1h_bets — the safety net for a "
+        "half-time score that never arrives."
+    )
+    vsrc = inspect.getsource(s.void_ungradeable_1h_bets)
+    assert "ht_score_home IS NULL" in vsrc and "ht_score_away IS NULL" in vsrc, (
+        "the sweep must require the HT score to be genuinely absent — never "
+        "void a 1H bet that could be graded."
+    )
+    assert "status = 'finished'" in vsrc, "only finished matches may be voided"
+    assert "_1h" in vsrc, (
+        "market match must be anchored on the _1h suffix so it cannot swallow "
+        "full-match markets."
+    )
+    assert s._HT_VOID_REASON == "no_ht_score", "void reason must be distinct and stable"
+    assert s._HT_VOID_REASON != "quarantine", (
+        "resettle_wrongly_voided_bets skips void_reason='quarantine' — this "
+        "reason must NOT be that, or the void could never be reversed."
+    )
+    assert "void_reason IS DISTINCT FROM 'quarantine'" in s._WRONGLY_VOIDED_SQL, (
+        "the resettle predicate must still admit other void reasons, so a "
+        "no_ht_score void is re-graded once AF backfills the HT score."
+    )
+    mod = inspect.getsource(s)
+    re_idx = mod.find("resettle_wrongly_voided_bets()")
+    void_idx = mod.find("void_ungradeable_1h_bets()")
+    assert re_idx > 0 and void_idx > 0, (
+        "both sweeps must be CALLED (not merely defined) in the settlement pass"
+    )
+    assert re_idx < void_idx, (
+        "void_ungradeable_1h_bets must run AFTER resettle_wrongly_voided_bets, "
+        "or a bet the HT backfill just rescued gets voided on the same pass."
+    )
+    assert s._HT_VOID_AFTER_H > 24, (
+        f"_HT_VOID_AFTER_H={s._HT_VOID_AFTER_H} must exceed the 24h gap between "
+        "22:30 half-score sweeps, so the backfill gets a full cycle to fill the "
+        "gap before anything is voided."
+    )
+
+
+@test("LAUNCHD-DRIFT-SEMANTIC — the installed-vs-repo guard compares parsed plists, not bytes")
+def test_launchd_drift_semantic():
+    """LAUNCHD-DRIFT-SEMANTIC (2026-09-11). The drift check used to byte-compare
+    with `diff -q`. Run on 2026-09-11 it printed 7 lines of which 3 were false
+    alarms: best-price-router-monitor and unibet-site-odds differed ONLY in
+    indentation (tabs vs 2 spaces), and coolbet-mac-daemon was reported MISSING
+    because it had been deliberately retired the day before.
+
+    That matters because the guard's whole value is precision. The 5.3h outage
+    it exists to catch (a stale INSTALLED plist setting COOLBET_NO_FS=true) is
+    exactly the kind of single real line that gets skimmed past in a report
+    that is mostly noise.
+
+    Pins: the guard parses plists (so whitespace is invisible), skips
+    `local/launchd/retired/`, falls back to `plutil` when Python's parser is
+    stricter than Apple's, and every shipped plist is machine-readable.
+    """
+    import pathlib
+    import plistlib
+    gsrc = pathlib.Path("scripts/ops/launchd_drift_check.py").read_text()
+
+    assert "plistlib" in gsrc, (
+        "the guard must PARSE plists — a byte diff reports reindentation as "
+        "drift, and launchd cannot see whitespace at all."
+    )
+    assert "retired" in gsrc, (
+        "the guard must skip local/launchd/retired/ — a deliberately retired "
+        "component is not drift, and reporting it forever trains people to "
+        "ignore the output."
+    )
+    assert "plutil" in gsrc, (
+        "the guard must fall back to plutil: coolbet-ui-placer.plist (the "
+        "REAL-MONEY job) once had a double-hyphen inside an XML comment, which "
+        "expat refuses and Apple's parser accepts. The guard must never go "
+        "blind on a file launchd is happily running."
+    )
+
+    repo_dir = pathlib.Path("local/launchd")
+    for plist in sorted(repo_dir.glob("*.plist")):
+        try:
+            with plist.open("rb") as fh:
+                parsed = plistlib.load(fh)
+        except Exception as e:  # noqa: BLE001
+            raise AssertionError(
+                f"{plist.name} is not parseable by plistlib ({e}). launchd's "
+                f"parser is more lenient, so this can pass unnoticed — but any "
+                f"tooling that reads plists (including the drift guard) goes "
+                f"blind on it. Most likely cause: a double-hyphen inside an "
+                f"XML comment."
+            ) from None
+        assert parsed.get("Label"), f"{plist.name} must declare a Label"
+
+    assert not (repo_dir / "com.oddsintel.coolbet-mac-daemon.plist").exists(), (
+        "the paper mac-daemon was retired 2026-09-10 — its plist must live in "
+        "local/launchd/retired/ so the drift guard stops reporting it MISSING."
+    )
+
+
+@test("COOLBET-PROBE-SESSION-HONORED — the probe's session_name is used, and wedged != challenged")
+def test_coolbet_probe_session_honored():
+    """COOLBET-PROBE-SESSION-HONORED (2026-09-11). `probe_coolbet_reachable`
+    accepted a `session_name` kwarg and SILENTLY DISCARDED it — it always built
+    `CoolbetSession(require_auth=False)`. So a "fresh session" diagnostic in
+    fact re-used the wedged long-lived one and returned the same answer, which
+    is how a wrong conclusion nearly got drawn from it: a diagnostic parameter
+    that does nothing is worse than no parameter.
+
+    It also collapsed two states. Every probe read exactly `60.4s / 0 bytes`,
+    and that identical duration is a TIMEOUT, not a verdict Coolbet rendered;
+    on a genuinely fresh session Coolbet answered in 1.8s with an 881-byte
+    challenge page. Two different faults, one label, each hiding the other.
+
+    Pins: the kwarg reaches CoolbetSession, `wedged` exists and is distinct
+    from `challenged`, and the throwaway session is destroyed after use.
+    """
+    import inspect
+    from workers.automation import coolbet_explorer as ce
+    from workers.automation.coolbet_session import CoolbetSession
+
+    assert "fs_session_name" in inspect.signature(CoolbetSession.__init__).parameters, (
+        "CoolbetSession must accept fs_session_name so a caller can override "
+        "COOLBET_FLARE_SESSION for one session object."
+    )
+    psrc = inspect.getsource(ce.probe_coolbet_reachable)
+    assert "fs_session_name=session_name" in psrc, (
+        "the probe must PASS session_name through to CoolbetSession. It used to "
+        "accept the kwarg and ignore it, so --fresh-session silently reused the "
+        "wedged session."
+    )
+    assert '"wedged"' in psrc, (
+        "the probe must distinguish a stuck FS session (long, zero-byte) from a "
+        "live Imperva challenge (fast, with a body) — they have different fixes."
+    )
+    assert ce._WEDGED_AFTER_S < 60, (
+        "the wedged threshold must sit below the 60s FS timeout that produced "
+        "the ambiguous reading, or the new state can never trigger."
+    )
+    main_src = inspect.getsource(ce.main)
+    assert "sessions.destroy" in main_src, (
+        "a --fresh-session probe must destroy its throwaway session, or each "
+        "diagnostic run leaks a Chrome context inside FlareSolverr."
+    )
+    assert '"wedged": 3' in main_src, "wedged needs its own exit code for ops scripts"
+
+
+@test("DATA-TASK-AUDIT-NUMBERS — the re-measured data-cluster figures stay pinned to their sources")
+def test_data_task_audit_numbers():
+    """DATA-TASK-AUDIT-2026-09-11. Four numbers that drove the data-coverage
+    sequence were wrong, each in the direction that mattered, and each had
+    already been copied into a doc as fact:
+
+      * the AF ceiling was written as 75,000/day; it is 150,000, so "quota
+        headroom" was never the prerequisite the epic sequenced behind it;
+      * DB-RETENTION-POLICY's 45,807,706 "match_signals rows" was actually
+        odds_snapshots' row count — two tables crossed, turning a 2.07x
+        duplication into a reported 30x;
+      * odds_snapshots growth was filed at ~860k rows/day; it runs ~2M;
+      * `pinnacle_drift_home` was described as 2.6% covered and waiting for a
+        >=30% trigger, while its writer has in fact been dead since 2026-06-06
+        and coverage is 0%.
+
+    A doc sentence cannot defend itself, so each figure is pinned to the code or
+    config that produces it. This asserts on SOURCES, not on live DB counts — a
+    smoke test must not depend on today's row counts.
+    """
+    import inspect
+    from pathlib import Path
+
+    # (1) the AF daily ceiling: code must default to 150000, never 75000.
+    from workers.api_clients import api_football as af
+    assert "daily_limit: int = 150000" in inspect.getsource(af), (
+        "the AF budget guard must default to the real Mega ceiling of 150,000. "
+        "Every percentage in the old DATA_SOURCES table was computed against "
+        "75,000, which made a ~13% median burn read as ~26%."
+    )
+    assert '"AF_DAILY_QUOTA", "150000"' in Path("workers/jobs/health_alerts.py").read_text(), (
+        "the quota alert must also use 150,000 or it fires at half the real cap."
+    )
+
+    # (2) the single-call halftime fix must stay — it is why match_stats
+    #     half-time coverage went from 0 of 1,929 rows to ~61%.
+    assert 'half": "true"' in inspect.getsource(af.get_fixture_statistics), (
+        "get_fixture_statistics must send half=true; without it the halftime "
+        "split is absent and settlement falls back to an extra per-fixture call."
+    )
+
+    # (3) the drift feature: its >=30% coverage trigger is meaningless while
+    #     nothing writes the column. If someone schedules the backfill, the
+    #     ticket must stop describing a dead writer.
+    if "backfill_pinnacle_drift" in Path("workers/scheduler.py").read_text():
+        assert "writer fixed" in Path("PRIORITY_QUEUE.md").read_text(), (
+            "backfill_pinnacle_drift is now scheduled, so pinnacle_drift_home "
+            "coverage can grow again — update DRIFT-FEATURE-REENABLE, which is "
+            "currently documented as a dead writer (last populated 2026-06-06)."
+        )
+
+    # (4) the audit banner is the only record of which figures were corrected;
+    #     older rows still quote the wrong ones, so losing it re-inherits them.
+    assert "DATA-TASK-AUDIT" in Path("PRIORITY_QUEUE.md").read_text(), (
+        "the DATA-TASK-AUDIT banner must stay in PRIORITY_QUEUE.md — it is what "
+        "stops the 75k ceiling and the 30x duplication figure coming back."
+    )
 
 if __name__ == "__main__":
     main()
