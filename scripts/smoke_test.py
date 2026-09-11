@@ -36426,20 +36426,39 @@ def test_signaler_public_only():
     import os
     from workers.automation import coolbet_signaler as sig
 
-    # 1. The operator prompt is opt-IN, not opt-out.
-    assert sig._OPERATOR_PROMPT_ENABLED is False or os.getenv(
-        "SIGNALER_OPERATOR_PROMPT"), (
-        "_OPERATOR_PROMPT_ENABLED must default to False — the private per-pick "
-        "prompt duplicates every public pick now that the placer is unattended. "
-        "Only SIGNALER_OPERATOR_PROMPT may switch it on."
+    # 1. Per-pick private alerts are opt-IN, and ONE flag governs BOTH paths.
+    from workers.notify.telegram import operator_pick_alerts_enabled
+    _saved = os.environ.pop("OPERATOR_PICK_ALERTS", None)
+    try:
+        assert operator_pick_alerts_enabled() is False, (
+            "per-pick private alerts must default OFF — two paths were sending "
+            "the owner 16 private messages for 10 picks."
+        )
+    finally:
+        if _saved is not None:
+            os.environ["OPERATOR_PICK_ALERTS"] = _saved
+
+    # The capability must stay reachable: the owner named a future use (private
+    # invite-only channel for a paid tier), and deleting it would orphan
+    # _format_signal, the sigplaced:/sigskip: webhook handler and
+    # signal_message_id.
+    import pathlib as _pl
+    tg_src = _pl.Path("workers/notify/telegram.py").read_text()
+    assert 'os.getenv("OPERATOR_PICK_ALERTS"' in tg_src, (
+        "operator_pick_alerts_enabled must read OPERATOR_PICK_ALERTS"
     )
-    src_all = inspect.getsource(sig)
-    assert 'os.getenv("SIGNALER_OPERATOR_PROMPT"' in src_all, (
-        "the operator prompt must stay reachable behind an env flag — the owner "
-        "named a future use (private invite-only channel for a paid tier), and "
-        "deleting it would orphan _format_signal, the sigplaced:/sigskip: "
-        "webhook handler and signal_message_id."
-    )
+    # BOTH per-pick senders must consult the SHARED helper, not their own flag.
+    # Two env vars for one intent is how the edge floors reached six copies.
+    for mod in ("workers/automation/coolbet_signaler.py",
+                "workers/jobs/daily_pipeline_v2.py"):
+        m = _pl.Path(mod).read_text()
+        assert "operator_pick_alerts_enabled" in m, (
+            f"{mod} must gate its per-pick private alert on the shared "
+            "operator_pick_alerts_enabled() helper"
+        )
+        assert "SIGNALER_OPERATOR_PROMPT" not in m, (
+            f"{mod} must not carry a second, private flag for the same intent"
+        )
 
     # 2. real_bets must NOT filter the candidate set.
     cand = inspect.getsource(sig.load_signal_candidates)

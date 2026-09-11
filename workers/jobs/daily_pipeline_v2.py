@@ -4009,7 +4009,21 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             + (f"\n{_bots_line}" if _bots_line else "")
             + (f"\n  <a href=\"{_cb_url}\">Open on Coolbet →</a>" if _cb_url else "")
         )
-        _msg_id = send_telegram(_alert_text, reply_markup=_markup)
+        # OPERATOR-PICK-ALERTS-OFF (2026-09-11): the owner's private chat used to
+        # get one of these per pick ON TOP of the public channel post and the
+        # signaler's own prompt — 16 private messages for 10 picks. Owner: "no
+        # need to duplicate this to my own private channel." Gated by the SHARED
+        # helper so this path and the signaler cannot drift apart.
+        #
+        # When it is off there is no message to edit, so `_rec_alert` below is
+        # skipped naturally (_msg_id is None) and the "Record at Coolbet" button
+        # simply never appears. The webhook handler is untouched and works again
+        # the moment OPERATOR_PICK_ALERTS=true. The USER broadcast
+        # (send_telegram_to_users, just below) is a different audience and is
+        # NOT affected.
+        from workers.notify.telegram import operator_pick_alerts_enabled as _op_alerts
+        _msg_id = (send_telegram(_alert_text, reply_markup=_markup)
+                   if _op_alerts() else None)
         # Persist so _run_coolbet_record can edit this message with the outcome
         if _msg_id and _first_bet_id:
             # original_text includes the TELEGRAM_PREFIX so the editMessageText

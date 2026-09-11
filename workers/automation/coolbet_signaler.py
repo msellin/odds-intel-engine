@@ -26,7 +26,8 @@ the pipeline, already-signaled rows are skipped.
 
 WHAT IT SENDS NOW (SIGNALER-PUBLIC-ONLY + PUBLIC-CHANNEL-DECOUPLED, 2026-09-11):
 the public @oddsintelpicks channel is the ONLY sink. The operator's private
-per-pick prompt is off by default (`SIGNALER_OPERATOR_PROMPT`) — auto-placement
+per-pick prompt is off by default (`OPERATOR_PICK_ALERTS`, the ONE flag that
+also governs daily_pipeline_v2's `[OI] 🎯 PRE-MATCH` alert) — auto-placement
 works now, so it had become a duplicate of every public pick in the owner's own
 chat. It is kept behind the flag for a possible paid invite-only channel later.
 
@@ -57,21 +58,22 @@ from workers.api_clients.db import execute_query, execute_write
 from workers.automation.coolbet_placer import (
     clears_edge_floor, min_edge_for_pick, _MIN_EDGE,
 )
-from workers.notify.telegram import send_telegram, send_telegram_public
+from workers.notify.telegram import (
+    send_telegram, send_telegram_public, operator_pick_alerts_enabled,
+)
 
 log = logging.getLogger(__name__)
 
 # SIGNALER-PUBLIC-ONLY (2026-09-11). The operator's private per-pick prompt is
 # OFF by default: the UI placer now places unattended, so the prompt had become
-# a duplicate of every public pick in the owner's own chat. Kept behind a flag
-# rather than deleted because the owner named a likely future use — a private
-# invite-only channel for a paid tier. Set SIGNALER_OPERATOR_PROMPT=true to
-# restore it (the ✅ Placed / ⏭ Skip buttons and their webhook handler still
-# work; nothing else needs changing).
-_OPERATOR_PROMPT_ENABLED = (
-    os.getenv("SIGNALER_OPERATOR_PROMPT", "").strip().lower()
-    in ("true", "1", "yes")
-)
+# a duplicate of every public pick in the owner's own chat.
+#
+# Governed by the SHARED `operator_pick_alerts_enabled()` rather than a flag of
+# its own. Two independent paths were sending the owner per-pick private
+# messages (this prompt and daily_pipeline_v2's `[OI] 🎯 PRE-MATCH` alert) — 16
+# messages for 10 picks on the day this was switched off. Giving each its own
+# env var is how one intent becomes two settings that drift apart, which is the
+# exact failure this whole day's work was about. One flag, one place.
 
 
 def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
@@ -405,10 +407,10 @@ def signal_all_bets(*, lookahead_hours: int = 36,
                 "telegram_message_id": None,
                 "would_post_public": _pub_ok,
                 "would_prompt_operator": bool(
-                    _OPERATOR_PROMPT_ENABLED and not b.get("already_placed")),
+                    operator_pick_alerts_enabled() and not b.get("already_placed")),
                 "preview": (_format_public_signal(b) if _pub_ok
                             else "(not public-eligible — nothing would be sent)"),
-                "preview_operator": msg if _OPERATOR_PROMPT_ENABLED else None,
+                "preview_operator": msg if operator_pick_alerts_enabled() else None,
             })
             continue
         # Inline buttons so the operator can mark placed / skipped with one
@@ -451,7 +453,7 @@ def signal_all_bets(*, lookahead_hours: int = 36,
         # bet_telegram_alerts — 10 of them the same day). That is a SEPARATE
         # path and is untouched here; silencing it is its own decision.
         tg_id = None
-        if _OPERATOR_PROMPT_ENABLED and not b.get("already_placed"):
+        if operator_pick_alerts_enabled() and not b.get("already_placed"):
             tg_id = send_telegram(
                 msg,
                 dedup_key=f"signal-{sim_id}",

@@ -88,6 +88,36 @@ def clv_footer_line(clv_pct: float | None = None) -> str:
     return f"📊 {sign}{clv_pct:.1f}% CLV (30d) · oddsintel.app/performance"
 
 
+def operator_pick_alerts_enabled() -> bool:
+    """Should we send the owner a PER-PICK message in their private chat?
+
+    OPERATOR-PICK-ALERTS-OFF (owner decision 2026-09-11): "not sure we need
+    that at all, its legacy... we wanna send picks to our public channel, no
+    need to duplicate this to my own private channel."
+
+    Two independent paths were doing it — `coolbet_signaler`'s manual-placement
+    prompt and `daily_pipeline_v2`'s `[OI] 🎯 PRE-MATCH` alert — so on the day
+    this was switched off the owner's chat received 16 private messages for 10
+    picks. Both are legacy in the same way: they date from when auto-placement
+    was disabled and a phone message was how a bet got placed. The UI placer now
+    places unattended.
+
+    ONE flag governs BOTH deliberately. Two flags for the same intent is how the
+    edge floors ended up with six copies — the whole point of today's work.
+
+    Default OFF. `OPERATOR_PICK_ALERTS=true` restores both. Nothing else needs
+    changing when it flips: the inline buttons (`sigplaced:`/`sigskip:`,
+    "Record at Coolbet") and their webhook handlers are untouched, as is
+    `signal_message_id`. Kept rather than deleted because the owner named a
+    likely future use — a private invite-only channel for a paid tier.
+
+    This governs PER-PICK alerts only. Summaries, health/silence alerts,
+    placement confirmations and error pages are unaffected.
+    """
+    return (os.getenv("OPERATOR_PICK_ALERTS", "").strip().lower()
+            in ("true", "1", "yes"))
+
+
 def send_telegram(
     msg: str,
     *,
