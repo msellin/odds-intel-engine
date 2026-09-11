@@ -187,6 +187,77 @@ canonical method says executable, so **34 / 22% is the number.** (An even earlie
 "47%" was measured across ALL `simulated_bets` including non-published bots —
 wrong population entirely.)
 
+### UNIFIED-GATE test (owner hypothesis, 2026-09-11) — the MECHANISM is right, the draw/away claim is not
+
+Owner: *"we have 10% floor, but don't bet on home favs (their odds are below 2.8
+anyway?)... we keep draw and away and home underdogs, but the odds 2.8+ and the
+floor 10% will ensure that nothing suspicious gets past... this is what our big
+sweeps discovered actually? we didn't have many draws but it's because they
+didn't pass the gates, but the ones that pass are profitable."*
+
+Tested with `scripts/favlong_floor_backtest.py --unified-gate` (new mode): restrict
+to executable odds >= 2.80 FIRST, then sweep the edge floor per selection. This
+matters because **every earlier sweep measured selections across ALL odds** — the
+population that decides the question is each selection *inside* the odds floor.
+
+**THE MECHANISM IS RIGHT, AND IT IS A BETTER FIX THAN THE ONE I PROPOSED.** A home
+favourite is priced under ~2.0, so the 2.80 odds floor excludes home-favs
+*automatically* — and it also excludes the home-MID (2.00–2.80) band flagged
+above. No selection list, no exclusions, no second edge floor. **The reason
+home-favs and home-MID leak onto `/picks` and Telegram is simply that the
+publication path applies NO odds floor** (`coolbet_signaler` has no
+`_min_odds_for` call, and `clears_edge_floor` takes `odds` only to *choose* the
+floor, never to gate). Verified: `clears_edge_floor("1x2","home",1.80,0.14)` is
+`True`. So the clean fix is **apply the 2.80 odds floor at publication**, which
+subsumes the whole "retire the pooled floor / exclude home-favs" discussion.
+
+**THE DRAW/AWAY HALF DOES NOT SURVIVE — and gotcha §47 is why.** The first run
+looked like a vindication: on ALL bots at odds>=2.80, AWAY read n=364, **+15.4%
+robust ✓ from a 0% floor**, rising to +48.5% ✓ at 13%. Splitting by bot dissolved
+it — *"an odds-band effect is a BOT effect until you split by bot"*:
+
+| bot | maturity | sel | n | ROI |
+|---|---|---|---|---|
+| `inplay_p` | **retired** | away | 56 | −0.7% |
+| `inplay_p_v2` | **retired** | away | 42 | +20.9% |
+| `inplay_i` | **retired** | away | 21 | −23.1% |
+| `inplay_n` | **retired** | away | 16 | −77.5% |
+| `inplay_o` | **retired** | away | 14 | **+452.3%** |
+| `inplay_c` | **retired** | away | 8 | −100.0% |
+| `bot_v10_all` | calibrated | away | **3** | +278.3% |
+
+The entire away result is **retired IN-PLAY bots** — a different bet type, retired
+2026-08-21 — with one bot (n=14, +452%) carrying it. Re-running **pre-match only**:
+
+| selection @ odds>=2.80, pre-match | n | @10% | verdict |
+|---|---|---|---|
+| HOME | 653 | +7.0%, **not robust** (f2 −14.7%); 12% → +16.1% ✓ | see note |
+| DRAW | 95 | n=10, −52.5%; **−31.5% overall, negative in every fold** | **loses** |
+| AWAY | 85 | **n=5** (+204% on one winner; two folds have zero bets) | **no evidence** |
+
+So draws are not "profitable once they pass" — they lose, −31.5% across 95
+pre-match picks at odds>=2.80. And aways at the proposed gate are **5 bets**.
+
+**BUT the selection-bias point is RIGHT, and it cuts both ways.** The
+active/calibrated cohort at odds>=2.80 is **236 HOME out of 240** — our own
+home-only mirror stopped generating draws and aways, so that slice *cannot* test
+the hypothesis at all. The correct response is therefore **not** "draws/aways are
+bad" and **not** "adopt them" — it is *generate the evidence*: a paper shadow bot
+at the unified gate (all selections, edge>=10%, odds>=2.80) costs nothing and
+produces a clean pre-match sample in weeks. Deciding from retired in-play residue
+is exactly the mistake the fold-robustness rule exists to prevent.
+
+**One caveat on HOME worth recording:** 10% is robust on the calibrated cohort
+(+21.0%, n=212, all folds) but NOT on the wider pre-match universe (+7.0%, f2
+−14.7%, n=524), where 12% is the lowest robust floor. The 10% floor's validation
+therefore rests on the calibrated slice specifically — which is the right slice
+per the canonical method, but it is a thinner base than the headline implies.
+
+**Recommendation:** (1) apply the 2.80 odds floor at publication — it is the
+owner's mechanism, it subsumes home-favs *and* home-MID, and it needs no new
+constants; (2) keep HOME at 10%; (3) do NOT add draws/aways to any real-money or
+published gate yet — generate paper evidence first.
+
 ### WHERE the pooled 13% is actually consumed — and it is NOT "better" at any of them
 
 Owner asked, fairly: *"where we use pooled and why its better to use pooled there

@@ -83,6 +83,56 @@ _SEL_GROUPS = [
 ]
 
 
+def run_unified_gate(n_folds: int, stake: float, odds_floor: float):
+    """Test the UNIFIED-GATE hypothesis (owner, 2026-09-11).
+
+    Proposal: one edge floor (10%) + one odds floor (2.80) for EVERY 1x2
+    selection, and drop the per-selection carve-outs entirely. The claim is that
+    the odds floor already does the exclusion work — home favourites are priced
+    under 2.80 by definition, so they are removed automatically — and that draws
+    and aways looked bad in earlier sweeps only because they were measured
+    WITHOUT the odds floor applied.
+
+    That claim is worth testing precisely because every earlier sweep here
+    measured selections across ALL odds. `--by-selection` swept AWAY at n=18
+    over every price; the population that actually matters is AWAY at odds
+    >= 2.80. Same for DRAW, which read n=0 in the calibrated cohort.
+
+    So: restrict the universe to odds >= `odds_floor` FIRST, then sweep the edge
+    floor per selection. If the owner is right, every selection is positive and
+    fold-robust at 10% inside that universe, and the pooled floor plus the
+    home-only carve-out can both go.
+
+    Same method as everything else in this file: executable price
+    `COALESCE(odds_at_pick_live, odds_at_pick)`, walk-forward folds, `_sweep`'s
+    robustness column. Read the robustness column, not the ROI.
+    """
+    for active_only in (False, True):
+        cohort = ("active/calibrated cohort (real-money-relevant)"
+                  if active_only else "ALL bots (widest executable universe)")
+        rows = [r for r in _rows(active_only)
+                if r["odds"] is not None and r["odds"] >= odds_floor]
+        print(f"\n{'='*78}\nUNIFIED-GATE test — {cohort}\n"
+              f"universe: 1x2 with EXECUTABLE odds >= {odds_floor:.2f}  ·  "
+              f"n={len(rows)}  ·  walk-forward {n_folds} folds\n{'='*78}")
+        buckets = [("HOME", lambda s: s == "home"),
+                   ("DRAW", lambda s: s in ("draw", "x")),
+                   ("AWAY", lambda s: s == "away")]
+        for label, pred in buckets:
+            grp = [(r["ep"], r["ret"], r["pick_time"]) for r in rows
+                   if pred(r["sel"])]
+            print(f"\n--- {label} @ odds>={odds_floor:.2f}  (n={len(grp)}) ---")
+            if len(grp) < 10:
+                print(f"  (n={len(grp)} — too few to sweep; decides nothing)")
+                continue
+            _sweep(grp, n_folds, stake)
+        allsel = [(r["ep"], r["ret"], r["pick_time"]) for r in rows]
+        print(f"\n--- ALL SELECTIONS POOLED @ odds>={odds_floor:.2f}  "
+              f"(n={len(allsel)}) — the owner's proposed single gate ---")
+        if len(allsel) >= 10:
+            _sweep(allsel, n_folds, stake)
+
+
 def run_by_selection(n_folds: int, stake: float):
     """Sweep floors for each 1x2 SELECTION TYPE separately."""
     for active_only in (False, True):
@@ -131,13 +181,23 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="1x2 fav/long split floor backtest")
     ap.add_argument("--folds", type=int, default=3)
     ap.add_argument("--stake", type=float, default=10.0)
+    ap.add_argument("--unified-gate", action="store_true",
+                    help="test ONE edge floor + ONE odds floor for every "
+                         "selection: restrict to odds >= --odds-floor FIRST, "
+                         "then sweep the edge floor per selection. Answers "
+                         "whether the odds floor alone does the exclusion work.")
+    ap.add_argument("--odds-floor", type=float, default=2.80,
+                    help="odds floor for --unified-gate (default 2.80, the live "
+                         "1x2 odds floor)")
     ap.add_argument("--by-selection", action="store_true",
                     help="sweep each 1x2 SELECTION TYPE separately "
                          "(home-underdog / home-mid / home-fav / away / draw) "
                          "instead of the fav-vs-long split. Use this to decide "
                          "whether the pooled floor still has a job.")
     a = ap.parse_args()
-    if a.by_selection:
+    if a.unified_gate:
+        run_unified_gate(a.folds, a.stake, a.odds_floor)
+    elif a.by_selection:
         run_by_selection(a.folds, a.stake)
     else:
         run(a.folds, a.stake)

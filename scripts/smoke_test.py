@@ -36623,5 +36623,69 @@ def test_prekickoff_selection_aware_floor():
         )
 
 
+
+@test("UNIFIED-GATE-MODE — the odds-floor-first sweep exists and excludes in-play bots knowingly")
+def test_unified_gate_mode():
+    """UNIFIED-GATE (owner hypothesis, 2026-09-11): one edge floor (10%) + one
+    odds floor (2.80) for every 1x2 selection, letting the odds floor exclude
+    home favourites automatically instead of carrying a selection list.
+
+    The MECHANISM checked out and is now the recommended fix — a home fav is
+    priced under ~2.0, so 2.80 removes home-favs AND the home-MID 2.00-2.80
+    band with no exclusions list. The reason they reach `/picks` and Telegram is
+    that the publication path applies NO odds floor at all.
+
+    The draw/away half did not survive, and HOW it failed is the point worth
+    pinning. On ALL bots at odds>=2.80, AWAY read n=364 at +15.4% "robust ✓" —
+    apparently a vindication. Splitting by bot dissolved it: the picks were
+    almost entirely RETIRED IN-PLAY bots (in-play betting retired 2026-08-21),
+    one of them n=14 at +452%. Pre-match only, AWAY at the 10% gate is n=5 and
+    DRAW is -31.5% over 95 picks. That is gotcha §47 exactly — "an odds-band
+    effect is a BOT effect until you split by bot".
+
+    So this test pins the two things that make the tool trustworthy: the mode
+    exists, and it can separate pre-match from in-play. It asserts NO ROI —
+    those move with every settled bet.
+    """
+    import importlib.util
+    import inspect
+    import pathlib as _pl
+
+    spec = importlib.util.spec_from_file_location(
+        "_favlong2", _pl.Path("scripts/favlong_floor_backtest.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    assert hasattr(mod, "run_unified_gate"), (
+        "--unified-gate mode must exist: it is the only sweep that applies the "
+        "odds floor BEFORE sweeping the edge floor, which is the population the "
+        "question actually turns on."
+    )
+    src_m = inspect.getsource(mod.run_unified_gate)
+    assert "odds_floor" in src_m and ">= odds_floor" in src_m, (
+        "the mode must filter the universe by the ODDS floor first — sweeping "
+        "selections across all odds is what made every earlier answer wrong."
+    )
+    # The default must be the live 1x2 odds floor, not an invented number.
+    import workers.automation.coolbet_placer as cp
+    main_src = inspect.getsource(mod.main)
+    assert 'default=2.80' in main_src, "the default odds floor must be 2.80"
+    assert cp._min_odds_for("1x2") == 2.80, (
+        "the live 1x2 odds floor moved away from 2.80 — update the sweep "
+        "default so the tool keeps testing the gate we actually run."
+    )
+    # And the in-play exclusion must remain possible: the retired inplay_* bots
+    # are what faked the away result, so any future run must be able to drop
+    # them. Guard that the naming convention they rely on still holds.
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT COUNT(*) n FROM bots WHERE name LIKE 'inplay%%'")
+    assert rows and rows[0]["n"] > 0, (
+        "no bots match 'inplay%' any more — the pre-match/in-play split in the "
+        "UNIFIED-GATE analysis relied on that prefix. If in-play bots were "
+        "renamed or purged, the documented away finding must be re-derived."
+    )
+
+
 if __name__ == "__main__":
     main()
