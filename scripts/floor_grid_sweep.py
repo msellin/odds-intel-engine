@@ -169,7 +169,7 @@ DIMENSIONS = {
     "odds_band":      "executable-odds bucket (<1.8, 1.8-2.2, 2.2-2.8, 2.8-3.2, 3.2-4.0, 4.0+)",
     "edge_band":      "edge bucket (<5%, 5-8%, 8-10%, 10-13%, 13-18%, 18%+)",
     "edge_scale":     "fraction (the convention, 0..1) | SUSPECT (>1 — different unit, see --include-suspect-edge)",
-    "edge_kind":      "WHAT the edge is measured against: model | sharp-anchor | line-shop. NEVER pool these on one floor axis",
+    "edge_kind":      "WHAT the edge is measured against: model | sharp-anchor | line-shop | devig-fixture. NEVER pool these on one floor axis",
     "bookmaker":      "recommended_bookmaker — the book the pick was priced at",
     "closing_book":   "closing_bookmaker — where the closing line came from",
     "bot":            "bot name",
@@ -273,6 +273,12 @@ _SHARP_MV = "pinnacle_shin_devig"
 
 
 def _edge_kind(bot: str, model_version: str | None) -> str:
+    # The fixture-level basis computes `best_accessible * P_devig_pinnacle - 1`.
+    # That is NOT our model's edge — it is a de-vig/line-shop edge — and letting
+    # it label itself "model" would recreate the exact conflation this dimension
+    # exists to prevent, at 105k rows where it would drown the real model data.
+    if (model_version or "").lower() == "devig_pinnacle" or bot == "(fixture-level)":
+        return "devig-fixture"
     if (model_version or "").lower() == _SHARP_MV:
         return "sharp-anchor"
     b = (bot or "").lower()
@@ -434,6 +440,7 @@ def load(datasets=None, include_idealized: bool = True) -> list[dict]:
                                  ("over", "under"), "o/u"):
             raw.append((IDEALIZED_LABEL, r))
     for label, d in raw:
+        d["dataset"] = label
         fam, line, side = parse_market(d["market"], d["selection"])
         d["family"], d["line"], d["side"] = fam, line, side
         d["bet_type"] = fam if line == "-" else f"{fam} {line}"

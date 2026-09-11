@@ -12,7 +12,7 @@
 | Service | Role | Plan | Status |
 |---------|------|------|--------|
 | **Supabase** | **Auth only** (52 users in `auth.users`) + **Storage** (`models` bucket, 222 MB / 233 objects). Data plane migrated to Hetzner VPS Postgres 17 on 2026-07-09 (SUPABASE-TO-VPS). `public` schema dropped 2026-07-13 (SUPABASE-CLEANUP-DROP). | **Free ($0)** since 2026-07-13 | Downgraded from Pro. DB 18 MB / 500 MB cap; models bucket 222 MB / 1 GB cap. |
-| **Hetzner VPS** | Pipeline scheduler + LivePoller (long-running process; in-play betting/InplayBot retired 2026-08-21) + FlareSolverr (Coolbet transport; HLTV/CS2 scraping removed 2026-08-26) + **odds-intel-web Next.js frontend (pm2 + nginx)** since 2026-07-07 | **€5.49/mo** | Active since 2026-06-29 (RAILWAY-ELIMINATION). 2 vCPU / 4 GB RAM / 40 GB disk. systemd unit `oddsintel-scheduler.service` — `Restart=always`, venv Python, TZ=UTC. FlareSolverr in Docker (no persistent profile — HLTV sessions are ephemeral). Frontend at `/opt/odds-intel-web`, pm2 process `odds-intel-web` on port 3000, nginx reverse proxy on 80. GitHub Actions auto-deploy on push to main. See `docs/VPS_NEXTJS_MIGRATION_RUNBOOK.md` for the playbook to move more sites. After code push: `git pull && venv/bin/pip install -r requirements.txt && systemctl restart oddsintel-scheduler`. |
+| **Hetzner VPS** | Pipeline scheduler + LivePoller (long-running process; in-play betting/InplayBot retired 2026-08-21) + FlareSolverr (Coolbet transport; HLTV/CS2 scraping removed 2026-08-26) + **odds-intel-web Next.js frontend (pm2 + nginx)** since 2026-07-07 | **€5.49/mo** | Active since 2026-06-29 (RAILWAY-ELIMINATION). Originally provisioned 2 vCPU / 4 GB RAM / 40 GB disk (hence the hostname `ubuntu-4gb-hel1-1`); **now 15 GB RAM / 301 GB disk** after resizing. systemd unit `oddsintel-scheduler.service` — `Restart=always`, venv Python, TZ=UTC. FlareSolverr in Docker (no persistent profile — HLTV sessions are ephemeral). Frontend at `/opt/odds-intel-web`, pm2 process `odds-intel-web` on port 3000, nginx reverse proxy on 80. GitHub Actions auto-deploy on push to main. See `docs/VPS_NEXTJS_MIGRATION_RUNBOOK.md` for the playbook to move more sites. After code push: `git pull && venv/bin/pip install -r requirements.txt && systemctl restart oddsintel-scheduler`. |
 | **GitHub Actions** | Manual workflow_dispatch + DB migrations only | Free (public repos) | Active — crons disabled, ~100 min/month |
 | **GitHub** | Source control (2 repos, both public) | Free | Active |
 | **Vercel** | ~~Frontend hosting~~ | Free (paused 2026-07-07 at 301% of Fluid CPU quota) | **oddsintel.app migrated off Vercel to VPS 2026-07-07.** Vercel account still holds `box-ranking` and `procurement-intel` projects but service is paused. Kept as fallback until VPS-hosted frontend has 48h of clean operation, then delete. |
@@ -65,7 +65,7 @@ All steps complete:
 
 | | |
 |---|---|
-| VPS disk | **301 GB total, 158 GB used, 131 GB free (55%)** — up from 118 GB free on 2026-09-06 |
+| VPS disk | **301 GB total, 122 GB used, 167 GB free (43%)** — after the 2026-09-11 log reclaim (was 159 GB used / 130 GB free that morning) |
 | `odds_snapshots` | 46.3M rows / **20 GB** (9.7 GB heap + 10 GB indexes — the indexes are bigger than the data) |
 | next largest table | `team_transfers` 864 MB |
 | odds inflow | ~1.8M rows/day (1.48M–3.52M; Saturdays peak) |
@@ -73,8 +73,7 @@ All steps complete:
 | net growth before DB-ANCHOR-GROWTH | **+1.58M rows/day ≈ +681 MB/day ≈ 249 GB/yr** → ~190 days of runway |
 | net growth after | **+634k rows/day ≈ +273 MB/day ≈ 100 GB/yr** → **~480 days of runway** |
 
-The 4 GB / 40 GB figure in the table above is the *original* VPS spec; the box
-now runs a 301 GB volume. Note that a `DELETE` returns space to Postgres for
+Note that a `DELETE` returns space to Postgres for
 reuse but **not** to the filesystem — `df` only changes after a `VACUUM FULL`,
 which takes an exclusive lock and ~15 GB of temp space and is deliberately not
 part of the nightly job.
@@ -91,16 +90,55 @@ shift `ou25_bookmaker_disagreement` and `market_implied_btts_yes`, which are
 recomputed from full history on every Sunday retrain, and would make
 CONSENSUS-ANCHOR-BOT unbacktestable.
 
-**Context (VPS audit 2026-09-11):** OddsIntel is *not* the main tenant on this
-box. Of 159 GB used, CrossRank's live DB is 39 GB against OddsIntel's 24 GB
-(20 GB of which is `odds_snapshots`), and roughly **30 GB is unrotated logs** —
-15 GB of Postgres slow-query log in `pgdata/log` that logrotate's
-`postgresql-common` entry never touches, plus a 15 GB unrotated Docker
-container log. So the cheapest disk recovery on this box is log rotation, not
-odds rows; the retention work above is about bounding OddsIntel's own growth
-rate, not about this quarter's free space. The ~480-day runway figure quoted
-earlier assumed the whole 131 GB was available to `odds_snapshots`, which it is
-not.
+**Context (VPS audit 2026-09-11) — OddsIntel is *not* the main tenant.** Of the
+159 GB used that morning, CrossRank's live DB was 39 GB against OddsIntel's
+24 GB (20 GB of which is `odds_snapshots`). The ~480-day runway figure above
+assumed the whole 131 GB was available to `odds_snapshots`; it is not.
+
+**Log reclaim — done 2026-09-11.** Roughly 30 GB was unrotated logs, and the
+cheapest disk recovery on this box was rotation, not odds rows. **37 GB
+reclaimed; 159 GB used → 122 GB.** What was wrong and what now bounds it:
+
+| Source | Was | Root cause | Fix |
+|---|---|---|---|
+| Postgres `PGDATA/log` | 15 GB / 38 files | `logging_collector=on` writes to `/var/lib/postgresql/17/main/log`, **not** `/var/log/postgresql` — Debian's `postgresql-common` logrotate entry never saw it, so nothing ever deleted these | `prune-pg-logs.sh`, cron `20 4 * * *`, 7-day expiry |
+| Docker `json-file` logs | 15 GB (one file) | No `/etc/docker/daemon.json`, so `json-file` logging is unbounded; `crossrank-postgrest-1` had accumulated one 15 GB log since creation | `/etc/logrotate.d/docker-containers`, daily, `maxsize 200M`, `copytruncate` |
+| journald | 3.4 GB | `SystemMaxUse` unset (default is 10% of disk = 30 GB) | `SystemMaxUse=500M` |
+| `/var/crash` | 722 MB | apport dumps nobody reads | deleted |
+| orphan `crossrank.dump` | 3.8 GB | one-off from the 2026-07-08 migration restore, superseded by the nightlies | deleted |
+
+Note that Postgres' log volume (~1–4 GB/day) is driven by
+`log_min_duration_statement=1000` dumping full statement text — the
+`odds_snapshots` thinning `DELETE`s carry multi-KB UUID `ARRAY[...]` literals
+and run ~2.1 s each. 7-day retention bounds it at roughly 7–25 GB. If that is
+ever too much, raise the threshold rather than shortening retention — the slow
+-query log is the only visibility we have into those statements.
+
+## Hetzner Storage Box (measured 2026-09-11)
+
+| | |
+|---|---|
+| Capacity | **1 TB — 453 GB used (45%), 572 GB free** |
+| `crossrank/` | **298 GB** — 65 dumps from 2026-07-08, ~5.0 GB each, flat |
+| `oddsintel/` | **156 GB** — 64 dumps from 2026-07-09; grew 1.6 GB → 4.4 GB, then **dropped to ~1.9 GB on 2026-09-08** when DB-ANCHOR-GROWTH landed (a 2.3x cut, visible in the dump sizes) |
+
+**CrossRank's remote retention had never run, and could not have.** Its sweep
+was `ssh <box> 'find crossrank/ -name "crossrank-*.dump" -mtime +90 -delete'`.
+The **Storage Box runs a restricted shell with no `find`** — every nightly run
+returned `Command not found` (exit 8) and the trailing `|| true` swallowed it.
+`backup-oddsintel.sh` had always worked around this by listing remotely and
+deciding locally; CrossRank's copy never got that fix. It had not yet *shown* as
+growth only because the oldest dump was 65 days old — still inside 90 days.
+Fixed 2026-09-11; the sweep is now VPS-side in both scripts and was dry-run
+against the real 65-file listing (65 parsed, 0 due, boundary exact at 90/91
+days, non-`.dump` names and `..` rejected).
+
+**Fill projection.** CrossRank adds ~5 GB/day and prunes nothing until
+~2026-10-06 (when its oldest dump turns 90). OddsIntel adds ~2 GB/day and
+starts pruning ~2026-10-07, after which it plateaus near 180 GB. Net ~7 GB/day
+until early October, ~5 GB/day after. **The box fills around late December
+2026** unless CrossRank's dump size or cadence changes. That is the number to
+watch, not the VPS disk.
 
 ## GitHub Actions Usage
 

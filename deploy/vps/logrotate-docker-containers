@@ -1,0 +1,17 @@
+# Docker json-file logs are unbounded by default and there is no daemon.json
+# log-opt on this host. copytruncate keeps the daemon's open fd valid, so this
+# needs no container restart (unlike daemon.json, which only applies to
+# containers created after it).
+# Added 2026-09-11 (VPS-DISK-AUDIT): crossrank-postgrest had grown one 15 GB
+# json.log since the container was created.
+/var/lib/docker/containers/*/*-json.log {
+    daily
+    rotate 3
+    maxsize 200M
+    copytruncate
+    compress
+    delaycompress
+    missingok
+    notifempty
+    su root root
+}

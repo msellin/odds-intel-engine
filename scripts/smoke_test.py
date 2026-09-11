@@ -36993,5 +36993,100 @@ def test_reference_book_opening_trim():
             "started getting openings at all on 2026-09-11."
         )
 
+@test("VPS-BACKUP-RETENTION-SWEEPS-SANE")
+def test_vps_backup_retention_sweeps_sane():
+    """VPS-DISK-AUDIT (2026-09-11): the two nightly backup scripts share one
+    disk, one Postgres and one Storage Box account, and both had a silent bug.
+
+    1. `backup-crossrank.sh` swept the Storage Box with
+       `ssh <box> 'find crossrank/ -mtime +90 -delete'`. **Hetzner Storage Box
+       runs a restricted shell with no `find`** — it returned "Command not
+       found" (exit 8) every night and the trailing `|| true` swallowed it, so
+       remote retention had NEVER deleted anything. It had not yet shown as
+       growth only because the oldest dump was still inside 90 days.
+    2. `backup-oddsintel.sh` pruned BOTH `oddsintel-*.dump` and
+       `crossrank-*.dump` locally. Running at 03:30, after CrossRank's 03:00,
+       it silently overrode that script's own retention rule.
+
+    Source-inspection test: the live scripts are on the VPS, but the copies in
+    `deploy/vps/` are what a rebuild would deploy, so they must stay correct.
+    """
+    import os
+    import re
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    vps = os.path.join(root, "deploy", "vps")
+
+    for fname, own in (("backup-oddsintel.sh", "oddsintel"),
+                       ("backup-crossrank.sh", "crossrank")):
+        path = os.path.join(vps, fname)
+        assert os.path.exists(path), f"{fname} must be kept in deploy/vps/"
+        src = open(path).read()
+        other = "crossrank" if own == "oddsintel" else "oddsintel"
+
+        # (1) Nothing but ls/rm/mkdir may be sent to the Storage Box. Look only
+        # at lines that actually invoke the remote shell, so the LOCAL prune
+        # (which legitimately uses find on the VPS's own disk) is not flagged.
+        remote_lines = [
+            ln for ln in src.splitlines()
+            if "$STORAGE_BOX_USER@$STORAGE_BOX_HOST" in ln
+        ]
+        assert remote_lines, f"{fname}: expected remote Storage Box commands"
+        for ln in remote_lines:
+            assert not re.search(r"\bfind\b", ln), (
+                f"{fname}: `find` must never be sent to the Storage Box — its "
+                "restricted shell has no find, and `|| true` hides the "
+                f"failure. Offending line: {ln.strip()!r}"
+            )
+        assert any("ls %s/" % own in ln for ln in remote_lines), (
+            f"{fname}: the remote sweep must list with `ls {own}/` and decide "
+            "locally — that is all the restricted shell supports."
+        )
+
+        # (2) Each script prunes ONLY the dumps it creates.
+        assert "-name '%s-*.dump' -mtime" % own in src, (
+            f"{fname}: must prune its own {own}-*.dump locally"
+        )
+        assert "-name '%s-*.dump' -mtime" % other not in src, (
+            f"{fname}: must NOT prune {other}-*.dump — the two scripts run 30 "
+            "min apart into the same directory, so whichever runs last wins "
+            "and silently overrides the other's retention."
+        )
+
+        # (3) Anything that is not a dated dump must be skipped, never rm'd.
+        assert '[ -z "$DATE_STR" ] && continue' in src, (
+            f"{fname}: filenames that do not parse as {own}-YYYY-MM-DD.dump "
+            "must be skipped, never passed to rm."
+        )
+
+    # (4) Postgres' own logs live in PGDATA/log, which logrotate's packaged
+    # postgresql-common entry does NOT cover — that is why this script exists.
+    prune = os.path.join(vps, "prune-pg-logs.sh")
+    assert os.path.exists(prune), "prune-pg-logs.sh must be kept in deploy/vps/"
+    psrc = open(prune).read()
+    assert "/var/lib/postgresql/17/main/log" in psrc, (
+        "prune-pg-logs.sh must target PGDATA/log — /var/log/postgresql was "
+        "already covered by logrotate and was never the problem."
+    )
+    assert "-mtime" in psrc and "postgresql-*.log" in psrc, (
+        "prune-pg-logs.sh must expire by age, and only Postgres' own log files."
+    )
+
+    # (5) Docker logs must rotate with copytruncate: daemon.json log-opts apply
+    # only to containers created after them, which would mean recreating
+    # oddsintel-postgrest-1 and dropping api.oddsintel.app.
+    lr = os.path.join(vps, "logrotate-docker-containers")
+    assert os.path.exists(lr), "logrotate-docker-containers must be in deploy/vps/"
+    lsrc = open(lr).read()
+    assert "copytruncate" in lsrc, (
+        "docker log rotation must use copytruncate so the daemon's open fd "
+        "stays valid and no container restart is needed."
+    )
+    assert "maxsize" in lsrc, (
+        "a daily-only rule is not enough — one container produced a 15 GB log "
+        "between restarts. Bound it by size too."
+    )
+
+
 if __name__ == "__main__":
     main()

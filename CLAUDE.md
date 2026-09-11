@@ -288,7 +288,7 @@ ESPN (free)                  -> Settlement results backup
 - Credentials in `.env` (gitignored) — never commit secrets
 - Prediction model: Poisson + XGBoost blend with 3-tier fallback (A/B/C)
 - 16 paper trading bots running since 2026-04-27
-- Nightly VPS backup at 03:30 UTC → Hetzner Storage Box (`/opt/oddsintel/backup-oddsintel.sh`, 14-day local + 90-day remote retention)
+- Nightly VPS backup at 03:30 UTC → Hetzner Storage Box (`/opt/oddsintel/backup-oddsintel.sh`, **3-day local + 90-day remote** retention). CrossRank shares this box, this Postgres and this Storage Box account — both backup scripts live in `deploy/vps/` and must not prune each other's dumps. **The Storage Box shell is restricted: only `ls`, `rm`, `mkdir` — no `find`.** See `deploy/vps/README.md`.
 
 ---
 
