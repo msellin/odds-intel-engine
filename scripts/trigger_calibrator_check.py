@@ -98,6 +98,28 @@ def _agg(rows):
     return out
 
 
+def verdict(min_n: int = CLV_USEFUL_N) -> dict:
+    """Machine-readable form of the report, for the scheduled watcher.
+
+    Returns {ready, post_clv_n, post_clv, post_roi, pre_clv, pre_clv_n, verdict}.
+    `ready` is False until the post-fix era has enough settled CLV rows — the
+    watcher stays silent until then rather than paging with a number built on
+    four bets.
+    """
+    rows = _rows()
+    eras = {"pre-fix": [], "post-fix": []}
+    for r in rows:
+        eras[_era(r["mv"])].append(r)
+    post, pre = _agg(eras["post-fix"]), _agg(eras["pre-fix"])
+    ready = post["clv_n"] >= min_n
+    v = None
+    if ready:
+        v = "mechanism_sound" if (post["clv"] or 0) > 0 else "mechanism_suspect"
+    return {"ready": ready, "post_clv_n": post["clv_n"], "post_clv": post["clv"],
+            "post_roi": post["roi"], "post_settled": post["settled"],
+            "pre_clv": pre["clv"], "pre_clv_n": pre["clv_n"], "verdict": v}
+
+
 def run(min_n: int, per_bot: bool) -> int:
     rows = _rows()
     if not rows:

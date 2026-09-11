@@ -1979,6 +1979,58 @@ def job_backfill_live_prices():
     _run_job("backfill_live_prices", _run)
 
 
+def job_trigger_calibrator_watch():
+    """TRIGGER-CALIBRATOR-WATCH (2026-09-11) — page ONCE when the post-fix
+    trigger sample is large enough to judge, and say nothing until then.
+
+    The owner's actual request was "you need to add some follow up task, i will
+    forget". A reminder would fire on a date and still need someone to run a
+    command and interpret it; this fires on the DATA being ready and hands over
+    the verdict, which is the thing that was going to be forgotten.
+
+    Background: the 1x2 trigger calibrator was fit POOLED over home/draw/away
+    until 2026-09-11, under-estimating HOME by 10-15pp and making the bots fire
+    only on longshots. It is now per-selection. Whether CLV recovers from -6.6%
+    decides whether the real-money mirror bots should be moved onto the same
+    window-firing mechanism (EPIC: MIRROR-AND-TRIGGER-CONVERGENCE phase 2).
+
+    Silent until the post-fix era has ~334 settled picks with a Pinnacle CLV —
+    the sample size at which CLV is worth reading. Deduped to one alert per
+    week so a long wait cannot turn into daily noise.
+    """
+    def _run():
+        from scripts.trigger_calibrator_check import verdict
+        import logging
+        v = verdict()
+        log = logging.getLogger("scheduler")
+        if not v["ready"]:
+            log.info("trigger_calibrator_watch: not ready (%d/334 settled CLV)",
+                     v["post_clv_n"])
+            return
+        sound = v["verdict"] == "mechanism_sound"
+        from workers.notify.telegram import send_telegram
+        send_telegram(
+            ("✅" if sound else "⚠️") +
+            " <b>Trigger calibrator verdict is in</b>\n\n"
+            f"Post-fix CLV <b>{v['post_clv']:+.1f}%</b> on n={v['post_clv_n']}\n"
+            f"(pre-fix was {v['pre_clv']:+.1f}% on n={v['pre_clv_n']})\n"
+            f"Post-fix ROI {v['post_roi']:+.1f}% on {v['post_settled']} settled\n\n"
+            + ("CLV is POSITIVE — the window-firing mechanism looks sound, so "
+               "phase 2 (give the mirror bots trigger firing) is worth "
+               "building. Promotion to real money still needs ROI volume."
+               if sound else
+               "CLV is still NEGATIVE — the calibrator was not the whole "
+               "story, so the firing mechanism itself is suspect. Do NOT move "
+               "the real-money mirror bots onto it yet.")
+            + "\n\nDetail: <code>python3 scripts/trigger_calibrator_check.py --per-bot</code>",
+            dedup_key="trigger-calibrator-verdict",
+            dedup_window_s=7 * 24 * 3600,
+        )
+        log.info("trigger_calibrator_watch: PAGED verdict=%s clv=%.2f",
+                 v["verdict"], v["post_clv"] or 0)
+    _run_job("trigger_calibrator_watch", _run)
+
+
 def job_backfill_half_scores():
     """1H-HT-GOALS sweep — daily. Fills matches.ht_score_*/h2_score_* for finished
     matches still missing them, from AF /fixtures (score.halftime + score.fulltime),
@@ -2517,6 +2569,12 @@ def main():
                       id="backfill_live_prices", name="odds_at_pick_live producer")
     scheduler.add_job(job_backfill_half_scores, CronTrigger(hour=22, minute=30),
                       id="backfill_half_scores", name="1H/2H half-score sweep")
+
+    # TRIGGER-CALIBRATOR-WATCH: checks daily, stays silent until the post-fix
+    # sample can actually be judged, then pages the verdict once.
+    scheduler.add_job(job_trigger_calibrator_watch, CronTrigger(hour=7, minute=15),
+                      id="trigger_calibrator_watch",
+                      name="Trigger calibrator verdict watch")
 
     # Fixture status refresh: 6× daily, 15 min before each betting window
     # Re-fetches today's fixtures to catch postponements/cancellations/time changes.

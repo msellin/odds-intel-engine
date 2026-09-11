@@ -37776,5 +37776,60 @@ def test_trigger_calibrator_revision():
     )
 
 
+
+@test("TRIGGER-CALIBRATOR-WATCH — the verdict pages itself when the sample is ready, not on a date")
+def test_trigger_calibrator_watch():
+    """TRIGGER-CALIBRATOR-WATCH (2026-09-11). Owner: "you need to add some
+    follow up task, i will forget".
+
+    A date-based reminder would still require someone to run a command and
+    interpret the output — i.e. it defers exactly the part that gets forgotten.
+    This fires on the DATA being ready and hands over the verdict itself.
+
+    The invariant that matters: it must stay SILENT until the post-fix era has
+    enough settled picks with a Pinnacle CLV (~334, the sample size at which CLV
+    is worth reading). Paging early would deliver a confident-looking number
+    built on a handful of bets, which is the failure this whole day was spent
+    removing. And it must dedup, or a long wait becomes daily noise.
+    """
+    import inspect
+    import pathlib as _pl
+    from scripts.trigger_calibrator_check import verdict, CLV_USEFUL_N
+
+    v = verdict()
+    for k in ("ready", "post_clv_n", "post_clv", "pre_clv", "verdict"):
+        assert k in v, f"verdict() must report {k!r}"
+    # Not ready => no verdict. A verdict without the sample is the bug.
+    if not v["ready"]:
+        assert v["verdict"] is None, (
+            "verdict must be None until the sample is large enough — offering "
+            "one early is how a four-bet number becomes a decision."
+        )
+    assert CLV_USEFUL_N >= 300, (
+        f"CLV_USEFUL_N={CLV_USEFUL_N} is below the ~334 needed for a useful CLV "
+        "read; lowering it silently lowers the bar for a real-money decision."
+    )
+
+    sched = _pl.Path("workers/scheduler.py").read_text()
+    assert "job_trigger_calibrator_watch" in sched, "the watcher must exist"
+    assert 'id="trigger_calibrator_watch"' in sched, (
+        "the watcher must be REGISTERED with the scheduler — a job function "
+        "nobody calls is the same as a reminder nobody reads."
+    )
+    body = sched[sched.index("def job_trigger_calibrator_watch"):]
+    body = body[:body.index("def job_backfill_half_scores")]
+    assert 'if not v["ready"]:' in body and "return" in body, (
+        "the watcher must return early while the sample is too small"
+    )
+    assert "dedup_key" in body and "dedup_window_s" in body, (
+        "the page must be deduped, or a long wait turns into daily noise"
+    )
+    # It must run the work INSIDE _run_job, not beside it (OBS-LOG-ALL-JOBS).
+    assert "_run_job(\"trigger_calibrator_watch\", _run)" in body, (
+        "the real work must be wrapped by _run_job so a failure is logged as a "
+        "failure — see OBS-LOG-ALL-JOBS-DEFEATED for the 20 jobs that don't."
+    )
+
+
 if __name__ == "__main__":
     main()
