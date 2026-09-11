@@ -37154,5 +37154,91 @@ def test_floor_table_matches_code():
     )
 
 
+@test("DRIFT-FEATURE-WRITER — pinnacle_drift has a scheduled writer and a fan-out-safe query")
+def test_drift_feature_writer():
+    """DRIFT-FEATURE-WRITER-2026-09-11. `pinnacle_drift_*` was backfilled once
+    on 2026-06-04 and then never written again: `backfill_pinnacle_drift.py`
+    was the only writer and was never registered in the scheduler. Measured
+    2026-09-11 it was non-null on 0 of 22,401 MFV rows from the preceding 60
+    days, last value dated 2026-06-06. The ticket asked to "re-enable once
+    coverage reaches 30 per cent" — a trigger that could never fire, because
+    nothing populated the column. It waited on itself for three months.
+
+    The script was also silently broken. It joined ALL is_opening rows to ALL
+    is_closing rows, but a price series routinely carries several of each
+    (186,257 pairs across ~22,300 matches = ~2.8 per match-selection). The join
+    fanned out, so `HAVING COUNT(*) = 3` was satisfied by one selection with
+    three pairs, leaving draw/away NULL and the match discarded — and where it
+    did survive, MAX(drift) picked the most positive fanned-out combination
+    rather than the real open-to-close move. It returned 1,861 matches where
+    11,827 were computable: 84 per cent silently dropped.
+    """
+    import inspect
+    from pathlib import Path
+    from scripts import backfill_pinnacle_drift as bpd
+
+    sched = Path("workers/scheduler.py").read_text()
+    assert 'id="pinnacle_drift_refresh"' in sched, (
+        "the drift writer must be registered in the scheduler. It was absent "
+        "for three months while the queue row waited on a coverage trigger "
+        "that could not fire without it."
+    )
+
+    qsrc = inspect.getsource(bpd.compute_drifts)
+    assert qsrc.count("DISTINCT ON (match_id, selection)") >= 2, (
+        "both the opening and closing CTEs must pick one row per "
+        "(match, selection) — earliest open, latest close. Without it the join "
+        "fans out and MAX(drift) returns the most positive combination rather "
+        "than the actual open-to-close move."
+    )
+    assert "COUNT(DISTINCT j.selection)" in qsrc, (
+        "the HAVING must count DISTINCT selections, not joined rows: counting "
+        "rows let a single selection with three pairs pass as 'all three'."
+    )
+    # Match the ASSIGNMENT, not any mention: the fix's own comment explains the
+    # trap and names the attribute, so a substring test on the whole source
+    # fails on the documentation of the bug it is guarding against.
+    assert "updated = cur.rowcount" not in inspect.getsource(bpd.main), (
+        "do not report execute_values' rowcount — it reflects only the LAST "
+        "page, so an 11,827-row update printed 'UPDATEd 1,827' and then "
+        "invented a '10,000 matches have no MFV row' warning from the "
+        "shortfall. Verify against the table instead."
+    )
+
+
+@test("DRIFT-NOT-IN-RETRAIN — a post-hoc feature must never enter the auto retrain")
+def test_drift_not_in_retrain():
+    """DRIFT-FEATURE-NOT-A-TRAINING-FEATURE-2026-09-11. `pinnacle_drift_*` is
+    (1/closing - 1/opening), so it needs the closing price and cannot exist
+    when we predict; nothing in the inference path supplies it. Training on it
+    would fit three permanently-missing features and, worse, fit every other
+    coefficient in the presence of information the model will never have.
+
+    This guard exists because the ORIGINAL blocker was recorded as a coverage
+    gate ("re-enable at >=30 per cent"), and that gate is now satisfied at
+    46.5 per cent. Someone reading only the old note would reasonably conclude
+    the work is unblocked. It is not, and the reason is not coverage.
+
+    The pre-kickoff cousins (`pinnacle_line_move_*_at_t6h`,
+    `sharp_consensus_*_at_t6h`) are the legitimate route, and a separate
+    experiment.
+    """
+    from pathlib import Path
+    sched = Path("workers/scheduler.py").read_text()
+
+    i = sched.index("workers.model.train")
+    window = sched[max(0, i - 200): i + 400]
+    assert "--include-drift" not in window, (
+        "the Sunday auto-retrain must not pass --include-drift: "
+        "pinnacle_drift_* cannot be computed before kickoff, so the model "
+        "would train on features that are 100 per cent missing in production."
+    )
+    assert "NOT-A-TRAINING-FEATURE" in sched, (
+        "keep the explanation next to the retrain call — the previous comment "
+        "gave a coverage threshold as the blocker, which has since been met "
+        "and would invite exactly the change this test forbids."
+    )
+
+
 if __name__ == "__main__":
     main()

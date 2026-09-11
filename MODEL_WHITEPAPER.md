@@ -133,6 +133,29 @@ independent recomputation rather than checking that the column is populated.
 The new AF model trains on `match_feature_vectors` — live pipeline data accumulated since 2026-04-27, plus historical rebuild via `scripts/backfill_mfv_historical.py` (Stage 0e of ML-PIPELINE-UNIFY).
 Column names match the table exactly.
 
+**Excluded by design: Pinnacle open→close drift (DRIFT-FEATURE-NOT-A-TRAINING-FEATURE, 2026-09-11).**
+`match_feature_vectors` carries `pinnacle_drift_home/draw/away` = `1/closing_odds − 1/opening_odds`
+on the Pinnacle 1X2 line, and `train.py` can add them via `--include-drift`. **The production
+retrain deliberately does not, and should not.** The quantity requires the *closing* price, which
+does not exist until kickoff, so it is structurally unavailable at inference — prediction reads the
+MFV row of an *upcoming* match, where the column is necessarily NULL. Including it would fit three
+features whose `_missing` indicator fires on 100% of production rows and, more damagingly, would
+fit every other coefficient in the presence of information the model never has at serve time.
+
+The associated backtest result — **+8.76pp win-rate spread, top vs bottom quintile over 8,850
+matches** — is genuine but *post-hoc*: "matches where Pinnacle drifted toward the selection won
+more often" is an outcome, not a pre-kickoff signal. Two legitimate uses remain: (a) research and
+CLV-adjacent analysis, including the delayed-placement design where the bet is struck at the close
+and the drift is therefore observable beforehand; (b) the pre-kickoff cousins already in MFV,
+`pinnacle_line_move_*_at_t6h` (9,006 of 22,413 rows) and `sharp_consensus_*_at_t6h` (9,491), neither
+of which is in the production 45-feature list — evaluating *those* is the honest version of "add
+sharp line movement to the model", as a separate held-out experiment.
+
+The column itself is maintained (writer fixed 2026-09-11, coverage 0% → 46.5%, refreshed nightly at
+02:30 UTC) precisely so the research uses stay available. Smoke `DRIFT-NOT-IN-RETRAIN` fails if the
+flag reappears on the auto-retrain — the original blocker was recorded as a coverage threshold, that
+threshold is now met, and meeting it does not make the change correct.
+
 **Missing-data handling (Stage 2a, 2026-05-10).** The prior `valid = X.notna().all(axis=1)` row-drop lost ~30-40% of rows because H2H is structurally absent for newly-promoted pairings, opening odds are absent for pre-2026-Q2 matches the engine wasn't yet watching, and referee features are absent for unstaffed fixtures. The new pipeline imputes per-league mean (with a global-mean fallback for leagues with no observations) and adds `<col>_missing` indicator columns for the features where missingness *itself* carries signal:
 
   `h2h_win_pct_missing`, `opening_implied_home_missing`, ..., `referee_over25_pct_missing`, `pinnacle_implied_home_missing`, ..., `pinnacle_implied_btts_yes_missing` (full list in `INFORMATIVE_MISSING_COLS`, `train.py:48`)

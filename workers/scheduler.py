@@ -725,15 +725,40 @@ def job_weekly_retrain():
         # eval surfaced the cost: v20260517 and v20260524 are +9 to +13%
         # worse than v14 on the over_under XGBoost head despite being better
         # on every other market head. Root cause traced to this flag omission.
-        # DRIFT-FEATURE flag intentionally OMITTED here (2026-06-04 revert).
-        # The DRIFT-FEATURE backfill currently only covers 260/10K matches
-        # (rest don't have MFV rows yet), and the June 8 / June 15 calibration
-        # + bot-threshold work needs clean apples-to-apples comparison vs the
-        # prior bundle. Re-enable via DRIFT-FEATURE-REENABLE in PRIORITY_QUEUE
-        # once MFV coverage on drift columns is ≥30% and the Batch 2
-        # calibration eval is baselined. Until then, drift remains available
-        # for ad-hoc training runs via `--include-drift` but not on the
-        # auto-Sunday-retrain.
+        # `--include-drift` is OMITTED PERMANENTLY. Do not add it.
+        #
+        # DRIFT-FEATURE-NOT-A-TRAINING-FEATURE-2026-09-11. The original note
+        # here said "re-enable once MFV coverage on drift columns is >=30 per
+        # cent". That coverage gate is now MET — 46.5 per cent over the last 60
+        # days after the writer was fixed — and re-enabling would still be
+        # wrong, so the gate is replaced with the real reason.
+        #
+        # `pinnacle_drift_*` is (1/closing_odds - 1/opening_odds). It needs the
+        # CLOSING price, which does not exist until kickoff. It is therefore
+        # structurally unavailable when we predict, and nothing in the
+        # inference path supplies it: prediction reads the MFV row for an
+        # UPCOMING match, where the column is necessarily NULL. Training on it
+        # would fit three features that are always missing at serve time, so
+        # Stage 2a's `<col>_missing` indicator would fire on 100 per cent of
+        # production rows — and, worse, every OTHER coefficient would have been
+        # fitted in the presence of information the model will never have.
+        # That is train/serve skew, not a feature.
+        #
+        # The backtested "+8.76pp win-rate spread, top vs bottom quintile" is a
+        # POST-HOC quantity: "matches where Pinnacle drifted toward X won more
+        # often" is a result, not a pre-kickoff signal. Two legitimate ways to
+        # use it, neither of which is this flag:
+        #   * research / CLV-adjacent analysis, and as the observable in the
+        #     delayed-placement design (PINNACLE-COHORT-FILTER) where you bet
+        #     AT the close and so can see the drift before staking;
+        #   * its pre-kickoff cousins, which ARE computable before we bet and
+        #     already exist in MFV: `pinnacle_line_move_*_at_t6h` (9,006 of
+        #     22,413 rows) and `sharp_consensus_*_at_t6h` (9,491). Neither is
+        #     in the production 45-feature list. Evaluating THOSE is the honest
+        #     version of "add sharp line movement to the model", and it is a
+        #     separate experiment with a proper held-out comparison.
+        #
+        # Smoke DRIFT-NOT-IN-RETRAIN fails if this flag reappears.
         result = subprocess.run(
             [sys.executable, "-m", "workers.model.train", "--version", version,
              "--include-pinnacle", "--include-ou-market"],

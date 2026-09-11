@@ -144,12 +144,30 @@ def main():
                 drifts,
                 page_size=2000,
             )
-            updated = cur.rowcount
             conn.commit()
-        print(f"  UPDATEd {updated:,} match_feature_vectors rows")
+
+            # DRIFT-FEATURE-ROWCOUNT-2026-09-11. This used to report
+            # `cur.rowcount` straight after execute_values, which only reflects
+            # the LAST page (page_size=2000) — so a real 11,827-row update
+            # printed "UPDATEd 1,827" and then derived a wholly fictional
+            # "10,000 matches have no MFV row — skipped" from the shortfall.
+            # Two false statements from one wrong variable, and the second one
+            # looks exactly like a legitimate coverage limit.
+            #
+            # Verify against the table instead of trusting the driver.
+            cur.execute(
+                """SELECT COUNT(*) FROM match_feature_vectors
+                    WHERE match_id = ANY(%s::uuid[])
+                      AND pinnacle_drift_home IS NOT NULL""",
+                ([d[0] for d in drifts],),
+            )
+            updated = cur.fetchone()[0]
+
+        print(f"  {updated:,} of {len(drifts):,} computed matches now carry drift "
+              f"in match_feature_vectors")
         skipped = len(drifts) - updated
         if skipped > 0:
-            print(f"  ({skipped:,} matches in odds_snapshots have no MFV row — skipped)")
+            print(f"  ({skipped:,} had no match_feature_vectors row to update)")
     except Exception:
         conn.rollback()
         raise
