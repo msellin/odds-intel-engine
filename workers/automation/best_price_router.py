@@ -318,7 +318,23 @@ def route(execute: bool = False, *, stage: bool = False, limit: int | None = Non
 
     Never raises."""
     from workers.automation.coolbet_placer import _min_odds_for
-    from scripts.place_coolbet_ui import PLACEABLE_BOTS, BOT_THRESHOLDS, load_picks
+    # ROUTER-GATE-PARITY (2026-09-11). The router previously ran a THINNER gate
+    # stack than `place_coolbet_ui.py --execute` already enforced: its only guard
+    # was an exact (match, market, selection) exposure match. Missing were
+    # already-placed, the kickoff cutoff, the per-match market-family guard and
+    # the daily bet/stake caps. Routing real money through it would have been a
+    # downgrade, not parity.
+    #
+    # REUSE these, never reimplement: `canon_bet` (inside match_exposure /
+    # exposure_conflict) collapses the TWO market vocabularies that coexist in
+    # `real_bets` — 'o/u'+'over 2.5' from the API placer vs 'over_under_25'+'over'
+    # from the UI placer. Any guard that reads real_bets without it sees half the
+    # book and will happily double-bet the half it cannot see.
+    from scripts.place_coolbet_ui import (
+        PLACEABLE_BOTS, BOT_THRESHOLDS, load_picks,
+        already_placed, match_exposure, exposure_conflict, spent_today,
+        KICKOFF_CUTOFF_MIN, MAX_BETS_PER_DAY, MAX_STAKE_PER_DAY,
+    )
 
     # Real-money is double-gated: the caller's execute=True AND an explicit env
     # opt-in. Without the env flag, a True degrades to report-only (never staged
@@ -329,7 +345,7 @@ def route(execute: bool = False, *, stage: bool = False, limit: int | None = Non
 
     out = {"candidates": 0, "routed": 0, "no_book_clears": 0, "already_placed": 0,
            "would_place": [], "skipped": [], "execute": execute, "mode": mode,
-           "dispatched": 0}
+           "dispatched": 0, "aborted": None}
     if execute and not real_allowed:
         out["real_refused"] = ("execute=True but ROUTER_ALLOW_REAL is not set — "
                                "real-money placement is owner-gated; reporting only")
@@ -346,6 +362,33 @@ def route(execute: bool = False, *, stage: bool = False, limit: int | None = Non
             log.warning("router: load_picks(%s) failed: %s", bot, e)
     out["candidates"] = len(picks)
 
+    # Seed per-match exposure from real_bets ONCE for every candidate match (one
+    # query, not one per pick). Cross-book by construction: match_exposure reads
+    # real_bets by match_id with no bookmaker filter, so a Unibet bet blocks a
+    # Coolbet duplicate and vice versa — which only works because the Unibet arm
+    # now records (UNIBET-NO-REAL-BETS-ROW, fixed 2026-09-11).
+    try:
+        held_by_match = match_exposure([str(p["match_id"]) for p in picks])
+    except Exception as e:  # noqa: BLE001
+        log.error("match_exposure failed (%s) — refusing to route: the per-match "
+                  "dedup is the guard that stops double-betting", e)
+        out["aborted"] = f"match_exposure failed: {e}"
+        return out
+
+    # Daily caps, counted from COMMITTED 'placed' rows plus what this pass places.
+    # Only meaningful when money can actually move; in report/stage mode they are
+    # reported but never abort, so a dry run still shows the full routing picture.
+    try:
+        day_n, day_stake = spent_today()
+    except Exception as e:  # noqa: BLE001
+        if real:
+            log.error("spent_today failed (%s) — refusing to place: the daily cap "
+                      "is the backstop for a runaway loop", e)
+            out["aborted"] = f"spent_today failed: {e}"
+            return out
+        day_n, day_stake = 0, 0.0
+    out["day_start"] = {"bets": day_n, "stake": round(day_stake, 2)}
+
     for p in picks:
         mid = p["match_id"]; market = p["market"]; sel = p["selection"]
         bot = p["bot_name"]; cal = p.get("calibrated_prob")
@@ -356,6 +399,54 @@ def route(execute: bool = False, *, stage: bool = False, limit: int | None = Non
         if _has_exposure(mid, market, sel):
             out["already_placed"] += 1
             out["skipped"].append({"pick": label, "reason": "already have a real bet (cross-book dedup)"}); continue
+
+        # GATE 1 — already placed. A confirmed 'placed' attempt for this exact
+        # shadow_bet means the work is done; re-placing is a duplicate.
+        sbid = p.get("shadow_bet_id")
+        try:
+            if sbid and already_placed(str(sbid)):
+                out["already_placed"] += 1
+                out["skipped"].append({"pick": label,
+                                       "reason": "already placed (confirmed attempt)"})
+                continue
+        except Exception as e:  # noqa: BLE001
+            log.warning("already_placed check failed for %s: %s — skipping "
+                        "(fail closed: an unreadable dedup must not place)", label, e)
+            out["skipped"].append({"pick": label,
+                                   "reason": f"already_placed check failed: {e}"})
+            continue
+
+        # GATE 2 — maturity / kickoff cutoff. Too close to kickoff the price is
+        # moving and the slip may be refused mid-placement.
+        kd = p.get("match_date")
+        if kd is not None:
+            try:
+                from datetime import datetime, timezone
+                ko = kd if hasattr(kd, "tzinfo") else None
+                if ko is not None:
+                    if ko.tzinfo is None:
+                        ko = ko.replace(tzinfo=timezone.utc)
+                    mins = (ko - datetime.now(timezone.utc)).total_seconds() / 60.0
+                    if mins < KICKOFF_CUTOFF_MIN:
+                        out["skipped"].append({
+                            "pick": label,
+                            "reason": f"kickoff in {mins:.1f} min < "
+                                      f"{KICKOFF_CUTOFF_MIN} min cutoff"})
+                        continue
+            except Exception as e:  # noqa: BLE001
+                log.debug("kickoff cutoff check skipped for %s: %s", label, e)
+
+        # GATE 3 — per-match exposure across BOTH books. Stronger than the exact
+        # (match,market,selection) check above: it also refuses a second bet in
+        # the same market FAMILY ("the same opinion, not a second one") and
+        # enforces the per-match bet/stake caps. `held` is appended to as this
+        # pass places, because a DB-only check is racy within one run.
+        held = held_by_match.setdefault(mid, [])
+        conflict = exposure_conflict(p, held, STAKE_EUR)
+        if conflict:
+            out["skipped"].append({"pick": label,
+                                   "reason": f"per-match exposure: {conflict}"})
+            continue
 
         threshold = float(BOT_THRESHOLDS.get(bot, 0.03))
         odds_floor = _min_odds_for(_floor_key(market))
@@ -382,12 +473,57 @@ def route(execute: bool = False, *, stage: bool = False, limit: int | None = Non
         # Dispatch to the winning book's executor when staging (dry-drive) or
         # placing for real. Report mode touches nothing. `limit` caps how many
         # picks we actually drive (keeps a dry-test-in-action controlled).
+        # GATE 4 — daily caps. The backstop for a runaway loop: if something
+        # goes wrong upstream, this is what stops it at 80 bets / EUR 800 rather
+        # than at the account balance. ABORTS the run rather than skipping the
+        # pick — once the cap is hit, every later pick would hit it too, and
+        # continuing would just hammer the books for nothing.
+        if real:
+            if day_n + 1 > MAX_BETS_PER_DAY:
+                out["aborted"] = (f"daily bet cap reached ({day_n} >= "
+                                  f"{MAX_BETS_PER_DAY}) — stopping the run")
+                break
+            if day_stake + STAKE_EUR > MAX_STAKE_PER_DAY:
+                out["aborted"] = (f"daily stake cap reached (EUR {day_stake:.2f} + "
+                                  f"{STAKE_EUR:.2f} > {MAX_STAKE_PER_DAY:.2f}) — "
+                                  "stopping the run")
+                break
+
         if (stage or real) and (limit is None or out["dispatched"] < limit):
             disp = _dispatch(winner, p, decision, execute=real)
             decision["dispatch"] = disp
             out["dispatched"] += 1
+            # Count what we actually placed, in-pass. A DB-only re-read is racy
+            # inside one run — the Airbus UK incident put three bets on one match
+            # at 13:00, 13:02 and 13:02 because each check re-read a table that
+            # had not caught up yet.
+            if disp.get("placed"):
+                canon = None
+                try:
+                    from scripts.place_coolbet_ui import canon_bet
+                    canon = canon_bet(market, sel)
+                except Exception:  # noqa: BLE001
+                    pass
+                if canon:
+                    held.append({"family": canon[0], "canon": canon[1],
+                                 "stake": float(STAKE_EUR)})
+                day_n += 1
+                day_stake += float(STAKE_EUR)
+            elif disp.get("staged"):
+                # Dry-test realism: a would-place must occupy the guard exactly as
+                # a real one would, or a stage run reports a rosier picture than
+                # the real run would produce.
+                try:
+                    from scripts.place_coolbet_ui import canon_bet
+                    c = canon_bet(market, sel)
+                    if c:
+                        held.append({"family": c[0], "canon": c[1],
+                                     "stake": float(STAKE_EUR)})
+                except Exception:  # noqa: BLE001
+                    pass
         elif real or stage:
             decision["dispatch"] = {"skipped": f"limit {limit} reached"}
+    out["day_end"] = {"bets": day_n, "stake": round(day_stake, 2)}
     return out
 
 

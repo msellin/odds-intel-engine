@@ -19,11 +19,19 @@
       analysis would be one-sided (Unibet-only). Either thread `notes` through
       `stage_bet`, or persist the router's own decision log (better — it also
       captures picks where NO book cleared, which `real_bets` never sees).
-- [ ] **The router bypasses Coolbet's per-pick gates 1-7.** Confirmed in recon:
-      no `already_placed`, no kickoff cutoff, no per-match MARKET_FAMILY guard,
-      **no daily bet/stake caps**. Its only guard is `_has_exposure`. Routing real
-      money through it today would run with a thinner gate stack than
-      `place_coolbet_ui.py --execute` already enforces.
+- [x] **DONE 2026-09-11 — gate-stack parity.** Ported the four missing gates into
+      `route()`, REUSING `place_coolbet_ui`'s own functions rather than
+      reimplementing (canon_bet collapses the two market vocabularies in
+      real_bets; a guard without it sees half the book):
+      already_placed (fail-closed) · kickoff cutoff KICKOFF_CUTOFF_MIN · per-match
+      exposure_conflict (also blocks same-FAMILY second opinions + per-match caps,
+      stronger than the old exact-match check) · daily MAX_BETS_PER_DAY /
+      MAX_STAKE_PER_DAY which ABORT the run rather than skip the pick.
+      In-pass `held` append + day counters so a within-run race cannot
+      double-place (the Airbus UK incident: 3 bets at 13:00/13:02/13:02).
+      Stage mode occupies the guard too, so a dry run cannot look rosier than
+      the real run. Verified live in report mode: 7 candidates -> 4 blocked by
+      cross-book dedup, 3 no-book-clears, 0 routed, day_start 4 bets/EUR40.
 - [ ] **No live dry-test.** `route(stage=True)` has never run green end-to-end
       since the Coolbet arm was dead. Must see a clean stage-in-action on a real
       candidate first.
