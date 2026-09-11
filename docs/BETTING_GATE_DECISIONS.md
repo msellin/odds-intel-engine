@@ -6,6 +6,76 @@
 the fix is a fixed method + a recorded decision, not another ad-hoc run.
 (Established 2026-09-09 after the 1x2 10-vs-13 churn.)
 
+## 🎯 FINAL RECOMMENDATION (2026-09-11) — the edge floor is the decision; the odds floor is not
+
+Tested symmetrically (incumbent and challenger in the same run), on the full
+pooled model-edge universe, with folds AND significance AND CLV together.
+
+### 1x2 home-underdog (odds >= 2.80) — EDGE ladder, universe n=1,973
+
+| edge | n | ROI | SE | t | CLVpin | f1 | f2 | f3 | robust |
+|---|---|---|---|---|---|---|---|---|---|
+| 8% | 1,821 | +4.3% | 3.7 | 1.17 | +3.1% | −5.2 | +2.3 | +15.9 | no |
+| **10% (live)** | 1,481 | +12.1% | 4.2 | 2.88 | +4.8% | +1.7 | +9.7 | +25.0 | ✓ |
+| **12%** | 965 | +17.9% | 5.4 | 3.30 | +8.6% | +16.6 | +13.7 | +24.1 | ✓ |
+| **13%** ⭐ | **808** | **+20.9%** | 6.0 | **3.46** | **+10.0%** | +14.0 | +21.9 | +27.6 | ✓ |
+| 15% | 454 | +22.8% | 8.2 | 2.80 | +12.0% | **−38.7** | +50.7 | +53.9 | no |
+
+**13% is the peak on every criterion at once** — highest t (3.46), highest CLV
+(+10.0%), fold-robust, and all three folds comfortably positive. 15% breaks
+(f1 −38.7%, one bad window). This is the single strongest signal in the entire
+dataset and, unlike the odds floor, it IS decidable: t=3.46 on n=808.
+
+**→ RECOMMEND: raise the real-money 1x2 edge floor from 10% to 13%.**
+Cost: ~45% fewer bets (1,481 -> 808). Gain: ROI +12.1% -> +20.9% and CLV +4.8%
+-> +10.0%, i.e. CLV roughly doubles — and CLV is the metric that converges.
+
+⚠️ **This REVERSES FAVLONG-CUTS (2026-09-09, owner-approved), which moved this
+floor 13% -> 10%** citing "10% is the sweet spot ... ~50% more volume than 13%".
+That call used per-GROUP folds and the cohort/idealized bases; this uses the
+full pooled model-edge universe, one shared fold timeline, and a significance
+test. Both numbers are fold-robust — 10% is not wrong — but 13% dominates it on
+ROI, t and CLV simultaneously. **Flagged loudly because reversing a deliberate
+owner decision is exactly the churn this document exists to prevent: it is the
+owner's call, and "more volume at 10%" remains a legitimate reason to decline.**
+
+### O/U 2.5 (odds >= 1.80) — EDGE ladder, universe n=1,814
+
+| edge | n | ROI | SE | t | CLVpin | f1 | f2 | f3 | robust |
+|---|---|---|---|---|---|---|---|---|---|
+| 5% | 1,680 | +6.1% | 3.0 | 2.05 | +0.3% | +10.9 | −0.1 | +8.0 | no |
+| **8% (live)** ⭐ | **1,287** | **+8.6%** | 3.5 | **2.49** | +0.8% | +19.9 | +0.0 | +9.9 | ✓ |
+| 10% | 641 | +9.5% | 5.0 | 1.91 | +3.0% | +47.9 | **−7.4** | +11.7 | no |
+| 12% | 227 | +17.9% | 8.3 | 2.15 | +4.0% | +58.7 | +2.1 | +18.8 | ✓ |
+| 13% | 152 | **−5.7%** | 9.6 | −0.59 | +3.5% | +21.5 | **−22.7** | +5.8 | no |
+
+**→ RECOMMEND: keep 8%.** It is the only robust cell with real volume. 12% looks
+better but n=227 with f1=+58.7 carrying it, and the very next step (13%) is
+**−5.7%** — a cliff, not a gradient. Do not chase the 12% number.
+
+### The odds floors — leave both alone
+
+| | keep | why |
+|---|---|---|
+| 1x2 | **2.80** | 2.00 vs 2.80 is **indistinguishable and always will be** — see the ⛔ section. Not "2.80 is better". |
+| O/U 2.5 | **1.80** | Confirmed: the band it excludes (<1.80) is ROI-negative (−1.1%, n=222); above it the ladder zigzags with flat CLV. |
+
+### Everything else
+
+| market | recommendation |
+|---|---|
+| 1x2 draw / away | **do not bet.** Draw: CLV negative at every floor. Away: hold as paper — CLV +20% but ROI negative, so the kill rule does not fire either. |
+| asian_handicap | **RETIRE** (`None`). n=2,059, no robust cell at any line or floor. Still gated at 5% — the one live discrepancy. |
+| o/u 3.5 / 1.5, btts, double_chance | **do not bet.** All zero robust cells; DC dead on n=8,130. |
+| corners, team_total, 1x2_1h | **no evidence.** Fix the corners bot's edge UNIT first (it stores up to 30.7). |
+
+### The structural insight behind all of it
+
+The edge floor removes ~99% of candidates before the odds floor applies
+(105,456 -> 1,391 -> 1,215). **So the edge floor is where all the leverage is,
+and it is the one with enough data behind it to tune.** The odds floor is a
+rounding decision on the residue. Spend effort on the first, not the second.
+
 ## ⭐ THE FLOOR TABLE — what the data supports, per market and bet type (2026-09-11)
 
 **This is the answer section. Everything below it is method and history.**
