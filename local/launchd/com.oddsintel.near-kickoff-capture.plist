@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  NEAR-KICKOFF-CAPTURE (2026-09-11) — every 5 min, fetch fixtures kicking off in
+  the next 15 min from Coolbet / Unibet-Site / Epicbet by their stored event id,
+  so our own books get a true closing price. See workers/jobs/near_kickoff_capture.py.
+
+  Env:
+    COOLBET_NO_FS=1          never through FlareSolverr (the board sweep + the
+                             real-money placer share that FS; see module doc)
+    EPICBET_FLARE_SESSION    own FS session id if Epicbet ever falls back to FS,
+                             so it cannot destroy a sweep's session
+
+  Install: cp to ~/Library/LaunchAgents/ and `launchctl load` it.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.oddsintel.near-kickoff-capture</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/python3</string>
+		<string>-m</string>
+		<string>workers.jobs.near_kickoff_capture</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PYTHONUNBUFFERED</key>
+		<string>1</string>
+		<key>COOLBET_NO_FS</key>
+		<string>1</string>
+		<key>EPICBET_FLARE_SESSION</key>
+		<string>epicbet_nearko_reader</string>
+	</dict>
+	<key>WorkingDirectory</key>
+	<string>/Users/margussellin/www/odds-intel-engine</string>
+	<key>StandardOutPath</key>
+	<string>/Users/margussellin/www/odds-intel-engine/dev/active/near-kickoff-capture.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/margussellin/www/odds-intel-engine/dev/active/near-kickoff-capture.log</string>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StartInterval</key>
+	<integer>300</integer>
+</dict>
+</plist>

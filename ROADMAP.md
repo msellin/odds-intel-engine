@@ -174,7 +174,8 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 ### Pipeline additions 2026-06-24
 | Cron | Schedule | Purpose |
 |------|----------|---------|
-| `job_closing_snap` | */5 12-23 UTC | Per-fixture odds snap for matches in T-15→T+5, stored with `is_closing=TRUE` — fixes the historical 25% Pinnacle close coverage |
+| `job_closing_snap` | */5 24/7 (was 12-23 UTC until 2026-09-11) | Per-fixture AF odds snap for matches in T-15→T+5, stored with `is_closing=TRUE` — fixes the historical 25% Pinnacle close coverage |
+| `near_kickoff_capture` (Mac launchd) | every 5 min | NEAR-KICKOFF-CAPTURE 2026-09-11 — direct-book closing prices (Coolbet / Unibet-Site / Epicbet) for fixtures in the next 15 min, fetched by stored event id (`book_event_map`). Feeds own-book real-bet CLV (DIRECT-BOOK-CLV, migration 332). |
 | `job_odds_tomorrow` (3 new) | 04:00, 10:00, 16:00 UTC | T24H-COVERAGE — expand T-24h odds snap coverage from 15% to ~60-70% to support the high-ROI early-fire cohort surfaced by `dev/active/day_ahead_backtest_results.json` |
 | GitHub Actions ledger | 22:45 UTC daily | `track_record_ledger.yml` — exports + OTS-stamps + commits the daily snapshot |
 

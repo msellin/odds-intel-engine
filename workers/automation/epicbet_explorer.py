@@ -905,6 +905,31 @@ def _squads_compatible(our_home: str, our_away: str, ev: dict) -> bool:
 # ── orchestration ─────────────────────────────────────────────────────────────
 
 
+def drop_non_monotone_ft_ou(rows: list[tuple], match_id) -> tuple[list[tuple], int]:
+    """Drop the full-match goals O/U ladder when it is not monotone.
+
+    Same OU sanity guard the Coolbet writer runs
+    (COOLBET-OU-LINE-MISLABEL-2026-08-22): a non-monotone Under-probability
+    across lines is mathematically impossible, so the labelling is wrong and
+    zero OU data beats lying OU data.
+
+    Restricted to the FULL-MATCH goals ladder, not `startswith("over_under_")`.
+    `_ou_rows_monotone` keys on the last underscore-separated token, so
+    `over_under_1h_15` parses as cents=15 and collides with `over_under_15`; a
+    first-half under price is far longer than the full-match one, so mixing them
+    fabricates a non-monotone ladder and drops perfectly good full-match rows.
+
+    Shared by run_bulk and near_kickoff_capture (NEAR-KICKOFF-CAPTURE-2026-09-11)
+    so both write paths apply the identical guard. Returns (rows, n_dropped).
+    """
+    ou_rows = [r for r in rows if r[0] in _FT_OU_MARKETS]
+    if ou_rows and not _ou_rows_monotone([(a, b, c) for a, b, c, _ in ou_rows]):
+        log.warning("epicbet-ou-monotonicity: dropping %d OU rows for match %s",
+                    len(ou_rows), match_id)
+        return [r for r in rows if r[0] not in _FT_OU_MARKETS], len(ou_rows)
+    return rows, 0
+
+
 def run_bulk(
     days: int = 2,
     dry_run: bool = False,
@@ -994,6 +1019,15 @@ def _run_bulk_inner(sess, matches, days, sleep_s, dry_run):
         if ev is not None:
             pairs.append((m, ev))
 
+    # NEAR-KICKOFF-CAPTURE-2026-09-11: persist the pairing so the near-kickoff
+    # job can fetch one fixture by id. fuzzy_match_event exposes no score.
+    if pairs and not dry_run:
+        from workers.api_clients.supabase_client import record_book_events
+        record_book_events(BOOKMAKER, [
+            (m["id"], ev.get("id"), ev.get("start") or None, None)
+            for m, ev in pairs if ev.get("id") is not None
+        ])
+
     # EPICBET-SIDEBETS-CORNERS-2026-09-06: deepen the board for matched pairs
     # only, before market ids are collected. Corners/cards/1H/team totals/DC
     # exist ONLY in this payload — the league listing never carries them.
@@ -1029,12 +1063,8 @@ def _run_bulk_inner(sess, matches, days, sleep_s, dry_run):
         # and collides with `over_under_15`; a first-half under price is far
         # longer than the full-match one, so mixing them fabricates a
         # non-monotone ladder and drops perfectly good full-match rows.
-        ou_rows = [r for r in rows if r[0] in _FT_OU_MARKETS]
-        if ou_rows and not _ou_rows_monotone([(a, b, c) for a, b, c, _ in ou_rows]):
-            log.warning("epicbet-ou-monotonicity: dropping %d OU rows for match %s",
-                        len(ou_rows), m["id"])
-            dropped_ou += len(ou_rows)
-            rows = [r for r in rows if r[0] not in _FT_OU_MARKETS]
+        rows, dropped = drop_non_monotone_ft_ou(rows, m["id"])
+        dropped_ou += dropped
 
         for market, _sel, _odds, _line in rows:
             by_market[market] = by_market.get(market, 0) + 1

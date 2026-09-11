@@ -15154,7 +15154,8 @@ def _():
 
     settle = (root / "workers" / "jobs" / "settlement.py").read_text()
     # The real_bets settle loop must now pull closing_odds + write clv.
-    assert "UPDATE real_bets SET result=%s, pnl=%s, resolved_at=NOW(),\n                                        clv=%s" in settle, (
+    # (DIRECT-BOOK-CLV-2026-09-11 extended the SET list; clv stays first.)
+    assert "UPDATE real_bets SET result=%s, pnl=%s, resolved_at=NOW(),\n                                        clv=%s, closing_odds=%s" in settle, (
         "_settle_real_bets_for_matches must update real_bets.clv at settlement"
     )
 
@@ -38906,6 +38907,108 @@ def test_ou_line_goals_ladder():
         "'275' is 2.75 or 27.5 and the name cannot say which. Guessing the "
         "plausible reading is precisely what produced the 634 bets."
     )
+
+
+@test("DIRECT-BOOK-CLV — real-bet CLV is measured at the bet's OWN book, fresh or NULL")
+def _():
+    """DIRECT-BOOK-CLV-2026-09-11: real_bets.clv used get_closing_odds() with no
+    book filter — an arbitrary AF book — so it read +4..+17% where the same bets
+    against Coolbet's own later price had a 0.0% median. The close must come
+    from the bet's own book, be bounded in freshness, and never fall back."""
+    import inspect
+    import pathlib
+    from workers.jobs import settlement as st
+
+    # Venue -> feed: Unibet must map to the PLACEABLE Unibet-Site, never Kambi.
+    assert st._VENUE_SNAPSHOT_BOOK["coolbet"] == "Coolbet"
+    assert st._VENUE_SNAPSHOT_BOOK["unibet"] == "Unibet-Site", (
+        "a bet on unibet.ee must close against Unibet-Site — Unibet-Kambi "
+        "diverges from the site (KAMBI-FEED-DIVERGENCE)"
+    )
+    assert "Unibet-Kambi" not in st._VENUE_SNAPSHOT_BOOK.values()
+    assert 0 < st.DIRECT_CLOSE_MAX_MIN <= 60
+
+    close_src = inspect.getsource(st.get_book_close)
+    for needle in ("os.bookmaker = %s", "os.timestamp <= m.date",
+                   "make_interval(mins => %s)", "is_live"):
+        assert needle in close_src, f"get_book_close lost its guard: {needle}"
+    assert "get_closing_odds" not in close_src, "get_book_close must never fall back to another book"
+
+    loop = inspect.getsource(st._settle_real_bets_for_matches)
+    single = loop.split("# ── Combos")[0]
+    assert "real_bet_closing(bet)" in single, "real-bet settle must use real_bet_closing"
+    assert "get_closing_odds(" not in single, (
+        "the real-bet settle loop must not use the unfiltered get_closing_odds() again"
+    )
+    assert "rb.bookmaker" in single, "the pending query must carry the venue"
+
+    helper = inspect.getsource(st.real_bet_closing)
+    assert "get_devigged_pinnacle_close_prob" in helper, "clv_pinnacle must be de-vigged"
+    # AH: "away -1" must be split into side + home-perspective line and the rung
+    # pinned — otherwise every AH real bet resolves NULL (caught in review
+    # 2026-09-11: 74 settled AH singles would have been wiped by the backfill).
+    assert 'market == "asian_handicap"' in helper and "handicap_line=line" in helper, (
+        "real_bet_closing must parse AH selections and pass the line to get_book_close"
+    )
+    assert "os.handicap_line = %s" in close_src, "get_book_close must pin the AH rung"
+
+    mig = pathlib.Path("supabase/migrations/332_real_bets_direct_book_clv.sql").read_text()
+    for col in ("closing_odds", "closing_bookmaker", "closing_minutes_before_ko", "clv_pinnacle"):
+        assert col in mig, f"migration 332 must add {col}"
+    bf = pathlib.Path("scripts/backfill_real_bets_direct_clv.py").read_text()
+    assert "real_bet_closing" in bf, "the backfill must reuse the settle helper, not a copy"
+
+
+@test("NEAR-KICKOFF-CAPTURE — direct-book close fetched by stored event id, never a board walk")
+def _():
+    """NEAR-KICKOFF-CAPTURE-2026-09-11: the sweeps persist their AF<->book pairing
+    in book_event_map; the near-kickoff job fetches only imminent fixtures by id.
+    The whole point is O(imminent fixtures) — a capture that re-walks a board is
+    the FlareSolverr/Imperva load this exists to avoid."""
+    import inspect
+    import pathlib
+    import re
+    from workers.jobs import near_kickoff_capture as nk
+
+    src = inspect.getsource(nk)
+    for walker in ("fetch_football_leagues", "fetch_league_events",
+                   "enumerate_coolbet_football_categories", "fetch_events_for_league",
+                   "quickbrowse", "views/lobby", "run_board_sweep", "run_bulk("):
+        assert walker not in src, f"near_kickoff_capture must not walk a board ({walker})"
+    assert "FROM book_event_map" in src, "fixtures must come from the stored mapping"
+    assert "m.date > now()" in src, "capture must be PRE-kickoff only — never an in-play price"
+    assert nk.WINDOW_MIN <= 15, "rows must land inside the writers' is_closing window (<=15 min)"
+    assert 'os.environ["COOLBET_NO_FS"] = "1"' in src, (
+        "Coolbet capture must FORCE no-FS — never share the Mac FlareSolverr with "
+        "the sweep + real-money placer, whatever .env says"
+    )
+    assert "_kicked_off(d)" in src and src.count("if _kicked_off(d):") >= 3, (
+        "every book's loop must re-check kickoff right before its fetch — never "
+        "write an in-play price as a close"
+    )
+    assert 'setdefault("EPICBET_FLARE_SESSION"' in src, (
+        "a manual run must not fall back to the sweep's Epicbet FS session id"
+    )
+    assert set(nk._CAPTURE) == {"Coolbet", "Unibet-Site", "Epicbet"}
+
+    # All three sweeps record the pairing they already compute.
+    for path, needle in (
+        ("workers/automation/coolbet_explorer.py", 'record_book_events("Coolbet"'),
+        ("workers/automation/epicbet_explorer.py", "record_book_events(BOOKMAKER"),
+        ("workers/automation/unibet_odds_feed.py", "record_book_events(_BOOKMAKER"),
+    ):
+        assert needle in pathlib.Path(path).read_text(), f"{path} must persist its pairing"
+
+    mig = pathlib.Path("supabase/migrations/333_book_event_map.sql").read_text()
+    assert "PRIMARY KEY (match_id, bookmaker)" in mig
+
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    m = re.search(r"add_job\(job_closing_snap, CronTrigger\(([^)]*)\)", sched)
+    assert m and "hour" not in m.group(1), "closing_snap must run 24/7 — kickoffs are global"
+
+    plist = pathlib.Path("local/launchd/com.oddsintel.near-kickoff-capture.plist").read_text()
+    assert "workers.jobs.near_kickoff_capture" in plist and "<integer>300</integer>" in plist
+    assert "COOLBET_NO_FS" in plist and "epicbet_nearko_reader" in plist
 
 
 if __name__ == "__main__":

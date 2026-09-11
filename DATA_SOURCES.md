@@ -65,6 +65,24 @@ writers now use the 15-minute window and compute `is_opening` in the INSERT
 **Historical openings are unrecoverable** — those early rows are already pruned;
 this only accrues forward, at ~24k rows/day.
 
+**NEAR-KICKOFF-CAPTURE-2026-09-11 — a real CLOSE at the books we bet.** The
+15-minute window above only helps when a sweep happens to land near kickoff, and
+the sweeps are slow: Coolbet's evening board sweep takes 60-75 minutes end to
+end, so the last Coolbet price before kickoff was typically 1-5h old (3-day
+closing coverage: Coolbet 23 matches, Epicbet 82, Unibet-Site 139, Pinnacle 539).
+Two pieces fix it:
+
+- `book_event_map` (migration 333) — the AF fixture ↔ book event id pairing the
+  three sweeps already compute, now persisted instead of discarded.
+- `workers/jobs/near_kickoff_capture.py` (Mac launchd, every 5 min) — for
+  fixtures kicking off in the next 15 min, fetches that one event per book by id
+  and writes it with `minutes_to_kickoff` ≤ 15, so it is stamped `is_closing`.
+  It never walks a board; a (match, book) priced in the last 6 minutes is skipped.
+
+Consumer: own-book real-bet CLV (DIRECT-BOOK-CLV, migration 332 —
+`real_bets.clv` / `closing_bookmaker` / `closing_minutes_before_ko`), and the
+report `scripts/direct_book_clv_report.py`.
+
 **REFERENCE-BOOK-OPENING-TRIM-2026-09-11 (owner-approved).** Books we can
 neither bet from Estonia nor use as the sharp anchor no longer keep `is_opening`
 rows past the retention window. Their **closing** rows stay — the published

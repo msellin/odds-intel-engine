@@ -7,11 +7,16 @@ matches with kickoff in the next 15 min. Stores with is_closing=TRUE.
 Purpose: maximize coverage of true closing-line snaps so clv_pinnacle and
 clv (any-book) can be computed reliably at settlement.
 
-Schedule: every 5 min, 12:00-23:00 UTC.
+Schedule: every 5 min, 24/7 (was 12:00-23:00 UTC until NEAR-KICKOFF-CAPTURE
+2026-09-11 — Asian/Australian kickoffs got no closing snap at all).
 
 Cost: ~1 AF call per imminent match. On a busy evening with 20 matches
-imminent, that is ~20 calls × 12 cycles/hr = 240 calls/hr (~2400 calls
-over a 10-hour window — well under the 7500/day Ultra budget).
+imminent, that is ~20 calls × 12 cycles/hr = 240 calls/hr — a few thousand a
+day, well under the Mega 150K/day quota.
+
+This covers the API-Football books (incl. Pinnacle). Our DIRECT books —
+Coolbet, Unibet-Site, Epicbet — are not in AF; their closing snap is
+workers/jobs/near_kickoff_capture.py (operator's Mac).
 """
 from __future__ import annotations
 

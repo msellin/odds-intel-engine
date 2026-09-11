@@ -841,6 +841,38 @@ def store_book_odds_snapshots(
     return len(payload)
 
 
+def record_book_events(
+    bookmaker: str,
+    rows: list[tuple[str, str, str | None, float | None]],
+) -> int:
+    """Upsert (match_id, book_event_id, book_start, match_score) pairings into
+    book_event_map (NEAR-KICKOFF-CAPTURE-2026-09-11).
+
+    Called by each direct-book sweep at the point it has ALREADY paired a book
+    event with a DB fixture, so the near-kickoff job can fetch that one fixture
+    by id instead of re-walking the board. Never raises — losing a mapping only
+    costs a closing snapshot, and must never cost the sweep's odds write.
+    """
+    from workers.api_clients.db import bulk_upsert
+    if not rows:
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    # De-dup on match_id: one statement cannot upsert the same key twice.
+    latest = {str(m): (str(m), bookmaker, str(eid), start or None, score, now)
+              for m, eid, start, score in rows if m and eid}
+    try:
+        return bulk_upsert(
+            "book_event_map",
+            ["match_id", "bookmaker", "book_event_id", "book_start", "match_score", "matched_at"],
+            list(latest.values()),
+            conflict_columns=["match_id", "bookmaker"],
+            update_columns=["book_event_id", "book_start", "match_score", "matched_at"],
+        )
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[yellow]book_event_map upsert failed for {bookmaker}: {e}[/yellow]")
+        return 0
+
+
 # ============================================================
 # LIVE TRACKING
 # ============================================================

@@ -1778,6 +1778,14 @@ def run_board_sweep(
     now = datetime.now(timezone.utc)
     horizon = now + timedelta(hours=horizon_hours)
     consecutive_fails = 0
+    # NEAR-KICKOFF-CAPTURE-2026-09-11: keep the pairing this sweep computes
+    # anyway, so near_kickoff_capture can fetch one fixture by id at T-15.
+    mapped: list[tuple] = []
+
+    def _flush_mapped() -> None:
+        if mapped and not dry_run:
+            from workers.api_clients.supabase_client import record_book_events
+            c["event_map_rows"] = record_book_events("Coolbet", mapped)
 
     # BOARD-SWEEP-NEARTERM-SKIP (2026-09-11) — see _load_cat_memo above.
     cat_memo = _load_cat_memo()
@@ -1811,6 +1819,7 @@ def run_board_sweep(
                 c["unmatched"] += 1  # genuinely AF-absent OR beyond confidence — leave it
                 continue
             c["matched"] += 1
+            mapped.append((af_row["id"], str(ev["id"]), ev.get("start"), score))
             try:
                 markets = fetch_match_markets(session, int(ev["id"]))
                 odds_map = fetch_odds_for_markets(session, markets)
@@ -1823,6 +1832,7 @@ def run_board_sweep(
                     log.error("Coolbet unreachable: %d consecutive fetch failures — aborting board sweep.",
                               consecutive_fails)
                     console.print("[red]Coolbet unreachable — board sweep aborted.[/red]")
+                    _flush_mapped()
                     return c
                 time.sleep(sleep_s)
                 continue
@@ -1839,6 +1849,7 @@ def run_board_sweep(
         if idx % 40 == 0:
             log.info("  …%d/%d categories, matched=%d stored=%d", idx, len(cats), c["matched"], c["stored_rows"])
         time.sleep(sleep_s)
+    _flush_mapped()
     _save_cat_memo(cat_memo)
     if c["cats_skipped_empty"]:
         log.info("board sweep: skipped %d/%d categories with no near-term "

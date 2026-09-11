@@ -1940,3 +1940,37 @@ both, neither gate was fold-robust (A: +2.9/−2.7/+28.0, B: +8.9/−0.3/+23.8).
 Rejecting a change for failing a bar the incumbent also fails is status-quo bias
 dressed as rigour. **Whatever test you apply to the proposal, apply to the
 incumbent in the same run and print both.**
+
+## §63 — `real_bets.clv` changed meaning on 2026-09-11: own-book close, fresh or NULL
+
+**Before 2026-09-11** `real_bets.clv = actual_odds / closing_odds - 1` with
+`closing_odds` from `get_closing_odds()` called with **no bookmaker** — whichever
+of the ~13 API-Football books sorted last at kickoff. Every real bet is placed at
+a direct book (Coolbet so far), so the number never answered the question it was
+read for. Measured on 130 settled real bets: stored `clv` averaged **+4% to
++17%** per lead-time bucket, while the same bets against **Coolbet's own later
+price** had a median of **0.0%**.
+
+**Now (DIRECT-BOOK-CLV, migration 332):**
+
+- `clv` — vs the last pre-kickoff, non-live price **at the bet's own book**, and
+  only if that price was taken within `DIRECT_CLOSE_MAX_MIN` (60) minutes of
+  kickoff. Otherwise **NULL** — a Coolbet price 5h before kickoff is not a close,
+  and CLV against the placement snapshot itself reads 0% by construction.
+- `closing_bookmaker`, `closing_minutes_before_ko` — which feed and how fresh.
+  Tighten the bound in analysis (`closing_minutes_before_ko <= 20`) once
+  NEAR-KICKOFF-CAPTURE has been writing for a few days.
+- `clv_pinnacle` — de-vigged Pinnacle CLV, same definition as
+  `shadow_bets.clv_pinnacle`, so real and paper bets sit on one scale.
+
+**Rules:** never pool `real_bets.clv` rows settled before the backfill with
+rows after it (the backfill rewrites all of them, so re-run it if in doubt:
+`scripts/backfill_real_bets_direct_clv.py`). Own-book CLV and Pinnacle CLV answer
+different questions — "did we bet too early at OUR book" vs "did we beat the
+sharp market" — and a price drifting out with negative Pinnacle CLV means the
+market moved against the pick, not that waiting would have been free money.
+`scripts/direct_book_clv_report.py` prints both side by side.
+
+`shadow_bets.clv` / `simulated_bets.clv` were deliberately NOT changed: other
+work is mid-measurement on them, and changing a definition under a running
+comparison pools two quantities.

@@ -2648,7 +2648,11 @@ def main():
     # CLOSING-LINE-COVERAGE: per-fixture closing snap every 5 min, peak hours.
     # Catches matches with kickoff in T-15→T+5 — without this only ~25% of
     # bets had a Pinnacle pre-KO snap, hurting CLV measurement.
-    scheduler.add_job(job_closing_snap, CronTrigger(hour="12-23", minute="*/5"),
+    # NEAR-KICKOFF-CAPTURE-2026-09-11: 24/7, was hour="12-23". Kickoffs are
+    # global — the 09:30 UTC Melbourne real bet on 2026-09-11 got no close at
+    # all because this job was asleep. Cost is ~1 AF call per imminent match
+    # per tick, trivial against the Mega 150K/day quota.
+    scheduler.add_job(job_closing_snap, CronTrigger(minute="*/5"),
                       id="closing_snap_5min", name="Closing snap (5min)")
 
     # AF-INJURIES-LATE (2026-06-01): single 08:00 UTC injury fetch replaces

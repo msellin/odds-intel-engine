@@ -1320,6 +1320,106 @@ def settle_finished_matches(match_ids: list[str]):
     )
 
 
+# DIRECT-BOOK-CLV-2026-09-11: real_bets.bookmaker names the VENUE; odds_snapshots
+# names the FEED. For Unibet only 'Unibet-Site' is the placeable price —
+# 'Unibet-Kambi' diverges from the site (KAMBI-FEED-DIVERGENCE) and must never
+# stand in as the close of a bet placed on unibet.ee.
+_VENUE_SNAPSHOT_BOOK = {
+    "coolbet": "Coolbet",
+    "unibet": "Unibet-Site",
+    "unibet-site": "Unibet-Site",
+    "epicbet": "Epicbet",
+}
+
+# A "closing" price older than this is not a close. Before NEAR-KICKOFF-CAPTURE
+# the direct-book sweeps rarely sat near kickoff, so the newest pre-KO Coolbet
+# price was often the placement snapshot itself, hours out — and CLV against it
+# reads 0% by construction. 60 min keeps ~⅓ of historical bets measurable while
+# excluding those; the age is stored so readers can tighten it further.
+DIRECT_CLOSE_MAX_MIN = 60
+
+
+def get_book_close(
+    match_id: str,
+    market: str,
+    selection: str,
+    bookmaker: str,
+    max_minutes: int = DIRECT_CLOSE_MAX_MIN,
+    handicap_line: float | None = None,
+) -> tuple[float, int] | None:
+    """Last PRE-KICKOFF, non-live price at one book, if taken within
+    `max_minutes` of kickoff. Returns (odds, minutes_before_ko) or None.
+
+    `handicap_line` pins an Asian-handicap rung (home-perspective, the way every
+    AH writer and `_r_asian_handicap` define it). Without it an AH lookup would
+    return the newest row of ANY rung, which is worse than NULL.
+
+    Unlike the unfiltered closing lookup above, this never falls back to another
+    book or to an older snapshot — a missing close is NULL, not a guess."""
+    line_clause = "AND os.handicap_line = %s" if handicap_line is not None else ""
+    line_args = [handicap_line] if handicap_line is not None else []
+    rows = execute_query(
+        f"""SELECT os.odds,
+                  FLOOR(EXTRACT(EPOCH FROM (m.date - os.timestamp)) / 60)::int AS mins
+             FROM odds_snapshots os
+             JOIN matches m ON m.id = os.match_id
+            WHERE os.match_id = %s AND os.market = %s AND os.selection = %s
+              AND os.bookmaker = %s
+              {line_clause}
+              AND COALESCE(os.is_live, FALSE) = FALSE
+              AND os.timestamp <= m.date
+              AND os.timestamp >= m.date - make_interval(mins => %s)
+            ORDER BY os.timestamp DESC LIMIT 1""",
+        [match_id, market, selection, bookmaker] + line_args + [max_minutes],
+    )
+    if not rows or not rows[0]["odds"] or float(rows[0]["odds"]) <= 1.0:
+        return None
+    return float(rows[0]["odds"]), int(rows[0]["mins"])
+
+
+def real_bet_closing(bet: dict) -> dict:
+    """Closing-line fields for one real bet (DIRECT-BOOK-CLV-2026-09-11).
+
+    `closing_odds` / `clv` are at the bet's OWN book; `clv_pinnacle` is the
+    de-vigged Pinnacle CLV (same definition as shadow_bets). Shared by the
+    settle loop and scripts/backfill_real_bets_direct_clv.py so the two can
+    never compute different numbers."""
+    market = _normalize_bet_market(bet["market"], bet["selection"])
+    selection = _normalize_bet_selection(bet["selection"])
+    odds = float(bet["odds_at_pick"])
+    out = {"closing_odds": None, "closing_bookmaker": None,
+           "closing_minutes_before_ko": None, "clv": None, "clv_pinnacle": None}
+
+    # Asian handicap: real_bets carries "away -1" (side + home-perspective line,
+    # exactly as _r_asian_handicap reads it); odds_snapshots stores the side in
+    # `selection` and the same home-perspective line in `handicap_line`. Split it,
+    # or every AH real bet resolves NULL (74 settled AH singles as of 2026-09-11).
+    line = None
+    if market == "asian_handicap":
+        side, _, line_str = selection.partition(" ")
+        try:
+            line = float(line_str)
+        except ValueError:
+            return out
+        selection = side
+
+    snap_book = _VENUE_SNAPSHOT_BOOK.get((bet.get("bookmaker") or "").strip().lower())
+    close = (get_book_close(str(bet["match_id"]), market, selection, snap_book, handicap_line=line)
+             if snap_book else None)
+    if close:
+        out["closing_odds"], out["closing_minutes_before_ko"] = close
+        out["closing_bookmaker"] = snap_book
+        out["clv"] = round(odds / close[0] - 1, 4)
+
+    try:
+        true_p = get_devigged_pinnacle_close_prob(str(bet["match_id"]), market, selection)
+        if true_p:
+            out["clv_pinnacle"] = round(odds * true_p - 1.0, 4)
+    except Exception as e:  # never let a CLV lookup block a settlement
+        console.print(f"  [dim]devigged-pinnacle CLV failed for real bet {bet.get('id')}: {e}[/dim]")
+    return out
+
+
 def _settle_real_bets_for_matches(match_ids: list[str]):
     """SELF-USE-VALIDATION Phase 2.2 — settle real_bets for finished matches.
 
@@ -1334,7 +1434,7 @@ def _settle_real_bets_for_matches(match_ids: list[str]):
     # ── Singles ────────────────────────────────────────────────────────────
     pending_singles = execute_query(
         """SELECT rb.id, rb.match_id, rb.market, rb.selection,
-                  rb.actual_odds AS odds_at_pick, rb.stake,
+                  rb.actual_odds AS odds_at_pick, rb.stake, rb.bookmaker,
                   m.score_home, m.score_away
            FROM real_bets rb
            JOIN matches m ON m.id = rb.match_id
@@ -1349,21 +1449,16 @@ def _settle_real_bets_for_matches(match_ids: list[str]):
     settled = 0
     for bet in (pending_singles or []):
         try:
-            # REAL-BETS-CLV-EDGE (2026-05-23): pull closing line so
-            # settle_bet_result() can compute CLV against actual_odds.
-            # REAL-BETS-CLV-NORMALIZE (2026-05-24): real_bets market/selection
-            # come in as raw labels ('1X2', 'O/U', 'o/u', 'over 2.5') that
-            # don't match odds_snapshots canonical form — normalize first.
-            closing_odds = get_closing_odds(
-                str(bet["match_id"]),
-                _normalize_bet_market(bet["market"], bet["selection"]),
-                _normalize_bet_selection(bet["selection"]),
-            )
+            # DIRECT-BOOK-CLV-2026-09-11: the close is taken at the bet's OWN
+            # book (fresh, pre-KO) — it used to be the unfiltered closing lookup
+            # (no book filter), i.e. whichever AF book sorted last. Market/selection
+            # normalisation (REAL-BETS-CLV-NORMALIZE) happens inside the helper.
+            closing = real_bet_closing(bet)
             outcome = settle_bet_result(
                 bet,
                 int(bet["score_home"]),
                 int(bet["score_away"]),
-                closing_odds,
+                closing["closing_odds"],
             )
             # SETTLEMENT-RESOLVER-REGISTRY: don't write 'skip' — leave the real
             # bet pending and alert so an unsettleable market is investigated.
@@ -1372,9 +1467,12 @@ def _settle_real_bets_for_matches(match_ids: list[str]):
                 continue
             execute_write(
                 """UPDATE real_bets SET result=%s, pnl=%s, resolved_at=NOW(),
-                                        clv=%s
+                                        clv=%s, closing_odds=%s, closing_bookmaker=%s,
+                                        closing_minutes_before_ko=%s, clv_pinnacle=%s
                    WHERE id=%s""",
-                [outcome["result"], outcome["pnl"], outcome.get("clv"),
+                [outcome["result"], outcome["pnl"], closing["clv"],
+                 closing["closing_odds"], closing["closing_bookmaker"],
+                 closing["closing_minutes_before_ko"], closing["clv_pinnacle"],
                  bet["id"]],
             )
             settled += 1

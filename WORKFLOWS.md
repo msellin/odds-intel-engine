@@ -32,8 +32,12 @@
 24/7   ③ Odds            run_odds()                Every 30min (:00 and :30) — AF bulk odds, 13 bookmakers
                                                     + mark_closing runs at 13:30, 17:30, 20:00 (pre-KO windows)
                                                     (WC-OVERNIGHT-COVERAGE 2026-06-12 — was 07-22, expanded to cover overnight WC kickoffs)
-*/5 12-23 ㊵ Closing snap  run_closing_snap()        CLOSING-LINE-COVERAGE 2026-06-24 — per-fixture AF /odds for matches in T-15→T+5, stored with is_closing=TRUE.
+*/5 24/7  ㊵ Closing snap  run_closing_snap()        CLOSING-LINE-COVERAGE 2026-06-24 — per-fixture AF /odds for matches in T-15→T+5, stored with is_closing=TRUE.
                                                     Solves the gap where only ~25% of bets had a Pinnacle pre-KO snap; clv_pinnacle measurement now resolves against the real closing line.
+                                                    24/7 since NEAR-KICKOFF-CAPTURE 2026-09-11 (was 12-23 UTC — early Asian/Australian kickoffs got no close at all).
+                                                    AF books only. The DIRECT-book close (Coolbet / Unibet-Site / Epicbet) is the Mac launchd job
+                                                    `com.oddsintel.near-kickoff-capture` (every 5 min, workers/jobs/near_kickoff_capture.py): fixtures in
+                                                    the next 15 min, fetched by the event id the sweeps store in `book_event_map` — no board walk.
                                                     Also fixed: fetch_odds.py was hardcoding is_closing=False; now computes from minutes_to_kickoff.
 07:15  ⑩ Match Previews  (PMF-PAUSED 2026-07-03)   Top 10 matches → Gemini 200-word previews (ENG-3). **Paused** at ~0 users — pure UI content with no readers. Job function preserved for manual re-run; re-enable when user count > 0.
 07:30  ⑲ WC AI Previews  (PMF-PAUSED 2026-07-03)   Every WC fixture in next 7d → Gemini 80-120 word previews. **Paused** — same rationale. WC window ends 2026-07-19 anyway.

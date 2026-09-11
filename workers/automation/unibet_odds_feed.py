@@ -404,6 +404,9 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
 
     last_fetch = [0.0]
     consec_blocks = [0]
+    # NEAR-KICKOFF-CAPTURE-2026-09-11: fixture -> contestKey pairings, persisted
+    # after the sweep so near_kickoff_capture can fetch one fixture by key.
+    mapped: list[tuple] = []
 
     async with websockets.connect(tab["webSocketDebuggerUrl"], max_size=40_000_000) as ws:
         nid = [0]
@@ -513,6 +516,7 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
                 if not key:
                     continue
                 c["matched"] += 1
+                mapped.append((str(f["id"]), key, ev.get("start") or None, None))
                 contest = await inj(f"{_SPORTSBFF}/views/contest-page?_typ=GetContestWithPricesReq&contestKey={key}")
                 if not contest or not (contest.get("contest") or {}).get("propositions"):
                     continue
@@ -523,6 +527,9 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
                                                              minutes_to_kickoff=mins)
                 elif rows:
                     c["stored"] += len(rows)
+    if mapped and not dry_run:
+        from workers.api_clients.supabase_client import record_book_events
+        c["event_map_rows"] = record_book_events(_BOOKMAKER, mapped)
     if c["reason"] is None:
         c["reason"] = "ok"
     return c
