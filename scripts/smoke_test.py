@@ -4007,10 +4007,13 @@ def test_signal_placer_1x2_align():
     for name, src in (("coolbet_signaler.load_signal_candidates", signaler_src),
                       ("coolbet_placer.load_qualified_bets", loader_src),
                       ("coolbet_placer.place_all_bets (live re-eval)", placer_src)):
-        assert "min_edge_for_pick(" in src, (
-            f"{name} must gate picks on the shared min_edge_for_pick — a blind "
-            "market-only floor here is how the two signalers drifted (home-underdogs "
-            "placed but never signaled)."
+        assert ("clears_edge_floor(" in src or "min_edge_for_pick(" in src), (
+            f"{name} must gate picks on the SHARED edge-floor predicate "
+            "(clears_edge_floor, which wraps min_edge_for_pick). A blind "
+            "market-only floor here is how the two paths drifted the first time "
+            "(home-underdogs placed but never signaled); a hand-rolled "
+            "comparison is how they drifted the second time (Decimal vs float "
+            "silently dropped picks sitting exactly ON the floor)."
         )
         assert "_min_edge_for(" not in src.replace("min_edge_for_pick(", ""), (
             f"{name} still calls the market-only _min_edge_for for a per-pick "
@@ -5810,10 +5813,13 @@ def test_coolbet_signaler():
     # pooled 13% while the placer used 10% for home-underdogs, so those picks
     # were PLACED with real money but never signalled to Telegram (Stevenage v
     # Luton). Pin the shared utility, not the old name.
-    assert "from workers.automation.coolbet_placer import min_edge_for_pick, _MIN_EDGE" in sig_src, (
-        "signaler must reuse min_edge_for_pick + _MIN_EDGE from the placer so "
-        "per-market floors stay in lock-step. It must NOT re-derive a floor "
-        "locally, and must NOT fall back to the selection-blind _min_edge_for."
+    assert "clears_edge_floor" in sig_src and "_MIN_EDGE" in sig_src, (
+        "signaler must reuse the placer's shared edge predicate "
+        "(clears_edge_floor) + _MIN_EDGE so the floors AND the comparison stay "
+        "in lock-step. It must NOT re-derive a floor locally, must NOT fall "
+        "back to the selection-blind _min_edge_for, and must NOT hand-roll the "
+        "comparison (that is how a Decimal-vs-float mismatch dropped every pick "
+        "sitting exactly on its floor)."
     )
     assert "_min_edge_for(" not in sig_src, (
         "signaler must not call the selection-blind _min_edge_for — that is "
@@ -22687,6 +22693,64 @@ def test_unibet_uncertain_placement_2026_09_11():
         "caps — money may have moved"
     )
     return "uncertain placements create exposure without claiming confirmation"
+
+
+@test("EDGE-FLOOR-DECIMAL-BOUNDARY — a pick exactly ON the floor must pass")
+def test_edge_floor_decimal_boundary_2026_09_11():
+    """EDGE-FLOOR-DECIMAL-BOUNDARY (2026-09-11). `edge_percent` arrives from
+    Postgres as a Decimal; the floor is a Python float. The float literal 0.08
+    is really 0.08000000000000000166…, i.e. fractionally LARGER than exact
+    decimal 0.08 — so `Decimal("0.0800") < 0.08` is TRUE and a pick landing
+    EXACTLY on the floor was silently dropped by the signaler.
+
+    Not a rare edge case: edges are stored rounded, so "exactly at the floor"
+    is common. Found when Telegram shipped 4 picks while 7 cleared the floor;
+    all three missing sat at 0.080 / 0.100 / 0.080 — every one exactly on its
+    own floor.
+
+    This is the Stevenage failure in a new costume: the PLACER casts to float
+    and would have staked these; the signaler did not and never told the
+    operator. Same utility, same floor, two different answers — from a TYPE.
+
+    The comparison direction was never wrong: a pick that MEETS its floor
+    passes it, so the predicate is `>=`. Switching to a strict `>` would drop
+    at-floor picks deliberately and bake this bug in permanently.
+    """
+    from decimal import Decimal
+    import inspect
+    from workers.automation import coolbet_signaler as cs
+    from workers.automation import coolbet_placer as cp
+
+    # The trap itself, so the reason this test exists is self-evident.
+    assert Decimal("0.0800") < 0.08, "if this ever stops being true, read on"
+    assert not (float(Decimal("0.0800")) < 0.08), "the float() cast is the fix"
+
+    # EDGE-FLOOR-ONE-PREDICATE: sharing the FLOOR was not enough — each caller
+    # still hand-rolled the comparison, which is where this bug lived. Every
+    # gate must now route through the ONE predicate.
+    assert float(Decimal("0.1000")) >= cp.min_edge_for_pick("1x2", "home", 3.30)
+    assert cp.clears_edge_floor("1x2", "home", 3.30, Decimal("0.1000")) is True, (
+        "a 1x2 home-underdog at exactly the 10% floor MEETS it and must pass"
+    )
+    assert cp.clears_edge_floor("over_under_25", "under", 2.93, Decimal("0.0800")) is True, (
+        "an o/u pick at exactly the 8% floor MEETS it and must pass"
+    )
+    assert cp.clears_edge_floor("1x2", "home", 3.15, Decimal("0.0900")) is False
+    assert cp.clears_edge_floor("1x2", "home", 3.30, None) is False, (
+        "a pick with no edge cannot clear a floor — fail closed"
+    )
+
+    for mod, fn in ((cs, "load_signal_candidates"), (cp, "load_qualified_bets")):
+        fsrc = inspect.getsource(getattr(mod, fn))
+        assert "clears_edge_floor(" in fsrc, (
+            f"{mod.__name__}.{fn} must use the shared predicate, not its own "
+            "comparison — a shared floor with hand-rolled comparisons is how "
+            "the signaler and placer disagreed twice in one day"
+        )
+        assert 'or 0) < floor' not in fsrc and "< min_edge_for_pick" not in fsrc, (
+            f"{mod.__name__}.{fn} still hand-rolls the edge comparison"
+        )
+    return "one predicate: at-floor passes, and no caller re-implements it"
 
 
 @test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")

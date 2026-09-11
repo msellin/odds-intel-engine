@@ -219,6 +219,35 @@ def min_edge_for_pick(market: str | None, selection: str | None,
         return _MODEL_1X2_HOME_FLOOR
     return _min_edge_for(market)
 
+def clears_edge_floor(market, selection, odds, edge) -> bool:
+    """THE edge-floor predicate. Every gate that asks "does this pick have
+    enough edge?" MUST call this — do not re-implement the comparison.
+
+    EDGE-FLOOR-ONE-PREDICATE (2026-09-11). `min_edge_for_pick` already made the
+    FLOOR a single source of truth, but each caller still hand-rolled the
+    comparison, and that is exactly where the next bug lived: `edge_percent`
+    arrives from Postgres as a Decimal while the floor is a Python float, and
+    the float literal 0.08 is really 0.08000000000000000166… — fractionally
+    LARGER than exact decimal 0.08. So `Decimal("0.0800") < 0.08` is True and a
+    pick sitting EXACTLY on the floor was silently dropped.
+
+    The placer happened to cast to float and staked those picks; the signaler
+    did not and never told the operator. Same floor, same utility, two
+    different answers — the Stevenage failure again, from a TYPE this time.
+    Sharing the floor was not enough; the comparison has to be shared too.
+
+    Returns True when the pick MEETS or beats its floor. Meeting the floor
+    passes it — `>=`, never `>`.
+    """
+    if edge is None:
+        return False
+    try:
+        e = float(edge)
+    except (TypeError, ValueError):
+        return False
+    return e >= min_edge_for_pick(market, selection, odds)
+
+
 
 # CHERRY-PICK-PLACER (2026-06-01) — gate the placer's bet loaders by the
 # `bots.maturity_label` column so the curated subset of strategies (default:
@@ -575,9 +604,8 @@ def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
     # the real-money placer. Same utility the Telegram signaler uses.
     before = len(results)
     results = [r for r in results
-               if float(r.get("edge_percent") or 0)
-               >= min_edge_for_pick(r.get("market"), r.get("selection"),
-                                    r.get("model_odds"))]
+               if clears_edge_floor(r.get("market"), r.get("selection"),
+                                    r.get("model_odds"), r.get("edge_percent"))]
     dropped = before - len(results)
     if dropped:
         log.info("Per-market edge filter dropped %d/%d singles below floor "

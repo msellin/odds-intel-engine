@@ -35,7 +35,9 @@ import os
 from datetime import datetime, timezone
 
 from workers.api_clients.db import execute_query, execute_write
-from workers.automation.coolbet_placer import min_edge_for_pick, _MIN_EDGE
+from workers.automation.coolbet_placer import (
+    clears_edge_floor, min_edge_for_pick, _MIN_EDGE,
+)
 from workers.notify.telegram import send_telegram, send_telegram_public
 
 log = logging.getLogger(__name__)
@@ -127,9 +129,13 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
         # Telegram path; it previously called the blind market-only _min_edge_for
         # and so never signaled home-underdogs in the 10-13% band that the placer
         # would place (Stevenage v Luton). One utility now, so the two can't drift.
-        floor = min_edge_for_pick(d.get("market"), d.get("selection"),
-                                  d.get("odds_at_pick"))
-        if (d.get("edge_percent") or 0) < floor:
+        # EDGE-FLOOR-ONE-PREDICATE (2026-09-11): one shared predicate, not a
+        # shared floor plus a hand-rolled comparison. Sharing only the floor is
+        # what let the signaler and placer disagree AGAIN — see
+        # clears_edge_floor() for the Decimal-vs-float trap that silently
+        # dropped every pick sitting exactly ON its floor.
+        if not clears_edge_floor(d.get("market"), d.get("selection"),
+                                 d.get("odds_at_pick"), d.get("edge_percent")):
             continue
         out.append(d)
     return out
