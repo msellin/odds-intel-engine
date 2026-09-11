@@ -15342,8 +15342,13 @@ def _():
     )
     # Fail-closed when live_edge is uncomputable — bets with no cal_prob/model_prob
     # must skip, not slip through.
-    assert "live_edge is None or live_edge <" in placer, (
-        "placer must fail closed when live_edge is uncomputable (cal_prob == 0)"
+    # UPDATED 2026-09-11 (EDGE-FLOOR-ONE-PREDICATE): the comparison moved into
+    # the shared `clears_edge_floor` predicate, so the literal `live_edge <`
+    # is gone. The INVARIANT is unchanged and is what this pins — an
+    # uncomputable live_edge must SKIP, never slip through.
+    assert "live_edge is None or not clears_edge_floor(" in placer, (
+        "placer must fail closed when live_edge is uncomputable (cal_prob == 0), "
+        "and must gate through the shared predicate rather than its own `<`"
     )
     assert "live_edge uncomputable" in placer, (
         "placer must log the uncomputable-edge skip path"
@@ -16915,11 +16920,18 @@ def test_inplay_coolbet_placer():
     # PER-MARKET-EDGE-V2 (2026-06-06): placer migrated from one global
     # _MIN_REMAINING_EDGE to per-market floors via _min_edge_for(mkt). Same
     # semantic gate (skip when live_edge < floor) — floor is market-specific.
-    assert "_min_edge_for" in place_src, (
-        "must apply per-market live-edge floor via _min_edge_for(mkt)"
+    # UPDATED 2026-09-11 (EDGE-FLOOR-ONE-PREDICATE). This pinned the
+    # SELECTION-BLIND `_min_edge_for(mkt)` — the pre-FAVLONG-CUTS floor, which
+    # applied the pooled 13% to the 1x2 home-underdogs the backtest cleared at
+    # 10%. The in-play path was the last caller still on it. Pinning the blind
+    # version would have kept this path divergent forever, so the assertion now
+    # requires the SELECTION-AWARE predicate.
+    assert "min_edge_for_pick(" in place_src, (
+        "in-play must apply the SELECTION-AWARE floor, not the blind "
+        "_min_edge_for(mkt)"
     )
-    assert "live_edge < live_floor" in place_src, (
-        "must compare live_edge against the per-market floor"
+    assert "clears_edge_floor(" in place_src, (
+        "in-play must compare live_edge through the shared predicate"
     )
     assert "search_blocked" in place_src, "must handle search_blocked"
     assert 'notes=f"inplay-auto' in place_src, "must tag real_bets as inplay-auto"
@@ -22856,6 +22868,70 @@ def test_daily_summary_reported_zero_2026_09_11():
         "show stake alongside the count — a count alone cannot be sanity-checked"
     )
     return "24h activity counts every book, case-insensitively"
+
+
+@test("EDGE-FLOOR-ALL-CALLERS — every edge gate routes through the one predicate")
+def test_edge_floor_all_callers_2026_09_11():
+    """EDGE-FLOOR-ONE-PREDICATE, completion pass (2026-09-11).
+
+    A gate audit found three edge comparisons still bypassing the shared
+    predicate after the morning's consolidation:
+
+      1. coolbet_placer live re-eval — shared floor, hand-rolled `<`. Safe only
+         because live_edge happened to be a float; the signaler hit exactly this
+         shape with a Decimal and silently dropped every at-floor pick.
+      2. coolbet_placer IN-PLAY path — still on the SELECTION-BLIND
+         `_min_edge_for(mkt)`, pre-dating EDGE-FLOOR-ONE-UTILITY entirely. It
+         applied the pooled 13% to the 1x2 home-underdogs the FAVLONG-CUTS
+         backtest cleared at 10% — the Stevenage divergence, still live. In-play
+         placement is retired, so dormant, not harmless: a revival ships the bug.
+      3. best_price_router.decide_book — gated on the per-bot BOT_THRESHOLDS
+         value ALONE, which is selection-blind. It applied the 1x2 bot's 10% to
+         AWAY and HOME-FAV selections too, where the backtest requires the
+         pooled 13% (aways are not fold-robust at 10%; home-favs lose at every
+         floor). The router was MORE PERMISSIVE than the rest of the stack on
+         exactly the selections the backtest excluded — on a real-money path.
+
+    The rule: two policies, both must pass, stricter wins — the per-bot
+    threshold AND the market/selection floor. Not one replacing the other.
+    """
+    import inspect
+    from workers.automation import coolbet_placer as cp
+    from workers.automation import best_price_router as bpr
+
+    # 1+2. No raw edge-vs-floor comparison left in the placer.
+    psrc = inspect.getsource(cp)
+    code = "\n".join(l for l in psrc.splitlines() if not l.lstrip().startswith("#"))
+    assert "live_edge < live_floor" not in code, (
+        "the live re-eval must use clears_edge_floor, not a hand-rolled `<`"
+    )
+    assert "_min_edge_for(mkt)" not in code, (
+        "the in-play path must use the SELECTION-AWARE floor — _min_edge_for is "
+        "the pre-FAVLONG-CUTS blind version"
+    )
+
+    # 3. Same edge, same odds, opposite verdicts by SELECTION — the whole point
+    #    of the backtest result.
+    d_home = bpr.decide_book(0.41, 0.10, 2.80, {"Coolbet": 3.30},
+                             market="1x2", selection="home")
+    d_away = bpr.decide_book(0.41, 0.10, 2.80, {"Coolbet": 3.30},
+                             market="1x2", selection="away")
+    assert d_home["winner"] == "Coolbet", (
+        "a 1x2 HOME underdog at ~10.7% edge clears the 10% FAVLONG-CUTS floor"
+    )
+    assert d_away["winner"] is None, (
+        "the SAME edge on an AWAY selection must be refused — aways sit at the "
+        "pooled 13% and are not fold-robust at 10%"
+    )
+    assert "selection floor" in (d_away["considered"]["Coolbet"]["reason"] or ""), (
+        "the rejection must name the selection floor, not just 'no book clears'"
+    )
+
+    # the per-bot threshold still applies independently (stricter wins)
+    d_low = bpr.decide_book(0.41, 0.30, 2.80, {"Coolbet": 3.30},
+                            market="1x2", selection="home")
+    assert d_low["winner"] is None, "a high per-bot threshold must still bind"
+    return "placer + in-play + router all gate on the shared selection-aware floor"
 
 
 @test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")

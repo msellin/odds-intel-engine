@@ -2165,8 +2165,13 @@ def place_all_bets(
         # Fail closed: when live_edge is uncomputable (missing calibrated_prob +
         # model_probability) we can't verify the live price still has edge, so
         # skip rather than record a bet we never would have taken.
+        # EDGE-FLOOR-ONE-PREDICATE (2026-09-11): route through the shared
+        # predicate instead of comparing here. Safe before only because
+        # live_edge happens to be a Python float — the signaler hit exactly this
+        # shape with a Decimal and silently dropped every at-floor pick.
         live_floor = min_edge_for_pick(mkt, bet.get("selection"), ev_odds)
-        if live_edge is None or live_edge < live_floor:
+        if live_edge is None or not clears_edge_floor(
+                mkt, bet.get("selection"), ev_odds, live_edge):
             if live_edge is None:
                 log.info("Skip %s — live_edge uncomputable (no cal_prob/model_prob)", label)
             else:
@@ -2644,9 +2649,17 @@ def place_all_inplay_bets(
         if not cal_prob:
             cal_prob = float(bet.get("model_probability") or 0)
         live_edge = (cal_prob - 1.0 / ev_odds) if (cal_prob > 0 and ev_odds > 1.0) else None
-        live_floor = _min_edge_for(mkt)
+        # EDGE-FLOOR-ONE-PREDICATE (2026-09-11). This was still on the
+        # SELECTION-BLIND `_min_edge_for(mkt)` — pre-dating
+        # EDGE-FLOOR-ONE-UTILITY entirely. It therefore applied the pooled 13%
+        # to 1x2 home-underdogs that the FAVLONG-CUTS backtest cleared at 10%,
+        # i.e. the exact divergence the Stevenage incident was about, still live
+        # on this path. In-play placement is retired (2026-08-21) so it was
+        # dormant, not harmless: a revival would have shipped the old bug.
+        live_floor = min_edge_for_pick(mkt, bet.get("selection"), ev_odds)
         # Fail closed when live_edge is uncomputable — see pre-match path above.
-        if live_edge is None or live_edge < live_floor:
+        if live_edge is None or not clears_edge_floor(
+                mkt, bet.get("selection"), ev_odds, live_edge):
             if live_edge is None:
                 log.info("Skip inplay %s — live_edge uncomputable (no cal_prob/model_prob)", label)
             else:

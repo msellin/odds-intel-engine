@@ -36,6 +36,12 @@ from __future__ import annotations
 import logging
 import os
 
+# EDGE-FLOOR-ONE-PREDICATE: the router must gate on the SAME shared
+# predicate as the placer and the signaler, not on its own comparison.
+from workers.automation.coolbet_placer import (
+    clears_edge_floor, min_edge_for_pick,
+)
+
 log = logging.getLogger(__name__)
 
 PLACEABLE_BOOKS = ("Coolbet", "Unibet-Site")  # order = tiebreak preference on equal odds
@@ -85,7 +91,8 @@ def _has_exposure(match_id: str, market: str, selection: str) -> bool:
 
 
 def decide_book(cal_prob: float, threshold: float, odds_floor: float,
-                book_odds: dict) -> dict:
+                book_odds: dict, *, market: str | None = None,
+                selection: str | None = None) -> dict:
     """Pure routing decision. `book_odds` = {book: odds}. A book clears iff its edge
     (cal_prob − 1/odds) ≥ threshold AND odds ≥ odds_floor. Winner = best clearing
     price; ties break by PLACEABLE_BOOKS order. Returns {clearing, winner, ...}."""
@@ -100,10 +107,26 @@ def decide_book(cal_prob: float, threshold: float, odds_floor: float,
             considered[book] = {"odds": o, "cleared": False, "reason": "no usable price"}
             continue
         edge = cal_prob - 1.0 / o
+        # EDGE-FLOOR-ONE-PREDICATE (2026-09-11). This used the per-bot
+        # BOT_THRESHOLDS value ALONE, which is selection-BLIND: it applied the
+        # 1x2 bot's 10% to every 1x2 selection, including aways and home-favs.
+        # The FAVLONG-CUTS backtest only cleared 10% for HOME UNDERDOGS
+        # (odds >= 2.80); aways sit at the pooled 13% and home-favs lose at
+        # every floor. So the router was MORE PERMISSIVE than the rest of the
+        # stack on exactly the selections the backtest excluded — on a
+        # real-money path (owner-gated off, but built to be switched on).
+        #
+        # Two policies, both must pass, stricter wins: the per-bot threshold
+        # AND the market/selection floor. Not one replacing the other.
+        sel_ok = clears_edge_floor(market, selection, o, edge) if market else True
         if o < odds_floor:
             reason = f"below odds floor ({o} < {odds_floor})"
         elif edge < threshold:
-            reason = f"edge {edge:.4f} < threshold {threshold}"
+            reason = f"edge {edge:.4f} < bot threshold {threshold}"
+        elif not sel_ok:
+            reason = (f"edge {edge:.4f} < selection floor "
+                      f"{min_edge_for_pick(market, selection, o):.4f} "
+                      f"({market}/{selection})")
         else:
             reason = None
         considered[book] = {"odds": o, "edge": round(edge, 4),
@@ -480,7 +503,9 @@ def route(execute: bool = False, *, stage: bool = False, limit: int | None = Non
         threshold = float(BOT_THRESHOLDS.get(bot, 0.03))
         odds_floor = _min_odds_for(_floor_key(market))
         books = _latest_book_odds(mid, market, sel)
-        dec = decide_book(cal, threshold, odds_floor, {b: d["odds"] for b, d in books.items()})
+        dec = decide_book(cal, threshold, odds_floor,
+                          {b: d["odds"] for b, d in books.items()},
+                          market=market, selection=sel)
         if not dec["winner"]:
             out["no_book_clears"] += 1
             out["skipped"].append({"pick": label, "reason": "no book clears the gate",
