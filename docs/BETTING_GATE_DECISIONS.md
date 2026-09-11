@@ -120,6 +120,39 @@ it — NOT because it is better.** It is not better. It is indistinguishable, an
 it will remain indistinguishable. If the owner prefers 2.00 for the CLV or the
 volume, that is a fully legitimate call and needs no further backtest.
 
+**Confirmed on the 105k fixture-level basis too, and the FUNNEL is the reason
+this can never be answered.** Owner asked directly: *"when you look at the 100k
+fixtures we have, odds 2.0 vs 2.8 are no different in terms of ROI%, when they
+both share same 10% edge floor?"* — correct:
+
+| | n | ROI | SE | t |
+|---|---|---|---|---|
+| A odds>=2.80 (home) | 1,215 | +22.8% | 10.5 | 2.16 |
+| B odds>=2.00 (home) | 1,354 | +21.4% | 9.5 | 2.26 |
+| A odds>=2.80 (all selections) | 4,051 | +13.7% | 5.0 | 2.73 |
+| B odds>=2.00 (all selections) | 4,283 | +13.4% | 4.8 | 2.80 |
+
+Differences of −1.4 pp and −0.3 pp against standard errors of ~10 and ~5. And
+note the SIGN IS OPPOSITE to the pick-level data (which had B above A, +11.8 vs
++11.4). **A difference that flips sign between datasets is noise**, and that is
+about as clean a demonstration as this repo will ever produce.
+
+**Why 105,456 does not help — the funnel:**
+
+```
+all 1x2 fixture-level synthetic bets   105,456
+  ... HOME only                         35,152
+  ... AND edge >= 10%                    1,391   <- 98.7% gone, and the ODDS
+  ... AND odds >= 2.00                   1,354      floor has not applied yet
+  ... AND odds >= 2.80                   1,215
+```
+
+**The odds floor is the LAST and SMALLEST filter in the chain.** By the time
+`home` and `edge >= 10%` have run, 1,391 bets remain, and the entire 2.00-vs-2.80
+choice touches **139 of them**. Starting from 105k, or a million, does not change
+that: the edge floor removes ~99% first, so the odds floor can only ever be
+decided on the residue. This is structural, not a shortage of history.
+
 **Do not re-run this comparison expecting a different answer.** If someone does,
 the result they get will differ from all of the above, and that variation IS the
 finding.
