@@ -125,7 +125,9 @@ def _emit_sharp_anchor(counters: dict) -> None:
     the model anchor. `cal_prob` holds P_sharp so Stage B computes
     edge = P_sharp − 1/book_odds unchanged. Never raises (best-effort sibling)."""
     from workers.api_clients.db import execute_query, execute_write
-    from workers.automation.coolbet_placer import _min_edge_for, _min_odds_for
+    from workers.automation.coolbet_placer import (
+            _min_edge_for, _min_odds_for, min_edge_for_pick,
+        )
     from workers.model.devig import devig
 
     for strategy, market, floor_key, sides in _SHARP_STRATEGIES:
@@ -189,7 +191,9 @@ def compute_triggers() -> dict:
     counters = {"strategies": 0, "written": 0, "skipped_no_edge": 0, "cleaned": 0}
     try:
         from workers.api_clients.db import execute_query, execute_write
-        from workers.automation.coolbet_placer import _min_edge_for, _min_odds_for
+        from workers.automation.coolbet_placer import (
+            _min_edge_for, _min_odds_for, min_edge_for_pick,
+        )
 
         # housekeeping: drop windows for fixtures already kicked off > 1 day ago
         try:
@@ -201,7 +205,6 @@ def compute_triggers() -> dict:
         cal_ou = _fit_calibrator("ou25")
 
         for strategy, market, floor_key, sel_preds in _STRATEGIES:
-            edge_floor = float(_min_edge_for(floor_key))
             odds_floor = float(_min_odds_for(floor_key))
             counters["strategies"] += 1
 
@@ -236,6 +239,27 @@ def compute_triggers() -> dict:
                         cal = cal_over
                 if cal is None:
                     continue
+                # TRIGGER-FLOOR-SELECTION-AWARE (2026-09-11). This used the
+                # market-only `_min_edge_for(floor_key)` — 13% for every 1x2
+                # selection — while the real-money bot bets home-underdogs at
+                # 10%. So the trigger demanded MORE edge than the thing it is
+                # meant to shadow, and never emitted the 10-13% band at all.
+                #
+                # The odds argument is `odds_floor`, and that is exact rather
+                # than an approximation: `_window` returns
+                # max(1/(cal - floor), odds_floor), so EVERY window this job
+                # emits already starts at or above the odds floor. For 1x2 that
+                # floor is 2.80, so a HOME window lies entirely inside
+                # home-underdog territory — which is precisely the condition
+                # `min_edge_for_pick` tests. Draws and aways are unaffected and
+                # keep the pooled 13%.
+                #
+                # Owner 2026-09-11: "keep trigger bots accumulating more picks at
+                # lower floor (apply same 10% floor and odds)". These are PAPER
+                # bots, so a wider net costs nothing and buys the sample we do
+                # not have — their CLV is negative today and the question of
+                # whether any slice works needs volume to answer.
+                edge_floor = float(min_edge_for_pick(market, sel, odds_floor))
                 win = _window(cal, edge_floor, odds_floor)
                 if win is None:
                     counters["skipped_no_edge"] += 1

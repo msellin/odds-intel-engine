@@ -37545,5 +37545,52 @@ def test_mirror_prices_at_its_own_books():
     )
 
 
+
+@test("TRIGGER-FLOOR-SELECTION-AWARE — trigger windows use the same floor as the bot they shadow")
+def test_trigger_floor_selection_aware():
+    """TRIGGER-FLOOR-SELECTION-AWARE (2026-09-11).
+
+    The model-anchor trigger emitter used the market-only `_min_edge_for` — 13%
+    for EVERY 1x2 selection — while the real-money bot bets home-underdogs at
+    10%. So the trigger demanded MORE edge than the thing it shadows and never
+    emitted the 10-13% band at all, which is the band the placer actually
+    stakes. It now calls the shared selection-aware `min_edge_for_pick`.
+
+    Passing `odds_floor` as the odds argument is EXACT, not an approximation:
+    `_window` returns max(1/(cal - floor), odds_floor), so every window the job
+    emits already starts at or above the odds floor. For 1x2 that floor is 2.80,
+    so a HOME window lies entirely inside home-underdog territory — precisely
+    the condition min_edge_for_pick tests. Draw and away keep the pooled 13%.
+
+    Owner asked for the wider net so these PAPER bots accumulate the sample
+    their CLV question needs.
+    """
+    import inspect
+    from workers.jobs import pick_triggers as pt
+    from workers.automation.coolbet_placer import min_edge_for_pick, _min_odds_for
+
+    src_pt = inspect.getsource(pt)
+    assert "min_edge_for_pick(market, sel, odds_floor)" in src_pt, (
+        "the model-anchor emitter must take its edge floor from the shared "
+        "selection-aware predicate, evaluated at the odds floor."
+    )
+    # The invariant that makes passing odds_floor exact: _window never returns a
+    # minimum below the odds floor. If that changes, this call becomes wrong.
+    w = pt._window(0.50, 0.10, 2.80)
+    assert w is not None and w[0] >= 2.80, (
+        "_window must never return a min_odds below the odds floor — the "
+        "selection-aware floor above relies on it to know a HOME window is "
+        "entirely in underdog territory."
+    )
+    # And the floors it should now produce.
+    assert min_edge_for_pick("1x2", "home", _min_odds_for("1x2")) == 0.10, (
+        "1x2 home at the odds floor must gate at the real-money 10%"
+    )
+    for sel in ("draw", "away"):
+        assert min_edge_for_pick("1x2", sel, _min_odds_for("1x2")) == 0.13, (
+            f"1x2 {sel} must keep the pooled 13% — neither is fold-robust at 10%"
+        )
+
+
 if __name__ == "__main__":
     main()
