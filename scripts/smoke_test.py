@@ -37721,5 +37721,60 @@ def test_shadow_detail_three_books_and_bet_made():
     )
 
 
+
+@test("TRIGGER-CALIBRATOR-REVISION — trigger picks record which calibrator shaped them")
+def test_trigger_calibrator_revision():
+    """TRIGGER-CALIBRATOR-REVISION (2026-09-11).
+
+    `model_version` on a trigger window records the PREDICTION bundle, which is
+    not enough to tell two eras of picks apart: the bundle never changed, but on
+    2026-09-11 the CALIBRATION applied on top of it did — from one curve pooled
+    over home/draw/away (HOME under-estimated 10-15pp, so the bot fired only on
+    longshots) to per-selection fits.
+
+    Every pick before that date therefore came from a materially different
+    model. Pooling the two eras in an evaluation would average a known-biased
+    sample with a corrected one and report neither — and the 3-5 day CLV re-read
+    that GATES the whole mirror/trigger convergence epic is exactly that
+    evaluation. So the revision is stamped into `model_version` on the window
+    and carried onto the pick, making the eras separable with a string match.
+
+    Pins: the stamp exists, both emitters apply it (a reader cannot know which
+    revision produced a row unless model AND sharp anchors are both stamped),
+    and the matcher carries it from window to pick.
+    """
+    import inspect
+    from workers.jobs import pick_triggers as pt
+    from workers.jobs import pick_trigger_matcher as ptm
+
+    assert hasattr(pt, "_CALIBRATOR_REV") and pt._CALIBRATOR_REV, (
+        "pick_triggers must declare a calibrator revision — without it, picks "
+        "from the pooled-calibration era are indistinguishable from corrected "
+        "ones and no evaluation of these bots can be trusted."
+    )
+    assert pt._stamp_cal("v1") == f"v1+{pt._CALIBRATOR_REV}", "stamp format"
+    assert pt._stamp_cal(None).startswith("unknown+"), (
+        "a missing bundle must still carry the revision, not silently drop it"
+    )
+
+    csrc = inspect.getsource(pt.compute_triggers)
+    assert "_stamp_cal(r[\"mv\"])" in csrc, (
+        "the model-anchor emitter must stamp its windows"
+    )
+    ssrc = inspect.getsource(pt._emit_sharp_anchor)
+    assert "_stamp_cal(" in ssrc, (
+        "the SHARP emitter must stamp too — it shares the window math, so a row "
+        "from it is equally un-attributable without the stamp."
+    )
+
+    msrc = inspect.getsource(ptm.emit_for_book) if hasattr(ptm, "emit_for_book") \
+        else inspect.getsource(ptm)
+    assert "t.model_version AS mv" in msrc and 'r["mv"]' in msrc, (
+        "the matcher must carry the window's stamped model_version onto the "
+        "PICK — the window knew which calibrator shaped it and the pick did "
+        "not, which is what made the two eras unseparable."
+    )
+
+
 if __name__ == "__main__":
     main()

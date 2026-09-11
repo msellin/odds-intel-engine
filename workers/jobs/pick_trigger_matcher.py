@@ -77,7 +77,8 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
                ORDER BY o.match_id, o.selection, o.timestamp DESC
             )
             SELECT t.match_id::text AS mid, t.market, t.selection,
-                   t.cal_prob::float AS cal, l.odds AS book_odds
+                   t.cal_prob::float AS cal, l.odds AS book_odds,
+                   t.model_version AS mv
               FROM pick_triggers t
               JOIN latest l ON l.mid = t.match_id::text AND l.selection = t.selection
              WHERE t.market = %s AND t.strategy = %s AND t.kickoff_at > NOW()
@@ -98,15 +99,16 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
                        (shadow_run_id, shadow_cohort, bot_id, match_id, market, selection,
                         odds_at_pick, odds_at_pick_live, pick_time, stake,
                         model_probability, calibrated_prob, edge_percent,
-                        recommended_bookmaker)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s,%s)
+                        recommended_bookmaker, model_version)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s,%s,%s)
                    ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)
                    DO UPDATE SET
                         odds_at_pick      = EXCLUDED.odds_at_pick,
                         odds_at_pick_live = EXCLUDED.odds_at_pick_live,
                         calibrated_prob   = EXCLUDED.calibrated_prob,
                         edge_percent      = EXCLUDED.edge_percent,
-                        recommended_bookmaker = EXCLUDED.recommended_bookmaker""",
+                        recommended_bookmaker = EXCLUDED.recommended_bookmaker,
+                        model_version         = EXCLUDED.model_version""",
                 # TRIGGER-BOOK-UNATTRIBUTED (2026-09-11): every trigger row was
                 # written with recommended_bookmaker NULL — 100% of them, 639 of
                 # a 950-pick sample landing in the unattributed bucket. `book`
@@ -120,7 +122,17 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
                 # CLV against a price we never had. That last one matters most
                 # here, because CLV is the metric these bots are judged on.
                 [run_id, cohort, bot_id, r["mid"], r["market"], r["selection"],
-                 price, price, STAKE_EUR, r["cal"], r["cal"], edge, book],
+                 # TRIGGER-CALIBRATOR-REVISION (2026-09-11): carry the
+                 # window's stamped model_version onto the PICK. The window
+                 # knew which calibrator shaped it; the pick did not, so
+                 # nothing downstream could tell a pre-fix row (pooled
+                 # calibration, HOME under-estimated 10-15pp, longshot-only
+                 # fires) from a post-fix one. The 3-5 day CLV re-read that
+                 # gates the whole convergence epic depends on being able to
+                 # separate them — pooled, it would average a known-biased
+                 # sample with a corrected one and report neither.
+                 price, price, STAKE_EUR, r["cal"], r["cal"], edge, book,
+                 r["mv"]],
             )
             counters["written"] += 1
         log.info("trigger matcher (%s/%s/%s): %s", book, market, strategy, counters)

@@ -50,6 +50,28 @@ _STRATEGIES = [
 # (1x2 + O/U 2.5) so each sharp bot has a model-anchored twin.
 _SHARP_ANCHOR_BOOK = "Pinnacle"
 _SHARP_MODEL_VERSION = "pinnacle_shin_devig"  # sentinel: not a model bundle
+
+# TRIGGER-CALIBRATOR-REVISION (2026-09-11). The window's `model_version` records
+# the PREDICTION bundle, which is not enough to tell two eras of trigger picks
+# apart: the bundle never changed, but on 2026-09-11 the CALIBRATION applied on
+# top of it did — from one curve pooled over home/draw/away (which
+# under-estimated HOME by 10-15pp and made the bot fire only on longshots) to
+# per-selection fits.
+#
+# So every pick before that date came from a materially different model, and
+# pooling the two eras in an evaluation would average a known-biased sample with
+# a corrected one and report neither. Stamping the calibrator revision into
+# `model_version` makes them separable with a string match, which is what the
+# 3-5 day CLV re-read after the fix depends on.
+#
+# BUMP THIS whenever _fit_calibrator's shape changes — not when the underlying
+# prediction bundle changes, which model_version already carries.
+_CALIBRATOR_REV = "selcal1"
+
+
+def _stamp_cal(model_version: str | None) -> str:
+    """Tag a prediction bundle with the calibrator revision that shaped it."""
+    return f"{model_version or 'unknown'}+{_CALIBRATOR_REV}"
 _SHARP_STRATEGIES = [
     ("sharp_1x2", "1x2", "1x2", ["home", "draw", "away"]),
     ("sharp_ou25", "over_under_25", "o/u", ["over", "under"]),
@@ -239,7 +261,8 @@ def _emit_sharp_anchor(counters: dict) -> None:
                                      kickoff_at=EXCLUDED.kickoff_at,
                                      computed_at=NOW()""",
                     [mid, market, sel, strategy, p_sharp, edge_floor, odds_floor,
-                     min_odds, max_odds, _SHARP_MODEL_VERSION, m["kickoff"]],
+                     min_odds, max_odds, _stamp_cal(_SHARP_MODEL_VERSION),
+                     m["kickoff"]],
                 )
                 counters["written"] += 1
 
@@ -342,7 +365,7 @@ def compute_triggers() -> dict:
                                      kickoff_at=EXCLUDED.kickoff_at,
                                      computed_at=NOW()""",
                     [r["mid"], market, sel, strategy, cal, edge_floor, odds_floor,
-                     min_odds, max_odds, r["mv"], r["kickoff"]],
+                     min_odds, max_odds, _stamp_cal(r["mv"]), r["kickoff"]],
                 )
                 counters["written"] += 1
 
