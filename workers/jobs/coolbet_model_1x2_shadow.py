@@ -48,8 +48,25 @@ log = logging.getLogger(__name__)
 BOT_NAME = "bot_coolbet_1x2_model_v1"
 SHADOW_COHORT = "coolbet_1x2_model"
 STAKE_EUR = 10.0
-# Mirrors _MIN_EDGE_BY_MARKET['1x2'] in coolbet_placer.py (fraction, not pct).
-EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_1X2_EDGE_FLOOR", "0.10"))  # FAVLONG-CUTS-2026-09-09: home-underdogs robust to 10%
+# FLOORS-ONE-SOURCE (2026-09-11): DERIVE the default from the engine registry
+# instead of re-typing it. This read `os.getenv(..., "0.10")` — a literal that
+# only *happened* to equal _MODEL_1X2_HOME_FLOOR, with nothing keeping the two
+# in step. It was one of six independent copies of the 1x2 edge floor; an engine
+# change would have left this mirror quietly selecting on the old number.
+#
+# The env var stays, so an operator can still override for an experiment — but
+# the DEFAULT is now the engine's own value, not a guess that matches today.
+from workers.automation.coolbet_placer import (  # noqa: E402
+    _MODEL_1X2_HOME_FLOOR, _min_odds_for,
+)
+
+# FAVLONG-CUTS-2026-09-09: home-underdogs are the one fold-robust 1x2 engine.
+EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_1X2_EDGE_FLOOR",
+                             str(_MODEL_1X2_HOME_FLOOR)))
+# The odds floor was hardcoded as `>= 2.80` INSIDE the SQL, where no constant
+# could reach it. Same source as the placer's gate now.
+MIN_ODDS = float(os.getenv("COOLBET_MODEL_1X2_MIN_ODDS",
+                           str(_min_odds_for("1x2"))))
 
 
 def _bot_id() -> str | None:
@@ -93,7 +110,7 @@ def generate_picks() -> dict:
                -- BETTING_GATE_DECISIONS "1x2 by type"). odds>=2.80 also excludes home-favs
                -- (odds<2.0) belt-and-braces with the placer's _min_odds_for('1x2')=2.80.
                AND lower(sb.selection) = 'home'
-               AND COALESCE(sb.odds_at_pick_live, sb.odds_at_pick) >= 2.80
+               AND COALESCE(sb.odds_at_pick_live, sb.odds_at_pick) >= %s
                AND sb.result = 'pending'
                AND sb.combo_legs IS NULL
                AND sb.calibrated_prob IS NOT NULL
@@ -103,7 +120,9 @@ def generate_picks() -> dict:
                AND m.date > NOW()
              ORDER BY sb.match_id, sb.selection, sb.edge_percent DESC
             """,
-            [EDGE_FLOOR],
+            # NOTE the order: the odds placeholder appears BEFORE the edge one
+            # in the SQL above.
+            [MIN_ODDS, EDGE_FLOOR],
         )
 
         run_id = str(uuid.uuid4())

@@ -54,7 +54,28 @@ BOT_NAME = "bot_coolbet_ou_model_v1"
 SHADOW_COHORT = "coolbet_ou_model"
 STAKE_EUR = 10.0
 # Mirrors _MIN_EDGE_BY_MARKET['o/u'] in coolbet_placer.py (fraction, not pct).
-EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_OU_EDGE_FLOOR", "0.08"))
+# FLOORS-ONE-SOURCE (2026-09-11): DERIVE the default from the engine registry
+# rather than re-typing it. This was `os.getenv(..., "0.08")` — a literal that
+# only happened to equal _MIN_EDGE_BY_MARKET['o/u'], with nothing keeping the
+# two in step. The env override stays for experiments; the DEFAULT is now the
+# engine's own number.
+#
+# A null value in the registry means the market is RETIRED (btts and
+# double_chance are None there, and _min_edge_for returns infinity so nothing
+# clears). Fail loudly rather than silently substituting a number: this mirror
+# selecting on a resurrected floor for a market we no longer bet is exactly the
+# silent-wrong-floor failure this consolidation exists to remove.
+from workers.automation.coolbet_placer import _MIN_EDGE_BY_MARKET  # noqa: E402
+
+_OU_REGISTRY_FLOOR = _MIN_EDGE_BY_MARKET.get("o/u")
+if _OU_REGISTRY_FLOOR is None:
+    raise RuntimeError(
+        "_MIN_EDGE_BY_MARKET['o/u'] is None — the o/u market is retired in the "
+        "engine, so this paper mirror must not keep selecting picks for it. "
+        "Retire the bot or restore the floor; do not hardcode one here."
+    )
+EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_OU_EDGE_FLOOR",
+                             str(_OU_REGISTRY_FLOOR)))
 
 # 'o/u' selection ("over 2.5" / "under 3.5") -> (over_under market, side).
 # Only 2.5 and 3.5 are supported; every other line returns None and is skipped.

@@ -42,13 +42,17 @@
 - [ ] **`echo 'COOLBET_AUTO_LOGIN_ON_HEAL=true' >> .env`** — still unset; makes
       the inactivity logout self-heal instead of needing the operator
 
-### 3. Finish the consolidation (phase 2)
-- [ ] **Shadow-mirror SQL floors** — the last copies. `coolbet_model_1x2_shadow.py`
-      (`EDGE_FLOOR` default `"0.10"`) and `coolbet_model_ou_shadow.py`
-      (`"0.08"`) define floors independently of `_MIN_EDGE_BY_MARKET`. Make the
-      DEFAULT derive from the registry, keep the env override. Paper mirrors →
-      lower risk, which is why they were left last.
-- [ ] `coolbet_model_1x2_shadow.py` also has `odds>=2.80` as a SQL literal
+### 3. Finish the consolidation (phase 2) — ✅ DONE 2026-09-11
+- [x] **Shadow-mirror floors now derive from the engine registry.** Both mirrors
+      took their defaults from re-typed literals that only happened to match, and
+      the 1x2 one inlined `>= 2.80` inside its SQL where no constant reached it.
+      Defaults now come from `_MODEL_1X2_HOME_FLOOR` / `_MIN_EDGE_BY_MARKET['o/u']`
+      / `_min_odds_for('1x2')`; the odds floor is a bound parameter; env overrides
+      kept. The o/u mirror RAISES if the registry retires the market rather than
+      substituting a number.
+- [x] **Phase 2 is complete** — every copy the audit found (Python callers,
+      frontend, shadow mirrors) is closed. What is left is phase 3 *policy*:
+      which gates become configurable, and with what bounds.
 
 ### 4. Stuck settlement (small, real)
 - [ ] One finished match (Independiente del Valle, Libertadores, 00:30 UTC

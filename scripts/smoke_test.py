@@ -3992,8 +3992,19 @@ def test_signal_placer_1x2_align():
     assert cp._min_edge_for("1x2") == 0.13, "the pooled _min_edge_for('1x2') must NOT move — only the per-pick carve-out is selection-aware"
 
     # the odds gate reuses the placement odds floor, so a signaled home-underdog is placeable
-    assert cp._MODEL_1X2_HOME_FLOOR == float(__import__("os").getenv("COOLBET_MODEL_1X2_EDGE_FLOOR", "0.10")), \
-        "per-pick home-underdog floor must read the SAME env var as the mirror (coolbet_model_1x2_shadow)"
+    # FLOORS-ONE-SOURCE (2026-09-11): the mirror now DERIVES its default from
+    # _MODEL_1X2_HOME_FLOOR instead of re-typing "0.10", so assert they are the
+    # same OBJECT-VALUE rather than re-typing the literal a third time here.
+    from workers.jobs import coolbet_model_1x2_shadow as _m1
+    assert _m1.EDGE_FLOOR == cp._MODEL_1X2_HOME_FLOOR, (
+        "the 1x2 mirror's edge floor must derive from _MODEL_1X2_HOME_FLOOR — "
+        "a re-typed literal is how six independent copies of this number "
+        "accumulated across the stack"
+    )
+    assert _m1.MIN_ODDS == cp._min_odds_for("1x2"), (
+        "the 1x2 mirror's odds floor must derive from the placer's registry; it "
+        "used to be a `>= 2.80` literal inside the SQL where no constant reached it"
+    )
 
     # EDGE-FLOOR-ONE-UTILITY: every pick-level gate must route through the ONE
     # utility min_edge_for_pick, so the signal set and placement set can never
@@ -4375,8 +4386,19 @@ def test_coolbet_model_ou_shadow():
     assert "lower(sb.market) IN ('o/u', 'over_under_25', 'over_under_35')" in job, (
         "source market filter must accept both legacy 'o/u' and canonical over_under_25/35")
     assert "sb.calibrated_prob IS NOT NULL" in job, "source must require a calibrated_prob (the placer's live-edge gate reads it)"
-    assert "sb.edge_percent >= %s" in job and 'EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_OU_EDGE_FLOOR", "0.08"))' in job, (
-        "edge floor must be 0.08 as a FRACTION (edge_percent is stored as a fraction, not a percentage)"
+    # FLOORS-ONE-SOURCE (2026-09-11): the default is now DERIVED from
+    # _MIN_EDGE_BY_MARKET['o/u'], not the literal "0.08". Pin the derivation and
+    # the resulting VALUE, not the old source text.
+    from workers.jobs import coolbet_model_ou_shadow as _mou
+    from workers.automation import coolbet_placer as _cp_ou
+    assert "sb.edge_percent >= %s" in job, "edge floor must be a bound parameter"
+    assert 'COOLBET_MODEL_OU_EDGE_FLOOR' in job and '_MIN_EDGE_BY_MARKET' in job, (
+        "the o/u mirror must derive its default floor from the engine registry "
+        "(env override may remain), not re-type a literal"
+    )
+    assert _mou.EDGE_FLOOR == _cp_ou._MIN_EDGE_BY_MARKET["o/u"], (
+        "edge floor must equal the engine's o/u floor, as a FRACTION "
+        "(edge_percent is stored as a fraction, not a percentage)"
     )
     assert "sb.result = 'pending'" in job and "m.date > NOW()" in job, "only pending, future-kickoff picks"
     assert "sb.user_placed_at IS NULL" in job and "sb.user_skipped_at IS NULL" in job, "skip operator-placed/skipped picks"
@@ -4471,16 +4493,24 @@ def test_coolbet_model_1x2_shadow():
     assert "b.maturity_label = 'calibrated'" in job, "source must be the calibrated cohort"
     assert "sb.market = '1x2'" in job, "source market must be '1x2'"
     assert "sb.calibrated_prob IS NOT NULL" in job, "source must require a calibrated_prob (the placer's live-edge gate reads it)"
-    assert "sb.edge_percent >= %s" in job and 'EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_1X2_EDGE_FLOOR", "0.10"))' in job, (
-        "edge floor must be 0.10 as a FRACTION — FAVLONG-CUTS-2026-09-09: home-underdogs are "
-        "robust to 10% (BETTING_GATE_DECISIONS 1x2 by type); edge_percent is a fraction"
+    # FLOORS-ONE-SOURCE (2026-09-11): derived from _MODEL_1X2_HOME_FLOOR now.
+    assert "sb.edge_percent >= %s" in job, "edge floor must be a bound parameter"
+    assert 'COOLBET_MODEL_1X2_EDGE_FLOOR' in job and '_MODEL_1X2_HOME_FLOOR' in job, (
+        "the 1x2 mirror must derive its default floor from the engine registry "
+        "(env override may remain), not re-type a literal"
     )
     # FAVLONG-CUTS-2026-09-09: real-money 1x2 = HOME-UNDERDOGS only (home + odds>=2.80).
     assert "lower(sb.selection) = 'home'" in job, (
         "mirror must restrict to home picks — home-favs lose, aways aren't robust, draws are "
         "a sharp edge (ANALYSIS_GOTCHAS §57)")
-    assert "COALESCE(sb.odds_at_pick_live, sb.odds_at_pick) >= 2.80" in job, (
-        "mirror must require odds>=2.80 (excludes home-favourites; matches the placer odds floor)")
+    # FLOORS-ONE-SOURCE (2026-09-11): was a hardcoded `>= 2.80` inside the SQL,
+    # unreachable from any constant. Now a bound parameter fed by MIN_ODDS,
+    # which derives from the placer's _min_odds_for('1x2').
+    assert "COALESCE(sb.odds_at_pick_live, sb.odds_at_pick) >= %s" in job, (
+        "mirror must bind its odds floor as a parameter, not inline a literal")
+    assert "_min_odds_for" in job, (
+        "the mirror's odds floor must derive from the placer's registry so it "
+        "cannot drift from the gate that actually stakes money")
     assert "sb.result = 'pending'" in job and "m.date > NOW()" in job, "only pending, future-kickoff picks"
     assert "sb.user_placed_at IS NULL" in job and "sb.user_skipped_at IS NULL" in job, "skip operator-placed/skipped picks"
     assert "DISTINCT ON (sb.match_id, sb.selection)" in job, "one row per (match, selection), highest edge"

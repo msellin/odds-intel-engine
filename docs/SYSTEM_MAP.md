@@ -243,10 +243,21 @@ hint, the trigger bots, and this map all read."* Audited 2026-09-11:
   agreeing while the RULE drifts is how these paths diverged before — and nearly
   did again: a first draft of the TS branch published 3.03 where the engine clears
   at 2.80, caught by sweeping `clears_edge_floor` across cal_prob 0.11-0.60.
-- ⬜ **Still duplicated: the shadow-mirror SQL.** `coolbet_model_1x2_shadow.py` and
-  `coolbet_model_ou_shadow.py` embed their floors as query literals, unreachable
-  from Python constants. Lower risk (paper mirrors, not a published figure and not
-  a stake), but the last copies standing.
+- ✅ **The shadow mirrors now derive too** (2026-09-11, the last copies).
+  `coolbet_model_1x2_shadow.py` and `coolbet_model_ou_shadow.py` took their
+  defaults from re-typed literals (`os.getenv(..., "0.10")` / `"0.08"`) that only
+  *happened* to equal the registry, with nothing keeping them in step; the 1x2
+  mirror also inlined `>= 2.80` INSIDE its SQL, where no constant could reach it.
+  Defaults now derive from `_MODEL_1X2_HOME_FLOOR` / `_MIN_EDGE_BY_MARKET['o/u']`
+  / `_min_odds_for('1x2')`, and the odds floor is a bound parameter. Env overrides
+  remain for experiments. The o/u mirror **raises** if the registry says the market
+  is retired (`None`) rather than substituting a number — a paper bot quietly
+  selecting on a resurrected floor is the same silent-wrong-floor failure in
+  miniature.
+
+**All copies from the 2026-09-11 audit are now closed** — Python callers, the
+frontend, and the shadow mirrors. What remains is not duplication but *policy*:
+which gates should become configurable (phase 3), and with what bounds.
 
 **Design rule going forward:** callers pass **who they are** (market, selection,
 odds) — never their own floor %. Passing floors as arguments keeps every copy and
