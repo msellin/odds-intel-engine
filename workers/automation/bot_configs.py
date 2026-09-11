@@ -60,4 +60,45 @@ CONFIGS: list[BotConfig] = [
     ),
 ]
 
-CONFIG_BY_NAME = {c.bot_name: c for c in CONFIGS}
+
+# ── WIDE-SOURCE PAPER TWINS (migration 330) ──────────────────────────────────
+# Identical to the two above in every respect EXCEPT `prob_source`. That is the
+# whole experiment: the real-money bots take candidates from `simulated_bets`,
+# i.e. only fixtures the pipeline already picked, and that pick list is built
+# from AF API odds which are not current and contain no Coolbet. Measured at one
+# moment: 1 candidate vs 81; by day roughly 1,000 candidate selections against
+# the pipeline's ~10 picks.
+#
+# Kept as PAPER twins rather than flipping the real-money bots, because the
+# wider source is also a DIFFERENT probability — it re-calibrates raw
+# predictions here, where the pipeline's calibrated_prob is what the real-money
+# bots were validated on. Running both on the same mechanism, differing in one
+# field, makes it a measurement instead of an argument.
+WIDE_CONFIGS: list[BotConfig] = [
+    BotConfig(
+        bot_name="bot_wide_1x2_model_v1",
+        shadow_cohort="wide_1x2_model",
+        markets=("1x2",),
+        selections=("home",),
+        books=PLACEABLE_BOOKS,
+        prob_source="predictions",
+        notes="paper twin of the real-money 1x2 bot on the wide candidate source",
+    ),
+    BotConfig(
+        bot_name="bot_wide_ou_model_v1",
+        shadow_cohort="wide_ou_model",
+        markets=("o/u", "over_under_25", "over_under_35"),
+        books=PLACEABLE_BOOKS,
+        convert=_ou_convert,
+        prob_source="predictions",
+        # Generates nothing yet: the predictions source covers 1x2 only and says
+        # so rather than guessing an O/U calibration. Registered now so the
+        # comparison is already wired when it gains one.
+        notes="paper twin of the real-money O/U bot; inert until the predictions "
+              "source supports O/U",
+    ),
+]
+
+ALL_CONFIGS: list[BotConfig] = CONFIGS + WIDE_CONFIGS
+
+CONFIG_BY_NAME = {c.bot_name: c for c in ALL_CONFIGS}

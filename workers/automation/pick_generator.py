@@ -341,8 +341,10 @@ def generate_all(configs: list[BotConfig] | None = None) -> dict:
     """Run every bot. The shared choke point, so adding a book or a bot needs no
     new wiring anywhere."""
     if configs is None:
-        from workers.automation.bot_configs import CONFIGS
-        configs = CONFIGS
+        # ALL_CONFIGS, not CONFIGS: the wide-source paper twins must run on every
+        # odds arrival too, or the comparison they exist for never accumulates.
+        from workers.automation.bot_configs import ALL_CONFIGS
+        configs = ALL_CONFIGS
     return {cfg.bot_name: generate(cfg) for cfg in configs}
 
 

@@ -37995,7 +37995,17 @@ def test_every_registry_bot_is_visible():
     two operator surfaces to it as well, and the class of bug closes: adding a
     bot to the registry without listing it fails the build.
     """
-    from workers.registry.bot_registry import BOTS
+    from workers.registry.bot_registry import BOTS, FAM_INTERNAL
+
+    # Scope: the VENUE bots — the ones that pick at a book we can reach, which is
+    # what /admin/shadow-bots is for. FAM_INTERNAL (bot_v10_all,
+    # bot_high_roi_global_v2) are model/strategy validators with no placement
+    # path; they are deliberately surfaced on /performance via
+    # components/performance-history.tsx instead, and appear in neither
+    # allowlist by design. Verified before excluding them rather than assumed —
+    # they do write shadow_bets (908 and 17 rows in 7 days), so "it writes
+    # shadow_bets" is NOT the criterion; the venue is.
+    BOTS = [b for b in BOTS if b.family != FAM_INTERNAL]
 
     index = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
     detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
@@ -38014,7 +38024,76 @@ def test_every_registry_bot_is_visible():
     )
     # Guard the guard: if the registry is ever emptied or the import silently
     # yields nothing, the two assertions above pass while checking nothing.
-    assert len(BOTS) >= 14, f"registry looks truncated ({len(BOTS)} bots) — this test would be vacuous"
+    assert len(BOTS) >= 12, (
+        f"registry looks truncated ({len(BOTS)} venue bots) — this test would be vacuous"
+    )
+
+
+
+@test("WIDE-SOURCE-TWINS — paper twins differ from the real-money bots in ONE config field")
+def test_wide_source_twins():
+    """WIDE-SOURCE TWINS (migration 330, 2026-09-11).
+
+    The real-money mirrors take candidates from `simulated_bets` — only fixtures
+    the pipeline already picked — and that pick list is built from AF API odds,
+    which are not current and contain NO COOLBET. Measured at one moment: 1
+    candidate from the pipeline source against 81 from predictions; by day,
+    ~300-400 fixtures predicted x 3 selections against the pipeline's ~10 picks.
+    That ~100x gap is the idea the trigger bots were built on.
+
+    The wide source is ALSO a different probability (it re-calibrates raw
+    predictions, where the pipeline's calibrated_prob is what the real-money
+    bots were validated on), so flipping them would silently change what we
+    stake. Paper twins on the SAME mechanism, differing in one field, make it a
+    measurement instead of an argument — which is the point of the generator.
+
+    Pins: the twins exist, differ ONLY in prob_source and identity, and can
+    never be staked.
+    """
+    import dataclasses
+    import pathlib as _pl
+    from workers.automation.bot_configs import (
+        CONFIGS, WIDE_CONFIGS, ALL_CONFIGS, CONFIG_BY_NAME,
+    )
+    from scripts.place_coolbet_ui import PLACEABLE_BOTS
+
+    assert WIDE_CONFIGS, "the wide-source twins must be configured"
+    assert set(ALL_CONFIGS) >= set(CONFIGS) | set(WIDE_CONFIGS)
+
+    pairs = [("bot_coolbet_1x2_model_v1", "bot_wide_1x2_model_v1"),
+             ("bot_coolbet_ou_model_v1", "bot_wide_ou_model_v1")]
+    ignore = {"bot_name", "shadow_cohort", "prob_source", "notes"}
+    for real_name, wide_name in pairs:
+        real, wide = CONFIG_BY_NAME[real_name], CONFIG_BY_NAME[wide_name]
+        assert real.prob_source == "pipeline", real.prob_source
+        assert wide.prob_source == "predictions", wide.prob_source
+        for f in dataclasses.fields(real):
+            if f.name in ignore:
+                continue
+            assert getattr(real, f.name) == getattr(wide, f.name), (
+                f"{wide_name} differs from {real_name} on {f.name!r} — the twin "
+                f"must differ ONLY in the candidate source, or the comparison "
+                f"measures two things at once and answers neither."
+            )
+
+    # PAPER ONLY. A twin must never be stakeable, whatever a DB toggle says.
+    for wide in WIDE_CONFIGS:
+        assert wide.bot_name not in PLACEABLE_BOTS, (
+            f"{wide.bot_name} must NOT be in PLACEABLE_BOTS — these exist to be "
+            f"measured, not staked."
+        )
+
+    # The migration must register them, or generate() skips them forever with a
+    # log line nobody reads.
+    mig = _pl.Path("supabase/migrations/330_wide_source_shadow_twins.sql")
+    assert mig.exists(), "migration 330 must register the twin bots"
+    msrc = mig.read_text()
+    for wide in WIDE_CONFIGS:
+        assert wide.bot_name in msrc, f"{wide.bot_name} must be in migration 330"
+        assert wide.shadow_cohort in msrc, (
+            f"{wide.shadow_cohort} must be added to the shadow_cohort CHECK "
+            f"constraint, or every insert for this bot fails"
+        )
 
 
 if __name__ == "__main__":
