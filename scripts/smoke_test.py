@@ -22488,6 +22488,93 @@ def test_board_sweep_nearterm_skip_2026_09_11():
     return f"empty categories skipped {ce._CAT_PROBE_EVERY - 1}/{ce._CAT_PROBE_EVERY} passes, fail-open"
 
 
+@test("1X2-1H-SETTLEMENT — first-half bets grade on the half-time score, or skip")
+def test_1x2_1h_settlement_2026_09_11():
+    """1X2-1H-SETTLEMENT (2026-09-11). `bot_1h_1x2_paper_shadow_v1` has written
+    1x2_1h picks since 2026-09-10 with no resolver in the registry, so every one
+    piled up as "Unsettleable market" and alerted on repeat — the same gap the
+    team_total fix closed a day earlier.
+
+    THE TRAP this pins: the full-time goals passed to every resolver are the
+    WRONG input for a first-half market. A team can lead at half-time and lose
+    the match, so grading 1x2_1h on the final score silently inverts those bets
+    and manufactures a track record out of the wrong match. An ungraded bet is
+    recoverable; a confidently wrong one is not — so a missing half-time score
+    must SKIP, never fall back to full time.
+    """
+    from workers.jobs.settlement import (
+        _r_1x2_1h, _UNSETTLEABLE, _SETTLEMENT_REGISTRY, settle_bet_result,
+    )
+
+    # registered at all (the actual bug: no resolver -> permanent pending)
+    assert any(pred("1x2_1h") for pred, _ in _SETTLEMENT_REGISTRY), (
+        "1x2_1h must have a resolver or every pick alerts forever"
+    )
+
+    # HT 1-0, FT 1-2 — home won the half and lost the match. Full-time grading
+    # would call the 1H home bet a LOSS; it is a WIN.
+    ht = {"_ht_score": (1, 0)}
+    assert _r_1x2_1h("1x2_1h", "home", 1, 2, ht) is True
+    assert _r_1x2_1h("1x2_1h", "draw", 1, 2, ht) is False
+    assert _r_1x2_1h("1x2_1h", "away", 1, 2, ht) is False
+    # and the mirror: level at the half, home wins the match
+    ht2 = {"_ht_score": (0, 0)}
+    assert _r_1x2_1h("1x2_1h", "draw", 3, 0, ht2) is True, (
+        "a 0-0 half is a 1H draw regardless of a 3-0 final score"
+    )
+    assert _r_1x2_1h("1x2_1h", "home", 3, 0, ht2) is False
+
+    # no half-time score -> SKIP, never a guess off full time
+    for stats in ({}, {"_ht_score": None}, None):
+        assert _r_1x2_1h("1x2_1h", "home", 5, 0, stats) is _UNSETTLEABLE, (
+            "without a half-time score this MUST skip — a silent full-time "
+            "fallback would grade the wrong match"
+        )
+
+    # the dispatcher must enrich 1H markets with the HT score itself, so no
+    # caller has to know (most callers pass no stats at all)
+    import inspect
+    src = inspect.getsource(settle_bet_result)
+    assert "_ht_score" in src and "_1h" in src, (
+        "settle_bet_result must fetch the half-time score for 1H markets — "
+        "most call sites pass stats=None"
+    )
+    return "1x2_1h grades on HT score; missing HT score skips rather than guessing"
+
+
+@test("COOLBET-PROBE — one request answers 'is Coolbet answering?' without a sweep")
+def test_coolbet_probe_2026_09_11():
+    """COOLBET-PROBE (2026-09-11). Added because the only way to learn whether an
+    Imperva escalation had decayed was to run a sweep — and running a sweep is
+    exactly what sustains the escalation. The question was unanswerable without
+    making the answer worse.
+
+    Must stay ONE request, and must run ABOVE the pause check: probing while
+    paused is the entire point.
+    """
+    import inspect
+    from workers.automation import coolbet_explorer as ce
+
+    assert hasattr(ce, "probe_coolbet_reachable")
+    src = inspect.getsource(ce.probe_coolbet_reachable)
+    # exactly one outbound call — a probe that sweeps is not a probe
+    assert src.count("sess.get(") == 1, "the probe must make ONE request"
+    assert "run_board_sweep" not in src and "run_bulk" not in src
+
+    # the three states must stay distinguishable: 'challenged' (still flagged,
+    # wait) vs 'down' (our own plumbing) are different actions entirely.
+    for state in ("ok", "challenged", "down"):
+        assert f'"{state}"' in src, f"probe must be able to report {state}"
+
+    main_src = inspect.getsource(ce.main)
+    assert "probe" in main_src, "--probe must be wired into main"
+    assert main_src.index("args, \"probe\"") < main_src.index("is_daemons_paused"), (
+        "the probe must run BEFORE the pause check — its whole purpose is to "
+        "answer 'has the flag decayed?' while the footprint is paused"
+    )
+    return "probe is one request, states distinguishable, runs while paused"
+
+
 @test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")
 def test_kuma_push_helper():
     """KUMA-PUSH-HELPER (2026-07-07): workers/utils/kuma.py is the

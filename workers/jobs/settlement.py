@@ -223,6 +223,55 @@ def _r_1x2(market, selection, home_goals, away_goals, stats):
     return False
 
 
+def _ht_score(match_id) -> tuple[int, int] | None:
+    """(ht_home, ht_away) for a match, or None when the half-time score is not
+    recorded. Read lazily because 1H bets are rare (a handful a day), so one
+    small query per 1H bet is cheaper than threading half-time state through
+    every settlement caller."""
+    try:
+        from workers.api_clients.supabase_client import execute_query
+        rows = execute_query(
+            "SELECT ht_score_home, ht_score_away FROM matches WHERE id = %s",
+            (str(match_id),),
+        )
+    except Exception as e:  # noqa: BLE001 — a lookup failure must SKIP, not grade
+        console.print(f"  [dim]ht score lookup failed for {match_id}: {e}[/dim]")
+        return None
+    if not rows:
+        return None
+    h, a = rows[0].get("ht_score_home"), rows[0].get("ht_score_away")
+    if h is None or a is None:
+        return None
+    return int(h), int(a)
+
+
+def _r_1x2_1h(market, selection, home_goals, away_goals, stats):
+    """First-half 1x2, graded on the HALF-TIME score.
+
+    1X2-1H-SETTLEMENT (2026-09-11). `bot_1h_1x2_paper_shadow_v1` has been
+    writing 1x2_1h picks since 2026-09-10 with no resolver, so every one piled
+    up as "Unsettleable market" and alerted on repeat — the same gap the
+    team_total fix closed a day earlier.
+
+    The full-time goals passed in are the WRONG input here and must never be
+    used: a team can lead at half-time and lose. When the half-time score is
+    absent we return _UNSETTLEABLE (leave pending + alert) rather than falling
+    back to full-time, because a silently wrong grade is far worse than an
+    ungraded bet — it would manufacture a track record out of the wrong match.
+    """
+    ht = (stats or {}).get("_ht_score")
+    if not ht:
+        return _UNSETTLEABLE
+    hh, ha = ht
+    if selection == "home":
+        return hh > ha
+    if selection in ("draw", "x"):
+        return hh == ha
+    if selection == "away":
+        return ha > hh
+    return _UNSETTLEABLE
+
+
 def _r_ou_goals(market, selection, home_goals, away_goals, stats):
     total_goals = home_goals + away_goals
     line = _parse_ou_line(market, selection)
@@ -374,6 +423,7 @@ _SETTLEMENT_REGISTRY = [
     (lambda m: m == "draw_no_bet", _r_draw_no_bet),
     (lambda m: re.match(r"^corners_ou_\d+$", m) is not None, _r_corners_ou),
     (lambda m: _TEAM_TOTAL_RE.match(m) is not None, _r_team_total),
+    (lambda m: m == "1x2_1h", _r_1x2_1h),
     # cards_ou is DELIBERATELY absent — see CARDS-SETTLEMENT-EVENTS-DEF-GUARD
     # below. Cards are not cleanly settleable yet (thin Pinnacle anchor), so they
     # SKIP. When that changes, a resolver MUST use cards_total_from_events().
@@ -465,6 +515,13 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
     selection = bet["selection"].lower().strip()
     stake = float(bet["stake"])
     odds = float(bet["odds_at_pick"])
+
+    # 1H markets grade on the HALF-TIME score, which most callers do not pass.
+    # Fetch it here so no caller has to know, and so a missing HT score becomes
+    # a SKIP (leave pending + alert) rather than a silent full-time misgrade.
+    if market.endswith("_1h") or "_1h_" in market:
+        stats = dict(stats or {})
+        stats["_ht_score"] = _ht_score(bet.get("match_id"))
 
     resolver = None
     for pred, fn in _SETTLEMENT_REGISTRY:

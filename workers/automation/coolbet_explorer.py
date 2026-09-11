@@ -1605,6 +1605,63 @@ def _cat_should_skip(memo: dict, cat_id) -> bool:
     return streak > 0 and (streak % _CAT_PROBE_EVERY) != 0
 
 
+def probe_coolbet_reachable(*, session_name: str | None = None) -> dict:
+    """ONE request. Is Coolbet answering this machine right now?
+
+    COOLBET-PROBE (2026-09-11). Added because the only way to find out whether
+    an Imperva escalation had decayed was to run a sweep — and running a sweep
+    is precisely what sustains the escalation. That made the question
+    unanswerable without making the answer worse.
+
+    Deliberately minimal: a single `fo-tree` GET, the same call the sweep opens
+    with, so a green probe means the sweep's first hop will work. It is cheap
+    enough to poll occasionally while paused WITHOUT rebuilding the footprint
+    we just removed.
+
+    Distinguishes the three states that look alike from the outside:
+      * `ok`        — answered with a usable body
+      * `challenged`— FlareSolverr reached it but could not solve the Imperva
+                      challenge (HTTP 500 / "Error solving the challenge"), or
+                      the direct path was BLACKHOLED into a read timeout.
+                      This is §2/§6: still flagged, keep waiting.
+      * `down`      — our own plumbing (FS not running, import failure). Ours
+                      to fix, nothing to do with Coolbet.
+
+    Returns {"state", "detail", "elapsed_s", "bytes"}. Never raises.
+    """
+    import time as _t
+    t0 = _t.time()
+    try:
+        sess = CoolbetSession(require_auth=False)
+    except Exception as e:  # noqa: BLE001
+        return {"state": "down", "detail": f"session init failed: {e}",
+                "elapsed_s": round(_t.time() - t0, 1), "bytes": 0}
+    try:
+        resp = sess.get(_FO_TREE_URL, params={"country": "EE"})
+        body = getattr(resp, "text", "") or ""
+        n = len(body)
+        # A challenge page is small and is not JSON; a real board is large.
+        try:
+            resp.json()
+            parsed = True
+        except Exception:  # noqa: BLE001
+            parsed = False
+        if parsed and n > 500:
+            return {"state": "ok", "detail": "fo-tree answered with a parseable board",
+                    "elapsed_s": round(_t.time() - t0, 1), "bytes": n}
+        return {"state": "challenged",
+                "detail": f"answered but not a usable board ({n} bytes, "
+                          f"parsed={parsed}) — treat as still flagged",
+                "elapsed_s": round(_t.time() - t0, 1), "bytes": n}
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        challenged = ("500" in msg or "timed out" in msg.lower()
+                      or "timeout" in msg.lower())
+        return {"state": "challenged" if challenged else "down",
+                "detail": msg[:200],
+                "elapsed_s": round(_t.time() - t0, 1), "bytes": 0}
+
+
 def run_board_sweep(
     *,
     dry_run: bool = False,
@@ -2168,6 +2225,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--match-id", help="Inspect a single match by our matches.id")
     ap.add_argument("--days", type=int, default=2, help="Bulk window in days (default 2)")
+    ap.add_argument("--probe", action="store_true",
+                    help="ONE request: is Coolbet answering right now? Prints "
+                         "ok|challenged|down. Safe to poll while paused — it "
+                         "does not rebuild the footprint. Exit 0=ok, 1=challenged, 2=down.")
     ap.add_argument("--kickoff-band", metavar="LO:HI",
                     help="Sweep only fixtures kicking off in [LO,HI) hours from "
                          "now, e.g. '0:6'. Overrides --days. Cuts footprint AND "
@@ -2190,6 +2251,20 @@ def main() -> None:
                     help="With --board: only consider Coolbet events kicking off within this many "
                          "hours (near-term filter; default 96)")
     args = ap.parse_args()
+
+    # COOLBET-PROBE: deliberately ABOVE the pause check. The whole point of the
+    # probe is to answer "has the Imperva flag decayed yet?" WHILE paused —
+    # otherwise the only way to find out is to resume the sweep, which is what
+    # sustains the escalation in the first place. One request; safe to poll.
+    if getattr(args, "probe", False):
+        r = probe_coolbet_reachable()
+        colour = {"ok": "green", "challenged": "yellow", "down": "red"}[r["state"]]
+        console.print(f"[{colour}]coolbet probe: {r['state'].upper()}[/{colour}] "
+                      f"({r['elapsed_s']}s, {r['bytes']} bytes) — {r['detail']}")
+        if r["state"] == "challenged":
+            console.print("[dim]still flagged — keep the footprint paused and "
+                          "re-probe later; do NOT resume the sweep to test it[/dim]")
+        sys.exit({"ok": 0, "challenged": 1, "down": 2}[r["state"]])
 
     # COOLBET-DAEMONS-PAUSE: the global footprint pause (set from /admin/shadow-bots
     # to calm Imperva). Skip the sweep runs — a manual --match-id inspect is still
