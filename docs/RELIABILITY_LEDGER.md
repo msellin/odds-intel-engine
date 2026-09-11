@@ -248,6 +248,40 @@ about (484k/day), turning 76 GB/yr into a claimed 310. **Both errors share a
 cause — comparing a fresh measurement against an old claim without first
 checking that the two measure the same thing.**
 
+## 13. An alerter's own bookkeeping is production code
+
+2026-09-11: `odds_freshness._set_dedup_row` wrote a column that has never
+existed (`last_reason`; migration 258 created `last_alert_reason`). The write
+raised on every call, the module's broad `except` logged it as a warning, and
+the DB dedup layer for the Epicbet watchdog was **dead from the day it
+shipped** — `pipeline_health_state` never held a single `epicbet_odds` row.
+
+Nothing looked broken, because the alert still *sent*. What broke was the part
+that decides **how often** — and that half has no output of its own to check.
+
+Three properties that make this class invisible:
+
+1. **The broad `except` that keeps the alerter alive also hides its own
+   failures.** `check_feed` is deliberately written to never raise ("an alerter
+   that dies takes the alerting with it") — correct, and it means a bug in the
+   alerter is a log line nobody reads, not an incident.
+2. **The fallback dedup was in-process.** `send_telegram`'s `_LAST_SENT` is a
+   dict, wiped on every restart — which is *exactly* the failure mode migration
+   258 was created to survive. The scheduler restarted **4 times in 90 minutes**
+   on routine deploys that day, so the true alert re-fired per restart.
+3. **A dedup marker that is never written can never be cleared**, so the
+   `✅ recovered` path was unreachable too. The bug hid its own recovery signal.
+
+The operational cost is not a missing alert — it is the opposite. A real outage
+alerts so often that the operator learns to ignore the channel, which is how the
+next real one gets missed.
+
+**Guard:** smoke `ODDS-FRESHNESS-DEDUP-COLUMN` pins both halves — the SQL may
+name only columns present in the live `information_schema`, **and** the writer
+is exercised and round-tripped, because valid-but-wrong SQL passes a
+source-only check. When adding a healthcheck, the dedup write is not plumbing
+to be eyeballed; test it like the alert itself.
+
 ## 12. A column filled by a nightly backfill can never be a model feature
 
 Added 2026-09-11, after two features were proposed for the production ensemble

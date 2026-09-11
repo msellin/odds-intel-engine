@@ -62,13 +62,35 @@ def _read_dedup_row(bookmaker: str) -> dict | None:
 
 
 def _set_dedup_row(bookmaker: str, *, ts: datetime | None, reason: str | None) -> None:
+    """Persist the dedup marker.
+
+    ODDS-FRESHNESS-DEDUP-COLUMN (2026-09-11): this wrote `last_reason`, but the
+    column created by migration 258 is `last_alert_reason` — no migration has
+    ever created `last_reason`. Every call therefore raised UndefinedColumn,
+    which the broad `except` in check_feed() swallowed as a log warning, so the
+    DB dedup layer was 100% dead for this watchdog from the day it shipped.
+
+    Why that mattered rather than being cosmetic: `send_telegram`'s own dedup is
+    an IN-PROCESS dict (`_LAST_SENT`), so it is wiped on every scheduler
+    restart — which is the exact failure mode migration 258 was created to
+    survive. With the DB layer dead, the Epicbet stale alert re-fired on every
+    restart instead of once per 12h, and the "✅ recovered" message could never
+    clear a marker that was never written. That is how a true alert decays into
+    noise the operator learns to ignore.
+
+    Also sets `updated_at` on the UPDATE path, matching every other consumer
+    (flaresolverr_health, coolbet_odds_freshness, retrain_healthcheck); the
+    column's DEFAULT NOW() only fires on INSERT.
+    """
     from workers.api_clients.db import execute_write
     execute_write(
-        """INSERT INTO pipeline_health_state (pipeline_name, last_alert_at, last_reason)
-           VALUES (%s, %s, %s)
+        """INSERT INTO pipeline_health_state
+               (pipeline_name, last_alert_at, last_alert_reason, updated_at)
+           VALUES (%s, %s, %s, NOW())
            ON CONFLICT (pipeline_name)
-           DO UPDATE SET last_alert_at = EXCLUDED.last_alert_at,
-                         last_reason   = EXCLUDED.last_reason""",
+           DO UPDATE SET last_alert_at     = EXCLUDED.last_alert_at,
+                         last_alert_reason = EXCLUDED.last_alert_reason,
+                         updated_at        = NOW()""",
         (_pipeline_name(bookmaker), ts, reason),
     )
 

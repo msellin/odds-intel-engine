@@ -38192,5 +38192,69 @@ def test_bots_describe():
     assert mod.run(active_only=True, show_sql=False) == 0, "the tool must run"
 
 
+@test("ODDS-FRESHNESS-DEDUP-COLUMN — the staleness watchdog's dedup row actually writes")
+def test_odds_freshness_dedup_column_2026_09_11():
+    """ODDS-FRESHNESS-DEDUP-COLUMN (2026-09-11). `odds_freshness._set_dedup_row`
+    wrote `last_reason`; migration 258 created `last_alert_reason` and no
+    migration has ever created `last_reason`. Every call raised UndefinedColumn,
+    swallowed by the broad `except` in check_feed() as a log warning — so the DB
+    dedup layer was dead from the day the Epicbet watchdog shipped.
+
+    Why this is a real bug and not cosmetic: send_telegram's own dedup is an
+    in-process dict, wiped on every scheduler restart, which is precisely the
+    failure mode migration 258 exists to survive. Dead DB dedup => the Epicbet
+    stale alert re-fires per restart rather than once per 12h, and the recovery
+    message can never clear a marker that was never written.
+
+    Pins BOTH halves, because either alone would have missed it: the SQL names
+    only columns that exist in the live table, and the writer is exercised
+    for real so a future rename cannot pass a source-only check.
+    """
+    import re
+    import inspect
+    from workers.api_clients.db import execute_query
+    from workers.jobs import odds_freshness as of
+
+    live = {c["column_name"] for c in execute_query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'pipeline_health_state'"
+    )}
+    assert live, "pipeline_health_state must exist (migration 258)"
+
+    # Scan the SQL only — the docstring deliberately names the OLD column, and
+    # a naive scan of the whole source would flag its own explanation.
+    src = inspect.getsource(of._set_dedup_row)
+    src = src[src.index("execute_write("):]   # SQL only, not the docstring
+    named = set(re.findall(r"\blast_[a-z_]+\b", src))
+    unknown = named - live
+    assert not unknown, (
+        f"_set_dedup_row references column(s) {sorted(unknown)} that do not "
+        f"exist in pipeline_health_state {sorted(live)} — the write would raise "
+        f"and be swallowed, killing the dedup layer silently"
+    )
+
+    # Exercise the real writer round-trip: a source check alone would still pass
+    # if the SQL were valid but wrote nothing.
+    probe = "smoke_probe_odds_freshness"
+    of._pipeline_name  # ensure attribute exists before monkeypatching
+    orig = of._pipeline_name
+    try:
+        of._pipeline_name = lambda bookmaker: probe
+        of._set_dedup_row("Epicbet", ts=None, reason="smoke probe")
+        row = execute_query(
+            "SELECT last_alert_reason FROM pipeline_health_state "
+            "WHERE pipeline_name = %s", (probe,),
+        )
+        assert row and row[0]["last_alert_reason"] == "smoke probe", (
+            "the dedup row must actually persist the reason"
+        )
+    finally:
+        of._pipeline_name = orig
+        from workers.api_clients.db import execute_write
+        execute_write("DELETE FROM pipeline_health_state WHERE pipeline_name = %s",
+                      (probe,))
+
+    return "dedup row writes to last_alert_reason and round-trips"
+
 if __name__ == "__main__":
     main()
