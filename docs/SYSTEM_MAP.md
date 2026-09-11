@@ -104,9 +104,9 @@ Same-looking numbers, different meaning per screen. This is the glossary.
 
 | Where you see it | The number | What it actually is |
 |---|---|---|
-| **/picks** — "edge" | model edge | `cal_prob − 1/odds` at the price the pick was found. NOT gated to 13% here — the page shows all model picks; the gate is at *placement*. |
+| **/picks** — "edge" | model edge | `cal_prob − 1/odds` at the price the pick was found. **There is NO edge gate on this page at all** — not 13%, not any value. It publishes every model pick from an eligible bot; the gate is at *placement*. (Corrected 2026-09-11: the old wording "NOT gated to 13% here" implied some other floor applied.) Also undocumented until now: a silent `.limit(300)` truncation, and a cohort split — signed-out sees `calibrated` only, signed-in sees `calibrated+beta+active`. |
 | **/picks** — "min odds" (public) | break-even | `1/cal_prob` (edge = 0). Below this the bet is −EV under our model. |
-| **/picks** — "place ≥ X.XX" (admin only) | placement trigger | the odds a pick must be offered at to clear the **real-money** floor: `1/(cal_prob − edge_floor)`, floor = 13%/8%. What the placer needs to see. |
+| **/picks** — "place ≥ X.XX" (admin only) | placement trigger | the odds a pick must be offered at to clear the **real-money** floor: `1/(cal_prob − edge_floor)`. ⚠️ floor is **10%** for 1x2 home-underdogs (FAVLONG-CUTS), 8% O/U — and these are **hardcoded in TypeScript** (`upcoming-picks.ts`) with no import path to Python, so an engine floor change never reaches this hint. See §4d. |
 | **/shadow-bots** — bot "ROI" | realised | settled paper/real P&L at the executable price. Retired bots' losses are in the "including retired" total only. |
 | **/shadow-bots** — bot "CLV" | closing-line value | edge vs the closing line — the leading indicator; ROI is noisier at low n. |
 | **`value_v1` / line-shop** — "edge ≥ 3%" | sharp edge | `P_sharp − 1/odds`. A different edge from /picks (§1). |
@@ -116,24 +116,128 @@ Same-looking numbers, different meaning per screen. This is the glossary.
 
 ## 4. The real-money gate stack (Coolbet own-betting)
 
-A pick becomes a real staked bet ONLY if it clears every gate, in order. Miss any one
-→ no stake. Full detail: `docs/COOLBET_OWN_BETTING.md`.
+**Rewritten 2026-09-11 after a full gate audit.** The previous version of this
+section described gates that do not exist on this path, omitted the largest block
+of gates that do, and claimed a single-source-of-truth that is not true. Corrections
+are called out inline so the old claims are not silently replaced.
 
-1. **Bot is placeable** — in `scripts/place_coolbet_ui.py` `PLACEABLE_BOTS`
-   (currently: `bot_coolbet_1x2_model_v1`, `bot_coolbet_ou_model_v1`). Structural —
-   paper bots can never reach here.
-2. **Per-bot real-money toggle ON** — `coolbet_placer_bots.ui_place_enabled`.
-3. **Not globally paused** — `placement_paused` / `daemons_paused` both false.
-4. **Per-market edge floor** — model edge ≥ the floor for that bot. Pooled/paper floor
-   `_MIN_EDGE_BY_MARKET` = 13% 1x2 / 8% O/U. **The real-money placeable 1x2 bot is the
-   exception (FAVLONG-CUTS-2026-09-09): home-underdogs @10% via its per-bot
-   `BOT_THRESHOLDS` gate** (home-favs + aways excluded; draws→sharp triggers). O/U 8%.
-5. **Per-market odds floor** — odds ≥ `_MIN_ODDS_BY_MARKET` (2.80 / 1.80).
-6. **Live-edge re-check** at current price, **maturity**, **pre-match only**,
-   **blast-radius** caps.
+Full detail: `docs/COOLBET_OWN_BETTING.md`. Recurring failure patterns:
+`docs/RELIABILITY_LEDGER.md`.
 
-The floors in steps 4–5 live in `workers/automation/coolbet_placer.py` and are the
-single source the /picks "place ≥" hint, the trigger bots, and this map all read.
+### 4a. There are TWO real-money paths, not one
+
+| Path | Entry | Status |
+|---|---|---|
+| **Coolbet UI placer** | `scripts/place_coolbet_ui.py --execute` | live, hourly 06-21 UTC |
+| **Best-price router** | `workers/automation/best_price_router.py::route` | built, **owner-gated OFF** (`ROUTER_ALLOW_REAL` unset) |
+
+⚠️ **Previously undocumented.** The router can place at **Coolbet OR Unibet-Site**
+(`PLACEABLE_BOOKS`), so "Coolbet own-betting" no longer describes the whole surface.
+It reuses `place_coolbet_ui`'s gate functions rather than copying them — the only
+place in the codebase that pattern is followed.
+
+### 4b. The UI placer, in execution order
+
+**Run-level** (`scripts/place_coolbet_ui.py`)
+
+| # | Gate | Effect if failed |
+|---|---|---|
+| R1 | `single_run_lock()` flock | SKIP the run |
+| R2 | `effective_allowlist() = PLACEABLE_BOTS ∩ ui_place_enabled_bots()` — DB read **fails CLOSED** | bot forced to **dry-run**, not an error |
+| R3 | session alive / `cdp_auto_login` | **abort**, Telegram lockout alert |
+| R4 | `detect_block()` (Imperva) | **abort** — do not retry or re-login |
+| R5 | account verify `fetch_account_holds()` — **fails CLOSED** | every bot forced dry-run for the run |
+
+**Per-pick**
+
+| # | Gate | Value | Effect |
+|---|---|---|---|
+| P1 | `already_placed(shadow_bet_id)` | — | SKIP, no audit row |
+| P2 | pick already on the Coolbet account | — | rejected + audit row |
+| P3 | kickoff cutoff | `KICKOFF_CUTOFF_MIN = 3` min | rejected, **no audit row** |
+| P4 | per-market odds floor | 1x2 **2.80** / O/U **1.80** | rejected |
+| P5 | `exposure_conflict()` — exact dup, same market FAMILY, per-match caps | `MAX_BETS_PER_MATCH=2`, `MAX_STAKE_PER_MATCH=20` | rejected |
+| P6 | daily caps | `MAX_BETS_PER_DAY=80`, `MAX_STAKE_PER_DAY=800` | **ABORTS the whole run** |
+
+⚠️ **Correction.** The old step 6 compressed P1-P6 into the phrase "blast-radius caps"
+and named none of the numbers. The daily caps were raised 20→80 / 200→800 on
+2026-09-05 and this map never recorded it.
+
+**Inside `stage_bet`** (`workers/automation/coolbet_ui_placer.py`)
+
+Search → match → open → read prices → resolve outcome → **min-odds gate** → drift →
+stake (verified by read-back) → slip → place. Every exit writes exactly one
+`coolbet_placement_attempts` row; nothing here raises to the caller.
+
+| Gate | Note |
+|---|---|
+| **min-odds** `outcome.odds < min_odds_for(bet, threshold)` | `min_odds_for = 1/(cal_prob − threshold)` — the GATE floor, not break-even (`1/cal_prob`) |
+| odds-drift `max_odds_drop_pct` | ⚠️ **defaults to 100.0 and `place_for_bot` never overrides it — this gate is effectively DEAD.** Open decision. |
+| `is_placement_paused()` | ⚠️ checked HERE, i.e. *after* the stake is typed — see 4c |
+| single-leg `slip_ticket_count() != 1` | refuse |
+| balance-delta confirmation | "confirm by evidence, never by absence of an exception" |
+
+### 4c. Corrections to the old step list
+
+- ⚠️ **Old step 3 was wrong.** `place_coolbet_ui.py` checks **neither**
+  `placement_paused` nor `daemons_paused` at run level. `placement_paused` is read
+  only inside `stage_bet`, *after* search, price read and stake entry — the kill
+  switch fires late. `daemons_paused` is not checked on this path at all.
+- ⚠️ **Old step 4 described an edge gate this script does not have.**
+  `place_coolbet_ui.py` contains **no edge comparison**. The floor reaches money only
+  indirectly, as the min-odds translation above. Until 2026-09-11 that translation
+  **failed OPEN**: when no floor was computable the gate was skipped and the bet
+  placed ungated — including for picks whose probability was at or below the bot's
+  threshold, i.e. those that could never clear it at any price
+  (`PLACER-EDGE-GATE-FAILED-OPEN`). It now refuses.
+- ⚠️ **`maturity_label` does NOT gate the UI placer.** It gates the Mac daemon, the
+  Telegram public channel, the mirror jobs and every web surface — not this path.
+  Safe today only because `PLACEABLE_BOTS` is hardcoded.
+- ⚠️ **`load_picks` has no `retired_at` / `is_active` check**, unlike
+  `coolbet_placer.load_qualified_bets`. Same reason it is currently safe.
+
+### 4d. The floors — and where they are NOT the single source
+
+The policy is unchanged and still correct: pooled `_MIN_EDGE_BY_MARKET` = **13% 1x2 /
+8% O/U**; the real-money 1x2 bot takes the **FAVLONG-CUTS** exception —
+**home-underdogs (home, odds ≥ 2.80) at 10%**, home-favs and aways excluded, draws to
+the sharp triggers. Odds floors **2.80 / 1.80**.
+
+Since 2026-09-11 the comparison itself is shared, not just the number:
+
+```python
+clears_edge_floor(market, selection, odds, edge)   # workers/automation/coolbet_placer.py
+```
+
+Sharing only the FLOOR proved insufficient twice in one day — once via a
+selection-blind floor (home-underdogs placed but never signaled), once via a
+Decimal-vs-float comparison that silently dropped every pick sitting exactly ON its
+floor. See `RELIABILITY_LEDGER.md`.
+
+⚠️ **The old closing claim was false and is withdrawn.** It read: *"The floors in
+steps 4-5 live in `coolbet_placer.py` and are the single source the /picks 'place ≥'
+hint, the trigger bots, and this map all read."* Audited 2026-09-11:
+
+| Policy | Copies | Where |
+|---|---|---|
+| Edge floors 0.10 / 0.08 | **6** | `_MIN_EDGE_BY_MARKET`, `_MODEL_1X2_HOME_FLOOR`, `BOT_THRESHOLDS`, `coolbet_model_1x2_shadow.EDGE_FLOOR`, `coolbet_model_ou_shadow.EDGE_FLOOR`, `upcoming-picks.ts` |
+| Odds floors 2.80 / 1.80 | **4** | `_MIN_ODDS_BY_MARKET`, `MIN_ODDS_FOR_PLACEMENT`, `coolbet_model_1x2_shadow` SQL, `upcoming-picks.ts` |
+| Home-underdog rule | **3 implementations** | `min_edge_for_pick` (Python), shadow-mirror SQL, `upcoming-picks.ts` (TypeScript) |
+
+`/picks` hardcodes `0.1/2.8` and `0.08/1.8` **in TypeScript with no import path to
+Python**, so a floor change in the engine never reaches the published "place ≥" hint.
+Consolidating these is tracked as the follow-up to `EDGE-FLOOR-ONE-PREDICATE`.
+
+### 4e. Gates BEFORE any of this (generation)
+
+This map used to jump straight from bots to placement. Far more picks are dropped
+upstream, in `workers/jobs/daily_pipeline_v2.py`: `ACCESSIBLE_BOOKMAKERS`
+(Coolbet/Betano/Unibet/Epicbet), OU-PIN-REQUIRED (no Pinnacle reference ⇒ the O/U
+selection is dropped for every book), the outlier multipliers, the Pinnacle veto gap
+(0.12; 0.22 AH/DC), the anchor-gap mid-band bump, a hardcoded Scottish-Premiership
+skip, per-bot tier/league/market filters, and the min-edge + odds-range gate at
+`:3527`. Detail lives in that file; named here so the map stops implying placement is
+where filtering begins.
 
 ---
 

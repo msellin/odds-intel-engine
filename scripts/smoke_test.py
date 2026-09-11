@@ -22804,6 +22804,60 @@ def test_placer_edge_gate_fails_closed_2026_09_11():
     return "no computable floor now refuses the bet instead of placing it ungated"
 
 
+@test("DAILY-SUMMARY-REPORTED-ZERO — the 24h count must not filter itself to nothing")
+def test_daily_summary_reported_zero_2026_09_11():
+    """DAILY-SUMMARY-REPORTED-ZERO (2026-09-11). The daily Telegram summary read
+    `WHERE bookmaker = 'coolbet'` — lowercase — while real_bets stores 'Coolbet'
+    and 'Unibet'. Postgres string comparison is case-sensitive, so the filter
+    matched NOTHING and the summary reported
+
+        24h: 0 placed · W0/L0 · pnl €+0.00
+
+    on a day with 7 real bets and €70 staked. The comment above it claimed the
+    filter existed "to keep the line semantically correct".
+
+    A status line that confidently reports 0 is worse than no status line: it
+    teaches the operator that nothing happened. Same family as
+    RELIABILITY_LEDGER pattern 1 (an alert naming a cause it cannot evidence).
+
+    Also pinned: the count must stay BOOK-AGNOSTIC. The best-price router can
+    place at Unibet-Site, so a Coolbet-only count would under-report by design
+    the moment ROUTER_ALLOW_REAL is switched on.
+    """
+    import inspect
+    from workers.jobs import coolbet_daily_summary as cds
+
+    # CODE only — the comment in _gather_state quotes the buggy literal in
+    # order to explain it. (RELIABILITY_LEDGER pattern 9: when asserting on
+    # source, inspect code, not comments. This is the third time today.)
+    raw = inspect.getsource(cds._gather_state)
+    src = "\n".join(l for l in raw.splitlines() if not l.lstrip().startswith("#"))
+    assert "bookmaker = 'coolbet'" not in src, (
+        "case-sensitive lowercase literal — real_bets stores 'Coolbet'"
+    )
+    # no single-book filter at all on the 24h activity count
+    act = src[src.index("activity = execute_query"):src.index("activity_by_book_24h")]
+    assert "bookmaker =" not in act and "bookmaker=" not in act, (
+        "the 24h count must be book-agnostic: the router can place at "
+        "Unibet-Site, so filtering to one book under-reports real money"
+    )
+    assert "FROM real_bets" in act and "24 hours" in act
+
+    # any bookmaker comparison that DOES exist must be case-insensitive
+    for line in src.splitlines():
+        if "bookmaker" in line and "=" in line and "'" in line:
+            assert "lower(" in line.lower() or "GROUP BY" in line, (
+                f"case-sensitive bookmaker comparison reintroduced: {line.strip()!r}"
+            )
+
+    # the rendered line must carry the real figures, not a bare count
+    fmt = inspect.getsource(cds._format_summary)
+    assert "placed_24h" in fmt and "staked" in fmt, (
+        "show stake alongside the count — a count alone cannot be sanity-checked"
+    )
+    return "24h activity counts every book, case-insensitively"
+
+
 @test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")
 def test_kuma_push_helper():
     """KUMA-PUSH-HELPER (2026-07-07): workers/utils/kuma.py is the

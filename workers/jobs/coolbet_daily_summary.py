@@ -76,18 +76,42 @@ def _gather_state() -> dict:
     )
     out: dict = dict(state[0]) if state else {}
 
-    # 24h real-bet activity. Count + W/L/P + PnL. coolbet only — explicit
-    # bookmaker filter to keep the line semantically correct.
+    # 24h real-bet activity. Count + W/L/P + PnL.
+    #
+    # DAILY-SUMMARY-REPORTED-ZERO (fixed 2026-09-11). This read
+    # `WHERE bookmaker = 'coolbet'` — lowercase — while `real_bets` stores
+    # 'Coolbet' and 'Unibet'. Postgres string comparison is case-sensitive, so
+    # the filter matched NOTHING and the daily Telegram summary reported
+    # "24h: 0 placed · W0/L0 · pnl €+0.00" on a day with 7 real bets and €70
+    # staked. The comment it replaces claimed the filter existed "to keep the
+    # line semantically correct" — the filter added for correctness is exactly
+    # what broke it.
+    #
+    # A status line that confidently reports 0 is worse than no status line:
+    # it actively teaches the operator that nothing happened. Treat it like any
+    # other alert that names a cause it has no evidence for
+    # (RELIABILITY_LEDGER pattern 1).
+    #
+    # Now case-insensitive AND book-agnostic: the best-price router can place at
+    # Unibet-Site too, so a Coolbet-only count would under-report by design the
+    # moment ROUTER_ALLOW_REAL is switched on. The per-book split is reported
+    # separately below so the line stays legible.
     activity = execute_query(
         """SELECT COUNT(*)                                    AS placed,
                   COUNT(*) FILTER (WHERE result = 'won')      AS won,
                   COUNT(*) FILTER (WHERE result = 'lost')     AS lost,
                   COUNT(*) FILTER (WHERE result = 'pending')  AS pending,
+                  COALESCE(SUM(stake), 0)                     AS staked,
                   COALESCE(SUM(pnl) FILTER (WHERE result IN ('won','lost','push')), 0) AS pnl_24h
              FROM real_bets
-            WHERE bookmaker = 'coolbet'
-              AND placed_at >= NOW() - INTERVAL '24 hours'"""
+            WHERE placed_at >= NOW() - INTERVAL '24 hours'"""
     )
+    out["activity_by_book_24h"] = execute_query(
+        """SELECT bookmaker, COUNT(*) AS n
+             FROM real_bets
+            WHERE placed_at >= NOW() - INTERVAL '24 hours'
+            GROUP BY 1 ORDER BY 2 DESC"""
+    ) or []
     out["activity_24h"] = dict(activity[0]) if activity else {}
 
     # Today's calibrated queue. Mirror the cherry-pick placer's gate so
@@ -156,6 +180,9 @@ def _format_summary(s: dict) -> str:
     queue = s.get("queue_today") or {}
 
     placed_24h = int(activity.get("placed") or 0)
+    _books = s.get("activity_by_book_24h") or []
+    _book_split = (" (" + ", ".join(f"{b['bookmaker']} {b['n']}" for b in _books) + ")"
+                   if len(_books) > 1 else "")
     won_24h = int(activity.get("won") or 0)
     lost_24h = int(activity.get("lost") or 0)
     pnl_24h = float(activity.get("pnl_24h") or 0)
@@ -203,11 +230,14 @@ def _format_summary(s: dict) -> str:
         f"",
         readiness_line,
         f"",
-        f"🔑 JWT: TTL {_fmt_age(jwt_ttl) if (jwt_ttl is not None and jwt_ttl > 0) else 'expired'}",
-        f"🛰 Scheduler HB: {_fmt_age(hb_age)} ago · ok={bool(s.get('last_heartbeat_ok'))}",
+        f"🔑 JWT: TTL {_fmt_age(jwt_ttl) if (jwt_ttl is not None and jwt_ttl > 0) else 'expired'}"
+        f"   ↳ persisted DB token (odds/API path) — the UI placer does NOT need it; a live CDP session can be valid while this reads expired",
+        f"🛰 Scheduler HB: {_fmt_age(hb_age)} ago · ok={bool(s.get('last_heartbeat_ok'))}"
+        f"   ↳ odds/API path — NOT a real-money placement gate",
         f"🚨 Catch-net: {_fmt_age(prekickoff_age)} ago · sent={prek_sent}",
         f"",
-        f"📊 24h: {placed_24h} placed · W{won_24h}/L{lost_24h} · pnl €{pnl_24h:+.2f}",
+        f"📊 24h: {placed_24h} placed{_book_split} · W{won_24h}/L{lost_24h} "
+        f"· staked €{float(activity.get('staked') or 0):.2f} · pnl €{pnl_24h:+.2f}",
         f"📅 Today: {queued} calibrated picks queued"
         + (f" · first KO {first_ko_str}" if first_ko_str else ""),
     ]
