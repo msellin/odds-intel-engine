@@ -175,9 +175,57 @@ every group it admits is either measurably losing on executable pricing
 Real money is unaffected either way — the 2.80 odds floor plus the home-only
 mirror already restrict placement to home-underdogs.
 
-**Cost of retiring it: 20 of 152 published 1x2 picks over 90d (13%).** NB an
-earlier read of "47%" was measured across ALL `simulated_bets` including
-non-published bots; on what actually reaches the channel it is 13%.
+**Cost of retiring it: 34 of 152 published 1x2 picks over 90d (22%)** — of which
+23 are in the two measurably-negative bands (home-MID −7.6%, home-FAV −34.8% as
+published) and 11 are aways (+35.2% on n=11, i.e. noise). ⚠️ This figure was
+stated wrong twice on the way here, both times by me, and the reason is worth
+recording: **it moves depending on which price you bin the odds by.** Binning by
+`odds_at_pick` gave "20 of 152"; binning by the EXECUTABLE
+`COALESCE(odds_at_pick_live, odds_at_pick)` gives 34, because the stale
+high-water snapshot pushes picks across the 2.00/2.80 band boundaries. The
+canonical method says executable, so **34 / 22% is the number.** (An even earlier
+"47%" was measured across ALL `simulated_bets` including non-published bots —
+wrong population entirely.)
+
+### ⚠️ THIS RUN MOSTLY REPRODUCED WORK ALREADY DONE — read before running another
+
+The home-underdog result here (**+21.0%, n=212, robust in all folds**) is the same
+number FAVLONG-CUTS already recorded on 2026-09-09 (**+21%, n=206**). The AWAY
+caveat here ("n=18, the ✓ is 10 and 8 bets") is the same caveat FAVLONG-CUTS
+already wrote ("+43→+105% is 10–18 bets of luck"). Two days apart, same method,
+same answers — which is good news about the method and a warning about the habit.
+
+**The 13-vs-10 question is NOT open, and was not open when this run started.**
+Both numbers are decided and both are live, because they govern *different
+populations*:
+
+| | value | population | where |
+|---|---|---|---|
+| real-money 1x2 | **10%** | home-underdogs ONLY (home, odds ≥ 2.80) | `place_coolbet_ui.BOT_THRESHOLDS`, the 1x2 mirror, `_MODEL_1X2_HOME_FLOOR` |
+| pooled 1x2 | **13%** | all selections — trigger windows + publication | `_MIN_EDGE_BY_MARKET['1x2']` |
+
+They are not two answers to one question. Anyone reading "1x2 floor = 13%" as an
+unresolved dispute with 10% is reading a table that is describing both correctly.
+
+**The pooled floor's actual churn history** (`git log -L` on the constant), which
+is why this doc exists at all:
+
+| date | commit | pooled 1x2 |
+|---|---|---|
+| 2026-06-06 | `5de0380` PER-MARKET-EDGE-V2 | 0.03 → **0.10** ("backtest +14% ROI at ≥10%") |
+| 2026-09-08 | `121ecaf` BOT-CONFIG-GOLDEN-MIDDLE | 0.10 → **0.15** |
+| 2026-09-08 | `c14e87f` same day, reverted | 0.15 → **0.10** ("15% raise was overfit") |
+| 2026-09-08 | `f2d553b` EDGE-FLOOR-BACKTEST | 0.10 → **0.13** ("the validated 13%") |
+| 2026-09-09 | this doc created + FAVLONG-CUTS | 0.13 **locked**; real money carved to 10% home-underdogs |
+| 2026-09-11 | per-selection re-run (below) | **0.13 unchanged — no floor was moved** |
+
+Three changes in a single day, then the method was fixed and the churn stopped.
+**So the genuinely NEW content of the 2026-09-11 run is exactly one thing: the
+home-MID 2.00–2.80 band.** Every prior sweep split either at 2.00 (fav/long,
+which put MID inside LONG where home-underdogs' +17% masked it) or at 2.80
+(FAVLONG-CUTS, which left MID unclassified and falling through to the pooled
+floor). It was never isolated, which is precisely why it went unnoticed.
+
 
 **STILL OWNER-GATED, and deliberately not implemented yet** — "retire the pooled
 floor" means four different things to its four consumers, one of which would die
