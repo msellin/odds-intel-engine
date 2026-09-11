@@ -38054,6 +38054,89 @@ def test_pick_generator():
         assert c.prob_source in ("pipeline", "predictions"), c.prob_source
 
 
+@test("PREDICTIONS-SOURCE-OU — the wide candidate source covers O/U, per line, or refuses")
+def test_predictions_source_ou():
+    """PREDICTIONS-SOURCE-OU (2026-09-11). `prob_source='predictions'` covered
+    1x2 only, which left `bot_trigger_ou_model_v1` REGISTERED AND INERT — a bot
+    that exists, appears on every admin page, and writes nothing. A silent zero
+    is the failure mode this repo keeps paying for (the 1x2 mirror wrote 0 picks
+    for two days behind a swallowed SQL error), so the gap was closed rather
+    than documented a second time.
+
+    THE INVARIANT THAT MATTERS IS NOT "O/U WORKS" — it is that a market without
+    a calibrator still REFUSES. The whole trigger-bot incident was a calibration
+    applied where it did not belong: one pooled 1x2 curve over three different
+    events, under-estimating HOME by 10-15pp, which made those bots fire only on
+    longshots. So this pins both halves:
+
+      * the two canonical O/U lines each get their OWN fit (`ou25` / `ou35`) and
+        a line with no calibrator is skipped, never served the other line's curve
+      * a bare legacy 'o/u' — which does not say WHICH line — yields nothing
+      * every other market (btts, double_chance, asian_handicap) yields nothing
+
+    Over/under from ONE fit is sound where pooled 1x2 was not, and the reason is
+    structural, not a judgement call: on a .5 line the two outcomes are
+    exhaustive and cannot push, so P(under) = 1 - P(over) is exact. Pinned here
+    so a future "let's pool it for consistency" has to argue with the reason.
+    """
+    import inspect
+    from workers.automation import pick_generator as pg
+    from workers.automation.bot_configs import CONFIG_BY_NAME
+    from workers.jobs.pick_triggers import _fit_calibrator
+
+    # Per-line calibrators exist and are DIFFERENT curves.
+    c25, c35 = _fit_calibrator("ou25"), _fit_calibrator("ou35")
+    assert c25 is not None and c35 is not None, (
+        "both O/U lines must have their own isotonic fit"
+    )
+    assert abs(c25(0.55) - c35(0.55)) > 1e-6, (
+        "the 2.5 and 3.5 calibrators must be distinct fits — serving one line "
+        "the other's curve is the pooled-calibrator mistake in a new place"
+    )
+    # An unknown kind must refuse, not fall through to a default line.
+    assert _fit_calibrator("btts") is None, (
+        "an unknown calibrator kind must return None rather than guess"
+    )
+
+    src = _strip_prose(inspect.getsource(pg._predictions_ou))
+    assert '"over_under_25": ("ou25", "over25")' in src and \
+           '"over_under_35": ("ou35", "over35")' in src, (
+        "each canonical line must map to its OWN calibrator and its OWN "
+        "predictions market"
+    )
+    assert "1.0 - p_over" in src, (
+        "the under side must be the exact complement of the over fit — on a .5 "
+        "line the outcomes are exhaustive, so a second estimate would be both "
+        "redundant and inconsistent"
+    )
+    assert "_stamp_cal" in src, (
+        "picks must carry the calibrator revision, exactly as the 1x2 path "
+        "does: an unstamped pick is classified PRE-fix by "
+        "trigger_calibrator_check and silently corrupts the baseline that "
+        "gates the convergence epic"
+    )
+
+    # A market with no calibration must produce NOTHING rather than guess.
+    from workers.automation.pick_generator import BotConfig, _candidates_from_predictions
+    for markets in (("btts",), ("o/u",), ("asian_handicap",), ("double_chance",)):
+        cfg = BotConfig(bot_name="probe", shadow_cohort="probe",
+                        markets=markets, books=("Coolbet",),
+                        prob_source="predictions")
+        assert _candidates_from_predictions(cfg, 0.08) == [], (
+            f"prob_source='predictions' must yield nothing for {markets} — a "
+            f"bare 'o/u' does not even say which line, and the rest have no "
+            f"calibrator at all"
+        )
+
+    # And the bot that was inert is now declared live.
+    ou = CONFIG_BY_NAME["bot_trigger_ou_model_v1"]
+    assert ou.prob_source == "predictions" and ou.markets == ("over_under_25",)
+    assert "inert" not in ou.notes, (
+        "the config note must stop saying the bot is inert once it generates — "
+        "a stale note is how a known-zero bot stays invisible"
+    )
+
+
 @test("ODDS-ARRIVAL-HOOK-BOTH-SWEEPS — every book we place at fires the generator")
 def test_odds_arrival_hook_both_sweeps():
     """A hook wired on one of two books is a bug that only shows up as latency.

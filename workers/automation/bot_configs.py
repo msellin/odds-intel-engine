@@ -91,11 +91,12 @@ WIDE_CONFIGS: list[BotConfig] = [
         books=PLACEABLE_BOOKS,
         convert=_ou_convert,
         prob_source="predictions",
-        # Generates nothing yet: the predictions source covers 1x2 only and says
-        # so rather than guessing an O/U calibration. Registered now so the
-        # comparison is already wired when it gains one.
-        notes="paper twin of the real-money O/U bot; inert until the predictions "
-              "source supports O/U",
+        # RETIRED by migration 331 with the rest of WIDE_CONFIGS, so this never
+        # runs — but for the record: the predictions source gained O/U on
+        # 2026-09-11 (PREDICTIONS-SOURCE-OU), so the "inert" note that used to
+        # sit here is no longer the reason it does not generate.
+        notes="paper twin of the real-money O/U bot (retired — superseded by "
+              "bot_trigger_ou_model_v1)",
     ),
 ]
 
@@ -135,8 +136,8 @@ TRIGGER_CONFIGS: list[BotConfig] = [
         markets=("over_under_25",),
         books=PLACEABLE_BOOKS,
         prob_source="predictions",
-        notes="model-anchored O/U trigger, both books; inert until the "
-              "predictions source supports O/U",
+        notes="model-anchored O/U 2.5 trigger, both books; live since "
+              "PREDICTIONS-SOURCE-OU (2026-09-11)",
     ),
     BotConfig(
         bot_name="bot_trigger_1x2_sharp_v1",

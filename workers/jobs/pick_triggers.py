@@ -172,17 +172,31 @@ def _fit_calibrator(kind: str):
             f = fits.get((selection or "").strip().lower())
             return float(f.predict([praw])[0]) if f is not None else None
         return _cal_1x2
-    # ou25: over/under are complements of one event, so a single fit is sound
-    # here — unlike 1x2, where home/draw/away are three DIFFERENT events whose
-    # reliability diverges by ~20pp (see above).
+    # ou25 / ou35: over and under are COMPLEMENTS of one event, so a single fit
+    # is sound here — unlike 1x2, where home/draw/away are three DIFFERENT
+    # events whose reliability diverges by ~20pp (see above). The fit is on the
+    # OVER probability; the under side is 1 - that, which is exact because the
+    # two outcomes are exhaustive (a .5 line can never push).
+    #
+    # PREDICTIONS-SOURCE-OU (2026-09-11): 'ou35' added so the wide candidate
+    # source can cover the 3.5 line its bots declare. Same shape, different
+    # goal line and prediction market — generalised rather than copied, since a
+    # second near-identical calibrator is how the mirrors drifted.
+    _OU_KINDS = {"ou25": (2.5, "over25"), "ou35": (3.5, "over35")}
+    if kind not in _OU_KINDS:
+        log.warning("pick_triggers: unknown calibrator kind %r — returning None "
+                    "rather than guessing a calibration", kind)
+        return None
+    line, pred_market = _OU_KINDS[kind]
     rows = execute_query(
             """SELECT po.model_probability::float AS praw,
-                      ((m.score_home + m.score_away) > 2.5)::int AS y
+                      ((m.score_home + m.score_away) > %s)::int AS y
                  FROM matches m
                  JOIN LATERAL (SELECT model_probability FROM predictions
-                               WHERE match_id=m.id AND market='over25'
+                               WHERE match_id=m.id AND market=%s
                                ORDER BY model_version DESC LIMIT 1) po ON true
-                WHERE m.status='finished' AND m.score_home IS NOT NULL"""
+                WHERE m.status='finished' AND m.score_home IS NOT NULL""",
+            [line, pred_market],
         )
     xs = [r["praw"] for r in rows if r["praw"] is not None]
     ys = [r["y"] for r in rows if r["praw"] is not None]
