@@ -4391,7 +4391,41 @@ def test_coolbet_model_ou_shadow():
     # the resulting VALUE, not the old source text.
     from workers.jobs import coolbet_model_ou_shadow as _mou
     from workers.automation import coolbet_placer as _cp_ou
-    assert "sb.edge_percent >= %s" in job, "edge floor must be a bound parameter"
+    # MIRROR-PRICES-AT-ITS-OWN-BOOKS (2026-09-11): re-pointed, same as the 1x2
+    # mirror. This used to assert the job pre-filtered on `sb.edge_percent` —
+    # the PIPELINE's stored edge, which belongs to whichever book
+    # `recommended_bookmaker` was and had drifted from its own price on 9 of 11
+    # pending picks. The floor is now applied by `decide_book` against each
+    # PLACEABLE book's live quote, so the only sound SQL pre-filter left is the
+    # necessary condition (edge is always below cal_prob).
+    assert "sb.calibrated_prob > %s" in job, (
+        "edge floor must reach the SQL as a bound parameter on cal_prob — the "
+        "necessary condition — not as a filter on the pipeline's stored edge."
+    )
+    # Strip comments and the module docstring before asserting on ABSENCE: both
+    # legitimately describe the pre-filter that was REMOVED, and matching them
+    # is how a source-inspection test ends up forbidding its own explanation.
+    # (This is the most-repeated trap in this suite — see RELIABILITY_LEDGER.)
+    _job_code = "\n".join(
+        ln for ln in job.splitlines()
+        if not ln.lstrip().startswith(("--", "#"))
+    )
+    import re as _re
+    _job_code = _re.sub(r'"""', "", _job_code, count=2)
+    assert "sb.edge_percent >=" not in _job_code, (
+        "the O/U mirror must not pre-filter on the pipeline's stored edge; it "
+        "re-prices at the placeable books instead."
+    )
+    assert "decide_book(" in job and "_latest_book_odds(" in job, (
+        "the O/U mirror must price against the books we bet, via the router's "
+        "own helpers"
+    )
+    # The book lookup MUST use the CONVERTED canonical market/selection: a
+    # lookup on the legacy 'o/u' + 'over 2.5' spelling matches nothing in
+    # odds_snapshots and would silently drop every pick.
+    assert "_latest_book_odds(r[\"match_id\"], market, side)" in job, (
+        "book lookup must use the converted canonical market/selection"
+    )
     assert 'COOLBET_MODEL_OU_EDGE_FLOOR' in job and '_MIN_EDGE_BY_MARKET' in job, (
         "the o/u mirror must derive its default floor from the engine registry "
         "(env override may remain), not re-type a literal"

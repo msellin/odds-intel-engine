@@ -12,11 +12,29 @@ picks the calibrated model already produced.
 
 Source: simulated_bets rows on the calibrated cohort (bots.maturity_label =
 'calibrated'), market='o/u' (store_bet lowercases it), result='pending', future
-kickoff, edge_percent >= 0.08 (edge is stored as a FRACTION — cal_prob - implied
-— NOT a percentage; the placer's _MIN_EDGE_BY_MARKET['o/u']=0.08 compares to it
-directly), calibrated_prob NOT NULL, singles only, and the operator has not
-already placed/skipped it. DISTINCT ON (match, line, side) taking the highest
-edge_percent.
+kickoff, calibrated_prob NOT NULL, singles only, and the operator has not
+already placed/skipped it. DISTINCT ON (match, line, side).
+
+MIRROR-PRICES-AT-ITS-OWN-BOOKS (2026-09-11) — what this job takes from the
+pipeline, and what it does NOT. It used to select on the pipeline's stored
+`edge_percent` and carry the pipeline's `odds_at_pick`. Both are the wrong basis
+for a bot that bets at specific books:
+
+  * the carried price is whichever book `recommended_bookmaker` happened to be,
+    which is usually not a book we can bet. On the 1x2 side this dropped
+    Nancy v Reims on Betano's 3.15 while Coolbet was live at 3.25 and clearing;
+  * `edge_percent` is stored independently of price and probability and had
+    drifted from its own row on 9 of 11 pending picks
+    (EDGE-IS-DERIVED-NOT-STORED) — this bot carried a Clermont row priced 2.49
+    with edge 0.0800, whose own UI then demanded 2.51.
+
+So the ONLY thing inherited from the pipeline is `calibrated_prob`, the sole
+model output. Price, edge and gate come from the books we actually bet, via the
+router's `_latest_book_odds` (180-min freshness cap) and `decide_book` (edge per
+book, best clearing price wins). `edge_percent` is DERIVED from the winning
+price, so it can no longer disagree with `odds_at_pick` in the same row, and
+`recommended_bookmaker` records which book qualified it — provenance only; the
+placer re-decides on live odds at placement.
 
 Vocabulary conversion — WRITE IN THE LINE-SHOP VOCABULARY so the new bot reuses
 the line-shop O/U search/place path in coolbet_ui_placer:
@@ -76,6 +94,16 @@ if _OU_REGISTRY_FLOOR is None:
     )
 EDGE_FLOOR = float(os.getenv("COOLBET_MODEL_OU_EDGE_FLOOR",
                              str(_OU_REGISTRY_FLOOR)))
+
+# MIRROR-PRICES-AT-ITS-OWN-BOOKS (2026-09-11): this mirror previously applied NO
+# odds floor at all — it carried whatever price the pipeline recommended and
+# left the floor entirely to the placer. Now that it gates per placeable book it
+# needs the floor here too, DERIVED from the same registry as everything else
+# rather than re-typed (the o/u floor already had four copies once).
+from workers.automation.coolbet_placer import _min_odds_for  # noqa: E402
+
+MIN_ODDS = float(os.getenv("COOLBET_MODEL_OU_MIN_ODDS",
+                           str(_min_odds_for("o/u"))))
 
 # 'o/u' selection ("over 2.5" / "under 3.5") -> (over_under market, side).
 # Only 2.5 and 3.5 are supported; every other line returns None and is skipped.
@@ -142,7 +170,21 @@ def generate_picks() -> dict:
                AND sb.result = 'pending'
                AND sb.combo_legs IS NULL
                AND sb.calibrated_prob IS NOT NULL
-               AND sb.edge_percent >= %s
+               -- MIRROR-PRICES-AT-ITS-OWN-BOOKS (2026-09-11): the
+               -- `sb.edge_percent >= ...` pre-filter that used to sit here is
+               -- GONE. It tested the PIPELINE's stored edge, which belongs to
+               -- whichever book `recommended_bookmaker` was -- not a book this
+               -- bot can bet -- and had drifted from its own price on 9 of 11
+               -- pending picks. On the 1x2 side that dropped Nancy v Reims on
+               -- Betano's 3.15 while Coolbet was live at 3.25 and clearing.
+               -- The only sound pre-filter is the NECESSARY condition: edge is
+               -- cal_prob minus 1/odds, so it is always below cal_prob, and
+               -- nothing can clear unless cal_prob exceeds the floor.
+               -- (Keep literal per-cent signs OUT of this comment: psycopg2
+               --  scans the whole query for parameter placeholders, SQL
+               --  comments included, and a stray one raises IndexError before
+               --  the database sees the statement. SQL-PERCENT-GUARD.)
+               AND sb.calibrated_prob > %s
                AND sb.user_placed_at IS NULL
                AND sb.user_skipped_at IS NULL
                AND m.date > NOW()
@@ -160,11 +202,41 @@ def generate_picks() -> dict:
             market, side = conv
             counters["scanned"] += 1
 
-            price = r["odds_at_pick"]
-            if price is None or float(price) <= 1.0:
-                # No usable executable price to carry — skip rather than write a
-                # pick the placer's drift check cannot anchor.
+            # ── MIRROR-PRICES-AT-ITS-OWN-BOOKS (2026-09-11) ──────────────
+            # Identical treatment to the 1x2 mirror. Re-price the model's
+            # probability against the books we can ACTUALLY BET and gate on that
+            # edge, instead of copying `odds_at_pick` + `edge_percent` from
+            # simulated_bets (a foreign book's price, plus an edge stored
+            # independently of it and therefore free to drift).
+            #
+            # NB the lookup uses the CONVERTED market/selection: `_convert`
+            # returns the canonical `over_under_25|35` + `over|under`, which is
+            # the vocabulary `odds_snapshots` is keyed on. Looking up the legacy
+            # 'o/u' + 'over 2.5' spelling would silently match nothing and drop
+            # every pick.
+            from workers.automation.best_price_router import (
+                _latest_book_odds, decide_book,
+            )
+            cal_prob = float(r["calibrated_prob"] or 0)
+            book_odds = _latest_book_odds(r["match_id"], market, side)
+            if not book_odds:
+                counters["no_book_price"] = counters.get("no_book_price", 0) + 1
                 continue
+            decision = decide_book(
+                cal_prob, EDGE_FLOOR, MIN_ODDS,
+                {b: v["odds"] for b, v in book_odds.items()},
+                market=market, selection=side,
+            )
+            won_book = decision.get("winner")          # book NAME, e.g. 'Coolbet'
+            if not won_book:
+                counters["no_book_clears"] = counters.get("no_book_clears", 0) + 1
+                continue
+            price = float(decision["winner_odds"])
+            # Derived from the winning price, never copied, so `edge_percent`
+            # cannot disagree with `odds_at_pick` in the same row. That
+            # contradiction was visible on this very bot: a Clermont row priced
+            # 2.49 carrying edge 0.0800, whose own UI then demanded 2.51.
+            edge_at_price = cal_prob - 1.0 / price
 
             # odds_at_pick == odds_at_pick_live: we already source the live
             # (executable) quote via the COALESCE above, so there is no
@@ -174,18 +246,21 @@ def generate_picks() -> dict:
                 """INSERT INTO shadow_bets
                        (shadow_run_id, shadow_cohort, bot_id, match_id, market, selection,
                         odds_at_pick, odds_at_pick_live, pick_time, stake,
-                        model_probability, calibrated_prob, edge_percent)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s)
+                        model_probability, calibrated_prob, edge_percent,
+                        recommended_bookmaker)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s,%s)
                    ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)
                    DO UPDATE SET
                         odds_at_pick      = EXCLUDED.odds_at_pick,
                         odds_at_pick_live = EXCLUDED.odds_at_pick_live,
                         model_probability = EXCLUDED.model_probability,
                         calibrated_prob   = EXCLUDED.calibrated_prob,
-                        edge_percent      = EXCLUDED.edge_percent""",
+                        edge_percent      = EXCLUDED.edge_percent,
+                        recommended_bookmaker = EXCLUDED.recommended_bookmaker""",
                 [run_id, SHADOW_COHORT, bot_id, r["match_id"], market, side,
                  price, price, STAKE_EUR,
-                 r["model_probability"], r["calibrated_prob"], r["edge_percent"]],
+                 r["model_probability"], r["calibrated_prob"], edge_at_price,
+                 won_book],
             )
             counters["written"] += 1
 
