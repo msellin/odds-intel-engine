@@ -22368,6 +22368,55 @@ def test_router_unibet_parity_2026_09_11():
     return "Unibet arm records + heals; Coolbet arm live; routing rationale stored"
 
 
+@test("KICKOFF-BAND-SWEEP — the sweep can be scoped by kickoff proximity")
+def test_kickoff_band_sweep_2026_09_11():
+    """KICKOFF-BAND-SWEEP (2026-09-11). The day-window sweep walks ~2,000
+    fixtures serially, takes 1.5h+, and fires every 30 min — so passes overlap
+    and the sweep is effectively continuous from one residential IP. That is
+    almost certainly what keeps triggering the Imperva escalation the runbook
+    describes as "usually triggered by our own request volume from one IP":
+    FlareSolverr's logs show a FRESH session passing while a REUSED one is
+    challenged and times out at 60s.
+
+    Measured 2026-09-11 over a 48h horizon (2,026 fixtures):
+        0-6h      64   <- the band we actually place on
+        6-24h    373
+        24-48h  1589   <- 78% of the load, for fixtures a DAY+ away
+
+    So banding by kickoff cuts footprint AND improves freshness (median quote
+    age was ~197 min, which is what the placer's `drift` rejections are). Those
+    are usually a trade-off; here they are the same lever.
+    """
+    import inspect
+    from workers.automation import coolbet_explorer as ce
+
+    assert hasattr(ce, "load_matches_in_kickoff_band"), (
+        "the sweep must be scopable by kickoff proximity, not only by whole days"
+    )
+    src = inspect.getsource(ce.load_matches_in_kickoff_band)
+    # Half-open [lo, hi) so adjacent bands tile without re-sweeping the boundary
+    # fixture — a closed range would double-sweep exactly the near-kickoff
+    # fixtures we run most often.
+    assert ">=" in src and "<  NOW()" in src.replace("< NOW()", "<  NOW()"), (
+        "band must be half-open [lo,hi) so adjacent bands tile cleanly"
+    )
+    assert "m.date > NOW()" in src, "never sweep a fixture that already kicked off"
+    assert "status = 'scheduled'" in src, "pre-match only"
+
+    # run_bulk must accept the band, and the band must OVERRIDE --days rather
+    # than intersect with it (an intersection would silently re-widen the sweep).
+    rb = inspect.signature(ce.run_bulk)
+    assert "kickoff_band" in rb.parameters, "run_bulk must accept kickoff_band"
+    assert rb.parameters["kickoff_band"].default is None, (
+        "default None = unchanged day-window behaviour; banding is opt-in"
+    )
+    body = inspect.getsource(ce.run_bulk)
+    assert body.index("if kickoff_band is not None:") < body.index("elif bets_only:"), (
+        "the band must take precedence over the day window, not be merged with it"
+    )
+    return "sweep can be scoped to a kickoff band; bands tile half-open"
+
+
 @test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")
 def test_kuma_push_helper():
     """KUMA-PUSH-HELPER (2026-07-07): workers/utils/kuma.py is the

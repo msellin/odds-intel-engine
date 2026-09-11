@@ -926,6 +926,56 @@ def _outcome_id_for_selection(mkt: dict, parsed_market: str, parsed_sel: str) ->
 # ── DB layer ──────────────────────────────────────────────────────────────────
 
 
+def load_matches_in_kickoff_band(lo_h: float, hi_h: float) -> list[dict]:
+    """Pre-KO matches kicking off between `lo_h` and `hi_h` hours from now.
+
+    KICKOFF-BAND-SWEEP (2026-09-11). The day-window sweep loads EVERY fixture
+    inside `--days` and walks them serially: ~2,000 fixtures taking 1.5h+, fired
+    every 30 min, so passes overlap and the sweep is effectively continuous from
+    one residential IP. Two things follow, and both are bad:
+
+      * Imperva escalates. The runbook's §2 challenge is "usually triggered by
+        our own request volume from one IP" — and FlareSolverr's logs show a
+        FRESH session passing ("Challenge not detected!") while a REUSED one is
+        challenged and times out. We have been treating a self-inflicted load
+        problem as a mysterious external block, which is why it recurs daily.
+      * Prices go stale where it matters. A full pass takes so long that the
+        median Coolbet quote on an upcoming fixture is ~197 min old (p90 235),
+        which is what the placer's `drift` rejections actually are.
+
+    Measured distribution 2026-09-11 (48h horizon, 2,026 fixtures):
+        0-6h     64      <- the band we actually place on
+        6-24h   373
+        24-48h 1589      <- 78% of the load, for fixtures a DAY+ away whose
+                            prices will have moved entirely before we bet them
+
+    So sweeping by kickoff proximity cuts footprint AND improves freshness at
+    the same time — they are not a trade-off here. A 0-6h pass is ~3% of the
+    current load.
+
+    Half-open [lo_h, hi_h) so adjacent bands tile without double-sweeping the
+    boundary fixture.
+    """
+    return execute_query(
+        """
+        SELECT m.id::text AS id, m.date AS date,
+               ht.name AS home, at2.name AS away,
+               l.name AS league,
+               m.league_id::text AS league_id
+        FROM matches m
+        JOIN teams ht ON ht.id = m.home_team_id
+        JOIN teams at2 ON at2.id = m.away_team_id
+        JOIN leagues l ON l.id = m.league_id
+        WHERE m.date > NOW()
+          AND m.date >= NOW() + (%s * interval '1 hour')
+          AND m.date <  NOW() + (%s * interval '1 hour')
+          AND m.status = 'scheduled'
+        ORDER BY m.date
+        """,
+        (float(lo_h), float(hi_h)),
+    )
+
+
 def load_matches_in_window(days: int) -> list[dict]:
     """Pull pre-KO matches from our DB kicking off within `days` days.
 
@@ -1711,8 +1761,15 @@ def run_bulk(
     *, bets_only: bool = False,
     long_pause_every: int = 15, long_pause_s: float = 20.0,
     session: "CoolbetSession | None" = None,
+    kickoff_band: tuple[float, float] | None = None,
 ) -> None:
-    matches = load_value_bet_matches(days) if bets_only else load_matches_in_window(days)
+    if kickoff_band is not None:
+        lo_h, hi_h = kickoff_band
+        matches = load_matches_in_kickoff_band(lo_h, hi_h)
+    elif bets_only:
+        matches = load_value_bet_matches(days)
+    else:
+        matches = load_matches_in_window(days)
     if limit:
         matches = matches[:limit]
     if not matches:
@@ -1726,8 +1783,13 @@ def run_bulk(
                       f"never-Coolbet leagues (~1 in {_NEG_PROBE_EVERY} kept as a probe)[/dim]")
         log.info("negative-cache league prior skipped %d fixtures", _skipped_prior)
 
-    label = "value-bet matches" if bets_only else "matches from DB"
-    console.print(f"[cyan]Loaded {len(matches)} {label} (window={days}d){' [DRY-RUN]' if dry_run else ''}[/cyan]")
+    if kickoff_band is not None:
+        label = "matches from DB"
+        window = f"kickoff {kickoff_band[0]:g}-{kickoff_band[1]:g}h"
+    else:
+        label = "value-bet matches" if bets_only else "matches from DB"
+        window = f"window={days}d"
+    console.print(f"[cyan]Loaded {len(matches)} {label} ({window}){' [DRY-RUN]' if dry_run else ''}[/cyan]")
 
     if session is None:
         # COOLBET-INGEST-ANON: see run_league_sweep — reads-only path.
@@ -2032,6 +2094,11 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--match-id", help="Inspect a single match by our matches.id")
     ap.add_argument("--days", type=int, default=2, help="Bulk window in days (default 2)")
+    ap.add_argument("--kickoff-band", metavar="LO:HI",
+                    help="Sweep only fixtures kicking off in [LO,HI) hours from "
+                         "now, e.g. '0:6'. Overrides --days. Cuts footprint AND "
+                         "improves freshness where placement happens — see "
+                         "load_matches_in_kickoff_band.")
     ap.add_argument("--limit", type=int, help="Cap bulk to first N matches (testing)")
     ap.add_argument("--sleep", type=float, default=0.25, help="Seconds between sidebets calls")
     ap.add_argument("--dry-run", action="store_true", help="Parse but don't write")
@@ -2066,7 +2133,19 @@ def main() -> None:
     elif args.board:
         run_board_sweep(dry_run=args.dry_run, horizon_hours=args.horizon_hours, sleep_s=args.sleep)
     else:
-        run_bulk(args.days, args.dry_run, args.sleep, args.limit, bets_only=args.bets_only)
+        band = None
+        if getattr(args, "kickoff_band", None):
+            try:
+                _lo, _hi = args.kickoff_band.split(":")
+                band = (float(_lo), float(_hi))
+                if band[0] < 0 or band[1] <= band[0]:
+                    raise ValueError("need 0 <= LO < HI")
+            except Exception as e:  # noqa: BLE001
+                console.print(f"[red]--kickoff-band must be LO:HI hours "
+                              f"(e.g. 0:6) — {e}[/red]")
+                return 2
+        run_bulk(args.days, args.dry_run, args.sleep, args.limit,
+                 bets_only=args.bets_only, kickoff_band=band)
 
 
 if __name__ == "__main__":
