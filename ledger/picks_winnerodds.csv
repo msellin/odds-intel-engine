@@ -1,4 +1,8 @@
 source,kickoff_date,league,home_team,away_team,market,pick,odds,result,pnl_per_unit,ref_url
+winnerodds,2026-08-30,Denmark,,,over_under_35,u3.5,1.820,won,0.8200,https://winnerodds.com
+winnerodds,2026-08-30,Germany,,,asian_handicap,ah-0_1,1.490,won,0.4900,https://winnerodds.com
+winnerodds,2026-09-03,Bosnia and Herzegovina,,,over_under_35,u3.5,1.300,lost,-1.0000,https://winnerodds.com
+winnerodds,2026-08-31,Estonia,,,asian_handicap,ah-0_1,1.860,won,0.8600,https://winnerodds.com
 winnerodds,2026-09-05,Sweden,,,1x2,2,1.500,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-09-04,Sweden,,,over_under_35,u3.5,1.800,won,0.8000,https://winnerodds.com
 winnerodds,2026-09-04,Latvia,,,over_under_35,u3.5,1.950,lost,-1.0000,https://winnerodds.com
@@ -995,7 +999,3 @@ winnerodds,2026-06-18,USA,,,over_under_35,o3.5,2.250,won,1.2500,https://winnerod
 winnerodds,2026-06-17,USA,,,1x2,2,1.310,won,0.3100,https://winnerodds.com
 winnerodds,2026-06-16,Sweden,,,asian_handicap,ah-0_2,1.960,won,0.9600,https://winnerodds.com
 winnerodds,2026-06-16,Sweden,,,asian_handicap,ah-0_1,1.140,void,0.0000,https://winnerodds.com
-winnerodds,2026-06-15,Sweden,,,asian_handicap,ah-0_2,2.500,void,0.0000,https://winnerodds.com
-winnerodds,2026-06-18,Sweden,,,asian_handicap,ah-0_2,1.250,won,0.2500,https://winnerodds.com
-winnerodds,2026-06-16,Sweden,,,asian_handicap,ah-0_2,1.230,won,0.2300,https://winnerodds.com
-winnerodds,2026-06-16,Georgia,,,asian_handicap,ah-0_2,1.660,void,0.0000,https://winnerodds.com
