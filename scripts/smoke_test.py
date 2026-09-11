@@ -37883,5 +37883,90 @@ def test_ub_column_is_the_placeable_feed():
         )
 
 
+
+@test("PICK-GENERATOR — one mechanism, N bots, differing only by configuration")
+def test_pick_generator():
+    """PICK-GENERATOR (2026-09-11), to the owner's brief: "there will be like n
+    amount of bots that real money ui placers use... the bots look very similar
+    in the way they work, only the gates and configuration of the bots are
+    different."
+
+    Two near-identical 250-line mirror jobs had already drifted apart in ways
+    that cost real bets — one pre-filtered on the pipeline's odds, the other
+    applied no odds floor at all. A third would have drifted further. So the
+    mechanism is one function and a bot is a `BotConfig`.
+
+    The single most consequential setting is `prob_source`, because getting it
+    wrong is why the mirrors were ~100x narrower than the trigger bots:
+      * 'pipeline'    — only fixtures the pipeline already picked. That list is
+                        built from AF API odds, which are not current and do NOT
+                        include Coolbet, so it is narrow for reasons unrelated
+                        to our edge. Measured: 1 candidate.
+      * 'predictions' — every fixture we model, calibrated here. Same moment:
+                        81 candidates, and ~300-400 fixtures/day x 3 selections
+                        against the pipeline's ~10 picks.
+
+    Pins the config surface and the invariants that keep a new bot from
+    re-introducing a fixed bug.
+    """
+    import inspect
+    from workers.automation.pick_generator import BotConfig, generate, _floors
+    from workers.automation import pick_generator as pg
+    from workers.automation.bot_configs import CONFIGS
+    from workers.automation.coolbet_placer import min_edge_for_pick, _min_odds_for
+
+    # Floors DEFAULT to the registry. A bot that re-types one is how the 1x2
+    # floor got six independent copies.
+    cfg = BotConfig(bot_name="x", shadow_cohort="x", markets=("1x2",),
+                    books=("Coolbet",), selections=("home",))
+    assert cfg.edge_floor is None and cfg.odds_floor is None, (
+        "floors must default to None so the registry supplies them"
+    )
+    ef, of = _floors(cfg, "1x2", "home", None)
+    assert of == _min_odds_for("1x2"), "odds floor must come from the registry"
+    assert ef == min_edge_for_pick("1x2", "home", of), (
+        "edge floor must come from the shared selection-aware predicate"
+    )
+
+    gsrc = inspect.getsource(pg)
+    # Derive, never carry.
+    assert "cal_prob - 1.0 / price" in gsrc, (
+        "edge must be DERIVED from the winning price — carrying the pipeline's "
+        "stored edge is what put a 0.0800 edge on a 2.49 price whose own UI "
+        "then demanded 2.51."
+    )
+    assert 'r["edge_percent"]' not in gsrc, "must never copy the stored edge"
+    # Price at our books, record which won.
+    assert "_latest_book_odds" in gsrc and "decide_book" in gsrc
+    assert "recommended_bookmaker" in gsrc, (
+        "the winning book must be recorded — trigger rows were NULL on 100% of "
+        "them, which broke per-book analysis, cross-book dedup, and made "
+        "settlement compute CLV against a price we never had."
+    )
+    # The pre-filter must be the necessary condition, not a foreign price.
+    assert "sb.calibrated_prob > %s" in gsrc
+    assert "sb.edge_percent >=" not in "\n".join(
+        l for l in gsrc.splitlines() if not l.lstrip().startswith(("#", "--"))
+    ), "must not pre-filter on the pipeline's stored edge"
+    # Never raises: the caller's job is collecting odds.
+    assert "def on_odds_written" in gsrc
+    osrc = inspect.getsource(pg.on_odds_written)
+    assert "except Exception" in osrc, (
+        "the odds-arrival hook must never raise — odds collection has to "
+        "survive a pick-generation failure."
+    )
+    # And no precomputed window: a window is a cache of min_odds derived from
+    # cal_prob, i.e. the stored-derivation shape behind every bug found today.
+    assert "pick_triggers" not in inspect.getsource(pg.generate), (
+        "generate() must derive at decision time, not read precomputed windows"
+    )
+
+    # The shipped configs must be real bots.
+    assert CONFIGS, "at least one bot must be configured"
+    for c in CONFIGS:
+        assert c.books, f"{c.bot_name} must declare which books it may bet"
+        assert c.prob_source in ("pipeline", "predictions"), c.prob_source
+
+
 if __name__ == "__main__":
     main()

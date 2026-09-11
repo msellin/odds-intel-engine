@@ -1830,6 +1830,20 @@ def run_board_sweep(
     except Exception as e:  # noqa: BLE001
         log.debug("coolbet zero-rows alarm failed (non-fatal): %s", e)
 
+    # ODDS-ARRIVAL HOOK (2026-09-11). Fresh Coolbet prices have just landed, so
+    # regenerate the real-money candidates NOW instead of waiting for the
+    # :10/:40 poll. Coolbet sweeps at :03/:33 and the generators ran at
+    # :10/:40, so a qualifying price could sit unused for ~30 minutes — for a
+    # match kicking off in 40 that was the entire window. It is also what let
+    # the generator gate Nancy on a 14.8h-old quote of 3.10 while the live
+    # price was 3.25 and clearing.
+    #
+    # `on_odds_written` never raises: collecting odds is this function's job and
+    # must survive a pick-generation failure.
+    if c.get("stored_rows"):
+        from workers.automation.pick_generator import on_odds_written
+        on_odds_written("Coolbet")
+
     return c
 
 

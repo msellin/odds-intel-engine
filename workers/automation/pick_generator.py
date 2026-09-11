@@ -81,7 +81,27 @@ class BotConfig:
     edge_floor: float | None = None              # None = selection-aware registry floor
     odds_floor: float | None = None              # None = registry per-market floor
     convert: Callable[[str, str], tuple[str, str] | None] | None = None
-    maturity: tuple[str, ...] = ("calibrated",)  # source cohort in simulated_bets
+    maturity: tuple[str, ...] = ("calibrated",)  # source cohort, `pipeline` source only
+    # WHERE THE CANDIDATE PROBABILITIES COME FROM. This is the single most
+    # consequential setting here, and getting it wrong is why the mirrors were
+    # ~81x narrower than the trigger bots.
+    #
+    #   'pipeline'    — `simulated_bets.calibrated_prob`, i.e. only fixtures the
+    #                   pipeline ALREADY picked. That pick list is built from AF
+    #                   API odds, which are not current and DO NOT INCLUDE
+    #                   COOLBET at all, so it is narrow for reasons that have
+    #                   nothing to do with our edge. Measured over the next 48h:
+    #                   1 fixture with a 1x2 pipeline pick.
+    #   'predictions' — `predictions.model_probability` for EVERY fixture we
+    #                   model, calibrated here. Same 48h: 81 fixtures. This is
+    #                   the idea the trigger bots were built on, and it is the
+    #                   reason they raised 318 picks in 7 days where the mirrors
+    #                   raised 27.
+    #
+    # 'pipeline' is kept because it is the probability the real-money bots were
+    # VALIDATED on; 'predictions' re-calibrates independently. Both are exposed
+    # so the two can be compared on the same mechanism instead of argued about.
+    prob_source: str = "pipeline"
     lookahead_hours: int | None = None           # None = any future kickoff
     notes: str = field(default="", compare=False)
 
@@ -155,29 +175,10 @@ def generate(cfg: BotConfig) -> dict:
             ahead = "AND m.date < NOW() + (%s * INTERVAL '1 hour')"
             params.append(cfg.lookahead_hours)
 
-        rows = execute_query(
-            f"""
-            SELECT DISTINCT ON (sb.match_id, sb.market, sb.selection)
-                   sb.match_id::text AS match_id, sb.market, sb.selection,
-                   sb.calibrated_prob, sb.model_probability
-              FROM simulated_bets sb
-              JOIN bots    b ON b.id = sb.bot_id
-              JOIN matches m ON m.id = sb.match_id
-             WHERE lower(sb.market) = ANY(%s)
-               AND b.maturity_label = ANY(%s)
-               AND sb.calibrated_prob IS NOT NULL
-               AND sb.calibrated_prob > %s
-               AND sb.result = 'pending'
-               AND sb.combo_legs IS NULL
-               AND sb.user_placed_at IS NULL
-               AND sb.user_skipped_at IS NULL
-               AND m.date > NOW()
-               {sel_clause}
-               {ahead}
-             ORDER BY sb.match_id, sb.market, sb.selection, sb.edge_percent DESC
-            """,
-            params,
-        )
+        if cfg.prob_source == "predictions":
+            rows = _candidates_from_predictions(cfg, loosest)
+        else:
+            rows = _candidates_from_pipeline(cfg, loosest, sel_clause, ahead, params)
 
         run_id = str(uuid.uuid4())
         for r in rows:
@@ -232,17 +233,157 @@ def generate(cfg: BotConfig) -> dict:
             )
             c["written"] += 1
 
-        log.info("pick_generator[%s]: scanned %d, wrote %d "
+        log.info("pick_generator[%s/%s]: scanned %d, wrote %d "
                  "(no price %d, no clear %d, unsupported %d)",
-                 cfg.bot_name, c["scanned"], c["written"],
+                 cfg.bot_name, cfg.prob_source, c["scanned"], c["written"],
                  c["no_book_price"], c["no_book_clears"], c["unsupported"])
     except Exception as e:  # noqa: BLE001
         log.warning("pick_generator[%s] raised (non-fatal): %s", cfg.bot_name, e)
     return c
 
 
-def generate_all(configs: list[BotConfig]) -> dict:
-    """Run every bot. Used by the odds-arrival hook so one call regenerates
-    everything a new price could have changed — the shared choke point that
-    means adding a book or a bot needs no new wiring."""
+def _candidates_from_pipeline(cfg, loosest, sel_clause, ahead, params):
+    """Only fixtures the PIPELINE already picked. Narrow for reasons unrelated
+    to our edge: that pick list is built from AF API odds, which are not current
+    and do not include Coolbet."""
+    from workers.api_clients.db import execute_query
+    return execute_query(
+            f"""
+            SELECT DISTINCT ON (sb.match_id, sb.market, sb.selection)
+                   sb.match_id::text AS match_id, sb.market, sb.selection,
+                   sb.calibrated_prob, sb.model_probability
+              FROM simulated_bets sb
+              JOIN bots    b ON b.id = sb.bot_id
+              JOIN matches m ON m.id = sb.match_id
+             WHERE lower(sb.market) = ANY(%s)
+               AND b.maturity_label = ANY(%s)
+               AND sb.calibrated_prob IS NOT NULL
+               AND sb.calibrated_prob > %s
+               AND sb.result = 'pending'
+               AND sb.combo_legs IS NULL
+               AND sb.user_placed_at IS NULL
+               AND sb.user_skipped_at IS NULL
+               AND m.date > NOW()
+               {sel_clause}
+               {ahead}
+             ORDER BY sb.match_id, sb.market, sb.selection, sb.edge_percent DESC
+            """,
+            params,
+    )
+
+
+def _candidates_from_predictions(cfg, loosest):
+    """EVERY fixture we model, calibrated here — the idea the trigger bots were
+    built on, and ~100x wider than the pipeline's pick list (~300-400 predicted
+    fixtures a day x 3 selections, against ~10 pipeline picks).
+
+    Calibration uses `pick_triggers._fit_calibrator`, which was made
+    PER-SELECTION on 2026-09-11. Pooled, it under-estimated HOME by 10-15pp and
+    the resulting windows only ever fired on longshots. Reused rather than
+    re-fitted so there is one calibrator, not a third.
+
+    Returns rows shaped like the pipeline source so the caller is source-blind.
+    """
+    from workers.api_clients.db import execute_query
+    from workers.jobs.pick_triggers import _fit_calibrator
+
+    want = {m for m in cfg.markets}
+    is_1x2 = "1x2" in want
+    if not is_1x2:
+        # O/U from predictions needs the ou25 calibrator and the line vocabulary;
+        # not wired yet, so say so instead of silently returning nothing.
+        log.info("pick_generator[%s]: prob_source='predictions' currently "
+                 "supports 1x2 only — falling back to no candidates rather "
+                 "than guessing a calibration for %s", cfg.bot_name, cfg.markets)
+        return []
+    cal = _fit_calibrator("1x2")
+    if cal is None:
+        log.warning("pick_generator[%s]: 1x2 calibrator unavailable — "
+                    "generating nothing rather than using raw probabilities",
+                    cfg.bot_name)
+        return []
+
+    sels = cfg.selections or ("home", "draw", "away")
+    pred_markets = [f"1x2_{s}" for s in sels]
+    ahead_sql = ""
+    params: list = [pred_markets]
+    if cfg.lookahead_hours:
+        ahead_sql = "AND m.date < NOW() + (%s * INTERVAL '1 hour')"
+        params.append(cfg.lookahead_hours)
+    rows = execute_query(
+        f"""
+        SELECT DISTINCT ON (p.match_id, p.market)
+               p.match_id::text AS match_id, p.market AS pred_market,
+               p.model_probability::float AS praw
+          FROM predictions p JOIN matches m ON m.id = p.match_id
+         WHERE p.market = ANY(%s) AND m.date > NOW() AND m.status = 'scheduled'
+           AND p.model_probability IS NOT NULL
+           {ahead_sql}
+         ORDER BY p.match_id, p.market, p.model_version DESC
+        """,
+        params,
+    )
+    out = []
+    for r in rows:
+        sel = r["pred_market"].replace("1x2_", "")
+        cp = cal(r["praw"], sel)
+        if cp is None or cp <= loosest:
+            continue          # no price can clear when cal_prob <= the floor
+        out.append({"match_id": r["match_id"], "market": "1x2",
+                    "selection": sel, "calibrated_prob": cp,
+                    "model_probability": r["praw"]})
+    return out
+
+
+
+
+def generate_all(configs: list[BotConfig] | None = None) -> dict:
+    """Run every bot. The shared choke point, so adding a book or a bot needs no
+    new wiring anywhere."""
+    if configs is None:
+        from workers.automation.bot_configs import CONFIGS
+        configs = CONFIGS
     return {cfg.bot_name: generate(cfg) for cfg in configs}
+
+
+def on_odds_written(book: str | None = None) -> dict:
+    """ODDS-ARRIVAL HOOK — call this at the END of a book's odds sweep.
+
+    This is the "trigger mechanism" the owner asked for, in the form that adds
+    no cache. The generator already derives everything at decision time; firing
+    it when a price LANDS rather than on a 30-minute clock removes the three
+    remaining problems in one move:
+
+      * STALENESS — the mirror gated Nancy on a 14.8h-old Coolbet quote of 3.10
+        while the live price was 3.25 and clearing. When the price IS the event,
+        a stale quote cannot gate anything.
+      * THE RACE — Coolbet sweeps :03/:33, Unibet :15/:45, the generators ran
+        :10/:40. A qualifying price could wait ~30 min, which for a match
+        kicking off in 40 is the entire window.
+      * MULTI-CHECK — no polling pass re-deriving every candidate on a clock
+        whether or not anything changed.
+
+    Deliberately NOT implemented as precomputed windows. A window is a stored
+    derivation of `min_odds` from `cal_prob`, i.e. a cache that must be
+    invalidated when the model re-predicts — and every bug found on 2026-09-11
+    was a stored derivation drifting from its source. This keeps the derivation
+    at decision time and only changes WHEN it happens.
+
+    `book` is accepted for logging and future narrowing; today every bot
+    compares across all its books, so a price at either one can change the
+    winner and all configs are re-run.
+
+    MUST NEVER RAISE: the caller's job is collecting odds, and that has to
+    survive a pick-generation failure. `generate` already swallows per-bot
+    errors; this adds a belt on top.
+    """
+    try:
+        out = generate_all()
+        total = sum(r.get("written", 0) for r in out.values())
+        log.info("on_odds_written(%s): %d picks written/updated across %d bots",
+                 book or "all", total, len(out))
+        return out
+    except Exception as e:  # noqa: BLE001
+        log.warning("on_odds_written(%s) raised (non-fatal, odds collection "
+                    "is unaffected): %s", book, e)
+        return {}
