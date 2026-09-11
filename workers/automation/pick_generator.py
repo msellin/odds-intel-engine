@@ -101,6 +101,12 @@ class BotConfig:
     # 'pipeline' is kept because it is the probability the real-money bots were
     # VALIDATED on; 'predictions' re-calibrates independently. Both are exposed
     # so the two can be compared on the same mechanism instead of argued about.
+    #   'sharp_devig'  — fair value from the Shin-de-vigged Pinnacle line, not
+    #                   our model at all. A bot on this source MUST set
+    #                   `edge_floor` explicitly (3%-ish): inheriting the
+    #                   registry's model floors would demand a 13% overlay on
+    #                   Pinnacle, which is nearly unobservable (max seen +6.6%),
+    #                   so the bot would never fire.
     prob_source: str = "pipeline"
     lookahead_hours: int | None = None           # None = any future kickoff
     notes: str = field(default="", compare=False)
@@ -177,6 +183,8 @@ def generate(cfg: BotConfig) -> dict:
 
         if cfg.prob_source == "predictions":
             rows = _candidates_from_predictions(cfg, loosest)
+        elif cfg.prob_source == "sharp_devig":
+            rows = _candidates_from_sharp(cfg, loosest)
         else:
             rows = _candidates_from_pipeline(cfg, loosest, sel_clause, ahead, params)
 
@@ -217,8 +225,8 @@ def generate(cfg: BotConfig) -> dict:
                        (shadow_run_id, shadow_cohort, bot_id, match_id, market,
                         selection, odds_at_pick, odds_at_pick_live, pick_time,
                         stake, model_probability, calibrated_prob, edge_percent,
-                        recommended_bookmaker)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s,%s,%s,%s,%s)
+                        recommended_bookmaker, model_version)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s,%s,%s,%s,%s,%s)
                    ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)
                    DO UPDATE SET
                         odds_at_pick          = EXCLUDED.odds_at_pick,
@@ -226,10 +234,12 @@ def generate(cfg: BotConfig) -> dict:
                         model_probability     = EXCLUDED.model_probability,
                         calibrated_prob       = EXCLUDED.calibrated_prob,
                         edge_percent          = EXCLUDED.edge_percent,
-                        recommended_bookmaker = EXCLUDED.recommended_bookmaker""",
+                        recommended_bookmaker = EXCLUDED.recommended_bookmaker,
+                        model_version         = EXCLUDED.model_version""",
                 [run_id, cfg.shadow_cohort, bot_id, r["match_id"], market,
                  selection, price, price, cfg.stake,
-                 r["model_probability"], r["calibrated_prob"], edge, won_book],
+                 r["model_probability"], r["calibrated_prob"], edge, won_book,
+                 r.get("model_version")],
             )
             c["written"] += 1
 
@@ -270,6 +280,71 @@ def _candidates_from_pipeline(cfg, loosest, sel_clause, ahead, params):
             """,
             params,
     )
+
+
+def _candidates_from_sharp(cfg, loosest):
+    """Fair value = Shin-de-vigged Pinnacle, not our model.
+
+    A THIRD kind of probability, and the reason `edge_kind` has to be a
+    dimension everywhere: a sharp edge is measured against a near-true line, so
+    3% is a real 3% overlay, where a 3% MODEL edge is noise. That is why
+    `pick_triggers._SHARP_MIN_EDGE_BY_MARKET` is 3% while the model floors are
+    13%/8%, and why a bot on this source must set `edge_floor` explicitly
+    instead of inheriting the registry's model floors — inheriting them would
+    demand a 13% overlay on Pinnacle, which is nearly unobservable (max seen
+    +6.6%) and the bot would simply never fire.
+
+    Needs the COMPLETE line to de-vig honestly: a partial market is skipped
+    rather than de-vigged from two of three prices.
+    """
+    from workers.api_clients.db import execute_query
+    from workers.model.devig import devig
+    from workers.jobs.pick_triggers import _SHARP_ANCHOR_BOOK
+
+    # `sides` must be the full market in a fixed order — devig returns
+    # probabilities positionally.
+    market = cfg.markets[0]
+    if market == "1x2":
+        sides = ("home", "draw", "away")
+    elif market.startswith("over_under"):
+        sides = ("over", "under")
+    else:
+        log.info("pick_generator[%s]: sharp_devig does not know the full-market "
+                 "shape for %s — generating nothing rather than de-vigging a "
+                 "partial line", cfg.bot_name, market)
+        return []
+
+    rows = execute_query(
+        """
+        SELECT DISTINCT ON (o.match_id, o.selection)
+               o.match_id::text AS mid, o.selection, o.odds::float AS odds
+          FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
+         WHERE o.bookmaker = %s AND o.market = %s
+           AND o.timestamp <= m.date AND m.date > NOW() AND m.status = 'scheduled'
+         ORDER BY o.match_id, o.selection, o.timestamp DESC
+        """,
+        [_SHARP_ANCHOR_BOOK, market],
+    )
+    by_match: dict[str, dict] = {}
+    for r in rows:
+        by_match.setdefault(r["mid"], {})[r["selection"]] = r["odds"]
+
+    wanted = set(cfg.selections) if cfg.selections else set(sides)
+    out = []
+    for mid, quotes_by_sel in by_match.items():
+        quotes = [quotes_by_sel.get(s) for s in sides]
+        if any(q is None or q <= 1.0 for q in quotes):
+            continue                      # incomplete line — do not guess
+        probs = devig(quotes)
+        if probs is None:
+            continue
+        for sel, p_sharp in zip(sides, probs):
+            if sel not in wanted or p_sharp is None or p_sharp <= loosest:
+                continue
+            out.append({"match_id": mid, "market": market, "selection": sel,
+                        "calibrated_prob": float(p_sharp),
+                        "model_probability": float(p_sharp)})
+    return out
 
 
 def _candidates_from_predictions(cfg, loosest):
@@ -314,7 +389,7 @@ def _candidates_from_predictions(cfg, loosest):
         f"""
         SELECT DISTINCT ON (p.match_id, p.market)
                p.match_id::text AS match_id, p.market AS pred_market,
-               p.model_probability::float AS praw
+               p.model_probability::float AS praw, p.model_version AS mv
           FROM predictions p JOIN matches m ON m.id = p.match_id
          WHERE p.market = ANY(%s) AND m.date > NOW() AND m.status = 'scheduled'
            AND p.model_probability IS NOT NULL
@@ -323,6 +398,13 @@ def _candidates_from_predictions(cfg, loosest):
         """,
         params,
     )
+    # TRIGGER-CALIBRATOR-REVISION: stamp WHICH calibrator shaped these, exactly
+    # as pick_triggers does for its windows. Without it, picks generated here
+    # would carry a NULL model_version and `trigger_calibrator_check` would
+    # classify them as PRE-fix — silently mixing corrected picks into the
+    # known-biased bucket and destroying the comparison that gates the whole
+    # convergence epic. A stamp is cheap; a corrupted baseline is not.
+    from workers.jobs.pick_triggers import _stamp_cal
     out = []
     for r in rows:
         sel = r["pred_market"].replace("1x2_", "")
@@ -331,7 +413,8 @@ def _candidates_from_predictions(cfg, loosest):
             continue          # no price can clear when cal_prob <= the floor
         out.append({"match_id": r["match_id"], "market": "1x2",
                     "selection": sel, "calibrated_prob": cp,
-                    "model_probability": r["praw"]})
+                    "model_probability": r["praw"],
+                    "model_version": _stamp_cal(r.get("mv"))})
     return out
 
 

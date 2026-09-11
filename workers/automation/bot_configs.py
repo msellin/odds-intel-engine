@@ -99,6 +99,74 @@ WIDE_CONFIGS: list[BotConfig] = [
     ),
 ]
 
-ALL_CONFIGS: list[BotConfig] = CONFIGS + WIDE_CONFIGS
+# ── TRIGGER CONFIGS — 8 bots collapse to 4 ───────────────────────────────────
+# The eight trigger bots were 2 anchors x 2 books x 2 markets. The BOOK is not a
+# strategy, it is a venue, and the generator already compares across every book
+# a bot may use — so the per-book split bought nothing and would have become 12
+# bots the moment Epicbet joined. Collapsing it halves the count and makes the
+# remaining axes the real ones: ANCHOR and MARKET.
+#
+# The per-book performance question does not disappear: `recommended_bookmaker`
+# is recorded on every pick (fixed 2026-09-11 — it was NULL on 100% of trigger
+# rows), so `bots_describe`/`floor_grid_sweep --group-by bookmaker` still splits
+# them. Book became a column instead of an identity, which is where it belongs.
+#
+# ⚠️ THE SHARP CONFIGS SET `edge_floor` EXPLICITLY, and must. Their probability
+# is a de-vigged Pinnacle line, so a 3% overlay is a REAL 3%; inheriting the
+# registry's 13% model floor would demand a 13% overlay on Pinnacle, which is
+# nearly unobservable (max seen +6.6%), and the bot would silently never fire.
+# This is the one place a hand-written floor is correct rather than a sixth copy.
+_SHARP_EDGE_FLOOR = 0.03
+_SHARP_ODDS_FLOOR = 1.01   # effectively off: these are observational paper bots
+
+TRIGGER_CONFIGS: list[BotConfig] = [
+    BotConfig(
+        bot_name="bot_trigger_1x2_model_v1",
+        shadow_cohort="trigger_1x2_model",
+        markets=("1x2",),
+        books=PLACEABLE_BOOKS,
+        prob_source="predictions",
+        notes="model-anchored 1x2 trigger, both books; replaces "
+              "bot_{coolbet,unibet}_trigger_1x2_v1",
+    ),
+    BotConfig(
+        bot_name="bot_trigger_ou_model_v1",
+        shadow_cohort="trigger_ou_model",
+        markets=("over_under_25",),
+        books=PLACEABLE_BOOKS,
+        prob_source="predictions",
+        notes="model-anchored O/U trigger, both books; inert until the "
+              "predictions source supports O/U",
+    ),
+    BotConfig(
+        bot_name="bot_trigger_1x2_sharp_v1",
+        shadow_cohort="trigger_1x2_sharp",
+        markets=("1x2",),
+        books=PLACEABLE_BOOKS,
+        prob_source="sharp_devig",
+        edge_floor=_SHARP_EDGE_FLOOR,
+        odds_floor=_SHARP_ODDS_FLOOR,
+        notes="sharp-anchored 1x2 trigger, both books; the only triggers with "
+              "POSITIVE CLV so far (+8.2%/+9.7%) but n=13-30",
+    ),
+    BotConfig(
+        bot_name="bot_trigger_ou_sharp_v1",
+        shadow_cohort="trigger_ou_sharp",
+        markets=("over_under_25",),
+        books=PLACEABLE_BOOKS,
+        prob_source="sharp_devig",
+        edge_floor=_SHARP_EDGE_FLOOR,
+        odds_floor=_SHARP_ODDS_FLOOR,
+        notes="sharp-anchored O/U trigger, both books",
+    ),
+]
+
+# WIDE_CONFIGS are RETIRED by migration 331 and deliberately NOT in the run set:
+# `bot_trigger_1x2_model_v1` uses the same prob_source='predictions' and adds
+# draw/away, so the home-only wide twin is a strict subset of it and would write
+# duplicate home rows under a second name. The comparison the twins were created
+# for is unchanged — it is the merged trigger bot filtered to home, against
+# `bot_coolbet_1x2_model_v1`. Kept here as the record of why, not as config.
+ALL_CONFIGS: list[BotConfig] = CONFIGS + TRIGGER_CONFIGS
 
 CONFIG_BY_NAME = {c.bot_name: c for c in ALL_CONFIGS}

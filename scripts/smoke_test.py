@@ -38056,72 +38056,87 @@ def test_every_registry_bot_is_visible():
 
 
 
-@test("WIDE-SOURCE-TWINS — paper twins differ from the real-money bots in ONE config field")
-def test_wide_source_twins():
-    """WIDE-SOURCE TWINS (migration 330, 2026-09-11).
+@test("MERGE-TRIGGER-BOTS — 8 per-book trigger bots collapse to 4 configs; book is a field")
+def test_merge_trigger_bots():
+    """MERGE-TRIGGER-BOTS (migration 331, 2026-09-11). Owner: eventually one
+    family of bots the placer uses, "only the gates and configuration of the
+    bots are different".
 
-    The real-money mirrors take candidates from `simulated_bets` — only fixtures
-    the pipeline already picked — and that pick list is built from AF API odds,
-    which are not current and contain NO COOLBET. Measured at one moment: 1
-    candidate from the pipeline source against 81 from predictions; by day,
-    ~300-400 fixtures predicted x 3 selections against the pipeline's ~10 picks.
-    That ~100x gap is the idea the trigger bots were built on.
+    The eight trigger bots were 2 anchors x 2 books x 2 markets. The BOOK is a
+    venue, not a strategy, and `pick_generator` already compares across every
+    book a bot may use — so the split bought nothing and would have become 12
+    bots the moment Epicbet joined. It collapses to 4 configs on the two axes
+    that are real: ANCHOR and MARKET. The per-book question survives because
+    `recommended_bookmaker` is now on every pick, so book is a column to group
+    by rather than an identity.
 
-    The wide source is ALSO a different probability (it re-calibrates raw
-    predictions, where the pipeline's calibrated_prob is what the real-money
-    bots were validated on), so flipping them would silently change what we
-    stake. Paper twins on the SAME mechanism, differing in one field, make it a
-    measurement instead of an argument — which is the point of the generator.
+    REPLACES the WIDE-SOURCE-TWINS test: those two bots (migration 330, an hour
+    earlier) are retired as redundant — `bot_trigger_1x2_model_v1` uses the same
+    prob_source='predictions' and adds draw/away, making the home-only twin a
+    strict subset that would duplicate its home rows. The wide-vs-pipeline
+    comparison is unchanged: the merged bot filtered to home, against
+    bot_coolbet_1x2_model_v1.
 
-    Pins: the twins exist, differ ONLY in prob_source and identity, and can
-    never be staked.
+    Pins the three things that make this safe.
     """
-    import dataclasses
     import pathlib as _pl
     from workers.automation.bot_configs import (
-        CONFIGS, WIDE_CONFIGS, ALL_CONFIGS, CONFIG_BY_NAME,
+        TRIGGER_CONFIGS, WIDE_CONFIGS, ALL_CONFIGS,
     )
     from scripts.place_coolbet_ui import PLACEABLE_BOTS
 
-    assert WIDE_CONFIGS, "the wide-source twins must be configured"
-    assert set(ALL_CONFIGS) >= set(CONFIGS) | set(WIDE_CONFIGS)
+    # 1. Four configs, on the two real axes, each spanning BOTH books.
+    assert len(TRIGGER_CONFIGS) == 4, (
+        f"{len(TRIGGER_CONFIGS)} trigger configs — the 8 bots collapse to 4 "
+        f"(anchor x market); a 5th means an axis crept back in."
+    )
+    for c in TRIGGER_CONFIGS:
+        assert len(c.books) >= 2, (
+            f"{c.bot_name} must span both placeable books — splitting per book "
+            f"is what this merge removed."
+        )
+        assert c.bot_name not in PLACEABLE_BOTS, f"{c.bot_name} must stay PAPER"
+    anchors = {c.prob_source for c in TRIGGER_CONFIGS}
+    assert anchors == {"predictions", "sharp_devig"}, anchors
 
-    pairs = [("bot_coolbet_1x2_model_v1", "bot_wide_1x2_model_v1"),
-             ("bot_coolbet_ou_model_v1", "bot_wide_ou_model_v1")]
-    ignore = {"bot_name", "shadow_cohort", "prob_source", "notes"}
-    for real_name, wide_name in pairs:
-        real, wide = CONFIG_BY_NAME[real_name], CONFIG_BY_NAME[wide_name]
-        assert real.prob_source == "pipeline", real.prob_source
-        assert wide.prob_source == "predictions", wide.prob_source
-        for f in dataclasses.fields(real):
-            if f.name in ignore:
-                continue
-            assert getattr(real, f.name) == getattr(wide, f.name), (
-                f"{wide_name} differs from {real_name} on {f.name!r} — the twin "
-                f"must differ ONLY in the candidate source, or the comparison "
-                f"measures two things at once and answers neither."
+    # 2. The SHARP configs must set their floors explicitly. Inheriting the
+    #    registry's 13% model floor would demand a 13% overlay on a de-vigged
+    #    Pinnacle line (max observed +6.6%) and the bot would silently never
+    #    fire — the one place a hand-written floor is correct.
+    for c in TRIGGER_CONFIGS:
+        if c.prob_source == "sharp_devig":
+            assert c.edge_floor is not None and c.edge_floor <= 0.05, (
+                f"{c.bot_name}: a sharp edge is measured against a near-true "
+                f"line, so its floor must be set explicitly and small, not "
+                f"inherited from the model registry."
             )
 
-    # PAPER ONLY. A twin must never be stakeable, whatever a DB toggle says.
-    for wide in WIDE_CONFIGS:
-        assert wide.bot_name not in PLACEABLE_BOTS, (
-            f"{wide.bot_name} must NOT be in PLACEABLE_BOTS — these exist to be "
-            f"measured, not staked."
+    # 3. The retired twins must NOT be in the run set, or they duplicate rows.
+    names = {c.bot_name for c in ALL_CONFIGS}
+    for w in WIDE_CONFIGS:
+        assert w.bot_name not in names, (
+            f"{w.bot_name} is retired by migration 331 as a strict subset of "
+            f"the merged trigger bot — running it would write duplicate home "
+            f"rows under a second name."
         )
 
-    # The migration must register them, or generate() skips them forever with a
-    # log line nobody reads.
-    mig = _pl.Path("supabase/migrations/330_wide_source_shadow_twins.sql")
-    assert mig.exists(), "migration 330 must register the twin bots"
-    msrc = mig.read_text()
-    for wide in WIDE_CONFIGS:
-        assert wide.bot_name in msrc, f"{wide.bot_name} must be in migration 330"
-        assert wide.shadow_cohort in msrc, (
-            f"{wide.shadow_cohort} must be added to the shadow_cohort CHECK "
-            f"constraint, or every insert for this bot fails"
+    mig = _pl.Path("supabase/migrations/331_merge_trigger_bots.sql")
+    assert mig.exists(), "migration 331 must register the merged bots"
+    m = mig.read_text()
+    for c in TRIGGER_CONFIGS:
+        assert c.bot_name in m and c.shadow_cohort in m, (
+            f"{c.bot_name}/{c.shadow_cohort} must be in migration 331 — the "
+            f"cohort also needs adding to the CHECK constraint or every insert "
+            f"for it fails."
         )
-
-
+    # The 8 old trigger bots must NOT be retired yet: trigger_calibrator_check
+    # is mid-measurement and retiring them would make the comparison span a bot
+    # change AND a calibrator change.
+    assert "bot_coolbet_trigger_1x2_v1" not in m.split("UPDATE bots")[-1], (
+        "the old per-book trigger bots must NOT be retired while "
+        "trigger_calibrator_check is still accumulating post-fix picks — that "
+        "would conflate a bot change with the calibrator change it measures."
+    )
 
 @test("BOTS-DESCRIBE — the bot comparison exists and is honest about what it cannot state")
 def test_bots_describe():
