@@ -1204,6 +1204,59 @@ def job_coolbet_daemon_healthcheck():
     _run_job("coolbet_daemon_healthcheck", lambda: None)
 
 
+def job_pinnacle_drift_refresh():
+    """DRIFT-FEATURE-WRITER-2026-09-11 — keep `pinnacle_drift_*` populated.
+
+    The feature (Pinnacle open->close implied-probability drift on 1X2) was
+    backfilled once, on 2026-06-04, and then nothing ever wrote it again:
+    `scripts/backfill_pinnacle_drift.py` was the only writer and it was never
+    registered here. Measured 2026-09-11, the column was non-null on **0 of
+    22,401** `match_feature_vectors` rows built in the preceding 60 days, with
+    the last populated value dated **2026-06-06** (10,479 of 87,932 rows ever).
+
+    The queue row asked to "re-enable --include-drift once MFV coverage reaches
+    >=30 per cent (currently 2.6)". That trigger could never fire: coverage
+    cannot grow while nothing writes the column. Three months of silence, and
+    the ticket was waiting on itself.
+
+    A 3-day rolling window rather than a fixed cutoff, because the script is a
+    pure idempotent UPSERT keyed on match_id: re-running it over already-filled
+    rows writes the same values, so a missed night self-heals on the next run
+    instead of leaving a permanent hole. 02:30 UTC sits after the 01:00
+    settlement pass (which is when the last of the day's closing prices land)
+    and before the 03:00 prune.
+
+    NOTE this feature is deliberately NOT in the model's training set -- see
+    DRIFT-FEATURE-NOT-A-TRAINING-FEATURE in PRIORITY_QUEUE.md. It is a
+    post-hoc quantity (it needs the CLOSING price) and is used for research,
+    CLV-adjacent analysis and the delayed-placement work, not for inference.
+    """
+    from datetime import datetime, timedelta, timezone
+    import subprocess
+    import sys
+
+    since = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
+    r = subprocess.run(
+        [sys.executable, "scripts/backfill_pinnacle_drift.py", "--since", since],
+        capture_output=True, text=True, timeout=900,
+    )
+    out = (r.stdout or "").strip().splitlines()
+    log.info("pinnacle_drift_refresh since=%s rc=%s :: %s",
+             since, r.returncode, out[-1] if out else "(no output)")
+    if r.returncode != 0:
+        # Surface a failure instead of returning normally -- SILENT-FAILURE-AUDIT-JOBS
+        # found four jobs that reported success after failing, and this one is
+        # replacing a writer that was silently absent for three months.
+        raise RuntimeError(
+            f"backfill_pinnacle_drift exited {r.returncode}: "
+            f"{(r.stderr or '')[-400:]}"
+        )
+
+
+def _pinnacle_drift_refresh_wrapper():
+    _run_job("pinnacle_drift_refresh", job_pinnacle_drift_refresh)
+
+
 def job_epicbet_odds_freshness():
     """EPICBET-403-FROM-VPS-2026-08-29 — DB-side staleness watchdog for the
     Epicbet feed, the thing whose absence let a six-day outage pass unnoticed.
@@ -2762,6 +2815,13 @@ def main():
     # Wed–Sat as extra alert chances catches the case even when Mon dedup
     # or Tue send silently fails. Weekly job = ok to alert 5×/week if
     # something's actually wrong; the operator can tune dedup down.
+    # DRIFT-FEATURE-WRITER-2026-09-11 — 02:30 UTC, after the 01:00 settlement
+    # pass lands the day's closing prices and before the 03:00 odds prune.
+    scheduler.add_job(_pinnacle_drift_refresh_wrapper,
+                      CronTrigger(hour=2, minute=30),
+                      id="pinnacle_drift_refresh",
+                      name="Pinnacle Drift Refresh 02:30")
+
     scheduler.add_job(job_retrain_healthcheck,
                       CronTrigger(day_of_week="mon,tue,wed,thu,fri,sat",
                                   hour=9, minute=0),

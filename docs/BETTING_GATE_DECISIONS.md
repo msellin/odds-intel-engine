@@ -6,6 +6,88 @@
 the fix is a fixed method + a recorded decision, not another ad-hoc run.
 (Established 2026-09-09 after the 1x2 10-vs-13 churn.)
 
+## ⭐ THE FLOOR TABLE — what the data supports, per market and bet type (2026-09-11)
+
+**This is the answer section. Everything below it is method and history.**
+Produced by `scripts/floor_grid_sweep.py` over every settled PRE-MATCH pick in
+both ledgers, model-edge only (`--filter edge_kind=model`), executable price,
+walk-forward folds. Read the **n** column before the ROI column.
+
+### How to read the evidence column
+
+ROI alone cannot decide anything at our sample sizes (~9,300 settled bets are
+needed for +/-2% on ROI; ~334 for CLV). So each row is judged on **ROI and CLV
+moving TOGETHER as the edge floor rises**. That pairing is the strongest
+evidence available to us:
+* **both rise** -> a real edge, and the floor is doing work.
+* **both flat/negative** -> dead, regardless of sample size.
+* **CLV up, ROI down** -> edge is probably real, variance has not converged.
+  Do NOT retire on ROI alone (this is the `bot_summer_specialist` lesson, and
+  the standing kill rule is `ROI < -5% AND CLV < 0%` — both conditions).
+* **CLV negative** -> we are taking worse prices than the close. Nothing to
+  salvage at any floor.
+
+### 1x2 — by selection band (the band IS the bet type here)
+
+| band | n | edge floor | odds floor | verdict |
+|---|---|---|---|---|
+| **home-underdog** | **1,966** | **12-13%** (live: 10% real-money / 13% pooled) | **2.80, keep** | ✅ **REAL EDGE — the only one we have.** ROI and CLV both rise monotonically: 0% -> +5.0/+2.7 · 10% -> +11.4/+4.8 · 12% -> +16.9/+8.7 · 13% -> +19.8/+10.2 · 15% -> +20.8/+12.3 (n=802 at 13%). The 10% real-money floor is the *volume* end of a real gradient, not a mistake — but 12-13% is where CLV roughly doubles. |
+| **draw** | 381 | **do not bet** | — | ❌ **DEAD.** ROI −18% to −38% AND **CLV NEGATIVE at every floor** (−3.1 to −4.4). Negative CLV means we take worse prices than the close, so no floor rescues it. NB the 105k fixture-level basis shows a broad positive DRAW frame — that is a **de-vig/line-shop** edge, not ours (see the scale section). Our model has no draw edge. |
+| **away** | 1,603 | **hold, do not bet, do not retire** | — | ⚠️ **THE INTERESTING ONE.** ROI negative (−6.5% -> −1.2%) but **CLV strongly positive and rising: +6.0 -> +14.9 -> +16.9 -> +20.3%**. That is the "edge is real, variance has not converged" signature, and the standing kill rule does not fire (it needs CLV < 0 too). Let it accrue as paper; revisit at n≈3,000. |
+| **home-mid 2.00-2.80** | 1,201 | **do not bet** | excluded by the 2.80 odds floor | ❌ No robust frame in any dataset; −12.0% at the pooled gate in the earlier per-selection run. The 2.80 odds floor already removes it — no separate rule needed. |
+| **home-fav <2.00** | 336 | **do not bet** | excluded by the 2.80 odds floor | ❌ Zero robust cells in all four datasets; −17.3% at 13%. Excluded automatically by the odds floor. |
+
+**So the whole 1x2 policy is: `home AND odds >= 2.80 AND edge >= 10-13%`** — which
+is what the real-money bot already does. The odds floor does the selection work;
+no exclusion list is needed.
+
+### O/U goals
+
+| bet type | n | edge floor | odds floor | verdict |
+|---|---|---|---|---|
+| **o/u 2.5** | **2,129** | **8-12% (live 8% is sound; do NOT go above 12%)** | **1.80, keep** | ✅ Real but narrower than 1x2. ROI 0% -> +2.1 · 8% -> +6.4 · 10% -> +5.8 · 12% -> **+11.5** · then **COLLAPSES: 13% -> −9.6, 15% -> −18.9**. CLV peaks ~+3.3 at 12%. The collapse above 12% is the important part — a higher floor is NOT safer here. |
+| o/u 2.5 **under** | 1,278 | 8% | 2.20 in two datasets | Carries most of the signal (+27.0% @8%/2.20, n=162, 17 robust cells in sim/all). |
+| o/u 2.5 **over** | 851 | — | — | Weak: zero robust cells on n=462 in the largest ledger. |
+| **o/u 3.5** | **312** | **do not bet** | — | ❌ Zero robust cells in any dataset, either side. `bot_ou35_model_v1` shipped promotion-pending and is **still unvalidated**. |
+| **o/u 1.5** | 143 | **do not bet** | — | ❌ Zero robust cells. Never activated; leave it that way. |
+
+### Markets we do not bet — and whether the data agrees
+
+| bet type | n | verdict |
+|---|---|---|
+| **double_chance** | **8,130** (our largest sample) | ❌ **DEAD, decisively.** ROI −5.5% to −7.0% and **CLV −4.8% at EVERY floor**, both flat — the floor changes nothing. Already retired; this confirms it on 8k picks. |
+| **asian_handicap** (all lines) | **2,059** | ❌ No fold-robust cell at ANY line or floor (−0.5 n=614, +0.5 n=445, −1 n=221, 0 n=219, −1.5 n=204, …). ROI negative until 15% (+1.4%, n=726). No Pinnacle AH coverage so CLV cannot corroborate. **It still carries a 5% floor in `_MIN_EDGE_BY_MARKET` — retiring it (`None`) is now evidence-backed.** |
+| **btts** | 851 | ❌ Zero robust cells. Already retired; confirmed. |
+| **corners** (8.5-11.5) | ≤12 per line | ⚠️ **NO EVIDENCE — and worse, its bot is an edge-unit offender** (`bot_corners_paper_shadow_v1` stores edge up to 30.7, breaking the 0..1 convention). Fix the unit before any sweep of it means anything. |
+| **team_total / 1x2_1h / draw_no_bet** | ≤22 | ⚠️ No evidence. Too young. |
+
+### What is NOT supported, and was claimed earlier in this same session
+
+* **A 3.20 odds floor for 1x2 and 2.20 for O/U.** Withdrawn. It rested on cells
+  of 130-260 bets; CLV by odds band does not corroborate it (the 2.2-2.8 band
+  reads as good or better, +18.2% CLVpin); and the only basis at real scale is
+  **blind to the odds axis by construction**. Keep 2.80 / 1.80.
+* **Any floor derived from the 105k fixture-level basis.** Its edge is
+  `best_accessible x P_devig_pinnacle - 1` — a de-vig/line-shop edge, not ours,
+  labelled `edge_kind=devig-fixture` precisely so it cannot be mistaken for
+  model edge. Its O/U-over column prints **+226.7%**, which is the line-shop
+  mirage (§52/§55) being self-evidently unreal. Use it for edge-axis
+  *monotonicity* at scale, never for a floor and never for the odds axis.
+
+### The honest limit on all of the above
+
+Model-edge decisions can only rest on picks our model actually made: **18,030
+settled pre-match model-edge picks total**, of which 1x2 is 4,346 and o/u 2.5 is
+2,129. The ~9,300-for-+/-2% threshold means only `1x2 home-underdog`,
+`o/u 2.5`, `double_chance` and `asian_handicap` have samples in the range where
+ROI starts to mean much — and two of those are dead. Everything else is a CLV
+argument or a hold. Reproduce any row with:
+
+```bash
+python3 scripts/floor_grid_sweep.py --no-idealized --filter edge_kind=model \
+        --group-by bet_type --summary-only --min-n 100
+```
+
 ## The canonical method (use THIS, nothing else, for a floor decision)
 
 Run `scripts/edge_floor_backtest.py --market <m> --folds 3`. A floor is

@@ -37088,5 +37088,71 @@ def test_vps_backup_retention_sweeps_sane():
     )
 
 
+
+@test("FLOOR-TABLE-MATCHES-CODE — the documented floor table still describes the live gates")
+def test_floor_table_matches_code():
+    """THE FLOOR TABLE (docs/BETTING_GATE_DECISIONS.md, 2026-09-11) is the
+    answer to "what floors does the data support, per market and bet type".
+
+    A table like that is only useful while it describes reality. The whole doc
+    exists because floors were changed without the record being updated — the
+    1x2 pooled floor moved four times (0.03 -> 0.10 -> 0.15 -> 0.10 -> 0.13,
+    three in one day). So this pins the live values the table CLAIMS are live.
+    If a floor changes, this fails and the table must be re-derived in the same
+    commit — which is the doc's own stated rule.
+
+    It deliberately pins NO ROI or CLV figures: those move with every settled
+    bet, and pinning them would make this a test of the data rather than of the
+    agreement between the code and the record.
+    """
+    import pathlib as _pl
+    import workers.automation.coolbet_placer as cp
+    from scripts.place_coolbet_ui import BOT_THRESHOLDS
+
+    doc = _pl.Path("docs/BETTING_GATE_DECISIONS.md").read_text()
+    assert "THE FLOOR TABLE" in doc, (
+        "the floor table must remain the answer section of "
+        "BETTING_GATE_DECISIONS.md — it is what the owner is pointed at."
+    )
+
+    # The values the table states are LIVE today.
+    assert cp._MIN_EDGE_BY_MARKET["1x2"] == 0.13, (
+        f"pooled 1x2 edge floor is {cp._MIN_EDGE_BY_MARKET['1x2']}, table says "
+        "0.13 — re-derive the table in this commit."
+    )
+    assert cp._MODEL_1X2_HOME_FLOOR == 0.10, (
+        "the 1x2 home-underdog floor is the real-money one; table says 0.10"
+    )
+    assert BOT_THRESHOLDS["bot_coolbet_1x2_model_v1"] == 0.10
+    assert cp._MIN_EDGE_BY_MARKET["o/u"] == 0.08, (
+        "table says the live O/U edge floor is 8% and that it is SOUND — but "
+        "also that ROI COLLAPSES above 12% (13% -> -9.6%, 15% -> -18.9%). "
+        "Raising it is the dangerous direction here, not lowering it."
+    )
+    assert cp._min_odds_for("1x2") == 2.80, (
+        "table keeps the 1x2 odds floor at 2.80 — the 3.20 suggestion was "
+        "WITHDRAWN (130-260 bet cells, CLV did not corroborate, and the only "
+        "basis at scale is blind to the odds axis)."
+    )
+    assert cp._min_odds_for("o/u") == 1.80, "table keeps the O/U odds floor at 1.80"
+
+    # Retired markets the table confirms as dead on large samples.
+    for m in ("btts", "double_chance"):
+        assert cp._MIN_EDGE_BY_MARKET[m] is None, (
+            f"{m} is recorded as DEAD (double_chance on n=8,130 with ROI and "
+            f"CLV both negative at every floor); it must stay retired (None)."
+        )
+
+    # AH is the one open item the table names: still gated at 5%, evidence now
+    # says retire. Pinned so the discrepancy stays VISIBLE rather than rotting.
+    ah = cp._MIN_EDGE_BY_MARKET["asian_handicap"]
+    assert ah in (0.05, None), (
+        f"asian_handicap floor is {ah}. The table records 0.05 as live with "
+        "'retiring it is now evidence-backed' (n=2,059, no robust cell at any "
+        "line). Either value is consistent with the record; anything else means "
+        "someone picked a new number and must justify it in the table."
+    )
+
+
 if __name__ == "__main__":
     main()

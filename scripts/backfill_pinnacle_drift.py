@@ -43,21 +43,49 @@ def compute_drifts(since: str | None) -> list[tuple[str, float, float, float]]:
     params: list = [since] if since else []
     rows = execute_query(
         f"""
+        -- DRIFT-FEATURE-FANOUT-2026-09-11. This used to select ALL is_opening
+        -- and ALL is_closing rows and join them, which is wrong on two counts
+        -- because a price series routinely carries more than one of each: over
+        -- all time there are 186,257 open/close pairs across only ~22,300
+        -- matches, i.e. ~2.8 pairs per (match, selection) rather than 1.
+        --
+        --   * the join FANS OUT (n_open x n_close rows per selection), so
+        --     `HAVING COUNT(*) ... = 3` -- which counted joined ROWS, not
+        --     distinct selections -- was satisfied by a single selection with
+        --     three pairs, leaving draw/away NULL and the row discarded by the
+        --     Python None-guard below;
+        --   * even when it survived, `MAX(drift)` picked the most POSITIVE of
+        --     the fanned-out combinations rather than the real open-to-close
+        --     move.
+        --
+        -- Measured effect: the old query returned 1,861 matches since
+        -- 2026-06-01 where 11,716 have all three selections anchored at both
+        -- ends -- it was silently dropping 84 per cent of what it could
+        -- compute. DISTINCT ON picks the EARLIEST opening and the LATEST
+        -- closing per (match, selection), which is what "open to close"
+        -- means, and the HAVING now counts distinct selections.
         WITH open_rows AS (
-          SELECT match_id, selection, odds
+          SELECT DISTINCT ON (match_id, selection)
+                 match_id, selection, odds
           FROM odds_snapshots
-          WHERE bookmaker = 'Pinnacle' AND market = '1x2' AND is_opening = true
+          WHERE bookmaker = 'Pinnacle' AND market = '1x2'
+            AND is_opening = true AND NOT COALESCE(is_live, false)
+          ORDER BY match_id, selection, timestamp ASC
         ),
         close_rows AS (
-          SELECT match_id, selection, odds
+          SELECT DISTINCT ON (match_id, selection)
+                 match_id, selection, odds
           FROM odds_snapshots
-          WHERE bookmaker = 'Pinnacle' AND market = '1x2' AND is_closing = true
+          WHERE bookmaker = 'Pinnacle' AND market = '1x2'
+            AND is_closing = true AND NOT COALESCE(is_live, false)
+          ORDER BY match_id, selection, timestamp DESC
         ),
         joined AS (
           SELECT o.match_id, o.selection,
                  (1.0/c.odds) - (1.0/o.odds) AS drift
           FROM open_rows o
           JOIN close_rows c USING (match_id, selection)
+          WHERE o.odds > 1.0 AND c.odds > 1.0
         )
         SELECT j.match_id::text AS match_id,
                MAX(CASE WHEN j.selection = 'home' THEN j.drift END) AS drift_home,
@@ -67,7 +95,8 @@ def compute_drifts(since: str | None) -> list[tuple[str, float, float, float]]:
         JOIN matches m ON m.id = j.match_id
         WHERE 1=1 {where}
         GROUP BY j.match_id
-        HAVING COUNT(*) FILTER (WHERE j.selection IN ('home','draw','away')) = 3
+        HAVING COUNT(DISTINCT j.selection) FILTER (
+                   WHERE j.selection IN ('home','draw','away')) = 3
         """,
         params,
     )
