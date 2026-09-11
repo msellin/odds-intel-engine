@@ -61,6 +61,33 @@ All steps complete:
 
 ---
 
+## Disk headroom (measured 2026-09-11)
+
+| | |
+|---|---|
+| VPS disk | **301 GB total, 158 GB used, 131 GB free (55%)** — up from 118 GB free on 2026-09-06 |
+| `odds_snapshots` | 46.3M rows / **20 GB** (9.7 GB heap + 10 GB indexes — the indexes are bigger than the data) |
+| next largest table | `team_transfers` 864 MB |
+| odds inflow | ~1.8M rows/day (1.48M–3.52M; Saturdays peak) |
+| permanently retained | **33.9% of rows written** — anchors + one fallback row per anchorless series |
+| net growth before DB-ANCHOR-GROWTH | **+1.58M rows/day ≈ +681 MB/day ≈ 249 GB/yr** → ~190 days of runway |
+| net growth after | **+634k rows/day ≈ +273 MB/day ≈ 100 GB/yr** → **~480 days of runway** |
+
+The 4 GB / 40 GB figure in the table above is the *original* VPS spec; the box
+now runs a 301 GB volume. Note that a `DELETE` returns space to Postgres for
+reuse but **not** to the filesystem — `df` only changes after a `VACUUM FULL`,
+which takes an exclusive lock and ~15 GB of temp space and is deliberately not
+part of the nightly job.
+
+Still open (owner decision, see DB-ANCHOR-GROWTH in `PRIORITY_QUEUE.md`): of
+20,607,450 permanent anchor rows, **16,172,516 (78.5%, ~6.6 GB)** belong to
+books we can neither bet nor use as the sharp anchor. Dropping only their
+`is_opening` rows is safe and worth ~3.3 GB; dropping their `is_closing` rows
+too would silently shift two production model features
+(`ou25_bookmaker_disagreement`, `market_implied_btts_yes`) that are recomputed
+from full history on every Sunday retrain, and would make CONSENSUS-ANCHOR-BOT
+unbacktestable.
+
 ## GitHub Actions Usage
 
 All scheduled jobs run on Hetzner VPS (systemd). GitHub Actions used only for manual triggers + DB migrations.

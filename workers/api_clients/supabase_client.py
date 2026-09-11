@@ -737,16 +737,30 @@ def store_coolbet_odds_snapshot(
     """
     from workers.api_clients.db import get_conn
     now = datetime.now(timezone.utc).isoformat()
-    is_closing = minutes_to_kickoff is not None and abs(minutes_to_kickoff) <= 5
+    # DIRECT-BOOK-ANCHORS-2026-09-11 — same fix as store_book_odds_snapshots:
+    # a 15-minute closing window (the house convention, set by fetch_odds.py)
+    # and a real `is_opening`. This single-row path is what the Coolbet placer
+    # writes through, so leaving it on the old +-5 window would have kept
+    # Coolbet — the book we place real money at — anchorless.
+    is_closing = minutes_to_kickoff is not None and abs(minutes_to_kickoff) <= 15
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO odds_snapshots
                    (match_id, bookmaker, market, selection, odds, timestamp,
-                    is_closing, minutes_to_kickoff, handicap_line)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    is_closing, minutes_to_kickoff, handicap_line, is_opening)
+                   SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                          NOT EXISTS (
+                              SELECT 1 FROM odds_snapshots p
+                               WHERE p.match_id  = %s
+                                 AND p.bookmaker = 'Coolbet'
+                                 AND p.market    = %s
+                                 AND p.selection = %s
+                                 AND p.handicap_line IS NOT DISTINCT FROM %s
+                          )""",
                 (match_id, "Coolbet", market, selection, odds, now,
-                 is_closing, minutes_to_kickoff, handicap_line),
+                 is_closing, minutes_to_kickoff, handicap_line,
+                 match_id, market, selection, handicap_line),
             )
             conn.commit()
 
@@ -772,10 +786,38 @@ def store_book_odds_snapshots(
     if not rows:
         return 0
     now = datetime.now(timezone.utc).isoformat()
-    is_closing = minutes_to_kickoff is not None and abs(minutes_to_kickoff) <= 5
+    # DIRECT-BOOK-ANCHORS-2026-09-11 (DB-ANCHOR-GROWTH step 0). Two bugs in one
+    # line, and they cost us history at the only books we can actually stake at.
+    #
+    # (1) The window was `<= 5` minutes while the API-Football writer
+    #     (fetch_odds.py) uses `<= 15`. Our direct sweeps run every 30 minutes,
+    #     so a +-5 window (10 minutes wide) almost never contains a snapshot for
+    #     any given match: measured all-time, `is_closing` was set on 1,544 of
+    #     Epicbet's 1,663,230 rows (0.09%), 1,057 of Coolbet's 481,753 (0.22%)
+    #     and 0 of Unibet-Site's 35,340 (0.00%) — against 39% for Pinnacle and
+    #     32% for Betano on the AF path. A +-15 window is 30 minutes wide, i.e.
+    #     exactly the sweep period, so one snapshot lands in it per match.
+    #
+    # (2) `is_opening` was never written at all, so it defaulted to false on
+    #     every row. That is why we have no opening price at Coolbet, Epicbet or
+    #     Unibet-Site and therefore no own-book open->close drift, while we hold
+    #     405,615 Pinnacle openings.
+    #
+    # Consequence under retention: the pruner keeps anchors plus the latest
+    # pre-kickoff row per series, so our own books were reduced to ONE row per
+    # series while unbettable reference books kept two. (CLV was never affected
+    # — CLOSING-PRE-KO-FALLBACK already resolves against that surviving row, and
+    # measured coverage is 95-100% at Coolbet/Epicbet.)
+    #
+    # `is_opening` is computed by the INSERT itself rather than by a pre-fetch
+    # round trip, and the series key includes `handicap_line` so each AH rung
+    # gets its own opening — matching how the pruner partitions series. The
+    # NOT EXISTS rides the (match_id, market, timestamp) index.
+    is_closing = minutes_to_kickoff is not None and abs(minutes_to_kickoff) <= 15
     payload = [
         (match_id, bookmaker, market, selection, odds, now,
-         is_closing, minutes_to_kickoff, line)
+         is_closing, minutes_to_kickoff, line,
+         match_id, bookmaker, market, selection, line)
         for market, selection, odds, line in rows
     ]
     with get_conn() as conn:
@@ -783,8 +825,16 @@ def store_book_odds_snapshots(
             cur.executemany(
                 """INSERT INTO odds_snapshots
                    (match_id, bookmaker, market, selection, odds, timestamp,
-                    is_closing, minutes_to_kickoff, handicap_line)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    is_closing, minutes_to_kickoff, handicap_line, is_opening)
+                   SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                          NOT EXISTS (
+                              SELECT 1 FROM odds_snapshots p
+                               WHERE p.match_id  = %s
+                                 AND p.bookmaker = %s
+                                 AND p.market    = %s
+                                 AND p.selection = %s
+                                 AND p.handicap_line IS NOT DISTINCT FROM %s
+                          )""",
                 payload,
             )
             conn.commit()

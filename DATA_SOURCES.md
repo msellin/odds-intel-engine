@@ -33,6 +33,42 @@ Three odds caveats worth knowing before planning against this feed:
 
 ---
 
+## Odds retention & anchors (what we keep, and for how long)
+
+`odds_snapshots` is the largest object in the database by far — **46.3M rows /
+20 GB**, versus 864 MB for the next biggest table — and it is governed by
+`scripts/prune_odds_snapshots.py` (nightly 03:00 UTC). The policy: keep every
+tick for 7 days, then keep only the **opening** and **closing** anchors plus the
+latest pre-kickoff row per price series. In-play rows are **downsampled to one
+per minute** and kept indefinitely.
+
+**DIRECT-BOOK-ANCHORS-2026-09-11 — the books we bet had no anchors.** Anchor
+flags are stamped at write time as `abs(minutes_to_kickoff) <= N`. The
+API-Football writer uses N=15; the direct-book writers used N=5, and our direct
+sweeps run every 30 minutes, so a 10-minute-wide window almost never contained a
+snapshot. Measured all-time before the fix:
+
+| book | rows | `is_closing` | `is_opening` |
+|---|---|---|---|
+| Pinnacle | 3,732,910 | 1,462,147 (39%) | 405,615 |
+| Betano | 3,135,310 | 1,017,790 (32%) | 447,467 |
+| Unibet (AF feed) | 2,393,734 | 729,509 (30%) | 372,498 |
+| **Epicbet** | 1,663,230 | **1,544 (0.09%)** | **0** |
+| **Coolbet** | 481,753 | **1,057 (0.22%)** | **12** |
+| **Unibet-Site** | 35,340 | **0 (0.00%)** | **0** |
+
+So retention reduced the three books we can actually stake at to a single
+surviving row per series, with no opening price anywhere — hence no own-book
+open-to-close drift, while we hold 405,615 Pinnacle openings. Both direct
+writers now use the 15-minute window and compute `is_opening` in the INSERT
+(partitioned on `handicap_line`, so each AH rung gets its own opening).
+**Historical openings are unrecoverable** — those early rows are already pruned;
+this only accrues forward, at ~24k rows/day.
+
+CLV was never affected: `CLOSING-PRE-KO-FALLBACK` (settlement.py) resolves
+against the surviving pre-kickoff row, and measured coverage is `real_bets`
+Coolbet 930/977 = 95.2%, `shadow_bets` 30d Coolbet 100.0% / Epicbet 99.4%.
+
 ## Daily Request Budget (API-Football **Mega** — 150,000/day, 900/min)
 
 Verified 2026-09-05 from live `/status` headers. The old version of this table was

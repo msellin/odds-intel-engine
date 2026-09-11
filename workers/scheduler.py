@@ -2608,12 +2608,21 @@ def main():
     scheduler.add_job(job_prune_anon_users, CronTrigger(day_of_week="sun", hour=2, minute=0),
                       id="prune_anon_users", name="Prune Anonymous Users Sunday 02:00")
 
-    # ODDS-BACKLOG-PRUNE — drain historical odds_snapshots for finished matches >30d.
-    # Simple DELETE (no window functions): keeps only is_closing + is_opening.
-    # Runs nightly at 03:00 UTC when IO budget is fresh. 5k matches per run
-    # clears the ~45k-match backlog in ~9 nights automatically.
+    # ODDS-BACKLOG-PRUNE — drain historical odds_snapshots past the retention
+    # window. Simple DELETE (no window functions): keeps is_closing + is_opening
+    # + the latest pre-kickoff row per series, and downsamples in-play rows to
+    # 1/minute rather than deleting them. Runs nightly at 03:00 UTC when the IO
+    # budget is fresh.
+    #
+    # DB-ANCHOR-GROWTH-2026-09-11: the cap was 5,000 matches/night, chosen when
+    # the backlog was counted in matches (~45k) rather than rows. It is the rows
+    # that matter and they are concentrated: the whole prunable backlog is only
+    # ~8,200 matches but 10.9M rows, and the 2026-09-11 run recovered 85,913 of
+    # them against ~1.8M written that day. 12,000 covers the entire backlog in
+    # one pass and then costs nothing on subsequent nights, because the EXISTS
+    # predicate means an already-compacted match is never selected again.
     scheduler.add_job(
-        lambda: __import__('scripts.prune_odds_snapshots', fromlist=['prune_old_simple']).prune_old_simple(max_matches=5000),
+        lambda: __import__('scripts.prune_odds_snapshots', fromlist=['prune_old_simple']).prune_old_simple(max_matches=12000),
         CronTrigger(hour=3, minute=0),
         id="odds_backlog_prune", name="Odds Backlog Prune 03:00"
     )

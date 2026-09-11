@@ -160,6 +160,33 @@ def prune(dry_run: bool = True, mode: str = "hourly") -> int:
 # time, not from history.
 RETENTION_DAYS = int(os.getenv("ODDS_RETENTION_DAYS", "7"))
 
+# DB-ANCHOR-GROWTH step B (2026-09-11). `prune_old_simple` only ever looked at
+# status='finished', so POSTPONED fixtures kept their entire tick history
+# forever — 1,910,407 non-anchor rows when measured, with nothing to expire
+# them. A postponed match has no result, so it cannot be settled, cannot carry
+# CLV and cannot appear in a backtest; the only thing its ticks are good for is
+# the pre-postponement price path if the fixture is later replayed under the
+# same id. That is worth a longer grace than a finished match, not an exemption.
+POSTPONED_RETENTION_DAYS = int(os.getenv("ODDS_POSTPONED_RETENTION_DAYS", "30"))
+
+# ODDS-INPLAY-RETENTION (2026-09-11). In-play rows cannot survive this job's
+# ordinary predicate: `is_closing` is only stamped within 15 minutes of kickoff
+# and the anchorless-survivor fallback below only considers rows with
+# `timestamp <= m.date`, so a post-kickoff row is neither an anchor nor a
+# fallback survivor. The unqualified DELETE therefore erased 100% of in-play
+# price history — which went unnoticed only because the cursor was too slow to
+# reach it (155,048 is_live rows still existed, 152,327 of them already inside
+# the target set).
+#
+# That is not a policy anybody chose, and it forecloses an in-play product: no
+# model could ever train on more than a 7-day window. So in-play rows are now
+# DOWNSAMPLED rather than deleted — one row per minute per price series, kept
+# indefinitely. At the cadences we actually run (api-football-live 45s, a
+# prospective Epicbet sweep 2-3 min) that is near-lossless while bounding the
+# worst case to 60 rows/hour/series. Raw pre-existing history is preserved at
+# full resolution in `odds_snapshots_inplay_archive` (migration 329).
+INPLAY_BUCKET = os.getenv("ODDS_INPLAY_BUCKET", "minute")
+
 
 def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
     """
@@ -199,19 +226,38 @@ def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
     # alone would still re-visit already-compacted matches forever, just in a
     # different order. Excluding matches with nothing left to prune is what
     # makes the cursor actually advance.
+    # ── ODDS-PRUNE-CURSOR-ORDER-2026-09-11 ──────────────────────────────────
+    # `ORDER BY m.date ASC` drained the THINNEST matches first. Measured on the
+    # live backlog: 7-14d old = 2,527 matches x 3,102 prunable rows each;
+    # 14-30d = 4,095 x 683; 30-90d = 1,569 x 143. Oldest-first therefore spent
+    # every night on the 143-row matches and never reached the 2,527 holding
+    # 72% of the 10.9M recoverable rows — the 2026-09-11 run deleted 85,913
+    # rows from its full 5,000-match budget (17 per match) while ~1.8M were
+    # written that day. DESC puts the fat matches first, so an interrupted or
+    # rate-limited run still recovers most of what is available.
+    #
+    # The EXISTS clause (ODDS-PRUNE-CURSOR-BUG-2026-09-06) is what makes the
+    # cursor advance at all; ordering only decides how much each night is worth.
+    #
+    # Postponed fixtures are included on their own longer grace — see
+    # POSTPONED_RETENTION_DAYS. 'cancelled' is deliberately NOT included: those
+    # rows are few and a cancelled fixture never comes back, so the ordinary
+    # finished-match path never sees them and they are left for a later pass.
     cur.execute("""
         SELECT m.id FROM matches m
-        WHERE m.status = 'finished'
-          AND m.date < NOW() - make_interval(days => %s)
+        WHERE (
+                 (m.status = 'finished'  AND m.date < NOW() - make_interval(days => %s))
+              OR (m.status = 'postponed' AND m.date < NOW() - make_interval(days => %s))
+              )
           AND EXISTS (
                 SELECT 1 FROM odds_snapshots o
                  WHERE o.match_id = m.id
                    AND NOT COALESCE(o.is_closing, false)
                    AND NOT COALESCE(o.is_opening, false)
               )
-        ORDER BY m.date ASC
+        ORDER BY m.date DESC
         LIMIT %s
-    """, (RETENTION_DAYS, max_matches))
+    """, (RETENTION_DAYS, POSTPONED_RETENTION_DAYS, max_matches))
     match_ids = [str(r[0]) for r in cur.fetchall()]
     conn.commit()
 
@@ -251,6 +297,18 @@ def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
                         WHERE o.match_id = ANY(%s::uuid[])
                           AND NOT COALESCE(o.is_closing, false)
                           AND NOT COALESCE(o.is_opening, false)
+                          -- ODDS-INPLAY-RETENTION-2026-09-11: in-play rows are
+                          -- downsampled by _prune_inplay_downsample, never
+                          -- deleted here. Without this clause they were ALL
+                          -- deleted, because a post-kickoff row can satisfy
+                          -- neither anchor flag nor the pre-kickoff fallback
+                          -- below. Losing every in-play row, silently.
+                          -- NB: never write a literal percent sign inside these
+                          -- SQL strings. psycopg2 parses it as a parameter
+                          -- placeholder, so one in a COMMENT raised
+                          -- IndexError on every batch and the job reported
+                          -- "0 rows" as if there were nothing to prune.
+                          AND NOT COALESCE(o.is_live, false)
                           AND o.id <> (
                                 SELECT k.id FROM odds_snapshots k
                                  JOIN matches m ON m.id = k.match_id
@@ -272,6 +330,18 @@ def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
                         WHERE o.match_id = ANY(%s::uuid[])
                           AND NOT COALESCE(o.is_closing, false)
                           AND NOT COALESCE(o.is_opening, false)
+                          -- ODDS-INPLAY-RETENTION-2026-09-11: in-play rows are
+                          -- downsampled by _prune_inplay_downsample, never
+                          -- deleted here. Without this clause they were ALL
+                          -- deleted, because a post-kickoff row can satisfy
+                          -- neither anchor flag nor the pre-kickoff fallback
+                          -- below. Losing every in-play row, silently.
+                          -- NB: never write a literal percent sign inside these
+                          -- SQL strings. psycopg2 parses it as a parameter
+                          -- placeholder, so one in a COMMENT raised
+                          -- IndexError on every batch and the job reported
+                          -- "0 rows" as if there were nothing to prune.
+                          AND NOT COALESCE(o.is_live, false)
                           AND o.id <> (
                                 SELECT k.id FROM odds_snapshots k
                                  JOIN matches m ON m.id = k.match_id
@@ -303,8 +373,80 @@ def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
                 break
 
     print(f"  {'Would delete' if dry_run else 'Deleted'}: {total_deleted:,} rows from {len(match_ids):,} matches")
+
+    # ODDS-INPLAY-RETENTION-2026-09-11 — downsample instead of delete. Runs on
+    # the same match cursor so it inherits the same batching and grace period.
+    inplay_deleted = _prune_inplay_downsample(cur, conn, match_ids, dry_run=dry_run)
+    if inplay_deleted:
+        print(f"  in-play {'would downsample' if dry_run else 'downsampled'}: "
+              f"{inplay_deleted:,} sub-minute rows dropped")
+
     conn.close()
-    return total_deleted
+    return total_deleted + inplay_deleted
+
+
+def _prune_inplay_downsample(cur, conn, match_ids: list[str], dry_run: bool = False) -> int:
+    """Thin in-play rows to one per minute per price series. Never deletes the
+    last remaining row of a series.
+
+    In-play odds are the one class this job must NOT treat like pre-match ticks.
+    A post-kickoff row can never carry `is_closing` (stamped only within 15
+    minutes of kickoff) and can never be the anchorless fallback survivor (that
+    clause requires `timestamp <= m.date`), so the ordinary predicate condemned
+    every in-play row ever written. Nobody chose that, and it would cap any
+    future in-play model's training window at 7 days.
+
+    Keeping one row per minute per (match, bookmaker, market, selection,
+    handicap_line) preserves the SHAPE of the move — which is what an in-play
+    model needs — at a bounded 60 rows/hour/series. At the cadences we run it is
+    near-lossless: api-football-live polls at 45s, a prospective Epicbet in-play
+    sweep at 2-3 min would lose nothing at all.
+
+    `DISTINCT ON` picks the EARLIEST row in each minute deliberately: a
+    downsampled series should read as "the price as at 61'00", not as a value
+    stamped at an arbitrary offset inside the minute.
+    """
+    if not match_ids:
+        return 0
+
+    sql = """
+        DELETE FROM odds_snapshots o
+        WHERE o.match_id = ANY(%s::uuid[])
+          AND COALESCE(o.is_live, false)
+          AND o.id NOT IN (
+                SELECT DISTINCT ON (k.match_id, k.bookmaker, k.market,
+                                    k.selection, k.handicap_line,
+                                    date_trunc('minute', k.timestamp))
+                       k.id
+                  FROM odds_snapshots k
+                 WHERE k.match_id = ANY(%s::uuid[])
+                   AND COALESCE(k.is_live, false)
+                 ORDER BY k.match_id, k.bookmaker, k.market, k.selection,
+                          k.handicap_line, date_trunc('minute', k.timestamp),
+                          k.timestamp ASC
+          )
+    """
+    count_sql = sql.replace("DELETE FROM odds_snapshots o",
+                            "SELECT COUNT(*) FROM odds_snapshots o", 1)
+
+    total = 0
+    BATCH = 100
+    for i in range(0, len(match_ids), BATCH):
+        batch = match_ids[i:i + BATCH]
+        try:
+            cur.execute("SET LOCAL statement_timeout = '10min'")
+            if dry_run:
+                cur.execute(count_sql, (batch, batch))
+                total += cur.fetchone()[0]
+                conn.rollback()
+            else:
+                cur.execute(sql, (batch, batch))
+                total += cur.rowcount
+                conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"  in-play batch {i} skipped: {type(e).__name__}: {e}")
+    return total
 
 
 if __name__ == "__main__":

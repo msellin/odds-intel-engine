@@ -31929,9 +31929,17 @@ def _odds_prune_cursor():
     # assertions (gotcha 41 — the trap that caught another test earlier today).
     code = "\n".join(ln for ln in fn.split("\n") if not ln.lstrip().startswith("#"))
 
-    assert "ORDER BY m.date ASC" in code, (
+    # DB-ANCHOR-GROWTH-2026-09-11: this used to require `ORDER BY m.date ASC`
+    # specifically, which pinned the old reality — ASC was itself the reason the
+    # job recovered almost nothing, because it drained the thinnest matches
+    # first (30-90d: 143 prunable rows/match vs 7-14d: 3,102). The direction is
+    # now DESC and the intent this test actually protects is unchanged: order by
+    # a MONOTONIC column, never by a random UUID. ODDS-PRUNE-CURSOR-ORDER pins
+    # the direction itself.
+    assert ("ORDER BY m.date DESC" in code or "ORDER BY m.date ASC" in code), (
         "prune_old_simple no longer orders candidates by date — if it is back "
         "on `ORDER BY id` over a UUID it will revisit the same page forever"
+        " (either date direction is acceptable here; see ODDS-PRUNE-CURSOR-ORDER)"
     )
     assert "EXISTS" in code and "NOT COALESCE(o.is_closing" in code, (
         "the candidate query no longer excludes matches with nothing left to "
@@ -36686,6 +36694,154 @@ def test_unified_gate_mode():
         "renamed or purged, the documented away finding must be re-derived."
     )
 
+
+@test("ODDS-PRUNE-INPLAY-PROTECTED — in-play rows are downsampled, never deleted wholesale")
+def test_odds_prune_inplay_protected():
+    """ODDS-INPLAY-RETENTION-2026-09-11. The retention job's predicate was
+    structurally incapable of keeping an in-play row: `is_closing` is stamped
+    only within 15 minutes of kickoff, and the anchorless-survivor fallback
+    requires `timestamp <= m.date`, so every post-kickoff row was condemned.
+    Measured on 200 in-play matches: the old clause would have deleted 8,427 of
+    9,021 is_live rows; the 1/minute downsample drops 13.
+
+    Nobody chose to delete in-play history — and it forecloses an in-play
+    product, since no model could train on more than a 7-day window. This pins
+    the carve-out: the destructive DELETE must exclude is_live, and the
+    downsampler must exist and keep one row per minute per price series.
+    """
+    import inspect
+    from scripts import prune_odds_snapshots as pr
+
+    src = inspect.getsource(pr.prune_old_simple)
+    assert "NOT COALESCE(o.is_live, false)" in src, (
+        "prune_old_simple's DELETE must exclude in-play rows — without it, "
+        "100 percent of in-play price history is deleted after the retention "
+        "window, silently."
+    )
+    assert hasattr(pr, "_prune_inplay_downsample"), (
+        "the in-play downsampler must exist; excluding is_live from the DELETE "
+        "without it would make in-play rows immortal instead of bounded."
+    )
+    dsrc = inspect.getsource(pr._prune_inplay_downsample)
+    assert "date_trunc('minute'" in dsrc and "DISTINCT ON" in dsrc, (
+        "the downsampler must keep one row per MINUTE per series — that bounds "
+        "the worst case to 60 rows/hour/series while preserving the move shape."
+    )
+    assert "k.handicap_line" in dsrc, (
+        "the series key must include handicap_line or every AH rung collapses "
+        "into one downsampled series."
+    )
+
+    # Regression guard for a real bug hit while writing this: a literal percent
+    # sign inside any SQL string makes psycopg2 treat it as a placeholder, which
+    # raised IndexError on every batch while the job cheerfully printed
+    # "Would delete: 0 rows" -- i.e. it looked like there was nothing to prune.
+    mod_src = inspect.getsource(pr)
+    for chunk in mod_src.split('"""'):
+        pass
+    import re
+    for m in re.finditer(r'"""(.*?)"""', mod_src, re.S):
+        body = m.group(1)
+        if "DELETE FROM" in body or "SELECT" in body:
+            stripped = body.replace("%s", "").replace("%%", "")
+            assert "%" not in stripped, (
+                "a literal percent sign inside a SQL string is parsed by "
+                "psycopg2 as a parameter placeholder. One in a COMMENT made "
+                "every prune batch raise IndexError while the job reported "
+                "0 rows, which reads identically to a clean database. "
+                f"Offending SQL starts: {body.strip()[:120]}"
+            )
+
+
+@test("ODDS-PRUNE-CURSOR-ORDER — the cursor takes the fattest matches first, and sees postponed ones")
+def test_odds_prune_cursor_order():
+    """DB-ANCHOR-GROWTH-2026-09-11. Two independent reasons the nightly job
+    recovered almost nothing:
+
+      * `ORDER BY m.date ASC` drained the thinnest matches first. The prunable
+        backlog is 7-14d old: 2,527 matches x 3,102 rows each; 14-30d: 4,095 x
+        683; 30-90d: 1,569 x 143. Oldest-first spent its whole 5,000-match
+        budget on the 143-row tail — the 2026-09-11 run deleted 85,913 rows
+        against ~1.8M written that day. With DESC, 300 matches dry-ran to
+        955,561 rows.
+      * the selection only ever looked at status='finished', so POSTPONED
+        fixtures kept their full tick history forever: 1,910,407 non-anchor
+        rows with nothing to expire them.
+    """
+    import inspect
+    from scripts import prune_odds_snapshots as pr
+
+    src = inspect.getsource(pr.prune_old_simple)
+    assert "ORDER BY m.date DESC" in src, (
+        "the match cursor must take the NEWEST prunable matches first; they "
+        "hold ~20x more recoverable rows each than the oldest ones."
+    )
+    assert "m.status = 'postponed'" in src, (
+        "postponed fixtures must be in the cursor or their tick history is "
+        "kept forever — they never become 'finished'."
+    )
+    assert pr.POSTPONED_RETENTION_DAYS >= pr.RETENTION_DAYS, (
+        "postponed fixtures deserve a LONGER grace than finished ones: the "
+        "fixture may be replayed under the same id, and its pre-postponement "
+        "price path is the only thing those ticks are good for."
+    )
+
+
+@test("DIRECT-BOOK-ANCHORS — the books we can actually bet get opening + closing anchors")
+def test_direct_book_anchors():
+    """DIRECT-BOOK-ANCHORS-2026-09-11. `store_book_odds_snapshots` (Coolbet,
+    Epicbet, Unibet-Site) and `store_coolbet_odds_snapshot` both used a +-5
+    minute closing window while the API-Football writer uses +-15, and neither
+    wrote `is_opening` at all. Our direct sweeps run every 30 minutes, so a
+    10-minute-wide window almost never contained a snapshot: measured all-time,
+    is_closing was set on 1,544 of Epicbet's 1,663,230 rows (0.09 per cent),
+    1,057 of Coolbet's 481,753 (0.22) and 0 of Unibet-Site's 35,340 -- against
+    39 per cent for Pinnacle. Under retention that reduced the only books we can
+    stake at to ONE surviving row per price series, with no opening price at all
+    and so no own-book open-to-close drift.
+    """
+    import inspect
+    from workers.api_clients import supabase_client as sc
+
+    for fn_name in ("store_book_odds_snapshots", "store_coolbet_odds_snapshot"):
+        fn_src = inspect.getsource(getattr(sc, fn_name))
+        assert "abs(minutes_to_kickoff) <= 15" in fn_src, (
+            f"{fn_name} must use the house +-15 minute closing window (the one "
+            "fetch_odds.py uses). At +-5 a 30-minute sweep cadence almost never "
+            "lands inside it, which is why our own books had ~0 anchors."
+        )
+        assert "is_opening" in fn_src and "NOT EXISTS" in fn_src, (
+            f"{fn_name} must compute is_opening in the INSERT; it defaulted to "
+            "false on every row, so we hold no opening price at any book we can "
+            "actually bet."
+        )
+        assert "handicap_line IS NOT DISTINCT FROM" in fn_src, (
+            f"{fn_name}'s opening check must partition on handicap_line, or one "
+            "AH rung claims the opening for every other rung on that market."
+        )
+
+
+@test("INPLAY-ODDS-ARCHIVE — the pre-existing in-play history is preserved at full resolution")
+def test_inplay_odds_archive():
+    """DB-ANCHOR-GROWTH step 1 (2026-09-11). 155,048 is_live rows spanning
+    2026-05-07 to 2026-08-21 existed only because the pruner was too slow to
+    reach them; 152,327 were already inside its target set. Making the pruner
+    keep up would have destroyed the only in-play price history we own, so it
+    was archived first (migration 329, 30 MB) at FULL resolution -- the new
+    1/minute rule is near-lossless going forward but would thin the existing
+    45-second api-football-live series by roughly a quarter.
+    """
+    from workers.api_clients.supabase_client import execute_query
+    rows = execute_query(
+        """SELECT COUNT(*) AS n, MIN(timestamp)::date AS lo, MAX(timestamp)::date AS hi
+             FROM odds_snapshots_inplay_archive"""
+    )
+    n = int(rows[0]["n"])
+    assert n >= 155048, (
+        f"the in-play archive holds {n:,} rows but 155,048 were archived on "
+        "2026-09-11. It must never shrink -- it is the only full-resolution "
+        "copy of the pre-2026-08-21 in-play history."
+    )
 
 if __name__ == "__main__":
     main()

@@ -1757,3 +1757,47 @@ Coolbet-covered) — the reference price nearly doubles the honest number. Cover
 Coolbet quotes ~87 and Unibet-Site ~132 of ~262 upcoming fixtures, so validation is
 "executable performance on the covered subset" — which is the number that matters for real
 money anyway. Use CLV, not ROI, at small n (per-bet return sd ≈ 1.42).
+
+## 59. Retention keeps the LATEST pre-kickoff row — and until 2026-09-11 it kept nothing else at the books we bet
+
+Two facts to know before writing any query against historical `odds_snapshots`.
+
+**(a) After 7 days, a price series is at most three rows.** `prune_old_simple`
+keeps `is_opening`, `is_closing`, and the latest pre-kickoff row per
+`(match, bookmaker, market, selection, handicap_line)`. Everything between is
+gone. So any analysis of the intra-day price *path* — drift, velocity, "was a
+better price available two hours earlier" — only works inside the 7-day window.
+The model is unaffected: all four odds-derived training features
+(`pinnacle_implied_*`, `pinnacle_implied_over25/under25`,
+`ou25_bookmaker_disagreement`, `market_implied_btts_yes`) select the latest
+pre-kickoff row per series, and where an `is_closing` row exists it **is** that
+row — 453,291 of 453,311 = 100.0%.
+
+**(b) Anchor flags are a function of sweep cadence, not of importance.**
+`is_closing` is stamped at write time as `abs(minutes_to_kickoff) <= 15`. Any
+book whose sweep does not happen to run inside that window gets no anchor. Until
+2026-09-11 the direct-book writers used `<= 5` against a 30-minute sweep, so
+**Epicbet had anchors on 0.09% of its rows, Coolbet 0.22%, Unibet-Site 0.00%** —
+against Pinnacle's 39%. Consequences for anyone reading old data:
+
+* our three bettable books have **one** surviving row per series before
+  2026-09-11, and **no opening price at all** — do not try to compute own-book
+  open-to-close drift over that period, the data does not exist;
+* **52.6% of all price series carry no anchor of either kind** (measured on one
+  day of finished matches: 48,247 of 91,701) and survive only via the
+  anchorless fallback. A query filtering `WHERE is_closing` silently drops half
+  the universe. CLV does not have this problem — `CLOSING-PRE-KO-FALLBACK`
+  resolves against the surviving row, and coverage is 95-100% at our books.
+
+**(c) In-play is a separate regime.** A post-kickoff row can satisfy neither
+anchor flag nor the pre-kickoff fallback, so before 2026-09-11 retention deleted
+**every** in-play row. In-play rows are now downsampled to one per minute per
+series and kept indefinitely; the pre-2026-08-21 history lives at full
+resolution in `odds_snapshots_inplay_archive` (155,048 rows, migration 329).
+Query that table, not `odds_snapshots`, for anything before 2026-08-21.
+
+**(d) Never put a literal percent sign inside a SQL string in this repo.**
+psycopg2 parses `%` as a parameter placeholder, so one in a *comment* raises
+`IndexError` per batch — and `prune_old_simple` caught the exception and printed
+"Would delete: 0 rows", which reads exactly like a clean database. Smoke
+`ODDS-PRUNE-INPLAY-PROTECTED` now scans the module's SQL strings for it.

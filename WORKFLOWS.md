@@ -428,7 +428,11 @@ pinned by the SETTLEMENT-GOLDEN smoke fixture. See ANALYSIS_GOTCHAS §50.
    - Post-match: stats (T4), events (T8), player stats (T12)
    - Update ELO, form, pseudo-CLV, match feature vectors
    - Gemini post-mortem analysis of losses
-   - **Pruning (PERF-2):** `scripts/prune_odds_snapshots.py` — single SQL DELETE removes all intermediate snapshots for finished matches (keeps opening + closing). Prevents `odds_snapshots` from growing unboundedly (was 4.1M rows, ~500K/day).
+   - **Pruning (PERF-2):** `scripts/prune_odds_snapshots.py` — `prune_old_simple`, nightly 03:00 UTC, 12,000 matches/run. Keeps `is_opening` + `is_closing` + the latest pre-kickoff row per (match, bookmaker, market, selection, handicap_line), and **downsamples in-play rows to one per minute rather than deleting them**.
+     - Grace periods: `ODDS_RETENTION_DAYS=7` for finished matches, `ODDS_POSTPONED_RETENTION_DAYS=30` for postponed ones (they never become 'finished', so before 2026-09-11 they were never pruned at all — 1,910,407 rows).
+     - **DB-ANCHOR-GROWTH-2026-09-11** fixed three things that made this job recover almost nothing: the cursor ordered `m.date ASC` and so drained the thinnest matches first (30-90d: 143 prunable rows/match vs 7-14d: 3,102), the 5,000-match cap was sized against a match count rather than a row count, and in-play rows could satisfy neither anchor flag nor the pre-kickoff fallback so **100% of in-play history was being deleted**. Measured before: 85,913 rows deleted on 2026-09-11 against ~1.8M written. After: a 300-match dry run alone found 955,561.
+     - Steady state: of the rows written for one day's finished matches, **33.9% survive forever** (anchors plus one fallback row per anchorless series), so permanent growth is ~610k rows/day rather than the ~1.58M/day net the broken job was allowing.
+     - `odds_snapshots_inplay_archive` (migration 329) holds the pre-2026-08-21 in-play history at full resolution — the 1/minute rule is near-lossless going forward but would thin 45-second api-football-live series.
    - **Sundays only:** Platt recalibration (`scripts/fit_platt.py`) — refits sigmoid α/β per market from all settled predictions → `model_calibration` table
 
 3. **Settle-ready sweep (every 15 min):** `settle_ready_matches()` — catch-all for
