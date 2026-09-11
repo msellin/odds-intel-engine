@@ -3821,9 +3821,23 @@ def _():
             {"id": 1502775087, "result_key": "Under"},
         ],
     }, odds)
+    # OU-LINE-BACKFILL (2026-09-11): the 4th element is `handicap_line`, and it
+    # was None here — the goals ladder was the ONE branch of parse_market that
+    # did not pass `line_val` to `_add`, while the side-totals branch above
+    # always did. Effect on stored data: Coolbet wrote handicap_line on 100 pct
+    # of its corners/cards totals and 0 pct of its over_under_*.
+    #
+    # That is not cosmetic. Epicbet and Unibet-Site DO store 2.5 on
+    # over_under_25, so any cross-book join keyed on (market, handicap_line)
+    # silently returned ZERO Coolbet O/U pairs — it collapsed the first
+    # book-dimension sweep to 1x2-only with no error (ANALYSIS_GOTCHAS 61).
+    # The market name alone is not enough (MARKET-LINE-ENCODING-LOSSY).
+    #
+    # This assertion was updated rather than deleted: it now pins the LINE, so
+    # the branch cannot silently stop carrying it again.
     assert rows == [
-        ("over_under_15", "over", 1.05, None),
-        ("over_under_15", "under", 7.00, None),
+        ("over_under_15", "over", 1.05, 1.5),
+        ("over_under_15", "under", 7.00, 1.5),
     ], f"OU 1.5 parse wrong: {rows}"
 
     # BTTS — falls back to name-based detection (mtid set is still empty)
@@ -38061,7 +38075,21 @@ def test_ub_column_is_the_placeable_feed():
         # vacuously, which is the failure mode this counter exists to catch.
         checked = 0
         for line in src.splitlines():
-            if '.in("bookmaker"' not in line:
+            # SHADOW-INDEX-EPICBET-COLUMN (2026-09-11): two shapes to inspect,
+            # not one. The index page moved from a shared
+            # `.in("bookmaker", [...])` to PER-BOOK queries driven by a
+            # `SNAPSHOT_BOOKS` literal, because a shared bookmaker list also
+            # shares the 10,000-row ceiling and Epicbet's volume would have
+            # blanked the Coolbet column. The allowlist is still an allowlist;
+            # only its spelling changed, so the rule must follow it there.
+            #
+            # And COMMENT LINES ARE SKIPPED — this test failed on the very
+            # comment that explains the change, matching its own prose. Sixth
+            # occurrence of that trap in this suite.
+            stripped = line.lstrip()
+            if stripped.startswith(("//", "*", "/*")):
+                continue
+            if '.in("bookmaker"' not in line and "SNAPSHOT_BOOKS = [" not in line:
                 continue
             checked += 1
             assert "Unibet-Kambi" not in line and '"Unibet"' not in line, (
@@ -38073,7 +38101,8 @@ def test_ub_column_is_the_placeable_feed():
                 f"{rel} must read the placeable 'Unibet-Site' feed in {line.strip()}"
             )
         assert checked >= 1, (
-            f"{rel}: found no single-line `.in(\"bookmaker\", [...])` call to check — "
+            f"{rel}: found no single-line bookmaker allowlist to check "
+            "(neither `.in(\"bookmaker\", [...])` nor `SNAPSHOT_BOOKS = [...]`) — "
             "the query was reformatted and this test is now asserting nothing"
         )
 
