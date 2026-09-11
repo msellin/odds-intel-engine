@@ -22934,6 +22934,79 @@ def test_edge_floor_all_callers_2026_09_11():
     return "placer + in-play + router all gate on the shared selection-aware floor"
 
 
+@test("FLOORS-ONE-SOURCE-CROSS-LANGUAGE — the frontend derives its floors from the engine")
+def test_floors_one_source_cross_language_2026_09_11():
+    """FLOORS-ONE-SOURCE-CROSS-LANGUAGE (2026-09-11).
+
+    The Python side was consolidated onto one predicate, but `upcoming-picks.ts`
+    still hardcoded 0.1/2.8 and 0.08/1.8 plus its own TypeScript copy of the
+    FAVLONG-CUTS home-underdog rule, with NO import path to Python. A floor
+    change in the engine therefore never reached the published "place >= X.XX"
+    hint — the number readers actually act on. That is the worst copy of the six
+    to have drifting, because it is customer-facing.
+
+    The engine now GENERATES `src/lib/generated/engine-floors.ts`, and this test
+    fails CI when the committed file no longer matches the engine.
+
+    It also pins the parity FIXTURE, not just the constants. Constants agreeing
+    while the RULE drifts is exactly how these paths diverged before — and it
+    nearly happened again here: a first version of the TS branch fell back to
+    the pooled 13% whenever the 10% trigger came out under 2.80, publishing 3.03
+    where the engine clears at 2.80. Caught by sweeping the real
+    clears_edge_floor() across cal_prob 0.11-0.60.
+    """
+    import pathlib, subprocess, sys, re
+
+    gen = pathlib.Path("scripts/gen_frontend_floors.py")
+    assert gen.exists(), "the generator must exist"
+
+    web = pathlib.Path("../odds-intel-web/src/lib")
+    if not web.exists():
+        return "SKIP — sibling web repo not checked out (CI)"
+
+    # 1. The committed generated file must match the engine RIGHT NOW.
+    r = subprocess.run([sys.executable, str(gen), "--check"],
+                       capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, (
+        "generated engine-floors.ts is STALE — the frontend would publish a "
+        f"floor the engine no longer uses. Run `python3 {gen}`.\n"
+        f"{r.stdout}{r.stderr}"
+    )
+
+    out = (web / "generated" / "engine-floors.ts").read_text()
+    assert "DO NOT EDIT" in out, "generated file must say so"
+    for sym in ("ENGINE_MIN_EDGE_BY_MARKET", "ENGINE_MIN_ODDS_BY_MARKET",
+                "ENGINE_MODEL_1X2_HOME_FLOOR", "ENGINE_FLOOR_FIXTURE"):
+        assert sym in out, f"generated file must export {sym}"
+
+    # the fixture must cover the boundary that DEFINES the FAVLONG-CUTS rule:
+    # a home pick at the odds floor is an underdog (10%); a tick below it is a
+    # favourite (pooled 13%).
+    assert '"odds": 2.8' in out and '"odds": 2.79' in out, (
+        "the parity fixture must pin the 2.80 underdog boundary in BOTH "
+        "directions — it is the whole content of the rule"
+    )
+
+    # 2. The consumer must derive, not re-type. Inspect CODE, not comments:
+    #    the comments here legitimately quote the old literals to explain them.
+    #    (RELIABILITY_LEDGER pattern 9 — this trap has fired four times today.)
+    raw = (web / "upcoming-picks.ts").read_text()
+    no_block = re.sub(r"/\*.*?\*/", "", raw, flags=re.S)
+    code = "\n".join(l for l in no_block.splitlines()
+                      if not l.strip().startswith("//"))
+    assert "generated/engine-floors" in code, (
+        "upcoming-picks.ts must import the engine-generated floors"
+    )
+    for lit in ("edgeFloor = 0.1", "oddsFloor = 2.8",
+                "edgeFloor = 0.08", "oddsFloor = 1.8"):
+        assert lit not in code, (
+            f"hardcoded floor {lit!r} is back in upcoming-picks.ts — it must "
+            "come from the generated file, or the published 'place >=' hint "
+            "silently diverges from what the engine actually stakes"
+        )
+    return "frontend floors are generated from the engine; drift fails CI"
+
+
 @test("KUMA-PUSH-HELPER — workers/utils/kuma imports cleanly and no-ops when unconfigured")
 def test_kuma_push_helper():
     """KUMA-PUSH-HELPER (2026-07-07): workers/utils/kuma.py is the

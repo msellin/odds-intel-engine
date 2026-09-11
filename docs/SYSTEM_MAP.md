@@ -224,9 +224,33 @@ hint, the trigger bots, and this map all read."* Audited 2026-09-11:
 | Odds floors 2.80 / 1.80 | **4** | `_MIN_ODDS_BY_MARKET`, `MIN_ODDS_FOR_PLACEMENT`, `coolbet_model_1x2_shadow` SQL, `upcoming-picks.ts` |
 | Home-underdog rule | **3 implementations** | `min_edge_for_pick` (Python), shadow-mirror SQL, `upcoming-picks.ts` (TypeScript) |
 
-`/picks` hardcodes `0.1/2.8` and `0.08/1.8` **in TypeScript with no import path to
-Python**, so a floor change in the engine never reaches the published "place ≥" hint.
-Consolidating these is tracked as the follow-up to `EDGE-FLOOR-ONE-PREDICATE`.
+**Status of each copy (updated 2026-09-11):**
+
+- ✅ **Python is consolidated.** `EDGE-FLOOR-ALL-CALLERS` routed the last three
+  holdouts through `clears_edge_floor`: the live re-eval (hand-rolled `<`), the
+  in-play path (still on the selection-BLIND `_min_edge_for`), and
+  `best_price_router.decide_book` (per-bot threshold only — which made the newest
+  real-money path the MOST permissive on aways and home-favs, the exact selections
+  FAVLONG-CUTS excluded). Rule: **two policies, both must pass, stricter wins** —
+  the per-bot threshold AND the market/selection floor.
+- ✅ **The frontend now DERIVES its floors.** `/picks` used to hardcode `0.1/2.8`
+  and `0.08/1.8` in TypeScript with no import path to Python, so an engine floor
+  change never reached the published "place ≥" hint readers act on. The engine now
+  generates `odds-intel-web/src/lib/generated/engine-floors.ts` via
+  `scripts/gen_frontend_floors.py`; smoke `FLOORS-ONE-SOURCE-CROSS-LANGUAGE` fails
+  CI when it drifts. The generated file also carries a **parity fixture**
+  (input → floor, computed by the real Python predicate) because constants
+  agreeing while the RULE drifts is how these paths diverged before — and nearly
+  did again: a first draft of the TS branch published 3.03 where the engine clears
+  at 2.80, caught by sweeping `clears_edge_floor` across cal_prob 0.11-0.60.
+- ⬜ **Still duplicated: the shadow-mirror SQL.** `coolbet_model_1x2_shadow.py` and
+  `coolbet_model_ou_shadow.py` embed their floors as query literals, unreachable
+  from Python constants. Lower risk (paper mirrors, not a published figure and not
+  a stake), but the last copies standing.
+
+**Design rule going forward:** callers pass **who they are** (market, selection,
+odds) — never their own floor %. Passing floors as arguments keeps every copy and
+merely relocates the duplication.
 
 ### 4e. Gates BEFORE any of this (generation)
 
