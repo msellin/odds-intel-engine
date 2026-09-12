@@ -176,8 +176,50 @@ a one-shot `com.oddsintel.coolbet-resume` agent, and **fails loudly** if it
 cannot. Always confirm with `coolbet_pause_resume.sh status` → `resume agent:
 ARMED`. Pinned by smoke `LIVENESS-IS-NOT-CAPABILITY`.
 
-### 2. Imperva challenge  → the "STAY COOL" / "Pardon Our Interruption" wall
-- **Symptom:** the browser page body is ~9 chars (`STAY COOL`) or contains `Pardon Our Interruption`; `x-iinfo` response header present.
+### ⛔ 2a. "STAY COOL" IS NOT THE IMPERVA WALL — corrected 2026-09-13
+
+**This section told you for weeks that a ~9-character `STAY COOL` body IS §2.
+It is not, and that error is why "the Coolbet login doesn't work" recurred so
+many times without ever being fixed: every attempt went down the bot-detection
+path for a fault that has nothing to do with bot detection.**
+
+Measured side by side on one machine, minutes apart:
+
+| | response |
+|---|---|
+| CDP-Chrome showing STAY COOL | HTTP 200, **504,929 bytes of real Coolbet SPA**, **zero** Imperva markers, zero console errors, zero failed requests, zero HTTP ≥400 |
+| same Mac, plain request | **6,058-byte Imperva JS challenge** — `_Incapsula_Resource` + "Pardon Our Interruption" |
+
+The interstitial carries Imperva's fingerprints everywhere. STAY COOL carries
+none. **A tiny rendered body means the SPA rendered nothing — it does not say
+who stopped it.** Always check the RAW HTML, which is what
+`scripts/diagnose/coolbet_login_state.py` now does.
+
+**Ruled out by measurement against the STAY COOL state — do not repeat these:**
+
+| Tried | Result |
+|---|---|
+| all 5 Imperva **cookies** cleared | unchanged |
+| localStorage `reese84` (732 chars) + `uuid` cleared | unchanged |
+| fresh `goto` to `/et/login` | unchanged |
+| `/et/sport`, `/et/`, `/en/login` | all identical → **site-wide, not a login page problem** |
+| console / network | no errors, no failed requests, no 4xx |
+| foreground tab + JS PoW time | unchanged |
+
+**THE DECIDING TEST, which needs a human:** open coolbet.com in a **normal
+Chrome window** (not the `--remote-debugging-port=9222` one).
+- **Loads fine** → the block follows the **automation profile**, and the fix is
+  architectural: stop logging in through CDP-Chrome. Log in on a normal profile
+  and hand the session over.
+- **Also walled** → it is the **IP or the account**, and no browser-side remedy
+  will ever fix it. Escalate to Coolbet.
+
+Run `python3 scripts/diagnose/coolbet_login_state.py` FIRST, every time. It
+distinguishes wall / no-form / logged-in in one read, which is the distinction
+that kept being guessed.
+
+### 2. Imperva challenge  → the "Pardon Our Interruption" wall
+- **Symptom:** the raw HTML contains `Pardon Our Interruption` or `_Incapsula_Resource`; `x-iinfo` response header present. (**NOT** a short `STAY COOL` body — see §2a.)
 - **Tell:** raw `curl` of `coolbet.com` returns the interstitial HTML even at HTTP 200.
 - **⚠️ CHECK OUR OWN RETRY LOOPS FIRST (2026-09-13).** Before blaming volume in
   general, look at what WE are sending into the wall. `coolbet_health_ping` runs
