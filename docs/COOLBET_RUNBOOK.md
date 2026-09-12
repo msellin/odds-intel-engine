@@ -195,6 +195,22 @@ ARMED`. Pinned by smoke `LIVENESS-IS-NOT-CAPABILITY`.
   fingerprint; the operator's Chrome is a different client entirely. **So a
   walled login does NOT mean the feed is blocked, and pausing a healthy feed
   does not clear a login wall.** Check both before reaching for the pause lever.
+- **If a FOREGROUND tab still walls, the flag is on the VISITOR ID, not on today's
+  behaviour.** `visid_incap_*` is long-lived — observed expiry **6,024 hours,
+  about eight months** — so waiting, foregrounding and reducing load all fail to
+  clear it, because the mark is attached to the visitor rather than to current
+  traffic. Reset it:
+  ```bash
+  python3 scripts/ops/coolbet_reset_imperva_identity.py          # dry run
+  python3 scripts/ops/coolbet_reset_imperva_identity.py --apply
+  ```
+  Surgical — five Imperva cookies, consent/analytics untouched. **Then RELOAD in
+  the foreground tab and log in PROMPTLY**: the FS odds sweep is seeded from this
+  browser's cookies (re-harvested when they go 2h stale), so a harvest landing
+  mid-challenge seeds FlareSolverr with a challenge-state set and can take down a
+  healthy feed. ⚠️ This resets an identity rather than removing a cause — do the
+  footprint work FIRST (see the retry-loop note above), and if you are running it
+  repeatedly the identity is not the problem.
 - **Fix:** this is genuine bot-detection escalation, usually triggered by our own request volume from one IP. Reduce footprint (`coolbet_pause_resume.sh pause`), let the flag decay, load the site in a **foreground** real-Chrome tab to solve the challenge (a backgrounded `--no-startup-window` instance can't complete the JS PoW). Do **not** build a challenge solver. The token is TLS/JA3-bound, so replaying `reese84` into plain `requests` cannot work — this is exactly why FS (a real browser) is mandatory.
 
 ### 3. Session / JWT expired  → `logged_out`
