@@ -36020,25 +36020,84 @@ def test_book_agnostic_config_search():
         "the 1x2 model loader must pick the latest model_version (no ~16x duplication)"
 
 
-@test("BEST-PRICE-ROUTER-MONITOR — report-only 'check both books' monitor + launchd, no money")
-def test_best_price_router_monitor():
-    """BEST-PRICE-ROUTER wired as a scheduled REPORT-ONLY monitor (2026-09-10): makes
-    'always check both books' real before the owner-gated real-money cutover. It runs
-    route() in report mode, logs per-pick routing, and alerts on picks better/only at
-    Unibet (which the Coolbet-only placer misses). Pin: monitor() exists + is report-only
-    (never execute/stage), the --monitor CLI flag, and the launchd job runs it."""
+@test("ROUTER-REAL-MONEY-CUTOVER — the router places at the best book, double-gated")
+def test_router_real_money_cutover():
+    """ROUTER-REAL-MONEY-CUTOVER (2026-09-12). Until today the router was BUILT,
+    correct, and wired to a REPORT-ONLY monitor — so a pick whose best price was
+    at Unibet simply never got placed. The Coolbet-only UI placer cannot place
+    there, and the router's real-money arm was gated off.
+
+    THE COST, measured the day it was fixed: on 2026-09-12 alone, THREE mirror
+    picks expired unplaced, all three qualified at Unibet-Site — Sudtirol,
+    Portimonense, and Sochaux, which WON at 3.40. Over 14 days, 4 of 34
+    real-money mirror picks (12%) were qualified at Unibet and none could be
+    placed. Nothing was broken; the cutover simply never happened.
+
+    The scheduled job now runs `--execute` (renamed from
+    `...-router-monitor`, because a job named "monitor" that moves real money
+    is exactly the misleading-name failure this repo keeps paying for).
+
+    WHAT MUST STAY TRUE — the safety properties, not the feature:
+
+      1. DOUBLE GATE. `--execute` alone must NOT move money; it also needs env
+         ROUTER_ALLOW_REAL. That is what makes the plist safe to ship in git
+         and the env var the single switch.
+      2. CROSS-BOOK EXPOSURE. Both placers must dedup against the SAME source
+         (`real_bets`, `placed_real IS NOT FALSE`) or they double-bet the same
+         (match, market, selection) at two books. The Coolbet placer's
+         match-exposure query must NOT filter by bookmaker.
+      3. RECORD ON UNCERTAINTY. A Unibet click whose balance could not be read
+         must still create exposure (`placed_real=None`), or the next pass
+         re-places it — the double-bet bug by another route.
+    """
     import inspect
     from pathlib import Path
     from workers.automation import best_price_router as bpr
-    assert hasattr(bpr, "monitor"), "the router must expose monitor()"
-    src = inspect.getsource(bpr.monitor)
-    assert "route()" in src and "execute" not in src and "stage" not in src, \
-        "monitor must be REPORT-ONLY — never execute or stage (no money)"
-    assert "unibet_wins" in src and "send_telegram" in src, "must alert on Unibet-win divergences"
-    assert "--monitor" in inspect.getsource(bpr.main)
-    plist = Path.home() / "Library/LaunchAgents/com.oddsintel.best-price-router-monitor.plist"
-    if plist.exists():  # operator-machine only — don't fail CI where LaunchAgents differ
-        assert "best_price_router" in plist.read_text() and "--monitor" in plist.read_text()
+
+    # (1) the double gate
+    rsrc = _strip_prose(inspect.getsource(bpr.route))
+    assert 'os.getenv("ROUTER_ALLOW_REAL"' in rsrc, (
+        "real money must require the env opt-in, not just execute=True"
+    )
+    assert "real = bool(execute and real_allowed)" in rsrc, (
+        "execute AND the env flag — either alone must not move money"
+    )
+    # (2) cross-book exposure, both directions
+    ui = Path("scripts/place_coolbet_ui.py").read_text()
+    i = ui.index("FROM real_bets")
+    window = ui[i:i + 400]
+    assert "placed_real IS NOT FALSE" in window, (
+        "the Coolbet placer's exposure query must count real + unverified rows"
+    )
+    assert "bookmaker" not in window, (
+        "the exposure query must NOT filter by bookmaker — a Unibet bet placed "
+        "by the router has to block a second Coolbet bet on the same selection"
+    )
+    assert "_has_exposure" in _strip_prose(inspect.getsource(bpr)), (
+        "the router needs its own cross-book exposure check"
+    )
+    # (3) uncertainty still creates exposure
+    uni = _strip_prose(inspect.getsource(bpr._dispatch_unibet))
+    assert "uncertain" in uni and "placed_real=True if placed else None" in uni, (
+        "an unverified Unibet click must be recorded with placed_real=None so "
+        "the retry is blocked without claiming a bet we cannot evidence"
+    )
+    assert "store_real_bet" in uni, (
+        "the Unibet arm must write real_bets itself — it is the ONLY thing the "
+        "cross-book dedup can see"
+    )
+    # The job that actually runs it.
+    repo_plist = Path("local/launchd/com.oddsintel.best-price-router.plist")
+    assert repo_plist.exists(), "the router job must be reproducible from git"
+    assert "--execute" in repo_plist.read_text(), "the scheduled job must place"
+    installed = Path.home() / "Library/LaunchAgents/com.oddsintel.best-price-router.plist"
+    if installed.exists():  # operator machine only — CI has no LaunchAgents
+        assert "--execute" in installed.read_text()
+    stale = Path.home() / "Library/LaunchAgents/com.oddsintel.best-price-router-monitor.plist"
+    assert not stale.exists(), (
+        "the superseded report-only job must be removed, or it reloads at login "
+        "and runs alongside the real one"
+    )
 
 
 @test("UNIBET-SELF-REVIVE — every book self-logins/self-revives; alert only when that FAILS")

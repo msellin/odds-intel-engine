@@ -52,10 +52,19 @@ PLIST
     for j in "${JOBS[@]}"; do
       launchctl load "$LA/$j.plist" 2>/dev/null && echo "loaded $j" || echo "already loaded $j"
     done
-    # self-destruct the one-shot resume agent
-    launchctl unload "$LA/com.oddsintel.coolbet-resume.plist" 2>/dev/null || true
+    # Self-destruct the one-shot resume agent. ORDER IS LOAD-BEARING, and the
+    # first version got it wrong (2026-09-12): it called `launchctl unload` on
+    # the agent that was RUNNING THIS SCRIPT, so launchd killed the process
+    # group mid-branch and `rm` never executed. The plist survived, the agent
+    # stayed armed, and it re-fired every 90 minutes — the log shows the two
+    # "loaded" lines repeated with no "resume agent removed" after either.
+    #
+    # So: delete the file FIRST (nothing can re-load it), then remove the agent
+    # BY LABEL as the very last statement — `launchctl remove` needs no plist
+    # on disk, and if it kills us here everything else has already happened.
     rm -f "$LA/com.oddsintel.coolbet-resume.plist"
-    echo "resume agent removed" ;;
+    echo "resume agent removed"
+    launchctl remove com.oddsintel.coolbet-resume 2>/dev/null || true ;;
   status)
     launchctl list | grep -i "oddsintel.coolbet" || echo "  (no coolbet agents loaded)"
     [ -f "$LA/com.oddsintel.coolbet-resume.plist" ] && echo "  resume agent: ARMED" || echo "  resume agent: not armed" ;;
