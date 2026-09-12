@@ -179,6 +179,22 @@ ARMED`. Pinned by smoke `LIVENESS-IS-NOT-CAPABILITY`.
 ### 2. Imperva challenge  → the "STAY COOL" / "Pardon Our Interruption" wall
 - **Symptom:** the browser page body is ~9 chars (`STAY COOL`) or contains `Pardon Our Interruption`; `x-iinfo` response header present.
 - **Tell:** raw `curl` of `coolbet.com` returns the interstitial HTML even at HTTP 200.
+- **⚠️ CHECK OUR OWN RETRY LOOPS FIRST (2026-09-13).** Before blaming volume in
+  general, look at what WE are sending into the wall. `coolbet_health_ping` runs
+  an AUTHENTICATED probe every 5 min and, while logged out, cannot succeed:
+  measured **143 failed authenticated probes in 12 hours** from one residential
+  IP into an endpoint already answering the wall. A health check retrying into a
+  challenge is exactly the "own request volume" this section blames — it was
+  feeding the condition it was reporting. Fixed with a circuit breaker
+  (`health_ping._skip_reason`): no usable credential → no request, still marked
+  unhealthy, reopens by itself when a live JWT appears. Smoke
+  `HEALTH-PING-CIRCUIT-BREAKER`.
+- **NOTE the two transports are escalated SEPARATELY.** On 2026-09-13 the
+  FS-routed odds sweep was storing 33k rows a pass while CDP-Chrome's login
+  showed STAY COOL. FlareSolverr is a different browser in Docker with its own
+  fingerprint; the operator's Chrome is a different client entirely. **So a
+  walled login does NOT mean the feed is blocked, and pausing a healthy feed
+  does not clear a login wall.** Check both before reaching for the pause lever.
 - **Fix:** this is genuine bot-detection escalation, usually triggered by our own request volume from one IP. Reduce footprint (`coolbet_pause_resume.sh pause`), let the flag decay, load the site in a **foreground** real-Chrome tab to solve the challenge (a backgrounded `--no-startup-window` instance can't complete the JS PoW). Do **not** build a challenge solver. The token is TLS/JA3-bound, so replaying `reese84` into plain `requests` cannot work — this is exactly why FS (a real browser) is mandatory.
 
 ### 3. Session / JWT expired  → `logged_out`

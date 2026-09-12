@@ -42,6 +42,32 @@ load_dotenv()
 from workers.automation.coolbet_state import mark_heartbeat
 
 
+def _skip_reason() -> str | None:
+    """Why this tick must NOT put a request on the wire, or None to go ahead.
+
+    Reads only the DB, never the network. Fails OPEN (returns None) on any
+    error: a broken breaker must not silently disable the health check.
+    """
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """SELECT jwt_current IS NULL AS no_jwt,
+                      COALESCE(EXTRACT(EPOCH FROM (jwt_exp_at - NOW())), -1) AS jwt_ttl_s
+                 FROM coolbet_session_state WHERE id = 1"""
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    if not rows:
+        return None
+    r = rows[0]
+    if r.get("no_jwt"):
+        return "no JWT stored"
+    ttl = float(r.get("jwt_ttl_s") or -1)
+    if ttl <= 0:
+        return f"JWT expired {abs(int(ttl // 60))}m ago"
+    return None
+
+
 def ping() -> dict:
     """Returns a dict: { ok: bool, elapsed_s: float, error: str | None,
     detail: str }. Always writes to coolbet_session_state."""
@@ -54,6 +80,35 @@ def ping() -> dict:
         mark_heartbeat(False, note=f"import: {e}")
         return {"ok": False, "elapsed_s": 0.0, "error": f"import: {e}",
                 "detail": "CoolbetSession failed to import — workers package broken"}
+
+    # HEALTH-PING-CIRCUIT-BREAKER (2026-09-13). This probe is AUTHENTICATED and
+    # runs every 5 minutes. When the session is logged out it cannot possibly
+    # succeed — and it does not merely waste a request, it actively works
+    # against recovery: measured 2026-09-12, **143 failed authenticated probes
+    # in 12 hours** from one residential IP, into an endpoint already answering
+    # the Imperva wall. The runbook's own diagnosis of that wall (§2/§7) is
+    # "usually triggered by our own request volume from one IP", and a retry
+    # loop into a challenge is exactly that volume.
+    #
+    # So: when the state row says the session is logged out, report the SAME
+    # unhealthy verdict from the DB without touching the network. The operator
+    # still sees `session_healthy=False`, the alerter still fires, and the
+    # footprint that sustains the flag stops. The breaker opens again the
+    # moment a JWT with real life in it appears — recovery is never blocked by
+    # this, because recovery happens through CDP-Chrome, not through here.
+    #
+    # NOT a backoff timer: a timer would still probe eventually and would need
+    # tuning. The condition "we hold no usable credential" is exact.
+    skip = _skip_reason()
+    if skip:
+        elapsed = time.monotonic() - start
+        mark_heartbeat(False, note=f"probe skipped: {skip}")
+        return {"ok": False, "elapsed_s": elapsed, "error": f"probe skipped: {skip}",
+                "detail": ("Not probing Coolbet: we hold no usable credential, so the "
+                           "request could only fail — and a retry loop into the Imperva "
+                           "wall is what sustains it (runbook 2/7). Log in via "
+                           "CDP-Chrome; the probe resumes by itself."),
+                "skipped": True}
 
     try:
         session = CoolbetSession(require_auth=True)

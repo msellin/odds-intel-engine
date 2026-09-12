@@ -36020,6 +36020,76 @@ def test_book_agnostic_config_search():
         "the 1x2 model loader must pick the latest model_version (no ~16x duplication)"
 
 
+@test("HEALTH-PING-CIRCUIT-BREAKER — a probe that cannot succeed must not add footprint")
+def test_health_ping_circuit_breaker():
+    """HEALTH-PING-CIRCUIT-BREAKER (2026-09-13), found while diagnosing a
+    "STAY COOL" Imperva wall on the CDP-Chrome login.
+
+    `coolbet_health_ping` runs an AUTHENTICATED probe every 5 minutes. When the
+    session is logged out it cannot possibly succeed — and it does not merely
+    waste a request. Measured: **143 failed authenticated probes in 12 hours**
+    from one residential IP, into an endpoint already answering the Imperva
+    wall. The runbook's own diagnosis of that wall (§2/§7) is "usually
+    triggered by our own request volume from one IP", so the health check was
+    feeding the condition it was reporting on: a retry loop into a challenge is
+    precisely the footprint that sustains it.
+
+    The breaker reads the DB only and puts nothing on the wire when we hold no
+    usable credential. The operator still sees session_healthy=False and the
+    alerter still fires — only the requests stop.
+
+    THREE PROPERTIES, each of which would make this worse if lost:
+
+      1. It must still MARK UNHEALTHY when it skips. A breaker that reported
+         "fine" because it declined to look would be far more dangerous than
+         the footprint it saves.
+      2. It must FAIL OPEN. Any error reading the state returns None and the
+         probe proceeds — a broken breaker must never silently disable the
+         health check.
+      3. The condition is "no usable credential", not a timer. A backoff timer
+         still probes eventually and needs tuning; this condition is exact, and
+         it reopens by itself the moment a live JWT appears, so recovery is
+         never gated on it.
+    """
+    import inspect
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "_hp", Path("scripts/coolbet/health_ping.py"))
+    hp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(hp)
+
+    assert hasattr(hp, "_skip_reason"), "the breaker must exist"
+    br = _strip_prose(inspect.getsource(hp._skip_reason))
+    # (2) fails open
+    assert "return None" in br and "except Exception" in br, (
+        "the breaker must fail OPEN — an error reading state must let the "
+        "probe proceed, never silently disable the health check"
+    )
+    # (3) credential-based, not a timer
+    assert "jwt_exp_at" in br and "jwt_current" in br, (
+        "the skip condition must be 'we hold no usable credential', which is "
+        "exact — not a backoff timer, which still probes and needs tuning"
+    )
+    assert "execute_query" in br and "request" not in br.lower().replace("requests", ""), (
+        "the breaker must decide from the DB alone — putting a request on the "
+        "wire to decide whether to put a request on the wire defeats it"
+    )
+    # (1) a skip is still UNHEALTHY, and it happens before any session work
+    pg = _strip_prose(inspect.getsource(hp.ping))
+    i_skip = pg.index("_skip_reason()")
+    assert pg.index("CoolbetSession(require_auth=True)") > i_skip, (
+        "the breaker must run BEFORE the session is constructed — constructing "
+        "it is itself what triggers the login attempt"
+    )
+    skip_block = pg[i_skip:i_skip + 600]
+    assert "mark_heartbeat(False" in skip_block, (
+        "a skipped probe must still record UNHEALTHY — a breaker that reported "
+        "healthy because it declined to look is worse than the footprint"
+    )
+
+
 @test("OPS-STATUS — one command answers 'are the books working?', and checks capability")
 def test_ops_status():
     """OPS-STATUS (2026-09-12). Owner, after asking the same question several
