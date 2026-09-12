@@ -22493,8 +22493,23 @@ def test_coolbet_cdp_cookie_export():
         running = {ln.split()[-1] for ln in listing.splitlines()
                    if ln.strip().endswith(tuple("0123456789abcdefghijklmnopqrstuvwxyz-"))
                    and "com.oddsintel." in ln}
+        # GENERATED ONE-SHOTS are not orphans. `com.oddsintel.coolbet-resume`
+        # is WRITTEN BY scripts/ops/coolbet_pause_resume.sh at pause time and
+        # DELETED by its own `resume` branch, so it is fully reproducible from
+        # git — the generator is checked in. Committing a static copy would be
+        # worse than useless: it would imply a standing job where the real one
+        # exists only while the feed is deliberately paused.
+        _GENERATED = {"com.oddsintel.coolbet-resume"}
         orphans = sorted(lbl for lbl in running
-                         if f"{lbl}.plist" not in have)
+                         if f"{lbl}.plist" not in have and lbl not in _GENERATED)
+        # …but the generator must actually be in the repo, or this exemption
+        # becomes the hiding place it was meant not to be.
+        for lbl in _GENERATED & running:
+            assert pathlib.Path("scripts/ops/coolbet_pause_resume.sh").exists(), (
+                f"{lbl} is exempted as script-generated, but its generator "
+                f"scripts/ops/coolbet_pause_resume.sh is missing — the exemption "
+                f"only holds while the thing that writes it is checked in"
+            )
         assert not orphans, (
             "these launchd jobs are RUNNING with no plist in local/launchd/ — "
             "they exist only on this Mac and are unreproducible from git: "
@@ -38366,6 +38381,175 @@ def test_predictions_source_ou():
     assert "inert" not in ou.notes, (
         "the config note must stop saying the bot is inert once it generates — "
         "a stale note is how a known-zero bot stays invisible"
+    )
+
+
+@test("LIVENESS-IS-NOT-CAPABILITY — the watchdogs must check the thing, not a proxy for it")
+def test_liveness_is_not_capability():
+    """FS-LIVENESS-IS-NOT-CAPABILITY + ALERT-STAMP-NOT-CONDITIONAL-ON-SEND
+    (2026-09-12). The Coolbet odds feed — our PRIMARY book — was dead for 3h
+    and every single green light stayed green:
+
+        docker              `Up 6 weeks (healthy)`
+        FlareSolverr `/`    "FlareSolverr is ready"
+        sessions.list       status ok
+        launchd sweep       exit 0
+        pipeline_runs       `completed`, 12 times
+        staleness watchdog  ran 12 times, stamped nothing, messaged nobody
+
+    Six healthy signals, one dead feed. The shape is one mistake repeated: each
+    check verified a PROXY for the capability instead of the capability. A port
+    answering is not a browser that can serve a request. A job exiting 0 is not
+    a job that wrote rows. An alert decided is not an alert delivered.
+
+    Two guards, pinned here because both were absent and each alone was enough
+    to leave the outage invisible for 3h.
+    """
+    import inspect
+    import os
+
+    # ── 1. the FS keepalive must probe the CAPABILITY ────────────────────────
+    ka = open(os.path.join(os.path.dirname(__file__), "ops",
+                           "flaresolverr_keepalive.sh"), encoding="utf-8").read()
+    code = "\n".join(l for l in ka.splitlines() if not l.lstrip().startswith("#"))
+    assert "can_serve" in code, (
+        "the keepalive must verify FlareSolverr can SERVE A REQUEST, not just "
+        "that the port answers — on 2026-09-12 the banner said ready while "
+        "every session 500'd, and this script would never have restarted it"
+    )
+    assert "request.get" in code, (
+        "the capability probe must be a real request.get — sessions.list "
+        "answered `ok` throughout the outage"
+    )
+    assert "sessions.destroy" in code, (
+        "the probe must clean up its own session — a leaked session pins a "
+        "Chrome context, which is the exact resource exhaustion it detects"
+    )
+    assert "restart" in code, (
+        "detecting it is not enough; the 2026-09-12 fix was a restart and it "
+        "took seconds — the script must be able to do it without a human"
+    )
+    # …and the cheap probe must still gate the expensive one, or every 180s
+    # tick costs a browser fetch.
+    assert code.index("if probe;") < code.index("if can_serve;"), (
+        "the cheap port probe must gate the expensive capability probe"
+    )
+
+    # ── 2. a stale verdict must be RECORDED even if the message is not sent ──
+    from workers.jobs import coolbet_odds_freshness as f
+    src = _strip_prose(inspect.getsource(f.run_coolbet_odds_freshness_check))
+    i_send = src.index("tg_id = send_telegram")
+    i_stamp = src.index("_set_dedup_row(ts=now")
+    assert i_stamp > i_send, "stamp comes after the attempt, by construction"
+    # The stamp must NOT be nested under a successful send.
+    between = src[i_send:i_stamp]
+    assert "if tg_id is not None:" not in between, (
+        "the DB stamp must not be conditional on Telegram accepting the "
+        "message. send_telegram returns None for a SUPPRESSED send as well as "
+        "a failed one, and its dedup is an in-process dict wiped on every "
+        "scheduler restart — conditioning the durable record on the transient "
+        "one is how a 3h outage of the primary book left last_alert_at NULL "
+        "and told nobody."
+    )
+    assert "send_suppressed" in src, (
+        "a suppressed send must be distinguishable from no alert at all"
+    )
+
+    # ── 3. a pause must ARM its own resume ──────────────────────────────────
+    # Third instance of the same class on one day: the thing that REPORTS a
+    # safety property did not IMPLEMENT it. `coolbet_pause_resume.sh` has
+    # always carried the header "the resume is a launchd job, not a note to a
+    # human" — and its `pause` branch only ever unloaded. Nothing was armed,
+    # so every use of the runbook's own §7 lever created exactly the silent
+    # multi-day outage that comment warns about. Found by running `status`
+    # immediately after `pause` and reading "resume agent: not armed".
+    pr = open(os.path.join(os.path.dirname(__file__), "ops",
+                           "coolbet_pause_resume.sh"), encoding="utf-8").read()
+    pause_branch = pr.split("pause)", 1)[1].split("resume)", 1)[0]
+    pause_code = "\n".join(l for l in pause_branch.splitlines()
+                           if not l.lstrip().startswith("#"))
+    assert "coolbet-resume.plist" in pause_code and "launchctl load" in pause_code, (
+        "pause must ARM the one-shot resume agent, not merely unload the jobs "
+        "— a pause without a guaranteed resume is how a temporary stop becomes "
+        "a silent multi-day outage, which is what this script's own header "
+        "promises it prevents"
+    )
+    assert "exit 1" in pause_code, (
+        "if the resume agent fails to arm, pause must FAIL LOUDLY — silently "
+        "leaving the feed down with no resume is the exact outcome being "
+        "guarded against"
+    )
+
+
+@test("IMPERVA-SEED-FS — the FS path can reach the cookies the DB already holds")
+def test_imperva_seed_fs():
+    """IMPERVA-SEED-FS (2026-09-12). The Coolbet odds feed was dead for ~3h with
+    every pass logging `fo-tree fetch failed: HTTP Error 500`, and the cause was
+    a cookie set the code could not see.
+
+    The DB's Imperva cookies — harvested from the operator's own logged-in
+    CDP-Chrome every ~30 min — were read ONLY in `_no_fs` mode. Every FS-routed
+    call, which is every odds sweep and every placement, relied entirely on the
+    FS browser session earning its own cookies through the warmup navigations.
+    That works until the warmup is itself challenged, and then there is no
+    fallback at all. Measured against the live FS that morning:
+
+        fresh context, NO seed   -> HTTP 200,     995 bytes (Incapsula interstitial)
+        fresh context, WITH seed -> HTTP 200, 223,820 bytes (real board)
+
+    So Coolbet was not blocking us. A proven, minutes-old cookie set was sitting
+    in `coolbet_session_state` and the path that needed it could not reach it.
+
+    WHY THE SEED IS FIRST-CONTACT-ONLY, which is the part worth protecting:
+    Imperva challenges the first request on a fresh context and nothing after
+    it, and FlareSolverr applies a `cookies` field by RESETTING the session's
+    browser context. Seeding every request would therefore throw away the login
+    state on the placement path — trading a stale-odds bug for a money bug. So
+    `_imperva_seed()` returns None once a response comes back that is not an
+    interstitial.
+
+    Metadata keys must not be sent as cookies: the stored blob carries
+    `_source` and `_harvested_at` alongside the real ones.
+    """
+    import inspect
+    from workers.automation import coolbet_session as cs
+
+    src = _strip_prose(inspect.getsource(cs))
+    # The FS request builders must carry the seed.
+    for fn in (cs.CoolbetSession._fs_get, cs.CoolbetSession._fs_post):
+        body = _strip_prose(inspect.getsource(fn))
+        assert "_imperva_seed" in body, (
+            f"{fn.__name__} must offer the DB cookie seed — without it the FS "
+            f"path has no fallback when the warmup is challenged"
+        )
+    # …and the seed must be first-contact only, or the placement context gets
+    # reset mid-session.
+    seed_fn = _strip_prose(inspect.getsource(cs.CoolbetSession._imperva_seed))
+    assert "_imperva_seed_done" in seed_fn and "return None" in seed_fn, (
+        "the seed must stop once a context is past the challenge — FS applies "
+        "a cookies field by resetting the browser context, which on the "
+        "placement path discards the login state the session exists to hold"
+    )
+    get_src = _strip_prose(inspect.getsource(cs.CoolbetSession._fs_get))
+    assert "_imperva_seed_done = True" in get_src, (
+        "a non-interstitial response must mark the context as past the "
+        "challenge, or the seed never stops"
+    )
+
+    # Metadata keys are not cookies.
+    conv = _strip_prose(inspect.getsource(cs._imperva_seed_cookies))
+    assert 'startswith("_")' in conv, (
+        "the stored blob carries _source and _harvested_at — sending those as "
+        "cookies is at best noise and at worst a fingerprint"
+    )
+    assert '".coolbet.com"' in conv, (
+        "Imperva issues some cookies for the bare domain; a host-only domain "
+        "would silently not send them"
+    )
+    # It must degrade to today's behaviour, not to stale cookies.
+    assert "return None" in conv, (
+        "no fresh snapshot must mean NO seed (FS earns its own), never a stale "
+        "one — stale cookies are worse than none"
     )
 
 

@@ -148,6 +148,7 @@ def run_coolbet_odds_freshness_check(*, dry_run: bool = False) -> dict:
         "alert_sent": False,
         "recovery_sent": False,
         "dedup_skipped": False,
+        "send_suppressed": False,
     }
 
     try:
@@ -177,12 +178,39 @@ def run_coolbet_odds_freshness_check(*, dry_run: bool = False) -> dict:
                 dedup_key="coolbet-odds-freshness",
                 dedup_window_s=ALERT_DEDUP_HOURS * 3600,
             )
-            if tg_id is not None:
-                counters["alert_sent"] = True
-                try:
-                    _set_dedup_row(ts=now, reason=reason)
-                except Exception as e:
-                    log.warning("dedup-stamp write failed (alert sent anyway): %s", e)
+            counters["alert_sent"] = tg_id is not None
+            counters["send_suppressed"] = tg_id is None
+            # ALERT-STAMP-NOT-CONDITIONAL-ON-SEND (2026-09-12). The stamp used
+            # to live inside `if tg_id is not None:`, so a send that Telegram
+            # did NOT accept left no trace anywhere — no message, no DB row,
+            # nothing in `pipeline_runs` but a green "completed".
+            #
+            # That is not hypothetical. On 2026-09-12 the Coolbet feed was dead
+            # for ~3h, this watchdog ran 12 times and completed every time, and
+            # `pipeline_health_state.coolbet_odds.last_alert_at` was still NULL
+            # — it had never been stamped once. The operator was never told
+            # that the PRIMARY book had stopped writing.
+            #
+            # `send_telegram` returns None for a suppressed send as well as a
+            # failed one (its own dedup is an in-process dict, wiped on every
+            # scheduler restart — the exact thing migration 258's DB layer
+            # exists to survive), so conditioning the durable record on the
+            # transient one inverts the dependency.
+            #
+            # Stamp on the DECISION instead. The DB row is the layer that
+            # survives a restart, and it must record "we judged this stale and
+            # tried to say so", which is true whether or not the message went
+            # out. A suppressed send also gets a WARNING, so the journal shows
+            # the difference between "not alerting" and "alerted, quietly".
+            try:
+                _set_dedup_row(ts=now, reason=reason)
+            except Exception as e:
+                log.warning("dedup-stamp write failed: %s", e)
+            if tg_id is None:
+                log.warning(
+                    "Coolbet odds STALE (%s) but the Telegram send was "
+                    "suppressed or failed — the DB dedup row is stamped so "
+                    "this is not silent, but nobody was messaged", reason)
 
         elif status == "healthy" and last_alert is not None:
             if dry_run:

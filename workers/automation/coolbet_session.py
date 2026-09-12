@@ -200,6 +200,47 @@ def _load_fresh_imperva_cookies_from_db(*, max_age_hours: float = 2.0) -> dict[s
 # session (default: coolbet_prod) so Imperva sees real-Chrome TLS + headers.
 
 
+def _imperva_seed_cookies(max_age_hours: float = 2.0) -> list[dict] | None:
+    """The fresh Imperva cookie set, shaped for FlareSolverr's `cookies` field.
+
+    IMPERVA-SEED-FS (2026-09-12) — why this exists. The DB cookie set was read
+    ONLY in `_no_fs` mode. Every FS-routed call — which is every odds sweep and
+    every placement, i.e. the paths that matter — relied entirely on the FS
+    browser session earning its own Imperva cookies through the warmup
+    navigations. That works right up until the warmup ITSELF is challenged, and
+    then there is no fallback at all.
+
+    Measured 2026-09-12, with the odds feed dead for 2.6h and every pass logging
+    `fo-tree fetch failed: HTTP Error 500`:
+
+        fresh FS session, no cookies   -> HTTP 200,     995 bytes (interstitial)
+        second request, same session   -> FlareSolverr HTTP 500 (tab is gone)
+        fresh FS session, DB cookies   -> HTTP 200, 220,597 bytes (real board)
+
+    So Coolbet was not blocking us and FlareSolverr was not broken. A proven,
+    minutes-old cookie set was sitting in `coolbet_session_state` — harvested
+    from the operator's own logged-in CDP-Chrome every ~30 min — and the code
+    path that needed it could not see it. Seeding it costs one field on a
+    request we were already making.
+
+    Returns None when there is nothing fresh to seed, so the caller behaves
+    exactly as before (FS earns its own) rather than sending stale cookies,
+    which are worse than none.
+    """
+    try:
+        raw = _load_fresh_imperva_cookies_from_db(max_age_hours=max_age_hours)
+    except Exception as e:  # noqa: BLE001
+        log.debug("Imperva seed unavailable (non-fatal): %s", e)
+        return None
+    if not raw:
+        return None
+    # FS wants a list of cookie objects. Imperva issues some for the bare
+    # domain and some for the host; `.coolbet.com` covers both, and the host
+    # form would NOT be sent for a bare-domain cookie.
+    return [{"name": k, "value": v, "domain": ".coolbet.com", "path": "/"}
+            for k, v in raw.items() if v and not k.startswith("_")]
+
+
 def _fs_call(body: dict, *, timeout_s: int = 90) -> dict:
     """Low-level FlareSolverr proxy call. Raises if FLARESOLVERR_URL unset
     or the FS instance is unreachable.
@@ -585,6 +626,13 @@ class CoolbetSession:
                 "session": self._fs_session_name,
                 "maxTimeout": _FS_TIMEOUT_MS,
             }
+            # IMPERVA-SEED-FS: seed the WARMUP too. The warmup exists to earn
+            # Imperva cookies, and its failure mode is being challenged itself —
+            # exactly when a known-good set is most useful. Whatever FS harvests
+            # on top still wins, because the harvest below merges by name.
+            seed = self._imperva_seed()
+            if seed:
+                body["cookies"] = seed
             raw = _fs_call(body)
             sol = raw.get("solution") or {}
             new_cookies = sol.get("cookies") or []
@@ -1032,6 +1080,33 @@ class CoolbetSession:
             h.update(extra)
         return h
 
+    def _imperva_seed(self, *, force_refresh: bool = False) -> list[dict] | None:
+        """The Imperva cookie seed for this session — FIRST CONTACT ONLY.
+
+        Cached because `_load_fresh_imperva_cookies_from_db` triggers a CDP
+        re-harvest when the snapshot is stale, and doing that per request would
+        turn one browser round-trip into hundreds.
+
+        WHY IT STOPS AFTER THE FIRST GOOD RESPONSE, measured 2026-09-12 against
+        the live FS. Imperva challenges the FIRST request on a fresh browser
+        context and nothing after it:
+
+            fresh context, NO seed   -> HTTP 200,     995 bytes (interstitial)
+            fresh context, WITH seed -> HTTP 200, 223,820 bytes (real board)
+
+        So the seed is worth exactly one request. Sending it on every request
+        instead would mean handing FlareSolverr a `cookies` field forever, and
+        FS applies cookies by resetting the session's browser context — which
+        on the placement path would throw away the login state the session
+        exists to hold. First contact is where the challenge is; that is where
+        the seed belongs.
+        """
+        if not force_refresh and getattr(self, "_imperva_seed_done", False):
+            return None      # this context is past the challenge; do not reset it
+        if force_refresh or not hasattr(self, "_imperva_seed_cache"):
+            self._imperva_seed_cache = _imperva_seed_cookies()
+        return self._imperva_seed_cache
+
     def _fs_get(self, url: str, *, headers: dict | None = None,
                 params: dict | None = None) -> _FSResponse:
         """GET via FlareSolverr's named browser session. URL-encodes params
@@ -1046,6 +1121,14 @@ class CoolbetSession:
             "session": self._fs_session_name,
             "maxTimeout": _FS_TIMEOUT_MS,
         }
+        # IMPERVA-SEED-FS (2026-09-12): hand FS the cookie set harvested from
+        # the operator's own logged-in Chrome, when it is fresh. Without it the
+        # FS session must earn its own through the warmup — and when the warmup
+        # is itself challenged there is no fallback, which is how the odds feed
+        # sat dead for 2.6h with a proven cookie set minutes old in the DB.
+        seed = self._imperva_seed()
+        if seed:
+            body["cookies"] = seed
         if headers:
             body["headers"] = headers
         resp = _FSResponse(_fs_call(body))
@@ -1077,12 +1160,26 @@ class CoolbetSession:
         # This is not evasion — it is completing the challenge exactly as a
         # browser does, on our own session, with no extra identity. It costs one
         # extra request per fresh session, not per call.
+        #
+        # IMPERVA-SEED-FS (2026-09-12): the retry now also RE-READS the cookie
+        # seed. Repeating a request that got the interstitial, unchanged, is
+        # what turned a challenge into a dead tab: attempt 2 on the same
+        # session came back FlareSolverr HTTP 500, and every consumer read that
+        # as "Coolbet is down". Re-reading costs one DB query on the one
+        # occasion it can change the outcome.
         for _ in range(_INCAP_RETRIES):
             if not _looks_like_incapsula(resp):
+                # Past the challenge on this context — stop seeding (see
+                # `_imperva_seed`), so later calls reuse the context instead of
+                # resetting it.
+                self._imperva_seed_done = True
                 break
             log.info("Incapsula interstitial on %s — letting the JS challenge "
                      "settle and retrying on the same FS session", url[:80])
             time.sleep(_INCAP_BACKOFF_S)
+            fresh = self._imperva_seed(force_refresh=True)
+            if fresh:
+                body["cookies"] = fresh
             resp = _FSResponse(_fs_call(body))
         return resp
 
@@ -1098,6 +1195,12 @@ class CoolbetSession:
             "url": url,
             "session": self._fs_session_name,
             "maxTimeout": _FS_TIMEOUT_MS,
+            # IMPERVA-SEED-FS: same first-contact seed as the GET. A placement
+            # POST that loses the challenge is worse than a sweep that does — it
+            # is money not staked. `_imperva_seed()` returns None once this
+            # context is past the challenge, so a POST mid-session does NOT
+            # carry cookies and cannot reset the logged-in context.
+            **({"cookies": _s} if (_s := self._imperva_seed()) else {}),
         }
         if json_body is not None:
             body["postData"] = json.dumps(json_body)

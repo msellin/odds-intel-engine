@@ -130,6 +130,52 @@ broken.
   `Pardon Our Interruption`, usually with a 403. If you see HTTP 200 +
   `_Incapsula_Resource`, you are here, not there — **do not pause the feed.**
 
+### 1c. ⭐ Interstitial that does NOT self-resolve → you are in §7, not §1b
+
+**Read this WITH §1b — they look identical for the first 900 bytes and the fix
+is opposite.** Measured 2026-09-12, Coolbet odds dead 3h.
+
+- **Symptom:** identical to §1b — HTTP 200, ~995 bytes, `NOINDEX, NOFOLLOW`.
+- **The distinguishing tell is the SECOND request, not the first:**
+
+  | | request 1 (fresh context) | request 2 (same session) |
+  |---|---|---|
+  | **§1b, self-resolving** | 200, ~900 B interstitial | 200, ~217 KB real payload |
+  | **§1c/§7, escalated**   | 200, ~995 B interstitial | **FS HTTP 500 after 45-60s** |
+
+  A 500 *after a timeout* is FlareSolverr's "Error solving the challenge.
+  Timeout" — the tell §7 already documents. The session is then **poisoned**:
+  every later request on it 500s, including ones that worked seconds earlier.
+- **What DOES work while escalated, and what it proves:** seeding the request
+  with the Imperva cookies harvested from the operator's own logged-in
+  CDP-Chrome returns the real payload in ~1s on a **fresh** context:
+
+  ```
+  fresh context, NO seed   -> 200,     995 bytes (interstitial, then poisoned)
+  fresh context, WITH seed -> 200, 223,820 bytes (real board, reusable)
+  ```
+
+  That is IMPERVA-SEED-FS (`coolbet_session._imperva_seed_cookies`), and it is
+  now wired into `_fs_get`/`_fs_post`/warmup as a **first-contact** seed.
+  **It is a floor, not a cure.** It makes first contact survive; it does not
+  un-escalate the flag, and `search/v2` still poisons a warm session.
+- **Do NOT conclude "Coolbet is blocking us" from a probe.** Every `--probe` is
+  a first request on a fresh context, so post-seed it reports **OK even while
+  the sweep cannot complete**. Judge from `odds_snapshots` row counts, never
+  from the probe alone.
+- **Fix:** §7. Reduce footprint (`coolbet_pause_resume.sh pause`, which now
+  genuinely arms its resume — see below), let the flag decay.
+
+### ⚠️ `coolbet_pause_resume.sh pause` did not arm a resume until 2026-09-12
+
+Its header promised *"the resume is a launchd job, not a note to a human"*, and
+the `pause` branch only ever unloaded the two jobs. **Nothing was ever armed**,
+so every use of the §7 lever created exactly the silent multi-day outage the
+comment warns about. Fixed: `pause [MINUTES]` (default 90) now writes and loads
+a one-shot `com.oddsintel.coolbet-resume` agent, and **fails loudly** if it
+cannot. Always confirm with `coolbet_pause_resume.sh status` → `resume agent:
+ARMED`. Pinned by smoke `LIVENESS-IS-NOT-CAPABILITY`.
+
 ### 2. Imperva challenge  → the "STAY COOL" / "Pardon Our Interruption" wall
 - **Symptom:** the browser page body is ~9 chars (`STAY COOL`) or contains `Pardon Our Interruption`; `x-iinfo` response header present.
 - **Tell:** raw `curl` of `coolbet.com` returns the interstitial HTML even at HTTP 200.
