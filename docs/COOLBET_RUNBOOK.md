@@ -318,6 +318,24 @@ ARMED`. Pinned by smoke `LIVENESS-IS-NOT-CAPABILITY`.
 
 ---
 
+## ⭐ START HERE — one command for "is everything working?"
+
+```bash
+python3 scripts/ops/status.py            # full check, exits 1 if degraded
+python3 scripts/ops/status.py --no-fs     # fast: skips the browser probe
+python3 scripts/ops/status.py --json      # for a dashboard or a widget
+```
+
+Feeds (minutes since the last row per book), launchd jobs **including ones that
+are UNLOADED**, FlareSolverr probed for **capability not liveness**, Coolbet JWT
+and Imperva cookie age, what was actually staked in 24h, and — the line that
+matters — **picks that kicked off with no bet on them**.
+
+It exists because this question was being answered by hand, six ad-hoc queries
+at a time, differently each time. On its first run it found two faults the
+hand-assembled version had missed that same hour. Prefer it to the one-shots
+below; reach for those once it tells you *which* thing is broken.
+
 ## One-shot diagnostics
 
 ```bash

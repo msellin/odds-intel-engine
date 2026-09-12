@@ -36020,6 +36020,87 @@ def test_book_agnostic_config_search():
         "the 1x2 model loader must pick the latest model_version (no ~16x duplication)"
 
 
+@test("OPS-STATUS — one command answers 'are the books working?', and checks capability")
+def test_ops_status():
+    """OPS-STATUS (2026-09-12). Owner, after asking the same question several
+    times in one day: *"whats coolbet and unibet statuses? sweepers, scrapers,
+    daemons, etc... i think soon its time for the local dashboard as i keep
+    asking the same question."*
+
+    Answering by hand meant six ad-hoc SQL queries plus `launchctl list`, every
+    time, with the shape of the answer depending on which agent assembled it.
+    That is how a status check becomes unreliable — not because the data is
+    hard, but because nobody runs the same check twice. It found two things on
+    its FIRST run that the hand-assembled version had missed that same hour:
+    `near-kickoff-capture` was UNLOADED, and one upcoming pick was unplaced.
+
+    WHY IT IS A MAC CLI AND NOT AN /admin PAGE: half this state is not in the
+    database. launchd, FlareSolverr and CDP-Chrome live on the operator's Mac
+    and the VPS frontend cannot see any of them — and "the job is unloaded" was
+    the actual fault on 2026-09-12, when every DB-side signal read green.
+
+    The checks pinned here are the ones that were absent during real outages:
+
+      * FlareSolverr must be probed for CAPABILITY, not liveness. Its ready
+        banner stayed green for 3h while every session returned HTTP 500.
+      * A launchd job must be reported UNLOADED. An unloaded job is absent from
+        `launchctl list` and errors nowhere — it is silent by construction.
+      * A pick that kicked off UNPLACED must be counted. Three did on
+        2026-09-12, one won at 3.40, and nothing anywhere said so.
+      * Exit code must be non-zero when degraded, so this is usable from cron
+        or a menu-bar widget without parsing prose.
+    """
+    import inspect
+    import importlib.util
+    from pathlib import Path
+
+    path = Path("scripts/ops/status.py")
+    assert path.exists(), "the status tool must exist"
+    spec = importlib.util.spec_from_file_location("_ops_status", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # Capability, not liveness.
+    fs = _strip_prose(inspect.getsource(mod.flaresolverr))
+    assert "request.get" in fs and "sessions.destroy" in fs, (
+        "FlareSolverr must be probed with a real request on a throwaway "
+        "session — the ready banner stayed green through a 3h outage"
+    )
+    assert "can_serve" in fs, "the result must distinguish up from serving"
+
+    # An unloaded job is the silent failure; it must be named.
+    jobs = _strip_prose(inspect.getsource(mod.launchd_jobs))
+    assert "local/launchd" in jobs, (
+        "expected jobs must come from the REPO, not from whatever happens to "
+        "be loaded — otherwise an unloaded job simply disappears from the list"
+    )
+    render = _strip_prose(inspect.getsource(mod.render))
+    assert "UNLOADED" in render, "an unloaded job must be reported, loudly"
+
+    # The bet that never happened.
+    bet = _strip_prose(inspect.getsource(mod.betting))
+    assert "missed_24h" in bet and "placed_real IS NOT FALSE" in bet, (
+        "must count picks whose kickoff passed with no real bet — counting "
+        "only what WAS placed can never surface what was missed"
+    )
+    assert "missed_24h" in render, "a missed pick must reach the output"
+
+    # Usable from a script.
+    assert "return 1 if bad else 0" in render, (
+        "exit non-zero when degraded, so cron/widgets need not parse prose"
+    )
+    main = _strip_prose(inspect.getsource(mod.main))
+    assert "--json" in main, "must offer machine-readable output for a dashboard"
+
+    # It must actually run end to end (skip the browser probe for speed).
+    d = mod.collect(probe_fs=False)
+    for key in ("feeds", "jobs", "sessions", "betting", "failing_jobs"):
+        assert key in d, f"collect() must report {key}"
+    assert d["feeds"] and all("state" in f for f in d["feeds"]), (
+        "every book must get a state, including one with no rows at all"
+    )
+
+
 @test("ROUTER-REAL-MONEY-CUTOVER — the router places at the best book, double-gated")
 def test_router_real_money_cutover():
     """ROUTER-REAL-MONEY-CUTOVER (2026-09-12). Until today the router was BUILT,
