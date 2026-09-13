@@ -1653,6 +1653,15 @@ def stage_bet(
             match_id=str(bet["match_id"]), market=bet["market"], selection=bet["selection"],
             bookmaker="Coolbet", captured_odds=float(captured) if captured else outcome.odds,
             actual_odds=outcome.odds, stake=applied, bot_id=str(bet["bot_id"]) if bet.get("bot_id") else None,
+            # EDGE-PCT-TAKEN (2026-09-13): pass the pick id. Without it
+            # store_real_bet skips the edge derivation entirely, which is why
+            # `edge_pct_taken` was NULL on 97% of real bets and the
+            # "did the lower floor admit worse picks?" question could not be
+            # answered when CLV fell. The bots place from shadow_bets, so this
+            # is a shadow_bet id; store_real_bet now looks there first.
+            simulated_bet_id=(str(bet["shadow_bet_id"])
+                              if bet.get("shadow_bet_id") else
+                              (str(bet["id"]) if bet.get("id") else None)),
             # ROUTER-AUDIT-BOTH-ARMS (2026-09-11): `extra_notes` lets the
             # best-price router record WHY this book won on the Coolbet row
             # too. Without it the book-choice analysis was one-sided — only

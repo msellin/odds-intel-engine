@@ -36020,6 +36020,61 @@ def test_book_agnostic_config_search():
         "the 1x2 model loader must pick the latest model_version (no ~16x duplication)"
 
 
+@test("EDGE-PCT-TAKEN-RECORDED — the column that makes a CLV slump diagnosable")
+def test_edge_pct_taken_recorded():
+    """EDGE-PCT-TAKEN (2026-09-13). `real_bets.edge_pct_taken` was NULL on 142
+    of 147 real bets — 97% — and it only mattered once the question got asked.
+
+    On 2026-09-13 CLV vs Pinnacle fell from +0.33% to -6.95% (t=-4.34,
+    significant), so the obvious suspect was the edge floor dropping from a
+    pooled 13% to a selection-aware 10%. The test for that is one query:
+    bucket CLV by the edge we ACTUALLY took. It could not be run, because the
+    column holding that edge was empty.
+
+    TWO STACKED FAULTS, either of which alone nulls the column:
+
+      1. WRONG TABLE. The derivation looked up `simulated_bets`. The bots we
+         actually place — bot_coolbet_1x2_model_v1, bot_coolbet_ou_model_v1 —
+         write to `shadow_bets`. Verified against a live pick: found in
+         shadow_bets, NOT in simulated_bets. So even the Unibet router arm,
+         which does pass `simulated_bet_id=pick["shadow_bet_id"]`, silently
+         found nothing.
+      2. NO ID AT ALL. The Coolbet UI placer — the path that places most bets —
+         never passed `simulated_bet_id`, so the block was skipped outright.
+
+    This is the same class as `recommended_bookmaker` being NULL on 100% of
+    trigger rows: a column that exists, that analysis depends on, that nothing
+    writes, and whose absence is invisible until someone needs it.
+
+    Pinned: both tables are consulted (shadow first), the derivation is edge at
+    the price we GOT, and the placer passes an id.
+    """
+    import inspect
+    from workers.api_clients import supabase_client as sc
+
+    src = _strip_prose(inspect.getsource(sc.store_real_bet))
+    assert '"shadow_bets"' in src and '"simulated_bets"' in src, (
+        "must look up BOTH tables — the real-money bots write shadow_bets, the "
+        "legacy pipeline bots write simulated_bets"
+    )
+    assert src.index('"shadow_bets"') < src.index('"simulated_bets"'), (
+        "shadow_bets must be tried FIRST: it is where the bots we place live"
+    )
+    assert "calibrated_prob" in src and "1.0 / float(actual_odds)" in src, (
+        "edge must be derived at the price we GOT (actual_odds), so it is "
+        "comparable with the bot's own gate rather than with a quoted price"
+    )
+    # The placer must actually supply the id, or the whole block is skipped.
+    ui = _strip_prose(inspect.getsource(
+        __import__("workers.automation.coolbet_ui_placer",
+                   fromlist=["x"])))
+    i_call = ui.index("store_real_bet(")
+    assert "simulated_bet_id" in ui[i_call:i_call + 900], (
+        "the UI placer must pass the pick id to store_real_bet — without it "
+        "the edge derivation never runs on the path that places most bets"
+    )
+
+
 @test("COOLBET-CDP-SELFHEAL — the walled-profile fix runs itself, and cannot false-positive")
 def test_coolbet_cdp_selfheal():
     """COOLBET-CDP-SELFHEAL (2026-09-13). Owner: *"this system needs to be online

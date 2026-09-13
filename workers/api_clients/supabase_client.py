@@ -5514,20 +5514,44 @@ def store_real_bet(
     # Additive edge at the price we got, using the bot's own calibrated
     # probability so it matches what the bot used to decide. Falls back to
     # model_probability if calibrated is missing.
+    # EDGE-PCT-TAKEN-LOOKS-IN-THE-WRONG-TABLE (fixed 2026-09-13). This column
+    # was NULL on 142 of 147 real bets — 97% — which made the one analysis that
+    # matters impossible: bucketing CLV by the edge we actually took, i.e.
+    # "did lowering the floor admit worse picks?". Asked that question on
+    # 2026-09-13 after CLV vs Pinnacle fell 7.28pp (t=-4.34, significant) and
+    # it could not be answered at all.
+    #
+    # Two stacked faults, and each alone was enough to null the column:
+    #   1. WRONG TABLE. The lookup reads `simulated_bets`. The bots we actually
+    #      place — bot_coolbet_1x2_model_v1, bot_coolbet_ou_model_v1 — write to
+    #      `shadow_bets`. So even the router arm, which DOES pass an id
+    #      (`simulated_bet_id=pick["shadow_bet_id"]`), found no row.
+    #   2. NO ID AT ALL. The Coolbet UI placer never passed `simulated_bet_id`,
+    #      so the block was skipped outright on the path that places most bets.
+    #
+    # Now tries shadow_bets FIRST (the real-money bots' table), then
+    # simulated_bets for the legacy pipeline bots. Same derivation either way:
+    # edge = calibrated_prob - 1/actual_odds, at the price we GOT, so it is
+    # comparable with the bot's own gate rather than with a quoted price.
     edge_pct_taken = None
     if simulated_bet_id and not combo_legs:
-        sim_rows = execute_query(
-            "SELECT calibrated_prob, model_probability FROM simulated_bets WHERE id = %s",
-            [simulated_bet_id],
-        )
-        if sim_rows:
-            prob_raw = sim_rows[0].get("calibrated_prob")
-            if prob_raw is None:
-                prob_raw = sim_rows[0].get("model_probability")
-            if prob_raw is not None and float(actual_odds) > 0:
-                edge_pct_taken = round(
-                    float(prob_raw) - 1.0 / float(actual_odds), 5
+        prob_raw = None
+        for table in ("shadow_bets", "simulated_bets"):
+            try:
+                rows = execute_query(
+                    f"SELECT calibrated_prob, model_probability "
+                    f"FROM {table} WHERE id = %s", [simulated_bet_id],
                 )
+            except Exception:  # noqa: BLE001
+                continue
+            if rows:
+                prob_raw = rows[0].get("calibrated_prob")
+                if prob_raw is None:
+                    prob_raw = rows[0].get("model_probability")
+                if prob_raw is not None:
+                    break
+        if prob_raw is not None and float(actual_odds) > 0:
+            edge_pct_taken = round(float(prob_raw) - 1.0 / float(actual_odds), 5)
 
     # MARKET-VOCAB-CANONICAL: store the canonical spelling (AH/combo keep selection).
     market, selection = canonicalize_for_storage(
