@@ -2023,3 +2023,28 @@ t=+12.66 on n=381** — a significant result nobody could see.
 **Before writing off a market as unmeasurable, check
 `odds_snapshots WHERE bookmaker='Pinnacle' AND market=...` yourself.** A NULL
 column is evidence about our code first and the market second.
+
+---
+
+### O/U calibration has THREE eras — never pool across them
+
+**Added 2026-09-13 (OU-CALIBRATOR-DOMAIN-MISMATCH).** Any O/U 2.5 / 3.5 analysis that
+spans these boundaries is measuring a calibrator change, not a bot or a strategy:
+
+| Era | State |
+|---|---|
+| → 2026-09-03 10:49 UTC | **No O/U calibration at all.** `model_calibration` held no `over_under_*` row, so `apply_platt` was a silent no-op and `cal_prob` was stage-1 Pinnacle shrinkage only. |
+| 2026-09-03 10:49 → 2026-09-13 | **The domain-mismatched curve.** Fitted on raw ensemble probs, applied to Pinnacle-shrunk probs. Output range [0.3028, 0.6663], fixed point 0.4713. Inflated every probability below 0.4713 by 5–11pp and manufactured ~10× the pick volume. |
+| 2026-09-13 → | Rows removed (migration 335). Back to stage-1 only, pending `OU-CALIBRATOR-REFIT-ON-SHRUNK`. |
+
+Concretely, this invalidates lifetime O/U figures for every model-anchored O/U bot,
+because their history straddles two incompatible regimes with no cohort marker — the
+same shape as gotcha #39 (ENSEMBLE-RECALIBRATION) and the `+selcal1` precedent for 1x2
+triggers. Report pre- and post- separately with explicit n; do not average them.
+
+**This does NOT apply to 1x2.** 1x2 is fitted by a different script (`fit_platt.py`,
+nightly, from `simulated_bets.calibrated_prob` — the correct domain). Verified: `1x2_home`
+held `a=1.6081, b=−0.8604` continuously from 2026-08-30 through 2026-09-13 with no step
+change on 09-03. 1x2 shows a similarly compressed range ([0.297, 0.679], fixed point
+0.4766) but *chronically*, so it is a separate open question, not part of this incident.
+

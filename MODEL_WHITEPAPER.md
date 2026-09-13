@@ -1820,3 +1820,31 @@ Dataset: Beat the Bookie, 275 leagues, 2005-2015.
 | Consistently profitable leagues | 22 (12 of 22 are tier 3-4) |
 
 Key insight: the model shows edge primarily in **lower-tier, less commercially-covered leagues** where bookmaker pricing efficiency is lowest.
+
+
+### O/U 2.5 / 3.5 stage-2 calibration: REMOVED 2026-09-13
+
+O/U markets currently run **stage-1 Pinnacle shrinkage only**. There is no Platt curve
+for `over_under_25_*` or `over_under_35_*`; `apply_platt` is a graceful no-op when no row
+exists, which is the intended state, not an outage.
+
+The curve fitted on 2026-09-03 (OU-PLATT-UNFITTABLE, "O/U calibrated for the first time
+in the project's history") was **fitted on `predictions.model_probability` — the raw
+ensemble probability — while `improvements.calibrate_prob:227` applies stage 2 to
+`shrunk`**, which is ~90% de-vigged Pinnacle once odds > 3.0. Its out-of-sample ECE
+check (under25 0.0817 → 0.0454) was honest and irrelevant: it measured the curve on the
+distribution it was fitted to, not the one production feeds it.
+
+Effect: `sigmoid(1.5258·p − 0.8341)` spans only **[0.3028, 0.6663]** with fixed point
+**0.4713**, so it lifted every probability below 0.4713 by 5–11pp and compressed input
+spread 2.7×. `edge = cal_prob − 1/odds` therefore ranked by *price length* rather than by
+model disagreement. Published O/U edge figures between 2026-09-03 and 2026-09-13 are
+inflated by roughly 8pp of that lift and should not be quoted.
+
+Reverted in migration 335 (rows preserved in
+`model_calibration_ou_domain_mismatch_backup`). Refit tracked as
+`OU-CALIBRATOR-REFIT-ON-SHRUNK`; measured alternatives in
+`scripts/ou_calibrator_backtest.py`. **1x2 is unaffected** — it is fitted nightly by
+`scripts/fit_platt.py` from `simulated_bets.calibrated_prob`, the correct domain, and its
+parameters show no step change across 2026-09-03.
+

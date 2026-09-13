@@ -63,7 +63,7 @@ registry and regenerate.
 | Bot | Market | Anchor | Edge floor | Odds floor | Money | What it does |
 |---|---|---|---|---|---|---|
 | `bot_coolbet_1x2_model_v1` | 1x2 | model | **10%** | 2.80 | **REAL** | **FAVLONG-CUTS-2026-09-09: HOME-UNDERDOGS ONLY** at model edge ≥10% & odds ≥2.80. Home-favs lose, aways aren't fold-robust, draws are a sharp edge the model can't see (§57) → the one robust 1x2 engine is home-underdogs, robust to 10%. Real money, per-bot toggle. (NB the pooled/paper `_MIN_EDGE_BY_MARKET['1x2']` stays 13% — see below.) |
-| `bot_coolbet_ou_model_v1` | O/U 2.5 | model | 8% | 1.80 | **REAL** | Places our calibrated model's O/U picks at Coolbet's own price when model edge ≥8% & odds ≥1.80. Real money, per-bot toggle. |
+| `bot_coolbet_ou_model_v1` | O/U 2.5 | model | 8% | 1.80 | **REAL (toggled OFF)** | Places our calibrated model's O/U picks at Coolbet's own price when model edge ≥8% & odds ≥1.80. ⚠️ **`ui_place_enabled=false` since 2026-09-13** (migration 335, OU-CALIBRATOR-DOMAIN-MISMATCH §5b): every pick it staked came from a Platt curve fitted on raw ensemble probs and applied to Pinnacle-shrunk probs, so the edge was manufactured. n=32, −€139.30, −43.5% ROI, CLV −5.7% (t=−4.6). Still in `PLACEABLE_BOTS` — the code boundary is unchanged, only the runtime toggle. |
 
 ### Trigger engine · model vs sharp anchor (paper)
 

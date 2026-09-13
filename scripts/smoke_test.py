@@ -39711,5 +39711,142 @@ def test_edge_percent_unit_2026_09_13():
     assert "pre_cutoff_max <= 1.5" in mig and "created_at < TIMESTAMPTZ" in mig
 
 
+def _migration_335_applied() -> bool:
+    """True once migration 335 is recorded in `_schema_migrations`.
+
+    `migrate.yml` and `smoke_tests.yml` both fire on push to main, in parallel
+    and with no ordering between them, so a commit that ships a migration plus
+    the tests pinning its effect WILL sometimes run the tests against the
+    pre-migration DB. Gating on the recorded filename makes that deterministic:
+    the assertions arm themselves the moment the migration lands instead of
+    flaking on whichever workflow won the race.
+    """
+    from workers.api_clients.db import execute_query
+
+    rows = execute_query(
+        "SELECT 1 FROM _schema_migrations WHERE filename = %s",
+        ("335_ou_calibrator_domain_mismatch.sql",),
+    )
+    return bool(rows)
+
+@test("OU-CALIBRATOR-DOMAIN-MISMATCH — no O/U Platt row fitted in the wrong domain")
+def test_ou_calibrator_domain_mismatch_rows_gone():
+    """OU-CALIBRATOR-DOMAIN-MISMATCH (2026-09-13).
+
+    `scripts/fit_calibration_from_predictions.py` fits on
+    `predictions.model_probability` (RAW ensemble). `improvements.calibrate_prob`
+    applies stage 2 to `shrunk` = alpha*model + (1-alpha)*pinnacle_devig, which is
+    ~90% Pinnacle once odds > 3.0. Fitted in one domain, applied in another — so
+    the fitter's own out-of-sample ECE check validated a function nobody runs.
+
+    The one shipped run (2026-09-03 10:49 UTC) produced
+    sigmoid(1.5258*p - 0.8341) for under 2.5: total output range [0.3028, 0.6663],
+    fixed point 0.4713, so every probability below 0.4713 was inflated 5-11pp.
+    `edge = cal_prob - 1/odds` degenerated into "distance of this price from
+    ~0.45", maximised by the longest price on the board. bot_v10_all went 14.6% ->
+    69.9% O/U share and +38.5% -> -15.0% ROI (-EUR467 drawdown, -EUR449 of it in
+    one week). Held-out measurement (scripts/ou_calibrator_backtest.py): live
+    curve CLV -1.57% t=-2.4; no curve +24.7% t=+5.5.
+
+    Migration 335 removed the rows. `apply_platt` is a graceful no-op with no row,
+    so absence IS the fix. This test fails if any come back — whether by re-running
+    the unfixed fitter or by restoring the backup table.
+    """
+    from workers.api_clients.db import execute_query
+
+    if not _migration_335_applied():
+        raise SkipTest("migration 335 not applied yet (migrate.yml races this suite)")
+
+    rows = execute_query(
+        """SELECT market FROM model_calibration
+            WHERE platt_a IS NOT NULL
+              AND (market LIKE 'over_under_%%' OR market IN
+                   ('over25','under25','over35','under35','over15','under15'))"""
+    )
+    assert not rows, (
+        f"O/U Platt rows are back: {[r['market'] for r in rows]}. These can only "
+        f"come from fit_calibration_from_predictions.py, which still fits on the "
+        f"raw ensemble probability while production applies the curve to `shrunk`. "
+        f"See OU-CALIBRATOR-REFIT-ON-SHRUNK before re-enabling."
+    )
+
+
+@test("OU-CALIBRATOR-DOMAIN-MISMATCH — the fitter refuses to write, and guards its range")
+def test_fit_calibration_refuses_wrong_domain():
+    """Source-inspection twin of the row test above.
+
+    Removing the rows fixes today; this stops the next person re-creating them by
+    running the script that made them. Two guards must survive refactors:
+
+      1. a hard refusal on --apply until the fit is moved onto `shrunk`
+      2. a range guard, so that even after the domain is fixed a curve that
+         collapses toward a constant cannot ship. The 2026-09-03 curve could
+         never emit below 0.3028 while books price O/U 2.5 down to ~0.22 implied,
+         which is what made every longshot look like value.
+    """
+    import pathlib as _pl
+
+    src = _pl.Path("scripts/fit_calibration_from_predictions.py").read_text()
+    code = _strip_prose(src)
+
+    assert "i_have_fixed_the_domain_mismatch" in code, (
+        "the --apply refusal is gone; this script writes calibrations fitted on "
+        "predictions.model_probability while production applies them to `shrunk`"
+    )
+    assert "return 2" in code, "the refusal must exit non-zero, not fall through"
+
+    for const in ("MIN_RANGE", "MAX_FLOOR", "MIN_CEILING"):
+        assert const in code, f"range guard constant {const} missing"
+
+    # The guard must actually be wired to the ship list, not just defined.
+    assert "ship.remove(" in code, "range guard defined but never applied to `ship`"
+
+    # And the bounds must still be able to reject the exact curve that caused this.
+    import re as _re
+    def _const(name):
+        m = _re.search(rf"^{name}\s*=\s*([0-9.]+)", src, _re.M)
+        assert m, name
+        return float(m.group(1))
+
+    import math as _math
+    a, b = 1.5258414484479286, -0.8341459180945152      # the 2026-09-03 under-2.5 fit
+    lo = 1 / (1 + _math.exp(-b))
+    hi = 1 / (1 + _math.exp(-(a + b)))
+    assert lo > _const("MAX_FLOOR") or hi < _const("MIN_CEILING") \
+        or (hi - lo) < _const("MIN_RANGE"), (
+        f"range guard would NOT reject the curve that caused this incident "
+        f"(range [{lo:.4f}, {hi:.4f}]) — the bounds have been loosened too far"
+    )
+
+
+@test("OU-CALIBRATOR-DOMAIN-MISMATCH — real-money O/U bot is off")
+def test_coolbet_ou_model_bot_disabled():
+    """bot_coolbet_ou_model_v1 staked real money on picks generated entirely
+    inside the broken-calibrator window: n=32, -EUR139.30, -43.5% ROI, CLV -5.7%
+    (t=-4.6), and no configuration of it is fold-robust (PRIORITY_QUEUE P0).
+
+    Migration 335 set ui_place_enabled=false. Paper generation continues so it can
+    be re-measured on a clean window. Re-enable only on positive post-fix CLV —
+    this test is the thing that makes that a deliberate act.
+    """
+    from workers.api_clients.db import execute_query
+
+    if not _migration_335_applied():
+        raise SkipTest("migration 335 not applied yet (migrate.yml races this suite)")
+
+    rows = execute_query(
+        "SELECT ui_place_enabled FROM coolbet_placer_bots "
+        "WHERE bot_name = 'bot_coolbet_ou_model_v1'"
+    )
+    if not rows:
+        raise SkipTest("bot_coolbet_ou_model_v1 not in coolbet_placer_bots")
+    assert rows[0]["ui_place_enabled"] is False, (
+        "bot_coolbet_ou_model_v1 is staking real money again. It has never shown "
+        "positive CLV on a clean window. Re-enable only with the measurement that "
+        "justifies it."
+    )
+
+
+
 if __name__ == "__main__":
     main()

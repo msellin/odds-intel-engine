@@ -78,6 +78,15 @@ TRAIN_FRAC = 0.70
 # The refit must beat raw by more than this to be worth shipping. A margin
 # rather than ">" so we do not churn production for a rounding difference.
 MIN_ECE_GAIN = 0.002
+# Range guard (OU-CALIBRATOR-DOMAIN-MISMATCH). A sigmoid fitted in the wrong
+# domain collapses toward a constant: the 2026-09-03 under-2.5 curve spanned only
+# [0.3028, 0.6663]. Books price O/U 2.5 selections down to ~0.22 implied, so a
+# curve that cannot emit below 0.30 reports edge on every longshot by
+# construction. These bounds are deliberately loose — they reject a degenerate
+# curve, not a merely imperfect one.
+MIN_RANGE = 0.55       # sig(a+b) - sig(b) must span at least this much
+MAX_FLOOR = 0.20       # sig(b): the lowest probability the curve can ever emit
+MIN_CEILING = 0.80     # sig(a+b): the highest
 
 
 def _won(market: str, h: int, a: int) -> bool | None:
@@ -142,6 +151,11 @@ def _apply(p: float, a: float, b: float) -> float:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--apply", action="store_true", help="write to model_calibration")
+    ap.add_argument("--i-have-fixed-the-domain-mismatch", action="store_true",
+                    help="Override the domain-mismatch refusal. Only pass this once "
+                         "this script fits on `shrunk` (what improvements.py:227 "
+                         "actually passes to _apply_stage2), not on the raw "
+                         "predictions.model_probability. See OU-CALIBRATOR-REFIT-ON-SHRUNK.")
     ap.add_argument("--model-version", default=None,
                     help="pin one version for every market (default: resolve "
                          "the live version PER MARKET)")
@@ -237,6 +251,72 @@ def main() -> int:
     if not ship:
         console.print("\n[yellow]Nothing beats raw — nothing to write.[/yellow]")
         return 0
+
+    # ------------------------------------------------------------------
+    # OU-CALIBRATOR-DOMAIN-MISMATCH (2026-09-13) — WRITES ARE DISABLED.
+    #
+    # This script fits on `predictions.model_probability`, the RAW ensemble
+    # probability. Production does NOT call apply_platt with that number.
+    # `improvements.calibrate_prob` runs stage-1 shrinkage first and passes
+    # `shrunk = alpha * model_prob + (1 - alpha) * pinnacle_devig` into
+    # `_apply_stage2` (improvements.py:227). Once odds > 3.0, alpha floors at
+    # 0.10, so `shrunk` is ~90% Pinnacle and nothing like the fit's X.
+    #
+    # Every market in MARKETS goes through that shrinkage — `_GOALLINE_PREFIXES`
+    # is ("btts", "over", "under") — so there is no market this script can
+    # currently calibrate correctly, and the `e_new < e_raw` check above cannot
+    # catch it: it measures a function production never executes. That is the
+    # same trap `_fit_platt`'s own docstring documents for logit-vs-probability,
+    # reached from the other direction.
+    #
+    # What the one shipped run did (2026-09-03 10:49 UTC, over/under 2.5 + 3.5):
+    # the under-2.5 curve sigmoid(1.5258*p - 0.8341) has total output range
+    # [0.3028, 0.6663] and a fixed point at 0.4713, so it inflated every
+    # probability below 0.4713 by 5-11pp. `edge = cal_prob - 1/odds` became "how
+    # far is this price from ~0.45", maximised by the longest price on the board.
+    # bot_v10_all went 14.6% -> 69.9% O/U share and +38.5% -> -15.0% ROI, a
+    # -EUR467 drawdown. Measured by scripts/ou_calibrator_backtest.py on a
+    # held-out slice: live curve CLV -1.57% (t=-2.4) vs no curve +24.7% (t=+5.5).
+    #
+    # Re-enabling requires fitting on `shrunk` (reconstruct it the way the
+    # backtest does: alpha * model_prob + (1-alpha) * devigged Pinnacle), and
+    # validating on the edge >= floor SELECTED subpopulation rather than
+    # universe-wide ECE — an average-ECE win is the wrong loss for a curve whose
+    # only job is to feed a tail gate. Tracked as OU-CALIBRATOR-REFIT-ON-SHRUNK.
+    # ------------------------------------------------------------------
+    if args.apply and not args.i_have_fixed_the_domain_mismatch:
+        console.print(
+            "\n[bold red]REFUSING TO WRITE — domain mismatch.[/bold red]\n"
+            "This script fits on predictions.model_probability (raw ensemble), but\n"
+            "improvements.calibrate_prob applies stage 2 to `shrunk` (~90% Pinnacle\n"
+            "above odds 3.0). The out-of-sample ECE check above therefore validates a\n"
+            "function production never runs.\n\n"
+            "The single shipped run of this script (2026-09-03) cost -EUR467 on\n"
+            "bot_v10_all and was reverted in migration 335. See\n"
+            "scripts/ou_calibrator_backtest.py for the measured comparison.\n\n"
+            "Fit on `shrunk` before re-enabling. Tracked: OU-CALIBRATOR-REFIT-ON-SHRUNK."
+        )
+        return 2
+
+    # Second line of defence, for after the domain is fixed: a curve whose output
+    # range cannot reach the probabilities the market actually prices is not a
+    # calibration, it is a constant with a slope. The 2026-09-03 under-2.5 fit
+    # could never emit anything below 0.3028 while books routinely price O/U 2.5
+    # selections at 0.22-0.25 implied.
+    rejected = []
+    for mkt, a, b, n, e_raw, e_new in list(ship):
+        lo, hi = _apply(0.0, a, b), _apply(1.0, a, b)
+        if lo > MAX_FLOOR or hi < MIN_CEILING or (hi - lo) < MIN_RANGE:
+            rejected.append((mkt, lo, hi))
+            ship.remove((mkt, a, b, n, e_raw, e_new))
+    for mkt, lo, hi in rejected:
+        console.print(f"  [red]rejected {mkt}[/red]: output range [{lo:.4f}, {hi:.4f}] "
+                      f"— too compressed to be a calibration "
+                      f"(need span >= {MIN_RANGE}, floor <= {MAX_FLOOR}, ceiling >= {MIN_CEILING})")
+    if not ship:
+        console.print("\n[yellow]Every fit failed the range guard — nothing to write.[/yellow]")
+        return 0
+
     if not args.apply:
         console.print(f"\n[yellow]Dry run — would write {len(ship)}: "
                       f"{', '.join(m for m, *_ in ship)}. Re-run with --apply.[/yellow]")

@@ -314,3 +314,79 @@ drift from `odds_snapshots` rather than the MFV columns.
 Corollary worth checking whenever a post-hoc column has a live consumer: the
 meta-model scores at pick time and reads three `*_at_t6h` columns, and
 `meta_clv_score` lands on only **13.8%** of shadow picks.
+
+---
+
+### OU-CALIBRATOR-DOMAIN-MISMATCH — a calibrator fitted on one quantity, applied to another
+
+**Added 2026-09-13** after the owner asked why a day of picks went 2-for-16 and the
+bankroll "dropped so hard".
+
+**The tell:** a sudden, large change in *pick composition and volume* with no model
+version change. `bot_v10_all` went from 14.6% O/U share at +38.5% ROI (Aug 1 – Sep 2)
+to **69.9% O/U share at −15.0% ROI** (Sep 3 – 13), ~3 bets/day to ~12 bets/day, peak
++€756.06 on 09-06 → +€289.30, a **−€466.76 drawdown with −€449.07 of it in one week**.
+The model head never changed.
+
+**The cause.** `scripts/fit_calibration_from_predictions.py:186` fits the Platt curve on
+`predictions.model_probability` — the RAW ensemble probability.
+`workers/model/improvements.py:227` applies it to `shrunk`
+(`alpha * model_prob + (1 - alpha) * pinnacle_devig`), which is ~90% Pinnacle once
+odds > 3.0 because `CAL-ALPHA-ODDS` floors alpha at 0.10. **Fitted in one domain,
+applied in another.**
+
+**Why validation could not catch it.** The script ships a fit only when it beats raw
+out-of-sample on ECE — a genuine, honest check. But it measured the curve *on the raw
+probabilities it was fitted on*, i.e. **a function production never executes**. Its ECE
+improvement (under25 0.0817 → 0.0454) was real and irrelevant. This is the same trap
+`_fit_platt`'s own docstring documents for logit-vs-probability, reached from the
+opposite direction.
+
+**Why the damage was shaped the way it was.** The shipped under-2.5 curve is
+`sigmoid(1.5258·p − 0.8341)`: total output range **[0.3028, 0.6663]**, fixed point
+**0.4713**. Everything below 0.4713 is inflated, and long-priced unders are all below it.
+Live rows: input sd 0.2209 → output sd 0.0823, a 2.7× compression. So
+`edge = cal_prob − 1/odds` degenerated into *"how far is this price from ~0.45"*, which
+is monotonically maximised by the longest price on the board. **An 8% edge floor became
+a longshot-finder.** Against 113,506 Pinnacle under-2.5 quotes on finished matches since
+08-01: at market-implied 0.316 the curve says 0.413 while the actual rate is 0.271 —
+a reported +9.7% edge on a true −4.5%. The market is well calibrated; the curve is a
+horizontal line drawn through it.
+
+**The guard now in place.** `fit_calibration_from_predictions.py` refuses `--apply`
+outright until it is reworked to fit on `shrunk`, and carries a range guard that rejects
+any curve whose output span collapses (`MIN_RANGE` / `MAX_FLOOR` / `MIN_CEILING`).
+Migration 335 removed the rows (`apply_platt` is a graceful no-op with none) and
+preserved them in `model_calibration_ou_domain_mismatch_backup`. Smoke tests
+`OU-CALIBRATOR-DOMAIN-MISMATCH` (×3) fail CI if the rows return, the guards are removed,
+or the real-money O/U bot is re-enabled.
+
+**The generalisable lesson — two of them.**
+
+1. **A calibrator must be fitted on the exact quantity inference passes it.** Not a
+   correlated quantity, not the pre-shrinkage version. If you cannot state which
+   variable production hands the curve, you cannot validate the curve.
+2. **Average ECE is the wrong loss for a curve that only feeds a tail gate.** The fit was
+   ECE-optimal over the whole universe and maximally wrong exactly where the 8% floor
+   bites. Validate on the **selected** subpopulation (`edge ≥ floor`), not the universe.
+
+**Measured alternatives** (`scripts/ou_calibrator_backtest.py`, held-out slice, TEST
+n=8,963 candidates, stale-best-odds guarded):
+
+| arm | picks | claimed | actual | gap | ROI | CLV vs Pinnacle close |
+|---|---|---|---|---|---|---|
+| live (broken) | 488 | 44.2% | 30.1% | **+14.1pp** | −11.3% | **−1.57% (t=−2.4)** |
+| no calibrator | 48 | 53.0% | 47.9% | +5.1pp | +18.0% | **+24.72% (t=+5.5)** |
+| refit on `shrunk` | 47 | 53.6% | 51.1% | **+2.5pp** | +24.6% | **+25.49% (t=+5.6)** |
+| refit + odds (2-feature) | 1 | — | — | — | — | unusable, n=1 |
+
+ROI t-stats at n≈48 are not significant and are not the basis for the decision — **CLV
+is**, per this repo's own ~334-vs-9,300 sample rule. Note the volume: the broken curve
+produced **10× the picks**. A 90% drop in O/U pick count after the fix is the fix
+working, not a regression.
+
+⚠️ **Caveat on the +24.7% CLV magnitude.** The backtest takes each book's *last*
+pre-match quote (a STALE-BEST-ODDS guard — a first run without it showed inflated
++19–24% ROI). A dead feed's last quote can still look live (`ODDS-NO-MAX-AGE`), so treat
+the *direction and significance* as robust and the *magnitude* as optimistic.
+

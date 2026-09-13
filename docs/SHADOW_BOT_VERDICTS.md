@@ -103,8 +103,16 @@ are the sharp-anchored family that wins above.
 
 ## Recommended actions
 
-1. **Stop staking `bot_coolbet_ou_model_v1`** — significantly negative CLV
-   (t=−4.6) and the largest real-money exposure. *Owner decision, live money.*
+1. ✅ **DONE 2026-09-13 — stopped staking `bot_coolbet_ou_model_v1`.**
+   `ui_place_enabled=false` via migration 335. The root cause was found the same
+   day and it was not the bot: OU-CALIBRATOR-DOMAIN-MISMATCH, a Platt curve fitted
+   on raw ensemble probabilities and applied to Pinnacle-shrunk ones, which
+   manufactured the edge on every O/U pick from 2026-09-03. Its −43.5% ROI /
+   CLV −4.6 record is therefore a measurement of the calibrator, not of the bot.
+   ⚠️ **Re-measure on a post-fix window before judging it** — and note the same
+   contamination applies to every model-anchored **O/U** verdict in this document
+   (see `docs/ANALYSIS_GOTCHAS.md`, "O/U calibration has THREE eras"). The 1x2 and
+   sharp-anchored verdicts here are unaffected.
 2. **Retire the seven model-anchored losers.** No configuration rescues them, so
    they are pure noise on the page.
 3. **Keep and watch the sharp family** — the two live sharp 1x2 bots plus the two
