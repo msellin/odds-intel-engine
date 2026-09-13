@@ -15139,8 +15139,27 @@ def _():
     # formula the bot itself uses (`cal_prob - 1/odds`). The earlier
     # multiplicative back-derivation disagreed with the bot's convention
     # by a factor of ~odds.
-    assert "calibrated_prob, model_probability FROM simulated_bets" in sc, (
-        "store_real_bet must read calibrated_prob (with model_probability fallback)"
+    # TEST-PINNED-OLD-REALITY (fixed 2026-09-13): this asserted the literal
+    # "calibrated_prob, model_probability FROM simulated_bets". EDGE-PCT-TAKEN-RECORDED
+    # (658d36e) correctly replaced that single-table read with a loop over
+    # ("shadow_bets", "simulated_bets") built by an f-string — real bets are placed
+    # from shadow_bets, so the old query missed them and left edge_pct_taken NULL,
+    # which is the very bug that commit fixed. The literal stopped matching and this
+    # test had been red ever since, masking every other regression it covers.
+    # Assert the INVARIANT (both ledgers are searched, calibrated_prob preferred,
+    # model_probability the fallback) rather than one spelling of the SQL.
+    assert "calibrated_prob, model_probability" in sc, (
+        "store_real_bet must select calibrated_prob and model_probability"
+    )
+    assert '("shadow_bets", "simulated_bets")' in sc, (
+        "store_real_bet must look in BOTH ledgers — real bets are placed from "
+        "shadow_bets, and reading only simulated_bets leaves edge_pct_taken NULL"
+    )
+    assert 'prob_raw = rows[0].get("calibrated_prob")' in sc, (
+        "store_real_bet must PREFER calibrated_prob"
+    )
+    assert 'prob_raw = rows[0].get("model_probability")' in sc, (
+        "store_real_bet must fall back to model_probability"
     )
     assert "1.0 / float(actual_odds)" in sc, (
         "store_real_bet must compute additive edge: calibrated_prob - 1/actual_odds"
