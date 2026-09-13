@@ -118,6 +118,15 @@ indefensible from the data.
 
 ---
 
+> ⚠️ **UPDATED 2026-09-14.** The conclusion below (do not un-retire) STANDS, but
+> its premise about the retirement reason was incomplete. Re-measured on era-1
+> data only — excluding the OU-CALIBRATOR-DOMAIN-MISMATCH window — this bot is
+> **CLV +4.29% (t=+8.3) with ROI +10.3% on n=325**, and its O/U legs are +3.1%
+> (2.5) and +15.9% (3.5), not the −17% on record. The recorded reason was
+> corrected by migration 337. It stays retired purely because the sharp
+> successor scores 2–3× better, which is exactly the argument made below.
+> See `docs/SHADOW_BOT_VERDICTS.md` Addendum 3.
+
 # ADDENDUM 2 — `bot_coolbet_value_v1`: why it was retired, and why NOT to un-retire it
 
 Owner asked four things: why was it retired, backtest its picks, does it need an

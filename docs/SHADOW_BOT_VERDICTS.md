@@ -277,3 +277,63 @@ repo's history, including the ones this document recommended.
 Fixed: both lookups now require `retired_at IS NULL`, so a DB retirement is
 self-enforcing. Worth knowing when reading any historical "retired" bot's record —
 its pick count may have continued past its retirement date.
+
+---
+
+# ADDENDUM 3 — 2026-09-14: should we UN-retire any? No — but the recorded reasons were wrong
+
+Owner asked: *"what about un-retire some?"* Measured properly on **era-1 data
+only** (before 2026-09-03 09:02 UTC, so the calibrator window cannot be what is
+being measured), placeable books:
+
+| Bot | n | CLV | t | ROI | ROI t |
+|---|---|---|---|---|---|
+| `bot_sweep_ou25_v1` | 171 | **+5.20%** | +9.1 | −6.8% | — |
+| `bot_pin_1x2_home_v1` | 236 | **+4.34%** | +7.7 | **+10.8%** | <1.3 |
+| `bot_coolbet_value_v1` | 325 | **+4.29%** | +8.3 | **+10.3%** | <1.3 |
+| `bot_sweep_ou35_v1` | 137 | **+4.08%** | +5.7 | **+10.4%** | <1.3 |
+
+**These are better than the pooled figures reported in this document's main
+table** (+2.9% to +3.4%), because the pooled numbers were dragged down by era-2
+contamination. Three now show double-digit positive ROI.
+
+## The retirement reasons on record are wrong in both halves
+
+All four carry: *"line-shop signal loses out-of-sample; model-edge is the path."*
+
+1. **Line-shop does not lose out-of-sample.** All four beat the close at
+   t = +5.7 to +9.1 on clean data.
+2. **"Model-edge is the path" has been falsified by events.** The model-edge
+   bots they were retired *in favour of* have themselves now failed — migration
+   336 retired three of them at CLV −8.4% to −9.2%, and the real-money
+   `bot_coolbet_ou_model_v1` was toggled off on 2026-09-13.
+
+`bot_coolbet_value_v1`'s specific charge — *"−17% on O/U every month"* — also
+splits by era: O/U 2.5 is **+3.1%** in era 1 against **−27.6%** in era 2; O/U 3.5
+**+15.9%** against **−12.0%**. ⚠️ Honest caveat: it was retired on 2026-09-08,
+only five days into era 2, so the original figure was computed largely on era-1
+data and **cannot be blamed entirely on the calibrator** — more likely it was
+measured on all books or the idealized price basis rather than the executable,
+placeable-book basis used here. Either way it is not what the data shows.
+
+Corrected on the record by **migration 337** (reasons only — no bot changes
+state).
+
+## They still stay retired, for a different reason
+
+The real successor is the **sharp anchor**, and it beats them 2–3× on CLV:
+
+| Live sharp bot | n | CLV | t |
+|---|---|---|---|
+| `bot_coolbet_trigger_sharp_1x2_v1` | 65 | **+12.09%** | +8.8 |
+| `bot_unibet_trigger_sharp_1x2_v1` | 63 | **+10.40%** | +4.8 |
+| `bot_coolbet_trigger_sharp_ou_v1` | 18 | +6.93% | +6.1 |
+
+Un-retiring would add a weaker duplicate of a strategy already running. And the
+sharp bots' record is **forward** data gathered *after* the line-shop four were
+selected out, which satisfies the BETA bar's criterion (5) by construction where
+theirs cannot.
+
+**The transferable finding is the `edge ≥ 13%` floor** — it lifts the line-shop
+CLV roughly 3× on era-1 data (+15.3%, +15.2%, +8.0%) and all four landed on it
+independently. Inherit the floor, not the bots.

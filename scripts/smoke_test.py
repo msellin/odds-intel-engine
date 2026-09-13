@@ -40073,5 +40073,33 @@ def test_retired_bots_kept_generating_2026_09_14():
         )
 
 
+@test("LINESHOP-RETIREMENT-REASON-CORRECTED — the record says why they stay retired")
+def test_lineshop_retirement_reason_corrected_2026_09_14():
+    """The four line-shop bots were retired 2026-09-08 because "line-shop loses
+    out-of-sample; model-edge is the path". Both halves are wrong: on era-1
+    placeable-book data all four beat the close at t=+5.7..+9.1, and the
+    model-edge strategy named as their successor has itself since been retired
+    (migration 336) or toggled off. They stay retired for a DIFFERENT reason —
+    the sharp anchor supersedes them at 2-3x the CLV.
+
+    A retirement reason is load-bearing: it is what the next person reads before
+    deciding whether to revive a bot, and a wrong one sends them the wrong way.
+    """
+    import pathlib as _pl
+
+    mig = _pl.Path(
+        "supabase/migrations/337_correct_lineshop_retirement_reasons.sql").read_text()
+    for bot in ("bot_sweep_ou25_v1", "bot_sweep_ou35_v1",
+                "bot_coolbet_value_v1", "bot_pin_1x2_home_v1"):
+        assert f"'{bot}'" in mig, bot
+    # It corrects the record ONLY — it must not revive anything or change state.
+    body = mig.split("UPDATE bots")[1]
+    assert "is_active" not in body and "retired_at =" not in body, (
+        "this migration corrects retired_reason only; reviving a bot is a "
+        "separate, owner-level decision"
+    )
+    assert "retired_at IS NOT NULL" in body, "only ever touch already-retired bots"
+
+
 if __name__ == "__main__":
     main()
