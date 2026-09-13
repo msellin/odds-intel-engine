@@ -39885,5 +39885,99 @@ def test_coolbet_ou_model_bot_disabled():
 
 
 
+@test("MODEL-1X2-RETIRED — the three model-anchored 1x2 trigger bots are off, O/U still held")
+def test_model_1x2_retired_2026_09_14():
+    """SHADOW-BOT-VERDICTS: the 1x2 half of the retirement shipped; the O/U half
+    did not, and must not drift into supabase/migrations/ by accident.
+
+    The asymmetry is the whole point. All four model-anchored O/U bots have ZERO
+    settled picks outside the OU-CALIBRATOR-DOMAIN-MISMATCH window
+    (2026-09-03 09:02 -> 2026-09-13 21:00 UTC), so excising the bad era leaves no
+    evidence at all — they cannot be retired on data that does not exist. The
+    1x2 bots are not part of that incident (1x2_home held a=1.6081, b=-0.8604
+    continuously from 08-30) and all three have 100% of their CLV-bearing picks
+    after the 09-04..09-06 book-set change, so their measured life sits in one
+    regime.
+    """
+    import pathlib as _pl
+
+    mig = _pl.Path(
+        "supabase/migrations/336_retire_model_anchored_1x2_losers.sql").read_text()
+    for bot in ("bot_coolbet_trigger_1x2_v1", "bot_unibet_trigger_1x2_v1",
+                "bot_trigger_1x2_model_v1"):
+        assert bot in mig, bot
+    # The O/U bots must NOT be retired by this migration.
+    for bot in ("bot_coolbet_trigger_ou_v1", "bot_unibet_trigger_ou_v1",
+                "bot_ou35_model_v1", "bot_trigger_ou_model_v1",
+                "bot_coolbet_ou_model_v1"):
+        assert bot not in mig.split("UPDATE bots")[1], (
+            f"{bot} is O/U — it has zero settled picks outside the calibrator "
+            f"window, so retiring it is a coin flip with a paper trail"
+        )
+
+    held = _pl.Path("dev/active/HELD_retire_model_anchored_ou_losers.sql")
+    assert held.exists(), "the O/U decision must stay staged, not vanish"
+    assert not list(_pl.Path("supabase/migrations").glob("*HELD*")), (
+        "a HELD file inside supabase/migrations/ would be auto-applied"
+    )
+    # bot_coolbet_ou_model_v1 is real money and must NOT be in the held sweep —
+    # it keeps generating paper picks so era 3 can answer the question.
+    assert "bot_coolbet_ou_model_v1" not in held.read_text().split("UPDATE bots")[1]
+
+
+@test("PERF-CHART-EVENT-MARKERS — markers are data-driven, not hardcoded to a dead date")
+def test_perf_chart_event_markers():
+    """The owner asked for the calibration bug's start and end to be marked on
+    /performance so a reader can see whether the curve recovers.
+
+    While adding them I found the existing markers were already broken. They were
+    written as `x="May 6"` / `x="May 24"` inside a `period === "90d"` guard.
+    Recharts matches a categorical `x` against a value PRESENT IN THE DATA, so
+    once those dates aged out of the 90-day window the lines silently stopped
+    rendering — the guard checked the selected period, not whether the day was
+    actually on the chart. A marker that renders nothing looks exactly like a
+    marker that was never added.
+
+    So this pins the shape, not the specific events: markers come from a dated
+    list and are filtered against the days the curve actually holds.
+    """
+    import re as _re
+
+    src = _web_path("src/components/performance-pnl-chart-toggle.tsx").read_text()
+    # Strip JS/JSX comments before the "must not contain" checks. The comment
+    # explaining the old hardcoded form quotes it verbatim, and a naive substring
+    # search cannot tell documentation from live code — the same reason
+    # `_strip_prose` exists for the Python assertions.
+    code = _re.sub(r"/\*.*?\*/", "", src, flags=_re.S)
+    code = _re.sub(r"^\s*//.*$", "", code, flags=_re.M)
+
+    assert "const EVENTS" in src, "event markers must come from a dated list"
+    for iso in ("2026-09-03", "2026-09-13"):
+        assert iso in src, f"{iso} marker missing (calibration bug window)"
+
+    # The filter is the whole point — without it a marker outside the window is
+    # a silent no-op, which is the bug this replaced.
+    assert "inWindow.has(e.iso)" in src, (
+        "markers must be filtered to days present in the active curve; an "
+        "unfiltered ReferenceLine with a categorical x renders nothing at all"
+    )
+    assert 'x={shortDate(e.iso)}' in src, (
+        "the marker x must be derived from the event's ISO date through the same "
+        "formatter the data uses, or it cannot match a data point"
+    )
+    # The old hardcoded form must not come back.
+    assert 'x="May 6"' not in code and 'x="May 24"' not in code, (
+        "hardcoded categorical marker dates render nothing once they leave the "
+        "window — drive them from EVENTS instead"
+    )
+    # The caption is load-bearing: without it the green marker reads as "the line
+    # should turn up from here", which over-claims on a curve whose newest days
+    # are still filling in.
+    assert "showsBugWindow" in src, (
+        "the explanatory caption must be gated on BOTH markers being visible"
+    )
+
+
+
 if __name__ == "__main__":
     main()
