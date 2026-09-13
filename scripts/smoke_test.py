@@ -36020,6 +36020,94 @@ def test_book_agnostic_config_search():
         "the 1x2 model loader must pick the latest model_version (no ~16x duplication)"
 
 
+@test("COOLBET-CDP-SELFHEAL — the walled-profile fix runs itself, and cannot false-positive")
+def test_coolbet_cdp_selfheal():
+    """COOLBET-CDP-SELFHEAL (2026-09-13). Owner: *"this system needs to be online
+    24/7 and self healing and reviving"* — after the Coolbet login had been
+    hand-fixed many times.
+
+    THE FAULT. Coolbet served the CDP-Chrome profile a 504,929-byte REAL SPA
+    rendering the 9 characters "STAY COOL", on every route, HTTP 200, no console
+    errors, no failed requests, no 4xx, and ZERO Imperva markers in the raw
+    HTML. The runbook called that body the Imperva wall, so every previous
+    attempt reached for bot-detection remedies. Measured against this exact
+    state and ALL ineffective: clearing the 5 Imperva cookies; clearing
+    localStorage reese84 + uuid; hard reload; CDP-Chrome process restart;
+    foreground tab with PoW time.
+
+    Meanwhile the operator's NORMAL Chrome — same machine, same IP, same account
+    — loaded the site and logged in first try. So the block is bound to the CDP
+    PROFILE ON DISK, not to the IP, the account, the cookies or the process.
+
+    THE FIX, which is the architecture lesson: never log in through CDP-Chrome.
+    Keep the operator's own Chrome logged in and RE-COPY that profile. The
+    launcher always did this on first run; it was simply never re-run when the
+    copy went bad.
+
+    WHAT THIS TEST PROTECTS — the two ways a self-heal turns into an outage:
+
+      1. FALSE POSITIVES. Both JWT checks I wrote first reported "no JWT" on a
+         perfectly healthy session — a naive `cbauth` key filter (Coolbet does
+         not always name the key that way), and then the repo's own scanner
+         called from INSIDE an open patchright connection (two CDP clients
+         collide → `chrome_down`). Either would have re-copied several GB on a
+         loop, forever. The detector must reuse `diagnose_cdp_jwt_state` and
+         must call it outside the CDP connection.
+      2. NO RATE LIMIT. The copy moves several GB; healing every tick would be
+         its own outage.
+
+    And the heal must END by syncing the JWT to the DB. Without that the browser
+    holds a valid token while every consumer — placer, health ping, router —
+    reads the stale row and still believes we are logged out. That step made the
+    difference between "looks broken" and "green" when this was first run.
+    """
+    import inspect
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "_rb", Path("scripts/ops/coolbet_cdp_rebootstrap.py"))
+    rb = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rb)
+
+    diag = _strip_prose(inspect.getsource(rb.diagnose))
+    # (1) no false positives
+    assert "diagnose_cdp_jwt_state" in diag, (
+        "the JWT check must reuse the repo's scanner — a key-name guess read "
+        "'no JWT' on a healthy session and would have looped a multi-GB copy"
+    )
+    assert "'cbauth'" not in diag and '"cbauth"' not in diag, (
+        "must not re-implement the check by key name"
+    )
+    i_close = diag.index("except Exception")
+    assert diag.index("diagnose_cdp_jwt_state") > i_close, (
+        "the scanner must run OUTSIDE the patchright `with` block — two CDP "
+        "clients on one browser collide and report chrome_down"
+    )
+    # (2) rate limited, and the heal is recoverable
+    heal = _strip_prose(inspect.getsource(rb.heal))
+    assert "rename(" in heal and "rm" not in heal.split("rename(")[0][-200:], (
+        "the walled profile must be MOVED aside, never deleted — it is the way "
+        "back if the heal makes things worse, and the only evidence of the fault"
+    )
+    assert "--refresh-jwt" in heal, (
+        "the heal must end by syncing the JWT into coolbet_session_state, or "
+        "the browser is healthy while every consumer reads the stale DB row"
+    )
+    main = _strip_prose(inspect.getsource(rb.main))
+    assert "_recently_healed" in main and "min_gap_hours" in main, (
+        "must be rate limited — a multi-GB copy every tick is its own outage"
+    )
+
+    # The job that runs it, reproducible from git.
+    plist = Path("local/launchd/com.oddsintel.coolbet-cdp-selfheal.plist")
+    assert plist.exists(), "the self-heal must be a scheduled job, not a manual step"
+    txt = plist.read_text()
+    assert "coolbet_cdp_rebootstrap.py" in txt and "--apply" in txt, (
+        "the scheduled job must actually heal, not just report"
+    )
+
+
 @test("HEALTH-PING-CIRCUIT-BREAKER — a probe that cannot succeed must not add footprint")
 def test_health_ping_circuit_breaker():
     """HEALTH-PING-CIRCUIT-BREAKER (2026-09-13), found while diagnosing a

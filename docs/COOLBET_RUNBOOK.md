@@ -206,13 +206,36 @@ who stopped it.** Always check the RAW HTML, which is what
 | console / network | no errors, no failed requests, no 4xx |
 | foreground tab + JS PoW time | unchanged |
 
-**THE DECIDING TEST, which needs a human:** open coolbet.com in a **normal
-Chrome window** (not the `--remote-debugging-port=9222` one).
-- **Loads fine** → the block follows the **automation profile**, and the fix is
-  architectural: stop logging in through CDP-Chrome. Log in on a normal profile
-  and hand the session over.
-- **Also walled** → it is the **IP or the account**, and no browser-side remedy
-  will ever fix it. Escalate to Coolbet.
+**✅ ANSWERED 2026-09-13.** The operator's **normal Chrome loaded Coolbet fine
+and logged in first try** — same machine, same IP, same account. So the block is
+**bound to the CDP profile ON DISK**: not the IP, not the account, not the
+cookies, not the process (a restart did not clear it either).
+
+**THE FIX — and it is now AUTOMATIC:**
+
+```bash
+python3 scripts/ops/coolbet_cdp_rebootstrap.py            # check
+python3 scripts/ops/coolbet_cdp_rebootstrap.py --apply    # heal
+```
+
+Scheduled as `com.oddsintel.coolbet-cdp-selfheal` (:25/:55), rate-limited to one
+heal per 6h because the copy moves several GB. It quits CDP-Chrome, **parks** the
+walled profile (moved, never deleted — it is the evidence), re-copies the
+operator's normal profile, relaunches, and **syncs the JWT into
+`coolbet_session_state`**. That last step is easy to forget and makes a
+successful heal look broken: the browser holds a valid token while the placer,
+the health ping and the router all read the stale DB row.
+
+**THE ARCHITECTURE LESSON: never log in through CDP-Chrome.** Coolbet walls that
+profile. Keep your OWN Chrome logged in; the automation copies from it. The
+operator ask changes from "log into the window Coolbet blocks" to "stay logged
+into your normal browser", which is the one thing that reliably works.
+
+**The one case a human still has to handle:** if the normal Chrome profile is
+ALSO logged out, the copy carries nothing. Log in there, then re-run.
+
+Verified end-to-end 2026-09-13: profile re-copied → `JWT: valid (ttl 1734s)` →
+`--refresh-jwt` → health-ping `✓ maintenance probe succeeded in 3.70s`.
 
 Run `python3 scripts/diagnose/coolbet_login_state.py` FIRST, every time. It
 distinguishes wall / no-form / logged-in in one read, which is the distinction

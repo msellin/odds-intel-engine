@@ -34,21 +34,50 @@ fi
 # localStorage + Imperva trust state. macOS keychain entry for "Chrome
 # Safe Storage" is shared across paths, so encrypted cookies decrypt
 # normally in the copy.
-if [ ! -d "$CDP_PROFILE/Default" ]; then
-    echo "✓ First run — copying your Chrome profile to $CDP_PROFILE"
-    echo "  (one-time; ~30s; the copy carries your existing Coolbet session)"
-    mkdir -p "$CDP_PROFILE"
-    # rsync the essential subdirs only. Skip caches/history that are huge
-    # and irrelevant for session state. --no-perms because the target
-    # owns the files differently than the source-as-running-Chrome.
+# PROFILE-COPY-ATOMIC-AND-VANISH-TOLERANT (2026-09-13). Two bugs made recovery
+# fail exactly when it was needed most, both hit while re-bootstrapping a walled
+# CDP profile:
+#
+#   1. rsync exits 24 ("partial transfer due to vanished source files") whenever
+#      the SOURCE Chrome is running — it constantly creates and deletes
+#      IndexedDB blobs. With `set -e` that aborted the whole script. Observed:
+#      `.../https_web.telegram.org_0.indexeddb.blob/1/65/6511: No such file`.
+#      A vanished cache blob is not a failure; a session copy does not need it.
+#   2. The completeness test was `[ -d "$CDP_PROFILE/Default" ]`, so a copy that
+#      aborted half-way left a directory that LOOKS complete and is silently
+#      skipped forever after. That is how a broken profile becomes permanent.
+#
+# Fixed by copying into a staging dir and moving it into place only on success,
+# so the real path is either absent or complete — never half-made.
+copy_profile() {
+    local stage="${CDP_PROFILE}.staging.$$"
+    rm -rf "$stage"
+    mkdir -p "$stage/Default"
     rsync -a --no-perms --no-owner \
         --exclude='Cache' --exclude='Code Cache' --exclude='GPUCache' \
         --exclude='Media Cache' --exclude='Service Worker/CacheStorage' \
         --exclude='ShaderCache' --exclude='Storage/ext' \
-        --exclude='Crashpad' \
-        "$DEFAULT_PROFILE/Default/" "$CDP_PROFILE/Default/"
-    # Local State (top-level) holds the encryption key handle — must be copied.
-    cp -p "$DEFAULT_PROFILE/Local State" "$CDP_PROFILE/" 2>/dev/null || true
+        --exclude='Crashpad' --exclude='IndexedDB/*.blob' \
+        "$DEFAULT_PROFILE/Default/" "$stage/Default/"
+    local rc=$?
+    # 0 = clean, 24 = source files vanished mid-copy (expected: Chrome is live).
+    if [ $rc -ne 0 ] && [ $rc -ne 24 ]; then
+        echo "✗ profile copy failed (rsync rc=$rc)"
+        rm -rf "$stage"
+        return 1
+    fi
+    cp -p "$DEFAULT_PROFILE/Local State" "$stage/" 2>/dev/null || true
+    rm -rf "$CDP_PROFILE"
+    mv "$stage" "$CDP_PROFILE"
+    return 0
+}
+
+if [ ! -f "$CDP_PROFILE/Local State" ] || [ ! -d "$CDP_PROFILE/Default" ]; then
+    echo "✓ Copying your Chrome profile to $CDP_PROFILE"
+    echo "  (~30s; the copy carries your current Coolbet session + Imperva trust)"
+    echo "  NOTE: quit your normal Chrome first for the freshest cookies — a live"
+    echo "  Chrome holds recent session state in memory and may not have flushed it."
+    copy_profile || exit 1
     echo "✓ Profile copied"
 fi
 
