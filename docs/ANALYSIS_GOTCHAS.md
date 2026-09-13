@@ -1974,3 +1974,52 @@ market moved against the pick, not that waiting would have been free money.
 `shadow_bets.clv` / `simulated_bets.clv` were deliberately NOT changed: other
 work is mid-measurement on them, and changing a definition under a running
 comparison pools two quantities.
+
+---
+
+## 61. `edge_percent` is a FRACTION — but three paper bots stored it ×100 until 2026-09-13
+
+`shadow_bets.edge_percent` / `simulated_bets.edge_percent` hold a **fraction**
+(0.127 = 12.7%). Every reader multiplies by 100 to display
+(`coolbet_signaler.py:219`, `coolbet_placer.py:324/2010/2321/2600`,
+`coolbet_prekickoff_alert.py:195`, `email_digest.py:161`).
+
+`bot_corners_paper_shadow_v1`, `bot_team_total_paper_shadow_v1` and
+`bot_1h_1x2_paper_shadow_v1` wrote `round(edge * 100.0, 4)` instead — medians of
+1.65–2.83 against 0.127 for a normal bot, maxima up to 96.53.
+
+**The trap:** an `edge >= 0.13` filter on those bots retained **97%** of their
+picks instead of ~8%, so a whole sweep reported "no edge floor helps" on floors
+that never bound. Nothing was visibly broken — the filter ran, returned rows,
+and produced plausible-looking numbers.
+
+**The tell, and it generalises:** if a cumulative floor barely changes `n` as you
+raise it, the units are wrong — not the signal. Print `n` at every floor and
+watch it fall; a floor that keeps 97% at "13%" is not a floor.
+
+Fixed in code + migration 334. **The live generation gate was never affected** —
+it compares the raw `edge` to `EDGE_FLOOR` before the write — so no bad pick was
+ever made. Only the analysis was wrong.
+
+## 62. `clv_pinnacle IS NULL` means the DE-VIG could not run — it does NOT mean Pinnacle has no price
+
+Two genuinely different causes, and they were conflated for months:
+
+* **Pinnacle really has no quote.** `btts` is the real case: 0 Pinnacle rows of
+  3,076,350 BTTS snapshots, because API-Football's Pinnacle feed carries 8 bet
+  types and BTTS is not one (gotcha 39). Permanently unmeasurable.
+* **We never taught the de-vig the market name.** `get_devigged_pinnacle_close_prob`
+  needs the full complement set from `_market_complement_selections`, and that
+  helper returned `None` for anything outside `1x2` / `btts` / `over_under*`.
+  `corners_*`, `team_total_*` and `1x2_1h` all fell through — **while Pinnacle
+  was quoting them heavily** (66,313 snapshots on `corners_ou_95`, 133,152 on
+  `team_total_home_15`, 118,272 on `1x2_1h`).
+
+853 settled picks across three bots sat with no validator, and the recorded
+explanation was the first cause when it was actually the second. Fixed
+2026-09-13; `bot_corners_paper_shadow_v1` turned out to be **CLV +3.11% at
+t=+12.66 on n=381** — a significant result nobody could see.
+
+**Before writing off a market as unmeasurable, check
+`odds_snapshots WHERE bookmaker='Pinnacle' AND market=...` yourself.** A NULL
+column is evidence about our code first and the market second.

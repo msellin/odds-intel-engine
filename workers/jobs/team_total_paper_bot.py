@@ -117,7 +117,19 @@ def generate_picks() -> dict:
                 if edge < EDGE_FLOOR:
                     continue
                 picks.append((match_id, market, sel, book, round(price, 3),
-                              round(dp, 6), round(edge * 100.0, 4)))
+                              # EDGE-PERCENT-UNIT-FIX-2026-09-13: store the
+                              # FRACTION, not percentage points. Every other
+                              # writer of shadow_bets.edge_percent stores the
+                              # fraction (0.127 = 12.7%) and every reader
+                              # multiplies by 100 to display it. These three
+                              # paper bots wrote `edge * 100`, so their stored
+                              # edges were 100x everyone else's — median 2.83
+                              # ("283%") against 0.127 for a normal bot. The
+                              # live gate above is unaffected (it compares the
+                              # raw `edge` to EDGE_FLOOR before this line), but
+                              # every downstream edge floor silently passed
+                              # ~97% of their picks instead of filtering.
+                              round(dp, 6), round(edge, 6)))
 
         for match_id, market, sel, book, price, dp, edge_pct in picks:
             n = execute_write(

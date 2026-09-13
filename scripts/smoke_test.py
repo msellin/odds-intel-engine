@@ -39648,5 +39648,68 @@ def _():
     assert "COOLBET_NO_FS" in plist and "epicbet_nearko_reader" in plist
 
 
+@test("PAPER-BOT-CLV-UNBLOCK — corners / team totals / 1H 1x2 are de-viggable")
+def test_paper_bot_clv_unblock_2026_09_13():
+    """The three paper shadow bots had clv_pinnacle=NULL on all 853 settled
+    picks. The stated reason ("Pinnacle does not quote these markets") was
+    WRONG: Pinnacle carries 66k snapshots on corners_ou_95 and 133k on
+    team_total_home_15. The real cause was that
+    `_market_complement_selections` had simply never been taught the names, so
+    every one of these markets fell through to `return None` and the de-vig
+    never ran — leaving ROI, which needs ~9,300 bets, as their only metric.
+
+    Each market string carries its own line (corners_ou_95, team_total_home_15),
+    so it is a self-contained two-way over/under partition and needs no handicap
+    threading — which is why asian_handicap stays excluded while these do not.
+    """
+    from workers.jobs.settlement import _market_complement_selections as comp
+
+    for mkt in ("corners_ou_95", "corners_ou_115", "corners_1h_ou_45",
+                "team_total_home_15", "team_total_away_25",
+                "team_total_1h_home_05"):
+        assert comp(mkt, "over") == ["over", "under"], mkt
+    assert comp("1x2_1h", "home") == ["home", "draw", "away"]
+    assert comp("1x2", "home") == ["home", "draw", "away"]
+
+    # The exclusions that must SURVIVE this widening. double_chance does not
+    # partition (1X and X2 both contain the draw) and asian_handicap needs a
+    # line this helper does not take.
+    assert comp("asian_handicap", "home") is None
+    assert comp("double_chance", "1x") is None
+    assert comp("correct_score", "1-0") is None
+
+
+@test("EDGE-PERCENT-UNIT — paper bots store the FRACTION, never percentage points")
+def test_edge_percent_unit_2026_09_13():
+    """shadow_bets.edge_percent holds a fraction by contract: every reader in
+    the codebase multiplies by 100 to display it. The three paper bots wrote
+    `round(edge * 100.0, 4)`, so their stored edges were 100x everyone else's
+    (median 2.83 against 0.127 for a normal bot). The live gate was unaffected —
+    it compares the raw `edge` to EDGE_FLOOR before the write — but every
+    downstream edge floor silently passed ~97% of their picks.
+    """
+    import pathlib as _pl
+
+    for job in ("corners_paper_bot", "team_total_paper_bot",
+                "first_half_1x2_paper_bot"):
+        src = _pl.Path(f"workers/jobs/{job}.py").read_text()
+        code = _strip_prose(src)
+        assert "edge * 100" not in code and "edge*100" not in code, (
+            f"{job} must store the edge FRACTION — a x100 here makes every "
+            f"downstream edge floor a no-op for this bot"
+        )
+        assert "round(edge, 6)" in code, job
+        # The gate still reads the raw fraction, and still runs BEFORE the write.
+        assert "if edge < EDGE_FLOOR:" in code, job
+
+    mig = _pl.Path(
+        "supabase/migrations/334_paper_bot_edge_percent_unit_fix.sql").read_text()
+    assert "edge_percent / 100.0" in mig
+    # Idempotence is a guard on the SAME fixed row set the update touches, not a
+    # magnitude filter — corners' stored minimum is 0.0000, so "only divide the
+    # big ones" would leave the low tail 100x wrong.
+    assert "pre_cutoff_max <= 1.5" in mig and "created_at < TIMESTAMPTZ" in mig
+
+
 if __name__ == "__main__":
     main()

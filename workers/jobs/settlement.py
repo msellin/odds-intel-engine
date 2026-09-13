@@ -953,11 +953,25 @@ def _market_complement_selections(market: str, selection: str) -> list[str] | No
     take.
     """
     m = (market or "").strip().lower()
-    if m == "1x2":
+    if m in ("1x2", "1x2_1h"):
         return ["home", "draw", "away"]
     if m == "btts":
         return ["yes", "no"]
     if m.startswith("over_under"):
+        return ["over", "under"]
+    # PAPER-BOT-CLV-UNBLOCK-2026-09-13. corners_* and team_total_* are plain
+    # two-way over/under books on a stated line, and Pinnacle quotes both
+    # heavily (66k snapshots on corners_ou_95 alone, 133k on team_total_home_15).
+    # They were falling through to `return None` purely because this helper had
+    # never been taught the names — NOT because no closing reference exists. The
+    # consequence was that all three paper bots
+    # (bot_corners_paper_shadow_v1, bot_team_total_paper_shadow_v1,
+    # bot_1h_1x2_paper_shadow_v1, 853 settled picks) carried clv_pinnacle=NULL
+    # on every pick, leaving ROI — which needs ~9,300 bets — as their only
+    # metric. The line is already part of the market name, so each market string
+    # is its own self-contained two-way partition and no handicap threading is
+    # needed (unlike asian_handicap, still excluded above).
+    if m.startswith(("corners_", "team_total_")):
         return ["over", "under"]
     return None
 

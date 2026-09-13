@@ -84,6 +84,11 @@ CLV is not; do not let the green number rescue them.
 
 ## ⚪ NO SIGNAL — bots with no CLV recorded at all
 
+> ⚠️ **CORRECTED 2026-09-13 — this section was WRONG. See Addendum below.**
+> Pinnacle quotes all three markets heavily; the CLV was NULL because
+> `_market_complement_selections` had never been taught the market names. Fixed.
+> `bot_corners_paper_shadow_v1` is **CLV +3.11% at t=+12.66 on n=381**.
+
 `bot_team_total_paper_shadow_v1` (297), `bot_corners_paper_shadow_v1` (381),
 `bot_1h_1x2_paper_shadow_v1` (170) have **no `clv_pinnacle` on any pick** —
 Pinnacle does not quote these markets, so there is no closing reference. They can
@@ -112,3 +117,89 @@ are the sharp-anchored family that wins above.
 
 That would take the page from 28 bots to roughly 8 that are actually being
 learned from.
+
+---
+
+# ADDENDUM — 2026-09-13: two corrections, and why the retirements are HELD
+
+## Correction 1 — "Pinnacle does not quote these markets" was WRONG
+
+The ⚪ NO SIGNAL section above said `bot_team_total_paper_shadow_v1`,
+`bot_corners_paper_shadow_v1` and `bot_1h_1x2_paper_shadow_v1` "can only ever be
+judged on ROI" because Pinnacle has no closing reference for them.
+
+**Pinnacle quotes all three heavily** — 66,313 snapshots on `corners_ou_95`,
+133,152 on `team_total_home_15`, 118,272 on `1x2_1h`. The picks had
+`clv_pinnacle = NULL` because `_market_complement_selections`
+(`workers/jobs/settlement.py`) knew only `1x2`, `btts` and `over_under*`, so
+every one of these markets fell through to `return None` and the de-vig never
+ran. A missing four-line mapping, not a missing market.
+
+Fixed this commit. Computed over all 853 settled picks:
+
+| Bot | n | CLV | t | ROI |
+|---|---|---|---|---|
+| **`bot_corners_paper_shadow_v1`** | 381 | **+3.11%** | **+12.66** | −3.7% |
+| `bot_1h_1x2_paper_shadow_v1` | 171 | +0.97% | +1.40 | +3.8% |
+| `bot_team_total_paper_shadow_v1` | 301 | +0.64% | +0.68 | −1.2% |
+
+**The corners bot is significantly CLV-positive** and nobody could see it. It is
+sharp-anchored (price vs de-vigged Pinnacle), so it is *not* affected by the
+calibrator bug below. n=381 clears this repo's ~334 threshold. Its ROI is −3.7%,
+which at n=381 is noise (~9,300 bets are needed for ±2%) — CLV is the read.
+
+The other two are **indistinguishable from zero**, not negative. Judge later.
+
+## Correction 2 — the edge floors in the table above were never applied
+
+These three bots stored `edge_percent` **×100** (median 2.83, i.e. "283%",
+against 0.127 for a normal bot), because they wrote `round(edge * 100.0, 4)`
+while every other writer stores the fraction. An `edge ≥ 13%` filter means
+`edge ≥ 0.13`, which retained **97%** of their picks instead of ~8%. Every
+"no floor helps" statement about them was made on floors that never bound.
+
+Fixed this commit (code + migration 334 backfill). Re-measured with real floors,
+**no floor on any of the three reaches |t| ≥ 2** — so the conclusion survives.
+But the *shape* changed and is worth recording: on team totals and corners, ROI
+falls **monotonically** as the edge floor rises (team totals −1.2% → −8.4% at
+≥3%; corners −3.7% → −6.6% at ≥2%). A claimed edge that is anti-predictive is a
+different diagnosis from "no signal", and it was invisible while units were wrong.
+
+## The seven retirements are HELD, not cancelled
+
+Staged at `dev/active/HELD_retire_model_anchored_losers.sql`, deliberately
+outside `supabase/migrations/` so the auto-apply workflow cannot run it.
+
+A separate investigation the same day confirmed a bug in the O/U Platt
+calibrator (`model_calibration` rows `under25` **and `under35`**, both fitted
+2026-09-03 10:48:19 UTC): fitted on `predictions.model_probability` but applied
+to `shrunk`. Verified independently — `under25` has range [0.3028, 0.6663] and a
+fixed point at 0.4713, so `edge = cal_prob − 1/odds` degenerates into "how far is
+this price from ~0.45", which the longest price on the board always maximises.
+
+**All seven bots have 100% of their settled picks after that fit — zero rows
+before it.** There is no clean window for any of them:
+
+| bot | settled | before fit | after fit |
+|---|---|---|---|
+| `bot_coolbet_trigger_ou_v1` | 484 | 0 | 484 |
+| `bot_coolbet_trigger_1x2_v1` | 405 | 0 | 405 |
+| `bot_unibet_trigger_1x2_v1` | 388 | 0 | 388 |
+| `bot_trigger_1x2_model_v1` | 374 | 0 | 374 |
+| `bot_unibet_trigger_ou_v1` | 260 | 0 | 260 |
+| `bot_ou35_model_v1` | 190 | 0 | 190 |
+| `bot_trigger_ou_model_v1` | 141 | 0 | 141 |
+
+So the four **O/U** verdicts are measuring the calibrator and the bot together
+and cannot be separated on existing data. The three **1x2** verdicts stand —
+`1x2_home` has been `a=1.6081, b=-0.8604` continuously since 2026-08-30 with no
+step change on 09-03 — but they are held in the same file to keep one decision
+in one place.
+
+⚠️ **`bot_ou35_model_v1` is in scope even though the bug report named only the
+2.5 line.** `under35` was fitted in the same batch at the same second and is
+compressed the same way (range [0.4787, 0.7287], fixed point 0.6480).
+
+**To proceed:** refit the calibrator, re-measure the four O/U bots on post-fix
+data only (expect volume to fall 90–99% — that is the fix working), then move
+whatever still fails into a numbered migration.
