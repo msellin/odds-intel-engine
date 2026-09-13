@@ -151,3 +151,83 @@ python3 scripts/floor_grid_sweep.py --group-by bot,odds_band --metric clv_pinnac
 python3 scripts/floor_grid_sweep.py --group-by edge_kind,sel_band --metric clv_pinnacle --min-n 80 --folds 3 --no-idealized
 python3 scripts/floor_grid_sweep.py --group-by bot,odds_band --metric roi --min-n 60 --folds 3 --no-idealized
 ```
+
+
+---
+
+# ADDENDUM — the per-bot segment table, and a correction
+
+Owner: *"did you analyze each? i didnt see any table with the result for each bot
+in every possible segment."* Fair. `floor_grid_sweep` reports the BEST cell,
+which is how a wide scan flatters itself — the losing cells are the context.
+
+`scripts/bot_segment_table.py` now prints **every** segment per bot (market,
+selection, odds band, edge band, and every cumulative floor), winners and losers
+together. Full output: `docs/BOT_SEGMENT_TABLE_2026_09_13.txt` (904 lines),
+machine-readable in `docs/bot_segments_2026_09_13.csv`.
+
+## The result is about UNANIMITY, not best cells
+
+Counting how many of a bot's segments are significantly positive vs negative
+(|t| ≥ 2, n ≥ 40) turns out to separate the system almost perfectly:
+
+| Bot | CLV+ | clv− | of | anchor |
+|---|---|---|---|---|
+| `bot_coolbet_value_v1` | **25** | **0** | 29 | line-shop |
+| `bot_pin_1x2_home_v1` | **24** | **0** | 24 | line-shop |
+| `bot_sweep_ou35_v1` | **21** | **0** | 23 | line-shop |
+| `bot_sweep_ou25_v1` | **19** | **0** | 21 | line-shop |
+| `bot_coolbet_trigger_sharp_1x2_v1` | **8** | **0** | 9 | sharp |
+| `bot_unibet_trigger_sharp_1x2_v1` | **6** | **0** | 7 | sharp |
+| `bot_v10_all` | 15 | 5 | 24 | model (mixed) |
+| `bot_dc_value` | 0 | **18** | 18 | model |
+| `bot_dc_specialist` | 0 | **18** | 18 | model |
+| `bot_dc_strong_fav` | 0 | **17** | 17 | model |
+| `bot_trigger_1x2_model_v1` | 0 | **19** | 19 | model |
+| `bot_coolbet_trigger_ou_v1` | 0 | **19** | 19 | model |
+| `bot_coolbet_trigger_1x2_v1` | 0 | **19** | 20 | model |
+| `bot_ou35_model_v1` | 0 | 17 | 19 | model |
+
+**A bot with 24 of 24 segments positive is not noise.** That is the point of
+this cut: a lone significant cell in a wide scan is expected ~5% of the time,
+but unanimity across every way of slicing the same bot is not. Equally, a bot
+with 19 of 19 segments NEGATIVE cannot be rescued by any filter — which is a
+stronger and more useful statement than "it is losing".
+
+**The split is by ANCHOR, cleanly:** every line-shop and sharp-anchored bot is
+unanimously positive; every purely model-anchored bot except `bot_v10_all` is
+unanimously negative. `bot_v10_all` is genuinely mixed (15/5), which is why its
+high-edge home-dog cell survives while the bot as a whole does not.
+
+**Shape, not just level.** `bot_coolbet_trigger_sharp_1x2_v1` rises monotonically
+with the odds floor — +11.67% (≥1.8) → +13.35% (≥2.2) → +15.03% (≥2.8) →
++16.35% (≥3.2). A contiguous, ordered run like that is what a real frame looks
+like; noise does not line up.
+
+## CORRECTION to Finding "the 13% floor is validated"
+
+The main document said the reduction from 13% to a selection-aware 10% was "NOT
+supported". **That was overstated and the reasoning was wrong** — it compared a
+*pooled* 13% against a *home-dog* 10%, which are different things. The owner
+challenged it, correctly: the pooled 13% was high **because** it had to carry
+home-favs, and restricting to home-dogs was the right fix.
+
+Measured properly — home-dogs only (1x2 home, odds ≥2.80), calibrated ledger:
+
+| floor | n | win% | ROI% | ROI t | CLV% | CLV t |
+|---|---|---|---|---|---|---|
+| 5% | 221 | 33.0 | +9.7 | +0.91 | +5.68 | +5.02 |
+| 8% | 216 | 32.4 | +7.9 | +0.74 | +5.94 | +5.17 |
+| **10%** | 194 | 35.6 | +18.6 | +1.60 | +7.24 | +5.86 |
+| **13%** | 127 | 34.6 | +19.7 | +1.34 | **+12.63** | **+8.46** |
+| 15% | 77 | 36.4 | +26.0 | +1.35 | +15.75 | +7.22 |
+
+**Every floor is positive** — 10% is not broken. But the band the change
+specifically unlocked, **home-dogs at edge 10–13%, has CLV −3.27% (t = −2.16)**:
+significantly negative, while its ROI of +16.4% is noise (t = +0.88). And total
+CLV captured (CLV × bets) peaks at 13%: **1,604 points vs 1,391 at 10% and 1,213
+at 15%.**
+
+**So: restricting to home-dogs was right; also lowering to 10% admitted a band
+that loses to the close.** 13% remains the better floor — but on this evidence,
+not on the claim originally made.
