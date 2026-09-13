@@ -54,8 +54,77 @@ can_serve() {
   echo "$out" | /usr/bin/grep -q '"status": *"ok"'
 }
 
+# COOLBET-SPECIFIC WEDGE (2026-09-13). `can_serve` fetches example.com, and on
+# 2026-09-13 it PASSED while every Coolbet request hung — FlareSolverr was
+# serving fine in general and wedged on one site. The Coolbet feed sat dead for
+# 3.3h behind a green capability probe. "Liveness is not capability" was the
+# right lesson; this is the sharper version: **capability against the site you
+# actually need**.
+#
+# WHY THIS IS GATED ON FEED STALENESS RATHER THAN RUN EVERY TICK. This script
+# runs every 180s. Probing Coolbet on every tick would add ~480 requests/day
+# from one residential IP — and our own request volume is precisely what earns
+# the Imperva escalation (runbook §7). Curing the disease by spreading it is
+# not a fix.
+#
+# So the expensive probe is tied to the SYMPTOM: ask the database (free, no
+# network) whether the Coolbet feed has actually gone stale, and only then
+# spend one real request finding out whether FS is the reason. Healthy system,
+# zero added footprint.
+coolbet_feed_stale() {
+  /opt/homebrew/bin/python3 - <<'STALE' 2>/dev/null
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path.cwd()))
+try:
+    from workers.api_clients.db import execute_query
+    r = execute_query("""SELECT EXTRACT(EPOCH FROM (NOW()-MAX(timestamp)))/60.0 AS m
+                           FROM odds_snapshots WHERE bookmaker='Coolbet'""")
+    mins = float((r[0]["m"] if r and r[0]["m"] is not None else 9999))
+except Exception:
+    sys.exit(1)          # cannot tell -> do NOT escalate (fail quiet, not loud)
+# 75 min = two and a half missed :03/:33 passes. Below that it is ordinary jitter.
+sys.exit(0 if mins > 75 else 1)
+STALE
+}
+
+# One real Coolbet fetch through a throwaway session. Only ever called when the
+# feed is already stale, so it costs nothing on a healthy day.
+coolbet_can_serve() {
+  local sess="kacb_$$_$(date +%s)"
+  local out
+  out=$(/usr/bin/curl -s --max-time 90 -X POST "$FS_URL/v1" \
+        -H 'Content-Type: application/json' \
+        -d "{\"cmd\":\"request.get\",\"url\":\"https://www.coolbet.com/s/sbgate/category/fo-tree/et?country=EE\",\"session\":\"$sess\",\"maxTimeout\":60000}" 2>/dev/null)
+  /usr/bin/curl -s --max-time 10 -X POST "$FS_URL/v1" \
+        -H 'Content-Type: application/json' \
+        -d "{\"cmd\":\"sessions.destroy\",\"session\":\"$sess\"}" >/dev/null 2>&1
+  echo "$out" | /usr/bin/grep -q '"status": *"ok"'
+}
+
 if probe; then
   if can_serve; then
+    # FS serves in general. Now the sharper question, and only when the feed
+    # says something is wrong.
+    if coolbet_feed_stale; then
+      echo "$(LOG_TS) Coolbet feed stale — probing FS against COOLBET specifically"
+      if coolbet_can_serve; then
+        echo "$(LOG_TS)   FS serves Coolbet fine — the fault is NOT FlareSolverr."
+        echo "$(LOG_TS)   Look at the sweep, the session, or Imperva (runbook 2a/6/7)."
+        exit 0
+      fi
+      echo "$(LOG_TS)   FS serves example.com but WEDGES ON COOLBET — restarting"
+      cd "$COMPOSE_DIR" || exit 1
+      "$DOCKER" restart oi_local_flaresolverr 2>&1 | /usr/bin/tail -2
+      for i in $(seq 1 8); do
+        sleep 5
+        if probe && coolbet_can_serve; then
+          echo "$(LOG_TS)   FS serving Coolbet again after ~$((i*5))s"
+          exit 0
+        fi
+      done
+      echo "$(LOG_TS)   still wedged on Coolbet after restart — escalating"
+      exit 1
+    fi
     exit 0        # genuinely healthy — the common path, silent
   fi
   echo "$(LOG_TS) FS answers on $FS_URL but CANNOT SERVE A REQUEST — restarting"
