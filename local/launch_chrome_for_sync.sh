@@ -93,6 +93,19 @@ fi
 # profile dir, different process group).
 if pgrep -lf "Chrome-CDP-OddsIntel" >/dev/null; then
     echo "⚠ Previous CDP-Chrome running — quitting it"
+    # CDP-LIFECYCLE-LOG: record that WE killed it. Without this line a later
+    # "cdp_down" is indistinguishable from a crash, which is exactly why
+    # "why does CDP-Chrome keep dying?" could not be answered on 2026-09-13.
+    python3 - <<'LOGKILL' 2>/dev/null || true
+import json, pathlib, datetime
+p = pathlib.Path("dev/active/cdp-lifecycle.jsonl")
+p.parent.mkdir(parents=True, exist_ok=True)
+with p.open("a") as f:
+    f.write(json.dumps({
+        "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "event": "killed", "why": "launch_chrome_for_sync.sh", "source": "launcher",
+    }) + "\n")
+LOGKILL
     pkill -f "Chrome-CDP-OddsIntel" || true
     sleep 2
 fi

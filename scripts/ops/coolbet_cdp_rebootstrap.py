@@ -73,6 +73,48 @@ STAMP = REPO / "dev" / "active" / ".cdp_rebootstrap_last"
 WALL_TEXT = "stay cool"
 
 
+# CDP-LIFECYCLE-LOG (2026-09-13). Asked "why does CDP-Chrome keep dying?" and
+# could not answer it: nothing recorded WHEN it went down or WHO killed it. The
+# self-heal only looks every 30 min, so a death and a revival inside one window
+# left no trace at all, and every kill in this file is indistinguishable from a
+# crash after the fact.
+#
+# So every transition and every deliberate kill is appended here as one JSON
+# line. The question this answers is the one that mattered today: "down with NO
+# preceding kill line" = it crashed on its own; "down right after a kill line"
+# = we did it. Without that distinction the honest answer is "I don't know",
+# which is where this investigation ended up.
+EVENTS = REPO / "dev" / "active" / "cdp-lifecycle.jsonl"
+
+
+def _log_event(event: str, **fields) -> None:
+    """Append one lifecycle event. Never raises — logging must not break a heal."""
+    try:
+        EVENTS.parent.mkdir(parents=True, exist_ok=True)
+        rec = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+               "event": event, **fields}
+        with EVENTS.open("a") as fh:
+            fh.write(json.dumps(rec, default=str) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _kill_chrome(why: str) -> None:
+    """pkill CDP-Chrome, and RECORD that it was us. The whole point: a later
+    'cdp_down' with no `killed` line just before it is a real crash."""
+    _log_event("killed", why=why, pid_count=_chrome_procs())
+    subprocess.run(["pkill", "-f", "Chrome-CDP-OddsIntel"], capture_output=True)
+
+
+def _chrome_procs() -> int:
+    try:
+        r = subprocess.run(["pgrep", "-f", "Chrome-CDP-OddsIntel"],
+                           capture_output=True, text=True, timeout=10)
+        return len([x for x in r.stdout.split() if x.strip()])
+    except Exception:  # noqa: BLE001
+        return -1
+
+
 def _cdp_up() -> bool:
     try:
         urllib.request.urlopen(f"{CDP}/json/version", timeout=5)
@@ -209,7 +251,7 @@ def relaunch() -> dict:
     expensive or makes walls unfixable.
     """
     steps = []
-    subprocess.run(["pkill", "-f", "Chrome-CDP-OddsIntel"], capture_output=True)
+    _kill_chrome("relaunch tier")
     time.sleep(2)
     r = subprocess.run(["bash", str(LAUNCHER)], capture_output=True, text=True,
                        timeout=900)
@@ -241,7 +283,8 @@ def relaunch() -> dict:
 def heal() -> dict:
     """Quit CDP-Chrome, park the walled profile, re-copy, relaunch, sync JWT."""
     steps = []
-    subprocess.run(["pkill", "-f", "Chrome-CDP-OddsIntel"], capture_output=True)
+    parked = None
+    _kill_chrome("rebootstrap tier")
     time.sleep(3)
     steps.append("quit CDP-Chrome")
 
@@ -257,6 +300,31 @@ def heal() -> dict:
                        timeout=900)
     steps.append(f"relaunch rc={r.returncode}")
     if r.returncode != 0:
+        # NEVER LEAVE THE SUBJECT DEAD (2026-09-13). This used to return here,
+        # and on the day it was written that is precisely what happened: an
+        # rsync tripped `set -e`, the copy aborted, and the heal exited having
+        # already killed Chrome and moved its profile away. CDP stayed down
+        # until a human noticed — so the "self-heal" had converted a degraded
+        # browser into no browser at all.
+        #
+        # A repair that can leave things worse than it found them is not a
+        # repair. Put the parked profile back and start Chrome again: the old
+        # profile may be walled, but a walled browser still serves the Unibet
+        # feed, still holds tabs, and is strictly better than nothing.
+        steps.append("copy FAILED — restoring the parked profile")
+        try:
+            if parked and parked.exists():
+                if PROFILE.exists():
+                    import shutil
+                    shutil.rmtree(PROFILE, ignore_errors=True)
+                parked.rename(PROFILE)
+                steps.append("parked profile restored")
+            rb = subprocess.run(["bash", str(LAUNCHER)], capture_output=True,
+                                text=True, timeout=900)
+            steps.append(f"rollback relaunch rc={rb.returncode} "
+                         f"cdp_up={_cdp_up()}")
+        except Exception as e:  # noqa: BLE001
+            steps.append(f"rollback FAILED: {type(e).__name__}: {str(e)[:80]}")
         return {"ok": False, "steps": steps,
                 "error": (r.stderr or r.stdout or "")[-400:]}
 
@@ -280,7 +348,38 @@ def main() -> int:
     ap.add_argument("--force", action="store_true", help="heal even if it looks fine")
     ap.add_argument("--min-gap-hours", type=float, default=6.0)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--quick", action="store_true",
+                    help="cheap up/down probe only (one HTTP call, no browser) "
+                         "— logs a transition and exits; for a frequent watcher")
     a = ap.parse_args()
+
+    if a.quick:
+        # WHY A SEPARATE CHEAP MODE. The full diagnose() navigates a real page,
+        # so it can only reasonably run every 30 min — and a death plus a
+        # revival inside one of those windows leaves no trace, which is exactly
+        # why "why does CDP keep dying?" was unanswerable on 2026-09-13.
+        # This is one HTTP call, so it can run every few minutes and give the
+        # timeline the heavy probe cannot.
+        #
+        # TRANSITIONS ONLY: writing a line per tick would bury the two events
+        # that matter in hundreds that do not.
+        up = _cdp_up()
+        prev = None
+        try:
+            for line in reversed(EVENTS.read_text().splitlines()):
+                rec = json.loads(line)
+                if "cdp_up" in rec:
+                    prev = rec["cdp_up"]
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+        if prev is None or bool(prev) != up:
+            _log_event("cdp_up" if up else "cdp_down", cdp_up=up,
+                       procs=_chrome_procs(), source="quick")
+            print(f"CDP {'UP' if up else 'DOWN'} (transition logged)")
+        else:
+            print(f"CDP {'up' if up else 'down'} (no change)")
+        return 0 if up else 1
 
     d = diagnose()
 
@@ -302,6 +401,21 @@ def main() -> int:
     tier = None
     if a.force:
         tier = "rebootstrap"
+    elif d.get("walled") and d.get("has_jwt"):
+        # WALLED BUT WORKING (2026-09-13). Observed minutes after a successful
+        # heal: `walled: True (STAY COOL)` AND `JWT: valid (ttl 1389s)`, with
+        # the heartbeat green and a real bet placed through FlareSolverr in the
+        # same window. The wall flaps on the BROWSER'S page render while the
+        # FS-routed API path is unaffected.
+        #
+        # So a wall alone is NOT grounds for a multi-GB re-copy. Doing that
+        # every time the marketing page flickers would burn GB on a schedule
+        # and kill a browser that is doing its job — the self-heal becoming the
+        # outage, which is the trap this whole file keeps circling.
+        #
+        # Hold the session as the authority: if the JWT is alive, we are
+        # working. Report the wall, do not act on it.
+        tier = None
     elif d.get("walled"):
         tier = "rebootstrap"
     elif not d["cdp_up"]:
@@ -319,6 +433,12 @@ def main() -> int:
         tier = "autologin"
     result = {"diagnosis": d, "needs_heal": tier is not None, "tier": tier,
               "healed": None}
+    # One line per observation — this is what turns "it keeps dying" into a
+    # timeline you can actually read.
+    _log_event("observed", cdp_up=d.get("cdp_up"), walled=d.get("walled"),
+               jwt=d.get("jwt_state"), jwt_ttl_s=d.get("jwt_ttl_s"),
+               captcha=d.get("captcha"), tier=tier,
+               procs=_chrome_procs())
 
     if tier and (a.apply or a.force):
         if tier == "autologin":
@@ -338,6 +458,10 @@ def main() -> int:
             else:
                 result["healed"] = heal()
 
+    if result.get("healed"):
+        _log_event("healed", tier=tier, ok=result["healed"].get("ok"),
+                   steps=result["healed"].get("steps"),
+                   error=(result["healed"].get("error") or "")[:200])
     if a.json:
         print(json.dumps(result, indent=2, default=str))
     else:
@@ -345,6 +469,11 @@ def main() -> int:
         print(f"walled      : {d['walled']}   ({d['detail']})")
         print(f"JWT         : {d.get('jwt_state')}"
               f"{'' if d.get('jwt_ttl_s') is None else f"  (ttl {d['jwt_ttl_s']}s)"}")
+        if d.get("walled") and d.get("has_jwt"):
+            print("  note: page shows the wall but the JWT is ALIVE — the "
+                  "FS-routed path is unaffected.")
+            print("        Not re-bootstrapping: a wall alone is not a fault "
+                  "while the session works.")
         if d.get("captcha"):
             print(f"  ⚠ CAPTCHA PRESENT ({', '.join(d['captcha'])}) — NEEDS A HUMAN.")
             print(f"    Solve it in CDP-Chrome. Not automatable and not attempted.")

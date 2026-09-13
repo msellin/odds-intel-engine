@@ -1331,30 +1331,50 @@ class CoolbetSession:
 
         self._throttle()
 
-        # 1) /s/casino/fo/maintenance — what the browser pings every 5 min.
+        # HEARTBEAT-MUST-USE-FS (2026-09-13). Both probes used to go through
+        # `self._http` — PLAIN REQUESTS — and that is the one transport this
+        # runbook says cannot work:
+        #
+        #   "The token is TLS/JA3-bound, so replaying `reese84` into plain
+        #    `requests` cannot work — this is exactly why FS (a real browser)
+        #    is mandatory."   — docs/COOLBET_RUNBOOK.md §2
+        #
+        # Measured 2026-09-13, same endpoint, same cookies, seconds apart:
+        #     self._http.get(...)  -> ReadTimeout after 20s (Imperva tarpit)
+        #     self._fs_get(...)    -> HTTP 200, 346 bytes of real JSON
+        #
+        # So `session_healthy` sat FALSE for hours — 143 failed probes in 12h —
+        # purely because the heartbeat used the wrong transport, while real
+        # money placed fine through FS the entire time. The status was wrong,
+        # not the session, and every consumer reading `session_healthy` was
+        # being told the opposite of the truth.
+        #
+        # NB this also explains the "returned non-200" wording in the error: a
+        # timeout was being reported as a status-code failure, which sent the
+        # diagnosis toward Coolbet rather than toward our own transport.
         try:
-            resp = self._http.get(
+            resp = self._fs_get(
                 "https://www.coolbet.com/s/casino/fo/maintenance",
                 params={"licence": "EE"},
-                timeout=15,
             )
-            if resp.status_code == 200:
+            if getattr(resp, "status_code", None) == 200:
                 return True
-            log.debug("keep_alive: maintenance %d, trying fo-category fallback", resp.status_code)
+            log.debug("keep_alive: maintenance %s, trying fo-category fallback",
+                      getattr(resp, "status_code", "?"))
         except Exception as e:
             log.debug("keep_alive: maintenance raised %s, trying fo-category fallback", e)
 
-        # 2) Fallback: fo-category (heavier but production-tested).
+        # 2) Fallback: fo-category (heavier but production-tested). Same
+        #    transport rule — FS, never plain requests.
         try:
             self._throttle()
-            resp = self._http.get(
+            resp = self._fs_get(
                 "https://www.coolbet.com/s/sbgate/sports/fo-category/",
                 params={"categoryId": 18975, "country": "EE", "isMobile": 0,
                         "language": "et", "layout": "EUROPEAN", "limit": 6},
                 headers={"referer": "https://www.coolbet.com/et/sport/jalgpall/inglismaa/meistriliiga"},
-                timeout=15,
             )
-            return resp.status_code == 200
+            return getattr(resp, "status_code", None) == 200
         except Exception as e:
             log.warning("Coolbet keep_alive failed (both endpoints): %s", e)
             return False

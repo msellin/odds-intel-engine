@@ -35767,11 +35767,26 @@ def test_best_price_router_execute_wiring():
 
     # (2) real-money double-gate: execute=True with ROUTER_ALLOW_REAL unset must
     # NOT enter real mode and must dispatch nothing.
-    os.environ.pop("ROUTER_ALLOW_REAL", None)
-    r = bpr.route(execute=True)
-    assert r["mode"] == "report", "execute=True without ROUTER_ALLOW_REAL must degrade to report"
-    assert r["dispatched"] == 0, "no dispatch without the real-money env gate"
-    assert "real_refused" in r, "must record that real money was refused"
+    # SET IT FALSY, DO NOT POP IT (fixed 2026-09-13, the day real money was
+    # enabled). `pop` leaves the name ABSENT, and `load_dotenv()` anywhere in
+    # the call chain then re-adds it from .env — which now carries
+    # ROUTER_ALLOW_REAL=true. dotenv skips names already present but happily
+    # fills in missing ones, so the test was silently re-enabling the very gate
+    # it exists to verify, and failed the moment the line landed in .env.
+    # Assigning a falsy value is immune: dotenv will not override it.
+    _prev_gate = os.environ.get("ROUTER_ALLOW_REAL")
+    os.environ["ROUTER_ALLOW_REAL"] = "false"
+    try:
+        r = bpr.route(execute=True)
+        assert r["mode"] == "report", "execute=True without ROUTER_ALLOW_REAL must degrade to report"
+        assert r["dispatched"] == 0, "no dispatch without the real-money env gate"
+        assert "real_refused" in r, "must record that real money was refused"
+    finally:
+        # Restore, or every later test in this process runs with real money off.
+        if _prev_gate is None:
+            os.environ.pop("ROUTER_ALLOW_REAL", None)
+        else:
+            os.environ["ROUTER_ALLOW_REAL"] = _prev_gate
 
     # (3) _dispatch routes to the correct arm (monkeypatch the arms — no browser)
     calls = {}
@@ -36184,6 +36199,59 @@ def test_coolbet_cdp_selfheal():
     assert i_re < i_rate, (
         "the relaunch tier must run BEFORE the rate-limit check — throttling a "
         "dead-browser revival defeats the point of a 24/7 reviver"
+    )
+
+    # (4) A FAILED HEAL MUST NOT LEAVE THE SUBJECT DEAD. On 2026-09-13 an
+    # rsync tripped `set -e`, the copy aborted, and heal() returned having
+    # already killed Chrome and moved its profile away — converting a degraded
+    # browser into no browser at all. A repair that can leave things worse than
+    # it found them is not a repair.
+    assert "restoring the parked profile" in heal and "parked.rename(PROFILE)" in heal, (
+        "a failed copy must put the parked profile back and restart Chrome — a "
+        "walled browser still serves the feed and holds tabs, and is strictly "
+        "better than nothing"
+    )
+    # (5) A WALL ALONE IS NOT A FAULT while the session works. Observed minutes
+    # after a successful heal: walled=True AND jwt valid, heartbeat green, a
+    # real bet placed through FS in the same window — the wall flaps on the
+    # page render while the FS-routed path is unaffected. Re-copying GB every
+    # time the marketing page flickers would make the self-heal the outage.
+    assert 'd.get("walled") and d.get("has_jwt")' in main, (
+        "walled WITH a live JWT must not trigger a re-bootstrap — hold the "
+        "session as the authority, report the wall, do not act on it"
+    )
+
+    # (6) LIFECYCLE LOGGING. "Why does CDP-Chrome keep dying?" was
+    # unanswerable on 2026-09-13 because nothing recorded when it went down or
+    # who killed it — and every kill in this file looks identical to a crash
+    # after the fact. Two properties make the log able to answer it:
+    #   * every deliberate kill is recorded BEFORE the pkill, so a `cdp_down`
+    #     with no preceding `killed` line is a genuine crash;
+    #   * a cheap transition-only watcher runs far more often than the heavy
+    #     probe, so a death and a revival inside one 30-min window still leave
+    #     a trace.
+    src_all = _strip_prose(inspect.getsource(rb))
+    assert "_kill_chrome" in src_all and "_log_event" in src_all, (
+        "kills must be logged, or a crash and a deliberate kill are the same "
+        "line in the record"
+    )
+    kill = _strip_prose(inspect.getsource(rb._kill_chrome))
+    assert kill.index("_log_event") < kill.index("pkill"), (
+        "log BEFORE killing — a kill that dies mid-way must still have said so"
+    )
+    assert 'subprocess.run(["pkill"' not in src_all.replace(
+        _strip_prose(inspect.getsource(rb._kill_chrome)), ""), (
+        "every pkill must go through _kill_chrome, or an unlogged kill reads "
+        "as a spontaneous crash"
+    )
+    assert "--quick" in main, (
+        "a cheap transition-only mode must exist: the full probe navigates a "
+        "page and can only run every 30 min, which is the blind spot that made "
+        "the original question unanswerable"
+    )
+    watch = Path("local/launchd/com.oddsintel.cdp-watch.plist")
+    assert watch.exists() and "--quick" in watch.read_text(), (
+        "the frequent watcher must be a scheduled job, reproducible from git"
     )
 
     # The job that runs it, reproducible from git.

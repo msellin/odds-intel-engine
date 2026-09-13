@@ -337,8 +337,24 @@ def _dispatch_coolbet(pick: dict, *, execute: bool,
         return {"book": "Coolbet", "ok": False, "reason": f"stage_bet raised: {e}"}
     placed = bool(getattr(res, "placed", False))
     staged = (not execute) and bool(getattr(res, "ok", False))
-    return {"book": "Coolbet", "ok": placed or staged, "placed": placed, "staged": staged,
+    # ROUTER-DROPS-THE-REASON (fixed 2026-09-13). This returned only
+    # placed/ok/notes, so a Coolbet decline surfaced in the router log as
+    #     {"ok": false, "placed": false, "notes": []}
+    # — indistinguishable from a crash, a timeout, or a legitimate no-bet, and
+    # impossible to act on. `StageResult.reason` existed the whole time and was
+    # already being written to `coolbet_placement_attempts`; only the router's
+    # own output threw it away. The two "empty notes" failures on 2026-09-13
+    # were "not logged in — run coolbet_browser_sync --cdp-auto-login", which
+    # would have named the fault instantly.
+    #
+    # This is the THIRD fault of this exact shape in this one function — see
+    # ROUTER-COOLBET-ARM-DEAD and ROUTER-EDGE-THRESHOLD above. Each time the
+    # arm reported a bare falsy result that looked like a normal decline.
+    reason = str(getattr(res, "reason", "") or "")
+    return {"book": "Coolbet", "ok": placed or staged, "placed": placed,
+            "staged": staged, "reason": reason or None,
             "result": {"placed": placed, "ok": getattr(res, "ok", None),
+                       "reason": reason or None,
                        "notes": list(getattr(res, "notes", []) or [])}}
 
 
