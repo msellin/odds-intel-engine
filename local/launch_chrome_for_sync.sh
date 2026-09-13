@@ -53,13 +53,21 @@ copy_profile() {
     local stage="${CDP_PROFILE}.staging.$$"
     rm -rf "$stage"
     mkdir -p "$stage/Default"
+    # `|| rc=$?` is LOAD-BEARING under `set -e`: without it a non-zero rsync
+    # aborts the whole script before the next line can even read $?, so the
+    # rc==24 tolerance below never runs. That is what happened on 2026-09-13 —
+    # a vanished `Sessions/Session_*` file killed the heal and left Chrome down.
+    # Also skip Sessions/ outright: it is the tab-restore state, it churns
+    # constantly while Chrome is live, and an automation window does not want
+    # the operator's 20 restored tabs anyway.
+    local rc=0
     rsync -a --no-perms --no-owner \
         --exclude='Cache' --exclude='Code Cache' --exclude='GPUCache' \
         --exclude='Media Cache' --exclude='Service Worker/CacheStorage' \
         --exclude='ShaderCache' --exclude='Storage/ext' \
         --exclude='Crashpad' --exclude='IndexedDB/*.blob' \
-        "$DEFAULT_PROFILE/Default/" "$stage/Default/"
-    local rc=$?
+        --exclude='Sessions' --exclude='Session Storage' \
+        "$DEFAULT_PROFILE/Default/" "$stage/Default/" || rc=$?
     # 0 = clean, 24 = source files vanished mid-copy (expected: Chrome is live).
     if [ $rc -ne 0 ] && [ $rc -ne 24 ]; then
         echo "✗ profile copy failed (rsync rc=$rc)"
@@ -127,6 +135,50 @@ for i in $(seq 1 30); do
         echo "  It's a copy of your profile so Coolbet recognises your session."
         echo "  Keep this window open for the daemon to sync via CDP."
         echo
+        # ENSURE-BOTH-BOOK-TABS (2026-09-13). A relaunch brings Chrome back
+        # with whatever the profile restores — which on 2026-09-13 was a
+        # coolbet.com tab and NO unibet.ee tab. Both feeds need one:
+        #
+        #   unibet_odds_feed.run_bulk  -> "no unibet.ee tab open in CDP-Chrome"
+        #                                 stored 0 rows, feed went stale
+        #   best_price_router          -> "resolve_event_url: no Unibet event URL"
+        #                                 a routed real-money bet was NOT placed
+        #
+        # That second one cost a real bet: Cacereño at Unibet 3.30 (edge 11.2%)
+        # routed correctly, failed to dispatch for want of a tab, and by the
+        # time one existed the price had drifted to 3.10 (edge 9.2%, below the
+        # floor). So opening the tabs is not cosmetic — it is the difference
+        # between the Unibet arm working and silently not.
+        #
+        # Opened via CDP so it works headlessly and needs no window focus.
+        python3 - "$PORT" <<'ENSURE_TABS'
+import json, sys, urllib.request
+port = sys.argv[1]
+WANT = {"coolbet.com": "https://www.coolbet.com/et/",
+        "unibet.ee":   "https://www.unibet.ee/betting/odds"}
+try:
+    with urllib.request.urlopen(f"http://localhost:{port}/json/list", timeout=8) as r:
+        tabs = json.loads(r.read())
+except Exception as e:
+    print(f"  (could not list tabs: {e})")
+    raise SystemExit(0)
+have = " ".join((t.get("url") or "").lower() for t in tabs)
+for host, url in WANT.items():
+    if host in have:
+        print(f"  ✓ {host} tab already open")
+        continue
+    try:
+        urllib.request.urlopen(
+            f"http://localhost:{port}/json/new?{urllib.parse.quote(url, safe='')}"
+            if False else
+            urllib.request.Request(f"http://localhost:{port}/json/new?{url}",
+                                   method="PUT"), timeout=15)
+        print(f"  ✓ opened {host} tab")
+    except Exception as e:
+        print(f"  ! could not open {host} tab ({e}) — the {host} feed will "
+              f"report 'no tab open' until one exists")
+ENSURE_TABS
+
         echo "  Sanity-test:"
         echo "    PYTHONPATH=. python3 -m workers.automation.coolbet_browser_sync --cdp-fetch"
         exit 0

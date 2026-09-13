@@ -84,7 +84,8 @@ def _cdp_up() -> bool:
 def diagnose() -> dict:
     """Is the CDP profile healthy? Read-only."""
     out = {"cdp_up": _cdp_up(), "walled": None, "has_jwt": None,
-           "jwt_state": None, "jwt_ttl_s": None, "detail": ""}
+           "jwt_state": None, "jwt_ttl_s": None, "captcha": None,
+           "limit_dialog": None, "detail": ""}
     if not out["cdp_up"]:
         out["detail"] = "CDP-Chrome not reachable on :9222"
         return out
@@ -104,6 +105,34 @@ def diagnose() -> dict:
             body = (pg.inner_text("body") or "")[:200]
             out["walled"] = WALL_TEXT in body.lower() and len(body.strip()) < 40
             out["detail"] = f"body={body.strip()[:40]!r}"
+
+            # NEEDS-HUMAN DETECTION (2026-09-13). The operator hit a CAPTCHA and
+            # a betting-limit dialog and cleared both by hand, after the feed had
+            # already been failing for a while with no indication why.
+            #
+            # THIS DETECTS; IT DOES NOT SOLVE. A CAPTCHA is a deliberate
+            # are-you-human gate and automating the answer is off the table — so
+            # the useful thing is to turn a silent multi-hour stall into an
+            # immediate, specific page: "Coolbet is asking for a CAPTCHA, go and
+            # click it". That converts the worst property of this failure (it
+            # looks exactly like every other kind of broken) into the cheapest
+            # possible operator action.
+            try:
+                frames = pg.evaluate(
+                    "() => Array.from(document.querySelectorAll('iframe'))"
+                    ".map(f => f.src || '').join(' ')") or ""
+            except Exception:  # noqa: BLE001
+                frames = ""
+            marks = ("hcaptcha", "recaptcha", "turnstile", "arkose", "funcaptcha",
+                     "datadome", "geetest")
+            hit = [m for m in marks if m in frames.lower() or m in body.lower()]
+            out["captcha"] = hit or None
+            # A limit / responsible-gaming dialog is a PRODUCT control, not a
+            # bug and not something to click away automatically — flagged for a
+            # human on purpose.
+            lim = [w for w in ("limiit", "limit", "vastutustundlik",
+                               "responsible") if w in body.lower()]
+            out["limit_dialog"] = lim or None
     except Exception as e:  # noqa: BLE001
         out["detail"] = f"probe failed: {type(e).__name__}: {str(e)[:90]}"
 
@@ -316,6 +345,12 @@ def main() -> int:
         print(f"walled      : {d['walled']}   ({d['detail']})")
         print(f"JWT         : {d.get('jwt_state')}"
               f"{'' if d.get('jwt_ttl_s') is None else f"  (ttl {d['jwt_ttl_s']}s)"}")
+        if d.get("captcha"):
+            print(f"  ⚠ CAPTCHA PRESENT ({', '.join(d['captcha'])}) — NEEDS A HUMAN.")
+            print(f"    Solve it in CDP-Chrome. Not automatable and not attempted.")
+        if d.get("limit_dialog"):
+            print(f"  ⚠ possible limit / responsible-gaming dialog — NEEDS A HUMAN.")
+            print(f"    Deliberately not auto-dismissed: it is a product control.")
         print(f"needs heal  : {result['needs_heal']}"
               f"{'' if not tier else f'  (tier: {tier})'}")
         h = result["healed"]
@@ -340,6 +375,21 @@ def main() -> int:
                       "carries nothing — log in there, then re-run.")
         elif tier:
             print(f"  (re-run with --apply to {tier})")
+    # Page the operator for the things only they can clear. Deduped by
+    # send_telegram; never fatal.
+    if d.get("captcha") or d.get("limit_dialog"):
+        try:
+            from workers.notify.telegram import send_telegram
+            what = ("a CAPTCHA" if d.get("captcha")
+                    else "a limit / responsible-gaming dialog")
+            send_telegram(
+                f"🟠 Coolbet CDP-Chrome is showing {what} — automation cannot "
+                f"clear it. Open CDP-Chrome and handle it; the feed and the "
+                f"placer stay blocked until then.",
+                dedup_key="coolbet-needs-human", dedup_window_s=3600)
+        except Exception:  # noqa: BLE001
+            pass
+
     if result["healed"] and not result["healed"].get("ok"):
         return 1
     return 0 if not tier or (result["healed"] or {}).get("ok") else 1
