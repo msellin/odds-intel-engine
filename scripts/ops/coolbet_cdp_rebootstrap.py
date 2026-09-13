@@ -140,6 +140,75 @@ def _recently_healed(min_gap_h: float) -> float | None:
         return None
 
 
+def autologin() -> dict:
+    """Cheapest tier: sign in through the repo's own CDP auto-login.
+
+    Reads COOLBET_USER / COOLBET_PASS from .env and drives the real form in
+    CDP-Chrome — the same routine the daemon has always had. Seconds, and it
+    touches no profile. If Coolbet asks for SMS this cannot complete it and the
+    next tick escalates, which is the correct division: automation handles the
+    routine lapse, a human handles a genuine 2FA challenge.
+    """
+    steps = []
+    r = subprocess.run(
+        [sys.executable, "-m", "workers.automation.coolbet_browser_sync",
+         "--cdp-auto-login"], capture_output=True, text=True, cwd=str(REPO),
+        timeout=600)
+    logged = "✓ logged in" in r.stdout
+    steps.append(f"cdp auto-login {'OK' if logged else 'FAILED'}")
+    if not logged:
+        return {"ok": False, "tier": "autologin", "steps": steps,
+                "error": (r.stdout or r.stderr)[-300:],
+                "hint": "if Coolbet asked for SMS, complete it in CDP-Chrome"}
+    # Same trap as every other tier: without this the browser is logged in and
+    # every consumer still reads the stale DB row.
+    sync = subprocess.run(
+        [sys.executable, "-m", "workers.automation.coolbet_browser_sync",
+         "--refresh-jwt"], capture_output=True, text=True, cwd=str(REPO),
+        timeout=600)
+    ok = "jwt_obtained      = True" in sync.stdout
+    steps.append(f"jwt sync {'OK' if ok else 'FAILED'}")
+    return {"ok": ok, "tier": "autologin", "steps": steps,
+            "error": None if ok else (sync.stdout or sync.stderr)[-300:]}
+
+
+def relaunch() -> dict:
+    """Cheap tier: start CDP-Chrome again. Touches no profile.
+
+    Separate from `heal()` on purpose — a crashed browser needs seconds, not a
+    several-GB profile copy, and conflating the two either makes crashes
+    expensive or makes walls unfixable.
+    """
+    steps = []
+    subprocess.run(["pkill", "-f", "Chrome-CDP-OddsIntel"], capture_output=True)
+    time.sleep(2)
+    r = subprocess.run(["bash", str(LAUNCHER)], capture_output=True, text=True,
+                       timeout=900)
+    steps.append(f"relaunch rc={r.returncode}")
+    if r.returncode != 0 or not _cdp_up():
+        return {"ok": False, "tier": "relaunch", "steps": steps,
+                "error": (r.stderr or r.stdout or "CDP still down")[-300:]}
+    # Pull whatever session the profile still holds into the DB. Failure here
+    # is NOT fatal: the browser is up again, which is what this tier promised,
+    # and the next tick escalates to a rebootstrap if there is still no token.
+    sync = subprocess.run(
+        [sys.executable, "-m", "workers.automation.coolbet_browser_sync",
+         "--refresh-jwt"], capture_output=True, text=True, cwd=str(REPO),
+        timeout=600)
+    ok = "jwt_obtained      = True" in sync.stdout
+    if not ok:
+        # The browser is back but signed out — try the cheap fix immediately
+        # rather than waiting 30 minutes for the next tick. Escalation should
+        # cost time only when it actually needs a human.
+        steps.append("no JWT after relaunch — trying auto-login")
+        al = autologin()
+        steps.extend(al.get("steps", []))
+        return {"ok": True, "tier": "relaunch+autologin", "steps": steps,
+                "jwt": bool(al.get("ok"))}
+    steps.append("jwt sync OK")
+    return {"ok": True, "tier": "relaunch", "steps": steps, "jwt": ok}
+
+
 def heal() -> dict:
     """Quit CDP-Chrome, park the walled profile, re-copy, relaunch, sync JWT."""
     steps = []
@@ -185,20 +254,60 @@ def main() -> int:
     a = ap.parse_args()
 
     d = diagnose()
-    needs = bool(a.force or d.get("walled") or
-                 (d["cdp_up"] and d.get("has_jwt") is False))
-    result = {"diagnosis": d, "needs_heal": needs, "healed": None}
 
-    if needs and (a.apply or a.force):
-        recent = _recently_healed(a.min_gap_hours)
-        if recent is not None and not a.force:
-            result["healed"] = {"ok": False, "skipped": True,
-                                "reason": f"healed {recent:.1f}h ago "
-                                          f"(< {a.min_gap_hours}h) — re-copying "
-                                          f"several GB every tick would be its "
-                                          f"own outage"}
+    # TWO TIERS, and getting this wrong made the first version DECORATIVE.
+    #
+    # v1 asked `cdp_up AND has_jwt is False`. So when CDP-Chrome was DEAD —
+    # exactly when reviving matters — `cdp_up` was False, the whole condition
+    # collapsed to False, and the log filled with:
+    #     CDP up: False / walled: None / needs heal: False
+    # tick after tick, for hours, against a browser that was not running. A
+    # reviver that stands down because its subject is down is worse than none:
+    # it looks like supervision.
+    #
+    # But "Chrome crashed" must NOT trigger a multi-GB profile re-copy. The
+    # cheap fix is a relaunch; the expensive one is only for a profile Coolbet
+    # has actually walled. Hence:
+    #     RELAUNCH  — CDP down. Seconds. No profile touched.
+    #     REBOOTSTRAP — walled, or still no JWT after a relaunch. Several GB.
+    tier = None
+    if a.force:
+        tier = "rebootstrap"
+    elif d.get("walled"):
+        tier = "rebootstrap"
+    elif not d["cdp_up"]:
+        tier = "relaunch"
+    elif d.get("has_jwt") is False:
+        # Browser is up and RENDERING (not walled) but holds no token — i.e. the
+        # session simply expired. That is the common case by far, and it needs
+        # neither a relaunch nor a multi-GB copy: `--cdp-auto-login` fills the
+        # form from COOLBET_USER/PASS and takes seconds. Verified 2026-09-13:
+        # "✓ logged in", no SMS prompt.
+        #
+        # An earlier draft sent this straight to `rebootstrap`, which would have
+        # copied several GB every time a 30-minute token lapsed — turning the
+        # most routine event into the most expensive one.
+        tier = "autologin"
+    result = {"diagnosis": d, "needs_heal": tier is not None, "tier": tier,
+              "healed": None}
+
+    if tier and (a.apply or a.force):
+        if tier == "autologin":
+            result["healed"] = autologin()
+        elif tier == "relaunch":
+            # Deliberately NOT rate-limited: relaunching a dead browser is
+            # cheap and is the whole point of a 24/7 reviver.
+            result["healed"] = relaunch()
         else:
-            result["healed"] = heal()
+            recent = _recently_healed(a.min_gap_hours)
+            if recent is not None and not a.force:
+                result["healed"] = {"ok": False, "skipped": True,
+                                    "reason": f"re-bootstrapped {recent:.1f}h ago "
+                                              f"(< {a.min_gap_hours}h) — copying "
+                                              f"several GB every tick would be "
+                                              f"its own outage"}
+            else:
+                result["healed"] = heal()
 
     if a.json:
         print(json.dumps(result, indent=2, default=str))
@@ -207,24 +316,33 @@ def main() -> int:
         print(f"walled      : {d['walled']}   ({d['detail']})")
         print(f"JWT         : {d.get('jwt_state')}"
               f"{'' if d.get('jwt_ttl_s') is None else f"  (ttl {d['jwt_ttl_s']}s)"}")
-        print(f"needs heal  : {needs}")
+        print(f"needs heal  : {result['needs_heal']}"
+              f"{'' if not tier else f'  (tier: {tier})'}")
         h = result["healed"]
         if h:
             for s in h.get("steps", []):
                 print(f"  - {s}")
             if h.get("skipped"):
                 print(f"  SKIPPED: {h['reason']}")
+            elif h.get("ok") and h.get("jwt") is False:
+                # Do not claim a synced JWT we did not get. The relaunch tier
+                # succeeds at what it promised (browser up) while the session
+                # may still be absent; saying "healed, JWT synced" there is a
+                # status line that lies, which is the whole failure class this
+                # session has been unpicking.
+                print("  ✓ browser relaunched — but NO JWT yet (profile has no "
+                      "session). Next tick escalates to a full re-bootstrap.")
             elif h.get("ok"):
                 print("  ✓ HEALED — JWT synced to coolbet_session_state")
             else:
                 print(f"  ✗ HEAL FAILED: {h.get('error','')[:200]}")
                 print("  If your NORMAL Chrome is also logged out, the copy "
                       "carries nothing — log in there, then re-run.")
-        elif needs:
-            print("  (re-run with --apply to heal)")
+        elif tier:
+            print(f"  (re-run with --apply to {tier})")
     if result["healed"] and not result["healed"].get("ok"):
         return 1
-    return 0 if not needs or (result["healed"] or {}).get("ok") else 1
+    return 0 if not tier or (result["healed"] or {}).get("ok") else 1
 
 
 if __name__ == "__main__":

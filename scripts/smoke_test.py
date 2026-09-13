@@ -36099,6 +36099,38 @@ def test_coolbet_cdp_selfheal():
         "must be rate limited — a multi-GB copy every tick is its own outage"
     )
 
+    # (3) THE TIERS, and the two bugs they encode.
+    #
+    # v1 asked `cdp_up AND has_jwt is False`, so a DEAD browser — exactly when
+    # reviving matters — produced `needs heal: False`, tick after tick, for
+    # hours. A reviver that stands down because its subject is down is worse
+    # than none: it looks like supervision.
+    #
+    # v2 then sent every missing token to a multi-GB profile copy, which would
+    # make the most ROUTINE event (a 30-minute JWT lapsing) the most expensive
+    # one. The repo has had CDP auto-login all along and it takes seconds —
+    # verified "✓ logged in", no SMS.
+    assert 'tier = "relaunch"' in main and "not d[\"cdp_up\"]" in main, (
+        "a DEAD browser must trigger a relaunch — the first version concluded "
+        "nothing needed doing precisely when the browser was gone"
+    )
+    assert 'tier = "autologin"' in main, (
+        "an expired session must try CDP auto-login FIRST — it is seconds and "
+        "touches no profile; re-copying several GB for a lapsed token makes "
+        "the routine case the expensive one"
+    )
+    assert hasattr(rb, "autologin") and hasattr(rb, "relaunch"), (
+        "the cheap tiers must be separate callables from heal()"
+    )
+    # Only the expensive tier is rate limited; reviving a dead browser must not
+    # be throttled, or a crash inside the window goes unattended.
+    i_re = main.index('tier == "relaunch"')
+    i_rate = main.index("_recently_healed")
+    assert i_re < i_rate, (
+        "the relaunch tier must run BEFORE the rate-limit check — throttling a "
+        "dead-browser revival defeats the point of a 24/7 reviver"
+    )
+
     # The job that runs it, reproducible from git.
     plist = Path("local/launchd/com.oddsintel.coolbet-cdp-selfheal.plist")
     assert plist.exists(), "the self-heal must be a scheduled job, not a manual step"

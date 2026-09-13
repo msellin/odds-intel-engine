@@ -231,8 +231,27 @@ profile. Keep your OWN Chrome logged in; the automation copies from it. The
 operator ask changes from "log into the window Coolbet blocks" to "stay logged
 into your normal browser", which is the one thing that reliably works.
 
-**The one case a human still has to handle:** if the normal Chrome profile is
-ALSO logged out, the copy carries nothing. Log in there, then re-run.
+**THREE TIERS, cheapest first** — the self-heal picks by what is actually wrong,
+which matters because the tiers differ by four orders of magnitude in cost:
+
+| Symptom | Tier | Cost |
+|---|---|---|
+| CDP-Chrome not running | **relaunch** | seconds, no profile touched, **never rate-limited** |
+| up + rendering, no JWT (a lapsed session — the common case) | **auto-login** (`--cdp-auto-login`, creds from `.env`) | seconds |
+| up but walled (STAY COOL) | **re-bootstrap** (profile re-copy) | GB, max once / 6h |
+
+Two bugs found by running it against a real system, both worth knowing:
+- v1 asked `cdp_up AND no JWT`, so a **dead browser** gave `needs heal: False`
+  tick after tick for hours. *A reviver that stands down because its subject is
+  down is worse than none — it looks like supervision.*
+- v2 then sent every missing token to the multi-GB copy, making the most
+  ROUTINE event (a 30-min JWT lapsing) the most expensive one. Auto-login has
+  been in the repo all along and takes seconds.
+
+**The human case is now genuinely rare:** auto-login handles a lapsed session
+(verified 2026-09-13, "✓ logged in", no SMS). A human is needed only if Coolbet
+demands SMS/2FA, or if the normal Chrome profile is also signed out so a
+re-bootstrap copies nothing.
 
 Verified end-to-end 2026-09-13: profile re-copied → `JWT: valid (ttl 1734s)` →
 `--refresh-jwt` → health-ping `✓ maintenance probe succeeded in 3.70s`.
