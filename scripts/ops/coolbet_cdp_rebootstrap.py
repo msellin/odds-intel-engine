@@ -450,18 +450,45 @@ def main() -> int:
         else:
             recent = _recently_healed(a.min_gap_hours)
             if recent is not None and not a.force:
-                result["healed"] = {"ok": False, "skipped": True,
+                # RATE-LIMITED MUST NOT MEAN DO-NOTHING (2026-09-13). This
+                # returned here, and the lifecycle log caught the consequence
+                # within hours of being added:
+                #
+                #   16:55 walled+logged_out -> rebootstrap -> ok=False
+                #   17:25 walled+logged_out -> rebootstrap -> ok=False
+                #   17:55 NOT walled        -> autologin   -> ok=True
+                #   18:25 walled+logged_out -> rebootstrap -> ok=False
+                #
+                # Every walled tick picked the expensive tier, hit the 6h gap,
+                # and did NOTHING — while the cheap tier succeeded every time it
+                # was reached. The Coolbet feed sat dead for 2.3h inside a
+                # "self-healing" loop that was choosing to sit on its hands.
+                #
+                # So fall back: if we may not re-copy, still try the login,
+                # which costs seconds and is what actually fixes a lapsed
+                # session. A wall does not prevent auto-login from working —
+                # the 17:55 and 18:55 runs prove the session recovers fine.
+                result["healed"] = {"skipped_rebootstrap": True,
                                     "reason": f"re-bootstrapped {recent:.1f}h ago "
                                               f"(< {a.min_gap_hours}h) — copying "
                                               f"several GB every tick would be "
-                                              f"its own outage"}
+                                              f"its own outage; trying the cheap "
+                                              f"tier instead",
+                                    **autologin()}
             else:
                 result["healed"] = heal()
 
     if result.get("healed"):
-        _log_event("healed", tier=tier, ok=result["healed"].get("ok"),
-                   steps=result["healed"].get("steps"),
-                   error=(result["healed"].get("error") or "")[:200])
+        h = result["healed"]
+        # "skipped" is NOT "failed". Logging a rate-limit skip as ok=False made
+        # three consecutive do-nothing ticks look like three failed repairs,
+        # which is a materially different — and much less alarming — story than
+        # the truth.
+        _log_event("healed", tier=tier, ok=h.get("ok"),
+                   skipped_rebootstrap=h.get("skipped_rebootstrap"),
+                   steps=h.get("steps"),
+                   reason=(h.get("reason") or "")[:120],
+                   error=(h.get("error") or "")[:200])
     if a.json:
         print(json.dumps(result, indent=2, default=str))
     else:
