@@ -114,3 +114,86 @@ a number that looked strong did **not** survive scrutiny:
 
 Publishing either would have been defensible from the summary table and
 indefensible from the data.
+
+
+---
+
+# ADDENDUM 2 — `bot_coolbet_value_v1`: why it was retired, and why NOT to un-retire it
+
+Owner asked four things: why was it retired, backtest its picks, does it need an
+odds floor, and **is there an active bot doing the same?** The fourth turns out
+to settle the other three.
+
+## Why it was retired (migration 317, 2026-09-08)
+
+> *"line-shop loses out-of-sample — it was **−17% on O/U every month** and the
+> 1x2 raw signal is negative OOS (§52)."*
+
+## That reason was PARTIALLY WRONG, and the segment table shows where
+
+All 544 settled picks, every segment, fold-checked:
+
+| Config | n | folds CLV | folds ROI | robust? |
+|---|---|---|---|---|
+| ALL (as retired) | 544 | +3.9 / +3.9 / +1.4 | +21 / −1 / −16 | CLV yes |
+| edge ≥8% | 165 | +9.0 / +10.1 / +4.3 | −4 / −0 / +11 | CLV yes |
+| edge ≥10% | 109 | +10.6 / +11.6 / +6.4 | −12 / +25 / +18 | CLV yes |
+| **edge ≥8% AND exclude `under`** | **148** | **+8.9 / +9.8 / +5.5** | **+3 / +12 / +18** | **both** |
+| 1x2 only | 363 | +4.1 / +4.1 / +1.9 | +22 / +2 / −13 | CLV yes |
+
+**The leak was one selection, not the strategy.** `selection=under` is the only
+significantly negative ROI in the entire table: **−29.5% (t = −2.6)**, and O/U
+2.5 overall −10.1%. Meanwhile `market=1x2` is CLV +3.37% (t=+6.9) with ROI
++3.5%, and **every one of the bot's 25 segments has positive CLV**.
+
+So "line-shop loses OOS" over-generalised from the O/U leg to the whole bot. The
+answer to *"does it need a floor?"* is yes — **edge ≥8% plus dropping `under`**
+is the only configuration positive in all three folds on **both** metrics.
+
+## But do NOT un-retire it — the strategy is already running
+
+`bot_coolbet_value_v1` = *"Coolbet's price valued against de-vigged Pinnacle."*
+`bot_coolbet_trigger_sharp_1x2_v1` = *"Coolbet 1x2 odds vs pick_triggers where
+cal_prob = de-vigged Pinnacle prob."*
+
+**Same strategy.** And it has three live siblings:
+
+| Successor | active | CLV |
+|---|---|---|
+| `bot_coolbet_trigger_sharp_1x2_v1` | ✅ | **+10.9%** |
+| `bot_unibet_trigger_sharp_1x2_v1` | ✅ | **+10.0%** |
+| `bot_coolbet_trigger_sharp_ou_v1` | ✅ | — |
+| `bot_trigger_1x2_sharp_v1` (book-agnostic) | ✅ | — |
+
+The successors have **more than triple the CLV** of the retired bot (+10.9% vs
++3.1%) — and, critically, their data is **forward data gathered after
+value_v1 was selected out**, which satisfies the BETA bar's criterion (5) by
+construction. Un-retiring value_v1 would add a duplicate of a live strategy and
+re-introduce the `under` leak.
+
+## Do the value_v1 lessons transfer to the successors? NOT YET — n is too small
+
+| group | n | CLV | t | ROI |
+|---|---|---|---|---|
+| all sharp bots | 206 | **+10.4%** | **+9.6** | +3.5% |
+| `selection=under` | **18** | +6.5% | +3.5 | **+29.5%** |
+| excluding `under` | 188 | +10.8% | +9.2 | +1.0% |
+| edge ≥8% | **16** | +31.3% | +4.6 | **+91.0%** |
+
+**Do not copy the fixes across.** In the successors `under` is *positive*
+(the opposite of value_v1), and the edge ≥8% slice showing +31% CLV / +91% ROI
+rests on **n=16** — that is the single most tempting and least trustworthy number
+in this entire analysis. Sub-slicing 206 picks collapses every cell below n=20.
+
+## Recommendation
+
+1. **Leave `bot_coolbet_value_v1` retired.** Its successor is live, is the same
+   strategy, and is three times better on CLV.
+2. **Change nothing on the sharp bots.** Their aggregate CLV (+10.4%, t=+9.6,
+   n=206) is strong evidence of edge; every sub-slice is n<20 and would be
+   fitting noise.
+3. **Let them reach n ≥ 334**, then re-run this analysis. At the current rate
+   that is weeks, not months.
+4. **Record the correction**: "line-shop loses OOS" was true of the O/U leg and
+   false of the 1x2 leg. Worth keeping so the same over-generalisation is not
+   made again — the bot was CLV-positive in all folds when it was retired.
