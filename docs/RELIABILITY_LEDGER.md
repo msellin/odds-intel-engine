@@ -390,3 +390,61 @@ pre-match quote (a STALE-BEST-ODDS guard — a first run without it showed infla
 +19–24% ROI). A dead feed's last quote can still look live (`ODDS-NO-MAX-AGE`), so treat
 the *direction and significance* as robust and the *magnitude* as optimistic.
 
+
+---
+
+## A retirement that only changes the DB, while the code still resolves the bot
+
+**Found 2026-09-14, while retiring three model-anchored 1x2 bots.**
+
+Both generation paths resolved a bot name with a bare lookup:
+
+```sql
+SELECT id FROM bots WHERE name = %s      -- no retired_at check
+```
+
+`workers/automation/pick_generator.py:_bot_id` and
+`workers/jobs/pick_trigger_matcher.py:_bot_id`, independently, the same shape.
+
+So setting `retired_at` removed a bot from `/admin/shadow-bots`, from the
+registry, from every dashboard — **and it carried on writing `shadow_bets`
+underneath**. Every retirement migration in this repo's history had this
+property. The bot looked dead from every surface a human checks.
+
+**The tell:** a "retired" bot whose settled-pick count keeps rising. Nothing
+errors, nothing alarms, and the page that would show you is the one place the
+bot no longer appears.
+
+**Why it survived so long:** retirement was always verified by looking at the
+thing that hides retired bots. The check and the bug shared a blind spot.
+
+**The guard:** both lookups now require `retired_at IS NULL`, so a DB retirement
+is self-enforcing and needs no code edit to take effect. Smoke test
+`RETIRED-BOTS-KEPT-GENERATING` pins both. The analogous gap in the placer's
+`load_picks` is still open and is flagged in `docs/SYSTEM_MAP.md` §4c.
+
+**The pattern, generally:** when a kill switch lives in one system and the thing
+it kills lives in another, verify the kill at the *target*, never at the switch.
+
+---
+
+## A test that monkeypatches a shared module and never restores it
+
+**Found 2026-09-14.** `BEST-PRICE-ROUTER-EXECUTE-WIRING` replaced
+`best_price_router._dispatch_unibet` and `._dispatch_coolbet` with lambdas to
+test routing without a browser, and left them replaced. The module object lives
+for the whole process, so every later test that read those functions got a
+lambda. `ROUTER-REAL-MONEY-CUTOVER` — which asserts the unverified-click path
+records `placed_real=None`, a real-money safety property — was reading the
+lambda's source and failing.
+
+**The tell, and it is the nasty part:** it passed under `--filter` and failed
+only in a full-suite run. So it looked like a regression introduced by whatever
+commit happened to run the full suite next, and the obvious debugging move
+(re-run that one test) reports green.
+
+**The guard:** save and restore in a `try/finally`. This is the second instance
+of "a test broke another test" in this file; the rule is that any smoke test
+mutating shared module state or `os.environ` must restore it — see also the
+`ROUTER_ALLOW_REAL` entry, where `os.environ.pop()` let `load_dotenv()` silently
+re-populate the flag the test existed to verify.

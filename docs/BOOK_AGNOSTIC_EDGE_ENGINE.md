@@ -254,12 +254,27 @@ odds — deliberately different from the model floors, see BETTING_GATE_DECISION
 Stage B routes by **(book, market, strategy)** so the model and sharp anchors emit
 into separate paper bots and never blend:
 
-| strategy | bot |
-|---|---|
-| model_1x2  | `bot_coolbet_trigger_1x2_v1` |
-| sharp_1x2  | `bot_coolbet_trigger_sharp_1x2_v1` |
-| model_ou25 | `bot_coolbet_trigger_ou_v1` |
-| sharp_ou25 | `bot_coolbet_trigger_sharp_ou_v1` |
+| strategy | bot | status |
+|---|---|---|
+| model_1x2  | `bot_coolbet_trigger_1x2_v1` | **RETIRED 2026-09-14** (mig 336) |
+| sharp_1x2  | `bot_coolbet_trigger_sharp_1x2_v1` | active |
+| model_ou25 | `bot_coolbet_trigger_ou_v1` | active — held, see below |
+| sharp_ou25 | `bot_coolbet_trigger_sharp_ou_v1` | active |
+
+> **RETIRED 2026-09-14 — the model_1x2 arm.** `bot_coolbet_trigger_1x2_v1` ran
+> CLV −9.16% (t=−14.5, n=277) on placeable books with no fold-robust positive
+> configuration at any edge floor, odds floor or single selection; its Unibet
+> twin `bot_unibet_trigger_1x2_v1` the same (−8.68%, t=−7.1). **The routing entry
+> above is deliberately KEPT**: `_bot_id()` now requires `retired_at IS NULL`, so
+> a retired route is inert, and deleting it would erase the record of what this
+> engine once emitted. The head-to-head those rows exist to measure has now
+> returned its verdict — the SHARP arm wins and the MODEL arm loses, on the same
+> fixtures at the same prices.
+>
+> **`model_ou25` is NOT retired**, despite a similar-looking record: every one of
+> its settled picks falls inside the OU-CALIBRATOR-DOMAIN-MISMATCH window
+> (2026-09-03 → 2026-09-13), so there is no uncontaminated data to judge it on.
+> See `docs/SHADOW_BOT_VERDICTS.md` Addendum 2.
 
 All four are PAPER (never in `PLACEABLE_BOTS`). The sharp bots fire rarely — Coolbet ≈
 Pinnacle, so a 3%+ overlay vs the sharp line is uncommon — which is itself the finding

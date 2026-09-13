@@ -211,3 +211,69 @@ compressed the same way (range [0.4787, 0.7287], fixed point 0.6480).
 **To proceed:** refit the calibrator, re-measure the four O/U bots on post-fix
 data only (expect volume to fall 90–99% — that is the fix working), then move
 whatever still fails into a numbered migration.
+
+
+---
+
+# ADDENDUM 2 — 2026-09-14: the 1x2 half shipped, the O/U half cannot be judged
+
+The ❌ LOSERS table above named seven bots. **Three are now retired (migration
+336); four are not, and the reason is not caution — it is that the evidence does
+not exist.**
+
+## Retired: the three MODEL-anchored 1x2 bots
+
+Re-measured 2026-09-14 on placeable books, after the O/U calibrator fix:
+
+| Bot | n | CLV | t | ROI | fold-robust positive cfg |
+|---|---|---|---|---|---|
+| `bot_coolbet_trigger_1x2_v1` | 277 | −9.16% | −14.5 | −24.2% | **NONE** |
+| `bot_unibet_trigger_1x2_v1` | 309 | −8.68% | −7.1 | −9.1% | **NONE** |
+| `bot_trigger_1x2_model_v1` | 381 | −8.44% | −12.2 | −15.7% | **NONE** |
+
+`bot_trigger_1x2_model_v1` clears this repo's **n ≥ 334** threshold at t = −12.2.
+
+Both confounds in that window were checked and neither applies: 1x2 is not part
+of the calibrator incident (`1x2_home` held `a=1.6081, b=-0.8604` continuously
+from 08-30, no step change on 09-03), and **all three have 100% of their
+CLV-bearing picks after the 09-04..09-06 book-set change**, so their entire
+measured life sits in a single book regime.
+
+Their **SHARP twins are kept** — same fixtures, same prices, opposite verdict.
+That pairing is the cleanest evidence in this system that the **anchor**, not the
+market and not the book, is what separates a winning bot from a losing one.
+
+## Not retired: the four MODEL-anchored O/U bots
+
+| bot | era 1 (no curve) | era 2 (broken curve) | era 3 (no curve again) |
+|---|---|---|---|
+| `bot_coolbet_trigger_ou_v1` | **0** | 494 | 0 |
+| `bot_unibet_trigger_ou_v1` | **0** | 267 | 0 |
+| `bot_ou35_model_v1` | **0** | 190 | 0 |
+| `bot_trigger_ou_model_v1` | **0** | 149 | 0 |
+
+Era 1 and era 3 share a calibration regime, so pre-09-03 O/U history is usable in
+general. **It does not reach these four** — every one was born inside the poisoned
+window. Excise era 2 and nothing remains. Era 3 is empty because the fix landed
+~20h before this measurement.
+
+Bots that *can* be judged on O/U today, because they predate the bad fit:
+`bot_ou25_global` (era1=216), `bot_sweep_ou25_v1` (246), `bot_sweep_ou35_v1`
+(199), `bot_aggressive` (190), `bot_v10_all` (126).
+
+Staged at `dev/active/HELD_retire_model_anchored_ou_losers.sql`.
+`bot_coolbet_ou_model_v1` is deliberately excluded from that file: it is real
+money, already `ui_place_enabled=false`, and it still generates **paper** picks —
+retiring it would destroy the only route back to an answer.
+
+## ⚠️ And until 2026-09-14, retiring a bot did not stop it
+
+`_bot_id()` in **both** `pick_generator` and `pick_trigger_matcher` resolved
+`bots WHERE name=%s` with no `retired_at` check. A retired bot disappeared from
+`/admin/shadow-bots`, from the registry and from every dashboard — **and kept
+writing `shadow_bets`**. That was true of every retirement migration in this
+repo's history, including the ones this document recommended.
+
+Fixed: both lookups now require `retired_at IS NULL`, so a DB retirement is
+self-enforcing. Worth knowing when reading any historical "retired" bot's record —
+its pick count may have continued past its retirement date.

@@ -69,18 +69,39 @@ registry and regenerate.
 
 | Bot | Market | Anchor | Edge floor | Odds floor | Money | What it does |
 |---|---|---|---|---|---|---|
-| `bot_coolbet_trigger_1x2_v1` | 1x2 | model | 13% | 2.80 | paper | Fires when Coolbet's 1x2 price lands in the MODEL trigger window (model edge ≥13% at Coolbet's own odds). Paper. OOS backtest −21% (adverse selection). |
 | `bot_coolbet_trigger_sharp_1x2_v1` | 1x2 | sharp | 3% | 1.01 | paper | Sharp twin: fires when Coolbet's 1x2 price beats the de-vigged Pinnacle line by ≥3% (no odds floor — experimental). Paper. Head-to-head vs the model twin. |
 | `bot_coolbet_trigger_ou_v1` | O/U 2.5 | model | 8% | 1.80 | paper | Fires when Coolbet's O/U 2.5 price lands in the MODEL trigger window (model edge ≥8% at Coolbet's own odds). Paper. OOS backtest +4.3% not-robust. |
 | `bot_coolbet_trigger_sharp_ou_v1` | O/U 2.5 | sharp | 3% | 1.01 | paper | Sharp twin: fires when Coolbet's O/U 2.5 price beats the de-vigged Pinnacle line by ≥3% (no odds floor — experimental). Paper. Head-to-head vs the model twin. |
-| `bot_unibet_trigger_1x2_v1` | 1x2 | model | 13% | 2.80 | paper | Stage 3b — Unibet 1x2 model trigger (reads `Unibet-Site` sweep). Paper twin of the Coolbet 1x2 trigger. |
 | `bot_unibet_trigger_sharp_1x2_v1` | 1x2 | sharp | 3% | 1.01 | paper | Unibet 1x2 sharp trigger. **Where the DRAW edge the model can't see should surface** (soft-book mispricing vs de-vig Pinnacle, §57). Paper. |
 | `bot_unibet_trigger_ou_v1` | O/U 2.5 | model | 8% | 1.80 | paper | Stage 3b — Unibet O/U 2.5 model trigger. Paper twin of the Coolbet O/U trigger. |
 | `bot_unibet_trigger_sharp_ou_v1` | O/U 2.5 | sharp | 3% | 1.01 | paper | Unibet O/U 2.5 sharp trigger. Paper. |
-| `bot_trigger_1x2_model_v1` | 1x2 | model | 13% | 2.80 | paper | **MERGE-TRIGGER-BOTS 2026-09-11** — book-agnostic MODEL 1x2 trigger: fires when ANY book we place at prices a modelled fixture into the window. Replaces the two 1x2 model twins above. |
 | `bot_trigger_1x2_sharp_v1` | 1x2 | sharp | 3% | 1.01 | paper | Book-agnostic SHARP 1x2 trigger. The 3% floor is set EXPLICITLY, not inherited: a sharp edge is measured against a near-true line and is never comparable to a model floor (a 13% overlay on Pinnacle is nearly unobservable — max seen +6.6% — so the bot would simply never fire). |
 | `bot_trigger_ou_model_v1` | O/U 2.5 | model | 8% | 1.80 | paper | Book-agnostic MODEL O/U 2.5 trigger. Replaces the two O/U model twins above. |
 | `bot_trigger_ou_sharp_v1` | O/U 2.5 | sharp | 3% | 1.01 | paper | Book-agnostic SHARP O/U 2.5 trigger. |
+
+> **RETIRED 2026-09-14 (migration 336) — the three MODEL-anchored 1x2 trigger
+> bots.** `bot_coolbet_trigger_1x2_v1`, `bot_unibet_trigger_1x2_v1` and
+> `bot_trigger_1x2_model_v1` are gone from this table. On placeable books they
+> ran CLV **−9.16% (t=−14.5, n=277)**, **−8.68% (t=−7.1, n=309)** and **−8.44%
+> (t=−12.2, n=381)**, and a search over edge floors (5/8/10/13/15%), odds floors
+> (2.2/2.8/3.2) and each selection alone produced **no** configuration that is
+> CLV-positive in all three walk-forward folds. Their SHARP twins remain and are
+> the system's best performers on the same fixtures and prices — which is the
+> cleanest evidence here that the **anchor**, not the market or the book, is what
+> separates a winning bot from a losing one.
+>
+> **The four MODEL-anchored O/U trigger bots are NOT retired**, deliberately.
+> Every settled pick they own falls inside the OU-CALIBRATOR-DOMAIN-MISMATCH
+> window (2026-09-03 → 2026-09-13), so excising it leaves them with zero
+> evidence — not weak evidence, none. Staged at
+> `dev/active/HELD_retire_model_anchored_ou_losers.sql` pending era-3 volume.
+>
+> ⚠️ **A DB retirement only became self-enforcing on 2026-09-14.** Before that,
+> `_bot_id()` in both `pick_generator` and `pick_trigger_matcher` looked up
+> `bots WHERE name=%s` with no `retired_at` check, so a retired bot kept writing
+> `shadow_bets` — it vanished from the page and carried on underneath. Both
+> lookups now require `retired_at IS NULL` (RETIRED-BOTS-KEPT-GENERATING). The
+> analogous gap in the placer's `load_picks` is still open — see §4c.
 
 > **Why eight bots became four, and why all twelve are listed here right now.**
 > The eight above are 2 anchors × 2 books × 2 markets, but the **book is a venue,

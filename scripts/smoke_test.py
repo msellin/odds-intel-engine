@@ -4364,16 +4364,49 @@ def test_system_map_registry_not_drifted():
         assert name in smap, f"{name} is in the registry but missing from docs/SYSTEM_MAP.md"
 
     # 5. registry active set MUST equal the DB's active bots (skip cleanly offline).
+    #
+    # PENDING-MIGRATION-RACE (2026-09-14): smoke_tests.yml and migrate.yml BOTH
+    # fire on push to main, with no ordering between them. So a commit that
+    # retires a bot — migration + registry + SYSTEM_MAP together, exactly as the
+    # CLAUDE.md rule requires — races its own migration: if smoke wins, the
+    # registry has already dropped the bot while the DB still shows it active,
+    # and this assertion fails on a commit that is completely correct. That is a
+    # property of every retirement, not of any one of them.
+    #
+    # Resolved by discounting bots that a migration ON DISK but NOT YET APPLIED
+    # retires. This stays strict — it only forgives a difference the repo can
+    # show is about to be closed by a migration it can actually read, and the
+    # moment that migration applies the name leaves the DB set and the plain
+    # equality holds again.
     try:
         from workers.api_clients.db import execute_query
         db = {r["name"] for r in execute_query(
             "SELECT name FROM bots WHERE retired_at IS NULL")}
+        applied = {r["filename"] for r in execute_query(
+            "SELECT filename FROM _schema_migrations")}
     except Exception:
-        db = None
-    if db:
-        assert active_names() == db, (
-            f"registry active {active_names() ^ db} differs from bots table — "
-            "add/retire the bot in the registry (and SYSTEM_MAP.md) in the same change"
+        db = applied = None
+    if db is not None:
+        mig_dir = Path(__file__).parent.parent / "supabase" / "migrations"
+        # COMMENTS ARE STRIPPED FIRST. A retirement migration's header routinely
+        # NAMES the bots it is deliberately NOT retiring (migration 336 tabulates
+        # all four O/U bots to explain why they stay), so matching raw file text
+        # would discount exactly the bots the migration went out of its way to
+        # leave alone — turning this guard into a blanket exemption.
+        pending_stmts = []
+        for f in sorted(mig_dir.glob("*.sql")):
+            if f.name in applied:
+                continue
+            pending_stmts += [ln.split("--")[0] for ln in f.read_text().splitlines()]
+        pending = "\n".join(pending_stmts)
+        retiring = {n for n in db if n in pending and "retired_at" in pending}
+        db_effective = db - retiring
+        assert active_names() == db_effective, (
+            f"registry active {active_names() ^ db_effective} differs from bots "
+            f"table — add/retire the bot in the registry (and SYSTEM_MAP.md) in "
+            f"the same change"
+            + (f" [discounted as pending-migration retirements: "
+               f"{sorted(retiring)}]" if retiring else "")
         )
 
 
@@ -35751,8 +35784,28 @@ def test_unibet_trigger_bots():
         assert f"'{b}'" in mig, f"migration must register {b}"
     assert mig.count("'experimental'") >= 1, "Unibet triggers must register as experimental (paper)"
     # registry has them (paper, right anchors/floors — drift test cross-checks the values)
+    #
+    # SHADOW-BOT-VERDICTS-2026-09-14: this used to assert all four are in the
+    # registry. `bot_unibet_trigger_1x2_v1` has since been RETIRED (migration
+    # 336, CLV -8.68% at t=-7.1 with no fold-robust configuration), so that form
+    # pinned the old reality rather than an invariant. The routing table keeps
+    # all four entries on purpose — `_bot_id` now refuses a retired bot, so a
+    # retired route is inert, and deleting routes would lose the history of what
+    # the engine once emitted.
+    #
+    # The real invariant: a routed bot is either ACTIVE in the registry or
+    # DELIBERATELY retired by a migration. What must never happen is a route to
+    # a bot nothing in the repo accounts for.
     from workers.registry.bot_registry import active_names
-    assert ub <= active_names(), "registry must list the 4 Unibet trigger bots"
+    _mig_all = "\n".join(
+        f.read_text() for f in
+        sorted((Path(__file__).parent.parent / "supabase" / "migrations").glob("*.sql")))
+    for _b in ub:
+        if _b in active_names():
+            continue
+        assert f"'{_b}'" in _mig_all and "retired_at" in _mig_all, (
+            f"{_b} is routed by the trigger engine but is neither in the "
+            f"registry nor retired by any migration")
     from workers.registry.bot_registry import placeable_names
     assert not (ub & placeable_names()), "Unibet triggers must NOT be placeable (paper)"
 
@@ -35826,15 +35879,29 @@ def test_best_price_router_execute_wiring():
             os.environ["ROUTER_ALLOW_REAL"] = _prev_gate
 
     # (3) _dispatch routes to the correct arm (monkeypatch the arms — no browser)
+    #
+    # MUST BE RESTORED (fixed 2026-09-14). These two names used to be replaced
+    # permanently: the module object is shared for the whole process, so every
+    # later test that read the real functions saw a lambda instead.
+    # ROUTER-REAL-MONEY-CUTOVER does `inspect.getsource(bpr._dispatch_unibet)`
+    # and asserts the unverified-click path records `placed_real=None` — it was
+    # reading this lambda's source and failing, but ONLY in a full-suite run, so
+    # it passed under `--filter` and looked like a real regression in whatever
+    # commit happened to notice. A monkeypatch without a restore is a test that
+    # breaks other tests.
     calls = {}
-    bpr._dispatch_unibet = lambda pick, dec, *, execute: calls.setdefault("uni", execute) or {"ok": True}
-    # accepts edge_threshold (added 2026-09-11 so the bot's real 0.08/0.10 floor
-    # reaches stage_bet's live-price re-check instead of its 0.03 default)
-    bpr._dispatch_coolbet = (lambda pick, *, execute, edge_threshold=0.03,
-                             routing_note=None:
-                             calls.setdefault("cb", execute) or {"ok": True})
-    bpr._dispatch("Unibet-Site", {}, {}, execute=False)
-    bpr._dispatch("Coolbet", {}, {}, execute=False)
+    _orig_uni, _orig_cb = bpr._dispatch_unibet, bpr._dispatch_coolbet
+    try:
+        bpr._dispatch_unibet = lambda pick, dec, *, execute: calls.setdefault("uni", execute) or {"ok": True}
+        # accepts edge_threshold (added 2026-09-11 so the bot's real 0.08/0.10 floor
+        # reaches stage_bet's live-price re-check instead of its 0.03 default)
+        bpr._dispatch_coolbet = (lambda pick, *, execute, edge_threshold=0.03,
+                                 routing_note=None:
+                                 calls.setdefault("cb", execute) or {"ok": True})
+        bpr._dispatch("Unibet-Site", {}, {}, execute=False)
+        bpr._dispatch("Coolbet", {}, {}, execute=False)
+    finally:
+        bpr._dispatch_unibet, bpr._dispatch_coolbet = _orig_uni, _orig_cb
     assert "uni" in calls and "cb" in calls, "_dispatch must route Unibet-Site and Coolbet to their arms"
 
     # (4) dry-test-in-action + the executor arms are named in source
@@ -39977,6 +40044,33 @@ def test_perf_chart_event_markers():
         "the explanatory caption must be gated on BOTH markers being visible"
     )
 
+
+
+@test("RETIRED-BOTS-KEPT-GENERATING — a DB retirement actually stops pick generation")
+def test_retired_bots_kept_generating_2026_09_14():
+    """Retiring a bot used to be cosmetic. Both generation paths resolved a bot
+    name with a bare `SELECT id FROM bots WHERE name=%s`, so setting
+    `retired_at` removed the bot from every page and dashboard while it carried
+    on writing shadow_bets underneath — the repo's recurring "second code path
+    inheriting no gates" pattern.
+
+    Both lookups must require `retired_at IS NULL`, so a DB retirement is
+    self-enforcing and needs no code edit to take effect.
+    """
+    import pathlib as _pl
+
+    for path in ("workers/automation/pick_generator.py",
+                 "workers/jobs/pick_trigger_matcher.py"):
+        src = _pl.Path(path).read_text()
+        code = _strip_prose(src)
+        assert "FROM bots WHERE name=%s AND retired_at IS NULL" in code, (
+            f"{path}: _bot_id must exclude retired bots, or retiring a bot only "
+            f"hides it from the page while it keeps generating picks"
+        )
+        # And there must be no un-gated sibling lookup left behind.
+        assert "FROM bots WHERE name=%s\"" not in code, (
+            f"{path}: an un-gated bot-name lookup survives"
+        )
 
 
 if __name__ == "__main__":

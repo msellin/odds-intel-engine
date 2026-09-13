@@ -48,8 +48,26 @@ def _cohort_for(book: str) -> str:
 
 
 def _bot_id(name: str) -> str | None:
+    """Resolve a bot name to its id — and ONLY if the bot is still active.
+
+    RETIRED-BOTS-KEPT-GENERATING (2026-09-14). This lookup used to be a bare
+    `WHERE name=%s`, so retiring a bot by setting `retired_at` / `is_active`
+    in the `bots` table did NOT stop it producing picks: the generator resolved
+    its id exactly as before and kept writing shadow_bets under a bot the fleet
+    considered dead. Every retirement migration in this repo's history therefore
+    stopped the bot appearing on the page while leaving it running underneath.
+
+    That is this repo's recurring "a second code path inheriting no gates"
+    pattern (RELIABILITY_LEDGER), and the same gap is documented for the placer
+    at SYSTEM_MAP 4c. Gating here closes it for BOTH generation paths at once —
+    pick_generator's BotConfig list and pick_trigger_matcher's BOOK_MARKET_BOTS
+    both funnel through a `_bot_id` lookup — so a DB retirement is now
+    self-enforcing and no code edit is needed to make one take effect.
+    """
     from workers.api_clients.db import execute_query
-    r = execute_query("SELECT id::text AS id FROM bots WHERE name=%s", [name])
+    r = execute_query(
+        "SELECT id::text AS id FROM bots WHERE name=%s AND retired_at IS NULL",
+        [name])
     return r[0]["id"] if r else None
 
 
@@ -62,7 +80,8 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
         from workers.api_clients.db import execute_query, execute_write
         bot_id = _bot_id(bot_name)
         if not bot_id:
-            log.warning("trigger matcher: bot %s not registered (migration 321?)", bot_name)
+            log.info("trigger matcher: bot %s is retired or not registered — "
+                     "skipping (RETIRED-BOTS-KEPT-GENERATING)", bot_name)
             return counters
         cohort = _cohort_for(book)
 
