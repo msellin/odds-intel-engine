@@ -1,4 +1,38 @@
 source,kickoff_date,league,home_team,away_team,market,pick,odds,result,pnl_per_unit,ref_url
+signalodds,2026-09-13,,Cruz Azul,América,Match Result,Cruz Azul,2.750,won,1.7500,/predictions/the-pitch-master/cruz-azul-vs-america-20260913/cruz-azul
+signalodds,2026-09-13,,San Jose Earthquakes,Houston Dynamo,Match Result,San Jose Earthquakes,2.540,won,1.5400,/predictions/the-pitch-master/san-jose-earthquakes-vs-houston-dynamo-20260913/san-jose-earthquakes
+signalodds,2026-09-13,,LA Galaxy,Seattle Sounders FC,Match Result,LA Galaxy,2.300,lost,-1.0000,/predictions/the-pitch-master/la-galaxy-vs-seattle-sounders-fc-20260913/la-galaxy
+signalodds,2026-09-12,,Jeonbuk Hyundai Motors,FC Seoul,Match Result,FC Seoul,2.540,won,1.5400,/predictions/the-pitch-master/jeonbuk-hyundai-motors-vs-fc-seoul-20260912/fc-seoul
+signalodds,2026-09-12,,Ulsan Hyundai FC,Incheon United,Match Result,Ulsan Hyundai FC,2.300,won,1.3000,/predictions/the-pitch-master/ulsan-hyundai-fc-vs-incheon-united-20260912/ulsan-hyundai-fc
+signalodds,2026-09-12,,Bucheon FC 1995,Jeju United FC,Match Result,Jeju United FC,2.680,lost,-1.0000,/predictions/the-pitch-master/bucheon-fc-1995-soccer-vs-jeju-united-fc-20260912/jeju-united-fc
+signalodds,2026-09-12,,Atlante FC,Pachuca,Match Result,Pachuca,2.460,won,1.4600,/predictions/the-pitch-master/atlante-fc-soccer-vs-pachuca-20260912/pachuca
+signalodds,2026-09-11,,Al-Qadsiah,Al-Ettifaq,Match Result,Al-Qadsiah,1.280,lost,-1.0000,/predictions/the-pitch-master/al-qadsiah-vs-al-ettifaq-20260911/al-qadsiah
+signalodds,2026-09-11,,Kryliya Sovetov,Rodina Moscow,Match Result,Kryliya Sovetov,2.010,won,1.0100,/predictions/the-pitch-master/kryliya-sovetov-vs-rodina-moscow-soccer-20260911/kryliya-sovetov
+signalodds,2026-09-11,,Vissel Kobe,Kashima Antlers,Match Result,Kashima Antlers,2.600,lost,-1.0000,/predictions/the-pitch-master/vissel-kobe-vs-kashima-antlers-20260911/kashima-antlers
+signalodds,2026-09-11,,Kyoto Purple Sanga,Kashiwa Reysol,Match Result,Kashiwa Reysol,1.940,won,0.9400,/predictions/the-pitch-master/kyoto-purple-sanga-vs-kashiwa-reysol-20260911/kashiwa-reysol
+signalodds,2026-09-11,,Pumas,León,Match Result,Pumas,2.280,won,1.2800,/predictions/the-pitch-master/pumas-vs-leon-20260911/pumas
+signalodds,2026-09-10,,Fenerbahce,AS Roma,Match Result,AS Roma,2.230,lost,-1.0000,/predictions/the-pitch-master/fenerbahce-vs-as-roma-20260910/as-roma
+signalodds,2026-09-10,,Portland Timbers,St. Louis City SC,Match Result,Portland Timbers,2.540,lost,-1.0000,/predictions/the-pitch-master/portland-timbers-vs-st-louis-city-sc-20260910/portland-timbers
+signalodds,2026-09-10,,Los Angeles FC,New York Red Bulls,Match Result,Los Angeles FC,1.430,won,0.4300,/predictions/the-pitch-master/los-angeles-fc-vs-new-york-red-bulls-20260910/los-angeles-fc
+signalodds,2026-09-10,,Vancouver Whitecaps FC,LA Galaxy,Match Result,Vancouver Whitecaps FC,1.350,won,0.3500,/predictions/the-pitch-master/vancouver-whitecaps-fc-vs-la-galaxy-20260910/vancouver-whitecaps-fc
+signalodds,2026-09-10,,San Diego FC,San Jose Earthquakes,Match Result,San Diego FC,1.810,lost,-1.0000,/predictions/the-pitch-master/san-diego-fc-vs-san-jose-earthquakes-20260910/san-diego-fc
+signalodds,2026-09-09,,HJK Helsinki,FC Inter Turku,Match Result,HJK Helsinki,2.780,won,1.7800,/predictions/the-pitch-master/hjk-helsinki-vs-fc-inter-turku-20260909/hjk-helsinki
+signalodds,2026-09-09,,Gangwon FC,Jeonbuk Hyundai Motors,Match Result,Gangwon FC,2.760,lost,-1.0000,/predictions/the-pitch-master/gangwon-fc-vs-jeonbuk-hyundai-motors-20260909/gangwon-fc
+signalodds,2026-09-09,,Daejeon Citizen,FC Anyang,Match Result,Daejeon Citizen,1.620,won,0.6200,/predictions/the-pitch-master/daejeon-citizen-vs-fc-anyang-20260909/daejeon-citizen
+signalodds,2026-09-09,,Gwangju FC,Jeju United FC,Match Result,Jeju United FC,1.990,won,0.9900,/predictions/the-pitch-master/gwangju-fc-vs-jeju-united-fc-20260909/jeju-united-fc
+signalodds,2026-09-09,,Pohang Steelers,Sangju Sangmu FC,Match Result,Pohang Steelers,2.560,lost,-1.0000,/predictions/the-pitch-master/pohang-steelers-vs-sangju-sangmu-fc-20260909/pohang-steelers
+signalodds,2026-09-08,,Ilves Tampere,Jaro,Match Result,Ilves Tampere,1.600,won,0.6000,/predictions/the-pitch-master/ilves-tampere-vs-jaro-20260908/ilves-tampere
+signalodds,2026-09-08,,TPS Turku,SJK Seinäjoki,Match Result,TPS Turku,2.380,lost,-1.0000,/predictions/the-pitch-master/tps-turku-vs-sjk-seinajoki-20260908/tps-turku
+signalodds,2026-09-08,,VPS Vaasa,AC Oulu,Match Result,VPS Vaasa,2.150,won,1.1500,/predictions/the-pitch-master/vps-vaasa-vs-ac-oulu-20260908/vps-vaasa
+signalodds,2026-09-08,,Ulsan Hyundai FC,FC Seoul,Match Result,FC Seoul,2.150,lost,-1.0000,/predictions/the-pitch-master/ulsan-hyundai-fc-vs-fc-seoul-20260908/fc-seoul
+signalodds,2026-09-08,,Incheon United,Bucheon FC 1995,Match Result,Incheon United,1.860,won,0.8600,/predictions/the-pitch-master/incheon-united-vs-bucheon-fc-1995-soccer-20260908/incheon-united
+signalodds,2026-09-07,,Rubin Kazan,FC Akhmat Grozny,Match Result,Rubin Kazan,2.810,lost,-1.0000,/predictions/the-pitch-master/rubin-kazan-vs-fc-akhmat-grozny-20260907/rubin-kazan
+signalodds,2026-09-07,,Wieczysta Kraków,Zagłębie Lubin,Match Result,Wieczysta Kraków,2.050,lost,-1.0000,/predictions/the-pitch-master/wieczysta-krakow-soccer-vs-zag-bie-lubin-20260907/wieczysta-krakow
+signalodds,2026-09-07,,Union Berlin,Eintracht Frankfurt,Match Result,Eintracht Frankfurt,1.700,won,0.7000,/predictions/the-pitch-master/union-berlin-vs-eintracht-frankfurt-20260907/eintracht-frankfurt
+signalodds,2026-09-07,,Al-Khaleej,Al-Riyadh,Match Result,Al-Khaleej,2.320,lost,-1.0000,/predictions/the-pitch-master/al-khaleej-vs-al-riyadh-20260907/al-khaleej
+signalodds,2026-09-07,,Asteras Tripolis,Iraklis FC,Match Result,Asteras Tripolis,2.280,lost,-1.0000,/predictions/the-pitch-master/asteras-tripolis-vs-iraklis-fc-soccer-20260907/asteras-tripolis
+signalodds,2026-09-06,,Nagoya Grampus,FC Machida Zelvia,Match Result,FC Machida Zelvia,2.280,won,1.2800,/predictions/the-pitch-master/nagoya-grampus-vs-fc-machida-zelvia-20260906/fc-machida-zelvia
+signalodds,2026-09-06,,Kashima Antlers,Urawa Red Diamonds,Match Result,Kashima Antlers,1.930,lost,-1.0000,/predictions/the-pitch-master/kashima-antlers-vs-urawa-red-diamonds-20260906/kashima-antlers
 signalodds,2026-09-06,,Atlas,Atlante FC,Match Result,Atlas,2.030,lost,-1.0000,/predictions/the-pitch-master/atlas-vs-atlante-fc-soccer-20260906/atlas
 signalodds,2026-09-06,,Portland Timbers,Minnesota United FC,Match Result,Portland Timbers,2.520,won,1.5200,/predictions/the-pitch-master/portland-timbers-vs-minnesota-united-fc-20260906/portland-timbers
 signalodds,2026-09-06,,Vancouver Whitecaps FC,St. Louis City SC,Match Result,Vancouver Whitecaps FC,1.510,lost,-1.0000,/predictions/the-pitch-master/vancouver-whitecaps-fc-vs-st-louis-city-sc-20260906/vancouver-whitecaps-fc
