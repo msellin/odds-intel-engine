@@ -152,3 +152,80 @@ may be true and useless, and that is a finding, not a footnote.
   not a gradient (`BETTING_GATE_DECISIONS`: "do not chase the 12% number", where
   12% looked best and 13% was −5.7%).
 - n < 334, however good the number looks.
+
+---
+
+# RESULTS — Phase 0 + H1 interim (run 2026-09-14, design unchanged since lock)
+
+## Phase 0 — clv_pinnacle IS partly mechanical
+
+Regressed realised `clv_pinnacle` on sharp edge at pick, all settled
+sharp-anchored picks (n=253):
+
+| | |
+|---|---|
+| mean edge at pick | +5.01% |
+| mean `clv_pinnacle` | +9.98% |
+| slope dCLV/dEdge | +3.62 |
+| **R²** | **0.3865** |
+| sign(edge) == sign(CLV) | 81.4% |
+
+**Verdict per the locked thresholds: 0.30–0.80 → "partly mechanical, secondary
+only".** Not the pure identity feared (that would be slope ≈ 1, R² ≈ 1), but ~39%
+of CLV variance is the selection rule restating itself. `clv_pinnacle` is
+therefore **barred from being the success criterion**, exactly as pre-registered.
+
+## H1 — the primary, non-circular test
+
+Population: sharp edge ≥3% **and** odds ≥2.20, settled, executable prices.
+
+| metric | value | t | n |
+|---|---|---|---|
+| **PRIMARY — direct-book CLV** | **+9.21%** | **+5.1** | **89** |
+| SECONDARY — `clv_pinnacle` | +13.18% | +8.3 | 139 |
+| ROI | **−14.5%** | — | 140 |
+| hit rate | 26.4% | — | 140 |
+
+Direct-book CLV is measured strictly where we bet and where it closed — 48
+Coolbet, 41 Unibet-Site, no Pinnacle — so it cannot be an identity of a
+Pinnacle-derived rule.
+
+**The circularity correction is visible and the signal survives it:** +13.18%
+on the mechanical metric falls to **+9.21%** on the clean one, a ~30% haircut,
+and remains significant at t=+5.1. This is precisely the outcome the
+pre-registration named in advance — magnitude inflated, direction intact.
+
+## VERDICT: H1 is NOT CONFIRMED. Promising, not stakeable.
+
+Three of the four locked conditions fail:
+
+| condition | required | actual |
+|---|---|---|
+| positive holdout direct-book CLV | yes | ✅ +9.21%, t=+5.1 |
+| **n ≥ 334** | 334 | ❌ **89** |
+| **positive in every walk-forward fold** | 3 folds | ❌ **impossible — all data is 2026-09-09..09-13, five days** |
+| **not carried by one month/book** | — | ❌ **one five-day window** |
+
+The bots were created ~2026-09-09, so the entire sharp evidence base is five days
+old. **Every headline sharp figure quoted anywhere — including "+12.0% (t=+8.3)"
+and "+10.7% (t=+4.4)" — is CLV on that window, not ROI, and not out-of-sample.**
+
+**ROI over the same population is −14.5%.** At n=140 that is uninformative (this
+repo's own bar is ~9,300 for ±2% on ROI), and it must not be used to dismiss the
+strategy any more than the CLV may be used to promote it. Both numbers are too
+small. Recording it because an interim that reports only the favourable metric is
+how a pre-registration gets quietly defeated.
+
+## What happens next — fixed now, not after seeing more data
+
+1. **Accrue forward.** No promotion, no staking, no publication until n ≥ 334 on
+   direct-book CLV **and** three genuine time folds exist. At current volume that
+   is weeks, not days.
+2. **H1 is spent.** It has been evaluated once. Re-running it on a larger sample
+   is a NEW test and needs its own entry here, stating in advance that it is a
+   second look.
+3. **The exploratory grid was not run** and must not be, until H1 resolves — a
+   grid run now would be searching a five-day window.
+4. **Do not re-derive the 2.2 odds floor from this data.** It was chosen because
+   it replicated across two books; confirming it on the same window that produced
+   it is circular a second time.
