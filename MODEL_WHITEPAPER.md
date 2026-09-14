@@ -1886,3 +1886,48 @@ read without retraining would make serving *worse*: the live bundles learned the
 weights against leaked-scale ELO (AUC 0.74) and are out of distribution on clean
 input (AUC 0.62). Expect offline metrics to **fall** after the retrain; that is the
 first honest measurement, not a regression.
+
+---
+
+### The clean retrain (2026-09-14): the leak inflated our EVALUATION, not our predictions
+
+`v20260914_clean_cut0820` was trained on the rebuilt, strictly-pre-match corpus
+with the same 2026-08-20 cutoff as the live `v20260903_cut0820`, so the two are
+directly comparable. Both were scored on the **same clean held-out features** for
+matches after that cutoff (n=14,084, 2026-08-20 → 09-14), with `*_missing`
+indicators reconstructed exactly as inference builds them:
+
+| model | AUC (1X2 home) | log-loss |
+|---|---|---|
+| `v20260903_cut0820` (leak-trained) | 0.6152 | 0.7183 |
+| **`v20260914_clean_cut0820` (clean)** | **0.6055** | **0.7173** |
+| base rate | 0.5000 | **0.6856** |
+| de-vigged market | 0.7270 | — |
+
+**The clean model is statistically indistinguishable from the leaked one
+(+0.13% log-loss), and both are ~4.7% WORSE than predicting the base rate.**
+
+This is the most important negative result in the project and it should not be
+softened. Fixing the leak did **not** produce a working model. What it did was
+make the failure visible: the leak inflated every *offline evaluation*, not the
+*served predictions*. Serving was always going to be mediocre — we simply could
+not see it, because every evaluator scored the model against the same
+contaminated table.
+
+Two things follow, and they point in different directions:
+
+1. **The inversion fix was real and large.** Read correctly, these models score
+   AUC ≈ 0.61; as production actually served them (home/away swapped) they scored
+   0.4151. That is a genuine recovery from anti-predictive to weakly predictive.
+2. **Weakly predictive is not the same as useful.** AUC 0.61 against a market at
+   0.7270, with log-loss worse than a constant, is not a betting edge. The models
+   can rank slightly; their probabilities are too poorly calibrated to be worth
+   money.
+
+**Do not read the retrain as a failure of the retrain.** The corpus had to be
+clean before any of this could be measured at all. What the measurement now says
+is that the remaining problem is not contamination — see `MASTER_TASK_LIST` #4,
+the residual test, which asks the only question left: does the model predict
+anything the market price does not already contain?
+
+Reproduce with `scripts/compare_bundles_holdout.py`.
