@@ -258,12 +258,60 @@ than a lucky cell, and it is the thing to carry into the Epicbet data.
 The *shape* of the finding — long side dearer than short side — should hold at a real
 book, but the absolute costs at Epicbet should be lower. Re-run on the collected data.
 
+---
+
+## Part 5 — is AF's live price a usable proxy for Epicbet's? (1x2: yes)
+
+This decides what the 2.2M-row history is worth. If AF's live price, once de-vigged,
+tracks the book we can actually bet, then every edge number above carries. If not,
+the history is only good for *state* and all pricing work waits on new collection.
+
+**307 concurrent AF/Epicbet 1x2 snapshots, 7 fixtures, fetched in parallel threads so
+neither feed is systematically later.**
+
+| side | median gap | mean | p90 abs gap | max abs gap |
+|---|---|---|---|---|
+| home | **−0.01pp** | −0.54pp | 3.11pp | 3.52pp |
+| draw | **+0.42pp** | +0.59pp | 1.73pp | 5.37pp |
+| away | **−0.04pp** | −0.06pp | 1.38pp | 2.25pp |
+
+**After de-vigging, AF's live 1x2 is an essentially unbiased proxy for Epicbet's** —
+median gaps are within half a point of zero on all three outcomes. The noise is real
+but modest: 18% of snapshots differ by ≥3pp on P(home), which is what a ~40s-stale
+feed should look like.
+
+The margins differ as expected: **AF 6.51% overround vs Epicbet 5.56%**.
+
+### What that means for every number in Parts 2–4
+
+They are measured against the *wider* book, so they are **conservative**. Proportionally,
+the margin difference is worth about **+0.8pp of ROI** in Epicbet's favour on 1x2.
+Applied to Part 4: "1-goal leader holds" goes from −3.0% to roughly −2.2% (still
+clearly negative); "2-goal leader holds" from +1.1% to roughly +1.9% (still an interval
+containing zero).
+
+**No conclusion in this document flips.** The refutations get slightly stronger in
+relative terms and no negative becomes a positive.
+
+### Scope — do not over-extend this
+
+* It is **1x2 only**. Most candidate strategies here are **over/under**, and O/U
+  fidelity is *not* established by this test. A dedicated O/U comparison is running
+  overnight (`<scratch>/oufid.jsonl`) — until it reports, the O/U-based ROI figures
+  should not be margin-adjusted.
+* n=307 on 7 fixtures in a single evening, all top/mid-tier. The Unibet and Kambi
+  precedents in this repo are a warning: both looked fine until checked against the
+  book's own site, and both were 33–38% divergent.
+
+**Provisional read: the 2.2M-row history is usable for 1x2 strategy discovery.** That
+is a much better position than "the prices in it are unusable", which is where this
+document started.
+
 ## Ranked next actions
 
-1. **Re-run Part 2 against Epicbet's collected prices.** Every number above is
-   measured against AF's stale aggregate. Epicbet is the placeable book and its live
-   O/U margin (6.44%) is close enough to AF's (6.5%) that the comparison should carry
-   — but it must be redone before a cent moves.
+1. **Finish the fidelity work (Part 5).** 1x2 is done and AF proxies Epicbet well.
+   **O/U is the gap that matters**, because most candidates here are O/U — the
+   overnight `oufid` run answers it. Only then margin-adjust the O/U numbers.
 2. ~~Pre-register B1.~~ **Withdrawn — it failed its robustness check the same night.**
    The lesson is procedural and worth keeping: *always widen the trigger to the window
    a bot would really use before believing a cell.* A 5-minute bucket that a bot would
