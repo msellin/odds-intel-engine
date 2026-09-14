@@ -50,7 +50,7 @@ def generate_picks() -> dict:
               FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
              WHERE o.market = '1x2_1h'
                AND m.date > now()
-               AND o.bookmaker IN ('Epicbet','Betano','Unibet','Pinnacle')
+               AND o.bookmaker IN ('Epicbet','Betano','Unibet-Site','Pinnacle')
                AND o.selection IN ('home','draw','away')
              ORDER BY o.match_id, o.selection, o.bookmaker, o."timestamp" DESC
             """

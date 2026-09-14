@@ -138,9 +138,6 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_ou35_model_v1", FAM_COOLBET_PAPER, "O/U 3.5", ANCHOR_MODEL,
             0.08, 1.80, False,
             "Model-edge O/U 3.5 vs Coolbet's own 3.5 price (own isotonic calibration). Paper. +7.8% not-robust, accruing forward."),
-    BotSpec("bot_corners_paper_shadow_v1", FAM_COOLBET_PAPER, "corners", ANCHOR_SHARP,
-            0.0, None, False,
-            "Best Betano/Unibet corners price vs de-vigged Pinnacle corners line (sharp edge ≥0%). Forward paper test on executable corners books."),
 
     # Internal model / strategy validators (paper, not a Coolbet placement path)
     BotSpec("bot_v10_all", FAM_INTERNAL, "mixed", ANCHOR_MODEL,

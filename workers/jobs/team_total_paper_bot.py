@@ -87,7 +87,7 @@ def generate_picks() -> dict:
               JOIN matches m ON m.id = o.match_id
              WHERE o.market ~ '^team_total_(home|away)_[0-9]+$'
                AND m.date > now()
-               AND o.bookmaker IN ('Epicbet','Betano','Unibet','Pinnacle')
+               AND o.bookmaker IN ('Epicbet','Betano','Unibet-Site','Pinnacle')
                AND o.selection IN ('over','under')
              ORDER BY o.match_id, o.market, o.selection, o.bookmaker, o."timestamp" DESC
             """

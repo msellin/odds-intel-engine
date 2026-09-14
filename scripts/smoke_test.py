@@ -42264,5 +42264,33 @@ def test_own_segment_search_method_guards():
     )
 
 
+
+@test("NO-PHANTOM-UNIBET-IN-BOT-PRICES — paper bots price against the scrape, not the AF feed")
+def test_no_phantom_unibet_in_bot_prices():
+    """AF-UNIBET-PHANTOM (2026-09-14). Three paper bots priced their bets against
+    bookmaker 'Unibet' — API-Football's feed, not our scrape.
+
+    That feed quotes a price HIGHER than unibet.ee actually offers on 33.1% of
+    selections, and it stopped writing entirely on 2026-09-12. A bot pricing
+    against it computes edge on a price nobody can take, which is the same
+    failure as Unibet-Kambi (38%) and Bet365 (~26.6% inflated) before it — three
+    AF-fed books checked against their own site, three unfaithful.
+
+    The placeable feed is 'Unibet-Site' (workers/automation/unibet_odds_feed.py).
+    This pins the distinction in the bot price lists, because the two names differ
+    by a suffix and the wrong one is the shorter, more natural thing to type.
+    """
+    import re as _re
+    for rel in ("workers/jobs/corners_paper_bot.py",
+                "workers/jobs/first_half_1x2_paper_bot.py",
+                "workers/jobs/team_total_paper_bot.py"):
+        src = _engine_path(rel).read_text()
+        # 'Unibet' as a standalone SQL literal — not Unibet-Site / Unibet-Kambi
+        bad = _re.findall(r"'Unibet'(?!-)", src)
+        assert not bad, (
+            f"{rel} prices against 'Unibet' (the AF feed, 33.1% phantom-high and "
+            f"dead since 2026-09-12). Use 'Unibet-Site' — our own scrape."
+        )
+
 if __name__ == "__main__":
     main()

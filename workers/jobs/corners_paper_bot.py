@@ -134,7 +134,7 @@ def generate_picks() -> dict:
              WHERE o.market ~ '^corners_ou_[0-9]+$'
                AND m.date > now()
                AND m.league_id::text = ANY(%s)
-               AND o.bookmaker IN ('Betano','Unibet','Pinnacle')
+               AND o.bookmaker IN ('Betano','Unibet-Site','Pinnacle')
                AND o.selection IN ('over','under')
              ORDER BY o.match_id, o.market, o.selection, o.bookmaker, o."timestamp" DESC
             """,
@@ -208,8 +208,24 @@ def generate_picks() -> dict:
 
 def settle_picks() -> dict:
     """Grade this bot's pending corners picks whose match has a finished corner
-    count. Writes result + pnl into shadow_bets (clv columns stay NULL — no
-    corners closing anchor is wired). Never raises."""
+    count. Writes result + pnl into shadow_bets. Never raises.
+
+    CORNERS-ANCHOR-EXISTS-2026-09-14 — this docstring used to say "clv columns
+    stay NULL — no corners closing anchor is wired", and that premise was FALSE.
+    Pinnacle prices corners on 2,045 fixtures / 43 lines in 30 days, covering
+    95% of the corners fixtures Coolbet quotes and 87% of Epicbet's. The bot
+    already de-vigs that same Pinnacle line to SELECT (see _devig_two_way) — the
+    settler simply never used it.
+
+    Cost of the belief: 568 settled picks with no CLV at all, so the bot could
+    not be judged on the only basis that decides anything, while its unanchored
+    +9.60% ROI sat on the dashboard looking like evidence. Recomputed from
+    odds_snapshots afterwards: margin-corrected own-book CLV -4.86%,
+    CI [-5.59,-4.12], t=-12.93, n=467 — decisively losing, which is why the bot
+    is retired (migration 351).
+
+    The lesson is RELIABILITY_LEDGER's: a capability assumed absent is never
+    re-checked. The anchor was there the whole time."""
     counters = {"settled": 0, "won": 0, "lost": 0, "voided": 0}
     try:
         from workers.api_clients.db import execute_query, execute_write
