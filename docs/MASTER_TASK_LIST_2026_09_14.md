@@ -1,0 +1,59 @@
+# Master task list — 2026-09-14
+
+Every task from all three workstreams, priority-ordered, each with a
+**pre-registered success measure**. The measure column is the point: this
+project's dominant failure mode was not bugs, it was numbers that were computed
+and never surfaced. A task without a falsifiable "did it help" is how that
+happens.
+
+**Two independent tracks.** Track M (model) and Track B (betting evidence) do not
+block each other and should run in parallel.
+
+| # | Task | Track | Dir | Est | Status | What it does | How we will know it helped |
+|---|---|---|---|---|---|---|---|
+| **1** | **Fix ELO/form leakage** | M | 🤖👥 | 2-3d | ⬜ | `update_elo_ratings()` writes post-match ELO stamped with the match date and runs BEFORE the ETL reads `date <= date_str`. Reorder so training only ever sees strictly pre-match ratings. | **Baseline: 79.5% of training rows carry a leaked ELO; stored `elo_diff` AUC 0.745 vs 0.617 pre-match.** Success = leaked-row share → ~0% and stored AUC converges to ~0.617 (a DROP is the win). Fails if stored AUC stays above the market's 0.727 — nothing pre-match can. |
+| **2** | **Rebuild historical MFV on clean features** | M | 🤖👥 | 1d | ⬜ | Backfill the feature table so the training corpus matches what inference can actually see. Depends on #1. | Live-vs-training NULL rates converge: `season_progress` 2.0%/96.5% → within 5pp; `league_clv_efficiency` 62.1%/100% → within 5pp. |
+| **3** | **Retrain — the first clean model this project has had** | M | 🤖👥 | 1d | ⬜ | Every bundle in the registry (v20260903_cut0820, v20260830, all of them) was trained on leaked ELO. Depends on #1+#2. ⚠️ Doing #1/#2 WITHOUT this makes things worse — the model learned weights on leaked-scale ELO and would be out of distribution on clean input. | **Expect offline metrics to FALL** — that is success, not regression. Hard gate: held-out log-loss must beat the base rate (1x2 ~0.6817; currently 0.7283 even un-inverted). |
+| **4** | **THE DECISIVE EXPERIMENT — does the clean model add anything the market lacks?** | M | 🤖👥 | 1d | ⬜ | Predict the **residual** `y − p_mkt` on a time-ordered holdout, the method the OU signal-search pre-registration used. Answers "do we have a model business" with a number instead of an argument. | Three outcomes, all pre-declared: (a) no residual signal → **model-anchored betting is dead**, go all-in on sharp; (b) residual signal < vig (2.5–6.6%) → real but not monetisable at our books → buy more books, not more modelling; (c) residual signal > vig → **you have a model business**, re-derive every floor. |
+| **5** | **Backfill `recommended_bookmaker` on 8 per-book trigger bots** | B | 🤖 | 2h | ⬜ | 488 of 2,445 trigger rows have no venue and cannot be priced executably. Recoverable with certainty from the bot name via `BOOK_MARKET_BOTS`. **Blocks #6.** ⚠️ Never by price-matching — only 36% of 400 sampled rows resolve to one book. | NULL rate on trigger bots **20% → 0%**; sharp 1x2 bots **33% → 0%**; the H1 evaluable population rises from **n=89 toward 140**. |
+| **6** | **Port `DIRECT-BOOK-CLV` to `shadow_bets`** | B | 🤖👥 | 1d | ⬜ | `get_closing_odds()` is called with no bookmaker, so CLV is measured against whichever of ~13 books sorted last. Port `_direct_book_close` from the `real_bets` path (migration 332). Gives a structurally non-circular metric on ~112k rows instead of 89 — real time folds with no waiting. | **Baseline: 66.9% of CLV rows (106,726 of 159,614) have no known closing book.** Success = <10%, AND the circularity regression falls from **R²=0.386** toward ~0. ⚠️ Historical bot CLV will MOVE — that is the point, not a bug. |
+| **7** | **Re-check the three 2026-09-14 1x2 retirements** | B | 🤖 | 2h | ⬜ | `bot_coolbet_trigger_1x2_v1`, `bot_unibet_trigger_1x2_v1`, `bot_trigger_1x2_model_v1` were retired on arbitrary-book CLV. Depends on #6. | Binary: do they still fail on direct-book CLV? If any flips sign, the retirement is reversed and the method that produced it is re-examined. |
+| **8** | **Re-measure shrinkage alpha after #3** | M | 🤖👥 | 4h | ⬜ | Alpha is the honest verdict on whether the model adds anything. Today's 0.0085 / 0.0000 was measured on inverted + leaked inputs, so it is a verdict on nothing. ⚠️ `fit_blend_weights` reads ALL history with no date bound, so inverted rows depress it for months — needs an era marker (`+selcal1` precedent). | **Baseline: `shrinkage_alpha_t1_1x2` = 0.0085, t2 and t4 exactly 0.0000.** Any sustained rise above 0.10 on clean data = the model is contributing. Flat at ~0 on clean data = the strongest possible evidence to stop model work. |
+| **9** | **Arm `MODEL-OUTPUT-CALIBRATION`** | M | 🤖👥 | — | ⬜ auto | Currently SKIPS until 500 settled post-fix predictions exist. It is the test that would have caught the inversion in days. | It stops skipping and passes. If it ever fails, a market is being served backwards — that is its only job. |
+| **10** | **Phantom `pinnacle_implied_*` features** | M | 🤖👥 | 4h | ⬜ | In `feature_cols.pkl` but not columns of MFV → `0.0` with the missing-flag pinned on 100% of production rows forever. ⚠️ Do NOT fix by adding the column: training takes the latest pre-KO Pinnacle price, effectively the close, which inference never has. Remove them instead. | Pinned missing-flag rate **100% → 0%**; ~6% of gain importance redistributes to features that exist. |
+| **11** | **Imputation mismatch train vs serve** | M | 🤖👥 | 4h | ⬜ | Training fills the per-league mean, serving fills `0.0`. Also: means computed over the whole frame before `TimeSeriesSplit`, so CV folds see future means. | Same MFV row scored through both paths returns the **same probability** (currently unmeasured, and that is the problem). |
+| **12** | **Swap `n ≥ 334` for power + regime conditions** | B | 🤖👥 | 4h | ⬜ | sd = 0.147 ⇒ n=10 suffices at a +9.2% effect; 334 assumes ~2%. Power was never the constraint — **bias** was. | Promotion decisions cite an effect size and a count of distinct weeks/regimes, never a bare n. |
+| **13** | **Pinnacle-movement cut as a standing evaluation column** | B | 👥 | 4h | ⬜ | Where Pinnacle is static, "beats Pinnacle now" and "beat Pinnacle at close" are the same sentence. | **Baseline: static lines +14.95%, genuinely moved >5% +2.42% (t=+1.1, not significant).** Success = no sweep can report a Pinnacle-anchored CLV without printing this split. |
+| **14** | **Draw `cal_prob` is a constant** | M | 🤖👥 | 4h | ⬜ | Live draw picks span **[0.3050, 0.3072], sd 0.0004** on n=96. Either the draw head is dead or the calibrator flattened it to nothing. | sd rises materially above 0.0004, or the draw market is explicitly retired. Either is an answer; the current state is neither. |
+| **15** | **`OU-CALIBRATOR-REFIT-ON-SHRUNK`** | M | 🤖👥 | 1d | ⬜ | Fit on `shrunk` (what inference receives), validate on the `edge ≥ floor` SELECTED subpopulation, not universe-wide ECE. ⚠️ The 2-feature variant collapsed the gate to 1 pick. | Overconfidence gap **+5.1pp → +2.5pp** at the same pick volume (measured in `ou_calibrator_backtest.py`). |
+| **16** | **O/U blend weight is the 1x2 blend weight** | M | 🤖👥 | 4h | ⬜ | `load_blend_weight()` only reads `blend_weight_1x2*`. Fold into #15. | A `blend_weight_ou*` row exists and differs materially from 0.83. |
+| **17** | **`/picks` publishes a frozen `odds_at_pick`** | B | 👥 | 4h | ⬜ | Up to 6h behind the market / 48h old, while `odds_at_pick_live` is computed every 30min and never shown. Product decision, not a defect. | Published price age p95 falls below 1h, or the staleness is disclosed on the page. |
+| **18** | **`odds_drift`/`steam_move` unbounded query** | M | 🤖👥 | 2h | ⬜ | No `is_live=false`, no pre-kickoff bound — "latest snapshot" can be an in-play price. Inert today; a loaded gun in a shared builder. | Source guard + a test; the columns cannot read a post-kickoff price. |
+| **19** | **`train_ah_xgboost.py` random split** | M | 🤖 | 1h | ⬜ | `StratifiedKFold(shuffle=True)` leaks through team-strength features. AH only. | `TimeSeriesSplit` in source; AH holdout metric will DROP — that is the honest number. |
+| **20** | **Ablate the `*_missing` indicators** | M | 🤖👥 | 4h | ⬜ | ~20% of importance sits on missingness flags, which may encode collection era or league rather than football. Suspicion, not a defect. | Holdout log-loss with vs without. If removing them does not hurt, they were encoding regime and should go. |
+
+## Done 2026-09-13/14
+
+| Task | Verified effect |
+|---|---|
+| `OU-CALIBRATOR-DOMAIN-MISMATCH` (mig 335) | Only 2 of 142 published picks cleared their floor without the sigmoid lift. O/U pick volume correctly fell to ~0 (best available edge today +5.3% vs an 8% floor). |
+| `1X2-CLASS-ORDER-INVERTED` | AUC(home) 0.4151 → 0.5892 on 4,658 matches. |
+| `MODEL-OUTPUT-CALIBRATION` test | Mutation-verified: fails on historical data, passes clean. |
+| 4 latent O/U bugs | Settlement lost-on-both-sides; `store_odds` handicap_line; 1xBet poisoning; isotonic key. |
+| `ALPHA-IS-AN-UNREAD-INSTRUMENT` (mig 338) | `ll_model`/`ll_market` now recorded instead of printed and discarded. |
+| `PERF-CHART-EVENT-MARKERS` | Bug window visible; found the old markers had silently not rendered in months. |
+| 2 stale CI tests | CI was red before this session and is now green at 960. |
+
+## Sequencing
+
+```
+Track M:  1 → 2 → 3 → 4        (the leak gates the retrain gates the answer)
+                    ↘ 8
+Track B:  5 → 6 → 7            (independent; start immediately)
+
+Everything 10-20 is parallelisable once its track's head is clear.
+```
+
+**Do not:** stake or publish the sharp anchor, re-derive the 2.2 odds floor from
+the window that produced it, run the exploratory grid on five days of data, or
+read a post-retrain drop in offline metrics as a regression.
