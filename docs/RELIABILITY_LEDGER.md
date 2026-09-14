@@ -485,3 +485,43 @@ itself a fix for a silent-failure trap and must not be undone by this one).
 from *"I measured, and it is bad."* Collapsing the two costs you the alert
 channel — an operator who sees the same red every night stops reading it, and
 that is exactly when the real 65-minute outage goes unnoticed.
+
+---
+
+### A value that is available at training time but not at prediction time
+
+**Added 2026-09-14 (ELO-FORM-LEAK).** The fourth instance this year of one shape:
+*computed correctly, consumed at the wrong moment.*
+
+**The tell.** A feature, model or metric that performs impossibly well. Not
+"surprisingly" well — **impossibly**: better than a benchmark that has strictly
+more information. `elo_diff` scored AUC 0.7396 against a de-vigged market at
+0.7270. A rating built only from past matches cannot out-predict a market that
+knows everything the rating knows plus team news, lineups and money flow. The
+number was not too good to be true; it was *logically impossible*, and it sat in
+production for four months.
+
+**Why nothing caught it.** Every offline evaluator scored the leaked feature and
+reported a strong model. The leak was invisible to all of them because they all
+read the same contaminated table. **A shared input is a shared blind spot** —
+adding more evaluators against the same source adds no coverage.
+
+**Related instances, same shape, all 2026:**
+
+| | What was computed | When it was consumed |
+|---|---|---|
+| `WEEKLY-EVAL-OU-INVERTED` | over-2.5 probability | scored against P(under) |
+| `1X2-CLASS-ORDER-INVERTED` | correct class probabilities | read by position, inverted |
+| `OU-CALIBRATOR-DOMAIN-MISMATCH` | a curve fitted on raw probs | applied to shrunk probs |
+| `ELO-FORM-LEAK` | post-match ELO | read as a pre-match feature |
+
+**The guards that now exist.** `LEAKAGE-CANARY` (a benchmark no pre-match feature
+may beat), `MODEL-OUTPUT-CALIBRATION` (scores what production actually emitted,
+so it cannot share an evaluator's blind spot), and `ELO-FORM-LEAK` (asserts the
+date bound both in source and against live data).
+
+**The generalisable rule.** For every input, ask *when* its value becomes known,
+not just whether it is correct. A date-bounded read of a table that is written
+after the event is the specific pattern; `<=` where `<` is meant is the specific
+bug. Any join to a table updated post-match deserves this question, and the
+answer belongs in a comment next to the bound.

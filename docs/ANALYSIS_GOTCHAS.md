@@ -2090,3 +2090,38 @@ SUM(pnl)
 
 Coverage is ~85% of settled rows, so keep the `COALESCE` fallback rather than dropping
 uncovered picks — silently shrinking the population is its own bias.
+
+---
+
+### A feature that beats the market is reading the answer — run the canary
+
+**Added 2026-09-14 (ELO-FORM-LEAK).** Before trusting any feature, any offline
+eval, or any model comparison:
+
+```bash
+python3 scripts/leakage_canary.py --outcome home   # also: over, btts
+```
+
+It ranks every numeric `match_feature_vectors` column by |corr| with a settled
+outcome and flags any **non-market** feature that reaches the strongest
+market-derived one. The rule it encodes is hard: the de-vigged market is
+thousands of informed participants pricing the same fixture with at least the
+information we hold, so **no strictly pre-match feature can out-discriminate it**.
+A column that does is not brilliant, it is leaking.
+
+`elo_diff` scored |corr| **0.4116** against a market ceiling of **0.3658** and was
+the model's largest input for four months. Nothing flagged it because nothing was
+looking.
+
+Two things the canary deliberately excludes, both learned by getting them wrong
+first:
+- **Market-derived columns** (`pinnacle_*`, `implied_*`, `opening_*`, drift, CLV…)
+  are *expected* to approach the ceiling — they are the market.
+- **Label columns** (`total_goals`, `match_outcome`, `score_*`…) live in the same
+  table and trivially correlate. `total_goals` reads 0.761 against over-2.5
+  because it *is* the total. Verified against the live bundle's `feature_cols.pkl`
+  that none of them is actually a feature.
+
+Current state: `over` and `btts` are clean; `home` flags only `elo_diff`, pending
+the stored-row rebuild (master task #2). The smoke test `LEAKAGE-CANARY` pins that
+known set, so a **new** leak fails CI.

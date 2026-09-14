@@ -40535,5 +40535,79 @@ def test_elo_form_no_leak():
 
 
 
+@test("LEAKAGE-CANARY — no pre-match feature may out-discriminate the market")
+def test_leakage_canary():
+    """Generic guard for the class of defect that cost the most this year.
+
+    THE RULE: no strictly pre-match feature can out-discriminate the de-vigged
+    market. The market is thousands of informed participants pricing the same
+    fixture with at least the information we hold. A single column that beats it
+    is not a brilliant feature — it is reading the result. Every leak found here
+    has shown exactly that signature, and ELO-FORM-LEAK ran from May to September
+    because nothing was looking for it.
+
+    Known exceptions are listed, not tolerated silently. The list should SHRINK.
+
+    Deliberately pins the known set rather than demanding zero: `elo_diff` is
+    still flagged because the stored `match_feature_vectors` rows remain leaked
+    until the rebuild (master task #2). Demanding zero today would be
+    red-on-arrival, and a red-on-arrival test gets ignored — which is how the
+    original survived.
+    """
+    from workers.api_clients.db import execute_query
+
+    # Stored MFV rows are still leaked pending the task #2 rebuild.
+    KNOWN = {"elo_diff"}
+
+    MARKET_DERIVED = ("pinnacle_", "implied_", "market_", "opening_", "closing_",
+                      "odds_", "bookmaker_disagreement", "sharp_", "line_velocity",
+                      "drift", "steam", "clv", "vig", "overround")
+    LABEL_COLS = {"total_goals", "match_outcome", "score_home", "score_away",
+                  "over_25", "under_25", "btts", "result",
+                  "ht_score_home", "ht_score_away"}
+
+    cols = [r["column_name"] for r in execute_query(
+        """SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'match_feature_vectors'
+              AND data_type IN ('double precision','numeric','integer','real',
+                                'smallint','bigint')""")]
+
+    scores, market_best = {}, 0.0
+    for col in cols:
+        if col in LABEL_COLS:
+            continue
+        rows = execute_query(
+            f"""SELECT count(*) AS n,
+                       corr(mfv."{col}"::float,
+                            CASE WHEN m.score_home > m.score_away THEN 1.0 ELSE 0.0 END) AS c
+                  FROM match_feature_vectors mfv
+                  JOIN matches m ON m.id = mfv.match_id
+                 WHERE m.status = 'finished' AND m.score_home IS NOT NULL
+                   AND m.date >= NOW() - INTERVAL '90 days'
+                   AND mfv."{col}" IS NOT NULL""")
+        if not rows or not rows[0]["n"] or rows[0]["n"] < 2000 or rows[0]["c"] is None:
+            continue
+        v = abs(float(rows[0]["c"]))
+        if any(tok in col for tok in MARKET_DERIVED):
+            market_best = max(market_best, v)
+        else:
+            scores[col] = v
+
+    if not scores or market_best <= 0:
+        raise SkipTest("not enough settled feature rows to run the canary")
+
+    flagged = {c for c, v in scores.items() if v >= market_best}
+    unexpected = flagged - KNOWN
+    assert not unexpected, (
+        "feature(s) out-discriminate the de-vigged market — the leakage "
+        "signature: " +
+        ", ".join(f"{c} (|corr|={scores[c]:.4f} vs market {market_best:.4f})"
+                  for c in sorted(unexpected)) +
+        ". Check the date bound on whatever writes them before trusting any model "
+        "trained on them. See scripts/leakage_canary.py and ELO-FORM-LEAK."
+    )
+
+
+
 if __name__ == "__main__":
     main()

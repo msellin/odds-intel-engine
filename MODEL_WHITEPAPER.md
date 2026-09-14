@@ -1848,3 +1848,41 @@ Reverted in migration 335 (rows preserved in
 `scripts/fit_platt.py` from `simulated_bets.calibrated_prob`, the correct domain, and its
 parameters show no step change across 2026-09-03.
 
+---
+
+### ELO and form were leaked into training until 2026-09-14
+
+`update_elo_ratings()` stamps **post-match** ELO with the date the job runs, while
+processing yesterday's *and* today's finished matches, at 21:00/23:30 — before the
+ML ETL. The feature builder read `team_elo_daily WHERE date <= match_date`, so a
+rating that had already absorbed match *D* was handed to the model as an input for
+predicting match *D*. `team_form_cache` leaked the same way from the other end:
+`compute_team_form_from_db(tid, today_str)` bounds on `date < today T23:59:59`,
+which includes today's fixture.
+
+Measured on 22,290 matches (2026-07-01 – 09-10):
+
+| `elo_diff` source | AUC vs home-win |
+|---|---|
+| stored (`date <= match_date`) | **0.7396** |
+| strictly pre-match (`date < match_date`) | **0.6171** |
+| de-vigged market | 0.7270 |
+
+**80.2%** of stored feature rows differ from their strictly-pre-match value. The
+diagnostic is that 0.7396 is *above the market* — nothing strictly pre-match can
+out-predict the market, so a feature that does is reading the answer. `elo_*` and
+`form_ppg_*` carry roughly **39%** and **5.6%** of 1X2 model importance, so the
+model's largest input was partly the label.
+
+**⚠️ Consequences for every model figure in this document dated before
+2026-09-14.** Offline evaluations, version comparisons and promotion decisions in
+the sections above were computed on leaked features. They are not evidence of
+model quality and should not be quoted. The holdout numbers that look strongest
+are the ones most likely to be measuring the leak.
+
+The read is fixed. The stored history is **not** yet rebuilt, and no model has been
+retrained — see `docs/MASTER_TASK_LIST_2026_09_14.md` tasks #2 and #3. Fixing the
+read without retraining would make serving *worse*: the live bundles learned their
+weights against leaked-scale ELO (AUC 0.74) and are out of distribution on clean
+input (AUC 0.62). Expect offline metrics to **fall** after the retrain; that is the
+first honest measurement, not a regression.
