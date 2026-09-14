@@ -27,6 +27,19 @@ actually store today. "Can we model it, settle it, and anchor its edge?"
 | **Team totals** | 🟡 derivable, unvalidated | derivable from goals model | final score ✅ | ✅ (`team_total_*`) | economics/validation only |
 | **Player props** | ⏸ defer | NEW player model | player events + lineups (partial) | mostly none | biggest data lift — defer |
 
+> **⚠️ REFINED 2026-09-14 (`docs/OWN_MARKET_EXPANSION_2026_09_14.md`).** The
+> "corners/cards ~32%, AF ceiling" figure in the table above (and in takeaway 2
+> below) is correct for the WHOLE fixture
+> universe (measured again: 31.4% all-time, 16.5% over the last 17 days) and is
+> still the right reason not to train a corner model on everything. It is NOT the
+> reason a corners BOT cannot be evaluated: on the slate such a bot could bet —
+> fixtures both Pinnacle and Coolbet/Epicbet quote corners on — the settleable
+> rate is **92.2%** (cards 97.6%). Corners fails the OWN gate stack at **gate 4**
+> (no measurable edge: n=51, +4.0%, CI [−38.8,+46.9], ~15 years to power), and
+> cards at settlement CORRECTNESS (−4.1pp vs the sharp anchor), not at coverage.
+> Separately, `match_stats.*_ht` holds FULL-MATCH values on 54% of rows — any 1H
+> stat market here is unusable until that parser fallback is removed.
+
 ## The three takeaways
 
 1. **Goals-based markets are almost free.** BTTS, DC, AH, team-totals are

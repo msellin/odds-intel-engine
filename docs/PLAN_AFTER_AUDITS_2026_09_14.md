@@ -106,6 +106,11 @@ The OWN audit's verdict, which I accept:
   **different quantities** (implied P(over) on `cards_ou_65`: Coolbet 0.176 vs
   Bet365 0.482). Building the cards bot would have been betting a units mismatch.
 * Corners are settleable on only **16.7%** of finished fixtures.
+  > **⚠️ CORRECTED 2026-09-14 — wrong denominator.** That is the rate over ALL
+  > finished fixtures; on the slate a bot could actually bet (Pinnacle AND
+  > Coolbet/Epicbet both quoting corners) it is **92.2%**. Corners still fails,
+  > at gate 4 for lack of any measurable edge, not at settleability. See
+  > `docs/OWN_MARKET_EXPANSION_2026_09_14.md`.
 * Confirmed real money: **139 settled placements, €1,390 staked, −€97.50,
   ROI −7.01%**.
 * Confirming a true +3% ROI at 80% power needs **≈15,600 settled bets** ≈ 9 years

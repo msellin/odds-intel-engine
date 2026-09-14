@@ -41601,5 +41601,123 @@ def test_shadow_clv_no_arbitrary_fallback():
     )
 
 
+
+
+@test("OWN-MARKET-EXPANSION-GUARDS — the market gate sweep pairs, aligns and grades correctly")
+def test_own_market_expansion_sweep():
+    """OWN-MARKET-EXPANSION (2026-09-14) — `scripts/own_market_expansion_sweep.py`,
+    `docs/OWN_MARKET_EXPANSION_2026_09_14.md`. The four-gate study of which
+    ADDITIONAL markets could carry a sharp edge at Coolbet/Epicbet/Unibet-Site.
+
+    Three properties are pinned, each because losing it turns a negative result
+    into a fake positive one or vice versa:
+
+    (a) **The same-quantity check is PAIRED on fixtures.** ANALYSIS_GOTCHAS §10:
+        each book prices a different slate, so comparing two books' median
+        P(over) compares their slates. Run UNPAIRED, this check REJECTED O/U
+        1.5, 3.5 and 4.5 — three markets whose books agree to within 0.009 once
+        paired. An unpaired version of this gate would silently kill honest
+        markets and, worse, would "confirm" the cards trap for the wrong reason.
+
+    (b) **Asian handicap grades HOME-perspective for BOTH sides** (§53). The
+        sign error there once produced a +142% TEST ROI. Checked behaviourally
+        on a worked scoreline, not by grepping for a comment.
+
+    (c) **The window assembly agrees with the kill criterion** (§63), the
+        production outlier multipliers are the pipeline's own (§9), and the
+        junk-anchor negative control exists. `assemble` here is generalised over
+        the selection list, so its 1x2 behaviour must still match
+        `own_path_kill_criterion.assemble` outcome-for-outcome.
+    """
+    import datetime as _dt
+    import random as _rnd
+    import scripts.own_market_expansion_sweep as mx
+    import scripts.own_path_kill_criterion as kc
+
+    # --- (a) the quantity check must be paired --------------------------------
+    src = _engine_path("scripts/own_market_expansion_sweep.py").read_text()
+    qsrc = src[src.index("def gate_same_quantity("):src.index("def gate_settlement_calibration(")]
+    assert "set(anchor) & set(bybook" in qsrc, (
+        "the level test must intersect the anchor's fixtures with the book's and "
+        "median the PER-FIXTURE difference. An unpaired median compares slates, "
+        "not prices (ANALYSIS_GOTCHAS §10) — and it rejects O/U 1.5/3.5/4.5, "
+        "which agree to within 0.009 when paired.")
+    assert "PAIRED ON FIXTURES" in qsrc, (
+        "the pairing requirement must stay documented where the next reader of "
+        "this function will see it")
+
+    # --- (b) AH grading, home-perspective for both sides (§53) ---------------
+    ah = mx.MARKETS_BY_KEY["asian_handicap"]
+    f = {"score_home": 2, "score_away": 0, "status": "finished",
+         "ht_score_home": None, "ht_score_away": None,
+         "corners_home": None, "corners_away": None,
+         "corners_home_ht": None, "corners_away_ht": None, "n_cards": None}
+    # home -1.5: margin 2 > spread 1.5 -> home covers, away does not
+    assert mx.grade(ah, "home", (None, -1.5), f) == 1.0
+    assert mx.grade(ah, "away", (None, -1.5), f) == -1.0
+    # home -2.0: margin exactly 2 -> PUSH on both sides, never a loss
+    assert mx.grade(ah, "home", (None, -2.0), f) == 0.0
+    assert mx.grade(ah, "away", (None, -2.0), f) == 0.0
+    # home -2.5: margin 2 < spread 2.5 -> away covers
+    assert mx.grade(ah, "home", (None, -2.5), f) == -1.0
+    assert mx.grade(ah, "away", (None, -2.5), f) == 1.0
+    # home -2.25 is half the stake on -2.0 and half on -2.5. A 2-0 win pushes
+    # the first and loses the second, so HOME is -0.5 and AWAY is +0.5 — the
+    # half-stake case Coolbet does not offer but Epicbet and Pinnacle do.
+    assert mx.grade(ah, "home", (None, -2.25), f) == -0.5
+    assert mx.grade(ah, "away", (None, -2.25), f) == 0.5
+    # and at -1.75 the same 2-0 gives home a half win
+    assert mx.grade(ah, "home", (None, -1.75), f) == 0.5
+    assert mx.grade(ah, "away", (None, -1.75), f) == -0.5
+
+    # a whole-number TOTAL pushes; it is not a loss on both sides
+    ou = mx.MARKETS_BY_KEY["over_under_25"]
+    assert mx.grade(ou, "over", (None, 2.0), f) == 0.0
+    assert mx.grade(ou, "over", (None, 1.5), f) == 1.0
+    assert mx.grade(ou, "under", (None, 1.5), f) == -1.0
+
+    # --- (c) assembly, guards, control ---------------------------------------
+    rnd = _rnd.Random(909)
+    base = _dt.datetime(2026, 9, 14, 9, 0, tzinfo=_dt.timezone.utc)
+    for _ in range(30):
+        rows = []
+        for _ in range(rnd.randint(3, 12)):
+            off = rnd.choice([0.0, 0.05, 1.9, 2.1, 7.0]) + rnd.random()
+            rows.append((base + _dt.timedelta(minutes=off),
+                         rnd.choice(["home", "draw", "away"]),
+                         round(1.2 + rnd.random() * 6, 2)))
+        mine = mx.assemble(rows, ("home", "draw", "away"))
+        theirs = kc.assemble(rows)
+        assert mine == theirs, (
+            "the generalised assemble must reproduce own_path_kill_criterion's "
+            "1x2 behaviour exactly — §63's window assembly is the thing that "
+            "made the cross-book comparison runnable at all")
+
+    assert mx.ANCHOR_BOOK == "Pinnacle"
+    assert mx.EXEC_BOOKS == ("Coolbet", "Epicbet", "Unibet-Site"), (
+        "the bettable set is a WHITELIST of self-scraped books")
+    for phantom in ("Unibet", "Unibet-Kambi", "Max", "Avg"):
+        assert phantom in mx.EXCLUDED_BOOKS, (
+            f"{phantom} is a phantom/synthetic feed and can never be a price")
+    assert mx.OUTLIER_MULT_3WAY == 1.35 and mx.OUTLIER_MULT_2WAY == 1.30, (
+        "the sweep must apply the pipeline's own ODDS-OUTLIER-FILTER multipliers "
+        "(§9) — without them the O/U 2.5 control reads +16.3% instead of the "
+        "+6.1% that matches the live bot")
+    assert "scramble" in src and "DIFFERENT fixture" in src, (
+        "the junk-anchor negative control is what makes every other number "
+        "readable; without it a broken harness is undetectable")
+    assert "def flat_control" in src and "-v / (1 + v)" in src, (
+        "the FLAT junk-anchor control is the one with a closed form and is the "
+        "only harness-validity check that can be read against a known number")
+
+    doc = _engine_path("docs/OWN_MARKET_EXPANSION_2026_09_14.md")
+    assert doc.exists(), "the sweep's gate table must be committed with the script"
+    body = doc.read_text()
+    assert "92.2%" in body and "16.7%" in body, (
+        "the report must carry BOTH corners settleability figures and say which "
+        "denominator each belongs to — the 16.7% claim is what closed corners "
+        "for the wrong reason")
+
+
 if __name__ == "__main__":
     main()

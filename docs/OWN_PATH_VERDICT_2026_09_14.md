@@ -102,8 +102,26 @@ simultaneity.** Assemble per-book quotes from a window before comparing.
   quantities** (implied P(over) on `cards_ou_65`: Coolbet 0.176, Epicbet 0.270,
   Pinnacle 0.346, Bet365 0.482). Building the cards bot the opportunity count
   invited would have meant betting a units mismatch.
+  > **⚠️ REFINED 2026-09-14 — right verdict, wrong evidence.** Those figures are
+  > UNPAIRED medians over disjoint slates, and Pinnacle quotes cards 6.5 on 21
+  > fixtures in 17 days. PAIRED on shared fixtures, Coolbet/Epicbet/Pinnacle agree
+  > to within **0.011** at every cards line dense enough to pair (2.5–5.5). The
+  > flat-ladder pathology is real but belongs to **Bet365 and 1xBet**, which we do
+  > not bet — it also poisons their corners feed. The sound reason to kill cards is
+  > SETTLEMENT: our card count realises **−4.1pp fewer overs (z=−3.0)** than the
+  > sharp book implies, and the rule's bets are overs at 5.0–5.5 — **−76% ROI on
+  > n=22**. See `docs/OWN_MARKET_EXPANSION_2026_09_14.md`.
 * Corners are settleable on only **16.7%** of finished fixtures — a corners bot
   cannot be *evaluated* on 5 of every 6 bets it places.
+  > **⚠️ CORRECTED 2026-09-14 — wrong denominator.** 16.5% is the rate over ALL
+  > finished fixtures. A bot can only bet fixtures somebody quotes corners on, and
+  > on that slate the rate is **92.2%** (482 of 523 fixtures both Pinnacle and
+  > Coolbet/Epicbet price; 66.5% on Pinnacle's slate alone, 81.7% on ours).
+  > Corners still fails — but at **gate 4 (no measurable edge: n=51, +4.0%,
+  > CI [−38.8,+46.9], ~15 years to power)**, not at settleability. A coverage
+  > percentage measured over a population you cannot bet measures your slate,
+  > not your ability to settle — ANALYSIS_GOTCHAS §10's sibling. See
+  > `docs/OWN_MARKET_EXPANSION_2026_09_14.md`.
 * Confirmed real money: **139 settled placements, €1,390 staked, −€97.50,
   ROI −7.01%.**
 * Confirming a true +3% ROI at 80% power needs **≈15,600 settled bets** ≈ 9
