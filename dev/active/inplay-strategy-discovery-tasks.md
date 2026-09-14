@@ -12,3 +12,9 @@
 - [ ] Write `docs/INPLAY_STRATEGY_CANDIDATES_2026_09_14.md`
 - [ ] Analyse the overnight Epicbet capture (morning)
 - [ ] Update `PRIORITY_QUEUE.md` + commit
+- [x] Edge estimate vs market price (quiet triggers only) — 714,827 priced snapshots
+- [x] Write `docs/INPLAY_STRATEGY_CANDIDATES_2026_09_14.md`
+- [x] Commit + push (1f7bba50)
+- [x] **Robustness-check B1 — IT FAILED. Withdrawn same night; docs + queue corrected**
+- [ ] Analyse the overnight Epicbet capture (morning)
+- [ ] Look for a trigger with a MECHANISM rather than a lucky bucket

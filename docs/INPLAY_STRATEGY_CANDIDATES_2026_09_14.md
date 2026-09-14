@@ -4,7 +4,35 @@ Written 2026-09-14 overnight. Companion to
 `docs/INPLAY_BOOK_COMPARISON_2026_09_14.md` (which books, what prices) — this one
 asks **what to bet**.
 
-> **Headline: the owner's seed idea is REFUTED, and its mirror is the candidate.**
+> ## ⚠️ CORRECTION, same night — B1 DID NOT SURVIVE. Read this before the rest.
+>
+> The "+9.0% ROI at minute 40" result below was a **narrow-bucket artefact** and is
+> **withdrawn**. Widening the entry to a window a bot could actually use (38'–47'
+> rather than a lucky 5-minute bucket) collapses it to **+2.3% ROI, CI [−2.8, +6.9]
+> — includes zero**, on a *larger* sample (n=1,086).
+>
+> The neighbouring windows show a spike, not a plateau, which is the signature of noise:
+>
+> | entry window | n | ROI | 95% CI |
+> |---|---|---|---|
+> | 28'–37' | 2,650 | −4.9% | [−8.0, −1.7] |
+> | 33'–42' | 1,699 | −1.1% | [−4.9, +3.0] |
+> | **38'–47'** | 1,086 | **+2.3%** | **[−2.8, +6.9]** |
+> | 43'–52' | 650 | −1.0% | [−7.0, +4.4] |
+> | 48'–57' | 206 | −5.0% | [−14.5, +5.7] |
+>
+> Nor does it survive any other cut: first half of the sample +0.9% [−5.1,+8.2],
+> second half +3.5% [−3.7,+10.4], non-top-5 +2.0% [−3.1,+7.3], strongest pre-match
+> filter +3.1% [−2.8,+8.8]. Every interval contains zero.
+>
+> **One positive cell out of ~50 tested is exactly what multiple testing produces on
+> its own.** A real effect does not switch off at minute 45 and back on at nothing.
+> **There is currently NO validated positive in-play strategy in this document.**
+>
+> What survives is the *negative* findings, which are the valuable part: they are
+> monotone across many buckets and large samples, and they tell you what not to build.
+>
+> **Headline: the owner's seed idea is REFUTED, and its mirror does not replace it.**
 > Backing OVER in a goalless high-total game loses at every entry minute and loses
 > *more* the longer you wait (−2.9% ROI at 10', −24.4% at 40'). Backing the UNDER in
 > the same spot is the side with the edge (+7.7% ROI at 40', CI [+1.2, +14.1]).
@@ -103,7 +131,7 @@ book stops paying you to wait, but the game keeps running out of time. **You are
 "waiting for better odds" — after about half an hour you are waiting for the same
 odds on a worse bet.**
 
-### B1 — the same spot, BACK THE UNDER ✅ **the candidate**
+### B1 — the same spot, BACK THE UNDER ❌ **WITHDRAWN (see the correction at the top)**
 
 | entry | n | hit | mkt price | implied | edge | ROI | 95% CI |
 |---|---|---|---|---|---|---|---|
@@ -121,8 +149,9 @@ The gradient is the encouraging part — edge climbs steadily (−3.9 → −2.8
 why A1 fails: the book stops marking the total down around the half-hour, which
 overprices the over and therefore **underprices the under**.
 
-⚠️ **Not yet a bot.** n=538, one significant cell out of ~50 tested, measured against
-a stale wide aggregate rather than a placeable price.
+⚠️ **WITHDRAWN.** The gradient looked encouraging, but it does not survive a realistic
+entry window (38'–47' → +2.3%, CI [−2.8, +6.9]) or any time/league/threshold split.
+It was one significant cell out of ~50 tested. Do not build it.
 
 ### D5 — "the draw is always mispriced in-play" ❌ **folk wisdom, refuted**
 
@@ -138,9 +167,10 @@ on the board.
    measured against AF's stale aggregate. Epicbet is the placeable book and its live
    O/U margin (6.44%) is close enough to AF's (6.5%) that the comparison should carry
    — but it must be redone before a cent moves.
-2. **Pre-register B1 before looking again.** Entry: goalless, pre-match over-2.5
-   ≤ 1.85, minute 38–47, back under 2.5. Kill criterion: stop at n=400 placed or
-   30 days; dead if the lower CI bound on ROI is below 0.
+2. ~~Pre-register B1.~~ **Withdrawn — it failed its robustness check the same night.**
+   The lesson is procedural and worth keeping: *always widen the trigger to the window
+   a bot would really use before believing a cell.* A 5-minute bucket that a bot would
+   never restrict itself to is not a strategy, it is a slice of noise.
 3. **Do not build A1.** It is refuted with a monotone trend on large samples.
 4. **Collect the state we are missing.** `shots_on_target` is 1.2% filled and
    `model_xg` 0%. Every trigger above is (minute, score) only — shots and xG are the

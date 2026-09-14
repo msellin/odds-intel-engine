@@ -62,3 +62,18 @@ carrying AF live prices ARE usable to estimate edge — but only on quiet trigge
 ## Not done, deliberately
 
 * Nothing deployed to the production scheduler. No migration pushed. No bot placing.
+
+## UPDATE — B1 withdrawn (same night)
+
+The "+9.0% ROI at minute 40" was a **narrow-bucket artefact**. Widening the entry to
+38'–47' — the window a bot would actually use — gives **+2.3%, CI [−2.8,+6.9]** on a
+*larger* sample, and the neighbouring windows are a spike, not a plateau
+(−4.9 / −1.1 / **+2.3** / −1.0 / −5.0). It fails every other split too.
+
+**No positive in-play strategy currently survives.** The negatives do, and they are the
+deliverable: they are monotone across many buckets on large samples.
+
+**The procedural rule to carry forward:** widen a trigger to the realistic betting
+window BEFORE believing a cell. ~50 cells were tested; one significant cell is what
+multiple testing produces on its own. `<scratch>/robust.py` is the check — run it on
+every future candidate before it gets a line in a doc.
