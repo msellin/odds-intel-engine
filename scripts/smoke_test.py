@@ -42478,5 +42478,72 @@ def test_own_anchor_gate_verification_guards():
     )
 
 
+@test("INPLAY-EPICBET-COLLECTOR-GUARDS — live endpoint, aliased names, suspension-as-data, freshness")
+def test_inplay_epicbet_collector_guards():
+    """INPLAY-EPICBET-COLLECTOR-GUARDS (2026-09-14). The overnight in-play
+    collector has four properties that are each one character away from
+    silently producing a useless or misleading dataset. Pin all four.
+
+    (1) It must call the LIVE odds endpoint. `activeOdds.getPreMatchByMarketIds`
+        answers HTTP 200 on an in-play fixture with that fixture's STALE
+        PRE-MATCH prices -- not an error, just wrong numbers, which is the
+        worst failure mode available here.
+
+    (2) The AF team-name lookup must ALIAS its columns. `SELECT ht.name,
+        at2.name` returns two columns both called "name" in a dict row, so the
+        away team overwrites the home team, every fuzzy match then scores
+        against the wrong pair, and `minute`/`score` come back NULL on every
+        row. This shipped and was caught only by eyeballing the output.
+
+    (3) Suspension must be recorded as DATA, not as an absent row. Both goals
+        observed on 2026-09-14 had the book pull its market BEFORE the score
+        feed reported the goal, so "the market was closed" is one of the more
+        informative states in the file.
+
+    (4) `af_age_s` must be stored on every row. The existing 2.2M-row
+        `live_match_snapshots` table cannot answer "was this price fresh?",
+        which is exactly why its stored odds are unusable.
+    """
+    import os, re
+    src = open(os.path.join(os.path.dirname(__file__), "..", "workers", "jobs",
+                            "inplay_epicbet_collector.py")).read()
+
+    assert "activeOdds.getLiveBetByMarketIds" in src, (
+        "the collector must read the LIVE odds endpoint"
+    )
+    assert "getPreMatchByMarketIds" not in src.split("API shape")[-1].replace(
+        "NOT `activeOdds.getPreMatchByMarketIds`", ""
+    ), (
+        "the PRE-MATCH odds endpoint must not be used for in-play capture -- it "
+        "returns 200 with stale pre-match prices on a live fixture"
+    )
+
+    m = re.search(r"def load_af_names.*?(?=\ndef )", src, re.S)
+    assert m, "load_af_names() disappeared"
+    body = m.group(0)
+    assert "AS home_name" in body and "AS away_name" in body, (
+        "ht.name / at2.name must be ALIASED -- unaliased they collide as 'name' "
+        "in a dict row and the away team silently overwrites the home team, "
+        "which nulls minute/score on every collected row"
+    )
+
+    assert '"suspended"' in src, (
+        "a market present but unpriced must be written with suspended=True, not "
+        "dropped -- books suspend BEFORE the score feed reports a goal"
+    )
+    assert '"af_age_s"' in src, (
+        "every row must carry the age of the game-state feed, so no future "
+        "reader has to re-derive whether a price was fresh"
+    )
+
+    # The collector is read-only: discovery work must never write odds rows.
+    for forbidden in ("store_odds", "store_book_odds_snapshots", "INSERT INTO",
+                      "store_real_bet"):
+        assert forbidden not in src, (
+            f"collector must stay read-only; found {forbidden!r}"
+        )
+
+
+
 if __name__ == "__main__":
     main()
