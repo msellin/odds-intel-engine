@@ -144,3 +144,45 @@ python3 scripts/own_path_kill_criterion.py --days 30 --align-min 15
 ```
 
 Exit code 1 = kill criterion met. Read-only.
+
+---
+
+## CORRECTION (same day) — real money was live until 2026-09-13, not dormant
+
+Migration `343_own_path_pause_real_money.sql` justifies the pause partly on the
+claim that *"no real bet has been placed since 2026-09-03"*. **That claim is
+wrong.** It came from reading the tail of a `ORDER BY ... DESC` result and
+mistaking the oldest rows for the newest. The correction does not weaken the
+case for pausing — it strengthens it considerably.
+
+Real money placed in the days immediately before the pause:
+
+| date | bets | staked | P&L |
+|---|---|---|---|
+| 2026-09-13 | 3 | €30.00 | −€30.00 |
+| 2026-09-12 | 7 | €70.00 | −€9.10 |
+| 2026-09-11 | 8 | €80.00 | −€20.50 |
+| 2026-09-10 | 1 | €10.00 | −€10.00 |
+| 2026-09-09 | 6 | €60.00 | −€60.00 |
+
+**22 real bets, €220 staked, −€99.60, ROI −45.27%** (`placed_real = TRUE`).
+
+Set against the all-time settled real-money record — **142 bets, €1,420 staked,
+−€97.50, ROI −6.87%** — the arithmetic is stark: **essentially the entire
+all-time loss was incurred in those final five days.** Before 2026-09-09 the
+real-money book was approximately break-even.
+
+That window is exactly the O/U calibrator's last days of operation before
+migration 335 removed it. The bug's real-money damage was heavily concentrated
+at the end, and the pause landed one day after the worst of it.
+
+**Two lessons worth keeping:**
+
+1. **The placer was never dormant.** It looked dormant only because of the
+   reading error above. Anyone reasoning about whether this system is "live"
+   should query it, not infer it — the same reflex `ENGINE-DEPLOY-2026-08-24`
+   records for deploy state ("assume nothing about what is live on the box").
+2. **A concentrated loss window is a signal, not noise.** −45% over 22 bets is
+   not variance around a −7% mean; it is a different regime, and it lines up
+   exactly with the defect's final days. When a ledger's damage clusters in
+   time, look for a cause with the same timestamps.
