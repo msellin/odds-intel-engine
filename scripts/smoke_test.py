@@ -40609,5 +40609,47 @@ def test_leakage_canary():
 
 
 
+@test("NO-PICKS-IS-NOT-NO-EVALUATION — an empty but working pipeline must not alarm")
+def test_no_picks_requires_no_pipeline_run():
+    """The Coolbet watchdog's NO_PICKS state used `priced >= 20` as its proxy for
+    "this is not a quiet day". That answers whether PRICES exist, not whether the
+    pipeline EVALUATED them — and those came apart the moment pick volume
+    legitimately fell.
+
+    OU-CALIBRATOR-DOMAIN-MISMATCH removed a curve that had been manufacturing
+    roughly 10x the picks, so zero is now a normal outcome: on 2026-09-14 the best
+    available O/U edge was +5.3% against an 8% floor, and of 87 1x2 candidates the
+    Pinnacle veto killed 11 and one passed. With prices present and nothing
+    clearing, the old condition fired on a correctly-working pipeline — it did,
+    in CI, the same day.
+
+    The honest distinction is whether the pipeline RAN. Ran and wrote nothing =
+    the gate rejected everything = silence is correct. Has not run = the outage
+    this check exists for.
+
+    Pinned here because it is a standing trap for any alerting built on volume:
+    **a fix that correctly reduces output will trip a watchdog that assumes
+    output.** Every gate tightening from here has the same hazard.
+    """
+    src = _engine_path("workers/jobs/coolbet_feed_watchdog.py").read_text()
+    code = _strip_prose(src)
+
+    assert "_betting_pipeline_ran_recently" in code, (
+        "NO_PICKS must consider whether the betting pipeline actually ran"
+    )
+    assert "not _betting_pipeline_ran_recently()" in code, (
+        "the pipeline-recency check must GATE the NO_PICKS return, not merely exist"
+    )
+    # Fail-closed: a broken lookup must not silence an incident.
+    i = src.index("def _betting_pipeline_ran_recently")
+    j = src.index("\ndef ", i + 10)
+    body = src[i:j]
+    assert "return False" in body.split("except")[-1], (
+        "the recency lookup must fail CLOSED (stay alarming) on error — failing "
+        "open would let a DB blip silence a genuine outage"
+    )
+
+
+
 if __name__ == "__main__":
     main()

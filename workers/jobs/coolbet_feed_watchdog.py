@@ -226,6 +226,43 @@ def _cdp_up() -> bool:
         return False
 
 
+def _betting_pipeline_ran_recently() -> bool:
+    """True if the betting pipeline has COMPLETED inside the pick-staleness window.
+
+    NO-PICKS-IS-NOT-NO-EVALUATION (2026-09-14). `priced >= 20` was the proxy for
+    "this is not a quiet day", but it answers the wrong question: it measures
+    whether PRICES exist, not whether the pipeline EVALUATED them. Those came
+    apart the moment pick volume legitimately fell — OU-CALIBRATOR-DOMAIN-MISMATCH
+    removed a curve that had been manufacturing ~10x the picks, so the honest
+    output on a normal day is now sometimes zero (measured: of 161 O/U selections
+    on 2026-09-14 the best available edge was +5.3% against an 8% floor, and of 87
+    1x2 candidates the Pinnacle veto killed 11 and one passed).
+
+    With prices present and nothing clearing, the old condition fires on a
+    correctly-working pipeline. The distinction that actually matters is whether
+    the pipeline RAN: if it ran and wrote nothing, the gate rejected everything and
+    that is honest silence; if it has not run, that is the outage this check exists
+    to catch.
+
+    Fails CLOSED (returns False -> stay alarming) on any error, matching the rule
+    used by every other lookup here: a broken lookup must not SILENCE an incident
+    any more than it may manufacture one.
+    """
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """SELECT count(*) AS n FROM pipeline_runs
+                WHERE job_name IN ('betting_pipeline', 'betting_refresh')
+                  AND status = 'completed'
+                  AND started_at > now() - (%s || ' hours')::interval""",
+            [str(int(PICKS_STALE_H))],
+        )
+        return bool(rows and rows[0]["n"])
+    except Exception as e:  # noqa: BLE001
+        log.warning("betting-pipeline recency lookup failed (staying loud): %s", e)
+        return False
+
+
 def classify() -> tuple[str, str]:
     """Return (state, human-readable reason). Pure — takes no action."""
     odds_h = _hours_since_last_odds()
@@ -236,12 +273,14 @@ def classify() -> tuple[str, str]:
         # bot is the failure this check exists for.
         picks_h, priced = _picks_gap()
         if (_picks_bot_active() and picks_h is not None and picks_h > PICKS_STALE_H
-                and priced >= PICKS_MIN_PRICED_MATCHES):
+                and priced >= PICKS_MIN_PRICED_MATCHES
+                and not _betting_pipeline_ran_recently()):
             return ("NO_PICKS",
                     f"feed healthy ({odds_h:.1f}h) but {PICKS_BOT} has written no "
                     f"pick for {picks_h:.1f}h while {priced} upcoming matches had "
-                    f"both Coolbet and Pinnacle priced — the pipeline is not "
-                    f"evaluating, this is not a quiet day")
+                    f"both Coolbet and Pinnacle priced, AND no betting pipeline run "
+                    f"completed in that window — the pipeline is not evaluating, "
+                    f"this is not a quiet day")
         return ("HEALTHY", f"last Coolbet odds {odds_h:.1f}h ago")
 
     # Feed is stale. Work out why, cheapest and most-fixable first.
