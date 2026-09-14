@@ -41764,6 +41764,137 @@ def test_own_market_expansion_sweep():
 
 
 
+@test("OWN-PER-MARKET-PROBEDGE — the per-market re-sweep gates on PROBABILITY, controls at a matched gate, and corrects CLV by the book's own margin")
+def test_own_per_market_probedge():
+    """OWN-PER-MARKET-PROBEDGE (2026-09-14) —
+    `scripts/own_per_market_probedge_sweep.py`,
+    `scripts/own_per_market_bot_ledger.py`,
+    `docs/OWN_PER_MARKET_BOTS_2026_09_14.md`.
+
+    The adversarial re-run of OWN-MARKET-EXPANSION. Four properties are pinned,
+    each because losing it reverts a specific conclusion in that report.
+
+    (a) **The two edge FORMS must stay distinguishable.** ANALYSIS_GOTCHAS §42
+        has now cost this repo six incidents. `roi_edge = prob_edge x odds`, so
+        a constant expected-ROI floor is a FALLING probability requirement in
+        odds and preferentially buys longshots, while the live gate
+        (`pick_triggers._window`) is a constant probability difference. Swept on
+        the probability form, Asian handicap moves from -12.6% to -3.2% and
+        1st-half 1x2 from -19.3% to -1.7%. If `select()` ever collapses the two
+        forms, every one of those verdicts silently reverts.
+
+    (b) **The junk-anchor control must run at the IDENTICAL gate** — same floor,
+        same band, same one-pick-per-fixture collapse. The withdrawn "junk beats
+        real" claim compared a 550-leg tail selection against a 5,881-leg
+        near-flat-back at a nominally-equal floor.
+
+    (c) **Double chance's margin uses fair=2.0.** DC's three prices cover every
+        outcome exactly TWICE, so the book's own overround is `sum(1/o)/2 - 1`.
+        Divide by 1.0 instead and a normal DC book reads as a ~100% margin,
+        which turns the decisive -6.50% (t=-25.8) verdict into nonsense.
+
+    (d) **CLV is a RAW price ratio and its break-even is the book's own margin.**
+        `(1+clv)/(1+m)-1`, m per row. A flat assumption inverted a verdict on
+        2026-09-14; per-book margins span 6.5-11.3%.
+    """
+    import scripts.own_per_market_probedge_sweep as pe
+    import scripts.own_per_market_bot_ledger as led
+
+    # --- (a) the two forms must disagree exactly where the theory says --------
+    def _bet(odds, p, mid="m1", book="Coolbet"):
+        import datetime as _dt
+        return {"mid": mid, "key": (None, None), "book": book,
+                "date": _dt.datetime(2026, 9, 1, tzinfo=_dt.timezone.utc),
+                "gap": 1.0, "status": "finished",
+                "legs": [{"sel": "home", "odds": odds, "p": p,
+                          "edge": p * odds - 1.0, "grade": 1.0}]}
+
+    # long price: roi_edge = 2.0%, prob_edge = 0.5%  -> ROI form takes it, prob form does not
+    longshot = _bet(4.00, 0.2550, mid="long")
+    # short price: roi_edge = 3.5%, prob_edge = 2.3%  -> both take it
+    favourite = _bet(1.50, 0.6900, mid="fav")
+    bets = [longshot, favourite]
+    assert abs(pe.prob_edge(longshot["legs"][0]) - 0.005) < 1e-6
+    assert abs(longshot["legs"][0]["edge"] - 0.02) < 1e-6
+
+    roi_sel = {b["mid"] for b in pe.select(bets, 0.02, (1.01, 99.0), form="roi")}
+    prob_sel = {b["mid"] for b in pe.select(bets, 0.02, (1.01, 99.0), form="prob")}
+    assert roi_sel == {"long", "fav"}, (
+        "a 2% EXPECTED-ROI floor admits a 4.00 leg carrying only 0.5pp of "
+        "probability edge — that is the longshot tilt the market sweep inherited")
+    assert prob_sel == {"fav"}, (
+        "a 2% PROBABILITY floor must reject the same leg. If these two sets ever "
+        "match, ANALYSIS_GOTCHAS §42 has been reintroduced and the AH / 1H-1x2 "
+        "verdicts in OWN_PER_MARKET_BOTS revert to the sweep's")
+
+    # the odds BAND is a real filter, not decoration
+    assert {b["mid"] for b in pe.select(bets, 0.0, (1.01, 2.00), form="prob")} == {"fav"}
+
+    # one pick per (fixture, book): two legs on one fixture collapse to the best
+    import copy
+    two = copy.deepcopy(favourite)
+    two["legs"].append({"sel": "away", "odds": 1.40, "p": 0.80,
+                        "edge": 0.80 * 1.40 - 1.0, "grade": -1.0})
+    assert len(pe.select([two], 0.0, (1.01, 99.0), form="prob",
+                         one_per_fixture=True)) == 1
+    assert len(pe.select([two], 0.0, (1.01, 99.0), form="prob",
+                         one_per_fixture=False)) == 2
+
+    # --- (b) the control must be driven through the SAME select() ------------
+    src = _engine_path("scripts/own_per_market_probedge_sweep.py").read_text()
+    assert src.count("select(ctrl, fl, band, bk, form, one_per_fixture)") >= 1, (
+        "the junk arm must be selected with the identical floor, band, form and "
+        "collapse as the real arm — a nominally-equal floor that passes 10x the "
+        "legs is what made 'junk beats real' look true")
+    assert "scramble" in src or "build_dc_legs" in src
+    assert pe.S.EXEC_BOOKS == ("Coolbet", "Epicbet", "Unibet-Site")
+    for phantom in ("Unibet", "Unibet-Kambi", "Max", "Avg"):
+        assert phantom in pe.S.EXCLUDED_BOOKS
+
+    # --- (c) the double-chance complement sums to TWO ------------------------
+    sels, fair = led.complement("double_chance")
+    assert sels == ("1x", "12", "x2") and fair == 2.0, (
+        "DC's three prices each cover two of three outcomes, so a zero-margin "
+        "DC book has sum(1/o) = 2. fair=1.0 would report a ~100% margin and "
+        "destroy the -6.50% verdict")
+    assert led.complement("1x2")[1] == 1.0
+    assert led.complement("corners_ou_95") == (("over", "under"), 1.0), (
+        "corners is a plain two-way book on a stated line — this is the "
+        "complement that made the corners instrument readable at all")
+    assert led.complement("asian_handicap") is None, (
+        "AH must stay out: its margin needs the handicap line threaded through "
+        "and a fixed rung is not a close (ANALYSIS_GOTCHAS §16)")
+    # a fair 3-way DC book priced off a fair 1x2 (0.5/0.25/0.25) is zero-margin
+    fair_dc = [1.0 / 0.75, 1.0 / 0.75, 1.0 / 0.50]
+    assert abs(sum(1.0 / o for o in fair_dc) / 2.0 - 1.0) < 1e-9
+
+    # --- (d) margin-corrected CLV arithmetic ---------------------------------
+    lsrc = _engine_path("scripts/own_per_market_bot_ledger.py").read_text()
+    assert "(1.0 + r[\"clv\"]) / (1.0 + m) - 1.0" in lsrc, (
+        "`clv` is a RAW price ratio; break-even is the closing book's own "
+        "margin, so every CLV figure must be divided by (1+m) per row")
+    assert 'r["odds"] / co - 1.0' in lsrc, (
+        "recomputed CLV must use the production definition "
+        "odds_at_pick / closing_odds - 1")
+    assert "closing_bookmaker" in lsrc and "arbitrary" in lsrc, (
+        "own-book rows only — the arbitrary-book fallback reads 4-10pp high")
+
+    # --- the report, and the two numbers that decide it ----------------------
+    doc = _engine_path("docs/OWN_PER_MARKET_BOTS_2026_09_14.md")
+    assert doc.exists(), "the per-market verdict must be committed with the scripts"
+    body = doc.read_text()
+    assert "-4.86%" in body and "bot_corners_paper_shadow_v1" in body, (
+        "the corners verdict is the document's load-bearing finding: a LIVE bot "
+        "whose clv was NULL on 639 of 639 picks reads -4.86% (t=-12.9) once the "
+        "close is recomputed from odds_snapshots")
+    assert "MEASURED NEGATIVE" in body and "NOT YET MEASURABLE" in body, (
+        "the brief's central distinction — a market that is measured negative "
+        "and one that cannot yet be measured lead to different actions")
+    assert "ROI may never promote this bot" in body, (
+        "per-bet return sd ~1.3 means a true +3% ROI needs ~15,600 bets; only "
+        "CLV can resolve, so ROI must be barred from promoting in writing")
+
+
 @test("PICKS-FORWARD-TEST-SCHEDULED — the public publisher is registered and runs the locked rule")
 def test_picks_forward_test_scheduled():
     """PICKS-FORWARD-TEST-SCHEDULED (2026-09-14).

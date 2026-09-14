@@ -91,11 +91,15 @@ def rows_for(pattern: str, days: int):
 
 
 def margins(keys):
-    """{(match_id, market, book): overround} from each book's own closing quotes.
+    """({(match_id, market, book): overround}, {same key: {selection: odds}}).
+
+    The second return value is what makes `--recompute` possible: a bot whose
+    own settler never wrote `closing_odds` (corners) still HAS an own-book close
+    sitting in `odds_snapshots`, and it is the same complement the margin needs.
 
     One query per complement shape, not one per row — 7,670 DC picks through a
     per-row helper is minutes of round-trips for a number that is a group-by."""
-    out = {}
+    out, quotes = {}, {}
     by_shape = defaultdict(list)
     for mid, mk, bk in keys:
         c = complement(mk)
@@ -124,11 +128,12 @@ def margins(keys):
         for r in rows:
             book[(r["mid"], r["mk"], r["bk"])][r["sel"]] = r["odds"]
         for k, q in book.items():
+            quotes[k] = q
             if all(s in q and q[s] > 1.0 for s in sels):
                 m = sum(1.0 / q[s] for s in sels) / fair - 1.0
                 if 0.0 <= m <= 0.5:
                     out[k] = m
-    return out
+    return out, quotes
 
 
 def clustered(vals, clusters):
@@ -154,6 +159,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pattern", default="corner|card|team_total|1h|btts|ah_|dc_|handicap")
     ap.add_argument("--days", type=int, default=200)
+    ap.add_argument("--recompute", action="store_true",
+                    help="derive own-book CLV from odds_snapshots for picks whose "
+                         "bot never wrote closing_odds (corners). Read-only.")
     a = ap.parse_args()
 
     rows = rows_for(a.pattern, a.days)
@@ -163,7 +171,23 @@ def main() -> int:
 
     need = {(r["match_id"], r["market"], r["cbook"])
             for r in rows if r["cbook"] and r["clv"] is not None}
-    mg = margins(need)
+    if a.recompute:
+        # A bot whose private settler never wrote closing_odds still has an
+        # own-book close in odds_snapshots. Recompute it at the bot's OWN
+        # recommended book — never at an arbitrary one, which is the fallback
+        # retired 2026-09-14 for reading 4-10pp high.
+        need |= {(r["match_id"], r["market"], r["book"])
+                 for r in rows if r["book"] and r["clv"] is None and r["odds"]}
+    mg, qt = margins(need)
+    if a.recompute:
+        for r in rows:
+            if r["clv"] is not None or not r["book"] or not r["odds"]:
+                continue
+            q = qt.get((r["match_id"], r["market"], r["book"]), {})
+            co = q.get(r["selection"])
+            if co and co > 1.0:
+                r["cod"], r["cbook"] = co, r["book"]
+                r["clv"] = r["odds"] / co - 1.0
     # Report the INTERSECTION, not len(mg): `margins` queries a cross-product of
     # the fixtures/markets/books it was asked about, so it legitimately resolves
     # combinations no pick used, and printing its raw size reads as >100%.
