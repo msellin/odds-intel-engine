@@ -28,6 +28,10 @@ asks **what to bet**.
 > **One positive cell out of ~50 tested is exactly what multiple testing produces on
 > its own.** A real effect does not switch off at minute 45 and back on at nothing.
 > **There is currently NO validated positive in-play strategy in this document.**
+> Parts 3 and 4 explain *why*, and narrow where a future one could live: the in-play
+> long side carries ~14% relative margin against ~3.8% on the favourite, and the
+> short side is near-break-even. **A future signal must be expressed through a short
+> price or it cannot clear the vig.**
 >
 > What survives is the *negative* findings, which are the valuable part: they are
 > monotone across many buckets and large samples, and they tell you what not to build.
@@ -210,6 +214,49 @@ Any future in-play candidate should be **short-side by construction** — back t
 priced roughly 1.10–2.20 — or it must clear a ~14% margin before it can win. Every
 strategy refuted tonight violated that rule, which in hindsight is the single best
 predictor of which ones failed.
+
+---
+
+## Part 4 — testing the rule: short-side only
+
+Part 3 predicted that short-side bets should be near-break-even and long-side bets
+should bleed ~14%. Tested directly, prices restricted to 1.05–2.30, wide windows:
+
+| strategy | window | n | market | edge | ROI | 95% CI |
+|---|---|---|---|---|---|---|
+| **0-0 → back under 2.5** | 35'–54' | 1,815 | 1.63 | −0.1pp | **+0.4%** | [−3.2, +4.0] |
+| 0-0 → back under 2.5 | 45'–64' | 647 | 1.62 | −0.1pp | −0.4% | [−6.4, +5.8] |
+| **2-goal leader → holds on** | 70'–89' | 752 | 1.11 | +0.7pp | **+1.1%** | [−1.4, +3.4] |
+| 2-goal leader → holds on | 60'–79' | 1,312 | 1.12 | +0.1pp | +0.5% | [−1.4, +2.4] |
+| 1-goal leader → holds on | 55'–94', 4 windows | ~7,500 ea | 1.21–1.37 | −2.5 to −2.7pp | ≈ −3% | excludes 0 |
+| 2+ goals scored → over 3.5 | 30'–69', 3 windows | ~4,000 ea | 1.72–1.79 | −2.1 to −4.5pp | −3.5% → −8.2% | excludes 0 |
+
+**The rule is confirmed.** On the short side the house edge very nearly disappears:
+backing the under at 1.63 costs **0.4% or less**, and a two-goal leader at 1.11 is
+statistically indistinguishable from break-even across three windows. Compare that
+with the same book charging **14% relative** on the underdog side.
+
+**But nothing is positive.** Every interval that contains a gain also contains zero.
+The best cell of the night (+1.1% at odds 1.11) would need enormous volume to matter
+and is exactly the sort of price books suspend and limit.
+
+### What this actually buys us
+
+It changes the size of edge we would need to find:
+
+* a real **2–3% signal deployed short-side would survive**, because the vig there is
+  ~0–1%;
+* the same signal deployed long-side would be **wiped out**, because it starts ~14%
+  behind.
+
+So the search is not hopeless — it is *constrained*. Any in-play bot worth building
+must express its view through a short price. That is a far more useful conclusion
+than a lucky cell, and it is the thing to carry into the Epicbet data.
+
+⚠️ All of Part 3 and Part 4 are measured against AF's aggregate, whose overround
+(7.8% on 1x2) is **wider than Epicbet's** (measured 6.4–6.6% on O/U the same day).
+The *shape* of the finding — long side dearer than short side — should hold at a real
+book, but the absolute costs at Epicbet should be lower. Re-run on the collected data.
 
 ## Ranked next actions
 
