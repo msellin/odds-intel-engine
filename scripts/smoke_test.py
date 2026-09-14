@@ -40770,7 +40770,8 @@ def test_picks_forward_test_rule_locked():
         assert m, f"{name} not found in publish_picks_forward_test.py"
         return float(m.group(1))
 
-    locked = {"MIN_EDGE": 0.03, "MAX_ODDS": 4.0, "ALIGN_MIN": 60.0, "TOP_N": 8}
+    locked = {"MIN_EDGE": 0.03, "MAX_ODDS": 4.0, "ALIGN_MIN": 60.0,
+              "TOP_N": 8, "MAX_RATIO": 0.20}
     for name, expected in locked.items():
         actual = const(name)
         assert actual == expected, (
@@ -40782,7 +40783,7 @@ def test_picks_forward_test_rule_locked():
         )
 
     # the doc must still state the same rule, or the two have drifted
-    for frag in ("≥ 3%", "≤ 4.0", "within 60 minutes", "top 8 per day"):
+    for frag in ("≥ 3%", "≤ 4.0", "within 60 minutes", "top 8 per day", "≤ 20%"):
         assert frag in doc, (
             f"pre-registration doc no longer states {frag!r} — the doc and the "
             f"publisher have drifted apart, and the doc is the authority."

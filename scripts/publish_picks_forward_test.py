@@ -31,13 +31,40 @@ from workers.notify.telegram import send_telegram_public
 
 log = logging.getLogger("picks_forward")
 
-RULE_VERSION = "sharp_edge_v1_2026_09_14"
+RULE_VERSION = "sharp_edge_v2_2026_09_15"
 
 # ── the locked rule ──────────────────────────────────────────────────────────
 MIN_EDGE   = 0.03   # sharp edge floor
 MAX_ODDS   = 4.0    # uncapped, the edge collapses into longshot noise
 ALIGN_MIN  = 60.0   # anchor and bet quote within 60 min — see note below
 TOP_N      = 8      # per day, by edge
+MAX_RATIO  = 0.20   # book price may not exceed the anchor by more than this
+
+# MAX_RATIO is v2's one change, and it is the ONLY change (RULE-V2-2026-09-15).
+#
+# Production has carried ODDS-OUTLIER-FILTER-2026-08-18 since August — >35 pct
+# over anchor for 1x2 — because AF's Bet365 quotes run ~26.6 pct above
+# contemporaneous Pinnacle: stale or shell prices nobody can take. This
+# standalone publisher never applied it. Six of the eight picks published on
+# 2026-09-14 under v1 sat above 20 pct, and the top one at +35.7 pct.
+#
+# Measured on the time-aligned backtest, ROI by book/anchor ratio band:
+#     0-10 pct   n=202  +11.75 pct
+#    10-20 pct   n=763   +6.24 pct
+#    20-35 pct   n=225  -12.13 pct   <-- the leak
+#    35+  pct    n= 44   +7.32 pct   (n too small to read)
+#
+# So the loss lives in 20-35 pct, BELOW the existing 35 pct filter — exactly what
+# the BET365-EXECUTION-AUDIT note predicted ("the ~20-30 pct band still leaks
+# through and generates -20 pct ROI picks"). Capping at 20 pct moves the rule
+# from +3.83 pct to +7.39 pct (n 1234 -> 965).
+#
+# WHY THIS IS A NEW TEST, NOT A PATCH. The pre-registration says changing the
+# rule after the first publication invalidates the test and starts a new one
+# with a new start date. It does. v1 is 8 picks on 2026-09-14 and is CLOSED at
+# that n; v2 starts fresh. Quietly tightening a running pre-registered rule and
+# carrying the n forward is precisely the discipline failure the whole document
+# exists to prevent.
 LOOKAHEAD_H = 14    # publish for fixtures kicking off inside this window
 MIN_LEAD_MIN = 45   # never publish a price a reader cannot reach in time
 
@@ -140,6 +167,8 @@ def load_candidates() -> tuple[list[dict], list[dict]]:
                 book, (odds, ts) = max(aligned.items(), key=lambda kv: kv[1][0])
                 if odds > MAX_ODDS:
                     continue
+                if odds / anchor_odds[s] - 1.0 > MAX_RATIO:
+                    continue          # phantom/stale price — see MAX_RATIO
                 edge = p_sharp * odds - 1.0
                 # NOTE: the MIN_EDGE floor is applied by select() below, not
                 # here — the junk arm must see the same unfiltered pool.
@@ -149,6 +178,7 @@ def load_candidates() -> tuple[list[dict], list[dict]]:
                     "odds": odds, "bookmaker": book, "edge": edge,
                     "p_sharp": p_sharp, "anchor_odds": anchor_odds,
                     "anchor_overround": overround, "anchor_quoted_at": anchor_ts,
+                    "price_ratio": odds / anchor_odds[s] - 1.0,
                     "odds_quoted_at": ts,
                     "alignment_gap_minutes":
                         abs((ts - anchor_ts).total_seconds()) / 60.0,
@@ -259,7 +289,8 @@ def main() -> int:
         print(f"  +{c['edge']*100:5.2f}%  {c['kickoff_at']:%H:%M}  "
               f"{c['home_team']} v {c['away_team']}  "
               f"{c['market']}/{c['selection']} @{c['odds']:.2f} {c['bookmaker']}  "
-              f"gap={c['alignment_gap_minutes']:.0f}m")
+              f"gap={c['alignment_gap_minutes']:.0f}m "
+              f"ratio={c['price_ratio']*100:+.0f}%")
 
     if not args.send:
         print("\n(dry run — pass --send to publish)")

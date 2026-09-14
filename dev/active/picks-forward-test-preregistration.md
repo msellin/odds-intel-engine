@@ -1,5 +1,37 @@
 # Pre-registration — PICKS forward test (sharp-edge rule)
 
+> ## ⚠️ v1 CLOSED at n=8 · v2 REGISTERED 2026-09-15
+>
+> **v1** (`sharp_edge_v1_2026_09_14`) published 8 picks on 2026-09-14 and is
+> **closed at that n**. It is not extended and its picks are not pooled with v2.
+>
+> **Why.** v1 omitted a filter production has carried since August
+> (`ODDS-OUTLIER-FILTER-2026-08-18`): a cap on how far the book price may exceed
+> the anchor. AF's Bet365 quotes run ~26.6% above contemporaneous Pinnacle —
+> stale or shell prices nobody can take. **Six of v1's eight picks sat above 20%
+> over anchor; the top one at +35.7%.**
+>
+> Measured on the time-aligned backtest, ROI by book/anchor price-ratio band:
+>
+> | ratio band | n | ROI |
+> |---|---|---|
+> | 0–10% | 202 | **+11.75%** |
+> | 10–20% | 763 | +6.24% |
+> | **20–35%** | 225 | **−12.13%** |
+> | 35%+ | 44 | +7.32% (n too small) |
+>
+> The loss sits in **20–35%**, *below* the existing 35% production filter —
+> exactly what the `BET365-EXECUTION-AUDIT` note predicted in August ("the
+> ~20-30% band still leaks through and generates -20% ROI picks"). Capping at
+> 20% moves the rule from **+3.83% to +7.39%** (n 1,234 → 965) and costs no
+> volume on the day it was found (still 8 picks).
+>
+> **v2 adds `MAX_RATIO = 0.20` and changes NOTHING else.** Starting a new test
+> rather than quietly tightening a running one is the entire point of this
+> document — carrying v1's n forward would be the discipline failure it exists
+> to prevent.
+
+
 **Registered 2026-09-14, before the first post.** Locked. Any change to the
 rule, the stopping criterion or the success criterion after the first pick is
 published invalidates the test and starts a new one with a new start date.
@@ -16,14 +48,23 @@ way we are forced to notice.
 
 ```
 anchor  = Shin de-vig of the Pinnacle triple
-edge    = P_shin × best_book_price − 1        ≥ 3%
+edge    = P_shin × best_book_price − 1        ≥ 3%     [EXPECTED ROI, not P − 1/odds]
 odds    ≤ 4.0
+price ratio: book_price / anchor_price − 1    ≤ 20%    [v2]
 alignment: anchor quote and bet quote within 60 minutes
 markets : 1x2, over_under_25
 excluded books: Max, Avg, Betfair Exchange, BetWin, Betfred,
                 Unibet-Kambi (38% phantom-high), Unibet/AF (33.1% phantom-high)
 selection: top 8 per day by edge
 ```
+
+**On the word "edge".** This rule's `edge` is **expected ROI** (`P × odds − 1`).
+The rest of the codebase — `pick_generator.py:239`, `pick_triggers.min_odds`,
+`SYSTEM_MAP` §1 — uses `P − 1/odds`, a **probability difference**. They are
+different quantities (`ROI_edge = prob_edge × odds`) and a 3% floor on one admits
+roughly twice the picks of a 3% floor on the other. This test is pre-registered
+on the **ROI** form. The public label should read "Expected return", not "Edge",
+so the two never collide in a reader's head or ours.
 
 Price basis is **best across all books** — the owner's ruling of 2026-09-14: for
 PICKS a price that was capturable somewhere at some point is acceptable, because
