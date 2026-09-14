@@ -1764,7 +1764,8 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
             update_cols = [c for c in columns if c != "match_id"]
             tuples = [tuple(row.get(c) for c in columns) for row in chunk]
             upserted += bulk_upsert(
-                "match_feature_vectors", columns, tuples, conflict_cols, update_cols
+                "match_feature_vectors", columns, tuples, conflict_cols, update_cols,
+                coalesce_columns=MFV_SIGNAL_SOURCED_COLUMNS,
             )
         except Exception as e:
             console.print(f"  [yellow]bulk upsert failed ({len(chunk)} rows), falling back one-by-one: {e}[/yellow]")
@@ -1776,7 +1777,8 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
                     update_cols = [c for c in columns if c != "match_id"]
                     tuples = [tuple(row.get(c) for c in columns)]
                     bulk_upsert(
-                        "match_feature_vectors", columns, tuples, conflict_cols, update_cols
+                        "match_feature_vectors", columns, tuples, conflict_cols, update_cols,
+                        coalesce_columns=MFV_SIGNAL_SOURCED_COLUMNS,
                     )
                     upserted += 1
                 except Exception as e2:
@@ -1788,6 +1790,37 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
 def _chunk_list(lst: list, size: int) -> list[list]:
     """Split list into chunks of given size."""
     return [lst[i:i + size] for i in range(0, len(lst), size)]
+
+
+# MFV-REBUILD-DESTROYS-PRUNED-SIGNALS (2026-09-14) — columns READ THROUGH from
+# `match_signals` rather than computed by the builder.
+#
+# `match_signals` is prunable (SIGNALS-STORE-ON-CHANGE-2026-09-03 plus
+# scripts/prune_match_signals.py collapsed it from 49.3M rows), so a rebuild sees
+# less than the original write did. Upserting these with a plain
+# `col = EXCLUDED.col` writes NULL over data that cannot be reconstructed —
+# measured: goals_for_avg_home lost 22,182 of 37,152 rows (-59.7 pct) on the
+# 2026-09-14 rebuild, silently, with the job reporting success.
+#
+# These are COALESCEd on upsert: an incoming NULL leaves the stored value alone.
+# Computed columns (elo_*, form_*) are deliberately NOT here — their NULL is a
+# finding ("no honest pre-match value exists"), which is the entire point of the
+# ELO-FORM-LEAK fix, and suppressing it would reintroduce the leak.
+#
+# Kept in sync with the reader by the MFV-SIGNAL-COLUMNS-NOT-DRIFTED smoke test.
+MFV_SIGNAL_SOURCED_COLUMNS = [
+    "bookmaker_disagreement", "fixture_importance",
+    "goals_against_avg_away", "goals_against_avg_home",
+    "goals_for_avg_away", "goals_for_avg_home", "h2h_win_pct",
+    "injury_count_away", "injury_count_home",
+    "league_position_away", "league_position_home",
+    "market_implied_away", "market_implied_draw", "market_implied_home",
+    "news_impact_score", "overnight_line_move",
+    "points_to_relegation_away", "points_to_relegation_home",
+    "points_to_title_away", "points_to_title_home",
+    "referee_cards_avg", "referee_home_win_pct", "referee_over25_pct",
+    "rest_days_away", "rest_days_home",
+]
 
 
 def _build_feature_row_batched(

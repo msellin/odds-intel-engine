@@ -262,7 +262,8 @@ def bulk_insert(table: str, columns: list[str], rows: list[tuple],
 
 
 def bulk_upsert(table: str, columns: list[str], rows: list[tuple],
-                conflict_columns: list[str], update_columns: list[str]) -> int:
+                conflict_columns: list[str], update_columns: list[str],
+                coalesce_columns: list[str] | None = None) -> int:
     """
     Bulk upsert — insert or update on conflict.
 
@@ -272,13 +273,38 @@ def bulk_upsert(table: str, columns: list[str], rows: list[tuple],
         rows: List of tuples
         conflict_columns: Columns that form the unique constraint
         update_columns: Columns to update on conflict
+        coalesce_columns: Subset of update_columns that must never be downgraded
+            to NULL — an incoming NULL keeps the stored value. Use for columns
+            READ THROUGH from a prunable source; never for computed ones, whose
+            NULL is a finding rather than an absence.
     """
     if not rows:
         return 0
 
     cols = ", ".join(columns)
     conflict = ", ".join(conflict_columns)
-    updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_columns)
+    # MFV-REBUILD-DESTROYS-PRUNED-SIGNALS (2026-09-14): columns listed in
+    # `coalesce_columns` are never downgraded to NULL by an upsert — a NULL in
+    # the incoming row leaves the stored value alone.
+    #
+    # The distinction that matters is COMPUTED vs READ-THROUGH. A computed column
+    # must be allowed to become NULL, because "we now know there is no honest
+    # value here" is a real result (the ELO-FORM-LEAK fix depends on exactly
+    # that). A read-through column sourced from a prunable table is different: a
+    # NULL there means "the source no longer holds it", not "it is not true", and
+    # writing that over good data destroys history the rebuild cannot
+    # reconstruct.
+    #
+    # Cost of getting it wrong, measured: rebuilding match_feature_vectors read
+    # `match_signals` AFTER prune_match_signals.py had collapsed it from 49.3M
+    # rows, and silently NULLed goals_for_avg_home on 22,182 of 37,152 rows
+    # (-59.7 pct). The job reported success and the row count was unchanged.
+    _coalesce = set(coalesce_columns or ())
+    updates = ", ".join(
+        (f"{c} = COALESCE(EXCLUDED.{c}, {table}.{c})" if c in _coalesce
+         else f"{c} = EXCLUDED.{c}")
+        for c in update_columns
+    )
     sql = (f"INSERT INTO {table} ({cols}) VALUES %s "
            f"ON CONFLICT ({conflict}) DO UPDATE SET {updates}")
     for attempt in range(2):

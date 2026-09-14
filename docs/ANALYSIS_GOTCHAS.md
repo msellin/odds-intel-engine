@@ -2125,3 +2125,24 @@ first:
 Current state: `over` and `btts` are clean; `home` flags only `elo_diff`, pending
 the stored-row rebuild (master task #2). The smoke test `LEAKAGE-CANARY` pins that
 known set, so a **new** leak fails CI.
+
+---
+
+### MFV coverage changed on 2026-09-14 — know which era your rows are from
+
+**ELO-FORM-LEAK + the rebuild.** `match_feature_vectors` rows for matches from
+2026-05-01 were rebuilt on 2026-09-14. Two consequences for any analysis:
+
+1. **`elo_*` / `form_*` coverage legitimately DROPPED** ~8–10% (`form_momentum_*`
+   ~43%, since it needs two form points). Those rows have no strictly-prior
+   rating, so they have no honest pre-match value. A NULL there is correct, not
+   missing data — do not impute it back.
+2. **Pre-rebuild rows are preserved in `mfv_pre_elo_fix_backup`** (49,395 rows).
+   Those are the **leaked** features every live model bundle was trained on. Keep
+   them: they are the only baseline against which a retrained model can be
+   compared, which is a stronger reason to retain them than rollback.
+
+So `elo_diff` means two different things depending on when the row was written.
+Before the rebuild it partly encodes the match result (AUC 0.7536 vs a market at
+0.7270 — impossible for a pre-match feature). After, it does not (0.6134). **Never
+pool the two.**

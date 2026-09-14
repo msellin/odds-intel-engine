@@ -363,6 +363,19 @@ Adding a third book is one `check_feed("Name")` call plus a `FEEDS` entry.
 - **Accessible-bookmaker filter (ACCESSIBLE-BM, 2026-05-11)**: `ACCESSIBLE_BOOKMAKERS = frozenset({"Bet365","Unibet","Betano","Marathonbet","10Bet","888Sport","Pinnacle"})` — only these books contribute to `best[mid][key]` odds aggregation. Inaccessible books (SBO, Dafabet, 1xBet, BetVictor, Betfair, William Hill) are still fetched and logged in `bm_sources` but excluded from edge math. `best_bookmaker[mid][key]` tracks which accessible book had the best price per market/selection. Stored as `recommended_bookmaker` on `simulated_bets` (migration 094) so `scripts/daily_picks.py` can tell the user exactly where to place.
 - Loads historical CSVs (targets_poisson_history, targets_global) for Poisson model
 - **Batch signal writing (PERF-1):** `batch_write_morning_signals(odds_matches)` called ONCE before the match loop — 10 bulk queries cover all 400+ matches at once (ELO, PPG, injuries, standings, season stats, BDM, overnight line move, odds volatility, league meta, H2H). One `execute_values` INSERT for all signals. Reduced from 34-70 min to ~15s.
+- **MFV-UPSERT-NON-DESTRUCTIVE (2026-09-14):** both MFV builders now pass
+  `coalesce_columns=MFV_SIGNAL_SOURCED_COLUMNS` to `bulk_upsert`, so the 25 columns
+  READ THROUGH from `match_signals` are never downgraded to NULL — an incoming NULL
+  leaves the stored value alone. Computed columns (`elo_*`, `form_*`) are
+  deliberately excluded: their NULL is a finding, not an absence, and is the whole
+  point of the ELO-FORM-LEAK fix. **Why:** `match_signals` is prunable
+  (SIGNALS-STORE-ON-CHANGE + `prune_match_signals.py` collapsed it from 49.3M rows),
+  so a rebuild reads less than the original write did. On 2026-09-14 a full rebuild
+  silently NULLed `goals_for_avg_home` on 22,182 of 37,152 rows (−59.7%) while
+  reporting success with an unchanged row count. **Any future MFV rebuild must diff
+  column coverage against a snapshot before its output is trusted** — the row count
+  will not tell you. Pinned by `MFV-SIGNAL-COLUMNS-NOT-DRIFTED`.
+
 - **MFV-LIVE-BUILD (2026-05-10):** `build_match_feature_vectors_live(today)` called immediately after the morning signals batch and before the match loop. Writes one `match_feature_vectors` row per pre-KO match (status != 'finished') so v10+ XGBoost inference (`_build_row_from_mfv`) finds a row instead of falling back to Poisson. Re-runs on every betting_refresh because opening_implied_* / odds_drift_home pick up newer snapshots between cron passes. Twin of the nightly `build_match_feature_vectors` (which only runs at settlement for finished matches); both share `_build_mfv_rows_for_matches`.
 - For each match with odds: compute Poisson/XGBoost prediction + store predictions
 - For each of 16 bots: calibrate, check odds movement (psycopg2), alignment (psycopg2), Kelly sizing, place bet

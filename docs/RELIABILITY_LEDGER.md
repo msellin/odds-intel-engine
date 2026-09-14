@@ -525,3 +525,47 @@ not just whether it is correct. A date-bounded read of a table that is written
 after the event is the specific pattern; `<=` where `<` is meant is the specific
 bug. Any join to a table updated post-match deserves this question, and the
 answer belongs in a comment next to the bound.
+
+---
+
+### Rebuilding a derived table from a pruned source is lossy, and silently so
+
+**Added 2026-09-14 (MFV-REBUILD-DESTROYS-PRUNED-SIGNALS).**
+
+`match_feature_vectors` was rebuilt to remove the ELO leak. The rebuild worked —
+`elo_diff` AUC fell 0.7536 → 0.6134 — and in the same pass destroyed four
+features it was never meant to touch:
+
+| column | before | after | lost |
+|---|---|---|---|
+| `goals_for_avg_home` | 37,152 | 14,970 | **−59.7%** |
+| `goals_against_avg_home` | 37,152 | 14,970 | −59.7% |
+| `goals_for_avg_away` | 37,423 | 15,113 | −59.6% |
+| `goals_against_avg_away` | 37,423 | 15,113 | −59.6% |
+
+Those columns are not computed by the builder — they are **read through** from
+`match_signals`, which `SIGNALS-STORE-ON-CHANGE` and `prune_match_signals.py` had
+collapsed from 49.3M rows. The rebuild read the pruned present and wrote NULL over
+data it could not reconstruct.
+
+**The tell is that there isn't one.** The job reported success, upserted 49,509
+rows across 134 dates, and the row count was unchanged. Every surface said healthy.
+Only a **column-level coverage diff against a pre-rebuild snapshot** revealed it.
+
+**Two guards now exist.**
+1. `bulk_upsert(..., coalesce_columns=[...])` — listed columns are never downgraded
+   to NULL by an upsert. The MFV builders pass the 25 signal-sourced columns.
+2. `MFV-SIGNAL-COLUMNS-NOT-DRIFTED` — asserts the list is wired into *both* the bulk
+   and the one-by-one fallback path, and that it still matches what the reader
+   assigns.
+
+**The distinction to carry elsewhere: COMPUTED vs READ-THROUGH.** A computed
+column must be allowed to become NULL — "we now know there is no honest value
+here" is a real result, and suppressing it would have undone the ELO fix in the
+same commit that made it. A read-through column from a prunable source must not:
+its NULL means "the source no longer holds it", which is not a fact about the
+match.
+
+**And the operational rule:** take the snapshot *before* a rebuild as routine, not
+as a precaution. Here the backup was worth more as a **measuring instrument** than
+as a rollback — without it the loss would have reached a retrain unnoticed.

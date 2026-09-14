@@ -40651,5 +40651,69 @@ def test_no_picks_requires_no_pipeline_run():
 
 
 
+@test("MFV-SIGNAL-COLUMNS-NOT-DRIFTED — read-through columns are COALESCEd, and the list matches the reader")
+def test_mfv_signal_columns_not_drifted():
+    """MFV-REBUILD-DESTROYS-PRUNED-SIGNALS (2026-09-14).
+
+    Rebuilding `match_feature_vectors` read `match_signals` AFTER
+    SIGNALS-STORE-ON-CHANGE and `prune_match_signals.py` had collapsed it from
+    49.3M rows. A plain `col = EXCLUDED.col` upsert then wrote NULL over data the
+    rebuild could not reconstruct: **goals_for_avg_home lost 22,182 of 37,152
+    rows (-59.7 pct)**, and goals_against/for_away the same. The job reported
+    success, upserted 49,509 rows across 134 dates, and the row count was
+    unchanged — nothing about the run looked wrong. Only a column-level coverage
+    diff against a backup revealed it.
+
+    THE DISTINCTION THIS PINS — computed vs read-through:
+      * COMPUTED columns (elo_*, form_*) MUST be allowed to become NULL. "There
+        is no honest pre-match value here" is a real finding and is precisely
+        what the ELO-FORM-LEAK fix produces. COALESCEing them would reintroduce
+        the leak by preserving the old contaminated value.
+      * READ-THROUGH columns from a prunable source must NOT. A NULL there means
+        "the source no longer holds it", not "it is not true".
+
+    Two assertions, because either alone rots: the list must be wired into the
+    upsert, and it must still match what the reader actually assigns from
+    `match_signals` (a new signal added to the reader without being added here
+    would be silently destroyable on the next rebuild).
+    """
+    import re as _re
+
+    src = _engine_path("workers/api_clients/supabase_client.py").read_text()
+
+    assert "coalesce_columns=MFV_SIGNAL_SOURCED_COLUMNS" in src, (
+        "the MFV upsert must pass MFV_SIGNAL_SOURCED_COLUMNS as coalesce_columns "
+        "— otherwise a rebuild can NULL read-through data it cannot reconstruct"
+    )
+    assert src.count("coalesce_columns=MFV_SIGNAL_SOURCED_COLUMNS") >= 2, (
+        "both the bulk path and the one-by-one fallback must coalesce; the "
+        "fallback runs exactly when the bulk path failed, i.e. under stress"
+    )
+
+    from workers.api_clients.supabase_client import MFV_SIGNAL_SOURCED_COLUMNS
+
+    # The declared list must match what the reader assigns from match_signals.
+    i = src.index("def _build_feature_row_batched")
+    j = src.index("\ndef ", i + 10)
+    reader = src[i:j]
+    assigned = set(_re.findall(r'name == "[a-z0-9_]+":\s*\n\s*([a-z0-9_]+) = ', reader))
+    declared = set(MFV_SIGNAL_SOURCED_COLUMNS)
+    missing = assigned - declared
+    assert not missing, (
+        f"columns read from match_signals but NOT protected on upsert: "
+        f"{sorted(missing)}. Add them to MFV_SIGNAL_SOURCED_COLUMNS — a rebuild "
+        f"after a prune will silently NULL them."
+    )
+
+    # Computed columns must NOT be protected — their NULL is the ELO-FORM-LEAK fix.
+    for computed in ("elo_home", "elo_away", "elo_diff",
+                     "form_ppg_home", "form_ppg_away"):
+        assert computed not in declared, (
+            f"{computed} is COMPUTED, not read-through. COALESCEing it would "
+            f"preserve the old leaked value and undo ELO-FORM-LEAK."
+        )
+
+
+
 if __name__ == "__main__":
     main()
