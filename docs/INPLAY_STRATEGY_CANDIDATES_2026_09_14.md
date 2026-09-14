@@ -161,6 +161,56 @@ on the board.
 
 ---
 
+---
+
+## Part 3 — the structural finding, and why every long-side idea lost
+
+Four more triggers were tested, this time with **wide windows from the outset**
+(≥15 minutes — something a bot could actually be told to do) and the neighbouring
+windows always shown, so a spike could not be mistaken for an effect.
+
+| strategy | windows tested | result |
+|---|---|---|
+| back the **trailing short favourite** | 15'–74', five windows | ❌ edge −3.3 to −4.1pp at **every** window; ROI −6.2% → −21.4%; CI excludes zero in 3 of 5 |
+| **lay a leading long-shot** (back the field) | 20'–79', five windows | ❌ edge −2.9 to −4.6pp; ROI −12.9% → −22.4%; **CI excludes zero in all five** |
+| back the **level short favourite** | 30'–84', four windows | ➖ edge −0.8 to −1.1pp; ROI ≈ −1%; CI includes zero throughout |
+
+The "market over-reacts to a goal against the favourite" folklore is **wrong** —
+if anything the comeback price is too short. Laying leading underdogs is worse.
+
+### Why — and this is the useful part
+
+Backing a *level* favourite loses only ~1% on a board carrying ~7.8% overround.
+If the margin were spread proportionally that bet should cost 3–4%. So the vig is
+not where you would assume. Measured on **7,539 level-score snapshots, minute 30–84**:
+
+| outcome | implied | actual | vig charged | **relative cost** |
+|---|---|---|---|---|
+| favourite | 47.6% | 45.8% | +1.8pp | **3.8%** |
+| draw | 34.4% | 32.1% | +2.3pp | **6.7%** |
+| underdog | 25.8% | 22.0% | +3.7pp | **14.3%** |
+
+**The long side carries nearly 4× the relative margin of the short side.**
+
+That reframes every negative above. They did not fail on football — they failed on
+*where they were shopping*. "Back the trailing favourite" buys at 2.9–7.5, "lay the
+dog" buys at 3.6–10.8; both are paying the long-side tax before a ball is kicked.
+A strategy that has to back a long price in-play starts roughly **14% behind**; one
+that backs a short price starts about **4% behind**.
+
+This converges with `INPLAY_BOOK_COMPARISON` from a completely different dataset,
+which found all cross-book dispersion sits on the long side (draw, away DNB, far
+totals) while favourites are priced near-identically everywhere. **Two independent
+measurements, one conclusion: the in-play long side is where the books take their
+money.**
+
+### The design rule this implies
+
+Any future in-play candidate should be **short-side by construction** — back things
+priced roughly 1.10–2.20 — or it must clear a ~14% margin before it can win. Every
+strategy refuted tonight violated that rule, which in hindsight is the single best
+predictor of which ones failed.
+
 ## Ranked next actions
 
 1. **Re-run Part 2 against Epicbet's collected prices.** Every number above is
@@ -175,6 +225,10 @@ on the board.
 4. **Collect the state we are missing.** `shots_on_target` is 1.2% filled and
    `model_xg` 0%. Every trigger above is (minute, score) only — shots and xG are the
    obvious next axis and we store neither.
+5. **Constrain the search to the short side.** Part 3 shows the long side carries
+   ~14% relative margin against ~4% on the favourite. Screening candidates for
+   "does this back a price under ~2.20?" would have killed most of tonight's losers
+   before they were tested.
 
 ## Provenance
 
