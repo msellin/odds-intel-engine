@@ -40778,6 +40778,70 @@ def test_accessible_bookmakers_feeds_alive():
     )
 
 
+@test("PICKS-FORWARD-TEST-RULE-LOCKED — the pre-registered constants match the doc")
+def test_picks_forward_test_rule_locked():
+    """PICKS-FORWARD-TEST (2026-09-14) — a pre-registration you can silently
+    edit is not a pre-registration.
+
+    The O/U Platt calibrator manufactured ~8-9pp of published edge for months
+    because no pre-committed criterion could fail. The remedy was to lock the
+    rule BEFORE the first post. That lock is worth nothing if someone later
+    nudges MIN_EDGE from 0.03 to 0.02 because a day looked thin — which is
+    exactly the pressure that will exist on a quiet Tuesday.
+
+    So: the constants in the publisher must match the numbers written in the
+    pre-registration doc. Changing the rule now requires editing the doc in the
+    same commit and saying why, which is all we are actually asking for.
+
+    ALIGN_MIN is the one that matters most. Unaligned, this rule backtested
+    +8.47pct; time-aligned it reads +5.5pct. The difference was stale soft-book
+    prices, not edge. Loosening it would quietly restore the artefact.
+    """
+    import re as _re
+
+    src = _engine_path("scripts/publish_picks_forward_test.py").read_text()
+    doc = _engine_path(
+        "dev/active/picks-forward-test-preregistration.md").read_text()
+
+    def const(name):
+        m = _re.search(rf"^{name}\s*=\s*([0-9.]+)", src, _re.M)
+        assert m, f"{name} not found in publish_picks_forward_test.py"
+        return float(m.group(1))
+
+    locked = {"MIN_EDGE": 0.03, "MAX_ODDS": 4.0, "ALIGN_MIN": 60.0, "TOP_N": 8}
+    for name, expected in locked.items():
+        actual = const(name)
+        assert actual == expected, (
+            f"{name} is {actual}, the pre-registration locks it at {expected}. "
+            f"If the rule is genuinely changing, edit "
+            f"dev/active/picks-forward-test-preregistration.md in the SAME "
+            f"commit, state why, and start a new test with a new start date — "
+            f"do not silently re-cut a running pre-registered test."
+        )
+
+    # the doc must still state the same rule, or the two have drifted
+    for frag in ("≥ 3%", "≤ 4.0", "within 60 minutes", "top 8 per day"):
+        assert frag in doc, (
+            f"pre-registration doc no longer states {frag!r} — the doc and the "
+            f"publisher have drifted apart, and the doc is the authority."
+        )
+
+    # the phantom feeds must never re-enter the pricing set
+    for phantom in ("Unibet-Kambi", "Unibet"):
+        assert f'"{phantom}"' in src, (
+            f"{phantom} must stay in EXCLUDED_BOOKS — it quotes prices the book "
+            f"does not honour (33-38 pct phantom-high)."
+        )
+
+    # the negative control must still run: if the junk arm is dropped, a broken
+    # harness becomes undetectable
+    assert "junk_anchor" in src, (
+        "the junk-anchor negative control has been removed. It is what proves "
+        "the harness works — if the junk arm makes money, the live arm means "
+        "nothing."
+    )
+
+
 
 if __name__ == "__main__":
     main()
