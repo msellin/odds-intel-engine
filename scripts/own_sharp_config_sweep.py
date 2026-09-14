@@ -470,6 +470,63 @@ def subset(legs, cell):
 # ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------
+BOOK_MARGIN = 0.076   # measured fleet-wide closing margin (PLAN_AFTER_AUDITS #4)
+
+
+def bot_clv_audit():
+    """The live SHARP trigger bots' own-book CLV, split by whether the close it
+    was scored against is actually THEIR book's.
+
+    Why this lives in the sweep. The reason to run a sharp-edge grid at all is
+    the claim that the four SHARP-anchored trigger bots are the fleet's only
+    CLV-positive engines. That claim is read off `shadow_bets.clv`, and two
+    things in it need separating before it can be believed:
+
+      * `clv` is a RAW price ratio with NO de-vig (settlement.py:613), so
+        break-even is the closing book's MARGIN, not zero:
+        `EV = (1+clv)/(1+m) - 1`, m ~ 7.6%.
+      * `settle_shadow_bets` prefers the bet's own book
+        (SHADOW-CLV-BOOKMAKER-FIX-2026-08-26) but FALLS BACK to the unfiltered
+        `get_closing_odds`, whose own docstring says comparing a price against
+        an arbitrary book "makes the resulting CLV structurally positive
+        regardless of whether the bet had any edge". Rows where that fallback
+        fired carry `closing_bookmaker IS NULL` — and they are not a small
+        remainder.
+
+    So the honest figure is the `closing_bookmaker = the bot's own book` row,
+    margin-corrected. Report both, and report the date span: a CLV measured
+    over three days is not a track record.
+    """
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        """
+        SELECT bot_name, closing_bookmaker, count(*) AS n,
+               avg(clv)::float AS clv, stddev(clv)::float AS sd,
+               avg(CASE WHEN result = 'won'
+                        THEN COALESCE(odds_at_pick_live, odds_at_pick) - 1
+                        ELSE -1 END)::float AS roi,
+               min(pick_time)::date AS d0, max(pick_time)::date AS d1
+          FROM shadow_bets_unique
+         WHERE bot_name LIKE %s AND clv IS NOT NULL
+           AND result IN ('won', 'lost')
+         GROUP BY 1, 2 ORDER BY 1, 3 DESC
+        """,
+        ("%trigger_sharp%",),
+    )
+    print("\n=== SHARP TRIGGER BOTS — own-book CLV vs the arbitrary-book "
+          "fallback (shadow_bets_unique, dedup view per §5) ===")
+    print(f"{'bot':34s} {'close@':14s} {'n':>4s} {'rawCLV':>8s} "
+          f"{'EV':>8s} {'t':>6s} {'execROI':>9s}  span")
+    for r in rows:
+        n, c, sd = r["n"], r["clv"], (r["sd"] or 0.0)
+        ev = (1 + c) / (1 + BOOK_MARGIN) - 1
+        se = (sd / (1 + BOOK_MARGIN)) / math.sqrt(n) if n > 1 and sd else 0.0
+        note = "" if r["closing_bookmaker"] else "   <- UNANCHORED, inflated"
+        print(f"{r['bot_name']:34s} {str(r['closing_bookmaker']):14s} {n:4d} "
+              f"{c*100:+7.2f}% {ev*100:+7.2f}% {(ev/se if se else 0):+6.2f} "
+              f"{r['roi']*100:+8.2f}%  {r['d0']}..{r['d1']}{note}")
+
+
 def fmt(s):
     if not s:
         return "n=0"
@@ -491,6 +548,8 @@ def main() -> int:
                     help="junk-anchor negative control (anchor from another fixture)")
     ap.add_argument("--seed", type=int, default=20260914)
     ap.add_argument("--diagnostics", action="store_true")
+    ap.add_argument("--bot-clv", action="store_true",
+                    help="also audit the live sharp trigger bots' own-book CLV")
     ap.add_argument("--json-out", default="")
     a = ap.parse_args()
 
@@ -664,6 +723,9 @@ def main() -> int:
         if s1:
             print(f"   {book:12s} 1x2 only     {fmt(s1)} "
                   f"gap {s1['median_gap_min']:.0f}m {s1['picks_per_day']:.2f}/day")
+
+    if a.bot_clv:
+        bot_clv_audit()
 
     if a.json_out:
         with open(a.json_out, "w") as fh:
