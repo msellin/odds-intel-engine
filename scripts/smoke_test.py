@@ -42101,5 +42101,162 @@ def test_clv_always_own_book():
                 f"is indistinguishable from an arbitrary-book one."
             )
 
+
+@test("OWN-LINE-MOVEMENT-METHOD-PINNED — the movement study keeps its guards")
+def test_own_line_movement_method_pinned():
+    """OWN_LINE_MOVEMENT (2026-09-14): the line-movement study concluded DEAD —
+    194 gated configurations across 3 books x 4 markets, zero with margin-corrected
+    own-book CLV above 0, and the real signals beat their own gate-matched placebo
+    in 82 of 160 cells (a coin flip).
+
+    This test does NOT re-run the study (its input window is destroyed by
+    `prune_old_simple` after 7 days). It pins the METHOD, because every guard below
+    is one that already inverted a verdict in this repo at least once, and because
+    the scripts stay re-runnable against a fresh snapshot:
+
+      * phantom/aggregate feeds must stay out of the consensus anchor;
+      * pre-kickoff must be bounded on the kickoff time, never on `is_live` (37);
+      * the margin correction must be per row with the 0..0.5 guard, matching
+        `settlement.closing_book_margin()` — a flat average m inverts verdicts;
+      * SEs must be clustered on fixture — a fixture contributes many correlated
+        quotes and unclustered SEs are ~3x too tight here;
+      * the placebo must be a PERMUTATION of the signal (gate-matched by
+        construction), not a different gate on a different population;
+      * epoch minutes must not be derived by dividing a datetime64[us] cast by
+        60e9 — that is microseconds, so every window lands 1000x too long and
+        every freshness filter becomes a no-op. It returned zero events once.
+    """
+    from pathlib import Path as _P
+    root = _P(__file__).parent.parent
+
+    snap = (root / "scripts" / "own_movement_snapshot.py").read_text()
+    assert "prune_old_simple" in snap, (
+        "the snapshot script must say WHY it exists — retention destroys the "
+        "price path after 7 days, so an unfrozen movement study is not reproducible"
+    )
+
+    src = (root / "scripts" / "own_line_movement.py").read_text()
+
+    for phantom in ("Unibet-Kambi", "Betfair Exchange", "BetWin", "Betfred"):
+        assert f'"{phantom}"' not in src.split("COMP =")[0].split("AF = [")[1].split("]")[0], (
+            f"{phantom} is a phantom/aggregate feed and must never enter the "
+            f"consensus anchor"
+        )
+    assert "df.ttk > 0" in src and "is_live" not in src.split("def build")[0].split("def load")[1], (
+        "pre-kickoff must be bounded on kickoff time, not on is_live (gotcha 37)"
+    )
+    assert "(1.0 + E.clv) / (1.0 + E.m) - 1.0" in src, (
+        "mc-CLV must be the per-row margin correction, matching closing_book_margin()"
+    )
+    assert "0.0 <= m <= 0.5" in src, "the margin guard from closing_book_margin() must be kept"
+    assert "groupby(\"mid\").mc.mean()" in src, "SEs must be clustered on fixture"
+    assert "rng.permutation" in src, (
+        "the placebo must permute the signal so it is gate-matched by construction"
+    )
+    assert "60e9" not in src, (
+        "datetime64[us].astype(int64) is MICROseconds — dividing by 60e9 makes every "
+        "window 1000x too long and every freshness filter a no-op"
+    )
+
+    doc = (root / "docs" / "OWN_LINE_MOVEMENT_2026_09_14.md").read_text()
+    assert "DEAD" in doc, "the verdict must stay stated in the report"
+
+
+
+
+@test("OWN-SEGMENT-SEARCH-METHOD-GUARDS")
+def test_own_segment_search_method_guards():
+    """OWN-SEGMENT-SEARCH (2026-09-14) — pins the six guards the search's
+    verdict rests on. See docs/OWN_SEGMENT_SIGNAL_SEARCH_2026_09_14.md.
+
+    Why a source-inspection test and not a data one: this family of analysis has
+    produced a retracted number roughly once per audit, and every retraction was
+    a METHOD defect, not a query bug — a flat margin instead of a per-row one
+    inverted a verdict; an arbitrary-book close read 4-10pp high; an
+    exact-timestamp cross-book join measured write granularity; `is_live=false`
+    was taken for pre-kickoff on 35.3pct of Pinnacle rows. Each guard below is
+    one of those, and each is cheap to delete by accident while refactoring.
+    """
+    universe = _engine_path("scripts/own_book_clv_universe.py").read_text()
+    placebo = _engine_path("scripts/own_anchor_placebo.py").read_text()
+    ledger = _engine_path("scripts/own_ledger_segment_check.py").read_text()
+    search = _engine_path("scripts/own_segment_signal_search.py").read_text()
+    signal = _engine_path("scripts/own_signal_residual_test.py").read_text()
+
+    # (1) margin-corrected CLV, per row, matching settlement.closing_book_margin.
+    assert "(1.0 + clv) / (1.0 + m) - 1.0" in universe, (
+        "own_book_clv_universe must margin-correct as (1+clv)/(1+m)-1. A raw "
+        "clv has its break-even at the closing book's own overround, not zero."
+    )
+    assert "CLOSE_MAX_MIN = 60" in universe and "MARGIN_MAX = 0.5" in universe, (
+        "the close freshness bound (settlement.DIRECT_CLOSE_MAX_MIN = 60) and "
+        "the 0 <= m <= 0.5 margin sanity bound must both be present — "
+        "settlement.closing_book_margin refuses out-of-range margins rather "
+        "than emitting a correction that would move a stopping rule."
+    )
+
+    # (2) pre-kickoff bounds. `is_live IS NOT TRUE` alone is NOT pre-kickoff.
+    for name, src in (("universe", universe), ("ledger", ledger)):
+        assert "o.timestamp <= m.date" in src, (
+            f"{name} must bound every quote on `timestamp <= m.date`. "
+            f"COALESCE(is_live, FALSE) = FALSE does not mean pre-kickoff — "
+            f"35.3pct of such Pinnacle rows are post-kickoff (gotcha 37)."
+        )
+    assert "minutes_to_kickoff IS NULL OR o.minutes_to_kickoff > 0" in universe, (
+        "the Pinnacle anchor needs the minutes_to_kickoff guard as well as the "
+        "timestamp bound — the same defect that was found inside the residual "
+        "test on 28pct of its selected rows."
+    )
+
+    # (3) no cross-book join on timestamp equality (gotcha 63).
+    assert "o.bookmaker = ANY(%s)" in universe, (
+        "books must be pulled together and assembled per book in Python; a "
+        "SQL join across bookmakers on equal timestamps measures write "
+        "granularity, not simultaneity (Coolbet's 1x2 triple spans ~100ms)."
+    )
+
+    # (4) own-book rows only in the ledger arm.
+    assert "closing_bookmaker IS NOT NULL" in ledger, (
+        "ledger rows with a NULL closing_bookmaker came through the retired "
+        "arbitrary-book fallback and read 4-10pp high."
+    )
+    assert "shadow_bets_unique" in ledger and "FROM shadow_bets " not in ledger, (
+        "read shadow_bets_unique — the base table duplicates 8.43x and the "
+        "duplication is OUTCOME-CORRELATED, so it moves the estimate itself."
+    )
+
+    # (5) the placebo must be gate/stratum matched, not a free shuffle.
+    assert "decile" in placebo and "odds_dec" in placebo, (
+        "the anchor placebo must shuffle the Pinnacle de-vig WITHIN odds "
+        "deciles. An unstratified shuffle destroys the mechanical dependence "
+        "it exists to preserve, and would make the control trivially flat for "
+        "the wrong reason."
+    )
+
+    # (6) multiple-comparison + clustering machinery must stay in the scan.
+    for token, why in (
+        ("bh_fdr", "Benjamini-Hochberg across the whole scan"),
+        ("cluster", "cluster-robust SEs on match_id — three 1x2 legs of one "
+                    "fixture are not independent draws"),
+        ("required_n", "power before reporting a difference (gotcha 60)"),
+        ("CELLS TESTED", "the number of cells searched must be printed"),
+        ("DATE SPAN", "n is meaningless without the span beside it"),
+    ):
+        assert token in search, (
+            f"scripts/own_segment_signal_search.py must retain `{token}`: {why}."
+        )
+
+    # (7) the signal test must report an OOS delta with NOTHING fitted on test.
+    assert "d_fixed" in signal and "ll(pm, yte) - ll(paug, yte)" in signal, (
+        "the alpha-blend delta fits alpha ON the test set and therefore can "
+        "never be negative — it is not an out-of-sample gain. The verdict must "
+        "read d_fixed, where c comes from train and alpha is pinned at 1."
+    )
+    assert "noise_gauss" in signal and "CANARY" in signal, (
+        "the signal test must keep its noise control and its post-hoc leakage "
+        "canary. A clean negative is only credible when the controls behave."
+    )
+
+
 if __name__ == "__main__":
     main()
