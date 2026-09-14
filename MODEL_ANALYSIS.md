@@ -534,3 +534,71 @@ Generate natural language bet justifications from dimension scores, alignment, K
 **Implementation:** LLM prompt in frontend API, using stored bet data.
 **Expected impact:** Zero betting ROI, high commercial ROI (subscriber retention).
 **When:** When building Pro/Elite tier in frontend.
+
+---
+
+## The shrinkage alpha has been telling us the model adds nothing, since May
+
+**Added 2026-09-14 (ALPHA-IS-AN-UNREAD-INSTRUMENT).**
+
+`scripts/fit_blend_weights.py::optimize_shrinkage_alpha` picks the alpha that
+minimises log-loss of `alpha * model_prob + (1 - alpha) * market_implied`. That is
+not a tuning knob — it is a **measurement**, refitted continuously on tens of
+thousands of settled outcomes, of exactly one thing: *how much does our model add
+over the market?*
+
+Its answer, per tier, latest fit:
+
+| market family | t1 | t2 | t3 | t4 | largest n |
+|---|---|---|---|---|---|
+| **1x2** | **0.0085** | **0.0000** | **0.0054** | **0.0000** | 59,799 |
+| **goal line** | 0.2278 | 0.2878 | 0.2848 | 0.1463 | 92,221 |
+
+And its trajectory (t1, 93 refits):
+
+| | May | Jun | Jul | Aug | Sep |
+|---|---|---|---|---|---|
+| `1x2` | 0.0154 | 0.0286 | 0.0278 | 0.0245 | **0.0085** |
+| `goalline` | 0.9262 | 0.5554 | 0.4168 | 0.3449 | **0.2278** |
+
+**Two 1x2 tiers are exactly zero.** On ~60,000 samples the optimum is to discard
+our 1x2 model entirely and use the de-vigged market. The goal-line weight has slid
+monotonically from 0.93 to 0.23 across 93 refits — not noise, a trend.
+
+### Why this matters more than it looks
+
+`cal_prob = stage2(alpha * model + (1 - alpha) * pinnacle_devig)`. At alpha =
+0.0085, a 1x2 `cal_prob` is **~99 percent a monotone transform of the Pinnacle
+line**. So `edge = cal_prob - 1/odds`, which every surface calls *model edge*, is
+mostly the stage-2 sigmoid's distortion of a sharp price — not an opinion our model
+holds. That is why:
+
+- the sigmoid's fixed point governs which selections show "edge" (below it,
+  everything is inflated — this is the exact mechanism of
+  OU-CALIBRATOR-DOMAIN-MISMATCH, and 1x2 has the same shape, held safe only by the
+  Pinnacle veto at `gap > 0.12`);
+- measured independently, the model-minus-market disagreement has **AUC 0.449 on
+  O/U and 0.344 on 1x2** — below 0.5, i.e. anti-predictive;
+- `12db2d6` found model-anchored CLV of −3.47% (t=−35.0) against +5.64% (t=+14.2)
+  for the sharp anchor.
+
+Four independent instruments, one conclusion. The alpha is the earliest and the
+largest-sample of them, and it was available the whole time.
+
+### The reporting gap, now closed
+
+`optimize_shrinkage_alpha` computes `ll_model` (alpha=1) and `ll_market` (alpha=0)
+on every run — the clean two-sided skill comparison — and **printed them to stdout,
+where they scrolled away**. `ece_before` held the previous alpha and `ece_after` the
+blended optimum, so neither baseline survived. Migration 338 adds `ll_model` /
+`ll_market` columns and the fitter now writes them; smoke test
+`ALPHA-IS-AN-UNREAD-INSTRUMENT` fails if that write is removed, and pins the current
+regime so a move in **either** direction surfaces.
+
+### What this does not say
+
+It does not say the model is worthless. It says the model is not worth much *against
+a sharp price on the markets and tiers measured here*. Its value may lie where no
+sharp price exists to shrink toward — which is an argument for the sharp/de-vig
+anchor and for markets Pinnacle does not price, not for tuning the model-anchored
+edge floors again.

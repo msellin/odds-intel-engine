@@ -40275,5 +40275,85 @@ def test_isotonic_ou_key_aliases():
 
 
 
+@test("ALPHA-IS-AN-UNREAD-INSTRUMENT — the model-vs-market skill comparison is recorded, and the regime is pinned")
+def test_shrinkage_alpha_regime():
+    """`optimize_shrinkage_alpha` picks the alpha minimising log-loss of
+    `alpha*model + (1-alpha)*market`, which makes alpha a direct, large-sample,
+    continuously-refitted answer to "how much does our model add over the
+    market?".
+
+    It has been answering since May and nobody read it:
+
+        shrinkage_alpha_t1_1x2       0.0154 -> 0.0085   n=59,799
+        shrinkage_alpha_t2_1x2       0.0000             n= 9,027
+        shrinkage_alpha_t4_1x2       0.0000             n= 4,042
+        shrinkage_alpha_t1_goalline  0.9262 -> 0.2278   n=92,221
+
+    Two 1x2 tiers are EXACTLY ZERO — the fitted optimum is to ignore our model
+    entirely — while `edge = cal_prob - 1/odds` is still described as "model
+    edge". At alpha=0.0085 a 1x2 cal_prob is ~99 pct a transform of the de-vigged
+    Pinnacle line, so most of the "disagreement" we bet on is the Platt sigmoid's
+    own distortion. Independent AUC work reached the same place from the other
+    side (1x2 disagreement AUC 0.344 — anti-predictive).
+
+    This test does two jobs:
+
+      1. Keeps the instrument wired. The fitter computes ll_model (alpha=1) and
+         ll_market (alpha=0) on every run and used to print and discard them.
+         Migration 338 added the columns; this fails if the write is removed.
+      2. Pins the REGIME, not a value. It is deliberately not a "alpha must be
+         above X" gate — every 1x2 tier is already below any sane threshold, so
+         such a gate would be red on arrival and instantly ignored. Instead it
+         fails when the picture MATERIALLY CHANGES in either direction, because
+         both directions are news: a recovering alpha means the model started
+         earning its weight, a collapsing goal-line alpha means it stopped.
+    """
+    import pathlib as _pl
+    from workers.api_clients.db import execute_query
+
+    src = _pl.Path("scripts/fit_blend_weights.py").read_text()
+    assert "ll_model, ll_market)" in src, (
+        "fit_blend_weights must RECORD ll_model/ll_market — computing and "
+        "printing them is how months of the cleanest skill measurement in the "
+        "system were lost"
+    )
+    assert 'res["ll_model"]' in src and 'res["ll_market"]' in src, (
+        "the recorded values must be the computed baselines, not placeholders"
+    )
+
+    rows = execute_query(
+        """SELECT DISTINCT ON (market) market, platt_a AS alpha
+             FROM model_calibration
+            WHERE market LIKE 'shrinkage_alpha%%' AND platt_a IS NOT NULL
+            ORDER BY market, fitted_at DESC"""
+    )
+    if not rows:
+        raise SkipTest("no shrinkage_alpha rows yet")
+    a = {r["market"]: float(r["alpha"]) for r in rows}
+
+    # The 1x2 family is at/near zero on every tier. If any tier climbs back over
+    # 0.10 the model has started contributing again — good news, and it must not
+    # pass unnoticed, because floors and gates were all set assuming it does not.
+    for k in [m for m in a if m.endswith("_1x2")]:
+        assert a[k] < 0.10, (
+            f"{k} = {a[k]:.4f} — our 1x2 model has started earning real weight "
+            f"against the market again (it has been <0.05 since May). This is "
+            f"good news, not a failure: re-read docs/MODEL_ANALYSIS.md on the "
+            f"alpha regime, then update this bound deliberately."
+        )
+
+    # The goal-line family slid 0.93 -> 0.23 across 93 refits. Zero would mean
+    # the O/U model has no remaining value at all over the market.
+    gl = [v for m, v in a.items() if m.endswith("_goalline")]
+    assert gl, "no goalline alpha rows"
+    assert max(gl) > 0.02, (
+        f"every goal-line shrinkage alpha has collapsed to ~0 (max {max(gl):.4f}). "
+        f"The O/U model now adds nothing measurable over the market — model-anchored "
+        f"O/U picks are a transform of the Pinnacle line and should not be published "
+        f"or staked as model edge."
+    )
+
+
+
 if __name__ == "__main__":
     main()

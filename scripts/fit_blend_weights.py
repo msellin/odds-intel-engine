@@ -415,8 +415,9 @@ def run(min_samples: int = MIN_SAMPLES_DEFAULT, dry_run: bool = False):
                 execute_write(
                     """
                     INSERT INTO model_calibration
-                        (market, platt_a, platt_b, sample_count, ece_before, ece_after, fitted_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        (market, platt_a, platt_b, sample_count, ece_before,
+                         ece_after, fitted_at, ll_model, ll_market)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         market_key,
@@ -426,6 +427,17 @@ def run(min_samples: int = MIN_SAMPLES_DEFAULT, dry_run: bool = False):
                         round(old_alpha, 6),
                         round(res["ll_optimal"], 6),
                         datetime.now(timezone.utc).isoformat(),
+                        # ALPHA-IS-AN-UNREAD-INSTRUMENT (2026-09-14): these two
+                        # were computed on every run since May and printed to
+                        # stdout, where they scrolled away. They are the cleanest
+                        # skill measurement in the system — `ll_model > ll_market`
+                        # says our model is WORSE than the market on this
+                        # tier/family — and the alpha alone does not carry it
+                        # (a low alpha says the model adds little, these say by
+                        # how much and in which direction). Recorded now so the
+                        # comparison is a time series instead of console output.
+                        round(res["ll_model"], 6),
+                        round(res["ll_market"], 6),
                     ),
                 )
                 print(f"      → Stored {market_key} = {alpha_opt:.4f} in model_calibration")
