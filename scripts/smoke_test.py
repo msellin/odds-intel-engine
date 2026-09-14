@@ -40126,5 +40126,43 @@ def test_trigger_config_deepdive_2026_09_14():
     assert "PLACEABLE" in code, "Kambi and Pinnacle must stay out of an executable-price read"
 
 
+@test("HEALTH-PING-SKIP-IS-NOT-A-FAILURE — a deliberate skip must not page as an outage")
+def test_health_ping_skip_not_failure_2026_09_14():
+    """The Coolbet health ping has a breaker: when we hold no usable JWT it does
+    NOT put a request on the wire, because a retry loop into the Imperva wall is
+    what sustains a lockout (runbook 2/7). That skip used to exit 1 — identical
+    to "Coolbet is down" — so the scheduler recorded it failed in pipeline_runs
+    and pushed status=down to Kuma.
+
+    Measured 2026-09-14 over 9h: 26 recorded failures, of which 14 were one real
+    outage and 12 were isolated skips at :55/:00 as the 30-minute JWT rolled
+    over. The breaker WORKING was indistinguishable from the thing it protects
+    against, and it paged all night while all four feeds wrote normally.
+
+    Exit 3 = skipped on purpose. The skip stays visible — mark_heartbeat records
+    it and status.py reports JWT age independently — it just is not an outage.
+    """
+    import pathlib as _pl
+
+    hp = _strip_prose(_pl.Path("scripts/coolbet/health_ping.py").read_text())
+    assert 'if result.get("skipped"):' in hp and "return 3" in hp, (
+        "a deliberate skip needs its own exit code, distinct from 1=unhealthy"
+    )
+    # The breaker itself must survive, and must still fail OPEN.
+    assert "_skip_reason" in hp, "the breaker must still exist"
+
+    sch = _strip_prose(_pl.Path("workers/scheduler.py").read_text())
+    i = sch.index("scripts/coolbet/health_ping.py")
+    window = sch[i:i + 1200]
+    assert "returncode == 3" in window, (
+        "the scheduler must treat exit 3 as not-a-failure, or the skip still pages"
+    )
+    # ...and a genuine failure must STILL be recorded as failed.
+    assert "_fail" in window and "raise RuntimeError" in window, (
+        "exit 1 must still record status=failed — that was itself a fix for a "
+        "silent-failure trap and must not be undone by this one"
+    )
+
+
 if __name__ == "__main__":
     main()

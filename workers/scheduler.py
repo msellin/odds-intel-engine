@@ -1044,8 +1044,21 @@ def job_coolbet_health_ping():
         [sys.executable, "scripts/coolbet/health_ping.py", "--json"],
         capture_output=True, text=True, timeout=60,
     )
-    # exit code 0 = healthy, 1 = unhealthy, 2 = config error
+    # exit code 0 = healthy, 1 = unhealthy, 2 = config error,
+    #           3 = SKIPPED ON PURPOSE (no usable credential to probe with)
     if result.returncode == 0:
+        _run_job("coolbet_health_ping", lambda: None)
+        return
+    # HEALTH-PING-SKIP-IS-NOT-A-FAILURE (2026-09-14): exit 3 means the probe
+    # deliberately did not go on the wire, because we hold no usable JWT and a
+    # retry loop into the Imperva wall is what sustains a lockout (runbook 2/7).
+    # That is the breaker WORKING. Recording it as failed conflated "Coolbet is
+    # down" with "the JWT is mid-rollover", and the 30-minute JWT rolls over
+    # every 30 minutes — so the alert fired all night on a healthy system while
+    # all four feeds were writing normally.
+    if result.returncode == 3:
+        console.print("[dim]Coolbet health-ping: skipped (no usable credential) "
+                      "— breaker working, not an outage[/dim]")
         _run_job("coolbet_health_ping", lambda: None)
         return
     console.print(f"[yellow]Coolbet health-ping: exit {result.returncode}[/yellow]")

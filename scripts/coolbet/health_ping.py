@@ -157,6 +157,19 @@ def main() -> int:
         print(f"  elapsed: {result['elapsed_s']:.2f}s")
         print(f"  written to coolbet_session_state.last_heartbeat_at")
 
+    # HEALTH-PING-SKIP-IS-NOT-A-FAILURE (2026-09-14). A deliberate skip used to
+    # fall through to exit 1, identical to "Coolbet is down" — so every JWT lapse
+    # was recorded as an outage in pipeline_runs and pushed status=down to Kuma.
+    # Measured over 9h: 26 "failures", of which 14 were one real outage and the
+    # other 12 were isolated skips at :55/:00 as the 30-minute JWT rolled over.
+    # Alerting on a state the self-heal is designed to absorb is how a monitor
+    # trains its operator to ignore it.
+    #
+    # 3 = skipped on purpose, not a verdict on Coolbet. The skip is still fully
+    # visible: mark_heartbeat() records it, and scripts/ops/status.py reports JWT
+    # age independently, so a JWT that is genuinely dead for hours still shows.
+    if result.get("skipped"):
+        return 3
     return 0 if result["ok"] else 1
 
 

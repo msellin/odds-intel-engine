@@ -448,3 +448,40 @@ of "a test broke another test" in this file; the rule is that any smoke test
 mutating shared module state or `os.environ` must restore it — see also the
 `ROUTER_ALLOW_REAL` entry, where `os.environ.pop()` let `load_dotenv()` silently
 re-populate the flag the test existed to verify.
+
+---
+
+## A circuit breaker whose "working" state is indistinguishable from the fault
+
+**Found 2026-09-14, from a `🔴 coolbet_health_ping stuck` alert.**
+
+The Coolbet health ping has a breaker: when no usable JWT is stored it does
+**not** put a request on the wire, because a retry loop into the Imperva wall is
+what sustains a lockout (runbook 2/7). Correct design.
+
+But the skip returned `ok: False` and fell through to `exit 1` — the same exit
+code as "Coolbet is down". The scheduler recorded `status=failed` in
+`pipeline_runs` and pushed `status=down` to Kuma. **The breaker doing its job was
+reported as the failure it exists to prevent.**
+
+Measured over 9 hours: **26 recorded failures — 14 were one real outage
+(20:20–21:25, self-healed), and the other 12 were isolated skips at :55 and :00**
+as the 30-minute JWT rolled over. All four feeds were writing normally the whole
+time (Coolbet 16,817 rows/hr).
+
+**The tell:** failures in a clean periodic pattern, at the same minutes past the
+hour, interleaved with successes. An outage is contiguous; a rollover is
+rhythmic. `XXXXXXXXXXXXXX.....XX......................XX..........XX` — the first
+run is an incident, everything after it is a clock.
+
+**The guard:** exit 3 = skipped on purpose, and the scheduler records it as
+completed. The skip stays fully visible — `mark_heartbeat()` records it and
+`scripts/ops/status.py` reports JWT age independently — so a JWT genuinely dead
+for hours still shows. Smoke test `HEALTH-PING-SKIP-IS-NOT-A-FAILURE` pins both
+halves, including that a real failure is STILL recorded as failed (that was
+itself a fix for a silent-failure trap and must not be undone by this one).
+
+**The pattern, generally:** a monitor must distinguish *"I could not measure"*
+from *"I measured, and it is bad."* Collapsing the two costs you the alert
+channel — an operator who sees the same red every night stops reading it, and
+that is exactly when the real 65-minute outage goes unnoticed.
