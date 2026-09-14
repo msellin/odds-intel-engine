@@ -41914,5 +41914,61 @@ def test_simulated_clv_own_book():
         f"and it is published."
     )
 
+
+@test("CLV-ALWAYS-OWN-BOOK — no settlement path may compute CLV against an arbitrary book")
+def test_clv_always_own_book():
+    """CLV-ALWAYS-OWN-BOOK (2026-09-14) — the rule, not the symptom.
+
+    The same defect was found in THREE separate settlement paths on one day:
+    `_settle_pending_shadow_bets`, the `simulated_bets` settle loop, and
+    `resettle_wrongly_voided_bets`. Each called `get_closing_odds` without a
+    bookmaker. Since `odds_at_pick` is by construction the MAX across accessible
+    books, comparing it against whichever book sorted last is structurally
+    positive regardless of whether the bet had edge — and `clv` is the promotion
+    gate for the entire fleet (§8).
+
+    The first two fixes shipped guards that look for `closing_odds IS NOT NULL
+    AND closing_bookmaker IS NULL`. **That guard could not see the third one.**
+    `resettle_wrongly_voided_bets` never wrote `closing_bookmaker` at all, so
+    when it re-settled a row that ALREADY carried a valid book it overwrote the
+    CLV with an arbitrary-book value and left the label in place: the row reads
+    own-book-verified while carrying a number that is not. 405 rows were in
+    range, 133 on that undetectable path.
+
+    So this test pins the RULE instead of the symptom: every call to
+    `get_closing_odds` in settlement.py must pass a bookmaker. Parsed with AST
+    rather than a regex — a regex splitting on commas miscounts nested calls
+    like `_normalize_bet_market(a, b)` and reported a fixed site as unfixed
+    while writing this.
+    """
+    import ast as _ast
+
+    src = _engine_path("workers/jobs/settlement.py").read_text()
+    tree = _ast.parse(src)
+    bad = []
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Call) and getattr(node.func, "id", None) == "get_closing_odds":
+            if len(node.args) + len(node.keywords) < 4:
+                bad.append(node.lineno)
+    assert not bad, (
+        f"get_closing_odds called WITHOUT a bookmaker at settlement.py line(s) "
+        f"{bad}. That comparison is structurally positive regardless of edge, "
+        f"and clv is the fleet's promotion gate. Pass the bet's own book and "
+        f"leave clv NULL when it has no close — a NULL is honest, a substituted "
+        f"book is a silent bias."
+    )
+
+    # and every path that writes clv must also write the book that produced it,
+    # or the own-book guarantee is unverifiable after the fact
+    import re as _re
+    for m in _re.finditer(r"UPDATE (shadow_bets|simulated_bets) SET", src):
+        seg = src[m.start():m.start() + 600]
+        if "clv = %s" in seg:
+            assert "closing_bookmaker = %s" in seg, (
+                f"a write to {m.group(1)} sets clv without closing_bookmaker "
+                f"(near offset {m.start()}). Without the book, an own-book CLV "
+                f"is indistinguishable from an arbitrary-book one."
+            )
+
 if __name__ == "__main__":
     main()

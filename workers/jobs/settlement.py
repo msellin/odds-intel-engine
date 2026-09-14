@@ -2084,7 +2084,7 @@ def settle_ready_matches():
 _WRONGLY_VOIDED_SQL = """
 SELECT
     sb.id, sb.bot_id, sb.match_id, sb.market, sb.selection, sb.stake,
-    sb.odds_at_pick, sb.pnl, sb.void_reason,
+    sb.odds_at_pick, sb.pnl, sb.void_reason, sb.recommended_bookmaker,
     m.score_home, m.score_away,
     ht.name AS home_team_name, ta.name AS away_team_name
 FROM {table} sb
@@ -2269,11 +2269,35 @@ def resettle_wrongly_voided_bets(limit: int = 2000, dry_run: bool = False) -> di
             # The old row contributed 0 to PnL whether it stored 0 or NULL, so
             # the delta is simply the newly computed pnl.
             delta = float(settlement["pnl"])
-            closing_odds = get_closing_odds(
-                bet["match_id"],
-                _normalize_bet_market(bet["market"], bet["selection"]),
-                _normalize_bet_selection(bet["selection"]),
+            # RESETTLE-CLV-OWN-BOOK-2026-09-14 — the THIRD site of the same
+            # defect, and the nastiest, because it is invisible to the guard the
+            # other two shipped with.
+            #
+            # This used to call get_closing_odds with NO bookmaker. Since
+            # `odds_at_pick` is by construction the MAX across accessible books,
+            # comparing it against whichever book sorted last is structurally
+            # positive regardless of edge — the same reasoning as
+            # SHADOW-CLV-NO-ARBITRARY-FALLBACK and SIMULATED-CLV-OWN-BOOK.
+            #
+            # WHY IT WAS UNDETECTABLE. Those two guards look for
+            # `closing_odds IS NOT NULL AND closing_bookmaker IS NULL`. This job
+            # never wrote `closing_bookmaker` at all — so when it re-settled a
+            # row that ALREADY carried a valid book, it overwrote `clv` with an
+            # arbitrary-book value and LEFT THE LABEL IN PLACE. The row then
+            # reads as own-book-verified while carrying a number that is not.
+            # 405 rows are in range and 133 sit on that undetectable path; the
+            # job had not yet fired on them.
+            _own_book = bet.get("recommended_bookmaker")
+            closing_odds = (
+                get_closing_odds(
+                    bet["match_id"],
+                    _normalize_bet_market(bet["market"], bet["selection"]),
+                    _normalize_bet_selection(bet["selection"]),
+                    _own_book,
+                )
+                if _own_book else None
             )
+            closing_bookmaker = _own_book if closing_odds else None
             clv = None
             if closing_odds and float(closing_odds) > 0:
                 clv = round((float(bet["odds_at_pick"]) / float(closing_odds)) - 1, 4)
@@ -2281,8 +2305,10 @@ def resettle_wrongly_voided_bets(limit: int = 2000, dry_run: bool = False) -> di
             try:
                 execute_write(
                     f"UPDATE {table} SET result = %s, pnl = %s, closing_odds = %s, "
-                    f"clv = %s, void_reason = NULL WHERE id = %s",
-                    [settlement["result"], settlement["pnl"], closing_odds, clv, bet["id"]],
+                    f"clv = %s, closing_bookmaker = %s, void_reason = NULL "
+                    f"WHERE id = %s",
+                    [settlement["result"], settlement["pnl"], closing_odds, clv,
+                     closing_bookmaker, bet["id"]],
                 )
             except Exception as e:
                 console.print(f"  [yellow]Void-integrity write failed for {bet['id']}: {e}[/yellow]")
