@@ -1,5 +1,79 @@
 # Pre-registration — PICKS forward test (sharp-edge rule)
 
+> ## ⚠️ v2 CLOSED · v3 REGISTERED 2026-09-14 — anchor-quality gate
+>
+> **v3** (`sharp_edge_v3_2026_09_14`) adds **`MAX_ANCHOR_OVERROUND = 0.04`** and
+> changes nothing else. v2's n is **not** carried forward.
+>
+> **Why.** The rule's own header tells readers the picks are *"priced directly
+> against the sharpest line in the market."* On a third of the slate that was
+> false, and `load_candidates()` was **already computing `anchor_overround` on
+> every leg and discarding it** — a number computed but never surfaced, on a
+> public Telegram feed. Measured on this rule's own population (90d, Shin,
+> aligned ≤60 min, the three bettable books; n=326, ROI −13.54% overall):
+>
+> | anchor overround | n | ROI |
+> |---|---|---|
+> | **<4%** sharp-grade | 72 | **−3.36%** |
+> | 4–6% | 76 | −22.07% |
+> | 6–9% | 58 | −16.00% |
+> | **≥9%** goodwill quote | 120 | −13.06% ← **34.1% of the slate** |
+>
+> A paired live-Pinnacle test the same day (n=92, 39 leagues) confirms the ≥9%
+> band is **not a feed artefact**: where our stored row says 9.28%, real Pinnacle
+> says **9.26%**, with $200 limits behind it. Pinnacle genuinely charges 9%+
+> there. An "edge" against a quote with no size behind it is two soft prices
+> disagreeing.
+>
+> **⚠️ THIS IS AN HONESTY FIX, NOT AN ALPHA FIX.** Gating does not make the rule
+> profitable — the retained band is still **−3.36% at n=72**. It stops us
+> publishing an edge computed against a price that is not a line. **If the honest
+> answer remains "no demonstrable edge at any anchor quality", that is what goes
+> on `/performance` and in the Telegram feed.** Publishing a positive figure while
+> the honest number is negative is the precise pattern CLAUDE.md exists to prevent.
+>
+> **Volume cost — the owner's call, stated up front.** The <4% band is ~22% of
+> legs (72/326) and ~12% of fixtures (11/92). At `TOP_N = 8` this will often
+> publish fewer than 8 picks a day. Loosening to 0.06 roughly doubles volume and
+> admits the **worst**-measured band (−22.07%). Per CLAUDE.md, restricting picks
+> to a narrow band is good for 🤖 OWN and bad for 👥 PICKS, and that trade-off is
+> the owner's, not an implementation detail.
+>
+> **Symmetry.** The gate is applied to the candidate **pool**, not in `select()`,
+> so the junk-anchor control arm is gated identically. Whatever test the live arm
+> gets, every control arm gets.
+>
+> ### Day-one measurement, and it is the sharpest statement of the thesis yet
+>
+> First gated dry run, 2026-09-14, on the live board (109 legs ungated):
+>
+> | gate | pool legs | legs ≥ MIN_EDGE | published |
+> |---|---|---|---|
+> | 4% | 28 | **0** | 0 |
+> | 6% | 69 | **0** | 0 |
+> | 8% | 88 | **0** | 0 |
+> | 10% | 105 | 2 | 2 |
+> | none | 109 | 2 | 2 |
+>
+> Ungated anchor-overround distribution: min 3.26%, median 5.46%, max 12.53%;
+> **<4% is 25.7% of legs**, so the pool is not the constraint.
+>
+> **Both of the day's qualifying picks were anchored on ≥9% goodwill quotes.**
+> Not one leg with a genuinely sharp anchor cleared a 3% edge.
+>
+> This is the thesis of `docs/ANCHOR_IS_NOT_SHARP_2026_09_14.md` stated at its
+> strongest, and measured rather than argued: **when the anchor is actually
+> sharp, the 3% edge does not exist. A ≥3% edge appears only when the anchor is
+> soft — because the "edge" IS the anchor's own margin.** The rule is therefore
+> structurally incapable of producing picks against a sharp line, and every pick
+> it has ever published was, by construction, priced against a quote with no size
+> behind it.
+>
+> **"No picks today" is the correct and honest output**, and the publisher already
+> treats it as a valid outcome. If that persists, the finding to publish is not a
+> thinner feed — it is that this rule has no demonstrable edge, which is exactly
+> what `/performance` and the Telegram feed should then say.
+
 > ## ⚠️ v1 CLOSED at n=8 · v2 REGISTERED 2026-09-15
 >
 > **v1** (`sharp_edge_v1_2026_09_14`) published 8 picks on 2026-09-14 and is
@@ -51,6 +125,7 @@ anchor  = Shin de-vig of the Pinnacle triple
 edge    = P_shin × best_book_price − 1        ≥ 3%     [EXPECTED ROI, not P − 1/odds]
 odds    ≤ 4.0
 price ratio: book_price / anchor_price − 1    ≤ 20%    [v2]
+anchor overround (sum(1/anchor_odds) − 1)     ≤ 4%     [v3]  ← the anchor must BE a line
 alignment: anchor quote and bet quote within 60 minutes
 markets : 1x2, over_under_25
 excluded books: Max, Avg, Betfair Exchange, BetWin, Betfred,

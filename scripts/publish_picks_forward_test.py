@@ -31,7 +31,7 @@ from workers.notify.telegram import send_telegram_public
 
 log = logging.getLogger("picks_forward")
 
-RULE_VERSION = "sharp_edge_v2_2026_09_15"
+RULE_VERSION = "sharp_edge_v3_2026_09_14"
 
 # ── the locked rule ──────────────────────────────────────────────────────────
 MIN_EDGE   = 0.03   # sharp edge floor
@@ -39,6 +39,49 @@ MAX_ODDS   = 4.0    # uncapped, the edge collapses into longshot noise
 ALIGN_MIN  = 60.0   # anchor and bet quote within 60 min — see note below
 TOP_N      = 8      # per day, by edge
 MAX_RATIO  = 0.20   # book price may not exceed the anchor by more than this
+MAX_ANCHOR_OVERROUND = 0.04   # [v3] the anchor must actually BE a sharp line
+
+# MAX_ANCHOR_OVERROUND is v3's one change (PICKS-ANCHOR-QUALITY-GATE-2026-09-14).
+#
+# `anchor_overround` was already COMPUTED on every leg (see load_candidates) and
+# then thrown away. This is the project's dominant failure shape — a number
+# computed but never surfaced — reproduced on a PUBLIC, live, Telegram-published
+# feed whose own HEADER below claims the picks are "priced directly against the
+# sharpest line in the market". On a third of the slate that is false.
+#
+# Measured 2026-09-14, this rule's own population, 90d, Shin de-vig, aligned
+# <=60 min, the three bettable books (n=326, ROI -13.54% overall):
+#
+#     anchor overround band          n     ROI
+#     <4%   sharp-grade anchor      72    -3.36%
+#     4-6%                          76   -22.07%
+#     6-9%                          58   -16.00%
+#     >=9%  goodwill quote         120   -13.06%   <- 34.1% of the slate
+#
+# And a paired live-Pinnacle test the same day (n=92, 39 leagues) confirms the
+# >=9% band is NOT a feed artefact: where our AF row says 9.28%, real Pinnacle
+# says 9.26% (+0.00pp). Pinnacle genuinely charges 9%+ there. A price with no
+# size behind it is a quote, not a line, and an "edge" against it is two soft
+# prices disagreeing. 4% is the same threshold docs/ANCHOR_IS_NOT_SHARP_2026_09_14.md
+# uses for "plausibly a real line", and it is the band where our stored anchor
+# is verified accurate (paired delta +0.10pp vs +1.05pp in the 4-6% band).
+#
+# ⚠️ THIS IS AN HONESTY FIX, NOT AN ALPHA FIX — state it plainly whenever the
+# rule is described. Gating does NOT make the rule profitable: the retained band
+# is still -3.36% at n=72. It stops us publishing an edge computed against a
+# quote with no size behind it. If the honest answer stays "this rule has no
+# demonstrable edge at any anchor quality", that belongs on /performance and in
+# the Telegram feed — publishing +X% while the honest number is negative is the
+# exact pattern CLAUDE.md was written to prevent.
+#
+# 👥 PICKS — it changes what readers are told, not what we stake.
+#
+# VOLUME COST, stated up front because it is the owner's call and not an
+# implementation detail (CLAUDE.md, "when the two directions conflict, say so"):
+# the <4% band was 72 of 326 legs (22%) in the ROI split and 11 of 92 fixtures
+# (12%) in the paired test. At TOP_N=8/day this will often publish fewer than 8
+# picks. Loosening to 0.06 roughly doubles volume and admits the worst-measured
+# band (-22.07%). That trade-off is the owner's to make; the constant is here.
 
 # MAX_RATIO is v2's one change, and it is the ONLY change (RULE-V2-2026-09-15).
 #
@@ -154,6 +197,11 @@ def load_candidates() -> tuple[list[dict], list[dict]]:
             anchor_ts = max(pin[s][1] for s in sides)
             anchor_odds = {s: pin[s][0] for s in sides}
             overround = sum(1.0 / o for o in anchor_odds.values()) - 1.0
+            if overround > MAX_ANCHOR_OVERROUND:
+                continue          # [v3] not a sharp line — see MAX_ANCHOR_OVERROUND.
+                                  # Applied to the POOL, not in select(), so the
+                                  # junk arm is gated identically: whatever test
+                                  # the live arm gets, every control arm gets.
             probs = devig([anchor_odds[s] for s in sides])
             if probs is None:
                 continue

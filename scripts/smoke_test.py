@@ -2715,6 +2715,54 @@ def _():
     assert isinstance(cnt, int), f"Expected int count, got {type(cnt)}"
 
 
+@test("SHARP-BMS-PHANTOM-FEEDS — the sharp set is Pinnacle-only, no CSV-import feeds")
+def _():
+    """SHARP-BMS-PHANTOM-FEEDS-2026-09-14.
+
+    `_SHARP_BMS` drives the live `sharp_consensus_*` signals. It used to read
+    {"Pinnacle", "Betfair Exchange", "Betfair", "Marathon Bet"} and three of the
+    four were wrong:
+
+      * "Betfair Exchange" rows are NOT a live book. Every one is a
+        football-data.co.uk CSV import — a historical CLOSING price on a major
+        league. Averaging a closing price into a signal computed at an arbitrary
+        time is a real defect. Every other consumer already excluded it; this
+        live signal path was the one that was missed.
+      * "Betfair" (AF's sportsbook, not the exchange) reads ~10.4pct median 1X2
+        overround — not sharp on merit — and AF stopped serving it at
+        2026-09-05 12:00.
+      * "Marathon Bet" never matched: the stored spelling is "Marathonbet".
+        Do NOT "fix" the typo — backfill_mfv_b_ml3_v2_features.py documents
+        Marathonbet as RETAIL and deliberately excludes it, so repairing the
+        spelling would ADD a book the model path rejects.
+
+    The bar this test defends: ONE definition of "sharp" across both paths. The
+    model feature (sharp_consensus_*_at_t6h) already uses
+    SHARP_BOOKS = frozenset({"Pinnacle"}); this is the raw-signal writer agreeing.
+    """
+    import re as _re
+
+    src = _engine_path("workers/api_clients/supabase_client.py").read_text()
+    m = _re.search(r"^\s*_SHARP_BMS\s*=\s*(\{[^}]*\})", src, _re.M)
+    assert m, "_SHARP_BMS not found in supabase_client.py"
+    body = m.group(1)
+
+    for phantom in ("Betfair Exchange", "Betfair", "Marathon Bet"):
+        assert phantom not in body, (
+            f'"{phantom}" is back in _SHARP_BMS. It is not a live sharp feed — '
+            f"see SHARP-BMS-PHANTOM-FEEDS-2026-09-14 in the comment above it."
+        )
+    assert "Pinnacle" in body, "_SHARP_BMS must still contain Pinnacle"
+
+    # and the model-feature path must still agree, or the two have drifted apart
+    mfv = _engine_path("scripts/backfill_mfv_b_ml3_v2_features.py").read_text()
+    assert 'SHARP_BOOKS = frozenset({"Pinnacle"})' in mfv, (
+        "the MODEL FEATURE's sharp set changed. The raw signal writer "
+        "(_SHARP_BMS) and the feature writer (SHARP_BOOKS) must define 'sharp' "
+        "the same way; if one moves, move both in the same commit."
+    )
+
+
 @test("LEAGUE-GOALS-DIST — league_over25_pct and league_btts_pct queryable in match_signals")
 def _():
     from workers.api_clients.db import execute_query
@@ -40835,7 +40883,7 @@ def test_picks_forward_test_rule_locked():
         return float(m.group(1))
 
     locked = {"MIN_EDGE": 0.03, "MAX_ODDS": 4.0, "ALIGN_MIN": 60.0,
-              "TOP_N": 8, "MAX_RATIO": 0.20}
+              "TOP_N": 8, "MAX_RATIO": 0.20, "MAX_ANCHOR_OVERROUND": 0.04}
     for name, expected in locked.items():
         actual = const(name)
         assert actual == expected, (
@@ -40847,11 +40895,39 @@ def test_picks_forward_test_rule_locked():
         )
 
     # the doc must still state the same rule, or the two have drifted
-    for frag in ("≥ 3%", "≤ 4.0", "within 60 minutes", "top 8 per day", "≤ 20%"):
+    for frag in ("≥ 3%", "≤ 4.0", "within 60 minutes", "top 8 per day", "≤ 20%",
+                 "anchor overround"):
         assert frag in doc, (
             f"pre-registration doc no longer states {frag!r} — the doc and the "
             f"publisher have drifted apart, and the doc is the authority."
         )
+
+    # PICKS-ANCHOR-QUALITY-GATE-2026-09-14 — the gate must be applied to the
+    # POOL, not inside select(). Two reasons, both load-bearing:
+    #   1. SYMMETRY. select() runs on the live arm only; the junk-anchor control
+    #      reads the pool. Gating in select() would leave the control ungated and
+    #      the comparison rigged in the live arm's favour.
+    #   2. The rule's public HEADER claims the picks are "priced directly against
+    #      the sharpest line in the market". A >=9% overround quote is not a
+    #      line — real Pinnacle charges 9%+ there too (paired n=92, delta
+    #      +0.00pp, $200 limits), so it is not a feed artefact we can wait out.
+    gate_at = src.find("if overround > MAX_ANCHOR_OVERROUND")
+    assert gate_at != -1, (
+        "the anchor-quality gate is gone. `anchor_overround` was computed and "
+        "discarded for the life of v1/v2 while the feed told readers it was "
+        "'priced against the sharpest line in the market' — on 34.1 pct of the "
+        "slate that was false. Do not remove the gate without closing the test."
+    )
+    assert gate_at < src.find("def select("), (
+        "the anchor-quality gate has moved into select() or below it. It must "
+        "gate the candidate POOL so the junk-anchor control arm is gated "
+        "identically — whatever test the live arm gets, every control arm gets."
+    )
+    assert "HONESTY FIX, NOT AN ALPHA FIX" in src, (
+        "the honesty-vs-alpha caveat has been deleted. Gating does NOT make this "
+        "rule profitable — the retained <4pct band is still -3.36pct at n=72. "
+        "Anyone reading this constant must not mistake it for an edge source."
+    )
 
     # the phantom feeds must never re-enter the pricing set
     for phantom in ("Unibet-Kambi", "Unibet"):

@@ -107,14 +107,73 @@ the CLV always said *about break-even*, and the realised ROI agreed.
 - Porting `DIRECT-BOOK-CLV` (#6) is still worth half a day — a ledger with an
   undefined closing book is indefensible. It is hygiene, not the deciding
   instrument.
-- **Derivative markets** (corners, team totals, 1H lines) are where low-tier
+- ~~**Derivative markets** (corners, team totals, 1H lines) are where low-tier
   softness actually lives, because the book bolts them on rather than buying them
-  from the same supplier that prices 1X2. `bot_corners_paper_shadow_v1`,
-  `bot_team_total_paper_shadow_v1`, `bot_1h_1x2_paper_shadow_v1` point there —
-  but they are anchored on the same non-sharp Pinnacle and must be re-derived
-  against a **multi-book consensus**.
+  from the same supplier that prices 1X2.~~ **❌ RETRACTED 2026-09-14, same day,
+  by `docs/OWN_MARKET_EXPANSION_2026_09_14.md` + commit `6c743ea`.** The premise
+  is measured false *at our books*: **Coolbet prices corners, cards and team
+  totals at a flat 8.00% — identical to its own 1X2** — and Epicbet's 1H 1X2
+  (6.19%) is **tighter** than its own 1X2. A flat margin across every derivative
+  is the signature of an **automated derivation engine**: the book computes one
+  goals model and applies a fixed margin to every projection of it. That means
+  the derivatives carry no *independent* error to exploit — they are a
+  deterministic transform of numbers we have already measured as efficient.
+  Results are in and null: corners **n=51, +4.0%, CI [−38.8, +46.9]** (~15 years
+  to power); team totals **CLV +0.64%, t=0.68**; 1H market AUC 0.66 vs model
+  0.54; cards **−76% ROI on n=22** with a −4.1pp settlement bias (z=−3.0).
+  **Do not re-open this on the strength of the retracted paragraph above.**
+  `bot_corners_paper_shadow_v1`, `bot_team_total_paper_shadow_v1` and
+  `bot_1h_1x2_paper_shadow_v1` are the instruments that returned the null.
 - **Exclude club friendlies unconditionally.** 15% of selected picks; ROI −45.1%
   (t=−3.10). This is a prior, not a discovery.
+
+## Follow-up the same day: is the 9.18% our FEED, or is it Pinnacle?
+
+**Answer: mostly Pinnacle. The feed adds ~0.8pp of lag, and none of it where it
+matters.** `AF-PINNACLE-NOT-PINNACLE-2026-09-14`'s paired test, run against
+Pinnacle's own guest API (`scripts/` probe, Mac-only — Cloudflare WAF-blocks the
+VPS), **n=92 fixtures across 39 leagues**, overround only (no de-vig, no
+max-over-selections, so none of the usual biases apply):
+
+```
+median real Pinnacle overround : 5.72%
+median AF  "Pinnacle" overround: 6.69%
+MEDIAN PAIRED DELTA (AF - real): +0.81pp   95% CI [+0.38, +1.02]
+AF wider on 73/92 (79%); effectively identical on 15/92
+```
+
+**It is LAG, not distortion** — the delta is a clean dose-response in the age of
+our stored row:
+
+| AF row age | n | delta |
+|---|---|---|
+| < 1h | 13 | **+0.02pp** |
+| 1–6h | 70 | +0.81pp |
+| 6–24h | 9 | +1.20pp |
+
+A fresh AF row is indistinguishable from real Pinnacle. (Caveat: age is partly a
+proxy for time-to-kickoff, so the two cannot be fully separated — both are lag.)
+
+**And the split by anchor quality confirms this document's thesis from a new
+direction rather than overturning it:**
+
+| band | n | real | AF | delta | median limit |
+|---|---|---|---|---|---|
+| sharp (<4%) | 11 | 3.57% | 3.84% | **+0.10pp** | $1,800 |
+| mid (4–6%) | 42 | 5.53% | 6.53% | +1.05pp | $500 |
+| wide (6–9%) | 23 | 6.40% | 7.71% | +1.08pp | $400 |
+| **goodwill (≥9%)** | 16 | **9.26%** | **9.28%** | **+0.00pp** | $200 |
+
+Where our feed says 9.28%, **real Pinnacle says 9.26%.** The goodwill quotes were
+never a feed artefact — Pinnacle genuinely charges 9%+ on those fixtures, with
+$200 limits behind them. §"The premise that was never checked" stands, and a live
+Pinnacle feed would not move it by a basis point.
+
+**Consequence: scraping Pinnacle does not revive the sharp-anchor strategy.** It
+would make edges *shrink* (our feed inflates), i.e. remove picks rather than
+create them. The surviving action is the one now shipped —
+`PICKS-ANCHOR-QUALITY-GATE`, which uses the `anchor_overround` column that was
+already being computed and discarded.
 
 ## The three process guards this should have had
 

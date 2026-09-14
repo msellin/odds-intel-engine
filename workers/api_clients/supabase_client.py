@@ -4469,7 +4469,29 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
     signals: list[tuple] = []  # (match_id, signal_name, value, group, source, captured_at)
 
     # Sharp/soft bookmaker sets — used in blocks 3 and 3a
-    _SHARP_BMS = {"Pinnacle", "Betfair Exchange", "Betfair", "Marathon Bet"}
+    # SHARP-BMS-PHANTOM-FEEDS-2026-09-14. Was
+    # {"Pinnacle", "Betfair Exchange", "Betfair", "Marathon Bet"} — three of the
+    # four were dead weight, and one of them was actively wrong:
+    #   * "Betfair Exchange" is NOT a live feed. Every such row is a
+    #     football-data.co.uk CSV import (scripts/ingest_football_data_csvs.py) —
+    #     i.e. a historical CLOSING price on a major league. Mixing a closing
+    #     price into a signal computed at an arbitrary time is a real defect, not
+    #     just dead weight. Every other consumer already excludes it
+    #     (own_line_movement.py, publish_picks_forward_test.py EXCLUDED_BOOKS,
+    #     audit_odds_fidelity.py, two smoke assertions); this live signal path
+    #     was the one that was missed.
+    #   * "Betfair" (the AF sportsbook, not the exchange) reads ~10.4% median 1X2
+    #     overround — that is not a sharp book on merit — and AF stopped serving
+    #     it entirely at 2026-09-05 12:00 in the supply change.
+    #   * "Marathon Bet" never matched anything: the stored spelling is
+    #     "Marathonbet". Do NOT "fix" the typo — scripts/backfill_mfv_b_ml3_v2_features.py
+    #     documents Marathonbet as RETAIL and deliberately excludes it.
+    # So the live sharp side was already Pinnacle alone. This makes that explicit
+    # and converges on the ONE definition the model feature already uses:
+    # backfill_mfv_b_ml3_v2_features.py SHARP_BOOKS = frozenset({"Pinnacle"}).
+    # No train/serve skew: the model feature (sharp_consensus_*_at_t6h) is
+    # written by that other file and never used this set.
+    _SHARP_BMS = {"Pinnacle"}
     _SOFT_BMS = {"Bwin", "Unibet", "Sportingbet", "Betway", "NordicBet", "10Bet", "1xBet"}
 
     def add(mid: str, name: str, val, group: str, source: str):
