@@ -668,12 +668,19 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
         ("over_under_35", "odds_over_35", "odds_under_35"),
         ("over_under_45", "odds_over_45", "odds_under_45"),
     ]:
+        # OU-LINE-BACKFILL had three writers to fix and this one was missed:
+        # store_book_odds_snapshots and store_coolbet_odds_snapshot both carry
+        # handicap_line, store_odds did not, so its rows landed with NULL and any
+        # cross-book join keyed on the line silently dropped them. The line is
+        # not ambiguous here — it is in `line_label` — so derive it rather than
+        # requiring callers to pass it.
+        _line = int(line_label.rsplit("_", 1)[1]) / 10.0
         if match_data.get(over_key, 0) > 0:
             odds_rows.append({**base, "market": line_label, "selection": "over",
-                              "odds": match_data[over_key]})
+                              "odds": match_data[over_key], "handicap_line": _line})
         if match_data.get(under_key, 0) > 0:
             odds_rows.append({**base, "market": line_label, "selection": "under",
-                              "odds": match_data[under_key]})
+                              "odds": match_data[under_key], "handicap_line": _line})
 
     # BTTS
     if match_data.get("odds_btts_yes", 0) > 0:
@@ -706,7 +713,8 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
         tuples = [
             (r["match_id"], r["bookmaker"], r["market"], r["selection"],
              r["odds"], r["timestamp"], r["is_closing"], r["minutes_to_kickoff"],
-             (r["market"], r["selection"]) not in existing_combos)
+             (r["market"], r["selection"]) not in existing_combos,
+             r.get("handicap_line"))
             for r in odds_rows
         ]
         with get_conn() as conn:
@@ -714,7 +722,7 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
                 psycopg2.extras.execute_values(
                     cur,
                     """INSERT INTO odds_snapshots
-                       (match_id, bookmaker, market, selection, odds, timestamp, is_closing, minutes_to_kickoff, is_opening)
+                       (match_id, bookmaker, market, selection, odds, timestamp, is_closing, minutes_to_kickoff, is_opening, handicap_line)
                        VALUES %s""",
                     tuples,
                     page_size=500,
@@ -1647,6 +1655,11 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
                  AND o.selection = 'over'
                  AND o.is_live = false
                  AND o.bookmaker NOT IN ('api-football', 'api-football-live', 'William Hill')
+                 -- OU25-DISAGREEMENT-WRONG-LINE (2026-09-14) — see the sibling
+                 -- filters in train.py and compute_ou25_bookmaker_disagreement.
+                 -- This is the BULK path that actually populates
+                 -- match_feature_vectors, so it is the one that matters most.
+                 AND (o.handicap_line IS NULL OR o.handicap_line = 2.5)
                  AND o.timestamp <= m.date
                ORDER BY o.match_id, o.bookmaker, o.timestamp DESC""",
             (chunk,),
@@ -3511,6 +3524,14 @@ def compute_ou25_bookmaker_disagreement(match_id: str) -> float | None:
            WHERE o.match_id = %s AND o.market = 'over_under_25' AND o.selection = 'over'
              AND o.is_live = false
              AND o.bookmaker NOT IN ('api-football', 'api-football-live', 'William Hill')
+             -- OU25-DISAGREEMENT-WRONG-LINE (2026-09-14): market='over_under_25'
+             -- does not guarantee the 2.5 line. 1xBet files 0.25-goal Asian
+             -- totals under it, and since this feature is max-minus-min across
+             -- books, ONE mislabelled row sets the max and the feature reads
+             -- ~1.0 instead of ~0.05. Key on the line, not on a book blacklist
+             -- that only chases whoever does it today. NULL kept: pre-backfill
+             -- rows are genuine 2.5 quotes.
+             AND (o.handicap_line IS NULL OR o.handicap_line = 2.5)
              AND o.timestamp <= m.date
            ORDER BY o.timestamp DESC
            LIMIT 200""",

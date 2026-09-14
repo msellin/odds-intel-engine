@@ -382,10 +382,25 @@ def load_isotonic_models() -> dict[str, object]:
         bundle_dir = Path(__file__).resolve().parent.parent.parent / "data" / "models" / "soccer" / version
         if not bundle_dir.exists():
             return _isotonic_models
+        # ISOTONIC-OU-KEY-MISMATCH (2026-09-14): bundles are named for the
+        # PREDICTIONS vocabulary (`isotonic_over_25.pkl`) while `_apply_stage2`
+        # looks up the PIPELINE key (`over_under_25_over`), built as
+        # f"{os_market}_{os_selection}". So an O/U isotonic bundle loaded fine,
+        # matched nothing at call time, and fell through to Platt in silence —
+        # the same vocabulary gap PRODUCTION_KEY exists to close on the writing
+        # side, still open on the reading side. Register both spellings so a
+        # bundle is reachable at the key production actually asks for.
+        _OU_ALIASES = {
+            "over_25": ("over_under_25_over",), "under_25": ("over_under_25_under",),
+            "over_35": ("over_under_35_over",), "under_35": ("over_under_35_under",),
+            "over_15": ("over_under_15_over",), "under_15": ("over_under_15_under",),
+        }
         for f in bundle_dir.glob("isotonic_*.pkl"):
             market = f.stem.replace("isotonic_", "")
             try:
                 _isotonic_models[market] = joblib.load(f)
+                for alias in _OU_ALIASES.get(market, ()):
+                    _isotonic_models[alias] = _isotonic_models[market]
             except Exception as e:
                 console.print(f"[yellow]Failed to load {f.name}: {e}[/yellow]")
     except Exception as e:

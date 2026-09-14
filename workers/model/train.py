@@ -689,6 +689,18 @@ def _load_ou_market_features() -> pd.DataFrame:
           AND os.is_live = false
           AND os.timestamp < m.date
           AND os.bookmaker NOT IN ('api-football', 'api-football-live', 'William Hill')
+          -- OU25-DISAGREEMENT-WRONG-LINE (2026-09-14): market='over_under_25' is
+          -- not sufficient to mean "the 2.5 line". 1xBet files 0.25-goal Asian
+          -- totals under it (~212 rows/day; implied_over up to 0.983), and this
+          -- feature is MAX(implied) - MIN(implied) across books, so a single
+          -- mislabelled row sets the max and the feature reads ~1.0 instead of
+          -- ~0.05. Observed max in live match_feature_vectors: 0.9401.
+          -- A book blacklist would only chase the book that does it today; the
+          -- line column is now populated (OU-LINE-BACKFILL), so key on the thing
+          -- that is actually wrong. NULL is kept: pre-backfill rows are genuine
+          -- 2.5 quotes and excluding them would silently shrink the feature's
+          -- history.
+          AND (os.handicap_line IS NULL OR os.handicap_line = 2.5)
         ORDER BY os.match_id, os.bookmaker, os.timestamp DESC
     )
     SELECT match_id,

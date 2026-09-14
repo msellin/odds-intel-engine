@@ -40164,5 +40164,116 @@ def test_health_ping_skip_not_failure_2026_09_14():
     )
 
 
+@test("OU-LINE-UNPARSEABLE-GRADED-LOST — an unreadable O/U line refuses to settle, and integer lines push")
+def test_ou_goals_resolver_refuses_unparseable():
+    """`_r_ou_goals` fell through to `return False` when `_parse_ou_line` could
+    not read the line — grading the bet LOST, and lost on BOTH sides, since over
+    and under take the same path.
+
+    `_parse_ou_line` handles 2-digit glued tokens ('25' -> 2.5) but not 3-digit
+    ones: 'over_under_275' parses as 275.0, fails the 0 < v < 10 range check and
+    returns None. That is the same "unrecognised market becomes a silent loss"
+    failure the resolver registry's own header says it was built to remove,
+    surviving inside one resolver.
+
+    Also pinned: a whole-number line with exactly that many goals is a PUSH
+    (stake returned), not a loss on both sides. `None` is this registry's
+    push/void signal.
+
+    Latent, not an incident — the pipeline only offers 05/15/25/35/45 today. It
+    is fixed because the error is asymmetric: refusing leaves the bet pending and
+    alerts, guessing settles it wrong and silently.
+    """
+    from workers.jobs.settlement import _r_ou_goals, _UNSETTLEABLE
+
+    # Readable lines still grade exactly as before.
+    assert _r_ou_goals("over_under_25", "over", 2, 1, None) is True      # 3 > 2.5
+    assert _r_ou_goals("over_under_25", "under", 2, 1, None) is False    # 3 !< 2.5
+    assert _r_ou_goals("over_under_25", "under", 1, 1, None) is True     # 2 < 2.5
+    assert _r_ou_goals("over_under_35", "over", 2, 2, None) is True      # 4 > 3.5
+
+    # Unreadable line: refuse, never guess. Both sides.
+    for sel in ("over", "under"):
+        assert _r_ou_goals("over_under_275", sel, 2, 1, None) is _UNSETTLEABLE, (
+            f"over_under_275/{sel} must refuse to settle, not grade lost"
+        )
+
+    # Whole-number line landing exactly on the number is a push, not a loss.
+    assert _r_ou_goals("over_under_30", "over", 2, 1, None) is None
+    assert _r_ou_goals("over_under_30", "under", 2, 1, None) is None
+
+
+@test("OU-LINE-WRITER-COMPLETE — every odds_snapshots writer carries handicap_line")
+def test_store_odds_writes_handicap_line():
+    """OU-LINE-BACKFILL fixed the readers and two of the three writers.
+    `store_odds()` was the one missed: its INSERT column list had no
+    `handicap_line`, so its rows landed NULL and any cross-book join keyed on the
+    line silently returned nothing for them.
+
+    The line is not ambiguous at that point — it is in `line_label` — so it is
+    derived rather than required from callers.
+    """
+    src = _engine_path("workers/api_clients/supabase_client.py").read_text()
+    i = src.index("def store_odds(")
+    j = src.index("def ", i + 10)
+    body = src[i:j]
+    assert "handicap_line" in body, "store_odds must carry handicap_line"
+    assert "is_opening, handicap_line)" in body, (
+        "handicap_line must be in the INSERT column list, not merely computed"
+    )
+    assert 'r.get("handicap_line")' in body, "the value tuple must supply it"
+
+
+@test("OU25-DISAGREEMENT-WRONG-LINE — the O/U disagreement feature keys on the line, not a book blacklist")
+def test_ou25_disagreement_line_filtered():
+    """`ou25_bookmaker_disagreement` is MAX(implied) - MIN(implied) across books,
+    so ONE mislabelled row sets the max on its own. 1xBet files 0.25-goal Asian
+    totals under `market='over_under_25'`, which made the feature read ~1.0 where
+    the true spread is ~0.05 — live `match_feature_vectors` max is 0.9401 against
+    a mean of 0.0534. It is a TRAINING feature, so the damage is to the model,
+    not to one pick.
+
+    A book blacklist only chases whoever does it today; `handicap_line` is now
+    populated, so all three code paths key on the line instead. NULL is kept
+    deliberately — pre-backfill rows are genuine 2.5 quotes and dropping them
+    would silently shorten the feature's history.
+    """
+    paths = [
+        "workers/model/train.py",                  # offline training
+        "workers/api_clients/supabase_client.py",  # bulk MFV loader + per-match
+    ]
+    for rel in paths:
+        src = _engine_path(rel).read_text()
+        assert "handicap_line IS NULL OR o" in src or "handicap_line IS NULL OR os" in src, (
+            f"{rel} must filter the O/U disagreement source on handicap_line"
+        )
+    # All three query sites, not just one: the bulk loader is the one that
+    # actually populates match_feature_vectors.
+    sc = _engine_path("workers/api_clients/supabase_client.py").read_text()
+    assert sc.count("handicap_line IS NULL OR o.handicap_line = 2.5") >= 2, (
+        "both the bulk loader and compute_ou25_bookmaker_disagreement must filter"
+    )
+
+
+@test("ISOTONIC-OU-KEY-MISMATCH — an O/U isotonic bundle is reachable at the production key")
+def test_isotonic_ou_key_aliases():
+    """Bundles are named for the PREDICTIONS vocabulary (`isotonic_over_25.pkl`)
+    while `_apply_stage2` looks them up by the PIPELINE key
+    (`over_under_25_over`, built as f"{os_market}_{os_selection}"). So an O/U
+    isotonic bundle loaded fine, matched nothing at call time, and fell through
+    to Platt in silence — the same vocabulary gap `PRODUCTION_KEY` closes on the
+    writing side, still open on the reading side.
+
+    Inert today (`STAGE2_CALIBRATOR` defaults to platt) which is exactly why it
+    could sit unnoticed: flipping that env var would have looked like "isotonic
+    changes nothing" rather than "isotonic never loaded".
+    """
+    src = _engine_path("workers/model/improvements.py").read_text()
+    assert "_OU_ALIASES" in src, "O/U isotonic key aliases missing"
+    for key in ("over_under_25_over", "over_under_25_under"):
+        assert key in src, f"{key} must be registered as an isotonic alias"
+
+
+
 if __name__ == "__main__":
     main()

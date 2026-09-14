@@ -307,14 +307,38 @@ def _r_1x2_1h(market, selection, home_goals, away_goals, stats):
 
 
 def _r_ou_goals(market, selection, home_goals, away_goals, stats):
+    """Grade a goals over/under bet.
+
+    OU-LINE-UNPARSEABLE-GRADED-LOST (2026-09-14). The `line is not None` guard
+    used to fall through to `return False`, so a line this parser cannot read was
+    graded LOST — and lost on BOTH sides, because over and under take the same
+    path. `_parse_ou_line` accepts 2-digit glued tokens ('25' -> 2.5) but not
+    3-digit ones, so `over_under_275` parses as 275.0, fails the 0 < v < 10
+    range check, and returns None. That is exactly the "unrecognised market
+    graded as a silent loss" failure this module's registry comment was written
+    to remove, still living inside one resolver.
+
+    Not currently reachable from `simulated_bets` — the pipeline only offers
+    05/15/25/35/45 — so this is a latent fix, not an incident. It is worth making
+    anyway because the cost of being wrong is asymmetric: refusing to settle
+    leaves a bet pending and alerts, guessing settles it wrong and silently.
+
+    Also fixes the integer-line PUSH. On a whole-number line (`over_under_30`)
+    with exactly that many goals, neither `> line` nor `< line` holds, so both
+    sides were graded lost where the book returns the stake. `None` is this
+    registry's push/void signal.
+    """
     total_goals = home_goals + away_goals
     line = _parse_ou_line(market, selection)
-    if line is not None:
-        if "over" in selection and total_goals > line:
-            return True
-        if "under" in selection and total_goals < line:
-            return True
-    return False
+    if line is None:
+        return _UNSETTLEABLE
+    if total_goals == line:          # only reachable on a whole-number line
+        return None                  # push — stake returned, not a loss
+    if "over" in selection:
+        return total_goals > line
+    if "under" in selection:
+        return total_goals < line
+    return _UNSETTLEABLE
 
 
 def _r_btts(market, selection, home_goals, away_goals, stats):

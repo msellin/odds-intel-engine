@@ -2048,3 +2048,45 @@ held `a=1.6081, b=−0.8604` continuously from 2026-08-30 through 2026-09-13 wit
 change on 09-03. 1x2 shows a similarly compressed range ([0.297, 0.679], fixed point
 0.4766) but *chronically*, so it is a separate open question, not part of this incident.
 
+---
+
+### `simulated_bets.pnl` is priced at a snapshot nobody could take — use the executable price
+
+**Added 2026-09-14**, after I summed the raw column mid-investigation and quoted an
+inflated drawdown back to the owner. It is written down because the trap is silent:
+`pnl` is a real, populated, sensible-looking column, and nothing about reading it warns
+you.
+
+`pnl` is settled from **`odds_at_pick`**, which STALE-BEST-ODDS (`5d8985a`) showed is the
+highest price ever *seen* for that selection, not one that was ever *on offer*. The
+honest basis is `COALESCE(odds_at_pick_live, odds_at_pick)` — the price actually
+available when the pick was made.
+
+Measured on the live ledger, all bots, settled only:
+
+| basis | total P&L |
+|---|---|
+| stored `pnl` (= `odds_at_pick`) | **−€39.79** |
+| recomputed at `odds_at_pick_live` | **−€487.15** |
+
+**The raw column is €447 optimistic.** On `bot_v10_all` alone: +€339.73 / +6.65% ROI
+stored, against +€158.57 / +3.10% at the executable price — and 288 of its 640 settled
+picks have a live price differing from the pick price, mean **−7.34%**.
+
+The UI is already right. `SHADOW-PAGE-ROI-INFLATED` (2026-09-05) converted
+`/admin/shadow-bots` and the per-bot page to `execOdds()`, and
+`docs/BETTING_GATE_DECISIONS.md` fixes executable price as the canonical method. So a
+disagreement between the page and your query is the *query* being wrong, which is the
+opposite of the instinct — I spent an hour treating the UI as the suspect.
+
+```sql
+-- correct
+SUM(CASE WHEN result = 'won'
+         THEN stake * (COALESCE(odds_at_pick_live, odds_at_pick) - 1)
+         ELSE -stake END)
+-- wrong, and quietly so
+SUM(pnl)
+```
+
+Coverage is ~85% of settled rows, so keep the `COALESCE` fallback rather than dropping
+uncovered picks — silently shrinking the population is its own bias.
