@@ -39384,7 +39384,12 @@ def test_every_registry_bot_is_visible():
     )
     # Guard the guard: if the registry is ever emptied or the import silently
     # yields nothing, the two assertions above pass while checking nothing.
-    assert len(BOTS) >= 12, (
+    # Lowered 12 -> 8 on 2026-09-14 (BOT-RETIREMENT-ON-CLV): five bots were
+    # legitimately retired on margin-corrected own-book CLV, taking the registry
+    # from 16 to 11. The guard's job is to catch an EMPTIED or failed import, not
+    # to pin a fleet size that is supposed to shrink as evidence arrives — a
+    # retirement should never require editing a threshold upward-only.
+    assert len(BOTS) >= 8, (
         f"registry looks truncated ({len(BOTS)} venue bots) — this test would be vacuous"
     )
 
