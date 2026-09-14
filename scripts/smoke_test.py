@@ -4348,15 +4348,35 @@ def test_system_map_registry_not_drifted():
             )
 
     # 3. sharp trigger floors MUST match the Stage-A sharp config (registry == code).
+    #
+    # SHARP-TIGHT-INSTRUMENT-2026-09-15: resolve the floor key PER BOT, not per
+    # market. A market no longer implies one gate — `bot_trigger_1x2_sharp_tight_v1`
+    # trades 1x2 at a 2% probability floor while `bot_trigger_1x2_sharp_v1`
+    # trades the same market at 3%, and that difference IS the experiment.
+    # Mapping by market would have forced the two to agree, which is the
+    # opposite of what this guard is for. Bots absent from the override map fall
+    # back to the market key, so nothing existing is weakened; a NEW sharp bot
+    # with its own gate must be added here, which is the point.
     from workers.jobs import pick_triggers as pt
+    _SHARP_FLOOR_KEY = {"bot_trigger_1x2_sharp_tight_v1": "1x2_tight"}
     for b in BOTS:
-        if b.anchor == ANCHOR_SHARP and b.market in fk:
-            assert abs(b.edge_floor - pt._SHARP_MIN_EDGE_BY_MARKET[fk[b.market]]) < 1e-9, (
-                f"{b.name} sharp edge_floor drifted from pick_triggers"
+        if b.anchor == ANCHOR_SHARP and (b.name in _SHARP_FLOOR_KEY or b.market in fk):
+            key = _SHARP_FLOOR_KEY.get(b.name) or fk[b.market]
+            assert key in pt._SHARP_MIN_EDGE_BY_MARKET, (
+                f"{b.name} resolves to sharp floor key {key!r}, which pick_triggers "
+                f"does not define"
             )
-            assert abs(b.odds_floor - pt._SHARP_MIN_ODDS_BY_MARKET[fk[b.market]]) < 1e-9, (
+            assert abs(b.edge_floor - pt._SHARP_MIN_EDGE_BY_MARKET[key]) < 1e-9, (
+                f"{b.name} sharp edge_floor drifted from pick_triggers "
+                f"(registry {b.edge_floor}, code {pt._SHARP_MIN_EDGE_BY_MARKET[key]}, key {key!r})"
+            )
+            assert abs(b.odds_floor - pt._SHARP_MIN_ODDS_BY_MARKET[key]) < 1e-9, (
                 f"{b.name} sharp odds_floor drifted from pick_triggers"
             )
+            # every strategy carrying an odds CEILING must be an instrument whose
+            # pre-registration exists — a cap is a gate, and an ungated gate rots
+            for strat, cap in pt._SHARP_MAX_ODDS_BY_STRATEGY.items():
+                assert cap > 1.0, f"{strat} odds ceiling {cap} is degenerate"
 
     # 4. every registry bot must be documented in the map (no silent bots).
     smap = (Path(__file__).parent.parent / "docs" / "SYSTEM_MAP.md").read_text()

@@ -469,8 +469,11 @@ def gate_same_quantity(m: M, days: int, min_fx: int = 30,
             pts.sort()
             ladders += 1
             steps += len(pts) - 1
+            # `ladder_sign` is the direction P(sel0) must MOVE as the line
+            # rises: -1 for a total, +1 for Asian handicap. A step is good when
+            # it moves that way (or is flat), i.e. sign * delta >= 0.
             drops += sum(1 for i in range(1, len(pts))
-                         if m.ladder_sign * (pts[i][1] - pts[i - 1][1]) <= 1e-9)
+                         if m.ladder_sign * (pts[i][1] - pts[i - 1][1]) >= -1e-9)
             hi.append(pts[0][1] if m.ladder_sign < 0 else pts[-1][1])
             lo.append(pts[-1][1] if m.ladder_sign < 0 else pts[0][1])
         if steps < 20:

@@ -134,6 +134,14 @@ BOTS: list[BotSpec] = [
             0.03, 1.01, False,
             "Book-agnostic SHARP O/U 2.5 trigger: any placeable book beating the de-vigged Pinnacle line by >=3% (no odds floor). Paper.",
             twin="bot_trigger_ou_model_v1"),
+    # SHARP-TIGHT-INSTRUMENT-2026-09-15. An INSTRUMENT, not a strategy — the one
+    # OWN configuration two independent research rounds agreed was worth
+    # measuring and neither thought was worth a euro. Pre-registration:
+    # dev/active/own-sharp-tight-preregistration.md. PROMOTION REQUIRES
+    # margin-corrected own-book CLV > 0 at n>=300; ROI may never promote it.
+    BotSpec("bot_trigger_1x2_sharp_tight_v1", FAM_TRIGGER, "1x2", ANCHOR_SHARP,
+            0.02, 1.01, False,
+            "INSTRUMENT (paper, never placeable). SHARP 1x2 at the TIGHT gate the original 70,200-cell sweep could not express — it swept a constant expected-ROI floor while the live gate is a constant probability-difference floor, and roi_edge = prob_edge x odds makes the latter a CURVE in odds. Gate: P_shin - 1/odds >= 2% AND odds <= 2.50, pooled over Coolbet/Epicbet/Unibet-Site. Backtest n=225 ROI +17.07% CI [+4.18,+29.95] OOS +23.40% — but a 12-day effect whose margin-corrected own-book CLV is -5.4 to -7.6%, so it is being MEASURED, not believed."),
 
     # Coolbet own-price paper bots
     BotSpec("bot_ou35_model_v1", FAM_COOLBET_PAPER, "O/U 3.5", ANCHOR_MODEL,
