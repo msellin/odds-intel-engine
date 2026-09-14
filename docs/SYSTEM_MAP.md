@@ -175,6 +175,54 @@ registry and regenerate.
 <!-- bot_1x2_specialist, bot_dnb_specialist, bot_summer_specialist RETIRED 2026-09-09 (migrations 323/324) and removed from bot_registry.py:116-119 — do not re-add. -->
 <!-- NB: bot generation stores best-of-books odds for these general bots (recommended_bookmaker), NOT the Coolbet/Unibet executable price — the SHADOW-PAGE-ROI-INFLATED gap; per-book executable ROI/CLV is the EXECUTABLE-SHADOW-EVAL work. -->
 
+### Pre-registered PICKS forward test (published, not staked)
+
+| Bot | Market | Anchor | Edge floor | Odds | Money | What it does |
+|---|---|---|---|---|---|---|
+| `bot_sharp_forward_test_v1` | 1x2 + O/U 2.5 | **sharp** | **3%** (multiplicative) | **cap 4.0** | published, not staked | **The picks readers actually see.** `P_shin × best_book_price − 1 ≥ 3%`, odds ≤ 4.0, anchor and bet quote within 60 min, top 8/day. **No model output at all.** Flat 1 unit, no Kelly, no bankroll. |
+
+**This row is unlike every other bot in this map, in four ways.** Read them
+before using any number attached to it.
+
+1. **It writes NOTHING.** No `simulated_bets`, no `shadow_bets`. Its ledger is
+   `picks_forward_test`; the bot row is a handle so the strategy is not silent,
+   and `picks_forward_test_shadow` (migration 345) is a READ-ONLY projection in
+   `shadow_bets` shape for anything that wants to consume it. Migration 342's
+   header has the reasoning: both bet tables are bot-scoped with staking
+   semantics, and every bot-cohort query ever written would have absorbed these
+   rows without knowing what they were.
+2. **Its floor is not comparable with any model floor on this page.** 3% SHARP
+   is `P_shin × price − 1`, a multiplicative edge against a de-vigged line. The
+   13%/8% model floors are differences in PROBABILITY POINTS against our own
+   calibrated model. Different quantity, different arithmetic. §1 is about
+   exactly this.
+3. **4.0 is a CAP, not a floor.** Above it the edge collapses into longshot
+   noise. Every other "odds" number in this map is a minimum.
+4. **It has NO demonstrated edge and claims none.** Backtest +5.5% ROI, 95% CI
+   **[−0.7, +11.7]** — the interval includes zero, and the window that produced
+   it is the same window that chose the rule's odds cap and alignment tolerance.
+   That number must never be published as a record. Stopping rules are
+   pre-registered: STOP at n=200 if margin-corrected CLV < −2%, STOP at n=400 if
+   it is < 0, promote or kill at n=800 on the ROI CI. Primary instrument is
+   margin-corrected CLV, not ROI — per-bet return variance is ~1.32, so
+   confirming a true +3% ROI at 80% power needs ≈15,600 bets.
+
+A **junk-anchor negative control** runs alongside it and is never published: the
+same rule with the Pinnacle anchor shuffled to a different fixture, expected to
+lose roughly the vig. If it makes money the harness is broken and the live arm
+means nothing. ⚠️ The 2026-09-14 junk rows are DEGENERATE — the first
+implementation relabelled the live picks instead of re-selecting, so they
+duplicate the live arm exactly. They carry `rule_version` ending
+`+DEGENERATE_JUNK_DAY1` (migration 343) and must be excluded from any control
+analysis.
+
+Surfaces: `/picks` and `/api/v1/upcoming` (live arm only, via
+`picks_forward_test_public`); `/admin/shadow-bots` (both arms, via
+`picks_forward_test_arm_summary`). Settled by
+`settlement.py::settle_picks_forward_test` on all three settlement cadences.
+Rule locked in `dev/active/picks-forward-test-preregistration.md`, pinned by
+smoke `PICKS-FORWARD-TEST-RULE-LOCKED`.
+
 ---
 
 ## 3. What each % means on each screen

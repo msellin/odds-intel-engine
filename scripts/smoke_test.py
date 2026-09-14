@@ -39276,7 +39276,7 @@ def test_every_registry_bot_is_visible():
     two operator surfaces to it as well, and the class of bug closes: adding a
     bot to the registry without listing it fails the build.
     """
-    from workers.registry.bot_registry import BOTS, FAM_INTERNAL
+    from workers.registry.bot_registry import BOTS, FAM_INTERNAL, FAM_FORWARD_TEST
 
     # Scope: the VENUE bots — the ones that pick at a book we can reach, which is
     # what /admin/shadow-bots is for. FAM_INTERNAL (bot_v10_all,
@@ -39286,9 +39286,29 @@ def test_every_registry_bot_is_visible():
     # allowlist by design. Verified before excluding them rather than assumed —
     # they do write shadow_bets (908 and 17 rows in 7 days), so "it writes
     # shadow_bets" is NOT the criterion; the venue is.
-    BOTS = [b for b in BOTS if b.family != FAM_INTERNAL]
-
+    #
+    # PICKS-FORWARD-TEST-BOT-2026-09-14 extends the same exclusion to
+    # FAM_FORWARD_TEST for a STRONGER reason: bot_sharp_forward_test_v1 writes
+    # NO shadow_bets rows at all, by design (migration 342 — these flat-stake
+    # pre-registered picks must not be absorbed by bot-cohort queries). Listing
+    # it in SHADOW_BOTS would render a permanently empty bot card and imply the
+    # rule had produced nothing, which is the opposite of true. Its surface on
+    # that page is its own panel, asserted below — so this is a relocation of
+    # the visibility requirement, not a waiver of it.
     index = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+    assert "ForwardTestPanel" in index and "picks_forward_test_arm_summary" in index, (
+        "the PICKS forward test has no panel on /admin/shadow-bots. It writes no "
+        "shadow_bets rows, so the SHADOW_BOTS list cannot show it — if the panel "
+        "goes, the published picks become an operator-invisible strategy, which "
+        "is exactly what this test exists to prevent."
+    )
+    assert '"live"' in index and "junk" in index.lower(), (
+        "the forward-test panel must show BOTH arms. The junk-anchor arm is the "
+        "negative control; an operator who cannot see it cannot tell a working "
+        "harness from a broken one."
+    )
+    BOTS = [b for b in BOTS if b.family not in (FAM_INTERNAL, FAM_FORWARD_TEST)]
+
     detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
 
     missing_index = [b.name for b in BOTS if f'"{b.name}"' not in index]
@@ -41057,6 +41077,91 @@ def test_picks_forward_test_surface():
             f"readers as if it were a pick.")
         assert rows[0]["summary_rows"] == 1, (
             "picks_forward_test_summary must return exactly one row")
+
+
+@test("PICKS-FORWARD-TEST-BOT-NOT-IN-BET-LEDGERS — registered, surfaced, and writing nothing")
+def test_picks_forward_test_bot_not_in_bet_ledgers():
+    """PICKS-FORWARD-TEST-BOT (2026-09-14).
+
+    The published picks needed to be a registered strategy — an unregistered one
+    that generates public picks is the "silent bot" SYSTEM-MAP-REGISTRY exists to
+    prevent — WITHOUT their rows entering `simulated_bets` or `shadow_bets`.
+
+    Migration 342's header is the reasoning, and it is worth restating because
+    the failure it describes is invisible: both bet tables are bot-scoped with
+    staking semantics (stake, kelly_fraction, bankroll), and EVERY bot-cohort
+    query ever written selects from them by bot_id. A flat-stake, pre-registered,
+    published-picks ledger sitting in there would be pulled into the per-bot
+    sweeps, the promotion gates and the published track record, in the same units
+    as everything else, with nothing anywhere saying it was different. That is
+    precisely the re-contamination of the record that 2026-09-14 spent the day
+    undoing.
+
+    So the bot row is a HANDLE and the ledger is read through a projection. This
+    test is what keeps that true: the moment something starts writing bets for
+    this bot, the counts below stop being zero.
+    """
+    from workers.registry.bot_registry import (
+        by_name, FAM_FORWARD_TEST, ANCHOR_SHARP,
+    )
+    spec = by_name("bot_sharp_forward_test_v1")
+    assert spec is not None, (
+        "bot_sharp_forward_test_v1 is not in the registry. It generates the "
+        "picks that are published to readers — it cannot be a silent strategy."
+    )
+    assert spec.family == FAM_FORWARD_TEST and spec.anchor == ANCHOR_SHARP
+    assert spec.real_money is False, "the forward test stakes nothing"
+    assert spec.edge_floor == 0.03, "the pre-registered sharp floor is 3%"
+    assert spec.odds_floor is None, (
+        "odds_floor must stay None. 4.0 in this rule is a CAP — above it the "
+        "edge collapses into longshot noise — and every other odds number in "
+        "the registry is a MINIMUM. Storing a cap in a field called odds_floor "
+        "reads as the exact opposite of what the rule does."
+    )
+    # the one-liner must carry the honest prior, not just the rule
+    assert "NO DEMONSTRATED EDGE" in spec.one_liner, (
+        "the registry entry no longer states that this rule has no demonstrated "
+        "edge. Its backtest CI includes zero; a one-liner that quotes +5.5% "
+        "without that is how a prior becomes a claim."
+    )
+
+    # DB invariants — skip cleanly offline.
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """SELECT
+                 (SELECT count(*) FROM simulated_bets
+                   WHERE bot_id = (SELECT id FROM bots
+                                    WHERE name='bot_sharp_forward_test_v1')) AS sim,
+                 (SELECT count(*) FROM shadow_bets
+                   WHERE bot_id = (SELECT id FROM bots
+                                    WHERE name='bot_sharp_forward_test_v1')) AS shad,
+                 (SELECT count(*) FROM picks_forward_test_shadow)            AS proj,
+                 (SELECT count(*) FROM picks_forward_test)                   AS base,
+                 (SELECT starting_bankroll FROM bots
+                   WHERE name='bot_sharp_forward_test_v1')                   AS bank""",
+            [])
+    except Exception:
+        rows = None
+    if rows:
+        r = rows[0]
+        assert r["sim"] == 0, (
+            f"{r['sim']} simulated_bets rows exist for bot_sharp_forward_test_v1. "
+            f"Something is writing the published picks into the bot ledger — see "
+            f"migration 342. Every bot-cohort query now silently includes them.")
+        assert r["shad"] == 0, (
+            f"{r['shad']} shadow_bets rows exist for bot_sharp_forward_test_v1. "
+            f"Same failure as above: shadow_bets is equally bot-scoped and is "
+            f"what /admin/shadow-bots aggregates.")
+        assert r["proj"] == r["base"], (
+            "picks_forward_test_shadow must project EVERY row of "
+            "picks_forward_test, both arms. A projection that silently drops "
+            "rows makes the operator's ledger disagree with the ledger the "
+            "stopping rules are evaluated on.")
+        assert float(r["bank"]) <= 1, (
+            f"starting_bankroll is {r['bank']}. This bot stakes nothing and has "
+            f"no capital at risk; the 10,000 default would be counted by every "
+            f"bankroll rollup as if it did.")
 
 
 @test("CROSS-BOOK-WINDOW-ASSEMBLY — books are compared on assembled windows, not timestamp equality")

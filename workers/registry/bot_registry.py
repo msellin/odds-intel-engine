@@ -33,12 +33,14 @@ FAM_COOLBET_REAL = "coolbet_real"      # places real money at Coolbet (gated)
 FAM_TRIGGER = "trigger"                # book-agnostic trigger engine (paper)
 FAM_COOLBET_PAPER = "coolbet_paper"    # Coolbet own-price paper bots
 FAM_INTERNAL = "internal"              # internal model/strategy paper validators
+FAM_FORWARD_TEST = "forward_test"      # pre-registered published-picks forward test
 
 FAMILY_TITLES = {
     FAM_COOLBET_REAL: "Real-money capable · Coolbet UI placer",
     FAM_TRIGGER: "Trigger engine · model vs sharp anchor (paper)",
     FAM_COOLBET_PAPER: "Coolbet own-price paper bots",
     FAM_INTERNAL: "Internal model / strategy validators (paper)",
+    FAM_FORWARD_TEST: "Pre-registered PICKS forward test (published, not staked)",
 }
 
 
@@ -158,6 +160,31 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_high_roi_global_v2", FAM_INTERNAL, "1x2", ANCHOR_NONE,
             None, None, False,
             "1x2 home/away in Spain/Australia/Iceland, odds 1.50–5.50. Internal paper strategy validator."),
+
+    # PICKS-FORWARD-TEST-BOT-2026-09-14 — the published PICKS rule, registered so
+    # it is not a silent strategy. It is unlike every other row in this list in
+    # three ways, and each one is deliberate:
+    #
+    #  * It WRITES NOTHING. No simulated_bets, no shadow_bets. Its ledger is
+    #    `picks_forward_test`, surfaced through the read-only projection
+    #    `picks_forward_test_shadow` (migration 345). Migration 342's header
+    #    explains why: both bet tables are bot-scoped with staking semantics, and
+    #    every bot-cohort query ever written would silently absorb these rows.
+    #  * `odds_floor` is None because this rule has an odds CAP (4.0), not a
+    #    floor — the edge collapses into longshot noise above it. There is no
+    #    field here for a cap, and putting 4.0 in `odds_floor` would read as the
+    #    exact opposite of what the rule does.
+    #  * Its floor is 3% SHARP edge and is MULTIPLICATIVE (P_shin x price - 1),
+    #    where the model floors in this file are differences in probability
+    #    points. Not comparable, in either direction.
+    #
+    # The market label is deliberately not "1x2" or "O/U 2.5": the drift test
+    # cross-checks single-market sharp floors against pick_triggers' Stage-A
+    # config, and this rule is not that engine — it is a standalone publisher
+    # whose constants are locked by PICKS-FORWARD-TEST-RULE-LOCKED instead.
+    BotSpec("bot_sharp_forward_test_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5",
+            ANCHOR_SHARP, 0.03, None, False,
+            "The PUBLISHED picks. Pre-registered forward test started 2026-09-14: best book price beats the Shin-de-vigged Pinnacle line by >=3%, odds <=4.0 (a CAP, not a floor), anchor and bet quote within 60 min, top 8/day. Uses NO model output. Flat 1 unit, no Kelly, no bankroll. Writes NO simulated_bets and NO shadow_bets — read-through only, via picks_forward_test_shadow. Prior: +5.5% ROI backtest, 95% CI [-0.7,+11.7] = NO DEMONSTRATED EDGE. Stops at n=200/400 on margin-corrected CLV, promote/kill at n=800 on the ROI CI. Junk-anchor negative control runs alongside, unpublished. Rule locked in dev/active/picks-forward-test-preregistration.md."),
 ]
 
 
