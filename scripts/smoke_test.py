@@ -4118,12 +4118,24 @@ def test_trigger_matcher_stage_b():
         "bot_coolbet_trigger_sharp_1x2_v1", "bot_coolbet_trigger_sharp_ou_v1",
         "bot_unibet_trigger_1x2_v1", "bot_unibet_trigger_ou_v1",
         "bot_unibet_trigger_sharp_1x2_v1", "bot_unibet_trigger_sharp_ou_v1",
-    }, "one paper bot per (book × market × anchor) — Coolbet + Unibet, model + sharp twins"
+        "bot_trigger_1x2_sharp_tight_v1",
+    }, "one paper bot per (book × market × anchor), plus declared instruments"
     # the routing key must include the strategy, else model & sharp windows blend into one bot
     assert all(len(k) == 3 for k in m.BOOK_MARKET_BOTS), "route by (book, market, strategy)"
     strategies = {k[2] for k in m.BOOK_MARKET_BOTS}
-    assert strategies == {"model_1x2", "model_ou25", "sharp_1x2", "sharp_ou25"}, (
+    # SHARP-TIGHT-INSTRUMENT-2026-09-15: was an equality pin on exactly four
+    # strategies, which pinned the old reality. The surviving invariants are
+    # (a) both anchors are routed, and (b) every routed strategy actually exists
+    # in Stage A — a matcher entry for a strategy nothing emits is a silent
+    # no-op, which is how a bot ends up looking retired while still registered.
+    assert {"model_1x2", "model_ou25", "sharp_1x2", "sharp_ou25"} <= strategies, (
         "both anchors routed: model_* and sharp_*"
+    )
+    from workers.jobs import pick_triggers as _pt
+    _emitted = {x[0] for x in _pt._STRATEGIES} | {x[0] for x in _pt._SHARP_STRATEGIES}
+    assert strategies <= _emitted, (
+        f"matcher routes strategies Stage A never emits: {sorted(strategies - _emitted)} "
+        f"— a route with no windows behind it silently produces nothing"
     )
     for bot in bots:
         assert bot not in PLACEABLE_BOTS, f"{bot} must be PAPER — never in PLACEABLE_BOTS"
@@ -4157,7 +4169,24 @@ def test_pick_triggers_stage_a():
     # SHARP anchor: sibling strategies, de-vigged Pinnacle, SMALL edge floor (a sharp
     # edge vs a near-true line is real at 3%; the 13%/8% model floors would never fire).
     sharp = {s[0] for s in m._SHARP_STRATEGIES}
-    assert sharp == {"sharp_1x2", "sharp_ou25"}, "sharp anchor mirrors the model markets"
+    # SHARP-TIGHT-INSTRUMENT-2026-09-15: the sharp anchor no longer MIRRORS the
+    # model markets, and pinning equality here pinned the old reality. The
+    # invariant that actually matters is that every model market has a sharp
+    # sibling — the anchor head-to-head this engine exists for. Extra sharp-only
+    # strategies are allowed and are how a gate gets measured before it is
+    # believed; each must declare a floor, which the loop below enforces.
+    assert {"sharp_1x2", "sharp_ou25"} <= sharp, (
+        "every model market must keep a sharp sibling — that pairing is the "
+        "anchor head-to-head this engine exists for"
+    )
+    for _strategy, _market, _floor_key, _sides in m._SHARP_STRATEGIES:
+        assert _floor_key in m._SHARP_MIN_EDGE_BY_MARKET, (
+            f"sharp strategy {_strategy!r} has no edge floor declared for key "
+            f"{_floor_key!r} — an undeclared gate is an unmeasurable one"
+        )
+        assert _floor_key in m._SHARP_MIN_ODDS_BY_MARKET, (
+            f"sharp strategy {_strategy!r} has no odds floor for key {_floor_key!r}"
+        )
     assert "devig" in src, "sharp anchor must de-vig the Pinnacle line (workers.model.devig)"
     from workers.automation.coolbet_placer import _min_edge_for
     assert m._SHARP_MIN_EDGE_BY_MARKET["1x2"] < _min_edge_for("1x2"), (
@@ -35732,8 +35761,13 @@ def test_unibet_trigger_bots():
     books = {k[0] for k in ptm.BOOK_MARKET_BOTS}
     assert "Unibet-Site" in books, "matcher must enumerate Unibet-Site trigger bots"
     ub = {v for k, v in ptm.BOOK_MARKET_BOTS.items() if k[0] == "Unibet-Site"}
-    assert ub == {"bot_unibet_trigger_1x2_v1", "bot_unibet_trigger_ou_v1",
-                  "bot_unibet_trigger_sharp_1x2_v1", "bot_unibet_trigger_sharp_ou_v1"}, (
+    # SHARP-TIGHT-INSTRUMENT-2026-09-15: was an equality pin, which pinned the
+    # old reality — a book-agnostic instrument routed at Unibet-Site legitimately
+    # widens this set. The surviving invariant is that all four per-book Unibet
+    # bots stay wired; extra routes are allowed, and every route is separately
+    # checked against Stage A in TRIGGER-MATCHER-STAGE-B.
+    assert {"bot_unibet_trigger_1x2_v1", "bot_unibet_trigger_ou_v1",
+            "bot_unibet_trigger_sharp_1x2_v1", "bot_unibet_trigger_sharp_ou_v1"} <= ub, (
         f"the 4 Unibet trigger bots must be wired, got {ub}")
     # book-aware cohort (else Unibet picks would mislabel as coolbet_trigger)
     assert ptm._cohort_for("Unibet-Site") == "unibet_trigger"
@@ -35742,7 +35776,12 @@ def test_unibet_trigger_bots():
     mig = (Path(__file__).parent.parent / "supabase" / "migrations"
            / "326_unibet_trigger_bots.sql").read_text()
     assert "'unibet_trigger'" in mig and "shadow_cohort_check" in mig, "migration must allow the unibet_trigger cohort"
-    for b in ub:
+    # Only the FOUR bots migration 326 introduced. `ub` now also contains
+    # book-agnostic instruments routed at Unibet-Site which are registered in
+    # their own migrations — asserting every routed bot appears in 326 would
+    # mean every future bot has to be retro-added to a historical migration.
+    for b in ("bot_unibet_trigger_1x2_v1", "bot_unibet_trigger_ou_v1",
+              "bot_unibet_trigger_sharp_1x2_v1", "bot_unibet_trigger_sharp_ou_v1"):
         assert f"'{b}'" in mig, f"migration must register {b}"
     assert mig.count("'experimental'") >= 1, "Unibet triggers must register as experimental (paper)"
     # registry has them (paper, right anchors/floors — drift test cross-checks the values)
