@@ -149,3 +149,72 @@ These are written by 23:05–23:45 UTC crons — i.e. after the match (master li
 
 A positive present only in the OPTIMISTIC arm is a finding *about task #7*, not
 about the model, and must be reported that way.
+
+---
+
+# RESULTS (run 2026-09-14, design unchanged since the amendment)
+
+Universe: 7,662 matches on/after 2026-08-20 with a pre-kickoff Pinnacle triple.
+Home-win base rate 0.4376. Pinnacle overround **1.0849** (vig ≈ 8.49% — far above
+the 2–3% Pinnacle shows on majors, because this universe is mostly low-tier
+leagues; it is why the Shin robustness arm was pre-registered). Time-ordered
+split, everything fitted on the first half, evaluated once on the second
+(n=3,831).
+
+| arm | fitted α | market LL | model LL | blend LL | blend vs market | residual AUC |
+|---|---|---|---|---|---|---|
+| OPTIMISTIC (stored features) | **0.0000** | 0.6221 | 0.6465 | 0.6221 | +0.000% | **0.4094** |
+| **REALISTIC (post-hoc NULLed) — decides** | **0.0000** | 0.6221 | 0.6561 | 0.6221 | +0.000% | **0.3775** |
+| REALISTIC + Shin de-vig (robustness) | **0.0000** | 0.6211 | 0.6561 | 0.6211 | +0.000% | **0.3676** |
+
+Market AUC 0.6998–0.7000. Model AUC 0.6409–0.6634.
+
+## VERDICT: PRIMARY FAILS in every arm. The model adds nothing to the market.
+
+The optimiser was free to pick any weight in [0, 1] and chose **exactly zero** —
+*use the market, ignore the model* — on 3,831 held-out matches, under both de-vig
+methods, with and without the post-hoc features.
+
+**Residual AUC is 0.368–0.409, i.e. BELOW 0.5.** Where the model disagrees with
+the market, it is not merely uninformative — it is *wrong*. When it says "more
+likely than the price implies", the outcome is *less* likely.
+
+Three things this is **not**, each ruled out by construction rather than argued:
+
+* **Not the leak.** The corpus was rebuilt strictly pre-match; `elo_diff` AUC
+  0.7536 → 0.6134.
+* **Not the inversion.** Class probabilities are read by label; this model scores
+  AUC 0.64–0.66 standalone, not 0.42.
+* **Not miscalibration.** Platt is fitted on the train half; the model alone
+  beats a constant.
+
+The model is, for the first time, genuinely fixed — and it still contributes
+nothing against a sharp price. It ranks real (AUC 0.64 vs a 0.50 coin flip) and
+the market simply ranks better (0.70) and already contains everything the model
+knows.
+
+**The economic gate was not reached.** With α = 0 there is no blend to price, so
+"does the edge exceed the vig" is moot: there is no edge to compare. Recorded
+rather than skipped.
+
+## Consequence, per the locked stopping rule
+
+> *"If the primary fails, the answer is the model adds nothing to the market,
+> reported as such. That is a real result and it retires the model-anchored
+> track — it does not become a search for a subgroup where it works."*
+
+**The model-anchored track is retired.** Not paused pending a better model: the
+instrument that would detect a better model — the fitted α — now has a clean,
+correctly-oriented, properly-calibrated input and still reads zero.
+
+This also explains, retrospectively and without needing any new theory, why
+`shrinkage_alpha_t1_1x2` sat at 0.0085 from May and why two tiers read exactly
+0.0000. That was never a symptom of the bugs. It was the correct answer all
+along, arrived at by a fitter nobody was reading.
+
+## What this does NOT retire
+
+O/U 2.5 and BTTS are not tested here; this is the 1X2 head. The sharp/de-vig
+anchor is untouched and remains the only thing in the system with a positive
+non-circular CLV measurement (+9.21%, t=+5.1, n=89 — small, five days, and
+unconfirmed, per `sharp-anchor-sweep-preregistration.md`).
