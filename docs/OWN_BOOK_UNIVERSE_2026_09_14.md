@@ -100,3 +100,63 @@ enters the placeable set on a **verified** feed, or not at all.
 3. **Do NOT** widen the rule's floors to manufacture volume. The volume problem
    is a book-count problem; loosening a floor to fix it trades real edge for
    picks, which is how the O/U calibrator's damage happened in the first place.
+
+---
+
+## CORRECTION (same day) — "all four sharp bots are positive" does NOT survive
+
+I reported earlier today that all four SHARP-anchored trigger bots carried
+positive margin-corrected EV (+0.27% to +5.24%) against six negative
+model-anchored ones. **The sharp half of that is wrong.** Two errors, both mine:
+
+1. **A flat margin.** I used `m = 7.6%`, a median across bots. The per-book
+   closing margin actually spans **6.5% to 11.3%** (Coolbet 7.8, Epicbet 8.0,
+   Pinnacle 9.1, Betfair 10.4, Unibet-Site 10.5, Bet365 11.3) — a spread wider
+   than the thresholds it is compared against, so a flat `m` can invert the sign.
+2. **Pooling rows whose `clv` was computed against an arbitrary book.** Requiring
+   the closing book's own margin drops 488 of 2,447 rows, and the surviving
+   subset tells a different story.
+
+Recomputed with the closing book's own margin, per row:
+
+| bot | anchor | n | raw CLV | m | EV @flat 7.6% | **EV @per-book** |
+|---|---|---|---|---|---|---|
+| `bot_unibet_trigger_sharp_1x2_v1` | SHARP | 67 | +12.05% | 8.60% | +4.13% | **+3.15%** |
+| `bot_coolbet_trigger_sharp_1x2_v1` | SHARP | 66 | +4.51% | 7.63% | +0.84% | **−2.84%** |
+| `bot_coolbet_trigger_sharp_ou_v1` | SHARP | 20 | +6.35% | 6.46% | −1.16% | **−0.05%** |
+| `bot_trigger_1x2_model_v1` | model | 414 | +1.73% | 8.36% | −5.46% | −6.10% |
+| `bot_coolbet_trigger_ou_v1` | model | 370 | +0.21% | 6.92% | −6.87% | −6.25% |
+| `bot_unibet_trigger_1x2_v1` | model | 332 | +2.73% | 8.60% | −4.53% | −5.41% |
+| `bot_coolbet_trigger_1x2_v1` | model | 297 | −0.20% | 7.31% | −7.25% | −6.97% |
+| `bot_unibet_trigger_ou_v1` | model | 219 | +0.71% | 6.64% | −6.41% | −5.55% |
+| `bot_trigger_ou_model_v1` | model | 160 | +0.50% | 6.85% | −6.60% | −5.93% |
+
+**This independently reproduces the replication referee's finding from this
+morning**, which I had treated as superseded:
+
+> *"On the non-circular direct-book metric it does not replicate:
+> `bot_coolbet_trigger_sharp_1x2_v1` +4.51% (n=66),
+> `bot_unibet_trigger_sharp_1x2_v1` +12.05% (n=67). After the margin conversion
+> those are −2.9% and +4.1% EV — **opposite signs**. The pooled +9.21% is two
+> coin flips averaged."*
+
+Their numbers and mine agree to ~0.3pp on two independently written harnesses.
+The referee was right and I should not have set it aside.
+
+### What this changes
+
+* **What survives:** all six model-anchored bots are clearly negative
+  (−5.4% to −7.0%) on large n. The model-vs-sharp separation is real and is the
+  robust finding of the day.
+* **What does not:** we do **not** have four working OWN bots. We have **one
+  candidate** — `bot_unibet_trigger_sharp_1x2_v1`, +3.15% EV at **n=67**, which
+  is 5 days of data and nowhere near a decision.
+* **Operational consequence:** do not promote anything on this evidence. The
+  pooled "sharp bots are CLV-positive" headline must not be quoted again without
+  the per-book margin and the per-bot split.
+
+**Method note worth keeping:** a flat average margin is never safe as a decision
+variable when the quantity it corrects is the same size as the decision
+threshold. Compute `m` per row from the book that actually set the closing
+price, and leave it NULL when you cannot — a NULL is honest, an average is a
+silent bias.
