@@ -2165,6 +2165,56 @@ def job_pick_trigger_matcher():
     _run_job("pick_trigger_matcher", lambda: None)
 
 
+def job_publish_picks_forward_test():
+    """PICKS-FORWARD-TEST (2026-09-14): publish the pre-registered sharp-edge
+    picks to the public Telegram channel and record them in
+    `picks_forward_test`.
+
+    WHY THIS IS SCHEDULED AT ALL. The rule is a PRE-REGISTERED FORWARD TEST with
+    stopping rules at n=200/400/800 (dev/active/picks-forward-test-preregistration.md).
+    Run by hand it produces 0 picks/day, so those checkpoints never arrive and
+    the test can neither pass nor fail — which is the exact failure the
+    pre-registration exists to prevent. A test that cannot resolve is not a test.
+
+    WHAT IT DOES: posts to @oddsintelpicks. This is the one scheduled job in the
+    engine that writes to a PUBLIC surface, so it is deliberately conservative —
+    it publishes at most TOP_N per day, never re-posts (`picks_forward_test` has
+    a unique index on match/market/selection/arm), and records the junk-anchor
+    control without publishing it.
+
+    10:00 UTC: after the 04:00 morning chain and several odds refreshes, with
+    enough lead on afternoon/evening kickoffs for a reader to act. Deliberately
+    NOT near kickoff — the backtest that justifies the rule was measured on
+    quotes at least 4h out, and publishing later than we measured would be
+    publishing a different rule than the one pre-registered.
+    """
+    from scripts.publish_picks_forward_test import load_candidates, render, record
+    from workers.notify.telegram import send_telegram_public
+
+    picks = load_candidates()
+    if not picks:
+        log.info("picks_forward_test: no qualifying picks today (a valid outcome)")
+        return {"picks": 0, "published": 0}
+
+    sent = 0
+    for c in picks:
+        mid = send_telegram_public(render(c))
+        if mid is not None:
+            sent += 1
+        record(c, "live", mid)
+
+    from scripts.publish_picks_forward_test import junk_anchor_arm
+    for c in junk_anchor_arm(picks, picks):
+        record(c, "junk_anchor", None)
+
+    log.info("picks_forward_test: %d picks, %d published", len(picks), sent)
+    return {"picks": len(picks), "published": sent}
+
+
+def _publish_picks_forward_test_wrapper():
+    _run_job("publish_picks_forward_test", job_publish_picks_forward_test)
+
+
 def job_pick_triggers():
     """BOOK-AGNOSTIC-EDGE-ENGINE Stage A (2026-09-09): recompute the per-fixture
     trigger windows (calibrated fair value + [min_odds,max_odds]) for upcoming
@@ -3163,6 +3213,15 @@ def main():
                       id="ou35_model_shadow", name="O/U 3.5 Model Shadow")
     # BOOK-AGNOSTIC-EDGE-ENGINE Stage A: refresh trigger windows hourly at :05
     # (before the :10 model-shadow jobs), so Stage B always matches fresh windows.
+    # PICKS-FORWARD-TEST-SCHEDULED (2026-09-14). The ONLY scheduled job that
+    # writes to a public surface. See the docstring for why it must be scheduled
+    # at all: unscheduled it yields 0 picks/day, and a pre-registered test whose
+    # checkpoints never arrive can neither pass nor fail.
+    scheduler.add_job(_publish_picks_forward_test_wrapper,
+                      CronTrigger(hour="10", minute="0"),
+                      id="publish_picks_forward_test",
+                      name="PICKS forward test — publish (public Telegram)")
+
     scheduler.add_job(job_pick_triggers, CronTrigger(hour="*", minute="5"),
                       id="pick_triggers", name="Pick Triggers (Stage A)")
     # Stage B (PAPER): match book odds against the windows at :15/:45 (after the

@@ -41758,5 +41758,49 @@ def test_own_market_expansion_sweep():
         "for the wrong reason")
 
 
+
+@test("PICKS-FORWARD-TEST-SCHEDULED — the public publisher is registered and runs the locked rule")
+def test_picks_forward_test_scheduled():
+    """PICKS-FORWARD-TEST-SCHEDULED (2026-09-14).
+
+    The rule is a PRE-REGISTERED forward test with stopping rules at n=200/400/
+    800. Run by hand it yields 0 picks/day, so those checkpoints never arrive
+    and the test can neither pass nor fail — a test that cannot resolve is not a
+    test, which is the exact failure the pre-registration exists to prevent.
+
+    This is also the ONLY scheduled job in the engine that writes to a PUBLIC
+    surface, so two things are pinned that would be expensive to get wrong:
+
+    (a) it is actually registered, and at a fixed hour — not near kickoff. The
+        backtest justifying the rule was measured on quotes at least 4h out;
+        publishing later than we measured publishes a DIFFERENT rule than the
+        one pre-registered.
+    (b) it goes through the same `load_candidates` the pre-registration locks,
+        not a reimplementation. A second code path inheriting no gates is this
+        repo's most-repeated failure (RELIABILITY_LEDGER).
+    """
+    src = _engine_path("workers/scheduler.py").read_text()
+
+    assert "def job_publish_picks_forward_test" in src, (
+        "the public publisher job is gone from the scheduler — the forward "
+        "test's checkpoints can never be reached"
+    )
+    assert 'id="publish_picks_forward_test"' in src, (
+        "job defined but never registered with the scheduler"
+    )
+    assert 'CronTrigger(hour="10", minute="0")' in src, (
+        "the publish hour moved. It is 10:00 UTC deliberately: the backtest was "
+        "measured on quotes >=4h before kickoff, so publishing nearer kickoff "
+        "publishes a different rule than the pre-registered one."
+    )
+    assert "from scripts.publish_picks_forward_test import load_candidates" in src, (
+        "the scheduled job must call the SAME load_candidates the "
+        "pre-registration locks — a reimplementation inherits none of its gates"
+    )
+    assert "junk_anchor" in src, (
+        "the scheduled job must still record the negative control; without it a "
+        "broken harness is undetectable"
+    )
+
 if __name__ == "__main__":
     main()

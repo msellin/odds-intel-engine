@@ -61,3 +61,9 @@
 {"at": "2026-09-14T12:25:15+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1791, "captcha": null, "tier": null, "procs": 13}
 {"at": "2026-09-14T13:25:17+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1791, "captcha": null, "tier": null, "procs": 13}
 {"at": "2026-09-14T13:55:16+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1791, "captcha": null, "tier": null, "procs": 13}
+{"at": "2026-09-14T14:25:15+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1791, "captcha": null, "tier": null, "procs": 13}
+{"at": "2026-09-14T14:55:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1791, "captcha": null, "tier": null, "procs": 13}
+{"at": "2026-09-14T15:25:46+00:00", "event": "observed", "cdp_up": true, "walled": null, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 13}
+{"at": "2026-09-14T15:26:00+00:00", "event": "healed", "tier": "autologin", "ok": false, "skipped_rebootstrap": null, "steps": ["cdp auto-login FAILED"], "reason": "", "error": "\u2014 session logged OUT. The login page did not show the email field and shows no known Imperva/shell signature. Fix: log in by hand in a FOREGROUND CDP-Chrome (:9222) window (complete SMS/Imperva); cbau"}
+{"at": "2026-09-14T15:55:18+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 13}
+{"at": "2026-09-14T15:55:29+00:00", "event": "healed", "tier": "autologin", "ok": true, "skipped_rebootstrap": null, "steps": ["cdp auto-login OK", "jwt sync OK"], "reason": "", "error": ""}
