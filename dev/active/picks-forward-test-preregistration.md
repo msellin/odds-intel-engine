@@ -77,6 +77,37 @@ CLV captures ~95% of everything extractable from single-bet P&L (verified: a
 10-bin oracle achieves R²=0.0057 against CLV's 0.0054). ROI is the *secondary*
 check and will not resolve on any realistic timescale.
 
+### Implementation note — `m` is per-row, not 7.6% (2026-09-14, before any pick settled)
+
+The criteria above are stated on the CORRECTED number and quote `m ≈ 7.6%`. That
+figure was a *measured average across 18,759 bets of a different mix*, written as
+an illustration of the size of the correction — not as a constant to substitute
+into the estimator. The settler
+(`workers/jobs/settlement.py::closing_book_margin`) therefore computes `m` **per
+row**: the closing book's own overround on that fixture and market, from that
+book's full market at close. When that book's full market is unavailable the
+column stays NULL, and the row is simply not counted — a NULL is honest, a
+guessed margin biases the n=200 and n=400 stopping rules in a direction nobody
+can see.
+
+This matters more than it sounds. Median closing 1X2 margins measured 2026-09-14
+over three days of finished fixtures:
+
+| book | median closing margin |
+|---|---|
+| Coolbet | 7.8% |
+| Epicbet | 8.0% |
+| Pinnacle | 9.1% |
+| Betfair | 10.4% |
+| Unibet-Site | 10.5% |
+| **Bet365** | **11.3%** |
+
+Bet365 is where most of day one's picks landed. Using 7.6% there would overstate
+EV by ~3.4pp **on the decision variable itself** — larger than the −2% threshold
+it is being compared against. The thresholds (−2% at n=200, 0 at n=400) are
+UNCHANGED; only the estimator of `m` is stated precisely. Recorded here rather
+than done silently, per the lock.
+
 **Break-even CLV is the closing book's margin, not zero.** `clv` in
 `settlement.py:613` is a raw price ratio with no de-vig. At m = 7.6%, a +7.6%
 raw CLV is 0.0% EV. Every criterion above is stated on the CORRECTED number.
@@ -92,9 +123,26 @@ raw CLV is 0.0% EV. Every criterion above is stated on the CORRECTED number.
 
 ## Negative control (runs alongside, not published)
 
-The same rule with the anchor replaced by a **junk anchor** (a shuffled
-Pinnacle line from a different fixture). Expected: loses roughly the vig. If the
-junk arm makes money, the harness is broken and the live arm means nothing.
+The same rule — floor, odds cap, alignment, top-8 — with the anchor replaced by
+a **junk anchor** (a shuffled Pinnacle line from a different fixture). Expected:
+loses roughly the vig. If the junk arm makes money, the harness is broken and the
+live arm means nothing.
+
+**The junk anchor must change WHICH BETS ARE SELECTED.** Selection is the only
+thing the anchor does in this rule, so an arm that re-labels the live picks with
+a different `p_sharp` is not a control — it settles to identical outcomes by
+construction.
+
+> **Day one was degenerate (JUNK-ARM-DEGENERATE-2026-09-14, fixed same day).**
+> `junk_anchor_arm()` shipped taking the eight live picks and overwriting their
+> `p_sharp`, so all eight junk rows of 2026-09-14 duplicate a live row on
+> (match_id, market, selection, odds, bookmaker). They are re-stamped
+> `rule_version = 'sharp_edge_v1_2026_09_14+DEGENERATE_JUNK_DAY1'` by migration
+> 343 and **must be excluded from any control analysis**. They are not deleted —
+> removing rows from a pre-registered ledger is worse than annotating them. The
+> publisher now re-runs the whole rule over a pool of shuffled anchors; on the
+> same day's data that selects a set with zero overlap with the live picks.
+> Pinned by smoke `PICKS-FORWARD-TEST-JUNK-ARM-SELECTS`.
 
 ## Recording
 

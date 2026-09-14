@@ -1350,6 +1350,14 @@ def settle_finished_matches(match_ids: list[str]):
     except Exception as e:
         console.print(f"  [yellow]published_picks settlement error: {e}[/yellow]")
 
+    # PICKS-FORWARD-TEST-SETTLEMENT-2026-09-14: settle the pre-registered
+    # forward-test ledger on the same 15-min cadence as everything else, so the
+    # /picks page and the channel never show a finished pick as still running.
+    try:
+        settle_picks_forward_test(match_ids)
+    except Exception as e:
+        console.print(f"  [yellow]Forward-test settlement error: {e}[/yellow]")
+
     # Mark settled regardless of whether there were any pending bets/picks.
     # This stops the 15-min sweep from re-querying the same finished matches.
     execute_write(
@@ -1558,6 +1566,206 @@ def _void_real_bets_on_dead_matches() -> int:
     )
     console.print(f"[green]Voided {len(ids)} real bet(s) on postponed/cancelled match(es)[/green]")
     return len(ids)
+
+
+
+# ─── PICKS forward test settlement (PICKS-FORWARD-TEST-SETTLEMENT-2026-09-14) ─
+#
+# WHY THIS EXISTS. `picks_forward_test` shipped on 2026-09-14 with its outcome
+# columns written by NOTHING. The pre-registered stopping rules — STOP at n=200
+# / n=400 on margin-corrected CLV, promote/kill at n=800 on the ROI CI — are all
+# evaluated on those columns, so until this landed the test could accumulate
+# picks forever without ever being able to fail. A pre-registration that cannot
+# fail is the exact thing the O/U calibrator taught us to stop building.
+#
+# It reuses the existing machinery deliberately: `settle_bet_result` (the
+# resolver registry) grades the outcome and `get_closing_odds` finds the close.
+# A second, parallel grader is how two columns called the same thing end up
+# holding two different quantities — see the clv_pinnacle note above.
+#
+# THREE DEFINITIONS ARE LOAD-BEARING HERE:
+#
+# 1. `pnl` is in UNITS at a FLAT 1-unit stake, because the pre-registration says
+#    flat stake and the table has no `stake` column. So ROI = SUM(pnl)/COUNT(*)
+#    directly. This differs from `simulated_bets.pnl`, which is money at a Kelly
+#    stake — do not pool the two.
+#
+# 2. `clv` is the RAW price ratio `odds/closing_odds - 1`, no de-vig — the same
+#    definition as `simulated_bets.clv` (settlement.py:613) and what the column
+#    comment in migration 342 promises. Break-even on it is the closing book's
+#    MARGIN, not zero.
+#
+#    The close is taken at the pick's OWN book (`bookmaker`), not the unfiltered
+#    lookup `_settle_pending_bets` uses. That is not a redefinition of CLV, it is
+#    the only well-defined way to compute this one: a forward-test price is by
+#    construction the MAX across every book, and `get_closing_odds`'s own
+#    docstring records that comparing a max against one arbitrary book makes the
+#    resulting CLV structurally positive whether or not the bet had any edge.
+#    The book used is stored in `closing_bookmaker` so any row can be audited.
+#
+# 3. `clv_margin_corrected` is the DECISION VARIABLE:
+#        EV = (1 + clv) / (1 + m) - 1
+#    where `m` is the CLOSING BOOK'S OWN margin on THAT fixture and market,
+#    computed from that book's full market at close. It is NOT the 7.6% constant
+#    quoted in the pre-registration — that figure was a measured average across
+#    18,759 bets, and substituting an average for a per-row quantity would put a
+#    silent bias straight into the stopping rule. When the closing book's full
+#    market is not available, this column stays NULL. A NULL is honest; a guessed
+#    margin is not, and it is the criterion at n=200 and n=400.
+
+_PENDING_FORWARD_TEST_SQL = """
+SELECT p.id, p.match_id::text AS match_id, p.market, p.selection,
+       p.odds::float AS odds_at_pick, p.bookmaker, p.arm,
+       m.score_home, m.score_away,
+       ht.name AS home_team_name, ta.name AS away_team_name
+  FROM picks_forward_test p
+  JOIN matches m  ON m.id = p.match_id
+  LEFT JOIN teams ht ON ht.id = m.home_team_id
+  LEFT JOIN teams ta ON ta.id = m.away_team_id
+ WHERE p.outcome IS NULL
+   AND m.status = 'finished'
+   AND m.score_home IS NOT NULL
+   AND m.score_away IS NOT NULL
+"""
+
+
+def closing_book_margin(match_id: str, market: str, bookmaker: str) -> float | None:
+    """Overround of ONE book's own closing market on one fixture, or None.
+
+    `m = SUM(1/closing_odds_i) - 1` over the full complement of selections
+    (1x2 -> home/draw/away, over_under_* -> over/under). Returns None when any
+    leg is missing, so the caller can leave `clv_margin_corrected` NULL rather
+    than substituting an average — see the header note.
+
+    Assembly caveat, stated because OWN_PATH_VERDICT_2026_09_14 turned on the
+    same point: each leg is that book's latest pre-kickoff quote, which may be a
+    few seconds or minutes apart from its siblings. That is a WITHIN-book
+    assembly (the same thing `get_devigged_pinnacle_close_prob` does), not the
+    cross-book exact-timestamp join that measures write granularity. The residual
+    error is the book's own drift over its final sweep, which is small against a
+    7-9pp margin.
+    """
+    sides = _market_complement_selections(market, "")
+    if not sides:
+        return None
+    inv = 0.0
+    for side in sides:
+        o = get_closing_odds(match_id, market, side, bookmaker)
+        if not o or o <= 1.0:
+            return None
+        inv += 1.0 / float(o)
+    m = inv - 1.0
+    # A book cannot have a negative margin on its own closing market, and a
+    # >50% one means the legs were assembled from incompatible quotes. Refuse
+    # both rather than emit a correction that would move the stopping rule.
+    return m if 0.0 <= m <= 0.5 else None
+
+
+def _void_forward_test_on_dead_matches() -> int:
+    """Void forward-test picks whose fixture was postponed/cancelled.
+
+    Same rule every book applies: stake returned, pnl = 0. Without this, a
+    postponed fixture's pick never reaches status='finished' and sits pending
+    forever, quietly holding `n` below the checkpoint it is being counted
+    towards. Mirrors _void_real_bets_on_dead_matches.
+    """
+    rows = execute_query(
+        """SELECT p.id FROM picks_forward_test p
+             JOIN matches m ON m.id = p.match_id
+            WHERE p.outcome IS NULL
+              AND m.status IN ('postponed', 'cancelled')""",
+        [],
+    )
+    if not rows:
+        return 0
+    ids = [r["id"] for r in rows]
+    execute_write(
+        """UPDATE picks_forward_test
+              SET outcome = 'void', pnl = 0, settled_at = NOW()
+            WHERE id = ANY(%s::uuid[])""",
+        [ids],
+    )
+    console.print(f"[green]Forward test: voided {len(ids)} pick(s) on "
+                  f"postponed/cancelled match(es)[/green]")
+    return len(ids)
+
+
+def settle_picks_forward_test(match_ids: list[str] | None = None) -> int:
+    """Settle `picks_forward_test` rows for finished matches. Returns count.
+
+    BOTH ARMS are settled by the same code path with no branch on `arm`. The
+    junk_anchor arm is the negative control: if it were graded differently — or
+    not graded at all — it could not do its job, and the live arm's number would
+    have nothing to be read against.
+    """
+    sql = _PENDING_FORWARD_TEST_SQL
+    args: list = []
+    if match_ids is not None:
+        if not match_ids:
+            return 0
+        sql += " AND p.match_id = ANY(%s::uuid[])"
+        args.append(match_ids)
+
+    pending = execute_query(sql, args) or []
+    if not pending:
+        return 0
+
+    settled = 0
+    for row in pending:
+        try:
+            bet = {
+                "match_id": row["match_id"],
+                "market": row["market"],
+                "selection": row["selection"],
+                "stake": 1.0,           # flat 1 unit — see header note 1
+                "odds_at_pick": row["odds_at_pick"],
+            }
+            book = (row["bookmaker"] or "").strip() or None
+            closing_odds = get_closing_odds(
+                row["match_id"], row["market"], row["selection"], book)
+
+            outcome = settle_bet_result(
+                bet, int(row["score_home"]), int(row["score_away"]), closing_odds)
+
+            # The resolver registry cannot grade this market: leave it pending
+            # and alert. Never guess — a guessed grade enters a pre-registered
+            # ledger and cannot be taken back out.
+            if outcome["result"] == "skip":
+                _alert_unsettleable(bet)
+                continue
+
+            # settle_bet_result signals a PUSH as result='void' (stake returned).
+            # On a FINISHED match that is a push, not a void: over_under_25 has
+            # no push (half-goal line) but the enum allows both and the resolver
+            # returns None on any whole-number line, so map it explicitly. Either
+            # way pnl is 0 — never -1.
+            result = "push" if outcome["result"] == "void" else outcome["result"]
+            pnl = 0.0 if result == "push" else float(outcome["pnl"])
+
+            clv = outcome["clv"]           # RAW ratio — see header note 2
+            clv_mc = None
+            if clv is not None:
+                m = closing_book_margin(row["match_id"], row["market"], book)
+                if m is not None:
+                    clv_mc = round((1.0 + float(clv)) / (1.0 + m) - 1.0, 4)
+
+            execute_write(
+                """UPDATE picks_forward_test
+                      SET outcome = %s, pnl = %s, closing_odds = %s,
+                          closing_bookmaker = %s, clv = %s,
+                          clv_margin_corrected = %s, settled_at = NOW()
+                    WHERE id = %s""",
+                [result, pnl, closing_odds, book if closing_odds else None,
+                 clv, clv_mc, row["id"]],
+            )
+            settled += 1
+        except Exception as e:
+            console.print(f"  [yellow]Forward-test settle error for "
+                          f"{row.get('id')}: {e}[/yellow]")
+
+    if settled:
+        console.print(f"[green]Forward test: settled {settled} pick(s)[/green]")
+    return settled
 
 
 def _settle_real_combo_bets() -> int:
@@ -1842,6 +2050,17 @@ def settle_ready_matches():
             _settle_pending_shadow_bets(shadow_pending, finished=[])
     except Exception as e:
         console.print(f"  [yellow]Shadow catch-up settle error (non-fatal): {e}[/yellow]")
+
+    # PICKS-FORWARD-TEST-SETTLEMENT-2026-09-14 — same catch-up logic as the
+    # shadow sweep above: a match marked 'done' by the live poller before this
+    # code existed (or before its pick was published) is skipped by the loop
+    # above, so query the forward-test ledger directly. Idempotent — the query
+    # filters on outcome IS NULL.
+    try:
+        _void_forward_test_on_dead_matches()
+        settle_picks_forward_test()
+    except Exception as e:
+        console.print(f"  [yellow]Forward-test catch-up settle error (non-fatal): {e}[/yellow]")
 
     # BET-VOID-INTEGRITY-2026-08-24 — a postponed fixture that later gets played
     # leaves its bets voided forever, because nothing ever revisited them. Run
@@ -2323,6 +2542,17 @@ def run_settlement():
             _settle_pending_shadow_bets(shadow_pending, finished)
     except Exception as e:
         console.print(f"  [yellow]Shadow settlement error: {e}[/yellow]")
+
+    # 4d. PICKS-FORWARD-TEST-SETTLEMENT-2026-09-14 — the pre-registered
+    # sharp-edge ledger. Unbounded sweep (no match_ids): the nightly run is the
+    # backstop for anything the 15-min path missed. Own try block — this test's
+    # stopping rules must never be able to block real-bet settlement, and a
+    # failure here must never be swallowed by an earlier one.
+    try:
+        _void_forward_test_on_dead_matches()
+        settle_picks_forward_test()
+    except Exception as e:
+        console.print(f"  [yellow]Forward-test settlement error: {e}[/yellow]")
 
     # Post-match enrichment and analytics always run (not gated on bets)
 

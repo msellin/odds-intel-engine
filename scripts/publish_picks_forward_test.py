@@ -75,7 +75,16 @@ HEADER = (
 )
 
 
-def load_candidates() -> list[dict]:
+def load_candidates() -> tuple[list[dict], list[dict]]:
+    """Returns (live picks, full candidate pool).
+
+    The POOL is every leg that clears the odds cap and the alignment window,
+    with the edge floor NOT yet applied. The live arm is the pool filtered at
+    MIN_EDGE and cut to TOP_N. The junk arm needs the unfiltered pool because it
+    re-runs the SAME rule — floor and all — on a shuffled anchor; selecting from
+    the live picks instead would make the control a relabelling of the live arm
+    rather than an independent draw. See junk_anchor_arm().
+    """
     rows = execute_query(
         """
         SELECT DISTINCT ON (o.match_id, o.market, o.selection, o.bookmaker)
@@ -132,8 +141,8 @@ def load_candidates() -> list[dict]:
                 if odds > MAX_ODDS:
                     continue
                 edge = p_sharp * odds - 1.0
-                if edge < MIN_EDGE:
-                    continue
+                # NOTE: the MIN_EDGE floor is applied by select() below, not
+                # here — the junk arm must see the same unfiltered pool.
                 m = meta[mid]
                 out.append({
                     "match_id": mid, "market": market, "selection": s,
@@ -147,21 +156,43 @@ def load_candidates() -> list[dict]:
                     "away_team": m["away_team"], "league": m["league"] or "",
                 })
 
-    out.sort(key=lambda c: -c["edge"])
-    return out[:TOP_N]
+    return select(out), out
 
 
-def junk_anchor_arm(live: list[dict], pool: list[dict]) -> list[dict]:
-    """Negative control: same rule, anchor shuffled to a DIFFERENT fixture.
+def select(cands: list[dict]) -> list[dict]:
+    """The selection half of the locked rule: edge floor, then top N by edge."""
+    keep = [c for c in cands if c["edge"] >= MIN_EDGE]
+    keep.sort(key=lambda c: -c["edge"])
+    return keep[:TOP_N]
+
+
+def junk_anchor_arm(pool: list[dict]) -> list[dict]:
+    """Negative control: the SAME rule, anchor shuffled to a DIFFERENT fixture.
 
     Expected to lose roughly the vig. If this arm makes money the harness is
     broken and the live arm means nothing. Not published — recorded only.
+
+    JUNK-ARM-DEGENERATE-2026-09-14 — what this used to do, and why it could not
+    work. The first version took the eight LIVE picks, overwrote each one's
+    `p_sharp` with a donor's, and recorded them. Selection never changed: the
+    junk rows were the same eight fixtures, markets, selections and prices as
+    the live arm, so they were guaranteed to settle to identical outcomes. The
+    control could not disagree with the live arm about anything. Verified on the
+    day-one rows — all eight junk rows match a live row on
+    (match_id, market, selection, odds, bookmaker).
+
+    A junk anchor has to change WHICH BETS ARE CHOSEN, because that is the only
+    thing the anchor does in this rule. So: assign every candidate in the pool a
+    donor `p_sharp` from a different fixture in the same market, recompute the
+    edge, and run the same floor-and-top-N selection over the result. The picks
+    that come out are a different set, chosen by a number that carries no
+    information — which is exactly the null this test needs.
     """
     if len(pool) < 2:
         return []
     rng = random.Random(20260914)
-    arm = []
-    for c in live:
+    junk: list[dict] = []
+    for c in pool:
         others = [o for o in pool if o["match_id"] != c["match_id"]
                   and o["market"] == c["market"]]
         if not others:
@@ -171,8 +202,8 @@ def junk_anchor_arm(live: list[dict], pool: list[dict]) -> list[dict]:
         d["p_sharp"] = donor["p_sharp"]
         d["edge"] = donor["p_sharp"] * c["odds"] - 1.0
         d["arm"] = "junk_anchor"
-        arm.append(d)
-    return arm
+        junk.append(d)
+    return select(junk)
 
 
 def record(c: dict, arm: str, message_id: int | None) -> None:
@@ -218,7 +249,7 @@ def main() -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    picks = load_candidates()
+    picks, pool = load_candidates()
     if not picks:
         print("no qualifying picks — nothing to publish (this is a valid outcome)")
         return 0
@@ -248,7 +279,7 @@ def main() -> int:
         record(c, "live", mid)
 
     # negative control — recorded, never published
-    for c in junk_anchor_arm(picks, picks):
+    for c in junk_anchor_arm(pool):
         record(c, "junk_anchor", None)
 
     print(f"\npublished {sent}/{len(picks)} to the channel, all recorded")

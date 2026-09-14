@@ -439,7 +439,39 @@ if/elif default silently lost every unrecognised market on the goal score). Addi
 a market family means adding a resolver. Behaviour on all existing markets is
 pinned by the SETTLEMENT-GOLDEN smoke fixture. See ANALYSIS_GOTCHAS §50.
 
-**Two modes:**
+**Four ledgers are settled by the same machinery.** `simulated_bets` (bots,
+money at a Kelly stake), `shadow_bets` (paper twins), `real_bets` (own money),
+and — since **PICKS-FORWARD-TEST-SETTLEMENT-2026-09-14** — `picks_forward_test`,
+the pre-registered sharp-edge PICKS forward test. They share `settle_bet_result()`
+and `get_closing_odds()` deliberately: a parallel grader is how one column name
+ends up holding two different quantities.
+
+`settle_picks_forward_test()` runs on all three cadences below (per-match,
+nightly, 15-min catch-up) and settles BOTH arms — `live` and the unpublished
+`junk_anchor` negative control — through the same code path with no branch on
+`arm`. (The 2026-09-14 junk rows are degenerate and carry a
+`+DEGENERATE_JUNK_DAY1` rule_version — see JUNK-ARM-DEGENERATE-2026-09-14 in the
+pre-registration doc.) Three definitions differ from the bot ledgers and are load-bearing:
+
+* **`pnl` is in UNITS at a flat 1-unit stake** (the pre-registration says flat
+  stake; the table has no `stake` column), so `ROI = SUM(pnl)/COUNT(*)`. Never
+  pool it with `simulated_bets.pnl`, which is money at a Kelly stake.
+* **`clv` is the RAW price ratio** `odds/closing_odds − 1`, no de-vig — the same
+  definition as `simulated_bets.clv`. The close is taken at the pick's OWN book
+  (stored in `closing_bookmaker`), not the unfiltered lookup, because a
+  forward-test price is by construction the max across books and comparing a max
+  against an arbitrary book is structurally positive (see `get_closing_odds`).
+* **`clv_margin_corrected` is the decision variable**, `EV = (1+clv)/(1+m) − 1`,
+  where `m` is the **closing book's own margin on that fixture**, computed per
+  row by `closing_book_margin()`. It is NOT the 7.6% average quoted in the
+  pre-registration: measured 2026-09-14 over 3 days of finished fixtures, median
+  closing 1X2 margins are Coolbet 7.8%, Epicbet 8.0%, Pinnacle 9.1%, Betfair
+  10.4%, Unibet-Site 10.5%, **Bet365 11.3%** — and Bet365 is where most
+  forward-test picks land. When the closing book's full market is unavailable the
+  column stays NULL; a NULL is honest, a guessed margin silently biases the
+  n=200/400 stopping rules.
+
+**Three modes:**
 
 1. **Per-match (instant):** `settle_finished_matches(match_ids)` — called by LivePoller the moment it detects FT/AET/PEN status. Writes final score + result to `matches` table, settles pending bets + user picks for that match immediately. No delay.
 

@@ -40842,6 +40842,177 @@ def test_picks_forward_test_rule_locked():
     )
 
 
+@test("PICKS-FORWARD-TEST-SETTLED — the pre-registered ledger is actually graded")
+def test_picks_forward_test_settled():
+    """PICKS-FORWARD-TEST-SETTLEMENT (2026-09-14).
+
+    `picks_forward_test` shipped with its outcome columns written by NOTHING.
+    Every stopping criterion in the pre-registration — STOP at n=200/400 on
+    margin-corrected CLV, promote or kill at n=800 on the ROI CI — reads those
+    columns, so the test could have accumulated picks indefinitely while being
+    structurally incapable of failing. That is the same defect as the O/U
+    calibrator, one level up: an instrument nobody could read.
+
+    This test pins the four things that make the ledger trustworthy:
+
+      1. the settler exists and is wired into all three settlement cadences;
+      2. `clv` stays the RAW price ratio (migration 342's column comment) —
+         no de-vig, or the number stops being comparable with simulated_bets;
+      3. `clv_margin_corrected` uses a PER-ROW closing-book margin, never the
+         7.6pct average. That average was measured across 18,759 bets of a
+         different mix; on the books these picks actually land at, Bet365's
+         median closing 1x2 margin is 11.3pct (measured 2026-09-14 over 70
+         fixtures). Substituting 7.6 there overstates EV by ~3.5pp on the
+         decision variable itself;
+      4. a push is pnl = 0, never -1.
+    """
+    src = _engine_path("workers/jobs/settlement.py").read_text()
+
+    assert "def settle_picks_forward_test(" in src, (
+        "settle_picks_forward_test is gone — picks_forward_test would go back "
+        "to never being graded, and the pre-registration back to unfailable."
+    )
+    # wired into the per-match fast path, the nightly run and the catch-up sweep
+    for caller in ("def settle_finished_matches(", "def run_settlement(",
+                   "def settle_ready_matches("):
+        i = src.index(caller)
+        j = src.index("\ndef ", i + 1)
+        assert "settle_picks_forward_test(" in src[i:j], (
+            f"{caller.strip('def (')} no longer calls settle_picks_forward_test — "
+            "one of the three settlement cadences has gone blind to the ledger."
+        )
+
+    body = src[src.index("def settle_picks_forward_test("):]
+    body = body[:body.index("\ndef ", 1)] if "\ndef " in body[1:] else body
+
+    # 2. raw CLV — the settler must take settle_bet_result's clv verbatim.
+    assert 'outcome["clv"]' in body, (
+        "clv is no longer taken straight from settle_bet_result. Migration 342 "
+        "promises a RAW price ratio with the same definition as "
+        "simulated_bets.clv; a locally-recomputed or de-vigged value silently "
+        "changes what every stopping criterion is measured on."
+    )
+
+    # 3. no hardcoded average margin anywhere in the forward-test settlement code
+    block_start = src.index("_PENDING_FORWARD_TEST_SQL")
+    block = src[block_start:block_start + len(body) + 6000]
+    for bad in ("0.076", "0.0760", "7.6%"):
+        assert bad not in block.replace("7.6pct", ""), (
+            f"the forward-test settler contains {bad!r}. m is the CLOSING "
+            f"BOOK'S OWN margin on that fixture, computed per row; 7.6pct was a "
+            f"measured average across a different bet mix. A guessed margin "
+            f"biases the n=200 and n=400 stopping rules in a direction nobody "
+            f"can see. Leave clv_margin_corrected NULL instead."
+        )
+    assert "def closing_book_margin(" in src and "(1.0 + float(clv)) / (1.0 + m)" in body, (
+        "clv_margin_corrected is no longer EV = (1+clv)/(1+m) - 1 computed "
+        "from a per-row closing-book margin."
+    )
+
+    # 4. push is pnl = 0. Pinned on the resolver itself, not on prose.
+    from workers.jobs.settlement import settle_bet_result
+    push = settle_bet_result(
+        {"market": "over_under_30", "selection": "over", "stake": 1.0,
+         "odds_at_pick": 2.0}, 2, 1, None)
+    assert push["result"] == "void" and push["pnl"] == 0.0, (
+        f"a whole-line O/U push no longer returns stake-back: {push}. In the "
+        f"forward-test ledger that becomes pnl=-1 on a bet the book refunded."
+    )
+    assert '"push" if outcome["result"] == "void"' in body, (
+        "the push mapping is gone — a finished-match stake-back must be "
+        "recorded as 'push', leaving 'void' to mean the fixture never happened."
+    )
+
+    # both arms must be graded by the same code with no branch on `arm`
+    assert 'row["arm"]' not in body and "== 'junk_anchor'" not in body, (
+        "the settler branches on `arm`. The junk-anchor arm is the negative "
+        "control: grading it differently from the live arm destroys the only "
+        "thing that can tell us the harness works."
+    )
+
+    # DB invariants — skip cleanly when the DB is unreachable (offline CI).
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """SELECT count(*) FILTER (WHERE outcome IS NOT NULL
+                                        AND settled_at IS NULL)      AS no_ts,
+                      count(*) FILTER (WHERE outcome IN ('push','void')
+                                        AND pnl IS DISTINCT FROM 0)  AS bad_push,
+                      count(*) FILTER (WHERE clv IS NOT NULL
+                                        AND closing_bookmaker IS NULL) AS orphan_clv
+                 FROM picks_forward_test""", [])
+    except Exception:
+        rows = None
+    if rows:
+        r = rows[0]
+        assert r["no_ts"] == 0, f"{r['no_ts']} settled forward-test picks carry no settled_at"
+        assert r["bad_push"] == 0, (
+            f"{r['bad_push']} push/void forward-test picks have pnl != 0 — a "
+            f"refunded stake is being counted as a loss in a pre-registered ROI.")
+        assert r["orphan_clv"] == 0, (
+            f"{r['orphan_clv']} rows have a clv with no closing_bookmaker. CLV "
+            f"against an unnamed book is exactly the structurally-positive "
+            f"artefact get_closing_odds' docstring warns about.")
+
+
+@test("PICKS-FORWARD-TEST-JUNK-ARM-SELECTS — the negative control chooses its own bets")
+def test_picks_forward_test_junk_arm_selects():
+    """JUNK-ARM-DEGENERATE-2026-09-14.
+
+    The junk arm is the only thing that can tell us the forward-test harness
+    works. Its first implementation could not: it took the eight live picks,
+    overwrote `p_sharp`, and recorded them — same fixtures, same selections,
+    same prices, therefore guaranteed identical outcomes. Selection is the ONLY
+    thing the anchor does in this rule, so a junk anchor that does not change
+    which bets are chosen changes nothing at all.
+
+    Pinned as a property on the pure functions, with no DB and no network: given
+    a synthetic pool, the junk arm must apply the same floor and top-N, and must
+    be able to pick bets the live arm did not.
+    """
+    import importlib
+    P = importlib.import_module("scripts.publish_picks_forward_test")
+
+    # a synthetic pool: 12 fixtures, one leg each, edges spread across the floor
+    pool = []
+    for i in range(12):
+        p_sharp = 0.30 + 0.02 * i
+        pool.append({"match_id": f"m{i}", "market": "1x2", "selection": "home",
+                     "odds": 3.0, "bookmaker": "B", "edge": p_sharp * 3.0 - 1.0,
+                     "p_sharp": p_sharp, "anchor_odds": {}, "anchor_overround": 0.09,
+                     "anchor_quoted_at": None, "odds_quoted_at": None,
+                     "alignment_gap_minutes": 0.0, "kickoff_at": None,
+                     "home_team": "H", "away_team": "A", "league": "L"})
+
+    live = P.select(pool)
+    junk = P.junk_anchor_arm(pool)
+
+    # the selection half of the locked rule applies to BOTH arms
+    assert len(live) <= P.TOP_N and len(junk) <= P.TOP_N, "TOP_N not applied"
+    assert all(c["edge"] >= P.MIN_EDGE for c in live + junk), "MIN_EDGE not applied"
+
+    # the junk arm must draw from the POOL, not relabel the live picks. With a
+    # 12-fixture pool and a shuffled anchor it cannot be a permutation of live.
+    assert {c["match_id"] for c in junk} != {c["match_id"] for c in live} or len(pool) <= P.TOP_N, (
+        "the junk arm selected exactly the live picks. If it is relabelling the "
+        "live arm rather than re-running the rule on a shuffled anchor, the "
+        "negative control settles to identical outcomes by construction and "
+        "cannot detect a broken harness (JUNK-ARM-DEGENERATE-2026-09-14)."
+    )
+    assert all(c["arm"] == "junk_anchor" for c in junk), "junk rows not tagged"
+
+    # and the anchor really is another fixture's
+    src = _engine_path("scripts/publish_picks_forward_test.py").read_text()
+    assert 'o["match_id"] != c["match_id"]' in src, (
+        "the donor anchor is no longer required to come from a different "
+        "fixture — a 'junk' anchor that is the fixture's own is not junk."
+    )
+    assert "def junk_anchor_arm(pool" in src, (
+        "junk_anchor_arm no longer takes the full candidate pool; it can only "
+        "be re-selecting from the live picks."
+    )
+
+
 @test("CROSS-BOOK-WINDOW-ASSEMBLY — books are compared on assembled windows, not timestamp equality")
 def test_cross_book_window_assembly():
     """ANALYSIS_GOTCHAS §63 (2026-09-14) — odds_snapshots timestamps each ROW.
