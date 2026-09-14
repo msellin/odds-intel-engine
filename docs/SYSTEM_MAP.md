@@ -216,9 +216,16 @@ duplicate the live arm exactly. They carry `rule_version` ending
 `+DEGENERATE_JUNK_DAY1` (migration 343) and must be excluded from any control
 analysis.
 
+⚠️ **Never sum a number across `rule_version`.** A rule change starts a NEW
+test with a new start date and its own n — v1 (`sharp_edge_v1_2026_09_14`) was
+CLOSED at n=8 when v2 added the 20% book/anchor price-ratio cap. Both summary
+views group by `rule_version` for this reason (migration 346); pooling them would
+carry a closed test's n into a running one and fire a checkpoint early on a mix
+of two rules.
+
 Surfaces: `/picks` and `/api/v1/upcoming` (live arm only, via
-`picks_forward_test_public`); `/admin/shadow-bots` (both arms, via
-`picks_forward_test_arm_summary`). Settled by
+`picks_forward_test_public`); `/admin/shadow-bots` (both arms and all rule
+versions, via `picks_forward_test_arm_summary`). Settled by
 `settlement.py::settle_picks_forward_test` on all three settlement cadences.
 Rule locked in `dev/active/picks-forward-test-preregistration.md`, pinned by
 smoke `PICKS-FORWARD-TEST-RULE-LOCKED`.

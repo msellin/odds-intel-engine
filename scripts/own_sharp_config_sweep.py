@@ -485,6 +485,8 @@ def main() -> int:
     ap.add_argument("--markets", default="1x2,over_under_15,over_under_25,over_under_35")
     ap.add_argument("--min-n", type=int, default=MIN_N)
     ap.add_argument("--top", type=int, default=15)
+    ap.add_argument("--top-per-day", type=int, default=8,
+                    help="daily cap for the published rule's ranking reference")
     ap.add_argument("--control", action="store_true",
                     help="junk-anchor negative control (anchor from another fixture)")
     ap.add_argument("--seed", type=int, default=20260914)
@@ -594,6 +596,25 @@ def main() -> int:
               f"| gap {c['median_gap_min']:.0f}m "
               f"| need n={c['n_for_80pct_power']:,.0f} | CLV {clv} | {fold_txt}")
 
+    # --- baseline: bet EVERY aligned leg ----------------------------------
+    # Anchor-independent (no edge filter touches it), so the REAL and CONTROL
+    # runs must print the same numbers here. It is the harness's own dipstick:
+    # flat-backing every outcome must return approximately -m/(1+m), the book's
+    # own margin. If this line is not near the measured close margin, the leg
+    # construction or the settlement is wrong and nothing else can be read.
+    print("\n=== BASELINE — every aligned leg, NO edge filter "
+          "(must return ~ -margin/(1+margin); identical in both arms) ===")
+    for book in BOOKS + [POOLED]:
+        for market in markets:
+            rows = [lg for lg in legs if lg["book"] == book
+                    and lg["market"] == market and lg["lead"] == 0]
+            s = summarise(rows)
+            if s:
+                m = s["close_margin_median"]
+                print(f"   {book:12s} {market:14s} {fmt(s)} "
+                      f"| close margin {m*100:5.2f}% "
+                      f"-> expected {-m/(1+m)*100:+6.2f}%")
+
     # --- headline reference: the publish rule at the OWN books ------------
     print("\n=== REFERENCE — the publish rule (edge>=3%, odds<=4.0) at each book ===")
     for book in BOOKS + [POOLED]:
@@ -608,6 +629,41 @@ def main() -> int:
                       f"gap {s['median_gap_min']:.0f}m "
                       f"{s['picks_per_day']:.2f}/day "
                       f"close-margin {s['close_margin_median']*100:.2f}%")
+        agg = summarise([lg for lg in legs
+                         if lg["book"] == book and lg["lead"] == 0
+                         and lg["edge"] >= 0.03 and lg["odds"] <= 4.0])
+        if agg:
+            print(f"   {book:12s} {'ALL MARKETS':14s} {fmt(agg)} "
+                  f"gap {agg['median_gap_min']:.0f}m "
+                  f"{agg['picks_per_day']:.2f}/day")
+
+    # --- the publish rule AS PUBLISHED: top-N per day by edge -------------
+    # PLAN_AFTER_AUDITS §3 states the rule as "edge >= 3%, odds <= 4.0, anchor
+    # and bet quote within 60 min, TOP 8 PER DAY BY EDGE". The daily cap is not
+    # a filter, it is a RANKING, so it cannot be expressed as a grid cell — and
+    # it changes the composition sharply (it concentrates on the largest edges,
+    # which are also the widest-anchor legs). Reported separately so the grid's
+    # numbers and the published rule's number can be compared honestly.
+    print(f"\n=== REFERENCE — publish rule WITH the top-{a.top_per_day}/day cap "
+          f"(ranking, not a filter) ===")
+    for book in BOOKS + [POOLED]:
+        elig = [lg for lg in legs
+                if lg["book"] == book and lg["lead"] == 0
+                and lg["edge"] >= 0.03 and lg["odds"] <= 4.0]
+        byday: dict[int, list] = defaultdict(list)
+        for lg in elig:
+            byday[int(lg["ko"] // 86400)].append(lg)
+        picked = []
+        for day, rows in byday.items():
+            picked.extend(sorted(rows, key=lambda r: -r["edge"])[:a.top_per_day])
+        s = summarise(picked)
+        if s:
+            print(f"   {book:12s} all markets  {fmt(s)} "
+                  f"gap {s['median_gap_min']:.0f}m {s['picks_per_day']:.2f}/day")
+        s1 = summarise([p for p in picked if p["market"] == "1x2"])
+        if s1:
+            print(f"   {book:12s} 1x2 only     {fmt(s1)} "
+                  f"gap {s1['median_gap_min']:.0f}m {s1['picks_per_day']:.2f}/day")
 
     if a.json_out:
         with open(a.json_out, "w") as fh:

@@ -41053,6 +41053,43 @@ def test_picks_forward_test_surface():
         "the aggregate must come from the summary view — one definition, the "
         "same one the stopping rules are evaluated on."
     )
+
+    # FORWARD-TEST-SUMMARY-POOLS-RULE-VERSIONS (2026-09-15). The summary views
+    # shipped aggregating the whole table, which was right for exactly one day.
+    # RULE-V2 closed sharp_edge_v1_2026_09_14 at n=8 and registered v2; the
+    # pre-registration is explicit that a rule change starts a NEW test and its
+    # picks are not pooled. An aggregate that sums across rule_version does that
+    # silently, in the one place the number is read from — a checkpoint at n=200
+    # would fire eight picks early, on a mix of two rules.
+    mig346 = Path(__file__).parent.parent / "supabase" / "migrations" / \
+        "346_forward_test_summary_per_rule.sql"
+    assert mig346.exists(), "migration 346 (per-rule summaries) is missing"
+    sql346 = mig346.read_text()
+    assert "GROUP BY rule_version" in sql346 and "GROUP BY rule_version, arm" in sql346, (
+        "the summary views no longer group by rule_version. Summing a closed "
+        "pre-registered test's n into a running one is the exact discipline "
+        "failure the pre-registration exists to prevent."
+    )
+    assert "rule_version: string" in lib, (
+        "ForwardTestSummary dropped rule_version — a caller cannot tell which "
+        "pre-registered rule a number belongs to."
+    )
+    assert "closed" in lib and "rows.slice(1)" in lib, (
+        "fetchForwardTestSummary must return the CURRENT rule's row and hand "
+        "back the closed ones separately, never merge or drop them."
+    )
+    try:
+        from workers.api_clients.db import execute_query as _eq
+        pooled = _eq("""SELECT count(*) AS n_rules FROM picks_forward_test_summary""", [])
+        distinct = _eq("""SELECT count(DISTINCT rule_version) AS n
+                            FROM picks_forward_test WHERE arm='live'""", [])
+    except Exception:
+        pooled = distinct = None
+    if pooled and distinct:
+        assert pooled[0]["n_rules"] == distinct[0]["n"], (
+            "picks_forward_test_summary must emit exactly one row per live-arm "
+            "rule_version — no more (a stray group) and no fewer (a pooled sum)."
+        )
     # honest framing, on the page, above the numbers
     _flat = " ".join(page.split())   # JSX wraps prose across lines
     assert "No past performance is claimed" in _flat, (
@@ -41221,6 +41258,125 @@ def test_cross_book_window_assembly():
         "is missing — it is the reusable lesson from the OWN-path verdict"
     )
 
+
+
+@test("OWN-SHARP-SWEEP-ASSEMBLE — the config sweep assembles like the kill criterion, and keeps its guards")
+def test_own_sharp_config_sweep():
+    """OWN-SHARP-CONFIG-SWEEP (2026-09-14) — the exhaustive sharp-edge grid for
+    the 🤖 OWN path (`scripts/own_sharp_config_sweep.py`,
+    `docs/OWN_SHARP_CONFIG_SWEEP_2026_09_14.md`).
+
+    Two things are pinned, both because losing either silently turns a negative
+    result into a fake positive one:
+
+    (a) **Window assembly, not timestamp equality.** ANALYSIS_GOTCHAS §63: an
+        exact-timestamp join across books measures write granularity (Coolbet's
+        1x2 triple lands across ~100 ms), and reading that as "we cannot compare
+        books" is what nearly bought two weeks of pointless polling. The sweep
+        generalises `own_path_kill_criterion.assemble` over the side list so it
+        also serves 2-way O/U. This asserts the two implementations agree
+        OUTCOME-FOR-OUTCOME on the 1x2 case — a behavioural check, not a
+        substring one (§41), so a divergent rewrite of either fails here.
+
+    (b) **The methodology guards.** Time alignment, the phantom-feed whitelist,
+        the production outlier multipliers, cluster-robust SEs and the
+        junk-anchor negative control. Every one of them is a trap that has
+        already cost this project money; a sweep without them reports the
+        artefact, not the edge.
+    """
+    import datetime as _dt
+    import random as _rnd
+    import scripts.own_sharp_config_sweep as sw
+    import scripts.own_path_kill_criterion as kc
+
+    # --- (a) behavioural equivalence on 1x2 -------------------------------
+    rnd = _rnd.Random(4242)
+    base = _dt.datetime(2026, 9, 14, 9, 0, tzinfo=_dt.timezone.utc)
+    for _ in range(40):
+        dt_rows, ep_rows = [], []
+        for _ in range(rnd.randint(3, 14)):
+            off = rnd.choice([0.0, 0.05, 0.1, 1.5, 1.9, 2.1, 5.0, 30.0]) + rnd.random()
+            sel = rnd.choice(["home", "draw", "away"])
+            o = round(1.2 + rnd.random() * 6, 2)
+            t = base + _dt.timedelta(minutes=off)
+            dt_rows.append((t, sel, o))
+            ep_rows.append((t.timestamp(), sel, o))
+        mine = sw.assemble(ep_rows, ("home", "draw", "away"))
+        theirs = kc.assemble(dt_rows)
+        assert len(mine) == len(theirs), (
+            f"assemble disagrees on triple COUNT: sweep {len(mine)} vs "
+            f"kill-criterion {len(theirs)} — §63's window assembly has drifted"
+        )
+        for (tm, qm), (tt, qt) in zip(mine, theirs):
+            assert abs(tm - tt.timestamp()) < 1e-6, "anchor timestamps disagree"
+            assert qm == qt, f"assembled quotes disagree: {qm} vs {qt}"
+
+    # a 2-way market must assemble too — the generalisation is the point
+    # timestamps here are EPOCH SECONDS, so 600 = 10 min = outside the window
+    two = [(0.0, "over", 1.9), (3.0, "under", 2.0),
+           (600.0, "over", 1.8), (603.0, "under", 2.1)]
+    assert len(sw.assemble(two, ("over", "under"))) == 2, (
+        "the 2-way generalisation must find both complete O/U pairs and must "
+        "not bridge the 10-minute gap between them"
+    )
+
+    # --- (b) the guards ---------------------------------------------------
+    src = _engine_path("scripts/own_sharp_config_sweep.py").read_text()
+
+    # phantom feeds can never enter: the book list is a whitelist of the three
+    # self-scraped EMTA books (PLAN_AFTER_AUDITS §5)
+    assert sw.BOOKS == ["Coolbet", "Epicbet", "Unibet-Site"], (
+        "the bettable set is a WHITELIST of self-scraped books — AF's 'Unibet' "
+        "is phantom-high on 33.1% of selections and 'Unibet-Kambi' on 38%"
+    )
+    assert sw.ANCHOR_BOOK == "Pinnacle"
+
+    # production outlier multipliers, not invented ones (ANALYSIS_GOTCHAS §9)
+    assert sw.OUTLIER_MULT["1x2"] == 1.35 and sw.OUTLIER_MULT["over_under_25"] == 1.30, (
+        "the sweep must apply the pipeline's own ODDS-OUTLIER-FILTER multipliers"
+    )
+
+    # time alignment is enforced per leg, and reported
+    assert "if gap > align_min:" in src and "continue" in src, (
+        "every leg must be dropped when its anchor gap exceeds the alignment "
+        "bound — an unaligned rule harvests soft-book staleness (+8.47% vs "
+        "+5.54% measured on the identical publish rule)"
+    )
+    assert '"median_gap_min"' in src, "every published cell must report its median anchor gap"
+
+    # the pre-kickoff predicate is the authoritative one (§37), never bare is_live
+    assert "o.timestamp <= m.date" in src, (
+        "pre-kickoff must be bounded on kickoff — `is_live = false` is NOT a "
+        "pre-match filter (26% of such rows are post-kickoff)"
+    )
+
+    # cluster-robust inference on fixture, not naive iid
+    stats_src = src[src.index("def stats("):src.index("def cell_rows(")]
+    assert "cluster" in stats_src.lower() and "by[m] += r - mean" in stats_src, (
+        "CIs must cluster on match_id — home/draw/away on one fixture are "
+        "mutually exclusive and the same selection at three books is one bet"
+    )
+
+    # power is computed, per ANALYSIS_GOTCHAS §60
+    assert "(1.96 + 0.84)" in stats_src, (
+        "every cell must report the n needed to detect its own point estimate "
+        "at 80% power (§60 — three different answers to one question)"
+    )
+
+    # the negative control exists and takes its anchor from ANOTHER fixture
+    assert "--control" in src and "junk" in src.lower(), (
+        "the junk-anchor negative control is what makes every other number in "
+        "the sweep readable — without it a broken harness is undetectable"
+    )
+
+    # CLV is reported raw AND margin-corrected (trap 3: `clv` has no de-vig)
+    assert "clv_ev" in src and "close_margin" in src, (
+        "CLV must be reported raw AND margin-corrected — break-even CLV equals "
+        "the closing book's margin, not zero (settlement.py:613)"
+    )
+
+    doc = _engine_path("docs/OWN_SHARP_CONFIG_SWEEP_2026_09_14.md")
+    assert doc.exists(), "the sweep's report must be committed alongside the script"
 
 
 if __name__ == "__main__":
