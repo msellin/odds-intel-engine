@@ -3533,15 +3533,45 @@ def _settle_pending_bets(pending: list, finished: list):
             settlement = combo_settlement
             closing_odds = None
             clv_pinnacle = None
+            closing_bookmaker = None
         elif is_inplay:
             # CLV is meaningless for inplay bets: live odds reflect game state (goals, cards)
             # not market efficiency, so closing_odds is just whatever snapshot happened to be
             # last captured — producing arbitrarily large/small CLV with no signal value.
             closing_odds = None
             clv_pinnacle = None
+            closing_bookmaker = None
             settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
         else:
-            closing_odds = get_closing_odds(match_id, odds_market, odds_selection)
+            # SIMULATED-CLV-OWN-BOOK-2026-09-14. This used to call
+            # get_closing_odds WITHOUT a bookmaker — the unfiltered form, which
+            # that function's own docstring warns about: every book writes its
+            # closing snapshot in the same batch so they share a timestamp, and
+            # `ORDER BY timestamp DESC LIMIT 1` then picks an ARBITRARY row among
+            # the ties. Observed spread on a single 1X2 home selection: 3.90 to
+            # 5.00, a 28 pct swing in whatever CLV came out.
+            #
+            # `odds_at_pick` is by construction the MAX across accessible books,
+            # so comparing a max against one arbitrary book is structurally
+            # positive whether or not the bet had any edge.
+            #
+            # THIS COLUMN IS PUBLISHED. `simulated_bets.clv` feeds the bot
+            # leaderboard on /performance, where `bot_v10_all` was reading
+            # "+11.5 pct AVG CLV" against an own-book figure of about +3.5 pct —
+            # i.e. roughly 8pp of a public number came from comparing our best
+            # price against whichever book sorted last. The shadow path had the
+            # identical defect (SHADOW-CLV-NO-ARBITRARY-FALLBACK, same day);
+            # this is the same fix on the surface customers actually see.
+            #
+            # No own-book close, no clv. A NULL is honest and every consumer
+            # handles it. Historical rows are not rewritten: `closing_odds IS
+            # NOT NULL AND closing_bookmaker IS NULL` marks the old ones.
+            _own_book = bet.get("recommended_bookmaker")
+            closing_odds = (
+                get_closing_odds(match_id, odds_market, odds_selection, _own_book)
+                if _own_book else None
+            )
+            closing_bookmaker = _own_book if closing_odds else None
             # PIN-5 / CLV-PINNACLE-LIVE-TWO-DEFINITIONS-2026-09-07: Pinnacle-anchored
             # CLV, DE-VIGGED. This path used to write the RAW ratio
             # `odds_at_pick / pinnacle_closing - 1` (Pinnacle's vig still in it),
@@ -3583,10 +3613,16 @@ def _settle_pending_bets(pending: list, finished: list):
         # Update DB
         execute_write(
             "UPDATE simulated_bets SET result = %s, pnl = %s, bankroll_after = %s, "
-            "closing_odds = %s, clv = %s, clv_pinnacle = %s, clv_pinnacle_live = %s "
+            "closing_odds = %s, clv = %s, clv_pinnacle = %s, clv_pinnacle_live = %s, "
+            # SIMULATED-CLV-OWN-BOOK-2026-09-14: record WHICH book supplied the
+            # close. Without it a NULL clv is indistinguishable from "we never
+            # tried", and the historical marker for arbitrary-book rows
+            # (closing_odds NOT NULL, closing_bookmaker NULL) cannot exist.
+            "closing_bookmaker = %s "
             "WHERE id = %s",
             [settlement["result"], settlement["pnl"], new_bankroll,
-             closing_odds, settlement["clv"], clv_pinnacle, clv_pinnacle_live, bet["id"]]
+             closing_odds, settlement["clv"], clv_pinnacle, clv_pinnacle_live,
+             closing_bookmaker, bet["id"]]
         )
 
         settled += 1

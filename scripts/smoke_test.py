@@ -41845,5 +41845,69 @@ def test_bot_status_board():
         "nothing"
     )
 
+
+@test("SIMULATED-CLV-OWN-BOOK — the PUBLISHED CLV is measured against the bot's own book")
+def test_simulated_clv_own_book():
+    """SIMULATED-CLV-OWN-BOOK (2026-09-14) — this column is on /performance.
+
+    `simulated_bets.clv` fed the bot leaderboard's AVG CLV column. It was
+    computed by calling get_closing_odds with NO bookmaker — the unfiltered
+    form, which that function's own docstring warns picks an ARBITRARY row among
+    books that share a closing timestamp (observed spread on one selection: 3.90
+    to 5.00). Since `odds_at_pick` is the MAX across accessible books, comparing
+    a max against an arbitrary book is structurally positive regardless of edge.
+
+    It was not a fraction of the rows. `closing_bookmaker` was populated on
+    0 of 4,279 settled rows — EVERY published CLV figure came through it:
+
+        bot_v10_all             published +11.5 pct   own-book +4.83 pct
+        bot_high_roi_global_v2  published +15.8 pct   own-book +7.39 pct
+
+    And break-even CLV is the closing book's MARGIN, not zero, so on the honest
+    basis those are about -2.6 pct and -0.2 pct EV. Both "positive CLV" bots on
+    the public leaderboard are at or below break-even.
+
+    Sibling of SHADOW-CLV-NO-ARBITRARY-FALLBACK — same defect, same day, but
+    this one was on the surface customers see.
+    """
+    import re as _re
+    from datetime import datetime, timezone
+    from workers.api_clients.db import execute_query
+
+    src = _engine_path("workers/jobs/settlement.py").read_text()
+    i = src.index("SIMULATED-CLV-OWN-BOOK-2026-09-14")
+    j = src.index("UPDATE simulated_bets SET result", i)
+    body = src[i:j]
+
+    assert "recommended_bookmaker" in body, (
+        "the simulated_bets settle path must price the close at the book the bot "
+        "actually used, not whichever row sorted last"
+    )
+    bare = _re.findall(
+        r"get_closing_odds\(\s*match_id,\s*odds_market,\s*odds_selection\s*\)", body)
+    assert not bare, (
+        "the unfiltered get_closing_odds call is back in the simulated_bets "
+        "path. That number is PUBLISHED on /performance — leave clv NULL rather "
+        "than compare our best price against an arbitrary book."
+    )
+    assert "closing_bookmaker = %s" in src, (
+        "closing_bookmaker must be WRITTEN, or a NULL clv is indistinguishable "
+        "from 'never attempted' and the historical marker cannot exist"
+    )
+
+    FIX_LANDED = datetime(2026, 9, 14, 17, 30, tzinfo=timezone.utc)
+    rows = execute_query(
+        """SELECT count(*) AS n FROM simulated_bets
+            WHERE closing_odds IS NOT NULL AND closing_bookmaker IS NULL
+              AND created_at > %s""",
+        (FIX_LANDED,),
+    )
+    n = rows[0]["n"] if rows else 0
+    assert n == 0, (
+        f"{n} simulated_bets rows created since the fix carry closing_odds with "
+        f"no closing_bookmaker — the arbitrary-book comparison is live again, "
+        f"and it is published."
+    )
+
 if __name__ == "__main__":
     main()
