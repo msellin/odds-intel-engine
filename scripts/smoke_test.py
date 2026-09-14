@@ -40101,5 +40101,30 @@ def test_lineshop_retirement_reason_corrected_2026_09_14():
     assert "retired_at IS NOT NULL" in body, "only ever touch already-retired bots"
 
 
+@test("TRIGGER-CONFIG-DEEPDIVE — the 'no fold-robust config' claim is backed by a real search")
+def test_trigger_config_deepdive_2026_09_14():
+    """The first search tested edge floors, odds floors and selections
+    SEPARATELY — ~11 cells — and reported "none fold-robust" as though the space
+    had been covered. The owner challenged it and was right to.
+
+    This pins the replacement: a full product search over selection x book x
+    edge BAND x odds BAND. Bands, not floors, is the load-bearing part — a floor
+    can only ever find "bet longer", and the actual finding was a CEILING.
+    """
+    import pathlib as _pl
+
+    src = _pl.Path("scripts/trigger_config_deepdive.py").read_text()
+    code = _strip_prose(src)
+    # Bands, not just floors — the whole point of redoing the search.
+    for name in ("EDGE_CEILS", "ODDS_CEILS", "EDGE_FLOORS", "ODDS_FLOORS"):
+        assert name in code, f"the search must vary {name} — a floor-only grid is what failed"
+    assert "itertools.product" in code, "the cells must be searched as a PRODUCT, not one axis at a time"
+    assert "_folds_ok" in code and "min-n" in src
+    # It must also report the counterfactual population, not just the bots —
+    # the finding is that the profitable band is one they hold no data in.
+    assert "WITHIN-BOT" in src, "the within-bot gradient removes the bot/odds confound"
+    assert "PLACEABLE" in code, "Kambi and Pinnacle must stay out of an executable-price read"
+
+
 if __name__ == "__main__":
     main()

@@ -337,3 +337,87 @@ theirs cannot.
 **The transferable finding is the `edge ≥ 13%` floor** — it lifts the line-shop
 CLV roughly 3× on era-1 data (+15.3%, +15.2%, +8.0%) and all four landed on it
 independently. Inherit the floor, not the bots.
+
+---
+
+# ADDENDUM 4 — 2026-09-14: the owner challenged "no fold-robust config". The challenge was right about the search and wrong about the reason.
+
+Owner: *"it's difficult to believe that trigger bots don't have a fold robust
+config, as they should be like all games when model ones are a subset, so if we
+shrunk the trigger selection down to some profitable set…"*
+
+**The first search deserved that challenge.** It tested edge floors, odds floors
+and selections **separately** — about 11 cells — and reported "none fold-robust"
+as if the space had been covered. It had not.
+
+Redone properly (`scripts/trigger_config_deepdive.py`): selection × book × edge
+**band** × odds **band**, bands rather than floors so a *ceiling* can be found —
+**9,048 combinations**.
+
+**Zero fold-robust positive configurations.** Dropping fold-robustness *and* the
+volume gate entirely, the best cell anywhere is **+1.81% on n=26** (one book, one
+narrow odds slice) — what a wide scan yields by chance. Without the book split,
+nothing is positive at all.
+
+## But the structural premise is backwards, and that is the real finding
+
+The trigger bots are **not a superset** of the model bots. They are a **disjoint,
+longshot-only population**, because `FAVLONG-CUTS-2026-09-09` gave them an odds
+**floor** of 2.80:
+
+| odds band | trigger bots | `bot_v10_all` | all-bots CLV | all-bots ROI |
+|---|---|---|---|---|
+| < 2.0 | **0** | 28 | **+5.0%** | +6% |
+| 2.0–2.8 | **0** | 48 | **+3.7%** | **+12%** |
+| 2.8–3.6 | 195 | 90 | −2.0% | −11% |
+| 3.6–4.5 | 244 | 6 | +0.0% | +3% |
+| 4.5–6.0 | 228 | 0 | −2.6% | −13% |
+| 6.0+ | 183 | 0 | **−10.3%** | −14% |
+
+**Zero picks below 2.80.** Median odds 4.35 against 2.94 for `bot_v10_all`. So
+"shrinking the trigger selection down" cannot reach the profitable region — the
+bots are *configured out of it* and hold no data there at all. Every band they do
+occupy is negative.
+
+## The odds gradient is real — it survives the obvious confound
+
+"Odds band" is entangled with "which bot supplied the pick". Removing that by
+measuring **within** single bots, seven of nine bots spanning two or more bands
+fall monotonically as odds rise:
+
+| bot | < 2.8 | 2.8–4.0 | 4.0+ |
+|---|---|---|---|
+| `bot_v10_all` | **+5.6% / +11%** | +2.4% / +13% | — |
+| `bot_pin_1x2_home_v1` | +3.2% / +5% | +2.6% / +1% | +2.0% / −28% |
+| `bot_high_alignment` | +3.3% / +16% | −3.0% / −20% | +7.1% / +29% |
+| `bot_coolbet_trigger_1x2_v1` | — | −8.7% / −21% | −9.8% / −21% |
+| `bot_trigger_1x2_model_v1` | — | −5.8% / −17% | −9.9% / −17% |
+
+⚠️ **Two honest caveats, both of which cut against over-reading this.**
+
+1. **CLV and ROI disagree at the extreme.** They agree that 2.0–2.8 is good
+   (+3.7% CLV, **+12% ROI at t=+2.6**) and 2.8–3.6 bad (−2.0%, −11% at t=−2.4).
+   But `edge ≥13% × odds 1.0–2.0` is **+16.7% CLV and −25% ROI**. Do not quote
+   that cell in either direction.
+2. **The long-odds collapse is recent; the short-odds positive is not.** Split
+   the window in half: 2.8–3.6 goes +0.9% → −5.0% and 4.5–6.0 goes +6.8% → −6.5%,
+   while 1.0–2.0 holds +5.4% → +4.2% and 2.0–2.8 holds +3.8% → +3.5%. **The
+   stable, time-robust claim is the short-odds positive**, not the long-odds
+   collapse.
+
+## What this implies — and it is an owner decision, not an implementation detail
+
+**The 2.80 odds FLOOR may be pointing the wrong way for MODEL-anchored 1x2.** It
+is live on `bot_coolbet_1x2_model_v1`, which stakes real money. On this evidence
+the model's 1x2 edge works at **short** prices and inverts at long ones, which is
+the opposite of what an odds floor assumes.
+
+This is *not* a recommendation to change it today. It contradicts
+`FAVLONG-CUTS-2026-09-09`, which set that floor on its own analysis, and the two
+need reconciling before anything moves — most likely FAVLONG-CUTS measured ROI on
+a different ledger or era. **Filed, not acted on.** See PRIORITY_QUEUE
+`FAVLONG-CUTS-VS-ODDS-CEILING`.
+
+**The retirement stands.** Not because the search found nothing, but because every
+band these three bots occupy is negative and the band that works is one they
+cannot reach.
