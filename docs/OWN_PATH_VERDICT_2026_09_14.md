@@ -85,6 +85,9 @@ Unibet-Site :15/:45 Mac), but none of them writes at its cron minute: each sweep
 smears across 10–25 minutes, and Coolbet's Mac daemon writes near-continuously
 (~309 distinct write-minutes/day vs the 48 a :03/:33 cron would produce).
 Aligning the start minutes would not have aligned the per-fixture write times.
+(That 309 is sweep BREADTH, not per-fixture resolution: Coolbet's median price
+series holds 3 observations over 4.5h, the worst of our 12 books —
+`docs/OWN_LINE_MOVEMENT_2026_09_14.md` §2.)
 
 **Generalise this.** `ANALYSIS_GOTCHAS` §10 says an unpaired cross-book
 comparison measures coverage, not price. This adds the sibling trap: **an

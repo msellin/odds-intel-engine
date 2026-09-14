@@ -2223,6 +2223,15 @@ Mac daemon writes near-continuously (~309 distinct write-minutes/day against the
 48 a `:03/:33` cron implies). Aligning start minutes does not align per-fixture
 write times.
 
+**Do not read that 309 as per-fixture resolution — it is BREADTH.** Measured
+2026-09-14 on the frozen path window, Coolbet writes on the most distinct minutes
+of any of our 12 books and still has the **worst-observed price path of all of
+them**: median **3 observations per price series** over a 4.5-hour span, median
+**one** distinct price. Epicbet writes on the fewest minutes (49/day) and has the
+best path (22 observations, 22.3 hours). "Coolbet writes continuously, so we see
+it move first" is false, and it was the founding premise of a line-movement
+hypothesis — see `docs/OWN_LINE_MOVEMENT_2026_09_14.md` §2.
+
 **The rule:** before comparing books, assemble each book's market from a small
 window (±2 min is ample), *then* align the assembled quotes across books. Never
 join books on timestamp equality.

@@ -42153,9 +42153,15 @@ def test_own_line_movement_method_pinned():
     assert "rng.permutation" in src, (
         "the placebo must permute the signal so it is gate-matched by construction"
     )
-    assert "60e9" not in src, (
+    code = "\n".join(l.split("#")[0] for l in src.splitlines()
+                     if not l.lstrip().startswith("#"))
+    assert "60e9" not in code, (
         "datetime64[us].astype(int64) is MICROseconds — dividing by 60e9 makes every "
-        "window 1000x too long and every freshness filter a no-op"
+        "window 1000x too long and every freshness filter a no-op. (Docstrings and "
+        "comments may name the constant; executable code may not.)"
+    )
+    assert "dt.total_seconds()" in code, (
+        "epoch minutes must come from .dt.total_seconds(), not a raw int64 cast"
     )
 
     doc = (root / "docs" / "OWN_LINE_MOVEMENT_2026_09_14.md").read_text()
