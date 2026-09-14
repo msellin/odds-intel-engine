@@ -160,3 +160,55 @@ variable when the quantity it corrects is the same size as the decision
 threshold. Compute `m` per row from the book that actually set the closing
 price, and leave it NULL when you cannot — a NULL is honest, an average is a
 silent bias.
+
+---
+
+## RETRACTION — the +16.00% at executable books was an era selection
+
+The table at the top of this document quotes **+16.00% (n=92)** for the sharp
+rule at Coolbet/Epicbet/Unibet-Site. **It is withdrawn.**
+
+The config-sweep agent could not reproduce it and named my 240-minute
+publish-lead requirement as the likely cause. Testing that on my own harness,
+varying **only** that parameter:
+
+| publish lead | n | ROI | 95% CI | date span |
+|---|---|---|---|---|
+| ≥ 240 min (**the quoted figure**) | 92 | **+16.00%** | [−12.1, +44.1] | **2026-09-03 → 09-14** |
+| ≥ 120 min | 118 | −4.54% | [−27.7, +18.6] | 2026-08-07 → 09-14 |
+| ≥ 60 min | 142 | −6.11% | [−26.7, +14.5] | 2026-08-07 → 09-14 |
+| ≥ 0 min | 248 | −3.62% | [−19.3, +12.0] | 2026-08-07 → 09-14 |
+
+**All 92 legs fall inside one 11-day window.** Relaxing the lead by two hours
+extends the span back five weeks and flips the sign. The 4-hour requirement was
+not selecting on timing — it was selecting an **era**, because that is the only
+window in which all three self-scraped books have deep enough history to satisfy
+it. Book mix: Epicbet 52, Coolbet 32, Unibet-Site 8; months: 2026-09 × 92.
+
+The sweep agent's independent construction — n=695 pooled, **−9.55%**, CI
+[−18.8, −0.3], with a passing vig dipstick and a junk-anchor control at −5.80% —
+is the better estimate. **Their real anchor underperforms their junk anchor at
+these books.**
+
+### Consequence for the book-universe argument above
+
+The §1 claim that "the reachable books are not lower quality, there are just 13×
+fewer opportunities" **rested on the retracted +16%** and does not survive. The
+honest statement is narrower and still useful:
+
+* **Volume at reachable books is ~13× lower.** That measurement stands — it is a
+  count, not a return.
+* **Whether the reachable books carry the same edge is UNKNOWN and currently
+  leans negative.** Two independent harnesses put the sharp rule at these three
+  books between −3.6% and −9.6%.
+
+The book-universe expansion case therefore rests on volume alone, and volume is
+only worth buying if the edge is real somewhere. **On current evidence it is not
+demonstrated at any of our reachable books**, which makes "scrape another
+licensed book" a lower priority than this document originally ranked it.
+
+**Lesson for the method file:** a filter that looks like a *parameter* can be an
+*era selection* when the underlying feeds have different start dates. Coolbet,
+Epicbet and Unibet-Site begin at different times; any cut that implicitly
+requires all three shrinks to the newest one's history. Always print the date
+span of a cell alongside its n.
