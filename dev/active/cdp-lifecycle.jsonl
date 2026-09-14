@@ -1,0 +1,54 @@
+{"at": "2026-09-13T16:31:10+00:00", "event": "observed", "cdp_up": true, "walled": true, "jwt": "valid", "jwt_ttl_s": 1231, "captcha": null, "tier": null, "procs": 16}
+{"at": "2026-09-13T16:55:13+00:00", "event": "observed", "cdp_up": true, "walled": true, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "rebootstrap", "procs": 15}
+{"at": "2026-09-13T16:55:13+00:00", "event": "healed", "tier": "rebootstrap", "ok": false, "steps": null, "error": ""}
+{"at": "2026-09-13T17:25:13+00:00", "event": "observed", "cdp_up": true, "walled": true, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "rebootstrap", "procs": 15}
+{"at": "2026-09-13T17:25:13+00:00", "event": "healed", "tier": "rebootstrap", "ok": false, "steps": null, "error": ""}
+{"at": "2026-09-13T17:55:12+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 16}
+{"at": "2026-09-13T17:55:21+00:00", "event": "healed", "tier": "autologin", "ok": true, "steps": ["cdp auto-login OK", "jwt sync OK"], "error": ""}
+{"at": "2026-09-13T18:25:13+00:00", "event": "observed", "cdp_up": true, "walled": true, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "rebootstrap", "procs": 15}
+{"at": "2026-09-13T18:25:13+00:00", "event": "healed", "tier": "rebootstrap", "ok": false, "steps": null, "error": ""}
+{"at": "2026-09-13T18:55:09+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 16}
+{"at": "2026-09-13T18:55:19+00:00", "event": "healed", "tier": "autologin", "ok": true, "steps": ["cdp auto-login OK", "jwt sync OK"], "error": ""}
+{"at": "2026-09-13T19:11:49+00:00", "event": "observed", "cdp_up": true, "walled": true, "jwt": "valid", "jwt_ttl_s": 804, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-13T19:25:14+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 16}
+{"at": "2026-09-13T19:55:14+00:00", "event": "observed", "cdp_up": true, "walled": true, "jwt": "valid", "jwt_ttl_s": 1282, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-13T20:25:13+00:00", "event": "observed", "cdp_up": true, "walled": true, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "rebootstrap", "procs": 15}
+{"at": "2026-09-13T20:25:21+00:00", "event": "healed", "tier": "rebootstrap", "ok": false, "skipped_rebootstrap": true, "steps": ["cdp auto-login FAILED"], "reason": "re-bootstrapped 5.5h ago (< 6.0h) \u2014 copying several GB every tick would be its own outage; trying the cheap tier instead", "error": "oved on or this CDP profile is flagged (normal Chrome on the same machine still works). Not a selector issue. Fix: log in by hand in a FOREGROUND CDP-Chrome (:9222) window (complete SMS/Imperva); cbau"}
+{"at": "2026-09-13T20:55:14+00:00", "event": "observed", "cdp_up": true, "walled": true, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "rebootstrap", "procs": 15}
+{"at": "2026-09-13T20:55:22+00:00", "event": "healed", "tier": "rebootstrap", "ok": false, "skipped_rebootstrap": true, "steps": ["cdp auto-login FAILED"], "reason": "re-bootstrapped 6.0h ago (< 6.0h) \u2014 copying several GB every tick would be its own outage; trying the cheap tier instead", "error": "oved on or this CDP profile is flagged (normal Chrome on the same machine still works). Not a selector issue. Fix: log in by hand in a FOREGROUND CDP-Chrome (:9222) window (complete SMS/Imperva); cbau"}
+{"at": "2026-09-13T21:25:14+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 16}
+{"at": "2026-09-13T21:25:24+00:00", "event": "healed", "tier": "autologin", "ok": true, "skipped_rebootstrap": null, "steps": ["cdp auto-login OK", "jwt sync OK"], "reason": "", "error": ""}
+{"at": "2026-09-13T21:55:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 16}
+{"at": "2026-09-13T22:25:31+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 14}
+{"at": "2026-09-13T22:25:41+00:00", "event": "healed", "tier": "autologin", "ok": false, "skipped_rebootstrap": null, "steps": ["cdp auto-login FAILED"], "reason": "", "error": "\u2014 session logged OUT. The login page did not show the email field and shows no known Imperva/shell signature. Fix: log in by hand in a FOREGROUND CDP-Chrome (:9222) window (complete SMS/Imperva); cbau"}
+{"at": "2026-09-13T22:55:12+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1790, "captcha": null, "tier": null, "procs": 14}
+{"at": "2026-09-13T23:25:16+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 15}
+{"at": "2026-09-13T23:25:25+00:00", "event": "healed", "tier": "autologin", "ok": true, "skipped_rebootstrap": null, "steps": ["cdp auto-login OK", "jwt sync OK"], "reason": "", "error": ""}
+{"at": "2026-09-13T23:55:15+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1791, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-14T00:25:19+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 15}
+{"at": "2026-09-14T00:25:29+00:00", "event": "healed", "tier": "autologin", "ok": true, "skipped_rebootstrap": null, "steps": ["cdp auto-login OK", "jwt sync OK"], "reason": "", "error": ""}
+{"at": "2026-09-14T00:55:10+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-14T01:25:15+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 15}
+{"at": "2026-09-14T01:25:24+00:00", "event": "healed", "tier": "autologin", "ok": true, "skipped_rebootstrap": null, "steps": ["cdp auto-login OK", "jwt sync OK"], "reason": "", "error": ""}
+{"at": "2026-09-14T01:55:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-14T02:25:14+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 14}
+{"at": "2026-09-14T02:25:23+00:00", "event": "healed", "tier": "autologin", "ok": true, "skipped_rebootstrap": null, "steps": ["cdp auto-login OK", "jwt sync OK"], "reason": "", "error": ""}
+{"at": "2026-09-14T02:55:17+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1790, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-14T03:25:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1793, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-14T03:55:16+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 15}
+{"at": "2026-09-14T03:55:26+00:00", "event": "healed", "tier": "autologin", "ok": true, "skipped_rebootstrap": null, "steps": ["cdp auto-login OK", "jwt sync OK"], "reason": "", "error": ""}
+{"at": "2026-09-14T04:25:15+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1790, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-14T04:55:15+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 14}
+{"at": "2026-09-14T04:55:25+00:00", "event": "healed", "tier": "autologin", "ok": true, "skipped_rebootstrap": null, "steps": ["cdp auto-login OK", "jwt sync OK"], "reason": "", "error": ""}
+{"at": "2026-09-14T05:25:11+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-14T05:55:14+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 15}
+{"at": "2026-09-14T05:55:24+00:00", "event": "healed", "tier": "autologin", "ok": true, "skipped_rebootstrap": null, "steps": ["cdp auto-login OK", "jwt sync OK"], "reason": "", "error": ""}
+{"at": "2026-09-14T06:25:14+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1791, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-14T06:55:16+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 15}
+{"at": "2026-09-14T06:55:27+00:00", "event": "healed", "tier": "autologin", "ok": true, "skipped_rebootstrap": null, "steps": ["cdp auto-login OK", "jwt sync OK"], "reason": "", "error": ""}
+{"at": "2026-09-14T07:25:16+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1789, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-14T07:55:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1789, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-14T08:25:14+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1518, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-14T08:55:14+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1529, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-14T09:25:15+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1789, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-14T09:55:20+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1783, "captcha": null, "tier": null, "procs": 14}

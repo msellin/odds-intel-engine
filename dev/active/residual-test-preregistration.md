@@ -175,9 +175,35 @@ The optimiser was free to pick any weight in [0, 1] and chose **exactly zero** �
 *use the market, ignore the model* — on 3,831 held-out matches, under both de-vig
 methods, with and without the post-hoc features.
 
-**Residual AUC is 0.368–0.409, i.e. BELOW 0.5.** Where the model disagrees with
-the market, it is not merely uninformative — it is *wrong*. When it says "more
-likely than the price implies", the outcome is *less* likely.
+**Residual AUC is 0.368–0.409.**
+
+> ⚠️ **CORRECTED 2026-09-14 after independent audit.** This section originally
+> read *"below 0.5 … where the model disagrees with the market it is not merely
+> uninformative, it is wrong"*. **That inference is invalid**, and it was the
+> headline sentence of the experiment.
+>
+> Residual AUC below 0.5 is the **mechanical signature of any model less
+> informative than the benchmark it is differenced against** — it carries no
+> directional information at all. Verified by simulation
+> (`scripts/residual_auc_null_simulation.py`) on models built to be noisy,
+> shrunk copies of the market, i.e. **zero incremental information and no inverse
+> signal by construction**:
+>
+> | construction | model AUC | residual AUC |
+> |---|---|---|
+> | `sigmoid(0.7·logit(mkt))` | 0.7204 | **0.2807** |
+> | `sigmoid(0.7·logit(mkt) + N(0,0.5))` | 0.6718 | **0.4049** |
+> | `sigmoid(0.5·logit(mkt) + N(0,0.8))` | 0.6011 | **0.3866** |
+> | **observed here** | **0.6409** | **0.3775** |
+>
+> The observed value sits on that curve. It means the model is *less informative
+> than the market*, which α = 0 already said. It does **not** mean fading the
+> model is profitable — an unconstrained fit gives α = −0.1075 worth **+0.005%**,
+> against **+0.164%** from simply recalibrating the market alone. The negative
+> weight measures the de-vig, not an inverse signal.
+>
+> The same error was made earlier about the pre-fix figure of 0.344; that too
+> meant only "less informative", not "anti-predictive".
 
 Three things this is **not**, each ruled out by construction rather than argued:
 
@@ -203,9 +229,33 @@ rather than skipped.
 > reported as such. That is a real result and it retires the model-anchored
 > track — it does not become a search for a subgroup where it works."*
 
-**The model-anchored track is retired.** Not paused pending a better model: the
-instrument that would detect a better model — the fitted α — now has a clean,
-correctly-oriented, properly-calibrated input and still reads zero.
+**The 1X2 model-anchored track is retired.**
+
+> ⚠️ **SCOPE CORRECTED 2026-09-14 after independent audit.** This originally said
+> "the model-anchored track is retired … not paused pending a better model". That
+> over-reached on three axes, each independently sufficient:
+>
+> 1. **Market scope.** This tests the **1X2 home leg only**. Model-anchored O/U
+>    bots were never tested — including `bot_coolbet_ou_model_v1`, which is
+>    real-money-capable.
+> 2. **The instrument I cited as corroboration disagrees on the other market.**
+>    The write-up invoked `shrinkage_alpha` as independent authority and quoted
+>    only its 1x2 values (0.0085 / 0.0000). The same fitter, same day, reads
+>    **goalline 0.2278 / 0.2878 / 0.2848 / 0.1463** — the model carries **15–29%
+>    weight** there. Quoting half of an instrument used as authority is selective
+>    reporting, and it is the fairest criticism made of this work.
+> 3. **The tested model is not the best achievable one.** Of 52 real features,
+>    3 are phantom (defect A4) and 18 more are ≥50% NULL on the holdout — 21 of
+>    52 inputs dead or mostly absent, with defects A4/A5/A6 open.
+>
+> **Defensible claim:** *the 1X2 head, in its current feature state, adds nothing
+> to a near-closing Pinnacle price, and the data exclude any blend weight above
+> 0.033.* Enough to stop 1X2 model-anchored staking. **Not** enough to retire O/U
+> model anchoring, and not enough to close model work.
+>
+> Also: α should be reported as an interval. The profile-likelihood 95% CI is
+> **[0, 0.0325]**, which does **not** exclude the pre-registered 0.02 bar.
+> "Exactly zero" is the point estimate, "≤0.033" is the claim.
 
 This also explains, retrospectively and without needing any new theory, why
 `shrinkage_alpha_t1_1x2` sat at 0.0085 from May and why two tiers read exactly

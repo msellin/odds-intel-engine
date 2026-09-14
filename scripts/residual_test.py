@@ -72,6 +72,17 @@ def main() -> int:
                        FROM odds_snapshots o
                       WHERE o.market='1x2' AND o.bookmaker='Pinnacle'
                         AND o.is_live IS NOT TRUE AND o.is_closing = false AND o.odds > 1.01
+                        -- PRE-KO BOUND (added 2026-09-14 after audit). Without it,
+                        -- 28 pct of selected "pre-kickoff" Pinnacle prices had
+                        -- minutes_to_kickoff <= 0, i.e. collected AFTER kickoff --
+                        -- defect B5's shape reproduced inside a decisive experiment.
+                        -- Verified harmless here (61.7 pct were byte-identical to the
+                        -- genuine pre-KO quote; market AUC 0.6983 vs 0.6980), but
+                        -- the guard was absent and the next analysis would not be
+                        -- so lucky. NOTE the sign convention: every WRITER computes
+                        -- kickoff - now, so POSITIVE means before kickoff, despite
+                        -- supabase_client.store_odds' docstring saying the opposite.
+                        AND (o.minutes_to_kickoff IS NULL OR o.minutes_to_kickoff > 0)
                       ORDER BY o.match_id, o.selection, o.timestamp DESC)
         SELECT {", ".join(f'mfv."{x}"' for x in real)},
                (m.score_home > m.score_away) hw, m.date,

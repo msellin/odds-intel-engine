@@ -2146,3 +2146,36 @@ So `elo_diff` means two different things depending on when the row was written.
 Before the rebuild it partly encodes the match result (AUC 0.7536 vs a market at
 0.7270 — impossible for a pre-match feature). After, it does not (0.6134). **Never
 pool the two.**
+
+---
+
+## ⚠️ CORRECTION 2026-09-14 — "disagreement AUC below 0.5 means anti-predictive" is WRONG
+
+Several entries in this file (and in `MODEL_ANALYSIS.md`, `PRIORITY_QUEUE.md` and
+the defect register) read a **model-minus-market disagreement AUC below 0.5** —
+0.449 on O/U, 0.344 on 1x2, 0.3775 in the residual test — as evidence that our
+disagreement with the market is *anti*-predictive, i.e. that fading our own model
+would carry information.
+
+**That inference is invalid.** Residual AUC below 0.5 is the **mechanical
+signature of any model less informative than the benchmark it is differenced
+against**, and carries no directional content. Verified by simulation
+(`scripts/residual_auc_null_simulation.py`) on models constructed to be noisy,
+shrunk copies of the market — **zero incremental information and no inverse
+signal by construction**:
+
+| construction | model AUC | residual AUC |
+|---|---|---|
+| `sigmoid(0.7·logit(mkt))` | 0.7204 | **0.2807** |
+| `sigmoid(0.7·logit(mkt) + N(0,0.5))` | 0.6718 | **0.4049** |
+| `sigmoid(0.5·logit(mkt) + N(0,0.8))` | 0.6011 | **0.3866** |
+| `sigmoid(1.0·logit(mkt) + N(0,0.8))` | 0.6613 | **0.4830** |
+
+Every observed figure sits on that curve. The correct reading is **"less
+informative than the market"** — which the fitted blend weight of 0 already says,
+more directly and without the extra inference.
+
+Concretely: an unconstrained blend fit gives α = **−0.1075**, worth **+0.005%**
+out of sample, against **+0.164%** from simply recalibrating the market alone.
+The negative weight is measuring the de-vig, not an inverse model signal. **Do
+not build a fade-the-model strategy on it.**
