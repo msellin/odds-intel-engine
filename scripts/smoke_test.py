@@ -42292,5 +42292,42 @@ def test_no_phantom_unibet_in_bot_prices():
             f"dead since 2026-09-12). Use 'Unibet-Site' — our own scrape."
         )
 
+
+@test("MATURITY-LABEL-CANONICAL — one spelling gates the public page, so it is constrained")
+def test_maturity_label_canonical():
+    """MATURITY-LABEL-CANONICAL (2026-09-14).
+
+    /performance hides operator-facing bots with
+    `maturityLabel !== 'experimental'`. Migration 347 wrote 'experiment'
+    (singular) for an OWN paper instrument, which therefore did NOT match the
+    filter and rendered on the CUSTOMER leaderboard as though it were a
+    strategy we stand behind.
+
+    One character, on a free-text column, on a public surface. The typo was its
+    own only check. Now the DB constrains the value, and this asserts both that
+    the constraint exists and that no row escapes the canonical set — a
+    constraint added while a violating row already exists would not have been
+    applied.
+    """
+    from workers.api_clients.db import execute_query
+
+    CANON = {"experimental", "beta", "calibrated", "retired"}
+    rows = execute_query(
+        "SELECT DISTINCT maturity_label AS m FROM bots WHERE maturity_label IS NOT NULL")
+    bad = sorted({r["m"] for r in rows} - CANON)
+    assert not bad, (
+        f"bots.maturity_label holds non-canonical value(s) {bad}. /performance "
+        f"gates on the exact string 'experimental'; anything else is treated as "
+        f"a public, customer-facing strategy."
+    )
+
+    con = execute_query(
+        """SELECT count(*) AS n FROM pg_constraint
+            WHERE conname = 'bots_maturity_label_check'""")
+    assert con and con[0]["n"] == 1, (
+        "the bots_maturity_label_check constraint is gone — free text on this "
+        "column means the next typo reaches a customer surface silently"
+    )
+
 if __name__ == "__main__":
     main()
