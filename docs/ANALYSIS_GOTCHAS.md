@@ -2179,3 +2179,50 @@ Concretely: an unconstrained blend fit gives α = **−0.1075**, worth **+0.005%
 out of sample, against **+0.164%** from simply recalibrating the market alone.
 The negative weight is measuring the de-vig, not an inverse model signal. **Do
 not build a fade-the-model strategy on it.**
+
+## 63. An exact-timestamp join across books measures WRITE GRANULARITY, not simultaneity
+
+Sibling of §10. That one says an **unpaired** cross-book comparison measures
+coverage. This one says a **paired but exact-timestamp** one measures how each
+scraper happens to write rows.
+
+`odds_snapshots` timestamps each **row** individually, not each sweep. Coolbet's
+1X2 triple lands across ~100 milliseconds:
+
+```
+00a41a30  home  2026-09-14 09:20:15.928829+00
+00a41a30  draw  2026-09-14 09:20:15.975788+00
+00a41a30  away  2026-09-14 09:20:16.026222+00
+```
+
+So `GROUP BY match_id, bookmaker, timestamp` finds a complete triple in **0.1%**
+of Coolbet timestamp-groups — against **99.9%** for Epicbet and **100%** for
+Unibet-Site, which write their three rows under one timestamp. The difference is
+not data quality. It is two ingest paths stamping rows differently.
+
+**What it cost.** An audit concluded from this that only **5.9%** of co-priced
+market-fixtures had quotes within 15 minutes, that we *"cannot compute a
+trustworthy cross-book comparison at all, let alone act on one"*, and that the
+OWN-path kill criterion needed **two weeks of new synchronised polling** before
+it could be evaluated. Assembling each book's triple from a ±2 min window
+instead:
+
+| | fixtures with a triple from all three | aligned ≤15 min |
+|---|---|---|
+| exact-timestamp grouping | 17 | 5.9% |
+| ±2 min assembly | **1,073** | **33.5%** |
+
+The comparison was runnable the whole time. See
+`docs/OWN_PATH_VERDICT_2026_09_14.md` and
+`scripts/own_path_kill_criterion.py::assemble`.
+
+**And do not reach for the schedule instead.** The obvious "fix" — put the
+scrapers on one cron minute — would not have worked either: none of the three
+writes at its cron minute. Each sweep smears over 10–25 minutes, and Coolbet's
+Mac daemon writes near-continuously (~309 distinct write-minutes/day against the
+48 a `:03/:33` cron implies). Aligning start minutes does not align per-fixture
+write times.
+
+**The rule:** before comparing books, assemble each book's market from a small
+window (±2 min is ample), *then* align the assembled quotes across books. Never
+join books on timestamp equality.

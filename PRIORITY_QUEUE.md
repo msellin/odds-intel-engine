@@ -1760,6 +1760,17 @@ Kept as a worked negative so the population-level evidence does not get re-disco
 
 ## 📋 Open Work — Priority Overview
 
+### 🔴 2026-09-14 — post-audit state: OWN closed, PICKS forward test running
+
+| ID | Status | Direction | Effort | Notes |
+|----|--------|-----------|--------|-------|
+| **OWN-PATH-VERDICT-2026-09-14** | ✅ **CLOSED 2026-09-14 — kill criterion MET** | 🤖 OWN | done | Best-of-3 de-vigged overround across Coolbet/Epicbet/Unibet-Site = **5.66%** on 359 time-aligned fixtures, against a pre-specified 2% threshold. Line shopping recovers **2.05pp of 7.71pp**; residual ~1.89pp per outcome. Robust: 5.33% (≤5min, n=28) / 5.52% (≤60min, n=619). **Automated betting on EMTA books is closed.** Ingestion of all three scraped feeds STAYS (only verifiable price source; makes AF infidelity measurable). Placement path paused, not deleted. `docs/OWN_PATH_VERDICT_2026_09_14.md`, `scripts/own_path_kill_criterion.py`. |
+| **PICKS-FORWARD-TEST-2026-09-14** | 🔄 **RUNNING — started 2026-09-14, 8 picks published** | 👥 PICKS | ongoing | Pre-registered sharp-edge rule. Prior: **+5.5%, CI [−0.7, +11.7]** — no demonstrated edge, and the posts claim none. Stops at n=200/400 on margin-corrected CLV, promote/kill at n=800 on ROI CI. Junk-anchor control recorded alongside. Rule locked by smoke `PICKS-FORWARD-TEST-RULE-LOCKED`. `dev/active/picks-forward-test-preregistration.md`. |
+| **PICKS-EXPLAIN-EDGE-CHANGE** | ⬜ P2 (owner 2026-09-14, after OWN) | 👥 PICKS | ~1h | Say something in the channel about the metric change: readers saw "edge 8%+" (model edge) and now see "edge vs sharp line", which is a **different ruler**, not a weaker pick. The old number was inflated ~8-9pp by the O/U Platt calibrator; the new one is measured against the de-vigged market. Needs to be said without re-claiming a track record. |
+| **PICKS-PAGE-SHOW-FORWARD-TEST** | ⬜ P2 (owner 2026-09-14, after OWN) | 👥 PICKS | ~half day | Surface `picks_forward_test` rows on `/picks` so the channel and the site agree. Today the page reads the old `simulated_bets` path, which no longer produces anything. **Do not point it at `/performance`** — that record belongs to the model-anchored era and 2 surviving bots of 46. |
+| **PICKS-FORWARD-TEST-BOT** | ⬜ P2 (owner 2026-09-14, after OWN) | 👥 PICKS | ~half day | Register a bot that tracks exactly the published forward-test picks, so the rule appears in the normal bot/shadow surfaces and accrues a comparable ledger. ⚠️ Must NOT write into `simulated_bets` — see the migration-342 note on why these are kept out of bot-cohort queries; a read-only projection or a clearly-tagged bot row only. |
+
+
 > All currently open (⬜) tasks in one place. Priority reflects *right now* (**2026-09-11** — the data-task batch; top of the list is **NEAR-KICKOFF-CAPTURE**, the one gap that blocked three separate improvements). Update when focus shifts.
 >
 > **Priorities:** P0 = blocking or high data-loss risk · P1 = do before paid launch · P2 = do when accumulating data / useful now · P3 = defer until triggered

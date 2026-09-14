@@ -40842,6 +40842,63 @@ def test_picks_forward_test_rule_locked():
     )
 
 
+@test("CROSS-BOOK-WINDOW-ASSEMBLY — books are compared on assembled windows, not timestamp equality")
+def test_cross_book_window_assembly():
+    """ANALYSIS_GOTCHAS §63 (2026-09-14) — odds_snapshots timestamps each ROW.
+
+    Coolbet's 1x2 triple lands across ~100ms, so GROUP BY (match, book,
+    timestamp) finds a complete triple in 0.1 pct of Coolbet timestamp-groups
+    against 99.9-100 pct for Epicbet/Unibet-Site. An audit read that as "only
+    5.9 pct of fixtures are co-priced within 15 min", concluded a cross-book
+    comparison was impossible today, and asked for two weeks of new polling
+    before the OWN kill criterion could run. The data was always there.
+
+    This pins the PROPERTY rather than the query: if the per-row stamping ever
+    changes, the window assembly is still correct, but if someone reintroduces
+    an equality join they will not learn this from the data — it silently
+    returns a small, biased sample.
+    """
+    from workers.api_clients.db import execute_query
+
+    rows = execute_query(
+        """
+        SELECT bookmaker,
+               count(*) FILTER (WHERE n >= 3)::float
+                 / NULLIF(count(*), 0) AS complete_frac
+          FROM (
+            SELECT bookmaker, match_id, timestamp, count(*) AS n
+              FROM odds_snapshots
+             WHERE market = '1x2' AND is_live IS NOT TRUE
+               AND bookmaker IN ('Coolbet', 'Epicbet', 'Unibet-Site')
+               AND timestamp > now() - interval '3 days'
+             GROUP BY 1, 2, 3
+          ) g
+         GROUP BY 1
+        """)
+    frac = {r["bookmaker"]: (r["complete_frac"] or 0.0) for r in rows}
+
+    # Not an assertion about which books are "good" — it documents that the
+    # stamping genuinely differs, which is the whole reason the rule exists.
+    if "Coolbet" in frac and frac["Coolbet"] > 0.5:
+        # stamping changed; the gotcha's example is stale but the rule stands
+        pass
+
+    src = _engine_path("scripts/own_path_kill_criterion.py").read_text()
+    assert "def assemble" in src, (
+        "own_path_kill_criterion must assemble each book's triple from a window "
+        "before comparing books — see ANALYSIS_GOTCHAS §63"
+    )
+    assert "ASSEMBLE_WINDOW_MIN" in src, (
+        "the assembly window must be a named constant, not inlined"
+    )
+
+    gotchas = _engine_path("docs/ANALYSIS_GOTCHAS.md").read_text()
+    assert "## 63." in gotchas, (
+        "ANALYSIS_GOTCHAS §63 (exact-timestamp joins measure write granularity) "
+        "is missing — it is the reusable lesson from the OWN-path verdict"
+    )
+
+
 
 if __name__ == "__main__":
     main()
