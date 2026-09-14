@@ -40464,5 +40464,76 @@ def test_production_predictions_not_inverted():
     )
 
 
+@test("ELO-FORM-LEAK — training features must read ratings STRICTLY BEFORE the match date")
+def test_elo_form_no_leak():
+    """`update_elo_ratings()` stamps POST-match ELO with the date the job RUNS
+    (`new_elo_rows.append((h_id, today_str, ...))`) while processing yesterday's
+    and today's finished matches, at 21:00/23:30 — before the ML ETL. The MFV
+    builder then read `team_elo_daily WHERE date <= date_str` with date_str = the
+    match date, so it handed the model a rating that had already absorbed the very
+    match it was asked to predict. `team_form_cache` had the same shape:
+    `compute_team_form_from_db(tid, today_str)` bounds on `date < today T23:59:59`,
+    which includes today's match.
+
+    Measured on 22,290 matches (2026-07-01..09-10):
+        stored (date <= match_date)   elo_diff AUC vs home-win = 0.7396
+        fixed  (date <  match_date)   elo_diff AUC vs home-win = 0.6171
+        de-vigged market                                        = 0.7270
+    80.2% of stored rows differ from their strictly-pre-match value.
+
+    The tell is that 0.7396 is ABOVE the market. Nothing strictly pre-match can
+    out-predict the market — a feature that does is reading the answer. elo+form
+    carry ~39% + ~5.6% of 1X2 model importance, so this was the model's single
+    biggest lever and it was partly the label.
+
+    Two halves, because source inspection alone would not have caught the original
+    and a data assertion alone would go stale:
+      1. the queries say `<`, and cannot drift back to `<=`;
+      2. the invariant holds against live data — no rating used for a finished
+         match is dated on or after that match.
+
+    NOTE: stored `match_feature_vectors` rows are still leaked until the rebuild
+    (task #2). This test deliberately checks the QUERY's behaviour, not the stored
+    values, so it is not red-on-arrival while that backfill is pending.
+    """
+    from workers.api_clients.db import execute_query
+
+    src = _engine_path("workers/api_clients/supabase_client.py").read_text()
+
+    # 1. The training-path queries must be strict.
+    i = src.index("def _build_mfv_rows_for_matches")
+    j = src.index("\ndef ", i + 10)
+    mfv = src[i:j]
+    for tbl in ("team_elo_daily", "team_form_cache"):
+        k = mfv.index(f"FROM {tbl}")
+        window = mfv[k:k + 260]
+        assert "date < %s" in window, (
+            f"_build_mfv_rows_for_matches reads {tbl} with `date <= %s` again — "
+            f"that is ELO-FORM-LEAK. A rating stamped on the match date already "
+            f"contains that match."
+        )
+    assert "ELO-FORM-LEAK" in src, "the explanation must survive refactors"
+
+    # 2. The invariant, against live data: for a finished match, the rating the
+    #    fixed query returns must predate the match.
+    bad = execute_query(
+        """SELECT count(*) AS n
+             FROM matches m
+             JOIN LATERAL (
+               SELECT e.date FROM team_elo_daily e
+                WHERE e.team_id = m.home_team_id AND e.date < m.date::date
+                ORDER BY e.date DESC LIMIT 1
+             ) x ON TRUE
+            WHERE m.status = 'finished' AND m.score_home IS NOT NULL
+              AND m.date >= NOW() - INTERVAL '30 days'
+              AND x.date >= m.date::date"""
+    )
+    assert bad and bad[0]["n"] == 0, (
+        f"{bad[0]['n']} finished matches resolve to an ELO rating dated on or "
+        f"after the match — the strict bound is not being applied"
+    )
+
+
+
 if __name__ == "__main__":
     main()

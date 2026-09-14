@@ -1522,13 +1522,32 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
         for o in odr:
             odds_by_match.setdefault(o["match_id"], []).append(o)
 
-    # -- Batch load: ELO (latest per team up to date_str) ----------------------
+    # -- Batch load: ELO (latest per team STRICTLY BEFORE date_str) ------------
+    # ELO-FORM-LEAK (fixed 2026-09-14). This was `date <= %s`, and
+    # `update_elo_ratings()` stamps POST-match ELO with the date the job runs
+    # (settlement.py: `new_elo_rows.append((h_id, today_str, ...))`) while
+    # processing yesterday's AND today's finished matches. It runs at 21:00/23:30,
+    # BEFORE the ML ETL. So a row dated D already contains match D's result, and
+    # `<= D` handed the model a rating that had absorbed the very match it was
+    # being asked to predict.
+    #
+    # Measured on 25,171 matches (2026-07-01..09-10):
+    #   date <= match_date   elo_diff AUC vs home-win = 0.7375
+    #   date <  match_date   elo_diff AUC vs home-win = 0.6151
+    # The tell is that 0.7375 is ABOVE the de-vigged market's 0.727. No strictly
+    # pre-match feature can out-predict the market; a number that does is reading
+    # the answer. elo+form carry ~39% of 1X2 model importance, so this was the
+    # single biggest lever in the model and it was partly the label.
+    #
+    # `<` is correct rather than merely safer: the D-1 stamp already contains
+    # every match through D-1 (the job processes yesterday too), so nothing
+    # legitimately pre-match is lost — only match D itself is excluded.
     elo_by_team: dict[str, float] = {}
     for chunk in _chunk_list(list(all_team_ids), 200):
         er = execute_query(
             """SELECT team_id, elo_rating, date
                FROM team_elo_daily
-               WHERE team_id = ANY(%s::uuid[]) AND date <= %s
+               WHERE team_id = ANY(%s::uuid[]) AND date < %s
                ORDER BY date DESC
                LIMIT 5000""",
             (chunk, date_str),
@@ -1538,13 +1557,19 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
             if e["team_id"] not in elo_by_team:
                 elo_by_team[e["team_id"]] = float(e["elo_rating"])
 
-    # -- Batch load: form cache (latest per team up to date_str) ---------------
+    # -- Batch load: form (latest per team STRICTLY BEFORE date_str) -----------
+    # ELO-FORM-LEAK: same defect, same fix. `update_team_form_cache()` calls
+    # `compute_team_form_from_db(tid, today_str)`, whose window is
+    # `date < '{today}T23:59:59'` — i.e. it INCLUDES today's match — and stamps
+    # the result with today. So a form row dated D encodes match D's result.
+    # 54.7% of training rows differed from their strictly-pre-match value;
+    # form_ppg_* carry a further ~5.6% of model importance.
     form_by_team: dict[str, float] = {}
     for chunk in _chunk_list(list(all_team_ids), 200):
         fr = execute_query(
             """SELECT team_id, ppg, date
                FROM team_form_cache
-               WHERE team_id = ANY(%s::uuid[]) AND date <= %s
+               WHERE team_id = ANY(%s::uuid[]) AND date < %s
                ORDER BY date DESC
                LIMIT 5000""",
             (chunk, date_str),
@@ -3898,8 +3923,12 @@ def write_morning_signals(
                                    (m.get("away_team_id"), "elo_away")]:
                 if team_id:
                     r = execute_query(
+                        # ELO-FORM-LEAK: keyed on the MATCH date, so `<=` read a
+                        # rating that had absorbed that match whenever this ran
+                        # over historical fixtures. For a FUTURE match the two
+                        # are identical (no same-day stamp exists yet).
                         """SELECT elo_rating FROM team_elo_daily
-                           WHERE team_id = %s AND date <= %s
+                           WHERE team_id = %s AND date < %s
                            ORDER BY date DESC LIMIT 1""",
                         (team_id, match_date_str),
                     )
@@ -3925,8 +3954,9 @@ def write_morning_signals(
             ]:
                 if team_id:
                     fr = execute_query(
+                        # ELO-FORM-LEAK — see the elo_rating query above.
                         """SELECT ppg FROM team_form_cache
-                           WHERE team_id = %s AND date <= %s
+                           WHERE team_id = %s AND date < %s
                            ORDER BY date DESC LIMIT 1""",
                         (team_id, match_date_str),
                     )
@@ -4857,6 +4887,14 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
     try:
         if all_team_uuids:
             elo_rows = execute_query(
+                # ELO-FORM-LEAK: deliberately still `<=`, and this is NOT the
+                # same case. It is keyed on TODAY for UPCOMING fixtures, so
+                # "latest rating available right now" is exactly what inference
+                # legitimately has — tightening it would make serving see LESS
+                # than it can, which is a train/serve skew in the other
+                # direction. In practice the two agree: the ELO job runs
+                # 21:00/23:30 and picks generate 00:05-14:00, so the newest stamp
+                # during pick hours is always D-1 either way.
                 """SELECT DISTINCT ON (team_id) team_id, elo_rating
                    FROM team_elo_daily
                    WHERE team_id = ANY(%s::uuid[]) AND date <= %s
