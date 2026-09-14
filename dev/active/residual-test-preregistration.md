@@ -86,3 +86,66 @@ best-of-books here would re-import the artefact the universe was chosen to avoid
 - Effect concentrated in one league, one week, or the lowest-liquidity tier.
 - Improvement that disappears when the calibrator is fitted on the train half
   rather than the whole period — that would mean I leaked calibration.
+
+---
+
+# AMENDMENT 1 (2026-09-14, still before any run) — two defects found by auditing the design
+
+Both were found by checking the code rather than by looking at results. Recorded
+here so the amendment is visibly pre-result.
+
+## A. The object I originally named would have made the test CIRCULAR
+
+The locked version said *"p_model is the clean bundle CALIBRATED, because that is
+what the serving path emits"*. That is wrong **for this question**, and the reason
+is visible in `improvements.calibrate_prob`:
+
+```
+shrunk = alpha * model_prob + (1 - alpha) * effective_anchor   # anchor = de-vigged Pinnacle
+return _apply_stage2(shrunk, ...)
+```
+
+Production's `cal_prob` **already contains the market** — at the live
+`shrinkage_alpha_t1_1x2 = 0.0085` it is ~99% Pinnacle. Blending that against
+Pinnacle and asking whether it beats Pinnacle is testing Pinnacle against itself.
+It would almost certainly have produced a small "improvement" that was pure
+tautology.
+
+**Corrected object:** `p_model` = raw bundle output, Platt-calibrated for LEVEL on
+the train half, **with no shrinkage toward the market**. The model's independent
+opinion.
+
+⚠️ This is *not* the task-#3 mistake repeated, and the distinction is the whole
+point. In #3 the question was "is the SERVED model better than a constant", so
+the object had to be what is served. Here the question is "does the model add
+anything TO the market", so the object must exclude the market. **The object
+follows the question, not habit.**
+
+## B. Eight features are available in training rows but NOT at serve time
+
+Scoring on stored `match_feature_vectors` hands the model information it would
+never have live:
+
+| feature | NULL in training rows | NULL live |
+|---|---|---|
+| `season_progress` | 1.4% | **93.9%** |
+| `league_draw_rate_ytd` | 29.7% | **95.9%** |
+| `league_clv_efficiency` | 57.8% | **100%** |
+| `line_velocity` | 67.3% | **100%** |
+| `goals_for_avg_home` | 25.0% | 60.5% |
+| `goals_against_avg_home` | 25.0% | 60.5% |
+| `goals_for_avg_away` | 24.5% | 59.9% |
+| `goals_against_avg_away` | 24.5% | 59.9% |
+
+These are written by 23:05–23:45 UTC crons — i.e. after the match (master list
+#7). A result that depends on them is not reproducible in production.
+
+**Corrected design — the primary is now run TWICE, and both are reported:**
+
+* **OPTIMISTIC** — stored MFV as-is. Upper bound.
+* **REALISTIC** — the eight columns forced to NULL (with their `_missing`
+  indicators set), simulating serve-time availability. **This is the arm that
+  decides.**
+
+A positive present only in the OPTIMISTIC arm is a finding *about task #7*, not
+about the model, and must be reported that way.
