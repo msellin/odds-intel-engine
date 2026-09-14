@@ -2985,13 +2985,19 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                             _X_s = pd.DataFrame([_row_s])[_fc].fillna(0)
                             _r_s = _shadow_bundle["result_1x2"]
                             _probs_s = _r_s.predict_proba(_X_s)[0]
+                            # 1X2-CLASS-ORDER-INVERTED (fixed 2026-09-14): this
+                            # duplicated the served inversion verbatim, so every
+                            # model-vs-model A/B and every promotion decision was
+                            # taken on home/away-swapped probabilities too. Index
+                            # by label, never by assumed position.
                             _cls = list(_r_s.classes_)
-                            if "H" in _cls:
-                                _hp_s = _probs_s[_cls.index("H")]; _dp_s = _probs_s[_cls.index("D")]; _ap_s = _probs_s[_cls.index("A")]
-                            else:
-                                _hp_s = _probs_s[2] if len(_probs_s) > 2 else _probs_s[0]
-                                _dp_s = _probs_s[1] if len(_probs_s) > 1 else 0.3
-                                _ap_s = _probs_s[0]
+                            def _ps(_ls, _li):
+                                if _ls in _cls:
+                                    return _probs_s[_cls.index(_ls)]
+                                if _li in _cls:
+                                    return _probs_s[_cls.index(_li)]
+                                raise KeyError(f"shadow 1x2 classes_={_cls}: cannot locate {_ls}/{_li}")
+                            _hp_s = _ps("H", 0); _dp_s = _ps("D", 1); _ap_s = _ps("A", 2)
                             _ou_s = _shadow_bundle["over_under"]
                             _po_s = _ou_s.predict_proba(_X_s)[0]
                             _oc = list(_ou_s.classes_)

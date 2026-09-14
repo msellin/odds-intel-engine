@@ -40355,5 +40355,114 @@ def test_shrinkage_alpha_regime():
 
 
 
+@test("1X2-CLASS-ORDER-INVERTED — served probabilities must index classes by LABEL, never by position")
+def test_1x2_class_order_by_label():
+    """From 2026-05-10 to 2026-09-14 the served 1X2 probabilities had HOME and
+    AWAY swapped.
+
+    `train.py:229` maps {"home": 0, "draw": 1, "away": 2}. The inference block
+    tested `if "H" in classes` — False for an integer-labelled model, whose
+    classes_ is [0,1,2] — and fell to an else branch commented "Assume order:
+    away=0, draw=1, home=2", reading `home_prob = probs[2]`. Exactly backwards.
+
+    Measured on 4,658 finished matches from the live stored predictions:
+        as served    AUC(home) 0.4151  log-loss 0.9050  corr(home_win) -0.153
+        un-inverted  AUC(home) 0.5892  log-loss 0.7283  corr(home_win) +0.150
+
+    A genuinely predictive model served backwards for four months.
+
+    Pin the SHAPE that failed: probabilities are located by class label, and an
+    unrecognised encoding raises instead of guessing. Guessing an order is the
+    defect; any 'assume' fallback reintroduces it.
+    """
+    for rel in ("workers/model/xgboost_ensemble.py", "workers/jobs/daily_pipeline_v2.py"):
+        code = _strip_prose(_engine_path(rel).read_text())
+        assert "probs_1x2[2]" not in code and "_probs_s[2]" not in code, (
+            f"{rel} indexes the 1x2 class vector by POSITION again — that is the "
+            f"inversion. Index by label via classes_.index()."
+        )
+        assert "Assume order" not in code, f"{rel} still guesses a class order"
+        assert "classes.index(" in code or "_cls.index(" in code, (
+            f"{rel} must locate probabilities via classes_.index()"
+        )
+
+
+@test("MODEL-OUTPUT-CALIBRATION — production's own predictions must correlate POSITIVELY with outcomes")
+def test_production_predictions_not_inverted():
+    """The test that would have caught 1X2-CLASS-ORDER-INVERTED in days, and did
+    not exist.
+
+    Every offline evaluator here (fit_platt_offline, fit_isotonic_offline,
+    weekly_eval_and_compare) re-implements the read from `classes_` and all of
+    them do it CORRECTLY, so the model scored well everywhere while production
+    served the opposite. Nothing scored what production ACTUALLY EMITTED against
+    what actually happened — the one check immune to how the read is implemented,
+    because it starts from the stored output.
+
+    TWO DESIGN POINTS, both learned the hard way while writing this:
+
+    1. It MUST check the raw `xgboost` source, not only `ensemble`. The first
+       version checked `ensemble` alone and PASSED on the very bug it was written
+       for: the ensemble is ~86 pct Poisson (correct) and ~14 pct XGB (inverted),
+       so it read corr +0.090 while the raw head underneath was -0.168. A blend
+       can mask an inverted leg indefinitely — which is exactly what happened for
+       four months.
+
+    2. It is scoped to predictions written AFTER the fix, because every stored
+       row before it is genuinely inverted and an all-history window would be red
+       on arrival for 30 days. A test that is red on arrival gets ignored, and an
+       ignored test is worse than none. It SKIPS until enough clean rows exist,
+       then arms itself permanently.
+
+    Deliberately coarse: it asks only for the right SIGN on a large sample. It is
+    not a quality bar and must never become one — a useless model still passes.
+    Its whole job is to catch an output wired backwards, in any market, forever.
+    """
+    from workers.api_clients.db import execute_query
+
+    FIX_LANDED = "2026-09-14"          # 1X2-CLASS-ORDER-INVERTED
+    MIN_N = 500
+
+    checks = [
+        ("1x2_home", "m.score_home > m.score_away"),
+        ("1x2_away", "m.score_away > m.score_home"),
+        ("over25",   "(m.score_home + m.score_away) > 2"),
+        ("under25",  "(m.score_home + m.score_away) < 3"),
+    ]
+    failures, checked = [], 0
+    for source in ("ensemble", "xgboost"):
+        for market, outcome_sql in checks:
+            rows = execute_query(
+                f"""SELECT corr(p.model_probability::float,
+                                CASE WHEN {outcome_sql} THEN 1.0 ELSE 0.0 END) AS c,
+                           count(*) AS n
+                      FROM predictions p
+                      JOIN matches m ON m.id = p.match_id
+                     WHERE p.market = %s AND p.source = %s
+                       AND m.status = 'finished' AND m.score_home IS NOT NULL
+                       AND p.model_probability IS NOT NULL
+                       AND p.created_at >= %s""",
+                (market, source, FIX_LANDED),
+            )
+            if not rows or not rows[0]["n"] or rows[0]["n"] < MIN_N:
+                continue
+            checked += 1
+            c = rows[0]["c"]
+            if c is not None and c < 0:
+                failures.append(f"{source}/{market}: corr={c:+.4f} on n={rows[0]['n']}")
+
+    if checked == 0:
+        raise SkipTest(
+            f"fewer than {MIN_N} settled predictions since {FIX_LANDED} — this "
+            f"test arms itself once post-fix volume exists"
+        )
+    assert not failures, (
+        "production predictions are ANTI-correlated with the outcome they name — "
+        "the model is being served inverted for: " + "; ".join(failures) +
+        ". This is 1X2-CLASS-ORDER-INVERTED's signature. Check how probabilities "
+        "are indexed out of predict_proba before touching anything else."
+    )
+
+
 if __name__ == "__main__":
     main()

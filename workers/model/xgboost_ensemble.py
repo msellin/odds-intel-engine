@@ -364,18 +364,45 @@ def get_xgboost_prediction(home_team: str, away_team: str,
         # 1X2 classifier (from v_1x2 bundle)
         result_model = bundle_1x2["result_1x2"]
         probs_1x2 = result_model.predict_proba(X)[0]
-        # Classes are typically [A, D, H] or [0, 1, 2] — check model classes
+        # 1X2-CLASS-ORDER-INVERTED (fixed 2026-09-14). This block read
+        # `home_prob = probs_1x2[2]` under the comment "Assume order: away=0,
+        # draw=1, home=2". `workers/model/train.py:229` maps
+        # {"home": 0, "draw": 1, "away": 2}, so the assumption was exactly
+        # backwards and HOME and AWAY were swapped on every served prediction
+        # from 2026-05-10 (d723242, when train.py adopted this map) until today.
+        #
+        # It survived four months because `classes_` on an integer-labelled
+        # model is [0, 1, 2], so `"H" in classes` is False and control always
+        # reached the else branch — while EVERY offline evaluator
+        # (fit_platt_offline, fit_isotonic_offline, weekly_eval_and_compare)
+        # indexed by classes_ correctly. The model therefore scored fine in every
+        # evaluation and was wrong only in production, which is the same shape as
+        # WEEKLY-EVAL-OU-INVERTED (0cf86cb) and the third instance of this class.
+        #
+        # Measured on 4,658 finished matches using the live stored predictions:
+        #   as served     AUC(home) 0.4151  log-loss 0.9050  corr -0.153
+        #   un-inverted   AUC(home) 0.5892  log-loss 0.7283  corr +0.150
+        # i.e. a genuinely predictive model was being served backwards.
+        #
+        # Index by the class LABEL rather than by position, so an ordering change
+        # in a future bundle cannot silently reintroduce this.
         classes = list(result_model.classes_)
 
-        if "H" in classes:
-            home_prob = probs_1x2[classes.index("H")]
-            draw_prob = probs_1x2[classes.index("D")]
-            away_prob = probs_1x2[classes.index("A")]
-        else:
-            # Assume order: away=0, draw=1, home=2
-            home_prob = probs_1x2[2] if len(probs_1x2) > 2 else probs_1x2[0]
-            draw_prob = probs_1x2[1] if len(probs_1x2) > 1 else 0.3
-            away_prob = probs_1x2[0]
+        def _p(label_str, label_int):
+            """Probability for one outcome, by label, whatever the encoding."""
+            if label_str in classes:
+                return probs_1x2[classes.index(label_str)]
+            if label_int in classes:
+                return probs_1x2[classes.index(label_int)]
+            raise KeyError(
+                f"1x2 bundle exposes classes_={classes}; cannot locate "
+                f"{label_str!r}/{label_int}. Refusing to guess an order — "
+                f"guessing is what caused 1X2-CLASS-ORDER-INVERTED."
+            )
+
+        home_prob = _p("H", 0)
+        draw_prob = _p("D", 1)
+        away_prob = _p("A", 2)
 
         # DRAW-CALIBRATION-2026-08-16 — post-hoc draw-probability rescale.
         # See workers/model/draw_calibration.py for the shared helper and
