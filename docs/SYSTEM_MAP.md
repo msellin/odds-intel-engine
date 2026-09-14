@@ -210,7 +210,15 @@ before using any number attached to it.
 A **junk-anchor negative control** runs alongside it and is never published: the
 same rule with the Pinnacle anchor shuffled to a different fixture, expected to
 lose roughly the vig. If it makes money the harness is broken and the live arm
-means nothing. ⚠️ The 2026-09-14 junk rows are DEGENERATE — the first
+means nothing. ⚠️ **Read it as a HARNESS check only, never as a matched null for
+the live arm.** A shuffled anchor changes WHICH legs pass the floor, so the two
+arms select different populations — measured 2026-09-14 on the backtest, the
+real arm sat a median +15% above the sharp line and the junk arm at 0%, with 10×
+the legs. Comparing their ROIs directly reads as "junk beats real" when it is a
+tail selection against a near-flat-back; and the junk arm's rejections are
+almost all NEGATIVE (its false-positive rate measured 0.0%), so its
+"cells excluding zero" rate is not the null for a positive live result.
+`docs/OWN_SWEEP_VERIFICATION_2026_09_14.md`. ⚠️ The 2026-09-14 junk rows are DEGENERATE — the first
 implementation relabelled the live picks instead of re-selecting, so they
 duplicate the live arm exactly. They carry `rule_version` ending
 `+DEGENERATE_JUNK_DAY1` (migration 343) and must be excluded from any control

@@ -41379,5 +41379,104 @@ def test_own_sharp_config_sweep():
     assert doc.exists(), "the sweep's report must be committed alongside the script"
 
 
+
+@test("OWN-SWEEP-VERIFICATION — the two edge gates are different gates, and the null is sign-aware")
+def test_own_sweep_verification():
+    """OWN-SWEEP-VERIFICATION (2026-09-14) — the adversarial re-test of
+    `docs/OWN_SHARP_CONFIG_SWEEP_2026_09_14.md`
+    (`scripts/own_sweep_verification.py`, `docs/OWN_SWEEP_VERIFICATION_2026_09_14.md`).
+
+    Three things are pinned, each because the verification's conclusion dies
+    without it.
+
+    (a) **`roi_edge` and `prob_edge` are DIFFERENT gates.** ANALYSIS_GOTCHAS §42:
+        our pipeline's `edge` is probability points (`cal_prob - 1/odds`) while
+        almost every betting reference means `odds*prob - 1`. `pick_triggers`
+        gates the LIVE sharp bots on the probability form
+        (`min_odds = 1/(cal - floor)`); the config sweep swept only the ROI form.
+        Since `roi_edge = prob_edge * odds`, the probability floor is STRICTLY
+        tighter at every price above evens — so the sweep's grid never contained
+        the live gate, which is the whole reason its "none of N configurations
+        clears the bar" did not settle the question. If these two ever collapse
+        into one expression, the verification is measuring one gate twice.
+
+    (b) **The book whitelist.** Only the three EMTA-legal, self-scraped books may
+        appear. Every phantom/synthetic feed (AF 'Unibet' 33.1% phantom-high and
+        dead since 2026-09-12, 'Unibet-Kambi' 38%, 'Max'/'Avg'/'Betfair Exchange'
+        /'BetWin'/'Betfred') must be structurally unreachable.
+
+    (c) **Cluster-robust SEs.** Legs from one fixture are not independent; a
+        naive SE would make every cell look significant. The clustered SE on
+        perfectly-correlated legs must exceed the naive one.
+    """
+    import scripts.own_sweep_verification as vf
+
+    # --- (a) the two gates are not the same gate --------------------------
+    for odds, p in ((1.50, 0.72), (2.00, 0.55), (3.20, 0.35), (6.00, 0.20)):
+        roi = p * odds - 1.0
+        prob = p - 1.0 / odds
+        assert abs(roi - prob * odds) < 1e-9, (
+            "roi_edge must equal prob_edge x odds — the identity the whole "
+            "verification turns on"
+        )
+        if odds > 1.0:
+            assert prob <= roi + 1e-12, (
+                f"at odds {odds} a probability-difference floor must be at "
+                f"least as tight as the same nominal ROI floor"
+            )
+    # and they must select DIFFERENT leg sets at the same nominal floor
+    legs = []
+    for o in (1.40, 1.80, 2.20, 2.60, 3.20, 4.00):
+        # a leg whose ROI edge is exactly 3% -> its probability edge is 3%/odds,
+        # i.e. BELOW a 3% probability floor at every price above evens
+        legs.append({"odds": o, "p": 1.03 / o})
+        # and one whose PROBABILITY edge is 3% -> its ROI edge is 3% x odds
+        legs.append({"odds": o, "p": 0.03 + 1.0 / o})
+    for l in legs:
+        l["roi_edge"] = l["p"] * l["odds"] - 1.0
+        l["prob_edge"] = l["p"] - 1.0 / l["odds"]
+    n_roi = sum(1 for l in legs if l["roi_edge"] >= 0.03 - 1e-12)
+    n_prob = sum(1 for l in legs if l["prob_edge"] >= 0.03 - 1e-12)
+    assert n_prob < n_roi, (
+        f"a 3% probability floor must admit FEWER legs than a 3% ROI floor "
+        f"({n_prob} vs {n_roi}) — if they agree, the sweep's grid did contain "
+        f"the live gate and the verification's central criticism is void"
+    )
+
+    # --- (b) the phantom feeds cannot appear ------------------------------
+    for bad in ("Unibet", "Unibet-Kambi", "Max", "Avg", "Betfair Exchange",
+                "BetWin", "Betfred", "Bet365", "Betano", "Pinnacle"):
+        assert bad not in vf.BOOKS, (
+            f"{bad!r} is not an EMTA-legal SELF-SCRAPED book and must never be "
+            f"in the bettable whitelist"
+        )
+    assert set(vf.BOOKS) == {"Coolbet", "Epicbet", "Unibet-Site"}, (
+        "the bettable book set is a whitelist, not a filter"
+    )
+    assert vf.ANCHOR == "Pinnacle", "the sharp anchor is de-vigged Pinnacle"
+
+    # --- (c) clustering must widen the interval ---------------------------
+    # 40 legs, 4 fixtures, perfectly correlated within fixture: the effective
+    # sample is 4, not 40.
+    rows = []
+    for fx in range(4):
+        for _ in range(10):
+            rows.append({"mid": f"m{fx}", "ret": (1.0 if fx % 2 else -1.0),
+                         "ko": 1.0e9, "gap": 0.0})
+    s = vf.stats(rows)
+    naive_se = s["sd"] / (len(rows) ** 0.5)
+    assert s["se"] > naive_se * 2, (
+        f"clustered SE {s['se']:.4f} must be far above the naive "
+        f"{naive_se:.4f} on perfectly within-fixture-correlated legs"
+    )
+    assert s["clusters"] == 4, "clusters must count fixtures, not legs"
+
+    # --- the report must be committed with the script ---------------------
+    doc = _engine_path("docs/OWN_SWEEP_VERIFICATION_2026_09_14.md")
+    assert doc.exists(), (
+        "the verification's report must be committed alongside its script — a "
+        "number that changes a strategy does not enter a doc without the script"
+    )
+
 if __name__ == "__main__":
     main()

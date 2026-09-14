@@ -187,8 +187,22 @@ it. Book mix: Epicbet 52, Coolbet 32, Unibet-Site 8; months: 2026-09 × 92.
 
 The sweep agent's independent construction — n=695 pooled, **−9.55%**, CI
 [−18.8, −0.3], with a passing vig dipstick and a junk-anchor control at −5.80% —
-is the better estimate. **Their real anchor underperforms their junk anchor at
-these books.**
+is the better estimate. ~~**Their real anchor underperforms their junk anchor at
+these books.**~~
+
+> **⚠️ CORRECTED 2026-09-14 — "the real anchor underperforms the junk anchor" is
+> WITHDRAWN.** See `docs/OWN_SWEEP_VERIFICATION_2026_09_14.md`. The two arms are
+> not the same population: the real arm selects legs priced a median **+15%**
+> above the sharp line, the junk arm legs priced at it (**−0.0%**); n is 550 vs
+> 5,881; market mix 76/24 vs 50/50. The junk arm is a near-flat-back (−5.56%
+> against a flat-back of −7.88%), so the comparison is a tail selection against
+> an unfiltered baseline. **At a matched gate and odds band the real anchor beats
+> junk by 18–33 pp in every cell**, and the observed 2.07 pp pooled gap would
+> need n=54,900 per arm to call (§60). The pooled **−9.55%** itself is
+> **−7.64% [−17.85, +2.58]** — not excluding zero — once restricted to the two
+> markets we actually trade. **The document's conclusion is unaffected**: the
+> sharp rule at these books is still not demonstrated, on a CLV test the
+> verification ran and the sweep could not.
 
 ### Consequence for the book-universe argument above
 

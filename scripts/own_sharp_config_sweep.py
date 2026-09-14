@@ -126,6 +126,14 @@ ODDS_BANDS = [(1.01, 2.50), (1.01, 4.00), (1.01, 8.00), (1.01, 1000.0),
 LEADS = [0, 60, 240]        # minutes before kickoff the bet quote must precede
 MIN_N = 100                 # refuse to draw a conclusion below this (trap 8)
 
+# PRICE-RATIO CAP — `book_odds / anchor_odds - 1`, i.e. how far above the sharp
+# line the soft price sits. Production's ODDS-OUTLIER-FILTER caps this at 35%
+# (1x2) / 30% (O/U), and the loss measured on the time-aligned backtest sits in
+# the 20-35% band, i.e. UNDER the production filter — the leak
+# BET365-EXECUTION-AUDIT predicted in August. `None` = production guard only.
+RATIO_CAPS = [None, 0.35, 0.25, 0.20, 0.15]
+RATIO_BANDS = [(0.0, 0.10), (0.10, 0.20), (0.20, 0.35), (0.35, 99.0)]
+
 
 # ---------------------------------------------------------------------------
 # Assembly — the §63 guard
@@ -329,9 +337,17 @@ def build_legs(matches, odds, markets, align_min: float, control_seed: int | Non
                             # raw price ratio, NO de-vig — break-even is the
                             # closing book's own margin, not zero (trap 3)
                             "clv": clv,
+                            # margin-corrected against THIS book's OWN closing
+                            # market on THIS fixture — never a fleet-wide
+                            # constant. The per-book spread (Coolbet ~7.8%,
+                            # Unibet-Site ~10.5%) is wider than the thresholds
+                            # it gets compared against, so a flat m can invert
+                            # the sign of the correction.
                             "clv_ev": ((1.0 + clv) / (1.0 + close_margin) - 1.0)
                                       if has_close else None,
                             "close_margin": close_margin,
+                            # how far above the sharp line this price sits
+                            "ratio": o / q_p[s] - 1.0,
                         })
 
     # --- pooled: best aligned price across the three books ----------------
@@ -394,12 +410,14 @@ def stats(rets, mids):
     }
 
 
-def cell_rows(legs, edge_floor, lo, hi, sel_filter):
+def cell_rows(legs, edge_floor, lo, hi, sel_filter, ratio_cap=None):
     out = []
     for lg in legs:
         if lg["edge"] < edge_floor:
             continue
         if not (lo <= lg["odds"] <= hi):
+            continue
+        if ratio_cap is not None and lg["ratio"] > ratio_cap:
             continue
         if sel_filter != "ALL" and lg["sel"] != sel_filter:
             continue
@@ -448,14 +466,16 @@ def sweep(legs, markets, min_n=MIN_N):
             base = rows if sel == "ALL" else [r for r in rows if r["sel"] == sel]
             for ef in EDGE_FLOORS:
                 for lo, hi in ODDS_BANDS:
-                    tested += 1
-                    sub = cell_rows(base, ef, lo, hi, "ALL")
-                    if len(sub) < min_n:
-                        continue
-                    s = summarise(sub)
-                    s.update(lead=lead, book=book, market=market, sel=sel,
-                             edge_floor=ef, odds_lo=lo, odds_hi=hi)
-                    cells.append(s)
+                    for rc in RATIO_CAPS:
+                        tested += 1
+                        sub = cell_rows(base, ef, lo, hi, "ALL", rc)
+                        if len(sub) < min_n:
+                            continue
+                        st = summarise(sub)
+                        st.update(lead=lead, book=book, market=market, sel=sel,
+                                  edge_floor=ef, odds_lo=lo, odds_hi=hi,
+                                  ratio_cap=rc)
+                        cells.append(st)
     return cells, tested
 
 
@@ -464,67 +484,109 @@ def subset(legs, cell):
             if lg["lead"] == cell["lead"] and lg["book"] == cell["book"]
             and lg["market"] == cell["market"]]
     return cell_rows(base, cell["edge_floor"], cell["odds_lo"], cell["odds_hi"],
-                     cell["sel"])
+                     cell["sel"], cell.get("ratio_cap"))
 
 
 # ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------
-BOOK_MARGIN = 0.076   # measured fleet-wide closing margin (PLAN_AFTER_AUDITS #4)
-
-
 def bot_clv_audit():
-    """The live SHARP trigger bots' own-book CLV, split by whether the close it
-    was scored against is actually THEIR book's.
+    """The live SHARP trigger bots' own-book CLV, margin-corrected PER FIXTURE.
 
     Why this lives in the sweep. The reason to run a sharp-edge grid at all is
     the claim that the four SHARP-anchored trigger bots are the fleet's only
-    CLV-positive engines. That claim is read off `shadow_bets.clv`, and two
-    things in it need separating before it can be believed:
+    CLV-positive engines. That claim is read off `shadow_bets.clv`, and three
+    things in it have to be separated before it can be believed:
 
-      * `clv` is a RAW price ratio with NO de-vig (settlement.py:613), so
-        break-even is the closing book's MARGIN, not zero:
-        `EV = (1+clv)/(1+m) - 1`, m ~ 7.6%.
-      * `settle_shadow_bets` prefers the bet's own book
-        (SHADOW-CLV-BOOKMAKER-FIX-2026-08-26) but FALLS BACK to the unfiltered
-        `get_closing_odds`, whose own docstring says comparing a price against
-        an arbitrary book "makes the resulting CLV structurally positive
-        regardless of whether the bet had any edge". Rows where that fallback
-        fired carry `closing_bookmaker IS NULL` — and they are not a small
-        remainder.
+    1. `clv` is a RAW price ratio with NO de-vig (settlement.py:613), so
+       break-even is the CLOSING BOOK'S MARGIN, not zero:
+       `EV = (1+clv)/(1+m) - 1`.
 
-    So the honest figure is the `closing_bookmaker = the bot's own book` row,
-    margin-corrected. Report both, and report the date span: a CLV measured
-    over three days is not a track record.
+    2. **m is not a constant.** A flat fleet-wide 7.6% was used at first; the
+       per-book closing margin actually runs Coolbet ~7.8%, Epicbet ~8.0%,
+       Unibet-Site ~10.5%. That spread is WIDER than the thresholds the
+       corrected number gets compared against, so a flat m can invert the sign
+       of the correction. This uses `settlement.closing_book_margin()` — the
+       book's own closing market on that fixture — and leaves the row OUT
+       rather than substituting an average when it cannot be computed.
+
+    3. `settle_shadow_bets` prefers the bet's own book
+       (SHADOW-CLV-BOOKMAKER-FIX-2026-08-26) but FALLS BACK to the unfiltered
+       `get_closing_odds`, whose own docstring says comparing a price against an
+       arbitrary book "makes the resulting CLV structurally positive regardless
+       of whether the bet had any edge". Rows where that fallback fired carry
+       `closing_bookmaker IS NULL`, and they are not a small remainder.
+
+    So the honest figure is `closing_bookmaker = the bot's own book`, corrected
+    by that book's own margin on that fixture. Report the span too: a CLV
+    measured over three days is not a track record.
     """
     from workers.api_clients.db import execute_query
+    from workers.jobs.settlement import (closing_book_margin,
+                                         _normalize_bet_market,
+                                         _normalize_bet_selection)
+
     rows = execute_query(
         """
-        SELECT bot_name, closing_bookmaker, count(*) AS n,
-               avg(clv)::float AS clv, stddev(clv)::float AS sd,
-               avg(CASE WHEN result = 'won'
-                        THEN COALESCE(odds_at_pick_live, odds_at_pick) - 1
-                        ELSE -1 END)::float AS roi,
-               min(pick_time)::date AS d0, max(pick_time)::date AS d1
+        SELECT bot_name, match_id, market, selection, closing_bookmaker,
+               clv::float AS clv, result, pick_time::date AS d,
+               COALESCE(odds_at_pick_live, odds_at_pick)::float AS px
           FROM shadow_bets_unique
          WHERE bot_name LIKE %s AND clv IS NOT NULL
            AND result IN ('won', 'lost')
-         GROUP BY 1, 2 ORDER BY 1, 3 DESC
         """,
         ("%trigger_sharp%",),
     )
-    print("\n=== SHARP TRIGGER BOTS — own-book CLV vs the arbitrary-book "
-          "fallback (shadow_bets_unique, dedup view per §5) ===")
-    print(f"{'bot':34s} {'close@':14s} {'n':>4s} {'rawCLV':>8s} "
-          f"{'EV':>8s} {'t':>6s} {'execROI':>9s}  span")
+
+    agg: dict = defaultdict(lambda: {"clv": [], "ev": [], "ret": [], "m": [],
+                                     "d0": None, "d1": None, "nom": 0})
     for r in rows:
-        n, c, sd = r["n"], r["clv"], (r["sd"] or 0.0)
-        ev = (1 + c) / (1 + BOOK_MARGIN) - 1
-        se = (sd / (1 + BOOK_MARGIN)) / math.sqrt(n) if n > 1 and sd else 0.0
-        note = "" if r["closing_bookmaker"] else "   <- UNANCHORED, inflated"
-        print(f"{r['bot_name']:34s} {str(r['closing_bookmaker']):14s} {n:4d} "
-              f"{c*100:+7.2f}% {ev*100:+7.2f}% {(ev/se if se else 0):+6.2f} "
-              f"{r['roi']*100:+8.2f}%  {r['d0']}..{r['d1']}{note}")
+        key = (r["bot_name"], r["closing_bookmaker"])
+        a = agg[key]
+        a["clv"].append(r["clv"])
+        a["ret"].append(r["px"] - 1 if r["result"] == "won" else -1.0)
+        a["d0"] = r["d"] if a["d0"] is None else min(a["d0"], r["d"])
+        a["d1"] = r["d"] if a["d1"] is None else max(a["d1"], r["d"])
+        m = None
+        if r["closing_bookmaker"]:
+            m = closing_book_margin(
+                r["match_id"],
+                _normalize_bet_market(r["market"], r["selection"]),
+                r["closing_bookmaker"])
+        if m is None:
+            a["nom"] += 1          # left NULL, never back-filled with a mean
+            continue
+        a["m"].append(m)
+        a["ev"].append((1.0 + r["clv"]) / (1.0 + m) - 1.0)
+
+    print("\n=== SHARP TRIGGER BOTS — own-book CLV, margin-corrected with the "
+          "CLOSING BOOK'S OWN per-fixture margin ===")
+    print(f"{'bot':34s} {'close@':14s} {'n':>4s} {'rawCLV':>8s} "
+          f"{'m':>6s} {'nEV':>4s} {'EV':>8s} {'t':>6s} {'execROI':>9s}  span")
+    for (bot, cb), a in sorted(agg.items(), key=lambda kv: (kv[0][0], kv[0][1] or "")):
+        n = len(a["clv"])
+        raw = sum(a["clv"]) / n
+        roi = sum(a["ret"]) / n
+        if a["ev"]:
+            k = len(a["ev"])
+            ev = sum(a["ev"]) / k
+            sd = math.sqrt(sum((x - ev) ** 2 for x in a["ev"]) / k)
+            t = ev / (sd / math.sqrt(k)) if sd and k > 1 else 0.0
+            mm = f"{sum(a['m'])/len(a['m'])*100:5.2f}%"
+            evs, ts = f"{ev*100:+7.2f}%", f"{t:+6.2f}"
+        else:
+            k, mm, evs, ts = 0, "   n/a", "    n/a", "   n/a"
+        note = "" if cb else "   <- UNANCHORED close, inflated"
+        print(f"{bot:34s} {str(cb):14s} {n:4d} {raw*100:+7.2f}% {mm} {k:4d} "
+              f"{evs} {ts} {roi*100:+8.2f}%  {a['d0']}..{a['d1']}{note}")
+        if a["nom"]:
+            print(f"{'':34s} {'':14s} ({a['nom']} rows left NULL — the book's "
+                  f"own closing market could not be assembled)")
+
+
+def _rc(c):
+    rc = c.get("ratio_cap")
+    return "none" if rc is None else f"{rc*100:.0f}%"
 
 
 def fmt(s):
@@ -631,7 +693,8 @@ def main() -> int:
             for _, fs in fold_rois)
         print(f"{c['book']:12s} {c['market']:14s} {c['sel']:5s} "
               f"{c['edge_floor']*100:4.0f}% {c['odds_lo']:5.2f}-{c['odds_hi']:6.2f} "
-              f"{c['lead']:5d} | {fmt(c):50s} | {fmt(oos):50s} | {fold_txt}")
+              f"r{_rc(c):>5s} {c['lead']:5d} | {fmt(c):50s} | {fmt(oos):50s} "
+              f"| {fold_txt}")
         finalists.append({"cell": c, "oos": oos,
                           "folds": {n: f for n, f in fold_rois}})
 
@@ -651,7 +714,7 @@ def main() -> int:
                f"(n={c['clv_n']})")
         print(f"{c['book']:12s} {c['market']:14s} {c['sel']:5s} "
               f"{c['edge_floor']*100:4.0f}% {c['odds_lo']:5.2f}-{c['odds_hi']:6.2f} "
-              f"lead{c['lead']:4d} | {fmt(c)} | {c['picks_per_day']:.2f}/day "
+              f"r{_rc(c):>5s} lead{c['lead']:4d} | {fmt(c)} | {c['picks_per_day']:.2f}/day "
               f"| gap {c['median_gap_min']:.0f}m "
               f"| need n={c['n_for_80pct_power']:,.0f} | CLV {clv} | {fold_txt}")
 
@@ -673,6 +736,30 @@ def main() -> int:
                 print(f"   {book:12s} {market:14s} {fmt(s)} "
                       f"| close margin {m*100:5.2f}% "
                       f"-> expected {-m/(1+m)*100:+6.2f}%")
+
+    # --- where does the money leak by price ratio? ------------------------
+    # The direct test of the coordinator's measurement: production's
+    # ODDS-OUTLIER-FILTER caps book/anchor at 35% (1x2) / 30% (O/U), and the
+    # loss is claimed to sit in the 20-35% band — UNDER that cap, i.e. inside
+    # this sample. If so, a tighter cap is the one lever in the whole grid that
+    # could move the verdict, so it gets its own table rather than being buried
+    # among 70,200 cells.
+    print("\n=== PRICE-RATIO BANDS — `book_odds / anchor_odds - 1`, "
+          "publish rule (edge>=3%, odds<=4.0), pooled over books ===")
+    for market in ["1x2", "ALL"]:
+        sel = [lg for lg in legs
+               if lg["book"] == POOLED and lg["lead"] == 0
+               and lg["edge"] >= 0.03 and lg["odds"] <= 4.0
+               and (market == "ALL" or lg["market"] == market)]
+        for lo_r, hi_r in RATIO_BANDS:
+            band = [lg for lg in sel if lo_r <= lg["ratio"] < hi_r]
+            st = summarise(band)
+            if st:
+                print(f"   {market:4s} ratio {lo_r*100:3.0f}-{hi_r*100:3.0f}%  {fmt(st)}")
+        for cap in [c for c in RATIO_CAPS if c]:
+            st = summarise([lg for lg in sel if lg["ratio"] <= cap])
+            if st:
+                print(f"   {market:4s} cap <= {cap*100:3.0f}%      {fmt(st)}")
 
     # --- headline reference: the publish rule at the OWN books ------------
     print("\n=== REFERENCE — the publish rule (edge>=3%, odds<=4.0) at each book ===")

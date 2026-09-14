@@ -1,306 +1,302 @@
 # 🤖 OWN — exhaustive SHARP-edge configuration sweep, 2026-09-14
 
-> ## ⚠️ PRELIMINARY — committed early to unblock CI, sweep still running
->
-> The smoke test `OWN-SHARP-SWEEP-ASSEMBLE` asserts this file exists, and it was
-> swept into `f0a4fac`/`ae7c86a` by a parallel agent's `git add -A` before the
-> analysis finished (ANALYSIS_GOTCHAS §46 — the trap it documents, happening
-> again). Everything in §1–§7 is **final and reproducible**. Two additions the
-> coordinator asked for mid-run are **not yet in**: the **price-ratio cap**
-> dimension and the switch of the bot-CLV table from a flat m=7.6% to the
-> **closing book's own per-fixture margin**. Both are marked 🚧 below. Nothing
-> already stated is expected to move — the recommendation rests on §3 and §4,
-> neither of which touches either addition.
-
-**Script:** `scripts/own_sharp_config_sweep.py` (read-only).
-**Smoke test:** `OWN-SHARP-SWEEP-ASSEMBLE`.
+**Script:** `scripts/own_sharp_config_sweep.py` (read-only — touches no bot,
+floor, config or table). **Smoke test:** `OWN-SHARP-SWEEP-ASSEMBLE`.
 
 ```bash
 python3 scripts/own_sharp_config_sweep.py --days 150 --diagnostics --bot-clv
-python3 scripts/own_sharp_config_sweep.py --days 150 --control      # negative control
-python3 scripts/own_sharp_config_sweep.py --days 150 --align-min 15 # alignment ladder
+python3 scripts/own_sharp_config_sweep.py --days 150 --control        # junk anchor
+python3 scripts/own_sharp_config_sweep.py --days 150 --align-min 15   # alignment ladder
 ```
+
+> ## ⚠️ CORRECTED after adversarial verification — read §0 first
+>
+> `docs/OWN_SWEEP_VERIFICATION_2026_09_14.md` was written to break this document.
+> It succeeded on four points. **I have re-checked every one of them in my own
+> harness rather than accepting them, and all four hold.** The corrections are in
+> §0; the rest of this document has been restated accordingly. The harness itself
+> replicated to the digit across two independent implementations.
 
 ---
 
-## 1. The question and the answer
+## 0. Corrections — what I got wrong, and what replaced it
 
-**Question.** For bets we place ourselves at EMTA-legal, self-scraped books
-(Coolbet, Epicbet, Unibet-Site), is there any configuration of
-
-```
-edge = P_shin(Shin-de-vigged Pinnacle) × book_price − 1
-```
-
-with enough volume **and** a confidence interval that excludes zero?
-
-**Answer: no. None of 14,040 configurations clears the bar, and the family's
-central estimate at these three books is not merely indistinguishable from zero
-— it is negative and worse than flat-backing every price the same books offer.**
-
-| construction, all markets pooled, lead 0, alignment ≤60 min | n | ROI | 95% CI (clustered on fixture) |
+| # | What this document originally claimed | Status | The corrected number |
 |---|---|---|---|
-| flat-back **every** aligned leg (the vig baseline) | 31,321 | **−7.5%** | decisive |
-| the sharp rule, edge ≥3% & odds ≤4.0, at **Coolbet** | 436 | **−13.58%** | [−25.4, −1.8] |
-| … at **Epicbet** | 246 | +4.48% | [−10.6, +19.6] |
-| … at **Unibet-Site** | 102 | **−23.40%** | [−45.4, −1.5] |
-| … **pooled** (best aligned price of the three) | 695 | **−9.55%** | [−18.8, −0.3] |
-| … pooled, **top-8/day by edge** (the published rule) | 232 | −9.78% | [−26.0, +6.5] |
+| 1 | *"None of 14,040 (70,200) configurations clears the bar."* | **WITHDRAWN as stated** | None **in that grid**. The grid could not express the gate the live bots use (below). At the live gate a positive family does appear. |
+| 2 | *"The real anchor did not beat a randomly permuted one (−9.55% vs −5.80%)."* | **WITHDRAWN** | Unmatched populations. At a **matched** gate the real anchor beats junk by 18–22 pp. |
+| 3 | *"23.4% of junk cells exclude zero, so any survivor is noise."* | **RESTATED** | Counted **by sign**, the junk arm's false-**positive** rate is **0.66%**, not 23.4%. Its rejections are the vig. |
+| 4 | *"Pooled sharp rule −9.55%, CI [−18.8, −0.3]."* | **RESTATED** | On the two markets we actually trade: **−7.64%, CI [−17.85, +2.58]** — does not exclude zero. |
+| 5 | *"Epicbet's first usable aligned data: 2026-08-27."* | **CORRECTED** | **2026-09-02.** (First Epicbet row of any kind is 08-27; first *time-aligned* leg is 09-02.) |
 
-The sharp rule at our own books does not beat the vig. It underperforms it.
+**The mistake that matters is #1, and it is a specific one.** My grid filtered on
+an **expected-ROI** floor, `edge = P_shin × odds − 1`. `pick_triggers::_window`
+gates the live sharp bots on a **probability-difference** floor,
+`P_shin − 1/odds ≥ floor`, implemented as `min_odds = 1/(cal − floor)`. Since
+`roi_edge = prob_edge × odds`, a constant probability floor is a **curve in
+odds** — 3% prob is a 4.5% ROI floor at 1.50 and a 12% ROI floor at 4.00 — and
+**no cell of a constant-floor grid can express a curve.** This is
+ANALYSIS_GOTCHAS **§42** ("our `edge` is probability points, not EV") claiming a
+fourth victim, and I walked into it having read §42 the same morning. My
+`ODDS_BANDS` also had no band ending at 2.00, which is where the effect lives.
 
-## 2. Why this disagrees with the number I was given
+**Corrections #2 and #3 share one root cause and it is worth naming.** The junk
+anchor passes ~10× as many legs through the same nominal floor, because a random
+probability × a book price clears `+3%` constantly while a real overlay of +3% is
+a genuine tail. So the "junk arm" at my gate was a 5,880-leg near-flat-back and
+the "real arm" a 550-leg tail selection. Comparing their ROIs compares two
+populations, and counting their CI rejections without splitting by sign counts
+the vig as if it were a false positive. **A control has to be matched on the gate
+before its number means anything** — mine was matched on the *harness* but not on
+the *selection*, which is a different and weaker thing.
 
-The brief states: *"time-aligned, betting at those three books, edge≥3%
-odds≤4.0: n=92, ROI +16.00%"*. I could not reproduce it, and the construction
-above is the one I can defend. Three differences I can name:
+**What survived unchanged:** the harness (§2), the retention and era-selection
+limits (§7), the refusal to reproduce the +16.00%, the refusal to move any gate,
+and the CLV-fallback fix as the highest-value item (§6).
 
-1. **n.** The same filter on my leg set is n=695 pooled, n=436/246/102 per book.
-   An n of 92 implies a much narrower population — most likely fixtures where
-   *all three* books have an aligned quote, which is essentially the Unibet-Site
-   era alone (its first row is **2026-09-09**, five days before this was written).
-2. **The daily cap is a ranking, not a filter,** so it cannot be a grid cell. I
-   report it separately (last row above). It does not rescue the number.
-3. **The books disagree with each other.** Epicbet is the only one of the three
-   with a positive point estimate, and it is +4.5% with a CI 30 points wide. A
-   pooled +16% would have to come from somewhere; it is not in any book here.
+---
 
-I am not asserting the +16% is wrong — I am asserting I cannot reproduce it from
-`odds_snapshots` with a construction that survives §1–§7 below, and that the
-figure has no committed script behind it (PLAN_AFTER_AUDITS §6, the rule that
-exists for exactly this).
+## 1. The question, and the answer
 
-## 3. The negative control PASSES — so the harness can be read
+For bets we place ourselves at EMTA-legal, self-scraped books (Coolbet, Epicbet,
+Unibet-Site), is there a configuration of the sharp rule with enough volume and a
+CI that excludes zero?
 
-Two independent checks, both required before any other number means anything.
+**At the ROI-floor family I swept: no.** 70,200 cells, 2,578 reached n ≥ 100,
+248 have a CI excluding zero — and **207 of those 248 are negative**. Zero
+positive cells at an odds floor ≥ 2.00, zero at edge floor ≥ 5%, zero at
+Coolbet, zero at Unibet-Site.
 
-**(a) The vig dipstick.** Flat-backing every aligned leg must return
-≈ `−m/(1+m)` where `m` is that book's own closing margin. It does, on every
-book and market:
+**At the probability-difference gate the live bots actually use: yes, one
+family — and it is twelve days old.** Reproduced independently in this harness:
 
-| book | market | n | measured ROI | book's close margin | predicted |
-|---|---|---|---|---|---|
-| Coolbet | 1x2 | 10,538 | −9.73% | 7.69% | −7.14% |
-| Coolbet | O/U 2.5 | 6,411 | −7.23% | 7.95% | −7.37% |
-| Epicbet | 1x2 | 5,465 | −10.61% | 7.93% | −7.35% |
-| Epicbet | O/U 2.5 | 3,400 | −6.10% | 6.94% | −6.49% |
-| Unibet-Site | 1x2 | 3,301 | −8.95% | 8.47% | −7.81% |
-| Unibet-Site | O/U 2.5 | 1,566 | −5.70% | 7.12% | −6.64% |
-
-O/U lands on prediction. 1x2 runs ~2pp worse than the margin alone, which is the
-favourite–longshot bias: flat-staking all three outcomes overweights the longshot
-in unit terms. Expected, and in the right direction.
-
-**(b) The junk anchor.** Identical harness, identical legs, identical outcomes —
-but each leg's de-vigged anchor is taken from a **different fixture's** Pinnacle
-triple (seeded permutation within market). It should lose roughly the vig:
-
-| | n | ROI |
-|---|---|---|
-| junk anchor, publish rule, pooled all markets | 9,022 | **−5.80%** (t=−4.54) |
-| junk anchor, Coolbet | 7,340 | −6.28% (t=−4.36) |
-| junk anchor, Epicbet | 3,798 | −2.42% |
-| junk anchor, Unibet-Site | 1,613 | +0.01% |
-
-It loses about the vig. **The harness is sound.**
-
-And the comparison that matters: the **real** anchor pooled reads **−9.55%**, the
-**junk** anchor pooled reads **−5.80%**. Selecting on a real de-vigged Pinnacle
-overlay, at these books, did not beat selecting on a randomly-permuted one.
-
-**The control also demonstrates the multiple-comparisons hazard in situ.** With
-a junk anchor, **2,466 of 10,531** evaluated cells (23.4%) have a clustered CI
-excluding zero. Every one is noise by construction. Any grid search over this
-data that reports "a cell with p<0.05" and stops there has reported nothing.
-
-## 4. What the grid actually found
-
-14,040 cells tested: 6 edge floors × 15 odds bands × 3 lead times × 4 book
-settings (3 books + pooled) × 13 market/selection combinations. 671 reached
-n ≥ 100 on the full sample.
-
-**91 of 671 (13.6%) exclude zero.** Under the control's own null that number is
-not remarkable. Every one of the survivors fails at least one of the three tests
-that separate a finding from a fluctuation:
-
-| survivor | n | ROI | folds (time-ordered thirds) | margin-corrected own-book CLV |
+| cell (lead 0, aligned ≤60 min, traded markets) | n | ROI | 95% CI (clustered) | picks/day |
 |---|---|---|---|---|
-| POOLED 1x2 ALL, edge≥1%, 1.01–2.50, lead 60 | 121 | +25.09% | **−14.5%** / +35.3% / +31.9% | **−5.43%** |
-| POOLED 1x2 ALL, edge≥1%, 1.50–2.50, lead 60 | 106 | +25.51% | **−18.2%** / +38.5% / +31.6% | **−5.09%** |
-| POOLED 1x2 home, edge≥1%, 1.01–8.00, lead 60 | 149 | +26.66% | **−2.0%** / +37.1% / +29.3% | **−5.63%** |
-| Epicbet O/U 2.5 ALL, edge≥1%, 1.01–4.00, lead 0 | 102 | +26.48% | +39.6% / +30.8% / **−5.9%** | n/a |
-| Epicbet 1x2 ALL, edge≥1%, 1.01–2.50, lead 0 | 122 | +18.03% | +27.3% / +10.4% / +15.9% | n/a |
+| POOLED, prob-edge ≥2%, odds ≤2.50 | 225 | **+17.07%** | [+4.18, +29.95] | 5.9 |
+| POOLED, prob-edge ≥2%, odds ≤2.00 | 109 | +19.67% | [+4.58, +34.77] | 2.9 |
+| POOLED, prob-edge ≥3%, odds ≤2.50 | 143 | +16.41% | [+0.33, +32.50] | 3.8 |
+| Coolbet, prob-edge ≥2%, odds ≤2.50 | 125 | +15.35% | [−1.81, +32.52] | 3.3 |
+| Epicbet, prob-edge ≥2%, odds ≤2.50 | 84 | +32.69% | [+12.36, +53.02] | 7.0 |
+| **matched junk control**, POOLED ≥2%, ≤2.50 | 2,878 | **−2.89%** | [−6.72, +0.94] | — |
 
-Three things kill them:
+The matched control is the point: at the **identical** gate the junk anchor reads
+−2.89% and the real anchor +17.07%. That is the comparison I should have run.
 
-1. **Not fold-robust.** Every 1x2 survivor loses in fold 1. The one cell that is
-   positive in all three folds (Epicbet 1x2 ALL) has a CI of [+0.6, +35.5] — a
-   34-point-wide interval whose lower bound is 0.55pp from zero, at n=122.
-2. **The CLV contradicts the ROI.** On the same legs, own-book closing-line value
-   is **negative in every case** once corrected for the closing book's margin
-   (−5.1% to −5.6%). A +25% ROI alongside a −5% EV is the signature of a small
-   sample landing well, not of an edge. CLV converges ~200× faster than ROI
-   (ANALYSIS_GOTCHAS §8) — believe the CLV.
-3. **They live at `edge ≥ 1%`, i.e. essentially no floor**, and at `lead 60`,
-   which after retention (§7) is an era selection rather than a timing choice.
+**But see §3 before believing it.** The entire effect is post-2026-09-02.
 
-**Out-of-sample.** Selecting finalists on a per-book time-ordered in-sample 70%
-and measuring them on the untouched 30%: the best IS cells are POOLED 1x2 home
-at +24.9% IS → +28.4% OOS **at n=41** (no power), while the two IS cells that
-reach n≥100 on both sides (POOLED 1x2 ALL, edge≥3%, ≤2.50) go **+18.2% IS →
-+3.0% OOS**. Epicbet 1x2 home goes **+16.8% IS → −15.4% OOS**.
+## 2. The harness is validated — three checks
 
-**Power.** Per-bet return sd is 1.3–1.6 here. The best cells report needing
-n = 118–257 to detect their *own* point estimates at 80% power, which they
-nearly reach — but that is the power to detect a +25% ROI, and nobody believes
-+25% is the truth. To detect a **+3%** true ROI at 80% power needs
-**≈ 15,000 settled bets**, which at the 3–11 picks/day these cells produce is
-**4 to 14 years**.
+**(a) The vig dipstick.** Flat-backing every aligned leg returns ≈ `−m/(1+m)`
+against each book's own per-fixture closing margin, on every book and market
+(Coolbet 1x2 −9.73% vs −7.14% predicted; Coolbet O/U 2.5 −7.23% vs −7.37%;
+Epicbet 1x2 −10.61% vs −7.35%; Epicbet O/U 2.5 −6.10% vs −6.49%; Unibet-Site 1x2
+−8.95% vs −7.81%; Unibet-Site O/U 2.5 −5.70% vs −6.64%). O/U lands on
+prediction; 1x2 runs ~2pp worse, which is the favourite–longshot bias in unit
+staking.
 
-## 5. Alignment, and the odds-band contradiction
+**An independent re-implementation reproduced all six figures to the digit.**
+Leg construction, ±2 min assembly, settlement and clustering are right.
 
-**Alignment ladder** (POOLED 1x2, edge≥3%, odds≤4.0):
+**(b) What the dipstick cannot do — and the check that was missing.** The
+baseline applies no edge filter, so it is anchor-independent *by design* and
+prints identically in both arms. It therefore validates everything **except** the
+de-vig and the edge computation, which is where the question lives. I originally
+presented it as validating the harness full stop; that was too strong. The
+verification supplied the missing half — binning 19,304 1x2 legs by
+Shin-de-vigged Pinnacle probability against realised outcomes gives errors of
+−1.4pp to +2.9pp across six buckets, while the junk anchor is flat regardless of
+its stated probability. **The sharp anchor is well calibrated and carries real
+information.**
 
-| anchor↔bet gap | n | ROI | span |
+**(c) The junk anchor, counted by sign.** From this sweep's own control JSON:
+
+| arm | cells n≥100 | CI excludes zero, **positive** | CI excludes zero, **negative** |
 |---|---|---|---|
-| unbounded ("unaligned") | 695 | −4.52% | 117d |
-| ≤ 60 min | 420 | −10.32% | 38d |
-| ≤ 15 min | 258 | −7.12% | 38d |
+| REAL | 2,578 | **41 (1.59%)** | 207 (8.03%) |
+| JUNK | 10,531 | **70 (0.66%)** | 2,396 (22.75%) |
 
-Negative at every alignment. The unaligned row spans a longer period and is
-therefore not a like-for-like comparison — which is itself the point: the
-*apparent* improvement from relaxing alignment is a sample change, not a result.
+The junk arm's rejections are overwhelmingly negative — they are the vig,
+measured precisely because that arm passes ~10× as many legs and buys tighter
+intervals. Its false-*positive* rate is 0.66%. My original "23.4%" compared a
+positive finding against the wrong tail.
 
-**The odds dimension, in both directions.** The coordinator flagged that the
-live OWN sharp bots show short odds (1.0–2.0) profitable and the middle band
-negative, against the PICKS rule's cap at 4.0 on the opposite logic. On this
-backtest the two are **different populations, and neither pattern survives**:
+Honesty about the remaining separation: 1.59% vs 0.66% is a factor of 2.4, on
+heavily nested cells. It is evidence that the real arm is not pure noise. It is
+not, on its own, evidence that any particular cell is real.
 
-* The cells that reach significance at the OWN books are **short-priced**
-  (ceiling 2.50) — consistent with the bots' short-band result, not with a
-  longshot story.
-* But those same cells are the ones with **negative margin-corrected CLV** and a
-  losing first fold. The short band looks good on ROI and bad on CLV.
-* Raising the **floor** to 2.80 (the placer's live gate) leaves no cell with
-  n ≥ 100 and a CI excluding zero in any market at any book.
+## 3. The surviving family is a twelve-day effect
 
-So: **the short-odds pattern reproduces, the long-odds pattern does not, and the
-short-odds pattern does not survive out-of-sample or on CLV.** Neither the 4.0
-ceiling nor its inverse is supported by this data. Do not change either on the
-strength of it.
+The one thing neither document should skip. Splitting the best cell
+(POOLED, prob-edge ≥2%, odds ≤2.50) at **2026-09-02**:
 
-🚧 **Still to run:** the price-ratio cap as a sweep dimension
-(none / 35% / 25% / 20% / 15%). The coordinator's measurement puts the leak in
-the 20–35% band, below production's 35% filter. My harness already applies the
-production guard (Pinnacle × 1.35 for 1x2, × 1.30 for O/U) per leg, so the
-20–35% band is **inside** my sample and tightening it can only help. That makes
-it a candidate for the one thing that could move §1 — it is the next run.
+| | n | ROI | 95% CI |
+|---|---|---|---|
+| full | 225 | +17.07% | [+4.18, +29.95] |
+| **before 2026-09-02** | 79 | **+0.99%** | [−20.63, +22.62] |
+| **on/after 2026-09-02** | 146 | **+25.76%** | [+9.92, +41.61] |
 
-## 6. 🚧 The claim this sweep was built on needs correcting
+**It is not an alignment artefact.** Within the old era, tight-gap legs return
+−3.54% and loose-gap legs +3.22%; within the new era, tight-gap +23.59% and
+loose-gap +30.21%. The split is by date, not by gap.
 
-The brief's premise is that the four SHARP-anchored trigger bots are the fleet's
-only CLV-positive engines, at +0.84% / +5.24% / +0.27% / +2.09% margin-corrected
-EV. **Those figures reproduce exactly** from `shadow_bets_unique` — and they are
-still wrong, for two reasons that the split below makes visible.
+**And it is not a line-shopping artefact either** — which was my first
+hypothesis, because 2026-09-02 is exactly when the pool stops being one book:
+
+| era | qualifying legs by book |
+|---|---|
+| before 09-02 | Coolbet 79 — *"POOLED" is Coolbet alone* |
+| on/after 09-02 | Coolbet 46, Epicbet 84, Unibet-Site 48 |
+
+So I tested **Coolbet alone**, the only book whose history spans both eras and
+whose pool width never changed:
+
+| Coolbet only, prob-edge ≥2%, odds ≤2.50 | n | ROI | 95% CI |
+|---|---|---|---|
+| before 2026-09-02 | 79 | **+0.99%** | [−20.63, +22.62] |
+| on/after 2026-09-02 | 46 | **+40.02%** | [+13.42, +66.62] |
+
+**Same jump, same dates, one book, constant pool.** The effect is real in the
+data and is not manufactured by best-of-books selection (§52/§55) — but it is
+**twelve days long and rests on n=46 at the single book that can see both eras.**
+For 26 of the 37 days, the rule returns +0.99% at n=79, which is nothing.
+
+I cannot name a mechanism that changed on 2026-09-02. Retention does not explain
+it (the 7-day boundary is 09-07). The honest reading is that this is either a
+regime we do not understand or twelve days of good luck, and **n=46 cannot
+distinguish those.**
+
+## 4. The price-ratio cap
+
+`ratio = book_odds / anchor_odds − 1`. The whole sweep sits inside production's
+ODDS-OUTLIER-FILTER (×1.35 / ×1.30). The 20–35% band — **below** that cap — is
+where the money goes, and the coordinator's measurement reproduces here:
+
+| band, publish rule, pooled | n | ROI | junk control |
+|---|---|---|---|
+| 0–10% | 139 | −3.11% | −2.61% (n=4,036) |
+| 10–20% | 389 | −8.20% | +5.69% (n=304) |
+| **20–35%** | 167 | **−18.06%** | **−17.23%** (n=91) |
+
+| cumulative cap | n | ROI | 95% CI |
+|---|---|---|---|
+| ≤35% (production) | 695 | −9.55% | [−18.8, −0.3] |
+| ≤25% | 627 | −7.87% | [−17.5, +1.8] |
+| ≤20% (PICKS rule v2) | 528 | −6.86% | [−17.3, +3.5] |
+| ≤15% | 364 | +3.17% | [−9.1, +15.4] |
+
+**The band effect also reproduces under a junk anchor** (−17.23%, same sign and
+size). So a price far above the sharp line loses *regardless of whether our
+selection carries information* — it is a fact about where books misprice, not
+evidence that the overlay works. The cap is hygiene, not edge.
+
+**Recommendation: keep the PICKS rule's ≤20%. Do not tighten to 15%** — that is
+the tightest of five values chosen after seeing the data, and its CI still spans
+zero.
+
+## 5. Where the ROI-floor grid's positive cells lived
+
+For the record, since the grid is what was swept: the 41 positive cells sit at
+edge floor 1% (39 of 41), odds floor ≤1.50 (41 of 41), lead ≥60 min (27 of 41),
+POOLED or Epicbet (41 of 41). The best — `POOLED · 1x2 · home · edge ≥1% · odds
+1.01–8.00 · ratio ≤15% · lead ≥60` — reads n=104, +31.67%, CI [+6.6, +56.7], no
+losing fold, OOS +43.5%.
+
+It fails on its own terms: own-book CLV is **−5.23% EV** on the same legs, and
+removing the `lead ≥60` dimension (an era selection, §7) collapses it to +7.29%,
+n=262, CI [−8.1, +22.6], fold 1 −3.7%. It is a worse candidate than the
+probability-gate family in §1 and is not recommended.
+
+## 6. The sharp bots' CLV was inflated — confirmed twice
 
 `settle_shadow_bets` prefers the bet's own book for the close
 (SHADOW-CLV-BOOKMAKER-FIX-2026-08-26) but **falls back to the unfiltered
 `get_closing_odds`**, whose own docstring says comparing a price against an
 arbitrary book "makes the resulting CLV structurally positive regardless of
-whether the bet had any edge". Rows where that fallback fired carry
-`closing_bookmaker IS NULL` — and they are 26–48% of each bot's CLV rows:
+whether the bet had any edge". Those rows carry `closing_bookmaker IS NULL` and
+are 26–48% of each bot's CLV. *(Independently reproduced by the verification:
++14.31% unanchored vs +8.28% own-book.)*
 
-| bot | close anchored at | n | raw CLV | EV (m=7.6% flat) | t | span |
-|---|---|---|---|---|---|---|
-| `bot_coolbet_trigger_sharp_1x2_v1` | **Coolbet** | 66 | +4.51% | **−2.87%** | −3.13 | 09-11..09-13 |
-| " | *(unanchored)* | 42 | +14.78% | +6.67% | +3.65 | 09-09..09-11 |
-| `bot_coolbet_trigger_sharp_ou_v1` | **Coolbet** | 20 | +6.35% | **−1.16%** | −0.68 | 09-12..09-13 |
-| " | *(unanchored)* | 12 | +10.47% | +2.67% | +1.40 | 09-09..09-11 |
-| `bot_unibet_trigger_sharp_1x2_v1` | **Unibet-Site** | 67 | +12.05% | **+4.13%** | +2.12 | 09-11..09-13 |
-| " | *(unanchored)* | 23 | +16.69% | +8.45% | +2.60 | 09-09..09-11 |
-| `bot_unibet_trigger_sharp_ou_v1` | **Unibet-Site** | 11 | +8.38% | **+0.72%** | +0.25 | 09-11..09-13 |
-| " | *(unanchored)* | 10 | +11.46% | +3.58% | +1.19 | 09-09..09-11 |
+And **`m` is not a constant.** Correcting with the closing book's **own**
+per-fixture margin (`settlement.closing_book_margin()`) instead of a flat 7.6%:
 
-Three consequences:
+| bot | close at | n | raw CLV | book's own m | **EV** | t | exec ROI | span |
+|---|---|---|---|---|---|---|---|---|
+| `bot_coolbet_trigger_sharp_1x2_v1` | **Coolbet** | 66 | +4.51% | 7.63% | **−2.84%** | **−2.85** | +10.87% | 09-11..09-13 |
+| " | *unanchored* | 42 | +14.78% | — | n/a | | −14.02% | 09-09..09-11 |
+| `bot_coolbet_trigger_sharp_ou_v1` | **Coolbet** | 20 | +6.35% | 6.46% | −0.05% | −0.03 | +28.07% | 09-12..09-13 |
+| `bot_unibet_trigger_sharp_1x2_v1` | **Unibet-Site** | 67 | +12.05% | 8.60% | **+3.15%** | **+1.67** | −9.03% | 09-11..09-13 |
+| `bot_unibet_trigger_sharp_ou_v1` | **Unibet-Site** | 11 | +8.38% | 6.75% | +1.51% | +0.56 | −18.82% | 09-11..09-13 |
 
-1. **The unanchored rows read 4–10pp higher than the own-book rows on every
-   bot.** That is not a coincidence in four of four; it is the artefact the
-   docstring predicts. Pooling the two is what produced the headline figures.
-2. **On own-book close, `bot_coolbet_trigger_sharp_1x2_v1` is significantly
-   NEGATIVE** (−2.87%, t=−3.13), not +0.84%. Only `bot_unibet_trigger_sharp_1x2_v1`
-   is positive with |t| > 2, at n=67.
-3. **The whole evidence base is 2026-09-09 → 2026-09-13 — five days, and the
-   own-book-anchored part is three.** A CLV measured over three days is not a
-   track record. `odds_at_pick` equals `odds_at_pick_live` on every one of these
-   rows, so at least the price basis is clean.
+**The flat m inverted a significance verdict.** At m=7.6%,
+`bot_unibet_trigger_sharp_1x2_v1` reads t=+2.12 — significant. At its book's
+real 8.60% margin it reads t=+1.67 — not. That correction is now pinned by the
+smoke test.
 
-🚧 These EVs still use the flat m = 7.6%. The correct denominator is the closing
-book's **own** margin per fixture (`settlement.closing_book_margin()`), and the
-per-book spread (Coolbet 7.8%, Epicbet 8.0%, Unibet-Site 10.5%) is wide enough to
-move the Unibet numbers materially — plausibly to flip
-`bot_unibet_trigger_sharp_1x2_v1` from +4.1% toward +1.4%. The sweep's own
-leg-level CLV already uses the per-fixture book margin; only this table does not.
+On the honest basis **not one of the four is significantly positive**, and the
+only significant result is `bot_coolbet_trigger_sharp_1x2_v1` being **negative**.
+The whole evidence base is 2026-09-09 → 09-13; the own-book-anchored part is
+three days.
 
-## 7. What this data cannot tell you
+## 7. What the data structurally cannot tell anyone
 
-**The usable window is 38 days, not 150.** `prune_old_simple` keeps only
-`is_opening`, `is_closing` and the latest pre-kickoff row per series after 7 days
-(ANALYSIS_GOTCHAS §59), and our books had almost no `is_closing` anchors before
-2026-09-11. Worse, pre-kickoff Coolbet 1x2 coverage is effectively **zero before
-2026-08-03** (2–9 fixtures/week, against 300–2,000 after). So:
+**The usable window is 37 days, and it is a near-closing-price backtest for 33 of
+them.** `prune_old_simple` keeps only `is_opening`, `is_closing` and the latest
+pre-kickoff row per series after 7 days (ANALYSIS_GOTCHAS §59); at our books
+before 2026-09-07 that is literally one row per series.
 
-| book | first usable pre-kickoff, time-alignable data |
+| book | first **time-aligned** leg |
 |---|---|
-| Coolbet | 2026-08-03 |
-| Epicbet | 2026-08-27 |
+| Coolbet | 2026-08-07 |
+| Epicbet | **2026-09-02** (corrected from 08-27) |
 | Unibet-Site | **2026-09-09** |
 
-**The lead-time dimension is not honestly sweepable.** Outside the 7-day
-retention window each series has exactly one surviving quote, so requiring a
-quote ≥60 or ≥240 min before kickoff selects on which era a fixture is from. The
-`lead 60` cells in §4 are contaminated by exactly this, which is a second reason
-not to believe them.
+Three consequences neither this document nor the verification can escape:
 
-**Own-book CLV is undefined on `lead 0` legs** — the leg *is* the last surviving
-pre-kickoff row, so its CLV is 0 by construction. It is computed only where a
-strictly later own-book quote exists, which is why several cells show `n/a`.
+1. **Outside the 7-day window the alignment filter is a coverage selection** —
+   "aligned ≤60 min" means "the book's last write happened within ~75 min of
+   kickoff", a property of the scraper's schedule.
+2. **Only near-closing prices can be evaluated.** An edge that is largest *early*
+   is invisible to both harnesses. This cuts **against** the negative result.
+3. **The live bots cannot be reproduced retrospectively** — they fire on
+   transient intraday prices retention has deleted. The backtest and the live
+   record measure different things over the same fixtures.
+
+**Own-book CLV — the one metric that converges fast enough to settle this (§8) —
+is uncomputable on every lead-0 cell**, because the leg *is* the last surviving
+pre-kickoff row. Neither side of this argument can use it there.
 
 ## 8. Recommendation
 
-**Do not build, promote, or stake anything on the sharp-edge rule at Coolbet,
-Epicbet or Unibet-Site. None of the 14,040 configurations clears the bar.**
+**Unchanged from the original, and now agreed by the verification: paper only,
+move no gate.** What changed is the reason — not "nothing works" but "one thing
+might, and it is twelve days old".
 
-Specifically:
+| # | Action | Why |
+|---|---|---|
+| 1 | **Move no floor, cap or gate** — not the 3% sharp floor, the 4.0 ceiling, the 2.80 placer floor, the 13% home-dog floor. | §60, a fourth time. The candidate family rests on n=46 at the only book that spans both eras. |
+| 2 | **Run the §1 family as a PAPER shadow bot**, tagged so its own-book CLV becomes readable once NEAR-KICKOFF-CAPTURE has been writing long enough: `P_shin − 1/odds ≥ 0.02`, `odds ≤ 2.50`, 1x2 + O/U 2.5, aligned ≤60 min, production outlier guard, ≤20% ratio cap. | It is the only configuration that survives a matched control, and it cannot be settled retrospectively — retention deleted the prices. Forward-running it is the only way to learn anything. **Not a euro of stake.** |
+| 3 | **Keep the PICKS rule's ≤20% ratio cap; do not tighten to 15%.** | The leak is real and reproduces, but it reproduces under a junk anchor too. Hygiene, not edge. |
+| 4 | **Do not promote `bot_unibet_trigger_sharp_1x2_v1`.** | +3.15% EV, t=+1.67, n=67, three days — and its Coolbet twin on the identical rule is significantly negative. |
+| 5 | **Fix the CLV fallback in `settle_shadow_bets`**: leave `clv` NULL when the bet's own book has no closing row. | It manufactures 4–10pp of apparent edge on exactly the bots the OWN path is judged on. Confirmed independently. **Still the highest-value item here**, and a correctness fix rather than a strategy change. Filed, not fixed — `settlement.py` is owned by another agent this session. |
 
-* **Do not change any floor, cap or gate on the strength of this sweep.** That
-  includes the 3% sharp floor, the 4.0 odds ceiling, the 2.80 placer floor and
-  the 13% home-dog floor. The sweep supports none of them and refutes none of
-  them; it says the whole family is indistinguishable from the vig.
-* **Do not promote `bot_unibet_trigger_sharp_1x2_v1`** on its +4.1% own-book EV.
-  n=67 over three days, and its Coolbet twin on the identical rule is
-  significantly negative. Two bots on one rule pointing opposite ways at n≈66 is
-  a sample-size statement, not a book-selection finding.
-* **Do fix the CLV fallback.** `settle_shadow_bets` writing an arbitrary-book
-  close into `clv` when the own book has no closing row is manufacturing 4–10pp
-  of apparent edge on the exact bots the OWN path is being judged on. Leaving
-  `clv` NULL is the honest behaviour, and `closing_bookmaker` already records
-  which happened. **This is the single highest-value change in this document**
-  and it is a correctness fix, not a strategy change. (Filed, not fixed here —
-  `settlement.py` is being edited by another agent.)
-* **Keep collecting.** Every conclusion here is bounded by a 38-day window and a
-  five-day Unibet-Site history. The right move is to let the paper bots run and
-  re-read this in eight weeks, not to act now.
+**Confidence.**
 
-**Confidence.** High that no configuration in this grid is demonstrably
-profitable — the negative control, the vig baseline and the fold/CLV
-contradictions all agree. Moderate that the family is genuinely negative rather
-than merely undemonstrated: the pooled −9.55% has a CI that barely excludes zero
-and the junk anchor loses less, which is suggestive but not decisive. Low on
-anything per-book — Unibet-Site has five days of history and Epicbet's positive
-point estimate cannot be separated from noise.
+* **High** — the harness is correct. Two independent implementations, six
+  identical dipstick figures, and a well-calibrated anchor.
+* **High** — the sharp-bot CLV headline was inflated by the unanchored-close
+  fallback, and no bot is significantly positive once corrected per-fixture.
+* **High** — the ROI-floor grid contains no defensible configuration, and my
+  original claim that this covered "all" configurations was wrong.
+* **Low-to-moderate** — that the probability-gate family is a real edge. It
+  survives a matched control and has no losing fold, but 26 of its 37 days return
+  +0.99% and the post-09-02 jump rests on n=46 at the one book that can see both
+  eras. Detecting the +3% that would actually matter needs ~3.7 years at this
+  pick rate.
+* **Low** — anything per-book. Epicbet has 11 aligned days, Unibet-Site 4.
 
-**A negative result is the result.** The OWN automated-betting path was already
-closed on structural grounds (`OWN_PATH_VERDICT_2026_09_14.md`: best-of-three
-residual overround 5.66%, 2.8× the kill threshold). This sweep is the
-complementary test — not "is there dispersion to harvest" but "does the sharp
-overlay pay" — and it returns the same answer from the other direction.
+**On process.** The thing that caught the real error was not a better statistic,
+it was a second agent told to break the result rather than check it. The gate-form
+mistake (§0 #1) was invisible from inside my own framing: I swept the dimension I
+had named, exhaustively, and reported exhaustiveness — which is precisely how a
+grid search launders a missing dimension into a negative result. Worth repeating
+on any finding that closes a product line.
