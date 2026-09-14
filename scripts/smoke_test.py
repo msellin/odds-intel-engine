@@ -41802,5 +41802,48 @@ def test_picks_forward_test_scheduled():
         "broken harness is undetectable"
     )
 
+
+@test("BOT-STATUS-BOARD — one verdict basis, and it is CLV not ROI")
+def test_bot_status_board():
+    """BOT-STATUS-BOARD (2026-09-14) — the owner could not tell which bots work.
+
+    /admin/shadow-bots lists dozens of rows with no verdict, so "is this one
+    working?" is unanswerable at a glance — and the number most visible there,
+    ROI, points the WRONG WAY on real bots in the current fleet:
+
+        bot_v10_all              ROI  +9.99 pct   EV -3.77 pct
+        bot_1h_1x2_paper_shadow  ROI  +4.81 pct   EV -6.25 pct
+        bot_corners_paper_shadow ROI  +9.60 pct   EV  none computable
+
+    Anyone choosing a bot to back by scanning ROI picks a loser. This pins the
+    three choices that make the board honest, because each has already been got
+    wrong once this week:
+
+      1. own-book only — rows without `closing_bookmaker` came through the
+         retired arbitrary-book fallback and read 4-10pp high.
+      2. per-row margin — `clv` is a RAW price ratio, so break-even is the
+         closing book's own margin. A flat average inverted a verdict.
+      3. CLV, never ROI — per-bet sd ~1.3 means a true +3 pct ROI needs ~15,600
+         bets to confirm; CLV converges ~200x faster (§8).
+    """
+    src = _engine_path("scripts/bot_status_board.py").read_text()
+
+    assert "closing_bookmaker" in src, (
+        "the board must exclude rows with no own-book close — they came through "
+        "the arbitrary-book fallback and are biased positive"
+    )
+    assert "closing_book_margin" in src, (
+        "the board must correct CLV by the CLOSING BOOK'S OWN per-row margin, "
+        "not a flat average — a flat m inverted a verdict on 2026-09-14"
+    )
+    assert "CANNOT promote" in src or "cannot promote" in src.lower(), (
+        "the board must state that ROI cannot promote a bot at any value"
+    )
+    assert "NO VERDICT POSSIBLE" in src, (
+        "a bot with no own-book closes must render as UNJUDGEABLE, never as its "
+        "unanchored ROI — bot_corners_paper_shadow_v1 reads +9.60 pct and means "
+        "nothing"
+    )
+
 if __name__ == "__main__":
     main()
