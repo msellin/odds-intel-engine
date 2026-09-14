@@ -61,3 +61,66 @@ are therefore about surfacing, not fixing.
 Staking or publishing the sharp anchor; re-deriving the 2.2 odds floor from the
 window that produced it; running the exploratory grid over five days; adding
 `pinnacle_implied_*` to MFV to "fix" P1-6.
+
+---
+
+# Defect register — everything confirmed wrong, 2026-09-13/14
+
+Separate from the task list above: this is *what is broken*, not *what to do*.
+Every row is confirmed by reading code, querying the live DB, or both. Suspicions
+are marked as such and kept at the bottom. Nothing here is inferred from a doc.
+
+**Impact scale:** 🔴 changes what we believe or stake · 🟠 wrong numbers reach a
+decision · 🟡 real but bounded · ⚪ latent (correct today, wrong on the next change)
+
+## A. Model & algorithms
+
+| # | Defect | Impact | Status | Comment |
+|---|---|---|---|---|
+| A1 | **1X2 home/away swapped on every served prediction** since 2026-05-10. `train.py` maps home→0; inference read `probs[2]` under a comment assuming the opposite. | 🔴 AUC(home) **0.4151 served vs 0.5892 correct** on 4,658 matches. corr with home-win **−0.165**. A predictive model served backwards for 4 months. | ✅ Fixed | Survived because **every offline evaluator indexed `classes_` correctly** — it scored fine everywhere and was wrong only in production. Third instance of this exact class. Production impact today was small (29 of 1,947 candidates change gate) *only because* alpha had already been driven to ~0 — the system defended against it without anyone noticing. |
+| A2 | **ELO and form in the training table contain the match's own result.** `update_elo_ratings()` writes post-match ELO stamped with the match date, and runs *before* the ETL reads `date <= date_str`. | 🔴 **79.5% of training rows** affected. Stored `elo_diff` AUC **0.745** vs **0.617** genuinely pre-match. elo+form = **39% of 1X2 importance**. | ⬜ Open | The tell is that 0.745 is **above the de-vigged market's 0.727** — an ELO cannot out-predict the market. This is why the model is still worse than the base rate even after A1 is fixed (0.7283 vs 0.6817). |
+| A3 | **O/U Platt curve fitted on raw probs, applied to Pinnacle-shrunk probs.** Range collapsed to [0.3028, 0.6663], fixed point 0.4713. | 🔴 Of 142 picks published after it shipped, **only 2 (1%)** cleared their floor without the sigmoid lift. Drove `bot_v10_all` 14.6%→**69.9%** O/U share and +38.5%→**−15.0%** ROI; **−€467** drawdown. | ✅ Fixed (mig 335) | The fitter's own out-of-sample ECE check *passed* — it validated a function production never executes. Average ECE is the wrong loss for a curve whose only job is to feed a tail gate. |
+| A4 | **`pinnacle_implied_home/draw/away` are phantom features** — in `feature_cols.pkl`, not columns of `match_feature_vectors`. | 🟠 `None → 0.0` with the missing-flag pinned to 1 on **100% of production rows, forever.** ~6% of importance dead. | ⬜ Open | The weekly retrain passes `--include-pinnacle`; the comment immediately above it rejects `--include-drift` for *precisely this reason*. ⚠️ Cannot be fixed by adding the column — training takes the latest pre-KO Pinnacle price, i.e. effectively the close. |
+| A5 | **Post-hoc backfilled features (train/serve skew).** Written by 23:05–23:45 UTC crons, after the match. | 🟠 `season_progress` 2.0% NULL in training vs **96.5% live**; `league_clv_efficiency` 62.1% vs **100%**; `line_velocity` 74.1% vs 100%. | ⬜ Open | Dense in training, absent at serve — the exact signature of "scores well offline, adds nothing live". |
+| A6 | **Imputation differs between training and serving.** Training fills the per-league mean; serving fills `0.0`. | 🟠 A missing `opening_implied_home` is ~0.45 in training and 0.0 at serve — a different tree leaf. | ⬜ Open | The serving code has a comment acknowledging the mismatch and calling it acceptable. It isn't. Separately, the per-league means are computed over the whole frame *before* `TimeSeriesSplit`, so CV folds see future-fold means. |
+| A7 | **O/U blend weight is the 1x2 blend weight.** `load_blend_weight()` only ever reads `blend_weight_1x2*`. | 🟡 O/U blended 83/17 Poisson/XGB on a weight nobody fit for it. | ⬜ Open | No `blend_weight_ou*` row has ever existed. Low leverage now — it scales a leg that gets 23% weight on O/U, 0.85% on 1x2. |
+| A8 | **Draw `cal_prob` is effectively a constant.** | 🟡 Live draw picks span **[0.3050, 0.3072], sd 0.0004** (n=96). | ⬜ Open | `1x2_draw` Platt is a=0.3907 — the flattest curve in the table. We emit a fixed number and call it a probability. Found while verifying an unrelated claim. |
+| A9 | **`train_ah_xgboost.py:200` uses `StratifiedKFold(shuffle=True)`** — a random split on football data. | 🟡 Leaks through team-strength features. AH head only. | ⬜ Open | `train.py` and `train_b_ml3.py` both use `TimeSeriesSplit` correctly, so this is an isolated regression, not a house style. |
+| A10 | **Isotonic bundles unreachable for O/U** — named `isotonic_over_25.pkl`, looked up as `over_under_25_over`. | ⚪ Latent | ✅ Fixed | Inert because `STAGE2_CALIBRATOR` defaults to platt — which is *why* it could sit unnoticed: flipping that env var would have read as "isotonic changes nothing" rather than "isotonic never loaded". |
+
+## B. Data & pipeline
+
+| # | Defect | Impact | Status | Comment |
+|---|---|---|---|---|
+| B1 | **Shadow CLV computed against an arbitrary book.** `get_closing_odds()` called with no bookmaker. | 🔴 **66.9% of all CLV (106,726 of 159,614 rows)** has no known closing book. Every bot decision rests on this column. | ⬜ Open | The function's own docstring says the unfiltered form "is not well defined… which book wins can change between two runs of the same query". `DIRECT-BOOK-CLV` solved this for `real_bets` in migration 332 and was never ported. |
+| B2 | **`recommended_bookmaker` NULL on 20% of trigger-bot rows** (~33% on the sharp 1x2 bots). | 🟠 488 of 2,445 rows cannot be priced executably even in principle. This is the n=140→89 gap. | ⬜ Open | Recoverable **with certainty** from the bot name via `BOOK_MARKET_BOTS`. ⚠️ Do *not* backfill by price-matching — only 36% of 400 sampled rows resolve to exactly one book. |
+| B3 | **1xBet files 0.25-goal Asian totals under `market='over_under_25'`.** | 🟠 `ou25_bookmaker_disagreement` is max−min across books, so **one** mislabelled row sets the max. Live MFV max **0.9401** against a mean of 0.0534; 138 rows >0.30. It is a *training* feature. | ✅ Fixed | Fixed by keying on `handicap_line` in all three query paths, not by blacklisting the book — a blacklist only chases whoever does it today. |
+| B4 | **`store_odds()` never wrote `handicap_line`** — one of three writers missed by OU-LINE-BACKFILL. | 🟡 Its rows landed NULL; any cross-book join keyed on the line dropped them silently. | ✅ Fixed | The line was never ambiguous there — it's in `line_label`. |
+| B5 | **`odds_drift_home`/`steam_move` built from an unbounded query** — no `is_live=false`, no pre-kickoff bound. | ⚪ Latent | ⬜ Open | "Latest snapshot" can be an **in-play** price on a finished match. Currently inert (not in `FEATURE_COLS`; the meta-model uses bounded `*_at_t6h` variants) but it is a loaded gun in a shared builder. |
+| B6 | **`simulated_bets.pnl` is priced at `odds_at_pick`** — the highest price ever *seen*, not one on offer. | 🟠 Raw column is **€447 optimistic** across all bots (−€39.79 stored vs −€487.15 executable). `bot_v10_all` +6.65% vs +3.10% ROI. | 📋 Documented | Not a bug — the UI was already fixed to the executable price in 2026-09-05. It is a **trap**: I summed the raw column mid-investigation and quoted an inflated drawdown. Now in `ANALYSIS_GOTCHAS`. When the page and your query disagree, the *query* is wrong. |
+
+## C. Settlement & grading
+
+| # | Defect | Impact | Status | Comment |
+|---|---|---|---|---|
+| C1 | **`_r_ou_goals` graded an unreadable O/U line as LOST — on both sides.** | ⚪ Latent | ✅ Fixed | `over_under_275` parses as 275.0, fails the 0<v<10 check, returns None → `return False`. Exactly the "unrecognised market becomes a silent loss" failure the resolver registry's own header says it was built to remove, still alive inside one resolver. Not reachable today (pipeline offers only 05/15/25/35/45) but the error is asymmetric: refusing alerts, guessing settles wrong silently. |
+| C2 | **Integer O/U lines graded both sides as lost instead of a push.** | ⚪ Latent | ✅ Fixed | `over_under_30` with exactly 3 goals satisfies neither `>` nor `<`. The book returns the stake; we recorded two losses. |
+
+## D. Measurement & process — the category that actually cost the most
+
+| # | Defect | Impact | Status | Comment |
+|---|---|---|---|---|
+| D1 | **No test ever scored production's own output against reality.** | 🔴 This is *why* A1 survived four months. Every offline evaluator re-implements the read from `classes_`, and all of them were right. | ✅ Fixed | `MODEL-OUTPUT-CALIBRATION` now does it. Two lessons in its docstring: the first version checked only `source='ensemble'` and **passed on the very bug it was written for** (the blend is 86% Poisson, reading +0.090 while the raw head underneath was −0.168 — a blend can mask an inverted leg indefinitely); and it is scoped to post-fix rows because a red-on-arrival test gets ignored. |
+| D2 | **`ll_model` / `ll_market` computed every run and discarded.** | 🔴 The cleanest model-vs-market skill comparison in the system, printed to stdout since May. | ✅ Fixed (mig 338) | Alongside it, the shrinkage alpha — a continuously-refitted, 60k-sample measurement of "does our model add anything" — read **0.0085 (1x2 t1)** and **exactly 0.0000** on two tiers, and nobody read it either. |
+| D3 | **`clv_pinnacle` is partly circular** with the sharp selection rule. | 🟠 R²=0.386. Split by whether Pinnacle moved: static lines **+14.95%**, genuinely moved >5% **+2.42%, t=+1.1 — not significant**. | 📋 Recorded | My own +13.18%→+9.21% haircut understated it. Fix is to make the movement split a standing evaluation column so no sweep can report a Pinnacle-anchored CLV without it. |
+| D4 | **`n ≥ 334` promotion gate is calibrated to the wrong effect size.** | 🟠 Observed CLV sd 0.147 ⇒ n=**10** suffices at a +9.2% effect. 334 assumes ~2%. | 📋 Recorded | Mine. Power was never the binding constraint — **bias** was. Accruing to 334 inside one regime tightens a biased estimate. |
+| D5 | **Two tests pinned a reality that had changed**, one pre-existing and one self-inflicted. | 🟡 CI was red before this session started, masking every other regression those tests covered. | ✅ Fixed | `REAL-BETS-CLV-EDGE-SCHEMA` asserted a literal SQL string that a correct fix had rewritten; `OU-PLATT-UNFITTABLE` asserted rows my own migration deleted. My ripple-check grepped `docs/` and `*.md` but not `scripts/` — **the test suite is part of the doc surface**. |
+| D6 | **`/performance` event markers had not rendered in months.** | 🟡 Hardcoded `x="May 6"` inside a `period==="90d"` guard; Recharts matches a categorical x against values *present in the data*. | ✅ Fixed | A marker that renders nothing is indistinguishable from one nobody added. The guard checked the selected period, not whether the day was on the chart. |
+
+## E. Suspicions — not confirmed, do not act on yet
+
+| # | Suspicion | Why it matters | Next step |
+|---|---|---|---|
+| E1 | **~20% of model importance sits on `*_missing` indicators.** | They plausibly encode data-collection era or league rather than football, and the coverage regime differs at serve time. | Ablation test. |
+| E2 | **The Pinnacle veto (`gap > 0.12`) may be load-bearing in a way nothing documents.** | It is what currently stops 1x2 admitting the picks the sigmoid inflates — 11 of 87 candidates on a sample day. | Measure what 1x2 selection looks like with it off, before anyone "simplifies" it. |
+| E3 | **The O/U head may be substantially re-learning the market.** | Its top features are `pinnacle_implied_under25`/`over25`; market values are 23.7% of O/U importance. | Not a bug if true — a design limit, and a reason alpha decays rather than collapsing. |
