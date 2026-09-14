@@ -14,6 +14,18 @@
 >
 > See `ROADMAP.md` → "Current System State (2026-06-24)" for the
 > current truth.
+>
+> **Confirmed 2026-09-14 (PICKS-PAGE-SHOW-FORWARD-TEST):** `/picks` now serves
+> the pre-registered sharp-edge forward test and stays **free and ungated,
+> including signed-out**. This is not just inherited — it is forced. The same
+> picks are broadcast to the public Telegram channel the moment they are
+> generated, so gating them on the site would be theatre; and more importantly
+> the pre-registration requires the PUBLISHED set and the RECORDED set to be
+> identical, so a session-dependent cut would evaluate the stopping rules on a
+> cohort no reader ever saw. The old auth-aware split (PICKS-USER-GATE,
+> calibrated-only for anon vs calibrated+beta+active signed-in) went with the
+> model path; the new rule has one cohort by construction (top 8/day). Pinned by
+> smoke `PICKS-USER-GATE`.
 
 ## Tier Overview
 

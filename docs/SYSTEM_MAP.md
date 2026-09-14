@@ -183,9 +183,11 @@ Same-looking numbers, different meaning per screen. This is the glossary.
 
 | Where you see it | The number | What it actually is |
 |---|---|---|
-| **/picks** — "edge" | model edge | `cal_prob − 1/odds` at the price the pick was found. **There is NO edge gate on this page at all** — not 13%, not any value. It publishes every model pick from an eligible bot; the gate is at *placement*. (Corrected 2026-09-11: the old wording "NOT gated to 13% here" implied some other floor applied.) Also undocumented until now: a silent `.limit(300)` truncation, and a cohort split — signed-out sees `calibrated` only, signed-in sees `calibrated+beta+active`. |
-| **/picks** — "min odds" (public) | break-even | `1/cal_prob` (edge = 0). Below this the bet is −EV under our model. |
-| **/picks** — "place ≥ X.XX" (admin only) | placement trigger | the odds a pick must be offered at to clear the **real-money** floor: `1/(cal_prob − edge_floor)`. ⚠️ floor is **10%** for 1x2 home-underdogs (FAVLONG-CUTS), 8% O/U — and these are **hardcoded in TypeScript** (`upcoming-picks.ts`) with no import path to Python, so an engine floor change never reaches this hint. See §4d. |
+| **/picks** — "Edge vs sharp" | **sharp edge** | `P_shin × best_book_price − 1`, a MULTIPLICATIVE edge against the Shin-de-vigged Pinnacle line. **REPOINTED 2026-09-14** (PICKS-PAGE-SHOW-FORWARD-TEST): this column used to be a MODEL edge (`cal_prob − 1/odds`, a probability-point difference) from `simulated_bets`. Different ruler AND different arithmetic — the two are not comparable, and a number that shrank from +8.5% to +5.3% across that date did not get worse. Gate: edge ≥ 3%, odds ≤ 4.0, anchor/bet quote within 60 min, top 8/day. No cohort split, no session branch, no `.limit(300)` cohort truncation — the rule caps at 8 a day. |
+| **/picks** — "min X.XX" (public) | break-even | `1/P_shin` — below this the pick is −EV **against the sharp line**. Was `1/cal_prob` (−EV under our model) until 2026-09-14. Same purpose, different estimator; separate functions in separate modules so the two can never be mixed. |
+| **/picks** — "place ≥ X.XX" (admin only) | ❌ **REMOVED 2026-09-14** | The admin placement-trigger hint went with the model path — there is no model probability on this page to derive one from, and the OWN betting path closed the same day (`docs/OWN_PATH_VERDICT_2026_09_14.md`). The floors themselves are unchanged and still live in `coolbet_placer.py`; only this display is gone. |
+| **/picks** — "Running result" | **live forward test** | ROI = `SUM(pnl)/COUNT(*)` at a flat 1 unit over settled (won+lost) picks, with its n and a 95% CI, from `picks_forward_test_summary`. The +5.5% BACKTEST is never rendered here: its CI includes zero and it was computed on the window that chose the rule's own parameters. Smoke `PICKS-FORWARD-TEST-SURFACE`. |
+| **/picks** — per-pick "CLV" | raw price ratio | `odds/closing_odds − 1` at the pick's OWN book, **no de-vig**. Break-even on it is that book's margin (7.8–11.3% depending on the book), NOT zero. The margin-corrected figure `(1+clv)/(1+m)−1` is the decision variable and is what the "Closing-line value" summary shows. |
 | **/shadow-bots** — bot "ROI" | realised | settled paper/real P&L at the executable price. Retired bots' losses are in the "including retired" total only. |
 | **/shadow-bots** — bot "CLV" | closing-line value | edge vs the closing line — the leading indicator; ROI is noisier at low n. |
 | **`value_v1` / line-shop** — "edge ≥ 3%" | sharp edge | `P_sharp − 1/odds`. A different edge from /picks (§1). |
@@ -312,6 +314,13 @@ hint, the trigger bots, and this map all read."* Audited 2026-09-11:
   real-money path the MOST permissive on aways and home-favs, the exact selections
   FAVLONG-CUTS excluded). Rule: **two policies, both must pass, stricter wins** —
   the per-bot threshold AND the market/selection floor.
+- ℹ️ **Superseded in part, 2026-09-14 (PICKS-PAGE-SHOW-FORWARD-TEST).** `/picks`
+  no longer renders the `place ≥` hint or any model-derived floor — it publishes
+  the model-free forward test (§3). `upcoming-picks.ts` and the generated
+  `engine-floors.ts` are UNCHANGED and still correct: they are read by the
+  model-era surfaces (`/api/v1/track-record`) and pinned by
+  `FLOORS-ONE-SOURCE-CROSS-LANGUAGE`. The consolidation recorded below still
+  holds; only the /picks display it fed is gone.
 - ✅ **The frontend now DERIVES its floors.** `/picks` used to hardcode `0.1/2.8`
   and `0.08/1.8` in TypeScript with no import path to Python, so an engine floor
   change never reached the published "place ≥" hint readers act on. The engine now

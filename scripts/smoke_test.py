@@ -24507,86 +24507,70 @@ def _():
     )
 
 
-@test("PICKS-COHORT-ALIGN — /api/v1/upcoming filters match /api/v1/track-record")
+@test("PICKS-COHORT-ALIGN — /picks and /api/v1/upcoming serve one cohort, from one definition")
 def _():
-    """The public /picks feed used to include inplay-bot picks and could
-    include retired-bot picks, while /performance's ledger excludes both.
-    Telegram subscribers clicking through from /picks → /performance saw
-    picks disappear from the ledger — same trust-loss class as the
-    LANDING-COMP-COHORT-DISCLOSURE 2026-07-06 issue.
+    """Originally (2026-08-21): /picks and /api/v1/upcoming had to apply the
+    IDENTICAL bot-cohort filter as /api/v1/track-record, so that every pick a
+    Telegram subscriber clicked through on would later appear on the ledger.
+    Same trust-loss class as LANDING-COMP-COHORT-DISCLOSURE.
 
-    Both endpoints must apply the identical cohort filter so every
-    /picks row lands on the ledger once settled.
+    PICKS-PAGE-SHOW-FORWARD-TEST (2026-09-14) — THE PREMISE IS GONE, DELIBERATELY.
 
-    Pins on both files:
-      1. maturity_label IN ('calibrated','beta','active') (via PUBLIC_MATURITY_LABELS)
-      2. NOT LIKE 'inplay_%%'  (pre-match only)
-      3. retired_at IS NULL    (excludes retired bots)
-      4. market whitelist matches PRE_MATCH_MARKETS
+    /picks and /api/v1/upcoming now serve `picks_forward_test`, which by design
+    NEVER lands on /api/v1/track-record's ledger: that ledger is `simulated_bets`
+    from the model-anchored era, priced on an edge migration 335 showed was
+    manufactured, and surviving in 2 bots of 46. Migration 342's header says why
+    these picks are kept out of bot-cohort queries. Asserting the two cohorts
+    match would now be asserting the contamination we just removed.
+
+    Rewritten to the invariant that survives the change, which is the one that
+    was always doing the work: ONE definition of the published cohort, both
+    surfaces resolving it, and no surface re-implementing it. The
+    track-record endpoint keeps its own internal filters, checked here too —
+    it still serves the model-era ledger and must stay narrow.
     """
-    # SMOKE-SUITE-AUDIT 2026-09-06 — the filters moved, correctly, and the
-    # test went red for the best possible reason.
-    #
-    # DUPLICATED-BUSINESS-RULES-AUDIT (odds-intel-web 2ff894f, 2026-09-05)
-    # deleted /api/v1/upcoming's line-for-line copy of the query, the dedupe
-    # and the row mapping; the route now delegates to
-    # `lib/upcoming-picks.ts:fetchUpcomingPicks`. The old assertions looked
-    # for `.is("bots.retired_at", null)` inside the ROUTE file, so collapsing
-    # two copies into one failed the test — while two copies quietly drifting
-    # apart, which is precisely how the landing and /performance published
-    # +13.10% and +17.39% for identical bets on 2026-09-05, passed it.
-    #
-    # Assert the invariant instead: the cohort rule exists exactly once, the
-    # route reaches it rather than re-implementing it, and both published
-    # surfaces resolve the same rule.
     upcoming = _web_path("src/app/api/v1/upcoming/route.ts").read_text()
     track = _web_path("src/app/api/v1/track-record/route.ts").read_text()
-    lib = _web_path("src/lib/upcoming-picks.ts").read_text()
+    lib = _web_path("src/lib/forward-test-picks.ts").read_text()
+    page = _web_path("src/app/picks/page.tsx").read_text()
 
-    # (1) The single definition, in the shared fetcher.
-    assert "export async function fetchUpcomingPicks" in lib, (
-        "lib/upcoming-picks.ts must own the picks query — it is the one "
-        "definition both /picks and /api/v1/upcoming read."
+    # (1) one definition, in the shared fetcher
+    assert "export async function fetchForwardTestPicks" in lib, (
+        "lib/forward-test-picks.ts must own the published-picks query — it is "
+        "the one definition both /picks and /api/v1/upcoming read."
     )
-    for needle, why in (
-        ('.is("bots.retired_at", null)',
-         "exclude retired bots — a beta bot retired mid-flight still has "
-         "pending picks, and they must not reach /picks when the ledger "
-         "will never show them"),
-        ('"like", "inplay_%"',
-         "exclude in-play bots — /picks and the ledger both describe the "
-         "PRE-MATCH cohort"),
-        ("PRE_MATCH_MARKETS",
-         "gate on the pre-match market whitelist"),
-    ):
-        assert needle in lib, f"fetchUpcomingPicks must {why} ({needle} missing)"
-
-    # (2) The route must DELEGATE, not re-implement. A second query here is
-    # the whole failure mode; catch it by its unmistakable fingerprint.
-    assert "fetchUpcomingPicks" in upcoming, (
-        "/api/v1/upcoming must call the shared fetchUpcomingPicks."
+    # (2) both surfaces delegate; neither grows its own query
+    for f, name in ((upcoming, "/api/v1/upcoming"), (page, "/picks")):
+        assert "fetchForwardTestPicks" in f, f"{name} must call the shared fetcher"
+        assert '.from("simulated_bets")' not in f, (
+            f"{name} has grown its own simulated_bets query. That table is the "
+            f"model-era bot ledger; these picks are deliberately not in it."
+        )
+        assert '.from("picks_forward_test")' not in f, (
+            f"{name} reads the BASE table. Read picks_forward_test_public — the "
+            f"arm='live' filter lives in the view so the junk-anchor negative "
+            f"control cannot leak into a public surface."
+        )
+    # (3) the forward test must not be cross-linked to the model-era record.
+    #     Scan for an actual LINK, not the word — the page names /performance in
+    #     a comment explaining exactly why it must not link there, and a test
+    #     that forbids the explanation along with the link teaches the next
+    #     reader to delete the explanation.
+    import re as _re
+    _links = _re.findall(r'href=[{"\'`]+\s*/performance', page)
+    assert not _links, (
+        "/picks links to /performance again. That ledger belongs to the "
+        "model-anchored method and was priced on the manufactured O/U edge; "
+        "linking it from these picks implies a track record that does not "
+        "transfer to them."
     )
-    assert '.from("simulated_bets")' not in upcoming, (
-        "/api/v1/upcoming has grown its own simulated_bets query again. Two "
-        "implementations of one feed is exactly what "
-        "DUPLICATED-BUSINESS-RULES-AUDIT removed — they agree until someone "
-        "edits one."
+    # (4) the model-era ledger endpoint keeps its own narrow cohort
+    assert "PUBLIC_MATURITY_LABELS" in track, (
+        "track-record must gate on PUBLIC_MATURITY_LABELS — production "
+        "strategies only."
     )
-
-    # (3) Both published surfaces must resolve the same maturity cohort
-    # constant, imported from engine-data — never a local literal.
-    assert "PUBLIC_MATURITY_LABELS" in upcoming and "PUBLIC_MATURITY_LABELS" in track, (
-        "both endpoints must gate on PUBLIC_MATURITY_LABELS — production "
-        "strategies only, and the same set on each surface."
-    )
-    assert 'inplay_%' in track, (
-        "track-record/route.ts must filter out inplay bots — the ledger and "
-        "/picks describe the same pre-match cohort."
-    )
-    assert 'PRE_MATCH_MARKETS' in track, (
-        "the ledger must use the pre-match market whitelist. Drift would let "
-        "a market show on /picks but never land on the ledger."
-    )
+    assert 'inplay_%' in track, "track-record must filter out inplay bots"
+    assert 'PRE_MATCH_MARKETS' in track, "track-record must use the pre-match whitelist"
 
 
 @test("SHADOW-TELEGRAM — shadow-pick notifier + inplay gated off")
@@ -25263,115 +25247,53 @@ def _():
     )
 
 
-@test("PICKS-USER-GATE — public /api/v1/upcoming is calibrated-only, wider cohort signed-in only")
+@test("PICKS-USER-GATE — the published picks are ONE cohort, ungated, on every surface")
 def _():
-    """PICKS-USER-GATE-2026-08-22 — the public /api/v1/upcoming JSON feed
-    is narrowed to `maturity_label = 'calibrated'` so it matches the
-    Telegram public channel one-to-one. Signed-in visitors get the wider
-    calibrated + beta + active cohort via a server-side helper that is
-    never exposed as a route — anon scrapers can't pull beta+active picks
-    from the network tab.
+    """PICKS-USER-GATE-2026-08-22 gated the model-era feed: anon callers got
+    `maturity_label='calibrated'` only, signed-in visitors got the wider
+    calibrated+beta+active set server-side, and the wider set was reachable from
+    no route — so anon scrapers could not pull beta picks from the network tab.
 
-    Pins:
-      1. /api/v1/upcoming's PUBLIC_MATURITY_LABELS is ['calibrated'] only.
-      2. lib/upcoming-picks exports SIGNED_IN_MATURITY_LABELS with all
-         three cohorts, and there is NO client-fetchable route that
-         returns them.
-      3. /picks reads the session, branches on isSignedIn, and passes the
-         wider array only when authenticated.
+    PICKS-PAGE-SHOW-FORWARD-TEST (2026-09-14) — THAT GATE NO LONGER HAS ANYTHING
+    TO GATE, and pinning it would pin a surface that no longer exists.
+
+    The forward test has exactly ONE cohort by construction: the top 8 picks a
+    day by sharp edge, which are the rows recorded in the pre-registered ledger
+    and simultaneously broadcast to the public Telegram channel. There is no
+    wider tier to hold back. Splitting it by session would change WHAT IS BEING
+    MEASURED in a running pre-registration — the published set and the recorded
+    set must be the same set, or the stopping rules are evaluated on a cohort no
+    reader ever saw.
+
+    So the invariant flips: assert there is NO session branch on the published
+    picks path, and that the legacy cohort constants stay narrow for the
+    model-era ledger surface that still uses them.
     """
-    # SMOKE-SUITE-AUDIT 2026-09-06 — the gate is unchanged; its definition
-    # moved. DUPLICATED-BUSINESS-RULES-AUDIT (odds-intel-web 2ff894f,
-    # 2026-09-05) deleted the route's own `PUBLIC_MATURITY_LABELS` literal
-    # and made it import the one in lib/upcoming-picks.ts. The old test
-    # required the literal assignment to be IN THE ROUTE, so de-duplication
-    # failed it. Worse, once the route imported the symbol, the old
-    # `split("PUBLIC_MATURITY_LABELS")[1]` leak-scan was reading whatever
-    # text followed an import statement — it had stopped inspecting the
-    # cohort at all.
-    #
-    # The invariant is about what the ANON feed returns, not where the array
-    # is typed: the public list is calibrated-only, the wider list exists but
-    # is unreachable from any route, and /picks is what widens it.
-    lib = _web_path("src/lib/upcoming-picks.ts").read_text()
+    page = _web_path("src/app/picks/page.tsx").read_text()
     upcoming = _web_path("src/app/api/v1/upcoming/route.ts").read_text()
+    lib = _web_path("src/lib/upcoming-picks.ts").read_text()
 
+    for f, name in ((page, "/picks"), (upcoming, "/api/v1/upcoming")):
+        for gated in ("SIGNED_IN_MATURITY_LABELS", "isSignedIn", "getUser()"):
+            assert gated not in f, (
+                f"{name} branches on the session ({gated}). The forward test is "
+                f"one cohort: the picks published to the channel ARE the picks "
+                f"in the pre-registered ledger. A session-dependent cut makes "
+                f"the measured set differ from the published one."
+            )
+
+    # the model-era constants still exist and must stay narrow — /api/v1/track-record
+    # resolves the same name from engine-data and serves the old ledger.
     assert 'PUBLIC_MATURITY_LABELS = ["calibrated"]' in lib, (
-        "PICKS-USER-GATE: PUBLIC_MATURITY_LABELS must be exactly "
-        "['calibrated']. Widening it ships beta + active picks to "
-        "unauthenticated scrapers and defeats the whole gate."
+        "PUBLIC_MATURITY_LABELS must stay exactly ['calibrated']. It no longer "
+        "gates /picks, but widening it would widen the model-era surfaces that "
+        "still read it."
     )
-    # Pin the array contents directly rather than scanning nearby text.
     _public_arr = lib.split("PUBLIC_MATURITY_LABELS = [")[1].split("]")[0]
     for leak in ("beta", "active"):
         assert f'"{leak}"' not in _public_arr, (
-            f"PICKS-USER-GATE: PUBLIC_MATURITY_LABELS must not include "
-            f"'{leak}' — that cohort is the signed-in-only surface."
+            f"PUBLIC_MATURITY_LABELS must not include '{leak}'."
         )
-    # The route must consume the shared constant, never re-declare one.
-    assert "PUBLIC_MATURITY_LABELS" in upcoming, (
-        "PICKS-USER-GATE: /api/v1/upcoming must scope on "
-        "PUBLIC_MATURITY_LABELS."
-    )
-    assert "PUBLIC_MATURITY_LABELS = [" not in upcoming, (
-        "PICKS-USER-GATE: /api/v1/upcoming has re-declared its own "
-        "PUBLIC_MATURITY_LABELS. A second copy is how the gate gets widened "
-        "on one surface and not the other."
-    )
-    assert "SIGNED_IN_MATURITY_LABELS" not in upcoming, (
-        "PICKS-USER-GATE: /api/v1/upcoming must never reference the "
-        "signed-in cohort — this endpoint is fetchable with no session."
-    )
-    assert 'SIGNED_IN_MATURITY_LABELS = ["calibrated", "beta", "active"]' in lib, (
-        "PICKS-USER-GATE: lib/upcoming-picks must export "
-        "SIGNED_IN_MATURITY_LABELS with all three production maturity tiers "
-        "so the /picks server component can render the wider set for auth "
-        "users."
-    )
-    assert "export async function fetchUpcomingPicks" in lib, (
-        "PICKS-USER-GATE: fetchUpcomingPicks helper must live in a "
-        "server-only module — never inlined into an API route that a "
-        "browser could hit."
-    )
-
-    # No public /api/me/upcoming or similar client-fetchable route may
-    # ever return the wider cohort — a future refactor adding one would
-    # silently reopen the leak.
-    import glob as _glob
-    api_files = _glob.glob(
-        str(_web_root / "src" / "app" / "api" / "**" / "route.ts"),
-        recursive=True,
-    )
-    import re as _re
-    for path in api_files:
-        text = _pathlib.Path(path).read_text()
-        # Only flag actual imports — doc-comment mentions of
-        # SIGNED_IN_MATURITY_LABELS are fine (in fact, encouraged so
-        # future readers understand the boundary). An `import` line
-        # bringing the symbol into scope is the real leak.
-        if _re.search(
-            r"^\s*import\s.*SIGNED_IN_MATURITY_LABELS", text, flags=_re.MULTILINE
-        ):
-            raise AssertionError(
-                f"PICKS-USER-GATE: {path} imports "
-                "SIGNED_IN_MATURITY_LABELS — API routes must not return "
-                "the signed-in-only cohort. Move the caller into a "
-                "server component or reuse fetchUpcomingPicks from a "
-                "page render only."
-            )
-
-    page = _web_path("src/app/picks/page.tsx").read_text()
-    assert "SIGNED_IN_MATURITY_LABELS" in page and "PUBLIC_MATURITY_LABELS" in page, (
-        "PICKS-USER-GATE: /picks page must select between the two label "
-        "arrays based on auth — otherwise the wider cohort either leaks "
-        "to anon or never renders."
-    )
-    assert 'isSignedIn\n    ? SIGNED_IN_MATURITY_LABELS' in page or (
-        "isSignedIn" in page and "? SIGNED_IN_MATURITY_LABELS" in page
-    ), (
-        "PICKS-USER-GATE: /picks must branch maturity labels on "
-        "isSignedIn — otherwise anon visitors see beta + active picks."
-    )
 
 
 @test("MOVE-ACTIVE-TO-BETA — active taxonomy retired, dormant opt bots retired")
@@ -26391,7 +26313,27 @@ def test_picks_min_odds_2026_08_26():
             "PICKS-MIN-ODDS-WRONG-FORMULA-2026-09-05."
         )
     # Rendered on the page, and quiet next to the odds.
-    assert "min {p.min_odds.toFixed(2)}" in page, "picks page must render it"
+    #
+    # PICKS-PAGE-SHOW-FORWARD-TEST (2026-09-14): /picks no longer renders the
+    # MODEL break-even, because it no longer publishes model picks. The reader
+    # protection is unchanged and must not be lost — a pick posted at 3.00 is
+    # worthless well above 2.60 — so the page renders the SHARP break-even
+    # instead: 1 / P_shin, the reciprocal of the de-vigged sharp probability.
+    # Same purpose, different estimator; the two must never be mixed, which is
+    # why they are separate functions in separate modules.
+    ft = _web_path("src/lib/forward-test-picks.ts").read_text()
+    assert "export function sharpBreakEvenOdds" in ft, (
+        "the sharp break-even price must have ONE definition — it is published "
+        "to readers on /picks and is the only thing telling them the price has "
+        "moved past the point where the pick was worth taking."
+    )
+    assert "1 / p" in ft, (
+        "sharpBreakEvenOdds must be 1 / P_shin. Anything else is not a "
+        "break-even against the anchor the edge was computed from."
+    )
+    assert "sharpBreakEvenOdds" in page and "min {be.toFixed(2)}" in page, (
+        "picks page must render the break-even price next to the odds"
+    )
     assert "text-neutral-600" in page, "must stay visually quiet next to the odds"
 
     # ── The arithmetic, checked rather than described ────────────────────
@@ -41011,6 +40953,110 @@ def test_picks_forward_test_junk_arm_selects():
         "junk_anchor_arm no longer takes the full candidate pool; it can only "
         "be re-selecting from the live picks."
     )
+
+
+@test("PICKS-FORWARD-TEST-SURFACE — /picks shows the live arm, its CI, and never the backtest")
+def test_picks_forward_test_surface():
+    """PICKS-PAGE-SHOW-FORWARD-TEST (2026-09-14).
+
+    /picks read `simulated_bets` from calibrated bots. Migration 335 removed the
+    O/U Platt calibrator that had manufactured ~8-9pp of the published model
+    edge, after which nothing clears the old model floors: the page returned
+    nothing while the Telegram channel posted daily. It now reads
+    `picks_forward_test`.
+
+    Three things can go wrong on a public surface for a pre-registered test, and
+    all three are pinned here:
+
+      1. **The negative control leaks.** The junk-anchor arm is chosen by a
+         deliberately meaningless number. The `arm='live'` filter is enforced in
+         the VIEW, not in TypeScript, so no call site can forget it.
+      2. **The backtest gets rendered as a record.** The rule backtested +5.5%
+         with a 95% CI of [-0.7, +11.7] — it includes zero, on the same window
+         that chose the rule's own odds cap and alignment tolerance. Any
+         aggregate on the page must be the LIVE ledger, and must carry n and a
+         CI. A point estimate with no interval is how +8.47% got published.
+      3. **PostgREST never sees the views.** POSTGREST-SCHEMA-RELOAD: the API
+         caches the schema, so a new view 404s until a reload is signalled. It
+         has bitten twice (migrations 278, 310).
+    """
+    from pathlib import Path
+    mig = Path(__file__).parent.parent / "supabase" / "migrations" / \
+        "344_picks_forward_test_public_views.sql"
+    assert mig.exists(), "migration 344 (the /picks read path) is missing"
+    sql = mig.read_text()
+
+    # 1. the live-arm filter is in the DATABASE
+    assert "WHERE p.arm = 'live'" in sql, (
+        "picks_forward_test_public no longer filters arm='live' in the view. "
+        "Filtering it in the page instead is one forgotten .eq() away from "
+        "publishing bets chosen by a shuffled anchor."
+    )
+    for view in ("picks_forward_test_public", "picks_forward_test_summary"):
+        assert f"GRANT SELECT ON {view}" in sql.replace("  ", " "), (
+            f"{view} has no GRANT — PostgREST returns 404 for a view the anon "
+            f"role cannot select."
+        )
+    # 3. schema reload signalled in the migration itself, belt and braces with
+    #    migrate.yml's global NOTIFY (pinned by POSTGREST-SCHEMA-RELOAD).
+    assert "NOTIFY pgrst" in sql and "reload schema" in sql, (
+        "migration 344 must NOTIFY pgrst 'reload schema' — without it both "
+        "views 404 until the container restarts, which looks exactly like the "
+        "page being broken."
+    )
+
+    page = _web_path("src/app/picks/page.tsx").read_text()
+    lib = _web_path("src/lib/forward-test-picks.ts").read_text()
+
+    # 2. the backtest number must not appear in anything the page RENDERS.
+    #    Comments are stripped first: the page explains at length why the
+    #    backtest must not be shown, and a test that forbids the explanation
+    #    teaches the next reader to delete the explanation.
+    import re as _re
+    _rendered = _re.sub(r"/\*.*?\*/", "", page, flags=_re.DOTALL)
+    _rendered = _re.sub(r"^\s*//.*?$", "", _rendered, flags=_re.MULTILINE)
+    for banned in ("5.5%", "+5.54", "5.54%", "11.7", "backtest"):
+        assert banned not in _rendered, (
+            f"the string {banned!r} is on /picks. The +5.5% backtest is a PRIOR "
+            f"whose CI includes zero, computed on the window that chose the "
+            f"rule's own parameters. Rendering it beside live picks reads as a "
+            f"track record, which this method does not have."
+        )
+    # the live aggregate must carry n and an interval
+    assert "ci95(" in page and "95% CI" in page, (
+        "the running result no longer shows a confidence interval. A point "
+        "estimate with no interval is the exact shape of the number this whole "
+        "test was set up to stop publishing."
+    )
+    assert "picks_forward_test_summary" in lib, (
+        "the aggregate must come from the summary view — one definition, the "
+        "same one the stopping rules are evaluated on."
+    )
+    # honest framing, on the page, above the numbers
+    _flat = " ".join(page.split())   # JSX wraps prose across lines
+    assert "No past performance is claimed" in _flat, (
+        "the no-history framing is gone from /picks. This method started on "
+        "2026-09-14 at zero and the page must say so."
+    )
+
+    # DB invariants — skip cleanly offline.
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """SELECT (SELECT count(*) FROM picks_forward_test_public
+                        WHERE id IN (SELECT id FROM picks_forward_test
+                                      WHERE arm <> 'live'))          AS leaked,
+                      (SELECT count(*) FROM picks_forward_test_summary) AS summary_rows""",
+            [])
+    except Exception:
+        rows = None
+    if rows:
+        assert rows[0]["leaked"] == 0, (
+            f"{rows[0]['leaked']} junk-anchor rows are visible through "
+            f"picks_forward_test_public — the negative control is reaching "
+            f"readers as if it were a pick.")
+        assert rows[0]["summary_rows"] == 1, (
+            "picks_forward_test_summary must return exactly one row")
 
 
 @test("CROSS-BOOK-WINDOW-ASSEMBLY — books are compared on assembled windows, not timestamp equality")

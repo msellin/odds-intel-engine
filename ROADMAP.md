@@ -142,15 +142,29 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 > "Public surface 2026-06-24" subsection below for current truth. The
 > 2026-06-15 section that follows is preserved for historical context.
 
+> **Surface update 2026-09-14 (PICKS-PAGE-SHOW-FORWARD-TEST)** — `/picks` and
+> `/api/v1/upcoming` no longer serve `simulated_bets`. Migration 335 removed the
+> O/U Platt calibrator that had manufactured ~8-9pp of the published MODEL edge;
+> with it gone nothing clears the old model floors, so both surfaces returned
+> nothing while the Telegram channel posted daily. They now serve
+> `picks_forward_test` (live arm only, via `picks_forward_test_public`) — the
+> pre-registered sharp-edge rule, which uses **no model at all**. Both are FREE
+> and ungated including signed-out: the pre-registration requires the published
+> set and the recorded set to be identical, so there is no cohort to hold back.
+> `edge_pct` on the JSON feed changed ruler (model edge → sharp edge) and
+> `meta.edge_basis` now names which one a response carries. **`/picks` does not
+> link to `/performance`** — that ledger is the model-anchored record and does
+> not transfer to this method.
+
 ### Public surface (2026-06-24, post-collapse)
 | Surface | Status |
 |---------|--------|
 | `/` landing | ✅ Minimal hero pulling live ROI from `/api/v1/track-record` |
-| `/picks` | ✅ Live pending pre-match picks for the next 36 hours. **Anonymous** = calibrated-only cohort (same set the Telegram public channel ships). **Logged-in** = wider calibrated + beta + active cohort, plus per-row "Mark bet" checkbox persisting to `user_pick_marks`. Wider cohort renders server-side only — no client-fetchable route exposes it. Gated via PICKS-USER-GATE 2026-08-22. |
+| `/picks` | ✅ **REPOINTED 2026-09-14** — the pre-registered sharp-edge forward test (`picks_forward_test`, live arm). Free and ungated, one cohort, no session branch. Shows the LIVE running result with n and a 95% CI, never the backtest; no link to `/performance`. Previously: calibrated-bot model picks with an anon/signed-in cohort split (PICKS-USER-GATE), retired with the model path. |
 | `/performance` | ✅ Settled track record + per-bot leaderboard. **Anonymous** = 10-bet ledger teaser + "Sign up free" CTA; **logged-in** = full filterable history (league / market / bot filters, 6-way sort, 200-row cap). Leaderboard subhead surfaces full strategy funnel ("Tested to date: N · proven / underperforming / maturing / retired"). Gate changed from `isPro` to `!!user` on 2026-08-21 (PERF-SIGNUP-HISTORY) — signup is now the reward, not payment (post TIER-COLLAPSE). |
 | `/privacy`, `/terms` | ✅ Minimal nav, retained for legal |
 | `/api/v1/track-record` | ✅ Public JSON feed of settled bets (median CLV, beat-rate, ROI) |
-| `/api/v1/upcoming` | ✅ Public JSON feed of pending picks (next 36h). Narrowed 2026-08-22 to `maturity_label = 'calibrated'` only so it matches the Telegram public channel one-to-one. The wider signed-in cohort is not available via any JSON endpoint. |
+| `/api/v1/upcoming` | ✅ **REPOINTED 2026-09-14** — the same forward-test rows `/picks` renders, 24h back through +36h. One shared fetcher, no second query. `edge_pct` is now a SHARP edge; `meta.edge_basis` says so, because it is not comparable with the model edge this field carried before that date. |
 | `/admin/*` | ✅ Operator-only, untouched by collapse |
 | /profile | ✅ Restored 2026-08-21 as a minimal page (email + tier + sign out); linked from the new nav avatar dropdown |
 | WC pages, /value-bets, /matches/*, /live, /accuracy, /bankroll, /learn, /how-it-works, /methodology, /my-picks, /predictions, /recaps, /vs, /welcome, /pricing, /changelog | ❌ Deleted |
