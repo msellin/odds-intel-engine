@@ -67,7 +67,13 @@ ON CONFLICT (name) DO NOTHING;
 -- `arm` is carried through as `shadow_cohort` so any aggregate must GROUP BY it
 -- or be obviously wrong.
 
-CREATE OR REPLACE VIEW picks_forward_test_shadow AS
+-- DROP + CREATE, not CREATE OR REPLACE — see the note in migration 344. This
+-- file failed in CI on 2026-09-14 ("cannot drop columns from view") because
+-- migration 346 had already reshaped picks_forward_test_arm_summary, and the
+-- migration runner re-applies every pending file in filename order.
+DROP VIEW IF EXISTS picks_forward_test_shadow;
+
+CREATE VIEW picks_forward_test_shadow AS
 SELECT p.id,
        NULL::uuid                       AS shadow_run_id,
        p.arm                            AS shadow_cohort,
@@ -110,7 +116,9 @@ COMMENT ON VIEW picks_forward_test_shadow IS
 -- Per-arm running result for the operator surface. `picks_forward_test_summary`
 -- (migration 344) is the PUBLIC one and is live-arm only; this one shows both,
 -- because the negative control is only useful to somebody who can see it.
-CREATE OR REPLACE VIEW picks_forward_test_arm_summary AS
+DROP VIEW IF EXISTS picks_forward_test_arm_summary;
+
+CREATE VIEW picks_forward_test_arm_summary AS
 SELECT arm,
        min(published_at)                                         AS started_at,
        count(*)                                                  AS published,

@@ -22,7 +22,16 @@
 -- for months. `alignment_gap_minutes` in particular is the quantity that took
 -- the backtest from +8.47% to +5.5%; it is published per row on purpose.
 
-CREATE OR REPLACE VIEW picks_forward_test_public AS
+-- DROP + CREATE, not CREATE OR REPLACE (RE-APPLIABLE-MIGRATIONS-2026-09-15).
+-- `CREATE OR REPLACE VIEW` cannot add or remove a column, so once migration 346
+-- gave this view a `rule_version` column, re-running this file failed with
+-- "cannot drop columns from view" and took the whole migration job down with it.
+-- Migrations must be re-appliable: the runner applies every pending file in
+-- filename order on each push, and a later migration reshaping an earlier
+-- migration's view is normal. Grants are reissued below because DROP takes them.
+DROP VIEW IF EXISTS picks_forward_test_public;
+
+CREATE VIEW picks_forward_test_public AS
 SELECT p.id,
        p.match_id,
        p.market,
@@ -84,7 +93,9 @@ COMMENT ON VIEW picks_forward_test_public IS
 -- point of the number and a renderer that drops it is the failure this test
 -- was set up to make impossible.
 
-CREATE OR REPLACE VIEW picks_forward_test_summary AS
+DROP VIEW IF EXISTS picks_forward_test_summary;
+
+CREATE VIEW picks_forward_test_summary AS
 SELECT
     min(published_at)                                            AS started_at,
     count(*)                                                     AS published,
