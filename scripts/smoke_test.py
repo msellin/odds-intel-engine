@@ -41375,6 +41375,39 @@ def test_own_sharp_config_sweep():
         "the closing book's margin, not zero (settlement.py:613)"
     )
 
+    # the margin correction uses the CLOSING BOOK'S OWN per-fixture margin,
+    # never a fleet-wide constant. A flat m=7.6% was used first and it INVERTED
+    # a significance verdict: bot_unibet_trigger_sharp_1x2_v1 read t=+2.12 flat
+    # and t=+1.67 on its book's real 8.60% margin. The per-book spread
+    # (Coolbet ~7.8% .. Unibet-Site ~10.5%) is wider than the thresholds the
+    # corrected number is compared against.
+    assert "closing_book_margin" in src, (
+        "margin-correct with settlement.closing_book_margin() — the book's own "
+        "closing market on that fixture, not a fleet-wide average"
+    )
+    import re as _re
+    assert not _re.search(r"^BOOK_MARGIN\s*=", src, _re.M), (
+        "a flat fleet-wide margin constant must not come back — it inverts the "
+        "sign of the correction on the wide books"
+    )
+    audit = src[src.index("def bot_clv_audit("):src.index("def _rc(")]
+    assert 'a["nom"] += 1' in audit and "continue" in audit, (
+        "a row whose book margin cannot be computed must be LEFT OUT, not "
+        "back-filled with an average"
+    )
+
+    # the price-ratio cap is a swept dimension, not an assumed value. The
+    # measured leak sits in the 20-35% band, i.e. BELOW production's 35%
+    # outlier filter, so neither 35% nor 20% may be hard-coded as correct.
+    assert sw.RATIO_CAPS[0] is None and 0.20 in sw.RATIO_CAPS, (
+        "the book/anchor price-ratio cap must be SWEPT (none/35/25/20/15), not "
+        "assumed at production's 35% or at the PICKS rule's 20%"
+    )
+    sweep_src = src[src.index("def sweep("):src.index("def subset(")]
+    assert "for rc in RATIO_CAPS" in sweep_src, (
+        "the ratio cap must be a grid dimension inside the sweep"
+    )
+
     doc = _engine_path("docs/OWN_SHARP_CONFIG_SWEEP_2026_09_14.md")
     assert doc.exists(), "the sweep's report must be committed alongside the script"
 
