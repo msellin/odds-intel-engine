@@ -30497,7 +30497,7 @@ def _unibet_kambi():
     # Pre-match filter: a live event's totals are in-play adjusted. A first pass
     # at this research sampled six already-kicked-off fixtures and wrongly
     # concluded Unibet barely offers O/U 2.5 on lower leagues.
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
     ev = lambda mins, group="Ligue 2": {"event": {
         "id": 1, "name": "A - B", "group": group,
@@ -33184,7 +33184,7 @@ def _coolbet_fuzzy_corroboration():
     Behavioural: drives the real matcher and asserts both signals are computed.
     """
     import logging
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
 
     from workers.automation.coolbet_placer import fuzzy_match_event
 
@@ -34423,7 +34423,7 @@ def test_af_quota_day_boundary():
     grouping on (logged_at - 1 hour) recovers the true peak. If AF ever moves
     the reset, the first assertion is what should be revisited.
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
 
     # Synthetic series: quota day runs 01:00 -> 01:00, climbing all day.
     # The two quota days MUST have different peaks. With an identical ramp on
@@ -40717,7 +40717,7 @@ def test_accessible_bookmakers_feeds_alive():
         f"We are willing to stake at a book we have never priced."
     )
 
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
     cutoff = datetime.now(timezone.utc) - timedelta(hours=36)
     stale = sorted(bk for bk, last in seen.items() if last < cutoff)
     assert not stale, (
@@ -41510,6 +41510,76 @@ def test_own_sweep_verification():
         "the verification's report must be committed alongside its script — a "
         "number that changes a strategy does not enter a doc without the script"
     )
+
+
+@test("SHADOW-CLV-NO-ARBITRARY-FALLBACK — CLV is NULL without an own-book close, never another book's")
+def test_shadow_clv_no_arbitrary_fallback():
+    """SHADOW-CLV-NO-ARBITRARY-FALLBACK (2026-09-14).
+
+    `_settle_pending_shadow_bets` used to fall back to the UNFILTERED `get_closing_odds`
+    when a bot's own book had no closing row. That function's own docstring says
+    what this does: `odds_at_pick` is by construction the MAX across accessible
+    books, so comparing a max against one arbitrary book makes CLV
+    "structurally positive regardless of whether the bet had any edge".
+
+    It was neither rare nor small. Measured on settled trigger-bot rows:
+
+        bot_coolbet_trigger_sharp_1x2_v1  38.9 pct fallback
+                                          own-book CLV  +4.51 pct
+                                          fallback CLV +14.78 pct
+        bot_unibet_trigger_sharp_1x2_v1   25.6 pct  +12.05 vs +16.69
+        bot_coolbet_trigger_ou_v1         27.1 pct   +0.20 vs  +1.81
+
+    CLV is the promotion gate for the whole fleet (§8 — it converges ~200x
+    faster than ROI), so a biased-positive CLV is a biased-positive PROMOTION
+    DECISION. The blended +8.50 pct it produced for the coolbet sharp bot was
+    read as positive EV; on the own-book basis that bot is -2.84 pct, t=-2.85.
+
+    Two assertions, because either alone rots: the fallback must be gone from
+    the source, AND no newly-settled row may carry closing_odds without the
+    bookmaker that supplied it. Historical rows are NOT rewritten --
+    `closing_odds IS NOT NULL AND closing_bookmaker IS NULL` is their marker and
+    they must be excluded from any gate or published figure.
+    """
+    import re as _re
+    from datetime import datetime, timezone
+    from workers.api_clients.db import execute_query
+
+    src = _engine_path("workers/jobs/settlement.py").read_text()
+    i = src.index("def _settle_pending_shadow_bets")
+    j = src.index("\ndef ", i + 10)
+    body = src[i:j]
+
+    assert "do NOT substitute another book" in body, (
+        "the explicit no-fallback marker is gone from _settle_pending_shadow_bets"
+    )
+    bare = _re.findall(
+        r"get_closing_odds\(\s*match_id,\s*odds_market,\s*odds_selection\s*\)", body)
+    assert not bare, (
+        "_settle_pending_shadow_bets calls get_closing_odds WITHOUT a bookmaker — that is "
+        "the arbitrary-book fallback returning. Leave clv NULL instead; a NULL "
+        "is honest, a substituted book is a silent positive bias."
+    )
+
+    # Anchored to when the fix landed, NOT a rolling window. Rows settled before
+    # this legitimately carry fallback values and are the historical marker the
+    # docstring describes; a rolling window would make this red-on-arrival, and
+    # a red-on-arrival test gets ignored (the same reasoning that kept the
+    # elo_diff canary exception alive for a month).
+    FIX_LANDED = datetime(2026, 9, 14, 17, 0, tzinfo=timezone.utc)
+    rows = execute_query(
+        """SELECT count(*) AS n FROM shadow_bets
+            WHERE closing_odds IS NOT NULL AND closing_bookmaker IS NULL
+              AND created_at > %s""",
+        (FIX_LANDED,),
+    )
+    n = rows[0]["n"] if rows else 0
+    assert n == 0, (
+        f"{n} shadow_bets rows created since the fix carry closing_odds with no "
+        f"closing_bookmaker — the arbitrary-book fallback is live again. CLV is "
+        f"the fleet's promotion gate; this biases it positive."
+    )
+
 
 if __name__ == "__main__":
     main()

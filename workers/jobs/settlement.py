@@ -3666,9 +3666,33 @@ def _settle_pending_shadow_bets(pending: list, finished: list) -> int:
 
         # SHADOW-CLV-BOOKMAKER-FIX-2026-08-26: prefer the book the bot actually
         # priced at, so `closing_odds` answers "what happened to MY price"
-        # rather than "what happened to whichever book sorted last". Falls back
-        # to the unfiltered form when that book has no closing row, and records
-        # which book supplied the number either way.
+        # rather than "what happened to whichever book sorted last".
+        #
+        # SHADOW-CLV-NO-ARBITRARY-FALLBACK-2026-09-14: the fallback to the
+        # UNFILTERED form is REMOVED. It used to fire whenever the bot's own book
+        # had no closing row, and `get_closing_odds`'s own docstring says exactly
+        # what that does: `odds_at_pick` is by construction the MAX across
+        # accessible books, so comparing a max against one arbitrary book makes
+        # the resulting CLV "structurally positive regardless of whether the bet
+        # had any edge".
+        #
+        # It was not rare and it was not small. Two independent audits measured
+        # 26-48 pct of the sharp trigger bots' CLV rows arriving through this
+        # path, reading 4-10pp HIGHER than the own-book number on four bots of
+        # four. CLV is the promotion gate for every bot in the fleet
+        # (ANALYSIS_GOTCHAS §8 — it converges ~200x faster than ROI), so a
+        # biased-positive CLV is a biased-positive PROMOTION DECISION. That is
+        # the single most consequential number in the system.
+        #
+        # Now: no own-book close, no `clv`. A NULL is honest and every consumer
+        # already handles it; a substituted number is a silent bias pointing the
+        # one direction that costs money. Same principle as
+        # `clv_margin_corrected`, which leaves NULL rather than substitute an
+        # average margin.
+        #
+        # HISTORICAL ROWS are not rewritten — `closing_bookmaker IS NULL` while
+        # `closing_odds IS NOT NULL` is the marker for a row that came through
+        # the old fallback. Exclude those from any gate or published figure.
         own_book = bet.get("recommended_bookmaker")
         closing_bookmaker = None
         closing_odds = None
@@ -3676,8 +3700,8 @@ def _settle_pending_shadow_bets(pending: list, finished: list) -> int:
             closing_odds = get_closing_odds(match_id, odds_market, odds_selection, own_book)
             if closing_odds:
                 closing_bookmaker = own_book
-        if closing_odds is None:
-            closing_odds = get_closing_odds(match_id, odds_market, odds_selection)
+            else:
+                closing_odds = None   # explicit: do NOT substitute another book
 
         # The validator the bot is actually judged on. Pinnacle-anchored and
         # de-vigged, so 0 means Pinnacle-fair rather than Pinnacle-quoted.
