@@ -42329,5 +42329,78 @@ def test_maturity_label_canonical():
         "column means the next typo reaches a customer surface silently"
     )
 
+
+@test("OWN-ANCHOR-GATE-VERIFICATION-GUARDS")
+def test_own_anchor_gate_verification_guards():
+    """OWN-ANCHOR-GATE-VERIFICATION (2026-09-14) — pins the four controls that
+    overturned the sharp-anchor gate calibration. See
+    docs/OWN_ANCHOR_GATE_VERIFICATION_2026_09_14.md.
+
+    Why source inspection rather than a data assertion: the panel this rests on
+    is seven days deep and is deleted by `prune_old_simple` as it ages, so a
+    data test would go red on its own within a week and teach nothing. What
+    must not be lost is the METHOD, because each guard below is a defect that
+    was live in a report that was about to change a staking gate:
+
+      * the published placebo shuffles p_sharp wholesale inside an odds decile,
+        which inflates the regressor variance 3.46x and attenuates ANY slope —
+        so the control that actually establishes the finding is the two-regressor
+        decomposition y ~ p_sharp + q, not the placebo;
+      * `odds_dec` is the last quote we OBSERVED, not the price on the screen at
+        the decision moment (the writers insert one row per poll, no
+        dedup-on-change), so a lag bound is mandatory before any break-even is
+        quoted — ANALYSIS_GOTCHAS 44;
+      * the per-book slope contrast is confounded with the dec->close
+        MEASUREMENT WINDOW, which differs 2-3x because our scrape densities do;
+      * every cell tested must be printed, not the four that looked best.
+    """
+    src = _engine_path("scripts/own_anchor_gate_adversarial.py").read_text()
+
+    # (1) the control that does the work: p_sharp with the soft price free.
+    assert "ols_cl([ps, q], y, cl)" in src, (
+        "the two-regressor decomposition y ~ p_sharp + q must stay. It is the "
+        "only control that separates the anchor's information from the "
+        "odds_soft(T) shared by predictor and target; the odds-decile placebo "
+        "attenuates by construction and cannot establish it."
+    )
+    assert "variance_matched_placebo" in src and "shuffle(res)" in src, (
+        "the variance-matched placebo (project p_sharp on the soft-price "
+        "stratum, permute only the RESIDUAL) must stay — shuffling p_sharp "
+        "wholesale inflates Var(edge) 3.46x and shrinks any slope toward 0 "
+        "whether or not a mechanical channel exists."
+    )
+
+    # (2) the price basis. A break-even quoted without a lag bound is phantom.
+    assert 'r["dec_mins_before_ko"] - lead_h * 60.0' in src, (
+        "the decision-quote lag (observed timestamp vs the nominal decision "
+        "moment) must be computed. 26-45pct of legs price off a quote >4h "
+        "stale, and the break-even moves +3.1pct -> +21.4pct when they are "
+        "excluded (ANALYSIS_GOTCHAS 44)."
+    )
+    assert "lag <= {lim:g} min" in src or 'f"lag <= {lim:g} min"' in src, (
+        "the freshness ladder must stay: a single break-even number without "
+        "the lag sensitivity beside it is the number this report refuted."
+    )
+
+    # (3) the per-book contrast must carry the window control.
+    assert "def window(r)" in src and "e * lw" in src, (
+        "the Epicbet slope gap must be re-fitted with the dec->close "
+        "measurement window interacted with the edge. Raw d_Epic is t=-3.0 to "
+        "-4.3; window-controlled it is t=-0.13 to -1.51 in all six cells, "
+        "because our Epicbet scrape is 3-6x denser than our Coolbet scrape."
+    )
+
+    # (4) count every cell, and print the volume a gate would admit.
+    assert "cells tested:" in src, (
+        "the total cell count must be printed. Four correlated window x lead "
+        "cells out of 20 are not four independent confirmations."
+    )
+    assert "HOW MANY PICKS A DAY" in src, (
+        "legs/day per book per gate must stay in the output. A gate that is "
+        "correct and fires 0.3 legs/day at the book we stake at is not a "
+        "strategy, and that number decides the thread before break-even does."
+    )
+
+
 if __name__ == "__main__":
     main()
