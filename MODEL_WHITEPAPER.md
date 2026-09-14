@@ -1907,6 +1907,55 @@ indicators reconstructed exactly as inference builds them:
 **The clean model is statistically indistinguishable from the leaked one
 (+0.13% log-loss), and both are ~4.7% WORSE than predicting the base rate.**
 
+> ⚠️ **CORRECTED 2026-09-14, same day.** The comparison above scores the RAW
+> XGBoost output, which production never serves — the pipeline applies stage-1
+> Pinnacle shrinkage and a stage-2 Platt curve first. Measuring an uncalibrated
+> model against the base rate tests the wrong object, and the corrected result
+> below reverses the verdict. The table stands as the raw-output comparison it
+> is; it is not the answer to "does the clean model work".
+
+### CORRECTED: the clean model's ranking is real, its LEVEL was broken — and level is fixable
+
+Calibration of the clean model on the same held-out period (n=14,084):
+
+| model says | n | actually happens | gap |
+|---|---|---|---|
+| 18.7% | 5,550 | **35.6%** | −16.9pp |
+| 30.0% | 3,995 | **41.9%** | −12.0pp |
+| 39.5% | 2,981 | **51.3%** | −11.8pp |
+| 49.2% | 1,209 | **61.9%** | −12.7pp |
+| 58.8% | 291 | **69.1%** | −10.3pp |
+| 69.2% | 58 | **79.3%** | −10.1pp |
+
+The **ordering is monotone across every bin** — the model ranks matches correctly.
+It is simply biased **low by 10–17 points everywhere** (predicts 30.0% home
+overall against an actual 43.9%). That is not an absence of signal; it is a
+level error, and a level error is what calibration exists to remove.
+
+Re-tested with a time-ordered split — Platt fitted on the first half of the
+holdout, scored on the second, no leakage:
+
+| | AUC | log-loss |
+|---|---|---|
+| raw model | 0.6010 | 0.7274 |
+| **recalibrated** | 0.6010 | **0.6705** |
+| base rate (the gate) | 0.5000 | 0.6873 |
+
+**+2.44% better than the base rate — the gate is MET.** As far as this record
+shows, that is the first model in the project's history to beat a constant.
+
+Two caveats that keep this in proportion:
+
+1. **It is still far below the market.** AUC 0.6010 against a de-vigged market at
+   0.7270. Beating a constant is the floor for being a model at all, not evidence
+   of a betting edge. Master list #4 — does it predict anything the market price
+   does not already contain? — remains the question that decides.
+2. **The production calibrator is wrong for this model.** The live `1x2_home`
+   Platt is `a=1.609, b=−0.860`; the curve this model needs is `a=3.587,
+   b=−1.366`. The live parameters were fitted against leak-trained output, so a
+   clean model cannot simply be dropped in behind them — the calibrator has to be
+   refitted in the same step. Related: `OU-CALIBRATOR-DOMAIN-MISMATCH`.
+
 This is the most important negative result in the project and it should not be
 softened. Fixing the leak did **not** produce a working model. What it did was
 make the failure visible: the leak inflated every *offline evaluation*, not the
