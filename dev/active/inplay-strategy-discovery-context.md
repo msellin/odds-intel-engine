@@ -110,3 +110,33 @@ candidate for "does this back a price under ~2.20?" before testing it.**
    absolute costs to be lower — Epicbet's O/U margin measured 6.4–6.6% vs AF's 7.8%.
 3. Always run `robust.py`-style wide-window + split checks BEFORE a candidate is
    written down as a candidate.
+
+## UPDATE — fidelity (Part 5) and what is still running
+
+**AF's live 1x2 de-vigs to essentially Epicbet's** (n=307, 7 fixtures, concurrent
+threads): median gap −0.01 / +0.42 / −0.04pp on home/draw/away. Margins differ,
+AF 6.51% vs Epicbet 5.56%, so every Part 2–4 number is **conservative by ~+0.8pp ROI**.
+No conclusion flips. **The 2.2M-row history is therefore usable for 1x2 discovery.**
+
+⚠️ **1x2 only.** Most candidates are O/U and that fidelity is NOT established.
+
+### Two detached jobs running overnight
+
+| job | output | purpose |
+|---|---|---|
+| `inplay_epicbet_collector.py` (~9h from 20:34 UTC) | `<scratch>/epicbet_inplay.jsonl` | the placeable in-play board |
+| `<scratch>/oufid.py` (900 cycles / 30s) | `<scratch>/oufid.jsonl` | **O/U fidelity AF vs Epicbet** — the open question |
+
+Both detached with `<scratch>/daemonize.py`. Check with
+`pgrep -f inplay_epicbet_collector` and `pgrep -f oufid.py`.
+
+**Gotcha already hit and fixed in `oufid.py`:** AF puts the O/U line in the
+`handicap` field, *not* inside `value` (which is just "Over"/"Under"). Parsing the
+line out of the string yields zero rows and looks like "no overlap" rather than an error.
+
+### Morning: analyse `oufid.jsonl`
+
+Per line: `{t, home, af:{line:{over,under}}, eb:{line:{over,under}}}` on common lines.
+Compute the de-vigged P(over) gap per line, exactly as Part 5 did for 1x2. If the
+median gap is near zero, margin-adjust the O/U numbers and the history is usable for
+O/U discovery too. If not, O/U pricing work waits on accumulated Epicbet data.

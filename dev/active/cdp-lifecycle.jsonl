@@ -80,3 +80,6 @@
 {"at": "2026-09-14T19:55:21+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 15}
 {"at": "2026-09-14T19:55:32+00:00", "event": "healed", "tier": "autologin", "ok": true, "skipped_rebootstrap": null, "steps": ["cdp auto-login OK", "jwt sync OK"], "reason": "", "error": ""}
 {"at": "2026-09-14T20:25:10+00:00", "event": "observed", "cdp_up": true, "walled": true, "jwt": "valid", "jwt_ttl_s": 643, "captcha": null, "tier": null, "procs": 14}
+{"at": "2026-09-14T20:55:14+00:00", "event": "observed", "cdp_up": true, "walled": true, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "rebootstrap", "procs": 14}
+{"at": "2026-09-14T20:55:14+00:00", "event": "killed", "why": "rebootstrap tier", "pid_count": 14}
+{"at": "2026-09-14T20:56:30+00:00", "event": "healed", "tier": "rebootstrap", "ok": false, "skipped_rebootstrap": null, "steps": ["quit CDP-Chrome", "parked walled profile -> Chrome-CDP-OddsIntel.walled-20260914-235518", "relaunch rc=0", "jwt sync FAILED"], "reason": "", "error": "  ok                = False\n  jwt_obtained      = False\n  ttl_s             = None\n  user_id           = None\n  placement_paused  = None \u2192 None\n  message           = No JWT found. Check that CDP-Chrom"}
