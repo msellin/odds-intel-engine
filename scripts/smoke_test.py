@@ -40548,16 +40548,19 @@ def test_leakage_canary():
 
     Known exceptions are listed, not tolerated silently. The list should SHRINK.
 
-    Deliberately pins the known set rather than demanding zero: `elo_diff` is
-    still flagged because the stored `match_feature_vectors` rows remain leaked
-    until the rebuild (master task #2). Demanding zero today would be
-    red-on-arrival, and a red-on-arrival test gets ignored — which is how the
-    original survived.
+    CANARY-EXCEPTION-CLEARED-2026-09-14: the `elo_diff` exception is GONE. It
+    was added because the stored `match_feature_vectors` rows were still leaked
+    pending the task-#2 rebuild. That rebuild has landed (migrations 339-341),
+    and `elo_diff` now scores 0.21 against a market-derived 0.37 — comfortably
+    below the market, which is the whole rule. An audit found the exception was
+    claimed removed in commit 68bf158 but never actually was, leaving the canary
+    BLIND TO THE EXACT COLUMN IT WAS WRITTEN FOR. The known set is now empty and
+    should stay that way: an exception here is a leak we have agreed not to see.
     """
     from workers.api_clients.db import execute_query
 
-    # Stored MFV rows are still leaked pending the task #2 rebuild.
-    KNOWN = {"elo_diff"}
+    # Empty by design — see CANARY-EXCEPTION-CLEARED-2026-09-14 above.
+    KNOWN: set[str] = set()
 
     MARKET_DERIVED = ("pinnacle_", "implied_", "market_", "opening_", "closing_",
                       "odds_", "bookmaker_disagreement", "sharp_", "line_velocity",
@@ -40712,6 +40715,67 @@ def test_mfv_signal_columns_not_drifted():
             f"{computed} is COMPUTED, not read-through. COALESCEing it would "
             f"preserve the old leaked value and undo ELO-FORM-LEAK."
         )
+
+
+@test("ACCESSIBLE-BOOKMAKERS-FEEDS-ALIVE — every book we will stake at has a feed that is actually writing")
+def test_accessible_bookmakers_feeds_alive():
+    """AF-UNIBET-PHANTOM (2026-09-14) — every book we are willing to BET must
+    have a feed that is actually writing.
+
+    `ACCESSIBLE_BOOKMAKERS` named "Unibet", the API-Football feed. That feed
+    stopped writing at 2026-09-12 10:00 UTC and nothing noticed for two days:
+    the placeable set silently shrank to Coolbet/Betano/Epicbet while
+    "Unibet-Site" — our own scrape, live, and the feed the placer was already
+    built against — sat OUTSIDE the set. Real money was being sized against a
+    best-accessible price computed from a book list that was partly fiction.
+
+    A dead feed in this constant cannot fail loudly on its own: a book with no
+    rows simply never wins the best-price comparison, so the only symptom is a
+    slightly worse price and nobody looks. This is the guard.
+
+    Deliberately checks the LIVE DB rather than the source text, because the
+    defect is not a typo — the name was correct when written. What changed was
+    the world.
+    """
+    from workers.api_clients.db import execute_query
+    from workers.jobs.daily_pipeline_v2 import ACCESSIBLE_BOOKMAKERS
+
+    rows = execute_query(
+        """SELECT bookmaker, max(timestamp) AS last_row
+             FROM odds_snapshots
+            WHERE bookmaker = ANY(%s)
+            GROUP BY 1""",
+        (list(ACCESSIBLE_BOOKMAKERS),),
+    )
+    seen = {r["bookmaker"]: r["last_row"] for r in rows}
+
+    missing = sorted(set(ACCESSIBLE_BOOKMAKERS) - set(seen))
+    assert not missing, (
+        f"books in ACCESSIBLE_BOOKMAKERS with NO odds rows at all: {missing}. "
+        f"We are willing to stake at a book we have never priced."
+    )
+
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=36)
+    stale = sorted(bk for bk, last in seen.items() if last < cutoff)
+    assert not stale, (
+        f"books in ACCESSIBLE_BOOKMAKERS whose feed has written nothing in 36h: "
+        f"{stale}. Either the feed is broken or the book should leave the set — "
+        f"a dead book in the placeable list quietly shrinks it with no alert. "
+        f"Last rows: " + ", ".join(f"{bk}={seen[bk]:%Y-%m-%d %H:%M}" for bk in stale)
+    )
+
+    # The AF-fed Unibet must never come back: 33.1 pct of its selections quote a
+    # price HIGHER than unibet.ee offers. The self-scraped twin is the placeable
+    # one. Same rule already applied to Unibet-Kambi (38 pct).
+    assert "Unibet" not in ACCESSIBLE_BOOKMAKERS, (
+        "AF 'Unibet' is phantom-high on 33.1 pct of selections — bet "
+        "'Unibet-Site' (our scrape) instead. See AF-UNIBET-PHANTOM-2026-09-14."
+    )
+    assert "Unibet-Kambi" not in ACCESSIBLE_BOOKMAKERS, (
+        "Unibet-Kambi is phantom-high on 38 pct of selections "
+        "(KAMBI-FEED-DIVERGENCE-2026-09-06)."
+    )
 
 
 

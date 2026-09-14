@@ -28,7 +28,7 @@ two different yardsticks, and **their percentages are NOT comparable**.
 | Formula | `cal_prob − 1/book_odds` | `P_sharp − 1/book_odds` |
 | Anchor ("fair value") | our **calibrated model** | **Shin-de-vigged Pinnacle** line |
 | Typical floor | **13%** (1x2) · **8%** (O/U) | **~3%** |
-| Why that floor | the model is *noisier* than the market, so a small edge is mostly model error — demand a big one to filter noise | Pinnacle is *near-true*, so a 3% overlay is a **real** 3% — no need for it to be big |
+| Why that floor | the model is *noisier* than the market, so a small edge is mostly model error — demand a big one to filter noise | ~~Pinnacle is *near-true*, so a 3% overlay is a **real** 3%~~ **FALSE — see the correction below. The 3% floor is currently UNSUPPORTED.** |
 | Fires… | when our model disagrees a LOT with the book | rarely — Coolbet ≈ Pinnacle, so beating it by 3%+ is uncommon |
 | Known failure | at 13% it still adverse-selects longshots → −21% OOS (the trigger bot) | over-strict floor (e.g. 13%) → never fires |
 
@@ -36,6 +36,48 @@ two different yardsticks, and **their percentages are NOT comparable**.
 just measure against different rulers. Putting a model floor on a sharp edge (or vice
 versa) is the classic mistake; the `Anchor` column in the bot tables below says which
 ruler each bot uses.
+
+> ### ⚠️ CORRECTED 2026-09-14 — the sharp floor's stated justification is false
+>
+> Three independent audits settled this. **Pinnacle is a genuinely good price — but it
+> is not *near-true* on the fixtures our bots actually fire on**, and the 3% floor was
+> derived from the premise that it is.
+>
+> **What is TRUE about Pinnacle** (don't over-correct — an earlier version of this
+> doc claimed Pinnacle was the *widest* book in the feed, and that was wrong):
+> * Paired on the same fixtures at the same moment, Pinnacle is narrower than 14 of 16
+>   books. The "9.18% vs Coolbet 7.79%" table compared each book on *its own* fixture
+>   population — it measured coverage breadth, not sharpness (the repo's own
+>   `ANALYSIS_GOTCHAS` §10 trap). On the fixtures Coolbet covers, Pinnacle reads 7.79%.
+> * On majors it reads **3.55% median** (Serie A 3.31, La Liga 3.31, EPL 3.36), and its
+>   `is_closing` rows sit at **3.86%**.
+> * It beats all 16 AF books on paired log-loss, 16 of 16, and beats the 15-book
+>   consensus on 60.1% of fixtures (z≈6.4).
+>
+> **What is FALSE — and why the floor does not follow:**
+> * On *our slate* the median is **~9.2%**, with 58.9% of fixtures at ≥9%. Pinnacle
+>   prices obscure leagues at 9–13%; that is real Pinnacle behaviour on low-limit
+>   markets, not feed degradation. A 3% overlay on a 9%-margin triple is not a real 3%.
+> * Worse, the sharp trigger bots **adverse-select the widest quotes**:
+>   `bot_coolbet_trigger_sharp_1x2_v1` fires at a 10.02% median Pinnacle overround out
+>   of a 7.73% bettable pool. The "overlay" is partly manufactured by the anchor's own
+>   margin.
+> * Once de-vigged, Pinnacle is statistically **indistinguishable** from Coolbet,
+>   Epicbet, Unibet-Site, Betano and Bet365 on paired log-loss (every |t| < 1.1).
+>
+> **The load-bearing defect is TIME ALIGNMENT.** The sharp selection rule selects on
+> staleness: median anchor↔bet quote gap is 0 min across all candidate legs but
+> **289 min among the legs the rule picks**. Align the two quotes and the apparent edge
+> collapses. Measured on the publish rule (edge≥3%, odds≤4.0): **+8.47% unaligned →
+> +5.5% aligned**, CI [−0.7, +11.7]. Roughly 3pp of it was pure soft-book staleness.
+>
+> **Status of the 3% floor: UNSUPPORTED, not disproven.** No demonstrated edge; point
+> estimate positive but the CI includes zero. Any figure quoted against this anchor
+> must state its time alignment.
+>
+> Related: `clv` is a **raw price ratio with no de-vig**
+> (`settlement.py:613`), so break-even CLV equals the closing book's margin —
+> `EV ≈ (1+clv)/(1+m) − 1`, m ≈ 7.6% measured. Verified to 0.04pp on 18,759 bets.
 
 `P_sharp` comes from `workers/model/devig.py` (Shin's method — removes proportionally
 more margin from longshots than a naive proportional de-vig, which matters for 3-way

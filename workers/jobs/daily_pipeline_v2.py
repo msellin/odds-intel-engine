@@ -1088,7 +1088,29 @@ ACCESSIBLE_BOOKMAKERS: frozenset = frozenset({
     # licensed, which its own calls confirm (jurisdiction=EE).
     "Coolbet",        # placement venue
     "Betano",         # EMTA-licensed, 95.1% coverage of fixtures we bet
-    "Unibet",         # EMTA-licensed (.ee), via API-Football
+    # AF-UNIBET-PHANTOM-2026-09-14: the placeable Unibet entry is the SELF-SCRAPED
+    # "Unibet-Site", not API-Football's "Unibet". Two independent reasons, either
+    # of which is sufficient:
+    #
+    #  1. FIDELITY. Time-matched to the same book within 60 min (n=375
+    #     selections), AF records a price HIGHER than unibet.ee actually offers
+    #     on 33.1% of selections (sd 9.0%, p99 +30.3%, max +49.3%). That is the
+    #     Kambi failure mode documented below (38%) and the Bet365 one before it
+    #     — edge computed on a price nobody can take. Three AF-fed books have now
+    #     been checked against their own site; three were unfaithful. The
+    #     divergence is flat across every hours-to-kickoff bucket, so it is feed
+    #     divergence, not staleness.
+    #
+    #  2. IT IS DEAD. The AF Unibet feed stopped writing entirely at
+    #     2026-09-12 10:00 UTC. For two days the placeable set has named a book
+    #     that produces no rows, while the live scrape that CAN be bet was
+    #     excluded from it. The set was quietly down to Coolbet/Betano/Epicbet.
+    #
+    # workers/automation/unibet_odds_feed.py is the placeable feed and has been
+    # since KAMBI-FEED-DIVERGENCE; this constant had simply never been moved to
+    # match. Keep ingesting AF "Unibet" — this governs what we BET, not what we
+    # store.
+    "Unibet-Site",    # EMTA-licensed (.ee), OUR OWN scrape — verifiable price
     # KAMBI-FEED-DIVERGENCE-2026-09-06 — "Unibet-Kambi" REMOVED from the
     # placeable set. unibet.ee has moved off the Kambi offering API this feed
     # reads: its event pages render against Kindred's own sportsbff-ams host,
