@@ -75,7 +75,41 @@ def _stamp_cal(model_version: str | None) -> str:
 _SHARP_STRATEGIES = [
     ("sharp_1x2", "1x2", "1x2", ["home", "draw", "away"]),
     ("sharp_ou25", "over_under_25", "o/u", ["over", "under"]),
+    # SHARP-TIGHT-INSTRUMENT-2026-09-15 — the one configuration two independent
+    # research rounds agreed was worth OBSERVING, and neither thought was worth
+    # a euro. See dev/active/own-sharp-tight-preregistration.md.
+    #
+    # It exists because the original sweep could not express it. That sweep
+    # graded 70,200 cells of a constant EXPECTED-ROI floor (`P x odds - 1`),
+    # while the live gate here is a constant PROBABILITY-DIFFERENCE floor
+    # (`P - 1/odds`). Since `roi_edge = prob_edge x odds`, a constant
+    # probability floor is a CURVE in odds — no cell of a constant-ROI grid can
+    # express it, and adding grid dimensions cannot fix a missing functional
+    # form. "None of 70,200 configurations clears the bar" meant none in that
+    # grid (ANALYSIS_GOTCHAS §42).
+    #
+    # Swept properly it is the only family that survives: prob-edge >= 2 pct,
+    # odds <= 2.50, pooled across our placeable books — n=225, ROI +17.07 pct,
+    # CI [+4.18, +29.95], no losing fold, OOS +23.40 pct.
+    #
+    # AND IT IS ALMOST CERTAINLY LUCK. It is a twelve-day effect: +0.99 pct
+    # (n=79) before 2026-09-02 against +25.76 pct (n=146) after, and Coolbet
+    # alone on a constant pool over 37 days jumps the same way (+0.99 -> +40.02,
+    # n=46). Not an alignment artefact — tight and loose quote gaps agree within
+    # each era. Decisively, margin-corrected OWN-BOOK CLV on the same legs reads
+    # -5.36 to -7.56 pct beside those +19-42 pct ROIs, and a random leg is
+    # ~-7.2 pct: the selection buys ~1.9pp of closing-line value, real but
+    # nowhere near the 7-8 pct vig it must clear. Per §8, believe the CLV.
+    #
+    # So this is an INSTRUMENT, not a strategy. Paper only, never placeable.
+    # Promotion requires margin-corrected own-book CLV > 0 at n >= 300 — ROI may
+    # never promote it, at any value. The pre-registration is binding.
+    ("sharp_1x2_tight", "1x2", "1x2_tight", ["home", "draw", "away"]),
 ]
+
+# Odds CEILING per strategy. `_window` otherwise derives max_odds from the
+# outlier multiplier; a strategy listed here is additionally capped.
+_SHARP_MAX_ODDS_BY_STRATEGY = {"sharp_1x2_tight": 2.50}
 
 # SHARP floors — deliberately DIFFERENT from the model floors, on principle.
 #   * EDGE 3%: a sharp edge (P_sharp − 1/book_odds) is measured against the
@@ -90,8 +124,8 @@ _SHARP_STRATEGIES = [
 #     per band LATER, once picks settle. Zero risk (paper). The 1.01 only rejects
 #     degenerate ≤1.0 prices. Owner decision 2026-09-09. See docs/SYSTEM_MAP.md and
 #     docs/BETTING_GATE_DECISIONS.md (sharp-anchor note).
-_SHARP_MIN_EDGE_BY_MARKET = {"1x2": 0.03, "o/u": 0.03}
-_SHARP_MIN_ODDS_BY_MARKET = {"1x2": 1.01, "o/u": 1.01}
+_SHARP_MIN_EDGE_BY_MARKET = {"1x2": 0.03, "o/u": 0.03, "1x2_tight": 0.02}
+_SHARP_MIN_ODDS_BY_MARKET = {"1x2": 1.01, "o/u": 1.01, "1x2_tight": 1.01}
 
 
 def _window(cal: float, edge_floor: float, odds_floor: float):
@@ -260,6 +294,11 @@ def _emit_sharp_anchor(counters: dict) -> None:
                     counters["skipped_no_edge"] += 1
                     continue
                 min_odds, max_odds = win
+                _cap = _SHARP_MAX_ODDS_BY_STRATEGY.get(strategy)
+                if _cap is not None:
+                    if min_odds > _cap:
+                        continue          # window lies entirely above the cap
+                    max_odds = min(max_odds, _cap)
                 execute_write(
                     """INSERT INTO pick_triggers
                           (match_id, market, selection, strategy, cal_prob,

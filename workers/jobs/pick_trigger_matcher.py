@@ -39,6 +39,18 @@ BOOK_MARKET_BOTS = {
     ("Unibet-Site", "over_under_25", "model_ou25"): "bot_unibet_trigger_ou_v1",
     ("Unibet-Site", "1x2",           "sharp_1x2"):  "bot_unibet_trigger_sharp_1x2_v1",
     ("Unibet-Site", "over_under_25", "sharp_ou25"): "bot_unibet_trigger_sharp_ou_v1",
+
+    # SHARP-TIGHT-INSTRUMENT-2026-09-15. THREE books into ONE bot, deliberately.
+    # Every other row here is per-book, which was the older pattern; bot_configs
+    # already records why it was collapsed ("the BOOK is not a strategy, it is a
+    # venue"). More importantly the result this instrument exists to test was
+    # measured POOLED across placeable books (n=225, +17.07%), so a per-book
+    # split would measure something other than the thing under test, at a third
+    # of the n. `recommended_bookmaker` still carries the venue per row, so the
+    # per-book question stays answerable without three bots.
+    ("Coolbet",     "1x2", "sharp_1x2_tight"): "bot_trigger_1x2_sharp_tight_v1",
+    ("Unibet-Site", "1x2", "sharp_1x2_tight"): "bot_trigger_1x2_sharp_tight_v1",
+    ("Epicbet",     "1x2", "sharp_1x2_tight"): "bot_trigger_1x2_sharp_tight_v1",
 }
 
 

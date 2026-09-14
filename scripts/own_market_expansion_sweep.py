@@ -85,13 +85,20 @@ PER_BET_SD_FALLBACK = 1.3
 # gate 3 measures the presence of.
 class M:
     def __init__(self, key, label, sql, sel, fair, settles_on, lined,
-                 fixed_line=None):
+                 fixed_line=None, ladder_sign=-1):
         self.key, self.label, self.sql = key, label, sql
         self.sel, self.fair = sel, fair
         self.settles_on, self.lined = settles_on, lined
         # A single-line market (over_under_25) still grades against a line — it
         # just does not vary, so it carries no monotonicity check.
         self.fixed_line = fixed_line
+        # Direction the FIRST selection's probability must move as the line
+        # rises. -1 for a total (P(over) falls as the line rises); +1 for Asian
+        # handicap, where `handicap_line` is stored HOME-perspective (§53) so a
+        # HIGHER line means the home side receives more goals and P(home covers)
+        # RISES. Getting this backwards turns an honest ladder into a "flat
+        # ladder, disqualified".
+        self.ladder_sign = ladder_sign
 
 
 OU = ("over", "under")
@@ -106,7 +113,7 @@ MARKETS = [
     M("btts", "BTTS", "o.market = 'btts'", ("yes", "no"), 1.0, "ft_goals", False),
     M("double_chance", "Double chance", "o.market = 'double_chance'", ("1x", "12", "x2"), 2.0, "ft_goals", False),
     M("draw_no_bet", "Draw no bet", "o.market = 'draw_no_bet'", ("home", "away"), 1.0, "ft_goals", False),
-    M("asian_handicap", "Asian handicap", "o.market = 'asian_handicap'", ("home", "away"), 1.0, "ah", True),
+    M("asian_handicap", "Asian handicap", "o.market = 'asian_handicap'", ("home", "away"), 1.0, "ah", True, None, +1),
     M("1x2_1h", "1st-half 1x2", "o.market = '1x2_1h'", X3, 1.0, "ht_goals", False),
     M("over_under_1h", "1st-half totals", "o.market LIKE 'over_under_1h_%'", OU, 1.0, "ht_goals", True),
     M("team_total", "Team totals (FT)", "o.market LIKE 'team_total_%' AND o.market NOT LIKE 'team_total_1h%'", OU, 1.0, "team_ft", True),
@@ -122,7 +129,12 @@ MARKETS_BY_KEY = {m.key: m for m in MARKETS}
 # ── loading ─────────────────────────────────────────────────────────────────
 def load_market(m: M, days: int, books: tuple[str, ...]):
     """Pre-kickoff, non-live quotes for one market family plus everything gate 3
-    and the grader need. Books are passed in so the same-quantity check can pull
+    and the grader need.
+
+    The `%` doubling is ANALYSIS_GOTCHAS #6: psycopg2 reads a bare `%` in the
+    SQL string as a parameter placeholder, so a `LIKE 'cards_ou_%'` predicate
+    interpolated into a parameterised query raises `IndexError: tuple index out
+    of range` — which reads like a bug in the parameter list, not in the LIKE. Books are passed in so the same-quantity check can pull
     a wider set than the gates do."""
     rows = execute_query(
         f"""
@@ -144,7 +156,7 @@ def load_market(m: M, days: int, books: tuple[str, ...]):
            AND o.bookmaker <> ALL(%s)
            AND o.is_live IS NOT TRUE
            AND o.timestamp < mt.date
-           AND ({m.sql})
+           AND ({m.sql.replace("%", "%%")})
         """,
         (str(days), list(books), list(EXCLUDED_BOOKS)),
     )
@@ -364,66 +376,171 @@ def gate_1_2_3(m: M, obs, facts, days: int):
     }
 
 
-def gate_same_quantity(m: M, days: int, min_fx: int = 30):
-    """Do the books price the SAME QUANTITY? Two independent tests, both of
-    which cards fails and which nothing else should.
+def gate_same_quantity(m: M, days: int, min_fx: int = 30,
+                       max_spread: float = 0.10, diag_books=("Bet365", "1xBet")):
+    """Do the books price the SAME QUANTITY, LINE BY LINE?
 
-    (a) LEVEL. At a shared line, every book's de-vigged P(over) should sit in
-        the same range. A book whose P(over) is 0.18 where the sharp book says
-        0.35 is not offering value, it is counting something else.
-    (b) MONOTONICITY. P(over) must FALL as the line rises, at every book. The
-        live parser bug behind the cards trap shows up here as a flat ~0.5
-        across every line from 2.5 to 8.5 — a label detached from the quantity.
+    This is the check that would have stopped the cards bot. Cards generated 156
+    "opportunities"/week at a 3% floor — more than every other market combined —
+    purely because the books disagree about what they are counting.
+
+    BOTH TESTS ARE PAIRED ON FIXTURES, which is not a detail. ANALYSIS_GOTCHAS
+    §10: each book prices a different slate, so comparing two books' median
+    P(over) compares their slates, not their prices. Run UNPAIRED, this check
+    rejects O/U 1.5 / 3.5 / 4.5 — three markets where the books demonstrably do
+    agree — with "spreads" of 0.13 to 0.25 that are entirely fixture mix.
+
+    (a) LEVEL, paired. For every fixture a book and the anchor both quote at the
+        same line, take the de-vigged P(over) difference; the line's bias is the
+        MEDIAN of those differences. A line passes when no executable book is
+        more than `max_spread` from the anchor.
+
+    (b) MONOTONICITY, within ONE FIXTURE'S OWN LADDER and one side. P(over) must
+        fall as the line rises. Measured inside a fixture, so a book's line mix
+        cannot fake it either. A book whose ladder is flat is not pricing the
+        ladder: Bet365 and 1xBet sit at ~0.46-0.58 at every cards line from 2.5
+        to 7.5 — a label detached from the quantity, i.e. a live parser bug, and
+        the reason cards produced more "opportunities" than every other market
+        combined.
+
+    A MARKET-LEVEL PASS/FAIL is the wrong output, because it throws away the
+    half of a ladder that is sound. This returns the SET OF LINES that pass, and
+    gate 4 runs on those lines only.
     """
-    if not m.lined:
-        return {"applicable": False}
-    books = (ANCHOR_BOOK,) + EXEC_BOOKS + ("Bet365", "1xBet")
+    if not (m.lined or m.fixed_line is not None):
+        return {"applicable": False, "pass_keys": None, "pass": True}
+    # Bet365 and 1xBet are DIAGNOSTIC ONLY — they are not bettable and never
+    # enter a gate. They are pulled because they are where the flat-ladder
+    # pathology is visible, which is the evidence that the check works at all.
+    books = (ANCHOR_BOOK,) + EXEC_BOOKS + tuple(diag_books)
     rows = load_market(m, days, books)
     obs, _ = index_rows(m, rows)
-    pov = defaultdict(list)           # (book, key) -> [p_over]
+    # key -> book -> match_id -> de-vigged P(over)
+    pov: dict = defaultdict(lambda: defaultdict(dict))
     for (mid, key), bybook in obs.items():
-        for b, o in bybook.items():
+        for bk, o in bybook.items():
             q = assemble(o, m.sel)
             if not q:
                 continue
-            d = devig([q[-1][1]["over"], q[-1][1]["under"]])
+            d = devig([q[-1][1][x] for x in m.sel])
             if d:
-                pov[(b, key)].append(d[0])
-    med = {k: (median(v), len(v)) for k, v in pov.items() if len(v) >= 5}
-
-    # (a) level agreement at shared lines, our books + anchor
+                pov[key][bk][mid] = d[0]
     ours = (ANCHOR_BOOK,) + EXEC_BOOKS
-    spreads = []
-    for key in {k for _, k in med}:
-        vals = [med[(b, key)][0] for b in ours if (b, key) in med
-                and med[(b, key)][1] >= min_fx]
-        if len(vals) >= 3:
-            spreads.append(max(vals) - min(vals))
-    # (b) monotonicity per book over its own lines
-    mono = {}
-    for b in books:
-        pts = sorted(((k[1], med[(b, k)][0]) for k in
-                      {kk for bb, kk in med if bb == b}
-                      if med[(b, k)][1] >= 10 and k[1] is not None),
-                     key=lambda x: x[0])
-        pts = [p for p in pts if p[0] is not None]
-        if len(pts) < 4:
+
+    # (a) PAIRED level agreement against the anchor, line by line
+    per_line = {}
+    for key, bybook in pov.items():
+        anchor = bybook.get(ANCHOR_BOOK, {})
+        biases, paired_n = {}, {}
+        for bk in EXEC_BOOKS:
+            common = set(anchor) & set(bybook.get(bk, {}))
+            if len(common) < min_fx:
+                continue
+            biases[bk] = median([bybook[bk][x] - anchor[x] for x in common])
+            paired_n[bk] = len(common)
+        if not biases:
+            per_line[key] = {"n_books": 0, "spread": None, "pass": False,
+                             "why": "too thin to pair", "bias": {}, "paired_n": {}}
             continue
-        drops = sum(1 for i in range(1, len(pts)) if pts[i][1] <= pts[i - 1][1] + 1e-9)
-        mono[b] = {"lines": len(pts), "monotone_steps": drops / (len(pts) - 1),
-                   "p_hi": pts[0][1], "p_lo": pts[-1][1],
-                   "range": pts[0][1] - pts[-1][1]}
-    ok_level = bool(spreads) and median(spreads) <= 0.10
-    ok_mono = all(v["monotone_steps"] >= 0.80 and v["range"] >= 0.10
-                  for b, v in mono.items() if b in ours)
-    return {"applicable": True, "n_shared_lines": len(spreads),
-            "median_spread": median(spreads) if spreads else None,
-            "mono": mono, "pass": bool(ok_level and ok_mono and spreads and mono)}
+        worst = max(abs(v) for v in biases.values())
+        per_line[key] = {
+            "n_books": len(biases) + 1, "spread": worst,
+            "pass": worst <= max_spread,
+            "why": "" if worst <= max_spread else "paired level mismatch vs anchor",
+            "bias": biases, "paired_n": paired_n,
+            "books": {bk: median(list(v.values()))
+                      for bk, v in bybook.items() if bk in ours and len(v) >= 5},
+        }
+
+    # (b) monotonicity measured WITHIN a fixture's own ladder
+    mono = {}
+    for bk in books:
+        steps = drops = ladders = 0
+        hi, lo = [], []
+        fx = defaultdict(list)          # (match_id, side) -> [(line, p_over)]
+        for key, bybook in pov.items():
+            if key[1] is None:
+                continue
+            for mid, pv in bybook.get(bk, {}).items():
+                fx[(mid, key[0])].append((key[1], pv))
+        for pts in fx.values():
+            if len(pts) < 4:
+                continue
+            pts.sort()
+            ladders += 1
+            steps += len(pts) - 1
+            drops += sum(1 for i in range(1, len(pts))
+                         if m.ladder_sign * (pts[i][1] - pts[i - 1][1]) <= 1e-9)
+            hi.append(pts[0][1] if m.ladder_sign < 0 else pts[-1][1])
+            lo.append(pts[-1][1] if m.ladder_sign < 0 else pts[0][1])
+        if steps < 20:
+            continue
+        mono[bk] = {"lines": ladders, "monotone_steps": drops / steps,
+                    "p_hi": median(hi), "p_lo": median(lo),
+                    "range": median(hi) - median(lo)}
+
+    # A book whose own ladder is flat is disqualified outright — no line of it is
+    # trustworthy however well it happens to agree at one point.
+    flat = {bk for bk, v in mono.items()
+            if bk in ours and (v["monotone_steps"] < 0.85 or v["range"] < 0.10)}
+    pass_keys = {k for k, v in per_line.items() if v["pass"]}
+    table = sorted(((bk, k[0], k[1], median(list(v.values())), len(v))
+                    for k, bb in pov.items() for bk, v in bb.items()
+                    if k[1] is not None and len(v) >= 5),
+                   key=lambda r: (str(r[1]), r[2], r[0]))
+    return {"applicable": True, "per_line": per_line, "pass_keys": pass_keys,
+            "mono": mono, "table": table, "flat_books": flat,
+            "n_lines": len(per_line), "n_pass": len(pass_keys),
+            "pass": bool(pass_keys) and not flat}
+
+
+def gate_settlement_calibration(m: M, obs, facts, allowed_keys=None):
+    """GATE 3b — does the statistic we grade on REPRODUCE the sharp book?
+
+    Gate 3 asks whether the number exists. This asks whether it is the number
+    the market is pricing, which is a different question and the one that cost
+    real money on cards: `match_stats` card columns undercount the books' line
+    by ~0.8/match (§51), so a bot grading on them manufactures phantom under-edge
+    on every fixture while still settling 100% of its bets.
+
+    The test needs no model. Pinnacle's de-vigged P(over), averaged over a few
+    hundred fixtures, IS the realised over-rate to within sampling error. If our
+    grading says otherwise, our definition of the quantity is wrong — not
+    Pinnacle's.
+
+    Returns mean anchor P(over) vs realised over-rate and the gap in pp.
+    """
+    exp, got = [], []
+    for (mid, key), bybook in obs.items():
+        if allowed_keys is not None and key not in allowed_keys:
+            continue
+        f = facts[mid]
+        if f["status"] != "finished":
+            continue
+        a = assemble(bybook.get(ANCHOR_BOOK, []), m.sel)
+        if not a:
+            continue
+        d = devig([a[-1][1][s2] for s2 in m.sel])
+        if not d:
+            continue
+        g = grade(m, m.sel[0], key, f)
+        # Only clean win/loss legs: a push carries no information and an Asian
+        # quarter line's half-win is not a Bernoulli draw from P(sel).
+        if g is None or abs(abs(g) - 1.0) > 1e-9:
+            continue
+        exp.append(d[0])
+        got.append(1.0 if g > 0 else 0.0)
+    if len(exp) < 100:
+        return None
+    e, o = sum(exp) / len(exp), sum(got) / len(got)
+    se = math.sqrt(max(o * (1 - o), 1e-9) / len(got))
+    return {"n": len(exp), "anchor": e, "realised": o, "gap": o - e,
+            "z": (o - e) / se if se else 0.0}
 
 
 # ── gate 4: the backtest ────────────────────────────────────────────────────
 def build_bets(m: M, obs, facts, align_min: float, scramble: bool = False,
-               rng: random.Random | None = None):
+               rng: random.Random | None = None, allowed_keys=None):
     """One candidate per (fixture, comparison key, executable book): the LATEST
     executable quote that has a time-aligned anchor. Returns rows carrying the
     full edge vector so a floor sweep costs nothing extra.
@@ -434,6 +551,8 @@ def build_bets(m: M, obs, facts, align_min: float, scramble: bool = False,
     anchor_pool = defaultdict(list)
     prepared = {}
     for (mid, key), bybook in obs.items():
+        if allowed_keys is not None and key not in allowed_keys:
+            continue          # the same-quantity check rejected this line
         a = assemble(bybook.get(ANCHOR_BOOK, []), m.sel)
         if not a:
             continue
@@ -554,6 +673,35 @@ def roi_ci(picked):
             "fixtures": len({p["mid"] for p in picked})}
 
 
+def flat_control(ctrl_bets, book_or: float | None):
+    """HARNESS VALIDITY — the number with a closed form.
+
+    Flat-bet EVERY leg of the junk-anchor ledger, with no floor and no
+    selection. If a book's prices are proportional to the true probabilities and
+    our grading is right, that loses exactly
+
+        -v / (1 + v)     where v is the book's overround
+
+    and nothing else. It is the one control whose expected value is known in
+    advance, so it separates "this market has no edge" from "we are grading this
+    market wrong" — a distinction the FLOORED control cannot make, because
+    taking the max-edge leg across a laddered market's many lines systematically
+    picks the longest price on offer and so loses the vig PLUS the
+    favourite-longshot bias.
+
+    Measured 2026-09-14: corners -6.62% against an expected -6.9%/-6.5% (clean);
+    cards -8.72% against the same -7.4%, and -11.4% at its central line 4.5
+    against -7.4% — a ~4pp residual that is the card-count definition itself,
+    the same gap gate 3b reports independently.
+    """
+    legs = [{**b, "leg": l} for b in ctrl_bets for l in b["legs"]]
+    r = roi_ci(legs)
+    if r is None:
+        return None
+    r["expected"] = (-book_or / (1 + book_or)) if book_or else None
+    return r
+
+
 def folds(picked, k=3):
     """Time-ordered folds — the only split that answers 'would this have worked
     on data I had not already looked at'."""
@@ -588,6 +736,9 @@ def main() -> int:
     ap.add_argument("--min-fx-per-day", type=float, default=3.0)
     ap.add_argument("--min-settle-pct", type=float, default=70.0)
     ap.add_argument("--seed", type=int, default=20260914)
+    ap.add_argument("--quantity-table", action="store_true",
+                    help="dump the per-book, per-line median P(over) grid — the "
+                         "evidence behind the same-quantity verdict")
     a = ap.parse_args()
 
     floors = [float(x) for x in a.floors.split(",")]
@@ -628,25 +779,83 @@ def main() -> int:
             print("  -> STOP: cannot be evaluated on the bets it would place. Not backtested.")
             continue
 
-        q = gate_same_quantity(m, a.days)
+        # ANALYSIS_GOTCHAS §12: a heavy replay query gets OOM-killed silently.
+        # Asian handicap alone is 2.7M rows across the five books over 17 days,
+        # so the two diagnostic books are dropped on any market whose bettable
+        # load is already large. They inform no gate.
+        diag = () if len(rows) > 800_000 else ("Bet365", "1xBet")
+        if not diag:
+            print("  (diagnostic books Bet365/1xBet skipped — market too large "
+                  "to reload; they inform no gate)")
+        q = gate_same_quantity(m, a.days, diag_books=diag)
+        allowed = None
         if q["applicable"]:
-            print(f"  QUANTITY CHECK     shared lines={q['n_shared_lines']}  "
-                  f"median cross-book P(over) spread="
-                  f"{'n/a' if q['median_spread'] is None else f'{q['median_spread']:.3f}'}")
+            print(f"  QUANTITY CHECK     lines checked={q['n_lines']}  "
+                  f"lines PASSING={q['n_pass']}")
             for b, v in sorted(q["mono"].items()):
-                print(f"                     {b:14s} lines={v['lines']:2d} "
-                      f"monotone={v['monotone_steps']*100:5.1f}%  "
-                      f"P(over) {v['p_hi']:.3f} -> {v['p_lo']:.3f}")
+                tag = "  <-- FLAT LADDER, disqualified" if b in q["flat_books"] else ""
+                print(f"                     {b:14s} ladders={v['lines']:5d} "
+                      f"within-fixture monotone={v['monotone_steps']*100:5.1f}%  "
+                      f"P(over) {v['p_hi']:.3f} -> {v['p_lo']:.3f}{tag}")
+            for k in sorted(q["per_line"], key=lambda x: (str(x[0]), x[1] or 0)):
+                v = q["per_line"][k]
+                if v["spread"] is None:
+                    continue
+                print(f"                     line {k[1]:5.2f} "
+                      f"{str(k[0] or ''):5s} worst paired bias vs anchor="
+                      f"{v['spread']:+.3f}  "
+                      f"{'PASS' if v['pass'] else 'FAIL — ' + v['why']}"
+                      + ("   [" + ", ".join(
+                          f"{b} {bi:+.3f} (n={v['paired_n'][b]})"
+                          for b, bi in sorted(v.get('bias', {}).items())) + "]"
+                         if a.quantity_table else ""))
             print(f"                     -> {'PASS' if q['pass'] else 'FAIL'}")
             if not q["pass"]:
                 verdicts.append((m, g, q, None, "QUANTITY FAIL — books price different things"))
                 print("  -> STOP: the books do not price the same quantity. Not backtested.")
                 continue
+            allowed = q["pass_keys"]
         else:
             print("  QUANTITY CHECK     n/a (unlined market)")
 
-        bets = build_bets(m, obs, facts, a.align_min)
-        ctrl = build_bets(m, obs, facts, a.align_min, scramble=True, rng=rng)
+        cal = gate_settlement_calibration(m, obs, facts, allowed)
+        if cal:
+            print(f"  GATE 3b calibration n={cal['n']}  anchor P({m.sel[0]})="
+                  f"{cal['anchor']:.3f}  realised={cal['realised']:.3f}  "
+                  f"gap={cal['gap']*100:+.1f}pp  z={cal['z']:+.1f}")
+            if abs(cal["z"]) > 4.0:
+                verdicts.append((m, g, q, None,
+                                 f"GATE 3b FAIL — grading disagrees with the sharp book "
+                                 f"by {cal['gap']*100:+.1f}pp"))
+                print("  -> STOP: the statistic we settle on is not the quantity the "
+                      "market prices. Not backtested.")
+                continue
+
+        bets = build_bets(m, obs, facts, a.align_min, allowed_keys=allowed)
+        ctrl = build_bets(m, obs, facts, a.align_min, scramble=True, rng=rng,
+                          allowed_keys=allowed)
+        mean_or = (median([v for v, _ in g["book_or"].values()])
+                   if g["book_or"] else None)
+        fc = flat_control(ctrl, mean_or)
+        if fc:
+            dev = (fc["roi"] - fc["expected"]) * 100 if fc["expected"] else None
+            print(f"  NEG CONTROL (flat)  junk anchor, every leg, no floor: "
+                  f"n={fc['n']}  ROI {fc['roi']*100:+.2f}%  "
+                  f"expected {-mean_or/(1+mean_or)*100:+.2f}% "
+                  f"(= -v/(1+v), v={mean_or*100:.2f}%)  "
+                  f"deviation {dev:+.2f}pp"
+                  # HOW TO READ THE DEVIATION. -v/(1+v) is the exact loss only
+                  # if a book's prices are proportional to the true
+                  # probabilities. They are not: the favourite-longshot bias
+                  # makes flat-betting every leg lose MORE than the vig wherever
+                  # the market is asymmetric, with no grading error involved —
+                  # 1x2 (our known-good control) deviates -2.45pp and O/U 4.5,
+                  # whose grading is `goals > 4.5`, deviates -4.50pp. So this
+                  # line answers "is the harness paying the vig it should" and
+                  # NOT "is the grading right". GATE 3b answers the grading
+                  # question, because comparing the anchor's de-vigged P(over)
+                  # to the realised rate is free of both biases.
+                  )
         print(f"  GATE 4 backtest    candidates={len(bets)}  "
               f"(align <= {a.align_min:.0f} min)")
         rowsout = []
