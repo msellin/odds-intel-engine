@@ -17,4 +17,7 @@
 - [x] Commit + push (1f7bba50)
 - [x] **Robustness-check B1 — IT FAILED. Withdrawn same night; docs + queue corrected**
 - [ ] Analyse the overnight Epicbet capture (morning)
-- [ ] Look for a trigger with a MECHANISM rather than a lucky bucket
+- [x] Test mechanism-based triggers (scoreline over-reaction) — all refuted, wide windows
+- [x] Found + quantified WHERE the vig sits (long side 14% vs favourite 3.8%)
+- [x] Confirmed short-side is near break-even; design rule recorded
+- [ ] Re-run everything against collected Epicbet prices (morning)

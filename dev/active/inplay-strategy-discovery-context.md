@@ -77,3 +77,36 @@ deliverable: they are monotone across many buckets on large samples.
 window BEFORE believing a cell. ~50 cells were tested; one significant cell is what
 multiple testing produces on its own. `<scratch>/robust.py` is the check — run it on
 every future candidate before it gets a line in a doc.
+
+## UPDATE — the structural finding (Parts 3 & 4)
+
+**Where the in-play vig sits** (n=7,539 level-score snapshots, minute 30–84,
+book overround 7.8%):
+
+| outcome | vig charged | relative cost |
+|---|---|---|
+| favourite | +1.8pp | **3.8%** |
+| draw | +2.3pp | **6.7%** |
+| underdog | +3.7pp | **14.3%** |
+
+This explains every negative result: the losing strategies were not wrong about
+football, they were **shopping on the long side**. "Back the trailing favourite" buys
+at 2.9–7.5; "lay the dog" at 3.6–10.8.
+
+**Confirmed by direct test (Part 4).** Restricted to prices 1.05–2.30 the house edge
+nearly vanishes: 0-0 → under 2.5 at 1.63 costs 0.4%; a 2-goal leader at 1.11 is
+indistinguishable from break-even across three windows. Still nothing positive —
+every interval containing a gain contains zero.
+
+**The operational consequence:** a genuine 2–3% signal would SURVIVE short-side and be
+WIPED OUT long-side. So the search is constrained, not hopeless. **Screen every future
+candidate for "does this back a price under ~2.20?" before testing it.**
+
+## Morning checklist
+
+1. `pgrep -f inplay_epicbet_collector` — the 9h run should have ended on its own.
+2. Re-run `edge2.py` / `shortside.py` logic against `epicbet_inplay.jsonl` (real
+   placeable prices) instead of AF's aggregate. Expect the *shape* to hold and the
+   absolute costs to be lower — Epicbet's O/U margin measured 6.4–6.6% vs AF's 7.8%.
+3. Always run `robust.py`-style wide-window + split checks BEFORE a candidate is
+   written down as a candidate.
