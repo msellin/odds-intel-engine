@@ -73,9 +73,6 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_coolbet_trigger_sharp_1x2_v1", FAM_TRIGGER, "1x2", ANCHOR_SHARP,
             0.03, 1.01, False,
             "Sharp twin: fires when Coolbet's 1x2 price beats the de-vigged Pinnacle line by ≥3% (no odds floor — experimental, observing all bands). Paper. Head-to-head vs the model twin."),
-    BotSpec("bot_coolbet_trigger_ou_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_MODEL,
-            0.08, 1.80, False,
-            "Fires when Coolbet's O/U 2.5 price lands in the MODEL trigger window (model edge ≥8% at Coolbet's own odds). Paper. OOS backtest +4.3% not-robust."),
     BotSpec("bot_coolbet_trigger_sharp_ou_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_SHARP,
             0.03, 1.01, False,
             "Sharp twin: fires when Coolbet's O/U 2.5 price beats the de-vigged Pinnacle line by ≥3% (no odds floor — experimental, observing all bands). Paper. Head-to-head vs the model twin.",
@@ -103,9 +100,6 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_unibet_trigger_sharp_1x2_v1", FAM_TRIGGER, "1x2", ANCHOR_SHARP,
             0.03, 1.01, False,
             "Sharp twin: fires when Unibet's 1x2 site price beats the de-vigged Pinnacle line by ≥3% (no odds floor). Paper. Where the draw edge should surface (§57)."),
-    BotSpec("bot_unibet_trigger_ou_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_MODEL,
-            0.08, 1.80, False,
-            "Fires when Unibet's O/U 2.5 site price lands in the MODEL trigger window (model edge ≥8% at Unibet's own odds). Paper. Unibet twin of the Coolbet O/U trigger."),
     BotSpec("bot_unibet_trigger_sharp_ou_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_SHARP,
             0.03, 1.01, False,
             "Sharp twin: fires when Unibet's O/U 2.5 site price beats the de-vigged Pinnacle line by ≥3% (no odds floor). Paper.",
@@ -127,9 +121,6 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_trigger_1x2_sharp_v1", FAM_TRIGGER, "1x2", ANCHOR_SHARP,
             0.03, 1.01, False,
             "Book-agnostic SHARP 1x2 trigger: any placeable book beating the de-vigged Pinnacle line by >=3% (no odds floor). Paper. The 3% floor is set EXPLICITLY — a sharp edge is measured against a near-true line and is never comparable to a model floor."),
-    BotSpec("bot_trigger_ou_model_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_MODEL,
-            0.08, 1.80, False,
-            "Book-agnostic MODEL O/U 2.5 trigger: fires when ANY book we place at prices a modelled fixture into the window. Paper. Replaces the Coolbet+Unibet O/U model twins."),
     BotSpec("bot_trigger_ou_sharp_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_SHARP,
             0.03, 1.01, False,
             "Book-agnostic SHARP O/U 2.5 trigger: any placeable book beating the de-vigged Pinnacle line by >=3% (no odds floor). Paper.",
@@ -150,12 +141,6 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_corners_paper_shadow_v1", FAM_COOLBET_PAPER, "corners", ANCHOR_SHARP,
             0.0, None, False,
             "Best Betano/Unibet corners price vs de-vigged Pinnacle corners line (sharp edge ≥0%). Forward paper test on executable corners books."),
-    BotSpec("bot_team_total_paper_shadow_v1", FAM_COOLBET_PAPER, "team totals", ANCHOR_SHARP,
-            0.0, None, False,
-            "Best Epicbet/Betano/Unibet full-match team-total price vs de-vigged Pinnacle line (sharp edge ≥0%). USE-COLLECTED-MARKETS: a market we collect but never modelled; settles from the final score (no coverage gap). Paper, accruing forward."),
-    BotSpec("bot_1h_1x2_paper_shadow_v1", FAM_COOLBET_PAPER, "1H 1x2", ANCHOR_SHARP,
-            0.0, None, False,
-            "Best Epicbet/Betano/Unibet first-half 1X2 price vs Shin-de-vigged Pinnacle 1H triple (sharp edge ≥0%). USE-COLLECTED-MARKETS: a 3-way market we collect but never modelled; settles from the HT score (no gap). Paper, accruing forward."),
 
     # Internal model / strategy validators (paper, not a Coolbet placement path)
     BotSpec("bot_v10_all", FAM_INTERNAL, "mixed", ANCHOR_MODEL,
@@ -198,6 +183,18 @@ BOTS: list[BotSpec] = [
 
 def by_name(name: str) -> BotSpec | None:
     return next((b for b in BOTS if b.name == name), None)
+
+
+# BOT-RETIREMENT-ON-CLV-2026-09-14 — five bots REMOVED from this list and
+# retired in the DB (migration 348), on margin-corrected own-book CLV:
+#   bot_coolbet_trigger_ou_v1       n=371  EV -6.27%
+#   bot_team_total_paper_shadow_v1  n=310  EV -4.98%
+#   bot_unibet_trigger_ou_v1        n=221  EV -5.61%
+#   bot_1h_1x2_paper_shadow_v1      n=165  EV -6.25%
+#   bot_trigger_ou_model_v1         n=164  EV -5.94%
+# Four of the five were MODEL-anchored. The sharp-anchored bots stay even
+# where their point estimate is negative — their CIs still straddle zero and
+# the anchor comparison is the open question.
 
 
 def active_names() -> set[str]:
