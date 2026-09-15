@@ -49,7 +49,16 @@ CREATE INDEX IF NOT EXISTS idx_picks_board_settle
     ON picks_board (kickoff_at) WHERE outcome IS NULL;
 
 -- Rebuilt to carry the tracking fields through to the public surface.
-CREATE OR REPLACE VIEW picks_board_public AS
+--
+-- DROP first: `CREATE OR REPLACE VIEW` can only APPEND columns, never insert
+-- them mid-list, and this adds the tracking fields before `kickoff_utc`.
+-- Postgres rejects it with `cannot change name of view column "kickoff_utc" to
+-- "first_seen_at"` — which is what the 2026-09-15 12:02 run failed on. Nothing
+-- depends on this view but the picks page, so dropping it is safe; the GRANTs
+-- below are re-applied because a DROP takes them with it.
+DROP VIEW IF EXISTS picks_board_public;
+
+CREATE VIEW picks_board_public AS
 SELECT b.match_id, b.market, b.selection, b.odds, b.bookmaker, b.p_sharp,
        b.edge, b.odds_breakeven, b.odds_grade_b, b.odds_grade_a,
        b.anchor_overround, b.updated_at, b.first_seen_at,
