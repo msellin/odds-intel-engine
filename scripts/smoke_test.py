@@ -66,6 +66,20 @@ def assert_no_error(fn, *args, **kwargs):
 # odds-intel-web checkout; using "../odds-intel-web/..." string paths is
 # CWD-dependent and flakes under the ThreadPoolExecutor when any concurrent
 # test shifts CWD. _engine_root / _web_root / _path are CWD-independent.
+# PUBLISHER-PATCH-LOCK. The runner executes tests in a ThreadPoolExecutor, so a
+# test that monkeypatches a SHARED MODULE is visible to every test running at the
+# same instant — even when it restores correctly in `finally`. On 2026-09-15
+# PICKS-FORWARD-TEST-SCHEDULED patched `publish_picks_forward_test.junk_anchor_arm`
+# to an identity lambda while PICKS-FORWARD-TEST-JUNK-ARM-SELECTS was mid-flight,
+# and the latter failed with "MIN_EDGE not applied" against a pool that had never
+# been filtered. The reported order made it look impossible: JUNK-ARM completed
+# 3rd and SCHEDULED 6th, because the list is COMPLETION order, not start order.
+#
+# Any test that patches that module must hold this lock. RELIABILITY_LEDGER's
+# "a test that monkeypatches a shared module" pattern, in its concurrent form.
+import threading as _threading
+_PUBLISHER_PATCH_LOCK = _threading.Lock()
+
 import pathlib as _pathlib
 _engine_root = _pathlib.Path(__file__).resolve().parent.parent
 _web_root = _engine_root.parent / "odds-intel-web"
@@ -41336,8 +41350,10 @@ def test_picks_forward_test_junk_arm_selects():
                      "alignment_gap_minutes": 0.0, "kickoff_at": None,
                      "home_team": "H", "away_team": "A", "league": "L"})
 
-    live = P.select(pool)
-    junk = P.junk_anchor_arm(pool)
+    # Hold the lock: a concurrently-running test may be patching this module.
+    with _PUBLISHER_PATCH_LOCK:
+        live = P.select(pool)
+        junk = P.junk_anchor_arm(pool)
 
     # the selection half of the locked rule applies to BOTH arms
     # No daily cap since 2026-09-15; the breaker is the only ceiling.
@@ -42434,6 +42450,7 @@ def test_picks_forward_test_scheduled():
         _claimed.add(key)
         return f"id-{len(_claimed)}"
 
+    _PUBLISHER_PATCH_LOCK.acquire()
     try:
         _pub.load_candidates = lambda: (list(_fake), list(_fake))
         _pub.junk_anchor_arm = lambda pool: list(pool)
@@ -42488,6 +42505,7 @@ def test_picks_forward_test_scheduled():
         (_pub.load_candidates, _pub.claim, _pub.attach_message_id,
          _pub.junk_anchor_arm, _tg.send_telegram_public,
          _st.is_publishing_paused) = _orig
+        _PUBLISHER_PATCH_LOCK.release()
         for _m in _stubbed:
             _sys.modules.pop(_m, None)
 
