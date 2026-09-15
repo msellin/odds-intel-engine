@@ -305,7 +305,15 @@ def _format_public_signal(b: dict) -> str:
         f"⚽ <b>{b['home_team']} vs {b['away_team']}</b>\n"
         f"{league_str} · {ko_str}\n\n"
         f"✅ Pick: <b>{pick}</b> @ <b>{odds:.2f}</b>{bk_str}\n"
-        f"📈 Edge: <b>+{edge_pct:.1f}%</b>\n\n"
+        # MODEL-EDGE-LABEL (2026-09-15). This said "Edge", and the sharp-anchored
+        # publisher says "Edge vs sharp line" — two DIFFERENT quantities under one
+        # word, arriving in the same channel 90 minutes apart on 2026-09-15.
+        # This one is a PROBABILITY difference (calibrated model probability minus
+        # the implied price); the sharp rule's is an expected ROI. They are not
+        # comparable: a 16% probability edge at odds of 4.00 is ~+64% expected
+        # return, not 16%. The pre-registration warns in terms that the two must
+        # never collide in a reader's head, and unlabelled they did.
+        f"📈 Model edge: <b>+{edge_pct:.1f}%</b>\n\n"
         f"<a href='https://oddsintel.app/picks'>Live picks</a> · "
         f"<a href='https://oddsintel.app/performance'>Track record</a>"
     )

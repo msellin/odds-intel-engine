@@ -42588,6 +42588,42 @@ def test_retention_artifact_gotcha():
     )
 
 
+@test("EDGE-LABELS-DISTINCT — the two bot families must not both say just \"Edge\"")
+def test_edge_labels_distinct():
+    """MODEL-EDGE-LABEL (2026-09-15).
+
+    Two publishers reach the same Telegram channel, and on 2026-09-15 they sent
+    messages 90 minutes apart reading:
+
+        Ludogorets  📈 Edge: +16.0%            (bot_v10_all, model-anchored)
+        Platense    📈 Edge vs sharp line: +3.3%  (sharp forward test)
+
+    Those are DIFFERENT QUANTITIES. The model's is a probability difference
+    (calibrated probability minus implied price); the sharp rule's is expected
+    ROI. A 16% probability edge at odds 4.00 is roughly +64% expected return —
+    so the smaller-looking number was the larger claim. The pre-registration
+    says in terms that the two forms must never collide in a reader's head.
+
+    Pin that each names its own basis."""
+    sig = _engine_path("workers/automation/coolbet_signaler.py").read_text()
+    pub = _engine_path("scripts/publish_picks_forward_test.py").read_text()
+
+    assert "Model edge:" in sig, (
+        "the model publisher must label its number 'Model edge' — it is a "
+        "probability difference, not the expected ROI the sharp rule publishes."
+    )
+    import re as _r
+    _code = _r.sub(r"#.*", "", sig)
+    assert '"📈 Edge: ' not in _code and "'📈 Edge: " not in _code, (
+        "the model publisher is back to a bare 'Edge:', which collides with the "
+        "sharp rule's 'Edge vs sharp line' in the same channel."
+    )
+    assert "Edge vs sharp line" in pub, (
+        "the sharp publisher must keep naming its anchor — 'Edge' alone would "
+        "collide with the model publisher's label."
+    )
+
+
 @test("PERFORMANCE-SHOWS-EVERY-BOT — the measurement surface hides nothing")
 def test_performance_shows_every_bot():
     """PERFORMANCE-SHOWS-EVERY-BOT (2026-09-15, owner).

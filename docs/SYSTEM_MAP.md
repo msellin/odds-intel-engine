@@ -37,6 +37,20 @@ just measure against different rulers. Putting a model floor on a sharp edge (or
 versa) is the classic mistake; the `Anchor` column in the bot tables below says which
 ruler each bot uses.
 
+**How the two edges are LABELLED in public** (MODEL-EDGE-LABEL, 2026-09-15). Both
+edges land in the same Telegram channel and on the same `/picks` page, so the label
+has to say which ruler the number was measured against — otherwise a reader compares
+a 16% and a 3% and concludes the 16% is five times better, when they are not the same
+quantity at all:
+
+| Surface | Model-anchored bots (e.g. `bot_v10_all`) | Sharp-anchored publisher |
+|---|---|---|
+| Telegram line | `📈 Model edge: +X%` (`workers/automation/coolbet_signaler.py`) | `📈 Edge vs sharp line: +X%` (`scripts/publish_picks_forward_test.py`) |
+| Channel bio | says the channel carries **two** bots and names both methods | — |
+
+Machine-checked by smoke test `EDGE-LABELS-DISTINCT`: a bare `📈 Edge:` in either
+publisher fails CI.
+
 > ### ⚠️ CORRECTED 2026-09-14 — the sharp floor's stated justification is false
 >
 > Three independent audits settled this. **Pinnacle is a genuinely good price — but it
