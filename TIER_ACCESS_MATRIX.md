@@ -24,7 +24,8 @@
 > identical, so a session-dependent cut would evaluate the stopping rules on a
 > cohort no reader ever saw. The old auth-aware split (PICKS-USER-GATE,
 > calibrated-only for anon vs calibrated+beta+active signed-in) went with the
-> model path; the new rule has one cohort by construction (top 8/day). Pinned by
+> model path; the new rule has one cohort by construction (every qualifying leg,
+> no daily selection cap since 2026-09-15). Pinned by
 > smoke `PICKS-USER-GATE`.
 
 ## Tier Overview

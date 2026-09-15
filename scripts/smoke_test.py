@@ -41547,38 +41547,80 @@ def test_picks_forward_test_surface():
             "picks_forward_test_summary must emit exactly one row per live-arm "
             "rule_version — no more (a stray group) and no fewer (a pooled sum)."
         )
-    # PICKS-BOARD-VS-RESULTS (2026-09-15). The fetch window is keyed on KICKOFF
-    # with a 24h lookback, so before a day's batch publishes the page held
-    # yesterday's settled picks and nothing else — indistinguishable from an
-    # outage, and the owner reported it as one ("we are still showing yesterdays
-    # pick on /picks page, where are todays?"). Nothing was broken; the board
-    # simply could not say it was empty. Pin the split so it cannot silently
-    # merge back.
+    # PICKS-SHOW-WHOLE-DAY (2026-09-15, owner). Two facts, and they were
+    # confused for each other all morning:
+    #
+    #   (a) The page must never show YESTERDAY'S picks as if they were today's.
+    #       That was the original complaint ("we are still showing yesterdays
+    #       pick on /picks page, where are todays?").
+    #   (b) The page must show ALL of TODAY'S picks, settled ones included —
+    #       "before 14 sept chnage, it showed all todays, even the ones that
+    #       were settled..so it should show all 4 still".
+    #
+    # The morning fix hid every started fixture, which bought (a) at the cost of
+    # (b): a pick published at noon vanished the moment it kicked off. The
+    # correct lever is the WINDOW, not the render. Anchoring the lookback to
+    # midnight UTC gives both — yesterday drops at midnight, today stays all day.
+    lib_ft = _web_path("src/lib/forward-test-picks.ts").read_text()
+    assert "hoursSinceUtcMidnight" in lib_ft and \
+            "fetchForwardTestPicks(hoursSinceUtcMidnight(" in page, (
+        "/picks is back on a rolling hour-count lookback. A rolling 24h window "
+        "reaches into yesterday at every hour of the day; the day boundary is "
+        "the only anchor under which 'today's picks' means today's picks."
+    )
+    assert "getUTCHours()" in lib_ft, (
+        "hoursSinceUtcMidnight must read the UTC clock. Kickoffs are stored in "
+        "UTC and this runs server-side — a server-local day boundary silently "
+        "follows whatever TZ the box has."
+    )
+    # The list and the headline must count the same set. This invariant has been
+    # broken once already (80aedd1: '3 picks on the board' above 'Today · 8
+    # picks'), so it is pinned rather than trusted.
+    assert "for (const p of picks)" in page, (
+        "the rendered list no longer iterates the full fetched set. Filtering "
+        "it again here is what dropped the day's own picks at kickoff."
+    )
+    assert "${picks.length} pick" in page, (
+        "the headline must count the same set the list renders."
+    )
+    # Started fixtures must still be DISTINGUISHABLE — shown, but never as if
+    # they were still bettable.
     assert "hasStarted(p.kickoff_utc)" in page, (
-        "the page must split picks on whether the fixture has kicked off. "
-        "Splitting on `outcome == null` instead puts in-play matches on the "
-        "board — telling a reader to bet a game already running."
+        "the page no longer knows which fixtures have kicked off. It does not "
+        "hide them any more, but it must still label them: an in-play match "
+        "rendered identically to an upcoming one tells a reader to bet a game "
+        "that is already running."
     )
-    assert "const board = picks.filter" in page, (
-        "the board must still exclude fixtures that have kicked off — a settled "
-        "pick rendered inside the board reads as a current pick."
+    assert "Nothing on the board right now" in page, (
+        "an empty board must SAY it is empty. A board that cannot report "
+        "emptiness looks identical to a broken page."
     )
-    assert "board.length > 0" in page and "Nothing on the board right now" in page, (
-        "an empty board must SAY it is empty. That sentence is the whole fix: a "
-        "board that cannot report emptiness looks identical to a broken page."
-    )
-    # SETTLED PICKS ARE NOT RENDERED ON /picks (owner, 2026-09-15). An
-    # "Already kicked off" section was added earlier that day and removed the
-    # same day: the page had never had one, and /picks is the live board.
-    # Results live on /performance. Pinned so it is not silently re-added.
+    # NO SEPARATE SETTLED SECTION (owner, 2026-09-15). Settled picks are shown,
+    # but inline in the day's list — not under a heading of their own. The page
+    # never had such a section and the owner removed it the day it appeared.
     # Checked against `_rendered` (comments stripped), not the raw source — the
     # comment EXPLAINING the removal contains the phrase, and asserting on raw
     # text would forbid documenting the decision. RELIABILITY_LEDGER #9:
     # "inspect code, not comments".
     assert "Already kicked off" not in _rendered, (
-        "the settled-picks section is back on /picks. The page is the live "
-        "board; results belong on /performance."
+        "the separate settled-picks section is back on /picks. Settled picks "
+        "belong in the same kickoff-ordered list as everything else, carrying "
+        "an outcome badge."
     )
+    # The daily cap is gone (PICKS-NO-DAILY-CAP, 2026-09-15, owner: "if possible
+    # lets not cap daily picks at all"). Any surface still promising eight is
+    # making a claim the publisher does not honour.
+    for _surface, _txt in (
+        ("/picks", page),
+        ("lib/forward-test-picks.ts", lib_ft),
+        ("/api/v1/upcoming", _web_path("src/app/api/v1/upcoming/route.ts").read_text()),
+    ):
+        assert "top 8 a day" not in _txt and "eight\n            a day" not in _txt \
+            and "top 8 per day" not in _txt, (
+            f"{_surface} still tells readers the rule publishes eight picks a "
+            f"day. TOP_N is None in scripts/publish_picks_forward_test.py — "
+            f"the only cap left is the 60/day runaway breaker."
+        )
 
     # honest framing, on the page, above the numbers
     _flat = " ".join(page.split())   # JSX wraps prose across lines
