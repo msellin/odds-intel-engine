@@ -36,6 +36,16 @@ load_dotenv()
 
 console = Console()
 
+# SCHEDULER-MODULE-LOGGER (2026-09-15). `log.info(...)` was used at module scope
+# by two jobs that had no `log` in scope at all — `job_pinnacle_drift_refresh`
+# (line ~1282) and `job_publish_picks_forward_test` — so both raised NameError
+# the moment they reached their own success-logging line. The forward-test
+# publisher had NEVER completed a single run (`pipeline_runs` held zero rows for
+# it). `job_trigger_calibrator_watch` happened to survive only because it builds
+# a local logger of its own. One module-level logger, so the next job that
+# reaches for `log` finds it.
+log = logging.getLogger("scheduler")
+
 # ── Globals ────────────────────────────────────────────────────────────────
 _shutdown_requested = False
 _start_time = time.time()
@@ -2188,10 +2198,42 @@ def job_publish_picks_forward_test():
     quotes at least 4h out, and publishing later than we measured would be
     publishing a different rule than the one pre-registered.
     """
-    from scripts.publish_picks_forward_test import load_candidates, render, record
+    from scripts.publish_picks_forward_test import (
+        load_candidates, render, record, junk_anchor_arm,
+    )
     from workers.notify.telegram import send_telegram_public
+    from workers.automation.coolbet_state import is_publishing_paused
 
-    picks = load_candidates()
+    # PUBLISHER-PAUSE-GATE (2026-09-15). `/pausepicks` sets `publishing_paused`
+    # (migration 353) and until now it gated ONLY the model signaler in
+    # betting_pipeline.py — which, since migration 335 removed the O/U
+    # calibrator, publishes nothing. So the operator's kill switch stopped the
+    # path that was silent and left running the only path that actually posts
+    # to @oddsintelpicks. That is RELIABILITY_LEDGER #4 — a second code path to
+    # the same surface, inheriting none of the first one's gates.
+    paused, reason = is_publishing_paused()
+    if paused:
+        log.info("picks_forward_test: publishing paused by operator (%s) — "
+                 "/resumepicks to restore", reason or "no reason given")
+        return {"picks": 0, "published": 0, "paused": True}
+
+    # SCHEDULER-PUBLISHER-NEVER-RAN (2026-09-15). This block could not execute.
+    # `load_candidates()` has returned a 2-TUPLE `(picks, pool)` since 2796dbd6,
+    # which PREDATES the commit that registered this job, and `junk_anchor_arm`
+    # takes ONE argument. So `if not picks` was never true (a 2-tuple is always
+    # truthy), `render()` received a list and raised TypeError, and the junk-arm
+    # call raised on arity. `pipeline_runs` held ZERO rows for this job: it was
+    # registered at 10:00 UTC and had never once completed. Every row in
+    # `picks_forward_test` came from a manual run on 2026-09-14.
+    #
+    # The smoke test asserted the IMPORT LINE as a string and passed green over
+    # a call that could not run — RELIABILITY_LEDGER #9, a test pinning the
+    # shape of the code instead of its behaviour. It now exercises the job.
+    #
+    # This mirrors `publish_picks_forward_test.main()`'s send path, which is the
+    # one that has actually worked. The day-one HEADER is deliberately NOT sent
+    # (main() gates it behind --no-header "use after day 1").
+    picks, pool = load_candidates()
     if not picks:
         log.info("picks_forward_test: no qualifying picks today (a valid outcome)")
         return {"picks": 0, "published": 0}
@@ -2199,12 +2241,18 @@ def job_publish_picks_forward_test():
     sent = 0
     for c in picks:
         mid = send_telegram_public(render(c))
-        if mid is not None:
+        if mid is None:
+            log.warning("picks_forward_test: send FAILED for %s v %s — "
+                        "recording anyway, unpublished",
+                        c.get("home_team"), c.get("away_team"))
+        else:
             sent += 1
         record(c, "live", mid)
 
-    from scripts.publish_picks_forward_test import junk_anchor_arm
-    for c in junk_anchor_arm(picks, picks):
+    # Negative control — recorded, never published. Runs over the POOL, not the
+    # selected picks: shuffling the anchor has to change WHICH bets are chosen,
+    # which is the only thing the anchor does (JUNK-ARM-DEGENERATE-2026-09-14).
+    for c in junk_anchor_arm(pool):
         record(c, "junk_anchor", None)
 
     log.info("picks_forward_test: %d picks, %d published", len(picks), sent)

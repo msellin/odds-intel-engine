@@ -42133,7 +42133,8 @@ def test_picks_forward_test_scheduled():
         "measured on quotes >=4h before kickoff, so publishing nearer kickoff "
         "publishes a different rule than the pre-registered one."
     )
-    assert "from scripts.publish_picks_forward_test import load_candidates" in src, (
+    assert "from scripts.publish_picks_forward_test import" in src and \
+           "load_candidates" in src, (
         "the scheduled job must call the SAME load_candidates the "
         "pre-registration locks — a reimplementation inherits none of its gates"
     )
@@ -42141,6 +42142,98 @@ def test_picks_forward_test_scheduled():
         "the scheduled job must still record the negative control; without it a "
         "broken harness is undetectable"
     )
+
+    # SCHEDULER-PUBLISHER-NEVER-RAN (2026-09-15) — EXERCISE THE JOB, don't grep it.
+    #
+    # Everything above this line is a string match, and on 2026-09-15 every one
+    # of them was GREEN over a job that could not execute a single line of its
+    # body. `load_candidates()` had returned a 2-tuple since 2796dbd6 — which
+    # predates the commit registering this job — so `if not picks` was never
+    # true, `render()` got a list and raised TypeError, `junk_anchor_arm` was
+    # called with two arguments against a one-argument signature, and `log` did
+    # not exist in the module at all. `pipeline_runs` held ZERO rows for this
+    # job. The only picks ever published came from a manual CLI run.
+    #
+    # That is RELIABILITY_LEDGER #9 in its purest form: the test pinned the
+    # SHAPE of the source and learned nothing about whether it runs. So run it.
+    # apscheduler is a declared dependency (requirements.txt) and present in CI,
+    # but not necessarily on a dev Mac. Stub it rather than skipping: a test that
+    # quietly skips locally is how a job stays broken between CI runs, and the
+    # job body does not touch apscheduler at all. Stubs are removed in `finally`.
+    import sys as _sys, types as _types
+    _APS = ("apscheduler", "apscheduler.schedulers",
+            "apscheduler.schedulers.background", "apscheduler.triggers",
+            "apscheduler.triggers.cron", "apscheduler.triggers.interval",
+            "apscheduler.events", "apscheduler.executors",
+            "apscheduler.executors.pool")
+    _stubbed = []
+    try:
+        import apscheduler  # noqa: F401
+    except ImportError:
+        for _m in _APS:
+            if _m not in _sys.modules:
+                _sys.modules[_m] = _types.ModuleType(_m)
+                _stubbed.append(_m)
+        _sys.modules["apscheduler.schedulers.background"].BackgroundScheduler = object
+        _sys.modules["apscheduler.triggers.cron"].CronTrigger = object
+        _sys.modules["apscheduler.triggers.interval"].IntervalTrigger = object
+        _sys.modules["apscheduler.events"].EVENT_JOB_ERROR = 1
+        _sys.modules["apscheduler.events"].EVENT_JOB_EXECUTED = 2
+        _sys.modules["apscheduler.executors.pool"].ThreadPoolExecutor = object
+
+    import workers.scheduler as _sch
+    import scripts.publish_picks_forward_test as _pub
+    import workers.notify.telegram as _tg
+    import workers.automation.coolbet_state as _st
+
+    # Every field `render()` touches — it is left REAL on purpose, because
+    # `render(a_list)` raising TypeError is precisely the bug that shipped.
+    _fake = [{"market": "1x2", "selection": "home", "odds": 2.5, "edge": 0.05,
+              "home_team": "A", "away_team": "B", "league": "L",
+              "bookmaker": "SomeBook", "price_ratio": 0.05,
+              "alignment_gap_minutes": 12.0,
+              "kickoff_at": __import__("datetime").datetime.now(
+                  __import__("datetime").timezone.utc)}]
+    # Restore EVERY patched attribute in `finally` — RELIABILITY_LEDGER's
+    # "a test that monkeypatches a shared module and never restores it".
+    _orig = (_pub.load_candidates, _pub.record, _pub.junk_anchor_arm,
+             _tg.send_telegram_public, _st.is_publishing_paused)
+    _sends, _rows = [], []
+    try:
+        _pub.load_candidates = lambda: (list(_fake), list(_fake))
+        _pub.junk_anchor_arm = lambda pool: list(pool)
+        _pub.record = lambda c, arm, mid: _rows.append(arm)
+        _tg.send_telegram_public = lambda m: (_sends.append(m), 1)[1]
+        _pub.render = _pub.render          # left real on purpose: it must not raise
+
+        _st.is_publishing_paused = lambda: (False, None)
+        res = _sch.job_publish_picks_forward_test()
+        assert res.get("published") == 1, (
+            f"the scheduled publisher did not publish its one pick: {res}. "
+            "This is the assertion whose absence let the job sit registered and "
+            "never once complete."
+        )
+        assert len(_sends) == 1, f"expected exactly 1 channel send, got {len(_sends)}"
+        assert "live" in _rows and "junk_anchor" in _rows, (
+            f"both arms must be recorded, got {_rows}"
+        )
+
+        # PUBLISHER-PAUSE-GATE: /pausepicks must stop THIS publisher. It is the
+        # only path that actually posts to @oddsintelpicks; until 2026-09-15 the
+        # flag gated only the model signaler, which publishes nothing.
+        _sends.clear(); _rows.clear()
+        _st.is_publishing_paused = lambda: (True, "operator /pausepicks")
+        res = _sch.job_publish_picks_forward_test()
+        assert _sends == [], (
+            "publishing_paused did not stop the forward-test publisher — "
+            "/pausepicks would be a kill switch that misses the live feed."
+        )
+        assert res.get("paused") is True, f"paused run must report it: {res}"
+    finally:
+        (_pub.load_candidates, _pub.record, _pub.junk_anchor_arm,
+         _tg.send_telegram_public, _st.is_publishing_paused) = _orig
+        for _m in _stubbed:
+            _sys.modules.pop(_m, None)
 
 
 @test("BOT-STATUS-BOARD — one verdict basis, and it is CLV not ROI")
