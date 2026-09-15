@@ -44232,5 +44232,32 @@ def test_shadow_bots_how_it_works():
     assert "<HowItWorks />" in page, "the explainer must actually be mounted on the page"
 
 
+
+@test("SHADOW-BOTS-SETTLED-ROW-SHOWS-CLOSE — a settled pick shows the book's CLOSE, not three empty 'current price' cells")
+def test_shadow_bots_settled_row_shows_close():
+    """The owner asked why the bot detail page's Now CB / UB / EB columns are
+    always empty on settled bets. They were: those snapshots are fetched for
+    PENDING picks only, because a finished match has no meaningful current price
+    — a defensible rule that left three permanent dashes on every settled row.
+
+    What IS meaningful there is the price the book CLOSED at and what that says
+    about the price we took. Coverage is essentially 100% (570/570 on
+    bot_v10_all), so the three cells collapse into it on settled rows. The
+    MARGIN-CORRECTED number is the one shown in colour: break-even for the raw
+    ratio is the closing book's own margin, not zero."""
+    f = _web_root / "src" / "app" / "(app)" / "admin" / "shadow-bots" / "[bot]" / "page.tsx"
+    if not f.exists():
+        return
+    src = f.read_text(encoding="utf-8")
+    assert "closing_odds, closing_bookmaker, clv_margin_corrected" in src, \
+        "the detail query must select the closing price and the margin-corrected CLV"
+    assert "const isSettled = b.result === \"won\" || b.result === \"lost\";" in src
+    assert "clv_margin_corrected" in src and "break-even 0" in src, \
+        "the colour must be on the margin-corrected number, and the tooltip must say break-even is 0"
+    # the three snapshot cells must still exist for PENDING rows
+    assert "No recent Coolbet price" in src and "isSettled ? (" in src, \
+        "pending rows keep the three live-price cells; only settled rows collapse them"
+
+
 if __name__ == "__main__":
     main()
