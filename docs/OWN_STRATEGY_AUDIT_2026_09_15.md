@@ -1,346 +1,328 @@
-# 🤖 OWN — full audit and a tested plan, 2026-09-15
+# 🤖 OWN — full audit and a tested plan, 2026-09-15 (reviewed)
 
 **Scope.** Both repos (`odds-intel-engine`, `odds-intel-web`), the VPS database, and
 the 2026-09-13/14 audit corpus, read as one system. Direction: **🤖 OWN first**
 (the owner's stated priority 1), 👥 PICKS second. Every number below was either
-re-queried from the DB today or is cited to a committed script; nothing is quoted
-from prose alone. No code was changed by this audit.
+re-queried from the DB or is cited to a committed script. No code was changed by
+this audit. **The implementation plan lives in `dev/active/own-implementation-plan.md`.**
 
-**Written for the owner.** Sections 1–3 are the verdict and the evidence. Section 4
-is the plan. Section 5 is the part nobody wants to read: the ceiling.
+> ## §0 — Adversarial review, same day. Read this first.
+>
+> Two independent reviewers (a betting quant, a trading-automation architect) were
+> asked to break the first version of this document. They did, in places. Every
+> correction is applied in the body below; this table is the changelog so a reader
+> of the first version knows what moved.
+>
+> | first-version claim | verdict | what replaced it |
+> |---|---|---|
+> | "Two things remain with a **positive expectation**: in-play short side, promotions" | **KILLED as stated** | Nothing measured is positive. The in-play source doc says so in as many words. Short side = **lower vig**, not edge. Promotions are *probably* +EV, terms-dependent, unhedgeable. |
+> | Epicbet in-play margin 5.56% is "the tightest we can place" | **KILLED** | 5.56% is 1x2 on 7 fixtures. On 43 fixtures Epicbet reads 6.41%/6.44% (1x2/O-U); **Coolbet 4.96%/5.16%**. And Epicbet has no placer. |
+> | Phase 1 stop rule: sd ≈ 0.5 at odds 1.6, ±2% at ~2,400 bets | **KILLED** | sd at 1.63 is **0.79**; ±2% needs ~6,000; the PROMOTE rule had **14% power** against a real +2.5%. Rewritten with a hit-rate metric and a proper power calculation. |
+> | `bot_v10_all` +12.5% on `/performance`, ≈ −5.5% EV at own books (n=161) | **WEAKENED in method, worse in fact** | The page shows **+7.4%** (exec price, n=640, `simulated_bets`). Own-book rows are 105 not 161. Placeable EV **−3.5% to −5.7%**. Pinnacle-devig CLV on own-book rows **−3.4%/−4.7%** vs **+5.35%** overall — the mirage in one query. |
+> | "A live Pinnacle feed would shrink edges" (paired n=92) | **WEAKENED** | That test was **overround-only**; it cannot see per-selection lag. What holds: the ≥9% quotes are real Pinnacle with $200 limits. What does not: any inference about direction. |
+> | Sharp anchor "DEAD" at −3.36% (n=72) / −14.2% (n=112) | **WEAKENED as ROI** | se ≈ ±18pp / ±14pp; those are "indistinguishable" per gotcha §60. The structural fact (0 of 109 legs clear 3% when the anchor is a real line) is the evidence and is one day's board. |
+> | "Expanding the book universe cannot help line shopping because the books agree to 0.6–1pp" | **CONFIRMED, wrong reasoning** | Each independent-supplier book removes 0.8–1.5pp; best-of-12 incl. Pinnacle/SBO/Betfair reaches 2.15%. Six more EMTA books plausibly land 3–4%. Same conclusion, from the N-curve. |
+> | 899 segment cells "DEAD" | **WEAKENED** | The metric (own-book margin-corrected CLV) can only see a mispricing *the same book corrects before kickoff*. A persistently soft segment reads −m by construction. The 27-signal outcome test is sound; the segment sweep is not a test of what it was cited for. |
+> | Phase 0: "two `--execute` cron jobs" | **CONFIRMED, under-counted** | A **third executor** runs on the VPS every 10 s (`_drain_manual_placement_queue` → `place_bet_by_id`, paper today) and never reads the pause. And `ROUTER_ALLOW_REAL=1` alone stakes for both placer bots **with the DB toggles OFF** — the router iterates `PLACEABLE_BOTS`, not `effective_allowlist()`. |
+> | Phase 0.3: Unibet arm has no pause, caps or cutoff | **WEAKENED** | The router applies caps and cutoff before dispatch. **The pause is the genuine gap.** |
+> | Phase 0.6: a second complete real-money path | **WEAKENED** | `place_all_bets` **does** read the pause and is scheduled nowhere; it is a manual path with stale gates, not an armed one. |
+> | "8 of 11 `BOOK_MARKET_BOTS` entries are retired" | **KILLED** | 4 of 11 map to inactive bots. Point stands for those four. |
+> | Real-money ledger is clean | **NEW DEFECT** | 1 confirmed €10 placement has **no `real_bets` row**; 3 `placed_real` rows sit **unsettled on finished matches** for four days. 143 stakes, not 139. |
+> | The sharp-tight instrument is "paper, move on" | **UNDER-WEIGHTED** | It carries the **only measured positive slope** in the corpus (mc-CLV vs prob-edge +1.31, t=4.9, placebo 0.007) — but on stale decision quotes; with ≤60-min freshness the slope reads +0.35 and break-even +21pp. So it is a *measurement* build (freshness stamp), not a strategy. Now Phase 1a. |
+> | Missing entirely | **ADDED** | CS2 measured dead 2026-07-31 (−27…−33%, n=205). Tennis has tables and no verdict. Cross-book O/U and AH *line* discrepancies were never measured (kill criterion is 1x2-only). Gambling winnings from EMTA operators are tax-free for individuals. |
 
 ---
 
 ## 1. The verdict in five sentences
 
 1. **The system as built cannot make money at the three books we can legally
-   place at, and the last 48 hours of audits proved it four independent ways**
-   (model α = 0, sharp anchor is a stale soft quote on our slate, best-of-3 line
-   shopping leaves 5.66% residual margin, own-book line movement is unexploitable).
-   These findings are sound. I re-checked the load-bearing ones and none moved.
-2. **Real money is paused, but the placement stack is still armed underneath the
-   pause** — two `--execute` cron jobs are loaded on the Mac today, the session
-   kill switch fails OPEN on a DB error, and the Unibet placement arm never reads
-   it. That is a Phase-0 fix, not a research question.
-3. **There is no pre-match strategy left to test at these books.** Every remaining
-   "maybe" — a live Pinnacle feed, more markets, more segments, per-book splits —
-   was measured on 2026-09-14 and came back at or below the vig.
-4. **Two things remain with a positive expectation, and neither is a model:**
-   (a) **in-play, short side only**, at Epicbet, where the book's margin is the
-   tightest anywhere in our reachable universe and the search is constrained but
-   not closed; (b) **promotions / boosts / free bets** at every EMTA-licensed book,
-   which is deterministic +EV and needs no prediction at all.
-5. **Even if both work, the honest ceiling is low four figures per year** before
-   the books limit the account. The owner should decide, with that number in
-   front of them, whether OWN justifies more engineering than Phase 0 plus one
-   pre-registered in-play forward test.
+   place at.** Model α = 0; the sharp anchor yields zero legs when required to be a
+   real line; best-of-3 line shopping leaves 5.66% residual margin; own-book line
+   movement is unexploitable; the flagship bot is −3.5% to −5.7% EV at a placeable
+   price while the public page shows +7.4%. These findings survived adversarial
+   review; two of them got *worse*.
+2. **Real money is paused, but three executors are armed underneath the pause** —
+   two `--execute` launchd jobs on the Mac and a 10-second queue drain on the VPS;
+   the session kill switch fails OPEN on a DB error; the router bypasses the DB
+   allowlist; and the real-money ledger has one missing row and three unsettled
+   bets. Phase 0 fixes all of it in about a day.
+3. **There is no pre-match strategy left to test at these books**, and nothing
+   in-play has measured positive either. The in-play short side is not an edge;
+   it is a smaller vig (≈ 4% relative vs ≈ 14% on the long side).
+4. **Two hypotheses are not dead because they were never measurable, and one
+   lever is probably +EV without any prediction:** (a) the pre-match sharp-tight
+   rule, whose positive slope has only been measured on stale decision quotes;
+   (b) in-play slow-state triggers at Coolbet, whose on-screen price we have never
+   recorded; (c) promotions, boosts and free bets at every EMTA-licensed book.
+   The plan makes (a) and (b) measurable with hard hour budgets and treats (c) as
+   the only OWN P&L available this quarter.
+5. **The expected value of OWN on current evidence is ≤ 0, and the ceiling if a
+   +2–3% edge exists is €1–7k/year before account limits** — statistically
+   indistinguishable from a losing year at €10 stakes. The owner should decide,
+   with that number in front of them, how much more to build.
 
 ---
 
-## 2. What the DB says today (re-queried 2026-09-15)
+## 2. What the DB says (re-queried 2026-09-15, re-derived by the quant reviewer)
 
-### 2a. Real money, all time, confirmed placements only (`real_bets.placed_real = TRUE`)
+### 2a. Real money, confirmed placements (`real_bets.placed_real = TRUE`, settled)
 
 | | n | staked | P&L | ROI | span |
 |---|---|---|---|---|---|
-| **all** | **139** | €1,390 | **−€97.50** | **−7.0%** | 2026-08-27 → 09-13 |
+| **all settled** | **139** | €1,390 | **−€97.50** | **−7.0%** | 2026-08-27 → 09-13 |
 | `bot_coolbet_value_v1` (line-shop, retired) | 120 | €1,200 | +€2.10 | +0.2% | 08-27 → 09-07 |
 | `bot_coolbet_ou_model_v1` (model, off) | 14 | €140 | −€49.60 | −35.4% | 09-09 → 09-13 |
 | `bot_coolbet_1x2_model_v1` (model, off) | 5 | €50 | −€50.00 | −100% | 09-10 → 09-12 |
 
-By market and side, same population:
+By market and side, same population: 1x2 home +€71.00 (n=33), draw +€59.00 (24),
+away −€22.80 (30); O/U 2.5 under −€112.30 (26), over +€0.80 (8); O/U 3.5 under
+−€63.20 (8), over −€30.00 (10). The line-shop bot broke even (what a zero-edge rule
+at a 7.7% book looks like on a lucky fortnight); **every euro of loss came from the
+two model bots in their last five days**, the O/U calibrator window.
 
-| market · side | n | P&L | ROI | avg odds |
-|---|---|---|---|---|
-| 1x2 · home | 33 | +€71.00 | +21.5% | 3.01 |
-| 1x2 · draw | 24 | +€59.00 | +24.6% | 3.63 |
-| 1x2 · away | 30 | −€22.80 | −7.6% | 3.47 |
-| O/U 2.5 · under | 26 | −€112.30 | −43.2% | 2.84 |
-| O/U 3.5 · under | 8 | −€63.20 | −79.0% | 2.17 |
-| O/U 3.5 · over | 10 | −€30.00 | −30.0% | 2.56 |
-| O/U 2.5 · over | 8 | +€0.80 | +1.0% | 2.15 |
+**Ledger defects found by review** (`coolbet_placement_attempts WHERE outcome='placed' AND execute_mode` = 143):
+- one €10 placement (2026-09-13 16:22, `bot_coolbet_ou_model_v1`, U2.5) has **no
+  `real_bets` row** — the "placed but could not write" branch fired;
+- three `placed_real` rows are `pending` on finished matches with scores
+  (2026-09-11; net −€0.10) — `_settle_real_bets_for_matches` only settles match_ids
+  inside the run's window and these fell through.
+- 0 of 143 placements carry a ticket id; the balance delta is the *only*
+  confirmation. One balance-read failure away from an unconfirmable placement.
 
-Read: the line-shop bot broke even (which is what a zero-edge rule at a 7.7% book
-looks like when it happens to catch a good fortnight), and **every euro of loss came
-from the two model bots in their last five days**, which coincides with the O/U
-calibrator defect (migration 335). The 1x2 home/draw profit is n=57 at odds ~3.2
-and is not evidence of anything.
+Corrected all-time: **143 stakes, €1,430, ≈ −€97.60 on the 142 knowable.** Also 823
+settled rows with `placed_real IS NULL` (−€418.85 on €4,760) from the manual /
+phantom-paper era — never to be summed with the above.
 
-There are a further 823 settled `real_bets` rows with `placed_real IS NULL`
-(−€418.85 on €4,760) — the pre-2026-08-27 era of manual + phantom-paper rows that the
-`OWN_PATH_VERDICT` correctly excludes. Nobody should ever sum the two populations.
+### 2b. The flagship bot at a placeable price
 
-### 2b. Paper fleet, last 60 days, own-book close only (`shadow_bets_unique`)
+`bot_v10_all`, last 60 days, `shadow_bets_unique`, settled, with a close at the
+bet's own book (n=105 of 161 — the other 56 closed at Unibet/Pinnacle/Betano/10Bet):
 
-| bot | n | raw own-book CLV | book margin | ≈ EV |
-|---|---|---|---|---|
-| `bot_unibet_trigger_sharp_1x2_v1` | 76 | +10.96% | ~8.6–9.1% | **≈ +2%** |
-| `bot_coolbet_trigger_sharp_1x2_v1` | 74 | +4.41% | ~7.8% | ≈ −3% |
-| `bot_coolbet_trigger_sharp_ou_v1` | 20 | +6.35% | ~6.5% | ≈ 0% |
-| `bot_v10_all` (the "calibrated" reference) | 161 | +1.97% | ~7.8% | ≈ −5.5% |
-| `bot_trigger_1x2_sharp_tight_v1` (the instrument) | 13 | +0.80% | — | too early |
+| basis | value |
+|---|---|
+| raw own-book CLV | +1.29% |
+| EV at `odds_at_pick`, book's own de-vigged close | **−3.51%** |
+| EV at own close | **−5.67%** |
+| Pinnacle-devig CLV, own-book-closed rows | **−3.4% (Coolbet) / −4.7% (Epicbet)** |
+| Pinnacle-devig CLV, all 260 rows | **+5.35%** |
+| `/performance` headline (`simulated_bets` since 2026-05-04, exec price, n=640) | **+7.4%** (high-water basis +11.5%; cache shows 6.6%) |
 
-One bot is marginally positive at n=76 over five days. That is not a strategy; it is
-what `OWN_BOOK_UNIVERSE` already called "one candidate, nowhere near a decision".
-**`bot_v10_all` — the bot whose picks feed `/performance` — is ≈ −5.5% EV at the
-books we can bet**, while showing +12.5% ROI at best-of-books prices on the page.
+The last two rows are the whole story: **the flagship's positive Pinnacle CLV lives
+entirely in rows whose best price was at a book nobody here can use.** That is
+`ANALYSIS_GOTCHAS` §52 in one query and is stronger than the margin arithmetic the
+first version of this doc used.
 
-### 2c. The data we actually have to work with
+### 2c. Paper fleet, last 60 days, own-book close only
 
-| book | 1x2 fixtures / 14d | median obs per price series (7d) | how it reaches us |
+| bot | n | raw own-book CLV | ≈ EV after margin |
 |---|---|---|---|
-| Coolbet | 3,872 | **4** | Mac, Imperva, `:03/:33` sweep smeared over ~25 min |
+| `bot_unibet_trigger_sharp_1x2_v1` | 76 | +10.96% | ≈ +2% |
+| `bot_coolbet_trigger_sharp_1x2_v1` | 74 | +4.41% | ≈ −3% |
+| `bot_coolbet_trigger_sharp_ou_v1` | 20 | +6.35% | ≈ 0% |
+| `bot_trigger_1x2_sharp_tight_v1` (instrument) | 13 | +0.80% | too early |
+
+One bot marginally positive at n=76 over five days; not a decision.
+
+### 2d. The data we have to work with
+
+| book | 1x2 fixtures / 14d | median obs per series (7d) | reaches us via |
+|---|---|---|---|
+| Coolbet | 3,872 | **4** | Mac, Imperva, `:03/:33` sweep smeared ~25 min |
 | Epicbet | 3,855 | **23** | VPS via FlareSolverr, `:02/:32` |
 | Unibet-Site | 1,951 | 7 | Mac, DataDome, `:15/:45` |
-| Pinnacle (AF feed) | 4,353 | 28 | AF `:00/:30`, lagged +0.81pp median vs real |
+| Pinnacle (AF) | 4,353 | 28 | AF `:00/:30`, lagged +0.81pp median overround vs real |
 
-Retention prunes every series to three rows after 7 days (`ANALYSIS_GOTCHAS` §59). So
-**any price-path study has a 7-day window**, and Coolbet — the only book with a
-working placer — is the worst-observed book we have. Epicbet is the best-observed and
-has no placer. That asymmetry shapes the plan.
+Retention prunes every series to three rows after 7 days (§59). **Coolbet — the
+only book with a working placer — is the worst-observed book we have.** In-play:
+`odds_snapshots` holds **zero** live rows for any of our three books; the only
+in-play history is AF's unattributed aggregate (median 40 s stale). In-play margins
+on 43 paired fixtures: **Coolbet 4.96% / 5.16%** (1x2 / O-U), Epicbet 6.41% / 6.44%,
+Unibet-Site 7.79% / 6.84%.
 
-### 2d. The PICKS forward test
+### 2e. The PICKS forward test
 
-`sharp_edge_v1` closed at n=8 (−2.97 units); v2 and v3 are live with their own n.
-Meaningless either way at this n, and the surfaces correctly refuse to render the
-backtest. Nothing to conclude.
-
----
-
-## 3. Where the edge is NOT — closed, with the evidence pointer
-
-Filed here so the next session does not spend a day re-deriving any of it. Each row
-was checked today against the script or the DB, not the doc.
-
-| idea | verdict | the one number | where |
-|---|---|---|---|
-| Model-anchored 1x2 | **DEAD** | residual α = 0.0000, CI [0, 0.03], against four benchmarks incl. our own books | `residual_test.py`, `c8b729af` |
-| Model-anchored O/U | **DEAD until proven otherwise** | every staked pick came from a calibrator applied outside its fitted domain; clean α untested | mig 335, master list #4 |
-| Sharp anchor (AF Pinnacle) at our books, 3% floor | **DEAD** | time-aligned ≤15 min: −14.2% (n=112); on the <4%-overround subpopulation: −3.36% (n=72); gated at 4% anchor overround, **0 legs** clear 3% | `d4238ec1`, `ANCHOR_IS_NOT_SHARP` |
-| A live Pinnacle feed would fix the anchor | **NO** | paired n=92: AF is +0.81pp *lagged*, not wrong; a fresh row differs by +0.02pp; the ≥9% quotes are real Pinnacle with $200 limits | `AF-PINNACLE-NOT-PINNACLE` step (1) |
-| Best-of-3 line shopping | **DEAD** | median best-of-3 overround 5.66% vs 2% kill line (n=359 aligned) | `own_path_kill_criterion.py` |
-| Steam / lag at our books | **DEAD** | follow-through β 0.00–0.14 where exploitation needs ≈1; best of 194 cells −4.16% | `own_line_movement.py` |
-| Derivative markets (corners, cards, 1H, team totals) | **DEAD** | flat 8.00% margin = automated derivation engine; no cell's CI excludes zero positively | `own_market_expansion_sweep.py` |
-| Segments (women, youth, cups, night KOs, longshots…) | **DEAD** | 899 cells, zero at break-even, whole spread inside 3pp of −7.4% | `own_segment_signal_search.py` |
-| 27 stored signals vs own-book price | **DEAD** | zero add anything OOS | same |
-| Sharp-tight prob-diff instrument | **INSTRUMENT, paper** | +17% ROI beside −5 to −7.6% own-book EV, 12-day effect | `own-sharp-tight-preregistration.md` |
-| Expand to Olybet/Optibet/Betsafe/bet365.ee **for line shopping** | **NOT WORTH IT for that reason** | our three books agree to 0.6–1.0pp de-vigged; more books of the same kind cannot open a 5.66% gap to <2% | `OWN_BOOK_UNIVERSE` |
-
-The only analytic thread I would have run myself — the sharp rule restricted to
-fixtures where the anchor is a genuine line — was already run on 2026-09-14
-(`d4238ec1`) and came back empty. I did not re-run it; duplicating a settled
-measurement is how this project's backlog grew.
+`sharp_edge_v1` closed at n=8 (−2.97 units); v2/v3 live with their own n. Nothing to
+conclude; the surfaces correctly refuse to render the backtest.
 
 ---
 
-## 4. The plan
+## 3. Where the edge is NOT — closed, with the evidence and its limits
 
-Four phases. Phase 0 is mandatory and cheap. Phases 1–2 are the only two
-strategies with a defensible prior. Phase 3 is the real-money gate. Every phase has
-a pre-registered stop, because the dominant failure mode in this repo has been a
-number computed and not read.
+| idea | verdict | the evidence | its limit (per review) | where |
+|---|---|---|---|---|
+| Model-anchored 1x2 | **DEAD** | residual α = 0.0000, CI [0, 0.03], four benchmarks incl. our books | none | `residual_test.py`, `c8b729af` |
+| Model-anchored O/U | **DEAD until re-measured clean** | every staked pick came from a calibrator applied outside its fitted domain | clean α untested | mig 335 |
+| Sharp anchor at our books, 3% floor | **DEAD structurally** | gated at ≤4% anchor overround, **0 of 109 legs** clear 3% | ROI figures (−3.4% n=72, −14.2% n=112) have se ±14–18pp — cite the structure, not the ROI | `d4238ec1` |
+| A live Pinnacle feed rescues the anchor | **NOT SUPPORTED** | paired n=92: AF is lagged +0.81pp; ≥9% quotes are real, with $200 limits | the paired test was overround-only; per-selection lag is unmeasured | `AF-PINNACLE-NOT-PINNACLE` |
+| Best-of-3 line shopping | **DEAD** | best-of-3 overround 5.66% vs 2% kill line | none | `own_path_kill_criterion.py` |
+| More EMTA books **for line shopping** | **DEAD** | each independent supplier removes 0.8–1.5pp; best-of-12 incl. unplaceable sharps reaches 2.15% | six more EMTA books ≈ 3–4%, still > 2% | reviewer `bestofn.py` |
+| Steam / lag at our books | **DEAD** | follow-through β 0.00–0.14; best of 194 cells −4.16% | none | `own_line_movement.py` |
+| Derivative markets | **DEAD** | flat 8.00% margin; no positive CI | none | `own_market_expansion_sweep.py` |
+| Segments (899 cells) | **NOT TESTED by that sweep** | metric sees only mispricings the book corrects pre-KO | a persistently soft segment reads −m by construction | `own_segment_signal_search.py` |
+| 27 stored signals vs own-book price | **DEAD** | outcome-based, 8,002 fixtures, controls behave | none | same |
+| In-play, any side, from AF history | **NOTHING POSITIVE** | every CI contains zero; long side −6…−22% | 1x2 fidelity n=7 fixtures, p90 gap 3.1pp; O/U fidelity **unreported** | `INPLAY_STRATEGY_CANDIDATES` |
+| CS2 | **DEAD** | −27…−33% ROI, n=205, flat CLV | — | 2026-07-31 verdict |
+| Tennis | **NO VERDICT** | tables exist, no evaluation | close the rows or evaluate | — |
+| Cross-book O/U and AH **line** discrepancies | **UNMEASURED** | kill criterion is 1x2-only; §61 deleted the O/U cross-book join | low prior at 7% margins; "unmeasured" ≠ "dead" | — |
 
-### Phase 0 — make "paused" actually mean paused (🤖 OWN, ~1 day, do first)
+---
 
-Verified in code and on this Mac today:
+## 4. The plan (detail and estimates in `dev/active/own-implementation-plan.md`)
+
+### Phase 0 — make "paused" mean paused (🤖 OWN, ~1 day, first)
 
 | # | defect | evidence | fix |
 |---|---|---|---|
-| 0.1 | `is_placement_paused()` **fails OPEN** — returns "not paused" on any DB exception | `workers/automation/coolbet_state.py:310-332`, defended in its own docstring | fail CLOSED, like `ui_place_enabled_bots()` already does 200 lines away. Two safety reads must not point in opposite directions. |
-| 0.2 | The pause is read **inside `stage_bet`**, after the browser is driven and the stake is typed — never at run level | `place_coolbet_ui.main()` has no call | one read at the top of `main()`; abort the run |
-| 0.3 | **`unibet_placer.place_bet()` never reads the pause**, nor daily caps, nor kickoff cutoff | `workers/automation/unibet_placer.py` — no reference | route every executor through one `assert_may_place()` |
-| 0.4 | `best_price_router.py` runs with `--execute` at :20/:50 and is inert **only** because `ROUTER_ALLOW_REAL` is unset in the plist | `local/launchd/com.oddsintel.best-price-router.plist`, **loaded in launchd right now** | unload the plist while OWN is paused; a paused product should not depend on an env var's absence |
-| 0.5 | `com.oddsintel.coolbet-ui-placer` runs `--all-enabled --execute` hourly, inert only because `PLACEABLE_BOTS ∩ ui_place_enabled` is empty | **loaded in launchd right now**; header comment still says caps 20/€200 (real: 80/€800) | unload; fix the comment |
-| 0.6 | A second complete real-money path exists (`coolbet_placer.place_all_bets(execute=True)` via `scripts/place_coolbet_bets.py`) with its own edge logic and `real_bets` vocabulary | audit §3 | delete it or make it import the UI placer's gates. Two placers to one account is the `RELIABILITY_LEDGER` §4 pattern. |
+| 0.1 | `is_placement_paused()` **fails OPEN**; so does `is_daemons_paused()` | `coolbet_state.py:310-332`, `:422-435` | fail CLOSED for both; `is_publishing_paused()` correctly stays open (mig 353) |
+| 0.2 | pause read only inside `stage_bet` after the stake is typed | `coolbet_ui_placer.py:1607`; no reference in `place_coolbet_ui.py` | run-level gate at top of `main()`; move the in-flow read before `select_outcome` |
+| 0.3 | Unibet arm never reads the pause | `unibet_placer.py` (caps/cutoff are applied by the router) | route through the shared gate |
+| 0.4 | router runs `--execute` at :20/:50 and **bypasses the DB allowlist** | iterates `PLACEABLE_BOTS` (`best_price_router.py:426`), never `effective_allowlist()`; `ROUTER_ALLOW_REAL=1` alone stakes with toggles OFF | gate reads the allowlist; unload the plist while OWN is paused |
+| 0.5 | UI placer loaded `--all-enabled --execute` hourly; header says 20/€200 (real 80/€800) | `launchctl print`, 84 runs | unload; fix comment |
+| 0.6 | manual API placer `place_all_bets(execute=True)` with its own gates | reads the pause (`coolbet_placer.py:1952`); not scheduled | delegate to the shared gate or delete |
+| **0.7** | **third executor**: `_drain_manual_placement_queue` every 10 s on the VPS → `place_bet_by_id` (paper today via hardcoded `execute=False`), **never reads the pause** | `scheduler.py:2616`, `coolbet_placer.py:2704-2761` | gate unconditionally |
+| **0.8** | **ledger leaks**: 1 placement without a `real_bets` row; 3 unsettled real bets on finished matches | §2a | reconcile from attempts; widen `_settle_real_bets_for_matches` to any finished match |
+| **0.9** | `coolbet_control --status` sees only the DB row | `coolbet_control.py:68-150` | add launchd + env + VPS-drain view, or redefine the success measure |
 
-Smoke tests for each. Success measure: `python3 -m workers.automation.coolbet_control --status`
-prints a single line that is TRUE only when nothing on any host can stake, and a
-kill-switch mutation test (drop the DB) leaves every executor refusing.
+Design: one `assert_may_place()` in a new `workers/automation/placement_gate.py`,
+fail-closed, raising `PlacementRefused`; four call sites; reuse `effective_allowlist`,
+`spent_today`, `exposure_conflict`, `KICKOFF_CUTOFF_MIN`. Three smoke tests, one of
+them a mutation test (DB raises ⇒ every executor refuses). `publishing_paused` stays
+outside the gate on purpose.
 
-### Phase 1 — in-play, short side only, at Epicbet (🤖 OWN, 4–6 weeks paper, then decide)
+### Phase 1 — make the two surviving hypotheses measurable (🤖 OWN, budgeted)
 
-**Why this is the one pre-match-adjacent idea with a real prior.** The 2026-09-14
-in-play work found no positive strategy but did find the *structure*: on 7,539
-level-score snapshots the relative margin is **3.8% on the favourite, 6.7% on the
-draw, 14.3% on the underdog**. Every loser tested was buying the long side. Restricted
-to prices 1.05–2.30 the house edge nearly vanishes: 0-0 → under 2.5 at 35'–54'
-reads **+0.4% [−3.2, +4.0]** (n=1,815); a 2-goal leader at 70'–89' reads **+1.1%
-[−1.4, +3.4]** (n=752). And Epicbet's in-play margin measured **5.56%** against
-AF's 6.51% — the tightest price anywhere we can place. That is a very different
-starting point from −7.4% pre-match.
+**Prior for both: near zero.** These are measurement builds with a hard hour budget,
+not strategies. Each has a pre-registered stop and a pre-registered "what would
+promote it".
 
-In-play is also the only regime where a soft book is *structurally* behind: it
-reprices on a delay after events, and our state engine (`live_match_snapshots`, 45 s
-cadence, 2.2M rows, 35k matches) already knows the score and minute. The edge, if it
-exists, is *timing on information we already hold*, not a better model.
+**1a. Pre-match sharp-tight instrument — freshness stamp (≈ 1.5 days).**
+The only positive slope in the corpus (mc-CLV vs Pinnacle prob-edge **+1.31,
+t=4.9**, placebo 0.007) was measured on decision quotes that were up to 12 h stale;
+requiring ≤60 min collapses it to **+0.35** and the break-even to **+21pp**
+(`OWN-ANCHOR-GATE-VERIFICATION`). We do not know which number is true because the
+writers insert one row per poll with no dedup-on-change and no "seen at" stamp.
+Build: (i) dedup-on-change + `first_seen_at/last_seen_at` on own-book writers;
+(ii) retention exemption keeping the full pre-KO path for Coolbet/Epicbet/Unibet-Site
+for 60 days (cheap: those three are ~2.8M rows/45d); (iii) the instrument records
+decision-quote age and refuses legs older than 60 min. **Metric:** margin-corrected
+own-book CLV slope vs prob-edge on fresh legs only. **Stop:** at n=300 fresh legs, if
+the slope's CI includes zero → RETIRE the instrument. **Promote to Phase 3
+candidate:** slope CI excludes zero AND the zero-crossing is ≤ +6pp AND ≥ 2 legs/day
+clear it. ROI never promotes it.
 
-**What to build (small):**
-1. Promote `workers/jobs/inplay_epicbet_collector.py` from scratch job to a
-   scheduled VPS job writing to a proper table (`inplay_book_quotes`: fixture, book,
-   market, selection, line, odds, minute, score, `captured_at`, `af_age_s`). It
-   already runs; it needs a home and a retention rule.
-2. A **paper in-play bot** that fires only on pre-registered short-price triggers
-   and records **the Epicbet price on screen at decision time**, never an AF price.
-   Settlement is the final score — we own that half outright.
-3. The **O/U fidelity check** (`oufid.jsonl`) must be read first: 1x2 fidelity of the
-   AF history vs Epicbet is established (median gaps ≤0.42pp); O/U is not, and most
-   candidates are O/U.
+**1b. In-play slow-state rig at Coolbet (+ Epicbet), on the Mac (≈ 3 days).**
+The AF history cannot answer the in-play question (O/U fidelity unreported; 1x2 p90
+gap 3.1pp > any plausible edge). Build a board collector on the Mac (residential IP,
+no FlareSolverr load) for Coolbet and Epicbet in-play markets at 30–60 s cadence,
+≤15 fixtures, table `inplay_book_quotes` (mig 354) with a prune job; run as a
+`KeepAlive` launchd loop, not a cron. A paper bot fires only on **slow-state
+triggers through a price ≤ 2.20** (0-0 at 35'–54' → under 2.5; 2-goal leader at
+70'–89'), records the **on-screen price at decision** and settles on the final
+score. **Primary metric:** realised hit-rate minus the book's own de-vigged implied
+probability on the selected set, cluster-robust on fixture (sd ≈ 0.49 vs 0.79 for
+returns). **Power:** +2.5pp lift at 80% ⇒ **n ≈ 3,000**. **Stop:** at n=1,000 if the
+lift point estimate < 0 → STOP. **Decide:** at n=3,000 on the CI. At 15–25
+triggers/day that is 4–7 months. **Control arm:** the same triggers priced off the AF
+aggregate at the same second; the gap is the value of the fresh board. **Gate before
+building the bot:** read `oufid.jsonl`; if AF O/U is unfaithful, the bot uses only
+1x2-derived triggers until the collected board has its own history. Mechanics
+constraint stated up front: 5–10 s acceptance delay and event suspension kill any
+state-change trigger; only slow-state triggers can survive, and at 45 s cadence we
+are the slow party, not the book.
 
-**Pre-registration (lock before the first paper pick):**
-- Triggers: only cells that already read ≥ 0 on the 2.2M-row history **after** the
-  wide-window robustness check (`robust.py`), expressed through a price ≤ 2.20.
-  Start with the two above. No new cell enters without a 10-minute-wide window and
-  a split-half agreement.
-- Primary metric: **realised ROI at the recorded Epicbet price**, flat 1 unit,
-  cluster-robust CI on fixture. CLV is not admissible in-play (`ANALYSIS_GOTCHAS` §14).
-  At odds ~1.6 per-bet sd ≈ 0.5, so ±2% precision needs ~2,400 bets — at 15–25
-  triggers/day that is 4–5 months, which is why the stop rules are asymmetric.
-- **STOP** at n=400 if ROI < −3% (the vig is winning). **CONTINUE** at n=400 if
-  CI includes zero. **PROMOTE to Phase 3** at n≥800 only if CI lower bound > 0.
-- Negative control: same triggers, price replaced by the AF aggregate at the same
-  second; the gap between the arms is the value of the fresh board and must be
-  positive or the collector is not earning its keep.
+### Phase 2 — promotions, boosts, free bets, acca insurance (🤖 OWN, ongoing, ≈ 0.5 day of code)
 
-**Kill criterion for the phase:** if `oufid` shows AF O/U is *not* a faithful proxy
-AND the collector cannot hold ≥ 30 concurrent fixtures at 30 s cadence for two
-weeks without gaps, the history is unusable and the phase is closed on cost.
-
-### Phase 2 — promotions, boosts, free bets, acca insurance (🤖 OWN, ongoing, low engineering)
-
-Stated in `OWN_PATH_VERDICT` as "the one thing with positive expected value at this
-scale" and then dropped as "a product decision". It is the *only* OWN lever that is
-+EV by construction, so it deserves a concrete shape:
-
-- **What it is.** A promotion converts a book's margin into a subsidy: a 100%
-  odds boost on a fairly-priced favourite is +50% EV; a free bet staked on a
-  ~4.0 de-vigged-fair price returns ~70–75% of its face value in expectation;
-  acca insurance on 4–5 leg combos of near-fair legs is +EV on the refund alone.
-  None of it requires a model. All of it requires **a fair price**, which is the
-  one thing this system computes well (Shin de-vig of a tight consensus).
-- **What to build.** (1) A promo ledger table: book, promo type, terms, expiry,
-  max stake, computed EV, taken/not. (2) A small `promo_ev.py` that takes the offer
-  and our consensus fair price and prints EV and the optimal side. (3) Accounts at
-  every EMTA-licensed book we do not yet have (Olybet, Optibet, Betsafe, Paf,
-  Tonybet, bet365.ee). **This is the correct reason to expand the book universe**
-  — more books means more promotions, not tighter prices.
-- **Pre-registration.** Every promo taken is logged with its EV *before* the bet.
-  Primary metric is **realised P&L vs pre-computed EV**, monthly. Kill: two
-  consecutive months where realised sits below EV by more than 1.5 sd, which would
-  mean the fair price is wrong.
-- **Ceiling.** Realistically low four figures per year at Estonian retail, a few
-  hours a month of the owner's time. It is also the lever most likely to survive
-  account restrictions, because promotional volume is what the books want.
+Probably +EV, **not** deterministic: real terms decide the sign (min odds pushing
+onto the long side, max boosted stakes €5–20, stake-not-returned, rollover multiples
+at ~7% margin per cycle, single-use). **No exchange is EMTA-licensed, so nothing
+can be hedged** — every free bet is variance-bearing. Build: (i) owner collects each
+book's current T&Cs into a terms table; (ii) `promo_ev.py` computes EV from the
+Shin-de-vigged consensus fair price **under the stated terms**; (iii) promo ledger
+(mig 355) logging EV before the bet and realised P&L after; (iv) monthly
+realised-vs-EV check, kill on two consecutive months > 1.5 sd below. This is also
+the correct reason to open Olybet / Optibet / Betsafe / Paf / Tonybet / bet365.ee
+accounts — more promotions, not tighter prices.
 
 ### Phase 3 — the real-money gate (any strategy, ever)
 
-Unchanged in spirit from the existing pre-registrations; written once so every
-strategy is judged the same way:
-
-1. Paper first, on the executable price at the book we would use, recorded at
-   decision time with a freshness stamp (the build `OWN-ANCHOR-GATE-VERIFICATION`
-   asked for: decision quote ≤ 60 min old or the leg is void).
-2. Promote on the strategy's **pre-registered** primary metric and n, never on ROI
-   alone unless ROI *is* the pre-registered metric (in-play).
-3. Real money starts at **€10 flat** (already the code default), one bot, one book,
-   with Phase 0 gates verified by mutation test.
-4. **Log the maximum stake the book accepts on every placement.** Account limiting
-   is the binding risk and is currently unmeasured; the first stake refusal is the
-   day the strategy's ceiling becomes known.
-5. Weekly review on realised vs pre-registered EV; stop at the pre-registered n.
+1. Paper first, at the executable price at the book we would use, recorded at
+   decision time with a freshness stamp (≤60 min or void).
+2. Promote on the strategy's pre-registered primary metric and n.
+3. Real money at **€10 flat**, one bot, one book, after Phase 0 mutation tests pass.
+4. **Log the maximum stake the book accepts on every placement.** All 143 stakes to
+   date were €10 requested / €10 applied; limiting is unmeasured.
+5. Weekly realised-vs-EV review; stop at the pre-registered n.
 
 ### Explicitly NOT in the plan
 
-- Any model-anchored staking, any retrain "for OWN". The clean model beats a
-  constant by 2.4% and the market by nothing. Model work is 👥 PICKS research, if
-  anything.
-- Pre-match sharp-anchor staking, at any floor, with any feed. Measured empty.
-- New bolt-on market bots. Measured empty.
-- A Pinnacle scraper. `pinnacle_movement_research.py` already exists, self-disabled
-  on 2026-06-09, and its spike doc says DO NOT SHIP; the paired test says a live
-  feed shrinks edges. The single thing worth taking from the guest API is
-  `limits[].amount` as a validity flag, and only for the PICKS anchor.
-- Kelly. Compounding an unproven edge is a bankroll error.
+Model-anchored staking or retrains "for OWN"; pre-match sharp-anchor staking at any
+floor; new bolt-on market bots; a Pinnacle scraper (`pinnacle_movement_research.py`
+exists, self-disabled 2026-06-09, spike doc says DO NOT SHIP — the only field worth
+taking from the guest API is `limits[].amount`, and only for the PICKS anchor); an
+Epicbet placer before Phase 1b passes n=1,000 (2–3 days of Cloudflare + auth + slip
+work); Kelly.
 
 ---
 
 ## 5. The ceiling — say it before spending another week
 
-Pull the numbers together. A working in-play short-side edge of **+2–3%** on
-**15–25 bets/day** at **€10–25** is **€110–560/month** before variance and before
-limits. Promotions add a similar order. Coolbet and Epicbet will restrict a
-consistently winning account; the industry norm is weeks to a few months at the
-first sign of sharp action, which caps the stake at a few euros exactly when the
-strategy is proven. **Low four figures per year is the realistic OWN outcome if
-everything works.** Against that: this codebase is ~120 tables, 26 GB, two hosts,
-three anti-bot chains, and a 92-row open queue, most of it built for OWN.
+If a +2–3% edge exists: €10–25 × 15–25 bets/day × 365 ⇒ **€1.1k–6.8k/year** before
+variance and before limits. At €10 and 15/day the one-sigma annual band is **±€3k**,
+so a successful year is statistically indistinguishable from a losing one.
+**Expected value on current evidence: ≤ 0.** Coolbet and Epicbet restrict winners;
+promotional volume is what survives restriction. Winnings from EMTA-licensed
+operators are tax-free for individuals — no tax drag, but it creates no edge.
 
-That is not an argument to stop. It is the number that should decide **how much
-more to build**. My recommendation:
-
-- **Do Phase 0 regardless.** An armed placer under a fail-open pause is a
-  liability whatever the strategy decision.
-- **Run Phase 1 as one bounded experiment** with the stop rules above and no
-  parallel research threads. If it fails its n=400 check, OWN closes to Phase 2
-  only.
-- **Start Phase 2 now** — it is the only OWN P&L available this month and it costs
-  almost nothing.
-- **Do not fund any other OWN research** until Phase 1 reports.
+Recommendation: **Phase 0 regardless. Phase 2 now. Phases 1a and 1b as two bounded
+builds with the stop rules above, and no other OWN research until they report.**
 
 ---
 
-## 6. 👥 PICKS — three things that are wrong on the public surface today
+## 6. 👥 PICKS — three things wrong on the public surface today (verified file:line)
 
-Secondary to the ask, but they are live and cheap:
-
-1. **`/performance` publishes the model-era record with no banner.** Its headline
-   ROI is `bot_v10_all` at best-of-books prices since 2026-05-04 — a rule that has
-   since been retired (mig 335, 1X2 inversion, α=0) and a price basis that is
-   ≈ −5.5% EV at any book a reader could use (§2b). `/picks` refuses to link to it
-   for exactly this reason, then `/performance` mounts the forward-test panel
-   anyway. Either banner it as a closed model-era ledger or take it down.
-2. **`/api/v1/track-record`** serves that same cohort and, unlike `/api/v1/upcoming`,
-   carries no `meta.edge_basis`. Add the field; the landing hero reads its `roi_pct`.
-3. **`/admin/shadow-bots` re-hardcodes odds floors** (`oddsFloor: 2.8 / 1.8`) instead
-   of importing `engine-floors.ts` — the one surface describing what stakes real
-   money is the one not on the generated source. Web-repo Telegram webhook still
-   tells users "Telegram alerts are available on Pro and Elite plans".
-
-The forward test itself is correctly built: no backtest rendered, n and CI on the
-live number, control arm recorded, rule pinned by smoke. Leave it alone and let it
-accrue.
+1. **`/performance` publishes the model-era record with no banner.** Cohort filter
+   `performance/page.tsx:229-235`, `CALIBRATED_SINCE = "2026-05-04"`
+   (`engine-data.ts:3383`). Headline +7.4% at exec price vs −3.5…−5.7% placeable
+   (§2b). `/picks` refuses to link to it (`src/app/picks/page.tsx:13`); `/performance`
+   mounts the forward-test panel anyway. Banner it as a closed model-era ledger or
+   take it down.
+2. **`/api/v1/track-record`** `meta` (`route.ts:318-345`) has `price_basis` but no
+   `edge_basis`; `/api/v1/upcoming/route.ts:126` has it. The landing hero reads
+   `roi_pct` (`src/app/page.tsx:37,61`).
+3. **`/admin/shadow-bots`** hardcodes `oddsFloor: 2.8/1.8/2.8` (`page.tsx:70,81,92`)
+   instead of importing `engine-floors.ts`. Telegram webhook still says "available
+   on Pro and Elite plans" (`webhook/route.ts:666`).
 
 ---
 
-## 7. Codebase hygiene the audits surfaced (file once, cull in one pass)
+## 7. Codebase hygiene (corrected)
 
-Dead or duplicated, per the read-only code audit; none of it is load-bearing and
-all of it costs reader time or cron cycles:
-
-- `workers/jobs/inplay_bot.py` (135 KB, env-gated off since 2026-08-21) and
-  `coolbet_inplay.py`. Phase 1 replaces them; delete when the new bot lands.
-- 8 of 11 `BOOK_MARKET_BOTS` entries in `pick_trigger_matcher.py` — retired bots
-  that still run a query every 30 min and no-op.
-- `bot_configs.WIDE_CONFIGS` (defined, never run); the line-shop O/U stop scoped to
-  a retired bot in `place_coolbet_ui.py:809`; `_ODDS_TOLERANCE` in `coolbet_placer.py`.
+- `workers/jobs/inplay_bot.py` (135,266 bytes, gated by `INPLAY_STRATEGIES_ENABLED`
+  in `live_poller.py:565`) and `workers/automation/coolbet_inplay.py`; plus
+  `coolbet_placer.place_all_inplay_bets`. Delete together when Phase 1b's bot lands.
+- `pick_trigger_matcher.BOOK_MARKET_BOTS`: **4 of 11** entries map to inactive bots
+  and still query every 30 min (`run_all()` does not filter `is_active`).
+- `bot_configs.WIDE_CONFIGS` (retired mig 331, documented dead); the line-shop O/U
+  stop at `place_coolbet_ui.py:843-851` scoped to a retired bot; `_ODDS_TOLERANCE`.
 - `pick_generator.generate` / `on_odds_written` / `match_and_emit` /
   `compute_triggers` swallow every exception — the "silent zero" shape.
-- `PIN_CROSS_DRIFT_VETO_ENABLED` — a documented veto that counts and places anyway.
+- `PIN_CROSS_DRIFT_VETO_ENABLED` (`daily_pipeline_v2.py:3697-3708`) — a documented
+  veto that counts and places anyway.
 - Web: ~700–900 lines of tier/Stripe code with no purchase path; `stripe`/`svix`
-  deps; README says Next 15 on Vercel (it is Next 16 on pm2); `.env.*` files present
-  in the working tree — confirm they are gitignored.
-- `PRIORITY_QUEUE.md`: 92 ⬜ and 20 🔄 rows. CLAUDE.md's own rule — close decisions
-  with a reason, merge sub-tasks into epics — would roughly halve it in an afternoon.
+  deps; README says Next 15 on Vercel (it is 16.2.4 on pm2). `.env.*` files are
+  gitignored (`.gitignore:35`) — confirmed.
+- `PRIORITY_QUEUE.md`: 92 ⬜ and 20 🔄 rows.
 
 ---
 
 ## Reproduce
 
 ```bash
-# real-money ledger and paper fleet, as in §2
 python3 scripts/own_path_kill_criterion.py --days 30 --align-min 15
 python3 scripts/own_sharp_config_sweep.py --days 150 --diagnostics --bot-clv
-# in-play structure (needs the frozen pkl from dev/active/inplay-strategy-discovery-context.md)
-# placement safety
 launchctl list | grep oddsintel
+launchctl print gui/$(id -u)/com.oddsintel.best-price-router | head -40
 python3 -m workers.automation.coolbet_control --status
 ```
+Reviewer scratch scripts (not committed): `db.py`, `ev_ownbook.py`, `bestofn.py`
+in the session scratchpad — the queries are described inline in §2.
