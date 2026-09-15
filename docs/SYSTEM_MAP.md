@@ -447,6 +447,7 @@ where filtering begins.
 - `docs/COOLBET_OWN_BETTING.md` — the full own-betting flow and gate stack.
 - `docs/ANALYSIS_GOTCHAS.md` — line-shop mirage (§52), single-book vs best-of-books (§55), CLV-vs-ROI variance.
 - `workers/registry/bot_registry.py` — the structured source of truth this map is built on.
+- `docs/OWN_STRATEGY_AUDIT_2026_09_15.md` — full-system OWN audit: what is measured dead (§3), the armed-under-pause defects (§4 Phase 0), the two remaining strategies with pre-registered stops, and the ceiling.
 
 ---
 *Last verified against code+DB by `SYSTEM-MAP-REGISTRY-NOT-DRIFTED` on every push.*
