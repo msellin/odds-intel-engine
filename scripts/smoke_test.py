@@ -43891,5 +43891,78 @@ def test_shadow_bots_place_writes_real_bets():
     assert '"/api/admin/real-bet"' in a and "shadowBetId" in a
 
 
+
+@test("SHADOW-BOTS-FRESHNESS-DISPLAY — the decision-quote age is a column with a three-state badge, and STALE greys the row instead of hiding it")
+def test_shadow_bots_freshness_display():
+    """OWN Phase 1a display addition (2026-09-15). `decision_quote_age_min` was
+    written by the matcher and shown only in a tooltip, so the operator could not
+    see WHICH picks were priced off a quote nobody could still take — the exact
+    distinction the whole freshness build exists to make.
+
+    Three states, not two: a NULL age means "leg written before 2026-09-15" or
+    "bot has no freshness gate", and folding that into FRESH would assert a
+    guarantee we never made."""
+    v = _web_root / "src" / "lib" / "shadow-bots" / "verdict.ts"
+    lb = _web_root / "src" / "lib" / "shadow-bots" / "labels.ts"
+    row = _web_root / "src" / "components" / "shadow-bots" / "picks-row.tsx"
+    if not v.exists():
+        return
+    vs = v.read_text(encoding="utf-8")
+    assert "export function quoteFreshness(" in vs, "freshness must be ONE pure function, not an inline ternary per component"
+    assert '"UNKNOWN"' in vs and '"FRESH"' in vs and '"STALE"' in vs, "a NULL age is its own state, never FRESH"
+    assert "QUOTE_MAX_AGE_MIN" in vs and "30" not in vs.split("QUOTE_MAX_AGE_MIN")[-1][:40], \
+        "the threshold must be the imported constant, not a retyped 30"
+    assert "export function formatAge(" in lb.read_text(encoding="utf-8")
+    rs = row.read_text(encoding="utf-8")
+    assert "quoteFreshness" in rs and "formatAge" in rs, "the row must render the age and its badge"
+    assert "opacity-50" in rs or "opacity-60" in rs, "a STALE row must be GREYED — never hidden (plan: 'shown greyed, never hidden')"
+    sc = (_web_root / "src" / "lib" / "shadow-bots" / "verdict.selfcheck.ts").read_text(encoding="utf-8")
+    assert "quoteFreshness" in sc and "formatAge" in sc, "both helpers must be exercised by the selfcheck"
+
+
+@test("SHADOW-BOTS-INPLAY-NEVER-PLACE — an in-play row can never read PLACE, and the control arm offers no Place action")
+def test_shadow_bots_inplay_never_place():
+    """OWN Phase 1b display addition (2026-09-15). There is NO Epicbet in-play
+    placer, so a PLACE verdict on an in-play row would invite a bet the operator
+    cannot make; and the control arm is priced off API-Football's stale aggregate,
+    a feed nobody can bet at all. Both rules are pure functions so they are
+    testable, and the override is applied INSIDE pickVerdict so no caller can
+    forget it (the 'second code path inherits no gates' pattern)."""
+    v = _web_root / "src" / "lib" / "shadow-bots" / "verdict.ts"
+    if not v.exists():
+        return
+    vs = v.read_text(encoding="utf-8")
+    assert "export function inplayOverride(" in vs, "the in-play rule must be a pure, testable function"
+    pv = vs[vs.index("export function pickVerdict("):]
+    assert "inplayOverride(" in pv, "pickVerdict must APPLY the override itself, not leave it to callers"
+    rs = (_web_root / "src" / "components" / "shadow-bots" / "picks-row.tsx").read_text(encoding="utf-8")
+    assert "!r.inplay && !r.isControlArm" in rs, \
+        "the Place action must be withheld from in-play rows AND from the control arm"
+    assert "book prob" in rs.lower(), "the in-play probability is the BOOK's de-vigged prob — it must not read as a model number"
+    lb = (_web_root / "src" / "lib" / "shadow-bots" / "labels.ts").read_text(encoding="utf-8")
+    assert "bot_inplay_slowstate_afctl_v1" in lb, "the control arm must be identified by name, not by a guess"
+    sc = (_web_root / "src" / "lib" / "shadow-bots" / "verdict.selfcheck.ts").read_text(encoding="utf-8")
+    assert "inplayOverride" in sc, "the override must be exercised by the selfcheck"
+
+
+@test("SHADOW-BOTS-PROMO-PANEL — the promotions panel reads the terms+ledger and its empty state names the command that fills it")
+def test_shadow_bots_promo_panel():
+    """OWN Phase 2 display addition (2026-09-15). The tables ship empty — the
+    owner enters terms from each book's T&C page — so the panel's EMPTY state is
+    its main state for now and must tell the operator what to do rather than
+    render a blank box that reads like a broken query."""
+    pnl = _web_root / "src" / "components" / "shadow-bots" / "promotions.tsx"
+    if not pnl.exists():
+        return
+    ps = pnl.read_text(encoding="utf-8")
+    assert "promo_ev.py add-terms" in ps, "the empty state must name the command that adds a promo"
+    for col in ("min_odds", "max_stake_eur", "valid_to"):
+        assert col in ps, f"the panel must show {col} — the terms are what decide the EV's sign"
+    q = (_web_root / "src" / "lib" / "shadow-bots" / "queries.ts").read_text(encoding="utf-8")
+    assert "promo_terms" in q and "promo_ledger" in q, "the panel's reads belong in the cached query layer"
+    page = (_web_root / "src" / "app" / "(app)" / "admin" / "shadow-bots" / "page.tsx").read_text(encoding="utf-8")
+    assert "Promotions" in page or "promotions" in page, "the panel must actually be rendered"
+
+
 if __name__ == "__main__":
     main()

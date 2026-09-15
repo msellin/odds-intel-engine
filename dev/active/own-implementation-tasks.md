@@ -4,9 +4,9 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 
 ## Visibility invariant (all phases)
 - [x] smoke `OWN-BOTS-OFF-CUSTOMER-SURFACES` (maturity experimental, no simulated_bets / picks_forward_test rows, /performance filter present)
-- [ ] 1a: FRESH/STALE badge + `decision_quote_age_min` column on /admin/shadow-bots upcoming rows
-- [ ] 1b: IN-PLAY rows (minute, score, on-screen price, de-vigged prob) in the same section
-- [ ] 2: Promotions panel on /admin/shadow-bots
+- [x] 1a: "Decision" age column + three-state FRESH/STALE/— badge; STALE rows greyed, never hidden (`quoteFreshness` + `formatAge`, one definition, selfchecked). Smoke `SHADOW-BOTS-FRESHNESS-DISPLAY`.
+- [x] 1b: IN-PLAY chip with minute + score, on-screen price and the BOOK's de-vigged prob (labelled "book prob", never a model number); control arm marked and Place withheld; `inplayOverride` forces SKIP because there is no Epicbet in-play placer, applied INSIDE `pickVerdict`. Smoke `SHADOW-BOTS-INPLAY-NEVER-PLACE` (mutation-verified).
+- [x] 2: Promotions panel — active terms + ledger aggregates (taken, ΣEV, Σrealised, gap), expiring-within-7-days highlight, empty state naming `promo_ev.py add-terms`. PostgREST exposure of `promo_terms`/`promo_ledger` incl. the FK embed verified live. Smoke `SHADOW-BOTS-PROMO-PANEL`.
 
 ## Phase 0 — placement safety (P0) — DONE 2026-09-15 (also: REAL-BETS-SHADOW-LINK FK fix, mig 354 adds real_bets.shadow_bet_id)
 - [x] 0.A `workers/automation/placement_gate.py` with `assert_may_place`, `PlacementRefused`, `read_placement_paused_strict`
@@ -68,7 +68,7 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 - [x] `place-action` → `/api/admin/real-bet` with `shadowBetId`, `placed_real = NULL`
 - [x] scoreboard from `bots WHERE retired_at IS NULL`; t-stat pill deleted; prereg verdict
 - [x] deletions: ForwardTestPanel + query, SHADOW_BOTS, BOT_BADGES, FAMILIES, discipline strip, Kambi tooltip (page 2264 → 81 lines)
-- [ ] fix SYSTEM_MAP §2 (5 retired bots listed); extend drift test map→registry
+- [x] fix SYSTEM_MAP §2 (5 retired bot rows struck through); drift test extended map→registry and mutation-verified (a ghost row fails, a struck row passes)
 - [x] smokes: `SHADOW-BOTS-REGISTRY-DRIVEN`, `SHADOW-BOTS-VERDICT-IS-PREREG`, `SHADOW-BOTS-PLACE-WRITES-REAL-BETS`
 
 ## Live state 2026-09-15 evening
