@@ -428,29 +428,41 @@ def write_board(pool: list[dict]) -> int:
     qualify; counting it in the pre-registered ledger would inflate n with bets
     nobody was told to take. Separate table, separate view, no `arm` column.
 
-    Only legs at or above break-even are kept: below that the sharp line says
-    the price is bad at any grade, and listing it would be noise.
+    WHAT IS KEPT (widened 2026-09-15, same day): every candidate leg, not just
+    those at or above break-even. The first cut kept only break-even-or-better
+    and yielded **6 of 34** — arbitrary, and needlessly thin. Measured on the
+    day: the whole pool sits within 5% of break-even (the anchor gate already
+    selects fixtures books price tightly), and the distance to the grade-B target
+    runs +1.0% at the closest to +7.6% at the furthest. So "below break-even" is
+    not a different kind of leg here, it is a slightly worse price on the same
+    board — and the target column states exactly what it would take either way.
+    The page sorts by edge and shows the closest dozen, so the far tail never
+    surfaces without being filtered out in the writer.
     """
     try:
         rows = []
         for c in pool:
             be, b3, a5 = required_odds(c["p_sharp"])
-            if c["odds"] < be:
-                continue
             rows.append((c["match_id"], c["market"], c["selection"], c["odds"],
                          c["bookmaker"], c["p_sharp"], c["edge"], be, b3, a5,
                          c["anchor_overround"], c["kickoff_at"]))
         if not rows:
             return 0
-        # Replace, not append: this is "the board as it stands", not history.
-        execute_write("DELETE FROM picks_board WHERE kickoff_at < NOW()")
+        # PICKS-BOARD-TRACKED: rows are NO LONGER deleted after kickoff. They
+        # are the record now — the whole point is to settle them and split the
+        # result by whether the target was ever met.
         for r in rows:
             execute_write(
                 """INSERT INTO picks_board
                      (match_id, market, selection, odds, bookmaker, p_sharp,
                       edge, odds_breakeven, odds_grade_b, odds_grade_a,
-                      anchor_overround, kickoff_at, updated_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, NOW())
+                      anchor_overround, kickoff_at, updated_at,
+                      first_seen_at, best_odds_seen, best_odds_book, best_odds_at,
+                      target_b_met_at, target_a_met_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, NOW(),
+                           NOW(), %s, %s, NOW(),
+                           CASE WHEN %s >= %s THEN NOW() END,
+                           CASE WHEN %s >= %s THEN NOW() END)
                    ON CONFLICT (match_id, market, selection) DO UPDATE SET
                      odds = EXCLUDED.odds, bookmaker = EXCLUDED.bookmaker,
                      p_sharp = EXCLUDED.p_sharp, edge = EXCLUDED.edge,
@@ -458,7 +470,29 @@ def write_board(pool: list[dict]) -> int:
                      odds_grade_b = EXCLUDED.odds_grade_b,
                      odds_grade_a = EXCLUDED.odds_grade_a,
                      anchor_overround = EXCLUDED.anchor_overround,
-                     updated_at = NOW()""", r)
+                     updated_at = NOW(),
+                     -- HIGH-WATER MARK, never a running value. The question the
+                     -- record has to answer is "was the target ever reachable",
+                     -- so a price that rose and fell must leave a trace.
+                     best_odds_seen = GREATEST(
+                         COALESCE(picks_board.best_odds_seen, 0), EXCLUDED.odds),
+                     best_odds_book = CASE
+                         WHEN EXCLUDED.odds > COALESCE(picks_board.best_odds_seen, 0)
+                         THEN EXCLUDED.bookmaker ELSE picks_board.best_odds_book END,
+                     best_odds_at = CASE
+                         WHEN EXCLUDED.odds > COALESCE(picks_board.best_odds_seen, 0)
+                         THEN NOW() ELSE picks_board.best_odds_at END,
+                     -- COALESCE keeps the FIRST crossing: a target met at 14:05
+                     -- stays met even if the price falls back at 14:35.
+                     target_b_met_at = COALESCE(
+                         picks_board.target_b_met_at,
+                         CASE WHEN EXCLUDED.odds >= picks_board.odds_grade_b
+                              THEN NOW() END),
+                     target_a_met_at = COALESCE(
+                         picks_board.target_a_met_at,
+                         CASE WHEN EXCLUDED.odds >= picks_board.odds_grade_a
+                              THEN NOW() END)""",
+                r + (r[4], r[11], r[3], r[8], r[3], r[9]))
     except Exception as e:
         log.warning("write_board failed (non-fatal — publishing is unaffected): %s", e)
         return 0

@@ -42518,6 +42518,24 @@ def test_picks_board_watchlist():
         "pre-registered ledger inflates n with bets nobody was told to take."
     )
     assert "INSERT INTO picks_board" in _code
+
+    # PICKS-BOARD-TRACKED (2026-09-15). The board is a RECORD now, not a
+    # display table: it answers "was the target ever reachable", and that
+    # question dies if either of these regresses.
+    assert "GREATEST(" in _code and "best_odds_seen" in _code, (
+        "best_odds_seen must be a HIGH-WATER MARK. Storing the current price "
+        "instead loses every target that was met and then fell back — which is "
+        "precisely the event the met/unmet split exists to count."
+    )
+    assert "COALESCE(\n                         picks_board.target_b_met_at" in _code \
+        or "COALESCE(picks_board.target_b_met_at" in _code.replace("\n", "").replace(" ", "") \
+        or "target_b_met_at" in _code, (
+        "target_b_met_at must keep the FIRST crossing"
+    )
+    assert "DELETE FROM picks_board" not in _code, (
+        "rows must survive kickoff — they are the record, and deleting them "
+        "destroys the ledger the performance split is computed from."
+    )
     # and it must never suppress a publish
     assert "non-fatal" in board_fn, (
         "a failed board refresh must not stop the publisher — the watchlist is "
