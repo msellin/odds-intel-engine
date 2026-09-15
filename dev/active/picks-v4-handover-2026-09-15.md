@@ -375,6 +375,34 @@ were unfaithful"* — Bet365 ~26.6% high, AF-Unibet 33.1%, Kambi 38%.
   backtest is **+16.56%** over 30d on best-of-all-books. **The difference is the
   price basis.**
 
+### 6.4b Price reversion — how long a published price is actually gettable
+
+Measured 2026-09-15, point-in-time, intact 7-day window, 28 sampled run times,
+**65 qualifying legs** (`scripts/picks_price_reversion.py`):
+
+| horizon | same book still clears 3% | rule finds any qualifying price | median edge |
+|---|---|---|---|
+| **T+30 min** | **61/65 (94%)** | 62/65 (95%) | +4.30% → **+4.29%** |
+| **T+60 min** | **40/65 (62%)** | 42/65 (65%) | +4.30% → **+3.45%** |
+
+A published price is good for about **half an hour** and has decayed materially
+by an hour (the quoting book's price is gone entirely in 14 of 65 by T+60).
+
+**This sizes the cadence.** At `:05/:35` a reader acting inside the window gets
+the quoted price 94% of the time, so continuous publishing is not publishing
+noise — the picks it catches are reachable.
+
+⚠️ **Persistence is not correctness.** This says a reader can GET the price, not
+that the price is RIGHT. §6.3 stands unchanged: the selected quotes sit at the
+98.8th–99.9th percentile of their own book's disagreement with Pinnacle, and a
+standing error is stable by definition.
+
+⚠️ **A live observation earlier the same day pointed the other way and was
+over-read.** Two picks qualifying at 09:17 (+5.97%, +4.01%) had both fallen under
+the floor by 10:00 (+1.71%, +0.54%) — 43 minutes. That was taken as evidence the
+edge evaporates; at n=2 it was simply a draw from the tail of the T+60 band. The
+n=65 measurement is the one to use.
+
 ### 6.5 What IS clean
 
 **The coverage fact.** ~47% of qualifying legs (34/72) kick off before ~10:45 UTC

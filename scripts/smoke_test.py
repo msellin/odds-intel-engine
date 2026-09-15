@@ -42297,6 +42297,42 @@ def test_picks_forward_test_scheduled():
             _sys.modules.pop(_m, None)
 
 
+@test("PICKS-PRICE-REVERSION — the cadence measurement is point-in-time, not a recency query")
+def test_picks_price_reversion_is_point_in_time():
+    """PICKS-PRICE-REVERSION (2026-09-15) — the measurement that sized the
+    publishing cadence: 94% of qualifying prices still clear the floor at the
+    same book after 30 minutes, 62% after 60.
+
+    It is pinned because of HOW it must be measured, not what it found. A price
+    path only exists inside the 7-day retention window, and a
+    `DISTINCT ON ... ORDER BY timestamp DESC` outside it returns whatever
+    retention kept rather than what a job could have seen (ANALYSIS_GOTCHAS §64,
+    written the same day after that exact error inflated a headline ROI). Rewrite
+    this as a recency query over 30 days and it will return a confident,
+    meaningless number.
+
+    So: the script must build each pool from a bounded `timestamp <= T` window,
+    and it must say out loud what it does not establish — persistence is not
+    correctness."""
+    src = _engine_path("scripts/picks_price_reversion.py").read_text()
+
+    assert "o.timestamp <= %s AND o.timestamp > %s" in src, (
+        "the pool must be built point-in-time from a bounded window — a query "
+        "that just takes the latest row measures retention, not the job"
+    )
+    assert "def pool_at(" in src, "the point-in-time pool builder is gone"
+    assert "intact" in src.lower() and "7" in src, (
+        "the script must state it is restricted to the intact-retention window"
+    )
+    # The honest limitation has to travel with the number.
+    assert "Persistence is not correctness" in src, (
+        "the script must state what it does NOT show. A stable price can still "
+        "be one book's standing error: the selected quotes sit at the "
+        "98.8th-99.9th percentile of their own book's disagreement with the "
+        "sharp line, and this measures reachability, not validity."
+    )
+
+
 @test("RETENTION-ARTIFACT-GOTCHA — the backtest trap that cost a headline number is written down")
 def test_retention_artifact_gotcha():
     """RETENTION-ARTIFACT (2026-09-15) — ANALYSIS_GOTCHAS §64.
