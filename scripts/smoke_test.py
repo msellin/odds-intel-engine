@@ -42297,6 +42297,48 @@ def test_picks_forward_test_scheduled():
             _sys.modules.pop(_m, None)
 
 
+@test("RETENTION-ARTIFACT-GOTCHA — the backtest trap that cost a headline number is written down")
+def test_retention_artifact_gotcha():
+    """RETENTION-ARTIFACT (2026-09-15) — ANALYSIS_GOTCHAS §64.
+
+    `prune_old_simple` keeps at most three rows per series after 7 days, so a
+    `DISTINCT ON ... ORDER BY timestamp DESC` outside that window does not return
+    "the last price before kickoff" — it returns the only row retention kept. The
+    query is unchanged, the column means something else, and nothing errors.
+
+    Measured cost on a live decision: a 30-day backtest read +16.56% (n=72), of
+    which +28.40% (n=35) came from pruned days and +5.35% (n=37) from intact
+    ones, and on the two biggest contributing days a point-in-time replay found
+    ZERO qualifying legs. 28% of the legs were reconstructions the live job could
+    never have produced.
+
+    This is a DOC test on purpose. The trap is not in any one query — it is in
+    the next one somebody writes, and the only durable defence is that §59 points
+    at §64 before they write it. A gotcha nobody is routed to is a gotcha nobody
+    reads."""
+    doc = _engine_path("docs/ANALYSIS_GOTCHAS.md").read_text()
+
+    assert "## 64." in doc, "ANALYSIS_GOTCHAS §64 (the retention artifact) is missing"
+    sec = doc[doc.index("## 64."):]
+    for needle in ("prune_old_simple", "DISTINCT ON", "point-in-time",
+                   "retention artifact"):
+        assert needle in sec or needle in sec.lower(), (
+            f"§64 must explain '{needle}' — the mechanism has to be readable "
+            f"without the original investigation"
+        )
+    # The numbers are the argument; without them it is an opinion.
+    for n in ("+16.56%", "+28.40%", "+5.35%"):
+        assert n in sec, f"§64 must carry the measured decomposition ({n})"
+
+    # §59 is where a reader lands first, so it must route them onward.
+    s59 = doc[doc.index("## 59."):doc.index("## 60.")]
+    assert "§64" in s59, (
+        "§59 must point at §64. A reader checking retention before writing a "
+        "backtest lands on §59; if it does not forward them, §64 is unreachable "
+        "at the moment it matters."
+    )
+
+
 @test("FORWARD-TEST-VERSIONS-DO-NOT-VANISH — a rule bump must not erase the published record")
 def test_forward_test_versions_do_not_vanish():
     """FORWARD-TEST-VERSIONS-DO-NOT-VANISH (2026-09-15).

@@ -1900,6 +1900,11 @@ series and kept indefinitely; the pre-2026-08-21 history lives at full
 resolution in `odds_snapshots_inplay_archive` (155,048 rows, migration 329).
 Query that table, not `odds_snapshots`, for anything before 2026-08-21.
 
+> **See §64 (2026-09-15) for what (a) does to a RESULT.** A 30-day backtest that
+> selects prices by recency is ~8 days of data plus 22 days of retention artifact:
+> measured, half of one headline ROI came from pruned days, and 28% of its legs
+> were reconstructions the live job could never have produced.
+
 **(d) Never put a literal percent sign inside a SQL string in this repo.**
 psycopg2 parses `%` as a parameter placeholder, so one in a *comment* raises
 `IndexError` per batch — and `prune_old_simple` caught the exception and printed
@@ -2235,3 +2240,70 @@ hypothesis — see `docs/OWN_LINE_MOVEMENT_2026_09_14.md` §2.
 **The rule:** before comparing books, assemble each book's market from a small
 window (±2 min is ample), *then* align the assembled quotes across books. Never
 join books on timestamp equality.
+
+## 64. A "30-day backtest" on `odds_snapshots` is ~8 days of data plus 22 days of retention artifact (2026-09-15)
+
+§59 says retention (`prune_old_simple`) keeps at most three rows per series after
+7 days. This is what that does to a **result**, measured, because the first time
+it bit nobody noticed until an adversarial re-derivation went looking.
+
+**The mechanism.** The idiomatic "price just before kickoff" query is
+
+```sql
+SELECT DISTINCT ON (match_id, market, selection, bookmaker) ...
+ WHERE o.timestamp < m.date - interval '45 minutes'
+ ORDER BY match_id, market, selection, bookmaker, o.timestamp DESC
+```
+
+Inside the 7-day window that returns *the last price before the cutoff*. Outside
+it, it returns **the only row retention chose to keep** — and retention chose the
+latest pre-kickoff row. The query looks identical, the column means something
+else, and nothing errors. Measured rows per `(match, book, market, selection)`:
+
+| kickoff era | rows per series |
+|---|---|
+| pruned (>7d old) | **2.6 – 4.7** |
+| intact (<7d old) | **13.1 – 20.2** |
+
+**What it did to a live decision.** A 30-day backtest of the published picks rule
+returned **ROI +16.56% (n=72)**. Decomposed by era:
+
+| slice | n | ROI |
+|---|---|---|
+| pruned days, unreconstructable | 35 | **+28.40%** |
+| intact days | 37 | **+5.35%** |
+
+**Half the headline came from a data regime that no longer exists.** Worse, on
+the two biggest contributing days a point-in-time replay — simulating the job's
+real run times, its 6-hour snapshot window and its kickoff window — found **ZERO**
+qualifying legs at any hour of the day. **20 of the 72 legs (28%) were
+reconstructions the live job could not have produced.**
+
+**Extending the window does not help; it makes the artifact bigger.** The same
+rule over 90 days yields n=81, of which **72 fall in the last 30 days**. The
+preceding 60 days contribute 9 legs. The recent window is not cherry-picked — it
+is the only window that produces data, and that is itself the tell.
+
+**The rules.**
+
+1. **A backtest that selects a price by recency is only reconstructible inside
+   the 7-day window.** Beyond it you are measuring retention's choice.
+2. **Simulate the job's actual run times** — `now()` → a fixed `T`, the job's own
+   snapshot window, the job's own kickoff window — rather than querying "the last
+   row before kickoff". On the case above, the point-in-time arm shared only
+   **19 of 37** legs with the recency query: the two methods select largely
+   different bets, so one is not an approximation of the other.
+3. **Report the intact-window n separately, always.** If the honest n is 37, say
+   37. A number carried by rows the live system could never have seen is not a
+   backtest of that system.
+4. **Suspect any per-day rate that jumps at the 7-day boundary.** Here: **1.6
+   legs/day** on pruned days against **4.6/day** on intact ones. That step is
+   retention, not football.
+
+**Sibling traps.** §59 (the retention mechanics themselves), §63 (an
+exact-timestamp join across books measures write granularity, not simultaneity —
+in the same analysis, **93.4%** of candidate legs had an alignment gap of exactly
+0.0 minutes because AF writes every book in one bulk sweep, which made a 60-minute
+alignment gate very nearly inert), and §60 (compute the power before reporting a
+difference — the +16.56% carried a one-sided p of 0.127 and a minimum detectable
+effect of ±40.9% at that n).
