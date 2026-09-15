@@ -41272,12 +41272,34 @@ def test_picks_forward_test_surface():
             f"rule's own parameters. Rendering it beside live picks reads as a "
             f"track record, which this method does not have."
         )
-    # the live aggregate must carry n and an interval
-    assert "ci95(" in page and "95% CI" in page, (
-        "the running result no longer shows a confidence interval. A point "
-        "estimate with no interval is the exact shape of the number this whole "
-        "test was set up to stop publishing."
-    )
+    # IF the page publishes an aggregate, it must carry n and an interval.
+    #
+    # RUNNING-RESULT-REMOVED-FROM-PICKS (owner, 2026-09-14, web 926aaaf): /picks
+    # now shows the pick list and NO running result — that lives on
+    # /performance, one track record in one place, and it was n=5 at the time.
+    # This assertion was written unconditionally and went red the moment the
+    # owner exercised the safer of the two options, which is ledger pattern 9
+    # (a test that pins the old reality) reported as a failure of the page.
+    #
+    # The guard's actual intent is "never a point estimate without an interval",
+    # so it is now conditional — and paired with its complement, because
+    # "publishes nothing" must be checked too or removing the CI *and* the
+    # number would pass silently while an ROI crept back in some other form.
+    _publishes_aggregate = "fetchForwardTestSummary" in page
+    if _publishes_aggregate:
+        assert "ci95(" in page and "95% CI" in page, (
+            "the running result no longer shows a confidence interval. A point "
+            "estimate with no interval is the exact shape of the number this "
+            "whole test was set up to stop publishing."
+        )
+    else:
+        for banned in ("ROI", "roi_pct", "hit rate", "Hit rate"):
+            assert banned not in _rendered, (
+                f"/picks renders {banned!r} while importing no summary — an "
+                f"aggregate has come back by another route, without the n and "
+                f"the interval the summary view carries. Publish it through "
+                f"fetchForwardTestSummary + ci95, or not at all."
+            )
     assert "picks_forward_test_summary" in lib, (
         "the aggregate must come from the summary view — one definition, the "
         "same one the stopping rules are evaluated on."
