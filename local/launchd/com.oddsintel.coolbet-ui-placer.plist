@@ -34,8 +34,8 @@
   Tail:
     tail -f /Users/margussellin/www/odds-intel-engine/dev/active/coolbet-ui-placer.log
 
-  Spend ceilings live in scripts/place_coolbet_ui.py: MAX_BETS_PER_DAY=20,
-  MAX_STAKE_PER_DAY=200. A looping UI bug is the realistic failure mode, not a
+  Spend ceilings live in scripts/place_coolbet_ui.py: MAX_BETS_PER_DAY=80,
+  MAX_STAKE_PER_DAY=800. A looping UI bug is the realistic failure mode, not a
   bad pick, so the blast radius is capped by count AND by money.
 -->
 <plist version="1.0">

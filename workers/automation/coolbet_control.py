@@ -92,7 +92,17 @@ def _evaluate_readiness(state: dict, bots: list[dict], now: datetime | None = No
     enabled_bots = [b.get("bot_name") for b in bots if b.get("ui_place_enabled")]
     disabled_bots = [b.get("bot_name") for b in bots if not b.get("ui_place_enabled")]
 
+    # PLACEMENT-GATE (2026-09-15): the ARMING switch (migration 354). Missing
+    # column (migration not yet applied) or NULL reads as NOT armed.
+    real_money_armed = bool(state.get("real_money_armed"))
+    real_money_armed_reason = state.get("real_money_armed_reason")
+
     blockers: list[str] = []
+    if not real_money_armed:
+        blockers.append(
+            "real money NOT ARMED (coolbet_session_state.real_money_armed, migration 354)"
+            + (f": {real_money_armed_reason}" if real_money_armed_reason else "")
+        )
     if placement_paused:
         blockers.append(
             f"placement paused (operator kill switch): {placement_paused_reason or 'no reason given'}"
@@ -138,6 +148,8 @@ def _evaluate_readiness(state: dict, bots: list[dict], now: datetime | None = No
         "warnings": warnings,
         "placement_paused": placement_paused,
         "placement_paused_reason": placement_paused_reason,
+        "real_money_armed": real_money_armed,
+        "real_money_armed_reason": real_money_armed_reason,
         "daemons_paused": daemons_paused,
         "daemons_paused_reason": daemons_paused_reason,
         "enabled_bots": enabled_bots,
@@ -181,6 +193,12 @@ def placement_readiness() -> dict:
                  FROM coolbet_session_state WHERE id = 1"""
         )
         state = dict(rows[0]) if rows else {}
+        # Arming switch (migration 354) via the FAIL-CLOSED helper, so a not-yet-
+        # applied migration reads as "not armed" instead of breaking the whole
+        # status read.
+        from workers.automation.coolbet_state import is_real_money_armed
+        armed, armed_reason = is_real_money_armed()
+        state["real_money_armed"], state["real_money_armed_reason"] = armed, armed_reason
 
         # The REAL-money liveness signal: the UI placer's own attempt ledger
         # (coolbet_placement_attempts). last attempt = job/browser ran; last
@@ -221,6 +239,71 @@ def placement_readiness() -> dict:
         }
 
 
+def host_executors() -> dict:
+    """PLACEMENT-GATE 0.E (2026-09-15): what THIS host could execute, read from
+    the OS rather than the DB. `_evaluate_readiness` sees only the DB row; the
+    2026-09-14 pause left two `--execute` launchd jobs loaded and the router's
+    env opt-in set in `.env`. Never raises; every field None when unreadable.
+
+    Returns loaded launchd agents whose program arguments contain `--execute`,
+    whether `ROUTER_ALLOW_REAL` is set in the environment this process sees
+    (which is what the launchd jobs see too, via load_dotenv), and the current
+    effective allowlist.
+    """
+    import os
+    import subprocess
+    out: dict = {"execute_agents_loaded": None, "router_allow_real_env": None,
+                 "allowlist": None}
+    try:
+        uid = os.getuid()
+        listing = subprocess.run(["launchctl", "list"], capture_output=True, text=True,
+                                 timeout=10).stdout
+        loaded = [ln.split()[-1] for ln in listing.splitlines()
+                  if "com.oddsintel." in ln]
+        armed = []
+        for label in loaded:
+            try:
+                pr = subprocess.run(["launchctl", "print", f"gui/{uid}/{label}"],
+                                    capture_output=True, text=True, timeout=10).stdout
+            except Exception:  # noqa: BLE001
+                continue
+            if "--execute" in pr:
+                armed.append(label)
+        out["execute_agents_loaded"] = sorted(armed)
+    except Exception as e:  # noqa: BLE001
+        out["launchd_error"] = str(e)[:120]
+    try:
+        out["router_allow_real_env"] = bool(
+            os.getenv("ROUTER_ALLOW_REAL", "").lower() in ("1", "true", "yes"))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from workers.automation.placement_gate import effective_allowlist
+        out["allowlist"] = sorted(effective_allowlist())
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def can_stake(readiness: dict, host: dict) -> tuple[bool, list[str]]:
+    """The one answer the owner asked for: could ANY executor on this host stake
+    right now? TRUE requires the DB gate open (not paused AND armed AND a bot
+    toggled ON) AND at least one loaded `--execute` agent or the router env
+    opt-in. Returns (can_stake, reasons_it_cannot). Pure; never raises."""
+    why: list[str] = []
+    if readiness.get("placement_paused") in (True, None):
+        why.append("placement_paused" if readiness.get("placement_paused") else
+                   "placement_paused unreadable (fails closed)")
+    if not readiness.get("real_money_armed"):
+        why.append("real_money_armed is FALSE")
+    if not (readiness.get("enabled_bots") or []):
+        why.append("no bot toggled ON")
+    agents = host.get("execute_agents_loaded") or []
+    if not agents and not host.get("router_allow_real_env"):
+        why.append("no --execute agent loaded and ROUTER_ALLOW_REAL not set")
+    return (not why, why)
+
+
 def _fmt_dt(dt: datetime | None) -> str:
     if dt is None:
         return "never"
@@ -240,6 +323,10 @@ def format_readiness(r: dict) -> str:
     lines.append(
         f"  placement_paused: {r.get('placement_paused')}"
         + (f" — {r.get('placement_paused_reason')}" if r.get('placement_paused') else "")
+    )
+    lines.append(
+        f"  real_money_armed: {r.get('real_money_armed')}"
+        + (f" — {r.get('real_money_armed_reason')}" if r.get('real_money_armed_reason') else "")
     )
     lines.append(
         f"  daemons_paused: {r.get('daemons_paused')}"
@@ -292,6 +379,17 @@ def main() -> int:
     # --status is the only mode; default to it so bare invocation is useful.
     r = placement_readiness()
     print(format_readiness(r))
+    h = host_executors()
+    print("")
+    print("  ── THIS HOST (PLACEMENT-GATE 0.E) ──")
+    print(f"  --execute launchd agents loaded: "
+          f"{', '.join(h.get('execute_agents_loaded') or []) or '(none)'}")
+    print(f"  ROUTER_ALLOW_REAL in env: {h.get('router_allow_real_env')}")
+    print(f"  effective allowlist: {', '.join(h.get('allowlist') or []) or '(empty)'}")
+    ok, why = can_stake(r, h)
+    print("")
+    print(f"CAN_STAKE: {'yes' if ok else 'no'}"
+          + ("" if ok else f"  ({'; '.join(why)})"))
     return 0 if r.get("can_place_now") else 1
 
 

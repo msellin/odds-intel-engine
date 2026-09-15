@@ -1486,7 +1486,12 @@ def _settle_real_bets_for_matches(match_ids: list[str]):
            JOIN matches m ON m.id = rb.match_id
            WHERE rb.result = 'pending'
              AND rb.combo_legs IS NULL
-             AND rb.match_id = ANY(%s::uuid[])
+             -- REAL-BETS-SETTLE-ANY-FINISHED (2026-09-15): a CONFIRMED real
+             -- stake whose match has finished is settled on EVERY pass, not
+             -- only when its match_id happens to be in this run's window.
+             -- Three placed_real rows from 2026-09-11 sat pending for four
+             -- days on finished, scored matches because they fell outside it.
+             AND (rb.match_id = ANY(%s::uuid[]) OR rb.placed_real = TRUE)
              AND m.status = 'finished'
              AND m.score_home IS NOT NULL
              AND m.score_away IS NOT NULL""",

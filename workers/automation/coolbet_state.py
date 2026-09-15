@@ -308,26 +308,66 @@ def mark_cookies_refreshed(count: int) -> None:
 
 
 def is_placement_paused() -> tuple[bool, str | None]:
-    """Returns (paused, reason). Placer calls this at the start of every
-    run; short-circuits the whole placement loop when paused=True.
+    """Returns (paused, reason). The operator KILL switch for real money.
 
-    Falls open (returns (False, None)) on DB error so an observability
-    hiccup doesn't accidentally halt placements — the system is more
-    useful running than paralysed by a transient lookup failure. The
-    intentional-pause path is the one we care about; transient DB errors
-    are caught elsewhere and surface in last_error."""
+    FAILS CLOSED (2026-09-15, OWN-ARMED-UNDER-PAUSE). Until today this fell
+    OPEN — a DB error read as "not paused" — on the argument that a transient
+    lookup failure should not halt placements. That argument was wrong for a
+    kill switch: this read is the ONLY thing between a scheduled `--execute`
+    job and the account, and `ui_place_enabled_bots()` 200 lines away already
+    failed CLOSED for the same money. Two safety reads pointing in opposite
+    directions is `RELIABILITY_LEDGER` material. A DB blip now resolves to
+    "paused" with the reason in the second element, so callers that only log
+    (health_alerts, the daily summary) can still tell the two apart.
+
+    A MISSING row is also paused: no state is not a licence to stake."""
     try:
         from workers.api_clients.db import execute_query
         rows = execute_query(
             "SELECT placement_paused, placement_paused_reason FROM coolbet_session_state WHERE id = 1"
         )
         if not rows:
-            return (False, None)
+            return (True, "coolbet_session_state row missing — failing CLOSED")
         return (bool(rows[0].get("placement_paused")),
                 rows[0].get("placement_paused_reason"))
     except Exception as e:
-        log.warning("placement_paused read failed (defaulting to NOT paused): %s", e)
-        return (False, None)
+        log.error("placement_paused read failed — failing CLOSED (treated as PAUSED): %s", e)
+        return (True, f"unreadable ({type(e).__name__}) — failing CLOSED")
+
+
+def is_real_money_armed() -> tuple[bool, str | None]:
+    """Returns (armed, reason). The ARMING switch (migration 354). FALSE means
+    no executor may stake regardless of bot toggles or env vars. FAILS CLOSED:
+    any error, or a missing row, or a missing column (migration not yet
+    applied) reads as NOT armed. Only the owner sets it, via
+    `set_real_money_armed`, with a reason."""
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT real_money_armed, real_money_armed_reason FROM coolbet_session_state WHERE id = 1"
+        )
+        if not rows:
+            return (False, "coolbet_session_state row missing")
+        return (bool(rows[0].get("real_money_armed")),
+                rows[0].get("real_money_armed_reason"))
+    except Exception as e:
+        log.error("real_money_armed read failed — failing CLOSED (treated as NOT armed): %s", e)
+        return (False, f"unreadable ({type(e).__name__})")
+
+
+def set_real_money_armed(armed: bool, *, reason: str | None = None) -> None:
+    """Owner-only arming switch. Requires a reason when arming — the reason is
+    the audit trail for why money was allowed to move."""
+    if armed and not (reason or "").strip():
+        raise ValueError("arming real money requires a reason")
+    _safe_write(
+        """UPDATE coolbet_session_state
+           SET real_money_armed = %s,
+               real_money_armed_at = CASE WHEN %s THEN NOW() ELSE NULL END,
+               real_money_armed_reason = %s
+           WHERE id = 1""",
+        (armed, armed, reason),
+    )
 
 
 # SIGNAL-PAUSE-DECOUPLE (2026-08-27): the marker the daemon stamps into
@@ -361,7 +401,8 @@ def is_publishing_paused() -> tuple[bool, str | None]:
     verdict (docs/OWN_PATH_VERDICT_2026_09_14.md) took the customer Telegram
     feed offline as a side effect nobody chose and nothing reported.
 
-    Falls open (NOT paused) on DB error, matching `is_placement_paused`: the
+    Falls open (NOT paused) on DB error — deliberately the OPPOSITE of
+    `is_placement_paused`, which fails CLOSED since 2026-09-15: the
     risk profile is the same in reverse — a transient lookup failure should not
     silently mute the customer feed, which is the failure mode we are fixing.
     Publishing makes no Coolbet API call and writes no `real_bets` row, so
@@ -418,21 +459,24 @@ def is_daemons_paused() -> tuple[bool, str | None]:
     dashboard when Imperva escalates (the "STAY COOL" wall).
 
     Distinct from is_placement_paused (that only stops real-money PLACEMENT;
-    this stops the footprint that provokes Imperva). Falls OPEN (not paused) on
-    DB error, mirroring is_placement_paused — a transient lookup failure must not
-    silently freeze collection; the operator verifies state in the dashboard."""
+    this stops the footprint that provokes Imperva). FAILS CLOSED since
+    2026-09-15 (OWN-ARMED-UNDER-PAUSE): a DB error reads as PAUSED. The cost is
+    one skipped sweep on a DB blip — and a sweep that cannot reach the DB could
+    not have written its rows anyway. The old fall-open argument ("must not
+    silently freeze collection") traded a harmless skip for a footprint that
+    kept running through the exact outages the pause exists for."""
     try:
         from workers.api_clients.db import execute_query
         rows = execute_query(
             "SELECT daemons_paused, daemons_paused_reason FROM coolbet_session_state WHERE id = 1"
         )
         if not rows:
-            return (False, None)
+            return (True, "coolbet_session_state row missing — failing CLOSED")
         return (bool(rows[0].get("daemons_paused")),
                 rows[0].get("daemons_paused_reason"))
     except Exception as e:
-        log.warning("daemons_paused read failed (defaulting to NOT paused): %s", e)
-        return (False, None)
+        log.error("daemons_paused read failed — failing CLOSED (treated as PAUSED): %s", e)
+        return (True, f"unreadable ({type(e).__name__}) — failing CLOSED")
 
 
 def set_daemons_paused(paused: bool, *, reason: str | None = None) -> None:

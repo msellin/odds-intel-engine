@@ -100,38 +100,21 @@ DEFAULT_BOT = "bot_coolbet_ou_model_v1"  # value_v1 (line-shop) retired 2026-09-
 # pipeline — matching, pricing, snapshots, audit rows — WITHOUT any path by
 # which an unproven strategy reaches the account. A default is not a guard;
 # --bot could name any bot and --execute would have honoured it.
-PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}  # value_v1 (line-shop) retired 2026-09-08
-
-
-def ui_place_enabled_bots() -> set[str]:
-    """Bots flipped ON for real-money UI placement in coolbet_placer_bots.
-
-    FAILS CLOSED. On ANY database error this returns the EMPTY set — the placer
-    then places nothing. That is the SAFE direction here: unlike a kill-switch
-    (where a read failure must not silently disable the stop), this gate ENABLES
-    real money, so a read failure must not silently enable it. "Can't read the
-    toggle" resolves to "place nothing", never "place everything".
-
-    Note the row set is intersected with PLACEABLE_BOTS by the caller, so even a
-    corrupted/injected row can only enable a bot the code already trusts.
-    """
-    try:
-        rows = execute_query(
-            "SELECT bot_name FROM coolbet_placer_bots WHERE ui_place_enabled = true"
-        )
-        return {r["bot_name"] for r in (rows or [])}
-    except Exception as e:
-        log.error(
-            "ui_place_enabled_bots: DB read failed — failing CLOSED (placing "
-            "nothing this run): %s", e
-        )
-        return set()
-
-
-def effective_allowlist() -> set[str]:
-    """The set of bots that may place REAL money right now: the code-level hard
-    whitelist intersected with the runtime DB toggle."""
-    return PLACEABLE_BOTS & ui_place_enabled_bots()
+# PLACEMENT-GATE (2026-09-15): PLACEABLE_BOTS, ui_place_enabled_bots and
+# effective_allowlist now LIVE in workers/automation/placement_gate.py — the one
+# module every real-money executor (this script, coolbet_ui_placer.stage_bet, the
+# best-price router incl. its Unibet arm, coolbet_placer.place_all_bets) calls
+# FIRST. They are re-exported here so existing imports and smoke pins keep
+# working. The whitelist is still a hardcoded set on purpose.
+from workers.automation.placement_gate import (  # noqa: E402
+    PLACEABLE_BOTS, ui_place_enabled_bots, effective_allowlist,
+    assert_run_may_place, assert_may_place, PlacementRefused,
+)
+# Pinned by smoke tests as the code-level boundary on what may EVER stake:
+# PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}  (defined in placement_gate.py)
+assert PLACEABLE_BOTS == {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, (
+    "placement_gate.PLACEABLE_BOTS drifted from the pinned set — this assertion "
+    "and the smoke pins move together")
 
 # COOLBET-LINESHOP-OU-STOP-2026-09-08. The real-money line-shop bot
 # (bot_coolbet_value_v1) LOSES on O/U: realized -17.0% ROI over n=1109 settled,
@@ -1000,6 +983,21 @@ def main() -> int:
     # per-bot execute decision below checks against it. Fails CLOSED (empty set)
     # on any DB error, so a toggle we can't read means "place nothing".
     allowed = effective_allowlist()
+
+    # PLACEMENT-GATE (2026-09-15): the run-level gate — pause + real_money_armed,
+    # both FAIL-CLOSED — before a browser is opened or a lock taken. Until today
+    # `placement_paused` was read only inside stage_bet, AFTER the stake had been
+    # typed into the slip, and it fell OPEN on a DB error. A refused run still
+    # proceeds as a DRY-RUN so matching/pricing/audit rows are produced; it just
+    # cannot stake. The per-pick gate inside stage_bet re-checks everything.
+    run_refused: str | None = None
+    if args.execute:
+        try:
+            assert_run_may_place()
+        except PlacementRefused as e:
+            run_refused = str(e)
+            print(f"REFUSING --execute for this run: {run_refused}. Running DRY.")
+            args.execute = False
 
     if args.all_enabled:
         # Only enabled + placeable bots run. They are all in `allowed`, so

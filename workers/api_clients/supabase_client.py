@@ -5667,24 +5667,76 @@ def store_real_bet(
         if prob_raw is not None and float(actual_odds) > 0:
             edge_pct_taken = round(float(prob_raw) - 1.0 / float(actual_odds), 5)
 
+    # REAL-BETS-SHADOW-LINK (2026-09-15). `simulated_bet_id` is a FOREIGN KEY to
+    # simulated_bets. The real-money bots pick from shadow_bets, and since
+    # EDGE-PCT-TAKEN-RECORDED (2026-09-13) callers pass the SHADOW id here — so
+    # every confirmed placement after that commit raised a FK violation on this
+    # INSERT and was logged as "placed but could not write real_bets". Money
+    # moved, ledger silent (found by the OWN audit's quant review: 142 of 142
+    # confirmed rows carry simulated_bet_id NULL; one placement is an orphan).
+    # Route the id to the table that actually holds it. Before migration 354 is
+    # applied there is no shadow column; then the shadow id goes into `notes`
+    # rather than into a column that will reject it.
+    sim_id_col = None
+    shadow_id_col = None
+    if simulated_bet_id:
+        try:
+            in_sim = execute_query("SELECT 1 FROM simulated_bets WHERE id = %s", [simulated_bet_id])
+        except Exception:  # noqa: BLE001
+            in_sim = []
+        if in_sim:
+            sim_id_col = simulated_bet_id
+        else:
+            try:
+                in_shadow = execute_query("SELECT 1 FROM shadow_bets WHERE id = %s", [simulated_bet_id])
+            except Exception:  # noqa: BLE001
+                in_shadow = []
+            if in_shadow:
+                if _real_bets_has_shadow_col():
+                    shadow_id_col = simulated_bet_id
+                else:
+                    notes = f"{notes or ''} | shadow_bet_id={simulated_bet_id}".strip(" |")
+            else:
+                notes = f"{notes or ''} | unlinked pick id {simulated_bet_id}".strip(" |")
+
     # MARKET-VOCAB-CANONICAL: store the canonical spelling (AH/combo keep selection).
     market, selection = canonicalize_for_storage(
         market, selection.lower() if isinstance(selection, str) else selection)
-    rows = execute_write_returning(
-        """INSERT INTO real_bets
-           (match_id, market, selection, bookmaker, captured_odds, actual_odds,
-            edge_pct_taken, stake, bot_id, simulated_bet_id,
-            notes, combo_legs, system_type, placed_real)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-           RETURNING id""",
-        [
-            match_id, market, selection.lower(), bookmaker,
+    cols = ["match_id", "market", "selection", "bookmaker", "captured_odds", "actual_odds",
+            "edge_pct_taken", "stake", "bot_id", "simulated_bet_id",
+            "notes", "combo_legs", "system_type", "placed_real"]
+    vals = [match_id, market, selection.lower(), bookmaker,
             captured_odds, actual_odds, edge_pct_taken,
-            stake, bot_id, simulated_bet_id, notes,
-            legs_json, system_type, placed_real,
-        ],
+            stake, bot_id, sim_id_col, notes,
+            legs_json, system_type, placed_real]
+    if shadow_id_col:
+        cols.append("shadow_bet_id"); vals.append(shadow_id_col)
+    rows = execute_write_returning(
+        f"""INSERT INTO real_bets ({', '.join(cols)})
+            VALUES ({', '.join(['%s'] * len(cols))})
+            RETURNING id""",
+        vals,
     )
     return str(rows[0]["id"]) if rows else None
+
+
+_REAL_BETS_SHADOW_COL: bool | None = None
+
+
+def _real_bets_has_shadow_col() -> bool:
+    """Cached: does real_bets have the shadow_bet_id column yet (migration 354)?
+    Fails to False — the caller then keeps the link in notes, never in a column
+    that would reject it."""
+    global _REAL_BETS_SHADOW_COL
+    if _REAL_BETS_SHADOW_COL is None:
+        try:
+            r = execute_query(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'real_bets' AND column_name = 'shadow_bet_id'")
+            _REAL_BETS_SHADOW_COL = bool(r)
+        except Exception:  # noqa: BLE001
+            _REAL_BETS_SHADOW_COL = False
+    return _REAL_BETS_SHADOW_COL
 
 
 def upsert_inplay_bot_stats(strategy_stats: dict[str, dict[str, int]]) -> None:

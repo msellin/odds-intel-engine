@@ -1950,15 +1950,13 @@ def place_all_bets(
     # Only check on execute=True: --record paper logging should still run
     # so we keep an audit trail of what *would* have been placed.
     if execute:
-        from workers.automation.coolbet_state import is_placement_paused
-        paused, reason = is_placement_paused()
-        if paused:
-            log.warning(
-                "place_all_bets SKIPPED — placement_paused=true (reason: %s). "
-                "Clear with `UPDATE coolbet_session_state SET placement_paused=false WHERE id=1` "
-                "or `--refresh-jwt --resume-placement` after fixing the root cause.",
-                reason or "no reason given",
-            )
+        # PLACEMENT-GATE (2026-09-15): the shared run-level gate — pause AND
+        # real_money_armed, both fail-closed — replaces the inline pause read.
+        from workers.automation.placement_gate import assert_run_may_place, PlacementRefused
+        try:
+            assert_run_may_place()
+        except PlacementRefused as e:
+            log.warning("place_all_bets SKIPPED — placement gate refused: %s", e)
             return []
 
     global _MIN_EDGE
@@ -2701,6 +2699,15 @@ def place_all_inplay_bets(
 
 # ── MANUAL-PLACE entrypoint ───────────────────────────────────────────────────
 
+# PLACEMENT-GATE (2026-09-15): the manual-place drain (`scheduler.py
+# _drain_manual_placement_queue`, every 10 s on the VPS) is the THIRD executor
+# entry point. It is paper today because `execute=False` was a literal in two
+# call sites below. That literal is now this ONE constant, so any future flip
+# routes through `place_all_bets`' gate instead of bypassing it. Pinned by smoke
+# `PLACEMENT-GATE-ALL-EXECUTORS`.
+MANUAL_PLACE_EXECUTE = False
+
+
 def place_bet_by_id(simulated_bet_id: str) -> dict:
     """Manual-place a single simulated_bet by id, bypassing the qualifying
     filters (date, edge, dedup). Used by the Telegram inline-keyboard
@@ -2751,14 +2758,14 @@ def place_bet_by_id(simulated_bet_id: str) -> dict:
         if is_inplay and not is_combo:
             # Inplay bet — use the inplay placer; window_minutes ignored when filter set
             results = place_all_inplay_bets(
-                record=True, execute=False,
+                record=True, execute=MANUAL_PLACE_EXECUTE,
                 bet_id_filter=simulated_bet_id,
             )
         else:
             # Pre-match single OR combo — place_all_bets handles both phases;
             # the loaders only return the matching row, the other phase is empty.
             results = place_all_bets(
-                record=True, execute=False,
+                record=True, execute=MANUAL_PLACE_EXECUTE,
                 bet_id_filter=simulated_bet_id,
             )
     except Exception as e:

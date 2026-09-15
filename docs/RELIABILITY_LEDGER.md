@@ -604,3 +604,41 @@ match.
 **And the operational rule:** take the snapshot *before* a rebuild as routine, not
 as a precaution. Here the backup was worth more as a **measuring instrument** than
 as a rollback — without it the loss would have reached a retrain unnoticed.
+
+
+## 14. Two safety reads pointing in opposite directions — and an env var's absence is not a pause
+
+**2026-09-15, OWN-ARMED-UNDER-PAUSE.** Real money was "paused" (migration 343) and
+the stack was armed underneath it in three ways nobody had listed:
+
+1. `is_placement_paused()` fell **OPEN** on a DB error ("the system is more useful
+   running than paralysed") while `ui_place_enabled_bots()` 200 lines away fell
+   **CLOSED** ("cannot read the toggle ⇒ place nothing"). Same money, two
+   reads, opposite defaults. Whichever one a given executor happened to call
+   decided whether a DB blip staked or refused.
+2. The router's "owner gate" was the **absence** of `ROUTER_ALLOW_REAL`. It was
+   present — in `.env`, loaded by `db.py` on import — so the router ran in real
+   mode every 30 minutes and staked nothing only because its pick loader found
+   zero candidates. Two audits in two days recorded it as "inert, env var unset".
+3. A third executor (the VPS manual-place drain, every 10 s) never read any
+   pause at all; it was paper because `execute=False` was a literal in two call
+   sites.
+
+**Tell:** more than one function answers "may money move?", or the answer
+depends on something not being set.
+
+**Guard:** one `assert_may_place()` in `placement_gate.py`, fail-closed on every
+read, called FIRST by every executor, with `real_money_armed` (mig 354) as an
+explicit default-FALSE arming switch and a source-position smoke test
+(`PLACEMENT-GATE-ALL-EXECUTORS`) that fails if any executor acts before it asks.
+`coolbet_control --status` now reads the OS (loaded `--execute` agents, the env)
+and ends with one line: `CAN_STAKE: yes/no`.
+
+**Sibling found the same day — a FK that silently ate the ledger.**
+EDGE-PCT-TAKEN-RECORDED (09-13) made the UI placer pass its `shadow_bets` pick id
+into `real_bets.simulated_bet_id`, a FOREIGN KEY to `simulated_bets`. Every
+confirmed placement after it raised on the ledger INSERT and was logged as
+"placed but could not write real_bets". Money moved; the ledger stayed silent.
+Guard: `store_real_bet` routes the id to the table that holds it
+(`shadow_bet_id`, mig 354); `REAL-BETS-ATTEMPTS-RECONCILED` fails if any
+confirmed attempt lacks a ledger row.

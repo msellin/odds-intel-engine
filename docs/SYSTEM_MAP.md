@@ -269,12 +269,41 @@ are called out inline so the old claims are not silently replaced.
 Full detail: `docs/COOLBET_OWN_BETTING.md`. Recurring failure patterns:
 `docs/RELIABILITY_LEDGER.md`.
 
+> ### ✅ PLACEMENT-GATE — 2026-09-15 (OWN Phase 0). Read before the tables below.
+>
+> There are **THREE** executors, and every one now calls **one fail-closed gate**
+> before it touches a browser or an API: `workers/automation/placement_gate.py`
+> (`assert_run_may_place` at run level, `assert_may_place` per pick). The gate
+> checks, in order, `placement_paused` (KILL switch, now fails CLOSED),
+> `real_money_armed` (ARMING switch, migration 354, default FALSE, owner-set only),
+> `effective_allowlist()` = `PLACEABLE_BOTS` ∩ `coolbet_placer_bots.ui_place_enabled`,
+> the kickoff cutoff and the daily caps. Any exception ⇒ refuse.
+>
+> | executor | where the gate runs | what it replaced |
+> |---|---|---|
+> | Coolbet UI placer | `place_coolbet_ui.main()` (run level, before browser/lock) and `coolbet_ui_placer.stage_bet` **before `select_outcome`** | a single `is_placement_paused()` read AFTER the stake was typed, which fell OPEN on a DB error |
+> | Best-price router (Coolbet + **Unibet-Site**) | `route()` run level; `_dispatch_unibet` before `unibet_placer.place_bet` | `ROUTER_ALLOW_REAL` env var only — which was SET in `.env`, so the router ran in real mode every 30 min; it iterated `PLACEABLE_BOTS`, never the DB toggle |
+> | API placer + manual-place drain (VPS, every 10 s) | `coolbet_placer.place_all_bets`; `place_bet_by_id` routes through `MANUAL_PLACE_EXECUTE = False` | an inline pause read (this was the only executor that had one) |
+>
+> Corrections to this section as written on 2026-09-11: the counts and claims
+> below that describe a "late" pause check, a dead drift gate, and `load_picks`
+> without a retirement check are still accurate history; the pause-position
+> defect is FIXED by the gate. `PLACEABLE_BOTS`, `ui_place_enabled_bots` and
+> `effective_allowlist` now LIVE in `placement_gate.py` and are re-exported by
+> `place_coolbet_ui.py`. Both `--execute` launchd jobs were unloaded on the Mac
+> (`~/Library/LaunchAgents/paused/`). `coolbet_control --status` prints a host
+> view and a final `CAN_STAKE: yes/no`. Smokes: `PLACEMENT-GATE-FAIL-CLOSED`
+> (mutation), `PLACEMENT-GATE-ARMED-REQUIRED`, `PLACEMENT-GATE-ALL-EXECUTORS`,
+> `ROUTER-NO-ALLOWLIST-BYPASS`, `REAL-BETS-ATTEMPTS-RECONCILED`,
+> `REAL-BETS-SETTLE-ANY-FINISHED`, `REAL-BETS-SHADOW-LINK`, `OWN-BOTS-OFF-CUSTOMER-SURFACES`.
+> Full plan: `dev/active/own-implementation-plan.md`.
+
 ### 4a. There are TWO real-money paths, not one
 
 | Path | Entry | Status |
 |---|---|---|
 | **Coolbet UI placer** | `scripts/place_coolbet_ui.py --execute` | live, hourly 06-21 UTC |
-| **Best-price router** | `workers/automation/best_price_router.py::route` | built, **owner-gated OFF** (`ROUTER_ALLOW_REAL` unset) |
+| **Best-price router** | `workers/automation/best_price_router.py::route` | built; **gated by `placement_gate`** (2026-09-15). ⚠️ The old claim "owner-gated OFF (`ROUTER_ALLOW_REAL` unset)" was FALSE — the var was set in `.env`; the router ran in real mode and staked nothing only for lack of candidates. Its launchd job is unloaded. |
 
 ⚠️ **Previously undocumented.** The router can place at **Coolbet OR Unibet-Site**
 (`PLACEABLE_BOOKS`), so "Coolbet own-betting" no longer describes the whole surface.

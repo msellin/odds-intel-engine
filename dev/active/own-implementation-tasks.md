@@ -3,26 +3,26 @@
 Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally.
 
 ## Visibility invariant (all phases)
-- [ ] smoke `OWN-BOTS-OFF-CUSTOMER-SURFACES` (maturity experimental, no simulated_bets / picks_forward_test rows, /performance filter present)
+- [x] smoke `OWN-BOTS-OFF-CUSTOMER-SURFACES` (maturity experimental, no simulated_bets / picks_forward_test rows, /performance filter present)
 - [ ] 1a: FRESH/STALE badge + `decision_quote_age_min` column on /admin/shadow-bots upcoming rows
 - [ ] 1b: IN-PLAY rows (minute, score, on-screen price, de-vigged prob) in the same section
 - [ ] 2: Promotions panel on /admin/shadow-bots
 
-## Phase 0 — placement safety (P0)
-- [ ] 0.A `workers/automation/placement_gate.py` with `assert_may_place`, `PlacementRefused`, `read_placement_paused_strict`
-- [ ] 0.A flip `is_placement_paused` / `is_daemons_paused` error default to paused; leave `is_publishing_paused`
-- [ ] 0.A mig 354 `coolbet_session_state.real_money_armed BOOLEAN NOT NULL DEFAULT FALSE`
-- [ ] 0.A move `PLACEABLE_BOTS`, `ui_place_enabled_bots`, `effective_allowlist` into the gate; shims in `place_coolbet_ui.py`
-- [ ] 0.B gate in `place_coolbet_ui.main()` (run-level)
-- [ ] 0.B gate in `coolbet_ui_placer.stage_bet` before `select_outcome`; remove late read
-- [ ] 0.B gate in `best_price_router.route()` + `_dispatch_unibet`; iterate `effective_allowlist()`
-- [ ] 0.B gate in `coolbet_placer.place_all_bets` and `place_bet_by_id`
-- [ ] 0.D `scripts/reconcile_placed_attempts_to_real_bets.py` + run once (1 missing row)
-- [ ] 0.D settlement: settle any `placed_real` row on a finished match; run once (3 rows)
-- [ ] 0.E `coolbet_control --status` host view + `CAN_STAKE` line
-- [ ] 0.F smoke: `PLACEMENT-GATE-FAIL-CLOSED`, `PLACEMENT-GATE-ALL-EXECUTORS`, `ROUTER-NO-ALLOWLIST-BYPASS`, `REAL-BETS-ATTEMPTS-RECONCILED`, `REAL-BETS-SETTLE-ANY-FINISHED`
+## Phase 0 — placement safety (P0) — DONE 2026-09-15 (also: REAL-BETS-SHADOW-LINK FK fix, mig 354 adds real_bets.shadow_bet_id)
+- [x] 0.A `workers/automation/placement_gate.py` with `assert_may_place`, `PlacementRefused`, `read_placement_paused_strict`
+- [x] 0.A flip `is_placement_paused` / `is_daemons_paused` error default to paused; leave `is_publishing_paused`
+- [x] 0.A mig 354 `coolbet_session_state.real_money_armed BOOLEAN NOT NULL DEFAULT FALSE`
+- [x] 0.A move `PLACEABLE_BOTS`, `ui_place_enabled_bots`, `effective_allowlist` into the gate; shims in `place_coolbet_ui.py`
+- [x] 0.B gate in `place_coolbet_ui.main()` (run-level)
+- [x] 0.B gate in `coolbet_ui_placer.stage_bet` before `select_outcome`; remove late read
+- [x] 0.B gate in `best_price_router.route()` + `_dispatch_unibet`; iterate `effective_allowlist()`
+- [x] 0.B gate in `coolbet_placer.place_all_bets` and `place_bet_by_id`
+- [x] 0.D `scripts/reconcile_placed_attempts_to_real_bets.py` + run once (1 missing row)
+- [x] 0.D settlement: settle any `placed_real` row on a finished match; run once (3 rows)
+- [x] 0.E `coolbet_control --status` host view + `CAN_STAKE` line
+- [x] 0.F smoke: `PLACEMENT-GATE-FAIL-CLOSED`, `PLACEMENT-GATE-ALL-EXECUTORS`, `ROUTER-NO-ALLOWLIST-BYPASS`, `REAL-BETS-ATTEMPTS-RECONCILED`, `REAL-BETS-SETTLE-ANY-FINISHED`
 - [ ] docs: SYSTEM_MAP §4, COOLBET_OWN_BETTING, RELIABILITY_LEDGER, PRIORITY_QUEUE
-- [ ] ⚖️ 0.C owner: bootout both `--execute` plists; move to `local/launchd/paused/`; fix header comment
+- [x] ⚖️ 0.C owner: bootout both `--execute` plists; move to `local/launchd/paused/`; fix header comment
 
 ## Phase 1a — sharp-tight freshness
 - [ ] mig 355 `odds_snapshots.first_seen_at`, `last_seen_at` (+ `shadow_bets.decision_quote_age_min`)

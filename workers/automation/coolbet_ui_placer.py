@@ -1578,6 +1578,20 @@ def stage_bet(
     # Any UI step can raise (timeouts, re-renders). An exception here must be
     # RECORDED as a failed attempt, not escape and abort the whole run — one
     # unhandled stake timeout killed a 15-pick run mid-way.
+    # PLACEMENT-GATE (2026-09-15): the per-pick gate runs BEFORE any outcome is
+    # selected or a stake typed — pause, real_money_armed, allowlist, kickoff
+    # cutoff, daily caps — all FAIL-CLOSED. It used to be a single
+    # `is_placement_paused()` read AFTER the slip was filled, and that read fell
+    # OPEN on a DB error. Dry runs (execute=False) are not gated: they stake
+    # nothing, and the audit rows they produce are the point of a dry run.
+    if execute:
+        from workers.automation.placement_gate import assert_may_place, PlacementRefused
+        try:
+            assert_may_place(bot_name=bet.get("bot_name"), book="Coolbet",
+                             stake=stake, kickoff_at=bet.get("match_date"))
+        except PlacementRefused as e:
+            return _fail("placement_gate", f"gate refused: {e}", ev, outcome)
+
     try:
         select_outcome(page, outcome)
         applied = set_stake(page, outcome.market_id, stake)
@@ -1604,12 +1618,8 @@ def stage_bet(
                        execute_mode=False)
         return StageResult(True, "staged (not placed)", ev, outcome, slip, applied, False, notes)
 
-    from workers.automation.coolbet_state import is_placement_paused
-    paused, why = is_placement_paused()
-    if paused:
-        clear_stake(page, outcome.market_id)
-        return _fail("place", f"placement_paused: {why or 'no reason given'}",
-                     ev, outcome, slip, applied)
+    # (The late `is_placement_paused()` read that used to sit here moved UP to
+    # the placement gate before select_outcome — PLACEMENT-GATE 2026-09-15.)
 
     if not slip.place_enabled:
         clear_stake(page, outcome.market_id)

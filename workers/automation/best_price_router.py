@@ -239,6 +239,18 @@ def _dispatch_unibet(pick: dict, decision: dict, *, execute: bool) -> dict:
 
     o = float(decision["winner_odds"])
     lo, hi = round(o * (1 - _ODDS_BAND_PCT), 2), round(o * (1 + _ODDS_BAND_PCT), 2)
+    # PLACEMENT-GATE (2026-09-15): `unibet_placer.place_bet` never read the pause,
+    # the arming switch or the allowlist. Gate here, immediately before the only
+    # call that can move money on this arm. Staging (execute=False) is not gated.
+    if execute:
+        from workers.automation.placement_gate import assert_may_place, PlacementRefused
+        try:
+            assert_may_place(bot_name=pick.get("bot_name"), book="Unibet-Site",
+                             stake=STAKE_EUR, kickoff_at=pick.get("match_date"))
+        except PlacementRefused as e:
+            return {"book": "Unibet-Site", "ok": False, "placed": False,
+                    "reason": f"placement gate refused: {e}",
+                    "event_url": r["url"], "outcome": name}
     try:
         res = unibet_placer.place_bet(
             r["url"], name, min_odds=float(decision["odds_floor"]),
@@ -409,21 +421,41 @@ def route(execute: bool = False, *, stage: bool = False, limit: int | None = Non
     # silently either) so nothing places by accident.
     real_allowed = os.getenv("ROUTER_ALLOW_REAL", "").lower() in ("1", "true", "yes")
     real = bool(execute and real_allowed)
+    real_refused: str | None = None
+    if execute and not real_allowed:
+        real_refused = ("execute=True but ROUTER_ALLOW_REAL is not set — "
+                        "real-money placement is owner-gated; reporting only")
+    # PLACEMENT-GATE (2026-09-15): the env var is no longer SUFFICIENT. The
+    # run-level gate (placement_paused + real_money_armed, both fail-closed)
+    # must also pass. Until today `ROUTER_ALLOW_REAL=1` alone would have staked
+    # for every bot in PLACEABLE_BOTS with the DB toggles OFF — the router never
+    # consulted `effective_allowlist()`. It does now (below), and the Unibet arm
+    # is gated per pick in `_dispatch_unibet`.
+    if real:
+        from workers.automation.placement_gate import assert_run_may_place, PlacementRefused
+        try:
+            assert_run_may_place()
+        except PlacementRefused as e:
+            real = False
+            real_refused = f"placement gate refused: {e} — reporting only"
     mode = "real" if real else ("stage" if stage else "report")
 
     out = {"candidates": 0, "routed": 0, "no_book_clears": 0, "already_placed": 0,
            "would_place": [], "skipped": [], "execute": execute, "mode": mode,
            "dispatched": 0, "aborted": None}
-    if execute and not real_allowed:
-        out["real_refused"] = ("execute=True but ROUTER_ALLOW_REAL is not set — "
-                               "real-money placement is owner-gated; reporting only")
+    if real_refused:
+        out["real_refused"] = real_refused
     # market label → placer floor key (o/u floors are keyed 'o/u')
     def _floor_key(m):
         from workers.canonical_market import market_family
         return market_family(m)
 
     picks = []
-    for bot in sorted(PLACEABLE_BOTS):
+    # REAL money loads only bots the DB toggle enables (code whitelist ∩
+    # coolbet_placer_bots); report/stage modes may look at every placeable bot.
+    from workers.automation.placement_gate import effective_allowlist as _eff
+    bots_to_load = sorted(_eff()) if real else sorted(PLACEABLE_BOTS)
+    for bot in bots_to_load:
         try:
             picks.extend(load_picks(bot))
         except Exception as e:  # noqa: BLE001
