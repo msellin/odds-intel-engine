@@ -4372,6 +4372,109 @@ def test_unibet_site_odds_parse():
         "document that FlareSolverr->API returns 400 (the Coolbet odds pattern does not transfer)")
 
 
+@test("UNIBET-SITE-MARKET-WIDENING — BTTS/DC/DNB/corners/cards parse, AH refuses")
+def test_unibet_site_market_widening():
+    """UNIBET-SITE-MARKET-WIDENING-2026-09-15. An audit found the captured
+    contest-page carries 21 propositions while the parser took 3, so Unibet-Site
+    wrote 1x2 + O/U + team totals and nothing else while Epicbet and Coolbet wrote
+    BTTS, double chance, corners and cards for the same fixtures.
+
+    Two pins, and the SECOND is the load-bearing one:
+
+    (1) The newly-taken markets parse into the EXACT vocabulary the other books
+        already write — `btts` yes/no, `double_chance` 1x/12/x2 (lower-cased),
+        `draw_no_bet` home/away, and the non-goal over/unders with a numeric line.
+        A near-miss spelling (`BTTS`, `1X`, `corners_ou_9_5`) is worse than no row:
+        it silently fails to line-shop and looks like coverage.
+
+    (2) **Asian handicap must NEVER be written from this feed.** `2_way_handicap`
+        and `3_way_handicap` arrive with `total: null` — the handicap LINE is not
+        in the payload — and a price of 2.00 on "1" is meaningless without knowing
+        whether it is -0.5 or -1.5. `draw_no_bet` shares the same "1"/"2" option
+        labels, so a parser that dispatched on option shape instead of exact
+        `propositionType` would merge them. That is KAMBI-CRITERION-CONTAMINATION,
+        which made a feed the #1 recommended book at prices that did not exist."""
+    import json
+    from pathlib import Path
+    from workers.automation import unibet_odds_feed as uof
+
+    fx = Path(__file__).parent.parent / "tests" / "fixtures" / "unibet_contest_derby.json"
+    rows = uof.parse_contest(json.loads(fx.read_text()))
+
+    for expected in [("btts", "yes", 1.75, None), ("btts", "no", 1.98, None),
+                     ("double_chance", "1x", 1.7, None),
+                     ("double_chance", "12", 1.33, None),
+                     ("double_chance", "x2", 1.29, None),
+                     ("draw_no_bet", "home", 2.5, None),
+                     ("draw_no_bet", "away", 1.5, None),
+                     ("over_under_1h_15", "over", 2.75, 1.5),
+                     ("corners_ou_95", "over", 1.8, 9.5),
+                     ("corners_1h_ou_45", "over", 1.88, 4.5),
+                     ("cards_ou_35", "over", 1.84, 3.5)]:
+        assert expected in rows, f"missing {expected} — got {sorted(rows)}"
+
+    # (2) the refusal. No handicap row may exist, under any spelling.
+    ah = [r for r in rows if "handicap" in r[0]]
+    assert not ah, (
+        f"asian/3-way handicap must NOT be parsed — the line is null in the "
+        f"payload and an AH row without a line is unpriceable. Got {ah}")
+
+    # Every row that carries a line carries a REAL one, never None-in-a-line-market.
+    for market, sel, odds, line in rows:
+        if any(k in market for k in ("over_under", "corners_ou", "corners_1h_ou",
+                                     "cards_ou", "team_total")):
+            assert isinstance(line, float) and line > 0, (
+                f"{market}/{sel} is a line market and must carry a numeric line, got {line!r}")
+
+    # Selection casing matches the shared vocabulary, not the feed's display form.
+    assert uof._DC_SEL["1X"] == "1x" and uof._DC_SEL["X2"] == "x2", (
+        "double_chance selections are lower-case in odds_snapshots")
+    # Fails closed on an unknown (e.g. re-localised) option label.
+    assert uof._BTTS_SEL.get("Yes") is None and uof._OU_SEL.get("Over") is None, (
+        "option maps must FAIL CLOSED — an unrecognised label yields no row, "
+        "never a guessed one")
+
+
+@test("UNIBET-KAMBI-RETIRED — the divergent Kambi feed is no longer a cron")
+def test_unibet_kambi_retired():
+    """UNIBET-KAMBI-RETIRED-2026-09-15. `Unibet-Kambi` was pulled from the
+    placeable set on 2026-09-06 (KAMBI-FEED-DIVERGENCE: unibet.ee moved off the
+    Kambi offering API, 38% of stored prices read HIGHER than the site, max
+    +23.5%) and then kept writing for nine more days — ~815k rows into the
+    largest table in the DB, read by nothing.
+
+    An audit on 2026-09-15 found it appears in every consumer ONLY as an
+    exclusion. A feed whose sole presence in the codebase is "do not use this" is
+    a standing trap: every new analysis must remember to exclude it or silently
+    inherits prices nobody can take, and it already became the #1
+    `recommended_bookmaker` once (403 of 1,015 picks) on exactly that failure.
+
+    Pin that the cron does not come back. The module and the job function are
+    deliberately KEPT for manual runs — only the registration is gone."""
+    import re
+    from pathlib import Path
+
+    src = (Path(__file__).parent.parent / "workers" / "scheduler.py").read_text()
+
+    # The job function stays (manual runs, and the historical rows are real).
+    assert "def job_unibet_kambi_odds" in src, (
+        "the job function is kept on purpose — only the cron is retired")
+
+    # But it must not be registered. Tolerant of whitespace and line-wrapping so
+    # the guard cannot be defeated by reformatting.
+    registered = re.search(
+        r"^\s*scheduler\.add_job\(\s*job_unibet_kambi_odds", src, re.M)
+    assert registered is None, (
+        "job_unibet_kambi_odds is registered as a cron again. The feed diverges "
+        "from unibet.ee by a median +3.3% (max +23.5%) and has no consumer — the "
+        "true site prices come from Unibet-Site. If this is deliberate, the "
+        "divergence must be re-measured and KAMBI-FEED-DIVERGENCE reopened first.")
+    assert 'id="unibet_kambi_odds"' not in src, (
+        "the scheduler id must be gone with the registration")
+    assert "UNIBET-KAMBI-RETIRED" in src, (
+        "leave the reason in place — a silently-absent job reads as an accident")
+
+
 @test("BETA-BOTS-RETIRED — dead beta bots (dnb, summer) retired by migration 323")
 def test_beta_bots_retired():
     """BETA-BOT-AUDIT 2026-09-09: the gradeability sweep found bot_dnb_specialist
