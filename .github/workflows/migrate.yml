@@ -130,12 +130,23 @@ jobs:
           psql "$DATABASE_URL" -tAc "SELECT 1" >/dev/null \
             || { echo "cannot reach Postgres through the tunnel — aborting"; exit 1; }
 
+          # MIGRATE-ONE-QUERY-FOR-THE-APPLIED-SET-2026-09-15. This loop used to
+          # open a psql connection PER FILE just to ask "already applied?" —
+          # 352 connections through the SSH tunnel on a run that applies one
+          # migration. Measured 2026-09-15: >7 minutes of a 15-minute budget to
+          # apply a single ALTER TABLE on a one-row table. The DDL was never
+          # slow; the bookkeeping was, and its cost grows with every migration
+          # ever written, so the budget is crossed on a schedule. Per
+          # MIGRATE-HANG-GUARD above, a migrate job that overruns queues every
+          # other workflow in the repo behind it. Read the applied set ONCE.
+          psql "$DATABASE_URL" -tAc "SELECT filename FROM _schema_migrations" \
+            | tr -d '[:space:]' | sed '/^$/d' | sort > /tmp/applied.txt
+          echo "$(wc -l < /tmp/applied.txt) migration(s) already applied."
+
           applied=0
           for f in supabase/migrations/*.sql; do
             name=$(basename "$f")
-            already=$(psql "$DATABASE_URL" -tAc \
-              "SELECT 1 FROM _schema_migrations WHERE filename = '$name'" | tr -d '[:space:]')
-            if [ "$already" = "1" ]; then
+            if grep -qxF "$name" /tmp/applied.txt; then
               continue
             fi
             echo "── Applying $name ──"

@@ -5064,6 +5064,23 @@ def test_postgrest_schema_reload():
         "or a new table 500s the API until a manual reload"
     )
 
+    # MIGRATE-ONE-QUERY-FOR-THE-APPLIED-SET (2026-09-15). The apply loop asked
+    # the DB "already applied?" once PER FILE — 352 psql connections through the
+    # SSH tunnel on a run that applies one migration. Measured that day: >7
+    # minutes of a 15-minute budget for a single ALTER TABLE on a one-row
+    # table. The DDL was never slow; the bookkeeping was, and its cost grows
+    # with every migration ever written, so the budget is crossed on a
+    # schedule. Per MIGRATE-HANG-GUARD's own note, a migrate job that overruns
+    # queues every other workflow in the repo behind it.
+    assert "SELECT 1 FROM _schema_migrations WHERE filename =" not in src, (
+        "the per-file 'already applied?' query is back. Read the applied set "
+        "ONCE before the loop — this is O(migrations) connections per run."
+    )
+    assert "SELECT filename FROM _schema_migrations" in src, (
+        "migrate.yml must read the applied set in a single query before the "
+        "apply loop."
+    )
+
 
 @test("SCHEDULED-LIVE-PRICE-PRODUCER — odds_at_pick_live is produced on a schedule, not manually")
 def test_scheduled_live_price_producer():
