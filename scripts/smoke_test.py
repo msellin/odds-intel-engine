@@ -41583,7 +41583,11 @@ def test_picks_forward_test_surface():
     # "Already kicked off" section was added earlier that day and removed the
     # same day: the page had never had one, and /picks is the live board.
     # Results live on /performance. Pinned so it is not silently re-added.
-    assert "Already kicked off" not in page, (
+    # Checked against `_rendered` (comments stripped), not the raw source — the
+    # comment EXPLAINING the removal contains the phrase, and asserting on raw
+    # text would forbid documenting the decision. RELIABILITY_LEDGER #9:
+    # "inspect code, not comments".
+    assert "Already kicked off" not in _rendered, (
         "the settled-picks section is back on /picks. The page is the live "
         "board; results belong on /performance."
     )
@@ -42722,6 +42726,20 @@ def test_picks_board_watchlist():
     # the page must not render watchlist legs as picks
     page = _web_path("src/app/picks/page.tsx").read_text()
     flat = " ".join(page.split())
+    # WATCHLIST COUNT MUST MATCH WHAT IS RENDERED (2026-09-15). The summary read
+    # `watchlist.length` (40) while the table sliced to 12 — the owner opened it
+    # and found a different number than the label promised. A count that does
+    # not match its own list is the smallest possible version of the dishonesty
+    # this whole page is trying to avoid.
+    assert "watchlist.slice(" not in page, (
+        "the watchlist table is sliced while the summary shows the full count. "
+        "Either render them all or state the number actually shown."
+    )
+    assert "odds_grade_a" in page and "odds_grade_b" in page, (
+        "both grade targets must be shown — a single 'target' column does not "
+        "say which bar it clears"
+    )
+
     assert "not picks yet" in flat, (
         "the watchlist heading must say these are not picks"
     )
