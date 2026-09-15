@@ -277,6 +277,33 @@ def load_candidates() -> tuple[list[dict], list[dict]]:
     return select(out), out
 
 
+def already_published_markets() -> set:
+    """(match_id, market) pairs that already have a LIVE pick out.
+
+    ONE-SELECTION-PER-MARKET, part 2 (2026-09-15). `select()` dedupes within a
+    single run, which was enough at one run a day and is not enough at 48. On
+    the day the cadence shipped, Platense v Fluminense published HOME at 15:05
+    and then the DRAW at 17:35 — the second leg qualified in a later run, by
+    which time the first was no longer in the pool to dedupe against.
+
+    To a reader that is covering both ways on one match, and it makes the day's
+    pick count not a count of opinions. The dedupe has to consult the LEDGER,
+    not just the current pool.
+    """
+    try:
+        rows = execute_query(
+            """SELECT DISTINCT match_id::text AS m, market
+                 FROM picks_forward_test WHERE arm = 'live'"""
+        )
+        return {(r["m"], r["market"]) for r in rows}
+    except Exception as e:
+        # Fail CLOSED would mean publishing nothing; fail open would mean
+        # risking a contradictory pair. Prefer the contradiction being
+        # impossible: an unreadable ledger blocks publication for this pass.
+        log.warning("already_published_markets unreadable — skipping this pass: %s", e)
+        return None
+
+
 def daily_room() -> int:
     """How many more live picks may publish today, against the RUNAWAY BREAKER.
 
@@ -326,10 +353,15 @@ def select(cands: list[dict], room: int | None = None) -> list[dict]:
     # AND away, Independiente away AND draw **in the same run**, Sudtirol draw
     # AND away. To a reader that is covering both ways, and it means a day's
     # "8 picks" are not 8 opinions. Keep the highest-edge side only.
-    seen: set = set()
+    # Seed the dedupe with markets that ALREADY have a published pick, so a
+    # later run cannot publish the opposite side of one we have already sent.
+    published = already_published_markets()
+    if published is None:
+        return []
+    seen: set = {(m, mk) for m, mk in published}
     deduped = []
     for c in keep:
-        key = (c["match_id"], c["market"])
+        key = (str(c["match_id"]), c["market"])
         if key in seen:
             continue
         seen.add(key)

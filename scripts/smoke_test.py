@@ -42672,7 +42672,17 @@ def test_picks_board_watchlist():
     # out four times in seven days, once inside a single run — to a reader that
     # is covering both ways.
     _sel = src[src.index("def select("):src.index("def junk_anchor_arm(")]
-    assert '(c["match_id"], c["market"])' in _sel, (
+    # ONE-SELECTION-PER-MARKET, part 2 (2026-09-15). Deduping within a run was
+    # enough at one run a day and not at 48: Platense v Fluminense published HOME
+    # at 15:05 and the DRAW at 17:35, because by the later run the first leg was
+    # no longer in the pool to dedupe against. The dedupe must consult the
+    # LEDGER, not just the current pool.
+    assert "already_published_markets()" in _sel, (
+        "select() no longer seeds its dedupe from already-published markets. A "
+        "later run will publish the opposite side of a pick already sent, which "
+        "reads to subscribers as covering both ways."
+    )
+    assert '(c["match_id"], c["market"])' in _sel or '(str(c["match_id"]), c["market"])' in _sel, (
         "select() no longer dedupes by (match, market). Publishing home AND "
         "away of the same fixture reads as covering both ways, and makes the "
         "day's pick count not a count of opinions."
