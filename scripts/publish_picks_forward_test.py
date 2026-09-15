@@ -33,13 +33,34 @@ from workers.notify.telegram import send_telegram_public
 
 log = logging.getLogger("picks_forward")
 
-RULE_VERSION = "sharp_edge_v3_2026_09_14"
+RULE_VERSION = "sharp_edge_v4_2026_09_15"
 
 # ── the locked rule ──────────────────────────────────────────────────────────
 MIN_EDGE   = 0.03   # sharp edge floor
 MAX_ODDS   = 4.0    # uncapped, the edge collapses into longshot noise
 ALIGN_MIN  = 60.0   # anchor and bet quote within 60 min — see note below
-TOP_N      = 8      # per day, by edge
+TOP_N      = 8      # per CALENDAR DAY (UTC), counted in the DB — see daily_room()
+
+# RULE-V4-2026-09-15 — cadence. v1-v3 published in ONE batch at 10:00 UTC. The
+# candidate window is `now+45min .. now+14h`, so a single 10:00 run can never see
+# a kickoff before ~10:45 and can never see 00:00-03:00 kickoffs at all: measured,
+# 47% of qualifying legs were structurally unreachable, and an independent replay
+# had the 10:00 slot catching 5 of 16 legs on a two-day sample.
+#
+# v4 runs every 30 minutes. Three things had to be true first, and now are:
+#   1. claim-before-send (PUBLISH-CLAIM-BEFORE-SEND) — a leg re-qualifies in a
+#      median of 6 consecutive runs, so send-then-record would have posted the
+#      same pick ~6 times to 62 subscribers.
+#   2. a DB-backed daily cap — `select()` alone caps per CALL, which is
+#      meaningless when there are 48 calls a day.
+#   3. price persistence measured — 94% of qualifying prices still clear the
+#      floor at the same book 30 minutes later (62% at 60), so a 30-minute
+#      cadence publishes prices a reader can still get.
+#
+# WHY THIS IS v4 AND NOT AN EDIT TO v3: it changes WHICH bets are selected, not
+# just when they are looked at. The pre-registration is explicit that this starts
+# a new test with a new start date. The cost is zero — v2 and v3 published
+# nothing at all, so no accumulated n is being discarded.
 MAX_RATIO  = 0.20   # book price may not exceed the anchor by more than this
 MAX_ANCHOR_OVERROUND = 0.04   # [v3] the anchor must actually BE a sharp line
 
@@ -239,11 +260,42 @@ def load_candidates() -> tuple[list[dict], list[dict]]:
     return select(out), out
 
 
-def select(cands: list[dict]) -> list[dict]:
-    """The selection half of the locked rule: edge floor, then top N by edge."""
+def daily_room() -> int:
+    """How many more live picks may publish today. TOP_N minus what is already out.
+
+    RULE-V4: `select()` caps per CALL. Under a 30-minute cadence that is 48 calls
+    a day and the cap stops meaning anything, so the count has to come from the
+    database.
+
+    Counted on `published_at::date` in UTC, deliberately, NOT on kickoff date:
+    with LOOKAHEAD_H=14 a single run spans two kickoff dates, which makes a
+    kickoff-date cap unenforceable. The visible consequence is that 00:00-03:00
+    kickoffs are only ever in window from ~10:00-13:00 the previous day and so
+    consume the PREVIOUS day's allowance. That is a real quirk and it is written
+    down rather than discovered later.
+
+    Falls CLOSED (returns 0) if the count cannot be read. A cap that fails open
+    is not a cap, and the surface it protects is a public channel."""
+    try:
+        rows = execute_query(
+            """SELECT count(*) AS n FROM picks_forward_test
+                WHERE arm = 'live' AND published_at::date = (now() AT TIME ZONE 'utc')::date"""
+        )
+        return max(0, TOP_N - int(rows[0]["n"]))
+    except Exception as e:
+        log.warning("daily_room unreadable — publishing nothing this pass: %s", e)
+        return 0
+
+
+def select(cands: list[dict], room: int | None = None) -> list[dict]:
+    """Edge floor, then the best `room` by edge.
+
+    `room` defaults to TOP_N so the junk-anchor control and any offline caller
+    keep the per-call behaviour they were measured with; the live path passes
+    `daily_room()`."""
     keep = [c for c in cands if c["edge"] >= MIN_EDGE]
     keep.sort(key=lambda c: -c["edge"])
-    return keep[:TOP_N]
+    return keep[: (TOP_N if room is None else room)]
 
 
 def junk_anchor_arm(pool: list[dict]) -> list[dict]:
@@ -270,7 +322,11 @@ def junk_anchor_arm(pool: list[dict]) -> list[dict]:
     """
     if len(pool) < 2:
         return []
-    rng = random.Random(20260914)
+    # RULE-V4: seed per (date, run) rather than with a fixed constant. Under one
+    # run a day a constant seed was merely reproducible; under 48 runs it makes
+    # every run's draw IDENTICAL, so the control stops being an independent
+    # sample and starts being the same draw counted 48 times.
+    rng = random.Random(int(datetime.now(timezone.utc).timestamp()) // 1800)
     junk: list[dict] = []
     for c in pool:
         others = [o for o in pool if o["match_id"] != c["match_id"]
@@ -370,8 +426,13 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     picks, pool = load_candidates()
+    # RULE-V4: re-select against the DB-backed daily allowance. load_candidates()
+    # caps per call (correct for offline analysis); the live path must cap per DAY.
+    room = daily_room()
+    picks = select(pool, room)
     if not picks:
-        print("no qualifying picks — nothing to publish (this is a valid outcome)")
+        print(f"no qualifying picks — nothing to publish (valid outcome; "
+              f"{room} of {TOP_N} slots free today)")
         return 0
 
     print(f"{len(picks)} picks under {RULE_VERSION}\n")
@@ -404,8 +465,11 @@ def main() -> int:
             sent += 1
             attach_message_id(pick_id, mid)
 
-    # negative control — recorded, never published
-    for c in junk_anchor_arm(pool):
+    # Negative control — recorded, never published. Same cadence AND same daily
+    # room as the live arm: an uncapped control accumulates the union of every
+    # run's draw while live accumulates one capped set, and the two arms stop
+    # being the same rule.
+    for c in junk_anchor_arm(pool)[:max(0, room)]:
         claim(c, "junk_anchor")
 
     print(f"\npublished {sent}/{len(picks)} to the channel, all recorded")

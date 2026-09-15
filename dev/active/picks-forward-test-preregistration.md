@@ -130,8 +130,50 @@ alignment: anchor quote and bet quote within 60 minutes
 markets : 1x2, over_under_25
 excluded books: Max, Avg, Betfair Exchange, BetWin, Betfred,
                 Unibet-Kambi (38% phantom-high), Unibet/AF (33.1% phantom-high)
-selection: top 8 per day by edge
+selection: top 8 per day by edge, capped on published_at::date UTC   [v4]
+cadence  : every 30 minutes at :05/:35                                [v4]
+lead     : kickoff between now+45 min and now+14 h                    [v4 — LOCKED]
 ```
+
+### v4 — `sharp_edge_v4_2026_09_15`, registered 2026-09-15, before its first pick
+
+**One change: CADENCE.** v1–v3 published a single batch at 10:00 UTC. The
+candidate window is `now+45 min .. now+14 h`, so a 10:00 run can never see a
+kickoff before ~10:45 and can never see 00:00–03:00 kickoffs **at all**.
+Measured: **47% of qualifying legs were structurally unreachable**, and an
+independent two-day replay had the 10:00 slot catching **5 of 16**.
+
+This is v4 rather than an edit to v3 because it changes **which bets are
+selected**, not merely when they are looked at. Per this document's own rule that
+starts a new test with a new start date. **The cost is zero: v2 and v3 published
+nothing at all**, so no accumulated n is discarded — which is exactly why it is
+being done now rather than later.
+
+**Three things had to be true before a 30-minute cadence was safe, and are:**
+
+1. **`claim`-before-send.** A qualifying leg re-qualifies in a median of **6**
+   consecutive runs (mean 6.8, max 13). Sending before recording would have put
+   the same pick in front of 62 subscribers ~6 times.
+2. **A DB-backed daily cap.** `select()` caps per *call*; across 48 calls a day
+   that is not a cap. `daily_room()` counts today's live rows and fails **closed**.
+3. **Price persistence measured.** **94%** of qualifying prices still clear the
+   floor at the same book after 30 minutes (**62%** after 60). A 30-minute
+   cadence therefore publishes prices a reader can still get; a 60-minute one
+   would not.
+
+**The junk-anchor control runs at the same cadence and under the same daily
+room**, and is seeded per `(date, run)` rather than by a constant — under one run
+a day a fixed seed was merely reproducible, under 48 runs it makes every draw
+identical and the control stops being an independent sample.
+
+**Known boundary quirk, stated rather than discovered later:** the cap counts
+`published_at::date` in UTC, not kickoff date, because with a 14 h lookahead one
+run spans two kickoff dates. So 00:00–03:00 kickoffs are only ever in window from
+~10:00–13:00 the previous day and consume the **previous** day's allowance.
+
+**`MIN_LEAD_MIN` and `LOOKAHEAD_H` are now LOCKED constants.** They were live
+rule parameters that existed only in the script and appeared in neither this
+document nor the smoke test, so a schedule change could move them silently.
 
 **On the word "edge".** This rule's `edge` is **expected ROI** (`P × odds − 1`).
 The rest of the codebase — `pick_generator.py:239`, `pick_triggers.min_odds`,

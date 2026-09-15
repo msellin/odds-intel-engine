@@ -40989,7 +40989,12 @@ def test_picks_forward_test_rule_locked():
         return float(m.group(1))
 
     locked = {"MIN_EDGE": 0.03, "MAX_ODDS": 4.0, "ALIGN_MIN": 60.0,
-              "TOP_N": 8, "MAX_RATIO": 0.20, "MAX_ANCHOR_OVERROUND": 0.04}
+              "TOP_N": 8, "MAX_RATIO": 0.20, "MAX_ANCHOR_OVERROUND": 0.04,
+              # RULE-V4 (2026-09-15): these were live rule parameters that
+              # existed ONLY in the script — absent from the doc and from this
+              # dict — so a schedule change could move them with nothing to
+              # notice. They decide which fixtures are in scope at all.
+              "MIN_LEAD_MIN": 45.0, "LOOKAHEAD_H": 14.0}
     for name, expected in locked.items():
         actual = const(name)
         assert actual == expected, (
@@ -41000,9 +41005,37 @@ def test_picks_forward_test_rule_locked():
             f"do not silently re-cut a running pre-registered test."
         )
 
+    # RULE-V4 SEMANTICS PIN. `TOP_N == 8` above is a check on a NUMBER, and the
+    # number is unchanged by turning "top 8 per day by edge" (a selection rule
+    # applied per call) into "8 per day" (an accounting rule applied across 48
+    # calls). That is a real rule change that would have left this test green —
+    # RELIABILITY_LEDGER #9. So pin the mechanism, not just the constant.
+    assert "def daily_room(" in src, (
+        "the daily cap must be counted in the DATABASE. Under a 30-minute "
+        "cadence `select()` caps per call, which across 48 calls a day is not a "
+        "cap at all."
+    )
+    assert "published_at::date" in src, (
+        "the daily cap must count published_at::date (UTC). Counting kickoff "
+        "date is unenforceable — with a 14h lookahead one run spans two."
+    )
+    assert "return 0" in src[src.index("def daily_room("):src.index("def select(")], (
+        "daily_room must fail CLOSED when the count cannot be read. A cap that "
+        "fails open is not a cap, and it guards a public channel."
+    )
+
+    # The registered version must appear in the doc, so a bump cannot happen
+    # without editing the pre-registration in the same commit.
+    _ver = _re.search(r'RULE_VERSION\s*=\s*"([^"]+)"', src)
+    assert _ver, "RULE_VERSION not found"
+    assert _ver.group(1) in doc, (
+        f"RULE_VERSION is {_ver.group(1)} but the pre-registration does not "
+        f"mention it. A rule version that is not registered is not pre-registered."
+    )
+
     # the doc must still state the same rule, or the two have drifted
     for frag in ("≥ 3%", "≤ 4.0", "within 60 minutes", "top 8 per day", "≤ 20%",
-                 "anchor overround"):
+                 "anchor overround", "now+45 min", "now+14 h"):
         assert frag in doc, (
             f"pre-registration doc no longer states {frag!r} — the doc and the "
             f"publisher have drifted apart, and the doc is the authority."
@@ -41219,6 +41252,34 @@ def test_picks_forward_test_junk_arm_selects():
     assert "def junk_anchor_arm(pool" in src, (
         "junk_anchor_arm no longer takes the full candidate pool; it can only "
         "be re-selecting from the live picks."
+    )
+
+    # RULE-V4 (2026-09-15) — the control must survive the 30-minute cadence.
+    # This test previously checked only that the junk SET differs from live,
+    # which stays true under a cadence that quietly breaks the comparison two
+    # other ways (RELIABILITY_LEDGER #9 — it would have passed through both):
+    #
+    #   1. A CONSTANT seed. Under one run a day `random.Random(20260914)` was
+    #      merely reproducible. Under 48 runs it makes every run's draw
+    #      IDENTICAL, so the control stops being an independent sample and
+    #      becomes one draw counted 48 times.
+    #   2. An UNCAPPED control. `select()` caps the junk arm per call, so across
+    #      48 calls it accumulates the union of 48 draws while the live arm
+    #      accumulates one capped set. The arms then differ in n by an order of
+    #      magnitude and are no longer the same rule.
+    assert "random.Random(20260914)" not in src, (
+        "the junk arm is back on a constant seed. At :05/:35 that is the same "
+        "draw 48 times a day, not 48 independent draws."
+    )
+    assert "random.Random(int(datetime.now(timezone.utc).timestamp())" in src, (
+        "the junk arm must seed per (date, run) so each run is an independent "
+        "draw under the v4 cadence."
+    )
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert "junk_anchor_arm(pool)[:max(0, room)]" in sched, (
+        "the junk arm must take the SAME daily room as the live arm. An "
+        "uncapped control accumulates every run's draw while live is capped, "
+        "and the comparison stops being like-for-like."
     )
 
 
@@ -42154,10 +42215,20 @@ def test_picks_forward_test_scheduled():
     assert 'id="publish_picks_forward_test"' in src, (
         "job defined but never registered with the scheduler"
     )
-    assert 'CronTrigger(hour="10", minute="0")' in src, (
-        "the publish hour moved. It is 10:00 UTC deliberately: the backtest was "
-        "measured on quotes >=4h before kickoff, so publishing nearer kickoff "
-        "publishes a different rule than the pre-registered one."
+    # RULE-V4 (2026-09-15): the job publishes every 30 minutes, not once at
+    # 10:00. A single daily run could not see 47% of qualifying legs — the
+    # candidate window is now+45min..now+14h, so it never saw a kickoff before
+    # ~10:45 and never saw 00:00-03:00 kickoffs at all. The old assertion
+    # justified the hour by a backtest "measured on quotes >=4h before kickoff";
+    # that claim was unsourced (the pre-registration stratifies by anchor/bet
+    # ALIGNMENT, never by lead time), and lead time is now a LOCKED constant
+    # (MIN_LEAD_MIN / LOOKAHEAD_H) where it can actually be checked.
+    assert 'CronTrigger(minute="5,35")' in src, (
+        "the publish cadence moved. v4 registers :05/:35; a single daily run "
+        "structurally cannot reach 47% of qualifying legs."
+    )
+    assert 'CronTrigger(hour="10", minute="0")' not in src, (
+        "the once-a-day publish schedule is back without a rule-version bump"
     )
     assert "from scripts.publish_picks_forward_test import" in src and \
            "load_candidates" in src, (

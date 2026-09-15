@@ -2200,6 +2200,7 @@ def job_publish_picks_forward_test():
     """
     from scripts.publish_picks_forward_test import (
         load_candidates, render, claim, attach_message_id, junk_anchor_arm,
+        select, daily_room, TOP_N,
     )
     from workers.notify.telegram import send_telegram_public
     from workers.automation.coolbet_state import is_publishing_paused
@@ -2234,9 +2235,15 @@ def job_publish_picks_forward_test():
     # one that has actually worked. The day-one HEADER is deliberately NOT sent
     # (main() gates it behind --no-header "use after day 1").
     picks, pool = load_candidates()
+    # RULE-V4 (2026-09-15): this job now runs every 30 minutes, so the cap has to
+    # come from the DB — `select()` caps per CALL, which across 48 calls a day is
+    # not a cap at all. Counted on published_at::date in UTC; falls CLOSED.
+    room = daily_room()
+    picks = select(pool, room)
     if not picks:
-        log.info("picks_forward_test: no qualifying picks today (a valid outcome)")
-        return {"picks": 0, "published": 0}
+        log.info("picks_forward_test: nothing qualifies this pass "
+                 "(valid outcome; %d of %d slots free today)", room, TOP_N)
+        return {"picks": 0, "published": 0, "room": room}
 
     # PUBLISH-CLAIM-BEFORE-SEND (2026-09-15): claim the row FIRST. A returned id
     # means this run created it and may send; None means it is already published
@@ -2261,7 +2268,7 @@ def job_publish_picks_forward_test():
     # Negative control — recorded, never published. Runs over the POOL, not the
     # selected picks: shuffling the anchor has to change WHICH bets are chosen,
     # which is the only thing the anchor does (JUNK-ARM-DEGENERATE-2026-09-14).
-    for c in junk_anchor_arm(pool):
+    for c in junk_anchor_arm(pool)[:max(0, room)]:
         claim(c, "junk_anchor")
 
     log.info("picks_forward_test: %d picks, %d published, %d already out",
@@ -3275,8 +3282,13 @@ def main():
     # writes to a public surface. See the docstring for why it must be scheduled
     # at all: unscheduled it yields 0 picks/day, and a pre-registered test whose
     # checkpoints never arrive can neither pass nor fail.
+    # RULE-V4-2026-09-15: every 30 minutes, not once at 10:00. The candidate
+    # window is now+45min..now+14h, so a single daily run structurally could not
+    # see 47% of qualifying legs, and never saw 00:00-03:00 kickoffs at all.
+    # Safe to run this often only because of PUBLISH-CLAIM-BEFORE-SEND (no
+    # duplicate messages) and daily_room() (a cap that counts across runs).
     scheduler.add_job(_publish_picks_forward_test_wrapper,
-                      CronTrigger(hour="10", minute="0"),
+                      CronTrigger(minute="5,35"),
                       id="publish_picks_forward_test",
                       name="PICKS forward test — publish (public Telegram)")
 
