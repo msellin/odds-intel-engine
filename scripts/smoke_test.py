@@ -44259,5 +44259,40 @@ def test_shadow_bots_settled_row_shows_close():
         "pending rows keep the three live-price cells; only settled rows collapse them"
 
 
+
+@test("SHADOW-BOTS-LOGGED-PICK-IS-VISIBLE — a hand-logged bet shows on the row, counts in the day's total, and drops the page cache")
+def test_shadow_bots_logged_pick_is_visible():
+    """2026-09-15, reported by the owner: they placed two bets by hand, logged
+    both, refreshed, and the page looked untouched. Both rows WERE in `real_bets`,
+    correctly linked to their picks — three separate display faults hid them:
+
+      1. the row had no idea it had been logged, so it still offered the button
+         (and `real_bets` still has no unique index — a second click writes a
+         second row; see SHADOW-BOTS-REVIEW-RESIDUE);
+      2. the day's counter showed only `placed_real = true`, i.e. AUTOMATED
+         placements, so two manual logs left it reading "0/80 · €0/800" while
+         the manual count sat in a tooltip;
+      3. the page caches its reads for 60 s and the write did not invalidate it.
+
+    A bet the operator just recorded must be visible on the next paint."""
+    q = _web_root / "src" / "lib" / "shadow-bots" / "queries.ts"
+    if not q.exists():
+        return
+    qs = q.read_text(encoding="utf-8")
+    assert "shadow_bet_id" in qs.split("from(\"real_bets\")")[1][:400], \
+        "the real_bets read must select shadow_bet_id so the page knows WHICH picks are logged"
+    assert "loggedPickIds" in qs, "the page data must carry the set of already-logged picks"
+    row = (_web_root / "src" / "components" / "shadow-bots" / "picks-row.tsx").read_text(encoding="utf-8")
+    assert "alreadyLogged" in row and "LOGGED" in row, "the row must SHOW that a pick is already recorded"
+    assert "!r.alreadyLogged && showPlaceAction" in row, \
+        "an already-logged pick must not keep offering the button — there is no unique index to catch a double write"
+    strip = (_web_root / "src" / "components" / "shadow-bots" / "safety-strip.tsx").read_text(encoding="utf-8")
+    assert "unconfirmedCount > 0" in strip and "manual" in strip, \
+        "manual logs are real exposure — they must be VISIBLE in the day's total, not tooltip-only"
+    route = (_web_root / "src" / "app" / "api" / "admin" / "real-bet" / "route.ts").read_text(encoding="utf-8")
+    assert 'revalidatePath("/admin/shadow-bots")' in route, \
+        "the write must drop the 60 s page cache, or the operator refreshes into stale data"
+
+
 if __name__ == "__main__":
     main()
