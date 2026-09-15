@@ -30,6 +30,8 @@ from workers.automation.coolbet_placer import (  # noqa: E402
     _MIN_EDGE_BY_MARKET, _MIN_ODDS_BY_MARKET, _MODEL_1X2_HOME_FLOOR,
     min_edge_for_pick,
 )
+from workers.registry.bot_registry import BOTS  # noqa: E402
+from workers.jobs.pick_triggers import _SHARP_MAX_ODDS_BY_STRATEGY  # noqa: E402
 
 OUT = (pathlib.Path(__file__).resolve().parents[2]
        / "odds-intel-web" / "src" / "lib" / "generated" / "engine-floors.ts")
@@ -53,6 +55,26 @@ def render() -> str:
     ]
     edge = {k: v for k, v in sorted(_MIN_EDGE_BY_MARKET.items())}
     odds = {k: v for k, v in sorted(_MIN_ODDS_BY_MARKET.items())}
+    # PER-BOT floors, from the REGISTRY (2026-09-15). The admin page derived a
+    # bot's odds floor from `coolbet_placer_bots` — a table only the two
+    # real-money bots have a row in — so for every OTHER bot the floor resolved
+    # to null and the page rendered a gate floor LOWER than the bot's own,
+    # turning rows into PLACE that the engine has never been allowed to stake.
+    # The registry is the machine-checked source for what each bot IS.
+    _cap_by_bot = {
+        "bot_trigger_1x2_sharp_tight_v1": _SHARP_MAX_ODDS_BY_STRATEGY.get("sharp_1x2_tight"),
+    }
+    bots = {
+        b.name: {
+            "edgeFloor": b.edge_floor,
+            "oddsFloor": b.odds_floor,
+            # An odds CAP is not a floor: above it the instrument says the edge
+            # is noise, so a price above the cap must never read as better.
+            "oddsCap": _cap_by_bot.get(b.name),
+            "realMoney": b.real_money,
+        }
+        for b in sorted(BOTS, key=lambda x: x.name)
+    }
     return f'''// GENERATED FILE — DO NOT EDIT BY HAND.
 // Source of truth: workers/automation/coolbet_placer.py
 // Regenerate:      python3 scripts/gen_frontend_floors.py
@@ -75,6 +97,14 @@ export const ENGINE_MIN_ODDS_BY_MARKET: Record<string, number> =
  *  edge. Home-favs and aways stay on the pooled floor — they are not
  *  fold-robust at 10%. */
 export const ENGINE_MODEL_1X2_HOME_FLOOR = {_MODEL_1X2_HOME_FLOOR};
+
+export const ENGINE_BOT_FLOORS: Record<string, {{
+  edgeFloor: number | null;
+  oddsFloor: number | null;
+  oddsCap: number | null;
+  realMoney: boolean;
+}}> =
+  {json.dumps(bots, indent=2)};
 
 /** Parity fixture, computed by Python's real min_edge_for_pick(). A test
  *  asserts the TS rule reproduces every row. Constants agreeing while the RULE

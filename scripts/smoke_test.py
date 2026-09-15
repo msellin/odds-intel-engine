@@ -43992,5 +43992,88 @@ def test_shadow_bots_promo_panel():
     assert "Promotions" in page or "promotions" in page, "the panel must actually be rendered"
 
 
+
+@test("SHADOW-BOTS-GATE-FLOOR-FROM-REGISTRY — the per-pick gate floor is the BOT's own floor, not one derived from the placer table")
+def test_shadow_bots_gate_floor_from_registry():
+    """Decision-surface review (2026-09-15). The page derived a pick's odds floor
+    from `coolbet_placer_bots` — a table only the two real-money bots have a row
+    in — so for every OTHER bot it resolved to null and the rendered gate floor
+    sat BELOW the bot's own. Measured live: 20 of 40 rows would have read PLACE,
+    none of them on a bot the engine has ever been allowed to stake. A green chip
+    beside an enabled button is an instruction.
+
+    The registry is the machine-checked source for what each bot IS, so the
+    generated floors file now carries per-bot floors AND the odds CAP the
+    sharp-tight instrument is pre-registered with."""
+    gen = _engine_path("scripts/gen_frontend_floors.py").read_text(encoding="utf-8")
+    assert "from workers.registry.bot_registry import BOTS" in gen, "per-bot floors must come from the registry"
+    assert "_SHARP_MAX_ODDS_BY_STRATEGY" in gen, "the odds CAP must be emitted too — above it the edge is noise"
+    ts = _web_root / "src" / "lib" / "generated" / "engine-floors.ts"
+    if not ts.exists():
+        return
+    src = ts.read_text(encoding="utf-8")
+    assert "ENGINE_BOT_FLOORS" in src, "the generated file must carry per-bot floors"
+    from workers.registry.bot_registry import BOTS
+    for b in BOTS:
+        assert f'"{b.name}"' in src, f"{b.name} missing from ENGINE_BOT_FLOORS — its picks would render an invented floor"
+    tbl = (_web_root / "src" / "components" / "shadow-bots" / "picks-table.tsx").read_text(encoding="utf-8")
+    assert "ENGINE_BOT_FLOORS[pick.bot_name]" in tbl, "the table must read the bot's OWN floor"
+    assert "oddsCap" in tbl, "the odds cap must reach the verdict"
+    v = (_web_root / "src" / "lib" / "shadow-bots" / "verdict.ts").read_text(encoding="utf-8")
+    assert "odds cap" in v, "a price above the cap must be SKIP, never PLACE"
+
+
+@test("SHADOW-BOTS-ROI-OVER-ALL-SETTLED — ROI and CLV are two populations, and the page never computes ROI over the CLV subset")
+def test_shadow_bots_roi_over_all_settled():
+    """Decision-surface review (2026-09-15). The scoreboard computed BOTH n and
+    ROI from `shadow_bets_own_book_clv` — settled picks whose recommended book
+    happened to have a complete closing market. That is not a random sample, and
+    it FLIPPED THE SIGN on four of eleven bots: bot_ou35_model_v1's true −11.3%
+    over n=226 rendered as +30.0% over n=23, on the screen the operator decides
+    from. Migration 360 makes the engine own both numbers, separately."""
+    mig = _engine_path("supabase/migrations/360_shadow_bot_scoreboard.sql").read_text(encoding="utf-8")
+    assert "CREATE OR REPLACE VIEW shadow_bot_scoreboard" in mig
+    assert "settled_roi" in mig and "clv_mc_mean" in mig, "the two populations must be separate columns"
+    assert "odds_at_pick_live" in mig, "ROI must price at the executable quote, not the best-of-books high-water mark"
+    from workers.api_clients.db import execute_query
+    if execute_query("SELECT 1 FROM information_schema.views WHERE table_name = 'shadow_bot_scoreboard'"):
+        bad = execute_query(
+            """SELECT count(*) AS n FROM shadow_bot_scoreboard
+                WHERE clv_n > settled_n""")[0]["n"]
+        assert bad == 0, "the CLV population must be a SUBSET of the settled population"
+    q = (_web_root / "src" / "lib" / "shadow-bots" / "queries.ts").read_text(encoding="utf-8")
+    if not q:
+        return
+    assert "shadow_bot_scoreboard" in q, "the page must read the engine's scoreboard view"
+    sb = (_web_root / "src" / "components" / "shadow-bots" / "scoreboard.tsx").read_text(encoding="utf-8")
+    assert "settled_roi" in sb, "ROI must come from the all-settled column"
+    assert "shadow_bets_own_book_clv" not in sb, "the component must not re-derive ROI from the CLV subset"
+
+
+@test("SHADOW-BOTS-AUTOMATION-IS-NOT-A-VERDICT — a paused placer never hides the price verdict or blocks recording a hand-placed bet")
+def test_shadow_bots_automation_is_not_a_verdict():
+    """Decision-surface review (2026-09-15). `placement_paused` and the per-bot
+    toggle govern the AUTOMATED placer. The owner places BY HAND, and this page's
+    Place button only RECORDS what they placed. Blocking the row on those flags
+    flattened all 44 rows to BLOCKED (so the verdict column carried nothing) and
+    disabled the only path that gets a hand-placed bet into `real_bets` to be
+    settled and CLV-scored — the opposite of why that path exists."""
+    v = _web_root / "src" / "lib" / "shadow-bots" / "verdict.ts"
+    if not v.exists():
+        return
+    src = v.read_text(encoding="utf-8")
+    core = src[src.index("function corePickVerdict("):]
+    core = core[:core.index("\n}")]
+    assert "i.placementPaused" not in core and "i.botEnabled" not in core, \
+        "automation state must not appear in the verdict ladder — it is context, shown as a marker"
+    assert "i.minutesToKo < KO_BLOCK_MIN" in core, "the kickoff cutoff IS a real blocker and must stay"
+    row = (_web_root / "src" / "components" / "shadow-bots" / "picks-row.tsx").read_text(encoding="utf-8")
+    assert "automationOff" in row, "the row must still SHOW that automation is off"
+    assert "placementPaused" not in row.split("showPlaceAction")[1][:200], \
+        "the Place button records a manual bet — it must not be gated on the staking kill switch"
+    assert "DECISION_FRESH_MAX_MIN = 60" in src, \
+        "the decision-quote badge must use the ENGINE's 60-min definition, not the 30-min live-quote rule"
+
+
 if __name__ == "__main__":
     main()
