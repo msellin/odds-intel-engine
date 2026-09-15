@@ -43799,11 +43799,31 @@ def test_own_bots_off_customer_surfaces():
     if pft:
         leak = execute_query("SELECT count(*) AS n FROM picks_forward_test p JOIN bots b ON b.id = p.bot_id WHERE b.name = ANY(%s)", (own,))
         assert leak[0]["n"] == 0, "an OWN bot wrote picks_forward_test"
-    perf = _web_root / "src" / "app" / "(app)" / "performance" / "page.tsx"
-    if perf.exists():
-        txt = perf.read_text(encoding="utf-8")
-        assert ("!== 'experimental'" in txt) or ('!== "experimental"' in txt), \
-            "/performance must still filter maturityLabel !== 'experimental' — that is what hides OWN bots"
+    # ASSERT THE INVARIANT, NOT A PROXY (corrected 2026-09-15). This used to
+    # require the string `maturityLabel !== 'experimental'` in /performance.
+    # That filter was removed the same day by an explicit owner decision
+    # (PERFORMANCE-SHOWS-EVERY-BOT — "this page is the measurement surface;
+    # curation of what customers are OFFERED happens on /picks"), and the test
+    # went red over a UI choice while the thing it was written to protect was
+    # never in danger. `/performance` is built from `dashboard_cache.bot_breakdown`,
+    # which is derived from `simulated_bets`; OWN bots write `shadow_bets` only.
+    # So the real guard is the zero-simulated_bets assertion above, plus this:
+    # no OWN bot may actually appear in the page's data source. That survives any
+    # amount of UI curation and fails on the thing that would really leak — an
+    # OWN bot starting to write the customer ledger.
+    import json as _json
+    cache = execute_query("SELECT bot_breakdown FROM dashboard_cache LIMIT 1")
+    if cache and cache[0].get("bot_breakdown"):
+        bb = cache[0]["bot_breakdown"]
+        if isinstance(bb, str):
+            bb = _json.loads(bb)
+        shown = {b.get("name") for b in (bb or []) if isinstance(b, dict)}
+        leaked = sorted(shown & set(own))
+        assert not leaked, (
+            f"OWN bots reached /performance's data source: {leaked}. They must write "
+            f"shadow_bets only — a row in the customer ledger is the actual leak, "
+            f"whatever the page chooses to render."
+        )
 
 
 @test("REAL-BETS-SHADOW-LINK — store_real_bet never puts a shadow pick id into the simulated_bets FK column")
