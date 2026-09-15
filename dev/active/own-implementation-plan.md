@@ -17,6 +17,44 @@
 
 ---
 
+## Visibility invariant (owner requirement, 2026-09-15) — applies to every phase
+
+**Every OWN pick is visible to the owner on `/admin/shadow-bots` from the first row
+it writes, and nothing OWN ever reaches `/picks` or `/performance`.** Verified in code:
+
+- `/admin/shadow-bots` "Upcoming picks" reads `shadow_bets_unique` for every
+  non-retired bot with `result='pending'` and kickoff in the future
+  (`page.tsx:937-1012`), with live Coolbet / Unibet / Epicbet prices per row. A new
+  bot needs NO frontend change to appear — it needs a `bots` row and its first
+  `shadow_bets` write.
+- `/picks` and `/api/v1/upcoming` read only `picks_forward_test_public`.
+- `/performance` and `/api/v1/track-record` read only `simulated_bets` and hide
+  `maturity_label = 'experimental'`; the column is CHECK-constrained to
+  `{experimental, beta, calibrated, retired}` (mig 352, `MATURITY-LABEL-CANONICAL`).
+
+**Rules for every OWN bot in this plan** (`bot_trigger_1x2_sharp_tight_v1`,
+`bot_inplay_slowstate_v1`, and any future one):
+1. `maturity_label = 'experimental'`, never promoted by a migration to `beta` or
+   `calibrated` without an explicit owner decision recorded in `PRIORITY_QUEUE.md`.
+2. Writes `shadow_bets` only. **Never** `simulated_bets`, never `picks_forward_test`.
+3. Not in `PLACEABLE_BOTS` until Phase 3.
+4. Smoke `OWN-BOTS-OFF-CUSTOMER-SURFACES` (add in Phase 0): for every bot named in
+   `bot_registry.py` with direction OWN — maturity is `experimental`, zero
+   `simulated_bets` rows, zero `picks_forward_test` rows, and the `/performance`
+   filter string `!== "experimental"` still exists in the web repo.
+
+**Display additions so the owner can decide per pick:**
+- Phase 1a: show `decision_quote_age_min` (from `last_seen_at`) and a FRESH/STALE
+  badge on each upcoming row; stale rows are shown greyed, never hidden.
+- Phase 1b: in-play rows show minute, score, the on-screen book price and the
+  de-vigged book probability; they use the same section, flagged `IN-PLAY`.
+- Phase 2: a "Promotions" panel on the same page listing open promos with computed
+  EV and the optimal selection, read from `promo_terms` / `promo_ledger`.
+- The manual-log path is `/admin/place` (already exists) — every hand-placed bet
+  goes through it so it lands in `real_bets` and gets settled and CLV-scored.
+
+---
+
 ## Phase 0 — placement safety (P0, ~1 day code + 15 min operator)
 
 **Goal:** `paused` means no host can stake; proven by mutation test.

@@ -26,6 +26,8 @@ findings"); reviewed by two adversarial agents; corrections applied to
 
 ## Decisions made
 
+- **Owner requirement 2026-09-15:** every OWN pick visible on `/admin/shadow-bots` from its first row; nothing OWN on `/picks` or `/performance`. Verified structurally (shadow_bets_unique upcoming section; customer surfaces read other tables; maturity CHECK constraint). Encoded as the "Visibility invariant" in the plan + smoke `OWN-BOTS-OFF-CUSTOMER-SURFACES`.
+
 - OWN direction continues only as bounded measurement builds (1a, 1b) plus promos (2);
   expected value stated as ≤ 0; ceiling €1–7k/yr.
 - Phase 0 is mandatory regardless of any strategy decision.

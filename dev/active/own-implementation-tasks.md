@@ -2,6 +2,12 @@
 
 Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally.
 
+## Visibility invariant (all phases)
+- [ ] smoke `OWN-BOTS-OFF-CUSTOMER-SURFACES` (maturity experimental, no simulated_bets / picks_forward_test rows, /performance filter present)
+- [ ] 1a: FRESH/STALE badge + `decision_quote_age_min` column on /admin/shadow-bots upcoming rows
+- [ ] 1b: IN-PLAY rows (minute, score, on-screen price, de-vigged prob) in the same section
+- [ ] 2: Promotions panel on /admin/shadow-bots
+
 ## Phase 0 — placement safety (P0)
 - [ ] 0.A `workers/automation/placement_gate.py` with `assert_may_place`, `PlacementRefused`, `read_placement_paused_strict`
 - [ ] 0.A flip `is_placement_paused` / `is_daemons_paused` error default to paused; leave `is_publishing_paused`
