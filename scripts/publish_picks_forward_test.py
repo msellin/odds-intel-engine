@@ -295,7 +295,22 @@ def select(cands: list[dict], room: int | None = None) -> list[dict]:
     `daily_room()`."""
     keep = [c for c in cands if c["edge"] >= MIN_EDGE]
     keep.sort(key=lambda c: -c["edge"])
-    return keep[: (TOP_N if room is None else room)]
+
+    # ONE-SELECTION-PER-MARKET (2026-09-15). Nothing stopped both sides of the
+    # same market publishing. Measured over 7 days: FOUR matches went out with
+    # two selections of the same 1x2 — Club Brugge home AND away, Stevenage home
+    # AND away, Independiente away AND draw **in the same run**, Sudtirol draw
+    # AND away. To a reader that is covering both ways, and it means a day's
+    # "8 picks" are not 8 opinions. Keep the highest-edge side only.
+    seen: set = set()
+    deduped = []
+    for c in keep:
+        key = (c["match_id"], c["market"])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(c)
+    return deduped[: (TOP_N if room is None else room)]
 
 
 def junk_anchor_arm(pool: list[dict]) -> list[dict]:
@@ -466,9 +481,17 @@ def write_board(pool: list[dict]) -> int:
                    ON CONFLICT (match_id, market, selection) DO UPDATE SET
                      odds = EXCLUDED.odds, bookmaker = EXCLUDED.bookmaker,
                      p_sharp = EXCLUDED.p_sharp, edge = EXCLUDED.edge,
-                     odds_breakeven = EXCLUDED.odds_breakeven,
-                     odds_grade_b = EXCLUDED.odds_grade_b,
-                     odds_grade_a = EXCLUDED.odds_grade_a,
+                     -- TARGET-FROZEN-AT-FIRST-SIGHTING (2026-09-15). These are
+                     -- deliberately NOT updated. `odds_grade_b = (1+0.03)/p_sharp`
+                     -- was recomputed every run while `target_b_met_at` was
+                     -- tested against the PREVIOUS run's value, so a target
+                     -- could be "met" with the quote never moving — the bar
+                     -- dropped because p_sharp rose. Measured on a replay of
+                     -- this exact upsert: 19% of "met" events were the goalpost
+                     -- moving toward the pick on information that arrived AFTER
+                     -- publication, which a reader could never have acted on.
+                     -- A published target is a promise about a number; it has to
+                     -- be the number we published.
                      anchor_overround = EXCLUDED.anchor_overround,
                      updated_at = NOW(),
                      -- HIGH-WATER MARK, never a running value. The question the

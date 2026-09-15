@@ -42306,7 +42306,8 @@ def test_picks_forward_test_scheduled():
 
     # Every field `render()` touches — it is left REAL on purpose, because
     # `render(a_list)` raising TypeError is precisely the bug that shipped.
-    _fake = [{"market": "1x2", "selection": "home", "odds": 2.5, "edge": 0.05,
+    _fake = [{"match_id": "00000000-0000-0000-0000-000000000001",
+              "market": "1x2", "selection": "home", "odds": 2.5, "edge": 0.05,
               "home_team": "A", "away_team": "B", "league": "L",
               "bookmaker": "SomeBook", "price_ratio": 0.05,
               "alignment_gap_minutes": 12.0,
@@ -42532,6 +42533,32 @@ def test_picks_board_watchlist():
         or "target_b_met_at" in _code, (
         "target_b_met_at must keep the FIRST crossing"
     )
+    # TARGET-FROZEN-AT-FIRST-SIGHTING (2026-09-15). The grade thresholds must NOT
+    # be refreshed on conflict. `odds_grade_b = (1+0.03)/p_sharp` recomputed each
+    # run, against a `target_b_met_at` tested on the PREVIOUS run's value, meant a
+    # target could be met with the quote never moving — the bar fell because
+    # p_sharp rose. 19% of "met" events on a replay were exactly that: the
+    # goalpost moving on information that arrived after publication, which no
+    # reader could act on. A published target is a promise about a number.
+    _upd = _code[_code.index("DO UPDATE"):] if "DO UPDATE" in _code else ""
+    for frozen in ("odds_grade_b = EXCLUDED", "odds_grade_a = EXCLUDED",
+                   "odds_breakeven = EXCLUDED"):
+        assert frozen not in _upd, (
+            f"`{frozen}` is back in the upsert — the published target moves "
+            f"under a stationary price, and 'target met' stops meaning a reader "
+            f"could have taken it."
+        )
+
+    # ONE-SELECTION-PER-MARKET (2026-09-15). Both sides of the same market went
+    # out four times in seven days, once inside a single run — to a reader that
+    # is covering both ways.
+    _sel = src[src.index("def select("):src.index("def junk_anchor_arm(")]
+    assert '(c["match_id"], c["market"])' in _sel, (
+        "select() no longer dedupes by (match, market). Publishing home AND "
+        "away of the same fixture reads as covering both ways, and makes the "
+        "day's pick count not a count of opinions."
+    )
+
     assert "DELETE FROM picks_board" not in _code, (
         "rows must survive kickoff — they are the record, and deleting them "
         "destroys the ledger the performance split is computed from."
