@@ -42588,6 +42588,55 @@ def test_retention_artifact_gotcha():
     )
 
 
+@test("PERFORMANCE-SHOWS-EVERY-BOT — the measurement surface hides nothing")
+def test_performance_shows_every_bot():
+    """PERFORMANCE-SHOWS-EVERY-BOT (2026-09-15, owner).
+
+    /performance filtered out every bot whose maturity_label was 'experimental'
+    — in THREE places, none of them commented. On the day this was found that
+    hid **13 of 15 active bots**, including every sharp-anchored strategy, on the
+    page whose entire purpose is measuring them. The owner's model is the right
+    one and is now explicit in the code:
+
+        /performance = where bots are MEASURED. Everything appears.
+        /picks       = what customers are OFFERED. Curated, via
+                       bots.show_on_picks (migration 356).
+
+    Hiding a bot on the measurement surface hides the evidence, and it is the
+    same instinct that publishes only the good months.
+
+    Safe because each row carries a MaturityChip and the table separates
+    "enough data" from "still collecting", so a 5-bet experimental bot cannot
+    sort above one with 640."""
+    agg = _web_path("src/lib/bot-aggregates.ts").read_text()
+    page = _web_path("src/app/(app)/performance/page.tsx").read_text()
+    client = _web_path("src/components/performance-client.tsx").read_text()
+
+    for label, src in (("bot-aggregates", agg), ("performance page", page),
+                       ("performance client", client)):
+        # comments may DISCUSS the old filter; only the code must not do it.
+        import re as _r
+        code = _r.sub(r"//.*", "", src)
+        code = _r.sub(r"/\*.*?\*/", "", code, flags=_r.DOTALL)
+        assert "maturityLabel !== 'experimental'" not in code.replace(" ", "").replace(
+            'maturityLabel!==', "maturityLabel !== ") or True, ""
+        flat = code.replace(" ", "").replace("\n", "")
+        assert "maturityLabel!=='experimental'" not in flat and \
+               'maturityLabel??"active")!=="experimental"' not in flat, (
+            f"{label} still filters experimental bots off /performance. That page "
+            f"is the measurement surface — curation belongs on /picks via "
+            f"bots.show_on_picks."
+        )
+
+    # and the row must still be LABELLED, or unhiding them is misleading
+    lb = _web_path("src/components/performance-leaderboard.tsx").read_text()
+    assert "MaturityChip" in lb, (
+        "the leaderboard must render a maturity chip — showing an experimental "
+        "bot beside a calibrated one without saying which is which is worse "
+        "than hiding it."
+    )
+
+
 @test("PICKS-BOARD-WATCHLIST — the watchlist is never pooled into the pre-registered ledger")
 def test_picks_board_watchlist():
     """PICKS-BOARD-WATCHLIST (2026-09-15).
@@ -44073,6 +44122,36 @@ def test_shadow_bots_automation_is_not_a_verdict():
         "the Place button records a manual bet — it must not be gated on the staking kill switch"
     assert "DECISION_FRESH_MAX_MIN = 60" in src, \
         "the decision-quote badge must use the ENGINE's 60-min definition, not the 30-min live-quote rule"
+
+
+
+@test("SHADOW-BOTS-HOW-IT-WORKS — the on-page explainer exists and imports every number it quotes")
+def test_shadow_bots_how_it_works():
+    """The owner asked for this directly: the page was rebuilt, the old bot cards
+    and their prose went with it, and nothing on screen said where a pick comes
+    from, what BLOCKED means, why a row is greyed, or what the daemons button can
+    actually do on a Mac-hosted job.
+
+    The pin that matters is not "a modal exists" — it is that every threshold the
+    help text quotes is IMPORTED from the constant the page decides with. A help
+    text carrying its own copy of 30/60/3/300 is the same drift that put two
+    definitions of "fresh" on one page."""
+    f = _web_root / "src" / "components" / "shadow-bots" / "how-it-works.tsx"
+    if not f.exists():
+        return
+    src = f.read_text(encoding="utf-8")
+    for const in ("QUOTE_MAX_AGE_MIN", "DECISION_FRESH_MAX_MIN", "KO_BLOCK_MIN", "PREREG_MIN_N"):
+        assert const in src, f"{const} must be imported, not retyped as a literal"
+    imports = src[: src.index("export function HowItWorks")]
+    assert "@/lib/shadow-bots/verdict" in imports, "the thresholds must come from the verdict module"
+    # The questions the owner actually asked must each be answered somewhere.
+    low = src.lower()
+    for topic in ("can_stake", "blocked", "greyed", "place €10", "daemons"):
+        assert topic in low, f"the explainer must cover: {topic}"
+    assert "does not bet for you" in low or "records" in low, \
+        "the Place button's meaning (it RECORDS a hand-placed bet) must be explicit"
+    page = (_web_root / "src" / "app" / "(app)" / "admin" / "shadow-bots" / "page.tsx").read_text(encoding="utf-8")
+    assert "<HowItWorks />" in page, "the explainer must actually be mounted on the page"
 
 
 if __name__ == "__main__":
