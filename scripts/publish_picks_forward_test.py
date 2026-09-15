@@ -25,7 +25,9 @@ import random
 import sys
 from datetime import datetime, timezone
 
-from workers.api_clients.db import execute_query, execute_write
+from workers.api_clients.db import (
+    execute_query, execute_write, execute_write_returning,
+)
 from workers.model.devig import devig
 from workers.notify.telegram import send_telegram_public
 
@@ -284,8 +286,33 @@ def junk_anchor_arm(pool: list[dict]) -> list[dict]:
     return select(junk)
 
 
-def record(c: dict, arm: str, message_id: int | None) -> None:
-    execute_write(
+def claim(c: dict, arm: str) -> str | None:
+    """Reserve this leg BEFORE sending, returning its new row id — or None if it
+    was already published.
+
+    PUBLISH-CLAIM-BEFORE-SEND (2026-09-15). `record()` used to run AFTER the
+    Telegram send, and `ON CONFLICT ... DO NOTHING` then suppressed the duplicate
+    ROW while the duplicate MESSAGE had already gone out to 62 subscribers. That
+    was survivable at one run a day and is not survivable at any other cadence: a
+    qualifying leg re-qualifies in a median of 6 consecutive runs (mean 6.8, max
+    13), so 13 picks would have produced ~88 channel messages.
+
+    It also broke the invariant the read path states in as many words — that the
+    published set and the recorded ledger are the same set. With send-then-record
+    the ledger kept the FIRST row and the channel showed the LAST message, and on
+    a measured day those disagreed on price by 3.6% (2.75 -> 2.85, edge +4.3% ->
+    +8.1%).
+
+    The database is the only thing that can arbitrate this. `_LAST_SENT` in
+    workers/notify/telegram.py cannot: `send_telegram_public` has no dedup window
+    at all, and `_LAST_SENT` is an in-process dict wiped on every scheduler
+    restart — which is exactly how RELIABILITY_LEDGER #13 happened, four restarts
+    in ninety minutes.
+
+    So: INSERT ... RETURNING id. A returned id means WE created the row and may
+    send. An empty result means somebody already did, and we must not.
+    """
+    rows = execute_write_returning(
         """
         INSERT INTO picks_forward_test
             (match_id, market, selection, odds, bookmaker, edge, p_sharp,
@@ -294,12 +321,27 @@ def record(c: dict, arm: str, message_id: int | None) -> None:
              telegram_message_id)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         ON CONFLICT (match_id, market, selection, arm) DO NOTHING
+        RETURNING id
         """,
         (c["match_id"], c["market"], c["selection"], c["odds"], c["bookmaker"],
          c["edge"], c["p_sharp"], json.dumps(c["anchor_odds"]),
          c["anchor_overround"], c["anchor_quoted_at"], c["odds_quoted_at"],
          c["alignment_gap_minutes"], arm, RULE_VERSION, c["kickoff_at"],
-         message_id),
+         None),
+    )
+    return str(rows[0]["id"]) if rows else None
+
+
+def attach_message_id(pick_id: str, message_id: int | None) -> None:
+    """Stamp the Telegram message id onto a row we already claimed. Separate from
+    `claim` because the send sits between them — and a send that fails must leave
+    the row in place, recorded and unpublished, rather than rolling back a claim
+    another run would then re-send."""
+    if message_id is None:
+        return
+    execute_write(
+        "UPDATE picks_forward_test SET telegram_message_id = %s WHERE id = %s",
+        (message_id, pick_id),
     )
 
 
@@ -349,17 +391,22 @@ def main() -> int:
 
     sent = 0
     for c in picks:
+        pick_id = claim(c, "live")
+        if pick_id is None:
+            log.info("already published, not re-sending: %s v %s",
+                     c["home_team"], c["away_team"])
+            continue
         mid = send_telegram_public(render(c))
         if mid is None:
-            log.warning("send FAILED: %s v %s — recording anyway, unpublished",
+            log.warning("send FAILED: %s v %s — row kept, unpublished",
                         c["home_team"], c["away_team"])
         else:
             sent += 1
-        record(c, "live", mid)
+            attach_message_id(pick_id, mid)
 
     # negative control — recorded, never published
     for c in junk_anchor_arm(pool):
-        record(c, "junk_anchor", None)
+        claim(c, "junk_anchor")
 
     print(f"\npublished {sent}/{len(picks)} to the channel, all recorded")
     return 0 if sent == len(picks) else 1

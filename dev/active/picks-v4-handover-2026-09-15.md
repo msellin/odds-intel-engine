@@ -163,7 +163,13 @@ simultaneity (ANALYSIS_GOTCHAS §63).
 
 ### P0
 
-**P0-1. Send-then-record would post each pick 6–13 times under continuous runs.**
+**P0-1. ✅ FIXED 2026-09-15 (`claim`-before-send).** `record()` is replaced by
+`claim()` (`INSERT ... ON CONFLICT DO NOTHING RETURNING id`) + `attach_message_id()`.
+A returned id means this run created the row and may send; None means it is
+already published. Both the CLI and the scheduler use it. Smoke asserts a
+re-run on an already-claimed leg sends nothing; mutation-verified by restoring
+the send-then-record order. *Original finding below, kept for the reasoning.*
+~~Send-then-record would post each pick 6–13 times under continuous runs.~~
 `publish_picks_forward_test.py:352-358` and the scheduler send **first**, then
 `record()`. The unique index (`342_picks_forward_test.sql:65`) is correct but
 `ON CONFLICT ... DO NOTHING` suppresses the **row**, never the **message**. A leg
@@ -231,7 +237,12 @@ kickoff-vs-publish-time basis. `…-JUNK-ARM-SELECTS` — see P1-4.
 from books dark >24h**. A price from a dark feed is a stale price being published
 as live. **Add a per-book freshness gate before publishing at that book's price.**
 
-**P1-9. The health-alert change as proposed targets the wrong table.**
+**P1-9. ✅ FIXED 2026-09-15 (`check_publisher_health`).** Alerts on the JOB, not
+the pick count: (a) never ran — the actual state, invisible to a last-run check;
+(b) last run failed; (c) no successful run in 26h. `NO_PICKS_AFTER_HOURS` stays
+at **48** and keeps watching the model pipeline. Registered in the hourly bundle;
+all four branches pinned. *Original reasoning below.*
+~~The health-alert change as proposed targets the wrong table.~~
 `NO_PICKS_AFTER_HOURS` (`workers/jobs/health_alerts.py:695`) reads
 `MAX(created_at) FROM simulated_bets` — **Path A**. Dropping it to 18h does
 nothing for picks silence and will cry wolf on a thin weekend. **Leave it at 48.**
@@ -240,7 +251,17 @@ on zero picks, which is a valid outcome. This gap is why §2.4 went undetected.
 
 ### P2
 
-**P2-10.** `fetchForwardTestPicks` (`forward-test-picks.ts:141-155`) is shared by
+**P2-10. ✅ PARTLY FIXED 2026-09-15 — and the proposed fix was wrong.** Changing
+the fetcher's basis to publish time does **not** solve the complaint: at 09:20 a
+pick published 11:40 the previous day is still inside a 24h publish window, so
+yesterday's settled picks would still have been on the board. The actual fault
+was that settled and live picks shared one list. `/picks` now partitions on
+`hasStarted(kickoff)` into a **board** and an **"Already kicked off"** section,
+the headline counts the board, and an empty board *says so*. The shared fetcher
+and `/api/v1/upcoming` are untouched, so `PICKS-COHORT-ALIGN` still holds.
+Remaining from this item: `.limit(200)` is still a silent truncation as volume
+rises. *Original note below.*
+~~`fetchForwardTestPicks` (`forward-test-picks.ts:141-155`) is shared by
 `/picks` **and** `/api/v1/upcoming/route.ts:50-52`, pinned by `PICKS-COHORT-ALIGN`.
 Change the basis in the shared fetcher. `page.tsx:135-138` **groups** by kickoff
 while you would **filter** by publish time — headings and headline will start

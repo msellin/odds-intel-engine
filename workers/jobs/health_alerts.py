@@ -874,6 +874,98 @@ def run_morning_checks() -> None:
         console.print(f"[yellow]health_alerts pinnacle check error: {e}[/yellow]")
 
 
+# PUBLISHER-SILENCE-ALERT (2026-09-15). How long the public picks publisher may
+# go without a SUCCESSFUL run before it is a fault. It is scheduled daily, so
+# 26h allows one missed slot plus clock slack and fires on the second.
+PUBLISHER_STALE_AFTER_HOURS = 26
+
+
+def check_publisher_health() -> None:
+    """PUBLISHER-SILENCE-ALERT (2026-09-15) — nothing watched the only path that
+    actually publishes to customers, and it had never run.
+
+    `publish_picks_forward_test` was registered at 10:00 UTC and raised on every
+    fire for four independent reasons (a tuple unpack, a wrong arity, a missing
+    module logger, a degenerate junk arm). `pipeline_runs` held ZERO rows for it.
+    Nobody noticed, because the only surfaces that could have shown it are
+    pull-only: `/picks` renders whatever the table holds, and the table held the
+    rows from a manual CLI run. "The publisher is dead" and "no pick cleared the
+    bar today" looked identical from every angle — the same silent-failure class
+    as SIGNAL-SILENCE-ALERT and the InplayBot UUID bug.
+
+    ALERT ON THE JOB, NOT ON THE PICKS. Zero picks is a VALID outcome of this
+    rule and a thin day must not page anybody — that is why
+    `NO_PICKS_AFTER_HOURS` stays at 48 and keeps watching the model pipeline
+    instead. What is never valid is the job failing, or not running at all.
+
+    Two conditions:
+      A. the most recent recorded run FAILED;
+      B. no SUCCESSFUL run in PUBLISHER_STALE_AFTER_HOURS — which also covers
+         "never ran once", the actual 2026-09-15 state, where condition A is
+         structurally blind because there is no row to inspect.
+    """
+    rows = execute_query(
+        """SELECT status, started_at, error_message
+             FROM pipeline_runs
+            WHERE job_name = 'publish_picks_forward_test'
+            ORDER BY started_at DESC
+            LIMIT 1"""
+    )
+    now_utc = datetime.now(timezone.utc)
+
+    if not rows:
+        msg = ("⚠️ The public picks publisher has NEVER completed a run. "
+               "`pipeline_runs` holds no row for publish_picks_forward_test — "
+               "the job is registered but every fire is raising before it "
+               "records. Nothing is reaching @oddsintelpicks from the scheduler.")
+        _notify_telegram(msg, dedup_key="publisher-never-ran")
+        _alert_once(
+            "publisher_never_ran",
+            "Public picks publisher has never run",
+            f"<p>{msg}</p>",
+        )
+        console.print("[red]health_alerts: publisher has NEVER run[/red]")
+        return
+
+    last = rows[0]
+    started = last["started_at"]
+    if started is not None and started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+
+    if last["status"] == "failed":
+        err = (last.get("error_message") or "")[:300]
+        msg = (f"⚠️ Public picks publisher FAILED at "
+               f"{started.strftime('%Y-%m-%d %H:%M UTC') if started else '?'}. "
+               f"Nothing published to @oddsintelpicks on that run. {err}")
+        _notify_telegram(msg, dedup_key="publisher-failed")
+        _alert_once("publisher_failed", "Public picks publisher failed",
+                    f"<p>{msg}</p>")
+        console.print("[red]health_alerts: publisher last run FAILED[/red]")
+        return
+
+    ok = execute_query(
+        """SELECT MAX(started_at) AS t
+             FROM pipeline_runs
+            WHERE job_name = 'publish_picks_forward_test'
+              AND status = 'completed'"""
+    )
+    last_ok = ok[0]["t"] if ok else None
+    if last_ok is not None and last_ok.tzinfo is None:
+        last_ok = last_ok.replace(tzinfo=timezone.utc)
+    age_h = 9_999.0 if last_ok is None else (now_utc - last_ok).total_seconds() / 3600.0
+    console.print(f"[dim]health_alerts: publisher last OK {age_h:.1f}h ago[/dim]")
+
+    if age_h > PUBLISHER_STALE_AFTER_HOURS:
+        msg = (f"⚠️ Public picks publisher has not completed successfully in "
+               f"{age_h:.0f}h (threshold {PUBLISHER_STALE_AFTER_HOURS}h). It runs "
+               f"daily — two missed slots means the scheduler entry or the job "
+               f"is broken. Note: ZERO PICKS is a valid outcome and is NOT what "
+               f"this alerts on; this is the job itself not running.")
+        _notify_telegram(msg, dedup_key="publisher-stale")
+        _alert_once("publisher_stale", "Public picks publisher stale",
+                    f"<p>{msg}</p>")
+
+
 def run_snapshot_check() -> None:
     """Hourly 10-23 UTC — LivePoller staleness check + companion alerts.
     Extended 2026-05-25 to include the new monitoring checks (MEMORY, BETTING
@@ -894,6 +986,10 @@ def run_snapshot_check() -> None:
         # fast enough to catch a mute within one betting_refresh window,
         # slow enough that the per-day dedup keeps it to one buzz.
         ("signal_silence", check_signal_silence),
+        # PUBLISHER-SILENCE-ALERT 2026-09-15 — watches the JOB, not the pick
+        # count. The forward-test publisher is the only path that reaches
+        # @oddsintelpicks and it had never completed a single run.
+        ("publisher_health", check_publisher_health),
     ]:
         try:
             fn()

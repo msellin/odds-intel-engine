@@ -2199,7 +2199,7 @@ def job_publish_picks_forward_test():
     publishing a different rule than the one pre-registered.
     """
     from scripts.publish_picks_forward_test import (
-        load_candidates, render, record, junk_anchor_arm,
+        load_candidates, render, claim, attach_message_id, junk_anchor_arm,
     )
     from workers.notify.telegram import send_telegram_public
     from workers.automation.coolbet_state import is_publishing_paused
@@ -2238,25 +2238,35 @@ def job_publish_picks_forward_test():
         log.info("picks_forward_test: no qualifying picks today (a valid outcome)")
         return {"picks": 0, "published": 0}
 
+    # PUBLISH-CLAIM-BEFORE-SEND (2026-09-15): claim the row FIRST. A returned id
+    # means this run created it and may send; None means it is already published
+    # and re-sending would put the same pick in front of 62 subscribers twice.
+    # The DB is the only arbiter that survives a scheduler restart.
     sent = 0
+    skipped = 0
     for c in picks:
+        pick_id = claim(c, "live")
+        if pick_id is None:
+            skipped += 1
+            continue
         mid = send_telegram_public(render(c))
         if mid is None:
             log.warning("picks_forward_test: send FAILED for %s v %s — "
-                        "recording anyway, unpublished",
+                        "row kept, unpublished",
                         c.get("home_team"), c.get("away_team"))
         else:
             sent += 1
-        record(c, "live", mid)
+            attach_message_id(pick_id, mid)
 
     # Negative control — recorded, never published. Runs over the POOL, not the
     # selected picks: shuffling the anchor has to change WHICH bets are chosen,
     # which is the only thing the anchor does (JUNK-ARM-DEGENERATE-2026-09-14).
     for c in junk_anchor_arm(pool):
-        record(c, "junk_anchor", None)
+        claim(c, "junk_anchor")
 
-    log.info("picks_forward_test: %d picks, %d published", len(picks), sent)
-    return {"picks": len(picks), "published": sent}
+    log.info("picks_forward_test: %d picks, %d published, %d already out",
+             len(picks), sent, skipped)
+    return {"picks": len(picks), "published": sent, "already_published": skipped}
 
 
 def _publish_picks_forward_test_wrapper():

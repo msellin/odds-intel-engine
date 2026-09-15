@@ -41358,6 +41358,32 @@ def test_picks_forward_test_surface():
             "picks_forward_test_summary must emit exactly one row per live-arm "
             "rule_version — no more (a stray group) and no fewer (a pooled sum)."
         )
+    # PICKS-BOARD-VS-RESULTS (2026-09-15). The fetch window is keyed on KICKOFF
+    # with a 24h lookback, so before a day's batch publishes the page held
+    # yesterday's settled picks and nothing else — indistinguishable from an
+    # outage, and the owner reported it as one ("we are still showing yesterdays
+    # pick on /picks page, where are todays?"). Nothing was broken; the board
+    # simply could not say it was empty. Pin the split so it cannot silently
+    # merge back.
+    assert "hasStarted(p.kickoff_utc)" in page, (
+        "the page must split picks on whether the fixture has kicked off. "
+        "Splitting on `outcome == null` instead puts in-play matches on the "
+        "board — telling a reader to bet a game already running."
+    )
+    assert "const board = picks.filter" in page and "const settled = picks" in page, (
+        "the board/results split is gone. A settled pick rendered inside the "
+        "board reads as a current pick."
+    )
+    assert "board.length > 0" in page and "Nothing on the board right now" in page, (
+        "an empty board must SAY it is empty. That sentence is the whole fix: a "
+        "board that cannot report emptiness looks identical to a broken page."
+    )
+    assert "no result is dropped" in page, (
+        "the results section must state that it shows winners and losers alike. "
+        "A results list that quietly drops losers is the dishonest version of "
+        "this section."
+    )
+
     # honest framing, on the page, above the numbers
     _flat = " ".join(page.split())   # JSX wraps prose across lines
     assert "No past performance is claimed" in _flat, (
@@ -42196,13 +42222,28 @@ def test_picks_forward_test_scheduled():
                   __import__("datetime").timezone.utc)}]
     # Restore EVERY patched attribute in `finally` — RELIABILITY_LEDGER's
     # "a test that monkeypatches a shared module and never restores it".
-    _orig = (_pub.load_candidates, _pub.record, _pub.junk_anchor_arm,
-             _tg.send_telegram_public, _st.is_publishing_paused)
+    _orig = (_pub.load_candidates, _pub.claim, _pub.attach_message_id,
+             _pub.junk_anchor_arm, _tg.send_telegram_public,
+             _st.is_publishing_paused)
     _sends, _rows = [], []
+    # A fake ledger: claim() returns a new id the FIRST time a leg is seen and
+    # None afterwards — exactly what `INSERT ... ON CONFLICT DO NOTHING
+    # RETURNING id` does against the unique index.
+    _claimed = set()
+
+    def _fake_claim(c, arm):
+        key = (c["market"], c["selection"], arm)
+        _rows.append(arm)
+        if key in _claimed:
+            return None
+        _claimed.add(key)
+        return f"id-{len(_claimed)}"
+
     try:
         _pub.load_candidates = lambda: (list(_fake), list(_fake))
         _pub.junk_anchor_arm = lambda pool: list(pool)
-        _pub.record = lambda c, arm, mid: _rows.append(arm)
+        _pub.claim = _fake_claim
+        _pub.attach_message_id = lambda pid, mid: None
         _tg.send_telegram_public = lambda m: (_sends.append(m), 1)[1]
         _pub.render = _pub.render          # left real on purpose: it must not raise
 
@@ -42218,6 +42259,25 @@ def test_picks_forward_test_scheduled():
             f"both arms must be recorded, got {_rows}"
         )
 
+        # PUBLISH-CLAIM-BEFORE-SEND (2026-09-15) — THE anti-duplicate invariant.
+        # Under any cadence above once-a-day the same leg re-qualifies on
+        # consecutive runs (measured: median 6, mean 6.8, max 13). Sending before
+        # recording made ON CONFLICT DO NOTHING suppress the duplicate ROW while
+        # the duplicate MESSAGE had already reached 62 subscribers — ~88 messages
+        # for one measured day's 13 picks. Re-run the job against the same
+        # already-claimed leg and assert NOTHING further is sent.
+        _before = len(_sends)
+        res2 = _sch.job_publish_picks_forward_test()
+        assert len(_sends) == _before, (
+            f"re-running the publisher on an already-published leg sent "
+            f"{len(_sends) - _before} more message(s). Claim the row BEFORE the "
+            f"send: ON CONFLICT ... DO NOTHING RETURNING id, and send only when "
+            f"a row was actually created."
+        )
+        assert res2.get("already_published") == 1, (
+            f"the job must report legs it skipped as already out: {res2}"
+        )
+
         # PUBLISHER-PAUSE-GATE: /pausepicks must stop THIS publisher. It is the
         # only path that actually posts to @oddsintelpicks; until 2026-09-15 the
         # flag gated only the model signaler, which publishes nothing.
@@ -42230,10 +42290,94 @@ def test_picks_forward_test_scheduled():
         )
         assert res.get("paused") is True, f"paused run must report it: {res}"
     finally:
-        (_pub.load_candidates, _pub.record, _pub.junk_anchor_arm,
-         _tg.send_telegram_public, _st.is_publishing_paused) = _orig
+        (_pub.load_candidates, _pub.claim, _pub.attach_message_id,
+         _pub.junk_anchor_arm, _tg.send_telegram_public,
+         _st.is_publishing_paused) = _orig
         for _m in _stubbed:
             _sys.modules.pop(_m, None)
+
+
+@test("PUBLISHER-SILENCE-ALERT — the only path to customers is watched, and on the JOB not the pick count")
+def test_publisher_silence_alert():
+    """PUBLISHER-SILENCE-ALERT (2026-09-15).
+
+    `publish_picks_forward_test` is the only path that reaches @oddsintelpicks.
+    It was registered at 10:00 UTC and raised on every fire for four independent
+    reasons; `pipeline_runs` held ZERO rows for it and nobody noticed, because
+    every surface that could have shown it is pull-only. "The publisher is dead"
+    and "no pick cleared the bar today" looked identical.
+
+    THE DESIGN POINT, and the reason this is not just `NO_PICKS_AFTER_HOURS`
+    lowered: zero picks is a VALID outcome of this rule. Alerting on pick count
+    would page on every thin day and be muted within a week. This alerts on the
+    JOB — failed, or not completed at all.
+
+    Pins all three branches, because the one that actually fired in production is
+    the one condition A is structurally blind to: there is no row to inspect."""
+    import workers.jobs.health_alerts as ha
+    from datetime import datetime, timezone, timedelta
+
+    _orig = (ha.execute_query, ha._notify_telegram, ha._alert_once)
+    fired: list[str] = []
+    try:
+        ha._notify_telegram = lambda text, dedup_key: fired.append(dedup_key)
+        ha._alert_once = lambda c, s_, b: None
+        now = datetime.now(timezone.utc)
+
+        # (a) never ran — the real 2026-09-15 state.
+        ha.execute_query = lambda sql, params=None: []
+        fired.clear(); ha.check_publisher_health()
+        assert fired == ["publisher-never-ran"], (
+            f"a publisher that has never run must alert, got {fired}. This is "
+            "the exact state that went unnoticed and it is invisible to a "
+            "last-run-status check, because there is no last run."
+        )
+
+        # (b) last run failed.
+        def _failed(sql, params=None):
+            if "ORDER BY started_at DESC" in sql:
+                return [{"status": "failed", "started_at": now,
+                         "error_message": "boom"}]
+            return [{"t": None}]
+        ha.execute_query = _failed
+        fired.clear(); ha.check_publisher_health()
+        assert fired == ["publisher-failed"], f"a failed run must alert, got {fired}"
+
+        # (c) last run fine, but no SUCCESS inside the window.
+        def _stale(sql, params=None):
+            if "ORDER BY started_at DESC" in sql:
+                return [{"status": "completed", "started_at": now,
+                         "error_message": None}]
+            return [{"t": now - timedelta(hours=ha.PUBLISHER_STALE_AFTER_HOURS + 2)}]
+        ha.execute_query = _stale
+        fired.clear(); ha.check_publisher_health()
+        assert fired == ["publisher-stale"], f"a stale publisher must alert, got {fired}"
+
+        # (d) healthy — silence. An alerter that fires on a green system gets
+        # muted, and then it is not an alerter.
+        def _ok(sql, params=None):
+            if "ORDER BY started_at DESC" in sql:
+                return [{"status": "completed", "started_at": now,
+                         "error_message": None}]
+            return [{"t": now - timedelta(hours=1)}]
+        ha.execute_query = _ok
+        fired.clear(); ha.check_publisher_health()
+        assert fired == [], f"a healthy publisher must not alert, got {fired}"
+    finally:
+        (ha.execute_query, ha._notify_telegram, ha._alert_once) = _orig
+
+    # Registered in the hourly bundle, and NO_PICKS_AFTER_HOURS left alone.
+    src = _engine_path("workers/jobs/health_alerts.py").read_text()
+    assert '("publisher_health", check_publisher_health)' in src, (
+        "check_publisher_health must be in run_snapshot_check's bundle — a check "
+        "nothing calls is the failure it exists to catch"
+    )
+    assert "NO_PICKS_AFTER_HOURS = 48" in src, (
+        "NO_PICKS_AFTER_HOURS must stay at 48 and keep watching simulated_bets. "
+        "Lowering it was proposed and is wrong twice over: it reads the MODEL "
+        "pipeline, not the publisher, and pick volume swings hard enough by "
+        "fixture list that a tighter bound cries wolf on a thin weekend."
+    )
 
 
 @test("BOT-STATUS-BOARD — one verdict basis, and it is CLV not ROI")
