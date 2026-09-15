@@ -4094,38 +4094,17 @@ def test_signal_placer_1x2_align():
         )
 
 
-@test("COOLBET-LINESHOP-OU-STOP — real-money UI placer no longer places line-shop O/U")
-def test_lineshop_ou_stop():
-    """COOLBET-LINESHOP-OU-STOP (2026-09-08): the real-money line-shop bot loses on
-    O/U (realized -17% ROI, n=1109, negative every month) while its 1x2 is +13%.
-    The UI placer must skip O/U real-money placement (gated at placement, so O/U
-    still writes shadow_bets for the model-edge comparison). Env override
-    COOLBET_UI_PLACE_OU=1 restores it. Pin the skip so it can't silently regress."""
+@test("LINESHOP-OU-STOP-GONE — the retired line-shop O/U stop and its env override are deleted from the UI placer")
+def test_lineshop_ou_stop_gone():
+    """COOLBET-LINESHOP-OU-STOP (2026-09-08) skipped O/U real money for
+    bot_coolbet_value_v1, which was retired the same day — the branch has been
+    unreachable since. Removed 2026-09-15 (OWN Phase 5 cull). A dead branch in the
+    real-money loop is a place for the next reader to misplace a gate."""
     import os
     ui = open(os.path.join(os.path.dirname(__file__), "place_coolbet_ui.py"), encoding="utf-8").read()
-    assert "REALMONEY_SKIP_MARKET_PREFIXES" in ui, "the O/U real-money skip constant is gone"
-    assert 'COOLBET_UI_PLACE_OU' in ui, "the override env must exist so O/U can be restored deliberately"
-    assert 'stage="lineshop_ou_stop"' in ui, "the loop must record a lineshop_ou_stop rejection for audit"
-    # the default (no override) must skip both O/U vocabularies
-    assert '("over_under", "o/u")' in ui, "default skip must cover both O/U market spellings"
-    # COOLBET-MODEL-OU-SHADOW-BOT-2026-09-08: the O/U stop must be SCOPED to the
-    # line-shop bot only. It must NOT block the model-edge O/U bot, whose whole
-    # purpose is to place O/U real money once enabled. Assert the guard reads
-    # args.bot == "bot_coolbet_value_v1" on the same skip branch.
-    import re as _re
-    # COOLBET-PLACER-CONTROL-2026-09-08: the per-bot loop was extracted into
-    # place_for_bot(page, bot_name, ...), so the scope guard now reads
-    # `bot_name`, not `args.bot`. The scoping requirement is unchanged.
-    stop_branch = _re.search(
-        r'if \(bot_name == "bot_coolbet_value_v1"\s*\n\s*and any\(_mkt\.startswith\(pre\) '
-        r'for pre in REALMONEY_SKIP_MARKET_PREFIXES\)\):',
-        ui,
-    )
-    assert stop_branch is not None, (
-        "the lineshop_ou_stop must be scoped to bot_name == 'bot_coolbet_value_v1' — "
-        "unscoped, it would block bot_coolbet_ou_model_v1, whose purpose is to place O/U"
-    )
-
+    code = "\n".join(ln for ln in ui.splitlines() if not ln.lstrip().startswith("#"))
+    assert "REALMONEY_SKIP_MARKET_PREFIXES" not in code, "the dead constant must stay deleted"
+    assert 'stage="lineshop_ou_stop"' not in code and "COOLBET_UI_PLACE_OU" not in code
 
 @test("LINESHOP-FAMILY-RETIRED — no generation pass runs for a retired line-shop bot")
 def test_lineshop_family_retired():
@@ -4161,13 +4140,14 @@ def test_trigger_matcher_stage_b():
     # UNIBET-UI-PLACER 3b (a2afe7b): a second book (Unibet) joined the book-agnostic
     # trigger engine — model + sharp twins per book × market. All PAPER (the
     # never-placeable invariant is still guarded below).
+    # OWN Phase 5 cull (2026-09-15): the four MODEL-anchored per-book entries
+    # are gone — retired in the DB (mig 336/348), refused by `_bot_id`, each
+    # running a no-op query every 30 min. The SHARP twins and the instrument stay.
     assert bots == {
-        "bot_coolbet_trigger_1x2_v1", "bot_coolbet_trigger_ou_v1",
         "bot_coolbet_trigger_sharp_1x2_v1", "bot_coolbet_trigger_sharp_ou_v1",
-        "bot_unibet_trigger_1x2_v1", "bot_unibet_trigger_ou_v1",
         "bot_unibet_trigger_sharp_1x2_v1", "bot_unibet_trigger_sharp_ou_v1",
         "bot_trigger_1x2_sharp_tight_v1",
-    }, "one paper bot per (book × market × anchor), plus declared instruments"
+    }, "one paper SHARP bot per (book × market), plus declared instruments"
     # the routing key must include the strategy, else model & sharp windows blend into one bot
     assert all(len(k) == 3 for k in m.BOOK_MARKET_BOTS), "route by (book, market, strategy)"
     strategies = {k[2] for k in m.BOOK_MARKET_BOTS}
@@ -4176,8 +4156,11 @@ def test_trigger_matcher_stage_b():
     # (a) both anchors are routed, and (b) every routed strategy actually exists
     # in Stage A — a matcher entry for a strategy nothing emits is a silent
     # no-op, which is how a bot ends up looking retired while still registered.
-    assert {"model_1x2", "model_ou25", "sharp_1x2", "sharp_ou25"} <= strategies, (
-        "both anchors routed: model_* and sharp_*"
+    # OWN Phase 5 cull (2026-09-15): the per-book MODEL twins are retired and
+    # their map entries deleted; the MODEL anchor is routed by the merged
+    # bot_configs.TRIGGER_CONFIGS (pick_generator), the SHARP anchor by this map.
+    assert {"sharp_1x2", "sharp_ou25", "sharp_1x2_tight"} <= strategies, (
+        "sharp anchors routed per book: sharp_1x2, sharp_ou25 (+ the tight instrument)"
     )
     from workers.jobs import pick_triggers as _pt
     _emitted = {x[0] for x in _pt._STRATEGIES} | {x[0] for x in _pt._SHARP_STRATEGIES}
@@ -4969,9 +4952,11 @@ def test_coolbet_model_1x2_shadow():
     assert 'PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in (ui + _engine_path("workers/automation/placement_gate.py").read_text(encoding="utf-8")), (
         "bot_coolbet_1x2_model_v1 must be in PLACEABLE_BOTS so the DB toggle can enable it"
     )
-    assert 'bot_name == "bot_coolbet_value_v1"' in ui, (
-        "the line-shop O/U stop must stay scoped to bot_coolbet_value_v1 — it must "
-        "not affect the model-edge 1x2 bot"
+    # OWN Phase 5 cull (2026-09-15): the line-shop O/U stop is DELETED (it was
+    # scoped to the retired value_v1 and unreachable), so nothing in the placer
+    # loop can affect the model-edge 1x2 bot by market any more.
+    assert 'bot_name == "bot_coolbet_value_v1"' not in ui, (
+        "the retired line-shop O/U stop must stay deleted from the real-money loop"
     )
 
     # ── the scheduler runs the 1x2 mirror alongside the O/U mirror ────────────
@@ -25506,7 +25491,10 @@ def _():
     )
     assert "initialState" in ui, "PickBetMark must accept initialState prop"
 
-    shadow_page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the row component renders the
+    # mark; the page pre-fetches the states. Read both.
+    shadow_page = (_web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+                   + _web_path("src/components/shadow-bots/picks-row.tsx").read_text())
     assert "PickBetMark" in shadow_page and "fetchUserPickMarkStates" in shadow_page, (
         "/admin/shadow-bots must render PickBetMark on each upcoming-pick "
         "row and pre-fetch the operator's mark states so icons render "
@@ -25551,42 +25539,27 @@ def _():
       3. it uses gapPp (absolute pp), which is the metric the calibration
          finding is stated in
     """
-    page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
-
-    assert "PER-BOT-SWEEP-2026-08-24" in page, "flag-reduction rationale must be recorded"
-
-    # (1) retired flags gone
-    assert "every bot shows negative ROI below 10%" not in page, (
-        "sub-10% red flag must be removed — its basis was vig-inclusive edge"
-    )
-    assert "pin_home bets at 3.5+ underperform" not in page, (
-        "home @ 3.5+ flag must be removed — never supported by the data"
-    )
-    assert "ensemble falls back to Poisson guess" not in page, (
-        "tier 0/NULL flag must be removed — now excluded at the SQL layer"
-    )
-    assert 'botName === "bot_pin_1x2_draw_tier4_v1"' not in page, (
-        "draw/tier-4 flag must be removed — bot is retired"
-    )
-
-    # (2) surviving flag is scoped to the model-driven bots only
-    assert "MODEL_DRIVEN" in page, "surviving flag must scope to model-driven bots"
-    for bot in ("bot_sweep_1x2_home_v1", "bot_sweep_1x2_draw_v1", "bot_sweep_btts_yes_v1"):
-        assert bot in page, f"{bot} must be in the model-driven set"
-    _md = page[page.index("const MODEL_DRIVEN"):]
-    _md = _md[: _md.index("]")]
-    for lineshop in ("bot_sweep_ou25_v1", "bot_sweep_ou35_v1", "bot_pin_1x2_home_v1"):
-        assert lineshop not in _md, (
-            f"{lineshop} is line-shop — it has no model, so a model-vs-market "
-            "gap flag is meaningless for it"
-        )
-
-    # (3) uses gapPp, the metric the calibration finding is stated in
-    assert "gapPp >= 25" in page, (
-        "surviving flag must threshold on gapPp (absolute pp) — the "
-        "overconfidence finding (6-17pp) is stated in pp, not relative %"
-    )
-
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the per-row confidence
+    # flags (and the MODEL_DRIVEN scope) were REPLACED by the single Verdict chip
+    # in src/lib/shadow-bots/verdict.ts — one colour carrier per row. What must
+    # not come back is any of the four RETIRED flags, whose bases were wrong.
+    web_src = ""
+    for rel in ("src/app/(app)/admin/shadow-bots/page.tsx",
+                "src/components/shadow-bots/picks-table.tsx",
+                "src/components/shadow-bots/picks-row.tsx",
+                "src/lib/shadow-bots/verdict.ts"):
+        web_src += _web_path(rel).read_text()
+    assert "every bot shows negative ROI below 10%" not in web_src, (
+        "sub-10% red flag must stay removed — its basis was vig-inclusive edge")
+    assert "pin_home bets at 3.5+ underperform" not in web_src, (
+        "home @ 3.5+ flag must stay removed — never supported by the data")
+    assert "ensemble falls back to Poisson guess" not in web_src, (
+        "tier 0/NULL flag must stay removed — excluded at the SQL layer")
+    assert 'botName === "bot_pin_1x2_draw_tier4_v1"' not in web_src, (
+        "draw/tier-4 flag must stay removed — bot is retired")
+    assert '"PLACE"' in web_src and '"BLOCKED"' in web_src, (
+        "the Verdict chip is the one surviving per-row signal")
+    return "confidence flags superseded by the Verdict chip; the four retired flags stay gone"
 
 @test("PICKS-USER-GATE — the published picks are ONE cohort, ungated, on every surface")
 def _():
@@ -26554,21 +26527,15 @@ def test_clv_first_gate_2026_08_26():
     """CLV-FIRST-DEV-LOOP-2026-08-26 — the graduation gate decides on CLV, with
     ROI kept as a cross-check."""
     import pathlib
-    page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
-
-    assert "const CLV_MIN_N = 100" in page, "CLV gate needs its own sample floor"
-    assert "clvTStat" in page, "the CLV t-statistic must be computed"
-    assert "const gateT = hasClvGate ? clvTStat : tStat" in page, (
-        "the gate must prefer CLV and fall back to ROI only where Pinnacle "
-        "quotes no market (BTTS)"
-    )
-    assert "gateT >= PROMOTE_T" in page and "gateT <= RETIRE_T" in page, \
-        "promote/retire must read the gate statistic, not the ROI t-stat"
-    # The fallback has to stay honest: a bot with no CLV anchor is slower to
-    # judge, and the UI should say so rather than silently using a weaker test.
-    assert "no CLV anchor" in page, \
-        "bots without a CLV anchor must be labelled as such"
-
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the page's gate is the
+    # pre-registered rule in src/lib/shadow-bots/verdict.ts — margin-corrected
+    # own-book CLV at n>=300 with the CI lower bound above 0 (a t-test at 1.96),
+    # RETIRE below -2%, ROI shown dimmed as context only. CLV-first, as before,
+    # with a stricter floor and the honest (margin-corrected) quantity.
+    page = _web_path("src/lib/shadow-bots/verdict.ts").read_text()
+    assert "PREREG_MIN_N = 300" in page, "CLV gate needs its own sample floor"
+    assert "clv_margin_corrected" in page or "mcClv" in page or "clvMc" in page, "the gate must decide on margin-corrected CLV"
+    assert "CI_Z = 1.96" in page, "the decision is a CI / t-test, not a raw level"
     rep = pathlib.Path("scripts/clv_gate_report.py").read_text()
     assert "shadow_bets_unique" in rep, "report must use the deduped view"
     assert "DISAGREEMENTS" in rep, (
@@ -29744,26 +29711,15 @@ def _pin_best():
     if not web.exists():
         raise SkipTest("odds-intel-web not present (CI single-repo checkout)")
 
-    page = (web / "src/app/(app)/admin/shadow-bots/page.tsx").read_text()
-    i = page.index("PINNACLE-BEST-NO-EDGE")
-    blk = page[i:i + 2200]
-    assert 'u.recommended_bookmaker === "Pinnacle"' in blk, (
-        "the warning must key on Pinnacle holding the best price"
-    )
-    assert "tier === 1" in blk, (
-        "the warning must be SCOPED TO TIER 1 — tier 2 runs the other way "
-        "(+11.1%) and flagging it would repeat the BOT-GATE-OU-BTTS mistake"
-    )
-    assert 'u.market === "1x2"' in blk, (
-        "scoped to 1X2: the whole effect is in that market"
-    )
-    # It must remain a warning. A veto would suppress the bets that are still
-    # generating the evidence this rule needs.
-    assert 'level: "red"' in blk and "cFlag" in blk, (
-        "must be a display flag, not a suppression — the cohort is t=-1.72 and "
-        "still accruing"
-    )
-
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the per-row PINNACLE-BEST-
+    # NO-EDGE warning was retired with the other confidence flags — the Verdict
+    # chip is the one per-row signal. The invariant that survives: the page must
+    # NOT turn it into a VETO. verdict.ts decides on price, age, gate and safety
+    # flags only; no bookmaker-identity suppression.
+    v = (web / "src/lib/shadow-bots/verdict.ts").read_text()
+    assert "Pinnacle" not in v and "recommended_bookmaker" not in v, (
+        "the verdict must not suppress picks by which book holds the best price — "
+        "a veto here would silence the cohort that generates the evidence")
     tracker = root / "scripts" / "track_pinnacle_best.py"
     assert tracker.exists(), "the tracking script must exist to re-measure the rule"
     tsrc = tracker.read_text()
@@ -29771,8 +29727,7 @@ def _pin_best():
         "the tracker must price at odds that were live — odds_at_pick is a "
         "high-water mark (STALE-BEST-ODDS) and would flatter every cohort"
     )
-    return "tier-1 1X2 Pinnacle-best warned, display-only, tracker present"
-
+    return "Pinnacle-best warning retired with the flag set; no bookmaker veto in the verdict; tracker present"
 
 @test("ISOTONIC-BUNDLE-MISMATCH — the isotonic fallback must not drop the odds")
 def _isotonic_odds():
@@ -31260,13 +31215,14 @@ def test_min_odds_formula():
     assert "min_odds = 1.0 / p" in tg, "telegram must publish 1/cal_prob as the floor"
 
     # 4. Admin qualifying floor must solve the gate correctly.
-    adm = open(os.path.join(web, "app", "(app)", "admin", "shadow-bots", "page.tsx"),
-               encoding="utf-8").read()
-    assert "(1 + threshold) / modelProb" not in adm, (
-        "admin floor still uses the mixed-unit form — it reads too permissive, "
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the admin gate floor is
+    # gateFloor() in src/lib/shadow-bots/verdict.ts.
+    adm = open(os.path.join(web, "lib", "shadow-bots", "verdict.ts"), encoding="utf-8").read()
+    assert "(1 + threshold) / prob" not in adm and "(1 + threshold) / modelProb" not in adm, (
+        "admin floor must not use the mixed-unit form — it reads too permissive, "
         "which is the dangerous direction for a real-money gate"
     )
-    assert "1 / (modelProb - threshold)" in adm, (
+    assert "1 / (prob - threshold)" in adm, (
         "admin floor must be 1/(cal_prob - threshold), from edge >= threshold"
     )
 
@@ -36050,10 +36006,9 @@ def test_unibet_trigger_bots():
     # widens this set. The surviving invariant is that all four per-book Unibet
     # bots stay wired; extra routes are allowed, and every route is separately
     # checked against Stage A in TRIGGER-MATCHER-STAGE-B.
-    assert {"bot_unibet_trigger_1x2_v1", "bot_unibet_trigger_ou_v1",
-            "bot_unibet_trigger_sharp_1x2_v1", "bot_unibet_trigger_sharp_ou_v1"} <= ub, (
-        f"the 4 Unibet trigger bots must be wired, got {ub}")
-    # book-aware cohort (else Unibet picks would mislabel as coolbet_trigger)
+    # OWN Phase 5 cull (2026-09-15): only the SHARP twins + the instrument remain.
+    assert {"bot_unibet_trigger_sharp_1x2_v1", "bot_unibet_trigger_sharp_ou_v1",
+            "bot_trigger_1x2_sharp_tight_v1"} == ub, ub
     assert ptm._cohort_for("Unibet-Site") == "unibet_trigger"
     assert ptm._cohort_for("Coolbet") == "coolbet_trigger"
     # migration 326: cohort added to the CHECK + all 4 bots registered
@@ -39693,7 +39648,7 @@ def test_merge_trigger_bots():
     """
     import pathlib as _pl
     from workers.automation.bot_configs import (
-        TRIGGER_CONFIGS, WIDE_CONFIGS, ALL_CONFIGS,
+        TRIGGER_CONFIGS, ALL_CONFIGS,
     )
     from scripts.place_coolbet_ui import PLACEABLE_BOTS
 
@@ -39725,12 +39680,8 @@ def test_merge_trigger_bots():
 
     # 3. The retired twins must NOT be in the run set, or they duplicate rows.
     names = {c.bot_name for c in ALL_CONFIGS}
-    for w in WIDE_CONFIGS:
-        assert w.bot_name not in names, (
-            f"{w.bot_name} is retired by migration 331 as a strict subset of "
-            f"the merged trigger bot — running it would write duplicate home "
-            f"rows under a second name."
-        )
+    # WIDE_CONFIGS deleted 2026-09-15 (OWN Phase 5 cull) — retired by mig 331,
+    # never in the run set; nothing to exclude any more.
 
     mig = _pl.Path("supabase/migrations/331_merge_trigger_bots.sql")
     assert mig.exists(), "migration 331 must register the merged bots"
@@ -43769,8 +43720,9 @@ def test_inplay_slowstate_price_is_book():
     assert "_af_control_pick(pick, af_px.get(str(afid)))" in run and 'write_pick(BOT_CONTROL' in run, \
         "the control arm must be the same pick repriced off AF"
     assert run.index("write_pick(BOT_LIVE") < run.index("write_pick(BOT_CONTROL"), "live arm first, control second"
-    ev = src[src.index("def evaluate_triggers("):src.index("def _norm_sel(")]
-    assert "af" not in ev.lower().replace("default", ""), "evaluate_triggers must not touch AF prices"
+    ev = src[src.index("def evaluate_triggers("):src.index("def _seconds(")]
+    for tok in ("api_football", "af_px", "af_state", "af_live_prices", "_af_control_pick"):
+        assert tok not in ev, f"evaluate_triggers must not touch AF prices ({tok})"
     from workers.registry import bot_registry as reg
     names = {b.name for b in reg.BOTS if b.family == reg.FAM_INPLAY}
     assert names == {"bot_inplay_slowstate_v1", "bot_inplay_slowstate_afctl_v1"}, names

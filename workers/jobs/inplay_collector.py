@@ -128,6 +128,26 @@ def evaluate_triggers(minute: int | None, score: list | None, markets: list[dict
     return out
 
 
+def _seconds(v) -> int | None:
+    """AF's `status.seconds` is a CLOCK STRING like "90:48" (minute:second), not
+    an int — found on the first live cycle (2026-09-15). Return elapsed seconds."""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return int(v)
+    t = str(v).strip()
+    if ":" in t:
+        try:
+            m, sec = t.split(":", 1)
+            return int(m) * 60 + int(sec)
+        except ValueError:
+            return None
+    try:
+        return int(float(t))
+    except ValueError:
+        return None
+
+
 def _norm_sel(s) -> str:
     t = (s or "").strip().lower()
     if t in ("1", "home", "h"):
@@ -314,7 +334,7 @@ def run(cadence: float, rediscover_s: float, max_fixtures: int, duration_s: floa
             match_id = af_fixture_to_match_id(afid) if afid else None
             row = {"captured_at": stamp, "book_event_id": str(f["eb_id"]), "af_fixture_id": afid,
                    "match_id": match_id, "league": f["league"], "home": f["home"], "away": f["away"],
-                   "minute": st.get("minute"), "seconds": st.get("seconds"),
+                   "minute": st.get("minute"), "seconds": _seconds(st.get("seconds")),
                    "score": st.get("goals"), "af_age_s": st.get("af_age_s"),
                    "markets": d.get("markets") or []}
             rows.append(row)

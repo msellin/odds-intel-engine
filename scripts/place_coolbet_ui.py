@@ -116,16 +116,10 @@ assert PLACEABLE_BOTS == {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}
     "placement_gate.PLACEABLE_BOTS drifted from the pinned set — this assertion "
     "and the smoke pins move together")
 
-# COOLBET-LINESHOP-OU-STOP-2026-09-08. The real-money line-shop bot
-# (bot_coolbet_value_v1) LOSES on O/U: realized -17.0% ROI over n=1109 settled,
-# negative in EVERY time fold AND every month (Aug -24%, Sep -10%), while its
-# 1x2 is +13.4% (n=1910). O/U is ~37% of its volume — a steady money leak.
-# Model-edge O/U is +15% (fold-robust) on the same market, so the fix is to stop
-# placing line-shop O/U real money (the model-edge O/U path is the unified-flow
-# work, COOLBET-REALMONEY-EDGE-GATE-RECONCILE). Gated at PLACEMENT, not
-# generation, so O/U keeps writing to shadow_bets for the ongoing comparison.
-# Env override RESTORES it if ever needed: COOLBET_UI_PLACE_OU=1.
-REALMONEY_SKIP_MARKET_PREFIXES = () if os.getenv("COOLBET_UI_PLACE_OU") == "1" else ("over_under", "o/u")
+# COOLBET-LINESHOP-OU-STOP (2026-09-08) and its REALMONEY_SKIP_MARKET_PREFIXES /
+# COOLBET_UI_PLACE_OU override were removed 2026-09-15 (OWN Phase 5 cull): they
+# applied only to bot_coolbet_value_v1, retired 2026-09-08. Smoke
+# LINESHOP-OU-STOP-GONE pins the removal.
 
 
 # REALMONEY-ODDS-BAND-MISMATCH-2026-09-05 — minimum odds for real placement.
@@ -823,27 +817,9 @@ def place_for_bot(page, bot_name: str, picks: list[dict], execute: bool,
                   f"(manual or prior placement)")
             continue
 
-        # COOLBET-LINESHOP-OU-STOP-2026-09-08: never place line-shop O/U real
-        # money (realized -17% ROI, negative every month). See the constant.
-        # SCOPED to bot_coolbet_value_v1 ONLY (COOLBET-MODEL-OU-SHADOW-BOT):
-        # the O/U leak is the LINE-SHOP bot's, not the model-edge O/U bot's
-        # (bot_coolbet_ou_model_v1, +15% fold-robust). This stop must never
-        # block the model-edge O/U bot, whose entire purpose is to place O/U.
-        _mkt = (p.get("market") or "").lower()
-        if (bot_name == "bot_coolbet_value_v1"
-                and any(_mkt.startswith(pre) for pre in REALMONEY_SKIP_MARKET_PREFIXES)):
-            rejected += 1
-            expected_rows += 1
-            up.record_attempt(
-                p, outcome="rejected", stage="lineshop_ou_stop",
-                reason="line-shop O/U real-money placement disabled (-17% ROI); "
-                       "model-edge O/U is the unified-flow path",
-                stake_requested=stake, execute_mode=execute,
-            )
-            mark_pick(p["shadow_bet_id"], MARK_CHECKED)
-            print(f"skip     {label}\n         line-shop O/U placement disabled "
-                  f"(-17% ROI; COOLBET_UI_PLACE_OU=1 to override)")
-            continue
+        # (The COOLBET-LINESHOP-OU-STOP branch that sat here was scoped to
+        # bot_coolbet_value_v1, retired 2026-09-08, and was unreachable dead code
+        # until the OWN Phase 5 cull removed it on 2026-09-15.)
 
         ko = p["match_date"]
         if ko and ko - timedelta(minutes=KICKOFF_CUTOFF_MIN) <= now:

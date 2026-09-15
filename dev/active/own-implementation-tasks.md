@@ -51,13 +51,13 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 ## Phase 3 — policy
 - [x] clamped stake recorded as stage `stake_limit` with `stake_applied` = accepted amount; smoke `PLACEMENT-LOGS-MAX-STAKE`
 
-## Phase 5 — cull
-- [ ] delete `inplay_bot.py`, `coolbet_inplay.py`, `place_all_inplay_bets` (after 1b)
-- [ ] drop 4 inactive `BOOK_MARKET_BOTS`; remove `WIDE_CONFIGS`, retired O/U stop, `_ODDS_TOLERANCE`
-- [ ] wire or delete `PIN_CROSS_DRIFT_VETO_ENABLED`
-- [ ] web: Stripe/tier dead code + deps; README
-- [ ] close CS2 + tennis queue rows with reasons
-- [ ] grep-ripple docs for every removal
+## Phase 5 — cull (small items DONE 2026-09-15; big deletion filed)
+- [ ] delete `inplay_bot.py`, `coolbet_inplay.py`, `place_all_inplay_bets` — DEFERRED → queue `INPLAY-BOT-DELETE` (10 live modules incl. live_poller + 139 test lines; not a same-day deletion)
+- [x] dropped 4 retired `BOOK_MARKET_BOTS` entries; removed `WIDE_CONFIGS` and the retired line-shop O/U stop (+ env override); `_ODDS_TOLERANCE` KEPT (still used by the API placer legacy flow)
+- [ ] wire or delete `PIN_CROSS_DRIFT_VETO_ENABLED` — left as a documented SHADOW counter (removing it changes pipeline output; decide with the model work, not OWN)
+- [x] web README fixed (Next 16 / pm2); Stripe/tier dead code → queue `WEB-TIER-DEAD-CODE` (👥, not OWN)
+- [x] no open CS2/tennis queue rows existed to close (the reviewer's point was missing VERDICT docs; CS2 verdict 2026-07-31 is recorded in the audit §3)
+- [x] grep-ripple: COOLBET_OWN_BETTING (line-shop stop), OWN_STRATEGY_AUDIT §7, WORKFLOWS Mac table (placer/router unloaded, collector added)
 
 ## Phase 6 — /admin/shadow-bots rework (parallel with 1a, after Phase 0)
 - [x] engine view `shadow_bets_own_book_clv` (margin-corrected per row, written at settle + backfill) + smoke
@@ -70,3 +70,8 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 - [x] deletions: ForwardTestPanel + query, SHADOW_BOTS, BOT_BADGES, FAMILIES, discipline strip, Kambi tooltip (page 2264 → 81 lines)
 - [ ] fix SYSTEM_MAP §2 (5 retired bots listed); extend drift test map→registry
 - [x] smokes: `SHADOW-BOTS-REGISTRY-DRIVEN`, `SHADOW-BOTS-VERDICT-IS-PREREG`, `SHADOW-BOTS-PLACE-WRITES-REAL-BETS`
+
+## Live state 2026-09-15 evening
+- `com.oddsintel.inplay-collector` LOADED and running on the Mac (15 live fixtures on cycle 1, rows in `inplay_book_quotes`, heartbeat `pipeline_health_state.inplay_collector`).
+- `com.oddsintel.coolbet-ui-placer` and `com.oddsintel.best-price-router` UNLOADED (`~/Library/LaunchAgents/paused/`).
+- `real_money_armed = FALSE`, `placement_paused = TRUE`, both placer toggles OFF → `CAN_STAKE: no`.

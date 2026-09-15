@@ -27,16 +27,17 @@ STAKE_EUR = 10.0
 # the sharp (de-vigged Pinnacle) anchor in separate bots even though they share a
 # fixture, market and Coolbet price — see docs/BOOK_AGNOSTIC_EDGE_ENGINE.md.
 BOOK_MARKET_BOTS = {
-    ("Coolbet", "1x2",           "model_1x2"):  "bot_coolbet_trigger_1x2_v1",
-    ("Coolbet", "over_under_25", "model_ou25"): "bot_coolbet_trigger_ou_v1",
+    # OWN Phase 5 cull (2026-09-15): the four MODEL-anchored per-book entries
+    # (bot_coolbet_trigger_1x2_v1 / _ou_v1, bot_unibet_trigger_1x2_v1 / _ou_v1)
+    # were removed — all four are retired in the DB (migrations 336 / 348) and
+    # `_bot_id` was already refusing them, so each entry ran a query every 30 min
+    # and no-opped. The SHARP twins stay.
     ("Coolbet", "1x2",           "sharp_1x2"):  "bot_coolbet_trigger_sharp_1x2_v1",
     ("Coolbet", "over_under_25", "sharp_ou25"): "bot_coolbet_trigger_sharp_ou_v1",
     # UNIBET-TRIGGER-BOTS-2026-09-09 (Stage 3b): same trigger engine, second book.
     # Reads odds_snapshots bookmaker='Unibet-Site' (the broad site sweep). Paper.
     # NB the DRAW edge — which the model can't see — lives here on the SHARP anchor
     # (soft-book mispricing vs de-vig Pinnacle); see ANALYSIS_GOTCHAS §57.
-    ("Unibet-Site", "1x2",           "model_1x2"):  "bot_unibet_trigger_1x2_v1",
-    ("Unibet-Site", "over_under_25", "model_ou25"): "bot_unibet_trigger_ou_v1",
     ("Unibet-Site", "1x2",           "sharp_1x2"):  "bot_unibet_trigger_sharp_1x2_v1",
     ("Unibet-Site", "over_under_25", "sharp_ou25"): "bot_unibet_trigger_sharp_ou_v1",
 

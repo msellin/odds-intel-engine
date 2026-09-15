@@ -74,31 +74,11 @@ CONFIGS: list[BotConfig] = [
 # predictions here, where the pipeline's calibrated_prob is what the real-money
 # bots were validated on. Running both on the same mechanism, differing in one
 # field, makes it a measurement instead of an argument.
-WIDE_CONFIGS: list[BotConfig] = [
-    BotConfig(
-        bot_name="bot_wide_1x2_model_v1",
-        shadow_cohort="wide_1x2_model",
-        markets=("1x2",),
-        selections=("home",),
-        books=PLACEABLE_BOOKS,
-        prob_source="predictions",
-        notes="paper twin of the real-money 1x2 bot on the wide candidate source",
-    ),
-    BotConfig(
-        bot_name="bot_wide_ou_model_v1",
-        shadow_cohort="wide_ou_model",
-        markets=("o/u", "over_under_25", "over_under_35"),
-        books=PLACEABLE_BOOKS,
-        convert=_ou_convert,
-        prob_source="predictions",
-        # RETIRED by migration 331 with the rest of WIDE_CONFIGS, so this never
-        # runs — but for the record: the predictions source gained O/U on
-        # 2026-09-11 (PREDICTIONS-SOURCE-OU), so the "inert" note that used to
-        # sit here is no longer the reason it does not generate.
-        notes="paper twin of the real-money O/U bot (retired — superseded by "
-              "bot_trigger_ou_model_v1)",
-    ),
-]
+# WIDE_CONFIGS (the two prob_source='predictions' 1x2 twins, migration 330) were
+# RETIRED by migration 331 an hour later and deleted from this file on
+# 2026-09-15 (OWN Phase 5 cull). They were never in the run set; the merged
+# bot_trigger_1x2_model_v1 was their strict superset and was itself retired
+# 2026-09-14 (BOT-RETIREMENT-ON-CLV). History is in git.
 
 # ── TRIGGER CONFIGS — 8 bots collapse to 4 ───────────────────────────────────
 # The eight trigger bots were 2 anchors x 2 books x 2 markets. The BOOK is not a

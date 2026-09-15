@@ -187,8 +187,8 @@ DC). ~3,000 picks since 2026-08-26. `shadow_bets_unique` is a dedup VIEW over
 | 7 | **Real-money allowlist** (COOLBET-PLACER-CONTROL) | `PLACEABLE_BOTS ∩ ui_place_enabled_bots()` | code-level hard whitelist `PLACEABLE_BOTS = {value_v1, ou_model_v1}` intersected with the runtime DB toggle `coolbet_placer_bots` (superadmin flips it at `/admin/shadow-bots`). Seed: value_v1 ON, ou_model_v1 OFF. **Fails CLOSED** (places nothing) on any DB read error. A bot outside `PLACEABLE_BOTS` can never place even if a row enables it. Any disallowed bot → forced dry-run |
 | 8 | **Kill switch** | `coolbet_state.is_placement_paused()` | DB flag halts the whole placement loop |
 
-**Line-shop O/U stop (`lineshop_ou_stop`) — scoped to `bot_coolbet_value_v1`
-only.** The line-shop bot loses on O/U (realized −17% ROI, negative every month),
+**~~Line-shop O/U stop (`lineshop_ou_stop`)~~ — REMOVED 2026-09-15 (OWN Phase 5 cull; it applied only to `bot_coolbet_value_v1`, retired 2026-09-08, and was unreachable). Historical text follows.** Scoped to `bot_coolbet_value_v1`
+only. The line-shop bot loses on O/U (realized −17% ROI, negative every month),
 so its O/U picks are skipped at placement (`REALMONEY_SKIP_MARKET_PREFIXES`,
 override `COOLBET_UI_PLACE_OU=1`). As of COOLBET-MODEL-OU-SHADOW-BOT this skip is
 gated on `args.bot == "bot_coolbet_value_v1"` and does **not** apply to the
@@ -274,7 +274,7 @@ floor (Path A gate 4 / Path B gate 6).
 Per-bot real-money on/off is **not** env — it is the DB table `coolbet_placer_bots`
 (`ui_place_enabled` per bot), toggled by a superadmin at `/admin/shadow-bots`
 (COOLBET-PLACER-CONTROL). The old `COOLBET_UI_MODEL_EDGE_OU` env flag was removed;
-the toggle replaces it. `COOLBET_UI_PLACE_OU=1` (line-shop O/U restore) still exists.
+the toggle replaces it. ~~`COOLBET_UI_PLACE_OU=1` (line-shop O/U restore)~~ removed 2026-09-15 with the line-shop stop.
 
 ## Not to be confused with
 
