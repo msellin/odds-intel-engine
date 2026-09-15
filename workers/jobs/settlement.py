@@ -3799,16 +3799,37 @@ def _settle_pending_shadow_bets(pending: list, finished: list) -> int:
             skipped += 1
             continue
 
+        # SHADOW-CLV-MARGIN-CORRECTED (2026-09-15, OWN Phase 1a / mig 355). Raw
+        # `clv` breaks even at the closing book's margin, not at zero; every
+        # pre-registered verdict is on `(1+clv)/(1+m) − 1`. Store it per row at
+        # settle time — the same way real_bets and picks_forward_test already do
+        # — instead of recomputing it in scripts and in the browser. `m` is the
+        # closing book's OWN overround on THIS fixture; NULL when any leg is
+        # missing, never an average (the flat-m correction inverted a
+        # significance verdict once already — OWN_BOOK_UNIVERSE §correction).
+        closing_margin = None
+        clv_margin_corrected = None
+        if closing_bookmaker and settlement.get("clv") is not None:
+            try:
+                closing_margin = closing_book_margin(match_id, odds_market, closing_bookmaker)
+                if closing_margin is not None:
+                    clv_margin_corrected = round(
+                        (1.0 + float(settlement["clv"])) / (1.0 + closing_margin) - 1.0, 5)
+                    closing_margin = round(closing_margin, 5)
+            except Exception as _e:  # never let the correction block a settlement
+                console.print(f"  [dim]closing_book_margin failed for {bet['id']}: {_e}[/dim]")
+
         try:
             execute_write(
                 "UPDATE shadow_bets SET result = %s, pnl = %s, "
                 "closing_odds = %s, clv = %s, clv_pinnacle = %s, "
                 "clv_live = %s, clv_pinnacle_live = %s, "
-                "closing_bookmaker = %s WHERE id = %s",
+                "closing_bookmaker = %s, closing_margin = %s, "
+                "clv_margin_corrected = %s WHERE id = %s",
                 [settlement["result"], settlement["pnl"],
                  closing_odds, settlement["clv"], clv_pinnacle,
                  settlement.get("clv_live"), clv_pinnacle_live,
-                 closing_bookmaker, bet["id"]]
+                 closing_bookmaker, closing_margin, clv_margin_corrected, bet["id"]]
             )
         except Exception as e:
             console.print(f"  [yellow]Shadow-settle error for {bet['id']}: {e}[/yellow]")

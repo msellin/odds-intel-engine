@@ -195,11 +195,13 @@ pre-registration constants), `SHADOW-BOTS-PLACE-WRITES-REAL-BETS`,
 **Hypothesis being made measurable:** the mc-CLV vs prob-edge slope (+1.31 stale /
 +0.35 fresh) — which is true on quotes we actually saw on screen.
 
-1. **Dedup-on-change + seen stamps** on the three own-book writers
-   (`coolbet_explorer.py`, `epicbet_explorer.py`, `unibet_odds_feed.py`): if the price
-   for `(match, book, market, selection, line)` equals the last stored row, update a
-   new `last_seen_at` instead of inserting; on change insert with `first_seen_at`.
-   Mig 355 adds the two columns (nullable; backfill `first_seen_at = timestamp`).
+1. ~~Dedup-on-change + seen stamps~~ **DROPPED 2026-09-15 during implementation.**
+   Three feed watchdogs (`coolbet_odds_freshness` rows-per-30-min, the feed
+   watchdog, `ACCESSIBLE-BOOKMAKERS-FEEDS-ALIVE`) count rows per window and would
+   read dedup as a starved feed; and one-row-per-poll already gives the quantity
+   the instrument needs — the latest row's `timestamp` IS the last observation of
+   that price, so `decision_quote_age_min = now − latest.timestamp` is exact. The
+   path is preserved by item 2 instead of by compressing it.
 2. **Retention exemption** in `prune_old_simple`: keep the full pre-KO path for
    `bookmaker IN ('Coolbet','Epicbet','Unibet-Site')` for 60 days. Cost check first:
    these three are ~2.8M rows / 45 days today.

@@ -34,6 +34,17 @@ load_dotenv()
 from workers.api_clients.db import execute_query, get_conn
 
 
+# OWN-BOOK-RETENTION-EXEMPT (2026-09-15, OWN Phase 1a). The books we can place at
+# keep their FULL pre-kickoff price path for 60 days in BOTH pruners; see the
+# note in prune_old_simple. Appended to each pruner's delete condition.
+OWN_BOOKS_EXEMPT = ("Coolbet", "Epicbet", "Unibet-Site")
+OWN_BOOK_EXEMPT_DAYS = 60
+OWN_BOOK_EXEMPT_SQL = (
+    " AND NOT (bookmaker IN ('Coolbet', 'Epicbet', 'Unibet-Site')"
+    " AND timestamp > NOW() - INTERVAL '60 days')"
+)
+
+
 def _build_sql(mode: str, for_count: bool) -> str:
     if mode == "compact":
         # Keep first + last + is_closing + is_opening per combination.
@@ -49,12 +60,15 @@ def _build_sql(mode: str, for_count: bool) -> str:
                            ORDER BY timestamp DESC
                        ) AS rn_last,
                        is_closing,
-                       is_opening
+                       is_opening,
+                       bookmaker,
+                       timestamp
                 FROM odds_snapshots
                 WHERE match_id = ANY(%s::uuid[])
             )
         """
-        condition = "rn_first > 1 AND rn_last > 1 AND NOT is_closing AND NOT is_opening"
+        condition = ("rn_first > 1 AND rn_last > 1 AND NOT is_closing AND NOT is_opening"
+                     + OWN_BOOK_EXEMPT_SQL)
     else:
         # Hourly strategy: keep first snapshot per hour per combination + is_closing + is_opening
         cte = """
@@ -66,12 +80,14 @@ def _build_sql(mode: str, for_count: bool) -> str:
                            ORDER BY timestamp ASC
                        ) AS rn_in_hour,
                        is_closing,
-                       is_opening
+                       is_opening,
+                       bookmaker,
+                       timestamp
                 FROM odds_snapshots
                 WHERE match_id = ANY(%s::uuid[])
             )
         """
-        condition = "rn_in_hour > 1 AND NOT is_closing AND NOT is_opening"
+        condition = "rn_in_hour > 1 AND NOT is_closing AND NOT is_opening" + OWN_BOOK_EXEMPT_SQL
 
     alias = "ranked" if mode == "compact" else "hourly"
 
@@ -330,6 +346,16 @@ def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
                         WHERE o.match_id = ANY(%s::uuid[])
                           AND NOT COALESCE(o.is_closing, false)
                           AND NOT COALESCE(o.is_opening, false)
+                          -- OWN-BOOK-RETENTION-EXEMPT (2026-09-15, OWN Phase 1a):
+                          -- keep the FULL pre-kickoff path at the books we can
+                          -- place at for 60 days. Before 2026-09-11 those three
+                          -- books had ONE surviving row per series and no line-
+                          -- movement study was possible (ANALYSIS_GOTCHAS 59);
+                          -- the sharp-tight instrument's freshness verdict
+                          -- needs the path, not the anchors. Cost measured
+                          -- 2026-09-15: ~2.8M rows / 45 days across the three.
+                          AND NOT (o.bookmaker IN ('Coolbet', 'Epicbet', 'Unibet-Site')
+                                   AND o.timestamp > NOW() - INTERVAL '60 days')
                           -- ODDS-INPLAY-RETENTION-2026-09-11: in-play rows are
                           -- downsampled by _prune_inplay_downsample, never
                           -- deleted here. Without this clause they were ALL

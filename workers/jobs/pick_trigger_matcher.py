@@ -101,7 +101,11 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
             """
             WITH latest AS (  -- latest pre-match price per (match, selection) for this book+market
               SELECT DISTINCT ON (o.match_id, o.selection)
-                     o.match_id::text AS mid, o.selection, o.odds::float AS odds
+                     o.match_id::text AS mid, o.selection, o.odds::float AS odds,
+                     -- SHARP-TIGHT-FRESHNESS (2026-09-15): how old this quote is
+                     -- at decision time. One row per poll, so the row's own
+                     -- timestamp IS the last observation of the price.
+                     EXTRACT(EPOCH FROM (NOW() - o.timestamp)) / 60.0 AS age_min
                 FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
                WHERE o.bookmaker = %s AND o.market = %s
                  AND o.timestamp <= m.date AND m.date > NOW()
@@ -109,6 +113,7 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
             )
             SELECT t.match_id::text AS mid, t.market, t.selection,
                    t.cal_prob::float AS cal, l.odds AS book_odds,
+                   l.age_min::float AS age_min,
                    t.model_version AS mv
               FROM pick_triggers t
               JOIN latest l ON l.mid = t.match_id::text AND l.selection = t.selection
@@ -124,14 +129,25 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
             price = float(r["book_odds"])
             if price <= 1.0:
                 continue
+            age_min = float(r["age_min"]) if r.get("age_min") is not None else None
+            # SHARP-TIGHT-FRESHNESS-REFUSES-STALE (2026-09-15, OWN Phase 1a).
+            # OWN-ANCHOR-GATE-VERIFICATION measured the instrument's slope at
+            # +1.31 on stale decision quotes and +0.35 once the quote had to be
+            # ≤60 min old — 26-45% of legs priced off a quote >4h stale, and
+            # across a >12h gap 72% of Coolbet quotes had moved. A stale quote is
+            # a price nobody could take. The instrument refuses it; every other
+            # strategy still records the age so the same cut can be made later.
+            if not is_fresh_enough(strategy, age_min):
+                counters["stale_skipped"] = counters.get("stale_skipped", 0) + 1
+                continue
             edge = float(r["cal"]) - 1.0 / price   # edge at the book's OWN price
             execute_write(
                 """INSERT INTO shadow_bets
                        (shadow_run_id, shadow_cohort, bot_id, match_id, market, selection,
                         odds_at_pick, odds_at_pick_live, pick_time, stake,
                         model_probability, calibrated_prob, edge_percent,
-                        recommended_bookmaker, model_version)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s,%s,%s)
+                        recommended_bookmaker, model_version, decision_quote_age_min)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s,%s,%s,%s)
                    ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)
                    DO UPDATE SET
                         odds_at_pick      = EXCLUDED.odds_at_pick,
@@ -139,7 +155,8 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
                         calibrated_prob   = EXCLUDED.calibrated_prob,
                         edge_percent      = EXCLUDED.edge_percent,
                         recommended_bookmaker = EXCLUDED.recommended_bookmaker,
-                        model_version         = EXCLUDED.model_version""",
+                        model_version         = EXCLUDED.model_version,
+                        decision_quote_age_min = EXCLUDED.decision_quote_age_min""",
                 # TRIGGER-BOOK-UNATTRIBUTED (2026-09-11): every trigger row was
                 # written with recommended_bookmaker NULL — 100% of them, 639 of
                 # a 950-pick sample landing in the unattributed bucket. `book`
@@ -163,13 +180,28 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
                  # separate them — pooled, it would average a known-biased
                  # sample with a corrected one and report neither.
                  price, price, STAKE_EUR, r["cal"], r["cal"], edge, book,
-                 r["mv"]],
+                 r["mv"], (round(age_min, 1) if age_min is not None else None)],
             )
             counters["written"] += 1
         log.info("trigger matcher (%s/%s/%s): %s", book, market, strategy, counters)
     except Exception as e:  # noqa: BLE001
         log.warning("trigger matcher raised (non-fatal): %s", e)
     return counters
+
+
+# SHARP-TIGHT-FRESHNESS (2026-09-15). Strategies that REFUSE a stale decision
+# quote, and the ceiling in minutes. The instrument is the only one today: its
+# pre-registration is amended to say so (dev/active/own-sharp-tight-preregistration.md).
+FRESHNESS_MAX_AGE_MIN: dict[str, float] = {"sharp_1x2_tight": 60.0}
+
+
+def is_fresh_enough(strategy: str, age_min: float | None) -> bool:
+    """True unless `strategy` has a freshness ceiling AND the quote is older
+    than it (or its age is unknown — unknown is stale for a gated strategy)."""
+    cap = FRESHNESS_MAX_AGE_MIN.get(strategy)
+    if cap is None:
+        return True
+    return age_min is not None and age_min <= cap
 
 
 def run_all() -> dict:

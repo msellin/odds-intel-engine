@@ -25,12 +25,12 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 - [x] ⚖️ 0.C owner: bootout both `--execute` plists; move to `local/launchd/paused/`; fix header comment
 
 ## Phase 1a — sharp-tight freshness
-- [ ] mig 355 `odds_snapshots.first_seen_at`, `last_seen_at` (+ `shadow_bets.decision_quote_age_min`)
-- [ ] dedup-on-change in `coolbet_explorer`, `epicbet_explorer`, `unibet_odds_feed`
-- [ ] retention exemption for the three own books, 60 days; cost check recorded
-- [ ] instrument refuses legs > 60 min old; pre-registration amended and dated
-- [ ] `scripts/sharp_tight_slope.py` + first output committed
-- [ ] smoke: `OWN-BOOK-DEDUP-ON-CHANGE`, `OWN-BOOK-RETENTION-EXEMPT`, `SHARP-TIGHT-FRESHNESS-REFUSES-STALE`
+- [x] mig 355 `shadow_bets.closing_margin`, `clv_margin_corrected`, `decision_quote_age_min`; views `shadow_bets_unique` (extended) + `shadow_bets_own_book_clv` (seen-stamps DROPPED — watchdogs count rows/window; row timestamp already is the observation time)
+- [x] ~~dedup-on-change~~ dropped (see plan 1a.1)
+- [x] retention exemption for the three own books, 60 days, in BOTH pruners (cost: ~2.8M rows/45d)
+- [x] instrument refuses legs > 60 min old (`is_fresh_enough`); pre-registration Amendment 1 dated 2026-09-15
+- [x] `scripts/sharp_tight_slope.py` (first output after mig 355 + backfill)
+- [x] smoke: `OWN-BOOK-RETENTION-EXEMPT`, `SHARP-TIGHT-FRESHNESS-REFUSES-STALE`, `SHADOW-CLV-MARGIN-CORRECTED`
 - [ ] stop/promote rule recorded in PRIORITY_QUEUE row
 
 ## Phase 1b — in-play slow-state rig (⚖️ go/no-go first)
@@ -60,7 +60,7 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 - [ ] grep-ripple docs for every removal
 
 ## Phase 6 — /admin/shadow-bots rework (parallel with 1a, after Phase 0)
-- [ ] engine view `shadow_bets_own_book_clv` (margin-corrected per row) + smoke
+- [x] engine view `shadow_bets_own_book_clv` (margin-corrected per row, written at settle + backfill) + smoke
 - [ ] `lib/shadow-bots/queries.ts` (typed, cached 60 s; no full-ledger fetch)
 - [ ] `lib/shadow-bots/verdict.ts` (+ tests): live edge, break-even, PLACE/THIN/SKIP/BLOCKED, prereg bot verdict
 - [ ] safety strip incl. orphaned `CoolbetDaemonsPause`, `CAN_STAKE`

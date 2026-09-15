@@ -91,3 +91,25 @@ the null for this family. Note what it is **not**: the sweep's original
 different populations (price-ratio median +15% vs −0.0%, n 550 vs 5,881). At a
 **matched** gate and band the real anchor beats junk by **18–33pp in every
 cell**. Any future control must match the gate before comparing.
+
+## Amendment 1 — 2026-09-15 — decision-quote freshness (measurement fix, not a rule change)
+
+`OWN-ANCHOR-GATE-VERIFICATION` (2026-09-14) showed the slope this instrument
+measures reads **+1.31** on stale decision quotes and **+0.35** once the quote is
+required to be ≤60 min old; 26–45% of legs were priced off a quote >4 h stale,
+and across a >12 h gap 72% of Coolbet quotes had moved. A stale quote is a price
+nobody could take, so a leg priced on one measures nothing about the strategy.
+
+From this date:
+* every leg records `shadow_bets.decision_quote_age_min` (migration 355);
+* the matcher **refuses** legs whose book quote is older than **60 min**
+  (`pick_trigger_matcher.FRESHNESS_MAX_AGE_MIN["sharp_1x2_tight"]`, smoke
+  `SHARP-TIGHT-FRESHNESS-REFUSES-STALE`);
+* the stopping rule is evaluated on **fresh legs only**, via
+  `scripts/sharp_tight_slope.py`: at **n_fresh ≥ 300** — slope CI includes 0 →
+  RETIRE; CI excludes 0 AND zero-crossing ≤ +6pp AND ≥2 fresh legs/day → Phase 3
+  candidate (owner decision); otherwise keep observing. ROI never promotes.
+
+The gate (prob-edge ≥2%, odds ≤2.50, pooled three books) is unchanged. Legs
+written before this date have `decision_quote_age_min IS NULL` and are excluded
+from the fresh count by construction.

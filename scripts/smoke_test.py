@@ -41636,8 +41636,12 @@ def test_picks_forward_test_surface():
             f"{rows[0]['leaked']} junk-anchor rows are visible through "
             f"picks_forward_test_public — the negative control is reaching "
             f"readers as if it were a pick.")
-        assert rows[0]["summary_rows"] == 1, (
-            "picks_forward_test_summary must return exactly one row")
+        # One row PER rule_version (mig 346) — v1 closed at n=8, v2 and v3 are
+        # live, so ≥1 is the invariant; "exactly one" pinned a single-version
+        # world and went red the day the scheduled publisher wrote its first
+        # v3 rows (2026-09-15).
+        assert rows[0]["summary_rows"] >= 1, (
+            "picks_forward_test_summary must return at least one row (one per rule_version)")
 
 
 @test("PICKS-FORWARD-TEST-BOT-NOT-IN-BET-LEDGERS — registered, surfaced, and writing nothing")
@@ -43700,6 +43704,70 @@ def test_real_bets_shadow_link():
     assert "stake, bot_id, sim_id_col, notes," in fn, "the FK column must receive only a verified simulated_bets id"
     mig = _engine_path("supabase/migrations/354_real_money_armed.sql").read_text(encoding="utf-8")
     assert "ADD COLUMN IF NOT EXISTS shadow_bet_id UUID REFERENCES shadow_bets(id)" in mig
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# OWN Phase 1a — sharp-tight freshness, own-book margin-corrected CLV, retention
+# ═══════════════════════════════════════════════════════════════════════════
+
+@test("SHARP-TIGHT-FRESHNESS-REFUSES-STALE — the instrument refuses a decision quote older than 60 min and records the age")
+def test_sharp_tight_freshness_refuses_stale():
+    from workers.jobs import pick_trigger_matcher as ptm
+    assert ptm.FRESHNESS_MAX_AGE_MIN.get("sharp_1x2_tight") == 60.0, "the instrument's ceiling is 60 min (prereg amendment 1)"
+    assert ptm.is_fresh_enough("sharp_1x2_tight", 59.9) is True
+    assert ptm.is_fresh_enough("sharp_1x2_tight", 60.1) is False
+    assert ptm.is_fresh_enough("sharp_1x2_tight", None) is False, "unknown age is stale for a gated strategy"
+    assert ptm.is_fresh_enough("sharp_1x2", 10_000) is True, "ungated strategies only RECORD the age"
+    src = _engine_path("workers/jobs/pick_trigger_matcher.py").read_text(encoding="utf-8")
+    fn = src[src.index("def match_and_emit("):src.index("FRESHNESS_MAX_AGE_MIN")]
+    assert "AS age_min" in fn and "is_fresh_enough(strategy, age_min)" in fn, "matcher must compute the age and gate on it"
+    assert fn.index("is_fresh_enough(strategy, age_min)") < fn.index("INSERT INTO shadow_bets"), "the refusal must come BEFORE the write"
+    assert "decision_quote_age_min" in fn and "decision_quote_age_min = EXCLUDED.decision_quote_age_min" in fn, "age must be written and refreshed on conflict"
+    prereg = _engine_path("dev/active/own-sharp-tight-preregistration.md").read_text(encoding="utf-8")
+    assert "Amendment 1 — 2026-09-15" in prereg and "fresh legs only" in prereg, "the pre-registration must carry the dated amendment"
+
+
+@test("SHADOW-CLV-MARGIN-CORRECTED — settlement writes closing_margin + clv_margin_corrected on shadow bets, NULL never averaged")
+def test_shadow_clv_margin_corrected():
+    src = _engine_path("workers/jobs/settlement.py").read_text(encoding="utf-8")
+    fn = src[src.index("def _settle_pending_shadow_bets("):]
+    _j = fn.find("\ndef ", 10)
+    fn = fn if _j < 0 else fn[:_j]
+    assert "closing_book_margin(match_id, odds_market, closing_bookmaker)" in fn, "must use the settlement helper, not a flat margin"
+    assert "closing_margin = %s" in fn and "clv_margin_corrected = %s WHERE id = %s" in fn, "UPDATE must write both columns"
+    assert "if closing_margin is not None:" in fn, "an undefined margin must leave the correction NULL"
+    mig = _engine_path("supabase/migrations/355_shadow_clv_margin_corrected_and_freshness.sql").read_text(encoding="utf-8")
+    assert "CREATE OR REPLACE VIEW shadow_bets_own_book_clv" in mig and "closing_bookmaker IS NOT NULL" in mig, \
+        "the page-facing view must exclude arbitrary-book rows by construction"
+    assert _engine_path("scripts/backfill_shadow_clv_margin.py").exists()
+    from workers.api_clients.db import execute_query
+    cols = {r["column_name"] for r in execute_query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'shadow_bets'")}
+    if {"closing_margin", "clv_margin_corrected"} <= cols:
+        # Once the migration is applied, no settled own-book row may carry a
+        # margin outside a book's plausible range, and no correction without its margin.
+        bad = execute_query(
+            """SELECT count(*) AS n FROM shadow_bets
+                WHERE (closing_margin IS NOT NULL AND (closing_margin < 0 OR closing_margin > 0.5))
+                   OR (clv_margin_corrected IS NOT NULL AND closing_margin IS NULL)""")[0]["n"]
+        assert bad == 0, f"{bad} shadow rows carry an implausible or unmatched margin correction"
+
+
+@test("OWN-BOOK-RETENTION-EXEMPT — both pruners keep the full 60-day price path at Coolbet / Epicbet / Unibet-Site")
+def test_own_book_retention_exempt():
+    src = _engine_path("scripts/prune_odds_snapshots.py").read_text(encoding="utf-8")
+    code = "\n".join(ln for ln in src.split("\n") if not ln.lstrip().startswith("#") and not ln.lstrip().startswith("--"))
+    simple = code[code.index("def prune_old_simple("):]
+    assert "o.bookmaker IN ('Coolbet', 'Epicbet', 'Unibet-Site')" in simple and "INTERVAL '60 days'" in simple, \
+        "prune_old_simple must exempt the own books' 60-day path"
+    assert simple.index("INTERVAL '60 days'") < simple.index("DELETE FROM odds_snapshots o") + 2000, "exemption must sit in the DELETE predicate"
+    build = code[code.index("def _build_sql("):code.index("def prune(")]
+    assert build.count("OWN_BOOK_EXEMPT_SQL") == 2, \
+        "both hourly and compact conditions must append the exemption (exactly two uses)"
+    assert build.count("bookmaker,\n                       timestamp") == 2, "both CTEs must expose bookmaker and timestamp for the exemption"
+    from scripts import prune_odds_snapshots as pr
+    assert set(pr.OWN_BOOKS_EXEMPT) == {"Coolbet", "Epicbet", "Unibet-Site"} and pr.OWN_BOOK_EXEMPT_DAYS == 60
 
 
 if __name__ == "__main__":
