@@ -179,3 +179,12 @@
 {"at": "2026-09-15T12:55:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
 {"at": "2026-09-15T12:55:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
 {"at": "2026-09-15T12:55:27+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T13:25:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T13:25:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T13:25:21+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T13:55:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T13:55:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T13:55:26+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T14:25:04+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T14:25:04+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T14:25:20+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}

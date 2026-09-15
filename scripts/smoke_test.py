@@ -41571,18 +41571,21 @@ def test_picks_forward_test_surface():
         "Splitting on `outcome == null` instead puts in-play matches on the "
         "board — telling a reader to bet a game already running."
     )
-    assert "const board = picks.filter" in page and "const settled = picks" in page, (
-        "the board/results split is gone. A settled pick rendered inside the "
-        "board reads as a current pick."
+    assert "const board = picks.filter" in page, (
+        "the board must still exclude fixtures that have kicked off — a settled "
+        "pick rendered inside the board reads as a current pick."
     )
     assert "board.length > 0" in page and "Nothing on the board right now" in page, (
         "an empty board must SAY it is empty. That sentence is the whole fix: a "
         "board that cannot report emptiness looks identical to a broken page."
     )
-    assert "no result is dropped" in page, (
-        "the results section must state that it shows winners and losers alike. "
-        "A results list that quietly drops losers is the dishonest version of "
-        "this section."
+    # SETTLED PICKS ARE NOT RENDERED ON /picks (owner, 2026-09-15). An
+    # "Already kicked off" section was added earlier that day and removed the
+    # same day: the page had never had one, and /picks is the live board.
+    # Results live on /performance. Pinned so it is not silently re-added.
+    assert "Already kicked off" not in page, (
+        "the settled-picks section is back on /picks. The page is the live "
+        "board; results belong on /performance."
     )
 
     # honest framing, on the page, above the numbers
