@@ -51,13 +51,6 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 ## Phase 3 — policy
 - [ ] log `max_accepted_stake` in `coolbet_placement_attempts`; smoke `PLACEMENT-LOGS-MAX-STAKE`
 
-## Phase 4 — PICKS honesty (odds-intel-web)
-- [ ] ⚖️ `/performance` banner or headline removal
-- [ ] `/api/v1/track-record` `meta.edge_basis`, `meta.rule_status`
-- [ ] `/admin/shadow-bots` floors from `engine-floors.ts`
-- [ ] Telegram webhook upsell string removed
-- [ ] web smoke config entries
-
 ## Phase 5 — cull
 - [ ] delete `inplay_bot.py`, `coolbet_inplay.py`, `place_all_inplay_bets` (after 1b)
 - [ ] drop 4 inactive `BOOK_MARKET_BOTS`; remove `WIDE_CONFIGS`, retired O/U stop, `_ODDS_TOLERANCE`
@@ -77,6 +70,3 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 - [ ] deletions: ForwardTestPanel + query, retired SHADOW_BOTS, BOT_BADGES, FAMILIES, discipline strip, Kambi tooltip
 - [ ] fix SYSTEM_MAP §2 (5 retired bots listed); extend drift test map→registry
 - [ ] smokes: `SHADOW-BOTS-REGISTRY-DRIVEN`, `SHADOW-BOTS-VERDICT-IS-PREREG`, `SHADOW-BOTS-PLACE-WRITES-REAL-BETS`
-
-## PICKS publish time (with Phase 4)
-- [ ] move `job_publish_picks_forward_test` 10:00 → 07:00 UTC; changelog line in prereg; verify `pipeline_runs` row next day

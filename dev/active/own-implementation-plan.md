@@ -1,7 +1,7 @@
 # OWN implementation plan — 2026-09-15
 
 **Source:** `docs/OWN_STRATEGY_AUDIT_2026_09_15.md` (reviewed version, §0 changelog).
-**Direction:** 🤖 OWN, with a small 👥 PICKS honesty batch (Phase 4).
+**Direction:** 🤖 OWN only. PICKS items found during the audit are filed in `PRIORITY_QUEUE.md` and are NOT in this roadmap.
 **Owner decisions required before Phase 1b and Phase 2 start** — marked ⚖️.
 
 ## Principles (from the audit and both reviews)
@@ -190,25 +190,6 @@ pre-registration constants), `SHADOW-BOTS-PLACE-WRITES-REAL-BETS`,
 
 ---
 
-## Publish-time change for the PICKS forward test (small, 👥, do with Phase 4)
-
-The publisher runs at **10:00 UTC** (`scheduler.py::job_publish_picks_forward_test`).
-Its docstring gives two reasons: "after the 04:00 morning chain and several odds
-refreshes", and "the backtest was measured on quotes at least 4 h out, so
-publishing later than we measured would be publishing a different rule". Neither
-forbids **earlier**. At 07:00 UTC the morning chain is done, Coolbet/Epicbet/AF have
-each swept ≥4 times, and the alignment rule (anchor and book quote within 60 min)
-is unaffected. Earlier publication also covers the 10:00–12:00 UTC kickoffs that
-10:00 publication misses. Publish time is not part of the pre-registered rule
-(edge ≥3%, odds ≤4.0, align ≤60 min, anchor overround ≤4%, top 8/day), so this is
-an operational change, not a new `rule_version` — record the date in the
-pre-registration file's changelog. **Move to 07:00 UTC; do not add a second daily
-run** (top-8-by-edge would then be ranked over two different pools). Note the job
-had **never completed once** until the 2026-09-15 `SCHEDULER-PUBLISHER-NEVER-RAN`
-fix — check `pipeline_runs` shows a row tomorrow.
-
----
-
 ## Phase 1a — sharp-tight instrument, freshness stamp (~1.5 days)
 
 **Hypothesis being made measurable:** the mc-CLV vs prob-edge slope (+1.31 stale /
@@ -305,16 +286,12 @@ Add to `coolbet_ui_placer.stage_bet` and any future placer: log `max_accepted_st
 
 ---
 
-## Phase 4 — 👥 PICKS honesty batch (~3 h, odds-intel-web)
+## Out of scope for this plan — 👥 PICKS items found during the audit
 
-1. `/performance`: banner "Model-era ledger, rule retired 2026-09-13/14; prices are
-   best-of-accessible, ≈ −3.5…−5.7% at a single placeable book" with links; or
-   remove the headline and keep the leaderboard behind the banner (⚖️ owner).
-2. `/api/v1/track-record`: add `meta.edge_basis` and `meta.rule_status`.
-3. `/admin/shadow-bots`: import floors from `src/lib/generated/engine-floors.ts`.
-4. Telegram webhook `route.ts:666`: drop the Pro/Elite upsell string.
-Web smoke via `scripts/web_smoke_test.py` config: `PERF-MODEL-ERA-BANNER`,
-`TRACK-RECORD-EDGE-BASIS`.
+Filed in `PRIORITY_QUEUE.md`, NOT part of the OWN roadmap: `/performance` model-era
+banner, `/api/v1/track-record` `meta.edge_basis`, admin floors from the generated
+source, Telegram upsell string (audit §6); publisher 10:00 → 07:00 UTC
+(`PICKS-PUBLISH-AT-07-UTC`). A PICKS agent picks these up independently.
 
 ---
 
@@ -334,7 +311,6 @@ Grep-ripple every removal through `docs/ *.md`.
 ```
 Phase 0 (P0) ──► 0.C operator unload ──► Phase 1a ──► Phase 1b (⚖️) ──► Phase 3 policy
                                      └──► Phase 2 (⚖️ accounts) — parallel, owner-driven
-Phase 4 (PICKS) — independent, any time
 Phase 5 (cull) — after 1b's bot lands
 ```
 

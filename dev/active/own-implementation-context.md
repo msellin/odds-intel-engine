@@ -54,7 +54,10 @@ findings"); reviewed by two adversarial agents; corrections applied to
 1. Unload the two `--execute` plists now (Phase 0.C).
 2. Go/no-go on Phase 1b (in-play rig, ~3 days, 4–7 months paper).
 3. Open accounts at Olybet / Optibet / Betsafe / Paf / Tonybet / bet365.ee for Phase 2 and supply the T&Cs.
-4. `/performance`: banner vs remove headline (Phase 4.1).
+
+## Scope
+
+- OWN only. PICKS items (audit §6, publisher time) are queue rows for a PICKS agent, not in this plan.
 
 ## Open questions
 
