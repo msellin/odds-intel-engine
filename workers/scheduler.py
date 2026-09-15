@@ -2244,11 +2244,13 @@ def job_publish_picks_forward_test():
     # PICKS-BOARD-WATCHLIST: refresh the live board on EVERY pass, including
     # passes that publish nothing — a flat day is exactly when the board is the
     # only thing /picks has to show. Writes `picks_board`, never the ledger.
-    try:
-        n_board = write_board(pool)
-    except Exception as e:
-        n_board = 0
-        log.warning("picks_forward_test: board refresh failed (non-fatal): %s", e)
+    # NO try/except here on purpose. `write_board` handles its own failures and
+    # returns 0 — catching again at the job level would make this entrypoint
+    # swallow an exception and still return normally, so `pipeline_runs` would
+    # record status='completed' for a run that failed (SILENT-FAILURE-AUDIT-JOBS).
+    # The count is returned below so a zero board is visible in the job metadata
+    # rather than only in a log line.
+    n_board = write_board(pool)
 
     if not picks:
         log.info("picks_forward_test: nothing qualifies this pass "

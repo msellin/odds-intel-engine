@@ -431,17 +431,17 @@ def write_board(pool: list[dict]) -> int:
     Only legs at or above break-even are kept: below that the sharp line says
     the price is bad at any grade, and listing it would be noise.
     """
-    rows = []
-    for c in pool:
-        be, b3, a5 = required_odds(c["p_sharp"])
-        if c["odds"] < be:
-            continue
-        rows.append((c["match_id"], c["market"], c["selection"], c["odds"],
-                     c["bookmaker"], c["p_sharp"], c["edge"], be, b3, a5,
-                     c["anchor_overround"], c["kickoff_at"]))
-    if not rows:
-        return 0
     try:
+        rows = []
+        for c in pool:
+            be, b3, a5 = required_odds(c["p_sharp"])
+            if c["odds"] < be:
+                continue
+            rows.append((c["match_id"], c["market"], c["selection"], c["odds"],
+                         c["bookmaker"], c["p_sharp"], c["edge"], be, b3, a5,
+                         c["anchor_overround"], c["kickoff_at"]))
+        if not rows:
+            return 0
         # Replace, not append: this is "the board as it stands", not history.
         execute_write("DELETE FROM picks_board WHERE kickoff_at < NOW()")
         for r in rows:
