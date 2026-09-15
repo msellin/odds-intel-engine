@@ -1,0 +1,9 @@
+
+=== bot_trigger_1x2_sharp_tight_v1 — mc-CLV vs prob-edge, 120d, own-book close only ===
+legs with mc-CLV: 17  fresh(≤60m): 0  stale/unknown: 17
+  FRESH    n=0 — too few legs
+  STALE    n=  17 (fixtures 17)  slope -5.351 [-11.114, +0.413] t=-1.82  intercept +9.21pp  zero-crossing +1.7pp edge  mean mc-CLV -8.10pp
+  ALL      n=  17 (fixtures 17)  slope -5.351 [-11.114, +0.413] t=-1.82  intercept +9.21pp  zero-crossing +1.7pp edge  mean mc-CLV -8.10pp
+
+--- pre-registered verdict (fresh legs only) ---
+  COLLECTING 0/300

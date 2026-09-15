@@ -1603,6 +1603,19 @@ def stage_bet(
         return _fail("stake", f"{type(e).__name__}: {str(e)[:140]}", ev, outcome)
     if abs(applied - stake) > 0.005:
         clear_stake(page, outcome.market_id)
+        # PLACEMENT-LOGS-MAX-STAKE (OWN Phase 3, 2026-09-15). When the field
+        # holds LESS than we typed, the book clamped the stake — that is the
+        # account being LIMITED, the binding risk on every OWN strategy, and
+        # until now it was indistinguishable in the ledger from a UI hiccup
+        # ("stake did not stick"). Record it as its own stage with the accepted
+        # amount in `stake_applied`, so the first stake refusal is the day the
+        # strategy's ceiling becomes known (all 143 placements to date were
+        # accepted at the full EUR 10).
+        if applied < stake - 0.005:
+            return _fail("stake_limit",
+                         f"book clamped the stake: wanted {stake:.2f}, accepted {applied:.2f} "
+                         f"(max accepted stake = {applied:.2f})",
+                         ev, outcome, applied=applied)
         return _fail("stake", f"stake did not stick: wanted {stake:.2f}, field holds {applied:.2f}",
                      ev, outcome, applied=applied)
 

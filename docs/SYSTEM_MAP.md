@@ -167,6 +167,15 @@ registry and regenerate.
 | `bot_team_total_paper_shadow_v1` | team totals | sharp | 0% | — | paper | Best Epicbet/Betano/Unibet full-match team-total price vs de-vigged Pinnacle line (sharp edge ≥0%). USE-COLLECTED-MARKETS: a market we collect but never modelled; settles from the final score (no coverage gap). Paper, accruing forward. |
 | `bot_1h_1x2_paper_shadow_v1` | 1H 1x2 | sharp | 0% | — | paper | Best Epicbet/Betano/Unibet first-half 1X2 price vs Shin-de-vigged Pinnacle 1H triple (sharp edge ≥0%). USE-COLLECTED-MARKETS: a 3-way market we collect but never modelled; settles from the HT score (no gap). Paper, accruing forward. |
 
+### In-play slow-state rig (paper) — OWN Phase 1b
+
+| Bot | Market | Anchor | Edge floor | Odds floor | Money | What it does |
+|---|---|---|---|---|---|---|
+| `bot_inplay_slowstate_v1` | in-play O/U 2.5 + 1x2 | none (book's own de-vigged prob) | — | **cap 2.20** | paper | **LIVE arm.** Two LOCKED slow-state triggers at Epicbet's on-screen price: T1 0-0 at 35'–54' → UNDER 2.5; T2 two-goal lead at 70'–89' → the leader. Both only through a price ≤ 2.20 (the long side carries ~14% relative in-play margin vs ~4% short — INPLAY_STRATEGY_CANDIDATES). Primary metric: realised hit-rate minus the book's de-vigged prob, cluster-robust on fixture; CLV inadmissible in play. **STOP at n=1,000 if the lift is negative; decide at n=3,000.** Board + bot: `workers/jobs/inplay_collector.py` (Mac launchd KeepAlive) → `inplay_book_quotes`; read: `scripts/inplay_slowstate_eval.py`. |
+| `bot_inplay_slowstate_afctl_v1` | in-play O/U 2.5 + 1x2 | none | — | cap 2.20 | paper | **CONTROL arm.** Same triggers at the same instant priced off API-Football's live aggregate (median 40 s stale). Live − control = the value of the fresh board. Two bots because `shadow_bets_unique` de-duplicates on (bot, match, market, selection). |
+
+> Epicbet only, deliberately: Coolbet's in-play margin is tighter (4.96%/5.16% vs 6.41%/6.44%) and Coolbet has the placer, but its board sits behind Imperva and the request volume is what escalates the wall (RELIABILITY_LEDGER §6/§10). Trigger findings transfer across books; price findings do not. Coolbet in-play collection is a follow-up with its own Imperva budget.
+
 ### Internal model / strategy validators (paper)
 
 | Bot | Market | Anchor | Edge floor | Odds floor | Money | What it does |

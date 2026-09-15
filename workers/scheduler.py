@@ -2910,6 +2910,16 @@ def main():
         id="odds_backlog_prune", name="Odds Backlog Prune 03:00"
     )
 
+    # OWN Phase 1b (2026-09-15): the in-play board written from the Mac
+    # (workers/jobs/inplay_collector.py) keeps 90 days. Prune here, on the VPS,
+    # because the writer is a KeepAlive loop with no natural nightly slot.
+    scheduler.add_job(
+        lambda: __import__('workers.api_clients.db', fromlist=['execute_write']).execute_write(
+            "DELETE FROM inplay_book_quotes WHERE captured_at < NOW() - INTERVAL '90 days'"),
+        CronTrigger(hour=3, minute=20),
+        id="inplay_book_quotes_prune", name="In-play board prune 03:20 (90d)"
+    )
+
     # ML-PIPELINE-UNIFY Stage 5a — weekly retrain Sunday 03:00 UTC, runs train.py +
     # compare_models.py. Promotion stays manual (operator flips MODEL_VERSION).
     scheduler.add_job(job_weekly_retrain, CronTrigger(day_of_week="sun", hour=3, minute=0),

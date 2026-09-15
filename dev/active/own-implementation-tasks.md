@@ -34,22 +34,22 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 - [ ] stop/promote rule recorded in PRIORITY_QUEUE row
 
 ## Phase 1b — in-play slow-state rig (⚖️ go/no-go first)
-- [ ] read `oufid.jsonl`; record result in inplay discovery context
-- [ ] collector generalised to `--book coolbet|epicbet`; Mac launchd `KeepAlive`; heartbeat
-- [ ] mig 356 `inplay_book_quotes` + prune job (90 d)
-- [ ] `bot_inplay_slowstate_v1` (T1, T2 locked) + `af_control` arm; registry + SYSTEM_MAP
-- [ ] `scripts/inplay_slowstate_eval.py` (hit-rate lift, cluster-robust, power line)
-- [ ] smoke: `INPLAY-COLLECTOR-HEARTBEAT`, `INPLAY-SLOWSTATE-TRIGGERS-LOCKED`, `INPLAY-SLOWSTATE-PRICE-IS-BOOK-NOT-AF`
+- [x] `oufid.jsonl` — scratch file from the 09-14 session no longer exists on disk; O/U fidelity remains UNREPORTED, so the paper bot measures at Epicbet's own board (no AF O/U dependency) and the control arm uses AF only where it quotes the same market
+- [x] `workers/jobs/inplay_collector.py` (Epicbet; Coolbet in-play collection FILED as follow-up — Imperva budget); Mac `KeepAlive` plist `com.oddsintel.inplay-collector`; heartbeat in `pipeline_health_state`
+- [x] mig 357 `inplay_book_quotes` + VPS prune job 03:20 (90 d) + `shadow_bets.inplay_*` columns + the two bot rows
+- [x] `bot_inplay_slowstate_v1` (T1, T2 locked, cap 2.20) + `bot_inplay_slowstate_afctl_v1` control arm; registry `FAM_INPLAY` + SYSTEM_MAP section
+- [x] `scripts/inplay_slowstate_eval.py` (hit-rate lift, cluster-robust, power line, STOP/DECIDE verdict)
+- [x] smoke: `INPLAY-COLLECTOR-HEARTBEAT`, `INPLAY-SLOWSTATE-TRIGGERS-LOCKED`, `INPLAY-SLOWSTATE-PRICE-IS-BOOK-NOT-AF`
 - [ ] stop rules (n=1,000 / n=3,000) recorded in PRIORITY_QUEUE row
 
 ## Phase 2 — promotions (⚖️ accounts + T&Cs from owner)
-- [ ] mig 357 `promo_terms`, `promo_ledger`
-- [ ] `scripts/promo_ev.py` (boost / free-bet SNR / acca insurance, under terms)
-- [ ] `scripts/promo_review.py` monthly
-- [ ] smoke: `PROMO-EV-FORMULAS`, `PROMO-LEDGER-EV-BEFORE-BET`
+- [x] mig 356 `promo_terms`, `promo_ledger`
+- [x] `workers/automation/promo_ev.py` + `scripts/promo_ev.py` (fair / ev / terms / add-terms; boost, free-bet SNR/SR, acca insurance, deposit bonus, all under terms)
+- [x] `scripts/promo_review.py` monthly (kill on 2 consecutive months > 1.5 sd below EV)
+- [x] smoke: `PROMO-EV-FORMULAS`, `PROMO-LEDGER-EV-BEFORE-BET`
 
 ## Phase 3 — policy
-- [ ] log `max_accepted_stake` in `coolbet_placement_attempts`; smoke `PLACEMENT-LOGS-MAX-STAKE`
+- [x] clamped stake recorded as stage `stake_limit` with `stake_applied` = accepted amount; smoke `PLACEMENT-LOGS-MAX-STAKE`
 
 ## Phase 5 — cull
 - [ ] delete `inplay_bot.py`, `coolbet_inplay.py`, `place_all_inplay_bets` (after 1b)
@@ -61,12 +61,12 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 
 ## Phase 6 — /admin/shadow-bots rework (parallel with 1a, after Phase 0)
 - [x] engine view `shadow_bets_own_book_clv` (margin-corrected per row, written at settle + backfill) + smoke
-- [ ] `lib/shadow-bots/queries.ts` (typed, cached 60 s; no full-ledger fetch)
-- [ ] `lib/shadow-bots/verdict.ts` (+ tests): live edge, break-even, PLACE/THIN/SKIP/BLOCKED, prereg bot verdict
-- [ ] safety strip incl. orphaned `CoolbetDaemonsPause`, `CAN_STAKE`
-- [ ] picks table + row (Age, Break-even, Gate, Live edge, Verdict, Place/Skip)
-- [ ] `place-action` → `/api/admin/real-bet` (fixes "no path from shadow pick to real_bets")
-- [ ] scoreboard from `active_names()`; delete ROI pill
-- [ ] deletions: ForwardTestPanel + query, retired SHADOW_BOTS, BOT_BADGES, FAMILIES, discipline strip, Kambi tooltip
+- [x] `lib/shadow-bots/queries.ts` (8 cached + 4 live queries; was ~20 uncached)
+- [x] `lib/shadow-bots/verdict.ts` + `verdict.selfcheck.ts` (30 assertions)
+- [x] safety strip incl. `CoolbetDaemonsPause`, `real_money_armed`, CAN_STAKE
+- [x] picks table + row (Age, Break-even, Gate, Live edge, Verdict, Place/Skip)
+- [x] `place-action` → `/api/admin/real-bet` with `shadowBetId`, `placed_real = NULL`
+- [x] scoreboard from `bots WHERE retired_at IS NULL`; t-stat pill deleted; prereg verdict
+- [x] deletions: ForwardTestPanel + query, SHADOW_BOTS, BOT_BADGES, FAMILIES, discipline strip, Kambi tooltip (page 2264 → 81 lines)
 - [ ] fix SYSTEM_MAP §2 (5 retired bots listed); extend drift test map→registry
-- [ ] smokes: `SHADOW-BOTS-REGISTRY-DRIVEN`, `SHADOW-BOTS-VERDICT-IS-PREREG`, `SHADOW-BOTS-PLACE-WRITES-REAL-BETS`
+- [x] smokes: `SHADOW-BOTS-REGISTRY-DRIVEN`, `SHADOW-BOTS-VERDICT-IS-PREREG`, `SHADOW-BOTS-PLACE-WRITES-REAL-BETS`

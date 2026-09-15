@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  INPLAY-COLLECTOR (Mac-side, OWN Phase 1b, 2026-09-15): the Epicbet in-play
+  board collector + slow-state PAPER bot. A long-running LOOP, not a cron —
+  KeepAlive restarts it if it exits. It writes inplay_book_quotes, shadow_bets
+  (two experimental paper bots) and a heartbeat row; it places NOTHING.
+
+  Why the Mac and not the VPS: Epicbet 403s the VPS behind Cloudflare and every
+  call there goes through FlareSolverr, whose sidebets budget the pre-match sweep
+  already caps at 250 per 30 min. From the Mac the live board is anonymous REST,
+  0.2-0.8 s per fixture, and the 2026-09-14 discovery run held 30 fixtures at
+  30 s for 9 hours without a block. Defaults here are gentler: 15 fixtures, 45 s.
+
+  Install once:
+    cp local/launchd/com.oddsintel.inplay-collector.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.oddsintel.inplay-collector.plist
+
+  Manage:
+    launchctl list | grep inplay-collector
+    launchctl bootout gui/$(id -u)/com.oddsintel.inplay-collector
+
+  Logs: dev/active/inplay-collector.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.oddsintel.inplay-collector</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/margussellin/www/odds-intel-engine/venv/bin/python</string>
+        <string>-m</string>
+        <string>workers.jobs.inplay_collector</string>
+        <string>--cadence</string><string>45</string>
+        <string>--max-fixtures</string><string>15</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/margussellin/www/odds-intel-engine</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/inplay-collector.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/inplay-collector.log</string>
+</dict>
+</plist>

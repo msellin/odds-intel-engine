@@ -34,6 +34,7 @@ FAM_TRIGGER = "trigger"                # book-agnostic trigger engine (paper)
 FAM_COOLBET_PAPER = "coolbet_paper"    # Coolbet own-price paper bots
 FAM_INTERNAL = "internal"              # internal model/strategy paper validators
 FAM_FORWARD_TEST = "forward_test"      # pre-registered published-picks forward test
+FAM_INPLAY = "inplay"                  # in-play slow-state rig (paper) — OWN Phase 1b
 
 FAMILY_TITLES = {
     FAM_COOLBET_REAL: "Real-money capable · Coolbet UI placer",
@@ -41,6 +42,7 @@ FAMILY_TITLES = {
     FAM_COOLBET_PAPER: "Coolbet own-price paper bots",
     FAM_INTERNAL: "Internal model / strategy validators (paper)",
     FAM_FORWARD_TEST: "Pre-registered PICKS forward test (published, not staked)",
+    FAM_INPLAY: "In-play slow-state rig (paper) — OWN Phase 1b",
 }
 
 
@@ -175,6 +177,22 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_sharp_forward_test_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5",
             ANCHOR_SHARP, 0.03, None, False,
             "The PUBLISHED picks. Pre-registered forward test started 2026-09-14: best book price beats the Shin-de-vigged Pinnacle line by >=3%, odds <=4.0 (a CAP, not a floor), anchor and bet quote within 60 min, top 8/day. Uses NO model output. Flat 1 unit, no Kelly, no bankroll. Writes NO simulated_bets and NO shadow_bets — read-through only, via picks_forward_test_shadow. Prior: +5.5% ROI backtest, 95% CI [-0.7,+11.7] = NO DEMONSTRATED EDGE. Stops at n=200/400 on margin-corrected CLV, promote/kill at n=800 on the ROI CI. Junk-anchor negative control runs alongside, unpublished. Rule locked in dev/active/picks-forward-test-preregistration.md."),
+    # OWN Phase 1b (2026-09-15) — the in-play slow-state RIG. Two paper bots, one
+    # measurement: the LIVE arm prices the two LOCKED triggers (0-0 at 35-54' ->
+    # under 2.5; two-goal lead at 70-89' -> the leader; both at <= 2.20) at
+    # Epicbet's ON-SCREEN price; the CONTROL arm prices the same trigger at the
+    # same instant off API-Football's live aggregate. Two bots because
+    # shadow_bets_unique de-duplicates on (bot, match, market, selection). Primary
+    # metric is hit-rate minus the book's de-vigged prob (CLV inadmissible in
+    # play). STOP at n=1,000 if the lift is negative; decide at n=3,000.
+    # workers/jobs/inplay_collector.py · scripts/inplay_slowstate_eval.py.
+    BotSpec("bot_inplay_slowstate_v1", FAM_INPLAY, "in-play O/U 2.5 + 1x2", ANCHOR_NONE,
+            None, None, False,
+            "In-play slow-state rig, LIVE arm: T1 0-0 at 35-54' -> UNDER 2.5 at <= 2.20; T2 two-goal lead at 70-89' -> the leader at <= 2.20, at Epicbet's on-screen price. Paper. Metric: hit-rate minus the book's de-vigged prob; STOP n=1,000 if lift < 0, decide n=3,000."),
+    BotSpec("bot_inplay_slowstate_afctl_v1", FAM_INPLAY, "in-play O/U 2.5 + 1x2", ANCHOR_NONE,
+            None, None, False,
+            "CONTROL arm of the in-play rig: the same two triggers priced off API-Football's live aggregate at the same instant. The live-minus-control gap is the value of the fresh board. Never a strategy on its own.",
+            twin="bot_inplay_slowstate_v1"),
 ]
 
 

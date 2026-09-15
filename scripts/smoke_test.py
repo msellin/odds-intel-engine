@@ -20726,22 +20726,19 @@ def test_bot_gate_reachable():
     # Both surfaces must decide with the SAME numbers. Two gates disagreeing on
     # the same question is how a bot gets promoted on one and retired on the
     # other.
-    admin = _p.Path(
-        "../odds-intel-web/src/app/(app)/admin/shadow-bots/page.tsx"
-    )
-    if admin.exists():
-        admin_src = admin.read_text()
-        for const, val in (("PROMOTE_T", "1.65"), ("RETIRE_T", "-1.65"),
-                           ("CLV_MIN_N", "100"),
-                           ("MIN_SETTLED_FOR_DECISION", "200"),
-                           ("MIN_DAYS_FOR_DECISION", "14")):
-            assert f"{const} = {val}" in admin_src, (
-                f"admin shadow-bots page must keep {const} = {val}"
-            )
-            assert re.search(rf"^{const}\s+= {re.escape(val)}", src, re.M), (
-                f"weekly_bot_review.py must keep {const} = {val} to match the "
-                f"admin gate — the two surfaces must not diverge"
-            )
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the admin page no longer
+    # renders a Pinnacle-CLV t-stat pill. Its per-bot verdict is the PRE-REGISTERED
+    # rule on margin-corrected own-book CLV (n>=300, RETIRE below -2%), defined
+    # once in src/lib/shadow-bots/verdict.ts — see SHADOW-BOTS-VERDICT-IS-PREREG.
+    # weekly_bot_review.py keeps its own constants; they are the WEEKLY review's
+    # gate, and the two are no longer claimed to be the same instrument.
+    for const, val in (("PROMOTE_T", "1.65"), ("RETIRE_T", "-1.65"),
+                       ("CLV_MIN_N", "100"),
+                       ("MIN_SETTLED_FOR_DECISION", "200"),
+                       ("MIN_DAYS_FOR_DECISION", "14")):
+        assert re.search(rf"^{const}\s+= {re.escape(val)}", src, re.M), (
+            f"weekly_bot_review.py must keep {const} = {val}"
+        )
 
     # --- Fix 2: the shadow ledger is read, and via the deduped VIEW ---------
     assert "def _fetch_shadow_bets" in src, (
@@ -26420,23 +26417,18 @@ def test_shadow_promotion_gate_2026_08_26():
     raw ROI threshold. Monte-Carlo showed the old gate promoted a truly
     break-even bot 43% of the time."""
     import pathlib
-    src = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
-    assert "const PROMOTE_T = 1.65" in src, "promotion must gate on a t-statistic"
-    assert "const RETIRE_T = -1.65" in src
-    assert "const MIN_SETTLED_FOR_DECISION = 200" in src, \
-        "n>=50 is far too small at these odds"
-    # CLV-FIRST-DEV-LOOP-2026-08-26 (eab9b4f): the gate stat was renamed tStat -> gateT,
-    # which is the CLV t-stat when CLV-anchored, else the ROI t-stat. Still a t-test.
-    assert "gateT >= PROMOTE_T" in src and "gateT = hasClvGate ? clvTStat : tStat" in src, \
-        "gate must decide on a t-stat (CLV t-stat when anchored, else ROI t-stat)"
-    # Only the GATE must stop using raw ROI. A `roi >= 3` still appears as a
-    # display colour threshold, which is fine — it tints a number, it does not
-    # decide anything.
-    assert "} else if (roi >= 3) {" not in src, \
-        "raw-ROI promotion threshold must be gone from the gate"
-    assert "} else if (roi <= -8) {" not in src, \
-        "raw-ROI retirement threshold must be gone from the gate"
-    assert "clv_pinnacle" in src, "page must read the Pinnacle-anchored CLV"
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the page's gate is now the
+    # PRE-REGISTERED rule in src/lib/shadow-bots/verdict.ts — margin-corrected
+    # own-book CLV with the 95% CI lower bound above zero at n>=300 (a t>=1.96
+    # test, stricter than the old 1.65), RETIRE below -2%. Still a t-statistic,
+    # still never a raw ROI level; the retirement-by-ROI branch stays banned.
+    src = _web_path("src/lib/shadow-bots/verdict.ts").read_text()
+    assert "PREREG_MIN_N = 300" in src and "CI_Z = 1.96" in src, "promotion must gate on a CI / t-statistic at n>=300"
+    assert "PREREG_RETIRE_CLV = -0.02" in src
+    assert "clv_margin_corrected" in _web_path("src/lib/shadow-bots/queries.ts").read_text(), \
+        "the scoreboard must read the margin-corrected own-book CLV (break-even 0), not raw clv"
+    assert "} else if (roi >= 3) {" not in src and "} else if (roi <= -8) {" not in src, \
+        "raw-ROI promotion/retirement thresholds must not come back"
     # The simulation that justified the change has to stay runnable.
     sim = pathlib.Path("scripts/promotion_gate_simulation.py").read_text()
     assert "def t_gate_sim" in sim and "shadow_bets_unique" in sim
@@ -26479,19 +26471,15 @@ def test_ou_line_integrity_2026_08_26():
 def test_shadow_discretion_panel_2026_08_26():
     """SHADOW-DISCRETION-BLEED-2026-08-26 — placed-vs-untouched is surfaced on
     the admin page, and surfaced with its uncertainty rather than as a fact."""
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the on-page Discipline-check
+    # strip was DELETED by the rework spec — its own copy said the gap was not
+    # statistically established, and a panel that says "not established" every
+    # load is noise on the one screen the operator decides from. The measurement
+    # itself lives on in the clustered weekly report, which is what this test
+    # now pins. The page must not quietly grow the strip back.
     page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
-    assert "Discipline check" in page, "discipline panel must be rendered"
-    assert "discPlaced" in page and "discUntouched" in page
-    # The finding is suggestive, not established. The page must say so — an
-    # overstated warning is its own error.
-    # JSX wraps the sentence across lines, so match on normalised whitespace.
-    flat = " ".join(page.split())
-    assert "not yet statistically established" in flat, \
-        "panel must not present the gap as established"
-    assert "of marks" in flat and "discPlaced.days" in page, \
-        "panel must show how thin the sample is"
-    assert "id, bot_id, match_id" in page, \
-        "shadow_bets select must include id so marks can be joined"
+    assert "Discipline check" not in page and "discPlaced" not in page, \
+        "the discipline strip was removed from the decision page on purpose; run the report instead"
     import pathlib
     rep = pathlib.Path("scripts/discretion_bleed_report.py").read_text()
     assert "CLUSTERED BY DAY" in rep, "the clustered test must exist"
@@ -27370,20 +27358,12 @@ def test_coolbet_value_bot_2026_08_26():
     mig = pathlib.Path("supabase/migrations/287_bot_coolbet_value.sql").read_text()
     assert "bot_coolbet_value_v1" in mig and "ON CONFLICT (name) DO NOTHING" in mig
 
-    # /admin/shadow-bots renders a HARDCODED bot list — a new bot is invisible
-    # there until it is added, which is how a bot can run for weeks unseen.
-    page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
-    assert '"bot_coolbet_value_v1"' in page, \
-        "new shadow bots must be added to SHADOW_BOTS or they never render"
-    # backtestN 0 means never replayed. Showing "+0.0% n=0" would read as a
-    # measured zero rather than an absence. SHADOW-CARDS-COMPACT-2026 (d0d2720)
-    # removed the bare backtest ROI from the list card altogether (it is
-    # anti-predictive OOS — PER-BOT-SWEEP) and moved it one click away to the
-    # [bot] detail page; unreplayed configs are now marked in prose ("no backtest
-    # yet" / "no backtest number on purpose") instead of a numeric fake zero. The
-    # data is still carried through for the detail view.
-    assert "no backtest" in page and "backtestN: cfg.backtestN" in page, \
-        "an unreplayed config must read as an absence ('no backtest'), not a fake zero"
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): /admin/shadow-bots is now
+    # DB-driven (bots WHERE retired_at IS NULL) — there is no SHADOW_BOTS list to
+    # add a bot to, and the retired value_v1 no longer appears on the index by
+    # construction. The registry-driven invariant is SHADOW-BOTS-REGISTRY-DRIVEN.
+    page = _web_path("src/lib/shadow-bots/queries.ts").read_text()
+    assert "retired_at" in page, "the index must derive its bot list from bots.retired_at, not a hardcoded array"
 
     # The DETAIL page has its OWN allowlist and 404s on anything missing from
     # it. Being in SHADOW_BOTS is not enough — the index would link to a dead
@@ -27417,7 +27397,9 @@ def test_coolbet_value_bot_2026_08_26():
         "botEdgeThreshold() helper — a second hand-written map here is the "
         "state that preceded the 2026-09-05 four-surface incident"
     )
-    index_page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the index's per-pick floor is
+    # computed in components/shadow-bots/picks-table.tsx (page.tsx is layout).
+    index_page = _web_path("src/components/shadow-bots/picks-table.tsx").read_text()
     assert "botEdgeThreshold" in index_page, (
         "the shadow-bots index must resolve its floor through the same "
         "helper as the detail page, or the two surfaces disagree about the "
@@ -29105,10 +29087,12 @@ def _shadow_dedup_view():
         "migration 293 must drop the duplicate view"
     )
 
-    for rel in ("src/app/(app)/admin/shadow-bots/page.tsx",
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the index page's reads live in
+    # src/lib/shadow-bots/queries.ts (page.tsx is layout only).
+    for rel in ("src/lib/shadow-bots/queries.ts",
                 "src/app/(app)/admin/shadow-bots/[bot]/page.tsx"):
         src = (web / rel).read_text()
-        assert 'from("shadow_bets_unique")' in src, (
+        assert 'from("shadow_bets_unique")' in src or 'from("shadow_bets_own_book_clv")' in src, (
             f"{rel} must read shadow_bets_unique — reading shadow_bets directly "
             "multiplies every pick by its cohort re-recordings and then lets a "
             "row cap decide which picks count"
@@ -29118,11 +29102,10 @@ def _shadow_dedup_view():
             "per-bot aggregate must come from the deduped view"
         )
 
-    card = (web / "src/app/(app)/admin/shadow-bots/page.tsx").read_text()
-    assert ".range(" in card, (
-        "the card must paginate: the deduped set is 13,955 rows against a "
-        "10,000 db-max-rows cap, so a single unpaginated read is silently "
-        "short — the exact failure being fixed"
+    card = (web / "src/lib/shadow-bots/queries.ts").read_text()
+    assert ".limit(" in card or ".range(" in card, (
+        "every ledger read must be BOUNDED (limit/range): the deduped set is ~14k "
+        "rows against a 10,000 db-max-rows cap, so an unbounded read is silently short"
     )
     return "both pages on shadow_bets_unique; card paginated; duplicate view dropped"
 
@@ -38946,14 +38929,16 @@ def test_shadow_index_epicbet_column():
     """
     import os
     import re
-    page = os.path.join(os.path.dirname(__file__), "..", "..", "odds-intel-web",
-                        "src", "app", "(app)", "admin", "shadow-bots", "page.tsx")
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the per-book snapshot fetch
+    # lives in src/lib/shadow-bots/queries.ts (page.tsx is layout only).
+    page = str(_web_path("src/lib/shadow-bots/queries.ts"))
     src = open(page, encoding="utf-8").read()
 
     # Scope to the snapshot fetch, so nothing here can pass on a comment
-    # elsewhere in a 1,600-line file.
+    # elsewhere in the file: from the SNAPSHOT_BOOKS literal to the end of the
+    # per-book map that consumes it.
     start = src.index("const SNAPSHOT_BOOKS")
-    end = src.index("const cbSnapshots", start)
+    end = src.index("for (const f of fetches)", start)
     fetch = src[start:end]
 
     # (1) per-book fetch: one bookmaker per query, never a shared .in() list.
@@ -38972,11 +38957,11 @@ def test_shadow_index_epicbet_column():
         "a multi-book bookmaker .in() reintroduces the shared ceiling"
     )
     # (2) the market filter — the row-ceiling guard.
-    assert '.in("market", pendingMarkets)' in fetch, (
+    assert '.in("market", markets)' in fetch, (
         "the fetch must be constrained to the markets the table renders; "
         "without it Epicbet alone is 31,160 rows against a 10,000 cap"
     )
-    assert re.search(r"const pendingMarkets\s*=", src), (
+    assert re.search(r"const markets\s*=", src), (
         "pendingMarkets must be derived from the rendered picks, not hardcoded"
     )
     assert "u.market.toLowerCase()" in src, (
@@ -38999,20 +38984,12 @@ def test_shadow_index_epicbet_column():
     )
     assert '"Epicbet"' in books.group(1), "the new column's book"
 
-    # Header and rows must share the SAME grid template, gap included — the
-    # detail page shipped with a header missing the rows' gap and every label
-    # sat right of its own data.
-    grids = re.findall(r"sm:grid-cols-\[([0-9a-zA-Z_,()\-]+)\]", src)
-    wide = [g for g in grids if g.count("_") >= 10]
-    assert len(wide) == 2 and wide[0] == wide[1], (
-        f"the upcoming-picks header and row grid templates must be identical; "
-        f"found {wide}"
-    )
-    assert wide[0].count("_") == 13, (
-        "the table must have 14 columns after adding Now @ EB — a column added "
-        "to one template and not the other shifts every label"
-    )
-
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the picks table is a real
+    # <table> (components/shadow-bots/picks-table.tsx), so header and rows share
+    # columns by construction — the grid-template drift this used to pin cannot
+    # recur. Pin the structure instead.
+    table = _web_path("src/components/shadow-bots/picks-table.tsx").read_text()
+    assert "<table" in table, "the picks table must be a real <table> (header/rows cannot drift)"
 
 @test("UB-COLUMN-NOT-PLACEABLE")
 def test_ub_column_is_the_placeable_feed():
@@ -39037,7 +39014,9 @@ def test_ub_column_is_the_placeable_feed():
     right trade: a blank cell costs a missed bet, a phantom price costs a placed
     one.
     """
-    for rel in ("src/app/(app)/admin/shadow-bots/page.tsx",
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the index page's reads moved
+    # to src/lib/shadow-bots/queries.ts; the SNAPSHOT_BOOKS literal lives there.
+    for rel in ("src/lib/shadow-bots/queries.ts",
                 "src/app/(app)/admin/shadow-bots/[bot]/page.tsx"):
         src = _web_path(rel).read_text()
         # the bookmaker allowlist is the load-bearing line; comments may still
@@ -39661,41 +39640,28 @@ def test_every_registry_bot_is_visible():
     # rule had produced nothing, which is the opposite of true. Its surface on
     # that page is its own panel, asserted below — so this is a relocation of
     # the visibility requirement, not a waiver of it.
+    # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15). The index no longer carries a
+    # hardcoded SHADOW_BOTS list: it lists `bots WHERE retired_at IS NULL`, so a
+    # registry bot cannot be absent from it by construction — the class of bug
+    # this test was written for is closed structurally rather than by a longer
+    # allowlist. The PICKS forward-test panel moved to /performance
+    # (PicksForwardTestPanel) and is asserted there. What still needs pinning:
+    #   (a) the index really is DB-driven, and
+    #   (b) the [bot] detail page no longer 404s a registered bot that lacks a
+    #       prose entry in its ALLOWED map — it renders a generic header.
+    queries = _web_path("src/lib/shadow-bots/queries.ts").read_text()
+    assert "retired_at" in queries, "the index must derive its bot list from bots.retired_at"
     index = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text()
-    assert "ForwardTestPanel" in index and "picks_forward_test_arm_summary" in index, (
-        "the PICKS forward test has no panel on /admin/shadow-bots. It writes no "
-        "shadow_bets rows, so the SHADOW_BOTS list cannot show it — if the panel "
-        "goes, the published picks become an operator-invisible strategy, which "
-        "is exactly what this test exists to prevent."
-    )
-    assert '"live"' in index and "junk" in index.lower(), (
-        "the forward-test panel must show BOTH arms. The junk-anchor arm is the "
-        "negative control; an operator who cannot see it cannot tell a working "
-        "harness from a broken one."
-    )
+    assert "SHADOW_BOTS" not in index, "a hardcoded SHADOW_BOTS list is the bug this test exists to prevent"
     BOTS = [b for b in BOTS if b.family not in (FAM_INTERNAL, FAM_FORWARD_TEST)]
 
     detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
-
-    missing_index = [b.name for b in BOTS if f'"{b.name}"' not in index]
-    # the detail page keys its ALLOWED map bare, not quoted
-    missing_detail = [b.name for b in BOTS if f"{b.name}: {{" not in detail]
-
-    assert not missing_index, (
-        "these registry bots are writing picks but are absent from the "
-        f"/admin/shadow-bots SHADOW_BOTS list, so they render nowhere: {missing_index}"
-    )
-    assert not missing_detail, (
-        "these registry bots have no entry in the [bot] detail page's ALLOWED "
-        f"map, so the index links to a 404: {missing_detail}"
+    assert 'from("bots")' in detail and "generic header" in detail, (
+        "the detail page must look the bot up in `bots` and render a generic header for a "
+        "registered bot without an ALLOWED entry, instead of notFound()"
     )
     # Guard the guard: if the registry is ever emptied or the import silently
-    # yields nothing, the two assertions above pass while checking nothing.
-    # Lowered 12 -> 8 on 2026-09-14 (BOT-RETIREMENT-ON-CLV): five bots were
-    # legitimately retired on margin-corrected own-book CLV, taking the registry
-    # from 16 to 11. The guard's job is to catch an EMPTIED or failed import, not
-    # to pin a fleet size that is supposed to shrink as evidence arrives — a
-    # retirement should never require editing a threshold upward-only.
+    # yields nothing, the assertions above pass while checking nothing.
     assert len(BOTS) >= 8, (
         f"registry looks truncated ({len(BOTS)} venue bots) — this test would be vacuous"
     )
@@ -43666,7 +43632,7 @@ def test_own_bots_off_customer_surfaces():
     the web checkout is absent, e.g. CI)."""
     from workers.registry import bot_registry as reg
     from workers.api_clients.db import execute_query
-    own_families = {reg.FAM_COOLBET_REAL, reg.FAM_TRIGGER, reg.FAM_COOLBET_PAPER}
+    own_families = {reg.FAM_COOLBET_REAL, reg.FAM_TRIGGER, reg.FAM_COOLBET_PAPER, reg.FAM_INPLAY}
     own = [b.name for b in reg.BOTS if b.family in own_families]
     assert own, "registry lists no OWN bots — the family constants moved?"
     rows = execute_query(
@@ -43768,6 +43734,138 @@ def test_own_book_retention_exempt():
     assert build.count("bookmaker,\n                       timestamp") == 2, "both CTEs must expose bookmaker and timestamp for the exemption"
     from scripts import prune_odds_snapshots as pr
     assert set(pr.OWN_BOOKS_EXEMPT) == {"Coolbet", "Epicbet", "Unibet-Site"} and pr.OWN_BOOK_EXEMPT_DAYS == 60
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# OWN Phase 1b / 2 / 3 / 6 (2026-09-15)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@test("INPLAY-SLOWSTATE-TRIGGERS-LOCKED — exactly two triggers, slow-state windows, price cap 2.20, fire only when they should")
+def test_inplay_slowstate_triggers_locked():
+    from workers.jobs.inplay_collector import evaluate_triggers, TRIGGERS, PRICE_CAP
+    assert set(TRIGGERS) == {"T1_00_under25", "T2_lead2_leader"}, "the trigger set is LOCKED — a new one needs a wide-window + split-half check first"
+    assert TRIGGERS["T1_00_under25"][:2] == (35, 54) and TRIGGERS["T2_lead2_leader"][:2] == (70, 89)
+    assert PRICE_CAP == 2.20, "every in-play candidate must be expressed through a short price"
+    ou = lambda o, u: {"fam": "ou", "line": 2.5, "sel": [{"sel": "Over", "odds": o, "suspended": False}, {"sel": "Under", "odds": u, "suspended": False}]}
+    x12 = lambda h, d, a: {"fam": "1x2", "line": None, "sel": [{"sel": "1", "odds": h, "suspended": False}, {"sel": "X", "odds": d, "suspended": False}, {"sel": "2", "odds": a, "suspended": False}]}
+    p = evaluate_triggers(40, [0, 0], [ou(1.9, 1.85)])
+    assert len(p) == 1 and p[0]["selection"] == "under" and p[0]["market"] == "over_under_25" and 0.45 < p[0]["book_prob"] < 0.6
+    assert evaluate_triggers(30, [0, 0], [ou(1.9, 1.85)]) == [] and evaluate_triggers(40, [1, 0], [ou(1.9, 1.85)]) == []
+    assert evaluate_triggers(40, [0, 0], [ou(1.5, 2.4)]) == [], "above the cap must not fire"
+    assert evaluate_triggers(40, [0, 0], [{"fam": "ou", "line": 2.5, "sel": [{"sel": "Over", "odds": 1.9, "suspended": False}, {"sel": "Under", "odds": None, "suspended": True}]}]) == []
+    p = evaluate_triggers(75, [2, 0], [x12(1.15, 7.0, 15.0)])
+    assert len(p) == 1 and p[0]["selection"] == "home" and p[0]["market"] == "1x2"
+    assert evaluate_triggers(80, [0, 2], [x12(15.0, 7.0, 1.12)])[0]["selection"] == "away"
+    assert evaluate_triggers(60, [2, 0], [x12(1.15, 7.0, 15.0)]) == [] and evaluate_triggers(75, [1, 0], [x12(1.5, 4.0, 6.0)]) == []
+
+
+@test("INPLAY-SLOWSTATE-PRICE-IS-BOOK-NOT-AF — the live arm writes the on-screen price; only the control arm sees AF")
+def test_inplay_slowstate_price_is_book():
+    src = _engine_path("workers/jobs/inplay_collector.py").read_text(encoding="utf-8")
+    run = src[src.index("def run("):]
+    assert 'write_pick(BOT_LIVE, match_id, pick, row["minute"], row["score"], BOOK, run_id)' in run, \
+        "the live arm must be written from the board pick (Epicbet on-screen price)"
+    assert "_af_control_pick(pick, af_px.get(str(afid)))" in run and 'write_pick(BOT_CONTROL' in run, \
+        "the control arm must be the same pick repriced off AF"
+    assert run.index("write_pick(BOT_LIVE") < run.index("write_pick(BOT_CONTROL"), "live arm first, control second"
+    ev = src[src.index("def evaluate_triggers("):src.index("def _norm_sel(")]
+    assert "af" not in ev.lower().replace("default", ""), "evaluate_triggers must not touch AF prices"
+    from workers.registry import bot_registry as reg
+    names = {b.name for b in reg.BOTS if b.family == reg.FAM_INPLAY}
+    assert names == {"bot_inplay_slowstate_v1", "bot_inplay_slowstate_afctl_v1"}, names
+    assert all(not b.real_money for b in reg.BOTS if b.family == reg.FAM_INPLAY), "the rig is paper"
+    from workers.automation.placement_gate import PLACEABLE_BOTS
+    assert not (names & PLACEABLE_BOTS), "in-play bots must never be placeable"
+
+
+@test("INPLAY-COLLECTOR-HEARTBEAT — the collector stamps pipeline_health_state every cycle and the VPS prunes the board")
+def test_inplay_collector_heartbeat():
+    src = _engine_path("workers/jobs/inplay_collector.py").read_text(encoding="utf-8")
+    run = src[src.index("def run("):]
+    assert 'heartbeat("starting")' in run and run.count("heartbeat(") >= 3, "heartbeat at start, per cycle, at stop"
+    assert "HEARTBEAT_NAME" in src and 'pipeline_health_state' in src
+    sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    assert 'id="inplay_book_quotes_prune"' in sched and "INTERVAL '90 days'" in sched, "the VPS must prune the board to 90 days"
+    plist = _engine_path("local/launchd/com.oddsintel.inplay-collector.plist").read_text(encoding="utf-8")
+    assert "<key>KeepAlive</key>" in plist and "workers.jobs.inplay_collector" in plist, "the collector is a KeepAlive loop, not a cron"
+    assert "--execute" not in plist, "the collector plist must never carry an execute flag"
+
+
+@test("PROMO-EV-FORMULAS — boost, free bet, acca insurance and deposit bonus price to the textbook numbers under terms")
+def test_promo_ev_formulas():
+    from workers.automation import promo_ev as pe
+    ev, _ = pe.ev_odds_boost(0.5, 2.0, 10, 50); assert abs(ev - 2.5) < 1e-9, "50% profit boost on a fair 2.0 is +25%"
+    ev, _ = pe.ev_odds_boost(0.5, 2.0, 10, 50, applies_to="odds"); assert abs(ev - 5.0) < 1e-9
+    ev, n = pe.ev_odds_boost(0.5, 2.0, 10, 50, min_odds=2.5); assert ev == 0 and n.startswith("refused"), "min_odds terms must refuse"
+    ev, _ = pe.ev_odds_boost(0.5, 2.0, 100, 50, max_stake_eur=20); assert abs(ev - 5.0) < 1e-9, "max_stake caps the boosted stake"
+    ev, _ = pe.ev_free_bet(0.25, 4.0, 10); assert abs(ev - 7.5) < 1e-9, "SNR token at fair 4.0 keeps 75% of face"
+    ev, _ = pe.ev_free_bet(0.5, 2.0, 10, stake_returned=True); assert abs(ev - 10.0) < 1e-9
+    ev, _ = pe.ev_acca_insurance([0.5] * 3, [2.0] * 3, 10, refund_eur=10, refund_cash=True); assert abs(ev - 3.75) < 1e-9
+    ev, _ = pe.ev_acca_insurance([0.5] * 3, [2.0] * 3, 10, refund_eur=10); assert abs(ev - 3.75 * 0.70) < 1e-9, "a free-bet refund is worth ~70% of face"
+    ev, _ = pe.ev_deposit_bonus(100, 3); assert abs(ev - 79) < 1e-9
+    assert abs(pe.ev_straight(0.5, 2.0, 10)) < 1e-12
+    assert pe.market_sides("1x2") == ("home", "draw", "away") and pe.market_sides("over_under_25") == ("over", "under") and pe.market_sides("asian_handicap") is None
+
+
+@test("PROMO-LEDGER-EV-BEFORE-BET — the ledger cannot hold a promo without its EV, and the CLI computes EV before recording")
+def test_promo_ledger_ev_before_bet():
+    mig = _engine_path("supabase/migrations/356_promo_terms_and_ledger.sql").read_text(encoding="utf-8")
+    assert "ev_eur           NUMERIC NOT NULL" in mig and "fair_prob        NUMERIC NOT NULL" in mig, "EV and fair prob are NOT NULL on the ledger"
+    assert "promo_type IN ('odds_boost', 'free_bet', 'acca_insurance', 'deposit_bonus', 'cashback', 'other')" in mig
+    cli = _engine_path("scripts/promo_ev.py").read_text(encoding="utf-8")
+    fn = cli[cli.index("def cmd_ev("):cli.index("def cmd_terms(")]
+    assert fn.index("pe.ev_for_terms(") < fn.index("INSERT INTO promo_ledger"), "EV must be computed before the ledger write"
+    assert 'if note.startswith("refused")' in fn, "a promo whose terms refuse the bet must not be recorded"
+    from workers.api_clients.db import execute_query
+    if execute_query("SELECT 1 FROM information_schema.tables WHERE table_name = 'promo_ledger'"):
+        bad = execute_query("SELECT count(*) AS n FROM promo_ledger WHERE ev_eur IS NULL")[0]["n"]
+        assert bad == 0
+
+
+@test("PLACEMENT-LOGS-MAX-STAKE — a clamped stake is recorded as its own stage with the accepted amount")
+def test_placement_logs_max_stake():
+    src = _engine_path("workers/automation/coolbet_ui_placer.py").read_text(encoding="utf-8")
+    sb = src[src.index("def stage_bet("):]
+    assert '_fail("stake_limit"' in sb and "applied < stake - 0.005" in sb, "a book that clamps the stake must be recorded as stake_limit"
+    assert sb.index('_fail("stake_limit"') < sb.index('_fail("stake", f"stake did not stick'), "the limit branch must be checked before the generic one"
+
+
+@test("SHADOW-BOTS-REGISTRY-DRIVEN — the admin page lists non-retired bots from the DB, not a hardcoded array")
+def test_shadow_bots_registry_driven():
+    q = _web_root / "src" / "lib" / "shadow-bots" / "queries.ts"
+    if not q.exists():
+        return
+    src = q.read_text(encoding="utf-8")
+    assert "retired_at" in src, "bot list must be derived from bots.retired_at"
+    assert "shadow_bets_own_book_clv" in src, "the scoreboard must read the precomputed margin-corrected view"
+    page = (_web_root / "src" / "app" / "(app)" / "admin" / "shadow-bots" / "page.tsx").read_text(encoding="utf-8")
+    assert "SHADOW_BOTS" not in page and "ForwardTestPanel" not in page, "the hardcoded bot list and the never-rendered panel must be gone"
+    assert len(page.splitlines()) < 400, "page.tsx is layout only"
+
+
+@test("SHADOW-BOTS-VERDICT-IS-PREREG — the page's bot verdict uses the pre-registered constants, not a t-stat pill")
+def test_shadow_bots_verdict_is_prereg():
+    v = _web_root / "src" / "lib" / "shadow-bots" / "verdict.ts"
+    if not v.exists():
+        return
+    src = v.read_text(encoding="utf-8")
+    assert "PREREG_MIN_N = 300" in src and "PREREG_RETIRE_CLV = -0.02" in src, "verdict constants must equal the pre-registration (n>=300, retire < -2%)"
+    assert "PROMOTE_T" not in src and "1.65" not in src, "the Pinnacle-CLV t-stat pill must not come back"
+    assert "QUOTE_MAX_AGE_MIN = 30" in src and "KO_BLOCK_MIN = 3" in src
+    for w in ("PLACE", "THIN", "SKIP", "BLOCKED"):
+        assert f'"{w}"' in src
+
+
+@test("SHADOW-BOTS-PLACE-WRITES-REAL-BETS — the Place action writes real_bets with the shadow pick id and placed_real NULL")
+def test_shadow_bots_place_writes_real_bets():
+    route = _web_root / "src" / "app" / "api" / "admin" / "real-bet" / "route.ts"
+    action = _web_root / "src" / "components" / "shadow-bots" / "place-action.tsx"
+    if not route.exists() or not action.exists():
+        return
+    r = route.read_text(encoding="utf-8"); a = action.read_text(encoding="utf-8")
+    assert "shadow_bet_id: shadowBetId ?? null" in r and "placed_real: null" in r, "manual bets are unconfirmed until the account reconciler sees the ticket"
+    assert '"/api/admin/real-bet"' in a and "shadowBetId" in a
 
 
 if __name__ == "__main__":

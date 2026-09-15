@@ -1,8 +1,11 @@
 # OWN implementation — CONTEXT
 
-**Last updated: 2026-09-15.** Plan accepted in principle by the owner ("i like your
-findings"); reviewed by two adversarial agents; corrections applied to
-`docs/OWN_STRATEGY_AUDIT_2026_09_15.md` §0. No implementation code written yet.
+**Last updated: 2026-09-15 (evening).** Phases 0, 1a, 1b, 2, 3 and 6 are CODE-COMPLETE
+and pushed (engine `6fdc37fa`, `a104b0d3`, this commit; web `c8fdade`…`173e56a`, deployed).
+Found during Phase 0: `ROUTER_ALLOW_REAL` was SET in `.env` (router ran in real mode);
+`real_bets.simulated_bet_id` FK swallowed every confirmed placement's ledger row since
+09-13 (fixed: `shadow_bet_id`, mig 354). Remaining: Phase 5 cull; verifier agents;
+owner actions (Phase 2 accounts + T&Cs; arm nothing).
 
 ## Key files
 
@@ -36,7 +39,7 @@ findings"); reviewed by two adversarial agents; corrections applied to
 - In-play target book is **Coolbet first** (tighter in-play margin, has a placer),
   Epicbet second; collector runs on the Mac.
 - In-play primary metric is hit-rate minus de-vigged book implied prob, not ROI, not CLV.
-- Next migration number: **354** (353 is the latest committed).
+- Migrations shipped today: 354 (real_money_armed + real_bets.shadow_bet_id), 355 (shadow mc-CLV + freshness + views), 356 (promo), 357 (in-play board + bots). Next free: **358**.
 
 ## Corrections to earlier advice (2026-09-15)
 
@@ -51,9 +54,9 @@ findings"); reviewed by two adversarial agents; corrections applied to
 
 ## Owner decisions pending (⚖️)
 
-1. Unload the two `--execute` plists now (Phase 0.C).
-2. Go/no-go on Phase 1b (in-play rig, ~3 days, 4–7 months paper).
-3. Open accounts at Olybet / Optibet / Betsafe / Paf / Tonybet / bet365.ee for Phase 2 and supply the T&Cs.
+1. ~~Unload the two `--execute` plists~~ DONE 2026-09-15 (moved to `~/Library/LaunchAgents/paused/`).
+2. ~~Go/no-go on Phase 1b~~ built per the owner's "finish everything" instruction; Epicbet only, Coolbet in-play filed.
+3. Open accounts at Olybet / Optibet / Betsafe / Paf / Tonybet / bet365.ee for Phase 2 and enter the T&Cs with `scripts/promo_ev.py add-terms`.
 
 ## Scope
 
