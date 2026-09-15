@@ -401,6 +401,70 @@ def attach_message_id(pick_id: str, message_id: int | None) -> None:
     )
 
 
+GRADE_B_EDGE = 0.03   # == MIN_EDGE: the price at which a leg becomes a pick
+GRADE_A_EDGE = 0.05
+
+
+def required_odds(p_sharp: float) -> tuple[float, float, float]:
+    """(break-even, grade-B price, grade-A price) for a given sharp probability.
+
+    edge = p_sharp * odds - 1, so the price needed for a target edge t is
+    (1 + t) / p_sharp. Exact arithmetic off the sharp line — it states what the
+    pick is worth taking at, and predicts nothing about whether it wins.
+    """
+    return 1.0 / p_sharp, (1.0 + GRADE_B_EDGE) / p_sharp, (1.0 + GRADE_A_EDGE) / p_sharp
+
+
+def write_board(pool: list[dict]) -> int:
+    """Replace the live candidate board that /picks renders as a watchlist.
+
+    PICKS-BOARD-WATCHLIST (2026-09-15). The rule publishes only legs over the
+    floor, and on a flat day that is nothing at all — 0 of 31 on the day this
+    was written. Rather than lower the floor, show the board with the price each
+    leg would need. A reader who finds 2.18 has a pick; one who only finds 2.15
+    knows to leave it.
+
+    ⚠️ This writes `picks_board`, NEVER `picks_forward_test`. A row here did not
+    qualify; counting it in the pre-registered ledger would inflate n with bets
+    nobody was told to take. Separate table, separate view, no `arm` column.
+
+    Only legs at or above break-even are kept: below that the sharp line says
+    the price is bad at any grade, and listing it would be noise.
+    """
+    rows = []
+    for c in pool:
+        be, b3, a5 = required_odds(c["p_sharp"])
+        if c["odds"] < be:
+            continue
+        rows.append((c["match_id"], c["market"], c["selection"], c["odds"],
+                     c["bookmaker"], c["p_sharp"], c["edge"], be, b3, a5,
+                     c["anchor_overround"], c["kickoff_at"]))
+    if not rows:
+        return 0
+    try:
+        # Replace, not append: this is "the board as it stands", not history.
+        execute_write("DELETE FROM picks_board WHERE kickoff_at < NOW()")
+        for r in rows:
+            execute_write(
+                """INSERT INTO picks_board
+                     (match_id, market, selection, odds, bookmaker, p_sharp,
+                      edge, odds_breakeven, odds_grade_b, odds_grade_a,
+                      anchor_overround, kickoff_at, updated_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, NOW())
+                   ON CONFLICT (match_id, market, selection) DO UPDATE SET
+                     odds = EXCLUDED.odds, bookmaker = EXCLUDED.bookmaker,
+                     p_sharp = EXCLUDED.p_sharp, edge = EXCLUDED.edge,
+                     odds_breakeven = EXCLUDED.odds_breakeven,
+                     odds_grade_b = EXCLUDED.odds_grade_b,
+                     odds_grade_a = EXCLUDED.odds_grade_a,
+                     anchor_overround = EXCLUDED.anchor_overround,
+                     updated_at = NOW()""", r)
+    except Exception as e:
+        log.warning("write_board failed (non-fatal — publishing is unaffected): %s", e)
+        return 0
+    return len(rows)
+
+
 def render(c: dict) -> str:
     pick = PICK_LABEL.get((c["market"], c["selection"]),
                           f"{c['market']} {c['selection']}")
@@ -430,6 +494,8 @@ def main() -> int:
     # caps per call (correct for offline analysis); the live path must cap per DAY.
     room = daily_room()
     picks = select(pool, room)
+    if args.send:
+        print(f"board refreshed: {write_board(pool)} legs at/above break-even")
     if not picks:
         print(f"no qualifying picks — nothing to publish (valid outcome; "
               f"{room} of {TOP_N} slots free today)")

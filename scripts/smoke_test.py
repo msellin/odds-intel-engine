@@ -42446,6 +42446,86 @@ def test_retention_artifact_gotcha():
     )
 
 
+@test("PICKS-BOARD-WATCHLIST — the watchlist is never pooled into the pre-registered ledger")
+def test_picks_board_watchlist():
+    """PICKS-BOARD-WATCHLIST (2026-09-15).
+
+    The rule publishes only legs clearing a 3% expected-ROI floor; on the day
+    this shipped that was 0 of 31, and the owner needs something on the page
+    every day. The answer is to show the board with the price each leg would
+    need — arithmetic off the sharp line, `(1 + t) / p_sharp`, which claims
+    nothing — rather than to lower the floor.
+
+    THE ONE THING THAT MUST NOT HAPPEN is these legs leaking into
+    `picks_forward_test`. That table is a pre-registered test whose n feeds
+    stopping rules at 200/400/800; a watchlist row DID NOT QUALIFY, and counting
+    it would inflate the ledger with bets nobody was told to take — the exact
+    discipline failure the pre-registration exists to prevent."""
+    from pathlib import Path
+    mig = Path(__file__).parent.parent / "supabase" / "migrations" / \
+        "354_picks_board_watchlist.sql"
+    assert mig.exists(), "migration 354 (the watchlist table) is missing"
+    sql = mig.read_text()
+    assert "CREATE TABLE IF NOT EXISTS picks_board" in sql
+    assert "GRANT SELECT ON picks_board_public" in sql, (
+        "no GRANT — PostgREST 404s a view the anon role cannot select"
+    )
+    assert "NOTIFY pgrst" in sql and "reload schema" in sql, (
+        "migration 354 must NOTIFY pgrst — a new view 404s until reload, which "
+        "looks exactly like the page being broken (bitten twice: migs 278, 310)"
+    )
+
+    src = _engine_path("scripts/publish_picks_forward_test.py").read_text()
+    board_fn = src[src.index("def write_board("):src.index("def render(")]
+    # Strip the docstring and comments before asserting. RELIABILITY_LEDGER #9:
+    # "inspect code, not comments" — twice a comment EXPLAINING a rule has
+    # tripped the assertion forbidding it, and this function's docstring says
+    # in terms that it must never write picks_forward_test.
+    # Drop ONLY the docstring — via ast, not a regex. A regex over triple-quoted
+    # strings also eats the SQL literals, which are the very thing being checked.
+    import ast as _ast, textwrap as _tw
+    _fn = _ast.parse(_tw.dedent(board_fn)).body[0]
+    if (_fn.body and isinstance(_fn.body[0], _ast.Expr)
+            and isinstance(_fn.body[0].value, _ast.Constant)
+            and isinstance(_fn.body[0].value.value, str)):
+        _fn.body = _fn.body[1:]
+    _code = _ast.unparse(_fn)
+    # THE INVARIANT: the board writer must not touch the ledger.
+    assert "picks_forward_test" not in _code, (
+        "write_board references picks_forward_test. The watchlist must write "
+        "ONLY picks_board — a leg here did not qualify, and pooling it into the "
+        "pre-registered ledger inflates n with bets nobody was told to take."
+    )
+    assert "INSERT INTO picks_board" in _code
+    # and it must never suppress a publish
+    assert "non-fatal" in board_fn, (
+        "a failed board refresh must not stop the publisher — the watchlist is "
+        "a display surface, the picks are the product"
+    )
+
+    # required_odds is the arithmetic the whole feature rests on.
+    from scripts.publish_picks_forward_test import required_odds, GRADE_B_EDGE, MIN_EDGE
+    be, b, a = required_odds(0.50)
+    assert abs(be - 2.0) < 1e-9, f"break-even at p=0.5 must be 2.00, got {be}"
+    assert abs(b - 2.06) < 1e-9, f"grade-B at p=0.5 must be 2.06, got {b}"
+    assert a > b > be, "the grade ladder must be monotone in price"
+    assert GRADE_B_EDGE == MIN_EDGE, (
+        "grade B must be exactly the publishing floor. If they drift, the page "
+        "tells a reader a price qualifies when the rule would not publish it."
+    )
+
+    # the page must not render watchlist legs as picks
+    page = _web_path("src/app/picks/page.tsx").read_text()
+    flat = " ".join(page.split())
+    assert "not picks yet" in flat, (
+        "the watchlist heading must say these are not picks"
+    )
+    assert "const watchlist" in page and "const board = picks.filter" in page, (
+        "the watchlist and the published board must be separate variables — "
+        "conflating them is the whole risk of this feature"
+    )
+
+
 @test("FORWARD-TEST-VERSIONS-DO-NOT-VANISH — a rule bump must not erase the published record")
 def test_forward_test_versions_do_not_vanish():
     """FORWARD-TEST-VERSIONS-DO-NOT-VANISH (2026-09-15).

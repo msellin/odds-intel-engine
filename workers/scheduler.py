@@ -2200,7 +2200,7 @@ def job_publish_picks_forward_test():
     """
     from scripts.publish_picks_forward_test import (
         load_candidates, render, claim, attach_message_id, junk_anchor_arm,
-        select, daily_room, TOP_N,
+        select, daily_room, write_board, TOP_N,
     )
     from workers.notify.telegram import send_telegram_public
     from workers.automation.coolbet_state import is_publishing_paused
@@ -2240,10 +2240,21 @@ def job_publish_picks_forward_test():
     # not a cap at all. Counted on published_at::date in UTC; falls CLOSED.
     room = daily_room()
     picks = select(pool, room)
+
+    # PICKS-BOARD-WATCHLIST: refresh the live board on EVERY pass, including
+    # passes that publish nothing — a flat day is exactly when the board is the
+    # only thing /picks has to show. Writes `picks_board`, never the ledger.
+    try:
+        n_board = write_board(pool)
+    except Exception as e:
+        n_board = 0
+        log.warning("picks_forward_test: board refresh failed (non-fatal): %s", e)
+
     if not picks:
         log.info("picks_forward_test: nothing qualifies this pass "
-                 "(valid outcome; %d of %d slots free today)", room, TOP_N)
-        return {"picks": 0, "published": 0, "room": room}
+                 "(valid outcome; %d of %d slots free today, board %d legs)",
+                 room, TOP_N, n_board)
+        return {"picks": 0, "published": 0, "room": room, "board": n_board}
 
     # PUBLISH-CLAIM-BEFORE-SEND (2026-09-15): claim the row FIRST. A returned id
     # means this run created it and may send; None means it is already published
