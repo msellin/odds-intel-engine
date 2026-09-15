@@ -1611,7 +1611,10 @@ def stage_bet(
         # amount in `stake_applied`, so the first stake refusal is the day the
         # strategy's ceiling becomes known (all 143 placements to date were
         # accepted at the full EUR 10).
-        if applied < stake - 0.005:
+        # `applied == 0` is an EMPTY field (set_stake returns 0.0 on an empty or
+        # unparseable read) — that is the UI dropping the fill, not the book
+        # clamping the stake. Only a POSITIVE amount below the request is a limit.
+        if 0.0 < applied < stake - 0.005:
             return _fail("stake_limit",
                          f"book clamped the stake: wanted {stake:.2f}, accepted {applied:.2f} "
                          f"(max accepted stake = {applied:.2f})",

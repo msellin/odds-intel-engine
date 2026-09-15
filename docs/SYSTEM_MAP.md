@@ -112,13 +112,13 @@ registry and regenerate.
 | Bot | Market | Anchor | Edge floor | Odds floor | Money | What it does |
 |---|---|---|---|---|---|---|
 | `bot_coolbet_trigger_sharp_1x2_v1` | 1x2 | sharp | 3% | 1.01 | paper | Sharp twin: fires when Coolbet's 1x2 price beats the de-vigged Pinnacle line by ≥3% (no odds floor — experimental). Paper. Head-to-head vs the model twin. |
-| `bot_coolbet_trigger_ou_v1` | O/U 2.5 | model | 8% | 1.80 | paper | Fires when Coolbet's O/U 2.5 price lands in the MODEL trigger window (model edge ≥8% at Coolbet's own odds). Paper. OOS backtest +4.3% not-robust. |
+| ~~`bot_coolbet_trigger_ou_v1`~~ **RETIRED** | O/U 2.5 | model | 8% | 1.80 | paper | Fires when Coolbet's O/U 2.5 price lands in the MODEL trigger window (model edge ≥8% at Coolbet's own odds). Paper. OOS backtest +4.3% not-robust. ⚠️ **RETIRED in the DB** (migrations 336/348, BOT-RETIREMENT-ON-CLV); kept struck-through for history. Struck 2026-09-15 — the drift test was registry→map only and could not see a map row for a bot the registry had dropped. |
 | `bot_coolbet_trigger_sharp_ou_v1` | O/U 2.5 | sharp | 3% | 1.01 | paper | Sharp twin: fires when Coolbet's O/U 2.5 price beats the de-vigged Pinnacle line by ≥3% (no odds floor — experimental). Paper. Head-to-head vs the model twin. |
 | `bot_unibet_trigger_sharp_1x2_v1` | 1x2 | sharp | 3% | 1.01 | paper | Unibet 1x2 sharp trigger. **Where the DRAW edge the model can't see should surface** (soft-book mispricing vs de-vig Pinnacle, §57). Paper. |
-| `bot_unibet_trigger_ou_v1` | O/U 2.5 | model | 8% | 1.80 | paper | Stage 3b — Unibet O/U 2.5 model trigger. Paper twin of the Coolbet O/U trigger. |
+| ~~`bot_unibet_trigger_ou_v1`~~ **RETIRED** | O/U 2.5 | model | 8% | 1.80 | paper | Stage 3b — Unibet O/U 2.5 model trigger. Paper twin of the Coolbet O/U trigger. ⚠️ **RETIRED in the DB** (migrations 336/348, BOT-RETIREMENT-ON-CLV); kept struck-through for history. Struck 2026-09-15 — the drift test was registry→map only and could not see a map row for a bot the registry had dropped. |
 | `bot_unibet_trigger_sharp_ou_v1` | O/U 2.5 | sharp | 3% | 1.01 | paper | Unibet O/U 2.5 sharp trigger. Paper. |
 | `bot_trigger_1x2_sharp_v1` | 1x2 | sharp | 3% | 1.01 | paper | Book-agnostic SHARP 1x2 trigger. The 3% floor is set EXPLICITLY, not inherited: a sharp edge is measured against a near-true line and is never comparable to a model floor (a 13% overlay on Pinnacle is nearly unobservable — max seen +6.6% — so the bot would simply never fire). |
-| `bot_trigger_ou_model_v1` | O/U 2.5 | model | 8% | 1.80 | paper | Book-agnostic MODEL O/U 2.5 trigger. Replaces the two O/U model twins above. |
+| ~~`bot_trigger_ou_model_v1`~~ **RETIRED** | O/U 2.5 | model | 8% | 1.80 | paper | Book-agnostic MODEL O/U 2.5 trigger. Replaces the two O/U model twins above. ⚠️ **RETIRED in the DB** (migrations 336/348, BOT-RETIREMENT-ON-CLV); kept struck-through for history. Struck 2026-09-15 — the drift test was registry→map only and could not see a map row for a bot the registry had dropped. |
 | `bot_trigger_ou_sharp_v1` | O/U 2.5 | sharp | 3% | 1.01 | paper | Book-agnostic SHARP O/U 2.5 trigger. |
 | **`bot_trigger_1x2_sharp_tight_v1`** | 1x2 | sharp | **2%** | 1.01 (**odds ≤ 2.50**) | paper | **INSTRUMENT, not a strategy** (SHARP-TIGHT-INSTRUMENT-2026-09-15). The one OWN configuration two independent research rounds agreed was worth measuring and neither thought was worth a euro. It exists because the original 70,200-cell sweep *could not express it*: that grid swept a constant expected-ROI floor (`P×odds−1`) while this gate is a constant probability-difference floor (`P−1/odds`), and since `roi_edge = prob_edge × odds` the latter is a **curve in odds** — no constant-floor cell can represent it (§42). Swept correctly it is the only survivor: n=225, ROI +17.07%, CI [+4.18,+29.95], no losing fold, OOS +23.40%. **But both rounds judge it luck**: a 12-day effect (+0.99% n=79 pre-09-02 vs +25.76% n=146 after; Coolbet alone on a constant 37-day pool does the same), and margin-corrected own-book CLV of −5.4% to −7.6% beside those ROIs, against ~−7.2% for a random leg — i.e. the selection buys ~1.9pp of CLV, real but far short of the 7–8% vig. Pooled over Coolbet/Epicbet/Unibet-Site in ONE bot because the result was measured pooled. **Promotion requires margin-corrected own-book CLV > 0 at n≥300; ROI may never promote it at any value** (per-bet sd ≈1.3 ⇒ a true +3% ROI needs ~15,600 bets). Pre-registration: `dev/active/own-sharp-tight-preregistration.md`. |
 
@@ -164,8 +164,8 @@ registry and regenerate.
 |---|---|---|---|---|---|---|
 | `bot_ou35_model_v1` | O/U 3.5 | model | 8% | 1.80 | paper | Model-edge O/U 3.5 vs Coolbet's own 3.5 price (own isotonic calibration). Paper. +7.8% not-robust, accruing forward. |
 | ~~`bot_corners_paper_shadow_v1`~~ | corners | sharp | 0% | — | **RETIRED 2026-09-14** | Margin-corrected own-book CLV **−4.86%**, CI [−5.59,−4.12], **t=−12.93, n=467** (migration 351). Carried for months as "unjudgeable" because its settler believed no corners closing anchor existed — **false**: Pinnacle prices corners on 2,045 fixtures / 43 lines in 30d, covering 95% of Coolbet's corners slate and 87% of Epicbet's, and the bot already de-vigged that same line to SELECT. The closes were in `odds_snapshots` the whole time; 568 settled picks went unjudged and an unanchored +9.60% ROI sat on the dashboard looking like evidence. Also priced against `'Unibet'` (the AF feed, 33.1% phantom-high, dead since 2026-09-12) rather than `'Unibet-Site'`. |
-| `bot_team_total_paper_shadow_v1` | team totals | sharp | 0% | — | paper | Best Epicbet/Betano/Unibet full-match team-total price vs de-vigged Pinnacle line (sharp edge ≥0%). USE-COLLECTED-MARKETS: a market we collect but never modelled; settles from the final score (no coverage gap). Paper, accruing forward. |
-| `bot_1h_1x2_paper_shadow_v1` | 1H 1x2 | sharp | 0% | — | paper | Best Epicbet/Betano/Unibet first-half 1X2 price vs Shin-de-vigged Pinnacle 1H triple (sharp edge ≥0%). USE-COLLECTED-MARKETS: a 3-way market we collect but never modelled; settles from the HT score (no gap). Paper, accruing forward. |
+| ~~`bot_team_total_paper_shadow_v1`~~ **RETIRED** | team totals | sharp | 0% | — | paper | Best Epicbet/Betano/Unibet full-match team-total price vs de-vigged Pinnacle line (sharp edge ≥0%). USE-COLLECTED-MARKETS: a market we collect but never modelled; settles from the final score (no coverage gap). Paper, accruing forward. ⚠️ **RETIRED in the DB** (migrations 336/348, BOT-RETIREMENT-ON-CLV); kept struck-through for history. Struck 2026-09-15 — the drift test was registry→map only and could not see a map row for a bot the registry had dropped. |
+| ~~`bot_1h_1x2_paper_shadow_v1`~~ **RETIRED** | 1H 1x2 | sharp | 0% | — | paper | Best Epicbet/Betano/Unibet first-half 1X2 price vs Shin-de-vigged Pinnacle 1H triple (sharp edge ≥0%). USE-COLLECTED-MARKETS: a 3-way market we collect but never modelled; settles from the HT score (no gap). Paper, accruing forward. ⚠️ **RETIRED in the DB** (migrations 336/348, BOT-RETIREMENT-ON-CLV); kept struck-through for history. Struck 2026-09-15 — the drift test was registry→map only and could not see a map row for a bot the registry had dropped. |
 
 ### In-play slow-state rig (paper) — OWN Phase 1b
 
@@ -280,8 +280,9 @@ Full detail: `docs/COOLBET_OWN_BETTING.md`. Recurring failure patterns:
 
 > ### ✅ PLACEMENT-GATE — 2026-09-15 (OWN Phase 0). Read before the tables below.
 >
-> There are **THREE** executors, and every one now calls **one fail-closed gate**
-> before it touches a browser or an API: `workers/automation/placement_gate.py`
+> **FIVE functions can reach a money primitive** (the Coolbet place click, the
+> Unibet "Tee panus" click, the Coolbet API bet POST), and every one now calls
+> **one fail-closed gate** before it does: `workers/automation/placement_gate.py`
 > (`assert_run_may_place` at run level, `assert_may_place` per pick). The gate
 > checks, in order, `placement_paused` (KILL switch, now fails CLOSED),
 > `real_money_armed` (ARMING switch, migration 354, default FALSE, owner-set only),
@@ -293,6 +294,8 @@ Full detail: `docs/COOLBET_OWN_BETTING.md`. Recurring failure patterns:
 > | Coolbet UI placer | `place_coolbet_ui.main()` (run level, before browser/lock) and `coolbet_ui_placer.stage_bet` **before `select_outcome`** | a single `is_placement_paused()` read AFTER the stake was typed, which fell OPEN on a DB error |
 > | Best-price router (Coolbet + **Unibet-Site**) | `route()` run level; `_dispatch_unibet` before `unibet_placer.place_bet` | `ROUTER_ALLOW_REAL` env var only — which was SET in `.env`, so the router ran in real mode every 30 min; it iterated `PLACEABLE_BOTS`, never the DB toggle |
 > | API placer + manual-place drain (VPS, every 10 s) | `coolbet_placer.place_all_bets`; `place_bet_by_id` routes through `MANUAL_PLACE_EXECUTE = False` | an inline pause read (this was the only executor that had one) |
+> | In-play API placer (`coolbet_placer.place_all_inplay_bets`) | run level when `execute` — added 2026-09-15 evening after the Phase 0 verifier found it ungated | nothing: it could stamp `placed_real=TRUE` (and post) with no pause/arming read |
+> | Orphaned in-play capture (`coolbet_inplay.capture_inplay_snapshot(mode="execute")`, zero callers) | before `_place_bet_api` — same finding | nothing |
 >
 > Corrections to this section as written on 2026-09-11: the counts and claims
 > below that describe a "late" pause check, a dead drift gate, and `load_picks`
@@ -497,4 +500,4 @@ where filtering begins.
 - `docs/OWN_STRATEGY_AUDIT_2026_09_15.md` — full-system OWN audit: what is measured dead (§3), the armed-under-pause defects (§4 Phase 0), the two remaining strategies with pre-registered stops, and the ceiling.
 
 ---
-*Last verified against code+DB by `SYSTEM-MAP-REGISTRY-NOT-DRIFTED` on every push.*
+*Last verified against code+DB by `SYSTEM-MAP-REGISTRY-NOT-DRIFTED` on every push — BOTH ways since 2026-09-15: a registry bot missing from this map fails, and a map row naming a bot the registry has dropped fails unless it is struck through (`~~name~~`).*

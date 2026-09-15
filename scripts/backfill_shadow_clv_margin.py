@@ -32,6 +32,7 @@ from workers.api_clients.db import execute_query, execute_write  # noqa: E402
 # shadow_bets.market -> odds_snapshots.market + the full complement of sides
 MKT_SQL = """
     CASE WHEN lower(sb.market) = '1x2' THEN '1x2'
+         WHEN lower(sb.market) = '1x2_1h' THEN '1x2_1h'
          WHEN lower(sb.market) = 'btts' THEN 'btts'
          WHEN lower(sb.market) LIKE 'over_under_%%' THEN lower(sb.market)
          WHEN lower(sb.market) LIKE 'team_total_%%' THEN lower(sb.market)
@@ -72,7 +73,7 @@ UPDATE shadow_bets sb
   FROM cand c JOIN mg ON mg.match_id = c.match_id AND mg.bookmaker = c.bk AND mg.market = c.mkt
  WHERE sb.id = c.id
    AND mg.m BETWEEN 0 AND 0.5
-   AND mg.n_sides = CASE WHEN mg.market = '1x2' THEN 3 ELSE 2 END
+   AND mg.n_sides = CASE WHEN mg.market IN ('1x2', '1x2_1h') THEN 3 ELSE 2 END
 """
 
 

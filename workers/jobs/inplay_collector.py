@@ -69,7 +69,8 @@ TRIGGERS = {
 
 
 # ── triggers (pure) ──────────────────────────────────────────────────────────
-def evaluate_triggers(minute: int | None, score: list | None, markets: list[dict]) -> list[dict]:
+def evaluate_triggers(minute: int | None, score: list | None, markets: list[dict],
+                      home_team: str | None = None, away_team: str | None = None) -> list[dict]:
     """Return the picks the LOCKED triggers fire on this board state.
 
     `markets` is the collector's nested shape: [{fam, line, sel:[{sel, odds, suspended}]}].
@@ -103,7 +104,7 @@ def evaluate_triggers(minute: int | None, score: list | None, markets: list[dict
         odds = [float(s["odds"]) for s in sels]
         probs = devig(odds) or []
         for s, p in zip(sels, probs):
-            if _norm_sel(s.get("sel")) == want:
+            if _norm_sel(s.get("sel"), home_team, away_team) == want:
                 return float(s["odds"]), p
         return None, None
 
@@ -148,13 +149,24 @@ def _seconds(v) -> int | None:
         return None
 
 
-def _norm_sel(s) -> str:
+def _norm_sel(s, home_team: str | None = None, away_team: str | None = None) -> str:
+    """Epicbet labels 1x2 selections with the TEAM NAMES ("Ajax U19" / "Draw" /
+    "AZ Alkmaar U19"), not 1/X/2 — found by the Phase 1b verifier on the first
+    live board, after a smoke test with synthetic "1"/"X"/"2" labels had passed.
+    Match team names first (exact, then alphanumeric-normalised), then the
+    generic vocab."""
     t = (s or "").strip().lower()
+    def _n(x):
+        return "".join(ch for ch in (x or "").lower() if ch.isalnum())
+    if home_team and (t == home_team.strip().lower() or (_n(t) and _n(t) == _n(home_team))):
+        return "home"
+    if away_team and (t == away_team.strip().lower() or (_n(t) and _n(t) == _n(away_team))):
+        return "away"
     if t in ("1", "home", "h"):
         return "home"
     if t in ("2", "away", "a"):
         return "away"
-    if t in ("x", "draw", "d"):
+    if t in ("x", "draw", "d", "viik"):
         return "draw"
     if t.startswith("over") or t.startswith("üle"):
         return "over"
@@ -339,7 +351,8 @@ def run(cadence: float, rediscover_s: float, max_fixtures: int, duration_s: floa
                    "markets": d.get("markets") or []}
             rows.append(row)
             if write_picks and match_id and row["minute"] is not None and row["score"]:
-                for pick in evaluate_triggers(row["minute"], row["score"], row["markets"]):
+                for pick in evaluate_triggers(row["minute"], row["score"], row["markets"],
+                                              d.get("home") or f["home"], d.get("away") or f["away"]):
                     if write_pick(BOT_LIVE, match_id, pick, row["minute"], row["score"], BOOK, run_id):
                         picks += 1
                         log.info("PICK %s %s %s/%s @ %.2f (%s %s-%s %d')", pick["trigger"], f["home"],

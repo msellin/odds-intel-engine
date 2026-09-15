@@ -21,7 +21,7 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 - [x] 0.D settlement: settle any `placed_real` row on a finished match; run once (3 rows)
 - [x] 0.E `coolbet_control --status` host view + `CAN_STAKE` line
 - [x] 0.F smoke: `PLACEMENT-GATE-FAIL-CLOSED`, `PLACEMENT-GATE-ALL-EXECUTORS`, `ROUTER-NO-ALLOWLIST-BYPASS`, `REAL-BETS-ATTEMPTS-RECONCILED`, `REAL-BETS-SETTLE-ANY-FINISHED`
-- [ ] docs: SYSTEM_MAP §4, COOLBET_OWN_BETTING, RELIABILITY_LEDGER, PRIORITY_QUEUE
+- [x] docs: SYSTEM_MAP §4, COOLBET_OWN_BETTING, RELIABILITY_LEDGER §14, PRIORITY_QUEUE (all four in 6fdc37fa — the box was wrong, the work was done)
 - [x] ⚖️ 0.C owner: bootout both `--execute` plists; move to `local/launchd/paused/`; fix header comment
 
 ## Phase 1a — sharp-tight freshness
@@ -31,7 +31,7 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 - [x] instrument refuses legs > 60 min old (`is_fresh_enough`); pre-registration Amendment 1 dated 2026-09-15
 - [x] `scripts/sharp_tight_slope.py` (first output after mig 355 + backfill)
 - [x] smoke: `OWN-BOOK-RETENTION-EXEMPT`, `SHARP-TIGHT-FRESHNESS-REFUSES-STALE`, `SHADOW-CLV-MARGIN-CORRECTED`
-- [ ] stop/promote rule recorded in PRIORITY_QUEUE row
+- [x] stop/promote rule recorded in the PRIORITY_QUEUE row (RETIRE at n=300 if the CI includes 0; PROMOTE only with CI>0, zero-crossing ≤+6pp and ≥2 fresh legs/day)
 
 ## Phase 1b — in-play slow-state rig (⚖️ go/no-go first)
 - [x] `oufid.jsonl` — scratch file from the 09-14 session no longer exists on disk; O/U fidelity remains UNREPORTED, so the paper bot measures at Epicbet's own board (no AF O/U dependency) and the control arm uses AF only where it quotes the same market
@@ -40,7 +40,7 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 - [x] `bot_inplay_slowstate_v1` (T1, T2 locked, cap 2.20) + `bot_inplay_slowstate_afctl_v1` control arm; registry `FAM_INPLAY` + SYSTEM_MAP section
 - [x] `scripts/inplay_slowstate_eval.py` (hit-rate lift, cluster-robust, power line, STOP/DECIDE verdict)
 - [x] smoke: `INPLAY-COLLECTOR-HEARTBEAT`, `INPLAY-SLOWSTATE-TRIGGERS-LOCKED`, `INPLAY-SLOWSTATE-PRICE-IS-BOOK-NOT-AF`
-- [ ] stop rules (n=1,000 / n=3,000) recorded in PRIORITY_QUEUE row
+- [x] stop rules recorded in the PRIORITY_QUEUE row (STOP n=1,000 if lift<0; DECIDE n=3,000 on the CI)
 
 ## Phase 2 — promotions (⚖️ accounts + T&Cs from owner)
 - [x] mig 356 `promo_terms`, `promo_ledger`

@@ -2565,6 +2565,16 @@ def place_all_inplay_bets(
     """
     if execute:
         record = True
+        # PLACEMENT-GATE (2026-09-15, found by the Phase 0 verifier): this
+        # function reached a real-money POST / a placed_real=TRUE ledger row with
+        # NO pause, arming or allowlist read — the exact "second code path
+        # inherits no gates" pattern. Same run-level gate as place_all_bets.
+        from workers.automation.placement_gate import assert_run_may_place, PlacementRefused
+        try:
+            assert_run_may_place()
+        except PlacementRefused as e:
+            log.warning("place_all_inplay_bets SKIPPED — placement gate refused: %s", e)
+            return []
 
     session = CoolbetSession(require_auth=execute)
     if not execute:
@@ -2700,10 +2710,11 @@ def place_all_inplay_bets(
 # ── MANUAL-PLACE entrypoint ───────────────────────────────────────────────────
 
 # PLACEMENT-GATE (2026-09-15): the manual-place drain (`scheduler.py
-# _drain_manual_placement_queue`, every 10 s on the VPS) is the THIRD executor
+# _drain_manual_placement_queue`, every 10 s on the VPS) is a third executor
 # entry point. It is paper today because `execute=False` was a literal in two
 # call sites below. That literal is now this ONE constant, so any future flip
-# routes through `place_all_bets`' gate instead of bypassing it. Pinned by smoke
+# routes through the gate in BOTH `place_all_bets` (pre-match) AND
+# `place_all_inplay_bets` (in-play) instead of bypassing it. Pinned by smoke
 # `PLACEMENT-GATE-ALL-EXECUTORS`.
 MANUAL_PLACE_EXECUTE = False
 
@@ -2720,6 +2731,19 @@ def place_bet_by_id(simulated_bet_id: str) -> dict:
 
     Always runs in --record mode (paper bet only — never --execute).
     """
+    # PLACEMENT-GATE (2026-09-15, conformance verifier): gate HERE too, not only
+    # via the callees. The plan said "unconditionally", and the drain reaches two
+    # different placers — relying on each one's own gate is the "second code path"
+    # pattern this gate exists to close. Harmless while MANUAL_PLACE_EXECUTE is
+    # False; load-bearing the moment it is not.
+    if MANUAL_PLACE_EXECUTE:
+        from workers.automation.placement_gate import assert_run_may_place, PlacementRefused
+        try:
+            assert_run_may_place()
+        except PlacementRefused as e:
+            return {"outcome": "guard_skip", "simulated_bet_id": simulated_bet_id,
+                    "reason": f"placement gate refused: {e}"}
+
     # Idempotency: already in real_bets? Don't re-run the placer.
     existing = execute_query(
         "SELECT id FROM real_bets WHERE simulated_bet_id = %s LIMIT 1",

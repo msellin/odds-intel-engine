@@ -26,7 +26,9 @@ def monthly(months: int) -> list[dict]:
     return execute_query(
         """SELECT date_trunc('month', taken_at)::date AS month,
                   count(*) AS n, count(settled_at) AS n_settled,
-                  sum(ev_eur) AS ev_sum,
+                  -- both sides over SETTLED rows only, else an open month reads
+                  -- biased toward KILL (verifier 2026-09-15)
+                  sum(ev_eur) FILTER (WHERE settled_at IS NOT NULL) AS ev_sum,
                   sum(realised_pnl_eur) FILTER (WHERE settled_at IS NOT NULL) AS realised,
                   -- per-bet variance approximated by stake^2 * p(1-p) * odds^2 is overkill for a
                   -- ledger this size; use the sample sd of (realised - ev) over settled rows
@@ -40,6 +42,18 @@ def monthly(months: int) -> list[dict]:
 
 
 def verdict(rows: list[dict]) -> str:
+    """Two CALENDAR-consecutive months below the bar. A month with no rows
+    breaks the streak explicitly (it is inserted as a reset)."""
+    import datetime as _dt
+    by_month = {r["month"]: r for r in rows}
+    if not rows:
+        return "CONTINUE"
+    months = []
+    m = min(by_month)
+    while m <= max(by_month):
+        months.append(m)
+        m = (m.replace(day=1) + _dt.timedelta(days=32)).replace(day=1)
+    rows = [by_month.get(mm, {"n_settled": 0, "realised": None, "sd_gap": None, "ev_sum": 0}) for mm in months]
     bad = 0
     for r in rows:
         n = int(r["n_settled"] or 0)

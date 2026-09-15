@@ -4,7 +4,8 @@
   COOLBET-UI-PLACER (Mac-side, 2026-08-27): periodic placement of
   bot_coolbet_value_v1 picks by driving Coolbet's own UI.
 
-  Runs every 30 minutes through the European match day. Each pass:
+  PARKED 2026-09-15 (OWN Phase 0) — unloaded; this file is history until
+  Phase 3 arming. When loaded it ran hourly 06:00-21:00 UTC. Each pass:
     * loads the bot's unsettled picks whose kickoff is still ahead
     * skips any pick with a CONFIRMED placement already (never double-places)
     * re-reads the live Coolbet price and places only if it clears the pick's

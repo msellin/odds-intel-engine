@@ -18,7 +18,7 @@ owner actions (Phase 2 accounts + T&Cs; arm nothing).
 | router | `workers/automation/best_price_router.py` (`ROUTER_ALLOW_REAL` :410, iterates `PLACEABLE_BOTS` :426) |
 | Unibet executor | `workers/automation/unibet_placer.py` (no pause read) |
 | API placer + VPS drain | `workers/automation/coolbet_placer.py` (`place_all_bets` :1930, pause :1952, `place_bet_by_id` :2704, hardcoded `execute=False` :2754/:2761); `workers/scheduler.py:2616` (`IntervalTrigger(seconds=10)`) |
-| launchd | `local/launchd/com.oddsintel.coolbet-ui-placer.plist`, `com.oddsintel.best-price-router.plist` — both LOADED on the Mac as of 2026-09-15 |
+| launchd | `local/launchd/paused/com.oddsintel.coolbet-ui-placer.plist`, `…best-price-router.plist` — **UNLOADED and parked** 2026-09-15 (repo + `~/Library/LaunchAgents/paused/`). Live: `com.oddsintel.inplay-collector` (KeepAlive, paper). |
 | settlement | `workers/jobs/settlement.py` (`_settle_real_bets_for_matches` :1481, direct-book CLV :1369) |
 | in-play collector | `workers/jobs/inplay_epicbet_collector.py` (Mac, plain requests); `workers/automation/coolbet_inplay.py` (Coolbet in-play API, read-only parts reusable) |
 | own-book writers | `workers/automation/coolbet_explorer.py`, `workers/scrapers/epicbet_explorer.py`, `workers/automation/unibet_odds_feed.py` |
@@ -39,7 +39,7 @@ owner actions (Phase 2 accounts + T&Cs; arm nothing).
 - In-play target book is **Coolbet first** (tighter in-play margin, has a placer),
   Epicbet second; collector runs on the Mac.
 - In-play primary metric is hit-rate minus de-vigged book implied prob, not ROI, not CLV.
-- Migrations shipped today: 354 (real_money_armed + real_bets.shadow_bet_id), 355 (shadow mc-CLV + freshness + views), 356 (promo), 357 (in-play board + bots). Next free: **358**.
+- Migrations shipped today: 354 (real_money_armed + real_bets.shadow_bet_id), 355 (shadow mc-CLV + freshness + views), 356 (promo), 357 (in-play board + bots). Next free: **360**. ⚠️ 354 and 355 each carry TWO files — a parallel PICKS session used the same numbers (`354_picks_board_watchlist`, `355_picks_board_tracking`); all are applied, and `355_shadow_clv…` was made re-appliable on 2026-09-15 (it now skips its view build when 358 has already widened the view).
 
 ## Corrections to earlier advice (2026-09-15)
 

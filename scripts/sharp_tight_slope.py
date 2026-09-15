@@ -117,6 +117,8 @@ def main() -> int:
         print("  RETIRE — slope CI includes 0 at n≥300")
     elif rf["lo"] > 0 and rf["zero_crossing"] is not None and rf["zero_crossing"] <= ZERO_CROSS_MAX and lpd >= LEGS_PER_DAY_MIN:
         print("  PHASE-3 CANDIDATE — owner decision; ROI is not admissible")
+    elif rf["hi"] < 0:
+        print("  RETIRE — slope significantly NEGATIVE at n≥300 (own-book CLV falls as the prob-edge rises)")
     else:
         print("  KEEP OBSERVING — slope significant but zero-crossing > +6pp or volume < 2/day")
     return 0

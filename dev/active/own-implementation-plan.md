@@ -202,9 +202,13 @@ pre-registration constants), `SHADOW-BOTS-PLACE-WRITES-REAL-BETS`,
    the instrument needs — the latest row's `timestamp` IS the last observation of
    that price, so `decision_quote_age_min = now − latest.timestamp` is exact. The
    path is preserved by item 2 instead of by compressing it.
-2. **Retention exemption** in `prune_old_simple`: keep the full pre-KO path for
-   `bookmaker IN ('Coolbet','Epicbet','Unibet-Site')` for 60 days. Cost check first:
-   these three are ~2.8M rows / 45 days today.
+2. **Retention exemption** in BOTH pruners: keep the full pre-KO path for
+   `bookmaker IN ('Coolbet','Epicbet','Unibet-Site')` for 60 days. ⚠️ **Cost
+   corrected by the rig verifier (2026-09-15):** the "~2.8M rows / 45 days" figure
+   counted ALREADY-PRUNED history. Full-resolution writes at these books run
+   400–600k rows/day, so steady state at 60 days is **~24–36M rows ≈ 11–17 GB**
+   on a 20 GB table (Epicbet ≈ 70% of it). The box has ~118 GB free. ⚖️ Owner
+   call: keep 60 d (recommended while 1a accrues), or narrow to 30 d / 1x2+O-U 2.5.
 3. **Instrument freshness rule**: `bot_trigger_1x2_sharp_tight_v1` records
    `decision_quote_age_min` (from `last_seen_at`) on each `shadow_bets` row (reuse
    `pair_gap_hours` semantics or add a column in mig 355) and **refuses legs whose
@@ -308,7 +312,22 @@ Grep-ripple every removal through `docs/ *.md`.
 
 ---
 
-## Sequencing
+## Verifier round (2026-09-15 evening) — what three independent reviewers found and what changed
+
+| finding | severity | fixed |
+|---|---|---|
+| `place_all_inplay_bets(execute=True)` and `coolbet_inplay` execute mode reached a money primitive with NO gate | medium (latent) | ✅ both gated; `PLACEMENT-GATE-ALL-EXECUTORS` now covers all five functions |
+| T2 could never fire: Epicbet labels 1x2 with team names, smoke fed "1/X/2" | **broken** | ✅ team names passed into `evaluate_triggers`; smoke uses real labels and asserts fail-closed without names |
+| `stake_limit` would classify an EMPTY stake field (0.0) as a clamp | medium | ✅ `0 < applied < stake` |
+| heartbeat had no consumer | medium | ✅ `health_alerts.check_inplay_collector_heartbeat` (stale > 15 min while fixtures are live) |
+| deposit-bonus EV priced 100%/3x at +79 | medium | ✅ refuses without deposit base; rollover on deposit+bonus; mig 359 |
+| acca insurance unreachable from CLI; consensus min books 2 not 4; promo_review ΣEV over unsettled rows; "consecutive" across empty months | low | ✅ all four |
+| backfill omitted `1x2_1h`; `real_bets.shadow_bet_id` never backfilled; dry-run COUNT lacked the exemption; slope else-branch text; `decision_quote_age_min` re-stamped on DO UPDATE | low | ✅ all five (143 real bets now linked) |
+| retention cost understated ~10× | doc | ✅ corrected above; owner call |
+| `ROUTER_ALLOW_REAL` still set in the Mac `.env` | low (gate makes it insufficient) | ⚖️ owner: delete the key (the assistant's edit of `.env` was declined by the permission layer) |
+| duplicate migration numbers 354/355 (a parallel session's picks-board files) | hygiene | noted; both sets applied; next free was 359 |
+
+
 
 ```
 Phase 0 (P0) ──► 0.C operator unload ──► Phase 1a ──► Phase 1b (⚖️) ──► Phase 3 policy

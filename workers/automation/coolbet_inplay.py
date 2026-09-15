@@ -229,6 +229,12 @@ def capture_inplay_snapshot(
             ticket_id = None
             notes = "inplay paper"
             if mode == "execute":
+                # PLACEMENT-GATE (2026-09-15, found by the Phase 0 verifier): this
+                # orphaned execute mode (zero callers) could POST real money with
+                # no gate. Gate it; an exception here is caught by the outer
+                # try and recorded as a failed side effect, never a stake.
+                from workers.automation.placement_gate import assert_run_may_place
+                assert_run_may_place()
                 # REAL MONEY — POST to /s/bets/bets
                 cb_market_name = ""
                 for _m in markets:

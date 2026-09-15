@@ -966,6 +966,33 @@ def check_publisher_health() -> None:
                     f"<p>{msg}</p>")
 
 
+def check_inplay_collector_heartbeat(max_age_min: int = 15) -> None:
+    """INPLAY-COLLECTOR-HEARTBEAT consumer (OWN Phase 1b, 2026-09-15). The Mac
+    KeepAlive collector stamps pipeline_health_state('inplay_collector') every
+    cycle; until this check existed nothing READ it, so "a dead collector
+    alerts" was untrue (verifier). Alert when the stamp is older than
+    `max_age_min` while at least one fixture is live in our DB — a quiet slate
+    is not a dead collector."""
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        """SELECT (EXTRACT(EPOCH FROM (NOW() - updated_at)) / 60.0)::float AS age_min
+             FROM pipeline_health_state WHERE pipeline_name = 'inplay_collector'""", [])
+    live = execute_query(
+        """SELECT count(*) AS n FROM matches
+            WHERE status IN ('live', '1H', '2H', 'HT', 'ET')
+               OR (date BETWEEN NOW() - INTERVAL '2 hours' AND NOW() AND status NOT IN ('finished','postponed','cancelled'))""", [])
+    n_live = int(live[0]["n"]) if live else 0
+    age = float(rows[0]["age_min"]) if rows else None
+    if n_live == 0:
+        return
+    if age is None or age > max_age_min:
+        msg = (f"⚠️ in-play collector heartbeat is {'missing' if age is None else f'{age:.0f} min old'} "
+               f"while {n_live} fixture(s) are live — com.oddsintel.inplay-collector on the Mac may be dead "
+               f"(launchctl list | grep inplay-collector; tail dev/active/inplay-collector.log)")
+        _alert_once("inplay_collector_heartbeat", "In-play collector heartbeat stale", f"<p>{msg}</p>")
+        _notify_telegram(msg, dedup_key="inplay_collector_heartbeat")
+
+
 def run_snapshot_check() -> None:
     """Hourly 10-23 UTC — LivePoller staleness check + companion alerts.
     Extended 2026-05-25 to include the new monitoring checks (MEMORY, BETTING
@@ -975,6 +1002,7 @@ def run_snapshot_check() -> None:
     """
     for fn_name, fn in [
         ("snapshot_staleness", check_snapshot_staleness),
+        ("inplay_collector_heartbeat", check_inplay_collector_heartbeat),
         ("memory_usage", check_memory_usage),
         ("betting_refresh_stale", check_betting_refresh_stale),
         ("af_quota", check_af_quota),

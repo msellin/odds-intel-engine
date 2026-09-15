@@ -156,8 +156,10 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
                         calibrated_prob   = EXCLUDED.calibrated_prob,
                         edge_percent      = EXCLUDED.edge_percent,
                         recommended_bookmaker = EXCLUDED.recommended_bookmaker,
-                        model_version         = EXCLUDED.model_version,
-                        decision_quote_age_min = EXCLUDED.decision_quote_age_min""",
+                        model_version         = EXCLUDED.model_version""",
+                # decision_quote_age_min is deliberately NOT in the DO UPDATE set:
+                # it records the age at the FIRST decision (pick_time), and a
+                # 30-min re-evaluation must not overwrite it (verifier 2026-09-15).
                 # TRIGGER-BOOK-UNATTRIBUTED (2026-09-11): every trigger row was
                 # written with recommended_bookmaker NULL — 100% of them, 639 of
                 # a 950-pick sample landing in the unattributed bucket. `book`

@@ -4554,6 +4554,24 @@ def test_system_map_registry_not_drifted():
     for name in active_names():
         assert name in smap, f"{name} is in the registry but missing from docs/SYSTEM_MAP.md"
 
+    # 4b. …and the reverse — SYSTEM-MAP-DRIFT-IS-TWO-WAY (2026-09-15). The check
+    # above is registry→map only, so a map row naming a bot the registry has
+    # DROPPED survives forever: the conformance verifier found five such rows
+    # (bot_coolbet_trigger_ou_v1 and friends, retired by migrations 336/348)
+    # still presented as live in §2. A retired bot may stay in the map for
+    # history, but it must be struck through (`~~name~~`) so a reader cannot
+    # mistake it for a live row.
+    import re as _re
+    _map_bots = set(_re.findall(r"^\| ~?~?`(bot_[a-z0-9_]+)`", smap, _re.M))
+    _struck = set(_re.findall(r"^\| ~~`(bot_[a-z0-9_]+)`~~", smap, _re.M))
+    _live_rows = _map_bots - _struck
+    _ghosts = sorted(_live_rows - active_names())
+    assert not _ghosts, (
+        f"SYSTEM_MAP.md presents these as LIVE bot rows but the registry does not "
+        f"have them: {_ghosts}. Retire them from the map, or strike the row "
+        f"through (~~`name`~~) to keep it as history."
+    )
+
     # 5. registry active set MUST equal the DB's active bots (skip cleanly offline).
     #
     # PENDING-MIGRATION-RACE (2026-09-14): smoke_tests.yml and migrate.yml BOTH
@@ -5137,7 +5155,9 @@ def test_ui_placer_all_enabled():
     flipping a bot ON in the control panel has no effect — the job would still
     only run the default bot. Pin the repo plist copy."""
     import os
-    plist = os.path.join(os.path.dirname(__file__), "..", "local", "launchd",
+    # OWN Phase 0 (2026-09-15): parked in local/launchd/paused/ (unloaded while
+    # OWN is paused). The argv contract is what reloads after Phase 3 arming.
+    plist = os.path.join(os.path.dirname(__file__), "..", "local", "launchd", "paused",
                          "com.oddsintel.coolbet-ui-placer.plist")
     src = open(plist, encoding="utf-8").read()
     assert "--all-enabled" in src and "--execute" in src, (
@@ -27798,7 +27818,15 @@ def test_coolbet_ui_placer_2026_08_27():
     assert up.pick_event([res], "Rosario Central", "Boca Juniors", ko) is None
 
     # The plist must never place a bet merely by being loaded.
-    plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-ui-placer.plist").read_text()
+    # OWN Phase 0 (2026-09-15): the two `--execute` plists were UNLOADED and
+    # parked in `local/launchd/paused/`. The argv contract still matters — this is
+    # what reloads after Phase 3 arming — so keep asserting it, from the new path,
+    # and assert the file is NOT in the live folder where launchd_drift_check and
+    # a folder-wide copy would pick it up.
+    assert not pathlib.Path("local/launchd/com.oddsintel.coolbet-ui-placer.plist").exists(), (
+        "the real-money UI placer plist must stay in local/launchd/paused/ while OWN is paused"
+    )
+    plist = pathlib.Path("local/launchd/paused/com.oddsintel.coolbet-ui-placer.plist").read_text()
     assert "<key>RunAtLoad</key>\n    <false/>" in plist, \
         "loading the job must not itself fire a placement"
 
@@ -36825,12 +36853,18 @@ def test_router_real_money_cutover():
         "cross-book dedup can see"
     )
     # The job that actually runs it.
-    repo_plist = Path("local/launchd/com.oddsintel.best-price-router.plist")
-    assert repo_plist.exists(), "the router job must be reproducible from git"
-    assert "--execute" in repo_plist.read_text(), "the scheduled job must place"
+    # OWN Phase 0 (2026-09-15): parked in local/launchd/paused/ and unloaded.
+    assert not Path("local/launchd/com.oddsintel.best-price-router.plist").exists(), (
+        "the router plist must stay in local/launchd/paused/ while OWN is paused"
+    )
+    repo_plist = Path("local/launchd/paused/com.oddsintel.best-price-router.plist")
+    assert repo_plist.exists(), "the router job must stay reproducible from git, parked"
+    assert "--execute" in repo_plist.read_text(), "the job it reloads to must still place"
     installed = Path.home() / "Library/LaunchAgents/com.oddsintel.best-price-router.plist"
-    if installed.exists():  # operator machine only — CI has no LaunchAgents
-        assert "--execute" in installed.read_text()
+    assert not installed.exists(), (
+        "the router must stay UNLOADED while OWN is paused — a copy in "
+        "~/Library/LaunchAgents reloads at login (it lives in paused/ there too)"
+    )
     stale = Path.home() / "Library/LaunchAgents/com.oddsintel.best-price-router-monitor.plist"
     assert not stale.exists(), (
         "the superseded report-only job must be removed, or it reloads at login "
@@ -43505,9 +43539,19 @@ def test_placement_gate_all_executors():
     assert "MANUAL_PLACE_EXECUTE = False" in cp, \
         "the manual-place drain's execute literal must be the single pinned constant"
     byid = cp[cp.index("def place_bet_by_id("):]
-    assert "execute=False" not in byid.split("def ", 2)[0] if False else True
     assert byid.count("execute=MANUAL_PLACE_EXECUTE") == 2, \
         "both placer calls in place_bet_by_id must route through MANUAL_PLACE_EXECUTE"
+    # Phase 0 verifier (2026-09-15): two MORE functions reach a money primitive
+    # and were ungated — the in-play API placer and an orphaned in-play capture
+    # with an execute mode. "Every executor" means all FIVE.
+    inpl = cp[cp.index("def place_all_inplay_bets("):]
+    inpl = inpl[:inpl.index("\ndef ", 10)]
+    assert "assert_run_may_place()" in inpl, "place_all_inplay_bets must call the run-level gate when execute"
+    assert inpl.index("assert_run_may_place()") < inpl.index("CoolbetSession("), \
+        "in-play API placer gate must run BEFORE a session is built"
+    ci = _engine_path("workers/automation/coolbet_inplay.py").read_text(encoding="utf-8")
+    assert "assert_run_may_place()" in ci and ci.index("assert_run_may_place()") < ci.index("_place_bet_api("), \
+        "coolbet_inplay execute mode must call the gate BEFORE _place_bet_api"
 
 
 @test("ROUTER-NO-ALLOWLIST-BYPASS — real mode with every bot toggled OFF dispatches nothing")
@@ -43640,7 +43684,13 @@ def test_sharp_tight_freshness_refuses_stale():
     fn = src[src.index("def match_and_emit("):src.index("FRESHNESS_MAX_AGE_MIN")]
     assert "AS age_min" in fn and "is_fresh_enough(strategy, age_min)" in fn, "matcher must compute the age and gate on it"
     assert fn.index("is_fresh_enough(strategy, age_min)") < fn.index("INSERT INTO shadow_bets"), "the refusal must come BEFORE the write"
-    assert "decision_quote_age_min" in fn and "decision_quote_age_min = EXCLUDED.decision_quote_age_min" in fn, "age must be written and refreshed on conflict"
+    assert "decision_quote_age_min" in fn, "the age must be written on insert"
+    # Deliberately NOT in the DO UPDATE set (rig verifier 2026-09-15): the column
+    # records the age at the FIRST decision, which is what `pick_time` dates. A
+    # 30-min re-evaluation must not overwrite it, or "fresh" would mean "was
+    # fresh at some later re-read" and the freshness split would be circular.
+    assert "decision_quote_age_min = EXCLUDED.decision_quote_age_min" not in fn, \
+        "a re-evaluation must not re-stamp the decision-quote age"
     prereg = _engine_path("dev/active/own-sharp-tight-preregistration.md").read_text(encoding="utf-8")
     assert "Amendment 1 — 2026-09-15" in prereg and "fresh legs only" in prereg, "the pre-registration must carry the dated amendment"
 
@@ -43708,6 +43758,20 @@ def test_inplay_slowstate_triggers_locked():
     p = evaluate_triggers(75, [2, 0], [x12(1.15, 7.0, 15.0)])
     assert len(p) == 1 and p[0]["selection"] == "home" and p[0]["market"] == "1x2"
     assert evaluate_triggers(80, [0, 2], [x12(15.0, 7.0, 1.12)])[0]["selection"] == "away"
+    # Rig verifier (2026-09-15): Epicbet labels 1x2 with TEAM NAMES, not 1/X/2 —
+    # the first version of this test passed while T2 could never fire live.
+    real = {"fam": "1x2", "line": None, "sel": [
+        {"sel": "NK Bjelovar", "odds": 1.15, "suspended": False},
+        {"sel": "Draw", "odds": 7.0, "suspended": False},
+        {"sel": "Karlovac", "odds": 15.0, "suspended": False}]}
+    p = evaluate_triggers(77, [2, 0], [real], "NK Bjelovar", "Karlovac")
+    assert len(p) == 1 and p[0]["selection"] == "home", "T2 must resolve Epicbet team-name labels"
+    p = evaluate_triggers(77, [0, 2], [{"fam": "1x2", "line": None, "sel": [
+        {"sel": "NK Bjelovar", "odds": 15.0, "suspended": False},
+        {"sel": "Draw", "odds": 7.0, "suspended": False},
+        {"sel": "Karlovac", "odds": 1.12, "suspended": False}]}], "NK Bjelovar", "Karlovac")
+    assert len(p) == 1 and p[0]["selection"] == "away"
+    assert evaluate_triggers(77, [2, 0], [real]) == [], "without team names a team-labelled 1x2 must NOT fire (fail closed)"
     assert evaluate_triggers(60, [2, 0], [x12(1.15, 7.0, 15.0)]) == [] and evaluate_triggers(75, [1, 0], [x12(1.5, 4.0, 6.0)]) == []
 
 
@@ -43737,6 +43801,9 @@ def test_inplay_collector_heartbeat():
     run = src[src.index("def run("):]
     assert 'heartbeat("starting")' in run and run.count("heartbeat(") >= 3, "heartbeat at start, per cycle, at stop"
     assert "HEARTBEAT_NAME" in src and 'pipeline_health_state' in src
+    ha = _engine_path("workers/jobs/health_alerts.py").read_text(encoding="utf-8")
+    assert "def check_inplay_collector_heartbeat(" in ha and '("inplay_collector_heartbeat", check_inplay_collector_heartbeat)' in ha, \
+        "the heartbeat must have a CONSUMER in health_alerts (rig verifier 2026-09-15: nothing read it)"
     sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
     assert 'id="inplay_book_quotes_prune"' in sched and "INTERVAL '90 days'" in sched, "the VPS must prune the board to 90 days"
     plist = _engine_path("local/launchd/com.oddsintel.inplay-collector.plist").read_text(encoding="utf-8")
@@ -43755,7 +43822,10 @@ def test_promo_ev_formulas():
     ev, _ = pe.ev_free_bet(0.5, 2.0, 10, stake_returned=True); assert abs(ev - 10.0) < 1e-9
     ev, _ = pe.ev_acca_insurance([0.5] * 3, [2.0] * 3, 10, refund_eur=10, refund_cash=True); assert abs(ev - 3.75) < 1e-9
     ev, _ = pe.ev_acca_insurance([0.5] * 3, [2.0] * 3, 10, refund_eur=10); assert abs(ev - 3.75 * 0.70) < 1e-9, "a free-bet refund is worth ~70% of face"
-    ev, _ = pe.ev_deposit_bonus(100, 3); assert abs(ev - 79) < 1e-9
+    ev, n = pe.ev_deposit_bonus(100, 3); assert ev == 0 and n.startswith("refused"), "deposit bonus must refuse without the deposit base"
+    ev, _ = pe.ev_deposit_bonus(100, 6, deposit_eur=100); assert abs(ev - (100 - 1200 * 0.07)) < 1e-9, "rollover applies to deposit+bonus"
+    import inspect as _insp
+    assert _insp.signature(pe.consensus_fair_prob).parameters["min_books"].default == 4, "consensus needs >= 4 books (plan)"
     assert abs(pe.ev_straight(0.5, 2.0, 10)) < 1e-12
     assert pe.market_sides("1x2") == ("home", "draw", "away") and pe.market_sides("over_under_25") == ("over", "under") and pe.market_sides("asian_handicap") is None
 
@@ -43779,7 +43849,8 @@ def test_promo_ledger_ev_before_bet():
 def test_placement_logs_max_stake():
     src = _engine_path("workers/automation/coolbet_ui_placer.py").read_text(encoding="utf-8")
     sb = src[src.index("def stage_bet("):]
-    assert '_fail("stake_limit"' in sb and "applied < stake - 0.005" in sb, "a book that clamps the stake must be recorded as stake_limit"
+    assert '_fail("stake_limit"' in sb and "0.0 < applied < stake - 0.005" in sb, \
+        "a book that clamps the stake must be recorded as stake_limit — and an EMPTY field (applied == 0) must NOT (rig verifier 2026-09-15)"
     assert sb.index('_fail("stake_limit"') < sb.index('_fail("stake", f"stake did not stick'), "the limit branch must be checked before the generic one"
 
 

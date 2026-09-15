@@ -389,6 +389,8 @@ def prune_old_simple(max_matches: int = 5000, dry_run: bool = False) -> int:
                         WHERE o.match_id = ANY(%s::uuid[])
                           AND NOT COALESCE(o.is_closing, false)
                           AND NOT COALESCE(o.is_opening, false)
+                          AND NOT (o.bookmaker IN ('Coolbet', 'Epicbet', 'Unibet-Site')
+                                   AND o.timestamp > NOW() - INTERVAL '60 days')
                           -- ODDS-INPLAY-RETENTION-2026-09-11: in-play rows are
                           -- downsampled by _prune_inplay_downsample, never
                           -- deleted here. Without this clause they were ALL

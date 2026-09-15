@@ -45,6 +45,20 @@ COMMENT ON COLUMN shadow_bets.decision_quote_age_min IS
     'Minutes between the book quote the pick was priced at and the moment the pick was made. '
     'Written by the trigger matcher; the sharp-tight instrument refuses legs > 60 min.';
 
+-- ⚠️ RE-APPLIABILITY (fixed 2026-09-15 after the conformance verifier).
+-- `CREATE OR REPLACE VIEW` cannot DROP columns, and migration 358 later widened
+-- `shadow_bets_unique` with the three `inplay_*` columns — so re-running this
+-- file verbatim failed with "cannot drop columns from view". The view build is
+-- therefore SKIPPED when a later migration has already produced a superset.
+-- 358 is the authoritative definition of this view; this block only bootstraps
+-- it on a database that has never seen 358.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'shadow_bets_unique' AND column_name = 'inplay_minute') THEN
+        RAISE NOTICE 'shadow_bets_unique already widened by migration 358 — skipping the 355 view build';
+    ELSE
+        EXECUTE $v$
 CREATE OR REPLACE VIEW shadow_bets_unique AS
  SELECT DISTINCT ON (sb.bot_id, sb.match_id, sb.market, sb.selection) sb.id,
     sb.shadow_run_id, sb.shadow_cohort, sb.bot_id, sb.match_id, sb.market, sb.selection,
@@ -58,7 +72,10 @@ CREATE OR REPLACE VIEW shadow_bets_unique AS
     sb.closing_margin, sb.clv_margin_corrected, sb.decision_quote_age_min
    FROM shadow_bets sb
      LEFT JOIN bots b ON b.id = sb.bot_id
-  ORDER BY sb.bot_id, sb.match_id, sb.market, sb.selection, sb.pick_time;
+  ORDER BY sb.bot_id, sb.match_id, sb.market, sb.selection, sb.pick_time
+        $v$;
+    END IF;
+END $$;
 
 -- The page-facing projection: settled, own-book-closed rows only, with the
 -- margin-corrected number already computed. Rows that came through the

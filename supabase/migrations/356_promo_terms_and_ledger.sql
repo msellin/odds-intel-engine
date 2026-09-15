@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS promo_terms (
     refund_eur       NUMERIC,                     -- acca_insurance / cashback: refund amount (as free bet unless refund_cash)
     refund_cash      BOOLEAN NOT NULL DEFAULT FALSE,
     rollover_x       NUMERIC,                     -- deposit_bonus: turnover multiple before withdrawal
+    deposit_eur      NUMERIC,                     -- deposit_bonus: the deposit the rollover applies to (rollover is on deposit+bonus at EE books)
     single_use       BOOLEAN NOT NULL DEFAULT TRUE,
     valid_from       TIMESTAMPTZ,
     valid_to         TIMESTAMPTZ,

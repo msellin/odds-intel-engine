@@ -36,7 +36,7 @@ from workers.automation import promo_ev as pe  # noqa: E402
 def cmd_fair(a) -> int:
     fp = pe.consensus_fair_prob(a.match, a.market, a.selection, exclude_book=a.book)
     if not fp:
-        print("no consensus (fewer than two reference books with a full, fresh market)")
+        print("no consensus (fewer than four reference books with a full, fresh market)")
         return 1
     print(f"fair p {fp.prob:.4f}  fair odds {fp.fair_odds:.3f}  books {fp.books_used}")
     for b, p in sorted(fp.per_book.items(), key=lambda kv: -kv[1]):
@@ -57,7 +57,10 @@ def cmd_ev(a) -> int:
     if not fp:
         print("no consensus fair price — refusing to price the promo")
         return 1
-    ev, note = pe.ev_for_terms(t, fair_p=fp.prob, odds=a.odds, stake=a.stake)
+    legs_p = [float(x) for x in a.leg_p.split(",")] if a.leg_p else None
+    legs_o = [float(x) for x in a.leg_odds.split(",")] if a.leg_odds else None
+    ev, note = pe.ev_for_terms(t, fair_p=fp.prob, odds=a.odds, stake=a.stake,
+                               leg_fair_p=legs_p, leg_odds=legs_o)
     plain = pe.ev_straight(fp.prob, a.odds, a.stake)
     print(f"[{t['book']}] {t['promo_type']} — {t['title']}")
     print(f"  fair p {fp.prob:.4f} ({fp.books_used} books), price {a.odds:.2f}, stake {a.stake:.2f}")
@@ -95,11 +98,11 @@ def cmd_add_terms(a) -> int:
     execute_write(
         """INSERT INTO promo_terms (book, promo_type, title, boost_pct, boost_applies_to, face_value_eur,
                                     stake_returned, min_odds, max_stake_eur, min_legs, refund_eur, refund_cash,
-                                    rollover_x, single_use, valid_to, source_url, terms_text)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                                    rollover_x, single_use, valid_to, source_url, terms_text, deposit_eur)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (a.book, a.type, a.title, a.boost_pct, a.applies_to, a.face_value, a.stake_returned,
          a.min_odds, a.max_stake, a.min_legs, a.refund, a.refund_cash, a.rollover, not a.multi_use,
-         a.valid_to, a.url, a.terms_text))
+         a.valid_to, a.url, a.terms_text, a.deposit))
     print("added")
     return 0
 
@@ -112,6 +115,8 @@ def main() -> int:
     e = sub.add_parser("ev"); e.add_argument("--terms", required=True); e.add_argument("--match", required=True)
     e.add_argument("--market", required=True); e.add_argument("--selection", required=True)
     e.add_argument("--odds", type=float, required=True); e.add_argument("--stake", type=float, default=10.0)
+    e.add_argument("--leg-p", help="acca_insurance: comma-separated fair probs per leg")
+    e.add_argument("--leg-odds", help="acca_insurance: comma-separated decimal odds per leg")
     e.add_argument("--record", action="store_true"); e.add_argument("--notes"); e.set_defaults(fn=cmd_ev)
     t = sub.add_parser("terms"); t.set_defaults(fn=cmd_terms)
     d = sub.add_parser("add-terms"); d.add_argument("--book", required=True); d.add_argument("--type", required=True)
@@ -120,6 +125,7 @@ def main() -> int:
     d.add_argument("--min-odds", type=float); d.add_argument("--max-stake", type=float); d.add_argument("--min-legs", type=int)
     d.add_argument("--refund", type=float); d.add_argument("--refund-cash", action="store_true"); d.add_argument("--rollover", type=float)
     d.add_argument("--multi-use", action="store_true"); d.add_argument("--valid-to"); d.add_argument("--url"); d.add_argument("--terms-text")
+    d.add_argument("--deposit", type=float, help="deposit_bonus: the deposit the rollover applies to")
     d.set_defaults(fn=cmd_add_terms)
     a = ap.parse_args()
     return a.fn(a)

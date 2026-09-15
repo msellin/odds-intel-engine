@@ -70,12 +70,12 @@ class FairPrice:
 def consensus_fair_prob(match_id: str, market: str, selection: str, *,
                         exclude_book: str | None = None,
                         books: tuple[str, ...] = REFERENCE_BOOKS,
-                        max_age_hours: float = 6.0) -> FairPrice | None:
+                        max_age_hours: float = 6.0, min_books: int = 4) -> FairPrice | None:
     """Shin-de-vig each reference book's LATEST pre-kickoff full market on this
     fixture and average the probabilities of `selection`. Books older than
     `max_age_hours` (relative to the newest quote) are dropped — a 12-hour-old
     quote is not an opinion about the current market. Returns None if fewer
-    than two books have a complete market."""
+    than `min_books` (default 4, per the plan) have a complete, fresh market."""
     from workers.api_clients.db import execute_query
     from workers.model.devig import devig
     sides = market_sides(market)
@@ -110,7 +110,7 @@ def consensus_fair_prob(match_id: str, market: str, selection: str, *,
         if not p:
             continue
         probs[book] = p[sides.index(sel)]
-    if len(probs) < 2:
+    if len(probs) < min_books:
         return None
     return FairPrice(prob=sum(probs.values()) / len(probs), books_used=len(probs), per_book=probs)
 
@@ -178,13 +178,24 @@ def ev_acca_insurance(leg_fair_p: list[float], leg_odds: list[float], stake: flo
                 f"{p_one_loses:.3f}, refund value {refund_value:.2f}, stake {s:.2f}, EV {ev:+.2f}")
 
 
-def ev_deposit_bonus(bonus_eur: float, rollover_x: float, margin: float = 0.07) -> tuple[float, str]:
-    """Rough EV of a deposit bonus: the bonus minus the vig paid turning it over
-    `rollover_x` times at the books' ~7% margin. Usually negative above ~3×."""
-    cost = bonus_eur * rollover_x * margin
+def ev_deposit_bonus(bonus_eur: float, rollover_x: float, margin: float = 0.07,
+                     deposit_eur: float | None = None, rollover_base: str = "deposit_plus_bonus",
+                     min_odds_margin: float | None = None) -> tuple[float, str]:
+    """EV of a deposit bonus under REAL terms. The verifier (2026-09-15) caught
+    the first version pricing 100%/3x at +79 while its own docstring said such
+    offers are usually negative: it rolled over the BONUS only and ignored that
+    Estonian books roll over deposit+bonus at 5–10x, often at min odds where
+    the effective margin is higher. Without the deposit base the number is not
+    computable — REFUSE rather than print a flattering guess."""
+    if deposit_eur is None or rollover_x is None:
+        return 0.0, ("refused: deposit_bonus needs deposit_eur and rollover_x from the T&Cs "
+                     "(rollover usually applies to deposit+bonus) — not modelled without them")
+    base = (deposit_eur + bonus_eur) if rollover_base == "deposit_plus_bonus" else bonus_eur
+    m = min_odds_margin if min_odds_margin is not None else margin
+    cost = base * rollover_x * m
     ev = bonus_eur - cost
-    return ev, (f"bonus {bonus_eur:.2f}, rollover {rollover_x:.0f}x at {margin:.0%} margin costs "
-                f"{cost:.2f}: EV {ev:+.2f}")
+    return ev, (f"bonus {bonus_eur:.2f} on deposit {deposit_eur:.2f}; rollover {rollover_x:.0f}x on "
+                f"{rollover_base} = {base * rollover_x:.0f} turnover at {m:.1%} margin costs {cost:.2f}: EV {ev:+.2f}")
 
 
 def ev_for_terms(terms: dict, *, fair_p: float, odds: float, stake: float,
@@ -204,7 +215,8 @@ def ev_for_terms(terms: dict, *, fair_p: float, odds: float, stake: float,
                                  refund_cash=bool(terms.get("refund_cash")),
                                  min_legs=terms.get("min_legs"), max_stake_eur=_f(terms.get("max_stake_eur")))
     if t == "deposit_bonus":
-        return ev_deposit_bonus(float(terms.get("face_value_eur") or 0), float(terms.get("rollover_x") or 0))
+        return ev_deposit_bonus(float(terms.get("face_value_eur") or 0), terms.get("rollover_x"),
+                                deposit_eur=_f(terms.get("deposit_eur")))
     return ev_straight(fair_p, odds, stake), "plain bet (no promo mechanics recognised)"
 
 
