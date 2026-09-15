@@ -41010,7 +41010,12 @@ def test_picks_forward_test_rule_locked():
         return float(m.group(1))
 
     locked = {"MIN_EDGE": 0.03, "MAX_ODDS": 4.0, "ALIGN_MIN": 60.0,
-              "TOP_N": 8, "MAX_RATIO": 0.20, "MAX_ANCHOR_OVERROUND": 0.04,
+              "MAX_RATIO": 0.20, "MAX_ANCHOR_OVERROUND": 0.04,
+              # TOP_N is deliberately absent: it is None since 2026-09-15. The
+              # daily cap was removed (it dropped 41% of qualifying legs and
+              # selected by earliness, not quality). What is locked now is the
+              # FAULT breaker, which must never quietly become a cap again.
+              "DAILY_RUNAWAY_LIMIT": 60.0,
               # RULE-V4 (2026-09-15): these were live rule parameters that
               # existed ONLY in the script — absent from the doc and from this
               # dict — so a schedule change could move them with nothing to
@@ -41026,7 +41031,7 @@ def test_picks_forward_test_rule_locked():
             f"do not silently re-cut a running pre-registered test."
         )
 
-    # RULE-V4 SEMANTICS PIN. `TOP_N == 8` above is a check on a NUMBER, and the
+    # RULE-V4 SEMANTICS PIN. A constant check is a check on a NUMBER, and the
     # number is unchanged by turning "top 8 per day by edge" (a selection rule
     # applied per call) into "8 per day" (an accounting rule applied across 48
     # calls). That is a real rule change that would have left this test green —
@@ -41055,8 +41060,9 @@ def test_picks_forward_test_rule_locked():
     )
 
     # the doc must still state the same rule, or the two have drifted
-    for frag in ("≥ 3%", "≤ 4.0", "within 60 minutes", "top 8 per day", "≤ 20%",
-                 "anchor overround", "now+45 min", "now+14 h"):
+    for frag in ("≥ 3%", "≤ 4.0", "within 60 minutes", "≤ 20%",
+                 "anchor overround", "now+45 min", "now+14 h",
+                 "NO daily cap", "runaway breaker"):
         assert frag in doc, (
             f"pre-registration doc no longer states {frag!r} — the doc and the "
             f"publisher have drifted apart, and the doc is the authority."
@@ -41251,12 +41257,14 @@ def test_picks_forward_test_junk_arm_selects():
     junk = P.junk_anchor_arm(pool)
 
     # the selection half of the locked rule applies to BOTH arms
-    assert len(live) <= P.TOP_N and len(junk) <= P.TOP_N, "TOP_N not applied"
+    # No daily cap since 2026-09-15; the breaker is the only ceiling.
+    assert len(live) <= P.DAILY_RUNAWAY_LIMIT and len(junk) <= P.DAILY_RUNAWAY_LIMIT, (
+        "the runaway breaker is not being applied")
     assert all(c["edge"] >= P.MIN_EDGE for c in live + junk), "MIN_EDGE not applied"
 
     # the junk arm must draw from the POOL, not relabel the live picks. With a
     # 12-fixture pool and a shuffled anchor it cannot be a permutation of live.
-    assert {c["match_id"] for c in junk} != {c["match_id"] for c in live} or len(pool) <= P.TOP_N, (
+    assert {c["match_id"] for c in junk} != {c["match_id"] for c in live} or len(pool) <= 2, (
         "the junk arm selected exactly the live picks. If it is relabelling the "
         "live arm rather than re-running the rule on a shuffled anchor, the "
         "negative control settles to identical outcomes by construction and "

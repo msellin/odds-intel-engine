@@ -2188,7 +2188,9 @@ def job_publish_picks_forward_test():
 
     WHAT IT DOES: posts to @oddsintelpicks. This is the one scheduled job in the
     engine that writes to a PUBLIC surface, so it is deliberately conservative —
-    it publishes at most TOP_N per day, never re-posts (`picks_forward_test` has
+    it publishes every qualifying leg (no daily cap since 2026-09-15; a
+    runaway breaker at DAILY_RUNAWAY_LIMIT guards against a data fault), never
+    re-posts (`picks_forward_test` has
     a unique index on match/market/selection/arm), and records the junk-anchor
     control without publishing it.
 
@@ -2200,7 +2202,7 @@ def job_publish_picks_forward_test():
     """
     from scripts.publish_picks_forward_test import (
         load_candidates, render, claim, attach_message_id, junk_anchor_arm,
-        select, daily_room, write_board, TOP_N,
+        select, daily_room, write_board, DAILY_RUNAWAY_LIMIT,
     )
     from workers.notify.telegram import send_telegram_public
     from workers.automation.coolbet_state import is_publishing_paused
@@ -2254,8 +2256,8 @@ def job_publish_picks_forward_test():
 
     if not picks:
         log.info("picks_forward_test: nothing qualifies this pass "
-                 "(valid outcome; %d of %d slots free today, board %d legs)",
-                 room, TOP_N, n_board)
+                 "(valid outcome; %d of %d before the runaway breaker, board %d legs)",
+                 room, DAILY_RUNAWAY_LIMIT, n_board)
         return {"picks": 0, "published": 0, "room": room, "board": n_board}
 
     # PUBLISH-CLAIM-BEFORE-SEND (2026-09-15): claim the row FIRST. A returned id

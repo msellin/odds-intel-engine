@@ -130,12 +130,35 @@ alignment: anchor quote and bet quote within 60 minutes
 markets : 1x2, over_under_25
 excluded books: Max, Avg, Betfair Exchange, BetWin, Betfred,
                 Unibet-Kambi (38% phantom-high), Unibet/AF (33.1% phantom-high)
-selection: top 8 per day by edge, capped on published_at::date UTC   [v4]
+selection: every leg clearing the edge floor; NO daily cap          [v4 amended]
+           one selection per (match, market) — highest edge wins    [v4 amended]
+           runaway breaker at 60/day is a FAULT guard, not a cap    [v4 amended]
 cadence  : every 30 minutes at :05/:35                                [v4]
 lead     : kickoff between now+45 min and now+14 h                    [v4 — LOCKED]
 ```
 
 ### v4 — `sharp_edge_v4_2026_09_15`, registered 2026-09-15, before its first pick
+
+**AMENDED 2026-09-15, still before its first pick (v4 has published n=0).**
+Two changes, both owner decisions taken on measurement:
+
+* **The daily cap is removed.** `TOP_N = 8` was pre-registered and carried
+  forward unexamined. Qualifying legs per day over the intact window were
+  10, 10, 7, 4, **32**, 11, 2 — mean 10.9 — and the cap bound on 4 of 7 days,
+  publishing **45 of 76 (59%)** and discarding 31 legs that had cleared the bar.
+  Under a 30-minute cadence a daily cap is not a quality filter at all: a live
+  feed cannot know the day's best in advance, so the cap fills with whichever
+  legs qualify EARLIEST. It was dropping 41% of picks on a rule unrelated to
+  their quality. What remains is a **runaway breaker at 60/day** — a guard
+  against a data fault flooding the channel, which should never bind (measured
+  max 32).
+* **One selection per (match, market).** Four matches in seven days published
+  two selections of the same 1x2 — once inside a single run. That reads as
+  covering both ways.
+
+Amending rather than starting v5 is legitimate **only** because v4 has published
+nothing; the rule in this document is that a change AFTER the first pick
+invalidates the test.
 
 **One change: CADENCE.** v1–v3 published a single batch at 10:00 UTC. The
 candidate window is `now+45 min .. now+14 h`, so a 10:00 run can never see a

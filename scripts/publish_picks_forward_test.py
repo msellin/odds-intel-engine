@@ -39,7 +39,24 @@ RULE_VERSION = "sharp_edge_v4_2026_09_15"
 MIN_EDGE   = 0.03   # sharp edge floor
 MAX_ODDS   = 4.0    # uncapped, the edge collapses into longshot noise
 ALIGN_MIN  = 60.0   # anchor and bet quote within 60 min — see note below
-TOP_N      = 8      # per CALENDAR DAY (UTC), counted in the DB — see daily_room()
+# NO DAILY CAP (owner decision, 2026-09-15, amended into v4 before its first pick).
+#
+# `TOP_N = 8` was pre-registered and carried forward unexamined. Measured over the
+# intact window, qualifying legs per day were 10, 10, 7, 4, **32**, 11, 2 — mean
+# 10.9, and the cap bound on 4 of 7 days, publishing **45 of 76 (59%)** and
+# dropping 31 legs that had cleared the bar.
+#
+# Worse, under the 30-minute cadence a daily cap is not a quality filter at all:
+# it fills with whichever legs qualify EARLIEST in the day, because a live feed
+# cannot know the day's best in advance. So it was discarding 41% of picks on a
+# rule unrelated to how good they were.
+#
+# What remains is a CIRCUIT BREAKER, not a selection rule. It exists only to stop
+# a data fault (a bad de-vig, a corrupted feed) firing hundreds of messages at 62
+# subscribers. At a measured max of 32/day it should never bind in normal
+# operation; if it ever does, that is a signal to investigate, not a day's picks.
+TOP_N = None                    # no selection cap — publish every qualifying leg
+DAILY_RUNAWAY_LIMIT = 60        # circuit breaker only; see above
 
 # RULE-V4-2026-09-15 — cadence. v1-v3 published in ONE batch at 10:00 UTC. The
 # candidate window is `now+45min .. now+14h`, so a single 10:00 run can never see
@@ -102,7 +119,7 @@ MAX_ANCHOR_OVERROUND = 0.04   # [v3] the anchor must actually BE a sharp line
 # VOLUME COST, stated up front because it is the owner's call and not an
 # implementation detail (CLAUDE.md, "when the two directions conflict, say so"):
 # the <4% band was 72 of 326 legs (22%) in the ROI split and 11 of 92 fixtures
-# (12%) in the paired test. At TOP_N=8/day this will often publish fewer than 8
+# (12%) in the paired test. This will often publish only a handful of
 # picks. Loosening to 0.06 roughly doubles volume and admits the worst-measured
 # band (-22.07%). That trade-off is the owner's to make; the constant is here.
 
@@ -173,7 +190,7 @@ def load_candidates() -> tuple[list[dict], list[dict]]:
 
     The POOL is every leg that clears the odds cap and the alignment window,
     with the edge floor NOT yet applied. The live arm is the pool filtered at
-    MIN_EDGE and cut to TOP_N. The junk arm needs the unfiltered pool because it
+    MIN_EDGE (no daily cap). The junk arm needs the unfiltered pool because it
     re-runs the SAME rule — floor and all — on a shuffled anchor; selecting from
     the live picks instead would make the control a relabelling of the live arm
     rather than an independent draw. See junk_anchor_arm().
@@ -261,7 +278,14 @@ def load_candidates() -> tuple[list[dict], list[dict]]:
 
 
 def daily_room() -> int:
-    """How many more live picks may publish today. TOP_N minus what is already out.
+    """How many more live picks may publish today, against the RUNAWAY BREAKER.
+
+    This is no longer a cap on the day's picks — the owner removed that on
+    2026-09-15 because it was dropping 41% of qualifying legs and selecting by
+    earliness rather than quality. It is a fault breaker: if a bad de-vig or a
+    corrupted feed makes hundreds of legs "qualify", this stops the channel being
+    flooded. It should never bind in normal operation (measured max 32/day).
+
 
     RULE-V4: `select()` caps per CALL. Under a 30-minute cadence that is 48 calls
     a day and the cap stops meaning anything, so the count has to come from the
@@ -281,7 +305,7 @@ def daily_room() -> int:
             """SELECT count(*) AS n FROM picks_forward_test
                 WHERE arm = 'live' AND published_at::date = (now() AT TIME ZONE 'utc')::date"""
         )
-        return max(0, TOP_N - int(rows[0]["n"]))
+        return max(0, DAILY_RUNAWAY_LIMIT - int(rows[0]["n"]))
     except Exception as e:
         log.warning("daily_room unreadable — publishing nothing this pass: %s", e)
         return 0
@@ -290,9 +314,9 @@ def daily_room() -> int:
 def select(cands: list[dict], room: int | None = None) -> list[dict]:
     """Edge floor, then the best `room` by edge.
 
-    `room` defaults to TOP_N so the junk-anchor control and any offline caller
-    keep the per-call behaviour they were measured with; the live path passes
-    `daily_room()`."""
+    `room=None` means NO truncation — publish every leg that clears the floor.
+    The live path passes `daily_room()`, which is the runaway breaker rather than
+    a selection cap."""
     keep = [c for c in cands if c["edge"] >= MIN_EDGE]
     keep.sort(key=lambda c: -c["edge"])
 
@@ -310,7 +334,7 @@ def select(cands: list[dict], room: int | None = None) -> list[dict]:
             continue
         seen.add(key)
         deduped.append(c)
-    return deduped[: (TOP_N if room is None else room)]
+    return deduped if room is None else deduped[:room]
 
 
 def junk_anchor_arm(pool: list[dict]) -> list[dict]:
@@ -555,7 +579,7 @@ def main() -> int:
         print(f"board refreshed: {write_board(pool)} legs at/above break-even")
     if not picks:
         print(f"no qualifying picks — nothing to publish (valid outcome; "
-              f"{room} of {TOP_N} slots free today)")
+              f"{room} of {DAILY_RUNAWAY_LIMIT} before the runaway breaker)")
         return 0
 
     print(f"{len(picks)} picks under {RULE_VERSION}\n")
