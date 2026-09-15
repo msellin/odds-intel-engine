@@ -167,3 +167,6 @@
 {"at": "2026-09-15T10:55:13+00:00", "event": "observed", "cdp_up": true, "walled": true, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "rebootstrap", "procs": 15}
 {"at": "2026-09-15T10:55:13+00:00", "event": "killed", "why": "rebootstrap tier", "pid_count": 15}
 {"at": "2026-09-15T10:56:11+00:00", "event": "healed", "tier": "rebootstrap", "ok": true, "skipped_rebootstrap": null, "steps": ["quit CDP-Chrome", "parked walled profile -> Chrome-CDP-OddsIntel.walled-20260915-135516", "relaunch rc=0", "jwt sync OK"], "reason": "", "error": ""}
+{"at": "2026-09-15T11:25:04+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T11:25:04+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T11:25:29+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}

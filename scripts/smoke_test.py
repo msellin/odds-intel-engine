@@ -5081,6 +5081,27 @@ def test_postgrest_schema_reload():
         "apply loop."
     )
 
+    # MIGRATE-APPLIED-SET-NEWLINES (2026-09-15). The first version of that
+    # one-query change piped the multi-row result through `tr -d '[:space:]'`,
+    # copying an idiom that is correct for the single-value COUNT reads. It
+    # DELETES NEWLINES: all 353 filenames collapsed onto one line, `grep -qxF`
+    # matched nothing, every migration looked pending, and the run began
+    # re-applying 001_initial_schema.sql TO PRODUCTION. It stopped only because
+    # ON_ERROR_STOP=1 and 001 happens not to be idempotent.
+    _loop = src[src.index("SELECT filename FROM _schema_migrations"):]
+    _loop = _loop[:_loop.index("Applied $applied new migration(s)")]
+    assert "tr -d '[:space:]'" not in _loop.split("applied_count=")[0], (
+        "the applied-set read pipes a MULTI-ROW result through "
+        "`tr -d '[:space:]'`, which deletes newlines and collapses every "
+        "filename onto one line. Every migration then looks unapplied and the "
+        "job re-runs the entire history against production. Strip per line."
+    )
+    assert "refusing to run" in src and "parse mismatch" in src, (
+        "migrate.yml must compare the parsed applied-set size against "
+        "COUNT(*) and abort on a mismatch. The failure mode is silent and "
+        "unbounded — an empty applied set means 'replay the whole history'."
+    )
+
 
 @test("SCHEDULED-LIVE-PRICE-PRODUCER — odds_at_pick_live is produced on a schedule, not manually")
 def test_scheduled_live_price_producer():

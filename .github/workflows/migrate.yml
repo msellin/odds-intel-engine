@@ -139,9 +139,29 @@ jobs:
           # ever written, so the budget is crossed on a schedule. Per
           # MIGRATE-HANG-GUARD above, a migrate job that overruns queues every
           # other workflow in the repo behind it. Read the applied set ONCE.
+          # ⚠️ `tr -d '[:space:]'` DELETES NEWLINES. It is correct on the
+          # single-value reads above (a COUNT), and catastrophic here: it
+          # collapsed all 353 filenames onto ONE line, so `grep -qxF` matched
+          # nothing, every migration looked pending, and the 2026-09-15 11:12
+          # run began re-applying `001_initial_schema.sql` TO PRODUCTION. It
+          # stopped on `type "match_status" already exists` only because
+          # ON_ERROR_STOP=1 and 001 is not idempotent — a migration that WAS
+          # idempotent would have let it march on through the whole history.
+          # Strip whitespace PER LINE and keep the line structure.
           psql "$DATABASE_URL" -tAc "SELECT filename FROM _schema_migrations" \
-            | tr -d '[:space:]' | sed '/^$/d' | sort > /tmp/applied.txt
-          echo "$(wc -l < /tmp/applied.txt) migration(s) already applied."
+            | awk '{gsub(/[[:space:]]/,""); if (length($0)) print}' \
+            | sort > /tmp/applied.txt
+          applied_count=$(wc -l < /tmp/applied.txt | tr -d '[:space:]')
+          echo "$applied_count migration(s) already applied."
+
+          # A sanity floor. The failure mode above is silent and unbounded: an
+          # empty or truncated applied-set means "re-run the entire history".
+          # If the table has rows but we parsed almost none, STOP.
+          db_count=$(psql "$DATABASE_URL" -tAc "SELECT COUNT(*) FROM _schema_migrations" | tr -d '[:space:]')
+          if [ "$applied_count" -ne "$db_count" ]; then
+            echo "applied-set parse mismatch: parsed $applied_count, DB has $db_count — refusing to run"
+            exit 1
+          fi
 
           applied=0
           for f in supabase/migrations/*.sql; do
