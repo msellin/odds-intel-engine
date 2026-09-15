@@ -42297,6 +42297,77 @@ def test_picks_forward_test_scheduled():
             _sys.modules.pop(_m, None)
 
 
+@test("FORWARD-TEST-VERSIONS-DO-NOT-VANISH — a rule bump must not erase the published record")
+def test_forward_test_versions_do_not_vanish():
+    """FORWARD-TEST-VERSIONS-DO-NOT-VANISH (2026-09-15).
+
+    `getPicksForwardTestSummary` read `.order(started_at desc).limit(1)` — the
+    newest rule version and nothing else. Two live consequences:
+
+      * the panel presented **v1, a CLOSED rule, as the current method**, because
+        v1 was the newest version that had published anything while the engine
+        was already running v3;
+      * on v4's first pick, v1's record (n=8, ROI -37.1%, margin-corrected CLV
+        -11.1%, every row negative) would have vanished from every public
+        surface.
+
+    A scoreboard that resets whenever the number goes bad is worse than none, and
+    this one would have done it on a schedule — v1 to v3 inside two days.
+
+    The opposite failure is equally barred: the versions must never be SUMMED.
+    A rule change starts a new test with its own n, and pooling would fire the
+    pre-registered n=200 checkpoint early on a mixture of rules
+    (FORWARD-TEST-SUMMARY-POOLS-RULE-VERSIONS)."""
+    lib = _web_path("src/lib/engine-data.ts").read_text()
+    panel = _web_path("src/components/picks-forward-test-panel.tsx").read_text()
+    perf = _web_path("src/app/(app)/performance/page.tsx").read_text()
+
+    # Slice to the next top-level export, NOT to the first "\n}" — the return
+    # type is an inline object literal, so "\n} | null> {" closes before the body
+    # and the body would never be inspected. (Caught by this test failing green.)
+    _start = lib.index("export async function getPicksForwardTestSummary")
+    _rest = lib[_start + 10:]
+    _end = _rest.find("\nexport ")
+    block = lib[_start:_start + 10 + (_end if _end != -1 else len(_rest))]
+    assert ".limit(1)" not in block, (
+        "getPicksForwardTestSummary is back to .limit(1). That drops every "
+        "closed rule version, which erases the public record on each bump and "
+        "labels the newest-with-rows as current even when the engine has moved on."
+    )
+    assert "rows.slice(1)" in block and "current:" in block, (
+        "the getter must return {current, closed} — closed versions kept, not dropped"
+    )
+
+    # The panel renders the closed ones, and says they are not pooled.
+    assert "summary.closed" in panel and "closed.map(" in panel, (
+        "the panel must RENDER closed versions. Returning them and not showing "
+        "them erases the record just as effectively."
+    )
+    # JSX wraps prose across lines — flatten before matching, the way
+    # PICKS-FORWARD-TEST-SURFACE does.
+    _panel_flat = " ".join(panel.split())
+    assert "not added to the numbers above" in _panel_flat, (
+        "the panel must tell the reader the earlier versions are not pooled into "
+        "the headline figures — otherwise it invites the exact sum the "
+        "pre-registration forbids."
+    )
+    assert "shortVersion(s.ruleVersion)" in panel, (
+        "the headline must be labelled with its rule version. An unlabelled "
+        "number invites pooling, and today's 'current' is not necessarily the "
+        "rule the engine is executing."
+    )
+    assert "new method · tracking from" not in panel, (
+        "'new method' asserts the headlined version is the live rule. The view "
+        "only knows what has published; label by version instead."
+    )
+
+    # The leaderboard row reads the CURRENT version only — never a pooled total.
+    assert "getPicksForwardTestSummary())?.current" in perf, (
+        "the performance leaderboard must read the current version explicitly, "
+        "so a future reader cannot mistake it for a pooled figure"
+    )
+
+
 @test("PUBLISHER-SILENCE-ALERT — the only path to customers is watched, and on the JOB not the pick count")
 def test_publisher_silence_alert():
     """PUBLISHER-SILENCE-ALERT (2026-09-15).

@@ -183,7 +183,15 @@ row; `UPDATE` the message id after. **Do NOT rely on `_LAST_SENT`** —
 `_LAST_SENT` is an in-process dict wiped on restart (ledger #13).
 **Hard prerequisite for the cadence change.**
 
-**P0-2. Every rule-version bump silently erases the public track record.**
+**P0-2. ✅ FIXED 2026-09-15.** `getPicksForwardTestSummary` returns
+`{current, closed}` instead of `.limit(1)`; the panel renders every earlier
+version with its own n, CLV and P&L, states they are **not pooled** into the
+headline, and labels the headline by rule version rather than calling it "new
+method" (the view only knows what has published — that is not necessarily the
+rule the engine is running). The leaderboard reads `.current` explicitly. Smoke
+`FORWARD-TEST-VERSIONS-DO-NOT-VANISH`, mutation-verified against `.limit(1)`.
+*Original finding below.*
+~~Every rule-version bump silently erases the public track record.~~
 `odds-intel-web/src/lib/engine-data.ts:6019-6020` takes
 `.order("started_at", desc).limit(1)`; `src/components/picks-forward-test-panel.tsx:27`
 renders it as the current method. **Today the panel presents v1 — a closed rule —
