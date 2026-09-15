@@ -38,6 +38,17 @@ findings"); reviewed by two adversarial agents; corrections applied to
 - In-play primary metric is hit-rate minus de-vigged book implied prob, not ROI, not CLV.
 - Next migration number: **354** (353 is the latest committed).
 
+## Corrections to earlier advice (2026-09-15)
+
+- **"Log manual bets via `/admin/place`" was WRONG for shadow picks.** `/admin/place`
+  reads `simulated_bets`; OWN picks live in `shadow_bets`. Today there is NO path from
+  a shadow pick to `real_bets` except the paused UI placer's Coolbet account
+  reconciliation. Phase 6's `place-action` closes this. Until then a hand-placed OWN
+  bet is only captured when the UI placer next runs a verified pass.
+- `/admin/shadow-bots` status pill (Promote/Retire) uses Pinnacle CLV t≥1.65 at
+  n≥100 — NOT the pre-registered margin-corrected own-book CLV at n≥300. Ignore the
+  pill until Phase 6.
+
 ## Owner decisions pending (⚖️)
 
 1. Unload the two `--execute` plists now (Phase 0.C).

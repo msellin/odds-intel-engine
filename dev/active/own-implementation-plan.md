@@ -127,6 +127,88 @@ safety reads pointing opposite ways"; "an env var's absence is not a pause"),
 
 ---
 
+## Phase 6 — `/admin/shadow-bots` rework (≈ 43 h web + 6 h engine; runs in parallel with 1a, right after Phase 0)
+
+**Why it is its own phase.** The owner's requirement is "read, understand, follow,
+decide per pick". A 2026-09-15 page review (agent, read-only) found the page cannot
+support that today: ~20 queries per load pulling the whole 14k-row ledger and up to
+30k `odds_snapshots` rows into Node; a **raw** own-book CLV coloured green/red around
+0 when break-even is ≈ −7% (the book's margin); a Promote/Retire pill gated on
+Pinnacle CLV while the engine's pre-registration gates on margin-corrected own-book
+CLV at n≥300 (two different tests); a `SHADOW_BOTS` list of 29 bots where the registry
+has 13, with `FAMILIES` grouped around two retired bots; a `ForwardTestPanel` that is
+never rendered but whose query still runs; 640-character tooltips describing a
+Kambi feed the code no longer reads; `edge_percent` fetched and never shown; and
+**no path from an upcoming shadow pick to `real_bets`** — `/admin/place` reads
+`simulated_bets`, a different ledger, so a hand-placed OWN pick cannot be logged
+today except by the paused UI placer's account reconciliation. The
+`CoolbetDaemonsPause` control is rendered nowhere.
+
+**Information architecture (replaces the page):**
+1. **Safety strip** (sticky): `placement_paused` · `publishing_paused` ·
+   `daemons_paused` (+ liveness) · armed executors (`ui_place_enabled` count) ·
+   today's placed / 80 and staked / €800 · `CAN_STAKE` from Phase 0.E. Each chip is
+   the control; arming requires an explicit confirm. Wire the orphaned
+   `CoolbetDaemonsPause` here.
+2. **Today's picks** (the decision table), columns in order: KO (local, relative) ·
+   Match · Pick (canonical label) · Bot · Best **placeable** price with book chip
+   (CB/UB; EB greyed until a placer exists) · **Age** of that quote · **Break-even**
+   (`1/p_anchor`) · Gate floor · **Live edge %** recomputed at the shown price
+   against the bot's own anchor · **Verdict** · Action. One colour carrier, the
+   Verdict chip: `PLACE` (live price ≥ gate floor, age < 30 min, bot not paused) ·
+   `THIN` (above break-even, below gate) · `SKIP` (below break-even, stale, or
+   unplaceable book) · `BLOCKED` (bot off / placement paused / KO < 3 min). Sort:
+   verdict then kickoff. Action `Place €X` writes **`real_bets`** via the existing
+   `/api/admin/real-bet` route with `placed_real=NULL, notes='manual via shadow-bots'`
+   so it settles and CLV-scores; `Skip` with a one-click reason. In-play rows (1b)
+   and FRESH/STALE (1a) land in this table, not in new sections.
+3. **Which bots work** (scoreboard): one row per **registry-active** bot (imported,
+   not hardcoded): n settled · margin-corrected own-book CLV ± CI · CLV t · ROI
+   (dimmed, footnote "per-bet sd ≈ 1.3; ~15,600 bets to confirm +3%") · Verdict
+   derived verbatim from the pre-registration (`COLLECTING n/300` · `PROMOTE` if CLV
+   CI > 0 · `RETIRE` if CLV < −2% · `OBSERVE`). Delete the ROI-based pill.
+4. **Promotions panel** (Phase 2) below the scoreboard.
+5. **Delete:** `ForwardTestPanel`/`ForwardTestArm` + their query; retired entries in
+   `SHADOW_BOTS`; dead `BOT_BADGES`; `FAMILIES`; Discipline-check strip (move to a
+   weekly script); "Including retired" card; Kambi tooltip text; unrendered selects.
+
+**Engine side (~6 h):** a view `shadow_bets_own_book_clv` exposing per-row
+margin-corrected own-book CLV via `closing_book_margin()` semantics, so the page
+reads a number instead of recomputing it in JS over the full ledger. Also fix the
+`docs/SYSTEM_MAP.md` §2 trigger table, which still lists five bots the registry
+retired on 2026-09-14 (the drift test checks registry→map, not map→registry —
+extend it both ways).
+
+**Component split:** `page.tsx` (~120 lines, layout) · `lib/shadow-bots/queries.ts`
+(typed, cached 60 s) · `lib/shadow-bots/verdict.ts` (+ tests) · `components/shadow-bots/
+{safety-strip,picks-table,picks-row,scoreboard,place-action}.tsx`.
+
+**Smoke (web config + engine):** `SHADOW-BOTS-REGISTRY-DRIVEN` (bot list equals
+`active_names()`), `SHADOW-BOTS-VERDICT-IS-PREREG` (verdict thresholds equal the
+pre-registration constants), `SHADOW-BOTS-PLACE-WRITES-REAL-BETS`,
+`SYSTEM-MAP-REGISTRY-NOT-DRIFTED` extended to map→registry.
+
+---
+
+## Publish-time change for the PICKS forward test (small, 👥, do with Phase 4)
+
+The publisher runs at **10:00 UTC** (`scheduler.py::job_publish_picks_forward_test`).
+Its docstring gives two reasons: "after the 04:00 morning chain and several odds
+refreshes", and "the backtest was measured on quotes at least 4 h out, so
+publishing later than we measured would be publishing a different rule". Neither
+forbids **earlier**. At 07:00 UTC the morning chain is done, Coolbet/Epicbet/AF have
+each swept ≥4 times, and the alignment rule (anchor and book quote within 60 min)
+is unaffected. Earlier publication also covers the 10:00–12:00 UTC kickoffs that
+10:00 publication misses. Publish time is not part of the pre-registered rule
+(edge ≥3%, odds ≤4.0, align ≤60 min, anchor overround ≤4%, top 8/day), so this is
+an operational change, not a new `rule_version` — record the date in the
+pre-registration file's changelog. **Move to 07:00 UTC; do not add a second daily
+run** (top-8-by-edge would then be ranked over two different pools). Note the job
+had **never completed once** until the 2026-09-15 `SCHEDULER-PUBLISHER-NEVER-RAN`
+fix — check `pipeline_runs` shows a row tomorrow.
+
+---
+
 ## Phase 1a — sharp-tight instrument, freshness stamp (~1.5 days)
 
 **Hypothesis being made measurable:** the mc-CLV vs prob-edge slope (+1.31 stale /

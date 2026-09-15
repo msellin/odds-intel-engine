@@ -65,3 +65,18 @@ Mark `[x]` as done; note the commit hash. Never run the full smoke suite locally
 - [ ] web: Stripe/tier dead code + deps; README
 - [ ] close CS2 + tennis queue rows with reasons
 - [ ] grep-ripple docs for every removal
+
+## Phase 6 — /admin/shadow-bots rework (parallel with 1a, after Phase 0)
+- [ ] engine view `shadow_bets_own_book_clv` (margin-corrected per row) + smoke
+- [ ] `lib/shadow-bots/queries.ts` (typed, cached 60 s; no full-ledger fetch)
+- [ ] `lib/shadow-bots/verdict.ts` (+ tests): live edge, break-even, PLACE/THIN/SKIP/BLOCKED, prereg bot verdict
+- [ ] safety strip incl. orphaned `CoolbetDaemonsPause`, `CAN_STAKE`
+- [ ] picks table + row (Age, Break-even, Gate, Live edge, Verdict, Place/Skip)
+- [ ] `place-action` → `/api/admin/real-bet` (fixes "no path from shadow pick to real_bets")
+- [ ] scoreboard from `active_names()`; delete ROI pill
+- [ ] deletions: ForwardTestPanel + query, retired SHADOW_BOTS, BOT_BADGES, FAMILIES, discipline strip, Kambi tooltip
+- [ ] fix SYSTEM_MAP §2 (5 retired bots listed); extend drift test map→registry
+- [ ] smokes: `SHADOW-BOTS-REGISTRY-DRIVEN`, `SHADOW-BOTS-VERDICT-IS-PREREG`, `SHADOW-BOTS-PLACE-WRITES-REAL-BETS`
+
+## PICKS publish time (with Phase 4)
+- [ ] move `job_publish_picks_forward_test` 10:00 → 07:00 UTC; changelog line in prereg; verify `pipeline_runs` row next day
