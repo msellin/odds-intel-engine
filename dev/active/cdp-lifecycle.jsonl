@@ -209,3 +209,6 @@
 {"at": "2026-09-15T17:55:04+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
 {"at": "2026-09-15T17:55:04+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
 {"at": "2026-09-15T17:55:21+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T18:25:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T18:25:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T18:25:25+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
