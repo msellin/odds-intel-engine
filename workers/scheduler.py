@@ -3214,14 +3214,37 @@ def main():
                       name="Feature Densify → MFV 23:45",
                       max_instances=1, misfire_grace_time=1800)
 
-    # UNIBET-KAMBI-ODDS (2026-09-04): direct Unibet prices every 30 min at
-    # :04/:34, just before the :05/:35 betting refresh so the same cycle sees
-    # them. Public API, no auth, no bot protection.
-    scheduler.add_job(job_unibet_kambi_odds,
-                      CronTrigger(minute="4,34"),
-                      id="unibet_kambi_odds",
-                      name="Unibet (Kambi) odds :04/:34",
-                      max_instances=1, misfire_grace_time=600)
+    # UNIBET-KAMBI-RETIRED-2026-09-15 — job DELIBERATELY NOT REGISTERED.
+    #
+    # The feed was removed from the placeable set on 2026-09-06
+    # (KAMBI-FEED-DIVERGENCE) because unibet.ee moved off the Kambi offering API
+    # onto Kindred's own platform: 38% of stored prices read HIGHER than the
+    # site, median +3.3%, max +23.5%. It kept writing for nine more days.
+    #
+    # WHY STOP WRITING RATHER THAN JUST NOT PLACING. An audit on 2026-09-15 found
+    # it had NO CONSUMER — it is named in `daily_pipeline_v2`, `settlement`,
+    # `bot_inventory`, `lineshop_new_markets`, `own_line_movement`,
+    # `own_movement_snapshot`, `own_sharp_config_sweep` and
+    # `publish_picks_forward_test` exclusively as an EXCLUSION, and two of those
+    # carry comments telling the next author not to re-type the exclusion set.
+    # A feed whose only appearance in the codebase is "do not use this" is not a
+    # data source, it is a standing trap: it cost ~815k rows in ten days into the
+    # largest table in the DB (odds_snapshots, 20 GB, 23x the next), and every
+    # new analysis has to remember to exclude it or silently inherits prices
+    # nobody can take. It already became the #1 `recommended_bookmaker` once
+    # (403 of 1,015 picks in three days) at prices that did not exist.
+    #
+    # WHY IT IS SAFE TO STOP NOW. Its one remaining advantage was breadth on
+    # corners/cards, which UNIBET-SITE-MARKET-WIDENING-2026-09-15 (same commit)
+    # now takes from the TRUE site feed instead. Note the honest cost: Kambi
+    # reached ~3,011 fixtures against Unibet-Site's ~2,026, so retiring it loses
+    # coverage on the Unibet brand — we are trading breadth for prices that are
+    # actually obtainable, which is the right trade for both directions but is
+    # not a free one.
+    #
+    # `job_unibet_kambi_odds` and `workers/automation/unibet_kambi.py` are KEPT
+    # for manual runs and for the historical rows already in the table; only the
+    # cron is gone. Guarded by smoke `UNIBET-KAMBI-RETIRED`.
 
     # ALN-AUTO (2026-05-25): 1st of each month at 03:30 UTC. Runs the
     # alignment-bump tuner over a 60d window; emails a diff via Resend

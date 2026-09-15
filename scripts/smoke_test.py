@@ -4339,16 +4339,24 @@ def test_unibet_site_odds_parse():
     # CB-UB-1H-TT-COLUMNS-2026-09-11: competitor totals are now captured on
     # purpose (team_total_*, pinned by CB-UB-1H-TT-COLUMNS). The contamination pin
     # below still holds for everything else.
-    rows = [r for r in all_rows if not r[0].startswith("team_total_")]
-    markets = {r[0] for r in rows}
-    assert markets == {"1x2", "over_under_25"}, (
-        f"parser must yield ONLY 1x2 + over_under_25, got {markets} — a contaminant "
-        "market (halves/corners/bookings/handicap/2-up) leaked through")
-    assert ("1x2", "home", 3.5, None) in rows, "Derby site home must be 3.50 (site, not 3.20 Kambi)"
-    assert ("1x2", "draw", 3.3, None) in rows and ("1x2", "away", 2.08, None) in rows
-    assert ("over_under_25", "over", 2.0, 2.5) in rows, "O/U 2.5 over must parse with numeric line"
-    assert ("over_under_25", "under", 1.8, 2.5) in rows
-    assert len(rows) == 5, f"exactly 3x1x2 + 2xOU25 = 5 clean rows, got {len(rows)}: {rows}"
+    # UNIBET-SITE-MARKET-WIDENING-2026-09-15: the parser now takes ten market
+    # families, not two. This assertion USED to read `markets == {"1x2",
+    # "over_under_25"}` — rewritten rather than relaxed, because the guard's real
+    # intent was never "only two markets", it was "no proposition whose OPTION
+    # SHAPE resembles a market we bet may enter that market's vocabulary".
+    # RELIABILITY_LEDGER #9: a test that pins the old shape blocks the change it
+    # should be verifying.
+    markets = {r[0] for r in all_rows}
+    expected = {"1x2", "over_under_25", "btts", "double_chance", "draw_no_bet",
+                "over_under_1h_15", "corners_ou_95", "corners_1h_ou_45",
+                "cards_ou_35", "team_total_home_05", "team_total_away_15"}
+    assert markets == expected, (
+        f"parser market set drifted.\n  missing: {expected - markets}\n"
+        f"  unexpected: {markets - expected}")
+    assert ("1x2", "home", 3.5, None) in all_rows, "Derby site home must be 3.50 (site, not 3.20 Kambi)"
+    assert ("1x2", "draw", 3.3, None) in all_rows and ("1x2", "away", 2.08, None) in all_rows
+    assert ("over_under_25", "over", 2.0, 2.5) in all_rows, "O/U 2.5 over must parse with numeric line"
+    assert ("over_under_25", "under", 1.8, 2.5) in all_rows
 
     assert uof._BOOKMAKER == "Unibet-Site", "must write as Unibet-Site (not the Kambi feed)"
     msrc = inspect.getsource(uof)
@@ -42513,7 +42521,7 @@ def test_picks_board_watchlist():
     # in terms that it must never write picks_forward_test.
     # Drop ONLY the docstring — via ast, not a regex. A regex over triple-quoted
     # strings also eats the SQL literals, which are the very thing being checked.
-    import ast as _ast, textwrap as _tw
+    import ast as _ast, textwrap as _tw, re as _re2
     _fn = _ast.parse(_tw.dedent(board_fn)).body[0]
     if (_fn.body and isinstance(_fn.body[0], _ast.Expr)
             and isinstance(_fn.body[0].value, _ast.Constant)
@@ -42527,6 +42535,23 @@ def test_picks_board_watchlist():
         "pre-registered ledger inflates n with bets nobody was told to take."
     )
     assert "INSERT INTO picks_board" in _code
+
+    # ANALYSIS_GOTCHAS §59(d) — psycopg2 reads a literal `%` as a placeholder,
+    # so ONE in a SQL COMMENT raises IndexError on every call. It happened here
+    # on 2026-09-15 ("19% of met events" inside the upsert comment), and the
+    # board silently wrote nothing for two hours because write_board swallows
+    # its own errors. The guard that exists for prune_old_simple did not cover
+    # this module.
+    # `_code` is the ast-unparsed body: docstring already gone, so any '%' left
+    # is genuinely inside a SQL literal or a code comment psycopg2 will see.
+    _bare = _code.replace("%s", "")
+    if True:
+        assert "%" not in _bare, (
+            "a literal '%' is inside a SQL string in write_board. psycopg2 "
+            "parses it as a parameter placeholder and every call raises "
+            "IndexError — silently, because this function catches its own "
+            "errors. Write 'pct' instead (ANALYSIS_GOTCHAS 59d)."
+        )
 
     # PICKS-BOARD-TRACKED (2026-09-15). The board is a RECORD now, not a
     # display table: it answers "was the target ever reachable", and that

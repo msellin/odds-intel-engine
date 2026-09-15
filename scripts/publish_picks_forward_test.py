@@ -511,8 +511,9 @@ def write_board(pool: list[dict]) -> int:
                      -- tested against the PREVIOUS run's value, so a target
                      -- could be "met" with the quote never moving — the bar
                      -- dropped because p_sharp rose. Measured on a replay of
-                     -- this exact upsert: 19% of "met" events were the goalpost
-                     -- moving toward the pick on information that arrived AFTER
+                     -- this exact upsert: 19 pct of "met" events were the
+                     -- goalpost moving toward the pick on information that
+                     -- arrived AFTER
                      -- publication, which a reader could never have acted on.
                      -- A published target is a promise about a number; it has to
                      -- be the number we published.
@@ -539,7 +540,10 @@ def write_board(pool: list[dict]) -> int:
                          picks_board.target_a_met_at,
                          CASE WHEN EXCLUDED.odds >= picks_board.odds_grade_a
                               THEN NOW() END)""",
-                r + (r[4], r[11], r[3], r[8], r[3], r[9]))
+                # best_odds_seen, best_odds_book, then the two target CASEs.
+                # r = (match, market, selection, odds, book, p_sharp, edge,
+                #      breakeven, grade_b, grade_a, overround, kickoff)
+                r + (r[3], r[4], r[3], r[8], r[3], r[9]))
     except Exception as e:
         log.warning("write_board failed (non-fatal — publishing is unaffected): %s", e)
         return 0

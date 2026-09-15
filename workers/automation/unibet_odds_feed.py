@@ -67,6 +67,49 @@ def _total_line(options: list[dict]) -> float | None:
     return None
 
 
+# UNIBET-SITE-MARKET-WIDENING-2026-09-15 — over/under-shaped propositions that
+# price a DIFFERENT quantity from match goals. Each is an exact `propositionType`
+# mapped to the vocabulary the other books already write, so the same market can
+# be line-shopped across Epicbet / Coolbet / Unibet-Site:
+#
+#   our market          <- Unibet propositionType
+#   over_under_1h_NN       1st_half_total
+#   corners_ou_NN          total_corners
+#   corners_1h_ou_NN       1st_half_total_corners
+#   cards_ou_NN            total_bookings
+#
+# The line comes from `options[].total`, same as match totals. A proposition with
+# a missing or quarter line is SKIPPED, never guessed at.
+_OU_FAMILIES: dict[str, str] = {
+    "1st_half_total": "over_under_1h_{n}",
+    "total_corners": "corners_ou_{n}",
+    "1st_half_total_corners": "corners_1h_ou_{n}",
+    "total_bookings": "cards_ou_{n}",
+}
+
+# Categorical markets. Option labels are LOCALISED (we fetch et_EE), unlike
+# `propositionType`. That is a real fragility, and it is why every map below
+# FAILS CLOSED: an unrecognised label yields no row rather than a guessed one.
+# If the operator's tab ever renders in another language these markets go quiet
+# — the safe direction — and the smoke test pins the Estonian labels so the
+# silence is attributable instead of mysterious.
+_BTTS_SEL = {"Jah": "yes", "Ei": "no"}
+_DC_SEL = {"1X": "1x", "12": "12", "X2": "x2"}
+_DNB_SEL = {"1": "home", "2": "away"}
+_OU_SEL = {"Üle": "over", "Alla": "under"}
+
+
+def _ou_tag(template: str, line: float) -> str | None:
+    """`corners_ou_{n}` + 9.5 -> `corners_ou_95`; 10.5 -> `corners_ou_105`.
+
+    Returns None for quarter lines — the shared vocabulary has no spelling for
+    them and the other books never write one.
+    """
+    if abs(line * 2 - round(line * 2)) > 1e-9:
+        return None
+    return template.format(n=f"{round(line * 10):02d}")
+
+
 def parse_contest(contest_json: dict) -> list[tuple[str, str, float, float | None]]:
     """(market, selection, odds, handicap_line) rows in the shared vocabulary.
 
@@ -75,6 +118,29 @@ def parse_contest(contest_json: dict) -> list[tuple[str, str, float, float | Non
     Estonian feed carries `1x2`, `1x2_{xup}up` (a 2-up variant), `3_way_handicap`,
     `1st_half_total`, `{competitor1}_total`, `total_corners`, `total_bookings`
     etc. side by side, and only the exact types below are the match markets we bet.
+
+    WHY ASIAN HANDICAP IS ABSENT, AND CANNOT SIMPLY BE ADDED
+    --------------------------------------------------------
+    UNIBET-SITE-MARKET-WIDENING-2026-09-15 audited a captured `contest-page` and
+    found the feed returns **21 propositions where this parser took 3**. Most of
+    that gap was simply never written and is taken below. `2_way_handicap`
+    ("Aasia händikäp") and `3_way_handicap` are the exception — **the handicap
+    LINE is not in the payload at all.** On the committed fixture both arrive as
+
+        {"propositionType": "2_way_handicap",
+         "options": [{"optionDisplayName": "1", "price": 2.0,  "total": null},
+                     {"optionDisplayName": "2", "price": 1.78, "total": null}]}
+
+    A price of 2.00 on "1" is meaningless without knowing whether it is -0.5 or
+    -1.5, and `asian_handicap` rows are keyed on `handicap_line` throughout the
+    pipeline. Writing them with a NULL line would drop an unpriceable row into
+    the market the router shops hardest — the same shape as KAMBI-CRITERION-
+    CONTAMINATION, where a look-alike offer entered a real market's vocabulary
+    and became the #1 recommended book at prices that did not exist.
+
+    So AH is deliberately NOT parsed. Recovering it needs the line from somewhere
+    else (a fuller `displayName` on other fixtures, or another endpoint) and that
+    is an investigation, not a parser change. Tracked as UNIBET-SITE-AH-LINE.
     """
     c = contest_json.get("contest") or contest_json
     props = c.get("propositions") or []
@@ -132,6 +198,55 @@ def parse_contest(contest_json: dict) -> list[tuple[str, str, float, float | Non
                 odds = _price(o.get("price"))
                 if sel and odds:
                     rows.append((tag, sel, odds, line))
+            continue
+
+        # ---- UNIBET-SITE-MARKET-WIDENING-2026-09-15 ----------------------
+        # Non-goal over/unders: 1st-half goals, corners, 1st-half corners,
+        # bookings. Exact-type dispatch, so `total` (match goals, handled
+        # above) and the per-team totals can never fall in here.
+        template = _OU_FAMILIES.get(ptype)
+        if template:
+            line = _total_line(opts)
+            if line is None:
+                continue
+            tag = _ou_tag(template, line)
+            if tag is None:
+                continue
+            for o in opts:
+                sel = _OU_SEL.get(str(o.get("optionDisplayName")))
+                odds = _price(o.get("price"))
+                if sel and odds:
+                    rows.append((tag, sel, odds, line))
+            continue
+
+        # Both teams to score — no line.
+        if ptype == "both_teams_to_score":
+            for o in opts:
+                sel = _BTTS_SEL.get(str(o.get("optionDisplayName")))
+                odds = _price(o.get("price"))
+                if sel and odds:
+                    rows.append(("btts", sel, odds, None))
+            continue
+
+        # Double chance. Selections are lower-cased to match the vocabulary the
+        # other books write (`1x` / `12` / `x2`), NOT the feed's display casing.
+        if ptype == "double_chance":
+            for o in opts:
+                sel = _DC_SEL.get(str(o.get("optionDisplayName")))
+                odds = _price(o.get("price"))
+                if sel and odds:
+                    rows.append(("double_chance", sel, odds, None))
+            continue
+
+        # Draw no bet. Shares the "1"/"2" option labels with `2_way_handicap`,
+        # which is precisely why this dispatches on the exact type and never on
+        # the option shape — see the AH note in the docstring.
+        if ptype == "draw_no_bet":
+            for o in opts:
+                sel = _DNB_SEL.get(str(o.get("optionDisplayName")))
+                odds = _price(o.get("price"))
+                if sel and odds:
+                    rows.append(("draw_no_bet", sel, odds, None))
             continue
     return rows
 
