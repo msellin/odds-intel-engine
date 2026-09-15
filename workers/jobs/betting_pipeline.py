@@ -77,37 +77,54 @@ def _run_coolbet_signal() -> None:
     from workers.automation.coolbet_signaler import signal_all_bets
     from workers.notify.telegram import send_telegram
 
-    # Operator kill switch — same DB flag the old auto-placer respected.
-    # /pause sets it; /resume clears. An OPERATOR-set pause silences
-    # signaling too, so the operator can fully mute Coolbet output during
-    # e.g. a personal break without env changes.
+    # ── THE ONLY GATE ON PUBLISHING IS THE PUBLISHING GATE ───────────────────
+    # PICKS-PUBLISH-DECOUPLED-FROM-OWN-PAUSE (2026-09-15).
     #
-    # SIGNAL-PAUSE-DECOUPLE (2026-08-27): a *daemon self-pause* is NOT an
-    # operator decision — it means the Mac daemon hit a sustained Coolbet
-    # outage and stopped placing. That is a placement-side problem, and it
-    # must not mute notification. Before this fix the two shared one flag:
-    # a daemon self-pause on 2026-08-23 03:53 UTC silenced every Telegram
-    # signal — operator chat AND the public @oddsintelpicks channel, which
-    # doesn't touch Coolbet at all — for 4 days and 12 picks. Nothing
-    # errored; "0 signals" is indistinguishable from "no qualifying picks".
-    # Signals are notification-only (no API calls, no real_bets writes), so
-    # they are always safe to send while placement is down.
+    # This function sends picks. It makes no Coolbet API call and writes no
+    # `real_bets` row. So `placement_paused` — the real-money kill switch —
+    # has no business gating it, and no longer does. Publishing is gated on
+    # `publishing_paused`, which only the operator's /pausepicks sets.
+    #
+    # THE HISTORY, because this coupling has now cost picks TWICE:
+    #   * 2026-08-23 — a daemon self-pause muted every Telegram signal for 4
+    #     days / 12 picks. SIGNAL-PAUSE-DECOUPLE fixed the self-pause branch
+    #     and LEFT the operator branch coupled.
+    #   * 2026-09-14 — the OWN-path verdict (migration 343,
+    #     docs/OWN_PATH_VERDICT_2026_09_14.md) set placement_paused to close
+    #     the automated-betting product, and the surviving branch silently took
+    #     the customer @oddsintelpicks channel down with it. The verdict says
+    #     in as many words: "This verdict is about what we BET, not what we
+    #     store." Nobody chose to stop publishing.
+    #
+    # Fixing one branch of a two-branch conflation is why it came back. The
+    # flag now matches its name, and matches the /pause help text in
+    # odds-intel-web's Telegram webhook, which has always promised
+    # "halt auto-placement until /resume" and never mentioned publishing.
+    #
+    # Placement state is still READ and REPORTED — a paused placer is worth
+    # seeing in the log next to the picks that went out anyway — but it does
+    # not return.
     try:
         from workers.automation.coolbet_state import (
-            is_daemon_self_pause, is_placement_paused,
+            is_placement_paused, is_publishing_paused,
         )
-        paused, reason = is_placement_paused()
+        pub_paused, pub_reason = is_publishing_paused()
+        place_paused, place_reason = is_placement_paused()
     except Exception:
-        paused, reason = (False, None)
-        is_daemon_self_pause = lambda _r: False  # noqa: E731
-    if paused and is_daemon_self_pause(reason):
+        pub_paused, pub_reason = (False, None)
+        place_paused, place_reason = (False, None)
+    if pub_paused:
         console.print(
-            f"[yellow]Placement paused by daemon self-pause (reason: {reason}) "
-            f"— signaling CONTINUES (notification-only, no Coolbet calls)[/yellow]"
+            f"[yellow]Pick publishing PAUSED by operator "
+            f"(reason: {pub_reason or 'no reason given'}) — /resumepicks to "
+            f"restore[/yellow]"
         )
-    elif paused:
-        console.print(f"[yellow]Coolbet signaler SKIPPED — operator paused (reason: {reason or 'no reason given'})[/yellow]")
         return
+    if place_paused:
+        console.print(
+            f"[dim]Placement is paused (reason: {place_reason}) — publishing "
+            f"CONTINUES (notification-only, no Coolbet calls)[/dim]"
+        )
 
     console.print("[bold cyan]Coolbet signaler (Telegram-only, no API calls)[/bold cyan]")
 

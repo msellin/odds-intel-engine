@@ -7501,59 +7501,103 @@ def test_selfpause_sticky_fix():
     )
 
 
-@test("SIGNAL-PAUSE-DECOUPLE — a daemon self-pause stops placement but must not mute Telegram signaling")
-def test_signal_pause_decouple():
-    """SIGNAL-PAUSE-DECOUPLE (2026-08-27): placement and notification
-    used to share one kill switch. When the Mac daemon self-paused on a
-    sustained Coolbet outage (2026-08-23 03:53 UTC), betting_pipeline's
-    signal gate returned early — muting the operator chat AND the public
-    @oddsintelpicks channel, which makes no Coolbet calls at all. Four
-    days and 12 picks went unsent with nothing erroring; "0 signals" is
-    indistinguishable from "no qualifying picks".
+@test("PICKS-PUBLISH-DECOUPLED-FROM-OWN-PAUSE — no placement pause of any kind may mute the customer channel")
+def test_picks_publish_decoupled_from_own_pause():
+    """SUPERSEDES the 2026-08-27 SIGNAL-PAUSE-DECOUPLE test, which pinned
+    "an operator-set pause must STILL mute signaling". That assertion was
+    correct for its day and became the bug.
 
-    Signals are notification-only (no Coolbet API calls, no real_bets
-    writes), so they are always safe while placement is down.
+    THE HISTORY, because this coupling has cost picks twice:
+      * 2026-08-23 — a daemon self-pause muted every Telegram signal for 4
+        days / 12 picks. SIGNAL-PAUSE-DECOUPLE fixed the self-pause branch
+        and deliberately LEFT the operator branch coupled.
+      * 2026-09-14 — the OWN-path verdict (migration 343) set
+        placement_paused to close the automated-betting product, and the
+        surviving branch armed a silent outage of the customer
+        @oddsintelpicks channel. A decision about what WE stake is not a
+        decision about what READERS see.
 
-    Pin: (a) a daemon self-pause does NOT return early; (b) an
-    operator-set pause still does; (c) both branch on the shared helper
-    so the marker string can't drift; (d) the helper itself behaves."""
+    Fixing one branch of a two-branch conflation is why it came back, so
+    this test pins the whole rule rather than one branch: publishing is
+    gated on `publishing_paused` and on NOTHING else. `signal_all_bets`
+    makes no Coolbet API call and writes no `real_bets` row, so it is safe
+    while placement is down — and cannot stake money if the gate falls open.
+
+    Pin: (a) the publishing gate reads is_publishing_paused and returns on
+    it; (b) NO placement-pause read causes a return in that function;
+    (c) the state helpers exist and read the right columns; (d) migration
+    353 adds them; (e) the daemon self-pause marker survives, because it
+    still governs auto-clear; (f) the helper falls open, not closed."""
     import pathlib
-    from workers.automation.coolbet_state import (
-        DAEMON_SELF_PAUSE_MARKER, is_daemon_self_pause,
-    )
 
-    # (d) functional — the discriminator itself.
+    # (e) + (f) functional — the discriminator and the fall-open contract.
+    from workers.automation.coolbet_state import (
+        DAEMON_SELF_PAUSE_MARKER, is_daemon_self_pause, is_publishing_paused,
+        set_publishing_paused,
+    )
     assert is_daemon_self_pause("daemon self-pause: 7 consecutive errors over 207m")
     assert not is_daemon_self_pause("operator break")
     assert not is_daemon_self_pause(None)
-    assert not is_daemon_self_pause("")
     assert DAEMON_SELF_PAUSE_MARKER == "daemon self-pause"
+    assert callable(set_publishing_paused)
 
     src = pathlib.Path("workers/jobs/betting_pipeline.py").read_text()
-    gate_start = src.index("is_placement_paused()")
-    gate = src[gate_start:gate_start + 1200]
+    fn_start = src.index("def _run_coolbet_signal(")
+    fn = src[fn_start:src.index("\ndef ", fn_start + 10)]
 
-    assert "is_daemon_self_pause(reason)" in gate, (
-        "Signal gate must distinguish a daemon self-pause from an "
-        "operator pause via the shared helper — not an inline substring."
+    # (a) the gate exists and it is the publishing flag that stops the send.
+    assert "is_publishing_paused()" in fn, (
+        "The publishing gate must read is_publishing_paused() — the "
+        "customer channel needs its own switch, not a borrowed one."
     )
-    # (a) the self-pause branch must NOT return.
-    self_pause_branch = gate[gate.index("if paused and is_daemon_self_pause(reason):"):gate.index("elif paused:")]
-    assert "return" not in self_pause_branch, (
-        "A daemon self-pause must NOT short-circuit signaling — "
-        "notification is safe while placement is down."
+    pub_branch = fn[fn.index("if pub_paused:"):]
+    assert "return" in pub_branch.split("\n    if ")[0], (
+        "publishing_paused must actually stop the send — otherwise the "
+        "operator has no kill switch on the customer feed at all."
     )
-    # (b) the operator branch must still return.
-    operator_branch = gate[gate.index("elif paused:"):]
-    assert "return" in operator_branch.split("\n\n")[0], (
-        "An operator-set pause must still mute signaling — that is the "
-        "deliberate /pause behaviour."
+
+    # (b) THE CORE INVARIANT: placement state may be read and logged, but no
+    # placement branch may return. Checked structurally rather than by
+    # eyeballing one branch name, because the last fix missed a branch.
+    place_idx = fn.index("if place_paused:")
+    # Take the branch body: every following line that is blank or indented
+    # DEEPER than the `if` itself. Slicing on the next "\n    " does not work —
+    # 4 spaces is a prefix of the body's own 8, so that match lands on the
+    # branch's first line and the assertion below reads an empty string and
+    # passes against anything. (Caught by mutation-testing this very test.)
+    _lines = fn[place_idx:].split("\n")
+    _body = [_lines[0]]
+    for _ln in _lines[1:]:
+        if _ln.strip() and not _ln.startswith("        "):
+            break
+        _body.append(_ln)
+    place_branch = "\n".join(_body)
+    assert "return" not in place_branch, (
+        "A placement pause must NOT short-circuit publishing. Publishing is "
+        "notification-only: no Coolbet API call, no real_bets write. This is "
+        "the assertion whose absence let the OWN-path verdict silently take "
+        "the customer channel offline on 2026-09-14."
     )
-    # (c) the daemon writes the same marker the gate reads.
-    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
-    assert "DAEMON_SELF_PAUSE_MARKER" in daemon, (
-        "Daemon must stamp the shared marker constant into the pause "
-        "reason so the signal gate's check can never drift out of sync."
+    assert fn.index("if pub_paused:") < place_idx, (
+        "Read the publishing gate first — a reader scanning this function "
+        "must meet the flag that actually governs publishing before the one "
+        "that does not."
+    )
+
+    # (c) the state helpers read the columns the migration creates.
+    state = pathlib.Path("workers/automation/coolbet_state.py").read_text()
+    assert "def is_publishing_paused()" in state and "def set_publishing_paused(" in state
+    assert "publishing_paused_reason" in state and "publishing_paused_at" in state
+
+    # (d) the migration exists and is the one that defines the columns.
+    mig = pathlib.Path(
+        "supabase/migrations/353_publishing_pause_separate_from_placement.sql"
+    ).read_text()
+    for col in ("publishing_paused", "publishing_paused_at", "publishing_paused_reason"):
+        assert col in mig, f"migration 353 must add {col}"
+    assert "DEFAULT FALSE" in mig, (
+        "publishing_paused must default FALSE — carrying the OWN-path pause "
+        "into publishing is the exact outcome this migration exists to prevent."
     )
 
 
@@ -8616,6 +8660,12 @@ def _():
         "handleTodayCommand",
         "handlePauseCommand",
         "handleResumeCommand",
+        # PICKS-PUBLISH-DECOUPLED-FROM-OWN-PAUSE (2026-09-15): the customer
+        # channel's own kill switch. Before it, /pause was the only way to
+        # silence @oddsintelpicks and it did so as a side effect of halting
+        # real-money placement — two different decisions on one flag.
+        "handlePausePicksCommand",
+        "handleResumePicksCommand",
         "handleHelpCommand",
     ):
         assert f"function {handler}(" in src, (
@@ -8635,6 +8685,10 @@ def _():
         ('"/today"',   "handleTodayCommand("),
         ('"/pause"',   "handlePauseCommand("),
         ('"/resume"',  "handleResumeCommand("),
+        # Dispatched by anchored regex, so there is no quoted literal to
+        # match — check the command text itself.
+        ('/pausepicks',  "handlePausePicksCommand("),
+        ('/resumepicks', "handleResumePicksCommand("),
         ('"/help"',    "handleHelpCommand("),
     ):
         assert trigger in src and fn in src, (
@@ -8644,16 +8698,33 @@ def _():
     # The per-command gate must include isOperator() — otherwise random
     # users could /pause and halt the bot. Verify the gate appears in
     # conjunction with each operator command rather than wrapping them.
-    for cmd in ("/status", "/today", "/pause", "/resume", "/help"):
+    for cmd in ("/status", "/today", "/pause", "/resume",
+                "/pausepicks", "/resumepicks", "/help"):
         # Look for the gated dispatch line for this command — accept
-        # either `text === "/cmd"` or `text.startsWith("/cmd")` followed
-        # by `&& isOperator(`.
+        # `text === "/cmd"`, `text.startsWith("/cmd")`, or the anchored
+        # regex form, each followed by `&& isOperator(`.
         gated_eq = f'text === "{cmd}" && isOperator(' in src
         gated_starts = f'text.startsWith("{cmd}") && isOperator(' in src
-        assert gated_eq or gated_starts, (
+        gated_re = f'/^\\{cmd}(\\s|$)/.test(text) && isOperator(' in src
+        assert gated_eq or gated_starts or gated_re, (
             f"Webhook must gate {cmd} with isOperator() — without the "
             f"per-command gate, non-operator chats could trigger it."
         )
+
+    # PREFIX-COLLISION (2026-09-15): "/pause" is a prefix of "/pausepicks".
+    # A bare startsWith("/pause") routes /pausepicks into the REAL-MONEY
+    # switch — halting placement while the operator believes they silenced
+    # the customer feed, and leaving the feed running. Two defences, both
+    # required: the specific command is dispatched first, and the general
+    # one is anchored so it cannot match the longer word at all.
+    assert src.index('/^\\/pausepicks(\\s|$)/.test(text)') < \
+           src.index('/^\\/pause(\\s|$)/.test(text)'), (
+        "/pausepicks must be dispatched BEFORE /pause."
+    )
+    assert 'text.startsWith("/pause")' not in src, (
+        "/pause must be anchored (/^\\/pause(\\s|$)/), not a bare "
+        "startsWith — it would swallow /pausepicks."
+    )
 
     # /pause writes to placement_paused (the kill switch column from mig 244)
     # so the placer respects it on next tick.
@@ -9280,6 +9351,24 @@ def _():
     for c in required_counters:
         assert c in src, f"missing funnel counter: {c}"
     assert "_print_funnel" in src, "run_morning must call _print_funnel when verbose"
+
+    # NEAR-MISS-VISIBILITY (2026-09-15): the counters alone cannot tell a
+    # genuinely flat slate from a mis-set floor — "594 candidates, 0 accepted"
+    # reads identically either way, and those call for opposite responses.
+    # Diagnosing 42h of zero picks needed the distance to the floor, so the
+    # funnel now carries it. (On the day: bot_v10_all's best of 594 missed by
+    # 0.12pp — flat slate, working pipeline.)
+    assert "_near[bot_name] = max(" in src, (
+        "run_morning must record the best edge-vs-threshold margin per bot — "
+        "without it a flat day and a broken floor are indistinguishable."
+    )
+    assert "near" in inspect.signature(_print_funnel).parameters, (
+        "_print_funnel must accept the near-miss margins and print them."
+    )
+    assert "missed its floor by" in inspect.getsource(_print_funnel), (
+        "_print_funnel must surface the near-miss margin — recording it "
+        "without printing it is the 'number computed but not surfaced' trap."
+    )
 
     # CLI runner exposes the flag
     import pathlib

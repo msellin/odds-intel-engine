@@ -177,6 +177,41 @@ explaining a bug tripped the assertion forbidding it.
 
 ---
 
+## 9b. Fixing one branch of a two-branch conflation guarantees a rerun
+
+`coolbet_session_state.placement_paused` did two unrelated jobs: halt real-money
+placement, and silence the customer `@oddsintelpicks` channel. In **August 2026**
+the second job caused an outage — a daemon self-pause muted every Telegram signal
+for 4 days / 12 picks. `SIGNAL-PAUSE-DECOUPLE` fixed it **for the self-pause
+branch** and deliberately left the operator branch coupled, because "operator
+`/pause` means full silence" sounded like a feature.
+
+Five weeks later, **2026-09-14**: the OWN-path verdict set `placement_paused` via
+migration 343 to close the automated-betting product. The surviving branch armed a
+silent outage of the customer feed. It cost nothing only by luck of timing — the
+last pick had been generated 23h earlier and the slate stayed flat — and the next
+qualifying pick would have vanished with no error on any surface.
+
+Three tells, all present both times:
+
+- **The column name described one job, the code did two.** `placement_paused`
+  never mentioned publishing; neither did the `/pause` help text, which promised
+  "halt auto-placement until /resume".
+- **The fix was scoped to the incident, not the conflation.** The August fix asked
+  "was *this* pause a legitimate reason to mute?" instead of "should this flag
+  decide muting at all?"
+- **Nothing reported it.** `signaled_at` is stamped only when a send lands, so a
+  muted pick and a day with no picks are the same row.
+
+**Rule:** when one flag is found governing two decisions, split the flag, not the
+branch. If a branch is genuinely wanted, give it its own switch with its own name —
+here, `publishing_paused` + `/pausepicks`. And when the two decisions belong to
+different **project directions** (🤖 OWN vs 👥 PICKS in `CLAUDE.md`), treat a shared
+flag as a defect on sight: a decision about what *we* stake will eventually be
+made by someone who is not thinking about what *readers* see.
+
+---
+
 ## Open, and worth closing to call this stable
 
 | Item | Why it matters |

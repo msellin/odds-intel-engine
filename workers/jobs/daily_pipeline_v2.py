@@ -2371,7 +2371,8 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
     return odds_matches, af_only_matches, af_preds, dict(best_bookmaker)
 
 
-def _print_funnel(funnel: dict, only_bot: str | None) -> None:
+def _print_funnel(funnel: dict, only_bot: str | None,
+                  near: dict[str, float] | None = None) -> None:
     """Print a per-bot candidate funnel table — shows how many candidates each
     bot generated and where in the filter chain they were dropped. Used to
     diagnose silent bots like bot_ou15_defensive.
@@ -2426,6 +2427,20 @@ def _print_funnel(funnel: dict, only_bot: str | None) -> None:
     console.print()
     console.print(t)
 
+    # NEAR-MISS-VISIBILITY (2026-09-15): "594 candidates, 0 accepted" is
+    # ambiguous in the one way that matters — a genuinely flat slate and a slate
+    # where every pick missed its edge floor by a hair look identical, and they
+    # call for opposite responses (wait vs. re-examine the floor). `near` carries
+    # the largest edge-minus-threshold margin each bot saw, in percentage points.
+    # Found while diagnosing 42h of zero picks on 2026-09-15.
+    if near:
+        for bot in bots:
+            if bot in near:
+                console.print(
+                    f"[dim]  {bot}: best edge missed its floor by "
+                    f"{abs(near[bot]) * 100:.2f}pp[/dim]"
+                )
+
 
 def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 shadow_mode: bool = False, shadow_cohort: str | None = None,
@@ -2464,6 +2479,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     _shadow_run_id: str | None = str(_uuid.uuid4()) if shadow_mode else None
     _pending_shadow_rows: list[dict] = []
     _funnel: dict[str, _Counter] = _dd_ct(_Counter)  # bot_name → Counter(step → n)
+    # NEAR-MISS-VISIBILITY: bot_name → max(edge - threshold) seen, for _print_funnel.
+    _near: dict[str, float] = {}
 
     today_str = date.today().isoformat()
     mode_tag = f" [SHADOW {shadow_cohort}]" if shadow_mode else ""
@@ -3555,6 +3572,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 if edge < me or odds < odds_min or odds > odds_max or cal_prob < min_prob:
                     if edge < me:
                         _funnel[bot_name]["drop_edge"] += 1
+                        _near[bot_name] = max(_near.get(bot_name, -9.9), edge - me)
                     elif odds < odds_min:
                         _funnel[bot_name]["drop_odds_too_low"] += 1
                     elif odds > odds_max:
@@ -3974,7 +3992,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         else:
             console.print(f"\n[yellow]SHADOW [{shadow_cohort}] — no candidate bets[/yellow]")
         if verbose_funnel:
-            _print_funnel(_funnel, verbose_funnel_bot)
+            _print_funnel(_funnel, verbose_funnel_bot, _near)
         # SHADOW-BOTS-MULTI-COHORT-EARLY-RETURN-FIX-2026-08-21: run the
         # new shadow-bot writers (no_pin, sweep, pin_ou, pin_1x2) BEFORE
         # the early return. The BET-TIMING-MONITOR shadow_mode path
@@ -4006,7 +4024,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     cohort_label = f" [{cohort} cohort]" if cohort else " [all bots]"
     console.print(f"\n[bold green]Done! {total_bets} bets placed{cohort_label}[/bold green]")
     if verbose_funnel:
-        _print_funnel(_funnel, verbose_funnel_bot)
+        _print_funnel(_funnel, verbose_funnel_bot, _near)
     console.print("[green]All data stored in Supabase — frontend can display it now[/green]")
 
     # Flush consolidated per-position alerts (one per match+market+selection,

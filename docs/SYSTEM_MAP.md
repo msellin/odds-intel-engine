@@ -338,6 +338,15 @@ stake (verified by read-back) → slip → place. Every exit writes exactly one
 - ⚠️ **`maturity_label` does NOT gate the UI placer.** It gates the Mac daemon, the
   Telegram public channel, the mirror jobs and every web surface — not this path.
   Safe today only because `PLACEABLE_BOTS` is hardcoded.
+- ⚠️ **`placement_paused` does NOT gate the Telegram public channel** — not any more
+  (PICKS-PUBLISH-DECOUPLED-FROM-OWN-PAUSE, 2026-09-15, migration 353). Publishing has
+  its own flag, `publishing_paused`, set only by `/pausepicks`. The two are separate
+  because a 🤖 OWN decision to stop staking is not a 👥 PICKS decision to stop
+  publishing: on 2026-09-14 the OWN-path verdict flipped `placement_paused` and armed
+  a silent customer-feed outage nobody chose. Publishing makes no Coolbet call and
+  writes no `real_bets` row, so it is safe while placement is down — and
+  `is_publishing_paused()` falls *open* on DB error for that reason. Full table:
+  `WORKFLOWS.md` § Pause semantics.
 - ⚠️ **`load_picks` has no `retired_at` / `is_active` check**, unlike
   `coolbet_placer.load_qualified_bets`. Same reason it is currently safe.
 

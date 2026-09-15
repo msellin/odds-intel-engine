@@ -342,9 +342,58 @@ DAEMON_SELF_PAUSE_MARKER = "daemon self-pause"
 def is_daemon_self_pause(reason: str | None) -> bool:
     """True when `reason` is a pause the daemon set on itself (as opposed to
     an operator /pause). Daemon self-pauses stop placement but must NOT stop
-    signaling, and may be auto-cleared; operator pauses do both and are
-    cleared only by the operator."""
+    signaling, and may be auto-cleared; operator pauses are cleared only by
+    the operator.
+
+    NOTE (2026-09-15): this distinction no longer decides whether picks are
+    PUBLISHED — `is_publishing_paused()` does, and neither kind of placement
+    pause touches it. It still decides auto-clear eligibility.
+    """
     return bool(reason) and DAEMON_SELF_PAUSE_MARKER in reason
+
+
+def is_publishing_paused() -> tuple[bool, str | None]:
+    """Returns (paused, reason) for the PUBLIC @oddsintelpicks channel.
+
+    PICKS-PUBLISH-DECOUPLED-FROM-OWN-PAUSE (2026-09-15). Publishing picks to
+    customers is a 👥 PICKS decision; halting real-money placement is a 🤖 OWN
+    one. They shared `placement_paused` until today, which meant the OWN-path
+    verdict (docs/OWN_PATH_VERDICT_2026_09_14.md) took the customer Telegram
+    feed offline as a side effect nobody chose and nothing reported.
+
+    Falls open (NOT paused) on DB error, matching `is_placement_paused`: the
+    risk profile is the same in reverse — a transient lookup failure should not
+    silently mute the customer feed, which is the failure mode we are fixing.
+    Publishing makes no Coolbet API call and writes no `real_bets` row, so
+    falling open cannot stake money.
+    """
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT publishing_paused, publishing_paused_reason "
+            "FROM coolbet_session_state WHERE id = 1"
+        )
+        if not rows:
+            return (False, None)
+        return (bool(rows[0].get("publishing_paused")),
+                rows[0].get("publishing_paused_reason"))
+    except Exception as e:
+        log.warning("publishing_paused read failed (defaulting to NOT paused): %s", e)
+        return (False, None)
+
+
+def set_publishing_paused(paused: bool, *, reason: str | None = None) -> None:
+    """Operator kill switch for the customer picks channel. Telegram
+    /pausepicks sets it; /resumepicks clears it. Deliberately separate from
+    `set_placement_paused` — see `is_publishing_paused`."""
+    _safe_write(
+        """UPDATE coolbet_session_state
+           SET publishing_paused = %s,
+               publishing_paused_at = CASE WHEN %s THEN NOW() ELSE NULL END,
+               publishing_paused_reason = %s
+           WHERE id = 1""",
+        (paused, paused, reason if paused else None),
+    )
 
 
 def set_placement_paused(paused: bool, *, reason: str | None = None) -> None:

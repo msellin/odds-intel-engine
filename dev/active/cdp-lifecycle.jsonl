@@ -83,3 +83,66 @@
 {"at": "2026-09-14T20:55:14+00:00", "event": "observed", "cdp_up": true, "walled": true, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "rebootstrap", "procs": 14}
 {"at": "2026-09-14T20:55:14+00:00", "event": "killed", "why": "rebootstrap tier", "pid_count": 14}
 {"at": "2026-09-14T20:56:30+00:00", "event": "healed", "tier": "rebootstrap", "ok": false, "skipped_rebootstrap": null, "steps": ["quit CDP-Chrome", "parked walled profile -> Chrome-CDP-OddsIntel.walled-20260914-235518", "relaunch rc=0", "jwt sync FAILED"], "reason": "", "error": "  ok                = False\n  jwt_obtained      = False\n  ttl_s             = None\n  user_id           = None\n  placement_paused  = None \u2192 None\n  message           = No JWT found. Check that CDP-Chrom"}
+{"at": "2026-09-14T21:25:06+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-14T21:25:06+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-14T21:25:29+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-14T21:55:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-14T21:55:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-14T21:55:23+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-14T22:25:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-14T22:25:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-14T22:25:20+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-14T22:55:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-14T22:55:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-14T22:55:29+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-14T23:25:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-14T23:25:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-14T23:25:22+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-14T23:55:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-14T23:55:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-14T23:55:21+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T00:25:01+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T00:25:01+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T00:25:15+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T00:55:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T00:55:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T00:55:22+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T01:25:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T01:25:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T01:25:18+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T01:55:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T01:55:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T01:55:22+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T02:25:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T02:25:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T02:25:19+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T02:55:03+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T02:55:03+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T02:55:19+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T03:25:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T03:25:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T03:25:19+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T03:55:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T03:55:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T03:55:22+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T04:25:04+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T04:25:04+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T04:25:17+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T04:55:06+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T04:55:06+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T04:55:23+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T05:25:04+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T05:25:04+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T05:25:19+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T05:55:03+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T05:55:03+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T05:55:19+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T06:25:06+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T06:25:06+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T06:25:21+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T06:55:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T06:55:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T06:55:23+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
+{"at": "2026-09-15T07:25:05+00:00", "event": "observed", "cdp_up": false, "walled": null, "jwt": null, "jwt_ttl_s": null, "captcha": null, "tier": "relaunch", "procs": 0}
+{"at": "2026-09-15T07:25:05+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 0}
+{"at": "2026-09-15T07:25:22+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "no JWT after relaunch \u2014 trying auto-login", "cdp auto-login FAILED"], "reason": "", "error": ""}
