@@ -90,9 +90,16 @@ def fit_alpha(pm, pk, ys):
     return best[1]
 
 def main() -> int:
+    import argparse
+    _ap = argparse.ArgumentParser()
+    _ap.add_argument("--bundle", default=BUNDLE,
+                     help="model bundle to score; lets an A/B train be compared "
+                          "against the shipped one through the identical harness")
+    _a = _ap.parse_args()
+    BUNDLE_USED = _a.bundle
     c = psycopg2.connect(os.getenv("DATABASE_URL")).cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cols = joblib.load(f"{BUNDLE}/feature_cols.pkl")
-    model = joblib.load(f"{BUNDLE}/result_1x2.pkl")
+    cols = joblib.load(f"{BUNDLE_USED}/feature_cols.pkl")
+    model = joblib.load(f"{BUNDLE_USED}/result_1x2.pkl")
     real = [x for x in cols if not x.endswith("_missing")]
     c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='match_feature_vectors'")
     have = {r["column_name"] for r in c.fetchall()}
@@ -171,7 +178,7 @@ def main() -> int:
         tot = sum(zs)
         return zs[0]/tot
     pk_shin = [shin(r["ph"], r["pd"], r["pa"]) for r in rows]
-    print(f"RESIDUAL TEST — universe: matches on/after {CUTOFF} with a Pinnacle triple")
+    print(f"RESIDUAL TEST — bundle {BUNDLE_USED}, matches on/after {CUTOFF} with a Pinnacle triple")
     print(f"  n = {len(rows)}   home-win base rate = {mean(ys):.4f}")
     print(f"  Pinnacle overround = {mean(inv):.4f}  (vig ≈ {100*(mean(inv)-1):.2f}%)\n")
 

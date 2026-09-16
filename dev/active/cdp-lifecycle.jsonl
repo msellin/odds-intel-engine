@@ -303,3 +303,9 @@
 {"at": "2026-09-16T12:55:06+00:00", "event": "healed", "tier": "autologin", "ok": false, "skipped_rebootstrap": null, "steps": ["cdp auto-login FAILED"], "reason": "", "error": "s/browser/e1c506af-c8b8-4262-811f-610a5a8e782c\n  - <ws disconnecting> ws://localhost:9222/devtools/browser/e1c506af-c8b8-4262-811f-610a5a8e782c\n  - <ws disconnected> ws://localhost:9222/devtools/brows"}
 {"at": "2026-09-16T13:25:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 11}
 {"at": "2026-09-16T13:55:12+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1783, "captcha": null, "tier": null, "procs": 13}
+{"at": "2026-09-16T14:25:12+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1793, "captcha": null, "tier": null, "procs": 12}
+{"at": "2026-09-16T14:55:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 12}
+{"at": "2026-09-16T15:25:12+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 12}
+{"at": "2026-09-16T15:55:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 12}
+{"at": "2026-09-16T16:25:12+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 11}
+{"at": "2026-09-16T16:55:12+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 11}

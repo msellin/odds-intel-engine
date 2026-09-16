@@ -58,6 +58,11 @@ INFORMATIVE_MISSING_COLS = [
     # covers ~30%; disagreement follows the same sparse-but-informative pattern.
     "pinnacle_implied_over25", "pinnacle_implied_under25",
     "ou25_bookmaker_disagreement", "market_implied_btts_yes",
+    # SIGNAL-FEATURES (2026-09-16) — league_* sits near 42% and
+    # pinnacle_ah_line_move near 26%, so missingness is informative here for the
+    # same reason it is for the Pinnacle block.
+    "league_avg_goals", "league_over25_pct", "league_btts_pct",
+    "pinnacle_ah_line_move",
 ]
 
 
@@ -595,6 +600,38 @@ OU_MARKET_FEATURE_COLS = [
 DRIFT_FEATURE_COLS = ["pinnacle_drift_home", "pinnacle_drift_draw", "pinnacle_drift_away"]
 
 
+# SIGNAL-FEATURES (FEED-THE-MODEL-WHAT-WE-ALREADY-COMPUTE, 2026-09-16).
+# 50 of the 90 signals we compute never reached the model. These four are the
+# ones that survived `scripts/candidate_signal_screen.py` — ranked by univariate
+# rank-AUC against BOTH targets and by correlation against features already in
+# FEATURE_COLS, on 78,358 settled matches with pre-kickoff captures only:
+#
+#   league_avg_goals       AUC(over2.5) 0.6165   r 0.70   n 32,713
+#   league_over25_pct      AUC(over2.5) 0.6127   r 0.69   n 32,610
+#   league_btts_pct        AUC(over2.5) 0.5803   r 0.60   n 32,620
+#   pinnacle_ah_line_move  AUC(home)    0.6207   r 0.62   n 20,542
+#
+# For scale: the O/U head's own AUC is 0.5796 and Pinnacle's is 0.6011 — a
+# single league base-rate column out-ranks our model. Not leakage; a strict
+# pre-kickoff bound moved it by 0.0000. Leagues differ enormously in scoring
+# rate and the O/U head was never told which league it was looking at beyond
+# `league_tier`.
+#
+# Deliberately EXCLUDED despite good coverage, because the screen found no
+# signal or pure redundancy: rest_days_norm_* (AUC 0.4997/0.5021 at 83%
+# coverage), away_team_turf_games_ytd (0.5043 at 53%), form_slope_*
+# (0.4986/0.5006), market_implied_* (r 0.94-0.98 with opening_implied_* -- the
+# same number renamed), league_draw_pct (r 0.87 with league_draw_rate_ytd),
+# squad_disruption_* (9% coverage). Coverage says what the model COULD read;
+# only the screen says what is worth reading.
+SIGNAL_FEATURE_COLS = [
+    "league_avg_goals",
+    "league_over25_pct",
+    "league_btts_pct",
+    "pinnacle_ah_line_move",
+]
+
+
 def _load_pinnacle_features() -> pd.DataFrame:
     """Per-match Pinnacle pre-match 1X2 implied probabilities.
 
@@ -638,6 +675,58 @@ def _load_pinnacle_features() -> pd.DataFrame:
             rows = [dict(r) for r in cur.fetchall()]
         conn.commit()
     return pd.DataFrame(rows)
+
+
+def _load_signal_features() -> pd.DataFrame:
+    """Per-match values for SIGNAL_FEATURE_COLS, read from `match_signals`.
+
+    These live in `match_signals`, not in `match_feature_vectors` — the same
+    split that caused MODEL-FEATURE-CONTRACT-AUDIT, where three declared
+    features had no mfv column and inference silently fed the model 0.0 for
+    them. Inference now backfills any declared feature the mfv row lacks from
+    match_signals, so adding a signal here makes it available on BOTH sides
+    without a migration.
+
+    PRE-KICKOFF BOUND is load-bearing, not hygiene. `league_avg_goals` and
+    friends are computed over "the last 200 finished matches in this league"
+    with no bound relative to the match being scored, so the LATEST capture for
+    an old match can encode results that had not happened when it kicked off.
+    Training on that would manufacture an edge that evaporates in production.
+    """
+    from workers.api_clients.db import get_conn
+    import psycopg2.extras
+
+    sql = """
+    SELECT m.id AS match_id, ms.signal_name, ms.signal_value
+      FROM matches m
+      JOIN LATERAL (
+            SELECT signal_name, signal_value
+              FROM match_signals
+             WHERE match_id = m.id
+               AND signal_name = ANY(%s)
+               AND captured_at < m.date
+             ORDER BY captured_at DESC
+      ) ms ON true
+     WHERE m.status = 'finished'
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SET LOCAL statement_timeout = '600s'")
+            cur.execute(sql, (SIGNAL_FEATURE_COLS,))
+            rows = [dict(r) for r in cur.fetchall()]
+        conn.commit()
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows)
+    # Latest pre-KO capture per (match, signal); the LATERAL is ordered so the
+    # first row per group wins.
+    df = df.drop_duplicates(subset=["match_id", "signal_name"], keep="first")
+    wide = df.pivot(index="match_id", columns="signal_name", values="signal_value")
+    wide = wide.reset_index().rename_axis(None, axis=1)
+    for c in SIGNAL_FEATURE_COLS:
+        if c not in wide.columns:
+            wide[c] = None
+    return wide[["match_id"] + SIGNAL_FEATURE_COLS]
 
 
 def _load_ou_market_features() -> pd.DataFrame:
@@ -760,6 +849,7 @@ def _load_ou_market_features() -> pd.DataFrame:
 
 def load_training_data(include_pinnacle: bool = False,
                        include_ou_market: bool = False,
+                       include_signals: bool = False,
                        include_drift: bool = False,
                        cutoff_date: str | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load match_feature_vectors rows with completed outcomes from the DB.
@@ -857,9 +947,22 @@ def load_training_data(include_pinnacle: bool = False,
                 f"({ou.shape[0] / len(df) * 100:.1f}% coverage)[/dim]"
             )
 
+    if include_signals:
+        sig = _load_signal_features()
+        if not sig.empty:
+            stale = [c for c in SIGNAL_FEATURE_COLS if c in df.columns]
+            if stale:
+                df = df.drop(columns=stale)
+            df = df.merge(sig, on="match_id", how="left")
+            console.print(
+                f"[dim]Joined signal features for {sig.shape[0]:,} matches "
+                f"({sig.shape[0] / len(df) * 100:.1f}% coverage)[/dim]"
+            )
+
     feature_cols = (FEATURE_COLS
                     + (PINNACLE_FEATURE_COLS if include_pinnacle else [])
                     + (OU_MARKET_FEATURE_COLS if include_ou_market else [])
+                    + (SIGNAL_FEATURE_COLS if include_signals else [])
                     + (DRIFT_FEATURE_COLS if include_drift else []))
     features_df = df[feature_cols].copy()
     # Postgres NUMERIC columns come back as decimal.Decimal which pandas can't
@@ -899,6 +1002,7 @@ def train_all(version: str = "untagged",
               output_root: Path | None = None,
               include_pinnacle: bool = False,
               include_ou_market: bool = False,
+              include_signals: bool = False,
               include_drift: bool = False,
               cutoff_date: str | None = None,
               ou_exclude_tier_c: bool = True):
@@ -922,6 +1026,7 @@ def train_all(version: str = "untagged",
         features_df, targets_df = load_training_data(
             include_pinnacle=include_pinnacle,
             include_ou_market=include_ou_market,
+            include_signals=include_signals,
             include_drift=include_drift,
             cutoff_date=cutoff_date,
         )
@@ -998,7 +1103,7 @@ def train_all(version: str = "untagged",
             n_training_rows=n_rows,
             feature_cols=augmented_feature_cols,
             cv_metrics=cv_metrics_combined,
-            notes=f"Auto-uploaded by train.py train_all() (include_pinnacle={include_pinnacle}, include_ou_market={include_ou_market})",
+            notes=f"Auto-uploaded by train.py train_all() (include_pinnacle={include_pinnacle}, include_ou_market={include_ou_market}, include_signals={include_signals})",
         )
         console.print(f"[bold green]✓ Bundle {version} uploaded + registered in model_versions[/bold green]\n")
     except Exception as e:
@@ -1029,6 +1134,12 @@ if __name__ == "__main__":
                         help="Add Pinnacle OU 2.5 implied probs + OU 2.5 bookmaker "
                              "disagreement + market-implied BTTS yes to FEATURE_COLS "
                              "(v14+ bundles). Overround guard applied to Pinnacle rows.")
+    parser.add_argument("--include-signals", action="store_true",
+                        help="Add the screened match_signals features to FEATURE_COLS "
+                             "(SIGNAL_FEATURE_COLS: league_avg_goals, league_over25_pct, "
+                             "league_btts_pct, pinnacle_ah_line_move). Read pre-kickoff "
+                             "only. See scripts/candidate_signal_screen.py for why these "
+                             "four and not the other 46.")
     parser.add_argument("--include-drift", action="store_true",
                         help="Add Pinnacle open→close drift columns (DRIFT-FEATURE). "
                              "Empirical: +8.76pp home WR spread top vs bottom quintile "
@@ -1054,6 +1165,7 @@ if __name__ == "__main__":
         version=args.version,
         include_pinnacle=args.include_pinnacle,
         include_ou_market=args.include_ou_market,
+        include_signals=args.include_signals,
         include_drift=args.include_drift,
         cutoff_date=args.cutoff,
         ou_exclude_tier_c=not args.ou_include_tier_c,

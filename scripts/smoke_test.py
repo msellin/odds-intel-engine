@@ -44353,6 +44353,48 @@ def test_placement_gate_all_executors():
         "coolbet_inplay execute mode must call the gate BEFORE _place_bet_api"
 
 
+@test("SIGNAL-FEATURES-TRAINING-WIRING — the screened signals load pre-kickoff and stay opt-in")
+def test_signal_features_training_wiring():
+    """FEED-THE-MODEL-WHAT-WE-ALREADY-COMPUTE (2026-09-16). SIGNAL_FEATURE_COLS
+    carries the four signals that survived `candidate_signal_screen.py`. Two
+    properties have to hold or the A/B that judges them is worthless.
+
+    1. PRE-KICKOFF. `league_avg_goals` and friends are computed over "the last
+       200 finished matches in this league" with NO bound relative to the match
+       being scored, so the latest capture for an old match can encode results
+       that had not happened at kickoff. Training on that manufactures an edge
+       that evaporates in production.
+    2. OPT-IN. The block must stay behind `include_signals`, so a control bundle
+       can be trained with everything else identical. The A/B on 2026-09-16
+       depended on exactly that and found the features HURT O/U while HELPING
+       1x2 — a result impossible to see without a matched control.
+    """
+    src = _engine_path("workers/model/train.py").read_text(encoding="utf-8")
+
+    assert "SIGNAL_FEATURE_COLS" in src, "the screened signal list must exist"
+    fn = src[src.index("def _load_signal_features("):src.index("def _load_ou_market_features(")]
+    assert "captured_at < m.date" in fn, (
+        "the signal loader must read only captures from BEFORE kickoff — the "
+        "league_* aggregates have no bound relative to the match being scored"
+    )
+    assert "%" not in fn.replace("%s", ""), (
+        "a literal '%' in the loader's SQL — psycopg2 reads it as a placeholder "
+        "and every training run raises IndexError (ANALYSIS_GOTCHAS 59d)"
+    )
+    assert "include_signals" in src, "the block must be opt-in so a control can be trained"
+    assert "SIGNAL_FEATURE_COLS if include_signals else []" in src, (
+        "SIGNAL_FEATURE_COLS must be appended only under the flag, else there is "
+        "no way to train a matched control"
+    )
+    # Sparse coverage makes missingness informative here for the same reason it
+    # is for the Pinnacle block; without the indicator the model reads a NULL as
+    # a real zero.
+    for c in ("league_avg_goals", "pinnacle_ah_line_move"):
+        assert c in src.split("INFORMATIVE_MISSING_COLS")[1].split("]")[0], (
+            f"{c} must carry a _missing indicator — coverage is ~22 pct in training"
+        )
+
+
 @test("CANDIDATE-SIGNAL-SCREEN-GUARDS — the feature screen must be pre-kickoff and psycopg2-safe")
 def test_candidate_signal_screen_guards():
     """2026-09-16, FEED-THE-MODEL-WHAT-WE-ALREADY-COMPUTE. 50 of our 90 signals

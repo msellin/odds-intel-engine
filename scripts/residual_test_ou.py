@@ -192,14 +192,18 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--line", default="25", help="O/U line suffix, e.g. 25 for over_under_25")
     ap.add_argument("--cutoff", default=CUTOFF)
+    ap.add_argument("--bundle", default=BUNDLE,
+                    help="model bundle to score; lets an A/B train be compared "
+                         "against the shipped one through the identical harness")
     a_ = ap.parse_args()
     market = f"over_under_{a_.line}"
     thresh = float(a_.line) / 10.0
 
     c = psycopg2.connect(os.getenv("DATABASE_URL")).cursor(
         cursor_factory=psycopg2.extras.RealDictCursor)
-    cols = joblib.load(f"{BUNDLE}/feature_cols.pkl")
-    model = joblib.load(f"{BUNDLE}/over_under.pkl")
+    bundle = a_.bundle
+    cols = joblib.load(f"{bundle}/feature_cols.pkl")
+    model = joblib.load(f"{bundle}/over_under.pkl")
     real = [x for x in cols if not x.endswith("_missing")]
     c.execute("SELECT column_name FROM information_schema.columns "
               "WHERE table_name='match_feature_vectors'")
@@ -256,7 +260,7 @@ def main() -> int:
     pk = [(1 / r["po"]) / s for r, s in zip(rows, inv)]
     pk_shin = [shin2(r["po"], r["pu"]) for r in rows]
 
-    print(f"RESIDUAL TEST (O/U {thresh}) — bundle {BUNDLE}, matches on/after {a_.cutoff}")
+    print(f"RESIDUAL TEST (O/U {thresh}) — bundle {bundle}, matches on/after {a_.cutoff}")
     print(f"  n = {len(rows)}   over-{thresh} base rate = {mean(ys):.4f}")
     print(f"  Pinnacle overround = {mean(inv):.4f}  (vig ~ {100*(mean(inv)-1):.2f}%)\n")
 

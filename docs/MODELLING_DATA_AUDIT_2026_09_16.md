@@ -219,6 +219,58 @@ That is the value of screening before adding: three of the candidates I named in
 (`away_team_turf_games_ytd`, 87.4%) is worthless. Coverage told us what the model
 COULD read; only this tells us what is worth reading.
 
+#### The A/B result — the screen was right about association and wrong about usefulness
+
+Two bundles trained on the identical 156,746 matches with the identical cutoff
+(2026-08-20) and identical flags, differing **only** in `--include-signals`
+(67 vs 75 columns — the four features plus their `_missing` indicators). Both
+scored through the same residual harness that produced the shipped α = 0.0000.
+
+**Deciding (REALISTIC) arm:**
+
+| market | metric | control | +4 signals |
+|---|---|---|---|
+| O/U 2.5 | model AUC | **0.5851** | **0.5620** |
+| | α | 0.0150 | **0.0000** |
+| | residual AUC | 0.4711 | 0.4254 |
+| 1x2 | model AUC | **0.6571** | **0.6711** |
+| | α | 0.0000 | 0.0000 |
+| | residual AUC | 0.4208 | 0.4488 |
+
+**Neither passes.** The bar is blend log-loss < market **and** α > 0.02; α is
+0.0000 on the treatment in both markets, and the market's AUC (0.6028 / 0.7004)
+is untouched.
+
+But the two markets moved in **opposite directions**, and that is the finding:
+
+* The three `league_*` features — chosen *for* O/U on univariate AUC 0.6165 —
+  made O/U **worse** (−0.023 AUC, α from 0.0150 to 0).
+* `pinnacle_ah_line_move` — chosen for 1x2 — moved 1x2 the right way (+0.014
+  AUC, residual AUC 0.4208 → 0.4488, closer to the 0.5 of no-information).
+
+**Why the O/U features backfired — the leading hypothesis.** The signals cover
+**22.6% of the training rows but ~42% of the evaluation window**. A gradient
+booster handed a column that is absent on three quarters of its training data
+learns to split on the `_missing` indicator, which encodes *era and coverage*
+rather than football. When coverage shifts between train and serve, that learned
+rule misfires. This is the same failure the audit's headline describes — sparse
+columns teaching the missingness pattern — arriving from the other direction.
+
+**What it settles.** Univariate association does not survive contact with the
+fitted model: `league_avg_goals` out-ranks our O/U head standalone (0.6165 vs
+0.5796) and still degrades it when added. The screen ranks what to TRY; only the
+harness decides, and here it said no.
+
+**What it supports.** The same four features help one target and hurt the other.
+That is direct empirical support for `SPLIT-FEATURE-SETS-1X2-VS-GOALS` — a
+single shared feature set cannot be right for both heads, and this is the first
+measurement showing it rather than arguing it.
+
+**Not shipped.** `FEATURE_COLS` is unchanged for production; the block is opt-in
+behind `--include-signals` and both A/B bundles are experimental. Re-try only
+with the coverage gap closed (backfill the league aggregates historically) or
+inside a goals-specific feature set.
+
 ### Category 2 — we collect the raw data and have never made a signal from it
 
 Tables the feature pipeline has never read. It reads only `matches`,
