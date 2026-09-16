@@ -44439,6 +44439,45 @@ def test_residual_harness_verified():
     )
 
 
+@test("OU25-DC-RHO-IS-INERT — the Dixon-Coles correction cannot move O/U 2.5, in either implementation")
+def test_ou25_dc_rho_is_inert():
+    """2026-09-16. `ou25_dedicated.py` hardcodes DIXON_COLES_RHO = -0.18 for every
+    league on earth, while a per-league fit over 310 leagues puts the median at
+    -0.048 (p5 -0.20, p95 +0.19). That looks like a bug worth fixing.
+
+    It is not. The four cells tau corrects — 0-0, 0-1, 1-0, 1-1 — are ALL under
+    2.5 goals, and their mass changes cancel exactly:
+
+        d = rho * e^-lam_h * e^-lam_a * lam_h*lam_a * (-1 + 1 + 1 - 1) = 0
+
+    so with the renormalisation that function already does, rho cannot move
+    P(over 2.5) at all. Measured across rho in {-0.30, -0.18, -0.048, 0, +0.20}:
+    spread 0.00e+00.
+
+    So the constant is INERT, not wrong, and "correcting" it would change
+    nothing while implying it had. The real cost is that a module named for
+    Dixon-Coles reduces, for its only output, to independent Poisson — which is
+    what MODEL_WHITEPAPER §5.1 was citing when it justified a higher model
+    weight for goal-line markets.
+
+    This also cross-checks the phase-1 algebraic proof against a SECOND,
+    independently written implementation.
+    """
+    from workers.model.ou25_dedicated import _over25_prob_from_lambdas as f
+    for lh, la in ((1.5, 1.1), (0.8, 0.7), (2.3, 1.9), (3.1, 0.4)):
+        vals = [f(lh, la, r) for r in (-0.30, -0.18, -0.048, 0.0, 0.20)]
+        assert max(vals) - min(vals) < 1e-12, (
+            f"rho now moves P(over 2.5) at lam=({lh},{la}) — spread "
+            f"{max(vals)-min(vals):.3e}. Either the renormalisation was removed "
+            f"or tau was changed; both invalidate the reasoning above."
+        )
+    # And the same invariance in our own implementation, so the two cannot drift.
+    from workers.model.dixon_coles import prob_over, score_matrix
+    for lh, la in ((1.5, 1.1), (2.3, 1.9)):
+        vals = [prob_over(score_matrix(lh, la, r), 2.5) for r in (-0.15, 0.0, 0.15)]
+        assert max(vals) - min(vals) < 1e-12, "our own tau leaked past the 2.5 line"
+
+
 @test("DIXON-COLES-GUARDS — the fitter keeps its intercept, its ridge, and its out-of-sample discipline")
 def test_dixon_coles_guards():
     """Phase 1-2 of DIXON-COLES-OU-BASELINE. Three properties, each of which was
