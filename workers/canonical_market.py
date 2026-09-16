@@ -113,6 +113,13 @@ def ou_selection_to_storage(selection: str | None) -> tuple[str, str] | None:
 
 # --- the ONE normaliser: any observed (market, selection) -> canonical -----
 _OU_MARKET_RE = re.compile(r"^over_under_(\d{2,3})$")
+# FIRST-HALF total goals, written by the Unibet-Site widening
+# (UNIBET-SITE-MARKET-WIDENING-2026-09-15). Its OWN family, never folded
+# into `o/u`: a first-half Over 1.5 and a full-match Over 1.5 are different
+# bets that settle on different scorelines, and collapsing them is exactly
+# the vocabulary merge this module exists to prevent. Same treatment the
+# `1x2_1h` and `team_total_1h` variants already get.
+_OU_1H_MARKET_RE = re.compile(r"^over_under_1h_(\d{2,3})$")
 # Any parametric over/under family that encodes the line in the market name:
 # corners_ou_95, corners_home_ou_75, corners_1h_ou_45, cards_ou_30, cards_away_ou_20…
 # Captured family stem keeps the '_ou' suffix (e.g. 'corners_home_ou').
@@ -126,6 +133,24 @@ _ONE_X_TWO_SEL = {"1": "home", "x": "draw", "2": "away",
 def _digits_to_line(d: str) -> float:
     """'25'->2.5, '05'->0.5, '105'->10.5."""
     return int(d) / 10.0
+
+
+def _digits_to_1h_line(d: str) -> float:
+    """First-half O/U line code -> float. '05'->0.5, '15'->1.5, '075'->0.75, '125'->1.25.
+
+    DIFFERENT from _digits_to_line, and deliberately so. There, 3 digits means
+    tenths ('105' -> 10.5) because a full-match goals line really can be 10.5.
+    A FIRST-HALF goals line cannot: the observed set tops out at 6.5, and the
+    3-digit codes actually stored are the QUARTER lines — 075, 125, 175, 225,
+    275, 325, 375, 425 — every one of them a `.25`/`.75`. Reusing the tenths
+    rule would read `over_under_1h_075` as 7.5 instead of 0.75, i.e. a line ten
+    times too big, silently, on a market we grade.
+
+    (Those quarter lines stopped being written on 2026-09-04 and only the half
+    lines are live today, but a book can start quoting them again at any time
+    and the mapper must not be the thing that breaks when it does.)
+    """
+    return int(d) / (100.0 if len(d) == 3 else 10.0)
 
 
 def _line_to_ou_market(line: float) -> str:
@@ -152,6 +177,21 @@ def normalize(market: str | None, selection: str | None) -> dict | None:
     if m in ("1x2", "1x2_1h"):
         sel = _ONE_X_TWO_SEL.get(s)
         return {"family": m, "market": m, "selection": sel, "line": None} if sel else None
+
+    # First-half Over/Under — matched BEFORE the full-match pattern so the
+    # intent is obvious to a reader, though the two regexes are disjoint anyway.
+    # `market` is preserved verbatim rather than rebuilt, so the 1h-ness cannot
+    # be lost on a round trip.
+    o1 = _OU_1H_MARKET_RE.match(m)
+    if o1:
+        side = s if s in ("over", "under") else None
+        if side is None:
+            ms = _OU_SEL_RE.match(selection or "")
+            side = ms.group(1).lower() if ms else None
+        if side in ("over", "under"):
+            return {"family": "o/u_1h", "market": m, "selection": side,
+                    "line": _digits_to_1h_line(o1.group(1))}
+        return None
 
     # Over/Under total goals — the line may live in the MARKET (over_under_25) or in
     # the SELECTION ('over 2.5'), depending on which table wrote it.

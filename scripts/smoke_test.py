@@ -42942,13 +42942,26 @@ def test_picks_board_settlement():
        computation belongs at analysis time.
     """
     import re as _r
+    import ast as _ast
     src = _engine_path("workers/jobs/settlement.py").read_text()
     assert "def settle_picks_board" in src, (
         "picks_board settlement is gone. Its outcome column goes back to being "
         "written by nothing, and the target-met question becomes unanswerable."
     )
-    body = src[src.index("def settle_picks_board"):]
-    body = body[:body.index("\ndef ", 1)]
+    # CODE ONLY — via ast, docstring dropped. The function's docstring names
+    # simulated_bets and real_bets while EXPLAINING that it must not touch them,
+    # so a raw substring check fails on the file that documents the rule
+    # correctly. This trap has been hit three times in this suite; ast is the
+    # fix that actually holds (a regex stripping triple-quoted strings ate the
+    # SQL last time). RELIABILITY_LEDGER #9.
+    _fn = next(n for n in _ast.walk(_ast.parse(src))
+               if isinstance(n, _ast.FunctionDef) and n.name == "settle_picks_board")
+    _stmts = list(_fn.body)
+    if (_stmts and isinstance(_stmts[0], _ast.Expr)
+            and isinstance(getattr(_stmts[0], "value", None), _ast.Constant)
+            and isinstance(_stmts[0].value.value, str)):
+        _stmts = _stmts[1:]
+    body = "\n".join(_ast.unparse(x) for x in _stmts)
 
     # 1. shared grader
     assert "settle_bet_result(" in body, (
