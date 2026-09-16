@@ -193,15 +193,20 @@ inside one strategy.*
 stated without a confidence interval attached, or it does not get stated.
 
 
-**(e) `shadow_bets` rows are NOT bets — they are re-evaluations.** The
-half-hourly refresh re-emits the same (bot, match, market, selection) on every
-pass and stores each as its own settled row. Fleet-wide: **162,191 settled rows
--> 20,444 distinct picks, 7.9x inflation, 87.4% re-emissions**, worst case 46
-copies of one pick over 22.4 hours. ROI is unaffected (uniform duplication
-cancels top and bottom) but **n, confidence intervals and t-statistics are not**
--- t is inflated by roughly **2.8x**. Always `count(distinct (bot_id, match_id,
-market, selection))`, never `count(*)`, and divide any t you compute on raw rows
-by ~2.8 before believing it. See SHADOW-BETS-DEDUP.
+**(e) Query `shadow_bets_unique`, NEVER `shadow_bets`.** The base table stores
+one row per RE-EVALUATION: the half-hourly refresh re-emits the same (bot, match,
+market, selection) every pass and each is its own settled row. All-time that is
+**162,191 settled rows for 20,444 real picks -- 7.9x**, worst case 51 copies of
+one pick. **The view `shadow_bets_unique` already solves this** (DISTINCT ON the
+four keys, ORDER BY pick_time, i.e. first emission) and the product reads it. It
+also already carries `clv_margin_corrected`, so do not recompute margins by hand.
+
+⚠️ **Recorded because I got this wrong on 2026-09-17 and briefly filed it as a P0
+defect.** Querying the base table directly produced n inflated 7.9x, t-statistics
+inflated ~2.8x, and an ROI for `bot_v10_all` of +5.83% where the deduped truth is
+**+9.74% on n=573**. Note the ROI moved too -- re-emission is NOT uniform across
+winners and losers, so the comforting "duplication cancels in a ratio" is false.
+The fix already existed; the bug was in my query.
 
 **And the rule that keeps catching me:** every one of (a)-(e) was found only
 after a confident wrong answer had already been written down. The measurement
