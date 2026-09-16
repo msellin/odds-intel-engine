@@ -65,11 +65,23 @@ them as signals). Any evaluation reading only mfv resolves them to `None`, and
 `build_X` turns `None` into `0.0` — so the model is silently handicapped on the
 three features carrying the market's own 1x2 price.
 
-`residual_test_ou.py` now joins them explicitly (52.7% available). **The O/U
-verdict did not move** — α stayed 0.0000. But `residual_test.py`, whose α = 0
-closed model-anchored 1x2, still has the defect. Filed as
-`RESIDUAL-TEST-ZEROED-MARKET-FEATURES`: the 1x2 conclusion should be re-run
-before it is treated as final.
+**RESOLVED 2026-09-16 — both tests fixed and re-run.** Same universe each time
+(O/U n=7,273; 1x2 n=7,775, identical base rate and overround), so the only thing
+that changed is what the model was fed:
+
+| test | model AUC before → after | residual AUC before → after | α |
+|---|---|---|---|
+| 1x2 (deciding arm) | 0.6437 → **0.6632** | 0.3791 → 0.4189 | 0.0000 both |
+| O/U (deciding arm) | 0.5788 → 0.5796 | 0.4443 → 0.4429 | 0.0000 both |
+
+The defect was real and material for 1x2 — **+0.0195 AUC** from three columns —
+and changed **neither verdict**. That is precisely why it could have sat there
+indefinitely: a silently handicapped model that still FAILS looks identical to a
+fair model that fails. Both closures now rest on a fair test.
+
+It also tells us something useful: **the model can use market features when it is
+given them.** That is evidence about the feature pipeline, not about the model
+family — and it is the strongest single argument for the rest of this audit.
 
 ---
 

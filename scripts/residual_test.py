@@ -10,6 +10,38 @@ BEFORE this ran, including two corrections found by auditing the design:
   * The primary runs twice — OPTIMISTIC on stored features, REALISTIC with the
     eight post-hoc columns forced to NULL. The REALISTIC arm decides.
 
+RE-RUN 2026-09-16 after RESIDUAL-TEST-ZEROED-MARKET-FEATURES
+------------------------------------------------------------
+Until this date the query selected only from `match_feature_vectors`, so the
+three features holding the MARKET's own 1x2 price -- pinnacle_implied_home /
+_draw / _away, which live in `match_signals`, not mfv -- were dropped by the
+`real` filter and `build_X` fed the model 0.0 for all three. In a test whose
+entire purpose is to compare the model against that market, the model never saw
+it. Fixed with three LEFT JOIN LATERALs; same universe (n = 7,775 both runs,
+identical base rate and overround), so the only thing that changed is what the
+model was given.
+
+    arm                          model AUC        residual AUC
+                              before -> after    before -> after
+    OPTIMISTIC                0.6635 -> 0.6718   0.4089 -> 0.4416
+    REALISTIC (DECIDES)       0.6437 -> 0.6632   0.3791 -> 0.4189
+    REALISTIC + SHIN          0.6437 -> 0.6632   0.3693 -> 0.4025
+
+The defect was REAL and MATERIAL: supplying the three features lifted the
+deciding arm's AUC by +0.0195. It did NOT change the verdict.
+
+    alpha = 0.0000 on all three arms, before and after.
+    market AUC 0.6997 vs model AUC 0.6632 -- the model is still well behind.
+    residual AUC 0.4189 -- still BELOW 0.5, so where the model disagrees with
+    Pinnacle, Pinnacle is still right more often.
+
+So model-anchored 1x2 stays closed, and now it is closed on a fair test rather
+than on a handicapped one. Two things worth carrying forward: (a) the model can
+use market features when given them, which is evidence about the FEATURE
+PIPELINE rather than about the model family; (b) an evaluation that silently
+turns a missing column into 0.0 will always fail quietly -- see
+docs/MODELLING_DATA_AUDIT_2026_09_16.md s1a.
+
     python3 scripts/residual_test.py
 """
 from __future__ import annotations
@@ -86,9 +118,31 @@ def main() -> int:
                       ORDER BY o.match_id, o.selection, o.timestamp DESC)
         SELECT {", ".join(f'mfv."{x}"' for x in real)},
                (m.score_home > m.score_away) hw, m.date,
-               ph.od ph, pd.od pd, pa.od pa
+               ph.od ph, pd.od pd, pa.od pa,
+               sh.v AS pinnacle_implied_home, sd.v AS pinnacle_implied_draw,
+               sa.v AS pinnacle_implied_away
           FROM match_feature_vectors mfv
           JOIN matches m ON m.id = mfv.match_id
+          -- RESIDUAL-TEST-ZEROED-MARKET-FEATURES (fixed 2026-09-16).
+          -- pinnacle_implied_home/draw/away are in the model's feature_cols.pkl
+          -- (train.py:581 PINNACLE_FEATURE_COLS builds them from odds_snapshots)
+          -- but have NO COLUMN in match_feature_vectors -- daily_pipeline_v2
+          -- writes them to match_signals instead. This query selected only from
+          -- mfv, so the `real` filter above dropped all three and build_X's
+          -- r.get(cl) returned None, which val() turns into 0.0. The model was
+          -- therefore fed ZERO for the three features carrying the MARKET's own
+          -- 1x2 price, inside a test whose whole purpose is to compare the model
+          -- against that market. Signals exist for roughly half the universe; the
+          -- *_missing indicators still fire correctly for rows without one.
+          LEFT JOIN LATERAL (SELECT signal_value v FROM match_signals
+                              WHERE match_id=m.id AND signal_name='pinnacle_implied_home'
+                              ORDER BY captured_at DESC LIMIT 1) sh ON true
+          LEFT JOIN LATERAL (SELECT signal_value v FROM match_signals
+                              WHERE match_id=m.id AND signal_name='pinnacle_implied_draw'
+                              ORDER BY captured_at DESC LIMIT 1) sd ON true
+          LEFT JOIN LATERAL (SELECT signal_value v FROM match_signals
+                              WHERE match_id=m.id AND signal_name='pinnacle_implied_away'
+                              ORDER BY captured_at DESC LIMIT 1) sa ON true
           JOIN pin ph ON ph.match_id = m.id AND ph.selection='home'
           JOIN pin pd ON pd.match_id = m.id AND pd.selection='draw'
           JOIN pin pa ON pa.match_id = m.id AND pa.selection='away'

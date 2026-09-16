@@ -44353,6 +44353,49 @@ def test_placement_gate_all_executors():
         "coolbet_inplay execute mode must call the gate BEFORE _place_bet_api"
 
 
+@test("RESIDUAL-TEST-MARKET-FEATURES-SUPPLIED — neither residual test may feed a model feature as zero")
+def test_residual_test_market_features_supplied():
+    """2026-09-16, RESIDUAL-TEST-ZEROED-MARKET-FEATURES.
+
+    `pinnacle_implied_home` / `_draw` / `_away` are in the model's
+    `feature_cols.pkl` (train.py PINNACLE_FEATURE_COLS builds them from
+    odds_snapshots) but have NO COLUMN in `match_feature_vectors` — daily_pipeline_v2
+    writes them to `match_signals`. Both residual tests selected only from mfv, so
+    their `real` filter dropped all three and `build_X`'s `r.get(cl)` returned None,
+    which `val()` turns into 0.0. The model was fed ZERO for the three features
+    carrying the MARKET's own price, inside a test whose entire purpose is to compare
+    the model against that market.
+
+    It was material: the deciding arm's AUC rose 0.6437 -> 0.6632 once supplied. It
+    did not change either verdict (alpha stayed 0.0000 for both 1x2 and O/U), which is
+    exactly why it could have sat there forever — a silently handicapped model that
+    still FAILS looks identical to a fair model that fails.
+
+    The guard is that both scripts must actually join the signals. A `_missing`
+    indicator is not a substitute: it records that the value was absent, it does not
+    supply it.
+    """
+    for script in ("scripts/residual_test.py", "scripts/residual_test_ou.py"):
+        src = _engine_path(script).read_text(encoding="utf-8")
+        assert "match_signals" in src, (
+            f"{script} never reads match_signals — pinnacle_implied_home/draw/away "
+            f"have no column in match_feature_vectors, so the model is being fed 0.0 "
+            f"for the three features holding the market's own price"
+        )
+        for sig in ("pinnacle_implied_home", "pinnacle_implied_draw", "pinnacle_implied_away"):
+            assert f"signal_name='{sig}'" in src, f"{script} does not join {sig}"
+        # psycopg2 reads a literal '%' in a SQL string as a placeholder and raises
+        # IndexError on execute — ANALYSIS_GOTCHAS §59(d). It happened while making
+        # this very fix ("~53% of the universe" inside the new SQL comment).
+        q_start = src.index("c.execute(f\"\"\"")
+        q_end = src.index("\"\"\"", q_start + 14)
+        sql = src[q_start:q_end]
+        assert "%" not in sql.replace("%s", ""), (
+            f"{script} has a literal '%' inside its SQL — psycopg2 parses it as a "
+            f"parameter placeholder and every run raises IndexError"
+        )
+
+
 @test("RESIDUAL-TEST-OU-METHOD — the clean O/U alpha test keeps the 1x2 pre-registration's guards")
 def test_residual_test_ou_method():
     """2026-09-16. The audit closed model-anchored 1x2 at alpha = 0.0000 but left

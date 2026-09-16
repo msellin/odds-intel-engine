@@ -92,36 +92,26 @@ hypothesised. See §4.**
 
 ---
 
-## 3. Finding: the Pinnacle guest API is broken from BOTH hosts
+## 3. Pinnacle — CORRECTED 2026-09-16
 
-Last turn I called this the biggest prize for a home tunnel. **That was wrong,
-and the direction is inverted.**
+An earlier pass claimed Pinnacle was blocked from both hosts. **Wrong** — that
+measurement used the system resolver and hit an EMTA DNS sinkhole.
 
 ```
-Mac (Estonia)   → www.pinnacle.com          TIMEOUT 12s  (DNS resolves fine)
-                → guest.api.arcadia...      TIMEOUT 12s
-VPS (Finland)   → guest.api.arcadia...      HTTP 403, Cloudflare error 1020
+Telia EE resolver  → 195.80.107.145                    EMTA sinkhole → timeout
+1.1.1.1 / 8.8.8.8  → 104.18.42.200, 172.64.145.56      real Cloudflare
+Mac → real CF IP + SNI  →  HTTP 200, 400KB of matchups  ✅
 ```
 
-A silent timeout on *every* Pinnacle host from an Estonian residential line,
-with DNS resolving, is **EMTA ISP-level blocking** — Pinnacle is not
-EMTA-licensed and Estonian ISPs block it (`BETTING_ARCHITECTURE.md:53`,
-`OWN_PATH_VERDICT_2026_09_14.md:133`).
+The EMTA block is **DNS poisoning only**; a public resolver bypasses it. Pinnacle
+works from the Mac today, which is how the n=92 paired test ran. No regression.
 
-So the two hosts are blocked for **opposite** reasons, and the consequence is
-the inverse of what I said:
+**Consequence:** the VPS block is Cloudflare WAF 1020 **on the datacenter IP**;
+the residential IP is not CF-blocked. So the §4 tunnel plus a public resolver
+should unlock Pinnacle on the VPS as well — one extra `curl` to confirm, and it
+would make the fresh-Pinnacle anchor a schedulable feed rather than a Mac-only
+research script.
 
-> **Routing the VPS through the Estonian home line would make Pinnacle *less*
-> reachable, not more** — it would inherit the EMTA block. Pinnacle needs a
-> **non-Estonian, non-datacenter** egress, which is a third thing entirely and
-> not what §4 builds.
-
-Also note: `AF-PINNACLE-NOT-PINNACLE-2026-09-14` ran this probe successfully
-from the Mac two days ago (n=92). It does not run today. **Either the EMTA block
-is new or something else changed — that is a live regression, and any conclusion
-depending on refreshing that comparison is currently un-reproducible.**
-
----
 
 ## 4. ✅ CONFIRMED: the IP is the entire blocker — Coolbet works from the VPS
 
