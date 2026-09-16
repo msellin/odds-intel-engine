@@ -20,7 +20,8 @@ HOST  VPS   egress 204.168.199.8    (Hetzner, Helsinki FI, datacenter)
 
 BOOK             WALL                       MAC direct   MAC+FS   VPS direct   VPS+FS
 Epicbet          Cloudflare challenge       OK           n/a      CF-CHALLENGE  ✅ OK
-Coolbet          Imperva                    IMPERVA¹     IMPERVA¹ IMPERVA      IMPERVA
+Coolbet          Imperva                    IMPERVA¹     IMPERVA¹ IMPERVA      IMPERVA¹
+   └─ VPS + warm FS session through a residential-EE tunnel → REAL DATA ✅ (§4)
 Pinnacle-guest   CF WAF rule 1020           TIMEOUT²     ERROR    CF-WAF-RULE   ERROR
 Unibet-Site      DataDome                   OK           n/a      ✅ OK         n/a
 API-Football     none (control)             HTTP-403³    OK       HTTP-403³     OK
@@ -71,12 +72,13 @@ It is worth doing on its own merits, independent of everything below.
 
 ### 🔧 Blocked on egress IP — one fix unblocks all of these
 
-| Job | Hits | Exact blocker |
-|---|---|---|
-| `coolbet-odds-snapshot` | Coolbet fo-tree + sidebets via FS | Imperva refuses the Hetzner IP even through FS |
-| `near-kickoff-capture` — **Coolbet third** | Coolbet, plain requests + harvested cookies | same |
+| Job | Hits | Exact blocker | Status |
+|---|---|---|---|
+| `coolbet-odds-snapshot` | Coolbet fo-tree + sidebets via FS | egress IP only | **✅ UNBLOCKED — proven working from the VPS through a residential tunnel, §4** |
+| `near-kickoff-capture` — **Coolbet third** | Coolbet, plain requests + harvested cookies | egress IP only | ✅ same fix |
 
-**Solution: give the VPS a residential Estonian egress.** See §4.
+**Solution: give the VPS a residential Estonian egress — now confirmed, not
+hypothesised. See §4.**
 
 ### 🔒 Blocked on something an IP cannot fix
 
@@ -121,51 +123,77 @@ depending on refreshing that comparison is currently un-reproducible.**
 
 ---
 
-## 4. Solution for the IP-blocked jobs: WireGuard egress through home
+## 4. ✅ CONFIRMED: the IP is the entire blocker — Coolbet works from the VPS
 
-Terminate WireGuard on something always-on at home (router, a ~€60 Pi, or the
-Mac) and **policy-route only Coolbet traffic** out through it. Everything else —
-Postgres, the 99 scheduler jobs, Epicbet, AF — keeps the fast Hetzner path.
+**Tested 2026-09-16 with a reverse SOCKS tunnel (`ssh -N -R 1080`), which made the
+VPS egress as the operator's Estonian residential IP. Same box, same FlareSolverr,
+same Linux Chromium, same warm-session shape. ONE variable: the egress IP.**
+
+```
+=== NOPROXY  (Hetzner 204.168.199.8, Helsinki datacenter) ===
+    warmup nav #1      HTTP=200  bytes=1,066    -> CHALLENGE (not solved)
+    warmup nav #2      HTTP=200  bytes=967      -> CHALLENGE (not solved)
+    API (warm)         HTTP=200  bytes=892      -> CHALLENGE (not solved)
+
+=== TUNNEL   (95.153.51.90, Telia EE residential) ===
+    warmup nav #1      HTTP=200  bytes=6,078    -> WALL           (the known §2 wall)
+    warmup nav #2      HTTP=200  bytes=963      -> CHALLENGE
+    API (warm)         HTTP=200  bytes=170,237  -> REAL DATA ✅
+```
+
+Reproduced twice at exactly 170,237 bytes. Payload verified as the genuine
+`fo-tree`: 30 top-level categories, keys `children/depth/fullSlug/id/name/slug`,
+containing `Premier League`, `matches_count`, `Jalgpall`, `Inglismaa`.
+
+### What this settles
+
+1. **Imperva blocks Coolbet on the IP alone.** Not the fingerprint.
+2. **`COOLBET_RUNBOOK.md:23` and `WORKFLOWS.md:147` are wrong** where they say
+   *"Hetzner IP **+ Linux Chrome fingerprint**"*. The successful request above was
+   made by Linux Chromium in Docker on the Hetzner box. Only the IP moved. The
+   fingerprint half has never been the obstacle, and it should be struck.
+3. **The warmup pattern is what earns the cookies**, and it works through a tunnel
+   — a fresh visitor identity, no production cookie replay needed.
+
+### Method notes that matter for anyone re-running this
+
+- **A cold, unseeded FS call is challenged from BOTH IPs** (999 vs 1000 bytes,
+  identical markers). So is a plain `curl` (965 vs 964). Anyone testing without a
+  warm named session + warmup navigations will measure nothing and wrongly
+  conclude the tunnel failed. **That was the first result this investigation got,
+  and it was a false negative.**
+- **Deliberately did NOT seed the production Imperva cookies from the DB.** They
+  are bound to the live visitor identity; replaying them from a second IP risks
+  flagging a `visid_incap_*` that lasts ~8 months and would take down the working
+  Mac feed. A fresh visitor per session is the safe experiment, and it was
+  sufficient.
+- FlareSolverr on the VPS runs on a **bridge** network, so it cannot reach an
+  `ssh -R` loopback forward. The test used a throwaway `--network host` container
+  on port 8192, since removed.
+
+### Build it properly: WireGuard, not a standing SSH tunnel
+
+The SSH reverse tunnel proved the point but is not the production shape — it dies
+with the terminal and depends on the Mac. Terminate WireGuard on something
+always-on at home (router, a ~€60 Pi, or the Mac) and **policy-route only Coolbet
+traffic** through it. Everything else — Postgres, the 99 scheduler jobs, Epicbet,
+AF — keeps the fast Hetzner path.
 
 Why this and not a commercial proxy:
-- The egress is **the operator's own residential Estonian IP** — the exact one
-  Imperva accepts today, not a lookalike.
+- The egress is **the operator's own residential Estonian IP** — now proven to be
+  the one Imperva accepts.
 - **No third party in the path** of an account that holds real money.
 - **No T&C problem.** Own connection, own account, EMTA-licensed book, operator
-  physically in Estonia. Nothing is misrepresented.
-- A commercial EE residential proxy is worse on every axis here: shared IPs carry
-  worse reputation than your own line, `visid_incap_*` flags stick to a *visitor*
-  for ~8 months so you can silently inherit someone's history, and most
-  bookmaker T&Cs prohibit proxies outright regardless of intent.
+  physically in Estonia.
+- A commercial EE residential proxy is worse on every axis: shared IPs carry worse
+  reputation than your own line, `visid_incap_*` flags stick to a *visitor* for
+  ~8 months so you can silently inherit someone's history, and most bookmaker T&Cs
+  prohibit proxies outright regardless of intent.
 
-### Test it in 5 minutes before building anything
-
-SSH can do a reverse SOCKS forward — no WireGuard, no hardware, nothing
-installed. **Run from the Mac** (a sandbox classifier blocked me from opening it):
-
-```bash
-ssh -N -R 1080 root@204.168.199.8
-```
-
-Then, in another terminal, from the VPS — traffic exits via the Mac's Estonian IP:
-
-```bash
-ssh root@204.168.199.8 'curl -s --socks5-hostname localhost:1080 -o /dev/null -w "%{http_code}\n" https://api.ipify.org && curl -s --socks5-hostname localhost:1080 "https://www.coolbet.com/s/sbgate/category/fo-tree/et?country=EE" | head -c 300'
-```
-
-- **Estonian IP echoed + JSON categories** → the IP was the whole blocker.
-  `coolbet-odds-snapshot` and the Coolbet near-kickoff third can move. Build the
-  WireGuard version properly.
-- **Imperva interstitial** → the fingerprint claim survives after all; we will
-  have *measured* it instead of inheriting it, and the proxy route is not worth
-  trying either.
-
-⚠️ The bare-FS caveat from §1 applies: to make this a fair test of the production
-path it should run through the seeded `coolbet_prod` FS session, not a naive
-call. The quick version above is still worth running first — a plain 200 is
-already decisive in the positive direction.
-
----
+**Note the FS-must-reach-the-tunnel constraint** — with WireGuard the routing is
+at the kernel level so the bridge-network problem disappears, but it is exactly
+the kind of detail that produces a mysterious failure if the container ends up on
+a network that bypasses the policy route. Verify with the egress check first.
 
 ## 5. Solution for Unibet: a persistent logged-in Chrome on the VPS
 
@@ -211,11 +239,11 @@ disarmed (mig 343/354) pending OWN Phase 3.
 | # | Do | Needs | Direction |
 |---|---|---|---|
 | 1 | Move the 5 zero-risk jobs (§2 ✅) | nothing | 🤖👥 BOTH — Epicbet in-play + near-kickoff stop depending on the laptop being open; that feeds both stake sizing and published CLV |
-| 2 | Run the 5-minute reverse-SOCKS test (§4) | one command, from the Mac | decides everything below |
-| 3 | If green: WireGuard + move the 2 Coolbet jobs | a Pi or router at home | 🤖 OWN — the Coolbet price basis every real stake is sized from stops having laptop-shaped holes |
+| 2 | ~~Run the reverse-SOCKS test~~ | — | ✅ **DONE 2026-09-16 — green, §4** |
+| 3 | **WireGuard + move the 2 Coolbet jobs** | a Pi or router at home | 🤖 OWN — the Coolbet price basis every real stake is sized from stops having laptop-shaped holes |
 | 4 | Only then consider Unibet-on-VPS (§5) | step 3 done first | 🤖 OWN, speculative |
 | — | Log the Pinnacle regression (§3) | — | 👥 PICKS — the AF-vs-real-Pinnacle comparison is currently un-reproducible |
-| — | Correct `COOLBET_RUNBOOK.md:23` + `WORKFLOWS.md:147` | after step 2 | both assert a fingerprint cause that the evidence does not support |
+| — | **Correct `COOLBET_RUNBOOK.md:23` + `WORKFLOWS.md:147`** | ready now | both assert a "Linux Chrome fingerprint" cause **disproven** in §4 — the working request was Linux Chromium on the Hetzner box |
 
 **Not yet in `PRIORITY_QUEUE.md`** — this is a design, and per the queue rules a
 decision is not a task. Say the word and I will file steps 1–3 as one epic row

@@ -66,6 +66,16 @@ untested" is now measured, and it lands where 1x2 landed: alpha = 0.
 a month on a new O/U model. This is a verdict on THIS model, not on O/U
 modelling, and this model is barely an O/U model at all:
 
+  * ⚠️ THREE OF ITS 52 FEATURES HAVE NO COLUMN IN `match_feature_vectors`.
+    `pinnacle_implied_home` / `_draw` / `_away` — the market's own 1x2 price —
+    live in `match_signals` (train.py:581 builds them from odds_snapshots;
+    daily_pipeline_v2 writes them as signals). Any evaluation that reads only
+    mfv resolves them to None and `build_X` turns None into 0.0, silently
+    handicapping the model on exactly the three features most likely to matter.
+    This script now LEFT JOINs them (52.7% available on the universe). The
+    verdict did not move. **`scripts/residual_test.py` — the 1x2 test whose
+    alpha=0.0000 closed model-anchored 1x2 — still has this defect**; filed as
+    RESIDUAL-TEST-ZEROED-MARKET-FEATURES.
   * it shares `feature_cols.pkl` with the 1x2 head — one 52-feature set,
     engineered for match OUTCOME, with the label swapped. The only architectural
     difference between the two trainers is max_depth (5 vs 6) and the objective.
@@ -210,9 +220,27 @@ def main() -> int:
                       ORDER BY o.match_id, o.selection, o.timestamp DESC)
         SELECT {", ".join(f'mfv."{x}"' for x in real)},
                (m.score_home + m.score_away) AS total_goals, m.date,
-               po.od po, pu.od pu
+               po.od po, pu.od pu,
+               sh.v AS pinnacle_implied_home, sd.v AS pinnacle_implied_draw,
+               sa.v AS pinnacle_implied_away
           FROM match_feature_vectors mfv
           JOIN matches m ON m.id = mfv.match_id
+          -- SIGNAL-RESIDENT FEATURES (2026-09-16). pinnacle_implied_home/draw/away
+          -- are model features that have NO COLUMN in match_feature_vectors — they
+          -- live in match_signals (train.py:581 PINNACLE_FEATURE_COLS builds them
+          -- from odds_snapshots; daily_pipeline_v2 writes them as signals). A test
+          -- that reads only mfv feeds all three as 0.0 via r.get()->None and
+          -- silently handicaps the model on 3 of its 52 real features — the three
+          -- carrying the MARKET's own 1x2 price. Joined explicitly.
+          LEFT JOIN LATERAL (SELECT signal_value v FROM match_signals
+                              WHERE match_id=m.id AND signal_name='pinnacle_implied_home'
+                              ORDER BY captured_at DESC LIMIT 1) sh ON true
+          LEFT JOIN LATERAL (SELECT signal_value v FROM match_signals
+                              WHERE match_id=m.id AND signal_name='pinnacle_implied_draw'
+                              ORDER BY captured_at DESC LIMIT 1) sd ON true
+          LEFT JOIN LATERAL (SELECT signal_value v FROM match_signals
+                              WHERE match_id=m.id AND signal_name='pinnacle_implied_away'
+                              ORDER BY captured_at DESC LIMIT 1) sa ON true
           JOIN pin po ON po.match_id = m.id AND po.selection='over'
           JOIN pin pu ON pu.match_id = m.id AND pu.selection='under'
          WHERE m.status='finished' AND m.score_home IS NOT NULL
