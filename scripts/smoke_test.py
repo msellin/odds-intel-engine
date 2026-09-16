@@ -42666,53 +42666,130 @@ def test_edge_labels_distinct():
     )
 
 
-@test("PERFORMANCE-SHOWS-EVERY-BOT — the measurement surface hides nothing")
-def test_performance_shows_every_bot():
-    """PERFORMANCE-SHOWS-EVERY-BOT (2026-09-15, owner).
+@test("PERF-PUBLIC-IS-CALIBRATED-OR-BETA — only bots with live results are listed publicly")
+def test_performance_public_is_calibrated_or_beta():
+    """PERF-PUBLIC-IS-CALIBRATED-OR-BETA (2026-09-16, owner).
 
-    /performance filtered out every bot whose maturity_label was 'experimental'
-    — in THREE places, none of them commented. On the day this was found that
-    hid **13 of 15 active bots**, including every sharp-anchored strategy, on the
-    page whose entire purpose is measuring them. The owner's model is the right
-    one and is now explicit in the code:
+    This filter was REMOVED on 2026-09-15 and RESTORED on 2026-09-16, so the
+    reasoning is written down here rather than re-derived a third time.
 
-        /performance = where bots are MEASURED. Everything appears.
-        /picks       = what customers are OFFERED. Curated, via
-                       bots.show_on_picks (migration 356).
+    2026-09-15: /performance filtered out every bot whose maturity_label was
+    'experimental' — in three places, none of them commented — and the owner
+    reported that `bot_v10_all` was published to Telegram but missing from a
+    customer surface. The filter was dropped entirely, on the argument that
+    /performance is the measurement surface and hiding a bot hides evidence.
 
-    Hiding a bot on the measurement surface hides the evidence, and it is the
-    same instinct that publishes only the good months.
+    2026-09-16: that over-corrected. It listed all 13 experimental shadow bots,
+    every one of them with ZERO settled bets, so the public leaderboard read as
+    13 rows of dashes beneath 2 rows of results. Owner: "all our shadow bots are
+    now here...it should be so that, the ones we have on performance page are
+    either calibrated or beta", "all shadow bots are experimental", "most shadow
+    bots are only for ourselves".
 
-    Safe because each row carries a MaturityChip and the table separates
-    "enough data" from "still collecting", so a 5-bet experimental bot cannot
-    sort above one with 640."""
+    And the 2026-09-15 argument was wrong on its own terms: `bot_v10_all` is
+    CALIBRATED and was never hidden by that filter. Removing it did not fix the
+    reported problem (which is /picks, governed by bots.show_on_picks) and
+    created a new one on a public page.
+
+    THE RULE: /performance is public. `calibrated` and `beta` mean "there are
+    live results behind this row"; `experimental` means "still collecting", and
+    the shadow fleet is OWN-direction work whose surface is /admin/shadow-bots.
+    A bot with no settled bets has no evidence to show a reader.
+
+    `bot_sharp_forward_test_v1` is exempt: it is injected below the filter from
+    its own pre-registered ledger, because it is the bot whose picks readers
+    actually receive."""
+    import re as _r
     agg = _web_path("src/lib/bot-aggregates.ts").read_text()
     page = _web_path("src/app/(app)/performance/page.tsx").read_text()
     client = _web_path("src/components/performance-client.tsx").read_text()
 
-    for label, src in (("bot-aggregates", agg), ("performance page", page),
-                       ("performance client", client)):
-        # comments may DISCUSS the old filter; only the code must not do it.
-        import re as _r
-        code = _r.sub(r"//.*", "", src)
-        code = _r.sub(r"/\*.*?\*/", "", code, flags=_r.DOTALL)
-        assert "maturityLabel !== 'experimental'" not in code.replace(" ", "").replace(
-            'maturityLabel!==', "maturityLabel !== ") or True, ""
-        flat = code.replace(" ", "").replace("\n", "")
-        assert "maturityLabel!=='experimental'" not in flat and \
-               'maturityLabel??"active")!=="experimental"' not in flat, (
-            f"{label} still filters experimental bots off /performance. That page "
-            f"is the measurement surface — curation belongs on /picks via "
-            f"bots.show_on_picks."
+    def _code(src: str) -> str:
+        """Strip comments — the files DISCUSS the old filter at length, and a
+        test that trips on the explanation teaches the next reader to delete the
+        explanation. RELIABILITY_LEDGER #9: inspect code, not comments."""
+        x = _r.sub(r"/\*.*?\*/", "", src, flags=_r.DOTALL)
+        return _r.sub(r"//.*", "", x)
+
+    # ONE definition of the allowlist, and it is exactly {calibrated, beta}.
+    agg_code = _code(agg)
+    assert "PUBLIC_MATURITY_LABELS" in agg_code and "isPublicBot" in agg_code, (
+        "the allowlist is gone from lib/bot-aggregates.ts. Three surfaces decide "
+        "this; three inline copies of a label list is how they drift apart."
+    )
+    m = _r.search(r"PUBLIC_MATURITY_LABELS[^=]*=\s*new Set\(\s*\[(.*?)\]",
+                  agg_code, _r.DOTALL)
+    assert m, "PUBLIC_MATURITY_LABELS is no longer a literal Set of labels"
+    labels = {t.strip().strip('"\'') for t in m.group(1).split(",") if t.strip()}
+    assert labels == {"calibrated", "beta"}, (
+        f"the public leaderboard allowlist is {sorted(labels)}, not "
+        f"['beta', 'calibrated']. 'experimental' here would put the whole shadow "
+        f"fleet — 13 bots with zero settled bets between them — on a public page."
+    )
+
+    # ALL THREE surfaces must use it. They disagreed once already (the table
+    # filtered while the hero count did not), which is the 43-vs-25 mismatch the
+    # performance-client comment has been rewritten twice to prevent.
+    for label, src in (("lib/bot-aggregates.ts", agg),
+                       ("/performance page", page),
+                       ("performance-client", client)):
+        assert "isPublicBot(" in _code(src), (
+            f"{label} no longer gates on isPublicBot(). Every surface that "
+            f"counts or lists bots must use the same allowlist, or the hero "
+            f"count and the table it sits above stop agreeing."
         )
 
-    # and the row must still be LABELLED, or unhiding them is misleading
+    # The picks bot must survive the filter — it is injected from its own ledger
+    # AFTER it, and it is the one row a reader can check against what we posted.
+    page_code = _code(page)
+    fi = page_code.index("isPublicBot(")
+    # the INJECTION site specifically (`name: "..."`), not the first mention —
+    # the file also maps that bot's bets higher up, and anchoring on the wrong
+    # occurrence made this assertion fail on correct code.
+    pi = page_code.index('name: "bot_sharp_forward_test_v1"')
+    assert pi > fi, (
+        "bot_sharp_forward_test_v1 is now injected BEFORE the maturity filter, "
+        "so the filter will drop it — it is 'experimental' in the DB. That bot "
+        "produces the picks readers receive; its record is the whole point."
+    )
+
+    # and every listed row must still be LABELLED
     lb = _web_path("src/components/performance-leaderboard.tsx").read_text()
     assert "MaturityChip" in lb, (
-        "the leaderboard must render a maturity chip — showing an experimental "
-        "bot beside a calibrated one without saying which is which is worse "
-        "than hiding it."
+        "the leaderboard must render a maturity chip — a beta bot at n=51 "
+        "beside a calibrated one at n=641 without saying which is which "
+        "invites the reader to weigh them equally."
     )
+
+    # DB reality check: the allowlist must actually select the bots with
+    # evidence. Skips cleanly offline.
+    try:
+        from workers.api_clients.db import execute_query as _eq
+        rows = _eq("""SELECT b.maturity_label AS ml,
+                             (SELECT count(*) FROM simulated_bets s
+                               WHERE s.bot_id = b.id
+                                 AND s.result IN ('won','lost')) AS settled
+                        FROM bots b
+                       WHERE b.is_active AND b.retired_at IS NULL""", [])
+    except Exception:
+        rows = None
+    if rows:
+        listed = [r for r in rows if r["ml"] in ("calibrated", "beta")]
+        hidden = [r for r in rows if r["ml"] not in ("calibrated", "beta")]
+        assert listed, (
+            "the allowlist selects NO active bot — /performance would render an "
+            "empty leaderboard."
+        )
+        assert all(r["settled"] > 0 for r in listed), (
+            "a calibrated/beta bot has zero settled bets. The labels are "
+            "supposed to MEAN there are live results behind the row; if one "
+            "does not, the label is wrong, not the filter."
+        )
+        assert all(r["settled"] == 0 for r in hidden), (
+            "a hidden bot has settled bets — real evidence is being withheld "
+            "from the public page. Promote it to beta rather than widening "
+            "this filter."
+        )
 
 
 @test("PICKS-BOARD-WATCHLIST — the watchlist is never pooled into the pre-registered ledger")
@@ -43801,11 +43878,12 @@ def test_own_bots_off_customer_surfaces():
         assert leak[0]["n"] == 0, "an OWN bot wrote picks_forward_test"
     # ASSERT THE INVARIANT, NOT A PROXY (corrected 2026-09-15). This used to
     # require the string `maturityLabel !== 'experimental'` in /performance.
-    # That filter was removed the same day by an explicit owner decision
-    # (PERFORMANCE-SHOWS-EVERY-BOT — "this page is the measurement surface;
-    # curation of what customers are OFFERED happens on /picks"), and the test
-    # went red over a UI choice while the thing it was written to protect was
-    # never in danger. `/performance` is built from `dashboard_cache.bot_breakdown`,
+    # That filter was removed the same day by an owner decision and RESTORED on
+    # 2026-09-16 as an allowlist (PERF-PUBLIC-IS-CALIBRATED-OR-BETA) — which is
+    # exactly why this test must not pin it. It went red over a UI choice that
+    # reversed twice in 24 hours, while the thing it was written to protect —
+    # an OWN bot leaking into the customer ledger — was never in danger either
+    # time. `/performance` is built from `dashboard_cache.bot_breakdown`,
     # which is derived from `simulated_bets`; OWN bots write `shadow_bets` only.
     # So the real guard is the zero-simulated_bets assertion above, plus this:
     # no OWN bot may actually appear in the page's data source. That survives any
