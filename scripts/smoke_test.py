@@ -44380,15 +44380,46 @@ def test_own_margin_by_market_guards():
         "get compared as one market and invent a discrepancy that is not there"
     )
     assert "is_live IS NOT TRUE" in src, "live rows must be excluded — pre-match only"
+
+    # TIME ALIGNMENT — the guard this script did NOT have on its first run, and
+    # the reason its first answer was wrong. Selecting max(odds) over a 10-day
+    # window per selection credits a book with prices it never showed at once
+    # and compares one book's Tuesday peak to another's Thursday peak: it
+    # understated every single-book margin by 1–2pp and made Asian handicap look
+    # 0.70pp CHEAPER than 1x2 when the aligned number is 0.30pp DEARER.
+    # ANALYSIS_GOTCHAS §52/§55 in the time dimension.
+    # Scope this to the SQL only: the docstring deliberately QUOTES the bad
+    # pattern to explain it, and matching the prose instead of the query is the
+    # §41 mistake (a substring assertion is not a test of behaviour).
+    sql = body[body.index("def load("):body.index("def assemble(")]
+    assert "max(" not in sql.lower(), (
+        f"the query aggregates with max() over the whole window — that is the "
+        f"best-of-time mirage that made this script's first answer wrong. Assemble "
+        f"each book's complement from a window and align the books instead. Found in:\n{sql[:400]}"
+    )
+    assert "def assemble(" in body, (
+        "a book's complement must be assembled from rows within a window, the way "
+        "own_path_kill_criterion.assemble() does it"
+    )
+    # The COMPARISON, not just the name: deleting `> align_min` leaves the
+    # parameter in the signature and every mention intact while removing the
+    # only thing that enforces alignment (mutation-verified 2026-09-16).
+    assert "> align_min" in body, (
+        "align_min is referenced but never compared — the books are no longer "
+        "required to be aligned, which is exactly the defect this guard exists for"
+    )
+    assert "ASSEMBLE_WINDOW_MIN" in src, "the per-book assembly window must be a named constant"
     # The threshold is the 1x2 criterion's, not a new one invented for this run.
     assert "KILL_THRESHOLD = 0.02" in src, (
         "the 2% threshold must match own_path_kill_criterion.py — a per-market "
         "answer against a different bar is not comparable to the 1x2 verdict"
     )
     # Best-of-N must take the MAX price per selection across books.
-    assert "if s not in best or o > best[s]" in body, "best-of-3 must take the max price per selection"
+    assert "max((quotes[b][s] for b in books))" in body, (
+        "best-of-N must take the MAX price per selection across the aligned books"
+    )
     # It must not silently report a market on a handful of rows.
-    assert "min_n" in body and "< a.min_n" in body, "a minimum n guard must gate every printed row"
+    assert "min_n" in body and "< min_n" in body, "a minimum n guard must gate every printed row"
     # And it must say what it does NOT cover, so the result is not over-read.
     assert "LINE discrepancies" in src, (
         "the script must state that cross-book LINE discrepancies are NOT measured here — "
