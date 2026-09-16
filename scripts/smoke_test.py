@@ -17729,8 +17729,19 @@ def _():
     cb_block = page[cb_start:cb_end]
     assert "liveRetiredNames" in cb_block, \
         "cachedBots must filter out names in liveRetiredNames (active leaderboard freshness)"
-    assert "experimental" in cb_block, \
-        "cachedBots must still filter experimental bots"
+    # MATURITY GATE — assert the GATE, not the spelling (corrected 2026-09-16).
+    # This required the literal substring "experimental", i.e. the old
+    # `maturityLabel !== 'experimental'`. That filter was removed on 09-15 and
+    # restored on 09-16 as a positive allowlist (`isPublicBot`, {calibrated,
+    # beta}) — STRICTER than what this pinned, and the test went red on a change
+    # that made the page more correct. RELIABILITY_LEDGER #9: a test that pins
+    # today's spelling fails on tomorrow's better implementation.
+    # The invariant is that SOME maturity gate runs here; which one is
+    # PERF-PUBLIC-IS-CALIBRATED-OR-BETA's job to pin.
+    assert "isPublicBot(" in cb_block or "experimental" in cb_block, (
+        "cachedBots applies no maturity gate at all — the public leaderboard "
+        "will list every active bot, including the shadow fleet."
+    )
 
 
 @test("RETIRE-LOWER-1X2 — migration 156 retires bot_lower_1x2; daily_pipeline_v2 description marked retired")
@@ -34245,6 +34256,42 @@ def _():
             "check is testing for silence instead of collapse, and would have "
             "missed the 2026-09-05 incident for 17 hours"
         )
+
+        # 5. ALERT ON THE TRANSITION, NOT THE STATE (2026-09-16). Measured that
+        #    morning this check was firing on FIVE books at 0.0% -- 10Bet,
+        #    888Sport, Dafabet, Superbet, Unibet -- every one stopped days
+        #    earlier by AF, and re-sending the same five-name mail daily. Five
+        #    standing alerts is how the sixth gets skimmed past, which is the
+        #    failure this check's own docstring describes.
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        _now = _dt.now(_tz.utc)
+        run([{"bookmaker": "Dafabet", "rows_24h": 0, "rows_prior": 600_000,
+              "last_row": _now - _td(hours=100)}])
+        assert not fired, (
+            f"a book dead for 100h raised a NEW alert. It has already been "
+            f"reported; re-sending it daily is alert fatigue, and this check "
+            f"exists because nobody looked at the last one. Got: {fired}"
+        )
+
+        # 5b. ...but a book that stopped TODAY still alerts at full volume.
+        #     This is the half that must not be lost while fixing the fatigue.
+        run([{"bookmaker": "Dafabet", "rows_24h": 0, "rows_prior": 600_000,
+              "last_row": _now - _td(hours=6)}])
+        assert fired, (
+            "a book that stopped SIX HOURS ago did not alert. Suppressing the "
+            "standing ones must never suppress the event."
+        )
+
+        # 5c. Unknown age must ALERT, not suppress. A caller handing rows with
+        #     no `last_row` (a mock, a changed query, a partial read) previously
+        #     raised KeyError; defaulting it to "long dead" would instead have
+        #     muted the check silently, which is strictly worse.
+        run([{"bookmaker": "Dafabet", "rows_24h": 0, "rows_prior": 600_000}])
+        assert fired, (
+            "a collapsed book with an UNKNOWN last_row did not alert. An alert "
+            "that cannot tell whether something is news must fire, not stay "
+            "quiet -- silence on missing data is the failure mode being fixed."
+        )
     finally:
         ha.execute_query, ha._send_alert = orig_q, orig_send
         ha._alerted_today.clear()
@@ -42867,6 +42914,106 @@ def test_performance_public_is_calibrated_or_beta():
         )
 
 
+@test("PICKS-BOARD-SETTLEMENT — watchlist legs are graded, and graded APART from the ledger")
+def test_picks_board_settlement():
+    """PICKS-BOARD-SETTLEMENT (2026-09-16).
+
+    `picks_board` shipped 2026-09-15 with `outcome` and `settled_at` written by
+    NOTHING — 99 rows, 0 settled. The board exists to make ONE question askable:
+    six legs reached the Grade B price and one reached Grade A; if a reader had
+    taken them at that price, would they have won? `target_b_met_at` is
+    plausibly ADVERSELY SELECTED — a price drifts out to the target because
+    money disagrees with our sharp anchor — and until these rows are graded that
+    is a hypothesis nobody can test.
+
+    THREE THINGS THIS PINS, each of which would quietly ruin the instrument:
+
+    1. **The grader is shared.** `settle_bet_result` is the same resolver
+       registry that grades simulated_bets, real_bets and the forward test. A
+       second grader is how two columns called `outcome` come to hold two
+       different quantities.
+    2. **The board never touches the ledger.** `picks_board` legs DID NOT
+       QUALIFY. `picks_forward_test` is pre-registered with stopping rules at
+       n=200/400/800, and folding in bets nobody was told to take is the exact
+       discipline failure the pre-registration exists to prevent.
+    3. **No stored pnl.** A return needs a price and the row carries three —
+       `odds` (last seen), `best_odds_seen` (high-water), `odds_grade_b` (the
+       published target). Storing one silently picks the question; the
+       computation belongs at analysis time.
+    """
+    import re as _r
+    src = _engine_path("workers/jobs/settlement.py").read_text()
+    assert "def settle_picks_board" in src, (
+        "picks_board settlement is gone. Its outcome column goes back to being "
+        "written by nothing, and the target-met question becomes unanswerable."
+    )
+    body = src[src.index("def settle_picks_board"):]
+    body = body[:body.index("\ndef ", 1)]
+
+    # 1. shared grader
+    assert "settle_bet_result(" in body, (
+        "settle_picks_board no longer calls settle_bet_result. A private "
+        "grader means `outcome` on this table stops meaning what it means "
+        "everywhere else in the codebase."
+    )
+    # 2. writes ONLY picks_board — no ledger contact of any kind
+    for banned in ("picks_forward_test", "simulated_bets", "real_bets"):
+        assert banned not in body, (
+            f"settle_picks_board references {banned}. A watchlist leg did not "
+            f"qualify; letting it reach a graded ledger inflates an n that "
+            f"feeds pre-registered stopping rules."
+        )
+    assert "UPDATE picks_board" in body, "it must write picks_board"
+    # 3. no pnl column written
+    assert "pnl" not in body, (
+        "settle_picks_board writes a pnl. There are three candidate prices on "
+        "every board row and storing one silently decides which counterfactual "
+        "the table answers — compute it in the query instead."
+    )
+    # only finished fixtures, and dead ones voided rather than left pending
+    assert "status = 'finished'" in src[src.index("_PENDING_BOARD_SQL"):][:600], (
+        "the board pending query no longer requires a finished fixture."
+    )
+    assert "def _void_board_on_dead_matches" in src, (
+        "a postponed fixture's board leg stays outcome IS NULL forever and is "
+        "re-queried on every settlement sweep."
+    )
+    # wired into settlement, in its OWN try block, AFTER the ledger
+    calls = [m.start() for m in _r.finditer(r"settle_picks_board\(", src)]
+    assert len(calls) >= 3, (
+        f"settle_picks_board is called {len(calls)} time(s) — expected the "
+        f"per-match hook plus both catch-up sweeps, or a finished match settled "
+        f"outside the 15-min path never gets graded."
+    )
+    for pos in calls[1:]:
+        ledger = src.rfind("settle_picks_forward_test(", 0, pos)
+        assert ledger != -1, (
+            "a settle_picks_board call precedes every forward-test call. The "
+            "display table must never run before the pre-registered ledger."
+        )
+
+    # DB: whatever is settled must be graded with the shared vocabulary, and
+    # nothing may be settled while its fixture is unfinished.
+    try:
+        from workers.api_clients.db import execute_query as _eq
+        bad = _eq("""SELECT count(*) AS n FROM picks_board b JOIN matches m ON m.id = b.match_id
+                      WHERE b.outcome IS NOT NULL
+                        AND m.status NOT IN ('finished','postponed','cancelled')""", [])
+        vocab = _eq("""SELECT DISTINCT outcome FROM picks_board
+                        WHERE outcome IS NOT NULL""", [])
+    except Exception:
+        bad = vocab = None
+    if bad is not None:
+        assert bad[0]["n"] == 0, (
+            f"{bad[0]['n']} board leg(s) carry an outcome while the fixture is "
+            f"not finished — something graded a match that had not been played."
+        )
+    if vocab:
+        allowed = {"won", "lost", "push", "void"}
+        got = {r["outcome"] for r in vocab}
+        assert got <= allowed, f"unexpected board outcome value(s): {got - allowed}"
+
+
 @test("PICKS-BOARD-WATCHLIST — the watchlist is never pooled into the pre-registered ledger")
 def test_picks_board_watchlist():
     """PICKS-BOARD-WATCHLIST (2026-09-15).
@@ -43026,9 +43173,23 @@ def test_picks_board_watchlist():
     assert "not picks yet" in flat, (
         "the watchlist heading must say these are not picks"
     )
-    assert "const watchlist" in page and "const board = picks.filter" in page, (
-        "the watchlist and the published board must be separate variables — "
+    # SEPARATION, NOT A VARIABLE NAME (corrected 2026-09-16). This required
+    # `const board = picks.filter`, which PICKS-SHOW-WHOLE-DAY deleted on
+    # purpose: the page stopped filtering published picks by kickoff and now
+    # renders `picks` whole. The risk this guards has not changed — a watchlist
+    # leg DID NOT QUALIFY and must never render as a pick — but that risk is
+    # about the two COLLECTIONS staying distinct, not about one of them being
+    # called `board`.
+    assert "const watchlist" in page and "fetchBoard()" in page, (
+        "the watchlist must come from its own fetch and its own variable — "
         "conflating them is the whole risk of this feature"
+    )
+    # The stronger form of the same rule: the row renderer for PUBLISHED picks
+    # must be typed to ForwardTestPick, so a BoardLeg cannot be passed to it.
+    assert "function PickRow({ p }: { p: ForwardTestPick })" in page, (
+        "PickRow is no longer typed to ForwardTestPick. That type is the only "
+        "thing stopping a watchlist leg — which did not qualify — from being "
+        "rendered in the same shape as a published pick."
     )
 
 
@@ -43979,6 +44140,68 @@ def test_placement_gate_all_executors():
     ci = _engine_path("workers/automation/coolbet_inplay.py").read_text(encoding="utf-8")
     assert "assert_run_may_place()" in ci and ci.index("assert_run_may_place()") < ci.index("_place_bet_api("), \
         "coolbet_inplay execute mode must call the gate BEFORE _place_bet_api"
+
+
+@test("SHADOW-BOTS-CACHED-PAYLOAD-IS-JSON — nothing that dies in JSON may cross unstable_cache")
+def test_shadow_bots_cached_payload_is_json():
+    """2026-09-16, reported by the owner as \"shadow bots page is broken\".
+
+    `loadShadowBotsPage` is `unstable_cache(_loadShadowBotsPage, ...)`, and
+    unstable_cache SERIALISES its return value to JSON. `loggedPickIds` was a
+    `Set<string>` (added the previous day so a hand-logged bet shows on its
+    row). A Set survives JSON.stringify as `{}` — no `.has` — so the FIRST
+    render after each 60 s revalidate worked and every cached render inside that
+    window threw `a.loggedPickIds.has is not a function`. The page was a 500 for
+    almost every actual page view, while tsc, the build and the deploy were all
+    green: the type said `Set<string>` and it genuinely was one, right up to the
+    cache boundary that TypeScript cannot see.
+
+    RELIABILITY_LEDGER #9 in a new place — the type pinned the reality on ONE
+    side of a boundary. The guard is structural: no `Set`, `Map` or `Date` may
+    appear in the cached function's return literal or in the shape it returns.
+    """
+    q = _web_path("src/lib/shadow-bots/queries.ts").read_text(encoding="utf-8")
+
+    # The interface that describes what crosses the boundary.
+    iface = q[q.index("export interface ShadowBotsPageData"):]
+    iface = iface[:iface.index("\n}")]
+    for bad in ("Set<", "Map<", ": Date", "Date;"):
+        assert bad not in iface, (
+            f"ShadowBotsPageData declares `{bad}` — this object is returned through "
+            f"unstable_cache, which JSON-serialises. A Set becomes {{}} and a Date becomes "
+            f"a string, and neither failure is visible to tsc, the build or the deploy. "
+            f"Return JSON (an array) and let the caller rebuild the structure."
+        )
+
+    # And the value actually returned, so a plain `loggedPickIds` (which would
+    # still satisfy a widened interface) cannot sneak a Set back in.
+    body = q[q.index("async function _loadShadowBotsPage"):q.index("export const loadShadowBotsPage")]
+    ret = body[body.rindex("\n  return {"):]
+    for line in ret.splitlines():
+        line = line.strip()
+        if line.startswith("//") or line.startswith("*") or line.startswith("/*"):
+            continue
+        assert "new Set" not in line and "new Map" not in line and "new Date(" not in line, (
+            f"the cached return literal builds a non-JSON value: {line!r}"
+        )
+
+    # It IS still cached — if the wrapper goes away this test's premise is gone
+    # and the constraint above becomes a mystery to the next reader.
+    assert "unstable_cache(_loadShadowBotsPage" in q, (
+        "loadShadowBotsPage is no longer wrapped in unstable_cache — if that is "
+        "deliberate, this test's reason to exist changed and it should be rewritten, "
+        "not deleted silently"
+    )
+
+    # The consumer must rebuild the Set on its side.
+    t = _web_path("src/components/shadow-bots/picks-table.tsx").read_text(encoding="utf-8")
+    assert "new Set(data.loggedPickIds)" in t, (
+        "picks-table must build its own Set from the array it receives"
+    )
+    assert ".loggedPickIds.has(" not in t, (
+        "picks-table calls .has() straight on the cached field — that is the exact "
+        "crash: after a cache hit the field is a plain JSON value, not a Set"
+    )
 
 
 @test("GATE-STATUS-READS-THE-SAME-ENV — the safety strip must not report the router opt-in as OFF while it is ON")

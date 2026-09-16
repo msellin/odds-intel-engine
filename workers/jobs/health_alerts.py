@@ -269,8 +269,15 @@ def check_bookmaker_disappearance() -> None:
         prior_daily = prior / 6.0  # rows_prior spans days 2-7
         if recent >= 0.05 * prior_daily:
             continue
-        last = r["last_row"]
-        age_h = ((now_utc - last).total_seconds() / 3600) if last else 1e9
+        # UNKNOWN AGE ALERTS (2026-09-16). `last_row` absent or NULL means we
+        # cannot tell whether this is news, and the safe default for an ALERT is
+        # to fire: suppressing on missing data converts an unknown into a
+        # silence, which is the failure this whole check exists to prevent.
+        # (The first draft defaulted the other way — age 1e9, i.e. "long dead,
+        # do not alert" — and a caller passing rows without the column would
+        # have muted the check completely.)
+        last = r.get("last_row")
+        age_h = ((now_utc - last).total_seconds() / 3600) if last else 0.0
         (gone if age_h <= STOPPED_IS_NEWS_HOURS else standing).append(r["bookmaker"])
 
     if standing:

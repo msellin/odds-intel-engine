@@ -1358,6 +1358,14 @@ def settle_finished_matches(match_ids: list[str]):
     except Exception as e:
         console.print(f"  [yellow]Forward-test settlement error: {e}[/yellow]")
 
+    # PICKS-BOARD-SETTLEMENT-2026-09-16: grade the WATCHLIST legs too. Its own
+    # try block, and after the ledger — the board is a display/analysis table
+    # and must never be able to stop the pre-registered test from settling.
+    try:
+        settle_picks_board(match_ids)
+    except Exception as e:
+        console.print(f"  [yellow]Picks-board settlement error: {e}[/yellow]")
+
     # Mark settled regardless of whether there were any pending bets/picks.
     # This stops the 15-min sweep from re-querying the same finished matches.
     execute_write(
@@ -1773,6 +1781,134 @@ def settle_picks_forward_test(match_ids: list[str] | None = None) -> int:
     return settled
 
 
+# PICKS-BOARD-SETTLEMENT (2026-09-16). `picks_board` shipped on 2026-09-15 with
+# `outcome` and `settled_at` columns written by NOTHING — 99 rows, 0 settled.
+#
+# WHAT SETTLING A WATCHLIST LEG MEANS, because it is NOT what settling a pick
+# means and conflating the two would be the worst outcome here.
+#
+# A board leg DID NOT QUALIFY. Nobody was told to bet it, nothing was staked,
+# and it is not in the pre-registered ledger. Grading it answers exactly one
+# counterfactual, which is the question the board was built to make askable:
+#
+#     "6 legs reached the Grade B price and 1 reached Grade A. If a reader had
+#      taken them at that price, would they have won?"
+#
+# That matters because `target_b_met_at` is plausibly ADVERSELY SELECTED — a
+# price drifts out to the target because money disagrees with our sharp anchor,
+# and the leg that becomes reachable is the one the market has turned against.
+# Right now that is a hypothesis nobody can test. Grading makes it measurable.
+#
+# NO pnl COLUMN, DELIBERATELY. A return needs a price, and there are three
+# candidates on every row — `odds` (last seen), `best_odds_seen` (high-water),
+# `odds_grade_b` (the published target). Storing one would silently pick the
+# question. The honest computation lives at analysis time:
+#
+#     take-at-target return = CASE WHEN outcome='won' THEN odds_grade_b - 1
+#                                  WHEN outcome='push' THEN 0 ELSE -1 END
+#
+# ⚠️ THESE ROWS MUST NEVER REACH `picks_forward_test`. That is a pre-registered
+# test whose n feeds stopping rules at 200/400/800, and a leg that did not
+# qualify is not a bet the test took. This function writes to `picks_board` and
+# nothing else — no join, no insert, no shared id. Pinned by PICKS-BOARD-WATCHLIST.
+
+_PENDING_BOARD_SQL = """
+SELECT b.match_id::text AS match_id, b.market, b.selection,
+       b.odds::float AS odds_at_pick, b.bookmaker,
+       m.score_home, m.score_away
+  FROM picks_board b
+  JOIN matches m ON m.id = b.match_id
+ WHERE b.outcome IS NULL
+   AND m.status = 'finished'
+   AND m.score_home IS NOT NULL
+   AND m.score_away IS NOT NULL
+"""
+
+
+def _void_board_on_dead_matches() -> int:
+    """Void board legs whose fixture was postponed or cancelled.
+
+    Without this they sit `outcome IS NULL` forever and are re-queried on every
+    settlement sweep — the same leak `_void_forward_test_on_dead_matches` closes
+    for the ledger.
+    """
+    n = execute_write(
+        """UPDATE picks_board b
+              SET outcome = 'void', settled_at = NOW()
+             FROM matches m
+            WHERE m.id = b.match_id
+              AND b.outcome IS NULL
+              AND m.status IN ('postponed', 'cancelled')""",
+        [],
+    )
+    return n or 0
+
+
+def settle_picks_board(match_ids: list[str] | None = None) -> int:
+    """Grade finished `picks_board` legs. Returns count.
+
+    Uses `settle_bet_result` — the SAME resolver registry that grades
+    simulated_bets, real_bets and the forward test. A second grader is how two
+    columns called `outcome` end up holding two different quantities.
+
+    Never raises to the caller: the board is a display/analysis table and must
+    not be able to take the settlement sweep down with it.
+    """
+    sql = _PENDING_BOARD_SQL
+    args: list = []
+    if match_ids is not None:
+        if not match_ids:
+            return 0
+        sql += " AND b.match_id = ANY(%s::uuid[])"
+        args.append(match_ids)
+
+    pending = execute_query(sql, args) or []
+    if not pending:
+        return 0
+
+    settled = 0
+    for row in pending:
+        try:
+            bet = {
+                "match_id": row["match_id"],
+                "market": row["market"],
+                "selection": row["selection"],
+                "stake": 1.0,
+                "odds_at_pick": row["odds_at_pick"],
+            }
+            # closing_odds deliberately omitted (None): CLV is not stored on the
+            # board and computing it would imply a bet that was never placed.
+            outcome = settle_bet_result(
+                bet, int(row["score_home"]), int(row["score_away"]), None)
+
+            if outcome["result"] == "skip":
+                # Unlike the ledger this does NOT alert. A market the resolver
+                # cannot grade is a gap in an analysis table, not a customer- or
+                # money-facing failure, and paging on it would train the operator
+                # to ignore _alert_unsettleable when the ledger really does hit one.
+                continue
+
+            # settle_bet_result signals a push as result='void'; on a FINISHED
+            # match that is a push. Same mapping as the forward test.
+            result = "push" if outcome["result"] == "void" else outcome["result"]
+
+            execute_write(
+                """UPDATE picks_board
+                      SET outcome = %s, settled_at = NOW()
+                    WHERE match_id = %s::uuid AND market = %s AND selection = %s
+                      AND outcome IS NULL""",
+                [result, row["match_id"], row["market"], row["selection"]],
+            )
+            settled += 1
+        except Exception as e:
+            console.print(f"  [yellow]Board settle error for "
+                          f"{row.get('match_id')}/{row.get('market')}: {e}[/yellow]")
+
+    if settled:
+        console.print(f"[green]Picks board: settled {settled} leg(s)[/green]")
+    return settled
+
+
 def _settle_real_combo_bets() -> int:
     """Settle any pending combo real_bets whose ALL leg matches are now finished.
 
@@ -2066,6 +2202,11 @@ def settle_ready_matches():
         settle_picks_forward_test()
     except Exception as e:
         console.print(f"  [yellow]Forward-test catch-up settle error (non-fatal): {e}[/yellow]")
+    try:
+        _void_board_on_dead_matches()
+        settle_picks_board()
+    except Exception as e:
+        console.print(f"  [yellow]Picks-board catch-up settle error (non-fatal): {e}[/yellow]")
 
     # BET-VOID-INTEGRITY-2026-08-24 — a postponed fixture that later gets played
     # leaves its bets voided forever, because nothing ever revisited them. Run
@@ -2584,6 +2725,11 @@ def run_settlement():
         settle_picks_forward_test()
     except Exception as e:
         console.print(f"  [yellow]Forward-test settlement error: {e}[/yellow]")
+    try:
+        _void_board_on_dead_matches()
+        settle_picks_board()
+    except Exception as e:
+        console.print(f"  [yellow]Picks-board settlement error: {e}[/yellow]")
 
     # Post-match enrichment and analytics always run (not gated on bets)
 
