@@ -37351,6 +37351,81 @@ def test_ht_score_fetch_on_settle():
     return "finished match w/o HT score -> fetched from AF + stored; absent AF score -> skip"
 
 
+@test("CDP-CHROME-NOT-REAPED — a launchd job that starts Chrome must abandon its process group")
+def test_cdp_chrome_not_reaped():
+    """CDP-CHROME-REAPED-BY-LAUNCHD (2026-09-16).
+
+    THE OUTAGE. Coolbet went dark for ~6h and Unibet-Site for ~20h, and the
+    self-heal that exists to prevent exactly that had been running every 30
+    minutes the whole time, reporting `relaunch rc=0` on every tick. It ran the
+    same four lines **70 times over 17 hours**:
+
+        CDP up      : False
+          - relaunch rc=0
+          - no JWT after relaunch — trying auto-login
+          ✓ browser relaunched — but NO JWT yet
+
+    THE MECHANISM. `relaunch()` shells out to `local/launch_chrome_for_sync.sh`,
+    which starts Chrome with a trailing `&`. launchd kills whatever is left in a
+    job's process group the moment the job exits, unless `AbandonProcessGroup`
+    is set — and Chrome was in that group. So every tick genuinely did start
+    Chrome (the launcher polls :9222 and confirmed it), the job then exited,
+    launchd killed Chrome, and 30 minutes later the next tick found CDP down
+    and started it again. Google's own updater agent sets this flag.
+
+    WHY IT LOOKED LIKE A LOGIN PROBLEM. With Chrome dying seconds after each
+    tick, the JWT sync and auto-login had nothing to talk to, so the log read
+    "profile has no session" — a human-needed symptom for a problem no human
+    could fix. The profile's session was fine: with the flag set, the very next
+    tick logged `jwt sync OK / ✓ HEALED` and both feeds resumed within minutes
+    (Coolbet 2,468 rows and Unibet-Site 799 rows in the following 10 minutes).
+
+    SECOND DEFECT, STILL OPEN — see CDP-SELFHEAL-CANNOT-ESCALATE in
+    PRIORITY_QUEUE. `coolbet_cdp_rebootstrap.py` picks the `relaunch` tier
+    whenever `cdp_up` is false, and BOTH escalation branches require
+    `cdp_up == True`. A Chrome that will not stay up therefore loops on the
+    cheap tier forever, which is precisely what happened, while the comment
+    beside it claims "the next tick escalates to a full re-bootstrap".
+    """
+    import pathlib
+    import plistlib
+
+    launcher = pathlib.Path("local/launch_chrome_for_sync.sh").read_text()
+    # If the launcher ever stops backgrounding Chrome, the flag stops mattering
+    # and this test should be re-read rather than blindly kept.
+    assert "--remote-debugging-port=$PORT" in launcher, (
+        "launch_chrome_for_sync.sh no longer starts Chrome on the CDP port — "
+        "re-derive what this test is protecting before editing it."
+    )
+
+    d = pathlib.Path("local/launchd")
+    offenders = []
+    for f in sorted(d.glob("com.oddsintel.*.plist")):
+        pl = plistlib.loads(f.read_bytes())
+        args = " ".join(str(a) for a in pl.get("ProgramArguments", []))
+        # The jobs that can end up starting Chrome: they run the rebootstrap
+        # tool, or the launcher itself.
+        starts_chrome = ("coolbet_cdp_rebootstrap" in args
+                         or "launch_chrome_for_sync" in args)
+        if starts_chrome and pl.get("AbandonProcessGroup") is not True:
+            offenders.append(f.name)
+    assert not offenders, (
+        f"{offenders} start CDP-Chrome but do not set AbandonProcessGroup. "
+        f"launchd will kill Chrome the moment the job exits, and the job will "
+        f"still report success — the exact shape of the 2026-09-16 outage, "
+        f"which ran 70 green ticks while both Estonian books were off the air."
+    )
+    assert offenders == [], offenders
+    # and at least one such job must exist, or the loop above passes vacuously
+    checked = [f.name for f in sorted(d.glob("com.oddsintel.*.plist"))
+               if "coolbet_cdp_rebootstrap" in " ".join(
+                   str(a) for a in plistlib.loads(f.read_bytes()).get("ProgramArguments", []))]
+    assert len(checked) >= 2, (
+        f"expected the self-heal and the watch job to both run the rebootstrap "
+        f"tool; found {checked}. A renamed job would make this test vacuous."
+    )
+
+
 @test("LAUNCHD-DRIFT-SEMANTIC — the installed-vs-repo guard compares parsed plists, not bytes")
 def test_launchd_drift_semantic():
     """LAUNCHD-DRIFT-SEMANTIC (2026-09-11). The drift check used to byte-compare

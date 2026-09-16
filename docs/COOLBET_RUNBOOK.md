@@ -297,6 +297,54 @@ that kept being guessed.
   repeatedly the identity is not the problem.
 - **Fix:** this is genuine bot-detection escalation, usually triggered by our own request volume from one IP. Reduce footprint (`coolbet_pause_resume.sh pause`), let the flag decay, load the site in a **foreground** real-Chrome tab to solve the challenge (a backgrounded `--no-startup-window` instance can't complete the JS PoW). Do **not** build a challenge solver. The token is TLS/JA3-bound, so replaying `reese84` into plain `requests` cannot work — this is exactly why FS (a real browser) is mandatory.
 
+### ⭐ 2b. CDP-Chrome will not STAY up  → launchd reaped it (fixed 2026-09-16)
+
+**Symptom.** `:9222` refused. The self-heal log repeats the SAME four lines every
+30 minutes, forever, each tick reporting success:
+
+```
+CDP up      : False
+  - relaunch rc=0
+  - no JWT after relaunch — trying auto-login
+  ✓ browser relaunched — but NO JWT yet (profile has no session).
+```
+
+**This reads like a login problem and is not one.** On 2026-09-16 it ran **70
+times over 17 hours**, took Coolbet dark ~6h and Unibet-Site ~20h, and no login
+would have fixed it — the profile's session was fine the whole time.
+
+**Cause.** `relaunch()` shells out to `local/launch_chrome_for_sync.sh`, which
+starts Chrome with a trailing `&`. **launchd kills everything left in a job's
+process group when the job exits** unless `AbandonProcessGroup` is set. Chrome
+was in that group. So each tick really did start Chrome — the launcher polls
+`:9222` and confirms it before returning, which is why `rc=0` was honest — and
+then launchd killed it seconds later when the job finished. Google's own updater
+agent sets this flag for the same reason.
+
+**Fix (already applied).** `AbandonProcessGroup` is now `<true/>` in both
+`com.oddsintel.coolbet-cdp-selfheal.plist` and `com.oddsintel.cdp-watch.plist`.
+Pinned by smoke test `CDP-CHROME-NOT-REAPED`, which fails if a launchd job that
+can start Chrome lacks the flag.
+
+**Verify in one line** — a job with the flag prints `abandon process group`:
+
+```bash
+launchctl print gui/$(id -u)/com.oddsintel.coolbet-cdp-selfheal | grep -i abandon
+```
+
+**Tell this apart from §3 (a genuinely expired session):** here `pgrep -f
+Chrome-CDP-OddsIntel` returns **0** a few minutes after a tick. In §3 Chrome is
+running and rendering, and only the token is gone.
+
+**⚠️ The self-heal cannot escalate out of this on its own** — see
+`CDP-SELFHEAL-CANNOT-ESCALATE` in PRIORITY_QUEUE. `coolbet_cdp_rebootstrap.py`
+picks the `relaunch` tier whenever `cdp_up` is false, and BOTH escalation
+branches require `cdp_up == True`, so a Chrome that will not stay up loops on the
+cheap tier indefinitely. The comment beside that branch claims the next tick
+escalates; it does not.
+
+---
+
 ### 3. Session / JWT expired  → `logged_out`
 - **Symptom:** `coolbet_session_state.session_healthy=false`, heal log `session expired — operator must log in`.
 - **Tell:** `python -m workers.automation.coolbet_browser_sync --full-heal --full-heal-dry-run` → `state=logged_out`.
