@@ -130,6 +130,77 @@ absence caused `season_progress` to sit at 0% for 90 days in June 2026.
 
 ---
 
+## 1c. What we never even listed — the outward-looking pass
+
+§1a and §1b were **inward-looking**: they compared what the model declares
+against what it receives. That is a closed loop, and it structurally cannot find
+an input nobody ever thought to add. The owner asked the right follow-up — *"are
+these only features the model needs or is missing, or are there things we
+haven't even listed, never collected, that would help?"* — so this section looks
+the other way.
+
+### Category 1 — we compute it, store it, and throw it away
+
+**50 of the 90 signals written in the last 60 days are not in the model's
+feature list at all.** Several have *better* coverage than any feature it has:
+
+| signal | coverage | why it matters |
+|---|---|---|
+| `league_over25_pct` | **75.1%** | the league's own over-2.5 base rate — the single most obvious O/U prior, and the O/U model does not have it |
+| `league_avg_goals` | **75.1%** | same, in goals rather than a rate |
+| `league_btts_pct` | **75.1%** | |
+| `rest_days_norm_home/away` | **83%** | rest normalised for league schedule; the model uses only raw `rest_days` |
+| `league_elo_range` / `_variance` | 77.4% | competitive balance — a tight league produces different scorelines |
+| `away_team_turf_games_ytd` | 87.4% | |
+| `form_slope_home/away` | 58.8% | direction of form; the model has only level (`form_ppg`) and `form_momentum` |
+| `fixture_urgency_home/away` | 59.6% | |
+| `odds_volatility` | 59.0% | |
+| `market_implied_home/draw/away` | 51.4% | the broad-market consensus — the model sees only Pinnacle |
+| `ah_bookmaker_disagreement` | 51.4% | |
+| `sharp_consensus_*` | 36.2% | |
+| `h2h_avg_goal_diff` | 41.0% | |
+| `squad_disruption_home/away` | ~22% | |
+
+For contrast: the model's own best real features sit near 90% and **48 of its 52
+are under 50%**. We are feeding it sparse columns while withholding denser ones
+we already have on disk.
+
+This is the cheapest finding in the whole audit — no collection, no
+procurement, no new pipeline. It is a feature-list change.
+
+### Category 2 — we collect the raw data and have never made a signal from it
+
+Tables the feature pipeline has never read. It reads only `matches`,
+`odds_snapshots`, `match_signals`, `predictions` and `match_feature_vectors`;
+these appear solely in their own fetchers:
+
+| table | size | what it would give |
+|---|---|---|
+| `match_events` | **1,839,736 rows / 81% of matches** | game-state scoring, goal timing, red-card timing — Tier B of §3 |
+| `team_transfers` | **1,427,923 rows** | squad churn and continuity |
+| `team_coaches` | **60,532 rows** | manager tenure and regime change. `manager_change_*_days` exists as a signal but reaches only ~200 matches — the raw table is far richer |
+| `venues` | 2,858 rows, **2,658 with lat/lon** | travel distance, altitude, capacity, surface. All derivable with a great-circle formula and no new data |
+| `player_sidelined` | 12,285 rows | |
+
+### Category 3 — genuinely never collected
+
+Only this category costs money, and it should be argued for on evidence rather
+than assumed:
+
+- **xG at scale.** ~15% today. The standard modern goals input.
+- **Pre-match starting XI.** `match_player_stats` is at 4.7%; a "key player out"
+  feature is currently fiction.
+- **Shot-level / possession-chain data.** Never held in any form.
+- **Player-level injury feeds.** `match_injuries` covers 0.8%.
+
+### Order this changes
+
+Category 1 is nearly free and should go **before** any procurement argument.
+Category 2 is derivation work on data already paid for. Category 3 is the only
+one that needs a purchase decision, and the Dixon-Coles result should inform it.
+
+---
+
 ## 2. What we have as raw material
 
 | source | coverage of finished matches | what it gives |
