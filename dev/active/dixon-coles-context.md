@@ -1,6 +1,30 @@
 # Dixon-Coles — context
 
-## State: phase 2 DONE (2026-09-16). Next: phase 3, select xi on a validation window.
+## State: COMPLETE (2026-09-16). VERDICT alpha = 0.0000.
+
+## THE ANSWER
+
+  Pinnacle       AUC 0.6043  log-loss 0.6741
+  Dixon-Coles    AUC 0.5708  log-loss 0.6831   alpha = 0.0000
+  (XGB O/U head  AUC 0.5784  log-loss 0.6804   alpha = 0.0000)
+
+n=5,204, both de-vig arms, residual AUC 0.4372.
+
+Dixon-Coles is slightly WORSE than the starved XGBoost head it was built to
+control for. Since DC shares NONE of the 52 features and runs on 100%-coverage
+data, the feature-set hypothesis behind the whole modelling audit is REFUTED:
+the feature set was never the binding constraint.
+
+xi selection (phase 3): no decay won, monotonically (0.71244 at xi=0 rising to
+0.73308 at an 87-day half-life). The phase-2 regime-tracking hypothesis is dead.
+Calibration is +0.0025 on the validation window and -0.0519 on the OOS window,
+confirming the miscalibration is the early-season scoring jump, not a defect.
+
+## RECOMMENDATION: STOP MODEL WORK.
+Three independent measurements on a verified instrument (it recovers a planted
+alpha of 1.0000) all say we cannot beat Pinnacle's closing line on goals with
+the data we have. Procurement stays closed; the goals-feature tasks drop with
+it. Surviving work: LINE-VELOCITY-COVERAGE-FILL and the promos lever.
 
 ## PHASE 2 RESULTS — walk-forward runs clean, but the model is 0.097 goals low
 

@@ -65,8 +65,17 @@ def load(history_days: int) -> list[dict]:
     ) or []
 
 
-def run(from_date: dt.date, xi: float, history_days: int, verify: bool):
-    rows = load(history_days)
+def run(from_date: dt.date, xi: float, history_days: int, verify: bool,
+        to_date: dt.date | None = None, rows: list[dict] | None = None):
+    """`to_date` bounds what is SCORED (inclusive). Without it the refit grid
+    runs to the newest match in the table, which for a validation window means
+    fitting weeks nobody will look at — measured at 4 wasted refits per league
+    per xi, on a 7-point grid.
+
+    `rows` lets a caller load once and reuse: the xi sweep was re-pulling the
+    same ~170k rows for every grid point."""
+    if rows is None:
+        rows = load(history_days)
     by_league: dict[str, list] = defaultdict(list)
     for r in rows:
         d = r["date"]
@@ -80,7 +89,8 @@ def run(from_date: dt.date, xi: float, history_days: int, verify: bool):
         if len(ms) < MIN_LEAGUE_MATCHES:
             skipped["league too small"] += sum(1 for m in ms if m[5] >= from_date)
             continue
-        targets = [m for m in ms if m[5] >= from_date]
+        targets = [m for m in ms if m[5] >= from_date
+                   and (to_date is None or m[5] <= to_date)]
         if not targets:
             continue
 

@@ -1,6 +1,33 @@
 # Modelling data audit — what we have, what we lack, what we can build
 **2026-09-16 · 🤖 OWN + 👥 PICKS · commissioned by the owner after O/U and 1x2 both measured residual α = 0**
 
+> ## ⛔ SUPERSEDED IN PART — DIXON-COLES ANSWERED IT, 2026-09-16
+>
+> This audit's central hypothesis was: *two alpha = 0 results from ONE shared
+> feature set is one result about the feature set.* That hypothesis is now
+> **refuted by measurement.**
+>
+> Dixon-Coles — a goals model fitted only on `(home, away, score, date)`, sharing
+> **none** of the 52 features, immune to every coverage gap catalogued below —
+> was scored through the same (and by then independently verified) harness:
+>
+> | | AUC | log-loss | alpha |
+> |---|---|---|---|
+> | Pinnacle | **0.6043** | 0.6741 | — |
+> | Dixon-Coles | 0.5708 | 0.6831 | **0.0000** |
+> | (XGBoost O/U head, for scale) | 0.5784 | 0.6804 | 0.0000 |
+>
+> n = 5,204, residual AUC 0.4372, both de-vig arms. **Dixon-Coles is not merely
+> beaten by the market — it is slightly WORSE than the starved XGBoost head it
+> was built to control for.** So the feature set was never the binding
+> constraint.
+>
+> What remains true and useful below: the coverage numbers, the contract bug
+> (which was real and is fixed in production), the unused-signal inventory, and
+> the fill assessments. What should NOT be read from it any more is the implied
+> promise that better features would produce an edge. Three independent
+> measurements on a verified instrument say otherwise.
+>
 > **The one-line finding.** The models are not underperforming because the
 > architecture is old. They are underperforming because **nine features carry
 > them.** Everything else in the 91-column feature table is under 90% populated,
