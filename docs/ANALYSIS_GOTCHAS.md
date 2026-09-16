@@ -139,8 +139,20 @@ A first pass of `clv_slice_search.py` reported `over_under_25` at odds 4.5+ with
 labelled is a mislabelled line. It is fleet-wide, not one book — Marathonbet
 2,413 such rows, Unibet 1,174, 888Sport 424 (to 26.0), Coolbet 163 (to 20.0).
 
-**Always apply the production guard** (`soft <= Pinnacle x 1.30` for OU, `x 1.35`
-for 1X2). With it, the same search returned 0 of 82 positive slices instead of 14.
+**Always apply the production guard** (`soft <= Pinnacle x 1.30` for OU,
+**`x 1.25`** for 1X2/BTTS/DC). With it, the same search returned 0 of 82 positive
+slices instead of 14.
+
+⚠️ **The 1X2/BTTS/DC ceiling changed 1.35 -> 1.25 on 2026-09-16**
+(OUTLIER-CEILING-CALIBRATED), and the reason matters for anyone writing a search:
+**the guard is not "tighter is safer".** Measured on 12,573 settled bets bucketed
+by `taken_price / anchor` and controlled for odds level, the **1.05-1.25 band is
+PROFITABLE in every odds bucket** (gap of +4 to +7 points over what the taken
+price implies) — that band is line shopping working, not noise. The inversion
+starts above 1.25: the 1.25-1.35 band runs -6.2 gap / -18.1% ROI at odds 2.2-3.2
+and -14.3 / -56.0% at odds >3.2. A proposal to tighten to 1.10-1.15 was measured
+and rejected; it would have deleted the only band that works. So clamp at 1.25,
+and do not clamp lower without re-running the measurement.
 
 ## 10. Comparing bookmakers by raw Brier is invalid
 

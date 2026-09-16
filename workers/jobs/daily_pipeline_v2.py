@@ -2143,10 +2143,41 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
     # can be formed (Pinnacle absent AND fewer than 3 accessible books), the whole
     # (match, market, selection) is dropped rather than accepted unvalidated.
     from statistics import median as _median
+    # OUTLIER-CEILING-CALIBRATED-2026-09-16. These were picked by judgement in
+    # 2026-08; this is the first time they have been measured against outcomes.
+    #
+    # METHOD. For 12,573 settled shadow bets over 120d, bucket each bet by
+    # `taken_price / anchor` (anchor = contemporaneous Pinnacle, else median of
+    # >=3 reference books within 90 min of pick time) and compare the ACTUAL win
+    # rate against the win rate the taken price implies. With bookmaker margin an
+    # edgeless bettor lands ~5 points BELOW implied, so a positive gap means the
+    # price was better than fair -- which is what line shopping is supposed to
+    # buy. Controlled for odds level, because longshots lose independently of
+    # price quality and would otherwise be read as a price defect.
+    #
+    #   ratio        odds<2.2        2.2-3.2        odds>3.2
+    #   <1.05        -5.4 / -8.7     -9.3 / -29.0   -0.2 / +1.9
+    #   1.05-1.25    +0.2..+7.1      +4.0..+4.8     mixed, +4.9 at 1.15-1.25
+    #   1.25-1.35        --          -6.2 / -18.1   -14.3 / -56.0
+    #   >=1.35 (already rejected)     --            -4.3 / -35.1
+    #
+    # THE FINDING THAT MATTERS, because it is the opposite of what was expected:
+    # 1.05-1.25 is the PROFITABLE band in every odds bucket. An earlier draft of
+    # this change proposed tightening to 1.10-1.15 on the theory that any price
+    # far above consensus is phantom. The measurement refutes that -- it would
+    # have deleted the one band that works. Only ABOVE 1.25 does the gap invert,
+    # and there it inverts hard.
+    #
+    # So the ceiling moves 1.35 -> 1.25 on 1x2/DC (and 1.30 -> 1.25 on BTTS for
+    # one rule, since nothing in the data distinguishes them). That removes 376
+    # bets averaging -34.0% ROI and touches nothing in the profitable band.
+    #
+    # DO NOT tighten further without re-running the measurement. The band below
+    # the ceiling is load-bearing, not slack.
     _OUTLIER_MULT: dict[str, float] = {
-        "1x2": 1.35,
-        "btts": 1.30,
-        "double_chance": 1.35,
+        "1x2": 1.25,
+        "btts": 1.25,
+        "double_chance": 1.25,
     }
     _OUTLIER_MIN_BOOKS = 3
     outlier_offers: dict[str, dict[str, list[tuple[str, float]]]] = _dd(lambda: _dd(list))

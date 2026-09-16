@@ -2144,10 +2144,27 @@ def _():
     assert "ODDS-OUTLIER-FILTER-2026-08-18" in src, (
         "ODDS-OUTLIER-FILTER: marker missing — outlier rejection not wired into _load_today_from_db"
     )
-    assert '"1x2": 1.35' in src and '"btts": 1.30' in src and '"double_chance": 1.35' in src, (
-        "ODDS-OUTLIER-FILTER: per-market ceiling multipliers must include 1x2 (1.35), "
-        "btts (1.30), double_chance (1.35)"
+    # OUTLIER-CEILING-CALIBRATED-2026-09-16: was 1.35/1.30/1.35, picked by
+    # judgement in 2026-08 and never measured. Measured on 12,573 settled shadow
+    # bets over 120d, bucketing each by taken_price/anchor and comparing the
+    # ACTUAL win rate to the rate the taken price implies, controlled for odds
+    # level. The 1.25-1.35 band -- accepted under the old ceiling -- ran a gap of
+    # -6.2 points at odds 2.2-3.2 and -14.3 at odds >3.2, for -18.1% and -56.0%
+    # ROI. Tightening to 1.25 removes 376 bets averaging -34.0% ROI.
+    assert '"1x2": 1.25' in src and '"btts": 1.25' in src and '"double_chance": 1.25' in src, (
+        "ODDS-OUTLIER-FILTER: per-market ceiling multipliers must be 1.25 "
+        "(OUTLIER-CEILING-CALIBRATED-2026-09-16). Raising them re-admits a band "
+        "measured at -18% to -56% ROI; lowering them cuts into 1.05-1.25, which "
+        "the same measurement shows is the PROFITABLE band in every odds bucket. "
+        "Re-run the calibration before changing either way."
     )
+    # The band below the ceiling is load-bearing, not slack. A future tightening
+    # to 1.10/1.15 was proposed and REJECTED by the measurement -- it would have
+    # deleted the only band with a positive gap. Pin that reasoning so the next
+    # reader does not re-derive it from intuition.
+    assert "1.05-1.25 is the PROFITABLE band" in src, (
+        "ODDS-OUTLIER-FILTER: the calibration finding must stay next to the "
+        "constants -- the ceiling is a measured value, not a guess")
     assert "_OUTLIER_MIN_BOOKS = 3" in src, (
         "ODDS-OUTLIER-FILTER: min-books gate for median anchor must be 3"
     )
