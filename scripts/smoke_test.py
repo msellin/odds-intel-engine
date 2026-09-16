@@ -44751,9 +44751,20 @@ def test_residual_test_ou_method():
     # 6. The over/under class convention is ASSERTED, not assumed — production
     #    reads classes.index(1) as the OVER probability (xgboost_ensemble.py).
     #    Getting this backwards silently inverts the whole result.
-    assert "assert 1 in classes or True in classes" in body, (
-        "the O/U class convention must be asserted, not assumed — inverting it "
-        "flips the sign of the entire test in a way nothing else would catch"
+    # The class convention must be RESOLVED EXPLICITLY, never assumed. It was an
+    # inline `assert 1 in classes ...` until the O/U-specific verification pass
+    # extracted it into `over_class_index()` so it could be given fixtures --
+    # which is strictly stronger, since that helper now RAISES on anything
+    # unexpected and is checked end-to-end (P(over|6 goals) 0.9987 vs
+    # P(over|0 goals) 0.0017) rather than only inspected.
+    assert "over_class_index(classes)" in body, (
+        "the O/U class convention must be resolved by over_class_index(), which "
+        "raises rather than guessing — inverting it flips the sign of the entire "
+        "test in a way nothing else would catch"
+    )
+    ou_src = _engine_path("scripts/residual_test_ou.py").read_text(encoding="utf-8")
+    assert "raise ValueError" in ou_src[ou_src.index("def over_class_index("):], (
+        "over_class_index must RAISE on unknown classes, not fall back to a guess"
     )
 
 
