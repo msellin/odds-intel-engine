@@ -289,3 +289,5 @@
 {"at": "2026-09-16T07:20:55+00:00", "event": "killed", "why": "relaunch tier", "pid_count": 1}
 {"at": "2026-09-16T07:21:03+00:00", "event": "healed", "tier": "relaunch", "ok": true, "skipped_rebootstrap": null, "steps": ["relaunch rc=0", "jwt sync OK"], "reason": "", "error": ""}
 {"at": "2026-09-16T07:25:27+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1505, "captcha": null, "tier": null, "procs": 18}
+{"at": "2026-09-16T07:55:14+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1649, "captcha": null, "tier": null, "procs": 18}
+{"at": "2026-09-16T08:25:15+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1790, "captcha": null, "tier": null, "procs": 18}

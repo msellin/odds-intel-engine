@@ -260,8 +260,30 @@ def relaunch() -> dict:
         return {"ok": False, "tier": "relaunch", "steps": steps,
                 "error": (r.stderr or r.stdout or "CDP still down")[-300:]}
     # Pull whatever session the profile still holds into the DB. Failure here
-    # is NOT fatal: the browser is up again, which is what this tier promised,
-    # and the next tick escalates to a rebootstrap if there is still no token.
+    # is NOT fatal: the browser is up again, which is what this tier promised.
+    #
+    # ⚠️ CORRECTED 2026-09-16. This comment used to end "...and the next tick
+    # escalates to a rebootstrap if there is still no token." **It does not.**
+    # The tier selector in main() reads:
+    #
+    #     elif d.get("walled"):            tier = "rebootstrap"
+    #     elif not d["cdp_up"]:            tier = "relaunch"
+    #     elif d.get("has_jwt") is False:  tier = "autologin"
+    #
+    # Both escalation branches require `cdp_up == True`, and `walled` is None
+    # when CDP is unreachable. So a Chrome that will not STAY up re-enters this
+    # tier every tick, forever. On 2026-09-15/16 it did exactly that 70 times
+    # over 17 hours while both Estonian books were off the air, every tick
+    # logging rc=0 (see CDP-CHROME-REAPED-BY-LAUNCHD — launchd was killing
+    # Chrome the moment the job exited, now fixed with AbandonProcessGroup).
+    #
+    # The loop is left in place ON PURPOSE. Escalating to `rebootstrap` would
+    # copy several GB on a schedule and would not have helped — the profile was
+    # never the problem — which is the self-heal-becomes-the-outage trap this
+    # file keeps circling. What was actually missing was someone being TOLD:
+    # `health_alerts.check_direct_feed_staleness()` (2026-09-16) now pushes to
+    # Telegram when any of the three direct feeds goes 120 min without a row,
+    # hourly, 24/7. See CDP-SELFHEAL-CANNOT-ESCALATE in PRIORITY_QUEUE.
     sync = subprocess.run(
         [sys.executable, "-m", "workers.automation.coolbet_browser_sync",
          "--refresh-jwt"], capture_output=True, text=True, cwd=str(REPO),

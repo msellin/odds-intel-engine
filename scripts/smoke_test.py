@@ -43103,6 +43103,126 @@ def test_forward_test_versions_do_not_vanish():
     )
 
 
+@test("DIRECT-FEED-STALENESS — the three books we collect ourselves are watched on AGE, 24/7")
+def test_direct_feed_staleness():
+    """DIRECT-FEED-STALENESS (2026-09-16).
+
+    Coolbet went dark ~6h and Unibet-Site ~20h and NOTHING alerted, though
+    `check_bookmaker_disappearance` exists for exactly this. Replayed at 07:00
+    UTC that morning:
+
+        book           24h rows   prior/day   ratio   fired?
+        Coolbet         193,416      78,931    245%   silent
+        Unibet-Site       1,294      22,341    5.8%   silent
+
+    Coolbet had been writing ABOVE its prior daily rate, so a six-hour blackout
+    read as 245% of normal; Unibet-Site missed the 5% floor by 0.8 points after
+    twenty hours dead.
+
+    That check is not broken — it was built for AF dropping seven books for
+    DAYS, and a 24h volume ratio is right for that. It is structurally blind to
+    an outage shorter than its own window. Hence a SECOND check on a different
+    instrument: `max(timestamp)` age, which a busy morning cannot mask.
+
+    Two properties this pins, because getting either wrong restores the silence:
+
+      1. AGE, not volume. A volume test cannot see a 20h gap inside a 24h window.
+      2. 24/7. The outage began at 01:25 UTC. `run_snapshot_check` is windowed
+         to 10-22 (no live matches outside it), so a check bundled in there
+         could not have LOOKED until 10:45.
+
+    The 120-minute threshold is measured, not guessed: 7-day inter-write gaps
+    are p99 59.2m (Coolbet), 56.0m (Unibet-Site), 62.0m (Epicbet) — one missed
+    30-minute cron. 120 is two missed ticks plus slack, above p99 for all three.
+    """
+    import re as _r
+    src = _engine_path("workers/jobs/health_alerts.py").read_text()
+    sched = _engine_path("workers/scheduler.py").read_text()
+
+    assert "def check_direct_feed_staleness" in src, (
+        "the age-based direct-feed check is gone. The volume-ratio check alone "
+        "cannot see an outage shorter than 24h — that is how 2026-09-16 stayed "
+        "silent for twenty hours."
+    )
+    # PROPERTY 1 — it must measure AGE.
+    body = src[src.index("def check_direct_feed_staleness"):]
+    body = body[:body.index("\ndef ", 1)] if "\ndef " in body[1:] else body
+    assert "MAX(timestamp)" in body and "age_min" in body, (
+        "check_direct_feed_staleness no longer reads max(timestamp). If it has "
+        "become a row-count test it is a duplicate of the check that already "
+        "failed, on the instrument that already failed."
+    )
+    # All three direct feeds, by exact name as stored in odds_snapshots.
+    for book in ("Coolbet", "Unibet-Site", "Epicbet"):
+        assert f'"{book}"' in src, (
+            f"{book} is not in DIRECT_FEED_BOOKS. These three are collected by "
+            f"OUR OWN crons — nobody else is watching them."
+        )
+    # Threshold sane: above p99 (~62m) and not so loose it sleeps through a shift.
+    m = _r.search(r"DIRECT_FEED_STALE_AFTER_MIN\s*=\s*(\d+)", src)
+    assert m, "DIRECT_FEED_STALE_AFTER_MIN is gone"
+    thr = int(m.group(1))
+    assert 90 <= thr <= 240, (
+        f"threshold is {thr} min. Below ~90 it fires on one missed cron tick "
+        f"(p99 inter-write gap is 62 min); above 240 it sleeps through most of "
+        f"a working day, which is the failure being fixed."
+    )
+    # PROPERTY 2 — 24/7, i.e. a CronTrigger with NO hour restriction.
+    assert "job_health_alerts_feeds" in sched, (
+        "the direct-feed check is not registered in the scheduler."
+    )
+    reg = sched[sched.index("scheduler.add_job(job_health_alerts_feeds"):][:220]
+    assert "CronTrigger(minute=" in reg and "hour=" not in reg, (
+        "job_health_alerts_feeds is registered with an hour restriction. The "
+        "Mac crons that fill these books run 24/7 and the outage this exists "
+        "for began at 01:25 UTC — a windowed watcher could not have looked for "
+        "another nine hours."
+    )
+    # It must NOT have been folded into the windowed runner.
+    snap = src[src.index("def run_snapshot_check"):]
+    snap = snap[:snap.index("\ndef ", 1)]
+    assert "check_direct_feed_staleness" not in snap, (
+        "the direct-feed check was moved into run_snapshot_check, which is "
+        "windowed to 10-22 UTC. That silently undoes property 2."
+    )
+    # Telegram leg: email alone is pull-only in practice.
+    assert "_notify_telegram" in body, (
+        "the direct-feed alert has no Telegram leg. Both placeable books going "
+        "dark is the class of failure that has to PUSH."
+    )
+
+    # ALERT ON THE TRANSITION, NOT THE STATE. On 2026-09-16 the volume check was
+    # re-sending the same five dead AF books every day; five standing alerts is
+    # how the sixth gets skimmed past.
+    # Comment-stripped: the block explaining this at length names the constant,
+    # and asserting on raw text would pass on a file that only DISCUSSES it.
+    # RELIABILITY_LEDGER #9 — inspect code, not comments.
+    _src_code = _r.sub(r"#.*", "", src)
+    assert "STOPPED_IS_NEWS_HOURS" in _src_code, (
+        "check_bookmaker_disappearance re-alerts on books that have been dead "
+        "for days. Measured 2026-09-16: five standing alerts (10Bet, 888Sport, "
+        "Dafabet, Superbet, Unibet), re-sent daily. Alert fatigue on this check "
+        "is the exact thing it was written to prevent."
+    )
+    _dis = _src_code[_src_code.index("def check_bookmaker_disappearance"):]
+    _dis = _dis[:_dis.index("\ndef ", 1)]
+    # The BRANCH, not the vocabulary. A first draft asserted the identifiers
+    # were present, and passed under mutation because they survive in the
+    # f-string that renders the mail — the routing expression is the only thing
+    # that actually decides whether a days-dead book raises a new alert.
+    _dis_flat = " ".join(_dis.split())
+    assert "age_h <= STOPPED_IS_NEWS_HOURS" in _dis_flat, (
+        "the disappearance check no longer routes on how long a book has been "
+        "dead, so a book that stopped days ago raises a fresh alert every day. "
+        "An alert fires on a TRANSITION; a standing state belongs in the body "
+        "of the mail, not in a new one."
+    )
+    assert "MAX(timestamp) AS last_row" in _dis, (
+        "the disappearance query stopped selecting last_row — without it there "
+        "is nothing to compute the age from."
+    )
+
+
 @test("PUBLISHER-SILENCE-ALERT — the only path to customers is watched, and on the JOB not the pick count")
 def test_publisher_silence_alert():
     """PUBLISHER-SILENCE-ALERT (2026-09-15).

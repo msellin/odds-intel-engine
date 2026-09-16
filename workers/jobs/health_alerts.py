@@ -12,6 +12,11 @@ Conditions checked:
   4. Settlement check (21:30): 0 results settled when >5 bets were pending before settlement
   5. Signal silence (hourly 10-23 UTC): picks eligible for Telegram but unsent past a
      grace period, or no picks produced at all for 48h (SIGNAL-SILENCE-ALERT)
+  6. Direct-feed staleness (hourly, 24/7): Coolbet / Unibet-Site / Epicbet — the three
+     books we collect on our own crons — with no row for 120 min (DIRECT-FEED-STALENESS).
+     Age-based on purpose: condition 5's sibling `check_bookmaker_disappearance` compares
+     24h VOLUME and is blind to any outage shorter than a day, which is how a 20h
+     Unibet-Site blackout passed unnoticed on 2026-09-16.
 
 Each condition logs to console always. Email fires only when the condition is true.
 One alert per condition per UTC day (deduped in memory via a simple set — process-level only).
@@ -223,7 +228,8 @@ def check_bookmaker_disappearance() -> None:
         SELECT bookmaker,
                COUNT(*) FILTER (WHERE timestamp >= now() - interval '24 hours') AS rows_24h,
                COUNT(*) FILTER (WHERE timestamp >= now() - interval '7 days'
-                                  AND timestamp <  now() - interval '24 hours') AS rows_prior
+                                  AND timestamp <  now() - interval '24 hours') AS rows_prior,
+               MAX(timestamp) AS last_row
           FROM odds_snapshots
          WHERE timestamp >= now() - interval '7 days'
          GROUP BY bookmaker
@@ -237,17 +243,47 @@ def check_bookmaker_disappearance() -> None:
     # most of a day. Compare against the book's own prior daily rate instead:
     # anything under 5% of its normal volume is a collapse regardless of whether
     # it has technically reached zero.
-    gone = []
+    #
+    # ALERT ON THE TRANSITION, NOT THE STATE (added 2026-09-16). Measured that
+    # morning, this check was firing on FIVE books at 0.0% — 10Bet, 888Sport,
+    # Dafabet, Superbet, Unibet — every one of which AF had stopped serving days
+    # earlier. It had re-sent the same five-name email every day since, and five
+    # standing alerts are how the sixth gets skimmed past. That is the failure
+    # this check was itself written to prevent (see the docstring: "it ran for
+    # over a day before anyone looked").
+    #
+    # A book that stopped days ago is a KNOWN state, not news. It ages out of
+    # the `prior < 1000` guard on its own after 7 days; until then it is
+    # reported to the console and counted in the email, but it does not trigger
+    # one. Anything that stopped inside STOPPED_IS_NEWS_HOURS still alerts at
+    # full volume — that is the event this check exists for.
+    STOPPED_IS_NEWS_HOURS = 48
+    now_utc = datetime.now(timezone.utc)
+
+    gone, standing = [], []
     for r in rows:
         prior = r["rows_prior"] or 0
         recent = r["rows_24h"] or 0
         if prior < 1000:          # never wrote enough for silence to mean anything
             continue
         prior_daily = prior / 6.0  # rows_prior spans days 2-7
-        if recent < 0.05 * prior_daily:
-            gone.append(r["bookmaker"])
+        if recent >= 0.05 * prior_daily:
+            continue
+        last = r["last_row"]
+        age_h = ((now_utc - last).total_seconds() / 3600) if last else 1e9
+        (gone if age_h <= STOPPED_IS_NEWS_HOURS else standing).append(r["bookmaker"])
+
+    if standing:
+        console.print(
+            f"[dim]health_alerts: {len(standing)} book(s) dead >"
+            f"{STOPPED_IS_NEWS_HOURS}h, not re-alerting: {sorted(standing)}[/dim]"
+        )
     if not gone:
         return
+    standing_note = (
+        f"<p>Also still dead (>{STOPPED_IS_NEWS_HOURS}h, already reported, not "
+        f"re-alerted): {', '.join(sorted(standing))}.</p>" if standing else ""
+    )
 
     try:
         from workers.jobs.daily_pipeline_v2 import ACCESSIBLE_BOOKMAKERS
@@ -271,7 +307,7 @@ def check_bookmaker_disappearance() -> None:
             f"recommended_bookmaker are all now computed on a degraded set. "
             f"Still writing: {', '.join(still_up) if still_up else '<b>NONE</b>'}.</p>"
             f"<p>Aggregate coverage will NOT look wrong — check composition, not totals. "
-            f"See AF-UNIBET-BETANO-FEED-COLLAPSE-2026-09-05.</p>",
+            f"See AF-UNIBET-BETANO-FEED-COLLAPSE-2026-09-05.</p>" + standing_note,
         )
     else:
         _alert_once(
@@ -280,7 +316,7 @@ def check_bookmaker_disappearance() -> None:
             f"<p>{', '.join(sorted(gone))} wrote under 5% of their normal daily volume in "
             f"the last 24h, having been active in the preceding 6 days.</p>"
             f"<p>Not in the accessible set, so placement is unaffected, but the line "
-            f"shop and any de-vig consensus are now thinner.</p>",
+            f"shop and any de-vig consensus are now thinner.</p>" + standing_note,
         )
 
 
@@ -715,6 +751,126 @@ def _notify_telegram(text: str, dedup_key: str) -> None:
         console.print(f"[yellow]signal-silence Telegram leg failed: {e}[/yellow]")
 
 
+# DIRECT-FEED-STALENESS (2026-09-16) — the check that would have caught the
+# 2026-09-16 outage, and the reason check_bookmaker_disappearance did not.
+#
+# THE OUTAGE. launchd was killing CDP-Chrome after every self-heal tick
+# (CDP-CHROME-REAPED-BY-LAUNCHD), which took Coolbet dark for ~6h and
+# Unibet-Site for ~20h. Nothing alerted. `check_bookmaker_disappearance` above
+# is the designated guard and it stayed silent for BOTH — replayed at 07:00 UTC
+# that morning:
+#
+#     book           24h rows   prior/day   ratio   fired?
+#     Coolbet         193,416      78,931    245%   silent
+#     Unibet-Site       1,294      22,341    5.8%   silent
+#
+# Coolbet had been writing ABOVE its prior rate (market widening), so a six-hour
+# blackout read as 245% of normal. Unibet-Site, twenty hours dead, missed the 5%
+# floor by 0.8 points.
+#
+# That check is not broken. It was built for AF-UNIBET-BETANO-FEED-COLLAPSE
+# (2026-09-05), where seven books vanished for DAYS, and a 24h volume ratio is
+# the right instrument for that. It is structurally blind to an outage shorter
+# than its own window: a book can write nothing for 20 hours and still clear a
+# 24h volume test on the 4 hours either side.
+#
+# SO THIS MEASURES AGE, NOT VOLUME. `max(timestamp)` cannot be fooled by a busy
+# morning, and for the three books we collect OURSELVES — on our own 30-minute
+# crons, not AF's bulk feed — age is the honest signal: we know exactly how
+# often they are supposed to write.
+#
+# THRESHOLD, MEASURED NOT GUESSED. Inter-write gap over 7 days, minute-bucketed:
+#
+#     Coolbet      p50 1m   p95  8m   p99 59.2m
+#     Unibet-Site  p50 1m   p95 28m   p99 56.0m
+#     Epicbet      p50 30m  p95 59m   p99 62.0m
+#
+# All three sit just under 60 minutes at p99 — one missed cron tick. 120 minutes
+# is two missed ticks plus slack, comfortably above p99 for every book, so it
+# does not cry wolf; and it would have fired ~2h into the Coolbet outage instead
+# of never, and ~2h into Unibet-Site's instead of twenty hours later.
+DIRECT_FEED_BOOKS = ("Coolbet", "Unibet-Site", "Epicbet")
+DIRECT_FEED_STALE_AFTER_MIN = 120
+
+
+def check_direct_feed_staleness() -> None:
+    """Age-based staleness for the three books we collect ourselves.
+
+    Runs 24/7 — deliberately NOT bundled into run_snapshot_check, which is
+    windowed to 10-22 UTC. The outage that motivated this began at 01:25 UTC,
+    six hours before the first windowed check of the day could have looked.
+
+    Telegram as well as email. These are the only two PLACEABLE books plus the
+    most reliable of the three direct feeds, and the published picks are priced
+    off them; a pull-only surface is exactly what failed here. Same reasoning as
+    _notify_telegram's docstring for SIGNAL-SILENCE.
+    """
+    rows = execute_query(
+        """SELECT bookmaker,
+                  MAX(timestamp) AS last_row,
+                  ROUND(EXTRACT(epoch FROM (now() - MAX(timestamp))) / 60) AS age_min
+             FROM odds_snapshots
+            WHERE bookmaker = ANY(%s)
+              AND timestamp > now() - interval '30 days'
+            GROUP BY bookmaker""",
+        (list(DIRECT_FEED_BOOKS),),
+    )
+    seen = {r["bookmaker"]: int(r["age_min"]) for r in rows}
+
+    stale, healthy = [], []
+    for book in DIRECT_FEED_BOOKS:
+        age = seen.get(book)
+        if age is None:
+            # No row in 30 days. Not "fresh by absence" — a book that has
+            # written nothing at all is the worst case, not an exempt one.
+            stale.append((book, None))
+        elif age >= DIRECT_FEED_STALE_AFTER_MIN:
+            stale.append((book, age))
+        else:
+            healthy.append(f"{book} {age}m")
+
+    console.print(
+        f"[dim]health_alerts: direct feeds — "
+        f"{', '.join(healthy) if healthy else 'none fresh'}"
+        f"{'; STALE: ' + ', '.join(b for b, _ in stale) if stale else ''}[/dim]"
+    )
+    if not stale:
+        return
+
+    def _age(a: int | None) -> str:
+        return "no rows in 30 days" if a is None else f"{a} min ({a / 60:.1f}h)"
+
+    names = ", ".join(b for b, _ in stale)
+    detail = "; ".join(f"{b}: {_age(a)}" for b, a in stale)
+
+    _alert_once(
+        # Per-book key: Coolbet dying should not suppress a later Unibet alert
+        # on the same day. The in-memory dedup is one alert per key per UTC day.
+        f"direct_feed_stale:{names}",
+        f"DIRECT FEED STALE — {names}",
+        f"<p><b>{detail}</b> (threshold {DIRECT_FEED_STALE_AFTER_MIN} min).</p>"
+        f"<p>These three books are collected by OUR OWN 30-minute crons, not by "
+        f"the API-Football bulk feed. Coolbet and Unibet-Site are the only two "
+        f"PLACEABLE books, and all three price the published picks.</p>"
+        f"<p>First thing to check is CDP-Chrome — <code>pgrep -f "
+        f"Chrome-CDP-OddsIntel</code>. If it returns 0, see COOLBET_RUNBOOK "
+        f"&sect;2b (launchd reaping); if Chrome is up and only the token is "
+        f"gone, &sect;3. Epicbet does not use CDP at all — it runs through "
+        f"FlareSolverr on the VPS, so Epicbet alone being stale points "
+        f"somewhere else entirely.</p>"
+        f"<p>Note: <code>check_bookmaker_disappearance</code> will NOT fire for "
+        f"this. It compares 24h volume against a prior daily rate and is blind "
+        f"to any outage shorter than its own window — that is why this check "
+        f"exists.</p>",
+    )
+    _notify_telegram(
+        f"🔴 [OI] DIRECT FEED STALE — {detail}\n"
+        f"threshold {DIRECT_FEED_STALE_AFTER_MIN} min. "
+        f"Check CDP-Chrome first: pgrep -f Chrome-CDP-OddsIntel",
+        dedup_key=f"direct_feed_stale:{names}",
+    )
+
+
 def check_signal_silence() -> None:
     """SIGNAL-SILENCE-ALERT (2026-08-27) — nothing alerted when Telegram
     signals stopped for 4 days (2026-08-23 → 08-27, 12 picks unsent).
@@ -1023,6 +1179,22 @@ def run_snapshot_check() -> None:
             fn()
         except Exception as e:
             console.print(f"[yellow]health_alerts {fn_name} error: {e}[/yellow]")
+
+
+def run_feed_checks() -> None:
+    """HOURLY, 24/7 — direct-feed staleness.
+
+    Its own runner rather than a line in run_snapshot_check because that one is
+    windowed to 10-22 UTC (there are no live matches to poll outside it). The
+    Coolbet/Unibet-Site outage of 2026-09-16 began at 01:25 UTC; a windowed
+    check could not have looked for another nine hours, by which time the feed
+    had been dark all night. The Mac crons that fill these books run 24/7, so
+    the check that watches them has to as well.
+    """
+    try:
+        check_direct_feed_staleness()
+    except Exception as e:
+        console.print(f"[yellow]health_alerts direct-feed check error: {e}[/yellow]")
 
 
 def run_settlement_check() -> None:

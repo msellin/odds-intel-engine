@@ -2424,6 +2424,19 @@ def job_health_alerts_snapshot():
         console.print(f"[yellow]health_alerts snapshot check error: {e}[/yellow]")
 
 
+def job_health_alerts_feeds():
+    """DIRECT-FEED-STALENESS (2026-09-16) — hourly, 24/7.
+
+    Separate from job_health_alerts_snapshot, which only runs 10-22 UTC because
+    that is when there are live matches to poll. The Coolbet/Unibet-Site outage
+    this check exists for began at 01:25 UTC and would not have been LOOKED at
+    until 10:45. The Mac crons that fill these books run around the clock, so
+    the watcher has to as well.
+    """
+    from workers.jobs.health_alerts import run_feed_checks
+    _run_job("health_alerts_feeds", run_feed_checks)
+
+
 def job_health_alerts_settlement():
     from workers.jobs.health_alerts import run_settlement_check
     _run_job("health_alerts_settlement", run_settlement_check)
@@ -3385,6 +3398,11 @@ def main():
         scheduler.add_job(job_health_alerts_snapshot, CronTrigger(hour=_ha_hour, minute=45),
                           id=f"health_alerts_snapshot_{_ha_hour:02d}",
                           name=f"Health Alerts Snapshot {_ha_hour:02d}:45")
+    # DIRECT-FEED-STALENESS: hourly, ALL 24 HOURS. The snapshot check above is
+    # deliberately windowed to live-match hours; this one must not be. Both
+    # outages it was written for started outside that window.
+    scheduler.add_job(job_health_alerts_feeds, CronTrigger(minute=50),
+                      id="health_alerts_feeds", name="Health Alerts Direct Feeds :50")
     # Settlement check at 21:30 (after 21:00 settlement job has had 30 min to run)
     scheduler.add_job(job_health_alerts_settlement, CronTrigger(hour=21, minute=30),
                       id="health_alerts_settlement", name="Health Alerts Settlement 21:30")
