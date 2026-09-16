@@ -179,10 +179,24 @@ def assert_may_place(
 def gate_status() -> dict:
     """Read-only summary for `coolbet_control --status` and the admin safety
     strip. Never raises. Each field is None when unreadable."""
+    # GATE-STATUS-READS-THE-SAME-ENV (2026-09-16). `best_price_router` reads
+    # ROUTER_ALLOW_REAL inside the scheduler process, where `.env` has been
+    # loaded (api_clients.db calls load_dotenv() at import). This function used
+    # to read os.getenv BEFORE any of that ran — the dict literal was evaluated
+    # before the `import coolbet_state` below — so a bare `--status` process saw
+    # an empty env and reported `router_allow_real_env: false` while the live
+    # router had it TRUE. A safety strip that reports the opt-in as OFF when it
+    # is ON is worse than no strip. Load the same file the router does, first.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except Exception:  # noqa: BLE001 — reporting must never raise
+        pass
     out: dict = {"placement_paused": None, "placement_paused_reason": None,
                  "real_money_armed": None, "allowlist": None,
                  "router_allow_real_env": bool(
-                     os.getenv("ROUTER_ALLOW_REAL", "").lower() in ("1", "true", "yes"))}
+                     os.getenv("ROUTER_ALLOW_REAL", "").strip().lower()
+                     in ("1", "true", "yes"))}
     try:
         import workers.automation.coolbet_state as cs
         p, r = cs.is_placement_paused()

@@ -43861,6 +43861,59 @@ def test_placement_gate_all_executors():
         "coolbet_inplay execute mode must call the gate BEFORE _place_bet_api"
 
 
+@test("GATE-STATUS-READS-THE-SAME-ENV — the safety strip must not report the router opt-in as OFF while it is ON")
+def test_gate_status_reads_the_same_env():
+    """2026-09-16. `gate_status()` built its result dict as a LITERAL, so
+    `os.getenv("ROUTER_ALLOW_REAL")` was evaluated before the `import
+    coolbet_state` two lines below it — and that import is the only thing that
+    ever pulled in `api_clients.db`, which is what calls `load_dotenv()`. A bare
+    `--status` process therefore read an empty environment and printed
+    `router_allow_real_env: false` on a machine whose `.env` had it set to
+    `true`. The live router reads the same variable INSIDE the scheduler
+    process, where `.env` is loaded, so the two disagreed: the strip said the
+    env opt-in was off while the running router had it on.
+
+    RELIABILITY_LEDGER #4 in miniature — a second code path reading the same
+    switch through a different door. Nothing could have moved money (the DB
+    pause and `real_money_armed` are independent of this flag), but a safety
+    display that under-reports an opt-in is the one direction a safety display
+    must never fail in.
+
+    Behaviour first, then the ordering that caused it."""
+    import importlib, os as _os
+    pg = importlib.import_module("workers.automation.placement_gate")
+
+    prev = _os.environ.get("ROUTER_ALLOW_REAL")
+    try:
+        for value, expected in (("true", True), ("1", True), ("  TRUE  ", True),
+                                ("false", False), ("", False), ("no", False)):
+            _os.environ["ROUTER_ALLOW_REAL"] = value
+            got = pg.gate_status()["router_allow_real_env"]
+            assert got is expected, (
+                f"gate_status reported router_allow_real_env={got} for "
+                f"ROUTER_ALLOW_REAL={value!r} — expected {expected}"
+            )
+    finally:
+        if prev is None:
+            _os.environ.pop("ROUTER_ALLOW_REAL", None)
+        else:
+            _os.environ["ROUTER_ALLOW_REAL"] = prev
+
+    # THE ORDERING. Source inspection, because the failure only reproduces in a
+    # process that has not already imported db.py — which the smoke suite has.
+    import inspect
+    src = inspect.getsource(pg.gate_status)
+    assert "load_dotenv" in src, (
+        "gate_status must load .env itself — it is called from bare "
+        "`coolbet_control --status` processes that import nothing else"
+    )
+    assert src.index("load_dotenv") < src.index('os.getenv("ROUTER_ALLOW_REAL"'), (
+        "gate_status reads ROUTER_ALLOW_REAL before load_dotenv() runs — a bare "
+        "status process sees an empty env and reports the opt-in as OFF while "
+        "the scheduler's router has it ON"
+    )
+
+
 @test("ROUTER-NO-ALLOWLIST-BYPASS — real mode with every bot toggled OFF dispatches nothing")
 def test_router_no_allowlist_bypass():
     """Before 2026-09-15 the router iterated PLACEABLE_BOTS, so ROUTER_ALLOW_REAL=1
