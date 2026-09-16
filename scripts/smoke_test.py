@@ -44418,6 +44418,26 @@ def test_residual_harness_verified():
         "our alpha = 0 results the STRONG reading rather than the weak one"
     )
 
+    # The O/U-SPECIFIC logic is not shared with the 1x2 harness, so verifying
+    # fit_alpha/Platt/Shin says nothing about it. Inverting the target or the
+    # class index still yields a plausible alpha, which is exactly why these are
+    # named functions with hand-computed fixtures rather than inline expressions.
+    ou = _engine_path("scripts/residual_test_ou.py").read_text(encoding="utf-8")
+    for fn in ("def ou_target(", "def devig_two_way(", "def over_class_index(",
+               "def ou_line_threshold("):
+        assert fn in ou, f"{fn} must stay a named, testable function"
+    # ...and main() must actually CALL them, or the fixtures cover dead code.
+    for call in ("ou_target(r[", "devig_two_way(r[", "over_class_index(classes)",
+                 "ou_line_threshold(a_.line)"):
+        assert call in ou, (
+            f"main() no longer calls {call} — the verified helper has been bypassed, "
+            f"so the fixtures now test code that does not run"
+        )
+    assert "end-to-end" in src and "6-goal match" in src, (
+        "the end-to-end class-convention check must remain: source inspection "
+        "cannot tell an inverted OVER index from a correct one"
+    )
+
 
 @test("DIXON-COLES-GUARDS — the fitter keeps its intercept, its ridge, and its out-of-sample discipline")
 def test_dixon_coles_guards():
@@ -45639,6 +45659,20 @@ def _():
     assert excess["A"] <= bpf.ALERT_EXCESS_POINTS and excess["B"] <= bpf.ALERT_EXCESS_POINTS, (
         "books at the fleet baseline must NOT fire -- that baseline is line "
         "shopping working, not a defect")
+
+    # FIDELITY-FALSE-POSITIVE-FIX-2026-09-16: retired bots must be excluded and
+    # the gap must be broad. The first live run flagged Bet365 at +16.8 on 931
+    # double_chance bets from three RETIRED bots (two emitting identical picks);
+    # on the book's full sample it reads +2.9, and with retired bots excluded it
+    # reads -6.0 and does not flag at all.
+    assert "bo.retired_at IS NULL" in bpf._SQL, (
+        "retired bots must be excluded -- a dead strategy raised a false alarm "
+        "about a live book on the monitor's first run")
+    assert "MIN_DISTINCT_BOTS" in src and "MIN_DISTINCT_MARKETS" in src, (
+        "a price defect belongs to the BOOK, so it cannot be confined to one "
+        "strategy or one market -- breadth guard missing")
+    assert bpf.WINDOW_DAYS >= 90, (
+        "30d let a single bot's burst own a book's whole sample")
 
     assert bpf.MIN_BETS >= 100, (
         "below n=100 the standard error on a win rate swamps the signal")

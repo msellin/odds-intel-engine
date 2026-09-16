@@ -154,6 +154,45 @@ and -14.3 / -56.0% at odds >3.2. A proposal to tighten to 1.10-1.15 was measured
 and rejected; it would have deleted the only band that works. So clamp at 1.25,
 and do not clamp lower without re-running the measurement.
 
+## 9a. Four ways a per-book slice will lie to you (2026-09-16)
+
+Written after a single investigation reached three confident conclusions and
+**two of them were wrong.** Each error was cheap to catch and none of them was
+caught before it had been stated as fact. The rules below are what would have
+caught each one.
+
+**(a) Do not infer a MECHANISM from an OUTCOME.** "Marathonbet shows +91.6% ROI,
+therefore its feed is phantom" is not an inference, it is a hypothesis. The test
+is whether its prices sit above the market median — they do not (-0.14%, at
+consensus), and Bet365 likewise (+0.27%). *Rule: name the falsifier before the
+conclusion, then measure it.*
+
+**(b) Check that the cause precedes the effect.** "The Unibet profit came from
+its feed being dead" — the feed died 2026-09-12; those 927 bets span months of it
+running live. The real evidence was the implied-vs-actual gap, which is a
+different claim entirely.
+
+**(c) Never conclude from an UNCONTROLLED aggregate.** Bucketing bets by
+`taken_price / anchor` suggested tightening the outlier ceiling to 1.10-1.15.
+Controlled for odds level, the 1.05-1.25 band is the *profitable* one in every
+bucket and that change would have deleted it. Longshots lose independently of
+price quality and will masquerade as a price defect. *Rule: before acting on a
+grouped table, control for the confounder most likely to have produced it.*
+
+**(d) A per-book slice is dominated by whoever bet most, not by the book.** The
+fidelity monitor's first run flagged Bet365 at +16.8 over 30 days (n=1,087).
+931 of those were `double_chance` from three RETIRED bots, two of which
+(`bot_dc_specialist`, `bot_dc_value`) emit **identical picks** and so counted the
+same evidence twice. On the book's full sample Bet365 reads +2.9; with retired
+bots excluded, **-6.0**. *Rule: exclude retired bots, require the effect across
+>=2 bots AND >=2 markets, and state n per cell — a book-level defect cannot live
+inside one strategy.*
+
+**And the sample-size floor that would have prevented one published number:**
++290% ROI was quoted from **n=20**. Nothing per-book below roughly n=200 gets
+stated without a confidence interval attached, or it does not get stated.
+
+
 ## 10. Comparing bookmakers by raw Brier is invalid
 
 Each book prices a different slate, so Brier partly measures how hard its games

@@ -169,6 +169,50 @@ def fit_alpha(pm, pk, ys):
     return best[1]
 
 
+def ou_line_threshold(line_arg: str) -> float:
+    """`--line 25` -> 2.5. The CLI takes the market suffix (`over_under_25`), and
+    a .5 line means there is no push case, which the target below relies on."""
+    return float(line_arg) / 10.0
+
+
+def ou_target(total_goals: float, threshold: float) -> int:
+    """1 when the match went OVER the line. Strictly greater: on a .5 line no
+    total can equal it, so this is exact rather than a convention.
+
+    Inverting this silently flips the sign of the entire test and would still
+    produce a plausible-looking alpha, which is why it is a named function with
+    its own fixtures rather than an inline comprehension.
+    """
+    return 1 if float(total_goals) > threshold else 0
+
+
+def devig_two_way(o_over: float, o_under: float) -> float:
+    """Proportional de-vig -> P(over). Returns the OVER leg, matching ou_target.
+
+    The pair must be the complete two-leg complement; overround is removed by
+    normalising, so the result is a probability even though 1/o_over + 1/o_under
+    exceeds 1.
+    """
+    q_over, q_under = 1.0 / o_over, 1.0 / o_under
+    return q_over / (q_over + q_under)
+
+
+def over_class_index(classes) -> int:
+    """Index of the OVER class in the model's `classes_`.
+
+    Production reads `probs_ou[classes.index(1)]` as over25_prob
+    (xgboost_ensemble.py) — this mirrors that, and raises rather than guessing.
+    A wrong index here inverts every probability the test scores and nothing
+    downstream would notice.
+    """
+    cl = list(classes)
+    if 1 in cl:
+        return cl.index(1)
+    if True in cl:
+        return cl.index(True)
+    raise ValueError(f"unexpected O/U classes {cl!r} — cannot locate the OVER class")
+
+
 def shin2(o_over, o_under):
     """Shin de-vig for a TWO-outcome market. Removes proportionally more margin
     from the longshot, which is exactly where a spurious model edge would show
@@ -197,7 +241,7 @@ def main() -> int:
                          "against the shipped one through the identical harness")
     a_ = ap.parse_args()
     market = f"over_under_{a_.line}"
-    thresh = float(a_.line) / 10.0
+    thresh = ou_line_threshold(a_.line)
 
     c = psycopg2.connect(os.getenv("DATABASE_URL")).cursor(
         cursor_factory=psycopg2.extras.RealDictCursor)
@@ -255,9 +299,9 @@ def main() -> int:
         print(f"only {len(rows)} rows — too few to conclude")
         return 1
 
-    ys = [1 if float(r["total_goals"]) > thresh else 0 for r in rows]
+    ys = [ou_target(r["total_goals"], thresh) for r in rows]
     inv = [1 / r["po"] + 1 / r["pu"] for r in rows]
-    pk = [(1 / r["po"]) / s for r, s in zip(rows, inv)]
+    pk = [devig_two_way(r["po"], r["pu"]) for r in rows]
     pk_shin = [shin2(r["po"], r["pu"]) for r in rows]
 
     print(f"RESIDUAL TEST (O/U {thresh}) — bundle {bundle}, matches on/after {a_.cutoff}")
@@ -280,8 +324,7 @@ def main() -> int:
     classes = list(model.classes_)
     # Production reads probs_ou[classes.index(1)] as over25_prob
     # (xgboost_ensemble.py:442) — same convention here, asserted not assumed.
-    assert 1 in classes or True in classes, f"unexpected O/U classes {classes}"
-    idx = classes.index(1) if 1 in classes else classes.index(True)
+    idx = over_class_index(classes)
     cut = len(rows) // 2
 
     verdicts = []

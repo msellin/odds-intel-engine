@@ -70,6 +70,8 @@ _rt = _ilu.module_from_spec(_spec)
 _spec.loader.exec_module(_rt)
 auc, fit_alpha, fit_platt = _rt.auc, _rt.fit_alpha, _rt.fit_platt
 ll, shin2, sig = _rt.ll, _rt.shin2, _rt.sig
+ou_target, devig_two_way = _rt.ou_target, _rt.devig_two_way
+ou_line_threshold, over_class_index = _rt.ou_line_threshold, _rt.over_class_index
 
 FAILS: list[str] = []
 
@@ -222,6 +224,72 @@ def main() -> int:
     check("AUC perfect = 1.0", abs(auc([0.1, 0.2, 0.8, 0.9], ys_s) - 1.0) < 1e-9)
     check("AUC reversed = 0.0", abs(auc([0.9, 0.8, 0.2, 0.1], ys_s) - 0.0) < 1e-9)
     check("AUC constant = 0.5", abs(auc([0.5] * 4, ys_s) - 0.5) < 1e-9)
+
+    print("\n=== 5. the O/U-SPECIFIC parts (not shared with the 1x2 harness) ===")
+    # These four decide what the O/U test is even measuring. Inverting any of
+    # them still produces a plausible alpha, so each gets fixtures where the
+    # right answer is computable by hand.
+
+    check("line 25 -> 2.5", ou_line_threshold("25") == 2.5)
+    check("line 15 -> 1.5", ou_line_threshold("15") == 1.5)
+    check("line 35 -> 3.5", ou_line_threshold("35") == 3.5)
+
+    # Target: strictly greater, on a .5 line so no push exists.
+    check("2-1 (3 goals) is OVER 2.5", ou_target(3, 2.5) == 1)
+    check("1-1 (2 goals) is UNDER 2.5", ou_target(2, 2.5) == 0)
+    check("0-0 is UNDER 2.5", ou_target(0, 2.5) == 0)
+    check("2-2 (4 goals) is OVER 2.5", ou_target(4, 2.5) == 1)
+    check("1-0 (1 goal) is UNDER 1.5", ou_target(1, 1.5) == 0)
+    check("1-1 (2 goals) is OVER 1.5", ou_target(2, 1.5) == 1)
+    # The inversion that would silently flip the whole test.
+    check("target is NOT inverted (3 goals must not read UNDER)",
+          ou_target(3, 2.5) != ou_target(2, 2.5))
+
+    # De-vig: hand-computed. over 1.80 / under 2.10 ->
+    #   1/1.80 = 0.555556, 1/2.10 = 0.476190, sum = 1.031746 (3.17 pct overround)
+    #   P(over) = 0.555556 / 1.031746 = 0.538462
+    pv = devig_two_way(1.80, 2.10)
+    check("de-vig matches the hand calculation", abs(pv - 0.5384615) < 1e-6,
+          f"{pv:.7f} vs 0.5384615 (over 1.80 / under 2.10)")
+    check("de-vig returns the OVER leg, not the under", pv > 0.5,
+          f"{pv:.4f} — 1.80 is the shorter price so over must be the favourite")
+    check("de-vig output is a probability", 0.0 < pv < 1.0)
+    # A symmetric market must give exactly 0.5 whatever the vig.
+    check("symmetric prices -> 0.5", abs(devig_two_way(1.90, 1.90) - 0.5) < 1e-12)
+    # And it must actually REMOVE the vig: raw 1/o sums above 1, the result is 1.
+    raw = 1 / 1.80 + 1 / 2.10
+    check("the vig is removed (raw sums above 1, de-vigged pair sums to 1)",
+          raw > 1.0 and abs(pv + devig_two_way(2.10, 1.80) - 1.0) < 1e-12,
+          f"raw sum {raw:.6f}")
+
+    # Class index: mirror production, and refuse rather than guess.
+    check("classes [0,1] -> OVER is index 1", over_class_index([0, 1]) == 1)
+    check("classes [1,0] -> OVER is index 0", over_class_index([1, 0]) == 0)
+    check("classes [False,True] -> OVER is index 1", over_class_index([False, True]) == 1)
+    try:
+        over_class_index(["a", "b"])
+        check("unknown classes raise rather than guessing", False, "no exception")
+    except ValueError:
+        check("unknown classes raise rather than guessing", True)
+
+    # END-TO-END: a model whose class 1 really IS over, checked through the
+    # same index the test uses. This is the assertion that would have caught an
+    # inverted convention, which source inspection cannot.
+    import numpy as _np
+    rng5 = _np.random.default_rng(11)
+    tot = rng5.integers(0, 7, 4000)                      # total goals
+    yy = _np.array([ou_target(t, 2.5) for t in tot])
+    try:
+        from xgboost import XGBClassifier
+        mdl = XGBClassifier(n_estimators=20, max_depth=2, verbosity=0)
+        mdl.fit(tot.reshape(-1, 1), yy)
+        idx5 = over_class_index(list(mdl.classes_))
+        p_over = mdl.predict_proba(_np.array([[6], [0]]))[:, idx5]
+        check("end-to-end: a 6-goal match scores HIGHER on P(over) than a 0-goal one",
+              p_over[0] > p_over[1],
+              f"P(over|6 goals) {p_over[0]:.4f} vs P(over|0 goals) {p_over[1]:.4f}")
+    except ImportError:
+        print("  SKIP  end-to-end class check (xgboost unavailable)")
 
     print(f"\n{'ALL PASS' if not FAILS else str(len(FAILS)) + ' FAILED: ' + ', '.join(FAILS)}")
     return 1 if FAILS else 0

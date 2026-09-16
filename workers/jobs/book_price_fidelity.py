@@ -61,16 +61,39 @@ MIN_BETS = int(os.getenv("FIDELITY_MIN_BETS", "100"))
 # fleet median near +2, i.e. roughly +10 excess, so 6 catches them with room.
 ALERT_EXCESS_POINTS = float(os.getenv("FIDELITY_ALERT_EXCESS", "6.0"))
 
-WINDOW_DAYS = int(os.getenv("FIDELITY_WINDOW_DAYS", "30"))
+# FIDELITY-FALSE-POSITIVE-FIX-2026-09-16. The first live run flagged Bet365 at
+# +16.8 on a 30d window (n=1,087) and the flag did not survive contact with the
+# full sample: over 13,852 DC bets Bet365 reads +2.9, in line with Betano -3.6,
+# 10Bet -2.0 and Coolbet -2.5. The 30d slice was 931 double_chance bets from
+# three RETIRED bots, two of which (bot_dc_specialist, bot_dc_value) emit
+# identical picks and so counted the same evidence twice.
+#
+# Three defects, all fixed below:
+#   * 30d is too short -- one bot's burst owns a book's whole sample.
+#   * retired bots were included, so a dead strategy could raise an alarm about
+#     a live book.
+#   * nothing reported CONCENTRATION, so a gap driven by one bot/market looked
+#     identical to one spread across the fleet.
+WINDOW_DAYS = int(os.getenv("FIDELITY_WINDOW_DAYS", "90"))
+
+# A flagged book must show its gap across more than one bot AND more than one
+# market. A price defect is a property of the BOOK, so it cannot be confined to
+# a single strategy -- if it is, the strategy is the story, not the feed.
+MIN_DISTINCT_BOTS = int(os.getenv("FIDELITY_MIN_BOTS", "2"))
+MIN_DISTINCT_MARKETS = int(os.getenv("FIDELITY_MIN_MARKETS", "2"))
 
 _SQL = """
 SELECT s.recommended_bookmaker AS book,
        COUNT(*)                                            AS bets,
        AVG(1.0 / s.odds_at_pick) * 100.0                   AS implied_pct,
        AVG(CASE WHEN s.result::text = 'won' THEN 1.0 ELSE 0.0 END) * 100.0 AS actual_pct,
-       AVG(s.odds_at_pick)                                 AS avg_odds
+       AVG(s.odds_at_pick)                                 AS avg_odds,
+       COUNT(DISTINCT s.bot_id)                            AS n_bots,
+       COUNT(DISTINCT s.market)                            AS n_markets
   FROM shadow_bets s
- WHERE s.result IS NOT NULL
+  JOIN bots bo ON bo.id = s.bot_id
+ WHERE bo.retired_at IS NULL
+   AND s.result IS NOT NULL
    AND s.result::text <> 'pending'
    AND s.odds_at_pick IS NOT NULL
    AND s.odds_at_pick > 1
@@ -107,6 +130,8 @@ def measure(window_days: int = WINDOW_DAYS, min_bets: int = MIN_BETS) -> list[di
             "actual_pct": round(actual, 1),
             "avg_odds": round(float(r["avg_odds"]), 2),
             "gap": round(actual - implied, 1),
+            "n_bots": int(r["n_bots"]),
+            "n_markets": int(r["n_markets"]),
         })
 
     baseline = median(b["gap"] for b in out)
@@ -135,7 +160,21 @@ def run_fidelity_check(
                  min_bets, window_days)
         return {"books": 0, "flagged": 0, "detail": []}
 
-    flagged = [b for b in books if b["excess"] > alert_excess]
+    # BREADTH GUARD (FIDELITY-FALSE-POSITIVE-FIX). A price defect belongs to the
+    # BOOK, so it cannot live inside one strategy or one market. The first live
+    # run flagged Bet365 on 931 double_chance bets from three retired bots -- a
+    # gap that vanished (+16.8 -> +2.9) on the book's full sample. If the gap is
+    # confined, the strategy is the story and the alert would be misdirected.
+    flagged = [b for b in books
+               if b["excess"] > alert_excess
+               and b["n_bots"] >= MIN_DISTINCT_BOTS
+               and b["n_markets"] >= MIN_DISTINCT_MARKETS]
+    narrow = [b for b in books
+              if b["excess"] > alert_excess and b not in flagged]
+    for b in narrow:
+        log.info("book-price-fidelity: %s over threshold (%+.1f) but confined to "
+                 "%d bot(s) / %d market(s) — not a book-level defect, not alerting",
+                 b["book"], b["excess"], b["n_bots"], b["n_markets"])
 
     for b in books:
         log.info("book-price-fidelity: %-16s n=%-5d implied=%.1f%% actual=%.1f%% "
@@ -155,7 +194,8 @@ def run_fidelity_check(
                 f"<b>{b['book']}</b> — won {b['actual_pct']:.1f}% where its price "
                 f"implied {b['implied_pct']:.1f}%\n"
                 f"   gap {b['gap']:+.1f}pts ({b['excess']:+.1f} vs fleet), "
-                f"n={b['bets']}, avg odds {b['avg_odds']:.2f}"
+                f"n={b['bets']} across {b['n_bots']} bots / {b['n_markets']} markets, "
+                f"avg odds {b['avg_odds']:.2f}"
             )
         lines += [
             "",
@@ -175,6 +215,7 @@ def run_fidelity_check(
     return {
         "books": len(books),
         "flagged": len(flagged),
+        "narrow": len(narrow),
         "fleet_median_gap": books[0]["fleet_median_gap"],
         "detail": books,
     }
