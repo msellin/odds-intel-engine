@@ -44353,6 +44353,55 @@ def test_placement_gate_all_executors():
         "coolbet_inplay execute mode must call the gate BEFORE _place_bet_api"
 
 
+@test("CANDIDATE-SIGNAL-SCREEN-GUARDS — the feature screen must be pre-kickoff and psycopg2-safe")
+def test_candidate_signal_screen_guards():
+    """2026-09-16, FEED-THE-MODEL-WHAT-WE-ALREADY-COMPUTE. 50 of our 90 signals
+    never reach the model; this screen ranks which are worth adding, on evidence
+    rather than judgement. Two guards decide whether its ranking means anything,
+    and both were violated in the first version:
+
+      * PRE-KICKOFF BOUND. Taking the LATEST captured signal reads, for a match
+        played months ago, a value written long after it. The league aggregates
+        are computed over "the last 200 finished matches in this league" with no
+        bound relative to the match being scored, so a later capture encodes
+        results that had not happened yet. (Measured: the bound moved
+        league_avg_goals AUC 0.6165 -> 0.6165 on 32,713 rows, i.e. those signals
+        were already pre-match — but that is a RESULT, not a reason to drop the
+        guard, and it is the same defect shape residual_test.py carries a bound
+        for.)
+      * NO BARE '%'. psycopg2 reads a literal % in SQL as a placeholder and
+        raises IndexError on every call. It happened here, in the comment
+        explaining the pre-kickoff bound ("28% of its pre-kickoff prices").
+        ANALYSIS_GOTCHAS §59(d), third occurrence in one day.
+    """
+    src = _engine_path("scripts/candidate_signal_screen.py").read_text(encoding="utf-8")
+    q_start = src.index('f"""SELECT ms.signal_value')
+    q_end = src.index('(sig, a.days))', q_start)
+    sql = src[q_start:q_end]
+
+    assert "captured_at < m.date" in sql, (
+        "the screen must read only signal values captured BEFORE kickoff — the "
+        "latest value for an old match can have been written after it, and the "
+        "league_* aggregates have no bound relative to the match being scored"
+    )
+    assert "%" not in sql.replace("%s", ""), (
+        "a literal '%' is inside the screen's SQL — psycopg2 parses it as a "
+        "parameter placeholder and every run raises IndexError"
+    )
+    # The redundancy column is what stops us re-adding a feature we already have
+    # under another name (market_implied_home correlates 0.97 with
+    # opening_implied_home — it would have been added as 'new' without this).
+    assert "REDUNDANT" in src and "corrcoef" in src, (
+        "the screen must report correlation against existing model features; "
+        "without it a renamed duplicate reads as a new signal"
+    )
+    # Both targets, because a signal can matter for goals and not for outcome —
+    # which is the evidence behind SPLIT-FEATURE-SETS-1X2-VS-GOALS.
+    assert "y_ou" in src and "y_hw" in src, (
+        "the screen must score against BOTH over-2.5 and home-win"
+    )
+
+
 @test("MODEL-FEATURE-CONTRACT — inference must deliver every feature the model declares")
 def test_model_feature_contract():
     """2026-09-16. `_build_row_from_mfv()` does `SELECT * FROM

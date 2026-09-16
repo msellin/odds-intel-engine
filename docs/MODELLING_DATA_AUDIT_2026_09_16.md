@@ -168,6 +168,57 @@ we already have on disk.
 This is the cheapest finding in the whole audit — no collection, no
 procurement, no new pipeline. It is a feature-list change.
 
+#### Which of the 50 are actually worth adding (screened 2026-09-16)
+
+`scripts/candidate_signal_screen.py` ranks every unused signal by coverage,
+univariate rank-AUC against **both** targets, and correlation against the
+features the model already has. 400 days, 78,358 settled matches, values read
+only from captures **before kickoff**.
+
+Univariate screening cannot see interactions, so this decides what to TRY, not
+what works — the residual harness still decides that.
+
+**Worth adding — goals side:**
+
+| signal | n | AUC over-2.5 | max \|r\| vs existing |
+|---|---|---|---|
+| `league_avg_goals` | 32,713 | **0.6165** | 0.70 (`pinnacle_implied_over25`) |
+| `league_over25_pct` | 32,610 | **0.6127** | 0.69 |
+| `league_btts_pct` | 32,620 | 0.5803 | 0.60 |
+
+For scale: the O/U head's own AUC is **0.5796** and Pinnacle's is **0.6011**.
+A single league base-rate column out-ranks our model. It is not leakage — the
+pre-kickoff bound moved the number by 0.0000 — it is simply that leagues differ
+enormously in scoring rate and the O/U head was never told which league it is
+looking at beyond `league_tier`.
+
+**Worth adding — outcome side:**
+
+| signal | n | AUC home-win | max \|r\| vs existing |
+|---|---|---|---|
+| `pinnacle_ah_line_move` | 20,542 | **0.6207** | 0.62 (`opening_implied_home`) |
+| `h2h_avg_goal_diff` | 21,979 | 0.6215 | 0.78 (`h2h_win_pct`) |
+| `pinnacle_ah_line` | 20,571 | 0.3527 (inverted 0.647) | 0.71 |
+
+`pinnacle_ah_line_move` is the pick of these: the strongest association that is
+not mostly a restatement of something we already feed.
+
+**Rejected on evidence, including three I proposed before measuring:**
+
+| signal | why |
+|---|---|
+| `rest_days_norm_home/away` | AUC 0.4997 / 0.5021 — **no univariate signal**, despite the 83% coverage that made me highlight it |
+| `away_team_turf_games_ytd` | AUC 0.5043 at 53% coverage — nothing |
+| `form_slope_home/away` | 0.4986 / 0.5006 — nothing, and r≈0.47 with `form_momentum` anyway |
+| `market_implied_home/draw/away` | r = **0.94–0.98** with `opening_implied_*` — the same number under another name |
+| `league_draw_pct` | r = 0.87 with `league_draw_rate_ytd`, already in the model |
+| `squad_disruption_*` | 9% coverage, AUC 0.50 |
+
+That is the value of screening before adding: three of the candidates I named in
+§1c from coverage alone carry no signal at all, and the densest of them
+(`away_team_turf_games_ytd`, 87.4%) is worthless. Coverage told us what the model
+COULD read; only this tells us what is worth reading.
+
 ### Category 2 — we collect the raw data and have never made a signal from it
 
 Tables the feature pipeline has never read. It reads only `matches`,
