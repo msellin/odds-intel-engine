@@ -85,6 +85,51 @@ family — and it is the strongest single argument for the rest of this audit.
 
 ---
 
+## 1b. The feature contract — and can the gaps be filled?
+
+`scripts/model_feature_contract_audit.py` (2026-09-16) runs the **actual
+production code path** (`_build_row_from_mfv`) over a sample of real matches and
+compares, **per row**, what the model received against what the sources hold.
+Re-run it before adding any feature; it exits non-zero on a finding.
+
+**It found exactly one wiring bug, and it was live.** `pinnacle_implied_home` /
+`_draw` / `_away` were zero-filled on **132 of 200** sampled matches where the
+signal existed, with their `_missing` indicators pinned to 1 on **100%** —
+asserting "no market price" on every match since the v10 schema. Fixed: the row
+builder now fills any declared feature the mfv row lacks from `match_signals`,
+driven by what is missing rather than a hardcoded list. Audit is now clean.
+
+> Two earlier versions of the audit were **wrong**, and the reason is worth
+> keeping: "zero on every sampled match" is not evidence. The sample is the most
+> RECENT matches, which is exactly where a backfilled-later column is legitimately
+> empty. v1 called four features dead on that basis; v2 cross-checked against each
+> column's non-zero count over the window and still called them dead, because an
+> aggregate says the data exists *somewhere*, not for *these rows*. Only the
+> per-row comparison separates a wiring bug from a coverage gap.
+
+### Can the coverage gaps be filled?
+
+| feature | now | ceiling with data we ALREADY hold | verdict |
+|---|---|---|---|
+| `line_velocity` | 32.5% | **52.1%** — matches with ≥3 Pinnacle 1x2 snapshots | **FILLABLE, ~20pp.** The computation is not running on everything eligible. Cheapest win here. Hard ceiling is Pinnacle coverage (55.4%). |
+| `league_clv_efficiency` | 41.4% | a per-league aggregate — applies to any match in a league we have CLV for | **LIKELY FILLABLE** — needs a check of which leagues it skips and why. |
+| `xg_overperf_home/away` | 4.0% | ~15% (xG present on 46% of the 32.6% of matches that have `match_stats`) | **BARELY.** Even fully exploited it reaches ~15%. Real fix is xG procurement (Tier D). |
+| `injury_severity_score_*` | 2.5% | `match_injuries` covers **0.8%** of finished matches | **NOT FILLABLE.** The source is empty. Any "key player out" feature is currently fiction. |
+| `team_avg_player_rating_*` | 12.8% | `match_player_stats` covers **4.7%** | **NOT FILLABLE** from what we hold. |
+
+Note `injury_severity_home` / `_away` are written by nothing at all (0% in
+`match_signals`) — but they are **not** in the model's `feature_cols`, so they
+cost nothing today. `injury_severity_score_*`, which IS a model feature, is the
+one at 2.5%.
+
+**The propagate job is healthy.** `mfv_v3_signals_propagate` (23:30) moves
+`match_signals` → mfv columns and the two match everywhere checked — so every
+gap above is upstream (the signal was never computed) or a genuine data gap, not
+a lost hand-off. That was worth confirming rather than assuming: the same job's
+absence caused `season_progress` to sit at 0% for 90 days in June 2026.
+
+---
+
 ## 2. What we have as raw material
 
 | source | coverage of finished matches | what it gives |

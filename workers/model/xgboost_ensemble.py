@@ -241,7 +241,38 @@ def _build_row_from_mfv(match_id: str, feature_cols: list, tier: int) -> dict | 
     if not rows:
         return None
 
-    raw = rows[0]
+    raw = dict(rows[0])
+
+    # SIGNAL-RESIDENT FEATURES (2026-09-16, MODEL-FEATURE-CONTRACT-AUDIT).
+    # Not every declared feature has a COLUMN in match_feature_vectors.
+    # `pinnacle_implied_home` / `_draw` / `_away` are built by
+    # train.py:PINNACLE_FEATURE_COLS from odds_snapshots and written by
+    # daily_pipeline_v2 to `match_signals` — so `SELECT * FROM
+    # match_feature_vectors` never sees them, `raw.get(col)` returned None, and
+    # the zero-fill below sent the model 0.0 for the three features carrying the
+    # MARKET's own 1x2 price. On 200 recent matches the signal existed for 132
+    # of them and was thrown away every time; the `_missing` indicators were
+    # pinned to 1 on 100% of matches, asserting "no market price" always.
+    #
+    # Nothing failed: no exception, no log line. This is why
+    # scripts/model_feature_contract_audit.py exists and is smoke-gated.
+    #
+    # Fill from match_signals ONLY for declared features the mfv row lacks, so
+    # this costs one extra query and only when such a feature exists.
+    _need = [c for c in feature_cols
+             if not c.endswith("_missing") and c != "tier" and c not in raw]
+    if _need:
+        try:
+            for r in (execute_query(
+                """SELECT DISTINCT ON (signal_name) signal_name, signal_value
+                     FROM match_signals
+                    WHERE match_id = %s AND signal_name = ANY(%s)
+                    ORDER BY signal_name, captured_at DESC""",
+                    (match_id, _need)) or []):
+                raw[r["signal_name"]] = r["signal_value"]
+        except Exception:  # noqa: BLE001 — a signal read must never break inference
+            pass
+
     row: dict = {}
     for col in feature_cols:
         if col == "tier":
