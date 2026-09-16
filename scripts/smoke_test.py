@@ -44370,6 +44370,55 @@ def test_placement_gate_all_executors():
         "coolbet_inplay execute mode must call the gate BEFORE _place_bet_api"
 
 
+@test("RESIDUAL-HARNESS-VERIFIED — the instrument every alpha comes from must find a planted edge")
+def test_residual_harness_verified():
+    """VERIFY-RESIDUAL-HARNESS (2026-09-16). Every alpha this project has quoted
+    comes out of one harness, and on its output we closed model-anchored 1x2,
+    closed model-anchored O/U and rejected a feature addition. It had never been
+    tested against a KNOWN answer — it was inherited as pre-registered, and
+    pre-registered is not the same as correct.
+
+    The failure mode that matters is a FALSE NEGATIVE: a harness reporting
+    alpha = 0 when there is real edge would produce exactly the results we have,
+    and nothing else in the pipeline would contradict it.
+
+    `scripts/verify_residual_harness.py` plants edges of known size and checks
+    they are recovered (alpha 1.0000 when the model is truth; 0.6450 on a small
+    realistic edge), that `fit_alpha` returns the true argmin of its own
+    objective against an independent fine grid, and that Platt / Shin / the
+    train-eval split behave. This test pins that the verification exists and
+    keeps its two load-bearing cases.
+    """
+    src = _engine_path("scripts/verify_residual_harness.py").read_text(encoding="utf-8")
+
+    # It must import the REAL functions, not reimplement them — a local copy
+    # would verify the copy.
+    assert "residual_test_ou.py" in src and "exec_module" in src, (
+        "the verification must load and import the REAL harness module under test "
+        "(by path, so scripts/ need not become a package) — a reimplementation "
+        "would verify the copy rather than the instrument"
+    )
+    for fn in ("fit_alpha", "fit_platt", "shin2"):
+        assert f"_rt.{fn}" in src, f"the verification must bind the real {fn}, not a local one"
+    # The false-negative guard is the reason this file exists.
+    assert "planted edge -> alpha goes HIGH" in src and "PRIMARY would PASS" in src, (
+        "the planted-edge case is the false-negative guard — without it the "
+        "verification only proves the harness can say no"
+    )
+    # A small edge is the realistic case and the one most likely to be missed.
+    assert "SMALL edge" in src, "a small planted edge must be tested, not only an obvious one"
+    # The optimiser must be checked against something other than itself.
+    assert "independent fine grid" in src or "fine grid" in src, (
+        "fit_alpha must be checked against an independently computed grid"
+    )
+    # The semantics finding must not be quietly dropped: alpha > 0 can be
+    # shrinkage on an over-confident market rather than model skill.
+    assert "OVER-CONFIDENT" in src and "shrinkage" in src.lower(), (
+        "the shrinkage-vs-skill asymmetry must stay documented — it is what makes "
+        "our alpha = 0 results the STRONG reading rather than the weak one"
+    )
+
+
 @test("DIXON-COLES-GUARDS — the fitter keeps its intercept, its ridge, and its out-of-sample discipline")
 def test_dixon_coles_guards():
     """Phase 1-2 of DIXON-COLES-OU-BASELINE. Three properties, each of which was
