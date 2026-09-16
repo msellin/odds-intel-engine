@@ -271,6 +271,31 @@ behind `--include-signals` and both A/B bundles are experimental. Re-try only
 with the coverage gap closed (backfill the league aggregates historically) or
 inside a goals-specific feature set.
 
+#### A reproducibility hazard found while checking the A/B
+
+The shipped `v20260914_clean_cut0820` bundle scored α = 0.0000 on O/U; my
+`ab_control_cut0820` — **identical flags, identical cutoff** — scored 0.0150.
+Chased rather than waved off, because an unexplained difference between two runs
+that should agree is exactly where a bug hides.
+
+It is not a bug. **11.6% of pre-cutoff feature rows were rebuilt between the two
+training dates.** A `--cutoff` bounds match DATE, not feature COMPLETENESS, so
+the nightly `mfv_v3_signals_propagate` and friends keep changing history under a
+fixed cutoff.
+
+Three consequences worth carrying:
+
+* **Training is not reproducible across days**, even with an identical cutoff and
+  identical flags. Anyone re-running a past experiment will get a different
+  bundle and should not treat the difference as a finding.
+* **α = 0.0000 and α = 0.0150 are the same number**, separated by two days of
+  backfill. That reinforces the verdict rather than complicating it: neither is
+  distinguishable from zero.
+* **A matched control is mandatory, not tidiness.** Comparing a new bundle
+  against a previously-shipped one measures backfill as much as it measures the
+  change. The A/B above is valid only because control and treatment were trained
+  four minutes apart.
+
 ### Category 2 — we collect the raw data and have never made a signal from it
 
 Tables the feature pipeline has never read. It reads only `matches`,
