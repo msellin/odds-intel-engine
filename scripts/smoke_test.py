@@ -44353,6 +44353,61 @@ def test_placement_gate_all_executors():
         "coolbet_inplay execute mode must call the gate BEFORE _place_bet_api"
 
 
+@test("RESIDUAL-TEST-OU-METHOD — the clean O/U alpha test keeps the 1x2 pre-registration's guards")
+def test_residual_test_ou_method():
+    """2026-09-16. The audit closed model-anchored 1x2 at alpha = 0.0000 but left
+    O/U as 'DEAD until re-measured clean — clean alpha untested', because
+    OU-CALIBRATOR-DOMAIN-MISMATCH (migration 335) fitted the Platt curve on the
+    RAW ensemble probability and applied it to the market-SHRUNK one. Every O/U
+    number ever staked came through that curve, so 'O/U does not work' had never
+    been tested — only 'that broken curve does not work' had.
+
+    `residual_test_ou.py` answers it with the SAME locked method as
+    `residual_test.py`, target swapped. The guards below are the ones that make
+    the answer admissible, and each was a correction found while designing the
+    1x2 test — they must not be quietly dropped in the copy.
+    """
+    src = _engine_path("scripts/residual_test_ou.py").read_text(encoding="utf-8")
+    import ast as _ast
+    body = _ast.unparse(_ast.parse(src))
+
+    # 1. No market shrinkage in p_model. Production's cal_prob is ~99% Pinnacle
+    #    at the live alpha, so blending before the test is testing Pinnacle
+    #    against itself. Platt is LEVEL only.
+    assert "fit_platt" in body, "p_model must be Platt-fitted for level, not left raw"
+    assert "over_under.pkl" in body, "must load the O/U head, not the 1x2 head"
+
+    # 2. The REALISTIC arm (post-hoc columns NULLed) is what decides.
+    assert "POST_HOC" in src and "DECIDES" in src, (
+        "the two arms and the DECIDES marker must survive — the optimistic arm "
+        "alone is not admissible"
+    )
+
+    # 3. Pre-KO bound. Without it ~28% of 'pre-kickoff' Pinnacle prices were
+    #    collected AFTER kickoff. POSITIVE minutes_to_kickoff means before.
+    assert "minutes_to_kickoff IS NULL OR o.minutes_to_kickoff > 0" in src, (
+        "the pre-kickoff bound is missing — post-KO prices leak the result"
+    )
+    assert "is_closing = false" in src, "closing prices must be excluded"
+
+    # 4. Shin robustness arm: proportional de-vig overstates longshots, which is
+    #    exactly where a spurious model edge would appear.
+    assert "shin2" in body, "the Shin de-vig robustness arm must remain"
+
+    # 5. Fit alpha on one half, EVALUATE on the other. Fitting and scoring on the
+    #    same rows manufactures a positive alpha out of nothing.
+    assert "cut = len(rows) // 2" in body, "train/eval split must exist"
+    assert "slice(cut, None)" in body, "evaluation must be on the held-out half"
+
+    # 6. The over/under class convention is ASSERTED, not assumed — production
+    #    reads classes.index(1) as the OVER probability (xgboost_ensemble.py).
+    #    Getting this backwards silently inverts the whole result.
+    assert "assert 1 in classes or True in classes" in body, (
+        "the O/U class convention must be asserted, not assumed — inverting it "
+        "flips the sign of the entire test in a way nothing else would catch"
+    )
+
+
 @test("OWN-MARGIN-BY-MARKET-GUARDS — the per-market kill criterion keeps the guards that make it honest")
 def test_own_margin_by_market_guards():
     """2026-09-16. The owner asked whether one of the other markets we collect

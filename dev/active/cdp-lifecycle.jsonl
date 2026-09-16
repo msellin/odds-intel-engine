@@ -299,3 +299,5 @@
 {"at": "2026-09-16T11:25:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 16}
 {"at": "2026-09-16T11:55:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 17}
 {"at": "2026-09-16T12:25:14+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1618, "captcha": null, "tier": null, "procs": 17}
+{"at": "2026-09-16T12:55:05+00:00", "event": "observed", "cdp_up": true, "walled": null, "jwt": "no_coolbet_tab", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 7}
+{"at": "2026-09-16T12:55:06+00:00", "event": "healed", "tier": "autologin", "ok": false, "skipped_rebootstrap": null, "steps": ["cdp auto-login FAILED"], "reason": "", "error": "s/browser/e1c506af-c8b8-4262-811f-610a5a8e782c\n  - <ws disconnecting> ws://localhost:9222/devtools/browser/e1c506af-c8b8-4262-811f-610a5a8e782c\n  - <ws disconnected> ws://localhost:9222/devtools/brows"}

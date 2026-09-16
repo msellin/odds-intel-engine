@@ -151,7 +151,7 @@ conclude; the surfaces correctly refuse to render the backtest.
 | idea | verdict | the evidence | its limit (per review) | where |
 |---|---|---|---|---|
 | Model-anchored 1x2 | **DEAD** | residual α = 0.0000, CI [0, 0.03], four benchmarks incl. our books | none | `residual_test.py`, `c8b729af` |
-| Model-anchored O/U | **DEAD until re-measured clean** | every staked pick came from a calibrator applied outside its fitted domain | clean α untested | mig 335 |
+| Model-anchored O/U | **DEAD — re-measured clean 2026-09-16** | residual α = **0.0000** on all three arms, n=7,273 OOS; model AUC 0.5788 vs market 0.6007; residual AUC 0.4443 (**below** 0.5). Same at O/U 1.5 (n=4,256) and 3.5 (n=5,680). | verdict is on THIS model: it shares the 1x2 feature set, `xg_overperf_home` is 3.9% populated, `referee_over25_pct` 9.8%, and `pinnacle_implied_over25` only 50.8% — a dedicated O/U model is untested, this one is the 1x2 head relabelled | `residual_test_ou.py` |
 | Sharp anchor at our books, 3% floor | **DEAD structurally** | gated at ≤4% anchor overround, **0 of 109 legs** clear 3% | ROI figures (−3.4% n=72, −14.2% n=112) have se ±14–18pp — cite the structure, not the ROI | `d4238ec1` |
 | A live Pinnacle feed rescues the anchor | **NOT SUPPORTED** | paired n=92: AF is lagged +0.81pp; ≥9% quotes are real, with $200 limits | the paired test was overround-only; per-selection lag is unmeasured | `AF-PINNACLE-NOT-PINNACLE` |
 | Best-of-3 line shopping | **DEAD** | best-of-3 overround 5.66% vs 2% kill line | none | `own_path_kill_criterion.py` |

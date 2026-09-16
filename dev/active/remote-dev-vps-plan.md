@@ -176,9 +176,39 @@ work: FS earns a `cf_clearance`, but replaying it from plain `requests` still
 real browser was enough; the IP was never the issue. Verified on the box: 200,
 552 categories.
 
-**Pinnacle went the other way.** Its guest-API probe is *Mac-only* precisely
-because the Cloudflare WAF blocks the VPS (`AF-PINNACLE-NOT-PINNACLE-2026-09-14`).
-That one was never solved server-side.
+**Pinnacle's guest API is the third case, and we DID use it** —
+`scripts/pinnacle_movement_research.py` (PINNACLE-WEEKEND-EXPERIMENT 2026-06-05)
+and again for the `AF-PINNACLE-NOT-PINNACLE-2026-09-14` paired test. It hits
+`https://guest.api.arcadia.pinnacle.com` with **plain `urllib`, no key, no auth**
+— and its own hard constraints read `USER_AGENT — honest identification, no
+spoofing` and `NO_PROXY — single-IP, no rotation, no evasion logic`. So no IP was
+faked there either; the endpoint is genuinely public. It is *Mac-only* because
+the VPS is blocked.
+
+**Measured live 2026-09-16 — and the Epicbet trick does NOT transfer.** Tested
+both transports from the VPS:
+
+```
+plain curl   → HTTP 403, 4,547B, 42ms
+               <title>Attention Required! | Cloudflare</title>
+               "Sorry, you have been blocked"          ← error 1020, a WAF RULE
+FlareSolverr → status: error
+               "Cloudflare has blocked this request.
+                Probably your IP is banned for this site."
+```
+
+**This is the whole distinction, and it is worth internalising:**
+
+| Wall | Book | What it is | FS from VPS |
+|---|---|---|---|
+| CF **managed challenge** ("Just a moment") | Epicbet | JS to execute; clearance bound to TLS fingerprint | ✅ solved — 200, 552 categories |
+| CF **WAF rule 1020** ("you have been blocked") | Pinnacle | IP/ASN denylist. **There is no challenge to solve.** | ❌ explicit "your IP is banned" |
+| **Imperva** | Coolbet | IP + visitor id | ❌ refused even through FS |
+| **DataDome** | Unibet | session provenance (human-established tab) | ❌ 3 transports failed 2026-09-09 |
+
+A challenge is solvable by being a real browser. A firewall rule is not solvable
+by anything except a different IP. FlareSolverr can only ever fix the first kind
+— which is exactly why it rescued Epicbet and does nothing for the other three.
 
 **So the Epicbet trick does not transfer to Coolbet — and that was already
 tested.** `epicbet_explorer.py:265` says it outright: *"Imperva refuses the
@@ -234,9 +264,17 @@ Why this is the good one:
 - The thing that must stay always-on at home shrinks from "the MacBook, lid open,
   running nine launchd jobs" to "a Pi that forwards packets".
 
-Realistic reach:
+Realistic reach — note the Pinnacle test above **widened this**:
 - ✅ `coolbet-odds-snapshot` (FS-based HTTP) — the hypothesis directly covers it
 - ✅ Coolbet third of `near-kickoff-capture` (plain requests + harvested cookies)
+- ✅ **Pinnacle guest API — a new and possibly the most valuable one.** Its block
+  is purely IP (error 1020, no challenge), so home egress should clear it
+  outright. Today the fresh-Pinnacle probe can only ever be a Mac research
+  script; on the VPS it becomes a *schedulable feed*. That matters because
+  `AF-PINNACLE-NOT-PINNACLE-2026-09-14` measured AF's "Pinnacle" as **+0.81pp
+  wider overround** than real Pinnacle (n=92, 95% CI [+0.38, +1.02]), pure lag
+  from AF's 3-hourly refresh — and real Pinnacle is the anchor every sharp edge
+  and every published CLV number is computed against.
 - ❓ `unibet-site-odds` — **IP alone will not fix this.** DataDome refused a
   fresh/background CDP tab (500/204) *from the residential IP already*. Its gate
   is session provenance — a tab a human established — not geography.
@@ -314,9 +352,13 @@ ripple-check rule applies.
 The 2026-09-16 finding makes this a one-afternoon experiment, not a project:
 bring up WireGuard at home, policy-route only the VPS FlareSolverr's egress
 through it, run one Coolbet `foCategory` call from the VPS.
+Test **Pinnacle's guest API through the same tunnel in the same sitting** — it
+is one plain `curl`, it needs no session or cookies, and its block is known to be
+pure IP, so it is the cleanest possible probe of whether the tunnel works at all.
 - **200 + categories** → the IP was the whole blocker. `coolbet-odds-snapshot`
-  and the Coolbet near-kickoff third move to the VPS, and the Mac's job list
-  drops to the CDP-bound ones.
+  and the Coolbet near-kickoff third move to the VPS, the fresh-Pinnacle probe
+  graduates from Mac research script to a schedulable anchor feed, and the Mac's
+  job list drops to the CDP-bound ones.
 - **Still walled** → the fingerprint claim survives after all, we have *measured*
   it rather than inherited it, and C2/proxy is not worth trying either.
 Either way, correct `COOLBET_RUNBOOK.md:23` and `WORKFLOWS.md:147` with what the
