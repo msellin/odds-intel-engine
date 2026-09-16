@@ -193,6 +193,21 @@ inside one strategy.*
 stated without a confidence interval attached, or it does not get stated.
 
 
+**(e) `shadow_bets` rows are NOT bets — they are re-evaluations.** The
+half-hourly refresh re-emits the same (bot, match, market, selection) on every
+pass and stores each as its own settled row. Fleet-wide: **162,191 settled rows
+-> 20,444 distinct picks, 7.9x inflation, 87.4% re-emissions**, worst case 46
+copies of one pick over 22.4 hours. ROI is unaffected (uniform duplication
+cancels top and bottom) but **n, confidence intervals and t-statistics are not**
+-- t is inflated by roughly **2.8x**. Always `count(distinct (bot_id, match_id,
+market, selection))`, never `count(*)`, and divide any t you compute on raw rows
+by ~2.8 before believing it. See SHADOW-BETS-DEDUP.
+
+**And the rule that keeps catching me:** every one of (a)-(e) was found only
+after a confident wrong answer had already been written down. The measurement
+that refutes a hypothesis is almost always cheaper than the one that supports
+it -- run it first.
+
 ## 10. Comparing bookmakers by raw Brier is invalid
 
 Each book prices a different slate, so Brier partly measures how hard its games
