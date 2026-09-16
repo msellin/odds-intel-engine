@@ -24905,22 +24905,36 @@ def _():
     lib = _web_path("src/lib/forward-test-picks.ts").read_text()
     page = _web_path("src/app/picks/page.tsx").read_text()
 
-    # (1) one definition, in the shared fetcher
-    assert "export async function fetchForwardTestPicks" in lib, (
+    # (1) one definition, in the shared fetcher.
+    #
+    # PICKS-SHOW-BOTH-BOTS (2026-09-16) renamed it: fetchForwardTestPicks ->
+    # fetchPublicPicks, because the cohort stopped being the sharp arm alone.
+    # The INVARIANT is unchanged and is the reason this test exists — ONE
+    # definition, both surfaces resolving it, neither growing its own query.
+    # Matched by shape so the next rename does not fail a correct change.
+    import re as _rc
+    _shared = _rc.search(r"export async function (fetch\w*Picks)\(", lib)
+    assert _shared, (
         "lib/forward-test-picks.ts must own the published-picks query — it is "
         "the one definition both /picks and /api/v1/upcoming read."
     )
+    _fetcher = _shared.group(1)
     # (2) both surfaces delegate; neither grows its own query
     for f, name in ((upcoming, "/api/v1/upcoming"), (page, "/picks")):
-        assert "fetchForwardTestPicks" in f, f"{name} must call the shared fetcher"
+        assert _fetcher in f, (
+            f"{name} does not call the shared fetcher {_fetcher}(). Two "
+            f"surfaces resolving the published cohort two different ways is "
+            f"how a reader clicks a Telegram pick and cannot find it."
+        )
         assert '.from("simulated_bets")' not in f, (
             f"{name} has grown its own simulated_bets query. That table is the "
             f"model-era bot ledger; these picks are deliberately not in it."
         )
         assert '.from("picks_forward_test")' not in f, (
-            f"{name} reads the BASE table. Read picks_forward_test_public — the "
-            f"arm='live' filter lives in the view so the junk-anchor negative "
-            f"control cannot leak into a public surface."
+            f"{name} reads the BASE table. Read a public VIEW — the arm='live' "
+            f"filter and the bots.show_on_picks gate live in the view so "
+            f"neither the junk-anchor control nor an uncurated bot can leak "
+            f"into a public surface."
         )
     # (3) the forward test must not be cross-linked to the model-era record.
     #     Scan for an actual LINK, not the word — the page names /performance in
@@ -26665,17 +26679,34 @@ def test_picks_min_odds_2026_08_26():
     # instead: 1 / P_shin, the reciprocal of the de-vigged sharp probability.
     # Same purpose, different estimator; the two must never be mixed, which is
     # why they are separate functions in separate modules.
+    # PICKS-SHOW-BOTH-BOTS (2026-09-16): `sharpBreakEvenOdds(p_sharp)` became
+    # `breakEvenFromFairProb(fair_prob)` and the old one was DELETED, not kept
+    # alongside. Same arithmetic (1/anchor probability), but /picks now carries
+    # both bot families and the anchor is `p_sharp` in one arm and
+    # `calibrated_prob` in the other — so the caller names which (ANCHOR_NAME).
+    #
+    # The invariant this assertion has always been protecting is ONE DEFINITION,
+    # not one NAME: two functions computing this number is how a page shows a
+    # break-even against an anchor the edge was never measured from.
+    import re as _rb
     ft = _web_path("src/lib/forward-test-picks.ts").read_text()
-    assert "export function sharpBreakEvenOdds" in ft, (
-        "the sharp break-even price must have ONE definition — it is published "
-        "to readers on /picks and is the only thing telling them the price has "
-        "moved past the point where the pick was worth taking."
+    _defs = _rb.findall(r"export function (\w*[Bb]reak[Ee]ven\w*)\(", ft)
+    assert len(_defs) == 1, (
+        f"the published break-even price must have ONE definition; found "
+        f"{_defs or 'none'}. It is the only thing telling a reader the price "
+        f"has moved past the point where the pick was worth taking."
     )
     assert "1 / p" in ft, (
-        "sharpBreakEvenOdds must be 1 / P_shin. Anything else is not a "
-        "break-even against the anchor the edge was computed from."
+        f"{_defs[0]} must be 1 / (anchor probability). Anything else is not a "
+        f"break-even against the anchor the edge was computed from."
     )
-    assert "sharpBreakEvenOdds" in page and "min {be.toFixed(2)}" in page, (
+    # Renamed 2026-09-16 (sharpBreakEvenOdds -> breakEvenFromFairProb) because
+    # /picks now carries both bot families and `fair_prob` is p_sharp in one arm
+    # and calibrated_prob in the other. Same arithmetic, same purpose, two
+    # anchors — so match the call shape, not the old name.
+    import re as _rm
+    assert _rm.search(r"breakEven\w*\(p\.\w+\)|sharpBreakEvenOdds\(", page) \
+        and "min {be.toFixed(2)}" in page, (
         "picks page must render the break-even price next to the odds"
     )
     assert "text-neutral-600" in page, "must stay visually quiet next to the odds"
