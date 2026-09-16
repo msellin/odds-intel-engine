@@ -34,6 +34,28 @@ from scipy.optimize import minimize
 MAX_GOALS = 10          # score matrix truncation; P(>10 goals) is ~1e-6 at real lambdas
 RHO_BOUNDS = (-0.2, 0.2)
 
+# RIDGE (2026-09-16, found in phase 2). Without a penalty the optimiser pushes a
+# thinly-observed team's attack/defence to the parameter bounds: the first
+# walk-forward produced lambda values from 0.003 to 227.4 goals. The MEAN was
+# right (predicted total 3.0644 vs actual 3.0600) so the level was never the
+# problem — the distribution was, and a degenerate lambda sends P(over 2.5) to 0
+# or 1 for that fixture. Shrinking attack/defence toward 0 (= league average) is
+# the standard fix and is exactly the right prior: a team we have barely seen
+# should be assumed average, not extreme.
+# ⚠️ THE INTERCEPT IS WHY THE RIDGE IS SAFE. With lambda = exp(atk - dfn + gamma)
+# and no intercept, the LEAGUE'S SCORING LEVEL is carried by mean(dfn) — so
+# penalising dfn^2 drags every league's goal rate toward exp(gamma) home and 1.0
+# away, which is an arbitrary anchor, not the league average. Measured on the
+# first regularised walk-forward: predicted mean total goals fell to 2.952
+# against an actual 3.060. An explicit intercept, EXCLUDED from the penalty,
+# absorbs the level so the ridge only ever shrinks a team toward its league's
+# average rather than toward a constant.
+RIDGE = 0.02
+# Teams below this many appearances in the fit window are still fitted (dropping
+# them would bias the league's own level) but the ridge does the work of keeping
+# them near average.
+PARAM_BOUND = 1.5       # was 3.0; exp(1.5+1.5+1) = 55 goals is still generous
+
 
 def tau(x: int, y: int, lam: float, mu: float, rho: float) -> float:
     """Dixon-Coles low-score correction. Returns 1 outside the four cells.
@@ -63,6 +85,7 @@ class DCFit:
     teams: list[str]
     atk: dict[str, float]
     dfn: dict[str, float]
+    intercept: float
     gamma: float
     rho: float
     n_matches: int
@@ -75,8 +98,8 @@ class DCFit:
         model ends up 'predicting' fixtures it knows nothing about."""
         if home not in self.atk or away not in self.atk:
             return None
-        lam = math.exp(self.atk[home] - self.dfn[away] + self.gamma)
-        mu = math.exp(self.atk[away] - self.dfn[home])
+        lam = math.exp(self.intercept + self.atk[home] - self.dfn[away] + self.gamma)
+        mu = math.exp(self.intercept + self.atk[away] - self.dfn[home])
         return lam, mu
 
     def score_matrix(self, home: str, away: str, max_goals: int = MAX_GOALS):
@@ -118,7 +141,8 @@ def prob_1x2(matrix: np.ndarray) -> tuple[float, float, float]:
     return h, d, a
 
 
-def fit(matches, xi: float = 0.0, ref_date=None, max_iter: int = 200) -> DCFit | None:
+def fit(matches, xi: float = 0.0, ref_date=None, max_iter: int = 200,
+        ridge: float = RIDGE) -> DCFit | None:
     """Fit one league.
 
     `matches` — iterable of (home, away, home_goals, away_goals, date).
@@ -160,11 +184,15 @@ def fit(matches, xi: float = 0.0, ref_date=None, max_iter: int = 200) -> DCFit |
     low = (hg <= 1) & (ag <= 1)
 
     def neg_ll(p):
-        atk = np.concatenate([p[:n - 1], [-p[:n - 1].sum()]])   # mean(atk) = 0
-        dfn = p[n - 1:2 * n - 1]
-        gamma, rho = p[-2], p[-1]
-        la = np.exp(np.clip(atk[hi] - dfn[ai] + gamma, -5, 5))
-        mu = np.exp(np.clip(atk[ai] - dfn[hi], -5, 5))
+        # mean(atk) = mean(dfn) = 0; the level lives in `intercept`, which is not
+        # penalised. Constraining BOTH is what makes the ridge mean "shrink this
+        # team toward its league average" rather than "shrink this league toward
+        # one goal a side".
+        atk = np.concatenate([p[:n - 1], [-p[:n - 1].sum()]])
+        dfn = np.concatenate([p[n - 1:2 * n - 2], [-p[n - 1:2 * n - 2].sum()]])
+        intercept, gamma, rho = p[-3], p[-2], p[-1]
+        la = np.exp(np.clip(intercept + atk[hi] - dfn[ai] + gamma, -5, 5))
+        mu = np.exp(np.clip(intercept + atk[ai] - dfn[hi], -5, 5))
         ll = (hg * np.log(la) - la - lg_h) + (ag * np.log(mu) - mu - lg_a)
         if low.any():
             t = np.ones(len(data))
@@ -180,18 +208,29 @@ def fit(matches, xi: float = 0.0, ref_date=None, max_iter: int = 200) -> DCFit |
             # undefined there, so push the optimiser back rather than log(≤0).
             t = np.clip(t, 1e-9, None)
             ll = ll + np.log(t)
-        return -float((w * ll).sum())
+        # Ridge on attack/defence only — never on gamma or rho, which are
+        # league-level and well observed. Scaled by the total weight so the
+        # penalty means the same thing in a 60-match league and a 2,000-match
+        # one.
+        pen = ridge * w.sum() * float((atk * atk).sum() + (dfn * dfn).sum()) / n
+        return -float((w * ll).sum()) + pen
 
-    p0 = np.concatenate([np.zeros(n - 1), np.zeros(n), [0.25, -0.05]])
-    bounds = [(-3, 3)] * (n - 1) + [(-3, 3)] * n + [(-1, 1), RHO_BOUNDS]
+    # intercept starts at the log of the observed mean goals per side, so the
+    # optimiser begins at the right LEVEL and only has to learn the spread.
+    _mean_gs = max((hg.mean() + ag.mean()) / 2.0, 0.05)
+    p0 = np.concatenate([np.zeros(n - 1), np.zeros(n - 1),
+                         [math.log(_mean_gs), 0.25, -0.05]])
+    bounds = ([(-PARAM_BOUND, PARAM_BOUND)] * (n - 1)
+              + [(-PARAM_BOUND, PARAM_BOUND)] * (n - 1)
+              + [(-2.0, 2.0), (-1, 1), RHO_BOUNDS])
     res = minimize(neg_ll, p0, method="L-BFGS-B", bounds=bounds,
                    options={"maxiter": max_iter})
     p = res.x
     atk = np.concatenate([p[:n - 1], [-p[:n - 1].sum()]])
-    dfn = p[n - 1:2 * n - 1]
+    dfn = np.concatenate([p[n - 1:2 * n - 2], [-p[n - 1:2 * n - 2].sum()]])
     return DCFit(teams=teams,
                  atk={t: float(atk[i]) for t, i in idx.items()},
                  dfn={t: float(dfn[i]) for t, i in idx.items()},
-                 gamma=float(p[-2]), rho=float(p[-1]),
+                 intercept=float(p[-3]), gamma=float(p[-2]), rho=float(p[-1]),
                  n_matches=len(data), converged=bool(res.success),
                  loglik=-float(res.fun))

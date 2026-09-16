@@ -44370,6 +44370,70 @@ def test_placement_gate_all_executors():
         "coolbet_inplay execute mode must call the gate BEFORE _place_bet_api"
 
 
+@test("DIXON-COLES-GUARDS — the fitter keeps its intercept, its ridge, and its out-of-sample discipline")
+def test_dixon_coles_guards():
+    """Phase 1-2 of DIXON-COLES-OU-BASELINE. Three properties, each of which was
+    violated at some point during the build and each of which silently produces
+    numbers rather than errors.
+
+    1. AN UNPENALISED INTERCEPT. With lambda = exp(atk - dfn + gamma) and no
+       intercept, the league's scoring LEVEL is carried by mean(dfn) — so a ridge
+       on dfn^2 drags every league toward exp(gamma) home and 1.0 away, an
+       arbitrary anchor. Measured: predicted mean total goals fell to 2.952
+       against an actual 3.060 before the intercept existed. The self-check that
+       was passing at the time generated data at an implicit intercept of 0 and
+       was structurally blind to it.
+    2. THE RIDGE ITSELF. Without it a thinly-observed team's parameters run to
+       the bounds: the first walk-forward produced lambda from 0.003 to 227.4
+       goals. The mean was right the whole time, so only the DISTRIBUTION gave
+       it away.
+    3. STRICT OUT-OF-SAMPLE in the driver. Every scored match must be priced by
+       a refit dated strictly before it. A single leaked fixture makes the alpha
+       this whole exercise exists to measure meaningless, in the flattering
+       direction.
+    """
+    dc = _engine_path("workers/model/dixon_coles.py").read_text(encoding="utf-8")
+    import ast as _ast
+    body = _ast.unparse(_ast.parse(dc))
+
+    assert "intercept" in body, "the fit must carry an explicit league intercept"
+    # The intercept must be OUTSIDE the penalty. The penalty sums atk and dfn only.
+    pen = [l for l in body.splitlines() if "pen = " in l]
+    assert pen, "the ridge penalty term is gone"
+    assert "intercept" not in pen[0], (
+        "the intercept is inside the ridge penalty — that reintroduces exactly the "
+        "bug the intercept was added to fix, shrinking each league's goal LEVEL "
+        "toward an arbitrary constant"
+    )
+    assert "atk * atk" in pen[0] and "dfn * dfn" in pen[0], (
+        "the ridge must penalise attack and defence (and only those)"
+    )
+    # Both means constrained — that is what makes the ridge mean "toward league
+    # average" rather than "toward one goal a side".
+    assert body.count("-p[:n - 1].sum()") >= 1 and "-p[n - 1:2 * n - 2].sum()" in body, (
+        "both atk and dfn must be mean-zero constrained, else the intercept is "
+        "not identified and the level can drift back into the penalised params"
+    )
+    assert "self.intercept + self.atk[home]" in body, "rates() must apply the intercept"
+
+    drv = _engine_path("scripts/dixon_coles_fit.py").read_text(encoding="utf-8")
+    # Target the TRAINING FILTER line specifically. A bare `"m[5] < g" in drv`
+    # also matches the verify block below it, so it passed on a driver whose
+    # training filter had been mutated to `<=` — caught by mutation 2026-09-16.
+    train_line = [l for l in drv.splitlines() if l.strip().startswith("train = [")]
+    assert train_line, "the training-set construction line is gone"
+    assert "m[5] < g]" in train_line[0] and "<=" not in train_line[0], (
+        f"the training filter must be STRICTLY before the refit date — a <= admits "
+        f"same-day fixtures into their own fit. Found: {train_line[0].strip()}"
+    )
+    assert "usable = [g for g in fits if g <= mdate]" in drv, (
+        "a match must be scored by a refit at or before its own date"
+    )
+    assert "is inside its own fit window" in drv, (
+        "the per-row leak assertion must remain — the guard is asserted, not assumed"
+    )
+
+
 @test("SIGNAL-FEATURES-TRAINING-WIRING — the screened signals load pre-kickoff and stay opt-in")
 def test_signal_features_training_wiring():
     """FEED-THE-MODEL-WHAT-WE-ALREADY-COMPUTE (2026-09-16). SIGNAL_FEATURE_COLS

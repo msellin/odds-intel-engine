@@ -139,6 +139,44 @@ def main() -> int:
     check("home advantage recovered within 0.12", abs(f.gamma - true_gamma) < 0.12,
           f"true {true_gamma:.3f} -> fitted {f.gamma:.3f}")
 
+    print("\n=== 3b. LEVEL recovery — the check that missed the intercept bug ===")
+    # Section 3 generates data at an implicit intercept of 0 (lambda = exp(atk -
+    # dfn + gamma)), so it recovered the SPREAD of team strengths and was blind
+    # to the LEVEL being wrong. The first regularised walk-forward predicted mean
+    # total goals 2.952 against an actual 3.060, because the ridge was shrinking
+    # attack/defence toward 0 and there was no intercept to hold the level.
+    # These assertions fail on that fitter and pass on this one.
+    for true_base in (0.85, 1.35, 2.10):
+        rng2 = np.random.default_rng(int(true_base * 1000))
+        n_t = 16
+        atk2 = rng2.normal(0, 0.30, n_t); atk2 -= atk2.mean()
+        dfn2 = rng2.normal(0, 0.25, n_t); dfn2 -= dfn2.mean()
+        nm = [f"S{i}" for i in range(n_t)]
+        b0 = dt.date(2024, 1, 1); rows2 = []
+        order = list(range(n_t))
+        for r in range(100):
+            rng2.shuffle(order)
+            for i in range(0, n_t, 2):
+                h, aw = order[i], order[i + 1]
+                la = true_base * math.exp(atk2[h] - dfn2[aw] + 0.25)
+                mu_ = true_base * math.exp(atk2[aw] - dfn2[h])
+                rows2.append((nm[h], nm[aw], int(rng2.poisson(la)), int(rng2.poisson(mu_)),
+                              b0 + dt.timedelta(days=7 * r)))
+        f2 = fit(rows2)
+        assert f2 is not None
+        actual = sum(r[2] + r[3] for r in rows2) / len(rows2)
+        pred = np.mean([sum(f2.rates(r[0], r[1])) for r in rows2])
+        check(f"mean total goals recovered at base {true_base}",
+              abs(pred - actual) / actual < 0.05,
+              f"actual {actual:.3f} vs fitted {pred:.3f} ({(pred-actual)/actual*100:+.1f} pct)")
+        # And the derived O/U probability must match the realised frequency, which
+        # is the number the whole exercise is judged on.
+        p_over = np.mean([prob_over(score_matrix(*f2.rates(r[0], r[1]), f2.rho), 2.5)
+                          for r in rows2])
+        a_over = sum(1 for r in rows2 if r[2] + r[3] > 2) / len(rows2)
+        check(f"P(over 2.5) calibrated at base {true_base}", abs(p_over - a_over) < 0.03,
+              f"predicted {p_over:.4f} vs actual {a_over:.4f} ({p_over-a_over:+.4f})")
+
     print("\n=== 4. guards ===")
     check("too few matches returns None", fit(data[:10]) is None)
     check("too few teams returns None",
