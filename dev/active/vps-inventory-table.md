@@ -12,10 +12,11 @@ measured, not reasoned.
 | Already on the VPS | **82 scheduler jobs + 9 infra services** | nothing to do |
 | Mac-side, movable **today** | **5 of 11** | no new infrastructure |
 | Mac-side, movable with **home egress** | **2 of 11** | ✅ proven working 2026-09-16 |
-| Mac-side, **cannot move** | **4 of 11** | 3 are Chrome-babysitters; 1 is the real-money placer |
+| Mac-side, movable with **a VPS Chrome** | **1 of 11** | `unibet-site-odds` — proven reachable 2026-09-16 |
+| Mac-side, **cannot / should not move** | **3 of 11** | 2 Chrome-babysitters + the real-money placer |
 
-**So: 9 of 11 Mac jobs can move.** What stays is the logged-in Chrome and the
-things that exist only to keep it alive.
+**So: 10 of 11 Mac jobs can move.** What stays is the real-money placer and the
+Chrome-watchers that exist only to keep its session alive.
 
 ---
 
@@ -77,7 +78,7 @@ All already on the VPS. Listed for completeness — **none of these is the quest
 
 | Job | Blocker | What it would take |
 |---|---|---|
-| `unibet-site-odds` | **Not IP** — the VPS reaches unibet.ee fine (tested OK). DataDome gates on a **human-established logged-in tab**; a fresh/background CDP tab got 500/204 **from the residential IP already** (2026-09-09). | Persistent Chrome on the VPS with a real profile, logged in once interactively over Xvfb/VNC — **and only through the home tunnel**, or an EE account logging in from a Finnish datacenter is exactly what fraud systems escalate on. Unverified; budget a real spike. |
+| ~~`unibet-site-odds`~~ **MOVED TO "can move" 2026-09-16** | **Not IP and not DataDome** — a real Chromium on the VPS loads the full 2.4 MB SPA *from the datacenter IP* and is issued a `datadome` cookie. The gate is the SPA-issued XHR shape. | Persistent Chromium + Xvfb, persistent profile, CDP on loopback, `UNIBET_CHROME_CDP_URL` repointed — **no transport code change**, login already automated. ~half a day. See [`unibet-on-vps-plan.md`](unibet-on-vps-plan.md). Route via the tunnel for **account safety**, not reachability. |
 | `coolbet-feed-watchdog` — **session-keep half** | Needs CDP-Chrome (`ensure_session_live`) | Follows the Chrome |
 | `cdp-watch` + `coolbet-cdp-selfheal` | Exist *only* to babysit that Chrome | Follow the Chrome |
 | `paused/coolbet-ui-placer` | **Real money.** `reese84` is **TLS-bound** to the operator's own Chrome; a replayed token is blackholed, not 403'd | **Don't.** Even if technically possible, this moves the logged-in identity of the money account onto a box running three other products and a public web server. Already parked + disarmed (mig 343/354). |

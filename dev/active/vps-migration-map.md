@@ -185,33 +185,26 @@ at the kernel level so the bridge-network problem disappears, but it is exactly
 the kind of detail that produces a mysterious failure if the container ends up on
 a network that bypasses the policy route. Verify with the egress check first.
 
-## 5. Solution for Unibet: a persistent logged-in Chrome on the VPS
+## 5. Unibet — SUPERSEDED 2026-09-16, and it is easier than this said
 
-This one is *not* an IP problem — **the VPS reaches unibet.ee fine (tested OK)**.
-DataDome gates on tab provenance, and a fresh CDP tab fails from the residential
-IP too. So the fix is not egress, it is giving the VPS a browser with the same
-provenance the Mac's has:
+This section previously called Unibet "unverified, budget a real spike" on the
+theory that DataDome gates on a human-established tab. **Measured, that is wrong.**
+A real Chromium *on the VPS* was pointed at `https://www.unibet.ee/betting/odds`:
 
-1. Run a persistent Chrome on the VPS under Xvfb/xpra with a real, durable profile.
-2. Log in **once, interactively**, over a VNC/xpra session.
-3. Keep the tab alive with the **existing** anti-freeze fix — the renderer-freeze
-   problem (`COOLBET-DAEMON-DEATH-RECURRING`, occluded tab → frozen renderer →
-   lapsed JWT) is already solved in this repo and the fix transfers.
+```
+NOPROXY (Hetzner datacenter FI)  nav#2  HTTP 200  2,444,620 bytes  REAL SPA ✅  datadome cookie ISSUED
+TUNNEL  (Telia EE residential)   nav#2  HTTP 200  1,446,864 bytes  REAL SPA ✅  datadome cookie ISSUED
+```
 
-**Honest risks, in order:**
-- **Account-security flagging.** An Estonian Unibet account logging in from a
-  Finnish datacenter IP is exactly the pattern fraud systems escalate on. This is
-  the real risk, and it is not technical. Combining it with the §4 WireGuard
-  egress removes it — log in *through* the home tunnel so the session originates
-  from the usual Estonian IP.
-- DataDome may fingerprint the headless/Xvfb environment even with a real profile.
-- Unverified. Unlike §4 this has no cheap decisive test; budget a real spike.
+DataDome admits the datacenter IP and issues an identity cookie. The blocker is
+the **request shape** — `contest-page` must be issued by the SPA itself — and the
+transport code is already env-var driven (`UNIBET_CHROME_CDP_URL`) with an
+**automated** login path (`cdp_auto_login`). Estimate drops to ~half a day.
 
-**Recommendation: do §4 first.** If the tunnel works, Unibet-on-VPS becomes much
-more attractive (it inherits the correct egress) and much lower risk. Attempting
-§5 alone, over a Finnish IP, is the version most likely to get an account locked.
-
----
+**Full design: [`unibet-on-vps-plan.md`](unibet-on-vps-plan.md).** The one real
+risk is account security, not bot-protection: an Estonian account logging in from
+a Finnish datacenter IP is what fraud systems escalate on, so route it through the
+§4 tunnel anyway.
 
 ## 6. What stays home no matter what
 

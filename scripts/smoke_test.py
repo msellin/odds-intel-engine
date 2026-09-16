@@ -44353,6 +44353,71 @@ def test_placement_gate_all_executors():
         "coolbet_inplay execute mode must call the gate BEFORE _place_bet_api"
 
 
+@test("MODEL-FEATURE-CONTRACT — inference must deliver every feature the model declares")
+def test_model_feature_contract():
+    """2026-09-16. `_build_row_from_mfv()` does `SELECT * FROM
+    match_feature_vectors` and zero-fills anything it cannot find. Three declared
+    features — `pinnacle_implied_home` / `_draw` / `_away` — have no column
+    there; `daily_pipeline_v2` writes them to `match_signals`. So EVERY live
+    prediction since the v10 schema fed the model 0.0 for the three features
+    carrying the market's own 1x2 price, and pinned their `_missing` indicators
+    to 1 on 100% of matches — asserting "no market price available" even on the
+    132-of-200 recent matches where we held one.
+
+    Nothing failed. No exception, no log line, no alert. That silence is the
+    point: a model quietly receiving zeros looks exactly like a model that has
+    seen the data and disagreed.
+
+    This test pins the FIX and the AUDIT that found it. The audit script itself
+    (`scripts/model_feature_contract_audit.py`) is the re-runnable version and
+    exits non-zero when any declared feature cannot be read — run it before
+    adding any new feature.
+    """
+    src = _engine_path("workers/model/xgboost_ensemble.py").read_text(encoding="utf-8")
+    fn_src = src[src.index("def _build_row_from_mfv("):src.index("def _build_row_from_legacy_cache(")]
+    # Inspect CODE, not comments. RELIABILITY_LEDGER #9 / ANALYSIS_GOTCHAS §41:
+    # the explanatory comment above this fix names `match_signals`, so a naive
+    # substring check passes even when the whole query is deleted — verified by
+    # mutation while writing this test.
+    import ast as _ast, textwrap as _tw
+    _f = _ast.parse(_tw.dedent(fn_src)).body[0]
+    if (_f.body and isinstance(_f.body[0], _ast.Expr)
+            and isinstance(_f.body[0].value, _ast.Constant)
+            and isinstance(_f.body[0].value.value, str)):
+        _f.body = _f.body[1:]
+    fn = _ast.unparse(_f)
+
+    assert "match_signals" in fn, (
+        "_build_row_from_mfv reads only match_feature_vectors. Declared features that "
+        "live in match_signals (pinnacle_implied_home/draw/away) are then zero-filled, "
+        "and the model is fed 0.0 for the market's own price on every prediction."
+    )
+    # It must fill from signals for the columns the mfv row LACKS — not a hardcoded
+    # list, which would silently miss the next feature that lands in signals.
+    assert "c not in raw" in fn, (
+        "the signal fill must be driven by which declared features the mfv row is "
+        "missing, not by a hardcoded column list — otherwise the next signal-resident "
+        "feature reintroduces the same bug"
+    )
+    # The zero-fill must still exist for genuinely absent data...
+    assert "row[col] = 0.0" in fn, "the zero-fill for genuinely missing data must remain"
+    # ...and the signal read must never be able to break inference.
+    assert "except Exception" in fn, (
+        "a match_signals read failure must not break prediction — it degrades to the "
+        "previous behaviour, it does not raise"
+    )
+
+    # The audit exists, is per-ROW (an aggregate 'the data exists somewhere' check
+    # produced two wrong classifications before this one), and gates on exit code.
+    audit = _engine_path("scripts/model_feature_contract_audit.py").read_text(encoding="utf-8")
+    assert "dropped_rows" in audit, (
+        "the audit must decide per row — 'zero on every sampled match' is not evidence, "
+        "since the sample is the most recent matches where a backfilled column is "
+        "legitimately empty"
+    )
+    assert "return 1 if bad else 0" in audit, "the audit must exit non-zero on a finding"
+
+
 @test("RESIDUAL-TEST-MARKET-FEATURES-SUPPLIED — neither residual test may feed a model feature as zero")
 def test_residual_test_market_features_supplied():
     """2026-09-16, RESIDUAL-TEST-ZEROED-MARKET-FEATURES.
@@ -45244,6 +45309,71 @@ def test_shadow_bots_logged_pick_is_visible():
     route = (_web_root / "src" / "app" / "api" / "admin" / "real-bet" / "route.ts").read_text(encoding="utf-8")
     assert 'revalidatePath("/admin/shadow-bots")' in route, \
         "the write must drop the 60 s page cache, or the operator refreshes into stale data"
+
+
+@test("EGRESS-PROBE — honest transport probe, both modes, wall taxonomy intact")
+def test_egress_probe():
+    """EGRESS-PROBE-2026-09-16 — the tool that replaced four inherited guesses.
+
+    Context. Four documented claims about what blocks us were each wrong in part
+    and each cost days: "Epicbet hits no bot-protection" (six silent days),
+    "Imperva blocks the Hetzner IP + Linux Chrome fingerprint" (the Mac's own
+    working reader IS Linux Chromium), "DataDome blocks non-established tabs"
+    (DataDome serves the VPS the full SPA), and "Pinnacle is Mac-only" (the Mac
+    side was an EMTA DNS sinkhole, bypassed by any public resolver).
+
+    Each paired a correct observation with a GUESSED cause, and the guess became
+    load-bearing. This probe exists so the cause is measured instead.
+
+    What this test pins:
+      1. The probe stays HONEST — no spoofed User-Agent, no proxy rotation. The
+         repo's standing rule (scripts/pinnacle_movement_research.py) is that we
+         identify ourselves; a probe that lies teaches us nothing about what a
+         real job will meet.
+      2. It keeps BOTH transports. The direct-vs-FS pair IS the diagnostic: a
+         wall FS clears is a CHALLENGE (a browser problem, fixable in place); a
+         wall FS also hits is a FIREWALL/reputation block (an IP problem). One
+         transport alone cannot tell those apart.
+      3. The wall taxonomy survives. CF-WAF-RULE must stay distinct from
+         CF-CHALLENGE — conflating them is exactly the error that made "we
+         solved Cloudflare once for Epicbet" look like it should transfer to
+         Pinnacle, which it does not.
+      4. It carries the warm-session caveat. A COLD, unseeded call is challenged
+         from every IP, so a naive run measures nothing and reads as a false
+         negative. That false negative was this investigation's first result.
+    """
+    import pathlib as _pl
+    src = _pl.Path(__file__).resolve().parent / "ops" / "egress_probe.py"
+    assert src.exists(), "scripts/ops/egress_probe.py must exist — it is the reusable measurement"
+    s = src.read_text(encoding="utf-8")
+
+    # 1. honest identification, no evasion
+    assert "OddsIntelOps" in s and "contact:" in s, \
+        "the probe must identify itself honestly — the repo does not spoof User-Agents"
+    assert "Mozilla/5.0" not in s, \
+        "no browser-UA spoofing in the probe: it must measure what an HONEST client meets"
+
+    # 2. both transports present
+    assert "def probe_direct(" in s and "def probe_fs(" in s, \
+        "both transports are required — the direct-vs-FS PAIR is the whole diagnostic"
+
+    # 3. the wall taxonomy must stay separable
+    for marker in ("CF-WAF-RULE", "CF-CHALLENGE", "IMPERVA", "DATADOME"):
+        assert marker in s, f"{marker} must stay a distinct verdict — conflating wall types is the original error"
+    assert "Attention Required" in s and "Just a moment" in s, \
+        "a WAF RULE and a CHALLENGE are different problems with different fixes; both signatures must be matched"
+
+    # 4. every endpoint declares what it needs BEYOND reachability
+    assert s.count("needs=") >= 5, \
+        "each endpoint must declare what the real job needs beyond reachability — " \
+        "Unibet is reachable from the VPS and still cannot run there"
+    assert "NOT sufficient" in s, \
+        "reachability-is-not-sufficiency must stay written down: it is why Unibet reads GREEN and is still blocked"
+
+    # 5. politeness — this touches live bookmakers
+    assert "ONE request per endpoint per run" in s or "no retries" in s, \
+        "the probe must stay single-shot: our own retry volume has previously FED the wall it was reporting"
+
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ rules).
 ## The chain (every hop can fail independently)
 
 ```
-operator's Mac (RESIDENTIAL IP)          ← Imperva blocks the VPS/Hetzner IP + Linux Chrome fingerprint
+operator's Mac (RESIDENTIAL IP)          ← Imperva blocks the VPS/Hetzner IP. **IP ONLY** — see note below
    │
    ├─ CDP-Chrome on :9222 (real logged-in Chrome, shared Default profile)
    │     → holds the session + JWT; harvests Imperva cookies (reese84, visid_incap…)
@@ -35,6 +35,25 @@ operator's Mac (RESIDENTIAL IP)          ← Imperva blocks the VPS/Hetzner IP +
    │
    └─ VPS Postgres  odds_snapshots(bookmaker='Coolbet')  +  coolbet_session_state
 ```
+
+> **⚠️ CORRECTED 2026-09-16 (VPS-CONSOLIDATION).** This diagram used to read
+> *"Hetzner IP **+ Linux Chrome fingerprint**"*. **The fingerprint half is wrong.**
+> The Mac's own working odds reader IS Linux Chromium in Docker
+> (`docker exec oi_local_flaresolverr chromium --version` → Chromium 148 on Debian
+> 12), which §2 already says elsewhere: *"FlareSolverr is a different browser in
+> Docker with its own fingerprint"*. Measured: the **same VPS**, **same Linux
+> Chromium**, a warm FS session with warmup navigations, routed through a
+> residential-EE tunnel, returned **170,237 bytes of real `fo-tree`** (reproduced
+> ×2, verified as genuine: 30 categories, `Premier League`, `matches_count`,
+> `Jalgpall`). The identical session over the Hetzner IP never solves the
+> challenge. **Imperva gates on the IP alone**, so a residential egress — not a
+> different browser — is what would let this run on the VPS.
+>
+> **Method warning for anyone re-testing:** a COLD, unseeded FS call *or* a plain
+> `curl` is challenged from **both** IPs (999 vs 1000 bytes; 965 vs 964). Testing
+> without a warm named session + warmup navigations measures nothing and reads as
+> a false negative. That was this investigation's first result.
+> Plan: `dev/active/VPS_FEATURE_MATRIX.md`.
 
 **Transport rule:** the odds READER and PLACER both route through FlareSolverr
 (named FS session `coolbet_prod`). Only interactive login drives CDP-Chrome

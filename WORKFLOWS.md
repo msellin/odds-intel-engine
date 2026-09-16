@@ -144,7 +144,9 @@ Threshold is measured, not chosen: 7-day inter-write gaps are p99 **59.2 min** (
 
 > **Troubleshooting: see [`docs/COOLBET_RUNBOOK.md`](docs/COOLBET_RUNBOOK.md)** — the full transport chain, the current API endpoints, and symptom→cause→fix for every Coolbet failure mode (FS-down, Imperva challenge, expired session, self-pause, below-floor days). Written after the 2026-09-07 outage whose 404 symptom looked like four different problems.
 
-Coolbet's Imperva blocks the VPS Linux Chrome fingerprint + Hetzner IP. Anything that hits Coolbet HTTP directly has to run from the Mac's residential IP with the local FS Docker (`oi_local_flaresolverr`).
+Coolbet's Imperva blocks the **Hetzner IP**. Anything that hits Coolbet HTTP directly has to run from the Mac's residential IP with the local FS Docker (`oi_local_flaresolverr`).
+
+> **⚠️ CORRECTED 2026-09-16 (VPS-CONSOLIDATION).** This line used to blame the "VPS Linux Chrome fingerprint + Hetzner IP". **The fingerprint half is wrong** — the Mac's own working reader is Linux Chromium in Docker. Measured: the same VPS, the same Linux Chromium, a warm FS session through a residential-EE tunnel returned **170,237 bytes of real `fo-tree`**; the same session over the Hetzner IP never solves the challenge. **It is the IP alone.** So these jobs are movable once the VPS has a residential egress — `job_coolbet_odds_snapshot` already exists in `workers/scheduler.py` unregistered and would be **registered, not written**. See `dev/active/VPS_FEATURE_MATRIX.md`.
 
 **This table is the Mac-side architecture inventory — keep it true. It is the
 input for the local operations dashboard**, so a job missing here is a job the
