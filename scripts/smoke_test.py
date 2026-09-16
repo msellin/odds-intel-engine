@@ -41585,6 +41585,9 @@ def test_picks_forward_test_surface():
 
     page = _web_path("src/app/picks/page.tsx").read_text()
     lib = _web_path("src/lib/forward-test-picks.ts").read_text()
+    import re as _rd
+    # "14 September 2026" as a const, or inlined — either spelling is fine.
+    START_DATE_RE = _rd.compile(r"(14 September 2026|START_DATE)")
 
     # 2. the backtest number must not appear in anything the page RENDERS.
     #    Comments are stripped first: the page explains at length why the
@@ -41684,8 +41687,13 @@ def test_picks_forward_test_surface():
     # correct lever is the WINDOW, not the render. Anchoring the lookback to
     # midnight UTC gives both — yesterday drops at midnight, today stays all day.
     lib_ft = _web_path("src/lib/forward-test-picks.ts").read_text()
+    # The fetcher was renamed on 2026-09-16 (fetchForwardTestPicks ->
+    # fetchPublicPicks, PICKS-SHOW-BOTH-BOTS). Match the CALL SHAPE rather than
+    # one function's name: what matters is that the window anchor is passed to
+    # whatever fetches the page's picks.
+    import re as _rw
     assert "hoursSinceUtcMidnight" in lib_ft and \
-            "fetchForwardTestPicks(hoursSinceUtcMidnight(" in page, (
+            _rw.search(r"fetch\w*Picks\(\s*hoursSinceUtcMidnight\(", page), (
         "/picks is back on a rolling hour-count lookback. A rolling 24h window "
         "reaches into yesterday at every hour of the day; the day boundary is "
         "the only anchor under which 'today's picks' means today's picks."
@@ -41744,11 +41752,24 @@ def test_picks_forward_test_surface():
             f"the only cap left is the 60/day runaway breaker."
         )
 
-    # honest framing, on the page, above the numbers
+    # HONEST FRAMING — the sharp method must declare it has no history, and say
+    # from when. Case-insensitive since 2026-09-16: PICKS-SHOW-BOTH-BOTS split
+    # one page-level claim into a per-method one, and the sentence moved
+    # mid-clause ("...and no past performance is claimed for it"). The claim is
+    # what matters, not its capitalisation.
+    #
+    # This is the guard that stops the sharp arm borrowing the model arm's
+    # months of history now that both families share the page — which is the
+    # exact confusion the 14 Sep reset was created to prevent.
     _flat = " ".join(page.split())   # JSX wraps prose across lines
-    assert "No past performance is claimed" in _flat, (
-        "the no-history framing is gone from /picks. This method started on "
-        "2026-09-14 at zero and the page must say so."
+    assert "no past performance is claimed" in _flat.lower(), (
+        "the no-history framing is gone from /picks. The sharp-edge method "
+        "started at zero on 2026-09-14 and the page must say so — especially "
+        "now that a model bot with 641 settled bets renders on the same page."
+    )
+    assert START_DATE_RE.search(_flat), (
+        "the start date is gone from /picks. 'No past performance' with no "
+        "date is unfalsifiable; the reader needs to know from WHEN."
     )
 
     # DB invariants — skip cleanly offline.
@@ -42914,6 +42935,141 @@ def test_performance_public_is_calibrated_or_beta():
         )
 
 
+@test("PICKS-SHOW-BOTH-BOTS — both bot families reach /picks, and their edges never share a label")
+def test_picks_show_both_bots():
+    """PICKS-SHOW-BOTH-BOTS (2026-09-16, owner).
+
+    `bot_v10_all` published to the public Telegram channel and sat on
+    /performance as CALIBRATED with 641 settled bets, but never appeared on
+    /picks. Owner, twice: "i see 15 Sept Ludogorets II vs Fratria ... on botv10
+    in performance page, but not on picks page, why?" and "these systems need
+    to be combined and users need to have those 3 picks as well".
+
+    It was never a missing flag. The two families write to two DIFFERENT
+    LEDGERS — picks_forward_test (sharp) and simulated_bets (model) — so the
+    fix is a union view, `picks_public_all` (migration 361), gated on
+    `bots.show_on_picks` which migration 356 created and nothing ever read.
+
+    ⚠️ THE FAILURE THIS TEST EXISTS FOR. The two `edge` values are NOT the same
+    quantity:
+
+        sharp edge = p_sharp * odds - 1        a RETURN
+        model edge = cal_prob - 1/odds         PROBABILITY POINTS
+
+    A reader who sees +16.0 beside +3.3 and concludes the first is five times
+    better has been misled BY US — a 16-point model edge at odds of 4.00 is
+    roughly +64 percent expected return. MODEL-EDGE-LABEL fixed this in the
+    Telegram channel on 2026-09-15, where both families already shared a
+    surface. Putting them on one web page re-creates it exactly, so the label
+    must switch per row and the gate is `edge_kind`.
+    """
+    import re as _r
+    from pathlib import Path as _P
+    mig = _P(__file__).parent.parent / "supabase" / "migrations" / \
+        "361_picks_public_all_union.sql"
+    assert mig.exists(), "migration 361 (the union view) is missing"
+    sql_raw = mig.read_text()
+    # CODE ONLY. The header explains every one of these guards at length and
+    # names each of them, so a raw substring check passes on a file that has
+    # deleted the guard but kept the paragraph describing it — verified: the
+    # first draft of this test survived replacing `WHERE b.show_on_picks` with
+    # `WHERE true`. RELIABILITY_LEDGER #9, again.
+    sql = "\n".join(ln.split("--")[0] for ln in sql_raw.split("\n"))
+
+    # THE CURATION GATE IS IN THE DATABASE. Same reasoning as arm='live': a
+    # view cannot forget a filter the way a call site can.
+    assert "b.show_on_picks" in sql, (
+        "picks_public_all does not gate on bots.show_on_picks. Without it every "
+        "model bot's picks — including the 13 experimental shadow bots — become "
+        "a customer offer."
+    )
+    for guard, why in (
+        ("b.retired_at IS NULL", "a retired bot's old picks are not an offer"),
+        ("s.combo_legs IS NULL", "a combo is not a single-market pick this page can render"),
+        ("s.match_minute_at_pick IS NULL", "/picks is pre-match; in-play betting was retired 2026-08-21"),
+        ("p.arm = 'live'", "the junk-anchor negative control must never reach a reader"),
+    ):
+        assert guard in sql, f"picks_public_all lost `{guard}` — {why}"
+    assert "GRANT SELECT ON picks_public_all" in sql, (
+        "no GRANT — PostgREST 404s a view the anon role cannot select, which "
+        "looks exactly like the page being broken."
+    )
+    # ANALYSIS_GOTCHAS 59(d): a literal percent in a migration is a parameter
+    # placeholder to the repo's own psycopg2 helper and dies with an opaque
+    # IndexError. This file was written with percent signs in its comments and
+    # hit it immediately.
+    assert "%" not in sql_raw, (
+        "migration 361 contains a literal percent sign. psql does not care, but "
+        "the repo's psycopg2 helper reads it as a placeholder — write 'pct'."
+    )
+
+    page = _web_path("src/app/picks/page.tsx").read_text()
+    lib = _web_path("src/lib/forward-test-picks.ts").read_text()
+
+    assert "picks_public_all" in lib, (
+        "the read path no longer points at the union view — one family is back "
+        "to being invisible on /picks."
+    )
+    # THE LABEL MUST SWITCH ON edge_kind, and both labels must be distinct.
+    _code = _r.sub(r"/\*.*?\*/", "", page, flags=_r.DOTALL)
+    _code = _r.sub(r"^\s*//.*?$", "", _code, flags=_r.MULTILINE)
+    assert "EDGE_LABEL[p.edge_kind]" in _code, (
+        "the edge label is no longer chosen per row from edge_kind. A single "
+        "hardcoded label over two different quantities is the whole failure "
+        "this test exists to prevent."
+    )
+    m = _r.search(r"EDGE_LABEL\s*=\s*\{(.*?)\}", page, _r.DOTALL)
+    assert m, "EDGE_LABEL is gone"
+    labels = dict(_r.findall(r'(\w+):\s*"([^"]+)"', m.group(1)))
+    assert set(labels) == {"sharp", "model"}, (
+        f"EDGE_LABEL must cover exactly the two edge kinds; got {sorted(labels)}"
+    )
+    assert labels["sharp"] != labels["model"], (
+        f"both families are labelled {labels['sharp']!r}. That is the bug: a "
+        f"reader cannot tell a return from a probability-point difference."
+    )
+    assert "model" in labels["model"].lower(), (
+        f"the model label {labels['model']!r} does not say 'model'. It must "
+        f"match the Telegram wording ('Model edge') — one quantity, one name, "
+        f"across every surface."
+    )
+    assert "sharp" in labels["sharp"].lower(), (
+        f"the sharp label {labels['sharp']!r} does not say 'sharp'."
+    )
+    # Break-even is 1/fair_prob in both arms but against DIFFERENT anchors, so
+    # the tooltip must name which.
+    assert "ANCHOR_NAME[p.edge_kind]" in _code, (
+        "the break-even tooltip no longer names the anchor. 1/fair_prob is "
+        "break-even against the sharp line in one arm and against our own "
+        "model in the other; an unqualified 'break-even' conflates them."
+    )
+    # And the page must no longer make a PAGE-LEVEL claim that it uses no model.
+    _flat = " ".join(_code.split())
+    assert "no model" not in _flat.lower() or "use no prediction model" in _flat.lower(), (
+        "/picks still claims page-wide that it uses no model, while rendering "
+        "model-anchored picks. A claim about HOW a pick is made cannot be "
+        "page-level once two methods share the page."
+    )
+
+    # DB: the view exists, both arms resolve, and edge_kind is never null.
+    try:
+        from workers.api_clients.db import execute_query as _eq
+        rows = _eq("""SELECT edge_kind, count(*) AS n FROM picks_public_all
+                       GROUP BY 1 ORDER BY 1""", [])
+        nulls = _eq("""SELECT count(*) AS n FROM picks_public_all
+                        WHERE edge_kind IS NULL OR fair_prob IS NULL""", [])
+    except Exception:
+        rows = nulls = None
+    if rows is not None:
+        kinds = {r["edge_kind"] for r in rows}
+        assert kinds <= {"sharp", "model"}, f"unexpected edge_kind(s): {kinds}"
+        assert nulls[0]["n"] == 0, (
+            f"{nulls[0]['n']} row(s) have a NULL edge_kind or fair_prob. The "
+            f"page switches its label and its break-even on those two columns "
+            f"and has no correct default branch if either is missing."
+        )
+
+
 @test("PICKS-BOARD-SETTLEMENT — watchlist legs are graded, and graded APART from the ledger")
 def test_picks_board_settlement():
     """PICKS-BOARD-SETTLEMENT (2026-09-16).
@@ -43199,10 +43355,21 @@ def test_picks_board_watchlist():
     )
     # The stronger form of the same rule: the row renderer for PUBLISHED picks
     # must be typed to ForwardTestPick, so a BoardLeg cannot be passed to it.
-    assert "function PickRow({ p }: { p: ForwardTestPick })" in page, (
-        "PickRow is no longer typed to ForwardTestPick. That type is the only "
-        "thing stopping a watchlist leg — which did not qualify — from being "
-        "rendered in the same shape as a published pick."
+    # The pick row must be typed to a PICK type, never to BoardLeg. The type
+    # name changed on 2026-09-16 (ForwardTestPick -> PublicPick) when the page
+    # started rendering both bot families, so match the shape, not the name —
+    # and assert explicitly that it is not the watchlist type.
+    import re as _re2
+    _pr = _re2.search(r"function PickRow\(\{ p \}: \{ p: (\w+) \}\)", page)
+    assert _pr, (
+        "PickRow no longer takes a single typed `p`. That type annotation is "
+        "the only thing stopping a watchlist leg — which did not qualify — "
+        "from being rendered in the same shape as a published pick."
+    )
+    assert _pr.group(1) != "BoardLeg", (
+        f"PickRow is typed to {_pr.group(1)}. A board leg is NOT a pick: it "
+        f"failed the floor, nobody was told to bet it, and rendering it as one "
+        f"is the entire risk of the watchlist feature."
     )
 
 
