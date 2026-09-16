@@ -67,6 +67,26 @@
 >
 >
 >
+> **🟣 EPIC ⬜ VERIFY-THE-INSTRUMENTS-2026-09-16 (🤖 OWN + 👥 PICKS — owner: "are we sure we found all the bugs? we never double checked those").** Honest position: **every bug found on 2026-09-16 was found incidentally**, while building the next thing — never by an audit pass. Three were in Dixon-Coles and surfaced only because phase 2 ran; the self-check was GREEN through two of them because it generated synthetic data at an implicit intercept of 0 and was structurally blind to the level being wrong. That is the pattern to fix: **an instrument nobody has tested against a KNOWN answer is not evidence, it is a number generator.**
+>
+> The debt is concentrated, not sprawling — nearly every conclusion in the modelling work flows through one harness:
+>
+> | artifact | verified how | status |
+> |---|---|---|
+> | `dixon_coles.py` | 28 self-checks incl. parameter AND level recovery at 3 base rates | ✅ good (level check exists only because phase 2 exposed the gap) |
+> | `dixon_coles_fit.py` | per-row leak assertion, mutation-tested | ✅ good |
+> | `model_feature_contract_audit.py` | per-row evidence; two wrong versions discarded | ✅ good |
+> | `candidate_signal_screen.py` | pre-KO bound + psycopg2 guard, both mutation-tested | ✅ good |
+> | **the residual harness** (Platt, α grid, Shin, train/eval split) | **never independently verified** — inherited as pre-registered and trusted | 🔴 **every α we have comes from here** |
+> | `residual_test_ou.py` | structural smoke test only; arithmetic never checked | 🔴 |
+> | `own_market_margin_by_market.py` | rewritten after the max() bug; the rest never audited | 🟠 |
+>
+> **Order: verification BEFORE the next measurement**, because a wrong harness invalidates 1x2-dead, O/U-dead and the feature A/B all at once — and we would not know.**
+>
+> **🔴 P0 ⬜ VERIFY-RESIDUAL-HARNESS (🤖 OWN + 👥 PICKS — do before DC phase 3).** Every α in this project comes out of one harness — `fit_alpha` + `fit_platt` + the Shin de-vig + the first-half/second-half split — and it has **never been tested against a known answer**. It was inherited as pre-registered, and pre-registered is not the same as correct. **Method (the one that caught the Dixon-Coles level bug): inject synthetic data with a CONSTRUCTED α and check the harness recovers it.** Build `p_market` and `p_model` such that the log-loss-optimal blend weight is known analytically — e.g. p_model = true probability, p_market = a deliberately degraded version, so the optimum is α ≈ 1; then the reverse, so the optimum is α ≈ 0; then a middle case. If the harness cannot recover a planted α, **every conclusion of 2026-09-16 is unreliable in an unknown direction** — 1x2 dead, O/U dead, and the signal A/B all rest on it. Also assert: Platt fits on the FIRST half only and is applied to both; the α grid actually spans [0,1]; Shin returns the proportional result when the overround is 0; the evaluation slice never overlaps the fit slice. ~half a day. **Everything else in `VERIFY-THE-INSTRUMENTS-2026-09-16` is cheap once this is done.**
+>
+> **🟠 P2 ⬜ VERIFY-MARGIN-AND-OU-SCRIPTS (🤖 OWN).** The remainder of the verification debt, once the harness is trusted. (a) `own_market_margin_by_market.py` — audit beyond the one `max()` bug already fixed: hand-compute the overround for ONE real fixture and assert the script reproduces it, so the arithmetic is checked against something other than itself. (b) `residual_test_ou.py` — its arithmetic is currently covered only by a structural smoke test; most of it is shared with the 1x2 harness, so this is largely settled by `VERIFY-RESIDUAL-HARNESS`, but the O/U-specific parts (two-leg Shin, the over-2.5 target construction, the class-index convention) need their own fixture. (c) confirm the shipped bundle's α is re-measurable at all, given that a fixed `--cutoff` does NOT fix the training data (11.6% of pre-cutoff feature rows were rebuilt in two days) — which may mean the honest answer is that historical α values are only ever comparable within a same-day matched pair.
+>
 > **🟣 EPIC ⬜ MODELLING-INPUTS-EPIC-2026-09-16 (🤖 OWN + 👥 PICKS — index of one day's findings, owner asked for the consolidation).** Distinct from `DATA-COVERAGE-EPIC-2026-09-10`, which is about what we FETCH; this is about what reaches the MODEL. Root cause of the whole cluster: **both shipped heads measure residual α = 0.0000 against Pinnacle, and they share ONE 52-feature set of which only nine clear 88% population** — so two zeros are one result about the feature set, not two about model families. Full reasoning in `docs/MODELLING_DATA_AUDIT_2026_09_16.md`.
 >
 > | # | finding | class | status |
