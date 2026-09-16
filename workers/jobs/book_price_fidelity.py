@@ -53,7 +53,12 @@ _NON_BOOKS = ("Max", "Avg", "betexplorer", "api-football", "api-football-live", 
 # standard error on a win rate near 40% is ~4.9 points, so a 6-point excess is
 # barely over 1 sigma — deliberately loose, because this alarm is meant to start
 # a query, not to conclude one.
-MIN_BETS = int(os.getenv("FIDELITY_MIN_BETS", "100"))
+# Recalibrated 2026-09-17 after the dedup fix. 100 was set against inflated
+# rows; on deduped picks it left only 3 books qualifying and the monitor went
+# blind. At n=60 a win-rate standard error near 40% is ~6.3 points, so the
+# 6-point excess threshold is ~1 sigma -- loose on purpose, this alarm starts a
+# query rather than concluding one.
+MIN_BETS = int(os.getenv("FIDELITY_MIN_BETS", "60"))
 
 # Points ABOVE the fleet median gap before a book is flagged. Set against the
 # measured line-shop baseline (~+4 to +5), not against zero — see the module
@@ -70,8 +75,13 @@ ALERT_EXCESS_POINTS = float(os.getenv("FIDELITY_ALERT_EXCESS", "6.0"))
 #
 # Three defects, all fixed below:
 #   * 30d is too short -- one bot's burst owns a book's whole sample.
-#   * retired bots were included, so a dead strategy could raise an alarm about
-#     a live book.
+#   * ~~retired bots were included~~ -- REVERTED 2026-09-17. Excluding them was
+#     an over-correction: the false positive's real cause was reading the RAW
+#     shadow_bets table (91% of those dc-bot rows were re-emissions of the same
+#     picks), not the bots being retired. A retired bot's historical picks are
+#     still valid evidence about what a book was quoting at the time, and
+#     excluding them left only 3 books above the threshold -- a blind monitor.
+#     Dedup plus the breadth guard address the concentration properly.
 #   * nothing reported CONCENTRATION, so a gap driven by one bot/market looked
 #     identical to one spread across the fleet.
 WINDOW_DAYS = int(os.getenv("FIDELITY_WINDOW_DAYS", "90"))
@@ -82,6 +92,20 @@ WINDOW_DAYS = int(os.getenv("FIDELITY_WINDOW_DAYS", "90"))
 MIN_DISTINCT_BOTS = int(os.getenv("FIDELITY_MIN_BOTS", "2"))
 MIN_DISTINCT_MARKETS = int(os.getenv("FIDELITY_MIN_MARKETS", "2"))
 
+# DEDUP-CORRECTION-2026-09-17. This job originally read `shadow_bets` directly.
+# That table stores one row per RE-EVALUATION, not per pick -- the refresh
+# re-emits the same (bot, match, market, selection) on every pass and each lands
+# as its own settled row. All-time that is 162,191 rows for 20,444 real picks
+# (7.9x); it is still running at 1.4-2.2x on current days.
+#
+# Reading it raw inflated every n here by that factor and every t by its square
+# root, which is precisely the error that produced this job's own first false
+# positive (Bet365 flagged at +16.8 on what was really a few hundred picks from
+# three retired bots). `shadow_bets_unique` is the canonical deduped view --
+# DISTINCT ON the four keys, first emission -- and every aggregate must use it.
+# Read the base table only for price-path work, where the re-emissions ARE the
+# data.
+
 _SQL = """
 SELECT s.recommended_bookmaker AS book,
        COUNT(*)                                            AS bets,
@@ -90,10 +114,9 @@ SELECT s.recommended_bookmaker AS book,
        AVG(s.odds_at_pick)                                 AS avg_odds,
        COUNT(DISTINCT s.bot_id)                            AS n_bots,
        COUNT(DISTINCT s.market)                            AS n_markets
-  FROM shadow_bets s
+  FROM shadow_bets_unique s
   JOIN bots bo ON bo.id = s.bot_id
- WHERE bo.retired_at IS NULL
-   AND s.result IS NOT NULL
+ WHERE s.result IS NOT NULL
    AND s.result::text <> 'pending'
    AND s.odds_at_pick IS NOT NULL
    AND s.odds_at_pick > 1

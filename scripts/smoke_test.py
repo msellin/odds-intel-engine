@@ -45710,22 +45710,32 @@ def _():
         "books at the fleet baseline must NOT fire -- that baseline is line "
         "shopping working, not a defect")
 
-    # FIDELITY-FALSE-POSITIVE-FIX-2026-09-16: retired bots must be excluded and
-    # the gap must be broad. The first live run flagged Bet365 at +16.8 on 931
-    # double_chance bets from three RETIRED bots (two emitting identical picks);
-    # on the book's full sample it reads +2.9, and with retired bots excluded it
-    # reads -6.0 and does not flag at all.
-    assert "bo.retired_at IS NULL" in bpf._SQL, (
-        "retired bots must be excluded -- a dead strategy raised a false alarm "
-        "about a live book on the monitor's first run")
+    # FIDELITY-FALSE-POSITIVE-FIX-2026-09-16, CORRECTED 2026-09-17.
+    #
+    # The first live run flagged Bet365 at +16.8 on 931 double_chance bets from
+    # three retired bots. I diagnosed that as "retired bots must be excluded" and
+    # this assertion pinned that fix. It was the WRONG fix: the real cause was
+    # reading the RAW `shadow_bets` table, where 91% of those dc-bot rows were
+    # re-emissions of the same picks. Excluding retired bots merely hid it, and
+    # cost most of the monitor's evidence -- only 3 books cleared the threshold.
+    #
+    # The correct fix is the deduped view plus the breadth guard, pinned below.
+    # This comment stays because a reverted guard with no explanation is an
+    # invitation to re-add it.
+    assert "bo.retired_at IS NULL" not in bpf._SQL, (
+        "the retired-bot exclusion was an over-correction and was reverted -- a "
+        "retired bot's picks are still valid evidence about what a book quoted. "
+        "Dedup + the breadth guard handle the concentration properly.")
     assert "MIN_DISTINCT_BOTS" in src and "MIN_DISTINCT_MARKETS" in src, (
         "a price defect belongs to the BOOK, so it cannot be confined to one "
         "strategy or one market -- breadth guard missing")
     assert bpf.WINDOW_DAYS >= 90, (
         "30d let a single bot's burst own a book's whole sample")
 
-    assert bpf.MIN_BETS >= 100, (
-        "below n=100 the standard error on a win rate swamps the signal")
+    assert 40 <= bpf.MIN_BETS <= 80, (
+        "MIN_BETS must match the DEDUPED population: 100 was calibrated against "
+        "7.9x-inflated rows and left only 3 books qualifying; below ~40 the "
+        "standard error on a win rate swamps the signal")
 
     # Read-only: no writes, no placement, no gate mutation.
     assert not any(k in src for k in ("INSERT", "UPDATE ", "DELETE", "place_")), (
@@ -45738,6 +45748,47 @@ def _():
         "monitor must be registered on the scheduler -- the defect it exists to "
         "catch ran for two months precisely because nobody ran the query")
     return f"relative threshold, excess C={excess['C']:+.1f} fires"
+
+@test("SHADOW-BETS-AGGREGATES-USE-UNIQUE — no reporting query may count raw shadow_bets rows")
+def _():
+    """DEDUP-CORRECTION-2026-09-17. `shadow_bets` stores one row per
+    RE-EVALUATION, not per pick: the refresh re-emits the same (bot, match,
+    market, selection) every pass and each lands as its own settled row. All-time
+    that is 162,191 rows for 20,444 real picks (7.9x), and it is STILL running at
+    1.4-2.2x on current days. `shadow_bets_unique` is the canonical deduped view.
+
+    Reading the base table for an AGGREGATE inflates n by that factor and every
+    t-statistic by its square root. It is not hypothetical: on 2026-09-17 it
+    produced a false P0 ticket, a fabricated "7.9x ledger defect", three books
+    wrongly accused of quoting phantom prices (10Bet/Unibet/Marathonbet read
+    +24.7/+15.6/+11.7 on raw rows and +1.7/-1.8/-5.5 deduped), and an ROI for
+    bot_v10_all of +5.83% where the truth is +9.74%. The duplication is NOT
+    uniform across winners and losers, so it does not cancel in a ratio.
+
+    This pins the one place that regressed: the fidelity monitor, which is a pure
+    aggregate. Writers (settlement, the paper bots, the placer) legitimately touch
+    the base table, and price-path analysis MUST use it -- there the re-emissions
+    are the data. So this guards the aggregate, not every reference."""
+    import inspect
+    from workers.jobs import book_price_fidelity as bpf
+
+    assert "shadow_bets_unique" in bpf._SQL, (
+        "book_price_fidelity is an aggregate and must read shadow_bets_unique; "
+        "reading the base table inflates n ~8x and every t ~2.8x")
+    assert "FROM shadow_bets\n" not in bpf._SQL and "FROM shadow_bets " not in bpf._SQL, (
+        "the base table must not be the aggregate's source")
+
+    src = inspect.getsource(bpf)
+    assert "re-emission" in src.lower() or "re-evaluation" in src.lower(), (
+        "keep the reason next to the query -- a bare view name reads as a "
+        "stylistic choice and gets 'simplified' back to the base table")
+
+    # The threshold must match the DEDUPED population, not the inflated one.
+    assert bpf.MIN_BETS <= 60, (
+        "MIN_BETS was 100 against inflated rows; on deduped picks that left only "
+        "3 books qualifying and the monitor went blind")
+    return f"aggregate on shadow_bets_unique, MIN_BETS={bpf.MIN_BETS}"
+
 
 
 if __name__ == "__main__":

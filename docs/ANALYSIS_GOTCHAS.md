@@ -208,6 +208,20 @@ inflated ~2.8x, and an ROI for `bot_v10_all` of +5.83% where the deduped truth i
 winners and losers, so the comforting "duplication cancels in a ratio" is false.
 The fix already existed; the bug was in my query.
 
+**(f) One bad table reference propagated into four wrong public claims.** Worth
+recording as a shape, not just an instance. On 2026-09-17 a single habit --
+querying `shadow_bets` instead of `shadow_bets_unique` -- produced, in order: a
+fabricated "7.9x ledger defect" filed as P0; three bookmakers (10Bet, Unibet,
+Marathonbet) accused of quoting phantom prices when deduped they read
+**+1.7 / -1.8 / -5.5**, i.e. entirely normal; an ROI of +5.83% where the truth is
+**+9.74%**; and a monitor built the same day that inherited the same bug. Each
+error looked independently plausible and each reinforced the others.
+
+*The tell:* several surprising findings in one session, all pointing the same
+direction. That is more often one broken input than four discoveries. Check the
+source of the data before building the fourth conclusion on the first three.
+
+
 **And the rule that keeps catching me:** every one of (a)-(e) was found only
 after a confident wrong answer had already been written down. The measurement
 that refutes a hypothesis is almost always cheaper than the one that supports
