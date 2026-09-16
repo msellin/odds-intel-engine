@@ -44155,6 +44155,49 @@ def test_placement_gate_all_executors():
         "coolbet_inplay execute mode must call the gate BEFORE _place_bet_api"
 
 
+@test("OWN-MARGIN-BY-MARKET-GUARDS — the per-market kill criterion keeps the guards that make it honest")
+def test_own_margin_by_market_guards():
+    """2026-09-16. The owner asked whether one of the other markets we collect
+    (O/U at five lines, BTTS, Asian handicap, team totals, 1H) is cheaper to bet
+    than 1x2. `own_market_margin_by_market.py` answers it with the SAME
+    arithmetic as the 1x2 kill criterion. Three guards decide whether the answer
+    means anything, and each has burned this project before:
+
+      * two-leg complements ONLY — the overround of a partial market is not an
+        overround at all, it is just the sum of whatever legs happened to be
+        stored (ANALYSIS_GOTCHAS on incomplete complements)
+      * grouped by handicap_line — comparing Coolbet's AH -0.5 against Unibet's
+        AH -0.75 as if they were one market manufactures a fake discrepancy
+      * pre-match only — a live row is a price that has stopped existing
+    """
+    src = _engine_path("scripts/own_market_margin_by_market.py").read_text(encoding="utf-8")
+    import ast as _ast
+    body = _ast.unparse(_ast.parse(src))
+
+    assert "len(sels) != 2" in body, (
+        "the two-leg completeness check is gone — a partial market's 'overround' is meaningless"
+    )
+    assert "handicap_line" in body, (
+        "handicap_line must be part of the grouping key, or two different AH lines "
+        "get compared as one market and invent a discrepancy that is not there"
+    )
+    assert "is_live IS NOT TRUE" in src, "live rows must be excluded — pre-match only"
+    # The threshold is the 1x2 criterion's, not a new one invented for this run.
+    assert "KILL_THRESHOLD = 0.02" in src, (
+        "the 2% threshold must match own_path_kill_criterion.py — a per-market "
+        "answer against a different bar is not comparable to the 1x2 verdict"
+    )
+    # Best-of-N must take the MAX price per selection across books.
+    assert "if s not in best or o > best[s]" in body, "best-of-3 must take the max price per selection"
+    # It must not silently report a market on a handful of rows.
+    assert "min_n" in body and "< a.min_n" in body, "a minimum n guard must gate every printed row"
+    # And it must say what it does NOT cover, so the result is not over-read.
+    assert "LINE discrepancies" in src, (
+        "the script must state that cross-book LINE discrepancies are NOT measured here — "
+        "that is the one place in derivatives an exploit could still hide"
+    )
+
+
 @test("SHADOW-BOTS-CACHED-PAYLOAD-IS-JSON — nothing that dies in JSON may cross unstable_cache")
 def test_shadow_bots_cached_payload_is_json():
     """2026-09-16, reported by the owner as \"shadow bots page is broken\".
