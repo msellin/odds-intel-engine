@@ -1305,6 +1305,37 @@ def _pinnacle_drift_refresh_wrapper():
     _run_job("pinnacle_drift_refresh", job_pinnacle_drift_refresh)
 
 
+
+def job_book_price_fidelity():
+    """BOOK-PRICE-FIDELITY-MONITOR (2026-09-16) — weekly: is each book's recorded
+    price real?
+
+    Compares, per bookmaker, the ACTUAL win rate on settled bets against the rate
+    the price we recorded implies. Margin guarantees an edgeless bettor lands
+    BELOW implied, so a book sustaining a gap above its peers was quoting prices
+    longer than the truth — and every edge/ROI/CLV figure computed on it is
+    inflated by exactly that much.
+
+    WHY A STANDING JOB AND NOT AN ANALYSIS SCRIPT. The defect that motivated it
+    (OUTLIER-CEILING-CALIBRATED) ran from August to September and was found by one
+    ad-hoc query, because nobody had reason to run that query. A track record is
+    only worth publishing if something checks the prices underneath it on a
+    schedule rather than when someone happens to get suspicious.
+
+    Read-only. Changes no price, no gate, no pick — it is a smoke alarm.
+    """
+    from workers.jobs.book_price_fidelity import run_fidelity_check
+    res = run_fidelity_check()
+    if res.get("flagged"):
+        console.print(f"[yellow]book-price-fidelity: {res['flagged']} of "
+                      f"{res['books']} books flagged[/yellow]")
+    return res
+
+
+def _book_price_fidelity_wrapper():
+    _run_job("book_price_fidelity", job_book_price_fidelity)
+
+
 def job_epicbet_odds_freshness():
     """EPICBET-403-FROM-VPS-2026-08-29 — DB-side staleness watchdog for the
     Epicbet feed, the thing whose absence let a six-day outage pass unnoticed.
@@ -3352,6 +3383,15 @@ def main():
                       CronTrigger(minute="5,35"),
                       id="publish_picks_forward_test",
                       name="PICKS forward test — publish (public Telegram)")
+
+    # BOOK-PRICE-FIDELITY-MONITOR (2026-09-16): Mondays 08:15 UTC. Weekly, not
+    # daily — the test needs n>=100 settled bets per book to mean anything, and a
+    # daily run would mostly re-report the same window with more noise.
+    scheduler.add_job(_book_price_fidelity_wrapper,
+                      CronTrigger(day_of_week="mon", hour=8, minute=15),
+                      id="book_price_fidelity",
+                      name="Book price fidelity (weekly)",
+                      max_instances=1, misfire_grace_time=3600)
 
     scheduler.add_job(job_pick_triggers, CronTrigger(hour="*", minute="5"),
                       id="pick_triggers", name="Pick Triggers (Stage A)")

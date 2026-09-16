@@ -45483,6 +45483,65 @@ def test_egress_probe():
         "the probe must stay single-shot: our own retry volume has previously FED the wall it was reporting"
 
 
+@test("BOOK-PRICE-FIDELITY — the monitor is relative to the fleet, not to zero")
+def _():
+    """BOOK-PRICE-FIDELITY-MONITOR-2026-09-16. Weekly per-book check that the
+    price we recorded is a price the book offered: compare the ACTUAL win rate
+    against the rate the recorded price implies.
+
+    THE PIN THAT MATTERS is that the threshold is RELATIVE. A positive gap is
+    also what genuine line shopping produces -- a better-than-fair price implies
+    a lower probability than the truth -- and OUTLIER-CEILING-CALIBRATED measured
+    that baseline at roughly +4 to +5 points in the healthy 1.05-1.25 band. So a
+    monitor thresholded at "gap > 0" fires on exactly the behaviour we want and
+    gets muted within a week. Each book is therefore compared against the FLEET
+    MEDIAN gap for the same window, which self-calibrates when the selection rule
+    changes.
+
+    Also pinned: the job is read-only (a smoke alarm, not a sprinkler), and a
+    quiet week is a success rather than a failure."""
+    import inspect
+    from workers.jobs import book_price_fidelity as bpf
+
+    src = inspect.getsource(bpf)
+    assert "median" in src and "fleet_median_gap" in src, (
+        "threshold must be relative to the fleet median gap, not an absolute "
+        "constant -- see the line-shop baseline in the docstring")
+    assert "excess" in src, "must expose gap-minus-baseline as the alert quantity"
+
+    # Pure function over injected rows: a book at the fleet median must not fire,
+    # and one far above it must.
+    rows = [
+        {"book": "A", "bets": 200, "implied_pct": 40.0, "actual_pct": 36.0, "avg_odds": 2.5},
+        {"book": "B", "bets": 200, "implied_pct": 40.0, "actual_pct": 35.0, "avg_odds": 2.5},
+        {"book": "C", "bets": 200, "implied_pct": 40.0, "actual_pct": 52.0, "avg_odds": 2.5},
+    ]
+    from statistics import median as _med
+    gaps = [r["actual_pct"] - r["implied_pct"] for r in rows]
+    base = _med(gaps)
+    excess = {r["book"]: (r["actual_pct"] - r["implied_pct"]) - base for r in rows}
+    assert excess["C"] > bpf.ALERT_EXCESS_POINTS, (
+        "a book winning 12 points above what its price implies, against a fleet "
+        "median of -4, must exceed the alert threshold")
+    assert excess["A"] <= bpf.ALERT_EXCESS_POINTS and excess["B"] <= bpf.ALERT_EXCESS_POINTS, (
+        "books at the fleet baseline must NOT fire -- that baseline is line "
+        "shopping working, not a defect")
+
+    assert bpf.MIN_BETS >= 100, (
+        "below n=100 the standard error on a win rate swamps the signal")
+
+    # Read-only: no writes, no placement, no gate mutation.
+    assert not any(k in src for k in ("INSERT", "UPDATE ", "DELETE", "place_")), (
+        "the fidelity monitor must not write or place -- it is a smoke alarm")
+
+    # Registered as a weekly cron, not left as a script nobody runs.
+    import pathlib
+    sched = pathlib.Path(__file__).parent.parent.joinpath("workers/scheduler.py").read_text()
+    assert 'id="book_price_fidelity"' in sched, (
+        "monitor must be registered on the scheduler -- the defect it exists to "
+        "catch ran for two months precisely because nobody ran the query")
+    return f"relative threshold, excess C={excess['C']:+.1f} fires"
+
 
 if __name__ == "__main__":
     main()
