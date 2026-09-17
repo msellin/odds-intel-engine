@@ -222,6 +222,24 @@ direction. That is more often one broken input than four discoveries. Check the
 source of the data before building the fourth conclusion on the first three.
 
 
+**(g) The published numbers come from `simulated_bets`, NOT `shadow_bets`.**
+`dashboard_cache` (which `/performance` reads) is built from `simulated_bets`,
+which has **zero duplication** (4,661 rows -> 4,661 picks). `shadow_bets` is the
+paper-shadow fleet and is a different population entirely. An entire session's
+conclusions were drawn from the wrong one.
+
+**(h) ROI means `sum(pnl)/sum(stake)`, never `avg(pnl/stake)`.** The two agree
+only under flat staking. Several bots are Kelly-variable (v10 stakes 1.35-17.38),
+where mean-of-ratios over-weights small stakes: it reported **+10.94%** where the
+published, stake-weighted truth is **+6.51%** -- and flipped the confidence
+interval from "excludes zero" to "includes zero", i.e. from a publishable claim
+to an inconclusive one.
+
+**(i) `select ... limit 1` with no ORDER BY returns an arbitrary row.** This
+produced a confident "dashboard_cache is 4 months stale" about a table whose
+newest row was written that morning.
+
+
 **And the rule that keeps catching me:** every one of (a)-(e) was found only
 after a confident wrong answer had already been written down. The measurement
 that refutes a hypothesis is almost always cheaper than the one that supports
