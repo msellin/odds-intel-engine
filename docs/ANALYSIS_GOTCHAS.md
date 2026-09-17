@@ -252,6 +252,17 @@ table for questions like this: 42,916 settled rows, `outcome` values are
 **`hit`/`miss`**, not `won`/`lost`.
 
 
+**(k) Any unguarded odds search will "find" a huge edge, and it will be garbage.**
+Measured 2026-09-17 on 1.29M book-selection quotes: a Kaunitz-style cross-book EV
+search with NO outlier guard returned **+75.21% ROI, t=+14.46** in its top band —
+entirely mislabelled lines, stale quotes and wrong markets, with EVs running to
++900%. It dragged every book positive, including the two we execute at. Applying
+the production **1.25 ceiling** (price vs vig-free consensus) removed all of it
+and every band came back **negative**. Same lesson as §9 but worth restating with
+the number: the guard is not a refinement, it is the difference between a result
+and a fiction. Use ≥5 books for the consensus, not 3.
+
+
 **And the rule that keeps catching me:** every one of (a)-(e) was found only
 after a confident wrong answer had already been written down. The measurement
 that refutes a hypothesis is almost always cheaper than the one that supports
