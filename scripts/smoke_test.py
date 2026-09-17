@@ -44546,6 +44546,67 @@ def test_odds_assembly_burst():
         )
 
 
+@test("ODDS-ASSEMBLY-CROSS-BOOK — combining books' own latest quotes must refuse a time smear")
+def test_odds_assembly_cross_book():
+    """CROSS-BOOK-TIME-SMEAR (2026-09-17). ODDS-ASSEMBLY-BURST fixed assembly
+    WITHIN a book. Combining books is a second, independent trap, and this
+    session walked straight into it after fixing the first one.
+
+    `max(latest_market(b) for b in books)` looks obviously right and is not. Each
+    book's latest lands at a different wall-clock time — over 30 days of stored
+    1x2 the median gap between two books' own latest quotes is 7.2 HOURS — so the
+    combination mixes a live quote with a stale one. The apparent overround falls
+    monotonically with that gap:
+
+        books  <15 min apart   6.55%     <- contemporaneous, the real number
+        books   15m-2h apart   6.07%
+        books    2-12h apart   5.16%
+        books     12h+ apart   4.37%     <- 2.18pp of pure artefact
+
+    It is the best-of-books mirage (ANALYSIS_GOTCHAS §52/§55) displaced into
+    time. It produced a top-league figure of 3.76% that was really ~3.1%, and it
+    briefly made the strict 15-minute alignment in own_margin_by_tier.py look
+    like an over-strict flaw when it was the correct method all along.
+
+    Behavioural test: contemporaneous books combine, distant books return None.
+    """
+    import datetime as _dt
+    from workers.utils.odds_assembly import best_across_books, CROSS_BOOK_MAX_GAP_S
+
+    sides = ("home", "draw", "away")
+    t = _dt.datetime(2026, 9, 17, 12, 0, 0, tzinfo=_dt.timezone.utc)
+
+    def book(at, h, d, a):
+        return [(at, "home", h), (at, "draw", d), (at, "away", a)]
+
+    near = {"A": book(t, 2.00, 3.40, 3.90),
+            "B": book(t + _dt.timedelta(minutes=5), 2.10, 3.30, 4.00)}
+    got = best_across_books(near, sides)
+    assert got is not None, "books 5 min apart are contemporaneous and must combine"
+    q, span = got
+    assert q == {"home": 2.10, "draw": 3.40, "away": 4.00}, (
+        f"must take the best price per leg across contemporaneous books, got {q}")
+    assert abs(span - 300.0) < 1.0, f"span must report the real anchor gap, got {span}"
+
+    far = {"A": book(t, 2.00, 3.40, 3.90),
+           "B": book(t + _dt.timedelta(hours=9), 2.10, 3.30, 4.00)}
+    assert best_across_books(far, sides) is None, (
+        "books 9h apart must NOT be combined — that market never existed, and "
+        "combining them is worth 2.18pp of fake cheapness"
+    )
+
+    edge = {"A": book(t, 2.00, 3.40, 3.90),
+            "B": book(t + _dt.timedelta(seconds=CROSS_BOOK_MAX_GAP_S + 60), 2.10, 3.30, 4.00)}
+    assert best_across_books(edge, sides) is None, (
+        "the gap cap must actually bind just past CROSS_BOOK_MAX_GAP_S")
+
+    assert best_across_books({"A": book(t, 2.0, 3.4, 3.9)}, sides) is None, (
+        "one book is not a cross-book best — it must not masquerade as one")
+    assert 60.0 <= CROSS_BOOK_MAX_GAP_S <= 3600.0, (
+        f"CROSS_BOOK_MAX_GAP_S is {CROSS_BOOK_MAX_GAP_S}s; outside 1-60 min it "
+        f"either discards every fixture or re-admits the smear")
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).

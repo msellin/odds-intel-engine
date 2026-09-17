@@ -161,20 +161,30 @@
 >
 > **Fix for (1) regardless of the gap:** read the FIRST complete round of a scrape pass, or the best price per leg, never the latest row. **Fix for (2):** the canonical-name mapping needs to be one-to-one, or the market_type_id must be stored so collisions are visible.**
 >
-> **✅ Done 2026-09-17 KILL-CRITERION-DEPENDS-ON-FIXTURE-MIX (🤖 OWN — corrects my own OWN-MARGIN-BY-TIER finding).**
+> **✅ Done 2026-09-17 KILL-CRITERION-DEPENDS-ON-FIXTURE-MIX — and CROSS-BOOK-TIME-SMEAR (🤖 OWN).** Filed, then partly **self-corrected within the hour**; the corrected numbers are the ones below.
 >
-> **First: our data is CORRECT.** Matched one-to-one against The Odds API's live Coolbet quote on the same 8 fixtures — our stored overround **4.14%** against their **4.11%**, median gap **+0.00pp**. The 7.80%-vs-3.05% discrepancy that has been open since yesterday was **entirely fixture mix**, not a bug. There is nothing left to fix in the Coolbet feed.
+> **1. Our data is CORRECT.** Matched one-to-one against The Odds API's live Coolbet quote on the same 8 fixtures — our stored overround **4.14%** against their **4.11%**, median gap **+0.00pp**. The 7.80%-vs-3.05% discrepancy open since yesterday was **entirely fixture mix**. Nothing left to fix in the feed.
 >
-> **Second, and it corrects me:** I filed `OWN-MARGIN-BY-TIER` saying no cheap subset exists, on a ~1pp tier effect. That test could not see the real effect, for two reasons — it required all three books to be sampled within 15 min of EACH OTHER (a bettor faces each book's own current price, not a synchronised snapshot), and "tier 1" in our `leagues` table is far broader than the genuinely top competitions. Reading each book's own latest burst, restricted to 12 major leagues:
+> **2. Fixture mix is real and large.** `tier` is a useless proxy for it — **1,012 of our 1,461 leagues are tier=1**, including Andorran second divisions, Swiss regional groups, U19 and reserve sides. Upcoming fixtures are led by Israeli Liga Alef, Kenyan Premier League and Russian youth. Under one consistent method, top leagues price **~3.1%** against **~6.1%** for all fixtures — a ~3pp gap that the tier column could not see.
 >
-> | universe | fixtures | Coolbet | Epicbet | Unibet-Site | **best-of-3** | p25 | under 2% |
-> |---|---|---|---|---|---|---|---|
-> | TOP leagues | 305 | 5.29% | 5.98% | 6.60% | **3.76%** | 2.49% | **18.0%** |
-> | ALL leagues | 2,648 | 7.84% | 8.16% | 9.14% | **5.85%** | 3.76% | 10.5% |
+> **3. THE CORRECTION.** I first measured this by taking each book's own latest quote, and argued that `own_margin_by_tier.py`'s strict 15-minute cross-book alignment was an over-strict flaw because "a bettor faces each book's own current price". **That was wrong, and it flattered us.** Each book's latest lands at a different wall-clock time — median gap between two books' own latest quotes is **7.2 hours** — so the combination mixes a live quote with a stale one. The apparent overround falls monotonically with the gap:
 >
-> **Fixture selection is worth 2.09pp**, and the all-leagues figure reproduces the kill criterion's 5.84% exactly, so the two methods agree.
+> | books' quotes apart | n | best-of-3 |
+> |---|---|---|
+> | <15 min (contemporaneous) | 293 | **6.55%** |
+> | 15 min – 2h | 828 | 6.07% |
+> | 2 – 12h | 1,610 | 5.16% |
+> | 12h+ | 1,157 | **4.37%** |
 >
-> **What it does and does not change.** The kill criterion tested ONE number across every fixture our books quote and nobody had tested whether the verdict depends on fixture selection. It does. But **3.76% is still above the 2% threshold**, so automated betting does not clear the bar on top leagues either — the verdict stands, on a median. What is new is that **18.0% of top-league fixtures are already under 2%**, against 10.5% across all fixtures. Whether those are executable or another best-of-books mirage is NOT established; the earlier mirage check found the sub-2% tail was books disagreeing rather than pricing cheaply, and that check has not been repeated on this burst-corrected top-league subset. **Do that before treating the 18% as an opportunity.**
+> **2.18pp of pure artefact.** This is the best-of-books mirage (ANALYSIS_GOTCHAS §52/§55) displaced from books into TIME, and it is the third time this session the mirage has appeared in a new disguise. **Strict simultaneity was the correct method all along** — my criticism of `own_margin_by_tier.py` is withdrawn.
+>
+> **Retracted:** top-league 3.76%, all-league 5.85%, "18.0% of top-league fixtures under 2%". **Corrected:** top leagues **~3.1%** (3.36% strict n=23; 3.10% by an independent time-to-kickoff bucketing, two methods converging), all fixtures **6.55%** strict.
+>
+> **4. Verdict unchanged, and slightly REINFORCED.** The strict all-fixture number 6.55% is *worse* than the kill criterion's 5.84%, so that criterion was if anything optimistic. Top leagues at ~3.1% remain above the 2% threshold. **KILL CRITERION STILL MET.** Fixture selection helps materially but does not clear the bar.
+>
+> **5. Also refuted along the way:** overrounds do NOT tighten toward kickoff. Top leagues sit flat at ~3.1% from 24h out; all leagues *widen* slightly (5.95% at 48-24h → 6.6% at 3-1h). There is no "bet later" edge.
+>
+> **Guard shipped:** `best_across_books()` in `workers/utils/odds_assembly.py` refuses to combine books whose anchors sit more than `CROSS_BOOK_MAX_GAP_S` (15 min) apart, returning None rather than a flattering number. Smoke test `ODDS-ASSEMBLY-CROSS-BOOK`, mutation-verified (disabling the gap check makes it fail).
 >
 **🔴 P0 🔄 In Progress SHARP-BOOK-PRICE-DISCREPANCY — CAUSE UNRESOLVED, KILL CRITERION IN DOUBT (🤖 OWN + 👥 PICKS).** Owner pushed back on the claim that our "Pinnacle" reads 9.15 pct, and was right to. Using The Odds API (`OA_KEY`, already in `.env`) to quote every book at the SAME instant on the SAME fixture, then comparing against our stored snapshots for the SAME five top leagues:
 >

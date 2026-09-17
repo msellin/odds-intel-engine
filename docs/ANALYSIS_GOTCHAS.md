@@ -2534,3 +2534,64 @@ SELECT count(*) FILTER (WHERE n = 3)::float / count(*) AS complete_share
 
 If that is near 1.0 for your books, group by timestamp. If it is near 0 (Coolbet),
 assemble in a window. Do not mix the two strategies in one query.
+
+---
+
+## 65. Combining books by "each book's own latest quote" smears TIME and manufactures cheapness (2026-09-17)
+
+§62 is about assembling a market **within** one book. This is the trap one level
+up: assembling a market **across** books. They are independent, and fixing the
+first does nothing for the second — this project fixed §62 and then walked
+straight into this one within the hour.
+
+The obvious combination looks like this and is wrong:
+
+```python
+best = {s: max(latest_market(obs[b], SIDES)[s] for b in BOOKS) for s in SIDES}   # WRONG
+```
+
+`latest_market` is correct per book. The defect is that **each book's latest
+lands at a different wall-clock time**. Over 30 days of stored pre-match 1x2 the
+median gap between two books' own latest quotes is **7.2 hours**. So that
+dictionary mixes a live quote with a stale one and calls the result a market.
+
+The apparent overround falls monotonically with the gap — this is the whole
+finding in one table:
+
+| the two books' quotes are... | n | best-of-3 overround |
+|---|---|---|
+| < 15 min apart (contemporaneous) | 293 | **6.55%** |
+| 15 min – 2h apart | 828 | 6.07% |
+| 2 – 12h apart | 1,610 | 5.16% |
+| 12h+ apart | 1,157 | **4.37%** |
+
+**2.18pp of pure artefact**, and it always points the flattering way, because
+taking a max over two moments in time can only ever find a better price. It is
+the best-of-books mirage (§52/§55) displaced from books into time: a market no
+book ever offered, stitched from one live price and one stale one.
+
+**What it cost.** It produced a top-league figure of **3.76%** that is really
+**~3.1%**, an "18% of fixtures under 2%" that does not survive, and — worst — it
+briefly made the strict 15-minute cross-book alignment in `own_margin_by_tier.py`
+look like an over-strict flaw to be relaxed. That alignment was the correct
+method all along. **If a stricter method gives a worse number, suspect your
+relaxation before you suspect the strictness.**
+
+### The rule
+
+Use `best_across_books()` from `workers/utils/odds_assembly.py`. It assembles
+each book independently, then **returns None** unless every contributing book's
+anchor sits inside `CROSS_BOOK_MAX_GAP_S` (15 min). Dropping a fixture is
+correct; a number built from stale legs is not. Guarded by the smoke test
+`ODDS-ASSEMBLY-CROSS-BOOK`.
+
+### Two things refuted while chasing this — do not re-derive them
+
+- **Overrounds do not tighten toward kickoff.** Top leagues sit flat at ~3.1%
+  from 24h out; all fixtures *widen* slightly (5.95% at 48–24h → 6.6% at 3–1h).
+  There is no "wait and bet later" edge. The 2.66%-vs-3.75% difference that
+  suggested one was this smear, not timing.
+- **`leagues.tier` is not a major-league proxy.** **1,012 of 1,461** leagues are
+  `tier=1`, including Andorran second divisions, Swiss regional groups, U19 and
+  reserve sides. Any "by tier" analysis is measuring almost nothing. Filter by an
+  explicit league list instead.

@@ -83,3 +83,48 @@ def latest_market(obs, sides, window_s: float = WINDOW_S, burst_s: float = BURST
     if not tail:
         return tri[-1][1]
     return {s: max(q[s] for q in tail) for s in sides}
+
+
+CROSS_BOOK_MAX_GAP_S = 15 * 60.0
+
+
+def best_across_books(per_book, sides, max_gap_s: float = CROSS_BOOK_MAX_GAP_S,
+                      window_s: float = WINDOW_S, burst_s: float = BURST_S):
+    """Best price per selection across books — or None if they are not contemporaneous.
+
+    WHY THIS IS NOT `max(latest_market(b) for b in books)` (2026-09-17). That
+    obvious one-liner is wrong, and wrong in the direction that flatters us.
+    `latest_market` is correct WITHIN a book, but each book's latest lands at a
+    different wall-clock time: measured over 30 days of stored 1x2, the median gap
+    between two books' own latest quotes is **7.2 hours**. Combining them mixes two
+    different states of the world, and the apparent overround falls monotonically
+    with the gap:
+
+        books  <15 min apart   6.55%      <- contemporaneous, the real number
+        books   15m-2h apart   6.07%
+        books    2-12h apart   5.16%
+        books     12h+ apart   4.37%      <- 2.18pp of pure artefact
+
+    That is the best-of-books mirage (ANALYSIS_GOTCHAS 52/55) displaced from books
+    into time: a market no book ever offered, assembled from a live quote and a
+    stale one. It is the same failure this module was written to fix, one level up.
+
+    So: assemble each book independently, then REFUSE the combination unless every
+    contributing book's anchor sits inside `max_gap_s`. Returning None for a
+    fixture is correct; a number built from stale legs is not.
+
+    `per_book` maps bookmaker -> iterable of (timestamp, selection, odds).
+    Returns (quote, anchor_span_seconds) or None.
+    """
+    last = {}
+    for book, obs in per_book.items():
+        tri = assemble(obs, sides, window_s=window_s, burst_s=burst_s)
+        if tri:
+            last[book] = tri[-1]
+    if len(last) < 2:
+        return None
+    anchors = [t for t, _ in last.values()]
+    span = (max(anchors) - min(anchors)).total_seconds()
+    if span > max_gap_s:
+        return None
+    return {s: max(q[s] for _, q in last.values()) for s in sides}, span
