@@ -49,7 +49,11 @@ jobs:
           cache: 'pip'
 
       - name: Install deps
-        run: pip install --quiet psycopg2-binary python-dotenv rich requests
+        # rapidfuzz: audit_vs_forebet -> _competitor_reprice imports it for fixture
+        # matching. It was installed only at the build_matched_picks_csv step BELOW
+        # the audits, so Forebet died on ModuleNotFoundError every run for 15 days
+        # while the job still reported success (continue-on-error).
+        run: pip install --quiet psycopg2-binary python-dotenv rich requests rapidfuzz
 
       # COMPETITOR-AUDIT-DB-TUNNEL (2026-07-31): SUPABASE-TO-VPS-2026-07-13
       # dropped the `public` schema on Supabase (128 tables), so the audit
@@ -103,6 +107,10 @@ jobs:
         run: python3 scripts/audit_vs_tipstrr.py
 
       - name: Audit vs Betaminic
+        # This step was the ONLY audit with no env: block, so it died on
+        # "DATABASE_URL not set" every run — the other half of the 15-day freeze.
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         continue-on-error: true
         run: python3 scripts/audit_vs_betaminic.py
 

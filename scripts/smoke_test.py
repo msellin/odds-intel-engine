@@ -44625,6 +44625,51 @@ def test_odds_assembly_cross_book():
         f"either discards every fixture or re-admits the smear")
 
 
+@test("COMPETITOR-AUDITS-CAN-ACTUALLY-RUN — every audit step gets its deps and its DB")
+def test_competitor_audits_can_run():
+    """COMPETITOR-SNAPSHOTS-STALE-WHILE-CRON-GREEN (2026-09-17).
+
+    `comparison_forebet.json` and `comparison_betaminic.json` sat frozen at
+    2026-09-02T16:38 for 15 days while the other four refreshed daily and the
+    workflow reported SUCCESS on every run. Two unrelated causes, one shared
+    disguise (`continue-on-error: true` on each step):
+
+      Forebet   ModuleNotFoundError: No module named 'rapidfuzz'. The workflow
+                installs a hand-listed set of packages rather than
+                requirements.txt, and rapidfuzz was installed only at the
+                build_matched_picks_csv step BELOW the audits. audit_vs_forebet
+                reaches it through _competitor_reprice.
+      Betaminic ValueError: DATABASE_URL not set — it was the only audit step
+                with no `env:` block at all.
+
+    The landing page publishes these competitor numbers, so a silent freeze
+    means publishing stale comparisons under a green cron. COMPETITOR-AUDIT-FRESH
+    catches the SYMPTOM (snapshot age); this catches the two CAUSES, which is
+    what stops it recurring.
+    """
+    import re as _re
+
+    wf = _engine_path(".github/workflows/competitor_audits_weekly.yml").read_text(encoding="utf-8")
+
+    install = [ln for ln in wf.splitlines() if "pip install" in ln and "psycopg2-binary" in ln]
+    assert install, "the audit job must still install its Python deps in one place"
+    assert "rapidfuzz" in install[0], (
+        "rapidfuzz must be installed BEFORE the audits run — audit_vs_forebet "
+        "reaches it via _competitor_reprice, and installing it only at the "
+        "later CSV step froze the Forebet ledger for 15 days behind a green cron"
+    )
+
+    steps = _re.findall(r"- name: Audit vs (\w+)(.*?)run: python3 (scripts/audit_vs_\w+\.py)",
+                        wf, _re.S)
+    assert len(steps) >= 6, f"expected every audit wired as its own step, found {len(steps)}"
+    for name, body, script in steps:
+        assert "DATABASE_URL" in body, (
+            f"the '{name}' audit step has no DATABASE_URL in its env — that is "
+            f"exactly how Betaminic died silently on every run for 15 days"
+        )
+        assert _engine_path(script).exists(), f"{script} is wired in CI but missing"
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).
