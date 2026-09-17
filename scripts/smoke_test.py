@@ -44478,6 +44478,74 @@ def test_ou25_dc_rho_is_inert():
         assert max(vals) - min(vals) < 1e-12, "our own tau leaked past the 2.5 line"
 
 
+@test("ODDS-ASSEMBLY-BURST — the shared assembler must take the best price in a burst")
+def test_odds_assembly_burst():
+    """COOLBET-DOUBLE-WRITE, engine side (2026-09-17). Every analysis that turns
+    per-selection rows into a market hits the same two traps, so the logic now
+    lives in one place: `workers/utils/odds_assembly.py`.
+
+    `own_path_kill_criterion.assemble()` LOOKED immune because it assembles from
+    a window — but its callers take the LAST assembled triple, which anchors on
+    the latest row, i.e. the worse half of a double-write. Measured against The
+    Odds API's live Coolbet quote, 8 fixtures matched one-to-one:
+
+        assemble()[-1], no burst rule  -> +1.86pp worse than the live quote
+        latest_market() with the burst -> +0.00pp
+
+    Behavioural test, not a source check: feed it a burst and assert it picks the
+    best price rather than the first or last.
+    """
+    import datetime as _dt
+    from workers.utils.odds_assembly import assemble, latest_market, BURST_S
+
+    sides = ("home", "draw", "away")
+    t = _dt.datetime(2026, 9, 17, 12, 0, 0, tzinfo=_dt.timezone.utc)
+    # one burst: a good write then a worse one 0.6s later
+    obs = [
+        (t, "home", 1.82), (t, "draw", 4.03), (t, "away", 4.05),
+        (t + _dt.timedelta(seconds=0.6), "home", 1.79),
+        (t + _dt.timedelta(seconds=0.6), "draw", 4.03),
+        (t + _dt.timedelta(seconds=0.6), "away", 3.92),
+    ]
+    q = latest_market(obs, sides)
+    assert q is not None, "a complete burst must produce a market"
+    assert q["home"] == 1.82 and q["away"] == 4.05, (
+        f"latest_market must keep the BEST price in the burst, got {q} — taking "
+        f"the last write is exactly the +1.86pp defect this exists to fix"
+    )
+
+    # a genuine later move, well outside the burst, must NOT be merged back in
+    late = obs + [
+        (t + _dt.timedelta(seconds=BURST_S + 120), "home", 1.50),
+        (t + _dt.timedelta(seconds=BURST_S + 120), "draw", 4.10),
+        (t + _dt.timedelta(seconds=BURST_S + 120), "away", 6.00),
+    ]
+    q2 = latest_market(late, sides)
+    assert q2["away"] == 6.00 and q2["home"] == 1.50, (
+        f"a move outside the burst is the CURRENT market and must win, got {q2}"
+    )
+    assert q2["away"] != 4.05, (
+        "the old burst's price must not leak into the current market — that is "
+        "the best-of-books mirage (ANALYSIS_GOTCHAS §52/§55)"
+    )
+
+    # a partial market is not a market
+    assert latest_market([(t, "home", 2.0), (t, "draw", 3.0)], sides) is None, (
+        "a group missing a selection must be skipped — the overround of a "
+        "partial market is not an overround"
+    )
+    assert 1.0 <= BURST_S <= 60.0, f"BURST_S is {BURST_S}s; outside 1-60s it either misses the double-write or surfaces stale prices"
+
+    # and the engine readers must actually use it
+    for f in ("scripts/own_path_kill_criterion.py", "scripts/own_soft_leg_scan.py",
+              "scripts/own_margin_by_tier.py"):
+        src = _engine_path(f).read_text(encoding="utf-8")
+        assert "odds_assembly" in src, (
+            f"{f} still has its own assembler — the burst rule must not be "
+            f"re-implemented per script, that is how three of them drifted"
+        )
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).

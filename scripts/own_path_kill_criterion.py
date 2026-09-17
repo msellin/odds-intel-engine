@@ -29,6 +29,7 @@ from collections import defaultdict
 from statistics import median
 
 from workers.api_clients.db import execute_query
+from workers.utils.odds_assembly import assemble as _shared_assemble
 from workers.model.devig import devig
 
 BOOKS = ["Coolbet", "Epicbet", "Unibet-Site"]   # EMTA-legal, SELF-SCRAPED only
@@ -58,21 +59,17 @@ def load(days_back: int, align_min: float):
     return d
 
 
-def assemble(obs, window=ASSEMBLE_WINDOW_MIN):
-    """Return [(anchor_ts, {sel: odds})] — a book's complete triples, allowing
-    the three rows to straddle `window` minutes. Coolbet needs ~100ms of
-    tolerance; the window is generous so this is not tuned to one book."""
-    obs = sorted(obs, key=lambda x: x[0])
-    out = []
-    for i, (t0, _, _) in enumerate(obs):
-        picked = {}
-        for t, sel, o in obs[i:]:
-            if (t - t0).total_seconds() / 60.0 > window:
-                break
-            picked.setdefault(sel, o)
-        if all(s in picked for s in SIDES):
-            out.append((t0, {s: picked[s] for s in SIDES}))
-    return out
+def assemble(obs, window=None):
+    """Delegates to workers.utils.odds_assembly (2026-09-17).
+
+    The local copy took the FIRST occurrence of each selection in the window
+    and callers then used the LAST assembled triple — which anchors on the
+    latest row, i.e. the worse half of a Coolbet double-write. Measured at
+    +1.86pp against the live quote; the shared helper's burst rule measures
+    +0.00pp. See ANALYSIS_GOTCHAS §62 and COOLBET-DOUBLE-WRITE.
+    """
+    return (_shared_assemble(obs, SIDES) if window is None
+            else _shared_assemble(obs, SIDES, window_s=float(window) * 60.0))
 
 
 def run(days_back: int, align_min: float):

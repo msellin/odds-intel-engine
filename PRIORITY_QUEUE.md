@@ -161,7 +161,13 @@
 >
 > **Fix for (1) regardless of the gap:** read the FIRST complete round of a scrape pass, or the best price per leg, never the latest row. **Fix for (2):** the canonical-name mapping needs to be one-to-one, or the market_type_id must be stored so collisions are visible.**
 >
-**🔴 P0 ⬜ SHARP-BOOK-PRICE-DISCREPANCY — CAUSE UNRESOLVED, KILL CRITERION IN DOUBT (🤖 OWN + 👥 PICKS).** Owner pushed back on the claim that our "Pinnacle" reads 9.15 pct, and was right to. Using The Odds API (`OA_KEY`, already in `.env`) to quote every book at the SAME instant on the SAME fixture, then comparing against our stored snapshots for the SAME five top leagues:
+**🔴 P0 🔄 In Progress SHARP-BOOK-PRICE-DISCREPANCY — CAUSE UNRESOLVED, KILL CRITERION IN DOUBT (🤖 OWN + 👥 PICKS).** Owner pushed back on the claim that our "Pinnacle" reads 9.15 pct, and was right to. Using The Odds API (`OA_KEY`, already in `.env`) to quote every book at the SAME instant on the SAME fixture, then comparing against our stored snapshots for the SAME five top leagues:
+>
+> **✅ THE KILL CRITERION SURVIVES THE CORRECTION — re-run 2026-09-17 on fixed assembly.** The engine readers had the SAME double-write defect as the web page: `own_path_kill_criterion.assemble()` looked immune because it assembles from a window, but its callers take the LAST assembled triple, which anchors on the latest row — the worse half. Measured against the live Coolbet quote, 8 fixtures one-to-one: **`assemble()[-1]` +1.86pp, the new `latest_market()` burst rule +0.00pp**. All three engine scripts now share `workers/utils/odds_assembly.py` rather than each keeping a copy.
+>
+> **Re-run result: best-of-3 = 5.84%** against the original **5.66%**, on the same 2% threshold. It moved by 0.18pp and **the verdict is unchanged: KILL CRITERION MET**. Coolbet 7.80% / Epicbet 7.99% / Unibet-Site 8.15% singly; line shopping recovers 1.95pp. **So the doubt I raised yesterday is resolved — automated OWN betting stays closed on market access, and that conclusion now rests on corrected data.**
+>
+> **STILL OPEN, and now the only live question here:** our data says Coolbet alone is **7.80%** while The Odds API's live Coolbet reads **3.05%** on top leagues, and best-of-3 EE brands reads 2.72%. That gap is NOT the double-write (fixed, worth 1.87pp) and NOT decimal precision (retracted). **Leading candidate is fixture mix** — the criterion spans every fixture our books quote, while the Odds API sample was major leagues at one moment. Test it by restricting the criterion to the SAME fixtures the Odds API covers; the fuzzy matcher built for the burst test does this. If fixture mix explains it, there is no bug left and the 5.84% is simply the honest number for the fixtures we actually bet.**
 >
 > **⚠️ AMENDED 2026-09-17, TWICE, BOTH TIMES AGAINST MYSELF — read this before the table above.**
 >
