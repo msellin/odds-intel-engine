@@ -2498,7 +2498,20 @@ was easy to read as a quirk; it is load-bearing.
 
 ### 62b. Coolbet carries computed prices that no other book does
 
-**Measured, 14 days of 1x2:** 3,798 Coolbet rows (**4.5%**) hold odds with more
+**Measured across ALL markets, 7 days: 303,512 rows — 29% of every Coolbet row
+we hold — over 141 markets, growing from 1,366/day to 71,805/day in ten days.
+No other book has a single one.** The 1x2 slice below understated it badly.
+
+The values are **not prices**: every non-1x2 market caps at exactly **2.75**
+while the clean rows for those same markets run to **150.00** (`over_under_05`),
+**89.00** (`asian_handicap`), **51.00** (`team_total_home_20`). The range is
+[1.0002, 2.75] — that 1.0002 floor looks like an upstream `odds > 1` filter
+clipping something that naturally goes lower. 1x2 is different again: it reaches
+21.92, and paired against the clean row seconds apart it sits ~3-4.6% BELOW it
+(3.2914 vs 3.4500), which reads like a de-vigged price and may be a second,
+separate bug.
+
+**Original 1x2-only measurement, 14 days:** 3,798 Coolbet rows (**4.5%**) hold odds with more
 than 2 decimal places — e.g. `5.4794` sitting milliseconds from a clean `6.0000`
 for the same fixture and selection. Every other book is **100% clean 2dp**. A
 bookmaker does not display `5.4794`, so a second writer is putting derived
