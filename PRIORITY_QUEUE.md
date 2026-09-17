@@ -161,6 +161,21 @@
 >
 > **Fix for (1) regardless of the gap:** read the FIRST complete round of a scrape pass, or the best price per leg, never the latest row. **Fix for (2):** the canonical-name mapping needs to be one-to-one, or the market_type_id must be stored so collisions are visible.**
 >
+> **✅ Done 2026-09-17 KILL-CRITERION-DEPENDS-ON-FIXTURE-MIX (🤖 OWN — corrects my own OWN-MARGIN-BY-TIER finding).**
+>
+> **First: our data is CORRECT.** Matched one-to-one against The Odds API's live Coolbet quote on the same 8 fixtures — our stored overround **4.14%** against their **4.11%**, median gap **+0.00pp**. The 7.80%-vs-3.05% discrepancy that has been open since yesterday was **entirely fixture mix**, not a bug. There is nothing left to fix in the Coolbet feed.
+>
+> **Second, and it corrects me:** I filed `OWN-MARGIN-BY-TIER` saying no cheap subset exists, on a ~1pp tier effect. That test could not see the real effect, for two reasons — it required all three books to be sampled within 15 min of EACH OTHER (a bettor faces each book's own current price, not a synchronised snapshot), and "tier 1" in our `leagues` table is far broader than the genuinely top competitions. Reading each book's own latest burst, restricted to 12 major leagues:
+>
+> | universe | fixtures | Coolbet | Epicbet | Unibet-Site | **best-of-3** | p25 | under 2% |
+> |---|---|---|---|---|---|---|---|
+> | TOP leagues | 305 | 5.29% | 5.98% | 6.60% | **3.76%** | 2.49% | **18.0%** |
+> | ALL leagues | 2,648 | 7.84% | 8.16% | 9.14% | **5.85%** | 3.76% | 10.5% |
+>
+> **Fixture selection is worth 2.09pp**, and the all-leagues figure reproduces the kill criterion's 5.84% exactly, so the two methods agree.
+>
+> **What it does and does not change.** The kill criterion tested ONE number across every fixture our books quote and nobody had tested whether the verdict depends on fixture selection. It does. But **3.76% is still above the 2% threshold**, so automated betting does not clear the bar on top leagues either — the verdict stands, on a median. What is new is that **18.0% of top-league fixtures are already under 2%**, against 10.5% across all fixtures. Whether those are executable or another best-of-books mirage is NOT established; the earlier mirage check found the sub-2% tail was books disagreeing rather than pricing cheaply, and that check has not been repeated on this burst-corrected top-league subset. **Do that before treating the 18% as an opportunity.**
+>
 **🔴 P0 🔄 In Progress SHARP-BOOK-PRICE-DISCREPANCY — CAUSE UNRESOLVED, KILL CRITERION IN DOUBT (🤖 OWN + 👥 PICKS).** Owner pushed back on the claim that our "Pinnacle" reads 9.15 pct, and was right to. Using The Odds API (`OA_KEY`, already in `.env`) to quote every book at the SAME instant on the SAME fixture, then comparing against our stored snapshots for the SAME five top leagues:
 >
 > **✅ THE KILL CRITERION SURVIVES THE CORRECTION — re-run 2026-09-17 on fixed assembly.** The engine readers had the SAME double-write defect as the web page: `own_path_kill_criterion.assemble()` looked immune because it assembles from a window, but its callers take the LAST assembled triple, which anchors on the latest row — the worse half. Measured against the live Coolbet quote, 8 fixtures one-to-one: **`assemble()[-1]` +1.86pp, the new `latest_market()` burst rule +0.00pp**. All three engine scripts now share `workers/utils/odds_assembly.py` rather than each keeping a copy.
