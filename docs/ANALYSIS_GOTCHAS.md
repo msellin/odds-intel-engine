@@ -2454,3 +2454,72 @@ in the same analysis, **93.4%** of candidate legs had an alignment gap of exactl
 alignment gate very nearly inert), and §60 (compute the power before reporting a
 difference — the +16.56% carried a one-sided p of 0.127 and a minimum detectable
 effect of ±40.9% at that n).
+
+## 62. `odds_snapshots` writes a COMPLETE triple per fetch — never take `DISTINCT ON` per leg
+
+Added 2026-09-17 after I made this exact error twice in one session, having
+flagged the same class of mistake three times in other people's work that day.
+
+**Measured:** for every bookmaker except Coolbet, **99.8–100% of fetch-rounds
+write all three 1x2 legs at a single timestamp**. One fetch, one complete
+simultaneous triple.
+
+So this is wrong:
+
+```sql
+-- WRONG: takes each leg from whichever round was latest FOR THAT LEG
+SELECT DISTINCT ON (match_id, selection) ...
+  FROM odds_snapshots ORDER BY match_id, selection, timestamp DESC
+```
+
+It assembles home from one round and away from another, and the resulting
+"overround" is a time-smear, not a market. It inflates, and it inflates MOST for
+the books that re-price fastest — which is how I concluded our Pinnacle feed
+"is not Pinnacle" and had to withdraw it. Measured properly (per timestamp), our
+Pinnacle is 5.33% against a 4.92% external reference; measured the wrong way it
+reads 9.15%.
+
+**Right:** group by `(bookmaker, match_id, timestamp)` and keep the groups that
+hold all three selections.
+
+```sql
+SELECT bookmaker, match_id, timestamp,
+       sum(1.0/odds) - 1 AS overround
+  FROM odds_snapshots
+ WHERE market = '1x2' AND is_live IS NOT TRUE
+ GROUP BY 1,2,3 HAVING count(DISTINCT selection) = 3
+```
+
+**COOLBET IS THE EXCEPTION and needs a window.** It writes one leg per
+timestamp (0.1% complete triples per timestamp, sub-second apart), so it must be
+assembled inside a small window — `own_path_kill_criterion.assemble()` does this
+and its docstring already said "Coolbet needs ~100ms of tolerance". That note
+was easy to read as a quirk; it is load-bearing.
+
+### 62b. Coolbet carries computed prices that no other book does
+
+**Measured, 14 days of 1x2:** 3,798 Coolbet rows (**4.5%**) hold odds with more
+than 2 decimal places — e.g. `5.4794` sitting milliseconds from a clean `6.0000`
+for the same fixture and selection. Every other book is **100% clean 2dp**. A
+bookmaker does not display `5.4794`, so a second writer is putting derived
+values into rows labelled Coolbet.
+
+Filtering those out does **not** close the gap between our stored Coolbet
+overround (7.20% on top-5 leagues) and an external reference (3.05%), so the
+contamination is real but is not the whole story. **Unresolved** — see
+`SHARP-BOOK-PRICE-DISCREPANCY` in PRIORITY_QUEUE. Until it is resolved, treat
+any Coolbet-derived margin or edge figure as provisional, including the 5.66%
+that `own_path_kill_criterion.py` used to close automated OWN betting.
+
+### 62c. How to check you have not done this
+
+Before trusting any overround, margin or "best price" number, run:
+
+```sql
+SELECT count(*) FILTER (WHERE n = 3)::float / count(*) AS complete_share
+  FROM (SELECT bookmaker, match_id, timestamp, count(DISTINCT selection) n
+          FROM odds_snapshots WHERE market='1x2' GROUP BY 1,2,3) s;
+```
+
+If that is near 1.0 for your books, group by timestamp. If it is near 0 (Coolbet),
+assemble in a window. Do not mix the two strategies in one query.

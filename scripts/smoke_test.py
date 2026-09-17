@@ -44478,6 +44478,46 @@ def test_ou25_dc_rho_is_inert():
         assert max(vals) - min(vals) < 1e-12, "our own tau leaked past the 2.5 line"
 
 
+@test("ODDS-TRIPLE-PER-FETCH — the gotcha that stops the next agent smearing legs across rounds")
+def test_odds_triple_per_fetch():
+    """2026-09-17, ANALYSIS_GOTCHAS §62. Owner: \"if we found duplicated or
+    errored data, we should fix the bug and also clear up the duplicates so next
+    agent doesn't run on same false queries and findings.\"
+
+    The false query in question was mine, twice in one session: reading
+    odds_snapshots with `DISTINCT ON (match_id, selection) ORDER BY timestamp
+    DESC` takes each leg from whichever round was latest FOR THAT LEG. Every
+    book except Coolbet writes a COMPLETE triple per fetch (99.8-100% of
+    rounds), so that assembles home from one round and away from another and
+    the resulting overround is a time-smear. It inflates most for the books
+    that re-price fastest, which is how I concluded our Pinnacle feed \"is not
+    Pinnacle\" and had to withdraw it.
+
+    This pins the written guidance, because the guidance IS the fix — there is
+    no code path to constrain, only the next person's query.
+    """
+    g = _engine_path("docs/ANALYSIS_GOTCHAS.md").read_text(encoding="utf-8")
+    assert "## 62." in g, "the per-fetch-triple gotcha must stay documented"
+    assert "DISTINCT ON (match_id, selection)" in g, (
+        "§62 must show the WRONG query verbatim — a rule stated only in the "
+        "abstract does not stop anyone writing it again"
+    )
+    assert "COOLBET IS THE EXCEPTION" in g, (
+        "§62 must carry the Coolbet exception: it writes one leg per timestamp "
+        "and needs window assembly, so a reader who applies the group-by rule "
+        "uniformly gets no Coolbet rows at all"
+    )
+    assert "5.4794" in g, (
+        "§62b must keep the concrete example of a computed price — 4.5% of "
+        "Coolbet 1x2 rows carry more than 2dp while every other book is 100% clean"
+    )
+    # And the self-check query that lets the next reader verify before trusting.
+    assert "complete_share" in g, (
+        "§62c must give the query that tells a reader which assembly strategy "
+        "their book needs"
+    )
+
+
 @test("DIXON-COLES-GUARDS — the fitter keeps its intercept, its ridge, and its out-of-sample discipline")
 def test_dixon_coles_guards():
     """Phase 1-2 of DIXON-COLES-OU-BASELINE. Three properties, each of which was
