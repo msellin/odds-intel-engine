@@ -91,7 +91,39 @@
 >
 > **✅ Done 2026-09-17 OWN-MARGIN-BY-TIER (🤖 OWN — owner asked whether a betting system can survive without promos).** The kill criterion closed automated betting on ONE number — best-of-3 overround 5.66 pct vs a 2 pct threshold — averaged over all of football. A hand-checked fixture (Beşiktaş v Marseille) came in at **2.61 pct**, less than half the median, which raised a fair question the criterion never tested: is some SUBSET cheap enough to be worth a strategy? **Answer: no.** n=1,550 time-aligned fixtures over 21 days. League tier moves the median by ~1pp (tier 1 **6.06 pct**, tier 3 7.06) and the CHEAPEST group is long-favourite obscure matches (5.17 pct), not big fixtures — the opposite of the hypothesis. **And the 5.7 pct of fixtures under 2 pct are a MIRAGE:** their best single book charges a normal +6.19 pct margin while their cross-book spread is 2.07pp against 1.45pp elsewhere, so the cheap combined price is books DISAGREEING (one stale), not books pricing cheaply. ANALYSIS_GOTCHAS §52/§55 for the third time in this project. `scripts/own_margin_by_tier.py`.**
 >
-> **🔴 P0 ⬜ ANCHOR-IS-NOT-PINNACLE-SINCE-2026-05 (🤖 OWN + 👥 PICKS — the sharp anchor every OWN strategy rests on is not Pinnacle).** Owner asked how we know the fair price. Measuring it found the anchor itself is broken, with a datable break:
+> > **🔴 P0 ⬜ OUR-SNAPSHOTS-DEGRADE-SHARP-BOOKS — THE KILL CRITERION MAY BE INVALID (🤖 OWN + 👥 PICKS).** Owner pushed back on the claim that our "Pinnacle" reads 9.15 pct, and was right to. Using The Odds API (`OA_KEY`, already in `.env`) to quote every book at the SAME instant on the SAME fixture, then comparing against our stored snapshots for the SAME five top leagues:
+>
+> | book | Odds API | ours | gap |
+> |---|---|---|---|
+> | Betfair | 0.93% | 8.49% | **+7.56pp** |
+> | 1xBet | 1.54% | 6.39% | **+4.86pp** |
+> | **Coolbet** | **3.05%** | **7.27%** | **+4.21pp** |
+> | Marathonbet | 4.33% | 7.29% | +2.96pp |
+> | Pinnacle | 4.92% | 6.07% | +1.15pp |
+> | William Hill | 8.43% | 9.64% | +1.21pp |
+> | BetVictor | 8.58% | 9.18% | +0.60pp |
+> | Betano | 8.58% | 7.93% | −0.65pp |
+>
+> **The pattern is monotone: the SHARPER the book, the more our collection degrades it.** Soft books land within ±1pp; sharp books are out by 4–7.5pp. The mechanism is cadence — a sharp book re-prices constantly while a soft one leaves a price up for hours, so our snapshot interval cannot assemble a simultaneous triple for a fast-moving line and the three legs come from different moments, inflating the overround. It is the time-smearing failure this project has hit three times in analysis, except here it is baked into the COLLECTION.
+>
+> **THE CONSEQUENCE. `own_path_kill_criterion.py` closed automated OWN betting on a best-of-3 overround of 5.66 pct against a 2 pct threshold — computed on exactly this degraded data.** Re-run on simultaneous quotes, controlling for book count:
+>
+> | subset | n | median | p25 | under 2% |
+> |---|---|---|---|---|
+> | Coolbet alone | 140 | 4.01% | 3.14% | 0.0% |
+> | Coolbet + Unibet | 140 | 2.96% | 2.08% | 22.9% |
+> | **Coolbet + Unibet + Betsson (3 books, same count as the criterion)** | 155 | **2.72%** | 1.84% | **29.0%** |
+> | all 6 EE-brand books | 167 | 2.57% | 1.78% | 31.1% |
+>
+> **2.72 pct against the criterion's 5.66 pct at the same book count, and 29 pct of fixtures clear the 2 pct bar.** The door we recorded as bricked up may only be closed.
+>
+> **WHAT THIS DOES NOT SAY, and the distinction matters.** A cheaper market is not a profitable one: at 2.72 pct vig with α = 0 the expectation is still about −2.6 pct. Lower vig does not create edge — it lowers the bar an edge has to clear, from impossible to merely hard. **But note that BOTH pillars of "OWN is closed" now rest on degraded inputs:** the kill criterion on time-smeared snapshots, and every α = 0 on an anchor that is not the sharp book it is named after (`ANCHOR-IS-NOT-PINNACLE-SINCE-2026-05`). Neither verdict is safe as measured.
+>
+> **CAVEATS, stated before anyone acts:** (1) top-15 leagues only — the criterion covered all fixtures and obscure leagues are wider everywhere; (2) "Unibet (SE)" and "Betsson" are Swedish brands, and the Estonian entities' prices need confirming; (3) n = 140–167, small; (4) **executability is unverified** — an Odds API price is not proof the price is takeable at Coolbet, and this project has been burned by exactly that three times (ANALYSIS_GOTCHAS §52/§55).
+>
+> **NEXT: re-run `own_path_kill_criterion.py` against a simultaneous-quote source before treating OWN as closed, and fix the collection cadence for sharp books.** Coolbet is our own placeable book and we are mis-recording it by 4.21pp.**
+>
+**🔴 P0 ⬜ ANCHOR-IS-NOT-PINNACLE-SINCE-2026-05 (🤖 OWN + 👥 PICKS — the sharp anchor every OWN strategy rests on is not Pinnacle).** Owner asked how we know the fair price. Measuring it found the anchor itself is broken, with a datable break:
 >
 > | period | fixtures/mo | median 1x2 overround |
 > |---|---|---|
