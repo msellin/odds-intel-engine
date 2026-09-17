@@ -240,6 +240,18 @@ produced a confident "dashboard_cache is 4 months stale" about a table whose
 newest row was written that morning.
 
 
+**(j) Kelly vs flat staking makes no measurable difference here — do not re-open
+it on one bot's sample.** Settled 2026-09-17 on **20,281 `published_picks` with a
+price**: flat −8.19%, Kelly −7.98%, a −0.21 point difference with Kelly
+marginally ahead, and it holds across every odds band (−0.66 to +0.62) and every
+market (−1.49 to +0.33). A single bot (v10) showed a +4.6 point flat advantage
+with a clean-looking stake-quintile gradient that survived an odds control; the
+fleet test then split 8-13 and the 20k-pick test found nothing. **A within-bot
+staking gradient at n≈600 is noise.** Note also `published_picks` is the right
+table for questions like this: 42,916 settled rows, `outcome` values are
+**`hit`/`miss`**, not `won`/`lost`.
+
+
 **And the rule that keeps catching me:** every one of (a)-(e) was found only
 after a confident wrong answer had already been written down. The measurement
 that refutes a hypothesis is almost always cheaper than the one that supports
