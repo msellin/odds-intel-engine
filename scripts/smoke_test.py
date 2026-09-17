@@ -43485,10 +43485,28 @@ def test_forward_test_versions_do_not_vanish():
         "only knows what has published; label by version instead."
     )
 
-    # The leaderboard row reads the CURRENT version only — never a pooled total.
-    assert "getPicksForwardTestSummary())?.current" in perf, (
-        "the performance leaderboard must read the current version explicitly, "
-        "so a future reader cannot mistake it for a pooled figure"
+    # UPDATED 2026-09-17 (PICKS-ROW-RECONCILES). This assertion used to demand
+    # `?.current` here, and went red when the row deliberately moved to `?.pooled`.
+    # The row and the TEST are different objects: a reader who expands the row
+    # counts every live pick ever published (the bets list reads all versions),
+    # and showing only the current version's n gave 14 settled against 22 listed
+    # — a reader who counts gets a different answer from the page. So the ROW
+    # pools. What must NOT change is that the pre-registered stopping rules stay
+    # on `current`, or an n=200 checkpoint fires early on a mixture of rules.
+    assert "getPicksForwardTestSummary())?.pooled" in perf, (
+        "the performance leaderboard row must read the POOLED figure, so the "
+        "summary reconciles with the per-pick list a reader can count"
+    )
+    eng = _web_path("src/lib/engine-data.ts").read_text(encoding="utf-8")
+    assert "current: PicksForwardTestSummary;" in eng and "pooled: PicksForwardTestSummary;" in eng, (
+        "the getter must still expose BOTH — `pooled` for the public row and "
+        "`current` for the pre-registered stopping rules. Collapsing them to one "
+        "figure is the discipline failure the pre-registration exists to prevent"
+    )
+    assert "never averaged across" in eng, (
+        "pooled ROI must be recomputed from summed units over summed n, never "
+        "averaged across versions — averaging ratios reported +10.94% where the "
+        "stake-weighted truth was +6.51% (ANALYSIS_GOTCHAS §9a(h))"
     )
 
 
@@ -46115,6 +46133,56 @@ def _():
         "the public row must use the pooled record so it reconciles with the "
         "bets list a reader can count")
     return "watchlist future-only; bot row pooled; label is a top-N"
+
+@test("PINNACLE-LIMITS — the validity-gate reader is read-only, polite, and fails safe")
+def _():
+    """PINNACLE-LIMITS-VALIDITY-GATE-2026-09-17. `limits[].amount` (type
+    `maxRiskStake`) is Pinnacle telling us, per market, how much it stands behind
+    its own price. Measured live 2026-09-17: La Liga max $20,000 and EPL $7,500
+    against Argentina Primera B $125 and International Friendlies $300 — a factor
+    of 160. A $100-limit quote is a placeholder, and "edge" against a placeholder
+    is two soft prices disagreeing. No aggregator sells this field.
+
+    Pinned here because the script reaches a blocked host and must not drift into
+    something heavier:
+
+      * READ-ONLY. No DB writes, no new tables, no placement. The 09-14 scope
+        note is explicit that this must not become a mini pick engine —
+        migration 342 `picks_forward_test` already carries p_sharp, anchor_odds,
+        anchor_overround and an arm control.
+      * POLITE. Jittered sleep between league calls and an abort after 3
+        consecutive errors. A public endpoint with no auth and no published rate
+        limit is a reason for care, not for volume.
+      * THE DNS PIN FAILS SAFE. Estonian ISPs sinkhole the host to
+        195.80.107.145. The script resolves via a public resolver and pins that
+        answer, leaving SNI and certificate validation intact — the same thing
+        `curl --resolve` does. It must NEVER pin the sinkhole itself, and must
+        degrade to the system resolver on any failure so an unblocked host (the
+        VPS) is unaffected.
+      * OWNER-DISABLEABLE. PINNACLE_FORCE_PUBLIC_DNS=0 turns the pin off, because
+        whether to run this from inside Estonia is the owner's call."""
+    import inspect, importlib.util, pathlib as _p
+    src = (_p.Path(__file__).parent.parent / "scripts" / "pinnacle_limits.py").read_text()
+
+    assert "maxRiskStake" in src, "must read the maxRiskStake limit, not just odds"
+    assert 'type") == "moneyline"' in src and 'period") == 0' in src, (
+        "profile the FULL-MATCH moneyline — the market our 1x2 picks live in")
+
+    # read-only
+    for bad in ("INSERT", "UPDATE ", "DELETE", "execute_write", "place_"):
+        assert bad not in src, f"PINNACLE-LIMITS must stay read-only — found {bad!r}"
+
+    # polite
+    assert "SLEEP_MIN" in src and "time.sleep" in src, "jittered sleep required"
+    assert "MAX_CONSECUTIVE_ERRORS" in src, "must abort on repeated errors"
+
+    # the DNS pin fails safe in both directions
+    assert '195.80.107.' in src, (
+        "must refuse to pin the EMTA sinkhole — pinning it would silently read "
+        "a block page as if it were Pinnacle")
+    assert "PINNACLE_FORCE_PUBLIC_DNS" in src, "owner must be able to disable the pin"
+    assert "return None" in src, "must degrade to the system resolver on failure"
+    return "read-only, polite, sinkhole-refusing, owner-disableable"
 
 
 

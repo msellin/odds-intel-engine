@@ -284,6 +284,20 @@ AF-PINNACLE-NOT-PINNACLE-2026-09-14 already ran the paired real-vs-AF measuremen
 proposed running it as new work.
 
 
+**(o) Pinnacle's stake limit re-encodes league tier and nothing more.** Tested
+2026-09-17 on 1,269 settled bets across 57 leagues. The spread is real and huge
+(La Liga max $20,000 vs Argentina Primera B $125) but bucketing ROI by it is
+**non-monotonic**, and the decisive control is that the top limit bucket and the
+top-5-league set are **the same 215 bets**. Within top-5, splitting by limit
+separates nothing (+21.00% vs +28.35%, both t≈1.8). Do not re-open this as a
+validity gate without a mechanism that is not league identity.
+
+⚠️ And note how it nearly went the other way: a 29-league profile produced a
+clean monotone gradient (−5.20% / +1.86% / +23.22%) that vanished at 168
+leagues. **Profiling only the featured leagues selects exactly the confounder
+you are trying to control for.**
+
+
 **And the rule that keeps catching me:** every one of (a)-(e) was found only
 after a confident wrong answer had already been written down. The measurement
 that refutes a hypothesis is almost always cheaper than the one that supports

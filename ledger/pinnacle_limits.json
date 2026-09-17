@@ -1,0 +1,1520 @@
+{
+  "snapshot_at_utc": "2026-09-17T19:24:07Z",
+  "source": "https://guest.api.arcadia.pinnacle.com/0.1/leagues/{id}/markets/straight",
+  "field": "limits[].amount where type=maxRiskStake, moneyline period=0",
+  "note": "A low maxRiskStake means Pinnacle does not stand behind the price. Edge measured against a placeholder is two soft prices disagreeing.",
+  "leagues": {
+    "210697": {
+      "league_id": 210697,
+      "name": "Argentina - Liga Pro",
+      "n_markets": 212,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 900.0,
+      "total_market_rows": 800
+    },
+    "1834": {
+      "league_id": 1834,
+      "name": "Brazil - Serie A",
+      "n_markets": 238,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 900.0,
+      "total_market_rows": 699
+    },
+    "1875": {
+      "league_id": 1875,
+      "name": "CONMEBOL - Copa Libertadores",
+      "n_markets": 30,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 900.0,
+      "total_market_rows": 97
+    },
+    "2472": {
+      "league_id": 2472,
+      "name": "CONMEBOL - Copa Sudamericana",
+      "n_markets": 30,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 900.0,
+      "total_market_rows": 99
+    },
+    "5591": {
+      "league_id": 5591,
+      "name": "Colombia - Primera A",
+      "n_markets": 34,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1000.0,
+      "total_market_rows": 261
+    },
+    "1982": {
+      "league_id": 1982,
+      "name": "England - EFL Cup",
+      "n_markets": 26,
+      "median": 600.0,
+      "min": 200.0,
+      "max": 1000.0,
+      "total_market_rows": 113
+    },
+    "1980": {
+      "league_id": 1980,
+      "name": "England - Premier League",
+      "n_markets": 319,
+      "median": 225.0,
+      "min": 125.0,
+      "max": 7500.0,
+      "total_market_rows": 1368
+    },
+    "2036": {
+      "league_id": 2036,
+      "name": "France - Ligue 1",
+      "n_markets": 288,
+      "median": 150.0,
+      "min": 100.0,
+      "max": 5000.0,
+      "total_market_rows": 1235
+    },
+    "1842": {
+      "league_id": 1842,
+      "name": "Germany - Bundesliga",
+      "n_markets": 291,
+      "median": 150.0,
+      "min": 100.0,
+      "max": 3750.0,
+      "total_market_rows": 1242
+    },
+    "2117": {
+      "league_id": 2117,
+      "name": "International - Friendlies",
+      "n_markets": 59,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 156
+    },
+    "2436": {
+      "league_id": 2436,
+      "name": "Italy - Serie A",
+      "n_markets": 318,
+      "median": 225.0,
+      "min": 150.0,
+      "max": 7500.0,
+      "total_market_rows": 1355
+    },
+    "2157": {
+      "league_id": 2157,
+      "name": "Japan - J League",
+      "n_markets": 184,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 900.0,
+      "total_market_rows": 633
+    },
+    "207551": {
+      "league_id": 207551,
+      "name": "Korea Republic - K League 1",
+      "n_markets": 6,
+      "median": 1075.0,
+      "min": 1075.0,
+      "max": 1075.0,
+      "total_market_rows": 206
+    },
+    "2242": {
+      "league_id": 2242,
+      "name": "Mexico - Liga MX",
+      "n_markets": 237,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1200.0,
+      "total_market_rows": 671
+    },
+    "2196": {
+      "league_id": 2196,
+      "name": "Spain - La Liga",
+      "n_markets": 345,
+      "median": 225.0,
+      "min": 125.0,
+      "max": 20000.0,
+      "total_market_rows": 1435
+    },
+    "2627": {
+      "league_id": 2627,
+      "name": "UEFA - Champions League",
+      "n_markets": 16,
+      "median": 500.0,
+      "min": 500.0,
+      "max": 1000.0,
+      "total_market_rows": 635
+    },
+    "214101": {
+      "league_id": 214101,
+      "name": "UEFA - Conference League",
+      "n_markets": 18,
+      "median": 150.0,
+      "min": 150.0,
+      "max": 250.0,
+      "total_market_rows": 610
+    },
+    "5264": {
+      "league_id": 5264,
+      "name": "UEFA - EURO",
+      "n_markets": 1,
+      "median": 1000.0,
+      "min": 1000.0,
+      "max": 1000.0,
+      "total_market_rows": 1
+    },
+    "2630": {
+      "league_id": 2630,
+      "name": "UEFA - Europa League",
+      "n_markets": 346,
+      "median": 1000.0,
+      "min": 200.0,
+      "max": 5000.0,
+      "total_market_rows": 1224
+    },
+    "200719": {
+      "league_id": 200719,
+      "name": "UEFA - Nations League A",
+      "n_markets": 9,
+      "median": 500.0,
+      "min": 500.0,
+      "max": 1000.0,
+      "total_market_rows": 289
+    },
+    "200721": {
+      "league_id": 200721,
+      "name": "UEFA - Nations League B",
+      "n_markets": 8,
+      "median": 500.0,
+      "min": 500.0,
+      "max": 1000.0,
+      "total_market_rows": 273
+    },
+    "200726": {
+      "league_id": 200726,
+      "name": "UEFA - Nations League C",
+      "n_markets": 6,
+      "median": 300.0,
+      "min": 300.0,
+      "max": 300.0,
+      "total_market_rows": 202
+    },
+    "200727": {
+      "league_id": 200727,
+      "name": "UEFA - Nations League D",
+      "n_markets": 2,
+      "median": 150.0,
+      "min": 150.0,
+      "max": 150.0,
+      "total_market_rows": 64
+    },
+    "2663": {
+      "league_id": 2663,
+      "name": "USA - Major League Soccer",
+      "n_markets": 427,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1450.0,
+      "total_market_rows": 1164
+    },
+    "8667": {
+      "league_id": 8667,
+      "name": "Algeria - Ligue 1",
+      "n_markets": 51,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1175.0,
+      "total_market_rows": 318
+    },
+    "226450": {
+      "league_id": 226450,
+      "name": "Argentina - Liga Pro Reserves",
+      "n_markets": 7,
+      "median": 775.0,
+      "min": 500.0,
+      "max": 775.0,
+      "total_market_rows": 116
+    },
+    "201149": {
+      "league_id": 201149,
+      "name": "Argentina - Primera B Metropolitana",
+      "n_markets": 1,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 27
+    },
+    "1739": {
+      "league_id": 1739,
+      "name": "Argentina - Primera B Nacional",
+      "n_markets": 18,
+      "median": 300.0,
+      "min": 200.0,
+      "max": 300.0,
+      "total_market_rows": 588
+    },
+    "208258": {
+      "league_id": 208258,
+      "name": "Argentina - Primera Division Women",
+      "n_markets": 33,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 115
+    },
+    "1742": {
+      "league_id": 1742,
+      "name": "Armenia - Premier League",
+      "n_markets": 16,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 153
+    },
+    "227790": {
+      "league_id": 227790,
+      "name": "Asian Games U23",
+      "n_markets": 32,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 112
+    },
+    "1769": {
+      "league_id": 1769,
+      "name": "Australia - NPL Victoria",
+      "n_markets": 2,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 100.0,
+      "total_market_rows": 30
+    },
+    "1773": {
+      "league_id": 1773,
+      "name": "Austria - 2. Liga",
+      "n_markets": 124,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 510
+    },
+    "1792": {
+      "league_id": 1792,
+      "name": "Austria - Bundesliga",
+      "n_markets": 63,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 900.0,
+      "total_market_rows": 319
+    },
+    "7167": {
+      "league_id": 7167,
+      "name": "Azerbaijan - Premier League",
+      "n_markets": 25,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 133
+    },
+    "6416": {
+      "league_id": 6416,
+      "name": "Belarus - Premier League",
+      "n_markets": 21,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 76
+    },
+    "1818": {
+      "league_id": 1818,
+      "name": "Belgium - Challenger Pro League",
+      "n_markets": 65,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 335
+    },
+    "1817": {
+      "league_id": 1817,
+      "name": "Belgium - Pro League",
+      "n_markets": 154,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 900.0,
+      "total_market_rows": 576
+    },
+    "5595": {
+      "league_id": 5595,
+      "name": "Bolivia - Primera Division",
+      "n_markets": 1,
+      "median": 300.0,
+      "min": 300.0,
+      "max": 300.0,
+      "total_market_rows": 45
+    },
+    "1826": {
+      "league_id": 1826,
+      "name": "Bosnia and Herzegovina - Premier Liga",
+      "n_markets": 18,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 154
+    },
+    "1835": {
+      "league_id": 1835,
+      "name": "Brazil - Serie B",
+      "n_markets": 209,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 600.0,
+      "total_market_rows": 641
+    },
+    "9320": {
+      "league_id": 9320,
+      "name": "Bulgaria - First League",
+      "n_markets": 181,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 526
+    },
+    "204985": {
+      "league_id": 204985,
+      "name": "CONCACAF - Caribbean Cup",
+      "n_markets": 2,
+      "median": 200.0,
+      "min": 200.0,
+      "max": 200.0,
+      "total_market_rows": 57
+    },
+    "227146": {
+      "league_id": 227146,
+      "name": "CONCACAF - Central American Cup",
+      "n_markets": 2,
+      "median": 175.0,
+      "min": 175.0,
+      "max": 175.0,
+      "total_market_rows": 57
+    },
+    "203600": {
+      "league_id": 203600,
+      "name": "COSAFA - U20 Cup",
+      "n_markets": 2,
+      "median": 75.0,
+      "min": 75.0,
+      "max": 75.0,
+      "total_market_rows": 72
+    },
+    "205098": {
+      "league_id": 205098,
+      "name": "Canada - Premier League",
+      "n_markets": 6,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 100.0,
+      "total_market_rows": 90
+    },
+    "8655": {
+      "league_id": 8655,
+      "name": "China - League One",
+      "n_markets": 34,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 304
+    },
+    "213349": {
+      "league_id": 213349,
+      "name": "China - League Two",
+      "n_markets": 4,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 111
+    },
+    "6417": {
+      "league_id": 6417,
+      "name": "China - Super League",
+      "n_markets": 30,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1200.0,
+      "total_market_rows": 98
+    },
+    "201441": {
+      "league_id": 201441,
+      "name": "Colombia - Liga Women",
+      "n_markets": 1,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 27
+    },
+    "10921": {
+      "league_id": 10921,
+      "name": "Colombia - Primera B",
+      "n_markets": 11,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 150.0,
+      "total_market_rows": 29
+    },
+    "9531": {
+      "league_id": 9531,
+      "name": "Costa Rica - Primera Division",
+      "n_markets": 92,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 307
+    },
+    "209654": {
+      "league_id": 209654,
+      "name": "Costa Rica - Primera Division Women",
+      "n_markets": 1,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 28
+    },
+    "1880": {
+      "league_id": 1880,
+      "name": "Croatia - HNL",
+      "n_markets": 90,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 307
+    },
+    "1881": {
+      "league_id": 1881,
+      "name": "Croatia - Prva NL",
+      "n_markets": 1,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 28
+    },
+    "1887": {
+      "league_id": 1887,
+      "name": "Cyprus - 1st Division",
+      "n_markets": 206,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 517
+    },
+    "201192": {
+      "league_id": 201192,
+      "name": "Czech Republic - 3. Liga",
+      "n_markets": 1,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 29
+    },
+    "9441": {
+      "league_id": 9441,
+      "name": "Czech Republic - FNL",
+      "n_markets": 31,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 254
+    },
+    "1891": {
+      "league_id": 1891,
+      "name": "Czech Republic - First Liga",
+      "n_markets": 152,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 375.0,
+      "total_market_rows": 502
+    },
+    "191393": {
+      "league_id": 191393,
+      "name": "Denmark - 2nd Division",
+      "n_markets": 37,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 203
+    },
+    "214819": {
+      "league_id": 214819,
+      "name": "Denmark - 3rd Division",
+      "n_markets": 1,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 29
+    },
+    "1904": {
+      "league_id": 1904,
+      "name": "Denmark - Division 1",
+      "n_markets": 124,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 500.0,
+      "total_market_rows": 406
+    },
+    "1913": {
+      "league_id": 1913,
+      "name": "Denmark - Superliga",
+      "n_markets": 145,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 900.0,
+      "total_market_rows": 426
+    },
+    "5598": {
+      "league_id": 5598,
+      "name": "Ecuador - Serie A",
+      "n_markets": 36,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 311
+    },
+    "197248": {
+      "league_id": 197248,
+      "name": "Ecuador - Serie B",
+      "n_markets": 45,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 775.0,
+      "total_market_rows": 145
+    },
+    "210213": {
+      "league_id": 210213,
+      "name": "Egypt - 2nd Division A",
+      "n_markets": 19,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 175
+    },
+    "196742": {
+      "league_id": 196742,
+      "name": "El Salvador - Primera Division",
+      "n_markets": 11,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 100.0,
+      "total_market_rows": 38
+    },
+    "1977": {
+      "league_id": 1977,
+      "name": "England - Championship",
+      "n_markets": 311,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 2000.0,
+      "total_market_rows": 902
+    },
+    "1957": {
+      "league_id": 1957,
+      "name": "England - League 1",
+      "n_markets": 235,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1400.0,
+      "total_market_rows": 826
+    },
+    "1958": {
+      "league_id": 1958,
+      "name": "England - League 2",
+      "n_markets": 212,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 375.0,
+      "total_market_rows": 724
+    },
+    "1978": {
+      "league_id": 1978,
+      "name": "England - National League",
+      "n_markets": 275,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 844
+    },
+    "227473": {
+      "league_id": 227473,
+      "name": "England - National League Cup Women",
+      "n_markets": 2,
+      "median": 400.0,
+      "min": 400.0,
+      "max": 400.0,
+      "total_market_rows": 38
+    },
+    "197646": {
+      "league_id": 197646,
+      "name": "England - Premier League 2 U21",
+      "n_markets": 55,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 283
+    },
+    "198316": {
+      "league_id": 198316,
+      "name": "England - Professional Development League U21",
+      "n_markets": 12,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 68
+    },
+    "8713": {
+      "league_id": 8713,
+      "name": "England - Women Super League",
+      "n_markets": 14,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 226
+    },
+    "206343": {
+      "league_id": 206343,
+      "name": "England - Women Super League 2",
+      "n_markets": 1,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 29
+    },
+    "1989": {
+      "league_id": 1989,
+      "name": "Estonia - Meistriliiga",
+      "n_markets": 8,
+      "median": 125.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 123
+    },
+    "201777": {
+      "league_id": 201777,
+      "name": "Faroe Islands - Premier League",
+      "n_markets": 13,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 68
+    },
+    "228087": {
+      "league_id": 228087,
+      "name": "Finland - Kakkonen Group B",
+      "n_markets": 1,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 28
+    },
+    "2024": {
+      "league_id": 2024,
+      "name": "Finland - Veikkausliiga",
+      "n_markets": 121,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1200.0,
+      "total_market_rows": 460
+    },
+    "234884": {
+      "league_id": 234884,
+      "name": "Finland - Ykkonen",
+      "n_markets": 10,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 52
+    },
+    "2025": {
+      "league_id": 2025,
+      "name": "Finland - Ykkosliiga",
+      "n_markets": 121,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 390
+    },
+    "2033": {
+      "league_id": 2033,
+      "name": "France - Feminine Division 1",
+      "n_markets": 18,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 98
+    },
+    "2037": {
+      "league_id": 2037,
+      "name": "France - Ligue 2",
+      "n_markets": 238,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 600.0,
+      "total_market_rows": 739
+    },
+    "2027": {
+      "league_id": 2027,
+      "name": "France - Ligue 3",
+      "n_markets": 124,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 455
+    },
+    "1844": {
+      "league_id": 1844,
+      "name": "Germany - 3. Liga",
+      "n_markets": 216,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 629
+    },
+    "1843": {
+      "league_id": 1843,
+      "name": "Germany - Bundesliga 2",
+      "n_markets": 242,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1200.0,
+      "total_market_rows": 712
+    },
+    "1845": {
+      "league_id": 1845,
+      "name": "Germany - Bundesliga Women",
+      "n_markets": 16,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 126
+    },
+    "6545": {
+      "league_id": 6545,
+      "name": "Germany - Regionalliga North East",
+      "n_markets": 11,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 39
+    },
+    "6543": {
+      "league_id": 6543,
+      "name": "Germany - Regionalliga South West",
+      "n_markets": 22,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 78
+    },
+    "2050": {
+      "league_id": 2050,
+      "name": "Germany - Regionalliga West",
+      "n_markets": 11,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 39
+    },
+    "2081": {
+      "league_id": 2081,
+      "name": "Greece - Super League",
+      "n_markets": 92,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 450.0,
+      "total_market_rows": 371
+    },
+    "2088": {
+      "league_id": 2088,
+      "name": "Guatemala - Liga Nacional",
+      "n_markets": 4,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 100.0,
+      "total_market_rows": 59
+    },
+    "2095": {
+      "league_id": 2095,
+      "name": "Hungary - NB 1",
+      "n_markets": 151,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 433
+    },
+    "2100": {
+      "league_id": 2100,
+      "name": "Iceland - 1. Deild",
+      "n_markets": 2,
+      "median": 125.0,
+      "min": 100.0,
+      "max": 150.0,
+      "total_market_rows": 31
+    },
+    "2102": {
+      "league_id": 2102,
+      "name": "Iceland - Premier League",
+      "n_markets": 65,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 305
+    },
+    "197088": {
+      "league_id": 197088,
+      "name": "Iceland - Urvalsdeild Women",
+      "n_markets": 32,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 750.0,
+      "total_market_rows": 144
+    },
+    "199211": {
+      "league_id": 199211,
+      "name": "Indonesia - Super League",
+      "n_markets": 91,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 341
+    },
+    "2123": {
+      "league_id": 2123,
+      "name": "Ireland - Division 1",
+      "n_markets": 151,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 489
+    },
+    "218223": {
+      "league_id": 218223,
+      "name": "Ireland - Leinster Senior League",
+      "n_markets": 2,
+      "median": 400.0,
+      "min": 400.0,
+      "max": 400.0,
+      "total_market_rows": 40
+    },
+    "2120": {
+      "league_id": 2120,
+      "name": "Ireland - Premier",
+      "n_markets": 120,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 600.0,
+      "total_market_rows": 423
+    },
+    "10604": {
+      "league_id": 10604,
+      "name": "Israel - Liga Alef",
+      "n_markets": 3,
+      "median": 375.0,
+      "min": 200.0,
+      "max": 375.0,
+      "total_market_rows": 30
+    },
+    "2136": {
+      "league_id": 2136,
+      "name": "Israel - Premier League",
+      "n_markets": 151,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 482
+    },
+    "2438": {
+      "league_id": 2438,
+      "name": "Italy - Serie B",
+      "n_markets": 296,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1200.0,
+      "total_market_rows": 811
+    },
+    "217401": {
+      "league_id": 217401,
+      "name": "Italy - Serie C Group A",
+      "n_markets": 48,
+      "median": 150.0,
+      "min": 100.0,
+      "max": 1175.0,
+      "total_market_rows": 266
+    },
+    "217400": {
+      "league_id": 217400,
+      "name": "Italy - Serie C Group B",
+      "n_markets": 17,
+      "median": 250.0,
+      "min": 100.0,
+      "max": 250.0,
+      "total_market_rows": 273
+    },
+    "217399": {
+      "league_id": 217399,
+      "name": "Italy - Serie C Group C",
+      "n_markets": 20,
+      "median": 175.0,
+      "min": 100.0,
+      "max": 250.0,
+      "total_market_rows": 305
+    },
+    "2159": {
+      "league_id": 2159,
+      "name": "Japan - J2 League",
+      "n_markets": 124,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 553
+    },
+    "10078": {
+      "league_id": 10078,
+      "name": "Japan - J3 League",
+      "n_markets": 22,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 78
+    },
+    "9902": {
+      "league_id": 9902,
+      "name": "Jordan - Pro League",
+      "n_markets": 2,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 57
+    },
+    "6418": {
+      "league_id": 6418,
+      "name": "Kazakhstan - Premier League",
+      "n_markets": 5,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 142
+    },
+    "207552": {
+      "league_id": 207552,
+      "name": "Korea Republic - K League 2",
+      "n_markets": 66,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 375.0,
+      "total_market_rows": 360
+    },
+    "2238": {
+      "league_id": 2238,
+      "name": "Malta - Premier League",
+      "n_markets": 1,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 28
+    },
+    "209758": {
+      "league_id": 209758,
+      "name": "Mexico - Liga de Expansi\u00f3n MX",
+      "n_markets": 6,
+      "median": 300.0,
+      "min": 200.0,
+      "max": 600.0,
+      "total_market_rows": 284
+    },
+    "206165": {
+      "league_id": 206165,
+      "name": "Montenegro - Prva Liga",
+      "n_markets": 2,
+      "median": 150.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 55
+    },
+    "1929": {
+      "league_id": 1929,
+      "name": "Netherlands - Eerste Divisie",
+      "n_markets": 244,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 822
+    },
+    "1928": {
+      "league_id": 1928,
+      "name": "Netherlands - Eredivisie",
+      "n_markets": 269,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1200.0,
+      "total_market_rows": 739
+    },
+    "2259": {
+      "league_id": 2259,
+      "name": "Northern Ireland - Premiership",
+      "n_markets": 179,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 475
+    },
+    "2331": {
+      "league_id": 2331,
+      "name": "Norway - 1st Division",
+      "n_markets": 66,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 375.0,
+      "total_market_rows": 372
+    },
+    "2333": {
+      "league_id": 2333,
+      "name": "Norway - Eliteserien",
+      "n_markets": 211,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1200.0,
+      "total_market_rows": 612
+    },
+    "201238": {
+      "league_id": 201238,
+      "name": "Norway - U19 League",
+      "n_markets": 15,
+      "median": 500.0,
+      "min": 200.0,
+      "max": 500.0,
+      "total_market_rows": 230
+    },
+    "10573": {
+      "league_id": 10573,
+      "name": "Panama - Primera Division",
+      "n_markets": 1,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 100.0,
+      "total_market_rows": 28
+    },
+    "2359": {
+      "league_id": 2359,
+      "name": "Paraguay - Division Profesional",
+      "n_markets": 93,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 355
+    },
+    "2366": {
+      "league_id": 2366,
+      "name": "Peru - Liga 1",
+      "n_markets": 25,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 150.0,
+      "total_market_rows": 186
+    },
+    "6633": {
+      "league_id": 6633,
+      "name": "Poland - 1st Liga",
+      "n_markets": 67,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 420
+    },
+    "2368": {
+      "league_id": 2368,
+      "name": "Poland - 2nd Liga",
+      "n_markets": 33,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 284
+    },
+    "2374": {
+      "league_id": 2374,
+      "name": "Poland - Ekstraklasa",
+      "n_markets": 270,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 600.0,
+      "total_market_rows": 719
+    },
+    "2384": {
+      "league_id": 2384,
+      "name": "Portugal - Cup",
+      "n_markets": 1,
+      "median": 50.0,
+      "min": 50.0,
+      "max": 50.0,
+      "total_market_rows": 28
+    },
+    "196968": {
+      "league_id": 196968,
+      "name": "Portugal - Nacional Championship Women",
+      "n_markets": 1,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 43
+    },
+    "2386": {
+      "league_id": 2386,
+      "name": "Portugal - Primeira Liga",
+      "n_markets": 264,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 900.0,
+      "total_market_rows": 723
+    },
+    "2395": {
+      "league_id": 2395,
+      "name": "Romania - Liga 1",
+      "n_markets": 123,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 500.0,
+      "total_market_rows": 489
+    },
+    "35174": {
+      "league_id": 35174,
+      "name": "Russia - First League",
+      "n_markets": 147,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 481
+    },
+    "2406": {
+      "league_id": 2406,
+      "name": "Russia - Premier League",
+      "n_markets": 40,
+      "median": 600.0,
+      "min": 300.0,
+      "max": 2500.0,
+      "total_market_rows": 77
+    },
+    "10600": {
+      "league_id": 10600,
+      "name": "Saudi Arabia - Division 1",
+      "n_markets": 24,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 110
+    },
+    "2417": {
+      "league_id": 2417,
+      "name": "Scotland - Championship",
+      "n_markets": 118,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 365
+    },
+    "2418": {
+      "league_id": 2418,
+      "name": "Scotland - League One",
+      "n_markets": 10,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 100.0,
+      "total_market_rows": 148
+    },
+    "2419": {
+      "league_id": 2419,
+      "name": "Scotland - League Two",
+      "n_markets": 10,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 100.0,
+      "total_market_rows": 150
+    },
+    "2421": {
+      "league_id": 2421,
+      "name": "Scotland - Premiership",
+      "n_markets": 123,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 675.0,
+      "total_market_rows": 386
+    },
+    "2434": {
+      "league_id": 2434,
+      "name": "Serbia - Super Liga",
+      "n_markets": 22,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 775.0,
+      "total_market_rows": 209
+    },
+    "210554": {
+      "league_id": 210554,
+      "name": "Singapore - Premier League",
+      "n_markets": 11,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 39
+    },
+    "201139": {
+      "league_id": 201139,
+      "name": "Slovakia - 2. Liga",
+      "n_markets": 24,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 248
+    },
+    "2453": {
+      "league_id": 2453,
+      "name": "Slovakia - Super Liga",
+      "n_markets": 121,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 389
+    },
+    "2457": {
+      "league_id": 2457,
+      "name": "Slovenia - Prva Liga",
+      "n_markets": 91,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 306
+    },
+    "212479": {
+      "league_id": 212479,
+      "name": "South Africa - 1st Division",
+      "n_markets": 1,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 27
+    },
+    "196763": {
+      "league_id": 196763,
+      "name": "South Africa - PSL",
+      "n_markets": 22,
+      "median": 150.0,
+      "min": 100.0,
+      "max": 150.0,
+      "total_market_rows": 224
+    },
+    "2468": {
+      "league_id": 2468,
+      "name": "Spain - Primera Division Women",
+      "n_markets": 8,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 100.0,
+      "total_market_rows": 145
+    },
+    "220076": {
+      "league_id": 220076,
+      "name": "Spain - Primera Federacion",
+      "n_markets": 36,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 554
+    },
+    "2432": {
+      "league_id": 2432,
+      "name": "Spain - Segunda Division",
+      "n_markets": 295,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1200.0,
+      "total_market_rows": 840
+    },
+    "215547": {
+      "league_id": 215547,
+      "name": "Spain - Segunda Federacion",
+      "n_markets": 67,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 100.0,
+      "total_market_rows": 1118
+    },
+    "199926": {
+      "league_id": 199926,
+      "name": "Spain - Tercera Division",
+      "n_markets": 2,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 57
+    },
+    "1728": {
+      "league_id": 1728,
+      "name": "Sweden - Allsvenskan",
+      "n_markets": 182,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1075.0,
+      "total_market_rows": 545
+    },
+    "1903": {
+      "league_id": 1903,
+      "name": "Sweden - Damallsvenskan",
+      "n_markets": 8,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 200.0,
+      "total_market_rows": 143
+    },
+    "2510": {
+      "league_id": 2510,
+      "name": "Sweden - Division 1 Norra",
+      "n_markets": 10,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 100.0,
+      "total_market_rows": 10
+    },
+    "2476": {
+      "league_id": 2476,
+      "name": "Sweden - Superettan",
+      "n_markets": 153,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 500.0,
+      "total_market_rows": 522
+    },
+    "2518": {
+      "league_id": 2518,
+      "name": "Switzerland - Challenge League",
+      "n_markets": 122,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 393
+    },
+    "2517": {
+      "league_id": 2517,
+      "name": "Switzerland - Super League",
+      "n_markets": 181,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 675.0,
+      "total_market_rows": 487
+    },
+    "6419": {
+      "league_id": 6419,
+      "name": "Thailand - League 1",
+      "n_markets": 23,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 237
+    },
+    "2578": {
+      "league_id": 2578,
+      "name": "Turkey - 1st League",
+      "n_markets": 124,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 400.0,
+      "total_market_rows": 556
+    },
+    "2592": {
+      "league_id": 2592,
+      "name": "Turkey - Super League",
+      "n_markets": 236,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 1200.0,
+      "total_market_rows": 687
+    },
+    "2625": {
+      "league_id": 2625,
+      "name": "UAE - Division 1",
+      "n_markets": 7,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 202
+    },
+    "201290": {
+      "league_id": 201290,
+      "name": "USA - National Womens Soccer League",
+      "n_markets": 16,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 100.0,
+      "total_market_rows": 237
+    },
+    "201065": {
+      "league_id": 201065,
+      "name": "USA - USL Championship",
+      "n_markets": 245,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 500.0,
+      "total_market_rows": 790
+    },
+    "2650": {
+      "league_id": 2650,
+      "name": "Ukraine - Premier League",
+      "n_markets": 28,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 185
+    },
+    "5594": {
+      "league_id": 5594,
+      "name": "Uruguay - Cup",
+      "n_markets": 3,
+      "median": 750.0,
+      "min": 300.0,
+      "max": 750.0,
+      "total_market_rows": 72
+    },
+    "5593": {
+      "league_id": 5593,
+      "name": "Uruguay - Primera Division",
+      "n_markets": 63,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 375.0,
+      "total_market_rows": 321
+    },
+    "205369": {
+      "league_id": 205369,
+      "name": "Uruguay - Segunda Division",
+      "n_markets": 6,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 100.0,
+      "total_market_rows": 113
+    },
+    "9253": {
+      "league_id": 9253,
+      "name": "Vietnam - Cup",
+      "n_markets": 1,
+      "median": 125.0,
+      "min": 125.0,
+      "max": 125.0,
+      "total_market_rows": 29
+    },
+    "2678": {
+      "league_id": 2678,
+      "name": "Wales - Premier League",
+      "n_markets": 68,
+      "median": 100.0,
+      "min": 100.0,
+      "max": 300.0,
+      "total_market_rows": 374
+    }
+  }
+}
