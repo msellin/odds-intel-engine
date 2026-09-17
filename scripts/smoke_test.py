@@ -44478,6 +44478,53 @@ def test_ou25_dc_rho_is_inert():
         assert max(vals) - min(vals) < 1e-12, "our own tau leaked past the 2.5 line"
 
 
+@test("SHADOW-BOTS-BURST-BEST-PRICE — the decision surface must not read the worse of a double-write")
+def test_shadow_bots_burst_best_price():
+    """COOLBET-DOUBLE-WRITE (2026-09-17). A Coolbet scrape pass can write the
+    same selection twice within seconds, and the SECOND write is worse 98.7% of
+    the time (median overround 4.86% on the first, 7.00% on the second, over
+    1,023 differing round-pairs).
+
+    Measured against The Odds API's live Coolbet quote on 8 fixtures matched
+    one-to-one:
+
+        read `latest`  -> +1.87pp worse than the live quote
+        read `first`   -> +0.00pp  (reproduces it exactly)
+        read `best`    -> +0.00pp
+
+    So `/admin/shadow-bots` was showing a price worse than Coolbet actually
+    offered, on the page the operator uses to decide what to stake by hand —
+    which can only cause bets to be skipped, never wrongly taken.
+
+    The window must stay TIGHT. Widening it to catch more history would start
+    surfacing prices the market has moved away from, which is the best-of-books
+    mirage (ANALYSIS_GOTCHAS §52/§55) in a new place.
+    """
+    q = _web_path("src/lib/shadow-bots/queries.ts").read_text(encoding="utf-8")
+
+    assert "BURST_MS" in q, (
+        "the quote reader must take the best price within a burst window — "
+        "reading the latest row surfaces the worse half of a double-write"
+    )
+    # A tight window is the whole point; anything large re-introduces the mirage.
+    import re
+    m = re.search(r"const BURST_MS = ([\d_]+)", q)
+    assert m, "BURST_MS must be a named constant so the window is reviewable"
+    ms = int(m.group(1).replace("_", ""))
+    assert 1_000 <= ms <= 60_000, (
+        f"BURST_MS is {ms}ms. Under 1s misses the double-write (observed 0.5-10s "
+        f"apart); over 60s starts showing prices the market has left behind."
+    )
+    # And it must actually pick the MAX, not merely dedupe.
+    assert "o > cur.odds" in q, (
+        "the reader must keep the HIGHEST price in the burst, not the first or last"
+    )
+    assert "newest" in q and "n - t > BURST_MS" in q, (
+        "the window must be anchored to the NEWEST row per key, not to wall-clock "
+        "now — a fixture whose last scrape was hours ago must not widen its window"
+    )
+
+
 @test("ODDS-TRIPLE-PER-FETCH — the gotcha that stops the next agent smearing legs across rounds")
 def test_odds_triple_per_fetch():
     """2026-09-17, ANALYSIS_GOTCHAS §62. Owner: \"if we found duplicated or

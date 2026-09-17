@@ -122,7 +122,19 @@
 >
 > **✅ Done 2026-09-17 REAL-BETS-ONE-ROW-PER-SHADOW-PICK (🤖 OWN).** `real_bets` had no uniqueness beyond its PK. Audited: 16 duplicate groups on (match, market, selection, stake) out of 992 rows — 3 under 60s apart, 8 at 1–10 min, 5 over 10 min. **Nothing deleted, deliberately:** it is the operator's money ledger, 13 of 16 pairs are more than a minute apart, and a repeat bet on the same selection is a legitimate thing to do — deleting a financial record on a heuristic is data loss, not a fix. **What IS enforced:** a partial unique index on `shadow_bet_id`, the one case where a duplicate is unambiguously a bug (the shadow-bots Place action logging the same pick twice double-counts exposure on the page used to decide real stakes). Measured first: **zero duplicate `shadow_bet_id` groups today**, so it creates cleanly and is a guard against recurrence. Migration 361, applied live. The 16 legacy pairs are flagged for owner review, not touched.**
 >
-> **🟠 P1 ⬜ COOLBET-DOUBLE-WRITE-AND-BTTS-COLLISION (🤖 OWN — two real bugs found while chasing a gap that is still open).**
+> **🟠 P1 🔄 In Progress COOLBET-DOUBLE-WRITE-AND-BTTS-COLLISION (🤖 OWN — two real bugs found while chasing a gap that is still open).**
+>
+> **✅ (1) RESOLVED ON THE DECISION SURFACE 2026-09-17 — and the authoritative read is now MEASURED, not assumed.** I had guessed "read the first round" from a single fixture. Settled it properly by matching our stored rounds against The Odds API's LIVE Coolbet quote, 8 fixtures matched one-to-one with fuzzy team names (the earlier strict matcher overlapped on one):
+>
+> | read rule | n | median gap vs the live quote |
+> |---|---|---|
+> | `latest` | 8 | **+1.87pp worse** |
+> | `first` | 8 | **+0.00pp** — reproduces it exactly |
+> | `best` | 8 | **+0.00pp** |
+>
+> **Our database already holds Coolbet's correct prices; we were selecting the wrong rows.** `/admin/shadow-bots` took the latest row per key, so "Best placeable" understated the real price by ~1.9pp of overround on the page used to decide hand-placed bets. Direction matters: it can only cause a bet to be SKIPPED, never wrongly taken. Fixed to take the highest price within a **15s burst anchored to the newest row per key** — tight on purpose, because a wider window would start surfacing prices the market has left behind, which is the mirage of §52/§55 in a new place. Smoke `SHADOW-BOTS-BURST-BEST-PRICE` pins the constant, its 1s–60s bounds, that it keeps the MAX rather than deduping, and the newest-row anchoring. **Also closes 1.87pp of the 7.47%-vs-3.05% gap**; the remainder is most likely fixture mix.
+>
+> **⬜ STILL OPEN: (2) the BTTS collision**, and the same fix has NOT been applied to the engine-side readers (the placement gate's live-edge check, `own_soft_leg_scan`, the kill criterion). Those still read latest.**
 >
 > **(1) A second write lands seconds later with worse prices.** Of 3,767 Coolbet 1x2 round-pairs written within 10s of each other, **1,023 (27.2%) carry different prices, and the second round is worse 98.7% of the time** — median overround 4.86% on the first write against **7.00%** on the second. Everything downstream reads "latest", so we systematically read the worse of the two. Worked example (Real Betis v Getafe): first round 1.66/3.85/6.00 = **2.88%**, which matches The Odds API's live Coolbet quote EXACTLY; second round 1.62/3.85/5.48 = 5.95%.
 >
