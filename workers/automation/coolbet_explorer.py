@@ -28,6 +28,7 @@ log; extend MARKET_PARSERS below if a missing market matters.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import logging
 import os
@@ -443,13 +444,53 @@ def _looks_like_non_goals_total(name: str) -> bool:
 def _looks_like_sub_period(name: str) -> bool:
     """True if the market name suggests a sub-period (half/period/single-team)
     market rather than a full-match one. Used to short-circuit the name-fallback
-    on is_ou/is_btts so sub-period markets don't clobber their full-match slots."""
+    on is_ou/is_btts so sub-period markets don't clobber their full-match slots.
+
+    ⚠️ COOLBET-SUBPERIOD-LEADING-SPACE (2026-09-17). Every hint in
+    `_HALF_MATCH_HINTS` carries a LEADING SPACE, which silently failed for every
+    market whose name BEGINS with the qualifier — and that is exactly how Coolbet
+    names them: "1st Half Asian Handicap", "1st Half Result", "2nd Half Goals".
+    `" 1st half" in "1st half asian handicap"` is False, so those markets fell
+    through to the full-match slot and were stored as if they were full-match
+    prices.
+
+    Measured on one fixture: `1st Half Asian Handicap` (mtid 1108) wrote
+    home -2.0 at 12.00 into the same `asian_handicap/home/-2.0` key that the real
+    full-match market had at 4.80 — a first-half price wearing a full-match
+    label. 64 of 237 canonical keys in that single pass carried conflicting
+    prices from this and the Early Win variant below.
+
+    Matching is now anchored at a word boundary, so the qualifier is caught
+    whether it leads the name or sits inside it, without the substring
+    false-positives the leading space was there to prevent.
+    """
     if not name:
         return False
     for hint in _HALF_MATCH_HINTS:
-        if hint in name:
+        h = hint.strip()
+        if not h:
+            continue
+        if re.search(r"(?<![a-z0-9])" + re.escape(h) + r"(?![a-z0-9])", name):
             return True
     return False
+
+
+# COOLBET-EARLY-WIN-IS-A-DIFFERENT-BET (2026-09-17). "Early Win - Match Result
+# (1X2)" (mtid 13273) pays out early if a team goes N goals ahead, so it is a
+# DIFFERENT product from the match result and carries different prices — 1.769
+# against the real market's 1.80 on the fixture this was found on. Its name
+# contains both "match result" and "1x2", so the name-fallback claimed it for the
+# full-match 1x2 slot. It is not a sub-period, so `_looks_like_sub_period` could
+# never have caught it.
+_VARIANT_MARKET_HINTS = ("early win", "early payout", "insurance")
+
+
+def _looks_like_variant_market(name: str) -> bool:
+    """True for early-payout / insurance variants that share a market's name but
+    are a different bet. Name-fallback only; a trusted mtid still wins."""
+    if not name:
+        return False
+    return any(h in name for h in _VARIANT_MARKET_HINTS)
 
 
 def _looks_like_combined_market(name: str) -> bool:
@@ -469,7 +510,14 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
     odds_map values are dicts ({value, odds_id, ...}) from fetch_odds_for_markets."""
     rows: list[tuple[str, str, float, float | None]] = []
     mtid = mkt.get("market_type_id")
-    name = (mkt.get("name") or "").lower()
+    # COOLBET-HTML-ENTITIES-IN-MARKET-NAMES (2026-09-17). Coolbet returns market
+    # names HTML-escaped: "Both Teams To Score &amp; Over 2.5 Goals". Every hint
+    # list here matches plain text, so `" & " in name` was False and the
+    # combined-market filter let that market through into the plain BTTS slot —
+    # 11.8% of stored Coolbet BTTS (fixture, selection, second) slots hold more
+    # than one price because of it. Unescape ONCE, here, so every downstream
+    # hint list is matching what a human would read.
+    name = html.unescape(mkt.get("name") or "").lower()
     line_raw = mkt.get("line")
     try:
         line_val = float(line_raw) if line_raw not in (None, "") else None
@@ -512,9 +560,11 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
     # ships "Match Result 1st Half" in some leagues.
     sub_period = _looks_like_sub_period(name)
     combined   = _looks_like_combined_market(name)
+    variant = _looks_like_variant_market(name)
     is_1x2  = (mtid in _MTID_1X2
-               or (not sub_period and ("match result" in name or "1x2" in name
-                                       or "match winner" in name)))
+               or (not sub_period and not variant
+                   and ("match result" in name or "1x2" in name
+                        or "match winner" in name)))
     non_goals_total = _looks_like_non_goals_total(name)
 
     # NEW-MARKETS-LINESHOP-2026-09-05: corners and cards are over/under-shaped
@@ -554,8 +604,10 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
     is_btts = (mtid in _MTID_BTTS
                or (not sub_period and not combined
                    and ("both teams to score" in name or "btts" in name)))
-    is_dc   = mtid in _MTID_DC   or (not sub_period and "double chance" in name)
-    is_ah   = mtid in _MTID_AH   or (not sub_period and "asian handicap" in name)
+    is_dc   = mtid in _MTID_DC   or (not sub_period and not variant
+                                     and "double chance" in name)
+    is_ah   = mtid in _MTID_AH   or (not sub_period and not variant
+                                     and "asian handicap" in name)
 
     # CB-UB-1H-TT-COLUMNS-2026-09-11 — see _MTID_1X2_1H. Checked before is_1x2
     # so a 1st-half result can never fall into the full-match slot.

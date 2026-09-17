@@ -122,7 +122,24 @@
 >
 > **✅ Done 2026-09-17 REAL-BETS-ONE-ROW-PER-SHADOW-PICK (🤖 OWN).** `real_bets` had no uniqueness beyond its PK. Audited: 16 duplicate groups on (match, market, selection, stake) out of 992 rows — 3 under 60s apart, 8 at 1–10 min, 5 over 10 min. **Nothing deleted, deliberately:** it is the operator's money ledger, 13 of 16 pairs are more than a minute apart, and a repeat bet on the same selection is a legitimate thing to do — deleting a financial record on a heuristic is data loss, not a fix. **What IS enforced:** a partial unique index on `shadow_bet_id`, the one case where a duplicate is unambiguously a bug (the shadow-bots Place action logging the same pick twice double-counts exposure on the page used to decide real stakes). Measured first: **zero duplicate `shadow_bet_id` groups today**, so it creates cleanly and is a guard against recurrence. Migration 361, applied live. The 16 legacy pairs are flagged for owner review, not touched.**
 >
-> **🟠 P1 🔄 In Progress COOLBET-DOUBLE-WRITE-AND-BTTS-COLLISION (🤖 OWN — two real bugs found while chasing a gap that is still open).**
+> **🟠 P1 ✅ Done 2026-09-17 COOLBET-DOUBLE-WRITE-AND-BTTS-COLLISION (🤖 OWN — two real bugs found while chasing a gap that is still open).**
+>
+> **✅ (2) ROOT CAUSE FOUND AND FIXED AT THE WRITE — not just the read.** The double-write is not two passes; **ONE explorer pass emitted 64 of 237 canonical keys with CONFLICTING prices**, because three different Coolbet markets were being written into full-match slots. Found by running `parse_market` over one live fixture and grouping emissions by canonical key.
+>
+> | offending market | mtid | landed in | its price | the real market's |
+> |---|---|---|---|---|
+> | `1st Half Asian Handicap` | 1108 | `asian_handicap` home −2.0 | **12.00** | 4.80 |
+> | `Early Win - Match Result (1X2)` | 13273 | `1x2` home | **1.769** | 1.80 |
+> | `Both Teams To Score &amp; Over 2.5` | 2938 | `btts` yes | **1.834** | 1.565 |
+>
+> **Three separate causes, each a one-line class of mistake:**
+> 1. **A LEADING SPACE.** Every entry in `_HALF_MATCH_HINTS` is written `" 1st half"`. Coolbet names these markets *"1st Half Asian Handicap"* — the qualifier LEADS the name, so there is no preceding space and the hint never matched. Every sub-period market whose name begins with its qualifier fell through into the full-match slot. Now matched at a word boundary.
+> 2. **No variant guard.** `Early Win` pays out early if a team goes N ahead — a different bet that shares the name. It is not a sub-period, so no half-match hint could ever have caught it. Added `_looks_like_variant_market` and applied it to the `is_1x2` / `is_ah` / `is_dc` name-fallbacks.
+> 3. **HTML ENTITIES.** Coolbet returns names escaped (`&amp;`), so the combined-market filter's `" & "` never matched and *Both Teams To Score & Over 2.5* claimed the plain BTTS slot — this is the **11.8%** of BTTS slots holding more than one price. Names are now `html.unescape`d once, at the top, so every hint list downstream matches what a human reads.
+>
+> **Result on the same live fixture: 64 conflicts → 14.** 1x2, `asian_handicap` and `btts` are clean. The remaining 14 are all cards markets (`1st Half [Home] Total Cards` and `2nd Half Total Cards` collapsing into `cards_1h_ou_05`) — a per-team/per-half qualifier, filed separately, and nothing bets cards. Smoke `COOLBET-MARKET-COLLISION`; 139 Coolbet tests pass.
+>
+> **The read-side burst rule stays** as defence in depth — it still protects every row already in the table, which no write fix can retroactively clean.**
 >
 > **✅ (1) RESOLVED ON THE DECISION SURFACE 2026-09-17 — and the authoritative read is now MEASURED, not assumed.** I had guessed "read the first round" from a single fixture. Settled it properly by matching our stored rounds against The Odds API's LIVE Coolbet quote, 8 fixtures matched one-to-one with fuzzy team names (the earlier strict matcher overlapped on one):
 >

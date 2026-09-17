@@ -44478,6 +44478,58 @@ def test_ou25_dc_rho_is_inert():
         assert max(vals) - min(vals) < 1e-12, "our own tau leaked past the 2.5 line"
 
 
+@test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
+def test_coolbet_market_collision():
+    """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).
+
+    One live explorer pass over a single fixture emitted 64 of 237 canonical
+    keys with CONFLICTING prices, because three different Coolbet markets were
+    being written into full-match slots:
+
+      1st Half Asian Handicap (1108) -> asian_handicap, home -2.0 at 12.00 beside
+          the real market's 4.80. Cause: every entry in _HALF_MATCH_HINTS carries
+          a LEADING SPACE, so a name that BEGINS with the qualifier never
+          matched — and that is exactly how Coolbet names them.
+      Early Win - Match Result (13273) -> 1x2, at 1.769 beside the real 1.80. It
+          pays out early if a team goes N ahead, so it is a different bet. Not a
+          sub-period, so no half-match hint could ever have caught it.
+      Both Teams To Score &amp; Over 2.5 (2938) -> btts. The name arrives
+          HTML-ESCAPED, so the combined-market filter's " & " never matched. This
+          is the 11.8% of stored BTTS slots holding more than one price.
+
+    After the fixes the same pass emits 14 conflicts, all in cards markets
+    (per-team and 2nd-half variants collapsing into cards_1h_ou_05), which is
+    filed separately and which nothing bets on.
+
+    These are WRITE-side fixes. The read-side burst rule
+    (SHADOW-BOTS-BURST-BEST-PRICE) stays as defence in depth for rows already in
+    the table.
+    """
+    src = _engine_path("workers/automation/coolbet_explorer.py").read_text(encoding="utf-8")
+
+    # 1. sub-period matching must be word-anchored, not leading-space
+    fn = src[src.index("def _looks_like_sub_period("):src.index("def _looks_like_combined_market(")]
+    assert "re.search" in fn and "[a-z0-9]" in fn, (
+        "sub-period hints must match at a word boundary. A leading space silently "
+        "fails for every market whose name BEGINS with the qualifier, which is how "
+        "Coolbet names them ('1st Half Asian Handicap')."
+    )
+    # 2. early-payout variants must be excluded from the name fallbacks
+    assert "_looks_like_variant_market" in src and "early win" in src, (
+        "early-payout variants share a market's name but are a different bet and "
+        "must not claim the full-match slot"
+    )
+    for guard in ("is_1x2", "is_ah", "is_dc"):
+        blk = src[src.index(f"    {guard}  "):src.index(f"    {guard}  ") + 260]
+        assert "not variant" in blk, f"{guard}'s name-fallback must reject variant markets"
+    # 3. names must be HTML-unescaped before ANY hint matching
+    assert "html.unescape(mkt.get(\"name\")" in src, (
+        "market names arrive HTML-escaped ('&amp;'); unescape once at the top or "
+        "every hint list silently mismatches"
+    )
+    assert "\nimport html\n" in src, "html must be imported, not implicitly available"
+
+
 @test("SHADOW-BOTS-BURST-BEST-PRICE — the decision surface must not read the worse of a double-write")
 def test_shadow_bots_burst_best_price():
     """COOLBET-DOUBLE-WRITE (2026-09-17). A Coolbet scrape pass can write the
