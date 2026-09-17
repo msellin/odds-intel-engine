@@ -1,4 +1,28 @@
 source,kickoff_date,league,home_team,away_team,market,pick,odds,result,pnl_per_unit,ref_url
+winnerodds,2026-09-11,Czech Republic,,,asian_handicap,ah-0_1,1.270,void,0.0000,https://winnerodds.com
+winnerodds,2026-09-07,Poland,,,asian_handicap,ah-0_1,1.571,won,0.5710,https://winnerodds.com
+winnerodds,2026-09-07,Belarus,,,asian_handicap,ah-0_1,1.580,void,0.0000,https://winnerodds.com
+winnerodds,2026-09-10,Spain,,,1x2,1,2.150,lost,-1.0000,https://winnerodds.com
+winnerodds,2026-09-12,England,,,1x2,2,2.900,won,1.9000,https://winnerodds.com
+winnerodds,2026-09-12,Bosnia and Herzegovina,,,1x2,2,2.750,won,1.7500,https://winnerodds.com
+winnerodds,2026-09-11,Russia,,,asian_handicap,ah+0.5_1,1.140,lost,-1.0000,https://winnerodds.com
+winnerodds,2026-09-11,England,,,asian_handicap,ah+0.5_1,1.375,won,0.3750,https://winnerodds.com
+winnerodds,2026-09-10,England,,,asian_handicap,ah-0_1,1.100,void,0.0000,https://winnerodds.com
+winnerodds,2026-09-10,Scotland,,,asian_handicap,ah-0_1,1.422,won,0.4220,https://winnerodds.com
+winnerodds,2026-09-09,England,,,asian_handicap,ah-0_1,1.166,won,0.1660,https://winnerodds.com
+winnerodds,2026-09-09,England,,,asian_handicap,ah-0_1,1.285,won,0.2850,https://winnerodds.com
+winnerodds,2026-09-09,England,,,1x2,1,1.920,lost,-1.0000,https://winnerodds.com
+winnerodds,2026-09-09,England,,,asian_handicap,ah-0_1,1.730,won,0.7300,https://winnerodds.com
+winnerodds,2026-09-05,Scotland,,,asian_handicap,ah-0_1,1.400,won,0.4000,https://winnerodds.com
+winnerodds,2026-09-10,Germany,,,asian_handicap,ah-0_1,2.670,won,1.6700,https://winnerodds.com
+winnerodds,2026-09-08,Wales,,,1x2,1,1.290,lost,-1.0000,https://winnerodds.com
+winnerodds,2026-09-12,South Africa,,,1x2,1,1.760,won,0.7600,https://winnerodds.com
+winnerodds,2026-09-10,Russia,,,1x2,1,1.380,won,0.3800,https://winnerodds.com
+winnerodds,2026-09-10,Germany,,,asian_handicap,ah-0.5_1,2.670,lost,-1.0000,https://winnerodds.com
+winnerodds,2026-09-09,Sweden,,,asian_handicap,ah-0_2,2.870,won,1.8700,https://winnerodds.com
+winnerodds,2026-09-07,Germany,,,asian_handicap,ah-0_1,1.470,won,0.4700,https://winnerodds.com
+winnerodds,2026-09-07,Germany,,,asian_handicap,ah-0_1,2.670,void,0.0000,https://winnerodds.com
+winnerodds,2026-09-10,Oman,,,over_under_25,u2.5,1.680,won,0.6800,https://winnerodds.com
 winnerodds,2026-09-11,Germany,,,asian_handicap,ah-0_1,2.340,void,0.0000,https://winnerodds.com
 winnerodds,2026-09-09,Germany,,,asian_handicap,ah-0_1,1.200,won,0.2000,https://winnerodds.com
 winnerodds,2026-09-08,Sweden,,,asian_handicap,ah-0_2,1.760,lost,-1.0000,https://winnerodds.com
@@ -69,12 +93,12 @@ winnerodds,2026-09-05,Austria,,,1x2,2,2.400,won,1.4000,https://winnerodds.com
 winnerodds,2026-09-02,Germany,,,asian_handicap,ah-0.5_1,5.060,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-09-02,Germany,,,asian_handicap,ah-0_1,1.480,void,0.0000,https://winnerodds.com
 winnerodds,2026-09-04,Germany,,,1x2,2,1.600,won,0.6000,https://winnerodds.com
-winnerodds,2026-09-02,Belarus,,,1x2,2,2.569,won,1.5690,https://winnerodds.com
 winnerodds,2026-09-02,Belarus,,,over_under_35,u3.5,1.910,lost,-1.0000,https://winnerodds.com
+winnerodds,2026-09-02,Belarus,,,1x2,2,2.569,won,1.5690,https://winnerodds.com
 winnerodds,2026-09-02,Germany,,,over_under_35,u3.5,1.840,lost,-1.0000,https://winnerodds.com
-winnerodds,2026-09-02,Germany,,,over_under_35,u3.5,1.830,won,0.8300,https://winnerodds.com
-winnerodds,2026-09-02,Germany,,,1x2,2,3.490,lost,-1.0000,https://winnerodds.com
+winnerodds,2026-09-02,Germany,,,over_under_35,u3.5,1.840,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-09-02,Germany,,,over_under_35,u3.5,2.290,won,1.2900,https://winnerodds.com
+winnerodds,2026-09-02,Germany,,,1x2,2,3.490,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-09-02,Germany,,,over_under_35,u3.5,1.840,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-09-02,Switzerland,,,asian_handicap,ah-0_1,1.140,won,0.1400,https://winnerodds.com
 winnerodds,2026-09-03,Sweden,,,1x2,2,1.571,won,0.5710,https://winnerodds.com
@@ -199,8 +223,8 @@ winnerodds,2026-08-29,Wales,,,asian_handicap,ah-0_2,1.660,won,0.6600,https://win
 winnerodds,2026-08-29,Wales,,,asian_handicap,ah-0_2,1.400,won,0.4000,https://winnerodds.com
 winnerodds,2026-08-27,Costa Rica,,,asian_handicap,ah-0_1,1.110,won,0.1100,https://winnerodds.com
 winnerodds,2026-08-28,Venezuela,,,asian_handicap,ah-0_1,1.190,void,0.0000,https://winnerodds.com
-winnerodds,2026-08-24,USA,,,1x2,2,3.600,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-24,USA,,,over_under_35,u3.5,1.401,won,0.4010,https://winnerodds.com
+winnerodds,2026-08-24,USA,,,1x2,2,3.600,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-24,Argentina,,,1x2,1,2.700,won,1.7000,https://winnerodds.com
 winnerodds,2026-08-27,Argentina,,,asian_handicap,ah-0_1,1.360,won,0.3600,https://winnerodds.com
 winnerodds,2026-08-29,Costa Rica,,,asian_handicap,ah-0_1,1.200,won,0.2000,https://winnerodds.com
@@ -235,8 +259,8 @@ winnerodds,2026-08-29,Denmark,,,asian_handicap,ah-0_2,1.221,void,0.0000,https://
 winnerodds,2026-08-28,Denmark,,,asian_handicap,ah-0_2,1.774,won,0.7740,https://winnerodds.com
 winnerodds,2026-08-27,Germany,,,asian_handicap,ah-0_1,1.620,won,0.6200,https://winnerodds.com
 winnerodds,2026-08-25,Germany,,,over_under_35,u3.5,1.830,won,0.8300,https://winnerodds.com
-winnerodds,2026-08-25,Germany,,,over_under_35,u3.5,1.840,won,0.8400,https://winnerodds.com
 winnerodds,2026-08-25,Germany,,,over_under_35,u3.5,1.830,won,0.8300,https://winnerodds.com
+winnerodds,2026-08-25,Germany,,,over_under_35,u3.5,1.840,won,0.8400,https://winnerodds.com
 winnerodds,2026-08-20,Germany,,,1x2,1,1.670,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-29,Hungary,,,over_under_35,u3.5,1.500,won,0.5000,https://winnerodds.com
 winnerodds,2026-08-29,Sweden,,,over_under_35,u3.5,1.870,won,0.8700,https://winnerodds.com
@@ -272,9 +296,9 @@ winnerodds,2026-08-27,Scotland,,,asian_handicap,ah-0_1,1.385,won,0.3850,https://
 winnerodds,2026-08-27,England,,,asian_handicap,ah-0_1,1.480,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-26,England,,,asian_handicap,ah-0_1,1.250,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-26,England,,,asian_handicap,ah-0_1,1.170,void,0.0000,https://winnerodds.com
-winnerodds,2026-08-22,Scotland,,,asian_handicap,ah+0.5_1,1.300,won,0.3000,https://winnerodds.com
 winnerodds,2026-08-22,Scotland,,,asian_handicap,ah+0.5_1,1.337,won,0.3370,https://winnerodds.com
 winnerodds,2026-08-22,Scotland,,,1x2,1,3.600,won,2.6000,https://winnerodds.com
+winnerodds,2026-08-22,Scotland,,,asian_handicap,ah+0.5_1,1.300,won,0.3000,https://winnerodds.com
 winnerodds,2026-08-23,Germany,,,1x2,1,2.110,won,1.1100,https://winnerodds.com
 winnerodds,2026-08-28,Sweden,,,over_under_35,u3.5,1.989,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-28,Belarus,,,1x2,1,1.350,lost,-1.0000,https://winnerodds.com
@@ -377,8 +401,8 @@ winnerodds,2026-08-21,Czech Republic,,,1x2,1,1.909,won,0.9090,https://winnerodds
 winnerodds,2026-08-20,Russia,,,1x2,2,2.180,won,1.1800,https://winnerodds.com
 winnerodds,2026-08-20,Russia,,,asian_handicap,ah-0_1,1.240,void,0.0000,https://winnerodds.com
 winnerodds,2026-08-17,Belarus,,,1x2,2,2.450,won,1.4500,https://winnerodds.com
-winnerodds,2026-08-21,Czech Republic,,,1x2,1,2.220,won,1.2200,https://winnerodds.com
 winnerodds,2026-08-21,Czech Republic,,,1x2,1,2.170,won,1.1700,https://winnerodds.com
+winnerodds,2026-08-21,Czech Republic,,,1x2,1,2.220,won,1.2200,https://winnerodds.com
 winnerodds,2026-08-21,Hungary,,,1x2,2,2.838,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-21,England,,,asian_handicap,ah-0.5_1,2.400,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-21,Argentina,,,1x2,2,5.000,lost,-1.0000,https://winnerodds.com
@@ -427,8 +451,8 @@ winnerodds,2026-08-16,England,,,1x2,1,2.400,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-16,England,,,1x2,1,3.500,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-18,Germany,,,asian_handicap,ah-0_1,1.860,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-17,Germany,,,1x2,1,1.400,won,0.4000,https://winnerodds.com
-winnerodds,2026-08-18,Germany,,,asian_handicap,ah+0.5_1,1.320,won,0.3200,https://winnerodds.com
 winnerodds,2026-08-18,Germany,,,asian_handicap,ah+0.5_1,1.400,lost,-1.0000,https://winnerodds.com
+winnerodds,2026-08-18,Germany,,,asian_handicap,ah+0.5_1,1.320,won,0.3200,https://winnerodds.com
 winnerodds,2026-08-16,Mexico,,,over_under_35,u3.5,1.950,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-12,Brazil,,,asian_handicap,ah-0_1,1.552,void,0.0000,https://winnerodds.com
 winnerodds,2026-08-11,Argentina,,,asian_handicap,ah+0.5_1,1.375,won,0.3750,https://winnerodds.com
@@ -482,8 +506,8 @@ winnerodds,2026-08-14,Lithuania,,,over_under_25,u2.5,1.850,lost,-1.0000,https://
 winnerodds,2026-08-14,Germany,,,1x2,1,2.550,won,1.5500,https://winnerodds.com
 winnerodds,2026-08-13,Russia,,,asian_handicap,ah-0_1,1.440,won,0.4400,https://winnerodds.com
 winnerodds,2026-08-13,Scotland,,,1x2,1,3.700,lost,-1.0000,https://winnerodds.com
-winnerodds,2026-08-12,England,,,1x2,1,1.460,won,0.4600,https://winnerodds.com
 winnerodds,2026-08-12,England,,,1x2,1,1.480,lost,-1.0000,https://winnerodds.com
+winnerodds,2026-08-12,England,,,1x2,1,1.460,won,0.4600,https://winnerodds.com
 winnerodds,2026-08-09,Scotland,,,1x2,2,2.305,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-08,Scotland,,,1x2,1,2.350,won,1.3500,https://winnerodds.com
 winnerodds,2026-08-13,Germany,,,1x2,1,8.600,lost,-1.0000,https://winnerodds.com
@@ -496,8 +520,8 @@ winnerodds,2026-08-14,Malawi,,,asian_handicap,ah+0.5_1,1.480,won,0.4800,https://
 winnerodds,2026-08-15,Germany,,,1x2,1,1.350,won,0.3500,https://winnerodds.com
 winnerodds,2026-08-13,Germany,,,1x2,1,2.140,won,1.1400,https://winnerodds.com
 winnerodds,2026-08-12,Germany,,,1x2,1,2.260,lost,-1.0000,https://winnerodds.com
-winnerodds,2026-08-09,Germany,,,asian_handicap,ah-0_1,1.390,won,0.3900,https://winnerodds.com
 winnerodds,2026-08-09,Germany,,,asian_handicap,ah-0_1,1.390,void,0.0000,https://winnerodds.com
+winnerodds,2026-08-09,Germany,,,asian_handicap,ah-0_1,1.390,won,0.3900,https://winnerodds.com
 winnerodds,2026-08-14,Norway,,,over_under_35,u3.5,2.280,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-08-13,Russia,,,asian_handicap,ah-0_1,1.340,won,0.3400,https://winnerodds.com
 winnerodds,2026-08-12,China,,,asian_handicap,ah-0_1,2.370,won,1.3700,https://winnerodds.com
@@ -531,8 +555,8 @@ winnerodds,2026-08-08,Kuwait,,,over_under_25,u2.5,2.050,lost,-1.0000,https://win
 winnerodds,2026-08-09,Venezuela,,,1x2,1,3.450,won,2.4500,https://winnerodds.com
 winnerodds,2026-08-09,Argentina,,,asian_handicap,ah-0.5_2,1.170,won,0.1700,https://winnerodds.com
 winnerodds,2026-08-09,Argentina,,,asian_handicap,ah-0_1,1.260,won,0.2600,https://winnerodds.com
-winnerodds,2026-08-09,Argentina,,,asian_handicap,ah-0_1,1.610,won,0.6100,https://winnerodds.com
 winnerodds,2026-08-09,Argentina,,,asian_handicap,ah-0_1,1.910,won,0.9100,https://winnerodds.com
+winnerodds,2026-08-09,Argentina,,,asian_handicap,ah-0_1,1.610,won,0.6100,https://winnerodds.com
 winnerodds,2026-08-03,Argentina,,,asian_handicap,ah-0_1,1.546,void,0.0000,https://winnerodds.com
 winnerodds,2026-08-04,Sweden,,,asian_handicap,ah-0_1,1.667,won,0.6670,https://winnerodds.com
 winnerodds,2026-08-03,Bulgaria,,,over_under_25,u2.5,1.700,lost,-1.0000,https://winnerodds.com
@@ -975,27 +999,3 @@ winnerodds,2026-06-27,Norway,,,over_under_35,o3.5,1.491,lost,-1.0000,https://win
 winnerodds,2026-06-25,Russia,,,1x2,1,4.366,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-06-25,Russia,,,asian_handicap,ah+0.5_2,4.500,lost,-1.0000,https://winnerodds.com
 winnerodds,2026-06-25,Russia,,,1x2,1,1.270,won,0.2700,https://winnerodds.com
-winnerodds,2026-06-24,Brazil,,,1x2,2,4.956,lost,-1.0000,https://winnerodds.com
-winnerodds,2026-06-24,Finland,,,asian_handicap,ah-0_2,1.130,won,0.1300,https://winnerodds.com
-winnerodds,2026-06-23,Sweden,,,asian_handicap,ah-0_1,2.250,void,0.0000,https://winnerodds.com
-winnerodds,2026-06-22,Sweden,,,asian_handicap,ah-0_2,1.720,won,0.7200,https://winnerodds.com
-winnerodds,2026-06-22,Sweden,,,asian_handicap,ah-0_1,1.285,won,0.2850,https://winnerodds.com
-winnerodds,2026-06-21,Norway,,,1x2,1,4.200,won,3.2000,https://winnerodds.com
-winnerodds,2026-06-25,Russia,,,asian_handicap,ah-0_2,1.980,void,0.0000,https://winnerodds.com
-winnerodds,2026-06-22,Belarus,,,1x2,1,1.230,won,0.2300,https://winnerodds.com
-winnerodds,2026-06-27,Finland,,,asian_handicap,ah-0_2,4.200,lost,-1.0000,https://winnerodds.com
-winnerodds,2026-06-27,Norway,,,asian_handicap,ah-0_2,2.650,void,0.0000,https://winnerodds.com
-winnerodds,2026-06-25,Russia,,,asian_handicap,ah-0_1,1.540,won,0.5400,https://winnerodds.com
-winnerodds,2026-06-25,Russia,,,1x2,2,3.205,lost,-1.0000,https://winnerodds.com
-winnerodds,2026-06-24,Lithuania,,,asian_handicap,ah-0_2,1.142,won,0.1420,https://winnerodds.com
-winnerodds,2026-06-22,Lithuania,,,asian_handicap,ah-0_2,1.363,won,0.3630,https://winnerodds.com
-winnerodds,2026-06-22,Kazakhstan,,,asian_handicap,ah-0_2,1.900,lost,-1.0000,https://winnerodds.com
-winnerodds,2026-06-27,Malawi,,,asian_handicap,ah-0_1,1.800,won,0.8000,https://winnerodds.com
-winnerodds,2026-06-22,Kazakhstan,,,asian_handicap,ah-0_2,1.988,won,0.9880,https://winnerodds.com
-winnerodds,2026-06-26,Norway,,,1x2,2,3.990,lost,-1.0000,https://winnerodds.com
-winnerodds,2026-06-22,Belarus,,,asian_handicap,ah-0_1,1.301,won,0.3010,https://winnerodds.com
-winnerodds,2026-06-26,Finland,,,asian_handicap,ah+0.5_2,4.555,lost,-1.0000,https://winnerodds.com
-winnerodds,2026-06-26,Norway,,,asian_handicap,ah-0_2,1.615,won,0.6150,https://winnerodds.com
-winnerodds,2026-06-24,Norway,,,over_under_35,o3.5,1.570,won,0.5700,https://winnerodds.com
-winnerodds,2026-06-26,Russia,,,asian_handicap,ah-0_1,1.610,won,0.6100,https://winnerodds.com
-winnerodds,2026-06-26,South Korea,,,asian_handicap,ah-0_2,1.400,void,0.0000,https://winnerodds.com
