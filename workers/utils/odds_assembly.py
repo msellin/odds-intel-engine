@@ -40,6 +40,21 @@ BURST_S = 15.0
 WINDOW_S = 15 * 60.0
 
 
+def _elapsed(t, t0) -> float:
+    """Seconds between two observation timestamps.
+
+    Callers carry timestamps in two shapes: the DB readers hand us `datetime`
+    objects, the sweep scripts hand us EPOCH SECONDS as floats. Both are legal
+    here on purpose. Before this, each sweep kept a PRIVATE assembler because
+    the shared one only spoke `datetime` — and the moment the burst rule landed
+    in the shared copy, those private copies silently drifted to a different
+    answer (caught by OWN-SHARP-SWEEP-ASSEMBLE: draw 5.76 against 6.65 on the
+    same rows). Accepting both shapes is what makes "one assembler" reachable.
+    """
+    d = t - t0
+    return d.total_seconds() if hasattr(d, "total_seconds") else float(d)
+
+
 def assemble(obs, sides, window_s: float = WINDOW_S, burst_s: float = BURST_S):
     """[(anchor_ts, {selection: odds})] — every complete market in `obs`.
 
@@ -53,7 +68,7 @@ def assemble(obs, sides, window_s: float = WINDOW_S, burst_s: float = BURST_S):
     for i, (t0, _, _) in enumerate(obs):
         picked: dict[str, float] = {}
         for t, sel, o in obs[i:]:
-            dt = (t - t0).total_seconds()
+            dt = _elapsed(t, t0)
             if dt > window_s:
                 break
             if dt <= burst_s:
@@ -79,7 +94,7 @@ def latest_market(obs, sides, window_s: float = WINDOW_S, burst_s: float = BURST
         return None
     newest = tri[-1][0]
     # every triple whose anchor is inside the final burst, best price per leg
-    tail = [q for t, q in tri if (newest - t).total_seconds() <= burst_s]
+    tail = [q for t, q in tri if _elapsed(newest, t) <= burst_s]
     if not tail:
         return tri[-1][1]
     return {s: max(q[s] for q in tail) for s in sides}
@@ -124,7 +139,7 @@ def best_across_books(per_book, sides, max_gap_s: float = CROSS_BOOK_MAX_GAP_S,
     if len(last) < 2:
         return None
     anchors = [t for t, _ in last.values()]
-    span = (max(anchors) - min(anchors)).total_seconds()
+    span = _elapsed(max(anchors), min(anchors))
     if span > max_gap_s:
         return None
     return {s: max(q[s] for _, q in last.values()) for s in sides}, span

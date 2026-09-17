@@ -64,6 +64,8 @@ EXEC_BOOKS = ("Coolbet", "Epicbet", "Unibet-Site")
 EXCLUDED_BOOKS = ("Unibet", "Unibet-Kambi", "Max", "Avg", "Betfair Exchange",
                   "BetWin", "Betfred")
 
+from workers.utils.odds_assembly import assemble as _shared_assemble  # noqa: E402
+
 ASSEMBLE_WINDOW_MIN = 2.0     # a book's own complement may straddle this
 
 # ODDS-OUTLIER-FILTER-2026-08-18 / ANALYSIS_GOTCHAS §9. A mislabelled line
@@ -201,20 +203,15 @@ def key_of(m: M, row):
 
 # ── assembly (§63) ──────────────────────────────────────────────────────────
 def assemble(obs, sels, window=ASSEMBLE_WINDOW_MIN):
-    """[(anchor_ts, {sel: odds})] — a book's COMPLETE complements, allowing its
-    rows to straddle `window` minutes. Verbatim in spirit from
-    own_path_kill_criterion.assemble, generalised past the 1X2 triple."""
-    obs = sorted(obs, key=lambda x: x[0])
-    out = []
-    for i, (t0, _, _) in enumerate(obs):
-        picked = {}
-        for t, sel, o in obs[i:]:
-            if (t - t0).total_seconds() / 60.0 > window:
-                break
-            picked.setdefault(sel, o)
-        if all(s in picked for s in sels):
-            out.append((t0, {s: picked[s] for s in sels}))
-    return out
+    """[(anchor_ts, {sel: odds})] — a book's COMPLETE complements.
+
+    Delegates to `workers.utils.odds_assembly` — the ONE assembler. This was a
+    private copy, and when the burst rule (COOLBET-DOUBLE-WRITE) landed in the
+    shared module the copy silently kept the old first-in-window answer: same
+    rows, draw 5.76 here against 6.65 there. Do not re-inline it. `window` stays
+    in MINUTES for this script's callers; the shared module works in seconds.
+    """
+    return _shared_assemble(obs, tuple(sels), window_s=float(window) * 60.0)
 
 
 def overround(quote: dict, sels, fair: float) -> float:

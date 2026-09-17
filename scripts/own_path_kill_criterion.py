@@ -67,9 +67,15 @@ def assemble(obs, window=None):
     latest row, i.e. the worse half of a Coolbet double-write. Measured at
     +1.86pp against the live quote; the shared helper's burst rule measures
     +0.00pp. See ANALYSIS_GOTCHAS §62 and COOLBET-DOUBLE-WRITE.
+
+    `window` is in MINUTES and defaults to THIS script's ASSEMBLE_WINDOW_MIN,
+    never to the shared module's 15-minute default. The first delegation let it
+    fall through, silently widening this script's assembly window 7.5x (2 min ->
+    15 min) and admitting the within-book time smear the 2-minute figure exists
+    to exclude.
     """
-    return (_shared_assemble(obs, SIDES) if window is None
-            else _shared_assemble(obs, SIDES, window_s=float(window) * 60.0))
+    win = ASSEMBLE_WINDOW_MIN if window is None else float(window)
+    return _shared_assemble(obs, SIDES, window_s=win * 60.0)
 
 
 def run(days_back: int, align_min: float):

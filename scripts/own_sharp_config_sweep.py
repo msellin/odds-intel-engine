@@ -113,6 +113,8 @@ SIDES: dict[str, tuple[str, ...]] = {
 OUTLIER_MULT = {"1x2": 1.35, "over_under_15": 1.30,
                 "over_under_25": 1.30, "over_under_35": 1.30}
 
+from workers.utils.odds_assembly import assemble as _shared_assemble  # noqa: E402
+
 ASSEMBLE_WINDOW_MIN = 2.0   # a book's own market may straddle this
 
 # ---------------------------------------------------------------------------
@@ -139,24 +141,15 @@ RATIO_BANDS = [(0.0, 0.10), (0.10, 0.20), (0.20, 0.35), (0.35, 99.0)]
 # Assembly — the §63 guard
 # ---------------------------------------------------------------------------
 def assemble(obs, sides, window: float = ASSEMBLE_WINDOW_MIN):
-    """Return [(anchor_ts, {sel: odds})] — a book's complete markets, allowing
-    the rows to straddle `window` minutes.
+    """[(anchor_ts, {sel: odds})] — a book's complete markets.
 
-    Identical algorithm to `own_path_kill_criterion.assemble`, generalised over
-    `sides` so it also serves the 2-way O/U markets. Coolbet needs ~100 ms of
-    tolerance; the window is generous so this is not tuned to one book.
+    Delegates to `workers.utils.odds_assembly` — the ONE assembler. This was a
+    private copy, and when the burst rule (COOLBET-DOUBLE-WRITE) landed in the
+    shared module the copy silently kept the old first-in-window answer: same
+    rows, draw 5.76 here against 6.65 there. Do not re-inline it. `window` stays
+    in MINUTES for this script's callers; the shared module works in seconds.
     """
-    obs = sorted(obs, key=lambda x: x[0])
-    out = []
-    for i, (t0, _, _) in enumerate(obs):
-        picked: dict[str, float] = {}
-        for t, sel, o in obs[i:]:
-            if (t - t0) / 60.0 > window:
-                break
-            picked.setdefault(sel, o)
-        if all(s in picked for s in sides):
-            out.append((t0, {s: picked[s] for s in sides}))
-    return out
+    return _shared_assemble(obs, tuple(sides), window_s=float(window) * 60.0)
 
 
 # ---------------------------------------------------------------------------
