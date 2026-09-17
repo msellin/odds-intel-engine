@@ -263,6 +263,27 @@ the number: the guard is not a refinement, it is the difference between a result
 and a fiction. Use ≥5 books for the consensus, not 3.
 
 
+**(l) A consensus requirement silently selects the market you are trying to
+test.** A cross-book study requiring ">=5 books" covered **27,725 of 55,248
+fixtures** — half the universe — and the excluded half was precisely the thin
+leagues the study was meant to evaluate. Anchor on de-vigged Pinnacle (510 of 663
+leagues) instead of demanding a panel, and state the coverage.
+
+**(m) In thin markets Pinnacle's price is a PLACEHOLDER, not a consensus.** Its
+stake limits run **$2,000-7,500 on majors and $100-400 on lower tiers**. "Edge vs
+de-vigged Pinnacle" behind a $150 limit is two soft prices disagreeing. A measured
+thinness gradient (thin −1.79% vs thick −9.24%) is therefore **not** evidence of
+exploitable softness until `limits[].amount` is captured and used as a gate. The
+field is free in the guest API, no aggregator sells it, and as of 2026-09-17 it is
+captured nowhere in this codebase.
+
+**(n) Grep for the tool before proposing to build it.** `scripts/pinnacle_movement_research.py`
+and `scripts/ops/egress_probe.py` already hit the Pinnacle guest API, and
+AF-PINNACLE-NOT-PINNACLE-2026-09-14 already ran the paired real-vs-AF measurement
+— while I spent hours reasoning about whether the feed was genuine and then
+proposed running it as new work.
+
+
 **And the rule that keeps catching me:** every one of (a)-(e) was found only
 after a confident wrong answer had already been written down. The measurement
 that refutes a hypothesis is almost always cheaper than the one that supports
