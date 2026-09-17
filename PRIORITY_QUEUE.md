@@ -125,6 +125,28 @@
 >   FROM odds_snapshots WHERE bookmaker='Coolbet'
 >    AND timestamp > now() - interval '7 days' GROUP BY 1 ORDER BY 2 DESC;
 > ```
+> **🔎 NARROWED 2026-09-17 — three hypotheses TESTED AND REJECTED, one strong candidate left.**
+>
+> Both writers (`coolbet_explorer` and `coolbet_placer`) store `odds_map[oid]['value']` verbatim from Coolbet's API — neither computes anything — so the foreign values arrive from the fetch, not from our arithmetic.
+>
+> **The split is by ENDPOINT.** `fetch_odds_for_markets` POSTs simple markets (line==0) and line markets (line!=0) to two DIFFERENT Coolbet endpoints:
+>
+> | rows from | n | 4dp share | 4dp max | clean max |
+> |---|---|---|---|---|
+> | SIMPLE markets (`handicap_line IS NULL`) | 192,773 | 15.7% | **21.92** | 120.00 |
+> | LINE markets (`handicap_line` set) | 686,895 | **34.1%** | **2.75** | 290.00 |
+>
+> The 2.75 ceiling belongs exclusively to the `/fo-line/` endpoint. So these are **two separate bugs**, not one.
+>
+> **RULED OUT by measurement:**
+> * *Grouping mis-map* (the `/fo-line/` call sends every line as ONE group with the comment "avoids guessing the grouping"). If that mis-associated outcome ids, one price would land on several lines — **0 of 6,000** value-groups show one value across multiple handicap lines.
+> * *Hong Kong odds* (`decimal - 1`), which would have explained both the ceiling and the `odds > 1.0` filter silently dropping the rest — **0.0%** of 8,000 paired rows match `clean == dirty + 1`.
+> * *The opposite side's price* (`1 + 1/(d-1)`) — **0.3%** match.
+>
+> Paired example: clean **5.1000**, dirty **2.4684**, same fixture, market, selection AND handicap line, within 300s. No transformation relates them, so the dirty value is a genuine price for **something else**.
+>
+> **REMAINING CANDIDATE: line mislabelling** — a price for a different (nearer-the-money) line written under this line's label. It fits the 2.75 ceiling exactly, since near-the-money line prices live in [1.0, 2.75]. **And it has precedent in this very file:** `COOLBET-OU-LINE-MISLABEL-RCA (2026-08-24)` exists because Coolbet OU lines were mislabelled before, and `_ou_rows_monotone()` guards ONLY `over_under_*`. Asian handicap, team totals and cards carry no such guard — which is exactly where the contamination is worst (AH 17.1%, `cards_ou_35` 67.7%). **Start there.**
+>
 > **Writers to check first:** `coolbet_explorer.py` (enumerates ~141 markets, matches the market breadth and the September ramp), `coolbet_ui_placer._snapshot_prices` → `store_odds`, and `store_coolbet_odds_snapshot`. ANALYSIS_GOTCHAS §62b.**
 >
 > **✅ Done 2026-09-17 REAL-BETS-ONE-ROW-PER-SHADOW-PICK (🤖 OWN).** `real_bets` had no uniqueness beyond its PK. Audited: 16 duplicate groups on (match, market, selection, stake) out of 992 rows — 3 under 60s apart, 8 at 1–10 min, 5 over 10 min. **Nothing deleted, deliberately:** it is the operator's money ledger, 13 of 16 pairs are more than a minute apart, and a repeat bet on the same selection is a legitimate thing to do — deleting a financial record on a heuristic is data loss, not a fix. **What IS enforced:** a partial unique index on `shadow_bet_id`, the one case where a duplicate is unambiguously a bug (the shadow-bots Place action logging the same pick twice double-counts exposure on the page used to decide real stakes). Measured first: **zero duplicate `shadow_bet_id` groups today**, so it creates cleanly and is a guard against recurrence. Migration 361, applied live. The 16 legacy pairs are flagged for owner review, not touched.**
