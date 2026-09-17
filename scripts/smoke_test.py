@@ -45829,6 +45829,58 @@ def _():
         "3 books qualifying and the monitor went blind")
     return f"aggregate on shadow_bets_unique, MIN_BETS={bpf.MIN_BETS}"
 
+@test("PICKS-SURFACE-RECONCILES — watchlist is future-only, and the bot row matches its own bets list")
+def _():
+    """PICKS-ROW-RECONCILES + PICKS-WATCHLIST-FUTURE-ONLY (2026-09-17). Three
+    reader-visible defects on the two customer surfaces, all found by the owner.
+
+    (1) The watchlist had NO kickoff filter. Neither the query nor
+        `picks_board_public` bounded it, and `write_board` never removes finished
+        legs — so with the list sorted by edge DESC, yesterday's matches sat at
+        the top. Measured 2026-09-16: 18 of 40 rows had already kicked off, up to
+        19.6h earlier, several already settled. Measured again 2026-09-17: 142 of
+        201 board rows (71%) were in the past.
+
+    (2) The count was a CAP. `.limit(40)` against a 201-row view rendered as
+        "40 prices we're tracking" every single day — a limit presented as a
+        measurement.
+
+    (3) The leaderboard row for `bot_sharp_forward_test_v1` read the CURRENT rule
+        version while the bets list beneath it reads every version, so the row
+        said 14 settled where a reader counting the list got 22. The row now uses
+        the pooled record; the pre-registered stopping rules still read `current`,
+        because pooling a closed rule's n into a running one would fire a
+        checkpoint early on a mixture of rules."""
+    import pathlib as _p
+    web = _p.Path(__file__).parent.parent.parent / "odds-intel-web" / "src"
+    if not web.exists():
+        return "odds-intel-web not checked out beside the engine — skipped"
+
+    ftp = (web / "lib" / "forward-test-picks.ts").read_text()
+    assert 'from("picks_board_public")' in ftp
+    assert '.gt("kickoff_utc"' in ftp, (
+        "the watchlist MUST exclude kicked-off fixtures — without it 71% of the "
+        "board was finished matches, sorted to the top by edge")
+    assert "PICKS-WATCHLIST-FUTURE-ONLY" in ftp, (
+        "keep the reason beside the filter; a bare .gt() reads as incidental")
+
+    picks_page = (web / "app" / "picks" / "page.tsx").read_text()
+    assert "we&apos;re tracking" not in picks_page, (
+        "the watchlist label must not present a .limit() as a count")
+    assert "by edge" in picks_page, "label should say it is a top-N by edge"
+
+    ed = (web / "lib" / "engine-data.ts").read_text()
+    assert "pooled: PicksForwardTestSummary" in ed, "pooled summary missing"
+    assert "averaging ratios is the error" in ed, (
+        "pooled ROI must be recomputed from pooled units and pooled n, never "
+        "averaged across versions — ANALYSIS_GOTCHAS 9a(h)")
+
+    perf = (web / "app" / "(app)" / "performance" / "page.tsx").read_text()
+    assert "getPicksForwardTestSummary())?.pooled" in perf, (
+        "the public row must use the pooled record so it reconciles with the "
+        "bets list a reader can count")
+    return "watchlist future-only; bot row pooled; label is a top-N"
+
 
 
 if __name__ == "__main__":
