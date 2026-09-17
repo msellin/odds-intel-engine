@@ -2496,33 +2496,31 @@ assembled inside a small window — `own_path_kill_criterion.assemble()` does th
 and its docstring already said "Coolbet needs ~100ms of tolerance". That note
 was easy to read as a quirk; it is load-bearing.
 
-### 62b. Coolbet carries computed prices that no other book does
+### 62b. Coolbet quotes FINER PRECISION than other books — this is not corruption
 
-**Measured across ALL markets, 7 days: 303,512 rows — 29% of every Coolbet row
-we hold — over 141 markets, growing from 1,366/day to 71,805/day in ten days.
-No other book has a single one.** The 1x2 slice below understated it badly.
+**Corrected 2026-09-17, same day it was written. The original §62b claimed 29%
+of Coolbet rows were "foreign values"; that was wrong and is withdrawn.**
 
-The values are **not prices**: every non-1x2 market caps at exactly **2.75**
-while the clean rows for those same markets run to **150.00** (`over_under_05`),
-**89.00** (`asian_handicap`), **51.00** (`team_total_home_20`). The range is
-[1.0002, 2.75] — that 1.0002 floor looks like an upstream `odds > 1` filter
-clipping something that naturally goes lower. 1x2 is different again: it reaches
-21.92, and paired against the clean row seconds apart it sits ~3-4.6% BELOW it
-(3.2914 vs 3.4500), which reads like a de-vigged price and may be a second,
-separate bug.
+Coolbet's API returns high-precision odds (`1.1524`, `1.0057`); its website
+rounds them for display, and every other book in `odds_snapshots` arrives via
+API-Football which rounds to 2dp. So **Coolbet is the only book whose stored
+prices carry more than 2 decimals, and that makes its data more precise than the
+rest, not corrupted.**
 
-**Original 1x2-only measurement, 14 days:** 3,798 Coolbet rows (**4.5%**) hold odds with more
-than 2 decimal places — e.g. `5.4794` sitting milliseconds from a clean `6.0000`
-for the same fixture and selection. Every other book is **100% clean 2dp**. A
-bookmaker does not display `5.4794`, so a second writer is putting derived
-values into rows labelled Coolbet.
+Verified by running `coolbet_explorer --match-id ... --dry-run` live and
+comparing to stored rows for the same fixture: live API 1.157 / 1.007 / 1.106 /
+1.194 against stored 1.1524 / 1.0057 / 1.1029 / 1.1893.
 
-Filtering those out does **not** close the gap between our stored Coolbet
-overround (7.20% on top-5 leagues) and an external reference (3.05%), so the
-contamination is real but is not the whole story. **Unresolved** — see
-`SHARP-BOOK-PRICE-DISCREPANCY` in PRIORITY_QUEUE. Until it is resolved, treat
-any Coolbet-derived margin or edge figure as provisional, including the 5.66%
-that `own_path_kill_criterion.py` used to close automated OWN betting.
+**Do not treat decimal precision as a data-quality signal.** The "every value
+caps at 2.75" pattern that made it look like a different quantity is an artifact
+of price level: fine precision runs at 52.0% of rows at odds 1.00–1.50, 19.9% at
+2.50–2.99, and **0.3% above 3.00**, because the book quotes short prices finely
+and long prices in round steps (3.00, 5.00, 12.00).
+
+**Still genuinely open:** our stored Coolbet 1x2 overround on top-5 leagues is
+7.20% against an external reference's 3.05%, and excluding the fine-precision
+rows does not move it. That gap is real and unexplained; staleness is the
+leading candidate. See `SHARP-BOOK-PRICE-DISCREPANCY` in PRIORITY_QUEUE.
 
 ### 62c. How to check you have not done this
 

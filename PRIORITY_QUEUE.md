@@ -99,53 +99,24 @@
 >
 > **✅ Done 2026-09-17 OWN-MARGIN-BY-TIER (🤖 OWN — owner asked whether a betting system can survive without promos).** The kill criterion closed automated betting on ONE number — best-of-3 overround 5.66 pct vs a 2 pct threshold — averaged over all of football. A hand-checked fixture (Beşiktaş v Marseille) came in at **2.61 pct**, less than half the median, which raised a fair question the criterion never tested: is some SUBSET cheap enough to be worth a strategy? **Answer: no.** n=1,550 time-aligned fixtures over 21 days. League tier moves the median by ~1pp (tier 1 **6.06 pct**, tier 3 7.06) and the CHEAPEST group is long-favourite obscure matches (5.17 pct), not big fixtures — the opposite of the hypothesis. **And the 5.7 pct of fixtures under 2 pct are a MIRAGE:** their best single book charges a normal +6.19 pct margin while their cross-book spread is 2.07pp against 1.45pp elsewhere, so the cheap combined price is books DISAGREEING (one stale), not books pricing cheaply. ANALYSIS_GOTCHAS §52/§55 for the third time in this project. `scripts/own_margin_by_tier.py`.**
 >
-> > > **🔴 P0 ⬜ COOLBET-FOREIGN-VALUES-IN-ODDS-COLUMN (🤖 OWN).** **4.5% of our Coolbet 1x2 rows (3,798 in 14 days) hold odds with more than 2 decimal places** — e.g. `5.4794` sitting milliseconds from a clean `6.0000` for the same fixture and selection. **Every other book is 100% clean 2dp.** A bookmaker does not display `5.4794`, so a second writer is putting derived values into rows labelled Coolbet, and Coolbet is the book we actually bet at. Found by comparing one fixture (Real Betis v Getafe) against The Odds API: our data held BOTH the Odds API's exact prices (1.66/3.85/6.00, overround 2.88%) AND a worse set (1.62/3.85/5.4794, 6.00%), written within one second. **Filtering the computed rows does NOT close the gap** — our Coolbet overround on top-5 leagues stays 7.20% against the Odds API's 3.05% — so the contamination is real but not the whole story, and the remainder is unexplained. Find the second writer. Until then every Coolbet-derived margin figure is provisional, **including the 5.66% that closed automated OWN betting**. ANALYSIS_GOTCHAS §62b.**
+> > > **⛔ WITHDRAWN 2026-09-17 COOLBET-FOREIGN-VALUES-IN-ODDS-COLUMN — THE FINDING WAS WRONG (🤖 OWN).** I filed this as P0 claiming 29 pct of Coolbet rows "are not prices". **They are prices.** The premise — that more than 2 decimal places means a value is not a bookmaker price — was simply false for this book.
 >
-> **⬆️ RAISED TO P0 AND FULLY CHARACTERISED 2026-09-17 — it is far larger than the 1x2 slice suggested, and the values are not prices.**
+> **How it was disproved.** Ran `coolbet_explorer --match-id ... --dry-run` live against Coolbet and compared its API output to our stored rows for the same fixture:
 >
-> **Scale:** **303,512 rows, 29 pct of ALL Coolbet odds_snapshots rows**, across **141 markets**, and growing hard — 1,366 rows on 09-06 to **71,805 on 09-16**. **No other book has a single one** (1xBet, Pinnacle, Bet365, Betfair, Epicbet, Unibet-Site: all 100 pct clean 2dp).
+> | line | sel | LIVE Coolbet API | our STORED row |
+> |---|---|---|---|
+> | −2.50 | away | 1.157 | 1.1524 |
+> | −2.00 | away | 1.007 | 1.0057 |
+> | −1.50 | away | 1.106 | 1.1029 |
+> | −1.00 | away | 1.194 | 1.1893 |
 >
-> **Fingerprint for whoever traces the writer:**
-> * odds carry **more than 2 decimal places** — `5.4794`, `3.2914` — which no bookmaker displays
-> * **every non-1x2 market caps at exactly 2.75**, while the clean rows for those same markets run to **150.00** (`over_under_05`), **89.00** (`asian_handicap`), **51.00** (`team_total_home_20`). A hard ceiling of 2.75 on BTTS and AH is not a price distribution.
-> * range is **[1.0002, 2.75]** — the 1.0002 floor suggests an upstream `odds > 1` filter clipping a quantity that naturally goes lower
-> * **1x2 behaves differently**: it reaches 21.92 and 845 rows exceed 2.755. Paired against the clean row for the same slot seconds apart, the 4dp value is **~3–4.6 pct BELOW** it (3.2914 vs 3.4500). That looks like a de-vigged or margin-adjusted price, i.e. possibly a SECOND distinct bug.
-> * **98.2 pct of paired observations have the 4dp value lower** than the clean one
-> * no `2.75` constant exists anywhere in `workers/` — so it is a property of the source, not a hardcoded cap
+> **Coolbet's API returns high-precision odds; the website rounds them for display.** Our stored 4dp values are the genuine API prices. 8 of 12 matched to within rounding, and the 4 that did not were the line moving across a three-hour gap.
 >
-> **Why P0.** Coolbet is the book we place real money at. These rows sit in the same column, under the same bookmaker label, with no flag distinguishing them — so every query that reads Coolbet prices mixes them in unless it filters on decimal places, which nothing does. That includes the placement gate's live-edge check, the shadow-bots page's "best placeable price", `own_path_kill_criterion.py` (the 5.66 pct that closed automated OWN betting) and every CLV figure computed against a Coolbet close.
+> **And the "2.75 ceiling" was an artifact of price level, not a cap.** Share of Coolbet prices quoted with more than 2 decimals, by magnitude: **52.0 pct** at odds 1.00–1.50, 40.5 pct at 1.50–2.00, 19.9 pct at 2.50–2.99, then **0.3 pct** at 3.00+. The book quotes short prices finely (1.157, 1.0057) and long prices in round steps (3.00, 5.00, 12.00). "Every 4dp value stops at 2.75" was just where round quoting takes over. Every other book reads 100 pct clean 2dp because they arrive via API-Football, which rounds — so Coolbet's data is MORE precise than the rest, not corrupted.
 >
-> **Known NOT to be the cause:** filtering the 4dp rows out does not close the gap between our stored Coolbet overround (7.20 pct on top-5 leagues) and The Odds API's (3.05 pct), so there is a second, separate problem still unexplained.
+> **What this cost:** an hour chasing a writer that does not exist, and three hypotheses tested against a phantom (the grouping mis-map, Hong Kong odds, and the inverse-side price — all three correctly rejected, but they were rejected for the wrong reason: there was nothing to explain). The `5.4794 vs 6.0000` example that started it was a genuine API price beside a genuine rounded one, three hours apart.
 >
-> **Reproduce:**
-> ```sql
-> SELECT market, count(*) FILTER (WHERE (odds*100)::numeric <> round(odds*100)) dirty,
->        max(odds) FILTER (WHERE (odds*100)::numeric <> round(odds*100)) dirty_max,
->        max(odds) FILTER (WHERE (odds*100)::numeric =  round(odds*100)) clean_max
->   FROM odds_snapshots WHERE bookmaker='Coolbet'
->    AND timestamp > now() - interval '7 days' GROUP BY 1 ORDER BY 2 DESC;
-> ```
-> **🔎 NARROWED 2026-09-17 — three hypotheses TESTED AND REJECTED, one strong candidate left.**
->
-> Both writers (`coolbet_explorer` and `coolbet_placer`) store `odds_map[oid]['value']` verbatim from Coolbet's API — neither computes anything — so the foreign values arrive from the fetch, not from our arithmetic.
->
-> **The split is by ENDPOINT.** `fetch_odds_for_markets` POSTs simple markets (line==0) and line markets (line!=0) to two DIFFERENT Coolbet endpoints:
->
-> | rows from | n | 4dp share | 4dp max | clean max |
-> |---|---|---|---|---|
-> | SIMPLE markets (`handicap_line IS NULL`) | 192,773 | 15.7% | **21.92** | 120.00 |
-> | LINE markets (`handicap_line` set) | 686,895 | **34.1%** | **2.75** | 290.00 |
->
-> The 2.75 ceiling belongs exclusively to the `/fo-line/` endpoint. So these are **two separate bugs**, not one.
->
-> **RULED OUT by measurement:**
-> * *Grouping mis-map* (the `/fo-line/` call sends every line as ONE group with the comment "avoids guessing the grouping"). If that mis-associated outcome ids, one price would land on several lines — **0 of 6,000** value-groups show one value across multiple handicap lines.
-> * *Hong Kong odds* (`decimal - 1`), which would have explained both the ceiling and the `odds > 1.0` filter silently dropping the rest — **0.0%** of 8,000 paired rows match `clean == dirty + 1`.
-> * *The opposite side's price* (`1 + 1/(d-1)`) — **0.3%** match.
->
-> Paired example: clean **5.1000**, dirty **2.4684**, same fixture, market, selection AND handicap line, within 300s. No transformation relates them, so the dirty value is a genuine price for **something else**.
->
-> **REMAINING CANDIDATE: line mislabelling** — a price for a different (nearer-the-money) line written under this line's label. It fits the 2.75 ceiling exactly, since near-the-money line prices live in [1.0, 2.75]. **And it has precedent in this very file:** `COOLBET-OU-LINE-MISLABEL-RCA (2026-08-24)` exists because Coolbet OU lines were mislabelled before, and `_ou_rows_monotone()` guards ONLY `over_under_*`. Asian handicap, team totals and cards carry no such guard — which is exactly where the contamination is worst (AH 17.1%, `cards_ou_35` 67.7%). **Start there.**
+> **WHAT SURVIVES AND IS STILL OPEN:** our stored Coolbet 1x2 overround on top-5 leagues is **7.20 pct** against The Odds API's **3.05 pct**, and excluding the fine-precision rows does not move it. That gap is real, unexplained, and NOT caused by contamination. Staleness is now the leading candidate — the Betis comparison showed our latest stored triple was hours old while the reference was live. See `SHARP-BOOK-PRICE-DISCREPANCY`.**
 >
 > **Writers to check first:** `coolbet_explorer.py` (enumerates ~141 markets, matches the market breadth and the September ramp), `coolbet_ui_placer._snapshot_prices` → `store_odds`, and `store_coolbet_odds_snapshot`. ANALYSIS_GOTCHAS §62b.**
 >

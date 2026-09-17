@@ -44507,9 +44507,16 @@ def test_odds_triple_per_fetch():
         "and needs window assembly, so a reader who applies the group-by rule "
         "uniformly gets no Coolbet rows at all"
     )
-    assert "5.4794" in g, (
-        "§62b must keep the concrete example of a computed price — 4.5% of "
-        "Coolbet 1x2 rows carry more than 2dp while every other book is 100% clean"
+    # §62b was WITHDRAWN the day it was written: the "foreign values" were
+    # genuine high-precision Coolbet API prices. The correction must stay, so
+    # nobody re-derives the same wrong conclusion from the same observation.
+    assert "this is not corruption" in g, (
+        "§62b must keep the CORRECTION — decimal precision is not a data-quality "
+        "signal, and the retraction is the useful part"
+    )
+    assert "0.3% above 3.00" in g, (
+        "§62b must keep the price-level evidence that explains the apparent 2.75 "
+        "ceiling, or the observation will look suspicious again"
     )
     # And the self-check query that lets the next reader verify before trusting.
     assert "complete_share" in g, (
