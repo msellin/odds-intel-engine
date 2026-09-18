@@ -32,7 +32,7 @@
         <string>-m</string>
         <string>workers.jobs.inplay_collector</string>
         <string>--cadence</string><string>45</string>
-        <string>--max-fixtures</string><string>15</string>
+        <string>--max-fixtures</string><string>60</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/margussellin/www/odds-intel-engine</string>

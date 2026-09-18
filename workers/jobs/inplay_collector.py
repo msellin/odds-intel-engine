@@ -57,6 +57,14 @@ log = logging.getLogger(__name__)
 BOOK = "Epicbet"
 BOT_LIVE = "bot_inplay_slowstate_v1"
 BOT_CONTROL = "bot_inplay_slowstate_afctl_v1"
+
+# Swallowed `write_pick` failures. Surfaced on the cycle line so a rig that is
+# collecting but recording nothing cannot look healthy (see migration 362).
+PICK_WRITE_FAILURES = 0
+
+# Max simultaneous Epicbet board_odds requests, independent of board size.
+MAX_CONCURRENT_FETCHES = 12
+_FETCH_SLOTS = threading.Semaphore(MAX_CONCURRENT_FETCHES)
 STAKE_EUR = 10.0
 PRICE_CAP = 2.20
 HEARTBEAT_NAME = "inplay_collector"
@@ -261,6 +269,14 @@ def write_pick(bot_name: str, match_id: str, pick: dict, minute: int, score: lis
              book, pick["trigger"], int(minute), int(score[0]), int(score[1])))
         return bool(n)
     except Exception as e:  # noqa: BLE001
+        # A write failure here is NOT benign: the cycle line would otherwise
+        # report `picks 0`, which is indistinguishable from "no trigger fired".
+        # That is exactly how the 'inplay_slowstate' cohort being missing from
+        # `shadow_bets_shadow_cohort_check` went unnoticed for three days while
+        # 1,501 qualifying instants were dropped (migration 362). Count it so the
+        # cycle line can show it.
+        global PICK_WRITE_FAILURES
+        PICK_WRITE_FAILURES += 1
         log.warning("shadow_bets write failed (%s): %s", bot_name, e)
         return False
 
@@ -324,10 +340,15 @@ def run(cadence: float, rediscover_s: float, max_fixtures: int, duration_s: floa
         res: dict = {}
 
         def grab(f):  # noqa: ANN001
-            try:
-                res[f["eb_id"]] = eb.board_odds(f["eb_id"])
-            except Exception as e:  # noqa: BLE001
-                res[f["eb_id"]] = {"error": str(e)[:120]}
+            # Bounded: raising --max-fixtures widens COVERAGE without raising the
+            # peak simultaneous request count against Epicbet. It is our best feed
+            # (anonymous REST, ~0.13s/fixture) and the one we least want to lose to
+            # rate-limiting, so the board grows but the burst stays flat.
+            with _FETCH_SLOTS:
+                try:
+                    res[f["eb_id"]] = eb.board_odds(f["eb_id"])
+                except Exception as e:  # noqa: BLE001
+                    res[f["eb_id"]] = {"error": str(e)[:120]}
         ths = [threading.Thread(target=grab, args=(f,)) for f in board]
         for t in ths:
             t.start()
@@ -365,19 +386,22 @@ def run(cadence: float, rediscover_s: float, max_fixtures: int, duration_s: floa
         written += write_quotes(rows)
         cycles += 1
         if cycles % 10 == 0:
-            log.info("cycle %d | fixtures %d | rows %d | picks %d | errors %d | %.1fs",
-                     cycles, len(board), written, picks, errors, time.time() - t0)
+            log.info("cycle %d | fixtures %d | rows %d | picks %d | pickfail %d | "
+                     "errors %d | %.1fs",
+                     cycles, len(board), written, picks, PICK_WRITE_FAILURES, errors,
+                     time.time() - t0)
         heartbeat(f"cycle {cycles} fixtures {len(board)} rows {written} picks {picks} errors {errors}")
         time.sleep(max(0.0, cadence - (time.time() - t0)))
     heartbeat(f"stopped after {cycles} cycles")
-    log.info("DONE cycles=%d rows=%d picks=%d errors=%d", cycles, written, picks, errors)
+    log.info("DONE cycles=%d rows=%d picks=%d pickfail=%d errors=%d",
+             cycles, written, picks, PICK_WRITE_FAILURES, errors)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="In-play board collector + slow-state paper bot (Epicbet)")
     ap.add_argument("--cadence", type=float, default=45.0)
     ap.add_argument("--rediscover", type=float, default=300.0)
-    ap.add_argument("--max-fixtures", type=int, default=15)
+    ap.add_argument("--max-fixtures", type=int, default=60)
     ap.add_argument("--hours", type=float, default=None, help="run for N hours; default = forever (launchd KeepAlive)")
     ap.add_argument("--no-picks", action="store_true", help="collect only; do not evaluate triggers")
     a = ap.parse_args()

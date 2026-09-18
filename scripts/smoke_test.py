@@ -45687,6 +45687,54 @@ def test_inplay_slowstate_price_is_book():
     assert not (names & PLACEABLE_BOTS), "in-play bots must never be placeable"
 
 
+@test("INPLAY-SLOWSTATE-COHORT-ACCEPTED — the cohort the collector writes must pass the shadow_bets CHECK constraint")
+def test_inplay_slowstate_cohort_accepted():
+    """INPLAY-SLOWSTATE-COHORT-REJECTED (2026-09-18). The rig shipped with two
+    bots, a collector and migration 357 — but nobody extended
+    `shadow_bets_shadow_cohort_check`, which whitelists `shadow_cohort`. Every
+    pick insert raised CheckViolation for three days. `write_pick` swallows the
+    exception and returns False, so the cycle line said `picks 0` — identical to
+    'no trigger fired' — while 1,501 qualifying T1 instants across 63 fixtures
+    were dropped.
+
+    This pins the coupling that was missing: the cohort literal in the collector
+    must appear in the constraint's allowed list. Mutation-verified — removing
+    'inplay_slowstate' from migration 362 fails this test."""
+    import re as _re
+    src = _engine_path("workers/jobs/inplay_collector.py").read_text(encoding="utf-8")
+    m = _re.search(r"VALUES \(%s, '([a-z_]+)'", src)
+    assert m, "could not find the cohort literal the collector INSERTs with"
+    cohort = m.group(1)
+    assert cohort == "inplay_slowstate", cohort
+
+    migs = sorted(_engine_path("supabase/migrations").glob("*.sql"))
+    latest = None
+    for f in migs:
+        t = f.read_text(encoding="utf-8")
+        marker = "ADD CONSTRAINT shadow_bets_shadow_cohort_check"
+        if marker in t:
+            # Only the CONSTRAINT BODY counts — a prose mention of the cohort in
+            # the migration's own WHY comment must not satisfy this test.
+            latest = t[t.index(marker):]
+    assert latest, "no migration defines shadow_bets_shadow_cohort_check"
+    assert f"'{cohort}'" in latest, (
+        f"cohort {cohort!r} is written by the collector but is not in the newest "
+        "shadow_bets_shadow_cohort_check — every pick insert will CheckViolation")
+
+
+@test("INPLAY-PICK-WRITE-FAILURES-VISIBLE — a swallowed pick-write failure must be counted and logged, not just warned")
+def test_inplay_pick_write_failures_visible():
+    """Same incident. The write failure WAS logged (2,694 warnings) but nothing
+    counted it, so the cycle line's `picks 0` looked like a quiet slate. Pin the
+    counter onto the cycle line so 'collecting but recording nothing' is visible."""
+    src = _engine_path("workers/jobs/inplay_collector.py").read_text(encoding="utf-8")
+    assert "PICK_WRITE_FAILURES" in src, "write failures must be counted"
+    wp = src[src.index("def write_pick("):]
+    wp = wp[:wp.index("def _af_control_pick(")]
+    assert "PICK_WRITE_FAILURES += 1" in wp, "write_pick must increment the failure counter"
+    assert "pickfail" in src, "the cycle log line must surface the failure count"
+
+
 @test("INPLAY-COLLECTOR-HEARTBEAT — the collector stamps pipeline_health_state every cycle and the VPS prunes the board")
 def test_inplay_collector_heartbeat():
     src = _engine_path("workers/jobs/inplay_collector.py").read_text(encoding="utf-8")

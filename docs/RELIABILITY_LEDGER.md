@@ -670,3 +670,51 @@ confirmed placement after it raised on the ledger INSERT and was logged as
 Guard: `store_real_bet` routes the id to the table that holds it
 (`shadow_bet_id`, mig 354); `REAL-BETS-ATTEMPTS-RECONCILED` fails if any
 confirmed attempt lacks a ledger row.
+
+---
+
+## 15. A whitelist the new writer never knew about — and "0" as a plausible number
+
+**INPLAY-SLOWSTATE-COHORT-REJECTED, found 2026-09-18, live since 2026-09-15.**
+
+Phase 1b shipped the in-play slow-state rig complete: a collector on the Mac
+under launchd KeepAlive, two bots (`bot_inplay_slowstate_v1` + an AF control
+arm), migration 357's `inplay_book_quotes`, a heartbeat with a consumer in
+`health_alerts`, and five smoke tests. It collected 45,489 board snapshots
+across 276 fixtures in three days. It recorded **zero picks**, and every part of
+it looked healthy while doing so.
+
+`shadow_bets.shadow_cohort` carries a CHECK constraint whitelisting cohort
+strings. Nobody extended it for `'inplay_slowstate'`, so **every** pick INSERT
+raised `CheckViolation` from the rig's first cycle. Measured cost: trigger T1
+(0-0, 35'–54', under 2.5 at ≤ 2.20, unsuspended) was satisfied at **1,501
+instants across 63 fixtures**, T2's window on 69 more — all dropped. The whole
+in-play question waits on this rig's n, and its n was structurally pinned at 0.
+
+**Why three days of "picks 0" read as normal.** `write_pick` catches the
+exception, logs a warning and returns False. The cycle line then reports
+`picks 0`, which is *exactly* what a genuinely quiet slate looks like — and a
+slate where no trigger fires is common enough to be unremarkable. The warning
+did fire, 2,694 times, into a log nothing alerts on. The heartbeat was green
+throughout, because the collector really was collecting; only the recording
+half was dead.
+
+**Tell:** a new writer targets an existing table whose constraints predate it —
+especially an enum-like CHECK, a FK, or a partial unique index. And, separately:
+a success counter whose zero value is indistinguishable from a legitimate quiet
+period, with the failure path counted nowhere.
+
+**Guard:** migration 362 adds the cohort. `INPLAY-SLOWSTATE-COHORT-ACCEPTED`
+extracts the cohort literal from the collector's own INSERT and asserts it
+appears in the *body* of the newest `shadow_bets_shadow_cohort_check` (a prose
+mention in the migration comment does not count — the first version of this test
+passed its own mutation check for exactly that reason). `PICK_WRITE_FAILURES` is
+counted and printed on every cycle line as `pickfail`, pinned by
+`INPLAY-PICK-WRITE-FAILURES-VISIBLE`, so "collecting but recording nothing" can
+no longer present as a quiet day.
+
+**The general rule this is the third instance of:** when a component's healthy
+state and its failed state produce the same observable, the observable is not
+monitoring. See also §"A circuit breaker whose 'working' state is
+indistinguishable from the fault" and the `real_bets` FK above — same shape,
+three different subsystems.
