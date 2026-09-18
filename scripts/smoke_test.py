@@ -27192,6 +27192,80 @@ def test_kuma_tier1_wired():
 
 
 
+@test("COOLBET-WEDGED-SESSION-SELF-HEAL")
+def test_coolbet_wedged_session_self_heal_2026_09_18():
+    """WEDGED-SESSION-SELF-HEAL-2026-09-18 — a crashed Chrome tab inside the
+    sweep's FlareSolverr session killed the Coolbet feed for 9.7h while the
+    watchdog ran 29 times and re-harvested cookies it had itself just declared
+    innocent. FlareSolverr stayed healthy throughout (`GET /` and sessions.list
+    both green), so every naive probe read OK; a FRESH session answered in 2.0s
+    with 190,708 bytes while the sweep's session returned HTTP 500 after a fixed
+    ~61s with zero bytes.
+
+    The 2026-09-10 fix for the same shape rewrote this branch's MESSAGE to say
+    "check transport first" and left the ACTION as a cookie refresh. A message
+    is not a remedy — pin the remedy."""
+    import pathlib
+    from workers.jobs.coolbet_feed_watchdog import (
+        ODDS_FS_SESSION, _probe_odds_session, _destroy_odds_session,
+    )
+    src = pathlib.Path("workers/jobs/coolbet_feed_watchdog.py").read_text()
+
+    # THE BUG: fresh cookies + dead feed must no longer fall through to a cookie
+    # refresh without first asking WHY. classify() must probe.
+    assert "WEDGED_SESSION" in src, "the wedged state must exist"
+    assert "_probe_odds_session()" in src, (
+        "the fresh-cookies branch must diagnose with one request, not narrate"
+    )
+
+    # THE REMEDY, and the blast radius. The sweep is isolated from coolbet_prod
+    # (FS-SESSION-ISOLATION 2026-07-05) and coolbet_prod is the REAL-MONEY
+    # placer's authed session. The watchdog runs in a different process with a
+    # different env, so it must name the reader's session explicitly — the
+    # ambient default is coolbet_prod, and inheriting it would point the destroy
+    # at real money to fix a read-only feed.
+    assert ODDS_FS_SESSION == "coolbet_odds_reader", (
+        f"must target the sweep's own FS session, got {ODDS_FS_SESSION!r}"
+    )
+    plist = pathlib.Path(
+        "local/launchd/com.oddsintel.coolbet-odds-snapshot.plist").read_text()
+    assert f"<string>{ODDS_FS_SESSION}</string>" in plist, (
+        "ODDS_FS_SESSION has drifted from the plist the sweep actually runs "
+        "with — the watchdog would probe and destroy the wrong session"
+    )
+    heal = src[src.index("def run("):]
+    assert "_destroy_odds_session()" in heal, "WEDGED_SESSION must self-heal"
+
+    # Inspect the destroy function's CODE, not its prose — its docstring names
+    # coolbet_prod deliberately, to say it is never a target.
+    import ast, textwrap
+    destroy_fn = next(
+        n for n in ast.walk(ast.parse(src))
+        if isinstance(n, ast.FunctionDef) and n.name == "_destroy_odds_session"
+    )
+    body = destroy_fn.body[1:] if ast.get_docstring(destroy_fn) else destroy_fn.body
+    code = "\n".join(ast.dump(n) for n in body)
+    assert "sessions.destroy" in code and "ODDS_FS_SESSION" in code
+    assert "coolbet_prod" not in code, (
+        "the destroy path must never be able to name the real-money session"
+    )
+
+    # WEDGED vs BLOCKED have OPPOSITE remedies and identical DB signatures. A
+    # `challenged` probe means Coolbet rendered a real answer — the Imperva flag
+    # is live, and cycling sessions at it hardens the block (runbook §7).
+    assert '"challenged"' in src, (
+        "a live challenge must NOT be treated as a wedge — it must route to "
+        "BLOCKED, not to a session destroy"
+    )
+
+    # Both helpers must be safe to call anywhere: they run inside a watchdog
+    # whose whole job is to survive the outage it is reporting on.
+    probe = _probe_odds_session()
+    assert probe["state"] in ("ok", "challenged", "wedged", "down"), probe
+    assert "detail" in probe
+    assert callable(_destroy_odds_session)
+
+
 @test("COOLBET-FEED-WATCHDOG")
 def test_coolbet_feed_watchdog_2026_08_26():
     """COOLBET-FEED-WATCHDOG-2026-08-26 — watches the feed's OUTPUT and only
@@ -27264,8 +27338,8 @@ def test_coolbet_feed_watchdog_2026_08_26():
 
     # classify() must be pure — safe to call anywhere, takes no action.
     state, reason = classify()
-    assert state in ("HEALTHY", "NOT_LOADED", "STALE_COOKIES", "CDP_DOWN",
-                     "BLOCKED", "UNKNOWN"), f"unexpected state {state}"
+    assert state in ("HEALTHY", "NOT_LOADED", "STALE_COOKIES", "WEDGED_SESSION",
+                     "CDP_DOWN", "BLOCKED", "UNKNOWN"), f"unexpected state {state}"
     assert reason
 
     # CORRECTED 2026-09-10: this used to assert the watchdog plist sets
@@ -27278,11 +27352,28 @@ def test_coolbet_feed_watchdog_2026_08_26():
     # this module never uses. Pin the real invariant instead: the watchdog
     # judges the feed from the DB, so it must not acquire an HTTP client.
     wd_src = pathlib.Path("workers/jobs/coolbet_feed_watchdog.py").read_text()
-    assert "CoolbetSession" not in wd_src, (
-        "the feed watchdog must judge the feed by its OUTPUT (DB rows), not "
-        "by making its own Coolbet request — otherwise it reports on a "
-        "transport the odds job does not use and invents false alarms."
+    # AMENDED 2026-09-18 (WEDGED-SESSION-SELF-HEAL). This used to assert the
+    # watchdog makes NO Coolbet HTTP call at all. That invariant was right about
+    # CLASSIFYING the feed and wrong about DIAGNOSING it: "feed dead + cookies
+    # fresh" has two causes with opposite remedies (a wedged FS session, which
+    # must be cycled; a live Imperva flag, which must be left alone), and they
+    # are indistinguishable from the DB. Refusing to make one request is what
+    # left the watchdog re-harvesting cookies for 9.7h at a crashed Chrome tab.
+    #
+    # The invariant that actually matters is narrower, so pin THAT: freshness is
+    # still judged from DB rows, and the probe is one bounded GET on the stale
+    # path only — never a poll on a healthy feed, and never a sweep.
+    assert "FROM odds_snapshots WHERE bookmaker = 'Coolbet'" in wd_src, (
+        "the feed watchdog must still judge FRESHNESS by output (DB rows); the "
+        "probe diagnoses a known-stale feed, it does not detect staleness."
     )
+    assert "CoolbetSession" not in wd_src, (
+        "the watchdog must not build its own Coolbet client — it goes through "
+        "probe_coolbet_reachable(), which is the ONE-request, never-raises entry "
+        "point, so the footprint stays bounded and the states stay shared."
+    )
+    probe_fn = wd_src[wd_src.index("def _probe_odds_session("):]
+    assert "probe_coolbet_reachable" in probe_fn
     plist = pathlib.Path("local/launchd/com.oddsintel.coolbet-feed-watchdog.plist").read_text()
     assert "coolbet_feed_watchdog" in plist
     return "coolbet feed watchdog judges output, self-heals only what it can"

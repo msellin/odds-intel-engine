@@ -461,6 +461,54 @@ escalates; it does not.
   a problem that was never about cookies."* When odds die, check TRANSPORT before
   cookies.
 
+### ⭐ 6b. Odds dead for hours, `fo-tree` HTTP **500** after ~61s → WEDGED FS SESSION (SELF-HEALS since 2026-09-18)
+- **Symptom:** identical in the DB to §6 and §7 — no Coolbet rows for hours,
+  `Board sweep enumerated 0 categories`, every :03/:33 — while the watchdog logs
+  `STALE_COOKIES … probably NOT the cookies` and re-harvests every 20 min.
+- **The tell is the SHAPE of the failure, and it is unambiguous:**
+
+  | | §6 (NO_FS) | **§6b (wedged)** | §7 (Imperva flag) |
+  |---|---|---|---|
+  | error | `Read timed out` | **HTTP 500** | HTTP 200 / 403 |
+  | timing | ~30s | **fixed ~61s** | fast, or 45-60s on a poisoned session |
+  | body | — | **0 bytes** | ~900-1000 bytes |
+
+  A **fixed** duration with **zero** bytes is a timeout, not a verdict Coolbet
+  rendered. Nothing on the other end answered at all.
+- **Cause:** the per-session Chrome tab inside FlareSolverr crashed. **FlareSolverr
+  itself stays healthy** — `GET /` returns ready, `sessions.list` lists the session,
+  `docker ps` says `(healthy)` — so every container-level check reads green while
+  every request on that one session 500s. Measured 2026-09-18: 9.7h outage,
+  container up 4 days and healthy throughout.
+- **Confirm in two commands** (the second is what separates this from §7):
+  ```bash
+  COOLBET_FLARE_SESSION=coolbet_odds_reader FLARESOLVERR_URL=http://localhost:8191 \
+    python3 -m workers.automation.coolbet_explorer --probe
+  ```
+  ```bash
+  FLARESOLVERR_URL=http://localhost:8191 \
+    python3 -m workers.automation.coolbet_explorer --probe --fresh-session
+  ```
+  `WEDGED` (61.1s, 0 bytes) on the named session + `OK` (2.0s, 190,708 bytes) on a
+  fresh one = this section. If the FRESH probe also fails, you are in §7 — the flag
+  is live and destroying sessions makes it worse.
+- **Fix — destroy ONLY the sweep's session.** It is recreated on the next sweep:
+  ```bash
+  FLARESOLVERR_URL=http://localhost:8191 python3 scripts/diagnose/flaresolverr_recover.py \
+    --session coolbet_odds_reader --apply
+  ```
+  > ⚠️ **Never `--all`, and never `coolbet_prod`.** The sweep runs on
+  > `coolbet_odds_reader` (FS-SESSION-ISOLATION 2026-07-05, set in the plist);
+  > `coolbet_prod` is the **real-money UI placer's authed** session. Destroying it
+  > to fix a read-only feed drops the placement path.
+- **Self-heal (WEDGED-SESSION-SELF-HEAL 2026-09-18):** the feed watchdog now runs
+  the first probe itself on the stale-feed-with-fresh-cookies path and destroys the
+  reader session on `wedged`, bounding this at ~30 min instead of "until someone
+  notices `/performance` has stopped moving". `challenged` routes to `BLOCKED`
+  instead — opposite remedy, see §7. Before that date this branch only *printed*
+  "check transport first" and refreshed cookies anyway; see
+  [`RELIABILITY_LEDGER.md`](RELIABILITY_LEDGER.md) §1, fourth row.
+
 ### 7. The feed dies most days → WE are very likely the cause (footprint)
 - **Symptom:** the Imperva challenge (§2) recurs daily no matter what is patched.
   FlareSolverr's own log is the tell:

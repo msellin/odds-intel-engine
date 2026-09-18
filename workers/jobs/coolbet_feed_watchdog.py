@@ -25,12 +25,21 @@ reflex. This watchdog classifies before it acts:
 
     NOT_LOADED       launchd lost the job          -> reload it (safe, automatic)
     STALE_COOKIES    Imperva cookies aged out      -> refresh from CDP-Chrome
+    WEDGED_SESSION   sweep's FS session is stuck   -> destroy ONLY that session
     CDP_DOWN         no Chrome on :9222            -> alert; needs the operator
-    BLOCKED          client gets 4xx on everything -> alert; do NOT loop
+    BLOCKED          Coolbet is challenging us     -> alert; do NOT loop
     HEALTHY          odds arriving                 -> nothing
 
-Only the first two self-heal. The rest alert once and stop, because retrying a
+Only the first three self-heal. The rest alert once and stop, because retrying a
 block is how you turn one outage into a rate-limit ban.
+
+WEDGED_SESSION and BLOCKED look identical from the DB (feed dead, cookies fresh)
+and have OPPOSITE remedies — cycle the session vs. stop touching Coolbet at all.
+They are separated by one fo-tree GET on the sweep's own FS session: HTTP 500
+after a fixed ~61s with zero bytes is a dead Chrome tab inside FlareSolverr; a
+small-but-real challenge page in ~2s is Imperva. Before 2026-09-18 this branch
+printed "check transport first" and refreshed cookies anyway, which is how a
+crashed tab cost 9.7 hours of the placement venue's feed.
 
 The real signal is OUTPUT, not process state: hours since the last Coolbet row
 in odds_snapshots. Everything else is a proxy, and today the proxies were all
@@ -57,6 +66,14 @@ log = logging.getLogger(__name__)
 # The launchd job that actually writes odds rows.
 ODDS_JOB = "com.oddsintel.coolbet-odds-snapshot"
 PLIST = f"~/Library/LaunchAgents/{ODDS_JOB}.plist"
+
+# WEDGED-SESSION-SELF-HEAL (2026-09-18). The FS session the odds sweep runs on,
+# mirroring COOLBET_FLARE_SESSION in local/launchd/<ODDS_JOB>.plist. The sweep is
+# deliberately isolated from `coolbet_prod` (FS-SESSION-ISOLATION 2026-07-05), so
+# this watchdog must name the reader's session explicitly: it runs in a different
+# process with a different env and would otherwise probe and destroy the REAL-MONEY
+# placer's session instead.
+ODDS_FS_SESSION = os.getenv("COOLBET_ODDS_FLARE_SESSION", "coolbet_odds_reader")
 
 # Hours without a single Coolbet odds row before we call the feed dead. The job
 # runs every 30 min, so 3h is six consecutive silent cycles — well past a blip.
@@ -313,18 +330,55 @@ def classify() -> tuple[str, str]:
                 f"{cookie_h:.1f}h old" if cookie_h is not None else
                 f"no Coolbet odds for {odds_h:.1f}h and cookie age is unknown")
     # FRESH COOKIES + DEAD FEED = TRANSPORT, NOT COOKIES (2026-09-10).
-    # Re-harvesting is still attempted (cheap, idempotent), but the message
-    # must stop asserting a cookie cause it has no evidence for. Twice now a
-    # transport fault has been misread as a cookie problem while the watchdog
-    # re-harvested for hours: COOLBET-GET-NO-TIMEOUT-2026-09-04, and the 5.3h
-    # outage on 2026-09-10 whose real cause was COOLBET_NO_FS=true in a stale
+    # Twice a transport fault had been misread as a cookie problem while the
+    # watchdog re-harvested for hours: COOLBET-GET-NO-TIMEOUT-2026-09-04, and the
+    # 5.3h outage on 2026-09-10 whose real cause was COOLBET_NO_FS=true in a stale
     # INSTALLED plist (direct plain-requests is blackholed by Imperva because
-    # reese84 is TLS-bound). When cookies are fresh, say transport first.
+    # reese84 is TLS-bound). The 09-10 fix rewrote this branch's MESSAGE to say
+    # "check transport first" but left the ACTION as _refresh_cookies().
+    #
+    # WEDGED-SESSION-SELF-HEAL (2026-09-18): so it happened a third time, and a
+    # message is not a remedy. Coolbet odds were dead 9.7h while this watchdog ran
+    # 29 times, printed that exact "probably NOT the cookies" sentence every run,
+    # and re-harvested cookies it had itself just declared innocent. The cause was
+    # a crashed Chrome tab inside the sweep's FS session: every fo-tree GET
+    # returned HTTP 500 after a fixed ~61s with zero bytes, while FlareSolverr
+    # itself stayed healthy and a FRESH session answered in 2.0s with 190,708
+    # bytes of real board. Nothing in the loop could ever have fixed that.
+    #
+    # probe_coolbet_reachable() has distinguished `wedged` from `challenged` since
+    # COOLBET-PROBE 2026-09-11 and its docstring already said "the remedy differs"
+    # — it was simply never called from here. One request, on the sweep's own
+    # session, is what turns this branch from narration into a diagnosis.
+    probe = _probe_odds_session()
+    if probe["state"] == "wedged":
+        return ("WEDGED_SESSION",
+                f"no Coolbet odds for {odds_h:.1f}h; cookies are fresh "
+                f"({cookie_h:.1f}h) and Coolbet is NOT challenging us — the FS "
+                f"session '{ODDS_FS_SESSION}' is stuck ({probe['detail']}). "
+                f"Destroying it so the next sweep builds a clean one.")
+
+    # `challenged` on the sweep's own session is NOT a wedge — Coolbet rendered a
+    # real answer, so this is the Imperva flag (runbook §2/§6/§7) and destroying
+    # sessions does nothing for it. Reduce footprint and let the flag decay.
+    if probe["state"] == "challenged":
+        return ("BLOCKED",
+                f"no Coolbet odds for {odds_h:.1f}h; cookies are fresh "
+                f"({cookie_h:.1f}h) and the FS session is NOT wedged — Coolbet "
+                f"answered with a challenge page ({probe['detail']}). The flag is "
+                f"live: see runbook §7, reduce footprint "
+                f"(scripts/ops/coolbet_pause_resume.sh pause) and let it decay. "
+                f"Do NOT cycle sessions at this.")
+
+    # `ok` (feed dead but fo-tree answers → downstream fault) or `down` (our own
+    # plumbing). Neither is a cookie problem; a re-harvest is still cheap and
+    # idempotent, so it is attempted, but the message must not assert a cause.
     return ("STALE_COOKIES",
             f"no Coolbet odds for {odds_h:.1f}h despite cookies only "
-            f"{cookie_h:.1f}h old — so this is probably NOT the cookies. "
-            f"Check TRANSPORT first (runbook §6): is the sweep logging "
-            f"'NO_FS mode'? is FlareSolverr up on :8191? has the INSTALLED "
+            f"{cookie_h:.1f}h old — so this is probably NOT the cookies, and the "
+            f"FS session is not wedged (probe: {probe['state']} — "
+            f"{probe['detail']}). Check TRANSPORT (runbook §6): is the sweep "
+            f"logging 'NO_FS mode'? is FlareSolverr up on :8191? has the INSTALLED "
             f"plist drifted from local/launchd/? A re-harvest is tried anyway "
             f"because it is cheap, but do not let it mask a transport fault")
 
@@ -333,6 +387,55 @@ def classify() -> tuple[str, str]:
             f"no Coolbet odds for {odds_h:.1f}h despite a loaded job, live CDP "
             f"and fresh cookies — upstream is refusing the client. Needs a "
             f"human: check for an Imperva/CDN block or a changed API surface.")
+
+
+def _probe_odds_session() -> dict:
+    """ONE fo-tree GET on the SWEEP's FS session. Never raises.
+
+    WEDGED-SESSION-SELF-HEAL (2026-09-18). Deliberately probes
+    `ODDS_FS_SESSION`, not the watchdog's ambient default — the default is
+    `coolbet_prod`, the real-money placer's session, and a wrong answer here
+    would route the destroy remedy at it.
+
+    Returns probe_coolbet_reachable()'s dict; on import/other failure returns
+    state "down" so the caller falls through to the cookie path rather than
+    destroying a session on no evidence.
+    """
+    try:
+        from workers.automation.coolbet_explorer import probe_coolbet_reachable
+        return probe_coolbet_reachable(session_name=ODDS_FS_SESSION)
+    except Exception as e:  # noqa: BLE001
+        log.warning("wedge probe failed (non-fatal): %s", e)
+        return {"state": "down", "detail": f"probe unavailable: {e}",
+                "elapsed_s": 0, "bytes": 0}
+
+
+def _destroy_odds_session() -> bool:
+    """Destroy ONLY the sweep's FS session; the next sweep recreates it.
+
+    This is the surgical recovery from the FS-sticking pattern: FlareSolverr
+    keeps serving `GET /` and `sessions.list` while one session's Chrome tab is
+    dead, so every naive health probe reads green. `coolbet_prod` is never a
+    target here — destroying it would drop the real-money placer's authed
+    session to fix a read-only feed.
+    """
+    fs_url = os.getenv("FLARESOLVERR_URL", "http://localhost:8191")
+    try:
+        import json as _json
+        import urllib.request as _url
+        req = _url.Request(
+            f"{fs_url.rstrip('/')}/v1",
+            data=_json.dumps({"cmd": "sessions.destroy",
+                              "session": ODDS_FS_SESSION}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with _url.urlopen(req, timeout=30) as r:
+            ok = _json.loads(r.read()).get("status") == "ok"
+        log.info("destroy FS session %r → %s", ODDS_FS_SESSION, "ok" if ok else "failed")
+        return ok
+    except Exception as e:  # noqa: BLE001
+        log.warning("destroying FS session %r failed: %s", ODDS_FS_SESSION, e)
+        return False
 
 
 def _reload_job() -> bool:
@@ -515,6 +618,20 @@ def run(dry_run: bool = False) -> dict:
 
     if state == "NOT_LOADED":
         result["action"] = "reloaded" if _reload_job() else "reload_failed"
+    elif state == "WEDGED_SESSION":
+        # Self-healing: the next sweep (:03/:33) builds a fresh session, so this
+        # bounds a wedge at ~30 min instead of "until a human looks at the
+        # /performance page". Alert either way — a wedge that recurs often is a
+        # different problem from one that happens once.
+        if _destroy_odds_session():
+            result["action"] = f"destroyed_fs_session={ODDS_FS_SESSION}"
+        else:
+            result["action"] = "fs_session_destroy_failed"
+            state = "BLOCKED"
+            reason = (f"{reason} — but destroying it FAILED; FlareSolverr may be "
+                      f"down or unreachable on FLARESOLVERR_URL. Needs a human: "
+                      f"see runbook §1.")
+            result["state"], result["reason"] = state, reason
     elif state == "STALE_COOKIES":
         if _refresh_cookies():
             result["action"] = "cookies_refreshed"

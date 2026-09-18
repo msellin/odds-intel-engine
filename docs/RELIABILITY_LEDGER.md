@@ -22,13 +22,41 @@ somewhere quieter.
 | 2026-09-04 | cookies | a GET with no timeout, hung 15h15m |
 | 2026-09-10 | Imperva / cookies | `COOLBET_NO_FS=true` in a **stale installed plist** |
 | 2026-09-11 | cookies (again) | FS session challenged on reuse; our own request volume |
+| 2026-09-18 | cookies (a fourth time) | a **crashed Chrome tab** inside the sweep's FS session |
 
 The 2026-09-04 note says it best: *"the feed watchdog cheerfully re-harvested
 cookies at a problem that was never about cookies."*
 
-**Guard:** the `STALE_COOKIES` message now says *"this is probably NOT the
-cookies — check TRANSPORT first"* and names the three checks. **Rule: when
-cookies are fresh and the feed is dead, it is not the cookies.**
+**Rule: when cookies are fresh and the feed is dead, it is not the cookies.**
+
+**The guard that did NOT work, and why (2026-09-18).** After 09-10 the guard was
+that the `STALE_COOKIES` *message* says "this is probably NOT the cookies — check
+TRANSPORT first". On 2026-09-18 Coolbet odds were dead **9.7 hours**. The watchdog
+ran 29 times, printed that exact sentence every single run — and re-harvested
+cookies every single run, because only the message had been changed, never the
+action. The outage surfaced when the owner noticed `/performance` had not moved in
+two days.
+
+**This is the sub-pattern worth naming: a better error message is not a remedy.**
+It moves the cost from "diagnose it wrong" to "diagnose it right and still do
+nothing", which looks like progress in the log and is identical in the DB. If the
+watchdog can name the likely cause, it is close enough to *test* the cause.
+
+**Guard (real this time):** `WEDGED-SESSION-SELF-HEAL` — when the feed is stale
+and cookies are fresh, `classify()` now spends ONE `fo-tree` GET on the sweep's own
+FS session and branches on the answer:
+
+| probe | means | remedy |
+|---|---|---|
+| HTTP 500, fixed ~61s, **0 bytes** | dead Chrome tab inside FlareSolverr | `WEDGED_SESSION` → destroy **only** `coolbet_odds_reader` |
+| small real body, ~2s | Imperva flag is live | `BLOCKED` → reduce footprint, do **not** cycle sessions |
+
+Those two were previously indistinguishable from the DB and have opposite
+remedies. FlareSolverr itself stayed **healthy** throughout the 09-18 outage —
+`GET /` and `sessions.list` both green — so every container-level probe read fine;
+a *fresh* session answered in 2.0s with 190,708 bytes while the sweep's session
+returned 0. **Corollary: "FlareSolverr is up" says nothing about whether your
+session works.** Smoke: `COOLBET-WEDGED-SESSION-SELF-HEAL`.
 
 ## 2. Two things that look identical are not the same thing
 
