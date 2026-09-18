@@ -44850,6 +44850,68 @@ def test_shadow_picks_attributable():
         )
 
 
+@test("BACKLOG-AUDIT-CLOSURES-HOLD — an audited closure must not silently reopen")
+def test_backlog_audit_closures_hold():
+    """BACKLOG-AUDIT 2026-09-18.
+
+    A full audit of every open row in PRIORITY_QUEUE.md found that **77 of 141
+    apparent open rows were already done or stale** — the queue was misleading a
+    reader more often than informing one. The cleanup closed 17 rows, merged 6
+    duplicates, and wrote an explicit reason onto 38 stale rows.
+
+    Two things that audit relied on, pinned here so the next bulk edit cannot
+    undo them silently:
+
+    1. **A row's status is its FIRST marker.** Rows routinely mention a later
+       "✅ Done" inside the body to describe partial progress, so a naive
+       `grep -c ⬜` over-counts open work — that is exactly how the first pass
+       reported 141 where the true number was 124.
+    2. **A closure carries its evidence.** Every row this audit closed was
+       annotated with WHY. If a future edit reopens one of those rows without
+       removing the annotation, the queue is asserting two contradictory things
+       at once — the failure mode the audit existed to remove.
+    """
+    import re as _re
+
+    q = _engine_path("PRIORITY_QUEUE.md").read_text(encoding="utf-8").split("\n")
+
+    def status(line):
+        pos = {m: line.find(m) for m in ("⬜", "🔄 In Progress", "✅", "⛔")
+               if line.find(m) >= 0}
+        if not pos:
+            return None
+        return "OPEN" if min(pos, key=pos.get) in ("⬜", "🔄 In Progress") else "CLOSED"
+
+    CLOSURE = ("closed as already done", "MERGED into", "REMOVED as duplicate",
+               "closed as ALREADY RESOLVED", "closed as DECIDED", "closed as DUPLICATE")
+    closures = [(i + 1, l) for i, l in enumerate(q)
+                if "BACKLOG-AUDIT" in l and any(c in l for c in CLOSURE)]
+    assert len(closures) >= 15, (
+        f"only {len(closures)} audited closures remain; the 2026-09-18 audit closed 17 — "
+        f"a bulk edit has dropped the closure record"
+    )
+    for ln, l in closures:
+        assert status(l) == "CLOSED", (
+            f"PRIORITY_QUEUE.md:{ln} carries a BACKLOG-AUDIT closure note but its first "
+            f"status marker is OPEN — the row now asserts both that it is done and that "
+            f"it is not. Remove the note or the open marker, not neither"
+        )
+
+    reasons = [l for l in q if "STALE, reason:" in l]
+    assert len(reasons) >= 30, (
+        f"only {len(reasons)} stale rows still carry a reason; the audit wrote 38. "
+        f"A stale row without a reason is what made this queue unreadable"
+    )
+    # every stale reason names a class, so the WHY is classified not just narrated
+    for l in reasons:
+        m = _re.search(r"STALE, reason: ([A-Z][^.]{4,90})\.", l)
+        assert m, (
+            "a STALE annotation must open with a reason CLASS before the first full "
+            "stop (e.g. 'SUBJECT RETIRED', 'PREMISE REFUTED BY MEASUREMENT') so the "
+            "pattern is visible across rows, not just narrated one row at a time"
+        )
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).
