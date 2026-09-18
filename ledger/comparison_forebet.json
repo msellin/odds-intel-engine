@@ -1,24 +1,24 @@
 {
   "source": "Forebet",
   "source_url": "https://www.forebet.com/en/football-predictions/predictions-1x2/<date>  (and /under-over-25-goals/<date>)",
-  "snapshot_at_utc": "2026-09-02T16:38:43+00:00",
+  "snapshot_at_utc": "2026-09-18T07:15:31+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-09-03"
+    "end": "2026-09-19"
   },
   "status": "ok",
   "min_sample_each_side": 50,
   "scope_notes": "1X2 highest-prob pick + OU 2.5 pick only, soccer, settled rows (Forebet's own predict_y/predict_no flag), 10 EUR flat stake. Coverage limited to ~last 38 days because Forebet date URLs older than that silently fall back to today. FOREBET-REPRICE-2026-09-02: their_stats is NOT Forebet's published ROI. Forebet's quoted odds are frequently unobtainable — see scripts/verify_forebet_odds_cross_source.py, which shows 9.5% of their picks claiming >1.5x the best price available anywhere against 0.7% for a third-party control, concentrated on winners (p=2.4e-06). their_stats therefore re-settles their own picks at the BEST closing price across our books — the most favourable realistic assumption for them — over the subset we can fixture-match. Their published figure is kept verbatim as their_stats_claimed_odds, and at_median_close / at_bet365_close in their_reprice show what an ordinary single account would get.",
   "reproducible_via": "scripts/scrape_forebet.py + scripts/audit_vs_forebet.py",
   "their_stats": {
-    "n": 1136,
-    "roi_pct": -0.18,
-    "hit_rate_pct": 50.26,
-    "pnl_total": -20.86,
-    "stake_total": 11360.0,
+    "n": 1102,
+    "roi_pct": -2.83,
+    "hit_rate_pct": 50.0,
+    "pnl_total": -312.2,
+    "stake_total": 11020.0,
     "priced_at": "best closing price across our books",
     "n_total_picks": 1909,
-    "coverage_pct": 59.5
+    "coverage_pct": 57.7
   },
   "their_stats_claimed_odds": {
     "n": 1909,
@@ -31,35 +31,35 @@
   },
   "their_reprice": {
     "n_total": 1909,
-    "n_repriced": 1136,
-    "coverage_pct": 59.5,
+    "n_repriced": 1102,
+    "coverage_pct": 57.7,
     "median_books_at_close": 11,
     "at_claimed_odds": {
-      "n": 1136,
-      "roi_pct": 8.97,
-      "hit_rate_pct": 50.26,
-      "pnl_total": 1018.8,
-      "stake_total": 11360.0
+      "n": 1102,
+      "roi_pct": 8.79,
+      "hit_rate_pct": 50.0,
+      "pnl_total": 969.1,
+      "stake_total": 11020.0
     },
     "at_best_close": {
-      "n": 1136,
-      "roi_pct": -0.18,
-      "hit_rate_pct": 50.26,
-      "pnl_total": -20.86,
-      "stake_total": 11360.0
+      "n": 1102,
+      "roi_pct": -2.83,
+      "hit_rate_pct": 50.0,
+      "pnl_total": -312.2,
+      "stake_total": 11020.0
     },
     "at_median_close": {
-      "n": 1136,
-      "roi_pct": -7.4,
-      "hit_rate_pct": 50.26,
-      "pnl_total": -840.32,
-      "stake_total": 11360.0
+      "n": 1102,
+      "roi_pct": -7.6,
+      "hit_rate_pct": 50.0,
+      "pnl_total": -837.41,
+      "stake_total": 11020.0
     },
     "at_bet365_close": {
       "n": 1052,
-      "roi_pct": -6.54,
+      "roi_pct": -6.74,
       "hit_rate_pct": 50.1,
-      "pnl_total": -688.2,
+      "pnl_total": -709.3,
       "stake_total": 10520.0
     }
   },
@@ -130,18 +130,18 @@
     "not_settled": 57
   },
   "our_stats_same_window": {
-    "n": 529,
-    "stake_total": 5290.0,
-    "pnl_total": 563.22,
-    "roi_pct": 10.65,
-    "hit_rate_pct": 40.64,
-    "avg_odds": 2.877,
+    "n": 688,
+    "stake_total": 6880.0,
+    "pnl_total": 550.14,
+    "roi_pct": 8.0,
+    "hit_rate_pct": 41.72,
+    "avg_odds": 2.759,
     "priced_at": "best price live at pick time",
     "n_total_settled": 693,
-    "coverage_pct": 76.3,
-    "roi_pct_recorded": 15.99,
-    "roi_pct_recorded_all_rows": 14.33,
-    "hit_rate_pct_recorded_all_rows": 42.57,
+    "coverage_pct": 99.3,
+    "roi_pct_recorded": 12.04,
+    "roi_pct_recorded_all_rows": 12.03,
+    "hit_rate_pct_recorded_all_rows": 41.7,
     "restatement_note": "roi_pct is priced at odds that were live at pick time. roi_pct_recorded is the same bets at the stored odds_at_pick, which STALE-BEST-ODDS-2026-09-02 showed to be a high-water mark across the whole snapshot history rather than a price on offer."
   }
 }
