@@ -2609,3 +2609,47 @@ correct; a number built from stale legs is not. Guarded by the smoke test
   `tier=1`, including Andorran second divisions, Swiss regional groups, U19 and
   reserve sides. Any "by tier" analysis is measuring almost nothing. Filter by an
   explicit league list instead.
+
+---
+
+## 66. A bootstrap CI over a sample with ZERO losses is a fiction that always reads "significant" (2026-09-18)
+
+Found while sweeping in-play triggers against collected Epicbet boards
+(`scripts/inplay_trigger_sweep.py`). The sweep tested 288 cells and reported
+**4 with a 95% CI strictly above zero** — which looked like the first positive
+in-play result we had ever had.
+
+All four were the same artifact. They were "back the leader at a two-goal lead":
+
+| window | n | wins | win rate | avg odds | ROI | ROI if ONE more loss |
+|---|---|---|---|---|---|---|
+| 55'–69' | 36 | 36 | **100%** | 1.107 | +10.67% | +7.59% |
+| 65'–79' | 33 | 33 | **100%** | 1.049 | +4.88% | +1.70% |
+| 75'–89' | 22 | 22 | **100%** | 1.031 | +3.09% | **−1.60%** |
+| 80'–94' | 17 | 17 | **100%** | 1.020 | +2.00% | **−4.00%** |
+
+A bootstrap resamples the OBSERVED outcomes. If the sample contains no losses,
+no resample can contain one, so the interval collapses to the spread of the
+*odds* and can never cross zero. The CI is not measuring the risk of the bet; it
+is measuring nothing at all. And a two-goal lead at 80' does not convert 100% of
+the time — it converts ~97–99% — so at odds 1.02 the cell is roughly break-even
+to negative in truth, which the "significant" CI actively conceals.
+
+**Tell:** a cell with an extreme win rate (>95%) at short odds (<1.15), a
+suspiciously narrow CI, and n in the tens. Short-priced near-certainties are
+where this always bites, because they are exactly the bets whose loss is rare
+enough to be absent from a small sample.
+
+**Guard:** `summarise()` computes `losses` and refuses to treat a CI as
+meaningful below **two observed losses** (`ci_ok`), printing `!CI` and excluding
+the cell from the significant count. It also reports `roi_one_more_loss` — what
+the cell becomes if a single winner had gone the other way — which is the only
+honest sensitivity number for this shape. Pinned by
+`INPLAY-SWEEP-CI-NEEDS-LOSSES`.
+
+**With the guard applied the same sweep reads: 0 trustworthy positives out of
+288 cells, against a noise expectation of ~7.2.** That is the real result, and
+it is a clean negative rather than a discovery — which is the point of running
+the check before believing the table. See also gotcha 8 (gate on CLV, not ROI)
+and the 2026-09-14 in-play round, where a +9.0% cell died to a window-widening
+check for a related reason.

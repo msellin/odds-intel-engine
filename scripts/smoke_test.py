@@ -45803,6 +45803,34 @@ def test_inplay_pick_write_failures_visible():
     assert "pickfail" in src, "the cycle log line must surface the failure count"
 
 
+@test("INPLAY-SWEEP-CI-NEEDS-LOSSES — a bootstrap CI over a lossless sample must not read as significant")
+def test_inplay_sweep_ci_needs_losses():
+    """ANALYSIS_GOTCHAS 66 (2026-09-18). The trigger sweep first reported 4 of 288
+    cells with a 95% CI strictly above zero. All four were 100%-win-rate cells at
+    odds 1.02-1.11: a bootstrap resamples observed outcomes, so a sample with no
+    losses can never produce one and its interval cannot cross zero. Pin the guard
+    and the sensitivity column, and verify the guard actually fires on a lossless
+    sample."""
+    import importlib.util
+    path = _engine_path("scripts/inplay_trigger_sweep.py")
+    src = path.read_text(encoding="utf-8")
+    assert "ci_ok" in src and "roi_one_more_loss" in src
+
+    spec = importlib.util.spec_from_file_location("_sweep", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    lossless = [{"odds": 1.05, "won": True, "at": 0} for _ in range(30)]
+    st = mod.summarise(lossless)
+    assert st["losses"] == 0
+    assert st["lo"] > 0, "a lossless bootstrap does produce a positive-looking CI"
+    assert not st["ci_ok"], "…and the guard must refuse to trust it"
+    assert st["roi_one_more_loss"] < st["roi"], "the sensitivity column must bite"
+
+    mixed = [{"odds": 2.0, "won": i % 2 == 0, "at": 0} for i in range(30)]
+    assert mod.summarise(mixed)["ci_ok"], "a sample with real losses keeps its CI"
+
+
 @test("INPLAY-COLLECTOR-HEARTBEAT — the collector stamps pipeline_health_state every cycle and the VPS prunes the board")
 def test_inplay_collector_heartbeat():
     src = _engine_path("workers/jobs/inplay_collector.py").read_text(encoding="utf-8")
