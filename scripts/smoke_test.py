@@ -46144,6 +46144,37 @@ def test_coolbet_inplay_never_prod_session():
         assert banned not in src, f"an in-play COLLECTOR must not reference {banned}"
 
 
+@test("COOLBET-INPLAY-SELF-RECYCLES — a fully-failed cycle must rebuild the session, not wait 20 min for the watchdog")
+def test_coolbet_inplay_self_recycles():
+    """Measured 2026-09-18: this FS session wedges repeatedly — ~1.6h the first
+    time, then ~17 min after a heal — and a wedge never recovers by itself. The
+    feed watchdog heals it, but on a 20-min cycle, so a session dying every 17 min
+    would be dead about half the time. Every target failing in one cycle is
+    unambiguous evidence, so the collector recycles itself and bounds the outage
+    at one cadence (~90s). Pins that, and that the recycle can only ever name its
+    OWN session."""
+    import re as _re
+    src = _engine_path("workers/jobs/inplay_coolbet_collector.py").read_text(encoding="utf-8")
+    assert "_recycle_session" in src, "the collector must be able to rebuild its own session"
+    run = src[src.index("def run("):]
+    assert _re.search(r"errors\s*==\s*len\(targets\)", run), \
+        "a cycle where EVERY target failed must be recognised as a wedge"
+    assert "session = _recycle_session()" in run, \
+        "…and must actually replace the session, not just log"
+    # Inspect the CODE, not the prose — the docstring names coolbet_prod
+    # deliberately, to say it is never a candidate. (The same assertion written
+    # against raw text is what broke COOLBET-WEDGED-SESSION-SELF-HEAL an hour
+    # earlier; a check that forbids a word cannot read the sentence forbidding it.)
+    import ast as _ast
+    fn = next(n for n in _ast.walk(_ast.parse(src))
+              if isinstance(n, _ast.FunctionDef) and n.name == "_recycle_session")
+    body = fn.body[1:] if _ast.get_docstring(fn) else fn.body
+    code = "\n".join(_ast.dump(n) for n in body)
+    assert "FS_SESSION_NAME" in code, "the recycle must name its own session constant"
+    assert "coolbet_prod" not in code, \
+        "the recycle path must never be able to name the real-money session"
+
+
 @test("COOLBET-INPLAY-SERIAL-ONLY — parallel Coolbet reads silently return another match's markets")
 def test_coolbet_inplay_serial_only():
     """INPLAY-VIABILITY-GATE defect (b): running more than one reader through a

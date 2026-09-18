@@ -45,6 +45,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 
@@ -234,6 +235,35 @@ def write_row(row: dict) -> int:
     )
 
 
+def _recycle_session():
+    """Destroy this collector's FS session and hand back a fresh one.
+
+    WHY THIS IS IN-PROCESS AND NOT LEFT TO THE WATCHDOG. Measured 2026-09-18:
+    this session wedges REPEATEDLY — ~1.6 h the first time, then ~17 min after a
+    heal — and a wedge never recovers on its own. The feed watchdog now heals it
+    too, but it runs every 20 min, so a session that dies every 17 min would
+    spend roughly half its life dead. The collector knows within ONE cycle (every
+    target failing is unambiguous), so it recycles itself and bounds the outage
+    at ~90 s. The watchdog stays as the backstop for the case where the whole
+    process is wedged rather than just the session.
+
+    `coolbet_prod` is never a candidate — this only ever names FS_SESSION_NAME."""
+    import json as _json
+    import urllib.request as _url
+    fs = os.getenv("FLARESOLVERR_URL", "http://localhost:8191").rstrip("/")
+    try:
+        req = _url.Request(f"{fs}/v1",
+                           data=_json.dumps({"cmd": "sessions.destroy",
+                                             "session": FS_SESSION_NAME}).encode(),
+                           headers={"Content-Type": "application/json"})
+        with _url.urlopen(req, timeout=30) as r:
+            log.warning("recycled wedged FS session %r: %s", FS_SESSION_NAME,
+                        _json.loads(r.read()).get("status"))
+    except Exception as e:                              # noqa: BLE001
+        log.warning("could not destroy FS session %r: %s", FS_SESSION_NAME, e)
+    return CoolbetSession(require_auth=False, fs_session_name=FS_SESSION_NAME)
+
+
 def run(cadence: float, max_fixtures: int, once: bool, dry_run: bool) -> None:
     # One session, one reader, for the life of the process (see hazard 2).
     session = CoolbetSession(require_auth=False, fs_session_name=FS_SESSION_NAME)
@@ -318,6 +348,12 @@ def run(cadence: float, max_fixtures: int, once: bool, dry_run: bool) -> None:
         cycles += 1
         log.info("cycle %d | targets %d | rows %d | empty %d | errors %d | %.1fs",
                  cycles, len(targets), written, empty, errors, time.time() - t0)
+
+        # EVERY target failing is a wedged session, not a bad slate — recycle now
+        # rather than spending the next 20 min erroring until the watchdog looks.
+        if targets and errors == len(targets):
+            log.warning("all %d targets failed — treating as a wedged session", errors)
+            session = _recycle_session()
         if once:
             return
         time.sleep(max(0.0, cadence - (time.time() - t0)))
