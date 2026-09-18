@@ -53,6 +53,13 @@ WHITELIST_EXACT = {
     # It was whitelisted in scripts/diagnose/flaresolverr.py and NOT here — the
     # exact divergence that file's own comment warned about.
     "coolbet_dev",
+    # COOLBET-INPLAY (2026-09-18). The in-play collector is a KeepAlive Mac
+    # process holding a long-lived session, i.e. exactly the shape this sweeper
+    # exists to kill. Whitelisted the same day it shipped rather than after it
+    # was destroyed mid-run — this file's own header warns that a sweep pointed
+    # at the Mac "would have destroyed both mid-run, every hour, and looked like
+    # a scraper bug rather than a sweeper one" (FS-SWEEP-WHITELIST-INCOMPLETE).
+    "coolbet_inplay",
 }
 WHITELIST_PREFIXES = (
     "hltv_",

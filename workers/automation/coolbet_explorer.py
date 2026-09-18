@@ -90,9 +90,11 @@ def fetch_match_markets(
     Each market: {id, name, line, market_type_id, outcomes:[{id, name, result_key}]}.
     Odds are NOT included — call fetch_odds_for_markets to fill those in.
 
-    `live=True` switches sidebets to `matchStatus=LIVE` (vs default OPEN) and
-    uses `limit=13` (matches the browser's live-page request). Used by the
-    inplay snapshot capture flow. Per browser curl 2026-05-20, only the
+    `live=True` switches sidebets to `matchStatus=LIVE` (vs default OPEN). It uses
+    the SAME non-binding `limit` as pre-match — it used to pin 13, "matching the
+    browser's live-page request", which returned 8 groups / 12 markets where the
+    non-binding limit returns 39 / 48 (measured live on match 6147686,
+    2026-09-18). Used by the in-play collectors and by `coolbet_inplay`. Per browser curl 2026-05-20, only the
     sidebets endpoint's matchStatus param needs flipping; fo-match returns
     the same shape for live + prematch matches."""
     flat: list[dict] = []

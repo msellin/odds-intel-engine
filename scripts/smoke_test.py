@@ -39755,8 +39755,12 @@ def test_fs_sweep_whitelist():
 
     # Every live feed session, by the name the code/plist actually uses.
     from workers.automation.epicbet_explorer import _FS_SESSION_ID as EPICBET_FS
+    # `coolbet_inplay` is read from the collector's own constant, so renaming it
+    # there without whitelisting the new name fails here rather than silently
+    # arming the sweeper against a live feed.
+    from workers.jobs.inplay_coolbet_collector import FS_SESSION_NAME as INPLAY_FS
     for live in ("coolbet_prod", "coolbet_odds_reader", EPICBET_FS,
-                 "coolbet_dev", "hltv_anything"):
+                 "coolbet_dev", "hltv_anything", INPLAY_FS):
         assert is_whitelisted(live), (
             f"{live} is a LIVE FlareSolverr session — sweeping it kills a feed "
             f"(or forces an SMS re-enrolment) mid-run"
@@ -45858,10 +45862,35 @@ def test_coolbet_inplay_never_prod_session():
     would wedge it, so it carries its own session name. Pin that, and pin that it
     does not reach a money primitive."""
     src = _engine_path("workers/jobs/inplay_coolbet_collector.py").read_text(encoding="utf-8")
-    assert 'FS_SESSION_NAME = "coolbet_inplay"' in src
-    assert "coolbet_prod" not in src.split("NEVER")[-1] or 'FS_SESSION_NAME = "coolbet_prod"' not in src, \
-        "the collector must not use the real-money session"
+    import re as _re
+    m = _re.search(r'^FS_SESSION_NAME\s*=\s*"([^"]+)"', src, _re.M)
+    assert m, "FS_SESSION_NAME must be a module-level string constant"
+    assert m.group(1) == "coolbet_inplay", m.group(1)
+    assert m.group(1) != "coolbet_prod", "that session belongs to the real-money placer"
     assert "fs_session_name=FS_SESSION_NAME" in src, "the session name must actually be passed"
+    # The previous version of this check was `"coolbet_prod" not in X or Y not in src`,
+    # an `or` whose right operand is true for every value except coolbet_prod — so it
+    # could never fail and only LOOKED like the safety check. Assert on the parsed
+    # constant instead of on substrings of the file.
+
+    # FOOTPRINT. A separate FS session does not isolate the IP. `daemons_paused` is
+    # the operator's global stop-touching-Coolbet switch, and a KeepAlive collector
+    # that ignores it sustains the very Imperva escalation the pause exists to end.
+    assert "is_daemons_paused" in src, "the collector must honour the global footprint pause"
+    run = src[src.index("def run("):]
+    assert "is_daemons_paused" in run, "the pause must be READ inside the cycle loop"
+    # Reading the switch is not honouring it. Require that the paused branch
+    # actually short-circuits the cycle, and that an unreadable switch fails
+    # CLOSED (paused), like every other reader of this flag.
+    import re as _re
+    branch = _re.search(r"if paused:(.{0,400}?)(?:targets\s*=|\Z)", run, _re.S)
+    assert branch, "there must be an `if paused:` branch in the cycle loop"
+    assert "continue" in branch.group(1) or "return" in branch.group(1), \
+        "a paused cycle must skip the Coolbet requests, not merely log"
+    # Tolerate a trailing `# noqa` on the except line — match the ASSIGNMENT,
+    # which is the thing that must be true, rather than the line's exact shape.
+    assert _re.search(r"except\b[^\n]*\n\s*paused,\s*why\s*=\s*True", run), \
+        "an unreadable daemons_paused must fail CLOSED (treated as paused)"
     for banned in ("place_bet", "place_all_bets", "assert_may_place", "real_bets",
                    "coolbet_ui_placer", "execute=True"):
         assert banned not in src, f"an in-play COLLECTOR must not reference {banned}"
@@ -45904,8 +45933,20 @@ def test_coolbet_inplay_suspension_is_data():
     collector that drops suspended selections destroys the measurement it was
     built for — the same rule the Epicbet arm already follows."""
     src = _engine_path("workers/jobs/inplay_coolbet_collector.py").read_text(encoding="utf-8")
-    assert '"suspended": status == "SUSPENDED"' in src, "suspension must be stored as a field"
     assert "SUSPENSION IS THE POINT" in src, "keep the reason at the parser"
+    # The first version of this collector did `if not price: continue`, which
+    # recorded "the book pulled this market" as "this market does not exist" —
+    # destroying the exact quantity the rig measures, and biasing it toward
+    # making the signal look weaker. A price-less selection MUST survive with
+    # suspended=True, the way the Epicbet arm already writes it.
+    assert "continue" not in src[src.index("raw = entry.get"):src.index("sels.append")], \
+        "a price-less selection must not be skipped — it is a SUSPENDED selection"
+    assert 'or price is None' in src, "a missing price must itself imply suspended"
+    assert '"odds": price' in src, "store the price as None rather than dropping the selection"
+    # And the two books must not double-count: fo-match and sidebets both return
+    # the headline markets, which produced 433 duplicated (row, fam, line) groups
+    # against zero on the Epicbet side.
+    assert "by_key" in src, "markets must be de-duplicated by (fam, line)"
 
 
 @test("INPLAY-COLLECTOR-HEARTBEAT — the collector stamps pipeline_health_state every cycle and the VPS prunes the board")
