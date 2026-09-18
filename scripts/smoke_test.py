@@ -80,6 +80,19 @@ def assert_no_error(fn, *args, **kwargs):
 import threading as _threading
 _PUBLISHER_PATCH_LOCK = _threading.Lock()
 
+# ROUTER-ENV-LOCK (2026-09-18). Exactly the same hazard, different shared global:
+# `os.environ` is process-wide, and TWO tests mutate ROUTER_ALLOW_REAL —
+# GATE-STATUS-READS-THE-SAME-ENV sweeps it through six values, while
+# COOLBET-ROUTER-REAL-GATE sets it to "false". Under the ThreadPoolExecutor they
+# can interleave, and then one test reads the other's value: CI failed with
+# "gate_status reported router_allow_real_env=True for ROUTER_ALLOW_REAL=''".
+# Both tests were CORRECT and both restored in `finally` — concurrency alone made
+# them wrong, which is why this surfaced only when an unrelated commit added four
+# tests and shifted the scheduling. A safety test that passes or fails on thread
+# timing is not a safety test. Any test that mutates ROUTER_ALLOW_REAL must hold
+# this lock.
+_ROUTER_ENV_LOCK = _threading.Lock()
+
 import pathlib as _pathlib
 _engine_root = _pathlib.Path(__file__).resolve().parent.parent
 _web_root = _engine_root.parent / "odds-intel-web"
@@ -36332,19 +36345,23 @@ def test_best_price_router_execute_wiring():
     # fills in missing ones, so the test was silently re-enabling the very gate
     # it exists to verify, and failed the moment the line landed in .env.
     # Assigning a falsy value is immune: dotenv will not override it.
+    # ROUTER-ENV-LOCK: os.environ is process-wide and GATE-STATUS-READS-THE-SAME-ENV
+    # sweeps this same name through six values. Under the ThreadPoolExecutor the
+    # two interleave and each reads the other's write — see the lock's definition.
     _prev_gate = os.environ.get("ROUTER_ALLOW_REAL")
-    os.environ["ROUTER_ALLOW_REAL"] = "false"
-    try:
-        r = bpr.route(execute=True)
-        assert r["mode"] == "report", "execute=True without ROUTER_ALLOW_REAL must degrade to report"
-        assert r["dispatched"] == 0, "no dispatch without the real-money env gate"
-        assert "real_refused" in r, "must record that real money was refused"
-    finally:
-        # Restore, or every later test in this process runs with real money off.
-        if _prev_gate is None:
-            os.environ.pop("ROUTER_ALLOW_REAL", None)
-        else:
-            os.environ["ROUTER_ALLOW_REAL"] = _prev_gate
+    with _ROUTER_ENV_LOCK:
+        os.environ["ROUTER_ALLOW_REAL"] = "false"
+        try:
+            r = bpr.route(execute=True)
+            assert r["mode"] == "report", "execute=True without ROUTER_ALLOW_REAL must degrade to report"
+            assert r["dispatched"] == 0, "no dispatch without the real-money env gate"
+            assert "real_refused" in r, "must record that real money was refused"
+        finally:
+            # Restore, or every later test in this process runs with real money off.
+            if _prev_gate is None:
+                os.environ.pop("ROUTER_ALLOW_REAL", None)
+            else:
+                os.environ["ROUTER_ALLOW_REAL"] = _prev_gate
 
     # (3) _dispatch routes to the correct arm (monkeypatch the arms — no browser)
     #
@@ -45463,7 +45480,8 @@ def test_gate_status_reads_the_same_env():
     pg = importlib.import_module("workers.automation.placement_gate")
 
     prev = _os.environ.get("ROUTER_ALLOW_REAL")
-    try:
+    with _ROUTER_ENV_LOCK:                      # see ROUTER-ENV-LOCK above
+     try:
         for value, expected in (("true", True), ("1", True), ("  TRUE  ", True),
                                 ("false", False), ("", False), ("no", False)):
             _os.environ["ROUTER_ALLOW_REAL"] = value
@@ -45472,7 +45490,7 @@ def test_gate_status_reads_the_same_env():
                 f"gate_status reported router_allow_real_env={got} for "
                 f"ROUTER_ALLOW_REAL={value!r} — expected {expected}"
             )
-    finally:
+     finally:
         if prev is None:
             _os.environ.pop("ROUTER_ALLOW_REAL", None)
         else:
@@ -45509,7 +45527,8 @@ def test_router_no_allowlist_bypass():
     o_p, o_a, o_e, o_lp, o_env = (cs.is_placement_paused, cs.is_real_money_armed,
                                   pg.ui_place_enabled_bots, ui.load_picks,
                                   os.environ.get("ROUTER_ALLOW_REAL"))
-    try:
+    with _ROUTER_ENV_LOCK:                      # ROUTER-ENV-LOCK: process-wide env
+      try:
         cs.is_placement_paused = lambda: (False, None)
         cs.is_real_money_armed = lambda: (True, "test")
         pg.ui_place_enabled_bots = lambda: set()          # every bot OFF
@@ -45519,7 +45538,7 @@ def test_router_no_allowlist_bypass():
         assert out.get("mode") == "real", out.get("mode")
         assert loaded == [], f"router loaded picks for OFF bots: {loaded}"
         assert out.get("dispatched") == 0 and out.get("candidates") == 0, out
-    finally:
+      finally:
         cs.is_placement_paused, cs.is_real_money_armed, pg.ui_place_enabled_bots = o_p, o_a, o_e
         ui.load_picks = o_lp
         if o_env is None:

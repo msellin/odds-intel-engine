@@ -718,3 +718,44 @@ state and its failed state produce the same observable, the observable is not
 monitoring. See also §"A circuit breaker whose 'working' state is
 indistinguishable from the fault" and the `real_bets` FK above — same shape,
 three different subsystems.
+
+---
+
+## 16. A safety test that passes or fails on thread scheduling is not a safety test
+
+**ROUTER-ENV-LOCK, 2026-09-18.** CI went red on a commit that touched only the
+Coolbet in-play collector, with a failure in an unrelated real-money test:
+
+```
+GATE-STATUS-READS-THE-SAME-ENV
+AssertionError: gate_status reported router_allow_real_env=True
+                for ROUTER_ALLOW_REAL='' — expected False
+```
+
+Nothing in the commit went near the placement gate, and the test passed in
+isolation locally. The cause: the smoke runner executes tests in a
+**ThreadPoolExecutor**, `os.environ` is process-wide, and **three** tests mutate
+`ROUTER_ALLOW_REAL` — one sweeping it through six values, one setting `"false"`,
+one setting `"1"`. Each was individually correct and each restored in `finally`.
+Concurrency alone made them wrong: one test read another's write mid-sweep.
+
+**The commit did not introduce the bug — it introduced four unrelated tests,
+which shifted the scheduling enough to make a latent race land.** That is the
+worst property of this class: the blame points at whoever was standing nearby.
+
+**Tell:** a test that mutates process-global state (`os.environ`, a module
+attribute, CWD) under a concurrent runner. Restoring in `finally` does not help —
+the window is between the write and the read, not after.
+
+**Guard:** `_ROUTER_ENV_LOCK` in `scripts/smoke_test.py`, held by all three
+mutation sites. This is the second instance of the same shape in three days; the
+first was `_PUBLISHER_PATCH_LOCK` (a monkeypatched shared module, 2026-09-15),
+documented a few lines above it in the same file. **When you add a third, the
+answer is probably to stop sharing the state rather than to add a third lock** —
+per-test subprocesses, or a runner that serialises anything touching globals.
+
+**Related, and the reason this one bites so hard:** the same file already carries
+a comment explaining that this test's failure "only reproduces in a process that
+has not already imported db.py — which the smoke suite has". A test whose
+correctness depends on what *else* the process has done is one scheduling change
+away from lying in either direction.
