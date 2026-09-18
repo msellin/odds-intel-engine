@@ -79,6 +79,23 @@ ODDS_FS_SESSION = os.getenv("COOLBET_ODDS_FLARE_SESSION", "coolbet_odds_reader")
 # runs every 30 min, so 3h is six consecutive silent cycles — well past a blip.
 FEED_STALE_H = 3.0
 
+# WEDGE-PROBE-EARLY (2026-09-18, same day as the self-heal that this corrects).
+# The self-heal only ran the wedge probe from inside the "feed is stale" branch,
+# i.e. after FEED_STALE_H = 3h of silence. Measured the same evening: the sweep's
+# session wedged at 16:09 UTC and at 18:05 the watchdog was still printing
+# "HEALTHY — last Coolbet odds 2.0h ago" and taking no action, because 2.0 < 3.0.
+# Two hours of odds lost to a fault that is DETERMINISTIC (a wedged session never
+# recovers on its own), DEFINITIVELY detectable (HTTP 500 at ~61s with 0 bytes)
+# and CHEAP to test (0.6s and 199 KB when healthy).
+#
+# So the wedge probe no longer waits on the staleness clock. One missed sweep is
+# enough to justify a single request, which bounds a wedge at roughly one
+# watchdog interval (~20 min) instead of 3h+. The 3h threshold stays for the
+# SLOWER diagnoses below (job not loaded, CDP down, cookie age), where acting
+# early would mean paging a human over a quiet slate.
+ODDS_SWEEP_INTERVAL_H = 0.5       # the sweep runs :03/:33
+WEDGE_PROBE_AFTER_H = 0.75        # one missed sweep plus margin
+
 # Imperva cookies are refreshed from CDP-Chrome and rot fast; the session itself
 # treats >2h as stale, so anything beyond that is worth acting on.
 COOKIE_STALE_H = 2.0
@@ -285,6 +302,19 @@ def classify() -> tuple[str, str]:
     odds_h = _hours_since_last_odds()
     if odds_h is None:
         return ("UNKNOWN", "could not read odds_snapshots")
+    # A WEDGED SESSION IS DETECTABLE LONG BEFORE THE FEED LOOKS STALE.
+    # This runs ahead of the staleness gate on purpose — see WEDGE-PROBE-EARLY.
+    # It costs one request and only after a sweep has already been missed, so a
+    # healthy feed (rows arriving every 30 min) never pays for it.
+    if odds_h > WEDGE_PROBE_AFTER_H:
+        early = _probe_odds_session()
+        if early["state"] == "wedged":
+            return ("WEDGED_SESSION",
+                    f"no Coolbet odds for {odds_h:.1f}h — under the {FEED_STALE_H}h "
+                    f"staleness threshold, but the FS session {ODDS_FS_SESSION!r} "
+                    f"is already provably stuck ({early['detail']}). Destroying it "
+                    f"now rather than waiting out the clock.")
+
     if odds_h <= FEED_STALE_H:
         # Feed is fine — but is the BOT producing? A healthy feed with a silent
         # bot is the failure this check exists for.
@@ -410,6 +440,59 @@ def _probe_odds_session() -> dict:
                 "elapsed_s": 0, "bytes": 0}
 
 
+def _destroy_fs_session(name: str) -> bool:
+    """Destroy one named FS session. `coolbet_prod` is refused outright — it is
+    the real-money placer's authed session, and no feed problem justifies
+    dropping it."""
+    if name == "coolbet_prod":
+        log.error("refusing to destroy the real-money session %r", name)
+        return False
+    fs_url = os.getenv("FLARESOLVERR_URL", "http://localhost:8191")
+    try:
+        import json as _json
+        import urllib.request as _url
+        req = _url.Request(
+            f"{fs_url.rstrip('/')}/v1",
+            data=_json.dumps({"cmd": "sessions.destroy", "session": name}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with _url.urlopen(req, timeout=30) as r:
+            ok = _json.loads(r.read()).get("status") == "ok"
+        log.info("destroy FS session %r → %s", name, "ok" if ok else "failed")
+        return ok
+    except Exception as e:  # noqa: BLE001
+        log.warning("destroying FS session %r failed: %s", name, e)
+        return False
+
+
+def heal_inplay_session(dry_run: bool = False) -> dict:
+    """Probe and, if stuck, destroy the IN-PLAY collector's FS session.
+
+    WHY THIS IS SEPARATE FROM THE ODDS PATH. The in-play collector
+    (`workers/jobs/inplay_coolbet_collector.py`) is a second long-lived Mac
+    session, and on the evening it shipped BOTH it and the odds reader wedged in
+    the same minute. The odds reader had a healer; the in-play session had none,
+    so it sat dead for two hours emitting `errors 8` every cycle until a human
+    destroyed it by hand. A long-lived FS session without a healer is a feed
+    outage waiting to happen — this closes that gap for the second one.
+
+    It does NOT key off `odds_snapshots`, because the in-play collector does not
+    write there; the probe itself is the evidence."""
+    from workers.jobs.inplay_coolbet_collector import FS_SESSION_NAME as INPLAY_FS
+    try:
+        from workers.automation.coolbet_explorer import probe_coolbet_reachable
+        probe = probe_coolbet_reachable(session_name=INPLAY_FS)
+    except Exception as e:  # noqa: BLE001
+        return {"session": INPLAY_FS, "state": "unknown", "action": f"probe_failed: {e}"}
+    if probe.get("state") != "wedged":
+        return {"session": INPLAY_FS, "state": probe.get("state"), "action": "none"}
+    if dry_run:
+        return {"session": INPLAY_FS, "state": "wedged", "action": "would_destroy"}
+    ok = _destroy_fs_session(INPLAY_FS)
+    return {"session": INPLAY_FS, "state": "wedged",
+            "action": f"destroyed={ok}", "detail": probe.get("detail")}
+
+
 def _destroy_odds_session() -> bool:
     """Destroy ONLY the sweep's FS session; the next sweep recreates it.
 
@@ -419,23 +502,7 @@ def _destroy_odds_session() -> bool:
     target here — destroying it would drop the real-money placer's authed
     session to fix a read-only feed.
     """
-    fs_url = os.getenv("FLARESOLVERR_URL", "http://localhost:8191")
-    try:
-        import json as _json
-        import urllib.request as _url
-        req = _url.Request(
-            f"{fs_url.rstrip('/')}/v1",
-            data=_json.dumps({"cmd": "sessions.destroy",
-                              "session": ODDS_FS_SESSION}).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        with _url.urlopen(req, timeout=30) as r:
-            ok = _json.loads(r.read()).get("status") == "ok"
-        log.info("destroy FS session %r → %s", ODDS_FS_SESSION, "ok" if ok else "failed")
-        return ok
-    except Exception as e:  # noqa: BLE001
-        log.warning("destroying FS session %r failed: %s", ODDS_FS_SESSION, e)
-        return False
+    return _destroy_fs_session(ODDS_FS_SESSION)
 
 
 def _reload_job() -> bool:
@@ -603,6 +670,18 @@ def run(dry_run: bool = False) -> dict:
     # Do this regardless of state: a wedged process starves the feed whether or
     # not the classifier has noticed yet, and killing it is safe when the log is
     # also silent.
+    # The in-play collector's session is healed on its own evidence, whatever the
+    # odds feed is doing — the two wedge independently (and, on 2026-09-18, together).
+    try:
+        inplay = heal_inplay_session(dry_run=dry_run)
+        if inplay.get("state") == "wedged":
+            result["inplay_session"] = inplay
+            _alert("WEDGED_INPLAY",
+                   f"in-play FS session {inplay['session']!r} was stuck "
+                   f"({inplay.get('detail')}) — {inplay['action']}")
+    except Exception as e:  # noqa: BLE001
+        log.warning("in-play session heal failed (non-fatal): %s", e)
+
     stall = kill_stalled_job(dry_run=dry_run)
     if stall["killed"]:
         result["action"] = f"killed_stalled_pids={stall['killed']}"

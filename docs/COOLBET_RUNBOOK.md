@@ -462,6 +462,29 @@ escalates; it does not.
   cookies.
 
 ### ⭐ 6b. Odds dead for hours, `fo-tree` HTTP **500** after ~61s → WEDGED FS SESSION (SELF-HEALS since 2026-09-18)
+
+> **⚠️ UPDATED the same evening (WEDGE-PROBE-EARLY + WATCHDOG-HEALS-INPLAY).** Two
+> gaps in the morning's self-heal, both found by a live outage:
+>
+> 1. **The probe waited on the 3h staleness clock.** The session wedged at 16:09
+>    UTC and at 18:05 the watchdog was still printing `HEALTHY — last Coolbet odds
+>    2.0h ago`, because 2.0 < `FEED_STALE_H`=3.0. The probe now runs once the feed
+>    has missed a single sweep (`WEDGE_PROBE_AFTER_H`=0.75), which bounds a wedge
+>    at roughly one watchdog interval (~45 min) instead of 3h+. The 3h clock stays
+>    for the slower diagnoses (job not loaded, CDP down, cookie age).
+> 2. **Only the odds reader had a healer.** `coolbet_odds_reader` and
+>    `coolbet_inplay` wedged in the SAME minute; the in-play collector sat dead two
+>    hours emitting `errors 8` per cycle until a human destroyed its session by
+>    hand. `heal_inplay_session()` now probes and heals it on its own evidence —
+>    it writes no `odds_snapshots` rows, so the odds staleness clock can never
+>    speak for it. **Any future long-lived FS session needs its own healer; that
+>    is now the rule, not a nicety.**
+>
+> Symptom for the in-play arm specifically: `cycle N | targets 8 | rows 0 | empty
+> 0 | errors 8` with `Read timed out (read timeout=30)` per target and cycles
+> stretching to ~243s. FlareSolverr itself reads healthy and a FRESH session gets
+> coolbet.com in 0.68s — that combination IS the wedge signature.
+> `_destroy_fs_session` refuses `coolbet_prod` outright.
 - **Symptom:** identical in the DB to §6 and §7 — no Coolbet rows for hours,
   `Board sweep enumerated 0 categories`, every :03/:33 — while the watchdog logs
   `STALE_COOKIES … probably NOT the cookies` and re-harvests every 20 min.

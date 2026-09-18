@@ -272,6 +272,14 @@ def run(cadence: float, max_fixtures: int, once: bool, dry_run: bool) -> None:
         for t in targets:
             # SERIAL on purpose. Do not parallelise this loop without giving each
             # reader its OWN named FS session — see hazard 2 in the module header.
+            # Bind the game state BEFORE the fetch: the empty-board log below
+            # reads it, and when the FIRST target of a cycle came back empty this
+            # raised UnboundLocalError and killed the process. It survived initial
+            # testing only because the empty fixture happened to be 4th in the
+            # list, so `s` was still bound from an earlier iteration — a loop
+            # variable leaking across iterations, masking the bug until the
+            # ordering changed.
+            s = t["state"]
             try:
                 markets = board_for_match(session, int(t["cb_id"]))
             except Exception as e:                      # noqa: BLE001
@@ -289,7 +297,6 @@ def run(cadence: float, max_fixtures: int, once: bool, dry_run: bool) -> None:
                 log.info("empty board: cb=%s match=%s min=%s",
                          t["cb_id"], t["match_id"][:8], s.get("minute"))
                 continue
-            s = t["state"]
             goals = s.get("goals") or [None, None]
             row = {"captured_at": stamp, "book_event_id": t["cb_id"],
                    "af_fixture_id": t["af_fixture_id"], "match_id": t["match_id"],

@@ -46000,6 +46000,90 @@ def test_inplay_sweep_ci_needs_losses():
     assert mod.summarise(mixed)["ci_ok"], "a sample with real losses keeps its CI"
 
 
+@test("WATCHDOG-HEALS-INPLAY-SESSION — every long-lived FS session needs a healer, and none may be coolbet_prod")
+def test_watchdog_heals_inplay_session():
+    """2026-09-18. The odds reader and the in-play collector wedged in the SAME
+    minute. The odds reader had a self-heal; the in-play session had none, so it
+    sat dead two hours emitting `errors 8` every cycle until a human destroyed it
+    by hand. A long-lived FS session without a healer is a feed outage waiting to
+    happen. Pins that the in-play session is healed on its own evidence (it writes
+    no odds_snapshots rows, so the odds staleness clock can never speak for it),
+    and that the destroyer refuses the real-money session outright."""
+    import importlib
+    wd = importlib.import_module("workers.jobs.coolbet_feed_watchdog")
+    from workers.jobs.inplay_coolbet_collector import FS_SESSION_NAME as INPLAY_FS
+
+    assert hasattr(wd, "heal_inplay_session"), "the in-play session must have a healer"
+    # It must never be possible to heal a feed by dropping the placer's session.
+    assert wd._destroy_fs_session("coolbet_prod") is False, \
+        "the real-money session must be refused, not destroyed"
+
+    o_probe = None
+    import workers.automation.coolbet_explorer as ex
+    o_probe = ex.probe_coolbet_reachable
+    seen = {}
+    try:
+        def fake(session_name=None):
+            seen["session"] = session_name
+            return {"state": "wedged", "detail": "HTTP 500 — 61s, 0 bytes"}
+        ex.probe_coolbet_reachable = fake
+        out = wd.heal_inplay_session(dry_run=True)
+        assert seen["session"] == INPLAY_FS, (
+            f"must probe the in-play session, not {seen.get('session')!r}")
+        assert out["action"] == "would_destroy", out
+        # …and a healthy session is left alone.
+        ex.probe_coolbet_reachable = lambda session_name=None: {"state": "ok"}
+        assert wd.heal_inplay_session(dry_run=True)["action"] == "none"
+    finally:
+        ex.probe_coolbet_reachable = o_probe
+
+
+@test("WEDGE-PROBE-EARLY — a wedged FS session must be caught in ~45 min, not after the 3h staleness clock")
+def test_wedge_probe_early():
+    """WEDGE-PROBE-EARLY (2026-09-18). The self-heal shipped that morning only ran
+    the wedge probe from INSIDE the `odds_h > FEED_STALE_H` branch, so it could not
+    fire until 3h of silence. Measured the same evening: the sweep's session wedged
+    at 16:09 UTC and at 18:05 the watchdog still printed "HEALTHY — last Coolbet
+    odds 2.0h ago" and took no action, because 2.0 < 3.0. Two hours of odds lost to
+    a fault that never self-recovers, is definitively detectable (HTTP 500 at ~61s,
+    0 bytes) and costs 0.6s to test.
+
+    Pins the behaviour, not the wording: a wedged session must classify as
+    WEDGED_SESSION well below FEED_STALE_H, must NOT fire while the feed is still
+    delivering, and a healthy session must never be called wedged."""
+    import importlib
+    wd = importlib.import_module("workers.jobs.coolbet_feed_watchdog")
+    assert wd.WEDGE_PROBE_AFTER_H < wd.FEED_STALE_H, \
+        "the wedge probe must be able to fire before the staleness clock expires"
+
+    wedged = {"state": "wedged", "detail": "HTTP 500 — 61.0s, 0 bytes",
+              "elapsed_s": 61.0, "bytes": 0}
+    ok = {"state": "ok", "detail": "fo-tree answered", "elapsed_s": 0.6, "bytes": 199013}
+    o_probe, o_hours = wd._probe_odds_session, wd._hours_since_last_odds
+    o_bot = getattr(wd, "_picks_bot_active", None)
+    try:
+        wd._probe_odds_session = lambda: wedged
+        # Below one missed sweep: the feed is still delivering, do not cry wedge.
+        wd._hours_since_last_odds = lambda: wd.WEDGE_PROBE_AFTER_H / 2
+        assert wd.classify()[0] != "WEDGED_SESSION", \
+            "must not declare a wedge while the feed is still delivering"
+        # Past one missed sweep but WELL under the staleness clock — the whole point.
+        mid = (wd.WEDGE_PROBE_AFTER_H + wd.FEED_STALE_H) / 2
+        wd._hours_since_last_odds = lambda: mid
+        assert wd.classify()[0] == "WEDGED_SESSION", (
+            f"a provably stuck session at {mid}h must be caught without waiting "
+            f"for FEED_STALE_H={wd.FEED_STALE_H}h")
+        # A healthy session is never a wedge, however stale the feed looks.
+        wd._probe_odds_session = lambda: ok
+        wd._picks_bot_active = lambda: False
+        assert wd.classify()[0] != "WEDGED_SESSION", \
+            "a session answering in 0.6s with 199KB is not wedged"
+    finally:
+        wd._probe_odds_session, wd._hours_since_last_odds = o_probe, o_hours
+        if o_bot is not None:
+            wd._picks_bot_active = o_bot
+
+
 @test("COOLBET-INPLAY-NEVER-PROD-SESSION — the in-play collector must never share the real-money FlareSolverr session")
 def test_coolbet_inplay_never_prod_session():
     """`coolbet_prod` is the FS session the real-money placer uses; wedging or
