@@ -1,5 +1,8 @@
 # 🤖 OWN — full audit and a tested plan, 2026-09-15 (reviewed)
 
+> **⛔ NOT A TASK LIST — dated audit, 2026-09-15.** It quotes the queue's open counts as they stood that day; those numbers are stale (the 2026-09-18 consolidation took the master from 124 open rows to 103). `PRIORITY_QUEUE.md` is the single master task list.
+
+
 **Scope.** Both repos (`odds-intel-engine`, `odds-intel-web`), the VPS database, and
 the 2026-09-13/14 audit corpus, read as one system. Direction: **🤖 OWN first**
 (the owner's stated priority 1), 👥 PICKS second. Every number below was either

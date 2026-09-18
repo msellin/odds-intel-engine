@@ -1,5 +1,13 @@
 # Audit of `MASTER_TASK_LIST_2026_09_14.md` — end of day, 2026-09-14
 
+> # ⛔ NOT A TASK LIST — 2026-09-18
+>
+> This is the AUDIT of `MASTER_TASK_LIST_2026_09_14.md`, kept for its method and evidence.
+> Both it and the list it audits were retired as backlogs on 2026-09-18; the surviving work
+> lives in `PRIORITY_QUEUE.md` as `MODEL-TRAINING-DEBT-2026-09-18`. Read it for HOW things
+> were verified, never for what is open.
+
+
 The master list was written this morning. A day of findings then overturned
 several of its premises. This audits all **17 open items (#4–#20)** against the
 code, the DB and git history — never against a doc asserting a state.

@@ -14,7 +14,7 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 
 | File | Purpose |
 |------|---------|
-| `PRIORITY_QUEUE.md` | **Master task list** — all open tasks across all docs, in priority order. Update status here first. |
+| `PRIORITY_QUEUE.md` | **THE master task list — the only backlog in this repo.** Every unit of work that outlives a session has a row here, sub-tasks included. Update status here first. See "ONE master task list" below; machine-checked by smoke `SINGLE-MASTER-TASK-LIST`. |
 | `docs/SYSTEM_MAP.md` | **The map — read first.** Single index for how picks, bots and every % work: the two edges (model vs sharp), every bot (anchor/floor/paper-or-real), the %-glossary, the gate stack. Built on `workers/registry/bot_registry.py`; machine-checked by smoke test `SYSTEM-MAP-REGISTRY-NOT-DRIFTED`. |
 | `ROADMAP.md` | Product vision, tier structure, milestones, system state, bot strategy, launch checklist |
 | `MODEL_ANALYSIS.md` | Prediction model architecture, AI evaluations, improvement roadmap |
@@ -44,6 +44,46 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 ## Task Lifecycle — Every Task Must Follow This Exactly
 
 This protocol exists because parallel agents caused real production bugs when docs drifted. Follow it without exception.
+
+### ONE master task list — `PRIORITY_QUEUE.md`, and nothing else (added 2026-09-18)
+
+**`PRIORITY_QUEUE.md` is the only backlog.** If a unit of work outlives the session
+that found it, it has a row there. No exceptions, no second list, no "I'll track this
+in my plan doc".
+
+**Why this rule exists.** The 2026-09-18 audit found open task markers in **71 files**.
+Only 19% were in the master. Two *other* backlogs had grown — `docs/MASTER_TASK_LIST_2026_09_14.md`
+and `docs/PRODUCT_FIX_PLAN_2026_09_14.md` — carrying real P0 work the master never
+referenced, so every triage of the queue was blind to them. One of those items was a
+**106,726-row CLV defect that sat unmoved for four days** because no master row existed
+to surface it. Separately, 55% of the master's own open rows turned out to be already
+done or stale, because closing a row was nobody's job once the work moved elsewhere.
+
+**Sub-tasks are fine. Losing them is not.** The dev-doc rule above still stands —
+a large task gets `dev/active/[task]-tasks.md` and you tick items as you go. Three
+conditions make that safe:
+
+1. **Name the parent.** The first line of any `*-tasks.md` says which `PRIORITY_QUEUE.md`
+   row it belongs to. A checklist with no parent row is an orphan backlog in training.
+2. **Promote what outlives the parent.** When the parent row closes, every unticked item
+   either gets its own master row or is explicitly dropped with a reason *in the commit
+   that closes it*. Never leave a live item behind in a doc nobody reads again.
+3. **Archive on close.** Move the doc to `dev/archive/` when its parent row closes.
+   `dev/active/` held **318 files** at the time of writing, most of them finished work.
+
+**A checkbox is not automatically a task.** These are legitimate and must NOT be swept
+into the queue:
+- **Procedure checklists** — steps you tick *while performing an operation*
+  (`docs/ROLLBACK_RUNBOOK.md` is the canonical example). They describe a procedure, not a backlog.
+- **In-flight `dev/active/*-tasks.md` checklists** that satisfy the three conditions above.
+
+Everything else — a root protocol doc, a `docs/` strategy doc, a plan, a findings write-up —
+**describes reality and holds no open work.** If you catch yourself adding `- [ ]` to one,
+that item belongs in `PRIORITY_QUEUE.md` with a Direction tag and an estimate.
+
+**Machine-checked** by smoke `SINGLE-MASTER-TASK-LIST`, which fails when a new competing
+backlog forms outside the master.
+
 
 ### Before writing any code
 

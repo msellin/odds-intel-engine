@@ -1,5 +1,14 @@
 # OddsIntel — Signals
 
+> # ⛔ NOT A TASK LIST — the SUX items below are retired, 2026-09-18
+>
+> SUX-8 (Signal Timeline) and SUX-11/12 are UX phases whose host surface — the match-detail page —
+> was **deleted by PRODUCT-COLLAPSE on 2026-06-24** (174 files, 39,872 lines). No signal component
+> exists in `odds-intel-web/src/components` today. The signal *inventory* below is still the
+> authoritative record of what we collect and how it flows into the model; only the 4-phase UX
+> roadmap is retired. Open work belongs in `PRIORITY_QUEUE.md`.
+
+
 > Combined reference for every signal we collect and how we surface it in the UI.
 > Part 1: Architecture (what we collect, store, and feed into the model).
 > Part 2: UX Strategy (how we expose signals to users by tier to drive engagement and conversion).

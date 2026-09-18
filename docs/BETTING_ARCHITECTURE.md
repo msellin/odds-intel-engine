@@ -326,7 +326,9 @@ fold-robust evidence.
 
 - [x] Three market spellings (`o/u` / `over_under_25` / `over 2.5`) → one canonical vocab (Stage 1 ✅ 2026-09-09, `workers/canonical_market.py`).
 - [x] `real_bets` mixes real + phantom-paper + manual → proof-tagged via `placed_real`, paper excluded from dedup + overlays (Stage 2 ✅ 2026-09-09, migration 325).
-- [ ] `/performance` shows `simulated_bets`, not what we stake → grade-pin + real overlay clarity (Stage 2 + PICKS-GRADING).
-- [ ] Two placers read two tables → one trigger-sourced path (Stages 3,6).
-- [ ] Single-book coupling in 5 places (§6) → placer registry + per-book config (Stages 4,5).
-- [ ] Floors disagree by surface → PICKS-GRADING-ROLLOUT (A=13/8, pin /performance to A).
+> **These four are now tracked in `PRIORITY_QUEUE.md` as `ARCH-DEBT-FROM-BETTING-ARCHITECTURE-2026-09-18` (promoted 2026-09-18 — they had no queue row and were invisible to every triage). Listed here for the architectural context only; the master row is authoritative.**
+
+- [x] `/performance` shows `simulated_bets`, not what we stake → grade-pin + real overlay clarity (Stage 2 + PICKS-GRADING).
+- [x] Two placers read two tables → one trigger-sourced path (Stages 3,6).
+- [x] Single-book coupling in 5 places (§6) → placer registry + per-book config (Stages 4,5).
+- [x] Floors disagree by surface → PICKS-GRADING-ROLLOUT (A=13/8, pin /performance to A).

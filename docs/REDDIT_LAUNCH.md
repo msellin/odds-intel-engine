@@ -1,5 +1,12 @@
 # Reddit Launch — Strategy, Progress & Posts
 
+> # ⛔ NOT A TASK LIST — RETIRED 2026-09-18
+>
+> The ⬜ rows below are Reddit posts scheduled for **~May 2026** and never sent. Kept for the post
+> drafts and the per-subreddit rules, which are still accurate. Do not read the status column as a
+> live plan — `PRIORITY_QUEUE.md` is the single master task list.
+
+
 > Merged from `reddit_warmup_comments.md` + `reddit_launch_posts.md` (2026-05-04). Updated 2026-05-06.
 > Full launch strategy in `docs/LAUNCH_PLAN.md`. ENG task tracking in `PRIORITY_QUEUE.md`.
 

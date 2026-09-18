@@ -1,5 +1,14 @@
 # OddsIntel — Tier Access Matrix
 
+> # ⛔ NOT A TASK LIST — the unchecked items below are retired, 2026-09-18
+>
+> Match alerts, the weekly summary email and the dark-mode toggle sit on a tier surface that
+> `ROADMAP.md:172` itself records as **"Deprecated — no paid product right now"**, and the
+> match-detail pages they attach to were deleted by PRODUCT-COLLAPSE on 2026-06-24. This doc still
+> describes the tier *rules*, which remain correct for the surfaces that exist. It holds no backlog:
+> `PRIORITY_QUEUE.md` is the single master task list.
+
+
 > **⚠️ DEPRECATED 2026-06-24** — The tiered product surface that this document
 > described has been collapsed. The current public surface (landing /
 > /picks / /performance) is **free for everyone with no tier gating**.

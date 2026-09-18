@@ -1,5 +1,14 @@
 # OddsIntel — Meta Ads Plan
 
+> # ⛔ NOT A TASK LIST — RETIRED 2026-09-18
+>
+> The unchecked boxes below are a **setup checklist for a campaign that was never run**, and it
+> is addressed to infrastructure we no longer have — it tells you to add `NEXT_PUBLIC_META_PIXEL_ID`
+> to **Vercel**, which this project left on 2026-07-07 for a Hetzner VPS. At ~30 pre-PMF users,
+> paid acquisition is not the constraint. Kept as a reference for what a Meta setup involves.
+> Open work belongs in `PRIORITY_QUEUE.md`.
+
+
 > **🗄️ ARCHIVED 2026-09-10 — never executed, obsolete.** This plan was written
 > pre-PMF (user count ~30) and assumes the tiered Free/Pro/Elite Stripe product
 > that was collapsed 2026-06-24. No paid ads were ever run. Kept for reference

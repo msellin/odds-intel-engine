@@ -1,5 +1,20 @@
 # Product fix plan — merged, 2026-09-14
 
+> # ⛔ RETIRED AS A TASK LIST — 2026-09-18
+>
+> **This file is no longer a backlog. It is a dated snapshot, kept for its evidence.**
+>
+> It was a SECOND task list running alongside `PRIORITY_QUEUE.md`, which never referenced it — so
+> its items were invisible to every triage of the master queue. The 2026-09-18 consolidation
+> re-verified every still-open item against code and the database and promoted the survivors into
+> the master as **`MODEL-TRAINING-DEBT-2026-09-18`** (and `DIRECT-BOOK-CLV-SHADOW-BACKFILL-2026-09-18`).
+>
+> **Do not add work here. Do not work from the status cells below — several are out of date**
+> (e.g. the ELO/form leakage this file lists as open was fixed; `corr(elo_diff, home_win)` fell
+> 0.4317 → 0.2100). `PRIORITY_QUEUE.md` is the single master task list.
+
+
+
 Merges three independent workstreams: the O/U-calibrator investigation, the
 training-path audit, and the parallel sharp-anchor audit
 (`docs/SHARP_ANCHOR_AUDIT_2026_09_14.md`). Ordered by **impact on what we

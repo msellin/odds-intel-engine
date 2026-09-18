@@ -1885,7 +1885,7 @@ model quality and should not be quoted. The holdout numbers that look strongest
 are the ones most likely to be measuring the leak.
 
 The read is fixed. The stored history is **not** yet rebuilt, and no model has been
-retrained — see `docs/MASTER_TASK_LIST_2026_09_14.md` tasks #2 and #3. Fixing the
+retrained — see `PRIORITY_QUEUE.md` — `MODEL-TRAINING-DEBT-2026-09-18` (the referenced list was retired as a backlog on 2026-09-18; its surviving items were promoted to the master). Fixing the
 read without retraining would make serving *worse*: the live bundles learned their
 weights against leaked-scale ELO (AUC 0.74) and are out of distribution on clean
 input (AUC 0.62). Expect offline metrics to **fall** after the retrain; that is the

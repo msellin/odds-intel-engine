@@ -1,5 +1,11 @@
 # OddsIntel — Launch Plan
 
+> # ⛔ NOT A TASK LIST — RETIRED 2026-09-18
+>
+> Same two ⬜ Reddit rows as `docs/REDDIT_LAUNCH.md`, scheduled ~May 2026 and never sent. Kept for
+> the launch-phase framing and ad copy. Open work belongs in `PRIORITY_QUEUE.md`.
+
+
 > **🗄️ ARCHIVED 2026-09-10 — describes a past launch and a dead stack.** This
 > plan assumes the tiered Stripe product (collapsed 2026-06-24) and Vercel
 > hosting (migrated to VPS pm2 2026-07-07). The organic launch it describes has

@@ -44912,6 +44912,90 @@ def test_backlog_audit_closures_hold():
         )
 
 
+@test("SINGLE-MASTER-TASK-LIST — no second backlog may form outside PRIORITY_QUEUE.md")
+def test_single_master_task_list():
+    """SINGLE-MASTER-TASK-LIST (2026-09-18).
+
+    The 2026-09-18 audit found open task markers in **71 files**, only 19% of them
+    in the master. Two rival backlogs had grown — `docs/MASTER_TASK_LIST_2026_09_14.md`
+    and `docs/PRODUCT_FIX_PLAN_2026_09_14.md` — carrying real P0 work the master never
+    referenced, so every triage of the queue was blind to them. One was a 106,726-row
+    CLV defect that sat unmoved for four days because no master row surfaced it.
+
+    A checkbox is NOT automatically a task, and this test is careful about that or it
+    would break legitimate documents:
+
+      allowed  PRIORITY_QUEUE.md                the master itself
+      allowed  dev/**                           in-flight per-task checklists (the
+                                                dev-doc protocol REQUIRES these) and
+                                                the archive of finished ones
+      allowed  runbooks in _PROCEDURE_DOCS      steps ticked WHILE performing an
+                                                operation, not a backlog
+      allowed  any file carrying the sentinel   a doc explicitly retired as a list
+               "NOT A TASK LIST"
+      allowed  CLAUDE.md                        it documents the markers themselves
+
+    Anything else holding open backlog markers is a second list forming. Put the work
+    in PRIORITY_QUEUE.md with a Direction tag and an estimate, or retire the doc with
+    the sentinel and a reason.
+    """
+    import re as _re
+    import subprocess as _sp
+
+    root = _engine_path(".")
+    files = _sp.run(["git", "ls-files", "*.md"], capture_output=True, text=True,
+                    cwd=str(root)).stdout.split()
+    assert len(files) > 50, f"expected the repo's markdown corpus, got {len(files)} files"
+
+    PROCEDURE_DOCS = {
+        "docs/ROLLBACK_RUNBOOK.md",
+        "docs/COOLBET_RUNBOOK.md",
+        "docs/VPS_NEXTJS_MIGRATION_RUNBOOK.md",
+    }
+    SELF_DOCUMENTING = {"CLAUDE.md"}
+    SENTINELS = ("NOT A TASK LIST", "RETIRED AS A TASK LIST")
+    MARKER = _re.compile(r"^\s*[-*] \[ \]|⬜|🔄 In Progress")
+
+    offenders = []
+    for f in files:
+        if f == "PRIORITY_QUEUE.md" or f.startswith("dev/"):
+            continue
+        if f in PROCEDURE_DOCS or f in SELF_DOCUMENTING:
+            continue
+        body = (root / f).read_text(encoding="utf-8")
+        if any(s in body for s in SENTINELS):
+            continue
+        n = sum(1 for line in body.split("\n") if MARKER.search(line))
+        if n:
+            offenders.append((n, f))
+
+    offenders.sort(reverse=True)
+    assert not offenders, (
+        "a second backlog is forming outside PRIORITY_QUEUE.md — "
+        + "; ".join(f"{f} ({n} open markers)" for n, f in offenders)
+        + ". Either move the work into PRIORITY_QUEUE.md with a Direction tag and an "
+        "estimate, or retire the doc by adding the sentinel 'NOT A TASK LIST' with a "
+        "reason. A procedure checklist that is ticked while performing an operation "
+        "belongs in _PROCEDURE_DOCS instead."
+    )
+
+    # the two rival lists must stay retired
+    for f in ("docs/MASTER_TASK_LIST_2026_09_14.md", "docs/PRODUCT_FIX_PLAN_2026_09_14.md"):
+        body = _engine_path(f).read_text(encoding="utf-8")
+        assert "RETIRED AS A TASK LIST" in body, (
+            f"{f} lost its retirement banner — it was a second backlog carrying P0 work "
+            f"the master never referenced, and its surviving items now live in "
+            f"PRIORITY_QUEUE.md as MODEL-TRAINING-DEBT-2026-09-18"
+        )
+
+    # the rule itself must stay documented
+    claude = _engine_path("CLAUDE.md").read_text(encoding="utf-8")
+    assert "ONE master task list" in claude, (
+        "CLAUDE.md lost the single-master-list rule; without it every new session "
+        "re-learns that a plan doc is an acceptable place to park work"
+    )
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).

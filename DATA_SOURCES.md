@@ -307,7 +307,7 @@ AH-bot prototype follow-up (`scripts/backtest_ah_bot_prototype.py`, 5,254 deriva
 - [x] ~~Remove `betexplorer_odds.py`~~ Done 2026-04-29
 - [x] ~~Remove Sofascore scrapers~~ Done 2026-04-29
 - [x] ~~Activate The Odds API for Pinnacle odds~~ Done 2026-06-06 (ODDS-API-WC) → retired 2026-06-25 (WC commercial value minimal). Key + client repurposed for tennis (TENNIS-PAPER-BETS).
-- [ ] ~~Evaluate API-Football Pro ($19/mo, 7.5K req/day)~~ — dropped 2026-09-05. Written when we believed the plan was 75K/day; we are on **Mega (150K/day)** and use 9–23% of it, but 7.5K/day is far below even that floor, so a downgrade to a Pro-sized tier is not viable. Tier names/prices unverified — re-check AF pricing if this is ever revisited.
+- [x] ~~Evaluate API-Football Pro ($19/mo, 7.5K req/day)~~ — dropped 2026-09-05. Written when we believed the plan was 75K/day; we are on **Mega (150K/day)** and use 9–23% of it, but 7.5K/day is far below even that floor, so a downgrade to a Pro-sized tier is not viable. Tier names/prices unverified — re-check AF pricing if this is ever revisited.
 
 ---
 
