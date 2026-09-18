@@ -27249,19 +27249,37 @@ def test_coolbet_wedged_session_self_heal_2026_09_18():
     heal = src[src.index("def run("):]
     assert "_destroy_odds_session()" in heal, "WEDGED_SESSION must self-heal"
 
-    # Inspect the destroy function's CODE, not its prose — its docstring names
-    # coolbet_prod deliberately, to say it is never a target.
+    # BEHAVIOUR, NOT SHAPE. This used to walk the AST of `_destroy_odds_session`
+    # and require `sessions.destroy` + `ODDS_FS_SESSION` inside its own body,
+    # which broke the moment the destroy was factored into a reusable
+    # `_destroy_fs_session(name)` so the in-play session could share it — even
+    # though every guarantee still held. It also asserted "coolbet_prod" never
+    # appears in the code, which now actively FIGHTS the stronger protection:
+    # the destroyer REFUSES that name outright instead of merely not mentioning
+    # it. RELIABILITY_LEDGER "a test that pins the old reality".
+    #
+    # So: assert what must be TRUE. The odds destroyer targets the odds session,
+    # and the real-money session cannot be destroyed however it is reached.
     import ast, textwrap
-    destroy_fn = next(
-        n for n in ast.walk(ast.parse(src))
-        if isinstance(n, ast.FunctionDef) and n.name == "_destroy_odds_session"
+    assert "sessions.destroy" in src and "ODDS_FS_SESSION" in src
+    from workers.jobs.coolbet_feed_watchdog import (
+        _destroy_fs_session, _destroy_odds_session as _dos,
     )
-    body = destroy_fn.body[1:] if ast.get_docstring(destroy_fn) else destroy_fn.body
-    code = "\n".join(ast.dump(n) for n in body)
-    assert "sessions.destroy" in code and "ODDS_FS_SESSION" in code
-    assert "coolbet_prod" not in code, (
-        "the destroy path must never be able to name the real-money session"
+    assert _destroy_fs_session("coolbet_prod") is False, (
+        "the destroy path must REFUSE the real-money session, not merely avoid "
+        "naming it"
     )
+    _seen = {}
+    import workers.jobs.coolbet_feed_watchdog as _wd
+    _orig = _wd._destroy_fs_session
+    try:
+        _wd._destroy_fs_session = lambda n: _seen.setdefault("name", n) and True
+        _dos()
+        assert _seen.get("name") == ODDS_FS_SESSION, (
+            f"_destroy_odds_session must target {ODDS_FS_SESSION!r}, "
+            f"not {_seen.get('name')!r}")
+    finally:
+        _wd._destroy_fs_session = _orig
 
     # WEDGED vs BLOCKED have OPPOSITE remedies and identical DB signatures. A
     # `challenged` probe means Coolbet rendered a real answer — the Imperva flag
