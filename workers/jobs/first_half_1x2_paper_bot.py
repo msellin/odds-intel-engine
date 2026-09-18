@@ -18,6 +18,19 @@ import os
 import uuid
 from collections import defaultdict
 
+# SHADOW-PICKS-UNATTRIBUTABLE (2026-09-18). This bot has NO model — its
+# probability is de-vigged Pinnacle, so there is no model bundle to point at.
+# But the picks still need to say WHICH RULE produced them: retired bots keep
+# writing (owner's call 2026-09-18, the rows are near-free and genuinely
+# out-of-sample), and the day this rule changes, old and new rows become
+# indistinguishable. That cannot be backfilled, unlike ROI or CLV.
+#
+# So this is a RULE version, deliberately not a model version string. Do NOT
+# join it against `model_versions` — bump it whenever the selection rule,
+# the edge floor or the fair-price basis changes.
+RULE_VERSION = "fh_1x2_paper_devig_v1"
+
+
 log = logging.getLogger(__name__)
 
 BOT_NAME = "bot_1h_1x2_paper_shadow_v1"
@@ -100,11 +113,12 @@ def generate_picks() -> dict:
                 """INSERT INTO shadow_bets
                        (shadow_run_id, shadow_cohort, bot_id, match_id, market, selection,
                         odds_at_pick, odds_at_pick_live, pick_time, stake,
-                        model_probability, calibrated_prob, edge_percent, recommended_bookmaker)
-                   VALUES (%s,%s,%s,%s,'1x2_1h',%s,%s,%s, now(), %s, %s,%s,%s,%s)
+                        model_probability, calibrated_prob, edge_percent, recommended_bookmaker,
+                        model_version)
+                   VALUES (%s,%s,%s,%s,'1x2_1h',%s,%s,%s, now(), %s, %s,%s,%s,%s,%s)
                    ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING""",
                 [run_id, SHADOW_COHORT, bot_id, match_id, sel,
-                 price, price, STAKE_EUR, dp, dp, edge_pct, book],
+                 price, price, STAKE_EUR, dp, dp, edge_pct, book, RULE_VERSION],
             )
             counters["picked" if n else "skipped_existing"] += 1
         log.info("fh-1x2 paper: scanned %d, %d new picks, %d existing",

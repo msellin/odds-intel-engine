@@ -103,14 +103,15 @@ def generate_picks() -> dict:
             SELECT m.id::text AS mid,
                    MAX(cb.odds) FILTER (WHERE cb.selection='over')  AS o_over,
                    MAX(cb.odds) FILTER (WHERE cb.selection='under') AS o_under,
-                   po.model_probability::float AS p_over
+                   po.model_probability::float AS p_over,
+                   po.model_version AS model_version
               FROM matches m
               JOIN cb ON cb.mid = m.id::text
-              JOIN LATERAL (SELECT model_probability FROM predictions
+              JOIN LATERAL (SELECT model_probability, model_version FROM predictions
                             WHERE match_id = m.id AND market = 'over35'
                             ORDER BY model_version DESC LIMIT 1) po ON true
              WHERE m.date > NOW()
-             GROUP BY m.id, po.model_probability
+             GROUP BY m.id, po.model_probability, po.model_version
             """
         )
         run_id = str(uuid.uuid4())
@@ -135,17 +136,24 @@ def generate_picks() -> dict:
                 """INSERT INTO shadow_bets
                        (shadow_run_id, shadow_cohort, bot_id, match_id, market, selection,
                         odds_at_pick, odds_at_pick_live, pick_time, stake,
-                        model_probability, calibrated_prob, edge_percent)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s)
+                        model_probability, calibrated_prob, edge_percent, model_version)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s,%s)
                    ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)
                    DO UPDATE SET
                         odds_at_pick      = EXCLUDED.odds_at_pick,
                         odds_at_pick_live = EXCLUDED.odds_at_pick_live,
                         model_probability = EXCLUDED.model_probability,
                         calibrated_prob   = EXCLUDED.calibrated_prob,
-                        edge_percent      = EXCLUDED.edge_percent""",
+                        edge_percent      = EXCLUDED.edge_percent,
+                        model_version     = EXCLUDED.model_version""",
+                # SHADOW-PICKS-UNATTRIBUTABLE (2026-09-18): stamp the version of
+                # the prediction this pick was derived from. It was already read
+                # by the LATERAL join to pick the newest row, then discarded —
+                # so 240 picks/week were measurable but not attributable, and
+                # that cannot be backfilled once the rule moves on.
                 [run_id, SHADOW_COHORT, bot_id, r["mid"], MARKET, sel,
-                 price, price, STAKE_EUR, float(r["p_over"]), calp, edge],
+                 price, price, STAKE_EUR, float(r["p_over"]), calp, edge,
+                 r["model_version"]],
             )
             counters["written"] += 1
 

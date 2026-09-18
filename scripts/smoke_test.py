@@ -44761,6 +44761,74 @@ def test_competitor_audits_can_run():
         assert _engine_path(script).exists(), f"{script} is wired in CI but missing"
 
 
+@test("SHADOW-PICKS-ATTRIBUTABLE — every shadow writer stamps what produced the pick")
+def test_shadow_picks_attributable():
+    """SHADOW-PICKS-UNATTRIBUTABLE (2026-09-18).
+
+    Four writers stored `model_probability` and `edge_percent` but left
+    `model_version` NULL — ~1,556 picks a week that could be measured but not
+    attributed. Retired bots keep writing (owner's call 2026-09-18: the rows are
+    near-free and genuinely out-of-sample), which makes attribution worth MORE,
+    not less: the day one of these rules changes, old and new rows become
+    indistinguishable, and unlike ROI or CLV that cannot be backfilled.
+
+    Two kinds of stamp, deliberately different:
+      ou35_model_shadow  a REAL model version, already read by its LATERAL join
+                         to pick the newest prediction and then thrown away.
+      the three paper    a RULE version — these have no model, their probability
+        de-vig bots      is de-vigged Pinnacle. Labelled so nobody joins it
+                         against `model_versions` expecting a bundle.
+
+    Checked structurally, including SQL ARITY: the first attempt at this fix
+    inserted the new placeholder after `VALUES (`'s first ")" — which is the one
+    inside `now()` — producing `now(,%s)` in three files. Column/placeholder/
+    param counts must agree, or the writer dies at runtime inside a broad
+    `except` and simply stops producing picks.
+    """
+    import re as _re
+
+    writers = {
+        "workers/jobs/corners_paper_bot.py": "RULE_VERSION",
+        "workers/jobs/team_total_paper_bot.py": "RULE_VERSION",
+        "workers/jobs/first_half_1x2_paper_bot.py": "RULE_VERSION",
+        "workers/jobs/ou35_model_shadow.py": "model_version",
+    }
+    for path, stamp in writers.items():
+        src = _engine_path(path).read_text(encoding="utf-8")
+        i = src.index("INSERT INTO shadow_bets")
+        cols_blk = src[src.index("(", i):src.index("VALUES", i)]
+        cols = [c.strip() for c in cols_blk.strip().strip("()").replace("\n", " ").split(",") if c.strip()]
+        vals = src[src.index("VALUES", i):src.index("ON CONFLICT", i)]
+
+        assert "model_version" in " ".join(cols), (
+            f"{path} does not write model_version — its picks cannot be "
+            f"attributed to whatever produced them, and that is not backfillable"
+        )
+        assert "now(,%s)" not in vals, (
+            f"{path} has the `now(,%s)` corruption — a placeholder was inserted "
+            f"at the first ')' after VALUES, which belongs to now()"
+        )
+        ph = vals.count("%s")
+        inline = vals.count("now()") + len(_re.findall(r"'[^']*'", vals))
+        assert len(cols) == ph + inline, (
+            f"{path}: {len(cols)} columns but {ph} placeholders + {inline} inline "
+            f"values — the INSERT would fail at runtime inside a broad except"
+        )
+        assert stamp in src, f"{path} must carry its {stamp} stamp"
+
+    # The three de-vig bots must NOT masquerade as model versions.
+    for path in ("workers/jobs/corners_paper_bot.py",
+                 "workers/jobs/team_total_paper_bot.py",
+                 "workers/jobs/first_half_1x2_paper_bot.py"):
+        src = _engine_path(path).read_text(encoding="utf-8")
+        m = _re.search(r'RULE_VERSION\s*=\s*"([^"]+)"', src)
+        assert m, f"{path} must define RULE_VERSION as a literal"
+        assert "devig" in m.group(1), (
+            f"{path} RULE_VERSION is {m.group(1)!r} — it must read as a RULE, not "
+            f"a model bundle; these bots have no model, their p is de-vigged Pinnacle"
+        )
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).
