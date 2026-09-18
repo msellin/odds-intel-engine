@@ -119,13 +119,29 @@ def fetch_match_markets(
     # Coolbet wrote 9 market families and ZERO corners for three hours, while
     # Unibet-Kambi wrote corners on 183 fixtures and Pinnacle on 301.
     #
-    # LIVE keeps 13 — that request shape is copied from a real browser call and
-    # the live page genuinely offers fewer groups; widening it there would change
-    # in-play behaviour for no benefit, and in-play is retired anyway.
+    # LIVE USED TO KEEP 13, on the reasoning quoted below — every clause of which
+    # turned out to be wrong, so it is corrected here rather than deleted:
+    #
+    #   "that request shape is copied from a real browser call and the live page
+    #    genuinely offers fewer groups; widening it there would change in-play
+    #    behaviour for no benefit, and in-play is retired anyway."
+    #
+    # Measured on a LIVE match (6147686) on 2026-09-18:
+    #     limit=13   ->   8 groups,  12 markets, 0.48 s
+    #     limit=300  ->  39 groups,  48 markets, 1.40 s
+    # The live page does NOT genuinely offer fewer groups — we were reading a
+    # QUARTER of Coolbet's live board. And in-play is no longer retired: the
+    # Phase 1b rig (`workers/jobs/inplay_collector.py`) has been collecting since
+    # 2026-09-15, which is exactly the consumer this truncation would starve.
+    #
+    # This is the same defect class as COOLBET-CORNERS-NOT-FLOWING-2026-09-05 —
+    # fixed pre-match at the time and left in place in-play BECAUSE of the
+    # incorrect comment above. A comment asserting a measurement nobody took is
+    # how one bug survives its own fix; see docs/RELIABILITY_LEDGER.md.
     r = session.get(_SIDEBETS_URL, params={
         "matchId": match_id, "country": "EE", "language": "en",
         "layout": "EUROPEAN",
-        "limit": 13 if live else _SIDEBETS_PREMATCH_LIMIT,
+        "limit": _SIDEBETS_PREMATCH_LIMIT,   # non-binding for live AND pre-match
         "matchStatus": "LIVE" if live else "OPEN",
     })
     if r.status_code == 200:

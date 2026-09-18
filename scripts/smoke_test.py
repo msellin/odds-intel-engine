@@ -45831,6 +45831,64 @@ def test_inplay_sweep_ci_needs_losses():
     assert mod.summarise(mixed)["ci_ok"], "a sample with real losses keeps its CI"
 
 
+@test("COOLBET-INPLAY-NEVER-PROD-SESSION — the in-play collector must never share the real-money FlareSolverr session")
+def test_coolbet_inplay_never_prod_session():
+    """`coolbet_prod` is the FS session the real-money placer uses; wedging or
+    destroying it breaks placement (docs/COOLBET_RUNBOOK.md). The in-play
+    collector runs continuously and is exactly the kind of long-lived reader that
+    would wedge it, so it carries its own session name. Pin that, and pin that it
+    does not reach a money primitive."""
+    src = _engine_path("workers/jobs/inplay_coolbet_collector.py").read_text(encoding="utf-8")
+    assert 'FS_SESSION_NAME = "coolbet_inplay"' in src
+    assert "coolbet_prod" not in src.split("NEVER")[-1] or 'FS_SESSION_NAME = "coolbet_prod"' not in src, \
+        "the collector must not use the real-money session"
+    assert "fs_session_name=FS_SESSION_NAME" in src, "the session name must actually be passed"
+    for banned in ("place_bet", "place_all_bets", "assert_may_place", "real_bets",
+                   "coolbet_ui_placer", "execute=True"):
+        assert banned not in src, f"an in-play COLLECTOR must not reference {banned}"
+
+
+@test("COOLBET-INPLAY-SERIAL-ONLY — parallel Coolbet reads silently return another match's markets")
+def test_coolbet_inplay_serial_only():
+    """INPLAY-VIABILITY-GATE defect (b): running more than one reader through a
+    shared FS session returned Botafogo/Goias outcomes inside a Leeds-Newcastle
+    1x2 — rare, plausible-looking, and completely silent. The collector is
+    therefore serial by construction. If someone parallelises it later, this
+    fails and points them at the per-process named-session requirement."""
+    src = _engine_path("workers/jobs/inplay_coolbet_collector.py").read_text(encoding="utf-8")
+    run = src[src.index("def run("):]
+    for banned in ("threading", "ThreadPool", "concurrent.futures", "asyncio"):
+        assert banned not in run, (
+            f"{banned} in the Coolbet collector loop — parallel reads through one FS "
+            "session silently return another match's markets")
+    assert "SERIAL on purpose" in run, "the serial requirement must stay documented at the loop"
+
+
+@test("COOLBET-INPLAY-LIMIT-NOT-13 — the live sidebets limit must not be the truncating 13")
+def test_coolbet_inplay_limit_not_13():
+    """Measured 2026-09-18 on a LIVE match: limit=13 returns 8 groups / 12
+    markets, limit=1000 returns 39 / 48. The old code pinned live to 13 on a
+    comment asserting the live page 'genuinely offers fewer groups' and that
+    in-play was retired — both false. Same defect class as
+    COOLBET-CORNERS-NOT-FLOWING-2026-09-05."""
+    src = _engine_path("workers/automation/coolbet_explorer.py").read_text(encoding="utf-8")
+    i = src.index("_SIDEBETS_URL, params={")
+    call = src[i:i + 400]
+    assert "13 if live" not in call, "live must not be pinned to the truncating limit 13"
+    assert "_SIDEBETS_PREMATCH_LIMIT" in call
+
+
+@test("COOLBET-INPLAY-SUSPENSION-IS-DATA — suspension must be recorded, never dropped")
+def test_coolbet_inplay_suspension_is_data():
+    """The entire reason this collector exists is the cross-book suspension lead
+    (an OPEN->SUSPENDED transition on 1x2 predicts a goal 19.06% vs 1.18%). A
+    collector that drops suspended selections destroys the measurement it was
+    built for — the same rule the Epicbet arm already follows."""
+    src = _engine_path("workers/jobs/inplay_coolbet_collector.py").read_text(encoding="utf-8")
+    assert '"suspended": status == "SUSPENDED"' in src, "suspension must be stored as a field"
+    assert "SUSPENSION IS THE POINT" in src, "keep the reason at the parser"
+
+
 @test("INPLAY-COLLECTOR-HEARTBEAT — the collector stamps pipeline_health_state every cycle and the VPS prunes the board")
 def test_inplay_collector_heartbeat():
     src = _engine_path("workers/jobs/inplay_collector.py").read_text(encoding="utf-8")

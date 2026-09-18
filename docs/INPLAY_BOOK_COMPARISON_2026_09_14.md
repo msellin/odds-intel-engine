@@ -1,5 +1,18 @@
 # In-play price comparison — Unibet vs Coolbet vs Epicbet
 
+> **✅ UPDATED 2026-09-18 — recommendation 5 (`limit=13`) is FIXED, and the
+> "RESEARCH ONLY, nothing written to the database" status no longer holds for
+> Coolbet.** `fetch_match_markets(live=True)` now uses the same non-binding limit
+> as pre-match; re-measured on live match 6147686: **limit=13 → 8 groups / 12
+> markets, limit=1000 → 39 / 48**, confirming this doc's finding on a second
+> occasion. Coolbet in-play is now COLLECTED into `inplay_book_quotes` by
+> `workers/jobs/inplay_coolbet_collector.py` (serial, own FS session
+> `coolbet_inplay`, 8 fixtures / 90 s), alongside the Epicbet arm. The purpose is
+> the cross-book suspension-lead test (INPLAY-SUSPENSION-LEAD-SIGNAL-2026-09-18),
+> not the price-quality comparison this doc reports. The price-quality numbers
+> below stand as measured, but note they were taken at `limit=13` for Coolbet and
+> therefore reflect a QUARTER of its live board.
+
 **Status: RESEARCH ONLY. Nothing was written to the database.** Pre-analysis
 material for an in-play strategy decision. Measured live on 2026-09-14, roughly
 19:10–19:35 UTC, against matches that were actually in play.

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Coolbet IN-PLAY collector (INPLAY-SUSPENSION-LEAD-SIGNAL-2026-09-18).
+
+  This is the SECOND book for the suspension-lead test, not a breadth collector.
+  Epicbet covers the board; Coolbet exists to answer one question: when Epicbet
+  pulls its 1x2, is Coolbet still quoting?
+
+  The defaults are deliberately conservative and the opposite of the Epicbet
+  arm's, because the constraints are opposite. Measured 2026-09-18:
+
+    * Coolbet costs ~6 s/fixture (3.1 s markets + 2.8 s odds) vs Epicbet's
+      0.13-0.8 s, because every call goes through FlareSolverr and Imperva.
+    * Parallel reads through one FS session SILENTLY return another match's
+      markets, so this process is a single SERIAL reader.
+    * It uses its own FS session `coolbet_inplay`. NEVER point it at
+      `coolbet_prod` — that session is the real-money placer's.
+
+  8 fixtures x ~6 s is ~48 s of work inside a 90 s cadence, which leaves real
+  headroom and keeps us clear of the Imperva budget. Raising either number is a
+  measured decision, not a default. Pinned by COOLBET-INPLAY-* smoke tests.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.oddsintel.inplay-coolbet-collector</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/margussellin/www/odds-intel-engine/venv/bin/python</string>
+        <string>-m</string>
+        <string>workers.jobs.inplay_coolbet_collector</string>
+        <string>--cadence</string><string>90</string>
+        <string>--max-fixtures</string><string>8</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/margussellin/www/odds-intel-engine</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/inplay-coolbet-collector.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/inplay-coolbet-collector.log</string>
+</dict>
+</plist>
