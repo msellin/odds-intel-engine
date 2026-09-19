@@ -46419,6 +46419,33 @@ def test_coolbet_sweep_skips_fo_match():
     assert "include_fo_match=False" in sweep, "the sweep must opt out of fo-match"
 
 
+@test("COOLBET-UNMATCHED-DEDUP-NOT-PER-PLAYER — the inventory key must not carry the player name")
+def test_coolbet_unmatched_dedup_not_per_player():
+    """2026-09-19. The unmatched-market log and `coolbet_market_inventory` are
+    deduped so a sweep touching ~1,200 fixtures emits one line per distinct
+    market. Keying on the RAW name defeated that for player props, because the
+    player is the name: mtid 1690 alone produced 3,800 distinct keys
+    ('will/will not score: <player>').
+
+    Measured cost: 304,799 UNMATCHED warnings in one log file — which buries the
+    first sighting of a market that actually matters, the only reason the line
+    exists — and an inventory of 17,744 rows for 124 market types, four
+    player-prop mtids accounting for 13,291 of them.
+
+    Pins that the key is normalised on the family, not the raw name."""
+    src = _engine_path("workers/automation/coolbet_explorer.py").read_text(encoding="utf-8")
+    i = src.index("_UNMATCHED_SEEN:")
+    blk = src[src.index("_key = ", i - 2000) - 400:i + 200] if "_key = " in src else src
+    assert '_key = (_family, mtid)' in src, (
+        "the dedup key must use the normalised family, not the raw market name")
+    assert '_n.split(":", 1)[0]' in src, "the player suffix must be stripped"
+    # and the behaviour itself
+    names = ["will/will not score:  ali maamar", "will/will not score:  nikita ivanov",
+             "to give an assist: pedri", "Handicap (3 Way)"]
+    keys = {(n.split(":", 1)[0].strip(), 1690) for n in names}
+    assert len(keys) == 3, f"4 raw names must collapse to 3 families, got {len(keys)}"
+
+
 @test("COOLBET-SWEEP-HORIZON-12H — the board sweep must not poll a 24h horizon")
 def test_coolbet_sweep_horizon_12h():
     """COOLBET-REQUEST-REDUCTION 2026-09-19. The 24h horizon was 47.9% of all

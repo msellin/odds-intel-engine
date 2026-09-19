@@ -899,8 +899,23 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
     # Pinnacle counterpart cannot be de-vigged and so cannot be priced against
     # a sharp line today. The owner's point stands anyway — optionality is
     # worth having, and the cost of knowing is one log line per distinct name.
+    # THE DEDUP KEY MUST NOT CARRY THE PLAYER NAME (fixed 2026-09-19).
+    # Keying on the raw (name, mtid) could never collapse a player-prop market,
+    # because the player IS the name: mtid 1690 alone produced 3,800 distinct
+    # keys ("will/will not score: <player>"). Measured cost of that: 304,799
+    # UNMATCHED warnings in one log file — which buries the FIRST sighting of a
+    # market that actually matters, the exact purpose of the line — and
+    # `coolbet_market_inventory` grown to 17,744 rows for 124 market types, with
+    # four player-prop mtids accounting for 13,291 of them. A catalogue of market
+    # TYPES that is 99% player names cannot answer "what do we not capture",
+    # which is the only question it exists to answer.
+    #
+    # Normalising on the part before ':' collapses the props to one entry each
+    # while keeping genuinely distinct market names apart. This file's own rule
+    # already says mtids are stable and names are not.
     _n = name or ""
-    _key = (_n, mtid)
+    _family = _n.split(":", 1)[0].strip()
+    _key = (_family, mtid)
     if _key not in _UNMATCHED_SEEN:
         _UNMATCHED_SEEN.add(_key)
         log.warning(
