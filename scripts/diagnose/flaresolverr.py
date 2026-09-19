@@ -177,6 +177,37 @@ def step_navigate(fs_url: str, target_url: str, label: str, results: dict,
         "cookies_returned": cookies_set,
         "url_final": sol.get("url"),
     }
+    # HTTP 200 IS NOT PROOF OF CONTENT. Incapsula answers a challenge with 200
+    # and a small JS body, so "✓ coolbet.com HTTP 200, 6,078 bytes, 2 cookies"
+    # read as a PASS all through the 2026-09-18 outage while coolbet.com was
+    # serving nothing but a challenge. Measured that evening on one fresh
+    # session: homepage 6,078 bytes carrying `_Incapsula_`, fo-tree 992 bytes
+    # carrying "Request unsuccessful", Epicbet from the same host 1.59 MB of
+    # real page. The bytes were always there to read; nothing looked at them.
+    #
+    # This is the diagnostic an operator reaches for DURING an incident, so a
+    # false green here costs hours — it cost them here.
+    # SIZE IS PART OF THE TEST, not decoration. A challenge page is small — the
+    # ones measured here were 992 and 6,078 bytes. The first version of this check
+    # keyed on the marker alone and promptly failed hltv.org, a 1.18 MB REAL page
+    # that merely contains the word "captcha" somewhere in it. A false RED in an
+    # incident tool is only marginally better than a false green, so both
+    # conditions must hold.
+    CHALLENGE_MAX_BYTES = 50_000
+    body = (sol.get("response") or "").lower()
+    challenge = next((m for m in ("_incapsula_", "incapsula", "request unsuccessful",
+                                  "captcha", "access denied")
+                      if m in body), None)
+    if 200 <= status < 400 and challenge and body_len < CHALLENGE_MAX_BYTES:
+        results[label]["ok"] = False
+        results[label]["challenge_marker"] = challenge
+        _print(label, "fail",
+               f"HTTP {status} but the body is a CHALLENGE page "
+               f"({body_len:,} bytes, contains {challenge!r}) — the target is "
+               f"blocking this IP; FlareSolverr itself is fine. Do NOT cycle "
+               f"sessions at this, it hardens the block (runbook §7).", elapsed)
+        return False
+
     if 200 <= status < 400:
         _print(label, "ok", f"HTTP {status}, {body_len:,} bytes, {cookies_set} cookies", elapsed)
         return True

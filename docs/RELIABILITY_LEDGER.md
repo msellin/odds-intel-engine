@@ -759,3 +759,47 @@ a comment explaining that this test's failure "only reproduces in a process that
 has not already imported db.py — which the smoke suite has". A test whose
 correctness depends on what *else* the process has done is one scheduling change
 away from lying in either direction.
+
+---
+
+## 17. HTTP 200 is not proof of content — and a challenge page reads as health
+
+**IMPERVA-FLAG 2026-09-18/19.** Coolbet's feed died at 18:15 UTC and stayed dead
+12.5h. It was diagnosed three times as a **wedged FlareSolverr session** and
+treated accordingly — sessions destroyed repeatedly, then the FS container
+restarted. All of that was the **opposite of the correct remedy**, because the
+real cause was an Incapsula flag on the IP, and cycling sessions at a live flag
+hardens it (runbook §7).
+
+Three separate instruments agreed on the wrong answer:
+
+| instrument | what it said | what was true |
+|---|---|---|
+| `scripts/diagnose/flaresolverr.py` | `✓ coolbet.com HTTP 200, 6,078 bytes` | those 6,078 bytes **were** the `_Incapsula_` challenge |
+| `probe_coolbet_reachable` | `state=wedged` … *"that is a stuck session, not a challenge verdict"* | it had logged `Incapsula interstitial` one line earlier |
+| the odds sweep | `fo-tree fetch failed … HTTP 500` ×3, every 30 min | 992 bytes of `Request unsuccessful` — a block, being retried 144×/day |
+
+**The bytes were always there to read. Nothing looked at them.** One request
+settled it in 70 seconds once asked properly — fetch the homepage and the API on
+a brand-new session and *inspect the body*: 6,078 bytes of Incapsula JS, 992
+bytes of "Request unsuccessful", against Epicbet's 1.59 MB of real page from the
+same host. That last control is what proves it is the target and not the network.
+
+**Tell:** a 200 whose body is far smaller than the page should be; any instrument
+that reports a status code without asserting on content; a "wedged" verdict on a
+**brand-new** session — a session that has never been used cannot be stuck, so
+that verdict is self-refuting and names the IP as the problem.
+
+**Guard:** the diagnostic now fails a 200 whose small body carries a challenge
+marker, and says explicitly not to cycle sessions at it
+(`FS-DIAGNOSTIC-DETECTS-CHALLENGE`). The size condition is part of the test —
+marker-only matching flagged a 1.18 MB real page containing the word "captcha",
+and a false RED in an incident tool is barely better than a false green.
+`COOLBET-PROBE-CALLS-IMPERVA-A-WEDGE` is filed for the probe's own verdict.
+
+**And the cause, which is the uncomfortable part:** the flag followed a
+same-day collector that added ~30k requests/day to this IP's Coolbet footprint.
+The footprint risk had been raised in review that afternoon and answered with a
+manual pause switch. A switch nobody is watching is not a control. **Retrying is
+not diagnosis** (§8) — 144 blocked requests a day is very likely why 12.5h
+produced no decay.

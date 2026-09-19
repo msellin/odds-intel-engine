@@ -46175,6 +46175,32 @@ def test_coolbet_inplay_self_recycles():
         "the recycle path must never be able to name the real-money session"
 
 
+@test("FS-DIAGNOSTIC-DETECTS-CHALLENGE — HTTP 200 carrying a challenge page must not read as a pass")
+def test_fs_diagnostic_detects_challenge():
+    """2026-09-18/19. Incapsula answers a challenge with HTTP 200 and a small JS
+    body, so the FS diagnostic printed `✓ coolbet.com HTTP 200, 6,078 bytes` as a
+    PASS through an outage in which coolbet.com served nothing but a challenge.
+    That false green is the tool an operator reaches for DURING an incident, and
+    it cost hours of chasing 'wedged sessions' that were really a blocked IP.
+
+    Measured: homepage 6,078 bytes carrying `_Incapsula_`, fo-tree 992 bytes
+    carrying 'Request unsuccessful', Epicbet from the same host 1.59 MB of real
+    page. Also pins the SIZE condition — the first version of the check failed
+    hltv.org, a 1.18 MB real page that merely contains the word 'captcha'. A
+    false RED in an incident tool is barely better than a false green."""
+    src = _engine_path("scripts/diagnose/flaresolverr.py").read_text(encoding="utf-8")
+    assert "_incapsula_" in src.lower(), "the challenge markers must be checked"
+    assert "CHALLENGE_MAX_BYTES" in src, (
+        "a challenge must also be SMALL — marker-only matching red-flags real pages")
+    assert "runbook" in src.lower() and "hardens the block" in src, (
+        "the message must tell the operator NOT to cycle sessions at a challenge — "
+        "that is the opposite remedy and it makes the block worse")
+    # The size gate must be part of the same condition, not advisory.
+    import re as _re
+    assert _re.search(r"challenge\s+and\s+body_len\s*<\s*CHALLENGE_MAX_BYTES", src), \
+        "marker AND size must both be required to call it a challenge"
+
+
 @test("COOLBET-INPLAY-SERIAL-ONLY — parallel Coolbet reads silently return another match's markets")
 def test_coolbet_inplay_serial_only():
     """INPLAY-VIABILITY-GATE defect (b): running more than one reader through a
