@@ -4522,6 +4522,57 @@ def test_beta_bots_retired():
     assert "bot_1x2_specialist" not in mig.split("WHERE")[1], "keeper must not be in WHERE"
 
 
+@test("EGRESS-PROBE-GEO-BLOCK — a country block must not read as reachable")
+def test_egress_probe_geo_block():
+    """GEO-BLOCK-DETECTION-2026-09-19.
+
+    1xBet answers a redirect to /en/block with **HTTP 203** and a full HTML page,
+    so status and body length both look like success. The probe classified it
+    "OK?-unexpected-body", which reads as "reachable, marker needs tuning" when
+    the truth is "this host refuses our country" — the opposite operational
+    conclusion, and the sort of thing that gets a sweep scheduled against a book
+    that will never answer.
+
+    Two invariants, and the second is the one that saves time:
+      1. a geo-block landing path classifies as GEO-BLOCK regardless of status,
+      2. FlareSolverr is NOT tried for one. FS shares the host's egress IP, so it
+         cannot clear a country block; a green FS cell there would be a lie, and
+         the 90s browser solve is pure waste.
+
+    `classify` is pure, so this is a real functional test, not source inspection.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location(
+        "_egress_probe", root / "scripts" / "ops" / "egress_probe.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # 1 — a 2xx with a block landing URL is a GEO-BLOCK, not OK
+    assert mod.classify(203, "<html>anything</html>",
+                        final_url="https://1xbet.com/en/block") == "GEO-BLOCK"
+    assert mod.classify(200, "<html>x</html>",
+                        final_url="https://x.example/restricted") == "GEO-BLOCK"
+    # a trailing slash must not defeat it
+    assert mod.classify(200, "x", final_url="https://x.example/blocked/") == "GEO-BLOCK"
+
+    # 2 — a normal landing URL is unaffected, and the real walls still classify
+    assert mod.classify(200, '{"result":[]}',
+                        final_url="https://www.marathonbet.com/en/betting/Football") == "OK"
+    assert mod.classify(200, "Just a moment...", final_url="https://e.example/x") == "CF-CHALLENGE"
+    assert mod.classify(200, "Pardon Our Interruption", final_url=None) == "IMPERVA"
+    # classify must stay callable without the new argument (other call sites)
+    assert mod.classify(200, '{"result":[]}') == "OK"
+
+    # 3 — FS must be skipped for a geo block
+    src = (root / "scripts" / "ops" / "egress_probe.py").read_text(encoding="utf-8")
+    assert 'if dv == "GEO-BLOCK":' in src and "FS cannot clear a geo block" in src, (
+        "the geo-block branch that skips FlareSolverr is gone — FS shares the "
+        "egress IP and cannot clear a country block")
+
+
 @test("ANCHOR-RESEARCH-OUTLIER-GUARD — the §9 guard is load-bearing, not optional")
 def test_anchor_research_outlier_guard():
     """1X2-HOME-AWAY-INVERSIONS-2026-09-19 / ANALYSIS_GOTCHAS §9, §58.

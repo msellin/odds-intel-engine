@@ -94,19 +94,19 @@ ENDPOINTS = [
     # front of it". An OK here is necessary for a sweep and nowhere near
     # sufficient — the endpoint shape is a separate, later piece of work.
     dict(
-        book="1xBet", wall="unknown (EMTA-blocked for BETTING; anchor use is read-only)",
+        book="1xBet", wall="GEO-BLOCK (measured 2026-09-19: redirects to /en/block, HTTP 203)",
         url="https://1xbet.com/en/line/football",
         ok=lambda b: "football" in b.lower() and "just a moment" not in b.lower(),
         needs="UNKNOWN — page-level probe only; odds API shape not yet observed",
     ),
     dict(
-        book="Marathonbet", wall="unknown (EMTA-blocked for BETTING; anchor use is read-only)",
+        book="Marathonbet", wall="none measured (HTTP 200, real page, Mac AND VPS)",
         url="https://www.marathonbet.com/en/betting/Football",
         ok=lambda b: "football" in b.lower() and "just a moment" not in b.lower(),
         needs="UNKNOWN — page-level probe only; odds API shape not yet observed",
     ),
     dict(
-        book="BetVictor", wall="unknown (EMTA-blocked for BETTING; anchor use is read-only)",
+        book="BetVictor", wall="geo: 403 from EE residential, OK from the VPS",
         url="https://www.betvictor.com/en-gb/sports/football",
         ok=lambda b: "football" in b.lower() and "just a moment" not in b.lower(),
         needs="UNKNOWN — page-level probe only; odds API shape not yet observed",
@@ -128,7 +128,15 @@ MARKERS = [
 ]
 
 
-def classify(status, body, err=None):
+# A landing path that means "we refuse your country", not "you are a bot". These
+# need a different egress, exactly like a reputation block — but they are NOT
+# solvable by FlareSolverr, so telling them apart from a challenge matters.
+GEO_BLOCK_PATHS = ("/block", "/restricted", "/geo-block", "/blocked")
+
+
+def classify(status, body, err=None, final_url=None):
+    if final_url and any(final_url.rstrip("/").endswith(p) for p in GEO_BLOCK_PATHS):
+        return "GEO-BLOCK"
     if err:
         low = str(err).lower()
         if "ip is banned" in low or "cloudflare has blocked" in low:
@@ -151,7 +159,14 @@ def probe_direct(url, timeout=25):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             body = r.read(200_000).decode("utf-8", "replace")
-            return dict(status=r.status, body=body, ms=int((time.time() - t0) * 1000))
+            # GEO-BLOCK-DETECTION-2026-09-19: the final URL is load-bearing. 1xBet
+            # answers a redirect to /en/block with HTTP **203** and a full HTML
+            # page, so status and body-length both look like success and the
+            # probe reported "OK?-unexpected-body" — which reads as "reachable,
+            # marker needs tuning" when the truth is "this host refuses our
+            # country". Carry the landing URL so classify() can tell them apart.
+            return dict(status=r.status, body=body, final_url=r.geturl(),
+                        ms=int((time.time() - t0) * 1000))
     except urllib.error.HTTPError as e:
         body = e.read(200_000).decode("utf-8", "replace")
         return dict(status=e.code, body=body, ms=int((time.time() - t0) * 1000))
@@ -219,12 +234,17 @@ def main():
         if a.book and a.book.lower() not in e["book"].lower():
             continue
         d = probe_direct(e["url"])
-        dv = classify(d.get("status"), d.get("body"), d.get("err"))
+        dv = classify(d.get("status"), d.get("body"), d.get("err"), d.get("final_url"))
         if dv == "OK" and not e["ok"](d.get("body") or ""):
             dv = "OK?-unexpected-body"
 
         fv = "-"
-        if fs_up and dv != "OK":
+        if dv == "GEO-BLOCK":
+            # FlareSolverr shares this host's egress IP, so it cannot clear a
+            # country block — spending a 90s browser solve to re-learn that is
+            # pure waste, and a green FS cell here would be actively misleading.
+            fv = "n/a (same IP — FS cannot clear a geo block)"
+        elif fs_up and dv != "OK":
             f = probe_fs(e["url"])
             fv = classify(f.get("status"), f.get("body"), f.get("err"))
             if fv == "OK" and not e["ok"](f.get("body") or ""):
