@@ -4522,6 +4522,52 @@ def test_beta_bots_retired():
     assert "bot_1x2_specialist" not in mig.split("WHERE")[1], "keeper must not be in WHERE"
 
 
+@test("PER-BOOK-SHARP-TRIGGERS-NOT-RETIRED-WHILE-MERGED-UNDERFIRE — keep the evidence base")
+def test_per_book_sharp_triggers_not_retired_while_merged_underfire():
+    """MERGED-TRIGGER-BOTS-UNDERFIRE-2026-09-19.
+
+    MERGE-TRIGGER-BOTS collapsed 8 per-book trigger bots into 4 book-agnostic
+    configs, and bot_configs.py says a follow-up migration retires the per-book
+    pair once the calibrator watch reports. Measured 2026-09-19, the merged bots
+    fire at ~7% of their per-book twins over 30 days (1x2: 15 vs 204 / 176;
+    O/U: 4 vs 54 / 43) despite being a superset of them by construction — same
+    anchor, same market, same 3% floor, same two books.
+
+    So that retirement must NOT land before the volume gap is explained: the
+    sharp anchor is the one axis with a positive-leaning result, and retiring
+    the pair on today's numbers deletes ~92% of the evidence for it.
+
+    This is a SOURCE-INSPECTION guard, not a behaviour test. It fails the moment
+    someone removes the per-book sharp bots from the registry, which is exactly
+    the change the open queue row says to hold. If you are deliberately closing
+    that row, delete this test IN THE SAME COMMIT and say why.
+    """
+    from workers.registry.bot_registry import active_names
+
+    keepers = {
+        "bot_coolbet_trigger_sharp_1x2_v1",
+        "bot_unibet_trigger_sharp_1x2_v1",
+        "bot_coolbet_trigger_sharp_ou_v1",
+        "bot_unibet_trigger_sharp_ou_v1",
+    }
+    missing = keepers - active_names()
+    assert not missing, (
+        f"per-book sharp trigger bots retired while their merged replacements underfire: "
+        f"{sorted(missing)}. See PRIORITY_QUEUE MERGED-TRIGGER-BOTS-UNDERFIRE-2026-09-19 — "
+        f"explain the ~13x volume gap before retiring the pair, or close that row and "
+        f"delete this test in the same commit."
+    )
+
+    # The row is only actionable while it is actually open — pin that too, so the
+    # guard and its justification cannot drift apart.
+    from pathlib import Path
+    q = Path(__file__).resolve().parent.parent / "PRIORITY_QUEUE.md"
+    assert "MERGED-TRIGGER-BOTS-UNDERFIRE-2026-09-19" in q.read_text(encoding="utf-8"), (
+        "this guard cites a PRIORITY_QUEUE row that no longer exists — remove the test "
+        "or restore the row"
+    )
+
+
 @test("SYSTEM-MAP-REGISTRY-NOT-DRIFTED — the bot registry matches code, DB and the map")
 def test_system_map_registry_not_drifted():
     """SYSTEM-MAP (2026-09-09): workers/registry/bot_registry.py is the single source
@@ -46199,6 +46245,40 @@ def test_fs_diagnostic_detects_challenge():
     import re as _re
     assert _re.search(r"challenge\s+and\s+body_len\s*<\s*CHALLENGE_MAX_BYTES", src), \
         "marker AND size must both be required to call it a challenge"
+
+
+@test("NO-DUPLICATE-AF-FETCH — the full odds sweep must not run twice at 04:00, and /odds/live once per cycle")
+def test_no_duplicate_af_fetch():
+    """REQUEST_AUDIT 2026-09-19. Two duplicate AF fetches, both invisible at the
+    call site:
+
+    (1) `job_odds_refresh` is registered for every hour x {00,30}, and 04:00 is
+        also `morning_pipeline`'s slot, whose step 4/7 runs run_odds(today) — the
+        SAME ~56-77-page paginated sweep, in the same minute. A comment claimed
+        the 02:00+04:00 slots were 'removed'; the loop had gone on re-adding them
+        because its only skip was 20:00. A comment is not a control.
+    (2) The in-play collector called af_state() AND af_live_prices(), each of
+        which fetched /odds/live — two identical GETs per 45s cycle, ~3,840 AF
+        calls/day where 1,920 would do."""
+    sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    i = sched.index("for hour in range(0, 24):")
+    loop = sched[i:i + 1200]
+    assert "hour == 4 and minute == 0" in loop, (
+        "04:00 must be skipped — morning_pipeline step 4/7 already sweeps odds "
+        "for today in that minute")
+
+    src = _engine_path("workers/jobs/inplay_collector.py").read_text(encoding="utf-8")
+    run = src[src.index("def run("):]
+    assert run.count("get_live_odds()") <= 1, (
+        "the cycle must fetch /odds/live at most once")
+    assert "af_state(live_raw)" in run and "af_live_prices(live_raw)" in run, (
+        "both consumers must reuse the one fetched payload")
+    # …and the shared payload must be genuinely optional, so other callers work.
+    for mod, fn in (("workers/jobs/inplay_epicbet_collector.py", "def af_state("),
+                    ("workers/jobs/inplay_af_prices.py", "def af_live_prices(")):
+        t = _engine_path(mod).read_text(encoding="utf-8")
+        sig = t[t.index(fn):t.index(fn) + 120]
+        assert "raw" in sig and "None" in sig, f"{fn} must take an optional raw payload"
 
 
 @test("COOLBET-INPLAY-SERIAL-ONLY — parallel Coolbet reads silently return another match's markets")
