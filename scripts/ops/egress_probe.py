@@ -75,6 +75,42 @@ ENDPOINTS = [
         ok=lambda b: "unibet" in b.lower() and "datadome" not in b.lower(),
         needs="a HUMAN-ESTABLISHED logged-in CDP tab — reachability is NOT sufficient",
     ),
+    # SHARP-ANCHOR-CANDIDATES-2026-09-19. Added after
+    # `scripts/anchor_book_sharpness_research.py` ranked every book in
+    # odds_snapshots by Shin-de-vigged 1X2 log-loss, paired per fixture against
+    # Pinnacle over 90 days: 1xBet (dLL -0.0003, n=15,194), Marathonbet
+    # (-0.0003, n=15,290) and BetVictor (+0.0001, n=13,168) were the three
+    # closest to Pinnacle and statistically tied with it. We currently get all
+    # three only through API-Football, i.e. with AF's lag baked in.
+    #
+    # ⚠️ THESE ARE PAGE-LEVEL PROBES, NOT API PROBES, AND THAT IS DELIBERATE.
+    # The three entries above each hit a REAL endpoint whose shape we have
+    # observed. We have not observed these books' odds APIs, and writing a
+    # guessed `/api/...` path here would put a fabricated endpoint in the one
+    # file whose job is to replace claims with measurements — the exact failure
+    # PINNACLE-LIMITS-VALIDITY-GATE refused ("deliberately NOT writing untested
+    # scraper code against an endpoint shape known only from research").
+    # So these answer ONLY "does this host answer us at all, and what wall is in
+    # front of it". An OK here is necessary for a sweep and nowhere near
+    # sufficient — the endpoint shape is a separate, later piece of work.
+    dict(
+        book="1xBet", wall="unknown (EMTA-blocked for BETTING; anchor use is read-only)",
+        url="https://1xbet.com/en/line/football",
+        ok=lambda b: "football" in b.lower() and "just a moment" not in b.lower(),
+        needs="UNKNOWN — page-level probe only; odds API shape not yet observed",
+    ),
+    dict(
+        book="Marathonbet", wall="unknown (EMTA-blocked for BETTING; anchor use is read-only)",
+        url="https://www.marathonbet.com/en/betting/Football",
+        ok=lambda b: "football" in b.lower() and "just a moment" not in b.lower(),
+        needs="UNKNOWN — page-level probe only; odds API shape not yet observed",
+    ),
+    dict(
+        book="BetVictor", wall="unknown (EMTA-blocked for BETTING; anchor use is read-only)",
+        url="https://www.betvictor.com/en-gb/sports/football",
+        ok=lambda b: "football" in b.lower() and "just a moment" not in b.lower(),
+        needs="UNKNOWN — page-level probe only; odds API shape not yet observed",
+    ),
     dict(
         book="API-Football", wall="none (control)",
         url="https://v3.football.api-sports.io/status",

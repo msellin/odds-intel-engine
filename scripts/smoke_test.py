@@ -4522,6 +4522,51 @@ def test_beta_bots_retired():
     assert "bot_1x2_specialist" not in mig.split("WHERE")[1], "keeper must not be in WHERE"
 
 
+@test("ANCHOR-RESEARCH-OUTLIER-GUARD — the §9 guard is load-bearing, not optional")
+def test_anchor_research_outlier_guard():
+    """1X2-HOME-AWAY-INVERSIONS-2026-09-19 / ANALYSIS_GOTCHAS §9, §58.
+
+    `scripts/anchor_book_sharpness_research.py` compares books by de-vigged
+    log-loss. Its FIRST result reported "Pinnacle beats Coolbet, t=+4.26" on
+    n=7,043 — which was 68 fixtures, with the top 50 carrying 92% of the total,
+    a NEGATIVE median and a 50.6% win rate for Coolbet. Under the repo's own
+    production guard it collapses to t=-0.14: a dead tie, which is what
+    docs/ANCHOR_IS_NOT_SHARP_2026_09_14.md already concluded.
+
+    §58 says it verbatim: a mean and a rate that disagree "is never a subtle
+    finding; it is outliers." Log-loss being a proper score does not excuse
+    skipping the guard, because the outliers here are a DATA FAULT (home/away
+    inversions), not heavy-tailed truth.
+
+    Source-inspection, so it costs nothing and cannot be skipped by a slow DB.
+    It pins the three things that made the first answer wrong:
+      1. the guard exists and is applied in section C,
+      2. the MEDIAN and win-rate are reported next to the mean, so a
+         mean-vs-median sign flip is visible rather than hidden,
+      3. the dropped fixtures are surfaced, not silently discarded.
+    """
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent
+           / "scripts" / "anchor_book_sharpness_research.py").read_text(encoding="utf-8")
+
+    assert "OUTLIER_MAX_RATIO" in src, "the §9 outlier guard constant is gone"
+    assert "dropped[bk] += 1" in src, (
+        "section C no longer drops outlier fixtures — the guard is decorative")
+    assert "med ΔLL" in src and "book win" in src, (
+        "the median and win-rate columns are gone; a mean-only table is what "
+        "produced the retracted t=+4.26 result")
+    assert "--show-outliers" in src, (
+        "dropped fixtures must stay inspectable — they are evidence of an "
+        "upstream fault, not noise to discard quietly")
+    # the guard must not be quietly widened into uselessness
+    import re
+    m = re.search(r"OUTLIER_MAX_RATIO\s*=\s*([0-9.]+)", src)
+    assert m and float(m.group(1)) <= 1.30, (
+        f"OUTLIER_MAX_RATIO widened to {m.group(1) if m else '?'} — the production "
+        f"line-shop guard is 1.25; widening it here re-admits the inverted rows")
+
+
 @test("PER-BOOK-SHARP-TRIGGERS-NOT-RETIRED-WHILE-MERGED-UNDERFIRE — keep the evidence base")
 def test_per_book_sharp_triggers_not_retired_while_merged_underfire():
     """MERGED-TRIGGER-BOTS-UNDERFIRE-2026-09-19.
