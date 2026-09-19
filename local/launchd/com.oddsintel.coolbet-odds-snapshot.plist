@@ -39,7 +39,7 @@
         <string>workers.automation.coolbet_explorer</string>
         <string>--board</string>
         <string>--horizon-hours</string>
-        <string>24</string>
+        <string>12</string>
     </array>
 
     <key>WorkingDirectory</key>

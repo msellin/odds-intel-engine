@@ -36,28 +36,51 @@ odds, then store. Today it interleaves per event.
 **⚠️ Validate when the block lifts:** that a single call accepts ids spanning
 multiple matches, and the real chunk ceiling.
 
-## 2. Poll the >12h band rarely — do NOT truncate it
+## 2. Truncate the horizon to 12h — 47.9%, and it IMPROVES pick quality
 
-Your 24h→12h idea is worth more than the fixture count suggests: only 7.7% of
-fixtures are >12h out at any instant, but events spend as long in that band as
-under it, so it is **47.9% of all polls**.
+**CORRECTED 2026-09-19.** This section first said "tier the >12h band, do NOT
+truncate it", on the grounds that 15.4% of Coolbet-priced picks are made >12h out
+and truncating would cost them. **That reasoning was wrong, and the owner was
+right to push on it.** Losing a pick only matters if the pick was good.
+
+Only 7.7% of fixtures are >12h out at any instant, but events spend as long in
+that band as under it, so it is **47.9% of all polls**:
 
 | horizon cut | polls removed |
 |---|---|
-| 24h → 12h | **47.9%** |
+| **24h → 12h** | **47.9%** |
 | 24h → 8h | 58.1% |
 | 24h → 6h | 67.7% |
 
-**But truncating has a real cost: 15.4% of Coolbet-priced picks are made more
-than 12h before kickoff**, and we hold 113,751 Coolbet `is_opening` rows that
-`model/train.py` reads. Cutting the horizon throws both away.
+**And the picks we would lose are our WORST.** Settled Coolbet-priced picks by
+how far ahead they were made — Pinnacle CLV, which is the closing-line test:
 
-**Better: tier it.** Keep the 24h horizon, poll the >12h band **every 6h instead
-of every 30 min** (÷12). Saves **~44%** — almost all of the truncation's benefit
-— while keeping the opening snapshot and the early picks.
+| picked | 1x2 | O/U 2.5 | double chance |
+|---|---|---|---|
+| <1h | **+8.36%** | +0.71% | +4.87% |
+| 1–4h | +3.37% | −3.31% | −0.40% |
+| 4–8h | +0.52% | −5.37% | −1.99% |
+| 8–12h | −3.53% | −5.16% | −0.18% |
+| **>12h** | **−5.63%** | **−6.23%** | **−5.20%** |
 
-Also relevant: `near_kickoff_capture` already covers T−15 min every 300 s, so the
-main sweep does not have to carry precision near kickoff.
+**Monotone in every market, and >12h is the worst bucket in all three** (n=340 /
+319 / 78), so this is not a composition artifact of one market or league.
+Margin-corrected CLV is flat across buckets (−3.7% to −5.7%), i.e. it does not
+argue for early picking either. Picking earlier does not find value before the
+market does — it takes a price the market then moves away from.
+
+**The two objections I raised, both checked and both dead:**
+
+- *"We lose the `is_opening` basis."* The line-movement features are
+  **Pinnacle**-sourced and measured at **T−6h**
+  (`pinnacle_line_move_*_at_t6h`), well inside a 12h horizon, and Pinnacle
+  arrives via API-Football rather than this sweep. No model feature reads Coolbet
+  prices >12h out.
+- *"We lose 15.4% of picks."* We lose the cohort with the worst closing-line
+  value we have. That is a gain.
+
+**Change:** `--horizon-hours 24` → `12`. One parameter, reversible, and it can
+ship while Coolbet is still blocked.
 
 ## 3. Only fetch odds for markets we actually bet
 
@@ -106,12 +129,12 @@ restructuring.
 
 | # | change | saving | risk |
 |---|---|---|---|
-| 2 | tier the >12h band to 6-hourly | ~44% | low — no API change, reversible |
+| 2 | **truncate horizon 24h → 12h** | **47.9%** | low — one parameter, and it drops our worst-CLV picks |
 | 4 | drop `fo-match` | ~23% | low once diffed |
 | 1 | batch odds across events | ~37% (→ more with 3) | medium — restructures the loop |
 | 3 | odds only for live market families | multiplies §1 | low, but a product decision |
 
-**2 + 4 alone take ~102k/day to roughly 35k** with no API risk and no loop
+**2 + 4 alone take ~102k/day to roughly 33k** with no API risk and no loop
 rewrite, and both can ship before Coolbet is even reachable again. Adding 1 + 3
 takes it under 10k.
 

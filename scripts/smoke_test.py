@@ -46281,6 +46281,29 @@ def test_no_duplicate_af_fetch():
         assert "raw" in sig and "None" in sig, f"{fn} must take an optional raw payload"
 
 
+@test("COOLBET-SWEEP-HORIZON-12H — the board sweep must not poll a 24h horizon")
+def test_coolbet_sweep_horizon_12h():
+    """COOLBET-REQUEST-REDUCTION 2026-09-19. The 24h horizon was 47.9% of all
+    Coolbet polls, because events spend as long above 12h-to-kickoff as below it
+    even though only 7.7% of fixtures sit there at any instant. At ~102k
+    requests/day that volume is what gets the residential IP flagged by Imperva.
+
+    Cutting it is not a trade-off: picks made >12h out are our WORST by Pinnacle
+    CLV, monotonically and in every market — 1x2 -5.63%, O/U 2.5 -6.23%, double
+    chance -5.20%, against +8.36% / +0.71% / +4.87% for picks made inside an hour.
+    Nothing in the model reads Coolbet prices that far out either; the
+    line-movement features are Pinnacle-sourced at T-6h."""
+    plist = _engine_path("local/launchd/com.oddsintel.coolbet-odds-snapshot.plist").read_text(encoding="utf-8")
+    assert "--horizon-hours" in plist, "the sweep must pass an explicit horizon"
+    import re as _re
+    m = _re.search(r"--horizon-hours</string>\s*<string>(\d+)</string>", plist)
+    assert m, "could not read the horizon value from the plist"
+    hours = int(m.group(1))
+    assert hours <= 12, (
+        f"Coolbet board sweep horizon is {hours}h — anything above 12h re-adds the "
+        f"band that was 47.9% of all polls and produced our worst-CLV picks")
+
+
 @test("COOLBET-INPLAY-SERIAL-ONLY — parallel Coolbet reads silently return another match's markets")
 def test_coolbet_inplay_serial_only():
     """INPLAY-VIABILITY-GATE defect (b): running more than one reader through a
