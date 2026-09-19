@@ -165,7 +165,7 @@ class Epicbet:
                 "away": (sb or {}).get("awayTeamName"), "markets": mkts}
 
 
-def af_state() -> dict:
+def af_state(raw: list | None = None) -> dict:
     """{af_fixture_id: {minute, seconds, goals, age_s}} from API-Football.
 
     Scores and clock ONLY. See the module docstring on why the prices are not read.
@@ -173,7 +173,11 @@ def af_state() -> dict:
     from workers.api_clients.api_football import get_live_odds
     now = time.time()
     out: dict[str, dict] = {}
-    for it in (get_live_odds() or []):
+    # `raw` lets a caller that already holds this cycle's /odds/live response
+    # reuse it. The in-play collector needs the SAME payload twice — once for
+    # scores/clock here, once for the control arm's prices — and was fetching it
+    # twice per 45 s cycle, ~1,920 duplicate AF calls a day.
+    for it in (raw if raw is not None else (get_live_odds() or [])):
         f = it.get("fixture") or {}
         st = f.get("status") or {}
         up = it.get("update")

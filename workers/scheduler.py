@@ -2785,6 +2785,17 @@ def main():
     # 20:00 still replaced by pre-KO mark_closing run (marks closing odds).
     for hour in range(0, 24):
         for minute in [0, 30]:
+            # 04:00 is morning_pipeline's slot and its step 4/7 already runs
+            # run_odds(today) — the SAME full paginated sweep (~56-77 pages), in
+            # the SAME minute. A comment 15 lines below has claimed since
+            # OPENING-LINE-MOVE-CAPTURE that the redundant 02:00 + 04:00 slots
+            # were "removed", but this loop has been re-adding them ever since:
+            # the only skip it ever had was 20:00. Found by REQUEST_AUDIT
+            # 2026-09-19. 02:00 is deliberately KEPT — the later
+            # WC-OVERNIGHT-COVERAGE decision made this refresh 24/7 on purpose,
+            # and 02:00 collides with nothing; only 04:00 is a true duplicate.
+            if hour == 4 and minute == 0:
+                continue
             if hour == 20 and minute == 0:
                 continue  # 20:00 is handled by pre-KO mark_closing below
             scheduler.add_job(job_odds_refresh, CronTrigger(hour=hour, minute=minute),

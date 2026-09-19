@@ -16,12 +16,14 @@ import time
 log = logging.getLogger(__name__)
 
 
-def af_live_prices() -> dict[str, dict[str, dict[str, float]]]:
+def af_live_prices(raw: list | None = None) -> dict[str, dict[str, dict[str, float]]]:
     """{af_fixture_id: {market: {selection: odds}}} for every live fixture AF
     quotes right now. Markets are '1x2' and 'over_under_<line>'. Never raises."""
     try:
         from workers.api_clients.api_football import get_live_odds, parse_live_odds
-        parsed = parse_live_odds(get_live_odds() or [])
+        # See af_state(): `raw` is this cycle's already-fetched /odds/live
+        # payload. Both consumers want the identical response.
+        parsed = parse_live_odds(raw if raw is not None else (get_live_odds() or []))
     except Exception as e:  # noqa: BLE001
         log.debug("af_live_prices failed: %s", e)
         return {}

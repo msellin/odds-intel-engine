@@ -329,10 +329,18 @@ def run(cadence: float, rediscover_s: float, max_fixtures: int, duration_s: floa
         af: dict = {}
         af_px: dict = {}
         try:
-            af = af_state()
+            # ONE /odds/live per cycle, shared. af_state() and af_live_prices()
+            # each used to fetch it, so every cycle made two identical AF calls —
+            # ~3,840/day where 1,920 would do (REQUEST_AUDIT_2026_09_19).
+            from workers.api_clients.api_football import get_live_odds
+            try:
+                live_raw = get_live_odds() or []
+            except Exception:                       # noqa: BLE001
+                live_raw = []
+            af = af_state(live_raw)
             if board and af_names:
                 afmap = match_af(board, af, af_names)
-            af_px = af_live_prices() if write_picks else {}
+            af_px = af_live_prices(live_raw) if write_picks else {}
         except Exception as e:  # noqa: BLE001
             errors += 1
             log.debug("AF state failed: %s", e)

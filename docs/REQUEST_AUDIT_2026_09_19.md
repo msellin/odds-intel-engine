@@ -87,6 +87,11 @@ unchanged 91.5% of the time and is picked up on the next poll regardless.
 
 ## 2. API-FOOTBALL — 9% of quota. Not a constraint.
 
+> **⚠️ `api_budget_log` is a FLOOR, not a true count.** `api_football._get` makes
+> up to `AF_MAX_ATTEMPTS=3` attempts, and **retried attempts are not recorded**.
+> Every AF figure below undercounts by however often we retry. The conclusion
+> (comfortably inside quota) survives a 3× worst case; the precision does not.
+
 | date | calls |
 |---|---|
 | 2026-09-15 | 10,636 |
@@ -117,6 +122,24 @@ never read — a storage and clarity problem, not a quota one.
 | teams/statistics | 94 | 1.0% |
 | coachs | 84 | 0.9% |
 | status / players / sidelined / injuries | 46 | 0.5% |
+
+### Fetched twice — both found by a code inventory, neither visible at the call site
+
+1. **The full day-odds sweep ran TWICE at 04:00 UTC.** `job_odds_refresh` is
+   registered for every hour × {00,30}, and 04:00 is also `morning_pipeline`'s
+   slot, whose step 4/7 runs `run_odds(today)` — the same ~56–77-page paginated
+   sweep, in the same minute. A comment in `scheduler.py` had claimed since
+   OPENING-LINE-MOVE-CAPTURE that the redundant 02:00 + 04:00 slots were
+   *"removed"*; the loop went on re-adding them because its only skip was 20:00.
+   **A comment is not a control.** Fixed: the skip is now in the loop. 02:00 is
+   deliberately kept — the later WC-OVERNIGHT-COVERAGE decision made this refresh
+   24/7 on purpose and 02:00 collides with nothing.
+
+2. **`/odds/live` was fetched twice per in-play cycle** — `af_state()` (scores and
+   clock) and `af_live_prices()` (control-arm prices) each called it, so every
+   45 s cycle made two identical GETs: **~3,840 AF calls/day where 1,920 would
+   do**. Fixed: the collector fetches once and passes the payload to both;
+   verified to produce byte-identical output with one call instead of two.
 
 ### Fetched and never read
 
