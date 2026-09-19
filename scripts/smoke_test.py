@@ -4522,6 +4522,71 @@ def test_beta_bots_retired():
     assert "bot_1x2_specialist" not in mig.split("WHERE")[1], "keeper must not be in WHERE"
 
 
+@test("DEVIG-METHOD-BIASES-THE-WIDER-ARM — why cross-book splits need a control")
+def test_devig_method_biases_the_wider_arm():
+    """ANCHOR-MEDIAN-ASYMMETRY-2026-09-19 — the mechanism behind a retracted result.
+
+    A research pass concluded "where Pinnacle quotes a sharp line it beats every
+    other book, so the lever is our anchor's quote quality". It was an artifact.
+    It stratified by Pinnacle's overround — which is near-collinear with
+    (pin_overround − book_overround) — under PROPORTIONAL de-vig, which
+    devig.py:17-26 documents as "wrong in a known direction" on 3-way markets.
+    So the stratifier sorted fixtures by WHICH ARM WAS WIDER, and the de-vig then
+    penalised the wider arm. Hold the two margins level and both de-vigs agree
+    exactly (48.9/51.8/56.9/58.2 Shin vs 48.9/51.7/55.8/58.3 proportional);
+    let them differ and the two methods split by 7-8pp.
+
+    This test pins the MECHANISM rather than the finding, because the mechanism
+    is what will bite the next cross-book comparison. It asserts that
+    proportional and Shin diverge MORE as a book's margin grows — so comparing
+    two books at different margins under proportional is not a fair comparison.
+
+    Functional, on synthetic quotes: no DB, no network.
+    """
+    from workers.model.devig import shin_devig, proportional_devig
+
+    # One "true" 3-way market, priced by two books at different margins. Margin
+    # is applied FAVOURITE-LONGSHOT style (more load on the longshot), which is
+    # what real books do and what Shin models.
+    true_p = [0.55, 0.25, 0.20]
+
+    def quote(margin_pp, longshot_load=2.0):
+        w = [1.0, longshot_load, longshot_load ** 1.5]      # rising load on longer odds
+        wsum = sum(p * x for p, x in zip(true_p, w))
+        infl = [p * (1 + margin_pp * x / wsum) for p, x in zip(true_p, w)]
+        return [1.0 / q for q in infl]
+
+    def gap(margin_pp):
+        o = quote(margin_pp)
+        a, b = shin_devig(o), proportional_devig(o)
+        assert a and b, "de-vig returned None on a well-formed 3-way quote"
+        return sum(abs(x - y) for x, y in zip(a, b))
+
+    tight, mid, wide = gap(0.03), gap(0.09), gap(0.15)
+    assert tight < mid < wide, (
+        f"expected Shin/proportional divergence to grow with margin, got "
+        f"{tight:.4f} / {mid:.4f} / {wide:.4f} — if this no longer holds, the "
+        f"matched-overround control in anchor_median_asymmetry.py may be moot, "
+        f"but check devig.py changed for a good reason first")
+    assert wide > 2 * tight, (
+        f"divergence barely grows ({tight:.4f} -> {wide:.4f}); the wider-arm bias "
+        f"that invalidated the overround-band result should be substantial")
+
+    # And the script must keep the guards that caught it.
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent
+           / "scripts" / "anchor_median_asymmetry.py").read_text(encoding="utf-8")
+    assert "MATCHED-OVERROUND CONTROL" in src, (
+        "the matched-overround control is gone — it is the only thing separating "
+        "a book difference from a de-vig artifact")
+    assert src.index('"SHIN (production)"') < src.index('"PROPORTIONAL"'), (
+        "Shin must be reported FIRST: it is the production de-vig, and the "
+        "retracted conclusion came from leading with proportional")
+    assert "RETRACTED" in src, (
+        "the retraction notice is load-bearing documentation — the first version "
+        "of this script stated the opposite conclusion")
+
+
 @test("EGRESS-PROBE-GEO-BLOCK — a country block must not read as reachable")
 def test_egress_probe_geo_block():
     """GEO-BLOCK-DETECTION-2026-09-19.
