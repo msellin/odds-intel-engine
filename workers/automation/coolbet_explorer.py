@@ -85,6 +85,7 @@ console = Console()
 
 def fetch_match_markets(
     session: CoolbetSession, match_id: int, live: bool = False,
+    include_fo_match: bool = True,
 ) -> list[dict]:
     """Combine fo-match + sidebets into one flat list of markets for a match.
     Each market: {id, name, line, market_type_id, outcomes:[{id, name, result_key}]}.
@@ -99,15 +100,31 @@ def fetch_match_markets(
     the same shape for live + prematch matches."""
     flat: list[dict] = []
 
-    # fo-match: main markets (1X2 + headline OU/BTTS for the league)
-    r = session.post(_FO_MATCH_URL, json={
+    # FO-MATCH IS REDUNDANT WITH SIDEBETS (measured 2026-09-19). On 11 fixtures
+    # across 8 leagues and tiers — including a 2. Bundesliga match with 115
+    # sidebets markets — fo-match contributed **zero** markets that sidebets did
+    # not already return; it only ever carried mtids {81 (1x2), 818 (O/U),
+    # 1086 (AH)}, all of which sidebets includes at the non-binding limit. The
+    # in-play arm had already hit the same overlap from the other side: it
+    # produced 433 duplicated (fam, line) entries because both sources returned
+    # the headline markets.
+    #
+    # `include_fo_match=False` therefore drops 1 of the 4 requests this function
+    # and its odds sibling make per event — ~23% of the board sweep. It stays
+    # TRUE by default: the placer resolves an outcome id to stake real money
+    # through this path, and a market missing there is a failed bet, not a
+    # slower sweep. The sweep opts out explicitly.
+    if not include_fo_match:
+        r = None
+    else:
+        r = session.post(_FO_MATCH_URL, json={
         "language": "en", "country": "EE", "layout": "EUROPEAN",
         "locale": "en", "matchIds": [str(match_id)],
-    })
-    if r.status_code == 200:
+        })
+    if r is not None and r.status_code == 200:
         for m in (r.json().get("matches") or []):
             flat.extend(m.get("markets") or [])
-    else:
+    elif r is not None:
         log.warning("fo-match %s returned %d", match_id, r.status_code)
 
     # sidebets: side markets. Response groups individual line-markets under
@@ -212,6 +229,62 @@ def fetch_odds_for_markets(
         r = session.post(_ODDS_LINE_URL, json={"marketIds": [line_ids]})
         if r.status_code == 200:
             _harvest_odds(r.json(), out)
+    return out
+
+
+# Market ids per batched odds call. Measured 2026-09-19: 12 matches' worth
+# (52 simple + 238 line ids) each went through in a SINGLE call, HTTP 200, with
+# every outcome returned. 250 follows the convention the Epicbet client already
+# uses and leaves headroom under whatever the real ceiling is.
+_ODDS_BATCH_IDS = int(os.getenv("COOLBET_ODDS_BATCH_IDS", "250"))
+
+# Events buffered before their odds are fetched together. Bounded so a long
+# pass still stores incrementally and an abort loses at most this many.
+_SWEEP_BATCH_EVENTS = int(os.getenv("COOLBET_SWEEP_BATCH_EVENTS", "25"))
+
+
+def fetch_odds_for_markets_batched(
+    session: CoolbetSession, markets: list[dict], chunk: int | None = None,
+) -> dict[int, dict]:
+    """Odds for markets spanning MANY matches, in as few requests as possible.
+
+    Neither odds endpoint is scoped to a match — they take lists of globally
+    unique market ids (`{"where": {"market_id": {"in": [...]}}}` and
+    `{"marketIds": [[...]]}`), so one call can price a whole batch of fixtures.
+    Verified 2026-09-19 on 3 matches: 6 per-match requests collapsed to 2, with
+    **identical prices on 94/94 outcomes and none missing**.
+
+    This is the single biggest lever on the board sweep, which spent 2 requests
+    per event — 970 of its ~2,132 requests per pass — asking the same endpoint
+    the same question one fixture at a time.
+    """
+    size = chunk or _ODDS_BATCH_IDS
+    simple_ids: list[int] = []
+    line_ids: list[int] = []
+    for mkt in markets:
+        mid = mkt.get("id")
+        if not mid:
+            continue
+        (simple_ids if _is_simple(mkt) else line_ids).append(int(mid))
+
+    out: dict[int, dict] = {}
+
+    def _chunks(xs: list[int]):
+        for i in range(0, len(xs), size):
+            yield xs[i:i + size]
+
+    for part in _chunks(simple_ids):
+        r = session.post(_ODDS_URL, json={"where": {"market_id": {"in": part}}})
+        if r.status_code == 200:
+            _harvest_odds(r.json(), out)
+        else:
+            log.warning("batched simple odds returned %d for %d ids", r.status_code, len(part))
+    for part in _chunks(line_ids):
+        r = session.post(_ODDS_LINE_URL, json={"marketIds": [part]})
+        if r.status_code == 200:
+            _harvest_odds(r.json(), out)
+        else:
+            log.warning("batched line odds returned %d for %d ids", r.status_code, len(part))
     return out
 
 
@@ -1860,6 +1933,35 @@ def run_board_sweep(
     # BOARD-SWEEP-NEARTERM-SKIP (2026-09-11) — see _load_cat_memo above.
     cat_memo = _load_cat_memo()
     c["cats_skipped_empty"] = 0
+    # BATCHING BUFFER. Events accumulate here and their odds are fetched for the
+    # whole buffer in one go — the board sweep used to spend 2 odds requests per
+    # event (970 of ~2,132 per pass) asking one endpoint the same question one
+    # fixture at a time. Flushed every _SWEEP_BATCH_EVENTS so memory stays
+    # bounded, storage stays incremental, and a mid-pass abort still persists
+    # everything already fetched.
+    pending: list[tuple] = []
+
+    def _flush_batch() -> None:
+        nonlocal pending
+        if not pending:
+            return
+        all_markets = [m for _, mk, _ in pending for m in mk]
+        try:
+            odds_map = fetch_odds_for_markets_batched(session, all_markets)
+        except Exception as e:                       # noqa: BLE001
+            log.warning("batched odds fetch failed for %d events: %s", len(pending), e)
+            pending = []
+            return
+        for match_id, mk, kickoff_iso in pending:
+            try:
+                _parsed, stored, _bm = store_coolbet_snapshots_for_match(
+                    match_id, mk, odds_map, dry_run=dry_run, kickoff_iso=kickoff_iso,
+                )
+                c["stored_rows"] += stored
+            except Exception as e:                   # noqa: BLE001
+                log.warning("store failed for %s: %s", match_id, e)
+        pending = []
+
     for idx, cat in enumerate(cats, 1):
         if _cat_should_skip(cat_memo, cat["id"]):
             # Still count the streak up so the probe fires on schedule.
@@ -1891,8 +1993,11 @@ def run_board_sweep(
             c["matched"] += 1
             mapped.append((af_row["id"], str(ev["id"]), ev.get("start"), score))
             try:
-                markets = fetch_match_markets(session, int(ev["id"]))
-                odds_map = fetch_odds_for_markets(session, markets)
+                # ONE request per event now, not four: fo-match is redundant with
+                # sidebets (measured), and odds are fetched for the whole buffer
+                # below in one batched call rather than twice per fixture.
+                markets = fetch_match_markets(session, int(ev["id"]),
+                                              include_fo_match=False)
             except Exception as e:
                 consecutive_fails += 1
                 c["fetch_fails"] += 1
@@ -1902,16 +2007,15 @@ def run_board_sweep(
                     log.error("Coolbet unreachable: %d consecutive fetch failures — aborting board sweep.",
                               consecutive_fails)
                     console.print("[red]Coolbet unreachable — board sweep aborted.[/red]")
+                    _flush_batch()
                     _flush_mapped()
                     return c
                 time.sleep(sleep_s)
                 continue
             consecutive_fails = 0
-            _parsed, stored, _bm = store_coolbet_snapshots_for_match(
-                af_row["id"], markets, odds_map,
-                dry_run=dry_run, kickoff_iso=ev.get("start") or "",
-            )
-            c["stored_rows"] += stored
+            pending.append((af_row["id"], markets, ev.get("start") or ""))
+            if len(pending) >= _SWEEP_BATCH_EVENTS:
+                _flush_batch()
         # Empty streak: reset the moment anything near-term shows up, so a
         # category that starts carrying fixtures is swept again immediately.
         cat_memo[str(cat["id"])] = 0 if cat_near_term else \
@@ -1919,6 +2023,7 @@ def run_board_sweep(
         if idx % 40 == 0:
             log.info("  …%d/%d categories, matched=%d stored=%d", idx, len(cats), c["matched"], c["stored_rows"])
         time.sleep(sleep_s)
+    _flush_batch()
     _flush_mapped()
     _save_cat_memo(cat_memo)
     if c["cats_skipped_empty"]:

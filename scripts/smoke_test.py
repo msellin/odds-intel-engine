@@ -46281,6 +46281,48 @@ def test_no_duplicate_af_fetch():
         assert "raw" in sig and "None" in sig, f"{fn} must take an optional raw payload"
 
 
+@test("COOLBET-SWEEP-BATCHES-ODDS — the board sweep must not fetch odds one fixture at a time")
+def test_coolbet_sweep_batches_odds():
+    """COOLBET-REQUEST-REDUCTION 2026-09-19. The sweep spent 2 odds requests PER
+    EVENT — 970 of its ~2,132 requests a pass — asking one endpoint the same
+    question one fixture at a time. Neither odds endpoint is scoped to a match;
+    both take lists of globally unique market ids. Measured live: 6 fixtures went
+    from 24 requests to 8 (-67%) with identical prices on 183/183 outcomes and
+    none lost."""
+    import re as _re
+    src = _engine_path("workers/automation/coolbet_explorer.py").read_text(encoding="utf-8")
+    assert "def fetch_odds_for_markets_batched(" in src, "the batched fetcher must exist"
+    sweep = src[src.index("def run_board_sweep("):]
+    sweep = sweep[:sweep.index("\ndef ")]
+    assert "fetch_odds_for_markets_batched" in sweep, (
+        "the board sweep must use the BATCHED odds fetcher")
+    assert not _re.search(r"fetch_odds_for_markets\s*\(", sweep), (
+        "the sweep must not call the per-event odds fetcher any more")
+    # The buffer must actually be bounded and flushed, or a long pass loses data.
+    assert "_SWEEP_BATCH_EVENTS" in sweep and "_flush_batch()" in sweep
+    assert sweep.count("_flush_batch()") >= 3, (
+        "flush on batch-full, on abort, and at end of pass")
+
+
+@test("COOLBET-SWEEP-SKIPS-FO-MATCH — redundant with sidebets, but the PLACER keeps it")
+def test_coolbet_sweep_skips_fo_match():
+    """Measured 2026-09-19 on 11 fixtures across 8 leagues and tiers, including a
+    2. Bundesliga match with 115 sidebets markets: fo-match contributed ZERO
+    markets sidebets did not already return, carrying only mtids {81, 818, 1086}.
+    Dropping it removes 1 of the 4 per-event requests.
+
+    It stays ON by default on purpose: the placer resolves an outcome id through
+    this path to stake real money, and a market missing there is a failed bet,
+    not a slower sweep. Only the sweep opts out."""
+    src = _engine_path("workers/automation/coolbet_explorer.py").read_text(encoding="utf-8")
+    sig = src[src.index("def fetch_match_markets("):src.index("def fetch_match_markets(") + 260]
+    assert "include_fo_match: bool = True" in sig, (
+        "fo-match must default to ON — the real-money placer depends on this path")
+    sweep = src[src.index("def run_board_sweep("):]
+    sweep = sweep[:sweep.index("\ndef ")]
+    assert "include_fo_match=False" in sweep, "the sweep must opt out of fo-match"
+
+
 @test("COOLBET-SWEEP-HORIZON-12H — the board sweep must not poll a 24h horizon")
 def test_coolbet_sweep_horizon_12h():
     """COOLBET-REQUEST-REDUCTION 2026-09-19. The 24h horizon was 47.9% of all

@@ -12,7 +12,7 @@ that does not attack the per-event multiplier is rounding error.
 
 ---
 
-## 1. Batch the odds calls across events — biggest single win ⚠️ validate
+## 1. Batch the odds calls across events — ✅ VALIDATED AND SHIPPED 2026-09-19
 
 **Today:** 2 odds requests **per event** — 970 of the 2,132.
 
@@ -33,8 +33,12 @@ the whole pass)**. With §3 it drops to ~18 calls.
 **Cost:** restructures the sweep loop — markets for all events first, then bulk
 odds, then store. Today it interleaves per event.
 
-**⚠️ Validate when the block lifts:** that a single call accepts ids spanning
-multiple matches, and the real chunk ceiling.
+**✅ Validated live 2026-09-19.** 3 matches: 6 per-match odds requests collapsed
+to **2**, with **identical prices on 94/94 outcomes and none missing**. 12
+matches' worth (52 simple + 238 line ids) each went through in a **single** call,
+HTTP 200, everything returned. Shipped as `fetch_odds_for_markets_batched`,
+chunked at 250 ids (`COOLBET_ODDS_BATCH_IDS`), with the sweep buffering 25 events
+(`COOLBET_SWEEP_BATCH_EVENTS`) and flushing on full / abort / end-of-pass.
 
 ## 2. Truncate the horizon to 12h — 47.9%, and it IMPROVES pick quality
 
@@ -98,7 +102,7 @@ request count** (still 2 calls/event, just smaller) — **but it multiplies with
 markets, `lineshop_new_markets`). The cheap compromise is to fetch odds for the
 7 live families every pass and sweep the long tail once or twice a day.
 
-## 4. Drop `fo-match` if `sidebets` already covers it ⚠️ validate
+## 4. Drop `fo-match` — ✅ VALIDATED AND SHIPPED 2026-09-19
 
 `fetch_match_markets` calls both. Evidence they overlap: the in-play collector
 produced **433 duplicated `(fam, line)` market entries** because the headline
@@ -109,7 +113,16 @@ If `sidebets` at the non-binding limit is a superset pre-match too, dropping
 `fo-match` removes **1 of the 4 per-event requests — ~23% of the pass**, with no
 restructuring.
 
-**⚠️ Validate:** diff the two responses for a few fixtures before removing.
+**✅ Validated live 2026-09-19** on **11 fixtures across 8 leagues and tiers**,
+including a 2. Bundesliga match with 115 sidebets markets: fo-match contributed
+**zero** markets sidebets did not already return, carrying only mtids
+{81 (1x2), 818 (O/U), 1086 (AH)}. Shipped as `include_fo_match`, which **defaults
+to True** — the placer resolves an outcome id through this path to stake real
+money, and a missing market there is a failed bet, not a slower sweep. Only the
+sweep opts out.
+
+**Combined end-to-end measurement (6 fixtures, old path vs new): 24 requests →
+8, a 67% cut, with identical prices on 183/183 outcomes and none lost.**
 
 ## 5. Things that do NOT help (measured, so they are not tried again)
 
