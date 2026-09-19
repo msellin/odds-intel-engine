@@ -4522,6 +4522,105 @@ def test_beta_bots_retired():
     assert "bot_1x2_specialist" not in mig.split("WHERE")[1], "keeper must not be in WHERE"
 
 
+@test("SHARP-TRIGGERS-REFUSE-STALE — every matcher strategy has a freshness ceiling")
+def test_sharp_triggers_refuse_stale():
+    """SHARP-TRIGGERS-REFUSE-STALE-2026-09-20.
+
+    `edge` is computed against a price, and a price nobody could take is not a
+    price. The error is also DIRECTIONAL: CLV scores the decision quote against
+    the close, so an old quote the market has moved away from scores as a WIN.
+    Measured within the age-recorded era, stale legs (>60 min) showed POSITIVE
+    CLV and fresh legs NEGATIVE, on all four ungated sharp bots — while the one
+    strategy that already had the gate had no stale legs at all.
+
+    Until 2026-09-20 only `sharp_1x2_tight` had a ceiling, so the others took
+    whatever the last sweep left in odds_snapshots. On 2026-09-19 that produced
+    a pick at 01:15 UTC off an 18:15 quote — seven hours old, mid-outage, on a
+    bot the operator stakes real money from.
+
+    The invariant is deliberately "EVERY strategy is gated", not a list of names:
+    a list passes happily when someone adds a fifth strategy with no ceiling,
+    which is precisely how the first four ended up ungated.
+    """
+    from workers.jobs.pick_trigger_matcher import (
+        BOOK_MARKET_BOTS, FRESHNESS_MAX_AGE_MIN, is_fresh_enough,
+    )
+
+    strategies = {k[2] for k in BOOK_MARKET_BOTS}
+    ungated = sorted(strategies - set(FRESHNESS_MAX_AGE_MIN))
+    assert not ungated, (
+        f"matcher strategies with NO freshness ceiling: {ungated}. Every strategy "
+        f"that emits a pick must refuse a stale decision quote — add it to "
+        f"FRESHNESS_MAX_AGE_MIN with a justified ceiling.")
+
+    # 60 is the engine's existing definition of a fresh decision quote
+    # (shadow_bets_own_book_clv.decision_quote_fresh is <= 60); drifting off it
+    # would make the gate and the CLV column disagree about the same word.
+    for st, cap in FRESHNESS_MAX_AGE_MIN.items():
+        assert cap <= 60.0, (
+            f"{st} ceiling widened to {cap} min — the engine calls a decision "
+            f"quote fresh at <= 60, and a looser gate re-admits the stale legs "
+            f"whose CLV reads positive by construction")
+
+    # behaviour, not just config: unknown age must be STALE for a gated strategy
+    for st in strategies:
+        assert is_fresh_enough(st, 30) is True, f"{st} rejects a 30-min quote"
+        assert is_fresh_enough(st, 600) is False, f"{st} accepts a 10-hour quote"
+        assert is_fresh_enough(st, None) is False, (
+            f"{st} accepts a quote of UNKNOWN age — unknown must be stale for a "
+            f"gated strategy, or the gate is bypassed by a missing field")
+
+
+@test("WEDGE-NEEDS-A-FRESH-SESSION — one session cannot tell §6b from §7")
+def test_wedge_needs_a_fresh_session():
+    """COOLBET-WEDGE-VS-IMPERVA-2026-09-20.
+
+    The 2026-09-18 self-heal destroys `coolbet_odds_reader` when the probe says
+    `wedged`. On 2026-09-19/20 that would have been the WRONG remedy applied
+    every 20 minutes to a live Imperva flag: under runbook §7 the API endpoint
+    gives the EXACT §6b signature (HTTP 500, fixed ~60s, 0 bytes) because
+    FlareSolverr cannot solve the challenge and times out. Measured that night —
+    the sweep's session wedged (60.5s/0B) AND a fresh throwaway wedged
+    (60.6s/0B), while FS was healthy and coolbet.com served a 6,078-byte
+    `_incapsula_` page. §7 says verbatim not to rotate sessions, because it
+    hardens the block.
+
+    So the wedge branch MUST consult a fresh session before destroying anything,
+    and must fail SAFE — anything other than a clean `ok` from the fresh probe
+    means hands off, since the destroy is the irreversible half of the decision.
+
+    Source-inspection: the real behaviour needs a live FlareSolverr and a
+    challenged bookmaker, neither of which belongs in CI.
+    """
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "workers" / "jobs"
+           / "coolbet_feed_watchdog.py").read_text(encoding="utf-8")
+
+    assert "_probe_fresh_session" in src, (
+        "the fresh-session discriminator is gone — the wedge branch is back to "
+        "deciding §6b vs §7 from one session, which cannot distinguish them")
+
+    wedge = src[src.index('if probe["state"] == "wedged":"'.rstrip('"')):]
+    wedge = wedge[:wedge.index("WEDGED_SESSION")]
+    assert "_probe_fresh_session()" in wedge, (
+        "the wedged branch no longer probes a fresh session BEFORE returning "
+        "WEDGED_SESSION")
+    assert 'fresh["state"] != "ok"' in wedge and "BLOCKED" in wedge, (
+        "the wedged branch must fail SAFE to BLOCKED when the fresh probe is not "
+        "a clean ok — never destroy a session on ambiguous evidence")
+
+    # the throwaway must be reaped: an orphaned session is what caused
+    # EPICBET-FS-500 (FS could not allocate Chrome and 500'd while reading healthy)
+    assert "finally:" in src[src.index("def _probe_fresh_session"):
+                             src.index("def _destroy_fs_session")], (
+        "the throwaway probe session is not destroyed in a finally — a leaked "
+        "session is the EPICBET-FS-500 failure mode")
+
+    # and the real-money session must still be refused outright
+    assert "coolbet_prod" in src, (
+        "the coolbet_prod refusal guard is missing from the watchdog")
+
+
 @test("DEVIG-METHOD-BIASES-THE-WIDER-ARM — why cross-book splits need a control")
 def test_devig_method_biases_the_wider_arm():
     """ANCHOR-MEDIAN-ASYMMETRY-2026-09-19 — the mechanism behind a retracted result.

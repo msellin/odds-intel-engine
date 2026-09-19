@@ -193,9 +193,54 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
 
 
 # SHARP-TIGHT-FRESHNESS (2026-09-15). Strategies that REFUSE a stale decision
-# quote, and the ceiling in minutes. The instrument is the only one today: its
-# pre-registration is amended to say so (dev/active/own-sharp-tight-preregistration.md).
-FRESHNESS_MAX_AGE_MIN: dict[str, float] = {"sharp_1x2_tight": 60.0}
+# quote, and the ceiling in minutes.
+#
+# ⭐ EXTENDED TO EVERY SHARP STRATEGY 2026-09-20 (SHARP-TRIGGERS-REFUSE-STALE).
+# It was the tight instrument alone, and the other sharp strategies had NO
+# ceiling at all — they took whatever the last sweep left in `odds_snapshots`,
+# however old. On 2026-09-19 that meant `bot_coolbet_trigger_sharp_1x2_v1`
+# raising a pick at 01:15 UTC against a Coolbet quote from 18:15 the previous
+# evening: a SEVEN-HOUR-OLD price, during a feed outage, for a bot the operator
+# places real money from.
+#
+# WHY THIS IS A CORRECTNESS FIX AND NOT A TUNING CHOICE. `edge` is computed
+# against a price, and a price nobody could take is not a price. Worse, the
+# error is DIRECTIONAL: CLV scores the quote against the close, so an old quote
+# that the market has since moved away from scores as a WIN. Measured that week
+# on the legs where an age is recorded (within the age-recorded era only, so the
+# comparison is not confounded with time):
+#
+#     bot                       fresh (<=60m) CLV   stale (>60m) CLV
+#     bot_coolbet_trigger_sharp_1x2_v1   -1.50% (n=62)   +5.30% (n=15)
+#     bot_unibet_trigger_sharp_1x2_v1    -5.04% (n=42)   +0.37% (n=25)
+#     bot_coolbet_trigger_sharp_ou_v1    -5.21% (n=11)   +7.35% (n=8)
+#     bot_unibet_trigger_sharp_ou_v1     -3.90% (n=10)   +2.62% (n=10)
+#     bot_trigger_1x2_sharp_tight_v1     -3.89% (n=138)  n=0  <- already gated
+#
+# Stale legs positive, fresh legs negative, every bot, same direction — and the
+# one strategy that already had this gate has no stale legs to contribute. That
+# is `ANCHOR_IS_NOT_SHARP`'s finding exactly: "the positive numbers came from
+# comparing a six-hour-old book quote against a Pinnacle quote at kickoff. The
+# edge was the gap." Small n on the stale side (8-25); the DIRECTION is what
+# justifies the gate, not the magnitude.
+#
+# ⚠️ THIS PUTS A DISCONTINUITY IN FOUR BOTS' SERIES, AT 2026-09-20. They are
+# accumulating toward the pre-registered n=300, and from here they collect a
+# different population — roughly 25-40% fewer legs for the Unibet arms on recent
+# days. That is deliberate: the excluded legs were never actionable, so keeping
+# them to protect a clean series would mean measuring a strategy nobody could
+# have executed. Anyone reading their CLV across this date must split on it.
+# Nothing is backfilled or deleted; `decision_quote_age_min` is on every leg
+# since 2026-09-15, so the same cut is reproducible over the history.
+#
+# 60.0 is not a new number — it is the engine's existing definition of a fresh
+# decision quote (`shadow_bets_own_book_clv.decision_quote_fresh` is `<= 60`,
+# and the shadow-bots page's DECISION_FRESH_MAX_MIN is 60).
+FRESHNESS_MAX_AGE_MIN: dict[str, float] = {
+    "sharp_1x2_tight": 60.0,
+    "sharp_1x2": 60.0,
+    "sharp_ou25": 60.0,
+}
 
 
 def is_fresh_enough(strategy: str, age_min: float | None) -> bool:

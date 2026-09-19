@@ -382,11 +382,45 @@ def classify() -> tuple[str, str]:
     # session, is what turns this branch from narration into a diagnosis.
     probe = _probe_odds_session()
     if probe["state"] == "wedged":
+        # ⚠️ ONE SESSION IS NOT A DIAGNOSIS (2026-09-20). The branch below used to
+        # fire here, and on 2026-09-19/20 that would have been the WRONG remedy
+        # applied every 20 minutes to a live Imperva flag.
+        #
+        # Under runbook §7 the API endpoint gives the EXACT §6b signature — HTTP
+        # 500, fixed ~60s, 0 bytes — because FlareSolverr cannot solve the
+        # challenge and times out. Measured that night: the sweep's own session
+        # returned wedged (60.5s/0B) and so did a FRESH throwaway (60.6s/0B),
+        # while FS itself was healthy (HLTV 1.4 MB, sessions.create 0.29s) and
+        # coolbet.com returned a 6,078-byte `_incapsula_` challenge page. That is
+        # §7, not §6b — and §7 says verbatim: "Do NOT fix this by rotating FS
+        # sessions to get a fresh un-escalated context", because cycling HARDENS
+        # the block. The old message even asserted "Coolbet is NOT challenging
+        # us", which was flatly false in that state.
+        #
+        # The discriminator is the one §6b's own runbook entry names and the
+        # probe's docstring was written for: a fresh session must ALSO be tried.
+        #   fresh OK      -> only our session is stuck -> §6b, destroy it
+        #   fresh ALSO bad -> the wall is upstream of any session -> §7, hands off
+        # Costs ONE extra fo-tree GET, only on this already-rare path, and the
+        # probe docstring explicitly sanctions `session_name` for exactly this.
+        fresh = _probe_fresh_session()
+        if fresh["state"] != "ok":
+            return ("BLOCKED",
+                    f"no Coolbet odds for {odds_h:.1f}h; cookies are fresh "
+                    f"({cookie_h:.1f}h). The sweep's session looks wedged "
+                    f"({probe['detail']}) BUT a fresh session fails the same way "
+                    f"({fresh['state']}: {fresh['detail']}) — so the wall is "
+                    f"upstream of any session. This is the Imperva flag, runbook "
+                    f"§7, NOT a wedge: destroying sessions here hardens the "
+                    f"block. Reduce footprint "
+                    f"(scripts/ops/coolbet_pause_resume.sh pause) and let it decay.")
         return ("WEDGED_SESSION",
                 f"no Coolbet odds for {odds_h:.1f}h; cookies are fresh "
-                f"({cookie_h:.1f}h) and Coolbet is NOT challenging us — the FS "
-                f"session '{ODDS_FS_SESSION}' is stuck ({probe['detail']}). "
-                f"Destroying it so the next sweep builds a clean one.")
+                f"({cookie_h:.1f}h) and Coolbet is NOT challenging us — a FRESH "
+                f"session answers fine ({fresh['bytes']}B in {fresh['elapsed_s']}s) "
+                f"while the FS session '{ODDS_FS_SESSION}' is stuck "
+                f"({probe['detail']}). Destroying it so the next sweep builds a "
+                f"clean one.")
 
     # `challenged` on the sweep's own session is NOT a wedge — Coolbet rendered a
     # real answer, so this is the Imperva flag (runbook §2/§6/§7) and destroying
@@ -437,6 +471,42 @@ def _probe_odds_session() -> dict:
     except Exception as e:  # noqa: BLE001
         log.warning("wedge probe failed (non-fatal): %s", e)
         return {"state": "down", "detail": f"probe unavailable: {e}",
+                "elapsed_s": 0, "bytes": 0}
+
+
+def _probe_fresh_session() -> dict:
+    """Probe Coolbet on a THROWAWAY FS session, then destroy it.
+
+    This is the discriminator between runbook §6b (our session is stuck) and §7
+    (Coolbet is challenging this IP). Both present identically on the sweep's own
+    session — HTTP 500, fixed ~60s, 0 bytes — so one session can never tell them
+    apart, and they have OPPOSITE remedies.
+
+    The throwaway name is timestamped so a previous failed run can never leave a
+    poisoned session behind for this one to inherit, and it is destroyed in a
+    `finally` so a raising probe does not leak an orphan — an orphaned session is
+    what caused EPICBET-FS-500 (FS could not allocate a new Chrome context and
+    returned 500 on everything while reporting healthy).
+
+    Returns probe_coolbet_reachable()'s dict, or state "down" if we could not
+    probe at all. NOTE the caller treats anything other than "ok" as evidence of
+    §7: if we cannot get a clean read from a fresh session, we must NOT destroy
+    the live one, because the destroy is the irreversible half of this decision.
+    """
+    import time as _t
+    name = f"wd_freshprobe_{int(_t.time())}"
+    try:
+        from workers.automation.coolbet_explorer import probe_coolbet_reachable
+        try:
+            return probe_coolbet_reachable(session_name=name)
+        finally:
+            try:
+                _destroy_fs_session(name)
+            except Exception as e:  # noqa: BLE001
+                log.warning("could not reap throwaway probe session %s: %s", name, e)
+    except Exception as e:  # noqa: BLE001
+        log.warning("fresh-session probe failed (non-fatal): %s", e)
+        return {"state": "down", "detail": f"fresh probe unavailable: {e}",
                 "elapsed_s": 0, "bytes": 0}
 
 

@@ -498,6 +498,32 @@ escalates; it does not.
 
   A **fixed** duration with **zero** bytes is a timeout, not a verdict Coolbet
   rendered. Nothing on the other end answered at all.
+
+- **⛔ THE TABLE ABOVE IS NECESSARY BUT NOT SUFFICIENT — you MUST probe a FRESH
+  session before destroying anything (added 2026-09-20).** On 2026-09-19/20 the
+  §7 Imperva flag produced the EXACT §6b signature on the sweep's own session:
+  `fo-tree` HTTP 500, fixed **60.5s**, **0 bytes**. It is not a wedge —
+  FlareSolverr simply cannot solve a live challenge and times out. The tell is
+  the second probe:
+
+  | | §6b (wedged) | §7 (Imperva flag) |
+  |---|---|---|
+  | sweep's own session | 500 / ~61s / 0B | 500 / ~61s / 0B — **identical** |
+  | **a FRESH session** | **OK, fast, real board** | **fails the same way** |
+  | `coolbet.com` homepage | loads | `_incapsula_` challenge page |
+  | FlareSolverr itself | healthy | healthy |
+
+  Measured that night: named 60.5s/0B, fresh 60.6s/0B, FS healthy (HLTV 1.4 MB,
+  `sessions.create` 0.29s), homepage a 6,078-byte `_incapsula_` page. **That is
+  §7, and destroying sessions there HARDENS the block (§7's own rule).** The
+  watchdog now runs this second probe and fails SAFE to `BLOCKED` on anything
+  but a clean fresh `ok`, because the destroy is the irreversible half.
+  Smoke `WEDGE-NEEDS-A-FRESH-SESSION`.
+
+  One command: `python3 -c "from workers.automation.coolbet_explorer import
+  probe_coolbet_reachable as p; print(p(session_name='coolbet_odds_reader'));
+  print(p(session_name='throwaway_probe'))"` with `FLARESOLVERR_URL` set —
+  the local `.env` still holds a dead Railway URL.
 - **Cause:** the per-session Chrome tab inside FlareSolverr crashed. **FlareSolverr
   itself stays healthy** — `GET /` returns ready, `sessions.list` lists the session,
   `docker ps` says `(healthy)` — so every container-level check reads green while

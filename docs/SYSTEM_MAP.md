@@ -124,6 +124,38 @@ registry and regenerate.
 
 ### Trigger engine · model vs sharp anchor (paper)
 
+> **⭐ ALL SHARP TRIGGERS NOW REFUSE A STALE DECISION QUOTE (SHARP-TRIGGERS-REFUSE-STALE,
+> 2026-09-20).** `pick_trigger_matcher.FRESHNESS_MAX_AGE_MIN` caps the decision quote at
+> **60 min for every strategy** — `sharp_1x2`, `sharp_ou25` and `sharp_1x2_tight`. It used
+> to gate the tight instrument ONLY; the others took whatever the last sweep left in
+> `odds_snapshots`, however old, and on 2026-09-19 `bot_coolbet_trigger_sharp_1x2_v1`
+> raised a pick at 01:15 UTC off an 18:15 quote — **seven hours stale, mid-outage**.
+>
+> Not a tuning choice. `edge` is computed against a price, a price nobody could take is
+> not a price, and the error is DIRECTIONAL: CLV scores the decision quote against the
+> close, so an old quote the market has moved away from scores as a **win**. Measured
+> within the age-recorded era (so it is not confounded with time):
+>
+> | bot | fresh ≤60m CLV | stale >60m CLV |
+> |---|---|---|
+> | `bot_coolbet_trigger_sharp_1x2_v1` | −1.50% (n=62) | **+5.30%** (n=15) |
+> | `bot_unibet_trigger_sharp_1x2_v1` | −5.04% (n=42) | +0.37% (n=25) |
+> | `bot_coolbet_trigger_sharp_ou_v1` | −5.21% (n=11) | **+7.35%** (n=8) |
+> | `bot_unibet_trigger_sharp_ou_v1` | −3.90% (n=10) | +2.62% (n=10) |
+> | `bot_trigger_1x2_sharp_tight_v1` *(already gated)* | −3.89% (n=138) | **n=0** |
+>
+> Stale positive, fresh negative, every bot; the already-gated one has no stale legs at
+> all. Small n on the stale side (8–25) — the DIRECTION justifies the gate, not the size.
+>
+> ⚠️ **This puts a discontinuity at 2026-09-20 in those four bots' series**, and they are
+> accumulating toward the pre-registered n=300 — roughly 25–40% fewer legs for the Unibet
+> arms on recent days. Deliberate: the excluded legs were never actionable. **Split on
+> this date when reading their CLV.** Nothing is backfilled or deleted, and
+> `decision_quote_age_min` is on every leg since 2026-09-15, so the same cut is
+> reproducible over the history. Smoke `SHARP-TRIGGERS-REFUSE-STALE` pins that EVERY
+> matcher strategy is gated — not a list of names, because a list passes when someone
+> adds a fifth strategy with no ceiling, which is how the first four ended up ungated.
+
 | Bot | Market | Anchor | Edge floor | Odds floor | Money | What it does |
 |---|---|---|---|---|---|---|
 | `bot_coolbet_trigger_sharp_1x2_v1` | 1x2 | sharp | 3% | 1.01 | paper | Sharp twin: fires when Coolbet's 1x2 price beats the de-vigged Pinnacle line by ≥3% (no odds floor — experimental). Paper. Head-to-head vs the model twin. |
