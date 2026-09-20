@@ -1,4 +1,31 @@
 source,kickoff_date,league,home_team,away_team,market,pick,odds,result,pnl_per_unit,ref_url
+signalodds,2026-09-20,,América,Guadalajara,Match Result,América,2.550,lost,-1.0000,/predictions/the-pitch-master/america-vs-guadalajara-20260920/america
+signalodds,2026-09-20,,Portland Timbers,Atlanta United FC,Match Result,Portland Timbers,2.000,lost,-1.0000,/predictions/the-pitch-master/portland-timbers-vs-atlanta-united-fc-20260920/portland-timbers
+signalodds,2026-09-19,,Urawa Red Diamonds,Tokyo Verdy,Match Result,Urawa Red Diamonds,1.870,won,0.8700,/predictions/the-pitch-master/urawa-red-diamonds-vs-tokyo-verdy-20260919/urawa-red-diamonds
+signalodds,2026-09-19,,Kawasaki Frontale,Kashima Antlers,Match Result,Kashima Antlers,2.580,lost,-1.0000,/predictions/the-pitch-master/kawasaki-frontale-vs-kashima-antlers-20260919/kashima-antlers
+signalodds,2026-09-19,,Bucheon FC 1995,Sangju Sangmu FC,Match Result,Sangju Sangmu FC,2.420,won,1.4200,/predictions/the-pitch-master/bucheon-fc-1995-soccer-vs-sangju-sangmu-fc-20260919/sangju-sangmu-fc
+signalodds,2026-09-19,,FC Juárez,Tigres,Match Result,Tigres,1.960,lost,-1.0000,/predictions/the-pitch-master/fc-juarez-vs-tigres-20260919/tigres
+signalodds,2026-09-18,,IF Gnistan,HJK Helsinki,Match Result,HJK Helsinki,1.900,lost,-1.0000,/predictions/the-pitch-master/if-gnistan-vs-hjk-helsinki-20260918/hjk-helsinki
+signalodds,2026-09-18,,FC Lahti,Jaro,Match Result,FC Lahti,1.620,lost,-1.0000,/predictions/the-pitch-master/fc-lahti-vs-jaro-20260918/fc-lahti
+signalodds,2026-09-18,,SJK Seinäjoki,IFK Mariehamn,Match Result,SJK Seinäjoki,1.860,won,0.8600,/predictions/the-pitch-master/sjk-seinajoki-vs-ifk-mariehamn-20260918/sjk-seinajoki
+signalodds,2026-09-17,,OFI Crete,TSG Hoffenheim,Match Result,TSG Hoffenheim,1.440,lost,-1.0000,/predictions/the-pitch-master/ofi-crete-vs-tsg-hoffenheim-20260917/tsg-hoffenheim
+signalodds,2026-09-17,,PFC Levski Sofia,Salzburg,Match Result,Salzburg,2.350,won,1.3500,/predictions/the-pitch-master/pfc-levski-sofia-soccer-vs-salzburg-20260917/salzburg
+signalodds,2026-09-17,,FK Rostov,Dinamo Moscow,Match Result,Dinamo Moscow,2.440,won,1.4400,/predictions/the-pitch-master/fk-rostov-vs-dinamo-moscow-20260917/dinamo-moscow
+signalodds,2026-09-17,,FC Akron Tolyatti,FC Akhmat Grozny,Match Result,FC Akhmat Grozny,2.340,lost,-1.0000,/predictions/the-pitch-master/fc-akron-tolyatti-vs-fc-akhmat-grozny-20260917/fc-akhmat-grozny
+signalodds,2026-09-17,,Gazovik Orenburg,FC Krasnodar,Match Result,FC Krasnodar,1.780,lost,-1.0000,/predictions/the-pitch-master/gazovik-orenburg-vs-fc-krasnodar-20260917/fc-krasnodar
+signalodds,2026-09-16,,Deportivo La Coruña,Sevilla,Match Result,Deportivo La Coruña,2.640,lost,-1.0000,/predictions/the-pitch-master/deportivo-la-coruna-vs-sevilla-20260916/deportivo-la-coruna
+signalodds,2026-09-16,,FC Ararat-Armenia,Sparta Prague,Match Result,Sparta Prague,1.700,won,0.7000,/predictions/the-pitch-master/fc-ararat-armenia-soccer-vs-sparta-prague-20260916/sparta-prague
+signalodds,2026-09-16,,Omonoia FC,Celta Vigo,Match Result,Celta Vigo,2.100,lost,-1.0000,/predictions/the-pitch-master/omonoia-fc-vs-celta-vigo-20260916/celta-vigo
+signalodds,2026-09-16,,Rodina Moscow,Rubin Kazan,Match Result,Rubin Kazan,2.470,lost,-1.0000,/predictions/the-pitch-master/rodina-moscow-soccer-vs-rubin-kazan-20260916/rubin-kazan
+signalodds,2026-09-16,,Spartak Moscow,FC Fakel Voronezh,Match Result,Spartak Moscow,1.390,won,0.3900,/predictions/the-pitch-master/spartak-moscow-vs-fc-fakel-voronezh-soccer-20260916/spartak-moscow
+signalodds,2026-09-15,,Jahn Regensburg,Fortuna Düsseldorf,Match Result,Fortuna Düsseldorf,2.280,won,1.2800,/predictions/the-pitch-master/jahn-regensburg-vs-fortuna-dusseldorf-20260915/fortuna-dusseldorf
+signalodds,2026-09-15,,IFK Värnamo,Östers IF,Match Result,IFK Värnamo,2.000,lost,-1.0000,/predictions/the-pitch-master/ifk-varnamo-vs-osters-if-20260915/ifk-varnamo
+signalodds,2026-09-15,,Raków Częstochowa,Zagłębie Lubin,Match Result,Raków Częstochowa,1.930,lost,-1.0000,/predictions/the-pitch-master/rakow-czestochowa-vs-zag-bie-lubin-20260915/rakow-czestochowa
+signalodds,2026-09-14,,IK Sirius,Degerfors IF,Match Result,IK Sirius,1.480,won,0.4800,/predictions/the-pitch-master/ik-sirius-vs-degerfors-if-20260914/ik-sirius
+signalodds,2026-09-14,,Como,Parma,Match Result,Como,1.260,won,0.2600,/predictions/the-pitch-master/como-vs-parma-20260914/como
+signalodds,2026-09-14,,Torino,AS Roma,Match Result,AS Roma,1.600,won,0.6000,/predictions/the-pitch-master/torino-vs-as-roma-20260914/as-roma
+signalodds,2026-09-14,,Bayer Leverkusen,Bayern Munich,Match Result,Bayern Munich,1.420,won,0.4200,/predictions/the-pitch-master/bayer-leverkusen-vs-bayern-munich-20260914/bayern-munich
+signalodds,2026-09-13,,Tokyo Verdy,JEF United Chiba,Match Result,Tokyo Verdy,2.360,lost,-1.0000,/predictions/the-pitch-master/tokyo-verdy-vs-jef-united-chiba-20260913/tokyo-verdy
 signalodds,2026-09-13,,Cruz Azul,América,Match Result,Cruz Azul,2.750,won,1.7500,/predictions/the-pitch-master/cruz-azul-vs-america-20260913/cruz-azul
 signalodds,2026-09-13,,San Jose Earthquakes,Houston Dynamo,Match Result,San Jose Earthquakes,2.540,won,1.5400,/predictions/the-pitch-master/san-jose-earthquakes-vs-houston-dynamo-20260913/san-jose-earthquakes
 signalodds,2026-09-13,,LA Galaxy,Seattle Sounders FC,Match Result,LA Galaxy,2.300,lost,-1.0000,/predictions/the-pitch-master/la-galaxy-vs-seattle-sounders-fc-20260913/la-galaxy

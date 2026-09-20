@@ -1,76 +1,84 @@
 {
   "source": "DeepBetting",
   "source_url": "https://deepbetting.io/dashboard/  (via /backend/api/predictions-api.php?type=stats)",
-  "snapshot_at_utc": "2026-09-18T07:12:20+00:00",
+  "snapshot_at_utc": "2026-09-20T07:34:57+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-09-19"
+    "end": "2026-09-21"
   },
   "status": "ok",
   "min_sample_each_side": 50,
   "scope_notes": "Moneyline (1X2) + Over-Under (2.5) only, soccer, settled bets (Won/Lost — Push refunds excluded), 10 EUR flat stake. Bet-Analytix integration audit excluded (requires paid subscription).",
   "reproducible_via": "scripts/scrape_deepbetting.py + scripts/audit_vs_deepbetting.py",
   "their_stats": {
-    "n": 595,
-    "stake_total": 5950.0,
-    "pnl_total": -477.9,
-    "roi_pct": -8.03,
-    "hit_rate_pct": 60.84,
-    "avg_odds": 1.561
+    "n": 660,
+    "stake_total": 6600.0,
+    "pnl_total": -514.7,
+    "roi_pct": -7.8,
+    "hit_rate_pct": 61.52,
+    "avg_odds": 1.546
   },
   "their_breakdown": {
     "by_market": {
       "1x2": {
-        "n": 313,
-        "stake_total": 3130.0,
-        "pnl_total": -253.1,
-        "roi_pct": -8.09,
-        "hit_rate_pct": 61.34,
-        "avg_odds": 1.559
+        "n": 341,
+        "stake_total": 3410.0,
+        "pnl_total": -238.3,
+        "roi_pct": -6.99,
+        "hit_rate_pct": 62.46,
+        "avg_odds": 1.548
       },
       "over_under_25": {
-        "n": 282,
-        "stake_total": 2820.0,
-        "pnl_total": -224.8,
-        "roi_pct": -7.97,
-        "hit_rate_pct": 60.28,
-        "avg_odds": 1.562
+        "n": 319,
+        "stake_total": 3190.0,
+        "pnl_total": -276.4,
+        "roi_pct": -8.66,
+        "hit_rate_pct": 60.5,
+        "avg_odds": 1.545
       }
     },
     "by_confidence": {
       "1": {
-        "n": 121,
-        "stake_total": 1210.0,
-        "pnl_total": -144.4,
-        "roi_pct": -11.93,
-        "hit_rate_pct": 56.2,
-        "avg_odds": 1.646
+        "n": 134,
+        "stake_total": 1340.0,
+        "pnl_total": -152.7,
+        "roi_pct": -11.4,
+        "hit_rate_pct": 56.72,
+        "avg_odds": 1.631
       },
       "2": {
-        "n": 248,
-        "stake_total": 2480.0,
-        "pnl_total": -271.5,
-        "roi_pct": -10.95,
-        "hit_rate_pct": 56.05,
-        "avg_odds": 1.619
+        "n": 276,
+        "stake_total": 2760.0,
+        "pnl_total": -298.2,
+        "roi_pct": -10.8,
+        "hit_rate_pct": 56.88,
+        "avg_odds": 1.601
       },
       "3": {
-        "n": 226,
-        "stake_total": 2260.0,
-        "pnl_total": -62.0,
-        "roi_pct": -2.74,
-        "hit_rate_pct": 68.58,
-        "avg_odds": 1.45
+        "n": 250,
+        "stake_total": 2500.0,
+        "pnl_total": -63.8,
+        "roi_pct": -2.55,
+        "hit_rate_pct": 69.2,
+        "avg_odds": 1.44
       }
     },
     "by_division_top": {
       "Brasileirão Série A": {
-        "n": 67,
-        "stake_total": 670.0,
-        "pnl_total": -109.0,
-        "roi_pct": -16.27,
-        "hit_rate_pct": 50.75,
-        "avg_odds": 1.674
+        "n": 73,
+        "stake_total": 730.0,
+        "pnl_total": -124.4,
+        "roi_pct": -17.04,
+        "hit_rate_pct": 50.68,
+        "avg_odds": 1.661
+      },
+      "Allsvenskan": {
+        "n": 64,
+        "stake_total": 640.0,
+        "pnl_total": -135.0,
+        "roi_pct": -21.09,
+        "hit_rate_pct": 50.0,
+        "avg_odds": 1.59
       },
       "World Cup": {
         "n": 60,
@@ -80,37 +88,45 @@
         "hit_rate_pct": 68.33,
         "avg_odds": 1.58
       },
-      "Allsvenskan": {
+      "Eliteserien": {
         "n": 58,
         "stake_total": 580.0,
-        "pnl_total": -145.4,
-        "roi_pct": -25.07,
-        "hit_rate_pct": 46.55,
-        "avg_odds": 1.606
-      },
-      "Eliteserien": {
-        "n": 55,
-        "stake_total": 550.0,
-        "pnl_total": -37.4,
-        "roi_pct": -6.8,
-        "hit_rate_pct": 61.82,
-        "avg_odds": 1.555
+        "pnl_total": -29.9,
+        "roi_pct": -5.16,
+        "hit_rate_pct": 63.79,
+        "avg_odds": 1.539
       },
       "La Liga": {
-        "n": 46,
-        "stake_total": 460.0,
-        "pnl_total": -28.7,
-        "roi_pct": -6.24,
-        "hit_rate_pct": 63.04,
-        "avg_odds": 1.58
+        "n": 54,
+        "stake_total": 540.0,
+        "pnl_total": -13.3,
+        "roi_pct": -2.46,
+        "hit_rate_pct": 66.67,
+        "avg_odds": 1.546
       },
       "Premier League": {
-        "n": 44,
-        "stake_total": 440.0,
-        "pnl_total": -71.2,
-        "roi_pct": -16.18,
-        "hit_rate_pct": 54.55,
-        "avg_odds": 1.604
+        "n": 47,
+        "stake_total": 470.0,
+        "pnl_total": -89.7,
+        "roi_pct": -19.09,
+        "hit_rate_pct": 53.19,
+        "avg_odds": 1.59
+      },
+      "Primeira Liga": {
+        "n": 46,
+        "stake_total": 460.0,
+        "pnl_total": -33.7,
+        "roi_pct": -7.33,
+        "hit_rate_pct": 65.22,
+        "avg_odds": 1.48
+      },
+      "Eredivisie": {
+        "n": 46,
+        "stake_total": 460.0,
+        "pnl_total": 8.4,
+        "roi_pct": 1.83,
+        "hit_rate_pct": 69.57,
+        "avg_odds": 1.477
       },
       "Friendlies": {
         "n": 44,
@@ -120,29 +136,21 @@
         "hit_rate_pct": 68.18,
         "avg_odds": 1.511
       },
-      "Eredivisie": {
+      "Serie A": {
         "n": 42,
         "stake_total": 420.0,
-        "pnl_total": 7.8,
-        "roi_pct": 1.86,
-        "hit_rate_pct": 69.05,
-        "avg_odds": 1.492
+        "pnl_total": 67.2,
+        "roi_pct": 16.0,
+        "hit_rate_pct": 78.57,
+        "avg_odds": 1.513
       },
-      "Primeira Liga": {
-        "n": 39,
-        "stake_total": 390.0,
-        "pnl_total": -14.1,
-        "roi_pct": -3.62,
-        "hit_rate_pct": 66.67,
-        "avg_odds": 1.516
-      },
-      "Serie A": {
-        "n": 34,
-        "stake_total": 340.0,
-        "pnl_total": 54.7,
-        "roi_pct": 16.09,
-        "hit_rate_pct": 79.41,
-        "avg_odds": 1.501
+      "Ligue 1": {
+        "n": 30,
+        "stake_total": 300.0,
+        "pnl_total": -61.2,
+        "roi_pct": -20.4,
+        "hit_rate_pct": 53.33,
+        "avg_odds": 1.528
       },
       "UEFA Champions League": {
         "n": 28,
@@ -152,13 +160,21 @@
         "hit_rate_pct": 64.29,
         "avg_odds": 1.504
       },
-      "Ligue 1": {
+      "UEFA Europa League": {
         "n": 25,
         "stake_total": 250.0,
-        "pnl_total": -54.4,
-        "roi_pct": -21.76,
-        "hit_rate_pct": 52.0,
-        "avg_odds": 1.548
+        "pnl_total": -11.9,
+        "roi_pct": -4.76,
+        "hit_rate_pct": 64.0,
+        "avg_odds": 1.48
+      },
+      "Bundesliga": {
+        "n": 24,
+        "stake_total": 240.0,
+        "pnl_total": -18.0,
+        "roi_pct": -7.5,
+        "hit_rate_pct": 62.5,
+        "avg_odds": 1.471
       },
       "UEFA Europa Conference League": {
         "n": 19,
@@ -167,45 +183,29 @@
         "roi_pct": -38.79,
         "hit_rate_pct": 42.11,
         "avg_odds": 1.528
-      },
-      "Bundesliga": {
-        "n": 19,
-        "stake_total": 190.0,
-        "pnl_total": -8.8,
-        "roi_pct": -4.63,
-        "hit_rate_pct": 63.16,
-        "avg_odds": 1.496
-      },
-      "UEFA Europa League": {
-        "n": 15,
-        "stake_total": 150.0,
-        "pnl_total": 1.8,
-        "roi_pct": 1.2,
-        "hit_rate_pct": 66.67,
-        "avg_odds": 1.473
       }
     }
   },
   "their_drop_reasons": {
     "out_of_window": 1238,
-    "market_Draw No Bet": 172,
-    "market_BTTS": 252,
-    "status_Push": 67,
+    "market_Draw No Bet": 194,
+    "market_BTTS": 276,
+    "status_Push": 74,
     "status_None": 3
   },
   "our_stats_same_window": {
-    "n": 688,
-    "stake_total": 6880.0,
-    "pnl_total": 550.14,
-    "roi_pct": 8.0,
-    "hit_rate_pct": 41.72,
-    "avg_odds": 2.759,
+    "n": 695,
+    "stake_total": 6950.0,
+    "pnl_total": 589.64,
+    "roi_pct": 8.48,
+    "hit_rate_pct": 41.73,
+    "avg_odds": 2.767,
     "priced_at": "best price live at pick time",
-    "n_total_settled": 693,
+    "n_total_settled": 700,
     "coverage_pct": 99.3,
-    "roi_pct_recorded": 12.04,
-    "roi_pct_recorded_all_rows": 12.03,
-    "hit_rate_pct_recorded_all_rows": 41.7,
+    "roi_pct_recorded": 12.4,
+    "roi_pct_recorded_all_rows": 12.39,
+    "hit_rate_pct_recorded_all_rows": 41.71,
     "restatement_note": "roi_pct is priced at odds that were live at pick time. roi_pct_recorded is the same bets at the stored odds_at_pick, which STALE-BEST-ODDS-2026-09-02 showed to be a high-water mark across the whole snapshot history rather than a price on offer."
   }
 }
