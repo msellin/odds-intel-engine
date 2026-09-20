@@ -4522,6 +4522,55 @@ def test_beta_bots_retired():
     assert "bot_1x2_specialist" not in mig.split("WHERE")[1], "keeper must not be in WHERE"
 
 
+@test("RESUME-VERIFIES-LAUNCHD — an exit code is not proof a job is scheduled")
+def test_resume_verifies_launchd():
+    """RESUME-LOADED-BUT-NOT-RUNNING-2026-09-20.
+
+    The §7 footprint lever pauses the Coolbet sweep and arms a one-shot resume.
+    On 2026-09-20 that resume fired TWICE, logged "loaded" for both jobs both
+    times, and `launchctl list` showed NEITHER — the Mac was asleep across the
+    fire time and the registration never took. A 90-minute pause became a
+    14-hour feed outage on the real-money venue: exactly the silent outage this
+    script's own header promises to prevent, reached by a different route than
+    the 2026-09-12 self-destruct bug it already fixed.
+
+    `launchctl load` returning 0 means "the command ran", not "the job is
+    scheduled". The only honest check is to ask launchd what it is running.
+
+    Two invariants:
+      1. resume VERIFIES against `launchctl list` and fails LOUD (exit 1),
+      2. on failure it does NOT self-destruct — an agent that re-fires is the
+         only thing that retries after a wake, and a disarmed agent plus
+         unloaded jobs is the worst of both outcomes.
+    """
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "scripts" / "ops"
+           / "coolbet_pause_resume.sh").read_text(encoding="utf-8")
+
+    resume = src[src.index("  resume)"):src.index("  status)")]
+    assert "launchctl list" in resume, (
+        "the resume branch no longer verifies against launchctl list — it is "
+        "back to trusting an exit code, which is how the 14h outage happened")
+    assert "exit 1" in resume, (
+        "the resume branch must fail LOUD when a job did not register; a silent "
+        "half-resume is indistinguishable from success")
+    # must NOT tear down the retry mechanism on the failure path. Bound the
+    # block at `exit 1`: everything AFTER it is the success path's legitimate
+    # self-destruct, and including it made this assertion fire on correct code.
+    assert "RESUME INCOMPLETE" in resume, "the explicit failure branch is gone"
+    fail_block = resume[resume.index("RESUME INCOMPLETE"):]
+    fail_block = fail_block[:fail_block.index("exit 1")]
+    assert "rm -f" not in fail_block and "launchctl remove" not in fail_block, (
+        "the failure path self-destructs the resume agent — it must stay ARMED "
+        "so it retries after a wake")
+
+    # status must report what actually matters, not just that the agent is armed
+    status = src[src.index("  status)"):]
+    assert "NOT LOADED" in status, (
+        "`status` still reports only 'resume agent: ARMED' — on 2026-09-20 that "
+        "read ARMED while both jobs were down, which is the answer that misled")
+
+
 @test("SHARP-TRIGGERS-REFUSE-STALE — every matcher strategy has a freshness ceiling")
 def test_sharp_triggers_refuse_stale():
     """SHARP-TRIGGERS-REFUSE-STALE-2026-09-20.

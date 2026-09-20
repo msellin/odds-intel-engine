@@ -49,9 +49,39 @@ PLIST
       exit 1
     fi ;;
   resume)
+    # VERIFY, DO NOT TRUST THE EXIT CODE (2026-09-20, RESUME-LOADED-BUT-NOT-RUNNING).
+    # `launchctl load` returned 0 and this branch logged "loaded" for BOTH jobs,
+    # TWICE, while `launchctl list` showed neither — the Mac was asleep across the
+    # fire time and the registration never took. The feed stayed down 14h after a
+    # 90-minute pause, which is precisely the silent outage this script's header
+    # promises to prevent, reached by a different route than the 2026-09-12 bug.
+    #
+    # An exit code says "the command ran", not "the job is scheduled". The only
+    # honest check is to ask launchd what it is actually running, so every load is
+    # now confirmed against `launchctl list` and a failure is LOUD. Retried once —
+    # a wake-race deserves a second attempt, a genuine failure must not loop.
+    failed=""
     for j in "${JOBS[@]}"; do
-      launchctl load "$LA/$j.plist" 2>/dev/null && echo "loaded $j" || echo "already loaded $j"
+      for attempt in 1 2; do
+        launchctl load "$LA/$j.plist" 2>/dev/null || true
+        if launchctl list 2>/dev/null | grep -q "	$j\$"; then
+          echo "loaded $j (verified in launchctl list)"
+          break
+        fi
+        [ "$attempt" = 1 ] && { echo "load of $j did not register — retrying once"; sleep 2; }
+      done
+      launchctl list 2>/dev/null | grep -q "	$j\$" || { failed="$failed $j"; }
     done
+    if [ -n "$failed" ]; then
+      # Do NOT self-destruct: the agent re-firing every 90 min is the only thing
+      # that will retry after a wake, and a disarmed agent plus unloaded jobs is
+      # the worst of both. Leave it armed and say so.
+      echo "!! RESUME INCOMPLETE — not registered in launchd:$failed"
+      echo "!! The resume agent is LEFT ARMED so it retries. Fix by hand with:"
+      echo "!!   launchctl load ~/Library/LaunchAgents/com.oddsintel.coolbet-odds-snapshot.plist"
+      echo "!! Verify with: $0 status  (jobs must appear in the launchctl list above)"
+      exit 1
+    fi
     # Self-destruct the one-shot resume agent. ORDER IS LOAD-BEARING, and the
     # first version got it wrong (2026-09-12): it called `launchctl unload` on
     # the agent that was RUNNING THIS SCRIPT, so launchd killed the process
@@ -67,6 +97,13 @@ PLIST
     launchctl remove com.oddsintel.coolbet-resume 2>/dev/null || true ;;
   status)
     launchctl list | grep -i "oddsintel.coolbet" || echo "  (no coolbet agents loaded)"
-    [ -f "$LA/com.oddsintel.coolbet-resume.plist" ] && echo "  resume agent: ARMED" || echo "  resume agent: not armed" ;;
+    [ -f "$LA/com.oddsintel.coolbet-resume.plist" ] && echo "  resume agent: ARMED" || echo "  resume agent: not armed"
+    # ARMED alone told us nothing on 2026-09-20: the agent was armed, had fired
+    # twice, and the jobs were still down. State the thing that actually matters.
+    for j in "${JOBS[@]}"; do
+      launchctl list 2>/dev/null | grep -q "	$j\$" \
+        && echo "  $j: RUNNING" \
+        || echo "  $j: ⛔ NOT LOADED — the feed is down until this is fixed"
+    done ;;
   *) echo "usage: $0 {pause|resume|status}"; exit 2 ;;
 esac
