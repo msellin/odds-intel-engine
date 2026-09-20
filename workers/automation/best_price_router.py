@@ -56,8 +56,22 @@ _ODDS_BAND_PCT = 0.12
 
 def _latest_book_odds(match_id: str, market: str, selection: str):
     """Latest fresh pre-match odds per placeable book for one (match,market,selection).
-    Returns {book: {'odds': float, 'age_min': int}}."""
+    Returns {book: {'odds': float, 'age_min': int}}.
+
+    ANCHOR-PRICE-SANITY (2026-09-20): a book quote the sharp anchor flatly
+    contradicts is dropped here rather than allowed to compete. It is dropped at
+    THIS choke point because this is the one function every bot's pricing runs
+    through — `pick_generator.generate()` and `route()` both call it — so a
+    mis-mapped fixture cannot reach a pick by taking a different route through
+    the code. See `anchor_sanity` for why the threshold is what it is; the short
+    version is that a wrong-fixture price reads as the biggest edge on the board,
+    so our own selection logic hunts these rows down for us.
+    """
     from workers.api_clients.db import execute_query
+    from workers.automation.anchor_sanity import ANCHOR_BOOK, is_anchor_sane
+    # The anchor rides along in the SAME query — no extra round trip — but is
+    # exempt from the freshness cap below: it is being asked "is this the right
+    # match?", not "may I stake at this price?".
     rows = execute_query(
         """
         SELECT DISTINCT ON (o.bookmaker) o.bookmaker,
@@ -68,11 +82,26 @@ def _latest_book_odds(match_id: str, market: str, selection: str):
            AND o.bookmaker = ANY(%s)
          ORDER BY o.bookmaker, o.timestamp DESC
         """,
-        (match_id, market, selection, list(PLACEABLE_BOOKS)),
+        (match_id, market, selection, list(PLACEABLE_BOOKS) + [ANCHOR_BOOK]),
     )
+    anchor = None
+    for r in rows or []:
+        if r["bookmaker"] == ANCHOR_BOOK and ANCHOR_BOOK not in PLACEABLE_BOOKS:
+            anchor = float(r["odds"]) if r["odds"] else None
     out = {}
     for r in rows or []:
+        if r["bookmaker"] not in PLACEABLE_BOOKS:
+            continue
         if r["odds"] and r["odds"] > 1 and float(r["age_min"]) <= ODDS_FRESH_MAX_MIN:
+            if not is_anchor_sane(float(r["odds"]), anchor):
+                log.warning(
+                    "ANCHOR-PRICE-SANITY: dropped %s %s/%s on %s — book %.2f vs "
+                    "%s %.2f. A price this far from the anchor is a mis-mapped "
+                    "fixture, not an edge; not competing for this pick.",
+                    r["bookmaker"], market, selection, match_id,
+                    float(r["odds"]), ANCHOR_BOOK, anchor,
+                )
+                continue
             out[r["bookmaker"]] = {"odds": float(r["odds"]), "age_min": round(float(r["age_min"]))}
     return out
 

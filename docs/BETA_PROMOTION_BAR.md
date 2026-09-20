@@ -174,6 +174,17 @@ cal_prob = de-vigged Pinnacle prob."*
 | `bot_coolbet_trigger_sharp_ou_v1` | ✅ | — |
 | `bot_trigger_1x2_sharp_v1` (book-agnostic) | ✅ | — |
 
+> **⚠️ 2026-09-20 — THIS TABLE'S CLV FIGURES ARE NOT SAFE TO PROMOTE ON.**
+> `SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES` voided all 31 picks of
+> `bot_trigger_1x2_sharp_v1` / `bot_trigger_ou_sharp_v1` (every one priced off
+> another fixture's quote; the 1x2 bot had reached +549.9% ROI). The two
+> per-book successors quoted at **+10.9%** and **+10.0%** CLV above are
+> **not re-verified** and are inflated by the same fault — 70% of
+> `bot_unibet_trigger_sharp_1x2_v1`'s P&L comes from the 11.3% of its picks
+> whose edge exceeds the 8% plausibility ceiling. **Nothing in this family
+> clears the BETA bar until those rows are checked per-row** (PRIORITY_QUEUE →
+> MERGED-TRIGGER-BOTS-UNDERFIRE).
+
 The successors have **more than triple the CLV** of the retired bot (+10.9% vs
 +3.1%) — and, critically, their data is **forward data gathered after
 value_v1 was selected out**, which satisfies the BETA bar's criterion (5) by

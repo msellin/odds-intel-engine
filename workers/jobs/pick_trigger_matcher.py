@@ -18,6 +18,8 @@ from __future__ import annotations
 import logging
 import uuid
 
+from workers.automation.anchor_sanity import ANCHOR_BOOK, is_anchor_sane
+
 log = logging.getLogger(__name__)
 
 STAKE_EUR = 10.0
@@ -111,18 +113,36 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
                WHERE o.bookmaker = %s AND o.market = %s
                  AND o.timestamp <= m.date AND m.date > NOW()
                ORDER BY o.match_id, o.selection, o.timestamp DESC
+            ),
+            -- ANCHOR-PRICE-SANITY (2026-09-20). The SECOND pricing engine, and
+            -- it had no anchor check either — the exact "second code path
+            -- inheriting no gates" shape in docs/RELIABILITY_LEDGER.md. Joined
+            -- LEFT so a fixture Pinnacle does not price still emits (fail open,
+            -- see workers/automation/anchor_sanity). Deliberately NOT
+            -- freshness-capped: it answers "is this the right match?", not
+            -- "may I stake here?".
+            anchor AS (
+              SELECT DISTINCT ON (o.match_id, o.selection)
+                     o.match_id::text AS mid, o.selection, o.odds::float AS odds
+                FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
+               WHERE o.bookmaker = %s AND o.market = %s
+                 AND o.is_live IS NOT TRUE
+                 AND o.timestamp <= m.date AND m.date > NOW()
+               ORDER BY o.match_id, o.selection, o.timestamp DESC
             )
             SELECT t.match_id::text AS mid, t.market, t.selection,
                    t.cal_prob::float AS cal, l.odds AS book_odds,
                    l.age_min::float AS age_min,
+                   a.odds AS anchor_odds,
                    t.model_version AS mv
               FROM pick_triggers t
               JOIN latest l ON l.mid = t.match_id::text AND l.selection = t.selection
+              LEFT JOIN anchor a ON a.mid = t.match_id::text AND a.selection = t.selection
              WHERE t.market = %s AND t.strategy = %s AND t.kickoff_at > NOW()
                AND l.odds >= t.min_odds
                AND (t.max_odds IS NULL OR l.odds <= t.max_odds)
             """,
-            [book, market, market, strategy],
+            [book, market, ANCHOR_BOOK, market, market, strategy],
         )
         counters["matched"] = len(rows)
         run_id = str(uuid.uuid4())
@@ -140,6 +160,19 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
             # strategy still records the age so the same cut can be made later.
             if not is_fresh_enough(strategy, age_min):
                 counters["stale_skipped"] = counters.get("stale_skipped", 0) + 1
+                continue
+            # ANCHOR-PRICE-SANITY (2026-09-20). A quote the anchor contradicts
+            # by >1.56x is a price from ANOTHER FIXTURE, and it arrives looking
+            # like the best edge on the board — `edge = cal - 1/price` rewards
+            # exactly the rows that are most wrong. Refuse before it is written.
+            if not is_anchor_sane(price, r.get("anchor_odds")):
+                counters["anchor_insane_skipped"] = counters.get("anchor_insane_skipped", 0) + 1
+                log.warning(
+                    "ANCHOR-PRICE-SANITY: skipped %s %s/%s on %s — book %.2f vs "
+                    "%s %.2f. Mis-mapped fixture, not an edge.",
+                    book, r["market"], r["selection"], r["mid"], price,
+                    ANCHOR_BOOK, float(r["anchor_odds"]),
+                )
                 continue
             edge = float(r["cal"]) - 1.0 / price   # edge at the book's OWN price
             execute_write(

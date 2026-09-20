@@ -99,6 +99,19 @@ multi-year experiment, or retire them.
 merged bots — **too new to have data**, and worth keeping precisely because they
 are the sharp-anchored family that wins above.
 
+> **⚠️ UPDATED 2026-09-20 — SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES.** Both bots are
+> back to **n=0**: all 31 picks they accumulated were priced off book quotes
+> belonging to OTHER FIXTURES and have been voided. Before the void the 1x2 bot
+> read **+549.9% ROI / €1,319.80**. Do not quote any figure for either bot dated
+> before 2026-09-20. **And read the caveat above with new eyes:** the reason to
+> keep the sharp-anchored family is its *anchor*, but that same anchor makes
+> these bots a search procedure for mis-mapped prices — their contamination rate
+> was 80% against a base rate under 3%. The per-book sharp bots this doc praises
+> are inflated by the same fault and have NOT been re-verified: 70% of
+> `bot_unibet_trigger_sharp_1x2_v1`'s P&L comes from picks above the 8%
+> plausibility ceiling, and `bot_coolbet_trigger_sharp_1x2_v1` is negative
+> without its equivalent. See `PRIORITY_QUEUE.md` → MERGED-TRIGGER-BOTS-UNDERFIRE.
+
 ---
 
 ## Recommended actions

@@ -164,9 +164,9 @@ registry and regenerate.
 | `bot_unibet_trigger_sharp_1x2_v1` | 1x2 | sharp | 3% | 1.01 | paper | Unibet 1x2 sharp trigger. **Where the DRAW edge the model can't see should surface** (soft-book mispricing vs de-vig Pinnacle, §57). Paper. |
 | ~~`bot_unibet_trigger_ou_v1`~~ **RETIRED** | O/U 2.5 | model | 8% | 1.80 | paper | Stage 3b — Unibet O/U 2.5 model trigger. Paper twin of the Coolbet O/U trigger. ⚠️ **RETIRED in the DB** (migrations 336/348, BOT-RETIREMENT-ON-CLV); kept struck-through for history. Struck 2026-09-15 — the drift test was registry→map only and could not see a map row for a bot the registry had dropped. |
 | `bot_unibet_trigger_sharp_ou_v1` | O/U 2.5 | sharp | 3% | 1.01 | paper | Unibet O/U 2.5 sharp trigger. Paper. |
-| `bot_trigger_1x2_sharp_v1` | 1x2 | sharp | 3% | 1.01 | paper | Book-agnostic SHARP 1x2 trigger. The 3% floor is set EXPLICITLY, not inherited: a sharp edge is measured against a near-true line and is never comparable to a model floor (a 13% overlay on Pinnacle is nearly unobservable — max seen +6.6% — so the bot would simply never fire). |
+| `bot_trigger_1x2_sharp_v1` | 1x2 | sharp | 3%–**8%** | 1.01 | paper | Book-agnostic SHARP 1x2 trigger. The 3% floor is set EXPLICITLY, not inherited: a sharp edge is measured against a near-true line and is never comparable to a model floor (a 13% overlay on Pinnacle is nearly unobservable — max seen +6.6% — so the bot would simply never fire). **There is now also an 8% CEILING**, for the mirror-image reason — above the observed maximum overlay an "edge" is a broken price. **⚠️ n=0: all 25 picks voided 2026-09-20**, see §2a. |
 | ~~`bot_trigger_ou_model_v1`~~ **RETIRED** | O/U 2.5 | model | 8% | 1.80 | paper | Book-agnostic MODEL O/U 2.5 trigger. Replaces the two O/U model twins above. ⚠️ **RETIRED in the DB** (migrations 336/348, BOT-RETIREMENT-ON-CLV); kept struck-through for history. Struck 2026-09-15 — the drift test was registry→map only and could not see a map row for a bot the registry had dropped. |
-| `bot_trigger_ou_sharp_v1` | O/U 2.5 | sharp | 3% | 1.01 | paper | Book-agnostic SHARP O/U 2.5 trigger. |
+| `bot_trigger_ou_sharp_v1` | O/U 2.5 | sharp | 3%–**8%** | 1.01 | paper | Book-agnostic SHARP O/U 2.5 trigger. **⚠️ n=0: all 6 picks voided 2026-09-20**, see §2a. |
 | **`bot_trigger_1x2_sharp_tight_v1`** | 1x2 | sharp | **2%** | 1.01 (**odds ≤ 2.50**) | paper | **INSTRUMENT, not a strategy** (SHARP-TIGHT-INSTRUMENT-2026-09-15). The one OWN configuration two independent research rounds agreed was worth measuring and neither thought was worth a euro. It exists because the original 70,200-cell sweep *could not express it*: that grid swept a constant expected-ROI floor (`P×odds−1`) while this gate is a constant probability-difference floor (`P−1/odds`), and since `roi_edge = prob_edge × odds` the latter is a **curve in odds** — no constant-floor cell can represent it (§42). Swept correctly it is the only survivor: n=225, ROI +17.07%, CI [+4.18,+29.95], no losing fold, OOS +23.40%. **But both rounds judge it luck**: a 12-day effect (+0.99% n=79 pre-09-02 vs +25.76% n=146 after; Coolbet alone on a constant 37-day pool does the same), and margin-corrected own-book CLV of −5.4% to −7.6% beside those ROIs, against ~−7.2% for a random leg — i.e. the selection buys ~1.9pp of CLV, real but far short of the 7–8% vig. Pooled over Coolbet/Epicbet/Unibet-Site in ONE bot because the result was measured pooled. **Promotion requires margin-corrected own-book CLV > 0 at n≥300; ROI may never promote it at any value** (per-bet sd ≈1.3 ⇒ a true +3% ROI needs ~15,600 bets). Pre-registration: `dev/active/own-sharp-tight-preregistration.md`. |
 
 > **RETIRED 2026-09-14 (migration 336) — the three MODEL-anchored 1x2 trigger
@@ -296,6 +296,55 @@ Rule locked in `dev/active/picks-forward-test-preregistration.md`, pinned by
 smoke `PICKS-FORWARD-TEST-RULE-LOCKED`.
 
 ---
+
+### 2a. ⚠️ The sharp bots' track record was VOIDED on 2026-09-20 — read this before quoting any sharp number
+
+`SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20`. `bot_trigger_1x2_sharp_v1`
+published **+549.9% ROI / €1,319.80 on 24 settled picks**. It was not an edge.
+**All 25 of its picks, and all 6 of `bot_trigger_ou_sharp_v1`'s, were priced off
+book quotes belonging to a DIFFERENT FIXTURE.** Beitar Jerusalem was stored at
+18.00 in a match Pinnacle priced 1.67; Southern District at 101.00 against a
+true 1.83, and "won". Both bots are now **n=0**.
+
+**Why these bots and not the others — this is the part worth internalising.**
+Base-rate contamination across all cohorts is under 3%. These bots hit 80%+
+because **their edge definition is literally "this book disagrees hugely with
+Pinnacle"** — they do not stumble onto mis-mapped prices, they *search for
+them*. Every gate in this system is `edge = p − 1/odds`, a LOWER bound, and a
+wrong price only ever inflates the edge. So the fault clears every floor we
+own and can never trip one. A model-anchored bot meets the same bad rows and
+ignores them; an anchor-anchored bot is a magnet for them.
+
+**Upstream cause (still open):** `coolbet_placer.fuzzy_match_event` scores our
+home and away with `max()` over BOTH sides of a candidate event, so nothing
+forces them onto different sides; `unibet_odds_feed` draws candidates from a
+whole COUNTRY's lobby; `parse_contest` maps `1/X/2` off the *book event's*
+sides and never re-orients them against our fixture; and the ±6h date tolerance
+admits a different kickoff (measured gaps 1h00–2h55). One wrong event poisons
+**every market** on that fixture, not just 1x2.
+
+**Three gates now stand between a bad price and a pick** (all added 2026-09-20):
+
+| gate | where | what it catches |
+|---|---|---|
+| `anchor_sanity.is_anchor_sane` (ratio > 1.5625× vs Pinnacle) | `best_price_router._latest_book_odds` **and** `pick_trigger_matcher` | 20 of the 25. Weak on O/U, where prices are compressed into ~1.2–3.0 and a wrong fixture rarely trips a ratio test. |
+| `BotConfig.edge_ceiling` (8% on `sharp_devig`) | `pick_generator` | all 31, including every O/U one. Works in edge space, so market compression does not blunt it. |
+| `pick_triggers.OUTLIER_MULT` (`max_odds = min_odds × 1.6`) | `pick_trigger_matcher` (always had it) **and now `pick_generator`** | 14 of the 25. The generator is a *clone* of the sharp path that had silently dropped this half of the window. |
+
+None dominates the others: the ratio guard works in price space, the ceiling in
+edge space, the outlier cap in odds space, and the latter two cross near
+`cal_prob ≈ 0.18`. Keep all three.
+
+**The guard existed and was in the wrong place.** It was the "§9 outlier guard"
+in `scripts/anchor_book_sharpness_research.py` and *only* there — neither
+production pricing path consulted the anchor at all. That is the repeat failure
+shape in `RELIABILITY_LEDGER.md`: a second code path inheriting no gates.
+
+**What is NOT affected:** `real_bets` — 143 real-money rows, **zero** on a
+cross-matched price. And the published sharp arm (`picks_forward_test`, 91
+picks) is clean; it already stored `anchor_bookmaker`/`anchor_odds` per pick,
+which is the pattern the rest of the system should copy.
+
 
 ## 3. What each % means on each screen
 

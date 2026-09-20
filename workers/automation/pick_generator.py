@@ -80,6 +80,23 @@ class BotConfig:
     selections: tuple[str, ...] | None = None    # None = every selection
     edge_floor: float | None = None              # None = selection-aware registry floor
     odds_floor: float | None = None              # None = registry per-market floor
+    # EDGE CEILING — refuse a pick whose edge is TOO GOOD (None = no ceiling).
+    #
+    # SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20. Only meaningful when the
+    # probability is derived from a near-true line: against a de-vigged Pinnacle
+    # the largest overlay this project has ever seen is +6.6% (see
+    # `prob_source` below, which has said so since the source was written), so an
+    # apparent +20% is not a find — it is arithmetic on a price from a different
+    # football match. `bot_trigger_1x2_sharp_v1` published 25 picks and every
+    # single one sat above +10.9%, because a mis-mapped fixture maximises
+    # `edge = p - 1/odds` and the bot's selection logic is a search for exactly
+    # that. The generic `anchor_sanity` ratio guard catches the flagrant 80% of
+    # them; this catches the rest, and it is the tighter gate precisely BECAUSE
+    # it only applies where fair value is already near-true.
+    #
+    # Do NOT set this on a model-anchored bot. A model edge of 20% is ordinary
+    # (the registry floor is 13%) and a ceiling there would gut the bot.
+    edge_ceiling: float | None = None
     convert: Callable[[str, str], tuple[str, str] | None] | None = None
     maturity: tuple[str, ...] = ("calibrated",)  # source cohort, `pipeline` source only
     # WHERE THE CANDIDATE PROBABILITIES COME FROM. This is the single most
@@ -237,6 +254,52 @@ def generate(cfg: BotConfig) -> dict:
                 continue
             price = float(decision["winner_odds"])
             edge = cal_prob - 1.0 / price     # derived; cannot disagree with price
+
+            # EDGE CEILING (see BotConfig.edge_ceiling). Against a near-true
+            # anchor an implausibly large edge is evidence the PRICE is wrong,
+            # not that the opportunity is big — and it is the one error mode the
+            # floor cannot catch, because the floor is a lower bound and this
+            # fault pushes edges up.
+            # OUTLIER CAP — INHERITED, NOT INVENTED (2026-09-20). The matcher
+            # engine has bounded every sharp window since it was written:
+            # `pick_triggers` emits `max_odds = min_odds x OUTLIER_MULT` and
+            # `pick_trigger_matcher` enforces it. THIS path is a second
+            # implementation of the same sharp anchor and it silently dropped
+            # that half of the window — the clone kept the floor and lost the
+            # cap. Applied to the 25 phantom picks the cap alone rejects 14,
+            # including every egregious one (101.00, 18.00, 9.00).
+            #
+            # It is kept ALONGSIDE `edge_ceiling` because neither dominates:
+            # the cap is a bound in ODDS space and the ceiling a bound in EDGE
+            # space, and they cross near cal_prob ~0.18 — below it the cap is
+            # tighter, above it the ceiling is. Importing `OUTLIER_MULT` rather
+            # than re-typing 1.6 is the point; a copied constant is how these
+            # two paths diverged in the first place.
+            if cfg.prob_source == "sharp_devig" and cal_prob > ef:
+                from workers.jobs.pick_triggers import OUTLIER_MULT
+                max_odds = max(1.0 / (cal_prob - ef), of) * OUTLIER_MULT
+                if price > max_odds:
+                    c["above_outlier_cap"] = c.get("above_outlier_cap", 0) + 1
+                    log.warning(
+                        "OUTLIER-CAP: %s skipped %s/%s on %s — %s %.2f is above "
+                        "the window's max_odds %.2f. A price this far above fair "
+                        "value is a stale or mis-mapped quote, not a gift.",
+                        cfg.bot_name, market, selection, r["match_id"],
+                        won_book, price, max_odds,
+                    )
+                    continue
+
+            if cfg.edge_ceiling is not None and edge > cfg.edge_ceiling:
+                c["above_ceiling"] = c.get("above_ceiling", 0) + 1
+                log.warning(
+                    "EDGE-CEILING: %s skipped %s/%s on %s — edge %.1f%% at %s "
+                    "%.2f exceeds the %.1f%% ceiling. Fair value here is a "
+                    "de-vigged sharp line, so this is a mis-priced or mis-mapped "
+                    "quote, not an overlay.",
+                    cfg.bot_name, market, selection, r["match_id"], edge * 100,
+                    won_book, price, cfg.edge_ceiling * 100,
+                )
+                continue
 
             execute_write(
                 """INSERT INTO shadow_bets

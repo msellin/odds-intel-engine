@@ -122,6 +122,46 @@ daily caps. **Reuse, never reimplement:** `canon_bet()` collapses the two market
 vocabularies in `real_bets` (`'o/u'`+`'over 2.5'` vs `'over_under_25'`+`'over'`),
 and a guard without it sees half the book and double-bets the half it cannot see.
 
+## 4b. A gate whose only implementation lives in a research script is not a gate
+
+**SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20.** §4 is about a second code
+path inheriting no gates. This is its sibling: the gate was *written*, reviewed,
+given a constant and a name — the "§9 outlier guard", `OUTLIER_MAX_RATIO = 1.25`
+— and then lived only inside `scripts/anchor_book_sharpness_research.py`. The
+`1X2-HOME-AWAY-INVERSIONS` queue row even said to *"verify that the guard is
+actually applied on the placement path and not only in the line-shop
+comparison."* Nobody did. It was not.
+
+**Cost:** `bot_trigger_1x2_sharp_v1` published **+549.9% ROI / €1,319.80** on 24
+settled picks, every one of them priced off a quote belonging to a different
+fixture. `bot_trigger_ou_sharp_v1` the same, all 6.
+
+**The tell** is the one this ledger keeps repeating in different clothes: *the
+analysis script and the production path disagreed about what is possible, and
+only the analysis script was ever run against reality.* A research script drops
+the bad rows and reports a clean number, which is precisely why nobody notices
+production is swallowing them.
+
+**And a new one, specific to this shape.** There was ALSO a real production
+guard — `pick_triggers.OUTLIER_MULT = 1.6` — live on the matcher engine the
+whole time. It did not help, because `pick_generator._candidates_from_sharp` is
+a **second implementation of the same sharp anchor** and the clone kept the
+floor while dropping the cap. So this incident is §4 *and* §4b at once: a gate
+in the wrong place, and a gate correctly placed on only one of two twins.
+
+**Guard now:** three gates, in three different spaces (price ratio, edge, odds),
+across both engines, pinned by smoke tests `ANCHOR-PRICE-SANITY` and
+`SHARP-BOTS-HAVE-AN-EDGE-CEILING` — the second of which asserts the generator
+*imports* `OUTLIER_MULT` rather than re-typing it, because a copied constant is
+how the two paths diverged.
+
+**The rule.** When a research script rejects rows as impossible, that rejection
+is a finding about production, not a cleaning step. Either production enforces
+the same rule or you are knowingly shipping the rows your own analysis refuses
+to score. And when you clone a pricing path, diff the GATES, not the outputs —
+the outputs of a clone that dropped a cap look *better*, not worse.
+
+
 ## 5. A placement you cannot confirm is not a placement that did not happen
 
 Three outcomes, not two. Collapsing the third into "didn't happen" causes a

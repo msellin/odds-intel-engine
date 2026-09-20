@@ -98,6 +98,15 @@ CONFIGS: list[BotConfig] = [
 # nearly unobservable (max seen +6.6%), and the bot would silently never fire.
 # This is the one place a hand-written floor is correct rather than a sixth copy.
 _SHARP_EDGE_FLOOR = 0.03
+# ⚠️ AND THEY SET AN EDGE CEILING, for the mirror-image reason
+# (SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20). The same fact that makes
+# 3% a real overlay — fair value is a near-true line — makes +20% impossible.
+# The observed maximum against Pinnacle is +6.6%; 8% leaves headroom above every
+# genuine edge ever recorded and still rejects every one of the 25 phantom picks
+# `bot_trigger_1x2_sharp_v1` published, the smallest of which was +10.9%.
+# A floor alone cannot catch this: a wrong price inflates the edge, so it always
+# clears a lower bound and never trips one.
+_SHARP_EDGE_CEILING = 0.08
 _SHARP_ODDS_FLOOR = 1.01   # effectively off: these are observational paper bots
 
 TRIGGER_CONFIGS: list[BotConfig] = [
@@ -126,6 +135,7 @@ TRIGGER_CONFIGS: list[BotConfig] = [
         books=PLACEABLE_BOOKS,
         prob_source="sharp_devig",
         edge_floor=_SHARP_EDGE_FLOOR,
+        edge_ceiling=_SHARP_EDGE_CEILING,
         odds_floor=_SHARP_ODDS_FLOOR,
         notes="sharp-anchored 1x2 trigger, both books; the only triggers with "
               "POSITIVE CLV so far (+8.2%/+9.7%) but n=13-30",
@@ -137,6 +147,7 @@ TRIGGER_CONFIGS: list[BotConfig] = [
         books=PLACEABLE_BOOKS,
         prob_source="sharp_devig",
         edge_floor=_SHARP_EDGE_FLOOR,
+        edge_ceiling=_SHARP_EDGE_CEILING,
         odds_floor=_SHARP_ODDS_FLOOR,
         notes="sharp-anchored O/U trigger, both books",
     ),

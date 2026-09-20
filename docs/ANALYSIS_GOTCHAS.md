@@ -2653,3 +2653,57 @@ it is a clean negative rather than a discovery — which is the point of running
 the check before believing the table. See also gotcha 8 (gate on CLV, not ROI)
 and the 2026-09-14 in-play round, where a +9.0% cell died to a window-widening
 check for a related reason.
+
+
+## 67. An anchor-anchored bot SEARCHES FOR your data faults — its contamination rate is not the base rate (2026-09-20)
+
+**SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20.** Measured across every
+`shadow_bets` cohort, the share of picks whose book price sits >1.5625× from
+Pinnacle on the same selection:
+
+| cohort | n | contaminated | % |
+|---|---|---|---|
+| `trigger_1x2_sharp` | 25 | 20 | **80.0%** |
+| `team_total_paper` | 937 | 32 | 3.4% |
+| `trigger_1x2_model` | 416 | 9 | 2.8% |
+| `coolbet_trigger` | 1,466 | 24 | 1.7% |
+| `unibet_trigger` | 1,051 | 15 | 1.6% |
+| every timing cohort | — | ≤10 each | <1% |
+
+**Do not read the 80% as "our odds are 80% broken".** The base rate is under 3%.
+The sharp bot's edge definition is *literally* "this book disagrees hugely with
+the de-vigged Pinnacle line", so it is a **search procedure for exactly the rows
+that are most wrong**. Model-anchored bots meet the same bad rows and pass over
+them.
+
+**Two consequences for any analysis:**
+
+1. **Never estimate feed quality from a bot's pick population.** It is the most
+   biased sample of your own odds table that exists. Estimate it from the odds
+   table directly, paired against an anchor.
+2. **Every gate we own is a LOWER bound on `edge = p − 1/odds`**, and a wrong
+   price only ever *inflates* the edge. So a price fault clears every floor in
+   the system and can never trip one. On a near-true anchor the only gate with
+   the right sign is a **ceiling** (`BotConfig.edge_ceiling`).
+
+**A ratio guard is market-shaped, and that is a trap.** 1x2 prices span 1.02–101,
+so a wrong fixture usually blows past 1.5625× — it caught 20 of 25. **O/U prices
+are compressed into ~1.2–3.0, so it caught 0 of 6**, while Unibet-Site's O/U 2.5
+on Hapoel Tel Aviv read over 2.20 / under 1.58 against Pinnacle's over 1.69 /
+under 2.19 *and* Coolbet's over 1.62 / under 2.15 — the two-way market inverted,
+unmistakably another fixture. **When you need a cross-book sanity test on a
+compressed market, test the ORDERING (which side is favourite), not the ratio.**
+Two real books cannot disagree about the favourite in the same market on the
+same fixture.
+
+**`inplay_slowstate` reads 91% contaminated and is an artifact of the test, not
+a finding** — it compares in-play prices against a pre-match anchor. Exclude
+`is_live` rows before running this comparison on anything.
+
+**Voided rows are already invisible to the scoreboard.** All 582 rows with a
+non-null `void_reason` also carry `result='void'`, and `shadow_bot_scoreboard`
+filters `result IN ('won','lost')`. Setting `result='void'` + a dated
+`void_reason` is the established remedy (precedent: `KAMBI-CRITERION-
+CONTAMINATION-2026-09-05`); it keeps the rows queryable as evidence and needs no
+view change. **Do not delete them** — `PRIORITY_QUEUE.md` says so explicitly, and
+the rows are the only record of the upstream fault's reach.

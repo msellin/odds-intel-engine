@@ -4620,6 +4620,125 @@ def test_sharp_triggers_refuse_stale():
             f"gated strategy, or the gate is bypassed by a missing field")
 
 
+@test("ANCHOR-PRICE-SANITY — both pricing engines refuse a price the anchor contradicts")
+def test_anchor_price_sanity_on_both_engines():
+    """SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20.
+
+    `bot_trigger_1x2_sharp_v1` published 25 picks and EVERY ONE was priced off a
+    quote belonging to a different fixture — Beitar Jerusalem stored at 18.00 in
+    a match Pinnacle priced 1.67, Southern District at 101.00 against a true
+    1.83. Fair value for that bot is a de-vigged Pinnacle line, where the largest
+    overlay ever observed is +6.6%; its smallest pick was +10.9%.
+
+    The guard existed as the "§9 outlier guard" in
+    `scripts/anchor_book_sharpness_research.py` and ONLY there. Neither
+    production pricing path consulted the anchor — the repeat failure shape in
+    `docs/RELIABILITY_LEDGER.md`: a second code path inheriting no gates. There
+    are TWO such paths (`best_price_router._latest_book_odds` for the merged
+    bots, `jobs/pick_trigger_matcher` for the per-book pair) and this test pins
+    the guard on BOTH, because fixing one and not the other is the original bug.
+    """
+    import inspect
+    from workers.automation import anchor_sanity, best_price_router
+    from workers.jobs import pick_trigger_matcher
+
+    # The production constant must not drift from the research script's, or
+    # "impossible price" quietly means two different things in two places.
+    import re
+    research = open("scripts/anchor_book_sharpness_research.py").read()
+    m = re.search(r"^OUTLIER_MAX_RATIO\s*=\s*([0-9.]+)", research, re.M)
+    assert m, "§9 guard constant OUTLIER_MAX_RATIO not found in the research script"
+    assert float(m.group(1)) == anchor_sanity.OUTLIER_MAX_RATIO, (
+        f"anchor_sanity.OUTLIER_MAX_RATIO={anchor_sanity.OUTLIER_MAX_RATIO} has "
+        f"drifted from the research script's {m.group(1)} — they are the same "
+        f"definition and must stay one number")
+
+    # behaviour: the real observed failures must be rejected, real edges kept
+    sane = anchor_sanity.is_anchor_sane
+    for book, anchor in ((18.00, 1.67), (101.00, 1.83), (9.00, 1.58), (6.50, 2.47)):
+        assert sane(book, anchor) is False, (
+            f"price {book} against anchor {anchor} accepted — that is a "
+            f"mis-mapped fixture, and it reads as the biggest edge on the board")
+    # inverted partner leg: too SHORT is the same broken row and must also fail
+    assert sane(1.27, 4.87) is False, "too-short leg of an inverted triple accepted"
+    # a genuine overlay (+6.6% on a 2.00 shot is ~2.30) must survive
+    for book, anchor in ((2.30, 2.00), (1.95, 1.74), (4.35, 3.60)):
+        assert sane(book, anchor) is True, (
+            f"price {book} vs anchor {anchor} rejected — that is inside normal "
+            f"book disagreement and the guard must not cost real coverage")
+    # fail OPEN with no anchor: refusing every fixture Pinnacle skips would
+    # trade a known fault for an invisible one (see the module docstring)
+    assert sane(5.00, None) is True and sane(None, 2.00) is True
+
+    # both engines actually call it
+    router_src = inspect.getsource(best_price_router._latest_book_odds)
+    assert "is_anchor_sane" in router_src, (
+        "best_price_router._latest_book_odds no longer applies the anchor guard "
+        "— this is the choke point every merged bot prices through")
+    matcher_src = inspect.getsource(pick_trigger_matcher.match_and_emit)
+    assert "is_anchor_sane" in matcher_src and "anchor_odds" in matcher_src, (
+        "pick_trigger_matcher.match_and_emit no longer applies the anchor guard "
+        "— the per-book sharp bots would price off mis-mapped fixtures again")
+
+
+@test("SHARP-BOTS-HAVE-AN-EDGE-CEILING — a floor cannot catch an inflated price")
+def test_sharp_bots_have_an_edge_ceiling():
+    """SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20.
+
+    Every gate in this system is a LOWER bound on `edge = p - 1/odds`. A wrong
+    price inflates the edge, so this fault always CLEARS the floor and can never
+    trip it — the selection logic actively hunts for the most-broken row. On an
+    anchor-derived probability the ceiling is the only gate with the right sign.
+
+    Asserted as "every sharp_devig config has one", not a list of bot names: a
+    list passes when someone adds a fifth sharp bot without a ceiling, which is
+    exactly how the first four ended up ungated on freshness.
+    """
+    from workers.automation.bot_configs import ALL_CONFIGS
+
+    sharp = [c for c in ALL_CONFIGS if c.prob_source == "sharp_devig"]
+    assert sharp, "no sharp_devig configs found — has prob_source been renamed?"
+    for c in sharp:
+        assert c.edge_ceiling is not None, (
+            f"{c.bot_name} derives fair value from a near-true line but has NO "
+            f"edge_ceiling; a +20% overlay on a de-vigged sharp price is a "
+            f"mis-mapped fixture, and the floor cannot catch it")
+        # 6.6% is the largest overlay ever observed against Pinnacle on this
+        # project; a ceiling at or below it would reject real edges, far above
+        # it re-admits the phantoms (the smallest of the 25 was +10.9%).
+        assert 0.066 < c.edge_ceiling < 0.109, (
+            f"{c.bot_name} edge_ceiling={c.edge_ceiling} sits outside the "
+            f"measured band: it must clear the +6.6% observed maximum and stay "
+            f"below the +10.9% smallest phantom pick")
+
+    # THE CLONE MUST NOT BE WEAKER THAN THE ORIGINAL. `pick_triggers` has
+    # bounded every sharp window since it was written (max_odds = min_odds x
+    # OUTLIER_MULT, enforced by pick_trigger_matcher); pick_generator is a
+    # SECOND implementation of the same anchor and had silently dropped that
+    # half. Applied to the 25 phantom picks the cap alone rejects 14. This pins
+    # the constant as IMPORTED, not re-typed — a copied number is how the two
+    # paths diverged.
+    import inspect
+    from workers.automation import pick_generator
+    gen_src = inspect.getsource(pick_generator.generate)
+    assert "OUTLIER_MULT" in gen_src, (
+        "pick_generator.generate no longer applies the sharp window's outlier "
+        "cap — it is a clone of the matcher's sharp path and must not be the "
+        "weaker of the two")
+    from workers.jobs.pick_triggers import OUTLIER_MULT
+    assert OUTLIER_MULT == 1.6, (
+        f"OUTLIER_MULT moved to {OUTLIER_MULT}; the generator inherits it, so "
+        f"confirm the change is intended on BOTH sharp engines")
+
+    # A ceiling on a MODEL-anchored bot would gut it — the registry floor alone
+    # is 13%, so the two kinds of probability must not share this setting.
+    for c in ALL_CONFIGS:
+        if c.prob_source != "sharp_devig":
+            assert c.edge_ceiling is None, (
+                f"{c.bot_name} is {c.prob_source}-anchored and has an "
+                f"edge_ceiling — a model edge of 20% is ordinary, not suspect")
+
+
 @test("WEDGE-NEEDS-A-FRESH-SESSION — one session cannot tell §6b from §7")
 def test_wedge_needs_a_fresh_session():
     """COOLBET-WEDGE-VS-IMPERVA-2026-09-20.

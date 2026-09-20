@@ -122,10 +122,10 @@ BOTS: list[BotSpec] = [
     # the verdict.
     BotSpec("bot_trigger_1x2_sharp_v1", FAM_TRIGGER, "1x2", ANCHOR_SHARP,
             0.03, 1.01, False,
-            "Book-agnostic SHARP 1x2 trigger: any placeable book beating the de-vigged Pinnacle line by >=3% (no odds floor). Paper. The 3% floor is set EXPLICITLY — a sharp edge is measured against a near-true line and is never comparable to a model floor."),
+            "Book-agnostic SHARP 1x2 trigger: any placeable book beating the de-vigged Pinnacle line by >=3% AND by <=8% (no odds floor). Paper. The 3% floor is set EXPLICITLY — a sharp edge is measured against a near-true line and is never comparable to a model floor. The 8% CEILING exists for the mirror-image reason (SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20): the observed maximum overlay on Pinnacle is +6.6%, so a larger apparent edge is a mis-mapped price, not an opportunity. ⚠️ ITS ENTIRE TRACK RECORD (25 picks) WAS VOIDED on 2026-09-20 — every pick was priced off a quote belonging to another fixture, which published +549.9% ROI / EUR 1,319.80. n=0 today; any number quoted for this bot before that date is meaningless."),
     BotSpec("bot_trigger_ou_sharp_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_SHARP,
             0.03, 1.01, False,
-            "Book-agnostic SHARP O/U 2.5 trigger: any placeable book beating the de-vigged Pinnacle line by >=3% (no odds floor). Paper.",
+            "Book-agnostic SHARP O/U 2.5 trigger: any placeable book beating the de-vigged Pinnacle line by >=3% AND by <=8% (no odds floor). Paper. The ceiling matters MORE here than on 1x2: O/U prices are compressed into ~1.2-3.0, so a wrong fixture rarely trips a price-ratio guard — all 6 of this bot's picks passed the ratio test and all 6 were contaminated. ⚠️ ALL 6 VOIDED 2026-09-20 (SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES); n=0 today.",
             twin="bot_trigger_ou_model_v1"),
     # SHARP-TIGHT-INSTRUMENT-2026-09-15. An INSTRUMENT, not a strategy — the one
     # OWN configuration two independent research rounds agreed was worth
