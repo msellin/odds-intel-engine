@@ -48394,6 +48394,74 @@ def test_dev_archive_leaves_no_dangling_path():
 
 
 
+@test("POSTGREST-NO-OVER-CAP-RANGE — no web query may ask for more rows than the server returns")
+def test_postgrest_no_over_cap_range():
+    """ALL-BETS-CEILING-DEAD (2026-09-21).
+
+    Our PostgREST runs with PGRST_DB_MAX_ROWS=10000 (read off the container).
+    It caps every response at that and signals nothing the JS client surfaces —
+    a capped response is byte-for-byte indistinguishable from a complete one.
+
+    So `.range(0, 19999)` does not fetch 20,000 rows; it fetches 10,000 and
+    reports them as all of them. Six call sites in engine-data.ts asked for more
+    than the cap, one of them the PUBLIC headline ROI cohort and one the
+    real-money placement page's odds map. getAllBets even carried a guard that
+    warned above 20,000 — which could never fire, because the server stops at
+    half that. The guard watched a line the data could not reach.
+
+    Two invariants:
+      1. No .range() or .limit() may name a bound at or above the cap. At the
+         cap is as bad as above it: "we got exactly 10,000" and "there were
+         more" are then the same observation.
+      2. The pager's page size must stay below the cap with headroom, or a full
+         page comes back short and the loop stops early believing it finished.
+    """
+    import re as _re, pathlib as _p
+
+    web = _p.Path("/Users/margussellin/www/odds-intel-web/src/lib")
+    if not web.exists():
+        return "odds-intel-web not checked out beside the engine — skipped"
+
+    CAP = 10000
+    offenders = []
+    for f in sorted(web.glob("*.ts")):
+        # Comment lines are skipped deliberately: the fix for each of these
+        # sites QUOTES the bound it replaced ("used .range(0, 19999) against a
+        # server capped at 10,000"), which is the most useful thing the comment
+        # can say. A checker that cannot tell code from the note explaining it
+        # forces you to delete the explanation to go green.
+        for i, raw in enumerate(f.read_text(encoding="utf-8").split("\n"), 1):
+            line = raw.strip()
+            if line.startswith("//") or line.startswith("*") or line.startswith("/*"):
+                continue
+            for m in _re.finditer(r"\.range\(\s*(\d+)\s*,\s*(\d+)\s*\)", line):
+                span = int(m.group(2)) - int(m.group(1)) + 1
+                if span >= CAP:
+                    offenders.append(f"{f.name}:{i} .range asks for {span} rows")
+            for m in _re.finditer(r"\.limit\(\s*(\d+)\s*\)", line):
+                if int(m.group(1)) >= CAP:
+                    offenders.append(f"{f.name}:{i} .limit({m.group(1)})")
+
+    assert not offenders, (
+        "query(ies) ask PostgREST for at least its PGRST_DB_MAX_ROWS=10000 cap, "
+        "so they receive a SUBSET and cannot tell: " + "; ".join(offenders) +
+        ". Page the query with fetchAllPaged() instead of raising the bound — "
+        "raising it changes nothing, which is exactly how the dead 20,000-row "
+        "guard came to exist.")
+
+    eng = (web / "engine-data.ts").read_text(encoding="utf-8")
+    m = _re.search(r"const PAGE = (\d+);", eng)
+    assert m, "fetchAllPaged's PAGE constant is gone"
+    page = int(m.group(1))
+    assert page <= CAP // 2, (
+        f"PAGE is {page} against a {CAP}-row cap. It must keep real headroom: "
+        f"if the cap is ever lowered below PAGE, a full page comes back short "
+        f"and the pager stops early, silently, believing it reached the end")
+    assert "fetchAllPaged" in eng, "the paging helper was removed"
+    return f"no over-cap bounds; PAGE={page} vs cap {CAP}"
+
+
+
 
 if __name__ == "__main__":
     main()
