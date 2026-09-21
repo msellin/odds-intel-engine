@@ -45788,6 +45788,53 @@ def test_mfv_odds_drift_pre_kickoff():
     )
 
 
+@test("TRAIN-SERVE-IMPUTATION-MATCH — a missing feature must fill the same way both sides")
+def test_train_serve_imputation_match():
+    """MODEL-TRAINING-DEBT (a), 2026-09-21.
+
+    `train._impute_features` fills a missing value with the per-league mean and
+    then the global mean. Serving filled with 0.0 (`row[col] = 0.0`,
+    `X.fillna(0)`). The same fixture therefore produced a different feature
+    vector at train time and at serve time, and 0.0 is far outside the
+    distribution for most of these columns.
+
+    Not an edge case: measured over 30 days of match_feature_vectors, **54 of 60
+    numeric columns sit below 95% coverage**, several in single digits (weather
+    12.3%, referee 8.5%, injury_count 3.3%). The divergent branch was the common
+    one for much of the feature set.
+
+    Fix: training ships its global means as `feature_fill_values.pkl` inside the
+    bundle; serving loads them and falls back to 0 only where the bundle has no
+    value. Deliberately backward-compatible — a bundle trained before this has no
+    such file and keeps the 0.0 behaviour it was trained against, so no model
+    changes behaviour until it is retrained to expect the new fills.
+    """
+    tr = _engine_path("workers/model/train.py").read_text(encoding="utf-8")
+    sv = _engine_path("workers/model/xgboost_ensemble.py").read_text(encoding="utf-8")
+
+    assert "feature_fill_values.pkl" in tr, (
+        "train.py must emit feature_fill_values.pkl beside feature_cols.pkl — "
+        "without it serving has no way to reproduce the training fills and must "
+        "invent a value"
+    )
+    assert "features_df.mean(numeric_only=True)" in tr, (
+        "the shipped fills must be the TRAINING means, not a constant"
+    )
+    assert "feature_fill_values" in sv, (
+        "xgboost_ensemble must load the bundle's fills"
+    )
+    assert "fillna(value=" in sv and "fillna(0)" in sv, (
+        "serving must fill from the bundle FIRST and fall back to 0 only where "
+        "the bundle carries no value — dropping the 0 fallback would break every "
+        "bundle trained before 2026-09-21"
+    )
+    # the backward-compat path must stay explicit
+    assert "fill_path.exists()" in sv, (
+        "an older bundle has no feature_fill_values.pkl; serving must handle its "
+        "absence rather than assume every bundle carries one"
+    )
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).

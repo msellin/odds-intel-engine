@@ -130,8 +130,20 @@ def _load_bundle(version: str) -> dict:
             return {}
 
     try:
+        # MODEL-TRAINING-DEBT (a), 2026-09-21. Training imputes a missing
+        # feature with the per-league mean then the global mean; serving used
+        # 0.0. Same fixture, two different feature vectors, and 0.0 is far
+        # outside the distribution for most columns. Bundles trained from
+        # 2026-09-21 ship their global means as feature_fill_values.pkl; older
+        # bundles have no such file and keep the 0.0 behaviour, which is what
+        # they were trained against — so this is backward-compatible and only
+        # changes a model once that model has been retrained to expect it.
+        fill_path = model_path / "feature_fill_values.pkl"
+        fill_values = joblib.load(fill_path) if fill_path.exists() else {}
+
         bundle = {
             "feature_cols": joblib.load(model_path / "feature_cols.pkl"),
+            "feature_fill_values": fill_values,
             "result_1x2":   joblib.load(model_path / "result_1x2.pkl"),
             "over_under":   joblib.load(model_path / "over_under.pkl"),
             "home_goals":   joblib.load(model_path / "home_goals.pkl"),
@@ -387,7 +399,10 @@ def get_xgboost_prediction(home_team: str, away_team: str,
     # Build DataFrame in correct column order
     try:
         X = pd.DataFrame([row])[feature_cols]
-        X = X.fillna(0)
+        # Fill with the TRAINING means where the bundle carries them, and only
+        # then fall back to 0 (old bundles, or a column with no training mean).
+        _fills = bundle.get("feature_fill_values") or {}
+        X = X.fillna(value={c: v for c, v in _fills.items() if c in X.columns}).fillna(0)
     except KeyError:
         return None
 

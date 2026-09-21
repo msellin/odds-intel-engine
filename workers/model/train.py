@@ -1065,6 +1065,33 @@ def train_all(version: str = "untagged",
     joblib.dump(augmented_feature_cols, output_dir / "feature_cols.pkl")
     console.print(f"  Saved: {output_dir / 'feature_cols.pkl'}")
 
+    # MODEL-TRAINING-DEBT (a), 2026-09-21 — TRAIN/SERVE IMPUTATION MISMATCH.
+    #
+    # _impute_features fills a missing value with the per-league mean and then
+    # the global mean. Serving fills it with 0.0 (xgboost_ensemble: `row[col] =
+    # 0.0`, `X.fillna(0)`). The same fixture therefore gets a different feature
+    # vector at train time and at serve time, and 0.0 is far outside the
+    # distribution for most of these columns — an odds-derived feature whose
+    # league mean is ~1.8 arrives as 0.0.
+    #
+    # It is not a rare edge: measured 2026-09-21 over 30 days of
+    # match_feature_vectors, 54 of 60 numeric columns sit below 95% coverage,
+    # and several are in single digits (weather 12.3%, referee 8.5%,
+    # injury_count 3.3%). So the divergent branch is the COMMON one for much of
+    # the feature set.
+    #
+    # Ship the training fills WITH the bundle so serving can reproduce them
+    # exactly, instead of inventing a value. Global means only: per-league means
+    # cannot be applied at serve without the league, and the global fallback is
+    # already what training uses for any league with no observations.
+    fill_values = {
+        c: float(v) for c, v in features_df.mean(numeric_only=True).items()
+        if v == v  # drop NaN — an all-null column has no mean to carry
+    }
+    joblib.dump(fill_values, output_dir / "feature_fill_values.pkl")
+    console.print(f"  Saved: {output_dir / 'feature_fill_values.pkl'} "
+                  f"({len(fill_values)} columns)")
+
     console.print(f"\n[bold green]✓ All models trained and saved to {output_dir}[/bold green]\n")
 
     # ML-BUNDLE-STORAGE — push the bundle to Supabase Storage + register a
