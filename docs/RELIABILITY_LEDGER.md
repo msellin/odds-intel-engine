@@ -162,6 +162,40 @@ to score. And when you clone a pricing path, diff the GATES, not the outputs —
 the outputs of a clone that dropped a cap look *better*, not worse.
 
 
+## 4c. A cleanup is not done until the nightly repair job agrees with it
+
+**SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20, second act.** 31 picks
+priced off other fixtures' quotes were voided, the scoreboard went clean, and
+the fix was reported as shipped. **By the next morning all 31 were back**,
+`void_reason` cleared to NULL, and the bot was publishing +549.9% ROI again.
+
+`settlement.resettle_wrongly_voided_bets` exists to undo WRONG voids — a good
+job, doing its job. It skipped only `void_reason = 'quarantine'`, an exact match
+on a bare magic string, so the only way to protect a deliberate cleanup was to
+throw away its own explanation. Every quarantine that recorded WHY it happened
+was silently reversible.
+
+**The tell:** nothing alerted. The scoreboard simply read differently than it
+had the night before. It was caught by a verification script returning **0 rows
+where it should have returned 31** — i.e. by an assertion about the cleanup, not
+by anything watching the system.
+
+**Two rules.**
+1. **Before you repair data, find out what else writes that column.**
+   `grep -rn "UPDATE <table>"` over `workers/` takes a minute. A repair that a
+   scheduled job disagrees with is a repair with a timer on it.
+2. **Verify a cleanup on a later run, not on the write.** A `UPDATE ... ;
+   SELECT` in the same breath proves nothing about durability. The smoke test
+   added here executes the *competing* job's own query and asserts it returns
+   none of the cleaned rows.
+
+**And a corollary about precedent.** The `KAMBI-CRITERION-CONTAMINATION` rows
+were cited as proof the void mechanism worked. They had survived only because
+their matches are postponed with NULL scores, which the repair pass skips
+anyway. *An outcome is not a mechanism.* Check why the precedent survived before
+copying it.
+
+
 ## 5. A placement you cannot confirm is not a placement that did not happen
 
 Three outcomes, not two. Collapsing the third into "didn't happen" causes a

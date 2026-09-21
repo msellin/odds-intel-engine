@@ -335,6 +335,24 @@ None dominates the others: the ratio guard works in price space, the ceiling in
 edge space, the outlier cap in odds space, and the latter two cross near
 `cal_prob ≈ 0.18`. Keep all three.
 
+**THE VOID HAD TO BE MADE TO SURVIVE THE NIGHT.** The first cleanup did not
+stick: `settlement.resettle_wrongly_voided_bets` re-grades every void on a
+finished match, and it skipped only the exact string `void_reason =
+'quarantine'`. A descriptive reason was not protected, so all 31 rows were
+resurrected within hours, `void_reason` cleared to NULL, and the +549.9% bot was
+back on the board by morning. (The `KAMBI-CRITERION-CONTAMINATION` rows that
+looked like a working precedent had survived only because their matches are
+postponed with NULL scores.) The predicate is now a PREFIX — `LEFT(void_reason,
+10) <> 'quarantine'` — so a deliberate quarantine keeps both its protection and
+its explanation. **If you ever void rows deliberately, the reason MUST start
+with `quarantine:` or this pass will undo you.** Reversible reasons
+(`postponed`, `no_ht_score`) still re-grade, which is the pass's actual purpose.
+Smoke `QUARANTINE-VOIDS-SURVIVE-THE-RESETTLER` executes the re-settler's own
+query against the live DB and asserts none of these rows is reachable — a source
+check cannot see this, and the first attempt at the fix used `LIKE 'quarantine%'`
+whose literal `%` is consumed by psycopg2 parameter interpolation and raises
+IndexError at runtime.
+
 **The guard existed and was in the wrong place.** It was the "§9 outlier guard"
 in `scripts/anchor_book_sharpness_research.py` and *only* there — neither
 production pricing path consulted the anchor at all. That is the repeat failure

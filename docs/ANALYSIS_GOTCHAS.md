@@ -2700,10 +2700,27 @@ same fixture.
 a finding** — it compares in-play prices against a pre-match anchor. Exclude
 `is_live` rows before running this comparison on anything.
 
-**Voided rows are already invisible to the scoreboard.** All 582 rows with a
-non-null `void_reason` also carry `result='void'`, and `shadow_bot_scoreboard`
-filters `result IN ('won','lost')`. Setting `result='void'` + a dated
-`void_reason` is the established remedy (precedent: `KAMBI-CRITERION-
-CONTAMINATION-2026-09-05`); it keeps the rows queryable as evidence and needs no
-view change. **Do not delete them** — `PRIORITY_QUEUE.md` says so explicitly, and
-the rows are the only record of the upstream fault's reach.
+**Voided rows are invisible to the scoreboard — but a void does NOT stay put
+unless you name it correctly.** `shadow_bot_scoreboard` filters
+`result IN ('won','lost')`, so `result='void'` removes a row from every
+published number without deleting it. **However**, `settlement.
+resettle_wrongly_voided_bets` runs nightly, re-grades every void on a finished
+match, and **clears `void_reason` to NULL** on anything that no longer grades to
+void. It skips only reasons that START WITH `quarantine`.
+
+**So a deliberate quarantine MUST be written as `quarantine: <tag> — <why>`.**
+The first pass of `SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES` used a bare
+descriptive reason; all 31 rows were resurrected within hours and the +549.9%
+ROI bot was back on the scoreboard by morning. It was caught only because a
+verification replay returned 0 rows where it should have returned 31 — nothing
+alerts on this. **Do not cite `KAMBI-CRITERION-CONTAMINATION-2026-09-05` as
+proof the mechanism works**: those 14 rows survived because their matches are
+postponed with NULL scores, which that pass skips anyway. Luck, not protection.
+
+Reversible reasons (`postponed`, `no_ht_score`, corners unsettleable) must NOT
+start with `quarantine` — they describe a state that can legitimately change,
+and re-grading them is the pass's actual purpose.
+
+**Do not delete rows** — `PRIORITY_QUEUE.md` says so explicitly, and they are the
+only record of the upstream fault's reach. Smoke
+`QUARANTINE-VOIDS-SURVIVE-THE-RESETTLER`.

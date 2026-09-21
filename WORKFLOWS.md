@@ -529,8 +529,17 @@ pre-registration doc.) Three definitions differ from the bot ledgers and are loa
    cleanup left 143 more. The pass re-runs `settle_bet_result` over every void
    on a finished match and **writes only when the result stops being `void`**,
    so genuine AH/DNB pushes are untouched and steady state does zero writes.
-   `void_reason='quarantine'` rows (the May-June INPLAY-O / OU cleanups) are
-   excluded outright. Any repair Telegram-alerts — steady state is zero, so an
+   Rows whose `void_reason` **starts with** `quarantine` (the May-June INPLAY-O /
+   OU cleanups, and SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES) are excluded outright.
+   **⚠️ It became a PREFIX on 2026-09-20, and that matters to anyone cleaning up
+   data:** as an exact match on the bare string, a deliberate quarantine could be
+   protected only by discarding its own explanation — and since this pass also
+   clears `void_reason` to NULL, the evidence went with it. 31 phantom-priced
+   picks were voided with a descriptive reason and resurrected within hours,
+   putting a +549.9% ROI bot back on the scoreboard. **If you void rows
+   deliberately, the reason MUST start with `quarantine:`.** Reversible reasons
+   (`postponed`, `no_ht_score`) must not, or they could never be re-graded.
+   Any repair Telegram-alerts — steady state is zero, so an
    alert always means something upstream voided a bet it shouldn't have.
 
 ### ⑩ Match Previews (`match_previews.py`) — ENG-3
