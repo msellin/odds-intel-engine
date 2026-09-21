@@ -48815,6 +48815,80 @@ def test_can_stake_one_definition():
 
 
 
+@test("MAC-FS-SWEPT — the Mac's FlareSolverr gets swept, and the sweep cannot eat a live feed")
+def test_mac_fs_swept():
+    """MAC-FS-UNSWEPT (2026-09-21).
+
+    `job_flaresolverr_sweep` runs hourly in the VPS scheduler against the VPS
+    FlareSolverr. Coolbet placement, the Coolbet odds sweep, the in-play
+    collector and Epicbet all route through the MAC's FS instead, and nothing
+    ever swept that one — so a leaked session lived forever inside a 1 GiB
+    container cap whose own comment sizes it for ONE session while three feeds
+    share it. Two leaks were sitting there when this shipped.
+
+    THE DANGEROUS HALF IS THE REMEDY, NOT THE FAULT. `sweep_stale_sessions.py`
+    destroys everything not whitelisted, and the Mac's live session names differ
+    from the VPS's. Pointing the sweeper at the Mac with an incomplete whitelist
+    — the obvious fix the day someone notices — would destroy the live feeds
+    every hour and read as a scraper bug, which is what that file's own
+    FS-SWEEP-WHITELIST-INCOMPLETE header warns about.
+
+    So the whitelist is checked against the session names the Mac processes
+    actually use, read from where they are DEFINED rather than restated here.
+    """
+    import re as _re, time as _time, importlib.util as _ilu, pathlib as _p
+
+    sweeper_path = _engine_path("scripts/coolbet/sweep_stale_sessions.py")
+    src = sweeper_path.read_text(encoding="utf-8")
+
+    spec = _ilu.spec_from_file_location("_sweeper", sweeper_path)
+    mod = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # (1) every live Mac session name must survive a sweep.
+    plist = _engine_path("local/launchd/com.oddsintel.coolbet-odds-snapshot.plist").read_text(encoding="utf-8")
+    m = _re.search(r"COOLBET_FLARE_SESSION</key>\s*<string>([^<]+)</string>", plist)
+    odds_session = m.group(1) if m else "coolbet_odds_reader"
+
+    epi = _engine_path("workers/automation/epicbet_explorer.py").read_text(encoding="utf-8")
+    m = _re.search(r"_FS_SESSION_ID\s*=\s*[\"']([^\"']+)", epi)
+    epicbet_session = m.group(1) if m else "epicbet_odds_reader"
+
+    inplay = _engine_path("workers/jobs/inplay_coolbet_collector.py").read_text(encoding="utf-8")
+    m = _re.search(r"FS_SESSION_NAME\s*=\s*[\"']([^\"']+)", inplay)
+    inplay_session = m.group(1) if m else "coolbet_inplay"
+
+    for name in (odds_session, epicbet_session, inplay_session, "coolbet_prod"):
+        assert mod.is_whitelisted(name), (
+            f"{name!r} is a LIVE Mac session and the sweeper would destroy it. "
+            f"With the Mac sweep now scheduled hourly that is a feed outage "
+            f"every hour, presenting as a scraper bug rather than a sweeper one")
+
+    # (2) throwaway probe sessions get reaped, but not while one is in flight.
+    now = _time.time()
+    assert mod._is_young_ephemeral(f"wd_freshprobe_{int(now)}", now), (
+        "a probe session created seconds ago must be spared — destroying it "
+        "mid-probe turns a diagnostic into a false 'down' verdict at exactly "
+        "the moment someone is diagnosing an outage")
+    assert not mod._is_young_ephemeral(f"wd_freshprobe_{int(now - 3600)}", now), (
+        "an hour-old probe session is abandoned and must be reaped — sparing "
+        "the prefix outright would never clean them up at all")
+    assert not mod._is_young_ephemeral("wd_freshprobe_garbage", now), (
+        "a probe session that cannot prove its age is old enough to reap")
+
+    # (3) the Mac job exists and passes its FS URL explicitly.
+    sh = _engine_path("scripts/ops/mac_fs_sweep.sh").read_text(encoding="utf-8")
+    assert "--fs-url" in sh, (
+        "the Mac sweep must pass --fs-url EXPLICITLY. The script's default "
+        "reads FLARESOLVERR_URL, and this entire family of bugs is one process "
+        "assuming which FlareSolverr it is talking to")
+    assert "COOLBET_FS_LOCAL_URL" in sh, "the URL must follow the box, not this file"
+    lp = _engine_path("local/launchd/com.oddsintel.mac-fs-sweep.plist").read_text(encoding="utf-8")
+    assert "mac_fs_sweep.sh" in lp, "the launchd agent does not invoke the sweep"
+    return f"whitelist covers {odds_session}/{epicbet_session}/{inplay_session}; probes reaped after grace"
+
+
+
 
 if __name__ == "__main__":
     main()

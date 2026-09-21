@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.oddsintel.mac-fs-sweep</string>
+  <key>ProgramArguments</key><array>
+    <string>/opt/homebrew/bin/bash</string>
+    <string>/Users/margussellin/www/odds-intel-engine/scripts/ops/mac_fs_sweep.sh</string>
+  </array>
+  <!-- Hourly at :47 — ten minutes after the VPS sweep at :37, and clear of the
+       Coolbet odds sweep (:03/:33) and Epicbet (:02/:32) so a sweep never lands
+       mid-fetch. -->
+  <key>StartCalendarInterval</key><dict>
+    <key>Minute</key><integer>47</integer>
+  </dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>/Users/margussellin/www/odds-intel-engine/dev/active/mac-fs-sweep.log</string>
+  <key>StandardErrorPath</key><string>/Users/margussellin/www/odds-intel-engine/dev/active/mac-fs-sweep.log</string>
+</dict></plist>

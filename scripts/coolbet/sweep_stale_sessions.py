@@ -65,6 +65,33 @@ WHITELIST_PREFIXES = (
     "hltv_",
 )
 
+# MAC-FS-UNSWEPT (2026-09-21). Throwaway probe sessions are named
+# `wd_freshprobe_<unix_ts>` by coolbet_feed_watchdog._fresh_session_probe, which
+# reaps its own session in a `finally`. They are therefore leaks ONLY when that
+# reap fails — which is exactly what happened until 2026-09-21, because the reap
+# resolved FLARESOLVERR_URL (a dead Railway host) instead of the Mac's local FS.
+#
+# They must be swept, but not while one is in flight: a probe can take up to the
+# ~60s FS timeout, and destroying its session mid-probe turns a diagnostic into a
+# false "down" verdict at the exact moment someone is diagnosing an outage. The
+# name carries its own creation time, so spare the young ones rather than
+# whitelisting the prefix (which would never reap them at all).
+EPHEMERAL_PREFIX = "wd_freshprobe_"
+EPHEMERAL_GRACE_S = 300
+
+
+def _is_young_ephemeral(name: str, now: float) -> bool:
+    """True for a `wd_freshprobe_<ts>` session created within the grace period."""
+    if not name.startswith(EPHEMERAL_PREFIX):
+        return False
+    try:
+        created = float(name[len(EPHEMERAL_PREFIX):])
+    except ValueError:
+        # Unparseable suffix — treat as stale. A probe session that cannot prove
+        # its age is old enough to have been abandoned.
+        return False
+    return (now - created) < EPHEMERAL_GRACE_S
+
 
 def _fs_call(fs_url: str, body: dict, *, timeout_s: int = 60) -> dict:
     req = urllib.request.Request(
@@ -107,8 +134,12 @@ def main() -> int:
         return 0
 
     # Step 2: partition by whitelist
-    keep = [s for s in sessions if is_whitelisted(s)]
-    stale = [s for s in sessions if not is_whitelisted(s)]
+    import time as _time
+    _now = _time.time()
+    keep = [s for s in sessions
+            if is_whitelisted(s) or _is_young_ephemeral(s, _now)]
+    stale = [s for s in sessions
+             if not is_whitelisted(s) and not _is_young_ephemeral(s, _now)]
     print(f"  keep ({len(keep)}): {keep}")
     print(f"  stale ({len(stale)}): {stale}")
 
