@@ -209,7 +209,7 @@ For weekly retrains, ~5MB bundles, 5 years horizon:
 
 5. **Add a `parent_version` column.** Records which previous bundle's hyperparams / training config seeded this one. Lets you build a lineage tree for explainability.
 
-6. **Wire CV metrics into the `cv_metrics` JSONB field at training time.** This repo's first cut left it `NULL` (TODO) — the right fix is `train_*_model()` returning a dict that gets bubbled up to `register_version()`.
+6. ~~**Wire CV metrics into the `cv_metrics` JSONB field at training time.**~~ **✅ DONE — verified 2026-09-21.** It is being written: **30 of the last 30 model versions carry `cv_metrics`**, including `v20260920` from yesterday. The 16 NULLs left in `model_versions` are all pre-fix history and are not backfillable — CV metrics only exist at training time, and re-deriving them now would mean retraining those bundles to produce a number describing a training run that already happened. This line described the first cut and stayed unchanged after the fix landed.
 
 7. **Add a checksum.** SHA256 each .pkl on upload, store the hash in metadata, verify on download. Catches Storage corruption (rare but happens).
 
