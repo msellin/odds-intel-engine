@@ -57,18 +57,30 @@ jobs:
         continue-on-error: true
         run: python3 scripts/scrape_signalodds.py --restart
 
-      - name: Scrape Forebet
-        id: forebet
-        # Forebet's public date-strip has shrunk from the doc-comment's ~38 days
-        # back to ~7 (verified 2026-08-01). Anything older silently returns
-        # today's picks and is filtered out. Ask for a 14-day slice — small
-        # cushion above the current cutoff without wasting requests on dates
-        # that will 100% get discarded.
-        continue-on-error: true
-        run: |
-          START=$(date -u -d '14 days ago' +%Y-%m-%d)
-          END=$(date -u -d 'yesterday' +%Y-%m-%d)
-          python3 scripts/scrape_forebet.py --start "$START" --end "$END"
+      # FOREBET MOVED OFF CI 2026-09-21 (FOREBET-SCRAPER-403-SILENTLY-GREEN).
+      #
+      # forebet.com blocks this runner by IP, not by user-agent. Measured
+      # 2026-09-21: from the operator's Mac both the self-identifying scraper UA
+      # and a plain browser UA return HTTP 200; from GitHub Actions every request
+      # 403s, all 3 retries, both market slugs, every day requested. The VPS
+      # cannot reach forebet at all (HTTP 000), so relocating it there fails too.
+      #
+      # Dropping the UA suffix and swapping requests->cloudscraper were both
+      # considered and are dead ends against an IP block; they are recorded here
+      # so nobody spends a timebox rediscovering that.
+      #
+      # It therefore runs MANUALLY ON THE MAC, which works (verified same day:
+      # 42 fresh rows, data_through 2026-09-18). Run it when the freshness alarm
+      # fires — COMPETITOR-PICKS-STALE trips at 21 days:
+      #
+      #     cd ~/www/odds-intel-engine
+      #     python3 scripts/scrape_forebet.py          # ~4 min, walks 40 days
+      #     python3 scripts/audit_vs_forebet.py        # refresh the ledger
+      #     git add dev/active/forebet_raw.json ledger/ && git commit && git push
+      #
+      # Until it is run, audit_vs_forebet publishes status "stale-source" past 21
+      # days, which keeps the landing's amber marker on — so the page stays
+      # honest on its own while the data ages.
 
       - name: Scrape Tipstrr
         id: tipstrr
@@ -124,7 +136,6 @@ jobs:
           fail=0
           for pair in "deepbetting=${{ steps.deepbetting.outcome }}" \
                       "signalodds=${{ steps.signalodds.outcome }}" \
-                      "forebet=${{ steps.forebet.outcome }}" \
                       "tipstrr=${{ steps.tipstrr.outcome }}" \
                       "betaminic=${{ steps.betaminic.outcome }}"; do
             name="${pair%%=*}"; outcome="${pair#*=}"
