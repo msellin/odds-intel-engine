@@ -42,11 +42,34 @@ jobs:
         run: |
           pip install --quiet psycopg2-binary python-dotenv rich opentimestamps-client
 
+      # LEDGER-WORKFLOW-RED-EVERY-DAY-2026-09-21. SUPABASE-TO-VPS-2026-07-13 put
+      # Postgres behind an SSH tunnel and DATABASE_URL became
+      # ...@localhost:5433/oddsintel on 2026-07-31. competitor_audits_weekly,
+      # migrate and match_status_sweeper each got this step in three separate
+      # repair sweeps; THIS workflow was walked past by all three and had been
+      # red for 71 consecutive nights (last green 2026-07-12) — UndefinedTable
+      # until 07-30, then "connection to server at localhost:5433 refused".
+      # ExitOnForwardFailure + the nc probe make a bad key or a down VPS fail
+      # HERE, loudly, instead of resurfacing as an opaque psycopg2 error.
+      - name: Open SSH tunnel to VPS Postgres
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$VPS_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 204.168.199.8 >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+              -L 5433:localhost:5432 root@204.168.199.8
+          nc -z localhost 5433 && echo "tunnel up on localhost:5433"
+
+      # SUPABASE_URL / SUPABASE_DB_PASSWORD dropped 2026-09-21: neither
+      # export_track_record_snapshot.py nor workers/api_clients/db.py reads them
+      # (verified by grep). Keeping them implied a Supabase dependency that the
+      # 2026-07-13 cutover removed.
       - name: Export snapshot
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           python3 scripts/export_track_record_snapshot.py
 
