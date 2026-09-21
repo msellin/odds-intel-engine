@@ -262,7 +262,7 @@ def generate(cfg: BotConfig) -> dict:
             # fault pushes edges up.
             # OUTLIER CAP — INHERITED, NOT INVENTED (2026-09-20). The matcher
             # engine has bounded every sharp window since it was written:
-            # `pick_triggers` emits `max_odds = min_odds x OUTLIER_MULT` and
+            # the trigger writer emits `max_odds = min_odds x OUTLIER_MULT` and
             # `pick_trigger_matcher` enforces it. THIS path is a second
             # implementation of the same sharp anchor and it silently dropped
             # that half of the window — the clone kept the floor and lost the
@@ -276,7 +276,7 @@ def generate(cfg: BotConfig) -> dict:
             # than re-typing 1.6 is the point; a copied constant is how these
             # two paths diverged in the first place.
             if cfg.prob_source == "sharp_devig" and cal_prob > ef:
-                from workers.jobs.pick_triggers import OUTLIER_MULT
+                from workers.automation.anchor_sanity import OUTLIER_MULT
                 max_odds = max(1.0 / (cal_prob - ef), of) * OUTLIER_MULT
                 if price > max_odds:
                     c["above_outlier_cap"] = c.get("above_outlier_cap", 0) + 1

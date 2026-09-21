@@ -79,6 +79,21 @@ ANCHOR_BOOK = "Pinnacle"
 OUTLIER_MAX_RATIO = 1.25
 MAX_ODDS_RATIO = OUTLIER_MAX_RATIO ** 2  # 1.5625
 
+# The sharp WINDOW's upper bound: `max_odds = min_odds x OUTLIER_MULT`. A book
+# price above that is a stale or mis-mapped quote, not a gift.
+#
+# IT LIVES HERE, NOT IN `pick_triggers`, AND THAT PLACEMENT IS LOAD-BEARING.
+# Both sharp engines need it — `pick_triggers`/`pick_trigger_matcher` (which
+# defined it) and `pick_generator` (the clone that dropped it, which is how the
+# phantom picks got through). But `pick_generator.generate()` is forbidden by
+# smoke `PICK-GENERATOR` from referencing `pick_triggers` at all, for a good
+# reason: it must DERIVE min/max odds at decision time from `cal_prob`, never
+# read the precomputed window rows — stored derivations are the shape behind a
+# whole family of bugs in this repo. Importing the constant from a neutral
+# module satisfies both invariants honestly: one definition, no window read,
+# and no re-typed 1.6 (a copied constant is exactly how the two paths diverged).
+OUTLIER_MULT = 1.6
+
 
 def is_anchor_sane(book_odds: float | None, anchor_odds: float | None) -> bool:
     """True when `book_odds` is close enough to the anchor to be the same fixture.

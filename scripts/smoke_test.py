@@ -4725,7 +4725,7 @@ def test_sharp_bots_have_an_edge_ceiling():
         "pick_generator.generate no longer applies the sharp window's outlier "
         "cap — it is a clone of the matcher's sharp path and must not be the "
         "weaker of the two")
-    from workers.jobs.pick_triggers import OUTLIER_MULT
+    from workers.automation.anchor_sanity import OUTLIER_MULT
     assert OUTLIER_MULT == 1.6, (
         f"OUTLIER_MULT moved to {OUTLIER_MULT}; the generator inherits it, so "
         f"confirm the change is intended on BOTH sharp engines")
@@ -46300,7 +46300,16 @@ def test_sharp_tight_freshness_refuses_stale():
     assert ptm.is_fresh_enough("sharp_1x2_tight", 59.9) is True
     assert ptm.is_fresh_enough("sharp_1x2_tight", 60.1) is False
     assert ptm.is_fresh_enough("sharp_1x2_tight", None) is False, "unknown age is stale for a gated strategy"
-    assert ptm.is_fresh_enough("sharp_1x2", 10_000) is True, "ungated strategies only RECORD the age"
+    # SHARP-TRIGGERS-REFUSE-STALE (b136863e, 2026-09-19) capped ALL THREE sharp
+    # strategies at 60 min, not just the instrument. This line asserted the
+    # pre-fix reality and has been failing on main ever since — RELIABILITY_
+    # LEDGER §9, "a test that pins the old reality is worse than no test".
+    # Rewritten to the invariant that survives: every sharp strategy is gated,
+    # and none of them accepts a quote of unknown age.
+    for st in ("sharp_1x2", "sharp_ou25", "sharp_1x2_tight"):
+        assert ptm.FRESHNESS_MAX_AGE_MIN.get(st) == 60.0, f"{st} is not gated at 60 min"
+        assert ptm.is_fresh_enough(st, 10_000) is False, f"{st} accepts a 7-day-old quote"
+        assert ptm.is_fresh_enough(st, None) is False, f"{st} accepts a quote of unknown age"
     src = _engine_path("workers/jobs/pick_trigger_matcher.py").read_text(encoding="utf-8")
     fn = src[src.index("def match_and_emit("):src.index("FRESHNESS_MAX_AGE_MIN")]
     assert "AS age_min" in fn and "is_fresh_enough(strategy, age_min)" in fn, "matcher must compute the age and gate on it"

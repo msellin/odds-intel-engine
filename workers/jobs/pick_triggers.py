@@ -31,7 +31,10 @@ import logging
 
 log = logging.getLogger(__name__)
 
-OUTLIER_MULT = 1.6  # a book price above min_odds×this is likely stale, not a gift
+# Re-exported from `anchor_sanity`, which owns it so BOTH sharp engines can
+# import it without `pick_generator` having to reference this module (smoke
+# PICK-GENERATOR forbids that — it must derive windows, not read them).
+from workers.automation.anchor_sanity import OUTLIER_MULT  # noqa: F401
 
 # MODEL anchor: (strategy, placer market, placer floor-key, {selection: prediction market})
 # Fair value = OUR calibrated model probability.
