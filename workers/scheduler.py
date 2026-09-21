@@ -2233,11 +2233,19 @@ def job_publish_picks_forward_test():
     a unique index on match/market/selection/arm), and records the junk-anchor
     control without publishing it.
 
-    10:00 UTC: after the 04:00 morning chain and several odds refreshes, with
-    enough lead on afternoon/evening kickoffs for a reader to act. Deliberately
-    NOT near kickoff — the backtest that justifies the rule was measured on
-    quotes at least 4h out, and publishing later than we measured would be
-    publishing a different rule than the one pre-registered.
+    CADENCE: every 30 minutes at :05/:35 (RULE-V4-2026-09-15). It ran once daily
+    at 10:00 UTC for one day; that is stale here and in any doc still repeating
+    it. The candidate window is now+45min..now+14h, so a single daily run
+    structurally could not see 47% of qualifying legs and never saw 00:00-03:00
+    kickoffs at all. Running this often is only safe because of
+    PUBLISH-CLAIM-BEFORE-SEND (no duplicate messages) and daily_room() (a cap
+    that counts across runs).
+
+    What is NOT negotiable is the other end: the backtest that justifies the
+    rule was measured on quotes at least 4h out, so publishing closer to kickoff
+    would publish a different rule than the one pre-registered. The :05/:35
+    cadence moves publication EARLIER on average, never later, so it stays
+    inside what was measured.
     """
     from scripts.publish_picks_forward_test import (
         load_candidates, render, claim, attach_message_id, junk_anchor_arm,

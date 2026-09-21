@@ -48255,6 +48255,57 @@ def test_coolbet_wedge_selfheal_reaches_the_right_fs():
 
 
 
+@test("PICKS-PUBLISH-CADENCE-IS-NOT-DAILY — the public publisher's schedule and its docs must agree")
+def test_picks_publish_cadence_is_not_daily():
+    """PICKS-PUBLISH-AT-07-UTC, closed as superseded (2026-09-21).
+
+    The queue carried a task to move `job_publish_picks_forward_test` from
+    10:00 UTC to 07:00 so that 10:00-12:00 kickoffs became publishable. That
+    proposal was already obsolete and strictly weaker than what shipped:
+    RULE-V4-2026-09-15 replaced the daily run with :05/:35, because the
+    candidate window is now+45min..now+14h and a single daily run structurally
+    could not see 47% of qualifying legs, nor any 00:00-03:00 kickoff.
+
+    The row survived because the JOB'S OWN DOCSTRING still opened "10:00 UTC:",
+    so both a reader and an agent checking the code would have confirmed the
+    stale premise from the most authoritative-looking place.
+
+    Two things are pinned. The cadence must not silently revert to a daily
+    trigger — this is the one scheduled job that writes to a PUBLIC surface, and
+    fewer runs means quietly publishing a narrower slate than the
+    pre-registration measured. And the docstring must not re-assert a fixed
+    hour, because that is what kept a dead task alive for six days.
+    """
+    import re as _re
+
+    src = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+
+    m = _re.search(
+        r"scheduler\.add_job\(\s*_publish_picks_forward_test_wrapper,\s*"
+        r"CronTrigger\(([^)]*)\)", src)
+    assert m, "the picks forward-test publisher is no longer registered at all"
+    trigger = m.group(1)
+    assert 'minute="5,35"' in trigger, (
+        f"the public publisher's trigger is now {trigger!r}. It must stay on the "
+        f"sub-daily cadence: its candidate window is now+45min..now+14h, so a "
+        f"daily run cannot see 47% of qualifying legs and never sees 00:00-03:00 "
+        f"kickoffs — publishing a narrower slate than the pre-registration measured")
+    assert "hour=" not in trigger, (
+        "a fixed hour on this trigger makes it a daily job again")
+
+    doc_start = src.index("def job_publish_picks_forward_test")
+    docstring = src[doc_start:doc_start + 2600]
+    assert "10:00 UTC: after the 04:00 morning chain" not in docstring, (
+        "the docstring still opens by asserting a 10:00 UTC run. That line is "
+        "what kept PICKS-PUBLISH-AT-07-UTC alive as an open task for six days "
+        "after RULE-V4 superseded it — a reader verifying the schedule from the "
+        "code found the stale claim in the most authoritative-looking place")
+    assert "RULE-V4" in docstring, (
+        "the docstring must name the cadence rule it actually runs under")
+    return ":05/:35 cadence pinned; docstring no longer asserts a daily hour"
+
+
+
 
 if __name__ == "__main__":
     main()
