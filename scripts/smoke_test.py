@@ -45998,6 +45998,60 @@ def test_comp_fallback_refresh_fails_loud():
     )
 
 
+@test("TASK-NUMBERS-STABLE — every open row is numbered, uniquely, and numbers are never reused")
+def test_task_numbers_stable():
+    """TASK-NUMBERING 2026-09-21.
+
+    Every open row carries a permanent `#NNN` so the owner can name work by
+    number instead of pasting an ID. The number is only worth anything if it
+    always means the same thing, so three properties are pinned here:
+
+      unique      two rows sharing a number makes every reference ambiguous
+      complete    an unnumbered open row cannot be referred to at all
+      never reused  NEXT-TASK-NUMBER must exceed every number in use. Reuse is
+                  the dangerous failure: "#012" in an old note would silently
+                  resolve to different work, which is worse than it not resolving.
+
+    Numbers are assigned in FILE order, never priority order, so re-prioritising
+    a row does not renumber it.
+    """
+    import re as _re
+
+    body = _engine_path("PRIORITY_QUEUE.md").read_text(encoding="utf-8")
+    lines = body.split("\n")
+
+    def status(l):
+        pos = {m: l.find(m) for m in ("⬜", "🔄 In Progress", "✅", "⛔") if l.find(m) >= 0}
+        if not pos:
+            return None
+        return "OPEN" if min(pos, key=pos.get) in ("⬜", "🔄 In Progress") else "CLOSED"
+
+    tags = _re.findall(r"\*\*#(\d{3})\b", body)
+    assert tags, "no task numbers found — the numbering has been stripped"
+    dupes = {n for n in tags if tags.count(n) > 1}
+    assert not dupes, (
+        f"task numbers reused: {sorted(dupes)}. A number must name exactly one "
+        f"piece of work or every reference to it is ambiguous"
+    )
+
+    unnumbered = [l[:70] for l in lines
+                  if status(l) == "OPEN" and not _re.search(r"\*\*#\d{3}\b", l)]
+    assert not unnumbered, (
+        f"{len(unnumbered)} open row(s) carry no #NNN and cannot be referred to: "
+        f"{unnumbered[:3]}"
+    )
+
+    m = _re.search(r"NEXT-TASK-NUMBER:\s*(\d{3})", body)
+    assert m, "the NEXT-TASK-NUMBER marker is gone; new rows have no way to get a number"
+    nxt = int(m.group(1))
+    highest = max(int(n) for n in tags)
+    assert nxt > highest, (
+        f"NEXT-TASK-NUMBER is {nxt:03d} but #{highest:03d} is already in use. "
+        f"Handing out {nxt:03d} again would make an old reference resolve to new "
+        f"work — the one numbering failure that is worse than having no numbers"
+    )
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).
