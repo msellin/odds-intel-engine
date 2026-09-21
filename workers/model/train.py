@@ -18,7 +18,7 @@ trained model can be activated by setting `MODEL_VERSION=<version>` in env.
 
 NOTE: home_goals + away_goals regression models are not trained here; the
 production loader still falls back to v9a_202425 for those when missing.
-Adding them is tracked in unified-ml-pipeline-tasks.md (Stage 1c).
+Adding them is tracked in dev/archive/unified-ml-pipeline-tasks.md (Stage 1c; that doc was archived 2026-09-21 — the pipeline it describes has been overtaken by the model flips since).
 
 Column names match match_feature_vectors exactly. Callers must provide:
   features_df: columns from FEATURE_COLS (allow NaN — dropped per model)

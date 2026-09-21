@@ -252,7 +252,7 @@ def clears_edge_floor(market, selection, odds, edge) -> bool:
 # CHERRY-PICK-PLACER (2026-06-01) — gate the placer's bet loaders by the
 # `bots.maturity_label` column so the curated subset of strategies (default:
 # 'calibrated' only) reaches real_bets while every bot keeps firing into
-# simulated_bets. See dev/active/cherry-pick-placer-plan.md.
+# simulated_bets. See dev/archive/cherry-pick-placer-plan.md.
 #
 # Env var: COOLBET_RECORD_ALLOWED_MATURITY
 #   • Unset / empty / '*' — no filter (Phase 1 default; ships safely)

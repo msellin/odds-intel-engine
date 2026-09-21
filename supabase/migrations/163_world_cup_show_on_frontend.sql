@@ -14,4 +14,4 @@ WHERE api_football_id = 1   -- FIFA World Cup
 -- WC Qualification — Intercontinental Play-offs (id=37) is the final 6-team
 -- mini-tournament that determines the last 2 WC slots and runs alongside
 -- the group stage. Backfill of finished qualifier matches is filed under
--- WC-PHASE-2 (see dev/active/world-cup-prep-tasks.md).
+-- WC-PHASE-2 (see dev/archive/world-cup-prep-tasks.md).

@@ -48349,6 +48349,51 @@ def test_picks_publish_cadence_is_not_daily():
 
 
 
+@test("DEV-ARCHIVE-LEAVES-NO-DANGLING-PATH — archiving a task doc must not orphan a citation")
+def test_dev_archive_leaves_no_dangling_path():
+    """DEV-ACTIVE-TRIAGE (2026-09-21).
+
+    `dev/active/` had grown to 319 files, most of them finished work. Moving a
+    task doc to `dev/archive/` is trivially safe EXCEPT for one thing: source
+    files, migrations and launchd plists cite these docs by path, so a move
+    silently turns a working citation into a dead one. This pass found three
+    (`101_shadow_bets.sql`, `coolbet_placer.py`, `train.py`) — each a comment
+    saying "see dev/active/X" for an X that had just moved.
+
+    A dead doc path is the same failure as a stale doc: a future reader follows
+    it, finds nothing, and concludes the reasoning was never written down.
+
+    Checked mechanically, because it is exactly the kind of thing a careful
+    person forgets on the fourteenth `git mv` of a cleanup.
+    """
+    import subprocess as _sp
+
+    root = _engine_path(".")
+    archived = {p.name for p in (root / "dev" / "archive").iterdir() if p.is_file()}
+    assert archived, "dev/archive is empty — nothing has been archived yet"
+
+    out = _sp.run(["git", "grep", "-I", "-h", "-o", "-e",
+                   "dev/active/[A-Za-z0-9_.-]*", "--", ":!dev"],
+                  cwd=str(root), capture_output=True, text=True).stdout
+    cited = {line.split("/", 2)[2] for line in out.split() if line.count("/") >= 2}
+
+    dangling = sorted(cited & archived)
+    assert not dangling, (
+        f"{len(dangling)} citation(s) point at dev/active/ for file(s) that now "
+        f"live in dev/archive/: {dangling[:5]}. Repoint them to dev/archive/ in "
+        f"the same commit as the move — a reader who follows a dead doc path "
+        f"concludes the reasoning was never written down")
+
+    # And the move must be a move, not a copy.
+    both = sorted(archived & {p.name for p in (root / "dev" / "active").iterdir()
+                              if p.is_file()})
+    assert not both, (
+        f"{both[:5]} exist in BOTH dev/active and dev/archive. Two copies of a "
+        f"task doc means the next reader updates the wrong one")
+    return f"{len(archived)} archived docs, no dangling citations"
+
+
+
 
 if __name__ == "__main__":
     main()

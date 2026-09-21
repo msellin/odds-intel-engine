@@ -82,7 +82,7 @@ COMMENT ON TABLE shadow_bets IS
     'Shadow placements of all bots at all 3 timing windows (morning/midday/pre_ko). '
     'Never affects real bankroll; produced by run_morning(shadow_mode=True). '
     'Used to break the cohort×strategy confound in the current cohort A/B. '
-    'See dev/active/bet-timing-monitor-plan.md.';
+    'See dev/archive/bet-timing-monitor-plan.md.';
 
 COMMENT ON COLUMN shadow_bets.shadow_cohort IS
     'Which timing window this shadow was generated AT — NOT the bot''s assigned cohort.';
