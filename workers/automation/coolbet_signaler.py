@@ -244,7 +244,25 @@ def _format_signal(b: dict) -> str:
     lines = [
         f"🎯 BET SIGNAL — {b['home_team']} vs {b['away_team']}",
         f"🏆 {market} → {selection}  @ {odds:.2f}",
-        f"💰 Stake €{stake:.2f}  (Kelly {kelly:.0f}%, edge +{edge_pct:.1f}%)",
+    # TELEGRAM-EDGE-LABEL (2026-09-21). "pp", not "%".
+    #
+    # `simulated_bets.edge_percent` on this path is `cal_prob - ip`
+    # (daily_pipeline_v2.run_morning:3600) — a difference of two PROBABILITIES,
+    # i.e. percentage POINTS. Printed as "%" beside a stake and a price it reads
+    # as an expected return, which it is not: a +14pp edge at odds of 4.00 is
+    # roughly +56% expected return, four times the number shown.
+    #
+    # Measured over 493 picks (90d): displayed median 11.00 against the model's
+    # own EV median 31.95 — a 3.08x understatement. It has looked plausible
+    # only because the model is itself ~3x inflated, so the wrong unit lands
+    # near realised ROI BY COINCIDENCE. That coincidence breaks the moment
+    # calibration is fixed, and it breaks silently.
+    #
+    # Note the SHADOW passes store a genuine return in the same column name
+    # (`edge = odds * prob - 1.0`, _run_sweep_shadow_pass et al), so the unit
+    # cannot be inferred from the column — only from which table the row came
+    # from. This renderer reads simulated_bets.
+        f"💰 Stake €{stake:.2f}  (Kelly {kelly:.0f}%, edge +{edge_pct:.1f}pp)",
         f"⏰ {ko_str}  ·  {league}",
         f"🤖 {b.get('bot_name') or '?'}",
         f"🔗 {coolbet_link}",

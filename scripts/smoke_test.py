@@ -48889,6 +48889,59 @@ def test_mac_fs_swept():
 
 
 
+@test("TELEGRAM-EDGE-UNITS — the operator alerts must say pp, because that is what the number is")
+def test_telegram_edge_units():
+    """TELEGRAM-EDGE-LABEL, operator half (2026-09-21).
+
+    `simulated_bets.edge_percent` on the alerting path is `cal_prob - ip`
+    (daily_pipeline_v2.run_morning:3600) — a difference of two PROBABILITIES,
+    i.e. percentage points. Both operator renderers printed it as "%" next to a
+    stake and a decimal price, where it reads as an expected return. It is not:
+    a +14pp edge at odds of 4.00 is roughly +56% expected return.
+
+    Measured over 493 picks (90d): displayed median 11.00 against the model's
+    own EV median 31.95, a 3.08x understatement. It has passed for plausible
+    only because the model is itself ~3x inflated, so the wrong unit lands near
+    realised ROI BY COINCIDENCE — a coincidence that breaks silently the moment
+    calibration is fixed.
+
+    THE UNIT CANNOT BE INFERRED FROM THE COLUMN, which is why this is pinned
+    rather than left to care: the shadow passes store a genuine expected return
+    under the same name (`edge = odds * prob - 1.0` in _run_sweep_shadow_pass,
+    _run_no_pin_shadow_pass, _run_coolbet_value_pass, _run_pin_ou_shadow_pass).
+    Same column, two quantities; only the source TABLE tells them apart. So the
+    test also asserts these renderers still read simulated_bets — if one is ever
+    repointed at shadow_bets, "pp" becomes the wrong label rather than the right
+    one.
+
+    The PUBLIC channel is deliberately not covered here: changing outward-facing
+    copy needs owner sign-off, and that half of the row stays open.
+    """
+    import re as _re
+
+    for path, must_read in (
+        ("workers/jobs/coolbet_prekickoff_alert.py", "FROM simulated_bets"),
+        ("workers/automation/coolbet_signaler.py", "FROM simulated_bets"),
+    ):
+        src = _engine_path(path).read_text(encoding="utf-8")
+
+        # every rendered edge on an operator line carries pp, never a bare %
+        bad = _re.findall(r'edge \+\{edge_pct:[^}]*\}%', src)
+        assert not bad, (
+            f"{path} prints the edge as a percentage: {bad[0]!r}. It is "
+            f"`cal_prob - ip`, i.e. percentage POINTS — beside a stake and a "
+            f"price a '%' reads as expected return, which at odds of 4.00 "
+            f"understates the model's own claim about four-fold")
+        assert "edge_pct:.1f}pp" in src, f"{path} no longer renders a pp-labelled edge"
+        assert must_read in src, (
+            f"{path} no longer reads simulated_bets. The 'pp' label is only "
+            f"correct for THAT table — the shadow passes store an expected "
+            f"return in the identically-named column, so repointing the query "
+            f"silently makes the unit wrong")
+    return "both operator renderers label the edge in pp, and still read simulated_bets"
+
+
+
 
 if __name__ == "__main__":
     main()
