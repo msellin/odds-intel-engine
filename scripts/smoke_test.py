@@ -45823,6 +45823,47 @@ def test_train_serve_imputation_match():
     assert "feature_fill_values" in sv, (
         "xgboost_ensemble must load the bundle's fills"
     )
+
+    # BUNDLE-SCOPE-REGRESSION 2026-09-21. The first version of this test checked
+    # only that the STRING "feature_fill_values" appeared in the source, and
+    # passed while the code read `bundle.get(...)` inside a function whose
+    # variable is `bundle_1x2`. That NameError took betting_pipeline and
+    # betting_refresh down for two hours in production — a source-inspection
+    # test cannot catch a scope error, so compile the module and resolve names.
+    import ast as _ast
+    tree = _ast.parse(sv)
+    fn = next((n for n in _ast.walk(tree)
+               if isinstance(n, _ast.FunctionDef) and n.name == "get_xgboost_prediction"), None)
+    assert fn is not None, "get_xgboost_prediction has been renamed; update this test"
+
+    bound = {t.id for n in _ast.walk(fn) for t in _ast.walk(n)
+             if isinstance(t, _ast.Name) and isinstance(t.ctx, _ast.Store)}
+    bound |= {a.arg for a in fn.args.args}
+    bound |= {n.name.split(".")[0] if n.asname is None else n.asname
+              for imp in _ast.walk(tree) if isinstance(imp, (_ast.Import, _ast.ImportFrom))
+              for n in imp.names}
+    bound |= {n.name for n in tree.body if isinstance(n, (_ast.FunctionDef, _ast.ClassDef))}
+    # MODULE-LEVEL assignments only. Walking tree.body recursively would descend
+    # into every OTHER function body, so a name bound anywhere in the file would
+    # count as in scope here — which is precisely how the first version of this
+    # check passed on the mutation it was written to catch.
+    bound |= {tg.id for stmt in tree.body
+              if isinstance(stmt, (_ast.Assign, _ast.AnnAssign, _ast.AugAssign))
+              for tg in _ast.walk(stmt)
+              if isinstance(tg, _ast.Name) and isinstance(tg.ctx, _ast.Store)}
+    import builtins as _bi
+    bound |= set(dir(_bi))
+
+    for node in _ast.walk(fn):
+        if isinstance(node, _ast.Attribute) and isinstance(node.value, _ast.Name):
+            name = node.value.id
+            if name.startswith("bundle") or name.endswith("bundle"):
+                assert name in bound, (
+                    f"get_xgboost_prediction reads `{name}.{node.attr}` but `{name}` is "
+                    f"never bound in that scope. This is the exact NameError that took "
+                    f"betting_pipeline down on 2026-09-21 — the bundle variable there is "
+                    f"`bundle_1x2`, not `bundle`"
+                )
     assert "fillna(value=" in sv and "fillna(0)" in sv, (
         "serving must fill from the bundle FIRST and fall back to 0 only where "
         "the bundle carries no value — dropping the 0 fallback would break every "

@@ -401,7 +401,7 @@ def get_xgboost_prediction(home_team: str, away_team: str,
         X = pd.DataFrame([row])[feature_cols]
         # Fill with the TRAINING means where the bundle carries them, and only
         # then fall back to 0 (old bundles, or a column with no training mean).
-        _fills = bundle.get("feature_fill_values") or {}
+        _fills = bundle_1x2.get("feature_fill_values") or {}
         X = X.fillna(value={c: v for c, v in _fills.items() if c in X.columns}).fillna(0)
     except KeyError:
         return None
