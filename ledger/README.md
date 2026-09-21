@@ -4,6 +4,23 @@ This folder holds **daily, byte-identical, GitHub-signed, blockchain-anchored
 snapshots** of every settled production pre-match bet placed by the OddsIntel
 football model.
 
+
+> **Gap: 2026-07-13 → 2026-09-20 — no daily snapshots.** The publishing workflow lost
+> its database connection in the Supabase→VPS cutover of 2026-07-13 and failed on all
+> **71** nightly runs until it was repaired on 2026-09-21
+> (`LEDGER-WORKFLOW-RED-EVERY-DAY-2026-09-21`). It went red twice over: `UndefinedTable`
+> until 2026-07-30, then `connection refused` on `localhost:5433` once `DATABASE_URL`
+> moved to the tunnel DSN.
+>
+> **No bet data was lost.** Each daily file is cumulative since 2026-05-04, so the first
+> snapshot after the repair contains every bet from the gap. What is missing is the
+> per-day proof-of-existence for those 70 days — the signed commit and the
+> OpenTimestamps stamp. Those were **deliberately not backfilled**: a file written in
+> September cannot honestly carry an August commit date or Bitcoin attestation, and
+> fabricating them would forge the exact audit trail this ledger exists to provide.
+>
+> Freshness is now machine-checked by smoke `LEDGER-SNAPSHOT-FRESH`.
+
 ## Verification mechanic — three independent anchors
 
 1. **Live source of truth.** `https://oddsintel.app/api/v1/track-record`

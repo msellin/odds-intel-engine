@@ -45649,6 +45649,87 @@ def test_crossrank_memory_cap_versioned():
     )
 
 
+@test("WORKFLOW-DB-TUNNEL — every DB-touching workflow must open the VPS tunnel")
+def test_workflow_db_tunnel():
+    """LEDGER-WORKFLOW-RED-EVERY-DAY-2026-09-21.
+
+    SUPABASE-TO-VPS-2026-07-13 put Postgres behind an SSH tunnel. Three workflows
+    were repaired for it in three SEPARATE sweeps (2026-07-31, and two on
+    2026-08-22) — and all three walked past `track_record_ledger.yml`, which then
+    failed **71 consecutive nights** while the public ledger it publishes froze on
+    2026-07-12.
+
+    The repair is per-file, so the next workflow added will forget it too unless
+    something checks. Rule: a workflow that injects `secrets.DATABASE_URL` must
+    also open the tunnel, or be named in DORMANT with a dated reason. A workflow
+    on a live cron that is dormant by accident is itself a finding.
+    """
+    DORMANT = {
+        # date-gated to 2026-07-22; exits before touching the DB
+        "day_ahead_backtest_rerun.yml": "date-gated, inert since 2026-07-22",
+        # last ran 2026-07-07, never cut over; retire-or-fix decision open
+        "tennis_daily.yml": "dormant since 2026-07-07, decision open",
+        # workflow_dispatch only (schedule disabled), last run 2026-05-04 and it
+        # failed. Its own comment says backfill "now runs on Railway" — Railway
+        # was eliminated 2026-06-29 (RAILWAY-ELIMINATION), so that note is stale
+        # too. Found by THIS test on the day it was written. If anyone ever
+        # dispatches it, it will fail on the tunnel: fix or delete it then.
+        "backfill.yml": "dispatch-only, dead since 2026-05-04, points at retired Railway",
+    }
+    wf = _engine_path(".github/workflows")
+    checked = 0
+    for p in sorted(wf.glob("*.yml")):
+        body = p.read_text(encoding="utf-8")
+        if "secrets.DATABASE_URL" not in body or p.name in DORMANT:
+            continue
+        checked += 1
+        assert "-L 5433:localhost:5432" in body and "204.168.199.8" in body, (
+            f"{p.name} injects DATABASE_URL (which points at localhost:5433 since "
+            f"the 2026-07-13 cutover) but never opens the SSH tunnel. It will fail "
+            f"every run with 'connection to server at localhost port 5433 failed'. "
+            f"Copy the tunnel step from match_status_sweeper.yml, or add the file to "
+            f"DORMANT with a dated reason."
+        )
+    assert checked >= 3, (
+        f"only {checked} DB-touching workflows found; the scan has stopped working"
+    )
+
+
+@test("LEDGER-SNAPSHOT-FRESH — the public ledger must actually be publishing")
+def test_ledger_snapshot_fresh():
+    """LEDGER-WORKFLOW-RED-EVERY-DAY-2026-09-21.
+
+    The daily ledger stopped on 2026-07-12 and **nothing said so for 71 days**.
+    COMPETITOR-AUDIT-FRESH covers `ledger/comparison_*.json`; LEDGER-EXEC-PRICE-BASIS
+    covers the export script's SQL basis. Neither notices that the script never ran.
+
+    `ledger/README.md` and `ROADMAP.md` both promise a daily snapshot and pitch the
+    signed commit plus the OpenTimestamps anchor as verification. A stale ledger is
+    therefore a false public claim, not just a dead light — a skeptic who clones the
+    repo to check the track record gets a ledger that stops ten weeks short while the
+    live API keeps moving.
+
+    3 days: one skipped cron is survivable, three in a row is a bug.
+    """
+    import re as _re
+    from datetime import date
+
+    led = _engine_path("ledger")
+    dated = [p.stem for p in led.glob("*.json")
+             if _re.fullmatch(r"\d{4}-\d{2}-\d{2}", p.stem)]
+    assert dated, "ledger/ holds no dated snapshots — the workflow has never run"
+
+    newest = max(dated)
+    age = (date.today() - date.fromisoformat(newest)).days
+    assert age <= 3, (
+        f"newest ledger snapshot is {newest} ({age} days old, max 3). The daily "
+        f"track-record ledger has stopped publishing, and ledger/README.md still "
+        f"promises one. Check track_record_ledger.yml — the SSH tunnel step is the "
+        f"usual suspect. Do NOT backfill dated files to silence this: a snapshot "
+        f"written today cannot honestly carry an earlier date or timestamp proof."
+    )
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).
