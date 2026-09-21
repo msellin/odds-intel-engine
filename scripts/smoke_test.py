@@ -45835,6 +45835,50 @@ def test_train_serve_imputation_match():
     )
 
 
+@test("CLV-SAMPLE-BAR-IS-DERIVED — the readiness threshold must come from the data")
+def test_clv_sample_bar_is_derived():
+    """MODEL-TRAINING-DEBT (d), 2026-09-21.
+
+    The trigger-calibrator watch stayed silent until 334 settled CLV rows, a
+    constant carried as "~+/-2% on CLV". Measured against the ledger it is
+    neither: with the observed margin-corrected CLV sd of 0.1103 (n=28,047 over
+    60 days), t=2 requires
+
+        1.0pp effect -> n = 487     334 is NOT enough
+        2.0pp        -> n = 122
+        5.0pp        -> n =  19     334 is 17x more than needed
+
+    One constant cannot be right at both ends, and a fixed bar silently stops
+    being the right number the moment the strategy's dispersion changes. The
+    threshold is now n = (t*sd/effect)^2 with sd read from the live ledger.
+    """
+    src = _engine_path("scripts/trigger_calibrator_check.py").read_text(encoding="utf-8")
+
+    assert "def required_clv_n(" in src, (
+        "the readiness bar must be a function of the effect size and the "
+        "observed spread, not a constant"
+    )
+    assert "stddev(clv_margin_corrected)" in src, (
+        "sd must be MEASURED from the ledger — a hardcoded sd is the same defect "
+        "one level down"
+    )
+    assert "CLV_N_FLOOR" in src, (
+        "keep a floor: the power maths alone will happily authorise a verdict on "
+        "a handful of rows for a large effect"
+    )
+
+    sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    assert "CLV_USEFUL_N" in sched and "%d/%d settled CLV" in sched, (
+        "the scheduler must read the derived bar rather than printing its own "
+        "literal — two copies of a threshold is how a log line ends up quoting a "
+        "number that moved"
+    )
+
+    import re as _re
+    body = src[src.index("def required_clv_n("):]
+    assert not _re.search(r"\breturn\s+334\b", body), "the constant must not survive inside the function"
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).

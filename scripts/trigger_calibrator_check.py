@@ -46,9 +46,13 @@ measurably different (and wrong) model.
 
 WHAT COUNTS AS ENOUGH
 ---------------------
-CLV converges far faster than ROI — roughly 334 settled bets for a useful CLV
-read against ~9,300 for +/-2% on ROI. So this reports CLV as the primary signal
-and ROI only as context, and it will not offer a verdict below --min-n.
+CLV converges far faster than ROI — tens to hundreds of settled bets against
+~9,300 for +/-2% on ROI. So this reports CLV as the primary signal and ROI only
+as context, and it will not offer a verdict below --min-n.
+
+That bar is DERIVED, not fixed (see required_clv_n below). It used to be a flat
+334, which the measured spread says is both too small and far too large
+depending on the effect you care about.
 """
 from __future__ import annotations
 
@@ -60,7 +64,52 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from workers.api_clients.db import execute_query  # noqa: E402
 
-CLV_USEFUL_N = 334      # ~+/-2% on CLV; the repo's own figure
+# MODEL-TRAINING-DEBT (d), 2026-09-21 — a FIXED n answers no particular question.
+#
+# This was `CLV_USEFUL_N = 334`, carried as "the repo's own figure" for
+# "~+/-2% on CLV". Measured against the actual data it is neither: over 60 days
+# and 28,047 rows the margin-corrected CLV sd is 0.1103, so at t=2 the required
+# sample is
+#
+#     to detect  1.0pp   n = 487      <- 334 is NOT enough
+#     to detect  2.0pp   n = 122
+#     to detect  5.0pp   n = 19       <- 334 is 17x more than needed
+#
+# One constant cannot be right for both ends of that. What matters is the effect
+# size the DECISION turns on, so the threshold is now derived from it.
+#
+# The decision here is whether the per-selection calibrator fix recovered CLV
+# from its -6.6% baseline. A 3pp move is the smallest that would change what we
+# do, so that is the default — and the sd is measured from the data rather than
+# assumed, so the bar tracks reality instead of drifting away from it.
+CLV_EFFECT_PP = 0.03      # smallest CLV improvement that changes the decision
+CLV_T_TARGET = 2.0        # ~95% two-sided
+CLV_SD_FALLBACK = 0.1103  # measured 2026-09-21, n=28,047; used only if the query fails
+CLV_N_FLOOR = 30          # never call a verdict on a handful, whatever the maths says
+
+
+def required_clv_n(effect: float = CLV_EFFECT_PP, t: float = CLV_T_TARGET) -> int:
+    """Sample needed to resolve `effect` at `t`, from the OBSERVED CLV spread.
+
+    n = (t * sd / effect)^2 — the standard two-sided power expression for a mean.
+    sd is read from the live ledger so the bar moves if the strategy's dispersion
+    does; a fixed constant silently stops being the right number the moment it
+    changes.
+    """
+    import math
+    try:
+        r = execute_query(
+            """SELECT stddev(clv_margin_corrected) AS sd
+                 FROM shadow_bets
+                WHERE clv_margin_corrected IS NOT NULL
+                  AND created_at > now() - interval '60 days'""")
+        sd = float(r[0]["sd"]) if r and r[0]["sd"] is not None else CLV_SD_FALLBACK
+    except Exception:
+        sd = CLV_SD_FALLBACK
+    return max(CLV_N_FLOOR, math.ceil((t * sd / effect) ** 2))
+
+
+CLV_USEFUL_N = required_clv_n()
 ERA_TAG = "selcal1"
 
 

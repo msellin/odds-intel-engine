@@ -2048,9 +2048,13 @@ def job_trigger_calibrator_watch():
     decides whether the real-money mirror bots should be moved onto the same
     window-firing mechanism (EPIC: MIRROR-AND-TRIGGER-CONVERGENCE phase 2).
 
-    Silent until the post-fix era has ~334 settled picks with a Pinnacle CLV —
-    the sample size at which CLV is worth reading. Deduped to one alert per
-    week so a long wait cannot turn into daily noise.
+    Silent until the post-fix era has enough settled picks with a Pinnacle CLV
+    to resolve the effect the decision turns on. That bar is DERIVED, not fixed:
+    `trigger_calibrator_check.required_clv_n()` computes n = (t*sd/effect)^2
+    from the ledger's observed CLV spread. It was a hardcoded 334, which the
+    data says is simultaneously too small to detect 1pp (needs 487) and 17x more
+    than needed for 5pp (needs 19). Deduped to one alert per week so a long wait
+    cannot turn into daily noise.
     """
     def _run():
         from scripts.trigger_calibrator_check import verdict
@@ -2058,8 +2062,12 @@ def job_trigger_calibrator_watch():
         v = verdict()
         log = logging.getLogger("scheduler")
         if not v["ready"]:
-            log.info("trigger_calibrator_watch: not ready (%d/334 settled CLV)",
-                     v["post_clv_n"])
+            # MODEL-TRAINING-DEBT (d) 2026-09-21: read the threshold from the
+            # check itself. It used to be the literal 334 in two places, which
+            # is how a log line keeps quoting a bar that has since moved.
+            from scripts.trigger_calibrator_check import CLV_USEFUL_N
+            log.info("trigger_calibrator_watch: not ready (%d/%d settled CLV)",
+                     v["post_clv_n"], CLV_USEFUL_N)
             return
         sound = v["verdict"] == "mechanism_sound"
         from workers.notify.telegram import send_telegram
