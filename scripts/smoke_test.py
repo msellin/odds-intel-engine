@@ -48549,6 +48549,81 @@ def test_cdp_selfheal_escalates():
 
 
 
+@test("COOLBET-PROBE-IMPERVA-BEATS-TIMING — a seen interstitial outranks the wedge heuristic")
+def test_coolbet_probe_imperva_beats_timing():
+    """COOLBET-PROBE-CALLS-IMPERVA-A-WEDGE (2026-09-21).
+
+    On 2026-09-18 `probe_coolbet_reachable` logged "Incapsula interstitial on
+    …/fo-tree" and then returned state='wedged' with the detail "that is a stuck
+    session, not a challenge verdict" — contradicting, in its own verdict,
+    evidence it had printed one line earlier.
+
+    This matters more than an inconsistent log because THE TWO STATES HAVE
+    OPPOSITE REMEDIES. A wedge wants the FS session destroyed; a live Imperva
+    flag wants us to back off, and cycling sessions at a flag HARDENS it
+    (runbook §7). Acting on the wrong one that day meant destroying sessions
+    repeatedly and restarting the container against a live flag — the remedy
+    making the fault worse, which is the RELIABILITY_LEDGER §10 shape.
+
+    Cause: the classifier reads only elapsed time and byte count. That is sound
+    inference, but it IS inference — once the session's Incapsula retries are
+    exhausted, a real block and a stuck tab both end as a long zero-byte failure
+    and cannot be told apart from timing. The interstitial had been seen inside
+    the session object and thrown away.
+
+    Pinned behaviourally with a fake session: same timing that would otherwise
+    produce 'wedged', plus a sighting, must produce 'challenged'.
+    """
+    import importlib, time as _t
+
+    ex = importlib.import_module("workers.automation.coolbet_explorer")
+    sess_mod = importlib.import_module("workers.automation.coolbet_session")
+
+    # A fresh session must start with the flag present and False — consumers
+    # read it directly, and an attribute that only exists after a sighting turns
+    # every read into a getattr default that silently means "no challenge".
+    assert "self.saw_incapsula = False" in \
+        _engine_path("workers/automation/coolbet_session.py").read_text(encoding="utf-8"), (
+        "CoolbetSession must initialise saw_incapsula, not create it on first "
+        "sighting — an absent attribute reads as 'no challenge seen'")
+
+    class FakeSession:
+        _fs_session_name = "coolbet_prod"
+
+        def __init__(self, saw):
+            self.saw_incapsula = saw
+
+        def get(self, *a, **k):
+            _t.sleep(0)
+            raise Exception("FlareSolverr HTTP Error 500: Internal Server Error")
+
+    orig_cls = ex.CoolbetSession
+    orig_wedge = ex._WEDGED_AFTER_S
+    try:
+        ex._WEDGED_AFTER_S = 0.0          # any failure is "long enough" to look wedged
+        ex.CoolbetSession = lambda **kw: FakeSession(False)
+        r = ex.probe_coolbet_reachable()
+        assert r["state"] == "wedged", (
+            f"without a sighting this must still classify as wedged, got {r['state']!r} "
+            f"— the timing heuristic is correct in its own domain and must survive")
+
+        ex.CoolbetSession = lambda **kw: FakeSession(True)
+        r = ex.probe_coolbet_reachable()
+        assert r["state"] == "challenged", (
+            f"an Imperva interstitial was SEEN during the probe and it still "
+            f"returned {r['state']!r}. Direct evidence of who answered must beat "
+            f"a timing inference — the remedies are opposite, and cycling "
+            f"sessions at a live flag hardens it")
+        assert "hardens it" in r["detail"] or "do NOT cycle" in r["detail"], (
+            "the detail must tell the operator the remedy is to back off, since "
+            "the previous wording actively recommended the opposite one")
+    finally:
+        ex.CoolbetSession = orig_cls
+        ex._WEDGED_AFTER_S = orig_wedge
+    return "sighting -> challenged; no sighting -> wedged; both preserved"
+
+
+
 
 if __name__ == "__main__":
     main()

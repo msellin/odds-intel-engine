@@ -520,6 +520,22 @@ escalates; it does not.
   A **fixed** duration with **zero** bytes is a timeout, not a verdict Coolbet
   rendered. Nothing on the other end answered at all.
 
+- **AN INTERSTITIAL ACTUALLY SEEN OUTRANKS ALL OF THE ABOVE** (added 2026-09-21,
+  `COOLBET-PROBE-CALLS-IMPERVA-A-WEDGE`). `CoolbetSession` now sets
+  `saw_incapsula` when it observes an Imperva interstitial, and
+  `probe_coolbet_reachable` returns **`challenged`** on that flag regardless of
+  timing or byte count. The table is *inference*; a sighting is *direct evidence
+  of who answered*, and once the session's Incapsula retries are exhausted a real
+  block and a stuck tab both end as `500 / long / 0 bytes` and cannot be told
+  apart by shape at all.
+
+  > **Why this is worth a rule.** On 2026-09-18 the probe printed
+  > `Incapsula interstitial on …/fo-tree` and then returned `wedged` with the
+  > detail *"that is a stuck session, not a challenge verdict"* — contradicting
+  > its own evidence one line earlier, at the worst possible moment. Acting on
+  > the wrong verdict meant destroying FS sessions repeatedly and restarting the
+  > container **against a live flag, which hardens it**.
+
 - **⛔ THE TABLE ABOVE IS NECESSARY BUT NOT SUFFICIENT — you MUST probe a FRESH
   session before destroying anything (added 2026-09-20).** On 2026-09-19/20 the
   §7 Imperva flag produced the EXACT §6b signature on the sweep's own session:

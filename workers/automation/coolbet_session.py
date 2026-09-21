@@ -434,6 +434,11 @@ class CoolbetSession:
         # USE ONLY: this is not a way to cycle sessions past a challenge.
         self._require_auth = require_auth
         self._fs_session_override = fs_session_name
+        # True once an Imperva/Incapsula interstitial has been observed on this
+        # session object. Read by probe_coolbet_reachable — see the note at the
+        # retry loop in `_fs_get`. Never reset: "we saw a challenge during this
+        # probe" is what the caller needs, and one sighting is enough.
+        self.saw_incapsula = False
 
         # COOLBET-NO-AUTO-LOGIN (2026-06-12): /s/auth/login triggers SMS 2FA
         # every call from any IP that hasn't been device-trusted in the
@@ -1174,6 +1179,24 @@ class CoolbetSession:
                 # resetting it.
                 self._imperva_seed_done = True
                 break
+            # COOLBET-PROBE-CALLS-IMPERVA-A-WEDGE (2026-09-21). RECORD the
+            # sighting, do not merely log it.
+            #
+            # On 2026-09-18 `probe_coolbet_reachable` printed this exact line
+            # and then returned state='wedged' with the detail "that is a stuck
+            # session, not a challenge verdict" — contradicting, in its own
+            # verdict, evidence it had produced one line earlier. The two states
+            # have OPPOSITE remedies: a wedge wants the session destroyed, an
+            # Imperva flag wants us to BACK OFF, and cycling sessions at a live
+            # flag hardens it (runbook §7).
+            #
+            # It happened because the classifier reads only elapsed time and
+            # byte count — and after the retries below fail, an Imperva block
+            # and a stuck tab look identical from there. The interstitial was
+            # seen, inside this object, and then thrown away. So keep it: a
+            # sighting is direct evidence about WHO answered, which no timing
+            # heuristic can reconstruct.
+            self.saw_incapsula = True
             log.info("Incapsula interstitial on %s — letting the JS challenge "
                      "settle and retrying on the same FS session", url[:80])
             time.sleep(_INCAP_BACKOFF_S)

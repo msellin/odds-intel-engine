@@ -1875,7 +1875,10 @@ def probe_coolbet_reachable(*, session_name: str | None = None) -> dict:
                     "elapsed_s": round(_t.time() - t0, 1), "bytes": n}
         return {"state": "challenged",
                 "detail": f"answered but not a usable board ({n} bytes, "
-                          f"parsed={parsed}) — treat as still flagged",
+                          f"parsed={parsed})"
+                          + (" — Imperva/Incapsula interstitial seen"
+                             if getattr(sess, "saw_incapsula", False) else "")
+                          + " — treat as still flagged",
                 "elapsed_s": round(_t.time() - t0, 1), "bytes": n}
     except Exception as e:  # noqa: BLE001
         msg = str(e)
@@ -1884,6 +1887,30 @@ def probe_coolbet_reachable(*, session_name: str | None = None) -> dict:
                          or "timeout" in msg.lower())
         if not looks_blocked:
             return {"state": "down", "detail": msg[:200],
+                    "elapsed_s": elapsed, "bytes": 0}
+        # COOLBET-PROBE-CALLS-IMPERVA-A-WEDGE (2026-09-21). DIRECT EVIDENCE
+        # BEATS THE TIMING HEURISTIC, and it has to be checked first.
+        #
+        # On 2026-09-18 this probe logged "Incapsula interstitial on …/fo-tree"
+        # and then returned `wedged` with the detail "that is a stuck session,
+        # not a challenge verdict" — contradicting evidence it had printed one
+        # line earlier. Acting on the wrong one meant destroying FS sessions
+        # repeatedly and restarting the container against what was actually a
+        # live Imperva flag, which HARDENS it (runbook §7).
+        #
+        # The heuristic below is sound but it is inference: after the session's
+        # Incapsula retries are exhausted, a real block and a stuck tab both end
+        # as a long zero-byte failure and are indistinguishable from timing
+        # alone. A sighting is not inference — it says who answered. So if the
+        # session saw an interstitial during THIS probe, the flag is live and
+        # the remedy is to back off, whatever the clock says.
+        if getattr(sess, "saw_incapsula", False):
+            return {"state": "challenged",
+                    "detail": f"an Imperva/Incapsula interstitial was served during "
+                              f"this probe, then the request failed after {elapsed}s "
+                              f"({msg[:100]}). The flag is LIVE — do NOT cycle or "
+                              f"destroy FS sessions, that hardens it (runbook §7). "
+                              f"Back off and let it decay.",
                     "elapsed_s": elapsed, "bytes": 0}
         # A long, zero-byte failure is the FS session being stuck, not Coolbet
         # rendering a verdict — Coolbet's own challenge comes back in ~2s with a
