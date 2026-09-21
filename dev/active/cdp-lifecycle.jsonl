@@ -632,3 +632,13 @@
 {"at": "2026-09-21T06:25:12+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 20}
 {"at": "2026-09-21T06:55:16+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1790, "captcha": null, "tier": null, "procs": 20}
 {"at": "2026-09-21T07:25:16+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1793, "captcha": null, "tier": null, "procs": 20}
+{"at": "2026-09-21T07:55:17+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1787, "captcha": null, "tier": null, "procs": 20}
+{"at": "2026-09-21T08:25:26+00:00", "event": "observed", "cdp_up": true, "walled": true, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "rebootstrap", "procs": 20}
+{"at": "2026-09-21T08:25:26+00:00", "event": "killed", "why": "rebootstrap tier", "pid_count": 20}
+{"at": "2026-09-21T08:25:53+00:00", "event": "healed", "tier": "rebootstrap", "ok": false, "skipped_rebootstrap": null, "steps": ["quit CDP-Chrome", "parked walled profile -> Chrome-CDP-OddsIntel.walled-20260921-112529", "relaunch rc=0", "jwt sync FAILED"], "reason": "", "error": "  ok                = False\n  jwt_obtained      = False\n  ttl_s             = None\n  user_id           = None\n  placement_paused  = None \u2192 None\n  message           = No JWT found. Check that CDP-Chrom"}
+{"at": "2026-09-21T08:55:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1644, "captcha": null, "tier": null, "procs": 19}
+{"at": "2026-09-21T09:25:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1530, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-21T09:55:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-21T10:25:12+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 14}
+{"at": "2026-09-21T10:55:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 15}
+{"at": "2026-09-21T11:25:12+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1793, "captcha": null, "tier": null, "procs": 14}

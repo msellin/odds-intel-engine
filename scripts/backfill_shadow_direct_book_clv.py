@@ -72,13 +72,27 @@ SHARP_PREREG_BOTS = (
 )
 
 
+def _has_col(table: str, col: str) -> bool:
+    return bool(execute_query(
+        """SELECT 1 FROM information_schema.columns
+            WHERE table_name = %s AND column_name = %s""", (table, col)))
+
+
 def _rows(table: str, exclude: list[str], limit: int, offset: int):
     """Settled rows carrying a clv but no closing_bookmaker — the defect, exactly.
 
     `closing_bookmaker IS NULL` is also the idempotency predicate: it shrinks
-    monotonically, and rows we deliberately NULL drop out of it too, so a re-run
-    does not churn them.
+    monotonically. Recovered rows drop out because they gain a book; rows we
+    deliberately NULL drop out because they lose their clv. So a re-run does not
+    churn either, and there is no loop.
+
+    The three ledgers do NOT share a schema — verified 2026-09-21 the hard way,
+    twice: simulated_bets has no closing_margin/clv_margin_corrected, and
+    shadow_bets has no combo_legs. A combo has no single closing price, so
+    exclude combos where the concept exists and skip the clause where it does
+    not, rather than assuming a shared shape.
     """
+    combo = "AND t.combo_legs IS NULL" if _has_col(table, "combo_legs") else ""
     return execute_query(
         f"""SELECT t.id, t.match_id::text AS match_id, t.market, t.selection,
                    t.odds_at_pick, t.odds_at_pick_live, t.recommended_bookmaker,
@@ -90,7 +104,7 @@ def _rows(table: str, exclude: list[str], limit: int, offset: int):
                AND t.closing_bookmaker IS NULL
                AND t.result IN ('won', 'lost', 'void')
                AND b.name NOT LIKE 'inplay%%'
-               AND t.combo_legs IS NULL
+               {combo}
                AND (%s::text[] IS NULL OR b.name <> ALL(%s::text[]))
              ORDER BY t.id
              LIMIT %s OFFSET %s""",
@@ -130,6 +144,31 @@ def main() -> int:
             margin_memo[k] = closing_book_margin(mid, mkt, book)
         return margin_memo[k]
 
+    ts_memo: dict = {}
+
+    def ts_of(mid, mkt, sel, book, kickoff):
+        # Memoised on the SAME key as the close. Unmemoised this was one query
+        # per row (~106k) instead of one per distinct market (~7.2k), which is
+        # what made the first dry run crawl.
+        k = (mid, mkt, sel, book)
+        if k not in ts_memo:
+            rows = execute_query(
+                """SELECT os.timestamp FROM odds_snapshots os
+                    WHERE os.match_id = %s AND os.market = %s AND os.selection = %s
+                      AND os.bookmaker = %s AND os.timestamp <= %s
+                    ORDER BY os.is_closing DESC, os.timestamp DESC LIMIT 1""",
+                (mid, mkt, sel, book, kickoff))
+            ts_memo[k] = rows[0]["timestamp"] if rows else None
+        return ts_memo[k]
+
+    has_margin_cols = bool(execute_query(
+        """SELECT 1 FROM information_schema.columns
+            WHERE table_name = %s AND column_name = 'clv_margin_corrected'""",
+        (a.table,)))
+    if not has_margin_cols:
+        print(f"note: {a.table} has no closing_margin / clv_margin_corrected "
+              f"columns — writing the rest, margin correction is not available there")
+
     stats = defaultdict(int)
     by_bot: dict = defaultdict(lambda: {"n": 0, "old": 0.0, "new": 0.0, "nulled": 0})
     offset = 0
@@ -154,8 +193,8 @@ def main() -> int:
                 margin = round(m, 5) if m is not None else None
                 clv_mc = (round((1.0 + clv) / (1.0 + m) - 1.0, 5)
                           if m is not None else None)
-                mins = (int((r["kickoff"] - close_ts).total_seconds() // 60)
-                        if (close_ts := _close_ts(r, mkt, sel, book)) else None)
+                cts = ts_of(r["match_id"], mkt, sel, book, r["kickoff"])
+                mins = int((r["kickoff"] - cts).total_seconds() // 60) if cts else None
                 stats["recovered"] += 1
                 by_bot[r["bot_name"]]["n"] += 1
                 by_bot[r["bot_name"]]["old"] += float(r["old_clv"])
@@ -172,15 +211,32 @@ def main() -> int:
 
         if not a.dry_run:
             for w in writes:
-                execute_write(
-                    f"""UPDATE {a.table}
-                           SET closing_odds = %s, clv = %s, clv_live = %s,
-                               closing_bookmaker = %s, closing_margin = %s,
-                               clv_margin_corrected = %s,
-                               closing_minutes_before_ko = %s
-                         WHERE id = %s
-                           AND (closing_bookmaker IS DISTINCT FROM %s
-                                OR clv IS DISTINCT FROM %s)""", w)
+                # The two ledgers do NOT share a schema: simulated_bets has no
+                # closing_margin / clv_margin_corrected (verified 2026-09-21), so
+                # margin-correcting it is not merely unset but impossible. Write
+                # the columns each table actually has rather than assuming they
+                # match — the first run failed loudly here, which is the right
+                # failure, but it should not need to fail to find that out.
+                if has_margin_cols:
+                    execute_write(
+                        f"""UPDATE {a.table}
+                               SET closing_odds = %s, clv = %s, clv_live = %s,
+                                   closing_bookmaker = %s, closing_margin = %s,
+                                   clv_margin_corrected = %s,
+                                   closing_minutes_before_ko = %s
+                             WHERE id = %s
+                               AND (closing_bookmaker IS DISTINCT FROM %s
+                                    OR clv IS DISTINCT FROM %s)""", w)
+                else:
+                    execute_write(
+                        f"""UPDATE {a.table}
+                               SET closing_odds = %s, clv = %s, clv_live = %s,
+                                   closing_bookmaker = %s,
+                                   closing_minutes_before_ko = %s
+                             WHERE id = %s
+                               AND (closing_bookmaker IS DISTINCT FROM %s
+                                    OR clv IS DISTINCT FROM %s)""",
+                        (w[0], w[1], w[2], w[3], w[6], w[7], w[8], w[9]))
 
         total += len(batch)
         print(f"  {total:,} rows processed "
@@ -209,22 +265,6 @@ def main() -> int:
         o, n2 = 100 * d["old"] / d["n"], 100 * d["new"] / d["n"]
         print(f"{name[:40]:<40s}{d['n']:>7d}{o:>9.2f}%{n2:>9.2f}%{n2 - o:>8.2f}%{d['nulled']:>8d}")
     return 0
-
-
-def _close_ts(r, mkt, sel, book):
-    """Timestamp of the snapshot get_closing_odds resolved, for the freshness column.
-
-    Mirrors that helper's ordering exactly (is_closing first, then any pre-kickoff
-    row, newest wins). Kept separate so the VALUE always comes from the helper and
-    only its AGE is re-derived here.
-    """
-    rows = execute_query(
-        """SELECT os.timestamp FROM odds_snapshots os
-            WHERE os.match_id = %s AND os.market = %s AND os.selection = %s
-              AND os.bookmaker = %s AND os.timestamp <= %s
-            ORDER BY os.is_closing DESC, os.timestamp DESC LIMIT 1""",
-        (r["match_id"], mkt, sel, book, r["kickoff"]))
-    return rows[0]["timestamp"] if rows else None
 
 
 if __name__ == "__main__":
