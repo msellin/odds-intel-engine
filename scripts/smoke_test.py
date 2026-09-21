@@ -10704,18 +10704,38 @@ def _():
                 out.append((c.get("name"), c_pnl, l_pnl))
         return out
 
-    # BOT-AGGREGATES-SSOT-FLAKY-2026-09-06: the cache is rebuilt every 30 min
-    # (:15/:45) while simulated_bets settle continuously. A bet settling BETWEEN
-    # the cache write and this live read moves `live` off the cached snapshot and
-    # trips the tolerance — a false failure (the 20:42 UTC flake). simulated_bets
-    # has no settled_at to bound the live read, so instead make the check
-    # snapshot-stable: a drift only counts if the cache row's computed_at did NOT
-    # advance across the read. If a rebuild landed mid-test, re-read once against
-    # the fresh snapshot and re-judge.
+    # BOT-AGGREGATES-SSOT-FLAKY, properly fixed 2026-09-21 (migration 366).
+    #
+    # The cache is rebuilt on a schedule while simulated_bets settle
+    # continuously, so this test was comparing a snapshot against a moving
+    # target: a bet settling BETWEEN the cache write and the live read shows as
+    # drift that is not drift. It failed that way again today — bot_v10_all
+    # 360.06 vs 353.29, one €6.77 settlement inside a 12-minute window.
+    #
+    # The old mitigation only re-read when the CACHE moved mid-test, and its own
+    # comment named the reason it could do no better: "simulated_bets has no
+    # settled_at to bound the live read". Migration 366 adds one (by trigger, so
+    # every write path stamps it), so the live read is now taken AS OF the
+    # cache's computed_at and the race is gone rather than retried.
+    #
+    # settled_at IS NULL means "settled before migration 366" — every such row
+    # predates any cache we could be comparing against, so it always counts.
     breakdown, cache_ts = _read_cache()
     if breakdown is None:
         return  # no cache row yet — skip
-    drifted = _drift(breakdown, execute_query(_LIVE_SQL))
+
+    as_of_sql = _LIVE_SQL.replace(
+        "WHERE b.is_active = true",
+        "WHERE (sb.id IS NULL OR sb.settled_at IS NULL OR sb.settled_at <= %s)\n"
+        "          AND b.is_active = true",
+    )
+    try:
+        live = execute_query(as_of_sql, (cache_ts,))
+    except Exception:
+        # Migration 366 not applied on this database yet — fall back to the old
+        # snapshot-stability dance rather than failing on a missing column.
+        live = execute_query(_LIVE_SQL)
+    drifted = _drift(breakdown, live)
 
     if drifted:
         _, cache_ts2 = _read_cache()
@@ -10723,7 +10743,11 @@ def _():
             # a cache rebuild ran during the test — the first comparison raced a
             # moving target. Re-read both against the newer snapshot and re-judge.
             breakdown, cache_ts = _read_cache()
-            drifted = _drift(breakdown, execute_query(_LIVE_SQL))
+            try:
+                live = execute_query(as_of_sql, (cache_ts,))
+            except Exception:
+                live = execute_query(_LIVE_SQL)
+            drifted = _drift(breakdown, live)
 
     assert not drifted, (
         f"dashboard_cache.bot_breakdown drift on {len(drifted)} bots vs a stable "
