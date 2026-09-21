@@ -642,3 +642,4 @@
 {"at": "2026-09-21T10:25:12+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 14}
 {"at": "2026-09-21T10:55:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 15}
 {"at": "2026-09-21T11:25:12+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1793, "captcha": null, "tier": null, "procs": 14}
+{"at": "2026-09-21T11:55:06+00:00", "event": "observed", "cdp_up": true, "walled": null, "jwt": "valid", "jwt_ttl_s": 918, "captcha": null, "tier": null, "procs": 15}

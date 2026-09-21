@@ -72,6 +72,28 @@ SHARP_PREREG_BOTS = (
 )
 
 
+def _margin_correctable(market: str) -> bool:
+    """Mirrors settlement._market_complement_selections' accept-list, exactly.
+
+    PERF (2026-09-21): closing_book_margin is the most expensive of the three
+    lookups (~0.25s vs ~0.10s), and for a market with no unambiguous complement
+    it can only ever return None — double_chance outcomes overlap (1X and X2 both
+    contain the draw) so they are not a partition, and asian_handicap needs the
+    handicap line threaded through, which that helper does not take.
+
+    70.3% of the remaining shadow rows are double_chance and a further 4.1% are
+    asian_handicap, so three quarters of the work was spending the most expensive
+    query to be told None. This declines to ask a question whose answer is known
+    to be unusable — it does NOT re-implement the lookup, which is the clone
+    pattern that let SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES through.
+
+    Keep in step with settlement._market_complement_selections.
+    """
+    m = (market or "").strip().lower()
+    return (m in ("1x2", "1x2_1h", "btts")
+            or m.startswith(("over_under", "corners_", "team_total_")))
+
+
 def _has_col(table: str, col: str) -> bool:
     return bool(execute_query(
         """SELECT 1 FROM information_schema.columns
@@ -189,7 +211,8 @@ def main() -> int:
                 clv = round(float(r["odds_at_pick"]) / float(close) - 1, 4)
                 clv_live = (round(float(r["odds_at_pick_live"]) / float(close) - 1, 4)
                             if r["odds_at_pick_live"] else None)
-                m = margin_of(r["match_id"], mkt, book)
+                m = (margin_of(r["match_id"], mkt, book)
+                     if _margin_correctable(mkt) else None)
                 margin = round(m, 5) if m is not None else None
                 clv_mc = (round((1.0 + clv) / (1.0 + m) - 1.0, 5)
                           if m is not None else None)
