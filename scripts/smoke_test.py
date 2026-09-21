@@ -10633,6 +10633,27 @@ def _():
         names = [(r["name"], f"€{float(r['drift']):.2f}") for r in rows[:5]]
         assert False, f"{len(rows)} bots drifted: {names} — run scripts/fix_bot_bankroll_drift.py --apply"
 
+    # BANKROLL-SHADOW-BLIND (2026-09-21). The check above passes trivially for
+    # any bot that writes no simulated_bets — starting + SUM(NULL) == starting,
+    # drift 0. That is 12 of the 14 active bots: their settled P&L lives in
+    # `shadow_bets` (bot_ou35_model_v1 -€437, bot_unibet_trigger_sharp_1x2_v1
+    # +€206, bot_inplay_slowstate_v1 -€158), and those are the bots whose
+    # signals the operator follows with REAL MONEY.
+    #
+    # So "no drift" and "no data" were the same green tick. The column is not
+    # redefined to merge the two ledgers — they are different bet streams and
+    # their sum describes neither — but the diagnostic must SAY so, or the next
+    # reader takes a frozen €1.00 as a measurement.
+    drift_src = _engine_path("scripts/fix_bot_bankroll_drift.py").read_text(encoding="utf-8")
+    assert "shadow_bets" in drift_src, (
+        "fix_bot_bankroll_drift.py must report the shadow ledger too. Without "
+        "it the tool prints a clean bill of health for 12 of 14 active bots "
+        "purely because their bankroll column can never move")
+    assert "NOT APPLICABLE" in drift_src, (
+        "shadow-only bots must be labelled as such, not merged into the drift "
+        "table — 'this number is meaningless for this bot' is a different "
+        "statement from 'this number is correct'")
+
 
 @test("BOT-AGGREGATES-SSOT — dashboard_cache.bot_breakdown reconciles to live simulated_bets aggregates")
 def _():

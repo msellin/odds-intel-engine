@@ -39,24 +39,70 @@ def main():
     args = ap.parse_args()
 
     console.print("[bold]BOT-BANKROLL-DRIFT — diagnose + rebuild current_bankroll[/bold]")
+    # BANKROLL-SHADOW-BLIND (2026-09-21). `current_bankroll` is rebuilt from
+    # `simulated_bets` ONLY, and 12 of the 14 active bots write no simulated
+    # bets at all — their settled P&L lives in `shadow_bets`. So the column
+    # reads `starting_bankroll` forever, with zero drift, for exactly the bots
+    # whose signals the operator follows with real money
+    # ([[project_realmoney_shadow_signals]]). "No drift" meant "no data", and
+    # the two are indistinguishable in the old output.
+    #
+    # The column is NOT redefined to merge the two ledgers. They are different
+    # bet streams (every bot is re-evaluated into shadow_bets every 30 min),
+    # so adding them produces a number that is neither — bot_v10_all has 662
+    # simulated and 5,626 shadow bets, and their sum describes nothing. What
+    # changes is that the shadow ledger is REPORTED, so a shadow-only bot is
+    # visibly "not applicable, here is where its money actually is" instead of
+    # silently green.
     rows = execute_query("""
         SELECT b.id, b.name, b.starting_bankroll, b.current_bankroll,
-               COALESCE(SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')), 0) AS live_pnl,
-               (b.starting_bankroll + COALESCE(SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')), 0)) AS correct_bankroll
+               COALESCE(sim.pnl, 0) AS live_pnl,
+               (b.starting_bankroll + COALESCE(sim.pnl, 0)) AS correct_bankroll,
+               COALESCE(sim.n, 0)   AS sim_n,
+               COALESCE(shd.n, 0)   AS shadow_n,
+               COALESCE(shd.pnl, 0) AS shadow_pnl
         FROM bots b
-        LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
-        GROUP BY b.id, b.name, b.starting_bankroll, b.current_bankroll
+        LEFT JOIN (
+            SELECT bot_id, COUNT(*) AS n,
+                   SUM(pnl) FILTER (WHERE result IN ('won','lost')) AS pnl
+            FROM simulated_bets GROUP BY bot_id
+        ) sim ON sim.bot_id = b.id
+        LEFT JOIN (
+            SELECT bot_id, COUNT(*) AS n,
+                   SUM(pnl) FILTER (WHERE result IN ('won','lost')) AS pnl
+            FROM shadow_bets GROUP BY bot_id
+        ) shd ON shd.bot_id = b.id
+        WHERE b.retired_at IS NULL
         ORDER BY b.name
     """)
+
+    # Shadow-only bots: the column cannot drift because nothing ever moves it.
+    # Reported first, because "this bot's bankroll is meaningless" is the more
+    # useful fact than "these three bots are €4 out".
+    shadow_only = [r for r in rows
+                   if int(r["sim_n"]) == 0 and int(r["shadow_n"]) > 0]
+    if shadow_only:
+        st = Table(title=f"Bankroll NOT APPLICABLE — {len(shadow_only)} shadow-only bots")
+        for c in ("bot", "stored bankroll", "shadow bets", "shadow P&L"):
+            st.add_column(c)
+        for r in sorted(shadow_only, key=lambda r: -abs(float(r["shadow_pnl"] or 0))):
+            st.add_row(r["name"],
+                       f"€{float(r['current_bankroll']):.2f}",
+                       str(int(r["shadow_n"])),
+                       f"€{float(r['shadow_pnl'] or 0):+,.2f}")
+        console.print(st)
+        console.print("[dim]current_bankroll tracks simulated_bets only; these bots "
+                      "write none, so it is frozen at starting_bankroll by "
+                      "construction. Their real P&L is the shadow column.[/dim]\n")
     drifted = [
         r for r in rows
         if abs(float(r["current_bankroll"]) - float(r["correct_bankroll"])) > 0.50
     ]
     if not drifted:
-        console.print("[green]✓ No drift — bankrolls already match bet history[/green]")
+        console.print("[green]✓ No drift among bots that write simulated_bets[/green]")
         return
 
-    t = Table(title=f"Bankroll drift — {len(drifted)} bots")
+    t = Table(title=f"Bankroll drift — {len(drifted)} bots with a simulated ledger")
     for c in ("bot", "starting", "current (stored)", "correct (from pnl)", "drift"):
         t.add_column(c)
     for r in drifted:
