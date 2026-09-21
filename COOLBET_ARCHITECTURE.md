@@ -277,7 +277,7 @@ placer path read this and short-circuit.
 | `workers/automation/coolbet_placer.py` | `place_all_bets()` — market resolve + POST |
 | `workers/automation/coolbet_explorer.py` | Odds ingest (used from Railway) |
 | `workers/automation/coolbet_signaler.py` | Telegram signals (Railway) |
-| `workers/automation/coolbet_inplay.py` | In-play module |
+| ~~`workers/automation/coolbet_inplay.py`~~ | **DELETED 2026-09-21** — orphaned in-play capture + real-money execute branch, zero callers (COOLBET-INPLAY-ORPHAN). The FS session *named* `coolbet_inplay` is unrelated and still live: it belongs to `workers/jobs/inplay_coolbet_collector.py`, which captures research data and stakes nothing. |
 | `scripts/coolbet/flaresolverr_login_enroll.py` | SMS enrollment — emergency only |
 | `scripts/coolbet/health_ping.py` | Heartbeat (Railway) |
 | `scripts/coolbet/sweep_stale_sessions.py` | FS GC (Railway) |

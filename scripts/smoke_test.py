@@ -15603,55 +15603,55 @@ def _():
     ).read_text(), "store_coolbet_odds_snapshot must exist in supabase_client"
 
 
-@test("COOLBET-INPLAY-SNAPSHOTS — LISTEN/NOTIFY inplay capture with capture/paper/execute modes")
+@test("COOLBET-INPLAY-CAPTURE-DELETED — the orphaned in-play money path stays deleted")
 def _():
-    """COOLBET-INPLAY-SNAPSHOTS (2026-05-20, daemon-listener removed 2026-06-12):
-    measures slippage between an inplay bot's decision and what Coolbet's
-    live markets show at that moment. Postgres trigger on simulated_bets
-    fires NOTIFY inplay_bet_fired on every inplay decision (xg_source IS
-    NOT NULL). The LISTEN/notify consumer originally lived in
-    scripts/coolbet_daemon.py (retired with COOLBET-CDP-JWT-EXTRACT); the
-    capture module + migration + three modes (capture/paper/execute) still
-    pin the data-side contract for a future consumer to slot in."""
+    """COOLBET-INPLAY-ORPHAN-RESOLVES-FIRST-MATCH, resolved by deletion (2026-09-21).
+
+    `workers/automation/coolbet_inplay.py` was a 296-line module with a mode-C
+    REAL-MONEY execute branch (`_place_bet_api`) and **zero callers** — confirmed
+    by grep and recorded in docs/SYSTEM_MAP.md. The previous version of this test
+    pinned it in place "for a future consumer to slot in". That consumer was the
+    LISTEN/NOTIFY daemon, removed 2026-06-12; in-play betting itself was then
+    retired on 2026-08-21 on a negative result (n=1,246 settled, ROI -0.31%,
+    t=-0.07).
+
+    So it was a money primitive kept warm for a product direction that had been
+    measured and abandoned. Two specific hazards, which is why deleting beat
+    leaving it dormant:
+
+      * It was the one execute path nothing exercised, so the placement gate in
+        front of it could never be observed working — only asserted.
+      * The `limit=13` -> non-binding change (COOLBET-INPLAY, 2026-09-18) fed it
+        ~48 markets instead of ~12 into a resolver that returns the FIRST match.
+        Widening an unreachable code path's input is exactly the change nobody
+        reviews, because nothing runs it.
+
+    Migration 115 and the `coolbet_inplay_snapshots` table are KEPT (0 rows, but
+    dropping a table is irreversible for no gain). What must not come back is
+    the executable path.
+    """
     import pathlib
-    # Migration shipped
+
+    gone = pathlib.Path("workers/automation/coolbet_inplay.py")
+    assert not gone.exists(), (
+        "workers/automation/coolbet_inplay.py is back. It carried a real-money "
+        "execute branch with no callers, for a consumer removed 2026-06-12 in a "
+        "product direction retired 2026-08-21 at ROI -0.31%. If in-play returns, "
+        "it needs a path that something actually runs — not this one revived")
+
+    # The data-side contract survives; only the executable orphan went.
     mig = pathlib.Path("supabase/migrations/115_coolbet_inplay_snapshots.sql")
-    assert mig.exists(), "migration 115_coolbet_inplay_snapshots.sql missing"
-    mig_src = mig.read_text()
-    assert "CREATE TABLE" in mig_src and "coolbet_inplay_snapshots" in mig_src
-    assert "notify_inplay_bet_fired" in mig_src, "trigger function missing"
-    assert "pg_notify" in mig_src and "inplay_bet_fired" in mig_src, "NOTIFY missing"
-    assert "AFTER INSERT" in mig_src, "trigger must fire AFTER INSERT"
-    assert "xg_source IS NOT NULL" in mig_src, "must gate on xg_source"
-    assert "inplay_mode" in mig_src, "inplay_mode column missing"
+    assert mig.exists(), (
+        "migration 115 was deleted too. Migrations are history and are already "
+        "applied — removing one makes the schema unreproducible from the repo")
 
-    # Capture module
-    cap = pathlib.Path("workers/automation/coolbet_inplay.py")
-    assert cap.exists(), "workers/automation/coolbet_inplay.py missing"
-    cap_src = cap.read_text()
-    assert "def capture_inplay_snapshot" in cap_src
-    assert "def insert_snapshot" in cap_src
-    assert "matchStatus=LIVE" in cap_src or "live=True" in cap_src, \
-        "capture must request LIVE markets"
-    # All three modes wired
-    for mode in ("capture", "paper", "execute"):
-        assert f"'{mode}'" in cap_src or f'"{mode}"' in cap_src, f"mode {mode} not wired"
-    # execute mode actually POSTs
-    assert "_place_bet_api" in cap_src, "execute mode must call _place_bet_api"
-
-    # Live-markets support in explorer
-    exp_src = pathlib.Path("workers/automation/coolbet_explorer.py").read_text()
-    assert "live: bool" in exp_src, \
-        "fetch_match_markets must accept live=True for matchStatus=LIVE"
-    assert '"LIVE" if live else "OPEN"' in exp_src, \
-        "fetch_match_markets must switch matchStatus on the live flag"
-
-    # Display context fields populated for the notification — the inplay
-    # capture path still uses these for the Telegram message body.
-    assert "_resolve_decision_context" in cap_src, \
-        "capture must fetch team + bot context for the Telegram ping"
-    assert "_home_team" in cap_src and "_bot_name" in cap_src, \
-        "snap must include display-only context fields for the ping"
+    # The FS SESSION named coolbet_inplay is a different thing and is still live:
+    # it belongs to inplay_coolbet_collector (research capture, no placement).
+    coll = pathlib.Path("workers/jobs/inplay_coolbet_collector.py")
+    assert coll.exists(), (
+        "the in-play COLLECTOR was deleted along with the placer. It captures "
+        "research data and stakes nothing — the 2.2M-row minute/score history "
+        "INPLAY-STRATEGY-DISCOVERY consumed comes from this path")
 
 
 @test("COOLBET-MAINTENANCE-KEEPALIVE — keepalive uses 5-min /casino/fo/maintenance ping")

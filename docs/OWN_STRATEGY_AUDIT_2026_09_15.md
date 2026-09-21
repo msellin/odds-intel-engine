@@ -303,6 +303,7 @@ builds with the stop rules above, and no other OWN research until they report.**
 - `workers/jobs/inplay_bot.py` (135,266 bytes, gated by `INPLAY_STRATEGIES_ENABLED`
   in `live_poller.py:565`) and `workers/automation/coolbet_inplay.py`; plus
   `coolbet_placer.place_all_inplay_bets`. **Deferred 2026-09-15 → `INPLAY-BOT-DELETE`** (10 live modules incl. the settlement poller and 139 test lines reference them; not a same-day deletion).
+  > **UPDATED 2026-09-21:** `workers/automation/coolbet_inplay.py` is **deleted** (COOLBET-INPLAY-ORPHAN) — unlike the other two it had *zero* callers, so none of the entanglement that justified deferring applied to it. `inplay_bot.py` and `place_all_inplay_bets` remain open under `INPLAY-BOT-DELETE`.
 - ~~`pick_trigger_matcher.BOOK_MARKET_BOTS`: 4 of 11 entries map to inactive bots~~ **deleted 2026-09-15 (Phase 5)**.
 - ~~`bot_configs.WIDE_CONFIGS`; the line-shop O/U stop~~ **deleted 2026-09-15 (Phase 5)**; `_ODDS_TOLERANCE` is still used by the API placer's legacy flow and stays.
 - `pick_generator.generate` / `on_odds_written` / `match_and_emit` /
