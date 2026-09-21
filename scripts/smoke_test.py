@@ -48103,6 +48103,58 @@ def test_data_source_rejections_keep_their_reason():
 
 
 
+@test("CI-ALERT-CANNOT-BE-SILENT — an alerting step with no credential must fail, not exit 0")
+def test_ci_alert_cannot_be_silent():
+    """WEB-VPS-PINNED-DEPS-UNCOMMITTED (2026-09-21).
+
+    The daily Deploy Drift Check had been detecting real drift — the web repo
+    carried uncommitted package.json/package-lock.json pins, which blocks
+    `git pull --ff-only` and therefore blocks the whole web deploy — and
+    telling nobody, for weeks. Not because the alarm was wrong but because its
+    Telegram step opened with `[ -z "$TG_TOKEN" ] && exit 0` and neither
+    TELEGRAM_BOT_TOKEN nor TELEGRAM_CHAT_ID exists on this repository.
+
+    That is the RELIABILITY_LEDGER "fails closed and calls it success" shape:
+    the guard was written to keep a fork without secrets from erroring, and the
+    cost was that the only channel the operator actually reads was mute on the
+    repo it was written for.
+
+    Pinned here for every workflow that alerts: when the credential is absent
+    the step must emit a ::error and exit non-zero. Both of these run only
+    `if: failure()`, so nothing green is turned red by this — the job is
+    already failing; the change is whether its log says the alert went nowhere.
+    """
+    import pathlib as _p, re as _re
+
+    wf_dir = _engine_path(".github/workflows")
+    checked = []
+    for wf in sorted(wf_dir.glob("*.yml")):
+        src = wf.read_text(encoding="utf-8")
+        if "TELEGRAM_BOT_TOKEN" not in src or "sendMessage" not in src:
+            continue
+        # A step may legitimately SKIP itself on a missing secret via an `if:`
+        # guard at the step level (day_ahead_backtest_rerun does this) — that is
+        # visible in the run summary as a skipped step. What must never happen
+        # is a step that RUNS, finds no credential, and exits 0 from inside the
+        # shell, which is indistinguishable from a delivered alert.
+        assert not _re.search(r'\[ -z "\$\{TG_TOKEN:-\}" \]\s*&&\s*exit 0', src), (
+            f"{wf.name}: the Telegram step exits 0 when the token is missing. "
+            f"That is how a real drift alarm ran for weeks notifying nobody — "
+            f"the job's own log reported the alert step as successful")
+        checked.append(wf.name)
+
+    assert checked, (
+        "no Telegram-alerting workflow found — either they were removed (fine, "
+        "delete this test) or renamed past this test's detection (not fine)")
+
+    for name in ("deploy.yml", "deploy_drift_check.yml"):
+        src = (wf_dir / name).read_text(encoding="utf-8")
+        assert "::error title=Alert could not be sent" in src, (
+            f"{name}: alert step must announce loudly that it could not notify")
+    return f"{len(checked)} alerting workflow(s) fail loudly without a token"
+
+
+
 
 if __name__ == "__main__":
     main()
