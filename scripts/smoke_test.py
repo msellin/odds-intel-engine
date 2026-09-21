@@ -45738,6 +45738,56 @@ def test_ledger_snapshot_fresh():
     )
 
 
+@test("MFV-ODDS-DRIFT-PRE-KICKOFF — a pre-match feature may not read a post-match price")
+def test_mfv_odds_drift_pre_kickoff():
+    """MODEL-TRAINING-DEBT (2026-09-21).
+
+    `_build_feature_row_batched` derives odds_drift_home and steam_move from the
+    FIRST and LAST 1x2 snapshot it is handed. The batch loader that hands them
+    over had no time bound at all, so "last" was frequently a price stamped after
+    the match had started — or finished.
+
+    Measured over 30 days of settled matches before the fix:
+
+        latest 1x2 snapshot after kickoff    9,929 of 12,366 matches   80.3%
+        ... more than 15 min after kickoff   3,581
+        ... more than  2 HOURS after         2,756                     22%
+
+    Two hours is a full match, so for roughly a fifth of training rows the
+    "closing line proxy" was a post-full-time price that knows the result. That
+    is leakage into a pre-match feature, of the same family as ELO-FORM-LEAK.
+
+    WHAT DOES NOT FIX IT, and why this test checks for the bound specifically:
+    the task was filed asking for an `is_live` filter, and `is_live IS TRUE`
+    matches ZERO of those 9,929 rows. The contamination is unflagged late writes,
+    not rows marked live. A reviewer who adds only `is_live` will believe this is
+    fixed and it will not be.
+    """
+    src = _engine_path("workers/api_clients/supabase_client.py").read_text(encoding="utf-8")
+
+    i = src.index("Batch load: odds_snapshots")
+    block = src[i:i + 2600]
+
+    assert "o.timestamp <= m.date" in block, (
+        "the 1x2 batch loader must bound snapshots to PRE-KICKOFF "
+        "(o.timestamp <= m.date). Without it the closing-line proxy behind "
+        "odds_drift_home / steam_move is a post-match price on ~22% of rows"
+    )
+    assert "JOIN matches m" in block, (
+        "the kickoff bound needs the matches join — without it there is no "
+        "kickoff time to compare against"
+    )
+    assert "is_live IS NOT TRUE" in block, (
+        "keep the is_live guard too: a live-flagged row is never a pre-match "
+        "price either, even though it is not what made this leak"
+    )
+    # the point of the comment is that is_live ALONE is not the fix
+    assert "is_live" in block and "ZERO" in block, (
+        "the comment must record that an is_live filter alone fixes nothing "
+        "here — otherwise the next reader re-derives it or, worse, trusts it"
+    )
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).

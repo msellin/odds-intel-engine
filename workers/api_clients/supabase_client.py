@@ -1511,11 +1511,29 @@ def _build_mfv_rows_for_matches(matches: list[dict], date_str: str) -> int:
     # picks snaps[0] as opening which is correct for both old and new data.
     odds_by_match: dict[str, list] = {}
     for chunk in _chunk_list(all_match_ids, 200):
+        # MODEL-TRAINING-DEBT (2026-09-21): bound to PRE-KICKOFF snapshots.
+        #
+        # This query had no time bound at all, and `_build_feature_row_batched`
+        # takes the LAST row as its closing-line proxy for odds_drift_home /
+        # steam_move. Measured over 30 days of settled matches: the latest 1x2
+        # snapshot lands AFTER kickoff on 9,929 of 12,366 matches (80.3%), and
+        # for 2,756 of them (22%) it is more than TWO HOURS after — i.e. after
+        # full time. A price stamped after the final whistle knows the result,
+        # so a pre-match training feature was being built from it.
+        #
+        # Note what does NOT fix this: an `is_live` filter. The task was filed
+        # asking for one, but `is_live IS TRUE` matches ZERO of those 9,929 rows
+        # — the contamination is unflagged late/post-match writes, not rows
+        # marked live. The kickoff bound is the fix; is_live is kept as well
+        # because a live-flagged row is never a pre-match price either.
         odr = execute_query(
-            """SELECT match_id, selection, odds, timestamp, is_opening
-               FROM odds_snapshots
-               WHERE match_id = ANY(%s::uuid[]) AND market = '1x2'
-               ORDER BY timestamp ASC
+            """SELECT o.match_id, o.selection, o.odds, o.timestamp, o.is_opening
+               FROM odds_snapshots o
+               JOIN matches m ON m.id = o.match_id
+               WHERE o.match_id = ANY(%s::uuid[]) AND o.market = '1x2'
+                 AND o.is_live IS NOT TRUE
+                 AND o.timestamp <= m.date
+               ORDER BY o.timestamp ASC
                LIMIT 10000""",
             (chunk,),
         )
