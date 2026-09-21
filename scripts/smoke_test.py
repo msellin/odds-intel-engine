@@ -48739,6 +48739,58 @@ def test_af_transfers_retired():
 
 
 
+@test("CAN-STAKE-ONE-DEFINITION — the web strip must not claim the engine's verdict")
+def test_can_stake_one_definition():
+    """CAN-STAKE-ONE-DEFINITION (2026-09-21).
+
+    Two definitions of one word. `coolbet_control.can_stake()` requires the
+    three DB gates AND a loaded `--execute` launchd agent (or ROUTER_ALLOW_REAL
+    in the env). The web safety strip weighed only the three DB gates and
+    labelled the result CAN_STAKE.
+
+    They disagree today: both plists sit in ~/Library/LaunchAgents/paused/, so
+    the engine says no while the strip would have said yes. Of the two possible
+    errors, a GREEN can-stake on a host that cannot stake is the dangerous one —
+    it invites the operator to assume automation is covering a pick.
+
+    The browser genuinely cannot see a launchd agent, so this is not fixable by
+    computing harder; the fix is for the label to claim only what it measures.
+    Pinned so nobody restores the stronger name over the weaker computation.
+    """
+    import pathlib as _p, re as _re
+
+    f = _p.Path("/Users/margussellin/www/odds-intel-web/src/components/shadow-bots/safety-strip.tsx")
+    if not f.exists():
+        return "odds-intel-web not checked out beside the engine — skipped"
+    src = f.read_text(encoding="utf-8")
+
+    assert 'label="CAN_STAKE"' not in src, (
+        "the chip is labelled CAN_STAKE again. It computes three DB gates; the "
+        "engine's can_stake() also requires a loaded --execute agent, which the "
+        "browser cannot observe. Green here on a host that cannot stake is the "
+        "dangerous direction of that error")
+    assert "dbGatesOpen" in src, "the honestly-named predicate is gone"
+
+    # The engine's extra condition must still exist — if can_stake() is ever
+    # reduced to the DB gates, the two DO agree and this test should be revisited
+    # rather than silently protecting a distinction that no longer exists.
+    eng = _engine_path("workers/automation/coolbet_control.py").read_text(encoding="utf-8")
+    assert "execute_agents_loaded" in eng and "router_allow_real_env" in eng, (
+        "coolbet_control.can_stake() no longer weighs the host executors. If "
+        "that is deliberate the two definitions have converged — update this "
+        "test and the web label together rather than leaving one of them lying")
+
+    # The caps are env-overridable in the engine; the web copy must say so.
+    ui = _engine_path("scripts/place_coolbet_ui.py").read_text(encoding="utf-8")
+    assert "COOLBET_MAX_BETS_PER_DAY" in ui, "the env override is gone from the placer"
+    assert "COOLBET_MAX_BETS_PER_DAY" in src, (
+        "the web hardcodes 80/800 without noting the engine reads those from "
+        "env — a changed cap would leave the strip quietly wrong about the "
+        "blast radius")
+    return "chip claims only the DB gates; caps labelled as defaults"
+
+
+
 
 if __name__ == "__main__":
     main()
