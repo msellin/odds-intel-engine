@@ -1662,7 +1662,7 @@ Kept as a worked negative so the population-level evidence does not get re-disco
 >
 > Action: revive individual items when a real data gap drives them. Until then, parked here to keep the queue cohesive.
 >
-> **#048 ⬜ FREE-TIER-BETFAIR-EXCHANGE-NOTE** — Betfair Exchange Developer Program offers a free Delayed Application Key (1-180s data lag) — but **personal use only**. Our project is commercial → using this would violate their ToS. NOT actionable as a data source. Document the limitation so we don't reconsider.
+> **#048 ✅ Done 2026-09-21 FREE-TIER-BETFAIR-EXCHANGE-NOTE (👥 PICKS — an exchange price is the margin-free anchor a published edge wants, so this one will keep resurfacing).** Recorded in `DATA_SOURCES.md` § "Evaluated and rejected" with the LICENCE ground stated explicitly, not the lag — a reader who remembers only "Betfair was rejected" assumes it was the 1–180 s delay, correctly concludes that delay is harmless pre-match, and re-opens it. Section carries a re-open condition (a commercial key, or changed terms). Smoke `DATA-SOURCE-REJECTIONS-KEEP-THEIR-REASON`, mutation-verified. Original note: — Betfair Exchange Developer Program offers a free Delayed Application Key (1-180s data lag) — but **personal use only**. Our project is commercial → using this would violate their ToS. NOT actionable as a data source. Document the limitation so we don't reconsider.
 >
 > ## 2026-06-06 — CLV-BACKFILL
 >

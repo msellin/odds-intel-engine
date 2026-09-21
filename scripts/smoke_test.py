@@ -48061,6 +48061,48 @@ def _():
     return "read-only, polite, sinkhole-refusing, owner-disableable"
 
 
+@test("DATA-SOURCE-REJECTIONS-KEEP-THEIR-REASON — a ruled-out source must say WHY, not just that")
+def test_data_source_rejections_keep_their_reason():
+    """FREE-TIER-BETFAIR-EXCHANGE-NOTE (2026-09-21).
+
+    Betfair Exchange's free Delayed Application Key keeps resurfacing as an
+    obvious win: it is free, and an exchange price is the one series with no
+    bookmaker margin in it — exactly what a sharp anchor wants. The
+    disqualifier is invisible on the pricing page: the free key is granted for
+    PERSONAL USE ONLY and this is a commercial project.
+
+    The failure mode this guards is a rejection recorded as a bare name with no
+    reason, which reads as 'nobody got round to it' and invites a second
+    evaluation. So the section must carry, for each entry, the reason AND the
+    condition under which it may be revisited.
+
+    Note it pins the LICENCE wording specifically. A future reader who only
+    remembers 'Betfair was rejected' will assume it was the 1-180s lag — the
+    visible, technical-sounding property — and conclude the lag is fine for
+    pre-match and re-open it. The lag genuinely is fine; that is not the
+    blocker.
+    """
+    doc = _engine_path("DATA_SOURCES.md").read_text(encoding="utf-8")
+
+    assert "## Evaluated and rejected" in doc, (
+        "the rejected-sources section is gone — every source ruled out on a "
+        "non-obvious ground is now unrecorded and will be re-evaluated")
+
+    section = doc.split("## Evaluated and rejected", 1)[1].split("\n## ", 1)[0]
+
+    assert "Betfair" in section, "the Betfair Exchange rejection is not recorded"
+    assert "personal use only" in section.lower(), (
+        "the Betfair entry must state the LICENCE ground (free Delayed App Key "
+        "is personal-use-only, we are commercial). Without it the next reader "
+        "assumes the 1-180s lag was the objection, decides the lag is "
+        "acceptable pre-match — which it is — and re-opens it")
+    assert "Re-open only if" in section, (
+        "a rejection with no re-open condition is indistinguishable from an "
+        "unfinished evaluation")
+    return "Betfair rejection recorded with its licence reason + re-open condition"
+
+
+
 
 if __name__ == "__main__":
     main()

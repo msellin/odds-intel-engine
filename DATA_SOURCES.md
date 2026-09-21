@@ -311,6 +311,21 @@ AH-bot prototype follow-up (`scripts/backtest_ah_bot_prototype.py`, 5,254 deriva
 
 ---
 
+## Evaluated and rejected — do not reconsider without new information
+
+Sources that were looked at properly and ruled out. They are recorded here *with
+the reason* so the same evaluation is not paid for twice; several of these look
+attractive on their pricing page and the disqualifier is not visible there.
+
+| Source | Looks like | Why it is ruled out | Ruled out |
+|---|---|---|---|
+| **Betfair Exchange Developer Program** — free Delayed Application Key | A free exchange feed (1–180 s data lag) — i.e. the one price series with no bookmaker margin in it, which is exactly what a sharp anchor wants | **Licence, not latency.** The free Delayed App Key is granted for **personal use only**. OddsIntel is a commercial project (paid tiers, published picks), so ingesting it would breach the Developer Program terms. The 1–180 s lag is irrelevant to pre-match use and is *not* the blocker — the blocker is that we are not an eligible user of the free key. A paid/Live App Key is a separate commercial application and is not covered by this note. | 2026-09-21 |
+
+**Re-open only if** the licence position changes (a commercial key is obtained,
+or Betfair's terms change), not because the lag or the coverage looks acceptable.
+
+---
+
 ## Over/Under bookmaker blacklist (ODDS-QUALITY-CLEANUP, 2026-05-10)
 
 These three sources ship clearly broken Over/Under data and are excluded from
