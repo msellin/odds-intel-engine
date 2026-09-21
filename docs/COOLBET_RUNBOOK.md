@@ -255,9 +255,30 @@ which matters because the tiers differ by four orders of magnitude in cost:
 
 | Symptom | Tier | Cost |
 |---|---|---|
-| CDP-Chrome not running | **relaunch** | seconds, no profile touched, **never rate-limited** |
+| CDP-Chrome not running, **or answering :9222 but not drivable** | **relaunch** | seconds, no profile touched, **never rate-limited** |
 | up + rendering, no JWT (a lapsed session — the common case) | **auto-login** (`--cdp-auto-login`, creds from `.env`) | seconds |
 | up but walled (STAY COOL) | **re-bootstrap** (profile re-copy) | GB, max once / 6h |
+
+**And the tier escalates on repeated failure** (`CDP-SELFHEAL-CANNOT-ESCALATE`,
+2026-09-21). After **3 consecutive failures of the same tier** the ladder moves
+up one rung: auto-login → relaunch → re-bootstrap. A success, or a different
+tier being chosen in between, resets the count; a rate-limit *skip* does not
+count as a failure. Three rather than one so a single timed-out page cannot
+trigger a multi-GB re-copy — at the :25/:55 cadence that is ~1.5h.
+
+> **Why this exists.** The chooser picks by SYMPTOM and knew nothing of HISTORY,
+> so a tier that could not work was re-chosen every 30 minutes forever. Measured
+> in `dev/active/cdp-lifecycle.jsonl` on 2026-09-21: **auto-login failed 105
+> times**, the last 8 consecutively over 3.5h with an identical error.
+>
+> It was unreachable-by-construction, not unlucky. `:9222/json/version` answered
+> 200 with a Chrome version string while `connect_over_cdp` died with *"Frame was
+> detached"* — so `cdp_up=True` blocked relaunch, the failed probe left
+> `walled=None` which blocked re-bootstrap, and the only tier left used the same
+> dead driver. **`diagnose()` now reports `cdp_usable` separately**: the endpoint
+> answering and the driver being able to attach are different questions, and only
+> the second one is what a remedy needs. Fixed live the same day — the escalated
+> relaunch restored a drivable browser (`cdp_usable: true`, `walled: false`).
 
 Two bugs found by running it against a real system, both worth knowing:
 - v1 asked `cdp_up AND no JWT`, so a **dead browser** gave `needs heal: False`

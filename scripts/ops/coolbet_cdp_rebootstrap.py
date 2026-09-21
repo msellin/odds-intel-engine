@@ -123,12 +123,90 @@ def _cdp_up() -> bool:
         return False
 
 
+
+# CDP-SELFHEAL-CANNOT-ESCALATE (2026-09-21). The cheap tier is a trap door.
+#
+# The tier chooser picks by SYMPTOM and never by HISTORY, so a tier that cannot
+# work is re-chosen every 30 minutes forever. Measured in the lifecycle log on
+# 2026-09-21: autologin failed 105 times, the last 8 of them consecutively over
+# 3.5 hours, each with the identical error, while the two expensive tiers were
+# structurally unreachable.
+#
+# The generalisable rule: WHICH REMEDY TO TRY is a function of the symptom, but
+# WHETHER THIS REMEDY WORKS is a fact only the history knows. So escalate on
+# repeated failure of the SAME tier.
+#
+# Three attempts, not one: the ladder must tolerate a transient (a page that
+# times out once, a token that lapses mid-run). At the :25/:55 cadence three
+# failures is ~1.5h — long enough that it is not noise, short enough that it is
+# not a shift.
+ESCALATE_AFTER = 3
+_LADDER = {"autologin": "relaunch", "relaunch": "rebootstrap"}
+
+
+def _consecutive_failures(tier: str) -> int:
+    """How many times in a row this tier has just failed, per the lifecycle log.
+
+    Counts backwards from the most recent `healed` event and stops at the first
+    entry that is not a failure of THIS tier — so a success, or a switch to a
+    different tier, resets the count. A rate-limit skip is not a failure and is
+    ignored rather than counted (see the `skipped_rebootstrap` note below).
+    """
+    try:
+        lines = EVENTS.read_text().strip().split("\n")
+    except Exception:  # noqa: BLE001
+        return 0
+    n = 0
+    for raw in reversed(lines):
+        try:
+            r = json.loads(raw)
+        except Exception:  # noqa: BLE001
+            continue
+        if r.get("event") != "healed":
+            continue
+        if r.get("skipped_rebootstrap"):
+            continue
+        if r.get("tier") != tier:
+            break
+        if r.get("ok") is True:
+            break
+        n += 1
+    return n
+
+
+def _escalate(tier: str | None) -> tuple[str | None, str | None]:
+    """Return (tier_to_run, why_escalated)."""
+    if tier is None or tier not in _LADDER:
+        return tier, None
+    fails = _consecutive_failures(tier)
+    if fails < ESCALATE_AFTER:
+        return tier, None
+    nxt = _LADDER[tier]
+    return nxt, (f"{tier} failed {fails}x in a row — escalating to {nxt}. "
+                 f"A remedy that has not worked {fails} times running is not "
+                 f"the remedy, whatever the symptom says.")
+
+
 def diagnose() -> dict:
     """Is the CDP profile healthy? Read-only."""
-    out = {"cdp_up": _cdp_up(), "walled": None, "has_jwt": None,
+    # CDP-SELFHEAL-CANNOT-ESCALATE (2026-09-21). `cdp_up` is an HTTP GET on
+    # :9222/json/version. Every REMEDY, by contrast, drives the browser through
+    # the patchright CDP driver. Those are not the same question, and on
+    # 2026-09-21 they disagreed for hours: /json/version answered 200 with a
+    # Chrome version string while `connect_over_cdp` died with "Frame was
+    # detached" / "Connection closed while reading from the driver".
+    #
+    # A browser in that state is UP by the tier chooser's measure and USELESS by
+    # every remedy's — so `cdp_up=True` blocked the relaunch branch, the failed
+    # probe left `walled=None` which blocked rebootstrap, and the only reachable
+    # tier was autologin, which uses the same dead driver. It failed 105 times.
+    #
+    # So record BOTH. `cdp_usable` is what the remedies actually need.
+    out = {"cdp_up": _cdp_up(), "cdp_usable": None, "walled": None, "has_jwt": None,
            "jwt_state": None, "jwt_ttl_s": None, "captcha": None,
            "limit_dialog": None, "detail": ""}
     if not out["cdp_up"]:
+        out["cdp_usable"] = False
         out["detail"] = "CDP-Chrome not reachable on :9222"
         return out
     try:
@@ -175,7 +253,11 @@ def diagnose() -> dict:
             lim = [w for w in ("limiit", "limit", "vastutustundlik",
                                "responsible") if w in body.lower()]
             out["limit_dialog"] = lim or None
+            # Reached the page through the driver: the browser is genuinely
+            # drivable, not merely answering HTTP.
+            out["cdp_usable"] = True
     except Exception as e:  # noqa: BLE001
+        out["cdp_usable"] = False
         out["detail"] = f"probe failed: {type(e).__name__}: {str(e)[:90]}"
 
     # JWT CHECK RUNS OUTSIDE THE PATCHRIGHT CONNECTION, and must.
@@ -440,7 +522,11 @@ def main() -> int:
         tier = None
     elif d.get("walled"):
         tier = "rebootstrap"
-    elif not d["cdp_up"]:
+    elif not d["cdp_up"] or d.get("cdp_usable") is False:
+        # `cdp_usable is False` is the case that ran for hours on 2026-09-21:
+        # :9222/json/version answered 200 while the driver could not attach.
+        # That browser needs killing and restarting, not signing into — and
+        # under the old condition it read as "up" and was never relaunched.
         tier = "relaunch"
     elif d.get("has_jwt") is False:
         # Browser is up and RENDERING (not walled) but holds no token — i.e. the
@@ -453,8 +539,12 @@ def main() -> int:
         # copied several GB every time a 30-minute token lapsed — turning the
         # most routine event into the most expensive one.
         tier = "autologin"
+    tier, escalated = _escalate(tier)
     result = {"diagnosis": d, "needs_heal": tier is not None, "tier": tier,
-              "healed": None}
+              "escalated": escalated, "healed": None}
+    if escalated:
+        print(f"ESCALATED: {escalated}")
+        _log_event("escalated", tier=tier, reason=escalated)
     # One line per observation — this is what turns "it keeps dying" into a
     # timeline you can actually read.
     _log_event("observed", cdp_up=d.get("cdp_up"), walled=d.get("walled"),

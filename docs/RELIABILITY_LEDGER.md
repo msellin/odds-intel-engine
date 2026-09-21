@@ -419,6 +419,7 @@ is exercised and round-tripped, because valid-but-wrong SQL passes a
 source-only check. When adding a healthcheck, the dedup write is not plumbing
 to be eyeballed; test it like the alert itself.
 
+
 ## 13b. A remedy that resolves its target differently from the detector
 
 2026-09-21 (`COOLBET-WEDGE-SELFHEAL-NEVER-FIRED`, found while triaging
@@ -459,6 +460,41 @@ FlareSolverr on each candidate URL and asserts the destroy hits
 `COOLBET_FS_LOCAL_URL` first — behavioural, because a source-only check cannot
 tell which host a URL names. It also asserts `coolbet_prod` is refused before any
 request leaves the process.
+
+### 13c. …and the same shape again: a remedy chosen by symptom, never by history
+
+2026-09-21, found doing `CDP-SELFHEAL-CANNOT-ESCALATE` on the same day as §13b,
+which is the point of recording them together.
+
+The Coolbet CDP self-heal picks a repair tier from the current symptom. It has
+no memory, so a tier that cannot possibly work is re-chosen every 30 minutes
+indefinitely — **auto-login failed 105 times**, the last 8 consecutively over
+3.5h with an identical error, while the two escalation tiers were unreachable by
+construction.
+
+Unreachable how: `cdp_up` is an HTTP GET on `:9222/json/version`; every remedy
+drives the browser through the patchright CDP driver. Those answered differently
+— 200 with a Chrome version string, versus *"Frame was detached"*. So the
+browser was UP to the chooser and USELESS to every repair, `cdp_up=True` blocked
+relaunch, and the probe failure left `walled=None`, blocking re-bootstrap.
+
+**Two rules, and the second is the transferable one:**
+
+1. A health flag must answer the question the REMEDY asks, not the cheapest
+   question available. `diagnose()` now reports `cdp_usable` (the driver can
+   attach) alongside `cdp_up` (something answers the port).
+2. **Which remedy to try is a function of the symptom; whether this remedy works
+   is a fact only the history knows.** Any self-heal that re-derives its choice
+   from scratch each tick can loop forever on a remedy that has never once
+   succeeded — and will look busy the whole time.
+
+Escalate after 3 consecutive failures of the same tier, not 1: the ladder has to
+tolerate a transient, or one timed-out page triggers a multi-GB profile re-copy.
+
+**Guard:** smoke `CDP-SELFHEAL-ESCALATES` drives the ladder against a synthetic
+lifecycle log — escalates at 3, resets on success, counts per-tier and only
+consecutively, and treats a rate-limit skip as "no attempt" rather than "failed
+attempt".
 
 ## 12. A column filled by a nightly backfill can never be a model feature
 

@@ -48462,6 +48462,93 @@ def test_postgrest_no_over_cap_range():
 
 
 
+@test("CDP-SELFHEAL-ESCALATES — a remedy that keeps failing must be abandoned, not repeated")
+def test_cdp_selfheal_escalates():
+    """CDP-SELFHEAL-CANNOT-ESCALATE (2026-09-21).
+
+    Two defects, both live when this was written, both of the same family.
+
+    (1) THE TIER CHOOSER MEASURED THE WRONG THING. `cdp_up` is an HTTP GET on
+    :9222/json/version; every REMEDY drives the browser through the patchright
+    CDP driver. On 2026-09-21 those disagreed for hours — /json/version answered
+    200 with a Chrome version string while connect_over_cdp died with "Frame was
+    detached". That browser was UP by the chooser's measure and USELESS by every
+    remedy's, so the relaunch branch was blocked by cdp_up=True, the rebootstrap
+    branch was blocked because the failed probe left walled=None, and the only
+    reachable tier was autologin — which uses the same dead driver.
+
+    (2) NOTHING COUNTED. The chooser picks by symptom and never by history, so
+    that tier was re-chosen every 30 minutes forever: 105 autologin failures in
+    the lifecycle log, the last 8 consecutive over 3.5h with an identical error.
+
+    The generalisable rule, and the reason both halves are pinned together:
+    WHICH remedy to try is a function of the symptom, but WHETHER this remedy
+    works is a fact only the history knows.
+
+    Verified live: with the fix, the chooser escalated autologin -> relaunch,
+    the relaunch restored a drivable browser (cdp_usable true, walled false),
+    and the counter reset.
+    """
+    import json as _json, tempfile, os as _os, importlib
+
+    mod = importlib.import_module("scripts.ops.coolbet_cdp_rebootstrap")
+
+    src = _engine_path("scripts/ops/coolbet_cdp_rebootstrap.py").read_text(encoding="utf-8")
+    assert 'd.get("cdp_usable") is False' in src, (
+        "the relaunch branch must also fire when the CDP endpoint answers but "
+        "the driver cannot attach — that state read as 'up' and looped on the "
+        "cheapest tier for hours")
+    assert '"cdp_usable"' in src, "diagnose() must report driver usability separately"
+
+    # The ladder, exercised against a synthetic lifecycle log.
+    orig = mod.EVENTS
+    tmpdir = tempfile.mkdtemp()
+    try:
+        mod.EVENTS = __import__('pathlib').Path(_os.path.join(tmpdir, "lifecycle.jsonl"))
+
+        def write(events):
+            with open(mod.EVENTS, "w") as fh:
+                for e in events:
+                    fh.write(_json.dumps(e) + "\n")
+
+        fail = {"event": "healed", "tier": "autologin", "ok": False}
+        ok = {"event": "healed", "tier": "autologin", "ok": True}
+
+        write([fail, fail])
+        assert mod._escalate("autologin")[0] == "autologin", (
+            "two failures must NOT escalate — the ladder has to tolerate a "
+            "transient, or a single timed-out page triggers a multi-GB re-copy")
+
+        write([fail, fail, fail])
+        nxt, why = mod._escalate("autologin")
+        assert nxt == "relaunch" and why, "three failures must escalate one rung"
+
+        write([fail, fail, fail, ok])
+        assert mod._escalate("autologin")[0] == "autologin", (
+            "a success must reset the count — otherwise one bad afternoon "
+            "escalates every future heal for the life of the log")
+
+        write([fail, fail, fail, {"event": "healed", "tier": "relaunch", "ok": False}])
+        assert mod._escalate("autologin")[0] == "autologin", (
+            "the count must be per-tier and CONSECUTIVE; a different tier's "
+            "attempt in between breaks the streak")
+
+        write([fail, fail, fail,
+               {"event": "healed", "tier": "autologin", "ok": False,
+                "skipped_rebootstrap": True}, fail])
+        assert mod._escalate("autologin")[0] == "relaunch", (
+            "a rate-limit SKIP is not a failed attempt and must not reset the "
+            "streak — it is the absence of a remedy, not a remedy that failed")
+
+        # rebootstrap is the top of the ladder; there is nothing above it.
+        write([fail, fail, fail, fail])
+        assert mod._escalate("rebootstrap")[0] == "rebootstrap"
+    finally:
+        mod.EVENTS = orig
+    return "escalates after 3, resets on success, per-tier, skip-aware"
+
+
+
 
 if __name__ == "__main__":
     main()
