@@ -333,14 +333,14 @@ restart. No extra hosting cost on the VPS; blast radius isolated.
   `api_football_id`.
 
 ### ② Enrichment (`fetch_enrichment.py`)
-- **04:15 (full):** standings (T9), H2H (T10), team stats (T2), injuries (T3), coaches (MGR-CHANGE), venues (AF-VENUES), sidelined (AF-SIDELINED), transfers (AF-TRANSFERS)
+- **04:15 (full):** standings (T9), H2H (T10), team stats (T2), injuries (T3), coaches (MGR-CHANGE), venues (AF-VENUES), sidelined (AF-SIDELINED). **transfers RETIRED from the default set 2026-09-21** (AF-TRANSFERS-NO-READER — 132 calls/day for a `squad_disruption_*` signal that `train.py` explicitly excludes and no surface reads; run manually with `--components transfers` if it is ever wanted)
 - **10:30/16:00 (refresh):** injuries only (AF-STANDINGS-DAILY — standings no longer intraday; 10:30 moved from 12:00 to feed 11:00 betting)
 - **13:00 (full, N7):** injuries + H2H + team_stats — ensures fresh context for afternoon/evening betting refreshes (standings excluded per AF-STANDINGS-DAILY)
 - **23:30 (nightly):** standings only — standings update ~1x/week so daily once-at-night is sufficient (~40 calls/day saved)
 - **H2H (T10):** Tier 1 leagues only + same-day cache (`h2h_raw IS NOT NULL` on the match row). Morning run: ~50-80 calls. Intraday runs: 0 calls (all cached after morning). No API batching available for H2H, so scope + cache is the only optimisation.
 - Venues: one call per unique venue, cached in `venues` table; skips already-cached venues (near-zero ongoing cost)
 - Sidelined: 7-day cache per player; only fetches players currently listed as injured in today's matches (~5-20 calls/day)
-- Transfers: 30-day cache per team (transfers only change in windows); capped at 100 teams/run; today's fixture teams are prioritised
+- Transfers: **off by default since 2026-09-21** (AF-TRANSFERS-NO-READER). When run manually: 30-day cache per team (transfers only change in windows); capped at 100 teams/run; today's fixture teams are prioritised
 - Coaches: 48-hour cache per team; capped at 50 teams/run
 - Coverage-aware: skips leagues AF doesn't support
 - Readiness gate: won't run unless ① Fixtures completed

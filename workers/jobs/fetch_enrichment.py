@@ -58,7 +58,27 @@ from workers.utils.pipeline_utils import (
 
 console = Console()
 
-ALL_COMPONENTS = {"injuries", "team_stats", "standings", "h2h", "coaches", "venues", "weather", "sidelined", "transfers"}
+# AF-TRANSFERS-NO-READER (2026-09-21). `transfers` is OFF by default.
+#
+# The chain looked alive at every single link, which is why it survived:
+#   132 AF calls/day -> team_transfers (1,437,485 rows / 882 MB, written as
+#   recently as 2026-09-19) -> squad_disruption_home/away signals
+#   (supabase_client.py:5482, 16,639 rows, newest written this morning)
+#   -> NOTHING.
+#
+# The terminus is explicit, not accidental: `train.py` lists squad_disruption_*
+# among the features "deliberately EXCLUDED despite good coverage" (9% coverage,
+# the screen found no signal), and no page or API reads the signal either. So
+# every day we spend 132 calls to keep a 882 MB table current in order to
+# compute a signal whose only documented mention is the note saying not to use
+# it.
+#
+# The DATA IS KEPT — dropping 882 MB of history is irreversible and cheap to
+# postpone; the ongoing COST is what stops. Re-enable with
+# `--components transfers` (or add it back here) if squad_disruption is ever
+# wanted as a feature, but re-read that train.py note first.
+_RETIRED_COMPONENTS = {"transfers"}
+ALL_COMPONENTS = {"injuries", "team_stats", "standings", "h2h", "coaches", "venues", "weather", "sidelined"}
 
 
 def _build_fixture_meta(target_date: str) -> dict[int, dict]:
@@ -579,7 +599,14 @@ def fetch_transfers(fixture_meta: dict) -> int:
     Calls /transfers?team={id} once per unique team AF ID, with a 30-day cache.
     Cache is tracked in team_transfer_cache so teams with no transfer activity
     are still marked fetched and not re-fetched every run.
-    Stores into team_transfers. Powers the squad_disruption signal in the betting pipeline.
+    Stores into team_transfers, which feeds the squad_disruption_home/away
+    signals (supabase_client.py:5482).
+
+    ⚠️ RETIRED FROM THE DEFAULT SET 2026-09-21 (AF-TRANSFERS-NO-READER). Those
+    signals are consumed by nothing: train.py lists squad_disruption_* among the
+    features deliberately EXCLUDED (9% coverage, no signal in the screen), and
+    no surface reads them. The function is kept for a manual
+    `--components transfers` run.
     """
     console.print("\n[cyan]Transfers: Fetching team transfer history...[/cyan]")
     from datetime import datetime, timezone, timedelta
@@ -722,6 +749,9 @@ def main():
     parser.add_argument("--team", type=int, default=None,
                         help="AF team ID — limit team_stats to a single team (use with --components team_stats)")
     args = parser.parse_args()
+    # "all" means the ACTIVE set; a retired component must be named explicitly,
+    # so re-enabling one is always a deliberate act rather than a side effect of
+    # running with defaults.
     components = ALL_COMPONENTS if args.components == "all" else set(args.components.split(","))
     run_enrichment(target_date=args.date, components=components, team_af_id=args.team)
 

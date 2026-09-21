@@ -48673,6 +48673,51 @@ def test_coolbet_probe_imperva_beats_timing():
 
 
 
+@test("AF-TRANSFERS-RETIRED — a fetch whose output nothing consumes stays off by default")
+def test_af_transfers_retired():
+    """AF-TRANSFERS-NO-READER (2026-09-21).
+
+    132 AF calls/day kept `team_transfers` (1,437,485 rows / 882 MB) current so
+    that `squad_disruption_home/away` could be computed — signals which
+    `train.py` lists among the features "deliberately EXCLUDED" (9% coverage,
+    no signal in the screen) and which no page or API reads.
+
+    WHAT MADE THIS HARD TO SEE, and the reason the test is worth having: every
+    individual link was alive. The fetch ran this week. The table was written
+    this week. The signal was computed at 04:01 this morning, 16,639 rows of it.
+    Only the END of the chain is dead, and nothing about the first three links
+    hints at that. The original ticket concluded "nothing reads team_transfers",
+    which was WRONG — there is a reader; its output is what nobody reads.
+
+    Pinned: transfers is out of the default component set, and the data is kept.
+    Deleting 882 MB of history is irreversible and postponing it costs nothing,
+    so the thing that stops is the ONGOING COST, not the record.
+    """
+    src = _engine_path("workers/jobs/fetch_enrichment.py").read_text(encoding="utf-8")
+
+    import re as _re
+    m = _re.search(r"^ALL_COMPONENTS = \{([^}]*)\}", src, _re.M)
+    assert m, "ALL_COMPONENTS is gone"
+    assert '"transfers"' not in m.group(1), (
+        "transfers is back in the DEFAULT enrichment set. It costs 132 AF "
+        "calls/day to keep an 882 MB table current for a signal train.py "
+        "explicitly excludes — if that changed, update train.py's exclusion "
+        "note in the same commit, because the two cannot both be right")
+    assert "_RETIRED_COMPONENTS" in src and '"transfers"' in src, (
+        "the retirement must be recorded as a named set, not by silently "
+        "deleting the string — a reader has to be able to tell a retirement "
+        "from a typo")
+
+    # The function itself stays: a manual --components transfers run must remain
+    # possible, because the fix here is to stop paying daily, not to lose the
+    # capability.
+    assert "def fetch_transfers(" in src, (
+        "fetch_transfers() was deleted. Retiring the DEFAULT is reversible; "
+        "deleting the fetcher makes re-enabling a rewrite")
+    return "transfers off by default, fetcher kept, retirement named"
+
+
+
 
 if __name__ == "__main__":
     main()
