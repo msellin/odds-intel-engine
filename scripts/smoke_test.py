@@ -45449,8 +45449,13 @@ def test_backlog_audit_closures_hold():
             return None
         return "OPEN" if min(pos, key=pos.get) in ("⬜", "🔄 In Progress") else "CLOSED"
 
+    # Widened 2026-09-21: the first list missed "[COMPLETE" and "[DONE", and a
+    # row closed with one of those kept a 🔄 In Progress marker for hours — the
+    # note said finished, the marker said claimed. Match the note SHAPE, which is
+    # what every closure actually shares, rather than enumerating phrasings.
     CLOSURE = ("closed as already done", "MERGED into", "REMOVED as duplicate",
-               "closed as ALREADY RESOLVED", "closed as DECIDED", "closed as DUPLICATE")
+               "closed as ALREADY RESOLVED", "closed as DECIDED", "closed as DUPLICATE",
+               "[DONE 2026-", "[COMPLETE 2026-", "[CLOSED 2026-", "RESOLVED 2026-")
     closures = [(i + 1, l) for i, l in enumerate(q)
                 if "BACKLOG-AUDIT" in l and any(c in l for c in CLOSURE)]
     assert len(closures) >= 15, (
