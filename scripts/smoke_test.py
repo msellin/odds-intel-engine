@@ -45606,6 +45606,49 @@ def test_claude_md_frontend_map_is_real():
         )
 
 
+@test("CROSSRANK-MEMORY-CAP-IS-VERSIONED — the shared box's memory cap must live in the repo")
+def test_crossrank_memory_cap_versioned():
+    """CROSSRANK-REFRESH-OOM-PRESSURES-OUR-BOX (2026-09-21).
+
+    crossrank-refresh.service ran unbounded (MemoryHigh/MemoryMax = infinity) on the
+    15 GB box it SHARES with our scheduler, Postgres and FlareSolverr. Over 14 days
+    it produced OOM kills whose victims were mostly NOT itself — chromium, i.e.
+    FlareSolverr, i.e. the live odds feed.
+
+    The fix is a systemd drop-in on the VPS, which CI cannot see. What CI CAN enforce
+    is that the config is versioned here with the measurements behind it, so the next
+    person to hit an OOM on that box finds the numbers instead of re-deriving them,
+    and so a hand-edit on the box is detectable as drift from this file.
+
+    The measurements are load-bearing and must stay in the file: a cap chosen without
+    them either throttles normal runs or fails to stop a runaway.
+    """
+    cap = _engine_path("deploy/vps/crossrank-refresh-memory-cap.conf")
+    assert cap.exists(), (
+        "deploy/vps/crossrank-refresh-memory-cap.conf is missing — the shared box's "
+        "memory cap is then an undocumented hand-edit nobody can audit"
+    )
+    body = cap.read_text(encoding="utf-8")
+
+    for token in ("MemoryHigh=7G", "MemoryMax=9G"):
+        assert token in body, f"the drop-in must set {token}"
+    assert "[Service]" in body, "a systemd drop-in needs a [Service] section"
+
+    # the numbers must carry their evidence
+    assert "6.42 GB" in body and "MemoryPeak" in body, (
+        "the file must record the MEASURED normal peak (6.42 GB, systemd MemoryPeak) "
+        "that the cap was chosen against — without it the next reader has no basis to "
+        "raise or lower these values"
+    )
+    assert "8.1 GB" in body, (
+        "the file must record the observed runaway peak, which is what MemoryMax stops"
+    )
+    assert "FlareSolverr" in body or "chromium" in body, (
+        "the file must name the actual victim of the OOMs — the point is that an "
+        "unbounded job killed OUR odds feed, not its own process"
+    )
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).

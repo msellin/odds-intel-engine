@@ -626,3 +626,8 @@
 {"at": "2026-09-21T04:25:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 20}
 {"at": "2026-09-21T04:55:15+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 20}
 {"at": "2026-09-21T04:55:27+00:00", "event": "healed", "tier": "autologin", "ok": true, "skipped_rebootstrap": null, "steps": ["cdp auto-login OK", "jwt sync OK"], "reason": "", "error": ""}
+{"at": "2026-09-21T05:25:13+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 20}
+{"at": "2026-09-21T05:55:14+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "logged_out", "jwt_ttl_s": null, "captcha": null, "tier": "autologin", "procs": 19}
+{"at": "2026-09-21T05:55:25+00:00", "event": "healed", "tier": "autologin", "ok": true, "skipped_rebootstrap": null, "steps": ["cdp auto-login OK", "jwt sync OK"], "reason": "", "error": ""}
+{"at": "2026-09-21T06:25:12+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1792, "captcha": null, "tier": null, "procs": 20}
+{"at": "2026-09-21T06:55:16+00:00", "event": "observed", "cdp_up": true, "walled": false, "jwt": "valid", "jwt_ttl_s": 1790, "captcha": null, "tier": null, "procs": 20}
