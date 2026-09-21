@@ -48942,6 +48942,72 @@ def test_telegram_edge_units():
 
 
 
+@test("SCHEDULER-SHUTDOWN-DRAIN — a deploy must not SIGKILL a job, and must name one it abandons")
+def test_scheduler_shutdown_drain():
+    """SCHEDULER-IGNORES-SIGTERM-ON-DEPLOY (2026-09-21).
+
+    `State 'stop-sigterm' timed out. Killing.` appeared 19 times in the 14 days
+    to 2026-09-21 — roughly every other deploy restart ended in SIGKILL, on a
+    service that can be mid-placement.
+
+    It was never a crash-loop, which is what made it easy to misread. SIGTERM
+    was always handled, the keep-alive loop always exited within a second, and
+    `Restart=always` brought the service straight back — so the unit looked
+    healthy while a job was being cut off. The blocker was the NEXT line:
+    `scheduler.shutdown(wait=True)` blocks until every running job returns, with
+    no bound, and a settlement pass or morning chain routinely exceeds 60s.
+
+    Three properties are pinned, because each was independently wrong:
+
+      1. The drain is BOUNDED. An unbounded wait does not prevent the kill; it
+         only guarantees systemd decides when it happens.
+      2. The scheduler PAUSES first, so the drain works over a shrinking set of
+         jobs rather than one that keeps replenishing.
+      3. Anything abandoned is logged BY NAME. The worst property of the old
+         behaviour was silence — a job killed mid-run left nothing identifying
+         it, so a half-finished placement was indistinguishable from none.
+
+    And the unit's TimeoutStopSec must exceed the drain, or systemd still kills
+    first and the whole thing is decoration.
+    """
+    import re as _re
+
+    src = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+
+    assert "scheduler.pause()" in src, (
+        "shutdown must pause the scheduler before draining, or new jobs keep "
+        "firing into a shutdown and the drain never converges")
+    assert "SHUTDOWN-DRAIN-EXPIRED" in src, (
+        "jobs abandoned at the drain deadline must be logged BY NAME — the "
+        "silence is the part that made mid-run kills invisible")
+    assert "shutdown(wait=False)" in src, (
+        "after the drain expires the scheduler must stop waiting; an unbounded "
+        "wait just hands the decision to systemd's SIGKILL")
+
+    # _instances lives on the EXECUTOR. Reading it off the scheduler returns
+    # nothing, which would make the drain a silent no-op that always reports
+    # "no jobs running" — verified against apscheduler 3.11.3.
+    assert '"_executors"' in src and '"_instances"' in src, (
+        "running-job detection must walk scheduler._executors[*]._instances. "
+        "apscheduler keeps _instances on the executor, so reading it from the "
+        "scheduler silently yields an empty set and the drain never waits")
+
+    m = _re.search(r'SCHEDULER_SHUTDOWN_DRAIN_S", "(\d+)"', src)
+    assert m, "the drain window must be a named, overridable constant"
+    drain = int(m.group(1))
+
+    unit = _engine_path("local/systemd/oddsintel-scheduler.service").read_text(encoding="utf-8")
+    m2 = _re.search(r"^TimeoutStopSec=(\d+)", unit, _re.M)
+    assert m2, "the unit no longer sets TimeoutStopSec"
+    timeout = int(m2.group(1))
+    assert timeout > drain, (
+        f"TimeoutStopSec={timeout}s does not exceed the scheduler's own drain "
+        f"of {drain}s. systemd would SIGKILL mid-drain and the bounded shutdown "
+        f"would never get to run — which is the original bug with extra steps")
+    return f"paused + bounded drain {drain}s under TimeoutStopSec={timeout}s, abandons logged"
+
+
+
 
 if __name__ == "__main__":
     main()

@@ -66,9 +66,22 @@ ExecStart=/opt/odds-intel-engine/venv/bin/python3 -m workers.scheduler
 Restart=always
 RestartSec=30
 
-# Give the scheduler up to 60s to handle in-flight jobs on SIGTERM before
-# systemd escalates to SIGKILL.
-TimeoutStopSec=60
+# SCHEDULER-IGNORES-SIGTERM-ON-DEPLOY (2026-09-21). Was 60s, and that was not
+# enough: `State 'stop-sigterm' timed out. Killing.` appeared 19 times in the 14
+# days to 2026-09-21, i.e. roughly every other deploy restart ended in SIGKILL.
+#
+# These were never crashes. The scheduler DOES handle SIGTERM — it sets a flag,
+# leaves its keep-alive loop within a second, and then calls
+# `scheduler.shutdown(wait=True)`, which blocks until every RUNNING job returns.
+# A settlement pass, a morning chain or an odds sweep routinely exceeds 60s, so
+# systemd killed the process in the middle of one. `Restart=always` brought it
+# straight back, which is why the service always looked healthy afterwards.
+#
+# 300s is the drain the scheduler now asks for (SHUTDOWN_DRAIN_S), plus headroom
+# to log which jobs it gave up on. The scheduler bounds itself, so this is a
+# ceiling systemd should never actually reach — if it does, that is the signal
+# that a job is genuinely stuck rather than merely slow.
+TimeoutStopSec=300
 
 # Log goes to journald (use journalctl -u oddsintel-scheduler).
 # For a plain file mirror: StandardOutput=append:/opt/odds-intel-engine/dev/active/scheduler.log

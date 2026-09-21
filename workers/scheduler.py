@@ -3522,8 +3522,78 @@ def main():
     except (KeyboardInterrupt, SystemExit):
         pass
 
+    # SCHEDULER-IGNORES-SIGTERM-ON-DEPLOY (2026-09-21).
+    #
+    # This was `scheduler.shutdown(wait=True)`, which blocks until every RUNNING
+    # job returns — unbounded. A settlement pass, a morning chain or an odds
+    # sweep routinely runs past systemd's TimeoutStopSec, so roughly every other
+    # deploy restart ended in SIGKILL: 19 `State 'stop-sigterm' timed out.
+    # Killing.` entries in the 14 days to 2026-09-21.
+    #
+    # It read as a crash-loop and is not one. SIGTERM was always handled, the
+    # keep-alive loop always exited within a second, and `Restart=always`
+    # brought the service straight back — so the unit looked healthy while a job
+    # was being killed mid-flight, possibly mid-placement.
+    #
+    # Three changes, in order of what actually matters:
+    #   1. PAUSE FIRST. Stop new jobs firing the moment shutdown begins, so the
+    #      drain is over a shrinking set rather than a replenishing one.
+    #   2. BOUND THE DRAIN. Wait up to SHUTDOWN_DRAIN_S (systemd allows 300s),
+    #      then stop waiting. An unbounded wait does not prevent the kill, it
+    #      just guarantees systemd is the one who decides.
+    #   3. SAY WHAT WAS KILLED. The worst property of the old behaviour was
+    #      silence: a job dying mid-run left nothing naming it. Anything still
+    #      running when the drain expires is logged BY NAME before we give up.
     console.print("[yellow]Shutting down scheduler + poller...[/yellow]")
-    scheduler.shutdown(wait=True)
+    drain_s = float(os.getenv("SCHEDULER_SHUTDOWN_DRAIN_S", "240"))
+    try:
+        scheduler.pause()
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[yellow]could not pause scheduler (non-fatal): {e}[/yellow]")
+
+    def _running_job_ids() -> list[str]:
+        """Job ids APScheduler currently has in flight.
+
+        `_instances` lives on each EXECUTOR (apscheduler.executors.base:
+        `self._instances = defaultdict(lambda: 0)`, incremented per submit and
+        deleted at zero), NOT on the scheduler. Reading it off the scheduler
+        returns nothing and would make this whole drain a silent no-op that
+        looks like "no jobs running" on every shutdown — verified against
+        apscheduler 3.11.3 on the VPS rather than assumed.
+
+        Best-effort and never raises: a shutdown path must not fail on its way
+        out. But note the failure direction — an exception here reports an
+        EMPTY set, i.e. "nothing running", so the drain ends early rather than
+        hanging. That is the safe way round.
+        """
+        ids: list[str] = []
+        try:
+            for ex in (getattr(scheduler, "_executors", None) or {}).values():
+                for jid, n in list(getattr(ex, "_instances", {}).items()):
+                    if n:
+                        ids.append(f"{jid} x{n}")
+        except Exception:  # noqa: BLE001
+            return []
+        return ids
+
+    deadline = time.time() + drain_s
+    while time.time() < deadline:
+        still = _running_job_ids()
+        if not still:
+            break
+        time.sleep(1)
+
+    stuck = _running_job_ids()
+    if stuck:
+        console.print(
+            f"[red]SHUTDOWN-DRAIN-EXPIRED after {drain_s:.0f}s — abandoning "
+            f"{len(stuck)} job(s) still running: {stuck}. These are being cut "
+            f"off mid-run; if a placement job is among them, reconcile before "
+            f"trusting the ledger.[/red]"
+        )
+        scheduler.shutdown(wait=False)
+    else:
+        scheduler.shutdown(wait=True)
     console.print("[green]Scheduler stopped cleanly.[/green]")
 
 
