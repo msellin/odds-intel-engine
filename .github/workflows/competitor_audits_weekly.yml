@@ -172,8 +172,29 @@ jobs:
             # that is why nobody noticed this step skipping every day from
             # 2026-07-05 to 2026-09-02 while the landing served stale
             # competitor ROI (COMP-FALLBACK-DRIFT-GUARD).
-            echo "::warning title=COMP_FALLBACK not refreshed::FRONTEND_REPO_TOKEN is not set, so the landing page keeps its previous hardcoded competitor figures. odds-intel-web CI (comp_fallback_guard.yml) will fail once they rot past tolerance."
+            echo "::error title=COMP_FALLBACK not refreshed::FRONTEND_REPO_TOKEN is not set, so the landing page keeps serving its previous hardcoded competitor figures while this job reports success."
           fi
+
+      # FRONTEND-REPO-TOKEN-MISSING-AGAIN-2026-09-21.
+      #
+      # The check above used to emit a ::warning and let the job exit 0. A
+      # warning in a run summary is not an alarm — it skipped silently every day
+      # from 2026-07-05 to 2026-09-02, and then AGAIN for 16 days to 2026-09-17,
+      # while the landing served stale numbers. Measured on 2026-09-21 before
+      # the refresh: the hardcoded fallback claimed WinnerOdds at 14.43% when
+      # the ledger said 5.70% (overstating a competitor by 8.7pp) and claimed
+      # OUR OWN ROI at 10.65% on n=529 when the ledger said 8.17% on n=697
+      # (overstating ourselves by 2.5pp).
+      #
+      # The same silence twice is a design fault, not bad luck. Fail the job.
+      # The audits above have already run and committed by this point, so a
+      # missing token costs the fallback refresh and nothing else — and it now
+      # costs a red run, which is the only thing anyone reads.
+      - name: Fail if the fallback could not be refreshed
+        if: always() && steps.pat_check.outputs.has_pat != 'true'
+        run: |
+          echo "::error title=Landing fallback is stale::FRONTEND_REPO_TOKEN is absent, so COMP_FALLBACK in odds-intel-web was not refreshed from ledger/comparison_*.json. The landing will keep publishing whatever figures are hardcoded there, about us AND about named competitors, until the token is restored or someone runs scripts/update_frontend_comp_fallback.py --web-repo <path> by hand."
+          exit 1
 
       - name: Checkout odds-intel-web
         if: steps.pat_check.outputs.has_pat == 'true'

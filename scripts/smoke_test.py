@@ -45954,6 +45954,45 @@ def test_ah_trainer_time_ordered_split():
     )
 
 
+@test("COMP-FALLBACK-REFRESH-FAILS-LOUD — a skipped fallback refresh must go red")
+def test_comp_fallback_refresh_fails_loud():
+    """FRONTEND-REPO-TOKEN-MISSING-AGAIN-2026-09-21.
+
+    The cross-repo step that refreshes the landing's hardcoded COMP_FALLBACK is
+    gated on FRONTEND_REPO_TOKEN. When the token is absent it used to emit a
+    ::warning and the job exited 0 — and a warning in a run summary is not an
+    alarm. It skipped silently from 2026-07-05 to 2026-09-02, was noticed, and
+    then did it AGAIN for 16 days to 2026-09-17.
+
+    What that publishes is not cosmetic. Measured 2026-09-21 before the refresh,
+    the hardcoded fallback claimed WinnerOdds at 14.43% ROI where the ledger said
+    5.70% — overstating a NAMED COMPETITOR by 8.7pp — and claimed our own ROI at
+    10.65% on n=529 where the ledger said 8.17% on n=697, overstating ourselves
+    by 2.5pp. On the page whose entire pitch is auditability.
+
+    The same silence twice is a design fault. The job must fail.
+    """
+    wf = _engine_path(".github/workflows/competitor_audits_weekly.yml").read_text(encoding="utf-8")
+
+    assert "Fail if the fallback could not be refreshed" in wf, (
+        "the workflow must FAIL when FRONTEND_REPO_TOKEN is absent — a ::warning "
+        "let this skip silently for 16 days while the landing published wrong "
+        "figures about us and about named competitors"
+    )
+    assert "exit 1" in wf, "the guard step must exit non-zero, not just log"
+    assert "has_pat != 'true'" in wf, (
+        "the guard must trigger on the ABSENCE of the token"
+    )
+    assert "::error title=Landing fallback is stale" in wf, (
+        "::error surfaces in the run summary; ::warning is what failed to be read"
+    )
+    # the ordering matters: audits must still commit before the job dies
+    assert wf.index("Fail if the fallback could not be refreshed") > wf.index("Audit vs WinnerOdds"), (
+        "the failure step must come AFTER the audits, so a missing token costs "
+        "only the fallback refresh and not the audit run itself"
+    )
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).
