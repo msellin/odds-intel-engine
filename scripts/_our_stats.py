@@ -31,7 +31,7 @@ from __future__ import annotations
 
 # DUPLICATED-RULES-REMAINING-2026-09-06. THE canonical flat stake for PUBLISHED
 # and COMPARATIVE figures — the €10-per-pick basis that matches how WinnerOdds,
-# Tipstrr, SignalOdds and Forebet publish, so head-to-head comparison is
+# SignalOdds and Forebet publish, so head-to-head comparison is
 # apples-to-apples. Every competitor audit imports this rather than re-typing
 # `STAKE = 10.0`, which is how the four copies came to exist.
 #

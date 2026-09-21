@@ -14,7 +14,7 @@ head-to-head basis.
 
 Constraints:
   - Requires per-pick team names to fuzzy-join. So this covers Forebet,
-    SignalOdds, and OddsIntel. DeepBetting, Tipstrr and WinnerOdds don't
+    SignalOdds, and OddsIntel. DeepBetting and WinnerOdds don't
     publish per-pick team names in their public feeds — they stay on
     their as-published aggregate for now.
   - Requires a Pinnacle snapshot for the relevant (match, market, selection)
@@ -320,7 +320,7 @@ def main() -> int:
         "notes": (
             "Replays each source's fuzzy-matched picks at the Pinnacle-close "
             "odds we captured in our own odds_snapshots. Same basis for all. "
-            "Sources without per-pick team names (DeepBetting, Tipstrr, "
+            "Sources without per-pick team names (DeepBetting, "
             "WinnerOdds public feed) are not included."
         ),
         "sources": summary,

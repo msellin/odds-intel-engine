@@ -3,7 +3,7 @@ Export the raw competitor scrape data to CSV so it's reusable later
 (spreadsheets, re-audits, manual review). The JSONs at dev/active/*.json
 are the canonical source — the CSVs are a human-friendly mirror.
 
-Output: ledger/competitor_raw/{signalodds,deepbetting,forebet,tipstrr,
+Output: ledger/competitor_raw/{signalodds,deepbetting,forebet,
         betaminic}.csv
 
 Idempotent — overwrites every CSV each run. JSON inputs are not modified.
@@ -135,53 +135,6 @@ def export_forebet() -> int:
     return n
 
 
-def export_tipstrr() -> int:
-    src = REPO / "dev" / "active" / "tipstrr_raw.json"
-    if not src.exists():
-        print(f"  tipstrr: source missing at {src}")
-        return 0
-    tipsters = json.loads(src.read_text(encoding="utf-8"))
-    if not isinstance(tipsters, list) or not tipsters:
-        print("  tipstrr: no tipsters — skipping")
-        return 0
-    # Flatten to one row per (tipster × month). Per-bet detail is paywalled
-    # on Tipstrr — we only have monthly aggregates.
-    cols = [
-        "slug", "name", "active", "football_only",
-        "month", "tips", "win", "lose", "void",
-        "averageOdds", "staked", "profit",
-        "levelStakeProfit", "levelStakeROI", "winPercentage",
-    ]
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out = OUT_DIR / "tipstrr.csv"
-    n = 0
-    with out.open("w", encoding="utf-8", newline="") as fh:
-        w = csv.writer(fh)
-        w.writerow(cols)
-        for t in tipsters:
-            if not isinstance(t, dict):
-                continue
-            base = {
-                "slug": t.get("slug"),
-                "name": t.get("name"),
-                "active": t.get("active"),
-                "football_only": t.get("football_only"),
-            }
-            for m in (t.get("monthly") or []):
-                if not isinstance(m, dict):
-                    continue
-                row = dict(base)
-                row["month"] = (m.get("date") or "")[:7]
-                for k in ("tips", "win", "lose", "void", "averageOdds",
-                          "staked", "profit", "levelStakeProfit",
-                          "levelStakeROI", "winPercentage"):
-                    row[k] = m.get(k)
-                w.writerow([_norm(row.get(c)) for c in cols])
-                n += 1
-    print(f"  tipstrr: wrote {n:,} rows → {out.relative_to(REPO)}")
-    return n
-
-
 def export_betaminic() -> int:
     src = REPO / "dev" / "active" / "betaminic_raw.json"
     if not src.exists():
@@ -238,7 +191,6 @@ def main() -> int:
     total += export_signalodds()
     total += export_deepbetting()
     total += export_forebet()
-    total += export_tipstrr()
     total += export_betaminic()
     print(f"Done. Total rows: {total:,}")
     return 0

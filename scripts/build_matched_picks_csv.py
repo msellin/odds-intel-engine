@@ -9,7 +9,6 @@ Joins per-source per-pick rows from:
 Sources dropped from the matrix (still exposed via per-source CSVs):
     ledger/picks_deepbetting.csv  — no per-pick team names on the DB endpoint
     ledger/picks_winnerodds.csv   — GraphQL feed exposes country only, no teams
-    ledger/picks_tipstrr.csv      — monthly aggregate, per-pick paywalled
 
 Row schema (one row per fixture × market):
     kickoff_date, home_team, away_team, market,
@@ -50,7 +49,7 @@ JOINABLE = ("oddsintel", "forebet", "signalodds")
 
 # Sources whose per-pick CSV exists but can't join to fixtures. Users hit
 # their per-source CSVs directly.
-UNJOINABLE = ("deepbetting", "winnerodds", "tipstrr")
+UNJOINABLE = ("deepbetting", "winnerodds")
 
 
 def load_source(name: str) -> list[dict]:

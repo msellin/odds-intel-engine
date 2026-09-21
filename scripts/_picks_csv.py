@@ -9,13 +9,13 @@ a stable, minimal schema that the landing links to via
 "Verify · view raw picks ↗".
 
 Columns (all rows):
-    source              : "deepbetting" | "signalodds" | "forebet" | "tipstrr" |
+    source              : "deepbetting" | "signalodds" | "forebet" |
                           "winnerodds" | "oddsintel"
     kickoff_date        : YYYY-MM-DD (best available; empty if source doesn't
-                          expose one, e.g. Tipstrr monthly aggregates)
+                          expose one)
     league              : short name if source publishes it, else empty
     home_team, away_team: strings; empty for sources that don't publish teams
-                          per-pick (DeepBetting, Tipstrr)
+                          per-pick (DeepBetting)
     market              : "1x2" | "over_under_25" | source-specific string
     pick                : "home"|"draw"|"away"|"over"|"under" (or raw label)
     odds                : float; empty if not published

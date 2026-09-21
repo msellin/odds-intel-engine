@@ -3,7 +3,7 @@ Audit OddsIntel vs WinnerOdds in a matched window. Writes the standard
 ledger/comparison_winnerodds.json that the landing page reads at runtime.
 
 Mirrors the shape of scripts/audit_vs_{signalodds,deepbetting,forebet,
-tipstrr,betaminic}.py — same `their_stats`, `our_stats_same_window`,
+betaminic}.py — same `their_stats`, `our_stats_same_window`,
 `scope_notes` keys so the consolidated landing fetch works
 uniformly.
 

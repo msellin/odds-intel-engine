@@ -82,11 +82,6 @@ jobs:
       # days, which keeps the landing's amber marker on — so the page stays
       # honest on its own while the data ages.
 
-      - name: Scrape Tipstrr
-        id: tipstrr
-        continue-on-error: true
-        run: python3 scripts/scrape_tipstrr.py
-
       - name: Scrape Betaminic (public ShootingBets results table)
         id: betaminic
         continue-on-error: true
@@ -101,8 +96,7 @@ jobs:
           git add dev/active/deepbetting_stats.json \
                   dev/active/signalodds_soccer.json \
                   dev/active/signalodds_soccer.cursor \
-                  dev/active/forebet_raw.json \
-                  dev/active/tipstrr_raw.json 2>/dev/null || true
+                  dev/active/forebet_raw.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No scrape changes — exiting cleanly."
             exit 0
@@ -110,7 +104,7 @@ jobs:
           DATE=$(date -u +%Y-%m-%d)
           git commit -m "competitor-scrapes: weekly refresh ${DATE}
 
-          Auto-refreshed dev/active/{deepbetting,signalodds,forebet,tipstrr}
+          Auto-refreshed dev/active/{deepbetting,signalodds,forebet}
           snapshots via scripts/scrape_*.py. The 02:00 UTC daily audit
           consumes these and rewrites ledger/comparison_*.json."
           git push origin HEAD:main
@@ -136,7 +130,6 @@ jobs:
           fail=0
           for pair in "deepbetting=${{ steps.deepbetting.outcome }}" \
                       "signalodds=${{ steps.signalodds.outcome }}" \
-                      "tipstrr=${{ steps.tipstrr.outcome }}" \
                       "betaminic=${{ steps.betaminic.outcome }}"; do
             name="${pair%%=*}"; outcome="${pair#*=}"
             if [ "$outcome" != "success" ]; then

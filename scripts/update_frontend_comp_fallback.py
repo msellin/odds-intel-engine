@@ -30,11 +30,14 @@ from datetime import date
 from pathlib import Path
 
 
-# TIPSTRR-DROPPED-2026-09-02: tipstrr is deliberately absent. Its audit still
-# runs and ledger/comparison_tipstrr.json is still written, but the landing no
-# longer presents it as a competitor (it is a marketplace, and the figure was a
-# consequence of which tipsters we listed). Keep it out of this list and out of
-# COMP_META together, or the drift guard fails on a key the page does not have.
+# TIPSTRR-DROPPED-2026-09-02, fully retired 2026-09-21 (TIPSTRR-SCRAPE-TEARDOWN).
+# Tipstrr is not a competitor and never was a like-for-like one: it is a tipster
+# MARKETPLACE, so its headline ROI is a consequence of which tipsters we happened
+# to list, and its public stats are at (tipster x month) grain while ours are
+# per-pick. It came off the landing 2026-09-02; the scraper, the audit and
+# ledger/comparison_tipstrr.json were deleted 2026-09-21. Do not re-add it to this
+# list without re-adding all three, or the drift guard fails on a key the page
+# does not have.
 LEDGER_KEYS = ["winnerodds", "signalodds", "deepbetting", "forebet", "betaminic"]
 
 

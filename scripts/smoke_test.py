@@ -22632,7 +22632,7 @@ def _():
             assert k in d, f"ledger/{name} missing key {k!r}"
 
 
-@test("COMPETITOR-AUDIT-FOREBET-TIPSTRR-BETAMINIC — three more competitor scrapers + audits exist")
+@test("COMPETITOR-AUDIT-FOREBET-BETAMINIC — competitor scrapers + audits exist, and Tipstrr stays retired")
 def _():
     """Three more competitor ROI audits land alongside the SignalOdds /
     DeepBetting pair. They feed three new rows in the
@@ -22642,23 +22642,42 @@ def _():
       1. scrape_forebet.py exists, exports the right markets, hits the
          documented date URL pattern (predictions-1x2/<date> and
          under-over-25-goals/<date>)
-      2. scrape_tipstrr.py uses cloudscraper (Cloudflare-gated host) and
-         decodes the HTML-encoded JSON payload (&q; → ")
+      2. Tipstrr is RETIRED (TIPSTRR-SCRAPE-TEARDOWN 2026-09-21) — its
+         scraper, audit and ledger artefacts must stay deleted
       3. scrape_betaminic.py documents the auth-required fail mode and
          writes an auth_required stub (no fabricated numbers)
-      4. audit_vs_forebet.py + audit_vs_tipstrr.py + audit_vs_betaminic.py
-         all exist and use STAKE = 10.0 / MIN_SAMPLE = 50 for parity
-      5. comparison_forebet.json, comparison_tipstrr.json,
-         comparison_betaminic.json all exist with the published shape
-      6. export_competitor_csvs.py emits forebet.csv + tipstrr.csv +
-         betaminic.csv alongside the existing two
+      4. audit_vs_forebet.py + audit_vs_betaminic.py all exist and use
+         STAKE = 10.0 / MIN_SAMPLE = 50 for parity
+      5. comparison_forebet.json + comparison_betaminic.json exist with the
+         published shape
+      6. export_competitor_csvs.py emits forebet.csv + betaminic.csv
+         alongside the existing two
+
+    WHY TIPSTRR IS PINNED AS ABSENT RATHER THAN SIMPLY DROPPED FROM THIS LIST.
+    It is a tipster MARKETPLACE, so its headline ROI is a consequence of which
+    tipsters we happened to list, and its public stats are at (tipster x month)
+    grain against our per-pick grain — it can never be made like-for-like, which
+    is why it is retired rather than fixed. It was removed from the landing on
+    2026-09-02 while the scrape and audit kept running against a 0-row source
+    for nineteen days, still writing ledger/comparison_tipstrr.json. Deleting
+    the row from a list is exactly how that half-retirement happened; asserting
+    the files are gone is what makes it stick.
     """
     import json, pathlib
     scripts = pathlib.Path("scripts")
-    for fn in ("scrape_forebet.py", "scrape_tipstrr.py", "scrape_betaminic.py",
-               "audit_vs_forebet.py", "audit_vs_tipstrr.py",
-               "audit_vs_betaminic.py"):
+    for fn in ("scrape_forebet.py", "scrape_betaminic.py",
+               "audit_vs_forebet.py", "audit_vs_betaminic.py"):
         assert (scripts / fn).exists(), f"scripts/{fn} must exist"
+
+    for gone in ("scripts/scrape_tipstrr.py", "scripts/audit_vs_tipstrr.py",
+                 "ledger/comparison_tipstrr.json", "ledger/picks_tipstrr.csv",
+                 "dev/active/tipstrr_raw.json"):
+        assert not pathlib.Path(gone).exists(), (
+            f"{gone} is back. Tipstrr is a tipster marketplace at (tipster x "
+            f"month) grain — it cannot be made like-for-like with our per-pick "
+            f"figures, so it is retired, not broken. Reviving any half of it "
+            f"recreates the 2026-09-02..09-21 state where the landing had "
+            f"dropped it but the scrape and audit still ran on a 0-row source")
 
     fb_src = (scripts / "scrape_forebet.py").read_text()
     assert "predictions-1x2" in fb_src and "under-over-25-goals" in fb_src, (
@@ -22669,17 +22688,6 @@ def _():
     assert "PAGE_CAP_PER_DAY" in fb_src, (
         "Forebet caps at ~44 picks/day — if they remove that cap, the "
         "scraper logs a warning. Pinned so an agent doesn't strip it"
-    )
-
-    ts_src = (scripts / "scrape_tipstrr.py").read_text()
-    assert "cloudscraper" in ts_src, (
-        "Tipstrr is Cloudflare-gated — naive requests get 403. The scraper "
-        "MUST use cloudscraper to mint the JS challenge cookie"
-    )
-    assert '&q;' in ts_src and '"' in ts_src, (
-        "Tipstrr payload is HTML-encoded JSON (&q; = quote). The decode step "
-        "is what makes the parser work — pinned so it can't be silently "
-        "removed"
     )
 
     bm_src = (scripts / "scrape_betaminic.py").read_text()
@@ -22707,8 +22715,7 @@ def _():
             "gated data is a paywall bypass"
         )
 
-    for fn in ("audit_vs_forebet.py", "audit_vs_tipstrr.py",
-               "audit_vs_betaminic.py"):
+    for fn in ("audit_vs_forebet.py", "audit_vs_betaminic.py"):
         src = (scripts / fn).read_text()
         assert "MIN_SAMPLE = 50" in src, (
             f"{fn} must keep the 50-bet sample-size gate (drops 'ok' "
@@ -22719,8 +22726,7 @@ def _():
             "DeepBetting accounting units"
         )
 
-    for name in ("comparison_forebet.json", "comparison_tipstrr.json",
-                 "comparison_betaminic.json"):
+    for name in ("comparison_forebet.json", "comparison_betaminic.json"):
         p = pathlib.Path("ledger") / name
         assert p.exists(), f"ledger/{name} must have been written by the audit"
         d = json.loads(p.read_text())
@@ -22763,7 +22769,7 @@ def _():
 
     # CSV export should emit all five competitors
     csv_src = (scripts / "export_competitor_csvs.py").read_text()
-    for name in ("export_forebet", "export_tipstrr", "export_betaminic"):
+    for name in ("export_forebet", "export_betaminic"):
         assert name in csv_src, (
             f"export_competitor_csvs.py must define {name}() so the CSVs "
             "for the new competitors get written alongside the old ones"
@@ -24947,16 +24953,38 @@ def test_competitor_scrapes_weekly_2026_08_01():
         "weekly workflow must fire Sunday 01:00 UTC (before the 02:00 UTC "
         "audit cron so same-day audit sees fresh scrapes)."
     )
+    # The set shrank twice and this check has to follow reality or it is
+    # theatre: Forebet moved OFF CI 2026-09-21 (FOREBET-SCRAPER-403-SILENTLY-GREEN
+    # — the runner is IP-blocked; it runs on the operator's Mac) and Tipstrr was
+    # retired entirely 2026-09-21 (TIPSTRR-SCRAPE-TEARDOWN).
+    #
+    # Checked against actual `run:` lines, not a substring of the whole file.
+    # The old version searched the raw text, so the long comment block that
+    # documents Forebet's move — which contains the string
+    # "scripts/scrape_forebet.py" — would have satisfied it forever. A scraper
+    # that is commented out passes a substring test and collects nothing.
+    run_lines = "\n".join(ln for ln in wf_txt.splitlines()
+                          if ln.strip().startswith("run:"))
     for script in (
         "scripts/scrape_deepbetting.py",
         "scripts/scrape_signalodds.py",
-        "scripts/scrape_forebet.py",
-        "scripts/scrape_tipstrr.py",
+        "scripts/scrape_betaminic.py",
     ):
-        assert script in wf_txt, (
-            f"weekly workflow must invoke {script} — losing any of the four "
-            "leaves that competitor frozen."
+        assert script in run_lines, (
+            f"weekly workflow must actually RUN {script} — losing one leaves "
+            f"that competitor's snapshot frozen while the daily audit keeps "
+            f"recomputing from it and the landing publishes it as current."
         )
+    assert "scripts/scrape_forebet.py" not in run_lines, (
+        "scrape_forebet.py is back as a CI step. forebet.com blocks the GitHub "
+        "runner by IP — every request 403s, all retries, both market slugs — so "
+        "this can only ever be a green step that collects nothing. It runs "
+        "manually on the operator's Mac; see the comment block in the workflow."
+    )
+    assert "scripts/scrape_tipstrr.py" not in run_lines, (
+        "scrape_tipstrr.py is back. Tipstrr is retired (TIPSTRR-SCRAPE-TEARDOWN) "
+        "— a marketplace at month grain that cannot be made like-for-like."
+    )
 
     wo = (repo / "scripts" / "audit_vs_winnerodds.py").read_text()
     assert 'WINDOW_END_DEFAULT = "2026-06-25"' not in wo, (
@@ -25011,7 +25039,10 @@ def test_competitor_picks_csv_2026_08_01():
     for col in ("kickoff_date", "home_team", "away_team", "market", "pick", "odds", "result"):
         assert col in helper_txt, f"_picks_csv.py must declare {col} column"
 
-    for src in ("deepbetting", "forebet", "signalodds", "tipstrr"):
+    # tipstrr dropped 2026-09-21 (TIPSTRR-SCRAPE-TEARDOWN) — its scraper and
+    # audit are deleted, not merely unlisted; COMPETITOR-AUDIT-FOREBET-BETAMINIC
+    # asserts their absence so this list cannot quietly diverge from reality.
+    for src in ("deepbetting", "forebet", "signalodds"):
         audit = repo / "scripts" / f"audit_vs_{src}.py"
         atxt = audit.read_text()
         assert f"picks_{src}.csv" in atxt, (
@@ -29626,14 +29657,22 @@ def _comp_fallback_guard():
         "COMP_META together."
     )
 
+    # UPDATED 2026-09-21 (FRONTEND-REPO-TOKEN-MISSING-AGAIN). This used to
+    # require a ::warning. That WAS the fix for the 2026-07-05..09-02 silent
+    # skip — and it was not enough: the step went silent again for 16 more days
+    # to 09-17 while the landing overstated a competitor by 8.7pp and us by
+    # 2.5pp, because a warning in a run summary is not an alarm. The workflow
+    # was escalated to ::error + a failing step; this assertion kept demanding
+    # the old, weaker annotation and turned the suite red on a strictly better
+    # workflow — RELIABILITY_LEDGER §9, a test that pins the old reality.
     wf = (root / ".github" / "workflows" / "competitor_audits_weekly.yml").read_text()
-    assert "::warning title=COMP_FALLBACK" in wf, (
-        "the FRONTEND_REPO_TOKEN skip in competitor_audits_weekly.yml must emit "
-        "a ::warning annotation. A plain echo is invisible in the run summary, "
-        "which is exactly how this step skipped daily for two months unnoticed."
+    assert "::error title=COMP_FALLBACK" in wf, (
+        "the FRONTEND_REPO_TOKEN check in competitor_audits_weekly.yml must emit "
+        "an ::error annotation. It emitted a ::warning for two months and nobody "
+        "read it; do not weaken this back to a warning."
     )
-    return (f"{len(expected)} sources in LEDGER_KEYS; PAT skip emits a "
-            "::warning annotation")
+    return (f"{len(expected)} sources in LEDGER_KEYS; PAT absence emits an "
+            "::error annotation")
 
 
 @test("FOREBET-REPRICE — landing publishes Forebet's picks at real odds, not their claimed odds")
@@ -45340,7 +45379,11 @@ def test_competitor_audits_can_run():
 
     steps = _re.findall(r"- name: Audit vs (\w+)(.*?)run: python3 (scripts/audit_vs_\w+\.py)",
                         wf, _re.S)
-    assert len(steps) >= 6, f"expected every audit wired as its own step, found {len(steps)}"
+    # 5 since TIPSTRR-SCRAPE-TEARDOWN-2026-09-21 retired the sixth. The count
+    # is a floor, not a target: what it guards is an audit losing its own step
+    # (and with it its env: block), which is how Betaminic ran for 15 days with
+    # no DATABASE_URL. Lower it only alongside a deletion, never to go green.
+    assert len(steps) >= 5, f"expected every audit wired as its own step, found {len(steps)}"
     for name, body, script in steps:
         assert "DATABASE_URL" in body, (
             f"the '{name}' audit step has no DATABASE_URL in its env — that is "

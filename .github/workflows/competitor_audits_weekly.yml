@@ -11,7 +11,7 @@ name: OddsIntel — Daily Competitor Audits
 # Does NOT re-scrape competitor data — that's a heavier monthly job
 # (separate workflow). This cron just re-runs the audit math on:
 #   - WinnerOdds  → fresh GraphQL pull each run (~5min)
-#   - SignalOdds / DeepBetting / Forebet / Tipstrr → existing dev/active
+#   - SignalOdds / DeepBetting / Forebet → existing dev/active
 #     JSON snapshots (re-runs the math but not the scrape). Their ROI
 #     changes day-to-day only because OUR matched cohort grows daily.
 #   - Betaminic   → public ShootingBets results table (wpDataTables AJAX,
@@ -99,12 +99,6 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         continue-on-error: true
         run: python3 scripts/audit_vs_forebet.py
-
-      - name: Audit vs Tipstrr
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        continue-on-error: true
-        run: python3 scripts/audit_vs_tipstrr.py
 
       - name: Audit vs Betaminic
         # This step was the ONLY audit with no env: block, so it died on
