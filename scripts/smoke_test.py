@@ -12805,12 +12805,19 @@ def _():
         "N >= 10000, or refactor to BOT-AGGREGATES-SSOT."
     )
 
-    # Belt-and-braces: assert the ceiling constant or .range call is present
+    # UPDATED 2026-09-21 (ALL-BETS-CEILING-DEAD). This asserted the literal name
+    # ALL_BETS_CEILING, which the fix renamed to PAGED_ROW_CEILING when the same
+    # bound started governing seven other queries. Worse, the original premise
+    # is obsolete: the ceiling no longer "bypasses" anything, because PostgREST
+    # caps every response at PGRST_DB_MAX_ROWS=10000 whatever .range() asks for.
+    # A bigger number was never the fix — paging is, which is what
+    # POSTGREST-NO-OVER-CAP-RANGE now enforces globally.
     assert (
-        "ALL_BETS_CEILING" in fn_body
+        "PAGED_ROW_CEILING" in fn_body
+        or "fetchAllPaged" in fn_body
         or ".range(0," in fn_body
     ), (
-        "getAllBets must use ALL_BETS_CEILING or .range() to bypass "
+        "getAllBets must page (fetchAllPaged/PAGED_ROW_CEILING) to get past "
         "Supabase's default 1000-row db-max-rows cap"
     )
 
@@ -29921,8 +29928,11 @@ def _restate():
         "a restated ROI must carry its coverage (ANALYSIS_GOTCHAS #29)"
     )
 
+    # tipstrr dropped 2026-09-21 (TIPSTRR-SCRAPE-TEARDOWN) — the scraper and
+    # audit are deleted, and COMPETITOR-AUDIT-FOREBET-BETAMINIC asserts they
+    # stay deleted.
     for name in ("winnerodds", "signalodds", "deepbetting", "forebet",
-                 "tipstrr", "betaminic"):
+                 "betaminic"):
         src = (root / "scripts" / f"audit_vs_{name}.py").read_text()
         assert "from scripts._our_stats import our_stats" in src, (
             f"audit_vs_{name}.py must use the shared our_stats"
@@ -39753,10 +39763,49 @@ def test_trigger_calibrator_watch():
             "verdict must be None until the sample is large enough — offering "
             "one early is how a four-bet number becomes a decision."
         )
-    assert CLV_USEFUL_N >= 300, (
-        f"CLV_USEFUL_N={CLV_USEFUL_N} is below the ~334 needed for a useful CLV "
-        "read; lowering it silently lowers the bar for a real-money decision."
+    # REWRITTEN 2026-09-21 (CLV-SAMPLE-BAR-IS-DERIVED). This demanded
+    # CLV_USEFUL_N >= 300, guarding the old hardcoded 334 "as the repo's own
+    # figure". Measured against the actual ledger, 334 is not a bar at all: at
+    # the observed sd of 0.1103 it is INSUFFICIENT to detect a 1pp move (n=487)
+    # and 17x more than needed for a 5pp one (n=19). One constant cannot be
+    # right for both ends, so the bar is now derived from the effect size the
+    # DECISION turns on — and the test that pinned the magic number turned the
+    # suite red on a strictly better implementation (RELIABILITY_LEDGER §9).
+    #
+    # So guard the DERIVATION, which is what actually cannot be weakened
+    # quietly, rather than a number that was never defensible.
+    from scripts.trigger_calibrator_check import (
+        required_clv_n, CLV_EFFECT_PP, CLV_T_TARGET, CLV_N_FLOOR,
     )
+    import inspect as _inspect
+
+    assert CLV_USEFUL_N == required_clv_n(), (
+        "CLV_USEFUL_N must BE the derived value, not a constant that happens to "
+        "sit near it")
+    assert CLV_N_FLOOR >= 30, (
+        f"the absolute floor is {CLV_N_FLOOR}. Whatever the power maths says, a "
+        f"verdict on a handful of bets is not a verdict — this is the backstop "
+        f"for the day the measured sd collapses")
+    assert CLV_T_TARGET >= 2.0, (
+        f"t={CLV_T_TARGET} is below two-sided ~95%. Lowering t shrinks the "
+        f"required sample without changing anything about the evidence")
+    assert 0.01 <= CLV_EFFECT_PP <= 0.10, (
+        f"CLV_EFFECT_PP={CLV_EFFECT_PP} is outside the plausible range for "
+        f"'smallest CLV move that changes what we do'. Raising it is the easy "
+        f"way to make any sample look sufficient — n falls as its SQUARE")
+
+    src_fn = _inspect.getsource(required_clv_n)
+    assert "stddev" in src_fn, (
+        "the sample bar must be derived from the OBSERVED spread. A fixed sd "
+        "stops being the right number the moment the strategy's dispersion "
+        "changes, which is exactly how 334 survived as long as it did")
+
+    # The relationship that makes the bar meaningful: a smaller effect must
+    # demand a larger sample. If that ever inverts, the derivation is wrong
+    # however sensible its constants look.
+    assert required_clv_n(effect=0.01) > required_clv_n(effect=0.05), (
+        "required_clv_n must grow as the effect size shrinks (n scales with "
+        "1/effect^2)")
 
     sched = _pl.Path("workers/scheduler.py").read_text()
     assert "job_trigger_calibrator_watch" in sched, "the watcher must exist"
