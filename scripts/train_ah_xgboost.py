@@ -42,7 +42,7 @@ import pandas as pd
 import xgboost as xgb
 from rich.console import Console
 from sklearn.metrics import roc_auc_score, log_loss
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import TimeSeriesSplit
 
 from workers.api_clients.db import execute_query
 
@@ -139,7 +139,7 @@ def _load_training_rows() -> pd.DataFrame:
             ORDER BY match_id, dist_to_fair ASC
         )
         SELECT
-            m.id AS match_id, m.score_home, m.score_away,
+            m.id AS match_id, m.date AS match_date, m.score_home, m.score_away,
             ml.handicap_line, ml.home_odds,
             mfv.bookmaker_disagreement, mfv.elo_diff,
             mfv.form_ppg_home, mfv.form_ppg_away,
@@ -196,13 +196,32 @@ def _build_feature_matrix(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, li
     return X, y, feature_cols
 
 
-def _train(X: pd.DataFrame, y: pd.Series, feature_cols: list[str]) -> tuple:
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+def _train(X: pd.DataFrame, y: pd.Series, feature_cols: list[str],
+           match_dates: pd.Series | None = None) -> tuple:
+    # MODEL-TRAINING-DEBT (e), 2026-09-21 — TIME-ORDERED SPLIT.
+    #
+    # This was StratifiedKFold(shuffle=True), which assigns a fixture from March
+    # to the test fold and its April neighbours to train. Team-strength features
+    # (elo_diff, form_ppg_*, form_momentum_*) are slow-moving per team, so a
+    # shuffled split lets the model see a team's later form while predicting its
+    # earlier match. The CV score that comes out is optimistic and does not
+    # describe how the model would perform on tomorrow's fixtures.
+    #
+    # TimeSeriesSplit trains only on the past and tests only on the future, which
+    # is the question this model would actually be asked.
+    #
+    # Note this head is DORMANT — `ah_xgb` is referenced nowhere in workers/, so
+    # nothing is served from it. Fixed anyway because a wrong CV number is worse
+    # than no number: it is the thing someone would cite when deciding whether to
+    # ship it.
+    if match_dates is not None and len(match_dates) == len(X):
+        order = match_dates.sort_values().index
+        X, y = X.loc[order].reset_index(drop=True), y.loc[order].reset_index(drop=True)
+    skf = TimeSeriesSplit(n_splits=5)
     # XGBoost handles half-labels naturally via binary:logistic with float y
     # — internally it's a weighted binary cross-entropy.
     auc_scores, ll_scores = [], []
-    y_bin = (y > 0.5).astype(int)  # for stratification only
-    for fold, (tr, te) in enumerate(skf.split(X, y_bin)):
+    for fold, (tr, te) in enumerate(skf.split(X)):
         clf = xgb.XGBClassifier(
             n_estimators=200, max_depth=4, learning_rate=0.05,
             subsample=0.8, colsample_bytree=0.8,
@@ -256,7 +275,10 @@ def main():
         sys.exit(1)
     X, y, feature_cols = _build_feature_matrix(df)
     console.print(f"\n[bold]Feature matrix: {X.shape[0]:,} rows × {X.shape[1]} features[/bold]")
-    model, metrics = _train(X, y, feature_cols)
+    # Pass the kickoff dates so the CV split is chronological. Without them
+    # _train falls back to unordered folds, which is the defect this fixed.
+    model, metrics = _train(X, y, feature_cols,
+                            match_dates=df["match_date"] if "match_date" in df else None)
     if args.dry_run:
         console.print("\n[yellow]--dry-run: not saving bundle[/yellow]")
         return

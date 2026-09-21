@@ -45879,6 +45879,40 @@ def test_clv_sample_bar_is_derived():
     assert not _re.search(r"\breturn\s+334\b", body), "the constant must not survive inside the function"
 
 
+@test("AH-TRAINER-TIME-ORDERED-SPLIT — football CV must not shuffle across time")
+def test_ah_trainer_time_ordered_split():
+    """MODEL-TRAINING-DEBT (e), 2026-09-21.
+
+    train_ah_xgboost used StratifiedKFold(shuffle=True), which puts a March
+    fixture in the test fold and its April neighbours in train. Team-strength
+    features (elo_diff, form_ppg_*, form_momentum_*) move slowly per team, so a
+    shuffled split lets the model see a team's LATER form while predicting its
+    EARLIER match. The resulting CV score is optimistic and does not describe
+    performance on tomorrow's fixtures, which is the only question that matters.
+
+    The head is dormant — `ah_xgb` is referenced nowhere in workers/ — so nothing
+    is served from it. Fixed anyway: a wrong CV number is worse than no number,
+    because it is exactly what someone would cite when deciding to ship it.
+    """
+    src = _engine_path("scripts/train_ah_xgboost.py").read_text(encoding="utf-8")
+
+    code = [l for l in src.split("\n")
+            if "StratifiedKFold" in l and not l.strip().startswith("#")]
+    assert not code, (
+        f"train_ah_xgboost still uses a shuffled split in executable code: {code}. "
+        f"Football CV must be chronological — train on the past, test on the future"
+    )
+    assert "TimeSeriesSplit" in src, "the trainer must use a time-ordered CV split"
+    assert "match_date" in src, (
+        "the split needs kickoff dates carried through from the query, or it "
+        "cannot order the folds and silently degrades to unordered"
+    )
+    assert "match_dates=" in src, (
+        "the caller must pass the dates into _train — the parameter defaulting "
+        "to None means forgetting it reintroduces the defect silently"
+    )
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).
