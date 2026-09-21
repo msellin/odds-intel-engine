@@ -48,14 +48,17 @@ jobs:
         run: pip install --quiet requests beautifulsoup4 cloudscraper
 
       - name: Scrape DeepBetting
+        id: deepbetting
         continue-on-error: true
         run: python3 scripts/scrape_deepbetting.py
 
       - name: Scrape SignalOdds
+        id: signalodds
         continue-on-error: true
         run: python3 scripts/scrape_signalodds.py --restart
 
       - name: Scrape Forebet
+        id: forebet
         # Forebet's public date-strip has shrunk from the doc-comment's ~38 days
         # back to ~7 (verified 2026-08-01). Anything older silently returns
         # today's picks and is filtered out. Ask for a 14-day slice — small
@@ -68,10 +71,12 @@ jobs:
           python3 scripts/scrape_forebet.py --start "$START" --end "$END"
 
       - name: Scrape Tipstrr
+        id: tipstrr
         continue-on-error: true
         run: python3 scripts/scrape_tipstrr.py
 
       - name: Scrape Betaminic (public ShootingBets results table)
+        id: betaminic
         continue-on-error: true
         run: python3 scripts/scrape_betaminic.py --days 150
 
@@ -97,3 +102,35 @@ jobs:
           snapshots via scripts/scrape_*.py. The 02:00 UTC daily audit
           consumes these and rewrites ledger/comparison_*.json."
           git push origin HEAD:main
+
+      # FOREBET-SCRAPER-403-SILENTLY-GREEN-2026-09-21.
+      #
+      # Every scrape step is continue-on-error so one dead source cannot stop the
+      # other four from running and committing — that part is correct and stays.
+      # What it ALSO did was make the JOB green for eight straight weeks while
+      # Forebet 403'd on every request and committed nothing, because
+      # continue-on-error rewrites the step's conclusion to success.
+      #
+      # So: collect the real outcomes and fail the job here, AFTER the commit, so
+      # working scrapers still publish while a dead one is loud at the scrape
+      # rather than 18 days later at COMPETITOR-PICKS-STALE.
+      #
+      # NOTE `steps.X.outcome`, not `.conclusion` — `.conclusion` is the value
+      # continue-on-error overwrites, and using it here would faithfully
+      # reproduce the bug this step exists to catch.
+      - name: Fail if any scraper produced nothing
+        if: always()
+        run: |
+          fail=0
+          for pair in "deepbetting=${{ steps.deepbetting.outcome }}" \
+                      "signalodds=${{ steps.signalodds.outcome }}" \
+                      "forebet=${{ steps.forebet.outcome }}" \
+                      "tipstrr=${{ steps.tipstrr.outcome }}" \
+                      "betaminic=${{ steps.betaminic.outcome }}"; do
+            name="${pair%%=*}"; outcome="${pair#*=}"
+            if [ "$outcome" != "success" ]; then
+              echo "::error title=Competitor scrape failed::${name} exited non-zero (${outcome}). Its cached snapshot is unchanged, the daily audit will recompute comparison_${name}.json from stale rows, and the landing will publish them as current."
+              fail=1
+            fi
+          done
+          exit $fail

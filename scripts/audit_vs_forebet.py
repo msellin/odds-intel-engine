@@ -183,6 +183,29 @@ def main() -> int:
 
     enough = fb.get("n", 0) >= MIN_SAMPLE and ours.get("n", 0) >= MIN_SAMPLE
     status = "ok" if enough else "insufficient-data-pending"
+
+    # FOREBET-SCRAPER-403-SILENTLY-GREEN-2026-09-21.
+    #
+    # snapshot_at_utc is the AUDIT's own run time and window.end is literally
+    # today+1 — both are fresh every single day whether or not the scrape
+    # produced anything. Neither describes the DATA. When the scraper 403s, this
+    # script happily recomputes a "current" comparison from a frozen cache and
+    # stamps it status "ok", which is the one flag the landing uses to CLEAR its
+    # amber stale marker. That is how 22-day-old picks rendered as live.
+    #
+    # So publish the date the data actually reaches, and drop out of "ok" once it
+    # ages past the scrape cadence. This does not hide the problem — the scraper
+    # is still broken and COMPETITOR-PICKS-STALE stays red until it is fixed or
+    # the source is dropped — it stops the PAGE from lying while that is open.
+    MAX_DATA_AGE_DAYS = 21          # keep in step with COMPETITOR-PICKS-STALE
+    data_through = max((r.get("match_date") or "" for r in kept), default="") or None
+    data_age = ((date.today() - date.fromisoformat(data_through)).days
+                if data_through else None)
+    if data_age is not None and data_age > MAX_DATA_AGE_DAYS:
+        status = "stale-source"
+        print(f"\nNOTE: newest Forebet pick is {data_through} ({data_age}d old, "
+              f"max {MAX_DATA_AGE_DAYS}d) — publishing status 'stale-source' so "
+              f"the landing marks the row instead of presenting it as current.")
     if not enough:
         print(f"\nNOTE: below MIN_SAMPLE={MIN_SAMPLE} on one side — "
               "publishing as insufficient-data-pending.")
@@ -235,6 +258,11 @@ def main() -> int:
         ),
         "snapshot_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "window": {"start": start, "end": end},
+        # data_through is the newest kickoff actually PRESENT, as opposed to
+        # window.end (= today+1) and snapshot_at_utc (= this run's clock), both
+        # of which stay fresh on a scrape that fetched nothing.
+        "data_through": data_through,
+        "data_age_days": data_age,
         "status": status,
         "min_sample_each_side": MIN_SAMPLE,
         "scope_notes": (

@@ -266,6 +266,7 @@ def main() -> int:
     })
 
     all_rows: list[dict] = []
+    bailed: list[str] = []
     day = start
     days_walked = 0
     while day <= end:
@@ -274,6 +275,7 @@ def main() -> int:
             html = fetch_day(session, d_str, mkt_slug)
             if html is None:
                 print(f"  ERROR: {d_str}/{mkt_key} bail")
+                bailed.append(f"{d_str}/{mkt_key}")
                 continue
             picks = parse_page(html, mkt_key, d_str)
             if len(picks) > PAGE_CAP_PER_DAY * 1.5:
@@ -310,8 +312,43 @@ def main() -> int:
         merged[key] = row
     out.write_text(json.dumps(list(merged.values()), indent=2, ensure_ascii=False))
     print(f"\nDone. days walked: {days_walked}, fresh rows: {len(all_rows)}, "
-          f"total after merge: {len(merged)}")
+          f"total after merge: {len(merged)}, bailed fetches: {len(bailed)}")
     print(f"Wrote: {out}")
+
+    # FOREBET-SCRAPER-403-SILENTLY-GREEN-2026-09-21.
+    #
+    # This returned 0 unconditionally. A run where EVERY fetch 403s therefore
+    # looked identical to a quiet one: `all_rows` is empty, the merge rewrites
+    # forebet_raw.json byte-identically from its own cache, git sees no diff,
+    # and the job is green. The weekly workflow was green on 08-02, 08-09,
+    # 08-16, 08-23, 08-30, 09-06, 09-13 and 09-20 while the scraped picks had
+    # been frozen since 2026-08-30 — and the daily audit kept recomputing
+    # comparison_forebet.json from that cache with status "ok", so the landing
+    # published 22-day-old picks as current.
+    #
+    # Exit non-zero HERE, at the scrape, instead of surfacing 18 days later as
+    # COMPETITOR-PICKS-STALE. A partial bail is a warning (Forebet's public
+    # date-strip legitimately shrank to ~7 days, so some requested days return
+    # nothing); a TOTAL bail is an error.
+    attempted = days_walked * len(MARKETS)
+    if not all_rows:
+        print(
+            f"::error title=Forebet scrape yielded 0 fresh rows::"
+            f"{len(bailed)}/{attempted} fetches bailed"
+            f"{' (first: ' + bailed[0] + ')' if bailed else ''}. "
+            f"{out.name} was rewritten unchanged from its {len(merged)}-row "
+            f"cache, so 'no diff to commit' does NOT mean 'nothing changed'. "
+            f"The daily audit will republish these rows as current.",
+            file=sys.stderr,
+        )
+        return 1
+    if bailed:
+        print(
+            f"::warning title=Forebet scrape partially failed::"
+            f"{len(bailed)}/{attempted} fetches bailed; "
+            f"{len(all_rows)} fresh rows kept.",
+            file=sys.stderr,
+        )
     return 0
 
 

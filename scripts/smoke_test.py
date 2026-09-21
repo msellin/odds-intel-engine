@@ -23160,8 +23160,16 @@ def test_competitor_audits_fresh():
 
         if name in require_ok:
             status = d.get("status")
-            assert status == "ok", (
-                f"ledger/{name} status={status!r} (want 'ok'). "
+            # FOREBET-SCRAPER-403-SILENTLY-GREEN-2026-09-21: 'stale-source' is a
+            # DELIBERATE downgrade the audit writes when the newest pick is older
+            # than the scrape cadence. It makes the landing render the row with
+            # its amber as-of marker instead of as live. Accepted here so that
+            # being honest about staleness does not itself trip an alarm —
+            # COMPETITOR-PICKS-STALE is the test that stays red until the scraper
+            # is fixed or the source dropped, and it must NOT be weakened.
+            assert status in ("ok", "stale-source"), (
+                f"ledger/{name} status={status!r} (want 'ok', or 'stale-source' "
+                f"for a source deliberately marked stale). "
                 f"When status != 'ok' the audit script writes a "
                 f"payload without full their_stats, and the landing "
                 f"falls back to the hardcoded COMP_FALLBACK for that "
