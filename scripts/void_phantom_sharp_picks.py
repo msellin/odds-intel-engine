@@ -36,7 +36,16 @@ from workers.automation.bot_configs import CONFIG_BY_NAME
 log = logging.getLogger(__name__)
 
 COHORTS = ("trigger_1x2_sharp", "trigger_ou_sharp")
-TAG = "SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20"
+# The `quarantine:` PREFIX IS LOAD-BEARING, not decoration. `settlement.
+# resettle_wrongly_voided_bets` re-grades every void on a finished match and
+# clears `void_reason` to NULL — it skips only reasons starting with
+# "quarantine". The first run of this script used a bare descriptive reason and
+# all 31 rows were resurrected within hours, putting the +549.9% ROI bot back on
+# the scoreboard. (The `KAMBI-CRITERION-CONTAMINATION` rows that looked like a
+# working precedent had survived only because their matches are postponed with
+# NULL scores.) This is a deliberate, permanent quarantine: the price never
+# existed, so there is no future state in which these rows become gradeable.
+TAG = "quarantine: SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20"
 
 
 def _evidence(cur, mid, market, selection, odds, book, kickoff) -> list[str]:

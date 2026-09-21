@@ -36,7 +36,7 @@ JOIN matches m ON m.id = sb.match_id
 LEFT JOIN teams ht ON ht.id = m.home_team_id
 LEFT JOIN teams ta ON ta.id = m.away_team_id
 WHERE sb.result = 'void'
-  AND sb.void_reason IS DISTINCT FROM 'quarantine'
+  AND (sb.void_reason IS NULL OR LEFT(sb.void_reason, 10) <> 'quarantine')
   AND m.status = 'finished'
   AND m.score_home IS NOT NULL AND m.score_away IS NOT NULL
 """

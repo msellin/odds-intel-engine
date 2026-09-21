@@ -4620,6 +4620,61 @@ def test_sharp_triggers_refuse_stale():
             f"gated strategy, or the gate is bypassed by a missing field")
 
 
+@test("QUARANTINE-VOIDS-SURVIVE-THE-RESETTLER — a deliberate void is not undone overnight")
+def test_quarantine_voids_survive_the_resettler():
+    """SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20, second act.
+
+    31 picks priced off other fixtures' quotes were voided with a descriptive
+    `void_reason`. `settlement.resettle_wrongly_voided_bets` re-graded every one
+    of them within hours, cleared `void_reason` to NULL, and put a **+549.9% ROI**
+    bot back on the scoreboard. The cleanup looked done and was gone by morning.
+
+    The re-settler skipped only `void_reason = 'quarantine'` — an EXACT match on
+    a bare magic string — so a deliberate quarantine could be protected only by
+    discarding its own explanation. The `KAMBI-CRITERION-CONTAMINATION` rows that
+    looked like a working precedent had survived by luck: their matches are
+    postponed with NULL scores, which this pass skips anyway.
+
+    Two invariants, because the fix has two halves that fail independently:
+      1. the predicate is a PREFIX, so a quarantine can carry its reason;
+      2. it uses LEFT(...)=, NOT LIKE — a literal % in this SQL is consumed by
+         psycopg2 parameter interpolation and raises IndexError at runtime. The
+         first version of this fix shipped with LIKE and crashed the query.
+    """
+    import inspect
+    from workers.jobs import settlement as st
+
+    sql = st._WRONGLY_VOIDED_SQL
+    assert "LEFT(sb.void_reason, 10) <> 'quarantine'" in sql, (
+        "the re-settler must skip any void_reason STARTING WITH 'quarantine'")
+    assert "LIKE" not in sql.upper().split("WHERE")[-1], (
+        "no LIKE in this predicate: the SQL is executed with parameters and a "
+        "literal %% is eaten by psycopg2 interpolation")
+    assert "void_reason = NULL" in inspect.getsource(st.resettle_wrongly_voided_bets), (
+        "this pass clears void_reason — that is WHY the prefix guard matters: "
+        "a resurrected row loses the evidence of why it was voided")
+
+    # It must still re-grade the reversible reasons; that is the pass's purpose.
+    for reason in ("postponed", "no_ht_score"):
+        assert not reason.startswith("quarantine"), (
+            f"'{reason}' describes a state that can legitimately change and must "
+            f"stay re-gradeable")
+
+    # End-to-end against the live DB: the SQL runs (the IndexError above is a
+    # runtime fault a source check cannot see) and returns none of our rows.
+    from workers.api_clients.db import execute_query
+    rows = execute_query(sql.format(table="shadow_bets"), [5000])
+    resurrectable = {str(r["id"]) for r in rows}
+    quarantined = {
+        str(r["id"]) for r in execute_query(
+            "SELECT id FROM shadow_bets WHERE LEFT(void_reason, 10) = %s", ["quarantine"])
+    }
+    assert quarantined, "no quarantined shadow_bets — the 31 phantom-priced picks should be"
+    assert not (resurrectable & quarantined), (
+        f"{len(resurrectable & quarantined)} quarantined rows are still reachable "
+        f"by the re-settler — they will be un-voided on the next settlement run")
+
+
 @test("ANCHOR-PRICE-SANITY — both pricing engines refuse a price the anchor contradicts")
 def test_anchor_price_sanity_on_both_engines():
     """SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20.
@@ -26763,10 +26818,18 @@ def _bet_void_integrity():
     )
     src = inspect.getsource(st.resettle_wrongly_voided_bets)
 
-    assert "IS DISTINCT FROM 'quarantine'" in st._WRONGLY_VOIDED_SQL, (
-        "the re-settler must exclude void_reason='quarantine'. Those are the "
-        "deliberate May-June cleanups; reopening them undoes the whole point "
-        "of INPLAY-O-QUARANTINE (62 rows, €577 of fake PnL)."
+    assert "LEFT(sb.void_reason, 10) <> 'quarantine'" in st._WRONGLY_VOIDED_SQL, (
+        "the re-settler must exclude void_reason starting with 'quarantine' "
+        "(LEFT(...)=, not LIKE — a literal %% in this SQL is eaten by psycopg2 "
+        "parameter interpolation and raises IndexError at runtime). "
+        "Those are deliberate cleanups; reopening them undoes the whole point "
+        "of INPLAY-O-QUARANTINE (62 rows, €577 of fake PnL).\n"
+        "IT MUST BE A PREFIX, NOT AN EXACT MATCH: as an exact match on the bare "
+        "string, a quarantine could only be protected by throwing away its own "
+        "explanation. SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES voided 31 phantom-"
+        "priced picks with a descriptive reason and this pass resurrected all "
+        "31 within hours — and clears void_reason to NULL, so the evidence went "
+        "with them."
     )
     assert "m.status = 'finished'" in st._WRONGLY_VOIDED_SQL, (
         "only re-settle on finished matches — a postponed fixture's void is correct"
@@ -37983,9 +38046,13 @@ def test_ht_score_never_arrives_void():
         "resettle_wrongly_voided_bets skips void_reason='quarantine' — this "
         "reason must NOT be that, or the void could never be reversed."
     )
-    assert "void_reason IS DISTINCT FROM 'quarantine'" in s._WRONGLY_VOIDED_SQL, (
+    assert "LEFT(sb.void_reason, 10) <> 'quarantine'" in s._WRONGLY_VOIDED_SQL, (
         "the resettle predicate must still admit other void reasons, so a "
         "no_ht_score void is re-graded once AF backfills the HT score."
+    )
+    assert not s._HT_VOID_REASON.startswith("quarantine"), (
+        "the predicate is a PREFIX match — a reversible void reason must not "
+        "start with 'quarantine' or it could never be re-graded."
     )
     mod = inspect.getsource(s)
     re_idx = mod.find("resettle_wrongly_voided_bets()")

@@ -2238,7 +2238,7 @@ JOIN matches m ON m.id = sb.match_id
 LEFT JOIN teams ht ON m.home_team_id = ht.id
 LEFT JOIN teams ta ON m.away_team_id = ta.id
 WHERE sb.result = 'void'
-  AND sb.void_reason IS DISTINCT FROM 'quarantine'
+  AND (sb.void_reason IS NULL OR LEFT(sb.void_reason, 10) <> 'quarantine')
   AND m.status = 'finished'
   AND m.score_home IS NOT NULL
   AND m.score_away IS NOT NULL
@@ -2360,9 +2360,26 @@ def resettle_wrongly_voided_bets(limit: int = 2000, dry_run: bool = False) -> di
     AH/DNB pushes recompute to void and are left completely untouched, which
     also makes the pass idempotent — a steady state does zero writes.
 
-    `void_reason='quarantine'` rows are excluded outright: those are the
-    deliberate May-June cleanups (INPLAY-O-QUARANTINE and the OU sweeps) whose
+    Rows whose `void_reason` STARTS WITH 'quarantine' are excluded outright:
+    those are deliberate cleanups (INPLAY-O-QUARANTINE, the OU sweeps) whose
     whole purpose was to remove fake PnL. Resurrecting them would undo that.
+
+    ⚠️ THE PREDICATE IS A PREFIX, AND IT HAD TO BECOME ONE (2026-09-20).
+    It was `IS DISTINCT FROM 'quarantine'` — an EXACT match on a bare magic
+    string — which meant a deliberate quarantine could only be protected by
+    discarding its own explanation. Any cleanup that recorded WHY it happened
+    was silently resurrected here, and this pass clears `void_reason` to NULL,
+    so the evidence went too. That is not hypothetical: SHARP-BOT-PRICED-OFF-
+    PHANTOM-FIXTURES voided 31 picks that were priced off other fixtures'
+    quotes, and this pass restored all 31 within hours, putting a +549.9% ROI
+    bot back on the board. The `KAMBI-CRITERION-CONTAMINATION` rows that looked
+    like a working precedent had survived only because their matches are
+    postponed with NULL scores — luck, not protection.
+
+    So a quarantine now reads `quarantine: <tag> — <why>` and stays quarantined.
+    Reasons that are NOT quarantines (`postponed`, `no_ht_score`, corners
+    unsettleable) still re-grade exactly as before — they describe a state that
+    can legitimately change, which is the whole point of this pass.
 
     Returns {'checked', 'repaired', 'shadow', 'simulated', 'pnl_delta'}.
     """
