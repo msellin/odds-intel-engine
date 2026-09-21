@@ -517,22 +517,55 @@ def _destroy_fs_session(name: str) -> bool:
     if name == "coolbet_prod":
         log.error("refusing to destroy the real-money session %r", name)
         return False
-    fs_url = os.getenv("FLARESOLVERR_URL", "http://localhost:8191")
-    try:
-        import json as _json
-        import urllib.request as _url
-        req = _url.Request(
-            f"{fs_url.rstrip('/')}/v1",
-            data=_json.dumps({"cmd": "sessions.destroy", "session": name}).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        with _url.urlopen(req, timeout=30) as r:
-            ok = _json.loads(r.read()).get("status") == "ok"
-        log.info("destroy FS session %r → %s", name, "ok" if ok else "failed")
-        return ok
-    except Exception as e:  # noqa: BLE001
-        log.warning("destroying FS session %r failed: %s", name, e)
-        return False
+    # COOLBET-WEDGE-SELFHEAL-NEVER-FIRED (2026-09-21). This used to read
+    # `FLARESOLVERR_URL` alone. That is the WRONG FlareSolverr for every caller
+    # of this function: the watchdog runs on the operator's Mac, whose FS is
+    # `COOLBET_FS_LOCAL_URL` (localhost:8191), while `FLARESOLVERR_URL` on that
+    # box still holds the pre-RAILWAY-ELIMINATION Railway host and now 404s.
+    #
+    # The asymmetry is what hid it: the WEDGE DETECTOR goes through
+    # `coolbet_explorer.probe_coolbet_reachable` -> `coolbet_session._fs_call`,
+    # which resolves the local override correctly, so the watchdog diagnosed
+    # every wedge accurately and then sent the destroy to a dead host. Measured
+    # over the log: 16 WEDGED_SESSION verdicts on 2026-09-19/20, 16
+    # `fs_session_destroy_failed`, ZERO successes — the self-heal shipped on
+    # 2026-09-18 to bound a wedge at ~30 min has never once fired.
+    #
+    # So resolve the SAME candidates `_fs_call` does, in the same order, and try
+    # each: the session lives on exactly one of them and we do not know which
+    # host this process is on.
+    candidates: list[str] = []
+    for u in (os.getenv("COOLBET_FS_LOCAL_URL"),
+              os.getenv("FLARESOLVERR_URL"),
+              "http://localhost:8191"):
+        if u:
+            u = u.rstrip("/")
+            if u not in candidates:
+                candidates.append(u)
+
+    import json as _json
+    import urllib.request as _url
+
+    errors: list[str] = []
+    for fs_url in candidates:
+        try:
+            req = _url.Request(
+                f"{fs_url}/v1",
+                data=_json.dumps({"cmd": "sessions.destroy", "session": name}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with _url.urlopen(req, timeout=30) as r:
+                ok = _json.loads(r.read()).get("status") == "ok"
+            if ok:
+                log.info("destroy FS session %r on %s → ok", name, fs_url)
+                return True
+            errors.append(f"{fs_url}: status!=ok")
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{fs_url}: {e}")
+
+    log.warning("destroying FS session %r failed on all %d FlareSolverr "
+                "candidate(s): %s", name, len(candidates), "; ".join(errors))
+    return False
 
 
 def heal_inplay_session(dry_run: bool = False) -> dict:

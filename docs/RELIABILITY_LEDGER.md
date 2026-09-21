@@ -419,6 +419,47 @@ is exercised and round-tripped, because valid-but-wrong SQL passes a
 source-only check. When adding a healthcheck, the dedup write is not plumbing
 to be eyeballed; test it like the alert itself.
 
+## 13b. A remedy that resolves its target differently from the detector
+
+2026-09-21 (`COOLBET-WEDGE-SELFHEAL-NEVER-FIRED`, found while triaging
+`COOLBET-WEDGE-RECURRENCE-WATCH`). The Coolbet feed watchdog's wedge self-heal
+shipped 2026-09-18 to bound a wedged FlareSolverr session at ~30 min. It had
+**never once fired**: 16 `WEDGED_SESSION` verdicts on 09-19/20, 16
+`fs_session_destroy_failed`, zero successes — on the price basis of the only
+book we stake real money at.
+
+The detector and the remedy resolved the same dependency two different ways.
+The **detector** probes through `coolbet_explorer.probe_coolbet_reachable` →
+`coolbet_session._fs_call`, which tries `COOLBET_FS_LOCAL_URL` first. The
+**remedy**, `_destroy_fs_session`, hand-rolled `os.getenv("FLARESOLVERR_URL")`.
+On the operator's Mac — the only host that runs this watchdog — that variable
+still holds the pre-RAILWAY-ELIMINATION Railway host, which returns 404.
+
+Why it survived both review and three days of logs:
+
+1. **The diagnosis was perfect.** Every one of those 16 lines names the session,
+   the byte count, the elapsed time, and correctly distinguishes a stuck session
+   from an Imperva verdict. A log that precise does not read like a broken
+   remedy.
+2. **Recovery still happened**, via the next sweep building a fresh session. The
+   feed always came back, so the outcome the self-heal was written to produce
+   occurred anyway — just on the old, slow path it was meant to replace. The
+   *benefit* was missing, not the service.
+3. **The failure string was in the log the whole time.** `fs_session_destroy_failed`
+   appeared 16 times and nobody was counting; the row that would have caught it
+   was filed as a "watch for recurrence in ~2 weeks" reminder.
+
+**The generalisable rule:** when a healthcheck can both *detect* and *fix*, both
+halves must reach the target through the same resolver. A detector that is right
+while its remedy is wrong is worse than one that is wrong outright — it produces
+confident, specific, accurate incident logs describing a fix that never happened.
+
+**Guard:** smoke `COOLBET-WEDGE-SELFHEAL-REACHES-THE-RIGHT-FS` stands up a fake
+FlareSolverr on each candidate URL and asserts the destroy hits
+`COOLBET_FS_LOCAL_URL` first — behavioural, because a source-only check cannot
+tell which host a URL names. It also asserts `coolbet_prod` is refused before any
+request leaves the process.
+
 ## 12. A column filled by a nightly backfill can never be a model feature
 
 Added 2026-09-11, after two features were proposed for the production ensemble

@@ -550,13 +550,23 @@ escalates; it does not.
   > `coolbet_odds_reader` (FS-SESSION-ISOLATION 2026-07-05, set in the plist);
   > `coolbet_prod` is the **real-money UI placer's authed** session. Destroying it
   > to fix a read-only feed drops the placement path.
-- **Self-heal (WEDGED-SESSION-SELF-HEAL 2026-09-18):** the feed watchdog now runs
+- **Self-heal (WEDGED-SESSION-SELF-HEAL 2026-09-18):** the feed watchdog runs
   the first probe itself on the stale-feed-with-fresh-cookies path and destroys the
   reader session on `wedged`, bounding this at ~30 min instead of "until someone
   notices `/performance` has stopped moving". `challenged` routes to `BLOCKED`
   instead — opposite remedy, see §7. Before that date this branch only *printed*
   "check transport first" and refreshed cookies anyway; see
   [`RELIABILITY_LEDGER.md`](RELIABILITY_LEDGER.md) §1, fourth row.
+  > ⚠️ **It did not actually work until 2026-09-21** (`COOLBET-WEDGE-SELFHEAL-NEVER-FIRED`).
+  > `_destroy_fs_session` read `FLARESOLVERR_URL` alone, which on the Mac still
+  > holds the pre-RAILWAY-ELIMINATION Railway host and now 404s — so for three
+  > days it diagnosed every wedge correctly and posted the destroy to a dead
+  > server: **16 `WEDGED_SESSION` verdicts on 09-19/20, 16 `fs_session_destroy_failed`,
+  > zero successes.** It now resolves the same candidates `coolbet_session._fs_call`
+  > does (`COOLBET_FS_LOCAL_URL` first) and tries each. If you are reading this
+  > during an incident, the manual command above still works and always did —
+  > note it sets `FLARESOLVERR_URL=http://localhost:8191` inline, which is
+  > precisely the override the watchdog was missing.
 
 ### 7. The feed dies most days → WE are very likely the cause (footprint)
 - **Symptom:** the Imperva challenge (§2) recurs daily no matter what is patched.

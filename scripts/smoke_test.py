@@ -48155,6 +48155,106 @@ def test_ci_alert_cannot_be_silent():
 
 
 
+@test("COOLBET-WEDGE-SELFHEAL-REACHES-THE-RIGHT-FS — destroy must resolve the LOCAL FlareSolverr")
+def test_coolbet_wedge_selfheal_reaches_the_right_fs():
+    """COOLBET-WEDGE-RECURRENCE-WATCH -> real defect (2026-09-21).
+
+    The row asked "is the wedge self-heal firing too often to still be called a
+    fix?". The log answered something worse: **16 WEDGED_SESSION verdicts on
+    2026-09-19/20 and 16 `fs_session_destroy_failed`, zero successes.** The
+    self-heal shipped 2026-09-18 to bound a wedge at ~30 min had never once
+    fired, on the price basis of the only book we stake real money at.
+
+    Cause: `_destroy_fs_session` hand-rolled `os.getenv("FLARESOLVERR_URL")`
+    while every other FS caller goes through `coolbet_session._fs_call`, which
+    tries COOLBET_FS_LOCAL_URL first. On the operator's Mac — the only host that
+    runs this watchdog — FLARESOLVERR_URL still holds the pre-RAILWAY-ELIMINATION
+    Railway host, which now returns 404.
+
+    The asymmetry is the whole lesson and is why it survived review: the wedge
+    DETECTOR used the correct resolution, so the watchdog diagnosed every wedge
+    accurately, printed a precise reason, and then posted the remedy to a dead
+    host. A remedy that cannot reach its target while the diagnosis beside it is
+    perfect reads, in the log, exactly like a remedy that ran.
+
+    Behavioural, not source-matched: a throwaway HTTP server stands in for each
+    FlareSolverr and records what it was sent.
+    """
+    import json as _json, os as _os, threading as _threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    hits: list[tuple[int, str]] = []
+
+    def make(port_holder, answer_ok: bool):
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):  # silence
+                pass
+
+            def do_POST(self):
+                body = self.rfile.read(int(self.headers["Content-Length"]))
+                payload = _json.loads(body)
+                hits.append((port_holder[0], payload.get("session", "")))
+                out = _json.dumps(
+                    {"status": "ok" if answer_ok else "error"}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(out)))
+                self.end_headers()
+                self.wfile.write(out)
+        return H
+
+    servers = []
+    try:
+        for answer_ok in (True, True):
+            holder = [0]
+            srv = HTTPServer(("127.0.0.1", 0), make(holder, answer_ok))
+            holder[0] = srv.server_address[1]
+            _threading.Thread(target=srv.serve_forever, daemon=True).start()
+            servers.append(srv)
+        local_port = servers[0].server_address[1]
+        remote_port = servers[1].server_address[1]
+
+        saved = {k: _os.environ.get(k)
+                 for k in ("COOLBET_FS_LOCAL_URL", "FLARESOLVERR_URL")}
+        try:
+            _os.environ["COOLBET_FS_LOCAL_URL"] = f"http://127.0.0.1:{local_port}"
+            _os.environ["FLARESOLVERR_URL"] = f"http://127.0.0.1:{remote_port}"
+
+            import importlib
+            wd = importlib.import_module("workers.jobs.coolbet_feed_watchdog")
+
+            hits.clear()
+            assert wd._destroy_fs_session("coolbet_odds_reader") is True, (
+                "destroy reported failure against a FlareSolverr that answered ok")
+            assert hits, "no FlareSolverr was contacted at all"
+            assert hits[0][0] == local_port, (
+                f"the destroy went to port {hits[0][0]} first, but "
+                f"COOLBET_FS_LOCAL_URL is {local_port}. The Mac's FS is the local "
+                f"one; FLARESOLVERR_URL there is a dead Railway host. Sending the "
+                f"remedy to the wrong FlareSolverr is the exact bug this pins — "
+                f"and it is invisible, because the DETECTOR resolves correctly")
+
+            # the real-money session is never a target, whatever the URL resolves to
+            hits.clear()
+            assert wd._destroy_fs_session("coolbet_prod") is False, (
+                "coolbet_prod is the real-money UI placer's authed session — no "
+                "feed problem justifies dropping it")
+            assert not hits, (
+                "a destroy for coolbet_prod reached FlareSolverr; the refusal "
+                "must happen before any request is sent")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
+    finally:
+        for srv in servers:
+            srv.shutdown()
+    return "destroy hits COOLBET_FS_LOCAL_URL first; coolbet_prod refused pre-flight"
+
+
+
 
 if __name__ == "__main__":
     main()
