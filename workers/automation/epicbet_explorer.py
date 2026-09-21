@@ -417,6 +417,25 @@ def _get(sess: requests.Session, path: str, payload=None, *, timeout: int = 25):
                 raise
             _fs_open(sess)
             body = _fs_get_json(url)
+        except (requests.ConnectionError, requests.Timeout) as e:
+            # EPICBET-CONNECTION-ERROR-SKIPS-THE-FALLBACK (2026-09-21).
+            #
+            # The FlareSolverr fallback above existed for exactly one symptom —
+            # an HTTP 403 — so it caught only requests.HTTPError. A refused or
+            # reset connection raises requests.ConnectionError, a DIFFERENT
+            # class, which propagated and failed the job without ever trying FS.
+            #
+            # That is backwards. "This host cannot reach Epicbet directly" is
+            # what the fallback is FOR, and a connection that never completes is
+            # stronger evidence of it than a status code. Observed live
+            # 2026-09-21: epicbet_odds_snapshot went 3+ consecutive failures on
+            # "HTTPSConnectionPool(host='epicbet.com', port=443): Max retries
+            # exceeded" while FlareSolverr on the same box was healthy and would
+            # have served the request.
+            log.warning("Epicbet: direct call failed at the transport (%s) — "
+                        "falling back to FlareSolverr", type(e).__name__)
+            _fs_open(sess)
+            body = _fs_get_json(url)
 
     if isinstance(body, dict) and "result" in body:
         return body["result"].get("data")
