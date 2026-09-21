@@ -357,6 +357,13 @@ The frontend lives at `../odds-intel-web/` (sibling directory). All rules for it
 
 ### Tier Gating Rules
 
+> **Corrected 2026-09-21.** This section used to describe gating for match detail and
+> `/value-bets`, neither of which exists. **There is no paid product right now** — `ROADMAP.md`
+> records the Free/Pro/Elite matrix as deprecated, and there is **no checkout route** in the web
+> app (only a vestigial Stripe webhook). The tier code below is still live and still correct for
+> the surfaces that remain, but the meaningful gate today is **`is_superadmin`**, which separates
+> the public pages from `/admin/**`.
+
 Server-side gating is the only safe gating. Client-side gating hides UI but does not protect data.
 
 - Tier is read from `profiles.tier` (values: `free`, `pro`, `elite`) + `profiles.is_superadmin`
@@ -367,21 +374,47 @@ Server-side gating is the only safe gating. Client-side gating hides UI but does
 
 ### Key Frontend Files
 
+> **Corrected 2026-09-21 (`CLAUDE-MD-MAPS-A-DELETED-PRODUCT`).** Every one of the 11 paths
+> previously listed here had been deleted by `PRODUCT-COLLAPSE` (`f6d3648`, **2026-06-24** — 174
+> files, 39,872 lines), which removed `/matches`, `/value-bets` and the entire signals UX. The
+> tables below are the surface that actually exists. **The public product is five pages.**
+
+**Public pages** — this is the whole customer-facing surface:
+
 | File | Purpose |
 |------|---------|
-| `src/lib/engine-data.ts` | All Supabase queries — data fetching layer |
-| `src/lib/signal-labels.ts` | Signal translation layer — raw floats → human labels |
-| `src/app/(app)/matches/[id]/page.tsx` | Match detail — server-side tier gating |
-| `src/app/(app)/value-bets/page.tsx` | Value bets — server-side tier gating |
-| `src/components/match-detail-free.tsx` | Free-tier match detail (pass `isPro` to suppress Pro CTAs for Pro/Elite users) |
-| `src/components/match-signal-summary.tsx` | Intelligence Summary (SUX-4) |
-| `src/components/signal-accordion.tsx` | Signal group accordion (SUX-5) |
-| `src/components/signal-delta.tsx` | Signal delta — what changed since last visit (SUX-9) |
-| `src/components/live-odds-chart.tsx` | Live in-play odds chart (FE-LIVE) |
-| `src/components/bet-explain-button.tsx` | LLM bet explanation button (BET-EXPLAIN) |
-| `src/app/api/bet-explain/route.ts` | Gemini API route — Elite only |
-| `src/app/api/live-odds/route.ts` | Live odds API route — Pro only |
-| `src/app/api/stripe/webhook/route.ts` | Stripe webhook handler |
+| `src/app/page.tsx` | Landing — head-to-head vs other public models, reads `ledger/comparison_*.json` |
+| `src/app/picks/page.tsx` | `/picks` — the pre-registered sharp-edge forward test (the product) |
+| `src/app/(app)/performance/page.tsx` | Settled track record + per-bot leaderboard |
+| `src/app/(app)/track-record/page.tsx` | Public ledger |
+| `src/app/methodology/page.tsx` | How the numbers are computed — the auditability pitch |
+
+**Data layer:**
+
+| File | Purpose |
+|------|---------|
+| `src/lib/engine-data.ts` | All PostgREST queries — the data fetching layer (large; start here) |
+| `src/lib/upcoming-picks.ts` | The `/picks` feed, incl. per-market edge floors and break-even odds |
+| `src/lib/forward-test-picks.ts` | The pre-registered forward test's own reads |
+| `src/lib/coolbet-edge.ts` | `COOLBET_AUTO_MIN_EDGE_BY_MARKET` — the web-side per-market floors |
+| `src/lib/bot-aggregates.ts` | Per-bot rollups behind the leaderboard |
+| `src/lib/shadow-bots/queries.ts` | Admin shadow-bots page data (see `verdict.ts` for the labels) |
+| `src/lib/get-user-tier.ts` | Reads `profiles.tier` + `is_superadmin` |
+| `src/lib/real-money-tier.ts` | Real-money tier badge logic |
+
+**Admin (superadmin only)** — `/admin`, `/admin/bots`, `/admin/ops`, `/admin/place`,
+`/admin/real-bets`, `/admin/shadow-bots[/[bot]]`, plus CS2/LoL/tennis. This is where the
+operator-facing surfaces live; most day-to-day work touches these, not the public pages.
+
+| File | Purpose |
+|------|---------|
+| `src/app/(app)/admin/shadow-bots/page.tsx` | Shadow-bot board — the main operator view |
+| `src/app/(app)/admin/ops/page.tsx` | Ops status |
+| `src/app/(app)/admin/place/page.tsx` | Placement controls |
+| `src/app/api/admin/coolbet-placer-bots/route.ts` | Per-bot `ui_place_enabled` toggles |
+| `src/app/api/v1/track-record/route.ts` | Public track-record API |
+| `src/app/api/v1/upcoming/route.ts` | Public upcoming-picks API |
+| `src/app/api/stripe/webhook/route.ts` | Stripe webhook — **vestigial, there is no checkout route** |
 
 ### Frontend Code Conventions
 

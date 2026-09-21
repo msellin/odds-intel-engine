@@ -45555,6 +45555,57 @@ def test_single_master_task_list():
     )
 
 
+@test("CLAUDE-MD-FRONTEND-MAP-IS-REAL — the agent map must not name files that do not exist")
+def test_claude_md_frontend_map_is_real():
+    """CLAUDE-MD-MAPS-A-DELETED-PRODUCT (2026-09-21).
+
+    CLAUDE.md's "Key Frontend Files" table listed 11 paths and **every one was gone**,
+    deleted by PRODUCT-COLLAPSE (f6d3648, 2026-06-24 — 174 files, 39,872 lines) which
+    removed /matches, /value-bets and the whole signals UX. It stood for THREE MONTHS.
+    Every agent session starts by reading that file, so the cost was paid on every
+    session: read the map, hunt for a path, discover it does not exist, re-derive the
+    real structure.
+
+    The 2026-09-18 backlog audit found this, reported it as the cheapest high-value fix
+    in the repo, and then neither fixed it nor filed it — so it survived another three
+    days. This test is the guard that makes the omission impossible to repeat: the map
+    must describe a surface that exists.
+
+    Checks every `src/...` path CLAUDE.md claims, against the sibling web repo.
+    """
+    import re as _re
+
+    body = _engine_path("CLAUDE.md").read_text(encoding="utf-8")
+    assert "### Key Frontend Files" in body, "CLAUDE.md lost its frontend map section"
+    section = body[body.index("### Key Frontend Files"):]
+
+    claimed = sorted(set(_re.findall(r"`(src/[^`]+)`", section)))
+    assert len(claimed) >= 10, (
+        f"the frontend map claims only {len(claimed)} paths — it has been gutted rather "
+        f"than corrected"
+    )
+
+    web = _engine_path("..") / "odds-intel-web"
+    if not web.exists():
+        return  # sibling repo not checked out in this environment
+
+    missing = [c for c in claimed if not (web / c).exists()]
+    assert not missing, (
+        "CLAUDE.md names frontend files that do not exist: " + ", ".join(missing)
+        + ". This is the exact failure that stood for three months — an agent map "
+        "describing a deleted product. Correct the table to the surface that exists; "
+        "do not delete the rows to make this pass."
+    )
+
+    # the deleted surface must not come back into the doc
+    for ghost in ("match-detail-free", "signal-accordion", "match-signal-summary",
+                  "signal-delta", "live-odds-chart", "bet-explain-button",
+                  "signal-labels", "value-bets/page.tsx"):
+        assert ghost not in body, (
+            f"CLAUDE.md references '{ghost}', deleted by PRODUCT-COLLAPSE on 2026-06-24"
+        )
+
+
 @test("COOLBET-MARKET-COLLISION — sub-period and variant markets must not land in full-match slots")
 def test_coolbet_market_collision():
     """COOLBET-SUBPERIOD-LEADING-SPACE + EARLY-WIN + HTML-ENTITIES (2026-09-17).
