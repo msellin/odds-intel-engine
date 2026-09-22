@@ -121,10 +121,33 @@ def _has_exposure(match_id: str, market: str, selection: str) -> bool:
 
 def decide_book(cal_prob: float, threshold: float, odds_floor: float,
                 book_odds: dict, *, market: str | None = None,
-                selection: str | None = None) -> dict:
+                selection: str | None = None,
+                apply_selection_floor: bool = True) -> dict:
     """Pure routing decision. `book_odds` = {book: odds}. A book clears iff its edge
     (cal_prob − 1/odds) ≥ threshold AND odds ≥ odds_floor. Winner = best clearing
-    price; ties break by PLACEABLE_BOOKS order. Returns {clearing, winner, ...}."""
+    price; ties break by PLACEABLE_BOOKS order. Returns {clearing, winner, ...}.
+
+    `apply_selection_floor` defaults TRUE and must stay that way for every
+    model-anchored caller — see EDGE-FLOOR-ONE-PREDICATE below, which exists
+    because the router was once MORE permissive than the rest of the stack on a
+    real-money path. Pass FALSE only when the caller's `threshold` is already a
+    deliberate, anchor-appropriate policy rather than an inherited model floor.
+
+    SHARP-FLOOR-STACKED-ON-MODEL-FLOOR (2026-09-22, [[#007]]). The sharp trigger
+    bots set `edge_floor=0.03` explicitly, because their probability is a
+    de-vigged Pinnacle line where a 3% overlay is a REAL 3%. `bot_configs.py`
+    says so in a ⚠️ comment and believed the explicit floor was honoured. It was
+    not: this function re-imposed `clears_edge_floor()` — the 10%/13%/8% MODEL
+    floor — ON TOP of it, "both must pass, stricter wins". The maximum genuine
+    overlay ever observed against a de-vigged Pinnacle is +6.6%, so an effective
+    10-13% floor cannot select a correctly-priced bet AT ALL: `edge = p − 1/price`
+    is maximised by a WRONG price, so the only legs that ever cleared were
+    phantom ones. That is why `bot_trigger_1x2_sharp_v1` went 25/25 voided while
+    its per-book twins went 2/243. It was not an unlucky strategy, it was a
+    phantom-price detector. Compounded by `_SHARP_EDGE_CEILING = 0.08` (shipped
+    2026-09-20), floor-above-ceiling left an EMPTY admissible band and both
+    merged sharp bots stopped emitting entirely — last picks 2026-09-20 15:58
+    and 2026-09-19 16:21, with `is_active = true` and no alert."""
     clearing = {}
     # ROUTER-AUDIT (2026-09-11): keep every book we PRICED, not just the ones
     # that cleared. Without the losers the stored rationale cannot answer the
@@ -147,7 +170,8 @@ def decide_book(cal_prob: float, threshold: float, odds_floor: float,
         #
         # Two policies, both must pass, stricter wins: the per-bot threshold
         # AND the market/selection floor. Not one replacing the other.
-        sel_ok = clears_edge_floor(market, selection, o, edge) if market else True
+        sel_ok = (clears_edge_floor(market, selection, o, edge)
+                  if (market and apply_selection_floor) else True)
         if o < odds_floor:
             reason = f"below odds floor ({o} < {odds_floor})"
         elif edge < threshold:

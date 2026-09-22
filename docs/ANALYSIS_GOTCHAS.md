@@ -2863,3 +2863,46 @@ every cell" into the queue as a settled fact.
 - Same family as #39: there, the window hid a regime change; here, the instant
   hides a price trend. Both make an arithmetically perfect number a statement
   about the method rather than about the system.
+
+## 70. Raw `clv` breaks even at the closing book's MARGIN, not at zero (2026-09-22)
+
+Found re-running [[#007]]/[[#024]]. The sharp anchor's headline result — **direct-book
+CLV +9.21%, t=+5.1** — was quoted in the queue, in two agent reports and in this repo's
+own task history as evidence the sharp anchor beat the market. It is raw `clv`, defined
+as `odds / closing_odds − 1`, **with no de-vig on either side**. The closing quote still
+carries the book's overround, so a bet that captured exactly zero value scores
+`+margin`. On this population the closing book's median margin is **7.95%**, so the
+break-even for that number was never 0 — it was roughly +8%.
+
+`workers/jobs/settlement.py:1608` says so explicitly and migration 355
+(`SHADOW-CLV-MARGIN-CORRECTED`) shipped the corrected column on **2026-09-15 — one day
+after the run that produced the headline.** Nobody re-read the headline afterwards, so a
+number that had already been superseded kept being quoted for a week as the reason to
+keep accruing toward real money.
+
+Corrected on the same picks the effect disappears and then inverts:
+
+| | ticket window | all to 2026-09-22 |
+|---|---|---|
+| raw `clv` (break-even ≈ +8%) | +8.78%, t=+5.33 | +6.75%, t=+6.93 |
+| margin-corrected (break-even 0) | **+0.86%, t=+0.57** | **−1.28%, t=−1.42** |
+| + priced at the quote actually on offer | **−1.85%** | **−2.98%, t=−3.26** |
+
+**Rules.**
+- Never quote raw `clv` as a verdict. Use `clv_margin_corrected`; if you must show raw,
+  print the book's margin beside it so the break-even is visible.
+- A metric whose break-even is not zero is not a percentage you can compare to another
+  percentage. This is the same class as §18 (a column's declared precision is part of
+  the gate) — the *definition* is part of the number.
+- When a migration changes how a metric is computed, **grep the docs for every figure
+  derived from the old definition in the same commit** (the ripple-check rule in
+  CLAUDE.md). Migration 355 changed the meaning of every CLV figure in the repo and
+  none of them were restated.
+- Two independent checks that both start from the stored column will agree with each
+  other and both be wrong. Re-derive from `odds_snapshots` at least once.
+
+**Related and worse:** on the same population `clv` is **exactly 0.0000 on 51 of 93
+rows**, because the last snapshot we hold for our own book IS the quote we bet — we stop
+polling Coolbet/Unibet-Site after placing. `closing_fresh` is true on **2 of 287**. Half
+the sample carries no information at all, so even the corrected number rests on ~42 rows.
+Before quoting own-book CLV again, check `closing_fresh`, not just `closing_bookmaker`.

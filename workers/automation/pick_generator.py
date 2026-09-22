@@ -246,8 +246,19 @@ def generate(cfg: BotConfig) -> dict:
                 continue
 
             ef, of = _floors(cfg, market, selection, None)
+            # SHARP-FLOOR-STACKED-ON-MODEL-FLOOR (2026-09-22, [[#007]]). When a
+            # bot sets `edge_floor` explicitly, THAT is the policy — the router
+            # must not also re-impose the selection-aware MODEL floor on top of
+            # it. `_floors()` already resolves the two correctly (explicit wins);
+            # `decide_book` was independently applying `clears_edge_floor()`
+            # regardless, so the sharp bots ran a 10-13% effective floor against
+            # a de-vigged Pinnacle whose maximum genuine overlay is +6.6%. See
+            # the docstring in best_price_router.decide_book for why that made
+            # them phantom-price detectors rather than a losing strategy.
+            # Model-anchored bots (edge_floor=None) keep the stacked behaviour.
             decision = decide_book(cal_prob, ef, of, book_odds,
-                                   market=market, selection=selection)
+                                   market=market, selection=selection,
+                                   apply_selection_floor=cfg.edge_floor is None)
             won_book = decision.get("winner")
             if not won_book:
                 c["no_book_clears"] += 1
@@ -420,7 +431,18 @@ def _candidates_from_sharp(cfg, loosest):
         if probs is None:
             continue
         for sel, p_sharp in zip(sides, probs):
-            if sel not in wanted or p_sharp is None or p_sharp <= loosest:
+            # SHARP-PREFILTER-COMPARES-PROB-TO-EDGE (2026-09-22, [[#007]]).
+            # `loosest` is an EDGE floor; `p_sharp` is a PROBABILITY. Comparing
+            # them is a category error that happens to be harmless at 0.03 (it
+            # only drops sub-3% probabilities, which no floor would pass anyway)
+            # and becomes silently destructive the moment a sharp `edge_floor`
+            # is raised — at 0.30 it would discard every selection under 30%
+            # probability for a reason having nothing to do with edge. The
+            # NECESSARY condition on a probability is that a bet at the best
+            # possible price could still clear the floor; since edge =
+            # p - 1/price and price is unknown here, the only sound pre-filter
+            # is p > 0. Edge is gated properly downstream by decide_book.
+            if sel not in wanted or p_sharp is None or p_sharp <= 0.0:
                 continue
             out.append({"match_id": mid, "market": market, "selection": sel,
                         "calibrated_prob": float(p_sharp),

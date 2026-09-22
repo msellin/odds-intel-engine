@@ -1033,3 +1033,54 @@ a gate that derives cannot be fooled by any future cause of drift, precision or 
 Smoke `EDGE-IS-DERIVED-NOT-STORED`. Historical rows were deliberately NOT backfilled:
 rewriting `edge_percent` would rewrite what each bot is recorded as having cleared, which
 is the evidence base for every floor we have set.
+
+## 19. A floor and a ceiling, each correct alone, that together admit nothing (2026-09-22)
+
+**The tell:** a bot with `is_active = true` whose emission count is not falling but
+*flat at a small number*, then zero — and no alert, because nothing failed. Every job
+ran, every job logged `completed`, and the gate that stopped it is the gate doing its
+job.
+
+**What happened ([[#007]]).** The sharp trigger bots set `edge_floor = 0.03`
+explicitly, and `bot_configs.py` carries a ⚠️ comment saying exactly why a model floor
+must not be inherited: their probability is a de-vigged Pinnacle line, so a 13% floor
+"would demand a 13% overlay on Pinnacle, which is nearly unobservable (max seen +6.6%),
+and the bot would silently never fire." The comment was right, the intent was right,
+and the floor was inherited anyway — `best_price_router.decide_book()` applied
+`clears_edge_floor()` **in addition to** the per-bot threshold, deliberately, under the
+banner "two policies, both must pass, stricter wins." That rule was itself a fix
+(`EDGE-FLOOR-ONE-PREDICATE`) for a real defect on a real-money path. **Both changes were
+correct in isolation and neither author could see the other.**
+
+Then `_SHARP_EDGE_CEILING = 0.08` shipped on 2026-09-20 — also correct in isolation, and
+also a fix for a real defect (phantom prices inflate edge, so only a ceiling catches
+them). Floor 0.10, ceiling 0.08. The admissible band became **empty**, and the two
+merged sharp bots stopped emitting entirely.
+
+**Two lessons, and the second is the one worth keeping.**
+
+1. **An effective gate is not the sum of its declared parts.** `_floors()` returned the
+   correct 0.03 the whole time. A test reading `_floors()` — or the config, or the
+   registry — passes green over the entire defect, because no single declared value was
+   ever wrong. Only a probe that asks *"can anything actually get through?"* sees it.
+   The smoke test written for this is deliberately a probe: it constructs an edge in the
+   middle of each bot's own declared band and asserts the router emits. Verified to fail
+   10/10 against the pre-fix code, which is the only evidence a regression test is real.
+
+2. **An unreachable floor does not produce no picks — it produces only WRONG picks.**
+   This is the counter-intuitive half and it cost a full track record. Because
+   `edge = p − 1/price` is *maximised by a bad price*, raising a floor past the maximum
+   genuine opportunity does not filter toward quality; it filters toward data faults.
+   `bot_trigger_1x2_sharp_v1` went **25/25 voided** — every pick priced off a quote
+   belonging to a different fixture — while its per-book twin, running the floor it was
+   supposed to, went **2/243**. It published +549.9% ROI before anyone noticed. It was
+   never an unlucky strategy; it was a phantom-fixture detector wearing a bot's name.
+   **Whenever a floor is above the largest effect the anchor can physically produce, the
+   survivors are by construction the errors.** Same family as §67 in ANALYSIS_GOTCHAS.
+
+**The guard that now exists:** `BOT-ADMISSIBLE-BAND-NON-EMPTY` probes every registered
+`BotConfig` at the midpoint of its own band, and `SHARP-FLOOR-NOT-STACKED` pins that an
+explicit `edge_floor` is the floor actually enforced while model-anchored bots keep the
+stacked behaviour. Still missing, and worth having: an alert for any `is_active` bot
+that emits zero picks for N consecutive days. Nothing in this incident was detected by
+monitoring — it was found by reading the ticket.

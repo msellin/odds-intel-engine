@@ -24408,6 +24408,112 @@ def test_edge_floor_all_callers_2026_09_11():
     return "placer + in-play + router all gate on the shared selection-aware floor"
 
 
+@test("SHARP-FLOOR-NOT-STACKED — an explicit bot edge_floor is the floor actually applied")
+def test_sharp_floor_not_stacked_on_model_floor_2026_09_22():
+    """SHARP-FLOOR-STACKED-ON-MODEL-FLOOR (2026-09-22, [[#007]]).
+
+    `bot_configs.py` sets `edge_floor=0.03` on the sharp trigger bots and says in
+    a ⚠️ comment that inheriting the registry's 13% model floor would make them
+    "silently never fire". They inherited it anyway: `decide_book` applied
+    `clears_edge_floor()` ON TOP of the per-bot threshold, so the sharp bots ran
+    an effective 10-13% floor against a de-vigged Pinnacle whose largest genuine
+    overlay ever observed is +6.6%. Since `edge = p - 1/price` is maximised by a
+    WRONG price, the only legs that could clear were phantom ones — 25/25 voided
+    on `bot_trigger_1x2_sharp_v1` vs 2/243 on its per-book twin.
+
+    This pins BEHAVIOUR, not source text: the previous test asserted the import
+    line and passed green over the defect (RELIABILITY_LEDGER #9)."""
+    import workers.automation.best_price_router as bpr
+
+    # An AWAY selection at ~10.7% edge: below the pooled 13% model floor, well
+    # above a sharp bot's explicit 3%.
+    stacked = bpr.decide_book(0.41, 0.03, 1.01, {"Coolbet": 3.30},
+                              market="1x2", selection="away")
+    assert stacked["winner"] is None, (
+        "default (model-anchored) callers must KEEP the stacked selection floor "
+        "— EDGE-FLOOR-ONE-PREDICATE exists because the router was once more "
+        "permissive than the rest of the stack on a real-money path"
+    )
+    explicit = bpr.decide_book(0.41, 0.03, 1.01, {"Coolbet": 3.30},
+                               market="1x2", selection="away",
+                               apply_selection_floor=False)
+    assert explicit["winner"] == "Coolbet", (
+        "a bot that sets edge_floor explicitly must have THAT floor applied — "
+        "a 3% overlay on a de-vigged Pinnacle line is a real 3%"
+    )
+    # ...and the explicit floor must still bind on its own.
+    too_thin = bpr.decide_book(0.31, 0.03, 1.01, {"Coolbet": 3.30},
+                               market="1x2", selection="away",
+                               apply_selection_floor=False)
+    assert too_thin["winner"] is None, (
+        "opting out of the SELECTION floor must not opt out of the bot's own "
+        "threshold — that would be a bypass, not a correction"
+    )
+
+    # The generator must actually pass the opt-out, keyed on the config.
+    import inspect
+    from workers.automation import pick_generator as pg
+    gsrc = inspect.getsource(pg)
+    assert "apply_selection_floor=cfg.edge_floor is None" in gsrc, (
+        "pick_generator must derive the opt-out from the CONFIG (explicit floor "
+        "=> no stacking), never hard-code it per bot"
+    )
+    return "explicit bot floors are honoured; model-anchored bots still stack"
+
+
+@test("BOT-ADMISSIBLE-BAND-NON-EMPTY — every registered bot can actually emit a pick")
+def test_bot_admissible_band_non_empty_2026_09_22():
+    """SHARP-BOT-BAND-EMPTY (2026-09-22, [[#007]]).
+
+    `_SHARP_EDGE_CEILING = 0.08` shipped 2026-09-20 to reject phantom prices. It
+    was right in isolation, but it landed on top of an EFFECTIVE 10-13% floor
+    (see SHARP-FLOOR-NOT-STACKED), leaving an empty admissible band: 1x2 needed
+    edge >= 0.10 AND <= 0.08. Both merged sharp bots stopped emitting entirely —
+    last picks 2026-09-20 15:58 and 2026-09-19 16:21 — while `is_active` stayed
+    true and nothing alerted. A bot whose band is empty is not conservative, it
+    is DEAD.
+
+    ⚠️ This probes the EFFECTIVE floor by calling `decide_book` exactly as
+    `pick_generator` does. Checking `_floors()` alone would pass green over this
+    entire defect, because `_floors()` was never wrong — the stacking happened
+    inside the router. That is RELIABILITY_LEDGER #9 and it is the reason this
+    test is written as a probe rather than an arithmetic comparison."""
+    from workers.automation.bot_configs import TRIGGER_CONFIGS
+    from workers.automation.pick_generator import _floors
+    import workers.automation.best_price_router as bpr
+
+    dead = []
+    for cfg in TRIGGER_CONFIGS:
+        if cfg.edge_ceiling is None:
+            continue
+        for market in cfg.markets:
+            for selection in (cfg.selections or ("home", "draw", "away",
+                                                 "over", "under")):
+                ef, of = _floors(cfg, market, selection, None)
+                if ef > cfg.edge_ceiling:
+                    dead.append(f"{cfg.bot_name} {market}/{selection}: declared "
+                                f"floor {ef:.4f} > ceiling {cfg.edge_ceiling:.4f}")
+                    continue
+                # An edge squarely INSIDE the declared band must actually clear
+                # the router, at a price the bot could really use.
+                target = (ef + cfg.edge_ceiling) / 2.0
+                odds = max(of, 3.30)
+                cal_prob = target + 1.0 / odds
+                d = bpr.decide_book(
+                    cal_prob, ef, of, {cfg.books[0]: odds},
+                    market=market, selection=selection,
+                    apply_selection_floor=cfg.edge_floor is None)
+                if d["winner"] is None:
+                    why = (d["considered"].get(cfg.books[0], {}) or {}).get("reason")
+                    dead.append(f"{cfg.bot_name} {market}/{selection}: mid-band "
+                                f"edge {target:.4f} rejected — {why}")
+    assert not dead, (
+        "these bots cannot emit anywhere inside their own declared band:\n  "
+        + "\n  ".join(dead)
+    )
+    return f"all {len(TRIGGER_CONFIGS)} bot configs can emit inside their band"
+
+
 @test("FLOORS-ONE-SOURCE-CROSS-LANGUAGE — the frontend derives its floors from the engine")
 def test_floors_one_source_cross_language_2026_09_11():
     """FLOORS-ONE-SOURCE-CROSS-LANGUAGE (2026-09-11).
