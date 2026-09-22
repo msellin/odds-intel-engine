@@ -3120,7 +3120,7 @@ def _build_upcoming_model_summary() -> dict | None:
     return None
 
 
-# PERF-HERO-AND-TABLE-ONE-BASIS (2026-09-22, [[#072]]).
+# PERF-HERO-AND-TABLE-ONE-BASIS (2026-09-22, [[#074]]).
 #
 # THE BUG THIS REMOVES. /performance's HERO read these cached aggregates while
 # its TABLE recomputed from raw bets through `engine-data.execPnl`. Same cohort,

@@ -10859,7 +10859,7 @@ def _():
     import json
     from workers.api_clients.db import execute_query
 
-    # PERF-HERO-AND-TABLE-ONE-BASIS (2026-09-22, [[#072]]). This reconciliation
+    # PERF-HERO-AND-TABLE-ONE-BASIS (2026-09-22, [[#074]]). This reconciliation
     # used to carry its OWN `SUM(sb.pnl)` — the stored, high-water basis — so the
     # moment write_dashboard_cache moved to executable prices the test reported
     # drift that was the FIX, not a regression (bot_v10_1x2 206.42 vs 360.17).
@@ -51028,7 +51028,7 @@ def test_maturity_promotion_rule_is_written():
 
 @test("PERF-ONE-PRICE-BASIS — the hero and the table cannot disagree about P&L")
 def test_perf_one_price_basis():
-    """PERF-HERO-AND-TABLE-ONE-BASIS (2026-09-22, [[#072]]). Owner: *"i feel that
+    """PERF-HERO-AND-TABLE-ONE-BASIS (2026-09-22, [[#074]]). Owner: *"i feel that
     the performance page hero numbers are not aligned with the bots table totals
     and averages"*. They were not, and the cause was a split basis, not a bug in
     either half:
