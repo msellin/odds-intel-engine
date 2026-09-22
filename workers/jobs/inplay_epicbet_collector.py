@@ -93,7 +93,8 @@ _ODDS_CHUNK = 250
 # IP would collect from the wrong identity while reporting success — which is
 # exactly how EPICBET-403-FROM-VPS ran "successfully" for six days writing zero
 # rows ([[feedback_silent_failures]]).
-_RESIDENTIAL_PROXY = os.getenv("OI_RESIDENTIAL_PROXY") or None
+_RESIDENTIAL_PROXY = (os.getenv("EPICBET_RESIDENTIAL_PROXY")
+                     or os.getenv("OI_RESIDENTIAL_PROXY") or None)
 
 
 class Epicbet:

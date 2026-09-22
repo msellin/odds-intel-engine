@@ -305,7 +305,11 @@ def _fs_call(body: dict, *, timeout_s: int = 90) -> dict:
 # So on the VPS the FS browser is given a SOCKS proxy at session-creation time
 # and its traffic leaves from the operator's Estonian line. Unset on the Mac,
 # which is already on that line.
-_RESIDENTIAL_PROXY = os.getenv("OI_RESIDENTIAL_PROXY") or None
+# COOLBET_RESIDENTIAL_PROXY is deliberately its own switch and is NOT set
+# anywhere yet: the sweep feeds the real-money path and gets a volume +
+# price-diff validation pass before it moves.
+_RESIDENTIAL_PROXY = (os.getenv("COOLBET_RESIDENTIAL_PROXY")
+                     or os.getenv("OI_RESIDENTIAL_PROXY") or None)
 
 # SCHEME NORMALISATION, and why it is not pedantry.
 # `socks5h://` is a curl/requests spelling meaning "resolve DNS at the proxy".

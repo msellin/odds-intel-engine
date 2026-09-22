@@ -1,0 +1,33 @@
+# NEAR-KICKOFF-CAPTURE, Epicbet third, on the VPS (2026-09-22).
+#
+# `near_kickoff_capture` snaps closing prices for fixtures inside T-15min at the
+# three direct books. It ran wholly on the Mac because two of the three
+# transports only existed there. Epicbet is not one of them: with the residential
+# egress the VPS reaches it with plain requests, ~0.7s for the full category
+# listing, and FlareSolverr is never opened.
+#
+# ⚠️ THE MAC STILL RUNS THE OTHER TWO. Its plist must be `--books
+# Coolbet,Unibet-Site`. If both sides run Epicbet the writes are not duplicated
+# (MIN_GAP_MIN skips a (match, book) priced in the last 6 minutes) but the two
+# jobs race for the same window and the Mac pays FlareSolverr cost for nothing.
+# Check: grep -A12 ProgramArguments ~/Library/LaunchAgents/com.oddsintel.near-kickoff-capture.plist
+#
+# Timer, not a loop: every 5 minutes, matching the Mac's StartInterval.
+
+[Unit]
+Description=OddsIntel near-kickoff capture (Epicbet, via residential egress)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/odds-intel-engine
+EnvironmentFile=/opt/odds-intel-engine/.env
+Environment=TZ=UTC
+Environment=PYTHONUNBUFFERED=1
+Environment=EPICBET_RESIDENTIAL_PROXY=socks5h://10.8.0.2:1080
+# Its own FS session id is now moot (FS is disabled when proxied) but kept so a
+# fallback run without the proxy still cannot touch the sweep's session.
+Environment=EPICBET_FLARE_SESSION=epicbet_nearko_reader
+ExecStart=/opt/odds-intel-engine/venv/bin/python -m workers.jobs.near_kickoff_capture --books Epicbet

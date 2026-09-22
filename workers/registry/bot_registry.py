@@ -145,6 +145,16 @@ BOTS: list[BotSpec] = [
             0.10, 2.80, False,
             "INSTRUMENT (paper, never placeable, never published). Every 1x2 selection — home, draw AND away — at a FLAT 10% model edge and odds >= 2.80, across both placeable books. The flat floor IS the hypothesis: the registry's selection-aware floor is 10% home / 13% draw+away, and inheriting it would make the instrument test the thing it is meant to be compared against. It exists because the calibrated cohort at odds>=2.80 is 236 HOME of 240, so every draw/away figure quoted so far (including 'draws are -31.5% over n=95') rests on a ~98%-home population and answers nothing. No edge ceiling — model-anchored, where a 20% edge is ordinary. ⚠️ Could not have been built correctly before 2026-09-22: until SHARP-FLOOR-STACKED-ON-MODEL-FLOOR was fixed ([[#007]]) the router re-imposed the selection-aware floor over any explicit edge_floor, so draws/aways would have run at 13% while the config said 10%."),
 
+    # CONSENSUS-ANCHOR-ARM-2026-09-22 ([[#068]]). The published forward test's
+    # SECOND arm. Its own bot identity, not a variant of the sharp one, because
+    # a reader expanding a leaderboard row must see ONE rule's record — two
+    # different anchors averaged into one number describe neither.
+    BotSpec("bot_consensus_anchor_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5", ANCHOR_SHARP,
+            0.03, None, False,
+            "PUBLISHED (Telegram + /picks), never staked. Prices each pick against a de-vigged CONSENSUS of >=5 bookmakers rather than a single sharp line, at a >=3% edge with an **8% ceiling** the sharp arm does not have ([[#007]]: edge = p*odds-1 is maximised by a WRONG price, and 5 of the first 15 qualifying legs cleared 8% against a 7-11 book consensus). It exists because the sharp arm's pre-registered <=4% anchor-overround gate admitted 0 of 173 Pinnacle-priced markets on 2026-09-22 and the channel went dark for two days; that gate is pre-registered so it was NOT relaxed. Justified by measurement, not assumption: over 45 days and n=11,419 matches, a consensus EXCLUDING our AF-'Pinnacle' predicts as well as that feed does (log-loss 0.98339 vs 0.98401), while the feed's median closing overround is 10.24% against those books' 7.95%. Ledger: picks_forward_test WHERE arm='consensus_anchor'. Reported SEPARATELY from the sharp arm.",
+            twin="bot_sharp_forward_test_v1"),
+
+
     # Coolbet own-price paper bots
     BotSpec("bot_ou35_model_v1", FAM_COOLBET_PAPER, "O/U 3.5", ANCHOR_MODEL,
             0.08, 1.80, False,

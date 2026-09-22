@@ -22,6 +22,14 @@
 		<string>/opt/homebrew/bin/python3</string>
 		<string>-m</string>
 		<string>workers.jobs.near_kickoff_capture</string>
+        <!-- EPICBET MOVED TO THE VPS 2026-09-22: oddsintel-near-kickoff-epicbet.
+             This side keeps only the two transports that exist ONLY here —
+             Coolbet (Imperva cookies harvested from CDP-Chrome) and
+             Unibet-Site (injected fetch from the logged-in CDP tab).
+             Do not add Epicbet back without removing the VPS timer: the two
+             would race for the same T-15min window, and the Mac would pay
+             FlareSolverr cost for prices the VPS already has. -->
+        <string>--books</string><string>Coolbet,Unibet-Site</string>
 	</array>
 	<key>EnvironmentVariables</key>
 	<dict>

@@ -231,6 +231,29 @@ _FAR_FUTURE = datetime(2100, 1, 1, tzinfo=timezone.utc)
 # ── transport ─────────────────────────────────────────────────────────────────
 
 
+# RESIDENTIAL-EGRESS (VPS-CONSOLIDATION-2026-09-16, wired 2026-09-22).
+#
+# The FlareSolverr fallback below exists because Epicbet 403s the Hetzner IP.
+# It works, but it is the expensive path: FS was dropping 7 of 48 pre-match runs
+# (15%, EPICBET-FS-500 — "cannot allocate a Chrome context" while reporting
+# healthy), and every Epicbet call competes with whatever else wants that
+# container.
+#
+# With a residential egress configured the DIRECT path works from the VPS exactly
+# as it does from the Mac — plain anonymous REST, ~0.1-0.3s, no browser, no
+# session budget. So the proxy is not merely a migration enabler here: it takes
+# the VPS's existing pre-match sweep off FlareSolverr entirely.
+#
+# Unset on the Mac, which is already on that line.
+# Per-module override first, then the shared knob. This matters: the VPS
+# scheduler runs all 82 jobs in ONE process, so a single shared env var would
+# flip Coolbet's transport at the same moment as Epicbet's. They are at very
+# different readiness — Epicbet is proven and cheap, Coolbet feeds the
+# real-money path and needs its own validation — so each gets its own switch.
+_RESIDENTIAL_PROXY = (os.getenv("EPICBET_RESIDENTIAL_PROXY")
+                     or os.getenv("OI_RESIDENTIAL_PROXY") or None)
+
+
 def _session() -> requests.Session:
     s = requests.Session()
     s.headers.update({
@@ -239,6 +262,15 @@ def _session() -> requests.Session:
         "Accept-Language": "en-GB,en;q=0.9,et;q=0.8",
         "Referer": f"{_BASE}/en/sports/football",
     })
+    if _RESIDENTIAL_PROXY:
+        s.proxies = {"http": _RESIDENTIAL_PROXY, "https": _RESIDENTIAL_PROXY}
+        # DO NOT let a proxy failure fall through to FlareSolverr. Switching
+        # transports silently is how we end up back on the 15%-failure path
+        # without anyone noticing we left it — and the freshness watchdog would
+        # read "working" throughout. A dead tunnel must look like a dead tunnel.
+        s._fs_forbidden = True          # noqa: SLF001 — read by _get below
+        log.info("Epicbet: direct via residential egress %s (FlareSolverr disabled)",
+                 _RESIDENTIAL_PROXY)
     return s
 
 
@@ -336,6 +368,18 @@ def _fs_open(sess: requests.Session) -> None:
     """Create the shared FS session once per run; mark it on `sess`."""
     if getattr(sess, "_fs_on", False):
         return
+    if getattr(sess, "_fs_forbidden", False):
+        # A residential egress is configured, so FlareSolverr is not our fallback
+        # — it is the thing we just left. Refuse at the SOURCE rather than only
+        # at the call site: opening a session here would pin a Chrome tab against
+        # the 1 GiB cap for a run that will never use it, and that cap is what
+        # starves the Coolbet reader (EPICBET-FS-500 / the 2026-09-11 outage).
+        raise RuntimeError(
+            "Epicbet direct call failed while a residential egress is configured "
+            f"({_RESIDENTIAL_PROXY}). Refusing to fall back to FlareSolverr: that "
+            "would silently return us to the 15%-failure transport and the "
+            "freshness watchdog would read healthy throughout. Check the tunnel."
+        )
     try:
         _fs_post("sessions.destroy", session=_FS_SESSION_ID)   # clear a stale one
     except Exception:
@@ -404,7 +448,7 @@ def _get(sess: requests.Session, path: str, payload=None, *, timeout: int = 25):
             json.dumps(payload, separators=(",", ":"))
         )
 
-    if getattr(sess, "_fs_on", False):
+    if getattr(sess, "_fs_on", False) and not getattr(sess, "_fs_forbidden", False):
         body = _fs_get_json(url)
     else:
         try:

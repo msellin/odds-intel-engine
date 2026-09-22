@@ -50,9 +50,11 @@ EnvironmentFile=/opt/odds-intel-engine/.env
 Environment=TZ=UTC
 Environment=PYTHONUNBUFFERED=1
 # The whole point of this unit. socks5h so DNS resolves AT the proxy.
-# Scoped to the Epicbet client only — API-Football keeps the fast Hetzner path;
-# routing AF through the home line would be a pointless round trip.
-Environment=OI_RESIDENTIAL_PROXY=socks5h://10.8.0.2:1080
+# EPICBET-specific on purpose: the scheduler runs all 82 jobs in one process, so
+# the shared OI_RESIDENTIAL_PROXY would flip Coolbet's transport at the same
+# moment. Coolbet feeds the real-money path and moves on its own schedule.
+# API-Football keeps the fast Hetzner path either way.
+Environment=EPICBET_RESIDENTIAL_PROXY=socks5h://10.8.0.2:1080
 
 ExecStart=/opt/odds-intel-engine/venv/bin/python -m workers.jobs.inplay_collector \
     --cadence 45 --max-fixtures 60
