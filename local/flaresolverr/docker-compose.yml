@@ -37,9 +37,20 @@ services:
       # trust cookie + Imperva markers and force another SMS round.
       - flaresolverr_profile:/app/profiles
     restart: always
-    # Memory cap so a Chrome leak doesn't take down the Mac. 1GB is
-    # plenty for one session juggling 2-3 Coolbet pages.
-    mem_limit: 1g
+    # Memory cap raised 1g -> 2g on 2026-09-22. The old comment said "1GB is
+    # plenty for ONE session" and that was true — the problem was that a second
+    # session existed. `near_kickoff_capture` runs COOLBET_NO_FS=1 every five
+    # minutes and, because CoolbetSession created its FlareSolverr session
+    # EAGERLY in __init__, it kept a Chrome context alive it never used. Measured
+    # at 702 MiB with two sessions, at which point the sweep could not allocate
+    # and failed with HTTP 500 on fo-tree — which reads as FlareSolverr being
+    # broken and cost three wrong diagnoses in a day.
+    #
+    # The eager creation is fixed (COOLBET-NO-FS-STILL-MADE-A-SESSION), so one
+    # session is the norm again. The cap still goes up: 1 GiB left ~300 MiB of
+    # headroom over a single session's ~440 MiB idle, which is not enough margin
+    # for the placer's session to coexist with the sweep's when OWN resumes.
+    mem_limit: 2g
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8191/"]
       interval: 30s

@@ -50766,6 +50766,56 @@ def test_coolbet_sweep_circuit_breaker():
         "a stale verdict must expire so the sweep re-probes even if the watchdog dies"
 
 
+@test("COOLBET-NO-FS-STILL-MADE-A-SESSION — constructing a session must create nothing")
+def test_coolbet_lazy_fs_session():
+    """COOLBET-NO-FS-STILL-MADE-A-SESSION, found 2026-09-22.
+
+    `CoolbetSession.__init__` called `_fs_session_ensure()` unconditionally. But
+    `_no_fs` mode never touches FlareSolverr at all — `_refresh_cookies_from_fs`
+    early-returns and every call goes out over plain requests with DB/env
+    cookies. So every `COOLBET_NO_FS=1` caller created a browser session it would
+    never use.
+
+    `near_kickoff_capture` runs with COOLBET_NO_FS=1 EVERY FIVE MINUTES. It was
+    therefore holding a second Chrome context against the Mac container's 1 GiB
+    cap permanently, alongside the sweep's. Measured at 702 MiB with two
+    sessions — at which point the sweep could no longer allocate and failed with
+    `HTTP 500` on fo-tree.
+
+    That symptom is the trap: it reads as "FlareSolverr is out of memory" or
+    "the session is wedged", and it cost three wrong diagnoses in one day
+    (destroy the session, raise the cap, blame the network) before anyone ran
+    `sessions.list` and saw there were two.
+
+    The fix is to create on FIRST USE. This test pins that constructing a
+    session creates nothing, and that every path which actually talks to
+    FlareSolverr ensures it first.
+    """
+    import inspect
+    from workers.automation import coolbet_session as cs
+
+    init = inspect.getsource(cs.CoolbetSession.__init__)
+    assert "_fs_session_ensure(" not in init, \
+        "__init__ must NOT create an FS session — a _no_fs caller has to create nothing"
+    assert "_fs_session_ready = False" in init, "lazy flag must be initialised"
+
+    assert hasattr(cs.CoolbetSession, "_ensure_fs_session"), "the lazy creator must exist"
+    ens = inspect.getsource(cs.CoolbetSession._ensure_fs_session)
+    assert "_fs_session_ensure(" in ens and "_fs_session_ready = True" in ens, \
+        "the lazy creator must create once and remember"
+
+    # every real FlareSolverr entry point must ensure first
+    src = inspect.getsource(cs)
+    assert src.count("self._ensure_fs_session()") >= 3, \
+        "each path that actually calls FlareSolverr (GET, POST, cookie refresh) must ensure " \
+        "first — one missed path reintroduces 'session not found' at random"
+
+    # and the cookie refresh must ensure AFTER its _no_fs early return, not before
+    ref = inspect.getsource(cs.CoolbetSession._refresh_cookies_from_fs)
+    assert ref.index("if self._no_fs:") < ref.index("self._ensure_fs_session()"), \
+        "_no_fs must return BEFORE the ensure, or no-FS callers start creating sessions again"
+
+
 
 if __name__ == "__main__":
     main()

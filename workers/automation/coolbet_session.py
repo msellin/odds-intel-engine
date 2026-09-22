@@ -667,7 +667,16 @@ class CoolbetSession:
         # See COOLBET-FS-SESSION-STABLE diagnostic logs 2026-06-11 for the
         # httpbin echo that proved FS truncates JSON to 4 bytes.
         self._fs_session_name = self._fs_session_override or _FS_SESSION_NAME
-        _fs_session_ensure(self._fs_session_name)
+        # LAZY, not eager — COOLBET-NO-FS-STILL-MADE-A-SESSION (2026-09-22).
+        # `_no_fs` mode never touches FlareSolverr (see _refresh_cookies_from_fs,
+        # which early-returns), yet this used to create a browser session here
+        # unconditionally. `near_kickoff_capture` runs COOLBET_NO_FS=1 every FIVE
+        # MINUTES and was therefore holding a second Chrome context against the
+        # Mac container's 1 GiB cap forever — measured at 702 MiB with two
+        # sessions, at which point the sweep could not allocate and failed with
+        # HTTP 500 on fo-tree. That reads as "FlareSolverr is broken" and cost
+        # three wrong diagnoses in a day. Created on first real use instead.
+        self._fs_session_ready = False
 
         # The real transport for POST (and any legacy plain-requests path).
         # Cookies will be populated by _refresh_cookies_from_fs() on first use.
@@ -721,6 +730,16 @@ class CoolbetSession:
 
     # ── setup ────────────────────────────────────────────────────────────────
 
+    def _ensure_fs_session(self) -> None:
+        """Create the FlareSolverr session on first actual use.
+
+        Idempotent and cheap after the first call. See __init__ for why this is
+        not done eagerly: a `_no_fs` caller must create NOTHING.
+        """
+        if not self._fs_session_ready:
+            _fs_session_ensure(self._fs_session_name)
+            self._fs_session_ready = True
+
     def _apply_imperva_cookies(self) -> None:
         """No-op since 2026-06-11 (HYBRID-FS architecture). FlareSolverr's
         browser holds the canonical Imperva cookies. We harvest them into
@@ -758,6 +777,7 @@ class CoolbetSession:
         """
         if self._no_fs:
             return len(self._http.cookies)
+        self._ensure_fs_session()      # first real FS use may happen here, not in _fs_get
         warmup_urls = [
             "https://www.coolbet.com/",                       # homepage (often gets reese84)
             "https://www.coolbet.com/en/sports/football",      # deep page (gets visid_incap_*)
@@ -1262,6 +1282,7 @@ class CoolbetSession:
         if params:
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}{urllib.parse.urlencode(params)}"
+        self._ensure_fs_session()
         body = {
             "cmd": "request.get",
             "url": url,
@@ -1355,6 +1376,7 @@ class CoolbetSession:
         FS expects postData as a URL-encoded string or a JSON-stringified blob
         depending on Content-Type — we pass JSON-stringified and rely on the
         headers (set by _build_auth_headers) to declare content-type."""
+        self._ensure_fs_session()
         body = {
             "cmd": "request.post",
             "url": url,
