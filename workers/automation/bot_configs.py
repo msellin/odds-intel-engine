@@ -151,6 +151,43 @@ TRIGGER_CONFIGS: list[BotConfig] = [
         odds_floor=_SHARP_ODDS_FLOOR,
         notes="sharp-anchored O/U trigger, both books",
     ),
+    # ── UNIFIED-GATE INSTRUMENT ([[#033]], 2026-09-22) ───────────────────────
+    # AN INSTRUMENT, NOT A STRATEGY. It answers one question that no existing
+    # row can: does the owner's "all selections, flat 10% edge, odds >= 2.80"
+    # rule work on DRAWS and AWAYS?
+    #
+    # Why it cannot be answered from what we already have: the calibrated cohort
+    # at odds >= 2.80 is 236 HOME out of 240, because our own home-only mirror
+    # stopped generating draws and aways. Every draw/away number computed so far
+    # (including "draws are -31.5% over n=95") sits on a ~98%-home population.
+    # More analysis on those rows cannot fix it; only new rows can.
+    #
+    # `edge_floor=0.10` IS THE HYPOTHESIS and must be explicit. The registry's
+    # selection-aware floor is 10% home / 13% draw+away — inheriting it would
+    # make the instrument test the thing it is supposed to be compared against.
+    #
+    # ⚠️ This config would have been silently WRONG before 2026-09-22. Until
+    # SHARP-FLOOR-STACKED-ON-MODEL-FLOOR was fixed ([[#007]]) the router
+    # re-imposed the selection-aware floor on top of any explicit `edge_floor`,
+    # so draws and aways would have run at 13% while this file said 10%. It
+    # would have produced clean-looking numbers answering a different question.
+    #
+    # NO `edge_ceiling`, deliberately — see the field's own docstring. This is
+    # model-anchored, where a 20% edge is ordinary; ceilings belong on
+    # sharp-anchored bots where fair value is near-true.
+    BotConfig(
+        bot_name="bot_unified_gate_1x2_paper_v1",
+        shadow_cohort="unified_gate_1x2",
+        markets=("1x2",),
+        books=PLACEABLE_BOOKS,
+        prob_source="predictions",
+        selections=None,          # every selection — the point of the instrument
+        edge_floor=0.10,
+        odds_floor=2.80,
+        notes="UNIFIED-GATE instrument: all 1x2 selections at a FLAT 10% edge "
+              "and odds>=2.80, to generate the draw/away evidence the 236-of-240 "
+              "HOME calibrated cohort cannot provide. Paper, publishes nothing.",
+    ),
 ]
 
 # WIDE_CONFIGS are RETIRED by migration 331 and deliberately NOT in the run set:

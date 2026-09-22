@@ -5205,15 +5205,35 @@ def test_system_map_registry_not_drifted():
     from workers.automation.coolbet_placer import _min_edge_for, _min_odds_for
     from scripts.place_coolbet_ui import BOT_THRESHOLDS as _BT
     fk = {"1x2": "1x2", "O/U 2.5": "o/u"}  # registry market label -> placer floor key
+    # RESOLVE EACH BOT AGAINST ITS OWN SOURCE OF TRUTH (2026-09-22, [[#033]]).
+    # This used to assume every model-anchored bot inherits the global
+    # `_min_edge_for`, which held only because no model bot had ever declared a
+    # floor of its own. `bot_unified_gate_1x2_paper_v1` does, and deliberately:
+    # a FLAT 10% across home/draw/away IS its hypothesis, measured against the
+    # selection-aware 10/13 it must not inherit.
+    #
+    # The guard is NOT relaxed for it. A bot that declares an explicit floor in
+    # its BotConfig is checked against THAT — so registry and code must still
+    # agree, which is the whole point of this test; only the authority moves to
+    # where the bot actually gets its gate. A bot with no BotConfig override is
+    # checked against the placer exactly as before.
+    from workers.automation.bot_configs import CONFIG_BY_NAME as _CBN
     for b in BOTS:
         if b.anchor == ANCHOR_MODEL and b.market in fk and b.edge_floor is not None:
-            expected = _BT[b.name] if b.name in placeable_names() else _min_edge_for(fk[b.market])
-            src = "BOT_THRESHOLDS" if b.name in placeable_names() else "placer _min_edge_for"
+            _cfg = _CBN.get(b.name)
+            if _cfg is not None and _cfg.edge_floor is not None:
+                expected, src = _cfg.edge_floor, "its own BotConfig.edge_floor"
+            elif b.name in placeable_names():
+                expected, src = _BT[b.name], "BOT_THRESHOLDS"
+            else:
+                expected, src = _min_edge_for(fk[b.market]), "placer _min_edge_for"
             assert abs(b.edge_floor - expected) < 1e-9, (
                 f"{b.name} edge_floor {b.edge_floor} != {src} {expected}"
             )
-            assert abs(b.odds_floor - _min_odds_for(fk[b.market])) < 1e-9, (
-                f"{b.name} odds_floor {b.odds_floor} != placer {_min_odds_for(fk[b.market])}"
+            _exp_odds = (_cfg.odds_floor if _cfg is not None and _cfg.odds_floor is not None
+                         else _min_odds_for(fk[b.market]))
+            assert abs(b.odds_floor - _exp_odds) < 1e-9, (
+                f"{b.name} odds_floor {b.odds_floor} != {_exp_odds}"
             )
 
     # 3. sharp trigger floors MUST match the Stage-A sharp config (registry == code).
@@ -5320,13 +5340,23 @@ def test_system_map_registry_not_drifted():
         _sets_retired = _re.search(r"\bset\b[^;]*\bretired_at\s*=", pending,
                                    _re.I | _re.S) is not None
         retiring = {n for n in db if n in pending and _sets_retired}
-        db_effective = db - retiring
+        # ...AND THE MIRROR CASE (2026-09-22, [[#033]]). A bot INSERTed by a
+        # pending migration is in the registry and not yet in the table, which is
+        # the same legitimate state as a pending retirement and was not handled.
+        # Smoke tests and the migration workflow both fire on a push and are not
+        # ordered against each other, so without this every new bot makes CI red
+        # or green depending on which job wins the race.
+        _inserts = _re.search(r"insert\s+into\s+bots\b", pending, _re.I) is not None
+        adding = {n for n in active_names() - db if n in pending and _inserts}
+        db_effective = (db - retiring) | adding
         assert active_names() == db_effective, (
             f"registry active {active_names() ^ db_effective} differs from bots "
             f"table — add/retire the bot in the registry (and SYSTEM_MAP.md) in "
             f"the same change"
             + (f" [discounted as pending-migration retirements: "
                f"{sorted(retiring)}]" if retiring else "")
+            + (f" [discounted as pending-migration additions: "
+               f"{sorted(adding)}]" if adding else "")
         )
 
 
@@ -24682,6 +24712,82 @@ def test_picks_consensus_arm_2026_09_22():
     return "consensus arm publishes, capped at 8%, live arm pre-registration intact"
 
 
+@test("UNIFIED-GATE-INSTRUMENT — a FLAT 10% on every 1x2 selection, paper, and it reaches no customer")
+def test_unified_gate_instrument_2026_09_22():
+    """UNIFIED-GATE-INSTRUMENT ([[#033]], 2026-09-22).
+
+    The owner's rule — every 1x2 selection at a flat 10% edge and odds >= 2.80 —
+    has never been testable: the calibrated cohort at odds >= 2.80 is 236 HOME of
+    240, so every draw/away number so far describes a ~98%-home population. This
+    bot generates the missing rows. It must be a MEASUREMENT and nothing else."""
+    import inspect
+    from workers.automation.bot_configs import CONFIG_BY_NAME
+    from workers.registry.bot_registry import BOTS
+    from workers.automation.pick_generator import _floors
+    import workers.automation.best_price_router as bpr
+
+    NAME = "bot_unified_gate_1x2_paper_v1"
+    cfg = CONFIG_BY_NAME.get(NAME)
+    assert cfg is not None, f"{NAME} must be a BotConfig, not a bespoke job"
+
+    # 1. The flat floor IS the hypothesis. `selections=None` means every one.
+    assert cfg.selections is None, (
+        "restricting selections defeats the instrument — draws and aways are the "
+        "whole reason it exists"
+    )
+    assert cfg.edge_floor == 0.10 and cfg.odds_floor == 2.80
+    assert cfg.edge_ceiling is None, (
+        "no ceiling on a model-anchored bot — a 20% model edge is ordinary "
+        "(the registry floor is 13%) and a ceiling would gut it"
+    )
+
+    # 2. THE FLOOR MUST ACTUALLY BE FLAT AT RUNTIME. This is the assertion that
+    #    matters: before SHARP-FLOOR-STACKED-ON-MODEL-FLOOR was fixed on the same
+    #    day ([[#007]]), the router re-imposed the selection-aware 10/13 over any
+    #    explicit edge_floor, so draws and aways would have run at 13% while the
+    #    config said 10% — clean-looking numbers answering the wrong question.
+    for sel in ("home", "draw", "away"):
+        ef, of = _floors(cfg, "1x2", sel, None)
+        assert ef == 0.10, f"{sel} resolves to {ef}, not the flat 0.10"
+        assert of == 2.80, f"{sel} odds floor is {of}, not 2.80"
+        # An 11% edge at 3.30 must clear on EVERY selection, draws included.
+        d = bpr.decide_book(0.11 + 1.0 / 3.30, ef, of, {"Coolbet": 3.30},
+                            market="1x2", selection=sel,
+                            apply_selection_floor=cfg.edge_floor is None)
+        assert d["winner"] == "Coolbet", (
+            f"an 11% edge on {sel} must clear a flat 10% floor — if it does not, "
+            f"the selection-aware floor is being re-imposed and this instrument "
+            f"is silently measuring 13% on draws and aways"
+        )
+    # ...and the odds floor must still bind, or 'home-favs excluded automatically'
+    # — the half of the hypothesis already settled — stops being true.
+    d = bpr.decide_book(0.11 + 1.0 / 2.00, 0.10, 2.80, {"Coolbet": 2.00},
+                        market="1x2", selection="home", apply_selection_floor=False)
+    assert d["winner"] is None, "odds 2.00 must be refused by the 2.80 floor"
+
+    # 3. It must reach nobody: no real money, no publication.
+    spec = next((b for b in BOTS if b.name == NAME), None)
+    assert spec is not None, "the bot must be in the registry (and SYSTEM_MAP)"
+    assert spec.real_money is False, "an instrument never stakes"
+    from scripts.place_coolbet_ui import PLACEABLE_BOTS
+    assert NAME not in PLACEABLE_BOTS
+    mig = _engine_path("supabase/migrations/370_unified_gate_paper_instrument.sql").read_text()
+    assert "show_on_picks" in mig and "FALSE" in mig, (
+        "the instrument must be inserted with show_on_picks FALSE — picks_public_all "
+        "admits any bot with that flag, so a TRUE here publishes it to customers"
+    )
+
+    # 4. Pre-registered before the first pick, with the trap it exists to escape.
+    doc = _engine_path("dev/active/unified-gate-instrument-preregistration.md").read_text()
+    assert "[[#033]]" in doc, "a checklist with no parent row is an orphan backlog"
+    assert "236 HOME" in doc, "the doc must state WHY existing data cannot answer this"
+    assert "PER SELECTION" in doc, (
+        "a pooled n that is again 90% home reproduces the exact failure this "
+        "instrument exists to escape — the minimum n must be per selection"
+    )
+    return "flat 10% resolves on home/draw/away; paper; unpublished; pre-registered"
+
+
 @test("FLOORS-ONE-SOURCE-CROSS-LANGUAGE — the frontend derives its floors from the engine")
 def test_floors_one_source_cross_language_2026_09_11():
     """FLOORS-ONE-SOURCE-CROSS-LANGUAGE (2026-09-11).
@@ -41113,18 +41219,27 @@ def test_merge_trigger_bots():
     )
     from scripts.place_coolbet_ui import PLACEABLE_BOTS
 
-    # 1. Four configs, on the two real axes, each spanning BOTH books.
-    assert len(TRIGGER_CONFIGS) == 4, (
-        f"{len(TRIGGER_CONFIGS)} trigger configs — the 8 bots collapse to 4 "
-        f"(anchor x market); a 5th means an axis crept back in."
-    )
+    # 1. The FOUR MERGED configs, on the two real axes, each spanning BOTH books.
+    #
+    # UPDATED 2026-09-22 ([[#033]]): this asserted `len(TRIGGER_CONFIGS) == 4`.
+    # The thing it protects is that the BOOK axis never creeps back — not that
+    # the list can never grow. `bot_unified_gate_1x2_paper_v1` is a fifth entry
+    # and is not a book split; a raw count cannot tell those apart, so it is
+    # replaced by the property itself: the four merged bots must all be present,
+    # and NO config may be per-book. That is strictly stronger, because a count
+    # of four would also have passed if someone deleted a merged bot and added a
+    # per-book one.
+    MERGED = {"bot_trigger_1x2_model_v1", "bot_trigger_ou_model_v1",
+              "bot_trigger_1x2_sharp_v1", "bot_trigger_ou_sharp_v1"}
+    have = {c.bot_name for c in TRIGGER_CONFIGS}
+    assert MERGED <= have, f"merged trigger bots missing: {sorted(MERGED - have)}"
     for c in TRIGGER_CONFIGS:
         assert len(c.books) >= 2, (
             f"{c.bot_name} must span both placeable books — splitting per book "
             f"is what this merge removed."
         )
         assert c.bot_name not in PLACEABLE_BOTS, f"{c.bot_name} must stay PAPER"
-    anchors = {c.prob_source for c in TRIGGER_CONFIGS}
+    anchors = {c.prob_source for c in TRIGGER_CONFIGS if c.bot_name in MERGED}
     assert anchors == {"predictions", "sharp_devig"}, anchors
 
     # 2. The SHARP configs must set their floors explicitly. Inheriting the
@@ -41148,6 +41263,21 @@ def test_merge_trigger_bots():
     assert mig.exists(), "migration 331 must register the merged bots"
     m = mig.read_text()
     for c in TRIGGER_CONFIGS:
+        if c.bot_name not in MERGED:
+            # A later addition lives in its OWN migration, not 331. It still has
+            # to be registered somewhere, and its cohort still has to reach the
+            # CHECK constraint — that requirement is what this block is really
+            # about, and it is the trap that nearly shipped a bot whose every
+            # insert would have been refused.
+            allmig = "\n".join(
+                f.read_text() for f in sorted(_pl.Path("supabase/migrations").glob("*.sql")))
+            assert c.bot_name in allmig, f"{c.bot_name} is in no migration"
+            assert f"'{c.shadow_cohort}'" in allmig, (
+                f"cohort {c.shadow_cohort!r} never reaches "
+                f"shadow_bets_shadow_cohort_check — every insert for "
+                f"{c.bot_name} would be refused"
+            )
+            continue
         assert c.bot_name in m and c.shadow_cohort in m, (
             f"{c.bot_name}/{c.shadow_cohort} must be in migration 331 — the "
             f"cohort also needs adding to the CHECK constraint or every insert "

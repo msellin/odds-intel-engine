@@ -136,6 +136,15 @@ BOTS: list[BotSpec] = [
             0.02, 1.01, False,
             "INSTRUMENT (paper, never placeable). SHARP 1x2 at the TIGHT gate the original 70,200-cell sweep could not express — it swept a constant expected-ROI floor while the live gate is a constant probability-difference floor, and roi_edge = prob_edge x odds makes the latter a CURVE in odds. Gate: P_shin - 1/odds >= 2% AND odds <= 2.50, pooled over Coolbet/Epicbet/Unibet-Site. Backtest n=225 ROI +17.07% CI [+4.18,+29.95] OOS +23.40% — but a 12-day effect whose margin-corrected own-book CLV is -5.4 to -7.6%, so it is being MEASURED, not believed."),
 
+    # UNIFIED-GATE-INSTRUMENT-2026-09-22 ([[#033]]). An INSTRUMENT, not a
+    # strategy: it exists because the draw/away half of the owner's unified-gate
+    # hypothesis is UNTESTABLE on what we have — the calibrated cohort at
+    # odds>=2.80 is 236 HOME of 240. Promotion is not on the table; the only
+    # output is a population that can answer the question.
+    BotSpec("bot_unified_gate_1x2_paper_v1", FAM_TRIGGER, "1x2", ANCHOR_MODEL,
+            0.10, 2.80, False,
+            "INSTRUMENT (paper, never placeable, never published). Every 1x2 selection — home, draw AND away — at a FLAT 10% model edge and odds >= 2.80, across both placeable books. The flat floor IS the hypothesis: the registry's selection-aware floor is 10% home / 13% draw+away, and inheriting it would make the instrument test the thing it is meant to be compared against. It exists because the calibrated cohort at odds>=2.80 is 236 HOME of 240, so every draw/away figure quoted so far (including 'draws are -31.5% over n=95') rests on a ~98%-home population and answers nothing. No edge ceiling — model-anchored, where a 20% edge is ordinary. ⚠️ Could not have been built correctly before 2026-09-22: until SHARP-FLOOR-STACKED-ON-MODEL-FLOOR was fixed ([[#007]]) the router re-imposed the selection-aware floor over any explicit edge_floor, so draws/aways would have run at 13% while the config said 10%."),
+
     # Coolbet own-price paper bots
     BotSpec("bot_ou35_model_v1", FAM_COOLBET_PAPER, "O/U 3.5", ANCHOR_MODEL,
             0.08, 1.80, False,
