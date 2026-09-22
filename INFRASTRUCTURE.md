@@ -7,6 +7,45 @@
 
 ---
 
+
+> ### ⏸️ CrossRank + BoxRank PAUSED 2026-09-22 — the VPS is now single-tenant for compute
+>
+> The box hosted three products. It was measured **memory-starved and I/O-bound, not
+> CPU-bound**: 20% CPU idle with **34% iowait**, **286 MB swapping out every 30 s**
+> (992 GB since boot), and OddsIntel's Postgres at a **71.7% cache hit rate**. Two
+> 30+ GB databases were competing for ~11 GB of page cache and neither fitted.
+>
+> CrossRank was paused and its 39 GB database archived and dropped. BoxRank went
+> with it — `boxrank.ee` has no database of its own, it reads the `crossrank` DB
+> through PostgREST, so they are one datastore with two front-ends.
+>
+> **Measured effect:**
+>
+> | | before | after |
+> |---|---|---|
+> | swap-out | 286 MB/30 s | **0** |
+> | CPU idle | 20.4% | 64.8% |
+> | iowait | 34.2% | 9.6% |
+> | load (1 min) | 4.47 | 0.97 |
+> | RAM used | 7,714 MB | 6,117 MB |
+> | page cache | 11,920 MB | 13,897 MB |
+> | disk | 130 GB | **75 GB** |
+> | Storage Box | 527 GB | **216 GB** |
+>
+> Still running for those products: nothing. `crossrank.ee`, `www.crossrank.ee`,
+> `boxrank.ee` and `api.crossrank.ee` serve a static paused page from
+> `/var/www/paused/` via nginx, which works with every backend stopped. Original
+> vhosts are at `/root/nginx-{crossrank,boxranking,api-crossrank}.bak`.
+>
+> **The archive is on the Hetzner Storage Box at `crossrank-archive/`** —
+> deliberately NOT `crossrank/`, because the nightly script sweeps that directory
+> with `-mtime +90` and would have silently deleted it after three months. It was
+> **verified by restoring into a scratch DB on this box** before the source was
+> dropped: 45 tables, exact `count(*)` match on all six largest.
+>
+> Full resume procedure: `CROSSRANK_PAUSE_HANDOVER.md` in
+> `github.com/msellin/crossfit-ranking`.
+
 ## Service Stack
 
 | Service | Role | Plan | Status |
