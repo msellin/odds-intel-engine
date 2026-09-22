@@ -20,15 +20,15 @@
 | Job | Cadence | What it does | Move to VPS? |
 |---|---|---|---|
 | `coolbet-odds-snapshot` | :03/:33 | Coolbet board + sidebets → `odds_snapshots` | 🟢 **Transport PROVEN 2026-09-22** (136 KB real fo-tree via egress). Needs a volume/price-diff validation pass, then cut over. **Biggest remaining win.** |
-| `coolbet-feed-watchdog` | :20/:50 | Cookie refresh, staleness verdict, JWT session-keep, Telegram heal drain | 🟡 **Split.** DB-judging half moves now; `ensure_session_live` needs CDP-Chrome |
+| `coolbet-feed-watchdog` | :20/:50 | Cookie refresh, staleness verdict, JWT session-keep, Telegram heal drain | 🔴 **DO NOT SPLIT — corrected 2026-09-22.** I proposed moving its "DB half" before reading it. There isn't one: it is a *classifier* (NOT_LOADED / STALE_COOKIES / WEDGED_SESSION / CDP_DOWN / BLOCKED / HEALTHY) whose DB read only chooses between remedies that are **all Mac-local** — reload a launchd job, harvest cookies from CDP-Chrome, destroy the Mac's FS session. Splitting it would separate the diagnosis from every cure |
 | `unibet-site-odds` | :15/:45 | unibet.ee SPA `contest-page` via raw CDP | 🟡 Needs a persistent Chromium+Xvfb on the VPS. **Not IP, not DataDome** — VPS loads the full 2.4 MB SPA. ~½ day |
 | `near-kickoff-capture` | every 5 min | Closing prices: **Coolbet + Unibet-Site only** | ✅ **Epicbet third MOVED to the VPS 2026-09-22.** Coolbet third goes with the sweep; Unibet third with the Chrome |
 | `cdp-watch` | every 5 min | Logs CDP-Chrome up/down transitions | 🔴 Follows the Chrome |
-| `coolbet-cdp-selfheal` | :25/:55 | Heavy CDP re-bootstrap probe | 🔴 Follows the Chrome · ⚠️ **`exit=1`** |
+| `coolbet-cdp-selfheal` | :25/:55 | Heavy CDP re-bootstrap probe | 🔴 Follows the Chrome · ⚠️ **`exit=1` is REAL and current.** CDP-Chrome is `JWT: logged_out`; auto-login fails because the login page shows no email field. **Needs a hand login in a FOREGROUND CDP-Chrome (:9222) window** — logging into normal Chrome does not carry over. Does **not** affect the odds sweep (that needs only Imperva cookies, which harvest fine); it blocks JWT-dependent work, and placement is paused anyway |
 | `flaresolverr-keepalive` | 180s | Revives the Mac's FS Docker | 🟡 Follows whatever still needs the Mac FS |
 | `mac-fs-sweep` | — | Reaps orphaned FS sessions | 🟡 Same |
 | `coolbet-resume` | one-shot | Re-arms the two paused Coolbet jobs | 🔴 Follows them |
-| `vps-postgres-tunnel` | always | autossh → VPS Postgres, for Mac-side jobs | 🟢 **Delete once the Mac stops running DB jobs** · ⚠️ **`exit=1`** |
+| `vps-postgres-tunnel` | always | autossh `-L 5433:localhost:5432` → VPS Postgres | 🔴 **DO NOT DELETE — corrected 2026-09-22.** It is **healthy and load-bearing**: `.env`'s `DATABASE_URL` points at `localhost:5433`, so every Mac-side DB write goes through it. Its child ssh has been up 1d21h. The `exit=1` is autossh's *last reconnect* status, **not a failure** — I read it as broken without checking. Delete only after the last Mac-side DB job leaves |
 
 ### Mac LaunchDaemons — the egress (new 2026-09-22)
 
@@ -114,7 +114,7 @@ mode.
 | ~~3~~ | ~~Split `near-kickoff-capture`~~ | ✅ **Done 2026-09-22** |
 | 4 | Split `coolbet-feed-watchdog`; move the DB half | Cheap |
 | 5 | Unibet Chromium on the VPS | ~½ day; do after 1–2 |
-| 6 | Delete `vps-postgres-tunnel`, fix `coolbet-cdp-selfheal` | Two failing things (`oddsintel-heartbeat` was a false alarm — see above) |
+| 6 | ~~Delete `vps-postgres-tunnel`~~, ~~split the watchdog~~, **log into CDP-Chrome** | **All three of my "cheap items" were wrong — corrected 2026-09-22.** The tunnel is healthy and load-bearing; the watchdog has no separable DB half; only the CDP login is real, and it needs the operator, not code |
 | — | **Placer stays on the Mac** | Real money, TLS-bound token. Not a migration candidate |
 
 
