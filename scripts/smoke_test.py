@@ -24616,6 +24616,31 @@ def test_shadow_close_bounded_2026_09_22():
         "are on this path and shadow_bets has no handicap_line column"
     )
 
+    # NOT VALID DOES NOT MEAN EXEMPT (2026-09-22, [[#024]]). Migration 370 added
+    # the shadow_cohort allow-list NOT VALID, reasoning it would leave the
+    # 156,795 pre-scheme rows alone. NOT VALID skips validation at ALTER time; it
+    # does not exempt those rows afterwards, so every UPDATE touching one raised
+    # CheckViolation — the ledger became un-re-settleable, which is a worse
+    # property than a loose constraint. It surfaced within hours when the #024
+    # CLV backfill died on a row whose cohort was '1210'. Migration 374
+    # grandfathers them by pattern and VALIDATES.
+    from workers.api_clients.db import execute_query as _q2
+    _applied = {r["filename"] for r in _q2("SELECT filename FROM _schema_migrations")}
+    _pend = "\n".join(
+        f.read_text(encoding="utf-8")
+        for f in sorted((_engine_root / "supabase" / "migrations").glob("*.sql"))
+        if f.name not in _applied)
+    _con = _q2("""SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint
+                   WHERE conrelid = 'shadow_bets'::regclass
+                     AND conname = 'shadow_bets_shadow_cohort_check'""")
+    if _con and _q2("""SELECT 1 FROM shadow_bets
+                        WHERE shadow_cohort ~ '^[0-9]{3,4}$' LIMIT 1"""):
+        assert "[0-9]" in _con[0]["d"] or "shadow_cohort" in _pend, (
+            "legacy clock-time cohorts are not grandfathered — any UPDATE on one "
+            "of the 156,795 pre-scheme rows raises CheckViolation, which makes "
+            "them impossible to re-settle or backfill"
+        )
+
     # AH rungs: parsed, or refused. Never matched against an arbitrary rung.
     f = st._ah_team_and_line
     assert f("1x2", "home") == ("home", None), "non-AH markets pass through"
