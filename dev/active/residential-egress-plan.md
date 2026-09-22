@@ -82,6 +82,16 @@ more here than elegance.
 
 ---
 
+## Progress
+
+| Phase | Status |
+|---|---|
+| 1 — VPS WireGuard server | ✅ **done 2026-09-22.** wg0 10.8.0.1/24, UDP 51820, `ufw allow`. Default route verified identical at every step; SSH never interrupted; no NAT/forwarding/ip-rule. |
+| 2 — home peer (Mac) | ✅ **done.** utun4 @ 10.8.0.2, microsocks on 10.8.0.2:1080. Handshake 12ms RTT, 1.5 MB carried, **0 errors 0 drops**. |
+| 3 — verify | ✅ **done.** VPS egress through proxy = 84.50.188.194 (home line). `egress_probe --proxy`: **Epicbet CF-CHALLENGE→OK, Pinnacle-guest CF-WAF-RULE→OK**. Mac default route still `192.168.1.1 via en0`, only `10.8/24` via tunnel — **no full-tunnel leak**. |
+| 4 — wire Epicbet | ✅ **done.** `OI_RESIDENTIAL_PROXY` in `inplay_epicbet_collector`, inert when unset. Deployed `5cd19fc3`, PySocks 1.7.1 on the VPS. **Transport parity confirmed:** VPS-via-tunnel and Mac-direct returned the *same 4 fixture ids, same 17 markets, identical prices* (Philippines 1.77 / Draw 3.0 / Kuwait 5.0). Latency 320ms vs 100ms per fixture — irrelevant at 45s cadence. |
+| 5 — cutover | ⬜ **blocked on persistence.** The tunnel is currently a foreground `microsocks` + a manually-raised interface. The LaunchDaemon exists in the repo but needs a one-time `sudo` install before anything depends on it. |
+
 ## Steps
 
 ### Phase 1 — VPS WireGuard server (blast radius: low, but do it carefully)

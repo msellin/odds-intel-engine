@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  RESIDENTIAL-EGRESS (2026-09-22, VPS-CONSOLIDATION-2026-09-16 phase 1).
+
+  Keeps the WireGuard tunnel + SOCKS proxy up so the OddsIntel VPS can reach
+  Epicbet/Coolbet through this machine's Estonian residential line.
+
+  This is a LaunchDAEMON, not a LaunchAgent: wg-quick configures a network
+  interface and needs root, and the tunnel must survive logout, not just
+  live inside a GUI session.
+
+  Install (needs sudo, once):
+    sudo cp local/launchd/com.oddsintel.residential-egress.plist /Library/LaunchDaemons/
+    sudo chown root:wheel /Library/LaunchDaemons/com.oddsintel.residential-egress.plist
+    sudo chmod 644       /Library/LaunchDaemons/com.oddsintel.residential-egress.plist
+    sudo launchctl bootstrap system /Library/LaunchDaemons/com.oddsintel.residential-egress.plist
+
+  Manage:
+    sudo launchctl list | grep residential-egress
+    sudo launchctl kickstart -k system/com.oddsintel.residential-egress
+    sudo launchctl bootout system/com.oddsintel.residential-egress
+
+  Logs: dev/active/residential-egress.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.oddsintel.residential-egress</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/margussellin/www/odds-intel-engine/scripts/ops/residential_egress_keepalive.sh</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>120</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/residential-egress.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/residential-egress.log</string>
+</dict>
+</plist>
