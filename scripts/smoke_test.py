@@ -24634,6 +24634,17 @@ def test_picks_consensus_arm_2026_09_22():
     # /picks; publishing an arm the page filters out sends readers to a page
     # missing the pick they just read — and on 2026-09-22 the live arm qualified
     # nothing, so that page is empty while the channel is active.
+    # The ledger's own CHECK must admit the arm, or claim() refuses every insert
+    # — which is how the first live run failed. Assert the constraint and the
+    # code agree, in the DATABASE, not just in Python.
+    from workers.api_clients.db import execute_query as _q
+    _con = _q("""SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint
+                  WHERE conrelid='picks_forward_test'::regclass
+                    AND conname='picks_forward_test_arm_check'""")
+    assert _con and pf.CONSENSUS_ARM in _con[0]["d"], (
+        f"picks_forward_test_arm_check does not admit {pf.CONSENSUS_ARM!r} — "
+        f"claim() will refuse every consensus pick: {_con and _con[0]['d']}"
+    )
     mig = _engine_path("supabase/migrations/368_picks_public_consensus_arm.sql").read_text()
     assert "IN ('live', 'consensus_anchor')" in mig, (
         "picks_public_all must admit both PUBLISHED arms"
