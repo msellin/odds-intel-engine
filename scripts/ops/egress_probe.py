@@ -21,6 +21,8 @@ USAGE
     python3 scripts/ops/egress_probe.py                 # this host, both transports
     python3 scripts/ops/egress_probe.py --direct-only   # skip FS
     python3 scripts/ops/egress_probe.py --json          # machine-readable
+    python3 scripts/ops/egress_probe.py \
+        --proxy socks5://10.8.0.2:1080                  # via the residential egress
 
 THE POINT: run it on the Mac and on the VPS and diff. Then, after any egress
 change (WireGuard to home, a proxy), run it on the VPS again — a row that flips
@@ -43,6 +45,14 @@ import urllib.request
 
 UA = "OddsIntelOps/1.0 (egress reachability probe; contact: margus@dolmit.com)"
 FS_URL = os.getenv("FLARESOLVERR_URL", "http://localhost:8191").rstrip("/")
+
+# RESIDENTIAL-EGRESS (2026-09-22). When set, every probe goes out through this
+# proxy instead of the host's own route. This is the whole point of the tool:
+# run it plain and again with --proxy, and a row that flips to OK is a job that
+# can move. NOT a fallback — if the proxy is unreachable the probe FAILS, it
+# does not quietly use the datacenter IP. A silent fallback is how
+# EPICBET-403-FROM-VPS reported success for six days.
+PROXY: str | None = None
 
 # ── endpoints ────────────────────────────────────────────────────────────────
 # Each is the CHEAPEST read that proves the transport works: a listing call, no
@@ -153,11 +163,32 @@ def classify(status, body, err=None, final_url=None):
 
 
 # ── transports ───────────────────────────────────────────────────────────────
+def _opener():
+    """urllib opener honouring PROXY. socks5h:// and socks5:// both resolve DNS
+    at the PROXY (the remote end), never locally — resolving here would leak the
+    lookup to the local resolver and, on the Mac, to an EMTA-poisoned answer."""
+    if not PROXY:
+        return urllib.request.build_opener()
+    if PROXY.startswith("socks"):
+        try:
+            import socks  # type: ignore
+            import socket as _s
+            host, _, port = PROXY.split("://", 1)[1].rpartition(":")
+            socks.set_default_proxy(socks.SOCKS5, host, int(port), rdns=True)
+            _s.socket = socks.socksocket
+            return urllib.request.build_opener()
+        except ImportError:
+            raise SystemExit("--proxy socks5:// needs PySocks (pip install pysocks), "
+                             "or pass an http:// proxy instead")
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({"http": PROXY, "https": PROXY}))
+
+
 def probe_direct(url, timeout=25):
     t0 = time.time()
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _opener().open(req, timeout=timeout) as r:
             body = r.read(200_000).decode("utf-8", "replace")
             # GEO-BLOCK-DETECTION-2026-09-19: the final URL is load-bearing. 1xBet
             # answers a redirect to /en/block with HTTP **203** and a full HTML
@@ -218,14 +249,19 @@ def main():
     ap.add_argument("--direct-only", action="store_true")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--book", help="probe only this book")
+    ap.add_argument("--proxy", help="route every probe through this proxy, "
+                                    "e.g. socks5://10.8.0.2:1080 (the residential egress)")
     a = ap.parse_args()
+    global PROXY
+    PROXY = a.proxy
 
     ip = egress_ip()
     fs_up = (not a.direct_only) and fs_alive()
     host = socket.gethostname()
 
     if not a.json:
-        print(f"host={host}  egress_ip={ip}  flaresolverr={'up' if fs_up else 'not used'}")
+        print(f"host={host}  egress_ip={ip}  flaresolverr={'up' if fs_up else 'not used'}"
+              + (f"  proxy={PROXY}" if PROXY else ""))
         print(f"{'BOOK':<14} {'WALL':<24} {'DIRECT':<20} {'VIA FS':<20}")
         print("-" * 82)
 

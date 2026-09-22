@@ -59,3 +59,6 @@ google-genai>=1.0.0
 # missing dep failed every fire with "No module named 'stripe'" until pinned
 # 2026-08-05.
 stripe>=15.0.0
+# RESIDENTIAL-EGRESS 2026-09-22 — socks5h:// support in `requests`, so the VPS
+# can reach Epicbet/Coolbet through the WireGuard residential egress.
+PySocks>=1.7.1

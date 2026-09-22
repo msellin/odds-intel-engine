@@ -72,9 +72,36 @@ GROUPS = {
 _ODDS_CHUNK = 250
 
 
+# RESIDENTIAL-EGRESS (VPS-CONSOLIDATION-2026-09-16, wired 2026-09-22).
+#
+# Epicbet is anonymous REST from a residential IP and a Cloudflare CHALLENGE from
+# the Hetzner VPS (measured: HTTP 403 CF-CHALLENGE on the live endpoint too, not
+# just pre-match). The VPS pre-match sweep works around that with FlareSolverr,
+# but FS is already dropping ~15% of those runs (EPICBET-FS-500), and the in-play
+# loop adds ~33 calls/min. So on the VPS this client goes out through the
+# WireGuard residential egress instead, where plain requests work exactly as they
+# do on the Mac — no FS, no session budget, no contention with the sweep.
+#
+# Unset on the Mac: it is already ON the residential line, and routing back out
+# through the tunnel would be a pointless round trip.
+#
+# socks5h (not socks5) so DNS resolves AT THE PROXY. Resolving locally would send
+# the lookup to the VPS resolver, and for some hosts that is a different answer.
+#
+# NO SILENT FALLBACK BY DESIGN. If this is set and the proxy is unreachable,
+# requests raises and the caller fails loudly. Quietly reverting to the datacenter
+# IP would collect from the wrong identity while reporting success — which is
+# exactly how EPICBET-403-FROM-VPS ran "successfully" for six days writing zero
+# rows ([[feedback_silent_failures]]).
+_RESIDENTIAL_PROXY = os.getenv("OI_RESIDENTIAL_PROXY") or None
+
+
 class Epicbet:
     def __init__(self) -> None:
         self.s = requests.Session()
+        if _RESIDENTIAL_PROXY:
+            self.s.proxies = {"http": _RESIDENTIAL_PROXY, "https": _RESIDENTIAL_PROXY}
+            log.info("Epicbet: routing via residential egress %s", _RESIDENTIAL_PROXY)
         # One fixture is fetched per thread, so the default pool of 10 thrashes
         # (and logs a warning per discarded connection) once the live board is
         # larger than that. Size it to the fixture cap.

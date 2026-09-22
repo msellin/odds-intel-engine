@@ -49041,6 +49041,69 @@ def test_scheduler_shutdown_drain():
     return f"paused + bounded drain {drain}s under TimeoutStopSec={timeout}s, abandons logged"
 
 
+@test("RESIDENTIAL-EGRESS — Epicbet honours the proxy, and NEVER falls back silently")
+def test_residential_egress():
+    """RESIDENTIAL-EGRESS 2026-09-22 (VPS-CONSOLIDATION-2026-09-16 phase 1).
+
+    WHY THIS EXISTS. Epicbet is anonymous REST from a residential IP and a
+    Cloudflare CHALLENGE from the Hetzner VPS — measured HTTP 403 CF-CHALLENGE on
+    the LIVE endpoint, not only pre-match. The VPS pre-match sweep works around
+    that with FlareSolverr, but FS already drops ~15% of those runs
+    (EPICBET-FS-500, 7 of 48 measured 2026-09-21) and the in-play loop would add
+    ~33 calls/min on top. So the VPS instead egresses through a WireGuard tunnel
+    to the operator's residential line, where plain requests work.
+
+    Proven the same day: through the tunnel the VPS reads Epicbet OK and the
+    Pinnacle guest API OK, both of which are blocked from the datacenter IP.
+
+    THE INVARIANT THIS PINS — no silent fallback. If the proxy is configured and
+    unreachable, the call must RAISE. Quietly reverting to the datacenter IP would
+    collect from the wrong network identity while reporting success, which is
+    precisely how EPICBET-403-FROM-VPS reported `status='completed'` for 277
+    consecutive runs over six days while writing zero rows
+    ([[feedback_silent_failures]]).
+
+    It also pins socks5h over socks5: DNS must resolve AT THE PROXY. Resolving
+    locally sends the lookup to the wrong resolver, and for Pinnacle the Estonian
+    ISP answer is an EMTA sinkhole rather than the real Cloudflare address.
+    """
+    import inspect
+    import pathlib as _pl
+    from workers.jobs import inplay_epicbet_collector as eb
+
+    src = inspect.getsource(eb)
+
+    # 1. the knob exists and is read from the environment
+    assert "OI_RESIDENTIAL_PROXY" in src, \
+        "the residential egress must be env-configurable, not hardcoded per host"
+
+    # 2. it is applied to the session used for every call
+    assert ".proxies" in src, "the proxy must be set on the requests Session actually used"
+
+    # 3. NO SILENT FALLBACK — the proxy assignment must not sit inside a
+    #    swallowing try/except that would let a dead tunnel revert to direct.
+    block = src.split("OI_RESIDENTIAL_PROXY", 1)[1][:600]
+    assert "except" not in block, \
+        "the proxy must NOT be wrapped in an exception handler — a dead tunnel has to " \
+        "FAIL, not silently collect from the datacenter IP"
+
+    # 4. socks5h, so DNS resolves at the proxy (documented intent)
+    assert "socks5h" in src, \
+        "socks5h (resolve-at-proxy) must be the documented scheme — socks5 leaks the " \
+        "DNS lookup to the local resolver"
+
+    # 5. the dependency that makes socks:// work in requests is declared
+    reqs = (_pl.Path(__file__).resolve().parent.parent / "requirements.txt").read_text()
+    assert "PySocks" in reqs or "pysocks" in reqs, \
+        "socks5h:// in `requests` needs PySocks — without it the proxy silently " \
+        "raises InvalidSchema on the VPS only"
+
+    # 6. the probe can measure through the same egress, or we cannot verify a move
+    probe = (_pl.Path(__file__).resolve().parent / "ops" / "egress_probe.py").read_text()
+    assert "--proxy" in probe and "rdns=True" in probe, \
+        "egress_probe must support --proxy with resolve-at-proxy, so 'does this job " \
+        "move?' stays a measurement rather than an argument"
+
 
 
 if __name__ == "__main__":
