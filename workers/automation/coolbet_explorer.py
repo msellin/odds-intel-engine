@@ -1700,12 +1700,65 @@ def _is_virtual_category(name: str | None) -> bool:
     return any(h in n for h in _VIRTUAL_CATEGORY_HINTS)
 
 
+# ── COOLBET-SWEEP-CIRCUIT-BREAKER (2026-09-22) ───────────────────────────────
+#
+# Our own retry volume is what escalates an Imperva flag. The runbook has said
+# so since §2, and `coolbet_health_ping` got a breaker for exactly this after it
+# was measured firing 143 failed authenticated probes in 12 hours into a wall it
+# was simultaneously reporting. THE SWEEP NEVER GOT ONE.
+#
+# Measured cost of that omission on 2026-09-22: while flagged, the sweep fired
+# 3 fo-tree attempts every 30 minutes — 144 requests/day into a wall, each one
+# feeding the condition. The feed watchdog had already correctly classified the
+# state as BLOCKED and printed "Do NOT cycle or destroy sessions — that hardens
+# it. Reduce footprint and let it decay", but nothing read that verdict.
+#
+# So the watchdog now PERSISTS its verdict and the sweep READS it. While BLOCKED,
+# the only Coolbet traffic we generate is the watchdog's single probe — one
+# request per 30 min instead of four. That is the "reduce footprint" the runbook
+# asks for, applied automatically instead of by a human noticing.
+#
+# FAILS OPEN, deliberately: if the breaker cannot be read, we sweep. A bug in a
+# safety check must never be the thing that stops collection.
+_BREAKER_PIPELINE = "coolbet_sweep_breaker"
+_BREAKER_MAX_AGE_MIN = 120
+
+
+def _sweep_blocked_by_breaker() -> str | None:
+    """Return a reason string if the feed watchdog has us flagged, else None."""
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT last_alert_reason, "
+            "EXTRACT(EPOCH FROM (now() - last_alert_at))/60.0 AS age_min "
+            "FROM pipeline_health_state WHERE pipeline_name = %s AND last_alert_at IS NOT NULL",
+            (_BREAKER_PIPELINE,),
+        )
+        if not rows:
+            return None
+        age = float(rows[0].get("age_min") or 1e9)
+        if age > _BREAKER_MAX_AGE_MIN:
+            return None          # verdict is stale — let the sweep re-probe
+        return f"{(rows[0].get('last_alert_reason') or 'BLOCKED')[:160]} ({age:.0f} min ago)"
+    except Exception as e:      # noqa: BLE001
+        log.debug("sweep breaker check failed, failing OPEN: %s", e)
+        return None
+
+
 def enumerate_coolbet_football_categories(session: "CoolbetSession") -> list[dict]:
     """Walk Coolbet's fo-tree and return every real (non-virtual) football leaf
     category as {id, name}. This is the whole board's index in ONE request —
     which makes it a single point of failure for the whole board sweep, so the
     fetch is RETRIED: an Imperva-fronted endpoint throws transient 30s read
     timeouts under load, and a single miss must not silently zero a whole pass."""
+    blocked = _sweep_blocked_by_breaker()
+    if blocked:
+        log.error("SWEEP SKIPPED — Imperva breaker open: %s. Not retrying into a wall; "
+                  "our own request volume is what hardens the flag (runbook §2, §7). "
+                  "The feed watchdog's probe is the single canary that reopens this.",
+                  blocked)
+        return []
+
     tree = None
     for attempt in range(3):
         try:

@@ -756,6 +756,46 @@ def kill_stalled_job(dry_run: bool = False) -> dict:
     return info
 
 
+# ── COOLBET-SWEEP-CIRCUIT-BREAKER (2026-09-22) ───────────────────────────────
+#
+# This watchdog has always classified BLOCKED correctly and printed "Do NOT cycle
+# or destroy sessions — that hardens it. Reduce footprint and let it decay." But
+# nothing READ that verdict, so the sweep kept firing 3 fo-tree attempts every
+# 30 minutes into the wall it was being told to back off from — 144 requests/day
+# feeding the very flag this job was reporting.
+#
+# Publishing the verdict closes that loop. `coolbet_explorer` reads it and skips
+# the pass entirely while BLOCKED, leaving this job's single probe as the only
+# Coolbet traffic we generate — one request per 30 min instead of four.
+#
+# Cleared on any healthy verdict, so the feed reopens on its own.
+_BREAKER_PIPELINE = "coolbet_sweep_breaker"
+
+
+def _publish_breaker(state: str, reason: str) -> None:
+    """Persist BLOCKED so the sweep can back off; clear it on recovery."""
+    try:
+        from workers.api_clients.db import execute_write
+        if state == "BLOCKED":
+            execute_write(
+                "INSERT INTO pipeline_health_state (pipeline_name, last_alert_at, "
+                "last_alert_reason, updated_at) VALUES (%s, now(), %s, now()) "
+                "ON CONFLICT (pipeline_name) DO UPDATE SET last_alert_at = now(), "
+                "last_alert_reason = EXCLUDED.last_alert_reason, updated_at = now()",
+                (_BREAKER_PIPELINE, reason[:500]),
+            )
+            log.info("sweep breaker OPENED — the sweep will skip until this clears")
+        else:
+            execute_write(
+                "UPDATE pipeline_health_state SET last_alert_at = NULL, "
+                "last_alert_reason = %s, updated_at = now() WHERE pipeline_name = %s",
+                (f"cleared by {state}", _BREAKER_PIPELINE),
+            )
+    except Exception as e:      # noqa: BLE001
+        # Never let the breaker's bookkeeping break the watchdog itself.
+        log.warning("could not publish sweep breaker state: %s", e)
+
+
 def run(dry_run: bool = False) -> dict:
     # COOLBET-DAEMONS-PAUSE: honor the global footprint pause. When the operator
     # has paused Coolbet daemons (to calm Imperva), the odds-snapshot job is not
@@ -860,6 +900,9 @@ def run(dry_run: bool = False) -> dict:
         # CDP_DOWN / BLOCKED / NO_PICKS — no safe automatic remedy. Restarting a
         # pipeline that is silently evaluating nothing would just hide it again.
         result["action"] = "alerted"
+
+    if not dry_run:
+        _publish_breaker(state, reason)
 
     if state != "NOT_LOADED" or result["action"] != "reloaded":
         _alert(state, reason)

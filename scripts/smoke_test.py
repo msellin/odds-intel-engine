@@ -50715,6 +50715,57 @@ def test_coolbet_egress_both_transports():
         "warmup must happen before the egress assertion returns, i.e. before callers use it"
 
 
+@test("COOLBET-SWEEP-CIRCUIT-BREAKER — stop retrying into the wall we are reporting")
+def test_coolbet_sweep_circuit_breaker():
+    """COOLBET-SWEEP-CIRCUIT-BREAKER 2026-09-22.
+
+    Our own retry volume is what escalates an Imperva flag — the runbook has said
+    so since §2, and `coolbet_health_ping` got a breaker after it was measured
+    firing 143 failed probes in 12 hours into a wall it was simultaneously
+    reporting. THE SWEEP NEVER GOT ONE.
+
+    Measured cost on 2026-09-22: while flagged, the sweep fired 3 fo-tree attempts
+    every 30 minutes — 144 requests/day, each feeding the condition. The feed
+    watchdog had already classified it correctly and printed "Do NOT cycle or
+    destroy sessions — that hardens it. Reduce footprint and let it decay."
+    Nothing read that verdict. The classification was right and inert.
+
+    So the watchdog PUBLISHES its verdict to pipeline_health_state and the sweep
+    READS it: while BLOCKED the only Coolbet traffic we generate is the
+    watchdog's single probe — one request per 30 min instead of four — and that
+    probe is what reopens the breaker when the flag decays.
+
+    MUST FAIL OPEN. If the breaker cannot be read, the sweep runs. A bug in a
+    safety check must never become the thing that stops collection — this repo
+    has enough outages caused by guards that failed closed.
+    """
+    import inspect
+    from workers.automation import coolbet_explorer as ex
+    from workers.jobs import coolbet_feed_watchdog as wd
+
+    # the sweep consults it, and bails BEFORE the retry loop
+    src = inspect.getsource(ex.enumerate_coolbet_football_categories)
+    assert "_sweep_blocked_by_breaker" in src, "the sweep must consult the breaker"
+    assert src.index("_sweep_blocked_by_breaker") < src.index("for attempt in range(3)"), \
+        "the breaker must be checked BEFORE the retry loop, or it saves nothing"
+
+    # fails OPEN
+    chk = inspect.getsource(ex._sweep_blocked_by_breaker)
+    assert "except Exception" in chk and "return None" in chk.split("except Exception")[1][:200], \
+        "the breaker check must fail OPEN — a broken guard must not stop collection"
+
+    # the watchdog publishes, and clears on recovery
+    pub = inspect.getsource(wd._publish_breaker)
+    assert "BLOCKED" in pub, "must arm on the BLOCKED verdict"
+    assert "last_alert_at = NULL" in pub, \
+        "must CLEAR on a healthy verdict — a breaker that only arms is a permanent outage"
+    assert "execute_write" in pub, "writes must use execute_write, not execute_query"
+
+    # and a stale verdict must not pin the feed off forever
+    assert "_BREAKER_MAX_AGE_MIN" in inspect.getsource(ex), \
+        "a stale verdict must expire so the sweep re-probes even if the watchdog dies"
+
+
 
 if __name__ == "__main__":
     main()
