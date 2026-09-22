@@ -2753,3 +2753,62 @@ and re-grading them is the pass's actual purpose.
 **Do not delete rows** — `PRIORITY_QUEUE.md` says so explicitly, and they are the
 only record of the upstream fault's reach. Smoke
 `QUARANTINE-VOIDS-SURVIVE-THE-RESETTLER`.
+
+---
+
+## 68. A SINGLE reference book is not a reference — and a mirror leaves the draw leg alone (2026-09-22)
+
+Written after `1X2-HOME-AWAY-INVERSIONS` was measured three times and got a
+different answer each time. Two independent mistakes, both of which will be made
+again by anyone comparing our stored prices against "the market".
+
+**(1) Comparing one book against one other book cannot tell you which of the two
+is wrong.** The first pass here asked "which books' 1x2 triples mirror
+Pinnacle's?" over 120 days and got **377 pairs**. It is worthless. On fixture
+`9abeb6cc` the answer included **thirteen different bookmakers** — 10Bet, 1xBet,
+888Sport, Bet365, Betano, Betfair, BetVictor, Dafabet, Marathonbet, SBO,
+Superbet, Unibet, William Hill — all "mirroring" Pinnacle on the same match.
+Thirteen simultaneous independent parser bugs is not a hypothesis. **The
+minority-of-one is the flipped row, so the reference has to be a CONSENSUS and
+the thing you flag is the minority.**
+
+Use the median of the *other* books' sum-to-1 normalised implied probabilities,
+leave-one-out, with a quorum of 4+. Normalising is not optional: it is what makes
+a 4%-margin exchange comparable with a 12%-margin retail book.
+
+**And require a POWER guard.** On a pick'em fixture every triple mirrors itself,
+so a mirror test has no power there and will happily flag ordinary disagreement.
+Requiring the consensus to separate home from away by ≥ 0.15 in probability took
+the count from 67 to 33; the 34 it dropped were not mirrors, they were fixtures
+nobody can call. This single threshold moves the answer more than any other.
+
+Measured properly: **33 of 251,923 (fixture, book) triples in 120 days, 0.013%**,
+concentrated in the feeds we scrape ourselves (Coolbet/Epicbet/Unibet-Site/
+Unibet-Kambi ≈ 0.13–0.26% each) against 0.008–0.021% on the API-Football books.
+The earlier "not a defect in our scrapers specifically" conclusion was an
+artifact of the bad reference; with a consensus, it **is** mostly our scrapers.
+
+**Why the consensus is the right reference for OUR home/away and not just a
+popularity contest:** the AF-fed books are keyed to the fixture by
+`matches.api_football_id`, the same AF fixture `matches.home_team_id` was
+populated from — so AF's "home" and ours agree by construction, and the books
+that can drift are exactly the fuzzy-matched ones. If the fixture's own
+orientation were wrong, every book would look mirrored at once and the test
+would correctly refuse to single anyone out.
+
+**(2) A home↔away mirror does not touch the DRAW leg — so a draw pick can never
+be "struck on an inverted price".** Counting it turned 4 real hits into 17: one
+`bot_coolbet_*` draw pick at 3.40 was re-evaluated hourly by the refresh job and
+contributed **thirteen** duplicate rows on a single fixture. Filter to
+`selection IN ('home','away')`, and de-duplicate on (fixture, bot, selection)
+before quoting any count — the hourly re-evaluation cohort makes raw row counts
+meaningless.
+
+**The exposure question that matters is not "picks on an affected fixture".**
+It is "picks whose `odds_at_pick` IS the inverted number". On these 33 triples
+that is 161 → 4. The earlier "161 shadow_bets affected" figure in the ticket was
+the first number and should never have been cited as exposure.
+
+Tools: `scripts/audit_mirrored_1x2.py` (report-only), which runs the production
+guard `workers/utils/mirror_guard.py` so the audit and the gate cannot drift into
+two definitions of "mirrored".

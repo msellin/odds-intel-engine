@@ -696,6 +696,19 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
     from workers.utils.odds_quality import filter_garbage_ou_rows
     odds_rows = filter_garbage_ou_rows(odds_rows)
 
+    # 1X2-HOME-AWAY-INVERSIONS: refuse a 1x2 triple that is the market's triple
+    # with home and away transposed. An inverted price reads as the LARGEST edge
+    # on the board, so it is the one data fault every gate we own selects FOR
+    # rather than against. See workers/utils/mirror_guard.py.
+    from workers.utils.mirror_guard import drop_mirrored_1x2
+    odds_rows = drop_mirrored_1x2(
+        match_id, operator, odds_rows,
+        market_of=lambda r: r["market"],
+        selection_of=lambda r: r["selection"],
+        odds_of=lambda r: r["odds"],
+        minutes_to_kickoff=minutes_to_kickoff,
+    )
+
     if odds_rows:
         # Determine which (market, selection) combos already have a snapshot so
         # we can mark truly-first inserts as is_opening=true.
@@ -791,6 +804,21 @@ def store_book_odds_snapshots(
     try/except, and rewiring it is not this task's business.
     """
     from workers.api_clients.db import get_conn
+    if not rows:
+        return 0
+
+    # 1X2-HOME-AWAY-INVERSIONS. This writer carries Epicbet, Unibet-Site and
+    # Unibet-Kambi — 12 of the 29 mirrored triples measured over 120 days, and
+    # the feeds whose matchers accept a flipped event without recording that it
+    # was flipped (workers/utils/mirror_guard.py names the file:line).
+    from workers.utils.mirror_guard import drop_mirrored_1x2
+    rows = drop_mirrored_1x2(
+        match_id, bookmaker, rows,
+        market_of=lambda r: r[0],
+        selection_of=lambda r: r[1],
+        odds_of=lambda r: r[2],
+        minutes_to_kickoff=minutes_to_kickoff,
+    )
     if not rows:
         return 0
     now = datetime.now(timezone.utc).isoformat()

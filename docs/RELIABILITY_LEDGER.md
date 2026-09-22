@@ -162,6 +162,46 @@ to score. And when you clone a pricing path, diff the GATES, not the outputs —
 the outputs of a clone that dropped a cap look *better*, not worse.
 
 
+## 4d. A gate that fails open is missing exactly where the fault is worst
+
+**1X2-HOME-AWAY-INVERSIONS-2026-09-22.** §4b is a gate in the wrong *place*.
+This is a gate in the right place with a deliberate, documented, correct-looking
+hole — and the hole and the fault turn out to be the *same population*.
+
+`anchor_sanity.is_anchor_sane` fails open when Pinnacle has no line, and that
+choice is right on its own terms: refusing every fixture Pinnacle skips would
+delete most of the obscure-league coverage these bots run on, trading a known
+fault for an invisible one. Its own docstring says so.
+
+**But the fixtures Pinnacle skips are the obscure ones, and the obscure ones are
+where fuzzy fixture matching goes wrong.** So the population the guard declines
+to judge is enriched for the fault it exists to catch. Of the four paper picks
+struck on a transposed 1x2 price, three were caught retrospectively by the ratio
+test and **the one that was never caught — the only one still counted as a real
+loss — is on Birkirkara v Hibernians, which has no Pinnacle 1x2 line at all.**
+Seven other books priced it.
+
+**A second, quieter version of the same shape:** the guard also had little
+*power* where it did fire. Balzan v Sliema stored away at 3.40 against a true
+2.12 — a ratio of 1.604 against a 1.5625 threshold. It passed by 2.5%. A
+transposition is glaring in STRUCTURE (swap the sides and the whole triple
+reconciles) and marginal in RATIO, so the statistic was simply the wrong one.
+
+**The tell.** A gate's fail-open branch is usually justified by a *coverage*
+argument ("we would lose too much data"), which is an argument about the
+population's SIZE. Nobody checks whether that population's COMPOSITION is
+different — and a guard that abstains on the risky half is not conservative, it
+is absent.
+
+**The rule.** When you write a fail-open branch, measure the fault rate *inside*
+the abstention set, not just its size. If you cannot, add a second gate that uses
+a different reference so the two abstain on different rows. Here that is
+`mirror_guard`, which uses a **consensus of whatever books did price the
+fixture** instead of one anchor, applies at **write** time instead of read time,
+and tests **structure** instead of ratio — three independent choices, so the two
+gates' blind spots do not overlap. Smoke `MIRROR-GUARD`.
+
+
 ## 4c. A cleanup is not done until the nightly repair job agrees with it
 
 **SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20, second act.** 31 picks
