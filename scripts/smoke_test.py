@@ -10859,10 +10859,21 @@ def _():
     import json
     from workers.api_clients.db import execute_query
 
-    _LIVE_SQL = """
+    # PERF-HERO-AND-TABLE-ONE-BASIS (2026-09-22, [[#072]]). This reconciliation
+    # used to carry its OWN `SUM(sb.pnl)` — the stored, high-water basis — so the
+    # moment write_dashboard_cache moved to executable prices the test reported
+    # drift that was the FIX, not a regression (bot_v10_1x2 206.42 vs 360.17).
+    #
+    # A reconciliation test must not re-implement the thing it reconciles: two
+    # copies of an aggregation diverge, and then the test's own copy decides what
+    # "correct" means. It now imports settlement's single expression, so if the
+    # writer's basis ever changes again this test follows it — and if someone
+    # edits only one of the two customer-facing paths, it still fails.
+    from workers.jobs.settlement import _EXEC_PNL
+    _LIVE_SQL = f"""
         SELECT b.name,
                COUNT(sb.id) FILTER (WHERE sb.result IN ('won','lost')) as settled,
-               COALESCE(SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')), 0) as total_pnl
+               COALESCE(SUM({_EXEC_PNL}) FILTER (WHERE sb.result IN ('won','lost')), 0) as total_pnl
         FROM bots b
         LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
         WHERE b.is_active = true AND b.retired_at IS NULL
