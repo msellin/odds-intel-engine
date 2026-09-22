@@ -94,6 +94,16 @@ more here than elegance.
 
 ## Steps
 
+
+> **Accuracy correction 2026-09-22.** An earlier note here and in the first commit
+> message said "no `net.ipv4.ip_forward`". That describes what *we added*, but it
+> reads as a claim about the box and the box does not match it: `ip_forward` is
+> already `1` and two `MASQUERADE` rules exist (`172.17.0.0/16`, `172.18.0.0/16`).
+> **Those are Docker's**, pre-existing and unrelated. What is true: nothing in
+> iptables references `wg0` or `10.8.0.0/24`, and this work added no forwarding or
+> NAT rule of its own. Do not "tidy away" the Docker rules — PostgREST and
+> FlareSolverr need them.
+
 ### Phase 1 — VPS WireGuard server (blast radius: low, but do it carefully)
 1. `apt install wireguard-tools` (kernel module already present, 7.0.0-27)
 2. Generate server keypair, `wg0` = 10.8.0.1/24, listen UDP 51820
