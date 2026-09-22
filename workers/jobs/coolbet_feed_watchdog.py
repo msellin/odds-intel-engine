@@ -309,11 +309,42 @@ def classify() -> tuple[str, str]:
     if odds_h > WEDGE_PROBE_AFTER_H:
         early = _probe_odds_session()
         if early["state"] == "wedged":
+            # WEDGE-EARLY-SKIPPED-THE-DISCRIMINATOR (2026-09-22). This branch
+            # used to return WEDGED_SESSION here, on ONE session's evidence, and
+            # by returning it short-circuited the §7 check further down. That is
+            # the one thing the runbook says never to do: "you MUST probe a
+            # FRESH session before destroying anything", because §6b (our
+            # session is stuck) and §7 (Coolbet is flagging this IP) are
+            # IDENTICAL on the sweep's own session — HTTP 500, fixed ~60s, 0
+            # bytes — and their remedies are opposite. Cycling sessions at a
+            # live flag HARDENS it.
+            #
+            # Caught live: on 2026-09-22 the Coolbet feed had been dead 15h and
+            # this branch had fired 37 times in a day, destroying sessions every
+            # 20 minutes, while a fresh-session probe returned the SAME
+            # 500/60.8s/0 bytes — i.e. §7 throughout. Its own message was the
+            # tell, printing "under the 3.0h staleness threshold" at 15.0h:
+            # written for the early case, still firing long after.
+            #
+            # So run the discriminator here too. `_probe_fresh_session` costs one
+            # request and only on an already-missed sweep.
+            fresh = _probe_fresh_session()
+            if fresh.get("state") != "ok":
+                return ("BLOCKED",
+                        f"no Coolbet odds for {odds_h:.1f}h. The sweep's session "
+                        f"{ODDS_FS_SESSION!r} fails ({early['detail']}) — but so "
+                        f"does a FRESH one ({fresh.get('state')}: "
+                        f"{str(fresh.get('detail'))[:140]}). Per runbook §6b that "
+                        f"is §7, an Imperva flag, NOT a wedge. Do NOT cycle or "
+                        f"destroy sessions — that hardens it. Reduce footprint "
+                        f"(scripts/ops/coolbet_pause_resume.sh pause) and let it "
+                        f"decay.")
             return ("WEDGED_SESSION",
-                    f"no Coolbet odds for {odds_h:.1f}h — under the {FEED_STALE_H}h "
-                    f"staleness threshold, but the FS session {ODDS_FS_SESSION!r} "
-                    f"is already provably stuck ({early['detail']}). Destroying it "
-                    f"now rather than waiting out the clock.")
+                    f"no Coolbet odds for {odds_h:.1f}h. The FS session "
+                    f"{ODDS_FS_SESSION!r} is provably stuck ({early['detail']}) "
+                    f"while a FRESH session answers fine — so this is our session, "
+                    f"not Coolbet's verdict. Destroying it now rather than waiting "
+                    f"out the clock.")
 
     if odds_h <= FEED_STALE_H:
         # Feed is fine — but is the BOT producing? A healthy feed with a silent

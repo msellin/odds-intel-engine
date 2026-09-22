@@ -47472,8 +47472,20 @@ def test_wedge_probe_early():
     ok = {"state": "ok", "detail": "fo-tree answered", "elapsed_s": 0.6, "bytes": 199013}
     o_probe, o_hours = wd._probe_odds_session, wd._hours_since_last_odds
     o_bot = getattr(wd, "_picks_bot_active", None)
+    o_fresh = wd._probe_fresh_session
     try:
         wd._probe_odds_session = lambda: wedged
+        # WEDGE-EARLY-SKIPPED-THE-DISCRIMINATOR (2026-09-22): the early path now
+        # confirms with a FRESH session before calling it a wedge, because §6b
+        # and §7 are identical on the sweep's own session and have opposite
+        # remedies. Stub it OK here — this test is about the CLOCK (caught in
+        # ~45 min, not after 3h), and WEDGE-EARLY-RUNS-THE-DISCRIMINATOR owns
+        # the §6b-vs-§7 question.
+        #
+        # Without this stub the test made a real network call: 71 seconds in the
+        # suite, and its verdict depended on whether Coolbet happened to be up —
+        # which is how it failed during the live outage of 2026-09-22.
+        wd._probe_fresh_session = lambda: ok
         # Below one missed sweep: the feed is still delivering, do not cry wedge.
         wd._hours_since_last_odds = lambda: wd.WEDGE_PROBE_AFTER_H / 2
         assert wd.classify()[0] != "WEDGED_SESSION", \
@@ -47491,6 +47503,7 @@ def test_wedge_probe_early():
             "a session answering in 0.6s with 199KB is not wedged"
     finally:
         wd._probe_odds_session, wd._hours_since_last_odds = o_probe, o_hours
+        wd._probe_fresh_session = o_fresh
         if o_bot is not None:
             wd._picks_bot_active = o_bot
 
@@ -49741,6 +49754,61 @@ def test_own_picks_book_seam():
             f"in Estonia, that is the OWN test leaking back into PICKS, which is "
             f"exactly what this split exists to prevent")
     return "PICKS prices off real offers; OWN keeps the Estonian allow-list"
+
+
+
+@test("WEDGE-EARLY-RUNS-THE-DISCRIMINATOR — never destroy a session on one probe's evidence")
+def test_wedge_early_runs_the_discriminator():
+    """WEDGE-EARLY-SKIPPED-THE-DISCRIMINATOR (2026-09-22), found during a live
+    Coolbet outage.
+
+    §6b (our FS session is stuck) and §7 (Coolbet is flagging this IP) are
+    IDENTICAL on the sweep's own session — HTTP 500, fixed ~60s, 0 bytes — and
+    their remedies are OPPOSITE. A wedge wants the session destroyed; a flag
+    wants us to back off, and cycling sessions at a live flag hardens it. The
+    runbook's rule is therefore absolute: probe a FRESH session before
+    destroying anything.
+
+    The early-wedge branch did not. It returned WEDGED_SESSION on one session's
+    evidence and, by returning, short-circuited the §7 check further down. Live
+    cost, measured 2026-09-22: the feed had been dead 15h, this branch had fired
+    37 times in a day destroying sessions every ~20 minutes, and a fresh probe
+    returned the same 500 / 60.8s / 0 bytes — §7 the whole time.
+
+    Its own message was the tell, printing "under the 3.0h staleness threshold"
+    at 15.0h: written for the early case, still firing long after.
+
+    Behavioural, because the bug was a control-flow short-circuit that a
+    source-match would not have caught.
+    """
+    import importlib
+
+    wd = importlib.import_module("workers.jobs.coolbet_feed_watchdog")
+    saved = (wd._hours_since_last_odds, wd._probe_odds_session, wd._probe_fresh_session)
+    try:
+        wd._hours_since_last_odds = lambda: 15.0
+        wd._probe_odds_session = lambda: {"state": "wedged", "detail": "500, 60s, 0 bytes"}
+
+        # Fresh session fails the same way -> Coolbet is flagging us. MUST NOT destroy.
+        wd._probe_fresh_session = lambda: {"state": "wedged", "detail": "500, 60s, 0 bytes"}
+        state, why = wd.classify()
+        assert state == "BLOCKED", (
+            f"a fresh session failing the SAME way is runbook §7, an Imperva flag "
+            f"— got {state!r}. Destroying sessions here hardens the block, and "
+            f"this exact path did it 37 times in one day on 2026-09-22")
+        assert "do not cycle" in why.lower() or "do NOT cycle" in why, (
+            "the BLOCKED reason must tell the operator not to cycle sessions — "
+            "the previous wording actively recommended the opposite remedy")
+
+        # Fresh session answers fine -> it really is our session. Destroy is right.
+        wd._probe_fresh_session = lambda: {"state": "ok", "detail": "real board"}
+        state, _ = wd.classify()
+        assert state == "WEDGED_SESSION", (
+            f"a fresh session answering fine IS the wedge signature — got "
+            f"{state!r}. The fix must not trade one wrong verdict for another")
+    finally:
+        wd._hours_since_last_odds, wd._probe_odds_session, wd._probe_fresh_session = saved
+    return "fresh-fails -> BLOCKED; fresh-ok -> WEDGED_SESSION"
 
 
 
