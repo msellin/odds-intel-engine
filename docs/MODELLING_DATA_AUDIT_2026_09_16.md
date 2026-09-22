@@ -36,6 +36,44 @@
 
 ---
 
+> ### ADDENDUM 2026-09-22 — the Dixon-Coles result must be RESTATED, and an external survey narrows what is left
+>
+> **(a) The DC baseline above was a DOUBLE-POISSON baseline.** [[#014]] proved
+> algebraically (and over a 48-point grid) that the τ low-score correction has
+> EXACTLY zero effect on O/U 2.5 for all λ, μ, ρ — all four corrected cells
+> (0-0, 0-1, 1-0, 1-1) sit under 2.5 and their mass changes cancel:
+> `d = ρ·e^−λ·e^−μ·λμ·(−1+1+1−1) = 0`. Petretta, Schiavon & Diquigiovanni
+> ([arXiv:2103.07272](https://arxiv.org/pdf/2103.07272)) publish the same result
+> and call it *"an undeniable limit in the Dixon and Coles procedure"*. So the
+> α = 0 above is a **double-Poisson** result. It is still a real baseline — but
+> "the canonical goals model was tried and failed" overstates it, because DC's
+> distinguishing feature is inert in this market.
+>
+> **(b) The audit's Tier C is understated and Wheatcroft says it is the priority.**
+> Wheatcroft (2020, *IJF* 36(3), n=68,672 bets) found GAP ratings fed
+> **shots+corners** returned **+535 units** while the same ratings fed **goals**
+> returned **−631 units** (Bonferroni-corrected p<0.001). Past goals are a WORSE
+> input for a goals model than past shots. We hold shots on **53,304** matches and
+> corners on **54,341** — 31% of finished matches, 42.8% in 2025. Never modelled.
+> Filed as [[#077]].
+>
+> **(c) The execution caveat outranks every modelling question here.** The same
+> paper's edge is **+0.8%/bet at MAX odds across books (overround 1.57%)** and a
+> **substantial loss at AVERAGE odds (6.8%)**. The one well-powered published O/U
+> edge is predominantly a best-price-execution result. With two Estonian books we
+> are on the losing side of that split, which is the same constraint recorded in
+> `docs/BOOK_SET_COUNTERFACTUAL_2026_09_22.md`.
+>
+> **(d) Nobody has published an O/U test against CLOSING lines.** Our −3.85%
+> closing CLV is therefore not contradicted by the literature — the literature has
+> never attempted that bar. Absence of evidence, in both directions.
+>
+> **(e) xG: beats goals, loses to the market.** ~12,000 Big-5 matches, Brier 58.6
+> (xG) vs 59.7 (goals) vs **57.2 (Bet365)**; all ten best xG models lost money.
+> And FBref LOST xG in January 2026 (Opta termination), so §3 Tier D's
+> "procurement" option is now narrower than when this audit was written —
+> Understat (6 leagues) is effectively the only free source.
+
 ## 0. Why this audit exists
 
 `residual_test.py` closed model-anchored 1x2 at α = 0.0000. `residual_test_ou.py`
