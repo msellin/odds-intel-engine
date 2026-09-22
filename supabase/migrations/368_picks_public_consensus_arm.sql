@@ -28,8 +28,6 @@ CREATE OR REPLACE VIEW picks_public_all AS
  SELECT p.id,
     'sharp'::text AS edge_kind,
     'bot_sharp_forward_test_v1'::text AS bot,
-    p.arm,
-    p.anchor_bookmaker,
     p.match_id, p.market, p.selection, p.odds, p.bookmaker, p.edge,
     p.p_sharp AS fair_prob,
     p.rule_version,
@@ -37,7 +35,13 @@ CREATE OR REPLACE VIEW picks_public_all AS
     p.published_at, p.outcome, p.clv,
     m.date AS kickoff_utc,
     l.name AS league, l.country,
-    ht.name AS home_team, at.name AS away_team
+    ht.name AS home_team, at.name AS away_team,
+    -- NEW COLUMNS GO LAST. `CREATE OR REPLACE VIEW` can only APPEND columns —
+    -- inserting them mid-list renames every column after the insertion point and
+    -- Postgres refuses ("cannot change name of view column"). Appending keeps
+    -- every existing consumer's ordinal positions intact, so the frontend needs
+    -- no coordinated deploy.
+    p.arm, p.anchor_bookmaker
    FROM picks_forward_test p
      JOIN matches m ON m.id = p.match_id
      LEFT JOIN leagues l ON l.id = m.league_id
@@ -48,8 +52,6 @@ UNION ALL
  SELECT s.id,
     'model'::text AS edge_kind,
     b.name AS bot,
-    NULL::text AS arm,
-    NULL::text AS anchor_bookmaker,
     s.match_id, s.market, s.selection,
     s.odds_at_pick AS odds,
     s.recommended_bookmaker AS bookmaker,
@@ -66,7 +68,8 @@ UNION ALL
     s.clv,
     m.date AS kickoff_utc,
     l.name AS league, l.country,
-    ht.name AS home_team, at.name AS away_team
+    ht.name AS home_team, at.name AS away_team,
+    NULL::text AS arm, NULL::text AS anchor_bookmaker
    FROM simulated_bets s
      JOIN bots b ON b.id = s.bot_id
      JOIN matches m ON m.id = s.match_id
