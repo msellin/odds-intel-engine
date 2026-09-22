@@ -28,6 +28,15 @@ from dataclasses import dataclass
 ANCHOR_MODEL = "model"   # fair value = our calibrated model probability
 ANCHOR_SHARP = "sharp"   # fair value = Shin-de-vigged Pinnacle probability
 ANCHOR_NONE = "none"     # internal strategy bot — not an edge-vs-book selection
+# ANCHOR_CONSENSUS (2026-09-22, [[#068]]): fair value = the de-vigged CONSENSUS
+# of >=5 books, not one book's line. Its own constant rather than a flavour of
+# ANCHOR_SHARP, because the distinction is load-bearing on two counts. (a) It is
+# what a reader needs to know: "one sharp book says so" and "ten books agree" are
+# different claims, and the /performance chip renders straight off this field.
+# (b) It changes which guards apply — a consensus has ZERO overround by
+# construction, so the anchor-quality test that gates the sharp arm is
+# meaningless against it and had to be replaced by a book COUNT.
+ANCHOR_CONSENSUS = "consensus"
 
 FAM_COOLBET_REAL = "coolbet_real"      # places real money at Coolbet (gated)
 FAM_TRIGGER = "trigger"                # book-agnostic trigger engine (paper)
@@ -149,7 +158,7 @@ BOTS: list[BotSpec] = [
     # SECOND arm. Its own bot identity, not a variant of the sharp one, because
     # a reader expanding a leaderboard row must see ONE rule's record — two
     # different anchors averaged into one number describe neither.
-    BotSpec("bot_consensus_anchor_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5", ANCHOR_SHARP,
+    BotSpec("bot_consensus_anchor_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5", ANCHOR_CONSENSUS,
             0.03, None, False,
             "PUBLISHED (Telegram + /picks), never staked. Prices each pick against a de-vigged CONSENSUS of >=5 bookmakers rather than a single sharp line, at a >=3% edge with an **8% ceiling** the sharp arm does not have ([[#007]]: edge = p*odds-1 is maximised by a WRONG price, and 5 of the first 15 qualifying legs cleared 8% against a 7-11 book consensus). It exists because the sharp arm's pre-registered <=4% anchor-overround gate admitted 0 of 173 Pinnacle-priced markets on 2026-09-22 and the channel went dark for two days; that gate is pre-registered so it was NOT relaxed. Justified by measurement, not assumption: over 45 days and n=11,419 matches, a consensus EXCLUDING our AF-'Pinnacle' predicts as well as that feed does (log-loss 0.98339 vs 0.98401), while the feed's median closing overround is 10.24% against those books' 7.95%. Ledger: picks_forward_test WHERE arm='consensus_anchor'. Reported SEPARATELY from the sharp arm.",
             twin="bot_sharp_forward_test_v1"),

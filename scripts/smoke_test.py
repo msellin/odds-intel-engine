@@ -24865,7 +24865,32 @@ def test_published_arm_has_a_record_2026_09_22():
                 f"{fn} must filter by arm — it sums the rows it is handed, so an "
                 f"unfiltered call pools two different rules into one record"
             )
-    return "both published arms have a separate record on /performance"
+    # 5. Each published arm must also be a ROW in the fleet table, not only a
+    #    panel. The consensus arm published every pick of 2026-09-22 and appeared
+    #    in the leaderboard nowhere — the same "the table lists everything EXCEPT
+    #    the strategy we publish" defect PICKS-BOT-IN-LEADERBOARD fixed in 2026-09,
+    #    reintroduced by a second arm instead of a second ledger.
+    page = _web_path("src/app/(app)/performance/page.tsx").read_text(encoding="utf-8")
+    if page:
+        assert "PUBLISHED_ARM_BOTS" in page, (
+            "the leaderboard must inject one row per published arm from a LIST, "
+            "not a hand-written call per arm — a third arm should appear by "
+            "being added to that list"
+        )
+        for bot in ("bot_sharp_forward_test_v1", "bot_consensus_anchor_v1"):
+            assert bot in page, f"{bot} is not injected into the leaderboard"
+
+    # 6. And the publisher must never put a pick on a match that is not on.
+    #    PUBLISHED-A-POSTPONED-FIXTURE: 3 of the consensus arm's first 20 picks
+    #    were POSTPONED fixtures, stamped postponed at 09:15 and published at
+    #    12:15. They void harmlessly, so only a reader ever sees the problem.
+    pub = _engine_path("scripts/publish_picks_forward_test.py").read_text(encoding="utf-8")
+    assert "m.status = 'scheduled'" in pub, (
+        "load_candidates must require m.status = 'scheduled' — an allow-list, "
+        "so a status nobody has thought about yet is refused rather than "
+        "published to the channel"
+    )
+    return "both published arms have a separate record, a leaderboard row, and no dead fixtures"
 
 
 @test("FLOORS-ONE-SOURCE-CROSS-LANGUAGE — the frontend derives its floors from the engine")
@@ -44479,12 +44504,19 @@ def test_performance_public_is_calibrated_or_beta():
     # the INJECTION site specifically (`name: "..."`), not the first mention —
     # the file also maps that bot's bets higher up, and anchoring on the wrong
     # occurrence made this assertion fail on correct code.
-    pi = page_code.index('name: "bot_sharp_forward_test_v1"')
+    # UPDATED 2026-09-22 ([[#068]]): the injection is now a LOOP over every
+    # published arm, so the bot name is a variable and the old literal anchor is
+    # gone. The property is unchanged and still the point — the injection must
+    # sit AFTER the maturity filter, or the filter drops bots that are
+    # 'experimental' in the DB but produce the picks readers actually receive.
+    pi = page_code.index("PUBLISHED_ARM_BOTS")
     assert pi > fi, (
-        "bot_sharp_forward_test_v1 is now injected BEFORE the maturity filter, "
-        "so the filter will drop it — it is 'experimental' in the DB. That bot "
-        "produces the picks readers receive; its record is the whole point."
+        "the published-arm bots are now injected BEFORE the maturity filter, so "
+        "the filter will drop them — they are 'experimental' in the DB. Those "
+        "bots produce the picks readers receive; their record is the whole point."
     )
+    for _b in ("bot_sharp_forward_test_v1", "bot_consensus_anchor_v1"):
+        assert _b in page_code, f"{_b} is not injected into the leaderboard"
 
     # and every listed row must still be LABELLED
     lb = _web_path("src/components/performance-leaderboard.tsx").read_text()
@@ -48902,7 +48934,10 @@ def _():
         "averaged across versions — ANALYSIS_GOTCHAS 9a(h)")
 
     perf = (web / "app" / "(app)" / "performance" / "page.tsx").read_text()
-    assert "getPicksForwardTestSummary())?.pooled" in perf, (
+    # ARM-SCOPED (2026-09-22, [[#068]]): the call now takes an arm, so the exact
+    # text moved. The PROPERTY is unchanged and is what matters — the public row
+    # reads `.pooled`, never `.current`, so it reconciles with the bets list.
+    assert "?.pooled" in perf and "getPicksForwardTestSummary(" in perf, (
         "the public row must use the pooled record so it reconciles with the "
         "bets list a reader can count")
     return "watchlist future-only; bot row pooled; label is a top-N"

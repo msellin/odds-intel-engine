@@ -283,6 +283,23 @@ def load_candidates(anchor: str = "pinnacle") -> tuple[list[dict], list[dict]]:
            AND m.date > now() + (%s || ' minutes')::interval
            AND m.date < now() + (%s || ' hours')::interval
            AND o.timestamp > now() - interval '6 hours'
+           -- PUBLISHED-A-POSTPONED-FIXTURE (2026-09-22, [[#068]]). There was NO
+           -- status filter here, on either arm. On the consensus arm's first day
+           -- that put 3 of 20 picks on POSTPONED matches in front of 62
+           -- subscribers — Chippenham v Sholing, Yate Town v Evesham, Poole Town
+           -- v Wimborne, all English non-league, all 18:45.
+           --
+           -- We knew. All three were stamped `postponed` at 09:15:33 UTC and we
+           -- published them at 12:15:55 — three hours later. They void harmlessly
+           -- in the ledger, which is exactly why this could have run for months
+           -- unnoticed: the P&L is unaffected and only a reader sees the problem.
+           --
+           -- `= 'scheduled'` and not `<> 'postponed'`: the live values are
+           -- scheduled / finished / postponed / live, and an allow-list refuses
+           -- a status nobody has thought about yet. A pick on a finished or
+           -- in-play match is just as wrong as one on a postponed match, and
+           -- this feed is pre-match only.
+           AND m.status = 'scheduled'
          ORDER BY o.match_id, o.market, o.selection, o.bookmaker,
                   o.timestamp DESC
         """,

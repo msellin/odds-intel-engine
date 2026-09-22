@@ -72,6 +72,14 @@ def render() -> str:
             # is noise, so a price above the cap must never read as better.
             "oddsCap": _cap_by_bot.get(b.name),
             "realMoney": b.real_money,
+            # WHAT THE BOT PRICES AGAINST (2026-09-22, owner: "we should have a
+            # label about what is used for bot....model, anchor, mix").
+            # model | sharp | consensus | none. Generated from the registry so
+            # the chip on /performance cannot drift from what the bot actually
+            # does — a hand-kept mapping in the frontend is how the floors got
+            # out of sync in the first place (see this file's header).
+            "anchor": b.anchor,
+            "market": b.market,
         }
         for b in sorted(BOTS, key=lambda x: x.name)
     }
@@ -103,6 +111,8 @@ export const ENGINE_BOT_FLOORS: Record<string, {{
   oddsFloor: number | null;
   oddsCap: number | null;
   realMoney: boolean;
+  anchor: string;
+  market: string;
 }}> =
   {json.dumps(bots, indent=2)};
 
