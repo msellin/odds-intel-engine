@@ -102,7 +102,34 @@ def _has_col(table: str, col: str) -> bool:
             WHERE table_name = %s AND column_name = %s""", (table, col)))
 
 
-def _rows(table: str, exclude: list[str], limit: int, offset: int):
+# SELF-COMPARISON REWRITE (2026-09-22, [[#024]], owner-approved).
+#
+# The default mode targets `closing_bookmaker IS NULL` — the arbitrary-book
+# defect — and deliberately leaves alone rows that already carry an own-book
+# close. But those were settled through the UNBOUNDED lookup, which returns the
+# latest pre-kickoff row however old, and for the direct books that row was
+# frequently THE BET'S OWN QUOTE. `clv = odds/close - 1` against your own quote
+# is exactly 0.0000, so the row scores "captured no value" without a measurement
+# ever having happened.
+#
+# Measured on shadow_bets: 158,848 settled rows carry a clv, and **80,340
+# (50.6%) are exactly 0.0000**. That is not a result, it is an absence wearing
+# one — and because it sits at zero it drags every pooled CLV toward zero rather
+# than being visibly missing.
+#
+# This mode re-derives those rows through the BOUNDED close. Two outcomes, both
+# honest: a real pre-kickoff price within 60 min becomes a real number, and
+# anything else becomes NULL. NULL is the point — "we never looked" must not
+# keep masquerading as "no edge captured".
+#
+# IDEMPOTENT for the same reason the default mode is: a rewritten row either
+# gains a non-zero clv or loses its clv, so it leaves the selection either way.
+_SELF_COMPARISON_PRED = "t.clv = 0 AND t.closing_bookmaker IS NOT NULL"
+_DEFAULT_PRED = "t.clv IS NOT NULL AND t.closing_bookmaker IS NULL"
+
+
+def _rows(table: str, exclude: list[str], limit: int, offset: int,
+          self_comparisons: bool = False):
     """Settled rows carrying a clv but no closing_bookmaker — the defect, exactly.
 
     `closing_bookmaker IS NULL` is also the idempotency predicate: it shrinks
@@ -117,15 +144,16 @@ def _rows(table: str, exclude: list[str], limit: int, offset: int):
     not, rather than assuming a shared shape.
     """
     combo = "AND t.combo_legs IS NULL" if _has_col(table, "combo_legs") else ""
+    pred = _SELF_COMPARISON_PRED if self_comparisons else _DEFAULT_PRED
     return execute_query(
         f"""SELECT t.id, t.match_id::text AS match_id, t.market, t.selection,
                    t.odds_at_pick, t.odds_at_pick_live, t.recommended_bookmaker,
-                   t.clv AS old_clv, b.name AS bot_name, m.date AS kickoff
+                   t.clv AS old_clv, b.name AS bot_name, m.date AS kickoff,
+                   t.pick_time
               FROM {table} t
               JOIN bots b ON b.id = t.bot_id
               JOIN matches m ON m.id = t.match_id
-             WHERE t.clv IS NOT NULL
-               AND t.closing_bookmaker IS NULL
+             WHERE {pred}
                AND t.result IN ('won', 'lost', 'void')
                AND b.name NOT LIKE 'inplay%%'
                {combo}
@@ -146,6 +174,12 @@ def main() -> int:
     ap.add_argument("--include-sharp", action="store_true",
                     help="also backfill the SHARP-ANCHOR-SWEEP pre-registration bots")
     ap.add_argument("--exclude-bots", default="")
+    ap.add_argument("--self-comparisons", action="store_true",
+                    help="rewrite rows whose stored close IS the bet's own quote "
+                         "(clv = 0 exactly, own-book): 80,340 of 158,848 settled "
+                         "shadow rows. Re-derives through the BOUNDED close; a "
+                         "real pre-KO price within 60 min becomes a real number, "
+                         "anything else becomes NULL.")
     a = ap.parse_args()
 
     exclude = [s for s in a.exclude_bots.split(",") if s]
@@ -192,6 +226,46 @@ def main() -> int:
                 close_memo[k] = got      # (odds, mins) or None
         return close_memo[k]
 
+    later_memo: dict = {}
+
+    def has_later_price(mid, mkt, sel, book, pick_time, kickoff):
+        """Is there a price at this book AFTER the bet and before kickoff?
+
+        THIS IS THE LINE BETWEEN "no value captured" AND "never measured", and
+        the whole self-comparison rewrite turns on it.
+
+        `clv = odds_at_pick / close - 1` is 0 in two completely different worlds:
+        the price genuinely did not move (a real result), or the only snapshot we
+        ever took at that book IS the bet's own quote (no measurement happened).
+        Both are stored as 0.0000 and are indistinguishable in the column.
+
+        Measured on 3,000 such rows: **1,627 (54%) have exactly ONE pre-kickoff
+        snapshot at that book** — for those there is no second price in
+        existence, so no lookup of any kind can produce a CLV. Only 1,111 (37%)
+        have a snapshot later than the bet at all.
+
+        So the rewrite must NOT simply re-run a bounded lookup: `get_book_close`
+        takes the latest row within 60 min of KICKOFF, which for a late bet can
+        be the bet's own row, and it would write 0.0000 again while looking like
+        it had checked. Requiring a strictly-later snapshot is what makes the
+        NULL honest.
+
+        Deliberately NOT pushed into `get_book_close` itself — that helper is
+        shared with `real_bets`, where "the closing price" is a definition and
+        not a function of when we happened to bet."""
+        k = (mid, mkt, sel, book)
+        if k not in later_memo:
+            rows = execute_query(
+                """SELECT 1 FROM odds_snapshots os
+                    WHERE os.match_id = %s AND os.market = %s AND os.selection = %s
+                      AND os.bookmaker = %s
+                      AND COALESCE(os.is_live, FALSE) = FALSE
+                      AND os.timestamp > %s AND os.timestamp <= %s
+                    LIMIT 1""",
+                (mid, mkt, sel, book, pick_time, kickoff))
+            later_memo[k] = bool(rows)
+        return later_memo[k]
+
     def margin_of(mid, mkt, book):
         k = (mid, mkt, book)
         if k not in margin_memo:
@@ -220,7 +294,8 @@ def main() -> int:
     total = 0
 
     while True:
-        batch = _rows(a.table, exclude, a.batch, offset)
+        batch = _rows(a.table, exclude, a.batch, offset,
+                      self_comparisons=a.self_comparisons)
         if not batch:
             break
         writes = []
@@ -234,6 +309,13 @@ def main() -> int:
             # close it was describing, because they were two queries against a
             # table that is still being written to.
             got = close_of(r["match_id"], mkt, sel, book) if book else None
+            # In self-comparison mode a close is only admissible if a price
+            # existed AFTER the bet — otherwise the "close" is the bet itself and
+            # we would re-write the same 0.0000 while appearing to have checked.
+            if got and a.self_comparisons and not has_later_price(
+                    r["match_id"], mkt, sel, book, r["pick_time"], r["kickoff"]):
+                got = None
+                stats["unmeasurable"] = stats.get("unmeasurable", 0) + 1
             close = got[0] if got else None
 
             if close and float(close) > 1.0:
