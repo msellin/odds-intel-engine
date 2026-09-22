@@ -43163,7 +43163,13 @@ def test_picks_forward_test_surface():
     )
     try:
         from workers.api_clients.db import execute_query as _eq
-        pooled = _eq("""SELECT count(*) AS n_rules FROM picks_forward_test_summary""", [])
+        # ARM-SCOPED (2026-09-22, [[#068]]). The view now carries every PUBLISHED
+        # arm (migration 371), so its raw row count is per (rule_version, arm).
+        # This test owns the LIVE arm — the pre-registered one — so it counts
+        # within that arm. The property is unchanged and still the point: one row
+        # per rule version, never a pooled sum, never a stray group.
+        pooled = _eq("""SELECT count(*) AS n_rules FROM picks_forward_test_summary
+                         WHERE arm = 'live'""", [])
         distinct = _eq("""SELECT count(DISTINCT rule_version) AS n
                             FROM picks_forward_test WHERE arm='live'""", [])
     except Exception:
@@ -43276,11 +43282,18 @@ def test_picks_forward_test_surface():
     # DB invariants — skip cleanly offline.
     try:
         from workers.api_clients.db import execute_query
+        # NAME THE CONTROL, DON'T INFER IT (2026-09-22, [[#068]]). This counted
+        # anything in the public view whose arm was NOT 'live' and called it a
+        # junk-anchor leak — correct while 'live' was the only published arm, and
+        # wrong the moment a second one shipped: it reported the 20 legitimate
+        # consensus picks as the negative control reaching readers. The invariant
+        # being protected is about `junk_anchor` specifically, so it now says so.
         rows = execute_query(
             """SELECT (SELECT count(*) FROM picks_forward_test_public
                         WHERE id IN (SELECT id FROM picks_forward_test
-                                      WHERE arm <> 'live'))          AS leaked,
-                      (SELECT count(*) FROM picks_forward_test_summary) AS summary_rows""",
+                                      WHERE arm = 'junk_anchor'))    AS leaked,
+                      (SELECT count(*) FROM picks_forward_test_summary
+                        WHERE arm = 'live')                          AS summary_rows""",
             [])
     except Exception:
         rows = None
@@ -50014,8 +50027,23 @@ def test_inplay_collector_single_writer():
         "the unit must give the concrete check that the Mac job is gone, not just a warning"
 
     # --- egress wiring ---
-    assert "OI_RESIDENTIAL_PROXY=socks5h://" in unit, \
-        "must be socks5h (resolve AT the proxy); socks5 leaks the DNS lookup to the VPS resolver"
+    # STALE SINCE 6e849bda (EPICBET-OFF-FLARESOLVERR), fixed 2026-09-22. That
+    # commit renamed the variable to EPICBET_RESIDENTIAL_PROXY deliberately: the
+    # scheduler runs all 82 jobs in ONE process, so a shared OI_RESIDENTIAL_PROXY
+    # would flip Coolbet's transport at the same instant — and Coolbet feeds the
+    # real-money path. The test kept asserting the old name and had been failing
+    # in CI on a change that was correct.
+    #
+    # Both halves are pinned, because each protects something different: socks5h
+    # (not socks5) keeps DNS resolving AT the proxy, and the EPICBET_ prefix keeps
+    # the residential egress off every other book.
+    assert "EPICBET_RESIDENTIAL_PROXY=socks5h://" in unit, \
+        ("must be EPICBET_RESIDENTIAL_PROXY=socks5h:// — socks5 leaks the DNS "
+         "lookup to the VPS resolver, and an unscoped OI_RESIDENTIAL_PROXY would "
+         "flip Coolbet's transport too (same process, real-money path)")
+    assert "OI_RESIDENTIAL_PROXY=" not in unit, \
+        ("the proxy must stay Epicbet-scoped; a shared OI_RESIDENTIAL_PROXY in "
+         "this unit would route Coolbet through it as well")
     assert "Restart=always" in unit and "RestartSec=" in unit, \
         "no-fallback means a down tunnel CRASHES the collector; it needs a throttled restart " \
         "so it self-heals when the tunnel returns instead of hammering or staying dead"
