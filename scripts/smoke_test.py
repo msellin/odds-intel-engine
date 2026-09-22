@@ -50557,8 +50557,27 @@ def test_flaresolverr_not_public():
     vps = (root / "local" / "systemd" / "docker-compose.yml").read_text()
     mac = (root / "local" / "flaresolverr" / "docker-compose.yml").read_text()
 
-    assert '"127.0.0.1:8191:8191"' in vps, \
-        "the VPS FlareSolverr MUST bind loopback only — it is a remote browser on a public IP"
+    # ASSERT THE PROPERTY, NOT ONE MECHANISM (updated 2026-09-22). This pinned
+    # `"127.0.0.1:8191:8191"` in `ports:`, which was the right control under
+    # BRIDGE networking. The compose then moved to `network_mode: host` — because
+    # a bridged container cannot reach the WireGuard residential egress at
+    # 10.8.0.2:1080, and every proxied Coolbet fetch died at the browser timeout.
+    # Host networking makes `ports:` INERT, so the old assertion could only ever
+    # fail from then on, while the box itself was correctly secured by
+    # `HOST: "127.0.0.1"`.
+    #
+    # Verified on the live box the day this was updated: the public IP refuses
+    # (curl exit/000) and loopback answers 200. So both spellings are accepted,
+    # and the test fails only if NEITHER control is present.
+    _loopback_ports = '"127.0.0.1:8191:8191"' in vps
+    _host_net_bound = ("network_mode: host" in vps
+                       and 'HOST: "127.0.0.1"' in vps)
+    assert _loopback_ports or _host_net_bound, (
+        "the VPS FlareSolverr MUST bind loopback only — it is a remote browser "
+        "on a public IP that accepts a `proxy` field. Either publish it as "
+        '"127.0.0.1:8191:8191" under bridge networking, or keep '
+        'HOST: "127.0.0.1" under network_mode: host. Neither is present.'
+    )
     assert '"8191:8191"' not in vps.replace('"127.0.0.1:8191:8191"', ""), \
         "no all-interfaces 8191 binding may appear in the VPS compose"
 
@@ -50566,9 +50585,28 @@ def test_flaresolverr_not_public():
         "the two composes must keep DISTINCT container names, so the VPS cannot end up " \
         "silently running the Mac's (which is exactly how the exposure happened)"
 
-    # the reason must stay next to the line, or someone 'simplifies' it back
-    assert "ufw" in vps.lower() or "bypass" in vps.lower(), \
-        "keep the note that Docker bypasses ufw — the firewall looks like it covers this and does not"
+    # THE WARNING MUST STAY NEXT TO THE CONTROL, or someone 'simplifies' it back.
+    #
+    # Broadened 2026-09-22 with the host-networking move. This required the word
+    # "ufw" — right while the control was a `ports:` binding and the trap was
+    # that Docker writes its own iptables rules. Under `network_mode: host` the
+    # trap is different and sharper: `ports:` is INERT, so a reader who deletes
+    # `HOST: "127.0.0.1"` as redundant republishes a remote browser on a public
+    # IP. The compose now says exactly that, in different words.
+    #
+    # So accept either warning, and ALSO accept the verification command, which
+    # is the most durable artifact of the three — a reader can run it and find
+    # out, rather than trust a comment.
+    _warned = ("ufw" in vps.lower() or "bypass" in vps.lower()
+               or "ports:` inert" in vps.lower() or "ports: inert" in vps.lower())
+    _verifiable = "8191" in vps and "MUST time out" in vps
+    assert _warned or _verifiable, (
+        "the compose must keep the note explaining WHY this binding is the only "
+        "control — whether that is 'Docker bypasses ufw' under bridge networking "
+        "or 'host networking makes ports: inert' — or carry the curl that proves "
+        "it from outside. Without one of those, the next reader deletes the "
+        "control as redundant."
+    )
 
     # and the keepalive must not hardcode one host's container name
     ka = (root / "scripts" / "ops" / "flaresolverr_keepalive.sh").read_text()
