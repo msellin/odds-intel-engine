@@ -174,9 +174,26 @@ BOTS: list[BotSpec] = [
             "Model-edge O/U 3.5 vs Coolbet's own 3.5 price (own isotonic calibration). Paper. +7.8% not-robust, accruing forward."),
 
     # Internal model / strategy validators (paper, not a Coolbet placement path)
-    BotSpec("bot_v10_all", FAM_INTERNAL, "mixed", ANCHOR_MODEL,
+    # V10-SPLIT-BY-MARKET (migration 375, 2026-09-22, [[#040]]). `bot_v10_all` was
+    # ONE spec with market "mixed". Splitting it was filed as accounting; measuring
+    # the halves first showed the two markets sit on OPPOSITE SIDES OF ZERO, both
+    # with CIs excluding it (de-vigged Pinnacle CLV, gotcha 8):
+    #     1x2            n=335   +2.50%   95% CI [+0.41, +4.60]   ROI +12.80%
+    #     over_under_25  n=181   -3.85%   95% CI [-5.01, -2.69]   ROI  -0.54%
+    # So "the calibrated reference bot, +11-13%, the yardstick other bots are read
+    # against" was one market carrying the other, and every bot ever compared to it
+    # was compared to a blend. "mixed" as a market label was hiding that.
+    BotSpec("bot_v10_1x2", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
             None, None, False,
-            "The calibrated reference bot: v10 model across target leagues, tier-adjusted thresholds. Honestly calibrated, +11–13% — the yardstick other bots are read against."),
+            "The calibrated reference bot's 1x2 half: v10 model across target leagues, tier-adjusted thresholds. De-vigged Pinnacle CLV +2.50% (n=335, CI [+0.41,+4.60]) — but the positive record is July-2026 onward (May −0.87%, Jun −2.15%, Jul +8.35%, Aug +8.24%, Sep +7.25%), so it is a three-month yardstick, not a five-month one."),
+    # BETA, NOT CALIBRATED — and that is the point of the split. Negative in all 5
+    # months and all 7 model versions, so it survives gotcha 39 and is NOT an
+    # artefact of OU-CALIBRATOR-DOMAIN-MISMATCH (migration 335); that bug made a
+    # bad half worse rather than creating it. Has published nothing since
+    # 2026-09-13, so demoting it costs zero Telegram volume.
+    BotSpec("bot_v10_ou", FAM_INTERNAL, "O/U 2.5", ANCHOR_MODEL,
+            None, None, False,
+            "The calibrated reference bot's O/U 2.5 half, now tracked on its own record. De-vigged Pinnacle CLV −3.85% (n=181, CI [−5.01,−2.69]) against ROI −0.54% — measurably losing, labelled `beta` rather than `calibrated` because /performance sells `calibrated` as proven."),
     # REGISTRY-DRIFT-FIX-2026-09-09: bot_1x2_specialist, bot_dnb_specialist and
     # bot_summer_specialist were retired in the DB (migrations 323/324, 2026-09-09
     # 10:25–10:41) but left in the registry — removed here so active_names() matches

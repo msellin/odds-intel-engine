@@ -801,7 +801,7 @@ T+FT+1h  Post-match: stats, events, player stats enrichment
 
 | Category | Bots | Approach |
 |----------|------|----------|
-| Broad coverage | `bot_v10_all`, `bot_aggressive` | All leagues, lower thresholds |
+| Broad coverage | `bot_v10_1x2`, `bot_v10_ou`, `bot_aggressive` | All leagues, lower thresholds. **Split by market 2026-09-22 (migration 375):** the two markets measure on opposite sides of zero — 1x2 de-vigged CLV +2.50% (n=335) vs O/U 2.5 −3.85% (n=181) — so they are promoted and retired independently. |
 | Lower-tier specialist | `bot_lower_1x2`, `bot_high_roi_global` | Tiers 2-4 where pricing is softest |
 | Conservative | `bot_conservative` | 10%+ edge only, highest selectivity |
 | Country/region | `bot_greek_turkish` | Specific regions with backtest-confirmed edge |
@@ -940,7 +940,7 @@ All 16 bots are assigned to one of three timing windows as an A/B test to identi
 
 | Cohort | UTC window | Bots | Rationale |
 |--------|-----------|------|-----------|
-| morning | 06:00 | `bot_v10_all`, `bot_lower_1x2`, `bot_aggressive`, `bot_ou25_global`, `bot_opt_ou_british` | Early odds capture before sharp money moves lines |
+| morning | 06:00 | `bot_v10_1x2`, `bot_v10_ou`, `bot_lower_1x2`, `bot_aggressive`, `bot_ou25_global`, `bot_opt_ou_british` | Early odds capture before sharp money moves lines |
 | midday | 11:00 | `bot_conservative`, `bot_greek_turkish`, `bot_high_roi_global`, `bot_ou15_defensive`, `bot_ou35_attacking`, `bot_draw_specialist` | Post-injury-news refresh, standings updated |
 | pre_ko | 15:00–19:00 | `bot_opt_away_british`, `bot_opt_away_europe`, `bot_opt_home_lower`, `bot_btts_all`, `bot_btts_conservative` | Confirmed lineups, most information available |
 

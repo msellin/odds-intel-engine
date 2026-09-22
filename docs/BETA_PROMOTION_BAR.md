@@ -1,5 +1,12 @@
 # Promoting a shadow bot to `/performance` (BETA) — the bar, and who clears it
 
+> **CHANGED 2026-09-22 — V10-SPLIT-BY-MARKET (migration 375, [[#040]]).** Every
+> `bot_v10_all` figure below is a **BLEND of two markets that measure on opposite
+> sides of zero** (1x2 de-vigged CLV +2.50% n=335; O/U 2.5 −3.85% n=181). The bot
+> is now `bot_v10_1x2` + `bot_v10_ou`. The numbers here remain true as of their
+> date; they are no longer true of any single bot.
+
+
 **Owner, 2026-09-13:** *"what I wanna do is move some of the actually positive
 shadow bots also to /performance… make a copy there and call it beta. But since
 this means those picks will land to users in Telegram, those bots must be

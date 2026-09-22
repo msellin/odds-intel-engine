@@ -122,7 +122,16 @@ PICKS_MIN_PRICED_MATCHES = 20
 # nothing (a legacy false-alarm that flooded the ops channel). `bot_v10_all` is the
 # live flagship (writes shadow_bets every refresh). The `_picks_bot_active()` guard
 # below makes this class of bug impossible to reintroduce silently. [2026-09-10]
-PICKS_BOT = "bot_v10_all"
+#
+# V10-SPLIT-BY-MARKET (migration 375, 2026-09-22): `bot_v10_all` became
+# `bot_v10_1x2` + `bot_v10_ou`. This proxy follows the 1x2 half, and that choice
+# is deliberate rather than arbitrary — it is the high-volume side (3,310 shadow
+# rows vs 2,318), it is the half still labelled `calibrated`, and it is the one
+# firing today. The O/U half has published nothing since 2026-09-13 (migration 335
+# removed the broken O/U calibrator), so pointing the liveness proxy at it — or at
+# "either bot" — would alarm on a bot that is CORRECTLY silent. That is precisely
+# the bot_coolbet_value_v1 ops-channel flood this constant was moved to avoid.
+PICKS_BOT = "bot_v10_1x2"
 
 # Alert at most this often per state, so a multi-day block sends a handful of
 # messages rather than one every run.

@@ -57,7 +57,7 @@ has to say which ruler the number was measured against — otherwise a reader co
 a 16% and a 3% and concludes the 16% is five times better, when they are not the same
 quantity at all:
 
-| Surface | Model-anchored bots (e.g. `bot_v10_all`) | Sharp-anchored publisher |
+| Surface | Model-anchored bots (e.g. `bot_v10_1x2`) | Sharp-anchored publisher |
 |---|---|---|
 | Telegram line | `📈 Model edge: +X%` (`workers/automation/coolbet_signaler.py`) | `📈 Edge vs sharp line: +X%` (`scripts/publish_picks_forward_test.py`) |
 | `/picks` column | `Model edge` | `Edge vs sharp` (both from `EDGE_LABEL[p.edge_kind]` in `picks/page.tsx`, fed by `picks_public_all.edge_kind`) |
@@ -242,8 +242,10 @@ registry and regenerate.
 
 | Bot | Market | Anchor | Edge floor | Odds floor | Money | What it does |
 |---|---|---|---|---|---|---|
-| `bot_v10_all` | mixed | model | — | — | paper | The calibrated reference bot: v10 model across target leagues, tier-adjusted thresholds. Honestly calibrated, +11–13% — the yardstick other bots are read against. |
-| `bot_high_roi_global_v2` | 1x2 | **model** | 6%/9% by tier | 1.50–5.50 | paper | 1x2 home/away in Spain/Australia/Iceland. **ANCHOR CORRECTED 2026-09-22** — it was recorded as `none` ("internal strategy validator"), which reads as *no fair-value basis*. False: `daily_pipeline_v2` gives it `edge_thresholds` (`1x2_fav` 0.06 / `1x2_long` 0.09) — the **same model edge `bot_v10_all` uses** — then filters by league, side and odds band. A filter over model picks is still MODEL-anchored. It mattered because the /performance method chip renders straight off this field, so a customer surface was telling readers this bot priced against something it does not. `ANCHOR_NONE` now means what it says: no model and no sharp reference, i.e. the in-play rig pricing off the book's own de-vigged probability. |
+| ~~`bot_v10_all`~~ | — | — | — | — | **SPLIT 2026-09-22** | **RETIRED BY SPLIT, not by performance** (migration 375, [[#040]]). Every row it owned was re-attributed by market to the two bots below, so its record is not lost — it is disaggregated. |
+| `bot_v10_1x2` | 1x2 | model | — | — | paper | The 1x2 half of the old reference bot. De-vigged Pinnacle CLV **+2.50%** (n=335, 95% CI [+0.41, +4.60]), ROI +12.80% (n=400) — `calibrated`. ⚠️ **Read the record as three months, not five:** monthly CLV runs May −0.87%, Jun −2.15%, Jul **+8.35%**, Aug **+8.24%**, Sep **+7.25%**, so the whole positive pooled figure is July-onward (n=142 vs n=193 before it). |
+| `bot_v10_ou` | O/U 2.5 | model | — | — | paper | The O/U 2.5 half. De-vigged Pinnacle CLV **−3.85%** (n=181, 95% CI [−5.01, −2.69]) against ROI −0.54% — **`beta`, deliberately NOT `calibrated`**, because this page's own legend sells `calibrated` as proven and a CI entirely below zero cannot carry it. Survives gotcha 39: negative in **all 5 months** (−1.76% to −4.84%) and **all 7 model versions** (−0.97% to −6.12%), so it predates OU-CALIBRATOR-DOMAIN-MISMATCH (migration 335) — that bug made a bad half worse, it did not create it. Has published nothing since 2026-09-13. |
+| `bot_high_roi_global_v2` | 1x2 | **model** | 6%/9% by tier | 1.50–5.50 | paper | 1x2 home/away in Spain/Australia/Iceland. **ANCHOR CORRECTED 2026-09-22** — it was recorded as `none` ("internal strategy validator"), which reads as *no fair-value basis*. False: `daily_pipeline_v2` gives it `edge_thresholds` (`1x2_fav` 0.06 / `1x2_long` 0.09) — the **same model edge `bot_v10_1x2` uses** — then filters by league, side and odds band. A filter over model picks is still MODEL-anchored. It mattered because the /performance method chip renders straight off this field, so a customer surface was telling readers this bot priced against something it does not. `ANCHOR_NONE` now means what it says: no model and no sharp reference, i.e. the in-play rig pricing off the book's own de-vigged probability. |
 <!-- bot_1x2_specialist, bot_dnb_specialist, bot_summer_specialist RETIRED 2026-09-09 (migrations 323/324) and removed from bot_registry.py:116-119 — do not re-add. -->
 <!-- NB: bot generation stores best-of-books odds for these general bots (recommended_bookmaker), NOT the Coolbet/Unibet executable price — the SHADOW-PAGE-ROI-INFLATED gap; per-book executable ROI/CLV is the EXECUTABLE-SHADOW-EVAL work. -->
 
@@ -428,8 +430,8 @@ Same-looking numbers, different meaning per screen. This is the glossary.
 | **/picks** — "place ≥ X.XX" (admin only) | ❌ **REMOVED 2026-09-14** | The admin placement-trigger hint went with the model path — there is no model probability on this page to derive one from, and the OWN betting path closed the same day (`docs/OWN_PATH_VERDICT_2026_09_14.md`). The floors themselves are unchanged and still live in `coolbet_placer.py`; only this display is gone. |
 | **/picks** — "Running result" | **live forward test** | ROI = `SUM(pnl)/COUNT(*)` at a flat 1 unit over settled (won+lost) picks, with its n and a 95% CI, from `picks_forward_test_summary`. The +5.5% BACKTEST is never rendered here: its CI includes zero and it was computed on the window that chose the rule's own parameters. Smoke `PICKS-FORWARD-TEST-SURFACE`. |
 | **/picks** — per-pick "CLV" | raw price ratio | `odds/closing_odds − 1` at the pick's OWN book, **no de-vig**. Break-even on it is that book's margin (7.8–11.3% depending on the book), NOT zero. The margin-corrected figure `(1+clv)/(1+m)−1` is the decision variable and is what the "Closing-line value" summary shows. |
-| **/picks** — WHICH BOTS APPEAR | cohort rule | **BOTH families**, unioned in the view `picks_public_all` (migration 361, PICKS-SHOW-BOTH-BOTS 2026-09-16). Sharp arm = `picks_forward_test` where `arm IN ('live','consensus_anchor')` (**widened 2026-09-22, migration 368, [[#068]]** — a SECOND published arm anchored on a de-vigged multi-book consensus instead of single-book Pinnacle. It exists because the live arm's pre-registered ≤4% anchor-overround gate admitted **0 of 173** Pinnacle-priced markets on 2026-09-22 and the channel went dark; the gate is pre-registered so it was NOT relaxed. The consensus arm carries its own `rule_version` (`consensus_edge_v1_2026_09_22`), records its basis in `anchor_bookmaker` as `consensus:N`, and unlike the live arm has an **8% edge CEILING** — [[#007]]'s lesson: `edge = p·odds−1` is maximised by a WRONG price, and 5 of the first 15 qualifying legs cleared 8% against a 7-11 book consensus. `junk_anchor` remains excluded by name: it is a negative control and must never reach a customer surface.); model arm = `simulated_bets` for bots with **`bots.show_on_picks = true`** (today: `bot_v10_all` only), pre-match singles, not retired, no combos, no in-play. The gate lives in the DATABASE for the same reason `arm='live'` does — a view cannot forget it. **Before this, /picks read only the sharp ledger**, so `bot_v10_all` published to Telegram and showed on /performance while being invisible on the page the channel links to; `show_on_picks` had existed since migration 356 and was read by nothing. ⚠️ **`edge` in this view means two different things** — see the `edge_kind` column and §1. The page switches its label on it (`Edge vs sharp` / `Model edge`) and so does the break-even tooltip, because `fair_prob` is `p_sharp` in one arm and `calibrated_prob` in the other. Pinned by `PICKS-SHOW-BOTH-BOTS`. |
-| **/performance** — WHICH BOTS APPEAR | cohort rule | **`calibrated` or `beta` only** (`PUBLIC_MATURITY_LABELS` in `odds-intel-web/src/lib/bot-aggregates.ts`, applied in three places: the cached leaderboard, the aggregate-bets toggle path, and the hero count — they must agree or the hero reads *N strategies live* above a table of 2). `experimental` bots are the **shadow fleet — OWN-direction work**, and their surface is `/admin/shadow-bots`. `bot_sharp_forward_test_v1` **and `bot_consensus_anchor_v1`** are the exceptions: both are injected BELOW the filter from `picks_forward_test_summary`, because they are the bots whose picks readers actually receive. **CORRECTED 2026-09-22 ([[#068]]):** those views filtered `arm='live'`, so when the consensus arm shipped, **20 picks went to Telegram and /picks with no track record on /performance at all** — PICKS-SHOW-BOTH-BOTS in mirror image, and the reason the rule is now stated as *if it is published, its record is published* (migrations 371-372). The two arms render as SEPARATE panels with their own n, ROI and CLV. **REVERSED TWICE, 2026-09-15 → 16:** the filter was dropped on the 15th (*"this page is the measurement surface"*) and restored on the 16th once it was seen to list 13 shadow bots with zero settled bets between them. The 15th's premise was also false — `bot_v10_all` is `calibrated` and was never hidden by it; its absence from **/picks** is a separate gap (`bots.show_on_picks`, migration 356, **still unread by any code**). |
+| **/picks** — WHICH BOTS APPEAR | cohort rule | **BOTH families**, unioned in the view `picks_public_all` (migration 361, PICKS-SHOW-BOTH-BOTS 2026-09-16). Sharp arm = `picks_forward_test` where `arm IN ('live','consensus_anchor')` (**widened 2026-09-22, migration 368, [[#068]]** — a SECOND published arm anchored on a de-vigged multi-book consensus instead of single-book Pinnacle. It exists because the live arm's pre-registered ≤4% anchor-overround gate admitted **0 of 173** Pinnacle-priced markets on 2026-09-22 and the channel went dark; the gate is pre-registered so it was NOT relaxed. The consensus arm carries its own `rule_version` (`consensus_edge_v1_2026_09_22`), records its basis in `anchor_bookmaker` as `consensus:N`, and unlike the live arm has an **8% edge CEILING** — [[#007]]'s lesson: `edge = p·odds−1` is maximised by a WRONG price, and 5 of the first 15 qualifying legs cleared 8% against a 7-11 book consensus. `junk_anchor` remains excluded by name: it is a negative control and must never reach a customer surface.); model arm = `simulated_bets` for bots with **`bots.show_on_picks = true`** (today: `bot_v10_1x2` and `bot_v10_ou` — one row until migration 375 split them), pre-match singles, not retired, no combos, no in-play. The gate lives in the DATABASE for the same reason `arm='live'` does — a view cannot forget it. **Before this, /picks read only the sharp ledger**, so `bot_v10_all` (now split) published to Telegram and showed on /performance while being invisible on the page the channel links to; `show_on_picks` had existed since migration 356 and was read by nothing. ⚠️ **`edge` in this view means two different things** — see the `edge_kind` column and §1. The page switches its label on it (`Edge vs sharp` / `Model edge`) and so does the break-even tooltip, because `fair_prob` is `p_sharp` in one arm and `calibrated_prob` in the other. Pinned by `PICKS-SHOW-BOTH-BOTS`. |
+| **/performance** — WHICH BOTS APPEAR | cohort rule | **`calibrated` or `beta` only** (`PUBLIC_MATURITY_LABELS` in `odds-intel-web/src/lib/bot-aggregates.ts`, applied in three places: the cached leaderboard, the aggregate-bets toggle path, and the hero count — they must agree or the hero reads *N strategies live* above a table of 2). `experimental` bots are the **shadow fleet — OWN-direction work**, and their surface is `/admin/shadow-bots`. `bot_sharp_forward_test_v1` **and `bot_consensus_anchor_v1`** are the exceptions: both are injected BELOW the filter from `picks_forward_test_summary`, because they are the bots whose picks readers actually receive. **CORRECTED 2026-09-22 ([[#068]]):** those views filtered `arm='live'`, so when the consensus arm shipped, **20 picks went to Telegram and /picks with no track record on /performance at all** — PICKS-SHOW-BOTH-BOTS in mirror image, and the reason the rule is now stated as *if it is published, its record is published* (migrations 371-372). The two arms render as SEPARATE panels with their own n, ROI and CLV. **REVERSED TWICE, 2026-09-15 → 16:** the filter was dropped on the 15th (*"this page is the measurement surface"*) and restored on the 16th once it was seen to list 13 shadow bots with zero settled bets between them. The 15th's premise was also false — `bot_v10_all` (now `bot_v10_1x2`) is `calibrated` and was never hidden by it; its absence from **/picks** is a separate gap (`bots.show_on_picks`, migration 356, **still unread by any code**). |
 | **/shadow-bots** — bot "ROI" | realised | settled paper/real P&L at the executable price. Retired bots' losses are in the "including retired" total only. |
 | **/shadow-bots** — bot "CLV" | closing-line value | edge vs the closing line — the leading indicator; ROI is noisier at low n. |
 | **`value_v1` / line-shop** — "edge ≥ 3%" | sharp edge | `P_sharp − 1/odds`. A different edge from /picks (§1). |
@@ -545,6 +547,74 @@ stake (verified by read-back) → slip → place. Every exit writes exactly one
   placed ungated — including for picks whose probability was at or below the bot's
   threshold, i.e. those that could never clear it at any price
   (`PLACER-EDGE-GATE-FAILED-OPEN`). It now refuses.
+## Maturity labels — what each one MEANS, and what promotes a bot
+
+Added 2026-09-22 ([[#069]]). Before this, `maturity_label` was a hand-set column
+with **no written threshold**: "proven" meant *somebody typed `calibrated`*. The
+owner put it plainly — *"we have today the beta, calibrated and testing, although
+im not sure if they are uptodate and really what they mean?"* — and all three
+observations checked out.
+
+| label | what it asserts | where it shows |
+|---|---|---|
+| `experimental` | writes `shadow_bets`; nothing is claimed about it | `/admin/shadow-bots` only — hidden from /performance **by design** |
+| `beta` | public, real record, **explicitly still accumulating** | /performance, marked as maturing |
+| `calibrated` | public and **promoted** — the record is callable, see the rule below | /performance |
+| `testing` | a **published** forward test: readers RECEIVE these picks and the rule is pre-registered, but n is not yet callable | /performance, injected below the maturity filter |
+| `retired` | no longer runs | hidden |
+
+`testing` became a real database value in migration 375. Until then it existed
+**only as a string `/performance/page.tsx` stamped on the injected rows**, so the
+page's legend documented three tiers of which one had no backing field — nothing
+could query for it, and no test could check it.
+
+### The promotion rules — two gates, not one
+
+There are **two** promotions, and only the first of them was ever written down.
+
+**`experimental` → `beta`: already specified.** `docs/BETA_PROMOTION_BAR.md`
+(2026-09-13) is the authority and is NOT restated here. In short: CLV positive on
+**placeable books only** at t ≥ 3, n ≥ 334 on that subset, fold-robust, ROI not
+significantly negative, and ≥ ~4 weeks of FORWARD data gathered after the bot was
+selected. Read that doc before promoting anything — it also records why each
+criterion exists, every one of them having been added after a strong-looking
+number failed scrutiny.
+
+**`beta` → `calibrated`: this is the gate that had no rule.** `maturity_label` is
+a hand-set column, so "proven" meant *somebody typed `calibrated`* — while that
+label gates the Telegram channel, the mirror jobs and every web surface. The rule
+below is **strictly stronger than the BETA bar**; a bot must still satisfy all of
+the BETA bar, plus:
+
+1. **Margin-corrected CLV > 0 with a 95% CI that excludes zero.** The BETA bar
+   accepts `t ≥ 3` on CLV vs Pinnacle; this tightens *which* CLV counts. De-vigged
+   Pinnacle (`clv_pinnacle_devig`) for model bots, own-book
+   `clv_margin_corrected` where it exists. **Raw `clv` is not admissible at this
+   gate**: it breaks even at the closing book's *margin* (~8%), not at zero
+   (gotcha §70), so a raw-CLV promotion can certify a losing bot.
+2. **≥ 30 days spanning no calibration change** (gotcha §39). A window that
+   straddles a recalibration measures the recalibration, not the bot.
+3. **No single month carrying the result.** State the monthly series next to the
+   pooled figure. `bot_v10_1x2` is promoted under this rule and is exactly the
+   case it is written for: pooled CLV +2.50%, but May −0.87% / Jun −2.15% /
+   Jul +8.35% / Aug +8.24% / Sep +7.25% — a three-month record, and the SYSTEM_MAP
+   row says so rather than quoting the pooled number alone.
+
+Why CLV and not ROI at either gate: `ANALYSIS_GOTCHAS §8` — CLV converges
+**~200× faster**. An ROI-based promotion rule at any n this system will reach is
+a coin flip dressed as evidence, which is precisely what BETA_PROMOTION_BAR's own
+headline found ("every ROI confidence interval in this system spans zero").
+
+**Demotion is the same test run backwards.** A `calibrated` bot whose trailing-200
+margin-corrected CLV CI falls entirely below zero returns to `beta`. Without this
+the labels are a ratchet. It is not hypothetical: it is exactly what the O/U half
+of the old `bot_v10_all` did, and why `bot_v10_ou` shipped `beta` on the day it
+was created rather than inheriting the parent's `calibrated`.
+
+**What this rule is NOT:** it is not a placement gate. Promotion changes what a
+*reader* is told; `PLACEABLE_BOTS` (hardcoded, defence-in-depth) is what decides
+whether a euro moves. See the warning immediately below.
+
 - ⚠️ **`maturity_label` does NOT gate the UI placer.** It gates the Mac daemon, the
   Telegram public channel, the mirror jobs and every web surface — not this path.
   Safe today only because `PLACEABLE_BOTS` is hardcoded.

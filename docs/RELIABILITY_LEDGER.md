@@ -1085,6 +1085,49 @@ stacked behaviour. Still missing, and worth having: an alert for any `is_active`
 that emits zero picks for N consecutive days. Nothing in this incident was detected by
 monitoring — it was found by reading the ticket.
 
+## 20. A guard widened three times by references it was never about (2026-09-22)
+
+**The tell:** a test that forgives a difference gets a new exception every time an
+unrelated change trips it, and each exception is *wider* than the last. Eventually
+it forgives everything and nobody notices, because a guard that never fires looks
+exactly like a guard that is being satisfied.
+
+**The case.** `SYSTEM-MAP-REGISTRY-NOT-DRIFTED` asserts the bot registry matches
+the `bots` table. Migrations and smoke tests both fire on push with no ordering
+between them, so a correct retirement races its own migration — hence a
+"pending-migration" discount. That discount was built as **two independent greps
+OR-ed across every pending file**: *is this bot's name anywhere in the pending
+SQL*, and *does the string `retired_at` appear anywhere in it*.
+
+It has now been widened three times by things it was never about:
+
+1. Migration 336's header **tabulated the bots it was deliberately NOT retiring** —
+   so matching raw text discounted exactly those. Fixed by stripping comments.
+2. Migration 368 rebuilt `picks_public_all`, which **names a live bot as a label**
+   and filters `retired_at IS NULL` in a WHERE clause — enough to mark a live bot
+   as retiring. Fixed by requiring an UPDATE that SETS `retired_at`.
+3. Migration 375 retires ONE bot and, in an unrelated statement, sets
+   `display_name` for **sixteen live ones** — so the whole fleet was discounted,
+   the effective DB set went empty, and the test failed on a correct commit.
+
+**The fix that should have been made the first time** is not another exception:
+scope the check to the STATEMENT that sets `retired_at`, so a bot is only
+discounted by a statement that actually retires *it*.
+
+**And the narrow fix was wrong too, in the opposite direction.** Splitting SQL on
+`;` shatters a `DO $$ ... $$` block, whose body is full of semicolons. Migration
+375's retirement reads `UPDATE bots SET retired_at = now() WHERE id = v_old`, with
+the name thirty lines earlier in `SELECT id INTO v_old ... WHERE name = '...'` —
+different fragments, so a correctly-written retirement was not seen at all.
+Strict in the wrong direction is just as broken as permissive. DO blocks are now
+lifted out as single units before the split.
+
+**The guard:** when a forgiveness rule fires on something it was not about, ask
+whether its SCOPE is wrong before adding a condition. Two greps OR-ed over a
+whole corpus is a scope bug wearing a logic bug's clothes. And whenever you
+tighten a matcher, check the *other* direction too — a fix that stops
+over-matching very often starts under-matching.
+
 ## Pattern: a reviver that reports success without verifying the world
 
 **Seen twice in three days, both on Coolbet, both silent.**

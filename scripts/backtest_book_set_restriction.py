@@ -127,7 +127,11 @@ DATA_TIER_EDGE_BUMP = {"A": 0.00, "B": 0.02, "C": 0.08}
 
 # THE picks bot. `coolbet_feed_watchdog.PICKS_BOT` names it, so this is not a
 # choice made here — it is the bot whose silence the ops alert is built around.
-PICKS_BOT = "bot_v10_all"
+# V10-SPLIT-BY-MARKET (migration 375, 2026-09-22): this script replays the
+# PICKS gate stack, and after the split the 1x2 half is the one that
+# publishes. `cfg = BOTS_CONFIG[PICKS_BOT]` below would KeyError on the old
+# name — the thresholds themselves are unchanged by the split.
+PICKS_BOT = "bot_v10_1x2"
 
 # Sources that are never a real offer, excluded from EVERY arm. `api-football`
 # and `api-football-live` are synthetic/in-play feeds; `Unibet-Kambi` was proved

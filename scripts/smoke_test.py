@@ -5337,9 +5337,33 @@ def test_system_map_registry_not_drifted():
         # perfectly live bot as "being retired" and turn this guard off for it.
         # A retirement is an UPDATE that SETS retired_at. Read-only references —
         # WHERE clauses, view definitions, labels — are not.
-        _sets_retired = _re.search(r"\bset\b[^;]*\bretired_at\s*=", pending,
-                                   _re.I | _re.S) is not None
-        retiring = {n for n in db if n in pending and _sets_retired}
+        # ...AND IT MUST BE THE *SAME* STATEMENT (2026-09-22, [[#040]]).
+        # `_sets_retired` used to be ONE boolean OR-ed across every pending file,
+        # so any bot named ANYWHERE in the pending set was discounted as long as
+        # SOMETHING, SOMEWHERE in it retired SOMETHING. Migration 375 retires one
+        # bot (bot_v10_all) and, in an unrelated statement, sets `display_name`
+        # for sixteen live ones — which discounted the entire fleet, emptied
+        # `db_effective` and failed the assertion on a correct commit. This is the
+        # third time this guard has been widened by an unrelated reference (see
+        # the comment blocks above), so scope it properly: split the pending SQL
+        # into STATEMENTS and only discount a bot named in a statement that
+        # actually sets retired_at. RELIABILITY_LEDGER #9 — a test pinning the
+        # shape of a migration instead of its behaviour.
+        # A `DO $$ ... $$` block is ONE statement whose body is full of
+        # semicolons, so it must be lifted out BEFORE splitting or it shatters.
+        # Migration 375 is the case that proves it: the retirement inside its DO
+        # block reads `UPDATE bots SET retired_at = now() WHERE id = v_old`, and
+        # the bot NAME appears thirty lines earlier in the `SELECT id INTO v_old
+        # ... WHERE name = 'bot_v10_all'`. Split naively and the two land in
+        # different fragments, so a correctly-written retirement is not seen at
+        # all — strict in the wrong direction, which is just as broken.
+        _blocks = _re.findall(r"\bDO\s*\$\$.*?\$\$", pending, _re.I | _re.S)
+        _rest = _re.sub(r"\bDO\s*\$\$.*?\$\$", " ", pending, flags=_re.I | _re.S)
+        retiring = set()
+        for stmt in _blocks + _rest.split(";"):
+            if not _re.search(r"\bset\b.*?\bretired_at\s*=", stmt, _re.I | _re.S):
+                continue
+            retiring |= {n for n in db if n in stmt}
         # ...AND THE MIRROR CASE (2026-09-22, [[#033]]). A bot INSERTed by a
         # pending migration is in the registry and not yet in the table, which is
         # the same legitimate state as a pending retirement and was not handled.
@@ -38654,11 +38678,23 @@ def test_coolbet_feed_watchdog_no_retired_bot():
     bot_coolbet_value_v1, RETIRED 2026-09-08 — so it Telegram-alerted every ~20min
     that "the pipeline is not evaluating" about a dead bot that CORRECTLY writes
     nothing (a flood of false alarms in the ops channel). Fix: track the live
-    flagship bot_v10_all, and guard with _picks_bot_active() so a retired PICKS_BOT
-    can never manufacture a NO_PICKS incident again (fails closed → stays quiet)."""
+    flagship, and guard with _picks_bot_active() so a retired PICKS_BOT
+    can never manufacture a NO_PICKS incident again (fails closed → stays quiet).
+
+    RE-PINNED BEHAVIOURALLY 2026-09-22 ([[#040]]). This asserted the literal
+    `"bot_v10_all"`, which tests the spelling of a constant rather than the
+    property that matters — and V10-SPLIT-BY-MARKET turned that bot into two, so
+    a correct change made a correct test red for the wrong reason
+    (RELIABILITY_LEDGER #9). What the watchdog actually needs is that PICKS_BOT
+    names a bot the registry still considers ACTIVE; that is what is checked now,
+    and it would have caught the original bot_coolbet_value_v1 bug just the same.
+    """
     import inspect
     from workers.jobs import coolbet_feed_watchdog as w
-    assert w.PICKS_BOT == "bot_v10_all", "NO_PICKS must track an ACTIVE flagship, not a retired bot"
+    from workers.registry.bot_registry import active_names
+    assert w.PICKS_BOT in active_names(), (
+        f"NO_PICKS must track an ACTIVE flagship, not a retired bot — "
+        f"PICKS_BOT={w.PICKS_BOT!r} is not in the registry's active set")
     assert hasattr(w, "_picks_bot_active"), "must guard the NO_PICKS alert with a retired-bot check"
     src = inspect.getsource(w.classify)
     assert "_picks_bot_active()" in src, "classify() must gate NO_PICKS on _picks_bot_active()"
@@ -39716,7 +39752,7 @@ def test_floor_grid_cube():
     # 4. the edge-unit guard and the edge-kind split both exist
     assert "edge_scale" in mod.DIMENSIONS and "edge_kind" in mod.DIMENSIONS
     assert mod._edge_kind("bot_pin_1x2_home_v1", "v1") == "line-shop"
-    assert mod._edge_kind("bot_v10_all", "v20260712") == "model"
+    assert mod._edge_kind("bot_v10_1x2", "v20260712") == "model"
     assert mod._edge_kind("x", mod._SHARP_MV) == "sharp-anchor", (
         "the pinnacle_shin_devig sentinel must mark sharp-anchored rows"
     )
@@ -50815,6 +50851,168 @@ def test_coolbet_lazy_fs_session():
     assert ref.index("if self._no_fs:") < ref.index("self._ensure_fs_session()"), \
         "_no_fs must return BEFORE the ensure, or no-FS callers start creating sessions again"
 
+
+
+@test("V10-SPLIT-BY-MARKET — the reference bot is two bots, and neither inherits the other's label")
+def test_v10_split_by_market():
+    """V10-SPLIT-BY-MARKET (migration 375, 2026-09-22, [[#040]]).
+
+    `bot_v10_all` traded 1x2 AND O/U 2.5 under one identity, one bankroll and one
+    maturity label, and was published as "the calibrated reference bot, +11-13%,
+    the yardstick other bots are read against". Measured apart (de-vigged Pinnacle
+    CLV, gotcha 8 — CLV converges ~200x faster than ROI):
+
+        1x2            n=335   +2.50%   95% CI [+0.41, +4.60]
+        over_under_25  n=181   -3.85%   95% CI [-5.01, -2.69]
+
+    Both CIs exclude zero, on OPPOSITE sides. One market was carrying the other,
+    and every bot ever compared to "the yardstick" was compared to a blend.
+
+    THE THING THIS TEST PROTECTS is not the split — that is a one-off migration —
+    but the LABEL asymmetry that came out of it. The whole value of splitting is
+    lost the moment the losing half quietly inherits `calibrated` again, which is
+    exactly what a future "sync the bots table" convenience script would do.
+    `calibrated` is what /performance's legend sells as proven.
+    """
+    from workers.registry.bot_registry import BOTS, active_names
+    names = active_names()
+    assert "bot_v10_1x2" in names and "bot_v10_ou" in names, (
+        "the v10 reference bot must be registered as two per-market bots")
+    assert "bot_v10_all" not in names, (
+        "bot_v10_all is retired by migration 375 — it must not be active again")
+
+    by_name = {b.name: b for b in BOTS}
+    # The market label must be the real market, not "mixed". "mixed" is what hid
+    # the divergence for five months.
+    assert by_name["bot_v10_1x2"].market == "1x2"
+    assert by_name["bot_v10_ou"].market == "O/U 2.5"
+    for n in ("bot_v10_1x2", "bot_v10_ou"):
+        assert by_name[n].market != "mixed", (
+            f"{n} must name one market — 'mixed' is what hid the divergence")
+        assert not by_name[n].real_money, f"{n} is paper; it must never be real-money"
+
+    # The config that GENERATES the picks must agree — one market each, and the
+    # thresholds must still be the pre-split ones (the split changed WHO OWNS a
+    # pick, never which picks are made).
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
+    assert "bot_v10_all" not in BOTS_CONFIG, "bot_v10_all must not still generate picks"
+    assert BOTS_CONFIG["bot_v10_1x2"]["markets"] == ["1x2"]
+    assert BOTS_CONFIG["bot_v10_ou"]["markets"] == ["ou"]
+    assert (BOTS_CONFIG["bot_v10_1x2"]["edge_thresholds"]
+            == BOTS_CONFIG["bot_v10_ou"]["edge_thresholds"]), (
+        "the split is accounting on the OUTPUT side — the thresholds must be "
+        "identical to each other and to the pre-split bot, or it silently became "
+        "a strategy change wearing a refactor's clothes")
+    assert BOTS_CONFIG["bot_v10_1x2"]["odds_range"] == (1.30, 4.50)
+    assert BOTS_CONFIG["bot_v10_1x2"]["min_prob"] == 0.30
+    # BOT_TIMING_COHORTS.get() defaults to "morning" — a bot missing from this
+    # dict silently fires at ONE window instead of all, with no error anywhere.
+    for n in ("bot_v10_1x2", "bot_v10_ou"):
+        assert BOT_TIMING_COHORTS.get(n) == "all", (
+            f"{n} missing from BOT_TIMING_COHORTS silently degrades to 'morning'")
+
+    # THE ASYMMETRY. Live DB, skipped cleanly offline.
+    try:
+        from workers.api_clients.db import execute_query
+        rows = {r["name"]: r for r in execute_query(
+            "SELECT name, maturity_label, is_active, retired_at FROM bots "
+            "WHERE name IN ('bot_v10_1x2','bot_v10_ou','bot_v10_all')")}
+    except Exception:
+        rows = None
+    if rows and {"bot_v10_1x2", "bot_v10_ou"} <= set(rows):
+        assert rows["bot_v10_ou"]["maturity_label"] != "calibrated", (
+            "bot_v10_ou must NOT be `calibrated`: its de-vigged Pinnacle CLV is "
+            "-3.85% with a 95% CI of [-5.01, -2.69] at n=181, negative in all 5 "
+            "months and all 7 model versions. /performance sells `calibrated` as "
+            "proven. Promotion needs the rule in docs/SYSTEM_MAP.md, not a sync "
+            "script")
+        assert rows["bot_v10_1x2"]["maturity_label"] == "calibrated"
+        if "bot_v10_all" in rows:
+            assert rows["bot_v10_all"]["retired_at"] is not None, (
+                "bot_v10_all must stay retired — it is superseded, not paused")
+
+
+@test("BOT-DISPLAY-NAME-IS-NOT-THE-KEY — readable names that cannot break attribution")
+def test_bot_display_name_is_not_the_key():
+    """BOT-NAMES-AND-LABELS (migration 375, 2026-09-22, [[#069]]).
+
+    /performance is a customer surface that listed internal identifiers
+    (`bot_v10_all`, `bot_high_roi_global_v2`). Owner: *"the names should be user
+    readable and intuitive"*.
+
+    The DANGEROUS fix is renaming `bots.name`, which is the join key for
+    simulated_bets, shadow_bets, real_bets, picks_public_all, ENGINE_BOT_FLOORS
+    and every analysis script — the 2026-09 audits are full of rows lost to
+    identity changes. So the rename went into a SEPARATE, ADDITIVE column and this
+    test pins that separation: a display name may never become a key.
+    """
+    from pathlib import Path
+    base = Path(__file__).parent.parent
+    web = base.parent / "odds-intel-web"
+
+    mig = (base / "supabase" / "migrations"
+           / "375_v10_split_and_bot_display_names.sql").read_text()
+    assert "ADD COLUMN IF NOT EXISTS display_name" in mig
+    # `testing` must be a REAL label, not a string the page stamps (#069 c).
+    assert "'testing'" in mig and "bots_maturity_label_check" in mig, (
+        "migration 375 must make `testing` a legal maturity_label — before it, "
+        "the /performance legend documented three tiers of which one had no "
+        "database field at all")
+
+    # The page must READ the label rather than hardcode it.
+    perf = (web / "src/app/(app)/performance/page.tsx").read_text()
+    assert 'maturityLabel: "testing",' not in perf, (
+        "the forward-test rows must take maturity_label from the bots row now "
+        "that it is a real DB value — a hardcoded literal is how the legend "
+        "described a tier nothing could query for")
+
+    # display_name is READ but never JOINED/FILTERED on.
+    for rel in ("src/lib/engine-data.ts", "src/lib/bot-aggregates.ts",
+                "src/components/performance-leaderboard.tsx"):
+        src = (web / rel).read_text()
+        for forbidden in (".eq(\"display_name\"", ".eq('display_name'",
+                          ".in_(\"display_name\"", "display_name)=eq"):
+            assert forbidden not in src, (
+                f"{rel} filters on display_name — it is DISPLAY ONLY. "
+                f"`bots.name` is the identity; keying on a label a human edits "
+                f"is exactly the failure this column was added to prevent")
+
+    lb = (web / "src/components/performance-leaderboard.tsx").read_text()
+    assert "function botLabel(" in lb, "the leaderboard needs one label helper"
+    assert "bot.displayName?.trim() || bot.name" in lb, (
+        "botLabel must FALL BACK to the identity — a bot with no display name "
+        "must still render, or adding a bot becomes a frontend change")
+
+
+@test("MATURITY-PROMOTION-RULE-IS-WRITTEN — `calibrated` means a number, not an opinion")
+def test_maturity_promotion_rule_is_written():
+    """BOT-NAMES-AND-LABELS part (b) (2026-09-22, [[#069]]). The owner asked what
+    the maturity labels mean and whether they are up to date. Audited: there was
+    NO WRITTEN beta->calibrated threshold anywhere. `maturity_label` is a
+    hand-set column, so "proven" meant "somebody typed calibrated" — while the
+    label gates the Telegram channel, the mirror jobs and every web surface.
+
+    This pins that the rule exists, is quantified, and is keyed on CLV rather
+    than ROI (gotcha 8: CLV converges ~200x faster, so an ROI-based promotion
+    rule at any n we will reach is a coin flip dressed as evidence)."""
+    from pathlib import Path
+    doc = (Path(__file__).parent.parent / "docs" / "SYSTEM_MAP.md").read_text()
+    assert "The promotion rules" in doc, "SYSTEM_MAP must carry the promotion rules"
+    seg = doc.split("The promotion rules", 1)[1][:3200]
+    # The experimental->beta gate was ALREADY specified (docs/BETA_PROMOTION_BAR.md,
+    # 2026-09-13) and must be REFERENCED, not restated — two copies of a bar drift,
+    # and the SINGLE-MASTER-TASK-LIST audit is a standing reminder of what that costs.
+    assert "BETA_PROMOTION_BAR" in seg, (
+        "SYSTEM_MAP must point at the existing experimental->beta bar rather than "
+        "fork a second copy of it")
+    assert "334" in seg, "the rule must carry a MINIMUM n — an unquantified rule is the status quo"
+    assert "CI" in seg and "excludes zero" in seg, (
+        "promotion must require a CI that excludes zero, not a positive point estimate")
+    for token in ("CLV", "margin-corrected"):
+        assert token in seg, f"the promotion rule must be stated on {token}"
+    assert "Demotion" in seg, (
+        "a promotion rule with no demotion rule is a ratchet — bot_v10_ou is the "
+        "case that proves labels must be able to go down")
 
 
 if __name__ == "__main__":

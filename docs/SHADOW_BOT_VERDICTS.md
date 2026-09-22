@@ -1,5 +1,12 @@
 # Shadow bots — the verdict table (2026-09-13)
 
+> **CHANGED 2026-09-22 — V10-SPLIT-BY-MARKET (migration 375, [[#040]]).** Every
+> `bot_v10_all` figure below is a **BLEND of two markets that measure on opposite
+> sides of zero** (1x2 de-vigged CLV +2.50% n=335; O/U 2.5 −3.85% n=181). The bot
+> is now `bot_v10_1x2` + `bot_v10_ou`. The numbers here remain true as of their
+> date; they are no longer true of any single bot.
+
+
 **Owner:** *"we have too many active bots we do nothing with… now its time to
 find out the winners, bots that can in some configuration and gates and floors,
 be profitable."*

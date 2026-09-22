@@ -58,11 +58,48 @@ PROCESSED_DIR = ENGINE_DIR / "data" / "processed"
 STAKE = 10.0
 
 # Bot configurations
+#
+# V10-SPLIT-BY-MARKET (migration 375, 2026-09-22, [[#040]]). `bot_v10_all` was ONE
+# bot trading 1x2 and O/U 2.5 under one identity, one bankroll and one maturity
+# label. It is now two. NOTHING ABOUT THE SELECTION CHANGED — every threshold,
+# band and filter below is byte-identical to what the single bot used; the split
+# is in WHO OWNS THE PICK, so each market is promoted, demoted and read on its
+# own record.
+#
+# It was filed as "accounting only". Measuring the halves before writing it showed
+# that was wrong. De-vigged Pinnacle CLV (gotcha 8: CLV converges ~200x faster
+# than ROI), settled rows:
+#
+#     1x2            n=335   +2.50%  95% CI [+0.41, +4.60]   ROI +12.80%
+#     over_under_25  n=181   -3.85%  95% CI [-5.01, -2.69]   ROI  -0.54%
+#
+# Both CIs exclude zero, on opposite sides — the public "+11-13% calibrated
+# reference bot" was one market carrying the other. The O/U result is negative in
+# all 5 months and all 7 model versions, so it survives gotcha 39 and is not an
+# artefact of OU-CALIBRATOR-DOMAIN-MISMATCH (migration 335). Hence `bot_v10_ou`
+# ships `beta`, not `calibrated`.
 BOTS_CONFIG = {
-    "bot_v10_all": {
-        "description": "v10 model, all target leagues, tier-adjusted thresholds",
+    "bot_v10_1x2": {
+        "description": "v10 model, all target leagues, tier-adjusted thresholds — 1x2 only",
         "tier_label": "elite",
-        "markets": ["1x2", "ou"],
+        "markets": ["1x2"],
+        "tier_filter": None,
+        # Identical to the pre-split thresholds. The "ou" keys are retained
+        # because `edge_thresholds` is read by market key and dropping them would
+        # be a silent behaviour change if this bot were ever given O/U again.
+        "edge_thresholds": {
+            1: {"1x2_fav": 0.08, "1x2_long": 0.12, "ou": 0.08},
+            2: {"1x2_fav": 0.05, "1x2_long": 0.08, "ou": 0.06},
+            3: {"1x2_fav": 0.04, "1x2_long": 0.06, "ou": 0.05},
+            4: {"1x2_fav": 0.03, "1x2_long": 0.05, "ou": 0.04},
+        },
+        "odds_range": (1.30, 4.50),
+        "min_prob": 0.30,
+    },
+    "bot_v10_ou": {
+        "description": "v10 model, all target leagues, tier-adjusted thresholds — over/under 2.5 only",
+        "tier_label": "elite",
+        "markets": ["ou"],
         "tier_filter": None,
         "edge_thresholds": {
             1: {"1x2_fav": 0.08, "1x2_long": 0.12, "ou": 0.08},
@@ -993,7 +1030,9 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     # still fires from morning onwards but the pre_ko evaluation catches
     # any edge that only appears once lineups land. Dedup prevents double
     # placement; if morning fires first, that's the price we get.
-    "bot_v10_all":          "all",
+    # V10-SPLIT-BY-MARKET (migration 375) — one cohort entry became two.
+    "bot_v10_1x2":          "all",
+    "bot_v10_ou":           "all",
     "bot_summer_specialist": "all",   # BOT-SUMMER-SPECIALIST 2026-07-08 — fills midweek summer volume gap
     "bot_lower_1x2":        "all",
     "bot_aggressive":       "all",

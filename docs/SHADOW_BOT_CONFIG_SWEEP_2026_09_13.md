@@ -1,5 +1,12 @@
 # Shadow-bot configuration sweep — 2026-09-13
 
+> **CHANGED 2026-09-22 — V10-SPLIT-BY-MARKET (migration 375, [[#040]]).** Every
+> `bot_v10_all` figure below is a **BLEND of two markets that measure on opposite
+> sides of zero** (1x2 de-vigged CLV +2.50% n=335; O/U 2.5 −3.85% n=181). The bot
+> is now `bot_v10_1x2` + `bot_v10_ou`. The numbers here remain true as of their
+> date; they are no longer true of any single bot.
+
+
 **Question (owner):** *"analyze all shadow bots and their bets… see if each shadow
 bot has some winning configuration — bet type, odds range, edge range, sharp edge
 range, anything. These are quite soft books, I'm sure we find something."*
