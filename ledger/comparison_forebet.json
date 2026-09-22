@@ -1,13 +1,13 @@
 {
   "source": "Forebet",
   "source_url": "https://www.forebet.com/en/football-predictions/predictions-1x2/<date>  (and /under-over-25-goals/<date>)",
-  "snapshot_at_utc": "2026-09-21T07:50:01+00:00",
+  "snapshot_at_utc": "2026-09-22T07:33:56+00:00",
   "window": {
     "start": "2026-05-04",
-    "end": "2026-09-22"
+    "end": "2026-09-23"
   },
   "data_through": "2026-09-18",
-  "data_age_days": 3,
+  "data_age_days": 4,
   "status": "ok",
   "min_sample_each_side": 50,
   "scope_notes": "1X2 highest-prob pick + OU 2.5 pick only, soccer, settled rows (Forebet's own predict_y/predict_no flag), 10 EUR flat stake. Coverage limited to ~last 38 days because Forebet date URLs older than that silently fall back to today. FOREBET-REPRICE-2026-09-02: their_stats is NOT Forebet's published ROI. Forebet's quoted odds are frequently unobtainable — see scripts/verify_forebet_odds_cross_source.py, which shows 9.5% of their picks claiming >1.5x the best price available anywhere against 0.7% for a third-party control, concentrated on winners (p=2.4e-06). their_stats therefore re-settles their own picks at the BEST closing price across our books — the most favourable realistic assumption for them — over the subset we can fixture-match. Their published figure is kept verbatim as their_stats_claimed_odds, and at_median_close / at_bet365_close in their_reprice show what an ordinary single account would get.",
@@ -132,18 +132,18 @@
     "not_settled": 61
   },
   "our_stats_same_window": {
-    "n": 697,
-    "stake_total": 6970.0,
-    "pnl_total": 569.64,
-    "roi_pct": 8.17,
-    "hit_rate_pct": 41.61,
-    "avg_odds": 2.769,
+    "n": 699,
+    "stake_total": 6990.0,
+    "pnl_total": 549.64,
+    "roi_pct": 7.86,
+    "hit_rate_pct": 41.49,
+    "avg_odds": 2.772,
     "priced_at": "best price live at pick time",
-    "n_total_settled": 702,
+    "n_total_settled": 704,
     "coverage_pct": 99.3,
-    "roi_pct_recorded": 12.08,
-    "roi_pct_recorded_all_rows": 12.07,
-    "hit_rate_pct_recorded_all_rows": 41.6,
+    "roi_pct_recorded": 11.76,
+    "roi_pct_recorded_all_rows": 11.75,
+    "hit_rate_pct_recorded_all_rows": 41.48,
     "restatement_note": "roi_pct is priced at odds that were live at pick time. roi_pct_recorded is the same bets at the stored odds_at_pick, which STALE-BEST-ODDS-2026-09-02 showed to be a high-water mark across the whole snapshot history rather than a price on offer."
   }
 }
