@@ -49407,6 +49407,63 @@ def _():
     return "gates derive; column numeric(6,4); no divergent write since 367"
 
 
+@test("INPLAY-COLLECTOR-SINGLE-WRITER — exactly one collector, and it fails loud")
+def test_inplay_collector_single_writer():
+    """INPLAY-COLLECTOR moved Mac -> VPS 2026-09-22 (VPS-CONSOLIDATION phase 5).
+
+    TWO WAYS THIS GOES WRONG SILENTLY, both pinned here.
+
+    1. TWO COLLECTORS. `inplay_book_quotes` has NO unique constraint — only a PK
+       on an autoincrement id (verified against the live schema). So a Mac job
+       left loaded alongside the VPS unit does not conflict, it DUPLICATES: two
+       rows per (fixture, instant), and the two slow-state paper bots double-count
+       into `shadow_bets` against a 3,000-pick target whose primary metric is a
+       hit-rate on the selected set. Nothing errors. The experiment just quietly
+       stops meaning anything.
+
+       There is no DB guard to add cheaply (the natural key is (book, book_event_id,
+       captured_at) and captured_at is per-cycle, not per-fixture), so the guard is
+       procedural and lives in the unit file: it must tell the operator to confirm
+       the Mac job is gone.
+
+    2. SILENT FALLBACK. The VPS reaches Epicbet only through the residential
+       egress; from its own IP it gets HTTP 403 CF-CHALLENGE. The unit must set
+       socks5h (resolve at the proxy) and the client must raise when the tunnel is
+       down, rather than reverting to the Hetzner IP and collecting from the wrong
+       network identity while reporting success — EPICBET-403-FROM-VPS did exactly
+       that for 277 runs over six days ([[feedback_silent_failures]]).
+    """
+    import pathlib as _pl
+    root = _pl.Path(__file__).resolve().parent.parent
+    unit = (root / "local" / "systemd" / "oddsintel-inplay-collector.service").read_text()
+
+    # --- single-writer guard is stated where the operator will see it ---
+    assert "inplay_book_quotes" in unit and "NO unique constraint" in unit, \
+        "the unit must say WHY two collectors are unsafe — there is no DB guard to catch it"
+    assert "launchctl list" in unit, \
+        "the unit must give the concrete check that the Mac job is gone, not just a warning"
+
+    # --- egress wiring ---
+    assert "OI_RESIDENTIAL_PROXY=socks5h://" in unit, \
+        "must be socks5h (resolve AT the proxy); socks5 leaks the DNS lookup to the VPS resolver"
+    assert "Restart=always" in unit and "RestartSec=" in unit, \
+        "no-fallback means a down tunnel CRASHES the collector; it needs a throttled restart " \
+        "so it self-heals when the tunnel returns instead of hammering or staying dead"
+
+    # --- the proxy must NOT leak to API-Football ---
+    af = (root / "workers" / "api_clients" / "api_football.py").read_text()
+    assert "OI_RESIDENTIAL_PROXY" not in af, \
+        "API-Football must keep the fast Hetzner path — routing it through the operator's " \
+        "home line is a pointless round trip and spends their uplink"
+
+    # --- the Mac plist must not silently come back alongside it ---
+    mac = root / "local" / "launchd" / "com.oddsintel.inplay-collector.plist"
+    if mac.exists():
+        assert "ONE" in mac.read_text() or "VPS" in mac.read_text(), \
+            "the Mac plist still exists — it must carry a note that the VPS unit is now the " \
+            "writer, or someone reinstalls it and silently doubles every row"
+
+
 
 if __name__ == "__main__":
     main()

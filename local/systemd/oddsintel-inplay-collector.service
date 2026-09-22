@@ -1,0 +1,67 @@
+# INPLAY-COLLECTOR on the VPS (VPS-CONSOLIDATION-2026-09-16 phase 5, 2026-09-22).
+#
+# The Epicbet in-play board collector + the two LOCKED slow-state paper bots.
+# Moved off the operator's Mac once the residential egress existed.
+#
+# WHY IT COULD NOT MOVE BEFORE, AND WHAT CHANGED. Epicbet answers this box with
+# HTTP 403 CF-CHALLENGE — on the LIVE endpoint too, not only pre-match — so every
+# call would have gone through FlareSolverr. FS was already dropping ~15% of the
+# pre-match Epicbet runs (EPICBET-FS-500, 7 of 48 measured 2026-09-21) and this
+# loop adds ~33 calls/min on top; moving it onto that FS would have degraded a
+# working feed on a placeable book. RESIDENTIAL-EGRESS removed the premise: via
+# the WireGuard tunnel this box reaches Epicbet with PLAIN REQUESTS, no FS, no
+# session budget, no contention. Verified: same fixture ids, same markets and
+# identical prices as the Mac, fetched in the same minute.
+#
+# ⚠️ EXACTLY ONE COLLECTOR MAY RUN.
+# `inplay_book_quotes` has NO unique constraint — only a PK on an autoincrement
+# id — so a second collector does not conflict, it DUPLICATES: two rows per
+# (fixture, instant), and the paper bots double-count into `shadow_bets` against
+# a 3,000-pick target. Nothing errors; the experiment just stops meaning
+# anything. Before starting this, confirm the Mac job is gone:
+#     launchctl list | grep inplay-collector      # must print nothing
+#
+# NO FALLBACK BY DESIGN. If the tunnel is down the Epicbet client RAISES rather
+# than quietly using the Hetzner IP. Restart=always + RestartSec=30 means this
+# crash-loops slowly while the tunnel is down and self-heals when it returns —
+# which is correct: collecting from the wrong network identity while reporting
+# success is how EPICBET-403-FROM-VPS ran "fine" for six days writing zero rows.
+#
+# Install:
+#   cp local/systemd/oddsintel-inplay-collector.service /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now oddsintel-inplay-collector
+#
+# Manage:
+#   systemctl status oddsintel-inplay-collector
+#   journalctl -u oddsintel-inplay-collector -f
+
+[Unit]
+Description=OddsIntel Epicbet in-play collector (via residential egress)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/odds-intel-engine
+EnvironmentFile=/opt/odds-intel-engine/.env
+
+Environment=TZ=UTC
+Environment=PYTHONUNBUFFERED=1
+# The whole point of this unit. socks5h so DNS resolves AT the proxy.
+# Scoped to the Epicbet client only — API-Football keeps the fast Hetzner path;
+# routing AF through the home line would be a pointless round trip.
+Environment=OI_RESIDENTIAL_PROXY=socks5h://10.8.0.2:1080
+
+ExecStart=/opt/odds-intel-engine/venv/bin/python -m workers.jobs.inplay_collector \
+    --cadence 45 --max-fixtures 60
+
+Restart=always
+RestartSec=30
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

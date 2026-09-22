@@ -1,6 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
+  ⛔ RETIRED ON THE MAC 2026-09-22 — the VPS is now the writer.
+
+  This collector moved to the VPS once RESIDENTIAL-EGRESS existed:
+  local/systemd/oddsintel-inplay-collector.service. Epicbet answers the VPS with
+  HTTP 403 CF-CHALLENGE, so before the tunnel every call there would have needed
+  FlareSolverr, which was already dropping ~15% of the pre-match Epicbet runs.
+  Through the tunnel the VPS reaches Epicbet with plain requests and returns
+  identical prices to this machine.
+
+  ⚠️ DO NOT RELOAD THIS unless the VPS unit is stopped first.
+  `inplay_book_quotes` has NO unique constraint, so running both does not
+  conflict — it silently writes every row twice and double-counts the two paper
+  bots into shadow_bets. Check with:
+      ssh root@204.168.199.8 'systemctl is-active oddsintel-inplay-collector'
+
+  Kept (not deleted) because the Mac is still the fallback if the tunnel is
+  retired. Smoke: INPLAY-COLLECTOR-SINGLE-WRITER.
+-->
+<!--
   INPLAY-COLLECTOR (Mac-side, OWN Phase 1b, 2026-09-15): the Epicbet in-play
   board collector + slow-state PAPER bot. A long-running LOOP, not a cron —
   KeepAlive restarts it if it exits. It writes inplay_book_quotes, shadow_bets
