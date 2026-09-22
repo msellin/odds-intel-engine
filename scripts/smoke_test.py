@@ -24594,6 +24594,28 @@ def test_shadow_close_bounded_2026_09_22():
         "entire purpose of migration 364's closing_fresh"
     )
 
+    # The BACKFILL must use the same bounded helper as the settle path. It had
+    # the identical defect: it called get_closing_odds, so re-running it would
+    # have written the same self-comparison zeros across ~106k historical rows
+    # and made them look audited.
+    bf = _engine_path("scripts/backfill_shadow_direct_book_clv.py").read_text(encoding="utf-8")
+    _bfc = "\n".join(l for l in bf.splitlines() if not l.lstrip().startswith("#"))
+    # Bound the slice to the FUNCTION, not a fixed character count — close_of
+    # carries a long docstring and a 1,500-char window fell entirely inside it,
+    # so the assertion searched prose and missed the code underneath.
+    _i = _bfc.index("def close_of(")
+    _body = _bfc[_i:_bfc.index("def margin_of(", _i)]
+    assert "get_book_close(" in _body, (
+        "the backfill's close_of must use the BOUNDED get_book_close — the same "
+        "helper real_bets and the shadow settle path use. get_closing_odds falls "
+        "back to any pre-kickoff row however old, which for the direct books is "
+        "frequently the bet's own quote"
+    )
+    assert "_ah_team_and_line(" in _body, (
+        "the backfill must parse the AH rung or refuse the close; 6,518 AH rows "
+        "are on this path and shadow_bets has no handicap_line column"
+    )
+
     # AH rungs: parsed, or refused. Never matched against an arbitrary rung.
     f = st._ah_team_and_line
     assert f("1x2", "home") == ("home", None), "non-AH markets pass through"

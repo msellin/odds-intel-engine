@@ -58,6 +58,8 @@ from workers.jobs.settlement import (  # noqa: E402
     _normalize_bet_selection,
     closing_book_margin,
     get_closing_odds,
+    get_book_close,
+    _ah_team_and_line,
 )
 
 # SHARP-ANCHOR-SWEEP is a LOCKED pre-registration whose primary metric is
@@ -155,9 +157,39 @@ def main() -> int:
     margin_memo: dict = {}
 
     def close_of(mid, mkt, sel, book):
+        """Own-book close, BOUNDED — see SHADOW-CLOSE-UNBOUNDED-IS-A-SELF-COMPARISON.
+
+        This called `get_closing_odds`, whose CLOSING-PRE-KO-FALLBACK returns the
+        latest pre-kickoff row HOWEVER OLD. For the direct books that row was
+        frequently THE BET'S OWN QUOTE, so `clv = odds/close - 1` came out exactly
+        0.0000 by construction — measured on the sharp population at 51 of 93
+        rows (54.8%). Backfilling with it would have written that same fiction
+        across ~106k historical rows and made it look audited.
+
+        `get_book_close` is the same helper `real_bets` has used since migration
+        332 and `_settle_pending_shadow_bets` since 2026-09-22: bounded at
+        DIRECT_CLOSE_MAX_MIN, never falling back to an older row or another book.
+        It returns (odds, minutes_before_ko), so the age this script already
+        wanted to record comes from the same call rather than a second query.
+
+        It finds LESS, and that is the point. Measured over 7 days at <=60 min:
+        Coolbet 64.8% of fixtures, Unibet-Site 68.2%, Epicbet 92.6%, Pinnacle
+        99.8% — so most rows still get a real number, and the ones that do not
+        get NULL instead of a zero that means "we never looked".
+
+        AH rungs are parsed out of `selection` via the settlement helper, or the
+        close is refused: `shadow_bets` has no handicap_line column, and matching
+        an arbitrary rung is worse than NULL (6,518 AH rows are on this path).
+        """
         k = (mid, mkt, sel, book)
         if k not in close_memo:
-            close_memo[k] = get_closing_odds(mid, mkt, sel, book)
+            parsed = _ah_team_and_line(mkt, sel)
+            if parsed is None:
+                close_memo[k] = None
+            else:
+                _sel, _line = parsed
+                got = get_book_close(mid, mkt, _sel, book, handicap_line=_line)
+                close_memo[k] = got      # (odds, mins) or None
         return close_memo[k]
 
     def margin_of(mid, mkt, book):
@@ -166,22 +198,13 @@ def main() -> int:
             margin_memo[k] = closing_book_margin(mid, mkt, book)
         return margin_memo[k]
 
-    ts_memo: dict = {}
-
-    def ts_of(mid, mkt, sel, book, kickoff):
-        # Memoised on the SAME key as the close. Unmemoised this was one query
-        # per row (~106k) instead of one per distinct market (~7.2k), which is
-        # what made the first dry run crawl.
-        k = (mid, mkt, sel, book)
-        if k not in ts_memo:
-            rows = execute_query(
-                """SELECT os.timestamp FROM odds_snapshots os
-                    WHERE os.match_id = %s AND os.market = %s AND os.selection = %s
-                      AND os.bookmaker = %s AND os.timestamp <= %s
-                    ORDER BY os.is_closing DESC, os.timestamp DESC LIMIT 1""",
-                (mid, mkt, sel, book, kickoff))
-            ts_memo[k] = rows[0]["timestamp"] if rows else None
-        return ts_memo[k]
+    # `ts_of` REMOVED 2026-09-22. It existed to date the close with a SECOND
+    # query, which could disagree with the close it was describing — it ordered
+    # `is_closing DESC, timestamp DESC` while the close itself came from the
+    # unbounded `get_closing_odds`, so on any market where those disagree the
+    # recorded age belonged to a different row than the recorded price. Bounded
+    # `get_book_close` returns (odds, minutes_before_ko) from one query, so the
+    # age and the price can no longer describe different rows.
 
     has_margin_cols = bool(execute_query(
         """SELECT 1 FROM information_schema.columns
@@ -205,7 +228,13 @@ def main() -> int:
             mkt = _normalize_bet_market(r["market"], r["selection"])
             sel = _normalize_bet_selection(r["selection"])
             book = r["recommended_bookmaker"]
-            close = close_of(r["match_id"], mkt, sel, book) if book else None
+            # (odds, minutes_before_ko) or None — `close_of` is bounded now, so
+            # the age comes back from the SAME call that found the price. The
+            # separate `ts_of` lookup it used to need could disagree with the
+            # close it was describing, because they were two queries against a
+            # table that is still being written to.
+            got = close_of(r["match_id"], mkt, sel, book) if book else None
+            close = got[0] if got else None
 
             if close and float(close) > 1.0:
                 clv = round(float(r["odds_at_pick"]) / float(close) - 1, 4)
@@ -216,8 +245,7 @@ def main() -> int:
                 margin = round(m, 5) if m is not None else None
                 clv_mc = (round((1.0 + clv) / (1.0 + m) - 1.0, 5)
                           if m is not None else None)
-                cts = ts_of(r["match_id"], mkt, sel, book, r["kickoff"])
-                mins = int((r["kickoff"] - cts).total_seconds() // 60) if cts else None
+                mins = got[1]
                 stats["recovered"] += 1
                 by_bot[r["bot_name"]]["n"] += 1
                 by_bot[r["bot_name"]]["old"] += float(r["old_clv"])
