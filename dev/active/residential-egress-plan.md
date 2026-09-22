@@ -159,3 +159,29 @@ more here than elegance.
 
 Coolbet cutover, Unibet-on-VPS, Claude Code on the VPS, the CrossRank/RAM
 decision, and the real-money placer — which stays on the Mac regardless.
+
+
+---
+
+## Handover 2026-09-22 — endpoint move parked, everything else running
+
+**Working right now, untouched:** WireGuard tunnel VPS↔MacBook, `microsocks` under
+launchd, Epicbet in-play collector on the VPS, Epicbet near-kickoff timer on the
+VPS, Coolbet sweep still on the Mac.
+
+**Parked:** moving the tunnel endpoint off the MacBook. The Archer AX53's
+WireGuard *server* is configured and enabled, but the Archer is **double-NATed**
+behind an old router the owner added in the garage (`192.168.0.254`, where the
+Telia cable enters, feeding a switch). Handshake test: **444 B sent, 0 received.**
+Nothing on the Archer can fix that — the packets die a hop earlier.
+
+**Resume by** getting into the garage box and either bridging it (best — removes
+the double NAT entirely) or forwarding **UDP 51820 → 192.168.0.9**. Then rewrite
+the client config's `Endpoint` (the router wrote its private WAN `192.168.0.9`
+into it) and re-test. Full detail in `PRIORITY_QUEUE.md` →
+`EGRESS-OFF-THE-MACBOOK-2026-09-22`.
+
+**Do first if you want to skip all of it:** the zone.ee ASN probe. We proved the
+block is IP-based, not fingerprint-based; we have NOT separated country from
+datacenter-ASN reputation. If an Estonian datacenter IP passes, there is no home
+arm at all.
