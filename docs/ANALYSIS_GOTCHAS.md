@@ -2753,3 +2753,55 @@ and re-grading them is the pass's actual purpose.
 **Do not delete rows** — `PRIORITY_QUEUE.md` says so explicitly, and they are the
 only record of the upstream fault's reach. Smoke
 `QUARANTINE-VOIDS-SURVIVE-THE-RESETTLER`.
+
+## 68. A counterfactual that must pick a decision INSTANT has to be run at more than one (2026-09-22)
+
+**BOOK-SET-COUNTERFACTUAL** (#005, `scripts/backtest_book_set_restriction.py`,
+written up in `docs/BOOK_SET_COUNTERFACTUAL_2026_09_22.md`).
+
+Any "what if we had priced off a different book set / used a different gate"
+replay has to answer a question the real pipeline never had to: **at what moment
+do you look up the price?** The pipeline re-prices hourly. A replay does not, so
+it picks one instant per fixture and moves on.
+
+I picked the defensible one — **kickoff − 6h, the median lead of the real
+`bot_v10_all` 1x2 picks** — and got a clean, confident answer to the question the
+exercise existed for: in **all four** market × gate-stack cells, the picks the
+book-set restriction destroyed were *worse* calibrated than the ones it kept, i.e.
+the selection-effect hypothesis was refuted. It reproduced. It had a sensible
+mechanism. It was ready to write up.
+
+Re-running the identical study at **kickoff − 12h** flipped the sign in **three of
+the four**, and flipped the headline outcome comparison too:
+
+| cell | Δgap at −6h | Δgap at −12h |
+|---|---|---|
+| v10 · 1x2 | +18.78pp (z +1.32) | +7.12pp (z +0.46) |
+| v10 · O/U | **+5.44pp** (z +0.71) | **−10.06pp** (z −1.01) |
+| placer · 1x2 | **+0.83pp** (z +0.15) | **−7.17pp** (z −1.21) |
+| placer · O/U | **+2.01pp** (z +0.31) | **−14.04pp** (z −1.63) |
+
+Post-cut O/U, all-books vs as-was: **3.2pp worse calibrated and −8.9pp ROI at −6h;
+4.7pp BETTER and +14.8pp ROI at −12h.** Same fixtures, same books, same gates,
+same calibrator — only the hour of the price changed.
+
+Nothing reached |z| = 1.96 at either lead, which is the tell: **the "finding" was
+always inside the noise, and the single-lead run merely dressed it in a
+direction.** A one-lead study would have shipped "the hypothesis is refuted in
+every cell" into the queue as a settled fact.
+
+**Rules:**
+
+- **Run every instant-dependent replay at two or more instants and report both.**
+  If the sign moves, the answer is "no evidence", not whichever run you did first.
+- Prices are not noise around a true value — they DRIFT (1x2 shortens ~11% by
+  kickoff, 86% of the time). So the instant is a systematic factor, and choosing
+  it by "what looks like the real lead time" hard-codes a bias you cannot see.
+- **The comparison between arms can be robust while the outcomes are not.** In
+  this study price (+2.1%), coverage (5.7–7.9% of selections with no accessible
+  price) and volume (+52% to +76%) held at both leads, because both arms share
+  the instant. Only the win-rate-dependent quantities moved. Separate the two
+  kinds of claim explicitly and say which is which.
+- Same family as #39: there, the window hid a regime change; here, the instant
+  hides a price trend. Both make an arithmetically perfect number a statement
+  about the method rather than about the system.

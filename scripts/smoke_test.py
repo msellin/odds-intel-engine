@@ -49272,5 +49272,107 @@ def _():
 
 
 
+@test("BOOK-SET-BACKTEST-REAL-GATES — the counterfactual must import the floors, not re-type them")
+def test_book_set_backtest_real_gates():
+    """BOOK-SET-COUNTERFACTUAL (PRIORITY_QUEUE #005, 2026-09-22).
+
+    `scripts/backtest_book_set_restriction.py` decides whether opening
+    `ACCESSIBLE_BOOKMAKERS` for published PICKS is supported by evidence. A
+    backtest that re-types a floor or forgets an excluded feed does not measure
+    the system anyone runs — and this repo has paid for exactly that twice:
+    SIGNAL-PLACER-1X2-ALIGN (two signalers, two copies of the same floor, 13%
+    vs 10%) and PLACER-OU-VOCAB-FLOOR (a market key that missed the map and
+    silently fell through to the 2.80 default).
+
+    So this pins the two things that would make the answer wrong while the
+    script still ran cleanly:
+
+      1. THE FLOORS ARE IMPORTED. `clears_edge_floor` / `min_edge_for_pick` /
+         `_min_odds_for` come from `coolbet_placer` and the odds floor is read
+         off the `bot_registry` spec, with the script raising on any drift
+         between the two. Hardcoding 0.10/0.08/2.80/1.80 would quietly measure
+         a bot with different gates from the real one — and the 1x2 floor is
+         selection-aware (home-underdogs clear at 10%, everything else at 13%),
+         which no literal can express.
+
+      2. THE KNOWN-BAD FEEDS STAY OUT OF THE WIDE ARM. The whole point of the
+         all-books arm is a price someone could actually have taken. Letting
+         `api-football`, `api-football-live`, the O/U blacklist or the retired
+         `Unibet-Kambi` back in would hand it exactly the phantom prices that
+         KAMBI-FEED-DIVERGENCE (38% of quotes above what unibet.ee offered) and
+         AF-UNIBET-PHANTOM were removed for, and would manufacture the +EV
+         result the exercise exists to test honestly.
+    """
+    import importlib
+    import datetime as _dt
+
+    mod = importlib.import_module("scripts.backtest_book_set_restriction")
+    src = _engine_path("scripts/backtest_book_set_restriction.py").read_text("utf-8")
+
+    # 1. the floors are imported, never re-typed
+    for name in ("clears_edge_floor", "min_edge_for_pick", "_min_odds_for"):
+        assert f"from workers.automation.coolbet_placer import" in src and name in src, (
+            f"the backtest no longer uses coolbet_placer.{name} — it must apply "
+            f"the REAL edge-floor predicate, not a re-implementation of it")
+    assert "from workers.registry.bot_registry import BOTS" in src, (
+        "the odds floor must be read off the bot_registry spec — the registry "
+        "is the single source of truth for what a bot is (SYSTEM-MAP-REGISTRY)")
+
+    from workers.automation.coolbet_placer import _min_odds_for as _mof
+    from workers.registry.bot_registry import BOTS as _BOTS
+    for market, bot in (("1x2", "bot_coolbet_1x2_model_v1"),
+                        ("over_under_25", "bot_coolbet_ou_model_v1")):
+        spec = next(b for b in _BOTS if b.name == bot)
+        e_floor, o_floor = mod.registry_floors(market)
+        assert e_floor == float(spec.edge_floor), (
+            f"registry_floors({market}) returned edge {e_floor}, registry says "
+            f"{spec.edge_floor} — the backtest is measuring a different bot")
+        assert o_floor == float(_mof(market)), (
+            f"registry_floors({market}) odds floor {o_floor} disagrees with the "
+            f"placer's {_mof(market)}")
+
+    # 2. the known-bad feeds are excluded from EVERY arm — behaviourally, not
+    #    by reading the constant back to itself.
+    from workers.utils.odds_quality import BLACKLISTED_OU_SOURCES as _BL
+    for bad in set(_BL) | {"api-football", "api-football-live", "Unibet-Kambi"}:
+        assert bad in mod.HARD_EXCLUDED_SOURCES, (
+            f"{bad!r} is not excluded from the all-books arm. That arm exists to "
+            f"price a bet someone could have taken; a synthetic or divergent "
+            f"feed in it manufactures edge that never existed")
+
+    mid = "00000000-0000-0000-0000-000000000001"
+    now = _dt.datetime(2026, 9, 10, 12, 0, tzinfo=_dt.timezone.utc)
+    rows = [
+        {"match_id": mid, "market": "1x2", "selection": "home",
+         "odds": o, "bookmaker": b, "timestamp": now}
+        for b, o in (("Pinnacle", 3.00), ("Betano", 3.05), ("Coolbet", 2.95),
+                     ("Marathonbet", 3.10), ("Unibet-Kambi", 9.99),
+                     ("api-football", 9.99), ("Bet365", 3.02))
+    ]
+    out = mod._clean_offers(rows, {mid: now}, {mid: now})
+    offers = out[(mid, "1x2", "home")]
+    assert "Unibet-Kambi" not in offers and "api-football" not in offers, (
+        f"_clean_offers let a hard-excluded source through: {sorted(offers)}. "
+        f"Both were quoting 9.99 here — a phantom price is precisely what wins "
+        f"a max()-across-books and precisely what must never set our best price")
+    assert "Marathonbet" in offers, (
+        "Marathonbet must survive the SHARED quality filters — it is collected, "
+        "legal to read, and is the single biggest thing the all-books arm adds. "
+        "Whether we may BET it is the arm's job to decide, not this filter's")
+
+    # the outlier ceiling is a shared rule, applied before any arm splits
+    rows.append({"match_id": mid, "market": "1x2", "selection": "home",
+                 "odds": 5.00, "bookmaker": "Betfair", "timestamp": now})
+    offers2 = mod._clean_offers(rows, {mid: now}, {mid: now})[(mid, "1x2", "home")]
+    assert "Betfair" not in offers2, (
+        "ODDS-OUTLIER-FILTER: 5.00 against a Pinnacle anchor of 3.00 is 1.67x, "
+        "far above the 1.25 ceiling — a price that far over the sharp line is a "
+        "stale or mis-mapped quote, and admitting it would hand the all-books "
+        "arm a fake win")
+    return ("floors imported from placer+registry; 4 known-bad feeds excluded; "
+            "outlier ceiling applied before the arms split")
+
+
+
 if __name__ == "__main__":
     main()
