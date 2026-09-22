@@ -124,7 +124,28 @@ def _has_col(table: str, col: str) -> bool:
 #
 # IDEMPOTENT for the same reason the default mode is: a rewritten row either
 # gains a non-zero clv or loses its clv, so it leaves the selection either way.
-_SELF_COMPARISON_PRED = "t.clv = 0 AND t.closing_bookmaker IS NOT NULL"
+# ⚠️ `closing_minutes_before_ko IS NULL` IS THE IDEMPOTENCY PREDICATE, and it is
+# NOT optional. I shipped this mode without it and asserted in the commit message
+# that it was idempotent "for the same reason the default mode is". It is not.
+#
+# The default predicate (`closing_bookmaker IS NULL`) shrinks monotonically:
+# every processed row either gains a book or loses its clv, so it leaves the
+# selection and the loop — which deliberately never advances OFFSET in write mode
+# — sees fresh rows each pass.
+#
+# This predicate does not shrink. 46% of these rows have a later price that is
+# IDENTICAL, so the re-derived clv is legitimately still 0 and the book is still
+# set. Worse, the UPDATE's change-guard (`clv IS DISTINCT FROM`) then writes
+# nothing at all, so the row cannot even gain the age that would mark it done.
+# Result: the same 2,000 rows re-selected forever. Observed on the live run —
+# "4,242,000 rows processed" against a population of 80,340, with the remaining
+# count stuck at 77,987.
+#
+# The age is the right marker precisely BECAUSE a correct zero must survive: a
+# processed row either loses its clv (nulled) or keeps 0 and gains an age. Both
+# leave the selection; neither destroys a legitimate measurement.
+_SELF_COMPARISON_PRED = ("t.clv = 0 AND t.closing_bookmaker IS NOT NULL "
+                         "AND t.closing_minutes_before_ko IS NULL")
 _DEFAULT_PRED = "t.clv IS NOT NULL AND t.closing_bookmaker IS NULL"
 
 
@@ -359,7 +380,13 @@ def main() -> int:
                                    closing_minutes_before_ko = %s
                              WHERE id = %s
                                AND (closing_bookmaker IS DISTINCT FROM %s
-                                    OR clv IS DISTINCT FROM %s)""", w)
+                                    OR clv IS DISTINCT FROM %s
+                                    -- ...OR the row has not been dated yet. A
+                                    -- correctly-unchanged zero must still be
+                                    -- allowed to record its age, or it can never
+                                    -- leave the self-comparison selection and the
+                                    -- loop re-reads it forever.
+                                    OR closing_minutes_before_ko IS NULL)""", w)
                 else:
                     execute_write(
                         f"""UPDATE {a.table}
@@ -368,7 +395,8 @@ def main() -> int:
                                    closing_minutes_before_ko = %s
                              WHERE id = %s
                                AND (closing_bookmaker IS DISTINCT FROM %s
-                                    OR clv IS DISTINCT FROM %s)""",
+                                    OR clv IS DISTINCT FROM %s
+                                    OR closing_minutes_before_ko IS NULL)""",
                         (w[0], w[1], w[2], w[3], w[6], w[7], w[8], w[9]))
 
         total += len(batch)
