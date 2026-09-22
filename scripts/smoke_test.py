@@ -24788,6 +24788,86 @@ def test_unified_gate_instrument_2026_09_22():
     return "flat 10% resolves on home/draw/away; paper; unpublished; pre-registered"
 
 
+@test("PUBLISHED-ARM-HAS-A-RECORD — every arm a reader receives is shown on /performance, separately")
+def test_published_arm_has_a_record_2026_09_22():
+    """[[#068]] (2026-09-22). On the day the consensus arm shipped, 20 picks went
+    to Telegram and /picks and appeared on /performance NOWHERE: both
+    `picks_forward_test_public` and `picks_forward_test_summary` filtered
+    `arm = 'live'`, written when 'live' was the only arm that reached anyone.
+
+    That is PICKS-SHOW-BOTH-BOTS (2026-09-16) in mirror image — there,
+    `bot_v10_all` published to Telegram and showed on /performance while missing
+    from /picks. Same class, opposite direction, because each surface was gated
+    independently instead of from one fact.
+
+    THE RULE: if it is published, its record is published — and the arms are
+    reported SEPARATELY, because they are two different rules."""
+    import pathlib as _pl
+    from scripts.publish_picks_forward_test import PUBLISHED_ARMS
+    from workers.api_clients.db import execute_query
+
+    # Smoke and the migration workflow both fire on a push and are not ordered
+    # against each other, so a view this commit rewrites may not be live yet.
+    # Same treatment SYSTEM-MAP-REGISTRY-NOT-DRIFTED gives pending bot changes:
+    # the REPO must declare it either way, and the DB is checked only once the
+    # migration that changes it has actually been applied.
+    applied = {r["filename"] for r in execute_query(
+        "SELECT filename FROM _schema_migrations")}
+    pending = "\n".join(
+        f.read_text(encoding="utf-8")
+        for f in sorted((_engine_root / "supabase" / "migrations").glob("*.sql"))
+        if f.name not in applied)
+
+    # 1. Every published arm reaches both /performance views.
+    for view in ("picks_forward_test_public", "picks_forward_test_summary"):
+        d = execute_query(
+            "SELECT pg_get_viewdef(%s::regclass, true) AS d", [view])[0]["d"]
+        for arm in PUBLISHED_ARMS:
+            ok = f"'{arm}'" in d or (view in pending and f"'{arm}'" in pending)
+            assert ok, (
+                f"{view} does not admit arm {arm!r}, and no pending migration "
+                f"adds it — its picks would be sent to readers with no track "
+                f"record anywhere"
+            )
+        assert "junk_anchor" not in d, (
+            f"{view} must never expose the negative control to a customer surface"
+        )
+
+    # 2. The arms must be SEPARABLE, not pooled. `arm` on the summary is what
+    #    keeps one locked pre-registration from absorbing a second rule's n.
+    cols = {r["column_name"] for r in execute_query(
+        """SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'picks_forward_test_summary'""")}
+    assert "arm" in cols or "picks_forward_test_summary" in pending, (
+        "picks_forward_test_summary must carry `arm`; without it the two rules' "
+        "results pool into one number that describes neither"
+    )
+
+    # 3. Each published arm maps to its OWN bot on the public feed.
+    rows = execute_query(
+        """SELECT DISTINCT arm, bot FROM picks_public_all WHERE arm IS NOT NULL""")
+    by_arm = {r["arm"]: r["bot"] for r in rows}
+    if len(by_arm) > 1 and "picks_public_all" not in pending:
+        assert len(set(by_arm.values())) == len(by_arm), (
+            f"two arms share one bot label {by_arm} — a reader expanding that row "
+            f"sees two different anchors averaged together"
+        )
+
+    # 4. The frontend must scope by arm, or `pooled` silently mixes rules.
+    #    `_web_path` raises SkipTest in CI, which does not check out the web
+    #    repo — the DB assertions above still run there.
+    src = _web_path("src/lib/engine-data.ts").read_text(encoding="utf-8")
+    if src:
+        for fn in ("getPicksForwardTestSummary", "getPicksForwardTestBets"):
+            i = src.index(f"export async function {fn}(")
+            body = src[i:i + 1400]
+            assert 'arm: string = "live"' in body and '.eq("arm", arm)' in body, (
+                f"{fn} must filter by arm — it sums the rows it is handed, so an "
+                f"unfiltered call pools two different rules into one record"
+            )
+    return "both published arms have a separate record on /performance"
+
+
 @test("FLOORS-ONE-SOURCE-CROSS-LANGUAGE — the frontend derives its floors from the engine")
 def test_floors_one_source_cross_language_2026_09_11():
     """FLOORS-ONE-SOURCE-CROSS-LANGUAGE (2026-09-11).
