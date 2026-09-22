@@ -45828,8 +45828,15 @@ def test_maturity_label_canonical():
     applied.
     """
     from workers.api_clients.db import execute_query
+    import re as _re
 
-    CANON = {"experimental", "beta", "calibrated", "retired"}
+    # `testing` added 2026-09-22 by migration 375 ([[#069]] part c). Before that
+    # it was NOT a database value at all — /performance/page.tsx stamped the
+    # literal string onto the injected forward-test rows, so the page's own
+    # legend documented three maturity tiers of which one had no backing field:
+    # nothing could query for it and no test could check it. It is now a real
+    # label on the two bots whose picks readers actually receive.
+    CANON = {"experimental", "beta", "calibrated", "testing", "retired"}
     rows = execute_query(
         "SELECT DISTINCT maturity_label AS m FROM bots WHERE maturity_label IS NOT NULL")
     bad = sorted({r["m"] for r in rows} - CANON)
@@ -45845,6 +45852,31 @@ def test_maturity_label_canonical():
     assert con and con[0]["n"] == 1, (
         "the bots_maturity_label_check constraint is gone — free text on this "
         "column means the next typo reaches a customer surface silently"
+    )
+
+    # ...AND THE TWO LISTS MUST AGREE (added 2026-09-22).
+    #
+    # This test kept its own copy of the legal set as a deliberate second
+    # opinion — the DB constraint and an independent list are a stronger guard
+    # than either alone, since a migration that widens the constraint by mistake
+    # would still be caught here. But a second copy that nobody reconciles just
+    # goes stale: migration 375 added `testing` to the constraint and this list
+    # stayed at four values, so CI went red on a correct migration.
+    #
+    # Keep the independence, add the reconciliation: the set this test believes
+    # in and the set the database enforces must be the same set, so widening one
+    # without the other fails loudly instead of either drifting silently or
+    # rubber-stamping whatever the constraint happens to say.
+    defn = execute_query(
+        """SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint
+            WHERE conname = 'bots_maturity_label_check'""")[0]["d"]
+    in_db = set(_re.findall(r"'([a-z_]+)'::text", defn))
+    assert in_db == CANON, (
+        f"the maturity labels this test knows about ({sorted(CANON)}) and the "
+        f"ones the database allows ({sorted(in_db)}) have diverged. Update BOTH "
+        f"in the same commit — /performance renders every one of these to a "
+        f"customer, and a label nothing checks is how `experiment` (singular) "
+        f"reached the public leaderboard in the first place."
     )
 
 
