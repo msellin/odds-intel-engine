@@ -43090,11 +43090,27 @@ def test_picks_forward_test_surface():
     assert mig.exists(), "migration 344 (the /picks read path) is missing"
     sql = mig.read_text()
 
-    # 1. the live-arm filter is in the DATABASE
-    assert "WHERE p.arm = 'live'" in sql, (
-        "picks_forward_test_public no longer filters arm='live' in the view. "
-        "Filtering it in the page instead is one forgotten .eq() away from "
-        "publishing bets chosen by a shuffled anchor."
+    # 1. THE ARM FILTER IS IN THE DATABASE — checked against the LIVE view.
+    #
+    # REWRITTEN 2026-09-22 ([[#068]]). This asserted the literal
+    # "WHERE p.arm = 'live'" inside migration 344 — a historical file nobody
+    # edits. It therefore still PASSED after migration 371 replaced that view,
+    # and would have kept passing if a later migration dropped the filter
+    # altogether. A test reading a frozen file cannot protect a live object.
+    #
+    # The invariant was never "the filter says 'live'" — it is that the ARM
+    # FILTER LIVES IN THE VIEW, so no TypeScript call site can forget it and
+    # publish bets chosen by a shuffled anchor. With a second published arm the
+    # exact predicate has to change; the guarantee does not.
+    from workers.api_clients.db import execute_query as _q
+    _live = _q("SELECT pg_get_viewdef('picks_forward_test_public'::regclass, true) AS d")[0]["d"]
+    assert "arm" in _live, (
+        "picks_forward_test_public does not filter on `arm` at all. Filtering in "
+        "the page instead is one forgotten .eq() away from publishing bets chosen "
+        "by a shuffled anchor."
+    )
+    assert "junk_anchor" not in _live, (
+        "the negative control is selectable through the public view"
     )
     for view in ("picks_forward_test_public", "picks_forward_test_summary"):
         assert f"GRANT SELECT ON {view}" in sql.replace("  ", " "), (
@@ -45067,7 +45083,9 @@ def test_forward_test_versions_do_not_vanish():
     # — a reader who counts gets a different answer from the page. So the ROW
     # pools. What must NOT change is that the pre-registered stopping rules stay
     # on `current`, or an n=200 checkpoint fires early on a mixture of rules.
-    assert "getPicksForwardTestSummary())?.pooled" in perf, (
+    # ARM-SCOPED (2026-09-22, [[#068]]): the call takes an arm now, so the exact
+    # text moved again. Pin the PROPERTY — `.pooled`, never `.current`.
+    assert "?.pooled" in perf and "getPicksForwardTestSummary(" in perf, (
         "the performance leaderboard row must read the POOLED figure, so the "
         "summary reconciles with the per-pick list a reader can count"
     )
