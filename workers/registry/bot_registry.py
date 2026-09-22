@@ -178,7 +178,7 @@ BOTS: list[BotSpec] = [
     # ONE spec with market "mixed". Splitting it was filed as accounting; measuring
     # the halves first showed the two markets sit on OPPOSITE SIDES OF ZERO, both
     # with CIs excluding it (de-vigged Pinnacle CLV, gotcha 8):
-    #     1x2            n=335   +2.50%   95% CI [+0.41, +4.60]   ROI +12.80%
+    #     1x2            n=335   +2.50%   95% CI [+0.41, +4.60]   ROI +7.3% exec
     #     over_under_25  n=181   -3.85%   95% CI [-5.01, -2.69]   ROI  -0.54%
     # So "the calibrated reference bot, +11-13%, the yardstick other bots are read
     # against" was one market carrying the other, and every bot ever compared to it
