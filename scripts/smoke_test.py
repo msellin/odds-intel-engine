@@ -43633,40 +43633,74 @@ def test_retention_artifact_gotcha():
     )
 
 
-@test("EDGE-LABELS-DISTINCT — the two bot families must not both say just \"Edge\"")
-def test_edge_labels_distinct():
-    """MODEL-EDGE-LABEL (2026-09-15).
+@test("PUBLIC-PICKS-PUBLISH-A-PRICE-NOT-A-PERCENTAGE — no edge % on any public channel")
+def test_public_picks_publish_a_price():
+    """TELEGRAM-EDGE-LABEL (2026-09-22, owner-approved). Supersedes
+    EDGE-LABELS-DISTINCT (2026-09-15).
 
-    Two publishers reach the same Telegram channel, and on 2026-09-15 they sent
-    messages 90 minutes apart reading:
+    The old rule was that the two public publishers must each NAME their basis,
+    because they reach the same channel 90 minutes apart with different
+    quantities under one word:
 
-        Ludogorets  📈 Edge: +16.0%            (bot_v10_all, model-anchored)
-        Platense    📈 Edge vs sharp line: +3.3%  (sharp forward test)
+        Ludogorets  📈 Edge: +16.0%              (bot_v10_all, model-anchored)
+        Platense    📈 Edge vs sharp line: +3.3% (sharp forward test)
 
-    Those are DIFFERENT QUANTITIES. The model's is a probability difference
-    (calibrated probability minus implied price); the sharp rule's is expected
-    ROI. A 16% probability edge at odds 4.00 is roughly +64% expected return —
-    so the smaller-looking number was the larger claim. The pre-registration
-    says in terms that the two forms must never collide in a reader's head.
+    Naming them was an improvement and not enough. Both were still percentages,
+    and a percentage beside a price reads as a promise about returns that
+    neither arm's sample can support. So neither publishes one now.
 
-    Pin that each names its own basis."""
+    THE TWO ARMS DIFFER, AND THE DIFFERENCE IS THE POINT:
+
+      * SHARP arm publishes a BREAK-EVEN PRICE, 1/p_sharp. Derived from the
+        sharp line, so it does not depend on our model being calibrated, and it
+        degrades gracefully — a reader arriving late compares it to the live
+        price themselves.
+      * MODEL arm publishes NO number. The agreed replacement was
+        1/(k x calibrated_prob), and it is not shipped because the probability
+        cannot currently carry it: re-measured on post-recalibration rows only
+        (2026-09-03 onward, n=154) the model is +12.3pp overconfident
+        (predicted 0.4286, actual 0.3052, se 3.7pp). A fair price off that would
+        tell readers a bet has value when our own realised win rate says it does
+        not — a worse error than the label it replaces.
+
+    The ticket's k=0.884 must never be reinstated without re-measurement: it was
+    fitted across a window containing the 2026-09-03 recalibration
+    (ANALYSIS_GOTCHAS #39), so it double-corrects.
+    """
+    import re as _r
+
     sig = _engine_path("workers/automation/coolbet_signaler.py").read_text()
     pub = _engine_path("scripts/publish_picks_forward_test.py").read_text()
 
-    assert "Model edge:" in sig, (
-        "the model publisher must label its number 'Model edge' — it is a "
-        "probability difference, not the expected ROI the sharp rule publishes."
-    )
-    import re as _r
-    _code = _r.sub(r"#.*", "", sig)
-    assert '"📈 Edge: ' not in _code and "'📈 Edge: " not in _code, (
-        "the model publisher is back to a bare 'Edge:', which collides with the "
-        "sharp rule's 'Edge vs sharp line' in the same channel."
-    )
-    assert "Edge vs sharp line" in pub, (
-        "the sharp publisher must keep naming its anchor — 'Edge' alone would "
-        "collide with the model publisher's label."
-    )
+    def code(src: str) -> str:
+        return _r.sub(r"#.*", "", src)
+
+    # Neither public renderer may emit an edge percentage.
+    for name, src in (("coolbet_signaler", sig), ("publish_picks_forward_test", pub)):
+        body = code(src)
+        assert "Model edge:" not in body and "Edge vs sharp line" not in body, (
+            f"{name} publishes an edge percentage again. A percentage next to a "
+            f"price reads as an expected-return promise; publish the price the "
+            f"bet stops being value at instead")
+        assert "📈 Edge: " not in body, f"{name} is back to a bare 'Edge:'"
+
+    # The sharp arm must publish the break-even price, off the SHARP line.
+    assert "Break-even price" in pub, (
+        "the sharp arm must publish its break-even price — removing the "
+        "percentage without replacing it leaves the reader nothing to act on, "
+        "and unlike the model arm this one has a sound basis")
+    assert "1.0 / c['p_sharp']" in pub or "1 / c['p_sharp']" in pub, (
+        "the break-even price must come from p_sharp (the sharp line), not from "
+        "our own calibrated probability — the whole reason this arm can publish "
+        "a price and the model arm cannot")
+
+    # The model arm must NOT grow a fair price off calibrated_prob while the
+    # calibration is unresolved, and must never reinstate the stale shrink.
+    assert "0.884" not in code(sig), (
+        "the stale k=0.884 shrink is back in the model publisher. It was fitted "
+        "across a window containing the 2026-09-03 recalibration, so it "
+        "double-corrects (ANALYSIS_GOTCHAS #39). Re-measure before using any k")
+    return "no edge % on either public arm; sharp publishes break-even off p_sharp"
 
 
 @test("PERF-PUBLIC-IS-CALIBRATED-OR-BETA — only bots with live results are listed publicly")

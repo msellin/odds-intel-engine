@@ -591,7 +591,25 @@ def render(c: dict) -> str:
         f"{c['league']} · {ko:%a %d %b · %H:%M UTC}\n\n"
         f"✅ Pick: <b>{pick}</b> @ <b>{c['odds']:.2f}</b> "
         f"at <b>{c['bookmaker']}</b>\n"
-        f"📈 Edge vs sharp line: <b>+{c['edge'] * 100:.1f}%</b>\n\n"
+        # TELEGRAM-EDGE-LABEL (2026-09-22, owner-approved). Publish the PRICE,
+        # not a percentage.
+        #
+        # `edge` here is a genuine expected return (p_sharp * odds - 1), so "%"
+        # was not the unit error it is on the model arm. It is still the wrong
+        # thing to publish: a percentage reads as a promise about returns, and
+        # the forward test's own n cannot support one. A break-even price makes
+        # no such claim, says the same thing in the unit a bettor acts on, and
+        # degrades gracefully — 1x2 shortens ~11% by kickoff 86% of the time,
+        # so a reader arriving late can check the price themselves instead of
+        # trusting a number computed at a moment that has passed.
+        #
+        # Derived from the SHARP line (1/p_sharp), deliberately: it is
+        # independent of our own model's calibration, which is currently
+        # +12.3pp overconfident (n=154 post-recalibration) and therefore cannot
+        # back a published fair price. See the model arm in coolbet_signaler,
+        # which for that reason publishes no replacement number at all.
+        f"📊 Break-even price: <b>{1.0 / c['p_sharp']:.2f}</b> — "
+        f"value while the price stays above it\n\n"
         f"<a href='https://oddsintel.app/picks'>Live picks</a>"
     )
 

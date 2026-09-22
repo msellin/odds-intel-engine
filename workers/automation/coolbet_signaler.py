@@ -323,15 +323,38 @@ def _format_public_signal(b: dict) -> str:
         f"⚽ <b>{b['home_team']} vs {b['away_team']}</b>\n"
         f"{league_str} · {ko_str}\n\n"
         f"✅ Pick: <b>{pick}</b> @ <b>{odds:.2f}</b>{bk_str}\n"
-        # MODEL-EDGE-LABEL (2026-09-15). This said "Edge", and the sharp-anchored
-        # publisher says "Edge vs sharp line" — two DIFFERENT quantities under one
-        # word, arriving in the same channel 90 minutes apart on 2026-09-15.
-        # This one is a PROBABILITY difference (calibrated model probability minus
-        # the implied price); the sharp rule's is an expected ROI. They are not
-        # comparable: a 16% probability edge at odds of 4.00 is ~+64% expected
-        # return, not 16%. The pre-registration warns in terms that the two must
-        # never collide in a reader's head, and unlabelled they did.
-        f"📈 Model edge: <b>+{edge_pct:.1f}%</b>\n\n"
+        # TELEGRAM-EDGE-LABEL (2026-09-22, owner-approved): the model arm
+        # publishes NO edge number at all, and no fair price either.
+        #
+        # It used to print "Model edge: +X%", where X is a PROBABILITY
+        # difference (calibrated prob minus implied price) — percentage points
+        # rendered as a percent, which a reader takes as expected return. At
+        # odds of 4.00 a 16pp edge is ~+64% expected return, so the label
+        # understated the model's own claim ~3x while looking conservative.
+        #
+        # The agreed replacement was a fair price, 1/(k x calibrated_prob).
+        # IT IS NOT SHIPPED, and the reason is the point of this comment:
+        #
+        #   * the k=0.884 in the ticket is stale — it was measured across
+        #     2026-05-04..09-05, and ENSEMBLE-RECALIBRATION landed 2026-09-03
+        #     INSIDE that window (ANALYSIS_GOTCHAS #39). Using it would
+        #     double-correct.
+        #   * re-measured on post-recalibration data only (2026-09-03 onward,
+        #     n=154): predicted 0.4286 vs actual 0.3052, i.e. **+12.3pp
+        #     overconfident, se 3.7pp**. Concentrated in bot_v10_all and
+        #     arriving as a STEP CHANGE in the week of 09-07 (-3.4pp -> +24.5pp),
+        #     not a drift.
+        #
+        # A "fair price" is a claim about our probabilities. Publishing one off
+        # a probability that is 12pp hot would state, to readers, that a bet has
+        # value when our own realised win rate says it does not — a worse error
+        # than the mislabelled percentage it replaces. So the number goes, and
+        # nothing takes its place until calibration is re-established.
+        #
+        # The pick and the price are still published; those are facts.
+        # The SHARP arm (publish_picks_forward_test) does publish a break-even
+        # price, because it is derived from the sharp line and does not depend
+        # on our calibration at all.
         f"<a href='https://oddsintel.app/picks'>Live picks</a> · "
         f"<a href='https://oddsintel.app/performance'>Track record</a>"
     )
