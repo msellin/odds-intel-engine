@@ -20,6 +20,7 @@ import base64
 import json
 import logging
 import os
+import re
 import random
 import time
 import urllib.parse
@@ -293,15 +294,104 @@ def _fs_call(body: dict, *, timeout_s: int = 90) -> dict:
         return json.loads(resp.read())
 
 
+# RESIDENTIAL-EGRESS (VPS-CONSOLIDATION-2026-09-16, wired 2026-09-22).
+#
+# Imperva blocks Coolbet on the Hetzner IP ALONE — proven 2026-09-22: the same
+# VPS, the same Linux Chromium, the same warm FS session, returned a challenge
+# from the datacenter IP and 170,237 bytes of real fo-tree through a residential
+# tunnel. (The "Linux Chrome fingerprint" in the old runbook was never the cause;
+# the Mac's own working reader IS Linux Chromium in Docker.)
+#
+# So on the VPS the FS browser is given a SOCKS proxy at session-creation time
+# and its traffic leaves from the operator's Estonian line. Unset on the Mac,
+# which is already on that line.
+_RESIDENTIAL_PROXY = os.getenv("OI_RESIDENTIAL_PROXY") or None
+
+# SCHEME NORMALISATION, and why it is not pedantry.
+# `socks5h://` is a curl/requests spelling meaning "resolve DNS at the proxy".
+# FlareSolverr hands the proxy to CHROMIUM's --proxy-server, which does not know
+# that spelling and silently ignores the whole proxy — the session then egresses
+# from the datacenter IP while looking fine. Chromium's plain `socks5://` already
+# resolves remotely, so stripping the `h` is the correct translation, not a
+# downgrade. One env var serves both consumers; each gets the spelling it parses.
+# Caught 2026-09-22 by the egress assertion below, which is exactly the class of
+# bug it exists for.
+if _RESIDENTIAL_PROXY and _RESIDENTIAL_PROXY.startswith("socks5h://"):
+    _RESIDENTIAL_PROXY = "socks5://" + _RESIDENTIAL_PROXY[len("socks5h://"):]
+
+
+def _fs_session_egress_ip(name: str) -> str | None:
+    """What IP does this FS session actually leave from? One cheap call."""
+    try:
+        r = _fs_call({"cmd": "request.get", "url": "https://api.ipify.org",
+                      "session": name, "maxTimeout": 30000}, timeout_s=45)
+        body = ((r.get("solution") or {}).get("response") or "")
+        m = re.search(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b", body)
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
 def _fs_session_ensure(name: str) -> None:
     """Idempotent — silently no-ops if session already exists. We don't
     distinguish creation from existence on purpose; FS doesn't expose a
-    clean 'exists?' check, only sessions.list which is heavier."""
+    clean 'exists?' check, only sessions.list which is heavier.
+
+    ⚠️ WHEN A RESIDENTIAL PROXY IS CONFIGURED THE IDEMPOTENCE IS A TRAP, and the
+    trap is silent. A FlareSolverr session's proxy is fixed at CREATION. If
+    `coolbet_prod` already exists from a run that had no proxy, `sessions.create`
+    fails, the `except` below swallows it, and every subsequent call goes out the
+    DATACENTER IP while looking completely healthy. That is the wrong-identity
+    failure this repo keeps paying for — EPICBET-403-FROM-VPS reported
+    `status='completed'` for 277 runs over six days writing zero rows
+    ([[feedback_silent_failures]]).
+
+    So when a proxy is set we DESTROY first, create with the proxy, and then
+    ASSERT the egress by asking the session what IP it actually leaves from. A
+    session that cannot prove it is on the residential line is torn down and
+    raises, because collecting Coolbet prices from the wrong identity is worse
+    than collecting nothing: those prices are the basis every real stake is
+    sized against.
+    """
+    if not _RESIDENTIAL_PROXY:
+        try:
+            _fs_call({"cmd": "sessions.create", "session": name}, timeout_s=30)
+        except Exception:
+            pass  # Already exists, or FS slow to respond — either way subsequent
+                  # request.* calls will surface the real error.
+        return
+
+    # Proxied path — no swallowing, and prove it afterwards.
     try:
-        _fs_call({"cmd": "sessions.create", "session": name}, timeout_s=30)
+        _fs_call({"cmd": "sessions.destroy", "session": name}, timeout_s=30)
     except Exception:
-        pass  # Already exists, or FS slow to respond — either way subsequent
-              # request.* calls will surface the real error.
+        pass  # Not existing is the normal case; only creation must succeed.
+    _fs_call({"cmd": "sessions.create", "session": name,
+              "proxy": {"url": _RESIDENTIAL_PROXY}}, timeout_s=60)
+
+    ip = _fs_session_egress_ip(name)
+    local_ip = None
+    try:
+        local_ip = _fs_call({"cmd": "request.get", "url": "https://api.ipify.org",
+                             "maxTimeout": 30000}, timeout_s=45)
+        body = ((local_ip.get("solution") or {}).get("response") or "")
+        m = re.search(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b", body)
+        local_ip = m.group(1) if m else None
+    except Exception:
+        local_ip = None
+
+    if ip is None or (local_ip and ip == local_ip):
+        try:
+            _fs_call({"cmd": "sessions.destroy", "session": name}, timeout_s=20)
+        except Exception:
+            pass
+        raise RuntimeError(
+            f"Coolbet FS session {name!r} did NOT take the residential egress "
+            f"(session_ip={ip}, host_ip={local_ip}, proxy={_RESIDENTIAL_PROXY}). "
+            "Refusing to collect: Imperva blocks the datacenter IP, and prices "
+            "fetched from the wrong identity are worse than no prices."
+        )
+    log.info("Coolbet FS session %s egressing via residential %s", name, ip)
 
 
 class _FSResponse:

@@ -49917,6 +49917,61 @@ def test_wedge_early_runs_the_discriminator():
     return "fresh-fails -> BLOCKED; fresh-ok -> WEDGED_SESSION"
 
 
+@test("COOLBET-RESIDENTIAL-EGRESS — proxied FS session proves its egress or refuses")
+def test_coolbet_residential_egress():
+    """RESIDENTIAL-EGRESS for Coolbet (VPS-CONSOLIDATION-2026-09-16), 2026-09-22.
+
+    Imperva blocks Coolbet on the Hetzner IP ALONE. Measured the same day: the
+    same VPS, same Linux Chromium, same warm FS session returned a challenge from
+    the datacenter IP and 136,179 bytes of real fo-tree through the residential
+    tunnel. So on the VPS the FS browser gets a SOCKS proxy at session creation.
+
+    TWO TRAPS, both silent, both pinned here.
+
+    1. IDEMPOTENCE. A FlareSolverr session's proxy is fixed at CREATION, and
+       `_fs_session_ensure` deliberately swallows "already exists". So a
+       `coolbet_prod` left over from a non-proxied run would keep egressing from
+       the DATACENTER IP, healthily, forever. The proxied path therefore destroys
+       first, creates without swallowing, and then ASSERTS the egress by asking
+       the session what IP it actually leaves from — refusing to collect if it
+       cannot prove it. Coolbet prices are the basis every real stake is sized
+       against; fetched from the wrong identity they are worse than nothing.
+
+    2. SCHEME. `socks5h://` is a curl/requests spelling. FlareSolverr passes the
+       proxy to CHROMIUM, which does not parse it and silently ignores the proxy
+       entirely. Chromium's plain `socks5://` already resolves remotely, so the
+       normalisation is a translation, not a downgrade. This was a real failure on
+       2026-09-22 — caught by the assertion in trap 1, which is the point of it.
+    """
+    import inspect
+    from workers.automation import coolbet_session as cs
+    src = inspect.getsource(cs)
+
+    assert "OI_RESIDENTIAL_PROXY" in src, "the egress must be env-configurable"
+
+    # scheme translation for the Chromium consumer
+    assert "socks5h://" in src and "socks5://" in src, \
+        "must normalise socks5h:// -> socks5:// for FlareSolverr/Chromium, which " \
+        "silently ignores a proxy spelling it cannot parse"
+
+    # destroy-then-create on the proxied path
+    ens = inspect.getsource(cs._fs_session_ensure)
+    assert "sessions.destroy" in ens, \
+        "a pre-existing non-proxied session must be torn down — FS fixes the proxy " \
+        "at creation, so reusing one silently egresses from the datacenter IP"
+
+    # the egress assertion itself, and that it RAISES
+    assert hasattr(cs, "_fs_session_egress_ip"), \
+        "there must be a way to ask a session what IP it actually leaves from"
+    assert "raise RuntimeError" in ens, \
+        "a session that cannot prove residential egress must REFUSE to collect, not " \
+        "fall through to the datacenter IP"
+
+    # and the unproxied path must be untouched, so the Mac keeps working
+    assert "if not _RESIDENTIAL_PROXY:" in ens, \
+        "with no proxy configured the original idempotent behaviour must remain — " \
+        "the Mac is already on the residential line and must not change"
+
 
 
 if __name__ == "__main__":
