@@ -2223,6 +2223,36 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
                       f"market={bet_data.get('market')} sel={bet_data.get('selection')}[/dim]")
         return None
 
+    # EDGE-IS-DERIVED-NOT-STORED (2026-09-22, queue #031). Edge is not a fact
+    # alongside the price and the probability — it IS `calibrated_prob - 1/odds`.
+    # Storing it as an independent third number is what let the trio disagree, so
+    # when the pick carries a calibrated probability we DERIVE the stored value
+    # from the same two numbers we are about to write in the same row, rather
+    # than trusting whatever the caller computed earlier against a possibly
+    # different price. All three then come from one computation, atomically.
+    #
+    # A caller whose own edge disagrees by more than rounding is a real signal —
+    # it means it priced against something other than `odds`, which is the Nancy
+    # failure (MIRROR-PRICES-AT-ITS-OWN-BOOKS) in a new place. We log it loudly
+    # instead of silently normalising, but we still write the derivation: the
+    # row must be internally consistent whatever the caller thought.
+    _edge = bet_data["edge"]
+    _cal = bet_data.get("calibrated_prob")
+    try:
+        _odds_f = float(bet_data["odds"])
+        if _cal is not None and _odds_f > 1.0:
+            _derived = float(_cal) - 1.0 / _odds_f
+            if _edge is not None and abs(float(_edge) - _derived) > 0.001:
+                console.print(
+                    f"[yellow]EDGE-DERIVED: caller edge {float(_edge):.4f} disagrees with "
+                    f"cal_prob {float(_cal):.4f} - 1/{_odds_f:.4f} = {_derived:.4f} "
+                    f"(bot={bot_id[:8]} {bet_data.get('market')}/{bet_data.get('selection')}) "
+                    f"— storing the derivation[/yellow]"
+                )
+            _edge = _derived
+    except (TypeError, ValueError, ZeroDivisionError):
+        pass  # fall back to the caller's edge; never break a write on this
+
     row = {
         "bot_id": bot_id,
         "match_id": match_id,
@@ -2232,9 +2262,9 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
         "pick_time": bet_data.get("placed_at", datetime.now().isoformat()),
         "stake": bet_data["stake"],
         "model_probability": bet_data["model_prob"],
-        "edge_percent": bet_data["edge"],
+        "edge_percent": _edge,
         "result": "pending",
-        "reasoning": bet_data.get("reasoning") or f"Edge: {bet_data['edge']:.1%}, Model: {bet_data['model_prob']:.1%}, Implied: {bet_data['implied_prob']:.1%}",
+        "reasoning": bet_data.get("reasoning") or f"Edge: {_edge:.1%}, Model: {bet_data['model_prob']:.1%}, Implied: {bet_data['implied_prob']:.1%}",
         "model_version": bet_data.get("model_version", _active_model_version()),
     }
 

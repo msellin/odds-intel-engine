@@ -112,7 +112,9 @@ def load_prekickoff_candidates() -> list[dict]:
 
     Returns rows sorted by KO ascending so the urgent picks render first."""
     from workers.api_clients.db import execute_query
-    from workers.automation.coolbet_placer import _min_edge_for, clears_edge_floor, _MIN_EDGE
+    from workers.automation.coolbet_placer import (
+        _min_edge_for, clears_edge_floor, model_edge, _MIN_EDGE,
+    )
 
     allowed = _allowed_maturity_labels()
     rows = execute_query(
@@ -124,6 +126,10 @@ def load_prekickoff_candidates() -> list[dict]:
                sb.selection,
                sb.odds_at_pick,
                sb.edge_percent,
+               -- EDGE-IS-DERIVED-NOT-STORED (2026-09-22): the gate below needs
+               -- the probability so it can DERIVE the edge instead of trusting
+               -- the stored column. See `model_edge`.
+               sb.calibrated_prob,
                sb.stake,
                sb.kelly_fraction,
                b.name            AS bot_name,
@@ -179,6 +185,16 @@ def load_prekickoff_candidates() -> list[dict]:
         # The second needs the pooled floor itself decided — see
         # POOLED-1X2-FLOOR-RETIRE; `min_edge_for_pick` still falls back to the
         # pooled 13% for home-favs, by design, until that is owner-approved.
+        # EDGE-IS-DERIVED-NOT-STORED (2026-09-22, queue #031): gate and render
+        # on the edge derived from THIS row's price and probability. Until
+        # migration 367 `simulated_bets.edge_percent` was numeric(5,2), so the
+        # stored value was rounded up to one whole percentage point and this
+        # catch-net urged the operator to place picks inside the half-point band
+        # below their own floor. Same normalise-then-gate shape as the signaler,
+        # so the two cannot answer differently.
+        d["edge_percent"] = model_edge(d.get("odds_at_pick"),
+                                       d.get("calibrated_prob"),
+                                       d.get("edge_percent"))
         if not clears_edge_floor(d.get("market"), d.get("selection"),
                                  d.get("odds_at_pick"), d.get("edge_percent")):
             continue
