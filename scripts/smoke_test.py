@@ -32120,8 +32120,24 @@ def test_landing_perf_roi_basis():
     # 4. The headline must ship with an interval and a stated basis.
     for key in ("roi_ci_low_pct", "roi_ci_high_pct", "roi_se_pct", "price_basis"):
         assert key in api_src, f"track-record meta must publish {key}"
-    assert "roi_ci_low_pct" in land_src and "95% CI" in land_src, (
-        "the landing hero must render the confidence interval next to the ROI"
+    # PERF-CLAIM-NOTHING (2026-09-22). This required the landing hero to render
+    # a 95% CI beside its ROI. The hero no longer publishes an ROI at all — the
+    # owner's call after alpha = 0.0000 was measured on both markets — so the
+    # original requirement is satisfied in the strongest possible way, by there
+    # being no point estimate to qualify.
+    #
+    # The INTENT survives and is what is asserted now: the landing page may
+    # never carry a bare ROI headline. If one is ever restored it must come with
+    # its interval, because a point estimate on a few hundred high-variance bets
+    # is the number readers should distrust most. The API keeps publishing the
+    # CI fields either way (asserted above) — /performance and the public API
+    # still serve them as ledger data.
+    _hero = land_src[land_src.index("<h1"):land_src.index("</h1>")]
+    if "% ROI" in _hero or "roi.toFixed" in _hero:
+        assert "roi_ci_low_pct" in land_src and "95% CI" in land_src, (
+            "the landing hero publishes an ROI point estimate again without its "
+            "confidence interval. Either render the CI beside it or keep the "
+            "headline a fact (the pick count) rather than a claim"
     )
 
     # 5. No surviving raw-odds ROI arithmetic in the API.
@@ -49462,6 +49478,75 @@ def test_inplay_collector_single_writer():
         assert "ONE" in mac.read_text() or "VPS" in mac.read_text(), \
             "the Mac plist still exists — it must carry a note that the VPS unit is now the " \
             "writer, or someone reinstalls it and silently doubles every row"
+
+
+@test("PUBLIC-SURFACES-CLAIM-NO-EDGE — no page may headline a performance claim we cannot support")
+def test_public_surfaces_claim_no_edge():
+    """PERF-CLAIM-NOTHING (2026-09-22, owner: "we should just fix it and claim
+    nothing").
+
+    The landing page and /performance both led with an ROI figure under
+    "verified football track record". The figures were correctly computed. The
+    CLAIM they carried is what the evidence does not support:
+
+      * residual_test.py (1x2) and residual_test_ou.py (O/U), both 2026-09-16:
+        alpha = 0.0000 on every arm and every line. Model AUC 0.5796 against the
+        market's 0.6011 — worse than the price it bets into — and residual AUC
+        0.4429, below chance.
+      * V10-HAS-NO-EDGE: "not a number to correct, it is a number to retire."
+      * Measured against the market on the same bets 2026-09-22: +3.0pp over
+        implied probability, z = +1.17, n = 354 — not distinguishable from zero.
+
+    THE LEDGER STAYS. Removing the numbers would defeat the product, which is
+    auditability; what goes is the assertion wrapped around them. So this test
+    does NOT demand the absence of ROI anywhere — /performance still shows it as
+    a record, and the public API still serves it with its CI. It demands that
+    the two hero surfaces do not SELL it.
+
+    Pinned as a property, not a string match on today's copy, so a rewrite of the
+    marketing language cannot quietly restore the claim.
+    """
+    import pathlib as _p, re as _re
+
+    web = _p.Path("/Users/margussellin/www/odds-intel-web/src")
+    if not web.exists():
+        return "odds-intel-web not checked out beside the engine — skipped"
+
+    for rel in ("app/page.tsx", "components/performance-hero.tsx"):
+        src = (web / rel).read_text(encoding="utf-8")
+        # Strip comments properly. A line-prefix filter is not enough here:
+        # JSX block comments open with `{/*` and their CONTINUATION lines are
+        # plain prose, so the notes explaining why this claim was removed would
+        # themselves trip the check — the same "a checker that cannot tell code
+        # from the note explaining it" problem as POSTGREST-NO-OVER-CAP-RANGE.
+        code = _re.sub(r"\{?/\*.*?\*/\}?", "", src, flags=_re.S)
+        code = "\n".join(l for l in code.split("\n")
+                         if not l.strip().startswith("//"))
+
+        assert "verified track record" not in code.lower(), (
+            f"{rel} calls it a 'verified track record'. Verified describes the "
+            f"LOGGING (every pick timestamped before kickoff, settled against "
+            f"official scores) — true and worth saying. Applied to the record it "
+            f"reads as a claim about returns, which alpha = 0.0000 does not support")
+
+        h1 = code[code.index("<h1"):code.index("</h1>")] if "<h1" in code else ""
+        assert "% ROI" not in h1, (
+            f"{rel}'s <h1> headlines an ROI figure again. The headline is the "
+            f"claim; put a fact there (the pick count) and leave ROI below as "
+            f"ledger data. If this is a deliberate reversal, it needs new "
+            f"evidence of edge — not new copy")
+
+    # The disclaimer must actually be present, not merely the claim absent.
+    land = (web / "app/page.tsx").read_text(encoding="utf-8")
+    hero = (web / "components/performance-hero.tsx").read_text(encoding="utf-8")
+    assert "don&rsquo;t claim to beat the market" in land or "not claiming an edge" in land.lower(), (
+        "the landing page must SAY it is not claiming an edge. Silently dropping "
+        "the number leaves a reader to assume the old claim still stands")
+    assert "not claiming an edge" in hero.lower(), (
+        "/performance must say the same thing — a reader arriving straight there "
+        "never sees the landing page's statement")
+    return "neither hero claims an edge; both say so explicitly; ledger intact"
+
 
 
 
