@@ -32,6 +32,20 @@ two different yardsticks, and **their percentages are NOT comparable**.
 | Fires… | when our model disagrees a LOT with the book | rarely — Coolbet ≈ Pinnacle, so beating it by 3%+ is uncommon |
 | Known failure | at 13% it still adverse-selects longshots → −21% OOS (the trigger bot) | over-strict floor (e.g. 13%) → never fires |
 
+**The model edge is a DERIVATION, never a stored fact** (EDGE-IS-DERIVED-NOT-STORED,
+2026-09-22). `cal_prob − 1/odds` is a function of the two numbers beside it, so any
+column holding it separately can drift from them — and did. `simulated_bets.edge_percent`
+was `numeric(5,2)`: two decimals on a number whose floors are themselves specified to two
+decimals, so Postgres rounded every write up to a whole percentage point and
+`stored >= floor` was true across the entire band `[floor − 0.005, floor)`. **114 picks
+all time (26 in 90d, 14 in 30d) cleared a floor their real edge missed; 0 were wrongly
+rejected** — it could only ever err in our favour on paper and against us in reality.
+Migration 367 widened the column, `store_bet` now derives the value it writes from the
+same price and probability in the same row, and every gate re-derives on read through
+`coolbet_placer.model_edge`. **Never gate, publish or compare on a stored model edge;
+derive it.** (The SHARP edge is a different quantity — multiplicative — and must not be
+routed through that helper.)
+
 **A 3% sharp edge and a 13% model edge filter to roughly the same strictness** — they
 just measure against different rulers. Putting a model floor on a sharp edge (or vice
 versa) is the classic mistake; the `Anchor` column in the bot tables below says which

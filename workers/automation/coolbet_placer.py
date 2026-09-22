@@ -219,6 +219,52 @@ def min_edge_for_pick(market: str | None, selection: str | None,
         return _MODEL_1X2_HOME_FLOOR
     return _min_edge_for(market)
 
+def model_edge(odds, calibrated_prob, stored_edge=None):
+    """THE model edge for one pick: `calibrated_prob - 1/odds`. Every gate that
+    loads a model-anchored pick out of `simulated_bets` MUST normalise the row
+    through this before comparing anything to a floor.
+
+    EDGE-IS-DERIVED-NOT-STORED (2026-09-22, queue #031). Edge is a DERIVATION,
+    not a third independent fact, and `simulated_bets.edge_percent` was declared
+    `numeric(5,2)` — two decimals, i.e. a granularity of one whole percentage
+    POINT. Postgres rounded every write to it silently, so 80 pct of stored
+    edges disagreed with `cal_prob - 1/odds`, always by up to +0.005 and always
+    in the flattering direction (round-half-up cannot push a clearing pick under
+    its floor). Because every per-market floor is itself specified to exactly two
+    decimals (0.13 / 0.10 / 0.08 / 0.05), `stored >= floor` was true for the
+    whole band `[floor - 0.005, floor)`: measured 114 picks all time, 26 in 90d,
+    14 in 30d cleared a floor their real edge did not. The readers that acted on
+    that were the Telegram signaler (the operator's manual-placement prompt AND
+    the public customer channel) and the pre-kickoff catch-net.
+
+    Migration 367 widened the column, which fixes FUTURE writes. This function is
+    what makes the gates right for the ~3,700 rows already written at two
+    decimals — and, more importantly, what stops the class of bug returning: a
+    gate that derives cannot be fooled by a stored number drifting from the price
+    beside it, whatever caused the drift (precision here, a stale price in
+    MIRROR-PRICES-AT-ITS-OWN-BOOKS, a foreign book's quote before that).
+
+    NOT for sharp-anchored picks. `shadow_bets.edge_percent` on the sharp bots is
+    a MULTIPLICATIVE return (`p_sharp * odds - 1`), a different quantity with a
+    different floor — see SYSTEM_MAP section 1 and migration 345. Those rows must
+    never be routed through here.
+
+    Falls back to `stored_edge` when the probability or the price is missing
+    (in-play rows carry no `calibrated_prob`), so a caller can normalise
+    unconditionally.
+    """
+    if calibrated_prob is None or odds is None:
+        return stored_edge
+    try:
+        o = float(odds)
+        p = float(calibrated_prob)
+    except (TypeError, ValueError):
+        return stored_edge
+    if o <= 1.0:
+        return stored_edge
+    return p - 1.0 / o
+
+
 def clears_edge_floor(market, selection, odds, edge) -> bool:
     """THE edge-floor predicate. Every gate that asks "does this pick have
     enough edge?" MUST call this — do not re-implement the comparison.
@@ -602,7 +648,15 @@ def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
     # SIGNAL-PLACER-1X2-ALIGN-2026-09-10: selection-aware floor via the shared
     # min_edge_for_pick — 1x2 home-underdogs (home, odds>=2.80) at 10% to match
     # the real-money placer. Same utility the Telegram signaler uses.
+    # EDGE-IS-DERIVED-NOT-STORED (2026-09-22): re-derive the edge from the price
+    # and the probability on the SAME row before gating. The SQL above pre-filters
+    # on the stored `edge_percent`, which is the necessary condition only (it is
+    # rounded to two decimals on every row written before migration 367, so it can
+    # only over-admit). See `model_edge` for why this is the gate's input.
     before = len(results)
+    for r in results:
+        r["edge_percent"] = model_edge(r.get("model_odds"), r.get("calibrated_prob"),
+                                       r.get("edge_percent"))
     results = [r for r in results
                if clears_edge_floor(r.get("market"), r.get("selection"),
                                     r.get("model_odds"), r.get("edge_percent"))]

@@ -43689,10 +43689,21 @@ def test_public_picks_publish_a_price():
         "the sharp arm must publish its break-even price — removing the "
         "percentage without replacing it leaves the reader nothing to act on, "
         "and unlike the model arm this one has a sound basis")
-    assert "1.0 / c['p_sharp']" in pub or "1 / c['p_sharp']" in pub, (
-        "the break-even price must come from p_sharp (the sharp line), not from "
-        "our own calibrated probability — the whole reason this arm can publish "
-        "a price and the model arm cannot")
+    # Assert the PROPERTY, not the expression. The first version of this pinned
+    # the literal `1.0 / c['p_sharp']`, and failed the moment that was extracted
+    # into `_break_even()` to stop a missing key taking the public feed down —
+    # a test breaking on a strictly safer refactor is the RELIABILITY_LEDGER §9
+    # shape in miniature.
+    assert "def _break_even(" in pub, "the break-even helper is gone"
+    be = pub[pub.index("def _break_even("):]
+    be = be[:be.index("\ndef ", 1)] if "\ndef " in be[1:] else be
+    assert "p_sharp" in be, (
+        "the break-even price must come from p_sharp (the sharp line). That is "
+        "the whole reason this arm can publish a price while the model arm "
+        "cannot — our calibrated probability is currently +12.3pp hot")
+    assert "calibrated_prob" not in be, (
+        "the break-even price must NOT be derived from our own calibrated "
+        "probability, which cannot currently support a published fair price")
 
     # The model arm must NOT grow a fair price off calibrated_prob while the
     # calibration is unresolved, and must never reinstate the stale shrink.
@@ -45229,9 +45240,16 @@ def test_placement_gate_all_executors():
     assert "assert_run_may_place()" in inpl, "place_all_inplay_bets must call the run-level gate when execute"
     assert inpl.index("assert_run_may_place()") < inpl.index("CoolbetSession("), \
         "in-play API placer gate must run BEFORE a session is built"
-    ci = _engine_path("workers/automation/coolbet_inplay.py").read_text(encoding="utf-8")
-    assert "assert_run_may_place()" in ci and ci.index("assert_run_may_place()") < ci.index("_place_bet_api("), \
-        "coolbet_inplay execute mode must call the gate BEFORE _place_bet_api"
+    # COOLBET-INPLAY-ORPHAN (2026-09-21): `coolbet_inplay.py` is DELETED. It
+    # carried a mode-C execute branch with zero callers, so the gate in front of
+    # it could only ever be asserted correct, never observed working — deleting
+    # the money path beats gating one nothing exercises. The absence is pinned by
+    # COOLBET-INPLAY-CAPTURE-DELETED; asserted here too so this enumeration of
+    # money paths cannot quietly stop covering one that came back.
+    assert not _engine_path("workers/automation/coolbet_inplay.py").exists(), (
+        "coolbet_inplay.py is back. If in-play placement is genuinely being "
+        "revived, it needs a gate assertion here AND something that actually "
+        "runs it — an unexercised execute path is how a gate goes untested")
 
 
 @test("RESIDUAL-HARNESS-VERIFIED — the instrument every alpha comes from must find a planted edge")
@@ -49103,6 +49121,154 @@ def test_residential_egress():
     assert "--proxy" in probe and "rdns=True" in probe, \
         "egress_probe must support --proxy with resolve-at-proxy, so 'does this job " \
         "move?' stays a measurement rather than an argument"
+
+
+
+@test("EDGE-IS-DERIVED-NOT-STORED — gates derive cal_prob-1/odds, never the stored edge_percent")
+def _():
+    """PRIORITY_QUEUE #031. `simulated_bets.edge_percent` was declared
+    numeric(5,2) — two decimals, i.e. one whole percentage POINT of granularity
+    on a number that IS `calibrated_prob - 1/odds`. Postgres rounded every write
+    to it silently, so 80% of stored edges disagreed with the price and
+    probability sitting beside them, always by up to +0.005 and always upward.
+
+    Every per-market floor is itself specified to exactly two decimals (1x2
+    pooled 0.13, 1x2 home-underdog 0.10, o/u 0.08, AH/DNB 0.05), so
+    `stored >= floor` was true across the whole band [floor-0.005, floor):
+    114 picks all time, 26 in 90d, 14 in 30d cleared a floor their real edge did
+    not, and 0 were wrongly rejected. The ticket's own worked example is pinned
+    below — Clermont over 2.5 at 2.49 with cal_prob 0.4782 is a 0.0766 edge
+    stored as 0.08, which is the o/u floor exactly.
+
+    That band was not cosmetic: the readers acting on it were the Telegram
+    signaler (the operator's manual-placement prompt AND the public customer
+    channel) and the pre-kickoff catch-net.
+
+    Three things must hold together, because any one alone leaves the bug live:
+      1. migration 367 widens the column, so FUTURE writes survive;
+      2. `store_bet` derives the value it stores from the same price and
+         probability it is writing, so the trio cannot be built inconsistent;
+      3. every gate re-derives on read, which is what makes the ~3,700 rows
+         already written at two decimals gate correctly — and what stops the
+         class returning, whatever the next cause of drift is.
+    """
+    from decimal import Decimal
+    from datetime import datetime, timezone, timedelta
+    from workers.automation.coolbet_placer import model_edge, clears_edge_floor
+
+    # ── 1. the derivation itself, on the ticket's own worked example ─────────
+    e = model_edge(2.49, 0.4782, 0.08)
+    assert abs(e - 0.0765936) < 1e-6, f"model_edge wrong: {e}"
+    assert clears_edge_floor("o/u", "over", 2.49, Decimal("0.08")), (
+        "the STORED 0.08 clears the o/u floor — that is the bug being guarded, "
+        "so if this ever stops being true the check below proves nothing")
+    assert not clears_edge_floor("o/u", "over", 2.49, e), (
+        "the DERIVED 0.0766 edge must NOT clear the 0.08 o/u floor")
+    # falls back rather than inventing a number when the row cannot be derived
+    assert model_edge(None, None, 0.08) == 0.08
+    assert model_edge(2.0, None, 0.07) == 0.07
+
+    # ── 2. the signaler actually gates on the derivation ────────────────────
+    # Monkeypatched because this is THE money + publication path: a source
+    # assertion would pass on a call site that computes the derivation and then
+    # forgets to use it.
+    import workers.automation.coolbet_signaler as sig
+    ko = datetime.now(timezone.utc) + timedelta(hours=5)
+
+    def _row(cal, odds, stored):
+        return {"simulated_bet_id": "x", "match_id": "m", "market": "o/u",
+                "selection": "over", "odds_at_pick": Decimal(str(odds)),
+                "edge_percent": Decimal(str(stored)),
+                "calibrated_prob": Decimal(str(cal)),
+                "stake": 10, "model_probability": Decimal(str(cal)),
+                "kelly_fraction": Decimal("0.05"), "bot_id": "b",
+                "recommended_bookmaker": "Coolbet", "bot_name": "t",
+                "maturity": "calibrated", "match_date": ko,
+                "coolbet_match_id": None, "home_team": "H", "away_team": "A",
+                "league": "L", "country": "C", "bot_count": 1,
+                "already_placed": False, "group_has_calibrated": True}
+
+    fake = [
+        _row(0.4782, 2.49, 0.08),   # derived 0.0766 — BELOW the 0.08 floor
+        _row(0.4900, 2.49, 0.09),   # derived 0.0884 — genuinely clears
+    ]
+    orig = sig.execute_query
+    try:
+        sig.execute_query = lambda *a, **k: fake
+        out = sig.load_signal_candidates()
+    finally:
+        sig.execute_query = orig
+
+    kept = [float(o["calibrated_prob"]) for o in out]
+    assert kept == [0.49], (
+        "the signaler must drop the pick whose DERIVED edge misses the floor "
+        f"and keep the one that clears it — kept cal_probs {kept}")
+    assert abs(float(out[0]["edge_percent"]) - 0.0883936) < 1e-5, (
+        "the surviving candidate must carry the DERIVED edge, not the stored "
+        f"0.09 — _format_signal renders this key: {out[0]['edge_percent']}")
+
+    # ── 3. the other two readers of the same column ─────────────────────────
+    for rel, why in (
+        ("workers/jobs/coolbet_prekickoff_alert.py", "the pre-kickoff catch-net"),
+        ("workers/automation/coolbet_placer.py", "the placer's singles loader"),
+    ):
+        src = _engine_path(rel).read_text(encoding="utf-8")
+        assert "model_edge(" in src, (
+            f"{why} ({rel}) must normalise through model_edge before gating — "
+            "it reads simulated_bets.edge_percent, which is rounded on every "
+            "row written before migration 367")
+
+    pk = _engine_path("workers/jobs/coolbet_prekickoff_alert.py").read_text(encoding="utf-8")
+    assert "sb.calibrated_prob" in pk, (
+        "the catch-net cannot derive an edge it never selected")
+
+    # store_bet must build the trio from one computation
+    sc = _engine_path("workers/api_clients/supabase_client.py").read_text(encoding="utf-8")
+    assert "EDGE-IS-DERIVED-NOT-STORED" in sc and "EDGE-DERIVED:" in sc, (
+        "store_bet must derive edge_percent from the calibrated_prob and odds "
+        "it is writing in the same row, and log loudly when the caller's own "
+        "edge disagrees (that disagreement is the Nancy stale-price failure)")
+
+    # ── 4. the migration, and the invariant it enables ──────────────────────
+    mig = _engine_path("supabase/migrations/367_simulated_bets_edge_precision.sql")
+    assert mig.exists(), "migration 367 is missing"
+    mtext = mig.read_text(encoding="utf-8")
+    assert "ALTER COLUMN edge_percent TYPE numeric(6, 4)" in mtext, (
+        "migration 367 must widen simulated_bets.edge_percent past two decimals")
+    assert "\x25" not in mtext, (
+        "SQL-PERCENT-GUARD: a literal percent sign in this repo's SQL is read as "
+        "a psycopg2 placeholder and dies with an opaque IndexError")
+    assert "s.calibrated_prob - 1.0 / s.odds_at_pick" in mtext, (
+        "picks_public_all's model arm must DERIVE the edge it publishes — the "
+        "stored column is rounded on every historical row and the /picks page "
+        "is the customer-facing number")
+
+    from workers.api_clients.db import execute_query
+    scale = execute_query(
+        """SELECT numeric_scale AS s FROM information_schema.columns
+            WHERE table_name = 'simulated_bets' AND column_name = 'edge_percent'""",
+        [])[0]["s"]
+    if int(scale or 0) < 4:
+        # Pre-deploy: migrate.yml has not run yet. The source assertions above
+        # are the gate until it does; asserting the live scale here would fail
+        # the very push that ships the migration.
+        return f"gates derive; migration 367 pending (column still scale={scale})"
+
+    # Post-deploy this is a live invariant: anything written under the widened
+    # column must agree with its own price and probability.
+    bad = execute_query(
+        """SELECT count(*) AS n FROM simulated_bets
+            WHERE calibrated_prob IS NOT NULL AND odds_at_pick > 1
+              AND combo_legs IS NULL
+              AND pick_time > now() - interval '2 days'
+              AND abs(edge_percent - (calibrated_prob - 1.0 / odds_at_pick)) > 0.001""",
+        [])[0]["n"]
+    assert int(bad) == 0, (
+        f"{bad} pick(s) written in the last 2 days have a stored edge that "
+        "disagrees with calibrated_prob - 1/odds_at_pick. The column is wide "
+        "enough now, so this is a WRITER storing an edge it priced against "
+        "something other than odds_at_pick — the Nancy failure, not rounding")
+    return "gates derive; column numeric(6,4); no divergent write in 2d"
 
 
 

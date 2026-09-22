@@ -56,7 +56,7 @@ from datetime import datetime, timezone
 
 from workers.api_clients.db import execute_query, execute_write
 from workers.automation.coolbet_placer import (
-    clears_edge_floor, min_edge_for_pick, _MIN_EDGE,
+    clears_edge_floor, min_edge_for_pick, model_edge, _MIN_EDGE,
 )
 from workers.notify.telegram import (
     send_telegram, send_telegram_public, operator_pick_alerts_enabled,
@@ -184,6 +184,21 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
         # what let the signaler and placer disagree AGAIN — see
         # clears_edge_floor() for the Decimal-vs-float trap that silently
         # dropped every pick sitting exactly ON its floor.
+        # EDGE-IS-DERIVED-NOT-STORED (2026-09-22, queue #031): gate on the edge
+        # DERIVED from this row's own price and probability, never on the stored
+        # `edge_percent`. That column was `numeric(5,2)` until migration 367, so
+        # Postgres rounded every write to one whole percentage point and the
+        # comparison below admitted the entire `[floor - 0.005, floor)` band —
+        # 114 picks all time, 26 in 90d. This path is BOTH the operator's
+        # manual-placement prompt and the public customer channel, so a pick
+        # admitted here is money staked and a claim published. Rewriting
+        # `edge_percent` on the dict (rather than passing the derivation only to
+        # the gate) is deliberate: `_format_signal` and the sort below read the
+        # same key, and a message quoting a different edge from the one that let
+        # the pick through is the drift this whole ticket is about.
+        d["edge_percent"] = model_edge(d.get("odds_at_pick"),
+                                       d.get("calibrated_prob"),
+                                       d.get("edge_percent"))
         if not clears_edge_floor(d.get("market"), d.get("selection"),
                                  d.get("odds_at_pick"), d.get("edge_percent")):
             continue

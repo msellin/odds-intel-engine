@@ -954,3 +954,42 @@ The footprint risk had been raised in review that afternoon and answered with a
 manual pause switch. A switch nobody is watching is not a control. **Retrying is
 not diagnosis** (§8) — 144 blocked requests a day is very likely why 12.5h
 produced no decay.
+
+
+## 18. A column's declared precision is part of the gate
+
+**2026-09-22, EDGE-IS-DERIVED-NOT-STORED (queue #031).** `simulated_bets.edge_percent`
+was declared `numeric(5,2)`. The writer was never wrong: `store_bet` passed the exact
+edge the bot had gated on. Postgres rounded it to two decimals on the way in, silently,
+with no error, no warning and no log line — and two decimals on a probability difference
+is a granularity of one whole percentage POINT.
+
+**Why that became a money bug rather than a display nit:** every per-market edge floor is
+itself a two-decimal literal (1x2 0.13, 1x2 home-underdog 0.10, o/u 0.08, AH/DNB 0.05).
+Round-half-up plus a two-decimal floor makes `stored >= floor` true across the entire
+band `[floor − 0.005, floor)`. **114 picks all time (26 in 90d, 14 in 30d) cleared a floor
+their real edge missed. Zero were wrongly rejected** — the error could only ever run in
+the flattering direction, which is also why nothing ever complained. The consumers were
+the Telegram signaler (the operator's placement prompt AND the public customer channel)
+and the pre-kickoff catch-net.
+
+**It had already been noticed and mis-attributed.** `ANALYSIS_GOTCHAS` 48 recorded "it is
+also ROUNDED" months earlier without asking WHY, and the ticket that filed this diagnosed
+it as a price mismatch — "the stored edge corresponds to a price of 2.5113" — because a
+0.0766 edge stored as 0.0800 *does* imply a different price if you assume the arithmetic
+is right and the storage is lossless. The measurement that settled it took one query:
+99.7% of divergences were ≤ 0.005, which is the signature of `round(x, 2)` and of nothing
+else.
+
+**Tell:** a derived quantity that has its own column; a gate threshold and a stored value
+that share a decimal place count; a divergence distribution whose maximum is suspiciously
+close to half a unit in the last stored digit. Ask `information_schema.columns` for the
+scale before theorising about the writer.
+
+**Guard:** the column is `numeric(6,4)` (migration 367), `store_bet` derives the value it
+writes from the price and probability in the same row, and **every gate re-derives on
+read** (`coolbet_placer.model_edge`) — the last of which is the part that generalises:
+a gate that derives cannot be fooled by any future cause of drift, precision or otherwise.
+Smoke `EDGE-IS-DERIVED-NOT-STORED`. Historical rows were deliberately NOT backfilled:
+rewriting `edge_percent` would rewrite what each bot is recorded as having cleared, which
+is the evidence base for every floor we have set.

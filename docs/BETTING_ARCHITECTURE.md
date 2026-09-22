@@ -39,7 +39,7 @@ and ⑨ Betting Refresh; a 30-min `_shadow_run` mirrors it in shadow mode). `wor
 | Calibrate | Raw model prob → `cal_prob = calibrate_prob(...)` (isotonic/Platt), shrunk toward the **Pinnacle** sharp anchor. | `:3502-3512` |
 | Edge | **`edge = cal_prob − 1/odds`**, where `odds` = the best-accessible price above. | `:3524` |
 | Gate (generation) | Per-**bot**, per-**tier**, per-**market** `edge_thresholds` + tier bumps + Pinnacle-disagreement veto. **NOT the 13%/8% floor** — that's placement-side (§4). For 1x2 the floor is split **fav vs long** (`:3375`): a **home** pick with odds `< 2.0` uses `1x2_fav` (bot_v10 tier-1 = **8%**); **every draw, every away, and any home pick ≥ 2.0** uses `1x2_long` (**12%**) — a favourite–longshot-bias correction (more edge demanded on longshots, where the model calibrates worse). So there is no flat 10% floor; 9%-edge picks you see are home favourites clearing 8%. | `:3375-3384`, `:62-995` |
-| Write | `store_bet()` → **`INSERT INTO simulated_bets`**, under **every** bot in `BOTS_CONFIG` (each its own `bot_id`; `bot_v10_all` is the flagship). Columns: `odds_at_pick` (=best-accessible), `edge_percent`, `calibrated_prob`, `recommended_bookmaker`. | `:3821` → `supabase_client.py:2110` |
+| Write | `store_bet()` → **`INSERT INTO simulated_bets`**, under **every** bot in `BOTS_CONFIG` (each its own `bot_id`; `bot_v10_all` is the flagship). Columns: `odds_at_pick` (=best-accessible), `edge_percent`, `calibrated_prob`, `recommended_bookmaker`. **`edge_percent` is DERIVED at write from the `calibrated_prob` and `odds_at_pick` in that same row** (EDGE-IS-DERIVED-NOT-STORED, 2026-09-22) — it used to be whatever the caller had computed earlier, into a `numeric(5,2)` column that then rounded it to a whole percentage point. Rows written before that date are still rounded; derive rather than read them. | `:3821` → `supabase_client.py:2110` |
 
 **The two edges** (see SYSTEM_MAP §1): the **model edge** above (`cal_prob − 1/book_odds`) is the
 generation/placement ruler. The **sharp edge** (`P_sharp − 1/book_odds`, P_sharp = Shin-de-vigged
@@ -204,6 +204,14 @@ book, with one placement-of-record — adding a 3rd book is config, not a rewrit
                     ▼
    ONE placement-of-record  (real_bets, with `bookmaker` + a proof flag)        │  ← no phantom rows
 ```
+
+> **PARTLY SUPERSEDED 2026-09-11 (MIRROR-PRICES-AT-ITS-OWN-BOOKS) and 2026-09-22
+> (EDGE-IS-DERIVED-NOT-STORED).** The mirrors no longer inherit the pipeline's price
+> or its edge: `workers/automation/pick_generator.generate` prices each candidate at
+> the books we actually bet and DERIVES the edge from the winning price, and the
+> remaining readers of `simulated_bets.edge_percent` re-derive it through
+> `coolbet_placer.model_edge`. The paragraph below states the problem that motivated
+> the unified router and is kept for that reasoning, not as a description of today.
 
 **Gate on PER-PLACEABLE-BOOK edge, not best-accessible (owner, 2026-09-09).** Today the
 mirror jobs gate on `simulated_bets.edge_percent` = edge at the MAX odds across ALL accessible

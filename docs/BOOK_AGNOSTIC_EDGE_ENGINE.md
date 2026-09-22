@@ -41,6 +41,16 @@ model output but **different** odds, because they are different books.
 
 ## Why the current approach is wrong
 
+> **IMPLEMENTED — this section describes the state BEFORE 2026-09-11.** Both failures
+> below were fixed by MIRROR-PRICES-AT-ITS-OWN-BOOKS: the mirrors now inherit only
+> `calibrated_prob` from the pipeline and compute price, edge and gate at the books we
+> actually bet (`workers/automation/pick_generator.generate`), recording the winning
+> book on the row. The second failure — "we don't know what a pick was priced
+> against" — had a second half fixed on 2026-09-22 (EDGE-IS-DERIVED-NOT-STORED):
+> `simulated_bets.edge_percent` was `numeric(5,2)`, so even the reference edge was
+> rounded to a whole percentage point and 114 picks cleared floors they missed.
+> Kept for the reasoning; do NOT read it as current behaviour.
+
 Today the Coolbet bots (`bot_coolbet_1x2_model_v1`, `bot_coolbet_ou_model_v1`)
 **copy from `simulated_bets`** — the calibrated cohort's picks — and filter on
 `edge_percent >= floor`. That `edge_percent` was computed against the *pipeline's*

@@ -1640,6 +1640,35 @@ unsafe.** The engine computes `edge = cal_prob − 1/odds` in probability POINTS
 has a **p99 absolute error of 1.98** — not imprecise, nonsense. Every
 `breakEvenOdds`-style helper carries that reconstruction as a fallback.
 
+**WHY it was rounded, found 2026-09-22 (EDGE-IS-DERIVED-NOT-STORED, queue #031):
+the COLUMN was `numeric(5,2)`.** Two decimal places on a probability difference is
+a granularity of one whole percentage POINT, and Postgres applied it silently on
+every write — the writer was always correct, the column destroyed it. Measured over
+all 3,672 non-combo picks carrying a calibrated probability, **3,661 (99.7%) sat
+within 0.005 of `cal_prob − 1/odds`, i.e. exactly the residue of `round(x, 2)`**;
+the only rows outside that were 2 retired in-play bots that stored a model-prob edge.
+
+That was not merely an analysis nuisance. Every per-market edge floor is itself
+specified to two decimals (1x2 pooled 0.13, 1x2 home-underdog 0.10, o/u 0.08,
+AH/DNB 0.05), so `stored >= floor` held across the whole band `[floor − 0.005,
+floor)`: **114 picks all time — 26 in 90d, 14 in 30d — cleared a floor their real
+edge missed, and 0 were wrongly rejected.** Rounding half-up can only admit, never
+reject, so the error ran entirely in the flattering direction. The readers acting
+on it were the Telegram signaler (operator prompt AND public channel) and the
+pre-kickoff catch-net; the placer itself re-derives at the live price before
+staking, so it never staked one.
+
+**Fixed 2026-09-22 in three places, and HISTORICAL ROWS WERE NOT BACKFILLED.**
+Migration 367 widened the column to `numeric(6,4)` (what `shadow_bets` has had
+since migration 101); `store_bet` now derives the value it stores from the same
+`calibrated_prob` and `odds_at_pick` it writes in that row; every gate re-derives
+on read via `coolbet_placer.model_edge`, and `picks_public_all`'s model arm derives
+the edge it publishes. A backfill was deliberately NOT run: rewriting
+`edge_percent` would rewrite what each bot is recorded as having cleared, which is
+the evidence base for every floor we have set. **So for any row written before
+2026-09-22, `edge_percent` is still rounded to two decimals — derive
+`calibrated_prob − 1/odds_at_pick` in the query rather than reading the column.**
+
 **Rule: always read `calibrated_prob` directly. Treat the `edge + 1/odds`
 fallback as a last resort that must never be relied on**, and prefer returning
 null over returning a reconstructed number. The fallback does not fire today

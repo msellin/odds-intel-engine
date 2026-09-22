@@ -582,6 +582,29 @@ def write_board(pool: list[dict]) -> int:
     return len(rows)
 
 
+def _break_even(c: dict) -> float:
+    """1/p_sharp — the price at which this stops being value.
+
+    Falls back to deriving p_sharp from the edge when the key is absent.
+    `edge = p_sharp * odds - 1` by construction, so `p_sharp = (1+edge)/odds`
+    is exact, not an approximation.
+
+    Defensive on purpose: this is the ONLY scheduled job that writes to a public
+    surface, and a KeyError here does not degrade the message — it kills the
+    publish. Every real candidate carries p_sharp (set at the point it is built,
+    and again for donor rows), so this branch should never run; it exists so a
+    future caller that assembles a candidate by hand cannot silently take the
+    public feed down.
+    """
+    p = c.get("p_sharp")
+    if not p:
+        edge, odds = c.get("edge"), c.get("odds")
+        if edge is None or not odds:
+            raise KeyError("p_sharp")          # genuinely unpriceable — fail loudly
+        p = (1.0 + float(edge)) / float(odds)
+    return 1.0 / float(p)
+
+
 def render(c: dict) -> str:
     pick = PICK_LABEL.get((c["market"], c["selection"]),
                           f"{c['market']} {c['selection']}")
@@ -608,7 +631,7 @@ def render(c: dict) -> str:
         # +12.3pp overconfident (n=154 post-recalibration) and therefore cannot
         # back a published fair price. See the model arm in coolbet_signaler,
         # which for that reason publishes no replacement number at all.
-        f"📊 Break-even price: <b>{1.0 / c['p_sharp']:.2f}</b> — "
+        f"📊 Break-even price: <b>{_break_even(c):.2f}</b> — "
         f"value while the price stays above it\n\n"
         f"<a href='https://oddsintel.app/picks'>Live picks</a>"
     )
