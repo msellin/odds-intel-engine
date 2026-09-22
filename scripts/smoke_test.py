@@ -5285,6 +5285,7 @@ def test_system_map_registry_not_drifted():
     # show is about to be closed by a migration it can actually read, and the
     # moment that migration applies the name leaves the DB set and the plain
     # equality holds again.
+    import re as _re
     try:
         from workers.api_clients.db import execute_query
         db = {r["name"] for r in execute_query(
@@ -5306,7 +5307,19 @@ def test_system_map_registry_not_drifted():
                 continue
             pending_stmts += [ln.split("--")[0] for ln in f.read_text().splitlines()]
         pending = "\n".join(pending_stmts)
-        retiring = {n for n in db if n in pending and "retired_at" in pending}
+        # ...AND THE RETIREMENT MUST BE A RETIREMENT (2026-09-22, [[#068]]).
+        # This used to discount any bot whose name appeared in a pending
+        # migration while the string "retired_at" appeared ANYWHERE in the same
+        # pending set — two independent greps OR-ed across every pending file.
+        # Migration 368 rebuilds `picks_public_all`, which names
+        # `bot_sharp_forward_test_v1` as a literal label and filters
+        # `b.retired_at IS NULL` in a WHERE clause; that was enough to mark a
+        # perfectly live bot as "being retired" and turn this guard off for it.
+        # A retirement is an UPDATE that SETS retired_at. Read-only references —
+        # WHERE clauses, view definitions, labels — are not.
+        _sets_retired = _re.search(r"\bset\b[^;]*\bretired_at\s*=", pending,
+                                   _re.I | _re.S) is not None
+        retiring = {n for n in db if n in pending and _sets_retired}
         db_effective = db - retiring
         assert active_names() == db_effective, (
             f"registry active {active_names() ^ db_effective} differs from bots "
@@ -24563,6 +24576,99 @@ def test_shadow_close_bounded_2026_09_22():
     )
     assert f("asian_handicap", "home banana") is None
     return "shadow close bounded at 60 min, age recorded, AH rungs parsed or refused"
+
+
+@test("PICKS-CONSENSUS-ARM — the second arm publishes, is capped, and cannot touch the pre-registered one")
+def test_picks_consensus_arm_2026_09_22():
+    """[[#068]] PICKS-DROUGHT-ANCHOR-OVERROUND-GATE (2026-09-22, owner-approved).
+
+    The live arm's <=4% anchor-overround gate admitted 0 of 173 Pinnacle-priced
+    markets on 2026-09-22 and /picks published nothing. The gate is PRE-REGISTERED,
+    so it is not relaxed — a consensus-anchored arm runs beside it.
+
+    Four things must hold or this arm is worse than the drought it fixes."""
+    import inspect
+    import re as _re
+    from scripts import publish_picks_forward_test as pf
+
+    # 1. The pre-registered arm is untouched. These numbers ARE the registration.
+    assert pf.MIN_EDGE == 0.03 and pf.MAX_ODDS == 4.0, "live arm floors moved"
+    assert pf.MAX_ANCHOR_OVERROUND == 0.04, (
+        "the live arm's anchor gate is pre-registered — the consensus arm exists "
+        "precisely so this does not have to move"
+    )
+    assert pf.RULE_VERSION != pf.CONSENSUS_RULE_VERSION, (
+        "the two arms must be separable in the ledger by rule_version"
+    )
+
+    # 2. The ceiling exists and binds — [[#007]]'s lesson, which arrives here
+    #    unchanged: edge = p*odds-1 is maximised by a WRONG price.
+    assert pf.CONSENSUS_MAX_EDGE == 0.08
+    mk = lambda e: {"edge": e, "match_id": "m1", "market": "1x2", "p_sharp": 0.4}
+    kept = pf.select([mk(0.05)], None, max_edge=pf.CONSENSUS_MAX_EDGE)
+    assert len(kept) == 1, "a mid-band edge must survive the ceiling"
+    dropped = pf.select([mk(0.147)], None, max_edge=pf.CONSENSUS_MAX_EDGE)
+    assert not dropped, (
+        "a +14.7% edge against a 5+ book consensus is a broken price and must "
+        "NOT be published — that is exactly what shipped as +549.9% ROI in #007"
+    )
+    # ...and the live arm must NOT inherit a ceiling.
+    assert len(pf.select([mk(0.147)], None)) == 1, (
+        "the pre-registered arm has no ceiling and must not gain one"
+    )
+
+    # 3. Dedupe and the runaway breaker span every PUBLISHED arm — a reader sees
+    #    one channel, so two arms must not post both sides of one match.
+    assert pf.PUBLISHED_ARMS == ("live", pf.CONSENSUS_ARM)
+    for fn in (pf.already_published_markets, pf.daily_room):
+        src = inspect.getsource(fn)
+        assert "PUBLISHED_ARMS" in src, (
+            f"{fn.__name__} must span every published arm, not just 'live'"
+        )
+        # Strip comments first: both functions DOCUMENT the old `arm = 'live'`
+        # they replaced, and matching prose instead of code is how a test starts
+        # failing on an explanation rather than on behaviour.
+        code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+        assert "arm = 'live'" not in code, f"{fn.__name__} still hard-codes the live arm"
+    # The PAGE must show what the CHANNEL sends. The Telegram message links to
+    # /picks; publishing an arm the page filters out sends readers to a page
+    # missing the pick they just read — and on 2026-09-22 the live arm qualified
+    # nothing, so that page is empty while the channel is active.
+    mig = _engine_path("supabase/migrations/368_picks_public_consensus_arm.sql").read_text()
+    assert "IN ('live', 'consensus_anchor')" in mig, (
+        "picks_public_all must admit both PUBLISHED arms"
+    )
+    assert "junk_anchor" not in mig.split("CREATE OR REPLACE VIEW")[1], (
+        "the negative control must never reach a customer surface"
+    )
+    assert "junk_anchor" not in pf.PUBLISHED_ARMS, (
+        "the negative control is never sent, so it must never suppress a real pick"
+    )
+
+    # 4. THE REGRESSION THAT ALMOST SHIPPED: the job used to `return` when the
+    #    live arm had nothing, which would have made the consensus arm dead code
+    #    on exactly the days it exists for. An empty live arm is the NORMAL case.
+    # Read the scheduler as SOURCE, not by import: apscheduler is a VPS
+    # dependency and importing it here would make this test pass-by-absence
+    # locally and only ever run in CI.
+    _sch = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    _i = _sch.index("def job_publish_picks_forward_test(")
+    job = _sch[_i:_sch.index("\ndef ", _i + 10)]
+    i_live, i_cons = job.index('claim(c, "live")'), job.index("CONSENSUS_ARM)")
+    assert i_live < i_cons, (
+        "the live arm must claim FIRST so the pre-registered pick wins any "
+        "(match, market) both arms want"
+    )
+    between = job[job.index("if not picks:"):i_live]
+    # Comments stripped and matched on a STATEMENT, not the substring: the
+    # PUBLISH-CLAIM-BEFORE-SEND comment in between contains the word "returned".
+    between = "\n".join(l for l in between.splitlines()
+                        if not l.lstrip().startswith("#"))
+    assert not _re.search(r"^\s*return\b", between, _re.M), (
+        "an early return on an empty live arm makes the consensus arm dead code "
+        "on precisely the midweek days the channel goes dark"
+    )
+    return "consensus arm publishes, capped at 8%, live arm pre-registration intact"
 
 
 @test("FLOORS-ONE-SOURCE-CROSS-LANGUAGE — the frontend derives its floors from the engine")
@@ -43824,7 +43930,20 @@ def test_picks_forward_test_scheduled():
 
     _PUBLISHER_PATCH_LOCK.acquire()
     try:
-        _pub.load_candidates = lambda: (list(_fake), list(_fake))
+        # ARM-AWARE STUB (2026-09-22, [[#068]]). `load_candidates` now takes
+        # `anchor`. This test owns the LIVE path, so the consensus arm is stubbed
+        # empty here and covered by PICKS-CONSENSUS-ARM — but the call is
+        # RECORDED, so deleting the consensus arm from the job still fails here
+        # rather than silently reducing this to a single-arm test.
+        _anchors: list = []
+
+        def _fake_load(anchor: str = "pinnacle"):
+            _anchors.append(anchor)
+            if anchor == "consensus":
+                return ([], [])
+            return (list(_fake), list(_fake))
+
+        _pub.load_candidates = _fake_load
         _pub.junk_anchor_arm = lambda pool: list(pool)
         _pub.claim = _fake_claim
         _pub.attach_message_id = lambda pid, mid: None
@@ -43841,6 +43960,11 @@ def test_picks_forward_test_scheduled():
         assert len(_sends) == 1, f"expected exactly 1 channel send, got {len(_sends)}"
         assert "live" in _rows and "junk_anchor" in _rows, (
             f"both arms must be recorded, got {_rows}"
+        )
+        assert "consensus" in _anchors, (
+            "the job must also load the consensus arm ([[#068]]) — it is the arm "
+            "that carries the channel on midweek days when the pre-registered "
+            "one qualifies nothing"
         )
 
         # PUBLISH-CLAIM-BEFORE-SEND (2026-09-15) — THE anti-duplicate invariant.

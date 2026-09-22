@@ -81,6 +81,42 @@ DAILY_RUNAWAY_LIMIT = 60        # circuit breaker only; see above
 MAX_RATIO  = 0.20   # book price may not exceed the anchor by more than this
 MAX_ANCHOR_OVERROUND = 0.04   # [v3] the anchor must actually BE a sharp line
 
+# ── CONSENSUS ANCHOR ARM (2026-09-22, [[#068]], owner-approved) ──────────────
+# WHY A SECOND ARM AND NOT A CHANGED RULE. `MAX_ANCHOR_OVERROUND` is a
+# PRE-REGISTERED parameter of the live arm. Loosening it mid-test would forfeit
+# the pre-registration, which is the entire basis of /picks' honesty claim. So
+# the live arm is left byte-identical and this runs beside it, recorded under
+# its own `arm` and its own `rule_version`.
+#
+# WHY IT EXISTS. The live arm published 294 picks on 2026-09-19 and ZERO on
+# 09-22: of 173 markets carrying a Pinnacle price in the window, 173 failed the
+# <=4% overround gate (min 5.40%, median 8.40%). That is not a regression — the
+# gate has always admitted only ~10-17% of fixtures and it admits them on
+# big-liquidity weekend cards, so the channel goes dark midweek by design.
+#
+# WHY A CONSENSUS IS A LEGITIMATE ANCHOR, measured and not assumed: scoring each
+# book's own de-vigged 1x2 probabilities against realised results over 45 days,
+# n=11,419 matches, AF-"Pinnacle" alone gives log-loss 0.98401 while a consensus
+# EXCLUDING Pinnacle gives 0.98339. Our single-book anchor is statistically
+# indistinguishable from an average of the others (t=+1.76), and its median
+# closing overround is 10.24% against those books' 7.95% — wider than the books
+# it is supposed to be sharper than. So this arm does not lower the bar; it
+# stops using a ruler that turned out not to be one.
+CONSENSUS_ARM = "consensus_anchor"
+CONSENSUS_RULE_VERSION = "consensus_edge_v1_2026_09_22"
+CONSENSUS_MIN_BOOKS = 5     # a consensus of four books is four books
+# ⚠️ A CEILING, AND IT IS NOT OPTIONAL — the lesson of [[#007]] arrives here
+# unchanged. `edge = p * odds - 1` is MAXIMISED by a wrong price, so the biggest
+# apparent edges are our own data faults, not opportunities. Measured on the
+# first run of this arm: 7 of 15 qualifying legs cleared +6.6% and 5 cleared +8%
+# AGAINST A 7-11 BOOK CONSENSUS, which should be tighter than a single book, not
+# looser (a +14.7% edge on a draw at 3.94 against ten books is a broken price).
+# The live arm has NO ceiling and must not gain one — it is pre-registered.
+CONSENSUS_MAX_EDGE = 0.08
+# Arms that actually reach the channel. The dedupe and the runaway breaker are
+# about what a READER sees, so they must span every published arm, not one.
+PUBLISHED_ARMS = ("live", CONSENSUS_ARM)
+
 # MAX_ANCHOR_OVERROUND is v3's one change (PICKS-ANCHOR-QUALITY-GATE-2026-09-14).
 #
 # `anchor_overround` was already COMPUTED on every leg (see load_candidates) and
@@ -185,8 +221,42 @@ HEADER = (
 )
 
 
-def load_candidates() -> tuple[list[dict], list[dict]]:
+def _consensus_anchor(sides, side_q):
+    """Fair-value probabilities from a CONSENSUS of books, or None.
+
+    Each book that prices the COMPLETE market is de-vigged on its own, then the
+    resulting probabilities are averaged. De-vig-then-average, never
+    average-then-de-vig: averaging raw prices across books with different
+    margins produces a market that does not sum to anything meaningful, and the
+    margin you then strip is an artifact of the mix (ANALYSIS_GOTCHAS §62 is the
+    within-book version of this trap).
+
+    A partial line is skipped rather than guessed — the same rule the live arm
+    applies to Pinnacle. Returns (probs_by_selection, anchor_ts, n_books)."""
+    per, stamps = [], []
+    books = {b for s in sides for b in (side_q.get(s) or {})}
+    for b in books:
+        quotes = [(side_q.get(s) or {}).get(b) for s in sides]
+        if any(q is None or q[0] <= 1.0 for q in quotes):
+            continue
+        probs = devig([q[0] for q in quotes])
+        if probs:
+            per.append(probs)
+            stamps.append(max(q[1] for q in quotes))
+    if len(per) < CONSENSUS_MIN_BOOKS:
+        return None
+    avg = [sum(p[i] for p in per) / len(per) for i in range(len(sides))]
+    return dict(zip(sides, avg)), max(stamps), len(per)
+
+
+def load_candidates(anchor: str = "pinnacle") -> tuple[list[dict], list[dict]]:
     """Returns (live picks, full candidate pool).
+
+    `anchor="pinnacle"` is the PRE-REGISTERED live arm and its behaviour is
+    frozen. `anchor="consensus"` swaps ONLY the source of the fair-value
+    probability ([[#068]]); every downstream guard — alignment window, MAX_ODDS,
+    MAX_RATIO, the 3% edge floor, the lead time, the lookahead — is shared, so
+    the two arms differ in exactly one variable.
 
     The POOL is every leg that clears the odds cap and the alignment window,
     with the edge floor NOT yet applied. The live arm is the pool filtered at
@@ -231,20 +301,36 @@ def load_candidates() -> tuple[list[dict], list[dict]]:
     for mid, by_market in quotes.items():
         for market, sides in MARKETS.items():
             side_q = by_market.get(market) or {}
-            pin = {s: side_q.get(s, {}).get("Pinnacle") for s in sides}
-            if any(pin[s] is None for s in sides):
-                continue
-            anchor_ts = max(pin[s][1] for s in sides)
-            anchor_odds = {s: pin[s][0] for s in sides}
-            overround = sum(1.0 / o for o in anchor_odds.values()) - 1.0
-            if overround > MAX_ANCHOR_OVERROUND:
-                continue          # [v3] not a sharp line — see MAX_ANCHOR_OVERROUND.
+            if anchor == "consensus":
+                got = _consensus_anchor(sides, side_q)
+                if got is None:
+                    continue
+                prob_by_sel, anchor_ts, n_books = got
+                # The de-vigged consensus IS the fair line, so its overround is
+                # 0 by construction and MAX_ANCHOR_OVERROUND cannot be the
+                # quality test here. Book COUNT is (CONSENSUS_MIN_BOOKS above);
+                # recording 0.0 keeps the column honest rather than implying a
+                # margin was measured and passed.
+                overround = 0.0
+                anchor_odds = {s: 1.0 / p for s, p in prob_by_sel.items()}
+                anchor_book = f"consensus:{n_books}"
+                probs = [prob_by_sel[s] for s in sides]
+            else:
+                pin = {s: side_q.get(s, {}).get("Pinnacle") for s in sides}
+                if any(pin[s] is None for s in sides):
+                    continue
+                anchor_ts = max(pin[s][1] for s in sides)
+                anchor_odds = {s: pin[s][0] for s in sides}
+                anchor_book = "Pinnacle"
+                overround = sum(1.0 / o for o in anchor_odds.values()) - 1.0
+                if overround > MAX_ANCHOR_OVERROUND:
+                    continue      # [v3] not a sharp line — see MAX_ANCHOR_OVERROUND.
                                   # Applied to the POOL, not in select(), so the
                                   # junk arm is gated identically: whatever test
                                   # the live arm gets, every control arm gets.
-            probs = devig([anchor_odds[s] for s in sides])
-            if probs is None:
-                continue
+                probs = devig([anchor_odds[s] for s in sides])
+                if probs is None:
+                    continue
             for s, p_sharp in zip(sides, probs):
                 aligned = {
                     b: (o, t) for b, (o, t) in (side_q.get(s) or {}).items()
@@ -266,6 +352,7 @@ def load_candidates() -> tuple[list[dict], list[dict]]:
                     "odds": odds, "bookmaker": book, "edge": edge,
                     "p_sharp": p_sharp, "anchor_odds": anchor_odds,
                     "anchor_overround": overround, "anchor_quoted_at": anchor_ts,
+                    "anchor_bookmaker": anchor_book,
                     "price_ratio": odds / anchor_odds[s] - 1.0,
                     "odds_quoted_at": ts,
                     "alignment_gap_minutes":
@@ -290,10 +377,17 @@ def already_published_markets() -> set:
     pick count not a count of opinions. The dedupe has to consult the LEDGER,
     not just the current pool.
     """
+    # ARM-SPANNING (2026-09-22, [[#068]]): this used to read `arm = 'live'`.
+    # With a second PUBLISHED arm that would let the consensus arm post the
+    # opposite side of a match the live arm already sent — the reader sees one
+    # channel, so the dedupe has to span every arm that reaches it. The junk
+    # control is deliberately NOT in PUBLISHED_ARMS: it is never sent, so it must
+    # never suppress a real pick.
     try:
         rows = execute_query(
             """SELECT DISTINCT match_id::text AS m, market
-                 FROM picks_forward_test WHERE arm = 'live'"""
+                 FROM picks_forward_test WHERE arm = ANY(%s)""",
+            (list(PUBLISHED_ARMS),),
         )
         return {(r["m"], r["market"]) for r in rows}
     except Exception as e:
@@ -330,7 +424,9 @@ def daily_room() -> int:
     try:
         rows = execute_query(
             """SELECT count(*) AS n FROM picks_forward_test
-                WHERE arm = 'live' AND published_at::date = (now() AT TIME ZONE 'utc')::date"""
+                WHERE arm = ANY(%s)
+                  AND published_at::date = (now() AT TIME ZONE 'utc')::date""",
+            (list(PUBLISHED_ARMS),),
         )
         return max(0, DAILY_RUNAWAY_LIMIT - int(rows[0]["n"]))
     except Exception as e:
@@ -338,13 +434,21 @@ def daily_room() -> int:
         return 0
 
 
-def select(cands: list[dict], room: int | None = None) -> list[dict]:
+def select(cands: list[dict], room: int | None = None,
+           max_edge: float | None = None) -> list[dict]:
     """Edge floor, then the best `room` by edge.
+
+    `max_edge` is the [[#007]] ceiling and is used ONLY by the consensus arm —
+    the live arm is pre-registered without one and must not acquire one. An edge
+    above the ceiling is discarded as a broken price, not published as a big
+    opportunity: `edge = p * odds - 1` is maximised by a wrong price, so the
+    largest values in any anchored feed are its data faults.
 
     `room=None` means NO truncation — publish every leg that clears the floor.
     The live path passes `daily_room()`, which is the runaway breaker rather than
     a selection cap."""
-    keep = [c for c in cands if c["edge"] >= MIN_EDGE]
+    keep = [c for c in cands if c["edge"] >= MIN_EDGE
+            and (max_edge is None or c["edge"] <= max_edge)]
     keep.sort(key=lambda c: -c["edge"])
 
     # ONE-SELECTION-PER-MARKET (2026-09-15). Nothing stopped both sides of the
@@ -445,16 +549,21 @@ def claim(c: dict, arm: str) -> str | None:
             (match_id, market, selection, odds, bookmaker, edge, p_sharp,
              anchor_odds, anchor_overround, anchor_quoted_at, odds_quoted_at,
              alignment_gap_minutes, arm, rule_version, kickoff_at,
-             telegram_message_id)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+             telegram_message_id, anchor_bookmaker)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         ON CONFLICT (match_id, market, selection, arm) DO NOTHING
         RETURNING id
         """,
         (c["match_id"], c["market"], c["selection"], c["odds"], c["bookmaker"],
          c["edge"], c["p_sharp"], json.dumps(c["anchor_odds"]),
          c["anchor_overround"], c["anchor_quoted_at"], c["odds_quoted_at"],
-         c["alignment_gap_minutes"], arm, RULE_VERSION, c["kickoff_at"],
-         None),
+         c["alignment_gap_minutes"], arm,
+         # ANCHOR-BASIS-RECORDED (2026-09-22): `anchor_bookmaker` is on the table
+         # and was never written, so no row could say what it was priced against.
+         # With two anchors live that is no longer a tidiness issue — it is the
+         # difference between two arms' results being separable and not.
+         CONSENSUS_RULE_VERSION if arm == CONSENSUS_ARM else RULE_VERSION,
+         c["kickoff_at"], None, c.get("anchor_bookmaker")),
     )
     return str(rows[0]["id"]) if rows else None
 
@@ -605,6 +714,22 @@ def _break_even(c: dict) -> float:
     return 1.0 / float(p)
 
 
+def _anchor_line(c: dict) -> str:
+    """One line naming the fair-value basis, in the reader's terms.
+
+    Deliberately NOT a percentage. TELEGRAM-EDGE-LABEL (2026-09-22) removed the
+    published edge % because a percentage reads as a promise about returns and
+    this test's n cannot support one; re-adding it beside the break-even price
+    would undo that decision by the back door. What a reader gains here is the
+    strength of the evidence — one book's opinion versus eleven books agreeing —
+    which is exactly what separates the two arms."""
+    book = c.get("anchor_bookmaker") or "Pinnacle"
+    if book.startswith("consensus:"):
+        n = book.split(":", 1)[1]
+        return f"⚖️ Fair price from <b>{n} bookmakers</b> agreeing (margin removed)"
+    return "⚖️ Fair price from the <b>sharp line</b> (margin removed)"
+
+
 def render(c: dict) -> str:
     pick = PICK_LABEL.get((c["market"], c["selection"]),
                           f"{c['market']} {c['selection']}")
@@ -632,7 +757,14 @@ def render(c: dict) -> str:
         # back a published fair price. See the model arm in coolbet_signaler,
         # which for that reason publishes no replacement number at all.
         f"📊 Break-even price: <b>{_break_even(c):.2f}</b> — "
-        f"value while the price stays above it\n\n"
+        f"value while the price stays above it\n"
+        # ANCHOR BASIS ON THE MESSAGE (2026-09-22, [[#068]], owner: "we just need
+        # to show the edge or something in number, so users can see and decide
+        # themselves"). The number a reader can act on is the break-even price
+        # above; this line says what it was derived FROM, which is the part that
+        # differs between the two published arms. Without it the channel mixes
+        # two rules with no way for a reader — or us — to tell them apart.
+        f"{_anchor_line(c)}\n\n"
         f"<a href='https://oddsintel.app/picks'>Live picks</a>"
     )
 

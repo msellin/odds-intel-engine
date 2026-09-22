@@ -2250,6 +2250,7 @@ def job_publish_picks_forward_test():
     from scripts.publish_picks_forward_test import (
         load_candidates, render, claim, attach_message_id, junk_anchor_arm,
         select, daily_room, write_board, DAILY_RUNAWAY_LIMIT,
+        CONSENSUS_ARM, CONSENSUS_MAX_EDGE,
     )
     from workers.notify.telegram import send_telegram_public
     from workers.automation.coolbet_state import is_publishing_paused
@@ -2290,6 +2291,21 @@ def job_publish_picks_forward_test():
     room = daily_room()
     picks = select(pool, room)
 
+    # CONSENSUS ARM ([[#068]], 2026-09-22, owner-approved). A SECOND published
+    # arm anchored on a de-vigged multi-book consensus instead of single-book
+    # Pinnacle. The live arm above is untouched and stays pre-registered.
+    #
+    # WHY IT IS HERE AND NOT A SEPARATE JOB: it must share `daily_room()` and
+    # the ledger dedupe, both of which protect the CHANNEL rather than an arm.
+    # Two jobs would each think they had the whole budget.
+    #
+    # Ordering matters: the live arm claims first, so where both arms want the
+    # same (match, market) the PRE-REGISTERED pick is the one that goes out.
+    # `select()` seeds its dedupe from the ledger, so this happens naturally
+    # once the live claims below have landed — hence consensus is selected
+    # AFTER the live send loop, not here.
+    _, consensus_pool = load_candidates(anchor="consensus")
+
     # PICKS-BOARD-WATCHLIST: refresh the live board on EVERY pass, including
     # passes that publish nothing — a flat day is exactly when the board is the
     # only thing /picks has to show. Writes `picks_board`, never the ledger.
@@ -2301,11 +2317,16 @@ def job_publish_picks_forward_test():
     # rather than only in a log line.
     n_board = write_board(pool)
 
+    # NO EARLY RETURN HERE (2026-09-22, [[#068]]). This used to `return` when the
+    # live arm had nothing, which would have made the consensus arm dead code on
+    # exactly the days it exists for: the live arm publishes on big weekend cards
+    # and goes silent midweek, and 2026-09-22 — the day the consensus arm was
+    # built — is a day the live arm qualifies ZERO legs. An empty live arm is the
+    # NORMAL case for this job, not a reason to stop the pass.
     if not picks:
-        log.info("picks_forward_test: nothing qualifies this pass "
+        log.info("picks_forward_test: live arm has nothing this pass "
                  "(valid outcome; %d of %d before the runaway breaker, board %d legs)",
                  room, DAILY_RUNAWAY_LIMIT, n_board)
-        return {"picks": 0, "published": 0, "room": room, "board": n_board}
 
     # PUBLISH-CLAIM-BEFORE-SEND (2026-09-15): claim the row FIRST. A returned id
     # means this run created it and may send; None means it is already published
@@ -2327,15 +2348,40 @@ def job_publish_picks_forward_test():
             sent += 1
             attach_message_id(pick_id, mid)
 
+    # Now the consensus arm, against whatever budget the live arm left and
+    # against a ledger that already contains this pass's live claims — so it can
+    # never publish the opposite side of a match the live arm just sent.
+    # CONSENSUS_MAX_EDGE is the [[#007]] ceiling: an edge that large against a
+    # 5+ book consensus is a broken price, and publishing it would put our own
+    # data faults in front of subscribers.
+    c_sent = 0
+    consensus_picks = select(consensus_pool, daily_room(),
+                             max_edge=CONSENSUS_MAX_EDGE)
+    for c in consensus_picks:
+        pick_id = claim(c, CONSENSUS_ARM)
+        if pick_id is None:
+            continue
+        mid = send_telegram_public(render(c))
+        if mid is None:
+            log.warning("picks_forward_test[consensus]: send FAILED for %s v %s "
+                        "— row kept, unpublished",
+                        c.get("home_team"), c.get("away_team"))
+        else:
+            c_sent += 1
+            attach_message_id(pick_id, mid)
+
     # Negative control — recorded, never published. Runs over the POOL, not the
     # selected picks: shuffling the anchor has to change WHICH bets are chosen,
     # which is the only thing the anchor does (JUNK-ARM-DEGENERATE-2026-09-14).
     for c in junk_anchor_arm(pool)[:max(0, room)]:
         claim(c, "junk_anchor")
 
-    log.info("picks_forward_test: %d picks, %d published, %d already out",
-             len(picks), sent, skipped)
-    return {"picks": len(picks), "published": sent, "already_published": skipped}
+    log.info("picks_forward_test: %d picks, %d published, %d already out; "
+             "consensus %d picks, %d published",
+             len(picks), sent, skipped, len(consensus_picks), c_sent)
+    return {"picks": len(picks), "published": sent, "already_published": skipped,
+            "consensus_picks": len(consensus_picks), "consensus_published": c_sent,
+            "room": room, "board": n_board}
 
 
 def _publish_picks_forward_test_wrapper():

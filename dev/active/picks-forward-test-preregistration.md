@@ -332,3 +332,47 @@ edge, `P_shin`, the anchor quote and its timestamp, and the bet quote timestamp.
 **The alignment gap is stored per pick** — it is the quantity that invalidated
 the first version of this backtest and it must be auditable per row, not
 recomputed later.
+
+
+## A second arm, and why this registration is unaffected (2026-09-22, [[#068]])
+
+`arm='consensus_anchor'` now publishes alongside `arm='live'`. **Nothing in this
+pre-registration changes**, and that is the whole reason it was built as a second
+arm rather than an edit.
+
+**What prompted it.** `MAX_ANCHOR_OVERROUND = 0.04` — registered in v3 to ensure
+the anchor "must actually BE a sharp line" — admitted **0 of 173** Pinnacle-priced
+markets on 2026-09-22. The live arm published 294 picks on 09-19 and zero on
+09-22. That is not a fault: the gate has always admitted only ~10-17% of fixtures
+and it admits them on big-liquidity weekend cards, so the channel is
+weekend-shaped by construction.
+
+**Why the gate was not relaxed.** Loosening a registered parameter mid-test
+forfeits the registration, which is the entire basis of the honesty claim on
+/picks. The registered arm keeps its rule, its constants and its start date.
+
+**What the second arm changes.** Exactly one variable: the source of the
+fair-value probability. Each book that prices the complete market is de-vigged on
+its own and the resulting probabilities are averaged (≥5 books required). Every
+downstream guard is shared and unchanged — the 3% edge floor, the 60-minute
+alignment window, `MAX_ODDS`, `MAX_RATIO`, the lead time and the lookahead.
+
+**One deliberate asymmetry.** The consensus arm has an 8% edge CEILING; the live
+arm has none and must not gain one. The ceiling is [[#007]]'s finding applied
+here: `edge = p·odds − 1` is maximised by a WRONG price, so the largest apparent
+edges in any anchored feed are its data faults. On the first run, 5 of 15
+qualifying legs cleared 8% against a 7-11 book consensus — including +14.7% on a
+draw at 3.94 against ten books, which is a broken price, not an opportunity.
+
+**Why a consensus is a defensible anchor**, measured rather than assumed: scoring
+each book's own de-vigged 1x2 probabilities against realised results over 45 days,
+n=11,419 matches, AF-"Pinnacle" alone gives log-loss 0.98401 while a consensus
+*excluding* Pinnacle gives 0.98339 (t=+1.76). Our single-book anchor is
+statistically indistinguishable from an average of the other books, and its median
+closing overround is 10.24% against those books' 7.95%. This arm does not lower
+the bar; it stops using a ruler that turned out not to be one.
+
+**The two arms are separable** in the ledger by `arm`, by `rule_version` and by
+`anchor_bookmaker` (`Pinnacle` vs `consensus:N`). They are deduplicated against
+each other so no match/market can carry both, and the live arm claims first, so a
+pre-registered pick always wins the tie. Pinned by smoke `PICKS-CONSENSUS-ARM`.
