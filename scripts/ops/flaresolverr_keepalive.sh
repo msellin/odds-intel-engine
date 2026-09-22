@@ -13,6 +13,16 @@
 set -uo pipefail
 
 DOCKER=/usr/local/bin/docker
+# Resolve the container by IMAGE, not by a hardcoded name. The Mac runs
+# `oi_local_flaresolverr` (local/flaresolverr/docker-compose.yml) and the VPS runs
+# `oi_hetzner_flaresolverr` (local/systemd/docker-compose.yml) — until 2026-09-22
+# the VPS was wrongly running the Mac's file, which is how it ended up with a
+# laptop-sized 1 GiB cap AND port 8191 bound to 0.0.0.0 on a public IP. Both are
+# fixed; this stops the same script from silently no-op'ing on whichever host it
+# was not written for.
+FS_CONTAINER="$("${DOCKER}" ps -a --filter ancestor=ghcr.io/flaresolverr/flaresolverr:latest \
+                 --format '{{.Names}}' 2>/dev/null | /usr/bin/head -1)"
+FS_CONTAINER="${FS_CONTAINER:-oi_local_flaresolverr}"
 FS_URL="http://localhost:8191"
 COMPOSE_DIR="$(cd "$(dirname "$0")/../../local/flaresolverr" && pwd)"
 LOG_TS() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
@@ -114,7 +124,7 @@ if probe; then
       fi
       echo "$(LOG_TS)   FS serves example.com but WEDGES ON COOLBET — restarting"
       cd "$COMPOSE_DIR" || exit 1
-      "$DOCKER" restart oi_local_flaresolverr 2>&1 | /usr/bin/tail -2
+      "$DOCKER" restart "$FS_CONTAINER" 2>&1 | /usr/bin/tail -2
       for i in $(seq 1 8); do
         sleep 5
         if probe && coolbet_can_serve; then
@@ -131,7 +141,7 @@ if probe; then
   echo "$(LOG_TS)   (this is the 2026-09-12 shape: 'ready' banner, healthy container,"
   echo "$(LOG_TS)    sessions.list ok, and every request 500s. Liveness != capability.)"
   cd "$COMPOSE_DIR" || { echo "$(LOG_TS)   compose dir missing: $COMPOSE_DIR"; exit 1; }
-  "$DOCKER" restart oi_local_flaresolverr 2>&1 | /usr/bin/tail -2
+  "$DOCKER" restart "$FS_CONTAINER" 2>&1 | /usr/bin/tail -2
   for i in $(seq 1 8); do
     sleep 5
     if probe && can_serve; then

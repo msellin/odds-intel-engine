@@ -24,6 +24,14 @@ services:
     image: ghcr.io/flaresolverr/flaresolverr:latest
     container_name: oi_hetzner_flaresolverr
     ports:
+      # ⚠️ 127.0.0.1 IS LOAD-BEARING SECURITY, NOT STYLE. Bind this to 0.0.0.0
+      # (as local/flaresolverr/docker-compose.yml does, for a laptop behind NAT)
+      # and FlareSolverr is an OPEN REMOTE BROWSER on a public IP: anyone can
+      # drive it, and because request.get accepts a `proxy` field they can drive
+      # it THROUGH the residential egress and browse from the operator's home
+      # connection. Found exposed on 2026-09-22 — the VPS had been running the
+      # Mac compose file since 2026-06-29. Docker writes its own iptables rules
+      # and BYPASSES ufw, so the firewall does not save you here.
       - "127.0.0.1:8191:8191"
     environment:
       BROWSER_TIMEOUT: "60000"
@@ -32,9 +40,14 @@ services:
       CAPTCHA_SOLVER: "none"
       TZ: "UTC"
     restart: unless-stopped
-    # Memory cap: 1.5 GB gives headroom for multiple concurrent HLTV sessions
-    # while leaving the scheduler's ~800 MB peak well within the 4 GB VPS.
-    mem_limit: 1536m
+    # Memory cap raised 1536m -> 3g on 2026-09-22. Measured: the container sits
+    # at ~476 MiB IDLE with zero sessions, and one Coolbet session took it to
+    # 705 MiB — so the old 1 GiB it was actually running under left roughly
+    # 550 MiB for work and the Coolbet board sweep 500'd three times on
+    # "cannot allocate a Chrome context". The box has ~7 GB free; 1 GiB was a
+    # laptop-shaped number inherited from the Mac compose, not a VPS one.
+    # (The old comment here said "the 4 GB VPS" — the box is 15.6 GB.)
+    mem_limit: 3g
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8191/"]
       interval: 30s

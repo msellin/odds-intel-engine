@@ -50529,6 +50529,54 @@ def test_coolbet_residential_egress():
         "the Mac is already on the residential line and must not change"
 
 
+@test("FLARESOLVERR-NOT-PUBLIC — the VPS compose must bind loopback only")
+def test_flaresolverr_not_public():
+    """FS-EXPOSED-ON-PUBLIC-IP, found and closed 2026-09-22.
+
+    The VPS was running `local/flaresolverr/docker-compose.yml` — the MAC's file —
+    since 2026-06-29. That file binds `"8191:8191"`, which is fine for a laptop
+    behind NAT and catastrophic on a public IP: FlareSolverr was reachable from
+    the internet and answering `sessions.list` to anyone who asked.
+
+    WHY THIS IS WORSE THAN A LEAKED PORT. FlareSolverr is a REMOTE BROWSER.
+    `request.get` accepts a `proxy` field, and since 2026-09-22 the box has a
+    WireGuard egress to the operator's home line — so an anonymous caller could
+    have driven a browser out through the operator's RESIDENTIAL connection.
+    Docker writes its own iptables rules and BYPASSES ufw, so the active
+    firewall (default-DROP, only 22 and 51820 allowed) did not stop it and gave
+    a false sense of safety.
+
+    Two invariants pinned here, both cheap and both load-bearing:
+      1. the VPS compose binds 127.0.0.1 explicitly;
+      2. it is not silently the Mac's file — the container names must differ, or
+         a future `docker compose up` in the wrong directory recreates the
+         exposure.
+    """
+    import pathlib as _pl
+    root = _pl.Path(__file__).resolve().parent.parent
+    vps = (root / "local" / "systemd" / "docker-compose.yml").read_text()
+    mac = (root / "local" / "flaresolverr" / "docker-compose.yml").read_text()
+
+    assert '"127.0.0.1:8191:8191"' in vps, \
+        "the VPS FlareSolverr MUST bind loopback only — it is a remote browser on a public IP"
+    assert '"8191:8191"' not in vps.replace('"127.0.0.1:8191:8191"', ""), \
+        "no all-interfaces 8191 binding may appear in the VPS compose"
+
+    assert "oi_hetzner_flaresolverr" in vps and "oi_local_flaresolverr" in mac, \
+        "the two composes must keep DISTINCT container names, so the VPS cannot end up " \
+        "silently running the Mac's (which is exactly how the exposure happened)"
+
+    # the reason must stay next to the line, or someone 'simplifies' it back
+    assert "ufw" in vps.lower() or "bypass" in vps.lower(), \
+        "keep the note that Docker bypasses ufw — the firewall looks like it covers this and does not"
+
+    # and the keepalive must not hardcode one host's container name
+    ka = (root / "scripts" / "ops" / "flaresolverr_keepalive.sh").read_text()
+    assert "FS_CONTAINER" in ka and "ancestor=" in ka, \
+        "the keepalive must RESOLVE the container, not hardcode one host's name — " \
+        "otherwise it silently no-ops on the other host"
+
+
 
 if __name__ == "__main__":
     main()
