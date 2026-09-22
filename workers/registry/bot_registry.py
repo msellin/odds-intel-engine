@@ -27,7 +27,11 @@ from dataclasses import dataclass
 # ── anchor / family vocab ────────────────────────────────────────────────────
 ANCHOR_MODEL = "model"   # fair value = our calibrated model probability
 ANCHOR_SHARP = "sharp"   # fair value = Shin-de-vigged Pinnacle probability
-ANCHOR_NONE = "none"     # internal strategy bot — not an edge-vs-book selection
+ANCHOR_NONE = "none"     # no fair-value reference of its own — the in-play rig,
+                         # which prices off the BOOK's own de-vigged probability.
+                         # NOT "an internal bot": a league/odds filter over model
+                         # picks is still MODEL-anchored (see bot_high_roi_global_v2,
+                         # corrected 2026-09-22).
 # ANCHOR_CONSENSUS (2026-09-22, [[#068]]): fair value = the de-vigged CONSENSUS
 # of >=5 books, not one book's line. Its own constant rather than a flavour of
 # ANCHOR_SHARP, because the distinction is load-bearing on two counts. (a) It is
@@ -177,7 +181,19 @@ BOTS: list[BotSpec] = [
     # bot_summer_specialist were retired in the DB (migrations 323/324, 2026-09-09
     # 10:25–10:41) but left in the registry — removed here so active_names() matches
     # the DB (SYSTEM-MAP-REGISTRY-NOT-DRIFTED section 5).
-    BotSpec("bot_high_roi_global_v2", FAM_INTERNAL, "1x2", ANCHOR_NONE,
+    # ANCHOR CORRECTED 2026-09-22 (owner: "how is strategy different from model?").
+    # It was ANCHOR_NONE, which reads as "no fair-value basis". That is false:
+    # `daily_pipeline_v2` gives this bot `edge_thresholds` (1x2_fav 0.06 /
+    # 1x2_long 0.09) — the SAME model edge `bot_v10_all` uses — and then filters
+    # by league (Spain/Australia/Iceland), selection (home/away) and odds band
+    # 1.50-5.50. It is the model anchor with extra filters, not a third method.
+    #
+    # It mattered because the /performance chip renders straight off this field,
+    # so a customer surface was telling readers this bot priced against something
+    # other than the model. ANCHOR_NONE now means what it says — the in-play rig,
+    # which prices off the BOOK's own de-vigged probability and has no model or
+    # sharp reference at all.
+    BotSpec("bot_high_roi_global_v2", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
             None, None, False,
             "1x2 home/away in Spain/Australia/Iceland, odds 1.50–5.50. Internal paper strategy validator."),
 

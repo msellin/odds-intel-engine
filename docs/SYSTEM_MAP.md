@@ -243,7 +243,7 @@ registry and regenerate.
 | Bot | Market | Anchor | Edge floor | Odds floor | Money | What it does |
 |---|---|---|---|---|---|---|
 | `bot_v10_all` | mixed | model | — | — | paper | The calibrated reference bot: v10 model across target leagues, tier-adjusted thresholds. Honestly calibrated, +11–13% — the yardstick other bots are read against. |
-| `bot_high_roi_global_v2` | 1x2 | — | — | — | paper | 1x2 home/away in Spain/Australia/Iceland, odds 1.50–5.50. Internal paper strategy validator. |
+| `bot_high_roi_global_v2` | 1x2 | **model** | 6%/9% by tier | 1.50–5.50 | paper | 1x2 home/away in Spain/Australia/Iceland. **ANCHOR CORRECTED 2026-09-22** — it was recorded as `none` ("internal strategy validator"), which reads as *no fair-value basis*. False: `daily_pipeline_v2` gives it `edge_thresholds` (`1x2_fav` 0.06 / `1x2_long` 0.09) — the **same model edge `bot_v10_all` uses** — then filters by league, side and odds band. A filter over model picks is still MODEL-anchored. It mattered because the /performance method chip renders straight off this field, so a customer surface was telling readers this bot priced against something it does not. `ANCHOR_NONE` now means what it says: no model and no sharp reference, i.e. the in-play rig pricing off the book's own de-vigged probability. |
 <!-- bot_1x2_specialist, bot_dnb_specialist, bot_summer_specialist RETIRED 2026-09-09 (migrations 323/324) and removed from bot_registry.py:116-119 — do not re-add. -->
 <!-- NB: bot generation stores best-of-books odds for these general bots (recommended_bookmaker), NOT the Coolbet/Unibet executable price — the SHADOW-PAGE-ROI-INFLATED gap; per-book executable ROI/CLV is the EXECUTABLE-SHADOW-EVAL work. -->
 
