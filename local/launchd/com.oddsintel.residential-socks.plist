@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  RESIDENTIAL-EGRESS socks proxy (2026-09-22).
+
+  The SOCKS5 endpoint the OddsIntel VPS talks to over WireGuard.
+
+  WHY ITS OWN JOB. The keepalive script used to spawn this with `&`. launchd
+  reaps the process group when a StartInterval job exits, so the proxy died
+  seconds after every tick and flapped on a 2-minute cycle. A long-running
+  process must be supervised by launchd directly — that is what KeepAlive is for.
+
+  KeepAlive also handles ordering: if this starts before the tunnel exists,
+  microsocks cannot bind 10.8.0.2, exits, and launchd retries. ThrottleInterval
+  keeps that from becoming a tight loop.
+
+  BOUND TO THE TUNNEL ADDRESS ONLY (-i 10.8.0.2). Never 0.0.0.0 — this must not
+  become an open proxy on the LAN, let alone one reachable from the internet.
+
+  Install (needs sudo, once):
+    sudo cp local/launchd/com.oddsintel.residential-socks.plist /Library/LaunchDaemons/
+    sudo chown root:wheel /Library/LaunchDaemons/com.oddsintel.residential-socks.plist
+    sudo launchctl bootstrap system /Library/LaunchDaemons/com.oddsintel.residential-socks.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.oddsintel.residential-socks</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/microsocks</string>
+        <string>-i</string><string>10.8.0.2</string>
+        <string>-p</string><string>1080</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/residential-socks.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/margussellin/www/odds-intel-engine/dev/active/residential-socks.log</string>
+</dict>
+</plist>

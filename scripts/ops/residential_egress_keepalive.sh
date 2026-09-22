@@ -21,15 +21,12 @@
 set -uo pipefail
 
 WG=/opt/homebrew/bin/wg-quick
-MICROSOCKS=/opt/homebrew/bin/microsocks
 CONF="${OI_WG_CONF:-/Users/margussellin/.wireguard/oi-egress.conf}"
 TUN_ADDR=10.8.0.2
 SOCKS_PORT=1080
 LOG_TS() { /bin/date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 
 tunnel_up() { /sbin/ifconfig 2>/dev/null | /usr/bin/grep -q "inet ${TUN_ADDR} "; }
-socks_up()  { /usr/sbin/lsof -nP -iTCP:${SOCKS_PORT} -sTCP:LISTEN 2>/dev/null \
-                | /usr/bin/grep -q "${TUN_ADDR}:${SOCKS_PORT}"; }
 
 # ── 1. tunnel ───────────────────────────────────────────────────────────────
 if ! tunnel_up; then
@@ -46,15 +43,30 @@ else
   echo "$(LOG_TS) tunnel ok"
 fi
 
-# ── 2. socks proxy ──────────────────────────────────────────────────────────
-# Bound to the TUNNEL address only, never 0.0.0.0 — this must not become an open
-# proxy on the LAN or, worse, reachable from the internet.
-if ! socks_up; then
-  echo "$(LOG_TS) SOCKS DOWN — starting microsocks on ${TUN_ADDR}:${SOCKS_PORT}"
-  /usr/bin/pkill -f "microsocks -i ${TUN_ADDR}" >/dev/null 2>&1
-  "$MICROSOCKS" -i "$TUN_ADDR" -p "$SOCKS_PORT" >/dev/null 2>&1 &
-  sleep 1
-  if socks_up; then echo "$(LOG_TS) socks up"; else echo "$(LOG_TS) ERROR socks failed to bind"; exit 1; fi
-else
-  echo "$(LOG_TS) socks ok"
-fi
+# ── 2. socks proxy: NOT OUR JOB ANYMORE ─────────────────────────────────────
+#
+# BUG FIXED 2026-09-22, caught before anything depended on it. This script used
+# to start microsocks with `&`. launchd reaps the whole process group when a
+# StartInterval job exits, so the proxy died within seconds of every tick and
+# was restarted on the next one — the log read
+#
+#     07:07:19Z SOCKS DOWN - starting microsocks
+#     07:07:20Z socks up
+#     07:09:21Z SOCKS DOWN - starting microsocks      <-- dead again
+#
+# i.e. a proxy that flaps on a 2-minute cycle. After the in-play cutover that
+# would have surfaced as Epicbet collection failing intermittently for no visible
+# reason, which is the worst kind of bug this repo keeps re-learning.
+#
+# A long-running process belongs to launchd, not to a script. microsocks is now
+# com.oddsintel.residential-socks with KeepAlive=true: launchd starts it, watches
+# it, and restarts it if it exits (including when it cannot bind because the
+# tunnel is not up yet — ThrottleInterval stops that becoming a tight loop).
+#
+# This script keeps only the tunnel, which is genuinely short-lived work:
+# wg-quick configures an interface and exits.
+socks_state() {
+  if /usr/sbin/lsof -nP -iTCP:${SOCKS_PORT} -sTCP:LISTEN 2>/dev/null \
+       | /usr/bin/grep -q "${TUN_ADDR}:${SOCKS_PORT}"; then echo ok; else echo DOWN; fi
+}
+echo "$(LOG_TS) socks(supervised by launchd): $(socks_state)"
