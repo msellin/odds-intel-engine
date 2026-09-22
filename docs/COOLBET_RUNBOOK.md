@@ -195,6 +195,34 @@ a one-shot `com.oddsintel.coolbet-resume` agent, and **fails loudly** if it
 cannot. Always confirm with `coolbet_pause_resume.sh status` → `resume agent:
 ARMED`. Pinned by smoke `LIVENESS-IS-NOT-CAPABILITY`.
 
+### ⚠️ 2b. OUR OWN DIAGNOSTIC PROBES CAN CAUSE THE WALL — added 2026-09-22
+
+**A fresh, unseeded FlareSolverr session earns a NEW Imperva visitor identity
+every time.** During the 2026-09-22 residential-egress work roughly **15 such
+probes** were made from the operator's residential IP in a day, each doing warmup
+navigations under a brand-new `visid_incap_*`. Later that day the feed hit the §2
+wall and needed an identity reset. Causation is not proven — the feed had also
+been down 4.3h for an unrelated launchd reason, so there is no clean before/after
+— but this is precisely the "our own request volume" pattern §2 already blames,
+and visitor churn is a stronger version of it than repeated probes under one id.
+
+**Two rules that follow:**
+
+1. **Never diagnose feed health with a fresh unseeded session.** It is challenged
+   from EVERY IP, including the Mac's — so it cannot distinguish "the feed is
+   walled" from "this probe has no cookies". It produces a false alarm AND
+   burns a visitor identity. This mistake was made twice on 2026-09-22 despite
+   being written down.
+2. **The only honest health check is the DB.** Did `odds_snapshots(bookmaker=
+   'Coolbet')` get rows on the last tick? That is the question. `fo-tree`
+   returning a challenge to a session you just created answers nothing:
+   ```sql
+   select max(timestamp), count(*) from odds_snapshots
+   where bookmaker='Coolbet' and timestamp >= now() - interval '2 hours';
+   ```
+   On 2026-09-22 this read "15:38, 2,769 rows" — healthy — at the same moment a
+   fresh probe was reporting WALL.
+
 ### ⛔ 2a. "STAY COOL" IS NOT THE IMPERVA WALL — corrected 2026-09-13
 
 **This section told you for weeks that a ~9-character `STAY COOL` body IS §2.

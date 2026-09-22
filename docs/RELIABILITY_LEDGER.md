@@ -1084,3 +1084,23 @@ explicit `edge_floor` is the floor actually enforced while model-anchored bots k
 stacked behaviour. Still missing, and worth having: an alert for any `is_active` bot
 that emits zero picks for N consecutive days. Nothing in this incident was detected by
 monitoring — it was found by reading the ticket.
+
+## Pattern: a reviver that reports success without verifying the world
+
+**Seen twice in three days, both on Coolbet, both silent.**
+
+- `RESUME-LOADED-BUT-NOT-RUNNING` (2026-09-20) — `launchctl load` returned 0 and
+  the resume agent logged "loaded" for both Coolbet jobs while `launchctl list`
+  showed neither. **14h outage.** Fix: verify against `launchctl list`, retry once.
+- **2026-09-22, again.** The verify-and-retry was in place. The agent still fired
+  twice, still logged "loaded", and the jobs were still not loaded. **4.3h
+  outage**, on the price basis every real stake is sized from. `launchctl
+  bootstrap` (the modern API) loaded them immediately where the legacy
+  `launchctl load` had not.
+
+**The tell:** a log line saying the fix was applied, next to a system that
+disagrees. **The guard:** verifying is necessary but was not sufficient — the
+legacy `load` verb can fail in ways the check ran too early to see, and the host
+sleeping across the fire time defeats both. **The real fix is to stop depending on
+a laptop being awake**, which is what VPS-CONSOLIDATION-2026-09-16 is for.
+
