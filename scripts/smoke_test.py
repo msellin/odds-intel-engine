@@ -13910,8 +13910,24 @@ def _():
     assert "Unibet" in _acc_block and "Coolbet" in _acc_block, \
         "the placeable set must still contain the books we can actually bet"
     assert "best_bookmaker" in pipeline, "best_bookmaker dict must be declared"
-    assert "bookmaker not in ACCESSIBLE_BOOKMAKERS" in pipeline, \
-        "inaccessible bookmakers must be filtered in odds aggregation loop"
+    # UPDATED 2026-09-22 (ACCESSIBLE-BOOK-SET split, #005). This required the
+    # Estonian allow-list in the odds-aggregation loop — i.e. on the PICKS price
+    # basis, which was the defect: /picks serves a mostly non-Estonian
+    # readership. The allow-list now gates the OWN paths (the shadow passes,
+    # which write shadow_bets and feed /admin/shadow-bots) and the PICKS loop
+    # filters on is_publishable_book() instead.
+    #
+    # The invariant that actually matters survives and is stated directly: the
+    # Estonian test must still be APPLIED SOMEWHERE, or "placeable" stops
+    # meaning anything. OWN-PICKS-BOOK-SEAM pins which side each belongs on.
+    assert "bm not in ACCESSIBLE_BOOKMAKERS" in pipeline, (
+        "no path applies the Estonian allow-list any more. OWN must keep it — "
+        "without it the operator is shown, and could stake at, books that "
+        "Estonia blocks")
+    assert "is_publishable_book(" in pipeline, (
+        "the PICKS price basis no longer filters non-offers. It must still "
+        "exclude phantom feeds (Unibet-Kambi, AF Unibet) and synthetic "
+        "aggregates — it just must not exclude books on legality grounds")
     assert "recommended_bookmaker" in pipeline, "recommended_bookmaker must be passed to store_bet"
 
     client = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
@@ -49649,6 +49665,83 @@ def test_book_set_backtest_real_gates():
         "arm a fake win")
     return ("floors imported from placer+registry; 4 known-bad feeds excluded; "
             "outlier ceiling applied before the arms split")
+
+
+@test("OWN-PICKS-BOOK-SEAM — the Estonian test gates OWN only, never the published picks")
+def test_own_picks_book_seam():
+    """ACCESSIBLE-BOOK-SET-SHRANK-UNMEASURED (#005), split 2026-09-22 on the
+    owner's decision: "for OWN picks, which is shadow bots page, we look at
+    estonian books... as for PICKS, we should use all books we have odds about."
+
+    `ACCESSIBLE_BOOKMAKERS` was cut on 2026-09-05 against EMTA's blocked-domain
+    list — a test of what the OPERATOR can reach from Estonia. It sat in
+    `_load_today_from_db`, which feeds `simulated_bets` and therefore /picks and
+    the public Telegram channel, whose readers are mostly not in Estonia. The
+    measured cost to them: 5.7% of 1x2 and 7.9% of O/U modelled selections had
+    NO accessible price at all, so they were unpublishable at any edge.
+
+    THE TWO QUESTIONS, and they must not re-merge:
+      OWN   "can the operator reach this book?"   -> ACCESSIBLE_BOOKMAKERS
+      PICKS "is this a real offer?"               -> is_publishable_book()
+
+    Not a new policy: the sharp arm has published this way since it shipped —
+    `publish_picks_forward_test.EXCLUDED_BOOKS` excludes phantom feeds only, and
+    its live output carries Bet365, SBO, 1xBet, Betfair, BetVictor. This makes
+    the model arm consistent with the sharp arm beside it.
+
+    Pinned at the SEAM, because the failure mode is re-conflation: one constant
+    creeping back across both paths, in either direction. Gating OWN on the
+    publishable set would be the worse direction — it would tell the operator he
+    can stake at a book Estonia blocks.
+    """
+    import re as _re
+
+    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
+
+    assert "def is_publishable_book(" in src, "the PICKS-side predicate is gone"
+
+    # 1. The PICKS path (feeds simulated_bets -> /picks) must NOT apply the
+    #    Estonian allow-list.
+    ld = src[src.index("def _load_today_from_db("):]
+    ld = ld[:ld.index("\ndef ", 1)]
+    assert "is_publishable_book(" in ld, (
+        "_load_today_from_db no longer filters on is_publishable_book. This is "
+        "the PICKS price basis — /picks and the public Telegram channel")
+    assert "not in ACCESSIBLE_BOOKMAKERS" not in ld, (
+        "the Estonian allow-list is back on the PICKS path. That hides picks "
+        "from a mostly non-Estonian readership for a reason that is not theirs")
+
+    # 2. The OWN paths must KEEP it. This is the direction that matters most:
+    #    publishing a price the operator cannot reach as if he could is worse
+    #    than hiding one he can.
+    for fn in ("_run_no_pin_shadow_pass", "_run_sweep_shadow_pass"):
+        blk = src[src.index(f"def {fn}("):]
+        blk = blk[:blk.index("\ndef ", 1)]
+        assert "ACCESSIBLE_BOOKMAKERS" in blk, (
+            f"{fn} no longer tests ACCESSIBLE_BOOKMAKERS. It writes shadow_bets, "
+            f"which is the OWN shadow-bots page — gating it on the publishable "
+            f"set would show the operator picks at books Estonia blocks")
+        assert "is_publishable_book(" not in blk, (
+            f"{fn} uses the PICKS predicate. OWN must stay on the Estonian "
+            f"allow-list")
+
+    # 3. The deny-list may only ever contain NON-OFFERS, never a legality call.
+    m = _re.search(r"_NON_OFFERS: frozenset = frozenset\(\{(.*?)\}\)", src, _re.S)
+    assert m, "_NON_OFFERS is gone"
+    # Parse QUOTED STRINGS, not whitespace tokens. "Betfair Exchange" is a
+    # football-data.co.uk CSV import and is correctly excluded; the live
+    # "Betfair" book is a different entity the sharp arm publishes from. A
+    # naive split conflates them and fails on a correct exclusion.
+    listed = set(_re.findall(r'"([^"]+)"', m.group(1)))
+    for legal_only in ("Marathonbet", "10Bet", "888Sport", "Pinnacle", "Bet365",
+                       "1xBet", "Betfair", "BetVictor", "SBO"):
+        assert legal_only not in listed, (
+            f"{legal_only} is excluded from the PICKS price basis. It is a real "
+            f"book that honours its quotes — if it was removed for being blocked "
+            f"in Estonia, that is the OWN test leaking back into PICKS, which is "
+            f"exactly what this split exists to prevent")
+    return "PICKS prices off real offers; OWN keeps the Estonian allow-list"
+
 
 
 

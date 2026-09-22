@@ -1069,6 +1069,62 @@ ODDS_MAX_LAG_HOURS = float(os.getenv("ODDS_MAX_LAG_HOURS", "6"))
 # Backstop for the pathological tail only (worst observed 406h).
 ODDS_MAX_AGE_HOURS = float(os.getenv("ODDS_MAX_AGE_HOURS", "48"))
 
+# ── PUBLISHABLE vs ACCESSIBLE — the OWN/PICKS seam (ACCESSIBLE-BOOK-SET, 2026-09-22)
+#
+# These answer DIFFERENT questions and were conflated until today:
+#
+#   ACCESSIBLE_BOOKMAKERS  "can the OPERATOR reach this book from Estonia?"
+#                          An EMTA blocked-domain test. Correct for 🤖 OWN —
+#                          staking, the placer, the shadow-bots page — because a
+#                          price we cannot reach is not a price we can take.
+#
+#   PUBLISHABLE_BOOKMAKERS "is this a real offer somebody could have taken?"
+#                          Correct for 👥 PICKS. The public Telegram channel and
+#                          /picks serve a mostly non-Estonian readership who can
+#                          use Marathonbet, Bet365, 1xBet and the rest perfectly
+#                          well. Applying an Estonian legality test to THEIR best
+#                          price hides picks from them for a reason that is not
+#                          theirs.
+#
+# WHY THIS IS NOT A NEW POLICY: the sharp arm has published this way since it
+# shipped. `scripts/publish_picks_forward_test.EXCLUDED_BOOKS` excludes only
+# feeds that quote prices the book does not honour — and its live output carries
+# Bet365, SBO, 1xBet, Betfair and BetVictor. This makes the MODEL arm consistent
+# with the sharp arm beside it, rather than inventing anything.
+#
+# Measured cost of the old behaviour to PICKS (BOOK-SET-COUNTERFACTUAL, #005):
+# 5.7% of 1x2 and 7.9% of O/U modelled selections had NO accessible price at all
+# — unpublishable at any edge — plus ~+2.1% on the best price and +52% O/U
+# volume. ⚠️ It is NOT an ROI improvement and must never be sold as one: the
+# uplift arrives as more candidates crossing the floor at an identical mean
+# price (2.892 vs 2.893), from a model whose calibration gap is negative in 13
+# of 18 measured cells.
+#
+# The exclusions below are the same KIND as the sharp arm's — phantom feeds and
+# synthetic aggregates, never legality:
+#   Unibet-Kambi  38% of stored quotes read higher than unibet.ee offered
+#   Unibet (AF)   33.1% phantom-high, and the feed died 2026-09-12
+#   Max / Avg     synthetic consensus columns, not a book
+#   Betfair Exchange / BetWin / Betfred   football-data.co.uk CSV imports
+#   api-football* synthetic; see BLACKLISTED_OU_SOURCES
+_NON_OFFERS: frozenset = frozenset({
+    "Unibet-Kambi", "Unibet", "Max", "Avg",
+    "Betfair Exchange", "BetWin", "Betfred",
+    "api-football", "api-football-live",
+})
+
+
+def is_publishable_book(bookmaker: str) -> bool:
+    """👥 PICKS price basis: any real book that honours its quotes.
+
+    Deliberately a DENY-list, where ACCESSIBLE_BOOKMAKERS is an allow-list. A
+    new book appearing in the feed should reach readers automatically; a new
+    book should NOT automatically become something we claim the operator can
+    stake at.
+    """
+    return bookmaker not in _NON_OFFERS
+
+
 ACCESSIBLE_BOOKMAKERS: frozenset = frozenset({
     # ACCESSIBLE-SET-VERIFY-2026-09-05: checked against EMTA's official blocked
     # -domain list (2,307 entries). Only books absent from that list are here.
@@ -2252,8 +2308,15 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
                 continue  # OU-PIN-REQUIRED — no Pinnacle reference for this OU selection, skip
             if bookmaker != "Pinnacle" and odds_val > 2.0 * pin_price:
                 continue  # OU-PINNACLE-CAP — likely mislabelled / Asian-total row
-        # ACCESSIBLE-BM: only aggregate odds from bookmakers users can actually bet at
-        if bookmaker not in ACCESSIBLE_BOOKMAKERS:
+        # ACCESSIBLE-BOOK-SET-2026-09-22: this is the 👥 PICKS path — it feeds
+        # `simulated_bets`, which is what /picks and the public Telegram channel
+        # publish. So it filters on "is this a real offer?", not "can the
+        # operator reach it from Estonia?". The 🤖 OWN paths keep the Estonian
+        # allow-list, and they are different call sites: the shadow passes
+        # (`_run_no_pin_shadow_pass`, `_run_sweep_shadow_pass`) still test
+        # ACCESSIBLE_BOOKMAKERS, and the placer re-derives at its own book's
+        # live price before staking regardless.
+        if not is_publishable_book(bookmaker):
             continue
         # ODDS-OUTLIER-FILTER-2026-08-18: reject 1X2 / BTTS / DC offers that blow
         # out the consensus. Pinnacle is exempt (it IS the anchor when present).
