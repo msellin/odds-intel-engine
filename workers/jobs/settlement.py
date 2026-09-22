@@ -3120,6 +3120,45 @@ def _build_upcoming_model_summary() -> dict | None:
     return None
 
 
+# PERF-HERO-AND-TABLE-ONE-BASIS (2026-09-22, [[#072]]).
+#
+# THE BUG THIS REMOVES. /performance's HERO read these cached aggregates while
+# its TABLE recomputed from raw bets through `engine-data.execPnl`. Same cohort,
+# same 704 bets -- and **+7.70% / +EUR424.87 against +4.28% / +EUR236.35**,
+# because they were on DIFFERENT PRICE BASES. Worse, `bot_breakdown` feeds the
+# table directly for signed-out/Free readers, so the SAME BOT read +12.80% to a
+# Free user and +7.34% to a Pro user, on the same page, on the same day.
+#
+# WHICH BASIS IS RIGHT IS ALREADY DECIDED, and not by me: LANDING-PERF-ROI-BASIS
+# (2026-09-05) ruled that settled P&L must be priced at the odds ACTUALLY ON
+# OFFER, because the stored `simulated_bets.pnl` is derived from `odds_at_pick` --
+# a MAX() high-water mark across the fixture's whole snapshot history
+# (STALE-BEST-ODDS). Its commit said the fix belonged in one place so it would
+# reach "the landing page, /performance and the bot dashboard" together. It put
+# that helper in the FRONTEND, so every figure the ENGINE precomputes -- this
+# cache, and therefore the hero -- kept the inflated basis for 17 days.
+#
+# This is the same expression as `execPnl`, line for line, so the two cannot
+# drift: combos keep their stored pnl (leg pricing is not re-derivable here),
+# a non-positive stake keeps its stored pnl, a WON bet is repriced at
+# COALESCE(live, at_pick) when that is > 1, a LOST bet is exactly -stake, and
+# anything else (void/push) keeps its stored value.
+#
+# Pinned by smoke `PERF-ONE-PRICE-BASIS`.
+_EXEC_PNL = """
+    CASE
+      WHEN sb.combo_legs IS NOT NULL THEN sb.pnl
+      WHEN sb.stake IS NULL OR sb.stake <= 0 THEN sb.pnl
+      WHEN sb.result = 'won' THEN
+        CASE WHEN COALESCE(NULLIF(sb.odds_at_pick_live, 0), sb.odds_at_pick) > 1
+             THEN (COALESCE(NULLIF(sb.odds_at_pick_live, 0), sb.odds_at_pick) - 1) * sb.stake
+             ELSE sb.pnl END
+      WHEN sb.result = 'lost' THEN -sb.stake
+      ELSE sb.pnl
+    END
+"""
+
+
 def write_dashboard_cache():
     """
     Pre-compute all dashboard stats and write to dashboard_cache table.
@@ -3140,12 +3179,12 @@ def write_dashboard_cache():
         # public leaderboard — they're paper experiments with 0 settled bets,
         # don't belong on /performance until they prove themselves. Still
         # visible on /admin/bots (different query path).
-        bot_rows = execute_query("""
+        bot_rows = execute_query(f"""
             SELECT
                 b.name,
                 COUNT(sb.id) FILTER (WHERE sb.result IN ('won','lost')) as settled,
                 COUNT(sb.id) FILTER (WHERE sb.result = 'won') as won,
-                SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')) as total_pnl,
+                SUM({_EXEC_PNL}) FILTER (WHERE sb.result IN ('won','lost')) as total_pnl,
                 SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost')) as total_staked,
                 AVG(sb.clv) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) as avg_clv
             FROM bots b
@@ -3159,14 +3198,14 @@ def write_dashboard_cache():
 
         # Retired bot rollup — feeds the collapsed "Retired Strategies" section.
         # Includes retired_at + retired_reason so the page can show *why*.
-        retired_rows = execute_query("""
+        retired_rows = execute_query(f"""
             SELECT
                 b.name,
                 b.retired_at,
                 b.retired_reason,
                 COUNT(sb.id) FILTER (WHERE sb.result IN ('won','lost')) as settled,
                 COUNT(sb.id) FILTER (WHERE sb.result = 'won') as won,
-                SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')) as total_pnl,
+                SUM({_EXEC_PNL}) FILTER (WHERE sb.result IN ('won','lost')) as total_pnl,
                 SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost')) as total_staked,
                 AVG(sb.clv) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) as avg_clv
             FROM bots b
@@ -3189,7 +3228,7 @@ def write_dashboard_cache():
         _excl = "AND b.maturity_label != 'experimental'"
         won = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result = 'won' {_excl}", [])[0]["n"]
         lost = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result = 'lost' {_excl}", [])[0]["n"]
-        staked_row = execute_query(f"SELECT SUM(sb.stake) as s, SUM(sb.pnl) as p, AVG(sb.clv) as c {_bets_join} WHERE sb.result IN ('won','lost') {_excl}", [])[0]
+        staked_row = execute_query(f"SELECT SUM(sb.stake) as s, SUM({_EXEC_PNL}) as p, AVG(sb.clv) as c {_bets_join} WHERE sb.result IN ('won','lost') {_excl}", [])[0]
         total_staked = float(staked_row["s"] or 0)
         total_pnl = float(staked_row["p"] or 0)
         avg_clv = float(staked_row["c"] or 0) if staked_row["c"] else None
@@ -3199,14 +3238,14 @@ def write_dashboard_cache():
 
         # Active-only headline (excludes retired bots). The "what's currently
         # running" number. Same math, scoped via JOIN to bots.
-        active_total_bets_row = execute_query("""
+        active_total_bets_row = execute_query(f"""
             SELECT
                 COUNT(*) FILTER (WHERE sb.result != 'void') as total_bets,
                 COUNT(*) FILTER (WHERE sb.result IN ('won','lost')) as settled,
                 COUNT(*) FILTER (WHERE sb.result = 'won') as won,
                 COUNT(*) FILTER (WHERE sb.result = 'lost') as lost,
                 SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost')) as staked,
-                SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')) as pnl,
+                SUM({_EXEC_PNL}) FILTER (WHERE sb.result IN ('won','lost')) as pnl,
                 AVG(sb.clv) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) as avg_clv
             FROM simulated_bets sb
             JOIN bots b ON b.id = sb.bot_id
@@ -3225,13 +3264,13 @@ def write_dashboard_cache():
         # PERF-HERO-COHORT-SPLIT (2026-06-01) — split last-30d ROI by cohort so
         # /performance can render separate Pre-match and In-play hero tiles.
         # Excludes experimental and retired bots (same scope as active headline).
-        cohort_rows = execute_query("""
+        cohort_rows = execute_query(f"""
             SELECT
                 CASE WHEN b.name LIKE 'inplay_%%' THEN 'inplay' ELSE 'prematch' END AS cohort,
                 COUNT(*) FILTER (WHERE sb.result IN ('won','lost')) AS settled,
                 COUNT(*) FILTER (WHERE sb.result = 'won') AS won,
                 SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost')) AS staked,
-                SUM(sb.pnl) FILTER (WHERE sb.result IN ('won','lost')) AS pnl,
+                SUM({_EXEC_PNL}) FILTER (WHERE sb.result IN ('won','lost')) AS pnl,
                 AVG(sb.clv) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) AS avg_clv
             FROM simulated_bets sb
             JOIN bots b ON b.id = sb.bot_id
@@ -3264,10 +3303,10 @@ def write_dashboard_cache():
         # chart reads `daily_pnl_curve_90d`. Both are now derived from a SINGLE
         # 90-day query so endpoints can't drift — the 30d series is just the
         # 90d series sliced to its tail. UI-METRIC-SOT (2026-06-06).
-        daily_pnl_rows_90d = execute_query("""
+        daily_pnl_rows_90d = execute_query(f"""
             SELECT
                 DATE(sb.pick_time) AS d,
-                ROUND(SUM(sb.pnl)::numeric, 2) AS daily_pnl
+                ROUND(SUM({_EXEC_PNL})::numeric, 2) AS daily_pnl
             FROM simulated_bets sb
             JOIN bots b ON b.id = sb.bot_id
             WHERE sb.result IN ('won','lost')
@@ -3325,7 +3364,7 @@ def write_dashboard_cache():
                     COUNT(*) FILTER (WHERE sb.result IN ('won','lost'))             AS n,
                     COUNT(*) FILTER (WHERE sb.result = 'won')                       AS won,
                     SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost'))        AS staked,
-                    SUM(sb.pnl)   FILTER (WHERE sb.result IN ('won','lost'))        AS pnl,
+                    SUM({_EXEC_PNL}) FILTER (WHERE sb.result IN ('won','lost'))     AS pnl,
                     AVG(sb.clv)   FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) AS avg_clv
                 FROM simulated_bets sb
                 JOIN bots b ON b.id = sb.bot_id
@@ -3383,7 +3422,7 @@ def write_dashboard_cache():
                     COUNT(*) FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void')) AS n_settled,
                     COUNT(*) FILTER (WHERE sb.result = 'won')                          AS won,
                     SUM(sb.stake) FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void')) AS staked,
-                    SUM(sb.pnl)   FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void')) AS pnl,
+                    SUM({_EXEC_PNL}) FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void')) AS pnl,
                     AVG(sb.clv)   FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void') AND sb.clv IS NOT NULL) AS avg_clv,
                     SUM(sb.clv * sb.stake) FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void') AND sb.clv IS NOT NULL) AS cumulative_clv_eur,
                     MIN(sb.pick_time) AS first_pick,

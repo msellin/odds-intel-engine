@@ -51015,5 +51015,60 @@ def test_maturity_promotion_rule_is_written():
         "case that proves labels must be able to go down")
 
 
+@test("PERF-ONE-PRICE-BASIS — the hero and the table cannot disagree about P&L")
+def test_perf_one_price_basis():
+    """PERF-HERO-AND-TABLE-ONE-BASIS (2026-09-22, [[#072]]). Owner: *"i feel that
+    the performance page hero numbers are not aligned with the bots table totals
+    and averages"*. They were not, and the cause was a split basis, not a bug in
+    either half:
+
+      HERO  (dashboard_cache.active_*)  704 settled, +7.70%, +EUR424.87
+      TABLE (recomputed via execPnl)    704 settled, +4.28%, +EUR236.35
+
+    Same cohort, same 704 rows, EUR188 apart. `bot_breakdown` is worse still --
+    it feeds the TABLE for signed-out and Free readers, so the same bot read
+    +12.80% to a Free user and +7.34% to a Pro user on the same page.
+
+    LANDING-PERF-ROI-BASIS (2026-09-05) had already decided which basis is right:
+    settled P&L must be priced at the odds ACTUALLY ON OFFER, because the stored
+    `simulated_bets.pnl` comes from `odds_at_pick`, a MAX() high-water mark over
+    the fixture's whole snapshot history (STALE-BEST-ODDS). It put the helper in
+    the FRONTEND, so every figure the ENGINE precomputes kept the inflated basis
+    for 17 days.
+
+    This pins that settlement's cache writer uses the repriced expression and
+    that the two implementations stay in step.
+    """
+    import inspect
+    from pathlib import Path
+    from workers.jobs import settlement as st
+
+    assert hasattr(st, "_EXEC_PNL"), (
+        "settlement must define the executable-price expression in ONE place")
+    expr = st._EXEC_PNL
+    for needed in ("combo_legs IS NOT NULL", "odds_at_pick_live", "result = 'won'",
+                   "result = 'lost'", "-sb.stake"):
+        assert needed in expr, f"_EXEC_PNL must mirror execPnl's `{needed}` branch"
+
+    # Every aggregate that reaches a customer surface must use it — a raw
+    # SUM(sb.pnl) anywhere in the cache writer reintroduces the split basis.
+    src = inspect.getsource(st.write_dashboard_cache)
+    assert "SUM(sb.pnl)" not in src, (
+        "write_dashboard_cache still sums the STORED pnl somewhere — that is the "
+        "high-water basis, and it is what made the hero disagree with the table")
+    assert src.count("_EXEC_PNL") >= 4, (
+        "all four customer-facing aggregates (all-time, active headline, "
+        "bot_breakdown, retired_bot_breakdown) must use _EXEC_PNL")
+
+    # ...and the frontend helper it mirrors must still exist and still prefer the
+    # live price. If someone deletes execPnl, this expression becomes the odd one
+    # out rather than the shared standard.
+    web = Path(__file__).parent.parent.parent / "odds-intel-web"
+    ed = (web / "src/lib/engine-data.ts").read_text()
+    assert "export function execPnl(" in ed and "export function execOdds(" in ed, (
+        "execPnl/execOdds are the reference implementation _EXEC_PNL mirrors")
+    assert "pnl: execPnl(row)" in ed, "LiveBet.pnl must stay on the executable basis"
+
+
 if __name__ == "__main__":
     main()
