@@ -24884,6 +24884,15 @@ def test_published_arm_has_a_record_2026_09_22():
     #    PUBLISHED-A-POSTPONED-FIXTURE: 3 of the consensus arm's first 20 picks
     #    were POSTPONED fixtures, stamped postponed at 09:15 and published at
     #    12:15. They void harmlessly, so only a reader ever sees the problem.
+    # ...and a postponed match must not be SHOWN either, not only not sent.
+    # Fixing the writer does not clean the window: after the publisher filter
+    # shipped, the 3 already-published postponed picks were still on /picks.
+    _pv = execute_query(
+        "SELECT pg_get_viewdef('picks_public_all'::regclass, true) AS d")[0]["d"]
+    assert "postponed" in _pv or "picks_public_all" in pending, (
+        "picks_public_all does not exclude postponed matches — a pick on a game "
+        "that is not happening stays on the page until someone notices"
+    )
     pub = _engine_path("scripts/publish_picks_forward_test.py").read_text(encoding="utf-8")
     assert "m.status = 'scheduled'" in pub, (
         "load_candidates must require m.status = 'scheduled' — an allow-list, "
