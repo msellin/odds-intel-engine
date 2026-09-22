@@ -2906,3 +2906,39 @@ rows**, because the last snapshot we hold for our own book IS the quote we bet �
 polling Coolbet/Unibet-Site after placing. `closing_fresh` is true on **2 of 287**. Half
 the sample carries no information at all, so even the corrected number rests on ~42 rows.
 Before quoting own-book CLV again, check `closing_fresh`, not just `closing_bookmaker`.
+
+---
+
+## 71. A permutation test over NESTED subsets must be centred, or it re-measures the level
+
+Found 2026-09-22 building `scripts/ou_odds_floor_sweep.py` ([[#073]]).
+
+**The tell: a huge test statistic and a boring p-value in the same line.** The
+first run reported `best |t| in grid = 7.17, family-wise p = 0.5917`. A |t| of
+7.17 arising by chance 59% of the time is impossible, and that impossibility is
+the signal — it means the statistic is measuring something the shuffle cannot
+disturb.
+
+**The mechanism.** Sweeping an odds FLOOR produces nested cells: `≥1.8` held 130
+of 157 rows. Permuting the outcome across rows leaves a cell that big with
+essentially the population mean every time. So its `t` was a restatement of *"the
+O/U bot's CLV is −4.17%"* — true, already known, and nothing to do with price.
+Every permutation reproduced it, so the observed max was never extreme.
+
+**The fix is one line and it changes the answer completely.** Subtract the
+population mean before permuting, so the test is on DEVIATIONS from the bot's own
+level rather than on the level itself. Centred: `best |t| = 1.91, p = 0.3438` —
+which is the honest reading (no band differs from the bot's average), and the
+opposite of what an uncritical read of 7.17 would have suggested.
+
+**The general rule:** a permutation null must break exactly the association you
+are testing and nothing else. When cells are nested inside a population whose
+mean is itself non-zero, shuffling within the population does not break "the
+population has a mean" — so that mean has to be removed by construction.
+`scripts/odds_band_by_market.py` already said this as *"centred within market"*;
+§47 is the same trap from the other side (an odds-band effect is a BOT effect
+until you split by bot). This is the third time this family has cost time.
+
+**Cheap detector:** if a grid's best |t| barely moves between the observed data
+and a shuffled draw, the statistic is dominated by something the shuffle is not
+touching. Print one shuffled draw's max |t| next to the observed one.

@@ -51081,5 +51081,63 @@ def test_perf_one_price_basis():
     assert "pnl: execPnl(row)" in ed, "LiveBet.pnl must stay on the executable basis"
 
 
+@test("OU-ODDS-FLOOR-SWEEP — the O/U floor question is answered on the CLEAN era, centred")
+def test_ou_odds_floor_sweep():
+    """OU-ODDS-FLOOR-SWEEP (2026-09-22, [[#073]]). Owner asked whether a higher
+    odds floor (1.8 .. 2.8) would have saved the O/U bot, having noticed the
+    drawdown coincided with high-priced picks.
+
+    ANSWER: no. Every floor AND every disjoint band is CLV-negative on the clean
+    pre-bug era (n=157), and a centred grid permutation puts the best |t| in the
+    whole grid at 1.91, family-wise p = 0.344.
+
+    This test pins the two design choices that make that answer trustworthy,
+    because both are the kind of thing a later edit silently undoes:
+
+      1. THE BUG WINDOW IS NEVER POOLED. 74% of Sep 3-12 picks are at 2.8+ vs
+         16% pre-bug, because OU-CALIBRATOR-DOMAIN-MISMATCH maximised long
+         prices by construction. Pooling re-measures the bug and reports it as
+         an odds-band effect (gotcha 47 via 39).
+      2. THE PERMUTATION IS CENTRED. Uncentred it returned |t| = 7.17 at p = 0.59
+         -- the `>= 1.8` cell holds 130 of 157 rows, so its mean IS the
+         population mean under every shuffle, and the test was re-measuring "the
+         O/U bot has negative CLV" rather than anything about price.
+    """
+    import inspect
+    from pathlib import Path
+    base = Path(__file__).parent.parent
+
+    src = (base / "scripts" / "ou_odds_floor_sweep.py").read_text()
+
+    # (1) eras are separated and the bug window is bounded by the real dates
+    assert 'BUG_START = "2026-09-03"' in src and 'BUG_END = "2026-09-13"' in src, (
+        "the bug window must be the migration-335 dates, not a guess")
+    assert "ERAS" in src and src.count("BUG_START") >= 2, (
+        "picks must be split into eras, not pooled")
+
+    # (2) the permutation must subtract the population level before shuffling
+    assert "_mu = st.mean(" in src, "the grid permutation must be CENTRED"
+    assert 'r["clv"] - _mu' in src, (
+        "both the observed statistic and the shuffled draws must be centred, or "
+        "the test measures the bot's overall CLV instead of the price effect")
+
+    # (3) CLV, not ROI, is the primary metric (gotcha 8) and it is the DE-VIGGED
+    #     one (gotcha 70: raw clv breaks even at the book's margin, not zero)
+    assert "clv_pinnacle_devig" in src, (
+        "raw `clv` breaks even at the closing book's ~8% margin — a raw-CLV "
+        "sweep ranks every band against the wrong baseline")
+
+    # (4) executable price for BOTH the threshold and the return (gotcha 30)
+    assert src.count("odds_at_pick_live") >= 2, (
+        "`odds_at_pick` alone is a MAX() high-water mark, so thresholding on it "
+        "asks what would have happened filtering on a price nobody offered")
+
+    # (5) the conclusion is recorded where a future reader will look
+    doc = (base / "docs" / "OU_ODDS_FLOOR_SWEEP_2026_09_22.md").read_text()
+    assert "no floor in that range rescues it" in doc.lower(), (
+        "the negative result must be stated plainly — an unrecorded negative "
+        "result gets re-litigated every few weeks")
+
+
 if __name__ == "__main__":
     main()
