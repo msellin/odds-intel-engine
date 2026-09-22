@@ -22,7 +22,7 @@
 | `coolbet-odds-snapshot` | :03/:33 | Coolbet board + sidebets → `odds_snapshots` | 🟢 **Transport PROVEN 2026-09-22** (136 KB real fo-tree via egress). Needs a volume/price-diff validation pass, then cut over. **Biggest remaining win.** |
 | `coolbet-feed-watchdog` | :20/:50 | Cookie refresh, staleness verdict, JWT session-keep, Telegram heal drain | 🟡 **Split.** DB-judging half moves now; `ensure_session_live` needs CDP-Chrome |
 | `unibet-site-odds` | :15/:45 | unibet.ee SPA `contest-page` via raw CDP | 🟡 Needs a persistent Chromium+Xvfb on the VPS. **Not IP, not DataDome** — VPS loads the full 2.4 MB SPA. ~½ day |
-| `near-kickoff-capture` | every 5 min | Closing prices: Coolbet + Unibet + Epicbet | 🟡 **Split three ways.** Epicbet third moves now; Coolbet third with the sweep; Unibet third with the Chrome |
+| `near-kickoff-capture` | every 5 min | Closing prices: **Coolbet + Unibet-Site only** | ✅ **Epicbet third MOVED to the VPS 2026-09-22.** Coolbet third goes with the sweep; Unibet third with the Chrome |
 | `cdp-watch` | every 5 min | Logs CDP-Chrome up/down transitions | 🔴 Follows the Chrome |
 | `coolbet-cdp-selfheal` | :25/:55 | Heavy CDP re-bootstrap probe | 🔴 Follows the Chrome · ⚠️ **`exit=1`** |
 | `flaresolverr-keepalive` | 180s | Revives the Mac's FS Docker | 🟡 Follows whatever still needs the Mac FS |
@@ -54,7 +54,8 @@
 |---|---|
 | `oddsintel-scheduler` | **82 registered jobs** in one root process |
 | `oddsintel-inplay-collector` | ✅ Epicbet in-play, moved 2026-09-22, via residential egress |
-| `oddsintel-heartbeat` | ⚠️ **inactive/dead** — worth a look or a deletion |
+| `oddsintel-near-kickoff-epicbet` (+ `.timer`) | ✅ **New 2026-09-22.** Epicbet closing-price capture every 5 min, direct via egress — FlareSolverr never opened |
+| `oddsintel-heartbeat` | ✅ **Healthy — I misread this.** It is a *oneshot* driven by `oddsintel-heartbeat.timer`; "dead" between runs is correct. Last result: success, fires every 15 min |
 | `oi_local_flaresolverr` | Docker. Serves the VPS Epicbet pre-match sweep |
 | `oddsintel-postgrest-1` | Docker, PostgREST |
 | Postgres 17, nginx, pm2 web | Shared with CrossRank + BoxRank |
@@ -110,8 +111,36 @@ mode.
 |---|---|---|
 | 1 | **Coolbet sweep → VPS** | Transport already proven. Removes the exact failure that just cost 4.3h |
 | 2 | **Egress → Pi or router** | Until this, the VPS still depends on the Mac being awake. Check the router first — free if it does WireGuard |
-| 3 | Split `near-kickoff-capture`; move the Epicbet third | Cheap, no new infrastructure |
+| ~~3~~ | ~~Split `near-kickoff-capture`~~ | ✅ **Done 2026-09-22** |
 | 4 | Split `coolbet-feed-watchdog`; move the DB half | Cheap |
 | 5 | Unibet Chromium on the VPS | ~½ day; do after 1–2 |
-| 6 | Delete `vps-postgres-tunnel`, fix/remove `oddsintel-heartbeat`, fix `coolbet-cdp-selfheal` | Three known-failing/dead things |
+| 6 | Delete `vps-postgres-tunnel`, fix `coolbet-cdp-selfheal` | Two failing things (`oddsintel-heartbeat` was a false alarm — see above) |
 | — | **Placer stays on the Mac** | Real money, TLS-bound token. Not a migration candidate |
+
+
+---
+
+## What is 100% off the Mac (as of 2026-09-22)
+
+| Thing | Moved | Note |
+|---|---|---|
+| **Epicbet in-play collector** | 07:21 UTC | Mac plist parked. 0 duplicates, continuous rows |
+| **Epicbet near-kickoff capture** | 15:19 UTC | Mac plist now `--books Coolbet,Unibet-Site`. First run clean: `fails: 0` |
+
+**Everything else is either still on the Mac or was always on the VPS.**
+
+### Deliberately NOT moved yet, and why
+
+**The VPS pre-match Epicbet sweep stays on FlareSolverr for now** — even though
+the direct path is measurably better (555 categories in 676ms vs ~11s and a 15%
+failure rate). Reason: it currently has **no Mac dependency at all**, and routing
+it through the tunnel would create one. Today a sleeping laptop took Coolbet dark
+for 4.3 hours; adding that same failure mode to a feed that does not have it is a
+resilience *regression*, whatever the latency says.
+
+The two jobs that did move were **already** Mac-dependent, so moving them is
+dependency-neutral and consolidation-positive.
+
+**Switch the pre-match sweep once the egress is on always-on hardware** (Pi or a
+WireGuard router). That is the gate, not the code — the code is already written
+and proven, behind `EPICBET_RESIDENTIAL_PROXY`.
