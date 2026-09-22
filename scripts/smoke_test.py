@@ -4736,6 +4736,131 @@ def test_anchor_price_sanity_on_both_engines():
         "— the per-book sharp bots would price off mis-mapped fixtures again")
 
 
+@test("MIRROR-GUARD — every pre-match odds writer refuses a transposed 1x2 triple")
+def test_mirror_guard_on_every_prematch_odds_writer():
+    """1X2-HOME-AWAY-INVERSIONS-2026-09-19, re-measured and closed 2026-09-22.
+
+    29 of 159,764 testable (fixture, book) 1x2 triples over 120 days are the
+    MIRROR IMAGE of the market — our home price is everyone else's away price.
+    FOUR paper picks were struck on an inverted leg, which corrects this row's
+    earlier "exposure = ZERO" reading.
+
+    Why the existing `anchor_sanity` ratio guard does not cover it, and why this
+    test pins a SECOND guard rather than a tighter threshold:
+
+      * Birkirkara v Hibernians has NO Pinnacle line, so `is_anchor_sane` fails
+        open (by design) — and that is precisely the one inverted pick that was
+        never voided. A consensus of the 7 books that DID price it catches it.
+      * Balzan v Sliema stored away at 3.40 against a true 2.12: ratio 1.604 vs
+        a 1.5625 threshold. It passed by 2.5%. The mirror is obvious in
+        STRUCTURE and marginal in ratio.
+
+    And it is pinned on ALL FOUR pre-match writers because `odds_snapshots` has
+    eight production INSERT sites with no shared choke point — "a second code
+    path inheriting no gates" is this repo's most-repeated failure shape.
+    """
+    import inspect
+    from workers.utils import mirror_guard as mg
+
+    # A consensus built from one repeated triple: six books saying home ~3.5.
+    cons = mg.consensus([(3.52, 2.97, 2.12)] * 6)
+    assert cons is not None, "six books must form a consensus"
+
+    # The four triples that picks were ACTUALLY struck on must all be refused.
+    observed = [
+        ((2.00, 3.10, 3.40), [(3.52, 2.97, 2.12)] * 9),   # Balzan v Sliema
+        ((3.20, 3.25, 2.05), [(2.05, 3.30, 3.40)] * 6),   # Birkirkara — no Pinnacle line
+        ((3.60, 3.50, 1.83), [(1.81, 3.59, 3.81)] * 9),   # Hamrun v Marsaxlokk
+        ((1.87, 3.30, 4.30), [(4.07, 3.10, 1.79)] * 8),   # La Equidad W v Millonarios W
+    ]
+    for (h, d, a), peers in observed:
+        assert mg.is_mirrored(h, d, a, mg.consensus(peers)) is True, (
+            f"triple {h}/{d}/{a} accepted against a consensus that mirrors it — "
+            f"an inverted price reads as the LARGEST edge on the board, so this "
+            f"is the one data fault every gate we own selects FOR")
+
+    # The same triple the right way round is an ordinary price and must survive.
+    assert mg.is_mirrored(3.40, 3.10, 2.00, cons) is False
+    # ...and so must ordinary wide book disagreement on the correct side.
+    assert mg.is_mirrored(4.20, 3.40, 1.95, cons) is False, (
+        "a book simply disagreeing with the market was refused — the guard must "
+        "not cost real coverage")
+
+    # FAIL OPEN with no quorum: refusing every thinly-priced fixture would trade
+    # a known fault for an invisible one (same reasoning as anchor_sanity).
+    assert mg.consensus([(3.5, 3.0, 2.1)] * 3) is None
+    assert mg.is_mirrored(2.00, 3.10, 3.40, None) is False
+
+    # NO POWER on a near-pick'em: when the consensus barely separates the two
+    # sides, a mirror and a disagreement are indistinguishable and the guard must
+    # decline to judge. This is the module's most sensitive number — measured
+    # over 120 days, refusals run 33 at MIN_SEPARATION=0.15 but 67 at 0.05, and
+    # the extra 34 are not mirrors, they are fixtures we cannot call. The triple
+    # below is an EXACT mirror of its consensus (p_home 0.42 <-> p_away 0.30, so
+    # d_swap = 0) and must STILL be allowed, purely because the sides are only
+    # 0.12 apart.
+    near_even = mg.consensus([(2.381, 3.571, 3.333)] * 6)
+    assert near_even is not None
+    assert abs(near_even[0] - near_even[1]) < mg.MIN_SEPARATION
+    assert mg.is_mirrored(3.333, 3.571, 2.381, near_even) is False, (
+        "guard judged a fixture whose consensus does not separate home from "
+        "away — there it cannot tell a mirror from a disagreement")
+    # ...and the same shape WITH separation must still be caught, so the check
+    # above is a power limit and not a hole.
+    assert mg.is_mirrored(2.00, 3.10, 3.40, cons) is True
+
+    # A partial triple cannot be judged and must pass through untouched.
+    assert mg.screen_1x2("m", "B", {"home": 2.0, "draw": 3.1}, reference=[(3.52, 2.97, 2.12)] * 6) is None
+
+    # Row filtering removes ONLY the 1x2 legs — a transposition is a 1x2-shaped
+    # fault and dropping a book's whole board would cost far more than it saves.
+    rows = [("1x2", "home", 2.00, None), ("1x2", "draw", 3.10, None),
+            ("1x2", "away", 3.40, None), ("btts", "yes", 1.90, None)]
+    orig_q = mg.quarantine_1x2
+    mg.quarantine_1x2 = lambda *a, **k: None   # keep the smoke run out of the DB
+    try:
+        kept = mg.drop_mirrored_1x2(
+            "m", "B", rows, market_of=lambda r: r[0], selection_of=lambda r: r[1],
+            odds_of=lambda r: r[2], reference=[(3.52, 2.97, 2.12)] * 9)
+        assert kept == [("btts", "yes", 1.90, None)], (
+            f"expected only the 1x2 legs dropped, got {kept}")
+
+        # the multi-book (API-Football) variant: leave-one-out over the payload
+        af = ([{"bookmaker": f"B{i}", "market": "1x2", "selection": s, "odds": o}
+               for i in range(6) for s, o in (("home", 3.52), ("draw", 2.97), ("away", 2.12))]
+              + [{"bookmaker": "BAD", "market": "1x2", "selection": s, "odds": o}
+                 for s, o in (("home", 2.00), ("draw", 3.10), ("away", 3.40))]
+              + [{"bookmaker": "BAD", "market": "btts", "selection": "yes", "odds": 1.9}])
+        out = mg.drop_mirrored_1x2_multibook(
+            "m", af, bookmaker_of=lambda r: r["bookmaker"], market_of=lambda r: r["market"],
+            selection_of=lambda r: r["selection"], odds_of=lambda r: r["odds"])
+        assert not [r for r in out if r["bookmaker"] == "BAD" and r["market"] == "1x2"], (
+            "the API-Football path kept a mirrored book's 1x2 — 8 of the 29 "
+            "measured mirrors came through that path, including Pinnacle twice")
+        assert len(out) == 19, f"expected 18 good 1x2 rows + 1 btts, got {len(out)}"
+    finally:
+        mg.quarantine_1x2 = orig_q
+
+    # ALL FOUR pre-match writers must call it. odds_snapshots has eight INSERT
+    # sites and no choke point; guarding three of four is the original bug.
+    from workers.api_clients import supabase_client
+    from workers.automation import coolbet_explorer
+    from workers.jobs import fetch_odds
+    for fn, label in (
+        (supabase_client.store_odds, "supabase_client.store_odds"),
+        (supabase_client.store_book_odds_snapshots,
+         "supabase_client.store_book_odds_snapshots (Epicbet/Unibet-Site/Unibet-Kambi)"),
+        (coolbet_explorer.store_coolbet_snapshots_for_match,
+         "coolbet_explorer.store_coolbet_snapshots_for_match (the real-money book)"),
+        (fetch_odds.fetch_af_odds, "fetch_odds.fetch_af_odds (API-Football bulk)"),
+    ):
+        src = inspect.getsource(fn)
+        assert "drop_mirrored_1x2" in src, (
+            f"{label} no longer screens for a transposed 1x2 triple — this is a "
+            f"pre-match writer into odds_snapshots and the guard must be on all "
+            f"of them, not most of them")
+
+
 @test("SHARP-BOTS-HAVE-AN-EDGE-CEILING — a floor cannot catch an inflated price")
 def test_sharp_bots_have_an_edge_ceiling():
     """SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20.

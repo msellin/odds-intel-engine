@@ -1469,6 +1469,26 @@ def store_coolbet_snapshots_for_match(
             by_market.pop(m, None)
         ou_buffer.clear()
 
+    # 1X2-HOME-AWAY-INVERSIONS. Coolbet is the book we place real money at and
+    # the largest single contributor to the fault (9 of 29 mirrored triples over
+    # 120 days). It is screened HERE rather than in `store_coolbet_odds_snapshot`
+    # because that writer takes one row at a time and never sees a whole triple —
+    # `non_ou_rows` is the first point where all three 1x2 legs exist together.
+    # Same shape as the OU-monotonicity drop above: refuse the market, keep the
+    # rest of the board.
+    from workers.utils.mirror_guard import drop_mirrored_1x2
+    if not dry_run:
+        _before = len(non_ou_rows)
+        non_ou_rows = drop_mirrored_1x2(
+            match_id, "Coolbet", non_ou_rows,
+            market_of=lambda r: r[0],
+            selection_of=lambda r: r[1],
+            odds_of=lambda r: r[2],
+            minutes_to_kickoff=minutes_to_ko,
+        )
+        if len(non_ou_rows) != _before:
+            by_market.pop("1x2", None)
+
     to_store = non_ou_rows + ou_buffer
     for market, selection, odds, line in to_store:
         if dry_run:

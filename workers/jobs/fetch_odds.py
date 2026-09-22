@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from workers.api_clients.api_football import get_odds_by_date, parse_fixture_odds
 from workers.api_clients.db import execute_query, bulk_insert
 from workers.utils.odds_quality import filter_garbage_ou_rows
+from workers.utils.mirror_guard import drop_mirrored_1x2_multibook
 from workers.utils.pipeline_utils import (
     log_pipeline_start, log_pipeline_complete, log_pipeline_failed,
 )
@@ -133,6 +134,23 @@ def fetch_af_odds(target_date: str) -> int:
         kickoff = match_kickoffs.get(match_id, "")
         minutes_to_kickoff = _compute_minutes_to_kickoff(kickoff)
         is_closing = minutes_to_kickoff is not None and abs(minutes_to_kickoff) <= 15
+
+        # 1X2-HOME-AWAY-INVERSIONS: 8 of the 29 mirrored triples measured over
+        # 120 days came through this path (Betfair, 1xBet, 10Bet, William Hill,
+        # Unibet, and Pinnacle itself twice), so "the AF rows are keyed by
+        # fixture id, therefore safe" is not true in practice. `parsed` holds
+        # every book for this ONE fixture, which makes the consensus free —
+        # leave-one-out over the payload, no database read.
+        parsed = drop_mirrored_1x2_multibook(
+            match_id, parsed,
+            bookmaker_of=lambda r: r["bookmaker"],
+            market_of=lambda r: r["market"],
+            selection_of=lambda r: r["selection"],
+            odds_of=lambda r: r["odds"],
+            minutes_to_kickoff=minutes_to_kickoff,
+        )
+        if not parsed:
+            continue
 
         for row in parsed:
             combo = (match_id, row["bookmaker"], row["market"], row["selection"])

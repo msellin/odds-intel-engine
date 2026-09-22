@@ -323,17 +323,54 @@ sides and never re-orients them against our fixture; and the ±6h date tolerance
 admits a different kickoff (measured gaps 1h00–2h55). One wrong event poisons
 **every market** on that fixture, not just 1x2.
 
-**Three gates now stand between a bad price and a pick** (all added 2026-09-20):
+**Added 2026-09-22 — the list above is missing the main Coolbet feed.**
+`coolbet_matching.match_event_to_af:180-182` has the same shape as
+`fuzzy_match_event`: it scores `direct` and `swapped` team pairings, takes
+`max(...)`, and returns only the score — **the winning orientation is thrown
+away** — and that is the matcher behind `run_board_sweep`. `run_league_sweep`'s
+inline matcher (`coolbet_explorer.py:1600`) is worse still: `token_sort_ratio`
+on a concatenated `"home vs away"` string is order-insensitive by definition.
+Every side-mapper then trusts the book's own `1`/`X`/`2`
+(`unibet_kambi.parse_betoffers:258-261`,
+`epicbet_explorer.parse_event_markets:680-691`,
+`coolbet_explorer.parse_market:727-740`). **The one feed that re-orients
+correctly is `coolbet_ui_placer.py:1170-1178`**, which matches each rendered
+outcome label against OUR fixture's home/away and writes nothing for a side that
+matches neither — the pattern the others should copy. See [[#001]].
+
+**Four gates now stand between a bad price and a pick** (three added 2026-09-20,
+the fourth 2026-09-22):
 
 | gate | where | what it catches |
 |---|---|---|
-| `anchor_sanity.is_anchor_sane` (ratio > 1.5625× vs Pinnacle) | `best_price_router._latest_book_odds` **and** `pick_trigger_matcher` | 20 of the 25. Weak on O/U, where prices are compressed into ~1.2–3.0 and a wrong fixture rarely trips a ratio test. |
+| `anchor_sanity.is_anchor_sane` (ratio > 1.5625× vs Pinnacle) | READ: `best_price_router._latest_book_odds` **and** `pick_trigger_matcher` | 20 of the 25. Weak on O/U, where prices are compressed into ~1.2–3.0 and a wrong fixture rarely trips a ratio test. **Fails open with no Pinnacle line — see the mirror-guard row.** |
 | `BotConfig.edge_ceiling` (8% on `sharp_devig`) | `pick_generator` | all 31, including every O/U one. Works in edge space, so market compression does not blunt it. |
 | `pick_triggers.OUTLIER_MULT` (`max_odds = min_odds × 1.6`) | `pick_trigger_matcher` (always had it) **and now `pick_generator`** | 14 of the 25. The generator is a *clone* of the sharp path that had silently dropped this half of the window. |
+| `mirror_guard.drop_mirrored_1x2` (1x2 triple transposed vs a 4+-book consensus) | **WRITE**: `store_odds`, `store_book_odds_snapshots`, `coolbet_explorer.store_coolbet_snapshots_for_match`, `fetch_odds.fetch_af_odds` | the transposed-triple class specifically: 33 of 251,923 triples over 120 days (1 in 7,600), including all 4 quotes that picks were actually struck on. |
 
 None dominates the others: the ratio guard works in price space, the ceiling in
 edge space, the outlier cap in odds space, and the latter two cross near
-`cal_prob ≈ 0.18`. Keep all three.
+`cal_prob ≈ 0.18`. Keep all four.
+
+**Why the fourth gate is not just a tighter version of the first**
+(`1X2-HOME-AWAY-INVERSIONS`, 2026-09-22). The anchor guard is a *ratio* test
+against *one* book, applied at *read* time, and a mirror walks through all three
+of those choices:
+
+- **It fails open with no anchor, deliberately** — and the one inverted pick that
+  was never voided (`bot_unibet_trigger_1x2_v1`, Birkirkara v Hibernians,
+  2026-09-12, home @ 3.20 against a true ~2.05) is on a fixture **Pinnacle never
+  priced**. Seven other books did. A consensus sees it; an anchor cannot.
+- **A ratio test has little power on a moderate mirror.** Balzan v Sliema stored
+  away at 3.40 against a true 2.12 — ratio 1.604 against the 1.5625 threshold. It
+  passed by 2.5%. The fault is obvious in *structure* and marginal in *ratio*.
+- **It runs at read time**, and `odds_snapshots` has **eight production INSERT
+  sites with no shared choke point**. A row that never lands cannot be inherited
+  by a consumer that forgot to ask — which is §4 of `RELIABILITY_LEDGER.md`.
+
+Refused triples go to `odds_snapshots_quarantined` with a dated
+`quarantine_reason`, never deleted. Audit tool: `scripts/audit_mirrored_1x2.py`
+(report-only by default). Smoke `MIRROR-GUARD`.
 
 **THE VOID HAD TO BE MADE TO SURVIVE THE NIGHT.** The first cleanup did not
 stick: `settlement.resettle_wrongly_voided_bets` re-grades every void on a
