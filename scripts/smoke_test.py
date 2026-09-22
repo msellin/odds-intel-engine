@@ -24949,6 +24949,55 @@ def test_published_arm_has_a_record_2026_09_22():
     return "both published arms have a separate record, a leaderboard row, and no dead fixtures"
 
 
+@test("BOOK-DISPLAY-NAME-NOT-THE-KEY — readers see 'Unibet', the ledger keeps 'Unibet-Site'")
+def test_book_display_name_not_the_key_2026_09_22():
+    """Owner: "we should name it Unibet, not Unibet-Site...everywhere. its weird
+    with that Site suffix."
+
+    Right for a reader, and a trap for the data. THREE Unibet feeds exist in
+    odds_snapshots and two carry volume:
+
+        Unibet        1,228,791 rows  last 2026-09-12  API-Football, dead
+        Unibet-Site     750,729 rows  last 2026-09-22  our direct scrape, LIVE
+        Unibet-Kambi    109,785 rows  last 2026-09-15  retired; its stored prices
+                                                       read up to +23.5% ABOVE
+                                                       what the site offered
+
+    Renaming the KEY would merge our live feed into a dead one, and every join in
+    real_bets / shadow_bets / recommended_bookmaker keys on the raw string. So the
+    rename is display-only — the same rule as [[#069]]: a display name that is
+    never the primary key."""
+    import inspect
+    from workers.utils.book_display import display_book
+    from scripts import publish_picks_forward_test as pf
+
+    assert display_book("Unibet-Site") == "Unibet"
+    assert display_book("Coolbet") == "Coolbet", "unknown keys pass through"
+    assert display_book(None) == ""
+
+    # The Telegram render must use it — that is the surface the owner was reading.
+    src = inspect.getsource(pf.render)
+    assert "display_book(" in src, (
+        "the Telegram message still prints the raw bookmaker key"
+    )
+
+    # And the data must NOT be renamed. If a migration ever rewrites the key,
+    # this is what says why that was wrong.
+    migs = "\n".join(
+        f.read_text(encoding="utf-8")
+        for f in (_engine_root / "supabase" / "migrations").glob("*.sql"))
+    assert "SET bookmaker = 'Unibet'" not in migs, (
+        "a migration renames the Unibet-Site KEY — that merges our live direct "
+        "scrape into 1.2M rows of the dead API-Football feed. Display only."
+    )
+
+    # The frontend mirror must exist and agree.
+    web = _web_path("src/lib/book-display.ts").read_text(encoding="utf-8")
+    if web:
+        assert '"Unibet-Site": "Unibet"' in web, "frontend map disagrees with the engine"
+    return "Unibet-Site renders as Unibet; the key is untouched"
+
+
 @test("FLOORS-ONE-SOURCE-CROSS-LANGUAGE — the frontend derives its floors from the engine")
 def test_floors_one_source_cross_language_2026_09_11():
     """FLOORS-ONE-SOURCE-CROSS-LANGUAGE (2026-09-11).

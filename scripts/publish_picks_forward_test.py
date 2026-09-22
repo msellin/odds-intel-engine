@@ -29,6 +29,7 @@ from workers.api_clients.db import (
     execute_query, execute_write, execute_write_returning,
 )
 from workers.model.devig import devig
+from workers.utils.book_display import display_book
 from workers.notify.telegram import send_telegram_public
 
 log = logging.getLogger("picks_forward")
@@ -755,7 +756,10 @@ def render(c: dict) -> str:
         f"⚽ <b>{c['home_team']} vs {c['away_team']}</b>\n"
         f"{c['league']} · {ko:%a %d %b · %H:%M UTC}\n\n"
         f"✅ Pick: <b>{pick}</b> @ <b>{c['odds']:.2f}</b> "
-        f"at <b>{c['bookmaker']}</b>\n"
+        # DISPLAY NAME, not the key (2026-09-22). `Unibet-Site` is an internal
+        # distinction from the dead AF `Unibet` feed and the retired
+        # `Unibet-Kambi`; to a reader it is just noise. The ledger keeps the key.
+        f"at <b>{display_book(c['bookmaker'])}</b>\n"
         # TELEGRAM-EDGE-LABEL (2026-09-22, owner-approved). Publish the PRICE,
         # not a percentage.
         #
