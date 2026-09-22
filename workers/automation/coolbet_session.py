@@ -324,6 +324,29 @@ if _RESIDENTIAL_PROXY and _RESIDENTIAL_PROXY.startswith("socks5h://"):
     _RESIDENTIAL_PROXY = "socks5://" + _RESIDENTIAL_PROXY[len("socks5h://"):]
 
 
+def _apply_residential_proxy(sess) -> None:
+    """Route a plain-requests session through the residential egress too.
+
+    THE FS PROXY IS ONLY HALF THE JOB. GETs go through FlareSolverr, but every
+    ODDS fetch is a POST, and post() deliberately uses plain requests because FS
+    force-encodes POST bodies as form-urlencoded and truncates JSON to ~4 bytes.
+    So on the VPS the board enumerated fine over the proxied FS session while
+    every batched odds POST still left from the DATACENTER IP — where Imperva
+    tarpits rather than refusing, so it surfaced as `Read timed out (30s)` on
+    25 and then 16 events rather than as a block.
+
+    requests wants socks5h:// (resolve at the proxy); Chromium wants socks5://.
+    _RESIDENTIAL_PROXY is normalised to the Chromium spelling at import, so put
+    the `h` back here — otherwise DNS resolves on the VPS.
+    """
+    if not _RESIDENTIAL_PROXY:
+        return
+    url = _RESIDENTIAL_PROXY
+    if url.startswith("socks5://"):
+        url = "socks5h://" + url[len("socks5://"):]
+    sess.proxies = {"http": url, "https": url}
+
+
 def _fs_session_egress_ip(name: str) -> str | None:
     """What IP does this FS session actually leave from? One cheap call."""
     try:
@@ -372,6 +395,30 @@ def _fs_session_ensure(name: str) -> None:
         pass  # Not existing is the normal case; only creation must succeed.
     _fs_call({"cmd": "sessions.create", "session": name,
               "proxy": {"url": _RESIDENTIAL_PROXY}}, timeout_s=60)
+
+    # WARM THE CONTEXT BEFORE ANYONE ASKS IT FOR JSON.
+    #
+    # This is not optional and it is not politeness. The destroy-then-create above
+    # means a proxied session is ALWAYS a brand-new browser context, and Imperva
+    # answers the first request on a fresh context with its JS challenge. On an
+    # HTML page the challenge executes and resolves in ~1s. Fired straight at the
+    # fo-tree JSON endpoint it does not resolve, FlareSolverr spins, and the call
+    # dies at the 60 s browser timeout — surfacing as "HTTP 500 Internal Server
+    # Error", which reads exactly like FS being out of memory.
+    #
+    # That false symptom cost two wrong diagnoses on 2026-09-22 (a wedged session,
+    # then a 1 GiB memory cap) before an A/B on one session showed the truth:
+    #     warmed then fo-tree  -> 133,608 bytes in 298ms
+    #     cold  then fo-tree   -> HTTP 500 after 60s, three times
+    #
+    # The Mac never hit this because its coolbet_odds_reader session is long-lived
+    # and warm; only the recreate-every-run proxied path is ever cold.
+    try:
+        _fs_call({"cmd": "request.get", "url": "https://www.coolbet.com/et/sport",
+                  "session": name, "maxTimeout": 90000}, timeout_s=120)
+    except Exception as e:      # noqa: BLE001
+        log.warning("Coolbet FS warmup navigation failed (%s) — the first API call "
+                    "may be challenged", str(e)[:120])
 
     ip = _fs_session_egress_ip(name)
     local_ip = None
@@ -625,6 +672,7 @@ class CoolbetSession:
         # The real transport for POST (and any legacy plain-requests path).
         # Cookies will be populated by _refresh_cookies_from_fs() on first use.
         self._http = _TimeoutSession()
+        _apply_residential_proxy(self._http)
         self._http.headers.update(_HEADERS_BASE)
         # Tracks whether we've done at least one FS-cookie harvest. Set to
         # False on init AND on any 401/403 to force re-harvest on next call.
@@ -1509,6 +1557,7 @@ def coolbet_match_url(home: str, away: str) -> str | None:
     """
     try:
         session = _TimeoutSession()
+        _apply_residential_proxy(session)
         session.headers.update({
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "

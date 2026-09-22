@@ -50577,6 +50577,57 @@ def test_flaresolverr_not_public():
         "otherwise it silently no-ops on the other host"
 
 
+@test("COOLBET-EGRESS-BOTH-TRANSPORTS — proxy the POSTs too, and warm the context")
+def test_coolbet_egress_both_transports():
+    """Two bugs found by actually running the sweep on the VPS, 2026-09-22.
+    Both produced symptoms that pointed somewhere else entirely.
+
+    1. THE POSTs WERE NOT PROXIED. GETs go through FlareSolverr, but every ODDS
+       fetch is a POST and `post()` deliberately uses plain requests — FS
+       force-encodes POST bodies as form-urlencoded and truncates JSON to ~4
+       bytes. So the board enumerated fine over the proxied FS session while
+       every batched odds POST still left from the DATACENTER IP. Imperva
+       TARPITS rather than refusing, so it surfaced as
+       `Read timed out (30s)` on 25 then 16 events — which looks like a slow
+       network, not a wrong egress. Both transports must carry the proxy.
+
+    2. A RECREATED SESSION IS ALWAYS COLD. The proxied path destroys and
+       recreates the FS session so a stale unproxied one cannot be silently
+       reused — but that means a brand-new browser context every run, and
+       Imperva answers the first request on a fresh context with its JS
+       challenge. On an HTML page it resolves in ~1s; fired straight at the
+       fo-tree JSON endpoint it does not, FlareSolverr spins, and the call dies
+       at the 60s browser timeout as **HTTP 500** — indistinguishable from FS
+       being out of memory. That false symptom cost two wrong diagnoses (a
+       wedged session, then a 1 GiB memory cap) before an A/B on one session
+       settled it:
+           warmed then fo-tree -> 133,608 bytes in 298ms
+           cold  then fo-tree  -> HTTP 500 after 60s, three times
+       The Mac never hit it because its session is long-lived and warm.
+
+    End state: full board sweep from the VPS in 47s, no timeouts.
+    """
+    import inspect
+    from workers.automation import coolbet_session as cs
+    src = inspect.getsource(cs)
+
+    assert "_apply_residential_proxy" in src, \
+        "plain-requests sessions must be proxied too — the odds POSTs do not go through FS"
+    helper = inspect.getsource(cs._apply_residential_proxy)
+    assert "socks5h://" in helper, \
+        "requests needs socks5h (resolve at proxy); the module-level value is normalised to " \
+        "the Chromium socks5 spelling, so the h must be put back for requests"
+    assert src.count("_apply_residential_proxy(") >= 3, \
+        "every _TimeoutSession() must be proxied — one unproxied session leaks the real egress"
+
+    ens = inspect.getsource(cs._fs_session_ensure)
+    assert "coolbet.com/et/sport" in ens, \
+        "the proxied path recreates the session every run, so it MUST warm the context on an " \
+        "HTML page before any JSON call — otherwise the Imperva challenge times out as HTTP 500"
+    assert ens.index("request.get") < ens.index("_fs_session_egress_ip"), \
+        "warmup must happen before the egress assertion returns, i.e. before callers use it"
+
+
 
 if __name__ == "__main__":
     main()

@@ -23,22 +23,32 @@ services:
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
     container_name: oi_hetzner_flaresolverr
-    ports:
-      # ⚠️ 127.0.0.1 IS LOAD-BEARING SECURITY, NOT STYLE. Bind this to 0.0.0.0
-      # (as local/flaresolverr/docker-compose.yml does, for a laptop behind NAT)
-      # and FlareSolverr is an OPEN REMOTE BROWSER on a public IP: anyone can
-      # drive it, and because request.get accepts a `proxy` field they can drive
-      # it THROUGH the residential egress and browse from the operator's home
-      # connection. Found exposed on 2026-09-22 — the VPS had been running the
-      # Mac compose file since 2026-06-29. Docker writes its own iptables rules
-      # and BYPASSES ufw, so the firewall does not save you here.
-      - "127.0.0.1:8191:8191"
+    # HOST NETWORKING, deliberately — and the bind is handled by HOST= below.
+    #
+    # WHY NOT A BRIDGE. On a bridge network the container could not reach the
+    # WireGuard residential egress at 10.8.0.2:1080: measured 2026-09-22, the host
+    # reaches it and a container on systemd_default (172.19.x) does not, so every
+    # proxied Coolbet fetch died at the 60 s browser timeout and surfaced as
+    # "HTTP 500 / cannot allocate a Chrome context" — a completely misleading
+    # symptom that cost two wrong diagnoses (a wedged session, then a memory cap).
+    #
+    # ⚠️ HOST NETWORKING MAKES `ports:` INERT. The ONLY thing keeping FlareSolverr
+    # off the public internet is now HOST=127.0.0.1 below. Removing or changing it
+    # republishes a REMOTE BROWSER on a public IP that accepts a `proxy` field —
+    # i.e. anyone could browse from the operator's home line. That is not
+    # hypothetical: it was the live state of this box from 2026-06-29 until
+    # 2026-09-22. Verify after any change:
+    #     curl -m5 http://204.168.199.8:8191/   # MUST time out
+    network_mode: host
     environment:
       BROWSER_TIMEOUT: "60000"
       LOG_LEVEL: "info"
       LOG_HTML: "false"
       CAPTCHA_SOLVER: "none"
       TZ: "UTC"
+      # Loopback bind — see the network_mode note above. This is the security control.
+      HOST: "127.0.0.1"
+      PORT: "8191"
     restart: unless-stopped
     # Memory cap raised 1536m -> 3g on 2026-09-22. Measured: the container sits
     # at ~476 MiB IDLE with zero sessions, and one Coolbet session took it to
