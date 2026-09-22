@@ -24514,6 +24514,57 @@ def test_bot_admissible_band_non_empty_2026_09_22():
     return f"all {len(TRIGGER_CONFIGS)} bot configs can emit inside their band"
 
 
+@test("SHADOW-CLOSE-BOUNDED — the shadow ledger's close is a measurement, not a self-comparison")
+def test_shadow_close_bounded_2026_09_22():
+    """SHADOW-CLOSE-UNBOUNDED-IS-A-SELF-COMPARISON (2026-09-22, [[#024]]).
+
+    `real_bets` has bounded its own-book close at DIRECT_CLOSE_MAX_MIN=60 since
+    migration 332. The SHADOW ledger never adopted it: it called the unfiltered
+    `get_closing_odds`, whose CLOSING-PRE-KO-FALLBACK returns the latest
+    pre-kickoff snapshot HOWEVER OLD. For Coolbet/Unibet-Site that row was
+    frequently the bet's own quote, so `clv = odds/close - 1` came out exactly
+    0.0000 by construction — measured at **51 of 93 rows (54.8%)**, with
+    `closing_fresh` true on **2 of 287**. CLV is the promotion gate for the whole
+    fleet (§8), so half of it was not a measurement.
+
+    Pins three things: the bound exists and excludes, AH rungs are parsed rather
+    than matched loosely, and the shadow path records the age it filtered on."""
+    import inspect
+    from workers.jobs import settlement as st
+
+    assert st.DIRECT_CLOSE_MAX_MIN == 60, (
+        "the shadow and real ledgers must agree on what 'fresh' means; "
+        "migration 364's closing_fresh flag hard-codes 60"
+    )
+
+    # The shadow own-book close must use the BOUNDED lookup, not the fallback one.
+    src = inspect.getsource(st)
+    i = src.index("SHADOW-CLOSE-UNBOUNDED-IS-A-SELF-COMPARISON")
+    block = src[i:i + 2600]
+    assert "get_book_close(" in block, (
+        "the shadow close must come from get_book_close (bounded, never falls "
+        "back to an older row or another book)"
+    )
+    assert "closing_minutes_before_ko" in block, (
+        "the shadow path must RECORD the close's age — without it a reader "
+        "cannot distinguish a real close from a self-comparison, which is the "
+        "entire purpose of migration 364's closing_fresh"
+    )
+
+    # AH rungs: parsed, or refused. Never matched against an arbitrary rung.
+    f = st._ah_team_and_line
+    assert f("1x2", "home") == ("home", None), "non-AH markets pass through"
+    assert f("asian_handicap", "home -1.25") == ("home", -1.25)
+    assert f("asian_handicap", "away +0.5") == ("away", 0.5)
+    assert f("asian_handicap", "home") is None, (
+        "an AH selection with no readable rung must yield NO close — "
+        "get_book_close(handicap_line=None) would match the newest row of ANY "
+        "rung, which its own docstring calls worse than NULL"
+    )
+    assert f("asian_handicap", "home banana") is None
+    return "shadow close bounded at 60 min, age recorded, AH rungs parsed or refused"
+
+
 @test("FLOORS-ONE-SOURCE-CROSS-LANGUAGE — the frontend derives its floors from the engine")
 def test_floors_one_source_cross_language_2026_09_11():
     """FLOORS-ONE-SOURCE-CROSS-LANGUAGE (2026-09-11).
@@ -43352,8 +43403,21 @@ def test_shadow_clv_no_arbitrary_fallback():
     j = src.index("\ndef ", i + 10)
     body = src[i:j]
 
-    assert "do NOT substitute another book" in body, (
-        "the explicit no-fallback marker is gone from _settle_pending_shadow_bets"
+    # UPDATED 2026-09-22 ([[#024]], SHADOW-CLOSE-UNBOUNDED-IS-A-SELF-COMPARISON).
+    # This used to assert the literal comment "do NOT substitute another book".
+    # The no-fallback guarantee is now STRUCTURAL and stronger: the own-book
+    # close comes from `get_book_close`, which by its own contract "never falls
+    # back to another book or to an older snapshot — a missing close is NULL,
+    # not a guess". Asserting the function is the property; asserting the
+    # comment was asserting that someone had written a comment.
+    assert "get_book_close(" in body, (
+        "the shadow own-book close must come from get_book_close, which cannot "
+        "fall back to another book OR to a stale pre-kickoff row"
+    )
+    assert "_ah_team_and_line(" in body, (
+        "asian_handicap rows carry their rung inside `selection` and shadow_bets "
+        "has no handicap_line column — the rung must be parsed, or the close "
+        "refused; matching an arbitrary rung is worse than NULL"
     )
     bare = _re.findall(
         r"get_closing_odds\(\s*match_id,\s*odds_market,\s*odds_selection\s*\)", body)
@@ -47348,7 +47412,17 @@ def test_shadow_clv_margin_corrected():
     _j = fn.find("\ndef ", 10)
     fn = fn if _j < 0 else fn[:_j]
     assert "closing_book_margin(match_id, odds_market, closing_bookmaker)" in fn, "must use the settlement helper, not a flat margin"
-    assert "closing_margin = %s" in fn and "clv_margin_corrected = %s WHERE id = %s" in fn, "UPDATE must write both columns"
+    # UPDATED 2026-09-22 ([[#024]]): the UPDATE gained closing_minutes_before_ko,
+    # so `clv_margin_corrected = %s` is no longer the last assignment before
+    # WHERE. Assert the two columns are written — which is what this test is
+    # about — rather than the exact position of the line break.
+    assert "closing_margin = %s" in fn and "clv_margin_corrected = %s" in fn, (
+        "UPDATE must write both columns"
+    )
+    assert "closing_minutes_before_ko = %s" in fn, (
+        "the shadow UPDATE must also record the close's age — a clv with no age "
+        "cannot be told apart from a self-comparison (migration 364)"
+    )
     assert "if closing_margin is not None:" in fn, "an undefined margin must leave the correction NULL"
     mig = _engine_path("supabase/migrations/355_shadow_clv_margin_corrected_and_freshness.sql").read_text(encoding="utf-8")
     assert "CREATE OR REPLACE VIEW shadow_bets_own_book_clv" in mig and "closing_bookmaker IS NOT NULL" in mig, \

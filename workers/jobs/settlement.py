@@ -1393,6 +1393,25 @@ _VENUE_SNAPSHOT_BOOK = {
 DIRECT_CLOSE_MAX_MIN = 60
 
 
+def _ah_team_and_line(market: str, selection: str) -> tuple[str, float | None] | None:
+    """Split an Asian-handicap bet selection into the (team, rung) pair the
+    odds tables are keyed on. `shadow_bets` has NO `handicap_line` column — the
+    rung lives inside `selection` as "home -1.25" — so any own-book close for AH
+    must parse it out. Returns None when the rung cannot be read, which the
+    caller must treat as "no close": `get_book_close` with handicap_line=None
+    would return the newest row of ANY rung, and its own docstring says that is
+    worse than NULL. Non-AH markets pass straight through."""
+    if market != "asian_handicap":
+        return selection, None
+    parts = selection.split(" ", 1)
+    if len(parts) != 2:
+        return None
+    try:
+        return parts[0], float(parts[1])
+    except ValueError:
+        return None
+
+
 def get_book_close(
     match_id: str,
     market: str,
@@ -3923,15 +3942,47 @@ def _settle_pending_shadow_bets(pending: list, finished: list) -> int:
         # HISTORICAL ROWS are not rewritten — `closing_bookmaker IS NULL` while
         # `closing_odds IS NOT NULL` is the marker for a row that came through
         # the old fallback. Exclude those from any gate or published figure.
+        # SHADOW-CLOSE-UNBOUNDED-IS-A-SELF-COMPARISON (2026-09-22, [[#024]]).
+        # The book was right after SHADOW-CLV-NO-ARBITRARY-FALLBACK; the AGE was
+        # not bounded. `get_closing_odds` carries CLOSING-PRE-KO-FALLBACK: when
+        # no `is_closing` row exists it returns the latest pre-kickoff snapshot
+        # HOWEVER OLD. Before NEAR-KICKOFF-CAPTURE the direct-book sweeps walked
+        # the whole board every 30 min, so for Coolbet/Unibet-Site that newest
+        # pre-KO row was frequently THE BET'S OWN QUOTE — and `clv = odds/close
+        # - 1` against your own quote is exactly 0.0000 by construction.
+        #
+        # Measured on the sharp-trigger population: `clv` is exactly 0 on **51
+        # of 93 rows (54.8%)**, and `closing_fresh` is true on **2 of 287**. So
+        # roughly half of the single most consequential number in the system
+        # (CLV is the promotion gate, §8) was not a measurement at all — it was
+        # a row comparing a price to itself, scored as "no edge captured" and
+        # pooled with real observations. The other half averaged ~+13%, which is
+        # how the headline stayed plausible.
+        #
+        # `real_bets` has been bounded since migration 332 (DIRECT_CLOSE_MAX_MIN
+        # = 60) and `get_book_close` never falls back to an older row or another
+        # book. The shadow ledger simply never adopted it. Use the same function
+        # so "fresh" means the same thing in both ledgers, and RECORD THE AGE —
+        # without it a reader cannot tell a real close from a self-comparison,
+        # which is the whole point of migration 364's `closing_fresh`.
+        #
+        # This deliberately REDUCES the number of rows carrying a `clv`. A NULL
+        # is honest; a 0 that means "we never looked" is a silent negative bias
+        # on every bot's promotion gate. HISTORICAL ROWS are not rewritten —
+        # they carry `closing_minutes_before_ko IS NULL`, so `closing_fresh` is
+        # already false on them and any gate filtering on it excludes them.
         own_book = bet.get("recommended_bookmaker")
         closing_bookmaker = None
         closing_odds = None
-        if own_book:
-            closing_odds = get_closing_odds(match_id, odds_market, odds_selection, own_book)
-            if closing_odds:
+        closing_minutes_before_ko = None
+        _ah = _ah_team_and_line(odds_market, odds_selection)
+        if own_book and _ah is not None:
+            _sel, _line = _ah
+            _close = get_book_close(match_id, odds_market, _sel, own_book,
+                                    handicap_line=_line)
+            if _close:
+                closing_odds, closing_minutes_before_ko = _close
                 closing_bookmaker = own_book
-            else:
-                closing_odds = None   # explicit: do NOT substitute another book
 
         # The validator the bot is actually judged on. Pinnacle-anchored and
         # de-vigged, so 0 means Pinnacle-fair rather than Pinnacle-quoted.
@@ -3988,11 +4039,13 @@ def _settle_pending_shadow_bets(pending: list, finished: list) -> int:
                 "closing_odds = %s, clv = %s, clv_pinnacle = %s, "
                 "clv_live = %s, clv_pinnacle_live = %s, "
                 "closing_bookmaker = %s, closing_margin = %s, "
-                "clv_margin_corrected = %s WHERE id = %s",
+                "clv_margin_corrected = %s, closing_minutes_before_ko = %s "
+                "WHERE id = %s",
                 [settlement["result"], settlement["pnl"],
                  closing_odds, settlement["clv"], clv_pinnacle,
                  settlement.get("clv_live"), clv_pinnacle_live,
-                 closing_bookmaker, closing_margin, clv_margin_corrected, bet["id"]]
+                 closing_bookmaker, closing_margin, clv_margin_corrected,
+                 closing_minutes_before_ko, bet["id"]]
             )
         except Exception as e:
             console.print(f"  [yellow]Shadow-settle error for {bet['id']}: {e}[/yellow]")
