@@ -163,3 +163,57 @@ slightly *worse* than frozen, nothing would have flagged it.
 
 **The verdict survived the correction. It did not have to.** Guard added:
 smoke `HALF-TIME-ONE-CONSTRUCTION`; pattern recorded as RELIABILITY_LEDGER #23.
+
+---
+
+# A/B RESULT (2026-09-23) — FAIL, and the two arms of the harness disagree about the sign
+
+Two bundles trained in the same minute on the same 175k rows, differing by exactly
+the five migration-378 columns. n = 9,127 out-of-sample fixtures.
+
+| harness arm | | model log-loss | model AUC | residual AUC | α |
+|---|---|---|---|---|---|
+| OPTIMISTIC | A (52 feat) | 0.6791 | 0.5822 | 0.4536 | **0.0000** |
+| OPTIMISTIC | B (57 feat) | **0.6783** | **0.5873** | **0.4552** | **0.0000** |
+| **REALISTIC — DECIDES** | **A (52 feat)** | **0.6805** | **0.5785** | **0.4472** | **0.0000** |
+| **REALISTIC — DECIDES** | **B (57 feat)** | **0.6809** | **0.5758** | **0.4423** | **0.0000** |
+
+*market: log-loss 0.6737, AUC 0.6038*
+
+## The verdict: FAIL, and the honest reading is NO EFFECT
+
+**α = 0.0000 on all four cells.** The optimiser, free to choose any weight in
+[0,1], puts nothing on either model whether or not it has half-time features.
+That is the pre-registered criterion and it is unambiguous.
+
+⚠️ **And the two harness arms disagree about the SIGN.** On the optimistic arm B
+looks better (log-loss −0.0008, AUC +0.005); on the deciding arm B is **worse**
+(log-loss +0.0004, AUC −0.003). Same bundles, same fixtures, opposite direction.
+
+**That disagreement is the finding, not a puzzle to resolve in B's favour.** A
+difference that flips sign between two arms of the same harness is smaller than
+the harness's own methodological variation — the identical logic that made the
+probe's Shin-arm "PASS" inadmissible. The effect is inside noise, and the correct
+summary is *no effect*, not *a small improvement*.
+
+**Recorded because I got this wrong in the moment:** on seeing the optimistic arm
+alone I reported "Arm B is a genuinely better model." The deciding arm says the
+opposite. The pre-registration names the realistic arm as the decider precisely
+so this cannot be chosen after the fact.
+
+## What this closes, and what it does not
+
+**Closes:** half-time features do not help the existing 52-feature vector on
+O/U 2.5. The probe said they cannot carry a model alone; the A/B says they do not
+help as one input among many either. Fifth consecutive α = 0.
+
+**Does NOT close:**
+* **The 1H MARKETS themselves** — `1x2_1h` (3,439 Pinnacle matches),
+  `team_total_1h_*` (~6,800 each), `corners_1h_*`. We price none of them. A model
+  mediocre at full-time totals may still be the only model in an uncontested
+  market, and nothing here has tested that.
+* **A correctly SIZED vector.** Both arms carry 52+ features of which 15 are
+  under 20% filled. The literature's sharpest finding — a two-number rating
+  beating a 40-feature set 0.2085 to 0.2416 RPS — says the informative experiment
+  is a SMALL market-shaped vector, which is [[#089]] arms C-H and is explicitly
+  not what was tested here.
