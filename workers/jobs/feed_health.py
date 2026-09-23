@@ -211,6 +211,11 @@ def _evaluate_one(f: dict, runs: list[dict], odds: dict) -> dict:
             reasons_warn.append("last run failed")
     elif basis == "runs":
         run_age = _age_min(row.get("last_run_at"))
+        if not runs and f.get("job"):
+            # A brand-new job before its first scheduled run is not a fault — it
+            # read as red "not run for never" on the day Tonybet results shipped.
+            row["status"], row["status_reason"] = "unknown", "waiting for its first scheduled run"
+            return row
         if row.get("fail_streak", 0) >= 2:
             reasons_fail.append(f"{row['fail_streak']} failed runs in a row")
         elif row.get("last_run_status") and row["last_run_status"] not in _OK_RUN + ("running",):

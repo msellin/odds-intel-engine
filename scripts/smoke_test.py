@@ -52457,5 +52457,15 @@ def test_feed_controls():
         tg.send_telegram = orig_send
     assert n == 2 and "failing" in sent[0] and "recovered" in sent[1], sent
 
+    # A brand-new runs-judged job with no runs yet reads "waiting", never red.
+    from workers.registry.feed_registry import FEEDS_BY_ID
+    orig_u = fh._unit_state
+    try:
+        fh._unit_state = lambda u: "active"
+        row = fh._evaluate_one(FEEDS_BY_ID["tonybet_results"], [], {})
+    finally:
+        fh._unit_state = orig_u
+    assert row["status"] == "unknown" and "first scheduled run" in row["status_reason"], row
+
 if __name__ == "__main__":
     main()
