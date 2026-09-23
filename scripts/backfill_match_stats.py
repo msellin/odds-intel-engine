@@ -157,7 +157,24 @@ def backfill_fixture_block(limit: int, sleep: float, dry_run: bool) -> int:
     from a call it was already making: the forward path is fixed, and this is
     the history those fixes cannot reach (enrichment only walks yesterday+today).
 
-    Measured recovery for referee: 24/40 September, 23/40 August — ~60%.
+    OBSERVED RECOVERY, from two 6,000-fixture runs — use these, not a sample:
+
+        batch 1 (newest 6,000, back to ~Apr 2026)   1,875 referees (31%)  4,088 lineups (68%)
+        batch 2 (next 6,000, older)                    91 referees ( 2%)  3,547 lineups (59%)
+
+    ⚠️ I PUBLISHED A 93% REFEREE ESTIMATE BEFORE RUNNING THIS AND IT WAS WRONG —
+    a measurement error of mine, not a sampling artifact, and worth recording so
+    nobody trusts it. I sampled the pool `referee IS NULL OR lineups_home IS NULL`
+    and counted "AF has a referee". But only **16% of that pool actually needs a
+    referee** (9,243 of 56,833) — it is dominated by fixtures needing a LINEUP,
+    most of which already had a referee. So I was counting fixtures that would
+    gain nothing. The right denominator is `referee IS NULL` alone.
+
+    The real shape: **referee recovery is strongly recency-dependent** (31% on
+    recent fixtures, 2% on older — AF simply never recorded it for most older
+    matches), while **lineup recovery is steady at ~60-68% across eras** and is
+    what makes this mode worth running.
+
     Fill-if-empty on both, so a value we already hold is never overwritten.
     """
     rows = execute_query("""
@@ -227,8 +244,9 @@ def main() -> int:
                          "worth running at scale; see the module docstring. "
                          "`fixture` backfills REFEREE and LINEUPS from the "
                          "/fixtures?ids= batch — 20 fixtures per call, so it is "
-                         "20x cheaper than the others; measured ~60% referee "
-                         "recovery ([[#088]]).")
+                         "20x cheaper than the others. OBSERVED: lineups ~60-68% "
+                         "across eras; referee 31% on recent fixtures and ~2% on "
+                         "older ones ([[#088]]).")
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--sleep", type=float, default=0.12,
                     help="seconds between calls; this shares the AF budget with "
