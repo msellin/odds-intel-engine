@@ -183,3 +183,37 @@ already being computed and discarded.
    anchors. Cheaper and more decisive than any amount of accrual.
 3. **Time alignment.** Anchor and book quotes within 15 minutes, or the
    comparison measures latency rather than price.
+
+## 2026-09-23 — is ANY book in the feed sharper than Pinnacle? No.
+
+Owner's question: find AF books as sharp as or sharper than Pinnacle, then check
+their AF odds against the real site and build direct sweepers for them. The
+first half is answered by `scripts/anchor_book_sharpness_research.py` section C
+(already existed, results never written up): Shin-de-vigged 1X2 log-loss against
+the result, **paired per fixture against Pinnacle**, latest pre-kickoff quote,
+120 days, 24,596 settled fixtures.
+
+**Pooled:** every book ties Pinnacle or is worse. Largest mean ΔLL in either
+direction is 0.003 nats (~0.3% of the score). Worse at |t|>1.96: William Hill,
+Bet365, Betano, Superbet, SBO, 888Sport; with a family-wise bar for 15 books
+(|t|≳2.9) only SBO, Betano and 888Sport survive.
+
+**Stratified by Pinnacle's own overround** (the question that matters — is anyone
+sharper where Pinnacle is REAL?):
+
+| Pinnacle band | fixtures | book significantly sharper than Pinnacle |
+|---|---|---|
+| < 4% (majors) | 1,844 | **none — all 15 tie** |
+| 4–6% | 3,490 | none (888Sport worse) |
+| 6–9% | 2,898 | none (Bet365, 888Sport worse) |
+| ≥ 9% (goodwill) | 11,560 | none (William Hill, Betano worse); our three books lean better (ΔLL −0.002 to −0.003, t −1.2 to −1.5, n.s.) |
+
+**Read:** on this fixture universe the mainstream books are one market. A
+"sharper anchor" does not exist in the AF feed, and the second half of the
+question (AF vs real site) is already answered for the only candidate that
+mattered — AF's Pinnacle is real Pinnacle plus lag (§ above). A direct sweeper
+for any AF book would buy FRESHNESS, not sharpness. The lever that remains is
+**placeable breadth** (`docs/BOOK_SET_COUNTERFACTUAL_2026_09_22.md`: +2.1% on
+price from a wider set), i.e. sweepers for books the operator can actually bet.
+Not measured here: time alignment across books (each book's own latest quote),
+and markets other than 1X2.
