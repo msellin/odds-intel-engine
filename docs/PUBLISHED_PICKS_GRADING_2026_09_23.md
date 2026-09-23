@@ -386,3 +386,25 @@ favourite-longshot bias (favourites are under-priced) — and it is spread acros
 🤖 OWN). Grade B by odds band here: ≤1.6 +10.6%, 1.6–2.0 +6.1%, 2.0–2.5 +7.2%, 2.5–3.0
 −3.0%, 3.0–4.0 +2.7% — the owner's instinct that B has a weak zone is right, but it is the
 HIGH-odds end, not the low.
+
+### Are three tiers distinct? + grade A odds floor (2026-09-23, owner: "if we add 3 tiers, they must be really distinct"; "maybe better if we don't bet at 1.1 odds")
+
+A = grade B at odds ≤ 1.6; B below = grade B without A.
+
+| sample | A | B | C | A − B | B − C |
+|---|---|---|---|---|---|
+| ours, last 56 d (rules built here) | +27.1% (32) | +9.2% (360) | −25.6% (285) | +17.9pp p=0.057 | **+34.8pp p<0.001** |
+| ours, May–Jul unseen | +14.7% (29) | +2.9% (150) | −2.8% (356) | +11.9pp p=0.21 | +5.7pp p=0.31 |
+| external 2015–16 | +9.8% (696) | +3.3% (6,380) | +3.6% (10,734) | **+6.4pp p=0.011** | **−0.3pp p=0.56** |
+
+**A > B in every sample. B > C only on our own data**, and mostly on the window that built
+the rules — out of sample the gap is small or none.
+
+**Odds floor for A:** below 1.20 is almost empty (external 9 picks, −10.4%; ours 2). With a
+1.20 floor external A is +10.0% (n=687) vs +9.8% without; 1.30 gives +10.1% (n=629). A
+floor at **1.20** costs nothing measurable and removes the picks readers find pointless.
+Bands externally: 1.20–1.30 +9.4% (58) · 1.30–1.40 +8.0% (143) · 1.40–1.50 +12.2% (169) ·
+1.50–1.60 +9.9% (317).
+
+Owner decision pending: three tiers (A 1.20–1.60 · B · C, C retired if it does not separate
+live) or two (A · everything else — the only split distinct in every sample).
