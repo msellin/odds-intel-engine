@@ -52044,6 +52044,38 @@ def test_candidate_funnel_persisted():
         "shadow runs must not share rows with live runs")
 
 
+@test("CLV-SHARP-FRESH-ASSEMBLED-CLOSE — one CLV definition against a fresh, same-moment Pinnacle close")
+def test_clv_sharp_fresh_assembled_close():
+    """[[#024]] (Block D step 2), 2026-09-23. clv_sharp = odds × Shin(Pinnacle close) − 1,
+    where the close is the latest COMPLETE Pinnacle set assembled within ±2 min and
+    no older than 60 min at kickoff. The old helper had no age bound and fetched
+    each side separately, so a "close" could be hours old or mix moments. Pins the
+    freshness bound, the same-moment assembly, the exact DC / DNB derivations,
+    and that unsupported markets yield nothing rather than a guess."""
+    from datetime import datetime, timedelta, timezone
+    from workers.jobs import clv_sharp as cs
+    ko = datetime(2026, 9, 20, 15, 0, tzinfo=timezone.utc)
+    t = lambda m: ko - timedelta(minutes=m)
+    sides = ("home", "draw", "away")
+    q = {"home": [(t(50), 2.0), (t(10), 2.1)], "draw": [(t(50), 3.4), (t(9), 3.3)],
+         "away": [(t(50), 3.9), (t(10), 3.8)]}
+    odds, ts = cs.assemble_close(q, sides, ko)
+    assert odds == [2.1, 3.3, 3.8] and ts == t(9), "latest complete set within ±2 min wins"
+    # draw only re-quoted 5 min away from the others -> falls back to the earlier complete set
+    q2 = {"home": [(t(50), 2.0), (t(10), 2.1)], "draw": [(t(50), 3.4), (t(4), 3.3)],
+          "away": [(t(50), 3.9), (t(10), 3.8)]}
+    assert cs.assemble_close(q2, sides, ko)[0] == [2.0, 3.4, 3.9], "never mix moments"
+    stale = {"home": [(t(90), 2.0)], "draw": [(t(90), 3.4)], "away": [(t(90), 3.9)]}
+    assert cs.assemble_close(stale, sides, ko) is None, "a close older than 60 min is not a close"
+    pr = [0.5, 0.3, 0.2]
+    assert abs(cs.leg_prob("double_chance", "1x", pr, sides) - 0.8) < 1e-12
+    assert abs(cs.leg_prob("double_chance", "x2", pr, sides) - 0.5) < 1e-12
+    assert abs(cs.leg_prob("draw_no_bet", "home", pr, sides) - 0.5 / 0.7) < 1e-12
+    assert cs.leg_prob("draw_no_bet", "draw", pr, sides) is None
+    assert cs.sides_for("asian_handicap") is None and cs.sides_for("btts") is None
+    assert cs.base_market("double_chance") == "1x2" and cs.base_market("over_under_25") == "over_under_25"
+
+
 @test("CONSENSUS-SPLIT-BY-GRADE — one ledger arm, two bots (B beta, C testing), split in the views")
 def test_consensus_split_by_grade():
     """[[#095]], 2026-09-23. Owner: split the consensus bot into two bots by
