@@ -528,3 +528,52 @@ win alone) — the question is whether it can TIME or FILTER picks.
   > 0 with one-sided p < 0.05 (Welch), reported per ledger.
 * **Expected:** Test 1 PASSES (+0.12 measured); Test 2 shows a modest positive gap, not enough to turn
   a losing ledger positive on its own.
+
+### Result — #090 (a) (2026-09-23, `scripts/ou_price_move_signal.py`, committed before the first run)
+
+17,801 finished fixtures with an early AND a later complete Pinnacle O/U 2.5 pair (median 28 h
+between the early pair and kickoff).
+
+| | train half | held-out half |
+|---|---|---|
+| corr(r, move) | +0.073 | **+0.119** |
+| slope of move on r | +0.0188 | **+0.0239 ± 0.0021, t = +11.3** |
+
+* **Test 1: PASS, with a caveat on size.** The slope passes easily. The top quintile moved
+  **+0.75pp** toward overs and the bottom quintile −0.02pp, so the pre-registered bar (> +0.5pp) is
+  met — **but half of that is drift**: the whole held-out half moved +0.34pp toward overs regardless of
+  the signal. The drift-free size is **±0.39pp per side**. Negative out-of-sample R² on the raw fit
+  is the same drift (the intercept); with the train slope and a demeaned intercept, OOS R² = +1.35%.
+* **Post-hoc control (not part of the bar): the rating is doing the work, not mean-reversion.** r
+  contains −logit(p_early), so a noisy early price that reverts would look like signal with any
+  rating. Replacing the rating with a walk-forward league mean of early prices gives **t = +0.9**
+  against the rating's +11.3. In a joint regression the rating keeps t = +11.3 alongside the early
+  price and the league mean. The same holds for early prices ≥ 6 h out (t = +11.2).
+* **Test 2: PASS overall, not on the published ledger.** Mean clv_sharp of scored O/U 2.5 legs:
+
+  | ledger | agree | disagree | gap |
+  |---|---|---|---|
+  | ALL | −6.14% (n=1,455) | −8.18% (n=1,450) | **+2.04pp, t = +4.6** |
+  | shadow_bets | −6.95% | −9.29% | +2.33pp, t = +4.2 |
+  | simulated_bets | −4.01% | −5.11% | +1.10pp, t = +1.5 |
+  | picks_forward_test | −2.29% | −2.68% | +0.39pp, t = +0.7 (NS) |
+
+**Independent review (2026-09-23) — Test 1 confirmed, Test 2 CORRECTED DOWN.**
+* No leakage: the rating walk is predict-then-update in date order. In 21.5% of fixtures the team
+  played between the early price and kickoff (the rating knows a result the early price did not), but
+  that is only 71 held-out fixtures, and without them t is unchanged (+11.3).
+* Test 1 survives clustering (league-day t = +10.4, league t = +8.9), per-day drift removal
+  (t = +11.4) and early ≥ 6 h (±0.43pp).
+* **Test 2 is inflated by side mix.** Agreeing legs are mostly overs, which lose less. Within OVERS
+  the gap is **0.00pp** (−3.76% vs −3.76%); within unders +1.62pp. Controlling for side, odds and bot,
+  the agree effect is **+0.88pp (t = 3.4)**, not +2.04pp. The pool also held one in-play bot
+  (`bot_inplay_slowstate_v1`, 269 legs at −36%). Test 2 is not independent of Test 1 either: legs that
+  agree gain because of the same move Test 1 measures.
+
+**Reading.** As expected. The goals rating knows something Pinnacle's opening O/U price does
+not yet reflect and its close does — which is also why every α test against the CLOSE returned 0.
+But the move it predicts is about 0.4pp of probability, and legs that agree with it still lose ~6%
+against the close. A filter would cut volume in half and improve clv_sharp by ~0.9pp (controlled; zero for overs),
+and would not produce a positive stream. **Not wired into any gate.** What it does establish: an O/U edge from
+this rating can only exist at EARLY prices, before Pinnacle moves — so any future O/U money test
+must be run at the opening price, not at T-2h.

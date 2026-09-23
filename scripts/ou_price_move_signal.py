@@ -56,6 +56,7 @@ def main() -> int:
 
     rows = execute_query("""
         SELECT o.match_id::text mid, o.selection, o.timestamp ts, o.odds::float od, m.date ko,
+               m.league_id::text lg,
                f.ht_expected_total::float ht, f.h2_expected_total::float h2
           FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
           JOIN match_feature_vectors f ON f.match_id = m.id
@@ -67,7 +68,7 @@ def main() -> int:
     meta = {}
     for r in rows:
         by[r["mid"]][r["ts"]][r["selection"]] = r["od"]
-        meta[r["mid"]] = (r["ko"], r["ht"] + r["h2"])
+        meta[r["mid"]] = (r["ko"], r["ht"] + r["h2"], r["lg"])
     data = []
     for mid, snaps in by.items():
         full = sorted((ts, d) for ts, d in snaps.items() if "over" in d and "under" in d)
@@ -79,9 +80,9 @@ def main() -> int:
         pe, pc = devig([d0["over"], d0["under"]]), devig([d1["over"], d1["under"]])
         if not pe or not pc:
             continue
-        ko, lam = meta[mid]
+        ko, lam, lg = meta[mid]
         r = logit(p_over(lam)) - logit(pe[0])
-        data.append((ko, mid, r, logit(pc[0]) - logit(pe[0]), pe[0], pc[0]))
+        data.append((ko, mid, r, logit(pc[0]) - logit(pe[0]), pe[0], pc[0], lg))
     data.sort()
     n = len(data)
     half = n // 2
@@ -105,6 +106,27 @@ def main() -> int:
           f" BOTTOM → {100*bot_move:+.2f}pp")
     ok1 = bte > 0 and p1 < 0.01 and top_move > 0.005
     print(f"  TEST 1: {'PASS' if ok1 else 'FAIL'}  (slope>0 at p<0.01 AND top-quintile move > +0.5pp)")
+
+    # POST-HOC CHECKS, added after the first run (2026-09-23) — not part of the pass bar.
+    # (1) Drift: the held-out half's AVERAGE move is not zero (Pinnacle drifted toward
+    #     overs), and it inflates the one-sided top-quintile figure. The drift-free
+    #     size is half the top-minus-bottom spread.
+    # (2) Mean-reversion control: r contains −logit(p_early), so a noisy early price
+    #     that reverts would look like signal with ANY rating. Replace the rating
+    #     with a walk-forward league mean of early prices (knows nothing about teams):
+    #     if that control predicts the move too, the rating adds nothing.
+    drift = mean(d[5] - d[4] for d in te)
+    print(f"  post-hoc: held-out mean move {100*drift:+.2f}pp (drift); drift-free size "
+          f"±{100*(top_move - bot_move)/2:.2f}pp per side")
+    acc, glob, ctl = defaultdict(lambda: [0.0, 0]), [0.0, 0], []
+    for d in data:
+        e = logit(d[4]); s = acc[d[6]]
+        lm = s[0] / s[1] if s[1] >= 10 else (glob[0] / glob[1] if glob[1] else e)
+        ctl.append(lm - e)
+        s[0] += e; s[1] += 1; glob[0] += e; glob[1] += 1
+    _, bc, sec = ols(ctl[half:], [d[3] for d in te])
+    print(f"  post-hoc CONTROL (league-mean 'rating'): held-out slope {bc:+.4f} ± {sec:.4f}  t={bc/sec:+.1f}"
+          f"   vs the rating's t={t:+.1f}")
 
     rmap = {d[1]: d[2] for d in data}
     legs = execute_query("""SELECT ledger, match_id::text mid, selection, clv_sharp::float c
