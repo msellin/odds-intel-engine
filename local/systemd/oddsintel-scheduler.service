@@ -45,6 +45,11 @@ Environment=TZ=UTC
 Environment=PYTHONUNBUFFERED=1
 # Always use the Hetzner-local FlareSolver, never the Railway-hosted one.
 Environment=FLARESOLVERR_URL=http://localhost:8191
+# COOLBET-MOVED-TO-VPS 2026-09-23 — Coolbet reads through the Estonian exit node.
+# Imperva blocks this box's own IP; through zone.ee the sweep completes normally.
+# socks5h so DNS resolves at the exit. Its own switch, separate from Epicbet's,
+# because the two moved on different days for different reasons.
+Environment=COOLBET_RESIDENTIAL_PROXY=socks5h://127.0.0.1:1081
 # Alert threshold calibrated for 4 GB RAM: warn at 3.4 GB (85%).
 Environment=SCHEDULER_PROCESS_MB_LIMIT=4096
 
