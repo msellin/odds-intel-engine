@@ -51621,5 +51621,53 @@ def test_coolbet_sweep_observable():
         "the job invisible in the first place"
 
 
+@test("HALF-TIME-ONE-CONSTRUCTION — the probe must test the feature we actually ship")
+def test_half_time_one_construction():
+    """[[#084]], 2026-09-23. RELIABILITY_LEDGER #23.
+
+    The half-time α probe and the MFV population both imported the same
+    `HalfRatings` class — and then used it DIFFERENTLY. The probe froze the
+    rating at the cutoff and predicted forward; the populated feature updates
+    after every match. **Sharing a class is not sharing a construction.**
+
+    Measured on the SAME post-cutoff fixtures: frozen r = +0.1117, walk-forward
+    r = +0.2378. The probe tested a materially worse feature and its FAIL was
+    reported as the feature's failure. The verdict happened to survive the
+    correction (α 0.0050 → 0.0100, still FAIL) — it did not have to.
+
+    This pins the property that would have caught it: both paths must apply the
+    online update AFTER predicting, which is simultaneously what makes them the
+    same construction and what makes them leak-free.
+    """
+    from pathlib import Path
+    base = Path(__file__).parent.parent
+    probe = (base / "scripts" / "probe_half_time_alpha.py").read_text()
+    pop = (base / "scripts" / "populate_half_time_features.py").read_text()
+    rat = (base / "scripts" / "build_half_time_ratings.py").read_text()
+
+    assert "def update(" in rat, (
+        "the online update must live on HalfRatings so both callers get the "
+        "same one — a second copy is a second construction")
+
+    for name, src in (("probe", probe), ("populate", pop)):
+        assert ".update(" in src, (
+            f"the {name} must walk forward with the online update, or it is "
+            f"testing/writing a different feature from the other path")
+        # update AFTER predict, never before — the same ordering that makes it
+        # leak-free also makes the two paths agree.
+        assert src.index(".predict(") < src.rindex(".update("), (
+            f"{name} appears to update before predicting — that is both a leak "
+            f"and a divergence from the other path")
+
+    assert "UPDATE AFTER PREDICTING" in probe or "update happens strictly AFTER" in probe, (
+        "the probe must state the ordering explicitly; it is the one edit that "
+        "silently turns this into a leaking, divergent measurement")
+
+    # And the populate script must ship a leak audit rather than assert safety.
+    assert "_audit" in pop and "SUSPECT A LEAK" in pop, (
+        "populate must carry an executable leak check, not a claim of one — the "
+        "construction argument is necessary but nobody re-derives it later")
+
+
 if __name__ == "__main__":
     main()

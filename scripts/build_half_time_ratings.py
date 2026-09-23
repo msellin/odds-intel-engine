@@ -103,6 +103,26 @@ class HalfRatings:
         return (self.base_h * self.att[h] * self.dfn[a],
                 self.base_a * self.att[a] * self.dfn[h])
 
+    def update(self, h, a, obs_h, obs_a, lr=0.06):
+        """Online step, applied only AFTER a match has been predicted.
+
+        This is what makes a historical population leak-free WITHOUT refitting
+        from scratch at every date. Walking the matches in date order and
+        updating after each prediction means a fixture is always scored by
+        ratings built strictly from matches that preceded it — the same
+        construction as scripts/ou_shots_corners_rating.py, and the reason that
+        script could claim leak-freedom by inspection rather than by assertion.
+        """
+        exp_h, exp_a = self.predict(h, a)
+        if exp_h > 0:
+            adj = 1 + lr * (obs_h - exp_h) / exp_h
+            self.att[h] = min(4.0, max(0.25, self.att[h] * adj))
+            self.dfn[a] = min(4.0, max(0.25, self.dfn[a] * adj))
+        if exp_a > 0:
+            adj = 1 + lr * (obs_a - exp_a) / exp_a
+            self.att[a] = min(4.0, max(0.25, self.att[a] * adj))
+            self.dfn[h] = min(4.0, max(0.25, self.dfn[h] * adj))
+
 
 def load(asof):
     """Finished matches with a half-time score, strictly before `asof`.

@@ -1200,6 +1200,47 @@ be dropped. When adding a field, grep for every writer of that table — not the
 one you happen to be editing. And derive placeholder counts from the column list
 rather than typing them.
 
+## 23. The same quantity computed in two places, diverging silently (2026-09-23)
+
+**Three instances in one day.** This is the dominant failure mode of this
+codebase and it is worth naming as a class rather than fixing three times.
+
+| # | the quantity | path A | path B | consequence |
+|---|---|---|---|---|
+| 1 | `match_events.assist_name` | `db.store_match_events_batch` | `supabase_client.store_match_events_af` | fixed A, backfill called B, wrote nothing for minutes while lineups climbed beside it |
+| 2 | `odds_volatility`, `sharp_consensus_*`, `pinnacle_line_move_*` | morning pipeline → `match_signals` | `backfill_mfv_b_ml3_v2_features` → MFV columns | **the model reads the copy the pipeline does not write** ([[#085]]) |
+| 3 | the half-time rating | probe: fit once, predict forward | populate: fit, then update after each match | **a FAIL was reported on a construction that was not the one shipped** |
+
+**Instance 3 is the instructive one, because it produced a wrong conclusion
+rather than missing data.** Both paths imported the same `HalfRatings` class —
+so "share the code" was satisfied — and then used it differently. **Sharing a
+class is not sharing a construction.** The probe froze the rating at the cutoff;
+the populated feature updated it after every match. Measured on the SAME
+post-cutoff fixtures: frozen r = **+0.1117**, walk-forward r = **+0.2378**. The
+probe tested a materially worse feature and its failure was reported as the
+feature's failure.
+
+**What actually caught it, and it was luck.** The leak audit printed r = 0.2580
+against realised totals, which sat suspiciously close to the market's own 0.2371
+— a number that looked *too good*, checked for the wrong reason (suspected leak),
+and turned out to be a different bug. Had the walk-forward version been slightly
+worse instead of better, nothing would have flagged it.
+
+### The guards that generalise
+
+1. **Measure the thing you ship.** The probe must call the same function the
+   population calls, not a second assembly of the same parts. Where that is
+   impractical, assert the two agree on a sample — see `HALF-TIME-ONE-CONSTRUCTION`.
+2. **Two numbers for one quantity is a bug until proven otherwise.** When a
+   dipstick and an audit disagree about the same rating on the same matches, the
+   explanation is a construction difference until demonstrated otherwise.
+3. **Keep an independent reference for every headline number.** The market's own
+   correlation (r = 0.2371) is what made 0.2580 legible. A number with nothing to
+   compare against cannot look wrong.
+4. **Too good and too bad are equally strong signals.** The instinct to check
+   fires easily on a flattering number; instance 3 arrived as a FAIL and was
+   nearly accepted because failure matched the prior.
+
 ## Pattern: a reviver that reports success without verifying the world
 
 **Seen twice in three days, both on Coolbet, both silent.**

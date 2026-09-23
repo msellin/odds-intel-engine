@@ -77,6 +77,24 @@ def main() -> int:
     ht = HalfRatings("1H"); ht.fit(hist, "hth", "hta", a_.half_life)
     h2 = HalfRatings("2H"); h2.fit(hist, "h2h", "h2a", a_.half_life)
 
+    # ⚠️ WALK FORWARD, added after the first probe run gave a FAIL on a WEAKER
+    # construction than the one actually shipped.
+    #
+    # The first version fitted once at the cutoff and predicted every later match
+    # from that frozen rating. The populated MFV columns do not work that way:
+    # `populate_half_time_features.py` updates the rating after each match, so by
+    # the time it reaches a fixture it holds everything up to the day before.
+    # Measured consequence — predicted-vs-realised FT total on the SAME
+    # post-cutoff matches: frozen fit r = +0.1117, walk-forward r = +0.2378.
+    # The probe was testing a materially worse feature than the one in the table,
+    # and reporting its failure as the feature's failure.
+    #
+    # Still leak-free: the update happens strictly AFTER the prediction is taken.
+    ht_w = HalfRatings("1H"); ht_w.att = ht.att.copy(); ht_w.dfn = ht.dfn.copy()
+    ht_w.base_h, ht_w.base_a = ht.base_h, ht.base_a
+    h2_w = HalfRatings("2H"); h2_w.att = h2.att.copy(); h2_w.dfn = h2.dfn.copy()
+    h2_w.base_h, h2_w.base_a = h2.base_h, h2.base_a
+
     rows = execute_query("""
         WITH pin AS (SELECT DISTINCT ON (o.match_id, o.selection)
                             o.match_id, o.selection, o.odds::float od
@@ -86,24 +104,31 @@ def main() -> int:
                         AND (o.minutes_to_kickoff IS NULL OR o.minutes_to_kickoff > 0)
                       ORDER BY o.match_id, o.selection, o.timestamp DESC)
         SELECT m.home_team_id h, m.away_team_id a,
-               (m.score_home + m.score_away)::float total, po.od po, pu.od pu
+               (m.score_home + m.score_away)::float total, po.od po, pu.od pu,
+               m.ht_score_home::float hth, m.ht_score_away::float hta,
+               (m.score_home - m.ht_score_home)::float h2h,
+               (m.score_away - m.ht_score_away)::float h2a
           FROM matches m
           JOIN pin po ON po.match_id = m.id AND po.selection='over'
           JOIN pin pu ON pu.match_id = m.id AND pu.selection='under'
          WHERE m.status='finished' AND m.score_home IS NOT NULL
+           AND m.ht_score_home IS NOT NULL
+           AND m.score_home >= m.ht_score_home AND m.score_away >= m.ht_score_away
            AND m.date >= %s
-         ORDER BY m.date""", (a_.cutoff,))
+         ORDER BY m.date, m.id""", (a_.cutoff,))
 
     pm_raw, pk, pk_shin, ys = [], [], [], []
     for r in rows:
-        if r["h"] not in rateable or r["a"] not in rateable:
-            continue
-        lh, la = ht.predict(r["h"], r["a"])
-        p2h, p2a = h2.predict(r["h"], r["a"])
-        pm_raw.append(p_over_25(min(6.0, lh + la + p2h + p2a)))
-        pk.append(devig_two_way(r["po"], r["pu"]))
-        pk_shin.append(shin2(r["po"], r["pu"]))
-        ys.append(1 if r["total"] > 2.5 else 0)
+        if r["h"] in rateable and r["a"] in rateable:
+            lh, la = ht_w.predict(r["h"], r["a"])
+            p2h, p2a = h2_w.predict(r["h"], r["a"])
+            pm_raw.append(p_over_25(min(6.0, lh + la + p2h + p2a)))
+            pk.append(devig_two_way(r["po"], r["pu"]))
+            pk_shin.append(shin2(r["po"], r["pu"]))
+            ys.append(1 if r["total"] > 2.5 else 0)
+        # UPDATE AFTER PREDICTING — never before.
+        ht_w.update(r["h"], r["a"], r["hth"], r["hta"])
+        h2_w.update(r["h"], r["a"], r["h2h"], r["h2a"])
 
     n = len(ys)
     print(f"  scored on {n:,} out-of-sample fixtures "
