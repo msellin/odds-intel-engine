@@ -29,9 +29,9 @@ WHAT IS STORED
   value is the fair close.
 
 PLACEABLE since 2026-09-23: in ACCESSIBLE_BOOKMAKERS after the site-price check
-(14/15 prices identical to tonybet.com/ee). Still EXCLUDED from the pre-registered
-forward test's book set (scripts/publish_picks_forward_test.py) — widening that is
-the owner's call, versioned as a rule change.
+(14/15 prices identical to tonybet.com/ee). Part of the pre-registered forward
+test's "all books" universe since 2026-09-23 (owner's go-ahead; dated note in
+dev/active/picks-forward-test-preregistration.md).
 """
 from __future__ import annotations
 

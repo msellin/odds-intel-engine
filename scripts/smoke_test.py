@@ -52195,8 +52195,10 @@ def test_tonybet_sweeper():
     assert 'minute="1,31"' in reg and "_tonybet_odds_snapshot_wrapper" in reg
     pub = (root / "scripts/publish_picks_forward_test.py").read_text()
     excl = pub[pub.index("EXCLUDED_BOOKS = ("): pub.index("MARKETS = {")]
-    assert '"Tonybet"' in excl, ("Tonybet must stay out of the pre-registered forward "
-                                 "test's book set until the owner widens it")
+    # Let in 2026-09-23 with the owner's go-ahead: the locked rule is "all books,
+    # phantom feeds excluded by name", and Tonybet is site-verified, not phantom.
+    assert '"Tonybet"' not in excl, ("Tonybet is a verified real book — excluding it "
+                                     "departs from the pre-registered 'all books' rule")
     from workers.jobs.health_alerts import DIRECT_FEED_BOOKS
     assert "Tonybet" in DIRECT_FEED_BOOKS
     # Promoted 2026-09-23 after the site-price check (14/15 identical).

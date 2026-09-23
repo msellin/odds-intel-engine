@@ -206,6 +206,15 @@ roughly twice the picks of a 3% floor on the other. This test is pre-registered
 on the **ROI** form. The public label should read "Expected return", not "Edge",
 so the two never collide in a reader's head or ours.
 
+> **NOTE 2026-09-23 — a new book entered the universe, not a rule change.**
+> Tonybet (our own sweep, `workers/automation/tonybet_feed.py`, #101) was verified
+> against tonybet.com (14 of 15 1X2 prices identical; favourites agree with
+> Epicbet/Coolbet 95–97%) and is not a phantom feed, so under the rule below it
+> is part of "all books" from 2026-09-23 ~19:00 UTC, in both the live arm (price
+> source) and the consensus arm (price source + consensus member). The v2
+> price-ratio cap (≤ 20% over the anchor) and the consensus 8% edge ceiling are
+> the guards against a mis-paired fixture. Rule versions are unchanged.
+
 Price basis is **best across all books** — the owner's ruling of 2026-09-14: for
 PICKS a price that was capturable somewhere at some point is acceptable, because
 we have no Estonian readers. EMTA legality constrains OWN only. A price no book

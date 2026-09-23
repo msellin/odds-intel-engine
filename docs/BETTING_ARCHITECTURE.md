@@ -49,7 +49,7 @@ never compare their numbers.
 **Anchor note:** Pinnacle drives calibration, the veto, CLV and de-vig, but **Pinnacle is not
 placeable** (not in `ACCESSIBLE_BOOKMAKERS`). `PRICE_REFERENCE_BOOKMAKERS = ACCESSIBLE ∪ {Pinnacle}`.
 
-`ACCESSIBLE_BOOKMAKERS = {Coolbet, Betano, Unibet, Epicbet}` (`daily_pipeline_v2.py:1072-1130`).
+`ACCESSIBLE_BOOKMAKERS = {Coolbet, Unibet-Site, Epicbet, Tonybet}` (`daily_pipeline_v2.py`). **Changed 2026-09-23:** Tonybet added after its site-price check (#101); Betano removed — the owner cannot bet there, and it is absent from EMTA's licence register.
 Pinnacle/Marathonbet/10Bet/888Sport removed (EMTA-blocked); `Unibet-Kambi` removed (feed-divergent).
 
 ---
