@@ -347,6 +347,45 @@ def _apply_residential_proxy(sess) -> None:
     sess.proxies = {"http": url, "https": url}
 
 
+def _configured_proxy_egress_ip() -> str | None:
+    """What IP does the CONFIGURED proxy actually exit from?
+
+    WHY THIS EXISTS (2026-09-23). The first version of the session check asked
+    "is the session's egress different from this host's?" and treated anything
+    else as proof it was residential. That is not the same question. A session
+    left over from a run against a DIFFERENT proxy passes it trivially — and did:
+    a `coolbet_prod` session still bound to the MacBook tunnel (84.50.188.194)
+    was accepted while COOLBET_RESIDENTIAL_PROXY pointed at the zone.ee exit
+    (217.146.76.113). The sweep then ran through a flagged identity and timed out
+    on the batched odds, which reads as a Coolbet problem rather than a wiring one.
+
+    So the comparison is now against the configured proxy's OWN egress, fetched
+    once per process directly through that proxy — not through FlareSolverr, so
+    it cannot inherit a stale session's route.
+    """
+    global _PROXY_EGRESS_CACHE
+    if _PROXY_EGRESS_CACHE is not _UNSET:
+        return _PROXY_EGRESS_CACHE
+    _PROXY_EGRESS_CACHE = None
+    if _RESIDENTIAL_PROXY:
+        url = _RESIDENTIAL_PROXY
+        if url.startswith("socks5://"):
+            url = "socks5h://" + url[len("socks5://"):]
+        try:
+            r = requests.get("https://api.ipify.org", timeout=20,
+                             proxies={"http": url, "https": url})
+            m = re.search(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b", r.text)
+            _PROXY_EGRESS_CACHE = m.group(1) if m else None
+        except Exception as e:      # noqa: BLE001
+            log.warning("could not read the configured proxy's egress (%s): %s",
+                        _RESIDENTIAL_PROXY, str(e)[:120])
+    return _PROXY_EGRESS_CACHE
+
+
+_UNSET = object()
+_PROXY_EGRESS_CACHE = _UNSET
+
+
 def _fs_session_egress_ip(name: str | None) -> str | None:
     """What IP does this FS session actually leave from? One cheap call.
 
@@ -427,9 +466,14 @@ def _fs_session_ensure(name: str) -> None:
     # 2. Ask it what egress it actually has. This is the guarantee, not the
     #    recreation: a session that cannot prove it is residential never serves.
     ip = _fs_session_egress_ip(name)
+    want = _configured_proxy_egress_ip()
     host_ip = _fs_session_egress_ip(None)
 
-    if ip is not None and not (host_ip and ip == host_ip):
+    # Correct test: does the session leave from the CONFIGURED proxy's IP?
+    # Falling back to "merely not the host" only when the proxy's own egress is
+    # unreadable, which is strictly weaker and says so in the log.
+    ok = (ip is not None) and (ip == want if want else not (host_ip and ip == host_ip))
+    if ok:
         if created:
             log.info("Coolbet FS session %s created, egressing via residential %s", name, ip)
         else:
@@ -439,8 +483,9 @@ def _fs_session_ensure(name: str) -> None:
     # 3. Wrong egress (or unreadable) — this is the ONLY case that justifies
     #    burning a visitor identity, because the alternative is collecting
     #    prices from the wrong network.
-    log.warning("Coolbet FS session %s is NOT on the residential egress "
-                "(session_ip=%s host_ip=%s) — recreating once", name, ip, host_ip)
+    log.warning("Coolbet FS session %s is NOT on the configured egress "
+                "(session_ip=%s expected=%s host_ip=%s) — recreating once",
+                name, ip, want, host_ip)
     try:
         _fs_call({"cmd": "sessions.destroy", "session": name}, timeout_s=30)
     except Exception:
@@ -450,8 +495,9 @@ def _fs_session_ensure(name: str) -> None:
     _warm(name)
 
     ip = _fs_session_egress_ip(name)
+    want = _configured_proxy_egress_ip()
     host_ip = _fs_session_egress_ip(None)
-    if ip is None or (host_ip and ip == host_ip):
+    if ip is None or (ip != want if want else (host_ip and ip == host_ip)):
         try:
             _fs_call({"cmd": "sessions.destroy", "session": name}, timeout_s=20)
         except Exception:

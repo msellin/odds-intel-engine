@@ -1068,7 +1068,7 @@ def fetch_post_match_enrichment() -> dict:
         budget,
     )
 
-    counts = {"stats": 0, "halftime": 0, "events": 0, "players": 0, "lineups": 0, "skipped": 0}
+    counts = {"stats": 0, "halftime": 0, "events": 0, "players": 0, "lineups": 0, "referee": 0, "skipped": 0}
 
     yesterday_str = (date.today() - timedelta(days=1)).isoformat()
     today_str = date.today().isoformat()
@@ -1082,7 +1082,7 @@ def fetch_post_match_enrichment() -> dict:
     # rows (0.4%); with coverage_statistics_players=false, 2,790 matches yielded
     # ZERO player rows (0.0%).
     db_finished = execute_query(
-        "SELECT m.id, m.api_football_id, m.home_team_api_id, "
+        "SELECT m.id, m.api_football_id, m.home_team_api_id, m.referee, "
         "       COALESCE(l.coverage_statistics_fixtures, false) AS cov_stats, "
         "       COALESCE(l.coverage_statistics_players, false)  AS cov_players "
         "  FROM matches m LEFT JOIN leagues l ON l.id = m.league_id "
@@ -1155,7 +1155,7 @@ def fetch_post_match_enrichment() -> dict:
         af_id = match["api_football_id"]
         match_id = match["id"]
         home_api_id = home_api_id_by_match.get(match_id)
-        result = {"stats": 0, "halftime": 0, "events": 0, "players": 0, "lineups": 0}
+        result = {"stats": 0, "halftime": 0, "events": 0, "players": 0, "lineups": 0, "referee": 0}
         batch_fix = prefetched.get(af_id)
 
         # AF-PLAYER-STATS-HOME-ASYMMETRY-FIX-2026-08-21: fallback if the
@@ -1251,6 +1251,31 @@ def fetch_post_match_enrichment() -> dict:
         except Exception as e:
             console.print(f"    [yellow]Events error for fixture {af_id}: {e}[/yellow]")
 
+        # REFEREE — also free, also thrown away until 2026-09-23 ([[#088]]).
+        #
+        # `matches.referee` is captured ONCE, at fixture-fetch time (04:00, for
+        # today + tomorrow), and never looked at again. Referees are frequently
+        # unassigned at that point, so the field simply stays NULL forever — and
+        # settlement, which holds the finished fixture object, never writes it.
+        #
+        # Measured 2026-09-23: of 10 random September fixtures where our DB has
+        # NULL, **AF has a referee for 4**. A control sample where we DO have one
+        # returned 10/10, so the feed is reliable — the gap is that we only ever
+        # ask before the answer exists.
+        #
+        # This is why `referee_*` features sit at ~5.3-5.6% MFV fill while
+        # `referee_stats` is rebuilt nightly from whatever `matches.referee`
+        # happens to hold. Fill-if-empty only: never overwrite a value we have,
+        # since the pre-match capture is the one the model saw.
+        try:
+            _ref = ((batch_fix or {}).get("fixture") or {}).get("referee")
+            if _ref and not match.get("referee"):
+                execute_write("UPDATE matches SET referee = %s "
+                              "WHERE id = %s AND referee IS NULL", (_ref, match_id))
+                result["referee"] = 1
+        except Exception as e:  # noqa: BLE001
+            console.print(f"    [yellow]Referee error for fixture {af_id}: {e}[/yellow]")
+
         # T7: LINEUPS — free, and thrown away until 2026-09-23 ([[#081]]).
         #
         # The `ids=` batch above already returns `lineups` embedded, and the
@@ -1317,6 +1342,7 @@ def fetch_post_match_enrichment() -> dict:
                 counts["players"] += r["players"]
                 # [[#078]] — see the per-match block for why these are counted.
                 counts["lineups"] = counts.get("lineups", 0) + r.get("lineups", 0)
+                counts["referee"] = counts.get("referee", 0) + r.get("referee", 0)
                 counts["xg_present"] = counts.get("xg_present", 0) + r.get("xg_present", 0)
                 counts["shotloc_present"] = counts.get("shotloc_present", 0) + r.get("shotloc_present", 0)
             except Exception:
@@ -2852,6 +2878,7 @@ def run_settlement():
             f"{enrichment_counts['halftime']} with half-time | "
             f"{enrichment_counts['events']} events | "
             f"{enrichment_counts.get('lineups', 0)} lineups | "
+            f"{enrichment_counts.get('referee', 0)} referees | "
             f"{enrichment_counts['players']} player stat rows | "
             f"{enrichment_counts.get('skipped', 0)} already enriched (skipped)"
         )

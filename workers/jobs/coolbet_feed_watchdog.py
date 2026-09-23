@@ -778,7 +778,11 @@ def kill_stalled_job(dry_run: bool = False) -> dict:
 # Coolbet traffic we generate — one request per 30 min instead of four.
 #
 # Cleared on any healthy verdict, so the feed reopens on its own.
-_BREAKER_PIPELINE = "coolbet_sweep_breaker"
+def _breaker_key() -> str:
+    """Must match coolbet_explorer._breaker_key(). A verdict describes the egress
+    it was measured on — this watchdog runs on the Mac, so it writes the Mac's."""
+    from workers.automation.coolbet_session import _RESIDENTIAL_PROXY
+    return f"coolbet_sweep_breaker:{_RESIDENTIAL_PROXY or 'direct'}"
 
 
 def _publish_breaker(state: str, reason: str) -> None:
@@ -791,14 +795,14 @@ def _publish_breaker(state: str, reason: str) -> None:
                 "last_alert_reason, updated_at) VALUES (%s, now(), %s, now()) "
                 "ON CONFLICT (pipeline_name) DO UPDATE SET last_alert_at = now(), "
                 "last_alert_reason = EXCLUDED.last_alert_reason, updated_at = now()",
-                (_BREAKER_PIPELINE, reason[:500]),
+                (_breaker_key(), reason[:500]),
             )
             log.info("sweep breaker OPENED — the sweep will skip until this clears")
         else:
             execute_write(
                 "UPDATE pipeline_health_state SET last_alert_at = NULL, "
                 "last_alert_reason = %s, updated_at = now() WHERE pipeline_name = %s",
-                (f"cleared by {state}", _BREAKER_PIPELINE),
+                (f"cleared by {state}", _breaker_key()),
             )
     except Exception as e:      # noqa: BLE001
         # Never let the breaker's bookkeeping break the watchdog itself.

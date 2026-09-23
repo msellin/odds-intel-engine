@@ -1720,8 +1720,19 @@ def _is_virtual_category(name: str | None) -> bool:
 #
 # FAILS OPEN, deliberately: if the breaker cannot be read, we sweep. A bug in a
 # safety check must never be the thing that stops collection.
-_BREAKER_PIPELINE = "coolbet_sweep_breaker"
+# TRANSPORT-SCOPED (2026-09-23). A block is a fact about ONE EGRESS, not about
+# Coolbet. When the Mac's residential identity was flagged, a single global row
+# also stopped the VPS from trying through the zone.ee exit — an exit that was
+# at that moment returning 141 KB of real fo-tree. One path's wall must not
+# condemn another's.
 _BREAKER_MAX_AGE_MIN = 120
+
+
+def _breaker_key() -> str:
+    """One breaker per egress. Unproxied (the Mac) and proxied (zone.ee) are
+    different network identities and get different verdicts."""
+    from workers.automation.coolbet_session import _RESIDENTIAL_PROXY
+    return f"coolbet_sweep_breaker:{_RESIDENTIAL_PROXY or 'direct'}"
 
 
 def _sweep_blocked_by_breaker() -> str | None:
@@ -1732,7 +1743,7 @@ def _sweep_blocked_by_breaker() -> str | None:
             "SELECT last_alert_reason, "
             "EXTRACT(EPOCH FROM (now() - last_alert_at))/60.0 AS age_min "
             "FROM pipeline_health_state WHERE pipeline_name = %s AND last_alert_at IS NOT NULL",
-            (_BREAKER_PIPELINE,),
+            (_breaker_key(),),
         )
         if not rows:
             return None
