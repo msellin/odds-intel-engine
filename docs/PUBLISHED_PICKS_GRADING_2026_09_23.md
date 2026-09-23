@@ -282,9 +282,9 @@ scored on the next month: May→Jun, May–Jun→Jul, May–Jul→Aug, May–Aug
 is out of sample for the config that selected it. This measures whether *refining B* works,
 not whether one rule fits history.
 
-**Grid (108 configs, all mechanistic — aimed at stale/phantom prices, the known loss source):**
+**Grid (all mechanistic — aimed at stale/phantom prices, the known loss source):**
 confirmation `n_books_pos_edge` ≥ 1/2/3 · `gap_to_second` ≤ none/5%/3% · market both/1x2/O-U ·
-max odds 4.0/2.5 · lead time any/≤6h. Selection in each fold: highest train ROI with train
+max odds 4.0/2.5 · **min odds none/1.8/2.0** (owner, before the run: *"add some odds floor for grade B?"* — 324 configs total) · lead time any/≤6h. Selection in each fold: highest train ROI with train
 n ≥ 40.
 
 **PASS:** pooled out-of-sample ROI of the selected configs beats plain grade B on the same
