@@ -51527,5 +51527,40 @@ def test_event_writer_columns_complete():
         "is added")
 
 
+@test("SETTLEMENT-REFRESHES-REFEREE — the finished fixture object carries it and we only ever asked too early")
+def test_settlement_refreshes_referee():
+    """[[#088]], 2026-09-23. `matches.referee` was captured ONCE at fixture-fetch
+    time (04:00, today + tomorrow) and never revisited. Referees are frequently
+    unassigned that early, so the field stayed NULL permanently — which is why
+    `referee_*` features sit at ~5.3-5.6% MFV fill while `referee_stats` is
+    rebuilt nightly from whatever `matches.referee` happens to hold.
+
+    Settlement already holds the FINISHED fixture object (the same
+    `/fixtures?ids=` batch that carries statistics, events, lineups and players)
+    and never wrote the referee from it. Measured: **24/40 September and 23/40
+    August NULL-referee fixtures in covered leagues would gain one — ~60%, at
+    zero extra API calls.**
+
+    Fill-if-empty is asserted at BOTH layers on purpose: the in-memory guard
+    skips the write, and `WHERE referee IS NULL` makes it safe even if the
+    SELECT ever stops returning the column. Never overwrite a value we already
+    have — the pre-match capture is the one the model actually saw.
+    """
+    import inspect
+    from workers.jobs import settlement as st
+
+    src = inspect.getsource(st.fetch_post_match_enrichment)
+    assert 'get("referee")' in src, (
+        "settlement must read the referee from the batch fixture block it "
+        "already pays for")
+    assert "UPDATE matches SET referee" in src, "and write it"
+    assert "referee IS NULL" in src, (
+        "the UPDATE must be fill-if-empty at the SQL layer, not only in Python — "
+        "the pre-match value is the one the model saw and must not be clobbered")
+    assert "m.referee" in src, (
+        "the enrichment SELECT should carry m.referee so the write is skipped "
+        "entirely when we already have one")
+
+
 if __name__ == "__main__":
     main()
