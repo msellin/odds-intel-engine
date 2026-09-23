@@ -50601,60 +50601,63 @@ def test_wedge_early_runs_the_discriminator():
     return "fresh-fails -> BLOCKED; fresh-ok -> WEDGED_SESSION"
 
 
-@test("COOLBET-RESIDENTIAL-EGRESS — proxied FS session proves its egress or refuses")
+@test("COOLBET-RESIDENTIAL-EGRESS — verify the egress, do NOT recreate the session")
 def test_coolbet_residential_egress():
-    """RESIDENTIAL-EGRESS for Coolbet (VPS-CONSOLIDATION-2026-09-16), 2026-09-22.
+    """RESIDENTIAL-EGRESS for Coolbet — rewritten 2026-09-23 after it caused an outage.
 
-    Imperva blocks Coolbet on the Hetzner IP ALONE. Measured the same day: the
-    same VPS, same Linux Chromium, same warm FS session returned a challenge from
-    the datacenter IP and 136,179 bytes of real fo-tree through the residential
-    tunnel. So on the VPS the FS browser gets a SOCKS proxy at session creation.
+    Imperva blocks Coolbet on the Hetzner IP alone, so on the VPS the FlareSolverr
+    browser gets a SOCKS proxy. The FIRST version of this guaranteed the proxy was
+    in effect by destroying and recreating the session every run, so a stale
+    unproxied one could never be silently reused.
 
-    TWO TRAPS, both silent, both pinned here.
+    Sound goal, wrong mechanism. A recreated session is a NEW browser context and
+    therefore a NEW Imperva visid_incap_*. At the sweep's :03/:33 cadence that is
+    48 fresh visitor identities a day from one residential IP — the exact churn
+    COOLBET_RUNBOOK §2b warns about. Five manual runs were enough: the watchdog
+    returned BLOCKED ("Do NOT cycle or destroy sessions — that hardens it") and
+    the feed went dark ~4.6h. On the VPS it would have fired every 30 minutes.
 
-    1. IDEMPOTENCE. A FlareSolverr session's proxy is fixed at CREATION, and
-       `_fs_session_ensure` deliberately swallows "already exists". So a
-       `coolbet_prod` left over from a non-proxied run would keep egressing from
-       the DATACENTER IP, healthily, forever. The proxied path therefore destroys
-       first, creates without swallowing, and then ASSERTS the egress by asking
-       the session what IP it actually leaves from — refusing to collect if it
-       cannot prove it. Coolbet prices are the basis every real stake is sized
-       against; fetched from the wrong identity they are worse than nothing.
+    The guarantee now comes from VERIFICATION, not recreation: create (harmless if
+    it exists), then ask the session what IP it actually leaves from, and recreate
+    ONLY when the answer is wrong. Same safety property — a session can never
+    silently use the datacenter egress — with one long-lived identity.
 
-    2. SCHEME. `socks5h://` is a curl/requests spelling. FlareSolverr passes the
-       proxy to CHROMIUM, which does not parse it and silently ignores the proxy
-       entirely. Chromium's plain `socks5://` already resolves remotely, so the
-       normalisation is a translation, not a downgrade. This was a real failure on
-       2026-09-22 — caught by the assertion in trap 1, which is the point of it.
+    Pinned here:
+      1. the happy path must NOT destroy;
+      2. there must still be a real egress check that can RAISE;
+      3. the unproxied path (the Mac) must be untouched;
+      4. socks5h must be normalised to socks5 for Chromium, which silently
+         ignores a proxy spelling it cannot parse.
     """
     import inspect
     from workers.automation import coolbet_session as cs
+
     src = inspect.getsource(cs)
-
-    assert "OI_RESIDENTIAL_PROXY" in src, "the egress must be env-configurable"
-
-    # scheme translation for the Chromium consumer
-    assert "socks5h://" in src and "socks5://" in src, \
-        "must normalise socks5h:// -> socks5:// for FlareSolverr/Chromium, which " \
-        "silently ignores a proxy spelling it cannot parse"
-
-    # destroy-then-create on the proxied path
     ens = inspect.getsource(cs._fs_session_ensure)
-    assert "sessions.destroy" in ens, \
-        "a pre-existing non-proxied session must be torn down — FS fixes the proxy " \
-        "at creation, so reusing one silently egresses from the datacenter IP"
 
-    # the egress assertion itself, and that it RAISES
-    assert hasattr(cs, "_fs_session_egress_ip"), \
-        "there must be a way to ask a session what IP it actually leaves from"
+    assert "OI_RESIDENTIAL_PROXY" in src or "COOLBET_RESIDENTIAL_PROXY" in src, \
+        "the egress must be env-configurable"
+    assert "socks5h://" in src and "socks5://" in src, \
+        "must normalise socks5h -> socks5 for FlareSolverr/Chromium"
+
+    # 1. the happy path must not churn identities
+    head = ens.split("# 3.")[0]
+    assert "sessions.destroy" not in head, \
+        "the proxied happy path must NOT destroy the session — that mints a new Imperva " \
+        "visitor identity every run, which is what caused the 2026-09-22 block"
+
+    # 2. but a wrong egress must still be caught, and must still raise
+    assert "_fs_session_egress_ip" in ens, \
+        "the session must still be asked what IP it actually leaves from"
     assert "raise RuntimeError" in ens, \
-        "a session that cannot prove residential egress must REFUSE to collect, not " \
-        "fall through to the datacenter IP"
+        "a session that cannot prove residential egress must REFUSE to collect"
+    assert "sessions.destroy" in ens, \
+        "a session on the WRONG egress must still be recreated — verification without " \
+        "a remedy is just logging"
 
-    # and the unproxied path must be untouched, so the Mac keeps working
+    # 3. the Mac path is untouched
     assert "if not _RESIDENTIAL_PROXY:" in ens, \
-        "with no proxy configured the original idempotent behaviour must remain — " \
-        "the Mac is already on the residential line and must not change"
+        "with no proxy configured the original idempotent behaviour must remain"
 
 
 @test("FLARESOLVERR-NOT-PUBLIC — the VPS compose must bind loopback only")

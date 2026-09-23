@@ -347,11 +347,17 @@ def _apply_residential_proxy(sess) -> None:
     sess.proxies = {"http": url, "https": url}
 
 
-def _fs_session_egress_ip(name: str) -> str | None:
-    """What IP does this FS session actually leave from? One cheap call."""
+def _fs_session_egress_ip(name: str | None) -> str | None:
+    """What IP does this FS session actually leave from? One cheap call.
+
+    `name=None` asks with no session at all, i.e. the host's own egress — the
+    control value the proxied check compares against.
+    """
     try:
-        r = _fs_call({"cmd": "request.get", "url": "https://api.ipify.org",
-                      "session": name, "maxTimeout": 30000}, timeout_s=45)
+        body = {"cmd": "request.get", "url": "https://api.ipify.org", "maxTimeout": 30000}
+        if name:
+            body["session"] = name
+        r = _fs_call(body, timeout_s=45)
         body = ((r.get("solution") or {}).get("response") or "")
         m = re.search(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b", body)
         return m.group(1) if m else None
@@ -364,21 +370,28 @@ def _fs_session_ensure(name: str) -> None:
     distinguish creation from existence on purpose; FS doesn't expose a
     clean 'exists?' check, only sessions.list which is heavier.
 
-    ⚠️ WHEN A RESIDENTIAL PROXY IS CONFIGURED THE IDEMPOTENCE IS A TRAP, and the
-    trap is silent. A FlareSolverr session's proxy is fixed at CREATION. If
-    `coolbet_prod` already exists from a run that had no proxy, `sessions.create`
-    fails, the `except` below swallows it, and every subsequent call goes out the
-    DATACENTER IP while looking completely healthy. That is the wrong-identity
-    failure this repo keeps paying for — EPICBET-403-FROM-VPS reported
-    `status='completed'` for 277 runs over six days writing zero rows
-    ([[feedback_silent_failures]]).
+    ── PROXIED PATH: VERIFY, DON'T RECREATE (rewritten 2026-09-23) ──
 
-    So when a proxy is set we DESTROY first, create with the proxy, and then
-    ASSERT the egress by asking the session what IP it actually leaves from. A
-    session that cannot prove it is on the residential line is torn down and
-    raises, because collecting Coolbet prices from the wrong identity is worse
-    than collecting nothing: those prices are the basis every real stake is
-    sized against.
+    The previous version destroyed and recreated the session on every run, so a
+    stale *unproxied* session could never be silently reused. Sound goal, wrong
+    mechanism: a recreated session is a brand-new browser context, and therefore
+    a brand-new Imperva `visid_incap_*`. At the sweep's :03/:33 cadence that is
+    **48 fresh visitor identities a day from one residential IP** — exactly the
+    churn COOLBET_RUNBOOK §2b warns about.
+
+    Five manual runs on 2026-09-22 were enough to prove it: the feed watchdog
+    returned BLOCKED — "that is §7, an Imperva flag, NOT a wedge. Do NOT cycle or
+    destroy sessions — that hardens it." Coolbet went dark ~4.6h. Shipped to the
+    VPS it would have done that every thirty minutes, indefinitely.
+
+    So: CREATE (harmless if it already exists), then ASK THE SESSION WHAT IP IT
+    ACTUALLY LEAVES FROM, and only recreate if the answer is wrong. One cheap
+    call per run buys the same guarantee — a session can never silently use the
+    datacenter egress — while keeping ONE long-lived visitor identity.
+
+    The warmup navigation is gone with it. It existed only because a recreated
+    session is always cold; a reused one is already warm. It is still performed
+    on the one path that can produce a cold context: an actual recreation.
     """
     if not _RESIDENTIAL_PROXY:
         try:
@@ -388,61 +401,68 @@ def _fs_session_ensure(name: str) -> None:
                   # request.* calls will surface the real error.
         return
 
-    # Proxied path — no swallowing, and prove it afterwards.
+    def _warm(sess: str) -> None:
+        """Only a NEW context needs this: Imperva answers the first request on a
+        fresh context with a JS challenge, which resolves on an HTML page in ~1s
+        but spins to the 60s browser timeout when fired at the JSON endpoint —
+        surfacing as HTTP 500 and reading exactly like FlareSolverr being out of
+        memory. Cost three wrong diagnoses on 2026-09-22."""
+        try:
+            _fs_call({"cmd": "request.get", "url": "https://www.coolbet.com/et/sport",
+                      "session": sess, "maxTimeout": 90000}, timeout_s=120)
+        except Exception as e:      # noqa: BLE001
+            log.warning("Coolbet FS warmup failed (%s) — first API call may be challenged",
+                        str(e)[:120])
+
+    # 1. Ensure a session exists. Creating an existing one errors harmlessly.
+    created = False
+    try:
+        _fs_call({"cmd": "sessions.create", "session": name,
+                  "proxy": {"url": _RESIDENTIAL_PROXY}}, timeout_s=60)
+        created = True
+        _warm(name)
+    except Exception:
+        pass    # Almost certainly "already exists" — verified below either way.
+
+    # 2. Ask it what egress it actually has. This is the guarantee, not the
+    #    recreation: a session that cannot prove it is residential never serves.
+    ip = _fs_session_egress_ip(name)
+    host_ip = _fs_session_egress_ip(None)
+
+    if ip is not None and not (host_ip and ip == host_ip):
+        if created:
+            log.info("Coolbet FS session %s created, egressing via residential %s", name, ip)
+        else:
+            log.debug("Coolbet FS session %s reused, egress still residential %s", name, ip)
+        return
+
+    # 3. Wrong egress (or unreadable) — this is the ONLY case that justifies
+    #    burning a visitor identity, because the alternative is collecting
+    #    prices from the wrong network.
+    log.warning("Coolbet FS session %s is NOT on the residential egress "
+                "(session_ip=%s host_ip=%s) — recreating once", name, ip, host_ip)
     try:
         _fs_call({"cmd": "sessions.destroy", "session": name}, timeout_s=30)
     except Exception:
-        pass  # Not existing is the normal case; only creation must succeed.
+        pass
     _fs_call({"cmd": "sessions.create", "session": name,
               "proxy": {"url": _RESIDENTIAL_PROXY}}, timeout_s=60)
-
-    # WARM THE CONTEXT BEFORE ANYONE ASKS IT FOR JSON.
-    #
-    # This is not optional and it is not politeness. The destroy-then-create above
-    # means a proxied session is ALWAYS a brand-new browser context, and Imperva
-    # answers the first request on a fresh context with its JS challenge. On an
-    # HTML page the challenge executes and resolves in ~1s. Fired straight at the
-    # fo-tree JSON endpoint it does not resolve, FlareSolverr spins, and the call
-    # dies at the 60 s browser timeout — surfacing as "HTTP 500 Internal Server
-    # Error", which reads exactly like FS being out of memory.
-    #
-    # That false symptom cost two wrong diagnoses on 2026-09-22 (a wedged session,
-    # then a 1 GiB memory cap) before an A/B on one session showed the truth:
-    #     warmed then fo-tree  -> 133,608 bytes in 298ms
-    #     cold  then fo-tree   -> HTTP 500 after 60s, three times
-    #
-    # The Mac never hit this because its coolbet_odds_reader session is long-lived
-    # and warm; only the recreate-every-run proxied path is ever cold.
-    try:
-        _fs_call({"cmd": "request.get", "url": "https://www.coolbet.com/et/sport",
-                  "session": name, "maxTimeout": 90000}, timeout_s=120)
-    except Exception as e:      # noqa: BLE001
-        log.warning("Coolbet FS warmup navigation failed (%s) — the first API call "
-                    "may be challenged", str(e)[:120])
+    _warm(name)
 
     ip = _fs_session_egress_ip(name)
-    local_ip = None
-    try:
-        local_ip = _fs_call({"cmd": "request.get", "url": "https://api.ipify.org",
-                             "maxTimeout": 30000}, timeout_s=45)
-        body = ((local_ip.get("solution") or {}).get("response") or "")
-        m = re.search(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b", body)
-        local_ip = m.group(1) if m else None
-    except Exception:
-        local_ip = None
-
-    if ip is None or (local_ip and ip == local_ip):
+    host_ip = _fs_session_egress_ip(None)
+    if ip is None or (host_ip and ip == host_ip):
         try:
             _fs_call({"cmd": "sessions.destroy", "session": name}, timeout_s=20)
         except Exception:
             pass
         raise RuntimeError(
             f"Coolbet FS session {name!r} did NOT take the residential egress "
-            f"(session_ip={ip}, host_ip={local_ip}, proxy={_RESIDENTIAL_PROXY}). "
+            f"(session_ip={ip}, host_ip={host_ip}, proxy={_RESIDENTIAL_PROXY}). "
             "Refusing to collect: Imperva blocks the datacenter IP, and prices "
             "fetched from the wrong identity are worse than no prices."
         )
-    log.info("Coolbet FS session %s egressing via residential %s", name, ip)
+    log.info("Coolbet FS session %s recreated, egressing via residential %s", name, ip)
 
 
 class _FSResponse:
