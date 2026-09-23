@@ -52547,5 +52547,22 @@ def test_feed_auto_pause():
     import pathlib
     assert (pathlib.Path(__file__).parent.parent / "supabase/migrations/391_feed_auto_pause.sql").exists()
 
+@test("COOLBET-SEARCH-BUDGET — the fallback search cannot recreate the footprint that got the exit IP flagged")
+def test_coolbet_search_budget():
+    """#108 / #091 (2026-09-23). With fo-category retired, every fixture fell back to up
+    to 5 search requests: 6,033 searches in 8 h from one IP (peak 1,517 Coolbet
+    requests/hour) before Imperva flagged the zone.ee exit. The sweep now searches
+    only fixtures kicking off within the horizon, and at most the budget per sweep;
+    a skipped fixture is UNRESOLVED, never recorded as absent."""
+    import inspect
+    from workers.automation import coolbet_explorer as ce
+    assert ce._SEARCH_FIXTURE_BUDGET <= 60, "search budget raised past the safe footprint"
+    assert ce._SEARCH_HORIZON_H <= 24
+    src = inspect.getsource(ce.run_bulk)
+    assert "searches_used >= _SEARCH_FIXTURE_BUDGET" in src and "_SEARCH_HORIZON_H" in src
+    assert "unreachable = True" in src, "a budget-skipped fixture must count as unresolved, not absent"
+    assert src.index("searches_used >= _SEARCH_FIXTURE_BUDGET") < src.index("search_coolbet_event("), (
+        "the budget check must run BEFORE the search request")
+
 if __name__ == "__main__":
     main()

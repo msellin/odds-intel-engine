@@ -2302,6 +2302,12 @@ def apply_league_prior(matches: list[dict]) -> tuple[list[dict], int]:
     return kept, skipped
 
 
+# COOLBET-SEARCH-BUDGET (2026-09-23) — see run_bulk. ~5 search requests per
+# fixture searched, so 40 fixtures ≈ 200 requests per sweep (was up to ~1,000).
+_SEARCH_FIXTURE_BUDGET = int(os.getenv("COOLBET_SEARCH_FIXTURE_BUDGET", "40"))
+_SEARCH_HORIZON_H = float(os.getenv("COOLBET_SEARCH_HORIZON_H", "12"))
+
+
 def run_bulk(
     days: int, dry_run: bool, sleep_s: float, limit: int | None,
     *, bets_only: bool = False,
@@ -2344,6 +2350,8 @@ def run_bulk(
     # COOLBET-BULK-LISTING-FIRST: latch so a blocked search logs once, not
     # ~1,200 times, and never aborts the sweep.
     search_blocked = False
+    searches_used = 0
+    search_skipped = 0
 
     matched = 0
     parsed_total = 0
@@ -2413,7 +2421,22 @@ def run_bulk(
 
         ev = fuzzy_match_event(home, away, category_cache, match_date) if category_cache else None
         unreachable = False
+        # COOLBET-SEARCH-BUDGET (#108 / #091, 2026-09-23). With fo-category retired,
+        # EVERY fixture fell through to up to 5 search requests — measured 6,033
+        # searches in 8 h from one IP (up to 1,517 Coolbet requests/hour) before
+        # Imperva flagged the exit. Search only near-term fixtures, and at most
+        # _SEARCH_FIXTURE_BUDGET of them per sweep. A fixture skipped here is
+        # UNRESOLVED (we did not ask), never "Coolbet does not have it".
         if ev is None and not search_blocked:
+            ko_h = None
+            if match_date is not None:
+                _md = match_date if match_date.tzinfo else match_date.replace(tzinfo=timezone.utc)
+                ko_h = (_md - datetime.now(timezone.utc)).total_seconds() / 3600
+            if searches_used >= _SEARCH_FIXTURE_BUDGET or (ko_h is not None and ko_h > _SEARCH_HORIZON_H):
+                search_skipped += 1
+                unreachable = True
+        if ev is None and not search_blocked and not unreachable:
+            searches_used += 1
             # Residue only. A block here must NOT kill the sweep — everything
             # matched from the listing is still worth storing.
             try:
@@ -2568,8 +2591,13 @@ def run_bulk(
     # FEEDS-DASHBOARD / #108 (2026-09-23): return the outcome instead of None, so
     # the scheduler job can FAIL a sweep that wrote nothing. Returning None let
     # 4 hours of "Coolbet unreachable — sweep aborted" record as `completed`.
+    if search_skipped:
+        console.print(f"[dim]search budget: searched {searches_used} fixtures, skipped "
+                      f"{search_skipped} (beyond {_SEARCH_HORIZON_H:g} h or over the "
+                      f"{_SEARCH_FIXTURE_BUDGET}-fixture budget) — unresolved, not absent[/dim]")
     return {"matches": len(matches), "matched": matched, "stored": stored_total,
-            "unresolved": total_unresolved}
+            "unresolved": total_unresolved, "searched": searches_used,
+            "search_skipped": search_skipped}
 
 
 def run_one_shot(match_id: str, raw: bool = False) -> None:
