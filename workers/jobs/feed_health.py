@@ -275,7 +275,7 @@ _COLS = ("feed_id", "label", "book", "category", "kind", "schedule", "interval_m
          "last_run_status", "last_run_seconds", "last_success_at", "last_error", "runs_24h",
          "failures_24h", "fail_streak", "last_data_at", "rows_1h", "rows_24h",
          "service_state", "runbook", "controls", "paused", "paused_reason", "paused_by",
-         "paused_at", "run_now_pending")
+         "paused_at", "run_now_pending", "auto_resume_at")
 
 FEEDS_URL = "https://www.oddsintel.app/admin/feeds"
 
@@ -283,7 +283,7 @@ FEEDS_URL = "https://www.oddsintel.app/admin/feeds"
 def _controls() -> dict[str, dict]:
     try:
         return {r["feed_id"]: r for r in execute_query(
-            """SELECT feed_id, paused, paused_reason, paused_by, paused_at,
+            """SELECT feed_id, paused, paused_reason, paused_by, paused_at, auto_resume_at,
                       (run_now_requested_at IS NOT NULL AND (run_now_started_at IS NULL
                          OR run_now_started_at < run_now_requested_at)) AS run_now_pending
                  FROM feed_controls""") or []}
@@ -321,6 +321,11 @@ def _alert_transitions(prev: dict[str, str], evals: list[dict]) -> int:
 def run_feed_health() -> dict:
     from workers.registry.feed_registry import FEEDS_BY_ID
     evals = evaluate()
+    try:  # circuit breaker first, so this run already renders the new pause
+        from workers.jobs.feed_control import apply_auto_pause
+        apply_auto_pause(evals)
+    except Exception as ex:  # noqa: BLE001 — never let the breaker blank the page
+        log.warning("auto-pause failed: %s", ex)
     ctl = _controls()
     prev = {r["feed_id"]: r["status"] for r in (execute_query(
         "SELECT feed_id, status FROM feed_status") or [])}
@@ -330,10 +335,15 @@ def run_feed_health() -> dict:
         e["paused_reason"], e["paused_by"], e["paused_at"] = (
             c.get("paused_reason"), c.get("paused_by"), c.get("paused_at"))
         e["run_now_pending"] = bool(c.get("run_now_pending"))
+        e["auto_resume_at"] = c.get("auto_resume_at")
         if e["paused"]:
             e["status"] = "paused"
-            e["status_reason"] = (f"paused by {c.get('paused_by') or 'operator'}"
-                                  + (f": {c['paused_reason']}" if c.get("paused_reason") else ""))
+            if c.get("paused_by") == "auto":
+                e["status_reason"] = (c.get("paused_reason") or "auto-paused") + (
+                    f" — next test {c['auto_resume_at']:%H:%M} UTC" if c.get("auto_resume_at") else "")
+            else:
+                e["status_reason"] = (f"paused by {c.get('paused_by') or 'operator'}"
+                                      + (f": {c['paused_reason']}" if c.get("paused_reason") else ""))
     rows = []
     for e in evals:
         f = FEEDS_BY_ID[e["feed_id"]]

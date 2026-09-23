@@ -21,6 +21,12 @@ CONTROLS (phase B, 2026-09-23). `controls` lists what /admin/feeds may do:
   "pause"   — `_run_job` skips the feed's job while `feed_controls.paused`
   "run_now" — the 30-s drain submits `wrapper` (a function in workers/scheduler.py)
               as a one-off run
+AUTO-PAUSE (2026-09-23, migration 391). `auto_pause: True` on the bot-protected
+book sweeps: 2 failed runs in a row → the engine pauses the feed itself and tests
+it again after a backoff (1 h, 2 h, 4 h, 8 h, cap 12 h) — see
+workers/jobs/feed_control.py. Why a pause and not a restart: #108 showed a full
+FlareSolverr restart does not clear a bot-protection flag on our exit IP; only time
+without traffic (or another IP) does, and every retry keeps the flag fresh.
 Only feeds whose job passes through `_run_job` can be paused that way; feeds run
 by systemd (in-play collector, near-kickoff timer, services) get their controls in
 phase C (allowlisted restarts).
@@ -33,25 +39,25 @@ AF_BOOKS = ("Pinnacle", "Bet365", "1xBet", "Marathonbet", "Betfair", "BetVictor"
 
 FEEDS: list[dict] = [
     # ── our own direct books ────────────────────────────────────────────────
-    {"id": "coolbet_prematch", "wrapper": "_coolbet_odds_snapshot_wrapper", "controls": ["pause", "run_now"], "label": "Coolbet — pre-match odds", "book": "Coolbet",
+    {"id": "coolbet_prematch", "auto_pause": True, "wrapper": "_coolbet_odds_snapshot_wrapper", "controls": ["pause", "run_now"], "label": "Coolbet — pre-match odds", "book": "Coolbet",
      "category": "book", "kind": "pre-match", "job": "coolbet_odds_snapshot",
      "units": ["oddsintel-zone-egress.service"], "docker": "oi_hetzner_flaresolverr",
      "schedule": ":03 / :33 UTC", "interval_min": 30, "stale_after_min": 90,
      "health": "data", "data": {"odds_books": ["Coolbet"]},
      "runbook": "docs/COOLBET_RUNBOOK.md"},
-    {"id": "epicbet_prematch", "wrapper": "_epicbet_odds_snapshot_wrapper", "controls": ["pause", "run_now"], "label": "Epicbet — pre-match odds", "book": "Epicbet",
+    {"id": "epicbet_prematch", "auto_pause": True, "wrapper": "_epicbet_odds_snapshot_wrapper", "controls": ["pause", "run_now"], "label": "Epicbet — pre-match odds", "book": "Epicbet",
      "category": "book", "kind": "pre-match", "job": "epicbet_odds_snapshot",
      "units": ["oddsintel-zone-egress.service"],
      "schedule": ":02 / :32 UTC", "interval_min": 30, "stale_after_min": 90,
      "health": "data", "data": {"odds_books": ["Epicbet"]}},
-    {"id": "unibet_prematch", "wrapper": "_unibet_site_odds_wrapper", "controls": ["pause", "run_now"], "label": "Unibet — pre-match odds (logged-out Chrome)",
+    {"id": "unibet_prematch", "auto_pause": True, "wrapper": "_unibet_site_odds_wrapper", "controls": ["pause", "run_now"], "label": "Unibet — pre-match odds (logged-out Chrome)",
      "book": "Unibet-Site", "category": "book", "kind": "pre-match",
      "job": "unibet_site_odds",
      "units": ["oddsintel-unibet-chrome.service", "oddsintel-zone-egress.service"],
      "schedule": ":15 / :45 UTC", "interval_min": 30, "stale_after_min": 90,
      "health": "data", "data": {"odds_books": ["Unibet-Site"]},
      "runbook": "docs/COOLBET_RUNBOOK.md#6-unibet-site-odds-feed-stale"},
-    {"id": "tonybet_prematch", "wrapper": "_tonybet_odds_snapshot_wrapper", "controls": ["pause", "run_now"], "label": "Tonybet — pre-match odds", "book": "Tonybet",
+    {"id": "tonybet_prematch", "auto_pause": True, "wrapper": "_tonybet_odds_snapshot_wrapper", "controls": ["pause", "run_now"], "label": "Tonybet — pre-match odds", "book": "Tonybet",
      "category": "book", "kind": "pre-match", "job": "tonybet_odds_snapshot",
      "units": ["oddsintel-zone-egress.service"],
      "schedule": ":01 / :31 UTC", "interval_min": 30, "stale_after_min": 90,

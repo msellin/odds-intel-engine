@@ -52450,10 +52450,15 @@ def test_feed_controls():
             {"feed_id": "af_fixtures", "paused": False, "run_now_requested_by": "t"},
             {"feed_id": "tonybet_live", "paused": False, "run_now_requested_by": "t"}]
         fc.execute_write = lambda *a, **k: writes.append(a) or 1
-        res = fc.drain(S(), M())
+        orig_ar = fc.auto_resume
+        fc.auto_resume = lambda: 0      # covered by FEED-AUTO-PAUSE
+        try:
+            res = fc.drain(S(), M())
+        finally:
+            fc.auto_resume = orig_ar
     finally:
         fc.execute_query, fc.execute_write = orig_q, orig_w
-    assert res == {"started": 1, "refused": 2}, res
+    assert (res["started"], res["refused"]) == (1, 2), res
     assert calls and calls[0][1] == "runnow_tonybet_live"
 
     # alerts: only transitions to fail / fail→ok, never for paused.
@@ -52483,6 +52488,64 @@ def test_feed_controls():
     finally:
         fh._unit_state = orig_u
     assert row["status"] == "unknown" and "first scheduled run" in row["status_reason"], row
+
+@test("FEED-AUTO-PAUSE — bot-protected sweeps pause themselves, back off, and test again")
+def test_feed_auto_pause():
+    """#107 / #108 (2026-09-23). A bot-protection flag on our exit IP is cured only by
+    time without traffic — #108 showed a full FlareSolverr restart does not help — and
+    every retry keeps it fresh. So: 2 failed runs in a row → auto-pause with backoff
+    1/2/4/8/12 h → auto-resume with one test run → re-pause (doubled) if it fails,
+    reset once it succeeds. Pins those rules and that an operator's pause is never
+    touched."""
+    from datetime import datetime, timedelta, timezone
+    from workers.jobs import feed_control as fc
+    assert [fc._backoff(n) for n in (1, 2, 3, 4, 5, 9)] == [60, 120, 240, 480, 720, 720]
+
+    now = datetime.now(timezone.utc)
+    writes = []
+    orig_q, orig_w, orig_n = fc.execute_query, fc.execute_write, fc._notify
+    try:
+        fc.execute_write = lambda sql, params=None: writes.append((sql, params)) or 1
+        fc._notify = lambda msg, key: None
+        def run(ctl_rows, evals):
+            writes.clear()
+            fc.execute_query = lambda *a, **k: ctl_rows
+            return fc.apply_auto_pause(evals)
+
+        fail2 = {"feed_id": "coolbet_prematch", "fail_streak": 2, "last_run_at": now,
+                 "last_run_status": "failed", "status": "fail", "last_error": "blocked"}
+        # 2 failures, no prior pause → paused for 60 min
+        r = run([], [fail2])
+        assert r["auto_paused"] == 1 and any("paused for 60 min" in str(p) for _, p in writes), writes
+        # 1 failure → nothing
+        assert run([], [dict(fail2, fail_streak=1)])["auto_paused"] == 0
+        # a feed without auto_pause (Tonybet live) → nothing
+        assert run([], [dict(fail2, feed_id="tonybet_live")])["auto_paused"] == 0
+        # failures that predate the last auto-resume do not re-pause (the test run is pending)
+        ctl = [{"feed_id": "coolbet_prematch", "paused": False, "paused_by": None,
+                "auto_pause_count": 1, "resumed_at": now + timedelta(seconds=5)}]
+        assert run(ctl, [fail2])["auto_paused"] == 0
+        # a failure AFTER the resume → re-pause with the doubled backoff
+        ctl[0]["resumed_at"] = now - timedelta(minutes=5)
+        r = run(ctl, [fail2])
+        assert r["auto_paused"] == 1 and any("paused for 120 min" in str(p) for _, p in writes), writes
+        # an operator's pause is left alone
+        man = [{"feed_id": "coolbet_prematch", "paused": True, "paused_by": "owner",
+                "auto_pause_count": 0, "resumed_at": None}]
+        assert run(man, [fail2])["auto_paused"] == 0 and not writes
+        # success after an auto-pause resets the counter
+        ok = dict(fail2, fail_streak=0, last_run_status="completed", status="ok")
+        r = run([{"feed_id": "coolbet_prematch", "paused": False, "paused_by": None,
+                  "auto_pause_count": 2, "resumed_at": now}], [ok])
+        assert r["auto_reset"] == 1
+    finally:
+        fc.execute_query, fc.execute_write, fc._notify = orig_q, orig_w, orig_n
+
+    from workers.registry.feed_registry import FEEDS_BY_ID
+    for fid in ("coolbet_prematch", "epicbet_prematch", "unibet_prematch", "tonybet_prematch"):
+        assert FEEDS_BY_ID[fid].get("auto_pause"), f"{fid} lost auto_pause"
+    import pathlib
+    assert (pathlib.Path(__file__).parent.parent / "supabase/migrations/391_feed_auto_pause.sql").exists()
 
 if __name__ == "__main__":
     main()
