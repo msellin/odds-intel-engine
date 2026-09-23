@@ -348,3 +348,41 @@ Also reported, not tested: CLV vs the index-71 consensus, per-half and per-leagu
 reported this family of strategy profitable at the MAX price across many books — our rule
 takes the best of ~32, so a positive B would not be a surprise either. Stated so neither
 outcome is read as vindication after the fact.
+
+### RESULT (2026-09-23) — the method works on 17,810 external picks; B passes; A3 (odds ≤ 1.6) passes
+
+91,572 matches extracted (the time-series files cover **2015-09 → 2016-11**, not 2005–15 —
+that span is closing-odds only). Calibration: earliest 18,314 matches, excluded. Panel =
+b2, b14, b9, b1, b13. Evaluated: 73,258 matches → **17,810 picks**; halves split 2016-06-11.
+
+| | n | ROI | p | half 1 / half 2 | CLV vs close |
+|---|---|---|---|---|---|
+| all consensus picks | 17,810 | **+3.76% ± 1.01** | 0.0001 | +4.01 / +3.51 | +4.27% |
+| **grade B** | 7,076 | **+3.98% ± 1.54** | 0.005 | +7.37 / +0.57 | +3.64% |
+| grade C | 10,734 | +3.62% ± 1.32 | 0.003 | +1.78 / +5.43 | +4.69% |
+
+* **Q1 B profitable: PASS.** **Q2 C worse than B: FAIL** — C is also profitable here (+5.6pp
+  gap in half 1, −4.9pp in half 2). The C rule, translated to anonymous books, does not
+  separate on this data; on our own data it does (in sample strongly, unseen weakly).
+* **Not one broken book:** profit is spread across books, CLV positive for nearly all; B
+  without its top contributor stays +3.2 to +3.5%. The largest-volume book (b10, 22% of picks)
+  LOSES −4.6% — the phantom-price book of this dataset.
+
+**Grade A (Holm m=3, on grade-B picks):**
+
+| candidate | n | ROI | Holm p | halves | verdict |
+|---|---|---|---|---|---|
+| A2 edge 4–6% | 3,557 | +6.09% | 0.006 | +8.75 / +3.40 | PASS here — but our own unseen data: −3.2% (n=98) |
+| **A3 odds ≤ 1.6** | **696** | **+9.77%** | **<0.0001** | **+8.69 / +10.79** | **PASS — and positive in BOTH of our own windows** |
+| A4 full panel agrees | 3,902 | +1.89% | 0.18 | +2.24 / +1.59 | FAIL |
+
+**A3 is the one rule that has now held in three independent samples:** our last 56 days
+(+17.8%, n=48), our unseen May–July (+14.7%, n=29), and 2015–16 external (+9.8%, n=696, win
+rate 0.764 at mean odds 1.44 vs 0.697 implied). It has a published mechanism — the
+favourite-longshot bias (favourites are under-priced) — and it is spread across books.
+
+**Caveats that stand:** 2015–16 had ~32 books and softer markets; our live consensus uses
+~7–12. Bookmakers limited Kaunitz et al.'s accounts (irrelevant for 👥 PICKS, decisive for
+🤖 OWN). Grade B by odds band here: ≤1.6 +10.6%, 1.6–2.0 +6.1%, 2.0–2.5 +7.2%, 2.5–3.0
+−3.0%, 3.0–4.0 +2.7% — the owner's instinct that B has a weak zone is right, but it is the
+HIGH-odds end, not the low.
