@@ -46,7 +46,7 @@ def main() -> int:
     from workers.jobs.clv_sharp import assemble_close
     from workers.model.devig import devig
     from scripts.publish_picks_forward_test import (
-        EXCLUDED_BOOKS, MAX_ANCHOR_OVERROUND, MAX_ODDS, MIN_EDGE)
+        EXCLUDED_BOOKS, MAX_ANCHOR_OVERROUND, MAX_ODDS, MAX_RATIO, MIN_EDGE)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=21)
@@ -110,16 +110,23 @@ def main() -> int:
                             best = (q[-1][1], bk)
                     if not best or best[0] > MAX_ODDS or pf[i_s] * best[0] - 1 < MIN_EDGE:
                         continue
+                    if best[0] / anchor[0][i_s] - 1 > MAX_RATIO:     # the live rule's phantom-price filter
+                        continue
                     clv = best[0] * pclose[i_s] - 1
                     feed = "scraped" if best[1] in SCRAPED else "af_fed"
+                    # Review 2026-09-23: a close with the SAME price as the anchor
+                    # scores clv == entry edge — often a frozen / echoed AF-Pinnacle
+                    # row, not a market that stood still. Reported separately.
+                    moved = "moved" if abs(c[0][i_s] - anchor[0][i_s]) > 1e-9 else "unchanged"
                     res[(cp, feed)].append(clv)
                     res[(cp, "all")].append(clv)
+                    res[(cp, moved)].append(clv)
                     days.add(str(k)[:10])
     nd = max(1, len(days))
-    print(f"LIVE SHARP RULE BY DECISION TIME — last {a.days} days ({nd} match days)\n")
+    print(f"LIVE SHARP RULE BY DECISION TIME — last {a.days} days ({nd} days with a leg)\n")
     print(f"  {'checkpoint':>11} {'feed':>8} {'n':>6} {'/day':>6} {'clv_sharp':>10} {'t':>6}")
     for cp in CHECKPOINTS_MIN:
-        for feed in ("all", "af_fed", "scraped"):
+        for feed in ("all", "af_fed", "scraped", "moved", "unchanged"):
             n, m, t = stat(res[(cp, feed)])
             lab = f"T-{cp // 60}h" if cp >= 60 else f"T-{cp}m"
             extra = f"   ({same_snap[cp]} market-checkpoints dropped: close = anchor)" if feed == "all" else ""

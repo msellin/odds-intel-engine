@@ -52125,11 +52125,22 @@ def test_meta_serving_skew():
     they are NULL for every fixture not yet played — every live score came from
     inputs the model never saw in that state. score_bet must return None then."""
     import workers.model.meta_b_ml3 as mm
+
+    class _Model:                      # returns a real score, so ONLY the guard can yield None
+        def predict_proba(self, X):
+            import numpy as _np
+            return _np.array([[0.4, 0.6]])
     orig = (mm._load_bundle, mm._get_mfv_row)
     try:
-        mm._load_bundle = lambda v: {"feature_cols": [], "model": None, "scaler": None}
+        mm._load_bundle = lambda v: {"feature_cols": ["edge_proxy", "ensemble_prob"],
+                                     "model": _Model(), "scaler": None}
         mm._get_mfv_row = lambda mid: {"opening_implied_home": 0.5, "league_tier": 1}
         assert mm.score_bet("m", "home", 0.55) is None, "must not score on empty t6h inputs"
+        # Control (review 2026-09-23: the first version passed WITHOUT the fix): with
+        # a t6h input present the same stub scores, so the None above is the guard's.
+        mm._get_mfv_row = lambda mid: {"opening_implied_home": 0.5, "league_tier": 1,
+                                       "pinnacle_line_move_home_at_t6h": -0.01}
+        assert mm.score_bet("m", "home", 0.55) == 0.6, "control: features present must score"
     finally:
         mm._load_bundle, mm._get_mfv_row = orig
 

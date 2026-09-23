@@ -242,7 +242,7 @@ and are NOT actionable.
 ### RESULT 2026-09-23 — the verdict STANDS on the tail test
 
 `scripts/own_tail_retest.py --days 21`: 19 decision days, 57 cells (book × market × X × stale),
-Holm m=57. **Every FRESH-quote cell is negative:** Coolbet 1x2 −0.3% to −1.4%, O/U 2.5 −2.4% to
+Holm m=57. **Every FRESH-quote cell but one is negative** (Epicbet 1H at a 5% floor: +0.42%, n=27, n.s.): Coolbet 1x2 −0.3% to −1.4%, O/U 2.5 −2.4% to
 −5.2%, 1H −0.9% to −2.3%; Epicbet 1x2 −1.4% to −2.5%, O/U 2.5 −2.5% to −2.8%, 1H −1.2% to +0.4%
 (n.s.); Unibet-Site 1x2 −0.8% to −1.8%, O/U 2.5 −1.9% to −2.9%. Positive clv_sharp appears only
 on STALE quotes (price unchanged > 60 min) — at most 1.5 legs/day, n = 1-29 per cell — exactly
@@ -252,3 +252,9 @@ the not-actionable class pre-stated. **No cell passes the bar. OWN stays closed.
 +0.4%. #103's +6.4% came from a T-2h anchor with no age bound; an old Pinnacle price is the
 likely source of the apparent Epicbet generosity. The live price check continues; its prior is
 now low.
+
+**Independent review (2026-09-23):** reproduced exactly; exact-timestamp Pinnacle sets are valid
+(39,644 of 39,645 1x2 write-timestamps complete). Two artefacts found, both biasing POSITIVE: 37
+legs with anchor = close, and 231 fresh legs whose close price equals the anchor price (clv =
+edge, ≈ +3.8-4.0%). Legs where Pinnacle actually moved score −4.50% (n=626, t=−17.4) when
+decided ≥2 h out. The verdict only gets stronger.
