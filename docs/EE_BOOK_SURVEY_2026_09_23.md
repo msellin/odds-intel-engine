@@ -76,3 +76,42 @@ VPS scheduler with `_run_job`, and a freshness watchdog covers it.
 - Legal/ToS for **reselling** these prices (goal 3/4) — see
   `docs/ODDS_DATA_PRODUCT_RESEARCH_2026_09_23.md` (#100). Collecting for our own
   use is what we already do for three books.
+
+## Coverage vs Epicbet — measured 2026-09-23 (~13:30 UTC)
+
+Next 48 h, pre-match football. Each book's full event list pulled from the VPS
+through the Estonian exit and matched to our 257 DB fixtures with the production
+matcher (`coolbet_placer.fuzzy_match_event`). Our current three books together
+price 159 of them. Script: session scratchpad `book_cov.py` (read-only).
+
+| Book | events offered | match our fixtures | **new — no current EE book prices them** | new vs Epicbet | markets/event¹ | requests per sweep | stats in play (vs AF: stats in only 28% of EE-priced matches) |
+|---|---|---|---|---|---|---|---|
+| **Epicbet** (baseline) | — | **139** | — | — | 14 families | tRPC, CF → needs EE exit | none read (AF's) |
+| Coolbet | — | 94 | — | — | 16 families | FS + Imperva | none read |
+| Unibet-Site | — | 69 | — | — | 7 families | logged-out Chrome | cards |
+| **Tonybet (=20bet)** | **570** | **156** | **+46** | +64 | not in list call² | **6** (REST, `time_lte` filter) | corners, cards (Sportradar) |
+| **Optibet** | 177 | 100 | +15 | +31 | 21 games | 139 (one per group, ~2 min) | shots, corners, cards, fouls, offsides |
+| **Paf** (Kambi) | 134 | 77 | +10 | +17 | 14 offers | **1** | corners, cards |
+| **Olybet** (BetConstruct) | 132 | 70 | +2 | +8 | **73.5** | 2 (websocket) | **shots on target, dangerous attacks, corners, cards + timeline** |
+| Betsafe | — | — | — | — | — | AWS WAF 403 | — |
+| Betmaster, Ninja (Altenar), Nubet, Vivatbet, Chanz | not measured — engine not identified / not probed | | | | | | |
+
+¹ Units differ (Epicbet = market families we store; others = raw markets/offers) — order of magnitude only.
+² `withMarketsCount` relation was not returned on the pre-match list; live events showed 140–307 markets.
+
+**Reading it**
+- **Tonybet is the biggest coverage gain**: more of our fixtures than Epicbet
+  (156 vs 139), +46 that no current book prices, and the cheapest sweep (6
+  requests). It also offers **414 events in 48 h that are not in our DB at all** —
+  either matcher misses or fixtures AF does not carry; that matters for the 💼 DATA
+  direction and should be sampled before trusting either reading.
+- **Olybet is a depth play, not a coverage play**: +2 new fixtures, but ~5× the
+  markets per event and the richest in-play stats (the #105 stats pilot).
+- **Paf and Optibet** add modest coverage (+10, +15); Paf is nearly free to sweep,
+  Optibet the most request-hungry.
+- Caveat: matched counts inherit the production matcher's error rate
+  (`FS-SESSION-CROSSED-RESPONSES` and `COOLBET-FUZZY-MATCH-FALSE-POSITIVES` show
+  it is not perfect); each sweeper's acceptance test re-checks this.
+
+**Revised build order: Tonybet → Optibet → Paf → Olybet (pre-match odds; its
+stats value is tracked by #105) → Betsafe spike.**
