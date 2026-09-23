@@ -782,6 +782,19 @@ def parse_fixture_stats(stats_response: list[dict]) -> dict:
         result[f"shots_insidebox_{prefix}"] = _parse_int(stats.get("Shots insidebox"))
         result[f"shots_outsidebox_{prefix}"] = _parse_int(stats.get("Shots outsidebox"))
 
+        # FREE KICKS — set-piece VOLUME, and genuinely new information. Audited
+        # 2026-09-23 across 25 fixtures / 50 team-rows: present on 40/50 (80%),
+        # and derivable from nothing else we store. The literature survey on
+        # [[#077]] lists set-piece volume as a candidate goals signal.
+        result[f"free_kicks_{prefix}"] = _parse_int(stats.get("Free Kicks"))
+
+        # NOT STORED, DELIBERATELY: `Shots off Goal`. It is on 50/50 responses,
+        # but `Total Shots = Shots on Goal + Shots off Goal + Blocked Shots`
+        # held on 30 of 30 team-rows tested, so it carries ZERO information we
+        # do not already have. A redundant column is a second thing to keep
+        # consistent, not a second signal. (`Passes %` is skipped for the same
+        # reason — it is Passes accurate / Total passes, and only on 6/50.)
+
         # goals_prevented — post-shot xG on the KEEPER's side (shot quality faced
         # minus goals conceded). Served alongside expected_goals and likewise
         # discarded until now.

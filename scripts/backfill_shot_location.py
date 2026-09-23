@@ -67,6 +67,7 @@ COLS = (
     "shots_insidebox_home", "shots_insidebox_away",
     "shots_outsidebox_home", "shots_outsidebox_away",
     "goals_prevented_home", "goals_prevented_away",
+    "free_kicks_home", "free_kicks_away",
 )
 
 

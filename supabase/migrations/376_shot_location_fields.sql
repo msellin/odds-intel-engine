@@ -71,6 +71,15 @@ ALTER TABLE match_stats
     ADD COLUMN IF NOT EXISTS shots_outsidebox_away    integer,
     ADD COLUMN IF NOT EXISTS goals_prevented_home     numeric,
     ADD COLUMN IF NOT EXISTS goals_prevented_away     numeric,
+    -- Set-piece VOLUME. Audited across 25 fixtures / 50 team-rows: present on
+    -- 40/50 (80%) and derivable from nothing else we hold.
+    --
+    -- `Shots off Goal` is deliberately NOT added despite 50/50 presence:
+    -- `Total Shots = on + off + blocked` held on 30 of 30 team-rows tested, so
+    -- it is exactly derivable and carries zero extra information. A redundant
+    -- column is a second thing to keep consistent, not a second signal.
+    ADD COLUMN IF NOT EXISTS free_kicks_home          integer,
+    ADD COLUMN IF NOT EXISTS free_kicks_away          integer,
     ADD COLUMN IF NOT EXISTS shots_insidebox_home_ht  integer,
     ADD COLUMN IF NOT EXISTS shots_insidebox_away_ht  integer,
     ADD COLUMN IF NOT EXISTS shots_outsidebox_home_ht integer,

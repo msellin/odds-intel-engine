@@ -411,3 +411,39 @@ January 2026** (Opta termination) and is no longer an option.
 ⚠️ **xG is not comparable across providers** — match-level correlations run
 0.86–0.96, and only **76.1%** of matches have four providers agreeing which team
 won the xG. Never mix providers in one column; refit any calibration on a switch.
+
+## Full AF field audit — what we get, what we store, what does not exist (2026-09-23)
+
+Sampled 25 fixtures / 50 team-rows across leagues, straight from the live
+`/fixtures/statistics` endpoint. Every type AF returned, with how often:
+
+| AF field | seen | stored? |
+|---|---|---|
+| Total Shots · Shots on Goal · Blocked Shots · Corner Kicks · Ball Possession · Yellow Cards | 50/50 | ✅ already |
+| Red Cards | 48/50 | ✅ already |
+| Goalkeeper Saves · Offsides · Fouls · Total passes · Passes accurate | 42/50 | ✅ already |
+| **Shots insidebox / Shots outsidebox** | 42/50 | ✅ **added [[#078]]** |
+| **Free Kicks** | 40/50 | ✅ **added [[#078]]** |
+| **goals_prevented** | 4/50 | ✅ **added [[#078]]** |
+| `expected_goals` | **4/50** | ✅ already — and 4/50 is the collapse, see above |
+| Shots off Goal | 50/50 | ❌ **deliberately not** — `Total = on + off + blocked` held **30/30**, so it is exactly derivable and carries zero information |
+| Passes % | 6/50 | ❌ **deliberately not** — `accurate / total`, same reason |
+
+**There is no further `match_stats` coverage to win.** Only **132 of 1,461**
+leagues carry `coverage_statistics_fixtures`, and probing **30 fixtures across 30
+flagged-FALSE leagues returned statistics for 0 of them**. The flag is accurate;
+those 46,089 matches are uncovered at source, not by our gating.
+
+### Where the real gap is — enrichment fill against 175,450 finished matches
+
+| table | matches | fill |
+|---|---|---|
+| **`match_events`** | **141,805** | **80.8%** — and **no feature is derived from it** |
+| `match_stats` | 56,463 | 32.2% |
+| `match_player_stats` | 8,559 | 4.9% |
+| `match_injuries` | 1,572 | 0.9% |
+
+`match_events` has **2.5× the coverage of `match_stats`**, holds **361,677 goal
+events with minutes across 129,518 matches** and **30,356 red cards with minutes**
+— and feeds the model nothing. Half-time scores are on **172,334 matches (98.2%)**.
+That is the largest untouched signal we own: [[#080]].
