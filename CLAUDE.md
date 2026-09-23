@@ -298,7 +298,7 @@ looks stale, check the workflow run rather than SSHing in and pulling.
 
 | What changed | Path | Workflow | Effect |
 |---|---|---|---|
-| `workers/**`, `requirements.txt` | engine → VPS | `odds-intel-engine/.github/workflows/deploy.yml` | pull + `systemctl restart oddsintel-scheduler` |
+| `workers/**`, `requirements.txt`, or a `scripts/` module the scheduler imports (e.g. `publish_picks_forward_test.py`; derived from `from scripts.X` imports, added 2026-09-23) | engine → VPS | `odds-intel-engine/.github/workflows/deploy.yml` | pull + `systemctl restart oddsintel-scheduler` |
 | Anything else in the engine repo | engine → VPS | same | pull only, no restart |
 | `supabase/migrations/**` | DB | `migrate.yml` | applies + records in `_schema_migrations` |
 | `odds-intel-web/**` | web → VPS | `odds-intel-web/.github/workflows/deploy.yml` | pull + clean build + `pm2 restart` |

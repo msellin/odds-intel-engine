@@ -20,8 +20,8 @@
 # WHAT IT DOES
 # ------------
 # Always pulls on any push to main, so the box never drifts. Restarts the
-# scheduler ONLY when runtime code changed (`workers/**` or `requirements.txt`)
-# so doc-only commits don't cause needless churn.
+# scheduler ONLY when runtime code changed (`workers/**`, `requirements.txt`, or
+# a `scripts/` module the scheduler imports) so doc-only commits don't cause needless churn.
 #
 # TRADEOFF, STATED EXPLICITLY: a restart kills any in-flight pipeline job.
 # That is accepted. Jobs re-run on the next tick (:05/:35 betting, :10/:40
@@ -78,7 +78,20 @@ jobs:
               ./venv/bin/pip install -q -r requirements.txt
             fi
 
-            if echo "$CHANGED" | grep -qE '^(workers/|requirements\.txt)'; then
+            # SCRIPTS-IMPORTED-BY-SCHEDULER (2026-09-23). The scheduler imports
+            # eleven modules from scripts/ (e.g. publish_picks_forward_test, the
+            # only job that posts to the public channel). A change to one of those
+            # used to be "pull only" — the running process kept the old module in
+            # sys.modules until something under workers/ happened to restart it.
+            # Derive the list from the imports so it cannot drift.
+            IMPORTED=$(grep -rhoE "from scripts\.[a-z_0-9]+" workers \
+                       | sed -E 's#from scripts\.#scripts/#; s#$#.py#' | sort -u)
+            RUNTIME_SCRIPT=$(echo "$CHANGED" | grep -Fx -e "$IMPORTED" || true)
+            if [ -n "$RUNTIME_SCRIPT" ]; then
+              echo "--- scheduler-imported script changed: $RUNTIME_SCRIPT ---"
+            fi
+
+            if echo "$CHANGED" | grep -qE '^(workers/|requirements\.txt)' || [ -n "$RUNTIME_SCRIPT" ]; then
               echo "--- runtime code changed, restarting scheduler ---"
               systemctl restart oddsintel-scheduler
               sleep 8

@@ -114,6 +114,89 @@ CONSENSUS_MIN_BOOKS = 5     # a consensus of four books is four books
 # looser (a +14.7% edge on a draw at 3.94 against ten books is a broken price).
 # The live arm has NO ceiling and must not gain one — it is pre-registered.
 CONSENSUS_MAX_EDGE = 0.08
+# ── CONSENSUS-ARM GRADING (2026-09-23, [[#094]], owner-approved) ─────────────
+# A LABEL, NOT A GATE. Every consensus pick is still published; each one now
+# carries grade 'B' (standard) or 'C' (weak) plus the reasons, so a reader can
+# choose, and so the arm can later be split into two bots and either retired on
+# its own record. It does not change WHICH legs are selected, so
+# CONSENSUS_RULE_VERSION is unchanged.
+#
+# Measured on a replay of this exact rule over 56 days (n=677,
+# scripts/consensus_arm_replay.py, docs/PUBLISHED_PICKS_GRADING_2026_09_23.md),
+# each condition checked in both chronological halves:
+#   * league tier 0 (unclassified: youth, women, reserves, regional cups)
+#       n=77   ROI -34.0% (disc -31 / hold -39)
+#   * ANOTHER panel book — one that is not offering the price — sees no edge at
+#     the published price (its own de-vigged p * odds <= 1)
+#       n=122  ROI -36.6% (disc -42 / hold -22)
+#   * edge above 6% — the [[#007]] shape again: the biggest edges are the
+#     wrong prices, even under the 8% ceiling
+#       n=138  ROI -16.6% (disc -14 / hold -21)
+#   Grade C (any of the above): n=285 ROI -25.6% (disc -26.0 / hold -24.7)
+#   Grade B (none):             n=392 ROI +10.6% (disc +18.3 / hold -3.4)
+# ⚠️ B is NOT proven profitable — its holdout is negative and its CI spans zero.
+# C is consistently worse in both halves. Hence two grades and no "A".
+#
+# WHY A PANEL AND NOT ONE BOOK. Scored against 10,900 results, no book in our
+# feed is measurably sharper than any other: Pinnacle's median margin is 9.1%
+# and Marathonbet's log-loss is within noise of it (t=-1.6). So no single book
+# can be "the" second opinion; any of these five disagreeing is the signal.
+# The book offering the price is excluded from its own check — its own de-vig
+# always "disagrees" with its own price by roughly its margin, which measures
+# nothing.
+GRADE_PANEL = ("Pinnacle", "Marathonbet", "Betfair", "1xBet", "SBO")
+GRADE_C_MAX_EDGE = 0.06
+GRADE_REASON_TEXT = {
+    "tier0": "lower-profile league",
+    "panel": "{books} sees no value at this price",
+    "edge": "edge looks too big to be real (often a stale price)",
+}
+
+
+def grade_consensus_pick(edge: float, odds: float, bookmaker: str,
+                         league_tier, panel_probs: dict) -> tuple[str, list[str]]:
+    """('B'|'C', reasons). `panel_probs` maps panel book -> its own de-vigged
+    probability for THIS selection (books that did not price the full market
+    are simply absent). Reasons are machine keys; `panel:<Book>` names the
+    dissenting book."""
+    reasons = []
+    if league_tier == 0:
+        reasons.append("tier0")
+    for book in GRADE_PANEL:
+        p = panel_probs.get(book)
+        if book != bookmaker and p is not None and p * odds - 1.0 <= 0.0:
+            reasons.append(f"panel:{book}")
+    if edge > GRADE_C_MAX_EDGE:
+        reasons.append("edge")
+    return ("C" if reasons else "B"), reasons
+
+
+def _grade_line(c: dict) -> str:
+    """The reader-facing grade. Empty for ungraded (live-arm) picks."""
+    grade = c.get("grade")
+    if not grade:
+        return ""
+    if grade == "B":
+        return "🟢 Grade <b>B</b> — standard\n"
+    why, dissent = [], []
+    for r in c.get("grade_reasons") or []:
+        if r.startswith("panel:"):
+            dissent.append(r.split(":", 1)[1])
+        else:
+            why.append(GRADE_REASON_TEXT[r])
+    if dissent:
+        why.insert(0, GRADE_REASON_TEXT["panel"].format(books=" & ".join(dissent)))
+    return f"🟠 Grade <b>C</b> — weaker: {'; '.join(why)}\n"
+
+
+def _book_probs(sides, side_q, book):
+    """One book's own de-vigged probabilities for a complete market, or None."""
+    quotes = [(side_q.get(s) or {}).get(book) for s in sides]
+    if any(q is None or q[0] <= 1.0 for q in quotes):
+        return None
+    return devig([q[0] for q in quotes])
+
+
 # Arms that actually reach the channel. The dedupe and the runaway breaker are
 # about what a READER sees, so they must span every published arm, not one.
 PUBLISHED_ARMS = ("live", CONSENSUS_ARM)
@@ -272,7 +355,8 @@ def load_candidates(anchor: str = "pinnacle") -> tuple[list[dict], list[dict]]:
                o.match_id, o.market, o.selection, o.bookmaker,
                o.odds::float AS odds, o.timestamp,
                m.date AS kickoff,
-               ht.name AS home_team, at.name AS away_team, l.name AS league
+               ht.name AS home_team, at.name AS away_team, l.name AS league,
+               l.tier AS league_tier
           FROM odds_snapshots o
           JOIN matches m  ON m.id  = o.match_id
           JOIN teams   ht ON ht.id = m.home_team_id
@@ -362,6 +446,16 @@ def load_candidates(anchor: str = "pinnacle") -> tuple[list[dict], list[dict]]:
                 if odds / anchor_odds[s] - 1.0 > MAX_RATIO:
                     continue          # phantom/stale price — see MAX_RATIO
                 edge = p_sharp * odds - 1.0
+                grade, grade_reasons = None, None
+                if anchor == "consensus":
+                    idx = sides.index(s)
+                    panel = {}
+                    for pb in GRADE_PANEL:
+                        bp = _book_probs(sides, side_q, pb)
+                        if bp:
+                            panel[pb] = bp[idx]
+                    grade, grade_reasons = grade_consensus_pick(
+                        edge, odds, book, meta[mid].get("league_tier"), panel)
                 # NOTE: the MIN_EDGE floor is applied by select() below, not
                 # here — the junk arm must see the same unfiltered pool.
                 m = meta[mid]
@@ -377,6 +471,7 @@ def load_candidates(anchor: str = "pinnacle") -> tuple[list[dict], list[dict]]:
                         abs((ts - anchor_ts).total_seconds()) / 60.0,
                     "kickoff_at": m["kickoff"], "home_team": m["home_team"],
                     "away_team": m["away_team"], "league": m["league"] or "",
+                    "grade": grade, "grade_reasons": grade_reasons,
                 })
 
     return select(out), out
@@ -567,8 +662,8 @@ def claim(c: dict, arm: str) -> str | None:
             (match_id, market, selection, odds, bookmaker, edge, p_sharp,
              anchor_odds, anchor_overround, anchor_quoted_at, odds_quoted_at,
              alignment_gap_minutes, arm, rule_version, kickoff_at,
-             telegram_message_id, anchor_bookmaker)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+             telegram_message_id, anchor_bookmaker, grade, grade_reasons)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         ON CONFLICT (match_id, market, selection, arm) DO NOTHING
         RETURNING id
         """,
@@ -581,7 +676,9 @@ def claim(c: dict, arm: str) -> str | None:
          # With two anchors live that is no longer a tidiness issue — it is the
          # difference between two arms' results being separable and not.
          CONSENSUS_RULE_VERSION if arm == CONSENSUS_ARM else RULE_VERSION,
-         c["kickoff_at"], None, c.get("anchor_bookmaker")),
+         c["kickoff_at"], None, c.get("anchor_bookmaker"),
+         # [[#094]] consensus-arm grade; NULL on the live/junk arms.
+         c.get("grade"), c.get("grade_reasons")),
     )
     return str(rows[0]["id"]) if rows else None
 
@@ -785,7 +882,9 @@ def render(c: dict) -> str:
         # above; this line says what it was derived FROM, which is the part that
         # differs between the two published arms. Without it the channel mixes
         # two rules with no way for a reader — or us — to tell them apart.
-        f"{_anchor_line(c)}\n\n"
+        f"{_anchor_line(c)}\n"
+        # [[#094]] B/C grade on consensus picks — a label so readers can choose.
+        f"{_grade_line(c)}\n"
         f"<a href='https://oddsintel.app/picks'>Live picks</a>"
     )
 

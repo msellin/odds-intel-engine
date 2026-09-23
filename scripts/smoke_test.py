@@ -51831,5 +51831,50 @@ def test_unibet_on_vps():
     assert res.get("self_revive") == "not_attempted", res
 
 
+@test("CONSENSUS-ARM-GRADING — every consensus pick carries a B/C grade; a label, never a gate")
+def test_consensus_arm_grading():
+    """[[#094]] (2026-09-23). Consensus picks are graded C when the league is tier
+    0, when ANOTHER panel book sees no edge at the published price, or when the
+    edge exceeds 6% — each measured on a 56-day replay in both chronological
+    halves (docs/PUBLISHED_PICKS_GRADING_2026_09_23.md). Pins: the rule itself,
+    that the book offering the price is excluded from its own check (its own
+    de-vig always 'disagrees' by its margin), that grading is stored on claim
+    and rendered on the message, that the live arm stays ungraded, and that the
+    deploy restarts the scheduler when a scheduler-imported script changes —
+    otherwise this change would sit un-run in sys.modules.
+    """
+    import inspect
+    import scripts.publish_picks_forward_test as pf
+
+    g = pf.grade_consensus_pick
+    assert g(0.04, 2.0, "Epicbet", 1, {"Pinnacle": 0.53}) == ("B", [])
+    assert g(0.04, 2.0, "Epicbet", 0, {}) == ("C", ["tier0"])
+    assert g(0.04, 2.0, "Epicbet", 1, {"Marathonbet": 0.49}) == ("C", ["panel:Marathonbet"])
+    # the price's own book never counts against itself
+    assert g(0.04, 2.0, "Marathonbet", 1, {"Marathonbet": 0.45}) == ("B", [])
+    assert g(0.07, 2.0, "Epicbet", 1, {}) == ("C", ["edge"])
+    assert pf.GRADE_C_MAX_EDGE < pf.CONSENSUS_MAX_EDGE
+
+    line = pf._grade_line({"grade": "C", "grade_reasons": ["panel:Pinnacle", "tier0"]})
+    assert "Grade <b>C</b>" in line and "Pinnacle sees no value" in line and "lower-profile" in line
+    assert "Grade <b>B</b>" in pf._grade_line({"grade": "B", "grade_reasons": []})
+    assert pf._grade_line({}) == "", "an ungraded (live-arm) pick must render no grade line"
+
+    src = inspect.getsource(pf.claim)
+    assert "grade_reasons" in src and 'c.get("grade")' in src, "claim() must store the grade"
+    assert "_grade_line(c)" in inspect.getsource(pf.render), "render() must show the grade"
+    lc = inspect.getsource(pf.load_candidates)
+    assert 'if anchor == "consensus":' in lc[lc.index("grade, grade_reasons = None"):], (
+        "only the consensus arm is graded — the live arm is pre-registered")
+
+    mig = _engine_path("supabase/migrations/379_picks_forward_test_grade.sql").read_text()
+    assert "grade_reasons text[]" in mig and "IN ('B', 'C')" in mig
+
+    dep = _engine_path(".github/workflows/deploy.yml").read_text()
+    assert "RUNTIME_SCRIPT" in dep and 'from scripts\\.' in dep, (
+        "deploy must restart the scheduler when a scripts/ module it imports changes")
+    return "B/C grade computed, stored, rendered; live arm ungraded; deploy restarts on script change"
+
+
 if __name__ == "__main__":
     main()
