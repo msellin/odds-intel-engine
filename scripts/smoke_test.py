@@ -51713,6 +51713,12 @@ def test_ou_arms_preregistered():
     sw = src[src.index("def shots_walk_forward"):src.index("def league_walk_forward")]
     assert sw.index("# 1. predict") < sw.index("# 2. THEN update"), "shots rating must not see same-day results"
     assert "if arm == \"D\"" in src and "if arm == \"E\"" in src
+    # harness repair (2026-09-23): train on every country; close strictly pre-KO;
+    # Pinnacle's decision price fresh relative to the executable quote
+    assert "exclude_tier_c_countries=False" in src, "arms are scored on all countries, so train on all"
+    dp = src[src.index("def decision_prices"):src.index("def backtest")]
+    assert "is_closing OR" not in dp and "o.timestamp < m.date" in dp, "close must be strictly pre-kickoff"
+    assert "PIN_FRESH_MIN" in dp, "Pinnacle's decision price must be fresh vs the Coolbet quote"
     assert 'dec = {arm: (res_cov[arm] if arm in ("D", "E") else res_full[arm])' in src, (
         "D/E are decided on the shots-covered subset, as pre-registered")
     assert "minutes_to_kickoff >= %s" in src and "DECISION_MIN = 120" in src, (

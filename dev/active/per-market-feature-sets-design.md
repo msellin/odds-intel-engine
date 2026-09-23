@@ -474,3 +474,16 @@ His own result: +0.8%/bet only at max odds, flat-to-negative from 2014-17 ("the 
 shots"). Expected against a Pinnacle close: ~nothing. A faithful replication spec is in the review
 (scratchpad `research_shots_method.md`) — run it on football-data.co.uk history for his 10 leagues first,
 which separates "our version was unfaithful" from "the effect no longer exists".
+
+## Pre-registration — HARNESS-REPAIRED re-run (2026-09-23, BEFORE the run)
+
+From the internal review: (1) arms now train on EVERY country (`exclude_tier_c_countries=False` —
+27% of the test set came from countries no arm trained on); (2) the backtest close is STRICTLY
+pre-kickoff (11% of closes were in-play); (3) a decision is a Coolbet quote ≥120 min out with
+Pinnacle's price no more than 30 min older (it was a median ~11 h older — only 407 of 4,389
+fixtures in a two-week sample qualify, so the money section will be small and honest).
+Everything else — arms, bar (Holm m=6), CHECK R — unchanged. Run at the original cutoff
+(2026-08-20) and at 2026-05-01 (~2.5× the test set; test spans season end + start, so the
+weeks-1-5 problem is diluted, not removed). **Expected: all verdicts unchanged (FAIL); the
+country fix may narrow the model-vs-market gap slightly.** The faithful Wheatcroft replication is
+a separate step.

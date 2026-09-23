@@ -293,7 +293,11 @@ def arm_cols(arm: str) -> list[str]:
 def train_arm(arm, feats, targs, tag):
     cols = arm_cols(arm)
     out = ROOT / f"{tag}_{arm}"
-    model = train_over25_model(feats[cols].copy(), targs.copy(), out)
+    # HARNESS REPAIR (#089, 2026-09-23): train on EVERY country. The default
+    # excludes OU_EXCLUDED_LEAGUE_COUNTRIES (train.py), but the arms are SCORED on
+    # all fixtures — 27% of the test set came from countries no arm trained on.
+    model = train_over25_model(feats[cols].copy(), targs.copy(), out,
+                               exclude_tier_c_countries=False)
     fcols = list(model.get_booster().feature_names)
     means = {c: float(pd.to_numeric(feats[c], errors="coerce").mean()) for c in cols}
     joblib.dump(fcols, out / "feature_cols.pkl")
@@ -427,32 +431,52 @@ DECISION_MIN = 120
 FLOORS = (0.03, 0.05, 0.08)
 
 
+PIN_FRESH_MIN = 30      # Pinnacle's decision price no older than this vs the Coolbet quote
+
+
 def decision_prices(match_ids) -> dict:
-    """{match_id: {pin_o, pin_u, cb_o, cb_u, close_o, close_u}} — T-2h Pinnacle
-    and Coolbet, and Pinnacle's closing pair (is_closing row, else last pre-KO)."""
+    """{match_id: {pin_o, pin_u, cb_o, cb_u, close_o, close_u}} — the decision at
+    >= DECISION_MIN before kickoff, and Pinnacle's close.
+
+    HARNESS REPAIR (#089, 2026-09-23, internal review):
+      * the close is STRICTLY before kickoff — `is_closing` rows used to bypass the
+        pre-kickoff check, and 40% of them are stamped at/after kickoff, so 11% of
+        closes were in-play prices;
+      * the decision is a COOLBET quote, and Pinnacle's price must be within
+        PIN_FRESH_MIN of it — "latest Pinnacle >= 120 min out" was a median ~11 h
+        old, because Pinnacle O/U is captured ~4 times per match."""
     ids = list(match_ids)
     rows = _q("""
-        WITH d AS (SELECT DISTINCT ON (match_id, bookmaker, selection)
-                          match_id, bookmaker, selection, odds::float od
-                     FROM odds_snapshots
-                    WHERE match_id = ANY(%s::uuid[]) AND market='over_under_25'
-                      AND bookmaker IN ('Pinnacle','Coolbet') AND is_live IS NOT TRUE
-                      AND odds > 1.01 AND minutes_to_kickoff >= %s
-                    ORDER BY match_id, bookmaker, selection, timestamp DESC),
-             c AS (SELECT DISTINCT ON (match_id, selection) match_id, selection, odds::float od
-                     FROM odds_snapshots
-                    WHERE match_id = ANY(%s::uuid[]) AND market='over_under_25'
-                      AND bookmaker='Pinnacle' AND is_live IS NOT TRUE AND odds > 1.01
-                      AND (is_closing OR minutes_to_kickoff IS NULL OR minutes_to_kickoff > 0)
-                    ORDER BY match_id, selection, is_closing DESC, timestamp DESC)
-        SELECT 'd' k, match_id::text m, bookmaker b, selection s, od FROM d
-        UNION ALL SELECT 'c', match_id::text, 'Pinnacle', selection, od FROM c""",
-             (ids, DECISION_MIN, ids))
+        WITH cb AS (SELECT DISTINCT ON (o.match_id, o.selection)
+                           o.match_id, o.selection, o.odds::float od, o.timestamp ts
+                      FROM odds_snapshots o
+                     WHERE o.match_id = ANY(%s::uuid[]) AND o.market='over_under_25'
+                       AND o.bookmaker='Coolbet' AND o.is_live IS NOT TRUE
+                       AND o.odds > 1.01 AND o.minutes_to_kickoff >= %s
+                     ORDER BY o.match_id, o.selection, o.timestamp DESC),
+             pin AS (SELECT o.match_id, o.selection, o.odds::float od, o.timestamp ts
+                       FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
+                      WHERE o.match_id = ANY(%s::uuid[]) AND o.market='over_under_25'
+                        AND o.bookmaker='Pinnacle' AND o.is_live IS NOT TRUE
+                        AND o.odds > 1.01 AND o.timestamp < m.date),
+             d AS (SELECT DISTINCT ON (cb.match_id, cb.selection)
+                          cb.match_id, cb.selection, cb.od cb_od, p.od pin_od
+                     FROM cb JOIN pin p ON p.match_id = cb.match_id AND p.selection = cb.selection
+                      AND p.ts <= cb.ts AND cb.ts - p.ts <= make_interval(mins => %s)
+                    ORDER BY cb.match_id, cb.selection, p.ts DESC),
+             c AS (SELECT DISTINCT ON (match_id, selection) match_id, selection, od
+                     FROM pin ORDER BY match_id, selection, ts DESC)
+        SELECT 'd' k, match_id::text m, selection s, cb_od, pin_od, NULL::float od FROM d
+        UNION ALL SELECT 'c', match_id::text, selection, NULL, NULL, od FROM c""",
+             (ids, DECISION_MIN, ids, PIN_FRESH_MIN))
     out = defaultdict(dict)
     for r in rows:
-        key = ("close" if r["k"] == "c" else ("pin" if r["b"] == "Pinnacle" else "cb")) \
-              + ("_o" if r["s"] == "over" else "_u")
-        out[r["m"]][key] = r["od"]
+        sfx = "_o" if r["s"] == "over" else "_u"
+        if r["k"] == "d":
+            out[r["m"]]["cb" + sfx] = r["cb_od"]
+            out[r["m"]]["pin" + sfx] = r["pin_od"]
+        else:
+            out[r["m"]]["close" + sfx] = r["od"]
     need = ("pin_o", "pin_u", "cb_o", "cb_u", "close_o", "close_u")
     return {m: v for m, v in out.items() if all(k in v for k in need)}
 
