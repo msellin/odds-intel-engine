@@ -266,5 +266,6 @@ the live C record is big enough to decide it.
 
 **A3 is the only lead:** positive in both unseen halves AND in the seen window (+17.8%,
 n=48) — but 29 picks cannot pass a correction, and at odds ≤1.6 a single upset swings it.
-**Decision: no grade A is published.** A3 becomes a SHADOW label on live grade-B picks (not
-shown to readers) so it accumulates a forward record; re-test it at n ≥ 150.
+**Decision: no grade A is published.** A3 needs no new code to track: it is
+`picks_forward_test WHERE arm='consensus_anchor' AND grade='B' AND odds <= 1.6`, both columns
+already stored. Re-test it on LIVE picks only (published after 2026-09-23) at n ≥ 150.
