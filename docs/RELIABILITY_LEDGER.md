@@ -1260,3 +1260,22 @@ legacy `load` verb can fail in ways the check ran too early to see, and the host
 sleeping across the fire time defeats both. **The real fix is to stop depending on
 a laptop being awake**, which is what VPS-CONSOLIDATION-2026-09-16 is for.
 
+
+## 18. A shared stateful handle is not a service — two callers, one browser tab
+
+**FS-SESSION-CROSSED-RESPONSES, 2026-09-23.** A FlareSolverr "session" looks like
+an HTTP client, but it is **one browser tab**. A manual board sweep and the
+scheduled sweep drove `coolbet_prod` at the same time, and Grorud v Moss's
+sidebets request came back holding Hammarby W v Rangers W's markets. They were
+stored as Grorud's prices and caught only because they happened to invert
+Pinnacle's favourite. A crossing between two similarly-priced games would have
+passed every check we have.
+
+**The tell:** wrong data that no matcher could have produced (the names share
+nothing), and the same write burst carrying two disagreeing values from two
+transports. **The guard:** a per-session cross-process lock at the one choke point
+(`_fs_call`), plus a check that the response describes the request (the URL FS
+reports) so the next unguarded path fails loudly instead of mis-pricing.
+**General rule:** anything with hidden state (a browser tab, a CDP target, a
+logged-in session) needs an owner or a lock, and "it's only a manual run" is
+exactly when the second caller appears.

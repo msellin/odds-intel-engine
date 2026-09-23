@@ -1938,12 +1938,21 @@ def probe_coolbet_reachable(*, session_name: str | None = None) -> dict:
     Returns {"state", "detail", "elapsed_s", "bytes"}. Never raises.
     """
     import time as _t
+    from workers.automation.coolbet_session import fs_lock_wait_s, reset_fs_lock_wait
+    # FS-SESSION-CROSSED-RESPONSES (2026-09-23): the FS session lock can queue
+    # this probe behind a live caller of the same tab. That wait is not the tab
+    # being stuck, so it is excluded from every elapsed below — `wedged` is
+    # decided on elapsed, and a false `wedged` destroys a healthy session.
+    reset_fs_lock_wait()
     t0 = _t.time()
+
+    def _elapsed() -> float:
+        return round(_t.time() - t0 - fs_lock_wait_s(), 1)
     try:
         sess = CoolbetSession(require_auth=False, fs_session_name=session_name)
     except Exception as e:  # noqa: BLE001
         return {"state": "down", "detail": f"session init failed: {e}",
-                "elapsed_s": round(_t.time() - t0, 1), "bytes": 0}
+                "elapsed_s": _elapsed(), "bytes": 0}
     try:
         resp = sess.get(_FO_TREE_URL, params={"country": "EE"})
         body = getattr(resp, "text", "") or ""
@@ -1956,17 +1965,17 @@ def probe_coolbet_reachable(*, session_name: str | None = None) -> dict:
             parsed = False
         if parsed and n > 500:
             return {"state": "ok", "detail": "fo-tree answered with a parseable board",
-                    "elapsed_s": round(_t.time() - t0, 1), "bytes": n}
+                    "elapsed_s": _elapsed(), "bytes": n}
         return {"state": "challenged",
                 "detail": f"answered but not a usable board ({n} bytes, "
                           f"parsed={parsed})"
                           + (" — Imperva/Incapsula interstitial seen"
                              if getattr(sess, "saw_incapsula", False) else "")
                           + " — treat as still flagged",
-                "elapsed_s": round(_t.time() - t0, 1), "bytes": n}
+                "elapsed_s": _elapsed(), "bytes": n}
     except Exception as e:  # noqa: BLE001
         msg = str(e)
-        elapsed = round(_t.time() - t0, 1)
+        elapsed = _elapsed()
         looks_blocked = ("500" in msg or "timed out" in msg.lower()
                          or "timeout" in msg.lower())
         if not looks_blocked:

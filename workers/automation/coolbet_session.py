@@ -22,6 +22,7 @@ import logging
 import os
 import re
 import random
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -290,8 +291,98 @@ def _fs_call(body: dict, *, timeout_s: int = 90) -> dict:
         data=json.dumps(body).encode("utf-8"),
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-        return json.loads(resp.read())
+    # FS-SESSION-CROSSED-RESPONSES (2026-09-23): one FS session is ONE browser
+    # tab. Two processes driving it at once each read back whatever page the tab
+    # last loaded — so a request can return ANOTHER request's body. Measured: a
+    # manual board sweep ran alongside the scheduled run_bulk, both on
+    # `coolbet_prod`, and Grorud v Moss's sidebets GET came back holding Hammarby
+    # W v Rangers W's markets, which were stored as Grorud's 1x2 (1.53/3.85/6.1
+    # against Pinnacle's 2.82/2.00). Serialise every call per session name across
+    # processes on this host. Per call, not per sweep: two sweeps still
+    # interleave, but no two navigations overlap.
+    #
+    # The lock only protects the tab while WE are waiting on it, so our client
+    # timeout must outlast FS's own maxTimeout — otherwise a timed-out caller
+    # releases the lock while FS is still navigating, and the next caller
+    # crosses it exactly as before.
+    sess = body.get("session")
+    if not sess:
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            return json.loads(resp.read())
+    timeout_s = max(timeout_s, int(body.get("maxTimeout") or 0) / 1000 + 5)
+    with _fs_session_lock(str(sess), timeout_s=timeout_s):
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            return json.loads(resp.read())
+
+
+_FS_LOCK_DIR = os.getenv("COOLBET_FS_LOCK_DIR", "/tmp/oddsintel-fs-locks")
+# Seconds this THREAD has spent waiting for FS session locks since the last
+# reset. `probe_coolbet_reachable` subtracts it: its "wedged" verdict is a
+# timing heuristic, and time spent queued behind another caller is not the tab
+# being stuck — counting it would destroy a healthy, merely busy session.
+_lock_wait = threading.local()
+
+
+def reset_fs_lock_wait() -> None:
+    _lock_wait.s = 0.0
+
+
+def fs_lock_wait_s() -> float:
+    return getattr(_lock_wait, "s", 0.0)
+
+
+class _fs_session_lock:
+    """Cross-process exclusive lock for one FS session name (fcntl.flock on a
+    per-session file). Waits up to `timeout_s`, then raises — a caller that
+    cannot get the tab must fail that one request, never share it.
+
+    Dir and file are world-writable (sticky dir, 0666 file): a lock file first
+    created by root or a sudo'd manual run must not lock every other user out of
+    Coolbet entirely."""
+
+    def __init__(self, session: str, *, timeout_s: float):
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", session)
+        self._path = os.path.join(_FS_LOCK_DIR, f"{safe}.lock")
+        self._timeout_s = timeout_s
+        self._fh = None
+
+    def __enter__(self):
+        import fcntl
+        if not os.path.isdir(_FS_LOCK_DIR):
+            os.makedirs(_FS_LOCK_DIR, exist_ok=True)
+            try:
+                os.chmod(_FS_LOCK_DIR, 0o1777)
+            except OSError:
+                pass
+        fd = os.open(self._path, os.O_RDWR | os.O_CREAT, 0o666)
+        try:
+            os.fchmod(fd, 0o666)     # umask strips the mode above on creation
+        except OSError:
+            pass                     # not ours — already created with 0666
+        self._fh = os.fdopen(fd, "r+")
+        t0 = time.monotonic()
+        deadline = t0 + self._timeout_s
+        while True:
+            try:
+                fcntl.flock(self._fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                _lock_wait.s = fs_lock_wait_s() + (time.monotonic() - t0)
+                return self
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    _lock_wait.s = fs_lock_wait_s() + (time.monotonic() - t0)
+                    self._fh.close()
+                    raise RuntimeError(
+                        f"FS session {self._path!r} busy for {self._timeout_s}s — "
+                        "another process holds the tab")
+                time.sleep(0.1)
+
+    def __exit__(self, *exc):
+        import fcntl
+        try:
+            fcntl.flock(self._fh, fcntl.LOCK_UN)
+        finally:
+            self._fh.close()
+        return False
 
 
 # RESIDENTIAL-EGRESS (VPS-CONSOLIDATION-2026-09-16, wired 2026-09-22).
@@ -584,6 +675,27 @@ class _FSResponse:
                 f"HTTP {self.status_code} on {self.url} via FlareSolverr — "
                 f"body[:200]={self._clean_text()[:200]!r}"
             )
+
+
+def _reject_crossed_response(requested: str, resp: _FSResponse) -> _FSResponse:
+    """FS-SESSION-CROSSED-RESPONSES tripwire. FS reports the URL the tab ended
+    on; for a Coolbet API read (`/s/sbgate/`, no redirects) that must be the URL
+    we asked for. A different one means the tab was driven by someone else
+    mid-request and the body belongs to THAT request — e.g. another fixture's
+    markets. Fail the request (status 0) rather than let the caller parse it.
+    The per-session lock in `_fs_call` prevents this on one host; this catches
+    whatever the lock cannot see (another host sharing the FS instance).
+    No URL reported → no evidence either way → pass through."""
+    if "/s/sbgate/" not in requested or not resp.url:
+        return resp
+    want, got = urllib.parse.urlsplit(requested), urllib.parse.urlsplit(resp.url)
+    if (want.path.rstrip("/"), urllib.parse.parse_qs(want.query)) == \
+       (got.path.rstrip("/"), urllib.parse.parse_qs(got.query)):
+        return resp
+    log.error("FS returned a CROSSED response — asked %s, tab was on %s; "
+              "discarding it (another process drove the session)",
+              requested[:160], resp.url[:160])
+    return _FSResponse({"solution": {"status": 0, "response": "", "url": resp.url}})
 
 
 class _TimeoutSession(requests.Session):
@@ -1470,7 +1582,7 @@ class CoolbetSession:
             if fresh:
                 body["cookies"] = fresh
             resp = _FSResponse(_fs_call(body))
-        return resp
+        return _reject_crossed_response(url, resp)
 
     def _fs_post(self, url: str, *, headers: dict | None = None,
                  json_body: dict | None = None,

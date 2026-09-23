@@ -51669,5 +51669,88 @@ def test_half_time_one_construction():
         "construction argument is necessary but nobody re-derives it later")
 
 
+
+@test("FS-SESSION-CROSSED-RESPONSES — one FS tab, one caller; a crossed body is discarded")
+def test_fs_session_crossed_responses():
+    """FS-SESSION-CROSSED-RESPONSES (2026-09-23). A manual board sweep ran
+    alongside the scheduled run_bulk, both on FS session `coolbet_prod` (one
+    browser tab). Grorud v Moss's sidebets GET came back holding Hammarby W v
+    Rangers W's markets and was stored as Grorud's 1x2 — caught only because it
+    happened to invert Pinnacle's favourite.
+
+    Pins both layers: the cross-process per-session lock actually excludes a
+    second holder, and a response whose reported URL is not the requested one is
+    turned into a failure instead of parsed.
+    """
+    import inspect
+    import multiprocessing as mp
+    import tempfile
+    from workers.automation import coolbet_session as cs
+
+    _orig_lock_dir = cs._FS_LOCK_DIR
+    cs._FS_LOCK_DIR = tempfile.mkdtemp()
+    try:
+        # 1) The lock excludes a second PROCESS (flock is per open file description).
+        def _try(q, d):
+            cs._FS_LOCK_DIR = d
+            try:
+                with cs._fs_session_lock("coolbet_prod", timeout_s=0.3):
+                    q.put("got")
+            except RuntimeError:
+                q.put("busy")
+        with cs._fs_session_lock("coolbet_prod", timeout_s=1):
+            q = mp.get_context("fork").Queue()
+            p = mp.get_context("fork").Process(target=_try, args=(q, cs._FS_LOCK_DIR))
+            p.start(); p.join(5)
+            assert q.get(timeout=2) == "busy", "a second process got the FS tab while it was held"
+        # ... and a different session name is independent.
+        with cs._fs_session_lock("coolbet_prod", timeout_s=1):
+            with cs._fs_session_lock("other_session", timeout_s=0.3):
+                pass
+
+        # 2) _fs_call must actually take it.
+        src = inspect.getsource(cs._fs_call)
+        assert "_fs_session_lock(" in src, "_fs_call no longer serialises per FS session"
+
+        # 3) The tripwire: crossed body -> status 0; same URL (any param order) -> kept.
+        asked = ("https://www.coolbet.com/s/sbgate/sports/fo-market/sidebets"
+                 "?matchId=6177657&country=EE&limit=1000")
+        def r(url):
+            return cs._FSResponse({"solution": {"status": 200, "response": "{}", "url": url}})
+        crossed = cs._reject_crossed_response(asked, r(asked.replace("6177657", "6176661")))
+        assert crossed.status_code == 0 and not crossed.ok, "crossed response was not discarded"
+        same = cs._reject_crossed_response(
+            asked, r("https://www.coolbet.com/s/sbgate/sports/fo-market/sidebets"
+                     "?limit=1000&country=EE&matchId=6177657"))
+        assert same.status_code == 200, "a correct response with reordered params was rejected"
+        assert cs._reject_crossed_response(asked, r("")).status_code == 200, (
+            "no reported URL is no evidence — must pass through")
+        assert "_reject_crossed_response(" in inspect.getsource(cs.CoolbetSession._fs_get)
+
+        # 4) Lock file is 0666: one created by root must not lock other users out.
+        import os as _os, stat as _st
+        mode = _st.S_IMODE(_os.stat(_os.path.join(cs._FS_LOCK_DIR, "coolbet_prod.lock")).st_mode)
+        assert mode == 0o666, f"lock file mode {oct(mode)} — another user could not open it"
+
+        # 5) The client timeout must outlast FS's maxTimeout, or a timed-out caller
+        #    frees the tab while FS is still navigating it.
+        assert "maxTimeout" in src and "timeout_s = max(" in src, (
+            "_fs_call no longer stretches its timeout past FS's maxTimeout")
+
+        # 6) Time queued on the lock is NOT counted towards the probe's `wedged`
+        #    verdict (a false wedge destroys a healthy session).
+        cs.reset_fs_lock_wait()
+        with cs._fs_session_lock("coolbet_prod", timeout_s=1):
+            pass
+        assert cs.fs_lock_wait_s() >= 0.0
+        from workers.automation import coolbet_explorer as ce
+        psrc = inspect.getsource(ce.probe_coolbet_reachable)
+        assert "reset_fs_lock_wait()" in psrc and "fs_lock_wait_s()" in psrc, (
+            "probe_coolbet_reachable counts lock-wait as elapsed again")
+        assert "round(_t.time() - t0, 1)" not in psrc, "a raw elapsed slipped back into the probe"
+    finally:
+        cs._FS_LOCK_DIR = _orig_lock_dir   # shared module — never leave it patched
+
+
 if __name__ == "__main__":
     main()
