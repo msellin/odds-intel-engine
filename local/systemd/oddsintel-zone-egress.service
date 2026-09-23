@@ -1,0 +1,55 @@
+# ZONE-EGRESS (VPS-CONSOLIDATION-2026-09-16, 2026-09-23).
+#
+# A SOCKS5 proxy on 127.0.0.1:1081 whose traffic leaves from an ESTONIAN IP —
+# the zone.ee box (AS49604 Zone Media, Tallinn).
+#
+# WHY. Coolbet/Epicbet/Pinnacle classify this Hetzner box (AS24940, Helsinki) as
+# a datacenter and block or challenge it. Measured 2026-09-23 from the zone.ee
+# box, DIRECT, no browser tricks:
+#     Epicbet         CF-CHALLENGE here -> OK there
+#     Pinnacle-guest  CF-WAF-RULE  here -> OK there
+#     BetVictor       OK here -> 403 there, MATCHING the operator's home line
+# That last row is the tell: an Estonian hosting IP is classified like an
+# Estonian eyeball IP, not like a German hyperscaler.
+#
+# ARCHITECTURE, and it is deliberate: ALL COMPUTE STAYS ON THIS BOX. The zone.ee
+# instance is 1 vCPU / 2 GB and does nothing but forward packets — no
+# FlareSolverr, no collectors, no database. It is an exit node, nothing more.
+# This box is 8 vCPU / 16 GB and keeps the scheduler, Postgres, FlareSolverr and
+# the web app.
+#
+# It replaces the WireGuard-to-MacBook tunnel for anything that does not need the
+# operator's own residential identity, and unlike that tunnel it does not care
+# whether a laptop is awake.
+#
+# ⚠️ BINDS 127.0.0.1 ONLY. A SOCKS proxy on a public interface is an open relay.
+#
+# Install:
+#   cp local/systemd/oddsintel-zone-egress.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now oddsintel-zone-egress
+# Verify:
+#   curl -s --socks5-hostname 127.0.0.1:1081 https://api.ipify.org   # -> 217.146.76.113
+
+[Unit]
+Description=OddsIntel SOCKS egress via zone.ee (Estonian IP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+# -N no command, -D dynamic SOCKS bound to loopback.
+# ServerAlive* so a dead peer is noticed in ~45s rather than hanging forever.
+# ExitOnForwardFailure so a bind failure is a restart, not a silent no-op.
+ExecStart=/usr/bin/ssh -N -D 127.0.0.1:1081 \
+    -o BatchMode=yes \
+    -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=15 \
+    -o ServerAliveCountMax=3 \
+    -o StrictHostKeyChecking=accept-new \
+    ubuntu@217.146.76.113
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

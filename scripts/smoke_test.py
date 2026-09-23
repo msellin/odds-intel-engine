@@ -51393,5 +51393,62 @@ def test_migration_edits_are_invisible():
         "376 that never ran")
 
 
+@test("ZONE-EGRESS — Estonian exit node, loopback-bound, per-request not blanket")
+def test_zone_egress():
+    """ZONE-EGRESS 2026-09-23 — the egress problem, solved without the MacBook.
+
+    The whole VPS-consolidation effort was blocked on one thing: Coolbet, Epicbet
+    and Pinnacle classify this Hetzner box (AS24940, Helsinki) as a datacenter.
+    The working theory was that only a RESIDENTIAL Estonian IP would pass, which
+    meant a tunnel to the operator's MacBook — and therefore a laptop that had to
+    stay awake, or a Pi, or a port-forward on a router in a garage.
+
+    That theory was wrong, and a EUR 6.50/month box settled it. Measured from
+    zone.ee (AS49604 Zone Media, Tallinn — an Estonian HOSTING ASN):
+
+        Epicbet         CF-CHALLENGE on Hetzner  ->  OK
+        Pinnacle-guest  CF-WAF-RULE  on Hetzner  ->  OK
+        Coolbet         blocked      on Hetzner  ->  141,023 bytes of real fo-tree
+        BetVictor       OK           on Hetzner  ->  403
+
+    The BetVictor row is the one that explains the rest: it 403s from the
+    operator's home line and works from Hetzner, and the zone.ee box gets 403 —
+    so an Estonian hosting IP is classified like an Estonian EYEBALL IP, not like
+    a German hyperscaler. Country, not datacenter-vs-residential.
+
+    TWO INVARIANTS, both load-bearing.
+
+    1. LOOPBACK ONLY. A SOCKS proxy on a public interface is an open relay that
+       anyone can use to launder traffic through an IP we depend on staying
+       clean. The whole value of this box is its reputation.
+
+    2. PER-REQUEST, NOT BLANKET. BetVictor proves a default route through Estonia
+       would silently break a book that currently works. Selection stays at the
+       request level via the existing *_RESIDENTIAL_PROXY env knobs.
+    """
+    import pathlib as _pl
+    u = (_pl.Path(__file__).resolve().parent.parent
+         / "local" / "systemd" / "oddsintel-zone-egress.service").read_text()
+
+    assert "-D 127.0.0.1:1081" in u, \
+        "the SOCKS proxy MUST bind loopback — on a public interface it is an open relay, " \
+        "and an abused exit IP is exactly the reputation we are buying"
+    assert "-D 0.0.0.0" not in u and "-D *:" not in u, "no public bind may appear"
+
+    assert "ExitOnForwardFailure=yes" in u, \
+        "without it a failed bind leaves the service 'active' with no proxy — a silent no-op"
+    assert "ServerAliveInterval" in u, \
+        "a dead peer must be detected, not hung on"
+    assert "Restart=always" in u, "the exit node is load-bearing; it must come back by itself"
+
+    # the reasoning must survive, or someone 'simplifies' the box into doing real work
+    assert "COMPUTE STAYS" in u.upper() or "exit node" in u, \
+        "record that zone.ee is an EXIT NODE only — 1 vCPU/2 GB, no FlareSolverr, no collectors"
+    assert "BetVictor" in u, \
+        "keep the counter-example next to the config: a blanket route through Estonia " \
+        "silently breaks a book that works today"
+
+
+
 if __name__ == "__main__":
     main()
