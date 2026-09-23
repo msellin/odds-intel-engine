@@ -64,7 +64,7 @@ log = logging.getLogger(__name__)
 
 WINDOW_MIN = 15    # capture fixtures kicking off within this many minutes
 MIN_GAP_MIN = 6    # skip a (match, book) with a snapshot this recent
-BOOKS = ("Coolbet", "Unibet-Site", "Epicbet")
+BOOKS = ("Coolbet", "Unibet-Site", "Epicbet", "Tonybet")
 UNIBET_SPACING_S = 1.2  # same pacing as the Unibet sweep (DataDome is behavioural)
 
 
@@ -198,7 +198,36 @@ def capture_unibet(due: list[dict], dry_run: bool) -> dict:
     return c
 
 
-_CAPTURE = {"Coolbet": capture_coolbet, "Unibet-Site": capture_unibet, "Epicbet": capture_epicbet}
+def capture_tonybet(due: list[dict], dry_run: bool) -> dict:
+    """TONYBET (#101 phase 1b, 2026-09-23): the full board by stored event id —
+    one request per due fixture, so the close carries corners/cards/1H/team totals
+    too, not just the main markets."""
+    from workers.automation import tonybet_feed as tb
+    c = {"due": len(due), "stored": 0, "fails": 0}
+    sess = tb._session()
+    for i, d in enumerate(due):
+        if i:
+            time.sleep(tb._SLEEP_S)
+        if _kicked_off(d):
+            continue
+        try:
+            markets = tb.fetch_deep_markets(sess, d["book_event_id"])
+        except Exception as e:  # noqa: BLE001
+            c["fails"] += 1
+            log.warning("near-KO Tonybet event %s failed: %s", d["book_event_id"], e)
+            continue
+        if not markets:
+            c["fails"] += 1
+            continue
+        if dry_run:
+            c["stored"] += len(tb.parse_markets(markets))
+            continue
+        c["stored"] += tb.store_event_rows(d["match_id"], markets, _mins_to_ko(d["date"]))
+    return c
+
+
+_CAPTURE = {"Coolbet": capture_coolbet, "Unibet-Site": capture_unibet, "Epicbet": capture_epicbet,
+            "Tonybet": capture_tonybet}
 
 
 def run_near_kickoff_capture(books=BOOKS, *, dry_run: bool = False,

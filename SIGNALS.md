@@ -60,6 +60,7 @@ Data tier system:
 | Signal | Signal name in match_signals | When written | Status |
 |--------|------------------------------|-------------|--------|
 | Opening implied prob (home) | `market_implied_home` | Morning pipeline | ✅ Running |
+| Sportradar fair probability per outcome (Tonybet, margin-free) | `book_fair_probs` (not a signal row; latest value = fair close) | Every Tonybet sweep | ✅ Collected since 2026-09-23, **not yet read** — test as an anchor first |
 | Opening implied prob (draw) | `market_implied_draw` | Morning pipeline | ✅ Running |
 | Opening implied prob (away) | `market_implied_away` | Morning pipeline | ✅ Running |
 | Bookmaker count active | `bookmaker_count_active` | Morning pipeline (batch_write block 3) | ✅ Running (2026-05-08) |
@@ -239,6 +240,10 @@ Data tier system:
 | `live_odds` | `odds_snapshots` (is_live=true) | ✅ Running |
 | `live_red_cards` | `match_events` | ✅ Running |
 | `live_goals` | `match_events` | ✅ Running |
+| Tonybet live score / clock / status / corners / cards (every live football match, matched or not; Sportradar) | `book_live_stats` | ✅ Running since 2026-09-23 (#101), every 120 s |
+| Tonybet FT / HT / 2H results + final corners/cards | `book_match_results` | ✅ Running since 2026-09-23 (#101), every 2 h |
+
+> **Why book-sourced match data (2026-09-23).** API-Football has fixture stats for only 28% of the matches our Estonian books price (`docs/BOOK_DATA_FOR_MODELLING_2026_09_23.md`). Tonybet's live feed carries corners/cards for ~83% of live football. These tables are raw collection, not model features: nothing reads them yet, and #077 found shots+corners add no α to a goals model — the proven uses are settling corners/cards markets and owning the data.
 
 ---
 

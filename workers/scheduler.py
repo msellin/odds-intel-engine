@@ -619,6 +619,34 @@ def _tonybet_odds_snapshot_wrapper():
     _run_job("tonybet_odds_snapshot", job_tonybet_odds_snapshot)
 
 
+def job_tonybet_live():
+    """TONYBET phase 2 (#101, 2026-09-23): one request snapshots score / clock /
+    status / corners / cards for EVERY live football event into book_live_stats.
+    Every 120 s (owner's choice). The last snapshot before full time is the only
+    durable record of final corners/cards — Tonybet clears them at the whistle."""
+    from workers.automation.tonybet_feed import run_live
+    return run_live()
+
+
+def _tonybet_live_wrapper():
+    _run_job("tonybet_live", job_tonybet_live)
+
+
+def job_tonybet_results():
+    """TONYBET phase 2 (#101, 2026-09-23): FT / HT / 2H results + final corners/
+    cards for football that ended in the last 36 h → book_match_results. Every 2 h
+    because Tonybet purges results ~1–2 days after kickoff."""
+    from workers.automation.tonybet_feed import run_results
+    res = run_results()
+    if not res.get("ended"):
+        raise RuntimeError(f"Tonybet returned no ended football in 36 h: {res}")
+    return res
+
+
+def _tonybet_results_wrapper():
+    _run_job("tonybet_results", job_tonybet_results)
+
+
 def job_unibet_site_odds():
     """UNIBET-ON-VPS (2026-09-23) — 30-min Unibet-Site (unibet.ee) odds sweep,
     logged OUT; see the registration below for why. Raises when the sweep could
@@ -3030,6 +3058,15 @@ def main():
     scheduler.add_job(_tonybet_odds_snapshot_wrapper,
                       CronTrigger(hour="*", minute="1,31"),
                       id="tonybet_odds_snapshot", name="Tonybet Odds [30min]",
+                      max_instances=1)
+    # TONYBET phase 2 (#101): live stats every 120 s (owner's choice — enough for
+    # final corners/cards, half the requests of 60 s), results every 2 h at :20.
+    scheduler.add_job(_tonybet_live_wrapper, IntervalTrigger(seconds=120),
+                      id="tonybet_live", name="Tonybet Live Stats [120s]",
+                      max_instances=1, coalesce=True)
+    scheduler.add_job(_tonybet_results_wrapper,
+                      CronTrigger(hour="*/2", minute="20"),
+                      id="tonybet_results", name="Tonybet Results [2h]",
                       max_instances=1)
     scheduler.add_job(_epicbet_odds_snapshot_wrapper,
                       CronTrigger(hour="*", minute="2,32"),

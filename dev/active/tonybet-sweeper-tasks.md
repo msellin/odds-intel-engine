@@ -7,7 +7,9 @@ Parent: PRIORITY_QUEUE.md #101 EE-SWEEPERS-2026-09-23 (Tonybet sub-item)
 - [x] Scheduler job + health staleness list
 - [x] Smoke test `TONYBET-SWEEPER`
 - [x] Docs: DATA_SOURCES, WORKFLOWS, INFRASTRUCTURE, SYSTEM_MAP line
-- [ ] Phase 1b: deep board — every market family in the payload (corners, cards, team totals, 1H, goalscorer), not just the six
-- [ ] Phase 2: live score/clock/corners/cards (120 s) + results FT/HT/2H within 24 h
+- [x] Phase 1b: deep board at T-24h/3h/30m + close; corners, bookings, team totals, 1H/2H goals, 1H/2H result, BTTS by half, 1H DC. Player/goalscorer/combos → raw archive only
+- [x] Phase 2: live stats every 120 s (`book_live_stats`) + results every 2 h (`book_match_results`), migration 385
+- [ ] After ~1 week: validate `book_match_results` FT/HT vs AF scores, and live corners/cards vs `match_stats` where AF has them
+- [ ] Parse player/goalscorer markets (needs `players` relation for names) — from the raw archive back to 2026-09-23
 - [x] Deploy + first scheduled run verified (14:01 UTC: 550 events, 164/218 matched, 4,714 rows, 4,717 fair probs)
 - [x] Acceptance 1–3 → promoted to ACCESSIBLE_BOOKMAKERS

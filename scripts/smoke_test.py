@@ -52190,6 +52190,46 @@ def test_tonybet_sweeper():
     assert '"Tonybet"' in acc, "Tonybet left the placeable set"
     assert (root / "supabase/migrations/383_book_fair_probs.sql").exists()
 
+    # PHASE 1b: the full-board families, on Sportradar ids confirmed in the catalogue.
+    deep = [
+        mk(166, "total=9.5", [("12", 1.9, 0.5, 1), ("13", 1.9, 0.5, 1)]),
+        mk(167, "total=4.5", [("12", 1.8, 0.52, 1), ("13", 2.0, 0.48, 1)]),
+        mk(177, "total=4", [("12", 1.85, 0.5, 1), ("13", 1.95, 0.5, 1)]),
+        mk(165, "hcp=-1.5", [("1714", 1.9, 0.5, 1), ("1715", 1.9, 0.5, 1)]),
+        mk(139, "total=3.5", [("12", 1.9, 0.5, 1), ("13", 1.9, 0.5, 1)]),
+        mk(19, "total=1.5", [("12", 2.0, 0.48, 1), ("13", 1.8, 0.52, 1)]),
+        mk(68, "total=0.5", [("12", 1.4, 0.7, 1), ("13", 2.9, 0.3, 1)]),
+        mk(90, "total=1.5", [("12", 2.2, 0.44, 1), ("13", 1.65, 0.56, 1)]),
+        mk(60, None, [("1", 3.0, 0.3, 1), ("2", 2.1, 0.45, 1), ("3", 4.0, 0.25, 1)]),
+        mk(83, None, [("1", 2.8, 0.33, 1), ("2", 2.4, 0.4, 1), ("3", 3.6, 0.27, 1)]),
+        mk(75, None, [("74", 4.5, 0.2, 1), ("76", 1.2, 0.8, 1)]),
+        mk(63, None, [("9", 1.3, 0.75, 1), ("10", 1.4, 0.7, 1), ("11", 1.6, 0.55, 1)]),
+        mk(166, "total=9.25", [("12", 1.9, 0.5, 1), ("13", 1.9, 0.5, 1)]),     # quarter → dropped
+    ]
+    dk = {(r[0], r[1]) for r in t.parse_markets(deep)}
+    for need in [("corners_ou_95", "over"), ("corners_home_ou_45", "under"),
+                 ("corners_1h_ou_40", "over"), ("corners_handicap", "home"),
+                 ("bookings_ou_35", "over"), ("team_total_home_15", "over"),
+                 ("over_under_1h_05", "over"), ("over_under_2h_15", "under"),
+                 ("1x2_1h", "draw"), ("1x2_2h", "away"), ("btts_1h", "yes"),
+                 ("double_chance_1h", "x2")]:
+        assert need in dk, f"phase-1b family missing: {need}"
+    assert not any(k[0].startswith("cards_") for k in dk), (
+        "Sportradar 'bookings' must not be filed as cards_* — its counting rule is unproven")
+    assert not any(k[0] == "corners_ou_92" for k in dk), "quarter corner line stored"
+    assert t._in_deep_window(30) and t._in_deep_window(180) and not t._in_deep_window(600)
+
+    # PHASE 2: live + results, archived, scheduled, and the close via near-kickoff.
+    src = (root / "workers/automation/tonybet_feed.py").read_text()
+    for fn in ("run_live", "run_results", "fetch_deep_markets"):
+        assert callable(getattr(t, fn, None)), f"{fn} missing"
+    assert '_archive("live"' in src and '_archive("results"' in src and '_archive("deep"' in src
+    assert 'id="tonybet_live"' in sched and "IntervalTrigger(seconds=120)" in sched
+    assert 'id="tonybet_results"' in sched
+    nk_src = (root / "workers/jobs/near_kickoff_capture.py").read_text()
+    assert '"Tonybet": capture_tonybet' in nk_src
+    assert (root / "supabase/migrations/385_book_live_stats_and_results.sql").exists()
+
     # RAW ARCHIVE: every fetched page is kept so later parsers can rebuild history.
     import gzip, tempfile
     src = (root / "workers/automation/tonybet_feed.py").read_text()

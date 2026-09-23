@@ -88,6 +88,27 @@ _BTTS = {"74": "yes", "76": "no"}
 _DC = {"9": "1x", "10": "12", "11": "x2"}
 _DNB = {"4": "home", "5": "away"}
 
+# PHASE 1b (2026-09-23) — every family on the full board that has a cross-book
+# counterpart or a consumer. Keyed on Sportradar UOF market ids, confirmed against
+# Tonybet's own market catalogue (`/api/market-descriptions/get-all-markets`).
+# Totals families: vendorMarketId → market-name template; lines are half or whole
+# goals/corners (quarters dropped — the shared vocabulary has no spelling for them).
+_ALT_TOTALS = {
+    "19": "team_total_home_{n}", "20": "team_total_away_{n}",
+    "69": "team_total_1h_home_{n}", "70": "team_total_1h_away_{n}",
+    "166": "corners_ou_{n}", "167": "corners_home_ou_{n}", "168": "corners_away_ou_{n}",
+    "177": "corners_1h_ou_{n}", "178": "corners_1h_home_ou_{n}", "179": "corners_1h_away_ou_{n}",
+    # Sportradar "bookings" — named honestly, NOT cards_ou: its card-counting rule
+    # (reds, second yellows) is not proven identical to the other books' cards markets.
+    "139": "bookings_ou_{n}", "140": "bookings_home_ou_{n}", "141": "bookings_away_ou_{n}",
+    "152": "bookings_1h_ou_{n}",
+}
+# Goals totals by half: .5 lines only, the same rule as the full-match goals ladder.
+_HALF_GOALS = {"68": "over_under_1h_", "90": "over_under_2h_"}
+_RESULT_1X2 = {"60": "1x2_1h", "83": "1x2_2h"}
+_YESNO = {"75": "btts_1h", "95": "btts_2h"}
+_YESNO_SEL = {"74": "yes", "76": "no"}
+
 
 def _session() -> requests.Session:
     s = requests.Session()
@@ -215,7 +236,50 @@ def parse_markets(markets: list[dict]) -> list[tuple]:
                 add("double_chance", _DC[oid], o)
             elif vm == "11" and oid in _DNB:
                 add("draw_no_bet", _DNB[oid], o)
+            # ── phase 1b families ──────────────────────────────────────────
+            elif vm in _ALT_TOTALS and oid in _OU:
+                line = _line(spec, "total")
+                if line is not None and abs(line * 2 - round(line * 2)) < 1e-9:
+                    add(_ALT_TOTALS[vm].format(n=f"{round(line * 10):02d}"), _OU[oid], o, line)
+            elif vm in _HALF_GOALS and oid in _OU:
+                line = _line(spec, "total")
+                tag = _ou_market_for_line(line) if line is not None else None
+                if tag:
+                    add(tag.replace("over_under_", _HALF_GOALS[vm], 1), _OU[oid], o, line)
+            elif vm in _RESULT_1X2 and oid in _1X2:
+                add(_RESULT_1X2[vm], _1X2[oid], o)
+            elif vm in _YESNO and oid in _YESNO_SEL:
+                add(_YESNO[vm], _YESNO_SEL[oid], o)
+            elif vm == "63" and oid in _DC:
+                add("double_chance_1h", _DC[oid], o)
+            elif vm == "165" and oid in _AH:
+                line = _line(spec, "hcp")
+                if line is not None:
+                    add("corners_handicap", _AH[oid], o, line)
     return rows
+
+
+# Full board (~120-140 market types) at these minutes-to-kickoff windows, for our
+# matched fixtures only. With 30-minute sweeps each window catches every fixture
+# once: ~3 deep fetches per fixture per day. The closing price (T-5..15) comes from
+# near_kickoff_capture, which calls fetch_deep_markets by event id.
+_DEEP_WINDOWS = ((15, 45), (165, 195), (1425, 1455))
+
+
+def fetch_deep_markets(sess: requests.Session, event_id) -> list[dict]:
+    """Every market on one event (`main=0`). ~0.2–0.8 MB per call; archived raw."""
+    r = sess.get(_API, params=[("lang", "en"), ("eventId_eq", str(event_id)),
+                               ("main", "0"), ("relations[]", "odds")], timeout=45)
+    r.raise_for_status()
+    _archive("deep", int(event_id) % 100, r.content)
+    body = r.json()
+    if body.get("status") != "ok":
+        raise RuntimeError(f"Tonybet deep board {event_id}: {str(body)[:200]}")
+    return ((body["data"].get("relations") or {}).get("odds") or {}).get(str(event_id)) or []
+
+
+def _in_deep_window(minutes: int | None) -> bool:
+    return minutes is not None and any(lo <= minutes <= hi for lo, hi in _DEEP_WINDOWS)
 
 
 def _flipped(our_home: str, our_away: str, ev: dict) -> bool:
@@ -252,6 +316,19 @@ def store_fair_probs(match_id: str, rows: list[tuple], minutes: int | None) -> i
     return len(payload)
 
 
+def store_event_rows(match_id: str, markets: list[dict], minutes: int | None) -> int:
+    """Parse + OU-guard + store odds and fair probs for one fixture. Returns rows stored."""
+    from workers.api_clients.supabase_client import store_book_odds_snapshots
+    from workers.automation.epicbet_explorer import drop_non_monotone_ft_ou
+    rows5 = parse_markets(markets)
+    rows4, _dropped = drop_non_monotone_ft_ou(
+        [(mk, sel, odds, line) for mk, sel, odds, line, _p in rows5], match_id)
+    kept = set((mk, sel, line) for mk, sel, _o, line in rows4)
+    stored = store_book_odds_snapshots(BOOKMAKER, match_id, rows4, minutes) if rows4 else 0
+    store_fair_probs(match_id, [r for r in rows5 if (r[0], r[1], r[3]) in kept], minutes)
+    return stored
+
+
 def run_bulk(hours: int = 48, dry_run: bool = False) -> dict:
     """One sweep: fetch → match to DB fixtures → store odds + fair probs + pairings.
     Returns counters. Raises if Tonybet itself could not be read, so the scheduler
@@ -264,7 +341,7 @@ def run_bulk(hours: int = 48, dry_run: bool = False) -> dict:
         _minutes_to_kickoff, _squads_compatible, drop_non_monotone_ft_ou)
 
     c = {"events": 0, "db_matches": 0, "matched": 0, "flipped_skipped": 0,
-         "rows": 0, "stored": 0, "fair_probs": 0, "ou_dropped": 0}
+         "rows": 0, "stored": 0, "fair_probs": 0, "ou_dropped": 0, "deep": 0}
     sess = _session()
     events = [e for e in fetch_events(sess, hours) if e["home"] and e["away"]]
     c["events"] = len(events)
@@ -294,7 +371,15 @@ def run_bulk(hours: int = 48, dry_run: bool = False) -> dict:
                                        for m, ev in pairs])
 
     for m, ev in pairs:
-        rows5 = parse_markets(ev["markets"])
+        markets = ev["markets"]
+        if not dry_run and _in_deep_window(_minutes_to_kickoff(ev["start"])):
+            try:
+                time.sleep(_SLEEP_S)
+                markets = fetch_deep_markets(sess, ev["id"]) or markets
+                c["deep"] += 1
+            except Exception as e:  # noqa: BLE001 — fall back to the main board
+                log.warning("tonybet deep board %s failed: %s", ev["id"], e)
+        rows5 = parse_markets(markets)
         rows4 = [(mk, sel, odds, line) for mk, sel, odds, line, _p in rows5]
         rows4, dropped = drop_non_monotone_ft_ou(rows4, m["id"])
         c["ou_dropped"] += dropped
@@ -313,13 +398,180 @@ def run_bulk(hours: int = 48, dry_run: bool = False) -> dict:
     return c
 
 
+# ── PHASE 2: live stats + results ─────────────────────────────────────────────
+
+def _pair(d: dict | None, key: str) -> tuple:
+    v = (d or {}).get(key) or {}
+    return v.get("home"), v.get("away")
+
+
+def _event_map() -> dict[str, str]:
+    from workers.api_clients.db import execute_query
+    return {r["eid"]: r["mid"] for r in execute_query(
+        "SELECT book_event_id AS eid, match_id::text AS mid FROM book_event_map "
+        "WHERE bookmaker = %s", (BOOKMAKER,)) or []}
+
+
+def run_live() -> dict:
+    """Snapshot score / clock / status / corners / cards for EVERY live football
+    event (matched to our fixtures or not — unmatched is still data we own).
+    One request per poll; the scheduler polls every 120 s."""
+    from workers.api_clients.db import get_conn
+    sess = _session()
+    r = sess.get(_API, params=[("lang", "en"), ("period", "0"), ("sportId_eq", "1"),
+                               ("status_in[]", "2"), ("status_in[]", "1"),
+                               ("limit", str(_PAGE)), ("relations[]", "result"),
+                               ("relations[]", "statistics"),
+                               ("relations[]", "additionalInfo")], timeout=45)
+    r.raise_for_status()
+    _archive("live", 1, r.content)
+    body = r.json()
+    if body.get("status") != "ok":
+        raise RuntimeError(f"Tonybet live list: {str(body)[:200]}")
+    d = body["data"]
+    rel = d.get("relations") or {}
+    res, st, info = rel.get("result") or {}, rel.get("statistics") or {}, rel.get("additionalInfo") or {}
+    emap = _event_map()
+    rows = []
+    for it in d.get("items") or []:
+        e = str(it["id"])
+        rr, ss = res.get(e) or {}, st.get(e) or {}
+        ch, ca = _pair(ss, "corners")
+        yh, ya = _pair(ss, "yellowCards")
+        rh, ra = _pair(ss, "redCards")
+        yrh, yra = _pair(ss, "yellowRedCards")
+        rows.append((BOOKMAKER, e, it.get("vendorEventId"), emap.get(e),
+                     rr.get("matchStatusId"), (rr.get("clock") or {}).get("matchTime"),
+                     rr.get("team1Score"), rr.get("team2Score"), ch, ca, yh, ya, rh, ra,
+                     yrh, yra, (info.get(e) or {}).get("coverage_source")))
+    if rows:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """INSERT INTO book_live_stats
+                         (bookmaker, book_event_id, sr_match_id, match_id, match_status_id,
+                          clock, score_home, score_away, corners_home, corners_away,
+                          yellows_home, yellows_away, reds_home, reds_away,
+                          yellow_reds_home, yellow_reds_away, coverage_source)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", rows)
+            conn.commit()
+    return {"live": len(rows), "matched": sum(1 for x in rows if x[3]),
+            "with_stats": sum(1 for x in rows if x[8] is not None)}
+
+
+def _period(periods: list, n: int) -> tuple:
+    for p in periods or []:
+        if p.get("number") == n:
+            return p.get("team1Score"), p.get("team2Score")
+    return None, None
+
+
+def run_results(hours_back: int = 36) -> dict:
+    """Upsert FT / HT / 2H results for football that ended in the last `hours_back`
+    hours. Tonybet purges results ~1–2 days after kickoff, so this must run well
+    inside that. Final corners/cards: the results feed usually has cleared them,
+    so fall back to the LAST live snapshot we stored for the event."""
+    from workers.api_clients.db import execute_query, get_conn
+    sess = _session()
+    now = datetime.now(timezone.utc)
+    fmt = "%Y-%m-%d %H:%M:%S"
+    items, rel_res, rel_st = [], {}, {}
+    for page in range(1, _MAX_PAGES + 1):
+        # NB: no `period` param — with it, ended events return nothing.
+        r = sess.get(_API, params=[("lang", "en"), ("sportId_eq", "1"),
+                                   ("status_in[]", "4"), ("status_in[]", "5"),
+                                   ("limit", str(_PAGE)), ("page", str(page)),
+                                   ("time_gte", (now - timedelta(hours=hours_back)).strftime(fmt)),
+                                   ("time_lte", now.strftime(fmt)),
+                                   ("relations[]", "result"), ("relations[]", "statistics")],
+                     timeout=60)
+        r.raise_for_status()
+        _archive("results", page, r.content)
+        body = r.json()
+        if body.get("status") != "ok":
+            raise RuntimeError(f"Tonybet results: {str(body)[:200]}")
+        d = body["data"]
+        items += d.get("items") or []
+        rel_res.update((d.get("relations") or {}).get("result") or {})
+        rel_st.update((d.get("relations") or {}).get("statistics") or {})
+        if page >= int(d.get("lastPage") or 1):
+            break
+        time.sleep(_SLEEP_S)
+    emap = _event_map()
+    ids = [str(i["id"]) for i in items]
+    last_live = {r["eid"]: r for r in execute_query(
+        """SELECT DISTINCT ON (book_event_id) book_event_id AS eid, corners_home, corners_away,
+                  yellows_home, yellows_away, reds_home, reds_away
+             FROM book_live_stats WHERE bookmaker = %s AND book_event_id = ANY(%s)
+            ORDER BY book_event_id, captured_at DESC""", (BOOKMAKER, ids)) or []} if ids else {}
+    rows, from_live, from_feed = [], 0, 0
+    for it in items:
+        e = str(it["id"])
+        rr, ss = rel_res.get(e) or {}, rel_st.get(e) or {}
+        if rr.get("team1Score") is None:
+            continue
+        ch, ca = _pair(ss, "corners")
+        yh, ya = _pair(ss, "yellowCards")
+        rh, ra = _pair(ss, "redCards")
+        src = "results_feed" if ch is not None else None
+        if ch is None and e in last_live:
+            lv = last_live[e]
+            ch, ca, yh, ya, rh, ra = (lv["corners_home"], lv["corners_away"], lv["yellows_home"],
+                                      lv["yellows_away"], lv["reds_home"], lv["reds_away"])
+            src = "last_live_snapshot" if ch is not None else None
+        from_feed += src == "results_feed"
+        from_live += src == "last_live_snapshot"
+        hth, hta = _period(rr.get("periods"), 1)
+        h2h, h2a = _period(rr.get("periods"), 2)
+        ko = datetime.strptime(it["time"], fmt).replace(tzinfo=timezone.utc)
+        import json as _json
+        rows.append((BOOKMAKER, e, it.get("vendorEventId"), emap.get(e), ko,
+                     rr.get("matchStatusId"), rr.get("team1Score"), rr.get("team2Score"),
+                     hth, hta, h2h, h2a, ch, ca, yh, ya, rh, ra, src,
+                     _json.dumps(rr.get("periods") or [])))
+    if rows:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """INSERT INTO book_match_results
+                         (bookmaker, book_event_id, sr_match_id, match_id, kickoff, match_status_id,
+                          ft_home, ft_away, ht_home, ht_away, h2_home, h2_away,
+                          corners_home, corners_away, yellows_home, yellows_away,
+                          reds_home, reds_away, stats_source, periods, captured_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb, now())
+                       ON CONFLICT (bookmaker, book_event_id) DO UPDATE SET
+                         match_id = COALESCE(EXCLUDED.match_id, book_match_results.match_id),
+                         match_status_id = EXCLUDED.match_status_id,
+                         ft_home = EXCLUDED.ft_home, ft_away = EXCLUDED.ft_away,
+                         ht_home = EXCLUDED.ht_home, ht_away = EXCLUDED.ht_away,
+                         h2_home = EXCLUDED.h2_home, h2_away = EXCLUDED.h2_away,
+                         corners_home = COALESCE(EXCLUDED.corners_home, book_match_results.corners_home),
+                         corners_away = COALESCE(EXCLUDED.corners_away, book_match_results.corners_away),
+                         yellows_home = COALESCE(EXCLUDED.yellows_home, book_match_results.yellows_home),
+                         yellows_away = COALESCE(EXCLUDED.yellows_away, book_match_results.yellows_away),
+                         reds_home = COALESCE(EXCLUDED.reds_home, book_match_results.reds_home),
+                         reds_away = COALESCE(EXCLUDED.reds_away, book_match_results.reds_away),
+                         stats_source = COALESCE(EXCLUDED.stats_source, book_match_results.stats_source),
+                         periods = EXCLUDED.periods, captured_at = now()""", rows)
+            conn.commit()
+    return {"ended": len(items), "results": len(rows), "matched": sum(1 for x in rows if x[3]),
+            "stats_from_feed": from_feed, "stats_from_last_live": from_live}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Tonybet pre-match odds sweep")
     ap.add_argument("--hours", type=int, default=48)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--live", action="store_true", help="one live-stats poll")
+    ap.add_argument("--results", action="store_true", help="one results sweep")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    print(run_bulk(a.hours, a.dry_run))
+    if a.live:
+        print(run_live())
+    elif a.results:
+        print(run_results())
+    else:
+        print(run_bulk(a.hours, a.dry_run))
 
 
 if __name__ == "__main__":
