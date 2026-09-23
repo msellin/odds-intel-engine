@@ -85,9 +85,15 @@ def _latest_book_odds(match_id: str, market: str, selection: str):
         (match_id, market, selection, list(PLACEABLE_BOOKS) + [ANCHOR_BOOK]),
     )
     anchor = None
+    anchor_label = ANCHOR_BOOK
     for r in rows or []:
         if r["bookmaker"] == ANCHOR_BOOK and ANCHOR_BOOK not in PLACEABLE_BOOKS:
             anchor = float(r["odds"]) if r["odds"] else None
+    if anchor is None:
+        # #113: no Pinnacle quote → median of >=4 other books (still fail-open below that)
+        from workers.automation.anchor_sanity import consensus_median_quotes
+        anchor = consensus_median_quotes(match_id, market).get(selection)
+        anchor_label = "4+-book median"
     out = {}
     for r in rows or []:
         if r["bookmaker"] not in PLACEABLE_BOOKS:
@@ -99,7 +105,7 @@ def _latest_book_odds(match_id: str, market: str, selection: str):
                     "%s %.2f. A price this far from the anchor is a mis-mapped "
                     "fixture, not an edge; not competing for this pick.",
                     r["bookmaker"], market, selection, match_id,
-                    float(r["odds"]), ANCHOR_BOOK, anchor,
+                    float(r["odds"]), anchor_label, anchor,
                 )
                 continue
             out[r["bookmaker"]] = {"odds": float(r["odds"]), "age_min": round(float(r["age_min"]))}

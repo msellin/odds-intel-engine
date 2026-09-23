@@ -56,7 +56,10 @@ i.e. unmistakably another fixture. The complement is `BotConfig.edge_ceiling`,
 which works in edge space instead of price space and therefore does not care
 how compressed the market is. Neither gate subsumes the other; both are needed.
 
-FAIL-OPEN, DELIBERATELY. With no anchor quote there is no evidence, and
+CONSENSUS FALLBACK (#113, 2026-09-23): with no Pinnacle quote the reference is the
+median raw price of >= 4 other books (`consensus_median_quotes`).
+
+FAIL-OPEN, DELIBERATELY. With no anchor quote AND no 4-book median there is no evidence, and
 refusing every fixture Pinnacle does not price would silently delete most of
 the obscure-league coverage these bots run on — trading a known fault for an
 invisible one. Absent anchor => allowed, and counted so the blind spot is
@@ -136,4 +139,39 @@ def anchor_quotes(match_id: str, market: str) -> dict[str, float]:
         """,
         (match_id, market, ANCHOR_BOOK),
     )
-    return {r["selection"]: float(r["odds"]) for r in (rows or []) if r["odds"]}
+    pin = {r["selection"]: float(r["odds"]) for r in (rows or []) if r["odds"]}
+    if pin:
+        return pin
+    # ANCHOR-WIDENING (#113, 2026-09-23). With no Pinnacle quote this guard used to be
+    # blind (fail-open) on ~41% of priced fixtures — exactly the obscure leagues where
+    # mis-mapped fixtures live. Fall back to the MEDIAN raw price across >=
+    # CONSENSUS_QUORUM other books (the mirror_guard quorum): one wrong-fixture quote
+    # cannot move a median, and a price 1.56x off it is a data fault, not an edge.
+    # Still fail-open below the quorum. Same "no freshness cap" reasoning as above.
+    return consensus_median_quotes(match_id, market)
+
+
+CONSENSUS_QUORUM = 4
+_NOT_A_REFERENCE = ("Pinnacle", "Max", "Avg", "Betfair Exchange", "BetWin", "Betfred",
+                    "Unibet", "Unibet-Kambi", "Coolbet-OddsAPI")
+
+
+def consensus_median_quotes(match_id: str, market: str) -> dict[str, float]:
+    """Median of each book's latest pre-match price per selection, where at least
+    CONSENSUS_QUORUM books quote that selection."""
+    from statistics import median
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        """
+        SELECT DISTINCT ON (o.bookmaker, o.selection) o.selection, o.odds::float AS odds
+          FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
+         WHERE o.match_id = %s AND o.market = %s AND NOT (o.bookmaker = ANY(%s))
+           AND o.is_live IS NOT TRUE AND o.timestamp <= m.date AND o.odds > 1.0
+         ORDER BY o.bookmaker, o.selection, o.timestamp DESC
+        """,
+        (match_id, market, list(_NOT_A_REFERENCE)),
+    ) or []
+    by_sel: dict[str, list] = {}
+    for r in rows:
+        by_sel.setdefault(r["selection"], []).append(float(r["odds"]))
+    return {s: median(v) for s, v in by_sel.items() if len(v) >= CONSENSUS_QUORUM}

@@ -171,7 +171,10 @@ hole — and the hole and the fault turn out to be the *same population*.
 `anchor_sanity.is_anchor_sane` fails open when Pinnacle has no line, and that
 choice is right on its own terms: refusing every fixture Pinnacle skips would
 delete most of the obscure-league coverage these bots run on, trading a known
-fault for an invisible one. Its own docstring says so.
+fault for an invisible one. Its own docstring says so. **Update 2026-09-23 (#113):**
+the blind spot is now mostly closed without refusing anything wholesale — with no
+Pinnacle line the reference is the median of ≥4 other books; the first catch was an
+Epicbet 1.21/5.14/9.85 triple on a match seven books priced ~1.75/3.5/4.0.
 
 **But the fixtures Pinnacle skips are the obscure ones, and the obscure ones are
 where fuzzy fixture matching goes wrong.** So the population the guard declines

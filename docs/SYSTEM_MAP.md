@@ -364,7 +364,7 @@ the fourth 2026-09-22):
 
 | gate | where | what it catches |
 |---|---|---|
-| `anchor_sanity.is_anchor_sane` (ratio > 1.5625× vs Pinnacle) | READ: `best_price_router._latest_book_odds` **and** `pick_trigger_matcher` | 20 of the 25. Weak on O/U, where prices are compressed into ~1.2–3.0 and a wrong fixture rarely trips a ratio test. **Fails open with no Pinnacle line — see the mirror-guard row.** |
+| `anchor_sanity.is_anchor_sane` (ratio > 1.5625× vs Pinnacle) | READ: `best_price_router._latest_book_odds` **and** `pick_trigger_matcher` | 20 of the 25. Weak on O/U, where prices are compressed into ~1.2–3.0 and a wrong fixture rarely trips a ratio test. **No Pinnacle line → falls back to the median raw price of ≥4 other books (#113, 2026-09-23; covered 418 of 569 placeable quotes on non-Pinnacle fixtures at wiring); fails open only below that quorum.** |
 | `BotConfig.edge_ceiling` (8% on `sharp_devig`) | `pick_generator` | all 31, including every O/U one. Works in edge space, so market compression does not blunt it. |
 | `pick_triggers.OUTLIER_MULT` (`max_odds = min_odds × 1.6`) | `pick_trigger_matcher` (always had it) **and now `pick_generator`** | 14 of the 25. The generator is a *clone* of the sharp path that had silently dropped this half of the window. |
 | `mirror_guard.drop_mirrored_1x2` (1x2 triple transposed vs a 4+-book consensus) | **WRITE**: `store_odds`, `store_book_odds_snapshots`, `coolbet_explorer.store_coolbet_snapshots_for_match`, `fetch_odds.fetch_af_odds` | the transposed-triple class specifically: 33 of 251,923 triples over 120 days (1 in 7,600), including all 4 quotes that picks were actually struck on. |

@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import uuid
 
-from workers.automation.anchor_sanity import ANCHOR_BOOK, is_anchor_sane
+from workers.automation.anchor_sanity import ANCHOR_BOOK, consensus_median_quotes, is_anchor_sane
 
 log = logging.getLogger(__name__)
 
@@ -146,6 +146,7 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
         )
         counters["matched"] = len(rows)
         run_id = str(uuid.uuid4())
+        cons_ref: dict = {}
         for r in rows:
             price = float(r["book_odds"])
             if price <= 1.0:
@@ -165,13 +166,19 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
             # by >1.56x is a price from ANOTHER FIXTURE, and it arrives looking
             # like the best edge on the board — `edge = cal - 1/price` rewards
             # exactly the rows that are most wrong. Refuse before it is written.
-            if not is_anchor_sane(price, r.get("anchor_odds")):
+            ref, ref_label = r.get("anchor_odds"), ANCHOR_BOOK
+            if ref is None:
+                # #113: no Pinnacle quote → median of >=4 other books (fail-open below that)
+                if r["mid"] not in cons_ref:
+                    cons_ref[r["mid"]] = consensus_median_quotes(r["mid"], r["market"])
+                ref, ref_label = cons_ref[r["mid"]].get(r["selection"]), "4+-book median"
+            if not is_anchor_sane(price, ref):
                 counters["anchor_insane_skipped"] = counters.get("anchor_insane_skipped", 0) + 1
                 log.warning(
                     "ANCHOR-PRICE-SANITY: skipped %s %s/%s on %s — book %.2f vs "
                     "%s %.2f. Mis-mapped fixture, not an edge.",
                     book, r["market"], r["selection"], r["mid"], price,
-                    ANCHOR_BOOK, float(r["anchor_odds"]),
+                    ref_label, float(ref),
                 )
                 continue
             edge = float(r["cal"]) - 1.0 / price   # edge at the book's OWN price

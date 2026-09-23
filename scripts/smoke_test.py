@@ -51676,6 +51676,35 @@ def test_coolbet_sweep_observable():
         "the job invisible in the first place"
 
 
+@test("OU-PRICE-MOVE-SIGNAL — #090 (a) keeps its later-close guard, pre-kickoff bound and control")
+def test_ou_price_move_signal():
+    """[[#090]] (a), 2026-09-23. The rating-vs-early-price residual predicts Pinnacle's
+    O/U move (held-out t=+11). Three things keep that number honest:
+
+    1. The close must be a LATER snapshot than the early price — otherwise
+       move == 0 by construction and the fixture dilutes nothing but adds rows.
+    2. Every Pinnacle row is strictly pre-kickoff and not in-play (the #089
+       harness repair found 11% of 'closes' were in-play).
+    3. The league-mean CONTROL: r contains −logit(p_early), so mean-reversion of a
+       noisy early price would look like signal with ANY rating. The control
+       (t=+0.9) is what showed the rating itself carries the information.
+    Plus behaviour: the Poisson P(over 2.5) and the OLS slope on known inputs.
+    """
+    import math
+    from pathlib import Path
+    src = (Path(__file__).parent.parent / "scripts" / "ou_price_move_signal.py").read_text()
+    assert "if t1 <= t0:" in src, "the close must be a later snapshot than the early price"
+    assert "o.timestamp < m.date" in src and "is_live IS NOT TRUE" in src, (
+        "Pinnacle rows must be strictly pre-kickoff and not in-play")
+    assert "CONTROL (league-mean" in src and "s[1] >= 10" in src, (
+        "the league-mean mean-reversion control must stay in the report")
+    from scripts.ou_price_move_signal import ols, p_over
+    # P(total > 2.5) at λ=2.5 is 1 − e^-2.5 (1 + 2.5 + 3.125 + 2.604) = 0.4562
+    assert abs(p_over(2.5) - 0.4562) < 1e-3, p_over(2.5)
+    a0, b, se = ols([0, 1, 2, 3, 4], [1.0, 3.1, 4.9, 7.0, 9.0])
+    assert abs(b - 1.99) < 0.02 and se < 0.05 and abs(a0 - 1.02) < 0.05, (a0, b, se)
+
+
 @test("OU-ARMS-PREREGISTERED — #089 arms keep a fixed family, market-free arms and the harness check")
 def test_ou_arms_preregistered():
     """[[#089]], 2026-09-23. The O/U feature-set arms are pre-registered in
@@ -52756,6 +52785,22 @@ def test_clv_consensus_close():
             {"bookmaker": "B", "sel": "under", "odds": 1.9, "timestamp": t - timedelta(seconds=30)}]
     sets = sets_from_rows(rows, ("over", "under"))
     assert "A" not in sets and sets["B"][0] == [1.9, 1.9]
+
+
+@test("ANCHOR-SANITY-CONSENSUS-FALLBACK — with no Pinnacle quote, the wrong-fixture guard uses a 4+-book median")
+def test_anchor_sanity_consensus_fallback():
+    """#113 (2026-09-23). The guard was blind (fail-open) on every fixture Pinnacle does
+    not price. Live check at wiring: 418 of 569 placeable quotes on non-Pinnacle fixtures
+    became checkable; the one refusal was Epicbet 1.21/5.14/9.85 on Hapoel Hadera v
+    Maccabi Ashdod against seven books at ~1.75/3.5/4.0 — another fixture's prices."""
+    import inspect
+    from workers.automation import anchor_sanity as a, best_price_router as bpr
+    from workers.jobs import pick_trigger_matcher as ptm
+    assert a.CONSENSUS_QUORUM >= 4 and "Pinnacle" in a._NOT_A_REFERENCE
+    assert "consensus_median_quotes(match_id, market)" in inspect.getsource(bpr._latest_book_odds)
+    assert "consensus_median_quotes(r[\"mid\"], r[\"market\"])" in inspect.getsource(ptm)
+    assert a.is_anchor_sane(9.85, 4.12) is False and a.is_anchor_sane(4.25, 4.04) is True
+    assert a.is_anchor_sane(9.85, None) is True, "still fail-open when no reference exists"
 
 
 @test("ODDS-REFRESH-TOMORROW-EVENING — the 30-min AF refresh also covers after-midnight kickoffs")
