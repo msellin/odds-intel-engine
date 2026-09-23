@@ -231,3 +231,40 @@ API-Football-fed prices that may not have been takeable (ANALYSIS_GOTCHAS §70, 
 published as A.
 
 **Expected result:** no candidate passes (the §1 holdouts faded); C stays worse than B.
+
+### RESULT (2026-09-23) — no grade A; C < B holds out of sample, but the gap shrinks ~5x
+
+`consensus_arm_replay.py --days 146` → 1,212 replayed picks; 535 UNSEEN (kickoff before
+2026-07-29; mostly May — 374 — because summer has few ≥5-book matches). Fidelity: the seen
+window reproduces §1 exactly (B +10.6% n=392, C −25.6% n=285).
+
+| | UNSEEN n | ROI | half 1 / half 2 |
+|---|---|---|---|
+| **B** | 179 | **+4.8% ± 8.0** | −2.3 / +6.8 |
+| **C** | 356 | **−2.8% ± 5.7** | −8.1 / +5.9 |
+
+**C is worse than B in both unseen halves — the channel claim (msg 395) stands — but the gap
+is ~7.6pp out of sample vs ~36pp in sample.** Most of §1's gap was fit to the window that
+chose the rules. B is still not proven (+4.8% ± 8.0).
+
+**Drift by month (B − C gap):** May +4.6pp · Jun +19.9 · Jul* −17.0 · Aug* +44.2 · Sep* +34.6.
+Positive in 4 of 5 usable months; the one reversal (July, n≈75) is inside noise.
+
+**Each C condition alone, UNSEEN:** tier 0 −6.9% (n=80) · a panel book disagrees −1.4%
+(n=267) · **edge > 6% +1.2% (n=149)**. Tier 0 is the most robust (−34% in sample too); the
+edge > 6% condition does NOT hold out of sample. Not changed on this alone — noted for when
+the live C record is big enough to decide it.
+
+**Grade A — all four candidates FAIL (Holm m=4):**
+
+| candidate | UNSEEN n | ROI | Holm p | halves |
+|---|---|---|---|---|
+| A1 non-Estonian best price | 179 | +4.8% | 0.824 | uninformative: before week 38 there WERE no Estonian feeds, so A1 = B |
+| A2 edge 4–6% | 98 | −3.2% | 1.000 | −38.0 / +7.5 |
+| **A3 odds ≤ 1.6** | **29** | **+14.7%** | 0.379 | **+11.2 / +15.3** |
+| A4 full panel agrees | 71 | −5.6% | 1.000 | +1.2 / −7.9 |
+
+**A3 is the only lead:** positive in both unseen halves AND in the seen window (+17.8%,
+n=48) — but 29 picks cannot pass a correction, and at odds ≤1.6 a single upset swings it.
+**Decision: no grade A is published.** A3 becomes a SHADOW label on live grade-B picks (not
+shown to readers) so it accumulates a forward record; re-test it at n ≥ 150.
