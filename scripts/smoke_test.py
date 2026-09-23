@@ -52667,6 +52667,21 @@ def test_coolbet_board_sweep_default():
     assert norm_team("Rhode Island") == "rhode island", "whole-name only — clubs must not be rewritten"
 
 
+@test("TONYBET-RESULTS-REGULAR-TIME — full time is built from the two halves, never the shootout-inclusive total")
+def test_tonybet_results_regular_time():
+    """Audit 2026-09-23: team1Score/team2Score is the running total incl. extra time and
+    penalties (Boreham Wood 3-5 for a 1-1), and the last live snapshot is often a
+    post-match reset (0-0, status 0, no stats)."""
+    import inspect
+    from workers.automation import tonybet_feed as tf
+    src = inspect.getsource(tf.run_results)
+    assert "ft_h, ft_a = hth + h2h, hta + h2a" in src
+    assert 'rr.get("matchStatusId"), ft_h, ft_a,' in src, "FT columns must be regular time"
+    assert "AND corners_home IS NOT NULL" in src, "fallback must skip reset snapshots"
+    assert tf._period([{"number": 1, "team1Score": 1, "team2Score": 0},
+                       {"number": 2, "team1Score": 0, "team2Score": 2}], 2) == (0, 2)
+
+
 @test("BOOK-EXITS-AND-LICENSED-FALLBACK — fixed per-book exits and a licensed Coolbet fallback that cannot price a pick")
 def test_book_exits_and_licensed_fallback():
     """#110 steps 3-4 (2026-09-23). (3) Each book reads its own exit setting and a

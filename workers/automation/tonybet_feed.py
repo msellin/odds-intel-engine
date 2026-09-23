@@ -504,6 +504,9 @@ def run_results(hours_back: int = 36) -> dict:
         """SELECT DISTINCT ON (book_event_id) book_event_id AS eid, corners_home, corners_away,
                   yellows_home, yellows_away, reds_home, reds_away
              FROM book_live_stats WHERE bookmaker = %s AND book_event_id = ANY(%s)
+              -- the very last snapshot is often a post-match RESET (0-0, status 0,
+              -- no stats); take the last one that still carried stats
+              AND corners_home IS NOT NULL
             ORDER BY book_event_id, captured_at DESC""", (BOOKMAKER, ids)) or []} if ids else {}
     rows, from_live, from_feed = [], 0, 0
     for it in items:
@@ -524,10 +527,21 @@ def run_results(hours_back: int = 36) -> dict:
         from_live += src == "last_live_snapshot"
         hth, hta = _period(rr.get("periods"), 1)
         h2h, h2a = _period(rr.get("periods"), 2)
+        # FULL TIME = REGULAR TIME. team1Score/team2Score is the running total and
+        # includes extra time AND the penalty shootout (Boreham Wood stored 3-5 for
+        # a 1-1). Build FT from the two halves; with no halves, trust the total only
+        # when there were no extra periods.
+        periods = rr.get("periods") or []
+        if hth is not None and h2h is not None:
+            ft_h, ft_a = hth + h2h, hta + h2a
+        elif len(periods) <= 2:
+            ft_h, ft_a = rr.get("team1Score"), rr.get("team2Score")
+        else:
+            ft_h = ft_a = None
         ko = datetime.strptime(it["time"], fmt).replace(tzinfo=timezone.utc)
         import json as _json
         rows.append((BOOKMAKER, e, it.get("vendorEventId"), emap.get(e), ko,
-                     rr.get("matchStatusId"), rr.get("team1Score"), rr.get("team2Score"),
+                     rr.get("matchStatusId"), ft_h, ft_a,
                      hth, hta, h2h, h2a, ch, ca, yh, ya, rh, ra, src,
                      _json.dumps(rr.get("periods") or [])))
     if rows:
