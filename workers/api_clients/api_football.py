@@ -1888,7 +1888,15 @@ def parse_fixture_events(events_response: list[dict]) -> list[dict]:
     rows = []
     for idx, ev in enumerate(events_response):
         time_info = ev.get("time", {})
+        # CLAMP to the DB's CHECK (minute BETWEEN 0 AND 130). API-Football sends
+        # NEGATIVE minutes for pre-kickoff incidents — a warm-up red card comes
+        # through as -5 — and those rows were rejected outright by
+        # `chk_match_events_minute`, losing the event entirely. Observed during
+        # the [[#083]] assist backfill: 5 rejections, each loudly reported by
+        # store_match_events_af, each an event we then did not have.
+        # A pre-kickoff incident is minute 0 for every purpose we have.
         minute = time_info.get("elapsed", 0) or 0
+        minute = max(0, min(130, int(minute)))
         extra = time_info.get("extra", 0) or 0
 
         team = ev.get("team", {})

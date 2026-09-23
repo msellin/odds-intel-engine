@@ -446,12 +446,24 @@ def _fs_session_ensure(name: str) -> None:
         but spins to the 60s browser timeout when fired at the JSON endpoint —
         surfacing as HTTP 500 and reading exactly like FlareSolverr being out of
         memory. Cost three wrong diagnoses on 2026-09-22."""
-        try:
-            _fs_call({"cmd": "request.get", "url": "https://www.coolbet.com/et/sport",
-                      "session": sess, "maxTimeout": 90000}, timeout_s=120)
-        except Exception as e:      # noqa: BLE001
-            log.warning("Coolbet FS warmup failed (%s) — first API call may be challenged",
-                        str(e)[:120])
+        # TWO navigations, not one (2026-09-23). Imperva's challenge on a fresh
+        # context does not always resolve on the first HTML page: every manual
+        # run that reached real data used two, and the one-navigation version
+        # shipped hours earlier left `fo-category` and `search` returning HTTP
+        # 500 — the 60 s browser timeout, which looks like FlareSolverr dying
+        # rather than a challenge that never finished.
+        #
+        # `fo-tree` happened to survive one warmup, which is why the board sweep
+        # looked healthy while the real job failed on the very next endpoint.
+        for i in (1, 2):
+            try:
+                _fs_call({"cmd": "request.get", "url": "https://www.coolbet.com/et/sport",
+                          "session": sess, "maxTimeout": 90000}, timeout_s=120)
+            except Exception as e:      # noqa: BLE001
+                log.warning("Coolbet FS warmup %d/2 failed (%s) — first API call "
+                            "may be challenged", i, str(e)[:120])
+            if i == 1:
+                time.sleep(3)
 
     # 1. Ensure a session exists. Creating an existing one errors harmlessly.
     created = False
