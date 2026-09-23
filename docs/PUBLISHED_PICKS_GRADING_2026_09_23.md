@@ -214,7 +214,7 @@ rows with kickoff < 2026-07-29 are the test ("UNSEEN").
 | A1 | best price at a NON-Estonian book | only split positive in both §1 halves (+5.9 / +7.5) |
 | A2 | edge 4–6% | positive early, negative late in §1 |
 | A3 | odds ≤ 1.6 | positive early, flat late in §1 |
-| A4 | EVERY available panel book sees an edge (not just "none disagrees") | the strongest single signal in §1, made stricter |
+| A4 | FULL panel coverage: ≥4 panel books other than the offering book priced the market, and ALL see an edge | the strongest single signal in §1, made stricter. *Clarified before any result: "every available book agrees" is already implied by grade B (a dissenting available book makes it C), so A4 must require coverage to be a distinct rule.* |
 
 **PASS for an A candidate** (all three, on UNSEEN rows only):
 1. ROI > 0 with Holm-adjusted one-sided p < 0.05 (m = 4), 1u flat;
