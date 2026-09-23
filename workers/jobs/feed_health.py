@@ -49,6 +49,33 @@ def _docker_state(name: str) -> str:
         return "unknown"
 
 
+def _host_check(kind: str) -> tuple[str, str, str | None]:
+    """(status, human state, reason) for a host resource on the VPS."""
+    try:
+        if kind == "disk":
+            import shutil
+            u = shutil.disk_usage("/")
+            pct = 100 * u.used / u.total
+            state = f"{pct:.0f}% used · {u.free / 1e9:.0f} GB free"
+            if pct >= 90:
+                return "fail", state, f"disk {pct:.0f}% full"
+            return ("warn", state, f"disk {pct:.0f}% full") if pct >= 80 else ("ok", state, None)
+        if kind == "memory":
+            info = {}
+            with open("/proc/meminfo") as fh:
+                for line in fh:
+                    k, v = line.split(":", 1)
+                    info[k] = int(v.split()[0])
+            avail_gb = info.get("MemAvailable", 0) / 1e6
+            state = f"{avail_gb:.1f} GB available of {info.get('MemTotal', 0) / 1e6:.0f} GB"
+            if avail_gb < 0.5:
+                return "fail", state, f"only {avail_gb:.1f} GB memory available"
+            return ("warn", state, f"only {avail_gb:.1f} GB memory available") if avail_gb < 1 else ("ok", state, None)
+    except Exception:  # noqa: BLE001 — not readable here (e.g. the Mac)
+        pass
+    return "unknown", "unknown", "not readable here"
+
+
 def _age_min(ts) -> float | None:
     if ts is None:
         return None
@@ -154,6 +181,11 @@ def evaluate() -> list[dict]:
 def _evaluate_one(f: dict, runs: list[dict], odds: dict) -> dict:
     row = {"feed_id": f["id"]}
     reasons_fail, reasons_warn = [], []
+
+    if f.get("host"):
+        st, state, reason = _host_check(f["host"])
+        row.update(service_state={f["host"]: state}, status=st, status_reason=reason)
+        return row
 
     # services
     svc = {u: _unit_state(u) for u in f.get("units") or []}
