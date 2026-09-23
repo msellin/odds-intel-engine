@@ -444,8 +444,8 @@ the market (p ≈ 0.6-1.0).
 **Shots did not help — against both the literature (Wheatcroft) and the pre-stated expectation.**
 D is worse than C; E ≈ C. Three honest caveats: (1) the shots rating is our generic
 `HalfRatings` IPF + online update, not Wheatcroft's exact GAP construction; (2) the covered test
-set is small (2,951); (3) Wheatcroft judged returns against AVERAGE odds, we judge against de-vigged
-Pinnacle — a much harder bar. **CM (prices in) ≈ the market itself**, confirming again that prices
+set is small (2,951); (3) CORRECTED 2026-09-23 by the method review: Wheatcroft PROFITED only at MAXIMUM odds across many books
+(1.57% margin) and LOST at average odds (6.8%) with every input; we judge against de-vigged Pinnacle, harder still. **CM (prices in) ≈ the market itself**, confirming again that prices
 make the model a copy of the market, not better than it.
 
 **Money (covered subset, T-2h, Coolbet):** every RAW strategy −3.7% to −6.4% CLV at 6-42 bets/day;
@@ -455,3 +455,22 @@ every BLEND ≈ MARKET (−2.9% to +1.9%, n.s.). No arm beats the MARKET baselin
 exhausted for this model class. The remaining model route is a different OBJECTIVE — [[#090]]
 (decorrelation from the market, Benter logit blend, judged on clv_sharp) — and its small
 per-market feature sets draw on the parked candidates in [[#080]] / [[#086]].
+
+### Was D a fair test of the published shots method? No — method review, 2026-09-23
+
+A review of Wheatcroft (2020, IJF 36(3), read in full) against our implementation found D was NOT a
+replication, so "shots did not beat goals" is inconclusive rather than negative:
+1. **Not a like-for-like swap** — C carries Elo and goals-based strength; D has no strength input but shots.
+   Wheatcroft changed ONLY the input.
+2. **Underpowered** — the model-alone comparison is on the held-out half, ~1,476 fixtures; the published
+   effect (~0.0008 nats) needs ~7-8k.
+3. **Wrong part of the season** — the 2026-08-20 cutoff puts the whole test in weeks 1-5, exactly the
+   window Wheatcroft EXCLUDES (no bets until both teams have played 6 games; promoted teams inherit ratings).
+4. **Untuned learning rate** — his shots λ ≈ 0.44 vs goals ≈ 0.08-0.12; ours 0.06 for everything.
+5. **Mostly imputed training values** — most training rows have no match stats.
+6. **Different model** — he regresses ONE summed rating plus the market price in a logistic regression;
+   we feed five overlapping totals to XGBoost with no market.
+His own result: +0.8%/bet only at max odds, flat-to-negative from 2014-17 ("the market started pricing
+shots"). Expected against a Pinnacle close: ~nothing. A faithful replication spec is in the review
+(scratchpad `research_shots_method.md`) — run it on football-data.co.uk history for his 10 leagues first,
+which separates "our version was unfaithful" from "the effect no longer exists".
