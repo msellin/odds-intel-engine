@@ -51856,6 +51856,27 @@ def test_unibet_on_vps():
     assert res.get("self_revive") == "not_attempted", res
 
 
+@test("LEDGER-BACKED-BOTS-NOT-DUPLICATED — forward-test bots skip the simulated_bets fleet lists")
+def test_ledger_backed_bots_not_duplicated():
+    """[[#095]] follow-up, 2026-09-23 — owner: "performance page shows 0 settled
+    for bot grade B". Grade B became its own bot with maturity `beta`, and `beta`
+    is a PUBLIC label, so it arrived TWICE: once from its ledger (16 settled) and
+    once from the simulated_bets/dashboard_cache fleet path with 0 bets. Every
+    bot whose record lives in picks_forward_test must be in LEDGER_BACKED_BOTS,
+    and both fleet paths must skip that set.
+    """
+    from workers.registry.bot_registry import BOTS, FAM_FORWARD_TEST
+    agg = _web_path("src/lib/bot-aggregates.ts").read_text(encoding="utf-8")
+    page = _web_path("src/app/(app)/performance/page.tsx").read_text(encoding="utf-8")
+    block = agg[agg.index("LEDGER_BACKED_BOTS"):]
+    block = block[:block.index("]);")]
+    for b in BOTS:
+        if b.family == FAM_FORWARD_TEST:
+            assert f'"{b.name}"' in block, f"{b.name} missing from LEDGER_BACKED_BOTS"
+    assert "!LEDGER_BACKED_BOTS.has(b.name)" in agg, "toggle path must skip ledger bots"
+    assert "!LEDGER_BACKED_BOTS.has(b.name)" in page, "cached path must skip ledger bots"
+
+
 @test("CONSENSUS-SPLIT-BY-GRADE — one ledger arm, two bots (B beta, C testing), split in the views")
 def test_consensus_split_by_grade():
     """[[#095]], 2026-09-23. Owner: split the consensus bot into two bots by
