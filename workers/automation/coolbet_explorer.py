@@ -2348,6 +2348,12 @@ def run_bulk(
     matched = 0
     parsed_total = 0
     stored_total = 0
+    # COOLBET-EVENT-MAP-FROM-RUN-BULK (2026-09-23): record the fixture -> Coolbet
+    # event pairing this sweep resolves anyway, as run_board_sweep does. Only the
+    # board sweep used to write book_event_map, and the VPS schedules run_bulk —
+    # so from 2026-09-22 15:38 no Coolbet pairing was recorded and the
+    # near-kickoff capture (which fetches by stored event id) had nothing to fetch.
+    mapped: list[tuple] = []
     by_market: dict[str, int] = {}
     missed_leagues: dict[str, int] = {}
     # Fixtures we could not resolve because Coolbet was unreachable — kept
@@ -2487,6 +2493,7 @@ def run_bulk(
                 dry_run=dry_run, kickoff_iso=ev.get("start") or "",
             )
             matched += 1
+            mapped.append((str(m["id"]), str(ev["id"]), ev.get("start") or None, None))
             parsed_total += parsed
             stored_total += stored
             for k, v in mkt_counts.items():
@@ -2506,6 +2513,10 @@ def run_bulk(
             pause = long_pause_s + random.uniform(0, long_pause_s * 0.3)
             log.info("breathing pause %.0fs after %d matches", pause, i)
             time.sleep(pause)
+
+    if mapped and not dry_run:
+        from workers.api_clients.supabase_client import record_book_events
+        record_book_events("Coolbet", mapped)
 
     console.print()
     t = Table(show_header=True, title="Coolbet ingest summary")

@@ -28444,7 +28444,7 @@ def _():
     assert mod.pick_targets(sessions, names=["nope"], prefixes=["zz_"], all_=False) == []
 
 
-@test("COOLBET-SCRAPERS-MOVED-TO-MAC — odds_snapshot + cs2 scanner run via launchd on Mac, not VPS scheduler")
+@test("COOLBET-SCRAPERS-MOVED-TO-MAC — odds sweep back on the VPS (Estonian egress); cs2 scanner stays off it")
 def test_coolbet_scrapers_moved_to_mac():
     """MOVED-TO-MAC (2026-07-03): Coolbet Imperva 403's the VPS FS
     Chrome + Hetzner IP. The two Coolbet-HTTP scrapers now run on the
@@ -28468,11 +28468,15 @@ def test_coolbet_scrapers_moved_to_mac():
     sched = (root / "workers/scheduler.py").read_text()
     # Neither add_job registration may exist on the VPS scheduler — if
     # someone re-adds them the VPS starts silently 403'ing again.
-    assert "\n    scheduler.add_job(_coolbet_odds_snapshot_wrapper," not in sched, (
-        "coolbet_odds_snapshot is registered on the VPS scheduler — it "
-        "runs on the Mac via launchd instead (Imperva 403s the VPS). "
-        "If you need it on the VPS again, first fix the Imperva 403 "
-        "root cause; don't just re-add it."
+    # REVERSED 2026-09-23 (COOLBET-MOVED-TO-VPS). The Imperva 403 root cause was
+    # fixed exactly as this assertion demanded: it was the Hetzner IP's COUNTRY,
+    # and the zone.ee Estonian exit (COOLBET_RESIDENTIAL_PROXY) removes it. The
+    # sweep is now registered on the VPS and the Mac plist is parked — so the
+    # guard flips: it must stay registered (the Mac no longer runs it).
+    assert "\n    scheduler.add_job(_coolbet_odds_snapshot_wrapper," in sched, (
+        "coolbet_odds_snapshot is not registered on the VPS scheduler — since "
+        "2026-09-23 it runs ONLY there (Mac plist parked); unregistering it "
+        "stops the Coolbet price feed entirely."
     )
     assert "\n    scheduler.add_job(job_cs2_coolbet_scanner," not in sched, (
         "cs2_coolbet_scanner is registered on the VPS scheduler — moved "
@@ -36559,7 +36563,10 @@ def test_coolbet_pause_resume():
 
     # The resume must both reload AND tear down its own agent.
     resume = code.split("resume)")[1].split(";;")[0]
-    assert "launchctl load" in resume, "resume no longer reloads the jobs"
+    # `launchctl bootstrap` replaced the legacy `load` on 2026-09-22 (load
+    # returned 0 while registering nothing — RELIABILITY_LEDGER, reviver pattern).
+    assert "launchctl bootstrap" in resume or "launchctl load" in resume, (
+        "resume no longer reloads the jobs")
     assert "coolbet-resume.plist" in resume and "rm -f" in resume, (
         "the resume no longer removes its own launchd agent -- a stale one-shot "
         "would silently re-load jobs that were later retired on purpose"
@@ -36941,7 +36948,9 @@ def test_flaresolverr_keepalive():
                          "com.oddsintel.flaresolverr-keepalive.plist")
     assert os.path.exists(plist), "the FS keepalive launchd plist is missing"
     pl = open(plist, encoding="utf-8").read()
-    assert "RunAtLoad" in pl and "StartInterval" in pl, (
+    # StartCalendarInterval since 2026-09-23: StartInterval gui-domain agents
+    # do not fire on the operator's Mac (see the STARTINTERVAL test).
+    assert "RunAtLoad" in pl and ("StartCalendarInterval" in pl or "StartInterval" in pl), (
         "the keepalive agent no longer runs at load + on an interval — it must "
         "both revive on boot and keep checking"
     )
@@ -41096,7 +41105,8 @@ def test_liveness_is_not_capability():
     pause_branch = pr.split("pause)", 1)[1].split("resume)", 1)[0]
     pause_code = "\n".join(l for l in pause_branch.splitlines()
                            if not l.lstrip().startswith("#"))
-    assert "coolbet-resume.plist" in pause_code and "launchctl load" in pause_code, (
+    assert "coolbet-resume.plist" in pause_code and (
+        "launchctl bootstrap" in pause_code or "launchctl load" in pause_code), (
         "pause must ARM the one-shot resume agent, not merely unload the jobs "
         "— a pause without a guaranteed resume is how a temporary stop becomes "
         "a silent multi-day outage, which is what this script's own header "
@@ -41152,7 +41162,10 @@ def test_imperva_seed_fs():
         )
     # …and the seed must be first-contact only, or the placement context gets
     # reset mid-session.
-    seed_fn = _strip_prose(inspect.getsource(cs.CoolbetSession._imperva_seed))
+    # The first-contact rule lives in `_imperva_seed_unproxied` since the proxied
+    # path was split out (2026-09-22); `_imperva_seed` dispatches to it.
+    seed_fn = _strip_prose(inspect.getsource(cs.CoolbetSession._imperva_seed)
+                           + inspect.getsource(cs.CoolbetSession._imperva_seed_unproxied))
     assert "_imperva_seed_done" in seed_fn and "return None" in seed_fn, (
         "the seed must stop once a context is past the challenge — FS applies "
         "a cookies field by resetting the browser context, which on the "
@@ -41854,9 +41867,12 @@ def _():
     m = re.search(r"add_job\(job_closing_snap, CronTrigger\(([^)]*)\)", sched)
     assert m and "hour" not in m.group(1), "closing_snap must run 24/7 — kickoffs are global"
 
-    plist = pathlib.Path("local/launchd/com.oddsintel.near-kickoff-capture.plist").read_text()
-    assert "workers.jobs.near_kickoff_capture" in plist and "<integer>300</integer>" in plist
-    assert "COOLBET_NO_FS" in plist and "epicbet_nearko_reader" in plist
+    # Since UNIBET-ON-VPS (2026-09-23) the live schedule is the VPS systemd unit
+    # for ALL three books; the Mac plist is parked in LaunchAgents/paused/.
+    unit = pathlib.Path("deploy/vps/oddsintel-near-kickoff-epicbet.service").read_text()
+    timer = pathlib.Path("deploy/vps/oddsintel-near-kickoff-epicbet.timer").read_text()
+    assert "workers.jobs.near_kickoff_capture --books Epicbet,Coolbet,Unibet-Site" in unit
+    assert "epicbet_nearko_reader" in unit and "OnUnitActiveSec=5min" in timer
 
 
 @test("PAPER-BOT-CLV-UNBLOCK — corners / team totals / 1H 1x2 are de-viggable")
@@ -51916,6 +51932,20 @@ def test_consensus_arm_grading():
         "deploy must restart the scheduler when a scripts/ module it imports changes")
     return "B/C grade computed, stored, rendered; live arm ungraded; deploy restarts on script change"
 
+
+@test("COOLBET-EVENT-MAP-FROM-RUN-BULK — the scheduled Coolbet sweep records its event pairings")
+def test_coolbet_event_map_from_run_bulk():
+    """COOLBET-EVENT-MAP-FROM-RUN-BULK (2026-09-23). Only run_board_sweep wrote
+    book_event_map, and the VPS schedules run_bulk — so the last Coolbet pairing
+    was 2026-09-22 15:38 and near_kickoff_capture (which fetches one fixture by
+    its stored event id) had no Coolbet fixture to close from then on."""
+    import inspect
+    from workers.automation import coolbet_explorer as ce
+    src = inspect.getsource(ce.run_bulk)
+    assert 'record_book_events("Coolbet", mapped)' in src, (
+        "run_bulk must persist its fixture -> Coolbet event pairings")
+    assert "mapped.append(" in src and "not dry_run" in src, (
+        "pairings must be collected per matched fixture and never written on a dry run")
 
 if __name__ == "__main__":
     main()
