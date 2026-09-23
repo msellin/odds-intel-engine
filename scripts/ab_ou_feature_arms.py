@@ -133,7 +133,74 @@ ARM_C = [
 ]
 
 
+SHOT_STATS = {   # feature -> (home column, away column) in match_stats
+    "exp_shots_total":     ("shots_home", "shots_away"),
+    "exp_sot_total":       ("shots_on_target_home", "shots_on_target_away"),
+    "exp_offtarget_total": ("shots_off_target_home", "shots_off_target_away"),
+    "exp_insidebox_total": ("shots_insidebox_home", "shots_insidebox_away"),
+    "exp_corners_total":   ("corners_home", "corners_away"),
+}
+SHOT_COLS = list(SHOT_STATS)
+ARM_D = SHOT_COLS + ["league_goals_wf", "league_over25_wf",
+                     "rest_days_home", "rest_days_away", "league_tier"]
+ARM_E = list(ARM_C) + SHOT_COLS
+SEED_DAYS = 180
+MIN_TEAM_MATCHES = 5
+
+
 # ─── derived features ────────────────────────────────────────────────────────
+
+def shots_walk_forward(half_life: float = LEAGUE_HALF_LIFE) -> pd.DataFrame:
+    """Per-match expected TOTALS of shots / SOT / off target / inside box / corners
+    (λ_home + λ_away), leak-free: `HalfRatings` (the #084 construction — IPF seed
+    fit on the oldest SEED_DAYS of stats, then predict-then-update in date order),
+    one rating per statistic. Every finished match gets a prediction when both
+    teams have >= MIN_TEAM_MATCHES stats matches behind them; only matches WITH
+    stats update the ratings. Same-date matches are all predicted before any of
+    them updates (the Saturday leak)."""
+    from scripts.build_half_time_ratings import HalfRatings
+    stats = {r["id"]: r for r in _q("""
+        SELECT m.id::text id, ms.* FROM match_stats ms JOIN matches m ON m.id = ms.match_id
+         WHERE m.status = 'finished'""")}
+    ms = _q("""SELECT id::text id, date::date d, home_team_id::text h, away_team_id::text a
+                 FROM matches WHERE status = 'finished' AND score_home IS NOT NULL
+                ORDER BY date, id""")
+    if not stats or not ms:
+        return pd.DataFrame(columns=["match_id"] + SHOT_COLS)
+    first = min(r["d"] for r in ms if r["id"] in stats)
+    from datetime import timedelta as _td
+    seed_end = first + _td(days=SEED_DAYS)
+    out = {r["id"]: {} for r in ms}
+    for feat, (kh, ka) in SHOT_STATS.items():
+        seed = [dict(id=r["id"], d=r["d"], h=r["h"], a=r["a"],
+                     x=float(stats[r["id"]][kh]), y=float(stats[r["id"]][ka]))
+                for r in ms if r["d"] < seed_end and r["id"] in stats
+                and stats[r["id"]].get(kh) is not None and stats[r["id"]].get(ka) is not None]
+        R = HalfRatings(feat)
+        R.fit(seed, "x", "y", half_life)
+        seen = defaultdict(int)
+        for r in seed:
+            seen[r["h"]] += 1; seen[r["a"]] += 1
+        day = [r for r in ms if r["d"] >= seed_end]
+        i = 0
+        while i < len(day):
+            j = i
+            while j < len(day) and day[j]["d"] == day[i]["d"]:
+                j += 1
+            batch = day[i:j]
+            for r in batch:                                   # 1. predict
+                if seen[r["h"]] >= MIN_TEAM_MATCHES and seen[r["a"]] >= MIN_TEAM_MATCHES:
+                    eh, ea = R.predict(r["h"], r["a"])
+                    out[r["id"]][feat] = eh + ea
+            for r in batch:                                   # 2. THEN update
+                st = stats.get(r["id"])
+                if st and st.get(kh) is not None and st.get(ka) is not None:
+                    R.update(r["h"], r["a"], float(st[kh]), float(st[ka]))
+                    seen[r["h"]] += 1; seen[r["a"]] += 1
+            i = j
+    return pd.DataFrame([{"match_id": k, **v} for k, v in out.items()],
+                        columns=["match_id"] + SHOT_COLS)
+
 
 def league_walk_forward(half_life: float = LEAGUE_HALF_LIFE) -> pd.DataFrame:
     """Per-match decayed league mean of total goals and over-2.5 rate, built
@@ -174,7 +241,7 @@ def league_walk_forward(half_life: float = LEAGUE_HALF_LIFE) -> pd.DataFrame:
     return pd.DataFrame(out, columns=["match_id", "league_goals_wf", "league_over25_wf"])
 
 
-def add_derived(df: pd.DataFrame, lwf: pd.DataFrame) -> pd.DataFrame:
+def add_derived(df: pd.DataFrame, lwf: pd.DataFrame, swf: pd.DataFrame | None = None) -> pd.DataFrame:
     """Arm C's columns from stored columns. `df` must carry match_id.
 
     lam_home/lam_away are recovered EXACTLY from the stored #084 ratings:
@@ -197,7 +264,10 @@ def add_derived(df: pd.DataFrame, lwf: pd.DataFrame) -> pd.DataFrame:
     d["elo_sum"] = eh + ea
     d["elo_absdiff"] = (eh - ea).abs()
     d = d.drop(columns=[c for c in ("league_goals_wf", "league_over25_wf") if c in d])
-    return d.merge(lwf, on="match_id", how="left")
+    d = d.merge(lwf, on="match_id", how="left")
+    if swf is not None:
+        d = d.drop(columns=[c for c in SHOT_COLS if c in d]).merge(swf, on="match_id", how="left")
+    return d
 
 
 # ─── training ────────────────────────────────────────────────────────────────
@@ -213,7 +283,11 @@ def arm_cols(arm: str) -> list[str]:
     if arm == "CM":
         return list(ARM_C) + PINNACLE_FEATURE_COLS + ["pinnacle_implied_over25",
                                                       "pinnacle_implied_under25"]
-    raise SystemExit(f"arm {arm} is not runnable yet — D/E wait on the #078 backfill")
+    if arm == "D":
+        return list(ARM_D)
+    if arm == "E":
+        return list(ARM_E)
+    raise SystemExit(f"unknown arm {arm}")
 
 
 def train_arm(arm, feats, targs, tag):
@@ -321,8 +395,20 @@ def score(bundle: Path, rows, fill: str):
                         l_bl=ll(bl, ys[te]), auc_mod=auc(pm[te], ys[te]),
                         auc_mkt=auc(mkt[te], ys[te]),
                         resid=auc([m - k for m, k in zip(pm[te], mkt[te])], ys[te]),
-                        p=p_one if alpha > 0 else 1.0, platt=(alpha, a, b))
+                        p=p_one if alpha > 0 else 1.0, platt=(alpha, a, b),
+                        ece=ece(pm[te], ys[te]))
     return out
+
+
+def ece(ps, ys, bins: int = 10) -> float:
+    """Expected calibration error, 10 equal-width bins (reported, not a bar)."""
+    tot, n = 0.0, len(ps)
+    for b in range(bins):
+        lo, hi = b / bins, (b + 1) / bins
+        idx = [i for i, p in enumerate(ps) if lo <= p < hi or (b == bins - 1 and p == 1.0)]
+        if idx:
+            tot += len(idx) / n * abs(mean(ps[i] for i in idx) - mean(ys[i] for i in idx))
+    return tot
 
 
 def harness_subprocess(bundle: Path, cutoff: str) -> dict:
@@ -421,7 +507,7 @@ def holm(ps: dict[str, float], m: int) -> dict[str, float]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cutoff", default="2026-08-20")
-    ap.add_argument("--arms", default="A,A0,C,CM")
+    ap.add_argument("--arms", default="A,A0,C,CM,D,E")
     ap.add_argument("--tag", default="ab_ou")
     a = ap.parse_args()
     arms = [x.strip() for x in a.arms.split(",")]
@@ -435,7 +521,8 @@ def main() -> int:
                                       include_halftime=True, cutoff_date=a.cutoff)
     assert "match_id" in targs, "load_training_data must carry match_id (see train.py)"
     lwf = league_walk_forward()
-    feats = add_derived(feats.assign(match_id=targs["match_id"].values), lwf)
+    swf = shots_walk_forward()
+    feats = add_derived(feats.assign(match_id=targs["match_id"].values), lwf, swf)
 
     # CHECK 1: arm A reproduces the shipped vector
     shipped = {c for c in joblib.load(f"{SHIPPED}/feature_cols.pkl") if not c.endswith("_missing")}
@@ -448,8 +535,14 @@ def main() -> int:
     for c in ARM_C:
         col = pd.to_numeric(feats[c], errors="coerce")
         assert col.notna().sum() > 10000 and (col.std() or 0) > 1e-6, f"{c} is dead"
-    print("  checks 1-3 ✓  (A = shipped 52; A0/C market-free; C columns alive)")
-    for c in ARM_C:
+    for c in SHOT_COLS:
+        col = pd.to_numeric(feats[c], errors="coerce")
+        assert col.notna().sum() > 10000 and (col.std() or 0) > 1e-6, f"{c} is dead"
+    for arm in ("D", "E"):
+        leak = set(arm_cols(arm)) & set(MARKET_DERIVED)
+        assert not leak, f"arm {arm} carries market inputs {leak}"
+    print("  checks 1-3 ✓  (A = shipped 52; A0/C/D/E market-free; C and shot columns alive)")
+    for c in ARM_C + SHOT_COLS:
         col = pd.to_numeric(feats[c], errors="coerce")
         print(f"     {c:18s} fill {col.notna().mean():6.1%}  mean {col.mean():9.3f}  sd {col.std():8.3f}")
 
@@ -458,7 +551,7 @@ def main() -> int:
     # ── score ───────────────────────────────────────────────────────────────
     all_cols = set(arm_cols("A")) | set(HALFTIME_FEATURE_COLS) | {"elo_home", "elo_away"}
     rows = universe(a.cutoff, sorted(all_cols))
-    udf = add_derived(pd.DataFrame(rows), lwf)
+    udf = add_derived(pd.DataFrame(rows), lwf, swf)
     rows = [{k: (None if (isinstance(v, float) and math.isnan(v)) else v)
              for k, v in r.items()} for r in udf.to_dict("records")]
     print(f"\n  universe: n = {len(rows):,} fixtures on/after {a.cutoff} with Pinnacle O/U 2.5")
@@ -473,43 +566,56 @@ def main() -> int:
                 f"— this script is NOT the same harness; aborting")
         print("  CHECK R ✓  in-process scoring reproduces residual_test_ou.py on arm A")
         za = mine
-    res = {arm: score(b, rows, "mean") for arm, b in bundles.items()}
+    covered = [r for r in rows if r.get("exp_sot_total") is not None]
+    print(f"  shots-covered subset: n = {len(covered):,} ({len(covered)/len(rows):.0%})")
+    full_arms = [x for x in bundles if x != "D"]
+    res_full = {arm: score(bundles[arm], rows, "mean") for arm in full_arms}
+    res_cov = {arm: score(b, covered, "mean") for arm, b in bundles.items()}
 
-    # ── report ──────────────────────────────────────────────────────────────
-    ps = {arm: r["REALISTIC"]["p"] for arm, r in res.items()}
-    adj = holm(ps, HOLM_M)
-    print(f"\n  {'arm':5}{'harness arm':16}{'alpha':>8}{'mkt LL':>9}{'model LL':>10}"
-          f"{'blend LL':>10}{'mod AUC':>9}{'resid AUC':>11}{'p':>8}{'Holm p':>8}")
-    for arm, r in res.items():
-        for h in ("OPTIMISTIC", "REALISTIC", "REALISTIC+SHIN"):
-            x = r[h]
-            dec = "  <- DECIDES" if h == "REALISTIC" else ""
-            hp = f"{adj[arm]:8.3f}" if h == "REALISTIC" else " " * 8
-            print(f"  {arm:5}{h:16}{x['alpha']:8.4f}{x['l_mkt']:9.4f}{x['l_mod']:10.4f}"
-                  f"{x['l_bl']:10.4f}{x['auc_mod']:9.4f}{x['resid']:11.4f}{x['p']:8.3f}{hp}{dec}")
+    def table(title, res):
+        print(f"\n  {title}")
+        print(f"  {'arm':5}{'harness arm':16}{'alpha':>8}{'mkt LL':>9}{'model LL':>10}"
+              f"{'blend LL':>10}{'mod AUC':>9}{'resid AUC':>11}{'ECE':>7}{'p':>8}")
+        for arm, r in res.items():
+            for h in ("OPTIMISTIC", "REALISTIC"):
+                x = r[h]
+                dec = "  <- DECIDES" if h == "REALISTIC" else ""
+                print(f"  {arm:5}{h:16}{x['alpha']:8.4f}{x['l_mkt']:9.4f}{x['l_mod']:10.4f}"
+                      f"{x['l_bl']:10.4f}{x['auc_mod']:9.4f}{x['resid']:11.4f}{x['ece']:7.4f}"
+                      f"{x['p']:8.3f}{dec}")
+    table(f"FULL UNIVERSE (n={len(rows):,}) — A, A0, C, CM, E", res_full)
+    table(f"SHOTS-COVERED SUBSET (n={len(covered):,}) — all arms; D and E are decided here", res_cov)
     if "A" in bundles:
         print(f"  {'A':5}{'REAL zero-fill':16}{za['alpha']:8.4f}{za['l_mkt']:9.4f}"
-              f"{za['l_mod']:10.4f}{za['l_bl']:10.4f}  (harness imputation, for scale)")
+              f"{za['l_mod']:10.4f}{za['l_bl']:10.4f}  (harness imputation, full universe, for scale)")
 
+    # decision p per arm: D/E on the covered subset, the rest on the full universe
+    dec = {arm: (res_cov[arm] if arm in ("D", "E") else res_full[arm])["REALISTIC"] for arm in bundles}
+    adj = holm({arm: x["p"] for arm, x in dec.items()}, HOLM_M)
     print("\n  VERDICT (pre-registered: REALISTIC alpha > 0.02 AND blend < market "
-          f"AND Holm p < {P_BAR}, m={HOLM_M})")
-    for arm, r in res.items():
-        x = r["REALISTIC"]
+          f"AND Holm p < {P_BAR}, m={HOLM_M}; D/E decided on the covered subset)")
+    for arm, x in dec.items():
         ok = x["alpha"] > ALPHA_BAR and x["l_bl"] < x["l_mkt"] and adj[arm] < P_BAR
         print(f"     {arm:3}  {'PASS' if ok else 'FAIL'}   alpha {x['alpha']:.4f}  Holm p {adj[arm]:.3f}")
+    if "C" in res_cov and "D" in res_cov:
+        c, d = res_cov["C"]["REALISTIC"], res_cov["D"]["REALISTIC"]
+        print(f"\n  BEFORE → AFTER on the same covered fixtures (model alone, REALISTIC):"
+              f"\n     C (goals-fed) LL {c['l_mod']:.4f} AUC {c['auc_mod']:.4f} ECE {c['ece']:.4f}"
+              f"\n     D (shots-fed) LL {d['l_mod']:.4f} AUC {d['auc_mod']:.4f} ECE {d['ece']:.4f}"
+              f"\n     market        LL {d['l_mkt']:.4f} AUC {d['auc_mkt']:.4f}")
 
-    # ── (b) does it make money: T-2h, Coolbet-executable, CLV vs Pinnacle close
-    prices = decision_prices({str(r["match_id"]) for r in rows[len(rows) // 2:]})
-    print(f"\n  BACKTEST — held-out half, decision T-{DECISION_MIN}min, Coolbet price, "
+    # money, on the covered subset so every arm (incl. D) is judged on the same fixtures
+    prices = decision_prices({str(r["match_id"]) for r in covered[len(covered) // 2:]})
+    print(f"\n  BACKTEST — covered subset, held-out half, decision T-{DECISION_MIN}min, Coolbet price, "
           f"CLV vs de-vigged Pinnacle close  ({len(prices):,} fixtures priced)")
     print("  ⚠️ A/CM carry market-price features of unrecorded capture time — "
           "their rows may be optimistic")
     print(f"  {'arm':5}{'strategy':8}{'floor':>6}{'bets':>7}{'/day':>7}{'CLV':>8}{'t':>7}{'ROI':>8}")
     for arm, b in bundles.items():
-        bt = backtest(b, rows, prices, res[arm]["REALISTIC"]["platt"])
+        bt = backtest(b, covered, prices, res_cov[arm]["REALISTIC"]["platt"])
         for (strat, fl), v in bt.items():
             if strat == "MARKET" and arm != arms[0]:
-                continue                     # identical for every arm; print once
+                continue
             print(f"  {arm if strat != 'MARKET' else '—':5}{strat:8}{fl:6.0%}{v['n']:7d}"
                   f"{v['per_day']:7.1f}{v['clv']:+8.2%}{v['t']:7.1f}{v['roi']:+8.1%}")
     return 0

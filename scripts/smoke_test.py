@@ -51709,6 +51709,12 @@ def test_ou_arms_preregistered():
     wf = src[src.index("def league_walk_forward"):src.index("def add_derived")]
     assert wf.index("1. decay + READ") < wf.index("2. THEN add"), (
         "league walk-forward must read the whole day before adding any of it")
+    # arms D/E (2026-09-23): shots rating predicts a whole day before updating
+    sw = src[src.index("def shots_walk_forward"):src.index("def league_walk_forward")]
+    assert sw.index("# 1. predict") < sw.index("# 2. THEN update"), "shots rating must not see same-day results"
+    assert "if arm == \"D\"" in src and "if arm == \"E\"" in src
+    assert 'dec = {arm: (res_cov[arm] if arm in ("D", "E") else res_full[arm])' in src, (
+        "D/E are decided on the shots-covered subset, as pre-registered")
     assert "minutes_to_kickoff >= %s" in src and "DECISION_MIN = 120" in src, (
         "the backtest must decide on prices visible at T-2h, not near-close ones")
 
