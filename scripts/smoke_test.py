@@ -51877,6 +51877,28 @@ def test_ledger_backed_bots_not_duplicated():
     assert "!LEDGER_BACKED_BOTS.has(b.name)" in page, "cached path must skip ledger bots"
 
 
+@test("BTB-REPLAY-MIRRORS-LIVE-RULE — the Beat the Bookie grade test uses the publisher's own rule")
+def test_btb_replay_mirrors_live_rule():
+    """[[#098]], 2026-09-23. The external-history test of grade B/C/A is only
+    evidence about OUR rule if it runs OUR rule. Pins: (1) every gate constant
+    is IMPORTED from the live publisher, never re-typed; (2) the panel is chosen
+    on the earliest 20% and those matches are EXCLUDED from scoring — otherwise
+    the panel is fitted on the rows it grades.
+    """
+    from pathlib import Path
+    src = (Path(__file__).parent.parent / "scripts" / "btb_consensus_replay.py").read_text()
+    imp = src[src.index("from scripts.publish_picks_forward_test import"):]
+    imp = imp[:imp.index(")")]
+    for c in ("ALIGN_MIN", "CONSENSUS_MAX_EDGE", "CONSENSUS_MIN_BOOKS", "GRADE_C_MAX_EDGE",
+              "MAX_ODDS", "MAX_RATIO", "MIN_EDGE", "MIN_LEAD_MIN", "LOOKAHEAD_H"):
+        assert c in imp, f"{c} must be imported from the live publisher"
+        assert f"\n{c} = " not in src and f"\n{c}=" not in src, f"{c} re-defined locally"
+    assert "cal, ev = ms[:n_cal], ms[n_cal:]" in src, "calibration slice must be split off"
+    run = src[src.index("picks = []"):]
+    assert "for m in ev:" in run and "for m in cal:" not in run, (
+        "only the evaluation slice may be replayed and scored")
+
+
 @test("CONSENSUS-SPLIT-BY-GRADE — one ledger arm, two bots (B beta, C testing), split in the views")
 def test_consensus_split_by_grade():
     """[[#095]], 2026-09-23. Owner: split the consensus bot into two bots by
