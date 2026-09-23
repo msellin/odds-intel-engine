@@ -52134,6 +52134,10 @@ def test_tonybet_sweeper():
                                  "test's book set until the owner widens it")
     from workers.jobs.health_alerts import DIRECT_FEED_BOOKS
     assert "Tonybet" in DIRECT_FEED_BOOKS
+    # Promoted 2026-09-23 after the site-price check (14/15 identical).
+    pipe = (root / "workers/jobs/daily_pipeline_v2.py").read_text()
+    acc = pipe[pipe.index("ACCESSIBLE_BOOKMAKERS: frozenset"): pipe.index("PRICE_REFERENCE_BOOKMAKERS")]
+    assert '"Tonybet"' in acc, "Tonybet left the placeable set"
     assert (root / "supabase/migrations/383_book_fair_probs.sql").exists()
 
     # RAW ARCHIVE: every fetched page is kept so later parsers can rebuild history.

@@ -9,5 +9,5 @@ Parent: PRIORITY_QUEUE.md #101 EE-SWEEPERS-2026-09-23 (Tonybet sub-item)
 - [x] Docs: DATA_SOURCES, WORKFLOWS, INFRASTRUCTURE, SYSTEM_MAP line
 - [ ] Phase 1b: deep board — every market family in the payload (corners, cards, team totals, 1H, goalscorer), not just the six
 - [ ] Phase 2: live score/clock/corners/cards (120 s) + results FT/HT/2H within 24 h
-- [ ] Deploy + first scheduled run verified
-- [ ] Acceptance 1–3 (then ACCESSIBLE_BOOKMAKERS promotion, separate commit)
+- [x] Deploy + first scheduled run verified (14:01 UTC: 550 events, 164/218 matched, 4,714 rows, 4,717 fair probs)
+- [x] Acceptance 1–3 → promoted to ACCESSIBLE_BOOKMAKERS

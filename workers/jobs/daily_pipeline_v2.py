@@ -1241,6 +1241,12 @@ ACCESSIBLE_BOOKMAKERS: frozenset = frozenset({
     # data is what makes the KSP-feed fix measurable. This constant governs
     # what we will BET, not what we will store.
     "Epicbet",        # EMTA-licensed, thin coverage but genuinely reachable
+    # TONYBET-SWEEPER (#101, 2026-09-23): EMTA-licensed (Osaühing Tonybet), OUR OWN
+    # sweep through the Estonian exit. Promoted after the site-price check: 14 of
+    # 15 1X2 prices identical to tonybet.com/ee on 5 fixtures (the 15th had moved
+    # in the 40 min since the sweep), and favourites agree with Epicbet 109/113,
+    # Coolbet 79/84. Widest direct coverage we have (164/218 fixtures, 1st sweep).
+    "Tonybet",
 })
 
 # PINNACLE-NOT-ACCESSIBLE-2026-09-04: Pinnacle REMOVED from the placeable set.

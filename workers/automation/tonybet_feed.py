@@ -28,8 +28,10 @@ WHAT IS STORED
   Tonybet ships on every outcome. Latest value per key, so the last pre-kickoff
   value is the fair close.
 
-NOT placeable yet: 'Tonybet' is deliberately absent from ACCESSIBLE_BOOKMAKERS
-until the acceptance checks in dev/active/tonybet-sweeper-plan.md pass.
+PLACEABLE since 2026-09-23: in ACCESSIBLE_BOOKMAKERS after the site-price check
+(14/15 prices identical to tonybet.com/ee). Still EXCLUDED from the pre-registered
+forward test's book set (scripts/publish_picks_forward_test.py) — widening that is
+the owner's call, versioned as a rule change.
 """
 from __future__ import annotations
 

@@ -3015,7 +3015,7 @@ def main():
     # refresh like the other direct books, and off Epicbet's :02/:32 minute.
     # Pre-match main board for the next 48 h (~6 requests), through the zone.ee
     # Estonian exit (EPICBET_RESIDENTIAL_PROXY in the unit env). NOT placeable yet:
-    # 'Tonybet' joins ACCESSIBLE_BOOKMAKERS only after the site-price check.
+    # Placeable (ACCESSIBLE_BOOKMAKERS) since the 2026-09-23 site-price check.
     scheduler.add_job(_tonybet_odds_snapshot_wrapper,
                       CronTrigger(hour="*", minute="1,31"),
                       id="tonybet_odds_snapshot", name="Tonybet Odds [30min]",

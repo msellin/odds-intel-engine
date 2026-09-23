@@ -47,8 +47,11 @@ Pinnacle at any Pinnacle margin band (`ANCHOR_IS_NOT_SHARP_2026_09_14.md`,
 **⚠️ Betano is NOT on the EMTA list**, yet several scripts tag it "we bet here"
 (e.g. `OUR_BOOKS` in `scripts/anchor_book_sharpness_research.py`). If that tag
 feeds any OWN placement or "placeable" logic, it is wrong for an Estonian
-operator. **Checked 2026-09-23:** not in `ACCESSIBLE_BOOKMAKERS`; it is in two
-paper bots' `PLACEMENT_BOOKS` (`team_total_paper_bot.py`, `first_half_1x2_paper_bot.py`) — flagged on #099.
+operator. **Checked 2026-09-23 — and first misreported:** Betano IS in
+`ACCESSIBLE_BOOKMAKERS` (`daily_pipeline_v2.py`, commented "EMTA-licensed"); that
+set was verified against EMTA's BLOCKED-domain list, not the licence register, and
+Betano is on neither. So live OWN paths treat it as placeable. Also in two paper
+bots' `PLACEMENT_BOOKS`. Owner decision needed — see #101.
 
 ## Recommended build order — ⚠️ SUPERSEDED same day
 
