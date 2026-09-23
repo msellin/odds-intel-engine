@@ -620,6 +620,52 @@ def select(cands: list[dict], room: int | None = None,
     return deduped if room is None else deduped[:room]
 
 
+def funnel_rows(pool: list[dict], picked: list[dict], source: str,
+                max_edge: float | None = None) -> list[dict]:
+    """CANDIDATE-FUNNEL ([[#082]]): every pool leg within 5pp of the floor, with
+    the reason it was or was not published. `select()` keeps nothing it drops,
+    so without this no floor / ceiling / grade question has a population.
+
+    Steps: selected | selected_unsent (grade D — claimed, never sent) |
+    below_floor | above_ceiling | deduped_or_capped (one-side-per-market,
+    already published, or the runaway breaker). Stores price + p_sharp, never
+    the edge (derived on read)."""
+    from workers.utils.candidate_funnel import NEAR_FLOOR_PP
+    now = datetime.now(timezone.utc)
+    chosen = {(str(c["match_id"]), c["market"], c["selection"]) for c in picked}
+    out = []
+    for c in pool:
+        e = c.get("edge")
+        if e is None or e < MIN_EDGE - NEAR_FLOOR_PP:
+            continue
+        key = (str(c["match_id"]), c["market"], c["selection"])
+        if key in chosen:
+            step = "selected_unsent" if c.get("grade") == "D" else "selected"
+        elif e < MIN_EDGE:
+            step = "below_floor"
+        elif max_edge is not None and e > max_edge:
+            step = "above_ceiling"
+        else:
+            step = "deduped_or_capped"
+        if source == "publisher_consensus":
+            bot = {"B": "bot_consensus_b_v1", "C": "bot_consensus_c_v1",
+                   "D": "bot_consensus_d_v1"}.get(c.get("grade"), "bot_consensus_c_v1")
+        else:
+            bot = "bot_sharp_forward_test_v1"
+        anchor = c.get("anchor_bookmaker") or "Pinnacle"
+        qt = c.get("odds_quoted_at")
+        out.append({
+            "source": source, "bot": bot, "match_id": str(c["match_id"]),
+            "market": c["market"], "selection": c["selection"],
+            "bookmaker": c.get("bookmaker"), "odds": c["odds"],
+            "fair_prob": c.get("p_sharp"),
+            "fair_source": anchor if anchor.startswith("consensus:") else "pinnacle_shin",
+            "raw_prob": None, "threshold": MIN_EDGE, "step": step,
+            "quote_age_min": round((now - qt).total_seconds() / 60, 1) if qt else None,
+        })
+    return out
+
+
 def junk_anchor_arm(pool: list[dict]) -> list[dict]:
     """Negative control: the SAME rule, anchor shuffled to a DIFFERENT fixture.
 

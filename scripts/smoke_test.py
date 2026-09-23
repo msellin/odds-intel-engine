@@ -10276,8 +10276,12 @@ def _():
         '_funnel[bot_name]["drop_stake_low"]',
         '_funnel[bot_name]["accepted"]',
     ]
+    # [[#082]] 2026-09-23: in-loop drop points now go through `_fstep("step")`,
+    # which bumps the SAME counter and also records the candidate. Either form
+    # satisfies "this drop point is counted" — what this test protects.
     for c in required_counters:
-        assert c in src, f"missing funnel counter: {c}"
+        key = c.split('"')[1]
+        assert c in src or f'_fstep("{key}")' in src, f"missing funnel counter: {c}"
     assert "_print_funnel" in src, "run_morning must call _print_funnel when verbose"
 
     # NEAR-MISS-VISIBILITY (2026-09-15): the counters alone cannot tell a
@@ -41855,7 +41859,7 @@ def _():
     assert 'setdefault("EPICBET_FLARE_SESSION"' in src, (
         "a manual run must not fall back to the sweep's Epicbet FS session id"
     )
-    assert set(nk._CAPTURE) == {"Coolbet", "Unibet-Site", "Epicbet"}
+    assert set(nk._CAPTURE) == {"Coolbet", "Unibet-Site", "Epicbet", "Tonybet"}
 
     # All three sweeps record the pairing they already compute.
     for path, needle in (
@@ -51977,6 +51981,52 @@ def test_perf_no_high_water_bankroll_column():
     code = _r.sub(r"\{/\*.*?\*/\}", "", lb, flags=_r.DOTALL)
     assert "bot.currentBankroll" not in code, "the high-water bankroll is back on the public row"
     assert ">Bankroll</th>" not in code
+
+
+@test("CANDIDATE-FUNNEL-PERSISTED — rejected candidates are kept, not just counted")
+def test_candidate_funnel_persisted():
+    """[[#082]], 2026-09-23 — step 1 of the Block D re-order. The pipeline counted
+    why candidates were rejected and threw them away; the publisher's select()
+    kept nothing it dropped. Pins: (1) every pipeline rejection point goes
+    through `_fstep` (a bare counter bump would record nothing), (2) the funnel
+    is flushed on BOTH exits of run_morning (shadow early-return and normal),
+    (3) the publisher labels each near-floor leg with its fate, grade D as
+    claimed-but-unsent, and skips far-below-floor legs, (4) edges are never
+    stored — only price and probability.
+    """
+    import re as _r
+    from datetime import datetime, timezone, timedelta
+    import scripts.publish_picks_forward_test as pf
+    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
+    i = src.index("for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:")
+    j = src.index("bet_candidates.sort(key=lambda x: x[6], reverse=True)")
+    loop = src[i:j]
+    bare = [l.strip() for l in loop.split("\n") if _r.search(r'_funnel\[bot_name\]\["(?!candidates")', l)]
+    assert not bare, f"rejection points bypassing _fstep (recorded nothing): {bare}"
+    assert src.count("_flush_funnel()") >= 2, "flush on both exits of run_morning"
+    mig = _engine_path("supabase/migrations/384_candidate_funnel.sql").read_text()
+    cols = mig[mig.index("CREATE TABLE"):mig.index("PRIMARY KEY")]
+    names = [ln.split()[0] for ln in cols.split("\n")[1:] if ln.strip() and not ln.strip().startswith("--")]
+    assert not [n for n in names if "edge" in n], f"never store an edge — derive it on read: {names}"
+
+    now = datetime.now(timezone.utc)
+    def leg(m, sel, edge, grade=None):
+        return {"match_id": m, "market": "1x2", "selection": sel, "odds": 2.0,
+                "edge": edge, "p_sharp": (1 + edge) / 2.0, "bookmaker": "Bet365",
+                "anchor_bookmaker": "consensus:6", "grade": grade,
+                "odds_quoted_at": now - timedelta(minutes=12)}
+    pool = [leg("a", "home", 0.05, "C"), leg("b", "home", 0.02, "C"), leg("c", "home", 0.10, "C"),
+            leg("d", "home", 0.04, "C"), leg("e", "home", -0.30, "C"), leg("f", "away", 0.05, "D")]
+    picked = [pool[0], pool[5]]
+    rows = {r["match_id"]: r for r in pf.funnel_rows(pool, picked, "publisher_consensus", max_edge=0.08)}
+    assert rows["a"]["step"] == "selected" and rows["a"]["bot"] == "bot_consensus_c_v1"
+    assert rows["f"]["step"] == "selected_unsent" and rows["f"]["bot"] == "bot_consensus_d_v1"
+    assert rows["b"]["step"] == "below_floor"
+    assert rows["c"]["step"] == "above_ceiling"
+    assert rows["d"]["step"] == "deduped_or_capped"
+    assert "e" not in rows, "far-below-floor legs answer nothing and are not written"
+    assert rows["a"]["fair_source"] == "consensus:6" and 11 < rows["a"]["quote_age_min"] < 13
+    assert all("edge" not in r for r in rows.values())
 
 
 @test("CONSENSUS-SPLIT-BY-GRADE — one ledger arm, two bots (B beta, C testing), split in the views")

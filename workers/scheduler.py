@@ -2424,6 +2424,17 @@ def job_publish_picks_forward_test():
             c_sent += 1
             attach_message_id(pick_id, mid)
 
+    # CANDIDATE-FUNNEL ([[#082]]): keep every near-floor leg of both arms with the
+    # reason it was or was not published. Never raises (record() swallows).
+    try:
+        from scripts.publish_picks_forward_test import funnel_rows
+        from workers.utils.candidate_funnel import record as _record_funnel
+        _record_funnel(funnel_rows(pool, picks, "publisher_live")
+                       + funnel_rows(consensus_pool, consensus_picks, "publisher_consensus",
+                                     max_edge=CONSENSUS_MAX_EDGE))
+    except Exception as _fe:  # noqa: BLE001
+        log.warning("picks_forward_test: candidate funnel failed (non-fatal): %s", _fe)
+
     # Negative control — recorded, never published. Runs over the POOL, not the
     # selected picks: shuffling the anchor has to change WHICH bets are chosen,
     # which is the only thing the anchor does (JUNK-ARM-DEGENERATE-2026-09-14).

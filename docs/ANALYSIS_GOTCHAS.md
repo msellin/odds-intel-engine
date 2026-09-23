@@ -2942,3 +2942,20 @@ until you split by bot). This is the third time this family has cost time.
 **Cheap detector:** if a grid's best |t| barely moves between the observed data
 and a shuffled draw, the statistic is dominated by something the shuffle is not
 touching. Print one shuffled draw's max |t| next to the observed one.
+
+
+## 72. `candidate_funnel` stores price and probability, never the edge — and the two sources' edges are different quantities (2026-09-23)
+
+`candidate_funnel` ([[#082]], migration 384) is the rejected population every floor / grade /
+de-vig question needs. Three rules for reading it:
+
+1. **Derive the edge on read, per source.** `source='pipeline'` is a MODEL edge,
+   `fair_prob − 1/odds` (probability points), against `threshold` in the same units.
+   `source='publisher_*'` is a SHARP edge, `fair_prob × odds − 1` (multiplicative), against
+   `threshold = MIN_EDGE`. They are never comparable (SYSTEM_MAP §1) — never pool them.
+2. **It is truncated on purpose.** Only candidates within 5pp of their floor, or rejected by a
+   later gate, are written. "How many candidates were far below the floor" is NOT answerable
+   here — the counters in the run log are.
+3. **One row per (day, source, bot, match, market, selection), latest decision wins.** A
+   candidate accepted at 10:05 and dropped at 11:05 reads as dropped; `n_seen` says how many
+   runs saw it. It starts 2026-09-23 — there is no history before that.

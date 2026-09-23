@@ -2620,6 +2620,33 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     _funnel: dict[str, _Counter] = _dd_ct(_Counter)  # bot_name → Counter(step → n)
     # NEAR-MISS-VISIBILITY: bot_name → max(edge - threshold) seen, for _print_funnel.
     _near: dict[str, float] = {}
+    # CANDIDATE-FUNNEL ([[#082]], migration 384). `_funnel` COUNTS why candidates
+    # were rejected; this keeps the candidates themselves, so a floor / grade /
+    # de-vig question has a rejected population to test against. `_fctx` is the
+    # candidate being evaluated; `_fstep` bumps the counter exactly as before AND
+    # records the candidate with the step that decided it. Written once per run
+    # by `_flush_funnel` (upsert, latest decision per candidate per day).
+    _funnel_rows: list[dict] = []
+    _fctx: dict = {}
+
+    def _fstep(step: str) -> None:
+        _funnel[bot_name][step] += 1
+        if not _fctx or step.endswith("_shadow"):
+            return                      # shadow vetoes are non-terminal: count only
+        if step == "drop_edge":
+            cp, thr = _fctx.get("fair_prob"), _fctx.get("threshold")
+            if cp is None or thr is None or (cp - 1 / _fctx["odds"]) < thr - 0.05:
+                return                  # far below the floor: answers nothing
+        _funnel_rows.append({**_fctx, "step": step})
+
+    def _flush_funnel() -> None:
+        try:
+            from workers.utils.candidate_funnel import record
+            n = record(_funnel_rows)
+            if n:
+                console.print(f"  [dim]candidate_funnel: {n} candidates recorded[/dim]")
+        except Exception as _fe:  # noqa: BLE001
+            console.print(f"  [yellow]candidate_funnel flush failed (non-critical): {_fe}[/yellow]")
 
     today_str = date.today().isoformat()
     mode_tag = f" [SHADOW {shadow_cohort}]" if shadow_mode else ""
@@ -3675,12 +3702,16 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                             candidate_specs.append(("draw_no_bet", "Away", dnb_a_odds, dnb_a_prob, "draw_no_bet", "away", thresholds.get("dnb", 0.05)))
 
             for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:
+                _fctx = {"source": "pipeline", "bot": bot_name, "match_id": str(match_id),
+                         "market": os_market, "selection": os_selection, "odds": odds,
+                         "raw_prob": raw_mp, "fair_prob": None, "fair_source": "model_cal",
+                         "threshold": base_threshold, "bookmaker": None, "quote_age_min": None}
                 _funnel[bot_name]["candidates"] += 1
                 ip = 1 / odds
 
                 # Guard: skip if raw model probability is NaN
                 if math.isnan(raw_mp):  # NaN guard
-                    _funnel[bot_name]["drop_nan_raw"] += 1
+                    _fstep("drop_nan_raw")
                     continue
 
                 # P1: Calibrate probability (tier-specific shrinkage + Platt sigmoid)
@@ -3701,23 +3732,24 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
 
                 # Guard: skip if calibration produced NaN
                 if math.isnan(cal_prob):
-                    _funnel[bot_name]["drop_nan_cal"] += 1
+                    _fstep("drop_nan_cal")
                     continue
 
                 # Use calibrated probability for edge calculation
                 edge = cal_prob - ip
                 me = base_threshold + edge_bump
+                _fctx.update(fair_prob=cal_prob, threshold=me)
 
                 if edge < me or odds < odds_min or odds > odds_max or cal_prob < min_prob:
                     if edge < me:
-                        _funnel[bot_name]["drop_edge"] += 1
+                        _fstep("drop_edge")
                         _near[bot_name] = max(_near.get(bot_name, -9.9), edge - me)
                     elif odds < odds_min:
-                        _funnel[bot_name]["drop_odds_too_low"] += 1
+                        _fstep("drop_odds_too_low")
                     elif odds > odds_max:
-                        _funnel[bot_name]["drop_odds_too_high"] += 1
+                        _fstep("drop_odds_too_high")
                     else:
-                        _funnel[bot_name]["drop_min_prob"] += 1
+                        _fstep("drop_min_prob")
                     continue
 
                 # Pinnacle disagreement veto: skip bets where our model is significantly
@@ -3763,10 +3795,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     and 0.06 <= _anchor_gap < 0.10
                     and edge < me + 0.02
                 ):
-                    _funnel[bot_name]["drop_pin_mid_band"] += 1
+                    _fstep("drop_pin_mid_band")
                     continue
                 if _anchor_gap > _veto_gap:
-                    _funnel[bot_name]["drop_pin_veto"] += 1
+                    _fstep("drop_pin_veto")
                     continue  # Model too far above market anchor — skip
 
                 # CAL-SHARP-GATE: skip 1X2 home bets when sharp books collectively
@@ -3777,7 +3809,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 if mkt == "1X2" and selection == "Home":
                     sc = sharp_consensus_by_match.get(str(match_id))
                     if sc is not None and sc < -0.02:
-                        _funnel[bot_name]["drop_sharp_gate"] += 1
+                        _fstep("drop_sharp_gate")
                         continue  # Sharps say home is less likely — skip
 
                 # P2: Odds movement — soft penalty, hard veto only >10%
@@ -3789,7 +3821,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 odds_mv = odds_movement_cache[mv_key]
 
                 if odds_mv["veto"]:
-                    _funnel[bot_name]["drop_odds_mv"] += 1
+                    _fstep("drop_odds_mv")
                     continue  # Market moved >10% against pick — hard skip
 
                 # PIN-CROSS-DRIFT (2026-06-03): cross-market veto for non-1X2 bets.
@@ -3835,13 +3867,9 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     )
                     if _pin_cross_drift_decision["should_veto"]:
                         # Always log so we can validate shadow predictions.
-                        _funnel[bot_name]["drop_pin_cross_drift_shadow"] = (
-                            _funnel[bot_name].get("drop_pin_cross_drift_shadow", 0) + 1
-                        )
+                        _fstep("drop_pin_cross_drift_shadow")
                         if os.getenv("PIN_CROSS_DRIFT_VETO_ENABLED", "false").lower() in ("true", "1", "yes"):
-                            _funnel[bot_name]["drop_pin_cross_drift"] = (
-                                _funnel[bot_name].get("drop_pin_cross_drift", 0) + 1
-                            )
+                            _fstep("drop_pin_cross_drift")
                             continue
                         # Shadow mode: bet still placed; we attach the decision
                         # to reasoning so we can query "which bets would have
@@ -3850,7 +3878,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 # P4: Kelly fraction (using calibrated prob)
                 kelly = compute_kelly(cal_prob, odds)
                 if kelly <= 0:
-                    _funnel[bot_name]["drop_kelly_zero"] += 1
+                    _fstep("drop_kelly_zero")
                     continue
 
                 # P3: Alignment — ALN-1 active (2026-05-12)
@@ -3882,12 +3910,13 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         elif eff <= -0.01:
                             eff_bump = 0.01
 
+                _fctx["threshold"] = me + aln_bump + eff_bump
                 if edge < me + aln_bump + eff_bump:
                     # Charge the funnel bucket whose bump made the difference.
                     if eff_bump > 0 and edge >= me + aln_bump:
-                        _funnel[bot_name]["drop_league_eff_edge"] = _funnel[bot_name].get("drop_league_eff_edge", 0) + 1
+                        _fstep("drop_league_eff_edge")
                     else:
-                        _funnel[bot_name]["drop_aln1"] += 1
+                        _fstep("drop_aln1")
                     continue
 
                 # BOT-HIGH-ALIGNMENT (2026-05-25): per-bot minimum alignment-class
@@ -3900,7 +3929,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     cur_rank = _ALN_RANK.get(alignment["alignment_class"], 0)
                     min_rank = _ALN_RANK.get(_min_aln, 0)
                     if cur_rank < min_rank:
-                        _funnel[bot_name]["drop_min_alignment"] = _funnel[bot_name].get("drop_min_alignment", 0) + 1
+                        _fstep("drop_min_alignment")
                         continue
 
                 # P4: Kelly-based stake sizing with soft odds penalty
@@ -3912,15 +3941,19 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     odds_penalty=odds_mv.get("penalty", 0.0),
                 )
                 if stake < 1.0:
-                    _funnel[bot_name]["drop_stake_low"] += 1
+                    _fstep("drop_stake_low")
                     continue
 
-                _funnel[bot_name]["accepted"] += 1
+                _fstep("accepted")
                 bet_candidates.append((mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake, os_market, os_selection))
 
             bet_candidates.sort(key=lambda x: x[6], reverse=True)
 
             for mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake, os_market, os_selection in bet_candidates:
+                _fctx = {"source": "pipeline", "bot": bot_name, "match_id": str(match_id),
+                         "market": os_market, "selection": os_selection, "odds": odds,
+                         "raw_prob": raw_mp, "fair_prob": cal_prob, "fair_source": "model_cal",
+                         "threshold": None, "bookmaker": None, "quote_age_min": None}
                 # T1: AF prediction agreement
                 af_agrees = _af_agrees_with_bet(selection, af_pred)
 
@@ -3960,7 +3993,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                             opening_implied=ip,
                         )
                         if not _meta.should_fire(meta_score):
-                            _funnel[bot_name]["drop_meta_b_ml3"] = _funnel[bot_name].get("drop_meta_b_ml3", 0) + 1
+                            _fstep("drop_meta_b_ml3")
                             continue
                 except Exception:
                     # Never let meta scoring kill a placement — graceful fallthrough.
@@ -4130,6 +4163,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 console.print(f"  [red dim]{traceback.format_exc()}[/red dim]")
         else:
             console.print(f"\n[yellow]SHADOW [{shadow_cohort}] — no candidate bets[/yellow]")
+        _flush_funnel()
         if verbose_funnel:
             _print_funnel(_funnel, verbose_funnel_bot, _near)
         # SHADOW-BOTS-MULTI-COHORT-EARLY-RETURN-FIX-2026-08-21: run the
@@ -4162,6 +4196,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
 
     cohort_label = f" [{cohort} cohort]" if cohort else " [all bots]"
     console.print(f"\n[bold green]Done! {total_bets} bets placed{cohort_label}[/bold green]")
+    _flush_funnel()
     if verbose_funnel:
         _print_funnel(_funnel, verbose_funnel_bot, _near)
     console.print("[green]All data stored in Supabase — frontend can display it now[/green]")
