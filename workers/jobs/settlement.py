@@ -1209,6 +1209,21 @@ def fetch_post_match_enrichment() -> dict:
                 result["stats"] = 1
                 if ht_stats:
                     result["halftime"] = 1
+                # FIELD-PRESENCE COUNTERS ([[#078]], 2026-09-23).
+                #
+                # The xG parse is `if xg is not None` with no logging, so a
+                # SUPPLIER WITHDRAWING THE FIELD is indistinguishable from a quiet
+                # day. That is exactly what happened and it took a manual probe to
+                # notice: daily xG on our stats rows fell from 109/156 (08-30) to
+                # 0-1/day across 09-04..08 while stats-row volume held steady, and
+                # nothing anywhere went red or even noisy.
+                #
+                # Counting presence per run makes the next withdrawal visible the
+                # day it happens instead of the month someone goes looking.
+                if full_stats.get("xg_home") is not None:
+                    result["xg_present"] = 1
+                if full_stats.get("shots_insidebox_home") is not None:
+                    result["shotloc_present"] = 1
         except Exception as e:
             console.print(f"    [yellow]Stats error for fixture {af_id}: {e}[/yellow]")
 
@@ -1269,6 +1284,9 @@ def fetch_post_match_enrichment() -> dict:
                 counts["halftime"] += r["halftime"]
                 counts["events"] += r["events"]
                 counts["players"] += r["players"]
+                # [[#078]] — see the per-match block for why these are counted.
+                counts["xg_present"] = counts.get("xg_present", 0) + r.get("xg_present", 0)
+                counts["shotloc_present"] = counts.get("shotloc_present", 0) + r.get("shotloc_present", 0)
             except Exception:
                 pass
 
@@ -2804,6 +2822,17 @@ def run_settlement():
             f"{enrichment_counts['players']} player stat rows | "
             f"{enrichment_counts.get('skipped', 0)} already enriched (skipped)"
         )
+        # FIELD PRESENCE ([[#078]]). Printed every run so a supplier withdrawing a
+        # field is visible immediately rather than months later. AF dropped xG
+        # from whole leagues between 2026-08-30 and 09-08 and nothing noticed.
+        _st = enrichment_counts.get("stats", 0)
+        if _st:
+            _xg = enrichment_counts.get("xg_present", 0)
+            _sl = enrichment_counts.get("shotloc_present", 0)
+            console.print(
+                f"  field presence: xG {_xg}/{_st} ({100*_xg/_st:.0f}%) | "
+                f"shot-location {_sl}/{_st} ({100*_sl/_st:.0f}%)"
+            )
     except Exception as e:
         console.print(f"  [yellow]Post-match enrichment error: {e}[/yellow]")
 

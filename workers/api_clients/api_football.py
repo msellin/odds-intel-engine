@@ -695,9 +695,33 @@ def get_fixture_statistics(fixture_id: int) -> list[dict]:
     'statistics_2h', 'team'].
 
     This is why `get_fixture_statistics_halftime` no longer makes its own calls.
+
+    ⚠️ HALF=TRUE RETURNS NOTHING AT ALL FOR A LARGE SLICE OF FIXTURES
+    ([[#078]], measured 2026-09-23). It is not a graceful degradation to
+    full-match-only — AF answers `results: 0` and we get an EMPTY LIST, so the
+    fixture looks like it has no statistics rather than no half splits. Sampling
+    one fixture per year straight from our own ledger:
+
+        2018 plain=2 half=0      2022 plain=2 half=0
+        2019 plain=2 half=0      2023 plain=2 half=0
+        2020 plain=2 half=0      2024 plain=2 half=2
+        2021 plain=2 half=2      2025 plain=2 half=2
+                                 2026 plain=2 half=2
+
+    It is per-fixture, not a clean date cutoff — 2021 works while 2022 and 2023
+    do not. Recent fixtures are unaffected, so the live pipeline was never losing
+    data; what was lost is REACH INTO HISTORY, silently, for every caller.
+
+    So: ask for the half splits, and if that comes back empty, ask again without
+    them. The retry costs one extra call ONLY in the case where we currently get
+    nothing, which is the one case where an extra call is obviously worth it.
     """
     data = _get("fixtures/statistics", {"fixture": fixture_id, "half": "true"})
-    return data.get("response", [])
+    resp = data.get("response", [])
+    if not resp:
+        data = _get("fixtures/statistics", {"fixture": fixture_id})
+        resp = data.get("response", [])
+    return resp
 
 
 def parse_fixture_stats(stats_response: list[dict]) -> dict:
@@ -736,6 +760,37 @@ def parse_fixture_stats(stats_response: list[dict]) -> dict:
         result[f"pass_accuracy_{prefix}"] = _parse_int(stats.get("Passes accurate"))
         result[f"blocked_shots_{prefix}"] = _parse_int(stats.get("Blocked Shots"))
         result[f"shots_on_target_{prefix}"] = _parse_int(stats.get("Shots on Goal"))
+
+        # SHOT LOCATION ([[#078]], 2026-09-23). AF has always sent these and we
+        # have always thrown them away — grep found ZERO references to
+        # `insidebox` in the whole repo before this.
+        #
+        # WHY THEY MATTER MORE THAN THE SHOT TOTALS NEXT TO THEM. A shot from
+        # inside the box converts several times more often than one from
+        # outside, so "12 shots" is a far weaker statement than "5 inside, 7
+        # outside". This is the crudest useful proxy for shot QUALITY, and it is
+        # the only one obtainable from this endpoint: real xG needs per-shot
+        # COORDINATES, which /fixtures/statistics does not carry at any plan
+        # level and /fixtures/events does not either (it returns goals, cards
+        # and substitutions — not every shot).
+        #
+        # ⚠️ AND THEY ARE PRESENT WHERE xG IS NOT. Verified live 2026-09-23:
+        # Argentine Liga Profesional fixture 1493144 returns the full
+        # inside/outside split and NO `expected_goals` field at all, on a league
+        # that carried 109 xG matches in the preceding 90 days. 30,446 of our
+        # 56,463 stats rows have no xG; nearly all of them can carry this.
+        result[f"shots_insidebox_{prefix}"] = _parse_int(stats.get("Shots insidebox"))
+        result[f"shots_outsidebox_{prefix}"] = _parse_int(stats.get("Shots outsidebox"))
+
+        # goals_prevented — post-shot xG on the KEEPER's side (shot quality faced
+        # minus goals conceded). Served alongside expected_goals and likewise
+        # discarded until now.
+        gp = stats.get("goals_prevented")
+        if gp is not None:
+            try:
+                result[f"goals_prevented_{prefix}"] = float(gp)
+            except (ValueError, TypeError):
+                pass
 
         # xG (API-Football has it for some top leagues)
         xg = stats.get("expected_goals") or stats.get("Expected Goals")
@@ -1567,6 +1622,9 @@ def parse_fixture_stats_halftime(halftime_response) -> dict:
         result[f"offsides_{prefix}_ht"] = _parse_int(stats.get("Offsides"))
         result[f"yellow_cards_{prefix}_ht"] = _parse_int(stats.get("Yellow Cards"))
         result[f"passes_{prefix}_ht"] = _parse_int(stats.get("Total passes"))
+        # Same fields at half-time — see the full-match block for why ([[#078]]).
+        result[f"shots_insidebox_{prefix}_ht"] = _parse_int(stats.get("Shots insidebox"))
+        result[f"shots_outsidebox_{prefix}_ht"] = _parse_int(stats.get("Shots outsidebox"))
 
         poss = stats.get("Ball Possession", "")
         if isinstance(poss, str) and "%" in poss:

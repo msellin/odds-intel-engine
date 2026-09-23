@@ -2723,6 +2723,11 @@ _MATCH_STATS_FIELDS = [
     "offsides_home", "offsides_away",
     "saves_home", "saves_away",
     "blocked_shots_home", "blocked_shots_away",
+    # SHOT LOCATION ([[#078]]) — see api_football.py for why these matter and
+    # why they are the only shot-quality signal this endpoint can give us.
+    "shots_insidebox_home", "shots_insidebox_away",
+    "shots_outsidebox_home", "shots_outsidebox_away",
+    "goals_prevented_home", "goals_prevented_away",
     "passes_home", "passes_away",
     "pass_accuracy_home", "pass_accuracy_away",
     "yellow_cards_home", "yellow_cards_away",
@@ -2737,6 +2742,8 @@ _MATCH_STATS_FIELDS = [
     "yellow_cards_home_ht", "yellow_cards_away_ht",
     "xg_home_ht", "xg_away_ht",
     "passes_home_ht", "passes_away_ht",
+    "shots_insidebox_home_ht", "shots_insidebox_away_ht",
+    "shots_outsidebox_home_ht", "shots_outsidebox_away_ht",
 ]
 
 

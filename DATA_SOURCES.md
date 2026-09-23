@@ -390,6 +390,21 @@ That supports a **binned shot-quality model** — location × outcome instead of
 exact coordinate — fitted on our own goals. An approximation, and it must be named
 as one wherever it surfaces. Never call it xG.
 
+### And a silent reach-into-history bug found alongside it (2026-09-23)
+
+`get_fixture_statistics` always sent `half=true`. That parameter does not
+degrade — AF answers `results: 0`, so the caller gets an empty list and the
+fixture looks like it has **no statistics at all**. One fixture sampled per year
+from our own ledger, plain vs `half=true`: **2018, 2019, 2020, 2022, 2023 all
+return 2 vs 0**; 2021, 2024, 2025, 2026 return 2 vs 2. Per-fixture, not a clean
+cutoff.
+
+Recent fixtures are unaffected, so the live pipeline never lost rows — what was
+lost is **reach into history, silently, for every caller**. The wrapper now
+retries without the parameter when the half call is empty. It costs one extra
+request only where we previously got nothing, and immediately recovered a 2018
+fixture (11/3 and 4/2 inside/outside shots).
+
 **If buying instead:** Understat is shot-level with coordinates and free, but
 **6 leagues only**; Sportmonks sells xG as a €15/mo add-on. FBref **lost xG in
 January 2026** (Opta termination) and is no longer an option.

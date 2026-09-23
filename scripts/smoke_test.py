@@ -51285,5 +51285,68 @@ def test_ou_shots_corners_controlled():
         "correction provably cannot move it — cite that, do not assume it")
 
 
+@test("SHOT-LOCATION-STORED — the fields AF sends us are parsed, stored, and counted")
+def test_shot_location_stored():
+    """SHOT-LOCATION-FIELDS-DISCARDED ([[#078]], 2026-09-23).
+
+    `Shots insidebox` / `Shots outsidebox` are in every /fixtures/statistics
+    response we already pay for. We stored NEITHER — grep returned zero hits for
+    `insidebox` in the whole repo. They are present on fixtures with no
+    `expected_goals` at all (verified live on Argentine fixture 1493144), and
+    30,446 of our 56,463 stats rows have no xG.
+
+    Three things are pinned, each of which cost real investigation to find:
+
+      1. the fields are parsed AND in the storage list — parsing without storing
+         is the exact failure this row exists to fix;
+      2. `get_fixture_statistics` keeps its no-half FALLBACK. `half=true` does
+         not degrade to full-match-only, it returns results:0 — so the wrapper
+         silently got NOTHING for 2018/2019/2020/2022/2023 fixtures that answer
+         fine without the parameter. That fallback is eight years of reachable
+         history;
+      3. field presence is COUNTED per run. The xG parse was `if xg is not None`
+         with no logging, so AF withdrawing the field from whole leagues between
+         2026-08-30 and 09-08 looked exactly like a quiet day.
+    """
+    import inspect
+    from pathlib import Path
+    base = Path(__file__).parent.parent
+
+    af = (base / "workers" / "api_clients" / "api_football.py").read_text()
+    for field in ("Shots insidebox", "Shots outsidebox", "goals_prevented"):
+        assert field in af, f"api_football must parse `{field}` — AF sends it on every response"
+    for col in ("shots_insidebox_", "shots_outsidebox_"):
+        assert col in af, f"parse must emit {col}home/away"
+
+    sc = (base / "workers" / "api_clients" / "supabase_client.py").read_text()
+    for col in ("shots_insidebox_home", "shots_insidebox_away",
+                "shots_outsidebox_home", "shots_outsidebox_away",
+                "goals_prevented_home", "goals_prevented_away"):
+        assert f'"{col}"' in sc, (
+            f"{col} is parsed but NOT in _MATCH_STATS_FIELDS — parsing a field and "
+            f"then dropping it on the floor is the exact defect [[#078]] is about")
+
+    from workers.api_clients import api_football as m
+    src = inspect.getsource(m.get_fixture_statistics)
+    assert src.count('_get("fixtures/statistics"') >= 2, (
+        "get_fixture_statistics must retry WITHOUT half=true when the half call "
+        "returns empty — half=true answers results:0 rather than degrading, so "
+        "without the fallback 2018-2023 fixtures look like they have no stats")
+    assert "if not resp" in src, "the fallback must trigger on an empty response"
+
+    st = (base / "workers" / "jobs" / "settlement.py").read_text()
+    assert "xg_present" in st and "shotloc_present" in st, (
+        "field presence must be counted per run — a silent parse is how a "
+        "supplier withdrawing xG went unnoticed for three weeks")
+    assert "field presence:" in st, "the counts must be PRINTED, not just collected"
+
+    mig = (base / "supabase" / "migrations" / "376_shot_location_fields.sql").read_text()
+    for col in ("shots_insidebox_home", "shots_outsidebox_away", "goals_prevented_home"):
+        assert col in mig, f"migration 376 must add {col}"
+    assert "NOT be presented as xG" in mig or "not be called xG" in mig.lower(), (
+        "the migration must record that these columns support a shot-QUALITY "
+        "index and not xG — real xG needs per-shot coordinates we do not have")
+
+
 if __name__ == "__main__":
     main()
