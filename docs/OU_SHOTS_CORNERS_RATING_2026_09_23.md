@@ -98,3 +98,67 @@ Only one thing, and it is not a model: **execution**. Wheatcroft's edge is
 **average odds** (6.8%) — he states the strategy still identifies value at average
 odds and simply cannot clear the vig. With two Estonian books we are on the losing
 side of that split regardless of what any model returns.
+
+---
+
+## ⚠️ What this does NOT establish — scoping added 2026-09-23 after the owner asked
+
+Owner: *"so you are saying there is no model on earth that can beat OU market?"*
+
+**No. Nothing here supports that, and the published evidence points the other
+way.** The claim this file makes is much narrower, and the difference is the most
+important thing on this page.
+
+### Two different questions that keep getting merged
+
+| | question | how it is measured | our answer |
+|---|---|---|---|
+| **Forecast** | can a model out-predict the SHARP line? | α against de-vigged Pinnacle | **No — four zeros** |
+| **Price** | can a model find books offering worse-than-consensus prices? | realised return at best available price | **Yes, measured, +2.2% on O/U** |
+
+Everything in this document, and in the three measurements before it, answers the
+**first** question only. α is fitted against **de-vigged Pinnacle** — one of the
+sharpest references in the world. "We cannot out-forecast Pinnacle" is a real
+finding and a narrow one.
+
+### The one well-powered published O/U edge did NOT beat the forecast either
+
+Wheatcroft (2020) **is** a model beating the O/U market — +0.8%/bet over 68,672
+bets, Bonferroni-corrected. But read where the edge lives:
+
+| price basis | mean overround | result |
+|---|---|---|
+| max across all bookmakers | **1.57%** | **+0.8%/bet, significant** |
+| average across bookmakers | **6.8%** | **substantial loss** |
+
+Same model, same bets, same period. He states the strategy still *identifies
+value* at average odds and simply cannot clear the vig. **So the published edge is
+dispersion, not forecasting.** He did not out-predict the consensus; he found
+books priced away from it.
+
+### Our own data says the same thing, from the other side
+
+`docs/BOOK_SET_COUNTERFACTUAL_2026_09_22.md`: opening the accessible book set is
+worth **+2.2% mean price uplift on O/U** and **+52% to +76% more O/U picks at an
+identical mean price** — both marked robust. That is the same mechanism
+Wheatcroft's profit came from, measured on our own fixtures.
+
+So the coherent picture is not "O/U is unbeatable". It is: **the forecasting edge
+is absent for us, and the profitable mechanism is execution — which is the thing
+two Estonian books structurally cannot give us.**
+
+### The honest limits of even the narrow claim
+
+* **xG coverage is 4%.** The standard modern input is effectively absent. A model
+  with full xG, full lineups and referee data has not been tried here, and this
+  file is no evidence about it.
+* **Coverage is not random** — MLS, English Championship and League One, Argentine
+  Primera, Brazilian Série B.
+* **n = 2,811**, one pooled cell.
+* **Nobody has published an O/U test against CLOSING lines at all**, so the
+  hardest version of the forecast question is untested in the literature as well
+  as here.
+
+**What is fair to say:** *we* cannot out-forecast Pinnacle on O/U, on our data,
+with four attempts across three model families and two inputs. **What is not fair
+to say:** that nobody can.
