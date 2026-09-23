@@ -51,7 +51,7 @@ operator. **Checked 2026-09-23 — and first misreported:** Betano IS in
 `ACCESSIBLE_BOOKMAKERS` (`daily_pipeline_v2.py`, commented "EMTA-licensed"); that
 set was verified against EMTA's BLOCKED-domain list, not the licence register, and
 Betano is on neither. So live OWN paths treat it as placeable. Also in two paper
-bots' `PLACEMENT_BOOKS`. Owner decision needed — see #101.
+bots' `PLACEMENT_BOOKS`. **Resolved 2026-09-23:** removed from `ACCESSIBLE_BOOKMAKERS` (owner cannot bet there).
 
 ## Recommended build order — ⚠️ SUPERSEDED same day
 

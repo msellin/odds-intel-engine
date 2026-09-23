@@ -1182,7 +1182,10 @@ ACCESSIBLE_BOOKMAKERS: frozenset = frozenset({
     # Unibet stays: only unibet.co.uk and unibet.net are blocked; unibet.ee is
     # licensed, which its own calls confirm (jurisdiction=EE).
     "Coolbet",        # placement venue
-    "Betano",         # EMTA-licensed, 95.1% coverage of fixtures we bet
+    # Betano REMOVED 2026-09-23 (owner: cannot bet there). It was labelled
+    # EMTA-licensed, but this set was verified against EMTA's BLOCKED-domain list,
+    # not the licence register, and Betano is in neither. Absent from the register =
+    # not a book an Estonian operator can use, whatever its coverage (95.1%).
     # AF-UNIBET-PHANTOM-2026-09-14: the placeable Unibet entry is the SELF-SCRAPED
     # "Unibet-Site", not API-Football's "Unibet". Two independent reasons, either
     # of which is sufficient:

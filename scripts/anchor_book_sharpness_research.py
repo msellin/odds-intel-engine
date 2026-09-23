@@ -94,7 +94,7 @@ from workers.model.devig import devig  # noqa: E402
 EXCLUDED_BOOKS = ("Unibet", "Unibet-Kambi", "Max", "Avg", "Betfair Exchange",
                   "BetWin", "Betfred")
 SIDES = ("home", "draw", "away")
-OUR_BOOKS = {"Coolbet", "Epicbet", "Unibet-Site", "Betano"}
+OUR_BOOKS = {"Coolbet", "Epicbet", "Unibet-Site", "Tonybet"}  # Betano out 2026-09-23: not bettable from EE
 REFERENCE = "Pinnacle"
 MIN_PAIRED_N = 100          # below this a paired median is not worth printing
 # ANALYSIS_GOTCHAS §9 — the guard the PRODUCTION line-shop path already applies

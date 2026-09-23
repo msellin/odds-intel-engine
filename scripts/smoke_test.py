@@ -13984,7 +13984,7 @@ def _():
     # bet, so it was setting "best price" on much of our reported edge while
     # being unreachable — margin 5.66% -> 6.59% once removed, and 141 of 1,651
     # settled picks turn out to have had no legal price at all.
-    for bad in ("Pinnacle", "Bet365", "Marathonbet", "10Bet", "888Sport"):
+    for bad in ("Pinnacle", "Bet365", "Marathonbet", "10Bet", "888Sport", "Betano"):
         assert f'"{bad}"' not in _acc_block, (
             f"{bad} is back in the PLACEABLE set. It is on EMTA's blocked-domain "
             "list (or, for Bet365, its AF feed is inflated) — either way it "
