@@ -1010,6 +1010,11 @@ def load_training_data(include_pinnacle: bool = False,
     # Not a feature — never enters the X matrix.
     if "league_country" in df.columns:
         target_cols.append("league_country")
+    # [[#089]] arms join derived, walk-forward features by match_id. Carried in
+    # targets (never X) because re-querying ids separately cannot be aligned:
+    # the ORDER BY is match_date only, so same-day ties have no stable order.
+    if "match_id" in df.columns:
+        target_cols.append("match_id")
     targets_df = df[target_cols].copy()
     targets_df["score_home"] = pd.to_numeric(targets_df["score_home"], errors="coerce")
     targets_df["score_away"] = pd.to_numeric(targets_df["score_away"], errors="coerce")

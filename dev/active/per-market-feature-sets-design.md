@@ -204,11 +204,19 @@ we run for 1x2 and O/U, today.
 
 ### What the per-market principle says about each
 
-* **Asian handicap** is a DIFFERENCE market — it is the 1x2 head's structure with
-  a continuous line instead of three buckets. It should share the 1x2 feature set
-  almost exactly, and Hegarty & Whelan (2024, *IJF*) find the **AH market is
-  efficient and shows no favourite-longshot bias while 1x2 does** (average loss
-  3.6% vs 7.8%). Cheaper to lose in, harder to beat.
+* **Asian handicap** is a DIFFERENCE market — but **only the 0 and ±0.5 lines
+  are pure difference, and those add nothing over 1x2** (−0.5 IS P(home win); 0
+  is P(H)/(P(H)+P(A))). Lines of ±1 and wider depend on the TOTAL too, because
+  under Skellam the goal difference has mean λh−λa and **variance λh+λa**.
+  *[CORRECTED 2026-09-23 — this line previously said AH "should share the 1x2
+  feature set almost exactly", which is wrong for every line we would actually
+  price beyond ±0.5.]* Efficiency, with the citation fixed (the earlier line
+  conflated two papers): Hegarty & Whelan, *IJF* 41(2) 2025, 84,230 matches,
+  **average-of-books** closing odds — AH loses **3.6%** vs 1x2 **7.8%**, no
+  favourite-longshot bias; and the same authors, *Rev. Behavioral Finance*
+  16(5) 2024, on **Pinnacle** — AH is NOT uniform across lines: whole-goal lines
+  ~2.97%, **half-goal lines ~4.8%**. We can bet only full and half lines, so the
+  line type we can use is the most expensive one.
 * **Team totals** are a *marginal* market — λ_home alone, not the sum and not the
   difference. **A third shape**, and the one our current architecture is least
   able to express. We already fit `home_goals` and `away_goals` heads, so this is
@@ -227,3 +235,161 @@ multiplies the multiple-comparison problem**. Testing eight markets and reportin
 the best one is exactly the trap `ANALYSIS_GOTCHAS §47` and the permutation
 designs in [[#073]] exist to prevent. **Any multi-market sweep must carry a
 family-wise correction from the start**, not as an afterthought.
+
+---
+
+## Pre-registration — O/U arms (2026-09-23, written BEFORE the first run)
+
+Owner's framing, which sets the bar: *"in the end we want working models, not
+hundreds of bad picks"* — the consensus arm fires many picks and is not
+profitable, and model bets must not repeat that.
+
+**Script:** `scripts/ab_ou_feature_arms.py`. Cutoff 2026-08-20 (train strictly
+before, test on/after). Market O/U 2.5 only.
+
+### The family — fixed at six, so the correction cannot get easier later
+
+| arm | inputs | question it answers |
+|---|---|---|
+| **A** | shipped 52 (incl. market prices) | control |
+| **A0** | A minus every market-derived input | does the 52 know anything without the market's help? |
+| **C** | 11 SUM-shaped, goals-fed, no market | does the right SHAPE and SIZE help? |
+| **CM** | C + Pinnacle 1x2 and O/U implied probs | owner's question: prices in the model — better, or a copy of the market? |
+| **D** | shots-fed sum-shaped | waits for the [[#078]] columns backfill |
+| **E** | C with D's shots terms where they exist | same gate as D |
+
+Arm C: `exp_total` (λh+λa, recovered exactly from the stored walk-forward #084
+ratings), `ht_share_expected`, `lam_min`, `lam_max`, `elo_sum`, `elo_absdiff`,
+`league_goals_wf`, `league_over25_wf` (decayed, 300-day half-life, same-day
+matches never see each other), `rest_days_home/away`, `league_tier`.
+
+### (a) Is the model correct — PASS bar (unchanged from every earlier test)
+
+On the **REALISTIC** harness arm: α > 0.02 **AND** blend log-loss < market
+log-loss **AND** Holm-adjusted p < 0.05 over **m = 6**, where p is one-sided on
+the per-fixture log-loss improvement of the blend over the market in the held-out
+half. The optimistic arm is printed and does not decide (the lesson of [[#084]],
+where the two arms disagreed about the sign).
+
+**Reading A/CM:** an arm handed Pinnacle's price can post α > 0 partly by
+re-predicting the market. So "prices in or out" is decided by the PAIRS —
+A vs A0, CM vs C — on model-alone log-loss and on (b), never by one α alone.
+
+### (b) Does it make money — the backtest, reported for every arm
+
+Held-out half only; decision at **T-2h** (last price ≥120 min before kickoff);
+executable price **Coolbet only** (§55); judged on **CLV vs de-vigged Pinnacle
+close** (§8), with ROI and **bets/day** beside it. Floors 3 / 5 / 8%. Three
+strategies: **BLEND** (what we would ship), **RAW** (model alone — today's
+`bot_v10_ou` shape), **MARKET** (α = 0 — the sharp-anchor baseline). A model
+strategy only counts if it beats MARKET on CLV at the same floor.
+
+⚠️ A/CM's price features come from `match_signals` rows of unrecorded capture
+time, possibly later than T-2h — their backtest rows may be optimistic.
+
+### What happens next depends on the result
+
+* **An arm passes (a) and beats MARKET on (b):** a selectivity study (CLV by
+  disagreement band, expected bets/day stated up front), then a PAPER bot. No
+  real money before a paper window.
+* **Nothing passes:** no model bot. That is the answer, not a reason to loosen
+  the bar.
+
+### Expected result, stated before running
+
+α = 0 on A, A0 and C — the normal published result against a sharp line and
+the fifth-time result here. CM's α may be > 0 but should NOT beat A0/C on
+backtest CLV at T-2h if the market-price features are doing the work. RAW
+strategies should show NEGATIVE CLV at every floor (they are today's losing
+bot shape); MARKET at T-2h may show small positive CLV — that is the
+sharp-anchor edge, not a model edge.
+
+---
+
+## Research landed 2026-09-23 — AH, team totals, 1H, corners, cards
+
+Scratch reports from three literature agents, merged here. [V] = primary text
+read, [A] = abstract only, [D] = derivation.
+
+| market | shape | proposed size | beatability evidence | expected α |
+|---|---|---|---|---|
+| **AH** | difference; ±1+ lines also need the total [D] | ~8: `elo_diff`, explicit home adv, `exp_total` (wide lines), split home/away strengths from `league_standings` (99.77%, read by nothing), shots diff, rest diff, line type | the best-documented EFFICIENT football market [V] | 0 |
+| **team totals** | MARGINAL λ of one team; Dixon-Coles ρ **cancels out of both marginals exactly** [D], so independent Poisson is structurally right | ~7: own attack × opp defence (Maher), shots for/opp against, venue split, `failed_to_score_pct` + opp `clean_sheet_pct` (96.87%, unused), `league_avg_goals`, league dispersion | **no literature**; and team goal rates barely beat the league mean (away 0.87 vs 0.85 — worse) | ~0 |
+| **1H markets** | same three shapes on λ_1H ≈ s·λ_FT; s ≈ 0.44 [D from Maia 2023 V] — **measure s on our 172k HT scores** | ~6, a thin layer on the FT heads: FT λs, team + league 1H share, dependence term (0-0 dominates 1x2_1h), red-card/game-state priors | **no literature** pre-match; Pinnacle 1x2_1h only 3,439 matches → underpowered | unknown, low power |
+| **corners** | overdispersed (var/mean 1.186 vs goals 1.040, Yip et al. JORS 2024 [V]); total = SUM, team = marginal, handicap = difference | ~8: team corners for/against (4), Pinnacle-implied expected goals (+16.7% corners per expected goal), implied supremacy (drives the SPLIT, not the total), league corner mean + dispersion | small literature; the "profitable" results are one soft-book **under** bias (Betfair EPL under 10.5, p=0.001) that failed on transfer to the Bundesliga; best CV R² 0.017. **Our own corners bot: −4.86% CLV, t=−12.9, n=467** | ~0 |
+| **cards** | team yellows are UNDER-dispersed (var/mean 0.79-0.97, Philipson *JRSS A* 2026, 7,203 matches [V]) and home/away POSITIVELY correlated (τ 0.08-0.18) — so NB and bivariate-Poisson are the wrong defaults; two marginals + copula, total derived. 65.8% of yellows in 2H | ~9: league-season base rate, referee multiplier shrunk to league (0.81-1.23×), team received rates (shrunk), de-vigged 1x2 closeness q(1−q), home flag (0.88×), derby, match stakes, team fouls (33% — secondary) | the closest published analogue (Hargreaves & Powell 2022, with Sky Bet) found **no out-of-sample skill** (0.4920 vs 0.4998 constant, n.s.); **no literature** on card markets vs a closing line | ~0 |
+
+**Cards — our own data has three defects to fix before any card head:**
+`referee_cards_avg` is built from `match_stats` (~33% coverage) and filled on
+7.4% of matches — rebuild from `match_events` (81%) with shrinkage; AF events
+may include coach/bench cards that books do NOT count (label inflation,
+unverified); and a late-filled referee name would leak in backtest (check fill
+vs hours-before-kickoff). Book settlement rules differ (Pinnacle yellow=1,
+red=2; bet365 booking points 10/25) — the label must follow the book we bet.
+
+**Two things this changes:**
+
+1. **Half-life is not settled.** Dixon & Coles (1997) optimised ξ on match
+   OUTCOMES and got ~373 days [A] — which contradicts the 30-90 days this doc
+   gives the 1x2 head. Totals at ~300 days (W&S) is not in conflict. Treat the
+   1x2 half-life as a parameter to sweep, not a fact.
+2. **The corner "edge" is a soft-book pricing bias, not model alpha** — if it
+   is real it belongs to 🤖 OWN placement (Coolbet/Epicbet unders vs Pinnacle
+   close) as its own pre-registered check, not to a corners model head.
+
+Referee, weather, corner time-decay and 1H efficiency: **no literature found** —
+recorded as the answer, per the CLAUDE.md rule.
+
+---
+
+## RESULT — O/U arms A / A0 / C / CM (2026-09-23, first run)
+
+n = 9,127 held-out fixtures; CHECK R passed (in-process scorer reproduces
+`residual_test_ou.py` on arm A). Mean-fill scoring decides; A with the harness's
+zero-fill shown for scale.
+
+| arm | α (REALISTIC) | model LL | model AUC | blend LL vs market 0.6737 | p | Holm p (m=6) | verdict |
+|---|---|---|---|---|---|---|---|
+| A (52, with prices) | 0.140 | 0.6764 | 0.5952 | 0.6735 | 0.233 | 1.000 | FAIL |
+| **A0 (52, no prices)** | **0.000** | **0.6901** | **0.5104** | 0.6737 | — | 1.000 | FAIL |
+| **C (11, sum-shaped, no prices)** | 0.140 | **0.6809** | **0.5787** | 0.6736 | 0.472 | 1.000 | FAIL |
+| CM (C + prices) | 0.315 | 0.6760 | 0.5966 | 0.6736 | 0.456 | 1.000 | FAIL |
+
+**(a) No arm passes.** Three post α > 0.02, but the blend improves log-loss by
+~0.0001 and no p comes near 0.05 even before correction. Sixth α-test, same
+answer: nothing beats Pinnacle.
+
+**The prices question, answered by the pairs:**
+* **A vs A0: the 52's apparent skill WAS the market price.** Take the prices out
+  and the 52-feature model is near coin-flip (AUC 0.510, LL 0.6901).
+* **C vs A0: shape and size matter a lot.** Eleven sum-shaped features without
+  prices (AUC 0.579, LL 0.6809) are far better than 52 features without prices
+  (0.510, 0.6901). That is the #089 hypothesis confirmed — for model quality,
+  not for edge.
+* **CM vs C: adding prices makes the model look better (LL 0.6809 → 0.6760) by
+  moving it toward the market, but never past it (0.6737).** Prices in the model
+  improve its resemblance to the market, not its edge. The rule "no prices in
+  the model we test" stands.
+
+**(b) Money — T-2h, Coolbet price, CLV vs de-vigged Pinnacle close, 2,994 fixtures:**
+
+| strategy | bets/day | CLV | t | reading |
+|---|---|---|---|---|
+| **RAW model, any arm** | 13–108 | **−4.2% to −7.2%** | −8 to −63 | the "hundreds of bad picks" mode — decisively negative, worst for the market-free arms (A0 RAW: 108/day at −7.2%) |
+| MARKET baseline (α=0, sharp anchor) | 2–8 | −0.5% / +0.5% / **+3.2%** at 3/5/8% | ≤1.5 | the only thing close to positive; not yet significant |
+| BLEND, A / C / CM | 2–8 | within ~±1.2pp of MARKET | ≤2.3 | indistinguishable from the baseline; CM 8% +4.4% t=2.3 is one cell of ~36 and carries the capture-time caveat |
+
+ROI is negative almost everywhere at these n (~40-150 bets per cell) and is not
+evidence either way (§8).
+
+**What this means, and what it does NOT:**
+* A raw model bot on O/U — any feature set — loses ~4-7% CLV per bet. **Never
+  ship a model-alone O/U bot.** This is the mechanism behind today's consensus-
+  style volume: without the market anchor, the model disagrees with Pinnacle
+  constantly and is wrong when it does.
+* The model adds nothing measurable on top of the market. The only candidate
+  edge in this data is the **sharp-anchor 8% floor at T-2h** (+3.2%, 2.3
+  bets/day, t=1.5) — which is #024's territory, not a model's.
+* **Not closed:** arm D/E (shots-fed) after the #078 backfill. C's big jump over
+  A0 says shape matters; shots are the one input the literature ranks above
+  goals. Expected result stays α = 0.

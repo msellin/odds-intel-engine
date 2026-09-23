@@ -51621,6 +51621,50 @@ def test_coolbet_sweep_observable():
         "the job invisible in the first place"
 
 
+@test("OU-ARMS-PREREGISTERED — #089 arms keep a fixed family, market-free arms and the harness check")
+def test_ou_arms_preregistered():
+    """[[#089]], 2026-09-23. The O/U feature-set arms are pre-registered in
+    `dev/active/per-market-feature-sets-design.md`. Four properties make the
+    comparison honest, and each is one quiet edit away from being lost:
+
+    1. The FAMILY is fixed at six (A, A0, C, CM, D, E) and Holm uses m = 6 even
+       while D/E wait for the backfill — shrinking m after seeing results is the
+       multiple-comparison trap (ANALYSIS_GOTCHAS §47).
+    2. A0 and C carry NO market-derived input. The owner's question "prices in
+       the model or not" is answered by the pairs A/A0 and CM/C; if C quietly
+       gains a price column the pair stops measuring anything.
+    3. CHECK R: the in-process scorer must reproduce `residual_test_ou.py` on arm
+       A before any arm's α is trusted — otherwise the numbers are not
+       comparable to the five earlier α = 0 results.
+    4. The league walk-forward READS a day's matches before ADDING any of them,
+       so a Saturday fixture is never scored by another Saturday result.
+    Plus a behavioural check of the Holm step-down itself.
+    """
+    import ast
+    from pathlib import Path
+    base = Path(__file__).parent.parent
+    src = (base / "scripts" / "ab_ou_feature_arms.py").read_text()
+
+    assert 'FAMILY = ("A", "A0", "C", "CM", "D", "E")' in src and "HOLM_M = len(FAMILY)" in src, (
+        "the arm family and Holm m must stay fixed at the pre-registered six")
+    assert "leak = set(arm_cols(arm)) & set(MARKET_DERIVED)" in src and '("A0", "C")' in src, (
+        "arms A0 and C must be asserted market-free at run time")
+    assert "CHECK R FAILED" in src and "harness_subprocess(" in src, (
+        "the in-process scorer must be checked against residual_test_ou.py")
+    wf = src[src.index("def league_walk_forward"):src.index("def add_derived")]
+    assert wf.index("1. decay + READ") < wf.index("2. THEN add"), (
+        "league walk-forward must read the whole day before adding any of it")
+    assert "minutes_to_kickoff >= %s" in src and "DECISION_MIN = 120" in src, (
+        "the backtest must decide on prices visible at T-2h, not near-close ones")
+
+    tree = ast.parse(src)
+    fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "holm")
+    ns: dict = {}
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), "holm", "exec"), ns)
+    adj = ns["holm"]({"x": 0.01, "y": 0.04, "z": 0.5}, 6)
+    assert abs(adj["x"] - 0.06) < 1e-9 and abs(adj["y"] - 0.20) < 1e-9 and adj["z"] == 1.0, adj
+
+
 @test("HALF-TIME-ONE-CONSTRUCTION — the probe must test the feature we actually ship")
 def test_half_time_one_construction():
     """[[#084]], 2026-09-23. RELIABILITY_LEDGER #23.
