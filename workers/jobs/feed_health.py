@@ -237,19 +237,74 @@ _COLS = ("feed_id", "label", "book", "category", "kind", "schedule", "interval_m
          "stale_after_min", "health_basis", "status", "status_reason", "last_run_at",
          "last_run_status", "last_run_seconds", "last_success_at", "last_error", "runs_24h",
          "failures_24h", "fail_streak", "last_data_at", "rows_1h", "rows_24h",
-         "service_state", "runbook")
+         "service_state", "runbook", "controls", "paused", "paused_reason", "paused_by",
+         "paused_at", "run_now_pending")
+
+FEEDS_URL = "https://www.oddsintel.app/admin/feeds"
+
+
+def _controls() -> dict[str, dict]:
+    try:
+        return {r["feed_id"]: r for r in execute_query(
+            """SELECT feed_id, paused, paused_reason, paused_by, paused_at,
+                      (run_now_requested_at IS NOT NULL AND (run_now_started_at IS NULL
+                         OR run_now_started_at < run_now_requested_at)) AS run_now_pending
+                 FROM feed_controls""") or []}
+    except Exception:  # noqa: BLE001 — table missing before migration 389
+        return {}
+
+
+def _alert_transitions(prev: dict[str, str], evals: list[dict]) -> int:
+    """Telegram on TRANSITIONS only: a feed newly red, or recovered from red. A feed
+    already red does not re-alert every 5 min; a paused feed never alerts (the
+    operator chose that). #108 ran 4 h with nobody told — this is the fix."""
+    from workers.notify.telegram import send_telegram
+    from workers.registry.feed_registry import FEEDS_BY_ID
+    sent = 0
+    for e in evals:
+        fid, new, old = e["feed_id"], e["status"], prev.get(e["feed_id"])
+        if old is None or new == old or new == "paused" or old == "paused":
+            continue
+        label = FEEDS_BY_ID[fid]["label"]
+        if new == "fail":
+            msg = (f"🔴 <b>{label}</b> is failing\n{e.get('status_reason') or ''}\n"
+                   f"<a href=\"{FEEDS_URL}\">Open /admin/feeds</a> — pause, run now, or check the error")
+        elif old == "fail" and new == "ok":
+            msg = f"🟢 <b>{label}</b> recovered\n<a href=\"{FEEDS_URL}\">/admin/feeds</a>"
+        else:
+            continue
+        try:
+            send_telegram(msg, dedup_key=f"feed-{fid}-{new}", dedup_window_s=3600)
+            sent += 1
+        except Exception as ex:  # noqa: BLE001
+            log.warning("feed alert %s failed: %s", fid, ex)
+    return sent
 
 
 def run_feed_health() -> dict:
     from workers.registry.feed_registry import FEEDS_BY_ID
     evals = evaluate()
+    ctl = _controls()
+    prev = {r["feed_id"]: r["status"] for r in (execute_query(
+        "SELECT feed_id, status FROM feed_status") or [])}
+    for e in evals:
+        c = ctl.get(e["feed_id"]) or {}
+        e["paused"] = bool(c.get("paused"))
+        e["paused_reason"], e["paused_by"], e["paused_at"] = (
+            c.get("paused_reason"), c.get("paused_by"), c.get("paused_at"))
+        e["run_now_pending"] = bool(c.get("run_now_pending"))
+        if e["paused"]:
+            e["status"] = "paused"
+            e["status_reason"] = (f"paused by {c.get('paused_by') or 'operator'}"
+                                  + (f": {c['paused_reason']}" if c.get("paused_reason") else ""))
     rows = []
     for e in evals:
         f = FEEDS_BY_ID[e["feed_id"]]
         merged = {"label": f["label"], "book": f.get("book"), "category": f["category"],
                   "kind": f.get("kind"), "schedule": f.get("schedule"),
                   "interval_min": f.get("interval_min"), "stale_after_min": f.get("stale_after_min"),
-                  "health_basis": f["health"], "runbook": f.get("runbook"), **e}
+                  "health_basis": f["health"], "runbook": f.get("runbook"),
+                  "controls": f.get("controls") or [], **e}
         merged["service_state"] = json.dumps(merged.get("service_state") or {})
         rows.append(tuple(merged.get(c) for c in _COLS))
     coverage = _coverage()
@@ -281,6 +336,7 @@ def run_feed_health() -> dict:
     counts = {}
     for e in evals:
         counts[e["status"]] = counts.get(e["status"], 0) + 1
+    counts["alerts"] = _alert_transitions(prev, evals)
     return {"feeds": len(evals), **counts}
 
 

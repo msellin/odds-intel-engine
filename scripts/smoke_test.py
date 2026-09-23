@@ -26667,7 +26667,9 @@ def _():
     # What remains is the EMTA-verified core. Pinnacle keeps its place in
     # PRICE_REFERENCE_BOOKMAKERS (reading its price for CLV needs no account),
     # which the ACCESSIBLE-BM test covers separately.
-    for expected in ("Coolbet", "Betano", "Unibet"):
+    # 2026-09-23: Betano out (owner cannot bet there; not in EMTA's licence
+    # register), Epicbet and Tonybet in — the four books we collect ourselves.
+    for expected in ("Coolbet", "Unibet", "Epicbet", "Tonybet"):
         assert f'"{expected}"' in contents, (
             f"{expected} unexpectedly missing from ACCESSIBLE_BOOKMAKERS. "
             f"If intentional, add a comment explaining why."
@@ -35847,10 +35849,11 @@ def _():
 
         # 3. A PLACEABLE book collapsing -> must escalate and name it.
         run([{"bookmaker": "Pinnacle", "rows_24h": 100_000, "rows_prior": 600_000},
-             {"bookmaker": "Betano",   "rows_24h": 0,       "rows_prior": 600_000}])
+             {"bookmaker": "Epicbet",  "rows_24h": 0,       "rows_prior": 600_000}])
+        # Epicbet, not Betano, since 2026-09-23: Betano left ACCESSIBLE_BOOKMAKERS.
         assert fired, "a PLACEABLE book stopping did not alert"
         subj = fired[0][0]
-        assert "PLACEABLE" in subj.upper() and "Betano" in subj, (
+        assert "PLACEABLE" in subj.upper() and "Epicbet" in subj, (
             f"an accessible book stopping must escalate and be named; got {subj!r}"
         )
 
@@ -52380,6 +52383,72 @@ def test_feed_registry_covers_sweepers():
         "the Coolbet sweep must fail when it stores nothing")
     epic = sched[sched.index("def job_epicbet_odds_snapshot"):sched.index("def _epicbet_odds_snapshot_wrapper")]
     assert "raise RuntimeError" in epic, "the Epicbet sweep must fail when it stores nothing"
+
+@test("FEED-CONTROLS — pause is enforced in _run_job, run-now is drained safely, alerts fire on transitions only")
+def test_feed_controls():
+    """FEEDS-DASHBOARD phase B (#107, 2026-09-23). /admin/feeds only writes requests
+    to feed_controls; the engine enforces them. Pins: the pause check sits at the
+    top of _run_job (the one place every feed job passes through); run-now is
+    refused for a paused feed or one without the control; Telegram alerts fire on
+    TRANSITIONS only (newly red, or recovered) and never for a paused feed."""
+    import pathlib, time
+    from workers.jobs import feed_control as fc
+    from workers.jobs import feed_health as fh
+    root = pathlib.Path(__file__).parent.parent
+    sched = (root / "workers/scheduler.py").read_text()
+
+    rj = sched[sched.index("def _run_job("):sched.index("log_pipeline_start(name")]
+    assert "is_job_paused(name)" in rj and "return" in rj, "pause must be checked before the run is logged"
+    assert 'id="feed_control_drain"' in sched and "IntervalTrigger(seconds=30)" in sched
+    assert "_SCHEDULER = scheduler" in sched
+    assert (root / "supabase/migrations/389_feed_controls.sql").exists()
+
+    # is_job_paused: paused feed's job resolves, others do not (cache primed, no DB).
+    saved = dict(fc._cache)
+    try:
+        fc._cache.update(at=time.monotonic(), paused={"coolbet_prematch"})
+        assert fc.is_job_paused("coolbet_odds_snapshot")
+        assert not fc.is_job_paused("epicbet_odds_snapshot")
+        assert not fc.is_job_paused("fetch_fixtures"), "a feed without the pause control was paused"
+    finally:
+        fc._cache.clear(); fc._cache.update(saved)
+
+    # drain: paused → refused; no control → refused; otherwise a one-off job.
+    calls, writes = [], []
+    class S:
+        def add_job(self, fn, **kw): calls.append((fn, kw["id"]))
+    class M:
+        _tonybet_live_wrapper = staticmethod(lambda: None)
+    orig_q, orig_w = fc.execute_query, fc.execute_write
+    try:
+        fc.execute_query = lambda *a, **k: [
+            {"feed_id": "coolbet_prematch", "paused": True, "run_now_requested_by": "t"},
+            {"feed_id": "af_fixtures", "paused": False, "run_now_requested_by": "t"},
+            {"feed_id": "tonybet_live", "paused": False, "run_now_requested_by": "t"}]
+        fc.execute_write = lambda *a, **k: writes.append(a) or 1
+        res = fc.drain(S(), M())
+    finally:
+        fc.execute_query, fc.execute_write = orig_q, orig_w
+    assert res == {"started": 1, "refused": 2}, res
+    assert calls and calls[0][1] == "runnow_tonybet_live"
+
+    # alerts: only transitions to fail / fail→ok, never for paused.
+    import workers.notify.telegram as tg
+    sent = []
+    orig_send = tg.send_telegram
+    try:
+        tg.send_telegram = lambda msg, **k: sent.append(msg)
+        n = fh._alert_transitions(
+            {"coolbet_prematch": "ok", "epicbet_prematch": "fail", "tonybet_live": "fail",
+             "af_odds": "ok", "unibet_prematch": "ok"},
+            [{"feed_id": "coolbet_prematch", "status": "fail", "status_reason": "no data"},
+             {"feed_id": "epicbet_prematch", "status": "ok"},
+             {"feed_id": "tonybet_live", "status": "fail"},        # already red → silent
+             {"feed_id": "af_odds", "status": "warn"},             # warn → silent
+             {"feed_id": "unibet_prematch", "status": "paused"}])  # paused → silent
+    finally:
+        tg.send_telegram = orig_send
+    assert n == 2 and "failing" in sent[0] and "recovered" in sent[1], sent
 
 if __name__ == "__main__":
     main()

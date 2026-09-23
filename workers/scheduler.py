@@ -93,6 +93,17 @@ def _run_job(name: str, fn, *args, _log_run: bool = True, **kwargs):
     import traceback
     from datetime import date as _date
     full_name = f"{_job_prefix()}{name}"
+    # FEEDS-DASHBOARD phase B (#107, 2026-09-23): a feed paused from /admin/feeds
+    # is skipped here — the one place every feed job passes through. Skipped, not
+    # failed: a pause is an operator decision (e.g. backing off a bot-protection
+    # flag, runbook §7), and must not page anyone. Lookup is cached 30 s.
+    try:
+        from workers.jobs.feed_control import is_job_paused
+        if is_job_paused(name):
+            console.print(f"[yellow]Job {full_name} SKIPPED — feed paused in /admin/feeds[/yellow]")
+            return
+    except Exception:  # noqa: BLE001 — the control check must never stop a job
+        pass
     started = datetime.now(timezone.utc)
     console.print(f"\n[bold cyan]{'─' * 60}[/bold cyan]")
     console.print(f"[bold cyan]Job: {full_name} @ {started.strftime('%H:%M:%S UTC')}[/bold cyan]")
@@ -668,6 +679,25 @@ def job_feed_health():
 
 def _feed_health_wrapper():
     _run_job("feed_health", job_feed_health)
+
+
+# Set in main(); the run-now drain needs the live scheduler to submit one-off runs.
+_SCHEDULER = None
+
+
+def job_feed_control_drain():
+    """FEEDS-DASHBOARD phase B (#107): turn run-now requests from /admin/feeds into
+    one-off runs of that feed's own wrapper. Every 30 s."""
+    import sys
+    from workers.jobs.feed_control import drain
+    if _SCHEDULER is not None:
+        return drain(_SCHEDULER, sys.modules[__name__])
+
+
+def _feed_control_drain_wrapper():
+    # Not logged to pipeline_runs: 2,880 rows/day would bury every other job.
+    # Each run-now it starts IS logged, by the feed's own wrapper.
+    _run_job("feed_control_drain", job_feed_control_drain, _log_run=False)
 
 
 def job_unibet_site_odds():
@@ -2895,6 +2925,8 @@ def main():
         executors={"default": APSThreadPoolExecutor(max_workers=12)},
         job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 300},
     )
+    global _SCHEDULER
+    _SCHEDULER = scheduler      # FEEDS-DASHBOARD phase B: run-now drain submits one-off jobs here
 
     # SCHEDULER-HANG-MITIGATION (2026-06-01) — listener fires whenever a job
     # is blocked from starting because the previous instance is still
@@ -3101,6 +3133,10 @@ def main():
     # FEEDS-DASHBOARD (#107): feed status for /admin/feeds, every 5 min.
     scheduler.add_job(_feed_health_wrapper, CronTrigger(minute="*/5"),
                       id="feed_health", name="Feed health [5min]", max_instances=1)
+    # Phase B: run-now requests from /admin/feeds, drained every 30 s.
+    scheduler.add_job(_feed_control_drain_wrapper, IntervalTrigger(seconds=30),
+                      id="feed_control_drain", name="Feed control drain [30s]",
+                      max_instances=1, coalesce=True)
     scheduler.add_job(_tonybet_results_wrapper,
                       CronTrigger(hour="*/2", minute="20"),
                       id="tonybet_results", name="Tonybet Results [2h]",

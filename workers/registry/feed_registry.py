@@ -16,6 +16,14 @@ green runs, zero rows). So a feed is judged by `health`:
 `workers/jobs/feed_health.py` evaluates every entry every 5 minutes into
 `feed_status`, which /admin/feeds renders. Adding a sweeper without an entry here
 fails smoke `FEED-REGISTRY-COVERS-SWEEPERS`.
+
+CONTROLS (phase B, 2026-09-23). `controls` lists what /admin/feeds may do:
+  "pause"   — `_run_job` skips the feed's job while `feed_controls.paused`
+  "run_now" — the 30-s drain submits `wrapper` (a function in workers/scheduler.py)
+              as a one-off run
+Only feeds whose job passes through `_run_job` can be paused that way; feeds run
+by systemd (in-play collector, near-kickoff timer, services) get their controls in
+phase C (allowlisted restarts).
 """
 from __future__ import annotations
 
@@ -25,35 +33,35 @@ AF_BOOKS = ("Pinnacle", "Bet365", "1xBet", "Marathonbet", "Betfair", "BetVictor"
 
 FEEDS: list[dict] = [
     # ── our own direct books ────────────────────────────────────────────────
-    {"id": "coolbet_prematch", "label": "Coolbet — pre-match odds", "book": "Coolbet",
+    {"id": "coolbet_prematch", "wrapper": "_coolbet_odds_snapshot_wrapper", "controls": ["pause", "run_now"], "label": "Coolbet — pre-match odds", "book": "Coolbet",
      "category": "book", "kind": "pre-match", "job": "coolbet_odds_snapshot",
      "units": ["oddsintel-zone-egress.service"], "docker": "oi_hetzner_flaresolverr",
      "schedule": ":03 / :33 UTC", "interval_min": 30, "stale_after_min": 90,
      "health": "data", "data": {"odds_books": ["Coolbet"]},
      "runbook": "docs/COOLBET_RUNBOOK.md"},
-    {"id": "epicbet_prematch", "label": "Epicbet — pre-match odds", "book": "Epicbet",
+    {"id": "epicbet_prematch", "wrapper": "_epicbet_odds_snapshot_wrapper", "controls": ["pause", "run_now"], "label": "Epicbet — pre-match odds", "book": "Epicbet",
      "category": "book", "kind": "pre-match", "job": "epicbet_odds_snapshot",
      "units": ["oddsintel-zone-egress.service"],
      "schedule": ":02 / :32 UTC", "interval_min": 30, "stale_after_min": 90,
      "health": "data", "data": {"odds_books": ["Epicbet"]}},
-    {"id": "unibet_prematch", "label": "Unibet — pre-match odds (logged-out Chrome)",
+    {"id": "unibet_prematch", "wrapper": "_unibet_site_odds_wrapper", "controls": ["pause", "run_now"], "label": "Unibet — pre-match odds (logged-out Chrome)",
      "book": "Unibet-Site", "category": "book", "kind": "pre-match",
      "job": "unibet_site_odds",
      "units": ["oddsintel-unibet-chrome.service", "oddsintel-zone-egress.service"],
      "schedule": ":15 / :45 UTC", "interval_min": 30, "stale_after_min": 90,
      "health": "data", "data": {"odds_books": ["Unibet-Site"]},
      "runbook": "docs/COOLBET_RUNBOOK.md#6-unibet-site-odds-feed-stale"},
-    {"id": "tonybet_prematch", "label": "Tonybet — pre-match odds", "book": "Tonybet",
+    {"id": "tonybet_prematch", "wrapper": "_tonybet_odds_snapshot_wrapper", "controls": ["pause", "run_now"], "label": "Tonybet — pre-match odds", "book": "Tonybet",
      "category": "book", "kind": "pre-match", "job": "tonybet_odds_snapshot",
      "units": ["oddsintel-zone-egress.service"],
      "schedule": ":01 / :31 UTC", "interval_min": 30, "stale_after_min": 90,
      "health": "data", "data": {"odds_books": ["Tonybet"]}},
-    {"id": "tonybet_live", "label": "Tonybet — live score / corners / cards", "book": "Tonybet",
+    {"id": "tonybet_live", "wrapper": "_tonybet_live_wrapper", "controls": ["pause", "run_now"], "label": "Tonybet — live score / corners / cards", "book": "Tonybet",
      "category": "book", "kind": "live", "job": "tonybet_live",
      "schedule": "every 120 s", "interval_min": 2, "stale_after_min": 20,
      "health": "runs", "data": {"table": "book_live_stats", "ts": "captured_at",
                                  "where": "bookmaker = 'Tonybet'"}},
-    {"id": "tonybet_results", "label": "Tonybet — results (FT / HT / 2H)", "book": "Tonybet",
+    {"id": "tonybet_results", "wrapper": "_tonybet_results_wrapper", "controls": ["pause", "run_now"], "label": "Tonybet — results (FT / HT / 2H)", "book": "Tonybet",
      "category": "book", "kind": "results", "job": "tonybet_results",
      "schedule": "every 2 h at :20", "interval_min": 120, "stale_after_min": 300,
      "health": "runs", "data": {"table": "book_match_results", "ts": "captured_at",
@@ -71,7 +79,7 @@ FEEDS: list[dict] = [
                                     "where": "is_closing AND bookmaker IN ('Epicbet','Unibet-Site','Tonybet','Coolbet')"}},
 
     # ── API-Football ────────────────────────────────────────────────────────
-    {"id": "af_odds", "label": "API-Football — bulk odds (9 books)", "book": None,
+    {"id": "af_odds", "wrapper": "job_odds_refresh", "controls": ["pause", "run_now"], "label": "API-Football — bulk odds (9 books)", "book": None,
      "category": "af", "kind": "pre-match", "job": "odds_refresh",
      "schedule": ":00 / :30 UTC", "interval_min": 30, "stale_after_min": 90,
      "health": "data", "data": {"odds_books": list(AF_BOOKS)}},
@@ -79,7 +87,7 @@ FEEDS: list[dict] = [
      "category": "af", "kind": "fixtures", "job": "fetch_fixtures",
      "schedule": "morning chain + refreshes", "interval_min": 360, "stale_after_min": 1560,
      "health": "runs"},
-    {"id": "af_closing", "label": "API-Football — closing snapshots", "book": None,
+    {"id": "af_closing", "wrapper": "job_closing_snap", "controls": ["pause", "run_now"], "label": "API-Football — closing snapshots", "book": None,
      "category": "af", "kind": "close", "job": "closing_snap",
      "schedule": "every 5 min", "interval_min": 5, "stale_after_min": 30,
      "health": "runs"},
