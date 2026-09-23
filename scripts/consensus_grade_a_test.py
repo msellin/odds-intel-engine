@@ -89,6 +89,28 @@ def main() -> int:
         print(f"  {g}: {fmt(stats(g_all))}   | h1 {100*stats([r for r in h1 if r['grade']==g])['roi']:+.1f}%"
               f"  h2 {100*stats([r for r in h2 if r['grade']==g])['roi']:+.1f}%")
 
+    # DRIFT (owner, before the result: "maybe the grade C and B rules and config
+    # also shift"). Descriptive only — the pass bar above is unchanged. A rule
+    # that holds in some months and not others is not one to publish.
+    print("\nDRIFT — B vs C by month (all rows, seen months marked *):")
+    for mo in sorted({r["ko"][:7] for r in rows}):
+        mr = [r for r in rows if r["ko"][:7] == mo]
+        sb, sc = stats([r for r in mr if r["grade"] == "B"]), stats([r for r in mr if r["grade"] == "C"])
+        star = "*" if mo >= SEEN_FROM[:7] else " "
+        print(f"  {mo}{star}  B n={sb['n']:4d} {100*sb['roi']:+6.1f}%   C n={sc['n']:4d} {100*sc['roi']:+6.1f}%"
+              f"   gap {100*(sb['roi']-sc['roi']):+6.1f}pp")
+    print("\nEACH C CONDITION ALONE on UNSEEN rows (vs rows with no C reason):")
+    clean = [r for r in unseen if r["grade"] == "B"]
+    conds = {
+        "tier 0": lambda r: f(r.get("tier")) == 0,
+        "a panel book disagrees": lambda r: any(
+            b != r["bookmaker"] and p * f(r["odds"]) - 1 <= 0 for b, p in panel(r).items()),
+        "edge > 6%": lambda r: f(r["edge"]) > 0.06,
+    }
+    print(f"  {'no C reason (= B)':24s} {fmt(stats(clean))}")
+    for k, fn in conds.items():
+        print(f"  {k:24s} {fmt(stats([r for r in unseen if fn(r)]))}")
+
     B = [r for r in unseen if r["grade"] == "B"]
     b_roi = stats(B)["roi"]
     res = {k: stats([r for r in B if fn(r)]) for k, fn in CANDIDATES.items()}
