@@ -2252,6 +2252,17 @@ def job_fh_1x2_paper_pick():
     _run_job("fh_1x2_paper_pick", lambda: None)
 
 
+def job_clv_sharp():
+    """CLV-SHARP ([[#024]], migration 386): score every newly settled leg of the three
+    ledgers against a fresh (<=60 min), same-moment (±2 min) de-vigged Pinnacle close.
+    Runs after the overnight settlement; only legs not yet in leg_clv_sharp."""
+    from workers.jobs.clv_sharp import run
+    c = run()
+    if c:
+        console.print(f"[cyan]clv_sharp: {c}[/cyan]")
+    _run_job("clv_sharp", lambda: None)
+
+
 def job_fh_1x2_paper_settle():
     """FIRST-HALF-1X2: grade pending picks from the HT score (no gap)."""
     from workers.jobs.first_half_1x2_paper_bot import settle_picks
@@ -3574,6 +3585,8 @@ def main():
                       id="team_total_paper_settle", name="Team Total Paper Settle")
     scheduler.add_job(job_fh_1x2_paper_pick, CronTrigger(hour="8,12,16,20", minute=27),
                       id="fh_1x2_paper_pick", name="First-Half 1x2 Paper Pick")
+    scheduler.add_job(job_clv_sharp, CronTrigger(hour=1, minute=40),
+                      id="clv_sharp", name="CLV vs sharp close (after overnight settlement)")
     scheduler.add_job(job_fh_1x2_paper_settle, CronTrigger(minute=57),
                       id="fh_1x2_paper_settle", name="First-Half 1x2 Paper Settle")
     # COOLBET-MODEL-OU-SHADOW-BOT: mirror calibrated model O/U picks into
