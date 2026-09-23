@@ -52733,6 +52733,31 @@ def test_anchor_resolver():
     assert (Path(__file__).resolve().parent / "anchor_consensus_composition.py").exists()
 
 
+@test("CLV-CONSENSUS-CLOSE — every leg also gets CLV against a >=5-book consensus close, Pinnacle half untouched")
+def test_clv_consensus_close():
+    """#113 (2026-09-23), migration 393. 36% of settled legs had no Pinnacle-based CLV."""
+    import inspect
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+    from workers.jobs import clv_sharp as cs
+    from workers.utils.anchor import sets_from_rows
+    src = inspect.getsource(cs.run)
+    assert "exclude_book=l.get(\"bk\")" in src, "the leg's own book must not anchor itself"
+    assert "p_close_cons = COALESCE(leg_clv_sharp.p_close_cons" in src
+    assert "WHEN leg_clv_sharp.status = 'no_fresh_close' THEN EXCLUDED.clv_sharp ELSE leg_clv_sharp.clv_sharp" in src, (
+        "clv_sharp may only be overwritten on a no_fresh_close row, exactly as before")
+    mig = Path(__file__).resolve().parent.parent / "supabase/migrations/393_leg_clv_consensus.sql"
+    assert "clv_cons" in mig.read_text()
+    # set assembly: legs from different fetches never form a set
+    t = datetime(2026, 9, 23, 20, 0, tzinfo=timezone.utc)
+    rows = [{"bookmaker": "A", "sel": "over", "odds": 1.9, "timestamp": t},
+            {"bookmaker": "A", "sel": "under", "odds": 1.95, "timestamp": t - timedelta(minutes=30)},
+            {"bookmaker": "B", "sel": "over", "odds": 1.9, "timestamp": t},
+            {"bookmaker": "B", "sel": "under", "odds": 1.9, "timestamp": t - timedelta(seconds=30)}]
+    sets = sets_from_rows(rows, ("over", "under"))
+    assert "A" not in sets and sets["B"][0] == [1.9, 1.9]
+
+
 @test("ODDS-REFRESH-TOMORROW-EVENING — the 30-min AF refresh also covers after-midnight kickoffs")
 def test_odds_refresh_tomorrow_evening():
     """#113 (2026-09-23): run_odds fetches one UTC date, so games kicking off after

@@ -58,7 +58,8 @@ NEVER_IN_ANCHOR = frozenset({"Max", "Avg", "Betfair Exchange", "BetWin", "Betfre
 # Same platform, same prices: counting both would double one opinion.
 SKIN_OF = {"20bet": "Tonybet", "X3000": "Paf", "Speedybet": "Paf"}
 
-MARKET_SIDES = {"1x2": ("home", "draw", "away"), "btts": ("yes", "no"),
+MARKET_SIDES = {"1x2": ("home", "draw", "away"), "1x2_1h": ("home", "draw", "away"),
+                "btts": ("yes", "no"),
                 "double_chance": ("1x", "12", "x2")}
 
 
@@ -188,6 +189,27 @@ def compute_anchor(sets: dict[str, tuple[list[float], datetime]], sides: tuple[s
     return Anchor("none", dropped=dropped)
 
 
+def sets_from_rows(rows: list[dict], sides: tuple[str, ...]) -> dict:
+    """Pure: rows of ONE match+market ({bookmaker, sel, odds, timestamp}) → the latest
+    COMPLETE set per book whose legs all come from one fetch (within SET_TOLERANCE_S)."""
+    by_book: dict[str, list] = {}
+    for r in sorted(rows, key=lambda r: r["timestamp"], reverse=True):
+        by_book.setdefault(r["bookmaker"], []).append(r)
+    out = {}
+    for book, rs in by_book.items():
+        # newest-first; the first timestamp at which every side is present within
+        # SET_TOLERANCE_S is that book's latest complete fetch
+        for head in rs:
+            legs = {}
+            for r in rs:
+                if abs((r["timestamp"] - head["timestamp"]).total_seconds()) <= SET_TOLERANCE_S:
+                    legs.setdefault(r["sel"], r["odds"])
+            if all(x in legs for x in sides):
+                out[book] = ([legs[x] for x in sides], head["timestamp"])
+                break
+    return out
+
+
 def load_sets(match_id: str, market: str, sides: tuple[str, ...], *, at: datetime,
               lookback_min: float = DEFAULT_MAX_AGE_MIN) -> dict:
     """Latest COMPLETE set per book at or before `at` (and before kickoff), all legs
@@ -202,22 +224,7 @@ def load_sets(match_id: str, market: str, sides: tuple[str, ...], *, at: datetim
               AND lower(o.selection) = ANY(%s)
             ORDER BY o.bookmaker, o.timestamp DESC""",
         (match_id, market, at, at, int(lookback_min), list(sides))) or []
-    by_book: dict[str, list] = {}
-    for r in rows:
-        by_book.setdefault(r["bookmaker"], []).append(r)
-    out = {}
-    for book, rs in by_book.items():
-        # walk newest-first; the first timestamp at which every side is present
-        # within SET_TOLERANCE_S is that book's latest complete fetch
-        for head in rs:
-            legs = {}
-            for r in rs:
-                if abs((r["timestamp"] - head["timestamp"]).total_seconds()) <= SET_TOLERANCE_S:
-                    legs.setdefault(r["sel"], r["odds"])
-            if all(s in legs for s in sides):
-                out[book] = ([legs[s] for s in sides], head["timestamp"])
-                break
-    return out
+    return sets_from_rows(rows, sides)
 
 
 def resolve_anchor(match_id: str, market: str, *, at: datetime | None = None,
