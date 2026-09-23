@@ -56,3 +56,46 @@ floors 3/5/8%. A model strategy counts only if it beats MARKET on CLV at the sam
 **Expected:** R α = 0 (our ratings failed at full time; a half is noisier). F is the real
 question — if the 1H market lags the FT market anywhere, F finds it. Prior: small or none,
 because Pinnacle itself prices both.
+
+## RESULT (2026-09-23) — neither model beats Pinnacle's first-half price; one book looks mispriced
+
+s (first-half share of goals, all matches before 2026-08-29) = **0.4460**.
+
+**(a) Does a model know more than the market? No — 10 of 10 FAIL (Holm m=10).**
+
+| market | arm | n | α | market LL | model LL | blend LL | p |
+|---|---|---|---|---|---|---|---|
+| 1x2_1h | R | 1,493 | 0.025 | 1.0413 | 1.0748 | 1.0410 | 0.067 |
+| 1x2_1h | F | 1,514 | 0.000 | 1.0387 | 1.0384 | 1.0387 | 1.000 |
+| TT 1H home 0.5 | R | 2,731 | 0.080 | 0.6727 | 0.6872 | 0.6729 | 0.818 |
+| TT 1H home 0.5 | F | 2,915 | 0.405 | 0.6751 | 0.6747 | 0.6748 | 0.126 |
+| TT 1H away 0.5 | R | 2,649 | 0.170 | 0.6737 | 0.6839 | 0.6734 | 0.318 |
+| TT 1H away 0.5 | F | 2,767 | 0.945 | 0.6699 | 0.6701 | 0.6700 | 0.569 |
+| O/U 1H 0.5 | R / F | 522 / 560 | 0.000 / 1.000 | 0.6386 / 0.6378 | 0.6468 / 0.6384 | = market | 1.0 / 0.62 |
+| O/U 1H 1.5 | R / F | 780 / 805 | 0.020 / 0.735 | 0.6506 / 0.6482 | 0.6591 / 0.6504 | ≈ market | 0.45 / 0.64 |
+
+* **R (our ratings)** is worse than the market alone in every market.
+* **F (full-time market, scaled)** matches the 1H market almost exactly (model LL ≈ market LL,
+  so α is undetermined, not informative): **Pinnacle's first-half prices are consistent with
+  its full-time prices.** There is no lag between them to exploit. A clean negative.
+
+**(b) Money — T-2h, best price across all books, CLV vs Pinnacle close (held-out half).**
+BLEND-R and BLEND-F never beat MARKET by more than noise (1x2_1h 3%: MARKET +6.44%, BLEND-F
++7.06%); on the team totals, BLEND-F fires 70–120 bets/day at −2% to −6% CLV — the "hundreds of
+bad picks" shape again. **The model adds nothing.**
+
+**The one lead is the MARKET strategy itself on 1x2_1h:** books beating Pinnacle's fair 1H price
+by 3%+ at T-2h — 148 bets (13.5/day), **CLV +6.4% (t=11.0)**, rising to +12.6% at an 8% floor.
+**69% of those bets are at Epicbet** (108: price +8.5% above fair, CLV +7.1%, **ROI −16.8%**).
+CLV and ROI disagree; at n=108 and ~3.0 odds the ROI noise is ±~13pp, so neither settles it.
+Two explanations, and they point different ways:
+* **Real softness:** Epicbet prices first-half 1x2 lazily. Epicbet is one of OUR placeable books
+  — this would be 🤖 OWN value, not a model edge.
+* **Data fault:** the scraper stores a stale or mis-mapped Epicbet 1H price. The CLV would then
+  be phantom (a price nobody could take), and the negative ROI is the truth.
+Filed as its own row: verify a sample of Epicbet 1H prices against the live site before any
+further weight is put on it.
+
+**Verdict for #084:** first-half markets cannot be priced better than Pinnacle by either model.
+Part 2 closes FAIL. The Epicbet lead and the Pinnacle 1H O/U collection gap (nothing after
+2026-09-04, never ≥2 h before kickoff) are separate rows.

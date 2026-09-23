@@ -22,7 +22,6 @@ import math
 import os
 import sys
 from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
 from statistics import mean, stdev
 
@@ -187,8 +186,8 @@ def main() -> int:
     print(f"{'market':24}{'arm':4}{'n':>6}{'alpha':>8}{'mkt LL':>9}{'model LL':>10}"
           f"{'blend LL':>10}{'p':>8}")
     for market, (sels, do_bt) in MARKETS.items():
-        mids = sorted({k[0] for k in closing if k[1] == market},
-                      key=lambda x: (meta[x]["date"] if x in meta else datetime.max))
+        mids = sorted((k[0] for k in closing if k[1] == market and k[0] in meta
+                       and k[2] == "Pinnacle"), key=lambda x: (meta[x]["date"], x))
         for arm in ("R", "F"):
             U = []
             for mid in mids:
