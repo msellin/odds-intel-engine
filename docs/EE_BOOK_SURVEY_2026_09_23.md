@@ -47,9 +47,12 @@ Pinnacle at any Pinnacle margin band (`ANCHOR_IS_NOT_SHARP_2026_09_14.md`,
 **⚠️ Betano is NOT on the EMTA list**, yet several scripts tag it "we bet here"
 (e.g. `OUR_BOOKS` in `scripts/anchor_book_sharpness_research.py`). If that tag
 feeds any OWN placement or "placeable" logic, it is wrong for an Estonian
-operator. To check.
+operator. **Checked 2026-09-23:** not in `ACCESSIBLE_BOOKMAKERS`; it is in two
+paper bots' `PLACEMENT_BOOKS` (`team_total_paper_bot.py`, `first_half_1x2_paper_bot.py`) — flagged on #099.
 
-## Recommended build order
+## Recommended build order — ⚠️ SUPERSEDED same day
+
+> Replaced by the measured order in §"Coverage vs Epicbet" below (Tonybet first). Kept for the reasoning.
 
 Ranked by *new, placeable price* per unit of effort:
 
