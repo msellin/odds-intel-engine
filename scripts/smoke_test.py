@@ -52564,5 +52564,65 @@ def test_coolbet_search_budget():
     assert src.index("searches_used >= _SEARCH_FIXTURE_BUDGET") < src.index("search_coolbet_event("), (
         "the budget check must run BEFORE the search request")
 
+
+@test("BOOK-FOOTPRINT — every book request is metered, capped per hour, and warned on before a block")
+def test_book_footprint():
+    """#110 (2026-09-23). #108's Imperva flag followed ~7,500 Coolbet requests in 8 h that
+    nothing counted. Every outbound request to a scraped book now goes through
+    workers/utils/footprint.py: a per-book hourly budget (refused, not sent, when spent),
+    outcome counts (bot-check / error / slow) in book_footprint, and a warn on the book's
+    /admin/feeds block at 80% of budget or a rising bot-check share."""
+    import inspect
+    from pathlib import Path
+    from workers.utils import footprint as fp
+    from workers.jobs import feed_health as fh
+    from workers.automation import coolbet_session, epicbet_explorer, tonybet_feed, unibet_odds_feed
+    from workers.jobs import inplay_epicbet_collector
+
+    # 1. budgets exist for every scraped book and Coolbet's stays under the flagged volume
+    for book in ("Coolbet", "Tonybet", "Unibet-Site", "Epicbet"):
+        assert fp.budget(book), f"{book} has no request budget"
+    assert fp.budget("Coolbet") < 750, "Coolbet budget at/above the volume that got the IP flagged"
+
+    # 2. check() refuses at the cap without sending; fails open on a DB error
+    saved = (fp._db_count, dict(fp._pending))
+    try:
+        fp._pending.clear()
+        fp._db_count = lambda book: fp.budget(book)
+        try:
+            fp.check("Coolbet")
+            raise AssertionError("check() did not refuse at the budget")
+        except fp.FootprintBudgetExceeded:
+            pass
+        fp._db_count = lambda book: 0
+        fp.check("Coolbet")
+    finally:
+        fp._db_count = saved[0]
+        fp._pending.clear()
+    assert fp.classify_status(403) == "challenge" and fp.classify_status(503) == "error"
+    assert fp.classify_status(200) == "ok" and fp.classify_status(None) == "error"
+
+    # 3. every transport is metered
+    assert "metered_session(\"Tonybet\")" in inspect.getsource(tonybet_feed._session)
+    assert "metered_session(\"Epicbet\")" in inspect.getsource(epicbet_explorer._session)
+    assert "footprint.check(\"Epicbet\")" in inspect.getsource(epicbet_explorer._fs_get_json)
+    assert "metered_session(\"Epicbet\")" in inspect.getsource(inplay_epicbet_collector)
+    assert "footprint.check" in inspect.getsource(coolbet_session._fs_call)
+    post_src = inspect.getsource(coolbet_session.CoolbetSession.post)
+    assert "footprint.record" in post_src and "footprint.check" not in post_src, (
+        "POST is the placement path: counted, never refused by the budget")
+    assert "footprint.check" in inspect.getsource(coolbet_session.CoolbetSession.get), "direct GET unmetered"
+    usrc = inspect.getsource(unibet_odds_feed)
+    assert usrc.count("footprint.check(_BOOKMAKER)") >= 3, "a Unibet transport is unmetered"
+
+    # 4. early warning
+    assert fh.footprint_warnings({"requests_1h": 10, "budget_1h": 500, "challenges_1h": 0}) == []
+    assert fh.footprint_warnings({"requests_1h": 450, "budget_1h": 500, "challenges_1h": 0})
+    assert fh.footprint_warnings({"requests_1h": 100, "budget_1h": 500, "challenges_1h": 8})
+    assert fh.footprint_warnings({"requests_1h": 500, "budget_1h": 500, "refused_1h": 3})
+
+    mig = Path(__file__).resolve().parent.parent / "supabase/migrations/392_book_footprint.sql"
+    assert "CREATE TABLE IF NOT EXISTS book_footprint" in mig.read_text()
+
 if __name__ == "__main__":
     main()

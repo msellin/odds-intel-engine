@@ -305,14 +305,31 @@ def _fs_call(body: dict, *, timeout_s: int = 90) -> dict:
     # timeout must outlast FS's own maxTimeout — otherwise a timed-out caller
     # releases the lock while FS is still navigating, and the next caller
     # crosses it exactly as before.
-    sess = body.get("session")
-    if not sess:
-        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-            return json.loads(resp.read())
-    timeout_s = max(timeout_s, int(body.get("maxTimeout") or 0) / 1000 + 5)
-    with _fs_session_lock(str(sess), timeout_s=timeout_s):
-        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-            return json.loads(resp.read())
+    # BOOK-FOOTPRINT (#110): every page load a browser makes on Coolbet counts
+    # against its hourly budget — including warmups — because Imperva sees them all.
+    from workers.utils import footprint
+    to_coolbet = str(body.get("cmd", "")).startswith("request.") and "coolbet.com" in str(body.get("url", ""))
+    if to_coolbet:
+        footprint.check("Coolbet")
+    t0 = time.monotonic()
+    try:
+        sess = body.get("session")
+        if not sess:
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                out = json.loads(resp.read())
+        else:
+            timeout_s = max(timeout_s, int(body.get("maxTimeout") or 0) / 1000 + 5)
+            with _fs_session_lock(str(sess), timeout_s=timeout_s):
+                with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                    out = json.loads(resp.read())
+    except Exception:
+        if to_coolbet:
+            footprint.record("Coolbet", "error", time.monotonic() - t0)
+        raise
+    if to_coolbet:
+        st = ((out or {}).get("solution") or {}).get("status")
+        footprint.record("Coolbet", footprint.classify_status(st), time.monotonic() - t0)
+    return out
 
 
 _FS_LOCK_DIR = os.getenv("COOLBET_FS_LOCK_DIR", "/tmp/oddsintel-fs-locks")
@@ -1557,6 +1574,11 @@ class CoolbetSession:
                 # resetting it.
                 self._imperva_seed_done = True
                 break
+            try:  # BOOK-FOOTPRINT (#110): a bot-check page is the early warning
+                from workers.utils import footprint
+                footprint.record("Coolbet", "challenge", count_request=False)
+            except Exception:  # noqa: BLE001
+                pass
             # COOLBET-PROBE-CALLS-IMPERVA-A-WEDGE (2026-09-21). RECORD the
             # sighting, do not merely log it.
             #
@@ -1640,7 +1662,16 @@ class CoolbetSession:
             # upcoming fixtures fell to 2.1% while the feed watchdog cheerfully
             # re-harvested cookies at a problem that was never about cookies.
             kwargs.setdefault("timeout", 30)
-            resp = self._http.get(url, params=params, headers=headers, **kwargs)
+            from workers.utils import footprint     # BOOK-FOOTPRINT (#110)
+            footprint.check("Coolbet")
+            _t0 = time.monotonic()
+            try:
+                resp = self._http.get(url, params=params, headers=headers, **kwargs)
+            except Exception:
+                footprint.record("Coolbet", "error", time.monotonic() - _t0)
+                raise
+            footprint.record("Coolbet", footprint.classify_status(resp.status_code),
+                             time.monotonic() - _t0)
             return _FSResponse({
                 "solution": {
                     "status": resp.status_code,
@@ -1677,7 +1708,17 @@ class CoolbetSession:
 
         # _ensure_auth already merged cbauth/login_session_id/user_id into
         # self._http.headers. kwargs.pop("headers") layers additional ones.
-        resp = self._http.post(url, **kwargs)
+        # BOOK-FOOTPRINT (#110): POSTs are COUNTED but never refused — this is the
+        # placement path, and a sweep that spent the hour's budget must not be able
+        # to block a bet. The reads that feed sweeps are what the budget caps.
+        from workers.utils import footprint
+        _t0 = time.monotonic()
+        try:
+            resp = self._http.post(url, **kwargs)
+        except Exception:
+            footprint.record("Coolbet", "error", time.monotonic() - _t0)
+            raise
+        footprint.record("Coolbet", footprint.classify_status(resp.status_code), time.monotonic() - _t0)
         if resp.status_code in (401, 403):
             # Refresh cookies + retry ONCE. If still 401/403, surface the
             # error to caller — likely JWT expired (caller should renew) or
@@ -1687,7 +1728,9 @@ class CoolbetSession:
             self._cookies_fresh = False
             self._refresh_cookies_from_fs()
             self._throttle()
+            _t0 = time.monotonic()
             resp = self._http.post(url, **kwargs)
+            footprint.record("Coolbet", footprint.classify_status(resp.status_code), time.monotonic() - _t0)
         return resp
 
     @property

@@ -280,6 +280,15 @@ dodges the detection and leaves the load, which is the actual problem.
 were a median **197 min** old (p90 235) because a pass took so long — which is
 what the placer's `drift` rejections actually were.
 
+**It came back (2026-09-23, #108)** through a different door: with the category
+path retired, a per-fixture *search* fallback sent 6,033 searches in 8 h — ~7,500
+Coolbet requests from one IP, peak 1,517/h — and the exit IP was flagged. The
+lesson generalises past Coolbet: **a volume nobody counts will grow until the
+other side counts it for you.** Guard (`BOOK-FOOTPRINT`, #110): every scraped
+book's requests are metered per hour in `book_footprint`, capped by a per-book
+budget that refuses before sending, and warned on at 80% of budget or a rising
+bot-check share — on /admin/feeds, before the block rather than after it.
+
 ## 7. A cache that fails closed is worse than no cache
 
 Every negative cache here (league prior, category memo) must:

@@ -32,6 +32,7 @@ import logging
 import os
 
 from workers.automation import unibet_browser_sync as ubs
+from workers.utils import footprint   # BOOK-FOOTPRINT (#110) — every Kindred request is counted
 
 log = logging.getLogger(__name__)
 
@@ -399,10 +400,17 @@ def fetch_event_odds(event_url: str, *, match_id: str | None = None,
     out = {"event_url": event_url, "contest_name": None, "rows": [],
            "stored": 0, "reason": None}
     try:
+        footprint.check(_BOOKMAKER)
+    except footprint.FootprintBudgetExceeded as e:
+        out["reason"] = str(e)
+        return out
+    try:
         contest = asyncio.run(_async_capture(event_url, timeout_s=timeout_s))
     except Exception as e:  # noqa: BLE001
+        footprint.record(_BOOKMAKER, "error")
         out["reason"] = f"capture failed: {e}"
         return out
+    footprint.record(_BOOKMAKER, "ok" if contest else "error")
     if not contest:
         out["reason"] = "no contest-page captured (is a logged-in unibet.ee tab open?)"
         return out
@@ -529,6 +537,11 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
             # rate-limit + cap + abort-on-repeated-block
             if c["fetches"] >= _RATE_MAX_FETCHES:
                 return None
+            try:
+                footprint.check(_BOOKMAKER)
+            except footprint.FootprintBudgetExceeded:
+                c["budget_refused"] = c.get("budget_refused", 0) + 1
+                return None
             wait = _RATE_MIN_INTERVAL_S - (time.monotonic() - last_fetch[0])
             if wait > 0:
                 await asyncio.sleep(wait + 0.15 * (nid[0] % 3))  # small jitter
@@ -548,11 +561,14 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
                     continue
                 val = ((evt.get("result") or {}).get("result") or {}).get("value")
                 if not val:
+                    footprint.record(_BOOKMAKER, "error")
                     return None
                 try:
                     d = json.loads(val)
                 except Exception:  # noqa: BLE001
+                    footprint.record(_BOOKMAKER, "error")
                     return None
+                footprint.record(_BOOKMAKER, footprint.classify_status(d.get("s")))
                 if d.get("s") != 200:
                     c["blocks"] += 1; consec_blocks[0] += 1
                     return None
@@ -782,6 +798,11 @@ async def _async_inject_get(url: str, *, timeout_s: float = 20.0) -> dict | None
                 and "unibet.ee" in (t.get("url") or "").lower()), None)
     if not tab or not tab.get("webSocketDebuggerUrl"):
         return None
+    try:
+        footprint.check(_BOOKMAKER)
+    except footprint.FootprintBudgetExceeded as e:
+        log.warning("unibet-odds: %s", e)
+        return None
     expr = (f"(async()=>{{try{{const r=await fetch({json.dumps(url)},"
             f"{{credentials:'include',headers:{json.dumps(_INJ_HEADERS)}}});"
             "const t=await r.text();return JSON.stringify({s:r.status,b:t});}"
@@ -801,8 +822,10 @@ async def _async_inject_get(url: str, *, timeout_s: float = 20.0) -> dict | None
                     continue
                 val = ((evt.get("result") or {}).get("result") or {}).get("value")
                 if not val:
+                    footprint.record(_BOOKMAKER, "error")
                     return None
                 d = json.loads(val)
+                footprint.record(_BOOKMAKER, footprint.classify_status(d.get("s")))
                 if d.get("s") != 200:
                     return None
                 try:

@@ -111,7 +111,8 @@ _YESNO_SEL = {"74": "yes", "76": "no"}
 
 
 def _session() -> requests.Session:
-    s = requests.Session()
+    from workers.utils.footprint import metered_session   # BOOK-FOOTPRINT (#110)
+    s = metered_session("Tonybet")
     if _PROXY:
         s.proxies = {"http": _PROXY, "https": _PROXY}
     s.headers.update({"User-Agent": _UA, "Accept": "application/json"})

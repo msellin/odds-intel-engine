@@ -99,7 +99,8 @@ _RESIDENTIAL_PROXY = (os.getenv("EPICBET_RESIDENTIAL_PROXY")
 
 class Epicbet:
     def __init__(self) -> None:
-        self.s = requests.Session()
+        from workers.utils.footprint import metered_session   # BOOK-FOOTPRINT (#110)
+        self.s = metered_session("Epicbet")
         if _RESIDENTIAL_PROXY:
             self.s.proxies = {"http": _RESIDENTIAL_PROXY, "https": _RESIDENTIAL_PROXY}
             log.info("Epicbet: routing via residential egress %s", _RESIDENTIAL_PROXY)

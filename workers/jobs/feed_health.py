@@ -164,13 +164,67 @@ def _coverage() -> list[tuple]:
             for b in COVERAGE_BOOKS]
 
 
+# BOOK FOOTPRINT (#110) — the signals that come BEFORE a block. #108's Imperva flag
+# followed hours of 750–1,500 req/h; these warn while there is still time to back off.
+FOOTPRINT_WARN_SHARE = 0.8      # of the hourly budget, this clock hour
+FOOTPRINT_CHALLENGE_MIN = 5     # bot-check / 403 / 429 answers this hour …
+FOOTPRINT_CHALLENGE_RATE = 0.05  # … and at least this share of requests
+
+
+def _footprint() -> dict[str, dict]:
+    """Per book: this clock hour's requests / challenges / errors / refusals, the
+    last 24 h's requests, and the budget (workers/utils/footprint.py)."""
+    from workers.utils.footprint import budget
+    try:
+        rows = execute_query(
+            """SELECT book,
+                      sum(requests)   FILTER (WHERE hour = date_trunc('hour', now())) AS req_1h,
+                      sum(challenges) FILTER (WHERE hour = date_trunc('hour', now())) AS ch_1h,
+                      sum(errors)     FILTER (WHERE hour = date_trunc('hour', now())) AS err_1h,
+                      sum(refused)    FILTER (WHERE hour = date_trunc('hour', now())) AS ref_1h,
+                      sum(requests) AS req_24h
+                 FROM book_footprint WHERE hour > now() - interval '24 hours'
+                GROUP BY book""") or []
+    except Exception as e:  # noqa: BLE001 — table may predate migration 392
+        log.debug("footprint read failed: %s", e)
+        return {}
+    return {r["book"]: {"requests_1h": int(r["req_1h"] or 0), "challenges_1h": int(r["ch_1h"] or 0),
+                        "errors_1h": int(r["err_1h"] or 0), "refused_1h": int(r["ref_1h"] or 0),
+                        "requests_24h": int(r["req_24h"] or 0), "budget_1h": budget(r["book"])}
+            for r in rows}
+
+
+def footprint_warnings(fp: dict | None) -> list[str]:
+    """Early-warning reasons for one book's footprint (empty when quiet)."""
+    if not fp:
+        return []
+    out = []
+    req, cap = fp.get("requests_1h") or 0, fp.get("budget_1h")
+    if fp.get("refused_1h"):
+        out.append(f"request budget spent — {fp['refused_1h']} requests refused this hour")
+    elif cap and req >= FOOTPRINT_WARN_SHARE * cap:
+        out.append(f"{req}/{cap} requests this hour — near the budget")
+    ch = fp.get("challenges_1h") or 0
+    if ch >= FOOTPRINT_CHALLENGE_MIN and req and ch / req >= FOOTPRINT_CHALLENGE_RATE:
+        out.append(f"{ch} bot-check answers this hour ({ch / req:.0%}) — back off before a block")
+    return out
+
+
 def evaluate() -> list[dict]:
     runs = _runs_by_job([f["job"] for f in FEEDS if f.get("job")])
     odds = _odds_agg()
+    fp = _footprint()
     out = []
     for f in FEEDS:
         try:
-            out.append(_evaluate_one(f, runs.get(f.get("job"), []), odds))
+            row = _evaluate_one(f, runs.get(f.get("job"), []), odds)
+            # One warning per book: on its pre-match block, which is the one the
+            # operator opens — and never over a louder fail/paused state.
+            warn = footprint_warnings(fp.get(f.get("book"))) if f["id"].endswith("_prematch") else []
+            if warn and row.get("status") in ("ok", "warn"):
+                row["status"] = "warn"
+                row["status_reason"] = "; ".join(filter(None, [row.get("status_reason"), *warn]))
+            out.append(row)
         except Exception as e:  # noqa: BLE001 — one check must not blank the page
             log.warning("feed_health %s failed: %s", f["id"], e)
             out.append({"feed_id": f["id"], "status": "unknown",
@@ -356,6 +410,7 @@ def run_feed_health() -> dict:
         rows.append(tuple(merged.get(c) for c in _COLS))
     coverage = _coverage()
     odds = _odds_agg()
+    fp = _footprint()
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.executemany(
@@ -368,16 +423,21 @@ def run_feed_health() -> dict:
                         ([e["feed_id"] for e in evals],))
             cur.executemany(
                 """INSERT INTO feed_book_stats (book, fixtures_today, priced_today, fixtures_yesterday,
-                         priced_yesterday, rows_today, market_families, last_row_at, updated_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now())
+                         priced_yesterday, rows_today, market_families, last_row_at,
+                         requests_1h, budget_1h, challenges_1h, errors_1h, requests_24h, updated_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now())
                    ON CONFLICT (book) DO UPDATE SET
                      fixtures_today = EXCLUDED.fixtures_today, priced_today = EXCLUDED.priced_today,
                      fixtures_yesterday = EXCLUDED.fixtures_yesterday,
                      priced_yesterday = EXCLUDED.priced_yesterday, rows_today = EXCLUDED.rows_today,
                      market_families = EXCLUDED.market_families, last_row_at = EXCLUDED.last_row_at,
-                     updated_at = now()""",
+                     requests_1h = EXCLUDED.requests_1h, budget_1h = EXCLUDED.budget_1h,
+                     challenges_1h = EXCLUDED.challenges_1h, errors_1h = EXCLUDED.errors_1h,
+                     requests_24h = EXCLUDED.requests_24h, updated_at = now()""",
                 [(b, ft, pt, fy, py, (odds.get(b) or {}).get("rows_today"),
-                  (odds.get(b) or {}).get("markets"), (odds.get(b) or {}).get("last_at"))
+                  (odds.get(b) or {}).get("markets"), (odds.get(b) or {}).get("last_at"),
+                  *((fp.get(b) or {}).get(k) for k in
+                    ("requests_1h", "budget_1h", "challenges_1h", "errors_1h", "requests_24h")))
                  for b, ft, pt, fy, py in coverage])
         conn.commit()
     counts = {}

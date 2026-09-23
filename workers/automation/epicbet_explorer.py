@@ -255,7 +255,8 @@ _RESIDENTIAL_PROXY = (os.getenv("EPICBET_RESIDENTIAL_PROXY")
 
 
 def _session() -> requests.Session:
-    s = requests.Session()
+    from workers.utils.footprint import metered_session   # BOOK-FOOTPRINT (#110)
+    s = metered_session("Epicbet")
     s.headers.update({
         "User-Agent": _UA,
         "Accept": "application/json, text/plain, */*",
@@ -415,7 +416,13 @@ def _fs_get_json(url: str, *, _retry: bool = True):
     :37 can have its session pulled mid-flight — so recover instead of
     failing the whole sweep.
     """
+    from workers.utils import footprint                   # BOOK-FOOTPRINT (#110)
+    footprint.check("Epicbet")
+    t0 = time.monotonic()
     out = _fs_post("request.get", url=url, session=_FS_SESSION_ID, maxTimeout=90000)
+    footprint.record("Epicbet", footprint.classify_status(
+        (out.get("solution") or {}).get("status") if out.get("status") == "ok" else None),
+        time.monotonic() - t0)
     if out.get("status") != "ok":
         msg = str(out.get("message") or "")
         if _retry and "session" in msg.lower():

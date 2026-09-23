@@ -665,6 +665,16 @@ escalates; it does not.
 - **Do NOT** "fix" this with more IPs or by rotating FS sessions to get a fresh
   un-escalated context. That dodges the detection instead of removing what
   triggers it, and it leaves the load — the actual problem — in place.
+- **Recurrence 2026-09-23 (#108) and the guard it produced (#110 BOOK-FOOTPRINT):**
+  the zone.ee exit was flagged after ~7,500 Coolbet requests in 8 h (peak 1,517/h),
+  6,033 of them search fallbacks — and nothing was counting. Every Coolbet read now
+  goes through `workers/utils/footprint.py`: counted per clock hour across all
+  processes in `book_footprint` (migration 392), **refused before sending** once the
+  hour's budget (500; env `FOOTPRINT_BUDGET_COOLBET`) is spent, and bot-check pages /
+  errors / >20 s responses counted too. `/admin/feeds` → Coolbet → details shows
+  "Requests this hour N / budget"; the block turns amber at 80% of budget or when
+  bot-check answers exceed 5% (≥5) — the warning that comes BEFORE the block.
+  **POSTs (placement) are counted but never refused.**
 
 ### 5. No placeable bet today  → this is CORRECT, not a failure
 - **Symptom:** daemon tick logs `qualified=N` but `placed=0`, every candidate `skip … below the 2.80 odds floor`.
