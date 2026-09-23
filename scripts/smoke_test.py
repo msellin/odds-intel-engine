@@ -52318,5 +52318,52 @@ def test_tonybet_sweeper():
     finally:
         t._RAW_DIR = old_dir
 
+@test("FEED-REGISTRY-COVERS-SWEEPERS — every sweeper is in the feed registry, and empty sweeps fail")
+def test_feed_registry_covers_sweepers():
+    """FEEDS-DASHBOARD (#107, 2026-09-23). /admin/feeds shows only what
+    workers/registry/feed_registry.py lists, so a sweeper added without an entry is
+    invisible — the exact blind spot that let Coolbet sit silent for 4 h (#108).
+    Pins: (1) every odds / live / results sweep registered in the scheduler has a
+    registry entry; (2) every book the staleness alert watches has a feed; (3) each
+    registry job name really is a scheduled _run_job name; (4) Coolbet and Epicbet
+    sweeps FAIL when they store nothing for 20+ fixtures (they used to 'complete')."""
+    import pathlib, re
+    from workers.registry.feed_registry import FEEDS, FEEDS_BY_ID
+    from workers.jobs.health_alerts import DIRECT_FEED_BOOKS
+    root = pathlib.Path(__file__).parent.parent
+    sched = (root / "workers/scheduler.py").read_text()
+
+    assert len(FEEDS_BY_ID) == len(FEEDS), "duplicate feed id in the registry"
+    for f in FEEDS:
+        assert f["health"] in ("data", "runs", "service"), f["id"]
+        assert f["category"] in ("book", "af", "infra"), f["id"]
+        if f.get("job"):
+            # Most feeds log through _run_job; a few (fetch_fixtures) log from inside
+            # the pipeline. Either way the name must be one the engine really writes.
+            logged = f'_run_job("{f["job"]}"' in sched or any(
+                f'"{f["job"]}"' in p.read_text() for p in (root / "workers").rglob("*.py")
+                if "registry" not in p.parts)
+            assert logged, f"registry job {f['job']!r} ({f['id']}) is never logged by the engine"
+
+    registered_jobs = {f.get("job") for f in FEEDS}
+    sweeper_ids = set(re.findall(r'id="((?:\w+_)?(?:odds_snapshot|site_odds|live|results))"', sched))
+    sweeper_ids -= {"live_poller"}
+    run_names = set(re.findall(r'_run_job\("(\w+)"', sched))
+    for sid in sweeper_ids:
+        if sid in run_names:
+            assert sid in registered_jobs, f"sweeper job {sid!r} has no feed_registry entry"
+
+    fed_books = {f.get("book") for f in FEEDS}
+    for b in DIRECT_FEED_BOOKS:
+        assert b in fed_books, f"{b} is watched for staleness but has no feed entry"
+
+    assert 'id="feed_health"' in sched
+    assert (root / "supabase/migrations/388_feed_status.sql").exists()
+    cool = sched[sched.index("def job_coolbet_odds_snapshot"):sched.index("def _coolbet_odds_snapshot_wrapper")]
+    assert 'res.get("matches", 0) >= 20 and not res.get("stored")' in cool, (
+        "the Coolbet sweep must fail when it stores nothing")
+    epic = sched[sched.index("def job_epicbet_odds_snapshot"):sched.index("def _epicbet_odds_snapshot_wrapper")]
+    assert "raise RuntimeError" in epic, "the Epicbet sweep must fail when it stores nothing"
+
 if __name__ == "__main__":
     main()

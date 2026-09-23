@@ -2565,6 +2565,12 @@ def run_bulk(
             "league-coverage prior.[/yellow]"
         )
 
+    # FEEDS-DASHBOARD / #108 (2026-09-23): return the outcome instead of None, so
+    # the scheduler job can FAIL a sweep that wrote nothing. Returning None let
+    # 4 hours of "Coolbet unreachable — sweep aborted" record as `completed`.
+    return {"matches": len(matches), "matched": matched, "stored": stored_total,
+            "unresolved": total_unresolved}
+
 
 def run_one_shot(match_id: str, raw: bool = False) -> None:
     rows = execute_query(

@@ -539,7 +539,14 @@ def job_coolbet_odds_snapshot():
     from workers.automation.coolbet_explorer import run_bulk
     import traceback
     try:
-        run_bulk(days=2, dry_run=False, sleep_s=0.25, limit=None)
+        res = run_bulk(days=2, dry_run=False, sleep_s=0.25, limit=None) or {}
+        # #108 (2026-09-23): a sweep that wrote NOTHING while fixtures existed is a
+        # failure, whatever run_bulk printed. For 4 h every sweep aborted with
+        # "Coolbet unreachable" and this job recorded `completed`.
+        if res.get("matches", 0) >= 20 and not res.get("stored"):
+            raise RuntimeError(
+                f"Coolbet sweep stored 0 rows for {res.get('matches')} fixtures "
+                f"(matched {res.get('matched')}, unresolved {res.get('unresolved')})")
     except Exception as e:
         console.print(f"[red]Coolbet odds snapshot failed: {e}[/red]")
         console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
@@ -594,6 +601,11 @@ def job_epicbet_odds_snapshot():
             f"[yellow]Epicbet: stored 0 rows "
             f"(db_matches={res.get('db_matches')} matched={res.get('matched')})[/yellow]"
         )
+        # #108 (2026-09-23): a quiet window has few fixtures; 20+ fixtures and
+        # nothing stored is the EPICBET-403 shape (277 green runs, zero rows).
+        if (res.get("db_matches") or 0) >= 20:
+            raise RuntimeError(f"Epicbet sweep stored 0 rows for "
+                               f"{res.get('db_matches')} fixtures: {res}")
     return res
 
 
@@ -645,6 +657,17 @@ def job_tonybet_results():
 
 def _tonybet_results_wrapper():
     _run_job("tonybet_results", job_tonybet_results)
+
+
+def job_feed_health():
+    """FEEDS-DASHBOARD (#107, 2026-09-23): evaluate every feed in the registry into
+    feed_status / feed_book_stats for /admin/feeds. Every 5 min, ~3 s."""
+    from workers.jobs.feed_health import run_feed_health
+    return run_feed_health()
+
+
+def _feed_health_wrapper():
+    _run_job("feed_health", job_feed_health)
 
 
 def job_unibet_site_odds():
@@ -3075,6 +3098,9 @@ def main():
     scheduler.add_job(_tonybet_live_wrapper, IntervalTrigger(seconds=120),
                       id="tonybet_live", name="Tonybet Live Stats [120s]",
                       max_instances=1, coalesce=True)
+    # FEEDS-DASHBOARD (#107): feed status for /admin/feeds, every 5 min.
+    scheduler.add_job(_feed_health_wrapper, CronTrigger(minute="*/5"),
+                      id="feed_health", name="Feed health [5min]", max_instances=1)
     scheduler.add_job(_tonybet_results_wrapper,
                       CronTrigger(hour="*/2", minute="20"),
                       id="tonybet_results", name="Tonybet Results [2h]",

@@ -454,8 +454,7 @@ Server-side gating is the only safe gating. Client-side gating hides UI but does
 | `src/lib/get-user-tier.ts` | Reads `profiles.tier` + `is_superadmin` |
 | `src/lib/real-money-tier.ts` | Real-money tier badge logic |
 
-**Admin (superadmin only)** — `/admin`, `/admin/bots`, `/admin/ops`, `/admin/place`,
-`/admin/real-bets`, `/admin/shadow-bots[/[bot]]`, plus CS2/LoL/tennis. This is where the
+**Admin (superadmin only)** — `/admin` (leads with the **Bookmakers & feeds** block, 2026-09-23), **`/admin/feeds`** (every sweeper/feed: last data, schedule, today's coverage, errors — #107), `/admin/bots`, `/admin/ops`, `/admin/shadow-bots[/[bot]]`. `/admin/place`, `/admin/real-bets` and CS2/LoL/tennis still exist as routes but were dropped from the index (unused). This is where the
 operator-facing surfaces live; most day-to-day work touches these, not the public pages.
 
 | File | Purpose |
