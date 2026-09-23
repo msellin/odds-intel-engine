@@ -487,3 +487,23 @@ Everything else — arms, bar (Holm m=6), CHECK R — unchanged. Run at the orig
 weeks-1-5 problem is diluted, not removed). **Expected: all verdicts unchanged (FAIL); the
 country fix may narrow the model-vs-market gap slightly.** The faithful Wheatcroft replication is
 a separate step.
+
+## RESULT — harness-repaired re-runs (2026-09-23): verdict unchanged; with more data, shots DO help a little
+
+Both runs: CHECK R passed; all six arms FAIL (Holm m=6).
+
+| window (cutoff) | test n | covered n | C goals LL | D shots LL | E goals+shots LL | market LL |
+|---|---|---|---|---|---|---|
+| 2026-08-20 | 9,169 | 2,952 | 0.6746 | 0.6752 | 0.6737 | **0.6673** |
+| 2026-05-01 | 23,309 | 6,798 | 0.6776 | **0.6761** | **0.6734** | **0.6684** |
+
+* **On the 2.3× larger window, shots beat goals** (D < C, better calibrated: ECE 0.017 vs 0.025) and
+  goals+shots is best — the direction the literature predicts, which the small August window could
+  not resolve. Still ~0.005 nats behind the market.
+* Closest to a blend gain: E on the full May universe, p = 0.071 raw (Holm → far from 0.05);
+  A (52 + prices, now trained on all countries) on the August covered subset, p = 0.111.
+* **Honest money test is tiny:** requiring Pinnacle within 30 min of the Coolbet quote leaves ~150
+  priced fixtures. RAW −4.2% to −6.5% CLV; BLEND / MARKET fire 0-10 times — no signal either way.
+  Fresher Pinnacle O/U polling (#090 b) is the prerequisite for any O/U money test.
+
+Remaining #089 step: the faithful Wheatcroft replication on football-data.co.uk history.
