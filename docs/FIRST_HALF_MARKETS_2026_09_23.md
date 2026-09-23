@@ -99,3 +99,42 @@ further weight is put on it.
 **Verdict for #084:** first-half markets cannot be priced better than Pinnacle by either model.
 Part 2 closes FAIL. The Epicbet lead and the Pinnacle 1H O/U collection gap (nothing after
 2026-09-04, never ≥2 h before kickoff) are separate rows.
+
+## #103 — is the Epicbet first-half lead real? (2026-09-23)
+
+**Ruled out — Epicbet is not systematically soft on first halves.** At T-2h over 1,720 matches:
+Epicbet 1H overround median 5.7% (p10 4.1, p90 9.4) — a normal, self-consistent book; its 1H
+price vs Pinnacle's fair price has median **−5.7%**, and only **2.9%** of its 1H selections sit
+≥3% above fair — the same rate as its full-time 1x2 (4.4%). The value side is home 74 /
+away 61 / draw 13, so no label swap. The market mapping (Epicbet group 98, " 1. half: Goals
+1x2", home/away by team name) reads correct. **Epicbet is 69% of the value bets because it
+prices far more first-half matches than the other books, not because it is lazy.**
+
+**Freshness of the 148 value quotes:** median 23 min old at the decision (p90 130), seen at that
+exact price once before (the scraper runs every ~30 min and the price moves), and **38% were
+still quoted after the decision**. On average the Epicbet price was **+8.8% above the best OTHER
+book** at the same moment — a genuine one-book outlier, which Epicbet corrects before kickoff
+about 62% of the time.
+
+**The live forward record agrees.** The retired `bot_1h_1x2_paper_shadow_v1` has kept writing
+paper picks since 2026-09-10 (0% floor). Re-scored at the backtest's floors with de-vigged
+Pinnacle-close CLV:
+
+| picks | floor | n | ROI | de-vigged CLV |
+|---|---|---|---|---|
+| all | 0% | 473 | −4.5% ± 6.8 | +0.41% (t=1.2) |
+| all | **3%** | **135** | +6.1% ± 17.0 | **+3.86% (t=4.0)** |
+| all | 5% | 74 | +9.3% ± 27.1 | +6.97% (t=4.4) |
+| Epicbet | 3% | 112 | +0.7% ± 19.4 | **+4.69% (t=4.2)** |
+| Betano | 3% | 23 | +32.5% ± 32.7 | −0.15% (t=−0.1) |
+
+The bot was retired on its 0%-floor record (CLV ≈ 0 — correct: most of its picks were noise).
+**At a 3% floor the same live picks carry +3.9% CLV.** ROI is far too noisy at ~3.0 odds to
+confirm or deny (±17pp at n=135).
+
+**What data cannot settle.** CLV is computed against Pinnacle's close for the price WE
+RECORDED — a price that was never actually clickable would score the same. Everything above
+says the prices were fresh, correctly mapped and from a normally-priced book; only a human
+(or a placement) can confirm they were clickable at that moment. **Next step: a manual spot
+check of live alerts on the Epicbet site** before any paper arm is re-activated or any money
+is considered.
