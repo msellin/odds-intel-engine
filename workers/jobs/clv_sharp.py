@@ -4,7 +4,8 @@ de-vigged Pinnacle close, in ONE definition.
     clv_sharp = odds × Shin(Pinnacle close) − 1
 
 THE CLOSE. For the leg's market, the latest COMPLETE Pinnacle set (every side of
-the market) whose quotes sit within ±ASSEMBLE_MIN of each other, taken no
+the market), each side within ±ASSEMBLE_MIN of the first side's quote (so a set
+spans at most 2×ASSEMBLE_MIN), taken no
 earlier than FRESH_MIN before kickoff. The existing
 `settlement.get_devigged_pinnacle_close_prob` is deliberately NOT reused: its
 close has no age bound (a 6-hour-old quote counts as "closing") and it fetches
@@ -36,7 +37,9 @@ from datetime import timedelta
 log = logging.getLogger(__name__)
 
 FRESH_MIN = 60          # close no older than this at kickoff
-ASSEMBLE_MIN = 2        # every side of the close within ±2 min of each other
+ASSEMBLE_MIN = 2        # every side within ±2 min of the anchor side (set spans <=4 min)
+# A leg with no fresh close is retried for 3 days after kickoff (a late closing
+# snap can still land); after that its 'no_fresh_close' is final.
 BATCH_MATCHES = 400
 _DC = {"1x": (0, 1), "12": (0, 2), "x2": (1, 2)}
 
@@ -96,7 +99,9 @@ _LEGS_SQL = {
                p.odds::float odds, 'published' basis, m.date kickoff
           FROM picks_forward_test p JOIN matches m ON m.id = p.match_id
           LEFT JOIN leg_clv_sharp c ON c.ledger = 'picks_forward_test' AND c.leg_id = p.id
-         WHERE p.outcome IN ('won','lost') AND c.leg_id IS NULL""",
+         WHERE p.outcome IN ('won','lost')
+           AND (c.leg_id IS NULL
+                OR (c.status = 'no_fresh_close' AND m.date > now() - interval '3 days'))""",
     "simulated_bets": """
         SELECT s.id::text leg_id, s.match_id::text match_id, s.market, s.selection,
                COALESCE(s.odds_at_pick_live, s.odds_at_pick)::float odds,
@@ -104,7 +109,9 @@ _LEGS_SQL = {
                m.date kickoff
           FROM simulated_bets s JOIN matches m ON m.id = s.match_id
           LEFT JOIN leg_clv_sharp c ON c.ledger = 'simulated_bets' AND c.leg_id = s.id
-         WHERE s.result IN ('won','lost') AND c.leg_id IS NULL""",
+         WHERE s.result IN ('won','lost')
+           AND (c.leg_id IS NULL
+                OR (c.status = 'no_fresh_close' AND m.date > now() - interval '3 days'))""",
     "shadow_bets": """
         SELECT s.id::text leg_id, s.match_id::text match_id, s.market, s.selection,
                COALESCE(s.odds_at_pick_live, s.odds_at_pick)::float odds,
@@ -112,7 +119,9 @@ _LEGS_SQL = {
                m.date kickoff
           FROM shadow_bets s JOIN matches m ON m.id = s.match_id
           LEFT JOIN leg_clv_sharp c ON c.ledger = 'shadow_bets' AND c.leg_id = s.id
-         WHERE s.result IN ('won','lost') AND c.leg_id IS NULL""",
+         WHERE s.result IN ('won','lost')
+           AND (c.leg_id IS NULL
+                OR (c.status = 'no_fresh_close' AND m.date > now() - interval '3 days'))""",
 }
 
 
@@ -172,7 +181,11 @@ def run(limit: int | None = None) -> dict:
                 execute_values(cur, """
                     INSERT INTO leg_clv_sharp (ledger, leg_id, match_id, market, selection, odds,
                         odds_basis, p_close, close_ts, close_age_min, clv_sharp, status)
-                    VALUES %s ON CONFLICT (ledger, leg_id) DO NOTHING""", out, page_size=2000)
+                    VALUES %s ON CONFLICT (ledger, leg_id) DO UPDATE SET
+                        p_close = EXCLUDED.p_close, close_ts = EXCLUDED.close_ts,
+                        close_age_min = EXCLUDED.close_age_min, clv_sharp = EXCLUDED.clv_sharp,
+                        status = EXCLUDED.status, computed_at = now()
+                    WHERE leg_clv_sharp.status = 'no_fresh_close'""", out, page_size=2000)
             conn.commit()
         log.info("clv_sharp: %d/%d matches", min(i + BATCH_MATCHES, len(mids)), len(mids))
     return dict(counts)

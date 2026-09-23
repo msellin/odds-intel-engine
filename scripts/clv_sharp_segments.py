@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-ALLOWED = {"ledger", "bot", "arm", "grade", "version", "bookmaker", "book_feed",
+ALLOWED = {"ledger", "bot", "arm", "grade", "version", "bookmaker", "book_feed",  # + market
            "market_group", "odds_band", "ttk_bucket", "quote_freshness",
            "league_tier", "odds_basis", "decided_day", "market"}
 RETIRE_MIN_N = 100
@@ -62,12 +62,18 @@ def main() -> int:
     ap.add_argument("--ledger", default=None)
     ap.add_argument("--since", default=None, help="decided_day >= this date")
     ap.add_argument("--min-n", type=int, default=30)
+    ap.add_argument("--all-rows", action="store_true",
+                    help="count every shadow re-evaluation row (default: one per bet, dup_rank = 1)")
+    ap.add_argument("--max-abs", type=float, default=0.5,
+                    help="exclude |clv_sharp| above this as a corrupt price (default 0.5)")
     a = ap.parse_args()
     by = [c.strip() for c in a.by.split(",") if c.strip()]
     bad = set(by) - ALLOWED
     if bad:
         raise SystemExit(f"unknown segment columns: {sorted(bad)}")
-    where, params = ["clv_sharp IS NOT NULL", "p_close > 0"], []
+    where, params = ["clv_sharp IS NOT NULL", "p_close > 0", "abs(clv_sharp) <= %s"], [a.max_abs]
+    if not a.all_rows:
+        where.append("dup_rank = 1")        # shadow_bets writes a row per re-evaluation
     if a.ledger:
         where.append("ledger = %s"); params.append(a.ledger)
     if a.since:
@@ -93,7 +99,10 @@ def main() -> int:
         stats.append((r, n, m, se, t, lt, p_two_sided(lt)))
     qs = bh([s[6] for s in stats])
     w = max(len(" | ".join(str(r[c]) for c in by)) for r, *_ in stats)
-    print(f"clv_sharp by {cols}  ({len(stats)} segments, n >= {a.min_n}; BH-FDR across all)\n")
+    dropped = execute_query(f"""SELECT count(*) n FROM clv_sharp_legs
+        WHERE clv_sharp IS NOT NULL AND abs(clv_sharp) > %s""", [a.max_abs])[0]["n"]
+    print(f"clv_sharp by {cols}  ({len(stats)} segments, n >= {a.min_n}; BH-FDR across all; "
+          f"{'all rows' if a.all_rows else 'one row per bet'}; {dropped} legs beyond ±{a.max_abs:.0%} excluded)\n")
     print(f"  {'segment':{w}s} {'n':>6} {'clv_sharp':>10} {'95% CI':>17} {'t':>6} {'t(log)':>7} {'q':>7}  close age")
     for (r, n, m, se, t, lt, p), q in zip(stats, qs):
         seg = " | ".join(str(r[c]) for c in by)

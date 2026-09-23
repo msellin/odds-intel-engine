@@ -2310,10 +2310,13 @@ def job_clv_sharp():
     ledgers against a fresh (<=60 min), same-moment (±2 min) de-vigged Pinnacle close.
     Runs after the overnight settlement; only legs not yet in leg_clv_sharp."""
     from workers.jobs.clv_sharp import run
-    c = run()
-    if c:
-        console.print(f"[cyan]clv_sharp: {c}[/cyan]")
-    _run_job("clv_sharp", lambda: None)
+
+    def _go():
+        c = run()
+        if c:
+            console.print(f"[cyan]clv_sharp: {c}[/cyan]")
+    # Inside _run_job, so a failure writes a pipeline_runs row (review 2026-09-23).
+    _run_job("clv_sharp", _go)
 
 
 def job_fh_1x2_paper_settle():

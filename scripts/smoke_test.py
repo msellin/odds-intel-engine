@@ -52103,6 +52103,13 @@ def test_clv_sharp_segments():
     assert "bad = set(by) - ALLOWED" in src, "--by must be checked against the allowlist before SQL"
     mig = _engine_path("supabase/migrations/387_clv_sharp_legs_view.sql").read_text()
     assert "book_feed" in mig and "quote_freshness" in mig and "c.status = 'ok'" in mig
+    # Independent review, 2026-09-23: shadow_bets rows were counted ~7x (one row
+    # per re-evaluation), in-play prices were judged against a pre-match close,
+    # and Kambi / Pinnacle were bucketed as AF-fed.
+    fix = _engine_path("supabase/migrations/390_clv_sharp_view_review_fixes.sql").read_text()
+    assert "dup_rank" in fix and "'api-football-live'" in fix
+    assert "THEN 'kambi'" in fix and "THEN 'sharp'" in fix and "consensus_ungraded" in fix
+    assert 'where.append("dup_rank = 1")' in src and "abs(clv_sharp) <= %s" in src
 
 
 @test("META-SERVING-SKEW — the meta-model does not score on features that are empty at bet time")
