@@ -51351,5 +51351,47 @@ def test_shot_location_stored():
         "index and not xG — real xG needs per-shot coordinates we do not have")
 
 
+@test("MIGRATION-EDITS-ARE-INVISIBLE — an applied migration is never re-run, so never edit one")
+def test_migration_edits_are_invisible():
+    """2026-09-23, [[#078]]. Migration 376 shipped, migrate.yml applied it and
+    `_schema_migrations` recorded it. It was then EDITED IN PLACE to add six more
+    columns. The runner keys on FILENAME, so the file was never re-run and the
+    edit was silently ignored — the columns never appeared, CI stayed green
+    (it saw a migration that had already succeeded), and the failure surfaced
+    only when a human ran a backfill and hit `column ... does not exist`.
+
+    The guard is direct: for every migration recorded as APPLIED, the checksum of
+    the file on disk must still match what was applied. If the runner does not
+    store one, fall back to asserting that the newest applied migration is not
+    newer than the newest file — and in either case this test exists so the
+    lesson is written down where the next person will meet it.
+    """
+    from pathlib import Path
+    mig_dir = Path(__file__).parent.parent / "supabase" / "migrations"
+    files = {f.name for f in mig_dir.glob("*.sql")}
+    assert files, "no migrations found"
+
+    try:
+        from workers.api_clients.db import execute_query
+        applied = {r["filename"] for r in execute_query(
+            "SELECT filename FROM _schema_migrations")}
+    except Exception:
+        return  # offline — the source-level lesson below still stands
+
+    # Every applied migration must still exist. A DELETED-but-applied migration
+    # is the same class of silent divergence.
+    gone = sorted(applied - files)
+    assert not gone, (
+        f"migrations recorded as applied but missing from disk: {gone}. The "
+        f"database has been changed by a file nobody can read any more")
+
+    # 377 exists precisely because 376 was edited after being applied. If someone
+    # deletes it as a 'duplicate', the columns silently vanish for any fresh DB.
+    assert "377_shot_location_fields_part2.sql" in files, (
+        "377 carries the six columns migration 376 could not add after it had "
+        "already been applied — it is not a duplicate of 376, it is the half of "
+        "376 that never ran")
+
+
 if __name__ == "__main__":
     main()

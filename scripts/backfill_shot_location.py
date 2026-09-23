@@ -138,9 +138,10 @@ def main() -> int:
         elif a.dry_run:
             filled += 1
             if filled <= 5:
+                # Column names keep their _home/_away suffix — stripping both
+                # made every pair print the same label twice.
                 print(f"  [dry-run] fixture {r['afid']} ({r['date'].date()}): "
-                      + ", ".join(f"{c.replace('_home','').replace('_away','')}="
-                                  f"{vals[c]}" for c in COLS if vals[c] is not None))
+                      + ", ".join(f"{c}={vals[c]}" for c in COLS if vals[c] is not None))
         else:
             sets = ", ".join(f"{c} = %s" for c in COLS)
             execute_write(f"UPDATE match_stats SET {sets} WHERE match_id = %s",

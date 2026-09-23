@@ -1128,6 +1128,35 @@ whole corpus is a scope bug wearing a logic bug's clothes. And whenever you
 tighten a matcher, check the *other* direction too — a fix that stops
 over-matching very often starts under-matching.
 
+## 21. An applied migration edited in place — the change is invisible, not applied (2026-09-23)
+
+**The tell:** CI is green, the migration workflow says success, and the column
+does not exist. Nothing is red anywhere, because nothing ran.
+
+**The case.** Migration 376 added ten columns, shipped, and `migrate.yml`
+recorded it in `_schema_migrations`. Feedback then arrived that three more field
+pairs should be captured, so 376 was **edited in place** and pushed again. The
+runner keys on **filename**: an already-recorded file is never re-executed, so
+the six new columns never appeared. The migration workflow reported success —
+truthfully, because it had nothing to do. CI was green for two commits.
+
+It surfaced when a human ran a backfill:
+`psycopg2.errors.UndefinedColumn: column s.shots_off_target_home does not exist`.
+
+**Why it is worth a ledger entry rather than a shrug.** Every signal available
+said the change had landed: the file on disk contained the columns, the commit
+was pushed, the migration job was green, and the smoke suite passed. The only
+thing that disagreed was the database, and nothing was comparing the two.
+
+**The guard:** `MIGRATION-EDITS-ARE-INVISIBLE` asserts every applied migration
+still exists on disk, and pins the follow-up file so it cannot later be deleted
+as a "duplicate" — it is not a duplicate, it is the half of 376 that never ran.
+
+**The rule:** an applied migration is immutable. New columns get a new file,
+always — even when the edit is one line and the original shipped ten minutes ago.
+The cost of a second file is nothing; the cost of a silent no-op is a defect that
+only a human running the right command will ever find.
+
 ## Pattern: a reviver that reports success without verifying the world
 
 **Seen twice in three days, both on Coolbet, both silent.**
