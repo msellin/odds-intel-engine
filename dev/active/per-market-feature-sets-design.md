@@ -507,3 +507,24 @@ Both runs: CHECK R passed; all six arms FAIL (Holm m=6).
   Fresher Pinnacle O/U polling (#090 b) is the prerequisite for any O/U money test.
 
 Remaining #089 step: the faithful Wheatcroft replication on football-data.co.uk history.
+
+## Pre-registration — #090 (a) PRICE-MOVE SIGNAL (2026-09-23, BEFORE building)
+
+Found by the internal review: the residual of our walk-forward goals rating against Pinnacle's EARLY
+de-vigged O/U 2.5 price correlates +0.12 with Pinnacle's subsequent move (n=8,085, stable in both
+halves and every tier). Not a standalone bet (the close absorbs it; at Coolbet's 8% margin it cannot
+win alone) — the question is whether it can TIME or FILTER picks.
+
+* signal r = logit(P_rating(over)) − logit(p_early), P_rating = Poisson P(total > 2.5) with
+  λ = ht_expected_total + h2_expected_total (the stored #084 walk-forward ratings); p_early = Shin
+  de-vig of Pinnacle's FIRST complete O/U 2.5 pair; move = logit(p_close) − logit(p_early), close =
+  latest complete pair strictly before kickoff, and only fixtures where the close is a LATER
+  snapshot than the early one.
+* **Test 1 (does it predict the move, out of sample):** date-ordered split; OLS move ~ r fitted on the
+  first half, scored on the second; PASS = the held-out slope > 0 with one-sided p < 0.01, and the
+  held-out top-quintile move toward the signal > +0.5pp in probability.
+* **Test 2 (does it improve picks):** on every scored O/U 2.5 leg (`clv_sharp_legs`, one row per bet),
+  split by whether r AGREES with the pick's side; PASS = mean clv_sharp(agree) − clv_sharp(disagree)
+  > 0 with one-sided p < 0.05 (Welch), reported per ledger.
+* **Expected:** Test 1 PASSES (+0.12 measured); Test 2 shows a modest positive gap, not enough to turn
+  a losing ledger positive on its own.
