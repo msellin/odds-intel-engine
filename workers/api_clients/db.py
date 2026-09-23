@@ -493,6 +493,13 @@ def store_match_events_batch(match_id: str, events: list[dict],
             ev["event_type"],
             team_side,
             ev.get("player_name"),
+            # ASSIST-NAME-NEVER-WRITTEN ([[#083]], 2026-09-23). The parse has
+            # always produced this (api_football.py:1951) and the batch writer's
+            # column tuple omitted it, so `match_events.assist_name` was NULL on
+            # ALL 1,869,434 rows — including all 353,490 goals. The legacy
+            # single-row path did set it, which is why the column exists and
+            # looks plausible; the batch path replaced that and dropped it.
+            ev.get("assist_name"),
             ev.get("detail"),
             ev.get("af_event_order"),
             now,
@@ -513,7 +520,8 @@ def store_match_events_batch(match_id: str, events: list[dict],
         return 0
 
     columns = ("match_id", "minute", "added_time", "event_type", "team",
-               "player_name", "detail", "af_event_order", "created_at")
+               "player_name", "assist_name", "detail", "af_event_order",
+               "created_at")
     cols = ", ".join(columns)
     # MATCH-EVENTS-SILENT-WRITE-FAILURE-2026-09-06: this was a bare INSERT
     # against a UNIQUE partial index, so every re-poll of a live match raised a
@@ -529,6 +537,7 @@ def store_match_events_batch(match_id: str, events: list[dict],
         "              event_type = EXCLUDED.event_type, "
         "              team = EXCLUDED.team, "
         "              player_name = EXCLUDED.player_name, "
+        "              assist_name = EXCLUDED.assist_name, "
         "              detail = EXCLUDED.detail"
     )
     with get_conn() as conn:
@@ -542,9 +551,15 @@ def store_match_events_batch(match_id: str, events: list[dict],
                 stored = 0
                 for row in rows:
                     try:
+                        # Placeholders DERIVED from `columns`, not hardcoded.
+                        # They were a literal nine `%s` while `columns` had nine
+                        # entries — so adding assist_name would have silently
+                        # broken this retry path, which only executes when the
+                        # bulk insert has already failed. A bug in a fallback is
+                        # a bug you meet on your worst day.
                         cur.execute(
                             f"INSERT INTO match_events ({cols}) "
-                            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                            f"VALUES ({', '.join(['%s'] * len(columns))})",
                             row,
                         )
                         stored += 1

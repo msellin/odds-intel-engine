@@ -51489,5 +51489,43 @@ def test_batch_embeds_four_blocks():
         "burst of calls from here")
 
 
+@test("EVENT-WRITER-COLUMNS-COMPLETE — the batch writer must persist everything the parse produces")
+def test_event_writer_columns_complete():
+    """ASSIST-NAME-NEVER-WRITTEN ([[#083]], 2026-09-23).
+
+    `parse_fixture_events` has always emitted `assist_name`
+    (api_football.py:1951). `store_match_events_batch`'s column tuple omitted
+    it, so the column was NULL on **all 1,869,434 rows — including all 353,490
+    goals**. Measured on live data: 36 of 64 parsed events carried an assist we
+    discarded. For substitutions the same field is the player coming OFF, so sub
+    pairings were lost too.
+
+    The column existed and looked plausible because the LEGACY single-row path
+    did set it; the batch path replaced that path and silently dropped it.
+
+    Two things are pinned:
+      1. every column the parse emits is in the writer's tuple;
+      2. the per-row fallback derives its placeholders from `columns` rather
+         than hardcoding them. They were a literal nine `%s` against nine
+         columns, so adding one would have broken the retry path — and a retry
+         path only runs when the bulk insert has already failed, i.e. on your
+         worst day.
+    """
+    import inspect
+    from workers.api_clients import db as dbmod
+
+    src = inspect.getsource(dbmod.store_match_events_batch)
+    assert '"assist_name"' in src, (
+        "assist_name must be in the writer's column tuple — the parse produces "
+        "it and the column exists; omitting it is silent, total data loss")
+    assert 'ev.get("assist_name")' in src, "the row tuple must carry the value too"
+    assert "assist_name = EXCLUDED.assist_name" in src, (
+        "the upsert must refresh assist_name, or re-polled live matches keep the NULL")
+    assert "'%s'] * len(columns)" in src or '"%s"] * len(columns)' in src, (
+        "the fallback INSERT must derive its placeholders from `columns`; a "
+        "hardcoded count silently breaks the retry path the next time a column "
+        "is added")
+
+
 if __name__ == "__main__":
     main()
