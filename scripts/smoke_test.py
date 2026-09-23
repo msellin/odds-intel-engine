@@ -52682,6 +52682,67 @@ def test_tonybet_results_regular_time():
                        {"number": 2, "team1Score": 0, "team2Score": 2}], 2) == (0, 2)
 
 
+@test("ANCHOR-RESOLVER — Pinnacle tight → consensus → Pinnacle wide → none, with guards and a recorded source")
+def test_anchor_resolver():
+    """#113 (2026-09-23). One fair-price resolver for every consumer. Pins the tier order,
+    the guards that fix the older consensus implementations (outlier, freshness, common
+    window, own-book and Coolbet exclusion, skins), and that it never guesses."""
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+    from workers.utils.anchor import compute_anchor, market_sides
+    S = ("home", "draw", "away")
+    now = datetime(2026, 9, 23, 20, 0, tzinfo=timezone.utc)
+    f = now - timedelta(minutes=5)
+    soft = {b: ([2.0, 3.4, 3.8], f) for b in ("1xBet", "Marathonbet", "Betfair", "Bet365", "BetVictor")}
+
+    # tight fresh Pinnacle wins
+    a = compute_anchor({**soft, "Pinnacle": ([2.10, 3.55, 3.95], f)}, S, at=now)
+    assert a.source == "pinnacle_tight" and a.overround <= 0.04
+    # wide Pinnacle loses to a 5-book consensus
+    a = compute_anchor({**soft, "Pinnacle": ([1.95, 3.3, 3.6], f)}, S, at=now)
+    # (a wide Pinnacle quote still counts as ONE member of the consensus)
+    assert a.source == "consensus" and a.n_books == 6 and "Pinnacle" in a.books
+    assert abs(sum(a.probs.values()) - 1) < 1e-9
+    # stale Pinnacle (>60 min) is not an anchor on its own
+    a = compute_anchor({"Pinnacle": ([2.1, 3.55, 3.95], now - timedelta(minutes=90))}, S, at=now)
+    assert a.source == "none"
+    # consensus not formable → fresh wide Pinnacle, labelled
+    a = compute_anchor({"Pinnacle": ([1.95, 3.3, 3.6], f), "1xBet": ([2.0, 3.4, 3.8], f)}, S, at=now)
+    assert a.source == "pinnacle_wide"
+    # the book being priced, Coolbet, and aggregates are never members
+    books = {**soft, "Coolbet": ([2.0, 3.4, 3.8], f), "Max": ([2.2, 3.6, 4.0], f)}
+    a = compute_anchor(books, S, at=now, exclude_book="Bet365")
+    assert a.source == "none" or "Bet365" not in a.books
+    assert "Coolbet" not in a.books and "Max" not in a.books
+    # an inverted home/away quote is dropped by the ratio guard
+    six = {**soft, "William Hill": ([3.8, 3.4, 2.0], f)}
+    a = compute_anchor(six, S, at=now)
+    assert "William Hill" in a.dropped and a.n_books == 5
+    # members outside the common window / stale are dropped, not averaged in
+    a = compute_anchor({**soft, "Epicbet": ([2.0, 3.4, 3.8], now - timedelta(minutes=400))}, S, at=now)
+    assert "Epicbet" in a.dropped
+    # thin consensus only on request
+    four = dict(list(soft.items())[:4])
+    assert compute_anchor(four, S, at=now).source == "none"
+    assert compute_anchor(four, S, at=now, min_thin_books=3).source == "consensus_thin"
+    # a skin never double-counts its platform
+    a = compute_anchor({**soft, "Tonybet": ([2.0, 3.4, 3.8], f), "20bet": ([2.0, 3.4, 3.8], f)}, S, at=now)
+    assert "20bet" in a.dropped
+    assert market_sides("double_chance") is None, "overlapping DC legs are not a de-viggable set"
+    assert market_sides("over_under_25") == ("over", "under")
+    assert (Path(__file__).resolve().parent / "anchor_consensus_composition.py").exists()
+
+
+@test("ODDS-REFRESH-TOMORROW-EVENING — the 30-min AF refresh also covers after-midnight kickoffs")
+def test_odds_refresh_tomorrow_evening():
+    """#113 (2026-09-23): run_odds fetches one UTC date, so games kicking off after
+    midnight UTC sat on 4–6 h old AF quotes (Pinnacle included) every evening."""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "workers/scheduler.py").read_text()
+    job = src[src.index("def job_odds_refresh"):src.index("def job_odds_pre_kickoff")]
+    assert "ODDS_REFRESH_TOMORROW_FROM_UTC" in job and "timedelta(days=1)" in job
+
+
 @test("BOOK-EXITS-AND-LICENSED-FALLBACK — fixed per-book exits and a licensed Coolbet fallback that cannot price a pick")
 def test_book_exits_and_licensed_fallback():
     """#110 steps 3-4 (2026-09-23). (3) Each book reads its own exit setting and a

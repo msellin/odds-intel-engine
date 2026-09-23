@@ -408,8 +408,22 @@ def job_morning():
 
 
 def job_odds_refresh():
+    """Every :00/:30. EVENING-TOMORROW-STALE (#113, 2026-09-23): `run_odds` fetches one
+    UTC DATE, so from late afternoon the games kicking off after midnight UTC (mostly
+    the Americas, hours away) were refreshed only by the 16:00/22:00 `odds_tomorrow`
+    runs — measured at 20:40 UTC: ~10 AF books incl. Pinnacle 273 min old on 00:30
+    kickoffs, which starves every anchor and prices bets off stale quotes. From
+    ODDS_REFRESH_TOMORROW_FROM_UTC (default 16) each refresh also fetches tomorrow
+    (~10 AF calls per date, ~160/day extra of a 150k/day plan)."""
+    import os
+    from datetime import date, datetime, timedelta, timezone
     from workers.jobs.fetch_odds import run_odds
-    _run_job("odds_refresh", run_odds)
+
+    def _both():
+        run_odds()
+        if datetime.now(timezone.utc).hour >= int(os.getenv("ODDS_REFRESH_TOMORROW_FROM_UTC", "16")):
+            run_odds(target_date=(date.today() + timedelta(days=1)).isoformat())
+    _run_job("odds_refresh", _both)
 
 
 def job_odds_pre_kickoff():

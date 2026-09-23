@@ -30,6 +30,7 @@
        ⑤ Betting         run_betting()             Poisson/XGBoost model + signals + bet placement; sends Telegram DMs to connected Pro/Elite users on each new value bet
        (morning pipeline — chained sequentially, completes by ~06:30)
 24/7   ③ Odds            run_odds()                Every 30min (:00 and :30) — AF bulk odds, 13 bookmakers
+                                                    From 16:00 UTC each run ALSO fetches TOMORROW (#113, 2026-09-23): after-midnight-UTC kickoffs sat on 4–6 h old AF quotes (Pinnacle incl.) every evening. Env ODDS_REFRESH_TOMORROW_FROM_UTC; ~160 extra AF calls/day.
                                                     + mark_closing runs at 13:30, 17:30, 20:00 (pre-KO windows)
                                                     (WC-OVERNIGHT-COVERAGE 2026-06-12 — was 07-22, expanded to cover overnight WC kickoffs)
 */5 24/7  ㊵ Closing snap  run_closing_snap()        CLOSING-LINE-COVERAGE 2026-06-24 — per-fixture AF /odds for matches in T-15→T+5, stored with is_closing=TRUE.
