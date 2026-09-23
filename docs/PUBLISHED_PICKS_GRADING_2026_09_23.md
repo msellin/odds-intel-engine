@@ -310,3 +310,41 @@ past months was worse than plain B in 3 of 4 test months — the search was fitt
 Descriptive, all grade-B rows (not a test): the owner's **odds floor makes B worse** —
 odds ≥1.8 +8.6%, ≥2.0 +5.6%, vs <1.8 +9.6%; confirmation ≥2 books +2.7%, ≥3 −11.3%;
 1x2 +10.1% vs O/U +4.9%. **Plain grade B stays as it is.**
+
+## 5. Pre-registration — grade B / C / A on the Beat the Bookie time series ([[#098]], BEFORE the run)
+
+Owner: *"can we even test more back? like 2026 start, 2025?"* Our own odds before 2026-04 hold
+1–2 snapshots per match — the rule cannot be replayed on them. `data/raw/beat_the_bookie/`
+(Kaunitz, Zhong & Kreiner 2017) holds `odds_series.csv` + `odds_series_b.csv`: **~128k
+matches, 32 anonymous books × 72 hourly 1x2 prices** (index 71 = the hour before kickoff —
+checked: 4,280 prices at idx 71 vs 569 at idx 0 over 300 rows, books open late).
+
+**Replay (mirrors `consensus_arm_replay.py`):** hourly runs from 14 h to 1 h before kickoff;
+per book the latest price within 6 h; consensus = mean of each complete book's own de-vigged
+1x2, **≥5 books**; best price per outcome across books; the publisher's MAX_ODDS 4.0,
+MAX_RATIO 0.20, edge 3–8%; the FIRST qualifying outcome per match (claim-once). Close = the
+consensus at index 71. 1x2 only — the series has no O/U.
+
+**Grade (the live rule, translated because books are anonymous):**
+* **panel** = the 5 books with the lowest log-loss of their own de-vigged index-71 prices
+  against results, measured on the EARLIEST 20% of matches by date. Those matches are then
+  EXCLUDED from every result below. (Same reasoning as the live panel: sharpness measured,
+  not assumed.)
+* **tier 0** = league name matches women / U17–U23 / youth / reserve / amateur / junior /
+  primavera (the live tier-0 bucket: youth, women, reserves, regional).
+* **C** = tier 0 OR a panel book (not the offering one) sees no edge at the price OR
+  edge > 6%. **B** = the rest.
+
+**Questions and bars (on the remaining 80%, split into two halves by date):**
+1. **Is B profitable?** ROI > 0 with one-sided p < 0.05 AND > 0 in both halves.
+2. **Is C worse than B?** B − C > 0 in both halves.
+3. **Grade A**, Holm m = 3, same bar as §3 (ROI > 0 Holm p < 0.05, both halves, beats B):
+   A2 edge 4–6% · **A3 odds ≤ 1.6** (the only §3 lead) · A4 full panel (≥4 panel books other
+   than the offering one priced it, all see an edge). A1 (non-Estonian book) is undefined here.
+
+Also reported, not tested: CLV vs the index-71 consensus, per-half and per-league-group ROI.
+
+**Expected:** B's ROI slightly negative to flat; C worse than B; no A. Kaunitz et al.
+reported this family of strategy profitable at the MAX price across many books — our rule
+takes the best of ~32, so a positive B would not be a surprise either. Stated so neither
+outcome is read as vindication after the fact.
