@@ -2388,6 +2388,10 @@ def job_publish_picks_forward_test():
         pick_id = claim(c, CONSENSUS_ARM)
         if pick_id is None:
             continue
+        # [[#098]] grade D (weak) is recorded to the ledger but NEVER sent —
+        # owner: "we don't publish grade C picks at all" (the old C is now D).
+        if c.get("grade") == "D":
+            continue
         mid = send_telegram_public(render(c))
         if mid is None:
             log.warning("picks_forward_test[consensus]: send FAILED for %s v %s "

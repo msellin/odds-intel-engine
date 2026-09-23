@@ -408,3 +408,23 @@ Bands externally: 1.20–1.30 +9.4% (58) · 1.30–1.40 +8.0% (143) · 1.40–1.
 
 Owner decision pending: three tiers (A 1.20–1.60 · B · C, C retired if it does not separate
 live) or two (A · everything else — the only split distinct in every sample).
+
+## 6. RE-TIER SHIPPED (2026-09-23, owner decision) — B strongest · C standard · D unpublished
+
+Owner: *"make grade B serve grade A picks and grade C serve grade B picks … we don't publish
+grade C picks at all"*, *"leave grade A for some model picks, not the consensus bot"*, and
+*"yes I want it as it is"* (individual messages for both published tiers, no digest).
+
+| grade | rule | bot | label | published |
+|---|---|---|---|---|
+| **B** | every check passes AND odds 1.20–1.60 | `bot_consensus_b_v1` | beta | yes |
+| **C** | every check passes, other odds | `bot_consensus_c_v1` | testing | yes |
+| **D** | tier-0 / a panel book disagrees / edge > 6% | `bot_consensus_d_v1` | testing | **no** — claimed, never sent |
+
+Grade A is reserved for model picks. Migration 381 re-derived every stored consensus grade
+from (old grade, odds): old C → D, old B outside 1.20–1.60 → C. On the 45 picks so far:
+B 5 · C 24 · D 16. **Volume falls from ~18/day to ~13/day — the published bulk is C, which is
+positive but unproven.** The owner chose individual messages over a C digest knowingly.
+
+⚠️ The §1–§5 tables above use the OLD letters (B = today's B+C, C = today's D). The analysis
+scripts map the new grades back, so re-running them reproduces the recorded numbers.

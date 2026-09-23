@@ -32,7 +32,7 @@ from statistics import mean, stdev
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts.publish_picks_forward_test import (  # noqa: E402
-    ALIGN_MIN, CONSENSUS_MAX_EDGE, CONSENSUS_MIN_BOOKS, GRADE_C_MAX_EDGE,
+    ALIGN_MIN, CONSENSUS_MAX_EDGE, CONSENSUS_MIN_BOOKS, WEAK_MAX_EDGE,
     LOOKAHEAD_H, MAX_ODDS, MAX_RATIO, MIN_EDGE, MIN_LEAD_MIN,
 )
 from workers.model.devig import devig  # noqa: E402
@@ -171,7 +171,7 @@ def grade(pk, league, panel):
         if b != pk["book"] and p is not None and p * pk["odds"] - 1 <= 0:
             reasons.append("panel")
             break
-    if pk["edge"] > GRADE_C_MAX_EDGE:
+    if pk["edge"] > WEAK_MAX_EDGE:
         reasons.append("edge")
     return "C" if reasons else "B"
 
@@ -245,7 +245,7 @@ def run() -> int:
     show("panel book disagrees", lambda p: any(
         b != p["book"] and p["per"].get(b) is not None and p["per"][b] * p["odds"] - 1 <= 0
         for b in panel))
-    show("edge > 6%", lambda p: p["edge"] > GRADE_C_MAX_EDGE)
+    show("edge > 6%", lambda p: p["edge"] > WEAK_MAX_EDGE)
 
     def a4(p):
         o = {b: p["per"][b] for b in panel if b != p["book"] and b in p["per"]}

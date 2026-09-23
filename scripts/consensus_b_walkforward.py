@@ -61,6 +61,10 @@ def main() -> int:
         tier = f(r.get("tier"))
         r["grade"], _ = grade_consensus_pick(f(r["edge"]), f(r["odds"]), r["bookmaker"],
                                              int(tier) if tier is not None else None, panel(r))
+        # [[#098]] re-tier: the publisher now returns B/C/D. This analysis was
+        # pre-registered on the OLD two grades, so map back (old B = new B+C,
+        # old C = new D) and a re-run reproduces the recorded numbers.
+        r["grade"] = "C" if r["grade"] == "D" else "B"
         r["mo"] = r["kickoff"][:7]
     B = [r for r in rows if r["grade"] == "B"]
 

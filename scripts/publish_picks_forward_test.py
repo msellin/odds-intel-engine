@@ -137,6 +137,22 @@ CONSENSUS_MAX_EDGE = 0.08
 # ⚠️ B is NOT proven profitable — its holdout is negative and its CI spans zero.
 # C is consistently worse in both halves. Hence two grades and no "A".
 #
+# ── RE-TIERED 2026-09-23 ([[#098]], owner) — THE LETTERS SHIFTED DOWN ─────────
+# Owner: "make grade B serve grade A picks and grade C serve grade B picks … we
+# don't publish grade C picks at all", and "leave grade A for some model picks,
+# not the consensus bot". So the consensus arm now uses B / C / D:
+#   B  strongest  — passes every check AND odds 1.20-1.60. The only rule positive
+#                   in all three samples: our 56 d +17.8% (48), unseen May-Jul
+#                   +14.7% (29), Beat the Bookie 2015-16 +9.8% (696, Holm p<1e-4).
+#                   Mechanism: favourite-longshot bias. Floor 1.20 (owner: "better
+#                   if we don't bet at 1.1") — <1.20 is ~empty and costs nothing.
+#   C  standard   — passes every check, any other odds. +2.9% unseen (n=150),
+#                   +3.3% external — positive but unproven.
+#   D  weak       — any of the three conditions below. NOT PUBLISHED: claimed to
+#                   the ledger (so its record stays honest and checkable) but never
+#                   sent. It loses on our own data (-25.6% / -2.8%).
+# Grade A is reserved for future MODEL picks and never used by this arm.
+#
 # WHY A PANEL AND NOT ONE BOOK. Scored against 10,900 results, no book in our
 # feed is measurably sharper than any other: Pinnacle's median margin is 9.1%
 # and Marathonbet's log-loss is within noise of it (t=-1.6). So no single book
@@ -145,7 +161,8 @@ CONSENSUS_MAX_EDGE = 0.08
 # always "disagrees" with its own price by roughly its margin, which measures
 # nothing.
 GRADE_PANEL = ("Pinnacle", "Marathonbet", "Betfair", "1xBet", "SBO")
-GRADE_C_MAX_EDGE = 0.06
+WEAK_MAX_EDGE = 0.06                # above this edge the pick is weak (grade D)
+STRONG_ODDS_MIN, STRONG_ODDS_MAX = 1.20, 1.60   # grade B band
 GRADE_REASON_TEXT = {
     "tier0": "lower-profile league",
     "panel": "{books} sees no value at this price",
@@ -155,7 +172,7 @@ GRADE_REASON_TEXT = {
 
 def grade_consensus_pick(edge: float, odds: float, bookmaker: str,
                          league_tier, panel_probs: dict) -> tuple[str, list[str]]:
-    """('B'|'C', reasons). `panel_probs` maps panel book -> its own de-vigged
+    """('B'|'C'|'D', reasons). `panel_probs` maps panel book -> its own de-vigged
     probability for THIS selection (books that did not price the full market
     are simply absent). Reasons are machine keys; `panel:<Book>` names the
     dissenting book."""
@@ -166,9 +183,11 @@ def grade_consensus_pick(edge: float, odds: float, bookmaker: str,
         p = panel_probs.get(book)
         if book != bookmaker and p is not None and p * odds - 1.0 <= 0.0:
             reasons.append(f"panel:{book}")
-    if edge > GRADE_C_MAX_EDGE:
+    if edge > WEAK_MAX_EDGE:
         reasons.append("edge")
-    return ("C" if reasons else "B"), reasons
+    if reasons:
+        return "D", reasons                    # weak — recorded, never published
+    return ("B" if STRONG_ODDS_MIN <= odds <= STRONG_ODDS_MAX else "C"), reasons
 
 
 def _grade_line(c: dict) -> str:
@@ -181,7 +200,9 @@ def _grade_line(c: dict) -> str:
     if not grade:
         return ""
     if grade == "B":
-        return "🟢 Grade <b>B</b> — standard · <i>beta</i>\n"
+        return "🟢 Grade <b>B</b> — strongest · <i>beta</i>\n"
+    if grade == "C":
+        return "🔵 Grade <b>C</b> — standard · <i>testing</i>\n"
     why, dissent = [], []
     for r in c.get("grade_reasons") or []:
         if r.startswith("panel:"):
@@ -190,7 +211,9 @@ def _grade_line(c: dict) -> str:
             why.append(GRADE_REASON_TEXT[r])
     if dissent:
         why.insert(0, GRADE_REASON_TEXT["panel"].format(books=" & ".join(dissent)))
-    return f"🟠 Grade <b>C</b> — weaker · <i>testing</i>: {'; '.join(why)}\n"
+    # Grade D is never SENT. This line only appears when a post published before
+    # the re-tier (then labelled C) is re-rendered by regrade_consensus_telegram_posts.
+    return f"⚪ Weak pick — this type is no longer published: {'; '.join(why)}\n"
 
 
 def _book_probs(sides, side_q, book):

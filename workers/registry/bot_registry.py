@@ -168,14 +168,21 @@ BOTS: list[BotSpec] = [
     # grade decides only whose record a pick counts toward. Split in the VIEWS,
     # not the ledger: per-grade arms would defeat the (match, market, selection,
     # arm) de-dupe when a leg's grade flips between runs, and send it twice.
+    # RE-TIERED 2026-09-23 ([[#098]], migration 381): the letters shifted DOWN.
+    # B = strongest (clean + odds 1.20-1.60), C = standard (clean, other odds),
+    # D = weak (recorded, NEVER sent). Grade A is reserved for model picks.
     BotSpec("bot_consensus_b_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5", ANCHOR_CONSENSUS,
-            0.03, None, False,
-            "PUBLISHED (Telegram + /picks), never staked. **BETA.** The consensus arm's grade-B picks: fair value from a de-vigged consensus of >=5 books, >=3% edge, AND every grade check passes — a classified league (tier > 0), a second sharp panel book (Pinnacle/Marathonbet/Betfair/1xBet/SBO, not the one offering the price) also sees an edge, and edge <= 6%. 56-day replay n=392, ROI +10.6% but -3.4% in the holdout half — NOT proven. Ledger: picks_forward_test WHERE arm='consensus_anchor' AND grade='B' (NULL grade also lands here, visibly).",
+            0.03, 1.20, False,
+            "PUBLISHED (Telegram + /picks), never staked. **BETA — the STRONGEST consensus tier.** Every grade check passes (classified league, no second panel book disagrees, edge <= 6%) AND odds 1.20-1.60. The only rule positive in all three samples: ours 56 d +17.8% (n=48), unseen May-Jul +14.7% (n=29), Beat the Bookie 2015-16 +9.8% (n=696, Holm p<1e-4). Mechanism: favourite-longshot bias. ~1 pick/day. Ledger: picks_forward_test WHERE arm='consensus_anchor' AND grade='B'.",
             twin="bot_consensus_c_v1"),
     BotSpec("bot_consensus_c_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5", ANCHOR_CONSENSUS,
             0.03, None, False,
-            "PUBLISHED (Telegram + /picks), never staked. **TESTING.** The consensus arm's grade-C picks: league tier 0, OR no second panel book sees an edge at the published price, OR edge > 6%. 56-day replay n=285, ROI -25.6% (-26.0 / -24.7 in both halves). Published and tracked in the open so it can be retired on its OWN record rather than dragging B's. Ledger: picks_forward_test WHERE arm='consensus_anchor' AND grade='C'.",
+            "PUBLISHED (Telegram + /picks), never staked. **TESTING — the STANDARD consensus tier.** Every grade check passes, odds outside 1.20-1.60. Positive but unproven: +2.9% unseen (n=150), +3.3% external (n=6,380). The bulk of the channel (~12/day). Ledger: grade='C'.",
             twin="bot_consensus_b_v1"),
+    BotSpec("bot_consensus_d_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5", ANCHOR_CONSENSUS,
+            0.03, None, False,
+            "RECORDED, NOT PUBLISHED since 2026-09-23 — the WEAK consensus picks: tier-0 league, OR a second panel book sees no edge at the price, OR edge > 6%. Claimed to the ledger so the record stays checkable, never sent (scheduler skips send for grade D). Loses on our own data: -25.6% in sample, -2.8% unseen. Its earlier picks were published as grade C and stay on /performance. Ledger: grade='D'.",
+            twin="bot_consensus_c_v1"),
 
 
     # Coolbet own-price paper bots

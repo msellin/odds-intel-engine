@@ -24968,7 +24968,7 @@ def test_published_arm_has_a_record_2026_09_22():
             "being added to that list"
         )
         # [[#095]] 2026-09-23: the consensus arm is TWO bots, one per grade.
-        for bot in ("bot_sharp_forward_test_v1", "bot_consensus_b_v1", "bot_consensus_c_v1"):
+        for bot in ("bot_sharp_forward_test_v1", "bot_consensus_b_v1", "bot_consensus_c_v1", "bot_consensus_d_v1"):
             assert bot in page, f"{bot} is not injected into the leaderboard"
 
     # 6. And the publisher must never put a pick on a match that is not on.
@@ -44713,7 +44713,7 @@ def test_performance_public_is_calibrated_or_beta():
         "the filter will drop them — they are 'experimental' in the DB. Those "
         "bots produce the picks readers receive; their record is the whole point."
     )
-    for _b in ("bot_sharp_forward_test_v1", "bot_consensus_b_v1", "bot_consensus_c_v1"):
+    for _b in ("bot_sharp_forward_test_v1", "bot_consensus_b_v1", "bot_consensus_c_v1", "bot_consensus_d_v1"):
         assert _b in page_code, f"{_b} is not injected into the leaderboard"
 
     # and every listed row must still be LABELLED
@@ -44728,12 +44728,22 @@ def test_performance_public_is_calibrated_or_beta():
     # evidence. Skips cleanly offline.
     try:
         from workers.api_clients.db import execute_query as _eq
-        rows = _eq("""SELECT b.maturity_label AS ml,
+        # Forward-test bots keep their record in picks_forward_test, not
+        # simulated_bets ([[#095]]/[[#098]]): count their settled picks through
+        # picks_public_all's `bot` label, and leave them out of the hidden check
+        # — they are injected below the filter from their own ledger.
+        from workers.registry.bot_registry import BOTS as _BOTS, FAM_FORWARD_TEST as _FT
+        _ledger = [b.name for b in _BOTS if b.family == _FT]
+        rows = _eq("""SELECT b.name, b.maturity_label AS ml,
                              (SELECT count(*) FROM simulated_bets s
                                WHERE s.bot_id = b.id
-                                 AND s.result IN ('won','lost')) AS settled
+                                 AND s.result IN ('won','lost'))
+                           + (SELECT count(*) FROM picks_public_all v
+                               WHERE v.edge_kind = 'sharp' AND v.bot = b.name
+                                 AND v.outcome IN ('won','lost')) AS settled
                         FROM bots b
                        WHERE b.is_active AND b.retired_at IS NULL""", [])
+        rows = [r for r in rows if not (r["name"] in _ledger and r["ml"] not in ("calibrated", "beta"))]
     except Exception:
         rows = None
     if rows:
@@ -51894,7 +51904,7 @@ def test_btb_replay_mirrors_live_rule():
     src = (Path(__file__).parent.parent / "scripts" / "btb_consensus_replay.py").read_text()
     imp = src[src.index("from scripts.publish_picks_forward_test import"):]
     imp = imp[:imp.index(")")]
-    for c in ("ALIGN_MIN", "CONSENSUS_MAX_EDGE", "CONSENSUS_MIN_BOOKS", "GRADE_C_MAX_EDGE",
+    for c in ("ALIGN_MIN", "CONSENSUS_MAX_EDGE", "CONSENSUS_MIN_BOOKS", "WEAK_MAX_EDGE",
               "MAX_ODDS", "MAX_RATIO", "MIN_EDGE", "MIN_LEAD_MIN", "LOOKAHEAD_H"):
         assert c in imp, f"{c} must be imported from the live publisher"
         assert f"\n{c} = " not in src and f"\n{c}=" not in src, f"{c} re-defined locally"
@@ -51952,17 +51962,26 @@ def test_consensus_arm_grading():
     import scripts.publish_picks_forward_test as pf
 
     g = pf.grade_consensus_pick
-    assert g(0.04, 2.0, "Epicbet", 1, {"Pinnacle": 0.53}) == ("B", [])
-    assert g(0.04, 2.0, "Epicbet", 0, {}) == ("C", ["tier0"])
-    assert g(0.04, 2.0, "Epicbet", 1, {"Marathonbet": 0.49}) == ("C", ["panel:Marathonbet"])
+    # [[#098]] re-tier: B = strongest (clean AND odds 1.20-1.60), C = standard
+    # (clean, other odds), D = weak (never published). Grade A is reserved for
+    # model picks and never returned here.
+    assert g(0.04, 2.0, "Epicbet", 1, {"Pinnacle": 0.53}) == ("C", [])
+    assert g(0.04, 1.45, "Epicbet", 1, {"Pinnacle": 0.73}) == ("B", [])
+    assert g(0.04, 1.15, "Epicbet", 1, {}) == ("C", []), "below the 1.20 floor is not B"
+    assert g(0.04, 2.0, "Epicbet", 0, {}) == ("D", ["tier0"])
+    assert g(0.04, 2.0, "Epicbet", 1, {"Marathonbet": 0.49}) == ("D", ["panel:Marathonbet"])
     # the price's own book never counts against itself
-    assert g(0.04, 2.0, "Marathonbet", 1, {"Marathonbet": 0.45}) == ("B", [])
-    assert g(0.07, 2.0, "Epicbet", 1, {}) == ("C", ["edge"])
-    assert pf.GRADE_C_MAX_EDGE < pf.CONSENSUS_MAX_EDGE
+    assert g(0.04, 2.0, "Marathonbet", 1, {"Marathonbet": 0.45}) == ("C", [])
+    assert g(0.07, 1.45, "Epicbet", 1, {}) == ("D", ["edge"]), "weak beats the odds band"
+    assert pf.WEAK_MAX_EDGE < pf.CONSENSUS_MAX_EDGE
+    assert (pf.STRONG_ODDS_MIN, pf.STRONG_ODDS_MAX) == (1.20, 1.60)
 
-    line = pf._grade_line({"grade": "C", "grade_reasons": ["panel:Pinnacle", "tier0"]})
-    assert "Grade <b>C</b>" in line and "Pinnacle sees no value" in line and "lower-profile" in line
+    line = pf._grade_line({"grade": "D", "grade_reasons": ["panel:Pinnacle", "tier0"]})
+    assert "no longer published" in line and "Pinnacle sees no value" in line and "lower-profile" in line
     assert "Grade <b>B</b>" in pf._grade_line({"grade": "B", "grade_reasons": []})
+    assert "Grade <b>C</b>" in pf._grade_line({"grade": "C", "grade_reasons": []})
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert 'if c.get("grade") == "D":' in sched, "grade D must be claimed but never sent"
     assert pf._grade_line({}) == "", "an ungraded (live-arm) pick must render no grade line"
 
     src = inspect.getsource(pf.claim)
