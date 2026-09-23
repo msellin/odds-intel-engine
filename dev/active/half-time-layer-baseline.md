@@ -78,3 +78,57 @@ python3 scripts/residual_test.py
 python3 scripts/residual_test_ou.py --line 25
 python3 scripts/data_coverage_report.py --days 180
 ```
+
+---
+
+# PROBE RESULT (2026-09-23) — the deciding arm FAILS, and one arm passing is a caution, not a finding
+
+`scripts/probe_half_time_alpha.py`, half-time ratings scored standalone through
+`residual_test_ou`'s own imported functions.
+
+| arm | α | market LL | model LL | blend LL | vs market | residual AUC | verdict |
+|---|---|---|---|---|---|---|---|
+| **de-vig Pinnacle — DECIDES** | **0.0050** | 0.6721 | 0.6870 | 0.6721 | +0.002% | **0.4086** | **FAIL** |
+| Shin de-vig — robustness | 0.0600 | 0.6722 | 0.6870 | 0.6719 | +0.038% | 0.4076 | *PASS* |
+
+## The verdict is FAIL, and here is why the PASS must not be promoted
+
+**The pre-registration names the realistic de-vig arm as the decider.** The Shin
+arm is a robustness check. Reading the arm that gave the nicer answer is exactly
+the cherry-picking the two-arm design exists to prevent, and it would be the same
+error as quoting a raw CLV because it looks better than the margin-corrected one.
+
+Three further reasons the PASS is not real:
+
+1. **The improvement is +0.038% of log-loss.** Three hundredths of one percent.
+2. **The two arms disagree on identical data.** They differ only in how the
+   overround is removed — proportional vs Shin. If a result flips between them,
+   the effect is smaller than the uncertainty in the de-vig method itself. That
+   is a definition of noise, not a robustness pass.
+3. **Residual AUC is 0.4086 and 0.4076 — on BOTH arms.** Where this model
+   disagrees with the market, the market is right roughly 59% of the time. A
+   model carrying genuine extra information would push that toward 0.50. It is
+   the single most diagnostic number here and it is unambiguous.
+
+## What IS worth recording
+
+* It is the **first non-zero α** this project has produced on any arm. Given four
+  prior α = 0.0000 results, "0.0050 on the decider, 0.06 on the robustness arm"
+  is at least a different shape of failure. Worth noting, worth not
+  over-reading.
+* The model alone is **AUC 0.5425 against the market's 0.6054** — weaker than the
+  existing 52-feature model (0.5825) despite using two inputs. Consistent with
+  the correlation dipstick: our rating predicts the realised total at r = 0.111
+  where the market manages r = 0.237 on the same matches.
+
+## What this does NOT settle, and why the MFV build still runs
+
+A standalone model failing does **not** mean the feature is worthless as one
+input among many — that exact distinction nearly produced a wrong conclusion in
+[[#077]]. The MFV build and the A/B proceed as planned; this probe only says the
+half-time ratings cannot carry a model on their own, which was the cheap question.
+
+And it says **nothing at all about the 1H markets** (`1x2_1h`,
+`team_total_1h_*`, `corners_1h_*`), where we currently price nothing. A model
+that is mediocre at full-time totals may still be the only model in a market we
+do not contest. That needs its own test against those markets' own prices.
