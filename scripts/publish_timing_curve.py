@@ -56,6 +56,7 @@ def main() -> int:
     ko = {m["id"]: m["date"] for m in ms}
     ids = list(ko)
     res = defaultdict(list)            # (checkpoint, feed) -> [clv]
+    same_snap = defaultdict(int)       # legs dropped: close is the SAME snapshot as the anchor
     days = set()
     for i in range(0, len(ids), 200):
         chunk = ids[i:i + 200]
@@ -90,6 +91,14 @@ def main() -> int:
                 pf = devig(anchor[0])
                 if not pf:
                     continue
+                # MECHANICAL-CLV GUARD (found on the first run, 2026-09-23): near
+                # kickoff the anchor and the close can be the SAME Pinnacle
+                # snapshot, and then clv_sharp == the decision edge (>= 3% by
+                # construction). A leg only counts if the close came strictly
+                # AFTER the anchor, i.e. Pinnacle had the chance to move.
+                if c[1] <= anchor[1]:
+                    same_snap[cp] += 1
+                    continue
                 for i_s, s in enumerate(sides):
                     best = None
                     for bk, sq in by_bk.items():
@@ -113,14 +122,17 @@ def main() -> int:
         for feed in ("all", "af_fed", "scraped"):
             n, m, t = stat(res[(cp, feed)])
             lab = f"T-{cp // 60}h" if cp >= 60 else f"T-{cp}m"
-            print(f"  {lab:>11} {feed:>8} {n:6d} {n / nd:6.1f} {100 * m:+9.2f}% {t:6.1f}")
+            extra = f"   ({same_snap[cp]} market-checkpoints dropped: close = anchor)" if feed == "all" else ""
+            print(f"  {lab:>11} {feed:>8} {n:6d} {n / nd:6.1f} {100 * m:+9.2f}% {t:6.1f}{extra}")
     p = Path("/tmp/claude-501/btb_picks.pkl")
     if p.exists():
         picks = pickle.load(open(p, "rb"))
         print("\nEXTERNAL — Beat the Bookie consensus replay, clv by decision hour before kickoff:")
         by = defaultdict(list)
         for pk in picks:
-            if pk.get("clv") is not None:
+            # the BtB close is index 71; a pick decided AT index 71 is scored
+            # against its own anchor hour (mechanical clv) — excluded, as above.
+            if pk.get("clv") is not None and pk["T"] < 71:
                 by[72 - pk["T"]].append(pk["clv"])
         for h in sorted(by, reverse=True):
             n, m, t = stat(by[h])
