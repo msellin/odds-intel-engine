@@ -2966,3 +2966,18 @@ de-vig question needs. Three rules for reading it:
    appear under two bots; `accepted` means it passed every gate, not that a bet was stored (the
    same-day dedupe can still skip it). A published leg is written once, as `selected`, and never
    re-labelled on later passes.
+
+## 73. A consensus anchor and Pinnacle are PEERS, not substitutes — and they sit ~1 pt apart (#113, 2026-09-23)
+
+`scripts/anchor_consensus_composition.py` (120 d, 24,625 fixtures): on outcome log-loss a
+≥5-book consensus TIES AF-Pinnacle — so do 5 random books and the 5 SOFTEST books. That
+does not make them interchangeable for EDGE work: outcome log-loss cannot see a 1–2 pt
+price error. At decision time each anchor predicts its OWN close best (persistence), the
+cross errors are symmetric, and a single soft book is clearly worse than both
+(`scripts/anchor_closing_validation.py`, 1,717 fixtures, 7 d — 1X2 at KO−120: consensus→Pinnacle
+close 1.65 pts vs Pinnacle→consensus close 1.68; Bet365→Pinnacle close 2.48). On 1,669 settled legs with both,
+`clv_cons` runs 0.9 pts below `clv_sharp` (r = 0.976). Consequences: (1) an edge floor
+tuned on one anchor must be re-derived for the other; (2) never pool `clv_sharp` and
+`clv_cons`, and every reader that falls back must carry the source; (3) where Pinnacle is
+missing, 51% of fixtures have only 1–2 books — no method makes an anchor there.
+

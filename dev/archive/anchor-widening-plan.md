@@ -59,3 +59,28 @@ the known defects instead of copying them:
 - Publishing a CLV number off a different anchor silently changes a public figure →
   every consumer records `source`; public numbers split by source, never pooled.
 - Consensus of copies (skins) = one opinion; resolver dedups known skins.
+
+## Validation result (phase 3) — scripts/anchor_closing_validation.py, 1,717 fixtures, 7 d
+Error (max over sides, prob. points) at decision time vs each close:
+
+| 1X2, KO−120 | → Pinnacle close | → consensus close |
+|---|---|---|
+| Pinnacle | 0.98 | 1.68 |
+| consensus ≥5 (ex-Pinnacle) | 1.65 | 0.98 |
+| Bet365 alone (control) | 2.48 | 1.99 |
+
+Each anchor predicts its OWN close best (persistence); the cross errors are symmetric;
+the single soft book loses to both everywhere (O/U 2.5, KO−30, tight-Pinnacle subset alike).
+**Verdict: peers.** Outcome log-loss ties (T1), closing-line prediction is symmetric, and
+both beat any single soft book by 1.5–2.5×. So a consensus is a valid anchor — but the two
+sit ~1–1.7 pts apart, so an edge floor calibrated on one must be RE-DERIVED on the other.
+That is why own-betting edge gates were NOT switched in this pass (see #114).
+
+## Shipped (2026-09-23)
+- resolver `workers/utils/anchor.py`; AF evening-staleness fix; `clv_cons` beside `clv_sharp`
+  (migration 393, 7-day backfill: 71 of 212 non-AH Pinnacle gaps filled, r 0.976 with clv_sharp);
+  wrong-fixture guard falls back to a 4+-book median (418/569 quotes newly covered).
+## Deliberately NOT done
+- Existing paper trigger bots keep their Pinnacle anchor: switching an experiment's anchor
+  mid-flight corrupts its record. New bots use the resolver.
+- The published sharp arm stays byte-identical (pre-registered).
