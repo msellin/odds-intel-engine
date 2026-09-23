@@ -51582,5 +51582,44 @@ def test_settlement_refreshes_referee():
         "entirely when we already have one")
 
 
+@test("COOLBET-SWEEP-IS-OBSERVABLE — the VPS sweep must record to pipeline_runs")
+def test_coolbet_sweep_observable():
+    """COOLBET-NOT-IN-PIPELINE-RUNS, found 2026-09-23 the day the sweep moved.
+
+    `job_coolbet_odds_snapshot` was registered directly rather than through a
+    `_run_job` wrapper. It worked — 81 fixtures matched, odds flowing — and left
+    NO row in `pipeline_runs`. So `select ... where job_name='coolbet_odds_snapshot'`
+    returned zero rows while the job was actively writing, and the failure
+    alerter, the stall watchdog and every "did it run?" query were blind to it.
+
+    That is the exact shape of this repo's worst outages. EPICBET-403-FROM-VPS
+    recorded status='completed' for 277 consecutive runs over six days while
+    writing zero rows; the lesson was that a job must be VISIBLE, and a job with
+    no row at all is strictly worse than one with a wrong row.
+
+    Source-inspected rather than imported: `workers.scheduler` needs apscheduler,
+    which is a VPS dependency and absent on the operator's Mac, so importing it
+    here would make this test pass vacuously wherever it matters least.
+    """
+    import pathlib as _pl
+    src = (_pl.Path(__file__).resolve().parent.parent
+           / "workers" / "scheduler.py").read_text(encoding="utf-8")
+
+    assert "def _coolbet_odds_snapshot_wrapper" in src, \
+        "the Coolbet sweep needs a _run_job wrapper like every other scheduled odds job"
+
+    w_start = src.index("def _coolbet_odds_snapshot_wrapper")
+    wrapper = src[w_start:w_start + 900]
+    assert '_run_job("coolbet_odds_snapshot"' in wrapper, \
+        "the wrapper must call _run_job so the run lands in pipeline_runs"
+
+    # the registration must reference the WRAPPER, not the bare job
+    reg_at = src.index('id="coolbet_odds_snapshot"')
+    registration = src[reg_at - 400:reg_at]
+    assert "_coolbet_odds_snapshot_wrapper" in registration, \
+        "add_job must reference the wrapper — registering the bare function is what made " \
+        "the job invisible in the first place"
+
+
 if __name__ == "__main__":
     main()

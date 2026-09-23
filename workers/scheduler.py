@@ -601,6 +601,16 @@ def _epicbet_odds_snapshot_wrapper():
     _run_job("epicbet_odds_snapshot", job_epicbet_odds_snapshot)
 
 
+def _coolbet_odds_snapshot_wrapper():
+    """COOLBET-NOT-IN-PIPELINE-RUNS (2026-09-23). Registered without a _run_job
+    wrapper when the sweep moved to the VPS, so it wrote odds perfectly and left
+    NO row in `pipeline_runs` — invisible to the failure alerter, the stall
+    watchdog and every 'did it run?' query. A job that can fail unobserved is the
+    exact shape of this repo's worst outages (EPICBET-403-FROM-VPS reported
+    completed for 277 runs while writing zero rows). Wrapped now, like Epicbet's."""
+    _run_job("coolbet_odds_snapshot", job_coolbet_odds_snapshot)
+
+
 
 def _shadow_run(shadow_cohort: str):
     """Run run_morning(shadow_mode=True, shadow_cohort=...).
@@ -2978,7 +2988,7 @@ def main():
     # ~/Library/LaunchAgents/paused/. Reloading them while this is registered
     # double-writes odds_snapshots and doubles our Imperva footprint, which is
     # what escalates the flag. Check: launchctl list | grep coolbet-odds-snapshot
-    scheduler.add_job(job_coolbet_odds_snapshot,
+    scheduler.add_job(_coolbet_odds_snapshot_wrapper,
                       CronTrigger(hour="*", minute="3,33"),
                       id="coolbet_odds_snapshot", name="Coolbet Odds [30min]")
 
