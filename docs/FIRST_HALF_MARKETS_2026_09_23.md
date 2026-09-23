@@ -161,3 +161,17 @@ comes later:
 Both hold → re-activate a 3%-floor first-half paper bot as a registered forward test and put
 the placement question (🤖 OWN, Epicbet) to the owner. Either fails → the lead closes as a
 data artefact or a price that does not survive to the site.
+
+## #104 — why Pinnacle first-half O/U "stopped" on 2026-09-04 (fixed 2026-09-23)
+
+It never started. **Every** API-Football book's `over_under_1h_*` rows exist only
+2026-08-29 → 09-04, all within 2 h of kickoff — the signature of the one-off 7-day historical
+backfill run on 2026-09-05. Live capture was switched on the same day (`fa88a6e3`), and the
+parser works (probed live: 80 first-half O/U rows from one fixture, Pinnacle included). The
+rows died at storage: `workers/utils/odds_quality.filter_garbage_ou_rows` drops any
+`over_under_*` market not in `ALLOWED_OU_MARKETS`, a May 2026 allowlist of the four full-time
+lines, and `over_under_1h_15` matches the `over_under_` prefix. The 1H team-total and corner
+families survived only because their names start differently — which is exactly what made
+it look like a Pinnacle feed problem. **Fix:** `over_under_1h_05` and `over_under_1h_15`
+added to the allowlist (quarter / whole lines stay out — they push or half-win and have no
+settler). Smoke `OU-ALLOWLIST-KEEPS-FIRST-HALF`.

@@ -31,6 +31,15 @@ ALLOWED_OU_MARKETS: frozenset[str] = frozenset({
     "over_under_25",
     "over_under_35",
     "over_under_45",
+    # PINNACLE-1H-OU-COLLECTION-GAP ([[#104]], 2026-09-23). `is_ou_market` is a
+    # PREFIX test, so `over_under_1h_*` counts as an O/U market — and this
+    # allowlist (May 2026) predates first-half capture (2026-09-05). Every AF
+    # first-half O/U row from every book was dropped here, silently, from the
+    # day it was switched on; the only rows we ever held came from the one-off
+    # 7-day backfill, which bypassed this filter. Only the two half-goal lines
+    # we measure are allowed: 0.75/1.0/1.25 push or half-win and have no settler.
+    "over_under_1h_05",
+    "over_under_1h_15",
 })
 
 # Drop Asian Handicap lines beyond ±3.0. AF returns up to 50 lines per

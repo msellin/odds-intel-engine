@@ -51944,6 +51944,27 @@ def test_epicbet_1h_price_verify():
     assert "shadow_bet_id  uuid        NOT NULL UNIQUE" in mig
 
 
+@test("OU-ALLOWLIST-KEEPS-FIRST-HALF — AF first-half O/U survives the storage filter")
+def test_ou_allowlist_keeps_first_half():
+    """[[#104]], 2026-09-23. `filter_garbage_ou_rows` drops any `over_under_*`
+    market not in ALLOWED_OU_MARKETS, and `over_under_1h_*` matches that prefix.
+    The May allowlist predated first-half capture, so from 2026-09-05 every AF
+    first-half O/U row from every book was silently dropped before storage —
+    while the 1H team-total and corner families (different prefixes) arrived
+    fine, which is what made it look like a Pinnacle feed gap."""
+    from workers.utils.odds_quality import filter_garbage_ou_rows
+    rows = [
+        {"bookmaker": "Pinnacle", "market": "over_under_1h_05", "selection": "over", "odds": 1.40},
+        {"bookmaker": "Pinnacle", "market": "over_under_1h_05", "selection": "under", "odds": 2.95},
+        {"bookmaker": "Pinnacle", "market": "over_under_1h_15", "selection": "over", "odds": 3.10},
+        {"bookmaker": "Pinnacle", "market": "over_under_1h_15", "selection": "under", "odds": 1.38},
+        {"bookmaker": "Pinnacle", "market": "over_under_1h_125", "selection": "over", "odds": 2.20},
+        {"bookmaker": "Pinnacle", "market": "over_under_1h_125", "selection": "under", "odds": 1.70},
+    ]
+    kept = {r["market"] for r in filter_garbage_ou_rows(rows)}
+    assert kept == {"over_under_1h_05", "over_under_1h_15"}, kept
+
+
 @test("CONSENSUS-SPLIT-BY-GRADE — one ledger arm, two bots (B beta, C testing), split in the views")
 def test_consensus_split_by_grade():
     """[[#095]], 2026-09-23. Owner: split the consensus bot into two bots by
