@@ -68,6 +68,8 @@ COLS = (
     "shots_outsidebox_home", "shots_outsidebox_away",
     "goals_prevented_home", "goals_prevented_away",
     "free_kicks_home", "free_kicks_away",
+    "shots_off_target_home", "shots_off_target_away",
+    "pass_pct_home", "pass_pct_away",
 )
 
 
@@ -80,6 +82,7 @@ def todo(limit: int, oldest_first: bool):
          WHERE m.api_football_id IS NOT NULL
            AND s.shots_insidebox_home IS NULL
            AND s.shots_outsidebox_home IS NULL
+           AND s.shots_off_target_home IS NULL
          ORDER BY m.date {order}
          LIMIT %s""", (limit,))
 

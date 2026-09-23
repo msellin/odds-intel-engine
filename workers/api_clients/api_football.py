@@ -757,6 +757,20 @@ def parse_fixture_stats(stats_response: list[dict]) -> dict:
         result[f"red_cards_{prefix}"] = _parse_int(stats.get("Red Cards"))
         result[f"saves_{prefix}"] = _parse_int(stats.get("Goalkeeper Saves"))
         result[f"passes_{prefix}"] = _parse_int(stats.get("Total passes"))
+        # ⚠️ MISNAMED, AND THE NAME IS THE TRAP. AF's "Passes accurate" is a
+        # COUNT (e.g. 477 of 522), not a percentage — verified on stored rows:
+        # range 0-1008, mean 340. The column is `pass_accuracy_*`, which invites
+        # reading it as 0-100 and being wrong by a factor of ~4-5.
+        #
+        # Checked 2026-09-23: it reaches NO feature column (zero pass/accuracy
+        # columns in match_feature_vectors) and is never rendered as a percentage
+        # on any surface, so nothing is currently broken by it. Documented rather
+        # than renamed because the column is in db.py, supabase_client.py,
+        # live_poller, live_tracker and the web types, and a rename for cosmetics
+        # is exactly the identity change this repo keeps paying for.
+        #
+        # AF's "Passes %" IS the percentage, and is deliberately not stored: it
+        # equals accurate/total, and appeared on only 6 of 50 sampled team-rows.
         result[f"pass_accuracy_{prefix}"] = _parse_int(stats.get("Passes accurate"))
         result[f"blocked_shots_{prefix}"] = _parse_int(stats.get("Blocked Shots"))
         result[f"shots_on_target_{prefix}"] = _parse_int(stats.get("Shots on Goal"))
@@ -788,12 +802,25 @@ def parse_fixture_stats(stats_response: list[dict]) -> dict:
         # [[#077]] lists set-piece volume as a candidate goals signal.
         result[f"free_kicks_{prefix}"] = _parse_int(stats.get("Free Kicks"))
 
-        # NOT STORED, DELIBERATELY: `Shots off Goal`. It is on 50/50 responses,
-        # but `Total Shots = Shots on Goal + Shots off Goal + Blocked Shots`
-        # held on 30 of 30 team-rows tested, so it carries ZERO information we
-        # do not already have. A redundant column is a second thing to keep
-        # consistent, not a second signal. (`Passes %` is skipped for the same
-        # reason — it is Passes accurate / Total passes, and only on 6/50.)
+        # `Shots off Goal` and `Passes %` — STORED, after initially being skipped
+        # as "exactly derivable". That was wrong, and the owner was right to
+        # push back on it ("be very sceptical on skipping anything we can get,
+        # unless we already store it").
+        #
+        # The identity `Total = on + off + blocked` held on 30/30 team-rows in
+        # the first sample, which is what the skip rested on. Widening to 78
+        # rows: it holds on 74 — and on **4 of 78 (5%) `Shots off Goal` is
+        # PRESENT while one of its three inputs is NULL**, so there the field is
+        # the ONLY source and the "derivation" silently yields nothing.
+        #
+        # The general lesson, worth more than the two columns: a derivation is
+        # only equivalent to a stored field when EVERY input is guaranteed
+        # present. Ours are not — AF omits fields per fixture. And the asymmetry
+        # is brutal: storing costs one nullable column, while not storing costs a
+        # re-fetch of the whole history against the same quota, if we ever notice.
+        result[f"shots_off_target_{prefix}"] = _parse_int(stats.get("Shots off Goal"))
+        result[f"pass_pct_{prefix}"] = _parse_int(
+            str(stats.get("Passes %") or "").replace("%", "") or None)
 
         # goals_prevented — post-shot xG on the KEEPER's side (shot quality faced
         # minus goals conceded). Served alongside expected_goals and likewise

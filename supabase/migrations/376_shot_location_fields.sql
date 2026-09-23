@@ -80,6 +80,18 @@ ALTER TABLE match_stats
     -- column is a second thing to keep consistent, not a second signal.
     ADD COLUMN IF NOT EXISTS free_kicks_home          integer,
     ADD COLUMN IF NOT EXISTS free_kicks_away          integer,
+    -- Stored after initially being skipped as "exactly derivable". Widening the
+    -- test from 30 to 78 team-rows: the identity `Total = on + off + blocked`
+    -- holds on 74, and on 4 of 78 (5%) `Shots off Goal` is PRESENT while one of
+    -- its inputs is NULL -- there the field is the only source and the
+    -- derivation silently yields nothing. A derivation equals a stored field
+    -- only when every input is guaranteed present, and AF omits fields per
+    -- fixture. Storing costs one nullable column; not storing costs a re-fetch
+    -- of the whole history against the same quota.
+    ADD COLUMN IF NOT EXISTS shots_off_target_home    integer,
+    ADD COLUMN IF NOT EXISTS shots_off_target_away    integer,
+    ADD COLUMN IF NOT EXISTS pass_pct_home            integer,
+    ADD COLUMN IF NOT EXISTS pass_pct_away            integer,
     ADD COLUMN IF NOT EXISTS shots_insidebox_home_ht  integer,
     ADD COLUMN IF NOT EXISTS shots_insidebox_away_ht  integer,
     ADD COLUMN IF NOT EXISTS shots_outsidebox_home_ht integer,
@@ -97,3 +109,18 @@ COMMENT ON COLUMN match_stats.goals_prevented_home IS
   'Post-shot expected goals on the KEEPER''s side -- quality of shots faced '
   'minus goals actually conceded. Served by API-Football alongside '
   'expected_goals and discarded until migration 376 ([[#078]]).';
+
+-- Not a new column — a correction to an existing one's meaning, found while
+-- auditing the feed. `pass_accuracy_*` holds API-Football's "Passes accurate",
+-- which is a COUNT (e.g. 477 of 522), not a percentage: measured range 0-1008,
+-- mean 340. Nothing currently misreads it (it reaches no feature column and is
+-- never rendered as a percentage), so the column is documented rather than
+-- renamed -- a rename would touch db.py, supabase_client.py, live_poller,
+-- live_tracker and the web types for no behavioural gain.
+COMMENT ON COLUMN match_stats.pass_accuracy_home IS
+  'COUNT of accurate passes (API-Football "Passes accurate"), NOT a percentage. '
+  'Divide by passes_home for a rate. Named before the distinction mattered; '
+  'documented by migration 376 rather than renamed because the name is load-'
+  'bearing across five modules and nothing currently misreads it.';
+COMMENT ON COLUMN match_stats.pass_accuracy_away IS
+  'COUNT of accurate passes, NOT a percentage. See pass_accuracy_home.';

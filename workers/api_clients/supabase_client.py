@@ -2729,6 +2729,8 @@ _MATCH_STATS_FIELDS = [
     "shots_outsidebox_home", "shots_outsidebox_away",
     "goals_prevented_home", "goals_prevented_away",
     "free_kicks_home", "free_kicks_away",
+    "shots_off_target_home", "shots_off_target_away",
+    "pass_pct_home", "pass_pct_away",
     "passes_home", "passes_away",
     "pass_accuracy_home", "pass_accuracy_away",
     "yellow_cards_home", "yellow_cards_away",

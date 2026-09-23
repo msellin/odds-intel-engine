@@ -443,6 +443,23 @@ those 46,089 matches are uncovered at source, not by our gating.
 | `match_player_stats` | 8,559 | 4.9% |
 | `match_injuries` | 1,572 | 0.9% |
 
+### AF endpoints: we call 18 — three only ever ran forward
+
+| endpoint | stored | fill of 175,450 finished | why |
+|---|---|---|---|
+| `fixtures/lineups` | `matches.lineups_*` / `formation_*` | **6.5% / 5.1%** | fetched ~40 min BEFORE kickoff for upcoming matches only; never retrospectively |
+| `fixtures/players` | `match_player_stats` (363,765 rows) | **4.9%** | forward-only, same shape |
+| `injuries` + `sidelined` | `match_injuries` 12,102 · `player_sidelined` 13,039 | **0.9%** | forward-only |
+
+All three are backfillable — AF serves historical fixtures (verified to **2018**).
+The constraint is quota: 150k calls/day shared with the live pipeline against
+~175k finished matches per endpoint, i.e. ~1.2 days of total quota each. Metered,
+resumable, off-peak. See [[#081]].
+
+**Dead schema:** the `lineups`, `injuries`, `players` and `seasons` tables all
+exist with **0 rows** — lineups are written onto `matches`, not into `lineups`.
+An empty table with a plausible name is a trap for the next person who greps.
+
 `match_events` has **2.5× the coverage of `match_stats`**, holds **361,677 goal
 events with minutes across 129,518 matches** and **30,356 red cards with minutes**
 — and feeds the model nothing. Half-time scores are on **172,334 matches (98.2%)**.
