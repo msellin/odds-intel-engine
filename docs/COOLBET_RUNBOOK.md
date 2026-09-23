@@ -710,7 +710,10 @@ psql "$DATABASE_URL" -c "select max(\"timestamp\"), count(*) from odds_snapshots
 python3 -m workers.jobs.flaresolverr_health --dry-run
 ```
 
-### 6. Unibet-Site odds feed STALE  → session logged out (SELF-HEALS now)
+### 6. Unibet-Site odds feed STALE
+
+> **CHANGED 2026-09-23 (UNIBET-ON-VPS).** The sweep now runs on the VPS (scheduler job `unibet_site_odds`) against a **logged-OUT** tab in `oddsintel-unibet-chrome.service`, with `login=False` — so the self-revive below no longer runs for the feed, and "logged out" is not a cause. Check instead: `systemctl status oddsintel-unibet-chrome` (Chrome up? a `unibet.ee` page in `curl 127.0.0.1:9222/json/list`?), `oddsintel-zone-egress` (the Estonian exit), and the job's `reason` in `pipeline_runs` (`quickbrowse returned no country RNs` / `aborted — repeated non-200` = DataDome throttling this IP). **Do not script logins on the VPS**: from that egress a login gets a DataDome slider captcha, and retries raise the bot score. The text below describes the Mac-era logged-in path, still used by the Unibet placer.
+
 - **Symptom:** `odds_snapshots` `Unibet-Site` rows stop landing; newest age grows past ~90 min; the best-price router shows 0 Unibet candidates.
 - **Cause:** the Unibet-Site sweep (`unibet_odds_feed.run_bulk`, launchd `com.oddsintel.unibet-site-odds` :15/:45) injects fetches on the operator's established, **logged-in** unibet.ee tab in CDP-Chrome (:9222). If that session logs out (Chrome relaunch, cookie expiry) the sweep writes 0 rows.
 - **Self-heal (2026-09-10 — no operator action normally needed):** `run_bulk` now calls `unibet_browser_sync.ensure_logged_in()` before every sweep — if logged out it runs `cdp_auto_login()` (reads `UNIBET_USER`/`UNIBET_PASS` from `.env`, fills the login modal on the **existing** tab), rate-limited to once/30min. **Auto-login through DataDome WORKS** — verified `logged_in ✓`, 1229 rows written on the next sweep. The earlier "manual only, DataDome blocks it" belief was wrong on two counts: (a) `unibet_browser_sync` never loaded `.env`, so the creds were invisible and auto-login no-op'd on "missing credentials"; (b) `login_via_modal` raced the header-login button (bare 5s click) — fixed with a `wait_for_selector(state="visible")`. This is the Unibet analogue of Coolbet's `auto_self_heal` auto-login step (`COOLBET_AUTO_LOGIN_ON_HEAL`).

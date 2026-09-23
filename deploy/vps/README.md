@@ -69,3 +69,19 @@ invisible because each script's *comment* described the intent, not the code:
 **If you touch either script: the Storage Box shell has only `ls`, `rm`, `mkdir`.**
 No `find`, no `xargs`, no `sh -c`. Any retention sweep must list remotely and
 decide locally — which is what both scripts now do.
+
+## Direct-book readers (added 2026-09-23, UNIBET-ON-VPS)
+
+Copied from the box so the repo records what runs there. Install/update with
+`scp deploy/vps/<unit> root@204.168.199.8:/etc/systemd/system/ && systemctl daemon-reload`.
+
+- **`oddsintel-unibet-chrome.service`** — real Google Chrome, headful under Xvfb,
+  persistent profile `/opt/oddsintel/unibet-chrome-profile`, CDP on
+  **127.0.0.1:9222 only**, egress via `oddsintel-zone-egress` (Estonian exit).
+  The scheduler's `unibet_site_odds` job and the near-kickoff capture read
+  unibet.ee prices through it, **logged out** — login from this egress gets a
+  DataDome captcha and reading needs none. Not snap Chromium: its confinement
+  refuses a custom `--user-data-dir`.
+- **`oddsintel-near-kickoff-epicbet.{service,timer}`** — every 5 min, closing
+  snapshots for fixtures inside T-15 at all three direct books
+  (`--books Epicbet,Coolbet,Unibet-Site`). The name is historical.

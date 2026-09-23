@@ -1,0 +1,11 @@
+# Every 5 minutes — matches the Mac plist's StartInterval of 300s.
+[Unit]
+Description=Run OddsIntel near-kickoff Epicbet capture every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

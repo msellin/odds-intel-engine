@@ -35,8 +35,8 @@
 */5 24/7  ㊵ Closing snap  run_closing_snap()        CLOSING-LINE-COVERAGE 2026-06-24 — per-fixture AF /odds for matches in T-15→T+5, stored with is_closing=TRUE.
                                                     Solves the gap where only ~25% of bets had a Pinnacle pre-KO snap; clv_pinnacle measurement now resolves against the real closing line.
                                                     24/7 since NEAR-KICKOFF-CAPTURE 2026-09-11 (was 12-23 UTC — early Asian/Australian kickoffs got no close at all).
-                                                    AF books only. The DIRECT-book close (Coolbet / Unibet-Site / Epicbet) is the Mac launchd job
-                                                    `com.oddsintel.near-kickoff-capture` (every 5 min, workers/jobs/near_kickoff_capture.py): fixtures in
+                                                    AF books only. The DIRECT-book close (Coolbet / Unibet-Site / Epicbet) is the VPS systemd timer
+                                                    `oddsintel-near-kickoff-epicbet` (every 5 min since 2026-09-23; was Mac launchd; workers/jobs/near_kickoff_capture.py): fixtures in
                                                     the next 15 min, fetched by the event id the sweeps store in `book_event_map` — no board walk.
                                                     Also fixed: fetch_odds.py was hardcoding is_closing=False; now computes from minutes_to_kickoff.
 07:15  ⑩ Match Previews  (PMF-PAUSED 2026-07-03)   Top 10 matches → Gemini 200-word previews (ENG-3). **Paused** at ~0 users — pure UI content with no readers. Job function preserved for manual re-run; re-enable when user count > 0.
@@ -149,10 +149,15 @@ Threshold is measured, not chosen: 7-day inter-write gaps are p99 **59.2 min** (
 > moved to the VPS, egressing through an Estonian exit node (zone.ee, AS49604).
 > **Parked in `~/Library/LaunchAgents/paused/`:** `coolbet-odds-snapshot`,
 > `coolbet-feed-watchdog`, `inplay-collector`, `flaresolverr-keepalive`,
-> `mac-fs-sweep`. `near-kickoff-capture` is now **`--books Unibet-Site` only**.
-> **The Mac's FlareSolverr is STOPPED** — 6h of logs showed its only remaining
-> consumer was its own keepalive. What is left on the Mac is Unibet and the
-> CDP-Chrome it needs, plus the Postgres tunnel. Details:
+> `mac-fs-sweep`, and — **UNIBET-ON-VPS 2026-09-23** — `unibet-site-odds` and
+> `near-kickoff-capture`. **The Mac's FlareSolverr is STOPPED** — 6h of logs showed
+> its only remaining consumer was its own keepalive. **No odds feed runs on the Mac
+> any more:** Unibet-Site is the VPS scheduler job `unibet_site_odds` (:15/:45),
+> reading a **logged-out** unibet.ee tab in `oddsintel-unibet-chrome.service`, and
+> the direct-book close for all three books is the VPS timer
+> `oddsintel-near-kickoff-epicbet`. Still on the Mac: the Postgres tunnel, and
+> `cdp-watch` / `coolbet-cdp-selfheal`, which look after the Mac's CDP-Chrome — the
+> browser the (paused) real-money placers drive. Details:
 > `dev/active/vps-migration-context.md`.
 
 > **Troubleshooting: see [`docs/COOLBET_RUNBOOK.md`](docs/COOLBET_RUNBOOK.md)** — the full transport chain, the current API endpoints, and symptom→cause→fix for every Coolbet failure mode (FS-down, Imperva challenge, expired session, self-pause, below-floor days). Written after the 2026-09-07 outage whose 404 symptom looked like four different problems.
@@ -173,7 +178,7 @@ dashboard cannot show. Verified against `launchctl list` on 2026-09-11.
 | `com.oddsintel.mac-fs-sweep` | hourly at :47 | `scripts/ops/mac_fs_sweep.sh` → `sweep_stale_sessions.py --fs-url $COOLBET_FS_LOCAL_URL`. **MAC-FS-UNSWEPT 2026-09-21** — `job_flaresolverr_sweep` (VPS, :37) only ever swept the VPS FlareSolverr, while Coolbet placement, the Coolbet odds sweep, the in-play collector and Epicbet all route through the MAC's FS. A leaked session there lived forever inside a 1 GiB cap sized for ONE session while three feeds share it; two leaks were present when this shipped. :47 is clear of the odds sweep (:03/:33) and Epicbet (:02/:32). Throwaway `wd_freshprobe_*` sessions are reaped but spared for 300s so a sweep cannot kill a probe mid-diagnosis. Guard: smoke `MAC-FS-SWEPT` asserts every live Mac session name is whitelisted — pointing this sweeper at the Mac with an incomplete whitelist would be an hourly feed outage that reads as a scraper bug. | ✅ repo |
 | `com.oddsintel.residential-egress` | every 120s + at boot | **RESIDENTIAL-EGRESS 2026-09-22.** LaunchDAEMON (root — `wg-quick` configures an interface). Keeps the WireGuard tunnel (`10.8.0.2`) + `microsocks` on `10.8.0.2:1080` alive, so the **VPS** can reach Epicbet/Coolbet through this machine's Estonian residential line with plain requests instead of FlareSolverr. The VPS side is `OI_RESIDENTIAL_PROXY` and has **no fallback** by design — if this dies, VPS collection FAILS loudly rather than collecting from the Hetzner IP. Not a full-tunnel VPN: `AllowedIPs = 10.8.0.0/24`, the Mac's own default route is untouched. | ✅ repo |
 | `com.oddsintel.flaresolverr-keepalive` | every 180s + at load | Probes :8191, restarts Docker/container if down. | ✅ repo |
-| `com.oddsintel.unibet-site-odds` | :15 / :45 | `unibet_odds_feed --bulk --days 2` — true unibet.ee site prices → `Unibet-Site`. Self-revives its session via `ensure_logged_in()`. Fires the **odds-arrival hook** (`pick_generator.on_odds_written`) when it wrote rows — before 2026-09-11 a qualifying Unibet price waited ~25 min for the next generator poll. | ⚠️ **no repo plist** |
+| ~~`com.oddsintel.unibet-site-odds`~~ | **⛔ MOVED TO THE VPS 2026-09-23** (UNIBET-ON-VPS) — now scheduler job `unibet_site_odds`, logged OUT (`login=False`); plist parked in `~/Library/LaunchAgents/paused/`. **Never run both** — it doubles the DataDome footprint. Was: | `unibet_odds_feed --bulk --days 2` — true unibet.ee site prices → `Unibet-Site`. Self-revives its session via `ensure_logged_in()`. Fires the **odds-arrival hook** (`pick_generator.on_odds_written`) when it wrote rows — before 2026-09-11 a qualifying Unibet price waited ~25 min for the next generator poll. | ⚠️ **no repo plist** |
 | `com.oddsintel.cdp-watch` | every 5 min | `coolbet_cdp_rebootstrap.py --quick` — one HTTP call, logs only up/down **transitions** to `dev/active/cdp-lifecycle.jsonl`. Exists because the heavy self-heal probe runs at :25/:55, so a CDP death AND revival inside one window left no trace — which is why "why does CDP-Chrome keep dying?" was unanswerable on 2026-09-13. | ✅ repo |
 | `com.oddsintel.coolbet-cdp-selfheal` | :25 / :55 | `coolbet_cdp_rebootstrap.py --apply` — detects a CDP-Chrome profile that Coolbet walls (the "STAY COOL" state, which is **not** Imperva — see runbook §2a) and re-copies the operator's normal Chrome profile, relaunches, and syncs the JWT to the DB. Rate-limited to one heal / 6h (the copy moves several GB). | ✅ repo |
 | `com.oddsintel.best-price-router` | **UNLOADED 2026-09-15** (was :20 / :50 `--execute`) | `best_price_router --execute` — **REAL MONEY at the best book** (Coolbet or Unibet-Site). ⚠️ The 2026-09-12 cutover set `ROUTER_ALLOW_REAL=true` in `.env`, so it ran in REAL mode every 30 min through the 09-14 "pause" and staked nothing only because it found no candidates; and it iterated `PLACEABLE_BOTS`, never the DB toggle. Since OWN Phase 0 the env var is no longer sufficient: the run-level gate (`placement_paused` + `real_money_armed`) and the DB allowlist gate every dispatch, incl. the Unibet arm. Parked in `~/Library/LaunchAgents/paused/`. |

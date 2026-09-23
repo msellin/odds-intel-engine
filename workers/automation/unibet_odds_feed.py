@@ -650,10 +650,16 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
     return c
 
 
-def run_bulk(days: int = 2, dry_run: bool = False, limit: int | None = None) -> dict:
+def run_bulk(days: int = 2, dry_run: bool = False, limit: int | None = None,
+             login: bool = True) -> dict:
     """Broad Unibet SITE odds sweep for DB fixtures within `days` → `Unibet-Site`.
-    Rate-limited (env UNIBET_SITE_RATE_S / _MAX_FETCHES), fail-safe. Requires the
-    operator's logged-in unibet.ee tab in CDP-Chrome. Never raises."""
+    Rate-limited (env UNIBET_SITE_RATE_S / _MAX_FETCHES), fail-safe. Needs a
+    unibet.ee tab in CDP-Chrome. Never raises.
+
+    `login=False` (UNIBET-ON-VPS, 2026-09-23): skip the self-revive login. The
+    prices are public — a logged-OUT tab returned the same prices as the Mac's
+    logged-in one — and login is needed only to place. The VPS reader runs this
+    way because its login is answered with a DataDome captcha."""
     import asyncio
     # UNIBET-SELF-REVIVE (2026-09-10): before sweeping, self-login if the CDP
     # unibet.ee session went logged-out — the same way the Coolbet daemon heals.
@@ -661,14 +667,15 @@ def run_bulk(days: int = 2, dry_run: bool = False, limit: int | None = None) -> 
     # .env (creds invisible → auto-login no-op) + a login-button click race. Both
     # fixed; auto-login through DataDome works (verified logged_in ✓). Rate-limited
     # to once/30min. Never raises.
-    heal = "skipped"
-    try:
-        from workers.automation import unibet_browser_sync as ubs
-        heal = ubs.ensure_logged_in(min_gap_min=30)
-        if heal == "logged_in":
-            log.info("unibet-site: session self-revived (logged back in)")
-    except Exception as e:  # noqa: BLE001
-        log.debug("unibet-site self-revive skipped (non-fatal): %s", e)
+    heal = "skipped" if login else "not_attempted"
+    if login:
+        try:
+            from workers.automation import unibet_browser_sync as ubs
+            heal = ubs.ensure_logged_in(min_gap_min=30)
+            if heal == "logged_in":
+                log.info("unibet-site: session self-revived (logged back in)")
+        except Exception as e:  # noqa: BLE001
+            log.debug("unibet-site self-revive skipped (non-fatal): %s", e)
     try:
         res = asyncio.run(_async_run_bulk(days, limit, dry_run))
     except Exception as e:  # noqa: BLE001
@@ -858,6 +865,8 @@ def main() -> int:
     ap.add_argument("--days", type=int, default=2)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--no-login", action="store_true",
+                    help="bulk: read logged-out, never attempt the self-revive login")
     ap.add_argument("--match-id", help="single-event: DB match id to store under")
     ap.add_argument("--write", action="store_true", help="single-event: write rows to odds_snapshots")
     ap.add_argument("--minutes", type=int, default=None, help="single-event: minutes to kickoff")
@@ -868,7 +877,8 @@ def main() -> int:
         print(json.dumps(resolve_event_url(h.strip(), a.strip()), indent=2, ensure_ascii=False))
         return 0
     if args.bulk:
-        print(json.dumps(run_bulk(days=args.days, dry_run=args.dry_run, limit=args.limit),
+        print(json.dumps(run_bulk(days=args.days, dry_run=args.dry_run, limit=args.limit,
+                                  login=not args.no_login),
                          indent=2, ensure_ascii=False))
         return 0
     if not args.event:

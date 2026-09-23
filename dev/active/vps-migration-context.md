@@ -71,8 +71,8 @@ Mac plists for these are in `~/Library/LaunchAgents/paused/`.
 
 | Job | Why it is still here |
 |---|---|
-| `unibet-site-odds` | DataDome needs a human-established logged-in CDP tab |
-| `near-kickoff-capture` | **now `--books Unibet-Site` only** — Coolbet left |
+| ~~`unibet-site-odds`~~ | **MOVED to VPS 2026-09-23** — scheduler `unibet_site_odds`, logged-out Chrome; login not needed to read |
+| ~~`near-kickoff-capture`~~ | **MOVED 2026-09-23** — VPS timer now `--books Epicbet,Coolbet,Unibet-Site` |
 | `cdp-watch` | watches that Chrome |
 | `coolbet-cdp-selfheal` | watches that Chrome · ⚠️ `exit=1`, logged out |
 | `vps-postgres-tunnel` | load-bearing: `.env` DATABASE_URL is `localhost:5433` |

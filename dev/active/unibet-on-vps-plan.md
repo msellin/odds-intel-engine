@@ -160,3 +160,14 @@ The agent must not solve captchas. Options (owner's call):
 
 Two failed login attempts were made; do not script repeated retries — that is the
 behavioural signal DataDome escalates on.
+
+## 10. 2026-09-23 — option C: logged-OUT reading works; shipped that way
+
+Ran `_async_run_bulk(days=1, limit=60)` on the VPS against the logged-out tab,
+with `store_book_odds_snapshots` swapped for a capture: 60 DB fixtures → 7
+countries swept → 13 matched → 162 rows, 21 fetches, **0 blocks**. Diffed against
+the Mac's latest `Unibet-Site` rows (written ~25 min earlier): 138/162 identical;
+**11 of 13 fixtures identical on every row**, the other two moved in paired
+over/under steps (a line move, not a transport fault). So the prices are public
+and login is needed only to place. The VPS reader therefore never logs in
+(`run_bulk(login=False)`), which also keeps it off the DataDome captcha path.

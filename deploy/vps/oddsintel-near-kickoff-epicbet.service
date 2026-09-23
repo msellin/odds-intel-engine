@@ -1,0 +1,51 @@
+# NEAR-KICKOFF-CAPTURE, Epicbet third, on the VPS (2026-09-22).
+#
+# `near_kickoff_capture` snaps closing prices for fixtures inside T-15min at the
+# three direct books. It ran wholly on the Mac because two of the three
+# transports only existed there. Epicbet is not one of them: with the residential
+# egress the VPS reaches it with plain requests, ~0.7s for the full category
+# listing, and FlareSolverr is never opened.
+#
+# (Historical, pre-2026-09-23: the Mac ran the other books; its plist is now parked.)
+# Was: THE MAC STILL RUNS THE OTHER TWO. Its plist must be `--books
+# Coolbet,Unibet-Site`. If both sides run Epicbet the writes are not duplicated
+# (MIN_GAP_MIN skips a (match, book) priced in the last 6 minutes) but the two
+# jobs race for the same window and the Mac pays FlareSolverr cost for nothing.
+# Check: grep -A12 ProgramArguments ~/Library/LaunchAgents/com.oddsintel.near-kickoff-capture.plist
+#
+# Timer, not a loop: every 5 minutes, matching the Mac's StartInterval.
+
+[Unit]
+Description=OddsIntel near-kickoff capture (Epicbet + Coolbet + Unibet-Site, via Estonian egress)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/odds-intel-engine
+EnvironmentFile=/opt/odds-intel-engine/.env
+Environment=TZ=UTC
+Environment=PYTHONUNBUFFERED=1
+# ZONE-EGRESS 2026-09-23: was socks5h://10.8.0.2:1080, the WireGuard tunnel to
+# the operator's MacBook. Now the zone.ee exit node (AS49604, Tallinn), which
+# does the same job without depending on a laptop being awake. Measured: an
+# Estonian HOSTING ip is classified like an Estonian eyeball ip — Epicbet goes
+# CF-CHALLENGE -> OK. socks5h so DNS resolves at the exit, not here.
+Environment=EPICBET_RESIDENTIAL_PROXY=socks5h://127.0.0.1:1081
+# COOLBET-NEAR-KICKOFF-MOVED 2026-09-23 — the Coolbet third follows the sweep
+# onto the VPS. NOTE: deliberately NOT setting COOLBET_NO_FS here. The Mac ran
+# it with NO_FS=1, which uses Imperva cookies loaded from the DB — harvested on
+# the operator's own machine. Replaying those from the Estonian exit is the
+# TLS-bound-token blackhole that made the first Coolbet cutover hang for 30s a
+# call. Without NO_FS it uses the FlareSolverr path, which mints its own
+# identity on this egress and is the one proven working.
+Environment=COOLBET_RESIDENTIAL_PROXY=socks5h://127.0.0.1:1081
+# Its own FS session id is now moot (FS is disabled when proxied) but kept so a
+# fallback run without the proxy still cannot touch the sweep's session.
+Environment=EPICBET_FLARE_SESSION=epicbet_nearko_reader
+# UNIBET-ON-VPS 2026-09-23 — the Unibet-Site third joins. It reads the logged-OUT
+# tab in oddsintel-unibet-chrome.service via UNIBET_CHROME_CDP_URL (from .env);
+# capture_unibet never logs in. The Mac's near-kickoff-capture plist is parked,
+# so all three books now close here. (Unit name kept for continuity.)
+ExecStart=/opt/odds-intel-engine/venv/bin/python -m workers.jobs.near_kickoff_capture --books Epicbet,Coolbet,Unibet-Site

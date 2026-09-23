@@ -601,6 +601,23 @@ def _epicbet_odds_snapshot_wrapper():
     _run_job("epicbet_odds_snapshot", job_epicbet_odds_snapshot)
 
 
+def job_unibet_site_odds():
+    """UNIBET-ON-VPS (2026-09-23) — 30-min Unibet-Site (unibet.ee) odds sweep,
+    logged OUT; see the registration below for why. Raises when the sweep could
+    not run at all, so `_run_job` records 'failed' instead of a green no-op."""
+    from workers.automation.unibet_odds_feed import run_bulk
+    res = run_bulk(days=2, dry_run=False, login=False)
+    reason = (res or {}).get("reason") or ""
+    console.print(f"  unibet-site: {res}")
+    if reason not in ("ok", "no DB fixtures in window") and not (res or {}).get("stored"):
+        raise RuntimeError(f"Unibet-Site sweep wrote nothing: {reason}")
+    return res
+
+
+def _unibet_site_odds_wrapper():
+    _run_job("unibet_site_odds", job_unibet_site_odds)
+
+
 def _coolbet_odds_snapshot_wrapper():
     """COOLBET-NOT-IN-PIPELINE-RUNS (2026-09-23). Registered without a _run_job
     wrapper when the sweep moved to the VPS, so it wrote odds perfectly and left
@@ -2991,6 +3008,27 @@ def main():
     scheduler.add_job(_coolbet_odds_snapshot_wrapper,
                       CronTrigger(hour="*", minute="3,33"),
                       id="coolbet_odds_snapshot", name="Coolbet Odds [30min]")
+
+    # UNIBET-ON-VPS (2026-09-23) — the Unibet-Site sweep follows Coolbet and
+    # Epicbet off the MacBook. It reads through `oddsintel-unibet-chrome.service`
+    # (real Chrome under Xvfb, CDP on 127.0.0.1:9222, egress via the zone.ee
+    # Estonian exit) — `UNIBET_CHROME_CDP_URL` in the VPS .env points at it.
+    #
+    # LOGGED OUT, ON PURPOSE (`login=False`). Reading prices needs no account:
+    # measured 2026-09-23, the logged-out VPS tab priced 13 fixtures / 162 rows
+    # with 0 blocks, and 11 of 13 fixtures matched the Mac's rows exactly (the
+    # other two had moved in the 25 min between the reads). Login is needed only
+    # to PLACE — and from this egress it is answered with a DataDome slider
+    # captcha, so auto-login every 30 min would only grow the bot score.
+    # Staleness still alerts via health_alerts' direct-feed check.
+    #
+    # :15/:45, the Mac plist's slot. ⚠️ EXACTLY ONE SWEEP MAY RUN — the Mac's
+    # com.oddsintel.unibet-site-odds plist is parked in LaunchAgents/paused/;
+    # reloading it doubles our DataDome footprint.
+    scheduler.add_job(_unibet_site_odds_wrapper,
+                      CronTrigger(hour="*", minute="15,45"),
+                      id="unibet_site_odds", name="Unibet-Site Odds [30min]",
+                      max_instances=1)
 
     # SCHEDULER-HANG-MITIGATION (2026-06-01) — staggered :10/:40 instead of
     # :05/:35 so it doesn't share a firing minute with betting_refresh_interval.

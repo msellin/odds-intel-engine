@@ -51752,5 +51752,40 @@ def test_fs_session_crossed_responses():
         cs._FS_LOCK_DIR = _orig_lock_dir   # shared module — never leave it patched
 
 
+@test("UNIBET-ON-VPS — the Unibet-Site sweep runs on the VPS, logged OUT, at :15/:45")
+def test_unibet_on_vps():
+    """UNIBET-ON-VPS (2026-09-23). The Unibet-Site sweep moved off the MacBook
+    onto the VPS scheduler, reading a LOGGED-OUT unibet.ee tab. Login from the
+    VPS egress is answered with a DataDome slider captcha, and prices do not
+    need it (11/13 fixtures identical to the Mac's logged-in rows). Pins: the
+    job is registered at the Mac's old slot, it passes login=False, and
+    run_bulk(login=False) never reaches the login code.
+    """
+    import pathlib
+    from workers.automation import unibet_odds_feed as uof
+    from workers.automation import unibet_browser_sync as ubs
+
+    src = (pathlib.Path(__file__).parent.parent / "workers" / "scheduler.py").read_text()
+    reg = src[src.index('id="unibet_site_odds"') - 200: src.index('id="unibet_site_odds"')]
+    assert 'minute="15,45"' in reg and "_unibet_site_odds_wrapper" in reg, (
+        "unibet_site_odds must stay registered at :15/:45")
+    job = src[src.index("def job_unibet_site_odds"): src.index("def _unibet_site_odds_wrapper")]
+    assert "login=False" in job, (
+        "the VPS sweep must read logged-out — auto-login there hits a captcha")
+
+    called = []
+    orig_login, orig_async = ubs.ensure_logged_in, uof._async_run_bulk
+    async def fake_async(days, limit, dry_run):
+        return {"reason": "ok", "stored": 0}
+    try:
+        ubs.ensure_logged_in = lambda **k: called.append(1) or "already"
+        uof._async_run_bulk = fake_async
+        res = uof.run_bulk(days=1, dry_run=True, login=False)
+    finally:
+        ubs.ensure_logged_in, uof._async_run_bulk = orig_login, orig_async
+    assert not called, "run_bulk(login=False) attempted a login"
+    assert res.get("self_revive") == "not_attempted", res
+
+
 if __name__ == "__main__":
     main()
