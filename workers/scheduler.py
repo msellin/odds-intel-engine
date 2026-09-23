@@ -546,18 +546,36 @@ def job_coolbet_odds_snapshot():
     cycle's edge math sees the latest Coolbet prices.
 
     Error-isolated — a Coolbet auth/Imperva blowup never blocks other jobs.
+
+    BOARD SWEEP BY DEFAULT (#091 / #110 step 2, 2026-09-23). `run_bulk` fell back to
+    per-fixture searches and sent ~7,500 requests in 8 h, which got the exit IP
+    flagged (#108). The board sweep walks fo-tree + one listing per category and
+    fetches markets only for matched events. Coverage diff from the Mac's IP,
+    48 h window: board 55 fixtures vs run_bulk 41, 40 in common, 1 only in run_bulk
+    (an MLS game whose category is absent from fo-tree) — after teaching the
+    matcher Estonian national-team names. `COOLBET_SWEEP_MODE=bulk` rolls back.
     """
-    from workers.automation.coolbet_explorer import run_bulk
+    import os
     import traceback
     try:
-        res = run_bulk(days=2, dry_run=False, sleep_s=0.25, limit=None) or {}
+        if os.getenv("COOLBET_SWEEP_MODE", "board") == "bulk":
+            from workers.automation.coolbet_explorer import run_bulk
+            res = run_bulk(days=2, dry_run=False, sleep_s=0.25, limit=None) or {}
+            fixtures, stored = res.get("matches", 0), res.get("stored")
+            detail = f"matched {res.get('matched')}, unresolved {res.get('unresolved')}"
+        else:
+            from workers.automation.coolbet_explorer import run_board_sweep
+            res = run_board_sweep(dry_run=False, horizon_hours=48, sleep_s=0.4) or {}
+            fixtures, stored = res.get("near_term", 0), res.get("stored_rows")
+            detail = (f"categories {res.get('categories')}, listing fails {res.get('cat_fails', 0)}, "
+                      f"matched {res.get('matched')}, market fetch fails {res.get('fetch_fails')}")
+            if not res.get("categories"):
+                raise RuntimeError("Coolbet board sweep enumerated 0 categories (fo-tree unreachable)")
         # #108 (2026-09-23): a sweep that wrote NOTHING while fixtures existed is a
-        # failure, whatever run_bulk printed. For 4 h every sweep aborted with
+        # failure, whatever the sweep printed. For 4 h every sweep aborted with
         # "Coolbet unreachable" and this job recorded `completed`.
-        if res.get("matches", 0) >= 20 and not res.get("stored"):
-            raise RuntimeError(
-                f"Coolbet sweep stored 0 rows for {res.get('matches')} fixtures "
-                f"(matched {res.get('matched')}, unresolved {res.get('unresolved')})")
+        if fixtures >= 20 and not stored:
+            raise RuntimeError(f"Coolbet sweep stored 0 rows for {fixtures} fixtures ({detail})")
     except Exception as e:
         console.print(f"[red]Coolbet odds snapshot failed: {e}[/red]")
         console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
@@ -568,10 +586,6 @@ def job_coolbet_odds_snapshot():
         # (16 silent hours). `_run_job` already isolates jobs from each
         # other, so re-raising costs no isolation.
         raise
-
-
-def _coolbet_odds_snapshot_wrapper():
-    _run_job("coolbet_odds_snapshot", job_coolbet_odds_snapshot)
 
 
 def job_epicbet_odds_snapshot():

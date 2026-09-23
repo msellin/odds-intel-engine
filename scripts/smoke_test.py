@@ -52403,7 +52403,7 @@ def test_feed_registry_covers_sweepers():
     assert 'id="feed_health"' in sched
     assert (root / "supabase/migrations/388_feed_status.sql").exists()
     cool = sched[sched.index("def job_coolbet_odds_snapshot"):sched.index("def _coolbet_odds_snapshot_wrapper")]
-    assert 'res.get("matches", 0) >= 20 and not res.get("stored")' in cool, (
+    assert "fixtures >= 20 and not stored" in cool and "raise RuntimeError" in cool, (
         "the Coolbet sweep must fail when it stores nothing")
     epic = sched[sched.index("def job_epicbet_odds_snapshot"):sched.index("def _epicbet_odds_snapshot_wrapper")]
     assert "raise RuntimeError" in epic, "the Epicbet sweep must fail when it stores nothing"
@@ -52623,6 +52623,76 @@ def test_book_footprint():
 
     mig = Path(__file__).resolve().parent.parent / "supabase/migrations/392_book_footprint.sql"
     assert "CREATE TABLE IF NOT EXISTS book_footprint" in mig.read_text()
+
+
+@test("COOLBET-BOARD-SWEEP-DEFAULT — scheduled sweep uses the board, a failed listing never poisons the memo, Estonian names match")
+def test_coolbet_board_sweep_default():
+    """#091 / #110 step 2 (2026-09-23). Coverage diff from the Mac's IP, 48 h: board
+    55 fixtures vs run_bulk 41 (1 only in run_bulk) for ~100 listing requests instead
+    of thousands of searches. Three pins: (1) the job defaults to run_board_sweep with
+    an env rollback; (2) a non-200 listing RAISES for the board sweep — returning []
+    taught the near-term memo that every category was empty during the #108 block;
+    (3) Coolbet lists national teams in Estonian, which the matcher now translates."""
+    import inspect
+    from pathlib import Path
+    from workers.automation import coolbet_explorer as ce, coolbet_placer as cp
+    from workers.automation.coolbet_matching import norm_team
+    sched = (Path(__file__).resolve().parent.parent / "workers/scheduler.py").read_text()
+    job = sched[sched.index("def job_coolbet_odds_snapshot"):sched.index("def _coolbet_odds_snapshot_wrapper")]
+    assert 'os.getenv("COOLBET_SWEEP_MODE", "board")' in job and "run_board_sweep(" in job
+
+    class _R:
+        status_code = 403
+    class _S:
+        def get(self, *a, **k):
+            return _R()
+    assert cp.fetch_events_for_league(_S(), 1) == []
+    try:
+        cp.fetch_events_for_league(_S(), 1, raise_on_error=True)
+        raise AssertionError("a failed listing must raise for the board sweep")
+    except RuntimeError:
+        pass
+    assert "raise_on_error=True" in inspect.getsource(ce.run_board_sweep)
+
+    for et, en in (("Holland", "Netherlands"), ("Saksamaa", "Germany"), ("Põhja-Iirimaa", "Northern Ireland"),
+                   ("Prantsusmaa U21", "France U21"), ("Elevandiluurannik", "Ivory Coast")):
+        assert norm_team(et) == norm_team(en), (et, norm_team(et), norm_team(en))
+    assert norm_team("Rhode Island") == "rhode island", "whole-name only — clubs must not be rewritten"
+
+
+@test("BOOK-EXITS-AND-LICENSED-FALLBACK — fixed per-book exits and a licensed Coolbet fallback that cannot price a pick")
+def test_book_exits_and_licensed_fallback():
+    """#110 steps 3-4 (2026-09-23). (3) Each book reads its own exit setting and a
+    template unit gives a book its own FIXED SOCKS exit — never rotated after a block.
+    (4) The Odds API carries Coolbet under licence; the adapter runs only while our own
+    sweep is paused and stores under its own label, which is NOT placeable."""
+    from pathlib import Path
+    from workers.automation import odds_api_fallback as oa
+    from workers.jobs.daily_pipeline_v2 import ACCESSIBLE_BOOKMAKERS
+    root = Path(__file__).resolve().parent.parent
+    unit = (root / "deploy/vps/oddsintel-egress@.service").read_text()
+    assert "EnvironmentFile=/etc/oddsintel/egress-%i.env" in unit and "${EGRESS_PORT}" in unit
+    assert "NOT ROTATION" in unit
+    assert "Per-book fixed exits" in (root / "deploy/vps/README.md").read_text()
+
+    assert oa.LABEL not in ACCESSIBLE_BOOKMAKERS and oa.LABEL != "Coolbet"
+    ev = {"home_team": "A", "away_team": "B", "bookmakers": [
+        {"key": "coolbet", "markets": [
+            {"key": "h2h", "outcomes": [{"name": "A", "price": 2.1}, {"name": "B", "price": 3.4},
+                                        {"name": "Draw", "price": 3.3}]},
+            {"key": "totals", "outcomes": [{"name": "Over", "price": 1.9, "point": 2.5},
+                                           {"name": "Under", "price": 1.95, "point": 2.5},
+                                           {"name": "Over", "price": 1.9, "point": 2.25}]}]},
+        {"key": "pinnacle", "markets": [{"key": "h2h", "outcomes": [{"name": "A", "price": 9.9}]}]}]}
+    rows = oa.parse_event(ev)
+    assert ("1x2", "home", 2.1, None) in rows and ("over_under_25", "under", 1.95, 2.5) in rows
+    assert len(rows) == 5, "quarter lines and other books must be dropped"
+    saved = oa.own_sweep_paused
+    try:
+        oa.own_sweep_paused = lambda: False
+        assert oa.run(dry_run=True).get("skipped"), "fallback must not spend credits while the own sweep runs"
+    finally:
+        oa.own_sweep_paused = saved
 
 if __name__ == "__main__":
     main()

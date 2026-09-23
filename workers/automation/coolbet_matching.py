@@ -79,6 +79,54 @@ DEFAULT_SLOT_HOURS = 3.5
 DEFAULT_MIN_GAP = 8  # required margin best-vs-runner-up (unless best is near-perfect)
 
 
+# ESTONIAN NATIONAL-TEAM NAMES (#091 / #110 step 2, 2026-09-23). Coolbet's category
+# listing is requested with language=et (it mirrors the browser's own request, which
+# Imperva expects), so national teams arrive as "Holland v Saksamaa", "Norra v
+# Taani". Club names are native and unaffected. Measured: 6 of the 7 fixtures the
+# board sweep missed against run_bulk were exactly these. Keys are post-NFKD ascii
+# (õ→o, ä→a, ü→u, š→s); applied ONLY when the WHOLE name (less a youth/women suffix)
+# is the key, so a club like "Rhode Island" can never be rewritten.
+_ET_COUNTRY = {
+    "saksamaa": "germany", "holland": "netherlands", "madalmaad": "netherlands",
+    "norra": "norway", "taani": "denmark", "iirimaa": "ireland",
+    "pohja iirimaa": "northern ireland", "leedu": "lithuania", "lati": "latvia",
+    "eesti": "estonia", "soome": "finland", "rootsi": "sweden", "island": "iceland",
+    "prantsusmaa": "france", "hispaania": "spain", "itaalia": "italy",
+    "belgia": "belgium", "inglismaa": "england", "sotimaa": "scotland",
+    "poola": "poland", "ungari": "hungary", "venemaa": "russia",
+    "valgevene": "belarus", "gruusia": "georgia", "armeenia": "armenia",
+    "aserbaidzaan": "azerbaijan", "turgi": "turkey", "kreeka": "greece",
+    "kupros": "cyprus", "rumeenia": "romania", "bulgaaria": "bulgaria",
+    "horvaatia": "croatia", "sloveenia": "slovenia", "slovakkia": "slovakia",
+    "tsehhi": "czech republic", "sveits": "switzerland", "albaania": "albania",
+    "pohja makedoonia": "north macedonia", "bosnia ja hertsegoviina": "bosnia herzegovina",
+    "kasahstan": "kazakhstan", "luksemburg": "luxembourg", "faari saared": "faroe islands",
+    "iisrael": "israel", "brasiilia": "brazil", "mehhiko": "mexico",
+    "ameerika uhendriigid": "usa", "kanada": "canada", "jaapan": "japan",
+    "louna korea": "south korea", "pohja korea": "north korea", "hiina": "china",
+    "austraalia": "australia", "uus meremaa": "new zealand",
+    "elevandiluurannik": "ivory coast", "egiptus": "egypt", "maroko": "morocco",
+    "alzeeria": "algeria", "tuneesia": "tunisia", "louna aafrika": "south africa",
+    "kolumbia": "colombia", "tsiili": "chile", "peruu": "peru",
+    "saudi araabia": "saudi arabia", "iraan": "iran", "katar": "qatar",
+    "palestiina": "palestine", "jordaania": "jordan", "iraak": "iraq", "suuria": "syria",
+    "araabia uhendemiraadid": "united arab emirates", "usbekistan": "uzbekistan",
+    "tadzikistan": "tajikistan", "kirgiisia": "kyrgyzstan", "indoneesia": "indonesia",
+    "tai": "thailand", "vietnam": "vietnam", "india": "india", "nigeeria": "nigeria",
+    "senegal": "senegal", "kamerun": "cameroon", "moldova": "moldova",
+}
+_YOUTH_SUFFIX = re.compile(r"^(u\d{2}|w|women|naised)$")
+
+
+def _et_country(s: str) -> str:
+    toks = s.split()
+    suffix = []
+    while toks and _YOUTH_SUFFIX.match(toks[-1]):
+        suffix.insert(0, toks.pop())
+    head = " ".join(toks)
+    return " ".join([_ET_COUNTRY[head], *suffix]) if head in _ET_COUNTRY else s
+
+
 def norm_team(name: str | None) -> str:
     """Lowercase, strip accents and club-form tokens → a comparable team key.
 
@@ -89,6 +137,7 @@ def norm_team(name: str | None) -> str:
     s = html.unescape(name or "")
     s = unicodedata.normalize("NFKD", s.lower()).encode("ascii", "ignore").decode()
     s = re.sub(r"[^a-z0-9 ]", " ", s)
+    s = _et_country(" ".join(s.split()))
     return " ".join(_RESERVE_CANON.get(t, t) for t in s.split()
                     if t and t not in _STRIP_TOKENS).strip()
 

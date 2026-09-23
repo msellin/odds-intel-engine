@@ -885,6 +885,7 @@ def fetch_coolbet_leagues(session: CoolbetSession) -> list[dict]:
 
 def fetch_events_for_league(
     session: CoolbetSession, league_id: int, league_slug: str | None = None,
+    *, raise_on_error: bool = False,
 ) -> list[dict]:
     """Return all matches in one Coolbet league.
 
@@ -910,6 +911,12 @@ def fetch_events_for_league(
     }, headers=extra_headers or None)
     if resp.status_code != 200:
         log.debug("fo-category(league=%d) returned %d", league_id, resp.status_code)
+        # BOARD-MEMO-POISON (#091, 2026-09-23): the board sweep's near-term memo
+        # read this [] as "category has nothing" and skipped it for hours — during
+        # the #108 block every category was learned empty (board matched 19 where
+        # run_bulk matched 81). The board sweep asks for a raise instead.
+        if raise_on_error:
+            raise RuntimeError(f"fo-category({league_id}) HTTP {resp.status_code}")
         return []
     data = resp.json()
     matches: list[dict] = []

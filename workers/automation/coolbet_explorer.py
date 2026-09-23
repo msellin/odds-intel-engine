@@ -2104,8 +2104,11 @@ def run_board_sweep(
             c["cats_skipped_empty"] += 1
             continue
         try:
-            events = fetch_events_for_league(session, cat["id"])
+            events = fetch_events_for_league(session, cat["id"], raise_on_error=True)
         except Exception as e:
+            # A failed listing is NOT an empty category — skip the memo update
+            # (BOARD-MEMO-POISON) and count it so an all-fail pass is visible.
+            c["cat_fails"] = c.get("cat_fails", 0) + 1
             log.warning("category %s events fetch failed (%s)", cat["name"], e)
             continue
         cat_near_term = 0

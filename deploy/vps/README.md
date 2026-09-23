@@ -83,5 +83,36 @@ Copied from the box so the repo records what runs there. Install/update with
   DataDome captcha and reading needs none. Not snap Chromium: its confinement
   refuses a custom `--user-data-dir`.
 - **`oddsintel-near-kickoff-epicbet.{service,timer}`** — every 5 min, closing
-  snapshots for fixtures inside T-15 at all three direct books
-  (`--books Epicbet,Coolbet,Unibet-Site`). The name is historical.
+  snapshots for fixtures inside T-15 at the direct books
+  (`--books Epicbet,Unibet-Site,Tonybet`; Coolbet removed 2026-09-23 while its
+  exit IP is flagged, #108). The name is historical.
+
+## Per-book fixed exits (#110 step 3, 2026-09-23)
+
+Today every direct book leaves through ONE zone.ee IP (`oddsintel-zone-egress`,
+SOCKS on `127.0.0.1:1081`). #108 showed the cost: Coolbet's volume got that IP
+flagged, and every other book shares its reputation. Each book already reads its
+OWN exit setting, so giving a book its own fixed IP is configuration only:
+
+| Book | Setting | Where it is set |
+|---|---|---|
+| Coolbet | `COOLBET_RESIDENTIAL_PROXY` | `Environment=` in `oddsintel-scheduler.service` AND `oddsintel-near-kickoff-epicbet.service` (both on the box, `/etc/systemd/system/`) |
+| Epicbet | `EPICBET_RESIDENTIAL_PROXY` | scheduler, near-kickoff and `oddsintel-inplay-collector.service` |
+| Tonybet | `TONYBET_PROXY` (falls back to `EPICBET_RESIDENTIAL_PROXY`) | scheduler + near-kickoff — unset today, so Tonybet shares Epicbet's exit |
+| Unibet-Site | `--proxy-server=` | `oddsintel-unibet-chrome.service` |
+
+To give a book its own exit (e.g. Coolbet, once the owner buys a second zone.ee server):
+1. On the new server: add the VPS's root SSH key to `ubuntu`'s `authorized_keys`.
+2. On the VPS: `mkdir -p /etc/oddsintel` and write `/etc/oddsintel/egress-coolbet.env`
+   with `EGRESS_HOST=ubuntu@<new ip>` and `EGRESS_PORT=1082`.
+3. `cp deploy/vps/oddsintel-egress@.service /etc/systemd/system/ && systemctl daemon-reload
+   && systemctl enable --now oddsintel-egress@coolbet`, then check the exit:
+   `curl -s --socks5-hostname 127.0.0.1:1082 https://api.ipify.org` → the new IP.
+4. Change `COOLBET_RESIDENTIAL_PROXY` to `socks5h://127.0.0.1:1082` in both units,
+   `systemctl daemon-reload && systemctl restart oddsintel-scheduler`.
+5. Add the unit to `workers/registry/feed_registry.py` infra so /admin/feeds watches it.
+
+**Fixed, never rotated.** A book always leaves from the same IP. We do NOT move a
+blocked book to another exit to get around the block — that is evasion (declined on
+#108) and invites a harder, account-level response. A flagged book backs off on its
+own exit (auto-pause, #108) while the other books carry on.

@@ -1,0 +1,39 @@
+# PER-BOOK FIXED EXITS (#110 step 3, 2026-09-23) — one SOCKS exit per book group.
+#
+# WHY. #108: every direct book (Coolbet, Epicbet, Tonybet, Unibet-Site) left through
+# ONE zone.ee IP (oddsintel-zone-egress, :1081). Coolbet's volume got that IP flagged
+# by Imperva, and Unibet's DataDome named the same IP the same morning — one book's
+# footprint put every book's reputation at risk. A FIXED exit per book (or group)
+# isolates them: a flag on one book's IP costs that book only.
+#
+# THIS IS NOT ROTATION. Each book always uses the same IP. We do not switch a book to
+# another exit after it is blocked — that is evading the block (declined on #108);
+# when a book's exit is flagged, the book backs off (auto-pause) on that exit.
+#
+# Instance = a short name; config lives in /etc/oddsintel/egress-<name>.env:
+#     EGRESS_HOST=ubuntu@<server ip>      # SSH target on the exit server
+#     EGRESS_PORT=1082                    # local SOCKS port, unique per instance
+# Install:  cp deploy/vps/oddsintel-egress@.service /etc/systemd/system/
+#           systemctl daemon-reload && systemctl enable --now oddsintel-egress@coolbet
+# Then point the book at it (see deploy/vps/README.md "Per-book fixed exits").
+[Unit]
+Description=OddsIntel SOCKS egress %i (fixed per-book exit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/etc/oddsintel/egress-%i.env
+ExecStart=/usr/bin/ssh -N -D 127.0.0.1:${EGRESS_PORT} \
+    -o BatchMode=yes \
+    -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=15 \
+    -o ServerAliveCountMax=3 \
+    -o StrictHostKeyChecking=accept-new \
+    ${EGRESS_HOST}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

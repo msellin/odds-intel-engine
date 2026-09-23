@@ -20,7 +20,7 @@ Imperva-bypass proxy used by both Coolbet and HLTV scrapers.
 ```
                      Railway worker (cloud, 24/7)
                      ─────────────────────────────
-                     • coolbet_explorer.run_bulk     (odds, anon-read)
+                     • coolbet_explorer.run_board_sweep (odds, anon-read; run_bulk until 2026-09-23)
                      • coolbet_signaler              (Telegram signals)
                      • coolbet_health_ping           (heartbeat)
                      • sweep_stale_sessions          (FS GC)
@@ -185,7 +185,7 @@ Railway, ~$5/mo. Triggered by `railway.toml` start command.
 
 | Job | Schedule | Module | Auth? |
 |---|---|---|---|
-| `coolbet_odds_snapshot` | 7-22 UTC, every 30 min | `coolbet_explorer.run_bulk` | anon |
+| `coolbet_odds_snapshot` | 24/7 :03/:33 (VPS) | `coolbet_explorer.run_board_sweep` since 2026-09-23 (#091; was `run_bulk`, rollback `COOLBET_SWEEP_MODE=bulk`) | anon |
 | `coolbet_health_ping` | every 5 min | `scripts/coolbet/health_ping.py` | uses DB JWT |
 | `coolbet_sweep_stale_sessions` | every 30 min | `scripts/coolbet/sweep_stale_sessions.py` | n/a |
 | `cs2_coolbet_scanner` | 7-22 UTC, every 30 min | `scripts/esports/cs2_coolbet_scanner.py` | anon |

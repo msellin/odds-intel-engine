@@ -675,6 +675,11 @@ escalates; it does not.
   "Requests this hour N / budget"; the block turns amber at 80% of budget or when
   bot-check answers exceed 5% (≥5) — the warning that comes BEFORE the block.
   **POSTs (placement) are counted but never refused.**
+- **And the sweep itself shrank (#091, 2026-09-23):** the scheduled job now runs the
+  board sweep, not `run_bulk`'s search fallback. Verify coverage any time, from an
+  IP Coolbet is not blocking, with `scripts/coolbet_board_coverage_diff.py
+  --horizon-hours 48 --cache board.json` (~100 requests; `--from-cache` re-matches
+  with zero requests).
 
 ### 5. No placeable bet today  → this is CORRECT, not a failure
 - **Symptom:** daemon tick logs `qualified=N` but `placed=0`, every candidate `skip … below the 2.80 odds floor`.
