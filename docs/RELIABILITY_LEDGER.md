@@ -1157,6 +1157,49 @@ always — even when the edit is one line and the original shipped ten minutes a
 The cost of a second file is nothing; the cost of a silent no-op is a defect that
 only a human running the right command will ever find.
 
+## 22. A column parsed and then dropped by a hardcoded writer list — three times in one day (2026-09-23)
+
+**The tell:** the parse produces a field, the column exists in the schema, and it
+is NULL on every row. Nothing errors, because nothing is wrong — the value simply
+never reaches the INSERT.
+
+**Three instances found in a single audit round**, all the same shape:
+
+1. **`Shots insidebox` / `Shots outsidebox`** — in every `/fixtures/statistics`
+   response since 2018, parsed by nothing. Zero repo references to `insidebox`.
+2. **Lineups from the batch** — `/fixtures?ids=` embeds `statistics`, `events`,
+   `lineups` and `players`. Settlement pulled out three and ignored `lineups`,
+   while the function's own header comment listed all four. Lineups sat at 6.5%
+   against statistics at 32% as a direct result.
+3. **`assist_name`** — the parse emitted it; the writer's column tuple omitted
+   it; NULL on all 1,869,434 rows including 353,490 goals.
+
+**And the third one repeated itself, which is the real lesson.** After fixing the
+writer in `db.store_match_events_batch`, a backfill was started and wrote
+**nothing** — assists stayed at 0 while lineups climbed beside them in the same
+job. There are **TWO** event writers: the batch one in `db.py` and
+`supabase_client.store_match_events_af`, each with its own hardcoded column list.
+The fix landed in one. The backfill called the other.
+
+**Why hardcoded column lists are the common cause.** Every one of these is a
+literal tuple or a literal `INSERT (...) VALUES (%s, %s, ...)` that someone has to
+remember to extend. The per-row fallback in the batch writer had NINE `%s` against
+nine columns — adding one would have broken the retry path, which only executes
+when the bulk insert has already failed.
+
+**The guards now in place:**
+* `SHOT-LOCATION-STORED` — parsed fields must also be in the storage list.
+* `BATCH-EMBEDS-FOUR-BLOCKS` — settlement must consume every block the batch
+  already paid for.
+* `EVENT-WRITER-COLUMNS-COMPLETE` — **both** event writers must carry every
+  column, and their upserts must refresh it. One writer passing is how instance 3
+  reached production twice.
+
+**The rule:** a second writer for the same table is a second place for a column to
+be dropped. When adding a field, grep for every writer of that table — not the
+one you happen to be editing. And derive placeholder counts from the column list
+rather than typing them.
+
 ## Pattern: a reviver that reports success without verifying the world
 
 **Seen twice in three days, both on Coolbet, both silent.**

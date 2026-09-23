@@ -51514,6 +51514,26 @@ def test_event_writer_columns_complete():
     import inspect
     from workers.api_clients import db as dbmod
 
+    # BOTH WIRTERS. There are two — `db.store_match_events_batch` and
+    # `supabase_client.store_match_events_af` — each with its own hardcoded
+    # column list. The first was fixed for assist_name and the second was
+    # missed, so the backfill ran for minutes writing nothing while lineups
+    # climbed beside it. One writer passing this test is how that happened.
+    from workers.api_clients import supabase_client as scmod
+    both = {
+        "store_match_events_batch": inspect.getsource(dbmod.store_match_events_batch),
+        "store_match_events_af": inspect.getsource(scmod.store_match_events_af),
+    }
+    for name, body in both.items():
+        assert "assist_name" in body, (
+            f"{name} does not carry assist_name. Every event writer must persist "
+            f"every column the parse produces — a second writer is a second place "
+            f"for a column to be silently dropped, which is exactly what happened "
+            f"to this one, twice")
+        assert "assist_name = EXCLUDED.assist_name" in body, (
+            f"{name}'s upsert must refresh assist_name, or re-stored events keep "
+            f"the old NULL and a backfill appears to work while doing nothing")
+
     src = inspect.getsource(dbmod.store_match_events_batch)
     assert '"assist_name"' in src, (
         "assist_name must be in the writer's column tuple — the parse produces "

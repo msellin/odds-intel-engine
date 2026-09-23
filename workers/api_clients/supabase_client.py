@@ -2973,6 +2973,14 @@ def store_match_events_af(match_id: str, events: list[dict],
             ev["event_type"],
             team_side,
             ev.get("player_name"),
+            # ASSIST-NAME, SECOND WRITER ([[#083]], found 2026-09-23). There are
+            # TWO event writers: `db.store_match_events_batch` and this one. The
+            # first was fixed and this was missed, so the backfill ran and wrote
+            # nothing — assists stayed at 0 of 1,869,434 while lineups climbed.
+            # A second copy of a writer is a second place for a column to be
+            # dropped, and that is exactly what happened, twice, to the same
+            # column.
+            ev.get("assist_name"),
             ev.get("detail"),
             ev.get("af_event_order"),
             datetime.now(timezone.utc).isoformat(),
@@ -2984,8 +2992,9 @@ def store_match_events_af(match_id: str, events: list[dict],
                     cur.execute(
                         """INSERT INTO match_events
                            (match_id, minute, added_time, event_type, team,
-                            player_name, detail, af_event_order, created_at)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            player_name, assist_name, detail, af_event_order,
+                            created_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                            ON CONFLICT (match_id, af_event_order)
                              WHERE af_event_order IS NOT NULL
                            DO UPDATE SET
@@ -2994,6 +3003,7 @@ def store_match_events_af(match_id: str, events: list[dict],
                             event_type = EXCLUDED.event_type,
                             team = EXCLUDED.team,
                             player_name = EXCLUDED.player_name,
+                            assist_name = EXCLUDED.assist_name,
                             detail = EXCLUDED.detail""",
                         row,
                     )
