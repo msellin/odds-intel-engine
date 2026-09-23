@@ -359,3 +359,40 @@ in the AF feed — adding them requires a separate scraper (`NORDIC-BOOKS-INTEGR
 `bulk_store_matches` and `store_match` (workers/api_clients/supabase_client.py) now look up existing rows **by `api_football_id` first**, falling back to the team/date window only for legacy rows without an AF id. This makes the dedup survive reschedules.
 
 Historical dupes (3,177 rows) are preserved in `matches_dupe_quarantined` with `canonical_id` and `quarantined_at` columns for forensic rollback.
+
+## xG — what we actually have, and the option we are currently destroying (2026-09-23)
+
+Measured live against the AF statistics endpoint while answering *"how can we
+improve xG coverage?"*. Full detail on [[#078]].
+
+**Coverage today: 26,017 of 56,463 stats rows carry xG, and it is FALLING.** Daily
+xG on our stats rows went from **109/156 on 2026-08-30** to **0–1/day across
+2026-09-04..08**, with partial recovery around 09-19, while stats-row volume held
+steady. Probed directly: a live MLS fixture still returns `expected_goals`, an
+Argentine Liga Profesional fixture returns **no such field at all** — and that
+league had 109 xG matches in the preceding 90 days. **This is a supplier coverage
+change, not a parse bug.**
+
+⚠️ Our parse is **silent** when the field is absent (`if xg is not None`, no
+logging), so a supplier withdrawing a field is indistinguishable from a quiet day.
+
+**Can we compute xG ourselves? Not real xG.** That needs per-shot COORDINATES.
+AF's `/fixtures/statistics` gives team aggregates; `/fixtures/events` gives goals,
+cards and substitutions — not every shot. Neither carries coordinates.
+
+**But we are discarding the next best thing.** Every statistics response we
+already pay for carries **`Shots insidebox`** and **`Shots outsidebox`** (plus
+`goals_prevented`), and we parse **none** of them — zero hits for `insidebox` in
+the repo. They are present on fixtures with **no xG at all**, which is exactly
+where they would matter: **30,446 rows**.
+
+That supports a **binned shot-quality model** — location × outcome instead of an
+exact coordinate — fitted on our own goals. An approximation, and it must be named
+as one wherever it surfaces. Never call it xG.
+
+**If buying instead:** Understat is shot-level with coordinates and free, but
+**6 leagues only**; Sportmonks sells xG as a €15/mo add-on. FBref **lost xG in
+January 2026** (Opta termination) and is no longer an option.
+⚠️ **xG is not comparable across providers** — match-level correlations run
+0.86–0.96, and only **76.1%** of matches have four providers agreeing which team
+won the xG. Never mix providers in one column; refit any calibration on a switch.
