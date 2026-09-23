@@ -55,7 +55,13 @@
 > returned **−631 units** (Bonferroni-corrected p<0.001). Past goals are a WORSE
 > input for a goals model than past shots. We hold shots on **53,304** matches and
 > corners on **54,341** — 31% of finished matches, 42.8% in 2025. Never modelled.
-> Filed as [[#077]].
+> Filed as [[#077]] — **and RUN 2026-09-23: α = 0.0000, and the goals CONTROL
+> BEAT the shots+corners treatment** (AUC 0.5499 vs 0.5441) on identical machinery
+> and population. Wheatcroft's claim did not replicate here, and the experiment
+> cannot separate "does not transfer" from "this is not a faithful GAP". What it
+> does settle: the market is at AUC 0.6184, nothing built clears 0.55 on either
+> input, and residual AUC is 0.39–0.40 on both — the market wins the disagreements.
+> See `docs/OU_SHOTS_CORNERS_RATING_2026_09_23.md`.
 >
 > **(c) The execution caveat outranks every modelling question here.** The same
 > paper's edge is **+0.8%/bet at MAX odds across books (overround 1.57%)** and a

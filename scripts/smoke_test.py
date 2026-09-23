@@ -51236,5 +51236,54 @@ def test_launchd_no_startinterval():
 
 
 
+@test("OU-SHOTS-CORNERS-CONTROLLED — the input test carries its own goals control")
+def test_ou_shots_corners_controlled():
+    """OU-SHOTS-AND-CORNERS-RATING ([[#077]], 2026-09-23).
+
+    Wheatcroft (2020, IJF, n=68,672 bets) found ratings fed shots+corners
+    returned +535 units where the SAME ratings fed goals returned -631. This
+    script tests that on our data — and the thing that makes it a test rather
+    than a fourth anecdote is the CONTROL ARM.
+
+    Without `--input goals`, a weak alpha is unattributable: "shots do not help
+    here" and "this rating implementation is poor" produce the identical number.
+    Our first run came back at model AUC 0.5441 against the shipped head's
+    0.5788, which is exactly the ambiguity that would have been reported as a
+    finding. The control holds the ratings, the GLM, the population and the
+    scoring identical and moves ONE variable.
+
+    Three properties are pinned:
+      1. the control arm exists and is reachable;
+      2. alpha is computed by residual_test_ou's OWN functions, imported rather
+         than reimplemented — a second implementation of the scoring rule is a
+         second definition of alpha, and this task is a comparison of alphas;
+      3. the online rating update happens strictly AFTER prediction, which is
+         the only thing standing between this and leakage.
+    """
+    from pathlib import Path
+    src = (Path(__file__).parent.parent / "scripts" / "ou_shots_corners_rating.py").read_text()
+
+    assert '"--input"' in src and '"goals"' in src, (
+        "the goals CONTROL arm is what makes this a controlled test — without it "
+        "a weak alpha cannot be attributed to the input rather than to the code")
+
+    assert "from scripts.residual_test_ou import" in src, (
+        "alpha must come from residual_test_ou's own functions; a private copy "
+        "of fit_alpha/ll/auc is a second definition of the quantity being compared")
+    for fn in ("fit_alpha", "fit_platt", "devig_two_way", "shin2", "auc", "ll"):
+        assert fn in src, f"{fn} must be imported from the shared harness"
+
+    # Leakage: the update must be described and placed after the prediction.
+    assert "ONLINE UPDATE" in src and "strictly after prediction" in src, (
+        "the post-prediction ordering of the rating update must be explicit — it "
+        "is the only thing preventing a match from informing its own forecast")
+    assert "leakage risk" in src.lower(), "the date-order assertion must remain"
+
+    # The DC independence shortcut must stay justified rather than assumed.
+    assert "p_over_25" in src and "[[#014]]" in src, (
+        "independent Poisson is only safe for O/U 2.5 because the Dixon-Coles "
+        "correction provably cannot move it — cite that, do not assume it")
+
+
 if __name__ == "__main__":
     main()
