@@ -1,6 +1,42 @@
 #!/usr/bin/env python3
-"""BACKFILL-SHOT-LOCATION ([[#078]]) — recover the shot-location split AF has
-been sending us since 2018 and we have never stored.
+"""BACKFILL-MATCH-STATS ([[#078]]) — recover match statistics we never stored.
+
+TWO MODES, AND THE SECOND IS THE BIGGER PRIZE
+---------------------------------------------
+    --mode columns  (default)  fill the NEW columns on rows we already have
+    --mode rows                create stats rows for fixtures that have NONE
+
+`--mode columns` updates 12 columns on ~56k existing rows: the shot-location
+split, free kicks, shots off target, pass % and goals prevented.
+
+`--mode rows` targets the 17,393 finished matches that sit in leagues AF DOES
+cover for statistics and have no `match_stats` row at all. It writes a COMPLETE
+row through the normal `store_match_stats_full` path (~50 fields including the
+half-time splits), so per successful fixture it is worth far more than a column
+fill.
+
+⚠️ **AND IT IS ALMOST CERTAINLY NOT WORTH RUNNING. MEASURE FIRST — I DID, AND MY
+HYPOTHESIS WAS WRONG.**
+
+The year distribution (2022 **2,731**, 2023 **2,672**, 2024 3,576, 2025 4,192,
+2026 3,545) looked exactly like the `half=true` defect in
+`get_fixture_statistics`, which returned `results: 0` for 2022 and 2023 fixtures.
+The obvious inference was that the fallback had just re-opened them.
+
+**It had not. Probing 12 random missing fixtures per year: 0/12 in 2022, 0/12 in
+2023, 0/12 in 2024, 0/12 in 2025 — 0 of 48 — actually have statistics at AF.**
+Sequential runs agree: 4/25 newest-first (those are fixtures that finished hours
+ago and whose stats land with a lag, which settlement picks up anyway) and
+**0/25 oldest-first**.
+
+The cause is simply that `coverage_statistics_fixtures` is a LEAGUE-level flag
+while AF's real per-fixture coverage inside those leagues is patchy. The gap is
+not recoverable, and running this mode at scale would spend ~17,000 calls to gain
+almost nothing.
+
+**So: use `--mode columns`.** It fills 12 fields on ~56k rows that demonstrably
+exist. `--mode rows` is kept for the recently-finished tail and so the
+measurement above is not re-discovered by the next person.
 
 WHAT AND WHY
 ------------
@@ -34,9 +70,10 @@ DESIGN RULES THIS OBEYS
 * IDEMPOTENT. Re-running over an already-filled fixture is a no-op.
 
 Usage:
-    python3 scripts/backfill_shot_location.py --limit 200 --dry-run
-    python3 scripts/backfill_shot_location.py --limit 5000
-    python3 scripts/backfill_shot_location.py --limit 60000 --sleep 0.05
+    python3 scripts/backfill_match_stats.py --limit 200 --dry-run
+    python3 scripts/backfill_match_stats.py --limit 5000
+    python3 scripts/backfill_match_stats.py --limit 60000 --sleep 0.05
+    python3 scripts/backfill_match_stats.py --mode rows --limit 50   # see the warning
 """
 from __future__ import annotations
 
@@ -59,7 +96,9 @@ for _line in pathlib.Path(
 from workers.api_clients.db import execute_query, execute_write  # noqa: E402
 from workers.api_clients.api_football import (  # noqa: E402
     get_fixture_statistics, parse_fixture_stats,
+    parse_fixture_stats_halftime,
 )
+from workers.api_clients.supabase_client import store_match_stats_full  # noqa: E402
 
 # Only the columns this backfill owns. Listed explicitly rather than derived, so
 # a future widening of the parse cannot silently start rewriting other fields.
@@ -73,7 +112,8 @@ COLS = (
 )
 
 
-def todo(limit: int, oldest_first: bool):
+def todo_columns(limit: int, oldest_first: bool):
+    """Rows we already have, missing the columns this backfill owns."""
     order = "ASC" if oldest_first else "DESC"
     return execute_query(f"""
         SELECT s.match_id, m.api_football_id afid, m.date
@@ -87,8 +127,32 @@ def todo(limit: int, oldest_first: bool):
          LIMIT %s""", (limit,))
 
 
+def todo_rows(limit: int, oldest_first: bool):
+    """Finished fixtures in leagues AF DOES cover, with no stats row at all.
+
+    Scoped to `coverage_statistics_fixtures = true` deliberately: probing 30
+    fixtures across 30 flagged-FALSE leagues returned statistics for 0 of them,
+    so the flag is accurate and calling for those would burn quota for nothing.
+    """
+    order = "ASC" if oldest_first else "DESC"
+    return execute_query(f"""
+        SELECT m.id AS match_id, m.api_football_id afid, m.date
+          FROM matches m
+          JOIN leagues l ON l.id = m.league_id
+         WHERE m.status = 'finished' AND m.api_football_id IS NOT NULL
+           AND COALESCE(l.coverage_statistics_fixtures, false) = true
+           AND NOT EXISTS (SELECT 1 FROM match_stats s WHERE s.match_id = m.id)
+         ORDER BY m.date {order}
+         LIMIT %s""", (limit,))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--mode", choices=("columns", "rows"), default="columns",
+                    help="`columns` (use this) fills 12 fields on ~56k rows that "
+                         "exist. `rows` creates complete rows for fixtures with "
+                         "none — MEASURED YIELD 0/48 on 2022-2025, so it is not "
+                         "worth running at scale; see the module docstring.")
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--sleep", type=float, default=0.12,
                     help="seconds between calls; this shares the AF budget with "
@@ -107,13 +171,22 @@ def main() -> int:
                          "run it for real with a small --limit.")
     a = ap.parse_args()
 
-    rows = todo(a.limit, a.oldest_first)
-    remaining = execute_query("""
-        SELECT count(*) n FROM match_stats s JOIN matches m ON m.id = s.match_id
-         WHERE m.api_football_id IS NOT NULL AND s.shots_insidebox_home IS NULL
-           AND s.shots_outsidebox_home IS NULL""")[0]["n"]
-    print(f"BACKFILL-SHOT-LOCATION — {len(rows)} this run, {remaining:,} outstanding"
-          f"{' [DRY RUN]' if a.dry_run else ''}")
+    if a.mode == "rows":
+        rows = todo_rows(a.limit, a.oldest_first)
+        remaining = execute_query("""
+            SELECT count(*) n FROM matches m JOIN leagues l ON l.id = m.league_id
+             WHERE m.status='finished' AND m.api_football_id IS NOT NULL
+               AND COALESCE(l.coverage_statistics_fixtures,false) = true
+               AND NOT EXISTS (SELECT 1 FROM match_stats s WHERE s.match_id=m.id)""")[0]["n"]
+    else:
+        rows = todo_columns(a.limit, a.oldest_first)
+        remaining = execute_query("""
+            SELECT count(*) n FROM match_stats s JOIN matches m ON m.id = s.match_id
+             WHERE m.api_football_id IS NOT NULL AND s.shots_insidebox_home IS NULL
+               AND s.shots_outsidebox_home IS NULL
+               AND s.shots_off_target_home IS NULL""")[0]["n"]
+    print(f"BACKFILL-MATCH-STATS [{a.mode}] — {len(rows)} this run, "
+          f"{remaining:,} outstanding{' [DRY RUN]' if a.dry_run else ''}")
     if not rows:
         print("nothing to do")
         return 0
@@ -121,10 +194,37 @@ def main() -> int:
     filled = empty = failed = 0
     for i, r in enumerate(rows, 1):
         try:
-            parsed = parse_fixture_stats(get_fixture_statistics(r["afid"]))
+            raw = get_fixture_statistics(r["afid"])
+            parsed = parse_fixture_stats(raw)
+            if a.mode == "rows":
+                # Full-row mode writes EVERYTHING the parse produces, including
+                # the half-time splits the same response already carries — the
+                # whole point is that these fixtures have no row at all.
+                parsed = {**parsed, **parse_fixture_stats_halftime(raw)}
         except Exception as e:  # noqa: BLE001
             failed += 1
             print(f"  [{i}] fixture {r['afid']}: {type(e).__name__}: {e}")
+            time.sleep(a.sleep)
+            continue
+
+        if a.mode == "rows":
+            # `store_match_stats_full` is the same writer settlement uses, so a
+            # backfilled row is indistinguishable from a live one — no second
+            # code path to diverge.
+            if not parsed or all(v is None for v in parsed.values()):
+                empty += 1
+            elif a.dry_run:
+                filled += 1
+                if filled <= 5:
+                    got = {k: v for k, v in parsed.items()
+                           if v is not None and not k.endswith("_team")}
+                    print(f"  [dry-run] fixture {r['afid']} ({r['date'].date()}): "
+                          f"{len(got)} fields — {dict(list(got.items())[:6])}")
+            else:
+                store_match_stats_full(r["match_id"], parsed)
+                filled += 1
+            if i % 100 == 0:
+                print(f"  {i}/{len(rows)}  filled {filled}  no-data {empty}  failed {failed}")
             time.sleep(a.sleep)
             continue
 

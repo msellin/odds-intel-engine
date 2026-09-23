@@ -460,6 +460,8 @@ resumable, off-peak. See [[#081]].
 exist with **0 rows** — lineups are written onto `matches`, not into `lineups`.
 An empty table with a plausible name is a trap for the next person who greps.
 
+⚠️ **And the `match_stats` gap is not recoverable.** 17,393 finished matches sit in stats-COVERED leagues with no stats row; probing 12 random ones per year returned **0/48 across 2022-2025**. `coverage_statistics_fixtures` is a LEAGUE-level flag and AF's per-fixture coverage inside those leagues is patchy. Do not spend quota on it.
+
 `match_events` has **2.5× the coverage of `match_stats`**, holds **361,677 goal
 events with minutes across 129,518 matches** and **30,356 red cards with minutes**
 — and feeds the model nothing. Half-time scores are on **172,334 matches (98.2%)**.
