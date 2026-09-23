@@ -96,9 +96,11 @@ for _line in pathlib.Path(
 from workers.api_clients.db import execute_query, execute_write  # noqa: E402
 from workers.api_clients.api_football import (  # noqa: E402
     get_fixture_statistics, parse_fixture_stats,
-    parse_fixture_stats_halftime,
+    parse_fixture_stats_halftime, get_fixtures_batch, parse_fixture_lineups,
 )
-from workers.api_clients.supabase_client import store_match_stats_full  # noqa: E402
+from workers.api_clients.supabase_client import (  # noqa: E402
+    store_match_stats_full, store_match_lineups,
+)
 
 # Only the columns this backfill owns. Listed explicitly rather than derived, so
 # a future widening of the parse cannot silently start rewriting other fields.
@@ -146,13 +148,87 @@ def todo_rows(limit: int, oldest_first: bool):
          LIMIT %s""", (limit,))
 
 
+def backfill_fixture_block(limit: int, sleep: float, dry_run: bool) -> int:
+    """REFEREE + LINEUPS from the /fixtures?ids= batch — 20 fixtures per call.
+
+    Both fields ride the SAME response, and that response takes 20 fixtures at a
+    time, so this is ~20x cheaper per fixture than either statistics mode. It
+    exists because [[#081]] and [[#088]] found settlement discarding both blocks
+    from a call it was already making: the forward path is fixed, and this is
+    the history those fixes cannot reach (enrichment only walks yesterday+today).
+
+    Measured recovery for referee: 24/40 September, 23/40 August — ~60%.
+    Fill-if-empty on both, so a value we already hold is never overwritten.
+    """
+    rows = execute_query("""
+        SELECT m.id AS match_id, m.api_football_id afid, m.date, m.referee,
+               (m.lineups_home IS NOT NULL) AS has_lineup
+          FROM matches m JOIN leagues l ON l.id = m.league_id
+         WHERE m.status = 'finished' AND m.api_football_id IS NOT NULL
+           AND COALESCE(l.coverage_statistics_fixtures, false) = true
+           AND (m.referee IS NULL OR m.lineups_home IS NULL)
+         ORDER BY m.date DESC
+         LIMIT %s""", (limit,))
+    remaining = execute_query("""
+        SELECT count(*) n FROM matches m JOIN leagues l ON l.id = m.league_id
+         WHERE m.status='finished' AND m.api_football_id IS NOT NULL
+           AND COALESCE(l.coverage_statistics_fixtures,false) = true
+           AND (m.referee IS NULL OR m.lineups_home IS NULL)""")[0]["n"]
+    print(f"BACKFILL-MATCH-STATS [fixture] — {len(rows)} this run, "
+          f"{remaining:,} outstanding{' [DRY RUN]' if dry_run else ''}")
+    if not rows:
+        print("nothing to do")
+        return 0
+
+    by_afid = {r["afid"]: r for r in rows}
+    refs = lus = 0
+    ids = list(by_afid)
+    for i in range(0, len(ids), 20):
+        chunk = ids[i:i + 20]
+        try:
+            batch = get_fixtures_batch(chunk)
+        except Exception as e:  # noqa: BLE001
+            print(f"  chunk {i//20}: {type(e).__name__}: {e}")
+            time.sleep(sleep)
+            continue
+        for afid, f in batch.items():
+            row = by_afid.get(afid)
+            if not row:
+                continue
+            ref = ((f.get("fixture") or {}).get("referee") or "").strip() or None
+            if ref and not row["referee"]:
+                if not dry_run:
+                    execute_write("UPDATE matches SET referee = %s "
+                                  "WHERE id = %s AND referee IS NULL",
+                                  (ref, row["match_id"]))
+                refs += 1
+                if refs <= 5:
+                    print(f"  [{'dry' if dry_run else 'set'}] {afid}: referee {ref}")
+            if not row["has_lineup"]:
+                lu = parse_fixture_lineups(f.get("lineups") or [])
+                if lu.get("formation_home") or lu.get("lineups_home"):
+                    if not dry_run:
+                        store_match_lineups(row["match_id"], lu)
+                    lus += 1
+        time.sleep(sleep)
+
+    print(f"\ndone: {refs} referees, {lus} lineups recovered from "
+          f"{(len(ids)+19)//20} calls ({len(ids)} fixtures)")
+    print(f"outstanding after this run: ~{max(0, remaining - max(refs, lus)):,}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=("columns", "rows"), default="columns",
+    ap.add_argument("--mode", choices=("columns", "rows", "fixture"), default="columns",
                     help="`columns` (use this) fills 12 fields on ~56k rows that "
                          "exist. `rows` creates complete rows for fixtures with "
                          "none — MEASURED YIELD 0/48 on 2022-2025, so it is not "
-                         "worth running at scale; see the module docstring.")
+                         "worth running at scale; see the module docstring. "
+                         "`fixture` backfills REFEREE and LINEUPS from the "
+                         "/fixtures?ids= batch — 20 fixtures per call, so it is "
+                         "20x cheaper than the others; measured ~60% referee "
+                         "recovery ([[#088]]).")
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--sleep", type=float, default=0.12,
                     help="seconds between calls; this shares the AF budget with "
@@ -170,6 +246,9 @@ def main() -> int:
                          "for the first few fixtures. For anything else, just "
                          "run it for real with a small --limit.")
     a = ap.parse_args()
+
+    if a.mode == "fixture":
+        return backfill_fixture_block(a.limit, a.sleep, a.dry_run)
 
     if a.mode == "rows":
         rows = todo_rows(a.limit, a.oldest_first)
