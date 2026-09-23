@@ -95,3 +95,33 @@ model has no O/U edge to gate — consistent with `MODELLING_DATA_AUDIT_2026_09_
 Recommended: **do not ship an O/U odds floor.** The open question is whether the
 O/U market is worth keeping at all, which is a different and larger decision than
 a threshold, and belongs to the owner.
+
+## Cross-check against the earlier fleet-wide sweep (added 2026-09-23)
+
+`docs/BETTING_GATE_DECISIONS.md` had **already** swept the O/U odds floor, on a
+larger population (n=1,491: 222 below 1.80, 1,269 at or above), and concluded
+**"1.80 CONFIRMED, it earns its keep"** with **"no case for moving it up"** —
+noting the ROI ladder above 1.80 is NON-MONOTONIC (+7.7 → +7.1 → +11.9 → +4.0 →
++15.3) *while CLV stays flat*, and that a metric zigzagging beside a
+flat faster-converging companion is noise.
+
+**The two sweeps agree on the decision and disagree on the level, and the
+disagreement is entirely the metric.** That doc's `CLVpin` is raw
+`simulated_bets.clv_pinnacle`; this one uses `clv_pinnacle_devig`. Measured on
+identical rows:
+
+| population | n | raw | de-vigged | offset |
+|---|---|---|---|---|
+| `bot_v10_ou`, clean era | 157 | **+6.36%** | **−4.17%** | **+10.53pp** |
+| all `over_under_25` model picks | 850 | −0.50% | −4.15% | +3.64pp |
+
+So the earlier doc's *"CLV stays flat at ~+1%"* is not break-even — it is a loss
+once Pinnacle's own margin comes out (§70). Two independent sweeps, on different
+populations and different years, both say **the odds floor is not the lever**;
+only this one says the underlying picks are also losing to the close.
+
+**The offset is not a constant.** It is the anchor's overround at those instants,
+and it is nearly 3× larger for `bot_v10_ou` (10.53pp) than for O/U model picks at
+large (3.64pp) — i.e. **this bot selects into markets where Pinnacle's margin is
+unusually wide**. That is a separate finding and a plausible partial explanation
+for its CLV: a wider-margin market is a less certain anchor and a worse price.

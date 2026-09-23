@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.oddsintel.cdp-watch</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PYTHONUNBUFFERED</key>
+		<string>1</string>
+	</dict>
+	<!-- CDP-CHROME-REAPED-BY-LAUNCHD (2026-09-16). Without this, launchd kills
+	     everything left in the job's process group the moment the job exits —
+	     and `relaunch()` starts CDP-Chrome with `&` from launch_chrome_for_sync.sh,
+	     so Chrome IS in that group. The tier confirmed CDP was up (it polls
+	     :9222 before returning), the job finished, launchd killed Chrome, and
+	     30 minutes later the next tick found CDP down and relaunched it again.
+	     That loop ran 70 times over 17 hours and took both Coolbet and
+	     Unibet-Site off the air with every tick reporting rc=0.
+	     Google's own updater agent sets this flag for the same reason. -->
+	<key>AbandonProcessGroup</key>
+	<true/>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/python3</string>
+		<string>scripts/ops/coolbet_cdp_rebootstrap.py</string>
+		<string>--quick</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/margussellin/www/odds-intel-engine</string>
+	<key>StandardOutPath</key>
+	<string>/Users/margussellin/www/odds-intel-engine/dev/active/cdp-watch.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/margussellin/www/odds-intel-engine/dev/active/cdp-watch.log</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StartInterval</key>
+	<integer>300</integer>
+</dict>
+</plist>

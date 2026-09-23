@@ -1,5 +1,47 @@
 # Betting Gate Decisions — the single source of truth for edge/odds floors
 
+> ## ⚠️ METRIC BANNER 2026-09-23 — every `CLVpin` column below is RAW, and raw CLV does not break even at zero
+>
+> Added after [[#073]] swept the O/U odds floor with a different column and got a
+> different-looking answer. Both are right; they are on **two scales that differ by
+> up to 10.5 percentage points**.
+>
+> `CLVpin` here is `simulated_bets.clv_pinnacle` (`scripts/floor_grid_sweep.py:156`)
+> — our price against Pinnacle's close with **Pinnacle's own margin still in it**.
+> Per `ANALYSIS_GOTCHAS §70`, that metric **breaks even at the closing book's
+> margin, not at zero**. `clv_pinnacle_devig` strips it.
+>
+> Measured on identical rows, 2026-09-23:
+>
+> | population | n | raw `CLVpin` | de-vigged | offset |
+> |---|---|---|---|---|
+> | `bot_v10_ou`, clean era | 157 | **+6.36%** | **−4.17%** | **+10.53pp** |
+> | all `over_under_25` model picks | 850 | −0.50% | −4.15% | +3.64pp |
+>
+> **The offset is not a constant** — it is the anchor's overround at those instants,
+> so it is larger where a bot selects into wider-margin markets. `bot_v10_ou` does
+> exactly that, which is itself a finding.
+>
+> **What this does and does not change.** The DECISIONS below stand: "keep 1.80",
+> "do not move the O/U floor up", "draw is dead", "double_chance is dead" are all
+> corroborated by [[#073]], which reached the same conclusion on the de-vigged
+> scale. What changes is how the LEVELS read, and the correction is **asymmetric**:
+>
+> * a row calling something **DEAD on negative raw CLV is now stronger** — de-vigged it is worse still;
+> * a row calling something **GOOD on small positive raw CLV is not evidence of an edge** — "CLV stays flat at ~+1%" is a loss once the margin comes out.
+>
+> In particular, **"o/u 2.5 — live 8% is sound" and "1.80 CONFIRMED, it earns its
+> keep" rest on ROI +7.7% and CLVpin +0.9%.** At n≈1,269 the ROI is inside the noise
+> band (`§8`; every ROI CI in this system spans zero — `docs/BETA_PROMOTION_BAR.md`),
+> and the CLV is negative once de-vigged. **Treat the O/U gate as unvalidated rather
+> than confirmed**, and see [[#077]] for the only input with well-powered external
+> evidence.
+>
+> Do not restate these tables on the de-vigged scale by hand — re-run the sweep with
+> the de-vigged metric if a number here is about to drive a decision.
+
+
+
 **Read this before changing any real-money edge or odds floor, and before running
 "a quick backtest" to re-decide one.** This doc exists because we kept running
 *different* backtests that gave *different* answers and kept changing the floors —

@@ -11,7 +11,13 @@ JOBS=(com.oddsintel.coolbet-odds-snapshot com.oddsintel.coolbet-feed-watchdog)
 case "${1:-}" in
   pause)
     for j in "${JOBS[@]}"; do
-      launchctl unload "$LA/$j.plist" 2>/dev/null && echo "unloaded $j" || echo "already unloaded $j"
+      # bootout is the counterpart of bootstrap; `unload` is the same legacy verb
+      # that broke resume. Fall back to unload so an old launchd still works.
+      if launchctl bootout "gui/$(id -u)/$j" 2>/dev/null || launchctl unload "$LA/$j.plist" 2>/dev/null; then
+        echo "unloaded $j"
+      else
+        echo "already unloaded $j"
+      fi
     done
     # PAUSE-WITHOUT-RESUME (fixed 2026-09-12). The header above has always
     # promised "the resume is a launchd job, not a note to a human" — and this
@@ -39,9 +45,17 @@ case "${1:-}" in
   <key>StandardErrorPath</key><string>$(cd "$(dirname "$0")/../.." && pwd)/dev/active/coolbet-resume.log</string>
 </dict></plist>
 PLIST
-    launchctl unload "$LA/com.oddsintel.coolbet-resume.plist" 2>/dev/null || true
-    if launchctl load "$LA/com.oddsintel.coolbet-resume.plist" 2>/dev/null; then
-      echo "resume agent ARMED — Coolbet jobs reload in ${MINUTES}min"
+    # ARMING USES BOOTSTRAP TOO — and this is the worst place to use the broken
+    # verb. If the resume AGENT fails to arm, there is no resume at all: the jobs
+    # stay unloaded and nothing ever retries. That is the exact silent multi-day
+    # outage this script's header promises to prevent. Same reasoning as the
+    # resume branch below (RESUME-LOAD-VERB-IS-THE-BUG, 2026-09-23).
+    launchctl bootout "gui/$(id -u)/com.oddsintel.coolbet-resume" 2>/dev/null || true
+    launchctl bootstrap "gui/$(id -u)" "$LA/com.oddsintel.coolbet-resume.plist" 2>/dev/null || true
+    # Verify against launchd rather than trusting the exit code — the same
+    # lesson the resume branch learned on 2026-09-20.
+    if launchctl list 2>/dev/null | grep -q "	com.oddsintel.coolbet-resume\$"; then
+      echo "resume agent ARMED — Coolbet jobs reload in ${MINUTES}min (verified in launchctl list)"
     else
       # Fail LOUD. A pause whose resume did not arm is the outage this fixes.
       echo "!! RESUME AGENT FAILED TO ARM — re-run '$0 resume' BY HAND, or the"
@@ -63,7 +77,21 @@ PLIST
     failed=""
     for j in "${JOBS[@]}"; do
       for attempt in 1 2; do
-        launchctl load "$LA/$j.plist" 2>/dev/null || true
+        # BOOTSTRAP, NOT LOAD (2026-09-23, RESUME-LOAD-VERB-IS-THE-BUG).
+        #
+        # Third failure of this branch in four days: 14h on 09-20, 4.3h on 09-22,
+        # ~4h overnight into 09-23. Each time it logged "loaded" and the job was
+        # not in `launchctl list` afterwards. The verification added on 09-20 was
+        # correct and did not help, because the problem is not the checking — it
+        # is `launchctl load`, the legacy verb, which names no domain and fails
+        # silently when the GUI session is not in the state it assumes (notably
+        # on a wake from sleep, which is exactly when this agent fires).
+        #
+        # `bootstrap gui/<uid>` names the domain explicitly. It has worked on
+        # every occasion `load` did not this week, including all three manual
+        # recoveries. It errors loudly when a job is ALREADY loaded, which is
+        # harmless here — the verification below is what decides success.
+        launchctl bootstrap "gui/$(id -u)" "$LA/$j.plist" 2>/dev/null || true
         if launchctl list 2>/dev/null | grep -q "	$j\$"; then
           echo "loaded $j (verified in launchctl list)"
           break
@@ -78,7 +106,8 @@ PLIST
       # the worst of both. Leave it armed and say so.
       echo "!! RESUME INCOMPLETE — not registered in launchd:$failed"
       echo "!! The resume agent is LEFT ARMED so it retries. Fix by hand with:"
-      echo "!!   launchctl load ~/Library/LaunchAgents/com.oddsintel.coolbet-odds-snapshot.plist"
+      echo "!!   launchctl bootstrap gui/\$(id -u) ~/Library/LaunchAgents/com.oddsintel.coolbet-odds-snapshot.plist"
+      echo "!!   (bootstrap, NOT load — load is the verb that caused this)"
       echo "!! Verify with: $0 status  (jobs must appear in the launchctl list above)"
       exit 1
     fi
