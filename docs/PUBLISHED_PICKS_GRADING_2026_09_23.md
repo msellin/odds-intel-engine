@@ -193,3 +193,41 @@ Holdout: A +4.6%, B +2.6%, C −2.2% closing edge. Of the 84 live picks, **67 wo
 **Common to both arms:** best price at an Estonian scraped book goes against us by kickoff. The
 likely mechanism is that the scraped quote is older than the anchor (~22 min on the sharp arm),
 so the apparent edge is a timing gap that reverts.
+
+---
+
+## 3. Pre-registration — grade A, and a re-test of B/C on UNSEEN data (2026-09-23, written BEFORE the run)
+
+Owner: *"we need profitable bets to be grade A… we have thousands of games and odds from
+starting May"*. Correct: the §1 replay used the script's default `--days 56`, not a data
+limit. 1x2 matches with ≥5 books: May 7,888 · Jun 2,743 · Jul 3,557 · Aug 8,723 · Sep 6,687.
+
+**Why this is a clean test.** The B/C conditions were chosen by looking at the last 56 days
+(≈ 2026-07-29 onward). Everything **before 2026-07-29 was never looked at**, so it is
+out-of-sample for every rule below. The run is `consensus_arm_replay.py --days 146`; only
+rows with kickoff < 2026-07-29 are the test ("UNSEEN").
+
+**Grade A candidates — a fixed family of four, Holm-corrected (m = 4):**
+
+| id | rule (all on top of grade B) | why it is a candidate |
+|---|---|---|
+| A1 | best price at a NON-Estonian book | only split positive in both §1 halves (+5.9 / +7.5) |
+| A2 | edge 4–6% | positive early, negative late in §1 |
+| A3 | odds ≤ 1.6 | positive early, flat late in §1 |
+| A4 | EVERY available panel book sees an edge (not just "none disagrees") | the strongest single signal in §1, made stricter |
+
+**PASS for an A candidate** (all three, on UNSEEN rows only):
+1. ROI > 0 with Holm-adjusted one-sided p < 0.05 (m = 4), 1u flat;
+2. ROI > 0 in BOTH halves of the unseen window (split at the median kickoff date);
+3. beats grade B on the same rows.
+
+**B/C re-test:** C must again be worse than B on UNSEEN rows — the claim the channel was
+told on 2026-09-23 (message 395). If it is not, the explainer was wrong and gets corrected.
+
+**Known confounds, stated before the result:** fewer books early (Epicbet / Unibet-Site came
+online in week 38), so early consensuses are built from a different panel; and A1 rides on
+API-Football-fed prices that may not have been takeable (ANALYSIS_GOTCHAS §70, [[#096]]) —
+**A1 passing is necessary, not sufficient**: it still needs the price check before it is
+published as A.
+
+**Expected result:** no candidate passes (the §1 holdouts faded); C stays worse than B.
