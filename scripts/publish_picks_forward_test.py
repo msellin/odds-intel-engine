@@ -620,8 +620,22 @@ def select(cands: list[dict], room: int | None = None,
     return deduped if room is None else deduped[:room]
 
 
+def published_selection_keys(match_ids) -> set:
+    """(match_id, market, selection) already in the ledger for the published
+    arms — so a leg published on an earlier pass is not re-labelled as a
+    rejection on every later pass (found by review before the first live run)."""
+    ids = list({str(m) for m in match_ids})
+    if not ids:
+        return set()
+    rows = execute_query(
+        """SELECT match_id::text AS m, market, selection FROM picks_forward_test
+            WHERE arm = ANY(%s) AND match_id = ANY(%s::uuid[])""",
+        (list(PUBLISHED_ARMS), ids))
+    return {(r["m"], r["market"], r["selection"]) for r in rows}
+
+
 def funnel_rows(pool: list[dict], picked: list[dict], source: str,
-                max_edge: float | None = None) -> list[dict]:
+                max_edge: float | None = None, published: set | None = None) -> list[dict]:
     """CANDIDATE-FUNNEL ([[#082]]): every pool leg within 5pp of the floor, with
     the reason it was or was not published. `select()` keeps nothing it drops,
     so without this no floor / ceiling / grade question has a population.
@@ -633,12 +647,16 @@ def funnel_rows(pool: list[dict], picked: list[dict], source: str,
     from workers.utils.candidate_funnel import NEAR_FLOOR_PP
     now = datetime.now(timezone.utc)
     chosen = {(str(c["match_id"]), c["market"], c["selection"]) for c in picked}
+    if published is None:
+        published = published_selection_keys(c["match_id"] for c in pool)
     out = []
     for c in pool:
         e = c.get("edge")
         if e is None or e < MIN_EDGE - NEAR_FLOOR_PP:
             continue
         key = (str(c["match_id"]), c["market"], c["selection"])
+        if key in published and key not in chosen:
+            continue            # published on an earlier pass — already recorded as selected
         if key in chosen:
             step = "selected_unsent" if c.get("grade") == "D" else "selected"
         elif e < MIN_EDGE:

@@ -52018,7 +52018,11 @@ def test_candidate_funnel_persisted():
     pool = [leg("a", "home", 0.05, "C"), leg("b", "home", 0.02, "C"), leg("c", "home", 0.10, "C"),
             leg("d", "home", 0.04, "C"), leg("e", "home", -0.30, "C"), leg("f", "away", 0.05, "D")]
     picked = [pool[0], pool[5]]
-    rows = {r["match_id"]: r for r in pf.funnel_rows(pool, picked, "publisher_consensus", max_edge=0.08)}
+    pool.append(leg("g", "home", 0.05, "C"))          # published on an EARLIER pass
+    rows = {r["match_id"]: r for r in pf.funnel_rows(
+        pool, picked, "publisher_consensus", max_edge=0.08,
+        published={("g", "1x2", "home"), ("a", "1x2", "home")})}
+    assert "g" not in rows, "a leg published earlier must not be re-labelled as a rejection"
     assert rows["a"]["step"] == "selected" and rows["a"]["bot"] == "bot_consensus_c_v1"
     assert rows["f"]["step"] == "selected_unsent" and rows["f"]["bot"] == "bot_consensus_d_v1"
     assert rows["b"]["step"] == "below_floor"
@@ -52027,6 +52031,17 @@ def test_candidate_funnel_persisted():
     assert "e" not in rows, "far-below-floor legs answer nothing and are not written"
     assert rows["a"]["fair_source"] == "consensus:6" and 11 < rows["a"]["quote_age_min"] < 13
     assert all("edge" not in r for r in rows.values())
+
+    # Found by independent review before the first live run: every model
+    # probability is a numpy float, which psycopg2 writes as `np.float64(..)`
+    # and Postgres rejects — the whole pipeline batch would have written 0 rows.
+    import numpy as _np
+    from workers.utils import candidate_funnel as cf
+    assert cf._clean(_np.float64(0.117)) == 0.117 and type(cf._clean(_np.float64(0.1))) is float
+    assert cf._clean(float("nan")) is None and cf._clean(_np.float32("inf")) is None
+    assert "_clean(r.get(c))" in _engine_path("workers/utils/candidate_funnel.py").read_text()
+    assert src.count('"pipeline_shadow" if shadow_mode else "pipeline"') == 2, (
+        "shadow runs must not share rows with live runs")
 
 
 @test("CONSENSUS-SPLIT-BY-GRADE — one ledger arm, two bots (B beta, C testing), split in the views")

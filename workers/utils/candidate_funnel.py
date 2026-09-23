@@ -20,6 +20,22 @@ _COLS = ("source", "bot", "match_id", "market", "selection", "bookmaker", "odds"
          "fair_prob", "fair_source", "raw_prob", "threshold", "step", "quote_age_min")
 
 
+def _clean(v):
+    """Plain Python value for psycopg2. numpy floats (every model probability is
+    one) are written by psycopg2 as the literal text `np.float64(0.11)`, which
+    Postgres rejects — and one bad row aborts the whole batch. Found by review
+    before the first live run; same trap `_sanitize_for_json` exists for.
+    NaN / Inf become NULL."""
+    if v is None or isinstance(v, (str, bool)):
+        return v
+    try:
+        import math
+        f = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    return None if (math.isnan(f) or math.isinf(f)) else f
+
+
 def record(rows: list[dict]) -> int:
     """Upsert funnel rows. Returns rows written (0 on any failure)."""
     if not rows:
@@ -35,7 +51,10 @@ def record(rows: list[dict]) -> int:
     try:
         from psycopg2.extras import execute_values
         from workers.api_clients.db import get_conn
-        vals = [tuple(r.get(c) if c != "match_id" else str(r[c]) for c in _COLS)
+        _txt = {"source", "bot", "match_id", "market", "selection", "bookmaker",
+                "fair_source", "step"}
+        vals = [tuple((str(r[c]) if r.get(c) is not None else None) if c in _txt
+                      else _clean(r.get(c)) for c in _COLS)
                 for r in latest.values()]
         with get_conn() as conn:
             with conn.cursor() as cur:

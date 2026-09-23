@@ -2959,3 +2959,10 @@ de-vig question needs. Three rules for reading it:
 3. **One row per (day, source, bot, match, market, selection), latest decision wins.** A
    candidate accepted at 10:05 and dropped at 11:05 reads as dropped; `n_seen` says how many
    runs saw it. It starts 2026-09-23 — there is no history before that.
+4. **`source='pipeline'` is the live betting run; `'pipeline_shadow'` is the shadow run**, which
+   evaluates ALL bots including retired and off-cohort ones. Never pool them.
+5. **Known limits:** a bot with several `strategies` keeps only the last strategy's verdict per
+   candidate (the strategy is not stored); a consensus leg whose grade changes during the day can
+   appear under two bots; `accepted` means it passed every gate, not that a bet was stored (the
+   same-day dedupe can still skip it). A published leg is written once, as `selected`, and never
+   re-labelled on later passes.

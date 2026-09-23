@@ -3705,7 +3705,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                             candidate_specs.append(("draw_no_bet", "Away", dnb_a_odds, dnb_a_prob, "draw_no_bet", "away", thresholds.get("dnb", 0.05)))
 
             for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:
-                _fctx = {"source": "pipeline", "bot": bot_name, "match_id": str(match_id),
+                _fctx = {"source": "pipeline_shadow" if shadow_mode else "pipeline", "bot": bot_name, "match_id": str(match_id),
                          "market": os_market, "selection": os_selection, "odds": odds,
                          "raw_prob": raw_mp, "fair_prob": None, "fair_source": "model_cal",
                          "threshold": base_threshold, "bookmaker": None, "quote_age_min": None}
@@ -3953,7 +3953,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             bet_candidates.sort(key=lambda x: x[6], reverse=True)
 
             for mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake, os_market, os_selection in bet_candidates:
-                _fctx = {"source": "pipeline", "bot": bot_name, "match_id": str(match_id),
+                _fctx = {"source": "pipeline_shadow" if shadow_mode else "pipeline", "bot": bot_name, "match_id": str(match_id),
                          "market": os_market, "selection": os_selection, "odds": odds,
                          "raw_prob": raw_mp, "fair_prob": cal_prob, "fair_source": "model_cal",
                          "threshold": None, "bookmaker": None, "quote_age_min": None}
