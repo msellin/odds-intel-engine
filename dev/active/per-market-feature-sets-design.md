@@ -423,3 +423,35 @@ log-loss and α; not part of the bar.
 **Expected:** D and E α = 0 (sixth O/U zero), but D's model-alone log-loss and AUC BETTER than C's
 on the covered subset — shots beat goals as an input (Wheatcroft) — without beating the market.
 RAW strategies still negative CLV.
+
+## RESULT — arms D/E + before/after (2026-09-23): all FAIL, and shots did NOT beat goals
+
+One run, six arms trained on the same rows. CHECK R passed. Universe 9,163 fixtures; shots-covered
+subset 2,951 (32%). **Verdict (Holm m=6): all six FAIL** — the sixth O/U α-test in a row with
+nothing beyond the market. C/E reach α 0.13-0.19 on the full universe but the blend does not beat
+the market (p ≈ 0.6-1.0).
+
+**Before → after on the SAME 2,951 fixtures, model alone (REALISTIC):**
+
+| arm | LL | AUC | ECE |
+|---|---|---|---|
+| C — goals-fed (before) | **0.6742** | **0.5943** | 0.0233 |
+| D — shots-fed (after) | 0.6767 | 0.5834 | 0.0228 |
+| E — C + shots | 0.6736 | 0.5937 | 0.0219 |
+| CM — C + prices | 0.6672 | 0.6128 | 0.0208 |
+| market | 0.6671 | 0.6134 | — |
+
+**Shots did not help — against both the literature (Wheatcroft) and the pre-stated expectation.**
+D is worse than C; E ≈ C. Three honest caveats: (1) the shots rating is our generic
+`HalfRatings` IPF + online update, not Wheatcroft's exact GAP construction; (2) the covered test
+set is small (2,951); (3) Wheatcroft judged returns against AVERAGE odds, we judge against de-vigged
+Pinnacle — a much harder bar. **CM (prices in) ≈ the market itself**, confirming again that prices
+make the model a copy of the market, not better than it.
+
+**Money (covered subset, T-2h, Coolbet):** every RAW strategy −3.7% to −6.4% CLV at 6-42 bets/day;
+every BLEND ≈ MARKET (−2.9% to +1.9%, n.s.). No arm beats the MARKET baseline.
+
+**What this closes:** O/U prediction by feature SHAPE, SIZE and INPUT (goals vs shots) is
+exhausted for this model class. The remaining model route is a different OBJECTIVE — [[#090]]
+(decorrelation from the market, Benter logit blend, judged on clv_sharp) — and its small
+per-market feature sets draw on the parked candidates in [[#080]] / [[#086]].
