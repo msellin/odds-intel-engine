@@ -393,3 +393,33 @@ evidence either way (§8).
 * **Not closed:** arm D/E (shots-fed) after the #078 backfill. C's big jump over
   A0 says shape matters; shots are the one input the literature ranks above
   goals. Expected result stays α = 0.
+
+---
+
+## Pre-registration — O/U arms D/E + before/after (2026-09-23, written BEFORE the run)
+
+Owner: *"can we also measure the effect of the 089? test before and after?"* The #078 columns
+backfill finished 2026-09-23 (53,309 matches: shots in/outside the box, off target, …), so the
+shots-fed arms can now be built on complete data.
+
+**Before/after is ONE run, not two.** The backfill changed the data under the first run, so its
+numbers are not a valid "before". All six arms are trained in the same minute on the same rows:
+BEFORE = C (sum-shaped, goals-fed) with A / A0 / CM as controls; AFTER = D and E.
+
+* **D** (~10, shots-fed): walk-forward opponent-adjusted expected TOTALS — shots, shots on target,
+  shots off target, shots inside the box, corners — each λ_home + λ_away from `HalfRatings`
+  (the #084 construction: IPF-seeded on the oldest 180 days, then predict-then-update in date
+  order, same-day matches never see each other), plus `league_goals_wf`, `league_over25_wf`,
+  rest days × 2, `league_tier`.
+* **E**: C + D's five shot totals (16).
+
+**Two universes, stated now:** (1) SHOTS-COVERED fixtures (the rating exists) — all six arms,
+and it is where D and E are DECIDED; (2) the full universe — A, A0, C, CM, E (D is not defined
+there). Same harness and CHECK R as the first run. **Bar unchanged:** REALISTIC α > 0.02 AND blend
+< market AND Holm p < 0.05, **m = 6** (family fixed at the first run). **Also reported (handover):
+ECE** (10-bin calibration error of the Platt-calibrated model on the held-out half) beside
+log-loss and α; not part of the bar.
+
+**Expected:** D and E α = 0 (sixth O/U zero), but D's model-alone log-loss and AUC BETTER than C's
+on the covered subset — shots beat goals as an input (Wheatcroft) — without beating the market.
+RAW strategies still negative CLV.
