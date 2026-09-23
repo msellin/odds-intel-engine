@@ -2961,6 +2961,27 @@ def main():
                       CronTrigger(hour="*", minute="2,32"),
                       id="epicbet_odds_snapshot", name="Epicbet Odds [30min]")
 
+    # COOLBET-MOVED-TO-VPS (2026-09-23). This job has existed here unregistered
+    # since COOLBET-SCRAPERS-MOVED-TO-MAC (2026-07-03), when Imperva 403'd this
+    # box and the sweep had to run from the operator's residential line.
+    #
+    # ZONE-EGRESS removed that constraint: COOLBET_RESIDENTIAL_PROXY points at an
+    # Estonian exit node, and through it this box reads Coolbet normally — 98
+    # categories enumerated, batched odds POSTs completing, 41s for a full dry
+    # sweep with no timeouts.
+    #
+    # It fires at :03/:33, between the AF odds refresh (:00/:30) and the betting
+    # refresh (:05/:35), so the same cycle's edge math sees fresh Coolbet prices —
+    # the same slot it held on the Mac.
+    #
+    # ⚠️ EXACTLY ONE SWEEP MAY RUN. The Mac plists are parked in
+    # ~/Library/LaunchAgents/paused/. Reloading them while this is registered
+    # double-writes odds_snapshots and doubles our Imperva footprint, which is
+    # what escalates the flag. Check: launchctl list | grep coolbet-odds-snapshot
+    scheduler.add_job(job_coolbet_odds_snapshot,
+                      CronTrigger(hour="*", minute="3,33"),
+                      id="coolbet_odds_snapshot", name="Coolbet Odds [30min]")
+
     # SCHEDULER-HANG-MITIGATION (2026-06-01) — staggered :10/:40 instead of
     # :05/:35 so it doesn't share a firing minute with betting_refresh_interval.
     # On 2026-06-01 at 14:35 UTC, betting_pipeline + betting_refresh + shadow_1435

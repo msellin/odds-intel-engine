@@ -244,9 +244,10 @@ def main() -> int:
                          "worth running at scale; see the module docstring. "
                          "`fixture` backfills REFEREE and LINEUPS from the "
                          "/fixtures?ids= batch — 20 fixtures per call, so it is "
-                         "20x cheaper than the others. OBSERVED: lineups ~60-68% "
-                         "across eras; referee 31% on recent fixtures and ~2% on "
-                         "older ones ([[#088]]).")
+                         "20x cheaper than the others. OBSERVED: lineups ~60-68%% "
+                         "across eras; referee 31%% on recent fixtures and ~2%% on "
+                         "older ones ([[#088]]). NB the %% are doubled because "
+                         "argparse format-expands help strings.")
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--sleep", type=float, default=0.12,
                     help="seconds between calls; this shares the AF budget with "

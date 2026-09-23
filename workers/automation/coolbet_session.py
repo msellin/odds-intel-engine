@@ -1316,6 +1316,31 @@ class CoolbetSession:
     def _imperva_seed(self, *, force_refresh: bool = False) -> list[dict] | None:
         """The Imperva cookie seed for this session — FIRST CONTACT ONLY.
 
+        ⚠️ NOT USED ON A PROXIED EGRESS (2026-09-23). The DB seed is harvested
+        from the operator's own CDP-Chrome, on the operator's residential line.
+        Imperva binds `reese84` to the client that minted it, and **blackholes a
+        mismatched client rather than 403-ing it** — so replaying those cookies
+        from the zone.ee exit does not fail fast, it hangs.
+
+        That is exactly what the first zone.ee cutover attempt looked like: the
+        board enumerated fine over FlareSolverr (98 categories) and then
+        `fetch_odds_for_markets_batched` died at the 30 s read timeout on every
+        event, which reads as "Coolbet is slow" rather than "these cookies belong
+        to a different machine".
+
+        On a proxied egress the session mints its OWN identity through the warmup
+        navigation — proven to work: 141,023 bytes of real fo-tree with no seed
+        at all — and `_refresh_cookies_from_fs()` then copies those same
+        FS-minted cookies into the plain-requests session the POSTs use. One
+        identity, one egress, end to end.
+        """
+        if _RESIDENTIAL_PROXY:
+            return None
+        return self._imperva_seed_unproxied(force_refresh=force_refresh)
+
+    def _imperva_seed_unproxied(self, *, force_refresh: bool = False) -> list[dict] | None:
+        """The original DB-seeded path, used when there is no proxy (the Mac).
+
         Cached because `_load_fresh_imperva_cookies_from_db` triggers a CDP
         re-harvest when the snapshot is stale, and doing that per request would
         turn one browser round-trip into hundreds.
