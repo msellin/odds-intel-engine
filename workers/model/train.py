@@ -599,6 +599,26 @@ OU_MARKET_FEATURE_COLS = [
 # plus the live pipeline's pre-kickoff opening snapshots going forward.
 DRIFT_FEATURE_COLS = ["pinnacle_drift_home", "pinnacle_drift_draw", "pinnacle_drift_away"]
 
+# HALF-TIME FEATURES ([[#084]], migration 378). Behind a flag so an A/B can train
+# two bundles that differ by EXACTLY these five columns and nothing else.
+#
+# They are the first SUM-shaped features this table has ever carried. Every other
+# feature here is a level or a DIFFERENCE — `elo_diff` exists because someone knew
+# 1x2 turns on the difference of team strengths, and nothing was ever added for
+# totals, which turn on the SUM (Karlis & Ntzoufras model the difference via the
+# Skellam distribution, in which the sum is integrated out and discarded).
+#
+# Fill on the labelled training set: 125,178 of 175,156 = 71.5%, which is better
+# than most of the existing 52.
+#
+# ⚠️ Scored STANDALONE these fail: alpha 0.0100 on de-vigged Pinnacle, residual
+# AUC 0.4107. The flag exists to ask the DIFFERENT question — do they help as one
+# input among many — which a standalone probe cannot answer.
+HALFTIME_FEATURE_COLS = [
+    "ht_expected_total", "h2_expected_total", "ht_share_expected",
+    "ht_expected_diff", "h2_expected_diff",
+]
+
 
 # SIGNAL-FEATURES (FEED-THE-MODEL-WHAT-WE-ALREADY-COMPUTE, 2026-09-16).
 # 50 of the 90 signals we compute never reached the model. These four are the
@@ -851,6 +871,7 @@ def load_training_data(include_pinnacle: bool = False,
                        include_ou_market: bool = False,
                        include_signals: bool = False,
                        include_drift: bool = False,
+                       include_halftime: bool = False,
                        cutoff_date: str | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load match_feature_vectors rows with completed outcomes from the DB.
 
@@ -963,7 +984,8 @@ def load_training_data(include_pinnacle: bool = False,
                     + (PINNACLE_FEATURE_COLS if include_pinnacle else [])
                     + (OU_MARKET_FEATURE_COLS if include_ou_market else [])
                     + (SIGNAL_FEATURE_COLS if include_signals else [])
-                    + (DRIFT_FEATURE_COLS if include_drift else []))
+                    + (DRIFT_FEATURE_COLS if include_drift else [])
+                    + (HALFTIME_FEATURE_COLS if include_halftime else []))
     features_df = df[feature_cols].copy()
     # Postgres NUMERIC columns come back as decimal.Decimal which pandas can't
     # `.mean()` mixed with float NaNs. Coerce all features to float64 so the
@@ -1004,6 +1026,7 @@ def train_all(version: str = "untagged",
               include_ou_market: bool = False,
               include_signals: bool = False,
               include_drift: bool = False,
+              include_halftime: bool = False,
               cutoff_date: str | None = None,
               ou_exclude_tier_c: bool = True):
     """Train all three models. If called with no args, loads data from DB automatically.
@@ -1028,6 +1051,7 @@ def train_all(version: str = "untagged",
             include_ou_market=include_ou_market,
             include_signals=include_signals,
             include_drift=include_drift,
+            include_halftime=include_halftime,
             cutoff_date=cutoff_date,
         )
 
@@ -1171,6 +1195,10 @@ if __name__ == "__main__":
                         help="Add Pinnacle open→close drift columns (DRIFT-FEATURE). "
                              "Empirical: +8.76pp home WR spread top vs bottom quintile "
                              "on 8,850 matches. Coverage depends on backfill_pinnacle_drift.py.")
+    parser.add_argument("--include-halftime", action="store_true",
+                        help="add the five half-time features from migration 378 "
+                             "([[#084]]). Use it to train arm B of an A/B whose "
+                             "only difference from arm A is these columns.")
     parser.add_argument("--version", default="untagged",
                         help="Version tag — used as the subdir under data/models/soccer/. "
                              "Set MODEL_VERSION=<version> in env to activate.")
@@ -1194,6 +1222,7 @@ if __name__ == "__main__":
         include_ou_market=args.include_ou_market,
         include_signals=args.include_signals,
         include_drift=args.include_drift,
+        include_halftime=args.include_halftime,
         cutoff_date=args.cutoff,
         ou_exclude_tier_c=not args.ou_include_tier_c,
     )
