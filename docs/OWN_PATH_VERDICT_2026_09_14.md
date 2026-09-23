@@ -207,3 +207,34 @@ at the end, and the pause landed one day after the worst of it.
    not variance around a −7% mean; it is a different regime, and it lines up
    exactly with the defect's final days. When a ledger's damage clusters in
    time, look for a cause with the same timestamps.
+
+---
+
+## ADDENDUM 2026-09-23 — re-test as a TAIL test ([[#024]] (c)); pre-registered BEFORE the run
+
+**Why.** This verdict closed OWN on the MEDIAN best-of-3 overround (5.66% vs a 2% kill line).
+Value betting lives in the TAIL — the minority of quotes priced above fair — which a median
+cannot see (research handover, T4). The 2026-09-17 Kaunitz replication scored ROI against
+outcomes at the latest pre-kickoff snapshot, not CLV against a fresh sharp close. This addendum
+asks the right question; it does not overwrite anything above.
+
+**Question.** Do quotes at the books WE can bet (self-scraped: Coolbet, Epicbet, Unibet-Site;
+Tonybet from its first rows) priced ≥X% above a FRESH de-vigged Pinnacle price beat the
+de-vigged Pinnacle CLOSE?
+
+**Method** (`scripts/own_tail_retest.py`). Last 21 days of finished fixtures; markets 1x2,
+over_under_25, 1x2_1h. For every stored book quote between 14 h and 45 min before kickoff,
+fair = Shin of the latest complete Pinnacle set at or before the quote, no older than 60 min.
+A leg = the FIRST quote per (match, market, selection, book) whose edge `p_fair × odds − 1`
+reaches X, with odds ≤ 4.0 and edge ≤ 8% (the ceiling; bigger is a data fault). Score:
+`clv_sharp` against the fresh assembled close (same code as `workers/jobs/clv_sharp.py`).
+Split by book × market, X ∈ {2, 3, 4, 5}%, and by whether the book's price had been UNCHANGED
+for > 60 min at the decision (stale-vs-structural: a stale price that beats the close is
+not actionable — the book moves it first). Holm across every book × market × threshold cell.
+
+**Bar.** A segment re-opens OWN (as an owner decision) only if clv_sharp > 0 at Holm-adjusted
+t > 3, on NON-stale quotes, with ≥ 3 legs/day.
+
+**Expected.** Main-market 1x2 and O/U at fresh quotes: clv_sharp ≤ 0 — the verdict stands.
+Possible exceptions: 1H at Epicbet (#103) and draws. Positive stale-quote cells are expected
+and are NOT actionable.
