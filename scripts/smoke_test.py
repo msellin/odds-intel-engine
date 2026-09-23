@@ -51965,6 +51965,20 @@ def test_ou_allowlist_keeps_first_half():
     assert kept == {"over_under_1h_05", "over_under_1h_15"}, kept
 
 
+@test("PERF-NO-HIGH-WATER-BANKROLL-COLUMN — the public leaderboard shows one price basis")
+def test_perf_no_high_water_bankroll_column():
+    """[[#074]], 2026-09-23. bots.current_bankroll accumulates the stored pnl
+    (high-water odds) while the P&L / ROI columns reprice at executable odds, so
+    one leaderboard row read BANKROLL €1,360 beside P&L +€206. It is a live
+    staking input, so its basis is not changed; the column is simply not shown
+    on the public leaderboard (the operator keeps it on /admin/bots)."""
+    lb = _web_path("src/components/performance-leaderboard.tsx").read_text(encoding="utf-8")
+    import re as _r
+    code = _r.sub(r"\{/\*.*?\*/\}", "", lb, flags=_r.DOTALL)
+    assert "bot.currentBankroll" not in code, "the high-water bankroll is back on the public row"
+    assert ">Bankroll</th>" not in code
+
+
 @test("CONSENSUS-SPLIT-BY-GRADE — one ledger arm, two bots (B beta, C testing), split in the views")
 def test_consensus_split_by_grade():
     """[[#095]], 2026-09-23. Owner: split the consensus bot into two bots by
