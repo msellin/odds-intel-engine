@@ -269,3 +269,27 @@ n=48) — but 29 picks cannot pass a correction, and at odds ≤1.6 a single ups
 **Decision: no grade A is published.** A3 needs no new code to track: it is
 `picks_forward_test WHERE arm='consensus_anchor' AND grade='B' AND odds <= 1.6`, both columns
 already stored. Re-test it on LIVE picks only (published after 2026-09-23) at n ≥ 150.
+
+## 4. Pre-registration — can grade B be made better? Walk-forward, all books (2026-09-23, BEFORE the run)
+
+Owner: *"can we make grade B better? we can use any odds that we have, not just Estonian
+ones, as our customers are not Estonians"* (👥 PICKS — any book's price is fair game).
+
+**Why walk-forward.** All 146 days are now spent: §1 chose the grades on the last 56, §3
+tested them on May–July. Searching the same rows again for a "better B" would be the
+overfit §3 just caught. So the SEARCH is re-run inside every fold on past months only, and
+scored on the next month: May→Jun, May–Jun→Jul, May–Jul→Aug, May–Aug→Sep. Every scored pick
+is out of sample for the config that selected it. This measures whether *refining B* works,
+not whether one rule fits history.
+
+**Grid (108 configs, all mechanistic — aimed at stale/phantom prices, the known loss source):**
+confirmation `n_books_pos_edge` ≥ 1/2/3 · `gap_to_second` ≤ none/5%/3% · market both/1x2/O-U ·
+max odds 4.0/2.5 · lead time any/≤6h. Selection in each fold: highest train ROI with train
+n ≥ 40.
+
+**PASS:** pooled out-of-sample ROI of the selected configs beats plain grade B on the same
+test months, one-sided bootstrap p < 0.05, AND keeps ≥ 40% of B's volume. Otherwise B stays
+as it is.
+
+**Expected:** fails. Confirmation ≥2 is the most plausible single winner, given §1's stale-
+price evidence.
