@@ -97,7 +97,14 @@ def main() -> int:
                     help="default is NEWEST first — recent seasons are the ones a "
                          "model would train on, and the ones most at risk if AF "
                          "withdraws more fields")
-    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="STILL CALLS THE API — it only skips the write. So it "
+                         "costs the same quota as a real run and stores nothing, "
+                         "which makes it a poor default. Its one honest use is "
+                         "eyeballing the parsed values before committing to a "
+                         "long run, so it now PRINTS what it would have written "
+                         "for the first few fixtures. For anything else, just "
+                         "run it for real with a small --limit.")
     a = ap.parse_args()
 
     rows = todo(a.limit, a.oldest_first)
@@ -128,12 +135,16 @@ def main() -> int:
             # will pick it up again — accepted: a cheap repeat beats a sentinel
             # value that a later analysis would have to know to ignore.
             empty += 1
-        elif not a.dry_run:
+        elif a.dry_run:
+            filled += 1
+            if filled <= 5:
+                print(f"  [dry-run] fixture {r['afid']} ({r['date'].date()}): "
+                      + ", ".join(f"{c.replace('_home','').replace('_away','')}="
+                                  f"{vals[c]}" for c in COLS if vals[c] is not None))
+        else:
             sets = ", ".join(f"{c} = %s" for c in COLS)
             execute_write(f"UPDATE match_stats SET {sets} WHERE match_id = %s",
                           tuple(vals[c] for c in COLS) + (r["match_id"],))
-            filled += 1
-        else:
             filled += 1
 
         if i % 100 == 0:
