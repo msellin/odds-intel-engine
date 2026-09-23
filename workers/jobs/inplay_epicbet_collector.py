@@ -99,8 +99,11 @@ _RESIDENTIAL_PROXY = (os.getenv("EPICBET_RESIDENTIAL_PROXY")
 
 class Epicbet:
     def __init__(self) -> None:
-        from workers.utils.footprint import metered_session   # BOOK-FOOTPRINT (#110)
-        self.s = metered_session("Epicbet")
+        # BOOK-FOOTPRINT (#110): its OWN budget line. At the 60-fixture cap the
+        # collector needs ~9,600 req/h; sharing "Epicbet"'s budget would let a busy
+        # in-play evening starve the pre-match sweep that prices picks.
+        from workers.utils.footprint import metered_session
+        self.s = metered_session("Epicbet-inplay")
         if _RESIDENTIAL_PROXY:
             self.s.proxies = {"http": _RESIDENTIAL_PROXY, "https": _RESIDENTIAL_PROXY}
             log.info("Epicbet: routing via residential egress %s", _RESIDENTIAL_PROXY)

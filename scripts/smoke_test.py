@@ -52612,7 +52612,8 @@ def test_book_footprint():
     assert "metered_session(\"Tonybet\")" in inspect.getsource(tonybet_feed._session)
     assert "metered_session(\"Epicbet\")" in inspect.getsource(epicbet_explorer._session)
     assert "footprint.check(\"Epicbet\")" in inspect.getsource(epicbet_explorer._fs_get_json)
-    assert "metered_session(\"Epicbet\")" in inspect.getsource(inplay_epicbet_collector)
+    assert "metered_session(\"Epicbet-inplay\")" in inspect.getsource(inplay_epicbet_collector), (
+        "the in-play collector must meter on its own budget, never the pre-match sweep's")
     assert "footprint.check" in inspect.getsource(coolbet_session._fs_call)
     post_src = inspect.getsource(coolbet_session.CoolbetSession.post)
     assert "footprint.record" in post_src and "footprint.check" not in post_src, (

@@ -38,7 +38,9 @@ _DEFAULT_BUDGETS = {
     "Coolbet": 500,       # was 750–1,500/h before the #108 flag; search now capped
     "Tonybet": 800,       # sweeps + deep boards + 2-min live + results; tighten once measured
     "Unibet-Site": 500,   # the sweep's own cap is 180 fetches per run, 2 runs/h
-    "Epicbet": 4000,      # never blocked; in-play collector is chatty — tighten once measured
+    "Epicbet": 4000,      # pre-match sweep + near-kickoff; ~200–400 per sweep
+    "Epicbet-inplay": 12000,  # paper-only in-play collector, ~9,600/h at its 60-fixture cap;
+                              # separate so it can never starve the pre-match sweep
 }
 SLOW_S = 20.0
 _FLUSH_EVERY = 20
