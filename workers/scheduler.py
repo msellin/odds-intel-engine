@@ -2194,10 +2194,15 @@ def job_fh_1x2_paper_pick():
     """USE-COLLECTED-MARKETS / FIRST-HALF-1X2 (2026-09-10): record paper picks for the
     first-half result where the best Epicbet/Betano/Unibet 1H 1X2 price beats
     Shin-de-vigged Pinnacle. Shadow bot bot_1h_1x2_paper_shadow_v1."""
-    from workers.jobs.first_half_1x2_paper_bot import generate_picks
+    from workers.jobs.first_half_1x2_paper_bot import generate_picks, verify_epicbet_picks
     c = generate_picks()
     if c.get("picked"):
         console.print(f"[cyan]fh-1x2 paper: {c['picked']} new picks ({c['scanned']} scanned)[/cyan]")
+    # [[#103]] straight after picking: re-fetch each new >=3% Epicbet pick live
+    # from Epicbet and record whether that price is really on the site.
+    v = verify_epicbet_picks()
+    if v.get("checked"):
+        console.print(f"[cyan]fh-1x2 verify: {v}[/cyan]")
     _run_job("fh_1x2_paper_pick", lambda: None)
 
 

@@ -128,6 +128,97 @@ def generate_picks() -> dict:
     return counters
 
 
+# ── LIVE PRICE VERIFICATION ([[#103]], 2026-09-23) ─────────────────────────
+# Owner: "instead of I doing it manually, can we set up an automated action?"
+# For every NEW Epicbet pick with edge >= VERIFY_MIN_EDGE, re-fetch that one
+# fixture straight from Epicbet (same fetch as near_kickoff_capture — by the
+# event id the sweep stored in book_event_map) and record what the site shows
+# right now in price_verifications (migration 382). The pick itself is never
+# changed: this only measures whether the recorded price was really there.
+VERIFY_MIN_EDGE = 0.03
+VERIFY_WINDOW_MIN = 30        # only picks made in the last half hour
+
+
+def classify_live(recorded: float, live: float | None) -> str:
+    """'confirmed' | 'moved_up' | 'moved_down' | 'missing' for one live look."""
+    if live is None:
+        return "missing"
+    if abs(live - recorded) < 0.005:
+        return "confirmed"
+    return "moved_up" if live > recorded else "moved_down"
+
+
+def verify_epicbet_picks() -> dict:
+    c = {"checked": 0, "confirmed": 0, "moved_up": 0, "moved_down": 0,
+         "missing": 0, "no_mapping": 0, "fetch_failed": 0, "kicked_off": 0}
+    try:
+        from workers.api_clients.db import execute_query, execute_write
+        bot_id = _bot_id()
+        if not bot_id:
+            return c
+        todo = execute_query(
+            """SELECT sb.id::text AS id, sb.match_id::text AS match_id, sb.selection,
+                      sb.odds_at_pick::float AS odds, sb.calibrated_prob::float AS p,
+                      bem.book_event_id, m.date
+                 FROM shadow_bets sb
+                 JOIN matches m ON m.id = sb.match_id
+                 LEFT JOIN book_event_map bem
+                        ON bem.match_id = sb.match_id AND bem.bookmaker = 'Epicbet'
+                 LEFT JOIN price_verifications pv ON pv.shadow_bet_id = sb.id
+                WHERE sb.bot_id = %s AND sb.market = '1x2_1h'
+                  AND sb.recommended_bookmaker = 'Epicbet'
+                  AND sb.calibrated_prob * sb.odds_at_pick - 1 >= %s
+                  AND sb.pick_time > now() - (%s || ' minutes')::interval
+                  AND pv.id IS NULL""",
+            [bot_id, VERIFY_MIN_EDGE, str(VERIFY_WINDOW_MIN)])
+        if not todo:
+            return c
+        from datetime import datetime, timezone
+        from workers.automation import epicbet_explorer as ex
+        sess = ex._session()
+        cache: dict = {}
+        try:
+            for t in todo:
+                status, live, detail = None, None, None
+                if not t["book_event_id"]:
+                    status = "no_mapping"
+                elif t["date"] <= datetime.now(timezone.utc):
+                    status = "kicked_off"
+                else:
+                    ev_id = int(t["book_event_id"])
+                    if ev_id not in cache:
+                        raw = ex.fetch_sidebets(sess, ev_id)
+                        if not raw:
+                            cache[ev_id] = None
+                        else:
+                            ev = {"id": ev_id, "raw": raw}
+                            ids = ex.collect_market_ids(ev)
+                            odds_map = ex.fetch_odds(sess, ids) if ids else {}
+                            cache[ev_id] = {(mk, sel): od for mk, sel, od, _ln
+                                            in ex.parse_event_markets(ev, odds_map)}
+                    board = cache[ev_id]
+                    if board is None:
+                        status, detail = "fetch_failed", "sidebets returned nothing"
+                    else:
+                        live = board.get(("1x2_1h", t["selection"]))
+                        status = classify_live(t["odds"], live)
+                execute_write(
+                    """INSERT INTO price_verifications
+                           (shadow_bet_id, bookmaker, market, selection, recorded_odds,
+                            live_odds, fair_prob, status, detail)
+                       VALUES (%s,'Epicbet','1x2_1h',%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (shadow_bet_id) DO NOTHING""",
+                    [t["id"], t["selection"], t["odds"], live, t["p"], status, detail])
+                c["checked"] += 1
+                c[status] += 1
+        finally:
+            ex.fs_close(sess)
+        log.info("fh-1x2 verify: %s", c)
+    except Exception as e:  # noqa: BLE001
+        log.warning("fh-1x2 verify_epicbet_picks raised (non-fatal): %s", e)
+    return c
+
+
 def settle_picks() -> dict:
     """Grade pending 1H-1X2 picks from the HALF-TIME result. No settlement gap."""
     counters = {"settled": 0, "won": 0, "lost": 0}

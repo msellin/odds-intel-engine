@@ -51914,6 +51914,36 @@ def test_btb_replay_mirrors_live_rule():
         "only the evaluation slice may be replayed and scored")
 
 
+@test("EPICBET-1H-PRICE-VERIFY — new 1H value picks are checked live against Epicbet")
+def test_epicbet_1h_price_verify():
+    """[[#103]], 2026-09-23. Owner: "instead of I doing it manually, can we set up
+    an automated action for that?" The first-half lead's CLV is computed on the
+    price WE recorded; a never-clickable price scores the same. So the paper job
+    re-fetches each new >=3% Epicbet pick live and stores what the site shows
+    (migration 382). Pins: the classifier, that the job calls the verifier right
+    after picking, that it looks the fixture up by the stored event id (never a
+    board re-walk), and that it only READS the pick (no UPDATE of shadow_bets).
+    """
+    import inspect
+    from workers.jobs import first_half_1x2_paper_bot as fh
+    assert fh.classify_live(2.40, 2.40) == "confirmed"
+    assert fh.classify_live(2.40, 2.404) == "confirmed"
+    assert fh.classify_live(2.40, 2.50) == "moved_up"
+    assert fh.classify_live(2.40, 2.20) == "moved_down"
+    assert fh.classify_live(2.40, None) == "missing"
+    assert fh.VERIFY_MIN_EDGE == 0.03
+    src = inspect.getsource(fh.verify_epicbet_picks)
+    assert "book_event_map" in src and "fetch_sidebets" in src, "fetch the ONE fixture by event id"
+    assert "UPDATE shadow_bets" not in src, "verification must never change the pick"
+    sched = _engine_path("workers/scheduler.py").read_text()
+    i = sched.index("def job_fh_1x2_paper_pick")
+    body = sched[i:i + 1200]
+    assert body.index("generate_picks()") < body.index("verify_epicbet_picks()"), (
+        "verify straight after picking, or the live look is minutes-to-hours late")
+    mig = _engine_path("supabase/migrations/382_price_verifications.sql").read_text()
+    assert "shadow_bet_id  uuid        NOT NULL UNIQUE" in mig
+
+
 @test("CONSENSUS-SPLIT-BY-GRADE — one ledger arm, two bots (B beta, C testing), split in the views")
 def test_consensus_split_by_grade():
     """[[#095]], 2026-09-23. Owner: split the consensus bot into two bots by

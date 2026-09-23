@@ -138,3 +138,26 @@ says the prices were fresh, correctly mapped and from a normally-priced book; on
 (or a placement) can confirm they were clickable at that moment. **Next step: a manual spot
 check of live alerts on the Epicbet site** before any paper arm is re-activated or any money
 is considered.
+
+## Automated verification — pre-registered 2026-09-23, BEFORE any verification exists
+
+Owner: *"instead of I doing it manually, can we set up an automated action for that?"*
+Built instead of manual spot checks: at 08/12/16/20:27 UTC the paper job picks, then
+`verify_epicbet_picks()` re-fetches every NEW Epicbet pick with edge ≥ 3% straight from
+Epicbet's live feed (the data the website renders), by the event id the sweep stored in
+`book_event_map`, and records `confirmed` / `moved_up` / `moved_down` / `missing` in
+`price_verifications` (migration 382). Tested live from the Mac before deploy: 9 of 9 stored
+Epicbet 1H prices matched the live feed exactly.
+
+**Limit stated up front:** this proves the price was ON THE SITE, not that Epicbet would
+ACCEPT a bet at it (limits, bet-slip re-pricing). Only a placement proves that.
+
+**Decision rule, fixed now.** Evaluated after **14 days or 60 verified picks**, whichever
+comes later:
+1. **Real on the site:** `confirmed` + `moved_up` ≥ 70% of verified picks (`no_mapping` /
+   `fetch_failed` / `kicked_off` excluded and reported).
+2. **Value holds on the confirmed ones:** de-vigged Pinnacle-close CLV of the confirmed
+   picks > 0 with t > 2.
+Both hold → re-activate a 3%-floor first-half paper bot as a registered forward test and put
+the placement question (🤖 OWN, Epicbet) to the owner. Either fails → the lead closes as a
+data artefact or a price that does not survive to the site.
