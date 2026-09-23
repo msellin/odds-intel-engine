@@ -97,9 +97,10 @@ from workers.api_clients.db import execute_query, execute_write  # noqa: E402
 from workers.api_clients.api_football import (  # noqa: E402
     get_fixture_statistics, parse_fixture_stats,
     parse_fixture_stats_halftime, get_fixtures_batch, parse_fixture_lineups,
+    parse_fixture_events,
 )
 from workers.api_clients.supabase_client import (  # noqa: E402
-    store_match_stats_full, store_match_lineups,
+    store_match_stats_full, store_match_lineups, store_match_events_af,
 )
 
 # Only the columns this backfill owns. Listed explicitly rather than derived, so
@@ -111,6 +112,12 @@ COLS = (
     "free_kicks_home", "free_kicks_away",
     "shots_off_target_home", "shots_off_target_away",
     "pass_pct_home", "pass_pct_away",
+    # HALF-TIME shot location. Parsed (api_football.py) and migrated (376), and
+    # originally LEFT OUT of this tuple — so `--mode columns` filled the
+    # full-match split and silently skipped the half-time one. Caught by the
+    # owner asking whether the backfills actually gather everything we found.
+    "shots_insidebox_home_ht", "shots_insidebox_away_ht",
+    "shots_outsidebox_home_ht", "shots_outsidebox_away_ht",
 )
 
 
@@ -179,18 +186,30 @@ def backfill_fixture_block(limit: int, sleep: float, dry_run: bool) -> int:
     """
     rows = execute_query("""
         SELECT m.id AS match_id, m.api_football_id afid, m.date, m.referee,
-               (m.lineups_home IS NOT NULL) AS has_lineup
+               m.home_team_api_id,
+               (m.lineups_home IS NOT NULL) AS has_lineup,
+               EXISTS (SELECT 1 FROM match_events e
+                        WHERE e.match_id = m.id AND e.assist_name IS NOT NULL)
+                 AS has_assists
           FROM matches m JOIN leagues l ON l.id = m.league_id
          WHERE m.status = 'finished' AND m.api_football_id IS NOT NULL
            AND COALESCE(l.coverage_statistics_fixtures, false) = true
-           AND (m.referee IS NULL OR m.lineups_home IS NULL)
+           AND (m.referee IS NULL OR m.lineups_home IS NULL
+                -- ...OR the match has events but no assists. Without this arm the
+                -- pool is only fixtures missing a referee or lineup, so a match
+                -- holding BOTH but missing assists is never visited — which is
+                -- most of them, since assist_name was NULL on all 1,869,434 rows.
+                OR EXISTS (SELECT 1 FROM match_events e
+                            WHERE e.match_id = m.id AND e.assist_name IS NULL))
          ORDER BY m.date DESC
          LIMIT %s""", (limit,))
     remaining = execute_query("""
         SELECT count(*) n FROM matches m JOIN leagues l ON l.id = m.league_id
          WHERE m.status='finished' AND m.api_football_id IS NOT NULL
            AND COALESCE(l.coverage_statistics_fixtures,false) = true
-           AND (m.referee IS NULL OR m.lineups_home IS NULL)""")[0]["n"]
+           AND (m.referee IS NULL OR m.lineups_home IS NULL
+                OR EXISTS (SELECT 1 FROM match_events e
+                            WHERE e.match_id = m.id AND e.assist_name IS NULL))""")[0]["n"]
     print(f"BACKFILL-MATCH-STATS [fixture] — {len(rows)} this run, "
           f"{remaining:,} outstanding{' [DRY RUN]' if dry_run else ''}")
     if not rows:
@@ -198,7 +217,7 @@ def backfill_fixture_block(limit: int, sleep: float, dry_run: bool) -> int:
         return 0
 
     by_afid = {r["afid"]: r for r in rows}
-    refs = lus = 0
+    refs = lus = evs = 0
     ids = list(by_afid)
     for i in range(0, len(ids), 20):
         chunk = ids[i:i + 20]
@@ -227,10 +246,23 @@ def backfill_fixture_block(limit: int, sleep: float, dry_run: bool) -> int:
                     if not dry_run:
                         store_match_lineups(row["match_id"], lu)
                     lus += 1
+            # EVENTS — re-store to recover `assist_name`, which was NULL on all
+            # 1,869,434 rows until [[#083]] fixed the writer. That fix is
+            # FORWARD-ONLY; this is the history it cannot reach. The upsert is
+            # ON CONFLICT (match_id, af_event_order) DO UPDATE, so re-storing is
+            # idempotent and refreshes the column in place rather than
+            # duplicating. Skipped when the match already has assists.
+            if not row["has_assists"] and row["home_team_api_id"]:
+                ev = parse_fixture_events(f.get("events") or [])
+                if ev:
+                    if not dry_run:
+                        store_match_events_af(row["match_id"], ev,
+                                              home_team_api_id=row["home_team_api_id"])
+                    evs += 1
         time.sleep(sleep)
 
-    print(f"\ndone: {refs} referees, {lus} lineups recovered from "
-          f"{(len(ids)+19)//20} calls ({len(ids)} fixtures)")
+    print(f"\ndone: {refs} referees, {lus} lineups, {evs} event-sets (assists) "
+          f"recovered from {(len(ids)+19)//20} calls ({len(ids)} fixtures)")
     print(f"outstanding after this run: ~{max(0, remaining - max(refs, lus)):,}")
     return 0
 
@@ -294,6 +326,9 @@ def main() -> int:
         try:
             raw = get_fixture_statistics(r["afid"])
             parsed = parse_fixture_stats(raw)
+            # The half-time splits ride the SAME response (half=true), so merging
+            # them costs nothing and is required for the *_ht columns above.
+            parsed = {**parsed, **parse_fixture_stats_halftime(raw)}
             if a.mode == "rows":
                 # Full-row mode writes EVERYTHING the parse produces, including
                 # the half-time splits the same response already carries — the
