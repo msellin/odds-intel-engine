@@ -52079,5 +52079,75 @@ def test_coolbet_event_map_from_run_bulk():
     assert "mapped.append(" in src and "not dry_run" in src, (
         "pairings must be collected per matched fixture and never written on a dry run")
 
+@test("TONYBET-SWEEPER — market mapping, squad naming, flip guard, and the fences around a new book")
+def test_tonybet_sweeper():
+    """TONYBET-SWEEPER (#101, 2026-09-23). Tonybet is swept on Sportradar UOF ids
+    (vendorMarketId + vendorOutcomeId), never Tonybet's internal market ids. Pins:
+    the mapping into the shared vocabulary; that quarter totals and absurd Asian
+    lines are NOT stored; that suspended/inactive prices are skipped; that women's
+    and youth teams get the qualifier our squad guard reads (Tonybet names them
+    WITHOUT one); that side-flipped pairings are detected; and the two fences — not
+    in the pre-registered forward test's book set, and watched for staleness."""
+    import pathlib
+    from workers.automation import tonybet_feed as t
+
+    def mk(vm, spec, outs, status=1):
+        return {"vendorMarketId": vm, "specifiers": spec, "status": status,
+                "outcomes": [{"vendorOutcomeId": o, "odds": p, "probabilities": q,
+                              "active": a} for o, p, q, a in outs]}
+    markets = [
+        mk(1, None, [("1", 2.3, 0.41, 1), ("2", 3.05, 0.31, 1), ("3", 3.3, 0.28, 1)]),
+        mk(18, "total=2.5", [("12", 2.47, 0.37, 1), ("13", 1.5, 0.63, 1)]),
+        mk(18, "total=2.25", [("12", 2.16, 0.43, 1), ("13", 1.65, 0.57, 1)]),   # quarter → dropped
+        mk(16, "hcp=-0.5", [("1714", 2.25, 0.41, 1), ("1715", 1.6, 0.59, 1)]),
+        mk(16, "hcp=-2", [("1714", 9.0, 0.07, 1), ("1715", 1.04, 0.93, 1)]),    # absurd → dropped
+        mk(29, None, [("74", 2.1, 0.44, 1), ("76", 1.69, 0.56, 0)]),           # 'no' inactive
+        mk(10, None, [("9", 1.3, 0.72, 1), ("10", 1.35, 0.69, 1), ("11", 1.54, 0.59, 1)]),
+        mk(11, None, [("4", 1.6, 0.59, 1), ("5", 2.26, 0.41, 1)]),
+        mk(1, None, [("1", 9.0, 0.1, 1)], status=-1),                            # suspended
+        mk(14, "hcp=0:1", [("1711", 4.8, 0.18, 1)]),                             # European hcp → ignored
+    ]
+    got = {(r[0], r[1], r[3]): (r[2], r[4]) for r in t.parse_markets(markets)}
+    assert got[("1x2", "home", None)] == (2.3, 0.41)
+    assert ("over_under_25", "over", 2.5) in got and ("over_under_25", "under", 2.5) in got
+    assert not any(k[2] == 2.25 for k in got), "quarter total leaked into the .5 vocabulary"
+    assert ("asian_handicap", "home", -0.5) in got and ("asian_handicap", "away", -0.5) in got
+    assert not any(k[0] == "asian_handicap" and k[2] == -2.0 for k in got), "absurd AH line stored"
+    assert ("btts", "yes", None) in got and ("btts", "no", None) not in got, "inactive outcome stored"
+    assert {k[1] for k in got if k[0] == "double_chance"} == {"1x", "12", "x2"}
+    assert {k[1] for k in got if k[0] == "draw_no_bet"} == {"home", "away"}
+    assert got[("1x2", "home", None)][0] != 9.0, "suspended market overwrote a live price"
+
+    assert t._team_name({"name": "Olympique Lyon", "gender": 2}) == "Olympique Lyon W"
+    assert t._team_name({"name": "Romania", "gender": 1, "ageGroup": "U19"}) == "Romania U19"
+    assert t._team_name({"name": "Some Academy", "gender": 1, "ageGroup": "YOUTH"}) is None
+    assert t._flipped("Arsenal", "Chelsea", {"home": "Chelsea FC", "away": "Arsenal FC"})
+    assert not t._flipped("Arsenal", "Chelsea", {"home": "Arsenal FC", "away": "Chelsea FC"})
+
+    root = pathlib.Path(__file__).parent.parent
+    sched = (root / "workers/scheduler.py").read_text()
+    reg = sched[sched.index('id="tonybet_odds_snapshot"') - 250: sched.index('id="tonybet_odds_snapshot"')]
+    assert 'minute="1,31"' in reg and "_tonybet_odds_snapshot_wrapper" in reg
+    pub = (root / "scripts/publish_picks_forward_test.py").read_text()
+    excl = pub[pub.index("EXCLUDED_BOOKS = ("): pub.index("MARKETS = {")]
+    assert '"Tonybet"' in excl, ("Tonybet must stay out of the pre-registered forward "
+                                 "test's book set until the owner widens it")
+    from workers.jobs.health_alerts import DIRECT_FEED_BOOKS
+    assert "Tonybet" in DIRECT_FEED_BOOKS
+    assert (root / "supabase/migrations/383_book_fair_probs.sql").exists()
+
+    # RAW ARCHIVE: every fetched page is kept so later parsers can rebuild history.
+    import gzip, tempfile
+    src = (root / "workers/automation/tonybet_feed.py").read_text()
+    assert '_archive("prematch", page, r.content)' in src, "raw responses are no longer archived"
+    old_dir = t._RAW_DIR
+    try:
+        t._RAW_DIR = tempfile.mkdtemp()
+        t._archive("prematch", 1, b'{"ok":1}')
+        files = list(pathlib.Path(t._RAW_DIR).rglob("*.json.gz"))
+        assert len(files) == 1 and gzip.decompress(files[0].read_bytes()) == b'{"ok":1}'
+    finally:
+        t._RAW_DIR = old_dir
+
 if __name__ == "__main__":
     main()

@@ -601,6 +601,24 @@ def _epicbet_odds_snapshot_wrapper():
     _run_job("epicbet_odds_snapshot", job_epicbet_odds_snapshot)
 
 
+def job_tonybet_odds_snapshot():
+    """TONYBET-SWEEPER (#101, 2026-09-23) — 30-min Tonybet pre-match odds +
+    Sportradar fair probabilities. Raises when Tonybet could not be read or
+    nothing matched, so `_run_job` records a failure instead of a green no-op."""
+    from workers.automation.tonybet_feed import run_bulk
+    res = run_bulk(hours=48)
+    console.print(f"  tonybet: {res}")
+    if not res.get("events"):
+        raise RuntimeError(f"Tonybet returned no pre-match football events: {res}")
+    if not res.get("stored"):
+        raise RuntimeError(f"Tonybet sweep stored nothing: {res}")
+    return res
+
+
+def _tonybet_odds_snapshot_wrapper():
+    _run_job("tonybet_odds_snapshot", job_tonybet_odds_snapshot)
+
+
 def job_unibet_site_odds():
     """UNIBET-ON-VPS (2026-09-23) — 30-min Unibet-Site (unibet.ee) odds sweep,
     logged OUT; see the registration below for why. Raises when the sweep could
@@ -2993,6 +3011,15 @@ def main():
     # :02/:32 — 3 min ahead of betting_refresh_interval (:05/:35) so the same
     # cycle prices against fresh Epicbet quotes, and clear of the :10/:40
     # shadow slot (see SCHEDULER-HANG-MITIGATION below).
+    # TONYBET-SWEEPER (#101, 2026-09-23). :01/:31 — ahead of the :05/:35 betting
+    # refresh like the other direct books, and off Epicbet's :02/:32 minute.
+    # Pre-match main board for the next 48 h (~6 requests), through the zone.ee
+    # Estonian exit (EPICBET_RESIDENTIAL_PROXY in the unit env). NOT placeable yet:
+    # 'Tonybet' joins ACCESSIBLE_BOOKMAKERS only after the site-price check.
+    scheduler.add_job(_tonybet_odds_snapshot_wrapper,
+                      CronTrigger(hour="*", minute="1,31"),
+                      id="tonybet_odds_snapshot", name="Tonybet Odds [30min]",
+                      max_instances=1)
     scheduler.add_job(_epicbet_odds_snapshot_wrapper,
                       CronTrigger(hour="*", minute="2,32"),
                       id="epicbet_odds_snapshot", name="Epicbet Odds [30min]")

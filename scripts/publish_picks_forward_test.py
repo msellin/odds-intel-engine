@@ -309,7 +309,14 @@ MIN_LEAD_MIN = 45   # never publish a price a reader cannot reach in time
 # Unibet-Kambi 38pct. Max/Avg are synthetic aggregates and the rest are
 # football-data.co.uk CSV imports, not live books.
 EXCLUDED_BOOKS = ("Max", "Avg", "Betfair Exchange", "BetWin", "Betfred",
-                  "Unibet-Kambi", "Unibet")
+                  "Unibet-Kambi", "Unibet",
+                  # TONYBET-SWEEPER (#101, 2026-09-23): new direct feed. This list is
+                  # a BLOCKLIST, so without this line Tonybet would join both the
+                  # consensus and the priced books of a pre-registered public test
+                  # the moment its first sweep lands — before its prices are checked
+                  # against its own site. Remove only with the owner's decision to
+                  # widen the published book set (a rule change, versioned as such).
+                  "Tonybet")
 
 MARKETS = {"1x2": ["home", "draw", "away"],
            "over_under_25": ["over", "under"]}
