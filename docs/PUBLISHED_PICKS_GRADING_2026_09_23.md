@@ -293,3 +293,20 @@ as it is.
 
 **Expected:** fails. Confirmation ≥2 is the most plausible single winner, given §1's stale-
 price evidence.
+
+### RESULT (2026-09-23) — FAIL: no refinement of B survives walk-forward
+
+| test month | config chosen on earlier months | train | test, refined | test, plain B |
+|---|---|---|---|---|
+| Jun | confirm≥1, both, max 2.5 | +2.7% n=67 | +25.8% n=31 | −4.6% n=44 |
+| Jul | confirm≥1, 1x2, max 2.5 | +12.3% n=55 | +14.1% n=27 | +23.2% n=40 |
+| Aug | confirm≥1, 1x2, max 2.5 | +12.9% n=82 | +12.3% n=32 | +15.5% n=70 |
+| Sep | confirm≥2, both, max 4.0 | +15.6% n=45 | −5.8% n=68 | +10.4% n=318 |
+
+**Pooled out of sample: refined +7.5% (n=158) vs plain B +10.8% (n=472), −3.4pp, bootstrap
+p=0.68, 33% of volume kept. FAIL on all three conditions.** The config that looked best on
+past months was worse than plain B in 3 of 4 test months — the search was fitting noise.
+
+Descriptive, all grade-B rows (not a test): the owner's **odds floor makes B worse** —
+odds ≥1.8 +8.6%, ≥2.0 +5.6%, vs <1.8 +9.6%; confirmation ≥2 books +2.7%, ≥3 −11.3%;
+1x2 +10.1% vs O/U +4.9%. **Plain grade B stays as it is.**
