@@ -51171,5 +51171,70 @@ def test_ou_odds_floor_sweep():
         "result gets re-litigated every few weeks")
 
 
+@test("LAUNCHD-NO-STARTINTERVAL — StartInterval agents do not fire on this Mac")
+def test_launchd_no_startinterval():
+    """LAUNCHD-STARTINTERVAL-AGENTS-NEVER-FIRE, found 2026-09-23.
+
+    Set out to fix the Coolbet resume agent, which had failed three times in four
+    days (14h, 4.3h, ~4h of feed outage). The first diagnosis was that it used
+    `launchctl load` rather than `bootstrap`. THAT WAS WRONG, and the log proved
+    it: `coolbet-resume.log` was last written 2026-09-10, so on none of the three
+    occasions did the resume branch run at all. It was not failing — it was never
+    being invoked.
+
+    A controlled test settled it: a trivial LaunchAgent with StartInterval=30 and
+    a one-line `date` command never fired in 150s. Meanwhile `cdp-watch` and
+    `flaresolverr-keepalive` both declare RunAtLoad=True, so they should have run
+    the instant they were loaded — and their log files DID NOT EXIST AT ALL.
+
+    So every StartInterval LaunchAgent on this machine was dead:
+        flaresolverr-keepalive  the thing that REVIVES FlareSolverr when it dies
+        cdp-watch               the CDP-Chrome lifecycle monitor
+        near-kickoff-capture    Coolbet + Unibet closing prices
+        coolbet-resume          the reviver that "failed" three times
+
+    That explains a whole class of "the self-healing didn't self-heal" incidents,
+    including why FlareSolverr outages have always needed a human.
+
+    StartCalendarInterval agents fire normally on the same machine (measured
+    0/9/17/47 min ago across four jobs), so every recurring agent is now
+    calendar-driven. This test stops StartInterval creeping back in.
+    """
+    import plistlib
+    import pathlib as _pl
+    d = _pl.Path(__file__).resolve().parent.parent / "local" / "launchd"
+    if not d.exists():
+        return "no local/launchd dir in this checkout"
+    # THE DISTINCTION IS THE DOMAIN, NOT THE TRIGGER. StartInterval works fine in
+    # the SYSTEM domain: com.oddsintel.residential-egress is a LaunchDaemon (it
+    # runs wg-quick, which needs root) with StartInterval=120, and it was measured
+    # firing normally at the same moment the gui-domain agents were not. So this
+    # test targets LaunchAGENTS only.
+    SYSTEM_DOMAIN_DAEMONS = {
+        "com.oddsintel.residential-egress.plist",   # LaunchDaemon, verified firing 2026-09-23
+        "com.oddsintel.residential-socks.plist",    # LaunchDaemon, KeepAlive-supervised
+    }
+    offenders = []
+    for f in sorted(d.glob("com.oddsintel.*.plist")):
+        if f.name in SYSTEM_DOMAIN_DAEMONS:
+            continue
+        try:
+            pl = plistlib.load(open(f, "rb"))
+        except Exception:
+            continue
+        # KeepAlive jobs are long-running, not interval-triggered — exempt.
+        if pl.get("KeepAlive"):
+            continue
+        if "StartInterval" in pl:
+            offenders.append(f.name)
+    assert not offenders, (
+        "StartInterval LaunchAGENTS do not fire on the operator's Mac — measured "
+        "2026-09-23 with a controlled test and confirmed by three production agents "
+        "whose RunAtLoad=True logs never existed. Use StartCalendarInterval with an "
+        f"explicit minute list instead. Offending plists: {offenders}"
+    )
+
+
+
 if __name__ == "__main__":
     main()
