@@ -19,7 +19,7 @@
 		<string>-m</string>
 		<string>workers.jobs.near_kickoff_capture</string>
 		<string>--books</string>
-		<string>Coolbet,Unibet-Site</string>
+		<string>Unibet-Site</string>
 	</array>
 	<key>RunAtLoad</key>
 	<false/>

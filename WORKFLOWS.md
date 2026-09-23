@@ -145,6 +145,16 @@ Threshold is measured, not chosen: 7-day inter-write gaps are p99 **59.2 min** (
 
 ### 🍎 Mac-side jobs (launchd, operator's Mac only)
 
+> **⏸️ MAC-SIDE SHRANK 2026-09-23 (VPS-CONSOLIDATION).** Coolbet and Epicbet both
+> moved to the VPS, egressing through an Estonian exit node (zone.ee, AS49604).
+> **Parked in `~/Library/LaunchAgents/paused/`:** `coolbet-odds-snapshot`,
+> `coolbet-feed-watchdog`, `inplay-collector`, `flaresolverr-keepalive`,
+> `mac-fs-sweep`. `near-kickoff-capture` is now **`--books Unibet-Site` only**.
+> **The Mac's FlareSolverr is STOPPED** — 6h of logs showed its only remaining
+> consumer was its own keepalive. What is left on the Mac is Unibet and the
+> CDP-Chrome it needs, plus the Postgres tunnel. Details:
+> `dev/active/vps-migration-context.md`.
+
 > **Troubleshooting: see [`docs/COOLBET_RUNBOOK.md`](docs/COOLBET_RUNBOOK.md)** — the full transport chain, the current API endpoints, and symptom→cause→fix for every Coolbet failure mode (FS-down, Imperva challenge, expired session, self-pause, below-floor days). Written after the 2026-09-07 outage whose 404 symptom looked like four different problems.
 
 Coolbet's Imperva blocks the **Hetzner IP**. Anything that hits Coolbet HTTP directly has to run from the Mac's residential IP with the local FS Docker (`oi_local_flaresolverr`).

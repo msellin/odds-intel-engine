@@ -62,19 +62,37 @@ break a book that works today.
 | Epicbet pre-match sweep | direct, **FlareSolverr never opened**, 537 cats / 546 ms |
 | **Coolbet odds sweep** | registered `:03/:33`; **1,508 rows / 30 matches / 36 markets** |
 | Coolbet feed watchdog | parked with it |
+| **Coolbet near-kickoff third** | VPS timer now `--books Epicbet,Coolbet` |
+| **Mac FlareSolverr + its 2 caretakers** | ⛔ **RETIRED** — see below |
 
 Mac plists for these are in `~/Library/LaunchAgents/paused/`.
 
-## Still on the Mac (5)
+## Still on the Mac — 5, all CDP-bound
 
-`unibet-site-odds` · `near-kickoff-capture` (Coolbet+Unibet thirds) ·
-`cdp-watch` · `coolbet-cdp-selfheal` · `flaresolverr-keepalive` ·
-`mac-fs-sweep` · `vps-postgres-tunnel`
+| Job | Why it is still here |
+|---|---|
+| `unibet-site-odds` | DataDome needs a human-established logged-in CDP tab |
+| `near-kickoff-capture` | **now `--books Unibet-Site` only** — Coolbet left |
+| `cdp-watch` | watches that Chrome |
+| `coolbet-cdp-selfheal` | watches that Chrome · ⚠️ `exit=1`, logged out |
+| `vps-postgres-tunnel` | load-bearing: `.env` DATABASE_URL is `localhost:5433` |
 
-**Several are now redundant** — `flaresolverr-keepalive` and `mac-fs-sweep` keep
-the Mac's FlareSolverr alive, and the Mac no longer sweeps Coolbet or Epicbet.
-`near-kickoff-capture` should drop its Coolbet third too. **Do not prune yet** —
-let Coolbet run a few cycles on the VPS first.
+**Every remaining job exists because of CDP-Chrome.** Unibet is the only feed
+still on the Mac; the other three are its caretakers plus the DB tunnel. So the
+Mac's job list will not shrink further until Unibet moves — which needs a
+persistent logged-in Chromium on the VPS (`unibet-on-vps-plan.md`, ~½ day).
+
+### Retired 2026-09-23: the Mac's FlareSolverr
+
+Stopped, container kept (`docker start oi_local_flaresolverr` to revive),
+`restart=no` so a reboot does not. `flaresolverr-keepalive` and `mac-fs-sweep`
+are parked.
+
+**Evidence it was safe:** 6 hours of container logs showed 62 requests to
+`example.com` and 6 to Coolbet `fo-tree`. The Coolbet ones predate parking the
+sweep. Every `example.com` request was `flaresolverr-keepalive` probing liveness
+— i.e. **a keepalive keeping alive a service nothing else used.** The remaining
+Mac jobs are all CDP-only. ~430 MB reclaimed.
 
 ## Traps that cost real time today — do not re-learn these
 

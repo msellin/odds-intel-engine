@@ -15,7 +15,7 @@
 # Timer, not a loop: every 5 minutes, matching the Mac's StartInterval.
 
 [Unit]
-Description=OddsIntel near-kickoff capture (Epicbet, via residential egress)
+Description=OddsIntel near-kickoff capture (Epicbet + Coolbet, via Estonian egress)
 After=network-online.target
 Wants=network-online.target
 
@@ -32,7 +32,15 @@ Environment=PYTHONUNBUFFERED=1
 # Estonian HOSTING ip is classified like an Estonian eyeball ip — Epicbet goes
 # CF-CHALLENGE -> OK. socks5h so DNS resolves at the exit, not here.
 Environment=EPICBET_RESIDENTIAL_PROXY=socks5h://127.0.0.1:1081
+# COOLBET-NEAR-KICKOFF-MOVED 2026-09-23 — the Coolbet third follows the sweep
+# onto the VPS. NOTE: deliberately NOT setting COOLBET_NO_FS here. The Mac ran
+# it with NO_FS=1, which uses Imperva cookies loaded from the DB — harvested on
+# the operator's own machine. Replaying those from the Estonian exit is the
+# TLS-bound-token blackhole that made the first Coolbet cutover hang for 30s a
+# call. Without NO_FS it uses the FlareSolverr path, which mints its own
+# identity on this egress and is the one proven working.
+Environment=COOLBET_RESIDENTIAL_PROXY=socks5h://127.0.0.1:1081
 # Its own FS session id is now moot (FS is disabled when proxied) but kept so a
 # fallback run without the proxy still cannot touch the sweep's session.
 Environment=EPICBET_FLARE_SESSION=epicbet_nearko_reader
-ExecStart=/opt/odds-intel-engine/venv/bin/python -m workers.jobs.near_kickoff_capture --books Epicbet
+ExecStart=/opt/odds-intel-engine/venv/bin/python -m workers.jobs.near_kickoff_capture --books Epicbet,Coolbet
