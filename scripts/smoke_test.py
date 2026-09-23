@@ -52102,6 +52102,22 @@ def test_clv_sharp_segments():
     assert "book_feed" in mig and "quote_freshness" in mig and "c.status = 'ok'" in mig
 
 
+@test("META-SERVING-SKEW — the meta-model does not score on features that are empty at bet time")
+def test_meta_serving_skew():
+    """[[#085]] correctness half, 2026-09-23. meta_b_ml3 reads selection-specific
+    MFV `*_at_t6h` columns that only the 22:30 retrospective backfill writes, so
+    they are NULL for every fixture not yet played — every live score came from
+    inputs the model never saw in that state. score_bet must return None then."""
+    import workers.model.meta_b_ml3 as mm
+    orig = (mm._load_bundle, mm._get_mfv_row)
+    try:
+        mm._load_bundle = lambda v: {"feature_cols": [], "model": None, "scaler": None}
+        mm._get_mfv_row = lambda mid: {"opening_implied_home": 0.5, "league_tier": 1}
+        assert mm.score_bet("m", "home", 0.55) is None, "must not score on empty t6h inputs"
+    finally:
+        mm._load_bundle, mm._get_mfv_row = orig
+
+
 @test("CONSENSUS-SPLIT-BY-GRADE — one ledger arm, two bots (B beta, C testing), split in the views")
 def test_consensus_split_by_grade():
     """[[#095]], 2026-09-23. Owner: split the consensus bot into two bots by

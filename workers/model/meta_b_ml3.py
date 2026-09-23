@@ -196,6 +196,20 @@ def score_bet(match_id: str, selection: str, ensemble_prob: float,
     mfv = _get_mfv_row(match_id)
     if mfv is None:
         return None
+    # META-SERVING-SKEW ([[#085]], 2026-09-23). The three selection-specific
+    # inputs are MFV `*_at_t6h` columns written by the 22:30 UTC retrospective
+    # backfill (backfill_mfv_b_ml3_v2_features.py) — for a fixture that has not
+    # kicked off they are NULL, so every live score was computed from a feature
+    # state the model was never trained on. Same fault PIN-CROSS-DRIFT-T6H-LIVE
+    # fixed for the drift veto on 2026-06-10. The live `match_signals` rows with
+    # the same names are NOT substitutes: measured over 20 days, odds_volatility
+    # correlates 0.138 with the MFV column and sharp_consensus 0.615 — different
+    # quantities under one name (pinnacle_line_move agrees, r=0.955). No score is
+    # better than a score from unseen inputs; the gate is OFF (META_B_ML3_ENABLED
+    # unset), so this changes no bet — it stops logging misleading scores.
+    if all(mfv.get(f"{k}_{selection}_at_t6h") is None
+           for k in ("pinnacle_line_move", "sharp_consensus", "odds_volatility")):
+        return None
     if opening_implied is None:
         opening_implied = mfv.get(f"opening_implied_{selection}")
 

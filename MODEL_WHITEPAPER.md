@@ -257,6 +257,8 @@ ELO ratings are updated daily during settlement (21:00 UTC) after match results 
 
 ### 3.4 Meta-model Feature Set (META-FEATURE-DESIGN, 2026-05-24 / updated B-ML3-BETS-MODE 2026-06-07)
 
+> **Serving note (2026-09-23, [[#085]]):** the three selection-specific inputs (`pinnacle_line_move_/sharp_consensus_/odds_volatility_{sel}_at_t6h`) are written only by the 22:30 UTC retrospective backfill, so they are NULL for any fixture not yet played. `score_bet` now returns None in that state rather than scoring from inputs the model never saw; the gate is off (`META_B_ML3_ENABLED` unset), so no bet changes — only the logged `meta_clv_score` stops being misleading. A live-computed equivalent is the prerequisite for ever switching the gate on.
+
 This subsection documents the **B-ML3** meta-model — Stage-3 classifier that scores each emitted bet on `P(this bet beats closing line)` and gates placement. The meta-model is a downstream filter; it does NOT replace the primary 1X2/OU/BTTS/AH heads.
 
 > **⚠️ CORRECTION 2026-09-06 (META-MFV-TARGET-INVERTED) — two things this section
