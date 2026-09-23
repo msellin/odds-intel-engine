@@ -51450,5 +51450,44 @@ def test_zone_egress():
 
 
 
+@test("BATCH-EMBEDS-FOUR-BLOCKS — settlement must consume every block the batch already paid for")
+def test_batch_embeds_four_blocks():
+    """[[#081]], 2026-09-23. `get_fixtures_batch` calls `/fixtures?ids=` (20 per
+    call) and AF embeds FOUR sub-resources in the response: statistics, events,
+    lineups and players — verified byte-identical to the standalone endpoints.
+
+    Settlement pulled three of them out and silently ignored `lineups`, even
+    though the function's own header comment listed it. The cost: lineups sat at
+    **6.5%** of finished matches against statistics at 32%, because the only
+    writer was live_tracker's T-40min pass over UPCOMING fixtures — so any match
+    not caught before kickoff had no lineup, permanently. The 2026-09-16
+    modelling audit ranks player availability ABOVE referee data among the gaps
+    worth closing, and this was free the whole time.
+
+    Pinned because the failure mode is invisible: nothing errors when a block is
+    ignored, the call is made and paid for either way, and the only symptom is a
+    coverage number nobody was watching.
+    """
+    import inspect
+    from workers.jobs import settlement as st
+
+    src = inspect.getsource(st.fetch_post_match_enrichment)
+    for block in ("statistics", "events", "players", "lineups"):
+        assert f'batch_fix.get("{block}")' in src, (
+            f"settlement does not consume the embedded `{block}` block. The batch "
+            f"call returns it whether we read it or not — ignoring one is paying "
+            f"for data and dropping it on the floor")
+
+    assert "store_match_lineups" in src, "the parsed lineups must actually be stored"
+
+    # And no per-fixture lineup fallback from settlement: that fan-out is what
+    # AF-WASTE-SETTLEMENT-FANOUT was about. live_tracker's pre-kickoff pass owns
+    # the non-batch path.
+    assert "get_fixture_lineups(" not in src, (
+        "settlement must NOT fan out per-fixture lineup calls — if the batch did "
+        "not carry it, live_tracker's T-40min pass is the right place, not a "
+        "burst of calls from here")
+
+
 if __name__ == "__main__":
     main()

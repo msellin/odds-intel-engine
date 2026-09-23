@@ -33,6 +33,7 @@ from workers.api_clients.supabase_client import (
     store_model_evaluation,
     compute_team_form_from_db,
     store_match_stats_full,
+    store_match_lineups,
     store_match_events_af,
     store_match_player_stats,
     build_match_feature_vectors,
@@ -1060,13 +1061,14 @@ def fetch_post_match_enrichment() -> dict:
     from workers.api_clients.api_football import (
         get_fixtures_batch,
         get_fixture_statistics, parse_fixture_stats,
+        parse_fixture_lineups,
         get_fixture_statistics_halftime, parse_fixture_stats_halftime,
         get_fixture_events, parse_fixture_events,
         get_fixture_players, parse_fixture_players,
         budget,
     )
 
-    counts = {"stats": 0, "halftime": 0, "events": 0, "players": 0, "skipped": 0}
+    counts = {"stats": 0, "halftime": 0, "events": 0, "players": 0, "lineups": 0, "skipped": 0}
 
     yesterday_str = (date.today() - timedelta(days=1)).isoformat()
     today_str = date.today().isoformat()
@@ -1153,7 +1155,7 @@ def fetch_post_match_enrichment() -> dict:
         af_id = match["api_football_id"]
         match_id = match["id"]
         home_api_id = home_api_id_by_match.get(match_id)
-        result = {"stats": 0, "halftime": 0, "events": 0, "players": 0}
+        result = {"stats": 0, "halftime": 0, "events": 0, "players": 0, "lineups": 0}
         batch_fix = prefetched.get(af_id)
 
         # AF-PLAYER-STATS-HOME-ASYMMETRY-FIX-2026-08-21: fallback if the
@@ -1249,6 +1251,35 @@ def fetch_post_match_enrichment() -> dict:
         except Exception as e:
             console.print(f"    [yellow]Events error for fixture {af_id}: {e}[/yellow]")
 
+        # T7: LINEUPS — free, and thrown away until 2026-09-23 ([[#081]]).
+        #
+        # The `ids=` batch above already returns `lineups` embedded, and the
+        # comment at the top of this function has always said so ("statistics,
+        # events, lineups, and players — so threads just parse pre-fetched
+        # data"). Statistics, events and players were each pulled out of it.
+        # Lineups never were.
+        #
+        # The cost of that: lineups sat at 6.5% of finished matches while
+        # statistics were at 32%, because the ONLY thing writing them was
+        # live_tracker's T-40min pass over UPCOMING fixtures — so every match we
+        # did not happen to catch before kickoff had no lineup, forever. And the
+        # 2026-09-16 modelling audit ranks player availability ABOVE referee data
+        # among the gaps worth closing.
+        #
+        # This adds ZERO API calls. It reads a block that is already in the
+        # response we already paid for. There is deliberately NO per-fixture
+        # fallback call here: if the batch did not carry it, live_tracker's
+        # pre-kickoff pass is the right place to get it, not a fan-out from
+        # settlement (AF-WASTE-SETTLEMENT-FANOUT).
+        try:
+            if batch_fix and batch_fix.get("lineups"):
+                parsed_lineups = parse_fixture_lineups(batch_fix["lineups"])
+                if parsed_lineups:
+                    store_match_lineups(match_id, parsed_lineups)
+                    result["lineups"] = 1
+        except Exception as e:  # noqa: BLE001
+            console.print(f"    [yellow]Lineups error for fixture {af_id}: {e}[/yellow]")
+
         # T12: Player stats — use batch data if available
         try:
             if batch_fix and batch_fix.get("players"):
@@ -1285,6 +1316,7 @@ def fetch_post_match_enrichment() -> dict:
                 counts["events"] += r["events"]
                 counts["players"] += r["players"]
                 # [[#078]] — see the per-match block for why these are counted.
+                counts["lineups"] = counts.get("lineups", 0) + r.get("lineups", 0)
                 counts["xg_present"] = counts.get("xg_present", 0) + r.get("xg_present", 0)
                 counts["shotloc_present"] = counts.get("shotloc_present", 0) + r.get("shotloc_present", 0)
             except Exception:
@@ -2819,6 +2851,7 @@ def run_settlement():
             f"  {enrichment_counts['stats']} match stats | "
             f"{enrichment_counts['halftime']} with half-time | "
             f"{enrichment_counts['events']} events | "
+            f"{enrichment_counts.get('lineups', 0)} lineups | "
             f"{enrichment_counts['players']} player stat rows | "
             f"{enrichment_counts.get('skipped', 0)} already enriched (skipped)"
         )
