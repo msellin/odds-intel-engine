@@ -52084,6 +52084,24 @@ def test_clv_sharp_fresh_assembled_close():
     assert cs.base_market("double_chance") == "1x2" and cs.base_market("over_under_25") == "over_under_25"
 
 
+@test("CLV-SHARP-SEGMENTS — BH-FDR is right and segment columns are an allowlist")
+def test_clv_sharp_segments():
+    """[[#024]] (b), 2026-09-23. The segment report slices clv_sharp_legs by any
+    columns and corrects across ALL segments at once (handover: FDR across
+    segments, ANALYSIS_GOTCHAS §47). Pins the BH maths on a known example, and
+    that --by is an allowlist (it is interpolated into SQL)."""
+    import scripts.clv_sharp_segments as cs
+    q = cs.bh([0.01, 0.04, 0.03, 0.20])
+    exp = [0.04, 0.0533333, 0.0533333, 0.20]
+    assert all(abs(a - b) < 1e-6 for a, b in zip(q, exp)), q
+    assert "bot" in cs.ALLOWED and "book_feed" in cs.ALLOWED
+    assert not any(";" in c or " " in c for c in cs.ALLOWED)
+    src = _engine_path("scripts/clv_sharp_segments.py").read_text()
+    assert "bad = set(by) - ALLOWED" in src, "--by must be checked against the allowlist before SQL"
+    mig = _engine_path("supabase/migrations/387_clv_sharp_legs_view.sql").read_text()
+    assert "book_feed" in mig and "quote_freshness" in mig and "c.status = 'ok'" in mig
+
+
 @test("CONSENSUS-SPLIT-BY-GRADE — one ledger arm, two bots (B beta, C testing), split in the views")
 def test_consensus_split_by_grade():
     """[[#095]], 2026-09-23. Owner: split the consensus bot into two bots by
