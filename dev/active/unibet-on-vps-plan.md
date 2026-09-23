@@ -131,3 +131,32 @@ is blocked because "DataDome gates on a human-established tab" and call it
 unverified/speculative. **Superseded by §1 above:** DataDome admits the VPS, the
 gate is the SPA-issued XHR, and the automated login path already exists. Those
 sections should be updated when this lands.
+
+---
+
+## 9. Measured 2026-09-23 — LOGIN hits a DataDome captcha from the Zone exit
+
+Steps 2 is built (not yet in the repo): `oddsintel-unibet-chrome.service` runs real
+Google Chrome headful under Xvfb, persistent profile `/opt/oddsintel/unibet-chrome-profile`,
+CDP on `127.0.0.1:9222`, proxied via `socks5://127.0.0.1:1081` (verified exit
+217.146.76.113, AS49604 Zone Media, Tallinn). The SPA loads, prices render
+logged-out, and a `datadome` cookie is issued — §1 still holds for **reading the page**.
+
+**Login does not.** `cdp_auto_login` returns rc=5. Instrumented: after the modal
+submit the page is replaced by a DataDome **slider captcha** ("Vajalik kinnitamine"),
+citing *"automatiseeritud (bot) tegevus teie võrgus (IP 217.146.76.113)"*. The creds
+match the Mac's `.env` (hash-compared). So §1's "DataDome is not the obstacle" was
+true for page load and **false for the login POST** — the login endpoint is scored
+far stricter, and the Zone egress IP is flagged there.
+
+The agent must not solve captchas. Options (owner's call):
+
+| Option | Cost | Risk |
+|---|---|---|
+| A. Operator solves the slider once over VNC (x11vnc on loopback + SSH tunnel); profile persists the session | ~20 min | Every future re-login (session expiry) may challenge again → feed silently stale until a human slides it |
+| B. Exit via the operator's home line (WireGuard, migration map §4) — the IP the account has always logged in from | the tunnel work | Depends on the home router; the thing we were moving away from |
+| C. Test whether the feed needs login at all (logged-out `sportsbff` lobby/contest-page) | ~30 min | If yes, the login problem disappears for the READER |
+| D. Leave Unibet on the Mac | 0 | Mac stays load-bearing |
+
+Two failed login attempts were made; do not script repeated retries — that is the
+behavioural signal DataDome escalates on.
