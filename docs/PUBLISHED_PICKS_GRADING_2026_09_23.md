@@ -8,6 +8,12 @@ Parent row: [[#094]] in `PRIORITY_QUEUE.md`.
 
 ## 1. Consensus arm (`bot_consensus_anchor_v1`)
 
+> **CHANGED 2026-09-23 ([[#095]], migration 380):** the arm is now **two bots** —
+> `bot_consensus_b_v1` (grade B, `beta`) and `bot_consensus_c_v1` (grade C, `testing`);
+> `bot_consensus_anchor_v1` is retired. Split in the views, not the ledger: the picks keep
+> `arm='consensus_anchor'`, so a leg whose grade flips between runs is still de-duped.
+> Each grade has its own record on /performance and a badge on /picks and Telegram.
+
 ### Volume — there is no "last Wednesday"
 
 The arm started **2026-09-22 12:15 UTC** ([[#068]]). It published **26 picks on its first

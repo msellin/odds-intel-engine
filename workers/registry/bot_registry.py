@@ -162,10 +162,20 @@ BOTS: list[BotSpec] = [
     # SECOND arm. Its own bot identity, not a variant of the sharp one, because
     # a reader expanding a leaderboard row must see ONE rule's record — two
     # different anchors averaged into one number describe neither.
-    BotSpec("bot_consensus_anchor_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5", ANCHOR_CONSENSUS,
+    # CONSENSUS SPLIT BY GRADE ([[#095]], 2026-09-23, migration 380). The single
+    # `bot_consensus_anchor_v1` (#068) is RETIRED and its picks are owned by two
+    # bots, one per `grade` (#094). Same ledger row, same selection rule — the
+    # grade decides only whose record a pick counts toward. Split in the VIEWS,
+    # not the ledger: per-grade arms would defeat the (match, market, selection,
+    # arm) de-dupe when a leg's grade flips between runs, and send it twice.
+    BotSpec("bot_consensus_b_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5", ANCHOR_CONSENSUS,
             0.03, None, False,
-            "PUBLISHED (Telegram + /picks), never staked. Prices each pick against a de-vigged CONSENSUS of >=5 bookmakers rather than a single sharp line, at a >=3% edge with an **8% ceiling** the sharp arm does not have ([[#007]]: edge = p*odds-1 is maximised by a WRONG price, and 5 of the first 15 qualifying legs cleared 8% against a 7-11 book consensus). It exists because the sharp arm's pre-registered <=4% anchor-overround gate admitted 0 of 173 Pinnacle-priced markets on 2026-09-22 and the channel went dark for two days; that gate is pre-registered so it was NOT relaxed. Justified by measurement, not assumption: over 45 days and n=11,419 matches, a consensus EXCLUDING our AF-'Pinnacle' predicts as well as that feed does (log-loss 0.98339 vs 0.98401), while the feed's median closing overround is 10.24% against those books' 7.95%. Ledger: picks_forward_test WHERE arm='consensus_anchor'. Reported SEPARATELY from the sharp arm. GRADED since 2026-09-23 ([[#094]]): every pick is labelled B or C (C = tier-0 league, another panel book sees no edge, or edge > 6%; replay n=677: C -25.6% vs B +10.6% ROI). A label, not a gate — stored in `grade` so the arm can later be split into two bots.",
-            twin="bot_sharp_forward_test_v1"),
+            "PUBLISHED (Telegram + /picks), never staked. **BETA.** The consensus arm's grade-B picks: fair value from a de-vigged consensus of >=5 books, >=3% edge, AND every grade check passes — a classified league (tier > 0), a second sharp panel book (Pinnacle/Marathonbet/Betfair/1xBet/SBO, not the one offering the price) also sees an edge, and edge <= 6%. 56-day replay n=392, ROI +10.6% but -3.4% in the holdout half — NOT proven. Ledger: picks_forward_test WHERE arm='consensus_anchor' AND grade='B' (NULL grade also lands here, visibly).",
+            twin="bot_consensus_c_v1"),
+    BotSpec("bot_consensus_c_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5", ANCHOR_CONSENSUS,
+            0.03, None, False,
+            "PUBLISHED (Telegram + /picks), never staked. **TESTING.** The consensus arm's grade-C picks: league tier 0, OR no second panel book sees an edge at the published price, OR edge > 6%. 56-day replay n=285, ROI -25.6% (-26.0 / -24.7 in both halves). Published and tracked in the open so it can be retired on its OWN record rather than dragging B's. Ledger: picks_forward_test WHERE arm='consensus_anchor' AND grade='C'.",
+            twin="bot_consensus_b_v1"),
 
 
     # Coolbet own-price paper bots

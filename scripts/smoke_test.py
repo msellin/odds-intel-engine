@@ -24926,13 +24926,21 @@ def test_published_arm_has_a_record_2026_09_22():
     )
 
     # 3. Each published arm maps to its OWN bot on the public feed.
-    rows = execute_query(
-        """SELECT DISTINCT arm, bot FROM picks_public_all WHERE arm IS NOT NULL""")
-    by_arm = {r["arm"]: r["bot"] for r in rows}
-    if len(by_arm) > 1 and "picks_public_all" not in pending:
-        assert len(set(by_arm.values())) == len(by_arm), (
-            f"two arms share one bot label {by_arm} — a reader expanding that row "
-            f"sees two different anchors averaged together"
+    #    [[#095]] 2026-09-23: keyed on (arm, grade) — the consensus arm is
+    #    split into one bot per grade, so each (arm, grade) owns exactly one bot
+    #    and no bot spans two of them.
+    if "picks_public_all" not in pending:
+        rows = execute_query(
+            """SELECT DISTINCT arm, grade, bot FROM picks_public_all WHERE arm IS NOT NULL""")
+        by_key: dict = {}
+        for r in rows:
+            by_key.setdefault((r["arm"], r["grade"]), set()).add(r["bot"])
+        assert all(len(v) == 1 for v in by_key.values()), (
+            f"one (arm, grade) maps to several bots: {by_key}")
+        owners = [next(iter(v)) for v in by_key.values()]
+        assert len(set(owners)) == len(owners), (
+            f"two (arm, grade) cohorts share one bot label {by_key} — a reader "
+            f"expanding that row sees two different rules averaged together"
         )
 
     # 4. The frontend must scope by arm, or `pooled` silently mixes rules.
@@ -24959,7 +24967,8 @@ def test_published_arm_has_a_record_2026_09_22():
             "not a hand-written call per arm — a third arm should appear by "
             "being added to that list"
         )
-        for bot in ("bot_sharp_forward_test_v1", "bot_consensus_anchor_v1"):
+        # [[#095]] 2026-09-23: the consensus arm is TWO bots, one per grade.
+        for bot in ("bot_sharp_forward_test_v1", "bot_consensus_b_v1", "bot_consensus_c_v1"):
             assert bot in page, f"{bot} is not injected into the leaderboard"
 
     # 6. And the publisher must never put a pick on a match that is not on.
@@ -44683,7 +44692,7 @@ def test_performance_public_is_calibrated_or_beta():
         "the filter will drop them — they are 'experimental' in the DB. Those "
         "bots produce the picks readers receive; their record is the whole point."
     )
-    for _b in ("bot_sharp_forward_test_v1", "bot_consensus_anchor_v1"):
+    for _b in ("bot_sharp_forward_test_v1", "bot_consensus_b_v1", "bot_consensus_c_v1"):
         assert _b in page_code, f"{_b} is not injected into the leaderboard"
 
     # and every listed row must still be LABELLED
@@ -51829,6 +51838,38 @@ def test_unibet_on_vps():
         ubs.ensure_logged_in, uof._async_run_bulk = orig_login, orig_async
     assert not called, "run_bulk(login=False) attempted a login"
     assert res.get("self_revive") == "not_attempted", res
+
+
+@test("CONSENSUS-SPLIT-BY-GRADE — one ledger arm, two bots (B beta, C testing), split in the views")
+def test_consensus_split_by_grade():
+    """[[#095]], 2026-09-23. Owner: split the consensus bot into two bots by
+    grade, B as `beta` and C as `testing`.
+
+    The split lives in the VIEWS (migration 380), not the ledger: per-grade
+    `arm` values would defeat the (match_id, market, selection, arm) unique
+    index as a de-dupe — a leg graded B at one 30-min run and C at the next
+    would be claimed and SENT twice. So the publisher must keep claiming one
+    CONSENSUS_ARM, and every surface must route by `grade`.
+    """
+    from pathlib import Path
+    import scripts.publish_picks_forward_test as pf
+    from workers.registry.bot_registry import active_names
+    base = Path(__file__).parent.parent
+    mig = (base / "supabase" / "migrations" / "380_split_consensus_bot_by_grade.sql").read_text()
+
+    assert pf.PUBLISHED_ARMS == ("live", pf.CONSENSUS_ARM), (
+        "the consensus arm must stay ONE ledger arm — see the docstring")
+    names = set(active_names())
+    assert {"bot_consensus_b_v1", "bot_consensus_c_v1"} <= names, names
+    assert "bot_consensus_anchor_v1" not in names, "the parent must be retired"
+    assert "retired_at = now()" in mig and "'bot_consensus_anchor_v1'" in mig
+    assert "'beta'" in mig and "'testing'" in mig, "B is beta, C is testing"
+    assert "p.grade = 'C' THEN 'bot_consensus_c_v1'" in mig, (
+        "picks_public_all must route grade C to its own bot")
+    assert "GROUP BY rule_version, arm, grade" in mig, (
+        "the summary must separate grades, or /performance pools B and C")
+    assert "beta" in pf._grade_line({"grade": "B", "grade_reasons": []})
+    assert "testing" in pf._grade_line({"grade": "C", "grade_reasons": ["tier0"]})
 
 
 @test("CONSENSUS-ARM-GRADING — every consensus pick carries a B/C grade; a label, never a gate")

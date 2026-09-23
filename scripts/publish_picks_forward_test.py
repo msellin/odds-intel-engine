@@ -172,12 +172,16 @@ def grade_consensus_pick(edge: float, odds: float, bookmaker: str,
 
 
 def _grade_line(c: dict) -> str:
-    """The reader-facing grade. Empty for ungraded (live-arm) picks."""
+    """The reader-facing grade. Empty for ungraded (live-arm) picks.
+
+    Since [[#095]] each grade is its own tracked bot — B `beta`, C `testing` —
+    so the line names the status as well as the grade: a reader seeing a C
+    pick knows it is still on trial and scored separately."""
     grade = c.get("grade")
     if not grade:
         return ""
     if grade == "B":
-        return "🟢 Grade <b>B</b> — standard\n"
+        return "🟢 Grade <b>B</b> — standard · <i>beta</i>\n"
     why, dissent = [], []
     for r in c.get("grade_reasons") or []:
         if r.startswith("panel:"):
@@ -186,7 +190,7 @@ def _grade_line(c: dict) -> str:
             why.append(GRADE_REASON_TEXT[r])
     if dissent:
         why.insert(0, GRADE_REASON_TEXT["panel"].format(books=" & ".join(dissent)))
-    return f"🟠 Grade <b>C</b> — weaker: {'; '.join(why)}\n"
+    return f"🟠 Grade <b>C</b> — weaker · <i>testing</i>: {'; '.join(why)}\n"
 
 
 def _book_probs(sides, side_q, book):

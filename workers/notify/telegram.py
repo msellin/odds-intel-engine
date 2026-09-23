@@ -333,6 +333,7 @@ def edit_telegram_message(
     text: str,
     *,
     remove_buttons: bool = True,
+    disable_preview: bool = False,
 ) -> bool:
     """Edit an earlier sendMessage. Used by MANUAL-PLACE to swap the inline
     button for a "✓ Recorded" / "✗ no_event" status line once placement runs.
@@ -351,6 +352,10 @@ def edit_telegram_message(
     }
     if remove_buttons:
         payload["reply_markup"] = {"inline_keyboard": []}
+    if disable_preview:
+        # Public picks are sent with previews off; an edit that omits this
+        # would sprout a link-preview card under an old post ([[#095]]).
+        payload["disable_web_page_preview"] = True
     try:
         resp = requests.post(
             f"https://api.telegram.org/bot{token}/editMessageText",
