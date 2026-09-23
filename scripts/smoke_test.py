@@ -41839,6 +41839,11 @@ def _():
     assert "FROM book_event_map" in src, "fixtures must come from the stored mapping"
     assert "m.date > now()" in src, "capture must be PRE-kickoff only — never an in-play price"
     assert nk.WINDOW_MIN <= 15, "rows must land inside the writers' is_closing window (<=15 min)"
+    # COOLBET-NEARKO-NO-FS-403 (2026-09-23): NO_FS is forced only WITHOUT a
+    # residential proxy — from the VPS exit, replayed Mac cookies get 403.
+    assert "COOLBET_RESIDENTIAL_PROXY" in src and "if not markets:" in src, (
+        "Coolbet near-KO must use the proxied FS path when a proxy is set, and "
+        "count an empty market list as a failure")
     assert 'os.environ["COOLBET_NO_FS"] = "1"' in src, (
         "Coolbet capture must FORCE no-FS — never share the Mac FlareSolverr with "
         "the sweep + real-money placer, whatever .env says"

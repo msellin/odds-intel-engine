@@ -43,6 +43,10 @@ Environment=EPICBET_RESIDENTIAL_PROXY=socks5h://127.0.0.1:1081
 Environment=COOLBET_RESIDENTIAL_PROXY=socks5h://127.0.0.1:1081
 # Its own FS session id is now moot (FS is disabled when proxied) but kept so a
 # fallback run without the proxy still cannot touch the sweep's session.
+# CORRECTED 2026-09-23 (COOLBET-NEARKO-NO-FS-403): the note above said NO_FS is
+# not set here — but capture_coolbet FORCED it in code, so the Coolbet close
+# replayed Mac cookies and got 403 on every call. It now forces NO_FS only when
+# no residential proxy is configured; on this box it uses the proxied FS path.
 Environment=EPICBET_FLARE_SESSION=epicbet_nearko_reader
 # UNIBET-ON-VPS 2026-09-23 — the Unibet-Site third joins. It reads the logged-OUT
 # tab in oddsintel-unibet-chrome.service via UNIBET_CHROME_CDP_URL (from .env);

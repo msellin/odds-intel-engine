@@ -105,10 +105,19 @@ def _kicked_off(d: dict) -> bool:
 
 
 def capture_coolbet(due: list[dict], dry_run: bool) -> dict:
-    # Forced, not defaulted: this path must NEVER go through the Mac FlareSolverr
-    # that the board sweep and the real-money placer share. CoolbetSession reads
-    # the flag at __init__, so set it first.
-    os.environ["COOLBET_NO_FS"] = "1"
+    # On the Mac: forced NO_FS, so this path never goes through the Mac
+    # FlareSolverr that the board sweep and the real-money placer share.
+    # CoolbetSession reads the flag at __init__, so set it first.
+    #
+    # NOT on the VPS (COOLBET-NEARKO-NO-FS-403, 2026-09-23). NO_FS replays the
+    # Imperva cookies harvested on the operator's Mac; from the Estonian exit
+    # those are answered 403 on every call (measured: fo-match and sidebets both
+    # 403). With a residential proxy configured, use the FS path through it —
+    # the one the sweep proves every half hour (same fixture: 46 markets, 124
+    # odds). It shares `coolbet_prod` with the sweep; the per-session FS lock in
+    # `_fs_call` keeps the two from driving that tab at once.
+    if not (os.getenv("COOLBET_RESIDENTIAL_PROXY") or os.getenv("OI_RESIDENTIAL_PROXY")):
+        os.environ["COOLBET_NO_FS"] = "1"
     from workers.automation.coolbet_session import CoolbetSession
     from workers.automation.coolbet_explorer import (
         fetch_match_markets, fetch_odds_for_markets, store_coolbet_snapshots_for_match,
@@ -120,6 +129,13 @@ def capture_coolbet(due: list[dict], dry_run: bool) -> dict:
             continue
         try:
             markets = fetch_match_markets(session, int(d["book_event_id"]))
+            if not markets:
+                # A 403/500 comes back as an EMPTY market list, not an exception —
+                # which is how a dead Coolbet close reported fails=0 for a day.
+                c["fails"] += 1
+                log.warning("near-KO Coolbet event %s: no markets returned "
+                            "(blocked or delisted)", d["book_event_id"])
+                continue
             odds_map = fetch_odds_for_markets(session, markets)
             parsed, stored, _ = store_coolbet_snapshots_for_match(
                 d["match_id"], markets, odds_map,
