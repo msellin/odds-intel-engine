@@ -53,4 +53,7 @@ Environment=EPICBET_FLARE_SESSION=epicbet_nearko_reader
 # capture_unibet never logs in. The Mac's near-kickoff-capture plist is parked,
 # so all three books now close here. (Unit name kept for continuity.)
 # TONYBET 2026-09-23 (#101 phase 1b): full-board close by stored event id.
-ExecStart=/opt/odds-intel-engine/venv/bin/python -m workers.jobs.near_kickoff_capture --books Epicbet,Coolbet,Unibet-Site,Tonybet
+# COOLBET-IMPERVA-FLAG-2026-09-23: Coolbet REMOVED from the close while the
+# zone.ee exit is flagged (runbook §7: back off, do not add footprint). Re-add
+# ',Coolbet' once the 30-min sweep writes rows again.
+ExecStart=/opt/odds-intel-engine/venv/bin/python -m workers.jobs.near_kickoff_capture --books Epicbet,Unibet-Site,Tonybet

@@ -41880,7 +41880,12 @@ def _():
     # for ALL three books; the Mac plist is parked in LaunchAgents/paused/.
     unit = pathlib.Path("deploy/vps/oddsintel-near-kickoff-epicbet.service").read_text()
     timer = pathlib.Path("deploy/vps/oddsintel-near-kickoff-epicbet.timer").read_text()
-    assert "workers.jobs.near_kickoff_capture --books Epicbet,Coolbet,Unibet-Site" in unit
+    books_line = next(l for l in unit.splitlines() if l.startswith("ExecStart=") and "near_kickoff_capture" in l)
+    for b in ("Epicbet", "Unibet-Site", "Tonybet"):
+        assert b in books_line, f"{b} missing from the VPS near-kickoff close"
+    # Coolbet may be OUT only while an Imperva flag is being waited out, and then
+    # the unit must say so (COOLBET-IMPERVA-FLAG-2026-09-23) — never silently.
+    assert "Coolbet" in books_line or "COOLBET-IMPERVA-FLAG" in unit
     assert "epicbet_nearko_reader" in unit and "OnUnitActiveSec=5min" in timer
 
 
