@@ -1,0 +1,58 @@
+# UNIBET-ON-VPS (2026-09-23) — the persistent logged-in browser unibet.ee needs.
+#
+# WHY A WHOLE BROWSER. unibet.ee is a bespoke SPA behind DataDome, and its
+# `contest-page` prices call must be issued BY THE SPA ITSELF. Measured
+# 2026-09-09: injected fetch() -> CORS; a bare GET at the Kindred API -> HTTP 400;
+# a fresh/background CDP tab -> 500/204. Only reading the SPA's own XHR works, so
+# something has to actually run the SPA. This is that something.
+#
+# DataDome is NOT the obstacle — measured 2026-09-16, a Chromium on this box
+# loaded the full 2.4 MB SPA from the bare datacenter IP and was issued a
+# `datadome` cookie. The obstacle was always the request shape.
+#
+# HEADFUL UNDER Xvfb, NOT --headless. The Mac's working setup is real Chrome, and
+# matching it keeps the fingerprint close to the one DataDome already accepts.
+# Cheap insurance; headless is the variable we do not want to introduce.
+#
+# REAL GOOGLE CHROME, NOT SNAP CHROMIUM. Ubuntu's chromium-browser is a snap
+# wrapper whose confinement refuses an arbitrary --user-data-dir; verified
+# failing on 2026-09-23. The profile must persist, so snap is unusable here.
+#
+# ⚠️ TWO THINGS ARE LOAD-BEARING SECURITY:
+#   1. --remote-debugging-address=127.0.0.1 — anyone who reaches CDP owns a
+#      logged-in bookmaker session. Never bind this to 0.0.0.0.
+#   2. --proxy-server points at the zone.ee Estonian exit. The account is
+#      Estonian; logging it in from a Finnish datacenter IP is exactly what
+#      fraud systems escalate on, and that risk is avoidable for free here.
+#
+# The profile is persistent so the login and the DataDome cookie survive a
+# restart. Losing it means re-login, not failure.
+
+[Unit]
+Description=OddsIntel Unibet CDP-Chrome (headful under Xvfb, via Estonian egress)
+After=network-online.target oddsintel-zone-egress.service
+Wants=network-online.target
+Requires=oddsintel-zone-egress.service
+
+[Service]
+Type=simple
+User=root
+Environment=HOME=/root
+ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1920x1080x24" \
+  /usr/bin/google-chrome \
+    --no-sandbox \
+    --disable-dev-shm-usage \
+    --disable-gpu \
+    --no-first-run \
+    --no-default-browser-check \
+    --user-data-dir=/opt/oddsintel/unibet-chrome-profile \
+    --remote-debugging-port=9222 \
+    --remote-debugging-address=127.0.0.1 \
+    --proxy-server=socks5://127.0.0.1:1081 \
+    --window-size=1920,1080 \
+    https://www.unibet.ee/betting/odds
+Restart=always
+RestartSec=20
+
+[Install]
+WantedBy=multi-user.target

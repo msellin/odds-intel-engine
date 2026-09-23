@@ -39,6 +39,7 @@ All project documentation lives in this repo (`odds-intel-engine/`). Before star
 | `docs/COOLBET_OWN_BETTING.md` | **Coolbet own-betting flow & architecture (single source of truth)** — what generates the picks we place with our own money, the full gate stack (maturity → per-market edge floor → 2.80 odds floor → live-edge → blast-radius), pre-match-only, paper-vs-real, and the placer-vs-shadow-bots-page distinction. **Read/update before touching any Coolbet placement gate or floor.** |
 | `docs/MODELLING_DATA_AUDIT_2026_09_16.md` | **Read before proposing any model change.** What the feature table actually contains (nine predictors ≥88%, 48 columns under 50%), what raw material we hold, and what can be derived without new collection — ordered by coverage × value. Written after 1x2 AND O/U both measured residual α = 0 on one shared feature set. |
 | `docs/BOOK_SET_COUNTERFACTUAL_2026_09_22.md` | **Read before changing `ACCESSIBLE_BOOKMAKERS` or arguing about which books PICKS should price off.** The counterfactual behind [[#005]]: opening the set is worth +2.1% on price, un-hides 5.7–7.9% of selections that currently have NO accessible price, and adds +52–76% O/U volume — while every realised-outcome comparison flips sign with the evaluation instant, so it must NOT be sold as a performance fix. Also rules the book set OUT as a cause of the accuracy collapse (#065 a). |
+| `dev/active/per-market-feature-sets-design.md` | **Read before building or retraining ANY model head.** Which features belong to which market and why — 1x2 lives on the DIFFERENCE of scoring rates, totals on the SUM, BTTS on the low-score dependence — plus the size rule and the two decisions (market prices as features; coverage gating) that must be made before a head is trained. |
 | `docs/RELIABILITY_LEDGER.md` | **Read before debugging a "mystery" outage.** The failure PATTERNS that keep recurring — blaming the loud thing, config edited but not deployed, a second code path inheriting no gates, unconfirmable placements, self-inflicted rate-limiting, caches that fail closed, tests pinning the old reality — each with its tell and the guard that now exists. |
 | `docs/ANALYSIS_GOTCHAS.md` | **Read before writing any analysis query.** Table/source vocabularies, capabilities that already exist (model A/B via `SHADOW_MODEL_VERSION`), dedup rules, outlier guards, and the CLV-vs-ROI variance numbers. Every entry is something that was guessed wrong or rediscovered the hard way. |
 
@@ -200,6 +201,56 @@ trade-off is the owner's call, not an implementation detail.
 
 **Any task-list table presented to the owner must carry a Direction column**
 alongside Priority, Estimate and Status.
+
+### Research before you train — no model work starts without it (added 2026-09-23)
+
+**Before building or retraining any model head, the literature question must be
+answered first and written down.** Not after a null result, not "while it
+trains" — before.
+
+**Why this is a rule and not a preference.** Six months of model work produced
+**five consecutive α = 0.0000 results** against de-vigged Pinnacle. Two
+afternoons of literature review then established, with primary sources, things
+that would have changed what was built:
+
+* **1x2 and totals are informationally orthogonal by construction.** Karlis &
+  Ntzoufras model the goal DIFFERENCE via the Skellam distribution, in which the
+  sum is *integrated out and discarded* — so a difference-shaped feature set is
+  provably silent about totals. Our vector carried an explicit `elo_diff` and
+  **no sum term at all**, feeding five heads.
+* **Past goals are the WORST input to a goals model.** Wheatcroft, 54,437
+  matches, Bonferroni-corrected p<0.0001: ratings fed shots+corners returned
+  +535 units where the same ratings fed goals returned −631, negative in 10 of
+  10 leagues. Our `goals_for_avg_*` features are exactly that input.
+* **More features is not better.** A 40-feature engineered set scored 0.2416 RPS
+  against **0.2085 for a two-number rating**, same model class, ~300k training
+  matches. A single-covariate Elo beat every entry in an earlier challenge.
+* **Time decay differs by market** — ~300-day half-life for O/U 2.5 against
+  30-90 for match outcome. We share one across every head.
+* **Draws are not worth targeting** — 1.4% model skill against 3.0% for the
+  bookmaker, c-statistic 0.62 for both.
+* **α = 0 against a sharp closing line is the NORMAL published result.** Nothing
+  in a 51-league benchmark beat the bookmaker consensus. Our zeros are not
+  evidence of a bug.
+
+None of that required new data, and all of it was available before any of the
+five measurements were taken.
+
+**What "answered first" means, concretely:**
+
+1. The market's **structural shape** is stated — difference, sum, marginal, or
+   dependence — with a citation, before features are chosen.
+2. The **feature set is sized deliberately**, and the default direction is DOWN.
+   `dev/active/per-market-feature-sets-design.md` carries the size rule.
+3. **Known negative results are checked** so effort is not spent re-deriving
+   them, and the expected outcome is stated before the run.
+4. If the literature has **nothing** on the market (corners and cards, as of
+   2026-09-23), that is recorded as the answer and the work proceeds knowing it
+   is unprecedented rather than assuming it is well-trodden.
+
+⚠️ **And a multi-market sweep carries a family-wise correction from the start.**
+Testing six markets and reporting the best is the multiple-comparison trap that
+`ANALYSIS_GOTCHAS §47` and [[#073]]'s permutation design exist to prevent.
 
 ## Keeping Docs Updated
 
