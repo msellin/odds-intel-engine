@@ -44,6 +44,9 @@ def record(rows: list[dict]) -> int:
     for r in rows:
         if r.get("odds") is None or r.get("match_id") is None:
             continue
+        if str(r["match_id"]).startswith("00000000-0000-0000-0000-"):
+            continue        # a test fixture's sentinel id — never a real match
+                            # (one reached the live table via a smoke test, 2026-09-23)
         key = (r["source"], r["bot"], str(r["match_id"]), r["market"], r["selection"])
         latest[key] = r
     if not latest:

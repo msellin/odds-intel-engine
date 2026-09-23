@@ -44379,7 +44379,7 @@ def test_picks_forward_test_scheduled():
     # "a test that monkeypatches a shared module and never restores it".
     _orig = (_pub.load_candidates, _pub.claim, _pub.attach_message_id,
              _pub.junk_anchor_arm, _tg.send_telegram_public,
-             _st.is_publishing_paused)
+             _st.is_publishing_paused, _pub.funnel_rows)
     _sends, _rows = [], []
     # A fake ledger: claim() returns a new id the FIRST time a leg is seen and
     # None afterwards — exactly what `INSERT ... ON CONFLICT DO NOTHING
@@ -44413,6 +44413,9 @@ def test_picks_forward_test_scheduled():
         _pub.junk_anchor_arm = lambda pool: list(pool)
         _pub.claim = _fake_claim
         _pub.attach_message_id = lambda pid, mid: None
+        # [[#082]]: the job now records its candidate funnel to the LIVE table —
+        # a fake leg must never reach it (it did once, 2026-09-23: 'SomeBook').
+        _pub.funnel_rows = lambda *a, **k: []
         _tg.send_telegram_public = lambda m: (_sends.append(m), 1)[1]
         _pub.render = _pub.render          # left real on purpose: it must not raise
 
@@ -44466,7 +44469,7 @@ def test_picks_forward_test_scheduled():
     finally:
         (_pub.load_candidates, _pub.claim, _pub.attach_message_id,
          _pub.junk_anchor_arm, _tg.send_telegram_public,
-         _st.is_publishing_paused) = _orig
+         _st.is_publishing_paused, _pub.funnel_rows) = _orig
         _PUBLISHER_PATCH_LOCK.release()
         for _m in _stubbed:
             _sys.modules.pop(_m, None)
