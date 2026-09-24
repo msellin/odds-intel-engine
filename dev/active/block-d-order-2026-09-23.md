@@ -27,6 +27,24 @@ backfills paused.
    quote within 60 min of kickoff.
 4. **T1 is partly built.** `picks_board` already stores the sharp arm's candidate board (1,267 rows).
 
+## FINAL STRETCH — 2026-09-24 (owner: "finish Block D today")
+
+Closed by decision (evidence on each row): #025 (no consumer after bot_v10_ou retired), #028
+(timing value bounded by #024 d / #090 a; reopen at <=5-min polling or a Pinnacle feed), #080 and
+#086 (feed models that measured alpha = 0; reopen when a route shows alpha > 0).
+Moved OUT of Block D back to the main queue (owner to prioritise): #014, #062, #090 (c).
+
+What remains in Block D, all doable today:
+
+| # | row | what | est | direction |
+|---|---|---|---|---|
+| 1 | new | own sweeper books (Coolbet/Epicbet/Unibet-Site/Tonybet) in every odds comparison — audit running | ½ d | BOTH |
+| 2 | #096 | grade the sharp bots' picks (price check on AF-fed books first) | ½ d | PICKS |
+| 3 | #085 | deletion half: duplicate signal code | ½ d | OWN |
+| 4 | #071 | dated odds-band re-check | 2 h | PICKS |
+
+Background (not work, decided by date): #103 Epicbet 1H check; grade B re-test at n >= 150.
+
 ## Current order — 2026-09-24 (evening, after the owner decisions)
 
 Done 2026-09-24: #089, #111, #118, #106 (+ consensus gate live), #087 (migration 401), #077's bot
