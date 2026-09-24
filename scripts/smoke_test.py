@@ -49759,6 +49759,9 @@ def test_af_transfers_removed():
                    "job_backfill_transfers", "run_transfers"):
             assert fn not in code, f"{rel} still has {fn}"
     assert not _engine_path("scripts/backfill_transfers.py").exists(), "backfill_transfers.py is removed"
+    mig = _engine_path("supabase/migrations/401_drop_dead_tables.sql").read_text(encoding="utf-8")
+    assert "DROP TABLE IF EXISTS team_transfers;" in mig and "CASCADE" not in mig.split("--")[-1], (
+        "the drop must exist and must not CASCADE (a dependent view should fail it loudly)")
 
 @test("CAN-STAKE-ONE-DEFINITION — the web strip must not claim the engine's verdict")
 def test_can_stake_one_definition():

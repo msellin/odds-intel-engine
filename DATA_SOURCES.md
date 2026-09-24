@@ -120,7 +120,7 @@ hours at 750–1,500/h). Measured, first 12–13 metered hours:
 | Coolbet | 298 / 508 | 500 | **Per match, via a browser**: fo-tree + ~100 category listings + one market request per matched fixture; FlareSolverr page loads count too. ~250 per sweep. The cap is biting (62 refusals in 13 h, tail of busy sweeps). |
 
 **The expensive pattern** is re-fetching every match's full board every 30 min, including
-matches two days out whose prices barely move. **Fix (queued, #112, Coolbet first):**
+matches two days out whose prices barely move. **Fix (SHIPPED 2026-09-24, #112 — Coolbet, Epicbet deep board, Unibet contest page):**
 refresh by time to kickoff — >12 h out every 2 h, 3–12 h hourly, <3 h every 30 min as now
 (+ the near-kickoff close capture). Expected: Coolbet ~150–250/h instead of 300–500, well
 clear of the block zone, with near-kickoff prices as fresh as today. **Budget rule once a
@@ -212,7 +212,7 @@ simply fewer callers) is not yet filed as its own task — see AF-QUOTA-REALLOCA
 | T10 | `/fixtures/headtohead` | Morning | ✅ Done |
 | T11 | `/sidelined` | Backfill script | ✅ Done |
 | T12 | `/fixtures/players` | Settlement | ✅ Done |
-| T13 | `/transfers` | Backfill (opt-in `--transfers`) | ⛔ **Retired from the daily default 2026-09-21** (AF-TRANSFERS-NO-READER). Fetcher kept for manual runs; 1.44M historical rows kept. ⛔ **REMOVED 2026-09-24 ([[#087]])**: fetcher, the still-scheduled `job_backfill_transfers` and all readers deleted; `team_transfers` slated for DROP (awaiting permission for the migration). |
+| T13 | `/transfers` | Backfill (opt-in `--transfers`) | ⛔ **Retired from the daily default 2026-09-21** (AF-TRANSFERS-NO-READER). Fetcher kept for manual runs; 1.44M historical rows kept. ⛔ **REMOVED 2026-09-24 ([[#087]])**: fetcher, the still-scheduled `job_backfill_transfers` and all readers deleted; `team_transfers` DROPPED (migration 401). |
 
 ---
 
