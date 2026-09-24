@@ -53621,6 +53621,31 @@ def test_feeds_coverage_drop():
     assert "coverage_warning(ft, pt, fy, py, _hour)" in inspect.getsource(fh.run_feed_health)
 
 
+@test("COOLBET-OU-MONOTONE-FT-ONLY — 1H goal lines never enter the full-match O/U ladder check (#132 fix)")
+def test_coolbet_ou_monotone_ft_only():
+    """2026-09-24: after b44cd256 added over_under_1h_05/15, the full-match monotonicity guard
+    keyed `over_under_1h_15` onto the same slot as `over_under_15`; the far longer 1H under
+    price broke the ladder and the writer dropped EVERY O/U row for the match (27 drops in
+    20 min live). The buffer must hold full-match lines only."""
+    import workers.automation.coolbet_explorer as ce
+    ft = [("over_under_15", "over", 1.30, 1.5), ("over_under_15", "under", 3.50, 1.5),
+          ("over_under_25", "over", 1.90, 2.5), ("over_under_25", "under", 1.95, 2.5),
+          ("over_under_35", "over", 3.20, 3.5), ("over_under_35", "under", 1.35, 3.5)]
+    h1 = [("over_under_1h_05", "over", 1.40, 0.5), ("over_under_1h_05", "under", 2.80, 0.5),
+          ("over_under_1h_15", "over", 3.00, 1.5), ("over_under_1h_15", "under", 1.40, 1.5)]
+    # the collision is real: the guard over the mixed list fails
+    assert not ce._ou_rows_monotone([(m, s_, o) for m, s_, o, _ in ft + h1])
+    orig = ce.parse_market
+    try:
+        ce.parse_market = lambda mkt, om: [mkt]
+        _, _, by_market = ce.store_coolbet_snapshots_for_match(
+            "00000000-0000-0000-0000-000000000000", ft + h1, {}, dry_run=True)
+    finally:
+        ce.parse_market = orig
+    for m in ("over_under_15", "over_under_25", "over_under_35", "over_under_1h_05", "over_under_1h_15"):
+        assert by_market.get(m) == 2, (m, by_market)
+
+
 @test("COOLBET-FIRST-HALF-GOALS — Coolbet 1H goals and 1H team goals stored in Pinnacle's namespace (#132)")
 def test_coolbet_first_half_goals():
     """#132 part 2 (2026-09-24): Coolbet offers '1st half goals' (842) and '1st half

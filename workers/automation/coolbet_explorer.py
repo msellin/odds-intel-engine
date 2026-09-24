@@ -1486,7 +1486,13 @@ def store_coolbet_snapshots_for_match(
         for market, selection, odds, line in parse_market(mkt, odds_map):
             parsed += 1
             by_market[market] = by_market.get(market, 0) + 1
-            if market.startswith("over_under_"):
+            # Full-match O/U only: `_ou_rows_monotone` keys on the last token, so a
+            # first-half `over_under_1h_15` would collide with `over_under_15` and the
+            # (much longer) 1H under price would fail the ladder and drop every real O/U
+            # row for the match (live 2026-09-24 after b44cd256; Epicbet hit the same
+            # collision — see its `_FT_OU_MARKETS`). 1H goal lines are stored as ordinary
+            # rows and still pass through the whole-board guard below.
+            if market.startswith("over_under_") and not market.startswith("over_under_1h_"):
                 ou_buffer.append((market, selection, odds, line))
             else:
                 non_ou_rows.append((market, selection, odds, line))
