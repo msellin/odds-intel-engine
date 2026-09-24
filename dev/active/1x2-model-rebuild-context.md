@@ -31,6 +31,14 @@ MODEL_VERSION_OU(_T1)=v20260903_cut0820, DRAW_CAL_FACTOR=0.75.
 - Research cache (gitignored): `data/models/_research/1x2/` (matches/stats/pinnacle parquet,
   af_history.parquet, tuned_params.json).
 
+## Update 2026-09-24 (later) — combined model live in shadow
+- Round 3b COMBINED model (`workers/model/combined_1x2.py`, `market_consensus_1x2.py`) adopted:
+  0.9763 vs 1.0711. VPS verified: full job 202 s / 866 MB (combiner fit on 54k matches), refresh
+  1.2 s; P&C rows sit 0.020 from Pinnacle on average (rating-only: 0.101). Versions in
+  `rating_1x2_predictions`: `r1x2_d8plus_v1` (rating) and `r1x2_comb_v1` (combined, `sources`).
+- `bot_rating_1x2_v1` ("1x2 market NEW", migration 414) reads the RATING version.
+- Round 3c (lineups) waits on the AF lineup/player backfill — owner arranging it.
+
 ## Next step
 1. ~2026-10-01: `python3 scripts/ab_1x2_rating_arms.py --forward` (needs ≥2,000 settled rows).
 2. Owner decision: replace the Poisson/XGB legs of the served 1X2 blend with the rating model. If yes:
