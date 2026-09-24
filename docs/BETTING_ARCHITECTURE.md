@@ -142,10 +142,15 @@ just not populated with non-Coolbet books.
 | Path | Reads | Schedule | Real money? | Writes |
 |---|---|---|---|---|
 | ~~**Paper daemon** (`coolbet_mac_daemon`)~~ **RETIRED 2026-09-10** | — | — | — | Paper placement duplicated the pipeline's `simulated_bets`/`shadow_bets` (model refinement) + the real-money UI placer; phantom `real_bets` were noise. Session-keep + operator control moved to the feed-watchdog. See COOLBET_RUNBOOK "PAPER-DAEMON RETIRED". |
-| **Real-money UI placer** (`place_coolbet_ui.py --all-enabled --execute` → `coolbet_ui_placer.place_and_record`) | `shadow_bets_unique`, for `PLACEABLE_BOTS ∩ coolbet_placer_bots(ui_place_enabled)` | launchd hourly **06:00–21:00 UTC** | **YES** (balance-confirmed) | `real_bets` (real) + `coolbet_placement_attempts` |
+| **Real-money UI placer** (`place_coolbet_ui.py --all-enabled --execute` → `coolbet_ui_placer.place_and_record`) | `shadow_bets_unique`, for `placement_path_bots() ∩ coolbet_placer_bots(ui_place_enabled)` | launchd hourly **06:00–21:00 UTC** | **YES** (balance-confirmed) | `real_bets` (real) + `coolbet_placement_attempts` |
 | **Unibet placer** (`unibet_placer.place_bet`) | **no pick table — args only** | **none — manual** | manual only | `real_bets` |
 
-`PLACEABLE_BOTS = {bot_coolbet_ou_model_v1, bot_coolbet_1x2_model_v1}`. Gates (Coolbet placer):
+**Who can / may stake (#139 phase A, 2026-09-24).** The two-name `PLACEABLE_BOTS` set is gone. A bot
+CAN be placed iff `placement_gate.placement_path_reason(family, ledger, books)` is None — pre-match
+`shadow_bets` picks priced at Coolbet or Unibet-Site, not in-play / forward-test / control — applied to the
+exported `bot_config` (11 active bots today). It MAY be placed only when its `coolbet_placer_bots` row
+(the eligibility list; every row seeded OFF; switched from /admin/bots with the typed bot name + a reason,
+audited in `control_changes`) is ON and not locked. Gates (Coolbet placer):
 maturity → per-market edge floor (`_MIN_EDGE_BY_MARKET`: 1x2 0.13 / o/u 0.08) → per-market odds
 floor (`_MIN_ODDS_BY_MARKET`: 1x2 2.80 / o/u 1.80) → live-edge re-check → single-leg → account-verify
 dedup. Pre-match only.

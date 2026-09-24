@@ -37,9 +37,10 @@ anywhere ALSO raises `PlacementRefused` (never a boolean that can be ignored):
                                is not a pause — it is an accident that has not
                                happened yet. Defaults FALSE; the owner arms it
                                explicitly (Phase 3 of the OWN plan).
-  3. allowlist               — `effective_allowlist()` = `PLACEABLE_BOTS` ∩
-                               `coolbet_placer_bots.ui_place_enabled`. Fails
-                               closed to the empty set.
+  3. allowlist               — `effective_allowlist()` = bots with a placement
+                               path (`placement_path_bots()`, code rule over
+                               bot_config) ∩ the DB eligibility list
+                               (`coolbet_placer_bots`). Fails closed to ∅.
   4. kickoff cutoff          — `KICKOFF_CUTOFF_MIN` (when a kickoff is given).
   5. daily caps              — `spent_today()` vs `MAX_BETS_PER_DAY` /
                                `MAX_STAKE_PER_DAY` (when `check_caps`).
@@ -50,10 +51,19 @@ pass's in-memory `held` list and stays with the callers. Publishing
 OWN staking is not a decision to mute the customer channel, and the two must
 never be re-unified (`RELIABILITY_LEDGER` §9b).
 
-`PLACEABLE_BOTS`, `ui_place_enabled_bots` and `effective_allowlist` LIVE here
-now; `scripts/place_coolbet_ui.py` re-exports them so its existing imports and
-smoke pins keep working. The whitelist is still a hardcoded set on purpose — a
-default is not a guard, and the registry drift test asserts it matches.
+`placement_path_bots`, `ui_place_enabled_bots` and `effective_allowlist` LIVE
+here; `scripts/place_coolbet_ui.py` re-exports them.
+
+WHO MAY BET MOVED TO THE DB (#139 phase A, owner decision 4, migration 413).
+The hand-listed `PLACEABLE_BOTS = {two names}` is gone. The owner selects which
+bots actively bet from /admin/bots: the eligibility list is the rows of
+`coolbet_placer_bots` (seeded OFF by migration for every capable bot, updated
+only through the audited `admin_set_control`), the per-bot switch is
+`ui_place_enabled`. What stays in CODE is the RULE for which bots have a
+placement path at all (`placement_path_reason`, below) — so a DB row can never
+"enable" a bot into nothing. Every read is fresh and fails CLOSED (empty set) on
+any error, including the column not existing yet. A row with `locked_reason`
+set, or a retired bot, is never eligible.
 """
 from __future__ import annotations
 
@@ -69,25 +79,100 @@ class PlacementRefused(RuntimeError):
     exception precisely so that it cannot be dropped like a False."""
 
 
-# ── the code-level hard whitelist ────────────────────────────────────────────
-# Bots that may EVER stake real money. Intersected at runtime with the DB toggle
-# `coolbet_placer_bots.ui_place_enabled`. Adding a bot here is a code review,
-# not a config change; that is the point. value_v1 (line-shop) retired
-# 2026-09-08; both remaining bots are toggled OFF in the DB since 2026-09-13/14.
-PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}
+# ── the code-level rule: which bots HAVE a placement path ───────────────────
+# Owner decision 4 (2026-09-24), as corrected the same day: the capable set is
+# NOT a hand-listed set of names. It is what the placers can technically place:
+#
+#   * the picks live in `shadow_bets` — `scripts/place_coolbet_ui.load_picks` and
+#     `best_price_router` read `shadow_bets_unique` by bot name, for ANY bot;
+#   * they are PRE-MATCH — both placers refuse kicked-off matches, so the in-play
+#     family is never capable;
+#   * they are priced at a book a placer supports — Coolbet (the UI placer and the
+#     router) or Unibet-Site (the router's Unibet arm);
+#   * the bot is not a pre-registered publish-only test or its control.
+#
+# `simulated_bets` bots are NOT capable: the only placer that reads that ledger is
+# the old API placer (`coolbet_placer.place_all_bets`), which is not a supported
+# real-money executor any more — its launchd daemon is retired, the VPS drain is
+# pinned paper (`MANUAL_PLACE_EXECUTE = False`) and only a hand-run CLI remains.
+#
+# The rule lives HERE (code, reviewed); the facts it is applied to (family,
+# ledger, books) come from `bot_config`, which `scripts/export_bot_config.py`
+# builds by importing the running code's own objects. Which capable bots may
+# actually bet is the DB eligibility list (`coolbet_placer_bots`, switched from
+# /admin/bots, audited), so a DB write alone can still never make a bot with no
+# placement path stake.
+PLACER_BOOKS = ("Coolbet", "Unibet-Site")   # == best_price_router.PLACEABLE_BOOKS (smoke-pinned)
+PLACEMENT_LEDGER = "shadow_bets"
+NO_PLACEMENT_FAMILIES = {
+    "inplay": "in-play — the placers are pre-match only",
+    "forward_test": "publish-only pre-registered test — it is never staked",
+    "control": "publish-only pre-registered control — it is never staked",
+}
+# bot_config older than this cannot vouch for a placement path (daily export).
+CONFIG_MAX_AGE_H = 36
+
+
+def placement_path_reason(family: str | None, ledger: str | None,
+                          books: list[str] | tuple[str, ...] | None) -> str | None:
+    """None when a bot with this config HAS a placement path; otherwise the
+    reason it does not, in words the page shows next to the switch."""
+    if family in NO_PLACEMENT_FAMILIES:
+        return NO_PLACEMENT_FAMILIES[family]
+    if ledger == "simulated_bets":
+        return ("no real-money placer reads simulated_bets (the old API placer is "
+                "not a supported executor)")
+    if ledger != PLACEMENT_LEDGER:
+        return "no placer reads this ledger" + (f" ({ledger})" if ledger else "")
+    if not set(books or ()) & set(PLACER_BOOKS):
+        return "priced only at books no placer supports (placers: Coolbet, Unibet-Site)"
+    return None
+
+
+def placement_path_bots() -> set[str]:
+    """ACTIVE bots whose exported config has a placement path. Read fresh.
+
+    FAILS CLOSED: any DB error, or an export older than CONFIG_MAX_AGE_H, reads
+    as the EMPTY set — this read ENABLES money."""
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            "SELECT c.bot_name, c.family, c.ledger, c.books FROM bot_config c "
+            "JOIN bots b ON b.name = c.bot_name "
+            "WHERE b.is_active AND b.retired_at IS NULL "
+            f"AND c.exported_at > NOW() - INTERVAL '{int(CONFIG_MAX_AGE_H)} hours'"
+        )
+        return {r["bot_name"] for r in (rows or [])
+                if placement_path_reason(r.get("family"), r.get("ledger"), r.get("books")) is None}
+    except Exception as e:  # noqa: BLE001
+        log.error("placement_path_bots: DB read failed — failing CLOSED "
+                  "(placing nothing): %s", e)
+        return set()
+
+
+# The DB eligibility read. Every condition narrows; none widens:
+#   ui_place_enabled          the per-bot switch (audited, /admin/bots)
+#   locked_reason IS NULL     pinned OFF by evidence (migration 413)
+#   b.is_active / retired_at  a retired bot never stakes, even if its switch was left on
+ELIGIBLE_SQL = (
+    "SELECT p.bot_name FROM coolbet_placer_bots p "
+    "JOIN bots b ON b.name = p.bot_name "
+    "WHERE p.ui_place_enabled = true AND p.locked_reason IS NULL "
+    "AND b.is_active AND b.retired_at IS NULL"
+)
 
 
 def ui_place_enabled_bots() -> set[str]:
-    """Bots flipped ON for real-money placement in `coolbet_placer_bots`.
+    """Bots selected to bet real money: the DB eligibility list
+    (`coolbet_placer_bots`, owner decision 4) — switched ON, not locked, not
+    retired.
 
     FAILS CLOSED: on ANY database error this returns the EMPTY set. This read
     ENABLES money, so "cannot read the toggle" must resolve to "place nothing".
     """
     try:
         from workers.api_clients.db import execute_query
-        rows = execute_query(
-            "SELECT bot_name FROM coolbet_placer_bots WHERE ui_place_enabled = true"
-        )
+        rows = execute_query(ELIGIBLE_SQL)
         return {r["bot_name"] for r in (rows or [])}
     except Exception as e:  # noqa: BLE001
         log.error("ui_place_enabled_bots: DB read failed — failing CLOSED "
@@ -96,8 +181,9 @@ def ui_place_enabled_bots() -> set[str]:
 
 
 def effective_allowlist() -> set[str]:
-    """Bots that may place REAL money right now: code whitelist ∩ DB toggle."""
-    return PLACEABLE_BOTS & ui_place_enabled_bots()
+    """Bots that may place REAL money right now: has a placement path (code rule
+    over the exported config) ∩ the DB eligibility list. Empty on any error."""
+    return placement_path_bots() & ui_place_enabled_bots()
 
 
 # ── the gate ─────────────────────────────────────────────────────────────────
@@ -144,10 +230,12 @@ def assert_may_place(
 
     if not bot_name:
         raise PlacementRefused("pick carries no bot_name — cannot check the allowlist, refusing")
-    allowed = effective_allowlist()
+    capable = placement_path_bots()
+    allowed = capable & ui_place_enabled_bots()
     if bot_name not in allowed:
-        why = ("not in PLACEABLE_BOTS (code whitelist)" if bot_name not in PLACEABLE_BOTS
-               else "ui_place_enabled is OFF in coolbet_placer_bots")
+        why = ("no placement path (placement_gate.placement_path_reason over bot_config)"
+               if bot_name not in capable
+               else "not eligible: ui_place_enabled is OFF, the row is locked, or the bot is retired (coolbet_placer_bots)")
         raise PlacementRefused(f"{bot_name} may not place at {book}: {why}")
 
     now = now or datetime.now(timezone.utc)

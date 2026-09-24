@@ -127,8 +127,28 @@ Telegram public channel posting — every calibrated-maturity pre-match pick (1x
 
 | Switch | Column | Set by | Stops placement | Stops `@oddsintelpicks` |
 |---|---|---|---|---|
-| Placement pause | `placement_paused` | `/pause`, daemon self-pause, migration 343 (OWN-path verdict) | ✅ | ❌ never |
-| Publishing pause | `publishing_paused` (mig 353) | `/pausepicks` only | ❌ | ✅ (sends only) |
+| Placement pause | `placement_paused` | **pause:** /admin/bots, Telegram `/pause`, daemon self-pause, migration 343 (OWN-path verdict). **resume:** /admin/bots ONLY (typed `RESUME PLACEMENT`, or `RESUME STRATEGIC` when the reason is a strategic stop, + a reason) and the daemon's auto-clear of its own self-pause | ✅ | ❌ never |
+| Publishing pause | `publishing_paused` (mig 353) | `/pausepicks` / `/resumepicks`, and /admin/bots (pause = typed `PAUSE PICKS` + reason; resume = one click) | ❌ | ✅ (sends only) |
+
+**Control panel + audit log (#139 phase A, migration 413, 2026-09-24).** `/admin/bots` is THE control
+surface for our own real money (owner decision 3). Every page write goes through ONE Postgres function,
+`admin_set_control` (arming: `admin_arm_real_money`, owner-only, typed `ARM REAL MONEY` + a ≥20-char
+reason, never expires), which locks the row, checks the value the page believed was current, validates,
+applies and appends a row to the append-only **`control_changes`** table in one transaction. The engine
+setters in `coolbet_state` (`set_placement_paused` / `set_publishing_paused` / `set_daemons_paused` /
+`set_real_money_armed` — incl. the daemon self-pause and auto-clear) write their audit row in the same
+statement; if the audit table is unavailable a STOP (pause, disarm) still applies, a START does not.
+**Telegram is stop-only for money:** `/pause` (and the `coolbet-pause:` button) goes through
+`admin_set_control` with `source='telegram'` (plain-update fallback for the stop only); `/resume`,
+`/arm`, `/unpause` and the `coolbet-resume:` button are REFUSED with a pointer to the page. The only non-page
+resume is the engine auto-clearing its OWN daemon self-pause (exact marker; `auto_self_heal` used to match any
+reason containing "daemon"); `coolbet_browser_sync --resume-placement` refuses operator and strategic pauses, and
+a DB trigger refuses every other start (arm, resume) that does not come through the audited functions.
+`set_real_money_armed(True)` is refused in code — real money is armed only on the page. `/pausepicks`
+and `/resumepicks` are unchanged. Every applied page change is also sent as one line to the operator chat
+(a courtesy — a failed notice never undoes the change). When each switch takes effect is shown under it
+on the page (placement / disarm / eligibility: next gate check, at run start and before every pick;
+publishing: next :05/:35 send; footprint: next collector tick; /picks: next render).
 
 **`/pausepicks` stops SENDING, never RECORDING (#139, owner decision 2026-09-24).** The publish job still claims every leg into `picks_forward_test` (live, consensus, junk control), refreshes the /picks watchlist and the candidate funnel; only the Telegram send is skipped. A pausable pre-registered test would be cherry-pickable — paused days would silently leave the record. Rows claimed while paused have no `telegram_message_id` and are not sent after `/resumepicks` (no burst of stale picks). They DO appear on /picks, which reads the ledger.
 
@@ -167,7 +187,10 @@ Threshold is measured, not chosen: 7-day inter-write gaps are p99 **59.2 min** (
 > the direct-book close for all three books is the VPS timer
 > `oddsintel-near-kickoff-epicbet`. Still on the Mac: the Postgres tunnel, and
 > `cdp-watch` / `coolbet-cdp-selfheal`, which look after the Mac's CDP-Chrome — the
-> browser the (paused) real-money placers drive. Details:
+> browser the (paused) real-money placers drive. **Placer heartbeat (#139, mig 413):**
+> `place_coolbet_ui.py` and `best_price_router` write `placer_heartbeats` on every run
+> (requested `--execute`, what the run gate allowed, the caps), so /admin/bots can show
+> the executors as Alive / Stale / Not reported — the web cannot see launchd. Details:
 > `dev/active/vps-migration-context.md`.
 
 > **Troubleshooting: see [`docs/COOLBET_RUNBOOK.md`](docs/COOLBET_RUNBOOK.md)** — the full transport chain, the current API endpoints, and symptom→cause→fix for every Coolbet failure mode (FS-down, Imperva challenge, expired session, self-pause, below-floor days). Written after the 2026-09-07 outage whose 404 symptom looked like four different problems.

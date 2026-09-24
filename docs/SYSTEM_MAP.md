@@ -124,8 +124,11 @@ more margin from longshots than a naive proportional de-vig, which matters for 3
 
 ## 2. Every active bot, by family
 
-Anchor = which edge it uses (§1). "Money" = whether it can stake **real** money
-(must be in `PLACEABLE_BOTS`) or is **paper**. Floors shown are the gate a pick must
+Anchor = which edge it uses (§1). "Money" = whether the registry declares it a **real**-money
+bot or **paper**. ⚠️ Since #139 phase A (2026-09-24) which bots CAN stake is not this column: it is
+the placement-path rule (`placement_gate.placement_path_reason` — pre-match `shadow_bets` priced at
+Coolbet / Unibet-Site; 11 active bots today, incl. the sharp-trigger bots marked paper here), and which
+MAY stake is the audited per-bot `coolbet_placer_bots` switch on /admin/bots, every row seeded OFF (§4). Floors shown are the gate a pick must
 clear. This table is generated from the registry — do not hand-edit rows; edit the
 registry and regenerate.
 
@@ -455,6 +458,20 @@ are called out inline so the old claims are not silently replaced.
 Full detail: `docs/COOLBET_OWN_BETTING.md`. Recurring failure patterns:
 `docs/RELIABILITY_LEDGER.md`.
 
+> ### 🎛 CONTROL PANEL — 2026-09-24 (#139 phase A, migration 413). Read first.
+>
+> `/admin/bots` is THE control surface for own real money (owner decision 3). It shows the six
+> separate layers in gate order — **placement path (code rule) → per-bot € switch → placement
+> pause → armed → Mac executors (heartbeat) → per-pick gates** — and a computed CAN STAKE line
+> (UNKNOWN when any layer is unreadable). The two-name `PLACEABLE_BOTS` set is gone:
+> `effective_allowlist()` = `placement_path_bots()` (code rule over the exported `bot_config`,
+> fail-closed, stale > 36 h = empty) ∩ `ui_place_enabled_bots()` (the `coolbet_placer_bots`
+> eligibility list: ON, not `locked_reason`, not retired). Arming is owner-only and two-step on
+> the page (typed `ARM REAL MONEY` + ≥20-char reason, `admin_arm_real_money`); resume is page-only
+> with a typed phrase + reason; Telegram `/pause` is a stop-only emergency command. Every write is
+> one audited transaction (`admin_set_control` → `control_changes`). Where the tables below say
+> `PLACEABLE_BOTS`, read "the placement-path rule".
+
 > ### ✅ PLACEMENT-GATE — 2026-09-15 (OWN Phase 0). Read before the tables below.
 >
 > **FIVE functions can reach a money primitive** (the Coolbet place click, the
@@ -506,7 +523,7 @@ place in the codebase that pattern is followed.
 | # | Gate | Effect if failed |
 |---|---|---|
 | R1 | `single_run_lock()` flock | SKIP the run |
-| R2 | `effective_allowlist() = PLACEABLE_BOTS ∩ ui_place_enabled_bots()` — DB read **fails CLOSED** | bot forced to **dry-run**, not an error |
+| R2 | `effective_allowlist() = placement_path_bots() ∩ ui_place_enabled_bots()` (was `PLACEABLE_BOTS ∩ …` until 2026-09-24) — both DB reads **fail CLOSED** | bot forced to **dry-run**, not an error |
 | R3 | session alive / `cdp_auto_login` | **abort**, Telegram lockout alert |
 | R4 | `detect_block()` (Imperva) | **abort** — do not retry or re-login |
 | R5 | account verify `fetch_account_holds()` — **fails CLOSED** | every bot forced dry-run for the run |
@@ -618,12 +635,13 @@ of the old `bot_v10_all` did, and why `bot_v10_ou` shipped `beta` on the day it
 was created rather than inheriting the parent's `calibrated`.
 
 **What this rule is NOT:** it is not a placement gate. Promotion changes what a
-*reader* is told; `PLACEABLE_BOTS` (hardcoded, defence-in-depth) is what decides
-whether a euro moves. See the warning immediately below.
+*reader* is told; the placement-path rule ∩ the audited per-bot € switch (since 2026-09-24;
+was the hardcoded `PLACEABLE_BOTS`) is what decides whether a euro moves. See the warning immediately below.
 
 - ⚠️ **`maturity_label` does NOT gate the UI placer.** It gates the Mac daemon, the
   Telegram public channel, the mirror jobs and every web surface — not this path.
-  Safe today only because `PLACEABLE_BOTS` is hardcoded.
+  Safe because the per-bot € switch is explicit, seeded OFF, audited and set only from
+  /admin/bots (was: because `PLACEABLE_BOTS` was hardcoded, until 2026-09-24).
 - ⚠️ **`placement_paused` does NOT gate the Telegram public channel** — not any more
   (PICKS-PUBLISH-DECOUPLED-FROM-OWN-PAUSE, 2026-09-15, migration 353). Publishing has
   its own flag, `publishing_paused`, set only by `/pausepicks`. The two are separate

@@ -4158,8 +4158,10 @@ def test_trigger_matcher_stage_b():
     src = inspect.getsource(m)
     assert "pick_triggers" in src and "l.odds >= t.min_odds" in src, "must join the book price against the window"
     assert "cal\"]) - 1.0 / price" in src or "- 1.0 / price" in src, "edge must be computed at the BOOK's own price"
-    # SAFETY: the per-(book×market×anchor) trigger bots must NOT be in the real-money whitelist
-    from scripts.place_coolbet_ui import PLACEABLE_BOTS
+    # SAFETY: the per-(book×market×anchor) trigger bots must never stake by default.
+    # #139 (owner decision 4, 2026-09-24): they HAVE a placement path now (shadow_bets,
+    # pre-match, Coolbet/Unibet) — the invariant is that their eligibility row is seeded
+    # OFF and only an audited /admin/bots action can switch it on.
     bots = set(m.BOOK_MARKET_BOTS.values())
     # UNIBET-UI-PLACER 3b (a2afe7b): a second book (Unibet) joined the book-agnostic
     # trigger engine — model + sharp twins per book × market. All PAPER (the
@@ -4192,8 +4194,7 @@ def test_trigger_matcher_stage_b():
         f"matcher routes strategies Stage A never emits: {sorted(strategies - _emitted)} "
         f"— a route with no windows behind it silently produces nothing"
     )
-    for bot in bots:
-        assert bot not in PLACEABLE_BOTS, f"{bot} must be PAPER — never in PLACEABLE_BOTS"
+    _assert_placer_rows_seed_off()
     from pathlib import Path
     for migf in ("320_bot_trigger_matcher.sql", "321_split_trigger_bots.sql"):
         mig = (Path(__file__).parent.parent / "supabase" / "migrations" / migf).read_text()
@@ -5179,11 +5180,15 @@ def test_system_map_registry_not_drifted():
         BOTS, active_names, placeable_names, ANCHOR_MODEL, ANCHOR_SHARP,
     )
 
-    # 1. real-money set MUST equal the hardcoded safety whitelist (defense-in-depth:
-    #    PLACEABLE_BOTS stays hardcoded in the placer; the registry only mirrors it).
-    from scripts.place_coolbet_ui import PLACEABLE_BOTS
-    assert placeable_names() == set(PLACEABLE_BOTS), (
-        f"registry real_money {placeable_names()} != PLACEABLE_BOTS {set(PLACEABLE_BOTS)}"
+    # 1. every registry real-money bot MUST have a placement path. #139 (owner decision 4,
+    #    2026-09-24): the hand-listed PLACEABLE_BOTS is gone; the capable set is the code
+    #    rule placement_gate.placement_path_reason over the exported config, and it is
+    #    WIDER than the registry's real-money family (every pre-match shadow bot priced at
+    #    Coolbet / Unibet-Site). Who may bet is the audited coolbet_placer_bots switch.
+    import scripts.export_bot_config as _ebc
+    _capable = {r["bot_name"] for r in _ebc.build_rows() if r.get("placeable")}
+    assert placeable_names() <= _capable, (
+        f"registry real_money bots with no placement path: {sorted(placeable_names() - _capable)}"
     )
 
     # 2. model-bot floors MUST equal the floor actually enforced for that bot.
@@ -5411,11 +5416,9 @@ def test_ou35_model_shadow():
     assert "o.bookmaker = 'Coolbet'" in src, "must use the single-book Coolbet price, not best-of-books"
     assert "IsotonicRegression" in src and "_fit_calibrator" in src, "must fit its own 3.5 calibration"
     assert m.MARKET == "over_under_35" and m.EDGE_FLOOR == 0.08, "market/edge floor pinned"
-    # PAPER ONLY: the bot must NOT be in the real-money placer whitelist
-    from scripts.place_coolbet_ui import PLACEABLE_BOTS
-    assert "bot_ou35_model_v1" not in PLACEABLE_BOTS, (
-        "the O/U 3.5 bot must NOT be placeable — it is a paper tracker until fold-robust"
-    )
+    # PAPER by default: #139 (owner decision 4) — the bot has a placement path, but its
+    # eligibility row is seeded OFF and only an audited /admin/bots action switches it on.
+    _assert_placer_rows_seed_off()
     # migration 316 registers the bot and the ou35_model cohort
     from pathlib import Path
     mig = (Path(__file__).parent.parent / "supabase" / "migrations" / "316_bot_ou35_model_shadow.sql").read_text()
@@ -5582,12 +5585,12 @@ def test_coolbet_model_ou_shadow():
     # migration 310, and the old COOLBET_UI_MODEL_EDGE_OU env flag is gone.
     ui = open(os.path.join(base, "place_coolbet_ui.py"), encoding="utf-8").read()
     assert '"bot_coolbet_ou_model_v1": 0.08' in ui, "the model-edge O/U bot must be in BOT_THRESHOLDS at 0.08"
-    assert 'PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in (ui + _engine_path("workers/automation/placement_gate.py").read_text(encoding="utf-8")), (
-        "PLACEABLE_BOTS must be exactly the two model bots (line-shop value_v1 retired)"
-    )
-    assert '"bot_coolbet_value_v1"' not in ui.split("PLACEABLE_BOTS")[1][:200], (
-        "the retired line-shop bot must not be in PLACEABLE_BOTS"
-    )
+    # #139 (owner decision 4, 2026-09-24): no hand-listed name set any more — the model
+    # bot is capable by the placement-path RULE, and the retired line-shop bot is not
+    # (placement_path_bots() requires an active bot).
+    _assert_placement_path_rule()
+    assert '"bot_coolbet_value_v1"' not in ui.split("BOT_THRESHOLDS = {")[1][:1500].split("}")[0].replace(
+        "bot_coolbet_value_v1 (line-shop) RETIRED", ""), "the retired line-shop bot must not be in BOT_THRESHOLDS"
     # Scoped to os.getenv, not the bare name: a comment legitimately mentions
     # the retired flag to explain the change.
     assert 'os.getenv("COOLBET_UI_MODEL_EDGE_OU")' not in ui, (
@@ -5722,9 +5725,7 @@ def test_coolbet_model_1x2_shadow():
         "home-underdogs are the fold-robust 1x2 engine, robust to 10% on odds>=2.80. "
         "The placer's live-edge gate 1/(cal_prob-threshold) reads this."
     )
-    assert 'PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in (ui + _engine_path("workers/automation/placement_gate.py").read_text(encoding="utf-8")), (
-        "bot_coolbet_1x2_model_v1 must be in PLACEABLE_BOTS so the DB toggle can enable it"
-    )
+    _assert_placement_path_rule()  # #139: capable by rule, so the DB switch can enable it
     # OWN Phase 5 cull (2026-09-15): the line-shop O/U stop is DELETED (it was
     # scoped to the retired value_v1 and unreachable), so nothing in the placer
     # loop can affect the model-edge 1x2 bot by market any more.
@@ -5756,11 +5757,9 @@ def test_coolbet_own_betting_arch():
     # toggle. PLACEABLE_BOTS bounds what may EVER place; the toggle (seeded
     # value_v1 ON, ou_model_v1 OFF) decides what does right now. value_v1 stays
     # the only bot that places by default.
-    assert 'PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}' in (ui + _engine_path("workers/automation/placement_gate.py").read_text(encoding="utf-8")), (
-        "PLACEABLE_BOTS is the hard code-level boundary on what may ever stake real money"
-    )
+    _assert_placement_path_rule()  # #139: the code-level bound is the placement-path rule
     _gate_src = _engine_path("workers/automation/placement_gate.py").read_text(encoding="utf-8")
-    assert "PLACEABLE_BOTS & ui_place_enabled_bots()" in (ui + _gate_src), (
+    assert "placement_path_bots() & ui_place_enabled_bots()" in (ui + _gate_src), (
         "the effective allowlist must be PLACEABLE_BOTS ∩ the DB toggle — the DB can "
         "only ever reduce placement, never widen it past the code-trusted set"
     )
@@ -6023,17 +6022,17 @@ def test_coolbet_placer_control():
     # patch the gate module (and the shared DB module it reads through).
     g = importlib.import_module("workers.automation.placement_gate")
     dbm = importlib.import_module("workers.api_clients.db")
-    assert m.PLACEABLE_BOTS is g.PLACEABLE_BOTS and m.effective_allowlist is g.effective_allowlist, (
+    assert m.placement_path_bots is g.placement_path_bots and m.effective_allowlist is g.effective_allowlist, (
         "place_coolbet_ui must re-export the gate's allowlist, not carry a copy"
     )
-
-    # PLACEABLE_BOTS is exactly the two Coolbet placement bots.
-    assert m.PLACEABLE_BOTS == {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, (
-        "PLACEABLE_BOTS must be exactly the two Coolbet placement bots"
-    )
+    # #139 (owner decision 4, 2026-09-24): no hand-listed name set — the code-level bound is
+    # the placement-path rule, read fresh (and fail-closed) from the exported config.
+    assert not hasattr(g, "PLACEABLE_BOTS"), "the hand-listed PLACEABLE_BOTS set must stay gone"
+    _assert_placement_path_rule()
 
     _orig_query = dbm.execute_query
     _orig_enabled = g.ui_place_enabled_bots
+    _orig_path = g.placement_path_bots
     try:
         # (2) fail closed: any DB error → empty set (place nothing).
         def _boom(*a, **k):
@@ -6045,8 +6044,10 @@ def test_coolbet_placer_control():
         )
         # …and effective_allowlist inherits the fail-closed empty set.
         assert m.effective_allowlist() == set(), "effective_allowlist must be empty when the toggle read fails"
+        assert g.placement_path_bots() == set(), "placement_path_bots must fail CLOSED on a DB error"
 
-        # (1) intersection: effective == PLACEABLE_BOTS ∩ enabled.
+        # (1) intersection: effective == placement_path_bots ∩ enabled.
+        g.placement_path_bots = lambda: {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}
         g.ui_place_enabled_bots = lambda: {"bot_coolbet_ou_model_v1"}
         assert m.effective_allowlist() == {"bot_coolbet_ou_model_v1"}, (
             "with only the O/U model bot enabled, the effective allowlist must be exactly that bot"
@@ -6061,13 +6062,14 @@ def test_coolbet_placer_control():
         # it is enabled-mockable but must be filtered out by the code whitelist.
         g.ui_place_enabled_bots = lambda: {"bot_coolbet_ou_model_v1", "bot_coolbet_value_v1", "bot_evil_experimental_v1"}
         assert m.effective_allowlist() == {"bot_coolbet_ou_model_v1"}, (
-            "a bot the DB enables but that is NOT in PLACEABLE_BOTS (retired value_v1, "
+            "a bot the DB enables but that has NO placement path (retired value_v1, "
             "or an unknown bot) must never reach the effective allowlist — the "
-            "code-level whitelist is the hard boundary"
+            "code-level rule is the hard boundary"
         )
     finally:
         dbm.execute_query = _orig_query
         g.ui_place_enabled_bots = _orig_enabled
+        g.placement_path_bots = _orig_path
 
     # (4) migration 310 seed values + idempotency.
     mig_path = os.path.join(os.path.dirname(__file__), "..", "supabase",
@@ -6268,7 +6270,7 @@ def test_placer_reconcile_attrib():
     from scripts import place_coolbet_ui as m
     src = inspect.getsource(m.reconcile_account_to_real_bets)
     assert "_placeable_bot_ids" in src, "reconcile must know which bots are placeable"
-    assert "PLACEABLE_BOTS" in src, "placeable ids must come from PLACEABLE_BOTS"
+    assert "placement_path_bots()" in src, "placeable ids must come from placement_path_bots() (#139)"
     # the override must be gated on same match + same canonical bet, not blind.
     assert "canon_bet(c.get(\"market\"), c.get(\"selection\")) == canon" in src, (
         "re-attribution must require the placeable bot to hold the SAME canonical bet"
@@ -8124,14 +8126,17 @@ def test_coolbet_inline_heal_buttons():
         "Webhook must handle coolbet-pause: (direct UPDATE placement_paused=true)."
     )
     assert 'data === "coolbet-resume:"' in webhook, (
-        "Webhook must handle coolbet-resume: (direct UPDATE placement_paused=false)."
+        "Webhook must still handle coolbet-resume: — since #139 by REFUSING it with a "
+        "pointer to /admin/bots (owner decision 3), so old buttons stay harmless."
     )
     assert "coolbet_daemon_commands" in webhook, (
         "Webhook must insert into coolbet_daemon_commands for heal."
     )
-    assert "placement_paused: true" in webhook and "placement_paused: false" in webhook, (
-        "Webhook must directly update placement_paused for pause/resume — "
-        "those don't need to round-trip through the daemon."
+    # #139 phase A (owner decision 3, 2026-09-24): Telegram is STOP-only for real money. The
+    # pause goes through the audited admin_set_control (plain-update fallback for the stop
+    # only); nothing in the webhook may clear placement_paused.
+    assert "placement_paused: true" in webhook and "placement_paused: false" not in webhook, (
+        "Webhook may pause placement (stop) but must never resume it — resume is /admin/bots only."
     )
 
 
@@ -8967,17 +8972,13 @@ def test_coolbet_maturity_gate_live_consumers():
         if _saved is not None:
             _os.environ["COOLBET_RECORD_ALLOWED_MATURITY"] = _saved
 
-    # 3. Real money is gated by an explicit code allowlist, not a maturity label.
-    from scripts.place_coolbet_ui import PLACEABLE_BOTS
-    assert PLACEABLE_BOTS, (
-        "PLACEABLE_BOTS is the hard boundary on which bots may EVER place real "
-        "money. It replaced the maturity label as the real-money gate; if it is "
-        "ever emptied or removed, say so deliberately."
-    )
-    assert all(b.startswith("bot_coolbet_") for b in PLACEABLE_BOTS), (
-        f"unexpected member in PLACEABLE_BOTS: {sorted(PLACEABLE_BOTS)} — every "
-        "real-money-eligible bot should be an explicit coolbet model bot."
-    )
+    # 3. Real money is gated by an explicit per-bot switch, not a maturity label.
+    #    #139 (owner decision 4, 2026-09-24): the switch is the audited coolbet_placer_bots
+    #    eligibility row, bounded by the code placement-path rule (no hand-listed names).
+    import workers.automation.placement_gate as _pg
+    assert "coolbet_placer_bots" in _pg.ELIGIBLE_SQL and "ui_place_enabled" in _pg.ELIGIBLE_SQL, (
+        "the real-money gate must be the per-bot eligibility switch, not a maturity label")
+    _assert_placement_path_rule()
 
 
 @test("COOLBET-AUTO-PLACE-TG-NOTIFY — daemon Telegrams the operator after every successful placement")
@@ -9647,8 +9648,12 @@ def _():
     # /pause writes to placement_paused (the kill switch column from mig 244)
     # so the placer respects it on next tick.
     pause_block = src.split("function handlePauseCommand(")[1].split("function ")[0]
-    assert "placement_paused: true" in pause_block, (
-        "handlePauseCommand must set placement_paused=true in coolbet_session_state."
+    audited = src.split("async function pausePlacementAudited(")[1].split("\nasync function ")[0]
+    assert "pausePlacementAudited(" in pause_block and '"admin_set_control"' in audited \
+        and 'p_control: "placement_paused"' in audited and "p_value: true" in audited \
+        and "placement_paused: true" in audited, (
+        "handlePauseCommand must set placement_paused=true — through the audited "
+        "admin_set_control (#139), with the plain update only as the STOP fallback."
     )
 
     # Migration 244 actually creates the column the FE depends on.
@@ -24725,8 +24730,9 @@ def test_unified_gate_instrument_2026_09_22():
     spec = next((b for b in BOTS if b.name == NAME), None)
     assert spec is not None, "the bot must be in the registry (and SYSTEM_MAP)"
     assert spec.real_money is False, "an instrument never stakes"
-    from scripts.place_coolbet_ui import PLACEABLE_BOTS
-    assert NAME not in PLACEABLE_BOTS
+    # #139: it has a placement path by rule, but its eligibility row is seeded OFF and only
+    # an audited /admin/bots action (typed name + reason) can switch it on.
+    _assert_placer_rows_seed_off()
     mig = _engine_path("supabase/migrations/370_unified_gate_paper_instrument.sql").read_text()
     assert "show_on_picks" in mig and "FALSE" in mig, (
         "the instrument must be inserted with show_on_picks FALSE — picks_public_all "
@@ -29251,12 +29257,11 @@ def test_coolbet_ui_placer_2026_08_27():
     # toggle. PLACEABLE_BOTS bounds what may EVER place; a bot outside it can
     # never execute. Per-bot the runner forces dry when a bot is not in the
     # effective allowlist.
-    from scripts.place_coolbet_ui import PLACEABLE_BOTS  # noqa: F401
-    assert PLACEABLE_BOTS == {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, \
-        "PLACEABLE_BOTS is the hard boundary on what may ever place real money"
+    # #139 (owner decision 4, 2026-09-24): the code-level bound is the placement-path rule.
+    _assert_placement_path_rule()
     # PLACEMENT-GATE (2026-09-15): the intersection LIVES in placement_gate.py; the
     # runner re-exports it. Either file may carry the expression.
-    assert "PLACEABLE_BOTS & ui_place_enabled_bots()" in (
+    assert "placement_path_bots() & ui_place_enabled_bots()" in (
         runner + _engine_path("workers/automation/placement_gate.py").read_text(encoding="utf-8")), \
         "the effective allowlist must intersect the code whitelist with the DB toggle"
     assert "b in allowed" in runner, "per-bot execute must be gated on the effective allowlist"
@@ -32598,10 +32603,12 @@ def test_coolbet_daily_caps():
     # 5. The hard code-level boundary on what may ever execute must survive.
     #    COOLBET-PLACER-CONTROL: PLACEABLE_BOTS ∩ the coolbet_placer_bots DB
     #    toggle is the effective allowlist; PLACEABLE_BOTS bounds it.
-    assert mod.PLACEABLE_BOTS == {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, (
-        "PLACEABLE_BOTS changed — real money may only ever be placed by a bot in "
-        "the code-level hard whitelist (∩ the coolbet_placer_bots DB toggle)"
+    #    #139 (owner decision 4): the boundary is the placement-path rule, not a name list.
+    assert mod.placement_path_bots is not None and "placement_path_bots" in mod.__dict__, (
+        "real money may only ever be placed by a bot with a placement path "
+        "(∩ the coolbet_placer_bots eligibility switch)"
     )
+    _assert_placement_path_rule()
 
 
 
@@ -33614,9 +33621,9 @@ def test_placer_odds_floor():
     )
 
     # The other real-money guards must survive alongside it.
-    # COOLBET-PLACER-CONTROL: PLACEABLE_BOTS is the hard code-level boundary
-    # (∩ the coolbet_placer_bots DB toggle = the effective allowlist).
-    assert mod.PLACEABLE_BOTS == {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}
+    # COOLBET-PLACER-CONTROL: the code-level boundary (since #139 the placement-path
+    # rule, not a name list) ∩ the coolbet_placer_bots switch = the effective allowlist.
+    _assert_placement_path_rule()
     assert mod.MAX_BETS_PER_MATCH > 0 and mod.MAX_STAKE_PER_MATCH > 0
 
 
@@ -37302,10 +37309,10 @@ def test_betting_architecture_doc():
     for b in acc:
         assert b in doc, (f"ACCESSIBLE_BOOKMAKERS has {b!r} but BETTING_ARCHITECTURE.md "
                           "does not list it — update §1")
-    # placeable set: code == doc
-    from scripts.place_coolbet_ui import PLACEABLE_BOTS
-    for b in PLACEABLE_BOTS:
-        assert b in doc, f"PLACEABLE_BOTS has {b!r} but the doc's §5 does not — update it"
+    # placeable set: code == doc. #139 (owner decision 4, 2026-09-24): no hand-listed
+    # name set any more — the doc must describe the RULE and the eligibility switch.
+    for t in ("placement_path_reason", "coolbet_placer_bots"):
+        assert t in doc, f"BETTING_ARCHITECTURE.md §5 must describe {t} — update it"
     # the trigger matcher is the multi-book point — doc says Coolbet-only today;
     # if someone adds a non-coolbet book, force a doc update.
     from workers.jobs import pick_trigger_matcher as ptm
@@ -37439,7 +37446,10 @@ def test_real_bets_placed_real():
 
     # paper daemon path tags placed_real=execute (paper when execute=False)
     cp = inspect.getsource(__import__("workers.automation.coolbet_placer", fromlist=["x"]))
-    assert cp.count("placed_real=execute") >= 3, "all 3 coolbet_placer writes must tag placed_real=execute"
+    # #139 review (2026-09-24): only the single path that actually POSTs a bet may tag
+    # placed_real=execute; combo and in-play never POST, so they always write False.
+    assert cp.count("placed_real=execute,") == 1, "only the POSTing single path tags placed_real=execute"
+    assert cp.count("placed_real=False,") >= 2, "combo + in-play (no POST) must write placed_real=False"
     # UI placer (balance-confirmed) tags True
     up = inspect.getsource(__import__("workers.automation.coolbet_ui_placer", fromlist=["x"]))
     assert "placed_real=True" in up, "UI placer (balance-confirmed) must tag placed_real=True"
@@ -41393,8 +41403,6 @@ def test_merge_trigger_bots():
     from workers.automation.bot_configs import (
         TRIGGER_CONFIGS, ALL_CONFIGS,
     )
-    from scripts.place_coolbet_ui import PLACEABLE_BOTS
-
     # 1. The FOUR MERGED configs, on the two real axes, each spanning BOTH books.
     #
     # UPDATED 2026-09-22 ([[#033]]): this asserted `len(TRIGGER_CONFIGS) == 4`.
@@ -41414,7 +41422,8 @@ def test_merge_trigger_bots():
             f"{c.bot_name} must span both placeable books — splitting per book "
             f"is what this merge removed."
         )
-        assert c.bot_name not in PLACEABLE_BOTS, f"{c.bot_name} must stay PAPER"
+    # #139: capable by rule, but PAPER unless the owner switches its seeded-OFF row on.
+    _assert_placer_rows_seed_off()
     anchors = {c.prob_source for c in TRIGGER_CONFIGS if c.bot_name in MERGED}
     assert anchors == {"predictions", "sharp_devig"}, anchors
 
@@ -41513,10 +41522,10 @@ def test_bots_describe():
         "anchors must be distinguished — edge floors are NOT comparable across "
         "anchor kinds"
     )
-    # Real-money eligibility must be read from the code allowlist, not guessed
-    # from a name or a DB flag.
-    assert "PLACEABLE_BOTS" in dsrc, (
-        "money eligibility must come from the code-level allowlist"
+    # Real-money capability must be read from the code rule (#139: placement_path_bots),
+    # not guessed from a name.
+    assert "placement_path_bots" in dsrc, (
+        "money capability must come from the code-level placement-path rule"
     )
 
     assert mod.run(active_only=True, show_sql=False) == 0, "the tool must run"
@@ -46039,7 +46048,10 @@ def test_placement_gate_armed_required():
     import workers.automation.coolbet_state as cs
     import workers.automation.placement_gate as pg
     o1, o2, o3 = cs.is_placement_paused, cs.is_real_money_armed, pg.ui_place_enabled_bots
+    o4 = pg.placement_path_bots
     try:
+        # #139: the capable set is read from bot_config; pin it so this stays DB-free.
+        pg.placement_path_bots = lambda: {"bot_coolbet_1x2_model_v1", "bot_coolbet_ou_model_v1"}
         cs.is_placement_paused = lambda: (False, None)
         cs.is_real_money_armed = lambda: (False, "disarmed")
         try:
@@ -46063,11 +46075,12 @@ def test_placement_gate_armed_required():
         try:
             pg.assert_may_place(bot_name="bot_v10_all", book="Coolbet", stake=10.0, check_caps=False)
         except pg.PlacementRefused as e:
-            assert "PLACEABLE_BOTS" in str(e), str(e)
+            assert "no placement path" in str(e), str(e)
         else:
-            raise AssertionError("a bot outside PLACEABLE_BOTS must be refused")
+            raise AssertionError("a bot with no placement path must be refused")
     finally:
         cs.is_placement_paused, cs.is_real_money_armed, pg.ui_place_enabled_bots = o1, o2, o3
+        pg.placement_path_bots = o4
 
 
 @test("PLACEMENT-GATE-ALL-EXECUTORS — every path that can move money calls the gate BEFORE it acts")
@@ -48066,8 +48079,9 @@ def test_inplay_slowstate_price_is_book():
     names = {b.name for b in reg.BOTS if b.family == reg.FAM_INPLAY}
     assert names == {"bot_inplay_slowstate_v1", "bot_inplay_slowstate_afctl_v1"}, names
     assert all(not b.real_money for b in reg.BOTS if b.family == reg.FAM_INPLAY), "the rig is paper"
-    from workers.automation.placement_gate import PLACEABLE_BOTS
-    assert not (names & PLACEABLE_BOTS), "in-play bots must never be placeable"
+    from workers.automation.placement_gate import placement_path_reason
+    assert placement_path_reason("inplay", "shadow_bets", ["Coolbet", "Epicbet"]) is not None, \
+        "in-play bots must never be placeable (the placers are pre-match only)"
 
 
 @test("INPLAY-SLOWSTATE-COHORT-ACCEPTED — the cohort the collector writes must pass the shadow_bets CHECK constraint")
@@ -52896,11 +52910,19 @@ def test_book_footprint():
     try:
         fp._pending.clear()
         fp._db_count = lambda book: fp.budget(book)
+        import logging as _lg
+        _seen = []
+        _h = _lg.Handler(); _h.emit = lambda r: _seen.append(r.getMessage())
+        fp.log.addHandler(_h)
         try:
             fp.check("Coolbet")
             raise AssertionError("check() did not refuse at the budget")
         except fp.FootprintBudgetExceeded:
             pass
+        finally:
+            fp.log.removeHandler(_h)
+        # a refusal must say which process refused and what it believed (2026-09-24)
+        assert any("footprint REFUSED Coolbet" in m and "pid=" in m for m in _seen), _seen
         fp._db_count = lambda book: 0
         fp.check("Coolbet")
     finally:
@@ -53719,6 +53741,511 @@ def test_coolbet_post_gated_per_pick():
     import scripts.place_coolbet_ui as ui
     st = inspect.getsource(ui.spent_today)
     assert "FROM real_bets" in st and "auto ticket=" in st
+
+
+# ── #139 phase A: the /admin/bots control panel (migration 413) ──────────────────────────────
+# Spec: dev/active/bots-control-panel-spec.md (§16 owner decisions override the earlier text).
+
+_MIG_413 = "supabase/migrations/413_bot_controls.sql"
+
+
+def _assert_placement_path_rule():
+    """#139 (owner decision 4 as corrected 2026-09-24): which bots CAN stake is a code RULE
+    applied to the exported config, never a hand-listed set of names. Shared by the older
+    real-money tests that used to pin the two-name PLACEABLE_BOTS literal."""
+    import workers.automation.placement_gate as pg
+    from workers.automation import best_price_router as bpr
+    assert not hasattr(pg, "PLACEABLE_BOTS"), "the hand-listed PLACEABLE_BOTS set must stay gone"
+    assert tuple(pg.PLACER_BOOKS) == tuple(bpr.PLACEABLE_BOOKS), "placer books must equal the router's"
+    ok = pg.placement_path_reason
+    assert ok("model_shadow", "shadow_bets", ["Coolbet", "Unibet-Site"]) is None
+    assert ok("sharp_trigger", "shadow_bets", ["Unibet-Site"]) is None
+    for fam in ("inplay", "forward_test", "control"):
+        assert ok(fam, "shadow_bets", ["Coolbet"]) is not None, f"{fam} must never have a placement path"
+    assert ok("model_sim", "simulated_bets", ["Coolbet"]) is not None, "no supported placer reads simulated_bets"
+    assert ok("model_shadow", "shadow_bets", ["Epicbet", "Tonybet"]) is not None, "no placer at those books"
+    assert ok("model_shadow", None, ["Coolbet"]) is not None
+
+
+def _assert_placer_rows_seed_off():
+    """Capable ≠ staking: every eligibility row is inserted OFF (DB trigger) and only an
+    audited /admin/bots action (typed bot name + reason) can switch one on."""
+    import re
+    sql = _engine_path(_MIG_413).read_text(encoding="utf-8")
+    assert "CREATE TRIGGER coolbet_placer_bots_guard" in sql and "BEFORE INSERT OR UPDATE ON coolbet_placer_bots" in sql
+    seeds = re.findall(r"INSERT INTO coolbet_placer_bots[^;]+;", sql)
+    assert seeds, "413 must seed the eligibility list"
+    for block in seeds:
+        assert re.search(r"\btrue\b", block, re.I) is None, "an eligibility seed must never insert a row ON"
+
+
+@test("CONTROL-PLACEMENT-PATH-RULE-AGREES — the capable-set rule is the same in Python, the migration and the page")
+def test_control_placement_path_rule_agrees():
+    """Owner correction 2026-09-24: 'why are those two real-money capable and the others aren't?'
+    The capable set is derived (shadow_bets, pre-match, Coolbet/Unibet-Site, not a publish-only
+    test) — it lives in placement_gate (enforced), admin_set_control (enforced) and the page
+    (explains). All three copies must agree, or the page would offer a switch the DB refuses."""
+    _assert_placement_path_rule()
+    import workers.automation.placement_gate as pg
+    sql = _engine_path(_MIG_413).read_text(encoding="utf-8")
+    books_sql = "ARRAY['Coolbet', 'Unibet-Site']::text[]"
+    assert sql.count(books_sql) >= 2, "seed AND function must use the placer books"
+    assert all(b in books_sql for b in pg.PLACER_BOOKS)
+    assert sql.count("('inplay', 'forward_test', 'control')") >= 2
+    assert set(pg.NO_PLACEMENT_FAMILIES) == {"inplay", "forward_test", "control"}
+    assert "c.ledger = 'shadow_bets'" in sql and pg.PLACEMENT_LEDGER == "shadow_bets"
+    ts = _web_path("src/lib/bot-controls/placement-path.ts").read_text(encoding="utf-8")
+    assert 'PLACER_BOOKS = ["Coolbet", "Unibet-Site"]' in ts and 'PLACEMENT_LEDGER = "shadow_bets"' in ts
+    for fam in pg.NO_PLACEMENT_FAMILIES:
+        assert f"{fam}:" in ts, fam
+    # export_bot_config computes `placeable` with the same rule, not a name list
+    ebc = _engine_path("scripts/export_bot_config.py").read_text(encoding="utf-8")
+    assert "placement_path_reason(" in ebc and "PLACEABLE_BOTS" not in ebc.split("def build_rows", 1)[1]
+
+
+@test("PLACEMENT-GATE-DB-ELIGIBILITY — who may bet is the DB list: ON, not locked, not retired, fail-closed")
+def test_placement_gate_db_eligibility():
+    """Owner decision 4: the eligibility list moved to coolbet_placer_bots. The gate must read
+    it fresh, narrow on the lock and on retirement, intersect with the placement-path rule,
+    and read as the EMPTY set on any error (this read ENABLES money)."""
+    import workers.automation.placement_gate as pg
+    import workers.api_clients.db as db
+    sql = pg.ELIGIBLE_SQL
+    for frag in ("coolbet_placer_bots", "ui_place_enabled = true", "locked_reason IS NULL",
+                 "b.retired_at IS NULL", "b.is_active"):
+        assert frag in sql, frag
+    src = open(pg.__file__, encoding="utf-8").read()
+    assert "return placement_path_bots() & ui_place_enabled_bots()" in src
+    orig = db.execute_query
+    try:
+        def _boom(*_a, **_k):
+            raise RuntimeError("simulated DB outage")
+        db.execute_query = _boom
+        assert pg.placement_path_bots() == set() and pg.ui_place_enabled_bots() == set()
+        assert pg.effective_allowlist() == set()
+        # a stale config export also reads as "no placement path"
+        seen = {}
+        def _capture(q, *_a, **_k):
+            seen["q"] = q
+            return [{"bot_name": "x", "family": "model_shadow", "ledger": "shadow_bets", "books": ["Coolbet"]}]
+        db.execute_query = _capture
+        assert pg.placement_path_bots() == {"x"}
+        assert "exported_at > NOW() - INTERVAL '36 hours'" in seen["q"], "the gate must refuse a stale export"
+    finally:
+        db.execute_query = orig
+
+
+@test("CONTROL-AUDIT-TABLES — control_changes is append-only and private; migration 413 shape")
+def test_control_audit_tables():
+    """#139 phase A §2.2 / §2.9: an append-only audit table (UPDATE/DELETE/TRUNCATE raise),
+    no anon/authenticated access to anything in 413, SECURITY DEFINER functions with a fixed
+    search_path executable by service_role only, the O/U lock seeded, baseline rows written."""
+    sql = _engine_path(_MIG_413).read_text(encoding="utf-8")
+    assert sql.lstrip().startswith("--") and "\nBEGIN;" in sql and sql.rstrip().endswith("COMMIT;")
+    for frag in ("CREATE TABLE IF NOT EXISTS control_changes", "BEFORE UPDATE OR DELETE ON control_changes",
+                 "BEFORE INSERT OR UPDATE ON coolbet_placer_bots",
+                 "BEFORE INSERT OR UPDATE OF real_money_armed, placement_paused, placement_paused_reason",
+                 "NEW.placement_paused_reason := OLD.placement_paused_reason",
+                 "NEW.publishing_paused_reason := OLD.publishing_paused_reason",
+                 "BEFORE DELETE ON coolbet_placer_bots", "BEFORE TRUNCATE ON coolbet_placer_bots",
+                 "BEFORE DELETE ON coolbet_session_state", "BEFORE TRUNCATE ON coolbet_session_state",
+                 "REVOKE INSERT, DELETE, TRUNCATE ON coolbet_session_state FROM service_role, authenticated, anon",
+                 "NOT LIKE 'daemon self-pause:%'",
+                 "ACCIDENT GUARD, not a security boundary",
+                 "BEFORE TRUNCATE ON control_changes", "REVOKE ALL ON control_changes FROM PUBLIC, anon, authenticated",
+                 "REVOKE ALL ON control_changes FROM service_role", "GRANT SELECT ON control_changes TO service_role",
+                 "CREATE TABLE IF NOT EXISTS placer_heartbeats",
+                 "REVOKE ALL ON placer_heartbeats FROM PUBLIC, anon, authenticated, service_role",
+                 "ADD COLUMN IF NOT EXISTS locked_reason", "OU-CALIBRATOR-DOMAIN-MISMATCH",
+                 "'migration:413', 'migration'"):
+        assert frag in sql, frag
+    for fn in ("admin_set_control(text, text, jsonb, text, text, text, uuid, text, jsonb, uuid)",
+               "admin_arm_real_money(text, text, text, uuid, jsonb, uuid)"):
+        assert f"REVOKE ALL ON FUNCTION public.{fn}\n    FROM PUBLIC, anon, authenticated" in sql, fn
+        assert f"GRANT EXECUTE ON FUNCTION public.{fn}\n    TO service_role" in sql, fn
+    assert sql.count("SECURITY DEFINER\nSET search_path = public") == 2
+    assert " TO anon" not in sql and " TO authenticated" not in sql
+    # ANON-LEAST-PRIVILEGE's grant list must not include anything from 413
+    g404 = _engine_path("supabase/migrations/404_anon_least_privilege.sql").read_text()
+    for t in ("control_changes", "placer_heartbeats", "coolbet_placer_bots"):
+        assert t not in g404.split("GRANT SELECT ON", 1)[1].split("TO anon", 1)[0], t
+
+
+@test("CONTROL-FN-REFUSES — admin_set_control / admin_arm_real_money behaviour, in a rolled-back txn")
+def test_control_fn_refuses():
+    """DB behaviour of migration 413, exercised inside ONE transaction that is always rolled
+    back (the migration body is executed first when it is not applied yet). Refused: € ON for
+    a locked / unseeded bot, € ON from Telegram, a start with no reason, arming through
+    admin_set_control, a strategic resume without RESUME STRATEGIC, /picks ON for a shadow
+    bot. Applied: a valid € ON (with its audit row), stop directions with no expected value,
+    arming through admin_arm_real_money with the phrase + reason. UPDATE/DELETE on the audit
+    table raise."""
+    import json, re
+    from workers.api_clients.db import get_conn
+    with get_conn() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute("SET LOCAL lock_timeout = '5s'")
+            cur.execute("SELECT to_regprocedure('admin_set_control(text,text,jsonb,text,text,text,uuid,text,jsonb,uuid)')")
+            if cur.fetchone()[0] is None:
+                body = _engine_path(_MIG_413).read_text(encoding="utf-8")
+                cur.execute(re.sub(r"^(BEGIN|COMMIT);\s*$", "", body, flags=re.M))
+                cur.execute("SELECT set_config('oddsintel.migration', '', true)")  # the test is not a migration
+
+            def call(control, bot, value, reason=None, confirm=None, source="web", expected="cur"):
+                if expected == "cur":
+                    expected = None
+                cur.execute("SELECT admin_set_control(%s,%s,%s::jsonb,%s,%s,'smoke@test',NULL,%s,%s::jsonb,NULL)",
+                            (control, bot, json.dumps(value), reason, confirm, source,
+                             None if expected is None else json.dumps(expected)))
+                return cur.fetchone()[0]
+
+            cur.execute("SELECT count(*) FROM control_changes"); n0 = cur.fetchone()[0]
+            # a known-state playground: one unlocked eligible bot, fresh config, fleet paused
+            cur.execute("SELECT c.bot_name FROM coolbet_placer_bots p JOIN bot_config c ON c.bot_name = p.bot_name "
+                        "JOIN bots b ON b.name = p.bot_name WHERE p.locked_reason IS NULL AND b.is_active "
+                        "AND b.retired_at IS NULL LIMIT 1")
+            row = cur.fetchone()
+            assert row, "413 must seed at least one unlocked eligibility row"
+            bot = row[0]
+            cur.execute("UPDATE coolbet_placer_bots SET ui_place_enabled = false WHERE bot_name = %s", (bot,))
+            cur.execute("UPDATE bot_config SET exported_at = now() WHERE bot_name = %s", (bot,))
+
+            r = call("placer_enabled", "bot_coolbet_ou_model_v1", True, "a reason long enough", "bot_coolbet_ou_model_v1", expected=False)
+            assert r["outcome"] == "refused" and "locked" in r["refusal"], r
+            r = call("placer_enabled", "bot_no_such_bot_v0", True, "a reason long enough", "bot_no_such_bot_v0", expected=False)
+            assert r["outcome"] == "refused", r
+            r = call("placer_enabled", bot, True, "a reason long enough", bot, source="telegram", expected=False)
+            assert r["outcome"] == "refused", r
+            r = call("placer_enabled", bot, True, None, bot, expected=False)
+            assert r["outcome"] == "refused" and "reason" in r["refusal"], r
+            r = call("placer_enabled", bot, True, "a reason long enough", "wrong name", expected=False)
+            assert r["outcome"] == "refused", r
+            r = call("placer_enabled", bot, True, "a reason long enough", bot, expected=None)
+            assert r["outcome"] == "refused", "a start with unreadable state must be refused"
+            r = call("placer_enabled", bot, True, "a reason long enough", bot, expected=True)
+            assert r["outcome"] == "conflict", r
+            r = call("placer_enabled", bot, True, "a reason long enough", bot, expected=False)
+            assert r["outcome"] == "applied", r
+            cur.execute("SELECT ui_place_enabled FROM coolbet_placer_bots WHERE bot_name = %s", (bot,))
+            assert cur.fetchone()[0] is True
+            r = call("placer_enabled", bot, False)  # stop: no reason, no expected
+            assert r["outcome"] == "applied", r
+
+            r = call("real_money_armed", None, True, "a reason long enough", "ARM REAL MONEY", expected=False)
+            assert r["outcome"] == "refused", "admin_set_control must never arm"
+
+            cur.execute("UPDATE coolbet_session_state SET placement_paused = true, "
+                        "placement_paused_reason = 'OWN-PATH-VERDICT test: STRATEGIC closure' WHERE id = 1")
+            r = call("placement_paused", None, False, "a reason long enough", "RESUME PLACEMENT", expected=True)
+            assert r["outcome"] == "refused" and "STRATEGIC" in r["refusal"], r
+            r = call("placement_paused", None, False, "a reason long enough", "RESUME STRATEGIC", source="telegram", expected=True)
+            assert r["outcome"] == "refused", "Telegram is stop-only"
+            r = call("placement_paused", None, True, source="telegram")
+            assert r["outcome"] in ("applied", "noop"), r
+
+            cur.execute("SELECT b.name FROM bots b JOIN bot_config c ON c.bot_name = b.name "
+                        "WHERE c.ledger = 'shadow_bets' AND b.is_active LIMIT 1")
+            shadow = cur.fetchone()[0]
+            r = call("show_on_picks", shadow, True, "a reason long enough", shadow, expected=False)
+            assert r["outcome"] == "refused", "a shadow-ledger bot can never be shown on /picks (I13)"
+
+            cur.execute("UPDATE coolbet_session_state SET real_money_armed = false WHERE id = 1")
+            cur.execute("SELECT admin_arm_real_money('short', 'ARM REAL MONEY', 'o', NULL, 'false'::jsonb, NULL)")
+            assert cur.fetchone()[0]["outcome"] == "refused"
+            cur.execute("SELECT admin_arm_real_money('a written reason for arming it', 'ARM', 'o', NULL, 'false'::jsonb, NULL)")
+            assert cur.fetchone()[0]["outcome"] == "refused"
+            cur.execute("SELECT admin_arm_real_money('a written reason for arming it', 'ARM REAL MONEY', 'o', NULL, 'false'::jsonb, NULL)")
+            assert cur.fetchone()[0]["outcome"] == "applied"
+
+            # ── table guards (review 2026-09-24): plain UPDATEs may STOP, never START ──
+            def refused(stmt, args=(), frag=""):
+                cur.execute("SAVEPOINT g")
+                try:
+                    cur.execute(stmt, args)
+                except Exception as e:  # noqa: BLE001
+                    cur.execute("ROLLBACK TO SAVEPOINT g")
+                    assert frag in str(e), e
+                    return
+                raise AssertionError(f"must be refused: {stmt}")
+            cur.execute("SELECT set_config('oddsintel.control_fn', '', true)")
+            cur.execute("UPDATE coolbet_session_state SET real_money_armed = false WHERE id = 1")   # stop: open
+            cur.execute("UPDATE coolbet_session_state SET placement_paused = true WHERE id = 1")    # stop: open
+            refused("UPDATE coolbet_session_state SET real_money_armed = true WHERE id = 1", frag="admin_arm_real_money")
+            refused("UPDATE coolbet_session_state SET placement_paused = false WHERE id = 1", frag="admin_set_control")
+            refused("UPDATE coolbet_placer_bots SET locked_reason = NULL WHERE bot_name = 'bot_coolbet_ou_model_v1'",
+                    frag="reviewed migration")
+            cur.execute("UPDATE coolbet_placer_bots SET ui_place_enabled = false")                   # stop: open
+            # DELETE + re-INSERT and TRUNCATE are refused on both tables (review 2026-09-24)
+            refused("DELETE FROM coolbet_session_state WHERE id = 1", frag="refused")
+            refused("DELETE FROM coolbet_placer_bots WHERE bot_name = 'bot_coolbet_ou_model_v1'", frag="refused")
+            refused("TRUNCATE coolbet_session_state", frag="refused")
+            refused("TRUNCATE coolbet_placer_bots", frag="refused")
+            refused("INSERT INTO coolbet_placer_bots (bot_name, ui_place_enabled) VALUES ('bot_smoke_v0', false)",
+                    frag="reviewed migration")
+            refused("INSERT INTO coolbet_session_state (id, real_money_armed, placement_paused) VALUES (2, true, false)",
+                    frag="must start paused")
+            cur.execute("SELECT has_table_privilege('service_role', 'coolbet_session_state', 'DELETE'), "
+                        "has_table_privilege('service_role', 'coolbet_placer_bots', 'INSERT'), "
+                        "has_table_privilege('service_role', 'coolbet_placer_bots', 'TRUNCATE'), "
+                        "has_table_privilege('service_role', 'coolbet_session_state', 'UPDATE')")
+            assert cur.fetchone() == (False, False, False, True), "API roles may only UPDATE control rows"
+            def setreason(txt):  # test setup only: rewrite the standing reason the way the function may
+                cur.execute("SELECT set_config('oddsintel.control_fn', 'on', true)")
+                cur.execute("UPDATE coolbet_session_state SET placement_paused = true, placement_paused_reason = %s WHERE id = 1", (txt,))
+                cur.execute("SELECT set_config('oddsintel.control_fn', '', true)")
+            # engine may clear only ITS OWN self-pause
+            setreason("operator: Mac daemon flaky")
+            r = call("placement_paused", None, False, source="engine")
+            assert r["outcome"] == "refused", "an operator pause mentioning 'daemon' must never auto-clear"
+            setreason("this is NOT a daemon self-pause: operator")
+            r = call("placement_paused", None, False, source="engine")
+            assert r["outcome"] == "refused", "only a reason STARTING with 'daemon self-pause:' is the daemon's own"
+            setreason("daemon self-pause: 7 consecutive errors over 207m")
+            r = call("placement_paused", None, False, source="engine")
+            assert r["outcome"] == "applied", r
+            cur.execute("SELECT current_setting('oddsintel.control_fn', true)")
+            assert cur.fetchone()[0] in ("", None), "the function must clear its flag after its own UPDATE"
+            refused("UPDATE coolbet_session_state SET real_money_armed = true WHERE id = 1", frag="admin_arm_real_money")
+
+            # re-pausing over a strategic pause keeps the strategic reason; the engine then refuses
+            cur.execute("UPDATE coolbet_session_state SET placement_paused = true, "
+                        "placement_paused_reason = 'OWN-PATH-VERDICT: STRATEGIC closure' WHERE id = 1")
+            cur.execute("UPDATE coolbet_session_state SET placement_paused = true, "
+                        "placement_paused_reason = 'daemon self-pause: 7 consecutive errors over 9m' WHERE id = 1")
+            cur.execute("UPDATE coolbet_session_state SET placement_paused = true, "
+                        "placement_paused_reason = 'operator /pause' WHERE id = 1")
+            cur.execute("SELECT placement_paused_reason FROM coolbet_session_state WHERE id = 1")
+            assert "OWN-PATH-VERDICT" in cur.fetchone()[0], "a re-pause must never rewrite a standing reason"
+            r = call("placement_paused", None, False, source="engine")
+            assert r["outcome"] == "refused", "the engine must not auto-clear a strategic stop"
+            r = call("placement_paused", None, False, "a reason long enough", "RESUME PLACEMENT", expected=True)
+            assert r["outcome"] == "refused" and "STRATEGIC" in r["refusal"], r
+
+            cur.execute("SELECT count(*) FROM control_changes"); n1 = cur.fetchone()[0]
+            assert n1 - n0 >= 17, f"every call must write an audit row (got {n1 - n0})"
+            cur.execute("SAVEPOINT s")
+            for stmt in ("UPDATE control_changes SET reason = 'x'", "DELETE FROM control_changes"):
+                try:
+                    cur.execute(stmt)
+                except Exception as e:  # noqa: BLE001
+                    assert "append-only" in str(e), e
+                    cur.execute("ROLLBACK TO SAVEPOINT s")
+                else:
+                    raise AssertionError(f"{stmt} must raise")
+            try:  # a bare UPDATE (the pre-413 shadow-bots route) cannot switch a bot ON
+                cur.execute("SELECT set_config('oddsintel.control_fn', '', true)")
+                cur.execute("UPDATE coolbet_placer_bots SET ui_place_enabled = true WHERE bot_name = %s", (bot,))
+            except Exception as e:  # noqa: BLE001
+                assert "only through admin_set_control" in str(e), e
+                cur.execute("ROLLBACK TO SAVEPOINT s")
+            else:
+                raise AssertionError("a direct OFF->ON update must raise")
+            try:
+                cur.execute("INSERT INTO coolbet_placer_bots (bot_name, ui_place_enabled) VALUES ('bot_smoke_v0', true)")
+            except Exception as e:  # noqa: BLE001
+                assert "reviewed migration" in str(e) or "inserted OFF" in str(e), e
+                cur.execute("ROLLBACK TO SAVEPOINT s")
+            else:
+                raise AssertionError("an eligibility row inserted ON must raise")
+        finally:
+            conn.rollback()
+
+
+@test("CONTROL-ENGINE-SETTERS-AUDITED — coolbet_state fleet setters write control_changes; only stops fall back")
+def test_control_engine_setters_audited():
+    """§2.2 'other writers join the log': the daemon self-pause / auto-clear and the ops CLI
+    write audit rows in the same statement as the change. If the audited write fails, a STOP
+    (pause, disarm) still applies via the plain update; a START (resume, arm) does not."""
+    import workers.automation.coolbet_state as cs
+    import workers.api_clients.db as db
+    import inspect
+    for fn in (cs.set_placement_paused, cs.set_publishing_paused, cs.set_daemons_paused, cs.set_real_money_armed):
+        assert "_set_fleet_switch(" in inspect.getsource(fn), fn.__name__
+    assert "INSERT INTO control_changes" in inspect.getsource(cs._set_fleet_switch)
+    calls = []
+    orig, orig_r = db.execute_write, db.execute_write_returning
+    def _w(sql, params=None):
+        calls.append(sql)
+        if "control_changes" in sql or "admin_set_control" in sql:
+            raise RuntimeError("relation control_changes does not exist")
+        return 1
+    db.execute_write = _w
+    db.execute_write_returning = _w
+    try:
+        calls.clear(); cs.set_placement_paused(True, reason="t")
+        assert len(calls) == 2 and "control_changes" not in calls[1], "a pause must fall back to the plain write"
+        calls.clear(); cs.set_placement_paused(False)
+        assert len(calls) == 1 and "admin_set_control" in calls[0], \
+            "a resume goes ONLY through admin_set_control (engine: own self-pause only) — no fallback"
+        calls.clear(); cs.set_real_money_armed(True, reason="because")
+        assert calls == [], "arming is refused outside /admin/bots (admin_arm_real_money)"
+        calls.clear(); cs.set_real_money_armed(False, reason="stop")
+        assert len(calls) == 2, "a disarm must fall back"
+    finally:
+        db.execute_write, db.execute_write_returning = orig, orig_r
+
+
+@test("PLACER-HEARTBEAT — every Mac placer run stamps placer_heartbeats (owner decision 7)")
+def test_placer_heartbeat():
+    """The page cannot see launchd; 'automatic placing ON' only stakes if a placer is loaded and
+    alive. Both --execute executors write a heartbeat each run, after the run gate decided,
+    recording what was requested and what the gate allowed."""
+    ui = _engine_path("scripts/place_coolbet_ui.py").read_text(encoding="utf-8")
+    m = ui[ui.index("def main() -> int:"):]
+    assert m.index("assert_run_may_place()") < m.index("mark_placer_heartbeat(") < m.index("sync_playwright()")
+    assert '"coolbet_ui_placer", execute_requested=execute_requested' in m
+    rt = _engine_path("workers/automation/best_price_router.py").read_text(encoding="utf-8")
+    main = rt[rt.index("def main() -> int:"):]
+    assert main.index("route(execute=") < main.index("mark_placer_heartbeat(") and '"best_price_router"' in main
+    import workers.automation.coolbet_state as cs
+    import inspect
+    src = inspect.getsource(cs.mark_placer_heartbeat)
+    assert "INSERT INTO placer_heartbeats" in src and "_safe_write(" in src, "best-effort: never fails a run"
+
+
+@test("CONTROL-ROUTES-GATED — every /api/admin/bots/controls handler: preview refusal, then superadmin/owner, then body")
+def test_control_routes_gated():
+    """§2.9 + the dev-preview rule: the page gate is not trusted. Each write handler refuses in
+    the fixture preview first, checks superadmin (arming: owner) BEFORE reading the body, and
+    writes ONLY through the audited DB function — no direct update/upsert/insert."""
+    base = "src/app/api/admin/bots/controls/"
+    for rel, gate, rpc in ((base + "route.ts", "requireSuperadmin()", '"admin_set_control"'),
+                           (base + "arm/route.ts", "requireOwner()", '"admin_arm_real_money"')):
+        src = _web_path(rel).read_text(encoding="utf-8")
+        post = src[src.index("export async function POST("):]
+        assert post.index("isBotBoardDevPreview()") < post.index(gate) < post.index("req.json()"), rel
+        assert f"rpc({rpc}" in post, rel
+        for bad in (".update(", ".upsert(", ".insert(", ".delete("):
+            assert bad not in src, f"{rel} must not write directly ({bad})"
+    audit = _web_path(base + "audit/route.ts").read_text(encoding="utf-8")
+    assert "requireSuperadmin()" in audit and ".update(" not in audit and ".insert(" not in audit
+    # #139 review item 6: the legacy /admin/shadow-bots toggle is OFF-only (clean 403 for ON).
+    legacy = _web_path("src/app/api/admin/coolbet-placer-bots/route.ts").read_text(encoding="utf-8")
+    post = legacy[legacy.index("export async function POST("):]
+    assert post.index("if (enabled) {") < post.index(".update("), "ON must be refused before any update"
+    assert "status: 403" in post.split("if (enabled) {")[1][:500] and "/admin/bots" in post.split("if (enabled) {")[1][:500]
+    auth = _web_path("src/lib/admin-auth.ts").read_text(encoding="utf-8")
+    assert "is_superadmin" in auth and "OWNER_USER_IDS" in auth
+    # the page folder never writes to PostgREST directly either
+    import pathlib
+    for f in pathlib.Path(_web_root / "src/app/(app)/admin/bots").glob("*.ts*"):
+        t = f.read_text(encoding="utf-8")
+        for bad in (".update(", ".upsert(", ".rpc("):
+            assert bad not in t, f"{f.name} must not write directly ({bad})"
+
+
+@test("CONTROL-NO-SINGLE-CLICK-MONEY — arming is owner-only and two-step; no per-bot path reaches it")
+def test_control_no_single_click_money():
+    """§1.3 rule 1 + owner decisions 1-4: no single click stakes money. Arming: owner route,
+    typed ARM REAL MONEY + a >= 20-char reason, re-checked in the DB. The generic route can
+    only DISARM. € ON needs confirm_text === bot_name + a reason, checked in the route AND the
+    DB. The only component that posts to the arm route is the arm dialog's provider."""
+    types = _web_path("src/lib/bot-controls/types.ts").read_text(encoding="utf-8")
+    assert 'PHRASE_ARM = "ARM REAL MONEY"' in types and "MIN_ARM_REASON = 20" in types and "MIN_REASON = 10" in types
+    route = _web_path("src/app/api/admin/bots/controls/route.ts").read_text(encoding="utf-8")
+    assert 'control === "real_money_disarm" && value !== false' in route
+    assert "confirm !== botName" in route and "reason.length < MIN_REASON" in route
+    assert '"real_money_armed" : control' in route  # disarm maps to the DB control, value false only
+    arm = _web_path("src/app/api/admin/bots/controls/arm/route.ts").read_text(encoding="utf-8")
+    assert "confirm !== PHRASE_ARM" in arm and "reason.length < MIN_ARM_REASON" in arm and "body.expected !== false" in arm
+    sql = _engine_path(_MIG_413).read_text(encoding="utf-8")
+    assert "arming is not possible through admin_set_control" in sql
+    assert "'ARM REAL MONEY'" in sql and "length(v_reason) < 20" in sql
+    import pathlib
+    posters = [f.name for f in pathlib.Path(_web_root / "src").rglob("*.ts*")
+               if "postArm(" in f.read_text(encoding="utf-8") and f.name != "client.ts"]
+    assert posters == ["controls-context.tsx"], posters
+
+
+@test("CONTROL-TELEGRAM-STOP-ONLY — /pause is audited; /resume and real-money starts are refused with a pointer")
+def test_control_telegram_stop_only():
+    """Owner decision 3 (2026-09-24): /admin/bots is THE control surface for real money;
+    Telegram is notifications only, with /pause as a stop-only emergency command.
+    /pausepicks and /resumepicks are unchanged."""
+    src = _web_path("src/app/api/telegram/webhook/route.ts").read_text(encoding="utf-8")
+    resume = src.split("async function handleResumeCommand(")[1].split("\n}\n")[0]
+    assert "START_REFUSAL" in resume and "update(" not in resume
+    assert "${BOTS_PAGE}" in src.split("const START_REFUSAL")[1][:400] and 'BOTS_PAGE = "https://oddsintel.app/admin/bots"' in src
+    assert "placement_paused: false" not in src
+    assert '/^\\/(resume|arm|unpause)(\\s|$)/.test(text) && isOperator(' in src
+    assert 'p_source: "telegram"' in src and 'p_control: "placement_paused"' in src
+    cb = src.split('// coolbet-resume: REFUSED')[1][:600]
+    assert "answerCallbackQuery(" in cb and "update(" not in cb
+    # /pausepicks unchanged: still a direct, unaudited publishing switch
+    assert "function handlePausePicksCommand(" in src and "publishing_paused: true" in src
+
+
+@test("CONTROL-PAGE-FAIL-SAFE — Unknown never reads Off; starts disabled; publish and placement in separate cards")
+def test_control_page_fail_safe():
+    """§2.6/§2.7/§3.4: unreadable state renders 'Unknown' (never 'Off') and disables the start
+    direction while the stop stays available; only the SAFE direction is optimistic; the
+    CAN STAKE line reads UNKNOWN when any layer is unknown; the customer channel and real-money
+    placement live in different cards (I10); /performance never reads show_on_picks (I12)."""
+    d = _web_root / "src/app/(app)/admin/bots"
+    sw = (d / "control-switch.tsx").read_text(encoding="utf-8")
+    assert "if (value === null)" in sw and "Unknown" in sw and "Force off" in sw
+    ctx = (d / "controls-context.tsx").read_text(encoding="utf-8")
+    body = ctx.split("const execute = useCallback(")[1]
+    assert body.index("if (start) {") < body.index("setOptimistic((o) => ({ ...o, [k]: intent.value }))"), \
+        "the start branch must return before any optimistic state is set"
+    lad = _web_path("src/lib/bot-controls/ladder.ts").read_text(encoding="utf-8")
+    assert 'unknownAt.length > 0 ? "unknown"' in lad
+    fleet = (d / "fleet-controls-card.tsx").read_text(encoding="utf-8")
+    money = (d / "real-money-card.tsx").read_text(encoding="utf-8")
+    assert 'control="publishing_paused"' in fleet and "placement_paused" not in fleet
+    assert "publishing_paused" not in money
+    shell = (d / "admin-shell.tsx").read_text(encoding="utf-8")
+    assert '"Unknown"' in shell
+    import re as _re
+    agg = _web_path("src/lib/bot-aggregates.ts").read_text(encoding="utf-8")
+    code = "\n".join(l for l in agg.splitlines() if not _re.match(r"\s*(//|\*|/\*)", l))
+    assert "show_on_picks" not in code, "the leaderboard must never filter on show_on_picks (I12)"
+    import pathlib
+    for f in pathlib.Path(_web_root / "src/app/(app)/performance").rglob("*.ts*"):
+        assert "show_on_picks" not in f.read_text(encoding="utf-8"), f"{f} must not read show_on_picks (I12)"
+
+
+@test("BOT-CONTROLS-PREVIEW-NEVER-WRITES — the fixture preview renders controls read-only and every write route refuses")
+def test_bot_controls_preview_never_writes():
+    """The no-login design preview (BOT_BOARD_FIXTURE + NODE_ENV=development) shows the controls
+    with fake-but-realistic state and must never write: loadControlState marks it readOnly, and
+    both write routes refuse before anything else when isBotBoardDevPreview()."""
+    lib = _web_path("src/lib/bot-board.ts").read_text(encoding="utf-8")
+    assert "if (isBotBoardDevPreview()) return previewControlState(" in lib
+    assert "readOnly: true, readOnlyReason: PREVIEW_REFUSAL" in lib
+    # dialogs open in preview (so they can be reviewed); only the final Confirm is disabled
+    d = _web_root / "src/app/(app)/admin/bots"
+    assert "&& !readOnlyReason" in (d / "confirm-control-dialog.tsx").read_text(encoding="utf-8")
+    assert "|| !!readOnlyReason" in (d / "arm-dialog.tsx").read_text(encoding="utf-8")
+    for rel in ("src/app/api/admin/bots/controls/route.ts", "src/app/api/admin/bots/controls/arm/route.ts"):
+        src = _web_path(rel).read_text(encoding="utf-8")
+        post = src[src.index("export async function POST("):]
+        assert post.split("\n")[1].strip() == "if (isBotBoardDevPreview()) return bad(PREVIEW_REFUSAL, 403);", rel
+
+
+@test("AUTO-HEAL-CLEARS-ONLY-SELF-PAUSE — auto_self_heal / --resume-placement never clear an operator or strategic pause")
+def test_auto_heal_clears_only_self_pause():
+    """#139 review (2026-09-24): auto_self_heal step 6 cleared placement_paused whenever the
+    reason CONTAINED "daemon", so "/pause Mac daemon flaky" was auto-resumed by the watchdog, the
+    Mac daemon or the Telegram heal button. Only the exact self-pause marker may be auto-cleared
+    (coolbet_state.is_daemon_self_pause), and the --resume-placement CLI refuses strategic and
+    operator pauses too (the DB function refuses them as well, migration 413)."""
+    import inspect
+    import workers.automation.coolbet_browser_sync as bs
+    import workers.automation.coolbet_state as cs
+    heal = inspect.getsource(bs.auto_self_heal)
+    assert '"daemon" in' not in heal and "is_daemon_self_pause(reason)" in heal
+    refresh = inspect.getsource(bs.refresh_jwt_via_cdp) if hasattr(bs, "refresh_jwt_via_cdp") else open(bs.__file__).read()
+    block = refresh[refresh.index("if clear_placement_paused and was_paused:"):][:900]
+    assert "is_daemon_self_pause(paused_reason)" in block and "OWN-PATH-VERDICT" in block
+    assert not cs.is_daemon_self_pause("operator: Mac daemon flaky")
+    assert not cs.is_daemon_self_pause("this is NOT a daemon self-pause: operator pause")
+    # the daemon's real written format must still match
+    daemon = open("workers/automation/coolbet_mac_daemon.py", encoding="utf-8").read()
+    assert 'reason=(f"{DAEMON_SELF_PAUSE_MARKER}: "' in daemon
+    assert cs.is_daemon_self_pause(f"{cs.DAEMON_SELF_PAUSE_MARKER}: 7 consecutive errors over 207m")
+    assert cs.is_daemon_self_pause("daemon self-pause: 7 consecutive errors")
 
 
 @test("BOT-BOARD-DEV-PREVIEW-NEVER-IN-PROD — the no-login /admin/bots fixture preview is development-only")

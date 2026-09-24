@@ -373,7 +373,7 @@ made by someone who is not thinking about what *readers* see.
 | `MAC-PLIST-ORPHANS` | 3 running jobs unreproducible from git |
 | Router dry-test never run green | the Coolbet arm was dead the whole time; `route(stage=True)` has never completed end-to-end |
 | Coolbet arm stores no routing note | book-choice analysis is Unibet-only today |
-| `ROUTER_ALLOW_REAL` | owner gate — deliberately unset. ⚠️ Found `=true` in the Mac engine `.env` on 2026-09-24 (#139 audit), so it protected nothing; owner decided to set it `false` |
+| `ROUTER_ALLOW_REAL` | owner gate — deliberately unset. ⚠️ Found `=true` in the Mac engine `.env` on 2026-09-24 (#139 audit), so it protected nothing; owner decided to set it `false`. Deliberately NOT shown as a layer on /admin/bots (control-panel spec F9): a switch that protects nothing must not look like one |
 
 ## 10. The remedy that guarantees the fault persists
 
@@ -1398,3 +1398,46 @@ the scheduler restarting, not a failed job.
 pins both. Rule for new jobs that do heavy pandas / numpy / XGBoost work: run them in a subprocess, and
 do not put tz-aware datetimes in DataFrames on pandas 3.0.4. Pinning pandas to 3.0.2 was NOT done here
 — it changes the runtime of every job at once and deserves its own verified change.
+
+## 25. A toggle with no reason field — the note and the flag disagree (closed 2026-09-24)
+
+**The pattern.** Migration 343 found `bot_coolbet_1x2_model_v1` carrying the note "OFF pending dry-run"
+while `ui_place_enabled` read TRUE: the web toggle wrote the flag and `updated_at`, never the note, and
+kept no record of who flipped it or why. Telegram `/pause` `/resume`, the footprint pause and the
+engine setters were the same shape — bare UPDATEs. A control surface without a reason field and a
+history lies by omission: the only explanation on record is whichever one was written last, by hand.
+
+**The tell.** A free-text `note` / `_reason` column next to a flag that more than one writer can
+change, and no append-only log. Or an "Activity" view that only shows clicks from one surface.
+
+**The guard (#139 phase A, migration 413).** Every control write from `/admin/bots` goes through ONE
+Postgres function (`admin_set_control`; arming: `admin_arm_real_money`) that locks the row, checks the
+value the page believed was current, validates (typed confirmation + ≥10-char reason for every start
+direction), applies the change and appends a `control_changes` row **in the same transaction** — refused
+and conflicting requests are logged too. `control_changes` is append-only (UPDATE / DELETE / TRUNCATE
+raise). The engine setters and Telegram `/pause` write audit rows as well, so the log covers every
+writer; `placer_enabled` rewrites the `note` with the change so the two can no longer disagree, and a table trigger refuses any OFF→ON update of `coolbet_placer_bots` that does not come through the function (the pre-413 shadow-bots route can only switch OFF). The same guard now covers the two fleet
+STARTs — `real_money_armed` false→true and `placement_paused` true→false are refused on `coolbet_session_state`
+unless the audited function set its transaction-local flag — and an existing `locked_reason` can only be lifted
+by a migration (`SET LOCAL oddsintel.migration = 'on'`). Every STOP stays open to every writer. The guards also fire on INSERT (a row may be added only by a migration, OFF, and the singleton must start paused and not armed), DELETE and TRUNCATE are always refused on both tables (DELETE + re-INSERT was the way around the lock and the audit), and API roles may only UPDATE them. The self-pause test is a PREFIX match on `daemon self-pause:` in both Python and SQL (a substring match accepted "this is NOT a daemon self-pause").
+
+**These flags are an ACCIDENT GUARD, not a security boundary.** Anyone with direct SQL as the table owner can
+set `oddsintel.control_fn` themselves; `pg_trigger_depth()` / `current_user` cannot tell the function from the
+engine (both run as `oddsintel_owner` at depth 1). What they do guarantee: the web's `service_role` reaches the
+DB only through PostgREST, which does not expose `set_config()`, so the web can start money only through the
+audited functions; and no engine path, legacy route or hand-typed UPDATE can do it by accident.
+
+**Found in the same review — the substring that resumed an operator pause.** `auto_self_heal` (run by the feed
+watchdog, the Mac daemon and the Telegram heal button) cleared `placement_paused` whenever the reason
+*contained* "daemon", so `/pause Mac daemon flaky` would have been auto-resumed. It now uses the exact
+self-pause marker (`is_daemon_self_pause`), the engine may resume ONLY its own self-pause (the DB function
+refuses anything else, `source='engine'`), and `coolbet_browser_sync --resume-placement` refuses strategic and
+operator pauses. Smoke `AUTO-HEAL-CLEARS-ONLY-SELF-PAUSE`.
+Smokes: `CONTROL-AUDIT-TABLES`, `CONTROL-FN-REFUSES`, `CONTROL-ENGINE-SETTERS-AUDITED`,
+`CONTROL-ROUTES-GATED`, `CONTROL-TELEGRAM-STOP-ONLY`.
+
+**Related, same day:** the hand-listed `PLACEABLE_BOTS = {two names}` was itself a silent claim ("these
+two are the only bots a placer can place") that was false — `load_picks` is generic. It is now a rule
+(`placement_gate.placement_path_reason`) applied to the exported config, and who may bet is the audited
+per-bot switch (owner decision 4). Smoke `CONTROL-PLACEMENT-PATH-RULE-AGREES` keeps the Python, SQL and
+page copies of the rule in step.

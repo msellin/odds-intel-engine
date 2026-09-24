@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -1139,7 +1140,7 @@ def auto_self_heal(*, dry_run: bool = False,
     """
     import time as _t
     from workers.automation.coolbet_state import (
-        set_placement_paused, is_placement_paused,
+        set_placement_paused, is_placement_paused, is_daemon_self_pause,
     )
 
     import time as _heal_t
@@ -1363,7 +1364,10 @@ def auto_self_heal(*, dry_run: bool = False,
         # by a stale kill-switch we (or the daemon's self-pause) might have set.
         try:
             paused, reason = is_placement_paused()
-            if paused and reason and "daemon" in (reason or "").lower():
+            # EXACT marker only (#139 review, 2026-09-24): the old substring test for "daemon"
+            # auto-resumed an operator pause like "/pause Mac daemon flaky". Only a
+            # pause the daemon set on ITSELF may be auto-cleared.
+            if paused and is_daemon_self_pause(reason):
                 set_placement_paused(False)
                 actions.append(f"cleared placement_paused (was: {reason})")
         except Exception as e:
@@ -1610,7 +1614,7 @@ def refresh_jwt_via_cdp(*, allow_open_new_tab: bool = True,
         from datetime import datetime as _dt, timezone as _tz
         from workers.automation.coolbet_state import (
             persist_jwt, set_placement_paused, is_placement_paused,
-            mark_login_success,
+            mark_login_success, is_daemon_self_pause,
         )
         was_paused, paused_reason = is_placement_paused()
         result["placement_paused_before"] = was_paused
@@ -1628,8 +1632,17 @@ def refresh_jwt_via_cdp(*, allow_open_new_tab: bool = True,
                 float(payload.get("exp", 0)), tz=_tz.utc),
         )
         if clear_placement_paused and was_paused:
-            set_placement_paused(False)
-            result["placement_paused_after"] = False
+            # #139: this CLI may clear only a daemon self-pause. A strategic
+            # (OWN-PATH-VERDICT) or operator pause is resumed on /admin/bots; the
+            # DB function refuses it anyway (migration 413).
+            if is_daemon_self_pause(paused_reason) and not re.search(
+                    r"strategic|OWN-PATH-VERDICT", paused_reason or "", re.I):
+                set_placement_paused(False)
+                was_paused, _ = is_placement_paused()
+            else:
+                result["resume_refused"] = ("not a daemon self-pause — resume it on "
+                                            "/admin/bots (typed confirmation + reason)")
+            result["placement_paused_after"] = was_paused
         else:
             result["placement_paused_after"] = was_paused
     except Exception as e:

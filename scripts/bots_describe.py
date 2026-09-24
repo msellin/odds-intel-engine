@@ -70,7 +70,10 @@ def _anchor(name: str, strategy: str | None) -> str:
 def run(active_only: bool, show_sql: bool) -> int:
     cfgs = _configured()
     try:
-        from scripts.place_coolbet_ui import PLACEABLE_BOTS
+        # #139: "money = Y" means the bot HAS a placement path (code rule over
+        # bot_config); whether it may bet is the coolbet_placer_bots switch.
+        from workers.automation.placement_gate import placement_path_bots
+        PLACEABLE_BOTS = placement_path_bots()
     except Exception:  # noqa: BLE001
         PLACEABLE_BOTS = set()
 

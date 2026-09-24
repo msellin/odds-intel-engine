@@ -3,7 +3,7 @@
 WHY. A bot's configuration lived in seven places (the `BotConfig` lists in
 `bot_configs`, `pick_trigger_matcher.BOOK_MARKET_BOTS` + `pick_triggers` floors,
 `daily_pipeline_v2.BOTS_CONFIG`, the forward-test constants, stand-alone paper modules,
-the in-play collector, `placement_gate.PLACEABLE_BOTS`) and no page showed any of it
+the in-play collector, the placer whitelist) and no page showed any of it
 (docs/BOTS_AUDIT_2026_09_24.md: seven book sets for twenty bots, none visible). This
 script reads the objects the running code actually uses — it IMPORTS them, it does not
 re-type them — and writes one row per bot into `bot_config` (migration 410), which the
@@ -543,7 +543,7 @@ def build_rows(db_bots: list[dict] | None = None) -> list[dict]:
     """One row per bot. `db_bots` = rows of `bots` (name, is_active, retired_at,
     maturity_label, show_on_picks, description); when None, the active set falls back to
     bot_registry.active_names() so the export is testable without a DB."""
-    from workers.automation.placement_gate import PLACEABLE_BOTS
+    from workers.automation.placement_gate import placement_path_reason
     if db_bots is None:
         from workers.registry.bot_registry import active_names
         db_bots = [{"name": n, "is_active": True, "retired_at": None} for n in sorted(active_names())]
@@ -573,9 +573,14 @@ def build_rows(db_bots: list[dict] | None = None) -> list[dict]:
                      description="No resolvable config in running code (retired and deleted, or never code-defined). "
                                  + (f"DB description: {b.get('description')}" if b.get("description") else ""))
         r = dict(r)
-        r["placeable"] = name in PLACEABLE_BOTS
+        # #139 (owner decision 4, 2026-09-24): `placeable` = the bot HAS a placement path,
+        # by the code rule placement_gate.placement_path_reason (shadow_bets, pre-match,
+        # priced at a placer book, not a publish-only test) — no longer membership of a
+        # hand-listed name set. Whether it may actually bet is coolbet_placer_bots.
+        active = b.get("is_active", True) is not False and b.get("retired_at") is None
+        r["placeable"] = active and placement_path_reason(r.get("family"), r.get("ledger"), r.get("books")) is None
         if r["placeable"]:
-            r["gates"] = list(r["gates"]) + [gate("PLACEABLE_BOTS", True, src(F_GATE, r"^PLACEABLE_BOTS"))]
+            r["gates"] = list(r["gates"]) + [gate("placement_path", True, src(F_GATE, r"^def placement_path_reason"))]
         if b.get("retired_at") is not None:
             r["published"] = False
             r["telegram"] = False

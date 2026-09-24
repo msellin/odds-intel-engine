@@ -535,3 +535,30 @@ every writer, after the #137 B4 decision. C3 the Mac reports executor status (lo
 5. **Retire and un-retire from the page (today 32 migrations).** Should retiring also stop a retired
    pipeline bot's shadow writes? **Default: page retire yes (phase B, typed name + reason, audited); a
    retired bot keeps collecting** (your 05-20 / 09-18 decision, I21) until you decide #137 B4.
+
+## 16. Owner decisions (2026-09-24) — these OVERRIDE the defaults above
+
+1. **Arm real money from the page: YES, two-step — but WITHOUT Telegram.** Step 1 type `ARM REAL MONEY`,
+   step 2 a written reason; the change is audited and a notification is SENT to the operator chat.
+   No 6-digit Telegram code.
+2. **No expiry on arming.** (The owner read "expiry" as per-bot selections expiring. Arming is the fleet
+   master key only; per-bot choices never expire. Decision: never expire.)
+3. **The page is THE control surface for own real money; Telegram is notifications only.** Owner: "let it
+   be controlled from /admin/bots — I want to turn the automatic placing on/off from there and select which
+   bots should actively bet." Placement pause/resume on the page (resume = typed confirm + reason).
+   Telegram `/pause` stays as a STOP-ONLY emergency command (stopping is always safe, I-rule "stop is one
+   click, anywhere"); Telegram `/resume` and any real-money START command are removed/refused with a pointer
+   to the page. `/pausepicks` / `/resumepicks` (publishing, 👥 PICKS) are unchanged.
+4. **Select which bots actively bet — from the page, any eligible bot.** The code whitelist `PLACEABLE_BOTS`
+   (F6) moves to the DB as the per-bot "Real-money eligible" switch (B6), editable ONLY through the audited
+   page write function, ON = typed bot name + reason. What stays in code, by design: the set of bots that
+   HAVE a placement path at all (shadow-ledger bots whose picks a placer reads — `bot_config.placeable` /
+   ledger = shadow and a supported book), so a bot with no placer can't be "enabled" into nothing. The
+   invariant I1 ("a default name is not a guard", 08-28) is preserved by: explicit per-bot row, no default,
+   UPDATE-only on seeded rows, server refusal for retired/locked bots, audit row per change.
+5. **Retire / un-retire from the page: YES**, with the per-bot preview dialog; forward-test bots can't be retired.
+6. **"Show on /picks" ships first** as the publish switch (default).
+7. **Executors on the Mac (F8):** the page cannot start launchd. "Automatic placing ON" only stakes if the
+   Mac placer is loaded and alive — so phase A adds a placer heartbeat (the placer writes `last_seen` to the
+   DB each loop) and the page shows Alive / Stale / Not reported next to the switch, never "on" when the
+   process is not running.

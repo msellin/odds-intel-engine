@@ -295,6 +295,32 @@ def mark_prekickoff_run(result: dict) -> None:
     )
 
 
+def mark_placer_heartbeat(placer: str, *, execute_requested: bool,
+                          execute_effective: bool, refused_reason: str | None = None,
+                          result: dict | None = None) -> None:
+    """#139 phase A (owner decision 7): each real-money placer run on the Mac
+    stamps `placer_heartbeats`, so /admin/bots can show the executor as Alive /
+    Stale / Not reported next to the money switches — the web cannot see
+    launchd, and it must never show "on" for a process that is not running.
+    Best-effort: a failed heartbeat never stops a run."""
+    import json as _json
+    import socket as _socket
+    _safe_write(
+        """INSERT INTO placer_heartbeats
+               (placer, host, last_seen_at, execute_requested, execute_effective,
+                refused_reason, result)
+           VALUES (%s, %s, NOW(), %s, %s, %s, %s::jsonb)
+           ON CONFLICT (placer) DO UPDATE SET
+               host = EXCLUDED.host, last_seen_at = EXCLUDED.last_seen_at,
+               execute_requested = EXCLUDED.execute_requested,
+               execute_effective = EXCLUDED.execute_effective,
+               refused_reason = EXCLUDED.refused_reason, result = EXCLUDED.result""",
+        (placer, _socket.gethostname()[:100], bool(execute_requested), bool(execute_effective),
+         (refused_reason or None) and str(refused_reason)[:500],
+         _json.dumps(result or {}, default=str)),
+    )
+
+
 def mark_cookies_refreshed(count: int) -> None:
     """FS cookie harvest succeeded — tracks last_refresh + count so /status
     can show 'cookies refreshed 3 min ago (5 cookies)'."""
@@ -355,19 +381,109 @@ def is_real_money_armed() -> tuple[bool, str | None]:
         return (False, f"unreadable ({type(e).__name__})")
 
 
-def set_real_money_armed(armed: bool, *, reason: str | None = None) -> None:
-    """Owner-only arming switch. Requires a reason when arming — the reason is
-    the audit trail for why money was allowed to move."""
+# ── audited fleet-switch writes (#139 phase A, migration 413) ─────────────────
+# Every setter below writes the change AND its `control_changes` audit row in ONE
+# statement, so the page's Activity log sees engine writes (the daemon
+# self-pause and auto-clear, the ops CLI) as well as page clicks. Without them
+# the log would show page clicks only and lie by omission — the 343 note-vs-flag
+# disagreement came from exactly that gap.
+#
+# If the audited write fails (e.g. control_changes not deployed yet), a STOP
+# direction (pause, disarm) falls back to the plain UPDATE so an emergency stop
+# never depends on the audit table; a START direction (resume, arm) does not
+# fall back and is logged as failed. This keeps each setter's old contract:
+# best-effort, never raises (except arming without a reason).
+# switch column -> (its _at column, its _reason column), spelled out so a grep for a column
+# finds its writer.
+_FLEET_SWITCHES = {
+    "placement_paused": ("placement_paused_at", "placement_paused_reason"),
+    "publishing_paused": ("publishing_paused_at", "publishing_paused_reason"),
+    "daemons_paused": ("daemons_paused_at", "daemons_paused_reason"),
+    "real_money_armed": ("real_money_armed_at", "real_money_armed_reason"),
+}
+
+
+def _caller_actor(depth: int = 3) -> str:
+    """'engine:<module>' of whoever called the public setter."""
+    import sys
+    try:
+        return f"engine:{sys._getframe(depth).f_globals.get('__name__', '?')}"
+    except Exception:  # noqa: BLE001
+        return "engine:?"
+
+
+def _resume_placement_via_fn(actor: str, reason: str | None) -> None:
+    """Resume placement from the ENGINE. Since migration 413 a table trigger refuses any
+    placement_paused true->false that does not come through `admin_set_control`, and the
+    function lets source='engine' clear only the daemon's OWN self-pause (exact marker, never a
+    strategic or operator pause). Everything else is resumed on /admin/bots. Never raises."""
+    try:
+        from workers.api_clients.db import execute_write_returning
+        rows = execute_write_returning(
+            "SELECT admin_set_control('placement_paused', NULL, 'false'::jsonb, %s, NULL, %s, "
+            "NULL, 'engine', NULL, NULL) AS r",
+            ((reason or None) and str(reason)[:500], str(actor)[:200]),
+        )
+        r = (rows[0]["r"] if rows else None) or {}
+        if r.get("outcome") not in ("applied", "noop"):
+            log.error("placement resume refused: %s", r.get("refusal") or r)
+    except Exception as e:  # noqa: BLE001
+        log.error("placement resume failed — NOT applied (a start never skips its audit): %s", e)
+
+
+def _set_fleet_switch(control: str, value: bool, stored_reason: str | None, *,
+                      audit_reason: str | None, actor: str | None, source: str,
+                      stop_direction: bool) -> None:
+    at_col, reason_col = _FLEET_SWITCHES[control]
+    actor = actor or _caller_actor()
+    # The two money STARTs are guarded at the table (migration 413): arming only through
+    # admin_arm_real_money (/admin/bots, owner), resuming only through admin_set_control.
+    if control == "real_money_armed" and value:
+        log.error("real money is armed only on /admin/bots (owner, typed ARM REAL MONEY + reason) "
+                  "— refusing the %s arm from %s", source, actor)
+        return
+    if control == "placement_paused" and not value:
+        _resume_placement_via_fn(actor, audit_reason)
+        return
+    # A pause over an existing pause is a no-op: it must never rewrite the standing reason
+    # (a strategic stop re-labelled as a daemon self-pause gets auto-cleared). The DB trigger
+    # (migration 413) enforces the same for every writer; this just avoids the write.
+    already = f" AND NOT coalesce({control}, false)" if value and control != "real_money_armed" else ""
+    plain = (f"UPDATE coolbet_session_state SET {control} = %s, "
+             f"{at_col} = CASE WHEN %s THEN NOW() ELSE NULL END, "
+             f"{reason_col} = %s WHERE id = 1{already}")
+    audited = f"""
+        WITH old AS (SELECT {control} AS v FROM coolbet_session_state WHERE id = 1),
+        upd AS ({plain} RETURNING {control} AS v)
+        INSERT INTO control_changes (actor, source, control, old_value, new_value, reason, outcome)
+        SELECT %s, %s, %s, to_jsonb(old.v), to_jsonb(upd.v), %s,
+               CASE WHEN old.v IS NOT DISTINCT FROM upd.v THEN 'noop' ELSE 'applied' END
+          FROM old, upd"""
+    try:
+        from workers.api_clients.db import execute_write
+        execute_write(audited, (value, value, stored_reason, str(actor)[:200], source, control,
+                                (audit_reason or None) and str(audit_reason)[:500]))
+        return
+    except Exception as e:  # noqa: BLE001
+        if not stop_direction:
+            log.error("%s=%s audited write failed — NOT applied (a start direction never "
+                      "skips its audit row): %s", control, value, e)
+            return
+        log.error("%s=%s audited write failed — applying the STOP without its audit row: %s",
+                  control, value, e)
+    _safe_write(plain, (value, value, stored_reason))
+
+
+def set_real_money_armed(armed: bool, *, reason: str | None = None,
+                         actor: str | None = None, source: str = "cli") -> None:
+    """Arming switch. Since #139 phase A (migration 413) real money is ARMED only on
+    /admin/bots through `admin_arm_real_money` (owner, typed ARM REAL MONEY + reason);
+    a table trigger refuses any other false->true, so `armed=True` here is refused
+    and logged. DISARMING (armed=False) works from anywhere and is audited."""
     if armed and not (reason or "").strip():
         raise ValueError("arming real money requires a reason")
-    _safe_write(
-        """UPDATE coolbet_session_state
-           SET real_money_armed = %s,
-               real_money_armed_at = CASE WHEN %s THEN NOW() ELSE NULL END,
-               real_money_armed_reason = %s
-           WHERE id = 1""",
-        (armed, armed, reason),
-    )
+    _set_fleet_switch("real_money_armed", armed, reason, audit_reason=reason,
+                      actor=actor, source=source, stop_direction=not armed)
 
 
 # SIGNAL-PAUSE-DECOUPLE (2026-08-27): the marker the daemon stamps into
@@ -389,7 +505,11 @@ def is_daemon_self_pause(reason: str | None) -> bool:
     PUBLISHED — `is_publishing_paused()` does, and neither kind of placement
     pause touches it. It still decides auto-clear eligibility.
     """
-    return bool(reason) and DAEMON_SELF_PAUSE_MARKER in reason
+    # PREFIX match on "<marker>:" — exactly how coolbet_mac_daemon writes it
+    # (f"{DAEMON_SELF_PAUSE_MARKER}: {n} consecutive errors over {m}m"). A substring
+    # match auto-resumed reasons like "this is NOT a daemon self-pause" (#139 review);
+    # the SQL function admin_set_control uses the same prefix rule (migration 413).
+    return bool(reason) and reason.startswith(f"{DAEMON_SELF_PAUSE_MARKER}:")
 
 
 def is_publishing_paused() -> tuple[bool, str | None]:
@@ -423,31 +543,28 @@ def is_publishing_paused() -> tuple[bool, str | None]:
         return (False, None)
 
 
-def set_publishing_paused(paused: bool, *, reason: str | None = None) -> None:
+def set_publishing_paused(paused: bool, *, reason: str | None = None,
+                          actor: str | None = None, source: str = "engine") -> None:
     """Operator kill switch for the customer picks channel. Telegram
-    /pausepicks sets it; /resumepicks clears it. Deliberately separate from
-    `set_placement_paused` — see `is_publishing_paused`."""
-    _safe_write(
-        """UPDATE coolbet_session_state
-           SET publishing_paused = %s,
-               publishing_paused_at = CASE WHEN %s THEN NOW() ELSE NULL END,
-               publishing_paused_reason = %s
-           WHERE id = 1""",
-        (paused, paused, reason if paused else None),
-    )
+    /pausepicks sets it; /resumepicks clears it; /admin/bots has its own switch.
+    Deliberately separate from `set_placement_paused` — see
+    `is_publishing_paused`. Audited (`control_changes`). Neither direction moves
+    money, so both fall back to the plain write if the audit table is missing."""
+    _set_fleet_switch("publishing_paused", paused, reason if paused else None,
+                      audit_reason=reason, actor=actor, source=source, stop_direction=True)
 
 
-def set_placement_paused(paused: bool, *, reason: str | None = None) -> None:
-    """Operator kill switch. Telegram /pause sets paused=True with a reason;
-    /resume clears both. Plain UPDATE — no validation — operator owns this."""
-    _safe_write(
-        """UPDATE coolbet_session_state
-           SET placement_paused = %s,
-               placement_paused_at = CASE WHEN %s THEN NOW() ELSE NULL END,
-               placement_paused_reason = %s
-           WHERE id = 1""",
-        (paused, paused, reason if paused else None),
-    )
+def set_placement_paused(paused: bool, *, reason: str | None = None,
+                         actor: str | None = None, source: str = "engine") -> None:
+    """Operator kill switch. Engine callers: the daemon self-pause (True) and its
+    auto-clear (False). Operators pause from /admin/bots or Telegram /pause and
+    resume ONLY from /admin/bots (owner decision 3, 2026-09-24). Audited
+    (`control_changes`); a pause falls back to the plain write if the audit
+    table is unavailable. A resume goes through `admin_set_control`, which lets
+    the engine clear ONLY its own daemon self-pause — never an operator or
+    strategic (OWN-PATH-VERDICT) pause."""
+    _set_fleet_switch("placement_paused", paused, reason if paused else None,
+                      audit_reason=reason, actor=actor, source=source, stop_direction=paused)
 
 
 def is_daemons_paused() -> tuple[bool, str | None]:
@@ -479,17 +596,13 @@ def is_daemons_paused() -> tuple[bool, str | None]:
         return (True, f"unreadable ({type(e).__name__}) — failing CLOSED")
 
 
-def set_daemons_paused(paused: bool, *, reason: str | None = None) -> None:
-    """Set the global Coolbet footprint pause. Written by the dashboard API and
-    the ops CLI. Plain UPDATE — the operator owns this switch."""
-    _safe_write(
-        """UPDATE coolbet_session_state
-           SET daemons_paused = %s,
-               daemons_paused_at = CASE WHEN %s THEN NOW() ELSE NULL END,
-               daemons_paused_reason = %s
-           WHERE id = 1""",
-        (paused, paused, reason if paused else None),
-    )
+def set_daemons_paused(paused: bool, *, reason: str | None = None,
+                       actor: str | None = None, source: str = "engine") -> None:
+    """Set the global Coolbet footprint pause. Written by the dashboard, the
+    ops CLI and /admin/bots. Audited (`control_changes`); not a money switch, so
+    both directions fall back to the plain write if the audit table is missing."""
+    _set_fleet_switch("daemons_paused", paused, reason if paused else None,
+                      audit_reason=reason, actor=actor, source=source, stop_direction=True)
 
 
 def get_or_create_device_id() -> str:

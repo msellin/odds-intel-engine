@@ -470,7 +470,7 @@ def route(execute: bool = False, *, stage: bool = False, limit: int | None = Non
     # from the UI placer. Any guard that reads real_bets without it sees half the
     # book and will happily double-bet the half it cannot see.
     from scripts.place_coolbet_ui import (
-        PLACEABLE_BOTS, BOT_THRESHOLDS, load_picks,
+        placement_path_bots, BOT_THRESHOLDS, load_picks,
         already_placed, match_exposure, exposure_conflict, spent_today,
         KICKOFF_CUTOFF_MIN, MAX_BETS_PER_DAY, MAX_STAKE_PER_DAY,
     )
@@ -510,10 +510,10 @@ def route(execute: bool = False, *, stage: bool = False, limit: int | None = Non
         return market_family(m)
 
     picks = []
-    # REAL money loads only bots the DB toggle enables (code whitelist ∩
-    # coolbet_placer_bots); report/stage modes may look at every placeable bot.
+    # REAL money loads only bots the DB toggle enables (placement path ∩
+    # coolbet_placer_bots); report/stage modes may look at every capable bot.
     from workers.automation.placement_gate import effective_allowlist as _eff
-    bots_to_load = sorted(_eff()) if real else sorted(PLACEABLE_BOTS)
+    bots_to_load = sorted(_eff()) if real else sorted(placement_path_bots())
     for bot in bots_to_load:
         try:
             picks.extend(load_picks(bot))
@@ -743,6 +743,17 @@ def main() -> int:
         print(json.dumps(monitor(), indent=2, ensure_ascii=False, default=str))
         return 0
     res = route(execute=a.execute, stage=a.stage, limit=a.limit)
+    # #139 phase A (owner decision 7): heartbeat for /admin/bots (Alive / Stale /
+    # Not reported). Written after the run so it records what the gate decided.
+    try:
+        from workers.automation.coolbet_state import mark_placer_heartbeat
+        mark_placer_heartbeat(
+            "best_price_router", execute_requested=bool(a.execute),
+            execute_effective=res.get("mode") == "real",
+            refused_reason=res.get("real_refused"),
+            result={k: res.get(k) for k in ("mode", "candidates", "routed", "dispatched")})
+    except Exception:  # noqa: BLE001 — a heartbeat never fails a run
+        pass
     print(json.dumps(res, indent=2, ensure_ascii=False, default=str))
     return 0
 

@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # SMOKE-SUITE-AUDIT 2026-09-01: playwright is imported lazily, inside the one
 # function that actually drives a browser. It used to be a module-level import,
 # which meant simply reading a constant from this file — e.g.
-# `from scripts.place_coolbet_ui import PLACEABLE_BOTS`, which the
+# `from scripts.place_coolbet_ui import BOT_THRESHOLDS`, which the
 # COOLBET-PLACER-CONTROL smoke test does — required the browser driver to be
 # installed. playwright is not in requirements.txt, so that test failed in CI
 # with ModuleNotFoundError while passing locally. _session_alive() already
@@ -77,18 +77,17 @@ DEFAULT_BOT = "bot_coolbet_ou_model_v1"  # value_v1 (line-shop) retired 2026-09-
 #
 # The effective allowlist is an INTERSECTION of two independent gates:
 #
-#   PLACEABLE_BOTS  ∩  ui_place_enabled_bots()
-#   └ code-level        └ runtime DB toggle (coolbet_placer_bots)
+#   placement_path_bots()  ∩  ui_place_enabled_bots()
+#   └ code rule: the bot HAS  └ runtime DB eligibility (coolbet_placer_bots)
+#     a placement path
 #
-# PLACEABLE_BOTS is the hard boundary: the complete set of bots that may EVER
-# stake real money. It is source code, changed only by a deploy + review. A bot
-# outside it can NEVER place, no matter what the DB says — so inserting an
-# enabled row in coolbet_placer_bots for some experimental bot does nothing.
+# (Until 2026-09-24 the left side was a hand-listed PLACEABLE_BOTS set of two
+# names; owner decision 4 replaced it with the rule — see placement_gate.)
+# A bot with no placement path can NEVER place, whatever the DB says.
 #
-# ui_place_enabled_bots() reads the runtime toggle. A superadmin flips a bot on
-# or off from /admin/shadow-bots without a deploy and without touching pick
-# generation. Because it is intersected with PLACEABLE_BOTS, the DB can only
-# ever REDUCE what places — never widen it past what the code already trusts.
+# ui_place_enabled_bots() reads the runtime switch. A superadmin flips a bot on
+# (typed name + reason) or off from /admin/bots without a deploy and without
+# touching pick generation; every change is audited in control_changes.
 #
 # This replaces the old code-level set EXECUTE_ALLOWED_BOTS and the
 # COOLBET_UI_MODEL_EDGE_OU env flag. The seed (migration 310) keeps
@@ -100,21 +99,21 @@ DEFAULT_BOT = "bot_coolbet_ou_model_v1"  # value_v1 (line-shop) retired 2026-09-
 # pipeline — matching, pricing, snapshots, audit rows — WITHOUT any path by
 # which an unproven strategy reaches the account. A default is not a guard;
 # --bot could name any bot and --execute would have honoured it.
-# PLACEMENT-GATE (2026-09-15): PLACEABLE_BOTS, ui_place_enabled_bots and
-# effective_allowlist now LIVE in workers/automation/placement_gate.py — the one
-# module every real-money executor (this script, coolbet_ui_placer.stage_bet, the
-# best-price router incl. its Unibet arm, coolbet_placer.place_all_bets) calls
-# FIRST. They are re-exported here so existing imports and smoke pins keep
-# working. The whitelist is still a hardcoded set on purpose.
+# PLACEMENT-GATE (2026-09-15): the allowlist functions LIVE in
+# workers/automation/placement_gate.py — the one module every real-money executor
+# (this script, coolbet_ui_placer.stage_bet, the best-price router incl. its
+# Unibet arm, coolbet_placer.place_all_bets) calls FIRST — and are re-exported here.
+#
+# #139 phase A (owner decision 4, 2026-09-24): the hand-listed two-name set is
+# gone. "Code-level" now means the RULE for which bots have a placement path
+# (placement_gate.placement_path_reason: shadow_bets ledger, pre-match, priced at
+# Coolbet or Unibet-Site, not a publish-only test), applied to the exported
+# bot_config; the eligibility list is coolbet_placer_bots (seeded OFF, switched
+# from /admin/bots, audited). effective = placement_path_bots() ∩ eligible.
 from workers.automation.placement_gate import (  # noqa: E402
-    PLACEABLE_BOTS, ui_place_enabled_bots, effective_allowlist,
+    placement_path_bots, ui_place_enabled_bots, effective_allowlist,
     assert_run_may_place, assert_may_place, PlacementRefused,
 )
-# Pinned by smoke tests as the code-level boundary on what may EVER stake:
-# PLACEABLE_BOTS = {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}  (defined in placement_gate.py)
-assert PLACEABLE_BOTS == {"bot_coolbet_ou_model_v1", "bot_coolbet_1x2_model_v1"}, (
-    "placement_gate.PLACEABLE_BOTS drifted from the pinned set — this assertion "
-    "and the smoke pins move together")
 
 # COOLBET-LINESHOP-OU-STOP (2026-09-08) and its REALMONEY_SKIP_MARKET_PREFIXES /
 # COOLBET_UI_PLACE_OU override were removed 2026-09-15 (OWN Phase 5 cull): they
@@ -185,8 +184,8 @@ KICKOFF_CUTOFF_MIN = 3
 #     2026-09-01 after the 2026-08-31 incident (19 bets / EUR 190 / -EUR 92.80).
 #     That incident's mechanism was repeated bets on ONE match, which is now
 #     guarded directly rather than incidentally by the daily count.
-#   * PLACEABLE_BOTS ∩ coolbet_placer_bots toggle — only enabled, code-trusted
-#     bots may ever place (value_v1 seeded ON, ou_model_v1 seeded OFF).
+#   * placement_path_bots() ∩ coolbet_placer_bots eligibility — only bots with a
+#     placement path that the owner switched ON may ever place.
 #   * MARKET_FAMILY — at most one bet per (match, family).
 #   * KICKOFF_CUTOFF_MIN — nothing placed inside 3 min of kickoff.
 # Residual risk accepted by the owner 2026-09-05: a loop spanning MANY distinct
@@ -577,9 +576,10 @@ def reconcile_account_to_real_bets(norms: list[dict]) -> int:
     # row to it, so the real-money count reflects the account.
     _placeable_bot_ids: set[str] = set()
     try:
+        # #139: the capable set (placement_path_bots), no longer a two-name list.
         _pb = execute_query(
             "SELECT id::text AS id FROM bots WHERE name = ANY(%s)",
-            [list(PLACEABLE_BOTS)],
+            [sorted(placement_path_bots())],
         )
         _placeable_bot_ids = {r["id"] for r in (_pb or [])}
     except Exception:
@@ -965,14 +965,14 @@ def main() -> int:
     ap.add_argument("--limit", type=int)
     ap.add_argument("--all-enabled", action="store_true",
                     help="place ALL bots currently enabled in coolbet_placer_bots "
-                         "(intersected with PLACEABLE_BOTS) in one run, sharing one "
+                         "(intersected with placement_path_bots) in one run, sharing one "
                          "browser session and one lock. Ignores --bot.")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    # Effective real-money allowlist for THIS run: PLACEABLE_BOTS (code-level
-    # hard whitelist) ∩ the DB toggle (coolbet_placer_bots). Read once; every
+    # Effective real-money allowlist for THIS run: placement_path_bots() (code
+    # rule) ∩ the DB eligibility list (coolbet_placer_bots). Read once; every
     # per-bot execute decision below checks against it. Fails CLOSED (empty set)
     # on any DB error, so a toggle we can't read means "place nothing".
     allowed = effective_allowlist()
@@ -984,6 +984,7 @@ def main() -> int:
     # proceeds as a DRY-RUN so matching/pricing/audit rows are produced; it just
     # cannot stake. The per-pick gate inside stage_bet re-checks everything.
     run_refused: str | None = None
+    execute_requested = bool(args.execute)
     if args.execute:
         try:
             assert_run_may_place()
@@ -992,27 +993,38 @@ def main() -> int:
             print(f"REFUSING --execute for this run: {run_refused}. Running DRY.")
             args.execute = False
 
+    # #139 phase A (owner decision 7): stamp the placer heartbeat on EVERY run, so
+    # /admin/bots can show this executor as Alive / Stale / Not reported — the web
+    # cannot see launchd. Best-effort; carries the caps the per-pick gate enforces.
+    from workers.automation.coolbet_state import mark_placer_heartbeat
+    mark_placer_heartbeat(
+        "coolbet_ui_placer", execute_requested=execute_requested,
+        execute_effective=bool(args.execute), refused_reason=run_refused,
+        result={"allowed": sorted(allowed), "caps": {
+            "max_bets_per_day": MAX_BETS_PER_DAY, "max_stake_per_day": MAX_STAKE_PER_DAY,
+            "kickoff_cutoff_min": KICKOFF_CUTOFF_MIN}})
+
     if args.all_enabled:
         # Only enabled + placeable bots run. They are all in `allowed`, so
         # --execute is honoured for each; --bot is ignored in this mode.
         bots_to_run = sorted(allowed)
         if not bots_to_run:
             print("no bots enabled for real-money UI placement in "
-                  "coolbet_placer_bots (∩ PLACEABLE_BOTS) — nothing to do.")
+                  "coolbet_placer_bots (∩ placement_path_bots) — nothing to do.")
             return 0
     else:
         bots_to_run = [args.bot]
 
     # Per-bot execute gate. A bot outside the effective allowlist is forced to
     # dry-run no matter what flags are passed — the same rule the single-bot
-    # path always enforced, now sourced from PLACEABLE_BOTS ∩ DB toggle rather
+    # path always enforced, now sourced from placement_path_bots ∩ DB toggle rather
     # than a lone code constant. --stage/--execute still print & record; they
     # just never touch the account for a disallowed bot.
     bot_execute = {b: (args.execute and b in allowed) for b in bots_to_run}
     for b in bots_to_run:
         if args.execute and not bot_execute[b]:
-            reason = ("not in PLACEABLE_BOTS (hard code-level whitelist)"
-                      if b not in PLACEABLE_BOTS
+            reason = ("no placement path (placement_gate.placement_path_reason)"
+                      if b not in placement_path_bots()
                       else "ui_place_enabled is OFF in coolbet_placer_bots")
             print(f"REFUSING --execute for {b!r}: {reason}. "
                   f"Running dry for this bot instead.")
