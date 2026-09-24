@@ -514,6 +514,10 @@ def run_results(hours_back: int = 36) -> dict:
         rr, ss = rel_res.get(e) or {}, rel_st.get(e) or {}
         if rr.get("team1Score") is None:
             continue
+        # matchStatusId 0 = not started: the feed still carries team1Score 0 / team2Score 0,
+        # which stored 0-0 "results" (Ajax W 8-0 recorded as 0-0 — DQ audit 2026-09-24)
+        if not rr.get("matchStatusId"):
+            continue
         ch, ca = _pair(ss, "corners")
         yh, ya = _pair(ss, "yellowCards")
         rh, ra = _pair(ss, "redCards")

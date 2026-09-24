@@ -52855,6 +52855,7 @@ def test_tonybet_results_regular_time():
     assert "ft_h, ft_a = hth + h2h, hta + h2a" in src
     assert 'rr.get("matchStatusId"), ft_h, ft_a,' in src, "FT columns must be regular time"
     assert "AND corners_home IS NOT NULL" in src, "fallback must skip reset snapshots"
+    assert 'if not rr.get("matchStatusId")' in src, "a not-started row (status 0) is not a 0-0 result"
     assert tf._period([{"number": 1, "team1Score": 1, "team2Score": 0},
                        {"number": 2, "team1Score": 0, "team2Score": 2}], 2) == (0, 2)
 
@@ -53027,7 +53028,8 @@ def test_betfair_exchange_reader():
     from workers.utils import footprint
     src = inspect.getsource(b)
     assert b._PROXY.endswith(":1082") and ":1081" not in src
-    assert "INSERT INTO exchange_quotes" in src and "odds_snapshots" not in src.split('"""', 2)[2]
+    assert "INSERT INTO exchange_quotes" in src and "INSERT INTO odds_snapshots" not in src
+    assert "store_book_odds_snapshots" not in src, "exchange quotes never enter odds_snapshots"
     for bad in ("identitysso", "placeOrders", "/login"):
         assert bad not in src
     assert footprint.budget("Betfair-Exchange")
@@ -53040,6 +53042,7 @@ def test_betfair_exchange_reader():
     assert b.line_of("ASIAN_HANDICAP", "home", -1.25) == -1.25
     assert b.line_of("ASIAN_HANDICAP", "away", 1.25) == -1.25
     assert b.line_of("ALT_TOTAL_GOALS", "over", 2.75) == 2.75
+    assert b.line_of("OVER_UNDER_25", "over", 0.0) == 2.5, "fixed O/U rows carry their line (join key vs odds_snapshots)"
     assert b.runner_selection("BOTH_TEAMS_TO_SCORE", "Yes", "A", "B") == "yes"
     assert b.runner_selection("ASIAN_HANDICAP", "B", "A", "B") == "away"
     assert b.EXTRA_MIN_MATCHED >= 1000, "extra markets only for events with a liquid match-odds market"

@@ -161,7 +161,9 @@ def line_of(market_type: str, selection: str, handicap: float | None) -> float |
         return float(handicap) if selection == "home" else -float(handicap)
     if market_type == "ALT_TOTAL_GOALS":
         return float(handicap)
-    return None
+    # fixed-line O/U markets carry their line too — odds_snapshots stores 2.5 on
+    # over_under_25, and a NULL here made every exchange-vs-Pinnacle O/U join empty
+    return {"OVER_UNDER_15": 1.5, "OVER_UNDER_25": 2.5, "OVER_UNDER_35": 3.5}.get(market_type)
 
 
 def _best(ladder: list | None) -> tuple[float | None, float | None]:
