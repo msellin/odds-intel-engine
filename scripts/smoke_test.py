@@ -52927,10 +52927,6 @@ def test_book_footprint():
             fp.log.removeHandler(_h)
         # a refusal must say which process refused and what it believed (2026-09-24)
         assert any("footprint REFUSED Coolbet" in m and "pid=" in m for m in _seen), _seen
-        finally:
-            fp.log.removeHandler(_h)
-        # a refusal must say which process refused and what it believed (2026-09-24)
-        assert any("footprint REFUSED Coolbet" in m and "pid=" in m for m in _seen), _seen
         fp._db_count = lambda book: 0
         fp.check("Coolbet")
     finally:
