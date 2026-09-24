@@ -2981,3 +2981,46 @@ tuned on one anchor must be re-derived for the other; (2) never pool `clv_sharp`
 `clv_cons`, and every reader that falls back must carry the source; (3) where Pinnacle is
 missing, 51% of fixtures have only 1–2 books — no method makes an anchor there.
 
+
+## 74. Weighting the consensus buys nothing; a 3–4-book close is usable for CLV only with its own label (#116, 2026-09-24)
+
+**Weighting (`scripts/anchor_weighting_research.py`, rejected).** Five alternatives to the
+equal-weight mean, on the SAME member books the resolver picks: accuracy weights (each
+book's log-loss excess vs the leave-one-out consensus, estimated on a TRAIN window before
+2026-08-15, scored on the 40-d HOLDOUT), margin weights (1/overround), de-correlation
+weights, trimmed mean, median. 30 paired tests fixed up front (5 variants × outcome LL /
+closing error vs Pinnacle close / vs a 3-held-out-book close × 1X2 and O/U 2.5), Holm.
+* **Outcome log-loss: every variant ties equal weight in both markets** (1X2 n=10,272,
+  O/U n=8,327; all |t| ≤ 2.2, none survives Holm). The forecast-combination puzzle holds.
+* Closing error: accuracy weights move the anchor **0.026 pp (1X2) / 0.042 pp (O/U)**
+  closer to the Pinnacle close on an error of 1.68 / 0.97 pp (t −4.9 / −8.2) — real but
+  ~2–4% of the error and ~1/40 of any edge floor. Margin weights help 1X2 and HURT O/U;
+  de-correlation hurts O/U; median/trim hurt vs held-out books in 1X2.
+* Why accuracy weights look closer to Pinnacle: they up-weight **Marathonbet and 1xBet,
+  whose residuals vs the consensus correlate +0.88 (1X2) / +0.84 (O/U) — effectively one
+  opinion, and a Pinnacle-follower**. "Closer to Pinnacle" is partly "copies Pinnacle",
+  which is circular for an anchor meant for fixtures WITHOUT Pinnacle. 888Sport~William
+  Hill +0.65 is the next near-duplicate pair. Nothing else above +0.33.
+* Decision: equal weight stays. Re-open only with a new mechanism, not by re-tuning.
+
+**Thin close (`leg_clv_sharp.clv_cons_thin`, migration 394; `scripts/anchor_thin_consensus_quality.py`).**
+* Coverage (7 d, 5,580 legs): 541 legs gain a thin close (295 on 3 books, 246 on 4), but
+  **only 34 legs / 8 fixtures had no other CLV at all** — the rest already had `clv_sharp`.
+  Mostly shadow-bot corners (338) and O/U (137). The legs still without any CLV are
+  Asian handicap (unsupported) and team totals / DNB with neither Pinnacle nor 3 books.
+* Closing quality by subsampling (≥5-book fixtures, 7 d; OPTIMISTIC, real thin fixtures
+  are lower leagues): a 3-book close is 0.69 pp (1X2, p90 1.35) / 0.36 pp (O/U) from the full
+  close; 4 books 0.50 / 0.26. Against the Pinnacle close the error grows 1.22→1.40 pp (3 books,
+  +15%) and →1.31 (4 books, +7%) in 1X2; O/U 0.77→0.84 / 0.83. In CLV units a 3-book close
+  adds ~1.7 pts (1X2) / 0.8 pts (O/U) of mean per-side noise vs the full close.
+* Real thin fixtures that also have a Pinnacle close (small n: 1X2 63, O/U 221): thin→Pinnacle
+  error 1.24–1.45 pp (1X2), 0.85–1.06 pp (O/U) — the same range as the subsample.
+* Outcome log-loss (120 d): a random 3- or 4-book subset is worse than the full consensus
+  by +0.0001 in 1X2 (t +2.6/+2.8) and ties in O/U — negligible.
+* Agreement with `clv_sharp` (507 legs with both): r 0.979; mean offset −1.82 pts vs −0.87
+  for `clv_cons` — but WITHIN market the thin offset matches the ≥5 one (corners −2.45 vs
+  −2.26, O/U −0.56 vs −0.28, 1X2 −1.00 vs −1.01); the pooled gap is market mix (corners).
+* **Verdict: trustworthy as a directional, per-leg CLV with its own label** — same bias
+  as `clv_cons` within market, ~15% more error than a ≥5-book close. Report it SEPARATELY,
+  by market, never averaged with `clv_cons` or `clv_sharp`, and never as a staking input or
+  gate. Its practical value is small: it mostly duplicates legs that already have `clv_sharp`.

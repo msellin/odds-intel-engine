@@ -37,6 +37,11 @@ DEFECTS OF THE OLDER IMPLEMENTATIONS, FIXED HERE (ANALYSIS_GOTCHAS refs)
   * the book being priced is never part of its own anchor (`exclude_book`).
   * Coolbet is out of the anchor set — the one book measured WORSE than Pinnacle
     on outcomes (ΔLL +0.0058, t +2.94, docs/PUBLISHED_PICKS_GRADING_2026_09_23.md).
+
+WHY EQUAL WEIGHT ([[#116]], 2026-09-24): accuracy-, margin- and de-correlation-weighted
+means, a trimmed mean and a median were tested against this mean on held-out data
+(scripts/anchor_weighting_research.py, 30 tests, Holm). None beat it on outcome log-loss;
+the best closing-line gain was 0.03–0.04 pp. Equal weight stays — ANALYSIS_GOTCHAS §74.
 """
 from __future__ import annotations
 
