@@ -53543,6 +53543,26 @@ def test_board_guard_btts_ah():
     assert "_ids = {id(r) for r in _kept}" in inspect.getsource(ce)
 
 
+@test("MANUAL-REAL-BET-ATOMIC — logging a hand-placed bet is one transaction; price & stake are editable (#022)")
+def test_manual_real_bet_atomic():
+    """#022 (2026-09-24): (a) /api/admin/real-bet de-duplicated with SELECT-then-INSERT across
+    two PostgREST calls (5 historical duplicate groups) — now one call to
+    record_manual_real_bet (advisory lock + same-day check + insert). A unique index was NOT
+    used: it needs the 5 real-money duplicate groups deleted (owner's call) and would also
+    bind the placer / reconciler. (b) the confirm step lets the operator enter the price and
+    stake actually taken (it logged the page's cached price and a hardcoded stake). (c) the
+    truncation banner fires only when a capped book is actually missing a pick's price."""
+    sql = _engine_path("supabase/migrations/407_record_manual_real_bet.sql").read_text()
+    assert "pg_advisory_xact_lock" in sql and "'already_placed'" in sql
+    assert "TO service_role" in sql and "TO anon" not in sql
+    route = _web_path("src/app/api/admin/real-bet/route.ts").read_text()
+    assert 'sa.rpc("record_manual_real_bet"' in route and '.from("real_bets")\n    .insert' not in route
+    pa = _web_path("src/components/shadow-bots/place-action.tsx").read_text()
+    assert "actualOdds: takenOdds" in pa and "stake: takenStake" in pa
+    q = _web_path("src/lib/shadow-bots/queries.ts").read_text()
+    assert "prematch.some((u) => !seen.has(" in q
+
+
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")
 def test_anon_least_privilege():
     """#072 (2026-09-24): anon held SELECT on 134/134 public relations via default privileges;
