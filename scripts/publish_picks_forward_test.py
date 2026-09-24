@@ -1054,6 +1054,15 @@ def main() -> int:
         print("\n(dry run — pass --send to publish)")
         return 0
 
+    # The operator's /pausepicks applies to the manual send too (#139 review, 2026-09-24);
+    # the scheduled job already honours it. Refuse rather than record-without-send: a
+    # manual --send is an explicit "post these now", so a pause should stop it outright.
+    from workers.automation.coolbet_state import is_publishing_paused
+    _paused, _why = is_publishing_paused()
+    if _paused:
+        print(f"\npublishing is paused ({_why or 'no reason given'}) — /resumepicks first. Nothing sent.")
+        return 1
+
     if not args.no_header:
         send_telegram_public(HEADER.format(n=len(picks)))
 

@@ -44369,6 +44369,10 @@ def test_picks_forward_test_scheduled():
         _st.is_publishing_paused = lambda: (False, None)
         _sch.job_publish_picks_forward_test()
         assert _sends == [], "legs claimed while paused must NOT be sent after /resumepicks"
+        _m = open("scripts/publish_picks_forward_test.py").read()
+        _mm = _m[_m.index("def main("):]
+        assert _mm.index("is_publishing_paused()") < _mm.index("send_telegram_public("), \
+            "the manual --send path must honour /pausepicks too"
     finally:
         (_pub.load_candidates, _pub.claim, _pub.attach_message_id,
          _pub.junk_anchor_arm, _tg.send_telegram_public,
