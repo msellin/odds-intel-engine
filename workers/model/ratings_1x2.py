@@ -81,6 +81,7 @@ def build_features(m: pd.DataFrame, stats: pd.DataFrame | None, P: dict | None =
         m = m.assign(sot_h=np.nan, sot_a=np.nan)
 
     elo = {}
+    seen: set = set()
     league_elo = defaultdict(lambda: [0.0, 0])          # sum, n  -> newcomer start
     pi_h, pi_a = defaultdict(float), defaultdict(float)
     att, dfn = defaultdict(float), defaultdict(float)
@@ -97,7 +98,7 @@ def build_features(m: pd.DataFrame, stats: pd.DataFrame | None, P: dict | None =
     def elo_of(t, league):
         if t not in elo:
             s, n = league_elo[league]
-            elo[t] = (s / n - 50.0) if n >= 5 else 1500.0   # newcomers start a bit below league mean
+            elo[t] = (s / n - P.get("elo_new_offset", 50.0)) if n >= 5 else 1500.0   # newcomers start below league mean
         return elo[t]
 
     def pi_exp(r):
@@ -109,6 +110,10 @@ def build_features(m: pd.DataFrame, stats: pd.DataFrame | None, P: dict | None =
         for r in grp.itertuples(index=False):
             h, a, L = r.home, r.away, r.league_id
             eh, ea = elo_of(h, L), elo_of(a, L)
+            for t in (h, a):                       # NEWC: newcomers' Poisson strength prior
+                if t not in seen:
+                    seen.add(t)
+                    att[t] = P.get("dp_new_att", 0.0); dfn[t] = P.get("dp_new_def", 0.0)
             lh = math.exp(lmu[L] + lhfa[L] + att[h] - dfn[a]); la = math.exp(lmu[L] + att[a] - dfn[h])
             hlh = math.exp(hmu[L] + hhfa[L] + hatt[h] - hdfn[a]); hla = math.exp(hmu[L] + hatt[a] - hdfn[h])
             slh = math.exp(smu[L] + shfa[L] + satt[h] - sdfn[a]); sla = math.exp(smu[L] + satt[a] - sdfn[h])

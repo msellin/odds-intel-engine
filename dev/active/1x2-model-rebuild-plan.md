@@ -244,3 +244,99 @@ worse out-of-sample — no evidence of an edge over Pinnacle, as predicted.
 
 **Decision:** ship H-D8+ as `r1x2_d8plus_v1` in SHADOW (migration 412, `workers/jobs/rating_1x2_shadow.py`,
 05:30/17:30 UTC). Promotion into the served 1X2 blend = owner decision on the forward record.
+
+## Pre-registration — ROUND 3 (2026-09-24, written BEFORE any round-3 run)
+Owner: *"the model isn't only about beating Pinnacle … we WILL build an even better 1x2 model"*. The goal
+is the most accurate 1X2 probability on EVERY match — the ~50% Pinnacle does not price matter most for
+both picks and our own bets. Round 3 has three parts; the baseline for all of them is **H-D8+**
+(round-2 winner, full history). Two research agents (web literature; our own bookmaker/data inventory)
+feed parts 3b and 3c, which are pre-registered in their own dated sections before they run.
+
+### 3a — small modelling ideas (no new data)
+| arm | change vs H-D8+ |
+|---|---|
+| NEWC | newcomer prior: a team's first rating in a league starts at the league's 25th-percentile Elo and bottom-quartile Poisson strength instead of mean-50 / zero (promoted and new teams are weaker than average) |
+| ORD | ordered logit (home > draw > away on one latent scale) instead of multinomial |
+| TIERX | D8+ features interacted with league tier (tier dummies × features) |
+| DECAY | training rows weighted by recency (half-life 365 d) |
+| ENS | average of D8+ logit and the dynamic-Poisson probabilities, weight chosen on validation |
+| C | L2 strength of the logit tuned on validation (C ∈ {0.1, 0.3, 1, 3}) |
+
+**Selection:** each arm is scored on the VALIDATION slice (fit ≤ 2026-02-28, score 2026-03-01..05-31).
+Arms that beat H-D8+ there by ≥ 0.001 are combined, and the combination is confirmed ONCE on the Q1
+window (2026-08-31..). Adopted only if it beats H-D8+ on both. Expected: each arm moves log-loss by
+≤ 0.003; NEWC most likely to help (cold start was the round-2 lesson).
+
+### 2026-09-24 — RESULT 3a: every arm FAILS the ≥ 0.001 bar — score-only inputs are saturated
+Validation slice (22,179 rows), H-D8+ baseline 1.0113: C ∈ {0.1,0.3,3} ±0.0000; DECAY hl 365 −0.0003,
+730 −0.0002; TIERX +0.0007; **ORD +0.0050 (worse)**; ENS with DP −0.0001; NEWC Elo offset 100/150
+−0.0001, Poisson newcomer prior ±0.0000. Nothing adopted; the Q1 window was not consulted. This agrees
+with the web-research finding (Hubáček et al. 2022: Berrar, pi, bivariate/double Poisson, Weibull all
+within 0.0002 RPS on 91,155 matches — a ceiling for score-only models). Remaining gains must come from
+information scores do not carry: bookmaker consensus (3b), lineups/player strength (3c).
+The NEWC parameters stay in `ratings_1x2.py` with defaults that reproduce the adopted model exactly.
+
+## Pre-registration — ROUND 3b: COMBINED model (ratings + bookmaker consensus + Pinnacle), 2026-09-24, BEFORE the run
+Inputs from the two research agents: (web) score-only models share a ceiling; the bookmaker consensus is
+the strongest single input (Robberechts & Davis RPS 0.2020 vs best rating 0.2035; 2023 challenge: nothing
+beat the consensus). (Data audit) the equal-weight de-vigged consensus of our non-Pinnacle books matches
+Pinnacle (0.9781 vs 0.9783, n 18,877) and on no-Pinnacle matches beats our rating model by 0.070 log-loss;
+multi-book history is usable from 2026-05-01 (~22k matches with ≥1 book).
+
+**Books in the consensus:** 1xBet, Marathonbet, Bet365, William Hill, Betano, Betfair (sportsbook),
+BetVictor, Coolbet, Epicbet, Unibet-Site, Tonybet, and — history only, they no longer quote — Dafabet,
+10Bet, Unibet, Superbet, 888Sport, BetWin, Betfred. **Excluded:** Pinnacle (its own input), SBO (worst
+accuracy, 15% margin), Unibet-Kambi (retired, off-site prices), Avg/Max (synthetic), Betfair Exchange
+(exchange, separate), junk names. Each book's triple is proportionally de-vigged; triples whose home
+probability is > 0.25 from the other books' median are dropped (catches transposed/wrong-fixture rows,
+~0.1%); the consensus is the mean in log-odds space; `n_books` kept.
+
+**Sources per match:** R = rating model H-D8+ (logit coefficients fitted ≤ 2026-04-30, so every
+combiner training row is out-of-sample for it); C = consensus; P = Pinnacle (proportional de-vig).
+**Arms:**
+| arm | rule |
+|---|---|
+| R | rating only (baseline = current shadow model) |
+| RULE | P if present, else C, else R |
+| COMB | multinomial logit per availability group {P&C, P only, C only, none} on the log-odds (vs draw) of the available sources + log(n_books) |
+| COMB+AF | COMB with API-Football's own prediction % as an extra source (77.5% coverage) |
+
+**Price timing — two variants, both reported:** CLOSE (last pre-kickoff price; upper bound, matches a
+prediction refreshed near kickoff) and OPEN (opening price; what a morning prediction can always see).
+**Windows:** combiner fitted 2026-05-01..07-31, selected on 08-01..08-30; confirmed ONCE on the Q1 window
+2026-08-31.. with the combiner refitted on 05-01..08-30.
+**Adoption:** COMB (or COMB+AF) is adopted if it beats RULE overall on the Q1 window with the paired CI
+excluding 0, and is not worse than RULE in any availability bucket by more than 0.002.
+**Expected:** COMB ≈ RULE on P&C rows (the market already carries the rating information: α = 0), a
+small gain on C-only rows with few books (rating adds where the consensus is thin), overall log-loss
+≈ 0.95–0.97 vs 1.008 for R. AF adds ≤ 0.002, mostly on the "none" group.
+
+### 2026-09-24 — RESULT 3b SELECTION (fit 05-01..07-31, score 08-01..08-30; Q1 window NOT yet read)
+| CLOSE prices | n | R | RULE | COMB | COMB+AF |
+|---|---|---|---|---|---|
+| ALL | 13,886 | 0.9971 | 0.9770 | **0.9749** (−0.0022 vs RULE, CI −0.0032..−0.0010) | 0.9755 |
+| P&C | 6,813 | 1.0182 | 0.9837 | 0.9827 | 0.9844 |
+| C only | 1,378 | 0.9555 | 0.9240 | **0.9138** (−0.0102) | 0.9182 |
+| none | 5,695 | 0.9819 | 0.9819 | 0.9803 | **0.9786** (−0.0032) |
+OPEN prices: same shape (ALL R 0.9971 / RULE 0.9799 / COMB 0.9786 / COMB+AF 0.9788; none: COMB+AF 0.9748).
+API-Football's prediction helps ONLY where no book prices the match and hurts where the market exists.
+**Selection (made here, before the confirmation run): COMB-HYB = COMB, with the AF inputs used in the
+"none" group only.** It is confirmed once on the Q1 window against RULE under the pre-registered rule.
+
+### 2026-09-24 — RESULT 3b CONFIRMATION (Q1 window 08-31..09-24, 12,640 matches, combiner fit 05-01..08-30): **COMB-HYB ADOPTED**
+| CLOSE | n | R | RULE (P→C→R) | COMB-HYB | COMB-HYB − RULE (95% CI) |
+|---|---|---|---|---|---|
+| ALL | 12,640 | 1.0049 | 0.9810 | **0.9763** | −0.0048 [−0.0065, −0.0029] |
+| P&C (RULE = Pinnacle alone) | 6,517 | 1.0243 | 0.9812 | **0.9795** | −0.0017 [−0.0033, −0.0002] |
+| C only | 2,500 | 0.9834 | 0.9749 | **0.9619** | −0.0130 [−0.0187, −0.0070] |
+| none (ratings + AF) | 3,623 | 0.9849 | 0.9849 | **0.9803** | −0.0045 [−0.0082, −0.0008] |
+OPEN prices: ALL 0.9792 vs RULE 0.9816 (−0.0025 [−0.0041, −0.0008]); no bucket worse than RULE.
+Passes the pre-registered rule (beats RULE overall, CI excludes 0; no bucket worse by > 0.002).
+
+**Read-outs.** (1) vs the shipped XGBoost head (1.0711 on the same window): **−0.095 log-loss, −8.9%**.
+(2) On matches Pinnacle prices, ratings + consensus + Pinnacle beats **Pinnacle alone** by 0.0017 (CI
+excludes 0) — the first positive combined-vs-Pinnacle result in this project, though it uses other books'
+CLOSING prices, so as a betting edge it is only as good as the price timing (OPEN: −0.0014, CI touches 0).
+(3) API-Football's prediction adds information only where no book prices the match — matches the owner's
+note that it is worse than uniform on its own. (4) Tonybet's Sportradar fair probabilities
+(`book_fair_probs`, 305 fixtures) are a candidate extra book once they have history.

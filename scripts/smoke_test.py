@@ -54931,5 +54931,33 @@ def test_rating_1x2_bot_twin():
     assert "INSERT INTO coolbet_placer_bots" not in mig, "no real-money eligibility row for this bot"
 
 
+@test("MARKET-CONSENSUS-1X2 — #141 de-vigged multi-book consensus: Pinnacle separate, excluded books ignored, outliers dropped")
+def test_market_consensus_1x2():
+    """MARKET-CONSENSUS-1X2 ([[#141]] round 3b). The combined 1X2 model's market input.
+    Its value rests on four rules: Pinnacle is a separate input and never inside the
+    consensus; excluded books (SBO, Unibet-Kambi, Avg/Max, the exchange) never count;
+    a book > 0.25 from the others' median (a transposed or wrong-fixture price) is
+    dropped; the three legs of a triple must be written within 120 s of each other."""
+    import pandas as pd
+    from workers.model.market_consensus_1x2 import consensus, CONSENSUS_BOOKS
+    assert "Pinnacle" not in CONSENSUS_BOOKS and "SBO" not in CONSENSUS_BOOKS
+    assert "Unibet-Kambi" not in CONSENSUS_BOOKS and "Avg" not in CONSENSUS_BOOKS
+    rows = []
+    def add(book, h, d, a, t=0.0, mid="m1"):
+        for sel, o in (("home", h), ("draw", d), ("away", a)):
+            rows.append(dict(match_id=mid, bookmaker=book, selection=sel, odds=o, ts=t))
+    add("Pinnacle", 2.00, 3.50, 4.00)
+    add("Bet365", 2.00, 3.40, 3.90); add("1xBet", 2.05, 3.40, 3.80); add("Betano", 1.95, 3.50, 4.00)
+    add("Coolbet", 6.00, 4.00, 1.50)                      # transposed home/away -> outlier
+    # NB the 0.25 guard only catches LARGE inversions: a 2.00/4.00 swap moves home prob
+    # ~0.22 and passes; the write-time mirror guard (#006) is the defence for those.
+    add("SBO", 1.20, 6.00, 12.0)                           # excluded book, must not move the consensus
+    add("Epicbet", 2.00, 3.40, 3.90, t=0.0); rows[-1]["ts"] = 500.0   # legs 500 s apart -> rejected
+    c = consensus(pd.DataFrame(rows)).loc["m1"]
+    assert c.n_books == 3, f"expected Bet365/1xBet/Betano only, got n_books={c.n_books}"
+    assert 0.45 < c.c_h < 0.52 and abs(c.c_h + c.c_d + c.c_a - 1) < 1e-9
+    assert abs(c.pin_h - (1/2.0) / (1/2.0 + 1/3.5 + 1/4.0)) < 1e-9, "Pinnacle must be its own de-vigged input"
+
+
 if __name__ == "__main__":
     main()
