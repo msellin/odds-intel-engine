@@ -1619,7 +1619,6 @@ def run_league_sweep(
         )
         _tol_s = _FUZZY_DATE_TOLERANCE_HOURS * 3600
         for af_m in af_matches:
-            af_key = f"{af_m['home']} vs {af_m['away']}".lower()
             af_date = af_m.get("date")
             if af_date is not None and getattr(af_date, "tzinfo", None) is None:
                 af_date = af_date.replace(tzinfo=_tz.utc)
@@ -1629,8 +1628,19 @@ def run_league_sweep(
                     cb_start = _parse_iso_start(cb_e.get("start"))
                     if cb_start is not None and abs((cb_start - af_date).total_seconds()) > _tol_s:
                         continue
-                cb_key = f"{cb_e['home']} vs {cb_e['away']}".lower()
-                sc = fuzz.token_sort_ratio(af_key, cb_key)
+                # #001 (2026-09-24): was token_sort_ratio on "home vs away" strings —
+                # order-insensitive BY DEFINITION, so it could never tell a reversed
+                # listing from the right one. Score each side against its own side,
+                # and drop a candidate that fits better swapped (same rule as
+                # coolbet_matching.match_event_to_af / coolbet_placer.fuzzy_match_event).
+                from workers.automation.coolbet_matching import norm_team, team_sim, _pair_score
+                _ah, _aw = norm_team(af_m["home"]), norm_team(af_m["away"])
+                _ch, _cw = norm_team(cb_e["home"]), norm_team(cb_e["away"])
+                _direct = _pair_score(team_sim(_ch, _ah), team_sim(_cw, _aw))
+                _swapped = _pair_score(team_sim(_ch, _aw), team_sim(_cw, _ah))
+                if _swapped > _direct:
+                    continue
+                sc = _direct
                 if sc > best_score:
                     best, best_score = cb_e, sc
             if not best or best_score < 65:

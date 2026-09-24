@@ -420,7 +420,7 @@ def run_bulk(hours: int = 48, dry_run: bool = False) -> dict:
     c["matched"] = len(pairs)
 
     if pairs and not dry_run:
-        record_book_events(BOOKMAKER, [(m["id"], str(ev["id"]), ev["start"], None)
+        record_book_events(BOOKMAKER, [(m["id"], str(ev["id"]), ev["start"], ev.get("_match_score"))
                                        for m, ev in pairs])
 
     for m, ev in pairs:

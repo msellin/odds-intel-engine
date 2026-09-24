@@ -1653,7 +1653,20 @@ def fuzzy_match_event(
             return max(fuzz.partial_ratio(v, side) for v in variants)
         direct = min(_best(home_variants, ev_home), _best(away_variants, ev_away))
         swapped = min(_best(home_variants, ev_away), _best(away_variants, ev_home))
-        score = max(direct, swapped)
+        # #001 (2026-09-24): ORIENTATION-STRICT — was `max(direct, swapped)`, which
+        # accepted a book event listing our AWAY team as its home side, and every
+        # side-mapper (Epicbet / Unibet / Tonybet / Coolbet parsers) then wrote the
+        # book's "1" into our "home": mirrored 1X2, sign-flipped AH, swapped team
+        # totals. A candidate that fits better swapped is now refused and logged;
+        # never re-oriented silently. See coolbet_matching.ORIENTATION_REJECTS.
+        if swapped > direct:
+            if swapped >= _FUZZY_THRESHOLD:
+                from workers.automation.coolbet_matching import ORIENTATION_REJECTS
+                ORIENTATION_REJECTS.append((home, away, ev.get("home"), ev.get("away"), swapped))
+                log.info("ORIENTATION: '%s v %s' matches '%s v %s' only SWAPPED (%d vs direct %d) — refused",
+                         home, away, ev.get("home"), ev.get("away"), swapped, direct)
+            continue
+        score = direct
         if score > best_score:
             runner_up_score = best_score      # the score this one just beat
             best_score = score
@@ -1736,6 +1749,10 @@ def fuzzy_match_event(
         "n/a" if ko_delta_min is None else ko_delta_min,
         skipped_date, skipped_squad,
     )
+    # #001: expose the score so feeds can store it in book_event_map.match_score —
+    # Epicbet / Unibet-Site / Tonybet pairings were recorded with NULL, so none of
+    # them could be audited. Set on the event dict itself (callers keep identity).
+    best_event["_match_score"] = best_score
     return best_event
 
 

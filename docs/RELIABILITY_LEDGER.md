@@ -1315,6 +1315,19 @@ and `is_opening` so they are reversible; and the matcher refuses the pairing at 
 (`coolbet_placer.fuzzy_match_event` 45-min start tolerance + orientation-consistent scoring,
 `unique_pairs`). Two independent reviews before anything moved.
 
+**Completed by #001 (2026-09-24): orientation-STRICT, in every matcher.** "Orientation-consistent"
+still took `max(direct, swapped)`, so a book listing our away team as its home side was
+accepted and every side-mapper wrote the book's "1" as our home — a mirrored 1X2, a
+sign-flipped handicap, swapped team totals (O/U and BTTS are orientation-free, which is why
+the mirror guard alone never saw most of it). `match_event_to_af` (main Coolbet board sweep,
+Betfair, Odds API fallback), `fuzzy_match_event` (Epicbet / Unibet-Site / Tonybet / placer) and
+the league-sweep matcher now accept only the direct orientation; a candidate that fits better
+swapped is dropped outright (a shared token — "Flora Tallinn" / "Levadia Tallinn" — keeps a
+reversed listing's direct score at 81.8, so scoring it by `direct` alone is not enough).
+Refusals are logged (`ORIENTATION: … only SWAPPED — refused`) and counted in
+`coolbet_matching.ORIENTATION_REJECTS`; if they are ever frequent, add re-orientation — never
+silently. Replayed on a cached 576-event Coolbet board: 132/132 matches identical, 0 lost.
+
 
 ## 25. A public role that inherits every new table (2026-09-24)
 

@@ -1130,11 +1130,11 @@ def _run_bulk_inner(sess, matches, days, sleep_s, dry_run):
         log.info("epicbet: %d pairings dropped — their event was also claimed by a closer fixture", dropped)
 
     # NEAR-KICKOFF-CAPTURE-2026-09-11: persist the pairing so the near-kickoff
-    # job can fetch one fixture by id. fuzzy_match_event exposes no score.
+    # job can fetch one fixture by id. fuzzy_match_event sets ev['_match_score'] (#001).
     if pairs and not dry_run:
         from workers.api_clients.supabase_client import record_book_events
         record_book_events(BOOKMAKER, [
-            (m["id"], ev.get("id"), ev.get("start") or None, None)
+            (m["id"], ev.get("id"), ev.get("start") or None, ev.get("_match_score"))
             for m, ev in pairs if ev.get("id") is not None
         ])
 

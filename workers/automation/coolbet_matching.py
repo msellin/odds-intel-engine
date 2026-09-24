@@ -27,6 +27,8 @@ old global cross-league search.
 """
 from __future__ import annotations
 
+import logging
+
 import html
 import re
 import unicodedata
@@ -185,6 +187,12 @@ def _pair_score(s1: float, s2: float) -> float:
     return lo
 
 
+# #001: pairings refused because they only matched with home/away swapped (per process;
+# sweeps log len() so the refusal rate is visible — if it is ever large, add re-orientation).
+ORIENTATION_REJECTS: list[tuple] = []
+log = logging.getLogger(__name__)
+
+
 def af_country_for_iso(region_icon: str | None) -> str | None:
     return ISO_TO_AF_COUNTRY.get(region_icon) if region_icon else None
 
@@ -227,7 +235,25 @@ def match_event_to_af(
         # every reserve-suffix spelling. [STRONG-ANCHOR 2026-09-10]
         direct = _pair_score(team_sim(eh, ah), team_sim(ea, aw))
         swapped = _pair_score(team_sim(eh, aw), team_sim(ea, ah))
-        sc = max(direct, swapped)
+        # #001 (2026-09-24): ORIENTATION-STRICT. This used to take max(direct,
+        # swapped) and return only the score, so a book event listing OUR away
+        # team as its home side was accepted — and every side-mapper downstream
+        # then wrote the book's "1" into our "home": a mirrored 1X2, a sign-flipped
+        # handicap, swapped team totals (O/U and BTTS are orientation-free, which is
+        # why the mirror guard alone never saw most of it). Only the direct
+        # orientation can match now; a pairing that would match only swapped is
+        # refused and logged, never re-oriented silently. Same rule as the one feed
+        # that already did this right (coolbet_ui_placer maps sides by name).
+        # A candidate that fits BETTER swapped is out entirely — scoring it by its
+        # direct score is not enough: names sharing a token ("Flora Tallinn" /
+        # "Levadia Tallinn") keep the direct score high (81.8) on a reversed listing.
+        if swapped > direct:
+            if swapped >= name_threshold:
+                ORIENTATION_REJECTS.append((cb_home, cb_away, a.get("home"), a.get("away"), round(swapped, 1)))
+                log.info("ORIENTATION: '%s v %s' matches '%s v %s' only SWAPPED (%.0f vs direct %.0f) — refused",
+                         cb_home, cb_away, a.get("home"), a.get("away"), swapped, direct)
+            continue
+        sc = direct
         if sc > best_score:
             second = best_score
             best_score = sc

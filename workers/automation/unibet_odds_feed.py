@@ -682,7 +682,7 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
                     break
                 key = ev["id"]
                 c["matched"] += 1
-                mapped.append((str(f["id"]), key, ev.get("start") or None, None))
+                mapped.append((str(f["id"]), key, ev.get("start") or None, ev.get("_match_score")))
                 if not refresh_due(f["date"], _last_ub.get(str(f["id"])), datetime.now(timezone.utc)):
                     c["refresh_skipped"] += 1
                     continue

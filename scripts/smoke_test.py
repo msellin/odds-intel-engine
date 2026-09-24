@@ -53444,6 +53444,35 @@ def test_telegram_no_dead_end():
     assert "https://t.me/oddsintelpicks" in src and "https://oddsintel.app/picks" in src
 
 
+@test("MATCHER-ORIENTATION-STRICT — a book listing our teams reversed is refused, never stored mirrored (#001)")
+def test_matcher_orientation_strict():
+    """#001 (2026-09-24): match_event_to_af (main Coolbet board sweep, Betfair exchange,
+    Odds API fallback), fuzzy_match_event (Epicbet / Unibet-Site / Tonybet / placer) and the
+    league-sweep matcher all took max(direct, swapped) or an order-blind token_sort_ratio, so
+    a reversed listing was accepted and every side-mapper wrote the book's "1" as our home.
+    Now only the direct orientation matches. A shared token ("Tallinn") must not let a
+    reversed listing through on its direct score (81.8 before the candidate-drop rule)."""
+    import inspect
+    from datetime import datetime, timezone
+    from workers.automation import coolbet_matching as cm, coolbet_placer as cp, coolbet_explorer as ce
+    ko = datetime(2026, 9, 24, 18, tzinfo=timezone.utc)
+    af = [{"id": 1, "ko": ko, "home": "Flora Tallinn", "away": "Levadia Tallinn", "country": "Estonia"}]
+    assert cm.match_event_to_af("Flora Tallinn", "Levadia Tallinn", "ee", ko, af)[0] is not None
+    assert cm.match_event_to_af("Levadia Tallinn", "Flora Tallinn", "ee", ko, af)[0] is None
+    assert cm.match_event_to_af("Stoke", "Hull", "gb", ko,
+        [{"id": 3, "ko": ko, "home": "Stoke City", "away": "Hull City", "country": "England"}])[0] is not None
+    evs = [{"home": "Maccabi Tel Aviv", "away": "Maccabi Netanya", "start": ko.isoformat()}]
+    assert cp.fuzzy_match_event("Maccabi Netanya", "Maccabi Tel Aviv", evs, ko) is None
+    hit = cp.fuzzy_match_event("Maccabi Tel Aviv", "Maccabi Netanya", evs, ko)
+    assert hit is not None and hit.get("_match_score") == 100, "score exposed for book_event_map"
+    src = inspect.getsource(ce)
+    assert "fuzz.token_sort_ratio(af_key, cb_key)" not in src
+    assert "if _swapped > _direct:" in src
+    for f in ("unibet_odds_feed", "epicbet_explorer", "tonybet_feed"):
+        mod = __import__(f"workers.automation.{f}", fromlist=["x"])
+        assert 'ev.get("_match_score")' in inspect.getsource(mod), f"{f} must store the match score"
+
+
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")
 def test_anon_least_privilege():
     """#072 (2026-09-24): anon held SELECT on 134/134 public relations via default privileges;
