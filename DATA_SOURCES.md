@@ -212,7 +212,7 @@ simply fewer callers) is not yet filed as its own task — see AF-QUOTA-REALLOCA
 | T10 | `/fixtures/headtohead` | Morning | ✅ Done |
 | T11 | `/sidelined` | Backfill script | ✅ Done |
 | T12 | `/fixtures/players` | Settlement | ✅ Done |
-| T13 | `/transfers` | Backfill (opt-in `--transfers`) | ⛔ **Retired from the daily default 2026-09-21** (AF-TRANSFERS-NO-READER). Fetcher kept for manual runs; 1.44M historical rows kept. |
+| T13 | `/transfers` | Backfill (opt-in `--transfers`) | ⛔ **Retired from the daily default 2026-09-21** (AF-TRANSFERS-NO-READER). Fetcher kept for manual runs; 1.44M historical rows kept. ⛔ **REMOVED 2026-09-24 ([[#087]])**: fetcher, the still-scheduled `job_backfill_transfers` and all readers deleted; `team_transfers` slated for DROP (awaiting permission for the migration). |
 
 ---
 

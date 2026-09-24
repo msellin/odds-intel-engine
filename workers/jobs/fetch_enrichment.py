@@ -41,13 +41,12 @@ from workers.api_clients.api_football import (
     get_coaches, parse_coaches,
     get_venue, parse_venue,
     get_sidelined_by_players_bulk, parse_sidelined,
-    get_transfers, parse_transfers,
 )
 from workers.api_clients.supabase_client import (
     store_team_season_stats, store_match_injuries,
     store_league_standings, store_match_h2h,
     store_team_coaches, store_venues,
-    store_player_sidelined, store_team_transfers,
+    store_player_sidelined,
 )
 from workers.api_clients.db import execute_query
 from workers.utils.pipeline_utils import (
@@ -58,7 +57,9 @@ from workers.utils.pipeline_utils import (
 
 console = Console()
 
-# AF-TRANSFERS-NO-READER (2026-09-21). `transfers` is OFF by default.
+# AF-TRANSFERS-NO-READER (2026-09-21). `transfers` was OFF by default — and on 2026-09-24
+# ([[#087]]) the fetch, its second writer (job_backfill_transfers) and the 883 MB table itself
+# were REMOVED (migration 400). The history below is kept as the reason.
 #
 # The chain looked alive at every single link, which is why it survived:
 #   132 AF calls/day -> team_transfers (1,437,485 rows / 882 MB, written as
@@ -593,70 +594,6 @@ def fetch_player_sidelined(fixture_meta: dict) -> int:
     return stored
 
 
-def fetch_transfers(fixture_meta: dict) -> int:
-    """Fetch recent transfer history for every team playing today.
-
-    Calls /transfers?team={id} once per unique team AF ID, with a 30-day cache.
-    Cache is tracked in team_transfer_cache so teams with no transfer activity
-    are still marked fetched and not re-fetched every run.
-    Stores into team_transfers, which feeds the squad_disruption_home/away
-    signals (supabase_client.py:5482).
-
-    ⚠️ RETIRED FROM THE DEFAULT SET 2026-09-21 (AF-TRANSFERS-NO-READER). Those
-    signals are consumed by nothing: train.py lists squad_disruption_* among the
-    features deliberately EXCLUDED (9% coverage, no signal in the screen), and
-    no surface reads them. The function is kept for a manual
-    `--components transfers` run.
-    """
-    console.print("\n[cyan]Transfers: Fetching team transfer history...[/cyan]")
-    from datetime import datetime, timezone, timedelta
-    from workers.api_clients.db import execute_query as _eq, execute_write as _ew
-
-    team_af_ids: set[int] = set()
-    for meta in fixture_meta.values():
-        if meta.get("home_team_api_id"):
-            team_af_ids.add(meta["home_team_api_id"])
-        if meta.get("away_team_api_id"):
-            team_af_ids.add(meta["away_team_api_id"])
-
-    if not team_af_ids:
-        console.print("  No team AF IDs — skipping transfers fetch")
-        return 0
-
-    # 30-day cache tracked in team_transfer_cache (independent of whether any rows were stored)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-    try:
-        cached = _eq(
-            "SELECT team_api_id FROM team_transfer_cache WHERE team_api_id = ANY(%s) AND fetched_at > %s",
-            [list(team_af_ids), cutoff]
-        )
-        cached_ids = {r["team_api_id"] for r in cached}
-    except Exception:
-        cached_ids = set()
-
-    to_fetch = list(team_af_ids - cached_ids)[:100]  # cap per run — rest picked up next day
-    console.print(f"  {len(team_af_ids)} teams, {len(cached_ids)} cached, {len(to_fetch)} to fetch (capped at 100)")
-
-    stored = 0
-    for team_af_id in to_fetch:
-        try:
-            raw = get_transfers(team_af_id)
-            if raw:
-                rows = parse_transfers(raw, team_api_id=team_af_id)
-                stored += store_team_transfers(team_af_id, rows)
-            # Always mark fetched — even teams with no transfers shouldn't be re-fetched daily
-            _ew(
-                "INSERT INTO team_transfer_cache (team_api_id, fetched_at) VALUES (%s, NOW())"
-                " ON CONFLICT (team_api_id) DO UPDATE SET fetched_at = NOW()",
-                (team_af_id,)
-            )
-        except Exception as e:
-            console.print(f"  [yellow]Transfers fetch failed for team {team_af_id}: {e}[/yellow]")
-
-    console.print(f"  {stored} transfer records stored across {len(to_fetch)} teams")
-    return stored
-
-
 def run_enrichment(target_date: str = None, components: set = None, team_af_id: int = None):
     """Run enrichment pipeline. Callable by scheduler or CLI."""
     from workers.utils.kill_switches import is_disabled
@@ -719,9 +656,6 @@ def run_enrichment(target_date: str = None, components: set = None, team_af_id: 
         if "sidelined" in components:
             total_records += fetch_player_sidelined(fixture_meta)
 
-        if "transfers" in components:
-            total_records += fetch_transfers(fixture_meta)
-
         log_pipeline_complete(
             run_id,
             fixtures_count=len(fixture_meta),
@@ -745,7 +679,7 @@ def main():
     parser = argparse.ArgumentParser(description="Enrich today's fixtures with team stats, injuries, standings, H2H")
     parser.add_argument("--date", type=str, default=None, help="Date (YYYY-MM-DD, default: today)")
     parser.add_argument("--components", type=str, default="all",
-                        help="Comma-separated: injuries,team_stats,standings,h2h,coaches,venues,sidelined,transfers or 'all'")
+                        help="Comma-separated: injuries,team_stats,standings,h2h,coaches,venues,sidelined or 'all'")
     parser.add_argument("--team", type=int, default=None,
                         help="AF team ID — limit team_stats to a single team (use with --components team_stats)")
     args = parser.parse_args()

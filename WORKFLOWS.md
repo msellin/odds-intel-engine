@@ -357,7 +357,7 @@ restart. No extra hosting cost on the VPS; blast radius isolated.
   `api_football_id`.
 
 ### ② Enrichment (`fetch_enrichment.py`)
-- **04:15 (full):** standings (T9), H2H (T10), team stats (T2), injuries (T3), coaches (MGR-CHANGE), venues (AF-VENUES), sidelined (AF-SIDELINED). **transfers RETIRED from the default set 2026-09-21** (AF-TRANSFERS-NO-READER — 132 calls/day for a `squad_disruption_*` signal that `train.py` explicitly excludes and no surface reads; run manually with `--components transfers` if it is ever wanted)
+- **04:15 (full):** standings (T9), H2H (T10), team stats (T2), injuries (T3), coaches (MGR-CHANGE), venues (AF-VENUES), sidelined (AF-SIDELINED). **transfers RETIRED from the default set 2026-09-21** (AF-TRANSFERS-NO-READER — 132 calls/day for a `squad_disruption_*` signal that `train.py` explicitly excludes and no surface reads; the `--components transfers` option and the separately scheduled `job_backfill_transfers` (every 25 min) were both REMOVED 2026-09-24, [[#087]])
 - **10:30/16:00 (refresh):** injuries only (AF-STANDINGS-DAILY — standings no longer intraday; 10:30 moved from 12:00 to feed 11:00 betting)
 - **13:00 (full, N7):** injuries + H2H + team_stats — ensures fresh context for afternoon/evening betting refreshes (standings excluded per AF-STANDINGS-DAILY)
 - **23:30 (nightly):** standings only — standings update ~1x/week so daily once-at-night is sufficient (~40 calls/day saved)

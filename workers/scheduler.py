@@ -2195,11 +2195,8 @@ def job_backfill_coaches():
     _run_job("backfill_coaches", run_batch, batch_size=10)
 
 
-def job_backfill_transfers():
-    """Transfers backfill — 25 teams/run every 25min.
-    Fetches /transfers for teams not in team_transfer_cache. Self-skips when done."""
-    from scripts.backfill_transfers import run_batch
-    _run_job("backfill_transfers", run_batch, batch_size=25)
+# job_backfill_transfers REMOVED 2026-09-24 ([[#087]]): team_transfers was dropped
+# (migration 400) — nothing consumed it (squad_disruption is excluded from every model).
 
 
 def job_backfill_live_prices():
@@ -3046,8 +3043,6 @@ def main():
                       id="hist_backfill", name="Match Stats/Events Backfill")
     scheduler.add_job(job_backfill_coaches, IntervalTrigger(minutes=25),
                       id="backfill_coaches", name="Coaches Backfill")
-    scheduler.add_job(job_backfill_transfers, IntervalTrigger(minutes=25),
-                      id="backfill_transfers", name="Transfers Backfill")
     scheduler.add_job(job_backfill_live_prices, IntervalTrigger(minutes=30),
                       id="backfill_live_prices", name="odds_at_pick_live producer")
     scheduler.add_job(job_backfill_half_scores, CronTrigger(hour=22, minute=30),

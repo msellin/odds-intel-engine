@@ -93,6 +93,8 @@ def probe_standings():
 # ─── /transfers ─────────────────────────────────────────────────────────────
 
 def probe_transfers():
+    # ⚠️ team_transfers is no longer written (2026-09-24, [[#087]]) and is slated to be
+    # dropped — this historical one-off probe (2026-05-10) samples teams from it.
     _hr("/transfers  — bulk via ?team=A-B")
     # Get 3 teams that have AF IDs and recent transfer activity
     rows = execute_query("""

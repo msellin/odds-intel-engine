@@ -3264,26 +3264,6 @@ def _():
         del os.environ["DISABLE_NEWS_CHECKER"]
 
 
-@test("store_team_transfers — uses bulk execute_values (not per-row connections)")
-def _():
-    import ast, pathlib
-    src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
-    # Verify no for-loop opening get_conn() inside store_team_transfers
-    fn_start = src.index("def store_team_transfers(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    assert "execute_values" in fn_body, "store_team_transfers must use execute_values for bulk insert"
-    assert fn_body.count("get_conn()") == 1, (
-        f"store_team_transfers should open exactly 1 DB connection (got {fn_body.count('get_conn()')})"
-    )
-    # Must dedupe on the conflict key before bulk upsert — AF returns multi-leg
-    # transfers on the same (player, date) which trip "ON CONFLICT cannot affect row a second time".
-    assert 'r["team_api_id"], r["player_id"], r["transfer_date"]' in fn_body, (
-        "store_team_transfers must dedupe rows on (team_api_id, player_id, transfer_date) "
-        "before execute_values to avoid Postgres 'ON CONFLICT cannot affect row a second time' errors"
-    )
-
-
 @test("INPLAY-UUID-FIX — mid converted to str before prematch dict lookup")
 def _():
     import pathlib
@@ -12645,23 +12625,6 @@ def _():
     )
 
 
-@test("BACKFILL-TRANSFER-PARSE — parse_transfers skips malformed AF dates instead of crashing batch")
-def _():
-    from workers.api_clients.api_football import parse_transfers
-    # Real-world failure: AF returned date "010897" (DDMMYY w/o separators)
-    # which crashed the entire psycopg2 batch via DATE column rejection.
-    bad = [{
-        "player": {"id": 90523, "name": "Alexander Manninger"},
-        "transfers": [
-            {"date": "010897", "type": "Free", "teams": {"in": {"id": 1}, "out": {"id": 2}}},
-            {"date": "2024-07-01", "type": "Free", "teams": {"in": {"id": 1}, "out": {"id": 2}}},
-        ],
-    }]
-    rows = parse_transfers(bad, team_api_id=4256)
-    assert len(rows) == 1, f"Expected malformed date dropped, got {len(rows)} rows"
-    assert rows[0]["transfer_date"] == "2024-07-01"
-
-
 @test("FETCH-ODDS-CONCURRENT — pages 2..N fetched via ThreadPoolExecutor")
 def _():
     """Source guard. The original loop was strictly sequential (`while page <=
@@ -12687,33 +12650,6 @@ def _():
     )
     assert "from concurrent.futures import ThreadPoolExecutor" in src, (
         "Module must import ThreadPoolExecutor"
-    )
-
-
-@test("BACKFILL-TRANSFERS-CONCURRENT — backfill_transfers fans out via ThreadPoolExecutor, no per-team sleep")
-def _():
-    """Source guard. Sequential per-team fetch + 70ms sleep ran ~1.4s/team
-    real-world (network-bound), turning a 4430-team backfill into ~100 min.
-    Fix fans out via ThreadPoolExecutor; _get's _rate_lock paces actual HTTP
-    at MIN_REQUEST_INTERVAL=120ms so 8 workers cannot breach AF's budget.
-    The per-team time.sleep(RATE_DELAY) must be gone — it's redundant when
-    pacing is enforced globally inside _get."""
-    import pathlib
-    src = pathlib.Path("scripts/backfill_transfers.py").read_text()
-
-    assert "from concurrent.futures import ThreadPoolExecutor" in src, (
-        "backfill_transfers must import ThreadPoolExecutor"
-    )
-    assert "ThreadPoolExecutor(max_workers=" in src, (
-        "Both run() and run_batch() must use ThreadPoolExecutor for fan-out"
-    )
-    # Old per-team sleep is redundant once _rate_lock paces _get globally
-    assert "time.sleep(RATE_DELAY)" not in src, (
-        "Per-team time.sleep(RATE_DELAY) must be gone — _get's _rate_lock "
-        "already paces requests; per-thread sleep just slows each worker."
-    )
-    assert "RATE_DELAY" not in src, (
-        "RATE_DELAY constant should be removed — pacing lives in _get's _rate_lock"
     )
 
 
@@ -49770,50 +49706,29 @@ def test_coolbet_probe_imperva_beats_timing():
 
 
 
-@test("AF-TRANSFERS-RETIRED — a fetch whose output nothing consumes stays off by default")
-def test_af_transfers_retired():
-    """AF-TRANSFERS-NO-READER (2026-09-21).
+@test("AF-TRANSFERS-REMOVED — no code writes or reads team_transfers, and no job fetches /transfers")
+def test_af_transfers_removed():
+    """AF-TRANSFERS-NO-READER (2026-09-21) stopped the default enrichment fetch, but
+    the chain had a SECOND writer nobody noticed: `job_backfill_transfers`, still
+    scheduled every 25 minutes. On 2026-09-24 ([[#087]], owner "yes") both writers,
+    the store/parse/get functions, the squad_disruption signal step and the ops
+    count were removed. squad_disruption_* is excluded from every model, so nothing
+    downstream loses an input. The table itself is dropped separately.
 
-    132 AF calls/day kept `team_transfers` (1,437,485 rows / 882 MB) current so
-    that `squad_disruption_home/away` could be computed — signals which
-    `train.py` lists among the features "deliberately EXCLUDED" (9% coverage,
-    no signal in the screen) and which no page or API reads.
-
-    WHAT MADE THIS HARD TO SEE, and the reason the test is worth having: every
-    individual link was alive. The fetch ran this week. The table was written
-    this week. The signal was computed at 04:01 this morning, 16,639 rows of it.
-    Only the END of the chain is dead, and nothing about the first three links
-    hints at that. The original ticket concluded "nothing reads team_transfers",
-    which was WRONG — there is a reader; its output is what nobody reads.
-
-    Pinned: transfers is out of the default component set, and the data is kept.
-    Deleting 882 MB of history is irreversible and postponing it costs nothing,
-    so the thing that stops is the ONGOING COST, not the record.
+    Guard: nothing in the live code paths may write or read the table, or call
+    /transfers again — a reintroduced writer would quietly restart the AF spend.
     """
-    src = _engine_path("workers/jobs/fetch_enrichment.py").read_text(encoding="utf-8")
-
     import re as _re
-    m = _re.search(r"^ALL_COMPONENTS = \{([^}]*)\}", src, _re.M)
-    assert m, "ALL_COMPONENTS is gone"
-    assert '"transfers"' not in m.group(1), (
-        "transfers is back in the DEFAULT enrichment set. It costs 132 AF "
-        "calls/day to keep an 882 MB table current for a signal train.py "
-        "explicitly excludes — if that changed, update train.py's exclusion "
-        "note in the same commit, because the two cannot both be right")
-    assert "_RETIRED_COMPONENTS" in src and '"transfers"' in src, (
-        "the retirement must be recorded as a named set, not by silently "
-        "deleting the string — a reader has to be able to tell a retirement "
-        "from a typo")
-
-    # The function itself stays: a manual --components transfers run must remain
-    # possible, because the fix here is to stop paying daily, not to lose the
-    # capability.
-    assert "def fetch_transfers(" in src, (
-        "fetch_transfers() was deleted. Retiring the DEFAULT is reversible; "
-        "deleting the fetcher makes re-enabling a rewrite")
-    return "transfers off by default, fetcher kept, retirement named"
-
-
+    for rel in ("workers/scheduler.py", "workers/jobs/fetch_enrichment.py",
+                "workers/api_clients/supabase_client.py", "workers/api_clients/api_football.py",
+                "scripts/backfill_team_enrichment.py"):
+        src = _engine_path(rel).read_text(encoding="utf-8")
+        code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+        assert not _re.search(r"\b(FROM|INTO|UPDATE)\s+team_transfers\b", code), f"{rel} still touches team_transfers"
+        for fn in ("store_team_transfers", "parse_transfers", "get_transfers(", "fetch_transfers(",
+                   "job_backfill_transfers", "run_transfers"):
+            assert fn not in code, f"{rel} still has {fn}"
+    assert not _engine_path("scripts/backfill_transfers.py").exists(), "backfill_transfers.py is removed"
 
 @test("CAN-STAKE-ONE-DEFINITION — the web strip must not claim the engine's verdict")
 def test_can_stake_one_definition():

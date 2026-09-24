@@ -2254,60 +2254,6 @@ def parse_fixture_players(players_response: list[dict],
 
 # ─── Transfers (T13) ──────────────────────────────────────────────────────────
 
-def get_transfers(team_id: int) -> list[dict]:
-    """Get all transfers for a team."""
-    data = _get("transfers", {"team": team_id})
-    return data.get("response", [])
-
-
-def parse_transfers(transfers_response: list[dict], team_api_id: int) -> list[dict]:
-    """Parse transfers response into flat rows for team_transfers table.
-
-    AF occasionally returns malformed dates (e.g. "010897" — DDMMYY without
-    separators). Anything that's not a parseable ISO YYYY-MM-DD is dropped:
-    the conflict key includes transfer_date, so a row with a bad date can't
-    be deduped and would also fail the DATE column. Skipping is safer than
-    losing the whole batch.
-    """
-    from datetime import date as _date
-
-    rows = []
-    for item in transfers_response:
-        player = item.get("player", {})
-        player_id = player.get("id")
-        player_name = player.get("name")
-
-        for t in item.get("transfers", []):
-            teams = t.get("teams", {})
-            from_team = teams.get("out", {})
-            to_team = teams.get("in", {})
-            date_str = t.get("date")
-
-            transfer_date = None
-            if date_str:
-                try:
-                    transfer_date = _date.fromisoformat(date_str[:10]).isoformat()
-                except (ValueError, TypeError):
-                    continue
-
-            rows.append({
-                "team_api_id": team_api_id,
-                "player_id": player_id,
-                "player_name": player_name,
-                "transfer_date": transfer_date,
-                "transfer_type": t.get("type"),
-                "from_team_api_id": from_team.get("id"),
-                "from_team_name": from_team.get("name"),
-                "to_team_api_id": to_team.get("id"),
-                "to_team_name": to_team.get("name"),
-                "raw": t,
-            })
-
-    return rows
-
-
-# ─── Team form ───────────────────────────────────────────────────────────────
-
 def get_team_last_fixtures(team_id: int, last: int = 5) -> list[dict]:
     """Get a team's last N finished fixtures."""
     data = _get("fixtures", {"team": team_id, "last": last, "status": "FT"})

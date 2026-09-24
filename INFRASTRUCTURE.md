@@ -110,7 +110,7 @@ All steps complete:
 |---|---|
 | VPS disk | **301 GB total, 122 GB used, 167 GB free (43%)** — after the 2026-09-11 log reclaim (was 159 GB used / 130 GB free that morning) |
 | `odds_snapshots` | 46.3M rows / **20 GB** (9.7 GB heap + 10 GB indexes — the indexes are bigger than the data) |
-| next largest table | `team_transfers` 864 MB |
+| next largest table | `team_transfers` 864 MB | *(no longer written from 2026-09-24, [[#087]]; slated for DROP)*
 | odds inflow | ~1.8M rows/day (1.48M–3.52M; Saturdays peak) |
 | permanently retained | **33.9% of rows written** — anchors + one fallback row per anchorless series |
 | net growth before DB-ANCHOR-GROWTH | **+1.58M rows/day ≈ +681 MB/day ≈ 249 GB/yr** → ~190 days of runway |

@@ -3303,49 +3303,6 @@ def store_match_player_stats(match_id: str, af_fixture_id: int,
 # T13: TEAM TRANSFERS
 # ============================================================
 
-def store_team_transfers(team_api_id: int, rows: list[dict]) -> int:
-    """Store team transfer records. Bulk upserts on (team_api_id, player_id, transfer_date)."""
-    valid = [r for r in rows if r.get("player_id") and r.get("transfer_date")]
-    if not valid:
-        return 0
-
-    # Dedupe on the conflict key — AF returns multiple transfer legs for the same
-    # (player, date), and Postgres ON CONFLICT DO UPDATE rejects duplicates in one batch.
-    deduped: dict[tuple, dict] = {}
-    for r in valid:
-        deduped[(r["team_api_id"], r["player_id"], r["transfer_date"])] = r
-    valid = list(deduped.values())
-
-    columns = list(valid[0].keys())
-    col_str = ", ".join(columns)
-    placeholders = ", ".join(["%s"] * len(columns))
-    update_cols = [c for c in columns if c not in ("team_api_id", "player_id", "transfer_date")]
-    update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols) if update_cols else "team_api_id = EXCLUDED.team_api_id"
-
-    value_rows = [
-        tuple(Json(r[c]) if isinstance(r[c], (dict, list)) else r[c] for c in columns)
-        for r in valid
-    ]
-
-    try:
-        from psycopg2.extras import execute_values
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                execute_values(
-                    cur,
-                    f"""INSERT INTO team_transfers ({col_str}) VALUES %s
-                        ON CONFLICT (team_api_id, player_id, transfer_date)
-                        DO UPDATE SET {update_str}""",
-                    value_rows,
-                    template=f"({placeholders})",
-                )
-            conn.commit()
-        return len(valid)
-    except Exception as e:
-        console.print(f"[yellow]store_team_transfers: {e}[/yellow]")
-        return 0
-
-
 def store_model_evaluation(eval_date: str, league_id: str | None, market: str,
                            total_bets: int, hits: int, roi: float,
                            avg_clv: float | None, notes: str | None = None):
@@ -5557,31 +5514,8 @@ def batch_write_morning_signals(matches: list[dict]) -> int:
     except Exception:
         pass
 
-    # ── 14. Squad disruption signals (from team_transfers) ───────────────────
-    # Count transfers INTO each team in the last 60 days.
-    # Many new arrivals → unfamiliar system → cohesion risk.
-    try:
-        from datetime import timedelta as _td
-        cutoff_60d = (date.today() - _td(days=60)).isoformat()
-        transfer_counts = execute_query(
-            """SELECT team_api_id, COUNT(*) AS arrivals
-               FROM team_transfers
-               WHERE transfer_date >= %s
-                 AND to_team_api_id = team_api_id
-               GROUP BY team_api_id""",
-            (cutoff_60d,),
-        )
-        arrivals_by_team = {r["team_api_id"]: int(r["arrivals"]) for r in transfer_counts}
-        for m in matches:
-            mid = m["id"]
-            for af_id, sig_name in [
-                (m.get("home_team_api_id"), "squad_disruption_home"),
-                (m.get("away_team_api_id"), "squad_disruption_away"),
-            ]:
-                if af_id and af_id in arrivals_by_team:
-                    add(mid, sig_name, float(arrivals_by_team[af_id]), "context", "af_transfers")
-    except Exception:
-        pass
+    # ── 14. Squad disruption signals — REMOVED 2026-09-24 ([[#087]]): team_transfers was
+    # dropped (migration 400); squad_disruption_* is excluded from every model (train.py).
 
     # ── 15. Bulk INSERT — store on CHANGE only ────────────────────────────────
     # SIGNALS-STORE-ON-CHANGE-2026-09-03. Every pipeline run used to re-insert
@@ -6477,11 +6411,6 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
             [today])
         if r:
             sidelined_players_fetched = r[0]["n"]
-        r = execute_query(
-            "SELECT COUNT(DISTINCT team_api_id) AS n FROM team_transfers WHERE created_at::date = %s",
-            [today])
-        if r:
-            transfers_teams_fetched = r[0]["n"]
     except Exception:
         pass  # Tables may not exist yet — leave as 0
 

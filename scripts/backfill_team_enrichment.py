@@ -1,13 +1,14 @@
-"""Backfill team enrichment for teams not yet covered by coaches / transfers / team_stats.
+"""Backfill team enrichment for teams not yet covered by coaches / team_stats.
+
+(transfers removed 2026-09-24, [[#087]] — team_transfers was dropped, migration 400.)
 
 Queries matches for all unique AF team IDs, diffs against the existing tables,
 and fetches the missing entries in configurable batches.
 
 Usage:
   python scripts/backfill_team_enrichment.py --components coaches
-  python scripts/backfill_team_enrichment.py --components transfers
   python scripts/backfill_team_enrichment.py --components team_stats
-  python scripts/backfill_team_enrichment.py --components coaches,transfers --batch-size 30
+  python scripts/backfill_team_enrichment.py --components coaches --batch-size 30
   python scripts/backfill_team_enrichment.py --components coaches --batch-size 25 --offset 50
   python scripts/backfill_team_enrichment.py --dry-run
 """
@@ -26,13 +27,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from workers.api_clients.api_football import (
     get_coaches, parse_coaches,
-    get_transfers, parse_transfers,
     get_team_statistics, parse_team_statistics,
     get_remaining_requests,
 )
 from workers.api_clients.supabase_client import (
     store_team_coaches,
-    store_team_transfers,
     store_team_season_stats,
 )
 from workers.api_clients.db import execute_query, execute_write
@@ -69,18 +68,6 @@ def _missing_coaches(all_ids: list[int]) -> list[int]:
         [all_ids],
     )
     covered = {r["team_af_id"] for r in rows}
-    return [i for i in all_ids if i not in covered]
-
-
-def _missing_transfers(all_ids: list[int]) -> list[int]:
-    """Teams not in team_transfer_cache (never fetched)."""
-    if not all_ids:
-        return []
-    rows = execute_query(
-        "SELECT team_api_id FROM team_transfer_cache WHERE team_api_id = ANY(%s)",
-        [all_ids],
-    )
-    covered = {r["team_api_id"] for r in rows}
     return [i for i in all_ids if i not in covered]
 
 
@@ -152,32 +139,6 @@ def run_coaches(missing: list[int], dry_run: bool) -> int:
     return stored
 
 
-def run_transfers(missing: list[int], dry_run: bool) -> int:
-    console.print(f"\n[cyan]Transfers — {len(missing)} teams to fetch[/cyan]")
-    if dry_run:
-        return 0
-    stored = 0
-    for team_af_id in missing:
-        try:
-            raw = get_transfers(team_af_id)
-            if raw:
-                rows = parse_transfers(raw, team_api_id=team_af_id)
-                stored += store_team_transfers(team_af_id, rows)
-        except Exception as e:
-            console.print(f"  [yellow]transfers {team_af_id}: {e}[/yellow]")
-        finally:
-            # Always mark as attempted — even on API error, so failing teams don't
-            # block the queue by being retried in every batch indefinitely.
-            execute_write(
-                "INSERT INTO team_transfer_cache (team_api_id, fetched_at) VALUES (%s, NOW())"
-                " ON CONFLICT (team_api_id) DO UPDATE SET fetched_at = NOW()",
-                (team_af_id,),
-            )
-        time.sleep(RATE_DELAY)
-    console.print(f"  {stored} transfer records stored")
-    return stored
-
-
 def run_team_stats(missing: list[tuple[int, int, int]], dry_run: bool) -> int:
     console.print(f"\n[cyan]Team stats — {len(missing)} (team, league, season) combos to fetch[/cyan]")
     if dry_run:
@@ -209,20 +170,10 @@ def run_coaches_batch(batch_size: int = 10) -> None:
     run_coaches(batch, dry_run=False)
 
 
-def run_transfers_batch(batch_size: int = 10) -> None:
-    """Scheduler-callable: fetch transfers for the next batch of uncovered teams."""
-    all_ids = _all_team_af_ids()
-    missing = _missing_transfers(all_ids)
-    if not missing:
-        return
-    batch = missing[:batch_size]
-    run_transfers(batch, dry_run=False)
-
-
 def main():
     parser = argparse.ArgumentParser(description="Backfill team enrichment for historically missing teams")
-    parser.add_argument("--components", default="coaches,transfers",
-                        help="Comma-separated: coaches, transfers, team_stats (default: coaches,transfers)")
+    parser.add_argument("--components", default="coaches",
+                        help="Comma-separated: coaches, team_stats (default: coaches)")
     parser.add_argument("--batch-size", type=int, default=50,
                         help="How many teams to process per run (default: 50)")
     parser.add_argument("--offset", type=int, default=0,
@@ -252,7 +203,7 @@ def main():
 
     total = 0
 
-    if "coaches" in components or "transfers" in components:
+    if "coaches" in components:
         all_ids = _all_team_af_ids()
         console.print(f"\n  {len(all_ids)} unique AF team IDs in DB")
 
@@ -262,13 +213,6 @@ def main():
             batch = missing[offset: offset + batch_size]
             console.print(f"  Processing [{offset}:{offset + len(batch)}] of {len(missing)}")
             total += run_coaches(batch, dry_run)
-
-        if "transfers" in components:
-            missing = _missing_transfers(all_ids)
-            console.print(f"  {len(missing)} missing transfers (never fetched)")
-            batch = missing[offset: offset + batch_size]
-            console.print(f"  Processing [{offset}:{offset + len(batch)}] of {len(missing)}")
-            total += run_transfers(batch, dry_run)
 
     if "team_stats" in components:
         missing = _missing_team_stats()

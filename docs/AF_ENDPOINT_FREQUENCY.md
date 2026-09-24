@@ -95,7 +95,7 @@ exist, **120s** idle, stats every 4th fast cycle (**180s**), lineups every 10th
 | `/coachs` | Daily | 1/day | Client method exists, not scheduled | Not relevant yet |
 | `/players` | Several/week | 1/day | Not used | Could enrich match detail |
 | `/sidelined` | — | — | Backfill only | Low priority |
-| `/transfers` | — | — | Backfill (opt-in) | Low priority |
+| `/transfers` | — | — | **Not called** (removed 2026-09-24, [[#087]]) | Low priority |
 
 ## Endpoints We Don't Use At All
 

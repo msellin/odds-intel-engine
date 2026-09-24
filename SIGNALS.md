@@ -212,8 +212,8 @@ Data tier system:
 | League CLV-efficiency (60d mean pseudo_clv, league beatability) | `league_clv_efficiency` | Sun 02:30 UTC weekly | ✅ Running (LEAGUE-CLV-EFFICIENCY 2026-05-25, 4,159 entries) |
 | Pinnacle home implied-prob slope T-12h..T-2h | `line_velocity` | 23:10 UTC nightly | ✅ Running (LINE-VELOCITY 2026-05-25, **REVERSE signal -6.6pp CLV-beat Q4 |v|**) |
 | Season progress within (league, season) window [0..1] | `season_progress` | 23:15 UTC nightly | ✅ Running (LEAGUE-SEASON-PHASE 2026-05-25, +7.7pp Over 2.5 late vs early) |
-| Squad disruption — home | `squad_disruption_home` | Morning pipeline (batch_write block 14) | ✅ Running (data from 2026-05-07) |
-| Squad disruption — away | `squad_disruption_away` | Morning pipeline (batch_write block 14) | ✅ Running (data from 2026-05-07) |
+| Squad disruption — home | `squad_disruption_home` | Morning pipeline (batch_write block 14) | ⛔ Removed 2026-09-24 ([[#087]]) — no source table; excluded from every model |
+| Squad disruption — away | `squad_disruption_away` | Morning pipeline (batch_write block 14) | ⛔ Removed 2026-09-24 ([[#087]]) — no source table; excluded from every model |
 
 | Weather temp at kickoff | `weather_temp_c` | Enrichment pipeline (fetch_weather.py → match_weather table → MFV) | ✅ Wired 2026-05-11 — coverage builds as venues geocode |
 | Weather wind speed (km/h) | `weather_wind_kmh` | Enrichment pipeline | ✅ Wired 2026-05-11 |
