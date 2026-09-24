@@ -521,6 +521,12 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
         (str(days),))
     if limit:
         fixtures = fixtures[:limit]
+    # REFRESH-BY-KICKOFF (#112, 2026-09-24): one contest page per matched fixture is the
+    # per-fixture cost; far fixtures are re-fetched only when their stored board is old
+    # enough for their distance to kickoff (same tiers as Coolbet / Epicbet).
+    from workers.automation.coolbet_explorer import _last_stored_by_match, refresh_due
+    _last_ub = _last_stored_by_match(_BOOKMAKER, [f["id"] for f in fixtures])
+    c["refresh_skipped"] = 0
     c["db_fixtures"] = len(fixtures)
     if not fixtures:
         c["reason"] = "no DB fixtures in window"; return c
@@ -603,11 +609,28 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
         def country_of(rn: str) -> str:
             return rn.split(":", 1)[1].replace("_", " ")
         rn_list = [(rn, country_of(rn)) for rn in rns]
+        log.info("unibet-site: %d top-level categories: %s", len(rn_list),
+                 ", ".join(sorted(cn for _, cn in rn_list)))
 
-        # group DB fixtures by COUNTRY and fuzzy-map each to a Unibet country RN
+        # group DB fixtures by COUNTRY and fuzzy-map each to a Unibet country RN.
+        # UNIBET-WORLD (#112, 2026-09-24): fixtures whose country has no confident Unibet
+        # category — above all AF's "World" (friendlies, Nations League, qualifiers: 28% of
+        # the window, all skipped) — are regrouped by their COMPETITION name, which is
+        # matched against the same category list below.
+        def _country_rn(target: str):
+            best, best_rn = 0, None
+            for rn, cn in rn_list:
+                sc = fuzz.token_set_ratio(target, cn.lower())
+                if sc > best:
+                    best, best_rn = sc, rn
+            return best_rn if best_rn and best >= 80 else None
         groups: dict[str, list] = {}
         for f in fixtures:
-            groups.setdefault(f.get("country") or "", []).append(f)
+            country = (f.get("country") or "").lower().strip()
+            if _country_rn(country):
+                groups.setdefault(country, []).append(f)
+            else:
+                groups.setdefault("league:" + (f.get("league") or "").lower().strip(), []).append(f)
 
         for country, fx in groups.items():
             if consec_blocks[0] >= _RATE_ABORT_AFTER_BLOCKS:
@@ -615,13 +638,18 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
             if c["fetches"] >= _RATE_MAX_FETCHES:
                 c["reason"] = f"hit fetch cap {_RATE_MAX_FETCHES}"; break
             target = (country or "").lower().strip()
-            best, best_rn = 0, None
-            for rn, cn in rn_list:
-                sc = fuzz.token_set_ratio(target, cn.lower())
-                if sc > best:
-                    best, best_rn = sc, rn
-            if not best_rn or best < 80:
-                continue  # no confident country match → skip (Kambi still covers it)
+            if target.startswith("league:"):
+                # competition-name fallback: "uefa nations league" / "friendlies" / "world cup
+                # - qualification europe" against Unibet's category names
+                best_rn = _country_rn(target[len("league:"):])
+                if not best_rn:
+                    c["league_unmapped"] = c.get("league_unmapped", 0) + len(fx)
+                    continue
+                c["league_mapped"] = c.get("league_mapped", 0) + len(fx)
+            else:
+                best_rn = _country_rn(target)
+            if not best_rn:
+                continue  # no confident country or competition match → skip
             lobby = await inj(f"{_SPORTSBFF}/views/lobby?_typ=GetLobbyPageView&category={best_rn}&clientOffset=-180")
             if not lobby:
                 continue
@@ -637,17 +665,27 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
                 h, a = nm.split(" vs ", 1)
                 cands.append({"home": h.strip(), "away": a.strip(),
                               "start": e.get("start"), "raw": {"contest_key": e["contest_key"]}})
+            # pass 1: pair every fixture of this country; ONE EVENT → ONE FIXTURE (#120,
+            # 2026-09-24 — 41 Unibet events were paired with >1 fixture in 7 days)
+            from workers.automation.coolbet_placer import unique_pairs
+            cand_pairs = []
             for f in fx:
+                ev = fuzzy_match_event(f["home"], f["away"], cands, f.get("date"), str(f["id"]))
+                key = (ev or {}).get("raw", {}).get("contest_key") if ev else None
+                if ev and key:
+                    cand_pairs.append((f, {**ev, "id": key}))
+            cand_pairs, _dup = unique_pairs(cand_pairs)
+            c["dup_dropped"] = c.get("dup_dropped", 0) + _dup
+            # pass 2: fetch
+            for f, ev in cand_pairs:
                 if consec_blocks[0] >= _RATE_ABORT_AFTER_BLOCKS or c["fetches"] >= _RATE_MAX_FETCHES:
                     break
-                ev = fuzzy_match_event(f["home"], f["away"], cands, f.get("date"), str(f["id"]))
-                if not ev:
-                    continue
-                key = (ev.get("raw") or {}).get("contest_key")
-                if not key:
-                    continue
+                key = ev["id"]
                 c["matched"] += 1
                 mapped.append((str(f["id"]), key, ev.get("start") or None, None))
+                if not refresh_due(f["date"], _last_ub.get(str(f["id"])), datetime.now(timezone.utc)):
+                    c["refresh_skipped"] += 1
+                    continue
                 contest = await inj(f"{_SPORTSBFF}/views/contest-page?_typ=GetContestWithPricesReq&contestKey={key}")
                 if not contest or not (contest.get("contest") or {}).get("propositions"):
                     continue

@@ -319,7 +319,9 @@ def run(cadence: float, rediscover_s: float, max_fixtures: int, duration_s: floa
         t0 = time.time()
         if t0 - last_disc > rediscover_s:
             try:
-                board = eb.live_board()[:max_fixtures]
+                # INPLAY-SLIM (#112, 2026-09-24): keep the WHOLE board; the per-cycle
+                # selection below takes fixtures we can join to our own matches first.
+                board = eb.live_board()
                 last_disc = t0
                 af_names = load_af_names() or af_names
                 log.info("board refreshed: %d live fixtures", len(board))
@@ -345,6 +347,10 @@ def run(cadence: float, rediscover_s: float, max_fixtures: int, duration_s: floa
             errors += 1
             log.debug("AF state failed: %s", e)
 
+        # INPLAY-SLIM (#112): at most `max_fixtures` per cycle, fixtures mapped to one of
+        # our matches first — a third of the rows used to be unmapped (women's cups,
+        # reserves) and nothing can join them to a result or a price.
+        todo = sorted(board, key=lambda f: f["eb_id"] not in afmap)[:max_fixtures]
         res: dict = {}
 
         def grab(f):  # noqa: ANN001
@@ -357,7 +363,7 @@ def run(cadence: float, rediscover_s: float, max_fixtures: int, duration_s: floa
                     res[f["eb_id"]] = eb.board_odds(f["eb_id"])
                 except Exception as e:  # noqa: BLE001
                     res[f["eb_id"]] = {"error": str(e)[:120]}
-        ths = [threading.Thread(target=grab, args=(f,)) for f in board]
+        ths = [threading.Thread(target=grab, args=(f,)) for f in todo]
         for t in ths:
             t.start()
         for t in ths:
@@ -365,7 +371,7 @@ def run(cadence: float, rediscover_s: float, max_fixtures: int, duration_s: floa
 
         stamp = datetime.now(timezone.utc)
         rows: list[dict] = []
-        for f in board:
+        for f in todo:
             d = res.get(f["eb_id"]) or {}
             if d.get("error"):
                 errors += 1

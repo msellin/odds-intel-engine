@@ -263,6 +263,31 @@ def run_bulk(*, horizon_hours: float = 48, dry_run: bool = False) -> dict:
     return c
 
 
+RETAIN_FULL_WITHIN_MIN = 360   # keep every capture within 6 h of kickoff (the close studies need it)
+THIN_AFTER_DAYS = 2
+
+
+def prune(*, dry_run: bool = False) -> int:
+    """RETENTION (#119, 2026-09-24): ~230k rows/day since the step-D widening. After
+    THIN_AFTER_DAYS, captures more than RETAIN_FULL_WITHIN_MIN before kickoff are thinned
+    to the FIRST per hour per (match, market, selection, line); captures near kickoff are
+    kept in full. Returns rows deleted (or that would be)."""
+    from workers.api_clients.db import execute_query, execute_write
+    sql_sel = """SELECT id FROM (
+                   SELECT id, row_number() OVER (
+                            PARTITION BY match_id, market, selection, COALESCE(handicap_line, -999),
+                                         date_trunc('hour', captured_at)
+                            ORDER BY captured_at) AS rn
+                     FROM exchange_quotes
+                    WHERE captured_at < now() - make_interval(days => %s)
+                      AND minutes_to_kickoff > %s) d
+                  WHERE d.rn > 1"""
+    params = (THIN_AFTER_DAYS, RETAIN_FULL_WITHIN_MIN)
+    if dry_run:
+        return len(execute_query(sql_sel, params) or [])
+    return execute_write(f"DELETE FROM exchange_quotes WHERE id IN ({sql_sel})", params) or 0
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     ap = argparse.ArgumentParser()

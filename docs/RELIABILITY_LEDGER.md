@@ -1291,3 +1291,27 @@ reports) so the next unguarded path fails loudly instead of mis-pricing.
 **General rule:** anything with hidden state (a browser tab, a CDP target, a
 logged-in session) needs an owner or a lock, and "it's only a manual run" is
 exactly when the second caller appears.
+
+## 24. A guard that judges the past against today's evidence (2026-09-24)
+
+**What happened.** The first version of the wrong-fixture board audit (#120) re-judged every
+stored snapshot against the other books' LATEST prices. An independent review found it
+would move correct data: August snapshots of a postponed fixture judged against September
+prices (7eb36ebb — 17 of 20 flagged snapshots wrong), and a genuine late move at two books
+we scrape judged against API-Football books that had simply frozen (de810545). The same
+review found the price check was aimed at the symptom: the cause was the matcher — 109
+Epicbet and 41 Unibet events paired with more than one of our fixtures in 7 days, and a
+±6 h window that let a different match of similar names through.
+
+**The tell.** A data-quality verdict computed with evidence that did not exist when the data
+was written. And a guard catching ~20 cases where a peer-free rule (one book event → one
+fixture; book start within 45 min of kickoff — true for 99% of correct pairings) would
+catch the whole class.
+
+**Guards now.** Every snapshot is judged against peers AS OF its own time (≤ 6 h before);
+identical feeds count once; a second book we scrape ourselves that agrees is corroboration,
+not a vote to overrule; Pinnacle is never judged; moves to quarantine keep the original id
+and `is_opening` so they are reversible; and the matcher refuses the pairing at source
+(`coolbet_placer.fuzzy_match_event` 45-min start tolerance + orientation-consistent scoring,
+`unique_pairs`). Two independent reviews before anything moved.
+

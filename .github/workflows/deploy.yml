@@ -97,6 +97,14 @@ jobs:
               sleep 8
               systemctl is-active --quiet oddsintel-scheduler
               echo "scheduler restarted and active"
+              # INPLAY-SLIM (#112, 2026-09-24): the in-play collector is a separate unit and
+              # kept running old code after every deploy (found: still unmetered a day after
+              # the request budget shipped). Restart it too when it exists; never fail the
+              # deploy over it.
+              if systemctl list-unit-files oddsintel-inplay-collector.service >/dev/null 2>&1; then
+                systemctl restart oddsintel-inplay-collector || true
+                echo "inplay collector restarted"
+              fi
             else
               echo "--- no runtime change, scheduler left running ---"
             fi

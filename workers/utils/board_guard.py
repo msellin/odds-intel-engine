@@ -95,15 +95,41 @@ def board_offenses(board: dict[str, dict[str, float]],
     return out
 
 
+CORROBORATE_RATIO = 1.15   # within 15% on EVERY leg — books' margins differ (Al-Rayyan v Qatar SC: Epicbet draw 4.51 vs Unibet 4.0 on the same real move); the mirror-closeness check below is what stops a book vouching for a mirror
+
+
 def _corroborated(b: dict, sides, market_peers: dict) -> bool:
-    """True when a DIRECT book's quote agrees with `b` on every leg (within the same
-    ratio / prob-gap tolerance) — independent evidence the board is this match's."""
-    for book, q in market_peers.items():
-        if book not in DIRECT_BOOKS or not all(q.get(s, 0) > 1.0 for s in sides):
+    """True when another book WE scrape independently shows the same prices as `b`.
+
+    Tightened after review #2 (2026-09-24). The first version reused the "off" band
+    (×1.5625 / 4 prob-pts), so a correctly oriented book could vouch for a genuine mirror,
+    and two WRONGLY paired books could vouch for each other (4f6992cc: Epicbet paired to
+    Koper v Nafta and Unibet-Site to Persebaya "agreed", while Coolbet — the one correctly
+    paired direct book — contradicted both). Now:
+      * agreement = within CORROBORATE_RATIO on every leg;
+      * for 1X2 the corroborator must be closer to `b` than to `b` with home/away swapped;
+      * any OTHER direct book that contradicts `b` (off by the guard's own rule) voids it.
+    """
+    def off(x, q):
+        return any(max(x[s] / q[s], q[s] / x[s]) > GUARD_RATIO and abs(1 / x[s] - 1 / q[s]) > MIN_PROB_GAP
+                   for s in sides)
+    direct = {bk: q for bk, q in market_peers.items()
+              if bk in DIRECT_BOOKS and all(q.get(s, 0) > 1.0 for s in sides)}
+    if any(off(b, q) for q in direct.values()):
+        agrees = [q for q in direct.values() if not off(b, q)]
+        contradicts = [q for q in direct.values() if off(b, q)]
+        if contradicts and agrees:
+            return False            # direct books disagree among themselves: no corroboration
+    for q in direct.values():
+        if not all(max(b[s] / q[s], q[s] / b[s]) <= CORROBORATE_RATIO for s in sides):
             continue
-        if all(max(b[s] / q[s], q[s] / b[s]) <= GUARD_RATIO or abs(1 / b[s] - 1 / q[s]) <= MIN_PROB_GAP
-               for s in sides):
-            return True
+        if set(sides) == {"home", "draw", "away"}:
+            mirror = {"home": b["away"], "draw": b["draw"], "away": b["home"]}
+            d_b = sum(abs(1 / q[s] - 1 / b[s]) for s in sides)
+            d_m = sum(abs(1 / q[s] - 1 / mirror[s]) for s in sides)
+            if d_b >= d_m:
+                continue
+        return True
     return False
 
 

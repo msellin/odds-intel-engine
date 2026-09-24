@@ -3127,3 +3127,17 @@ longshots and hides it on favourites. A "worst-method" robustness check must spa
 not measurably worse than Shin (Shin, additive, power), or it rejects picks on a formula known to be
 wrong. On a soft book's 8-10% margin the methods differ by a median 2.1pp of edge, against 0.6pp on
 Pinnacle — so the consensus arm is where the choice bites.
+
+## 79. Historical odds from our own scrapers contain other matches' boards (2026-09-24)
+
+Before 2026-09-24 the Epicbet / Unibet-Site matcher paired events up to ±6 h from our
+kickoff, allowed both of our teams to match the same side of a book event, and let one book
+event pair with several fixtures. Result: whole boards of ANOTHER match stored under our
+fixture (reviewed true positives: "Narva v Levadia" = Goias v Avai, another = Sevilla v
+Barcelona, …) — every market, not just 1X2. `mirror_guard` only ever stripped 1X2. Since
+#120: write-time `board_guard`, the 30-min `board_audit` read-back (moves offenders to
+`odds_snapshots_quarantined`, reason prefix `board-audit` / `board-guard`), and the matcher
+fixed at source. **Any analysis of Epicbet / Unibet-Site odds before 2026-09-24 must
+exclude (fixture, book) pairs where the book's board is off a ≥4-book median in ≥2 markets,
+or join `data_quality_findings`** — they read as the largest edges on the board.
+

@@ -645,8 +645,19 @@ def enrich_with_sidebets(sess: requests.Session, pairs: list[tuple[dict, dict]],
         pairs,
         key=lambda p: (_parse_iso_start(p[1].get("start")) or _FAR_FUTURE),
     )
+    # REFRESH-BY-KICKOFF (#112, 2026-09-24): the deep board is the per-fixture cost
+    # (up to 250 requests a sweep). Far from kickoff it is re-fetched only every ~2 h,
+    # 3–12 h out hourly, under 3 h every pass. The listing's main markets still refresh
+    # every pass. Last deep fetch per fixture lives in a small memo (fails open = due).
+    from workers.automation.coolbet_explorer import refresh_due
+    memo = _load_deep_memo()
+    now = datetime.now(timezone.utc)
     done = 0
     for _m, ev in ordered:
+        mid_key = str(ev.get("id"))
+        last = memo.get(mid_key)
+        if not refresh_due(_parse_iso_start(ev.get("start")), last, now):
+            continue
         if done >= budget:
             log.info("epicbet: sidebets budget %d reached — %d matched fixtures "
                      "keep listing-only markets", budget, len(pairs) - done)
@@ -658,9 +669,32 @@ def enrich_with_sidebets(sess: requests.Session, pairs: list[tuple[dict, dict]],
         done += 1
         if deep is not None:
             ev["raw"] = deep
+            memo[mid_key] = now
         if done < budget:
             time.sleep(sleep_s)
+    _save_deep_memo(memo, now)
     return done
+
+
+_DEEP_MEMO = Path.home() / ".config" / "oddsintel" / "epicbet-deep-last.json"
+
+
+def _load_deep_memo() -> dict:
+    """{epicbet event id: datetime of last deep-board fetch}. Missing/corrupt → {} (all due)."""
+    try:
+        raw = json.loads(_DEEP_MEMO.read_text())
+        return {k: datetime.fromisoformat(v) for k, v in raw.items()}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _save_deep_memo(memo: dict, now) -> None:
+    try:
+        keep = {k: v.isoformat() for k, v in memo.items() if (now - v).total_seconds() < 3 * 86400}
+        _DEEP_MEMO.parent.mkdir(parents=True, exist_ok=True)
+        _DEEP_MEMO.write_text(json.dumps(keep))
+    except Exception as e:  # noqa: BLE001 — bookkeeping never breaks a sweep
+        log.debug("epicbet deep memo save failed: %s", e)
 
 
 def collect_market_ids(event: dict) -> list[int]:
@@ -1088,6 +1122,12 @@ def _run_bulk_inner(sess, matches, days, sleep_s, dry_run):
                                match_id=m.get("id"))
         if ev is not None:
             pairs.append((m, ev))
+    # ONE EVENT → ONE FIXTURE (#120, 2026-09-24): 109 Epicbet events were paired with more
+    # than one of our fixtures in 7 days, so at least one of each group was wrong.
+    from workers.automation.coolbet_placer import unique_pairs
+    pairs, dropped = unique_pairs(pairs)
+    if dropped:
+        log.info("epicbet: %d pairings dropped — their event was also claimed by a closer fixture", dropped)
 
     # NEAR-KICKOFF-CAPTURE-2026-09-11: persist the pairing so the near-kickoff
     # job can fetch one fixture by id. fuzzy_match_event exposes no score.

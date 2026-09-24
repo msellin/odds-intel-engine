@@ -42,7 +42,7 @@ FEEDS: list[dict] = [
     {"id": "coolbet_prematch", "auto_pause": True, "wrapper": "_coolbet_odds_snapshot_wrapper", "controls": ["pause", "run_now"], "label": "Coolbet — pre-match odds", "book": "Coolbet",
      "category": "book", "kind": "pre-match", "job": "coolbet_odds_snapshot",
      "units": ["oddsintel-zone-egress.service"], "docker": "oi_hetzner_flaresolverr",
-     "schedule": ":03 / :33 UTC", "interval_min": 30, "stale_after_min": 90,
+     "schedule": ":03 / :33 UTC", "interval_min": 60, "stale_after_min": 150,
      "health": "data", "data": {"odds_books": ["Coolbet"]},
      "runbook": "docs/COOLBET_RUNBOOK.md"},
     {"id": "epicbet_prematch", "auto_pause": True, "wrapper": "_epicbet_odds_snapshot_wrapper", "controls": ["pause", "run_now"], "label": "Epicbet — pre-match odds", "book": "Epicbet",
@@ -54,7 +54,7 @@ FEEDS: list[dict] = [
      "book": "Unibet-Site", "category": "book", "kind": "pre-match",
      "job": "unibet_site_odds",
      "units": ["oddsintel-unibet-chrome.service", "oddsintel-zone-egress.service"],
-     "schedule": ":15 / :45 UTC", "interval_min": 30, "stale_after_min": 90,
+     "schedule": ":15 / :45 UTC", "interval_min": 60, "stale_after_min": 150,
      "health": "data", "data": {"odds_books": ["Unibet-Site"]},
      "runbook": "docs/COOLBET_RUNBOOK.md#6-unibet-site-odds-feed-stale"},
     {"id": "tonybet_prematch", "auto_pause": True, "wrapper": "_tonybet_odds_snapshot_wrapper", "controls": ["pause", "run_now"], "label": "Tonybet — pre-match odds", "book": "Tonybet",
@@ -147,4 +147,8 @@ FEEDS: list[dict] = [
 FEEDS_BY_ID = {f["id"]: f for f in FEEDS}
 
 # Books whose "fixtures priced today" is shown on the dashboard.
+# REFRESH-BY-KICKOFF (#112, 2026-09-24): Coolbet and Unibet re-fetch a far fixture only
+# hourly (3–12 h out) or ~2-hourly (> 12 h), so at night their newest row can legitimately
+# be ~2 h old — interval 60 / stale 150 instead of 30 / 90. Epicbet's listing still writes
+# every pass (only its deep board thins), so it keeps 30 / 90.
 COVERAGE_BOOKS = ("Coolbet", "Epicbet", "Unibet-Site", "Tonybet", "Pinnacle", "Betfair-Exchange")

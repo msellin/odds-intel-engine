@@ -580,16 +580,21 @@ def job_coolbet_odds_snapshot():
         else:
             from workers.automation.coolbet_explorer import run_board_sweep
             res = run_board_sweep(dry_run=False, horizon_hours=48, sleep_s=0.4) or {}
-            fixtures, stored = res.get("near_term", 0), res.get("stored_rows")
+            # REFRESH-BY-KICKOFF (#112): a pass where no matched fixture was DUE stores
+            # nothing by design (night passes with nothing < 3 h out) — only fixtures that
+            # were due count toward "stored nothing" (review #2, 2026-09-24).
+            fixtures = (res.get("matched") or 0) - (res.get("refresh_skipped") or 0)
+            stored = res.get("stored_rows")
             detail = (f"categories {res.get('categories')}, listing fails {res.get('cat_fails', 0)}, "
-                      f"matched {res.get('matched')}, market fetch fails {res.get('fetch_fails')}")
+                      f"matched {res.get('matched')}, due {fixtures}, "
+                      f"market fetch fails {res.get('fetch_fails')}")
             if not res.get("categories"):
                 raise RuntimeError("Coolbet board sweep enumerated 0 categories (fo-tree unreachable)")
         # #108 (2026-09-23): a sweep that wrote NOTHING while fixtures existed is a
         # failure, whatever the sweep printed. For 4 h every sweep aborted with
         # "Coolbet unreachable" and this job recorded `completed`.
-        if fixtures >= 20 and not stored:
-            raise RuntimeError(f"Coolbet sweep stored 0 rows for {fixtures} fixtures ({detail})")
+        if fixtures >= 10 and not stored:
+            raise RuntimeError(f"Coolbet sweep stored 0 rows for {fixtures} due fixtures ({detail})")
     except Exception as e:
         console.print(f"[red]Coolbet odds snapshot failed: {e}[/red]")
         console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
@@ -687,6 +692,12 @@ def _betfair_exchange_snapshot_wrapper():
     _run_job("betfair_exchange_snapshot", job_betfair_exchange_snapshot)
 
 
+def _exchange_quotes_prune_wrapper():
+    """#119 retention: thin old far-from-kickoff exchange captures to hourly, nightly."""
+    from workers.automation.betfair_exchange_feed import prune
+    _run_job("exchange_quotes_prune", prune)
+
+
 def job_board_audit():
     """WRONG-FIXTURE-BOARDS (#120, 2026-09-24): re-screen boards already stored (kickoff
     now−3 h … now+48 h) for another match's prices and home/away mirrors, and move the
@@ -698,6 +709,30 @@ def job_board_audit():
 
 def _board_audit_wrapper():
     _run_job("board_audit", job_board_audit)
+
+
+def job_observatory_metrics():
+    """#121 phase 3 pilot (2026-09-24): daily metrics (CLV coverage per ledger, per-book
+    price fidelity vs Pinnacle, 7-day CLV per bot) → obs_metric_values; a value that moves
+    >= 3 robust-z from its own 28-day baseline → a metric_shift finding."""
+    from workers.jobs.observatory_metrics import run
+    return run()
+
+
+def _observatory_metrics_wrapper():
+    _run_job("observatory_metrics", job_observatory_metrics)
+
+
+def job_results_check():
+    """#121 phase 1 (2026-09-24): API-Football final score vs Tonybet's regular-time result
+    on every match both cover; a disagreement → data_quality_findings + Telegram, listing
+    the bets already settled on it. Does NOT hold settlement (owner decision pending)."""
+    from workers.jobs.results_check import run
+    return run()
+
+
+def _results_check_wrapper():
+    _run_job("results_check", job_results_check)
 
 
 def job_tonybet_live():
@@ -769,6 +804,38 @@ def job_unibet_site_odds():
     if reason not in ("ok", "no DB fixtures in window") and not (res or {}).get("stored"):
         raise RuntimeError(f"Unibet-Site sweep wrote nothing: {reason}")
     return res
+
+
+# (pipeline_runs job name, wrapper name, interval in minutes) — see STARTUP-CATCHUP in main()
+_CATCHUP_SWEEPS = (
+    ("odds_refresh", "job_odds_refresh", 30),
+    ("coolbet_odds_snapshot", "_coolbet_odds_snapshot_wrapper", 30),
+    ("epicbet_odds_snapshot", "_epicbet_odds_snapshot_wrapper", 30),
+    ("tonybet_odds_snapshot", "_tonybet_odds_snapshot_wrapper", 30),
+    ("unibet_site_odds", "_unibet_site_odds_wrapper", 30),
+    ("betfair_exchange_snapshot", "_betfair_exchange_snapshot_wrapper", 15),
+)
+
+
+def _startup_catchup():
+    """Run once, 90 s after start: every sweep overdue by > interval + 5 min runs now."""
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        "SELECT job_name, max(started_at) AS last FROM pipeline_runs WHERE job_name = ANY(%s) GROUP BY 1",
+        ([j for j, _, _ in _CATCHUP_SWEEPS],)) or []
+    last = {r["job_name"]: r["last"] for r in rows}
+    now = datetime.now(timezone.utc)
+    for job_name, wrapper, interval in _CATCHUP_SWEEPS:
+        t = last.get(job_name)
+        if t is not None and (now - t).total_seconds() / 60 <= interval + 5:
+            continue
+        fn = globals().get(wrapper)
+        if fn is None or _SCHEDULER is None:
+            continue
+        console.print(f"[yellow]startup catch-up: {job_name} last ran "
+                      f"{'never' if t is None else f'{(now - t).total_seconds() / 60:.0f} min ago'} — running once[/yellow]")
+        _SCHEDULER.add_job(fn, trigger="date", run_date=now, id=f"catchup_{job_name}",
+                           replace_existing=True, max_instances=1, misfire_grace_time=300)
 
 
 def _unibet_site_odds_wrapper():
@@ -3195,9 +3262,18 @@ def main():
                       CronTrigger(hour="*", minute="1,31"),
                       id="tonybet_odds_snapshot", name="Tonybet Odds [30min]",
                       max_instances=1)
+    # #119 retention: before the 03:30 backup.
+    scheduler.add_job(_exchange_quotes_prune_wrapper, CronTrigger(hour=3, minute=10),
+                      id="exchange_quotes_prune", name="Exchange quotes prune [daily]", max_instances=1)
     # WRONG-FIXTURE-BOARDS (#120): read-back audit after the book sweeps have written.
     scheduler.add_job(_board_audit_wrapper, CronTrigger(hour="*", minute="25,55"),
                       id="board_audit", name="Board audit [30min]", max_instances=1)
+    # #121 observatory pilot metrics: after clv_sharp (01:40), before the 03:30 backup
+    scheduler.add_job(_observatory_metrics_wrapper, CronTrigger(hour=2, minute=15),
+                      id="observatory_metrics", name="Observatory metrics [daily]", max_instances=1)
+    # #121: results cross-check, 20 min after the Tonybet results job (*/2 h at :20)
+    scheduler.add_job(_results_check_wrapper, CronTrigger(hour="*/2", minute="40"),
+                      id="results_check", name="Results cross-check [2h]", max_instances=1)
     # BETFAIR-EXCHANGE-READER (#117): every 15 min so quotes exist close to kickoff
     # (the sharpness comparison needs a close), ~44 requests/h via the London exit.
     scheduler.add_job(_betfair_exchange_snapshot_wrapper,
@@ -3838,6 +3914,16 @@ def main():
 
     # ── Start scheduler ────────────────────────────────────────────────
     scheduler.start()
+
+    # STARTUP-CATCHUP (#112, 2026-09-24): a cron sweep whose minute passes while the
+    # scheduler is restarting is simply skipped. On 2026-09-24 six deploys restarted it
+    # between 07:55 and 08:47 and the 08:00-08:03 and 08:31-08:32 gaps swallowed both
+    # Epicbet sweeps (73 min stale on /admin/feeds). 90 s after start, every book sweep
+    # whose last run is older than its interval + 5 min is run ONCE (a paused feed still
+    # skips — _run_job checks the pause).
+    scheduler.add_job(_startup_catchup, trigger="date",
+                      run_date=datetime.now(timezone.utc) + timedelta(seconds=90),
+                      id="startup_catchup", name="Startup catch-up (one-off)", replace_existing=True)
 
     jobs = scheduler.get_jobs()
     console.print(f"\n[green]{len(jobs)} scheduled jobs registered:[/green]")

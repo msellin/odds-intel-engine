@@ -1409,6 +1409,13 @@ def _team_aliases(name: str) -> list[str]:
 # fuzzy matcher only scored names. Reject any candidate whose kickoff is
 # more than this many hours away from our DB match date.
 _FUZZY_DATE_TOLERANCE_HOURS = 6
+# WRONG-FIXTURE-BOARDS (#120, 2026-09-24): the ±6 h window above paired Epicbet / Unibet
+# events with a DIFFERENT match of similar names (Narva v Levadia stored Goias v Avai's
+# board; 18:00 vs 21:00, 19:00 vs 14:00, 12:00 vs 11:00). On correct pairings the book's
+# start is within 15 min of our kickoff 99% of the time (Coolbet 1,638/1,656, Unibet
+# 1,927/1,981, Tonybet 355/364 — book_event_map, 7 d). Beyond this the event goes to the
+# DATE-MISMATCH diagnostics below instead of being paired: no price beats a wrong price.
+_PAIR_START_TOLERANCE_MIN = 45   # quiet reject; only > _FUZZY_DATE_TOLERANCE_HOURS raises a date dispute
 
 
 def _parse_iso_start(start: str | None) -> datetime | None:
@@ -1477,6 +1484,42 @@ def clear_date_dispute(match_id) -> None:
         )
     except Exception as e:                      # noqa: BLE001
         log.debug("could not clear date dispute for %s: %s", match_id, e)
+
+
+def unique_pairs(pairs: list) -> tuple[list, int]:
+    """ONE BOOK EVENT → AT MOST ONE FIXTURE (#120). `pairs` = [(fixture, event)] with
+    fixture["date"] and event["id"/"start"]. When several fixtures claim one event, keep
+    the fixture whose kickoff is closest to the event's start; drop the others (they are
+    another match's prices). Returns (kept, n_dropped)."""
+    by_event: dict = {}
+    for m, ev in pairs:
+        by_event.setdefault(str(ev.get("id")), []).append((m, ev))
+    kept, dropped = [], 0
+    for eid, group in by_event.items():
+        if eid == "None" or len(group) == 1:
+            kept.extend(group)
+            continue
+        def _gap(p):
+            s, d = _parse_iso_start(p[1].get("start")), p[0].get("date")
+            if s is None or d is None:
+                return float("inf")
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=timezone.utc)
+            return abs((s - d).total_seconds())
+        def _names(p):
+            m, ev = p
+            try:
+                return -min(fuzz.token_set_ratio(_ascii(m.get("home") or ""), _ascii(ev.get("home") or "")),
+                            fuzz.token_set_ratio(_ascii(m.get("away") or ""), _ascii(ev.get("away") or "")))
+            except Exception:  # noqa: BLE001
+                return 0
+        # closest kickoff first; on a tie, the better name match (not list order — review #2)
+        group.sort(key=lambda p: (_gap(p), _names(p)))
+        kept.append(group[0])
+        dropped += len(group) - 1
+        log.warning("one-event-one-fixture: event %s claimed by %d fixtures — kept %s", eid,
+                    len(group), group[0][0].get("id"))
+    return kept, dropped
 
 
 def fuzzy_match_event(
@@ -1565,9 +1608,18 @@ def fuzzy_match_event(
         if match_date is not None:
             ev_start = ev_start_seen
             if ev_start is not None:
-                if abs((ev_start - match_date).total_seconds()) > tol_seconds:
+                gap_s = abs((ev_start - match_date).total_seconds())
+                if gap_s > tol_seconds:
                     skipped_date += 1
                     date_rejects.append((ev, ev_start))
+                    continue
+                if gap_s > _PAIR_START_TOLERANCE_MIN * 60:
+                    # QUIET reject (review #2, 2026-09-24): NOT a date_reject. date_rejects feed
+                    # _record_date_dispute, which drops OUR fixture from pricing — and a
+                    # 45 min – 6 h neighbour is usually a different match of similar names
+                    # (Atlante U21 v Monterrey U21 vs Iceland U21 v France U21), not proof
+                    # our kickoff is stale. Disputes stay reserved for > 6 h, as before.
+                    skipped_date += 1
                     continue
         ev_home = _ascii(ev.get("home") or "")
         ev_away = _ascii(ev.get("away") or "")
@@ -1593,17 +1645,15 @@ def fuzzy_match_event(
 
         # Each side can match either Coolbet's home or away (handles flipped
         # fixtures) AND can match against any registered alias.
-        home_score = max(
-            fuzz.partial_ratio(v, ev_side)
-            for v in home_variants
-            for ev_side in (ev_home, ev_away)
-        )
-        away_score = max(
-            fuzz.partial_ratio(v, ev_side)
-            for v in away_variants
-            for ev_side in (ev_home, ev_away)
-        )
-        score = min(home_score, away_score)
+        # ORIENTATION-CONSISTENT (#120): our two teams must match DIFFERENT sides of
+        # the book's event. Each side used to take its best of EITHER book side, so both
+        # of ours could match the same book team. Both orientations are still allowed —
+        # a transposed event is the mirror guard's business.
+        def _best(variants, side):
+            return max(fuzz.partial_ratio(v, side) for v in variants)
+        direct = min(_best(home_variants, ev_home), _best(away_variants, ev_away))
+        swapped = min(_best(home_variants, ev_away), _best(away_variants, ev_home))
+        score = max(direct, swapped)
         if score > best_score:
             runner_up_score = best_score      # the score this one just beat
             best_score = score

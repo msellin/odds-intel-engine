@@ -1476,6 +1476,16 @@ def store_coolbet_snapshots_for_match(
     # `non_ou_rows` is the first point where all three 1x2 legs exist together.
     # Same shape as the OU-monotonicity drop above: refuse the market, keep the
     # rest of the board.
+    # WRONG-FIXTURE-BOARDS (#120): judge the WHOLE board (1X2 + O/U + BTTS) first.
+    if not dry_run:
+        from workers.utils.board_guard import screen_board
+        _whole = non_ou_rows + ou_buffer
+        if _whole and not screen_board(match_id, "Coolbet", _whole,
+                                       market_of=lambda r: r[0], selection_of=lambda r: r[1],
+                                       odds_of=lambda r: r[2], line_of=lambda r: r[3],
+                                       minutes_to_kickoff=minutes_to_ko):
+            non_ou_rows, ou_buffer = [], []
+            by_market.clear()
     from workers.utils.mirror_guard import drop_mirrored_1x2
     if not dry_run:
         _before = len(non_ou_rows)
@@ -1490,6 +1500,9 @@ def store_coolbet_snapshots_for_match(
             by_market.pop("1x2", None)
 
     to_store = non_ou_rows + ou_buffer
+    # OU-LINE-LABEL (#121): never store an over_under_* row whose line is not its label's.
+    from workers.utils.odds_quality import ou_line_matches
+    to_store = [r for r in to_store if ou_line_matches(r[0], r[3])]
     for market, selection, odds, line in to_store:
         if dry_run:
             continue
@@ -2020,6 +2033,38 @@ def probe_coolbet_reachable(*, session_name: str | None = None) -> dict:
                 "elapsed_s": elapsed, "bytes": 0}
 
 
+# REFRESH-BY-KICKOFF (#112): how stale a fixture's stored board may be before the sweep
+# re-fetches it, by hours to kickoff. Under 3 h it is re-fetched every pass (30 min), and
+# the near-kickoff capture still takes the close.
+_REFRESH_TIERS = ((3.0, 0), (12.0, 55), (float("inf"), 115))   # (hours-to-KO below, max age min)
+
+
+def refresh_due(start, last_at, now) -> bool:
+    """Pure. True when a fixture kicking off at `start`, last stored at `last_at`, should be
+    re-fetched on this pass. Unknown kickoff or never stored → always due."""
+    if start is None or last_at is None:
+        return True
+    hours = (start - now).total_seconds() / 3600
+    max_age = next(age for below, age in _REFRESH_TIERS if hours < below)
+    return (now - last_at).total_seconds() / 60 >= max_age
+
+
+def _last_stored_by_match(bookmaker: str, match_ids: list) -> dict:
+    """{match_id: newest stored timestamp} for this book. Fails open (empty → all due)."""
+    if not match_ids:
+        return {}
+    try:
+        rows = execute_query(
+            """SELECT match_id::text AS mid, max(timestamp) AS last_at FROM odds_snapshots
+                WHERE bookmaker = %s AND match_id = ANY(%s::uuid[])
+                  AND timestamp > now() - interval '6 hours'
+                GROUP BY match_id""", (bookmaker, [str(m) for m in match_ids])) or []
+        return {r["mid"]: r["last_at"] for r in rows}
+    except Exception as e:  # noqa: BLE001
+        log.debug("refresh-by-kickoff lookup failed: %s", e)
+        return {}
+
+
 def run_board_sweep(
     *,
     dry_run: bool = False,
@@ -2050,6 +2095,11 @@ def run_board_sweep(
         console.print("[red]Board sweep: no categories enumerated — nothing written.[/red]")
         return c
     af = _load_af_candidates(horizon_hours)
+    # REFRESH-BY-KICKOFF (#112, 2026-09-24): the expensive part of a sweep is one market
+    # request per matched fixture, every 30 min — including fixtures two days out whose
+    # prices barely move. Measured 298/508 req/h median/peak against a 500 cap (#110).
+    last_stored = _last_stored_by_match("Coolbet", [r["id"] for r in af])
+    c["refresh_skipped"] = 0
     log.info("Board sweep — %d Coolbet categories, %d AF candidate fixtures (horizon %.0fh)",
              len(cats), len(af), horizon_hours)
 
@@ -2130,6 +2180,9 @@ def run_board_sweep(
                 continue
             c["matched"] += 1
             mapped.append((af_row["id"], str(ev["id"]), ev.get("start"), score))
+            if not refresh_due(cb_start, last_stored.get(str(af_row["id"])), now):
+                c["refresh_skipped"] += 1   # priced recently enough for its distance to kickoff
+                continue
             try:
                 # ONE request per event now, not four: fo-match is redundant with
                 # sidebets (measured), and odds are fetched for the whole buffer
@@ -2185,7 +2238,9 @@ def run_board_sweep(
     # case; near-zero is deliberately out of scope. Skipped in dry_run (writes 0 by
     # design) — the `not dry_run` guard is load-bearing.
     try:
-        if not dry_run and c["events_seen"] > 0 and c["stored_rows"] == 0:
+        # refresh-aware (#112): nothing due this pass is not a matcher regression
+        if (not dry_run and c["events_seen"] > 0 and c["stored_rows"] == 0
+                and c["matched"] - c.get("refresh_skipped", 0) > 0):
             from workers.notify.telegram import send_telegram
             send_telegram(
                 f"🟠 Coolbet board sweep ran but stored 0 rows — likely a matcher/parse regression, "

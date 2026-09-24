@@ -700,6 +700,11 @@ def store_odds(match_id: str, match_data: dict, minutes_to_kickoff: int = None):
     # with home and away transposed. An inverted price reads as the LARGEST edge
     # on the board, so it is the one data fault every gate we own selects FOR
     # rather than against. See workers/utils/mirror_guard.py.
+    from workers.utils.board_guard import screen_board   # #120 wrong-fixture boards
+    odds_rows = screen_board(match_id, operator, odds_rows,
+                             market_of=lambda r: r["market"], selection_of=lambda r: r["selection"],
+                             odds_of=lambda r: r["odds"], line_of=lambda r: r.get("handicap_line"),
+                             minutes_to_kickoff=minutes_to_kickoff)
     from workers.utils.mirror_guard import drop_mirrored_1x2
     odds_rows = drop_mirrored_1x2(
         match_id, operator, odds_rows,
@@ -811,6 +816,19 @@ def store_book_odds_snapshots(
     # Unibet-Kambi — 12 of the 29 mirrored triples measured over 120 days, and
     # the feeds whose matchers accept a flipped event without recording that it
     # was flipped (workers/utils/mirror_guard.py names the file:line).
+    # WRONG-FIXTURE-BOARDS (#120): a whole board that is another match's prices is refused
+    # entirely — the mirror guard below only strips 1X2, which is right for a transposition
+    # and wrong for a wrong pairing. workers/utils/board_guard.py.
+    # OU-LINE-LABEL (#121): never store an over_under_* row whose line is not its label's.
+    from workers.utils.odds_quality import ou_line_matches
+    rows = [r for r in rows if ou_line_matches(r[0], r[3] if len(r) > 3 else None)]
+    from workers.utils.board_guard import screen_board
+    rows = screen_board(match_id, bookmaker, rows,
+                        market_of=lambda r: r[0], selection_of=lambda r: r[1],
+                        odds_of=lambda r: r[2], line_of=lambda r: r[3] if len(r) > 3 else None,
+                        minutes_to_kickoff=minutes_to_kickoff)
+    if not rows:
+        return 0
     from workers.utils.mirror_guard import drop_mirrored_1x2
     rows = drop_mirrored_1x2(
         match_id, bookmaker, rows,

@@ -44,10 +44,6 @@ ALERT_PER_BOOK_PER_DAY = 3
 SNAP_GAP_S = 120   # rows of one book written within 2 min of each other are ONE snapshot
 
 
-def _minute(ts):
-    return ts.replace(second=0, microsecond=0)
-
-
 def _snapshots(rows) -> list[tuple]:
     """rows of ONE (fixture, book) → [(snapshot_ts, [rows])], grouped by time GAP, not by
     calendar minute: Coolbet writes one row at a time, each with its own now(), so a board
@@ -90,6 +86,30 @@ def _peers_asof(history: dict, book: str, t, *, allow_after: bool = False) -> di
                 val = odds
         if val is not None:
             out.setdefault(market, {}).setdefault(b, {})[sel] = val
+    return out
+
+
+OWN_BOARD_WINDOW_MIN = 60
+
+
+def _own_asof(history: dict, book: str, t) -> dict:
+    """This book's own latest quote per (market, sel) within OWN_BOARD_WINDOW_MIN before t.
+    A snapshot often carries only part of the board (Coolbet/Epicbet write markets in
+    separate passes); judging only its rows let a wrong 1X2 written 9 min after the rest
+    of the wrong board through as a single-market fault (Chippenham, review #2)."""
+    lo = t - timedelta(minutes=OWN_BOARD_WINDOW_MIN)
+    out: dict = {}
+    for (b, market, sel), series in history.items():
+        if b != book:
+            continue
+        val = None
+        for ts, odds in series:
+            if ts > t:
+                break
+            if ts >= lo:
+                val = odds
+        if val is not None:
+            out.setdefault(market, {})[sel] = val
     return out
 
 
@@ -160,21 +180,26 @@ def run(*, dry_run: bool = False, back_h: float = 3, ahead_h: float = 48) -> dic
         for k in series:
             series[k].sort()
         mine = [r for r in hist if r["book"] == book]
-        move_ids, wrong_snaps, mirror_snaps, swap_snaps, example = [], 0, 0, 0, None
+        move_ids, wrong_snaps, mirror_snaps, swap_snaps = [], 0, 0, 0
+        wrong_ex = swap_ex = None
         for t, snap in _snapshots(mine):
-            v = _judge(_board_of(snap), _peers_asof(series, book, t))
+            # judge the book's board AS IT STOOD at t (its own last hour), not only the rows
+            # this snapshot happens to carry
+            v = _judge(_own_asof(series, book, t), _peers_asof(series, book, t))
+            snap_markets = {r["market"] for r in snap}
             if v["wrong"]:
                 wrong_snaps += 1
-                example = example or v["wrong"]
+                wrong_ex = wrong_ex or v["wrong"]
                 move_ids += [r["id"] for r in snap]            # every market of the wrong match
                 continue
-            if v["mirror"]:
+            if v["mirror"] and "1x2" in snap_markets:
                 mirror_snaps += 1
                 move_ids += [r["id"] for r in snap if r["market"] == "1x2"]
-            if v["swapped"]:
+            if v["swapped"] and snap_markets & set(v["swapped"]):
                 swap_snaps += 1
-                example = example or v["swapped"]
+                swap_ex = swap_ex or v["swapped"]
                 move_ids += [r["id"] for r in snap if r["market"] in v["swapped"]]
+        example = wrong_ex if wrong_snaps else swap_ex
         if not move_ids:
             continue
         check = ("wrong_fixture_board" if wrong_snaps else

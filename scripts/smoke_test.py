@@ -29643,10 +29643,19 @@ def test_coolbet_date_guard_dead_2026_08_31():
     # matched on name, 7 agreed to the minute and the 2 rejects were genuinely
     # different fixtures (Man Utd U21 13 days out).
     assert cp._FUZZY_DATE_TOLERANCE_HOURS == 6
+    # CHANGED 2026-09-24 (#120 WRONG-FIXTURE-BOARDS): "3h of jitter must not cost us a
+    # fixture" was measured on 9 fixtures. On 7 days of book_event_map a CORRECT pairing's
+    # book start is within 15 min of our kickoff 99% of the time (Coolbet 1,638/1,656), and
+    # 1-6 h neighbours were mostly OTHER matches (Narva v Levadia stored Goias v Avai's
+    # board). Pairing now needs <= 45 min; 45 min - 6 h is a QUIET reject (no date dispute).
     near = cp._parse_event({"id": 2, "name": "Atl\u00e9tico Grau - FBC Melgar",
-                            "match_start": "2026-08-31T23:00:00.000Z"})
+                            "match_start": "2026-08-31T20:30:00.000Z"})
     assert cp.fuzzy_match_event("Atletico Grau", "FBC Melgar", [near], stale) is not None, \
-        "3h of jitter must not cost us a fixture"
+        "30 min of jitter must not cost us a fixture"
+    far = cp._parse_event({"id": 3, "name": "Atl\u00e9tico Grau - FBC Melgar",
+                           "match_start": "2026-08-31T23:00:00.000Z"})
+    assert cp.fuzzy_match_event("Atletico Grau", "FBC Melgar", [far], stale) is None, \
+        "a 3 h gap is another match, not jitter (#120)"
 
     # A name-perfect candidate losing ONLY on date is not "Coolbet does not
     # offer this" — it is "our date is stale", and the two call for opposite
@@ -52658,7 +52667,7 @@ def test_feed_registry_covers_sweepers():
     assert 'id="feed_health"' in sched
     assert (root / "supabase/migrations/388_feed_status.sql").exists()
     cool = sched[sched.index("def job_coolbet_odds_snapshot"):sched.index("def _coolbet_odds_snapshot_wrapper")]
-    assert "fixtures >= 20 and not stored" in cool and "raise RuntimeError" in cool, (
+    assert "fixtures >= 10 and not stored" in cool and "raise RuntimeError" in cool and "refresh_skipped" in cool, (
         "the Coolbet sweep must fail when it stores nothing")
     epic = sched[sched.index("def job_epicbet_odds_snapshot"):sched.index("def _epicbet_odds_snapshot_wrapper")]
     assert "raise RuntimeError" in epic, "the Epicbet sweep must fail when it stores nothing"
@@ -53119,6 +53128,11 @@ def test_betfair_exchange_reader():
     assert b.runner_selection("ASIAN_HANDICAP", "B", "A", "B") == "away"
     assert b.EXTRA_MIN_MATCHED >= 1000, "extra markets only for events with a liquid match-odds market"
     assert "handicap_line" in (Path(__file__).resolve().parent.parent / "supabase/migrations/396_exchange_quotes_lines.sql").read_text()
+    # retention: thin far-from-kickoff captures to hourly after 2 days, keep near-kickoff in full
+    psrc = inspect.getsource(b.prune)
+    assert b.RETAIN_FULL_WITHIN_MIN >= 180 and "date_trunc('hour', captured_at)" in psrc
+    assert "minutes_to_kickoff > %s" in psrc and "rn > 1" in psrc
+    assert 'id="exchange_quotes_prune"' in (Path(__file__).resolve().parent.parent / "workers/scheduler.py").read_text()
     root = Path(__file__).resolve().parent.parent
     assert "CREATE TABLE IF NOT EXISTS exchange_quotes" in (root / "supabase/migrations/395_exchange_quotes.sql").read_text()
     assert 'id="betfair_exchange_snapshot"' in (root / "workers/scheduler.py").read_text()
@@ -53182,8 +53196,9 @@ def test_board_guard():
     from workers.api_clients import supabase_client as sc
     from workers.automation import coolbet_explorer as ce
 
-    def peers(**markets):   # market -> list of (sel dict) for 5 peer books
-        return {m: {f"B{i}": dict(q) for i, q in enumerate(qs)} for m, qs in markets.items()}
+    def peers(**markets):   # market -> 5 peer books, slightly different (identical feeds count once)
+        return {m: {f"B{i}": {k: round(v * (1 + 0.01 * i), 3) for k, v in q.items()} for i, q in enumerate(qs)}
+                for m, qs in markets.items()}
     p = peers(**{"1x2": [{"home": 10.0, "draw": 5.5, "away": 1.28}] * 5,
                  "over_under_25": [{"over": 1.40, "under": 2.90}] * 5,
                  "over_under_35": [{"over": 2.06, "under": 1.75}] * 5})
@@ -53205,6 +53220,27 @@ def test_board_guard():
     # quorum: fewer than MIN_PEERS books → no judgement (fail open)
     few = {m: dict(list(v.items())[:3]) for m, v in p.items()}
     assert g.board_offenses(wrong, few) == []
+    # two-way swap (#121): over/under stored the wrong way round, rest of the board fine
+    sw = peers(**{"over_under_25": [{"over": 1.50, "under": 2.60}] * 5})
+    assert g.swapped_two_way({"over_under_25": {"over": 2.60, "under": 1.50}}, sw) == ["over_under_25"]
+    assert g.swapped_two_way({"over_under_25": {"over": 1.55, "under": 2.50}}, sw) == []
+    coin = peers(**{"btts": [{"yes": 1.90, "no": 1.90}] * 5})      # 50/50: no power, never judged
+    assert g.swapped_two_way({"btts": {"no": 1.95, "yes": 1.85}}, coin) == []
+    # review fixes: identical feeds are ONE opinion; a direct book agreeing corroborates
+    same = {m: {f"B{i}": dict(q) for i, q in enumerate(qs)} for m, qs in
+            {"1x2": [{"home": 10.0, "draw": 5.5, "away": 1.28}] * 5}.items()}
+    assert g.board_offenses(wrong, same) == [], "5 byte-identical feeds are not a 5-book quorum"
+    corro = {m: dict(v) for m, v in p.items()}
+    corro["1x2"] = dict(corro["1x2"], **{"Unibet-Site": {"home": 1.97, "draw": 3.4, "away": 3.55}})
+    corro["over_under_25"] = dict(corro["over_under_25"], **{"Unibet-Site": {"over": 2.5, "under": 1.52}})
+    assert not g.is_wrong_board(g.board_offenses(wrong, corro)), "Unibet-Site independently agrees"
+    assert "Pinnacle" in g.NEVER_JUDGED
+    # corroboration is tight (15%), must be closer to the board than to its mirror, and is
+    # voided when another direct book contradicts (4f6992cc: two wrongly paired books agreed)
+    assert g.CORROBORATE_RATIO <= 1.15
+    both = {"Epicbet": {"home": 1.97, "draw": 3.4, "away": 3.55}, "Coolbet": {"home": 10.0, "draw": 5.5, "away": 1.28}}
+    assert not g._corroborated({"home": 1.95, "draw": 3.4, "away": 3.6}, ("home", "draw", "away"), both)
+    assert "_own_asof(series, book, t)" in inspect.getsource(a.run), "judge the board as it stood, not one snapshot"
     # a mislabelled line (1xBet over_under_25 rows carrying 0.25) is never compared as 2.5
     assert g._line_ok("over_under_25", 2.5) and not g._line_ok("over_under_25", 0.25)
     # wired into all three direct-book writers, BEFORE the mirror guard
@@ -53217,7 +53253,173 @@ def test_board_guard():
     asrc = inspect.getsource(a.run)
     assert "INSERT INTO odds_snapshots_quarantined" in asrc and "DELETE FROM odds_snapshots WHERE id = ANY" in asrc
     assert asrc.index("INSERT INTO odds_snapshots_quarantined") < asrc.index("DELETE FROM odds_snapshots")
-    assert "replace(second=0, microsecond=0)" in inspect.getsource(a._minute)
+    assert "original_id" in asrc and "is_opening" in asrc, "a move must be fully reversible"
+    assert "::uuid[]" in asrc
+    # snapshots by time GAP (Coolbet writes each leg with its own now()); peers AS OF the snapshot
+    from datetime import datetime, timedelta, timezone
+    t0 = datetime(2026, 9, 24, 12, 0, 59, tzinfo=timezone.utc)
+    snaps = a._snapshots([{"timestamp": t0}, {"timestamp": t0 + timedelta(seconds=2)},
+                          {"timestamp": t0 + timedelta(minutes=30)}])
+    assert len(snaps) == 2 and len(snaps[0][1]) == 2, "a board straddling a minute boundary is one snapshot"
+    hist = {("Pinnacle", "1x2", "home"): [(t0 - timedelta(days=30), 3.7), (t0 - timedelta(hours=1), 2.1)]}
+    assert a._peers_asof(hist, "Epicbet", t0 - timedelta(days=29)) == {}, "August snapshot vs August peers only"
+    assert a._peers_asof(hist, "Epicbet", t0)["1x2"]["Pinnacle"]["home"] == 2.1
+
+
+@test("OU-LINE-LABEL — an over_under_* row whose line is not its label's line never lands")
+def test_ou_line_label():
+    """#121 (2026-09-24): 408 1xBet rows stored as over_under_25 carried handicap_line 0.25
+    (over 1.02 / under 10.9) and were read as the 2.5 line by every O/U consumer."""
+    import inspect
+    from workers.utils.odds_quality import ou_line_from_label, ou_line_matches, filter_garbage_ou_rows
+    from workers.api_clients import supabase_client as sc
+    from workers.automation import coolbet_explorer as ce
+    assert [ou_line_from_label(m) for m in ("over_under_25", "over_under_225", "over_under_025",
+            "over_under_1h_05", "over_under_40")] == [2.5, 2.25, 0.25, 0.5, 4.0]
+    assert not ou_line_matches("over_under_25", 0.25) and ou_line_matches("over_under_25", 2.5)
+    assert ou_line_matches("over_under_025", 0.25), "a real quarter line must not be refused"
+    assert ou_line_matches("over_under_25", None) and ou_line_matches("1x2", None)
+    rows = [{"bookmaker": "1xBet", "market": "over_under_25", "selection": "over", "odds": 1.02, "handicap_line": 0.25},
+            {"bookmaker": "1xBet", "market": "over_under_25", "selection": "under", "odds": 10.9, "handicap_line": 0.25}]
+    assert filter_garbage_ou_rows(rows) == []
+    assert "ou_line_matches(r[0]" in inspect.getsource(sc.store_book_odds_snapshots)
+    assert "ou_line_matches(r[0], r[3])" in inspect.getsource(ce)
+
+
+@test("RESULTS-CHECK — API-Football vs Tonybet regular-time scores; status 0 / ET endings never compared")
+def test_results_check():
+    """#121 (2026-09-24): two real disagreements in 7 days (JOS Watergraafsmeer v TEC 4-4 vs
+    2-2; Hapoel Ramat HaSharon v Sderot 1-0 vs 3-1). A disagreement is flagged with the bets
+    already settled on it; settlement is NOT held yet (owner decision)."""
+    import inspect
+    from pathlib import Path
+    from workers.jobs import results_check as rc
+    src = inspect.getsource(rc.run)
+    assert rc._ENDED_NORMAL_TIME == 100 and "r.match_status_id = %s" in src
+    assert "abs(extract(epoch FROM (r.kickoff - m.date))) <= 900" in src, "only when the book's kickoff agrees"
+    assert "results_disagree" in src and "settled_bets" in src
+    assert 'id="results_check"' in (Path(__file__).resolve().parent.parent / "workers/scheduler.py").read_text()
+
+
+@test("REFRESH-BY-KICKOFF — per-match fetches thin out far from kickoff (Coolbet, Epicbet deep board, Unibet)")
+def test_refresh_by_kickoff():
+    """#112 (2026-09-24). Re-fetching every fixture's full board every 30 min — including
+    games two days out — is what drives Coolbet to its 500/h cap (298/508 median/peak).
+    <3 h: every pass; 3–12 h: hourly; >12 h: ~2-hourly; unknown/never stored: always due."""
+    import inspect
+    from datetime import datetime, timedelta, timezone
+    from workers.automation import coolbet_explorer as ce, epicbet_explorer as ee, unibet_odds_feed as uf
+    now = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
+    due, h, m = ce.refresh_due, timedelta(hours=1), timedelta(minutes=1)
+    assert due(now + 1 * h, now - 10 * m, now), "under 3 h: every pass"
+    assert not due(now + 6 * h, now - 30 * m, now) and due(now + 6 * h, now - 60 * m, now)
+    assert not due(now + 30 * h, now - 90 * m, now) and due(now + 30 * h, now - 120 * m, now)
+    assert due(now + 30 * h, None, now) and due(None, now, now), "never stored / unknown kickoff: due"
+    assert "refresh_due(cb_start, last_stored.get(" in inspect.getsource(ce.run_board_sweep)
+    assert "refresh_due(_parse_iso_start(ev.get(\"start\")), last, now)" in inspect.getsource(ee.enrich_with_sidebets)
+    assert "refresh_due(f[\"date\"], _last_ub.get(" in inspect.getsource(uf)
+
+
+@test("INPLAY-SLIM — collector fetches <=25 fixtures/90 s, mapped fixtures first, and restarts on deploy")
+def test_inplay_slim():
+    """#112 (2026-09-24). At 45 s / 60 fixtures the paper-only collector needed ~9,600 req/h,
+    a third of its rows could not be joined to our matches, nothing in production reads it,
+    and it kept running pre-metering code because the deploy restarted only the scheduler."""
+    import inspect
+    from pathlib import Path
+    from workers.jobs import inplay_collector as ic
+    src = inspect.getsource(ic.run)
+    assert "sorted(board, key=lambda f: f[\"eb_id\"] not in afmap)[:max_fixtures]" in src
+    assert "for f in todo" in src and "eb.live_board()[:max_fixtures]" not in src
+    root = Path(__file__).resolve().parent.parent
+    unit = (root / "deploy/vps/oddsintel-inplay-collector.service").read_text()
+    assert "--cadence 90 --max-fixtures 25" in unit
+    assert "systemctl restart oddsintel-inplay-collector" in (root / ".github/workflows/deploy.yml").read_text()
+
+
+@test("UNIBET-WORLD — fixtures with no Unibet country category are matched by competition name")
+def test_unibet_world():
+    """#112 (2026-09-24): AF files friendlies / Nations League / qualifiers under country
+    'World', which never scored >= 80 against a Unibet country, so 28% of the window was
+    never swept. Unmatched countries now regroup by league name against the same list."""
+    import inspect
+    from workers.automation import unibet_odds_feed as uf
+    src = inspect.getsource(uf._async_run_bulk)
+    assert 'groups.setdefault("league:" + (f.get("league") or "")' in src
+    assert 'target.startswith("league:")' in src and "league_unmapped" in src
+    assert "top-level categories" in src, "the category list is logged so the mapping can be tightened"
+
+
+@test("OBSERVATORY-METRICS — daily metrics surface only CHANGES vs their own 28-day baseline")
+def test_observatory_metrics():
+    """#121 phase 3 pilot (2026-09-24), migration 400."""
+    import inspect
+    from pathlib import Path
+    from workers.jobs import observatory_metrics as om
+    assert om.robust_z(10.0, [1.0] * 3) is None, "fewer than 7 baseline days: no verdict"
+    assert om.robust_z(10.0, [1.0] * 10) is None, "flat baseline (MAD 0): no verdict"
+    base = [1.0, 1.1, 0.9, 1.05, 0.95, 1.0, 1.02, 0.98]
+    assert abs(om.robust_z(1.0, base)) < 1 and om.robust_z(3.0, base) > om.Z_ALERT
+    src = inspect.getsource(om.run)
+    assert "metric_shift" in src and "MIN_N.get(key, 0)" in src
+    root = Path(__file__).resolve().parent.parent
+    assert "CREATE TABLE IF NOT EXISTS obs_metric_values" in (root / "supabase/migrations/400_obs_metric_values.sql").read_text()
+    assert 'id="observatory_metrics"' in (root / "workers/scheduler.py").read_text()
+
+
+@test("AF-ODDS-FAILS-LOUD — an API-Football error fails the odds run instead of 'completed, 0 rows'")
+def test_af_odds_fails_loud():
+    """2026-09-24: ~2 h of SSL EOF errors on every AF call; each 30-min refresh logged
+    COMPLETED with 0 rows and nothing alerted until the data went stale."""
+    import inspect
+    from workers.jobs import fetch_odds as fo
+    src = inspect.getsource(fo.fetch_af_odds)
+    i = src.index("AF odds error")
+    assert "raise RuntimeError" in src[i:i + 300] and "return 0" not in src[i:i + 300]
+
+
+@test("MATCHER-WRONG-FIXTURE — 45-min start tolerance (quiet), orientation-consistent names, one event → one fixture")
+def test_matcher_wrong_fixture():
+    """#120 root cause (2026-09-24): Epicbet/Unibet paired events up to ±6 h away, let both
+    of our teams match the same book side, and let one event pair with several fixtures —
+    109 Epicbet / 41 Unibet events claimed by >1 fixture in 7 days. A 45 min – 6 h gap is a
+    QUIET reject (no date dispute, which would drop our fixture from pricing)."""
+    import inspect
+    from datetime import datetime, timezone
+    from workers.automation import coolbet_placer as cp
+    ko = datetime(2026, 9, 24, 18, 0, tzinfo=timezone.utc)
+    ev = lambda i, h, a, start: {"id": i, "home": h, "away": a, "start": start}
+    assert (cp.fuzzy_match_event("Levadia", "Narva Trans", [ev(1, "Levadia", "Narva Trans", "2026-09-24T18:30:00Z")], ko) or {}).get("id") == 1
+    assert cp.fuzzy_match_event("Levadia", "Narva Trans", [ev(2, "Levadia", "Narva Trans", "2026-09-24T19:30:00Z")], ko) is None
+    src = inspect.getsource(cp.fuzzy_match_event)
+    i = src.index("_PAIR_START_TOLERANCE_MIN * 60")
+    assert "date_rejects.append" not in src[i:i + 700], "45 min – 6 h must not raise a date dispute"
+    # orientation: both of our teams matching the SAME book side is not a match
+    same_side = ev(3, "Hapoel Tel Aviv Hapoel Haifa", "Maccabi Netanya", "2026-09-24T18:00:00Z")
+    assert cp.fuzzy_match_event("Hapoel Tel Aviv", "Hapoel Haifa", [same_side], ko) is None
+    # one event -> one fixture: the closest kickoff keeps it
+    f1 = {"id": "a", "home": "Levadia", "away": "Narva", "date": ko}
+    f2 = {"id": "b", "home": "Levadia", "away": "Narva", "date": datetime(2026, 9, 24, 18, 40, tzinfo=timezone.utc)}
+    e = ev(9, "Levadia", "Narva", "2026-09-24T18:00:00Z")
+    kept, dropped = cp.unique_pairs([(f2, e), (f1, e)])
+    assert dropped == 1 and kept[0][0]["id"] == "a"
+
+
+@test("STARTUP-CATCHUP — a sweep skipped by a restart runs once on start")
+def test_startup_catchup():
+    """2026-09-24: six deploys between 07:55 and 08:47 swallowed both Epicbet sweeps."""
+    import re
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "workers/scheduler.py").read_text()
+    block = src[src.index("_CATCHUP_SWEEPS = ("):src.index("def _startup_catchup")]
+    for job in ("epicbet_odds_snapshot", "coolbet_odds_snapshot", "odds_refresh", "unibet_site_odds"):
+        assert f'"{job}"' in block, job
+    pairs = re.findall(r'\("(\w+)", "(\w+)", \d+\)', block)
+    assert len(pairs) >= 5
+    for _job, wrapper in pairs:
+        assert f"def {wrapper}(" in src, f"catch-up names a function that does not exist: {wrapper}"
+    assert "interval + 5" in src[src.index("def _startup_catchup"):][:1500]
+    assert 'id="startup_catchup"' in src
 
 
 @test("BETFAIR-GEO-PROBE — the one-shot exchange probe is read-only and uses the site's own query")

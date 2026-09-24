@@ -87,8 +87,13 @@ def fetch_af_odds(target_date: str) -> int:
         bulk_odds = get_odds_by_date(target_date)
         console.print(f"  {len(bulk_odds)} fixtures with odds from AF")
     except Exception as e:
+        # AF-ODDS-SILENT-FAIL (2026-09-24): this returned 0, so run_odds logged the run
+        # COMPLETED with 0 rows. For ~2 h every AF call ended in an SSL EOF, each refresh
+        # "completed", and /admin/feeds only noticed when the data went stale at 90 min.
+        # A failed fetch is a failed run: raise, so pipeline_runs, feed health and the
+        # failure alerts see it at the first refresh.
         console.print(f"  [red]AF odds error: {e}[/red]")
-        return 0
+        raise RuntimeError(f"AF bulk odds fetch failed for {target_date}: {e}") from e
 
     # Build all rows up-front, then write in a single bulk_insert call.
     # Previous version did one bulk_insert per fixture (~560 round-trips at
