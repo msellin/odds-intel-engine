@@ -10,6 +10,7 @@ check (src/lib/bot-board.ts isBotBoardDevPreview — development builds only).
     python3 scripts/dump_bot_board_fixture.py            # default output path
     python3 scripts/dump_bot_board_fixture.py --out /tmp/x.json
 
+`overview` holds the non-bot reads of the /admin Overview (feeds, jobs, DQ, real bets per week).
 `weekly` (the 12-week strip), `market_stats` and the ledger's home_team / away_team come from
 migration 411's views bot_weekly / bot_market_stats / bot_ledger_display. They are computed here with the SAME SQL inline (below)
 rather than read from the views, so the fixture works before 411 is applied. Keep the two in
@@ -95,6 +96,29 @@ SELECT l.bot_name,
 """
 
 
+# Same body as the pipeline_job_latest view (migration 417).
+_JOB_LATEST_SQL = """
+WITH r AS (
+    SELECT job_name, status, started_at, error_message,
+           max(started_at) FILTER (WHERE status = 'completed') OVER (PARTITION BY job_name) AS last_ok_at,
+           row_number() OVER (PARTITION BY job_name ORDER BY started_at DESC)             AS rn
+      FROM public.pipeline_runs
+     WHERE started_at > now() - interval '35 days'
+       AND job_name NOT IN ('hist_backfill', 'backfill_coaches', 'backfill_transfers')
+), f AS (
+    SELECT job_name,
+           -- distinct minutes, not rows: some jobs write two rows per run (prune_anon_users)
+           count(DISTINCT date_trunc('minute', started_at)) FILTER (WHERE status = 'failed' AND started_at > coalesce(last_ok_at, '-infinity')) AS fail_streak,
+           min(started_at) FILTER (WHERE status = 'failed' AND started_at > coalesce(last_ok_at, '-infinity')) AS failing_since
+      FROM r
+     GROUP BY job_name
+)
+SELECT r.job_name, r.status, r.started_at, r.error_message, r.last_ok_at, f.fail_streak, f.failing_since
+  FROM r JOIN f USING (job_name)
+ WHERE r.rn = 1
+"""
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(_WEB / ".dev-fixtures" / "bot-board.json"))
@@ -127,6 +151,31 @@ def main() -> None:
         "ledger": ledger,
         "weekly": weekly,
         "market_stats": _rows(_MARKET_STATS_SQL),
+        # /admin Overview (#139, 2026-09-24): the non-bot reads src/lib/admin-overview.ts makes,
+        # in the same shapes (feed_status rows, latest pipeline run per job, counts).
+        "overview": {
+            "feeds": _rows("SELECT * FROM feed_status"),
+            # Same body as view pipeline_job_latest (migration 417), inline so it works pre-deploy.
+            "jobs": _rows(_JOB_LATEST_SQL),
+            "stale_pending": _rows(
+                """SELECT count(*) AS n FROM simulated_bets b JOIN matches m ON m.id = b.match_id
+                    WHERE b.result = 'pending' AND m.date < now() - interval '150 minutes'""")[0]["n"],
+            "dq_24h": _rows(
+                """SELECT check_name, count(*) AS n FROM data_quality_findings
+                    WHERE found_at > now() - interval '24 hours' GROUP BY 1"""),
+            "unconfirmed_manual": _rows(
+                """SELECT count(*) AS n FROM real_bets
+                    WHERE placed_real IS NULL AND placed_at >= '2026-09-10'
+                      AND placed_at < now() - interval '24 hours'""")[0]["n"],
+            "real_bets_weekly": _rows(
+                """SELECT to_char(date_trunc('week', placed_at), 'YYYY-MM-DD') AS week, count(*) AS bets,
+                          coalesce(sum(stake), 0) AS staked,
+                          coalesce(sum(pnl) FILTER (WHERE result IS NOT NULL AND result <> 'pending'), 0) AS pnl
+                     FROM real_bets
+                    WHERE placed_real IS DISTINCT FROM false
+                      AND placed_at >= date_trunc('week', now()) - interval '11 weeks'
+                    GROUP BY 1 ORDER BY 1"""),
+        },
     }
     p = Path(a.out)
     p.parent.mkdir(parents=True, exist_ok=True)

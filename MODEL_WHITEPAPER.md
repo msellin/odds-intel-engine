@@ -1319,7 +1319,7 @@ All four tables append-only or upsert-by-natural-key:
 | `cs2_upcoming_matches` | Latest snapshot per (team1, team2, kickoff); UPSERT on each scan |
 | `cs2_predictions` | Immutable history, one row per (bo3gg_id, scan_time); model_version tagged |
 | `cs2_results` | Match outcomes (winner, score, finished_at); PRIMARY KEY bo3gg_id |
-| `cs2_bets` | User-logged real bets (LogBetButton on admin/cs2) |
+| `cs2_bets` | User-logged real bets (LogBetButton on admin/cs2 — page deleted 2026-09-24, #139; CS2 retired) |
 | `cs2_simulated_bets` | Bot picks, UNIQUE (bot, match, market, bookie) |
 
 ### 10b.5 Coverage gate (lesson from the Banger Gang incident)

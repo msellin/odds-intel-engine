@@ -54358,6 +54358,68 @@ def test_admin_controls_one_writer():
                 assert ".update(" not in t and ".upsert(" not in t and ".insert(" not in t, f"{f} writes {tbl} directly"
 
 
+@test("ADMIN-OVERVIEW-DASHBOARD — /admin is a chart dashboard + attention inbox on the SAME bot rules as /admin/bots")
+def test_admin_overview_dashboard():
+    """#139 (2026-09-24). Owner: "make it look like a real admin dashboard … like the ones on Google —
+    graphs, bars, columns". IA move P4: the Overview is an attention inbox (only things that need an
+    action, each linking to where it is fixed) plus KPI cards and interactive charts. Guards:
+    (1) bot issues come from the /admin/bots view model (needsALook + picksTelegramMismatch, moved
+    into the pure bot-board-model.ts) — never a second, drifting rule; (2) every attention item has
+    a link; (3) the CLV chart treats a week with < 5 closing lines as a gap, never a point; (4) the
+    shared product components live in components/oi and the admin aliases exist in globals.css."""
+    if not (_web_root / "src").exists():
+        return
+    ov = _web_path("src/lib/admin-overview.ts").read_text(encoding="utf-8")
+    assert "needsALook(" in ov and "picksTelegramMismatch(" in ov and "buildView(" in ov
+    assert 'from "@/app/(app)/admin/bots/bot-board-model"' in ov
+    assert "MIN_CLV_N = 5" in ov and ">= MIN_CLV_N ?" in ov, "sparse CLV weeks must be null (a gap)"
+    model = _web_path("src/app/(app)/admin/bots/bot-board-model.ts").read_text(encoding="utf-8")
+    assert "export function picksTelegramMismatch(" in model and "export function picksUnavailable(" in model
+    cell = _web_path("src/app/(app)/admin/bots/bot-controls-cell.tsx").read_text(encoding="utf-8")
+    assert "export function picksTelegramMismatch(" not in cell, "one copy of the rule, in the pure model"
+    att = _web_path("src/lib/admin-attention.ts").read_text(encoding="utf-8")
+    import re
+    pushes = re.findall(r"out\.push\(\{[^;]*?\}\);", att, flags=re.S)
+    assert len(pushes) >= 10 and all("href:" in x for x in pushes), "every attention item links to its fix"
+    # (5) job failures come from view pipeline_job_latest (mig 417, 35 days, failure streak) — the web's
+    # getLatestJobStatuses sees ~2 h and missed every nightly failure; (6) unreadable sources surface
+    # as items, never as an empty "all clear"; (7) no chart pits the fleet against the junk control
+    # (SYSTEM_MAP: the control is a harness check, never a matched null for live arms).
+    mig = _engine_path("supabase/migrations/417_pipeline_job_latest.sql").read_text(encoding="utf-8")
+    assert "interval '35 days'" in mig and "fail_streak" in mig and "failing_since" in mig
+    assert "GRANT SELECT ON public.pipeline_job_latest TO service_role" in mig and "TO anon" not in mig
+    assert 'from("pipeline_job_latest")' in ov and "getLatestJobStatuses," not in ov and "getLatestJobStatuses }" not in ov
+    for src_err in ("feedsError", "jobsError", "staleError", "dqError"):
+        assert src_err in att, f"attention must surface {src_err}"
+    assert "unreadable(" in att
+    charts = _web_path("src/app/(app)/admin/overview-charts.tsx").read_text(encoding="utf-8")
+    assert "control" not in charts.lower().replace("controls", ""), "no fleet-vs-junk-control chart"
+    assert "RETIRED_SERIES" in charts, "retired bots stay visible as one series, not silently dropped"
+    page = _web_path("src/app/(app)/admin/page.tsx").read_text(encoding="utf-8")
+    assert "loadOverview(" in page and "<OverviewCharts" in page and 'id="attention"' in page
+    assert "is_superadmin" in page and "isBotBoardDevPreview()" in page
+    for comp in ("panel.tsx", "stat-card.tsx", "status-badge.tsx", "charts.tsx"):
+        assert _web_path(f"src/components/oi/{comp}").exists(), comp
+    css = _web_path("src/app/globals.css").read_text(encoding="utf-8")
+    for tok in ("--color-success:", "--color-danger:", "--color-info:", "--color-method-sharp:"):
+        assert tok in css, tok
+
+
+@test("ADMIN-DEAD-PAGES-DELETED — CS2 / LoL / Tennis admin pages and their bet routes stay deleted")
+def test_admin_dead_pages_deleted():
+    """#139 IA move P8 (2026-09-24). Owner: delete the LoL and Tennis pages. /admin/cs2 read
+    cs2_simulated_bets / cs2_upcoming_matches, which no longer exist (CS2 jobs silent since 07-31).
+    The sidebar must not link them either (ADMIN-SHARED-SHELL checks nav ↔ pages the other way)."""
+    if not (_web_root / "src").exists():
+        return
+    for gone in ("src/app/(app)/admin/cs2", "src/app/(app)/admin/lol", "src/app/(app)/admin/tennis",
+                 "src/app/api/cs2-bets", "src/app/api/lol-bets"):
+        assert not _web_path(gone).exists(), f"{gone} must stay deleted"
+    nav = _web_path("src/components/admin/admin-nav.ts").read_text(encoding="utf-8")
+    for href in ("/admin/cs2", "/admin/lol", "/admin/tennis"):
+        assert href not in nav, href
+
+
 @test("BOT-BOARD-DEV-PREVIEW-NEVER-IN-PROD — the no-login /admin/bots fixture preview is development-only")
 def test_bot_board_dev_preview_never_in_prod():
     """#139 (2026-09-24): /admin/bots can render from a JSON snapshot without the superadmin

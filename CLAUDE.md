@@ -458,7 +458,7 @@ Server-side gating is the only safe gating. Client-side gating hides UI but does
 | `src/lib/get-user-tier.ts` | Reads `profiles.tier` + `is_superadmin` |
 | `src/lib/real-money-tier.ts` | Real-money tier badge logic |
 
-**Admin (superadmin only)** — `/admin` (leads with the **Bookmakers & feeds** block, 2026-09-23), **`/admin/feeds`** (every sweeper/feed: last data, schedule, today's coverage, errors — #107), `/admin/bots` (unified bot board over `bot_scoreboard` / `bot_ledger` / `bot_config`, #139), `/admin/ops`, `/admin/shadow-bots[/[bot]]`. `/admin/place`, `/admin/real-bets` and CS2/LoL/tennis still exist as routes but were dropped from the index (unused). This is where the
+**Admin (superadmin only)** — one shared shell (sidebar on every page, `admin/layout.tsx`). `/admin` = **Overview dashboard** (KPI cards, attention inbox, charts — #139, 2026-09-24; data `src/lib/admin-overview.ts`, rules `src/lib/admin-attention.ts`, shared components `src/components/oi/`), **`/admin/feeds`** (every sweeper/feed: last data, schedule, today's coverage, errors — #107), `/admin/bots` (unified bot board over `bot_scoreboard` / `bot_ledger` / `bot_config`, #139), `/admin/ops`, `/admin/shadow-bots[/[bot]]`. `/admin/place` and `/admin/real-bets` still exist but are marked unused in the sidebar; **CS2 / LoL / Tennis pages were DELETED 2026-09-24** (#139 IA P8, owner). This is where the
 operator-facing surfaces live; most day-to-day work touches these, not the public pages.
 
 | File | Purpose |

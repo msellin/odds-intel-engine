@@ -14,9 +14,10 @@ Rule: every step ships with a smoke test and 1–2 independent review agents (2 
 - [ ] Admin dashboard: shared shell + design system + IA moves (see HANDOVER §2)
   - [x] shared shell (57086ec)
   - [x] IA P1 footprint = info layer, readiness warning (owner: sweeping only) · P2 switch → /admin/feeds + 4th status line · P3 unaudited writers deleted
-  - [ ] design tokens + `components/oi` (Panel, StatCard+sparkline, StatusBadge/TrendPill, charts) + Overview rebuild (charts + attention inbox = P4)
+  - [x] design tokens + `components/oi` (Panel, StatCard+sparkline, StatusBadge/TrendPill, charts) + Overview rebuild (charts + attention inbox = P4) + mig 417 pipeline_job_latest
   - [ ] shell top bar (breadcrumb, ⌘K, bell)
-  - [ ] P5 Money page · P6 Pick queue · P7 retire [bot] page · P8 delete cs2/place/lol/tennis (owner: delete LoL+Tennis) · P9 Ops → Jobs
+  - [x] P8a delete cs2/lol/tennis
+  - [ ] P5 Money page · P6 Pick queue · P7 retire [bot] page · P8b delete /admin/place (14 smoke pins) · P9 Ops → Jobs
   - [ ] per-page design pass: Bots, Feeds, Ops, Money, Queue (DataTable)
 - [ ] Owner decisions (i)–(v) listed on the #139 row
 - [ ] Phase 5 schema rewritten from the invariants; 2 reviewers
