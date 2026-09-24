@@ -53036,6 +53036,14 @@ def test_betfair_exchange_reader():
     assert b.split_event_name("Kosovo v Republic of Ireland") == ("Kosovo", "Republic of Ireland")
     assert b.runner_selection("MATCH_ODDS", "The Draw", "A", "B") == "draw"
     assert b.runner_selection("OVER_UNDER_25", "Over 2.5 Goals", "A", "B") == "over"
+    # #119 D — extra markets: AH rows carry the HOME line on both sides (odds_snapshots convention)
+    assert b.line_of("ASIAN_HANDICAP", "home", -1.25) == -1.25
+    assert b.line_of("ASIAN_HANDICAP", "away", 1.25) == -1.25
+    assert b.line_of("ALT_TOTAL_GOALS", "over", 2.75) == 2.75
+    assert b.runner_selection("BOTH_TEAMS_TO_SCORE", "Yes", "A", "B") == "yes"
+    assert b.runner_selection("ASIAN_HANDICAP", "B", "A", "B") == "away"
+    assert b.EXTRA_MIN_MATCHED >= 1000, "extra markets only for events with a liquid match-odds market"
+    assert "handicap_line" in (Path(__file__).resolve().parent.parent / "supabase/migrations/396_exchange_quotes_lines.sql").read_text()
     root = Path(__file__).resolve().parent.parent
     assert "CREATE TABLE IF NOT EXISTS exchange_quotes" in (root / "supabase/migrations/395_exchange_quotes.sql").read_text()
     assert 'id="betfair_exchange_snapshot"' in (root / "workers/scheduler.py").read_text()
