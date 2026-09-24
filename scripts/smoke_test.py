@@ -44701,7 +44701,7 @@ def test_performance_public_is_calibrated_or_beta():
         # + the parent retired by migration 402 ([[#122]]): until that migration has
         # run it is still active in the DB and still labels the sharp rows.
         _ledger = [b.name for b in _BOTS if b.family == _FT] + ["bot_sharp_forward_test_v1"]
-        rows = _eq("""SELECT b.name, b.maturity_label AS ml,
+        rows = _eq("""SELECT b.name, b.maturity_label AS ml, b.vip,
                              (SELECT count(*) FROM simulated_bets s
                                WHERE s.bot_id = b.id
                                  AND s.result IN ('won','lost'))
@@ -44711,6 +44711,10 @@ def test_performance_public_is_calibrated_or_beta():
                         FROM bots b
                        WHERE b.is_active AND b.retired_at IS NULL""", [])
         rows = [r for r in rows if not (r["name"] in _ledger and r["ml"] not in ("calibrated", "beta"))]
+        # VIP-PERFORMANCE-SETTLED-ONLY (#148): the VIP bot is listed through its
+        # own gate (`|| isVip`), not the maturity allowlist — so it is neither
+        # "listed by label" nor "hidden", and its settled bets are not withheld.
+        rows = [r for r in rows if not r.get("vip")]
     except Exception:
         rows = None
     if rows:
@@ -44730,6 +44734,88 @@ def test_performance_public_is_calibrated_or_beta():
             "from the public page. Promote it to beta rather than widening "
             "this filter."
         )
+
+
+@test("VIP-PERFORMANCE-SETTLED-ONLY — the VIP bot is on /performance with settled picks only")
+def test_vip_performance_settled_only():
+    """VIP-PERFORMANCE-SETTLED-ONLY (#148, 2026-09-24, owner).
+
+    `bot_combined_1x2_ev5_v1` is the paid-tier "VIP" bot (`bots.vip`, migration
+    420). Its LIVE picks are the paid product, delivered privately before
+    kickoff; its RECORD is public on /performance once settled — never a pending
+    pick. RLS (migration 420) hides VIP pending rows from anon/authenticated; the
+    web drops them again server-side so a later switch to a service-role read
+    cannot leak the product. Each settled pick carries EV8 (EV >= 8%) or EV5,
+    EV = calibrated_prob x odds_at_pick - 1. The VIP bot is listed through its
+    own gate beside isPublicBot — PUBLIC_MATURITY_LABELS stays {calibrated,
+    beta} — and is never counted in the hero "strategies live" number."""
+    import re as _r
+
+    def _code(src: str) -> str:
+        x = _r.sub(r"/\*.*?\*/", "", src, flags=_r.DOTALL)
+        return _r.sub(r"//.*", "", x)
+
+    ed = _code(_web_path("src/lib/engine-data.ts").read_text())
+    agg = _code(_web_path("src/lib/bot-aggregates.ts").read_text())
+    page = _code(_web_path("src/app/(app)/performance/page.tsx").read_text())
+    client = _code(_web_path("src/components/performance-client.tsx").read_text())
+    lb = _code(_web_path("src/components/performance-leaderboard.tsx").read_text())
+
+    # 1. the flag is read, and the cache key moved with the row shape
+    i = ed.index("_getAllBotsFromDBUncached")
+    assert "maturity_label, vip" in ed[i:i + 1500], "getAllBotsFromDB no longer selects bots.vip"
+    assert "isVip:" in ed[i:i + 2500], "BotRecord.isVip is not populated"
+    assert '"getAllBotsFromDB_v2"' not in ed, "cache key not bumped — 30 min of rows would lack isVip"
+
+    # 2. settled-only filter exists and keeps only won/lost/void for VIP bots
+    assert "export function dropVipUnsettled" in agg, "dropVipUnsettled is gone"
+    j = agg.index("export function dropVipUnsettled")
+    body = agg[j:j + 600]
+    assert '"won"' in body and '"lost"' in body and '"pending"' not in body, (
+        "dropVipUnsettled must allowlist settled results, not denylist 'pending' — "
+        "any new unsettled state would otherwise leak the paid pick")
+
+    # 3. page drops them BEFORE both client arrays are built
+    assert "dropVipUnsettled(" in page, "/performance does not strip VIP unsettled rows server-side"
+    assert "b.hidePending" in page and "hide_pending" in ed, (
+        "the EV8 twin (bots.hide_pending, migration 421) is not stripped — its pending "
+        "picks are exactly the VIP bot's EV8 picks")
+    d = page.index("dropVipUnsettled(")
+    assert d < page.index("sanitizeBets(allBetsRaw"), "VIP rows are stripped after sanitising"
+    assert "aggregateBets={allBetsRaw}" in page and d < page.index("aggregateBets={allBetsRaw}"), (
+        "the raw aggregate array reaches the client without the VIP filter")
+
+    # 4. listing gate: isPublicBot || isVip, and the allowlist is untouched
+    assert _r.search(r"isPublicBot\(b\.maturityLabel\)\s*\|\|\s*b\.isVip", page), "cachedBots lacks the VIP gate"
+    assert _r.search(r"isPublicBot\(b\.maturityLabel\)\s*\|\|\s*isVipBot\(b\)", agg), "buildPublicBotStats lacks the VIP gate"
+    m = _r.search(r"PUBLIC_MATURITY_LABELS[^=]*=\s*new Set\(\s*\[(.*?)\]", agg, _r.DOTALL)
+    assert m and "vip" not in m.group(1).lower(), "VIP must not widen PUBLIC_MATURITY_LABELS"
+
+    # 5. hero count excludes VIP (activeBotCount gates on isPublicBot only)
+    k = client.index("const activeBotCount")
+    assert "isVip" not in client[k:k + 300], "VIP bot counted in the hero 'strategies live' number"
+    assert "!b.isVip" in client, "botsTracked counts the VIP bot"
+    # ...and it never joins the HEADLINE aggregates
+    h = _r.search(r"HEADLINE_MATURITY_LABELS\s*=\s*\[(.*?)\]", ed, _r.DOTALL)
+    assert h and "vip" not in h.group(1).lower()
+
+    # 6. UI: chip in both render spots, legend, per-pick EV label, modal guard
+    assert lb.count("<VipChip isVip={bot.isVip} />") == 2, "VipChip missing from mobile or desktop row"
+    assert "paid-tier bot" in lb and "once settled" in lb, "VIP legend sentence missing"
+    assert "vipEvLabel(b.modelProb, b.odds)" in lb, "per-pick EV8/EV5 label missing in the modal"
+    assert "VIP_LIVE_SINCE" in lb, "'Live since' line missing"
+    assert _r.search(r"!bot\.isVip\s*\|\|\s*b\.result === \"won\"", lb), "modal lacks the settled-only guard"
+    e = agg.index("export function vipEvLabel")
+    assert ">= 0.08" in agg[e:e + 300] and "modelProb * odds - 1" in agg, "EV8/EV5 rule changed"
+
+    # 7. dashboard_cache.bot_breakdown (anonymous fallback) must not maturity-filter,
+    #    or the VIP card vanishes for logged-out readers.
+    st = _engine_path("workers/jobs/settlement.py").read_text()
+    q = st[st.index("bot_rows = execute_query(f"):]
+    q = q[:q.index("GROUP BY b.id, b.name")]
+    assert "maturity_label" not in q and "vip" not in q.lower(), (
+        "bot_breakdown now filters by maturity — the VIP bot needs an explicit include")
+    return "VIP listed via its own gate; unsettled rows dropped server-side; EV8/EV5 per pick"
 
 
 @test("PICKS-SHOW-BOTH-BOTS — both bot families reach /picks, and their edges never share a label")
