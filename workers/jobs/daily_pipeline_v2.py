@@ -4260,6 +4260,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         "recommended_bookmaker": best_bookmaker.get(str(match_id), {}).get(f"{os_market}_{os_selection}"),
                         # B-ML3-V2-ACTIVE: meta-model score for this bet (None if scoring unavailable)
                         "meta_clv_score": round(meta_score, 4) if meta_score is not None else None,
+                        # #148: rating/combined bots are priced by THEIR model, not the global
+                        # XGB bundle — tag the row with it so /admin/bots shows the truth.
+                        **({"model_version": ("r1x2_comb_v1" if config["prob_source"] == "combined_1x2"
+                                              else "r1x2_d8plus_v1")} if _rating_bot else {}),
                     })
                     if bet_id:
                         total_bets += 1
@@ -4287,6 +4291,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                                 "first_bet_id": str(bet_id),
                             }
                         _tele_bets[_tele_key]["bots"].append(bot_name)
+                        # #148 VIP: remember the VIP bot's OWN price/prob for this pick —
+                        # it decides the Pro/Elite DM and the private channel.
+                        from workers.registry.bot_registry import VIP_BOTS as _VIP_BOTS
+                        if bot_name in _VIP_BOTS:
+                            _tele_bets[_tele_key]["vip"] = {"odds": odds, "cal": cal_prob, "bm": bm}
                         if config.get("one_per_match"):
                             _one_done = True
                         # Save Stage 1 snapshot: stats-only probability
@@ -4441,17 +4450,28 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             # call keeps the "[OI]" tag visible
             _prefix = (os.getenv("TELEGRAM_PREFIX", "[OI]") + " ") if os.getenv("TELEGRAM_PREFIX", "[OI]") else ""
             _rec_alert(_first_bet_id, _msg_id, _prefix + _alert_text)
-        send_telegram_to_users(
-            f"🔔 <b>New value bet</b>"
-            + (f" <i>({_n} bots agree)</i>" if _n > 1 else "") + "\n"
-            f"<b>{_tb['home']} vs {_tb['away']}</b>\n"
-            f"{_tb['mkt']} {_tb['selection']} @ {_tb['odds']:.2f}\n"
-            f"{_tb['edge']*100:+.1f}% edge"
-            + (f" · {_tb['league']}" if _tb['league'] else "")
-            + f"\n\n{clv_footer_line(_clv_for_footer)}",
-            tier_minimum="pro",
-            dedup_key=f"user-bet-{_tk[0]}-{_tk[1]}-{_tk[2]}",
-        )
+        # #148 VIP (owner 2026-09-24: "only VIP picks to pro users"): Pro/Elite users get
+        # ONLY the VIP bot's picks, at the VIP bot's own price, labelled EV8 / EV5; the
+        # same message goes to the private VIP channel (no-op until TELEGRAM_VIP_CHAT_ID
+        # is set). Every other bot's pick is no longer DM'd to users.
+        _vip = _tb.get("vip")
+        if _vip:
+            from workers.registry.bot_registry import vip_ev_label as _vip_label
+            from workers.notify.telegram import send_telegram_vip as _send_vip
+            _ev = _vip["cal"] * _vip["odds"] - 1
+            _vip_text = (
+                f"⭐ <b>VIP pick · {_vip_label(_vip['cal'], _vip['odds'])}</b>\n"
+                f"<b>{_tb['home']} vs {_tb['away']}</b>\n"
+                f"{_tb['mkt']} {_tb['selection']} @ {_vip['odds']:.2f} ({_vip['bm']})\n"
+                f"EV {_ev*100:+.1f}% · fair odds {1 / _vip['cal']:.2f} — take it down to {1.05 / _vip['cal']:.2f}"
+                + (f"\n{_tb['league']}" if _tb['league'] else "")
+            )
+            send_telegram_to_users(
+                _vip_text,
+                tier_minimum="pro",
+                dedup_key=f"user-bet-{_tk[0]}-{_tk[1]}-{_tk[2]}",
+            )
+            _send_vip(_vip_text)
 
     # ADMIN-TG-CLARITY (2026-05-29): collapse the long bet-block list into
     # a one-line counter. Per-bet status now shows up inline on each alert

@@ -186,6 +186,30 @@ def send_telegram(
         return None
 
 
+def send_telegram_vip(msg: str, *, silent: bool = False) -> Optional[int]:
+    """Post to the PRIVATE VIP channel ([[#148]]). Env: TELEGRAM_VIP_CHAT_ID.
+    Unset -> silently skip (the channel does not exist yet). Refuses a target
+    equal to the public channel or the operator chat, so a mis-set env var can
+    never publish a paid pick publicly."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat = (os.getenv("TELEGRAM_VIP_CHAT_ID") or "").strip()
+    if not token or not chat:
+        return None
+    if chat in {(os.getenv("TELEGRAM_PUBLIC_CHANNEL") or "").strip(), (os.getenv("TELEGRAM_CHAT_ID") or "").strip()}:
+        log.warning("TELEGRAM_VIP_CHAT_ID equals the public/operator chat — refusing to send a VIP pick")
+        return None
+    try:
+        resp = requests.post(_API_URL.format(token=token), json={
+            "chat_id": chat, "text": msg[:4000], "disable_notification": silent,
+            "parse_mode": "HTML", "disable_web_page_preview": True}, timeout=10)
+        if resp.status_code == 200:
+            return int(resp.json().get("result", {}).get("message_id") or 0) or None
+        log.warning("VIP Telegram send failed: %s %s", resp.status_code, resp.text[:200])
+    except Exception as e:
+        log.warning("VIP Telegram send failed: %s", e)
+    return None
+
+
 def send_telegram_public(
     msg: str,
     *,

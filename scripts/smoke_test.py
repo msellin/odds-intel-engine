@@ -55817,5 +55817,30 @@ def test_shadow_detail_three_books_and_bet_made():
     assert "Bet made" in table and "p.bookmaker" in table
 
 
+
+@test("VIP-BOT — #148: VIP picks reach only Pro/Elite + the private channel; public sees them settled only")
+def test_vip_bot():
+    """#148 VIP (owner 2026-09-24). The paid bot's live pick must never reach a public surface:
+    RLS hides its pending rows from anon/authenticated, the signaler (public channel) excludes
+    it, Pro/Elite DMs carry ONLY VIP picks, and the private-channel sender refuses the public or
+    operator chat. Registry and DB flag must name the same bot."""
+    from workers.registry.bot_registry import VIP_BOTS, vip_ev_label, by_name
+    assert VIP_BOTS == frozenset({"bot_combined_1x2_ev5_v1"}) and by_name("bot_combined_1x2_ev5_v1")
+    assert vip_ev_label(0.60, 1.94) == "EV8" and vip_ev_label(0.55, 1.93) == "EV5"
+    mig = _engine_path("supabase/migrations/420_vip_bot.sql").read_text(encoding="utf-8")
+    assert "UPDATE bots SET vip = true WHERE name = 'bot_combined_1x2_ev5_v1';" in mig
+    assert "result IS DISTINCT FROM 'pending'" in mig and "b.vip" in mig
+    sig = _engine_path("workers/automation/coolbet_signaler.py").read_text(encoding="utf-8")
+    assert "AND b.name <> ALL(%s)" in sig and "(sorted(VIP_BOTS), _MIN_EDGE, lookahead_hours)" in sig
+    pipe = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
+    body = pipe[pipe.index("for _tk, _tb in _tele_bets.items():"):]
+    body = body[:body.index("ADMIN-TG-CLARITY")]
+    assert body.count("send_telegram_to_users(") == 1 and 'if _vip:' in body
+    assert body.index("if _vip:") < body.index("send_telegram_to_users("), "user DMs only inside the VIP branch"
+    tg = _engine_path("workers/notify/telegram.py").read_text(encoding="utf-8")
+    vip = tg[tg.index("def send_telegram_vip"):tg.index("def send_telegram_public")]
+    assert 'os.getenv("TELEGRAM_VIP_CHAT_ID")' in vip and "if not token or not chat:" in vip
+    assert 'TELEGRAM_PUBLIC_CHANNEL' in vip and 'TELEGRAM_CHAT_ID' in vip and "refusing" in vip
+
 if __name__ == "__main__":
     main()

@@ -50,6 +50,7 @@ so a bet we place also signals (EDGE-FLOOR-ONE-UTILITY-2026-09-10).
 """
 from __future__ import annotations
 
+from workers.registry.bot_registry import VIP_BOTS  # #148
 import logging
 import os
 from datetime import datetime, timezone
@@ -149,6 +150,8 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
           LEFT JOIN leagues  l   ON l.id   = m.league_id
           WHERE sb.combo_legs IS NULL
             AND sb.signaled_at IS NULL
+            -- #148 VIP: a paid pick never becomes public-channel content or eligibility.
+            AND b.name <> ALL(%s)
             AND sb.edge_percent >= %s
             AND m.date > NOW()
             AND m.date < NOW() + (%s * INTERVAL '1 hour')
@@ -168,7 +171,7 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
         ) q
         ORDER BY q.match_date ASC, q.edge_percent DESC
         """,
-        (_MIN_EDGE, lookahead_hours),
+        (sorted(VIP_BOTS), _MIN_EDGE, lookahead_hours),
     )
     out: list[dict] = []
     for r in rows:

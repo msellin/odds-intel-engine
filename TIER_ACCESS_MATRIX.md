@@ -253,3 +253,11 @@ All new tables have RLS policies: users can only read/write their own data.
 - [x] Stripe integration for paid tier upgrades (checkout + webhook + portal, profile upgrade buttons)
 - [x] STRIPE_WEBHOOK_SECRET — configured in Vercel
 - [x] Tier-aware data API (B3 — strip fields by tier in Next.js layer)
+
+## VIP picks (#148, 2026-09-24)
+| Surface | Anonymous / Free | Pro / Elite |
+|---|---|---|
+| VIP bot (`bot_combined_1x2_ev5_v1`) live picks | ✗ — hidden until settled (RLS, migration 420) | ✓ Telegram DM, each labelled EV8 / EV5 (and the private VIP channel once `TELEGRAM_VIP_CHAT_ID` is set) |
+| VIP bot settled picks on /performance | ✓ | ✓ |
+| Other bots' picks by Telegram DM | ✗ | ✗ — **since 2026-09-24 Pro/Elite DMs carry ONLY VIP picks** (owner) |
+
