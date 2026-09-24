@@ -49706,6 +49706,36 @@ def test_coolbet_probe_imperva_beats_timing():
 
 
 
+@test("WEB-NO-ORPHAN-FETCHERS — every exported function in engine-data.ts has a caller")
+def test_web_no_orphan_fetchers():
+    """[[#087]] step 2, 2026-09-24. PRODUCT-COLLAPSE (2026-06-24) deleted the pages but
+    left ~118 fetchers and types in `odds-intel-web/src/lib/engine-data.ts` with no
+    caller. Beyond the dead weight (6,525 -> 2,705 lines), they made grep-based audits
+    read tables as CONSUMED when nothing read them — the trap the #087 audit itself
+    fell into for three tables. Guard: every `export (async) function` in the file is
+    referenced somewhere else in the web src. Skipped when the web repo is absent (CI).
+    """
+    import re
+    import subprocess
+    from pathlib import Path
+    web = Path(__file__).resolve().parent.parent.parent / "odds-intel-web"
+    f = web / "src" / "lib" / "engine-data.ts"
+    if not f.exists():
+        return
+    text = f.read_text()
+    names = re.findall(r"^export (?:async )?function ([A-Za-z0-9_]+)", text, re.M)
+    orphans = []
+    for n in names:
+        if len(re.findall(rf"\b{n}\b", text)) > 1:
+            continue                    # used inside engine-data.ts itself
+
+        out = subprocess.run(["grep", "-rlw", n, str(web / "src"), "--include=*.ts", "--include=*.tsx"],
+                             capture_output=True, text=True).stdout.split()
+        if not [o for o in out if not o.endswith("src/lib/engine-data.ts")]:
+            orphans.append(n)
+    assert not orphans, f"exported fetchers with no caller in odds-intel-web: {orphans}"
+
+
 @test("AF-TRANSFERS-REMOVED — no code writes or reads team_transfers, and no job fetches /transfers")
 def test_af_transfers_removed():
     """AF-TRANSFERS-NO-READER (2026-09-21) stopped the default enrichment fetch, but
