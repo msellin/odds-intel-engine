@@ -93,3 +93,18 @@ Owner, 2026-09-24:
 - **Commit only your own hunks.** Use a temp index: `export GIT_INDEX_FILE=<scratch>/idx; git read-tree HEAD; git add <own files>; commit; unset; git reset -q; push`. For `scripts/smoke_test.py`, build the staged file from HEAD plus your own test blocks.
 - **Run smoke tests with `--filter` only.** Test migrations inside a ROLLED-BACK transaction before pushing. Never edit `.env` files; give the owner the command instead.
 - **The owner is not a deep football or stats person.** Report outcomes in plain words and tables.
+
+## 5. Landed after the handover was first written
+
+### Admin visual direction — DONE (`dev/active/admin-shell-visual-direction.md`, refs in `dev/active/admin-refs/`)
+- **Look:** dark by default, using the public site's own `globals.css` tokens and no new colours, just aliases (success, danger, info) plus the three pick-method colours from /picks. The STRUCTURE comes from shadcn sidebar-07 + dashboard-01, TailAdmin, Tremor and Materio. Style is borders, not shadows.
+- **Shared components go in `src/components/oi/`,** named so the public pages can reuse them later (#143): Panel, SectionLabel, StatCard, TrendPill, StatusBadge, Segmented, ChartCard, DataTable, PageHeader.
+- **Libraries:**
+  - recharts 3.8.1 is ALREADY installed, plus the copied-in shadcn chart wrapper.
+  - The only new npm dependency is `@tanstack/react-table`.
+  - The ⌘K palette is built from our Dialog and Input, with no `cmdk`.
+  - Sidebar: swap the new shared shell's internals for shadcn's Sidebar. Add the copied-in tooltip, skeleton and `use-mobile` files; no new package is needed.
+- **First charts:** picks per week by family and cumulative flat-stake P/L per bot are ready now. Per-bot CLV over time with the junk-control line needs weekly control data. Feed coverage over time needs a new daily history view, because only today and yesterday are stored.
+- **Light mode:** optional and last. About 655 hard-coded colour classes would fail contrast on white.
+- The doc ends with a **7-step build order** and a "what changes" row per admin page. Its sidebar groups are a DRAFT; the IA audit decides them.
+- The `bots-preview` dev server (:3055) was left running by that agent. Restart it via `.claude/launch.json` if needed.
