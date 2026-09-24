@@ -53333,6 +53333,31 @@ def test_results_tiebreak():
     assert 'record_finding("results_corrected"' in run and '"af_confirmed" in seen' in run
 
 
+@test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")
+def test_anon_least_privilege():
+    """#072 (2026-09-24): anon held SELECT on 134/134 public relations via default privileges;
+    RLS was the only control. Migration 404 revokes all, grants back exactly the relations
+    createSupabasePublic() reads, drops anon from default privileges, and revokes EXECUTE on
+    the SECURITY DEFINER odds functions (a definer function bypasses a table revoke).
+    Adding a public surface = a *_public view + an explicit GRANT + this list."""
+    import re as _re
+    sql = _engine_path("supabase/migrations/404_anon_least_privilege.sql").read_text()
+    assert "REVOKE SELECT ON ALL TABLES IN SCHEMA public FROM anon" in sql
+    assert "ALTER DEFAULT PRIVILEGES FOR ROLE oddsintel_owner IN SCHEMA public REVOKE SELECT ON TABLES FROM anon" in sql
+    grant = sql.split("GRANT SELECT ON", 1)[1].split("TO anon", 1)[0]
+    granted = set(_re.findall(r"public\.(\w+)", grant))
+    assert granted == {
+        "simulated_bets", "bots", "matches", "teams", "leagues", "dashboard_cache",
+        "match_page_views", "picks_forward_test_public", "picks_forward_test_summary",
+        "picks_forward_test_summary_by_market", "picks_board_public", "picks_public_all",
+    }, f"anon grant list changed: {sorted(granted)} — update this test deliberately"
+    for base in ("picks_forward_test", "picks_board", "shadow_bets", "coolbet_placement_attempts"):
+        assert base not in granted, f"{base} must stay private (serve it through a *_public view)"
+    for fn in ("get_best_match_odds", "get_latest_match_odds", "get_historical_match_odds",
+               "get_bookmaker_count_for_match", "handle_new_user"):
+        assert _re.search(rf"REVOKE EXECUTE ON FUNCTION public\.{fn}\(.*FROM anon, PUBLIC", sql), fn
+
+
 @test("PLACER-SKIPS-RETIRED-BOTS — the real-money Coolbet placer never loads a retired bot's picks")
 def test_placer_skips_retired_bots():
     """#131 audit (2026-09-24): `load_picks` joined `bots` with no retired filter, unlike

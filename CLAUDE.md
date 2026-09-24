@@ -405,6 +405,7 @@ The frontend lives at `../odds-intel-web/` (sibling directory). All rules for it
 - Next.js 15 (App Router), TypeScript, Tailwind CSS
 - **Auth**: Supabase — `createSupabaseServer()` (server, cookie-backed) + `createSupabaseBrowser()` (client). These stay on `NEXT_PUBLIC_SUPABASE_URL` even post-migration.
 - **Data**: VPS PostgREST at `https://api.oddsintel.app` — `createSupabasePublic()` (anon reads) + `createServerServiceClient()` (server-side service_role, bypasses RLS, requires explicit user_id filter for per-user queries). Env vars: `NEXT_PUBLIC_POSTGREST_URL`, `NEXT_PUBLIC_POSTGREST_ANON_KEY`, `POSTGREST_SERVICE_KEY`.
+- **The anon role reads ONLY what the public site reads** (migration 404, #072, 2026-09-24): 5 base tables + the `*_public` / summary views + `rpc/get_coverage_counts`. A new table is private by default. A new public read = a `*_public` view + an explicit `GRANT SELECT … TO anon` in the same migration + the name added to smoke `ANON-LEAST-PRIVILEGE`. Otherwise use the service client server-side.
 - **Per-user client-side reads** must go through a Next.js server route (browser can't authenticate to VPS PostgREST directly). Example: `/api/me/profile` in place of `supabase.from("profiles").eq("id", user.id)` on the browser client.
 - Payments: Stripe (checkout, webhook at `/api/stripe/webhook`, portal)
 - Error monitoring: Sentry

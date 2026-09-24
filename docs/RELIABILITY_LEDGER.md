@@ -1315,3 +1315,34 @@ and `is_opening` so they are reversible; and the matcher refuses the pairing at 
 (`coolbet_placer.fuzzy_match_event` 45-min start tolerance + orientation-consistent scoring,
 `unique_pairs`). Two independent reviews before anything moved.
 
+
+## 25. A public role that inherits every new table (2026-09-24)
+
+**Pattern.** A default-privileges rule (`ALTER DEFAULT PRIVILEGES … GRANT SELECT ON TABLES TO
+anon`) made every table created after it readable by the public API role, and RLS was the only
+thing standing between the internet and the data — off, or a `true` policy, on dozens of
+tables. Nobody decided "publish the real-money placement log"; it happened by default, one
+migration at a time. #072 found `anon` reading **134 of 134** public relations, including
+`coolbet_placement_attempts`, `coolbet_daemon_commands`, `promo_ledger`, `shadow_bets`, the
+pick tables behind the product and `pg_stat_statements`.
+
+**Tell.** `SELECT count(*) FROM information_schema.role_table_grants WHERE grantee='anon'` equals
+the table count, or `pg_default_acl` contains `anon=r`.
+
+**Guard (migration 404).** Revoke everything from `anon`, grant back exactly the 12 relations
+`createSupabasePublic()` reads (5 base tables + the owner-rights `*_public` / summary views),
+revoke EXECUTE on the SECURITY DEFINER odds functions from anon and PUBLIC (a definer function
+bypasses a table revoke), and remove anon from the default privileges so a new table is
+private until someone grants it on purpose. Smoke `ANON-LEAST-PRIVILEGE` pins the list.
+
+**Out of band.** `pg_stat_statements`, `pg_stat_statements_info`, `hypopg_list_indexes`,
+`hypopg_hidden_indexes` were granted by `postgres` at extension install; the migration role
+(`oddsintel_owner`) cannot revoke another grantor's privilege — the REVOKE is a silent no-op —
+so they were revoked as superuser: `ssh root@204.168.199.8 "sudo -u postgres psql -d oddsintel -c
+'REVOKE SELECT ON public.pg_stat_statements, public.pg_stat_statements_info,
+public.hypopg_list_indexes, public.hypopg_hidden_indexes FROM anon'"`. Re-run it after any
+extension reinstall.
+
+**Adding a public surface now means:** a `*_public` view (owner rights, only the columns you
+mean to publish) + an explicit `GRANT SELECT … TO anon` in the same migration + the name added
+to the smoke test's list.
