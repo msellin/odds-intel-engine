@@ -4704,6 +4704,7 @@ def test_anchor_price_sanity_on_both_engines():
     # #112 (8): correct longshots far apart in RATIO but not in probability must survive
     for book, anchor in ((21.0, 12.0), (91.0, 51.0), (17.0, 11.0)):
         assert sane(book, anchor) is True, f"longshot {book} vs {anchor} refused on ratio alone"
+    assert sane(26.0, 101.0) is False and sane(101.0, 26.0) is False, "hard x2.5 ceiling above anchor ~25"
     # fail OPEN with no anchor: refusing every fixture Pinnacle skips would
     # trade a known fault for an invisible one (see the module docstring)
     assert sane(5.00, None) is True and sane(None, 2.00) is True

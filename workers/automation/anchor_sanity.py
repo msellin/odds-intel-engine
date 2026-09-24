@@ -82,6 +82,7 @@ ANCHOR_BOOK = "Pinnacle"
 OUTLIER_MAX_RATIO = 1.25
 MAX_ODDS_RATIO = OUTLIER_MAX_RATIO ** 2  # 1.5625
 MIN_PROB_GAP = 0.04   # …AND this far apart in implied probability (board_guard's rule)
+MAX_LONGSHOT_RATIO = 2.5   # hard ceiling whatever the probability gap
 
 # The sharp WINDOW's upper bound: `max_odds = min_odds x OUTLIER_MULT`. A book
 # price above that is a stale or mis-mapped quote, not a gift.
@@ -123,8 +124,13 @@ def is_anchor_sane(book_odds: float | None, anchor_odds: float | None) -> bool:
     # apart in PROBABILITY too, so require both — the same rule board_guard adopted
     # (MIN_PROB_GAP) after its first dry run. Price SIZE is capped elsewhere (the outlier
     # ceilings, pick_generator._own_outlier_ok); this is an identity check.
-    if max(b / a, a / b) <= MAX_ODDS_RATIO:
+    r = max(b / a, a / b)
+    if r <= MAX_ODDS_RATIO:
         return True
+    # review 2026-09-24: above an anchor of ~25 the prob-gap test can never refuse, so cap
+    # the ratio outright (largest genuine longshot flip seen in 7 days: x1.93).
+    if r > MAX_LONGSHOT_RATIO:
+        return False
     return abs(1.0 / b - 1.0 / a) <= MIN_PROB_GAP
 
 
