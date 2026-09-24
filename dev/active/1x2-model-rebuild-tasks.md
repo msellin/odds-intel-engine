@@ -1,4 +1,4 @@
-Parent: [[#141]] 1X2-MODEL-REBUILD-2026-09-24 (PRIORITY_QUEUE.md) — 🔴 P0 TOP PRIORITY (owner 2026-09-24)
+Parent: [[#141]] 1X2-MODEL-REBUILD-2026-09-24 (PRIORITY_QUEUE.md) — 🔴 P0 TOP PRIORITY (owner 2026-09-24). START HERE: dev/active/1x2-model-rebuild-HANDOVER.md
 
 # 1X2 model rebuild — tasks
 
