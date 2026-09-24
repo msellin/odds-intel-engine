@@ -14,6 +14,6 @@ Parent: [[#141]] 1X2-MODEL-REBUILD-2026-09-24 (PRIORITY_QUEUE.md)
 - [ ] Coverage gate sensitivity (N = 4/8/15) + per-tier
 - [ ] History-depth analysis → decide on backfill
 - [ ] Iterate on new pre-registered arms if needed
-- [ ] Fix weekly retrain holdout (train candidate with --cutoff)
+- [x] Fix weekly retrain holdout (train candidate with --cutoff) — WEEKLY-EVAL-NO-HOLDOUT 2026-09-24
 - [ ] Productionise the winner (owner confirms before served model changes)
 - [ ] Smoke test(s), docs (MODEL_WHITEPAPER, MODEL_ANALYSIS, WORKFLOWS, ROADMAP), close #141

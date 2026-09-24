@@ -54171,5 +54171,24 @@ def test_feeds_exchange_liquid():
     root = Path(__file__).resolve().parent.parent
     assert (root / "supabase/migrations/403_feed_book_stats_liquid.sql").exists()
 
+@test("WEEKLY-EVAL-NO-HOLDOUT — #141 the weekly eval scores a --cutoff twin, never a bundle trained through today")
+def test_weekly_eval_no_holdout():
+    """WEEKLY-EVAL-NO-HOLDOUT-2026-09-24 ([[#141]]). The weekly candidate trained
+    through the run date and weekly_eval_and_compare.py refuses to score a version
+    on matches it trained on, so the eval exited 2 on every run from 09-06: no
+    verdict, no email. The job now trains a `_cut14` twin with --cutoff and
+    evaluates THAT. If the eval call ever goes back to `version`, the empty-window
+    failure returns silently."""
+    import re as _re
+    src = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    body = src[src.index("def job_weekly_retrain"):src.index("def job_weekly_meta_retrain")]
+    assert "WEEKLY-EVAL-NO-HOLDOUT-2026-09-24" in body
+    assert '"--cutoff", _cut' in body, "the eval twin must be trained with --cutoff"
+    assert "timedelta(days=14)" in body, "twin cutoff must leave the eval's 14-day window"
+    assert _re.search(r'"scripts/weekly_eval_and_compare\.py", eval_version, production', body), \
+        "the eval must score the twin (eval_version), not the bundle trained through today"
+    assert "send_weekly_retrain_email(eval_version" in body
+
+
 if __name__ == "__main__":
     main()

@@ -1057,6 +1057,30 @@ def job_weekly_retrain():
             raise RuntimeError(f"weekly retrain failed: exit {result.returncode}")
         console.print(result.stdout[-2000:])
 
+        # WEEKLY-EVAL-NO-HOLDOUT-2026-09-24 ([[#141]]). The bundle above trains
+        # through TODAY, and weekly_eval_and_compare.py (correctly) refuses to
+        # score a version on matches it trained on — so its honest window was
+        # empty by construction and the eval exited 2 on EVERY weekly run from
+        # 2026-09-06 onward: no verdict, no email ("no SUMMARY_JSON found").
+        # Fix: also train a TWIN with the identical config but --cutoff 14 days
+        # back, and evaluate the twin. The verdict on `<version>_cut14` is the
+        # verdict on `<version>`'s recipe; promote `<version>` (full data) when
+        # the twin wins. 14 days matches the eval's default --days window.
+        eval_version = f"{version}_cut14"
+        _cut = (_date.today() - timedelta(days=14)).isoformat()
+        twin = subprocess.run(
+            [sys.executable, "-m", "workers.model.train", "--version", eval_version,
+             "--include-pinnacle", "--include-ou-market", "--cutoff", _cut],
+            cwd=str(Path(__file__).parent.parent),
+            timeout=1800,
+            capture_output=True,
+            text=True,
+        )
+        if twin.returncode != 0:
+            console.print(f"[yellow]eval twin {eval_version} failed (exit {twin.returncode}) — "
+                          f"comparison will have no honest window: {twin.stderr[-1000:]}[/yellow]")
+            eval_version = version
+
         # Auto-comparison — best-effort.
         # WEEKLY-EVAL (2026-05-24): switched from compare_models.py to
         # weekly_eval_and_compare.py. The legacy script needed OVERLAPPING
@@ -1067,7 +1091,7 @@ def job_weekly_retrain():
         # for audit. Output is parsed by the email digest below.
         try:
             cmp = subprocess.run(
-                [sys.executable, "scripts/weekly_eval_and_compare.py", version, production],
+                [sys.executable, "scripts/weekly_eval_and_compare.py", eval_version, production],
                 cwd=str(Path(__file__).parent.parent),
                 timeout=900,
                 capture_output=True,
@@ -1080,7 +1104,7 @@ def job_weekly_retrain():
             # SUMMARY_JSON the eval script prints on its final line.
             try:
                 from workers.jobs.weekly_retrain_email import send_weekly_retrain_email
-                send_weekly_retrain_email(version, production, cmp.stdout)
+                send_weekly_retrain_email(eval_version, production, cmp.stdout)
             except Exception as ee:
                 console.print(f"[yellow]Email digest failed (non-blocking): {ee}[/yellow]")
         except Exception as e:
