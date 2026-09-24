@@ -3141,3 +3141,22 @@ fixed at source. **Any analysis of Epicbet / Unibet-Site odds before 2026-09-24 
 exclude (fixture, book) pairs where the book's board is off a ≥4-book median in ≥2 markets,
 or join `data_quality_findings`** — they read as the largest edges on the board.
 
+## 80. Pinnacle `over_under_05` is first-half contaminated, and "over 0.5 is easy" is not an edge (#128, 2026-09-24)
+
+* **Never read Pinnacle `over_under_05`.** All of it sits in 2026-04-27 → 05-10, before the strict
+  "Goals Over/Under" match in `api_football.py`; in about half the (fixture) pairs the over-0.5 price is
+  **at or above** the over-1.5 price, which is impossible for full-time goals. It reads as over 0.5
+  winning 87.6% at an average 1.40 — a fake +20% edge. No AF book carries a clean FT O/U 0.5 after
+  mid-May; clean 0.5 exists only from our scrapers (Coolbet ~Aug, Epicbet from 08-27).
+* **Guard for any O/U ladder analysis:** over-odds must strictly rise with the line (0.5 < 1.5 < 2.5 <
+  3.5) per (fixture, book); drop the pair if not. It removed 709 pairs in #128, and ~11% of Coolbet's
+  0.5 rows before 2026-09-18.
+* **The favourite–longshot shape in totals, measured:** at every line the short side loses least and
+  the long side absorbs the margin (under 0.5 −39% to −42%, over 0.5 ≈ −0.5% to +1%). Over 0.5 is the
+  line closest to fair and **still not profitable** — at 1.07 break-even is 93.5% against a ~92% hit
+  rate. "Easy to predict" is priced in.
+* **A pricing lapse is not a persistent edge.** Coolbet's over 0.5 barely tracked the match until
+  2026-08-23 (corr 0.39 with a Pinnacle-derived fair price) and fully from 08-24 (0.90). Any backtest
+  spanning that date will show a Coolbet over-0.5 "edge" that no longer exists. Split by period
+  before believing it. Full result: `dev/active/ou-low-lines-bias-sweep.md`.
+

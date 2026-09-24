@@ -64,3 +64,48 @@ Reported but NOT in the family (descriptive): implied-vs-actual calibration curv
 * C: edges fire rarely; CLV-free ROI ≈ 0 ± 2pp. **Nothing survives Holm.**
 * A surviving cell is only a candidate: it needs the replication half AND a forward shadow test before
   any bot, because the 0.5 history is ~6 weeks long.
+
+---
+
+## RESULT (2026-09-24, `scripts/ou_low_lines_bias_sweep.py`, run after the pre-registration commit 5dfa2048)
+
+**No positive cell survives. The expected result held.** 709 (fixture, book) pairs were dropped by the
+ladder guard; the Pinnacle-derived fair over 0.5 was available on 15,554 matches.
+
+**Family (discovery half, m = 44, Holm):** 9 cells survive, and **every one is NEGATIVE**. They are the
+margin measured precisely, not an edge: O/U 1.5 over at Epicbet close −5.4%; O/U 2.5 over at Coolbet
+in low-scoring leagues −13.4%; O/U 3.5 under −6% to −8% at both books, at both close and early; O/U 1.5
+over early −5% to −6%.
+
+**Over 0.5 — the owner's question.** It is the line closest to fair, as the favourite–longshot bias
+predicts, and it is still not profitable:
+
+| cell | discovery | replication |
+|---|---|---|
+| Coolbet close | −0.56% (n=1,219) | −0.15% (n=1,197) |
+| Epicbet close | +2.09% (n=305, t=1.28) | +0.58% (n=291) |
+| Coolbet early | +0.27% (n=466) | −0.97% (n=449) |
+| Epicbet early | −0.12% (n=273) | +0.80% (n=271) |
+
+Scoring tier doesn't rescue it: Coolbet low-scoring leagues −5.1% (p_holm 0.43), mid/high ≈ 0. The long
+side (under 0.5) loses 39–42% — that is where the margin sits.
+
+**Arm C (derived-fair over 0.5) — the one bright spot, explained.** Too few bets to test per half
+(n = 51/49 < 100, so p = 1 by rule), but post hoc both halves read +8% to +11% at Coolbet (n = 100
+combined, hit 99/100 vs a fair ~94%). This is **a real, temporary soft-book pricing lapse, not data error
+and not a current edge**:
+
+| Coolbet over 0.5 at close | corr(book implied, fair) | slope | share with EV ≥ 0 |
+|---|---|---|---|
+| 2026-08-01 → 08-23 (n = 677) | **0.39** | 0.78 | 21–29% per week |
+| 2026-08-24 → 09-23 (n = 1,454) | **0.90** | 1.02 | 0–3% per week |
+
+Until about 23 Aug, Coolbet quoted over 0.5 at a near-generic ~1.09–1.14 whatever the match, so in
+high-scoring fixtures (fair ~0.95) it was too long. From 24 Aug it tracks the sharp-derived price almost
+one-for-one and the edge is gone. Epicbet (from 27 Aug) tracks less tightly (corr 0.67, slope 0.71) but
+positive-EV cases are 1–6% and the EV is small.
+
+**Verdict:** no O/U line — 0.5, 1.5, 2.5 or 3.5 — is flat-bettable at Coolbet or Epicbet, by league
+tier or price time. **CLOSED as a negative result.** Re-open trigger: a soft book's low-line price decouples
+from the sharp-derived fair price again (corr < 0.6 over a week), which is what the August lapse looked
+like. Monitoring for that belongs to [[#121]] (odds observatory), not to a bot.

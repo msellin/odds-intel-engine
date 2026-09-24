@@ -53475,5 +53475,30 @@ def test_book_exits_and_licensed_fallback():
     finally:
         oa.own_sweep_paused = saved
 
+
+@test("OU-LOW-LINES-BIAS-SWEEP — #128 ladder guard, no Pinnacle O/U 0.5, Shin, 44-cell family")
+def test_ou_low_lines_bias_sweep():
+    """[[#128]], 2026-09-24. O/U 0.5/1.5/3.5 market-bias sweep (null: no positive survivor).
+    What keeps a re-run honest:
+    1. Pinnacle `over_under_05` is first-half contaminated (Apr-May rows, half have
+       over0.5 >= over1.5) and must never be read -- the anchor comes from 1x2 + O/U 2.5/1.5;
+    2. the ladder-monotonicity guard drops a (fixture, book) whose over-odds do not rise
+       with the line;
+    3. de-vig is Shin (ANALYSIS_GOTCHAS section 78), and the Holm family stays at 44 cells.
+    """
+    from pathlib import Path
+    import pandas as pd
+    import scripts.ou_low_lines_bias_sweep as S
+    src = (Path(__file__).parent.parent / "scripts" / "ou_low_lines_bias_sweep.py").read_text()
+    assert "'1x2', 'over_under_25', 'over_under_15'" in S.PIN_SQL and "over_under_05" not in S.PIN_SQL
+    assert "from workers.model.devig import devig" in src
+    assert len(S.LINES) * len(S.FAMILY_BOOKS) * len(S.TIERS) + len(S.LINES) * len(S.FAMILY_BOOKS) \
+        + 2 * len(S.FAMILY_BOOKS) == 44, "the pre-registered family is 44 cells"
+    w = pd.DataFrame({"match_id": [1, 1, 2, 2], "bookmaker": ["Coolbet"] * 4, "win": ["close"] * 4,
+                      "market": ["over_under_05", "over_under_15"] * 2, "over": [1.40, 1.30, 1.05, 1.30]})
+    bad = S.ladder_ok(w)
+    assert bool(bad.loc[(1, "Coolbet")]) and not bool(bad.loc[(2, "Coolbet")])
+    assert list(S.holm([0.01, 0.04, 0.5])) == [0.03, 0.08, 0.5]
+
 if __name__ == "__main__":
     main()
