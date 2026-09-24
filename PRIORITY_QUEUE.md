@@ -155,7 +155,7 @@
 
 ## Open work — ranked (the #131 audit, 2026-09-24)
 
-> **This table is the one ranked view of everything still open.** Rows below it hold the detail. Rebuilt 2026-09-24 by the #131 audit, which checked every open row against code, DB and scheduler and folded in three session-private lists: the feeds session's #1–#34, the #119 (E) handover a–g and stray `dev/active` checklists. Result: **~60 rows closed or merged** (each carries a `[#131 audit]` note with its evidence), **33 remain** (incl. the trigger rows #134/#135). Numbers are plain `#NNN` here; the bold tag lives on the row itself. Update this table when you open, close or reprioritise a row.
+> **⏸ 2026-09-24, owner: "pause or finish all the ongoing smaller tasks and focus solely on this bot situation" — #139 (unified bot model) is the only active build; #140 follows it. Date-triggered checks (#016 ~09-29, #117 ~09-28) still run.** **This table is the one ranked view of everything still open.** Rows below it hold the detail. Rebuilt 2026-09-24 by the #131 audit, which checked every open row against code, DB and scheduler and folded in three session-private lists: the feeds session's #1–#34, the #119 (E) handover a–g and stray `dev/active` checklists. Result: **~60 rows closed or merged** (each carries a `[#131 audit]` note with its evidence), **33 remain** (incl. the trigger rows #134/#135). Numbers are plain `#NNN` here; the bold tag lives on the row itself. Update this table when you open, close or reprioritise a row.
 
 **Ordered for implementation, not just by priority:** a row's prerequisites sit above it, so work top-down. Rows that are blocked or waiting on the owner sit where they would fall once unblocked. "Needs" names the prerequisite.
 
@@ -172,13 +172,13 @@
 | 8 | P2 | #123 | Extend the wrong-match guard to BTTS and Asian handicap, plus Coolbet AH rows near kickoff | 🤖👥 BOTH — shadow AH/BTTS bets you copy / the same boards reach /picks | ½ d | #001 | done 2026-09-24 |
 | — | P2 | #002 | Void 4 old public picks priced off a wrong-fixture quote (+ 50 shadow copies) | 👥 PICKS — inflated public record | — | — | done 2026-09-24 |
 | 10 | P2 | #022 | "Record a bet I placed" saves a cached price and a fixed €10, doesn't fully stop double entries | 🤖 OWN — the record of real-money bets is wrong | ~4 h | — | done 2026-09-24 |
-| 11 | P3 | #132 | Markets we throw away — only Unibet Asian handicap left (needs the line from another endpoint); Coolbet DNB + first-half goals and Epicbet first-half team goals done 09-24 | 🤖👥 BOTH — more placeable lines / more priced markets | ~½ d investigation | — | open |
-| 12 | P2 | #101 | New books: Optibet (+15 fixtures), Paf (price check first), Ninja probe | 🤖👥 BOTH — more books to bet at / wider consensus | ~1.5 d | #001, #112 (matcher + aliases) | open |
-| 13 | P2 | #105 | Corner/card counts from Olybet's live feed for matches API-Football has no stats for | 🤖👥 BOTH + 💼 DATA — corners/cards can settle | ~1 d + 1 wk | #101 (same book-onboarding path) | open |
-| 14 | P2 | #107 | Feeds dashboard phase C: restart buttons, closing-capture counts, suggested actions (coverage-drop flag done 09-24) (absorbs #054) | 🤖👥 BOTH — a thinning feed gets noticed | ~1 d | #101 (show the new books) | open |
+| 11 | P3 | #132 | Markets we throw away — only Unibet Asian handicap left (needs the line from another endpoint); Coolbet DNB + first-half goals and Epicbet first-half team goals done 09-24 | 🤖👥 BOTH — more placeable lines / more priced markets | ~½ d investigation | — | paused for #139 (owner, 09-24) |
+| 12 | P2 | #101 | New books: Optibet (+15 fixtures), Paf (price check first), Ninja probe | 🤖👥 BOTH — more books to bet at / wider consensus | ~1.5 d | #001, #112 (matcher + aliases) | paused for #139 (owner, 09-24) |
+| 13 | P2 | #105 | Corner/card counts from Olybet's live feed for matches API-Football has no stats for | 🤖👥 BOTH + 💼 DATA — corners/cards can settle | ~1 d + 1 wk | #101 (same book-onboarding path) | paused for #139 (owner, 09-24) |
+| 14 | P2 | #107 | Feeds dashboard phase C: restart buttons, closing-capture counts, suggested actions (coverage-drop flag done 09-24) (absorbs #054) | 🤖👥 BOTH — a thinning feed gets noticed | ~1 d | #101 (show the new books) | paused for #139 (owner, 09-24) |
 | 14b | P1 | #139 | Unified bot model: every bot the same kind of object with switches (collect → publish to /picks·performance·Telegram → real money), one record, one config view; absorbs the /admin/bots and /admin/shadow-bots audits (#137 ✓, #138 running) | 🤖 OWN: see + switch placing; 👥 PICKS: one publish switch, one honest record | ~1 wk in phases | owner approves the design | in progress (step 1) |
 | 14d | P2 | #140 | Could gates / floors / tiers / leagues turn the big losing bots break-even? — pre-registered, older-half discovery → newer-half holdout, Holm, judged on CLV | 🤖 OWN: a real edge or a clean no; 👥 PICKS second | 1–1½ d | #139's unified record view | open |
-| 15 | P2 | #121 | Odds observatory: book personalities + opening-price CLV now; lead-lag map later; AI digest needs an Anthropic key | 🤖👥 BOTH — catches bad prices, routes to the best book | 1 d now | #001 (clean pairings) | partly blocked |
+| 15 | P2 | #121 | Odds observatory: book personalities + opening-price CLV now; lead-lag map later; AI digest needs an Anthropic key | 🤖👥 BOTH — catches bad prices, routes to the best book | 1 d now | #001 (clean pairings) | paused for #139 (owner, 09-24) |
 | 16 | P1 | #109 | Paid VIP Telegram channel promised for mid/late October — write the proof bar, then the owner picks the route (absorbs #063) | 👥 PICKS — first paid product | ½ d + owner | #129, #002 (honest record first) | open, owner step |
 | 17 | P1 | #117 | How sharp is the Betfair exchange vs Pinnacle? | 🤖👥 BOTH — a second sharp price | ½ d | data ~09-28 | blocked |
 | 18 | P1 | #119 | Sharp anchor v2: exchange beside Pinnacle, then BTTS/AH shadow bots (E–F) | 🤖👥 BOTH — more fixtures with a sharp check | 2 d + weeks | #117, #123 | blocked |
@@ -187,7 +187,7 @@
 | 21 | P2 | #096 | Grade the sharp picks A/B/C like the consensus ones | 👥 PICKS — honest grades on the other arm | ½ d | a site price check of AF A-grade prices | blocked |
 | 22 | P3 | #062 | Weight each bookmaker by sharpness in the fair-price average | 👥 PICKS — better consensus anchor | 1–2 d | #119 | blocked |
 | 23 | P3 | #090 | Market-decorrelated O/U model + blend with the market price | 🤖 OWN — targets what we stake | ~3 d | #124 | blocked |
-| 24 | P3 | #018 | Delete the dead in-play bot code (135 KB) | 🤖 OWN — less dead code in the betting path | ~1 d | — (quiet week) | open |
+| 24 | P3 | #018 | Delete the dead in-play bot code (135 KB) | 🤖 OWN — less dead code in the betting path | ~1 d | — (quiet week) | paused for #139 (owner, 09-24) |
 | 25 | P3 | #019 | Remove leftover paid-tier / Stripe code from the website | 👥 PICKS / infra | 3 h | #109's route | blocked |
 | 26 | P3 | #134 | Forward-test checkpoints (live n=200 ~10-07; consensus n≥200; grade B n≥150) (absorbs #071, #126) | 👥 PICKS — the honest claim | 1–2 h each | trigger ~10-07 | trigger |
 | 27 | P3 | #135 | Preconditions before real money is re-armed (drift %, router dry-run, UI-placer edge cases) | 🤖 OWN — no automated real stake without them | 1–1.5 d | owner re-arms | trigger |
@@ -195,7 +195,7 @@
 | — | P2 | #127 | Make "consensus fair price" mean the same thing everywhere (changes a pre-registered rule) | 👥 PICKS | ½ d | owner decision | owner |
 | — | P3 | #049 | 74% of stored odds rows repeat the previous price — keep, or store only changes? | 🤖👥 BOTH — storage/backtest speed | ½ d | owner decision | owner |
 | — | P3 | #057 | Rebuild per-match pages for search traffic? | 👥 PICKS only — acquisition | 2–3 d | owner decision | owner |
-| — | P1 | #131 | This audit — remaining: 3 ANALYSIS_GOTCHAS lines from handover (a) + #012 (c)'s §35 line, `edge_floor_backtest._ACCESSIBLE` leftover (#030) | 🤖👥 BOTH | ~1 h | — | in progress |
+| — | P1 | #131 | This audit — remaining: 3 ANALYSIS_GOTCHAS lines from handover (a) + #012 (c)'s §35 line, `edge_floor_backtest._ACCESSIBLE` leftover (#030) | 🤖👥 BOTH | ~1 h | — | paused for #139 (owner, 09-24) |
 
 **Closed with a trigger** (not in the table; each row says when to look again): #064 (n=400 picks), #065 (≥200 post-09-14 picks), #103 (60 verified 1H picks — check the 09-21 volume drop first), SHADOW-BOT-ODDS-GATES (2026-10-05 on `bot_v10_1x2`), BOOK-AGNOSTIC-EDGE-ENGINE (500 settled per sharp trigger bot), #026 / #060 (real money re-armed), #079 (demand signal).
 
