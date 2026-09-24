@@ -64,7 +64,12 @@ CHECK_MARKETS = {"1x2": ("home", "draw", "away"), "over_under_15": ("over", "und
 # were few and plainly wrong (Coolbet BTTS-yes 2.6 vs 1.85, Epicbet 3.4 vs 1.82). AF books
 # still count as PEERS.
 SINGLE_MARKET_PROB_GAP = 0.15
-NEAR_KO_AH_PROB_GAP = 0.10
+# (b) the tighter near-kickoff AH bar is DEFERRED (review 2026-09-24): near kickoff the AF
+# peers can be up to an hour old, so a real late move at our book reads as "off" — a dry run
+# at 10 pp flagged 9 more direct-book boards, all 10–13 pp, the borderline shape. Quarantining
+# those would delete genuine closing prices. Held at the general bar until the guard can
+# require FRESH peers (<= 30 min) for the tighter test.
+NEAR_KO_AH_PROB_GAP = SINGLE_MARKET_PROB_GAP
 NEAR_KO_MIN = 30
 AH_SIDES = ("home", "away")
 
@@ -73,7 +78,9 @@ def ah_key(line) -> str | None:
     """Board key for one Asian-handicap line (handicap_line = the HOME line on both
     selections at every book we store — verified in the #119 (E) handover §2.3)."""
     try:
-        return f"ah:{float(line):+g}"
+        # + 0.0 folds -0.0 into 0.0: Epicbet writes the away row's line as -oc_line, so the
+        # level line arrives as -0.0 on one side and 0.0 on the other (review 2026-09-24)
+        return f"ah:{float(line) + 0.0:+g}"
     except (TypeError, ValueError):
         return None
 

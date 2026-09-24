@@ -176,7 +176,9 @@ def run(*, dry_run: bool = False, back_h: float = 3, ahead_h: float = 48) -> dic
             # PRE-FILTER only: peers' LATEST quotes are usually written after this book's
             # last snapshot, so accept ±PEER_MAX_AGE_H here. The verdict that MOVES rows
             # below is strictly as-of each snapshot.
-            v = _judge(_board_of(rows), _peers_asof(hist_latest, book, t, allow_after=True), None, book)
+            _ko = rows[0].get("ko")
+            _mtk = int((_ko - t).total_seconds() // 60) if _ko is not None else None
+            v = _judge(_board_of(rows), _peers_asof(hist_latest, book, t, allow_after=True), _mtk, book)
             if v["wrong"] or v["mirror"] or v["swapped"] or v["single"]:
                 candidates.append((mid, book))
     for mid, book in candidates:

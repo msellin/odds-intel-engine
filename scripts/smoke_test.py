@@ -53526,8 +53526,10 @@ def test_board_guard_btts_ah():
     assert bg.single_market_offenses({"btts": {"yes": 1.95, "no": 1.85}}, peers) == []
     ah = {"ah:-1": {"home": 2.35, "away": 1.6}}          # ~7-8 pp off: fine far out, off near KO
     assert bg.single_market_offenses(ah, peers, None) == []
-    assert bg.single_market_offenses({"ah:-1": {"home": 2.9, "away": 1.4}}, peers, 20)[0][0] == "ah:-1"
+    assert bg.single_market_offenses(ah, peers, 20) == [], "near-KO tightening deferred (stale AF peers)"
+    assert bg.single_market_offenses({"ah:-1": {"home": 3.3, "away": 1.3}}, peers, 20)[0][0] == "ah:-1"
     assert bg.ah_key(-1) == "ah:-1" and bg.ah_key(None) is None
+    assert bg.ah_key(-0.0) == bg.ah_key(0.0) == "ah:+0", "Epicbet's level line arrives as -0.0 on one side"
     rows = [("btts", "yes", 3.4, None), ("btts", "no", 1.3, None), ("1x2", "home", 2.0, None)]
     _saved = (bg.quarantine_rows, bg.record_finding)
     bg.quarantine_rows = lambda *a, **k: None      # never touch the DB from a smoke test
