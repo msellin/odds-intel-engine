@@ -27,6 +27,24 @@ backfills paused.
    quote within 60 min of kickoff.
 4. **T1 is partly built.** `picks_board` already stores the sharp arm's candidate board (1,267 rows).
 
+## Current order — 2026-09-24 (evening, after the owner decisions)
+
+Done 2026-09-24: #089, #111, #118, #106 (+ consensus gate live), #087 (migration 401), #077's bot
+retired (migration 399), #070 closed as covered. Remaining, in order:
+
+| # | row | what | prio | est | direction | status |
+|---|---|---|---|---|---|---|
+| 1 | #122 | split the sharp bot into 1x2 + O/U identities (bookkeeping only) | P1 | ½ d | PICKS (+OWN) | ⬜ next |
+| 2 | #096 | grade the sharp arm — needs the AF-fed book price check | P2 | ½ d | PICKS | ⬜ |
+| 3 | #062 | consensus as a log-odds pool, weights fitted to the close | P2 | 1 d | PICKS | ⬜ |
+| 4 | #014 | fair 1x2 from Pinnacle AH + totals (verify the claim first) | P2 | 2-3 d | PICKS | ⬜ |
+| 5 | #085 | deletion half: the duplicate signal code | P1 | ½ d | OWN | ⬜ |
+| 6 | #071 | dated odds-band re-check | P3 | 2 h | PICKS | ⬜ |
+| 7 | #090 (c) | decorrelation + Benter blend — last; O/U closed four ways | P1 | 2-3 d | OWN | ⬜ |
+
+Background: #103 (Epicbet 1H check, 14 d / 60 picks), grade B re-test at n ≥ 150.
+Parked: #080, #086. Owner, later: Pinnacle API email.
+
 ## Revised order — 2026-09-24 (owner: "move 089 on top")
 
 Steps 1-4 of the order below are done (#082, #024, #085 correctness half, #081/#088/#089 D/E), and
