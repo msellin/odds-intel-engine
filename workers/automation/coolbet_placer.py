@@ -440,7 +440,8 @@ _SELECTION_OUTCOME: dict[str, str] = {
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
-def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
+def load_qualified_bets(bet_id_filter: str | None = None,
+                        only_bots: set[str] | None = None) -> list[dict]:
     """Return today's simulated_bets qualifying for automated placement.
 
     bet_id_filter (MANUAL-PLACE 2026-05-29): when set, returns ONLY the bet
@@ -582,6 +583,12 @@ def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
 
     allowed_maturity = _allowed_maturity_labels()
     maturity_clause = "" if allowed_maturity is None else "AND b.maturity_label = ANY(%s)"
+    # #139 review D2 (2026-09-24): on a real-money run, restrict to the bots allowed to
+    # stake BEFORE the one-bot-per-selection DISTINCT ON, so a higher-edge bot that may not
+    # stake cannot shadow an allowed bot's pick (the per-pick gate would then refuse it).
+    bots_clause = "" if only_bots is None else "AND b.name = ANY(%s)"
+    _params = [_MIN_EDGE] + ([allowed_maturity] if allowed_maturity is not None else []) \
+        + ([sorted(only_bots)] if only_bots is not None else [])
     rows = execute_query(
         f"""
         SELECT * FROM (
@@ -615,6 +622,7 @@ def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
             AND b.is_active IS TRUE                      -- RETIRED-BOT-LEAK-FIX (2026-07-31): don't place picks from bots we've retired
             AND b.retired_at IS NULL
             {maturity_clause}                            -- CHERRY-PICK-PLACER (2026-06-01): default unset = no filter
+            {bots_clause}
             -- COOLBET-MAC-DAEMON-DEDUP (2026-06-12): the dedup is the
             -- ONLY thing preventing duplicate real-money bets. NEVER
             -- date-filter rb.placed_at — a bet placed yesterday on a
@@ -637,7 +645,7 @@ def load_qualified_bets(bet_id_filter: str | None = None) -> list[dict]:
         ) q
         ORDER BY q.match_date ASC, q.edge_percent DESC
         """,
-        (_MIN_EDGE, allowed_maturity) if allowed_maturity is not None else (_MIN_EDGE,),
+        tuple(_params),
     )
     results = [dict(r) for r in rows]
     if allowed_maturity is not None:
@@ -2140,7 +2148,11 @@ def place_all_bets(
     session = CoolbetSession(require_auth=execute)
     if not execute:
         log.info("Anon-read mode: no JWT required — using Imperva cookies only (--record)")
-    pending = load_qualified_bets(bet_id_filter=bet_id_filter)
+    _only = None
+    if execute and not bet_id_filter:
+        from workers.automation.placement_gate import effective_allowlist
+        _only = effective_allowlist()
+    pending = load_qualified_bets(bet_id_filter=bet_id_filter, only_bots=_only)
 
     if not pending:
         log.info("No qualifying bets found for today.")
@@ -2612,7 +2624,9 @@ def _place_combo_bets(
             notes=f"auto-combo ticket={ticket_id} edge={edge_pct:+.2f}% legs={len(resolved_legs)}",
             combo_legs=resolved_legs,
             system_type=system_type,
-            placed_real=execute,  # Stage 2: paper unless actually executed
+            # #139 review (2026-09-24): this path never POSTs a bet (no ticket), so the row
+            # is never real money — it was written placed_real=execute and counted as staked.
+            placed_real=False,
         )
         guard.record_placement(stake)
         log.info("✓ Recorded %s  combined live=%.3f  stake=€%.2f  real_bet=%s",
@@ -2866,7 +2880,8 @@ def place_all_inplay_bets(
             bot_id=bot_id,
             simulated_bet_id=sim_id,
             notes=f"inplay-auto edge={edge_pct:+.2f}% cb_match={cb_match_id}",
-            placed_real=execute,  # Stage 2: paper unless actually executed
+            # #139 review (2026-09-24): no POST on this path either — never real money.
+            placed_real=False,
         )
         guard.record_placement(stake)
         log.info("✓ Inplay recorded %s @ %.3f  stake=€%.2f  real_bet=%s",

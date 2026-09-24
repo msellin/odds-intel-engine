@@ -3190,10 +3190,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         # Weekly-retrain bundles only (vYYYYMMDD...). Experiment
                         # bundles (ab_*) share this registry; without the filter the
                         # slot silently picked up whichever A/B a research session
-                        # trained last (2026-09-24: 'ab_ht_B'). #139 decision (v).
+                        # trained last (2026-09-24: 'ab_ht_B'); weekly bundles are named exactly
+                        # f"v{YYYYMMDD}" (scheduler), so suffixed research bundles are out too.
                         "SELECT version FROM model_versions "
                         "WHERE demoted_at IS NULL AND version <> %s "
-                        "AND version ~ '^v[0-9]{8}' "
+                        "AND version ~ '^v[0-9]{8}$' "
                         "ORDER BY trained_at DESC LIMIT 1",
                         [_prod_ver],
                     )

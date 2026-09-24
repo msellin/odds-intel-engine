@@ -53640,7 +53640,7 @@ def test_shadow_autoselect_weekly_only():
     that day was 'ab_ht_B', a research experiment. Restrict to weekly retrains (vYYYYMMDD...)."""
     src = open("workers/jobs/daily_pipeline_v2.py").read()
     i = src.index("SHADOW-AUTOSELECT-2026-08-26")
-    assert "version ~ '^v[0-9]{8}'" in src[i:i + 4000]
+    assert "version ~ '^v[0-9]{8}$'" in src[i:i + 4000], "weekly bundles are exactly vYYYYMMDD"
 
 
 @test("COOLBET-POST-GATED-PER-PICK — the only real-money Coolbet POST runs the per-pick allowlist gate first")
@@ -53674,6 +53674,16 @@ def test_coolbet_post_gated_per_pick():
     assert callers, "no caller found"
     whole = open(cp.__file__).read()
     assert whole.count('bot_name=bet.get("bot_name")') >= len(callers)
+    # review of b9d2d05c: combo / in-play never POST, so never real money
+    assert whole.count("placed_real=execute,") == 1, "only the POSTing single path may mark real money"
+    # D2: the allowlist is applied BEFORE the one-bot-per-selection DISTINCT ON on a real run
+    lq = inspect.getsource(cp.load_qualified_bets)
+    assert "only_bots" in lq and "{bots_clause}" in lq
+    assert "only_bots=_only" in inspect.getsource(cp.place_all_bets)
+    # D1: the daily caps count the API path's real_bets, not only UI-placer attempts
+    import scripts.place_coolbet_ui as ui
+    st = inspect.getsource(ui.spent_today)
+    assert "FROM real_bets" in st and "auto ticket=" in st
 
 
 @test("BOT-BOARD-DEV-PREVIEW-NEVER-IN-PROD — the no-login /admin/bots fixture preview is development-only")

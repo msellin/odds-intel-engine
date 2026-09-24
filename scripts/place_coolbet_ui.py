@@ -396,12 +396,24 @@ def exposure_conflict(pick: dict, held: list[dict], stake: float) -> str | None:
 
 
 def spent_today() -> tuple[int, float]:
-    """(bets, stake) confirmed placed since midnight UTC."""
+    """(bets, stake) confirmed placed since midnight UTC.
+
+    Counts BOTH real-money Coolbet paths: the UI placer logs `coolbet_placement_attempts`;
+    the API placer (coolbet_placer._place_bet_api, gated per pick since #139) writes only
+    `real_bets` with notes 'auto ticket=...'. Before 2026-09-24 the API path's bets never
+    counted toward MAX_BETS_PER_DAY / MAX_STAKE_PER_DAY (#139 review D1)."""
     r = execute_query(
-        """SELECT COUNT(*) AS n, COALESCE(SUM(stake_applied), 0) AS s
-             FROM coolbet_placement_attempts
-            WHERE outcome = 'placed'
-              AND attempted_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC')"""
+        """WITH t AS (SELECT date_trunc('day', NOW() AT TIME ZONE 'UTC') AS d)
+           SELECT (SELECT COUNT(*) FROM coolbet_placement_attempts, t
+                    WHERE outcome = 'placed' AND attempted_at >= t.d)
+                + (SELECT COUNT(*) FROM real_bets, t
+                    WHERE bookmaker = 'Coolbet' AND placed_real IS TRUE
+                      AND notes LIKE 'auto ticket=%%' AND placed_at >= t.d) AS n,
+                  (SELECT COALESCE(SUM(stake_applied), 0) FROM coolbet_placement_attempts, t
+                    WHERE outcome = 'placed' AND attempted_at >= t.d)
+                + (SELECT COALESCE(SUM(stake), 0) FROM real_bets, t
+                    WHERE bookmaker = 'Coolbet' AND placed_real IS TRUE
+                      AND notes LIKE 'auto ticket=%%' AND placed_at >= t.d) AS s"""
     )[0]
     return int(r["n"]), float(r["s"])
 
