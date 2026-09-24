@@ -214,6 +214,29 @@ FOOTPRINT_CHALLENGE_MIN = 5     # bot-check / 403 / 429 answers this hour …
 FOOTPRINT_CHALLENGE_RATE = 0.05  # … and at least this share of requests
 
 
+def _closing_capture() -> dict[str, tuple[int, int]]:
+    """#107 C: {book: (priced pre-KO, priced in the final 15 min)} over fixtures that kicked
+    off in the last 24 h. ~1 s. Never raises."""
+    try:
+        rows = execute_query(
+            """WITH f AS (SELECT id, date FROM matches
+                          WHERE date > now() - interval '24 hours' AND date <= now()),
+                    b AS (SELECT unnest(%s::text[]) AS book)
+               SELECT b.book,
+                      count(*) FILTER (WHERE EXISTS (
+                          SELECT 1 FROM odds_snapshots o WHERE o.match_id = f.id AND o.bookmaker = b.book
+                             AND o.timestamp <= f.date AND o.timestamp > f.date - interval '3 days')) AS priced,
+                      count(*) FILTER (WHERE EXISTS (
+                          SELECT 1 FROM odds_snapshots o WHERE o.match_id = f.id AND o.bookmaker = b.book
+                             AND o.timestamp <= f.date AND o.timestamp > f.date - interval '15 minutes')) AS closed
+                 FROM f CROSS JOIN b GROUP BY b.book""",
+            ([b for b in COVERAGE_BOOKS if b != "Betfair-Exchange"],)) or []
+        return {r["book"]: (r["priced"], r["closed"]) for r in rows}
+    except Exception as e:  # noqa: BLE001
+        log.warning("feed_health closing capture failed: %s", e)
+        return {}
+
+
 def _footprint() -> dict[str, dict]:
     """Per book: this clock hour's requests / challenges / errors / refusals, the
     last 24 h's requests, and the budget (workers/utils/footprint.py)."""
@@ -519,6 +542,15 @@ def run_feed_health() -> dict:
             cur.execute("""UPDATE feed_book_stats SET liquid_today = %s, liquid_yesterday = %s
                             WHERE book = 'Betfair-Exchange'""", (liq.get("t", 0), liq.get("y", 0)))
         conn.commit()
+    # #107 C: separate + guarded, so a missing column (migration 408 not yet applied) or a
+    # slow query can never cost the feed_status write above.
+    try:
+        from workers.api_clients.db import execute_write
+        for _b, (_p, _c) in _closing_capture().items():
+            execute_write("""UPDATE feed_book_stats SET closing_priced_24h = %s, closing_captured_24h = %s
+                              WHERE book = %s""", (_p, _c, _b))
+    except Exception as e:  # noqa: BLE001
+        log.warning("feed_health closing-capture write failed: %s", e)
     counts = {}
     for e in evals:
         counts[e["status"]] = counts.get(e["status"], 0) + 1

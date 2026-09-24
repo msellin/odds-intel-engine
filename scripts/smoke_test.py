@@ -53648,6 +53648,23 @@ def test_coolbet_first_half_goals():
     assert got == {"team_total_1h_home_05", "team_total_1h_away_15"}, got
 
 
+@test("FEEDS-CLOSING-CAPTURE — each book's close shown as N of M kickoffs, written outside the main transaction (#107 C)")
+def test_feeds_closing_capture():
+    """#107 phase C (2026-09-24): per book, of the fixtures that kicked off in the last 24 h
+    and it priced pre-match, how many carry a price in the final 15 min. First read: Epicbet
+    104/105, Pinnacle 91/92, Unibet-Site 50/52, Tonybet 51/102, Coolbet 15/73 (both had just
+    joined the near-kickoff capture). The write is separate + guarded so a missing column
+    can never cost the feed_status write."""
+    import inspect
+    from workers.jobs import feed_health as fh
+    mig = _engine_path("supabase/migrations/408_feed_book_closing_capture.sql").read_text()
+    assert "closing_priced_24h" in mig and "closing_captured_24h" in mig
+    src = inspect.getsource(fh.run_feed_health)
+    commit_at = src.index("conn.commit()")
+    assert src.index("_closing_capture().items()") > commit_at, "must run after the main commit"
+    assert "interval '15 minutes'" in inspect.getsource(fh._closing_capture)
+
+
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")
 def test_anon_least_privilege():
     """#072 (2026-09-24): anon held SELECT on 134/134 public relations via default privileges;
