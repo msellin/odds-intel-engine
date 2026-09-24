@@ -3047,3 +3047,17 @@ shots_away_ht = shots_away AND corners_home_ht = corners_home)` per week should 
 
 Separately: **xG on rows < 6 days old is incomplete by design** — AF publishes it 1-4 days after the
 match and `job_xg_late_fill` fills it in. Do not read a recent xG gap as a coverage drop.
+
+## 77. Historical Pinnacle rows are football-data ingests: `is_closing` is stamped AT kickoff, `is_opening` is NOT an opening price (#118, 2026-09-24)
+
+Before live Pinnacle collection (~July 2026 for most leagues), our Pinnacle O/U rows came from
+`scripts/ingest_football_data_csvs.py`. Per match there are typically two pairs:
+* **`is_closing`** = FD's `PC>2.5`, **timestamped exactly at kickoff**. Any `o.timestamp < m.date`
+  filter silently drops every historical close. #118's first run found only 453 "fresh closes" instead
+  of ~4,000 because of this.
+* **`is_opening`** = FD's `P>2.5`, which football-data collects on a Friday or Tuesday before the match.
+  It is stamped kickoff − 7 days as a stand-in. It is a pre-close price, NOT the market's opening.
+
+**Rule:** to get a historical close, select `is_closing` explicitly. Never treat `is_opening` in history
+as an opening price or read its timestamp as real. A median "164 h before kickoff" on these rows is the
+stand-in stamp, not a fact about when the price existed.

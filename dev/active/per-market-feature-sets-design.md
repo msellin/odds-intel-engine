@@ -766,3 +766,44 @@ live era from ~July 2026.
 **EARLY is unchanged:** the first complete non-closing pair. For history that is FD's pre-close price,
 collected on a Friday or Tuesday — so EARLY here is the same market term as #089's M2, not an opening
 price.
+
+### Result — #118 (2026-09-24, `scripts/xg_gap_top_leagues.py`): NULL, every cell
+
+10,829 matches across the 10 leagues; 5,984 test-period eligible (2024/25 onward). Scored:
+3,793 against EARLY (football-data's Pinnacle pre-close) and 3,601 against CLOSE (Pinnacle close).
+
+| input | vs EARLY ΔLL (tuned / fixed θ) | vs CLOSE ΔLL (tuned / fixed θ) |
+|---|---|---|
+| xG | −0.00037 / −0.00012 | −0.00036 / −0.00019 |
+| shots+corners | −0.00094 / −0.00020 | −0.00084 / −0.00009 |
+| goals | −0.00031 / −0.00014 | −0.00024 / −0.00005 |
+
+**All six cells FAIL** (Holm p = 1.00). The tuned run is WORSE than the fixed one: with a single burn-in
+season to tune on, λ and φ ran to their bounds. Both agree anyway.
+
+**The pipeline is live.** Market-free, rating alone vs climatology (LL 0.6932):
+* xG **+0.0088** (corr with over +0.137);
+* goals +0.0057;
+* shots+corners +0.0040.
+
+**xG IS the best input, as expected.** But Pinnacle's pre-close alone scores LL 0.6729, far better than
+the xG rating alone (0.6844), and adding the rating to it adds nothing.
+
+**Money at Pinnacle's pre-close price** (level stakes where p̂ beats it):
+* xG −2.33% ROI / −2.86% CLV;
+* market-only control −3.88% / −2.98%.
+
+Nothing clears the control on CLV.
+
+**Verdict.** In the big leagues, API-Football xG carries real information about goals, and Pinnacle
+already prices all of it, at both pre-close and close. **No xG O/U head for these leagues.**
+
+A league subset does not change the #089 answer. The softer leagues where a public-data input might
+still be under-priced are exactly the ones with little Pinnacle history in our DB (MLS 180, Brazil
+122, Argentina 128, Norway 104 fixtures), so they cannot be graded against a sharp price yet.
+
+**Found on the way — ANALYSIS_GOTCHAS §77.** Historical Pinnacle rows are football-data ingests:
+* `is_opening` rows are FD's Friday/Tuesday pre-close price, stamped kickoff − 7 d. They are NOT an
+  opening price.
+* `is_closing` rows are stamped exactly AT kickoff, so a `timestamp < kickoff` filter silently drops
+  every historical close.

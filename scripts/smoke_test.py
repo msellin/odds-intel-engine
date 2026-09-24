@@ -51676,6 +51676,32 @@ def test_coolbet_sweep_observable():
         "the job invisible in the first place"
 
 
+@test("XG-GAP-TOP-LEAGUES — #118 keeps FD closing rows, same rows across inputs, xG input wired")
+def test_xg_gap_top_leagues():
+    """[[#118]], 2026-09-24. The xG-subset O/U test (null in every cell). What keeps a
+    re-run honest:
+    1. historical Pinnacle closes are football-data ingests stamped AT kickoff — the
+       query must keep `is_closing` rows or CLOSE silently shrinks to ~450 fixtures
+       (ANALYSIS_GOTCHAS §77);
+    2. `has_sc` requires EVERY input, so xG / shots / goals score identical rows;
+    3. the harness's gap_sums actually reads xG for inp="xg" (not shots by default).
+    """
+    from pathlib import Path
+    import numpy as np
+    import pandas as pd
+    src = (Path(__file__).parent.parent / "scripts" / "xg_gap_top_leagues.py").read_text()
+    assert "OR COALESCE(o.is_closing, false)" in src, "historical FD closes (stamped at kickoff) must be kept"
+    assert '["hs", "as_", "hc", "ac", "xgh", "xga"]' in src, "every input must be present on scored rows"
+    from scripts.xg_gap_top_leagues import season_of
+    assert season_of(pd.Timestamp("2025-08-10")) == "2526" and season_of(pd.Timestamp("2026-03-01")) == "2526"
+    from scripts.wheatcroft_replication import gap_sums
+    df = pd.DataFrame({"lg": ["L", "L"], "season": ["2425", "2425"], "h": ["A", "A"], "a": ["B", "B"],
+                       "hg": [0.0, 0.0], "ag": [0.0, 0.0], "hs": [0.0, 0.0], "as_": [0.0, 0.0],
+                       "hc": [0.0, 0.0], "ac": [0.0, 0.0], "xgh": [2.0, 0.0], "xga": [1.0, 0.0]})
+    out = gap_sums(df, "xg", (0.5, 1.0, 1.0))
+    assert out[1] == 0.5 * 2 + 0.5 * 1 + 0.5 * 1 + 0.5 * 2, out   # xG, not shots (which are all 0)
+
+
 @test("XG-LATE-FILL — #111 re-fetches rows whose xG AF published late, never overwrites with NULL")
 def test_xg_late_fill():
     """[[#111]], 2026-09-24. From ~2026-08-31 API-Football adds xG 1-4 days after a
