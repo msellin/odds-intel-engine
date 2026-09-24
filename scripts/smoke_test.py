@@ -55504,5 +55504,310 @@ def test_predictions_shadow_own_source():
     assert "AVG(probability)" not in ha and "AVG(model_probability)" in ha
 
 
+@test("B5-OUTLIER-PERSISTENCE — #141 B5: pre-registered takeability rule constants, read-only, cadence flag")
+def test_b5_outlier_persistence():
+    """B5 ([[#141]]). Pre-registered in dev/active/1x2-model-rebuild-plan.md ("Pre-registration
+    — B5: are outlier quotes takeable?") BEFORE looking at the data: a book is NAMEABLE in
+    paid picks iff >= 60% of its EV>=5% episodes are still EV>=5% at +15 min AND median
+    persistence >= 30 min AND single-snapshot episodes <= 25%; < 30 episodes = INSUFFICIENT.
+    Pins the rule so it cannot be re-tuned after the result. Source inspection only."""
+    import ast
+    src = _engine_path("scripts/b5_outlier_persistence.py").read_text(encoding="utf-8")
+    c = {}
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            try:
+                c[node.targets[0].id] = ast.literal_eval(node.value)
+            except ValueError:
+                pass
+    assert c["EV_MIN"] == 0.05 and c["HORIZONS_MIN"] == (5, 15, 30, 60)
+    assert c["RULE_SHARE_AT_15"] == 0.60 and c["RULE_MEDIAN_PERSIST_MIN"] == 30.0
+    assert c["RULE_SINGLE_SNAPSHOT_MAX"] == 0.25 and c["RULE_MIN_EPISODES"] == 30
+    assert c["CADENCE_JUDGEABLE_MAX_MIN"] == 15.0, "books coarser than 15 min cannot be judged at +15"
+    assert '"no_data"' in src and '"past_kickoff"' in src, "missing snapshots must not count as available"
+    assert 'o."timestamp" < m.date' in src and "is_live IS NOT TRUE" in src
+    low = src.lower()
+    for bad in ("insert into", "update ", "delete from", "execute_values", "create table"):
+        assert bad not in low, f"B5 must be read-only; found {bad!r}"
+    assert "_b5" in src and "INSUFFICIENT" in src and "NAMEABLE" in src
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# smoke-A.py — builder A (/admin/bots visual pass + IA move P7, retire /admin/shadow-bots/[bot])
+#
+# PART 1: four NEW tests — append to scripts/smoke_test.py (next to the other #139 admin tests).
+# PART 2: REPLACEMENTS for six existing tests that pinned the old 1,004-line [bot] page. Each is a
+#         complete function; replace the existing function of the same @test name wholesale
+#         (docstrings keep the history and say what moved where).
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+
+# ─────────────────────────────────────────── PART 1: NEW ───────────────────────────────────────
+
+
+@test("ADMIN-BOTS-P7-SHEET-LEDGER — /admin/shadow-bots/[bot] redirects; the bots sheet carries Bet made + current prices, per-family")
+def test_admin_bots_p7_sheet_ledger():
+    """#139 IA move P7 (2026-09-24). /admin/shadow-bots/[bot] computed its OWN per-bot record (ROI,
+    avg CLV, a 50-settled/14-day bar, a model-edge "Min odds") for every bot — a third scoring beside
+    bot_scoreboard, wrong for in-play and sharp bots (#139 finding b). It is now a redirect to the
+    /admin/bots sheet, whose Picks tab gained what the old page had that the sheet lacked:
+    "Bet made" (real_bets, placed_real IS NOT FALSE, price + venue), the current price at our three
+    books for PENDING PRE-MATCH picks, and paging through the whole ledger. Guards: the redirect
+    reads nothing; placements exclude the paper daemon's placed_real=FALSE rows; the price books are
+    the placeable feeds (Unibet-Site, never Kambi), one query per book; in-play bots get no CLV and
+    no pre-match price; no "Min odds"; the client table never imports server code."""
+    if not (_web_root / "src").exists():
+        return
+    detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text(encoding="utf-8")
+    assert 'from "next/navigation"' in detail and "redirect(`/admin/bots?bot=${encodeURIComponent(bot)}&tab=picks`)" in detail
+    assert ".from(" not in detail and "createServerServiceClient" not in detail, "the retired page must read nothing"
+
+    route = _web_path("src/app/api/admin/bot-ledger/route.ts").read_text(encoding="utf-8")
+    assert "loadBotPicks(bot, { limit, offset })" in route and "limit > 100" in route
+    assert route.index("if (!isBotBoardDevPreview())") < route.index("loadBotPicks(")
+
+    lib = _web_path("src/lib/bot-board.ts").read_text(encoding="utf-8")
+    fn = lib[lib.index("export async function loadBotPicks("):]
+    placed = lib[lib.index("async function readPlaced("):lib.index("async function readPrices(")]
+    assert '.from("real_bets")' in placed and '.not("placed_real", "is", false)' in placed and "bookmaker" in placed
+    prices = lib[lib.index("async function readPrices("):]
+    assert '.eq("bookmaker", book)' in prices and "SNAPSHOT_BOOKS.map(" in prices, "one query per book (row-cap safety)"
+    assert '.eq("is_live", false)' in prices and "12 * 3600_000" in prices
+    want = lib[lib.index("function wantsPrice("):lib.index("function attachExtras(")]
+    assert 'r.result === "pending"' in want and "!isInplayRow(r)" in want and "> now" in want
+    assert "placementLinked" in fn and "hasMore" in fn
+
+    books = _web_path("src/lib/bot-snapshot-books.ts").read_text(encoding="utf-8")
+    assert 'SNAPSHOT_BOOKS = ["Coolbet", "Unibet-Site", "Epicbet"] as const;' in books
+    code = "\n".join(l for l in books.splitlines() if not l.lstrip().startswith(("*", "/*", "//")))
+    assert "Kambi" not in code and '"Unibet"' not in code
+
+    d = _web_root / "src/app/(app)/admin/bots"
+    table = (d / "picks-table.tsx").read_text(encoding="utf-8")
+    assert "const anyClv = !inplay &&" in table and "const anyPriceRow = !inplay &&" in table
+    assert "Min odds" not in table.split('"use client";', 1)[1].split("import ", 1)[1], "no model-edge min-odds column"
+    assert 'id: "bet"' in table and 'id: "result"' in table and "Bet made" in table
+    for h in ("Now CB", "Now UB", "Now EB"):
+        assert h in table
+    # client components import only TYPES from the server-only data layer
+    import re as _re
+    for f in d.glob("*.tsx"):
+        t = f.read_text(encoding="utf-8")
+        if not t.lstrip().startswith('"use client"'):
+            continue  # server components (page.tsx) may import the loaders
+        for m in _re.finditer(r'^import (.+) from "@/lib/bot-board";', t, _re.M):
+            assert m.group(1).startswith("type "), f"{f.name} imports a VALUE from server-only bot-board.ts"
+    sheet = (d / "bot-sheet.tsx").read_text(encoding="utf-8")
+    assert "<PicksTable v={v} ledger={ledger} onMore={onMore} />" in sheet
+
+
+@test("ADMIN-BOTS-DESIGN-SYSTEM — /admin/bots uses PageHeader, StatCards (armed = whole red card), Panels and a DataTable-look toolbar")
+def test_admin_bots_design_system():
+    """#139 admin visual direction §10 (2026-09-24). The bot table itself stays custom (family groups
+    with per-family column headers, in-row money switches, shared forest-bar axis, cards below xl —
+    none of which DataTable does), so its toolbar copies DataTable's: search, Family / Verdict facet
+    chips, quick views, Reset, and sorting (headers + a Sort menu) within each family, all in the URL.
+    The money cards keep their behaviour; only the chrome changed."""
+    if not (_web_root / "src").exists():
+        return
+    d = _web_root / "src/app/(app)/admin/bots"
+    board = (d / "bots-board.tsx").read_text(encoding="utf-8")
+    assert '<PageHeader\n        eyebrow="Bots & money"' in board
+    assert '<FacetChip label="Family"' in board and '<FacetChip label="Verdict"' in board and "<SortMenu" in board
+    assert "sort={{ key: sortKey, dir: sortDir, onSort }}" in board
+    strip = (d / "fleet-strip.tsx").read_text(encoding="utf-8")
+    assert "danger={armed === true}" in strip and "unknown={armed == null}" in strip and "unknown={paused == null}" in strip
+    assert strip.count("<Jump onJump={onJump}>") == 2, "Placement + Real money cards jump to the Real money card"
+    money = (d / "real-money-card.tsx").read_text(encoding="utf-8")
+    assert '<Panel\n      id="real-money"' in money and "ctl.openArm" in money
+    assert money.count('ctl.request({ control: "placement_paused"') == 2 and 'ctl.request({ control: "real_money_disarm", bot: null, value: false })' in money
+    pub = (d / "fleet-controls-card.tsx").read_text(encoding="utf-8")
+    assert '<Panel id="controls">' in pub
+    sort = (d / "bot-sort.ts").read_text(encoding="utf-8")
+    assert "if (va == null) return 1;" in sort and "if (vb == null) return -1;" in sort, "missing values sort last, never as 0"
+
+
+@test("ADMIN-BOTS-PERF-CHARTS — the sheet's CLV-over-time is the family's own metric, gaps under 5, none for in-play")
+def test_admin_bots_perf_charts():
+    """#139 (2026-09-24): the bot sheet's Performance tab charts weekly CLV on the family's ONE
+    admissible metric (bot_weekly) and cumulative flat-stake P/L in units. A week with < 5 measured
+    picks is a gap, not a point; in-play bots get no CLV chart (no closing line — judged on lift) and
+    the tab says so; the by-market table shows mc-CLV only for mc-CLV families."""
+    if not (_web_root / "src").exists():
+        return
+    d = _web_root / "src/app/(app)/admin/bots"
+    c = (d / "bot-perf-charts.tsx").read_text(encoding="utf-8")
+    assert "const MIN_WEEK_N = 5;" in c and "w.clvN >= MIN_WEEK_N" in c
+    assert "No CLV chart: in-play picks have no closing line" in c
+    assert 'const inplay = metric === "lift" || v.family === "inplay";' in c
+    assert "Cumulative P/L · flat stake" in c
+    sheet = (d / "bot-sheet.tsx").read_text(encoding="utf-8")
+    assert "<BotPerfCharts v={v} weekly={weekly} />" in sheet
+    assert '{v.metric.metric === "clv_mc" && <th className="py-1 text-right font-normal">mc-CLV</th>}' in sheet
+    # the weekly strip / chart source redacts in-play CLV in the data layer
+    lib = _web_path("src/lib/bot-board.ts").read_text(encoding="utf-8")
+    assert "inplay.has(r.bot_name) ? { ...r, clv_mc_n: null, clv_mc_mean: null, clv_pin_n: null, clv_pin_mean: null } : r" in lib
+
+
+@test("ADMIN-BOTS-FIXTURE-P7 — the /admin/bots dev fixture carries placements + current prices in the loader's shapes")
+def test_admin_bots_fixture_p7():
+    """#139 IA move P7: dump_bot_board_fixture.py snapshots real_bets (placed_real IS NOT FALSE) and
+    the latest non-live Coolbet / Unibet-Site / Epicbet prices of pending pre-match picks, so the
+    no-login preview renders the Picks tab the way production does (loadBotPicks)."""
+    dump = _engine_path("scripts/dump_bot_board_fixture.py").read_text(encoding="utf-8")
+    assert '"placed": placed' in dump and '"prices": prices' in dump
+    assert "WHERE r.placed_real IS NOT FALSE" in dump
+    assert "bookmaker IN ('Coolbet', 'Unibet-Site', 'Epicbet')" in dump and "is_live = false" in dump
+    assert 'default=150' in dump, "enough ledger rows per bot to page through in the preview"
+
+
+# ───────────────────────────── PART 2: REPLACEMENTS for existing tests ─────────────────────────
+#
+# (a) COOLBET-VALUE-BOT — replace these 4 lines:
+#
+#     detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
+#     assert "bot_coolbet_value_v1: {" in detail, \
+#         "detail page ALLOWED entry required or the row links to a 404"
+#
+#   with:
+#
+#     # IA move P7 (2026-09-24): /admin/shadow-bots/[bot] is now a redirect to the /admin/bots sheet,
+#     # which opens ANY bot in bot_scoreboard — there is no per-bot allowlist left to 404 on.
+#     detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
+#     assert "redirect(`/admin/bots?bot=" in detail and "ALLOWED" not in detail, \
+#         "the retired detail page must redirect, not carry a per-bot allowlist"
+#
+#   (the preceding comment block "The DETAIL page has its OWN allowlist and 404s on anything missing
+#   from it..." should get one line appended: "RETIRED 2026-09-24 (IA move P7): see the redirect.")
+#
+#   and, further down in the same test, replace:
+#
+#     assert "botEdgeThreshold" in detail, (
+#         "the detail page must resolve its floor through the shared "
+#         "botEdgeThreshold() helper — a second hand-written map here is the "
+#         "state that preceded the 2026-09-05 four-surface incident"
+#     )
+#
+#   with:
+#
+#     # IA move P7 (2026-09-24): the detail page shows no floor any more (it redirects; the old
+#     # model-edge "Min odds" was wrong for sharp and in-play bots, #139 finding b). The index's
+#     # per-pick floor is the only one left and must still come from the shared helper.
+#
+#   and replace:
+#
+#     for surface_name, surface in (("index", index_page), ("detail", detail)):
+#
+#   with:
+#
+#     for surface_name, surface in (("index", index_page),):
+#
+# (b) SHADOW-BOTS-DETAIL-TRUNCATION — replace:
+#
+#     for rel in ("src/lib/shadow-bots/queries.ts",
+#                 "src/app/(app)/admin/shadow-bots/[bot]/page.tsx"):
+#
+#   with:
+#
+#     # IA move P7 (2026-09-24): the [bot] detail page is a redirect to /admin/bots, which reads
+#     # bot_ledger (its shadow arm keeps the EARLIEST row per bot/match/market/selection — the same
+#     # dedup rule). It reads nothing itself, so only the index's reads remain to pin here.
+#     detail = (web / "src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
+#     assert ".from(" not in detail, "the retired detail page must not read a ledger again"
+#     for rel in ("src/lib/shadow-bots/queries.ts",):
+#
+# (c) UB-COLUMN-NOT-PLACEABLE — replace:
+#
+#     for rel in ("src/lib/shadow-bots/queries.ts",
+#                 "src/app/(app)/admin/shadow-bots/[bot]/page.tsx"):
+#
+#   with (the per-bot "Now UB" column moved to the /admin/bots sheet; its book list is one literal):
+#
+#     # IA move P7 (2026-09-24): the per-bot Now CB/UB/EB columns moved from the retired [bot] page
+#     # to the /admin/bots sheet; their book list is SNAPSHOT_BOOKS in src/lib/bot-snapshot-books.ts.
+#     for rel in ("src/lib/shadow-bots/queries.ts",
+#                 "src/lib/bot-snapshot-books.ts"):
+#
+# (d) EVERY-REGISTRY-BOT-IS-VISIBLE — replace:
+#
+#     detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
+#     assert 'from("bots")' in detail and "generic header" in detail, (
+#         "the detail page must look the bot up in `bots` and render a generic header for a "
+#         "registered bot without an ALLOWED entry, instead of notFound()"
+#     )
+#
+#   with:
+#
+#     # IA move P7 (2026-09-24): (b) is now structural too — the [bot] page is a redirect to
+#     # /admin/bots?bot=<name>, whose sheet opens ANY bot in bot_scoreboard, active or retired.
+#     # No allowlist, no notFound().
+#     detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
+#     assert "redirect(`/admin/bots?bot=" in detail and "notFound" not in detail
+#     board = _web_path("src/app/(app)/admin/bots/bots-board.tsx").read_text()
+#     assert "scoreboard.rows.filter(isActive)" in board, "the board lists bots from bot_scoreboard, not a list"
+#     assert "retiredViews.find((r) => r.view.name === selected)" in board, "?bot= opens retired bots too"
+#
+# (e) SHADOW-BOT-REAL-BADGE-NO-OVERLAY and (f) SHADOW-DETAIL-THREE-BOOKS-AND-BET-MADE — replace
+#     each whole function with the versions below.
+
+
+@test("SHADOW-BOT-REAL-BADGE-NO-OVERLAY — the placed-real marker gets its own column, never the 60px Result cell")
+def test_shadow_bot_real_badge_no_overlay():
+    """SHADOW-BOT-REAL-BADGE (2026-09-10), rewritten BET-MADE-COLUMN (2026-09-11), moved IA move P7
+    (2026-09-24).
+
+    The invariant is and always was: **the placed-real marker must never be crammed into the
+    narrow Result cell, where it wraps into a blob and overlays the next column** (owner
+    screenshot, 2026-09-10). On 2026-09-11 it became its own "Bet made" column carrying the price
+    AND the venue together. On 2026-09-24 /admin/shadow-bots/[bot] was retired into the /admin/bots
+    sheet (picks-table.tsx, a DataTable), and the column moved with it: still its own column
+    (`id: "bet"`), still separate from `id: "result"`, still price + venue in one cell.
+    """
+    p = _web_path("src/app/(app)/admin/bots/picks-table.tsx")
+    if not p.exists():
+        skip("odds-intel-web not checked out")
+    src = p.read_text()
+    i = src.find('id: "bet"')
+    assert i != -1, "the Bet made column must exist — it is how the operator sees which picks had money on them"
+    j = src.find('id: "result"')
+    assert j != -1 and "ResultTag" not in src[i:src.find("});", i)], (
+        "the placed-real marker must not share the Result cell — that is the overlay bug of 2026-09-10"
+    )
+    cell = src[i:src.find("});", i)]
+    assert "p.odds" in cell and "p.bookmaker" in cell, (
+        "the 'Bet made' cell must show the price AND the venue in one place"
+    )
+    assert "Bet made" in cell, "the column needs a header, or nobody knows what it is"
+
+
+@test("SHADOW-DETAIL-THREE-BOOKS-AND-BET-MADE")
+def test_shadow_detail_three_books_and_bet_made():
+    """PER-BOT-EPICBET-ODDS + BET-MADE-COLUMN (2026-09-11), moved IA move P7 (2026-09-24).
+
+    The per-bot ledger moved from the retired /admin/shadow-bots/[bot] page to the /admin/bots
+    sheet's Picks tab (picks-table.tsx on the shared DataTable; data from loadBotPicks in
+    src/lib/bot-board.ts). What this test pinned still holds there:
+
+    1. HEADER ALIGNMENT — the old page had two hand-written grid templates that drifted. The sheet
+       uses the shared DataTable (one <thead> from the same column defs), so there is nothing to
+       drift; pinned by asserting it IS the DataTable.
+    2. THREE BOOKS — Coolbet, Unibet-Site and Epicbet current prices for pending picks.
+    3. BET MADE — the real placement's price AND venue in ONE cell, read from real_bets.bookmaker.
+    """
+    table = _web_path("src/app/(app)/admin/bots/picks-table.tsx").read_text()
+    assert 'import { DataTable } from "@/components/oi/data-table";' in table and "<DataTable" in table
+    for header in ("Now CB", "Now UB", "Now EB"):
+        assert header in table, f"missing book column: {header}"
+    books = _web_path("src/lib/bot-snapshot-books.ts").read_text()
+    assert '"Epicbet"' in books and '"Coolbet"' in books and '"Unibet-Site"' in books
+    lib = _web_path("src/lib/bot-board.ts").read_text()
+    sel = lib.split('.from("real_bets")')[1][:300]
+    assert "bookmaker" in sel and "actual_odds" in sel, (
+        "'Bet made' must read the venue and price from real_bets, not infer them"
+    )
+    assert "Bet made" in table and "p.bookmaker" in table
+
+
 if __name__ == "__main__":
     main()

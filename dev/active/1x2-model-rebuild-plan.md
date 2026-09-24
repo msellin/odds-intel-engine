@@ -499,3 +499,14 @@ share of episodes that exist in ONE snapshot only (phantom candidates); AF-fed v
 **Decision rule, fixed now:** a book is **nameable in paid picks** if ≥ 60% of its episodes are still EV ≥ 5% at
 +15 min AND median persistence ≥ 30 min AND single-snapshot episodes ≤ 25%. Books that fail are excluded from paid
 picks (they may still count in the consensus). Report n per book; a book with < 30 episodes = "insufficient", not pass.
+
+**B5 — RESULT (2026-09-24 ~22:00 UTC, `scripts/b5_outlier_persistence.py`):** the pre-registered rule is **NOT APPLICABLE** —
+a design error in the pre-registration: every book's median snapshot cadence is 30–60 min (AF bulk ≈ hourly, own
+sweepers 30–60 min), so the +15-min criterion has almost no data and every book with n ≥ 30 reads "cannot judge +15".
+Full history retained for kickoffs ≥ 2026-09-17; 3,537 matches with a NEW+ fair prob; 1.26M pre-KO 1X2 rows.
+Descriptive (NOT a verdict): median persistence of an EV ≥ 5% quote 99–385 min per book (lower bound — 50–78% never
+drop below EV 5% before kickoff), still EV ≥ 5% at +60 min in 74–100%, single-snapshot share 4.5–14% (all ≤ 25%).
+Only real +15 sample: Coolbet 95.5% (n=220). How an outlier ends: our direct books correct on their own (453 book-alone
+vs 18 market-moved) = a genuine soft price; AF books' outliers are usually followed by the market (639 vs 335) = they
+lead the move. Limits: persistence in our snapshots does not prove an AF-fed price was live on the book's own site.
+No book is excluded on this evidence; a +30/+60-min rule would be a NEW pre-registration (owner's call).
