@@ -17,7 +17,7 @@ cd ~/www/odds-intel-web && git status --short
 | Agent | Output | State at handover |
 |---|---|---|
 | Admin visual direction | `dev/active/admin-shell-visual-direction.md` + `dev/active/admin-refs/*.png` | **DONE + committed (387402ff) — see §5** |
-| Admin information-architecture audit | `dev/active/admin-information-architecture.md` | spec, read-only work |
+| Admin information-architecture audit | `dev/active/admin-information-architecture.md` | **DONE + committed — see §6** |
 | Shared admin layout (structural refactor) | odds-intel-web: `src/app/(app)/admin/layout.tsx` (one superadmin check + shell), `src/components/admin/{admin-shell,admin-sidebar,admin-nav,admin-status}.ts(x)`, `src/components/public-chrome.tsx` + `(app)/layout.tsx` (no public header under /admin), `bots/armed-bar.tsx`, `lib/bot-board.ts` loadFleetStatus, outer-wrapper edits in every admin page, `bots/admin-shell.tsx` deleted; engine smoke `ADMIN-SHARED-SHELL` (+ `CONTROL-PAGE-FAIL-SAFE` repointed) | **BUILT, verified in preview (sidebar persists, 1440/375); a pre-commit review agent was running at handover — if its result is not in git log, re-review then commit (web files + the smoke_test.py hunks only)** |
 
 If the files are incomplete, rerun that step from the prompts in §4.
@@ -108,3 +108,37 @@ Owner, 2026-09-24:
 - **Light mode:** optional and last. About 655 hard-coded colour classes would fail contrast on white.
 - The doc ends with a **7-step build order** and a "what changes" row per admin page. Its sidebar groups are a DRAFT; the IA audit decides them.
 - The `bots-preview` dev server (:3055) was left running by that agent. Restart it via `.claude/launch.json` if needed.
+
+## 6. Admin information-architecture audit — DONE (`dev/active/admin-information-architecture.md`)
+**Important finding:** the Coolbet footprint pause is not only a feeds switch. When it is set, the Mac daemon also skips
+PLACING, and `coolbet_control.can_stake()` counts it as a blocker. But the 6-layer money ladder on /admin/bots leaves it out,
+so the page could say "CAN STAKE: YES" while the engine says no. Fix this before anything else.
+
+Top 10 moves, in the audit's order:
+1. 🤖 Add the footprint pause to the money ladder as a read-only blocking layer, and fix its "Not a money switch" label.
+2. 🤖 Move the footprint switch to the Coolbet block on /admin/feeds, next to the Mac daemon heartbeat. Add a 4th sidebar status line.
+   After that, the Controls card on /admin/bots holds only the picks channel.
+3. 🤖 Remove the two unaudited write paths.
+   - /admin/shadow-bots flips the footprint pause through `/api/admin/coolbet-daemons-pause`, a plain UPDATE with no audit row.
+   - Its per-bot real-money toggle uses the legacy route, which is now OFF-only.
+   - Route both through the audited function.
+4. 🤖👥 Turn /admin into an ATTENTION INBOX built from existing data: placer armed or stale, picks channel quiet or paused, red feeds,
+   bot issues, failed jobs, stuck settlement, data-quality findings, unreconciled manual bets.
+5. 🤖 Promote /admin/real-bets to a "Money" page in the sidebar. It holds 992 rows; the last is 2026-09-15.
+6. 🤖 Cut /admin/shadow-bots down to a "Pick queue" (today's picks + Place). Drop its safety strip and scoreboard, which duplicate /admin/bots.
+7. 🤖👥 Keep ONE per-bot scoring. It is computed three ways today; fold /admin/shadow-bots/[bot] into the /admin/bots sheet.
+8. Delete the dead pages: /admin/cs2 reads tables that no longer exist, and /admin/place served a trial that ended in June. LoL/Tennis are the owner's call.
+9. Turn Ops into a "Jobs" page. Odds coverage, live tracker and API-Football budget move to Feeds; drop the paid-tier leftovers and the stale bots section.
+10. Gaps that need engine work: proof the picks channel is sending, one activity log across both audit tables, Coolbet session
+    health on Feeds, deploy drift, and which model version is live.
+
+**Open questions for the owner:** (a) keep the real-money controls on /admin/bots? The earlier decision was yes.
+(b) LoL/Tennis: delete, or keep under a collapsed "Archive" group? (c) add a Telegram command for footprint on/off?
+
+**Suggested order for the next agent:**
+- commit the shared shell (§0);
+- IA move 1 (ladder correctness, 🤖 money), then 2 and 3;
+- then the visual design system (§5) page by page, with the IA sitemap as the sidebar groups;
+- then moves 4–9.
+
+Every step gets a reviewer.
