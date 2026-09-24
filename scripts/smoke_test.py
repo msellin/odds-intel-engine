@@ -53168,6 +53168,7 @@ def test_board_guard():
     both = {"Epicbet": {"home": 1.97, "draw": 3.4, "away": 3.55}, "Coolbet": {"home": 10.0, "draw": 5.5, "away": 1.28}}
     assert not g._corroborated({"home": 1.95, "draw": 3.4, "away": 3.6}, ("home", "draw", "away"), both)
     assert "_own_asof(series, book, t)" in inspect.getsource(a.run), "judge the board as it stood, not one snapshot"
+    assert "m.date > now() - interval '24 hours'" in inspect.getsource(a._alert), "alert on CURRENT fixtures only"
     # a mislabelled line (1xBet over_under_25 rows carrying 0.25) is never compared as 2.5
     assert g._line_ok("over_under_25", 2.5) and not g._line_ok("over_under_25", 0.25)
     # wired into all three direct-book writers, BEFORE the mirror guard

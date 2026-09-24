@@ -239,8 +239,14 @@ def _alert() -> None:
         from workers.api_clients.db import execute_query
         from workers.notify.telegram import send_telegram
         rows = execute_query(
-            """SELECT bookmaker, count(*) n FROM data_quality_findings
-                WHERE check_name = 'wrong_fixture_board' AND found_at > now() - interval '24 hours'
+            """SELECT f.bookmaker, count(*) n FROM data_quality_findings f
+                 JOIN matches m ON m.id = f.match_id
+                WHERE f.check_name = 'wrong_fixture_board' AND f.found_at > now() - interval '24 hours'
+                  -- CURRENT fixtures only: the one-off 5-day clean-up of 2026-09-24 recorded 12
+                  -- findings on matches of 19-22 Sept and paged "12 wrong-fixture boards in
+                  -- 24 h" although nothing current was wrong. The alert means "the matcher is
+                  -- failing today", so it counts only matches kicking off from 24 h ago onward.
+                  AND m.date > now() - interval '24 hours'
                 GROUP BY 1 HAVING count(*) >= %s""", (ALERT_PER_BOOK_PER_DAY,)) or []
         for r in rows:
             send_telegram(f"🟠 <b>{r['bookmaker']}</b>: {r['n']} wrong-fixture boards in 24 h "
