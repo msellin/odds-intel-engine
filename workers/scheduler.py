@@ -670,6 +670,23 @@ def _tonybet_odds_snapshot_wrapper():
     _run_job("tonybet_odds_snapshot", job_tonybet_odds_snapshot)
 
 
+def job_betfair_exchange_snapshot():
+    """BETFAIR-EXCHANGE-READER (#117, 2026-09-24). Exchange back/lay + liquidity for our
+    fixtures in the next 48 h → `exchange_quotes`, through the London exit (SOCKS :1082,
+    `oddsintel-egress@betfair`). ~11 requests per run. A second sharp reference beside
+    AF-Pinnacle — NOT placeable, NOT in odds_snapshots until its sharpness is measured.
+    Raises when it lists markets but stores nothing (the silent-failure shape)."""
+    from workers.automation.betfair_exchange_feed import run_bulk
+    res = run_bulk(horizon_hours=48)
+    if res.get("matched_events", 0) >= 20 and not res.get("rows"):
+        raise RuntimeError(f"Betfair Exchange stored 0 rows for {res.get('matched_events')} matched events")
+    return res
+
+
+def _betfair_exchange_snapshot_wrapper():
+    _run_job("betfair_exchange_snapshot", job_betfair_exchange_snapshot)
+
+
 def job_tonybet_live():
     """TONYBET phase 2 (#101, 2026-09-23): one request snapshots score / clock /
     status / corners / cards for EVERY live football event into book_live_stats.
@@ -3155,6 +3172,12 @@ def main():
     scheduler.add_job(_tonybet_odds_snapshot_wrapper,
                       CronTrigger(hour="*", minute="1,31"),
                       id="tonybet_odds_snapshot", name="Tonybet Odds [30min]",
+                      max_instances=1)
+    # BETFAIR-EXCHANGE-READER (#117): every 15 min so quotes exist close to kickoff
+    # (the sharpness comparison needs a close), ~44 requests/h via the London exit.
+    scheduler.add_job(_betfair_exchange_snapshot_wrapper,
+                      CronTrigger(hour="*", minute="4,19,34,49"),
+                      id="betfair_exchange_snapshot", name="Betfair Exchange [15min]",
                       max_instances=1)
     # TONYBET phase 2 (#101): live stats every 120 s (owner's choice — enough for
     # final corners/cards, half the requests of 60 s), results every 2 h at :20.

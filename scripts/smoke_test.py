@@ -52913,6 +52913,32 @@ def test_odds_refresh_tomorrow_evening():
     assert "ODDS_REFRESH_TOMORROW_FROM_UTC" in job and "timedelta(days=1)" in job
 
 
+@test("BETFAIR-EXCHANGE-READER — London exit only, own table, liquidity recorded, read-only")
+def test_betfair_exchange_reader():
+    """#117 (2026-09-24). Exchange prices through the London Droplet (SOCKS :1082); the
+    exchange serves no markets to the Finnish VPS. Pins: never the Estonian exit, never
+    odds_snapshots (thin placeholders like 1.10/110 would poison every consensus), every
+    quote carries back+lay+sizes+matched volume, and no login/order endpoints."""
+    import inspect
+    from pathlib import Path
+    from workers.automation import betfair_exchange_feed as b
+    from workers.utils import footprint
+    src = inspect.getsource(b)
+    assert b._PROXY.endswith(":1082") and ":1081" not in src
+    assert "INSERT INTO exchange_quotes" in src and "odds_snapshots" not in src.split('"""', 2)[2]
+    for bad in ("identitysso", "placeOrders", "/login"):
+        assert bad not in src
+    assert footprint.budget("Betfair-Exchange")
+    assert b.is_liquid(2.48, 2.52, 18656) and not b.is_liquid(1.10, 110.0, 0.0)
+    assert not b.is_liquid(2.08, 2.20, 30.7), "a €31 market with a 6% spread is not a price"
+    assert b.split_event_name("Kosovo v Republic of Ireland") == ("Kosovo", "Republic of Ireland")
+    assert b.runner_selection("MATCH_ODDS", "The Draw", "A", "B") == "draw"
+    assert b.runner_selection("OVER_UNDER_25", "Over 2.5 Goals", "A", "B") == "over"
+    root = Path(__file__).resolve().parent.parent
+    assert "CREATE TABLE IF NOT EXISTS exchange_quotes" in (root / "supabase/migrations/395_exchange_quotes.sql").read_text()
+    assert 'id="betfair_exchange_snapshot"' in (root / "workers/scheduler.py").read_text()
+
+
 @test("BETFAIR-GEO-PROBE — the one-shot exchange probe is read-only and uses the site's own query")
 def test_betfair_geo_probe():
     """#115 (2026-09-24): Betfair Exchange served no markets to the Finnish VPS. The

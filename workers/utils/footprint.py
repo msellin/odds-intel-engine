@@ -39,6 +39,7 @@ _DEFAULT_BUDGETS = {
     "Tonybet": 800,       # sweeps + deep boards + 2-min live + results; tighten once measured
     "Unibet-Site": 500,   # the sweep's own cap is 180 fetches per run, 2 runs/h
     "Epicbet": 4000,      # pre-match sweep + near-kickoff; ~200–400 per sweep
+    "Betfair-Exchange": 300,  # ~11 req per sweep (1 listing + 40 markets/price call), 4 sweeps/h
     "Epicbet-inplay": 12000,  # paper-only in-play collector, ~9,600/h at its 60-fixture cap;
                               # separate so it can never starve the pre-match sweep
 }

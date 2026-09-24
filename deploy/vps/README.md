@@ -112,6 +112,8 @@ To give a book its own exit (e.g. Coolbet, once the owner buys a second zone.ee 
    `systemctl daemon-reload && systemctl restart oddsintel-scheduler`.
 5. Add the unit to `workers/registry/feed_registry.py` infra so /admin/feeds watches it.
 
+**In use (2026-09-24):** `oddsintel-egress@betfair` → DigitalOcean London Droplet 178.62.96.205, `/etc/oddsintel/egress-betfair.env` (`EGRESS_PORT=1082`), used only by the Betfair Exchange reader (#117).
+
 **Fixed, never rotated.** A book always leaves from the same IP. We do NOT move a
 blocked book to another exit to get around the block — that is evasion (declined on
 #108) and invites a harder, account-level response. A flagged book backs off on its

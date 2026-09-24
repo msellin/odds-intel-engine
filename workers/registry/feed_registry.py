@@ -106,6 +106,15 @@ FEEDS: list[dict] = [
      "health": "data", "data": {"table": "live_match_snapshots", "ts": "captured_at"}},
 
     # ── infrastructure ──────────────────────────────────────────────────────
+    {"id": "betfair_exchange", "wrapper": "_betfair_exchange_snapshot_wrapper", "controls": ["pause", "run_now"],
+     "label": "Betfair Exchange — back/lay + liquidity (reference, not placeable)", "book": "Betfair-Exchange",
+     "category": "book", "kind": "pre-match", "job": "betfair_exchange_snapshot",
+     "units": ["oddsintel-egress@betfair.service"],
+     "schedule": ":04 / :19 / :34 / :49 UTC", "interval_min": 15, "stale_after_min": 60,
+     "health": "data", "data": {"table": "exchange_quotes", "ts": "captured_at"}},
+    {"id": "betfair_egress", "label": "London exit for Betfair (DigitalOcean SOCKS :1082)", "book": None,
+     "category": "infra", "kind": "service", "units": ["oddsintel-egress@betfair.service"],
+     "schedule": "always on", "interval_min": None, "stale_after_min": None, "health": "service"},
     {"id": "zone_egress", "label": "Estonian exit (zone.ee SOCKS)", "book": None,
      "category": "infra", "kind": "service", "units": ["oddsintel-zone-egress.service"],
      "schedule": "always on", "interval_min": None, "stale_after_min": None, "health": "service"},
