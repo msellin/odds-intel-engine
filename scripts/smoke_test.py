@@ -54300,5 +54300,71 @@ def test_weekly_eval_no_holdout():
     assert "send_weekly_retrain_email(eval_version" in body
 
 
+@test("RATING-1X2-LEAK-GUARD — #141 walk-forward ratings never read a match's own or same-day result, and are order-independent")
+def test_rating_1x2_leak_guard():
+    """RATING-1X2 ([[#141]], 2026-09-24). The rating model's whole claim (beats the
+    shipped 1X2 head by ~0.06 log-loss on the 2026-08-31.. holdout) rests on the
+    walk-forward pass being leak-free. Behavioural, on synthetic data:
+      * changing a match's result must not change ITS features or any same-day
+        features, and must change later ones (date-batched updates);
+      * shuffling input rows must give identical features (ties on kickoff broke
+        differently per run until the (kickoff, match_id) mergesort);
+      * an upcoming fixture (no score) gets features but never updates state."""
+    import numpy as np
+    import pandas as pd
+    from workers.model.ratings_1x2 import build_features
+    rng = np.random.default_rng(7)
+    teams = [f"t{i}" for i in range(12)]
+    rows = []
+    for d in range(40):
+        order = rng.permutation(teams)
+        for k in range(0, 12, 2):
+            rows.append(dict(match_id=f"m{d:02d}_{k}", kickoff=pd.Timestamp("2025-01-01", tz="UTC") + pd.Timedelta(days=d),
+                             league_id="L", home=order[k], away=order[k + 1],
+                             gh=int(rng.integers(0, 4)), ga=int(rng.integers(0, 4)),
+                             hh=0, ha=0, tier=1))
+    m = pd.DataFrame(rows)
+    cols = ["elo_diff", "pi_diff", "dp_diff", "form_diff"]
+    base = build_features(m, None).set_index("match_id")
+    tgt = "m20_0"
+    alt_m = m.copy(); alt_m.loc[alt_m.match_id == tgt, ["gh", "ga"]] = (9, 0)
+    alt = build_features(alt_m, None).set_index("match_id")
+    same_day = [i for i in base.index if i.startswith("m20_")]
+    later = [i for i in base.index if i[1:3] > "20"]
+    assert np.allclose(base.loc[same_day, cols].astype(float), alt.loc[same_day, cols].astype(float)), \
+        "a match's own / same-day result leaked into its features"
+    assert not np.allclose(base.loc[later, cols].astype(float), alt.loc[later, cols].astype(float)), \
+        "results never propagate forward — the pass is not updating state"
+    shuf = build_features(m.sample(frac=1, random_state=3), None).set_index("match_id")
+    assert np.allclose(base[cols].astype(float), shuf.loc[base.index, cols].astype(float), equal_nan=True), \
+        "features depend on input row order"
+    up = m.copy(); up.loc[up.match_id.str.startswith("m20_"), ["gh", "ga"]] = np.nan
+    upf = build_features(up, None).set_index("match_id")
+    assert (upf.loc[same_day, "y"] == -1).all(), "upcoming fixtures must be labelled y=-1"
+    no20 = build_features(m[~m.match_id.str.startswith("m20_")], None).set_index("match_id")
+    assert np.allclose(upf.loc[later, cols].astype(float), no20.loc[later, cols].astype(float)), \
+        "an upcoming fixture updated rating state"
+
+
+@test("RATING-1X2-SHADOW-ISOLATED — #141 the shadow model writes only its own private table")
+def test_rating_1x2_shadow_isolated():
+    """RATING-1X2-SHADOW ([[#141]]). pick_generator, pick_triggers and health_alerts
+    read `predictions` without a strict source filter, so the shadow model must never
+    write there until the owner promotes it. Its tables are private (#072)."""
+    job = _engine_path("workers/jobs/rating_1x2_shadow.py").read_text(encoding="utf-8")
+    assert "INSERT INTO rating_1x2_predictions" in job
+    assert "INTO predictions" not in job and "bulk_store_predictions" not in job, \
+        "the shadow job must not write the shared predictions table"
+    sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    assert 'id="rating_1x2_shadow"' in sched and "def job_rating_1x2_shadow" in sched
+    mig = _engine_path("supabase/migrations/412_rating_1x2_tables.sql").read_text(encoding="utf-8")
+    assert "CREATE TABLE IF NOT EXISTS rating_history_results" in mig
+    assert "CREATE TABLE IF NOT EXISTS rating_1x2_predictions" in mig
+    assert "TO anon" not in mig, "rating tables are admin-only (#072)"
+    fetch = _engine_path("scripts/fetch_1x2_history_cache.py").read_text(encoding="utf-8")
+    assert "INSERT INTO matches" not in fetch and "bulk_store_matches" not in fetch, \
+        "prior-season history must not be written into matches"
+
+
 if __name__ == "__main__":
     main()

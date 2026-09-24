@@ -1133,6 +1133,17 @@ def job_weekly_retrain():
     _run_job("weekly_retrain", _retrain)
 
 
+def job_rating_1x2_shadow():
+    """RATING-1X2-SHADOW ([[#141]]) — forward predictions from the walk-forward 1X2
+    rating model into `rating_1x2_predictions`. SHADOW ONLY: nothing that stakes or
+    publishes reads that table; it builds the unseen forward record the owner needs
+    before deciding whether the rating model replaces the XGBoost head in the served
+    1X2 blend. Runs after the 04:00 morning chain has created today's and tomorrow's
+    fixtures, and again at 17:30 for fixtures added during the day (~1-2 min each)."""
+    from workers.jobs.rating_1x2_shadow import run as _run_rating
+    _run_job("rating_1x2_shadow", _run_rating)
+
+
 def job_weekly_meta_retrain():
     """META-RETRAIN (2026-05-25): weekly retrain of the B-ML3 meta-model.
     Runs Sunday 04:00 UTC, AFTER the main XGBoost weekly_retrain at 03:00 UTC
@@ -3605,6 +3616,11 @@ def main():
     scheduler.add_job(job_weekly_retrain, CronTrigger(day_of_week="sun", hour=3, minute=0),
                       id="weekly_retrain", name="Weekly Retrain Sunday 03:00",
                       max_instances=1, misfire_grace_time=3600)
+
+    # RATING-1X2-SHADOW ([[#141]]) — shadow forward predictions, 05:30 + 17:30 UTC.
+    scheduler.add_job(job_rating_1x2_shadow, CronTrigger(hour="5,17", minute=30),
+                      id="rating_1x2_shadow", name="1X2 rating model shadow 05:30/17:30",
+                      max_instances=1, misfire_grace_time=1800)
 
     # META-RETRAIN (2026-05-25) — weekly B-ML3 meta-model retrain Sunday 04:00 UTC,
     # an hour after the main retrain (which refreshes MFV features the meta

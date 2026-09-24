@@ -225,6 +225,15 @@ simply fewer callers) is not yet filed as its own task — see AF-QUOTA-REALLOCA
 
 Audit triggered by TIER-C-EXPAND debugging surfaced several non-obvious facts about our historical data state. Captured here so future agents (and the human) don't re-derive them.
 
+### Prior-season results for the 1X2 rating model (2026-09-24, [[#141]])
+`scripts/fetch_1x2_history_cache.py` fetched `/fixtures?league&season` (current + 2 prior seasons) for
+the **655 leagues first seen on/after 2025-10-01**: 1,965 calls, **258,222 finished fixtures**
+(90-minute score, HT score, AF team ids). They live in the private table `rating_history_results`
+(migration 412), **not** in `matches`, so public coverage counts, the track record, MFV and settlement
+never see them; they only warm the rating state (97% of low-history 1X2 holdout rows were in leagues
+first seen in 2026). Re-running the script is resumable and budget-guarded (aborts under 20k remaining).
+Not yet scheduled — in-season results for these leagues are refreshed by re-running it.
+
 ### `backfill_historical.py` is "complete" but partial
 
 - `backfill_complete.flag` (repo root, dated 2026-05-10) makes the script short-circuit. **To force a re-run: `rm backfill_complete.flag`.** Rarely useful — see next bullet.

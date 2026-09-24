@@ -544,6 +544,13 @@ P(outcome) = w * Poisson_prob + (1 - w) * XGBoost_prob
 
 Default blend weight w = 0.5 (equal). The weight is learned and stored in the `model_calibration` table (market key `blend_weight_1x2`) via `scripts/fit_blend_weights.py`, and loaded at pipeline startup — falls back to 0.5 if no learned value exists. Model disagreement (`|Poisson - XGBoost|`) is stored per bet as an uncertainty signal.
 
+> **⚠️ Measured 2026-09-24 ([[#141]]):** the stored 1X2 blend (`predictions` source='ensemble',
+> v20260830, Poisson weight 0.635) scores **1.144 log-loss** on settled matches since 08-31 — worse than
+> a flat 1/3-1/3-1/3 (1.099). The **Poisson leg alone scores 1.147**; mean stored probabilities are
+> H 0.366 / D 0.311 / A 0.323 against actual 0.438 / 0.244 / 0.318. Calibration and the Pinnacle pull
+> (§5) happen downstream at bet time, which is why placed bets are not this bad, but every reader of
+> `predictions.model_probability` for 1X2 sees the squashed number. See §4.4 for the replacement.
+
 ### 4.3 Data Tier Fallback
 
 Not all matches have sufficient data for both models:
@@ -556,6 +563,48 @@ Not all matches have sufficient data for both models:
 | D | No history and AF has no xG | Skipped — no model can fire | Not bet on |
 
 **TIER-C-AF-XG (2026-05-19):** Tier C was previously hardcoded to a 50/50 OU prior + league-average BTTS with `exp_home/exp_away = None` (so AH and OU 1.5/3.5 never fired). API-Football's `/predictions` endpoint actually returns per-team expected goals (`af_goals_home`, `af_goals_away`) for every match it covers — typically ~70-80% of fixtures including most non-CSV-covered leagues. The fallback now parses those xG values and feeds them into the same `_poisson_probs()` grid Tier A uses (same Dixon-Coles rho, same per-league draw inflation). 1X2 probabilities still come from AF's blended percentages (form + H2H + standings — stronger than xG alone); OU 1.5/2.5/3.5/4.5, BTTS, and AH are now model-priced. The +8% `DATA_TIER_EDGE_BUMP` for Tier C is kept unchanged so the existing safety margin still applies.
+
+
+### 4.4 1X2 walk-forward rating model — SHADOW (2026-09-24, [[#141]])
+
+**What.** `workers/model/ratings_1x2.py` computes team strength from match **scores only**, in one
+chronological pass, one kickoff date at a time (a date's features are read before any of that date's
+results update state — leak-free by construction; smoke `RATING-1X2-LEAK-GUARD`):
+
+| rating | method | tuned params (validation slice only) |
+|---|---|---|
+| Elo | World-Football-Elo margin multiplier, home advantage, newcomers start 50 below league mean | K 45, HFA 60 |
+| pi-ratings | Constantinou & Fenton 2013, separate home/away ratings | lr 0.1, γ 0.9 |
+| dynamic Poisson | online attack/defence, per-league μ and home advantage, λ clamped ±2 log | lr 0.03, league lr 0.003 |
+| HT Poisson | same on half-time goals | lr 0.06 |
+| form / rest | 240-day decayed points per game; rest days capped at 21 | — |
+
+The served head is **D8+**: a multinomial logit on eight difference features (Elo, pi, DP λ, HT λ,
+form, rest, league home-win and draw rates) plus the dynamic-Poisson model's own log-odds and draw
+probability. Ratings are warmed with **prior-season results** for recently added leagues
+(`rating_history_results`, fetched by `scripts/fetch_1x2_history_cache.py` — not written to `matches`).
+
+**Why.** The XGBoost head (§3.1b) reads strength from `match_feature_vectors`, whose columns were blank
+on 53% of its training rows; scores exist for 100% of matches. The literature favours small rating
+models over engineered vectors (Hvattum & Arntzen 2010; 2023 Soccer Prediction Challenge).
+
+**Measured** (holdout 2026-08-31..09-24, 12,640 matches, same rows, prior-season history only):
+
+| | log-loss | RPS |
+|---|---|---|
+| shipped XGBoost head v20260830 | 1.0711 | 0.2296 |
+| **rating model D8+** | **1.0078** (Δ −0.063, 95% CI −0.070..−0.056) | **0.2139** |
+| Pinnacle close (priced subset only) | 0.9812 vs model 1.0256 | — |
+
+It wins in all five tiers and on both history buckets, and is calibrated (mean H/D/A 0.440/0.239/0.321
+vs actual 0.438/0.231/0.331). **It does not beat Pinnacle:** α = 0 overall on 18,114 priced matches
+(and in the pre-registered six-arm test), so where Pinnacle prices a match the market stays the better
+number — the same result as every earlier α test. Full method, pre-registration and every run:
+`dev/active/1x2-model-rebuild-plan.md`; harness `scripts/ab_1x2_rating_arms.py`.
+
+**Status: shadow.** `job_rating_1x2_shadow` (05:30/17:30 UTC) writes `rating_1x2_predictions` only.
+Nothing that stakes or publishes reads it. Replacing the XGBoost/Poisson legs of the served blend is
+an owner decision, to be taken on the forward record from 2026-09-25.
 
 ---
 

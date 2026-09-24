@@ -195,3 +195,52 @@ Scored on settled matches since 08-31: ensemble 1.1437, **Poisson leg 1.1473 —
 Poisson leg (`daily_pipeline_v2.py` ~1530-1630, last-10 goals, fuzzy team names) is the defect.
 Calibration and the Pinnacle pull happen downstream at bet time, which is why placed bets are not
 this bad — but every consumer of `predictions.model_probability` for 1X2 reads the squashed number.
+
+## Pre-registration — ROUND 2 (2026-09-24, written BEFORE the round-2 runs)
+Motivation: Q1 showed accuracy depends on history depth (DP LL 1.056 at 1-3 prior matches vs 1.011
+at 60+) and 97% of low-depth test rows are in leagues first seen in 2026. Arms:
+
+| arm | change vs round 1 |
+|---|---|
+| H-DP / H-D8 | same models, ratings warmed with prior-season results from `scripts/fetch_1x2_history_cache.py` (AF `/fixtures?league&season`, cache only). Extra rows update rating state only; they are never train or test rows, so test sets are identical. |
+| D8+ | D8 plus the DP model's own log-odds (`log(dp_ph/dp_pa)`, `dp_pd`) as features — stacking the best single rating into the logit |
+| H-D8+ | both |
+
+**Adoption rule (fixed now):** a round-2 arm replaces round-1 D8 only if it beats D8 on the
+VALIDATION slice (fit ≤ 2026-02-28, score 2026-03..05) AND on the Q1 window (2026-08-31..). The Q1
+window has been seen once, so it is a confirmation, not a selector; the first genuinely unseen check
+is the forward window from 2026-09-25, recorded when ≥ 2,000 settled rows exist.
+**Expected:** history warm-up improves the ungated bucket materially (≥ 0.01 LL) and gated rows a
+little; D8+ is within ±0.003 of D8. α vs Pinnacle stays 0.
+
+### 2026-09-24 — RESULT ROUND 2: **H-D8+ adopted** (beats D8 on validation AND Q1, per the rule)
+Fetched 258,222 prior-season results (1,965 AF calls; 220,989 not already in `matches`). Features now
+built with a deterministic (kickoff, match_id) mergesort — round 1 used an arbitrary tie order; the
+re-run D8 numbers below supersede it (differences ≤0.002).
+
+| arm | validation ALL | Q1 ALL | Q1 base-gated | Q1 base-ungated |
+|---|---|---|---|---|
+| DP / D8 / D8+ (no history) | 1.0443 / 1.0472 / 1.0405 | 1.0276 / 1.0285 / 1.0253 | 1.0200 / 1.0187 / 1.0162 | 1.0394 / 1.0436 / 1.0392 |
+| H-DP / H-D8 / **H-D8+** | 1.0137 / 1.0133 / **1.0113** | 1.0080 / 1.0051 / **1.0037** | 1.0066 / 1.0052 / **1.0034** | 1.0101 / 1.0050 / **1.0040** |
+
+Leak / fairness checks: every `matches` row has an AF fixture id; 11 history rows duplicate a stored
+match by date+teams (same-day, so applied only after that date's features). **History cut at
+2026-01-01 (prior seasons only, production-reproducible): H-D8+ 1.0078**; cut at the Q1 train cutoff:
+1.0038 — so ~85% of the gain is prior-season history, the rest in-season fixtures of tracked leagues
+we never stored; in-window history adds nothing.
+
+### 2026-09-24 — FINAL (H-D8+, prior-season history only) vs PROD on the Q1 window
+| bucket | n | H-D8+ | PROD | Δ (95% CI) | RPS |
+|---|---|---|---|---|---|
+| ALL | 12,640 | **1.0078** | 1.0711 | −0.0632 [−0.0704, −0.0558] | 0.2139 vs 0.2296 |
+| base-gated | 7,690 | 1.0070 | 1.0538 | −0.0467 [−0.0544, −0.0388] | 0.2130 vs 0.2264 |
+| base-ungated | 4,950 | 1.0091 | 1.0980 | −0.0889 [−0.1022, −0.0752] | 0.2153 vs 0.2345 |
+| Pinnacle-priced | 6,517 | 1.0256 | 1.0653 | −0.0397 [−0.0486, −0.0312] | (Pinnacle close 0.9812) |
+
+Tiers 0-4: 1.007/0.996/1.036/1.062/1.049 vs PROD 1.082/1.058/1.064/1.152/1.101. Calibration H/D/A
+0.440/0.239/0.321 vs actual 0.438/0.231/0.331. **Exploratory α (outside the pre-registered family):**
+0.000 on 18,114 priced matches; tier 2 α 0.13 (blend 1.0169 vs market 1.0175), tier 3 α 0.155 but blend
+worse out-of-sample — no evidence of an edge over Pinnacle, as predicted.
+
+**Decision:** ship H-D8+ as `r1x2_d8plus_v1` in SHADOW (migration 412, `workers/jobs/rating_1x2_shadow.py`,
+05:30/17:30 UTC). Promotion into the served 1X2 blend = owner decision on the forward record.

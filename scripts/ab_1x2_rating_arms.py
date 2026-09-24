@@ -77,7 +77,9 @@ def refresh_cache() -> None:
         SELECT m.id::text match_id, m.date kickoff, m.league_id::text league_id,
                coalesce(l.tier, 9) tier, l.country,
                m.home_team_id::text home, m.away_team_id::text away,
-               m.score_home gh, m.score_away ga, m.ht_score_home hh, m.ht_score_away ha
+               m.score_home gh, m.score_away ga, m.ht_score_home hh, m.ht_score_away ha,
+               m.api_football_id af_fixture_id, m.home_team_api_id home_af, m.away_team_api_id away_af,
+               l.api_football_id af_league_id
           FROM matches m LEFT JOIN leagues l ON l.id = m.league_id
          WHERE m.status = 'finished' AND m.score_home IS NOT NULL AND m.score_away IS NOT NULL
     """, c)
@@ -129,165 +131,12 @@ def load_pinnacle(matches: pd.DataFrame) -> pd.DataFrame:
 
 
 # ───────────────────────────── ratings pass ─────────────────────────────
-def _skellam_1x2(lh: float, la: float, n: int = 11):
-    k = np.arange(n)
-    fk = np.array([math.factorial(int(i)) for i in k], float)
-    ph = np.exp(-lh) * lh ** k / fk
-    pa = np.exp(-la) * la ** k / fk
-    mat = np.outer(ph, pa)
-    return float(np.tril(mat, -1).sum()), float(np.trace(mat)), float(np.triu(mat, 1).sum())
-
-
+from workers.model.ratings_1x2 import (  # noqa: E402  — one implementation, shared with serving
+    _skellam_1x2, _clip, build_features, TUNED_PARAMS,
+)
 DEFAULT_PARAMS = dict(elo_k=20.0, elo_hfa=60.0, pi_lr=0.035, pi_gamma=0.7,
                       dp_lr=0.06, dp_league_lr=0.01, ht_lr=0.06, sot_lr=0.04,
-                      form_hl_days=60.0, league_hl_days=365.0)
-
-
-def _clip(d: dict, *keys, lim: float = 2.0) -> None:
-    """Online SGD on a sparse schedule can run away for a team with a handful of
-    freak scores (dp_diff reached ±31 goals unclamped). ±2 on the log scale is
-    already a 7x multiplier."""
-    for k in keys:
-        d[k] = max(-lim, min(lim, d[k]))
-
-
-def build_features(m: pd.DataFrame, stats: pd.DataFrame | None, P: dict | None = None) -> pd.DataFrame:
-    """Walk-forward pre-match features for every match. Date-batched (leak guard)."""
-    P = {**DEFAULT_PARAMS, **(P or {})}
-    m = m.sort_values("kickoff").reset_index(drop=True)
-    m["day"] = m["kickoff"].dt.tz_convert("UTC").dt.date if m["kickoff"].dt.tz is not None else m["kickoff"].dt.date
-    if stats is not None:
-        m = m.merge(stats[["match_id", "sot_h", "sot_a"]].drop_duplicates("match_id"), on="match_id", how="left")
-    else:
-        m = m.assign(sot_h=np.nan, sot_a=np.nan)
-
-    elo = {}
-    league_elo = defaultdict(lambda: [0.0, 0])          # sum, n  -> newcomer start
-    pi_h, pi_a = defaultdict(float), defaultdict(float)
-    att, dfn = defaultdict(float), defaultdict(float)
-    hatt, hdfn = defaultdict(float), defaultdict(float)
-    satt, sdfn = defaultdict(float), defaultdict(float)
-    lmu = defaultdict(lambda: math.log(1.3)); lhfa = defaultdict(lambda: 0.25)
-    hmu = defaultdict(lambda: math.log(0.58)); hhfa = defaultdict(lambda: 0.2)
-    smu = defaultdict(lambda: math.log(4.2)); shfa = defaultdict(lambda: 0.15)
-    form = {}                                           # team -> (ew_points, ew_weight, last_day)
-    nplayed = defaultdict(int)
-    last_day = {}
-    lg = defaultdict(lambda: [0.45, 0.26, 0.0, None])   # ew home-win, draw, weight, last_day
-
-    def elo_of(t, league):
-        if t not in elo:
-            s, n = league_elo[league]
-            elo[t] = (s / n - 50.0) if n >= 5 else 1500.0   # newcomers start a bit below league mean
-        return elo[t]
-
-    def pi_exp(r):
-        return math.copysign(10 ** (abs(r) / 3.0) - 1, r)
-
-    rows = []
-    for day, grp in m.groupby("day", sort=True):
-        feats = []
-        for r in grp.itertuples(index=False):
-            h, a, L = r.home, r.away, r.league_id
-            eh, ea = elo_of(h, L), elo_of(a, L)
-            lh = math.exp(lmu[L] + lhfa[L] + att[h] - dfn[a]); la = math.exp(lmu[L] + att[a] - dfn[h])
-            hlh = math.exp(hmu[L] + hhfa[L] + hatt[h] - hdfn[a]); hla = math.exp(hmu[L] + hatt[a] - hdfn[h])
-            slh = math.exp(smu[L] + shfa[L] + satt[h] - sdfn[a]); sla = math.exp(smu[L] + satt[a] - sdfn[h])
-            dp = _skellam_1x2(lh, la)
-
-            def fppg(t):
-                if t not in form: return np.nan
-                p, w, ld = form[t]
-                return p / w if w > 0 else np.nan
-
-            lw = lg[L]
-            feats.append(dict(
-                match_id=r.match_id,
-                elo_diff=eh - ea,
-                pi_diff=pi_exp(pi_h[h]) - pi_exp(pi_a[a]),
-                dp_lh=lh, dp_la=la, dp_diff=lh - la,
-                dp_ph=dp[0], dp_pd=dp[1], dp_pa=dp[2],
-                ht_diff=hlh - hla, sot_diff=slh - sla,
-                form_diff=fppg(h) - fppg(a),
-                rest_diff=(min((day - last_day[h]).days, 21) if h in last_day else np.nan)
-                          - (min((day - last_day[a]).days, 21) if a in last_day else np.nan),
-                lg_home=lw[0], lg_draw=lw[1],
-                n_home=nplayed[h], n_away=nplayed[a],
-            ))
-        rows.extend(feats)
-
-        # ── update state with this date's results ──
-        for r in grp.itertuples(index=False):
-            h, a, L = r.home, r.away, r.league_id
-            gd = r.gh - r.ga
-            # Elo (World-Football-Elo margin multiplier)
-            eh, ea = elo[h], elo[a]
-            we = 1 / (1 + 10 ** (-(eh - ea + P["elo_hfa"]) / 400))
-            res = 1.0 if gd > 0 else 0.5 if gd == 0 else 0.0
-            g = 1.0 if abs(gd) <= 1 else 1.5 if abs(gd) == 2 else (11 + abs(gd)) / 8
-            d = P["elo_k"] * g * (res - we)
-            elo[h] = eh + d; elo[a] = ea - d
-            # pi-ratings
-            exp_gd = pi_exp(pi_h[h]) - pi_exp(pi_a[a])
-            err = gd - exp_gd
-            psi = math.copysign(3 * math.log10(1 + abs(err)), err)
-            dh = psi * P["pi_lr"]
-            pi_h[h] += dh; pi_a[h] += dh * P["pi_gamma"]
-            pi_a[a] -= dh; pi_h[a] -= dh * P["pi_gamma"]
-            # dynamic Poisson, FT goals
-            lh = math.exp(lmu[L] + lhfa[L] + att[h] - dfn[a]); la = math.exp(lmu[L] + att[a] - dfn[h])
-            eh_, ea_ = r.gh - lh, r.ga - la
-            att[h] += P["dp_lr"] * eh_; dfn[a] -= P["dp_lr"] * eh_
-            att[a] += P["dp_lr"] * ea_; dfn[h] -= P["dp_lr"] * ea_
-            _clip(att, h, a); _clip(dfn, h, a)
-            lmu[L] = max(-1.0, min(1.5, lmu[L])); lhfa[L] = max(-0.3, min(0.8, lhfa[L]))
-            lmu[L] += P["dp_league_lr"] * (eh_ + ea_) / 2; lhfa[L] += P["dp_league_lr"] * (eh_ - ea_) / 2
-            # dynamic Poisson, HT goals
-            if not (pd.isna(r.hh) or pd.isna(r.ha)):
-                hlh = math.exp(hmu[L] + hhfa[L] + hatt[h] - hdfn[a]); hla = math.exp(hmu[L] + hatt[a] - hdfn[h])
-                e1, e2 = r.hh - hlh, r.ha - hla
-                hatt[h] += P["ht_lr"] * e1; hdfn[a] -= P["ht_lr"] * e1
-                hatt[a] += P["ht_lr"] * e2; hdfn[h] -= P["ht_lr"] * e2
-                _clip(hatt, h, a); _clip(hdfn, h, a)
-                hmu[L] += P["dp_league_lr"] * (e1 + e2) / 2; hhfa[L] += P["dp_league_lr"] * (e1 - e2) / 2
-            # dynamic Poisson, shots on target (only where recorded)
-            if True:
-                if not (pd.isna(r.sot_h) or pd.isna(r.sot_a)):
-                    slh = math.exp(smu[L] + shfa[L] + satt[h] - sdfn[a]); sla = math.exp(smu[L] + satt[a] - sdfn[h])
-                    e1, e2 = r.sot_h - slh, r.sot_a - sla
-                    satt[h] += P["sot_lr"] * e1 / 4; sdfn[a] -= P["sot_lr"] * e1 / 4
-                    satt[a] += P["sot_lr"] * e2 / 4; sdfn[h] -= P["sot_lr"] * e2 / 4
-                    _clip(satt, h, a); _clip(sdfn, h, a)
-                    smu[L] += P["dp_league_lr"] * (e1 + e2) / 8; shfa[L] += P["dp_league_lr"] * (e1 - e2) / 8
-            # form: exponentially-decayed points per game
-            for t, pts in ((h, 3 if gd > 0 else 1 if gd == 0 else 0), (a, 3 if gd < 0 else 1 if gd == 0 else 0)):
-                if t in form:
-                    p, w, ld = form[t]
-                    dec = 0.5 ** ((day - ld).days / P["form_hl_days"])
-                    form[t] = (p * dec + pts, w * dec + 1, day)
-                else:
-                    form[t] = (pts, 1.0, day)
-                nplayed[t] += 1
-                last_day[t] = day
-            # league outcome rates
-            lw = lg[L]
-            dec = 0.5 ** (((day - lw[3]).days if lw[3] else 0) / P["league_hl_days"])
-            wprev = lw[2] * dec
-            lg[L] = [(lw[0] * wprev + (gd > 0)) / (wprev + 1), (lw[1] * wprev + (gd == 0)) / (wprev + 1),
-                     min(wprev + 1, 200.0), day]
-        # league Elo means (for newcomers) refreshed after the day's updates
-        for L in set(grp.league_id):
-            teams = set(grp[grp.league_id == L].home) | set(grp[grp.league_id == L].away)
-            vals = [elo[t] for t in teams if t in elo]
-            if vals:
-                s, n = league_elo[L]
-                league_elo[L] = [s + sum(vals), n + len(vals)] if n < 400 else \
-                    [s * 0.95 + sum(vals), n * 0.95 + len(vals)]
-
-    f = pd.DataFrame(rows)
-    out = m.merge(f, on="match_id", how="left")
-    out["y"] = np.where(out.gh > out.ga, 0, np.where(out.gh == out.ga, 1, 2))
-    return out
+                      form_hl_days=60.0, league_hl_days=365.0)   # pre-tuning start point
 
 
 # ───────────────────────────── metrics ─────────────────────────────
@@ -316,6 +165,8 @@ ARM_FEATURES = {
     "DX":  ["elo_diff", "pi_diff", "dp_diff", "ht_diff", "form_diff", "rest_diff", "lg_home", "lg_draw"],
     "DXS": ["elo_diff", "pi_diff", "dp_diff", "ht_diff", "form_diff", "rest_diff", "lg_home", "lg_draw",
             "sot_diff"],
+    "D8+": ["elo_diff", "pi_diff", "dp_diff", "ht_diff", "form_diff", "rest_diff", "lg_home", "lg_draw",
+            "dp_logodds", "dp_pd"],
     "DXM": ["elo_diff", "pi_diff", "dp_diff", "ht_diff", "form_diff", "rest_diff", "lg_home", "lg_draw",
             "pin_dec_h", "pin_dec_a"],
 }
@@ -325,7 +176,7 @@ def fit_predict(arm: str, tr: pd.DataFrame, te: pd.DataFrame, val_days: int = 60
     if arm == "DP":
         return te[["dp_ph", "dp_pd", "dp_pa"]].to_numpy()
     cols = ARM_FEATURES[arm]
-    if arm in ("E", "PI", "D8"):
+    if arm in ("E", "PI", "D8", "D8+"):
         from sklearn.linear_model import LogisticRegression
         from sklearn.preprocessing import StandardScaler
         from sklearn.pipeline import make_pipeline
@@ -452,17 +303,57 @@ def served_reference(match_ids: list[str]) -> pd.DataFrame:
 
 
 # ───────────────────────────── runs ─────────────────────────────
-def load_all(params: dict | None = None) -> pd.DataFrame:
+def history_rows(m: pd.DataFrame) -> pd.DataFrame:
+    """Prior-season results from `fetch_1x2_history_cache.py`, mapped onto our ids.
+    Rows already in `matches` (same AF fixture id) are dropped; AF teams we have
+    never stored get a synthetic id so they still carry a rating. Marked
+    `extra=True`: they update rating STATE only and are never train/test rows."""
+    p = CACHE / "af_history.parquet"
+    if not p.exists():
+        return m.iloc[0:0]
+    h = pd.read_parquet(p)
+    h = h[~h.af_fixture_id.isin(set(m.af_fixture_id.dropna().astype(int)))]
+    team = {}
+    for side in ("home", "away"):
+        t = m[[f"{side}_af", side, "kickoff"]].dropna().sort_values("kickoff")
+        team.update(dict(zip(t[f"{side}_af"].astype(int), t[side])))
+    lg = m.dropna(subset=["af_league_id"]).drop_duplicates("af_league_id").set_index("af_league_id")
+    out = pd.DataFrame({
+        "match_id": "af:" + h.af_fixture_id.astype(str),
+        "kickoff": pd.to_datetime(h.kickoff, utc=True),
+        "league_id": h.af_league_id.map(lg["league_id"]).fillna("afl:" + h.af_league_id.astype(str)),
+        "tier": h.af_league_id.map(lg["tier"]).fillna(9),
+        "country": h.af_league_id.map(lg["country"]),
+        "home": h.home_af.map(team).fillna("aft:" + h.home_af.astype(str)),
+        "away": h.away_af.map(team).fillna("aft:" + h.away_af.astype(str)),
+        "gh": h.gh, "ga": h.ga, "hh": h.hh, "ha": h.ha,
+        "af_fixture_id": h.af_fixture_id, "home_af": h.home_af, "away_af": h.away_af,
+        "af_league_id": h.af_league_id,
+    })
+    out["extra"] = True
+    return out
+
+
+def load_all(params: dict | None = None, history: bool = False,
+             history_before: str | None = None) -> pd.DataFrame:
     m = pd.read_parquet(CACHE / "matches.parquet")
     m["kickoff"] = pd.to_datetime(m["kickoff"], utc=True)
     m = m[m.kickoff >= "2022-01-01"]
+    m["extra"] = False
+    if history:
+        h = history_rows(m)
+        h = h[h.kickoff < (pd.Timestamp(history_before, tz="UTC") if history_before else m.kickoff.max())]
+        print(f"history warm-up: +{len(h):,} prior-season rows")
+        m = pd.concat([m, h], ignore_index=True)
     stats = pd.read_parquet(CACHE / "stats.parquet")
     if params is None and (CACHE / "tuned_params.json").exists():
         params = __import__("json").loads((CACHE / "tuned_params.json").read_text())
         print(f"using tuned params {params}")
     f = build_features(m, stats, params)
     pin = load_pinnacle(m)
-    return f.merge(pin, left_on="match_id", right_index=True, how="left")
+    f = f.merge(pin, left_on="match_id", right_index=True, how="left")
+    f["dp_logodds"] = np.log(f.dp_ph.clip(1e-6) / f.dp_pa.clip(1e-6))
+    return f[~f.extra].copy()
 
 
 def _report(name: str, P: np.ndarray, y: np.ndarray, ref_ll: np.ndarray | None = None) -> str:
@@ -553,6 +444,33 @@ def run_q2(df: pd.DataFrame) -> None:
               f"{'PASS' if ok else 'FAIL'}")
 
 
+def run_round2() -> None:
+    """Round-2 adoption rule (plan, 'Pre-registration — ROUND 2'): an arm replaces
+    round-1 D8 only if it beats D8 on the validation slice AND on the Q1 window."""
+    frames = {False: load_all(history=False), True: load_all(history=True)}
+    windows = {
+        "VALIDATION (fit ≤02-28, score 03-01..05-31)": ("2026-02-28 23:59", "2026-03-01", "2026-06-01"),
+        "Q1 window (fit ≤08-30, score 08-31..)": ("2026-08-30 23:59", "2026-08-31", "2099-01-01"),
+    }
+    for wname, (cut, lo, hi) in windows.items():
+        print(f"\n== {wname}")
+        ref_rows = None
+        base_gate = dict(zip(frames[False].match_id, gated(frames[False])))
+        for hist, df in frames.items():
+            g = gated(df)
+            tr = df[(df.kickoff <= cut) & (df.kickoff >= "2022-07-01") & g]
+            te_all = df[(df.kickoff >= lo) & (df.kickoff < hi)]
+            if ref_rows is None:
+                ref_rows = set(te_all.match_id)          # identical rows for both history settings
+            te = te_all[te_all.match_id.isin(ref_rows)].sort_values("match_id")
+            y = te.y.to_numpy(); gm = te.match_id.map(base_gate).to_numpy(dtype=bool)
+            for arm in ("DP", "D8", "D8+"):
+                P = fit_predict(arm, tr, te)
+                ll = per_match_ll(P, y)
+                print(f"  {'H-' if hist else '  '}{arm:4s} n={len(te):,} (train {len(tr):,})  ALL {ll.mean():.4f}  "
+                      f"base-gated {ll[gm].mean():.4f} (n={gm.sum():,})  ungated {ll[~gm].mean():.4f}")
+
+
 def selfcheck(df: pd.DataFrame) -> None:
     """Leak guard: a match's features must not change if its own result is altered."""
     m = pd.read_parquet(CACHE / "matches.parquet")
@@ -582,6 +500,7 @@ def main() -> int:
     ap.add_argument("--tune-extend", action="store_true")
     ap.add_argument("--q1", action="store_true")
     ap.add_argument("--q2", action="store_true")
+    ap.add_argument("--round2", action="store_true")
     a = ap.parse_args()
     if a.refresh_cache:
         refresh_cache()
@@ -589,6 +508,8 @@ def main() -> int:
         selfcheck(None)
     if a.tune or a.tune_extend:
         tune(extend=a.tune_extend)
+    if a.round2:
+        run_round2()
     if a.q1 or a.q2:
         df = load_all()
         if a.q1: run_q1(df)

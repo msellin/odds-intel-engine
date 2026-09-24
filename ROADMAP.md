@@ -122,6 +122,12 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 ## Current System State (2026-06-24, infra updates 2026-07-13)
 
+> **Model update 2026-09-24 ([[#141]])** — a walk-forward 1X2 rating model (Elo / pi / dynamic Poisson from
+> scores, warmed with 258k prior-season results) beats the shipped XGBoost 1X2 head by −0.063 log-loss on
+> the 08-31..09-24 holdout, in every tier; it does not beat Pinnacle (α = 0). Running in **shadow** only
+> (`rating_1x2_predictions`); promotion into the served blend is pending the owner. Same day: the weekly
+> retrain's eval had been exiting without a verdict every Sunday since 09-06 — fixed with a `--cutoff` twin.
+
 > **Infra update 2026-08-24 (SCHEDULER-STALL-RCA / SCHEDULER-AF-429-DEADLOCK)** — the scheduler's
 > recurring multi-hour "hangs" (Jul 12, Jul 15, Aug 22) were never the systemd process dying. A single
 > APScheduler worker thread wedged inside `fix_stale_live_matches()`, which fan-out-fetched 225-350
