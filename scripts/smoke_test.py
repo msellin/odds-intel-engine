@@ -53621,6 +53621,24 @@ def test_feeds_coverage_drop():
     assert "coverage_warning(ft, pt, fy, py, _hour)" in inspect.getsource(fh.run_feed_health)
 
 
+@test("SHADOW-COHORT-COVERS-TRIGGER-BOOKS — every trigger book's cohort is allowed by the shadow_cohort CHECK")
+def test_shadow_cohort_covers_trigger_books():
+    """2026-09-24: 635be831 gave Epicbet / Tonybet their own trigger cohorts but not the CHECK
+    allow-list; every leg failed the constraint and match_and_emit swallowed it (never raises),
+    so the active sharp-tight bot silently lost two books. Pin the code to the newest migration
+    that defines the constraint."""
+    import glob, re
+    from workers.jobs.pick_trigger_matcher import BOOK_MARKET_BOTS, _cohort_for
+    migs = sorted(f for f in glob.glob("supabase/migrations/*.sql")
+                  if "shadow_bets_shadow_cohort_check" in open(f).read()
+                  and "ADD CONSTRAINT shadow_bets_shadow_cohort_check" in open(f).read())
+    body = open(migs[-1]).read()
+    allowed = set(re.findall(r"'([a-z0-9_]+)'", body.split("ARRAY[", 1)[1].split("]", 1)[0]))
+    for (book, _mkt, _strat) in BOOK_MARKET_BOTS:
+        c = _cohort_for(book)
+        assert c in allowed, f"{book} -> cohort {c!r} not in {migs[-1]}"
+
+
 @test("SIM-SETTLE-SELECTS-WHAT-IT-READS — _PENDING_BETS_SQL carries every column the settle loop bet.get()s")
 def test_sim_settle_selects_what_it_reads():
     """2026-09-24 (#139 5a inventory): the settle loop reads bet.get("recommended_bookmaker") and
