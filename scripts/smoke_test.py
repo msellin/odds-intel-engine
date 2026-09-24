@@ -55830,6 +55830,9 @@ def test_vip_bot():
     mig = _engine_path("supabase/migrations/420_vip_bot.sql").read_text(encoding="utf-8")
     assert "UPDATE bots SET vip = true WHERE name = 'bot_combined_1x2_ev5_v1';" in mig
     assert "result IS DISTINCT FROM 'pending'" in mig and "b.vip" in mig
+    m421 = _engine_path("supabase/migrations/421_hide_pending_vip_twins.sql").read_text(encoding="utf-8")
+    assert "'bot_combined_1x2_ev8_v1'" in m421 and "(b.vip OR b.hide_pending)" in m421, \
+        "EV8's picks are the VIP bot's EV8 picks — its pending rows must be hidden too"
     sig = _engine_path("workers/automation/coolbet_signaler.py").read_text(encoding="utf-8")
     assert "AND b.name <> ALL(%s)" in sig and "(sorted(VIP_BOTS), _MIN_EDGE, lookahead_hours)" in sig
     pipe = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
