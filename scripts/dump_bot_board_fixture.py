@@ -122,7 +122,8 @@ SELECT r.job_name, r.status, r.started_at, r.error_message, r.last_ok_at, f.fail
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(_WEB / ".dev-fixtures" / "bot-board.json"))
-    ap.add_argument("--ledger-per-bot", type=int, default=30)
+    # 150 (was 30): the sheet's Picks tab pages through the ledger 50 at a time (IA move P7).
+    ap.add_argument("--ledger-per-bot", type=int, default=150)
     a = ap.parse_args()
     ledger = {}
     for r in _rows(
@@ -140,6 +141,32 @@ def main() -> None:
         ledger.setdefault(r["bot_name"], []).append(r)
     for rows in ledger.values():
         rows.sort(key=lambda r: r["pick_time"] or "", reverse=True)
+    # IA move P7 (retiring /admin/shadow-bots/[bot]): the sheet's Picks tab shows "Bet made"
+    # (real_bets, placed_real IS NOT FALSE -- TRUE = money moved, NULL = legacy reconciled) and
+    # the current price at our three books for PENDING pre-match picks. Same reads as
+    # src/lib/bot-board.ts loadBotPicks(), in the same shapes.
+    placed = {}
+    for r in _rows(
+        """SELECT b.name AS bot_name, r.match_id, r.market, r.selection, r.actual_odds, r.bookmaker,
+                  r.stake, r.placed_real, r.result, r.pnl, r.shadow_bet_id, r.simulated_bet_id, r.placed_at
+             FROM real_bets r JOIN bots b ON b.id = r.bot_id
+            WHERE r.placed_real IS NOT FALSE"""
+    ):
+        placed.setdefault(r.pop("bot_name"), []).append(r)
+    pend = [r for rows in ledger.values() for r in rows
+            if r.get("result") == "pending" and not r.get("is_inplay") and r.get("match_id")]
+    prices = []
+    if pend:
+        prices = _rows(
+            """SELECT DISTINCT ON (match_id, lower(market), lower(selection), bookmaker)
+                      match_id, market, selection, bookmaker, odds, "timestamp"
+                 FROM odds_snapshots
+                WHERE match_id = ANY(%s::uuid[]) AND lower(market) = ANY(%s)
+                  AND bookmaker IN ('Coolbet', 'Unibet-Site', 'Epicbet')
+                  AND is_live = false AND "timestamp" >= now() - interval '12 hours'
+                ORDER BY match_id, lower(market), lower(selection), bookmaker, "timestamp" DESC""",
+            [sorted({r["match_id"] for r in pend}), sorted({(r["market"] or "").lower() for r in pend})],
+        )
     weekly = {}
     for r in _rows(_WEEKLY_SQL):
         weekly.setdefault(r["bot_name"], []).append(r)
@@ -149,6 +176,8 @@ def main() -> None:
         "capabilities": _rows("SELECT * FROM bot_capabilities"),
         "retired": _rows("SELECT name, retired_at, retired_reason FROM bots WHERE retired_at IS NOT NULL"),
         "ledger": ledger,
+        "placed": placed,
+        "prices": prices,
         "weekly": weekly,
         "market_stats": _rows(_MARKET_STATS_SQL),
         # /admin Overview (#139, 2026-09-24): the non-bot reads src/lib/admin-overview.ts makes,
@@ -181,7 +210,8 @@ def main() -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(out))
     print(f"wrote {p} — {len(out['scoreboard'])} bots, {sum(map(len, ledger.values()))} ledger rows, "
-          f"{sum(map(len, weekly.values()))} weekly rows")
+          f"{sum(map(len, weekly.values()))} weekly rows, {sum(map(len, placed.values()))} placed bets, "
+          f"{len(prices)} current prices")
 
 
 if __name__ == "__main__":

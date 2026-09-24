@@ -80,6 +80,21 @@ def assert_no_error(fn, *args, **kwargs):
 import threading as _threading
 _PUBLISHER_PATCH_LOCK = _threading.Lock()
 
+
+def _this_thread_only(fake, real):
+    """Wrap a monkeypatched shared function so ONLY the installing thread sees the fake.
+
+    The runner executes tests in a ThreadPoolExecutor, so replacing a module global (e.g.
+    workers.api_clients.db.execute_query with a function that raises "simulated DB outage")
+    is visible to every concurrent test — BEST-PRICE-ROUTER-EXECUTE-WIRING failed that way on
+    2026-09-24. With this wrapper, other threads keep calling the real function."""
+    owner = _threading.get_ident()
+
+    def _dispatch(*a, **k):
+        return (fake if _threading.get_ident() == owner else real)(*a, **k)
+
+    return _dispatch
+
 # ROUTER-ENV-LOCK (2026-09-18). Exactly the same hazard, different shared global:
 # `os.environ` is process-wide, and TWO tests mutate ROUTER_ALLOW_REAL —
 # GATE-STATUS-READS-THE-SAME-ENV sweeps it through six values, while
@@ -6037,7 +6052,7 @@ def test_coolbet_placer_control():
         # (2) fail closed: any DB error → empty set (place nothing).
         def _boom(*a, **k):
             raise RuntimeError("simulated DB outage")
-        dbm.execute_query = _boom
+        dbm.execute_query = _this_thread_only(_boom, _orig_query)
         assert m.ui_place_enabled_bots() == set(), (
             "ui_place_enabled_bots MUST return the empty set on a DB error — a "
             "toggle we cannot read must never enable real money"
@@ -8333,8 +8348,10 @@ def test_signal_silence_alert():
         "Condition B (no picks produced at all) must be checked — "
         "condition A cannot detect it."
     )
-    assert "MAX(created_at)" in body, (
-        "Condition B must read the newest simulated_bets row."
+    # NO-PICKS-ALL-LEDGERS (2026-09-24, f2fab119): Condition B reads the newest pick across ALL
+    # ledgers (bot_ledger), not simulated_bets alone — one low-volume bot writes that ledger now.
+    assert "MAX(pick_time) AS t FROM bot_ledger" in body, (
+        "Condition B must read the newest pick across every ledger (bot_ledger)."
     )
 
     # (e) grace period clears the widest normal betting_refresh gap.
@@ -12942,7 +12959,9 @@ def _():
     assert "log_loss" in src and "brier" in src.lower(), (
         "Standard metrics — log_loss and Brier — must both be reported."
     )
-    assert "source = 'ensemble'" in src, (
+    # #147 (2026-09-24): the shadow candidate is written as source='ensemble_shadow' — both ensemble
+    # sources, never poisson / xgboost / af / xgboost_shadow.
+    assert "source = 'ensemble'" in src or "source IN ('ensemble', 'ensemble_shadow')" in src, (
         "Comparison must restrict to the ensemble source — that's what bots "
         "actually consume. Comparing poisson/xgboost/af would mix unrelated signals."
     )
@@ -14068,12 +14087,12 @@ def test_place_bet_ux():
     assert "ahSnapMap" in src, "getPlaceableBets must use ahSnapMap for AH 5-part key lookup"
     assert "double_chance" in src, "_mapPaperToSnapshotKey must handle double_chance market"
 
-    # place-bet-table.tsx: badge rendered + filter chip + Pinnacle
+    # #139 P8b (2026-09-24): /admin/place and place-bet-table.tsx are deleted. The
+    # "already placed" indicator lives on the Pick queue as the LOGGED chip.
     table = root.parent / "odds-intel-web" / "src" / "components" / "place-bet-table.tsx"
-    tsrc = table.read_text()
-    assert "alreadyPlaced" in tsrc, "table must render alreadyPlaced badge"
-    assert "Placed" in tsrc, "filter chip for already-placed bets must exist"
-    assert "Pinnacle" in tsrc, "Pinnacle must be in ACCESSIBLE_BOOKS for AH bets"
+    assert not table.exists(), "place-bet-table.tsx stays deleted (ADMIN-PLACE-DELETED)"
+    row = root.parent / "odds-intel-web" / "src" / "components" / "shadow-bots" / "picks-row.tsx"
+    assert "LOGGED" in row.read_text(), "the Pick queue must show an already-logged pick"
 
 
 @test("INPLAY-BOT-REPORT — script structure (source inspect)")
@@ -16164,12 +16183,11 @@ def _():
     if not web.exists():
         print("  [skip] odds-intel-web not present in CI")
         return
+    # RETIRED #139 P8b (2026-09-24): the route's only caller was place-bet-table.tsx on the
+    # deleted /admin/place. An unreachable superadmin write route is attack surface, not a
+    # feature — it stays deleted (ADMIN-PLACE-DELETED). Combos are no longer hand-logged.
     route = web / "src" / "app" / "api" / "admin" / "record-combo" / "route.ts"
-    assert route.exists(), "record-combo route.ts must exist"
-    src = route.read_text()
-    assert "is_superadmin" in src, "record-combo route must check is_superadmin"
-    assert "combo_legs" in src, "record-combo route must insert combo_legs"
-    assert "system_type" in src, "record-combo route must insert system_type"
+    assert not route.exists(), "record-combo route stays deleted — it had no caller left"
 
 
 @test("COMBO-LEG-MARKETS — _normalise_our_target handles ou15/ou25/ou35/ou45 leg-market names")
@@ -16373,12 +16391,13 @@ def _():
     assert "edge_pct_taken" in ed and ", clv," in ed, (
         "getRealBets() select must include edge_pct_taken and clv columns"
     )
-    log = (web / "src" / "components" / "real-bets-log.tsx").read_text()
+    # #139 P5 (2026-09-24): the log is the DataTable in the real-bets page's client half.
+    log = (web / "src" / "app" / "(app)" / "admin" / "real-bets" / "money-client.tsx").read_text()
     assert ">Edge<" in log and ">CLV<" in log, (
-        "real-bets-log.tsx must render Edge and CLV column headers"
+        "the real-bets log must render Edge and CLV column headers"
     )
     assert "edgePctTaken" in log and "b.clv" in log, (
-        "real-bets-log.tsx must render Edge + CLV cell values"
+        "the real-bets log must render Edge + CLV cell values"
     )
 
 
@@ -16574,14 +16593,11 @@ def _():
         "Unibet must not contribute to Coolbet event-presence detection — "
         "see ADMIN-PLACE-COOLBET-ONLY-EVIDENCE"
     )
-    tbl = (web / "src" / "components" / "place-bet-table.tsx").read_text()
-    assert "AutoPlaceStatusBadge" in tbl, "place-bet-table must render AutoPlaceStatusBadge"
-    # Both chips must render with distinct copy so the user can scan the table
-    # and tell which rows to spot-check for fuzzy-match issues vs market gaps.
-    assert '"no_event"' in tbl, "place-bet-table must render a chip for no_event"
-    assert '"no_market"' in tbl, "place-bet-table must render a chip for no_market"
-    assert "⚠ no match" in tbl, "no_event chip should label as '⚠ no match'"
-    assert "⚠ no market" in tbl, "no_market chip should label as '⚠ no market'"
+    # #139 P8b (2026-09-24): the badge's only renderer, place-bet-table.tsx on /admin/place,
+    # is deleted. The engine-data status above has no UI consumer left (dead code in
+    # getPlaceableBets — see PRIORITY_QUEUE follow-up); the table itself stays deleted.
+    assert not (web / "src" / "components" / "place-bet-table.tsx").exists(), \
+        "place-bet-table.tsx stays deleted (ADMIN-PLACE-DELETED)"
 
 
 @test("COOLBET-FUZZY-DATE-GUARD — fuzzy_match_event rejects same-team candidates on wrong date")
@@ -16905,8 +16921,10 @@ def test_admin_real_bets_page():
     add Today (UTC) stats row alongside Overall, default bet log to 50 with expand."""
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1]
+    # #139 P5 (2026-09-24): Overall/Today are StatCards and the log is a paged DataTable in
+    # money-client.tsx (the INITIAL_VISIBLE/Show-all log was replaced by DataTable paging).
     page = root.parent / "odds-intel-web" / "src" / "app" / "(app)" / "admin" / "real-bets" / "page.tsx"
-    log = root.parent / "odds-intel-web" / "src" / "components" / "real-bets-log.tsx"
+    log = root.parent / "odds-intel-web" / "src" / "app" / "(app)" / "admin" / "real-bets" / "money-client.tsx"
     if not page.exists() or not log.exists():
         print("  [skip] odds-intel-web not present in CI")
         return
@@ -16917,16 +16935,12 @@ def test_admin_real_bets_page():
     # daily stats present
     assert "todayBets" in page_src, "page must compute todayBets"
     assert "Date.UTC" in page_src, "today boundary must be in UTC"
-    assert "StatRow" in page_src, "must use StatRow component for Overall + Today rows"
-    assert "Today (UTC" in page_src, "must label the daily stat row"
-    # log moved to client component
-    assert 'from "@/components/real-bets-log"' in page_src, "page must import RealBetsLog"
-    assert "<RealBetsLog bets={bets} />" in page_src, "page must render RealBetsLog"
+    assert "<StatCard" in page_src and "Today (UTC)" in page_src, "Overall + Today as StatCards"
+    assert "<BetLogTable bets={bets} />" in page_src, "page must render the bet log"
 
     log_src = log.read_text()
-    assert '"use client"' in log_src, "real-bets-log must be a client component"
-    assert "INITIAL_VISIBLE = 50" in log_src, "log must default to 50 visible rows"
-    assert "Show all" in log_src, "log must have a Show all expand button"
+    assert '"use client"' in log_src, "the bet log must be a client component"
+    assert "<DataTable" in log_src and "exportName" in log_src, "the log is a paged DataTable with CSV"
 
 
 @test("ADMIN-REAL-BETS-INSIGHTS — chart, daily breakdown, exposure, paper-vs-real, log filters (source inspect)")
@@ -16938,8 +16952,9 @@ def test_admin_real_bets_insights():
     root = pathlib.Path(__file__).resolve().parents[1]
     web = root.parent / "odds-intel-web" / "src"
     page = web / "app" / "(app)" / "admin" / "real-bets" / "page.tsx"
-    log = web / "components" / "real-bets-log.tsx"
-    chart = web / "components" / "real-bets-chart.tsx"
+    # #139 P5 (2026-09-24): chart + log moved into the page's client half (ChartCard + DataTable).
+    log = web / "app" / "(app)" / "admin" / "real-bets" / "money-client.tsx"
+    chart = log
     engine_data = web / "lib" / "engine-data.ts"
     if not page.exists() or not log.exists() or not engine_data.exists():
         print("  [skip] odds-intel-web not present in CI")
@@ -16952,36 +16967,31 @@ def test_admin_real_bets_insights():
     )
     assert "paper: {" in ed and "} | null" in ed, "RealBet interface must declare paper field"
 
-    # chart component
-    assert chart.exists(), "real-bets-chart.tsx must exist"
+    # chart component (#139 P5: the shared ChartCard, real vs paper series)
+    assert not (web / "components" / "real-bets-chart.tsx").exists(), "the hand-rolled chart is replaced by ChartCard"
     chart_src = chart.read_text()
     assert '"use client"' in chart_src, "chart must be a client component"
-    assert "RealBetsChartPoint" in chart_src, "chart must export RealBetsChartPoint type"
-    assert 'dataKey="real"' in chart_src and 'dataKey="paper"' in chart_src, (
+    assert "<ChartCard" in chart_src, "the P/L chart must be the shared ChartCard"
+    assert 'key: "real"' in chart_src and 'key: "paper"' in chart_src, (
         "chart must plot both real and paper cumulative P&L lines"
     )
 
-    # page wiring
+    # page wiring (#139 P5, 2026-09-24: plain-words labels, same four summaries)
     page_src = page.read_text()
-    assert "buildCumulativeSeries" in page_src, "page must build cumulative series"
-    assert "buildDailyBreakdown" in page_src, "page must build daily breakdown"
-    assert "buildExposure" in page_src, "page must build open-exposure summary"
-    assert "buildPaperVsReal" in page_src, "page must build paper-vs-real summary"
-    assert "<RealBetsChart data={series} />" in page_src, "page must render the chart"
-    assert "Open exposure" in page_src, "page must show the open exposure panel"
-    assert "Max potential payout" in page_src, "exposure must show max potential payout"
-    assert "Paper vs real" in page_src, "page must show paper-vs-real block"
-    assert "Slippage cost" in page_src, "paper-vs-real must surface slippage cost in €"
-    assert "Stake parity" in page_src, "paper-vs-real must surface stake parity badge"
-    assert "stakeParityDiverged" in page_src, "page must count divergent stakes (real vs Kelly)"
-    assert "Last " in page_src and "days (UTC)" in page_src, "page must show last-N-days table"
+    assert "cumulative(bets" in page_src, "page must build the cumulative series"
+    assert "daily(bets, 14)" in page_src, "page must build the last-14-days breakdown"
+    assert "weekly(bets" in page_src, "page must build the weekly staked / P&L series"
+    assert "<MoneyCharts" in page_src, "page must render the charts"
+    assert "At risk now" in page_src and "pays up to" in page_src, "open exposure incl. max potential payout"
+    assert "Did we get the paper price?" in page_src, "page must show the paper-vs-real block"
+    assert "Lost to worse prices" in page_src, "paper-vs-real must surface slippage cost in €"
+    assert "Stake matched the paper stake" in page_src and "diverged" in page_src, "stake parity"
+    assert "Day by day, last 14 days" in page_src, "page must show the last-N-days table"
 
-    # log filters
+    # log filters (DataTable facet chips)
     log_src = log.read_text()
-    assert "FilterSelect" in log_src, "log must include FilterSelect component"
-    for opt in ("Bot", "Result", "Market"):
-        assert f'label="{opt}"' in log_src, f"log must have a {opt} filter"
-    assert "anyFilter" in log_src and "clear" in log_src, "log must have a clear-filters affordance"
+    for col in ('column: "bot"', 'column: "result"', 'column: "market"'):
+        assert col in log_src, f"log must have a {col} filter"
 
 
 @test("PUBLIC-PERF-EXTRAS — cumulative chart, calibration, streaks on /performance (source inspect)")
@@ -20124,24 +20134,26 @@ def _():
         assert "next/headers" not in spec, f"coolbet-edge must not import next/headers ({spec!r})"
         assert "supabase-server" not in spec, f"coolbet-edge must not import server supabase ({spec!r})"
 
-    client = _web_path("src/components/place-bet-table.tsx")
-    csrc = client.read_text()
-    assert 'from "@/lib/coolbet-edge"' in csrc, \
-        "place-bet-table must import autoMinEdgeFor from coolbet-edge (not engine-data)"
-    # The type import from engine-data is allowed (types are erased at build).
-    # But there must be no runtime symbol import from engine-data.
+    # #139 P8b (2026-09-24): place-bet-table.tsx (the original client importer) is deleted.
+    # The invariant still matters for the Pick queue's CLIENT half: it must not runtime-import
+    # engine-data (which drags next/headers into the browser bundle).
     import re
-    runtime_imports = re.findall(
-        r'^import\s+\{([^}]*)\}\s+from\s+"@/lib/engine-data"',
-        csrc,
-        flags=re.MULTILINE,
-    )
-    for inner in runtime_imports:
-        # Allow `type Foo, type Bar` shape; reject any bare value imports.
-        parts = [p.strip() for p in inner.split(",") if p.strip()]
-        for p in parts:
-            assert p.startswith("type "), \
-                f"place-bet-table must not runtime-import {p!r} from engine-data"
+    for rel in ("src/components/shadow-bots/picks-queue-table.tsx", "src/components/shadow-bots/picks-row.tsx"):
+        client = _web_path(rel)
+        if not client.exists():
+            continue
+        csrc = client.read_text()
+        runtime_imports = re.findall(
+            r'^import\s+\{([^}]*)\}\s+from\s+"@/lib/engine-data"',
+            csrc,
+            flags=re.MULTILINE,
+        )
+        for inner in runtime_imports:
+            # Allow `type Foo, type Bar` shape; reject any bare value imports.
+            parts = [p.strip() for p in inner.split(",") if p.strip()]
+            for p in parts:
+                assert p.startswith("type "), \
+                    f"{rel} must not runtime-import {p!r} from engine-data"
 
     engine = _web_path("src/lib/engine-data.ts")
     ssrc = engine.read_text()
@@ -22227,15 +22239,15 @@ def test_coolbet_ingest_banner():
     outage for 6 days.
     """
     import pathlib
+    # #139 P8b (2026-09-24): the banner lived only on the deleted /admin/place; Coolbet
+    # collection freshness is shown on /admin/feeds. The banner stays deleted; the helper
+    # pin below stays until getCoolbetSnapshotFreshnessMinutes is removed from engine-data.
     banner_path = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/components/coolbet-ingest-banner.tsx")
     helper_path = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/lib/engine-data.ts")
-    if not banner_path.exists() or not helper_path.exists():
+    if not helper_path.exists():
         return
-    banner_src = banner_path.read_text()
+    assert not banner_path.exists(), "coolbet-ingest-banner.tsx stays deleted (ADMIN-PLACE-DELETED)"
     helper_src = helper_path.read_text()
-
-    assert "minutesSinceLastSnapshot" in banner_src, "banner must accept minutes-since prop"
-    assert "< 60" in banner_src, "60-min threshold must be present"
     assert "getCoolbetSnapshotFreshnessMinutes" in helper_src, (
         "engine-data must export the freshness helper"
     )
@@ -28845,8 +28857,8 @@ def test_coolbet_value_bot_2026_08_26():
     # it. Being in SHADOW_BOTS is not enough — the index would link to a dead
     # page, which is exactly what happened on first deploy.
     detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
-    assert "bot_coolbet_value_v1: {" in detail, \
-        "detail page ALLOWED entry required or the row links to a 404"
+    assert "redirect(`/admin/bots?bot=" in detail and "ALLOWED" not in detail, \
+        "the retired detail page must redirect, not carry a per-bot allowlist"
 
     # SMOKE-SUITE-AUDIT 2026-09-06 — the edge-floor assertion used to look
     # for `bot_coolbet_value_v1: 0.03,` inside the detail PAGE. That map was
@@ -28868,11 +28880,7 @@ def test_coolbet_value_bot_2026_08_26():
         "without it the ?? 0.08 default silently marks live +EV picks as "
         "below floor"
     )
-    assert "botEdgeThreshold" in detail, (
-        "the detail page must resolve its floor through the shared "
-        "botEdgeThreshold() helper — a second hand-written map here is the "
-        "state that preceded the 2026-09-05 four-surface incident"
-    )
+    # IA move P7
     # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the index's per-pick floor is
     # computed in components/shadow-bots/picks-table.tsx (page.tsx is layout).
     index_page = _web_path("src/components/shadow-bots/picks-table.tsx").read_text()
@@ -28881,7 +28889,7 @@ def test_coolbet_value_bot_2026_08_26():
         "helper as the detail page, or the two surfaces disagree about the "
         "same pick"
     )
-    for surface_name, surface in (("index", index_page), ("detail", detail)):
+    for surface_name, surface in (("index", index_page),):
         assert "BOT_EDGE_THRESHOLDS: Record" not in surface, (
             f"the {surface_name} page has re-declared its own edge-threshold "
             "map — there is exactly one, in lib/coolbet-edge.ts"
@@ -30589,8 +30597,9 @@ def _shadow_dedup_view():
 
     # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the index page's reads live in
     # src/lib/shadow-bots/queries.ts (page.tsx is layout only).
-    for rel in ("src/lib/shadow-bots/queries.ts",
-                "src/app/(app)/admin/shadow-bots/[bot]/page.tsx"):
+    detail = (web / "src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
+    assert ".from(" not in detail, "the retired detail page must not read a ledger again"
+    for rel in ("src/lib/shadow-bots/queries.ts",):
         src = (web / rel).read_text()
         assert 'from("shadow_bets_unique")' in src or 'from("shadow_bets_own_book_clv")' in src, (
             f"{rel} must read shadow_bets_unique — reading shadow_bets directly "
@@ -37568,53 +37577,6 @@ def test_real_bets_placed_real():
             "getRealBets + getPlaceableBets must exclude paper rows")
 
 
-@test("SHADOW-BOT-REAL-BADGE-NO-OVERLAY — the placed-real marker gets its own column, never the 60px Result cell")
-def test_shadow_bot_real_badge_no_overlay():
-    """SHADOW-BOT-REAL-BADGE (2026-09-10), rewritten BET-MADE-COLUMN (2026-09-11).
-
-    The invariant is and always was: **the placed-real marker must never be
-    crammed into the narrow Result cell, where it wraps into a blob and overlays
-    the Min-odds column** (owner screenshot, 2026-09-10).
-
-    The first fix put it in the wide 1fr Match cell as a shrink-0 chip beside
-    the truncating name, and this test pinned that *placement* — the literal
-    `shrink-0` class and the name's `truncate` classes. On 2026-09-11 the marker
-    moved again, into its own "Bet made" column carrying the price AND the venue
-    together, which serves the same invariant better: a dedicated grid column
-    cannot overflow at all, and the match name got its width back.
-
-    The old assertions then failed on an improvement, which is the
-    RELIABILITY_LEDGER "tests pinning the old reality" pattern. Rewritten to
-    assert the INVARIANT (never in the Result cell, cannot overflow) rather than
-    one particular way of satisfying it. Where the marker lives is a design
-    choice; not clipping the operator's placed-money indicator is not.
-    """
-    p = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx")
-    if not p.exists():
-        skip("odds-intel-web not checked out")
-    src = p.read_text()
-
-    idx = src.find("placedReal ?")
-    assert idx != -1, (
-        "the placed-real marker must exist — it is how the operator sees which "
-        "picks actually had money on them"
-    )
-    # It must not share the cramped Result cell with <ResultBadge>.
-    assert "<ResultBadge" not in src[idx:idx + 600], (
-        "the placed-real marker must not sit in the 60px Result cell beside "
-        "<ResultBadge> — that is the overlay bug of 2026-09-10"
-    )
-    # It must carry BOTH halves of the placement: the price and the venue.
-    cell = src[idx:idx + 900]
-    assert "placedOdds" in cell and "placedBook" in cell, (
-        "the 'Bet made' cell must show the price AND the venue — split across "
-        "two columns, neither half answers 'did we stake this, where, at what price?'"
-    )
-    # Whatever cell it occupies must be a real grid column, not an inline chip
-    # squeezed beside something else: header and row templates agree (that is
-    # SHADOW-DETAIL-THREE-BOOKS-AND-BET-MADE's job) and the header names it.
-    assert "Bet made" in src, "the column needs a header, or nobody knows what it is"
-
 @test("UNIBET-SITE-SWEEP — broad run_bulk is rate-limited, capped, fail-safe, Unibet-Site")
 def test_unibet_site_sweep():
     """COOLBET-PICK-TABLE-AUDIT Stage 3a (2026-09-09): the broad Unibet SITE odds
@@ -40483,71 +40445,6 @@ def test_trigger_calibrator_per_selection():
         )
 
 
-@test("SHADOW-DETAIL-THREE-BOOKS-AND-BET-MADE")
-def test_shadow_detail_three_books_and_bet_made():
-    """PER-BOT-EPICBET-ODDS + BET-MADE-COLUMN + HEADER-ALIGN (2026-09-11).
-
-    Three assertions about the shadow-bot detail ledger, each pinning a thing
-    that was actually wrong on the screen:
-
-    1. HEADER ALIGNMENT. The header grid and the row grid must use the SAME
-       column template AND the same `sm:gap-3`. The header was missing the gap
-       class, so its `1fr` Match column silently absorbed the 11 gaps the rows
-       spend (~132px) and every label from "Tier" rightwards sat to the right
-       of the data it named ("Prob" and "Book" even ran together as
-       "PROBBOOK"). Two grids describing one table must not drift.
-
-    2. THREE BOOKS. Epicbet is an accessible Estonian venue we already ingest
-       every 30 min with the same market/selection vocabulary as Coolbet, so
-       the operator price-shopping a pending pick should see all three without
-       opening the site.
-
-    3. BET MADE. The real placement's price and its venue belong in ONE cell.
-       They used to be split — the "€ real 3.25" badge inline next to the team
-       names, the book in a separate "Book" column — which cost a column of
-       width and still did not answer "did we stake this, where, at what
-       price?" in one place.
-    """
-    detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
-
-    # --- 1. header grid == row grid, gap included ---
-    import re
-    grids = re.findall(r"sm:grid-cols-\[([^\]]+)\]", detail)
-    assert len(grids) >= 2, "expected both a header grid and a row grid on the detail page"
-    assert len(set(grids)) == 1, (
-        f"header and row grid templates have drifted: {sorted(set(grids))} — "
-        "they describe the same table and must be identical"
-    )
-    for block in re.findall(r"sm:grid-cols-\[[^\]]+\][^\n]*", detail):
-        assert "sm:gap-3" in block, (
-            "every grid on the detail ledger must carry sm:gap-3 — the header "
-            "missing it is what pushed all its labels right of their columns"
-        )
-
-    # --- 2. Epicbet is fetched AND rendered ---
-    assert '"Epicbet"' in detail and "epicbetNow" in detail, (
-        "the detail page must fetch Epicbet prices alongside Coolbet/Unibet"
-    )
-    assert "Now EB" in detail, "the Epicbet price needs its own column header"
-    for header in ("Now CB", "Now UB", "Now EB"):
-        assert header in detail, f"missing book column: {header}"
-
-    # --- 3. one 'Bet made' cell carrying odds + venue ---
-    assert "Bet made" in detail, "the merged placement column must be headed 'Bet made'"
-    assert "placedBook" in detail and "real_bets" in detail, (
-        "'Bet made' must read the venue from real_bets.bookmaker, not infer it"
-    )
-    assert "bookmaker" in detail.split('.from("real_bets")')[1][:300], (
-        "the real_bets select must actually request the bookmaker column"
-    )
-    assert "€ real{placedOdds" not in detail, (
-        "the inline '€ real' badge next to the team names is superseded by the "
-        "'Bet made' column — two places showing half the placement each is the "
-        "state this change removed"
-    )
-
-
-
 @test("TRIGGER-CALIBRATOR-REVISION — trigger picks record which calibrator shaped them")
 def test_trigger_calibrator_revision():
     """TRIGGER-CALIBRATOR-REVISION (2026-09-11).
@@ -40792,8 +40689,11 @@ def test_shadow_index_epicbet_column():
     # <table> (components/shadow-bots/picks-table.tsx), so header and rows share
     # columns by construction — the grid-template drift this used to pin cannot
     # recur. Pin the structure instead.
-    table = _web_path("src/components/shadow-bots/picks-table.tsx").read_text()
-    assert "<table" in table, "the picks table must be a real <table> (header/rows cannot drift)"
+    # #139 P6 (2026-09-24): the table is the shared DataTable (a real <table> built from ONE
+    # column list, so header and rows cannot drift).
+    table = _web_path("src/components/shadow-bots/picks-queue-table.tsx").read_text()
+    assert "<DataTable" in table and "ColumnDef<PickRowData>" in table, \
+        "the picks table must be the shared DataTable over one column list"
 
 @test("UB-COLUMN-NOT-PLACEABLE")
 def test_ub_column_is_the_placeable_feed():
@@ -40821,7 +40721,7 @@ def test_ub_column_is_the_placeable_feed():
     # SHADOW-BOTS-REWORK (OWN Phase 6, 2026-09-15): the index page's reads moved
     # to src/lib/shadow-bots/queries.ts; the SNAPSHOT_BOOKS literal lives there.
     for rel in ("src/lib/shadow-bots/queries.ts",
-                "src/app/(app)/admin/shadow-bots/[bot]/page.tsx"):
+                "src/lib/bot-snapshot-books.ts"):
         src = _web_path(rel).read_text()
         # the bookmaker allowlist is the load-bearing line; comments may still
         # (and should) name Kambi to explain why it is absent.
@@ -41468,10 +41368,10 @@ def test_every_registry_bot_is_visible():
     BOTS = [b for b in BOTS if b.family not in (FAM_INTERNAL, FAM_FORWARD_TEST)]
 
     detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text()
-    assert 'from("bots")' in detail and "generic header" in detail, (
-        "the detail page must look the bot up in `bots` and render a generic header for a "
-        "registered bot without an ALLOWED entry, instead of notFound()"
-    )
+    assert "redirect(`/admin/bots?bot=" in detail and "notFound" not in detail
+    board = _web_path("src/app/(app)/admin/bots/bots-board.tsx").read_text()
+    assert "scoreboard.rows.filter(isActive)" in board, "the board lists bots from bot_scoreboard, not a list"
+    assert "retiredViews.find((r) => r.view.name === selected)" in board, "?bot= opens retired bots too"
     # Guard the guard: if the registry is ever emptied or the import silently
     # yields nothing, the assertions above pass while checking nothing.
     assert len(BOTS) >= 8, (
@@ -46150,7 +46050,7 @@ def test_placement_gate_fail_closed():
         raise RuntimeError("simulated DB outage")
 
     orig = db.execute_query
-    db.execute_query = _boom
+    db.execute_query = _this_thread_only(_boom, orig)
     try:
         p, why = cs.is_placement_paused()
         assert p is True and "CLOSED" in (why or ""), f"is_placement_paused must fail CLOSED, got {(p, why)}"
@@ -48842,10 +48742,11 @@ def test_shadow_bots_promo_panel():
     assert "promo_ev.py add-terms" in ps, "the empty state must name the command that adds a promo"
     for col in ("min_odds", "max_stake_eur", "valid_to"):
         assert col in ps, f"the panel must show {col} — the terms are what decide the EV's sign"
-    q = (_web_root / "src" / "lib" / "shadow-bots" / "queries.ts").read_text(encoding="utf-8")
-    assert "promo_terms" in q and "promo_ledger" in q, "the panel's reads belong in the cached query layer"
-    page = (_web_root / "src" / "app" / "(app)" / "admin" / "shadow-bots" / "page.tsx").read_text(encoding="utf-8")
-    assert "Promotions" in page or "promotions" in page, "the panel must actually be rendered"
+    # #139 P5 (2026-09-24): Promotions moved to the money page (EV vs realised is money).
+    q = (_web_root / "src" / "lib" / "admin-money.ts").read_text(encoding="utf-8")
+    assert "promo_terms" in q and "promo_ledger" in q, "the panel's reads live in the money loader"
+    page = (_web_root / "src" / "app" / "(app)" / "admin" / "real-bets" / "page.tsx").read_text(encoding="utf-8")
+    assert "<Promotions" in page, "the panel must actually be rendered"
 
 
 
@@ -48901,9 +48802,13 @@ def test_shadow_bots_roi_over_all_settled():
     if not q:
         return
     assert "shadow_bot_scoreboard" in q, "the page must read the engine's scoreboard view"
-    sb = (_web_root / "src" / "components" / "shadow-bots" / "scoreboard.tsx").read_text(encoding="utf-8")
-    assert "settled_roi" in sb, "ROI must come from the all-settled column"
-    assert "shadow_bets_own_book_clv" not in sb, "the component must not re-derive ROI from the CLV subset"
+    # #139 P6 (2026-09-24): the scoreboard SECTION is deleted (bot scores live on /admin/bots).
+    # The view is still read for the per-pick track chip, which must use the CLV columns only.
+    assert not (_web_root / "src" / "components" / "shadow-bots" / "scoreboard.tsx").exists(), \
+        "scoreboard.tsx stays deleted (QUEUE-HAS-NO-SCOREBOARD)"
+    tbl = (_web_root / "src" / "components" / "shadow-bots" / "picks-table.tsx").read_text(encoding="utf-8")
+    assert "clv_mc_mean" in tbl and "settled_roi" not in tbl and "shadow_bets_own_book_clv" not in tbl, \
+        "the track chip reads margin-corrected CLV, never ROI or a re-derived subset"
 
 
 @test("SHADOW-BOTS-AUTOMATION-IS-NOT-A-VERDICT — a paused placer never hides the price verdict or blocks recording a hand-placed bet")
@@ -48974,19 +48879,16 @@ def test_shadow_bots_settled_row_shows_close():
     bot_v10_all), so the three cells collapse into it on settled rows. The
     MARGIN-CORRECTED number is the one shown in colour: break-even for the raw
     ratio is the closing book's own margin, not zero."""
-    f = _web_root / "src" / "app" / "(app)" / "admin" / "shadow-bots" / "[bot]" / "page.tsx"
+    # IA move P7 (2026-09-24): the [bot] detail page is a redirect; the per-bot ledger is the
+    # /admin/bots sheet's Picks tab. The same rule holds there: a settled pick shows its CLV on the
+    # family's admissible metric (margin-corrected for mc-CLV families), and the live Now CB/UB/EB
+    # prices are fetched for PENDING pre-match picks only.
+    f = _web_root / "src" / "app" / "(app)" / "admin" / "bots" / "picks-table.tsx"
     if not f.exists():
         return
     src = f.read_text(encoding="utf-8")
-    assert "closing_odds, closing_bookmaker, clv_margin_corrected" in src, \
-        "the detail query must select the closing price and the margin-corrected CLV"
-    assert "const isSettled = b.result === \"won\" || b.result === \"lost\";" in src
-    assert "clv_margin_corrected" in src and "break-even 0" in src, \
-        "the colour must be on the margin-corrected number, and the tooltip must say break-even is 0"
-    # the three snapshot cells must still exist for PENDING rows
-    assert "No recent Coolbet price" in src and "isSettled ? (" in src, \
-        "pending rows keep the three live-price cells; only settled rows collapse them"
-
+    assert 'metric === "clv_mc" ? r.clv_mc' in src, "settled rows show the admissible (margin-corrected) CLV"
+    assert "Pending picks only." in src, "live book prices stay pending-only"
 
 
 @test("SHADOW-BOTS-LOGGED-PICK-IS-VISIBLE — a hand-logged bet shows on the row, counts in the day's total, and drops the page cache")
@@ -49015,9 +48917,13 @@ def test_shadow_bots_logged_pick_is_visible():
     assert "alreadyLogged" in row and "LOGGED" in row, "the row must SHOW that a pick is already recorded"
     assert "!r.alreadyLogged && showPlaceAction" in row, \
         "an already-logged pick must not keep offering the button — there is no unique index to catch a double write"
-    strip = (_web_root / "src" / "components" / "shadow-bots" / "safety-strip.tsx").read_text(encoding="utf-8")
-    assert "unconfirmedCount > 0" in strip and "manual" in strip, \
+    # #139 P5/P6 (2026-09-24): the safety strip is deleted; the day's total is the Pick queue's
+    # "Placed today" card and the money page's "Today (UTC)" card — both show "+N by hand".
+    queue = (_web_root / "src" / "app" / "(app)" / "admin" / "shadow-bots" / "page.tsx").read_text(encoding="utf-8")
+    assert "t.confirmedCount + t.unconfirmedCount" in queue and "unconfirmedCount > 0" in queue and "by hand" in queue, \
         "manual logs are real exposure — they must be VISIBLE in the day's total, not tooltip-only"
+    money = (_web_root / "src" / "app" / "(app)" / "admin" / "real-bets" / "page.tsx").read_text(encoding="utf-8")
+    assert "todayHand.length > 0" in money and "by hand" in money
     route = (_web_root / "src" / "app" / "api" / "admin" / "real-bet" / "route.ts").read_text(encoding="utf-8")
     assert 'revalidatePath("/admin/shadow-bots")' in route, \
         "the write must drop the 60 s page cache, or the operator refreshes into stale data"
@@ -50014,17 +49920,17 @@ def test_can_stake_one_definition():
     """
     import pathlib as _p, re as _re
 
-    f = _p.Path("/Users/margussellin/www/odds-intel-web/src/components/shadow-bots/safety-strip.tsx")
-    if not f.exists():
+    # #139 P6 (2026-09-24): the safety strip is DELETED. The one web-side CAN STAKE answer is
+    # the /admin/bots ladder (lib/bot-controls/ladder.ts, yes/no/unknown). The Pick queue links
+    # it and must not grow its own copy again; the caps moved to lib/admin-money.ts.
+    web = _p.Path("/Users/margussellin/www/odds-intel-web")
+    if not (web / "src").exists():
         return "odds-intel-web not checked out beside the engine — skipped"
-    src = f.read_text(encoding="utf-8")
-
-    assert 'label="CAN_STAKE"' not in src, (
-        "the chip is labelled CAN_STAKE again. It computes three DB gates; the "
-        "engine's can_stake() also requires a loaded --execute agent, which the "
-        "browser cannot observe. Green here on a host that cannot stake is the "
-        "dangerous direction of that error")
-    assert "dbGatesOpen" in src, "the honestly-named predicate is gone"
+    assert not (web / "src/components/shadow-bots/safety-strip.tsx").exists(), "safety-strip.tsx stays deleted"
+    queue = (web / "src/app/(app)/admin/shadow-bots/page.tsx").read_text(encoding="utf-8")
+    assert "CAN_STAKE" not in queue and "dbGatesOpen" not in queue, (
+        "the queue links the real-money ladder; it must not recompute a weaker CAN_STAKE")
+    src = (web / "src/lib/admin-money.ts").read_text(encoding="utf-8")
 
     # The engine's extra condition must still exist — if can_stake() is ever
     # reduced to the DB gates, the two DO agree and this test should be revisited
@@ -50040,9 +49946,9 @@ def test_can_stake_one_definition():
     assert "COOLBET_MAX_BETS_PER_DAY" in ui, "the env override is gone from the placer"
     assert "COOLBET_MAX_BETS_PER_DAY" in src, (
         "the web hardcodes 80/800 without noting the engine reads those from "
-        "env — a changed cap would leave the strip quietly wrong about the "
+        "env — a changed cap would leave the page quietly wrong about the "
         "blast radius")
-    return "chip claims only the DB gates; caps labelled as defaults"
+    return "no web CAN_STAKE copy outside the ladder; caps labelled as defaults"
 
 
 
@@ -53972,7 +53878,7 @@ def test_placement_gate_db_eligibility():
     try:
         def _boom(*_a, **_k):
             raise RuntimeError("simulated DB outage")
-        db.execute_query = _boom
+        db.execute_query = _this_thread_only(_boom, orig)
         assert pg.placement_path_bots() == set() and pg.ui_place_enabled_bots() == set()
         assert pg.effective_allowlist() == set()
         # a stale config export also reads as "no placement path"
@@ -53980,7 +53886,7 @@ def test_placement_gate_db_eligibility():
         def _capture(q, *_a, **_k):
             seen["q"] = q
             return [{"bot_name": "x", "family": "model_shadow", "ledger": "shadow_bets", "books": ["Coolbet"]}]
-        db.execute_query = _capture
+        db.execute_query = _this_thread_only(_capture, orig)
         assert pg.placement_path_bots() == {"x"}
         assert "exported_at > NOW() - INTERVAL '36 hours'" in seen["q"], "the gate must refuse a stale export"
     finally:
@@ -54564,6 +54470,240 @@ def test_admin_dead_pages_deleted():
     nav = _web_path("src/components/admin/admin-nav.ts").read_text(encoding="utf-8")
     for href in ("/admin/cs2", "/admin/lol", "/admin/tennis"):
         assert href not in nav, href
+
+
+@test("ADMIN-TOPBAR-PALETTE-TABLE — top bar (breadcrumb, ⌘K, attention bell), shared DataTable, final sidebar")
+def test_admin_topbar_palette_table():
+    """#139 (2026-09-24), admin visual direction §3/§7/§8 + IA §3.1. Every admin page gets one top
+    bar: breadcrumb, a ⌘K palette whose ACTIONS only navigate (no switch is ever flipped from the
+    palette — every control keeps its own confirm dialog + audit row), and a bell listing the SAME
+    attention items as the Overview (one loader, cached 60 s; a failure reads "could not check",
+    never "all clear"). Every list uses the one DataTable. Sidebar = the IA sitemap: Pick queue /
+    Real bets / Jobs / Activity labels on the kept URLs (65 smoke pins reference them)."""
+    if not (_web_root / "src").exists():
+        return
+    shell = _web_path("src/components/admin/admin-shell.tsx").read_text(encoding="utf-8")
+    assert "<AdminTopbar" in shell
+    top = _web_path("src/components/admin/admin-topbar.tsx").read_text(encoding="utf-8")
+    assert 'e.key.toLowerCase() === "k"' in top and "<CommandPalette" in top
+    assert "Could not check right now" in top, "an unknown attention state must not read as all clear"
+    pal = _web_path("src/components/admin/command-palette.tsx").read_text(encoding="utf-8")
+    assert "router.push(e.href)" in pal
+    for bad in ("postControl", "fetch(", "/api/admin"):
+        assert bad not in pal, f"the palette must only navigate, never write ({bad})"
+    data = _web_path("src/lib/admin-shell-data.ts").read_text(encoding="utf-8")
+    assert "loadOverview(" in data and "revalidate: 60" in data and "attention: null" in data
+    layout = _web_path("src/app/(app)/admin/layout.tsx").read_text(encoding="utf-8")
+    assert "loadShellExtras()" in layout and "attention={extras.attention}" in layout
+    dt = _web_path("src/components/oi/data-table.tsx").read_text(encoding="utf-8")
+    for feat in ("getSortedRowModel", "getFilteredRowModel", "getPaginationRowModel", "Export CSV", "Columns"):
+        assert feat in dt, feat
+    nav = _web_path("src/components/admin/admin-nav.ts").read_text(encoding="utf-8")
+    for entry in ('label: "Pick queue"', 'label: "Real bets"', 'label: "Jobs"', 'href: "/admin/activity"'):
+        assert entry in nav, entry
+    assert "/admin/place" not in nav and "unused: true" not in nav
+
+
+@test("ADMIN-JOBS-PAGE — /admin/ops (Jobs) reads pipeline_job_latest, keeps #runs/#settlement, and the dead sections stay deleted")
+def test_admin_jobs_page():
+    """#139 IA move P9 (2026-09-24). /admin/ops is labelled "Jobs" and answers one question: are the
+    scheduled jobs, settlement and match-data loading healthy? (1) The job list reads view
+    pipeline_job_latest (migration 417: 35 days + failure streak) through src/lib/admin-jobs.ts —
+    getLatestJobStatuses() saw ~2 h and never showed a nightly failure; (2) the Overview's attention
+    links #runs and #settlement must resolve; (3) "Email & alerts", the Pro/Elite tiles and the stale
+    "Betting & bots" section (16+8 bots, "$", "Apr 27") are deleted (IA §2.3) and the odds pipeline /
+    live tracker / API-Football budget moved to /admin/feeds (IA §2.1); (4) every read keeps its error."""
+    if not (_web_root / "src").exists():
+        return
+    page = _web_path("src/app/(app)/admin/ops/page.tsx").read_text(encoding="utf-8")
+    assert "is_superadmin" in page and "isBotBoardDevPreview()" in page
+    assert "loadJobsPage()" in page and "buildJobViews(" in page
+    assert 'id="runs"' in page and 'id="settlement"' in page
+    assert "<JobsTable" in page and "<FailuresChart" in page and "JOB_GROUPS" in page
+    for gone in ("Email & Alerts", "Email &amp; Alerts", "pro_users", "elite_users", "Pro tier", "16 pre-match",
+                 "Apr 27", 'prefix="$"', "digests_sent_today", "value_bet_alerts_today", "Odds Pipeline",
+                 "Live Tracker", "AF API Budget", "getLatestJobStatuses"):
+        assert gone not in page, f"/admin/ops must not carry {gone!r} any more"
+    lib = _web_path("src/lib/admin-jobs.ts").read_text(encoding="utf-8")
+    assert 'from("pipeline_job_latest")' in lib and "getLatestJobStatuses" not in lib
+    assert 'readAdminFixture<JobsFixture>("jobs")' in lib and "error:" in lib
+    model = _web_path("src/lib/admin-jobs-model.ts").read_text(encoding="utf-8")
+    assert "JOB_STUCK_H = 3" in model and 'shadow_HHMM' in model and "OTHER_GROUP" in model
+    table = _web_path("src/app/(app)/admin/ops/jobs-table.tsx").read_text(encoding="utf-8")
+    assert "DataTable" in table and 'column: "state"' in table and 'column: "group"' in table
+    assert _engine_path("scripts/admin_fixtures/jobs.py").exists()
+
+
+@test("ADMIN-FEEDS-PAGE — /admin/feeds: KPI cards, book blocks with audited controls, Coolbet switch + budget, coverage chart, #dq table")
+def test_admin_feeds_page():
+    """#139 admin redesign (2026-09-24). /admin/feeds answers "is data coming in, and at what cost?".
+    Pins: the loader keeps every read's error (unreadable never renders as an empty all-clear); the
+    per-feed Pause / Resume / Run now still post ONLY to the audited /api/admin/feed-control
+    (feed_controls + feed_actions); the Coolbet footprint switch sits in the Coolbet area with the
+    Coolbet request budget; the odds pipeline, live tracker and API-Football 150k/day budget moved
+    here from /admin/ops (IA §2.1); the coverage chart says feed_book_stats keeps only today +
+    yesterday; DQ findings keep anchor id="dq" (linked from the Overview) in the shared DataTable;
+    status colours are the admin tokens, not hard-coded emerald/amber/red."""
+    if not (_web_root / "src").exists():
+        return
+    d = "src/app/(app)/admin/feeds/"
+    page = _web_path(d + "page.tsx").read_text(encoding="utf-8")
+    assert "is_superadmin" in page and "loadFeedsPage()" in page and "<FeedsBoard" in page
+    assert "<FootprintControl" in page and "cb?.budget_1h" in page, "Coolbet switch sits with Coolbet's request budget"
+    assert "AF_DAILY_BUDGET" in page and 'id="af-budget"' in page and "Odds pipeline today" in page and "Live tracker" in page
+    assert "<CoverageChart" in page and "<DqFindings" in page and "error={d.dq.error}" in page
+    lib = _web_path("src/lib/admin-feeds.ts").read_text(encoding="utf-8")
+    assert "AF_DAILY_BUDGET = 150_000" in lib and 'readAdminFixture<FeedsFixture>("feeds")' in lib
+    for tbl in ("feed_status", "feed_book_stats", "data_quality_findings", "ops_snapshots"):
+        assert f'from("{tbl}")' in lib, tbl
+    chart = _web_path(d + "feeds-charts.tsx").read_text(encoding="utf-8")
+    assert "today and yesterday" in chart.lower() or "these two days" in chart
+    dq = _web_path(d + "dq-findings.tsx").read_text(encoding="utf-8")
+    assert 'id="dq"' in dq and "DataTable" in dq and "not an all-clear" in dq
+    ctl = _web_path(d + "feed-controls.tsx").read_text(encoding="utf-8")
+    assert '"/api/admin/feed-control"' in ctl and ctl.count("fetch(") == 1
+    route = _web_path("src/app/api/admin/feed-control/route.ts").read_text(encoding="utf-8")
+    assert 'from("feed_actions").insert' in route and "is_superadmin" in route, "every feed action stays audited"
+    board = _web_path(d + "feeds-board.tsx").read_text(encoding="utf-8")
+    assert "statusTone(main)" in board, "a warn on the main feed must colour its block"
+    for f in ("page.tsx", "feeds-board.tsx", "feed-controls.tsx", "dq-findings.tsx", "footprint-control.tsx"):
+        t = _web_path(d + f).read_text(encoding="utf-8")
+        for bad in ("emerald-", "amber-", "red-4", "red-5", "sky-5", "zinc-5"):
+            assert bad not in t, f"{f} uses hard-coded colour {bad} — use the admin tokens"
+    assert _engine_path("scripts/admin_fixtures/feeds.py").exists()
+
+
+@test("ADMIN-ACTIVITY-PAGE — /admin/activity: one read-only timeline of control_changes ∪ feed_actions")
+def test_admin_activity_page():
+    """#139 IA gap G4 (2026-09-24). "Who changed what" had two audit tables and one viewer
+    (control_changes inside /admin/bots; feed_actions had none). /admin/activity reads BOTH with the
+    service role, server-side, behind the superadmin check, and never writes. Each read keeps its
+    error so a log that could not be read says so instead of "no activity"; rows are plain sentences
+    using the same actorWord() as the /admin/bots timeline; facets are source / kind / outcome."""
+    if not (_web_root / "src").exists():
+        return
+    page = _web_path("src/app/(app)/admin/activity/page.tsx").read_text(encoding="utf-8")
+    assert "is_superadmin" in page and "isBotBoardDevPreview()" in page and "loadActivity()" in page
+    lib = _web_path("src/lib/admin-activity.ts").read_text(encoding="utf-8")
+    assert 'from("control_changes")' in lib and 'from("feed_actions")' in lib
+    assert "createServerServiceClient" in lib and 'readAdminFixture<ActivityFixture>("activity")' in lib
+    for w in (".insert(", ".update(", ".upsert(", ".delete(", ".rpc("):
+        assert w not in lib, f"the activity loader must be read-only ({w})"
+    table = _web_path("src/app/(app)/admin/activity/activity-table.tsx").read_text(encoding="utf-8")
+    assert 'from "../bots/activity-timeline"' in table and "actorWord(" in table
+    for col in ('column: "source"', 'column: "kind"', 'column: "outcome"'):
+        assert col in table, col
+    assert "fetch(" not in table and "could not be read" in table
+    nav = _web_path("src/components/admin/admin-nav.ts").read_text(encoding="utf-8")
+    assert 'href: "/admin/activity"' in nav
+    assert _engine_path("scripts/admin_fixtures/activity.py").exists()
+
+
+@test("ADMIN-UNPICKED-BOTS-VISIBLE — a registered active bot with no picks yet shows on /admin/bots and the Overview")
+def test_admin_unpicked_bots_visible():
+    """2026-09-24: #141's new bot_rating_1x2_v1 / bot_combined_1x2_v1 were registered, active and
+    configured but had written no pick, and bot_scoreboard is built FROM bot_ledger — so they were
+    invisible on every admin page. withUnpickedBots() adds a zero-count row for each such bot
+    (active, not retired, has bot_config), and a never-picked bot is "no picks yet", not "silent"."""
+    if not (_web_root / "src").exists():
+        return
+    model = _web_path("src/app/(app)/admin/bots/bot-board-model.ts").read_text(encoding="utf-8")
+    assert "export function withUnpickedBots(" in model
+    i = model.index("export function withUnpickedBots(")
+    body = model[i:model.index("\n}\n", i)]
+    assert "!b.is_active || b.retired_at || !cfgBy.has(b.name)" in body and "picks_total: 0" in body
+    assert "(sb?.picks_total ?? 0) > 0 && (silentByCaps || silentByTime)" in model
+    for f in ("src/app/(app)/admin/bots/bots-board.tsx", "src/lib/admin-overview.ts"):
+        assert "withUnpickedBots(" in _web_path(f).read_text(encoding="utf-8"), f
+
+
+@test("ADMIN-PLACE-DELETED — /admin/place and the files only it used stay deleted (#139 IA move P8b)")
+def test_admin_place_deleted():
+    """#139 IA move P8b (2026-09-24). /admin/place was the SELF-USE-VALIDATION page (window closed
+    2026-06-07): pending simulated_bets with a live edge and a manual log. Its job — "what do I place
+    by hand today" — is done by the Pick queue (/admin/shadow-bots), whose Place €X action records
+    the bet through /api/admin/real-bet → record_manual_real_bet. Deleted with the files ONLY it used:
+    place-bet-table, coolbet-ingest-banner, real-money-tier-badge and the record-combo route (its one
+    caller was place-bet-table). src/lib/real-money-tier.ts stays: engine-data.ts still imports it."""
+    if not (_web_root / "src").exists():
+        return
+    for gone in ("src/app/(app)/admin/place", "src/components/place-bet-table.tsx",
+                 "src/components/coolbet-ingest-banner.tsx", "src/components/real-money-tier-badge.tsx",
+                 "src/app/api/admin/record-combo"):
+        assert not _web_path(gone).exists(), f"{gone} must stay deleted"
+    for rel in ("src/components/admin/admin-nav.ts", "src/components/admin/command-palette.tsx"):
+        p = _web_path(rel)
+        if p.exists():
+            assert "/admin/place" not in p.read_text(encoding="utf-8"), f"{rel} still links /admin/place"
+    for p in (_web_root / "src").rglob("*.tsx"):
+        s = p.read_text(encoding="utf-8")
+        assert 'href="/admin/place"' not in s and "/api/admin/record-combo" not in s, f"{p} still points at a deleted route"
+    # the one manual-bet write path that replaced it must still exist
+    assert _web_path("src/app/api/admin/real-bet/route.ts").exists(), "the Place €X write path must remain"
+
+
+@test("QUEUE-HAS-NO-SCOREBOARD — the Pick queue is picks + Place only; bot scores and the money ladder live on /admin/bots (#139 P6)")
+def test_queue_has_no_scoreboard():
+    """#139 IA move P6 (2026-09-24). /admin/shadow-bots is the Pick queue: its ONE job is "what should
+    I place by hand today". The safety strip (a second copy of the real-money ladder) and the
+    scoreboard (a third per-bot score, from shadow_bot_scoreboard) are deleted — one owner per number:
+    /admin/bots (IA §2.2). The page keeps one line linking there. Promotions moved to /admin/real-bets.
+    The shadow_bot_scoreboard READ stays for one thing only: the per-pick bot-track chip (lead bot /
+    losing bot / unproven), which uses the margin-corrected CLV columns, never the ROI one."""
+    page_p = _web_path("src/app/(app)/admin/shadow-bots/page.tsx")
+    if not page_p.exists():
+        return
+    page = page_p.read_text(encoding="utf-8")
+    for gone in ("src/components/shadow-bots/scoreboard.tsx", "src/components/shadow-bots/safety-strip.tsx"):
+        assert not _web_path(gone).exists(), f"{gone} must stay deleted — its job lives on /admin/bots"
+    for comp in ("Scoreboard", "SafetyStrip", "<Promotions"):
+        assert comp not in page, f"{comp} must not come back to the Pick queue"
+    assert 'href="/admin/bots#real-money"' in page and 'href="/admin/bots"' in page, \
+        "the one line must link the real-money ladder and the bot scores"
+    assert "is_superadmin" in page and "PageHeader" in page and "<StatCard" in page and "<PicksQueueTable" in page
+    tbl = _web_path("src/components/shadow-bots/picks-queue-table.tsx").read_text(encoding="utf-8")
+    assert tbl.startswith('"use client"') and "<DataTable" in tbl and "exportName" in tbl
+    assert 'column: "verdict"' in tbl and 'column: "bot"' in tbl and 'column: "market"' in tbl, "filter chips"
+    assert "PICK_VERDICT_RANK" in tbl, "sorting by verdict must follow Place → Thin → Skip → Blocked, not the alphabet"
+    row = _web_path("src/components/shadow-bots/picks-row.tsx").read_text(encoding="utf-8")
+    assert "<PlaceAction" in row and "shadowBetId={pick.id}" in row, "Place €X must still record against the pick"
+    build = _web_path("src/components/shadow-bots/picks-table.tsx").read_text(encoding="utf-8")
+    assert "clv_mc_mean" in build and "settled_roi" not in build, "the track chip reads CLV, never ROI"
+    how = _web_path("src/components/shadow-bots/how-it-works.tsx").read_text(encoding="utf-8")
+    assert "<details" in how and "useState" not in how, "the explainer is a collapsed panel, not a modal"
+
+
+@test("MONEY-PAGE-LEDGER — /admin/real-bets: KPI cards, charts, CSV tables, caps with the by-hand split, promotions, unconfirmed to-do (#139 P5)")
+def test_money_page_ledger():
+    """#139 IA move P5 (2026-09-24). /admin/real-bets is the money ledger (IA J7): what we actually
+    staked and how it went. Moved here from the Pick queue: today's total against the daily caps
+    WITH the "+N by hand" split (LOGGED-PICKS-INVISIBLE) and Promotions (collapsed to one line while
+    promo_terms is empty). New: hand-logged bets the account check has not confirmed after 24 h,
+    counted from the SAME MANUAL_RECONCILE_SINCE the Overview's attention bell uses, so the two
+    cannot disagree. The loader pages past PostgREST's 1,000-row cap (992 rows on 2026-09-24) and
+    excludes paper rows. An unreadable ledger shows "Unknown", never €0."""
+    page_p = _web_path("src/app/(app)/admin/real-bets/page.tsx")
+    if not page_p.exists():
+        return
+    page = page_p.read_text(encoding="utf-8")
+    cl = _web_path("src/app/(app)/admin/real-bets/money-client.tsx").read_text(encoding="utf-8")
+    lib = _web_path("src/lib/admin-money.ts").read_text(encoding="utf-8")
+    assert "is_superadmin" in page and "<PageHeader" in page and page.count("<StatCard") >= 6
+    assert "/admin/place" not in page, "the deleted page must not be referenced"
+    assert "unknown={unreadable" in page, "an unreadable ledger must read Unknown, never 0"
+    assert "<Promotions" in page and "unconfirmedToDo(" in page and "<ToDoTable" in page
+    assert "todayHand.length > 0" in page and "by hand" in page and "DAILY_MAX_BETS" in page, \
+        "hand-logged bets are real exposure — visible in today's total, apart from the automatic caps"
+    assert cl.count("<ChartCard") >= 2 and "ranges=" in cl and "signed: true" in cl, \
+        "cumulative P/L line + weekly staked/P&L bars with signed colours"
+    assert "<DataTable" in cl and cl.count("exportName") >= 3, "the raw tables are DataTables with CSV export"
+    assert '.not("placed_real", "is", false)' in lib, "paper rows stay out of the real-money ledger"
+    assert ".range(" in lib and "MAX_PAGES" in lib, "must page past the 1,000-row cap"
+    assert "placed_real" in lib.split("BET_SELECT")[1][:400], "placed_real must be selected for the to-do"
+    assert "MANUAL_RECONCILE_SINCE" in lib and "RECONCILE_AFTER_H = 24" in lib and "b.placedReal == null" in lib
+    assert 'from("promo_terms")' in lib and "promo_ledger" in lib
+    promo = _web_path("src/components/shadow-bots/promotions.tsx").read_text(encoding="utf-8")
+    assert "promos.length === 0" in promo and "<details" in promo, "one line when empty, collapsed otherwise"
 
 
 @test("BOT-BOARD-DEV-PREVIEW-NEVER-IN-PROD — the no-login /admin/bots fixture preview is development-only")
@@ -55774,7 +55914,7 @@ def test_shadow_bot_real_badge_no_overlay():
     """
     p = _web_path("src/app/(app)/admin/bots/picks-table.tsx")
     if not p.exists():
-        skip("odds-intel-web not checked out")
+        raise SkipTest("odds-intel-web not checked out")
     src = p.read_text()
     i = src.find('id: "bet"')
     assert i != -1, "the Bet made column must exist — it is how the operator sees which picks had money on them"

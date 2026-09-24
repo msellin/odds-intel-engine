@@ -458,14 +458,16 @@ Server-side gating is the only safe gating. Client-side gating hides UI but does
 | `src/lib/get-user-tier.ts` | Reads `profiles.tier` + `is_superadmin` |
 | `src/lib/real-money-tier.ts` | Real-money tier badge logic |
 
-**Admin (superadmin only)** — one shared shell (sidebar on every page, `admin/layout.tsx`). `/admin` = **Overview dashboard** (KPI cards, attention inbox, charts — #139, 2026-09-24; data `src/lib/admin-overview.ts`, rules `src/lib/admin-attention.ts`, shared components `src/components/oi/`), **`/admin/feeds`** (every sweeper/feed: last data, schedule, today's coverage, errors — #107), `/admin/bots` (unified bot board over `bot_scoreboard` / `bot_ledger` / `bot_config`, #139), `/admin/ops`, `/admin/shadow-bots[/[bot]]`. `/admin/place` and `/admin/real-bets` still exist but are marked unused in the sidebar; **CS2 / LoL / Tennis pages were DELETED 2026-09-24** (#139 IA P8, owner). This is where the
+**Admin (superadmin only)** — one shared shell (`admin/layout.tsx`): sidebar + top bar (breadcrumb, ⌘K search that only navigates, attention bell = the Overview's items cached 60 s — `src/lib/admin-shell-data.ts`). Shared components `src/components/oi/` (Panel, StatCard, StatusBadge, ChartCard/DonutCard, **DataTable** on @tanstack/react-table). Pages (#139, 2026-09-24): `/admin` **Overview** (KPI cards, attention inbox `src/lib/admin-attention.ts`, charts `src/lib/admin-overview.ts`) · `/admin/bots` **Bots** (registry, one scoring, real-money ladder + controls, bot sheet with charts and the full pick ledger — `/admin/shadow-bots/[bot]` now redirects here) · `/admin/shadow-bots` **Pick queue** (today's picks + Place €X only) · `/admin/real-bets` **Real bets** (money ledger, caps, unconfirmed manual bets, promotions; `src/lib/admin-money.ts`) · `/admin/feeds` **Feeds** (#107; per-feed controls, Coolbet sweeping switch, budgets, coverage, DQ) · `/admin/ops` **Jobs** (view `pipeline_job_latest`, mig 417; settlement) · `/admin/activity` **Activity** (`control_changes` ∪ `feed_actions`). URLs kept on purpose (65 smoke pins); labels follow the IA sitemap. **Deleted 2026-09-24:** `/admin/place`, CS2 / LoL / Tennis. Local design preview for every admin page: `BOT_BOARD_FIXTURE` dev server + `scripts/dump_bot_board_fixture.py` / `scripts/dump_admin_fixture.py`. This is where the
 operator-facing surfaces live; most day-to-day work touches these, not the public pages.
 
 | File | Purpose |
 |------|---------|
-| `src/app/(app)/admin/shadow-bots/page.tsx` | Shadow-bot board — the main operator view |
-| `src/app/(app)/admin/ops/page.tsx` | Ops status |
-| `src/app/(app)/admin/place/page.tsx` | Placement controls |
+| `src/app/(app)/admin/page.tsx` | Overview dashboard (attention inbox + charts) |
+| `src/app/(app)/admin/bots/bots-board.tsx` | Bots — registry, scoring, real-money controls |
+| `src/app/(app)/admin/shadow-bots/page.tsx` | Pick queue — today's picks + manual Place |
+| `src/app/(app)/admin/real-bets/page.tsx` | Real bets — the money ledger |
+| `src/app/(app)/admin/ops/page.tsx` | Jobs — scheduled job health, settlement |
 | `src/app/api/admin/bots/controls/route.ts` | Every admin control write (per-bot real-money eligibility, /picks, pauses) → the audited `admin_set_control`. The legacy `coolbet-placer-bots` / `coolbet-daemons-pause` routes were deleted 2026-09-24 (#139 IA P3) |
 | `src/app/api/v1/track-record/route.ts` | Public track-record API |
 | `src/app/api/v1/upcoming/route.ts` | Public upcoming-picks API |

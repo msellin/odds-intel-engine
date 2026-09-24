@@ -1070,7 +1070,7 @@ Four additional bots (`bot_acca_value`, `bot_acca_proven`, `bot_combo_system`, `
 - N=5 + OU15 + fours_up: +791% ROI (risk/reward tradeoff: lower variance than straight)
 - N=5 without OU15: straight −0.9%, fours_up −19.4% (no edge without OU15)
 
-**Admin recording:** manually placed combo bets can be logged via the `/admin/place-bets` table — click "Record" on any combo row to open `RecordComboModal`, enter actual Coolbet odds + stake. Stores to `real_bets` with `combo_legs JSONB` + `system_type TEXT` and settles automatically once all legs finish.
+**Admin recording (REMOVED 2026-09-24, #139 IA P8b — /admin/place, RecordComboModal and the record-combo route were deleted):** manually placed combo bets could be logged via the `/admin/place-bets` table — click "Record" on any combo row to open `RecordComboModal`, enter actual Coolbet odds + stake. Stores to `real_bets` with `combo_legs JSONB` + `system_type TEXT` and settles automatically once all legs finish.
 
 ### 8.3.6 Per-market real-money placement thresholds (PER-MARKET-EDGE-V2 2026-06-06)
 

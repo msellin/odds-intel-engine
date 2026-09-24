@@ -242,6 +242,8 @@ Not in the inbox: verdict mixes, pick counts, ROI. Those are information, not ac
 
 ---
 
+> **STATUS 2026-09-24 (end of day):** P1 ✅ (as corrected by the owner: the footprint pause stops SWEEPING only, never real bets — info-only ladder layer 7, readiness warning) · P2 ✅ · P3 ✅ · P4 ✅ (Overview) · P5 ✅ (as "Real bets", URL kept) · P6 ✅ (as "Pick queue" at /admin/shadow-bots — URLs kept: 65 smoke pins) · P7 ✅ ([bot] → redirect to the /admin/bots sheet; the bots table stays custom with a DataTable-look toolbar — it needs per-family groups, in-row switches and a shared forest-bar axis) · P8 ✅ (CS2, LoL, Tennis, Place deleted) · P9 ✅ · P10: G4 Activity ✅; G3 send proof, G5 Coolbet session health, G6 deploy drift, G8 models still open (need engine sources).
+
 ## 4. Phased moves (each small and reviewable; smoke test + 1 review agent each, 2 for anything touching money controls)
 
 | # | Move | Dir | Size | Smoke |

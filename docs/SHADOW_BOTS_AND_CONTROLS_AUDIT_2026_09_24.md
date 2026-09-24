@@ -1,5 +1,8 @@
 # Shadow-bots page + the bot control map (2026-09-24)
 
+> **CHANGED 2026-09-24 (#139 IA P6/P7):** `/admin/shadow-bots/[bot]` is RETIRED — it redirects to `/admin/bots?bot=<name>&tab=picks` (the sheet carries Bet made + current prices; the model-edge "Min odds" was dropped, #139 finding b). `/admin/shadow-bots` is now the Pick queue (picks + Place only): its safety strip, scoreboard and promotions were removed (promotions moved to /admin/real-bets).
+
+
 > **CHANGED 2026-09-24 (#139 IA moves P2/P3):** the legacy `/api/admin/coolbet-placer-bots` and `/api/admin/coolbet-daemons-pause` routes and their `CoolbetPlacerToggle` / `CoolbetDaemonsPause` components were DELETED. Per-bot real-money eligibility is switched on /admin/bots only; the footprint pause (now "Coolbet sweeping") on /admin/feeds only — both through the audited `admin_set_control`. Owner decision the same day: the footprint pause stops odds sweeping, never real bets. The text below is the point-in-time audit.
 
 
