@@ -417,6 +417,22 @@ def _paper_module_rows() -> dict[str, dict]:
             books=list(m.PLACEMENT_BOOKS), books_source=src(fname, r"^PLACEMENT_BOOKS"),
             anchor="sharp",
         )
+    # #149 O/U sharp-outlier bots (workers/jobs/ou_sharp_outlier.py) — simulated_bets, paper.
+    from workers.jobs import ou_sharp_outlier as ou
+    fo = "workers/jobs/ou_sharp_outlier.py"
+    common = dict(ledger="simulated_bets", writer_job="ou_sharp_outlier", cadence=":14/:44",
+                  markets=list(ou.LINES), prob_source="power-de-vigged Pinnacle (latest, <= 3 h old)",
+                  edge_floor=f"EV {ou.EV_MIN:g}..{ou.EV_CAP:g}", edge_floor_source=src(fo, r"^EV_MIN, EV_CAP"),
+                  odds_min=ou.ODDS_LO, odds_max=ou.ODDS_HI, books=["every publishable book"],
+                  books_source=src(fo, r"is_publishable_book"), anchor="sharp")
+    out[ou.BOT_EARLY] = _row(ou.BOT_EARLY, "sharp_generator",
+        description="O/U EARLY (#149): soft-book O/U quote beats Pinnacle's fair price by EV 5-15%, >= 12 h before kickoff.",
+        gates=[gate("ev_vs_pinnacle", f"{ou.EV_MIN:g}..{ou.EV_CAP:g}", src(fo, r"^EV_MIN, EV_CAP")),
+               gate("early_hours", ou.EARLY_MIN_H, src(fo, r"^EARLY_MIN_H"))], **common)
+    out[ou.BOT_2ANCHOR] = _row(ou.BOT_2ANCHOR, "sharp_generator",
+        description="O/U TWO-ANCHOR (#149): as O/U EARLY without the 12 h rule; also beats the other books' consensus by >= 2% EV.",
+        gates=[gate("ev_vs_pinnacle", f"{ou.EV_MIN:g}..{ou.EV_CAP:g}", src(fo, r"^EV_MIN, EV_CAP")),
+               gate("ev_vs_consensus", ou.CONS_EV_MIN, src(fo, r"^CONS_EV_MIN"))], **common)
     return out
 
 
