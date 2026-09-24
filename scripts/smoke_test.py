@@ -53645,6 +53645,29 @@ def test_feeds_coverage_drop():
     assert "coverage_warning(ft, pt, fy, py, _hour)" in inspect.getsource(fh.run_feed_health)
 
 
+@test("BOT-WEEKLY-VIEW-411 — bot_weekly / bot_market_stats / bot_ledger_display are admin-only and never pool rule versions")
+def test_bot_weekly_view_411():
+    """#139 (2026-09-24): migration 411 adds bot_weekly (the /admin/bots 12-week strip) and
+    bot_ledger_display (ledger + team names). Both read bot_ledger, which is admin-only (#072),
+    so both must be service_role-only. bot_weekly must apply bot_scoreboard's pre-registration
+    filter (current rule_version only) and CLV outlier guard, or the strip would disagree with
+    the row it sits in. The fixture dump carries the same SQL inline — keep them in step."""
+    sql = _engine_path("supabase/migrations/411_bot_weekly_view.sql").read_text()
+    assert "CREATE OR REPLACE VIEW public.bot_weekly" in sql
+    assert "CREATE OR REPLACE VIEW public.bot_ledger_display" in sql
+    assert "CREATE OR REPLACE VIEW public.bot_market_stats" in sql
+    assert "FROM PUBLIC, anon, authenticated, service_role" in sql
+    assert "GRANT SELECT ON public.bot_weekly, public.bot_market_stats, public.bot_ledger_display TO service_role;" in sql
+    grants = [ln for ln in sql.splitlines() if ln.strip().upper().startswith("GRANT")]
+    assert all("anon" not in g and "authenticated" not in g for g in grants), grants
+    rule = "(l.source <> 'forward_test' OR l.rule_version = c.rule_version)"
+    assert sql.count(rule) == 2, "both bot_weekly and bot_market_stats carry the pre-registration filter"
+    assert "abs(l.clv_mc) <= 1" in sql and "l.result <> 'void'" in sql
+    dump = _engine_path("scripts/dump_bot_board_fixture.py").read_text()
+    assert dump.count(rule) == 2 and '"weekly": weekly' in dump and "ht.name AS home_team" in dump
+    assert '"market_stats": _rows(_MARKET_STATS_SQL)' in dump
+
+
 @test("SHADOW-AUTOSELECT-WEEKLY-ONLY — the A/B shadow slot never auto-picks an experiment bundle")
 def test_shadow_autoselect_weekly_only():
     """#139 decision (v), 2026-09-24: the stale SHADOW_MODEL_VERSION pin (v20260705, older than
