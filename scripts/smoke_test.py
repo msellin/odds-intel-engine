@@ -53418,6 +53418,20 @@ def test_obs_log_all_jobs():
          fc.is_job_paused, sched._kuma_push, sched._job_coolbet_price_sanity_impl) = saved
 
 
+@test("COVERAGE-COUNTS-FAST — the public coverage RPC uses the (bookmaker, timestamp) skip-scan (#136)")
+def test_coverage_counts_fast():
+    """#136 (2026-09-24): get_coverage_counts did COUNT(DISTINCT bookmaker) over 24 h of
+    odds_snapshots via the timestamp index — 335 s mean, 544 s max, 1,480 calls. Now a
+    recursive skip-scan over (bookmaker, timestamp) + one EXISTS probe per book: 0.11 s,
+    same answer (13 books). Don't reintroduce a COUNT(DISTINCT) over a time window here."""
+    sql = _engine_path("supabase/migrations/406_coverage_counts_fast.sql").read_text()
+    assert 'ON public.odds_snapshots (bookmaker, "timestamp")' in sql
+    body = sql[sql.index("CREATE OR REPLACE FUNCTION"):]
+    assert "WITH RECURSIVE books" in body and "EXISTS (SELECT 1 FROM odds_snapshots o" in body
+    assert "COUNT(DISTINCT bookmaker)" not in body.upper().replace("COUNT(DISTINCT LEAGUE_ID)", "")
+    assert "SECURITY DEFINER" in body and "SET search_path = public" in body
+
+
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")
 def test_anon_least_privilege():
     """#072 (2026-09-24): anon held SELECT on 134/134 public relations via default privileges;
