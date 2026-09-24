@@ -577,3 +577,62 @@ against the close. A filter would cut volume in half and improve clv_sharp by ~0
 and would not produce a positive stream. **Not wired into any gate.** What it does establish: an O/U edge from
 this rating can only exist at EARLY prices, before Pinnacle moves — so any future O/U money test
 must be run at the opening price, not at T-2h.
+
+## Pre-registration — #089 FAITHFUL WHEATCROFT REPLICATION (2026-09-24, BEFORE building)
+
+Question: was our shots-vs-goals null (#089 arm D, #077) because our construction was unfaithful, or
+because the effect does not exist against a sharp price? Method spec (from reading Wheatcroft 2020,
+*IJF* 36(3), in full): four additive GAP ratings per team (home/away × attack/defence), eqs (1)-(2),
+floored at 0, no decay; forecast `logit p = α + β1·(H_i^a + H_i^d + A_j^a + A_j^d) + β2·m`, where m is
+the market term, so the market is ALWAYS in the model.
+
+**Data.** football-data.co.uk, his 10 leagues (E0 E1 E2 E3 EC SC0 SP1 I1 F1 D1), 2005/06-2025/26,
+already on disk (`data/raw/football_data_co_uk/main`, gitignored). EC has no shots from 2016/17 on,
+so it drops out of the Pinnacle-era cells.
+
+**Inputs (S).** Shots + corners per team (his best), and goals as the control, with identical code.
+
+**Faithful to the paper:**
+* ratings keyed by (league, team). At season start a team new to a league inherits the mean last
+  rating of the teams that left that league.
+* (λ, φ1, φ2) chosen by bounded Nelder-Mead on the mean log-loss of the forecast over ALL prior
+  seasons, refit between seasons, pooled across leagues, starting at (0.44, 0.49, 0.6). The tuning
+  uses the M1 market term, as he did.
+* A match is eligible only when both teams have played ≥ 6 league games that season before it, and it
+  is not among either team's last 6.
+* M1 is his market term: m = 1/max odds for over 2.5 (BbMx>2.5 before 2019/20, Max>2.5 after), not
+  de-vigged.
+
+**Deviations, stated up front:**
+* The burn-in season is 2005/06, not 2000/01.
+* The logistic is fitted by maximum likelihood, not least squares.
+* It is refit weekly on all prior eligible matches, not every matchday.
+* For the Pinnacle markets the term is logit(Shin de-vig), not the raw probability.
+
+**The family: 6 cells, Holm m = 6.** Input {S+C, goals} × market:
+* **M1** — 1/max odds, 2006/07-2018/19 (his period plus one season).
+* **M2** — de-vigged Pinnacle PRE-CLOSE (`P>2.5`, collected Fri/Tue), 2019/20-2025/26.
+* **M3** — de-vigged Pinnacle CLOSE (`PC>2.5`), 2019/20-2025/26.
+
+Statistic per cell: ΔLL = mean[LL(market-only logistic) − LL(full logistic)] over eligible fixtures, in
+nats (positive = the rating adds to the market). Significance comes from a block bootstrap by week
+(2,000 draws), one-sided. **PASS = ΔLL > 0 with Holm-adjusted p < 0.05.**
+
+**Fidelity check (interprets the family, not part of it).** On M1, S+C ΔLL > goals ΔLL, i.e. his
+headline reproduces. If it does NOT, our implementation or data differ from his, and an M3 failure
+cannot be read as "the effect is gone".
+
+**Money (reported, not a pass bar).** Level stakes wherever p̂ > 1/odds on over or under, at:
+* max odds and avg odds (both eras);
+* Pinnacle pre-close odds, with CLV against the Shin-de-vigged Pinnacle close.
+
+**Expected before running:**
+* M1: S+C ΔLL small and positive (~0.0005-0.001 nats), and larger than goals — the fidelity check
+  passes.
+* M2: close to zero, perhaps faintly positive.
+* M3: ≈ 0, FAIL.
+* Goals: ≈ 0 or negative everywhere.
+* Money: positive at max odds only in the early seasons, negative at avg odds, and non-positive CLV
+  against the Pinnacle close.
+* **What would change the plan:** S+C passing M3. That would be the first input in six months to
+  add anything to a sharp close, and would justify building it into a live O/U head.
