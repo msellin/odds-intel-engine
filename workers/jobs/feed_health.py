@@ -262,7 +262,7 @@ def footprint_warnings(fp: dict | None) -> list[str]:
 COVERAGE_DROP_RATIO = 0.5
 COVERAGE_MIN_FIXTURES = 30
 COVERAGE_MIN_YDAY_SHARE = 0.20
-COVERAGE_FROM_HOUR_UTC = 8
+COVERAGE_FROM_HOUR_UTC = 9   # review backtest 09-10..24: 8 gave two 1-h blips (Coolbet slow start), 9 keeps every real flag
 
 
 def coverage_warning(fix_t: int, pr_t: int, fix_y: int, pr_y: int, hour_utc: int) -> str | None:

@@ -53608,7 +53608,7 @@ def test_feeds_coverage_drop():
     w = fh.coverage_warning
     assert w(200, 58, 210, 122, 12) and "29%" in w(200, 58, 210, 122, 12)
     assert w(200, 110, 210, 122, 12) is None, "a normal day"
-    assert w(200, 58, 210, 122, 6) is None, "morning ramp"
+    assert w(200, 58, 210, 122, 8) is None, "morning ramp (from 09 UTC after the backtest)"
     assert w(20, 2, 210, 122, 12) is None, "small denominator"
     assert w(200, 10, 210, 20, 12) is None, "yesterday's share too small to judge"
     assert "coverage_warning(ft, pt, fy, py, _hour)" in inspect.getsource(fh.run_feed_health)

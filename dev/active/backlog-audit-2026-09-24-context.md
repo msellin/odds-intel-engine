@@ -30,3 +30,27 @@ prioritise the whole list with estimates and present one table.
 
 ## State
 - #131 claimed (1146864c). Agents launched. Next: merge agent outputs → apply → table.
+
+## Execution run (owner: "work the list top-down, verify every task with another agent")
+Table is sorted in IMPLEMENTATION order (prerequisites first). Every task below was
+independently reviewed by a separate agent; review findings were fixed and re-committed.
+- #072 anon lockdown — mig 404/405 + superuser revokes; review clean. ✅
+- #129 PICKS outlier anchor = publishable books; review found OWN leak → `_own_outlier_ok`
+  in pick_generator; 1xBet+Marathonbet counted once. ✅
+- #034 19 jobs inside _run_job; review: pause claim was wrong (corrected). ✅
+- #136 coverage RPC 335 s → 0.03 s (index built by hand, mig 406). ✅
+- #016 checkpoint: slope verdict ~09-29; new item (5) Pinnacle 1H share halved from 09-21.
+- #055 Telegram dead ends + /performance upsell removed. ✅
+- #001 matchers orientation-strict; review found decoy defect → refuse when best fit is
+  reversed, ties broken on exact name similarity. ✅ (follow-up under review)
+- #112 T-lag was a measurement window; aliases; Unibet World routing (+43 matches/sweep);
+  UEFA club category; records_count; longshot identity check (under review). Open: captcha
+  iframes, docstrings.
+- #123 single-market BTTS/AH guard (direct books only); near-KO 10 pp deferred. ✅
+- #002 → owner decision: void Gremio, Borac, Plopeni, Sudtirol (not Mannucci).
+- #022 atomic manual bet logging (mig 407), editable price/stake. ✅
+- #132 part 1 Coolbet DNB (under review). Open: Unibet AH, Epicbet lines, 2H markets.
+- #101 Optibet probe: /et/groups works; /upcoming cut after ~4 s; boards by ids — not shipped.
+- #107 C part 1 coverage-drop amber (under review).
+Next in order: #121 now-parts (book personalities, opening-price CLV), then #018.
+Owner decisions pending: #002 voids, #133, #127, #049, #057, ROUTER_ALLOW_REAL on the Mac, DMARC.
