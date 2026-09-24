@@ -130,6 +130,7 @@ Telegram public channel posting — every calibrated-maturity pre-match pick (1x
 |---|---|---|---|---|
 | Placement pause | `placement_paused` | **pause:** /admin/bots, Telegram `/pause`, daemon self-pause, migration 343 (OWN-path verdict). **resume:** /admin/bots ONLY (typed `RESUME PLACEMENT`, or `RESUME STRATEGIC` when the reason is a strategic stop, + a reason) and the daemon's auto-clear of its own self-pause | ✅ | ❌ never |
 | Publishing pause | `publishing_paused` (mig 353) | `/pausepicks` / `/resumepicks`, and /admin/bots (pause = typed `PAUSE PICKS` + reason; resume = one click) | ❌ | ✅ (sends only) |
+| Coolbet footprint pause | `daemons_paused` (mig 318) | **/admin/feeds** only (moved from /admin/bots, #139 IA move P2, 2026-09-24; the /admin/shadow-bots direct-UPDATE route was deleted). No Telegram command (owner) | ❌ never — stops Coolbet odds sweeping (explorer, in-play collector) and the feed watchdog only (owner decision 2026-09-24; `coolbet_control` readiness lists it as a warning, not a blocker) | ❌ |
 
 **Control panel + audit log (#139 phase A, migration 413, 2026-09-24).** `/admin/bots` is THE control
 surface for our own real money (owner decision 3). Every page write goes through ONE Postgres function,

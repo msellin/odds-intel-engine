@@ -1,5 +1,8 @@
 # Unified bot model: step 5a inventory (#139, 2026-09-24)
 
+> **CHANGED 2026-09-24 (#139 IA moves P2/P3):** the legacy `/api/admin/coolbet-placer-bots` and `/api/admin/coolbet-daemons-pause` routes and their `CoolbetPlacerToggle` / `CoolbetDaemonsPause` components were DELETED. Per-bot real-money eligibility is switched on /admin/bots only; the footprint pause (now "Coolbet sweeping") on /admin/feeds only — both through the audited `admin_set_control`. Owner decision the same day: the footprint pause stops odds sweeping, never real bets. The text below is the point-in-time audit.
+
+
 Parent row: **#139 UNIFIED-BOT-MODEL-EPIC** in `PRIORITY_QUEUE.md`. Design: `docs/UNIFIED_BOT_MODEL_DESIGN_2026_09_24.md` § Phase 5.
 Genesis research: `dev/active/unified-bot-model-genesis/`.
 

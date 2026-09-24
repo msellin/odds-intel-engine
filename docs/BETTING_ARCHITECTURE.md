@@ -160,8 +160,9 @@ dedup. Pre-match only.
 dict: `can_place_now` (bool) + `blockers` + `warnings`. **It models the REAL
 placement path — the UI placer (`place_coolbet_ui.py`), which stakes via the
 operator's LOGGED-IN CDP-Chrome browser session.** So the gates are exactly what
-that placer enforces: NOT `placement_paused`, NOT `daemons_paused`, and ≥1 bot
-`ui_place_enabled`. Liveness is the UI placer's own attempt ledger
+that placer enforces: NOT `placement_paused`, `real_money_armed`, and ≥1 bot
+`ui_place_enabled`. (`daemons_paused` — the Coolbet footprint pause — is a WARNING only:
+it stops odds sweeping, not real bets. Owner decision 2026-09-24, #139.) Liveness is the UI placer's own attempt ledger
 (`coolbet_placement_attempts` — last attempt = the hourly job ran; last
 `outcome='placed'` = real money moved, so the browser was logged in); a stale
 attempt is a **warning** (no candidates ≠ down), not a blocker. **The API/

@@ -5381,8 +5381,8 @@ def test_system_map_registry_not_drifted():
 
 @test("COOLBET-DAEMONS-PAUSE — footprint daemons honor the global daemons_paused switch")
 def test_coolbet_daemons_pause():
-    """COOLBET-DAEMONS-PAUSE-2026-09-09: the /admin/shadow-bots 'Pause daemons'
-    button flips coolbet_session_state.daemons_paused to calm Imperva. It only
+    """COOLBET-DAEMONS-PAUSE-2026-09-09: the footprint switch (on /admin/feeds since
+    2026-09-24, #139 IA P2) flips coolbet_session_state.daemons_paused to calm Imperva. It only
     works if the FOOTPRINT daemons actually poll it and skip. Pin: the helper
     exists, migration 318 adds the column, and all three footprint entry points
     (odds-snapshot=coolbet_explorer, feed-watchdog, mac-daemon tick) check it."""
@@ -38494,8 +38494,8 @@ def test_coolbet_placement_readiness():
     REAL path — the UI placer (place_coolbet_ui.py) that stakes via the operator's
     logged-in CDP-Chrome browser. The v1 wrongly blocked on the API/FlareSolverr JWT
     and the PAPER mac-daemon tick, and cried BLOCKED while real money was being placed
-    fine through the browser. So the gates are exactly: placement_paused, daemons_paused,
-    ≥1 ui_place_enabled bot. JWT/session_healthy/paper-daemon are non-gating CONTEXT.
+    fine through the browser. So the gates are exactly: placement_paused, real_money_armed,
+    ≥1 ui_place_enabled bot. daemons_paused (footprint) is a warning — it stops sweeping only. JWT/session_healthy/paper-daemon are non-gating CONTEXT.
     Pure `_evaluate_readiness(state, bots, now)` — no DB."""
     from datetime import datetime, timezone, timedelta
     from workers.automation import coolbet_control as cc
@@ -38541,10 +38541,12 @@ def test_coolbet_placement_readiness():
     paused = cc._evaluate_readiness({**green_state, "placement_paused": True,
                                      "placement_paused_reason": "operator test"}, green_bots, now)
     assert paused["can_place_now"] is False and any("paus" in b.lower() for b in paused["blockers"])
-    # daemons_paused (global footprint kill switch) → BLOCKED.
+    # daemons_paused (footprint pause) stops SWEEPING, not the real-money placers
+    # (#139, owner decision 2026-09-24) → still READY, reported as a warning.
     dpaused = cc._evaluate_readiness({**green_state, "daemons_paused": True,
                                       "daemons_paused_reason": "footprint"}, green_bots, now)
-    assert dpaused["can_place_now"] is False and any("daemon" in b.lower() for b in dpaused["blockers"])
+    assert dpaused["can_place_now"] is True and dpaused["blockers"] == [], dpaused["blockers"]
+    assert any("sweeping" in w.lower() for w in dpaused["warnings"]), dpaused["warnings"]
     # no enabled bot → BLOCKED.
     no_bots = cc._evaluate_readiness(green_state,
         [{"bot_name": "bot_coolbet_ou_model_v1", "ui_place_enabled": False}], now)
@@ -54120,11 +54122,10 @@ def test_control_routes_gated():
             assert bad not in src, f"{rel} must not write directly ({bad})"
     audit = _web_path(base + "audit/route.ts").read_text(encoding="utf-8")
     assert "requireSuperadmin()" in audit and ".update(" not in audit and ".insert(" not in audit
-    # #139 review item 6: the legacy /admin/shadow-bots toggle is OFF-only (clean 403 for ON).
-    legacy = _web_path("src/app/api/admin/coolbet-placer-bots/route.ts").read_text(encoding="utf-8")
-    post = legacy[legacy.index("export async function POST("):]
-    assert post.index("if (enabled) {") < post.index(".update("), "ON must be refused before any update"
-    assert "status: 403" in post.split("if (enabled) {")[1][:500] and "/admin/bots" in post.split("if (enabled) {")[1][:500]
+    # #139 IA move P3 (2026-09-24): the two legacy /admin/shadow-bots writers (the OFF-only per-bot
+    # toggle and the direct-UPDATE footprint pause) are DELETED — see ADMIN-CONTROLS-ONE-WRITER.
+    for gone in ("src/app/api/admin/coolbet-placer-bots/route.ts", "src/app/api/admin/coolbet-daemons-pause/route.ts"):
+        assert not _web_path(gone).exists(), f"{gone} must stay deleted (unaudited writer)"
     auth = _web_path("src/lib/admin-auth.ts").read_text(encoding="utf-8")
     assert "is_superadmin" in auth and "OWNER_USER_IDS" in auth
     # the page folder never writes to PostgREST directly either
@@ -54285,6 +54286,72 @@ def test_admin_shared_shell():
     assert 'pathname.startsWith("/admin/")' in chrome
     app_layout = (_web_root / "src/app/(app)/layout.tsx").read_text(encoding="utf-8")
     assert "<PublicChrome" in app_layout
+
+
+@test("FOOTPRINT-PAUSE-NOT-A-MONEY-GATE — the Coolbet footprint pause stops sweeping, never real bets, and every surface says so")
+def test_footprint_pause_not_a_money_gate():
+    """#139 (owner decision 2026-09-24, "only sweeping stops"). `daemons_paused` stops the Coolbet
+    odds sweeps, the feed watchdog and the paper Mac daemon. The real-money placers pass through
+    placement_gate.assert_run_may_place(), which reads only placement_paused + real_money_armed.
+    coolbet_control's readiness used to list the footprint pause as a BLOCKER, so the daily Telegram
+    summary said BLOCKED on a pause that would not have stopped a real bet. Now: the gate ignores it
+    (on purpose), readiness reports it as a warning, and the /admin/bots ladder shows it as an
+    information-only layer that can never block CAN STAKE."""
+    import inspect
+    from datetime import datetime, timezone, timedelta
+    from workers.automation import placement_gate as pg
+    from workers.automation import coolbet_control as cc
+    gate_src = inspect.getsource(pg.assert_run_may_place)
+    assert "daemons" not in gate_src, "owner decision: the footprint pause is NOT a real-money gate"
+    now = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
+    st = {"placement_paused": False, "real_money_armed": True, "daemons_paused": True,
+          "daemons_paused_reason": "imperva", "last_ui_attempt_at": now - timedelta(minutes=5)}
+    r = cc._evaluate_readiness(st, [{"bot_name": "b", "ui_place_enabled": True}], now)
+    assert r["can_place_now"] is True and not any("daemon" in b.lower() for b in r["blockers"]), r
+    assert any("does NOT stop real bets" in w for w in r["warnings"]), r["warnings"]
+    ladder = _web_root / "src/lib/bot-controls/ladder.ts"
+    if not ladder.exists():
+        return
+    src = ladder.read_text(encoding="utf-8")
+    i = src.index('key: "footprint"')
+    block = src[i:src.index("});", i)]
+    assert 'state: "info"' in block and '"blocked"' not in block and '"unknown"' not in block, (
+        "the footprint layer must be information only — it may never block or un-know CAN STAKE")
+    assert "does not stop real bets" in block
+
+
+@test("ADMIN-CONTROLS-ONE-WRITER — footprint switch lives on /admin/feeds only; no admin page writes a control table directly")
+def test_admin_controls_one_writer():
+    """#139 IA moves P2 + P3 (2026-09-24, dev/active/admin-information-architecture.md). The Coolbet
+    footprint pause is a collection lever, so its switch moved from the /admin/bots Controls card to
+    /admin/feeds (still through ControlsProvider → /api/admin/bots/controls → admin_set_control, one
+    control_changes row per change). The sidebar carries a 4th status line so its state stays visible
+    everywhere. /admin/shadow-bots had two UNAUDITED writers for controls (a direct .update() on
+    coolbet_session_state for the footprint, and a legacy per-bot real-money toggle); both routes and
+    both components are deleted and the page shows read-only state with a link."""
+    if not (_web_root / "src").exists():
+        return
+    feeds = _web_path("src/app/(app)/admin/feeds/footprint-control.tsx").read_text(encoding="utf-8")
+    assert 'control="daemons_paused"' in feeds and "ControlsProvider" in feeds
+    import pathlib
+    hits = [f for f in pathlib.Path(_web_root / "src").rglob("*.tsx")
+            if 'control="daemons_paused"' in f.read_text(encoding="utf-8")]
+    assert [h.name for h in hits] == ["footprint-control.tsx"], f"footprint switch rendered in {hits}"
+    page = _web_path("src/app/(app)/admin/feeds/page.tsx").read_text(encoding="utf-8")
+    assert "loadControlState(user.id)" in page and "<FootprintControl" in page
+    status = _web_path("src/components/admin/admin-status.ts").read_text(encoding="utf-8")
+    assert '"Coolbet sweeping"' in status and "daemons_paused" in status
+    for gone in ("src/components/coolbet-daemons-pause.tsx", "src/components/coolbet-placer-toggle.tsx",
+                 "src/app/api/admin/coolbet-daemons-pause/route.ts", "src/app/api/admin/coolbet-placer-bots/route.ts"):
+        assert not _web_path(gone).exists(), f"{gone} must stay deleted"
+    for f in pathlib.Path(_web_root / "src/components/shadow-bots").glob("*.tsx"):
+        t = f.read_text(encoding="utf-8")
+        assert "coolbet-daemons-pause" not in t and "coolbet-placer-bots" not in t, f.name
+    for f in pathlib.Path(_web_root / "src/app/api/admin").rglob("route.ts"):
+        t = f.read_text(encoding="utf-8")
+        for tbl in ("coolbet_session_state", "coolbet_placer_bots"):
+            if f'from("{tbl}")' in t:
+                assert ".update(" not in t and ".upsert(" not in t and ".insert(" not in t, f"{f} writes {tbl} directly"
 
 
 @test("BOT-BOARD-DEV-PREVIEW-NEVER-IN-PROD — the no-login /admin/bots fixture preview is development-only")

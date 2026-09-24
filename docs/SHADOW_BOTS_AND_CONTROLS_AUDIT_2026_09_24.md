@@ -1,5 +1,8 @@
 # Shadow-bots page + the bot control map (2026-09-24)
 
+> **CHANGED 2026-09-24 (#139 IA moves P2/P3):** the legacy `/api/admin/coolbet-placer-bots` and `/api/admin/coolbet-daemons-pause` routes and their `CoolbetPlacerToggle` / `CoolbetDaemonsPause` components were DELETED. Per-bot real-money eligibility is switched on /admin/bots only; the footprint pause (now "Coolbet sweeping") on /admin/feeds only — both through the audited `admin_set_control`. Owner decision the same day: the footprint pause stops odds sweeping, never real bets. The text below is the point-in-time audit.
+
+
 
 > **Review corrections (independent verifier, 2026-09-24) — read these before the body.**
 > 1. The arm→bot mapping is written out **five** times, not four: the live view `clv_sharp_legs` has its own `CASE`.

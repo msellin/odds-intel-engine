@@ -5,8 +5,9 @@ Part of COOLBET-OWN-UNIFIED-FLOW-EPIC (monitor/control surface, sub-item #20).
 
 Why this exists:
 The answer to "is real-money placement possible right now?" was scattered
-across three tables and two kill switches: the operator pause
-(`placement_paused`), the global footprint pause (`daemons_paused`), the
+across three tables and several switches: the operator kill switch
+(`placement_paused`), the arming switch (`real_money_armed`), the footprint pause
+(`daemons_paused` — context only since 2026-09-24: it stops sweeping, not bets), the
 session/JWT health (`session_healthy`, `jwt_exp_at`), the Mac daemon's
 liveness (`mac_daemon_last_tick_at`), and which bots are actually toggled ON
 (`coolbet_placer_bots.ui_place_enabled`). Nobody surface answered all of it
@@ -17,15 +18,17 @@ into one dict with a single boolean `can_place_now` and a list of
 human-readable `blockers`. It is a READ-ONLY status surface: it never places,
 never toggles a switch, never touches a floor or an execute path. It only
 reports what the placer's own gates (`ui_place_enabled_bots`,
-`is_placement_paused`, `is_daemons_paused`) will find when they run.
+`is_placement_paused`, `is_real_money_armed`) will find when they run. The
+footprint pause (`daemons_paused`) is reported as context only: it stops odds
+sweeping, not the real-money placers (#139, owner decision 2026-09-24).
 
 The decision logic is factored into the pure helper `_evaluate_readiness()`
 so it can be tested with no DB. `placement_readiness()` just does the reads
 and hands the rows to the helper.
 
 Design note — the "can place" conjunction mirrors what the real placer
-(`scripts/place_coolbet_ui.py`) and the pause gates
-(`coolbet_state.is_placement_paused` / `is_daemons_paused`) already enforce.
+(`scripts/place_coolbet_ui.py`) and the run-level gate
+(`placement_gate.assert_run_may_place`: placement_paused + real_money_armed) already enforce.
 This surface does NOT introduce a new gate; if it says BLOCKED, the placer
 would place nothing anyway.
 """
@@ -107,10 +110,13 @@ def _evaluate_readiness(state: dict, bots: list[dict], now: datetime | None = No
         blockers.append(
             f"placement paused (operator kill switch): {placement_paused_reason or 'no reason given'}"
         )
-    if daemons_paused:
-        blockers.append(
-            f"daemons paused (global footprint kill switch): {daemons_paused_reason or 'no reason given'}"
-        )
+    # FOOTPRINT-NOT-A-MONEY-GATE (#139, owner decision 2026-09-24): `daemons_paused`
+    # stops the Coolbet odds SWEEPS, the feed watchdog and the paper Mac daemon. It
+    # does NOT stop the real-money placers — `placement_gate.assert_run_may_place()`
+    # reads only placement_paused + real_money_armed, and the owner chose to keep it
+    # that way ("only sweeping stops"). It used to be listed as a blocker here, so the
+    # daily summary said BLOCKED on a pause that would not have stopped a real bet.
+    # It is context now (a warning, added below); the kill switch stops real bets.
     if not enabled_bots:
         blockers.append("no bot toggled ON for placement (coolbet_placer_bots.ui_place_enabled)")
     can_place_now = not blockers
@@ -124,6 +130,11 @@ def _evaluate_readiness(state: dict, bots: list[dict], now: datetime | None = No
     ui_attempt_age_min = _age_minutes(last_ui_attempt_at, now)
     last_real_placement_at = _as_utc(state.get("last_real_placement_at"))
     warnings: list[str] = []
+    if daemons_paused:
+        warnings.append(
+            f"Coolbet sweeping paused (footprint): {daemons_paused_reason or 'no reason given'} — "
+            "odds collection only; this does NOT stop real bets (use placement_paused)"
+        )
     if ui_attempt_age_min is None:
         warnings.append(
             "UI placer has no recorded attempts — verify coolbet-ui-placer is loaded and the Coolbet tab is logged in"
@@ -329,7 +340,7 @@ def format_readiness(r: dict) -> str:
         + (f" — {r.get('real_money_armed_reason')}" if r.get('real_money_armed_reason') else "")
     )
     lines.append(
-        f"  daemons_paused: {r.get('daemons_paused')}"
+        f"  daemons_paused (sweeping only, not a money gate): {r.get('daemons_paused')}"
         + (f" — {r.get('daemons_paused_reason')}" if r.get('daemons_paused') else "")
     )
     lines.append(f"  enabled bots:  {', '.join(r.get('enabled_bots') or []) or '(none)'}")
@@ -362,7 +373,10 @@ def readiness_summary_line(r: dict) -> str:
         warn = f" (⚠️ {'; '.join(r['warnings'])})" if r.get("warnings") else ""
         return f"🟢 PLACEMENT READY ✅ — kill switches clear, {len(r.get('enabled_bots') or [])} bot(s) ON{warn}"
     reasons = "; ".join(r.get("blockers") or ["unknown"])
-    return f"⛔ PLACEMENT BLOCKED — {reasons}"
+    # The footprint pause is a warning, not a blocker (#139, 2026-09-24) — still show it here, or a
+    # paused Coolbet sweep vanishes from the daily summary while placement is disarmed.
+    warn = f" (⚠️ {'; '.join(r['warnings'])})" if r.get("warnings") else ""
+    return f"⛔ PLACEMENT BLOCKED — {reasons}{warn}"
 
 
 def main() -> int:

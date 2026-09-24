@@ -466,7 +466,7 @@ operator-facing surfaces live; most day-to-day work touches these, not the publi
 | `src/app/(app)/admin/shadow-bots/page.tsx` | Shadow-bot board — the main operator view |
 | `src/app/(app)/admin/ops/page.tsx` | Ops status |
 | `src/app/(app)/admin/place/page.tsx` | Placement controls |
-| `src/app/api/admin/coolbet-placer-bots/route.ts` | Per-bot `ui_place_enabled` toggles |
+| `src/app/api/admin/bots/controls/route.ts` | Every admin control write (per-bot real-money eligibility, /picks, pauses) → the audited `admin_set_control`. The legacy `coolbet-placer-bots` / `coolbet-daemons-pause` routes were deleted 2026-09-24 (#139 IA P3) |
 | `src/app/api/v1/track-record/route.ts` | Public track-record API |
 | `src/app/api/v1/upcoming/route.ts` | Public upcoming-picks API |
 | `src/app/api/stripe/webhook/route.ts` | Stripe webhook — **vestigial, there is no checkout route** |
