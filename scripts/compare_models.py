@@ -90,7 +90,8 @@ def main():
                    help="Restrict to one market (e.g. '1x2_home').")
     args = p.parse_args()
 
-    where = ["model_version IN (%s, %s)", "source = 'ensemble'"]
+    # #147: the candidate (shadow) version is written as source='ensemble_shadow'.
+    where = ["model_version IN (%s, %s)", "source IN ('ensemble', 'ensemble_shadow')"]
     params: list = [args.version_a, args.version_b]
     if args.since:
         where.append("created_at >= %s")

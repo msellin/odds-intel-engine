@@ -555,9 +555,9 @@ def check_model_drift() -> None:
     """
     rows = execute_query("""
         WITH daily AS (
-            SELECT created_at::date AS d, AVG(probability) AS mean_prob
+            SELECT created_at::date AS d, AVG(model_probability) AS mean_prob
             FROM predictions
-            WHERE market = '1x2_home'
+            WHERE market = '1x2_home' AND source = 'ensemble'   -- #147: the old column name did not exist
               AND created_at >= NOW() - INTERVAL '14 days'
             GROUP BY d
         ),

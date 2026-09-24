@@ -110,7 +110,8 @@ def main() -> int:
                p.match_id, p.market, p.model_version AS mv,
                p.model_probability::float AS prob
           FROM predictions p JOIN matches m ON m.id = p.match_id
-         WHERE p.source='ensemble' AND m.status='finished' AND m.score_home IS NOT NULL
+         WHERE p.source IN ('ensemble', 'ensemble_shadow')   -- #147: shadow versions have their own source
+           AND m.status='finished' AND m.score_home IS NOT NULL
            AND m.date >= %s AND p.market = ANY(%s)
            AND p.created_at <= m.date - (%s || ' hours')::interval
            AND (%s::text[] IS NULL OR p.model_version = ANY(%s::text[]))

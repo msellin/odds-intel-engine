@@ -17,6 +17,13 @@ rows to `predictions` with `model_version=<shadow>`.
 It is running today: `source='xgboost'` carries **both** `v20260705` and
 `v20260712` with **4,770 shared match+market pairs** — a proper paired sample.
 
+> **CHANGED 2026-09-24 (#147, migration 419):** shadow/candidate rows now have their OWN sources —
+> **`ensemble_shadow`** and **`xgboost_shadow`** (existing rows moved by their `shadow=` reasoning marker).
+> Most readers of `source='ensemble'` never filtered `model_version`, so since 2026-08-26 they had been
+> mixing the candidate in (calibration fits, ML ETL, shadow passes, in-play, triggers, previews).
+> `source='ensemble'` / `'xgboost'` = production only now; A/B = query both sources, as
+> `compare_models.py` does. The paragraph below describes the state before that.
+
 **Why this was nearly missed:** shadow rows are written with
 **`source='xgboost'`, not `source='ensemble'`**. A check for version overlap
 filtered on `source='ensemble'` returns **zero**, which looks exactly like "the
@@ -27,7 +34,8 @@ infrastructure does not exist". It does. Query `source='xgboost'`.
 | source | what it is |
 |---|---|
 | `ensemble` | the blended production probability the bots actually bet on |
-| `xgboost` | raw XGB component — **and where shadow/candidate versions land** |
+| `xgboost` | raw XGB component (production only since #147, 2026-09-24) |
+| `ensemble_shadow` / `xgboost_shadow` | the candidate (shadow) model's rows — #147, migration 419 |
 | `poisson` | raw Poisson component (also all the `ah_*` markets) |
 | `af` | API-Football's own prediction, not ours |
 | `national_team_v1` | separate NT model |

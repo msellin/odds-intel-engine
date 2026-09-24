@@ -55444,5 +55444,32 @@ def test_newplus_ev_bots():
     assert "'experimental', false" in mig and mig.count("'experimental', false") == 2, "paper + hidden from /picks"
 
 
+@test("PREDICTIONS-SHADOW-OWN-SOURCE — #147: candidate-model rows never share source with production")
+def test_predictions_shadow_own_source():
+    """#147 PREDICTIONS-1X2-VERSION-MIXING. The shadow (candidate) model's rows were written
+    with source='ensemble'/'xgboost' and told apart only by model_version, which ~15 readers
+    never filter — calibration fits, the ML ETL, shadow passes, in-play, triggers, previews
+    all mixed the candidate in. Now: *_shadow sources, existing rows migrated, the two A/B
+    readers read both, fit_platt keyed on the 1X2 head's version, drift alert query valid."""
+    pipe = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
+    assert '"source": "ensemble_shadow",' in pipe and '"source": "xgboost_shadow",' in pipe
+    import re as _re
+    for m in _re.finditer(r'"reasoning": f"data_tier=\{data_tier\} shadow=', pipe):
+        block = pipe[max(0, m.start() - 700):m.start()]
+        assert '_shadow",' in block.split('"source":')[-1], "every shadow= row must carry a *_shadow source"
+    mig = _engine_path("supabase/migrations/419_predictions_shadow_source.sql").read_text(encoding="utf-8")
+    assert "SET source = 'ensemble_shadow'" in mig and "SET source = 'xgboost_shadow'" in mig
+    assert mig.count("reasoning LIKE '%shadow=%'") == 2
+    cm = _engine_path("scripts/compare_models.py").read_text(encoding="utf-8")
+    assert "source IN ('ensemble', 'ensemble_shadow')" in cm, "A/B must still see the candidate"
+    sb = _engine_path("scripts/model_version_clv_scoreboard.py").read_text(encoding="utf-8")
+    assert "p.source IN ('ensemble', 'ensemble_shadow')" in sb
+    sch = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    assert 'fit_and_store(model_version=os.getenv("MODEL_VERSION"))' not in sch
+    assert '_resolve_version("1x2")' in sch
+    ha = _engine_path("workers/jobs/health_alerts.py").read_text(encoding="utf-8")
+    assert "AVG(probability)" not in ha and "AVG(model_probability)" in ha
+
+
 if __name__ == "__main__":
     main()

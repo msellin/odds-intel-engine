@@ -3475,7 +3475,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     pending_pred_rows.append({
                         "match_id": match_id,
                         "market": market,
-                        "source": "xgboost",
+                        # #147: shadow rows get their OWN source, so every reader of
+                        # source='xgboost' sees production only (most never filtered
+                        # model_version — the blend-weight fit pooled both).
+                        "source": "xgboost_shadow",
                         "model_prob": p,
                         "implied_prob": 1 / odds_val,
                         "edge": p - (1 / odds_val),
@@ -3567,7 +3570,12 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         pending_pred_rows.append({
                             "match_id": match_id,
                             "market": market,
-                            "source": "ensemble",
+                            # #147 PREDICTIONS-1X2-VERSION-MIXING: its own source. ~15
+                            # readers query source='ensemble' without a model_version
+                            # filter (calibration fits, ML ETL, shadow passes, in-play,
+                            # triggers, previews) and were mixing this row in since
+                            # 2026-08-26. compare_models / the CLV scoreboard read both.
+                            "source": "ensemble_shadow",
                             "model_prob": float(_sh_prob),
                             "implied_prob": 1 / odds_val,
                             "edge": float(_sh_prob) - (1 / odds_val),
