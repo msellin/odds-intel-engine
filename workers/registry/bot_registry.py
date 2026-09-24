@@ -249,9 +249,18 @@ BOTS: list[BotSpec] = [
     # cross-checks single-market sharp floors against pick_triggers' Stage-A
     # config, and this rule is not that engine — it is a standalone publisher
     # whose constants are locked by PICKS-FORWARD-TEST-RULE-LOCKED instead.
-    BotSpec("bot_sharp_forward_test_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5",
+    # SPLIT BY MARKET 2026-09-24 ([[#122]], migration 402): the parent
+    # bot_sharp_forward_test_v1 is retired; its picks are OWNED by market. Same rule,
+    # same pre-registered test — bookkeeping only. Market labels carry "(forward test)"
+    # so the drift test does not cross-check them against pick_triggers' Stage-A floors.
+    BotSpec("bot_sharp_1x2_v1", FAM_FORWARD_TEST, "1x2 (forward test)",
             ANCHOR_SHARP, 0.03, None, False,
-            "The PUBLISHED picks. Pre-registered forward test started 2026-09-14: best book price beats the Shin-de-vigged Pinnacle line by >=3%, odds <=4.0 (a CAP, not a floor), anchor and bet quote within 60 min, top 8/day. Uses NO model output. Flat 1 unit, no Kelly, no bankroll. Writes NO simulated_bets and NO shadow_bets — read-through only, via picks_forward_test_shadow. Prior: +5.5% ROI backtest, 95% CI [-0.7,+11.7] = NO DEMONSTRATED EDGE. Stops at n=200/400 on margin-corrected CLV, promote/kill at n=800 on the ROI CI. Junk-anchor negative control runs alongside, unpublished. Rule locked in dev/active/picks-forward-test-preregistration.md."),
+            "1x2 half of the published sharp picks. " + "The PUBLISHED picks. Pre-registered forward test started 2026-09-14: best book price beats the Shin-de-vigged Pinnacle line by >=3%, odds <=4.0 (a CAP, not a floor), anchor and bet quote within 60 min, top 8/day. Uses NO model output. Flat 1 unit, no Kelly, no bankroll. Writes NO simulated_bets and NO shadow_bets — read-through only, via picks_forward_test_shadow. Prior: +5.5% ROI backtest, 95% CI [-0.7,+11.7] = NO DEMONSTRATED EDGE. Stops at n=200/400 on margin-corrected CLV, promote/kill at n=800 on the ROI CI. Junk-anchor negative control runs alongside, unpublished. Rule locked in dev/active/picks-forward-test-preregistration.md.",
+            twin="bot_sharp_ou_v1"),
+    BotSpec("bot_sharp_ou_v1", FAM_FORWARD_TEST, "O/U 2.5 (forward test)",
+            ANCHOR_SHARP, 0.03, None, False,
+            "O/U 2.5 half of the published sharp picks (clv_sharp +0.67% n=22 at the split; retire on its own record if its CI is entirely below 0 at n >= 100). " + "The PUBLISHED picks. Pre-registered forward test started 2026-09-14: best book price beats the Shin-de-vigged Pinnacle line by >=3%, odds <=4.0 (a CAP, not a floor), anchor and bet quote within 60 min, top 8/day. Uses NO model output. Flat 1 unit, no Kelly, no bankroll. Writes NO simulated_bets and NO shadow_bets — read-through only, via picks_forward_test_shadow. Prior: +5.5% ROI backtest, 95% CI [-0.7,+11.7] = NO DEMONSTRATED EDGE. Stops at n=200/400 on margin-corrected CLV, promote/kill at n=800 on the ROI CI. Junk-anchor negative control runs alongside, unpublished. Rule locked in dev/active/picks-forward-test-preregistration.md.",
+            twin="bot_sharp_1x2_v1"),
     # OWN Phase 1b (2026-09-15) — the in-play slow-state RIG. Two paper bots, one
     # measurement: the LIVE arm prices the two LOCKED triggers (0-0 at 35-54' ->
     # under 2.5; two-goal lead at 70-89' -> the leader; both at <= 2.20) at

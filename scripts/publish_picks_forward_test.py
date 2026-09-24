@@ -701,7 +701,8 @@ def funnel_rows(pool: list[dict], picked: list[dict], source: str,
             bot = {"B": "bot_consensus_b_v1", "C": "bot_consensus_c_v1",
                    "D": "bot_consensus_d_v1"}.get(c.get("grade"), "bot_consensus_c_v1")
         else:
-            bot = "bot_sharp_forward_test_v1"
+            # [[#122]] the sharp arm is owned by market since migration 402
+            bot = "bot_sharp_ou_v1" if c["market"] == "over_under_25" else "bot_sharp_1x2_v1"
         anchor = c.get("anchor_bookmaker") or "Pinnacle"
         qt = c.get("odds_quoted_at")
         out.append({

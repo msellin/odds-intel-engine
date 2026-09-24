@@ -43506,26 +43506,26 @@ def test_picks_forward_test_bot_not_in_bet_ledgers():
     from workers.registry.bot_registry import (
         by_name, FAM_FORWARD_TEST, ANCHOR_SHARP,
     )
-    spec = by_name("bot_sharp_forward_test_v1")
-    assert spec is not None, (
-        "bot_sharp_forward_test_v1 is not in the registry. It generates the "
-        "picks that are published to readers — it cannot be a silent strategy."
-    )
-    assert spec.family == FAM_FORWARD_TEST and spec.anchor == ANCHOR_SHARP
-    assert spec.real_money is False, "the forward test stakes nothing"
-    assert spec.edge_floor == 0.03, "the pre-registered sharp floor is 3%"
-    assert spec.odds_floor is None, (
+    # [[#122]] 2026-09-24: the published sharp picks are owned by market — two
+    # registry entries, same pre-registered rule. Each half must satisfy everything
+    # the single bot used to.
+    for _name in ("bot_sharp_1x2_v1", "bot_sharp_ou_v1"):
+      spec = by_name(_name)
+      assert spec is not None, (
+        f"{_name} is not in the registry. It generates picks that are published "
+        "to readers — it cannot be a silent strategy.")
+      assert spec.family == FAM_FORWARD_TEST and spec.anchor == ANCHOR_SHARP
+      assert spec.real_money is False, "the forward test stakes nothing"
+      assert spec.edge_floor == 0.03, "the pre-registered sharp floor is 3%"
+      assert spec.odds_floor is None, (
         "odds_floor must stay None. 4.0 in this rule is a CAP — above it the "
         "edge collapses into longshot noise — and every other odds number in "
-        "the registry is a MINIMUM. Storing a cap in a field called odds_floor "
-        "reads as the exact opposite of what the rule does."
-    )
-    # the one-liner must carry the honest prior, not just the rule
-    assert "NO DEMONSTRATED EDGE" in spec.one_liner, (
+        "the registry is a MINIMUM.")
+      assert "NO DEMONSTRATED EDGE" in spec.one_liner, (
         "the registry entry no longer states that this rule has no demonstrated "
-        "edge. Its backtest CI includes zero; a one-liner that quotes +5.5% "
-        "without that is how a prior becomes a claim."
-    )
+        "edge. Its backtest CI includes zero.")
+    assert by_name("bot_sharp_forward_test_v1") is None, (
+        "the parent is retired (migration 402) — its picks belong to the two halves")
 
     # DB invariants — skip cleanly offline.
     try:
@@ -43533,11 +43533,11 @@ def test_picks_forward_test_bot_not_in_bet_ledgers():
         rows = execute_query(
             """SELECT
                  (SELECT count(*) FROM simulated_bets
-                   WHERE bot_id = (SELECT id FROM bots
-                                    WHERE name='bot_sharp_forward_test_v1')) AS sim,
+                   WHERE bot_id IN (SELECT id FROM bots WHERE name IN
+                     ('bot_sharp_forward_test_v1','bot_sharp_1x2_v1','bot_sharp_ou_v1'))) AS sim,
                  (SELECT count(*) FROM shadow_bets
-                   WHERE bot_id = (SELECT id FROM bots
-                                    WHERE name='bot_sharp_forward_test_v1')) AS shad,
+                   WHERE bot_id IN (SELECT id FROM bots WHERE name IN
+                     ('bot_sharp_forward_test_v1','bot_sharp_1x2_v1','bot_sharp_ou_v1'))) AS shad,
                  (SELECT count(*) FROM picks_forward_test_shadow)            AS proj,
                  (SELECT count(*) FROM picks_forward_test)                   AS base,
                  (SELECT starting_bankroll FROM bots
@@ -44664,7 +44664,7 @@ def test_performance_public_is_calibrated_or_beta():
         "the filter will drop them — they are 'experimental' in the DB. Those "
         "bots produce the picks readers receive; their record is the whole point."
     )
-    for _b in ("bot_sharp_forward_test_v1", "bot_consensus_b_v1", "bot_consensus_c_v1", "bot_consensus_d_v1"):
+    for _b in ("bot_sharp_1x2_v1", "bot_sharp_ou_v1", "bot_consensus_b_v1", "bot_consensus_c_v1", "bot_consensus_d_v1"):
         assert _b in page_code, f"{_b} is not injected into the leaderboard"
 
     # and every listed row must still be LABELLED
@@ -44684,7 +44684,9 @@ def test_performance_public_is_calibrated_or_beta():
         # picks_public_all's `bot` label, and leave them out of the hidden check
         # — they are injected below the filter from their own ledger.
         from workers.registry.bot_registry import BOTS as _BOTS, FAM_FORWARD_TEST as _FT
-        _ledger = [b.name for b in _BOTS if b.family == _FT]
+        # + the parent retired by migration 402 ([[#122]]): until that migration has
+        # run it is still active in the DB and still labels the sharp rows.
+        _ledger = [b.name for b in _BOTS if b.family == _FT] + ["bot_sharp_forward_test_v1"]
         rows = _eq("""SELECT b.name, b.maturity_label AS ml,
                              (SELECT count(*) FROM simulated_bets s
                                WHERE s.bot_id = b.id
@@ -49715,6 +49717,35 @@ def test_web_no_orphan_fetchers():
     fell into for three tables. Guard: every `export (async) function` in the file is
     referenced somewhere else in the web src. Skipped when the web repo is absent (CI).
     """
+@test("SHARP-BOT-SPLIT-BY-MARKET — #122 the sharp arm is owned by market, the stopping-rule view untouched")
+def test_sharp_bot_split_by_market():
+    """[[#122]], 2026-09-24, owner: split ONLY the sharp bot. Bookkeeping, not a rule
+    change: the live arm's picks are owned by market (1x2 -> bot_sharp_1x2_v1, O/U 2.5
+    -> bot_sharp_ou_v1). Guards:
+    1. migration 402 labels by market in picks_public_all AND clv_sharp_legs, and adds
+       a NEW per-market summary view with a read grant — while NOT redefining
+       picks_forward_test_summary, which the pre-registered stopping rules read;
+    2. the candidate funnel names the same two bots;
+    3. /performance injects both halves, each reading its own market.
+    """
+    from pathlib import Path
+    root = Path(__file__).parent.parent
+    mig = (root / "supabase" / "migrations" / "402_split_sharp_bot_by_market.sql").read_text()
+    assert mig.count("THEN 'bot_sharp_ou_v1'::text") == 2, "both views must route O/U rows to bot_sharp_ou_v1"
+    assert "ELSE 'bot_sharp_1x2_v1'::text" in mig and "THEN 'bot_sharp_1x2_v1'::text" in mig
+    assert "CREATE OR REPLACE VIEW picks_forward_test_summary_by_market" in mig
+    assert "GRANT SELECT ON picks_forward_test_summary_by_market TO anon" in mig
+    assert "VIEW picks_forward_test_summary AS" not in mig, "the stopping-rule view must not change"
+    pub = (root / "scripts" / "publish_picks_forward_test.py").read_text()
+    assert '"bot_sharp_ou_v1" if c["market"] == "over_under_25" else "bot_sharp_1x2_v1"' in pub
+    page = root.parent / "odds-intel-web" / "src" / "app" / "(app)" / "performance" / "page.tsx"
+    if page.exists():
+        src = page.read_text()
+        assert '{ arm: "live", market: "1x2", bot: "bot_sharp_1x2_v1" }' in src
+        assert '{ arm: "live", market: "over_under_25", bot: "bot_sharp_ou_v1" }' in src
+        assert "getPicksForwardTestSummary(arm, grade, market)" in src
+
+
     import re
     import subprocess
     from pathlib import Path
