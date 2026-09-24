@@ -53377,6 +53377,10 @@ def test_anon_least_privilege():
     }, f"anon grant list changed: {sorted(granted)} — update this test deliberately"
     for base in ("picks_forward_test", "picks_board", "shadow_bets", "coolbet_placement_attempts"):
         assert base not in granted, f"{base} must stay private (serve it through a *_public view)"
+    # 405: new FUNCTIONS are not executable by anon/PUBLIC by default either (a future
+    # SECURITY DEFINER function would otherwise be public the moment it is created)
+    f405 = _engine_path("supabase/migrations/405_anon_no_default_function_execute.sql").read_text()
+    assert "REVOKE EXECUTE ON FUNCTIONS FROM anon" in f405 and "REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC" in f405
     for fn in ("get_best_match_odds", "get_latest_match_odds", "get_historical_match_odds",
                "get_bookmaker_count_for_match", "handle_new_user"):
         assert _re.search(rf"REVOKE EXECUTE ON FUNCTION public\.{fn}\(.*FROM anon, PUBLIC", sql), fn

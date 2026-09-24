@@ -1333,7 +1333,9 @@ the table count, or `pg_default_acl` contains `anon=r`.
 `createSupabasePublic()` reads (5 base tables + the owner-rights `*_public` / summary views),
 revoke EXECUTE on the SECURITY DEFINER odds functions from anon and PUBLIC (a definer function
 bypasses a table revoke), and remove anon from the default privileges so a new table is
-private until someone grants it on purpose. Smoke `ANON-LEAST-PRIVILEGE` pins the list.
+private until someone grants it on purpose. Migration 405 (from the independent review) does
+the same for FUNCTIONS — default EXECUTE removed from anon and PUBLIC, so a future SECURITY
+DEFINER function is not public the moment it is created. Smoke `ANON-LEAST-PRIVILEGE` pins both.
 
 **Out of band.** `pg_stat_statements`, `pg_stat_statements_info`, `hypopg_list_indexes`,
 `hypopg_hidden_indexes` were granted by `postgres` at extension install; the migration role
