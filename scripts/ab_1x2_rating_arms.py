@@ -178,7 +178,7 @@ def fit_predict(arm: str, tr: pd.DataFrame, te: pd.DataFrame, val_days: int = 60
     if arm == "DP":
         return te[["dp_ph", "dp_pd", "dp_pa"]].to_numpy()
     cols = ARM_FEATURES[arm]
-    if arm in ("E", "PI", "D8", "D8+"):
+    if arm in ("E", "PI", "D8") or arm.startswith("D8+"):
         from sklearn.linear_model import LogisticRegression
         from sklearn.preprocessing import StandardScaler
         from sklearn.pipeline import make_pipeline

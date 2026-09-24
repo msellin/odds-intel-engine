@@ -54999,5 +54999,25 @@ def test_combined_1x2():
     assert "INTO predictions" not in job and "to_datetime" not in job
 
 
+@test("PLAYER-STRENGTH-LEAK-GUARD — #141 round 3c XI features never read the same day's player ratings")
+def test_player_strength_leak_guard():
+    """PLAYER-STRENGTH ([[#141]] round 3c). A player's rating from match X must not feed
+    match X's own XI feature (API-Football ratings are post-match and track the result),
+    nor any fixture the same day. Behavioural, on synthetic data."""
+    import pandas as pd
+    from workers.model.player_strength_1x2 import build_xi_features, PRIOR
+    fx = pd.DataFrame({"fixture_id": [1, 2, 3], "kickoff": [0.0, 3600.0, 86400.0 * 5],
+                       "home_af": [10, 30, 10], "away_af": [20, 40, 20]})
+    xi10, xi20 = ",".join(str(i) for i in range(100, 111)), ",".join(str(i) for i in range(200, 211))
+    lu = pd.DataFrame({"fixture_id": [1, 1, 3, 3], "team_id": [10, 20, 10, 20], "xi": [xi10, xi20, xi10, xi20]})
+    pl = pd.DataFrame({"fixture_id": [1] * 22, "player_id": list(range(100, 111)) + list(range(200, 211)),
+                       "minutes": [90] * 22, "rating": [9.0] * 11 + [5.0] * 11})
+    out = build_xi_features(fx, pl, lu).set_index("fixture_id")
+    assert abs(out.loc[1, "xi_h"] - PRIOR) < 1e-9 and abs(out.loc[1, "xi_diff"]) < 1e-9, \
+        "fixture 1 read its own post-match ratings"
+    assert out.loc[3, "xi_diff"] > 0.5, "ratings from fixture 1 must reach fixture 3 five days later"
+    assert out.loc[3, "prev_diff"] > 0.5, "PREV (last known XI) must be available by fixture 3"
+
+
 if __name__ == "__main__":
     main()

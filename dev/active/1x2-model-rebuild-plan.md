@@ -340,3 +340,29 @@ CLOSING prices, so as a betting edge it is only as good as the price timing (OPE
 (3) API-Football's prediction adds information only where no book prices the match — matches the owner's
 note that it is worse than uniform on its own. (4) Tonybet's Sportradar fair probabilities
 (`book_fair_probs`, 305 fixtures) are a candidate extra book once they have history.
+
+## Pre-registration — ROUND 3c: PLAYER / LINEUP strength (2026-09-24, BEFORE the run)
+Evidence: team + player ratings together significantly beat either alone (Arntzen & Hvattum 2021);
+a player-rating model returned significant profits against bookmaker 1X2 prices (Holmes & McHale 2024).
+Data: `scripts/fetch_fixture_details_cache.py` — `/fixtures?ids=` (20 fixtures per call with nested
+lineups, players, statistics), ~19.7k calls for 394,654 fixtures (our finished matches since 2022 +
+rating_history_results), owner-approved 2026-09-24 ("use all today's quota minus headroom"); cache only.
+
+**Feature (walk-forward, date-batched like the ratings):** each player's rating = minutes-weighted,
+exponentially decayed mean of API-Football's per-match rating (players with ≥ 20 minutes), shrunk to a
+prior with weight k = 3 matches; XI strength = mean over the starting XI. Features: `xi_diff` (home XI −
+away XI) and `xi_delta_home/away` (this XI − the team's own recent XI average — rotation / missing
+regulars). Two variants of which XI is used: **ACTUAL** (the confirmed XI — what a prediction ~1 h before
+kickoff sees) and **PREV** (the team's previous XI — what a morning prediction sees).
+
+**The family, fixed at 4 (Holm m = 4), each vs the same model without the XI features:**
+| id | model | XI | prices |
+|---|---|---|---|
+| L1 | rating model H-D8+ | ACTUAL | — |
+| L2 | combined COMB-HYB | ACTUAL | OPEN |
+| L3 | combined COMB-HYB | ACTUAL | CLOSE |
+| L4 | combined COMB-HYB | PREV | OPEN |
+Selected/tuned (half-life ∈ {180, 365} d) on 08-01..08-30, confirmed ONCE on 08-31.. . **PASS = Δ log-loss
+< 0 with Holm-adjusted p < 0.05.** Rows without lineups keep the no-XI prediction (coverage reported).
+**Expected:** L1 passes clearly (lineups carry what score ratings lag on); L2 small gain; L3 ≈ 0 (closing
+prices already contain the lineup news); L4 ≈ 0.

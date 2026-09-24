@@ -40,7 +40,10 @@ def assign_groups(d: pd.DataFrame) -> pd.DataFrame:
     return d
 
 
-def design(d: pd.DataFrame, group: str, use_af: bool | None = None) -> np.ndarray:
+def design(d: pd.DataFrame, group: str, use_af: bool | None = None,
+           extra: list[str] | None = None) -> np.ndarray:
+    """`extra`: optional additional numeric columns (e.g. round-3c XI features); NaN -> 0
+    plus one has-flag per column, so a missing lineup is not read as a real zero."""
     if use_af is None:
         use_af = group == "none"
     cols = [lo(d[["r_h", "r_d", "r_a"]].to_numpy())]
@@ -52,10 +55,13 @@ def design(d: pd.DataFrame, group: str, use_af: bool | None = None) -> np.ndarra
         afp = d[["af_h", "af_d", "af_a"]].astype(float).fillna(1 / 3).to_numpy()
         th = d["af_th"].astype(float).fillna(0.5).clip(0.02, 0.98).to_numpy()
         cols += [lo(afp), np.log(th / (1 - th))[:, None], d["has_af"].to_numpy(float)[:, None]]
+    for c in extra or ():
+        v = d[c].astype(float)
+        cols += [v.fillna(0.0).to_numpy()[:, None], v.notna().to_numpy(float)[:, None]]
     return np.hstack(cols)
 
 
-def fit(d: pd.DataFrame) -> dict:
+def fit(d: pd.DataFrame, extra: list[str] | None = None) -> dict:
     """d: finished matches with r_*, c_*, n_books, pin_*, af_*, y. Returns JSON-able params."""
     from sklearn.linear_model import LogisticRegression
     d = assign_groups(d)
@@ -64,9 +70,9 @@ def fit(d: pd.DataFrame) -> dict:
         a = d[d.group == g]
         if len(a) < MIN_ROWS:
             continue
-        m = LogisticRegression(max_iter=3000, C=1.0).fit(design(a, g), a.y)
+        m = LogisticRegression(max_iter=3000, C=1.0).fit(design(a, g, extra=extra), a.y)
         params[g] = {"classes": [int(c) for c in m.classes_], "coef": m.coef_.tolist(),
-                     "intercept": m.intercept_.tolist(), "n": int(len(a))}
+                     "intercept": m.intercept_.tolist(), "n": int(len(a)), "extra": list(extra or [])}
     return params
 
 
@@ -81,7 +87,7 @@ def predict(d: pd.DataFrame, params: dict) -> tuple[np.ndarray, np.ndarray]:
         mk = d.group.to_numpy() == g
         if not mk.any():
             continue
-        z = design(d[mk], g) @ np.asarray(prm["coef"]).T + np.asarray(prm["intercept"])
+        z = design(d[mk], g, extra=prm.get("extra")) @ np.asarray(prm["coef"]).T + np.asarray(prm["intercept"])
         z = np.exp(z - z.max(1, keepdims=True))
         z = z / z.sum(1, keepdims=True)
         out = np.zeros((mk.sum(), 3))
