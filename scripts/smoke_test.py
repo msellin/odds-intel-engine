@@ -52914,11 +52914,19 @@ def test_book_footprint():
         _seen = []
         _h = _lg.Handler(); _h.emit = lambda r: _seen.append(r.getMessage())
         fp.log.addHandler(_h)
+        import logging as _lg
+        _seen = []
+        _h = _lg.Handler(); _h.emit = lambda r: _seen.append(r.getMessage())
+        fp.log.addHandler(_h)
         try:
             fp.check("Coolbet")
             raise AssertionError("check() did not refuse at the budget")
         except fp.FootprintBudgetExceeded:
             pass
+        finally:
+            fp.log.removeHandler(_h)
+        # a refusal must say which process refused and what it believed (2026-09-24)
+        assert any("footprint REFUSED Coolbet" in m and "pid=" in m for m in _seen), _seen
         finally:
             fp.log.removeHandler(_h)
         # a refusal must say which process refused and what it believed (2026-09-24)

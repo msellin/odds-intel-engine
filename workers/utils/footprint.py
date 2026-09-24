@@ -26,6 +26,7 @@ from __future__ import annotations
 import atexit
 import logging
 import os
+import sys
 import threading
 import time
 from collections import defaultdict
@@ -101,9 +102,16 @@ def check(book: str) -> None:
         return
     with _lock:
         local = _pending[book]["requests"]
-    if _db_count(book) + local >= cap:
+    db = _db_count(book)
+    if db + local >= cap:
         with _lock:
             _pending[book]["refused"] += 1
+        # #110 follow-up (2026-09-24): refusals were counted but never logged, and ~17/h
+        # showed up for Coolbet in hours whose DB total was 220-340 of 500. Log what THIS
+        # process believed at the moment it refused, so the refusing caller can be found.
+        log.warning("footprint REFUSED %s: db=%d local=%d cap=%d pid=%d proc=%s thread=%s",
+                    book, db, local, cap, os.getpid(), os.path.basename(sys.argv[0] or "?"),
+                    threading.current_thread().name)
         _maybe_flush()
         raise FootprintBudgetExceeded(
             f"{book}: hourly request budget of {cap} spent — request not sent "
