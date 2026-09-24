@@ -51676,6 +51676,50 @@ def test_coolbet_sweep_observable():
         "the job invisible in the first place"
 
 
+@test("WHEATCROFT-REPLICATION — #089 GAP update, promotion inheritance, fixed family, same rows")
+def test_wheatcroft_replication():
+    """[[#089]], 2026-09-24. The faithful replication of Wheatcroft (2020, IJF) decides
+    whether our shots-vs-goals null was an unfaithful build or a real absence of effect.
+    What keeps it faithful and honest:
+
+    1. The GAP update is his eqs (1)-(2): additive, floored at 0, and the rating is read
+       BEFORE the match updates it (checked on a hand-computed two-match example).
+    2. A team new to a league inherits the mean rating of the teams that left it.
+    3. The family is fixed at 2 inputs x 3 markets, Holm m = 6.
+    4. Both inputs train and score on the SAME rows (has_sc on the training mask) —
+       without it the goals arm trained on shot-less National League rows and scored
+       different fixtures (found on the first quick run).
+    """
+    from pathlib import Path
+    import numpy as np
+    import pandas as pd
+    src = (Path(__file__).parent.parent / "scripts" / "wheatcroft_replication.py").read_text()
+    assert 'INPUTS = ("shots_corners", "goals")' in src and 'for mk in ("M1", "M2", "M3")' in src
+    assert "& df.has_sc.to_numpy()" in src, "both inputs must train on the same (shots-covered) rows"
+    from scripts.wheatcroft_replication import gap_sums, logit_fit, logit_pred
+    df = pd.DataFrame({"lg": ["E0", "E0"], "season": ["0506", "0506"], "h": ["A", "B"], "a": ["B", "A"],
+                       "hg": [2.0, 1.0], "ag": [0.0, 1.0], "hs": [10.0, 4.0], "as_": [4.0, 6.0],
+                       "hc": [0.0, 0.0], "ac": [0.0, 0.0]})
+    out = gap_sums(df, "shots_corners", (0.5, 1.0, 1.0))
+    # match 1: all ratings 0 -> sum 0. Update (λφ=0.5, 1−φ=0): A.H_a += .5*10=5, A.H_d += .5*4=2,
+    # B.A_a += .5*4=2, B.A_d += .5*10=5. Match 2 (B home, A away): B.H_a+B.H_d+A.A_a+A.A_d = 0.
+    assert out[0] == 0.0 and out[1] == 0.0, out
+    df2 = df.copy(); df2.loc[1, ["h", "a"]] = ["A", "B"]
+    out2 = gap_sums(df2, "shots_corners", (0.5, 1.0, 1.0))
+    assert out2[1] == 5 + 2 + 2 + 5, out2              # A home again: H_a 5 + H_d 2, B away: A_a 2 + A_d 5
+    # promotion: C replaces B in 0607 and inherits B's ratings (the only leaver)
+    df3 = pd.concat([df2, pd.DataFrame({"lg": ["E0"], "season": ["0607"], "h": ["A"], "a": ["C"],
+                     "hg": [0.0], "ag": [0.0], "hs": [1.0], "as_": [1.0], "hc": [0.0], "ac": [0.0]})],
+                    ignore_index=True)
+    out3 = gap_sums(df3, "shots_corners", (0.5, 1.0, 1.0))
+    assert out3[2] > 0 and np.isfinite(out3[2]), out3
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=4000); y = (rng.random(4000) < 1 / (1 + np.exp(-(0.3 + 1.2 * x)))).astype(float)
+    w = logit_fit(x[:, None], y)
+    assert abs(w[0] - 0.3) < 0.12 and abs(w[1] - 1.2) < 0.15, w
+    assert 0 < logit_pred(w, np.array([[0.0]]))[0] < 1
+
+
 @test("OU-PRICE-MOVE-SIGNAL — #090 (a) keeps its later-close guard, pre-kickoff bound and control")
 def test_ou_price_move_signal():
     """[[#090]] (a), 2026-09-23. The rating-vs-early-price residual predicts Pinnacle's
@@ -52811,6 +52855,18 @@ def test_odds_refresh_tomorrow_evening():
     src = (Path(__file__).resolve().parent.parent / "workers/scheduler.py").read_text()
     job = src[src.index("def job_odds_refresh"):src.index("def job_odds_pre_kickoff")]
     assert "ODDS_REFRESH_TOMORROW_FROM_UTC" in job and "timedelta(days=1)" in job
+
+
+@test("BETFAIR-GEO-PROBE — the one-shot exchange probe is read-only and uses the site's own query")
+def test_betfair_geo_probe():
+    """#115 (2026-09-24): Betfair Exchange served no markets to the Finnish VPS. The
+    owner may run this probe on a throwaway UK/IE VM before renting one. It must stay a
+    2-request, account-free read — no login, no order endpoints."""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent / "ops/betfair_exchange_geo_probe.sh").read_text()
+    assert "navigation/facet/v1/search" in src and "readonly/v1/bymarket" in src
+    for forbidden in ("identitysso", "placeOrders", "login", "etx."):
+        assert forbidden not in src, f"probe must not touch {forbidden}"
 
 
 @test("BOOK-EXITS-AND-LICENSED-FALLBACK — fixed per-book exits and a licensed Coolbet fallback that cannot price a pick")
