@@ -746,3 +746,23 @@ with CLV against the de-vigged close. A market-only control is run with the same
   head for 👥 PICKS.
 * **xG passing only EARLY** is a timing edge: a 🤖 OWN question of whether we can bet the early price
   at a book that has not yet moved.
+
+**Amendment to #118, 2026-09-24 — recorded BEFORE any CLOSE cell was scored.** The first quick run
+showed the EARLY cells: all three inputs had ΔLL < 0 (xG −0.00011, shots+corners −0.00021, goals
+−0.00013; n = 3,797). It could not score CLOSE: only 453 fixtures had a pre-kickoff pair ≤ 60 min
+old.
+
+**Cause:** provenance, not coverage. Our historical Pinnacle O/U rows (before ~July 2026) were
+ingested from football-data.co.uk (`scripts/ingest_football_data_csvs.py`):
+* FD's pre-close `P>2.5` is stored as `is_opening`, stamped kickoff − 7 d.
+* FD's closing `PC>2.5` is stored as `is_closing`, stamped AT kickoff.
+
+So the strict `timestamp < kickoff` filter dropped every closing row.
+
+**Amended CLOSE:** the `is_closing` Pinnacle pair (FD's Pinnacle close) where one exists; otherwise
+the pre-registered rule (latest complete pair ≤ 60 min old, strictly before kickoff), which covers the
+live era from ~July 2026.
+
+**EARLY is unchanged:** the first complete non-closing pair. For history that is FD's pre-close price,
+collected on a Friday or Tuesday — so EARLY here is the same market term as #089's M2, not an opening
+price.

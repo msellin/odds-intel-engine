@@ -100,6 +100,8 @@ def gap_sums(df: pd.DataFrame, inp: str, theta) -> np.ndarray:
     lam, f1, f2 = theta
     if inp == "goals":
         SH, SA = df.hg.to_numpy(), df.ag.to_numpy()
+    elif inp == "xg":                          # [[#118]]: our DB's API-Football xG
+        SH, SA = df.xgh.to_numpy(), df.xga.to_numpy()
     else:
         SH, SA = (df.hs + df.hc).to_numpy(), (df.as_ + df.ac).to_numpy()
     R: dict = {}
