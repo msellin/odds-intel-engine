@@ -80,6 +80,10 @@ difference.**
 
 **Time decay: ~300 day half-life** — totals want far longer memory than 1x2
 (Wheatcroft & Sienkiewicz, 53,447 O/U forecasts). We share one decay today.
+⚠️ *Corrected 2026-09-24: that 300 days is the decay of their shot-CONVERSION model with odds as a
+regressor (90 days without odds), not a memory for shot-volume or goal ratings. In the faithful GAP
+replication the memory is the learning rate λ, tuned per input (shots+corners λ≈0.7; goals λ→0.01
+after 2014 — i.e. switched off).*
 
 **DROP from this head:** `pinnacle_implied_home/draw/away`,
 `opening_implied_home/draw/away`, `h2h_win_pct`, `referee_home_win_pct`,
@@ -90,7 +94,8 @@ Bonferroni-corrected p<0.0001): GAP ratings fed shots+corners returned **+535
 units**; the same ratings fed **goals returned −631, negative in 10 of 10
 leagues**. The mechanism is measured separately: team goal rates are essentially
 unpredictable beyond the league mean (MAE 1.01 vs a 1.02 baseline; away goals
-0.87 vs 0.85, i.e. *worse than the mean*), while shots off target is 1.86 vs 3.77.
+0.87 vs 0.85, i.e. *worse than the mean*), while shots off target is 1.86 vs 3.77
+(these MAE figures are from Wheatcroft, arXiv:2001.09097, not 2101.02104 — corrected 2026-09-24).
 **Our `goals_for_avg_*` features are precisely the input the literature says is
 worst.**
 
@@ -506,7 +511,7 @@ Both runs: CHECK R passed; all six arms FAIL (Holm m=6).
   priced fixtures. RAW −4.2% to −6.5% CLV; BLEND / MARKET fire 0-10 times — no signal either way.
   Fresher Pinnacle O/U polling (#090 b) is the prerequisite for any O/U money test.
 
-Remaining #089 step: the faithful Wheatcroft replication on football-data.co.uk history.
+Remaining #089 step: the faithful Wheatcroft replication on football-data.co.uk history. ✅ Done 2026-09-24 — see its result section below.
 
 ## Pre-registration — #090 (a) PRICE-MOVE SIGNAL (2026-09-23, BEFORE building)
 
@@ -636,3 +641,45 @@ cannot be read as "the effect is gone".
   against the Pinnacle close.
 * **What would change the plan:** S+C passing M3. That would be the first input in six months to
   add anything to a sharp close, and would justify building it into a live O/U head.
+
+### Result — #089 faithful Wheatcroft replication (2026-09-24, `scripts/wheatcroft_replication.py`)
+
+88,477 matches, 10 leagues, 2005/06-2025/26; parameters re-tuned every season on prior seasons only.
+The first full run had a bug found by the independent review: promoted and relegated teams inherited
+ZERO ratings, because the inheritance ran before the walk. Fixed, the smoke test now fails on the old
+code, and the whole run was redone. The numbers below are from the fixed run; the verdict did not change.
+
+| input | market term in the model | n | ΔLL (nats) | Holm p | |
+|---|---|---|---|---|---|
+| shots+corners | M1: 1/max odds, 2006-19 (his set-up) | 37,204 | **+0.00063** | 0.021 | **PASS** |
+| shots+corners | M2: Pinnacle pre-close, 2019-26 | 15,461 | +0.00013 | 0.90 | fail |
+| shots+corners | M3: Pinnacle close, 2019-26 | 15,487 | −0.00006 | 1.00 | fail |
+| goals | M1 | 37,204 | −0.00005 | 1.00 | fail |
+| goals | M2 | 15,461 | −0.00015 | 1.00 | fail |
+| goals | M3 | 15,487 | −0.00014 | 1.00 | fail |
+
+**Fidelity check: REPRODUCED.** Against his own market term, shots+corners add +0.00063 nats (he
+reported ~0.0008) and goals add nothing. The tuner switches goals off: λ falls from 0.32 to ~0.06-0.08.
+
+**Where the effect goes (review, fixed parameters): about half is era, half is market.**
+* Shots+corners on 1/max odds: 2006-19 +0.00072 (p = 0.000); 2013-19 alone +0.00034 (p = 0.16);
+  2019-26 +0.00032 (p = 0.10).
+* On Pinnacle pre-close +0.00015; on the Pinnacle close −0.00005.
+* Logit vs raw-probability form makes no difference.
+* The market was already learning shots before 2019, which is his own "levelled off" caveat. The
+  sharp close takes what is left.
+
+**Money (reported, not a pass bar).**
+* Shots+corners at max odds: +2.34% (2006-12), +0.68% (2013-19), +0.28% (2019-26).
+* At average odds: −1.08%, −2.39%, +1.34% (n = 833).
+* At Pinnacle's pre-close price: −3.41%, and CLV against the Pinnacle close is −1.60%.
+* ⚠️ The +0.46% CLV at max odds is **line shopping, not the model.** A market-only logistic betting the
+  same way at max odds scores +0.80%, and goals score +0.71%.
+
+**Verdict.**
+* Our earlier shots-vs-goals null (#089 arm D, #077) WAS partly an unfaithful build. Built his way, the
+  published effect exists.
+* But it had halved by 2013-19 and is zero against Pinnacle's close. **Do not build a shots-fed O/U
+  head.** This closes the last structural O/U question: feature shape (#089 arms), input (shots vs
+  goals, faithfully) and timing (#090 (a)) all end at the same place — whatever our ratings know,
+  Pinnacle's close already prices.

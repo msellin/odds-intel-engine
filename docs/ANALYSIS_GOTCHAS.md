@@ -3024,3 +3024,13 @@ closing error vs Pinnacle close / vs a 3-held-out-book close × 1X2 and O/U 2.5)
   as `clv_cons` within market, ~15% more error than a ≥5-book close. Report it SEPARATELY,
   by market, never averaged with `clv_cons` or `clv_sharp`, and never as a staking input or
   gate. Its practical value is small: it mostly duplicates legs that already have `clv_sharp`.
+
+## 75. Positive CLV at max-of-books odds is line shopping until a market-only control says otherwise (#089, 2026-09-24)
+
+Any strategy that takes the BEST price across many books beats a single sharp close on average, whatever
+picked the bet. In the Wheatcroft replication, shots+corners bets at max odds showed +0.46% CLV against
+the Pinnacle close, which looked like a residual edge. But goals (a rating with no skill) scored +0.71%,
+and a **market-only** logistic betting the same way scored **+0.80%**, more than the model. **Rule:**
+before attributing max-odds (or best-of-books) CLV to a model, run the same betting rule with the model
+term removed; the model owns only the difference. At a single book's own price (Pinnacle pre-close) the
+same model was −1.60%.

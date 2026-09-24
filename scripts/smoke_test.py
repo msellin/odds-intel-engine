@@ -51712,7 +51712,9 @@ def test_wheatcroft_replication():
                      "hg": [0.0], "ag": [0.0], "hs": [1.0], "as_": [1.0], "hc": [0.0], "ac": [0.0]})],
                     ignore_index=True)
     out3 = gap_sums(df3, "shots_corners", (0.5, 1.0, 1.0))
-    assert out3[2] > 0 and np.isfinite(out3[2]), out3
+    df4 = df3.copy(); df4.loc[2, "a"] = "B"          # same fixture, B still in the league
+    out4 = gap_sums(df4, "shots_corners", (0.5, 1.0, 1.0))
+    assert out3[2] == out4[2] and out3[2] > 7, (out3, out4)   # C carries B's ratings, not zeros
     rng = np.random.default_rng(0)
     x = rng.normal(size=4000); y = (rng.random(4000) < 1 / (1 + np.exp(-(0.3 + 1.2 * x)))).astype(float)
     w = logit_fit(x[:, None], y)

@@ -25,10 +25,11 @@ varies the INPUT VARIABLE. That is the axis the published evidence says matters.
 METHOD
 ------
 * GAP-style online ratings. Each team carries attack/defence multipliers for
-  shots and corners, separately by venue, initialised from history before the
-  cutoff and then updated AFTER each test match is predicted -- so they are both
-  leak-free and never stale. That is Wheatcroft's actual construction, not an
-  approximation of it.
+  shots and corners, initialised from history before the cutoff and then updated
+  AFTER each test match is predicted -- so they are both leak-free and never stale.
+  ⚠️ Corrected 2026-09-24: this is NOT Wheatcroft's construction (no venue split,
+  multiplicative not additive, market not in the regression). The faithful build is
+  scripts/wheatcroft_replication.py ([[#089]]).
 * Opponent adjustment by iterative proportional fitting on the history window.
 * Predicted statistics -> goal rates through a Poisson GLM fitted on history,
   then P(total > 2.5) from INDEPENDENT Poisson. Independence is safe here

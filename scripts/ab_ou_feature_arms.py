@@ -113,7 +113,7 @@ FAMILY = ("A", "A0", "C", "CM", "D", "E")          # fixed — see module docstr
 HOLM_M = len(FAMILY)
 ALPHA_BAR = 0.02
 P_BAR = 0.05
-LEAGUE_HALF_LIFE = 300.0                      # totals want long memory (W&S 2021)
+LEAGUE_HALF_LIFE = 300.0                      # a choice; W&S 2021's 300 d is a shot-conversion decay, not this
 
 # Every input that IS a market price or is computed from one. Dropped for A0.
 MARKET_DERIVED = (

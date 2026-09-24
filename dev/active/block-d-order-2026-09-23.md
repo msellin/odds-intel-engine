@@ -35,7 +35,7 @@ Steps 1-4 of the order below are done (#082, #024, #085 correctness half, #081/#
 
 | step | row | what | est | direction |
 |---|---|---|---|---|
-| 1 | #089 | faithful Wheatcroft shots-rating replication on football-data.co.uk history — separates "our version was unfaithful" from "the effect is gone" | 1 d | BOTH |
+| 1 ✅ 2026-09-24 | #089 | DONE — effect reproduces vs max odds, zero vs Pinnacle; no shots O/U head. Was: faithful Wheatcroft shots-rating replication on football-data.co.uk history — separates "our version was unfaithful" from "the effect is gone" | 1 d | BOTH |
 | 2 | #111 | AF xG stopped arriving ~2026-08-31 — diagnose | 1-2 h | BOTH |
 | 3 | #106 | de-vig bake-off per market + worst-method gate | 1 d | PICKS |
 | 4 | #096 | grade the sharp arm (needs #106 and the AF-fed price check) | ½ d | PICKS |

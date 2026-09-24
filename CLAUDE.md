@@ -226,7 +226,10 @@ that would have changed what was built:
   against **0.2085 for a two-number rating**, same model class, ~300k training
   matches. A single-covariate Elo beat every entry in an earlier challenge.
 * **Time decay differs by market** — ~300-day half-life for O/U 2.5 against
-  30-90 for match outcome. We share one across every head.
+  30-90 for match outcome. We share one across every head. *(Corrected
+  2026-09-24: the 300 days is Wheatcroft & Sienkiewicz's decay for a shot-CONVERSION
+  model WITH odds as a regressor — without odds it was 90 — not a memory for
+  shot-volume ratings.)*
 * **Draws are not worth targeting** — 1.4% model skill against 3.0% for the
   bookmaker, c-statistic 0.62 for both.
 * **α = 0 against a sharp closing line is the NORMAL published result.** Nothing

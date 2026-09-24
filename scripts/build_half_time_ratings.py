@@ -29,10 +29,11 @@ vector has an explicit `elo_diff` and **no sum term at all**:
       ht_expected_diff    = lam_ht_home - lam_ht_away
       h2_expected_diff    = lam_h2_home - lam_h2_away
 
-HALF-LIFE. Defaults to 300 days, not the 30-90 used for match outcome: Wheatcroft
-& Sienkiewicz (arXiv:2101.02104, 53,447 O/U forecasts) find the optimal decay for
-O/U 2.5 is ~300 days while match outcome wants 30-90. Totals want far longer
-memory, and we currently share one decay across every head.
+HALF-LIFE. Defaults to 300 days, not the 30-90 used for match outcome. The source
+is Wheatcroft & Sienkiewicz (arXiv:2101.02104), but note (corrected 2026-09-24): their
+~300 days is the decay of a shot-CONVERSION model with odds as a regressor (90 days
+without odds), not a measured memory for goal ratings. Treat 300 as a choice, not a
+published optimum for this rating.
 
 LEAK-FREE BY CONSTRUCTION. Ratings are fitted on matches strictly BEFORE the
 `--asof` date; nothing reads a fixture's own result.

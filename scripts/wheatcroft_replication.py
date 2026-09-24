@@ -106,23 +106,24 @@ def gap_sums(df: pd.DataFrame, inp: str, theta) -> np.ndarray:
     members: dict = defaultdict(set)          # (lg, season) -> teams
     for lg, s, h, a in zip(df.lg, df.season, df.h, df.a):
         members[(lg, s)].update((h, a))
-    seasons = sorted({s for _, s in members})
-    prev = {}
-    for s in seasons:                          # promotion / relegation inheritance
-        for lg in LEAGUES:
-            now = members.get((lg, s))
-            if not now:
-                continue
-            before = prev.get(lg)
-            if before:
-                left = [R[(lg, t)] for t in before - now if (lg, t) in R]
-                mean = [sum(x[k] for x in left) / len(left) for k in range(4)] if left else [0.0] * 4
-                for t in now - before:
-                    R[(lg, t)] = list(mean)
-            prev[lg] = now
+    cur: dict = {}                             # lg -> season being walked
     out = np.full(len(df), np.nan)
     la1, la1c, la2, la2c = lam * f1, lam * (1 - f1), lam * f2, lam * (1 - f2)
-    for idx, (lg, h, a, sh, sa) in enumerate(zip(df.lg, df.h, df.a, SH, SA)):
+    for idx, (lg, s, h, a, sh, sa) in enumerate(zip(df.lg, df.season, df.h, df.a, SH, SA)):
+        if cur.get(lg) != s:
+            # Season boundary for this league: a team new to it inherits the mean
+            # CURRENT rating of the teams that left. Done here, during the walk —
+            # doing it before the walk (the first version) copied empty ratings,
+            # so every promoted team started at zero (found by review 2026-09-24).
+            before = members.get((lg, cur[lg])) if lg in cur else None
+            now = members[(lg, s)]
+            if before:
+                left = [R[(lg, t)] for t in before - now if (lg, t) in R]
+                if left:
+                    mean = [sum(x[k] for x in left) / len(left) for k in range(4)]
+                    for t in now - before:
+                        R[(lg, t)] = list(mean)
+            cur[lg] = s
         ri = R.get((lg, h))
         if ri is None:
             ri = R[(lg, h)] = [0.0, 0.0, 0.0, 0.0]    # [H_a, H_d, A_a, A_d]
