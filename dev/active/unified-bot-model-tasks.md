@@ -9,7 +9,9 @@ Rule: every step ships with a smoke test and 1–2 independent review agents (2 
 - [x] Phase 0 — genesis write-ups (ledgers, bots-and-controls, predictions)
 - [x] 5a — reader/writer inventory
 - [x] Phase 1 — migration 410 views + bot_config, export job, /admin/bots rebuild (3 review rounds)
-- [ ] Phase 1 — verify on live data after deploy (410 applied, first 03:40 export, page renders)
+- [x] Phase 1 — verified live (410/411 applied, export stored 111, page renders)
+- [x] Phase 3-A — control panel (mig 413), 3 money-safety review rounds
+- [ ] Admin dashboard: shared shell + design system + IA moves (see HANDOVER §2)
 - [ ] Owner decisions (i)–(v) listed on the #139 row
 - [ ] Phase 5 schema rewritten from the invariants; 2 reviewers
 - [ ] Phase 2 — shadow-bots page becomes "today's picks" on bot_ledger
