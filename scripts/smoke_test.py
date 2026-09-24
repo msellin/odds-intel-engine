@@ -53637,6 +53637,15 @@ def test_coolbet_first_half_goals():
     assert parse_market(m(843, "1st half [away] goals", 1.5), om)[0][0] == "team_total_1h_away_15"
     assert parse_market(m(842, "1st half goals", 2.5), om) == [], "no cross-book namespace for 1H 2.5"
     assert parse_market(m(818, "total goals", 2.5), om)[0][0] == "over_under_25"
+    # Epicbet first-half team goals (groups 13/14, side from teamName) — same namespace
+    from workers.automation.epicbet_explorer import parse_event_markets
+    ev = {"raw": {"homeTeamName": "Andorra", "awayTeamName": "Malta", "marketGroups": [
+        {"id": 13, "markets": [{"line": 0.5, "teamName": "Andorra",
+                                "outcomes": [{"id": 1, "name": "Over"}, {"id": 2, "name": "Under"}]}]},
+        {"id": 14, "markets": [{"line": 1.5, "teamName": "Malta",
+                                "outcomes": [{"id": 3, "name": "Over"}, {"id": 4, "name": "Under"}]}]}]}}
+    got = {r[0] for r in parse_event_markets(ev, {1: 3.1, 2: 1.35, 3: 9.0, 4: 1.05})}
+    assert got == {"team_total_1h_home_05", "team_total_1h_away_15"}, got
 
 
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")

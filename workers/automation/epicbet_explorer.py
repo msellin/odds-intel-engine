@@ -156,6 +156,11 @@ _GROUP_1X2_1H = 98              # " 1. half: Goals 1x2" — note the LEADING SPA
 _GROUP_TEAM_TOTAL_A = 7         # team-scoped; side resolved from market.teamName
 _GROUP_TEAM_TOTAL_B = 5
 _GROUP_DC = 96                  # "Double Chance"
+# #132 part 2 (2026-09-24): first-half TEAM goals, team-scoped like 7/5. Pinnacle writes
+# team_total_1h_{home,away}_05/15 on 150-190 fixtures a day; Epicbet offers it (seen on a
+# full 65-group board, Andorra v Malta) and we stored none.
+_GROUP_TEAM_TOTAL_1H_A = 13     # "1. half: <team> Goals"
+_GROUP_TEAM_TOTAL_1H_B = 14
 
 # Groups whose over/under ladder is NOT the full-match goals ladder, and so uses
 # `_alt_total_tag` (whole lines allowed) rather than `_ou_market_for_line`.
@@ -172,6 +177,8 @@ _ALT_TOTAL_GROUPS: dict[int, str] = {
     _GROUP_CARDS_B: "cards_{side}_ou",
     _GROUP_TEAM_TOTAL_A: "team_total_{side}",
     _GROUP_TEAM_TOTAL_B: "team_total_{side}",
+    _GROUP_TEAM_TOTAL_1H_A: "team_total_1h_{side}",
+    _GROUP_TEAM_TOTAL_1H_B: "team_total_1h_{side}",
 }
 
 # Every group the parser understands. Anything not here is skipped, so widening
