@@ -738,7 +738,11 @@ which feeds `simulated_bets` → /picks) the ODDS-OUTLIER-FILTER anchor is Pinna
 median of ≥3 **publishable** books (`is_publishable_book`) — the same set that path prices from
 since #005. It used to read the four Estonian books + Pinnacle, so fixtures without Pinnacle
 and with <3 Estonian books had no anchor and every pick on them was rejected (the model bots
-dried up). 🤖 OWN is unchanged: the shadow passes keep `PRICE_REFERENCE_BOOKMAKERS`.
+dried up). 🤖 OWN is unchanged: the live shadow passes filter on `ACCESSIBLE_BOOKMAKERS`, and
+OWN bots fed from `simulated_bets` (`pick_generator._candidates_from_pipeline`) re-apply the
+pre-#129 rule in `_own_outlier_ok` — Pinnacle, else median of ≥3 Estonian books, 1.25× ceiling —
+because #129 lets thinner fixtures into that table. Marathonbet and 1xBet count as ONE source
+toward the ≥3-book anchor (identical price 38–59% of the time, vs ~17% for any other pair).
 
 ---
 

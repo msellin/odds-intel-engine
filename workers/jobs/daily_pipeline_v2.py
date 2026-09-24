@@ -2335,6 +2335,15 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
             continue
         mid = str(row["match_id"])
         key = f"{market}_{row['selection']}"
+        # #129 review (2026-09-24): Marathonbet and 1xBet quote the IDENTICAL price
+        # far more often than any other pair (37.8% of latest 1X2 quotes vs ~17%
+        # for the next pair; 59% on shared selections over 3 d) — one price source
+        # under two names. Counted twice they turn a 2-source fixture into a
+        # ">= 3 books" anchor and pull the median. Count them once (1xBet kept).
+        if bookmaker == "Marathonbet" and any(b == "1xBet" for b, _ in outlier_offers[mid][key]):
+            continue
+        if bookmaker == "1xBet":
+            outlier_offers[mid][key] = [(b, o) for b, o in outlier_offers[mid][key] if b != "Marathonbet"]
         outlier_offers[mid][key].append((bookmaker, odds_val))
 
     outlier_anchor: dict[str, dict[str, float]] = _dd(dict)

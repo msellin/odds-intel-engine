@@ -300,6 +300,12 @@ def generate(cfg: BotConfig) -> dict:
                     )
                     continue
 
+            if cfg.prob_source not in ("predictions", "sharp_devig"):
+                ok, why = _own_outlier_ok(r["match_id"], market, selection, price)
+                if not ok:
+                    c[why] = c.get(why, 0) + 1
+                    continue
+
             if cfg.edge_ceiling is not None and edge > cfg.edge_ceiling:
                 c["above_ceiling"] = c.get("above_ceiling", 0) + 1
                 log.warning(
@@ -342,6 +348,44 @@ def generate(cfg: BotConfig) -> dict:
     except Exception as e:  # noqa: BLE001
         log.warning("pick_generator[%s] raised (non-fatal): %s", cfg.bot_name, e)
     return c
+
+
+# #129 REVIEW FOLLOW-UP (2026-09-24). #129 widened the 👥 PICKS outlier anchor to every
+# publishable book, so fixtures with no Pinnacle and < 3 Estonian books now reach
+# `simulated_bets` — and `_candidates_from_pipeline` feeds OWN bots from that table.
+# Before #129 those fixtures never reached it, so this bot family never saw them. OWN
+# must keep the rule it had: a 1X2 / BTTS / DC price needs an anchor built from the
+# Estonian reference set (Pinnacle, else the median of >= 3 ACCESSIBLE books) and must
+# sit within the same 1.25x ceiling. `_latest_book_odds`' own sanity check fails OPEN
+# without an anchor, which is why this is not redundant.
+_OWN_OUTLIER_MULT = {"1x2": 1.25, "btts": 1.25, "double_chance": 1.25}
+
+
+def _own_outlier_ok(match_id: str, market: str, selection: str, price: float) -> tuple[bool, str]:
+    mult = _OWN_OUTLIER_MULT.get(market)
+    if mult is None:
+        return True, ""
+    from statistics import median
+    from workers.api_clients.db import execute_query
+    from workers.jobs.daily_pipeline_v2 import ACCESSIBLE_BOOKMAKERS
+    rows = execute_query(
+        """SELECT DISTINCT ON (o.bookmaker) o.bookmaker, o.odds::float AS odds
+             FROM odds_snapshots o
+            WHERE o.match_id = %s AND o.market = %s AND o.selection = %s
+              AND o.bookmaker = ANY(%s)
+            ORDER BY o.bookmaker, o.timestamp DESC""",
+        (match_id, market, selection, sorted(ACCESSIBLE_BOOKMAKERS | {"Pinnacle"})),
+    ) or []
+    quotes = {r["bookmaker"]: r["odds"] for r in rows if r["odds"] and r["odds"] > 1}
+    anchor = quotes.get("Pinnacle")
+    if anchor is None:
+        acc = [v for b, v in quotes.items() if b in ACCESSIBLE_BOOKMAKERS]
+        if len(acc) < 3:
+            return False, "no_own_anchor"
+        anchor = median(acc)
+    if price > anchor * mult:
+        return False, "above_own_outlier"
+    return True, ""
 
 
 def _candidates_from_pipeline(cfg, loosest, sel_clause, ahead, params):

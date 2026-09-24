@@ -53354,9 +53354,19 @@ def test_picks_outlier_anchor_publishable():
     assert "bookmaker not in PRICE_REFERENCE_BOOKMAKERS" not in block, "anchor must not read the Estonian set"
     assert dp.is_publishable_book("1xBet") and dp.is_publishable_book("Pinnacle")
     assert not dp.is_publishable_book("Unibet-Kambi") and not dp.is_publishable_book("Max")
-    # 🤖 OWN paths still build their anchor from the reference set
-    src = inspect.getsource(dp)
-    assert src.count("list(PRICE_REFERENCE_BOOKMAKERS)") >= 2, "OWN shadow passes must keep the Estonian+Pinnacle anchor set"
+    # 🤖 OWN is unchanged. The LIVE shadow passes filter on ACCESSIBLE_BOOKMAKERS (the
+    # PRICE_REFERENCE_BOOKMAKERS uses are in retired passes — review 2026-09-24):
+    for fn in (dp._run_no_pin_shadow_pass, dp._run_sweep_shadow_pass):
+        assert "ACCESSIBLE_BOOKMAKERS" in inspect.getsource(fn), fn.__name__
+    # …and OWN bots fed from simulated_bets re-apply the pre-#129 Estonian anchor,
+    # because #129 lets thinner fixtures into that table:
+    import workers.automation.pick_generator as pg
+    assert "_own_outlier_ok(" in inspect.getsource(pg.generate)
+    ok, why = pg._own_outlier_ok("00000000-0000-0000-0000-000000000000", "1x2", "home", 2.0)
+    assert (ok, why) == (False, "no_own_anchor"), "no Estonian anchor must reject for OWN"
+    assert pg._own_outlier_ok("x", "over_under_25", "over", 2.0) == (True, "")
+    # one price source under two names counts once toward the >= 3-book anchor
+    assert 'bookmaker == "Marathonbet" and any(b == "1xBet"' in load
 
 
 @test("OBS-LOG-ALL-JOBS — no job runs its work outside _run_job; a crash is a FAILED pipeline_runs row (#034)")
