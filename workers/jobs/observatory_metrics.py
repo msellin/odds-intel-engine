@@ -90,7 +90,7 @@ def _bot_clv(q) -> list[tuple]:
                   LEFT JOIN bots b ON b.id = s.bot_id
                  WHERE l.ledger = 'shadow_bets' AND l.status = 'ok' AND l.computed_at > now() - interval '7 days'
                    -- in-play bots bet DURING the match: a pre-match close is not their yardstick
-                   -- (bot_inplay_slowstate_afctl_v1 read −50%, an artefact, 2026-09-24)
+                   -- (bot_inplay_slowstate_afctl_v1 read −50 per cent, an artefact, 2026-09-24)
                    AND COALESCE(b.name, '') NOT ILIKE '%%inplay%%'
                  GROUP BY 1""") or []
     return [("bot_clv_7d", f"bot={r['bot']}", r["v"], r["n"], None) for r in rows]
