@@ -1576,6 +1576,7 @@ def fuzzy_match_event(
 
     best_event = None
     best_score = -1
+    best_swapped, best_swapped_exact, best_exact = -1, -1.0, -1.0   # #001 review (see below)
     # ── COOLBET-FUZZY-MATCH-FALSE-POSITIVES-2026-09-06, step 1 of 2 ────────
     # We are matching fixtures Coolbet does not carry: 'Acatlan vs Guerreros'
     # (owner-verified absent from Coolbet) was matched to 'Atlas vs Queretaro'
@@ -1672,6 +1673,10 @@ def fuzzy_match_event(
         # totals. A candidate that fits better swapped is now refused and logged;
         # never re-oriented silently. See coolbet_matching.ORIENTATION_REJECTS.
         if swapped > direct:
+            _se = (max(fuzz.ratio(v, ev_away) for v in home_variants)
+                   + max(fuzz.ratio(v, ev_home) for v in away_variants)) / 2.0
+            if (swapped, _se) > (best_swapped, best_swapped_exact):
+                best_swapped, best_swapped_exact = swapped, _se
             if swapped >= _FUZZY_THRESHOLD:
                 from workers.automation.coolbet_matching import ORIENTATION_REJECTS
                 ORIENTATION_REJECTS.append((home, away, ev.get("home"), ev.get("away"), swapped))
@@ -1684,8 +1689,22 @@ def fuzzy_match_event(
             best_score = score
             best_event = ev
             best_start = ev_start_seen
+            best_exact = (max(fuzz.ratio(v, ev_home) for v in home_variants)
+                          + max(fuzz.ratio(v, ev_away) for v in away_variants)) / 2.0
         elif score > runner_up_score:
             runner_up_score = score
+
+    # #001 review (2026-09-24): a REFUSED reversed listing still competes. If the best fit
+    # overall is reversed, that is the real fixture — refuse, instead of falling through to
+    # a weaker direct candidate ("Penarol v Nacional" matched "Penarol Rivera v Nacional
+    # Potosi" at 100 once the reversed real event was dropped). Ties at 100 are common
+    # (subset names), so a tie is broken on EXACT name similarity.
+    if best_event is not None and best_swapped >= _FUZZY_THRESHOLD and (
+            best_swapped > best_score
+            or (best_swapped == best_score and best_swapped_exact > best_exact)):
+        log.info("ORIENTATION: '%s v %s' — best fit is a reversed listing (%s >= %s); fixture refused",
+                 home, away, best_swapped, best_score)
+        return None
 
     if best_event is not None and best_score >= _FUZZY_THRESHOLD and match_id:
         # Book and AF agree again — lift any standing dispute so a fixture is

@@ -218,6 +218,9 @@ def match_event_to_af(
     best = None
     best_score = 0.0
     second = 0.0
+    best_swapped = 0.0   # #001 review: a refused swapped candidate still COMPETES (see below)
+    best_swapped_exact = 0.0
+    best_exact = 0.0     # exact-name similarity of the winning DIRECT candidate (tie-breaker)
     for a in af_candidates:
         if cb_start is not None and a.get("ko") is not None:
             if abs((a["ko"] - cb_start).total_seconds()) > slot_hours * 3600:
@@ -248,6 +251,9 @@ def match_event_to_af(
         # direct score is not enough: names sharing a token ("Flora Tallinn" /
         # "Levadia Tallinn") keep the direct score high (81.8) on a reversed listing.
         if swapped > direct:
+            _se = (fuzz.ratio(eh, aw) + fuzz.ratio(ea, ah)) / 2.0
+            if (swapped, _se) > (best_swapped, best_swapped_exact):
+                best_swapped, best_swapped_exact = swapped, _se
             if swapped >= name_threshold:
                 ORIENTATION_REJECTS.append((cb_home, cb_away, a.get("home"), a.get("away"), round(swapped, 1)))
                 log.info("ORIENTATION: '%s v %s' matches '%s v %s' only SWAPPED (%.0f vs direct %.0f) — refused",
@@ -258,7 +264,21 @@ def match_event_to_af(
             second = best_score
             best_score = sc
             best = a
+            best_exact = (fuzz.ratio(eh, ah) + fuzz.ratio(ea, aw)) / 2.0
         elif sc > second:
             second = sc
     ok = best_score >= name_threshold and (best_score - second >= min_gap or best_score >= 90)
+    # #001 review (2026-09-24): when the best fit overall is a REVERSED listing, the real
+    # fixture is that one — refuse, rather than fall through to a weaker direct candidate
+    # (reproduced: "Penarol v Nacional" matched "Penarol Rivera v Nacional Potosi" at 100
+    # once the reversed real event was dropped from the competition).
+    # Scores tie at 100 whenever one name is a subset of another ("Nacional" ⊂ "Nacional
+    # Potosi"), so a tie is broken on EXACT name similarity: the real listing matches
+    # exactly, a decoy only partially.
+    if ok and best_swapped >= name_threshold and (
+            best_swapped > best_score
+            or (best_swapped == best_score and best_swapped_exact > best_exact)):
+        log.info("ORIENTATION: '%s v %s' — best fit is a reversed listing (%.0f >= %.0f); fixture refused",
+                 cb_home, cb_away, best_swapped, best_score)
+        ok = False
     return (best if ok else None), best_score, second

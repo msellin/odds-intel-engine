@@ -53468,6 +53468,18 @@ def test_matcher_orientation_strict():
     assert cp.fuzzy_match_event("Maccabi Netanya", "Maccabi Tel Aviv", evs, ko) is None
     hit = cp.fuzzy_match_event("Maccabi Tel Aviv", "Maccabi Netanya", evs, ko)
     assert hit is not None and hit.get("_match_score") == 100, "score exposed for book_event_map"
+    # review 2026-09-24: a refused reversed listing must still COMPETE — otherwise a decoy
+    # with similar names wins ("Penarol v Nacional" -> "Penarol Rivera v Nacional Potosi").
+    # Ties at 100 (subset names) are broken on exact name similarity.
+    evs2 = [{"home": "Nacional", "away": "Penarol", "start": ko.isoformat()},
+            {"home": "Penarol Rivera", "away": "Nacional Potosi", "start": ko.isoformat()}]
+    af2 = [{"id": 1, "ko": ko, "home": "Nacional", "away": "Penarol", "country": "Uruguay"},
+           {"id": 2, "ko": ko, "home": "Penarol Rivera", "away": "Nacional Potosi", "country": "Uruguay"}]
+    assert cp.fuzzy_match_event("Penarol", "Nacional", evs2, ko) is None
+    assert cm.match_event_to_af("Penarol", "Nacional", "uy", ko, af2)[0] is None
+    assert cp.fuzzy_match_event("Nacional", "Penarol", evs2, ko)["home"] == "Nacional"
+    assert cm.match_event_to_af("Nacional", "Penarol", "uy", ko, af2)[0]["id"] == 1
+    assert cm.match_event_to_af("Penarol Rivera", "Nacional Potosi", "uy", ko, af2)[0]["id"] == 2
     src = inspect.getsource(ce)
     assert "fuzz.token_sort_ratio(af_key, cb_key)" not in src
     assert "if _swapped > _direct:" in src
