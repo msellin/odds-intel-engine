@@ -54921,6 +54921,11 @@ def test_rating_1x2_bot_twin():
     for k in ("markets", "tier_filter", "edge_thresholds", "odds_range", "min_prob"):
         assert new[k] == old[k], f"twin drifted on {k}: {new[k]} vs {old[k]}"
     assert BOT_TIMING_COHORTS["bot_rating_1x2_v1"] == BOT_TIMING_COHORTS["bot_v10_1x2"]
+    comb = BOTS_CONFIG["bot_combined_1x2_v1"]          # second arm, combined model (round 3b)
+    assert comb["prob_source"] == "combined_1x2"
+    for k in ("markets", "tier_filter", "edge_thresholds", "odds_range", "min_prob"):
+        assert comb[k] == old[k], f"combined twin drifted on {k}"
+    assert BOT_TIMING_COHORTS["bot_combined_1x2_v1"] == BOT_TIMING_COHORTS["bot_v10_1x2"]
     src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
     i = src.index("if _rating_bot:\n                    cal_prob = raw_mp")
     assert "calibrate_prob(" in src[i:i + 600], "the non-rating path must still calibrate"

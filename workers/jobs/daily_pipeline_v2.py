@@ -124,6 +124,28 @@ BOTS_CONFIG = {
         "min_prob": 0.30,
         "prob_source": "rating_1x2",
     },
+    # RATING-1X2-BOT, second arm ([[#141]] round 3b, owner request "1x2 market NEW+"):
+    # the same twin of bot_v10_1x2, priced by the COMBINED model (r1x2_comb_v1 —
+    # ratings + de-vigged 18-book consensus + Pinnacle, API-Football only where no
+    # book prices the match; 0.9763 vs 1.0711 log-loss). Because the combined
+    # probability is built mostly FROM market prices, its "edge" appears when the
+    # quoted book sits away from the consensus — the consensus-outlier strategy
+    # (Kaunitz et al.), not a model-vs-market bet. Read it on CLV first.
+    "bot_combined_1x2_v1": {
+        "description": "1x2 market NEW+ — twin of bot_v10_1x2 priced by the COMBINED 1X2 model (r1x2_comb_v1: ratings + bookmaker consensus + Pinnacle), no market shrinkage",
+        "tier_label": "elite",
+        "markets": ["1x2"],
+        "tier_filter": None,
+        "edge_thresholds": {
+            1: {"1x2_fav": 0.08, "1x2_long": 0.12, "ou": 0.08},
+            2: {"1x2_fav": 0.05, "1x2_long": 0.08, "ou": 0.06},
+            3: {"1x2_fav": 0.04, "1x2_long": 0.06, "ou": 0.05},
+            4: {"1x2_fav": 0.03, "1x2_long": 0.05, "ou": 0.04},
+        },
+        "odds_range": (1.30, 4.50),
+        "min_prob": 0.30,
+        "prob_source": "combined_1x2",
+    },
     "bot_v10_ou": {
         # RETIRED 2026-09-24 — migration 399 ([[#077]]). Kept for history; the pipeline
         # skips it on is_active=False here and retired_at in the DB.
@@ -1064,6 +1086,7 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     # V10-SPLIT-BY-MARKET (migration 375) — one cohort entry became two.
     "bot_v10_1x2":          "all",
     "bot_rating_1x2_v1":    "all",    # RATING-1X2-BOT — same cohort as its twin
+    "bot_combined_1x2_v1":  "all",    # RATING-1X2-BOT second arm (combined model)
     "bot_v10_ou":           "all",
     "bot_summer_specialist": "all",   # BOT-SUMMER-SPECIALIST 2026-07-08 — fills midweek summer volume gap
     "bot_lower_1x2":        "all",
@@ -2928,6 +2951,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     pinnacle_under_by_match: dict[str, float] = {}        # under 2.5 (PIN-2/3)
     sharp_consensus_by_match: dict[str, float] = {}
     rating_1x2_by_match: dict[str, tuple[float, float, float]] = {}   # RATING-1X2-BOT
+    combined_1x2_by_match: dict[str, tuple[float, float, float]] = {}  # ... combined arm
     if all_match_ids_for_signals:
         try:
             from workers.api_clients.db import execute_query as _eq_pin
@@ -2964,13 +2988,14 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         # prob_source="rating_1x2" read this; a match without a row is skipped
         # by those bots (funnel step drop_no_rating), never priced by fallback.
         try:
-            from workers.jobs.rating_1x2_shadow import MODEL_VERSION as _R1X2_VER
+            from workers.jobs.rating_1x2_shadow import MODEL_VERSION as _R1X2_VER, COMB_VERSION as _C1X2_VER
+            _r1x2_maps = {_R1X2_VER: rating_1x2_by_match, _C1X2_VER: combined_1x2_by_match}
             for _rr in _eq_pin(
-                """SELECT match_id, p_home, p_draw, p_away FROM rating_1x2_predictions
-                    WHERE model_version = %s AND gated AND match_id = ANY(%s::uuid[])""",
-                (_R1X2_VER, all_match_ids_for_signals),
+                """SELECT match_id, model_version, p_home, p_draw, p_away FROM rating_1x2_predictions
+                    WHERE model_version = ANY(%s) AND gated AND match_id = ANY(%s::uuid[])""",
+                (list(_r1x2_maps), all_match_ids_for_signals),
             ):
-                rating_1x2_by_match[str(_rr["match_id"])] = (
+                _r1x2_maps[_rr["model_version"]][str(_rr["match_id"])] = (
                     float(_rr["p_home"]), float(_rr["p_draw"]), float(_rr["p_away"]))
         except Exception as e:
             console.print(f"  [yellow]Rating 1X2 load failed (non-critical; rating bot idles): {e}[/yellow]")
@@ -3663,10 +3688,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
 
             # RATING-1X2-BOT: a bot may take its 1X2 probability from the rating
             # model instead of the ensemble. Everything else in this loop is shared.
-            _rating_bot = config.get("prob_source") == "rating_1x2"
+            _rating_bot = config.get("prob_source") in ("rating_1x2", "combined_1x2")
             _p1x2 = pred
             if _rating_bot:
-                _rr = rating_1x2_by_match.get(str(match_id))
+                _rr = (combined_1x2_by_match if config["prob_source"] == "combined_1x2"
+                       else rating_1x2_by_match).get(str(match_id))
                 if _rr is None:
                     _funnel[bot_name]["drop_no_rating"] += 1
                     continue
@@ -3826,7 +3852,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 # the BOTS_CONFIG note) — calibrate_prob would replace it with Platt(Pinnacle).
                 if _rating_bot:
                     cal_prob = raw_mp
-                    _fctx["fair_source"] = "rating_1x2"
+                    _fctx["fair_source"] = config["prob_source"]
                 else:
                     cal_prob = calibrate_prob(raw_mp, ip, tier=tier, market=platt_market,
                                               anchor_implied=pin_anchor, odds=odds)
@@ -4147,7 +4173,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         "stake": stake,
                         "placed_at": datetime.now().isoformat(),
                         "pin_cross_drift_shadow_flag": _pin_shadow_flag,
-                        "reasoning": f"{'[rating r1x2_d8plus_v1] ' if _rating_bot else tier_tag}{f'[{_strategy_alias}] ' if _strategy_alias else ''}{match['home_team']} vs {match['away_team']} | edge={edge:.3f} cal={cal_prob:.3f} kelly={kelly:.4f} align={alignment['alignment_class']}",
+                        "reasoning": f"{('[combined r1x2_comb_v1] ' if config.get('prob_source') == 'combined_1x2' else '[rating r1x2_d8plus_v1] ') if _rating_bot else tier_tag}{f'[{_strategy_alias}] ' if _strategy_alias else ''}{match['home_team']} vs {match['away_team']} | edge={edge:.3f} cal={cal_prob:.3f} kelly={kelly:.4f} align={alignment['alignment_class']}",
                         "strategy_profile": _strategy_alias or None,
                         # P1: Calibration
                         "calibrated_prob": round(cal_prob, 4),
