@@ -96,6 +96,34 @@ BOTS_CONFIG = {
         "odds_range": (1.30, 4.50),
         "min_prob": 0.30,
     },
+    # RATING-1X2-BOT ([[#141]], 2026-09-24, owner request: "1x2 market NEW").
+    # A TWIN of bot_v10_1x2 — identical thresholds, odds range, min_prob, cohort,
+    # Pinnacle veto, meta gate, staking — with ONE difference: the 1X2 probability
+    # is the walk-forward rating model's (rating_1x2_predictions, gated rows only),
+    # used AS IS. It deliberately skips calibrate_prob: with shrinkage_alpha_*_1x2
+    # at ~0 that step returns Platt(Pinnacle), so bot_v10_1x2 is in effect a
+    # market bot, and feeding the new model through it would reproduce the old
+    # bot's picks. The rating model is already calibrated (holdout H/D/A
+    # 0.440/0.239/0.321 vs actual 0.438/0.231/0.331). The data-tier edge bump is
+    # also skipped: it grades the OLD model's inputs; this bot has its own
+    # coverage gate. Expectation, stated up front: it does NOT beat Pinnacle
+    # (alpha = 0), so a positive ROI would need CLV to back it before it means
+    # anything. experimental: simulated_bets only, no real-money path, not public.
+    "bot_rating_1x2_v1": {
+        "description": "1x2 market NEW — twin of bot_v10_1x2 priced by the walk-forward 1X2 rating model (r1x2_d8plus_v1), no market shrinkage",
+        "tier_label": "elite",
+        "markets": ["1x2"],
+        "tier_filter": None,
+        "edge_thresholds": {
+            1: {"1x2_fav": 0.08, "1x2_long": 0.12, "ou": 0.08},
+            2: {"1x2_fav": 0.05, "1x2_long": 0.08, "ou": 0.06},
+            3: {"1x2_fav": 0.04, "1x2_long": 0.06, "ou": 0.05},
+            4: {"1x2_fav": 0.03, "1x2_long": 0.05, "ou": 0.04},
+        },
+        "odds_range": (1.30, 4.50),
+        "min_prob": 0.30,
+        "prob_source": "rating_1x2",
+    },
     "bot_v10_ou": {
         # RETIRED 2026-09-24 — migration 399 ([[#077]]). Kept for history; the pipeline
         # skips it on is_active=False here and retired_at in the DB.
@@ -1035,6 +1063,7 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     # placement; if morning fires first, that's the price we get.
     # V10-SPLIT-BY-MARKET (migration 375) — one cohort entry became two.
     "bot_v10_1x2":          "all",
+    "bot_rating_1x2_v1":    "all",    # RATING-1X2-BOT — same cohort as its twin
     "bot_v10_ou":           "all",
     "bot_summer_specialist": "all",   # BOT-SUMMER-SPECIALIST 2026-07-08 — fills midweek summer volume gap
     "bot_lower_1x2":        "all",
@@ -2898,6 +2927,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     pinnacle_over_by_match:  dict[str, float] = {}        # over 2.5 (PIN-2/3)
     pinnacle_under_by_match: dict[str, float] = {}        # under 2.5 (PIN-2/3)
     sharp_consensus_by_match: dict[str, float] = {}
+    rating_1x2_by_match: dict[str, tuple[float, float, float]] = {}   # RATING-1X2-BOT
     if all_match_ids_for_signals:
         try:
             from workers.api_clients.db import execute_query as _eq_pin
@@ -2928,6 +2958,22 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         target[str(pr["match_id"])] = float(pr["signal_value"])
         except Exception as e:
             console.print(f"  [yellow]Pinnacle signal load failed (non-critical): {e}[/yellow]")
+
+        # RATING-1X2-BOT ([[#141]]): the rating model's gated 1X2 probabilities,
+        # written by job_rating_1x2_shadow before the match. Only bots with
+        # prob_source="rating_1x2" read this; a match without a row is skipped
+        # by those bots (funnel step drop_no_rating), never priced by fallback.
+        try:
+            from workers.jobs.rating_1x2_shadow import MODEL_VERSION as _R1X2_VER
+            for _rr in _eq_pin(
+                """SELECT match_id, p_home, p_draw, p_away FROM rating_1x2_predictions
+                    WHERE model_version = %s AND gated AND match_id = ANY(%s::uuid[])""",
+                (_R1X2_VER, all_match_ids_for_signals),
+            ):
+                rating_1x2_by_match[str(_rr["match_id"])] = (
+                    float(_rr["p_home"]), float(_rr["p_draw"]), float(_rr["p_away"]))
+        except Exception as e:
+            console.print(f"  [yellow]Rating 1X2 load failed (non-critical; rating bot idles): {e}[/yellow]")
 
         # CAL-SHARP-GATE: batch-load sharp_consensus_home for all matches.
         # Skip 1X2 home bets where sharp_consensus < -0.02 (sharps say home
@@ -3615,6 +3661,17 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             bet_candidates = []
             sel_filter = config.get("selection_filter")
 
+            # RATING-1X2-BOT: a bot may take its 1X2 probability from the rating
+            # model instead of the ensemble. Everything else in this loop is shared.
+            _rating_bot = config.get("prob_source") == "rating_1x2"
+            _p1x2 = pred
+            if _rating_bot:
+                _rr = rating_1x2_by_match.get(str(match_id))
+                if _rr is None:
+                    _funnel[bot_name]["drop_no_rating"] += 1
+                    continue
+                _p1x2 = {"home_prob": _rr[0], "draw_prob": _rr[1], "away_prob": _rr[2]}
+
             # Build candidates: (market, selection, odds, raw_prob, os_market, os_selection, threshold)
             candidate_specs = []
 
@@ -3622,15 +3679,15 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             if "1x2" in config["markets"] and match["odds_home"] > 0 and (not sel_filter or "Home" in sel_filter):
                 odds = match["odds_home"]
                 me = (thresholds.get("1x2_fav", 0.05) if odds < 2.0 else thresholds.get("1x2_long", 0.08))
-                candidate_specs.append(("1X2", "Home", odds, pred["home_prob"], "1x2", "home", me))
+                candidate_specs.append(("1X2", "Home", odds, _p1x2["home_prob"], "1x2", "home", me))
 
             # 1X2: Draw
             if "1x2" in config["markets"] and match["odds_draw"] > 0 and (not sel_filter or "Draw" in sel_filter):
-                candidate_specs.append(("1X2", "Draw", match["odds_draw"], pred["draw_prob"], "1x2", "draw", thresholds.get("1x2_long", 0.08)))
+                candidate_specs.append(("1X2", "Draw", match["odds_draw"], _p1x2["draw_prob"], "1x2", "draw", thresholds.get("1x2_long", 0.08)))
 
             # 1X2: Away
             if "1x2" in config["markets"] and match["odds_away"] > 0 and (not sel_filter or "Away" in sel_filter):
-                candidate_specs.append(("1X2", "Away", match["odds_away"], pred["away_prob"], "1x2", "away", thresholds.get("1x2_long", 0.08)))
+                candidate_specs.append(("1X2", "Away", match["odds_away"], _p1x2["away_prob"], "1x2", "away", thresholds.get("1x2_long", 0.08)))
 
             # O/U 2.5 — AGGRESSIVE-V2: sel_filter (when set) gates OU side
             if "ou" in config.get("markets", []) and match.get("odds_over_25", 0) > 0 and (not sel_filter or "Over 2.5" in sel_filter):
@@ -3765,8 +3822,14 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 }
                 _cal_pmap = _cal_pin_map.get(selection)
                 pin_anchor = _cal_pmap.get(str(match_id)) if _cal_pmap is not None else None
-                cal_prob = calibrate_prob(raw_mp, ip, tier=tier, market=platt_market,
-                                          anchor_implied=pin_anchor, odds=odds)
+                # RATING-1X2-BOT: the rating model's probability is used as is (see
+                # the BOTS_CONFIG note) — calibrate_prob would replace it with Platt(Pinnacle).
+                if _rating_bot:
+                    cal_prob = raw_mp
+                    _fctx["fair_source"] = "rating_1x2"
+                else:
+                    cal_prob = calibrate_prob(raw_mp, ip, tier=tier, market=platt_market,
+                                              anchor_implied=pin_anchor, odds=odds)
 
                 # Guard: skip if calibration produced NaN
                 if math.isnan(cal_prob):
@@ -3775,7 +3838,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
 
                 # Use calibrated probability for edge calculation
                 edge = cal_prob - ip
-                me = base_threshold + edge_bump
+                me = base_threshold + (0.0 if _rating_bot else edge_bump)
                 _fctx.update(fair_prob=cal_prob, threshold=me)
 
                 if edge < me or odds < odds_min or odds > odds_max or cal_prob < min_prob:
@@ -4084,7 +4147,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         "stake": stake,
                         "placed_at": datetime.now().isoformat(),
                         "pin_cross_drift_shadow_flag": _pin_shadow_flag,
-                        "reasoning": f"{tier_tag}{f'[{_strategy_alias}] ' if _strategy_alias else ''}{match['home_team']} vs {match['away_team']} | edge={edge:.3f} cal={cal_prob:.3f} kelly={kelly:.4f} align={alignment['alignment_class']}",
+                        "reasoning": f"{'[rating r1x2_d8plus_v1] ' if _rating_bot else tier_tag}{f'[{_strategy_alias}] ' if _strategy_alias else ''}{match['home_team']} vs {match['away_team']} | edge={edge:.3f} cal={cal_prob:.3f} kelly={kelly:.4f} align={alignment['alignment_class']}",
                         "strategy_profile": _strategy_alias or None,
                         # P1: Calibration
                         "calibrated_prob": round(cal_prob, 4),

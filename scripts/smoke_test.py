@@ -54373,5 +54373,28 @@ def test_rating_1x2_shadow_isolated():
         "prior-season history must not be written into matches"
 
 
+@test("RATING-1X2-BOT — #141 '1x2 market NEW' is an exact twin of bot_v10_1x2 except its 1X2 probability")
+def test_rating_1x2_bot_twin():
+    """RATING-1X2-BOT ([[#141]], 2026-09-24). The bot exists to answer ONE question —
+    does the rating model pick better 1X2 bets than bot_v10_1x2 — so every rule other
+    than the probability source must stay identical, and the rating probability must
+    NOT pass through calibrate_prob (with 1X2 shrinkage alpha ~0 that step returns
+    Platt(Pinnacle) and the twin would copy the market bot)."""
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
+    new, old = BOTS_CONFIG["bot_rating_1x2_v1"], BOTS_CONFIG["bot_v10_1x2"]
+    assert new["prob_source"] == "rating_1x2" and "prob_source" not in old
+    for k in ("markets", "tier_filter", "edge_thresholds", "odds_range", "min_prob"):
+        assert new[k] == old[k], f"twin drifted on {k}: {new[k]} vs {old[k]}"
+    assert BOT_TIMING_COHORTS["bot_rating_1x2_v1"] == BOT_TIMING_COHORTS["bot_v10_1x2"]
+    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
+    i = src.index("if _rating_bot:\n                    cal_prob = raw_mp")
+    assert "calibrate_prob(" in src[i:i + 600], "the non-rating path must still calibrate"
+    assert '_funnel[bot_name]["drop_no_rating"]' in src, "no rating row must mean no bet, never a fallback price"
+    assert 'candidate_specs.append(("1X2", "Home", odds, _p1x2["home_prob"]' in src
+    mig = _engine_path("supabase/migrations/414_bot_rating_1x2.sql").read_text(encoding="utf-8")
+    assert "'experimental'" in mig and "'1x2 market NEW'" in mig
+    assert "INSERT INTO coolbet_placer_bots" not in mig, "no real-money eligibility row for this bot"
+
+
 if __name__ == "__main__":
     main()
