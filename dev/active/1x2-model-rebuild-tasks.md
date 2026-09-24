@@ -17,20 +17,29 @@ Parent: [[#141]] 1X2-MODEL-REBUILD-2026-09-24 (PRIORITY_QUEUE.md) — 🔴 P0 TO
 - [x] CI unbroken (smoke_test.py syntax from `9836228e`) — `63726b99`
 
 ## Remaining — in this order
-- [ ] **A. Finish the AF fixture-details fetch** — `python3 -u scripts/fetch_fixture_details_cache.py --max-calls 25000`
+- [x] **A. Finish the AF fixture-details fetch** — ✅ 2026-09-24 19:22 UTC, 11,133 calls, 2 fixtures not returned — `python3 -u scripts/fetch_fixture_details_cache.py --max-calls 25000`
       (resumable; skips done fixtures; reserve 20k; stops 23:45 UTC; 350/min). 6,600 / 19,733 calls done at 18:38 UTC
       09-24. Cache: `data/models/_research/1x2/fixture_details/` on the owner's Mac (gitignored) — a session on another
       machine must re-run it there (~1 h, ~20k calls).
-- [ ] **A2. Round 3c test** — `python3 scripts/ab_1x2_lineups.py --select` (half-life 180 vs 365 on 08-01..08-30),
+- [x] **A2. Round 3c test** — ✅ 2026-09-24: hl 365 chosen; CONFIRM all four FAIL (plan doc); presence-flag fix applied before confirm — `python3 scripts/ab_1x2_lineups.py --select` (half-life 180 vs 365 on 08-01..08-30),
       record the choice in the plan doc, then `--confirm --half-life <chosen>` ONCE. Record results (plan doc "ROUND 3c").
-- [ ] **A3. If 3c passes:** production player strength — private table for fixture details, daily fetch of yesterday's
+- [x] **A3. DROPPED — 3c failed (2026-09-24).** Was: if 3c passes: production player strength — private table for fixture details, daily fetch of yesterday's
       fixtures (`/fixtures?ids=`, 20 per call), budget-aware backfill (owner: up to ~50k/day on quiet days, less on busy),
       XI features in the combined model's refit + refresh (confirmed lineups ~1 h before KO; PREV XI before that).
-- [ ] **B. Honest backtest** of `bot_rating_1x2_v1`, `bot_combined_1x2_v1` and `bot_v10_1x2` (baseline):
+- [x] **B. Honest backtest** — ✅ 2026-09-24: B, B2 (4/4 PASS), B3 grid 13,824 configs; results in plan doc. Display on /admin/bots still open → B-display below. Was: of `bot_rating_1x2_v1`, `bot_combined_1x2_v1` and `bot_v10_1x2` (baseline):
       window FIXED at 2026-08-31..2026-09-24 (the only out-of-sample window — do NOT pick windows by result);
       same bot rules; opening prices for the bet (only opening + close are retained after 7 days), Pinnacle-close CLV;
       every pick; stored SEPARATELY (not in simulated_bets) and labelled "Backtest (simulated)"; shown on /admin/bots
       beside "Live since 2026-09-25". Public display = owner decision after seeing the numbers.
+- [ ] **B-display.** Show the backtest on /admin/bots as "Backtest (simulated)" beside "Live since 2026-09-25": a private
+      home for the summary JSON on the VPS (table without anon grant, or a deployed file), a superadmin server-side reader,
+      the ROI-is-noise and book-split caveats. Admin only; never /performance.
+- [ ] **B4. NEW+ outlier shadow bot** — pre-register then add `bot_combined_1x2_ev_v1` (N2/N3-style: edge = p·odds − 1,
+      EV ≥ 5% or 8%, Pinnacle price required, no min_prob, odds 1.30–6.00, all books), judged forward on CLV from its creation date.
+- [ ] **B5. Takeability of opening outlier quotes** — for picks like B2's, how often is the above-consensus quote still
+      there 1 h / at Telegram send time, per book; AF-fed vs our own sweepers. Decides which books NEW+ picks may name.
+- [ ] **H. Shots/xG rating round** — pre-register (Wheatcroft: shots beat goals as rating input) using the fixture_details
+      cache's shots / shots on target / xG; confirm FORWARD (08-31..09-24 is used up by rounds 1, 2, 3b, 3c) — owner approves design first.
 - [ ] **C. Forward check ~2026-09-27** — `python3 scripts/ab_1x2_rating_arms.py --forward` (both versions vs served vs Pinnacle).
 - [ ] **D. OWNER DECISION (recommended yes): serve the combined model's 1X2** in place of the `predictions` ensemble
       (0.635·Poisson + 0.365·XGB, measured WORSE than uniform, 1.144). 1X2 only; the 1X2 Platt params in

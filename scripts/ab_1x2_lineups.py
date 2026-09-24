@@ -76,7 +76,12 @@ def run(half_life: float, fit_hi: str, lo: str, hi: str, label: str) -> None:
     trx, tex = tr.copy(), te.copy()
     for c in XI_ACTUAL:
         trx[c] = trx[c].fillna(0.0); tex[c] = tex[c].fillna(0.0)
-    withxi = A.fit_predict("D8+XI", trx, tex)
+    withxi = np.array(A.fit_predict("D8+XI", trx, tex), dtype=float, copy=True)
+    # Pre-registration: "rows without lineups keep the no-XI prediction". Without this the
+    # 0/1 presence flag acts as a league-coverage intercept on featureless rows (found in
+    # selection 2026-09-24: L4's whole gain sat on rows with NO XI data).
+    _no = te.xi_diff.isna().to_numpy()
+    withxi[_no] = np.asarray(base, dtype=float)[_no]
     d = A.per_match_ll(withxi, y) - A.per_match_ll(base, y)
     mu, clo, chi, p = A.boot_ci(-d)
     res["L1 rating +XI actual"] = (A.per_match_ll(base, y).mean(), A.per_match_ll(withxi, y).mean(), len(te),
@@ -89,6 +94,8 @@ def run(half_life: float, fit_hi: str, lo: str, hi: str, label: str) -> None:
         y2 = cte.y.to_numpy()
         P0, _ = comb_predict(cte, comb_fit(ctr))
         P1, _ = comb_predict(cte, comb_fit(ctr, extra=cols))
+        _no = cte[cols[0]].isna().to_numpy()   # pre-registration: no XI -> the no-XI prediction
+        P1 = np.array(P1, dtype=float, copy=True); P1[_no] = np.asarray(P0, dtype=float)[_no]
         l0, l1 = A.per_match_ll(P0, y2), A.per_match_ll(P1, y2)
         mu, clo, chi, p = A.boot_ci(l0 - l1)
         res[f"{lid} combined {which.upper()} +{'XI actual' if cols is XI_ACTUAL else 'XI previous'}"] = (

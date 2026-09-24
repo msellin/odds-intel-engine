@@ -366,3 +366,114 @@ Selected/tuned (half-life ∈ {180, 365} d) on 08-01..08-30, confirmed ONCE on 0
 < 0 with Holm-adjusted p < 0.05.** Rows without lineups keep the no-XI prediction (coverage reported).
 **Expected:** L1 passes clearly (lineups carry what score ratings lag on); L2 small gain; L3 ≈ 0 (closing
 prices already contain the lineup news); L4 ≈ 0.
+
+**ROUND 3c — SELECTION result (2026-09-24 ~19:35 UTC, fit < 08-01, score 08-01..08-30), recorded BEFORE the confirm run.**
+Fetch finished first: 11,133 calls, 2 fixtures not returned by AF. *Implementation fix found in selection, applied
+before confirm:* the combiner's `design()` adds a 0/1 presence flag per extra column, and on rows with NO XI data
+that flag acted as a league-coverage intercept — the first selection run showed L4 −0.0031 with its whole gain on
+rows where both XI variants were missing (−0.0071 on 5,180 "neither" rows, +0.0002 where only PREV existed). That
+contradicts the pre-registration ("rows without lineups keep the no-XI prediction"), so `ab_1x2_lineups.py` now
+sets the no-XI prediction on every row without the arm's XI feature. Re-run (Δ log-loss, Holm m=4):
+| arm | hl 180 | hl 365 |
+|---|---|---|
+| L1 rating +XI actual | −0.0012 (Holm .210) | **−0.0018 (Holm .026)** |
+| L2 comb OPEN +XI actual | −0.0003 | −0.0005 (.129) |
+| L3 comb CLOSE +XI actual | −0.0003 | −0.0005 (.129) |
+| L4 comb OPEN +XI prev | −0.0002 | −0.0004 (.129) |
+**Chosen half-life: 365 d** (better on all four arms). Confirm = `--confirm --half-life 365`, run ONCE.
+
+**ROUND 3c — CONFIRM result (run once, 2026-09-24 ~19:45 UTC; fit < 08-31, score 08-31..09-24, n = 12,640): ALL FAIL.**
+| arm | without | with | Δ | raw p | Holm |
+|---|---|---|---|---|---|
+| L1 rating +XI actual | 1.0037 | 1.0042 | +0.0005 | .728 | 1.0 |
+| L2 comb OPEN +XI actual | 0.9792 | 0.9792 | +0.0000 | .525 | 1.0 |
+| L3 comb CLOSE +XI actual | 0.9763 | 0.9763 | +0.0001 | .633 | 1.0 |
+| L4 comb OPEN +XI prev | 0.9792 | 0.9795 | +0.0003 | .925 | 1.0 |
+XI coverage 38.3% (actual) / 59.4% (prev). Expectation was L1 pass / L2 small / L3, L4 ≈ 0 — L1's selection-window
+gain (−0.0018) did not replicate. **Verdict: an API-Football player-rating XI adds nothing to either model out of
+sample; A3 (production player strength) is NOT built.** The fetched cache still holds per-team shots / shots on
+target / xG for ~395k fixtures — the input for the next candidate round (shot/xG-based ratings, Wheatcroft), which
+needs its own pre-registration and, because 08-31..09-24 has now been used by rounds 1, 2, 3b and 3c, a forward
+confirmation or a family-wise correction across rounds.
+
+## Pre-registration — BACKTEST B2: NEW+ with outlier-style rules (2026-09-24 ~19:20 UTC, BEFORE the run)
+Why: backtest B (`scripts/backtest_1x2_new_bots.py`) gave NEW+ only 14 picks (ROI −36% [−76, +10]; CLV +13.1% on
+the 8 with a Pinnacle price), nearly all favourites at odds 1.6–2.0. That is structural, not football: NEW+ inherited
+`bot_v10_1x2`'s ABSOLUTE-probability-point thresholds (fav < 2.0 easier than long), + 5 pp at T3+, and
+`min_prob` 0.30 — the same % price outlier clears a pp threshold far more easily at short odds. NEW+ is in effect
+a consensus-outlier strategy (Kaunitz et al.), whose natural edge unit is expected value, p × odds − 1.
+Owner prior (2026-09-24): across our bots the best gains came at odds above 2.0 — tested as its own arm (N4).
+
+**Rules common to all arms:** NEW+ probability (`r1x2_comb_v1`, OPEN-price variant, walk-forward, as in B);
+edge = p × odds − 1; Pinnacle price REQUIRED at decision time (drops the no-reference picks, e.g. the Iran draws);
+no `min_prob`; no tier bump; all books (Telegram audience, owner 2026-09-24); price = opening, bounded
+`timestamp < kickoff`; one pick per match (the best-EV selection); all other B gates unchanged.
+Window FIXED 2026-08-31..2026-09-24 — the same window B already looked at, so this is NOT a fresh out-of-sample
+test; the forward run from 2026-09-25 is.
+
+| id | EV threshold | odds range |
+|---|---|---|
+| N1 | ≥ 3% | 1.30–6.00 |
+| N2 | ≥ 5% | 1.30–6.00 |
+| N3 | ≥ 8% | 1.30–6.00 |
+| N4 | ≥ 5% | 2.00–6.00 (owner prior) |
+
+**Primary readout:** mean CLV vs de-vigged Pinnacle close > 0, one-sided bootstrap p, **Holm m = 4, PASS at
+adjusted p < 0.05**. Reported descriptively (not tested): n, hit rate, flat ROI with 95% CI, odds-band split
+(1.30–1.99 / 2.00–2.99 / 3.00–6.00), book split, and the "every selection at best open price" null per band.
+**Expected:** more picks than B (hundreds for N1); CLV positive but shrinking as the threshold falls; ROI inside
+noise at any n this window gives. A pass here licenses a shadow bot, not a public claim.
+
+## Pre-registration — BACKTEST B3: configuration GRID, all three models (2026-09-24 ~19:25 UTC, BEFORE the run)
+Owner request: "use all 3 models — baseline, NEW, NEW+ — and run them in every possible dimension, thousands of
+configurations". This is an EXPLORATORY search; its honesty comes from the design below, not from the best row.
+
+**Grid (~12k configs):** model {baseline `bot_v10_1x2` probs (calibrated, as live), NEW `r1x2_d8plus_v1`, NEW+
+`r1x2_comb_v1` OPEN} × edge unit {pp: p − 1/odds; EV: p·odds − 1} × threshold {pp: .02 .04 .06 .08 .10 .12;
+EV: .02 .04 .06 .08 .12 .16} × odds range (min ∈ {1.30, 1.60, 2.00, 2.50}, max ∈ {3.00, 4.50, 6.00, 10.00}, min <
+max) × selection {all, home, draw, away} × Pinnacle price required {yes, no} × book set {all, API-Football only,
+direct sweepers only (Coolbet, Unibet-Site, Epicbet, Tonybet)}. One pick per match per config (best edge). All other
+B gates as live. Window 2026-08-31..09-24, opening prices, CLV vs de-vigged Pinnacle close.
+
+**Honesty, fixed now:**
+1. **Split selection/confirmation:** rank configs on 08-31..09-12 (kickoff), min n = 30 picks with CLV; take the top
+   10 by mean CLV; test each ONCE on 09-13..09-24; one-sided bootstrap p, **Holm m = 10**, PASS at adj p < 0.05.
+2. **Data-snooping test on the full window:** Hansen SPA (stationary block bootstrap over kickoff DATES, ≥ 2,000
+   resamples, fixed seed) of the best config's mean CLV against the "every selection at best open price, same odds
+   range" null. Reports whether the best of the grid beats what the best of the grid would show by chance.
+3. Reported descriptively: per-model CLV/ROI surfaces (threshold × odds band), the share of configs with CLV > 0
+   per model vs the null's share, and every config row in the CSV. **No single config is promoted from this run**;
+   a config that passes (1) becomes a pre-registered shadow bot judged forward from its creation date.
+**Expected:** baseline ≈ null everywhere (it is Platt(Pinnacle)); NEW positive only in a favourites pocket, if at
+all, and not surviving (1); NEW+ positive CLV at low thresholds on soft books, SPA borderline. B2 (above) keeps
+its own pre-registered verdict regardless of B3.
+
+## RESULTS — backtests B, B2, B3 (2026-09-24 ~20:10 UTC; `scripts/backtest_1x2_new_bots.py`, outputs gitignored in `data/models/_research/1x2/backtest/`)
+**#065 swap check (applies to every baseline number):** the stored ensemble's XGBoost leg (~16% of the blend) was
+home/away swapped before 50ec7347 (corr with Pinnacle home −0.134 before, +0.625 after); un-swapped on 1,001/1,003
+matches in the shared loader. Baseline B moves CLV −2.9% → −0.75% [−4.8, +3.3], n=26.
+
+**B (live rules as-is, opening prices):** baseline 26 picks CLV −0.75%; NEW 118 picks CLV +1.1% [−1.1, +3.1] (favourites
++5.2% [+2.3, +8.1] n=27, 3.00+ −4.0%); NEW+ 14 picks, ROI −36%, CLV +13.1% on only 8. NEW+'s inherited pp thresholds +
+min_prob 0.30 push it to short odds and starve it of picks — the reason for B2.
+
+**B2 (pre-registered N1–N4): all four PASS** (Holm p < 4e-4). N1 EV≥3% n=1,638 CLV +1.27% [+0.86, +1.69];
+N2 EV≥5% n=1,050 +2.00%; N3 EV≥8% n=557 +3.12% [+2.35, +3.88]; N4 EV≥5% odds 2–6 n=860 +1.33%. ROI +7–12%, CIs
+touch zero. CLV positive below odds 3.00 only; 3.00–6.00 ≈ 0 (still above its −5.2% null). **Book split is the
+caveat:** API-Football-fed books carry most of it (N2 +2.66%); our own sweepers (Coolbet, Unibet-Site, Epicbet,
+Tonybet) N2 +1.08% [+0.20, +1.94], N3 +2.65% [+1.42, +3.89], N1/N4 CI crossing zero. AF-fed opening quotes can be
+phantom-high vs the book's own site (KAMBI-FEED-DIVERGENCE; AF 'Unibet' 33% above unibet.ee) — takeability is
+unproven. Same window as B, so not fresh out-of-sample.
+
+**B3 grid (13,824 configs):** split test — top 10 on 08-31..09-12 = only TWO distinct pick sets (NEW+ home pp≥4 odds≥1.6
+AF books; NEW+ away EV≥8% odds 1.3–3.0 AF books), both PASS on 09-13..09-24 but on n = 15 and 24. SPA vs the
+pre-registered null p = 0.000 (null is weak: −1.5..−5%); vs zero (NOT pre-registered) p = 0.000. Share of configs with
+CLV > 0: baseline 5.1%, NEW 7.6%, **NEW+ 75.8%**. Surfaces: baseline negative everywhere (it is Platt(Pinnacle));
+NEW positive only at pp ≥ 10–12 with small n; NEW+ positive almost everywhere, rising with threshold, better at
+short odds, draws the exception, AF books +3.5% vs own sweepers +1.4% per config.
+One interpretation to note: in B3 the grid threshold REPLACES the tier table / fav-long split / T3+ bump / data-tier
+bump; every other B gate (incl. min_prob 0.30) is kept.
+
+**Verdict:** NEW+ as a consensus-outlier bettor shows real, repeatable positive CLV on this window, strongest at our
+own sweepers only for EV ≥ 5–8%. Per pre-registration nothing is promoted: the next step is a forward shadow bot
+(N2/N3-style rules) plus a takeability check of opening outlier quotes. Baseline and NEW have no bettable pocket.

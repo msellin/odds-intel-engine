@@ -55188,5 +55188,127 @@ def test_player_strength_leak_guard():
     assert out.loc[3, "prev_diff"] > 0.5, "PREV (last known XI) must be available by fixture 3"
 
 
+@test("BACKTEST-1X2-NEW-BOTS — #141 B: fixed window, read-only, never writes simulated_bets, gates pinned to the pipeline")
+def test_backtest_1x2_new_bots():
+    """BACKTEST-1X2-NEW-BOTS ([[#141]] step B). The honest backtest of bot_v10_1x2 /
+    bot_rating_1x2_v1 / bot_combined_1x2_v1 is only honest if (a) the window stays the
+    owner's pre-registered 2026-08-31..2026-09-24 — no window picked by result, (b) it
+    never writes to simulated_bets or any table (results live in a gitignored research
+    dir, labelled "Backtest (simulated)"), and (c) the funnel constants it had to copy
+    (they are locals in run_morning / _load_today_from_db) still match the pipeline.
+    Source inspection only: importing the script would open a DB connection."""
+    import ast
+    from datetime import datetime, timezone
+    src = _engine_path("scripts/backtest_1x2_new_bots.py").read_text(encoding="utf-8")
+    consts = {}
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            try:
+                consts[node.targets[0].id] = ast.literal_eval(node.value)
+            except ValueError:
+                pass
+    assert consts["WINDOW_START"] == "2026-08-31" and consts["WINDOW_END"] == "2026-09-24", "window is pre-registered"
+    ep = lambda d: datetime.fromisoformat(d).replace(tzinfo=timezone.utc).timestamp()
+    assert consts["WINDOW_START_EPOCH"] == ep("2026-08-31") and consts["WINDOW_END_EPOCH"] == ep("2026-09-25")
+    assert "NEW_TRAIN_CUT_EPOCH = WINDOW_START_EPOCH" in src, "NEW must be fitted before the window only"
+    low = src.lower()
+    for bad in ("insert into", "update ", "delete from", "store_bet(", "execute_values", "bulk_store", "create table"):
+        assert bad not in low, f"backtest must be read-only; found {bad!r}"
+    assert "readonly=True" in src, "DB connection must be opened read-only"
+    assert '"_research" / "1x2" / "backtest"' in src, "output must stay in the gitignored research dir"
+    assert "Backtest (simulated)" in src
+    pipe = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
+    assert f"PINNACLE_VETO_GAP = {consts['PINNACLE_VETO_GAP']}" in pipe
+    assert 'DATA_TIER_EDGE_BUMP = {"A": 0.00, "B": 0.02, "C": 0.08}' in pipe and \
+        consts["DATA_TIER_EDGE_BUMP"] == {"A": 0.0, "B": 0.02, "C": 0.08}
+    assert '_ALN_BUMP = {"LOW": 0.01, "MEDIUM": 0.0, "HIGH": 0.0, "NONE": 0.0}' in pipe
+    assert f'"1x2": {consts["OUTLIER_MULT_1X2"]},' in pipe and f"_OUTLIER_MIN_BOOKS = {consts['OUTLIER_MIN_BOOKS']}" in pipe
+    assert "if tier >= 3 and thresholds:" in pipe and '(0.05 if k.startswith("1x2") else 0.03)' in pipe
+    assert "0.06 <= _anchor_gap < 0.10" in pipe and "edge < me + 0.02" in pipe
+    sc = _engine_path("workers/api_clients/supabase_client.py").read_text(encoding="utf-8")
+    assert '_SOFT_BMS = {"Bwin", "Unibet", "Sportingbet", "Betway", "NordicBet", "10Bet", "1xBet"}' in sc
+    assert consts["SOFT_BMS"] == {"Bwin", "Unibet", "Sportingbet", "Betway", "NordicBet", "10Bet", "1xBet"}
+    assert "not_replicated" in src and "meta gate" in src, "gates not replicated must be listed in the output"
+
+
+@test("BACKTEST-1X2-NEWPLUS-B2 — #141 B2: the four pre-registered NEW+ arms, Holm m=4, fixed window")
+def test_backtest_1x2_newplus_b2():
+    """BACKTEST B2 ([[#141]]). Pre-registered in dev/active/1x2-model-rebuild-plan.md
+    ("Pre-registration — BACKTEST B2") BEFORE the run: NEW+ only, edge = p*odds - 1,
+    Pinnacle required, one pick per match, arms N1-N4 fixed. Pins the arms so they
+    cannot be re-tuned on the output. Source inspection only."""
+    import ast
+    src = _engine_path("scripts/backtest_1x2_new_bots.py").read_text(encoding="utf-8")
+    consts = {}
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            try:
+                consts[node.targets[0].id] = ast.literal_eval(node.value)
+            except ValueError:
+                pass
+    assert consts["B2_ARMS"] == {
+        "N1": {"ev_min": 0.03, "odds_range": (1.30, 6.00)},
+        "N2": {"ev_min": 0.05, "odds_range": (1.30, 6.00)},
+        "N3": {"ev_min": 0.08, "odds_range": (1.30, 6.00)},
+        "N4": {"ev_min": 0.05, "odds_range": (2.00, 6.00)},
+    }, "B2 arms are pre-registered — do not change them"
+    assert consts["B2_HOLM_M"] == 4 and consts["B2_ALPHA"] == 0.05 and consts["B2_N_BOOT"] >= 10000
+    assert consts["WINDOW_START"] == "2026-08-31" and consts["WINDOW_END"] == "2026-09-24"
+    assert consts["B2_NULL_RANGE"] == (1.30, 6.00)
+    assert 'frozenset({"Coolbet", "Unibet-Site", "Epicbet", "Tonybet"})' in src
+    body = src[src.index("def run_b2_arm"):src.index("def _p_one_sided")]
+    assert "ev = p * odds - 1" in body, "B2 edge is expected value"
+    assert 'drop_no_pinnacle' in body and "min_prob" not in body and "startswith(\"1x2\")" not in body, \
+        "B2: Pinnacle required, no min_prob, no tier bump"
+    assert "max(accepted)" in body, "one pick per match: the best-EV selection"
+    assert "_b2.csv" in src and "_b2.json" in src and '"--b2" in _args' in src
+
+
+@test("BACKTEST-1X2-GRID-B3 — #141 B3: pre-registered grid dimensions, split date, Holm m=10, SPA resamples, #065 un-swap")
+def test_backtest_1x2_grid_b3():
+    """BACKTEST B3 ([[#141]]). Exploratory grid pre-registered in
+    dev/active/1x2-model-rebuild-plan.md ("Pre-registration — BACKTEST B3") BEFORE the
+    run. Its honesty is the design — select on 08-31..09-12, confirm the top 10 ONCE on
+    09-13..09-24 with Holm m=10, and Hansen SPA over kickoff dates — so the design
+    constants are pinned here. Also pins the #065 un-swap of the baseline's stored XGB
+    leg (served home/away swapped until 50ec7347). Source inspection only."""
+    import ast
+    from datetime import datetime, timezone
+    src = _engine_path("scripts/backtest_1x2_new_bots.py").read_text(encoding="utf-8")
+    c = {}
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            try:
+                c[node.targets[0].id] = ast.literal_eval(node.value)
+            except ValueError:
+                pass
+    assert c["B3_MODELS"] == ("baseline", "new", "newplus")
+    assert c["B3_THRESH"] == {"pp": (0.02, 0.04, 0.06, 0.08, 0.10, 0.12), "ev": (0.02, 0.04, 0.06, 0.08, 0.12, 0.16)}
+    assert c["B3_ODDS_MIN"] == (1.30, 1.60, 2.00, 2.50) and c["B3_ODDS_MAX"] == (3.00, 4.50, 6.00, 10.00)
+    assert c["B3_SELECTIONS"] == ("all", "home", "draw", "away") and c["B3_PIN_REQUIRED"] == (True, False)
+    assert c["B3_BOOKSETS"] == ("all", "af", "direct")
+    n_ranges = sum(1 for a in c["B3_ODDS_MIN"] for b in c["B3_ODDS_MAX"] if a < b)
+    assert 3 * 2 * 6 * n_ranges * 4 * 2 * 3 == 13824, "grid size drifted from the pre-registration (~12k)"
+    ep = lambda d: datetime.fromisoformat(d).replace(tzinfo=timezone.utc).timestamp()
+    assert c["B3_SPLIT_EPOCH"] == ep("2026-09-13"), "select 08-31..09-12, confirm 09-13..09-24"
+    assert c["B3_MIN_CLV_N"] == 30 and c["B3_TOP_K"] == 10 and c["B3_HOLM_M"] == 10 and c["B3_ALPHA"] == 0.05
+    assert c["B3_SPA_N_BOOT"] >= 2000 and c["B3_N_BOOT"] >= 10000 and isinstance(c["B3_SEED"], int)
+    assert c["WINDOW_START"] == "2026-08-31" and c["WINDOW_END"] == "2026-09-24"
+    assert c["UNSWAP_065"] is True and c["SWAP_FIX_EPOCH"] == ep("2026-09-14T07:08:48"), "#065 fix = commit 50ec7347"
+    assert "Xu = X[[2, 1, 0]]" in src, "un-swap must put the XGB leg's home/away back"
+    assert "_b3.csv" in src and "_b3.json" in src and '"--b3" in _args' in src
+
+
+@test("LINEUPS-3C-NO-XI-FALLBACK — #141 round 3c: rows without XI keep the no-XI prediction")
+def test_lineups_3c_no_xi_fallback():
+    """ROUND 3c pre-registration: "rows without lineups keep the no-XI prediction". The
+    combiner's presence flag otherwise acts as a league-coverage intercept on featureless
+    rows — the first selection run credited L4 with a gain that sat entirely on rows with
+    NO XI data. Source inspection: both the L1 and the L2-L4 paths must fall back."""
+    src = _engine_path("scripts/ab_1x2_lineups.py").read_text(encoding="utf-8")
+    assert "withxi[_no] = np.asarray(base, dtype=float)[_no]" in src, "L1 must fall back to the no-XI prediction"
+    assert "P1[_no] = np.asarray(P0, dtype=float)[_no]" in src, "L2-L4 must fall back to the no-XI prediction"
+
+
 if __name__ == "__main__":
     main()

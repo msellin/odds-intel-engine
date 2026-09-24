@@ -3184,3 +3184,14 @@ From 2026-09-24 Tonybet writes EVERY goals line, not only .5: `over_under_20` (2
   blanks its clock — join AF's minute on match_id + captured_at. Unchanged boards are not re-written, so
   the series is event-driven, not a fixed 120 s grid.
 
+
+## 82. A missing-value presence flag is a coverage intercept, not the feature's signal (#141 round 3c, 2026-09-24)
+`workers/model/combined_1x2.design()` turns each optional column into `(value.fillna(0), value.notna())`. The
+0/1 flag lets the logit shift every row where the column is MISSING — and missingness is itself informative
+(no API-Football lineups ≈ lower-coverage leagues). In round 3c's first selection run the "previous XI" arm
+gained −0.0031 log-loss, and the whole gain sat on rows with NO XI data at all (−0.0071 on 5,180 such rows).
+* **Always split a new feature's gain by "feature present / absent".** A gain on rows where the feature is
+  absent is the presence flag (or a refit shift), never the feature.
+* If the pre-registration says rows without the feature keep the old prediction, enforce it in code
+  (`scripts/ab_1x2_lineups.py` now does; smoke `LINEUPS-3C-NO-XI-FALLBACK`). With the fix, round 3c
+  failed on confirm — the "win" had been the artefact.
