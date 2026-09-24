@@ -53506,6 +53506,43 @@ def test_book_feed_tidyups():
     assert "returned an empty board" in inspect.getsource(nk.capture_tonybet)
 
 
+@test("BOARD-GUARD-BTTS-AH — a single BTTS / AH-line fault at a direct book is refused on its own (#123)")
+def test_board_guard_btts_ah():
+    """#123 (2026-09-24): the whole-board rule needs >= 2 markets off, so a board wrong in ONE
+    market passed (Coolbet BTTS-yes 11.0 / 4.5 vs ~50%). BTTS and each AH line are now judged
+    alone vs a >= 4-book median by implied probability (15 pp; 10 pp for AH within 30 min of
+    kickoff), refusing only that market — for the four DIRECT books only (AF books' AH quarter
+    lines disagree family-vs-family; a 4–6-book median is no referee there). The Coolbet
+    caller keeps exactly the rows the guard returns (it used to test only for "nothing kept",
+    so partial refusals were quarantined AND written)."""
+    import inspect
+    from workers.utils import board_guard as bg
+    from workers.automation import coolbet_explorer as ce
+    # peers must DIFFER slightly: identical feeds count once (1xBet/Marathonbet rule)
+    bks = ("Bet365", "1xBet", "Betano", "Pinnacle")
+    peers = {"btts": {b: {"yes": 1.85 + i * 0.01, "no": 1.95 - i * 0.01} for i, b in enumerate(bks)},
+             "ah:-1": {b: {"home": 2.0 + i * 0.01, "away": 1.85 - i * 0.01} for i, b in enumerate(bks)}}
+    assert bg.single_market_offenses({"btts": {"yes": 3.4, "no": 1.3}}, peers)[0][0] == "btts"
+    assert bg.single_market_offenses({"btts": {"yes": 1.95, "no": 1.85}}, peers) == []
+    ah = {"ah:-1": {"home": 2.35, "away": 1.6}}          # ~7-8 pp off: fine far out, off near KO
+    assert bg.single_market_offenses(ah, peers, None) == []
+    assert bg.single_market_offenses({"ah:-1": {"home": 2.9, "away": 1.4}}, peers, 20)[0][0] == "ah:-1"
+    assert bg.ah_key(-1) == "ah:-1" and bg.ah_key(None) is None
+    rows = [("btts", "yes", 3.4, None), ("btts", "no", 1.3, None), ("1x2", "home", 2.0, None)]
+    _saved = (bg.quarantine_rows, bg.record_finding)
+    bg.quarantine_rows = lambda *a, **k: None      # never touch the DB from a smoke test
+    bg.record_finding = lambda *a, **k: None
+    try:
+      kept = bg.screen_board("m", "Epicbet", rows, lambda r: r[0], lambda r: r[1], lambda r: r[2],
+                             lambda r: r[3], peers=peers)
+      assert [r[0] for r in kept] == ["1x2"], kept
+      assert len(bg.screen_board("m", "Bet365", rows, lambda r: r[0], lambda r: r[1], lambda r: r[2],
+                                 lambda r: r[3], peers=peers)) == 3, "AF books are not single-market judged"
+    finally:
+        bg.quarantine_rows, bg.record_finding = _saved
+    assert "_ids = {id(r) for r in _kept}" in inspect.getsource(ce)
+
+
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")
 def test_anon_least_privilege():
     """#072 (2026-09-24): anon held SELECT on 134/134 public relations via default privileges;

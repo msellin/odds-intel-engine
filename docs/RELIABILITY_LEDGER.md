@@ -1315,6 +1315,15 @@ and `is_opening` so they are reversible; and the matcher refuses the pairing at 
 (`coolbet_placer.fuzzy_match_event` 45-min start tolerance + orientation-consistent scoring,
 `unique_pairs`). Two independent reviews before anything moved.
 
+**Extended by #123 (2026-09-24): single-market faults.** The whole-board rule needs ≥2 markets
+off, so a board wrong in ONE market passed. BTTS and each Asian-handicap LINE (`ah:<line>`, home-line
+convention) are now judged alone vs a ≥4-book median by implied probability — 15 pp, 10 pp for AH
+within 30 min of kickoff — at write time and in the read-back, refusing only that market, and only
+for the four DIRECT books (API-Football books' AH quarter lines disagree family-vs-family, so a
+4–6-book median is no referee; they still count as peers). The Coolbet writer used to test only
+whether the guard kept NOTHING, so any partial refusal (this one, and the older swapped-two-way
+one) was quarantined AND written — it now keeps exactly the rows the guard returns.
+
 **Completed by #001 (2026-09-24): orientation-STRICT, in every matcher.** "Orientation-consistent"
 still took `max(direct, swapped)`, so a book listing our away team as its home side was
 accepted and every side-mapper wrote the book's "1" as our home — a mirrored 1X2, a

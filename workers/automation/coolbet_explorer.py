@@ -1480,12 +1480,22 @@ def store_coolbet_snapshots_for_match(
     if not dry_run:
         from workers.utils.board_guard import screen_board
         _whole = non_ou_rows + ou_buffer
-        if _whole and not screen_board(match_id, "Coolbet", _whole,
-                                       market_of=lambda r: r[0], selection_of=lambda r: r[1],
-                                       odds_of=lambda r: r[2], line_of=lambda r: r[3],
-                                       minutes_to_kickoff=minutes_to_ko):
-            non_ou_rows, ou_buffer = [], []
-            by_market.clear()
+        if _whole:
+            _kept = screen_board(match_id, "Coolbet", _whole,
+                                 market_of=lambda r: r[0], selection_of=lambda r: r[1],
+                                 odds_of=lambda r: r[2], line_of=lambda r: r[3],
+                                 minutes_to_kickoff=minutes_to_ko)
+            if not _kept:
+                non_ou_rows, ou_buffer = [], []
+                by_market.clear()
+            elif len(_kept) != len(_whole):
+                # #123: the guard can refuse PART of a board (swapped two-way sides, a single
+                # BTTS / AH-line fault). This caller used to test only for "nothing kept",
+                # so a partial refusal was quarantined AND still written. Keep exactly the
+                # rows the guard returned.
+                _ids = {id(r) for r in _kept}
+                non_ou_rows = [r for r in non_ou_rows if id(r) in _ids]
+                ou_buffer = [r for r in ou_buffer if id(r) in _ids]
     from workers.utils.mirror_guard import drop_mirrored_1x2
     if not dry_run:
         _before = len(non_ou_rows)

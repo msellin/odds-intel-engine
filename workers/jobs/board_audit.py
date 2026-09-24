@@ -32,9 +32,17 @@ from collections import defaultdict
 
 from datetime import timedelta
 
-from workers.utils.board_guard import (CHECK_MARKETS, NEVER_JUDGED, PEER_MAX_AGE_H, _NOT_PEERS,
-                                       _corroborated, _line_ok, board_offenses, is_wrong_board,
-                                       record_finding, swapped_two_way)
+from workers.utils.board_guard import (CHECK_MARKETS, DIRECT_BOOKS, NEVER_JUDGED, PEER_MAX_AGE_H, _NOT_PEERS,
+                                       _corroborated, _line_ok, ah_key, board_offenses, is_wrong_board,
+                                       record_finding, single_market_offenses, swapped_two_way)
+_AUDIT_MARKETS = list(CHECK_MARKETS) + ["asian_handicap"]   # #123: AH judged per line
+
+
+def _key_of(r) -> str | None:
+    """Board key: the market, or 'ah:<line>' for an Asian-handicap line (#123)."""
+    if r["market"] == "asian_handicap":
+        return ah_key(r["handicap_line"])
+    return r["market"] if r["market"] in CHECK_MARKETS and _line_ok(r["market"], r["handicap_line"]) else None
 from workers.utils.mirror_guard import consensus, is_mirrored
 
 log = logging.getLogger(__name__)
@@ -63,8 +71,9 @@ def _snapshots(rows) -> list[tuple]:
 def _board_of(rows) -> dict:
     board: dict = {}
     for r in rows:
-        if r["market"] in CHECK_MARKETS and _line_ok(r["market"], r["handicap_line"]):
-            board.setdefault(r["market"], {})[r["sel"]] = float(r["odds"])
+        k = _key_of(r)
+        if k:
+            board.setdefault(k, {})[r["sel"]] = float(r["odds"])
     return board
 
 
@@ -113,11 +122,15 @@ def _own_asof(history: dict, book: str, t) -> dict:
     return out
 
 
-def _judge(board: dict, peers: dict) -> dict:
-    """→ {"wrong": [offenses] | None, "mirror": bool, "swapped": [markets]}"""
+def _judge(board: dict, peers: dict, minutes_to_kickoff: int | None = None,
+           book: str | None = None) -> dict:
+    """→ {"wrong": [offenses] | None, "mirror": bool, "swapped": [markets], "single": [(key, detail)]}"""
     offenses = board_offenses(board, peers)
-    verdict = {"wrong": offenses if is_wrong_board(offenses) else None, "mirror": False,
-               "swapped": [] if is_wrong_board(offenses) else swapped_two_way(board, peers)}
+    wrong = is_wrong_board(offenses)
+    verdict = {"wrong": offenses if wrong else None, "mirror": False,
+               "swapped": [] if wrong else swapped_two_way(board, peers),
+               "single": [] if wrong or book not in DIRECT_BOOKS
+                         else single_market_offenses(board, peers, minutes_to_kickoff)}
     t = board.get("1x2") or {}
     if not verdict["wrong"] and {"home", "draw", "away"} <= t.keys():
         refs = list({(q["home"], q["draw"], q["away"]) for q in (peers.get("1x2") or {}).values()
@@ -133,16 +146,16 @@ def run(*, dry_run: bool = False, back_h: float = 3, ahead_h: float = 48) -> dic
     from workers.api_clients.db import execute_query, get_conn
     c = defaultdict(int)
     latest = execute_query(
-        """SELECT DISTINCT ON (o.match_id, o.bookmaker, o.market, o.selection)
+        """SELECT DISTINCT ON (o.match_id, o.bookmaker, o.market, o.selection, o.handicap_line)
                   o.match_id::text AS mid, o.bookmaker AS book, o.market, lower(o.selection) AS sel,
-                  o.odds::float AS odds, o.handicap_line, o.timestamp
+                  o.odds::float AS odds, o.handicap_line, o.timestamp, m.date AS ko
              FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
             WHERE m.date BETWEEN now() - make_interval(hours => %s) AND now() + make_interval(hours => %s)
               AND o.market = ANY(%s) AND NOT (o.bookmaker = ANY(%s))
               AND COALESCE(o.is_live, false) = false AND o.timestamp <= m.date
               AND o.timestamp > m.date - interval '3 days'
-            ORDER BY o.match_id, o.bookmaker, o.market, o.selection, o.timestamp DESC""",
-        (int(back_h), int(ahead_h), list(CHECK_MARKETS), list(_NOT_PEERS))) or []
+            ORDER BY o.match_id, o.bookmaker, o.market, o.selection, o.handicap_line, o.timestamp DESC""",
+        (int(back_h), int(ahead_h), _AUDIT_MARKETS, list(_NOT_PEERS))) or []
     by_fix: dict = defaultdict(lambda: defaultdict(list))
     for r in latest:
         by_fix[r["mid"]][r["book"]].append(r)
@@ -152,7 +165,9 @@ def run(*, dry_run: bool = False, back_h: float = 3, ahead_h: float = 48) -> dic
         hist_latest = defaultdict(list)
         for book, rows in books.items():
             for r in rows:
-                hist_latest[(book, r["market"], r["sel"])].append((r["timestamp"], float(r["odds"])))
+                k = _key_of(r)
+                if k:
+                    hist_latest[(book, k, r["sel"])].append((r["timestamp"], float(r["odds"])))
         for book, rows in books.items():
             if book in NEVER_JUDGED:
                 continue
@@ -161,31 +176,34 @@ def run(*, dry_run: bool = False, back_h: float = 3, ahead_h: float = 48) -> dic
             # PRE-FILTER only: peers' LATEST quotes are usually written after this book's
             # last snapshot, so accept ±PEER_MAX_AGE_H here. The verdict that MOVES rows
             # below is strictly as-of each snapshot.
-            v = _judge(_board_of(rows), _peers_asof(hist_latest, book, t, allow_after=True))
-            if v["wrong"] or v["mirror"] or v["swapped"]:
+            v = _judge(_board_of(rows), _peers_asof(hist_latest, book, t, allow_after=True), None, book)
+            if v["wrong"] or v["mirror"] or v["swapped"] or v["single"]:
                 candidates.append((mid, book))
     for mid, book in candidates:
         # full pre-match history of the fixture, every book, bounded to 3 days before kickoff
         hist = execute_query(
             """SELECT o.id, o.bookmaker AS book, o.market, lower(o.selection) AS sel,
-                      o.odds::float AS odds, o.handicap_line, o.timestamp
+                      o.odds::float AS odds, o.handicap_line, o.timestamp, m.date AS ko
                  FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
                 WHERE o.match_id = %s AND COALESCE(o.is_live, false) = false
                   AND o.timestamp <= m.date AND o.timestamp > m.date - interval '3 days'
                   AND NOT (o.bookmaker = ANY(%s))""", (mid, list(_NOT_PEERS))) or []
         series = defaultdict(list)
         for r in hist:
-            if r["market"] in CHECK_MARKETS and _line_ok(r["market"], r["handicap_line"]):
-                series[(r["book"], r["market"], r["sel"])].append((r["timestamp"], float(r["odds"])))
+            k = _key_of(r)
+            if k:
+                series[(r["book"], k, r["sel"])].append((r["timestamp"], float(r["odds"])))
         for k in series:
             series[k].sort()
         mine = [r for r in hist if r["book"] == book]
-        move_ids, wrong_snaps, mirror_snaps, swap_snaps = [], 0, 0, 0
-        wrong_ex = swap_ex = None
+        move_ids, wrong_snaps, mirror_snaps, swap_snaps, single_snaps = [], 0, 0, 0, 0
+        wrong_ex = swap_ex = single_ex = None
         for t, snap in _snapshots(mine):
             # judge the book's board AS IT STOOD at t (its own last hour), not only the rows
             # this snapshot happens to carry
-            v = _judge(_own_asof(series, book, t), _peers_asof(series, book, t))
+            ko = snap[0].get("ko")
+            mtk = int((ko - t).total_seconds() // 60) if ko is not None else None
+            v = _judge(_own_asof(series, book, t), _peers_asof(series, book, t), mtk, book)
             snap_markets = {r["market"] for r in snap}
             if v["wrong"]:
                 wrong_snaps += 1
@@ -199,17 +217,25 @@ def run(*, dry_run: bool = False, back_h: float = 3, ahead_h: float = 48) -> dic
                 swap_snaps += 1
                 swap_ex = swap_ex or v["swapped"]
                 move_ids += [r["id"] for r in snap if r["market"] in v["swapped"]]
-        example = wrong_ex if wrong_snaps else swap_ex
+            if v["single"]:
+                keys = {k for k, _ in v["single"]}
+                hit = [r["id"] for r in snap if _key_of(r) in keys and r["id"] not in move_ids]
+                if hit:
+                    single_snaps += 1
+                    single_ex = single_ex or v["single"]
+                    move_ids += hit
+        example = wrong_ex if wrong_snaps else (swap_ex or single_ex)
         if not move_ids:
             continue
         check = ("wrong_fixture_board" if wrong_snaps else
-                 "mirrored_1x2" if mirror_snaps else "swapped_two_way")
+                 "mirrored_1x2" if mirror_snaps else
+                 "swapped_two_way" if swap_snaps else "single_market_off")
         c[check] += 1
         move_ids = [str(i) for i in move_ids]
         c["rows_to_move"] += len(move_ids)
         if dry_run:
             log.info("DRY %s %s/%s: %d snapshots, %d rows %s", check, book, mid,
-                     wrong_snaps or mirror_snaps or swap_snaps, len(move_ids), example or "")
+                     wrong_snaps or mirror_snaps or swap_snaps or single_snaps, len(move_ids), example or "")
             continue
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -227,6 +253,7 @@ def run(*, dry_run: bool = False, back_h: float = 3, ahead_h: float = 48) -> dic
         c["rows_moved"] += len(move_ids)
         record_finding(check, mid, book, {"where": "read-back", "wrong_snapshots": wrong_snaps,
                                           "mirror_snapshots": mirror_snaps, "swap_snapshots": swap_snaps,
+                                          "single_snapshots": single_snaps,
                                           "offenses": example}, len(move_ids))
     if not dry_run:
         _alert()

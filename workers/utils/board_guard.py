@@ -48,6 +48,36 @@ MIN_OFF_MARKETS = 2
 CHECK_MARKETS = {"1x2": ("home", "draw", "away"), "over_under_15": ("over", "under"),
                  "over_under_25": ("over", "under"), "over_under_35": ("over", "under"),
                  "btts": ("yes", "no")}
+# SINGLE-MARKET CHECK (#123, 2026-09-24). The whole-board rule above needs >= 2 markets off,
+# so a board that is wrong in ONE market passes it: Coolbet BTTS-yes stored at 11.0 / 4.5
+# against a ~50% consensus (29 Coolbet + 40 Epicbet fixtures >15 pp off), and Asian-handicap
+# rows far off the same line elsewhere. BTTS and each AH LINE are judged on their own against
+# a >= MIN_PEERS median: a leg more than SINGLE_MARKET_PROB_GAP off in implied probability is
+# refused (that market only). Probability, not ratio — at AH's ~1.9 prices a real 15 pp miss
+# is only x1.3. Within NEAR_KO_MIN of kickoff an AH line must agree to NEAR_KO_AH_PROB_GAP
+# (in-play / wrong-kickoff rows cluster there — handover §3). An independently scraped direct
+# book showing the same prices still corroborates (a real move), as in the whole-board rule.
+# SCOPE: judged only for the books WE scrape and bet (DIRECT_BOOKS). A dry run over 72 h
+# (2026-09-24) flagged 33 boards / 653 rows, nearly all API-Football books' AH lines where
+# two book families disagree with each other on quarter lines (Bet365+Betano one way,
+# 1xBet+Marathonbet the other) — a 4–6-book median is no referee there. The direct-book hits
+# were few and plainly wrong (Coolbet BTTS-yes 2.6 vs 1.85, Epicbet 3.4 vs 1.82). AF books
+# still count as PEERS.
+SINGLE_MARKET_PROB_GAP = 0.15
+NEAR_KO_AH_PROB_GAP = 0.10
+NEAR_KO_MIN = 30
+AH_SIDES = ("home", "away")
+
+
+def ah_key(line) -> str | None:
+    """Board key for one Asian-handicap line (handicap_line = the HOME line on both
+    selections at every book we store — verified in the #119 (E) handover §2.3)."""
+    try:
+        return f"ah:{float(line):+g}"
+    except (TypeError, ValueError):
+        return None
+
+
 _NOT_PEERS = ("Max", "Avg", "Betfair Exchange", "BetWin", "Betfred", "Unibet",
               "Unibet-Kambi", "Coolbet-OddsAPI")
 # REVIEW FIXES (2026-09-24, independent review of #120):
@@ -92,6 +122,37 @@ def board_offenses(board: dict[str, dict[str, float]],
             worst_side, worst = max(off, key=lambda x: x[1])
             out.append((market, f"{worst_side} {b[worst_side]} vs {len(full)}-book median "
                                 f"{med[worst_side]:.2f} (x{worst:.2f})"))
+    return out
+
+
+def single_market_offenses(board: dict, peers: dict,
+                           minutes_to_kickoff: int | None = None) -> list[tuple[str, str]]:
+    """Pure. → [(market_key, detail)] for BTTS / AH lines whose price is far from a
+    >= MIN_PEERS median on its own (see SINGLE_MARKET_PROB_GAP)."""
+    out = []
+    near_ko = minutes_to_kickoff is not None and 0 <= minutes_to_kickoff <= NEAR_KO_MIN
+    for key, b in board.items():
+        if key == "btts":
+            sides, gap = ("yes", "no"), SINGLE_MARKET_PROB_GAP
+        elif key.startswith("ah:"):
+            sides = AH_SIDES
+            gap = NEAR_KO_AH_PROB_GAP if near_ko else SINGLE_MARKET_PROB_GAP
+        else:
+            continue
+        if not all(b.get(s, 0) > 1.0 for s in sides):
+            continue
+        full = [q for q in (peers.get(key) or {}).values() if all(q.get(s, 0) > 1.0 for s in sides)]
+        full = list({tuple(q[s] for s in sides): q for q in full}.values())
+        if len(full) < MIN_PEERS:
+            continue
+        med = {s: median(q[s] for q in full) for s in sides}
+        off = [(s, abs(1.0 / b[s] - 1.0 / med[s])) for s in sides if abs(1.0 / b[s] - 1.0 / med[s]) > gap]
+        if off and _corroborated(b, sides, peers.get(key) or {}):
+            off = []
+        if off:
+            s_, g_ = max(off, key=lambda x: x[1])
+            out.append((key, f"{s_} {b[s_]} vs {len(full)}-book median {med[s_]:.2f} "
+                             f"({g_ * 100:.0f} pp > {gap * 100:.0f})"))
     return out
 
 
@@ -172,20 +233,25 @@ def peer_boards(match_id: str, bookmaker: str) -> dict:
     try:
         from workers.api_clients.db import execute_query
         rows = execute_query(
-            """SELECT DISTINCT ON (bookmaker, market, selection)
+            """SELECT DISTINCT ON (bookmaker, market, selection, handicap_line)
                       bookmaker, market, lower(selection) AS sel, odds::float AS odds, handicap_line
                  FROM odds_snapshots
                 WHERE match_id = %s AND market = ANY(%s) AND bookmaker <> %s
                   AND NOT (bookmaker = ANY(%s)) AND COALESCE(is_live, false) = false
                   AND timestamp > now() - make_interval(hours => %s)
-                ORDER BY bookmaker, market, selection, timestamp DESC""",
-            (match_id, list(CHECK_MARKETS), bookmaker, list(_NOT_PEERS), PEER_MAX_AGE_H)) or []
+                ORDER BY bookmaker, market, selection, handicap_line, timestamp DESC""",
+            (match_id, list(CHECK_MARKETS) + ["asian_handicap"], bookmaker, list(_NOT_PEERS),
+             PEER_MAX_AGE_H)) or []
     except Exception as e:  # noqa: BLE001 — fail open
         log.debug("board-guard: peer lookup failed for %s: %s", match_id, e)
         return {}
     out: dict = {}
     for r in rows:
-        if _line_ok(r["market"], r["handicap_line"]):
+        if r["market"] == "asian_handicap":
+            k = ah_key(r["handicap_line"])
+            if k:
+                out.setdefault(k, {}).setdefault(r["bookmaker"], {})[r["sel"]] = r["odds"]
+        elif _line_ok(r["market"], r["handicap_line"]):
             out.setdefault(r["market"], {}).setdefault(r["bookmaker"], {})[r["sel"]] = r["odds"]
     return out
 
@@ -194,9 +260,11 @@ def board_from_rows(rows, market_of, selection_of, odds_of, line_of=lambda r: No
     board: dict = {}
     for r in rows:
         m = market_of(r)
-        if m in CHECK_MARKETS and _line_ok(m, line_of(r)):
+        key = ah_key(line_of(r)) if m == "asian_handicap" else (
+            m if m in CHECK_MARKETS and _line_ok(m, line_of(r)) else None)
+        if key:
             try:
-                board.setdefault(m, {})[str(selection_of(r)).lower()] = float(odds_of(r))
+                board.setdefault(key, {})[str(selection_of(r)).lower()] = float(odds_of(r))
             except (TypeError, ValueError):
                 continue
     return board
@@ -244,22 +312,40 @@ def screen_board(match_id: str, bookmaker: str, rows, market_of, selection_of, o
         if bookmaker in NEVER_JUDGED:
             return rows
         board = board_from_rows(rows, market_of, selection_of, odds_of, line_of)
-        if len(board) < MIN_OFF_MARKETS:
+        if not board:
             return rows
         peers = peers if peers is not None else peer_boards(match_id, bookmaker)
         offenses = board_offenses(board, peers)
         if not is_wrong_board(offenses):
             swapped = swapped_two_way(board, peers)
-            if not swapped:
-                return rows
-            bad = [r for r in rows if market_of(r) in swapped]
-            reason = f"board-guard 2026-09-24: two-way sides transposed vs consensus in {', '.join(swapped)}"
-            log.warning("board-guard: refusing %s %s on %s — sides swapped", bookmaker, swapped, match_id)
-            quarantine_rows(match_id, bookmaker, bad, market_of, selection_of, odds_of, line_of,
-                            reason, minutes_to_kickoff)
-            record_finding("swapped_two_way", match_id, bookmaker,
-                           {"markets": swapped, "where": "write"}, len(bad))
-            return [r for r in rows if market_of(r) not in swapped]
+            if swapped:
+                bad = [r for r in rows if market_of(r) in swapped]
+                reason = f"board-guard 2026-09-24: two-way sides transposed vs consensus in {', '.join(swapped)}"
+                log.warning("board-guard: refusing %s %s on %s — sides swapped", bookmaker, swapped, match_id)
+                quarantine_rows(match_id, bookmaker, bad, market_of, selection_of, odds_of, line_of,
+                                reason, minutes_to_kickoff)
+                record_finding("swapped_two_way", match_id, bookmaker,
+                               {"markets": swapped, "where": "write"}, len(bad))
+                rows = [r for r in rows if market_of(r) not in swapped]
+            # #123: BTTS / AH-line faults the whole-board rule cannot see on its own
+            single = (single_market_offenses(board, peers, minutes_to_kickoff)
+                      if bookmaker in DIRECT_BOOKS else [])
+            if single:
+                keys = {k for k, _ in single}
+                def _key(r):
+                    m = market_of(r)
+                    return ah_key(line_of(r)) if m == "asian_handicap" else m
+                bad = [r for r in rows if _key(r) in keys]
+                if bad:
+                    reason = ("board-guard 2026-09-24: single market off consensus — "
+                              + "; ".join(f"{k}: {d}" for k, d in single))
+                    log.warning("board-guard: refusing %s %s on %s — %s", bookmaker, sorted(keys), match_id, reason)
+                    quarantine_rows(match_id, bookmaker, bad, market_of, selection_of, odds_of, line_of,
+                                    reason, minutes_to_kickoff)
+                    record_finding("single_market_off", match_id, bookmaker,
+                                   {"offenses": single, "where": "write"}, len(bad))
+                    rows = [r for r in rows if _key(r) not in keys]
+            return rows
     except Exception as e:  # noqa: BLE001 — fail open
         log.debug("board-guard: screen failed for %s/%s: %s", match_id, bookmaker, e)
         return rows
