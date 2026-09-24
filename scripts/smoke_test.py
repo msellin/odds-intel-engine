@@ -56018,5 +56018,39 @@ def test_vip_bot():
     assert 'os.getenv("TELEGRAM_VIP_CHAT_ID")' in vip and "if not token or not chat:" in vip
     assert 'TELEGRAM_PUBLIC_CHANNEL' in vip and 'TELEGRAM_CHAT_ID' in vip and "refusing" in vip
 
+
+@test("OU-SHARP-OUTLIER — #149: EV vs Pinnacle 5-15%, early >= 12 h, two-anchor >= 2%, one pick per line")
+def test_ou_sharp_outlier():
+    """#149 rounds O1-O3 (dev/active/market2-model-plan.md). Behavioural on synthetic quotes:
+    the EARLY bot takes a soft book beating Pinnacle's fair price by 5-15% only >= 12 h out;
+    a > 15% gap (palpable error) is refused; the TWO-ANCHOR bot needs the other books'
+    consensus beaten too; one best-EV pick per (match, line) per bot; stale quotes ignored."""
+    from workers.jobs.ou_sharp_outlier import evaluate, BOT_EARLY, BOT_2ANCHOR, EV_CAP
+    now = 1_000_000.0
+    def q(book, over, under, age_h=0.5, mid="m1", mk="over_under_25"):
+        return [dict(match_id=mid, market=mk, bookmaker=book, selection="over", odds=over, ts=now - age_h * 3600),
+                dict(match_id=mid, market=mk, bookmaker=book, selection="under", odds=under, ts=now - age_h * 3600)]
+    base = q("Pinnacle", 2.00, 1.90) + q("Bet365", 1.95, 1.85) + q("Betano", 1.96, 1.86) + q("1xBet", 1.97, 1.87)
+    soft = q("Epicbet", 2.20, 1.70)                     # over EV ~ +7% vs Pinnacle fair
+    picks = evaluate(base + soft, now, {"m1": now + 20 * 3600})
+    bots = {p["bot"]: p for p in picks}
+    assert bots[BOT_EARLY]["bookmaker"] == "Epicbet" and bots[BOT_EARLY]["selection"] == "over"
+    assert 0.05 <= bots[BOT_EARLY]["ev"] <= EV_CAP
+    assert BOT_2ANCHOR in bots and bots[BOT_2ANCHOR]["ev_cons"] >= 0.02
+    assert len([p for p in picks if p["bot"] == BOT_EARLY]) == 1, "one pick per (match, line)"
+    late = evaluate(base + soft, now, {"m1": now + 5 * 3600})
+    assert BOT_EARLY not in {p["bot"] for p in late}, "EARLY needs >= 12 h to kickoff"
+    wild = evaluate(base + q("Epicbet", 2.60, 1.50), now, {"m1": now + 20 * 3600})
+    assert not wild, "a > 15% EV gap is a palpable-error risk and must be refused"
+    stale = evaluate(q("Pinnacle", 2.00, 1.90) + q("Epicbet", 2.20, 1.70, age_h=5), now, {"m1": now + 20 * 3600})
+    assert not stale, "quotes older than QUOTE_MAX_AGE_H are ignored"
+    sch = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    assert 'id="ou_sharp_outlier"' in sch
+    mig = _engine_path("supabase/migrations/423_bot_ou_sharp.sql").read_text(encoding="utf-8")
+    assert mig.count("'experimental', false") == 2
+    from workers.registry.bot_registry import by_name
+    assert by_name(BOT_EARLY) and by_name(BOT_2ANCHOR)
+
+
 if __name__ == "__main__":
     main()

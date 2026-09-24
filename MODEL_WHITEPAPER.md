@@ -2123,3 +2123,13 @@ Concretely: an unconstrained blend fit gives α = **−0.1075**, worth **+0.005%
 out of sample, against **+0.164%** from simply recalibrating the market alone.
 The negative weight is measuring the de-vig, not an inverse model signal. **Do
 not build a fade-the-model strategy on it.**
+
+### O/U sharp-outlier bots (#149, 2026-09-25)
+Second market after 1X2, built with the same recipe and three pre-registered rounds (`dev/active/market2-model-plan.md`).
+O1: a combined O/U model (walk-forward goal-rate rating via Poisson on λ_h + λ_a, power-de-vigged 18-book consensus,
+Pinnacle; one binary logit per availability group) passed on 2.5/3.5 overall but lost to Pinnacle alone on Pinnacle-priced
+rows, and its model-vs-Pinnacle disagreements lost CLV. O2: the fair price is therefore Pinnacle itself; a soft book beating
+it by EV 5–15% reads ≈ +2% CLV where real closes exist (before mid-July there is no Pinnacle O/U close — ANALYSIS_GOTCHAS #83).
+O3: requiring the quote ≥ 12 h before kickoff lifts it to CLV +7.5% / +6.9% with ROI +10.4% / +10.8% (Aug / Sep); requiring
+the other books' consensus to be beaten too: +6.6% / +4.2%. Live: `bot_ou_sharp_early_v1`, `bot_ou_sharp_2anchor_v1`, paper.
+

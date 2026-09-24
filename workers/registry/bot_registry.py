@@ -220,6 +220,12 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_combined_1x2_ev8_v1", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
             None, None, False,
             "1x2 NEW+ EV8 (#141 B4): as EV5 with EV >= 8%. Backtest B2 CLV +3.1% (n=557; +2.7% at our own sweepers). experimental, paper, no placement path."),
+    BotSpec("bot_ou_sharp_early_v1", FAM_INTERNAL, "ou", ANCHOR_SHARP,
+            None, None, False,
+            "O/U EARLY (#149): a soft book's O/U 1.5/2.5/3.5 quote beats Pinnacle's power-de-vigged fair price by EV 5-15% (cap = palpable-error guard) while it is >= 12 h before kickoff; one pick per (match, line). Backtest round O3 T3: CLV +7.5% (Aug, n=383) / +6.9% (Sep, n=459), ROI +10.4% / +10.8%. Job workers/jobs/ou_sharp_outlier.py. experimental, paper, no placement path."),
+    BotSpec("bot_ou_sharp_2anchor_v1", FAM_INTERNAL, "ou", ANCHOR_SHARP,
+            None, None, False,
+            "O/U TWO-ANCHOR (#149): as O/U EARLY without the 12 h rule, but the book must ALSO beat the leave-one-out consensus of the other books by >= 2% EV. Backtest round O3 T2: CLV +6.6% (Aug, n=420) / +4.2% (Sep, n=480). experimental, paper, no placement path."),
     # bot_v10_ou RETIRED 2026-09-24 (migration 399, owner "yes" on [[#077]]): de-vigged
     # Pinnacle CLV -3.85% (n=181), negative in all 5 months and 7 model versions, and
     # every O/U route measured 09-23/24 (#089, #118, #090 a) ends at alpha = 0.

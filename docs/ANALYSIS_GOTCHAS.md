@@ -3203,3 +3203,16 @@ gained −0.0031 log-loss, and the whole gain sat on rows with NO XI data at all
 * If the pre-registration says rows without the feature keep the old prediction, enforce it in code
   (`scripts/ab_1x2_lineups.py` now does; smoke `LINEUPS-3C-NO-XI-FALLBACK`). With the fix, round 3c
   failed on confirm — the "win" had been the artefact.
+
+## 83. Before mid-July 2026 there is NO Pinnacle O/U closing price — "CLV vs Pinnacle close" there is circular (#149, 2026-09-24)
+Measured on O/U 1.5/2.5/3.5 (`scripts/backtest_ou_comb_bots.py --o2`): the share of matches whose Pinnacle O/U history is a
+SINGLE row (open = "close") is **95% in May, 88% in June, 31% in July, 6% in August, 1% in September**, and the median
+"close" sits **8.5–10 h before kickoff** in May–June against ~5 min from August. Pinnacle is still well calibrated overall
+every month — but a rule that SELECTS rows where a book beats Pinnacle's early price selects exactly the matches where
+that early price was wrong and later moved, which a missing close cannot show. The tell: the sharp-anchored O/U arm read
+**CLV +8.6% and ROI −10.2% [−15.6, −4.6]** on 1,585 May–mid-July picks (Pinnacle "close" 65.6% vs a 55.7% hit rate on the
+short-odds AF picks); from mid-July, with real closes, the same arm reads CLV +2.8% / ROI +0.9%.
+* **Never report a pre-mid-July CLV vs Pinnacle close** without first checking the close is a separate, late row
+  (`ts_close` ≥ `ts_open` + something, and near kickoff). The 7-day retention (open + latest only) makes this worse for any
+  older window. Check the same for 1X2 before trusting an old 1X2 CLV.
+* **When CLV and a large-n ROI disagree by several standard errors, believe the ROI** and look for the broken anchor.

@@ -1175,6 +1175,14 @@ def job_combined_1x2_refresh():
     _run_job("combined_1x2_refresh", _run)
 
 
+def job_ou_sharp_outlier():
+    """O/U SHARP-OUTLIER ([[#149]]) — every 30 min, soft books beating Pinnacle's fair O/U price
+    (EV 5-15%) on lines 1.5/2.5/3.5: bot_ou_sharp_early_v1 (quote >= 12 h before kickoff) and
+    bot_ou_sharp_2anchor_v1 (also beats the consensus of the other books). Paper, simulated_bets."""
+    from workers.jobs.ou_sharp_outlier import run as _ou_run
+    _run_job("ou_sharp_outlier", lambda: _ou_run())
+
+
 def job_weekly_meta_retrain():
     """META-RETRAIN (2026-05-25): weekly retrain of the B-ML3 meta-model.
     Runs Sunday 04:00 UTC, AFTER the main XGBoost weekly_retrain at 03:00 UTC
@@ -3661,6 +3669,11 @@ def main():
     # betting refresh so the pipeline reads a fresh combined price on its next pass).
     scheduler.add_job(job_combined_1x2_refresh, CronTrigger(minute="10,40"),
                       id="combined_1x2_refresh", name="Combined 1X2 refresh :10/:40",
+                      max_instances=1, misfire_grace_time=600)
+
+    # O/U SHARP-OUTLIER ([[#149]]) — :14/:44, after the :00/:30 odds refresh and the :05/:35 betting refresh.
+    scheduler.add_job(job_ou_sharp_outlier, CronTrigger(minute="14,44"),
+                      id="ou_sharp_outlier", name="O/U sharp-outlier bots :14/:44",
                       max_instances=1, misfire_grace_time=600)
 
     # META-RETRAIN (2026-05-25) — weekly B-ML3 meta-model retrain Sunday 04:00 UTC,
