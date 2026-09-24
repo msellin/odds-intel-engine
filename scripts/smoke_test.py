@@ -53476,6 +53476,36 @@ def test_matcher_orientation_strict():
         assert 'ev.get("_match_score")' in inspect.getsource(mod), f"{f} must store the match score"
 
 
+@test("BOOK-FEED-TIDYUPS — aliases, Unibet World routing, esoccer excluded, records_count, empty near-KO boards logged (#112)")
+def test_book_feed_tidyups():
+    """#112 (2026-09-24). (a) renamed / FIFA-named clubs the fuzzy scorer cannot bridge;
+    (b) AF country='World' fixtures were 100% unmapped at Unibet (league_mapped 0, 121
+    unmapped per sweep) — routed to Unibet's three international categories; 'esoccer'
+    (console football) can never be a category; (c) _run_job records a sweep's `stored` as
+    pipeline_runs.records_count (NULL for every _run_job row before); (d) a Tonybet event
+    answering with an empty board near kickoff is now logged, not just counted."""
+    import inspect
+    from datetime import datetime, timezone
+    from workers.automation import coolbet_placer as cp, unibet_odds_feed as uf
+    from workers.jobs import near_kickoff_capture as nk
+    ko = datetime(2026, 9, 24, 18, tzinfo=timezone.utc)
+    for ours, theirs in ((("York United", "Pacific FC"), ("Inter Toronto", "Pacific FC")),
+                         (("South Korea", "Japan"), ("Korea Republic", "Japan")),
+                         (("Hapoel Nazareth Illit", "Hapoel Afula"), ("Hapoel Nof Hagalil", "Hapoel Afula"))):
+        ev = cp.fuzzy_match_event(ours[0], ours[1],
+                                  [{"home": theirs[0], "away": theirs[1], "start": ko.isoformat()}], ko)
+        assert ev is not None, (ours, theirs)
+    w = uf.world_category
+    assert w("UEFA Nations League") == "international" and w("Friendlies") == "international"
+    assert w("UEFA U21 Championship - Qualification") == "international youth"
+    assert w("Friendlies Clubs") == "international clubs" and w("CAF Champions League") == "international clubs"
+    src = inspect.getsource(uf)
+    assert 'country_of(rn).lower() != "esoccer"' in src and 'groups.setdefault("world:"' in src
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert "log_pipeline_complete(run_id, records_count=_rc)" in sched
+    assert "returned an empty board" in inspect.getsource(nk.capture_tonybet)
+
+
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")
 def test_anon_least_privilege():
     """#072 (2026-09-24): anon held SELECT on 134/134 public relations via default privileges;

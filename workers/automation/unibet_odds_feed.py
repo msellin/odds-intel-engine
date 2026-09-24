@@ -458,6 +458,25 @@ def _inject_expr(url: str) -> str:
             "catch(e){return JSON.stringify({s:0,e:String(e)});}})()")
 
 
+_WORLD_CLUB_KEYS = ("clubs", "champions league", "europa league", "conference league",
+                    "libertadores", "sudamericana", "club world", "confederation cup",
+                    "concacaf champions")
+
+
+def world_category(league: str) -> str:
+    """#112: Unibet's category for one of API-Football's country='World' competitions.
+    Youth (U15–U23 / youth / junior) → 'international youth'; club competitions →
+    'international clubs'; everything else (national teams: qualifiers, Nations League,
+    friendlies, continental cups) → 'international'."""
+    import re
+    l = (league or "").lower()
+    if re.search(r"\bu(1[5-9]|2[0-3])\b", l) or "youth" in l or "junior" in l:
+        return "international youth"
+    if any(k in l for k in _WORLD_CLUB_KEYS):
+        return "international clubs"
+    return "international"
+
+
 def _lobby_events(lobby_json: dict) -> list[dict]:
     """Extract [{name, contest_key, start}] from a views/lobby response."""
     out: list[dict] = []
@@ -608,7 +627,8 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
 
         def country_of(rn: str) -> str:
             return rn.split(":", 1)[1].replace("_", " ")
-        rn_list = [(rn, country_of(rn)) for rn in rns]
+        # #112 (2026-09-24): "esoccer" is simulated console football — never a real fixture.
+        rn_list = [(rn, country_of(rn)) for rn in rns if country_of(rn).lower() != "esoccer"]
         log.info("unibet-site: %d top-level categories: %s", len(rn_list),
                  ", ".join(sorted(cn for _, cn in rn_list)))
 
@@ -627,7 +647,13 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
         groups: dict[str, list] = {}
         for f in fixtures:
             country = (f.get("country") or "").lower().strip()
-            if _country_rn(country):
+            if country == "world":
+                # #112 (2026-09-24): the competition-name fallback below mapped NONE of AF's
+                # "World" fixtures ("uefa nations league" / "friendlies" never clear 80
+                # against Unibet's category names; league_mapped stayed 0, 121 unmapped per
+                # sweep). Unibet files them under three fixed categories — route explicitly.
+                groups.setdefault("world:" + world_category(f.get("league") or ""), []).append(f)
+            elif _country_rn(country):
                 groups.setdefault(country, []).append(f)
             else:
                 groups.setdefault("league:" + (f.get("league") or "").lower().strip(), []).append(f)
@@ -638,7 +664,14 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
             if c["fetches"] >= _RATE_MAX_FETCHES:
                 c["reason"] = f"hit fetch cap {_RATE_MAX_FETCHES}"; break
             target = (country or "").lower().strip()
-            if target.startswith("league:"):
+            if target.startswith("world:"):
+                want = target[len("world:"):]
+                best_rn = next((rn for rn, cn in rn_list if cn.lower() == want), None)
+                if not best_rn:
+                    c["world_unmapped"] = c.get("world_unmapped", 0) + len(fx)
+                    continue
+                c["world_mapped"] = c.get("world_mapped", 0) + len(fx)
+            elif target.startswith("league:"):
                 # competition-name fallback: "uefa nations league" / "friendlies" / "world cup
                 # - qualification europe" against Unibet's category names
                 best_rn = _country_rn(target[len("league:"):])

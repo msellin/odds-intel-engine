@@ -125,8 +125,9 @@ def _run_job(name: str, fn, *args, _log_run: bool = True, **kwargs):
     with _inflight_lock:
         _inflight[_tid] = {"job": full_name, "started_monotonic": time.monotonic(),
                            "started_at": started.isoformat()}
+    _result = None
     try:
-        fn(*args, **kwargs)
+        _result = fn(*args, **kwargs)
         status = "completed"
     except Exception as e:
         status = "failed"
@@ -155,7 +156,15 @@ def _run_job(name: str, fn, *args, _log_run: bool = True, **kwargs):
         try:
             if status == "completed":
                 from workers.utils.pipeline_utils import log_pipeline_complete
-                log_pipeline_complete(run_id)
+                # #112 (2026-09-24): a job that returns its counters with an int
+                # `stored` (every book sweep does) gets it recorded as records_count —
+                # it was NULL for every _run_job row, so "completed with 0 rows" and
+                # "completed with 9,000 rows" looked the same in pipeline_runs.
+                _rc = _result.get("stored") if isinstance(_result, dict) else None
+                if isinstance(_rc, int) and not isinstance(_rc, bool):
+                    log_pipeline_complete(run_id, records_count=_rc)
+                else:
+                    log_pipeline_complete(run_id)
             else:
                 from workers.utils.pipeline_utils import log_pipeline_failed
                 log_pipeline_failed(run_id, error_msg or "unknown error")

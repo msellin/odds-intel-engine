@@ -1386,6 +1386,18 @@ _TEAM_ALIASES: dict[str, list[str]] = {
     "austria vienna":       ["FK Austria Wien", "Austria Wien"],
     "austria wien":         ["Austria Vienna"],
     "fk austria wien":      ["Austria Vienna"],
+    # #112 (2026-09-24, from the Tonybet/Epicbet sweeper audit): renames and
+    # official-vs-common names that fuzzy scoring cannot bridge (no shared letters
+    # to fold). These go through fuzzy_match_event, i.e. Epicbet / Unibet-Site /
+    # Tonybet and the placer.
+    "york united":          ["Inter Toronto"],          # club renamed 2025
+    "inter toronto":        ["York United"],
+    "south korea":          ["Korea Republic"],          # FIFA name
+    "korea republic":       ["South Korea"],
+    "hapoel nazareth illit": ["Hapoel Nof Hagalil", "Nof Hagalil"],  # city renamed
+    "nazareth illit":       ["Nof Hagalil"],
+    "hapoel nof hagalil":   ["Hapoel Nazareth Illit"],
+    "nof hagalil":          ["Hapoel Nazareth Illit"],
 }
 
 
@@ -1742,7 +1754,7 @@ def fuzzy_match_event(
         ko_delta_min = round(abs((best_start - match_date).total_seconds()) / 60.0, 1)
     margin = round(best_score - runner_up_score, 1) if runner_up_score >= 0 else None
     log.info(
-        "Fuzzy matched '%s vs %s' → Coolbet '%s vs %s' (score %d, margin %s, "
+        "Fuzzy matched '%s vs %s' → book event '%s vs %s' (score %d, margin %s, "
         "ko_delta_min %s, %d date-mismatched, %d squad-mismatched candidates skipped)",
         home, away, matched_home, matched_away, best_score,
         "n/a" if margin is None else margin,

@@ -217,7 +217,12 @@ def capture_tonybet(due: list[dict], dry_run: bool) -> dict:
             log.warning("near-KO Tonybet event %s failed: %s", d["book_event_id"], e)
             continue
         if not markets:
+            # #112 (2026-09-24): this was counted but never logged, so the only trace of
+            # a Tonybet event that answers with an EMPTY board near kickoff (suspended,
+            # withdrawn, or a stale mapping) was a bare "fails" number.
             c["fails"] += 1
+            log.warning("near-KO Tonybet event %s (match %s) returned an empty board",
+                        d["book_event_id"], d["match_id"])
             continue
         if dry_run:
             c["stored"] += len(tb.parse_markets(markets))
