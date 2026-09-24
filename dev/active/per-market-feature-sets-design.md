@@ -683,3 +683,66 @@ reported ~0.0008) and goals add nothing. The tuner switches goals off: λ falls 
   head.** This closes the last structural O/U question: feature shape (#089 arms), input (shots vs
   goals, faithfully) and timing (#090 (a)) all end at the same place — whatever our ratings know,
   Pinnacle's close already prices.
+
+## Pre-registration — #118 xG GAP RATINGS, TOP-10 xG LEAGUES, O/U 2.5 (2026-09-24, BEFORE building)
+
+The owner's question: now that xG is backfilled (#111), does an xG-fed rating, fitted only on the
+leagues that carry xG, add anything to Pinnacle? It is the first league-SUBSET test on our own data.
+
+**Literature and prior evidence, stated first:**
+* Structural shape: totals are SUM-shaped, so the forecast regressor is the GAP rating sum, as in #089.
+* xG measures shot QUALITY, where Wheatcroft's shots+corners measure volume. The expectation is
+  xG ≥ shots > goals as an input.
+* But these are the MOST efficient markets there are. xG for these leagues has been public for years
+  (Understat, FBref/Opta).
+* #089 showed Wheatcroft's shot signal fading to zero against the Pinnacle close in largely these
+  same leagues.
+* #090 (a) showed our goals rating predicts Pinnacle's early→close MOVE (±0.4pp) but not the close
+  itself.
+* No published result shows an xG rating beating a sharp closing line.
+
+**Data (our DB).**
+* Leagues: EPL, Championship, La Liga, Serie A (ITA), Bundesliga, Ligue 1, Eredivisie, Primeira Liga,
+  Süper Lig, Belgian Pro League.
+* Matches: finished, from 2023-07-01; seasons are Jul–Jun.
+* Inputs from `match_stats`; goals from `matches`.
+* Pinnacle `over_under_25`, pre-kickoff and not in-play:
+  * **EARLY** = the first complete over/under pair;
+  * **CLOSE** = the latest complete pair (sides ≤ 2 min apart), no older than 60 min at kickoff,
+    strictly before kickoff.
+  * Both are Shin de-vigged, and the market term is logit(p_over).
+
+**Method (the #089 harness, reused).**
+* Ratings: four additive GAP ratings per team, keyed by (league, team). A team new to a league
+  inherits the mean of the teams that left it.
+* Tuning: (λ, φ1, φ2) by Nelder-Mead on prior seasons, with the EARLY market term.
+* Forecast: logit P(over) = α + β1·GAPsum + β2·market, refit weekly on all prior eligible matches.
+* Eligibility: both teams have played ≥ 6 league games that season, and every input is present.
+* **The same fixtures are scored for every input.**
+* Burn-in: 2023/24. Test: 2024/25 to date.
+
+**Deviations from #089, stated up front:**
+* No "last 6 games" exclusion, because the current season's remaining schedule is not held.
+* The market term is logit(de-vigged Pinnacle), not 1/max odds.
+* A 2023/24 burn-in, which is short.
+
+**Family: 6 cells, Holm m = 6.** Inputs {xG, shots+corners, goals} × markets {EARLY, CLOSE}.
+Statistic: ΔLL = mean[LL(market-only) − LL(market + rating)], in nats. Block bootstrap by week, 2,000
+draws, one-sided. **PASS = ΔLL > 0 with Holm-adjusted p < 0.05.**
+
+**Money (reported, not a pass bar).** Level stakes at Pinnacle's EARLY price wherever p̂ beats it,
+with CLV against the de-vigged close. A market-only control is run with the same rule (ANALYSIS_GOTCHAS
+§75).
+
+**Expected before running:**
+* xG ΔLL ≥ shots+corners > goals.
+* Against EARLY: a small positive gain, possibly passing (the #090 (a) move).
+* Against CLOSE: ≈ 0, FAIL for every input.
+* Power: roughly 5-6k scored fixtures, below the 7-8k needed to see a Wheatcroft-sized effect — so an
+  EARLY null would be inconclusive, not negative.
+
+**What would change the plan:**
+* **xG passing CLOSE** would be the first input to add to the sharp close, and justifies an xG O/U
+  head for 👥 PICKS.
+* **xG passing only EARLY** is a timing edge: a 🤖 OWN question of whether we can bet the early price
+  at a book that has not yet moved.
