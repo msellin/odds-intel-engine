@@ -33907,11 +33907,15 @@ def _outlier_anchor_pinnacle():
     # Find the guard's own filter, not any other use of the constant.
     anchor_block = src[src.index("outlier_offers[mid][key].append") - 2000:
                        src.index("outlier_offers[mid][key].append")]
-    assert "PRICE_REFERENCE_BOOKMAKERS" in anchor_block, (
-        "the outlier guard filters its offer set on something other than "
-        "PRICE_REFERENCE_BOOKMAKERS — if that is ACCESSIBLE_BOOKMAKERS again, "
-        "the Pinnacle anchor below it is unreachable and the guard is inert"
+    # #129 (2026-09-24): the anchor set is now every PUBLISHABLE book — the same
+    # set this PICKS path prices from — which still includes Pinnacle.
+    assert "if not is_publishable_book(bookmaker):" in anchor_block, (
+        "the outlier guard's anchor set is no longer the publishable set — if it "
+        "is ACCESSIBLE_BOOKMAKERS again, the Pinnacle anchor is unreachable; if it "
+        "is PRICE_REFERENCE_BOOKMAKERS again, #129's dried-up picks come back"
     )
+    from workers.jobs.daily_pipeline_v2 import is_publishable_book as _pub
+    assert _pub("Pinnacle"), "Pinnacle must stay publishable or the sharp anchor is lost"
 
     # Behavioural: the two sets must actually differ by the sharp book, or the
     # fix is cosmetic and this test proves nothing.
@@ -53331,6 +53335,26 @@ def test_results_tiebreak():
     assert "execute_write_returning" in src, "reopen must COMMIT (execute_query does not)"
     run = inspect.getsource(rc.run)
     assert 'record_finding("results_corrected"' in run and '"af_confirmed" in seen' in run
+
+
+@test("PICKS-OUTLIER-ANCHOR-PUBLISHABLE — the PICKS outlier anchor uses every real book; OWN keeps the Estonian set (#129)")
+def test_picks_outlier_anchor_publishable():
+    """#129 (2026-09-24): #005 widened the PICKS price basis to is_publishable_book() but the
+    ODDS-OUTLIER-FILTER anchor still read PRICE_REFERENCE_BOOKMAKERS (4 Estonian books +
+    Pinnacle), so a fixture without Pinnacle and with <3 of those four had no anchor and every
+    candidate was rejected — v10 fell from ~23 picks/wk to 3. OWN must stay on its own set."""
+    import inspect
+    from workers.jobs import daily_pipeline_v2 as dp
+    load = inspect.getsource(dp._load_today_from_db)
+    block = load[:load.index("outlier_offers[mid][key].append")]
+    block = block[block.rindex("for row in odds_raw:"):]
+    assert "if not is_publishable_book(bookmaker):" in block
+    assert "bookmaker not in PRICE_REFERENCE_BOOKMAKERS" not in block, "anchor must not read the Estonian set"
+    assert dp.is_publishable_book("1xBet") and dp.is_publishable_book("Pinnacle")
+    assert not dp.is_publishable_book("Unibet-Kambi") and not dp.is_publishable_book("Max")
+    # 🤖 OWN paths still build their anchor from the reference set
+    src = inspect.getsource(dp)
+    assert src.count("list(PRICE_REFERENCE_BOOKMAKERS)") >= 2, "OWN shadow passes must keep the Estonian+Pinnacle anchor set"
 
 
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")

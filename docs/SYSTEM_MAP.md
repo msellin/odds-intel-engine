@@ -733,6 +733,13 @@ skip, per-bot tier/league/market filters, and the min-edge + odds-range gate at
 `:3527`. Detail lives in that file; named here so the map stops implying placement is
 where filtering begins.
 
+**The PICKS outlier anchor (#129, 2026-09-24).** In the 👥 PICKS path (`_load_today_from_db`,
+which feeds `simulated_bets` → /picks) the ODDS-OUTLIER-FILTER anchor is Pinnacle, else the
+median of ≥3 **publishable** books (`is_publishable_book`) — the same set that path prices from
+since #005. It used to read the four Estonian books + Pinnacle, so fixtures without Pinnacle
+and with <3 Estonian books had no anchor and every pick on them was rejected (the model bots
+dried up). 🤖 OWN is unchanged: the shadow passes keep `PRICE_REFERENCE_BOOKMAKERS`.
+
 ---
 
 ## 5. Deep-dive docs (this map links out; it does not duplicate them)

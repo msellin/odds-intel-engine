@@ -307,3 +307,16 @@ Pinned by smoke `BOOK-SET-BACKTEST-REAL-GATES`, which fails if the script re-typ
 instead of importing it from `coolbet_placer` / `bot_registry`, if a known-bad feed gets back
 into the all-books arm, or if the shared outlier ceiling stops being applied before the arms
 split. Mutation-verified on all three.
+
+## Follow-up 2026-09-24 — #129: the outlier anchor was never widened
+
+#005 re-opened the PICKS **price** basis to every publishable book, but the ODDS-OUTLIER-FILTER
+**anchor** in the same function still read the Estonian set + Pinnacle. A fixture with no
+Pinnacle and fewer than three Estonian books therefore had no anchor, and every candidate on
+it was rejected however many real books priced it. Replay over 447 settled model-bot picks:
+127 dropped purely for want of an anchor; with the publishable set 202 kept vs 154 (volume
+restored, not an edge — the bot is losing either way since 09-06). Fixed in the PICKS path
+only. On the day's fixtures the filter's rejections fell 844 → 47. 1xBet, the largest
+newcomer to the median, was checked against Pinnacle first (median ratio 1.000, 47% above —
+the same profile as Betano/Epicbet/Coolbet); Dafabet, the other book the row named, has not
+been sent by API-Football since 2026-09-13.

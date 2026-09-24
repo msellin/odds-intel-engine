@@ -2246,8 +2246,9 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
     # limit-restricted and NOT reachable at the shown price. Picking them as "best
     # odds" inflates reported edge % / ROI without a bettable price behind it.
     # Anchor: Pinnacle odds if present (sharpest reference), else the median across
-    # ≥3 accessible-book offers. Ceiling multiplier per market family. If no anchor
-    # can be formed (Pinnacle absent AND fewer than 3 accessible books), the whole
+    # ≥3 publishable-book offers (#129 — was accessible-only). Ceiling multiplier
+    # per market family. If no anchor can be formed (Pinnacle absent AND fewer
+    # than 3 publishable books), the whole
     # (match, market, selection) is dropped rather than accepted unvalidated.
     from statistics import median as _median
     # OUTLIER-CEILING-CALIBRATED-2026-09-16. These were picked by judgement in
@@ -2309,8 +2310,24 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
         #
         # The anchor set is a REFERENCE set, not a placeable set — we do not
         # need to be able to bet Pinnacle for its price to tell us what a
-        # selection is worth. PRICE_REFERENCE_BOOKMAKERS is exactly that.
-        if bookmaker not in PRICE_REFERENCE_BOOKMAKERS:
+        # selection is worth.
+        #
+        # #129 (2026-09-24): and it must be the SAME set this path prices from.
+        # This used to read PRICE_REFERENCE_BOOKMAKERS (the four Estonian books +
+        # Pinnacle) after #005 had already widened the price basis below to
+        # every publishable book. So a fixture with no Pinnacle and fewer than
+        # three of those four had NO anchor, and every candidate on it was
+        # rejected however many real books priced it — the model bots'
+        # public picks dried up (v10 ~23/wk -> 3/wk). Replay over 447 settled
+        # picks: 127 of them dropped purely for `no_anchor`; with this set,
+        # 202 kept vs 154. That restores VOLUME, not an edge.
+        # Pinnacle is publishable, so "Pinnacle first, else median of >= 3" is
+        # unchanged. 1xBet (the biggest newcomer to the median) was checked
+        # against Pinnacle first: median ratio 1.000, 47% of quotes above it —
+        # the same profile as Betano/Epicbet/Coolbet, not a phantom-high feed.
+        # 🤖 OWN is untouched: the shadow passes and the placer keep
+        # ACCESSIBLE_BOOKMAKERS / PRICE_REFERENCE_BOOKMAKERS at their own call sites.
+        if not is_publishable_book(bookmaker):
             continue
         try:
             odds_val = float(row["odds"])
@@ -2376,7 +2393,7 @@ def _load_today_from_db(today_str: str) -> tuple[list[dict], list[dict], dict[st
             _anchor = outlier_anchor.get(mid, {}).get(key)
             if _anchor is None:
                 outlier_rejects += 1
-                continue  # no Pinnacle + <3 accessible books → no reliable consensus
+                continue  # no Pinnacle + <3 publishable books → no reliable consensus
             if bookmaker != "Pinnacle" and odds_val > _anchor * _mult:
                 outlier_rejects += 1
                 continue  # single-book outlier vs anchor → not a bettable price

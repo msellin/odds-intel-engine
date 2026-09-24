@@ -154,7 +154,8 @@ keep the pick if:
   1.30 ≤ odds ≤ 5.00
   Pinnacle vig ≤ 10%          (skip garbage anchors)
   pair_gap ≤ 4h               (Coolbet & Pinnacle quotes not stale vs each other)
-  passes the soft-book outlier filter
+  passes the soft-book outlier filter   (OWN anchor set = Estonian books + Pinnacle;
+                                         #129 widened only the PICKS path's anchor)
 → write to shadow_bets as bot_coolbet_value_v1
 ```
 
