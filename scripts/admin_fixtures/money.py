@@ -17,7 +17,7 @@ def snapshot(rows) -> dict:
         """SELECT rb.id::text, rb.match_id::text, rb.market, rb.selection, rb.bookmaker, rb.captured_odds,
                   rb.actual_odds, rb.slippage_pct, rb.edge_pct_taken, rb.clv, rb.clv_pinnacle,
                   rb.closing_bookmaker, rb.closing_minutes_before_ko, rb.stake, rb.placed_at, rb.result,
-                  rb.pnl, rb.resolved_at, rb.notes, rb.placed_real, b.name AS bot,
+                  rb.pnl, rb.resolved_at, rb.notes, rb.placed_real, b.name AS bot, b.display_name AS bot_display,
                   sb.stake AS paper_stake, sb.pnl AS paper_pnl, sb.result AS paper_result,
                   ht.name AS home, at.name AS away, l.name AS league, l.country
              FROM real_bets rb
@@ -43,6 +43,7 @@ def snapshot(rows) -> dict:
             "closingBookmaker": r["closing_bookmaker"], "closingMinutesBeforeKo": _num(r["closing_minutes_before_ko"]),
             "stake": float(r["stake"]), "placedAt": r["placed_at"], "result": r["result"], "pnl": _num(r["pnl"]),
             "resolvedAt": r["resolved_at"], "notes": r["notes"], "placedReal": r["placed_real"],
+            "botDisplayName": r["bot_display"],
             "paper": (
                 {"stake": float(r["paper_stake"] or 0), "pnl": _num(r["paper_pnl"]), "result": r["paper_result"]}
                 if r["paper_result"] is not None else None

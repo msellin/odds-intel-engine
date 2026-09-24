@@ -48862,7 +48862,11 @@ def test_shadow_bots_automation_is_not_a_verdict():
         "automation state must not appear in the verdict ladder — it is context, shown as a marker"
     assert "i.minutesToKo < KO_BLOCK_MIN" in core, "the kickoff cutoff IS a real blocker and must stay"
     row = (_web_root / "src" / "components" / "shadow-bots" / "picks-row.tsx").read_text(encoding="utf-8")
-    assert "automationOff" in row, "the row must still SHOW that automation is off"
+    # UX fix round (2026-09-24): the automation state is stated ONCE above the table, not as an
+    # "auto off" chip repeated on every row — but it must still be SHOWN.
+    assert "auto off" not in row, "automation state belongs above the table, not on every row"
+    qpage = (_web_root / "src" / "app" / "(app)" / "admin" / "shadow-bots" / "page.tsx").read_text(encoding="utf-8")
+    assert "Automatic placing:" in qpage and "state.placement_paused" in qpage,         "the page must still SHOW that automation is off"
     assert "placementPaused" not in row.split("showPlaceAction")[1][:200], \
         "the Place button records a manual bet — it must not be gated on the staking kill switch"
     assert "DECISION_FRESH_MAX_MIN = 60" in src, \
@@ -54773,6 +54777,551 @@ def test_money_page_ledger():
     assert "promos.length === 0" in promo and "<details" in promo, "one line when empty, collapsed otherwise"
 
 
+@test("ADMIN-UX-ROUND2-SHARED — UX-test fixes in the shared admin pieces stay in")
+def test_admin_ux_round2_shared():
+    """#139, 2026-09-24: three UX testers used the admin as the owner (scores 7, 6, 6.5 / 10). The
+    shared-piece findings this pins: (1) attention = Urgent / To check groups, money first within a
+    severity; (2) ⌘K finds the kill switch by "stop"/"kill"/"emergency" and says when placement is
+    ALREADY paused; (3) the Overview's recent real-money figure uses the Real bets page's window
+    (last 30 days), not 4 weeks — two pages showed two different "recent P/L"; (4) the Real money
+    card names EVERY blocker and is neutral (not green) when off; (5) retired bots are opt-in in
+    the charts; (6) the cookie notice and feedback button stay off the admin (they covered axes);
+    (7) phone status dots open a legend on tap."""
+    if not (_web_root / "src").exists():
+        return
+    att = _web_path("src/lib/admin-attention.ts").read_text(encoding="utf-8")
+    assert "AREA_ORDER" in att and "money: 0" in att
+    page = _web_path("src/app/(app)/admin/page.tsx").read_text(encoding="utf-8")
+    assert '"Urgent"' in page and '"To check"' in page
+    assert 'label="Real bets · 30 days"' in page and "d.realBets.last30" in page
+    assert "moneyBlockers.join" in page and 'real_money_armed ? "danger" : "neutral"' in page
+    ov = _web_path("src/lib/admin-overview.ts").read_text(encoding="utf-8")
+    assert "now - 30 * 86_400_000" in ov and "BLOCKER_WORDS" in ov
+    pal = _web_path("src/components/admin/command-palette.tsx").read_text(encoding="utf-8")
+    assert "stop kill emergency" in pal and "already paused" in pal
+    charts = _web_path("src/app/(app)/admin/overview-charts.tsx").read_text(encoding="utf-8")
+    assert charts.count("defaultHidden={[RETIRED_SERIES]}") == 2
+    for f in ("src/components/cookie-banner.tsx", "src/components/feedback-button.tsx"):
+        assert "isAdminPath(" in _web_path(f).read_text(encoding="utf-8"), f
+    top = _web_path("src/components/admin/admin-topbar.tsx").read_text(encoding="utf-8")
+    assert "setLegend(" in top and 'aria-label="Status"' in top
+
+
+@test("ADMIN-FEEDS-CONTROL-DIALOG — per-feed Pause / Resume / Run now open a styled confirmation, never prompt()/confirm()")
+def test_admin_feeds_control_dialog():
+    """#139 UX fix round (2026-09-24). The per-sweeper controls used window.prompt()/confirm(): they
+    failed in the preview ("prompt() is not supported"), gave no feedback, and the Coolbet Pause said
+    nothing about real bets. Pins: the shared ConfirmControlDialog (strength "a", optional reason),
+    a "takes effect" line, "does not stop real bets" with the kill-switch link for bet books, a
+    budget-spent warning on Run now saying when the budget resets, a toast for every outcome, and
+    the design preview disabling only Confirm. Still ONE fetch to the audited route."""
+    if not (_web_root / "src").exists():
+        return
+    ctl = _web_path("src/app/(app)/admin/feeds/feed-controls.tsx").read_text(encoding="utf-8")
+    code = "\n".join(l for l in ctl.splitlines() if not l.lstrip().startswith("//"))
+    for bad in ("window.prompt", "window.confirm", "prompt(", " confirm("):
+        assert bad not in code, f"feed controls must not use {bad}"
+    assert 'from "../bots/confirm-control-dialog"' in ctl and "<ConfirmControlDialog" in ctl
+    assert 'strength: "a"' in ctl and "takesEffect:" in ctl
+    assert "stop real bets" in ctl and "/admin/bots#real-money" in ctl
+    assert "budget?.spentNow" in ctl and "until the budget resets at" in ctl
+    assert "useToast()" in ctl and 'tone: "error"' in ctl and 'tone: "ok"' in ctl
+    assert "readOnlyReason={preview ?" in ctl
+    assert '"/api/admin/feed-control"' in ctl and ctl.count("fetch(") == 1
+    route = _web_path("src/app/api/admin/feed-control/route.ts").read_text(encoding="utf-8")
+    assert 'from("feed_actions").insert' in route, "every feed action stays audited"
+
+
+@test("ADMIN-FEEDS-BUDGET-HONEST — the request-budget text names the hour that actually ran out, from book_footprint")
+def test_admin_feeds_budget_honest():
+    """#139 UX fix round (2026-09-24). "request budget spent" showed beside Tonybet 73/150 and
+    Coolbet 352/500: feed_health reads only THIS hour's `refused`, and footprint.py books a refusal
+    in the hour its counter is FLUSHED (Tonybet refused at 18:59:57 at 150/150, booked under 19:00),
+    while Coolbet's refusals come from a process off the VPS at 150–460 of 500. The page now reads
+    book_footprint (25 h) and says which hour ran out, when it reset, and this hour's count; the
+    engine's refusal-only reason is replaced wherever it is shown."""
+    if not (_web_root / "src").exists():
+        return
+    lib = _web_path("src/lib/admin-feeds.ts").read_text(encoding="utf-8")
+    assert 'from("book_footprint")' in lib and "footprint: miss(fx.footprint" in lib
+    model = _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8")
+    assert "export function budgetView(" in model and "export function budgetSentence(" in model
+    assert "Budget last ran out" in model and "resets at" in model and "logged a moment late" in model
+    assert "BUDGET_REASON_RE = /^request budget spent/i" in model
+    assert "import" not in model.split("*/", 1)[1].split("export", 1)[0], "the model must stay import-free (client-safe)"
+    board = _web_path("src/app/(app)/admin/feeds/feeds-board.tsx").read_text(encoding="utf-8")
+    assert "BUDGET_REASON_RE.test(raw)" in board and "budgetSentence(budget)" in board
+    page = _web_path("src/app/(app)/admin/feeds/page.tsx").read_text(encoding="utf-8")
+    assert "budgetSentence(cbBudget)" in page
+    fx = _engine_path("scripts/admin_fixtures/feeds.py").read_text(encoding="utf-8")
+    assert "FROM book_footprint" in fx
+
+
+@test("ADMIN-FEEDS-STALE-GREY — a stale status check greys every colour; 'Fresh' only inside the feed's own schedule")
+def test_admin_feeds_stale_grey():
+    """#139 UX fix round (2026-09-24). Once feed_status is older than STATUS_STALE_MIN (15) the KPI
+    counts go "unknown" and every block / badge goes neutral — a green from a stale check is a claim
+    we cannot make. A feed's badge says "Fresh" only when its last data is within 1.5 slots + 5 min;
+    a 2-minute live feed quiet for 34 min says "OK · quiet" with the gap the engine allows. Also pins
+    the setState-in-render fix (URL updated outside the state updater) and the anchor scheme
+    id="book-<key>" the Overview links to."""
+    if not (_web_root / "src").exists():
+        return
+    model = _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8")
+    assert "export const STATUS_STALE_MIN = 15" in model
+    page = _web_path("src/app/(app)/admin/feeds/page.tsx").read_text(encoding="utf-8")
+    assert "statusStale" in page and "feedsUnknown = !!d.feeds.error || statusStale" in page
+    assert "STATUS_STALE_MIN" in page and 'from "./feeds-board"' in page
+    assert "STATUS_STALE_MIN" not in page.split('from "./feeds-board"')[0].rsplit("import", 1)[1], (
+        "a server component cannot read a constant out of a 'use client' file")
+    board = _web_path("src/app/(app)/admin/feeds/feeds-board.tsx").read_text(encoding="utf-8")
+    assert "function statusTone(f: FeedStatus | undefined, stale = false)" in board
+    assert "export function okWord(" in board and 'return "Fresh"' in board and "freshLimitMin(f)" in board
+    assert 'STATUS_WORD: Record<FeedStatus["status"], string> = {\n  ok: "OK"' in board, "status ok is not automatically 'Fresh'"
+    assert "id={`book-${b.key}`}" in board and "`#book-${next}`" in board
+    sel = board[board.index("function select(key: string)"):]
+    sel = sel[:sel.index("\n  }\n")]
+    assert "setSelected((prev)" not in sel and "replaceState" in sel, "no history.replaceState inside a setState updater"
+    assert '{" "}paused' in page, "the 'bluepaused' legend lost its space"
+
+
+@test("ADMIN-JOBS-DRAWER — Jobs rows open a drawer (last runs, error, Run now only where a feed path exists) and carry id=job-<name>")
+def test_admin_jobs_drawer():
+    """#139 UX fix round (2026-09-24). Pins: (1) JOB_FEED — the jobs that get a Run now in the drawer —
+    is EXACTLY the scheduler jobs of feeds whose registry grants run_now, so no button is shown that
+    the audited feed-control route would refuse; (2) the run list comes from a read-only,
+    superadmin-gated /api/admin/job-runs; (3) rows carry id="job-<job_name>" and the table is unpaged
+    so every anchor exists; (4) "Failing since" keeps non-failing rows last in both directions;
+    (5) the KPI tile names both "longest failing" and "most repeat failures"."""
+    if not (_web_root / "src").exists():
+        return
+    import re
+    from workers.registry.feed_registry import FEEDS
+    model = _web_path("src/lib/admin-jobs-model.ts").read_text(encoding="utf-8")
+    block = model[model.index("export const JOB_FEED"):]
+    block = block[:block.index("};")]
+    web_map = dict(re.findall(r"(\w+): \"(\w+)\"", block))
+    reg_map = {f["job"]: f["id"] for f in FEEDS if "run_now" in (f.get("controls") or [])}
+    assert web_map == reg_map, f"JOB_FEED drifted from feed_registry run_now feeds: {web_map} vs {reg_map}"
+    assert "export function jobAnchor(" in model and "`job-${" in model
+    route = _web_path("src/app/api/admin/job-runs/route.ts").read_text(encoding="utf-8")
+    assert "requireSuperadmin()" in route and 'from("pipeline_runs")' in route
+    for w in (".insert(", ".update(", ".upsert(", ".delete(", ".rpc("):
+        assert w not in route, f"job-runs must be read-only ({w})"
+    table = _web_path("src/app/(app)/admin/ops/jobs-table.tsx").read_text(encoding="utf-8")
+    assert "id={jobAnchor(row.original.job)}" in table and "pageSize={0}" in table
+    assert "accessorFn: (r) => r.failingSince ?? undefined" in table and 'sortUndefined: "last"' in table
+    assert "onRowClick=" in table and "<JobDrawer" in table
+    drawer = _web_path("src/app/(app)/admin/ops/job-drawer.tsx").read_text(encoding="utf-8")
+    assert "JOB_FEED[v.job]" in drawer and "No Run-now button for this job" in drawer
+    assert 'from "../feeds/feed-controls"' in drawer and "feedActionSpec(" in drawer
+    page = _web_path("src/app/(app)/admin/ops/page.tsx").read_text(encoding="utf-8")
+    assert "longest failing:" in page and "most repeat failures:" in page and "worst:" not in page
+    fx = _engine_path("scripts/admin_fixtures/jobs.py").read_text(encoding="utf-8")
+    assert '"recent_runs"' in fx and '"feeds"' in fx
+
+
+@test("ADMIN-ACTIVITY-PLAIN-ACTORS — no 'Database change 413', owner shown as Owner, stacked cards on a phone")
+def test_admin_activity_plain_actors():
+    """#139 UX fix round (2026-09-24). The rows migration 413 wrote when the change log was created
+    read "Set up when the change log started (date)"; any other migration row "A database update
+    (date)"; the owner's actor strings are resolved SERVER-side from OWNER_USER_IDS + profiles and
+    shown as "Owner", other e-mails shortened; below sm the From / Kind / Result / When columns hide
+    and the same facts sit inside the one remaining cell (no 652 px table on a phone). Times use the
+    shared src/lib/rel-time.ts."""
+    if not (_web_root / "src").exists():
+        return
+    lib = _web_path("src/lib/admin-activity.ts").read_text(encoding="utf-8")
+    assert "ownerIds()" in lib and "ownerActors" in lib and 'from("profiles").select("id, email")' in lib
+    table = _web_path("src/app/(app)/admin/activity/activity-table.tsx").read_text(encoding="utf-8")
+    assert "Set up when the change log started" in table and "A database update (" in table
+    assert 'return "Owner"' in table and "d.ownerActors" in table
+    assert table.count('"hidden sm:table-cell"') >= 3 and "sm:hidden" in table
+    assert 'from "@/lib/rel-time"' in table and "relTime(" not in table
+    assert '"Database change"' not in table
+
+
+@test("ADMIN-DQ-GROUPS — data-quality findings are grouped into four plain categories by dqGroupLabel()")
+def test_admin_dq_groups():
+    """#139 UX fix round (2026-09-24). The 24 h summary on /admin/feeds#dq (and the Overview, which
+    reuses the grouping) names four categories: price far from the other books / wrong match on the
+    board / home-away or over-under swapped / results disagree. Every check the engine writes must
+    map to one of them, not to a raw code."""
+    if not (_web_root / "src").exists():
+        return
+    import re
+    model = _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8")
+    fn = model[model.index("export function dqGroupLabel("):]
+    for check in ("single_market_off", "wrong_fixture_board", "mirrored_1x2", "swapped_two_way",
+                  "results_disagree", "results_corrected"):
+        assert f'case "{check}":' in fn, f"{check} has no plain category"
+    for label in ("Price far from the other books", "Wrong match on the board",
+                  "Home/away or over/under swapped", "Results disagree"):
+        assert label in model
+    assert "dqGroupLabel" in _web_path("src/lib/admin-feeds.ts").read_text(encoding="utf-8"), "re-exported from admin-feeds.ts"
+    dq = _web_path("src/app/(app)/admin/feeds/dq-findings.tsx").read_text(encoding="utf-8")
+    assert "dqGroupLabel(f.check_name)" in dq and 'id="dq"' in dq
+
+
+@test("QUEUE-UX-FIX-ROUND — Pick queue: Place only on Place/Thin, visible reasons, shown edge, one stale wording, one row per bet, in-play hidden, sticky action, display names (#139)")
+def test_queue_ux_fix_round():
+    """#139 UX fix round (2026-09-24), from three owner-style usability tests of the Pick queue.
+    (1) Skip rows showed a disabled "Place €10" with the reason only in a tooltip, and a POSITIVE
+    edge on prices below the bot's own minimum (1.62 vs min 1.80, "+8.9%"). Now: the Place button
+    renders only for PLACE and THIN (THIN with a visible warning); every other row states its reason
+    as text in the Action cell; the edge column shows verdict.ts shownEdge() — negative below
+    break-even, "below min" between break-even and the minimum. (2) One stale wording:
+    "Price too old (42 min; limit 30)"; the word "fresh" is never printed. (3) Placeable first,
+    in-play hidden behind a chip, one row per match+market+selection with the other bots listed.
+    (4) bots.display_name everywhere, id as secondary text. (7) Action column sticky right.
+    (8) best-of-our-books vs the bot's own book is explained on the row. (10) the fleet's
+    automatic-placing state is stated once above the table, not as a chip on every row."""
+    row_p = _web_path("src/components/shadow-bots/picks-row.tsx")
+    if not row_p.exists():
+        return
+    row = row_p.read_text(encoding="utf-8")
+    tbl = _web_path("src/components/shadow-bots/picks-table.tsx").read_text(encoding="utf-8")
+    qt = _web_path("src/components/shadow-bots/picks-queue-table.tsx").read_text(encoding="utf-8")
+    page = _web_path("src/app/(app)/admin/shadow-bots/page.tsx").read_text(encoding="utf-8")
+    vs = _web_path("src/lib/shadow-bots/verdict.ts").read_text(encoding="utf-8")
+    sc = _web_path("src/lib/shadow-bots/verdict.selfcheck.ts").read_text(encoding="utf-8")
+    q = _web_path("src/lib/shadow-bots/queries.ts").read_text(encoding="utf-8")
+
+    # (1) Place only on PLACE / THIN; reasons as text, never a disabled button
+    act = row[row.index("export function ActionCell("):]
+    assert '(v === "PLACE" || v === "THIN")' in act, "the Place button is for Place and Thin rows only"
+    assert "disabled={" not in act and "disabledReason" not in act, \
+        "no disabled Place button with a tooltip reason — a non-placeable row shows its reason as text"
+    assert "!r.alreadyLogged && !showPlaceAction" in act and "whyNot" in act, "the reason must be visible text"
+    assert 'v === "THIN"' in act and "text-warning" in act, "a Thin row's Place button carries a visible warning"
+    # shown edge: pure rule in verdict.ts, pinned by the selfcheck, used by the row and the table
+    assert "export function shownEdge(" in vs and "shownEdge" in sc and "2026-09-24 shown edge" in sc
+    assert "shownEdge(verdict, best?.odds ?? null)" in tbl and "r.shownEdge" in row and "below min" in row
+    assert "r.inplay ? null : r.shownEdge" in qt, "the Edge column sorts/exports the SHOWN edge, not the raw one"
+
+    # (2) one stale wording, no "fresh" chip
+    assert "price too old (${Math.round(r.bestAgeMin)} min; limit ${QUOTE_MAX_AGE_MIN})" in row
+    assert "FRESH_WORD" not in row and '"fresh"' not in row, "never print 'fresh' next to a price"
+    assert "reasonText(r)" in qt, "the CSV verdict uses the same wording as the row"
+
+    # (3) placeable first, one row per bet, in-play hidden by default
+    assert "export function groupPickRows(" in tbl and "siblings" in tbl and "return groupPickRows(rows)" in tbl
+    assert "Number(a.inplay) - Number(b.inplay)" in tbl, "pre-match must sort above in-play inside a band"
+    assert "PICK_VERDICT_RANK[a.verdict.verdict] - PICK_VERDICT_RANK[b.verdict.verdict]" in tbl
+    assert "if (r.alreadyLogged) head.alreadyLogged = true" in tbl, "a bet logged on any bot's copy is the same bet"
+    assert "useState(false)" in qt and "showInplay" in qt and "rows.filter((r) => !r.inplay)" in qt
+    assert "more bot" in row and "<details" in row, "the grouped bots are listed, expandable"
+
+    # (4) display names, id as secondary text
+    assert "display_name" in q.split('.from("bots")')[1][:200], "the bots read must carry display_name"
+    assert 'from "@/app/(app)/admin/bots/bot-board-format"' in tbl and "prettyDisplayName(b.display_name, b.name)" in tbl
+    assert "botShortLabel" not in row and "botShortLabel" not in qt, "no private short label as the bot name"
+    assert "{r.botLabel}" in row and "{pick.bot_name}" in row, "name first, id as secondary text"
+    fx = _engine_path("scripts/admin_fixtures/queue.py").read_text(encoding="utf-8")
+    assert "display_name" in fx, "the preview fixture must carry the same bots shape"
+
+    # (7) the action is always visible
+    assert "md:sticky md:right-0" in qt and qt.rindex('id: "_actions"') > qt.rindex('id: "decision"'), \
+        "Action is the last column and sticky on the right"
+    assert "[&>td:not(:last-child)]:opacity-50" in row, "a greyed row must not make the sticky cell see-through"
+
+    # (8) best of our books vs the bot's own book
+    assert "best of our books" in row and "recommended_bookmaker" in row and "ownQuote" in tbl
+
+    # (10) fleet state once, not per row
+    assert "auto off" not in row, "the per-row 'auto off' chip is gone"
+    assert "Automatic placing:" in page and "state.placement_paused" in page and "toggledOff" in page
+    assert "is_superadmin" in page
+
+
+@test("REAL-BETS-UX-FIX-ROUND — /admin/real-bets: display names, 'Not confirmed (by hand)', labelled exports, shared 30-day window, plain promotions text (#139)")
+def test_real_bets_ux_fix_round():
+    """#139 UX fix round (2026-09-24). (4) The ledger showed bot ids only — now bots.display_name
+    (via prettyDisplayName, in the client-safe admin-money-format.ts) with the id as secondary text.
+    (5) "By hand" in the Confirmed column meant NOT confirmed — it now says so, in amber; the four
+    CSV buttons each say what they export. (6) "last 30 days" is ONE pure function,
+    realMoneyWindow(rows, now, days) in admin-money.ts, shared with the Overview card: placed_at >=
+    now − days, paper rows excluded, staked = every bet placed, P/L = settled only. (9) The empty
+    Promotions card is plain words; the promo_ev.py command lives in a code comment."""
+    lib_p = _web_path("src/lib/admin-money.ts")
+    if not lib_p.exists():
+        return
+    lib = lib_p.read_text(encoding="utf-8")
+    fmt = _web_path("src/lib/admin-money-format.ts").read_text(encoding="utf-8")
+    page = _web_path("src/app/(app)/admin/real-bets/page.tsx").read_text(encoding="utf-8")
+    cl = _web_path("src/app/(app)/admin/real-bets/money-client.tsx").read_text(encoding="utf-8")
+    promo = _web_path("src/components/shadow-bots/promotions.tsx").read_text(encoding="utf-8")
+
+    # (6) one window definition
+    assert "export function realMoneyWindow(" in lib
+    fn = lib[lib.index("export function realMoneyWindow("):]
+    fn = fn[:fn.index("\n}\n")]
+    assert "r.placedReal === false" in fn, "paper rows are not money"
+    assert "days * 86_400_000" in fn and "t >= from" in fn, "rolling window on placed_at"
+    assert 'r.result !== "pending"' in fn and "pnl +=" in fn, "P/L counts settled bets only"
+    assert "realMoneyWindow(bets, now, 30)" in page, "the page's 30-day numbers use the shared function"
+
+    # (4) display names — client-safe helper, no server import in the client half
+    assert "prettyDisplayName" in fmt and "supabase" not in fmt, "the label helper must be importable client-side"
+    assert 'from "@/lib/admin-money-format"' in cl and "moneyBotLabel(" in cl
+    assert "bot:bot_id(name, display_name)" in lib, "the loader must read display_name"
+    assert "display_name" in _engine_path("scripts/admin_fixtures/money.py").read_text(encoding="utf-8")
+
+    # (5) confirmation wording + labelled exports
+    assert "Not confirmed (by hand)" in cl and ">\n            By hand\n" not in cl
+    for label in ("Export all real bets", "Export unconfirmed bets", "Export results by bot", "Export day by day"):
+        assert label in cl, f"export button must say what it exports: {label}"
+
+    # (9) no shell command in the owner's UI
+    empty = promo[promo.index("if (promos.length === 0)"):]
+    empty = empty[:empty.index("\n  }\n")]
+    ui = "\n".join(l for l in empty.splitlines() if not l.strip().startswith("//"))
+    assert "python3" not in ui and "no promotions recorded yet" in ui
+    assert "promo_ev.py add-terms" in promo, "the command stays in a developer comment"
+
+
+@test("ADMIN-BOTS-BLOCKED-IS-NOT-GREEN — a blocked real-money layer is neutral grey, open is red, unknown amber")
+def test_admin_bots_blocked_is_not_green():
+    """#139 UX fix round (2026-09-24). The ladder drew BLOCKED layers ("Paused", "Not armed",
+    "Stale") with green icons, and green reads as "go" — the opposite of what they mean. Rule:
+    open (money can pass) = red, blocked = neutral muted grey with a Ban icon, unknown = amber. The
+    CAN STAKE: NO line and the top "Kill switch" stat card follow it (Paused = neutral, Running =
+    red). The sr-only state word stays, so the state is readable without colour."""
+    if not (_web_root / "src").exists():
+        return
+    d = _web_root / "src/app/(app)/admin/bots"
+    lad = (d / "ladder-list.tsx").read_text(encoding="utf-8")
+    ui = lad[lad.index("const STATE_UI"):lad.index("export function LadderList")]
+    assert 'open: { Icon: LockOpen, cls: "text-danger"' in ui
+    assert 'blocked: { Icon: Ban, cls: "text-muted-foreground"' in ui
+    assert 'unknown: { Icon: HelpCircle, cls: "text-warning"' in ui
+    assert "text-success" not in lad, "no green anywhere on the money ladder"
+    assert '<span className="sr-only"> ({u.word})</span>' in lad
+    strip = (d / "fleet-strip.tsx").read_text(encoding="utf-8")
+    assert 'tone={paused == null ? "warning" : paused ? "neutral" : "danger"}' in strip
+    money = (d / "real-money-card.tsx").read_text(encoding="utf-8")
+    assert 'paused ? "text-muted-foreground" : "font-semibold text-danger"' in money
+
+
+@test("ADMIN-BOTS-CHANNEL-REASONS — every bot gets ONE plain line per channel, from the rule that channel uses")
+def test_admin_bots_channel_reasons():
+    """#139 UX fix round. The sheet said the Telegram channel posts "calibrated" bots for EVERY bot,
+    under a forward-test arm labelled "testing" that showed Telegram: Yes. There are two senders with
+    two rules: the forward-test publisher (published arms, grade D never sent, label irrelevant) and
+    the model signaler (calibrated customer-model bots). channel-reasons.ts states both and gives each
+    bot "On/Not on Telegram because …", "/picks because …", "/performance because …"; the sheet, the
+    row icons and the /picks confirmation all read it. Invariant ids (I12, I13) and "(maturity_label)"
+    are gone from primary text."""
+    if not (_web_root / "src").exists():
+        return
+    d = _web_root / "src/app/(app)/admin/bots"
+    cr = (d / "channel-reasons.ts").read_text(encoding="utf-8")
+    assert 'fam === "forward_test"' in cr and "plays no part" in cr
+    assert 'g.name === "send" && g.value === "recorded, not sent"' in cr, "grade D is recorded, never sent"
+    assert "Not on Telegram because its label is" in cr and "“calibrated”" in cr
+    assert 'PERF_LABELS = new Set(["calibrated", "beta"])' in cr and "opts.vip === true" in cr
+    # the rules it states are the engine's
+    exp = _engine_path("scripts/export_bot_config.py").read_text(encoding="utf-8")
+    assert 'telegram = bool(live and b.get("maturity_label") == "calibrated")' in exp
+    assert 'sent = g != "D"' in exp
+    perf = _web_path("src/lib/bot-aggregates.ts").read_text(encoding="utf-8")
+    assert '"calibrated",\n  "beta",' in perf
+    sheet = (d / "bot-sheet.tsx").read_text(encoding="utf-8")
+    assert "channelLines(v, {" in sheet and "{lines.telegram.text}" in sheet and "{lines.performance.text}" in sheet
+    assert "(maturity_label · I12)" not in sheet and "earned the “calibrated” label" not in sheet
+    specs = (d / "control-specs.tsx").read_text(encoding="utf-8")
+    assert "channelLines(ctx.view" in specs and "(maturity_label = calibrated)" not in specs
+    cell = (d / "bot-controls-cell.tsx").read_text(encoding="utf-8")
+    assert "title={lines.telegram.text}" in cell
+    model = (d / "bot-board-model.ts").read_text(encoding="utf-8")
+    assert "I13" not in model and "I16, I17" not in model
+
+
+@test("ADMIN-BOTS-CONFIRM-SHOWS-NAME — per-bot confirmations show the display name; the typed phrase is still the id")
+def test_admin_bots_confirm_shows_name():
+    """#139 UX fix round. The type-to-confirm box asked for "bot_high_roi_global_v2" for a bot the
+    table calls "High-odds match result". The dialog now shows the display name large with the id
+    under it, and labels the box "Type the bot's id to confirm". The confirmation is NOT weakened:
+    the phrase is still the exact bot id (i.bot), compared exactly."""
+    if not (_web_root / "src").exists():
+        return
+    d = _web_root / "src/app/(app)/admin/bots"
+    dlg = (d / "confirm-control-dialog.tsx").read_text(encoding="utf-8")
+    assert "subject?: { name: string; id: string };" in dlg
+    assert "{spec.subject.name}" in dlg and "bot id: {spec.subject.id}" in dlg
+    assert "Type the bot&apos;s id to confirm:" in dlg
+    assert "const phraseOk = !b || !spec.phrase || typed.trim() === spec.phrase;" in dlg
+    specs = (d / "control-specs.tsx").read_text(encoding="utf-8")
+    assert "const subject = i.bot ? { name: ctx.name ?? i.bot, id: i.bot } : undefined;" in specs
+    assert specs.count('phrase: i.bot ?? "",') == 2, "real money ON and /picks ON keep the id as the phrase"
+
+
+@test("ADMIN-BOTS-PICKS-WHOLE-LEDGER — real-money count and the Bet made filter cover ALL picks; list sorted = column shown")
+def test_admin_bots_picks_whole_ledger():
+    """#139 UX fix round. "No real money on any of these 50 picks" described the loaded page only,
+    and the Bet made facet filtered only loaded rows. Now loadBotPicks returns placedPicks (distinct
+    picks with a real bet over the bot's whole real_bets) and ?placed=1 filters server-side: the
+    bot's real bets → their matches' ledger rows → the linked ones. The list is newest PICK first, so
+    the first column is the pick time (kick-off moved under the match)."""
+    if not (_web_root / "src").exists():
+        return
+    lib = _web_path("src/lib/bot-board.ts").read_text(encoding="utf-8")
+    assert "placedPicks: number | null;" in lib and "placedOnly: boolean;" in lib
+    assert "if (placedOnly) return loadPlacedPicks(botName, lim, off, now);" in lib
+    fn = lib[lib.index("async function loadPlacedPicks("):lib.index("async function readLedgerForMatches(")]
+    assert "readPlaced(botId)" in fn and '.filter((r) => r.placed)' in fn and "i += 100" in fn
+    route = _web_path("src/app/api/admin/bot-ledger/route.ts").read_text(encoding="utf-8")
+    assert 'placed !== "0" && placed !== "1"' in route and "loadBotPicks(bot, { limit, offset, placedOnly })" in route
+    d = _web_root / "src/app/(app)/admin/bots"
+    table = (d / "picks-table.tsx").read_text(encoding="utf-8")
+    assert "of these ${rows.length} picks" not in table
+    assert "(whole ledger, not just the loaded rows)" in table and "Bet made only" in table
+    assert 'id: "picked"' in table and 'r.pick_time ? new Date(r.pick_time).getTime()' in table
+    assert '{ column: "bet", label: "Bet made" }' not in table, "no client-only facet over the loaded rows"
+    board = (d / "bots-board.tsx").read_text(encoding="utf-8")
+    assert '&placed=1' in board and "ledgerKey(name, onlyPlaced)" in board
+
+
+@test("ADMIN-BOTS-UX-ROUND2 — real tabs, CLV axis holds zero, silent-by-design is info, preview = real control rows, one rel-time")
+def test_admin_bots_ux_round2():
+    """#139 UX fix round, remaining items:
+    * Sheet tabs: Base UI's Tabs.Panel left the previous panel mounted (stuck exit transition), so
+      visited tabs stacked into one page. One panel is rendered at a time; ?tab= via replaceState.
+    * CLV chart: yDomain holds zero (the smallest range with all data AND the close), 1-dp ticks, no
+      dashed zero SERIES (it drew dots).
+    * needsALook: a bot silent BY DESIGN (real money locked + source retired — e.g. the Coolbet O/U
+      model after bot_v10_ou retired) is information, not an issue. Signature kept (optional opts).
+    * Design preview: the control state is the snapshot's REAL rows (no invented owner@example.test
+      change or fake heartbeat), and the audit rows come from admin-activity.json, so the bots page's
+      Activity drawer and /admin/activity list the same changes.
+    * One relative-time format: src/lib/rel-time.ts (timeAgo never renders "12 Sep ago").
+    * Kill switch: the top card focuses the Pause/Resume button; the wording says hand-placed Pick
+      queue bets are separate (record_manual_real_bet does not read placement_paused — verified)."""
+    if not (_web_root / "src").exists():
+        return
+    d = _web_root / "src/app/(app)/admin/bots"
+    sheet = (d / "bot-sheet.tsx").read_text(encoding="utf-8")
+    assert "TabsContent" not in sheet and '<div role="tabpanel"' in sheet
+    assert '{tab === "picks" && (' in sheet and '{tab === "overview" && ' in sheet
+    board = (d / "bots-board.tsx").read_text(encoding="utf-8")
+    board_code = "\n".join(l for l in board.splitlines() if not l.lstrip().startswith(("//", "*", "/*")))
+    assert "window.history.replaceState(" in board_code and "router.replace(" not in board_code
+    charts = (d / "bot-perf-charts.tsx").read_text(encoding="utf-8")
+    assert "yDomain={[(m: number) => Math.min(0, m), (M: number) => Math.max(0, M)]}" in charts
+    assert 'key: "zero"' not in charts and 'yFmt={(y) => signed(y, 1, "%")}' in charts
+    model = (d / "bot-board-model.ts").read_text(encoding="utf-8")
+    assert "opts?: { lockedBots?: ReadonlySet<string> }," in model
+    assert "if (!v.silent || quietByDesign(v, active, opts?.lockedBots)) continue;" in model
+    assert "export function quietInfo(" in model and "silent (source retired, locked off)" in model
+    lib = _web_path("src/lib/bot-board.ts").read_text(encoding="utf-8")
+    prev = lib[lib.index("function previewControlState("):lib.index("// ── Picks tab")]
+    assert '"owner@example.test"' not in lib and '"operator /pause"' not in lib, "no invented audit rows"
+    assert "const changes = activity ?? c?.changes ?? null;" in prev
+    assert '"admin-activity.json"' in lib
+    dump = _engine_path("scripts/dump_bot_board_fixture.py").read_text(encoding="utf-8")
+    assert '"control": {' in dump and "FROM control_changes ORDER BY id DESC LIMIT 50" in dump
+    rt = _web_path("src/lib/rel-time.ts").read_text(encoding="utf-8")
+    assert "export function timeAgo(" in rt and "export function relSpan(" in rt
+    for f in ("activity-timeline.tsx", "real-money-card.tsx", "fleet-controls-card.tsx"):
+        assert ")} ago" not in (d / f).read_text(encoding="utf-8"), f"{f}: use timeAgo, not relTime + ' ago'"
+    money = (d / "real-money-card.tsx").read_text(encoding="utf-8")
+    assert 'id="kill-switch"' in money and money.count("data-kill-switch-action") == 2
+    assert "Hand-placed bets from the Pick queue are separate" in money
+    assert 'box.querySelector<HTMLButtonElement>("[data-kill-switch-action]:not(:disabled)")' in board
+    route = _web_path("src/app/api/admin/real-bet/route.ts").read_text(encoding="utf-8")
+    assert "placement_paused" not in route, "the Pick queue's manual record is not gated by the kill switch — the copy says so"
+
+
+# ───────────────────────────── PART 2: REPLACEMENTS for existing tests ─────────────────────────
+
+
+@test("ADMIN-BOTS-DESIGN-SYSTEM — /admin/bots uses PageHeader, StatCards (armed = whole red card), Panels and a DataTable-look toolbar")
+def test_admin_bots_design_system():
+    """#139 admin visual direction §10 (2026-09-24). The bot table itself stays custom (family groups
+    with per-family column headers, in-row money switches, shared forest-bar axis, cards below xl —
+    none of which DataTable does), so its toolbar copies DataTable's: search, Family / Verdict facet
+    chips, quick views, Reset, and sorting (headers + a Sort menu) within each family, all in the URL.
+    The money cards keep their behaviour; only the chrome changed.
+    UX fix round (2026-09-24): the Kill switch card now jumps to the Pause / Resume button itself
+    (onJumpKill), the Real money card still to the Real money card."""
+    if not (_web_root / "src").exists():
+        return
+    d = _web_root / "src/app/(app)/admin/bots"
+    board = (d / "bots-board.tsx").read_text(encoding="utf-8")
+    assert '<PageHeader\n        eyebrow="Bots & money"' in board
+    assert '<FacetChip label="Family"' in board and '<FacetChip label="Verdict"' in board and "<SortMenu" in board
+    assert "sort={{ key: sortKey, dir: sortDir, onSort }}" in board
+    strip = (d / "fleet-strip.tsx").read_text(encoding="utf-8")
+    assert "danger={armed === true}" in strip and "unknown={armed == null}" in strip and "unknown={paused == null}" in strip
+    assert strip.count("<Jump onJump={onJump}>") == 1, "the Real money card jumps to the Real money card"
+    assert "<Jump onJump={onJumpKill ?? onJump}" in strip, "the Kill switch card jumps to the Pause / Resume button"
+    money = (d / "real-money-card.tsx").read_text(encoding="utf-8")
+    assert '<Panel\n      id="real-money"' in money and "ctl.openArm" in money
+    assert money.count('ctl.request({ control: "placement_paused"') == 2 and 'ctl.request({ control: "real_money_disarm", bot: null, value: false })' in money
+    pub = (d / "fleet-controls-card.tsx").read_text(encoding="utf-8")
+    assert '<Panel id="controls">' in pub
+    sort = (d / "bot-sort.ts").read_text(encoding="utf-8")
+    assert "if (va == null) return 1;" in sort and "if (vb == null) return -1;" in sort, "missing values sort last, never as 0"
+
+
+@test("ADMIN-BOTS-P7-SHEET-LEDGER — /admin/shadow-bots/[bot] redirects; the bots sheet carries Bet made + current prices, per-family")
+def test_admin_bots_p7_sheet_ledger():
+    """#139 IA move P7 (2026-09-24). /admin/shadow-bots/[bot] computed its OWN per-bot record (ROI,
+    avg CLV, a 50-settled/14-day bar, a model-edge "Min odds") for every bot — a third scoring beside
+    bot_scoreboard, wrong for in-play and sharp bots (#139 finding b). It is now a redirect to the
+    /admin/bots sheet, whose Picks tab gained what the old page had that the sheet lacked:
+    "Bet made" (real_bets, placed_real IS NOT FALSE, price + venue), the current price at our three
+    books for PENDING PRE-MATCH picks, and paging through the whole ledger. Guards: the redirect
+    reads nothing; placements exclude the paper daemon's placed_real=FALSE rows; the price books are
+    the placeable feeds (Unibet-Site, never Kambi), one query per book; in-play bots get no CLV and
+    no pre-match price; no "Min odds"; the client table never imports server code.
+    UX fix round (2026-09-24): the route also takes placed=1 (server-side "Bet made only") and the
+    sheet passes the filter state to PicksTable — pins updated, guards unchanged."""
+    if not (_web_root / "src").exists():
+        return
+    detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text(encoding="utf-8")
+    assert 'from "next/navigation"' in detail and "redirect(`/admin/bots?bot=${encodeURIComponent(bot)}&tab=picks`)" in detail
+    assert ".from(" not in detail and "createServerServiceClient" not in detail, "the retired page must read nothing"
+
+    route = _web_path("src/app/api/admin/bot-ledger/route.ts").read_text(encoding="utf-8")
+    assert "loadBotPicks(bot, { limit, offset, placedOnly })" in route and "limit > 100" in route
+    assert route.index("if (!isBotBoardDevPreview())") < route.index("loadBotPicks(")
+
+    lib = _web_path("src/lib/bot-board.ts").read_text(encoding="utf-8")
+    fn = lib[lib.index("export async function loadBotPicks("):]
+    placed = lib[lib.index("async function readPlaced("):lib.index("async function readPrices(")]
+    assert '.from("real_bets")' in placed and '.not("placed_real", "is", false)' in placed and "bookmaker" in placed
+    prices = lib[lib.index("async function readPrices("):]
+    assert '.eq("bookmaker", book)' in prices and "SNAPSHOT_BOOKS.map(" in prices, "one query per book (row-cap safety)"
+    assert '.eq("is_live", false)' in prices and "12 * 3600_000" in prices
+    want = lib[lib.index("function wantsPrice("):lib.index("function attachExtras(")]
+    assert 'r.result === "pending"' in want and "!isInplayRow(r)" in want and "> now" in want
+    assert "placementLinked" in fn and "hasMore" in fn
+
+    books = _web_path("src/lib/bot-snapshot-books.ts").read_text(encoding="utf-8")
+    assert 'SNAPSHOT_BOOKS = ["Coolbet", "Unibet-Site", "Epicbet"] as const;' in books
+    code = "\n".join(l for l in books.splitlines() if not l.lstrip().startswith(("*", "/*", "//")))
+    assert "Kambi" not in code and '"Unibet"' not in code
+
+    d = _web_root / "src/app/(app)/admin/bots"
+    table = (d / "picks-table.tsx").read_text(encoding="utf-8")
+    assert "const anyClv = !inplay &&" in table and "const anyPriceRow = !inplay &&" in table
+    assert "Min odds" not in table.split('"use client";', 1)[1].split("import ", 1)[1], "no model-edge min-odds column"
+    assert 'id: "bet"' in table and 'id: "result"' in table and "Bet made" in table
+    for h in ("Now CB", "Now UB", "Now EB"):
+        assert h in table
+    # client components import only TYPES from the server-only data layer
+    import re as _re
+    for f in d.glob("*.tsx"):
+        t = f.read_text(encoding="utf-8")
+        if not t.lstrip().startswith('"use client"'):
+            continue  # server components (page.tsx) may import the loaders
+        for m in _re.finditer(r'^import (.+) from "@/lib/bot-board";', t, _re.M):
+            assert m.group(1).startswith("type "), f"{f.name} imports a VALUE from server-only bot-board.ts"
+    sheet = (d / "bot-sheet.tsx").read_text(encoding="utf-8")
+    assert "<PicksTable v={v} ledger={ledger} onMore={onMore} placedOnly={placedOnly} onPlacedOnly={onPlacedOnly} />" in sheet
+
+
 @test("BOT-BOARD-DEV-PREVIEW-NEVER-IN-PROD — the no-login /admin/bots fixture preview is development-only")
 def test_bot_board_dev_preview_never_in_prod():
     """#139 (2026-09-24): /admin/bots can render from a JSON snapshot without the superadmin
@@ -55759,88 +56308,6 @@ def test_b5_outlier_persistence():
 
 
 # ─────────────────────────────────────────── PART 1: NEW ───────────────────────────────────────
-
-
-@test("ADMIN-BOTS-P7-SHEET-LEDGER — /admin/shadow-bots/[bot] redirects; the bots sheet carries Bet made + current prices, per-family")
-def test_admin_bots_p7_sheet_ledger():
-    """#139 IA move P7 (2026-09-24). /admin/shadow-bots/[bot] computed its OWN per-bot record (ROI,
-    avg CLV, a 50-settled/14-day bar, a model-edge "Min odds") for every bot — a third scoring beside
-    bot_scoreboard, wrong for in-play and sharp bots (#139 finding b). It is now a redirect to the
-    /admin/bots sheet, whose Picks tab gained what the old page had that the sheet lacked:
-    "Bet made" (real_bets, placed_real IS NOT FALSE, price + venue), the current price at our three
-    books for PENDING PRE-MATCH picks, and paging through the whole ledger. Guards: the redirect
-    reads nothing; placements exclude the paper daemon's placed_real=FALSE rows; the price books are
-    the placeable feeds (Unibet-Site, never Kambi), one query per book; in-play bots get no CLV and
-    no pre-match price; no "Min odds"; the client table never imports server code."""
-    if not (_web_root / "src").exists():
-        return
-    detail = _web_path("src/app/(app)/admin/shadow-bots/[bot]/page.tsx").read_text(encoding="utf-8")
-    assert 'from "next/navigation"' in detail and "redirect(`/admin/bots?bot=${encodeURIComponent(bot)}&tab=picks`)" in detail
-    assert ".from(" not in detail and "createServerServiceClient" not in detail, "the retired page must read nothing"
-
-    route = _web_path("src/app/api/admin/bot-ledger/route.ts").read_text(encoding="utf-8")
-    assert "loadBotPicks(bot, { limit, offset })" in route and "limit > 100" in route
-    assert route.index("if (!isBotBoardDevPreview())") < route.index("loadBotPicks(")
-
-    lib = _web_path("src/lib/bot-board.ts").read_text(encoding="utf-8")
-    fn = lib[lib.index("export async function loadBotPicks("):]
-    placed = lib[lib.index("async function readPlaced("):lib.index("async function readPrices(")]
-    assert '.from("real_bets")' in placed and '.not("placed_real", "is", false)' in placed and "bookmaker" in placed
-    prices = lib[lib.index("async function readPrices("):]
-    assert '.eq("bookmaker", book)' in prices and "SNAPSHOT_BOOKS.map(" in prices, "one query per book (row-cap safety)"
-    assert '.eq("is_live", false)' in prices and "12 * 3600_000" in prices
-    want = lib[lib.index("function wantsPrice("):lib.index("function attachExtras(")]
-    assert 'r.result === "pending"' in want and "!isInplayRow(r)" in want and "> now" in want
-    assert "placementLinked" in fn and "hasMore" in fn
-
-    books = _web_path("src/lib/bot-snapshot-books.ts").read_text(encoding="utf-8")
-    assert 'SNAPSHOT_BOOKS = ["Coolbet", "Unibet-Site", "Epicbet"] as const;' in books
-    code = "\n".join(l for l in books.splitlines() if not l.lstrip().startswith(("*", "/*", "//")))
-    assert "Kambi" not in code and '"Unibet"' not in code
-
-    d = _web_root / "src/app/(app)/admin/bots"
-    table = (d / "picks-table.tsx").read_text(encoding="utf-8")
-    assert "const anyClv = !inplay &&" in table and "const anyPriceRow = !inplay &&" in table
-    assert "Min odds" not in table.split('"use client";', 1)[1].split("import ", 1)[1], "no model-edge min-odds column"
-    assert 'id: "bet"' in table and 'id: "result"' in table and "Bet made" in table
-    for h in ("Now CB", "Now UB", "Now EB"):
-        assert h in table
-    # client components import only TYPES from the server-only data layer
-    import re as _re
-    for f in d.glob("*.tsx"):
-        t = f.read_text(encoding="utf-8")
-        if not t.lstrip().startswith('"use client"'):
-            continue  # server components (page.tsx) may import the loaders
-        for m in _re.finditer(r'^import (.+) from "@/lib/bot-board";', t, _re.M):
-            assert m.group(1).startswith("type "), f"{f.name} imports a VALUE from server-only bot-board.ts"
-    sheet = (d / "bot-sheet.tsx").read_text(encoding="utf-8")
-    assert "<PicksTable v={v} ledger={ledger} onMore={onMore} />" in sheet
-
-
-@test("ADMIN-BOTS-DESIGN-SYSTEM — /admin/bots uses PageHeader, StatCards (armed = whole red card), Panels and a DataTable-look toolbar")
-def test_admin_bots_design_system():
-    """#139 admin visual direction §10 (2026-09-24). The bot table itself stays custom (family groups
-    with per-family column headers, in-row money switches, shared forest-bar axis, cards below xl —
-    none of which DataTable does), so its toolbar copies DataTable's: search, Family / Verdict facet
-    chips, quick views, Reset, and sorting (headers + a Sort menu) within each family, all in the URL.
-    The money cards keep their behaviour; only the chrome changed."""
-    if not (_web_root / "src").exists():
-        return
-    d = _web_root / "src/app/(app)/admin/bots"
-    board = (d / "bots-board.tsx").read_text(encoding="utf-8")
-    assert '<PageHeader\n        eyebrow="Bots & money"' in board
-    assert '<FacetChip label="Family"' in board and '<FacetChip label="Verdict"' in board and "<SortMenu" in board
-    assert "sort={{ key: sortKey, dir: sortDir, onSort }}" in board
-    strip = (d / "fleet-strip.tsx").read_text(encoding="utf-8")
-    assert "danger={armed === true}" in strip and "unknown={armed == null}" in strip and "unknown={paused == null}" in strip
-    assert strip.count("<Jump onJump={onJump}>") == 2, "Placement + Real money cards jump to the Real money card"
-    money = (d / "real-money-card.tsx").read_text(encoding="utf-8")
-    assert '<Panel\n      id="real-money"' in money and "ctl.openArm" in money
-    assert money.count('ctl.request({ control: "placement_paused"') == 2 and 'ctl.request({ control: "real_money_disarm", bot: null, value: false })' in money
-    pub = (d / "fleet-controls-card.tsx").read_text(encoding="utf-8")
-    assert '<Panel id="controls">' in pub
-    sort = (d / "bot-sort.ts").read_text(encoding="utf-8")
-    assert "if (va == null) return 1;" in sort and "if (vb == null) return -1;" in sort, "missing values sort last, never as 0"
 
 
 @test("ADMIN-BOTS-PERF-CHARTS — the sheet's CLV-over-time is the family's own metric, gaps under 5, none for in-play")

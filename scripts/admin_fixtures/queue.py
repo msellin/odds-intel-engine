@@ -19,7 +19,7 @@ def snapshot(rows) -> dict:
     import datetime as dt
 
     now = dt.datetime.now(dt.timezone.utc)
-    bots = rows("SELECT id::text, name, maturity_label, is_active FROM bots WHERE retired_at IS NULL ORDER BY name")
+    bots = rows("SELECT id::text, name, display_name, maturity_label, is_active FROM bots WHERE retired_at IS NULL ORDER BY name")
     placer = rows("SELECT bot_name, ui_place_enabled, note FROM coolbet_placer_bots ORDER BY bot_name")
     real = rows(
         """SELECT bookmaker, stake, placed_real, shadow_bet_id::text AS shadow_bet_id FROM real_bets

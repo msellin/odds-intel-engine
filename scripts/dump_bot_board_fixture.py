@@ -180,6 +180,30 @@ def main() -> None:
         "prices": prices,
         "weekly": weekly,
         "market_stats": _rows(_MARKET_STATS_SQL),
+        # #139 UX fix round (2026-09-24): the REAL control state, in the shapes
+        # src/lib/bot-board.ts loadControlState() reads (fleet switches by named column only --
+        # never the JWT / cookie columns on the same row). The preview used to invent these
+        # (a fake owner@example.test change, a refused off->on, a Telegram /pause), so the bots
+        # page's Activity drawer disagreed with /admin/activity, which shows the real rows.
+        "control": {
+            "fleet": (_rows(
+                """SELECT placement_paused, placement_paused_at, placement_paused_reason,
+                          real_money_armed, real_money_armed_at, real_money_armed_reason,
+                          publishing_paused, publishing_paused_at, publishing_paused_reason,
+                          daemons_paused, daemons_paused_at, daemons_paused_reason
+                     FROM coolbet_session_state WHERE id = 1""") or [None])[0],
+            "placers": _rows(
+                "SELECT bot_name, ui_place_enabled, locked_reason, note, updated_at FROM coolbet_placer_bots"),
+            "bots": _rows(
+                "SELECT name, show_on_picks, maturity_label, is_active, retired_at, display_name, vip FROM bots"),
+            "heartbeats": _rows(
+                """SELECT placer, host, last_seen_at, execute_requested, execute_effective, refused_reason, result
+                     FROM placer_heartbeats"""),
+            "changes": _rows(
+                """SELECT id, created_at, actor, source, control, bot_name, old_value, new_value, reason,
+                          outcome, refusal
+                     FROM control_changes ORDER BY id DESC LIMIT 50"""),
+        },
         # /admin Overview (#139, 2026-09-24): the non-bot reads src/lib/admin-overview.ts makes,
         # in the same shapes (feed_status rows, latest pipeline run per job, counts).
         "overview": {
@@ -196,6 +220,12 @@ def main() -> None:
                 """SELECT count(*) AS n FROM real_bets
                     WHERE placed_real IS NULL AND placed_at >= '2026-09-10'
                       AND placed_at < now() - interval '24 hours'""")[0]["n"],
+            # same window + rules as the Real bets page: last 30 days, paper excluded, P/L settled-only
+            "real_bets_30d": _rows(
+                """SELECT 30 AS days, count(*) AS bets, coalesce(sum(stake), 0) AS staked,
+                          coalesce(sum(pnl) FILTER (WHERE result IS NOT NULL AND result <> 'pending'), 0) AS pnl
+                     FROM real_bets
+                    WHERE placed_real IS DISTINCT FROM false AND placed_at >= now() - interval '30 days'""")[0],
             "real_bets_weekly": _rows(
                 """SELECT to_char(date_trunc('week', placed_at), 'YYYY-MM-DD') AS week, count(*) AS bets,
                           coalesce(sum(stake), 0) AS staked,
