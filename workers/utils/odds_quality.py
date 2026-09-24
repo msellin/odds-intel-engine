@@ -53,6 +53,32 @@ def is_ou_market(market: str | None) -> bool:
     return bool(market) and market.startswith("over_under_")
 
 
+def ou_line_from_label(market: str | None) -> float | None:
+    """The goal line an over_under_* label encodes. Every writer builds the label as
+    str(line) with the dot removed ("over_under_25" = 2.5, "over_under_225" = 2.25,
+    "over_under_025" = 0.25, "over_under_1h_05" = 0.5): first digit, a point, the rest."""
+    if not market or not market.startswith("over_under_"):
+        return None
+    digits = market.rsplit("_", 1)[1]
+    if not digits.isdigit() or len(digits) < 2:
+        return None
+    return float(digits[0] + "." + digits[1:])
+
+
+def ou_line_matches(market: str | None, line) -> bool:
+    """False when an over_under_* row carries a handicap_line that is NOT its label's line.
+    OU-LINE-LABEL (#121, 2026-09-24): 408 1xBet rows (2026-09-17..20) were stored as
+    over_under_25 with handicap_line 0.25 — a quarter-line market under the 2.5 name
+    (e.g. over 1.02 / under 10.9), which every O/U consumer read as the 2.5 line."""
+    expected = ou_line_from_label(market)
+    if expected is None or line is None:
+        return True
+    try:
+        return abs(float(line) - expected) < 1e-9
+    except (TypeError, ValueError):
+        return False
+
+
 def filter_garbage_ou_rows(rows: list[dict]) -> list[dict]:
     """
     Drop OU rows from blacklisted bookmakers, drop both sides of any (over, under)
@@ -82,6 +108,8 @@ def filter_garbage_ou_rows(rows: list[dict]) -> list[dict]:
             clean.append(r)
             continue
 
+        if market.startswith("over_under_") and not ou_line_matches(market, r.get("handicap_line")):
+            continue  # OU-LINE-LABEL: a different line filed under this market's name
         if not is_ou_market(market):
             clean.append(r)  # 1x2, btts, double_chance pass through unchanged
             continue
