@@ -103,6 +103,30 @@ CLV was never affected: `CLOSING-PRE-KO-FALLBACK` (settlement.py) resolves
 against the surviving pre-kickoff row, and measured coverage is `real_bets`
 Coolbet 930/977 = 95.2%, `shadow_bets` 30d Coolbet 100.0% / Epicbet 99.4%.
 
+## Direct books — why request volume differs, and how to cut it (measured 2026-09-24)
+
+Every request to a scraped book is metered per clock hour (`workers/utils/footprint.py`,
+`book_footprint`, shown on /admin/feeds). The budgets are **safety fuses we chose**, not
+the books' limits — no book publishes one, and probing for it means getting blocked on
+purpose. Only Coolbet's is grounded in an incident (#108: Imperva flagged the exit after
+hours at 750–1,500/h). Measured, first 12–13 metered hours:
+
+| Book | Req/h median / peak | Budget | Why it costs what it costs |
+|---|---|---|---|
+| Betfair Exchange | ~37 | 300 | **Bulk**: one listing request for all football markets in 48 h, prices 40 markets/request (~11–15 per run, every 15 min). |
+| Tonybet | 54 / 69 | 800 | **Bulk**: one request returns 100 events WITH main odds (~6 pages / 48 h); full boards only at ~24 h / 3 h / 30 min; most of the count is the 2-min live poll. |
+| Unibet-Site | 84 / 177 | 500 | **Per match**: one lobby page per country + one contest page per matched fixture; low only because it matches ~28% of fixtures (the "World" gap, #112). |
+| Epicbet | 416 / 576 | 4,000 | **Per match, deep**: ~140 league listings + the FULL board (100+ markets) per matched fixture, up to 250 per sweep, 2 sweeps/h. |
+| Coolbet | 298 / 508 | 500 | **Per match, via a browser**: fo-tree + ~100 category listings + one market request per matched fixture; FlareSolverr page loads count too. ~250 per sweep. The cap is biting (62 refusals in 13 h, tail of busy sweeps). |
+
+**The expensive pattern** is re-fetching every match's full board every 30 min, including
+matches two days out whose prices barely move. **Fix (queued, #112, Coolbet first):**
+refresh by time to kickoff — >12 h out every 2 h, 3–12 h hourly, <3 h every 30 min as now
+(+ the near-kickoff close capture). Expected: Coolbet ~150–250/h instead of 300–500, well
+clear of the block zone, with near-kickoff prices as fresh as today. **Budget rule once a
+week of data exists:** ~2× the measured peak, except where a danger level is known
+(Coolbet stays at 500).
+
 ## Daily Request Budget (API-Football **Mega** — 150,000/day, 900/min)
 
 Verified 2026-09-05 from live `/status` headers. The old version of this table was
