@@ -391,7 +391,7 @@ consideration until then (owner-gated). Trigger: **≥500 settled `shadow_bets` 
 The #1/#2 positives all sat in a **narrow, recent** window. The owner asked the right question:
 can we widen the test, and are the older prices even the real odds we'd get? Answered with
 `scripts/trigger_widen_audit.py` (date-based train/test split, per bookmaker, month+fold detail;
-re-runnable). Snapshot: `dev/active/trigger-widen-audit-2026-09-10.txt`.
+re-runnable). Snapshot: `dev/archive/trigger-widen-audit-2026-09-10.txt`.
 
 **Two data facts frame everything (settled 1x2 odds coverage):**
 - **Coolbet** has real prices back to 2026-05-20, but **~37% of them are in the last 10 days** and only **22 rows before Aug 1** — the full-board sweep only started ~Sep 8, so older Coolbet is a *biased league subset*, not the board we now bet. **The model anchor CANNOT be widened on Coolbet** (a calibrator can't be fit on 22 rows). Forward accrual is the only path.

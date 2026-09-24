@@ -25606,8 +25606,9 @@ def test_model_version_re_eval_2026_07_31():
         "rigorous-eval-v20260719-vs-v20260712.md",
         "rigorous-eval-v20260719-vs-v20260621-ou.md",
     ):
-        assert (repo / "dev" / "active" / name).exists(), (
-            f"missing eval companion doc dev/active/{name} "
+        # archived to dev/archive/ by the #131 audit (2026-09-24) — either location is fine
+        assert any((repo / "dev" / d / name).exists() for d in ("active", "archive")), (
+            f"missing eval companion doc dev/{{active,archive}}/{name} "
             "(MODEL-VERSION-RE-EVAL-2026-07-31)."
         )
 

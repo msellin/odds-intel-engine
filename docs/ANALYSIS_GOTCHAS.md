@@ -1478,7 +1478,7 @@ was computed from `odds_at_pick`, a MAX() high-water mark. Because the error is
 - **Placebo and method-sensitivity tests are cheap and they earn their keep.**
   Here they *exonerated* the suspected cause, which stopped a wrong fix.
 - **Pre-register.** The predictions and decision rule were written to
-  `dev/active/devig-artefact-check-plan.md` before measuring, so "de-vig was
+  `dev/archive/devig-artefact-check-plan.md` before measuring, so "de-vig was
   innocent" could not be quietly reinterpreted as a win.
 
 
