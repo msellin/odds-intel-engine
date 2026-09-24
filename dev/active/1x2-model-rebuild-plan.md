@@ -149,3 +149,49 @@ until the effect is measured; (3) football-data.co.uk (free results + Pinnacle c
 
 ## RESULTS
 _(appended after each run, dated)_
+
+### 2026-09-24 — tuning (validation slice only: fit 2022-07..2026-02, score 2026-03..05, gated rows)
+Round 1 (single-feature multinomial logit per rating; DP scored directly). Validation LL:
+best Elo 1.0290 (K 45, HFA 60), pi 1.0293 (lr 0.1, γ 0.9), **dynamic Poisson 1.0252** (lr 0.03,
+league lr 0.003), HT rating 1.0404, SOT rating 1.0596, form 1.0356 (half-life 120 d). Several optima
+sat on a grid edge, so round 2 extends only those grids (`--tune-extend`). The Q1/Q2 test windows
+have not been read. Noted during cache build: 34% of Pinnacle's non-live 1X2 rows (176k of 517k)
+carry a timestamp AFTER kickoff and are excluded by the `timestamp < kickoff` bound.
+Round 2 (`--tune-extend`): converged at elo_k 45, pi_lr 0.1 / γ 0.9, dp_lr 0.03, dp_league_lr 0.003,
+ht_lr 0.06, sot_lr 0.08, form half-life 240 d (flat vs 120). Saved to `data/models/_research/1x2/tuned_params.json`.
+
+### 2026-09-24 — RESULT Q1 (vs production): **PASS, every arm**
+Train ≤ 2026-08-30 (120,300 gated rows), test 2026-08-31..09-24, 12,632 rows with a PROD prediction
+(7,687 gated). Log-loss (lower better), Δ vs PROD with paired-bootstrap 95% CI:
+
+| | ALL (12,632) | GATED (7,687) | UNGATED (4,945) | Pinnacle-priced (6,511) |
+|---|---|---|---|---|
+| BASE rate | 1.0683 | 1.0673 | 1.0699 | 1.0718 |
+| **PROD** v20260830 raw head | 1.0711 | 1.0538 | 1.0978 | 1.0653 |
+| SERVED ensemble (stored) | 1.1577 (n 5,956) | 1.1449 | 1.2054 | 1.1541 |
+| AF's own prediction | 1.4255 | 1.3657 | 1.5245 | 1.3499 |
+| E (Elo) | 1.0339 −0.037 | 1.0281 −0.026 | 1.0428 | 1.0396 |
+| PI (pi-ratings) | 1.0323 −0.039 | 1.0255 −0.028 | 1.0429 | 1.0384 |
+| **DP** (dynamic Poisson, no fit) | **1.0277 −0.043** [−0.051,−0.036] | 1.0202 −0.034 | **1.0392** | 1.0368 |
+| **D8** (8 diffs, logit) | 1.0285 −0.043 | **1.0188 −0.035** [−0.043,−0.027] | 1.0436 | **1.0365** |
+| DX (8 diffs, XGB) | 1.0326 | 1.0238 | 1.0462 | 1.0383 |
+| DXS (+ shots) | 1.0327 | 1.0238 | 1.0465 | 1.0378 |
+| DXM (+ Pinnacle T-2h, market-in) | 0.9864 (n 6,252) | 0.9906 | 0.9705 | 0.9864 |
+| Pinnacle close | — | — | — | 0.9813 |
+
+Per tier (gated): D8 beats PROD in all five (t0 1.031 v 1.074, t1 1.010 v 1.042, t2 1.036 v 1.065,
+t3 1.028 v 1.082, t4 1.056 v 1.109). XGB never beats the logit on the same 8 features; shots add nothing.
+Production's raw head is WORSE than the constant base rate overall — only its gated rows beat it.
+
+### 2026-09-24 — RESULT Q2 (α vs Pinnacle close): **FAIL, every arm — as pre-registered**
+Train ≤ 2026-05-31 (105,381 gated), test 14,053 gated Pinnacle-priced rows (α fit 7,026 / scored
+7,027). Mean overround 8.29%. Market LL 0.9846; arms 1.029–1.037; **α = 0.000 on all six**.
+The rating models trail the closing line by ~0.045 nats. Same verdict as the literature.
+
+### 2026-09-24 — side finding: the STORED 1X2 prediction is worse than uniform
+`predictions` source='ensemble' v20260830 = 0.635·Poisson + 0.365·XGB (`ensemble_prediction`).
+Scored on settled matches since 08-31: ensemble 1.1437, **Poisson leg 1.1473 — worse than 1/3-1/3-1/3
+(1.0986)**; mean stored probs H 0.366 / D 0.311 / A 0.323 vs actual 0.438 / 0.244 / 0.318. The
+Poisson leg (`daily_pipeline_v2.py` ~1530-1630, last-10 goals, fuzzy team names) is the defect.
+Calibration and the Pinnacle pull happen downstream at bet time, which is why placed bets are not
+this bad — but every consumer of `predictions.model_probability` for 1X2 reads the squashed number.
