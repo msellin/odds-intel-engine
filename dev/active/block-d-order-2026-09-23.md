@@ -27,6 +27,30 @@ backfills paused.
    quote within 60 min of kickoff.
 4. **T1 is partly built.** `picks_board` already stores the sharp arm's candidate board (1,267 rows).
 
+## Revised order — 2026-09-24 (owner: "move 089 on top")
+
+Steps 1-4 of the order below are done (#082, #024, #085 correctness half, #081/#088/#089 D/E), and
+#090 (a) and (b) are closed (a: real but ±0.4pp — too small to trade; b: not achievable through AF).
+#113 (anchor widening) was closed by another session. What is left, in order:
+
+| step | row | what | est | direction |
+|---|---|---|---|---|
+| 1 | #089 | faithful Wheatcroft shots-rating replication on football-data.co.uk history — separates "our version was unfaithful" from "the effect is gone" | 1 d | BOTH |
+| 2 | #111 | AF xG stopped arriving ~2026-08-31 — diagnose | 1-2 h | BOTH |
+| 3 | #106 | de-vig bake-off per market + worst-method gate | 1 d | PICKS |
+| 4 | #096 | grade the sharp arm (needs #106 and the AF-fed price check) | ½ d | PICKS |
+| 5 | #014 | fair 1x2 from Pinnacle AH + totals (verify the claim first) | 2-3 d | PICKS |
+| 6 | #062 | consensus as a log-odds pool, weights fitted to the close | 1 d | PICKS |
+| 7 | #090 (c) | decorrelation + Benter blend — demoted, capped by the margin | 2-3 d | OWN |
+| 8 | #085 | deletion half (keep `pinnacle_ah_line`) | ½ d | OWN |
+| 9 | #071 | dated odds-band re-check | 2 h | PICKS |
+
+Background, decided by date: #103 (Epicbet 1H, 14 d / 60 verified picks), grade B re-test at n ≥ 150.
+Parked: #080, #086 (lineups arrive after kickoff — the fetch must move to T-60..T-30 first).
+Owner decisions: #077 retire `bot_v10_ou`, #087 delete ~1.6 GB, #070 channel message, Pinnacle API email.
+
+The table below is the 2026-09-23 order, kept for its reasoning.
+
 ## The order (rows, not a second backlog)
 
 | step | row | what | est | direction |
