@@ -147,4 +147,4 @@ FEEDS: list[dict] = [
 FEEDS_BY_ID = {f["id"]: f for f in FEEDS}
 
 # Books whose "fixtures priced today" is shown on the dashboard.
-COVERAGE_BOOKS = ("Coolbet", "Epicbet", "Unibet-Site", "Tonybet", "Pinnacle")
+COVERAGE_BOOKS = ("Coolbet", "Epicbet", "Unibet-Site", "Tonybet", "Pinnacle", "Betfair-Exchange")

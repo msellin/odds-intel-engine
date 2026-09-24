@@ -234,14 +234,143 @@ def load_sets(match_id: str, market: str, sides: tuple[str, ...], *, at: datetim
 
 def resolve_anchor(match_id: str, market: str, *, at: datetime | None = None,
                    exclude_book: str | None = None, min_books: int = 5,
-                   min_thin_books: int = 99, max_age_min: float = DEFAULT_MAX_AGE_MIN) -> Anchor:
+                   min_thin_books: int = 99, max_age_min: float = DEFAULT_MAX_AGE_MIN,
+                   use_exchange: bool | None = None) -> Anchor:
     """The one entry point. `at` defaults to now (capped at kickoff by the query).
-    Consumers MUST record `anchor.source` next to whatever they compute from it."""
+    Consumers MUST record `anchor.source` next to whatever they compute from it.
+    `use_exchange` (default: env ANCHOR_USE_EXCHANGE, off) tries the sharp tier —
+    Pinnacle + Betfair Exchange — first; a `sharp_conflict` is returned as-is (no
+    probabilities), never silently replaced by a softer anchor."""
+    import os
     sides = market_sides(market)
     if not sides:
         return Anchor("none", dropped={"_": f"market {market!r} has no de-viggable set"})
     at = at or datetime.now(timezone.utc)
+    if use_exchange is None:
+        use_exchange = os.getenv("ANCHOR_USE_EXCHANGE", "0") == "1"
+    if use_exchange:
+        sharp = resolve_sharp(match_id, market, at=at)
+        if sharp.source != "none":
+            return sharp
     sets = load_sets(match_id, market, sides, at=at, lookback_min=max_age_min)
     return compute_anchor(sets, sides, at=at, exclude_book=exclude_book, min_books=min_books,
                           min_thin_books=min_thin_books, max_age_min=max_age_min)
 
+
+
+# ── SHARP TIER: Pinnacle + Betfair Exchange ([[#119]] SHARP-ANCHOR-V2, 2026-09-24) ──
+#
+# Owner: "whichever of those 2 provides odds, this means we have a sharp anchor, and
+# consensus of both is a plus" — and every backtest should be able to lean on the
+# exchange as much as on Pinnacle. Two independent sharp prices:
+#   sharp_blend     both present and within SHARP_DISAGREE of each other → their mean
+#   pinnacle_tight  only Pinnacle (fresh + tight)
+#   exchange_liquid only a LIQUID exchange market (spread ≤5% every runner, ≥€1k matched)
+#   sharp_conflict  both present but they disagree → NO probabilities; the flag is the
+#                   point: a stale AF-Pinnacle quote or a placeholder line looks exactly
+#                   like the biggest edge on the board (the phantom-edge class).
+#   none
+# `resolve_anchor(..., use_exchange=True)` tries this tier first. It is OFF by default
+# (env ANCHOR_USE_EXCHANGE=1 turns it on globally) until the #117 study says the
+# exchange is sharp enough near the close — no existing consumer changes behaviour.
+
+EXCHANGE = "Betfair-Exchange"
+EXCHANGE_MAX_AGE_MIN = 30          # the reader runs every 15 min
+SHARP_DISAGREE = 0.025             # max-side prob gap; liquid ex-vs-Pin measured mean 1.03 pts (#117)
+_EX_MARKETS = {"1x2": ("home", "draw", "away"), "over_under_25": ("over", "under"),
+               "btts": ("yes", "no")}
+
+
+def exchange_fair(quotes: dict[str, dict], sides: tuple[str, ...], *,
+                  max_spread: float = 0.05, min_matched: float = 1000.0) -> tuple[dict | None, bool, dict]:
+    """Pure. quotes: side -> {back, lay, market_matched}. Returns (probs, liquid, info).
+    Fair price per runner = harmonic mid of best back and lay, normalised (an exchange
+    book is ~100% so proportional normalisation is the de-vig)."""
+    info: dict = {}
+    if not all(s in quotes for s in sides):
+        return None, False, {"reason": "incomplete market"}
+    mids, spreads = [], []
+    for s in sides:
+        b, l = quotes[s].get("back"), quotes[s].get("lay")
+        if not b or not l or b <= 1.0 or l < b:
+            return None, False, {"reason": f"no two-sided price on {s}"}
+        mids.append(2.0 / (1.0 / b + 1.0 / l))
+        spreads.append(l / b - 1.0)
+    inv = [1.0 / m for m in mids]
+    tot = sum(inv)
+    probs = {s: v / tot for s, v in zip(sides, inv)}
+    matched = float(quotes[sides[0]].get("market_matched") or 0.0)
+    liquid = max(spreads) <= max_spread and matched >= min_matched
+    info.update(max_spread=round(max(spreads), 4), market_matched=round(matched), book_sum=round(tot, 4))
+    return probs, liquid, info
+
+
+def compute_sharp(pin: tuple[list[float], datetime] | None, ex: dict | None,
+                  sides: tuple[str, ...], *, at: datetime) -> Anchor:
+    """Pure. `pin` = (odds, ts) Pinnacle set; `ex` = {"probs", "liquid", "ts", "info"}."""
+    from workers.model.devig import devig
+    pin_probs = pin_or = None
+    if pin and (at - pin[1]).total_seconds() / 60 <= PIN_MAX_AGE_MIN:
+        p = devig(pin[0])
+        if p:
+            pin_or = _overround(pin[0])
+            if pin_or <= PIN_TIGHT_OVERROUND:
+                pin_probs = dict(zip(sides, p))
+    ex_ok = bool(ex and ex.get("probs") and ex.get("liquid")
+                 and (at - ex["ts"]).total_seconds() / 60 <= EXCHANGE_MAX_AGE_MIN)
+    ex_probs = ex["probs"] if ex_ok else None
+    books = {}
+    if pin_probs:
+        books[PIN] = pin_probs
+    if ex_probs:
+        books[EXCHANGE] = ex_probs
+    if pin_probs and ex_probs:
+        gap = max(abs(pin_probs[s] - ex_probs[s]) for s in sides)
+        if gap > SHARP_DISAGREE:
+            return Anchor("sharp_conflict", {}, 2, books, {"_": f"Pinnacle vs exchange gap {gap:.3f}"},
+                          max(pin[1], ex["ts"]), None, round(gap, 4), pin_or)
+        blend = {s: (pin_probs[s] + ex_probs[s]) / 2 for s in sides}
+        tot = sum(blend.values())
+        return Anchor("sharp_blend", {s: v / tot for s, v in blend.items()}, 2, books, {},
+                      max(pin[1], ex["ts"]), round((at - min(pin[1], ex["ts"])).total_seconds() / 60, 1),
+                      round(gap, 4), pin_or)
+    if pin_probs:
+        return Anchor("pinnacle_tight", pin_probs, 1, books, {}, pin[1],
+                      round((at - pin[1]).total_seconds() / 60, 1), 0.0, pin_or)
+    if ex_probs:
+        return Anchor("exchange_liquid", ex_probs, 1, books, {}, ex["ts"],
+                      round((at - ex["ts"]).total_seconds() / 60, 1), 0.0, None)
+    return Anchor("none")
+
+
+def load_exchange(match_id: str, market: str, sides: tuple[str, ...], *, at: datetime) -> dict | None:
+    """Latest exchange capture (one market_id, one captured_at) at or before `at`."""
+    from workers.api_clients.db import execute_query
+    rows = execute_query(
+        """WITH last AS (
+               SELECT market_id, captured_at FROM exchange_quotes
+                WHERE match_id = %s AND market = %s AND captured_at <= %s
+                  AND captured_at > %s - make_interval(mins => %s)
+                ORDER BY captured_at DESC LIMIT 1)
+           SELECT q.selection, q.back::float back, q.lay::float lay,
+                  q.market_matched::float market_matched, q.captured_at
+             FROM exchange_quotes q JOIN last l
+               ON q.market_id = l.market_id AND q.captured_at = l.captured_at""",
+        (match_id, market, at, at, EXCHANGE_MAX_AGE_MIN)) or []
+    if not rows:
+        return None
+    quotes = {r["selection"]: r for r in rows}
+    probs, liquid, info = exchange_fair(quotes, sides)
+    return {"probs": probs, "liquid": liquid, "ts": rows[0]["captured_at"], "info": info}
+
+
+def resolve_sharp(match_id: str, market: str, *, at: datetime | None = None) -> Anchor:
+    """The sharp tier on its own (Pinnacle and/or exchange). For research benchmarks
+    and the v2 sharp bots; returns `none` when neither sharp source is usable."""
+    sides = market_sides(market)
+    if not sides or market not in _EX_MARKETS and not market.startswith("over_under"):
+        return Anchor("none", dropped={"_": f"market {market!r} not supported by the sharp tier"})
+    at = at or datetime.now(timezone.utc)
+    pin = load_sets(match_id, market, sides, at=at, lookback_min=PIN_MAX_AGE_MIN).get(PIN)
+    ex = load_exchange(match_id, market, sides, at=at) if market in _EX_MARKETS else None
+    return compute_sharp(pin, ex, sides, at=at)

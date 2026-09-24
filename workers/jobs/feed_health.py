@@ -152,7 +152,11 @@ def _coverage() -> list[tuple]:
            SELECT b.book, f.d, count(*) AS fixtures,
                   count(*) FILTER (WHERE EXISTS (
                       SELECT 1 FROM odds_snapshots o
-                       WHERE o.match_id = f.id AND o.market = '1x2' AND o.bookmaker = b.book)) AS priced
+                       WHERE o.match_id = f.id AND o.market = '1x2' AND o.bookmaker = b.book)
+                    -- #117: the exchange keeps its own table (back/lay + liquidity)
+                    OR (b.book = 'Betfair-Exchange' AND EXISTS (
+                      SELECT 1 FROM exchange_quotes x
+                       WHERE x.match_id = f.id AND x.market = '1x2'))) AS priced
              FROM f CROSS JOIN b
             GROUP BY b.book, f.d""", (list(COVERAGE_BOOKS),)) or []
     today = datetime.now(timezone.utc).date()

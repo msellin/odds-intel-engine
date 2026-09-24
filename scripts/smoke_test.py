@@ -53011,6 +53011,38 @@ def test_betfair_exchange_reader():
     assert 'id="betfair_exchange_snapshot"' in (root / "workers/scheduler.py").read_text()
 
 
+@test("SHARP-TIER — Pinnacle + Betfair Exchange: blend when they agree, CONFLICT when they don't, off by default")
+def test_sharp_tier():
+    """#119 step A/B (2026-09-24). Two independent sharp prices. A disagreement is the
+    phantom-edge detector (stale AF-Pinnacle / placeholder line) and must never be
+    silently replaced by a softer anchor. OFF by default until the #117 study."""
+    import inspect
+    from datetime import datetime, timedelta, timezone
+    from workers.utils import anchor as A
+    S = ("home", "draw", "away")
+    now = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
+    f = now - timedelta(minutes=5)
+    liquid = {"home": {"back": 2.48, "lay": 2.52, "market_matched": 18656},
+              "draw": {"back": 3.30, "lay": 3.35, "market_matched": 18656},
+              "away": {"back": 3.35, "lay": 3.40, "market_matched": 18656}}
+    probs, liq, _ = A.exchange_fair(liquid, S)
+    assert liq and abs(sum(probs.values()) - 1) < 1e-9
+    placeholder = {s: {"back": 1.10, "lay": 110.0, "market_matched": 0} for s in S}
+    assert A.exchange_fair(placeholder, S)[1] is False
+    ex = {"probs": probs, "liquid": True, "ts": f}
+    pin_ok = ([2.45, 3.30, 3.30], f)                    # tight, near the exchange
+    assert A.compute_sharp(pin_ok, ex, S, at=now).source == "sharp_blend"
+    a = A.compute_sharp(([1.97, 3.62, 4.35], f), ex, S, at=now)   # tight but far away
+    assert a.source == "sharp_conflict" and not a.probs, "a conflict carries NO probabilities"
+    assert A.compute_sharp(None, ex, S, at=now).source == "exchange_liquid"
+    assert A.compute_sharp(pin_ok, None, S, at=now).source == "pinnacle_tight"
+    stale_ex = dict(ex, ts=now - timedelta(minutes=45))
+    assert A.compute_sharp(None, stale_ex, S, at=now).source == "none"
+    assert A.compute_sharp(None, dict(ex, liquid=False), S, at=now).source == "none"
+    src = inspect.getsource(A.resolve_anchor)
+    assert 'os.getenv("ANCHOR_USE_EXCHANGE", "0") == "1"' in src, "sharp tier must be OFF by default"
+
+
 @test("BETFAIR-GEO-PROBE — the one-shot exchange probe is read-only and uses the site's own query")
 def test_betfair_geo_probe():
     """#115 (2026-09-24): Betfair Exchange served no markets to the Finnish VPS. The
