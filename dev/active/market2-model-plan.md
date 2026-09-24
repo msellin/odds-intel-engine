@@ -65,7 +65,7 @@ measurement:** `bot_sharp_ou_v1`, `bot_sweep_ou25`, `bot_sweep_ou35` (their real
 selection at best open price, same odds range". **PASS** = mean CLV > 0, one-sided bootstrap, Holm m = 2 (EV5, EV8),
 adj p < 0.05 — AND reported side-by-side with the controls. Same-window caveat stands; the forward run decides.
 
-## RESULTS — ROUND O1 (2026-09-24 ~23:30 UTC)
+## RESULTS — ROUND O1 (2026-09-24 evening)
 **Model** (`scripts/ab_ou_combined.py`, n = 12,640 per line, OPEN): PASS 2.5 (Δ −0.0023 vs rule, Holm .004) and 3.5 (Δ −0.0038,
 Holm < .001); FAIL 1.5 (Δ −0.0010, Holm .16). CLOSE the same. **But on Pinnacle-priced rows the combiner is WORSE than
 Pinnacle alone** (1.5: 0.5661 vs 0.5620; 2.5: 0.6764 vs 0.6758; 3.5: 0.6451 vs 0.6449) — the whole gain is on rows Pinnacle
@@ -99,7 +99,7 @@ PASS = mean CLV > 0, one-sided bootstrap, Holm adj p < 0.05. Also reported (not 
 before kickoff, ROI with CI, and the same arms on the O1 window (08-31..09-24) for continuity. **Expected:** all four
 positive on CLV; direct > all; ROI inside noise. The production bot is the best-supported arm, forward-judged.
 
-## RESULTS — ROUND O2 (2026-09-25 ~00:10 UTC)
+## RESULTS — ROUND O2 (2026-09-24 evening)
 Pre-registered window 05-01..08-30: S1 CLV +4.66% / ROI −2.7%, S2 +5.93% / −5.1% [−9.0, −1.0], S3/S4 (only Coolbet swept
 then) CLV −1.8% / −1.1% — formally S1/S2 PASS, S3/S4 FAIL. **The S1/S2 pass is not trusted:** a +6% CLV cannot coexist
 with a −5% ROI at n = 2,938; cause found — before mid-July there is no Pinnacle O/U CLOSE (ANALYSIS_GOTCHAS #83), so that
@@ -122,7 +122,7 @@ Primary window **2026-08-01..08-30** (real closes; these filters never examined 
 already seen for S arms). PASS = CLV > S2's CLV on the same window, paired by pick where the filter keeps it (one-sided
 bootstrap of the difference in means, Holm m = 4, adj p < 0.05). A filter that passes both windows goes into the live bot.
 
-## RESULTS — ROUND O3 (2026-09-25 ~00:30 UTC) — all four filters PASS both windows (Holm < .001)
+## RESULTS — ROUND O3 (2026-09-24 evening) — all four filters PASS both windows (Holm < .001)
 | arm | Aug (primary): n / CLV / ROI [CI] | Sep (secondary): n / CLV / ROI [CI] |
 |---|---|---|
 | S2 base | 1,107 / +1.80% / +0.6% [−5.8, +7.2] | 1,013 / +2.63% / +3.1% [−4.1, +10.3] |
@@ -132,3 +132,15 @@ bootstrap of the difference in means, Holm m = 4, adj p < 0.05). A filter that p
 | T4 T1+T2 | 93 / +7.40% / +26.2% | 68 / +8.48% / −18.0% |
 **Adopted for the live bot: T3** (strongest, simplest, consistent in both windows, ROI agrees with CLV — the first O/U rule
 where outcomes and closing line tell the same story). **T2** runs beside it as a second bot. T1/T4: too few picks/week.
+
+**Robustness check after O3 (not a new test; the two caveats track 3's scan raised):** on the FULL-intraday-history slice
+(kickoffs 09-17..09-24) T3 early = n 176, CLV +7.12% [+6.3, +7.9], ROI +16.9% [+0.1, +33.8]; without Bet365 (the AF feed
+that dominates outliers elsewhere) n 128, CLV +7.39%. Before 09-17: n 283, CLV +6.81%. So T3 is neither a stale-history
+artefact nor a Bet365 artefact. Track 3 (all markets, consensus-outlier, Holm): the mechanism is broad on AF-fed books;
+O/U 2.5 / 3.5 / 4.5, AH 0 / ±0.5 and double chance hold after 09-17; takeability of AF opening quotes is still unproven.
+
+## Track 3 — consensus-outlier scan (landed 2026-09-24 evening, `scripts/scan_consensus_outlier_markets.py`)
+EV ≥ 5% (Shin): Holm passes 17/21 non-1X2 markets; O/U FT 2.5 +6.4% (n 67), 3.5 +6.8% (50), 4.5 +11.7% (30); AH 0.0 +10.1%;
+DNB +10.2%; corners O/U +8.7%. 1X2 calibration row +3.1% (≈ B2). Caveats: shrinks after 09-17 (pre-09-17 consensus built
+partly from stale opening rows), Bet365 ≈ 36% of picks, proportional de-vig unusable, whole AH lines conditional on no push.
+Next-market candidates for #149 round 2 (later): AH 0 / ±0.5 and DNB (need the push-aware CLV), corners (settlement 67%).
