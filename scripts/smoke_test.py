@@ -52532,7 +52532,7 @@ def test_tonybet_sweeper():
     markets = [
         mk(1, None, [("1", 2.3, 0.41, 1), ("2", 3.05, 0.31, 1), ("3", 3.3, 0.28, 1)]),
         mk(18, "total=2.5", [("12", 2.47, 0.37, 1), ("13", 1.5, 0.63, 1)]),
-        mk(18, "total=2.25", [("12", 2.16, 0.43, 1), ("13", 1.65, 0.57, 1)]),   # quarter → dropped
+        mk(18, "total=2.25", [("12", 2.16, 0.43, 1), ("13", 1.65, 0.57, 1)]),   # quarter → own label (#130)
         mk(16, "hcp=-0.5", [("1714", 2.25, 0.41, 1), ("1715", 1.6, 0.59, 1)]),
         mk(16, "hcp=-2", [("1714", 9.0, 0.07, 1), ("1715", 1.04, 0.93, 1)]),    # absurd → dropped
         mk(29, None, [("74", 2.1, 0.44, 1), ("76", 1.69, 0.56, 0)]),           # 'no' inactive
@@ -52544,7 +52544,11 @@ def test_tonybet_sweeper():
     got = {(r[0], r[1], r[3]): (r[2], r[4]) for r in t.parse_markets(markets)}
     assert got[("1x2", "home", None)] == (2.3, 0.41)
     assert ("over_under_25", "over", 2.5) in got and ("over_under_25", "under", 2.5) in got
-    assert not any(k[2] == 2.25 for k in got), "quarter total leaked into the .5 vocabulary"
+    # #130 (owner 2026-09-24, "all OU lines"): quarter totals ARE stored now — under their
+    # OWN label with the line beside it, never under a .5 label.
+    assert ("over_under_225", "over", 2.25) in got, "quarter FT total not stored (#130)"
+    assert not any(k[2] == 2.25 and k[0] != "over_under_225" for k in got), \
+        "quarter total leaked into the .5 vocabulary"
     assert ("asian_handicap", "home", -0.5) in got and ("asian_handicap", "away", -0.5) in got
     assert not any(k[0] == "asian_handicap" and k[2] == -2.0 for k in got), "absurd AH line stored"
     assert ("btts", "yes", None) in got and ("btts", "no", None) not in got, "inactive outcome stored"
@@ -53547,6 +53551,52 @@ def test_ou_low_lines_bias_sweep():
     esrc = (Path(__file__).parent.parent / "scripts" / "ou05_inplay_early_entry.py").read_text()
     assert "af.over < af.over15" in esrc and "w.over05 < w.over15" in esrc, "ladder guard on both sources"
     assert "MAX_AF_AGE_S" in esrc and "score_home = 0 and score_away = 0" in esrc
+
+
+@test("TONYBET-INPLAY-OU-ALL-LINES — #130 in-play boards on the same request, every O/U line spelled right")
+def test_tonybet_inplay_ou_all_lines():
+    """[[#130]], 2026-09-24 (owner: "collect all the data we can … inplay OU, all OU lines").
+    Pins: (1) the goals label spelling ou_line_from_label reads back, .5 lines unchanged;
+    (2) the ladder guard drops only the NEW lines when the over price falls with the line;
+    (3) live boards are built from the SAME metered 120 s request (relations odds), written
+    AFTER the book_live_stats commit, and dedup'd; (4) settlement refuses a quarter label
+    instead of guessing."""
+    import inspect
+    from workers.automation import tonybet_feed as t
+    from workers.utils.odds_quality import ou_line_from_label
+    for line in (0.5, 0.75, 1.0, 2.0, 2.25, 2.5, 3.75, 4.5, 5.5, 6.0, 9.75):
+        lab = t._goals_label(line)
+        assert ou_line_from_label(lab) == line, (line, lab)
+    assert t._goals_label(2.5) == "over_under_25" and t._goals_label(1.5, "over_under_1h_") == "over_under_1h_15"
+    assert t._goals_label(10.5) is None and t._goals_label(2.1) is None and t._goals_label(None) is None
+
+    good = [("over_under_20", "over", 1.40, 2.0, None), ("over_under_25", "over", 1.80, 2.5, None),
+            ("over_under_275", "over", 2.10, 2.75, None), ("over_under_25", "under", 2.0, 2.5, None)]
+    assert t.drop_non_monotone_extra_lines(good) == (good, 0)
+    bad = good + [("over_under_30", "over", 1.20, 3.0, None)]          # over price FALLS at 3.0
+    kept, n = t.drop_non_monotone_extra_lines(bad)
+    assert n == 3 and [r[0] for r in kept] == ["over_under_25", "over_under_25"], kept
+
+    mk = lambda vm, spec, outs, st=1: {"vendorMarketId": vm, "specifiers": spec, "status": st,
+        "outcomes": [{"vendorOutcomeId": o, "odds": p, "active": a, "probabilities": 0.5} for o, p, a in outs]}
+    board = t.live_board([mk(18, "total=2.25", [("12", 1.65, 1), ("13", 2.2, 0)]),
+                          mk(18, "total=0.5", [("12", 1.04, 1), ("13", 8.0, 1)]),
+                          mk(16, "hcp=-2", [("1714", 9.0, 1), ("1715", 1.04, 1)]),   # outside AH band
+                          mk(1, None, [("1", 2.0, 1)], st=-1),                        # suspended market
+                          mk(999, None, [("1", 2.0, 1)])])                            # unknown family
+    assert [(b["fam"], b["line"]) for b in board] == [("ou", 0.5), ("ou", 2.25)], board
+    assert board[1]["sel"][1] == {"sel": "Under", "odds": 2.2, "suspended": True, "p": 0.5}
+    assert t._clock("67:12") == (67, 12) and t._clock(None) == (None, None)
+
+    src = inspect.getsource(t.run_live)
+    assert '("relations[]", "odds")' in src and "sess = _session()" in src, "boards must ride the metered request"
+    assert src.index("INSERT INTO book_live_stats") < src.index("INSERT INTO inplay_book_quotes"), \
+        "boards are written after the stats commit so they can never cost the corners/cards record"
+    assert "_LAST_BOARD" in src and "raise RuntimeError" in src
+
+    from workers.jobs.settlement import _r_ou_goals, _UNSETTLEABLE
+    assert _r_ou_goals("over_under_225", "over", 1, 1, None) is _UNSETTLEABLE, "quarter line must not be guessed"
+    assert _r_ou_goals("over_under_20", "over", 1, 1, None) is None, "whole line is a push"
 
 if __name__ == "__main__":
     main()

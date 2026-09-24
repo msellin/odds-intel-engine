@@ -3170,3 +3170,17 @@ or join `data_quality_findings`** — they read as the largest edges on the boar
   by in-play analyses — including the retired in-play bots' "over 2.5 early +15.98%" postmortem, which is
   worth a spot-check before it is ever used to revive in-play.
 
+## 81. Tonybet O/U labels now include whole and quarter lines (#130, 2026-09-24)
+
+From 2026-09-24 Tonybet writes EVERY goals line, not only .5: `over_under_20` (2.0), `over_under_225`
+(2.25), `over_under_075` (0.75), `over_under_55` (5.5), and the same for `over_under_1h_*` / `_2h_*`.
+* **Never assume `over_under_%` means a .5 line.** Read the line from `handicap_line` or
+  `workers/utils/odds_quality.ou_line_from_label`; grading a whole line strictly turns a push into a loss,
+  and a quarter line is half-win/half-loss. Settlement already refuses 3-digit labels (`_UNSETTLEABLE`).
+* Before 2026-09-24 no book stored non-.5 FT O/U lines in `odds_snapshots`, so a query over all books
+  that suddenly finds `over_under_20` rows is seeing Tonybet only.
+* **Tonybet in-play boards** (`inplay_book_quotes` book='Tonybet'): sides and scores are in the BOOK's
+  orientation (home_team/away_team hold Tonybet's names); `minute` is NULL on most rows because Tonybet
+  blanks its clock — join AF's minute on match_id + captured_at. Unchanged boards are not re-written, so
+  the series is event-driven, not a fixed 120 s grid.
+

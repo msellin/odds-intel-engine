@@ -17,8 +17,9 @@ WHAT IS STORED
 - `odds_snapshots` (bookmaker 'Tonybet'), in the shared vocabulary, keyed on the
   Sportradar UOF `vendorMarketId`, never Tonybet's internal market id:
     1  → 1x2            home/draw/away        (outcomes 1/2/3)
-    18 → over_under_XX  over/under            (12/13; .5 lines 0.5–4.5 only, as
-                                               every other book writes)
+    18 → over_under_XX  over/under            (12/13; EVERY line since #130 —
+                                               .5, whole and quarter, spelled
+                                               over_under_25 / _20 / _225)
     16 → asian_handicap home/away, line = `hcp` (1714/1715; `hcp` is HOME-
                                                perspective — our convention)
     29 → btts           yes/no                (74/76)
@@ -36,6 +37,7 @@ dev/active/picks-forward-test-preregistration.md).
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import time
@@ -92,7 +94,7 @@ _DNB = {"4": "home", "5": "away"}
 # counterpart or a consumer. Keyed on Sportradar UOF market ids, confirmed against
 # Tonybet's own market catalogue (`/api/market-descriptions/get-all-markets`).
 # Totals families: vendorMarketId → market-name template; lines are half or whole
-# goals/corners (quarters dropped — the shared vocabulary has no spelling for them).
+# goals/corners (quarters dropped here; the GOALS ladders 18/68/90 keep every line since #130).
 _ALT_TOTALS = {
     "19": "team_total_home_{n}", "20": "team_total_away_{n}",
     "69": "team_total_1h_home_{n}", "70": "team_total_1h_away_{n}",
@@ -103,8 +105,58 @@ _ALT_TOTALS = {
     "139": "bookings_ou_{n}", "140": "bookings_home_ou_{n}", "141": "bookings_away_ou_{n}",
     "152": "bookings_1h_ou_{n}",
 }
-# Goals totals by half: .5 lines only, the same rule as the full-match goals ladder.
+# Goals totals by half. Since #130 (2026-09-24) every line is kept, like the FT ladder.
 _HALF_GOALS = {"68": "over_under_1h_", "90": "over_under_2h_"}
+
+
+def _goals_label(line: float | None, prefix: str = "over_under_") -> str | None:
+    """Goals O/U label for ANY line Tonybet quotes — .5, whole and quarter (#130,
+    owner 2026-09-24: "collect all the data we can … all OU lines").
+
+    Spelling is the one `workers/utils/odds_quality.ou_line_from_label` already reads:
+    str(line) with the dot removed — 2.5 → over_under_25, 2.0 → over_under_20,
+    2.25 → over_under_225, 0.75 → over_under_075. The .5 lines 0.5–4.5 therefore come
+    out byte-identical to the shared vocabulary, and a quarter line can never land
+    under a .5 label. Lines >= 10 are refused: their spelling would read back as a
+    different line ("105" → 1.05). handicap_line always carries the number too.
+    """
+    if line is None or not 0 < line < 10 or abs(line * 4 - round(line * 4)) > 1e-9:
+        return None
+    s = f"{line:g}"
+    if "." not in s:
+        s += ".0"
+    return prefix + s.replace(".", "")
+
+
+_EXTRA_LADDERS = ("over_under_", "over_under_1h_", "over_under_2h_")
+
+
+def _is_half_line(line: float | None) -> bool:
+    return line is not None and abs(line * 2 - round(line * 2)) < 1e-9 and line != int(line)
+
+
+def drop_non_monotone_extra_lines(rows: list[tuple]) -> tuple[list[tuple], int]:
+    """Guard for the whole/quarter/high lines #130 adds. The shared FT guard
+    (`epicbet_explorer.drop_non_monotone_ft_ou`) only knows the .5 lines 0.5–4.5, so
+    the new lines would otherwise reach the table unchecked — and neither does the
+    #120 wrong-fixture guard (board_guard.CHECK_MARKETS is 1x2 + O/U 1.5/2.5/3.5).
+    Per ladder (FT, 1H, 2H) the OVER price must not fall as the line rises; if it
+    does, every NON-.5-in-0.5..4.5 row of that ladder is dropped (the standard lines
+    are left to the shared guard). rows = (market, selection, odds, line[, ...])."""
+    dropped = 0
+    out = list(rows)
+    for pre in _EXTRA_LADDERS:
+        fam = [r for r in out if r[0].startswith(pre) and r[3] is not None
+               and (pre != "over_under_" or not r[0].startswith(("over_under_1h_", "over_under_2h_")))]
+        overs = sorted((r[3], r[2]) for r in fam if r[1] == "over")
+        unders = sorted((r[3], r[2]) for r in fam if r[1] == "under")
+        ok = all(a[1] <= b[1] + 1e-9 for a, b in zip(overs, overs[1:])) and \
+            all(a[1] + 1e-9 >= b[1] for a, b in zip(unders, unders[1:]))
+        if not ok:
+            extra = {id(r) for r in fam if not (_is_half_line(r[3]) and r[3] < 5)}
+            dropped += len(extra)
+            out = [r for r in out if id(r) not in extra]
+    return out, dropped
 _RESULT_1X2 = {"60": "1x2_1h", "83": "1x2_2h"}
 _YESNO = {"75": "btts_1h", "95": "btts_2h"}
 _YESNO_SEL = {"74": "yes", "76": "no"}
@@ -223,7 +275,7 @@ def parse_markets(markets: list[dict]) -> list[tuple]:
                 add("1x2", _1X2[oid], o)
             elif vm == "18" and oid in _OU:
                 line = _line(spec, "total")
-                tag = _ou_market_for_line(line) if line is not None else None
+                tag = _goals_label(line)          # every line since #130
                 if tag:
                     add(tag, _OU[oid], o, line)
             elif vm == "16" and oid in _AH:
@@ -244,9 +296,9 @@ def parse_markets(markets: list[dict]) -> list[tuple]:
                     add(_ALT_TOTALS[vm].format(n=f"{round(line * 10):02d}"), _OU[oid], o, line)
             elif vm in _HALF_GOALS and oid in _OU:
                 line = _line(spec, "total")
-                tag = _ou_market_for_line(line) if line is not None else None
+                tag = _goals_label(line, _HALF_GOALS[vm])   # every line since #130
                 if tag:
-                    add(tag.replace("over_under_", _HALF_GOALS[vm], 1), _OU[oid], o, line)
+                    add(tag, _OU[oid], o, line)
             elif vm in _RESULT_1X2 and oid in _1X2:
                 add(_RESULT_1X2[vm], _1X2[oid], o)
             elif vm in _YESNO and oid in _YESNO_SEL:
@@ -321,7 +373,7 @@ def store_event_rows(match_id: str, markets: list[dict], minutes: int | None) ->
     """Parse + OU-guard + store odds and fair probs for one fixture. Returns rows stored."""
     from workers.api_clients.supabase_client import store_book_odds_snapshots
     from workers.automation.epicbet_explorer import drop_non_monotone_ft_ou
-    rows5 = parse_markets(markets)
+    rows5, _x = drop_non_monotone_extra_lines(parse_markets(markets))
     rows4, _dropped = drop_non_monotone_ft_ou(
         [(mk, sel, odds, line) for mk, sel, odds, line, _p in rows5], match_id)
     kept = set((mk, sel, line) for mk, sel, _o, line in rows4)
@@ -413,9 +465,57 @@ def _event_map() -> dict[str, str]:
         "WHERE bookmaker = %s", (BOOKMAKER,)) or []}
 
 
+# IN-PLAY BOARDS (#130, 2026-09-24). Owner: "we should collect all the data we can,
+# lets start collecting inplay OU, all OU lines that we can from tonybet". The live list
+# run_live already fetches every 120 s returns the full board when `relations[]=odds`
+# is added, so this costs ZERO extra requests (only a bigger payload; the raw response
+# is archived as before). Stored in `inplay_book_quotes` (book='Tonybet') in the same
+# nested shape as the Epicbet collector: [{fam, gid, line, sel:[{sel, odds, suspended, p}]}].
+# Families: every goals total (FT / 1H / 2H / team totals, ALL lines) plus 1x2, Asian
+# handicap and BTTS for context. Sides are the BOOK's orientation — home_team/away_team
+# carry Tonybet's names so a flipped pairing is detectable (join on match_id + names).
+_LIVE_FAMS = {"18": "ou", "68": "ou_1h", "90": "ou_2h", "19": "tt_home", "20": "tt_away",
+              "69": "tt_1h_home", "70": "tt_1h_away", "1": "1x2", "16": "ah", "29": "btts"}
+_LIVE_SEL = {**{k: v.capitalize() for k, v in _OU.items()}, **_1X2, **_AH, **_BTTS}
+_LAST_BOARD: dict[str, int] = {}    # event id → hash of the last stored board
+
+
+def _clock(s: str | None) -> tuple[int | None, int | None]:
+    """'67:12' → (67, 12). Tonybet leaves it blank for many events (breaks, some
+    feeds) — then minute is NULL and analyses join AF's minute on match_id + time."""
+    try:
+        m, _, sec = (s or "").partition(":")
+        return int(m), int(sec) if sec else None
+    except ValueError:
+        return None, None
+
+
+def live_board(markets: list[dict]) -> list[dict]:
+    """Normalise one event's live markets. Open markets only (status == 1); an
+    outcome that is not active is kept but flagged suspended, like Epicbet."""
+    out = []
+    for m in markets or []:
+        vm = str(m.get("vendorMarketId"))
+        fam = _LIVE_FAMS.get(vm)
+        if fam is None or m.get("status") != 1:
+            continue
+        if vm == "16" and not _ah_useful(m):   # same AH band as pre-match; ~13 lines/match otherwise
+            continue
+        line = _line(m.get("specifiers"), "hcp" if vm == "16" else "total")
+        sels = [{"sel": _LIVE_SEL.get(str(o.get("vendorOutcomeId")), str(o.get("vendorOutcomeId"))),
+                 "odds": float(o["odds"]), "suspended": o.get("active") != 1,
+                 "p": o.get("probabilities")}
+                for o in m.get("outcomes") or [] if o.get("odds")]
+        if sels:
+            out.append({"fam": fam, "gid": int(vm), "line": line, "sel": sels})
+    out.sort(key=lambda x: (x["gid"], x["line"] if x["line"] is not None else -99))
+    return out
+
+
 def run_live() -> dict:
     """Snapshot score / clock / status / corners / cards for EVERY live football
-    event (matched to our fixtures or not — unmatched is still data we own).
+    event (matched to our fixtures or not — unmatched is still data we own), and
+    since #130 the in-play odds board of each into inplay_book_quotes.
     One request per poll; the scheduler polls every 120 s."""
     from workers.api_clients.db import get_conn
     sess = _session()
@@ -423,7 +523,9 @@ def run_live() -> dict:
                                ("status_in[]", "2"), ("status_in[]", "1"),
                                ("limit", str(_PAGE)), ("relations[]", "result"),
                                ("relations[]", "statistics"),
-                               ("relations[]", "additionalInfo")], timeout=45)
+                               ("relations[]", "additionalInfo"),
+                               ("relations[]", "odds"),            # #130 in-play boards
+                               ("relations[]", "competitors")], timeout=45)
     r.raise_for_status()
     _archive("live", 1, r.content)
     body = r.json()
@@ -456,8 +558,52 @@ def run_live() -> dict:
                           yellow_reds_home, yellow_reds_away, coverage_source)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", rows)
             conn.commit()
-    return {"live": len(rows), "matched": sum(1 for x in rows if x[3]),
-            "with_stats": sum(1 for x in rows if x[8] is not None)}
+    out = {"live": len(rows), "matched": sum(1 for x in rows if x[3]),
+           "with_stats": sum(1 for x in rows if x[8] is not None)}
+
+    # ── #130 in-play boards — AFTER the stats commit, so a board failure can never
+    # cost the corners/cards record. It still fails the job loudly (RuntimeError after
+    # the counts are known) rather than going silently empty.
+    comps = {c["id"]: c for c in (rel.get("competitors") or []) if isinstance(c, dict)}
+    odds = rel.get("odds") or {}
+    now = datetime.now(timezone.utc)
+    boards, unchanged = [], 0
+    for it in d.get("items") or []:
+        e = str(it["id"])
+        board = live_board(odds.get(e) or [])
+        if not board:
+            continue
+        rr = res.get(e) or {}
+        key = hash((rr.get("team1Score"), rr.get("team2Score"), json.dumps(board, sort_keys=True)))
+        if _LAST_BOARD.get(e) == key:
+            unchanged += 1
+            continue
+        _LAST_BOARD[e] = key
+        minute, sec = _clock((rr.get("clock") or {}).get("matchTime"))
+        h, a = comps.get(it.get("competitor1Id")) or {}, comps.get(it.get("competitor2Id")) or {}
+        boards.append((now, BOOKMAKER, e, emap.get(e), h.get("name"), a.get("name"),
+                       minute, sec, rr.get("team1Score"), rr.get("team2Score"), json.dumps(board)))
+    live_ids = {str(it["id"]) for it in d.get("items") or []}
+    for gone in [k for k in _LAST_BOARD if k not in live_ids]:
+        del _LAST_BOARD[gone]
+    out.update(boards=len(boards), boards_unchanged=unchanged, events_with_odds=len(odds))
+    if boards:
+        import psycopg2.extras
+        try:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    psycopg2.extras.execute_values(
+                        cur,
+                        """INSERT INTO inplay_book_quotes
+                             (captured_at, book, book_event_id, match_id, home_team, away_team,
+                              minute, seconds, score_home, score_away, markets) VALUES %s""",
+                        boards, page_size=200)
+                conn.commit()
+        except Exception as ex:
+            for b in boards:            # let the next poll retry these events
+                _LAST_BOARD.pop(b[2], None)
+            raise RuntimeError(f"Tonybet in-play boards not stored ({out}): {ex}") from ex
+    return out
 
 
 def _period(periods: list, n: int) -> tuple:

@@ -62,7 +62,7 @@ FEEDS: list[dict] = [
      "units": ["oddsintel-zone-egress.service"],
      "schedule": ":01 / :31 UTC", "interval_min": 30, "stale_after_min": 90,
      "health": "data", "data": {"odds_books": ["Tonybet"]}},
-    {"id": "tonybet_live", "wrapper": "_tonybet_live_wrapper", "controls": ["pause", "run_now"], "label": "Tonybet — live score / corners / cards", "book": "Tonybet",
+    {"id": "tonybet_live", "wrapper": "_tonybet_live_wrapper", "controls": ["pause", "run_now"], "label": "Tonybet — live score / corners / cards + in-play odds", "book": "Tonybet",
      "category": "book", "kind": "live", "job": "tonybet_live",
      "schedule": "every 120 s", "interval_min": 2, "stale_after_min": 20,
      "health": "runs", "data": {"table": "book_live_stats", "ts": "captured_at",
