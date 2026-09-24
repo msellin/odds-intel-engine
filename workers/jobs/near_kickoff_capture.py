@@ -2,34 +2,27 @@
 OddsIntel — NEAR-KICKOFF-CAPTURE (2026-09-11): direct-book closing prices.
 
 WHAT. Every 5 minutes, for fixtures kicking off in the next 15 minutes, fetch
-that ONE fixture from each direct book we collect (Coolbet, Unibet-Site,
-Epicbet) straight by its book event id, and write the prices to odds_snapshots.
+that ONE fixture from each direct book we collect (Coolbet, Unibet-Site, Epicbet,
+Tonybet) straight by its book event id, and write the prices to odds_snapshots.
 `minutes_to_kickoff` <= 15 makes the shared writers stamp them is_closing=TRUE.
 
-WHY. The direct-book sweeps walk the whole board every 30 min — Coolbet's
-evening sweep takes 60-75 min end to end — so the last price we held before
-kickoff was usually 1-5h old. A price that old is not a close, and it made
-real-bet CLV unmeasurable at the book we actually bet at (DIRECT-BOOK-CLV,
-migration 332). Closing coverage over the 3 days to 2026-09-11: Coolbet 23
-matches, Epicbet 82, Unibet-Site 139 — against Pinnacle 539.
+WHY. The direct-book sweeps walk the whole board every 30 min, so the last price we
+held before kickoff was usually 1-5h old. A price that old is not a close, and it made
+real-bet CLV unmeasurable at the book we actually bet at (DIRECT-BOOK-CLV, migration
+332). Measured after Tonybet joined (2026-09-23 18:47): its last pre-KO quote is a
+median 3.4 min old (p90 10.3).
 
-HOW IT FINDS THE EVENT. The sweeps now persist the pairing they already compute
-into book_event_map (migration 333). No mapping = no capture for that book: the
-job never re-walks a board, which is what keeps it O(imminent fixtures).
+HOW IT FINDS THE EVENT. The sweeps persist the pairing they already compute into
+book_event_map (migration 333). No mapping = no capture for that book: the job never
+re-walks a board, which is what keeps it O(imminent fixtures). An event that answers
+with an EMPTY board is logged (#112), not just counted.
 
-WHERE IT RUNS. The operator's Mac (local/launchd/com.oddsintel.near-kickoff-
-capture.plist), because two of the three transports only exist there:
-  * Coolbet     — plain requests with the watchdog-harvested Imperva cookies
-                  (COOLBET_NO_FS). Deliberately NOT FlareSolverr: the Coolbet
-                  board sweep holds the Mac FS session almost continuously in
-                  the evening, and that FS (1 GiB cap) also carries real-money
-                  placement. If the cookies are stale this fails for the tick
-                  and logs it — it can never starve placement.
-  * Unibet-Site — injected fetch from the logged-in unibet.ee CDP tab.
-  * Epicbet     — direct from the residential IP (no Cloudflare there). If it
-                  ever falls back to FS it uses its own session id
-                  (EPICBET_FLARE_SESSION in the plist) so it can never destroy
-                  a sweep's session.
+WHERE IT RUNS (updated 2026-09-24, #112 — it used to say "the operator's Mac"). The VPS
+systemd timer `oddsintel-near-kickoff-epicbet` (deploy/vps/, every 5 min since
+2026-09-23), through the Estonian exit, for `--books Epicbet,Unibet-Site,Tonybet,Coolbet`
+(Coolbet re-added 2026-09-24 after the 09-23 Imperva back-off). The Mac launchd plist
+is parked. Epicbet, if it ever falls back to FlareSolverr, uses its own session id
+(EPICBET_FLARE_SESSION) so it can never destroy a sweep's session.
 The AF / Pinnacle side of the close is `closing_snap.py` on the VPS.
 
 A (match, book) the sweep priced in the last MIN_GAP_MIN minutes is skipped —

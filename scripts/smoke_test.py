@@ -53529,6 +53529,8 @@ def test_book_feed_tidyups():
     assert 'return {**res, "stored": int(stored or 0)}' in sched, "Coolbet job must return its counters"
     assert 'return {**res, "stored": int(res.get("rows") or 0)}' in sched, "Betfair reports rows, not stored"
     assert "returned an empty board" in inspect.getsource(nk.capture_tonybet)
+    # stale docstrings fixed (they described the Mac / the retired Kambi feed)
+    assert "VPS" in (nk.__doc__ or "") and "RETIRED" in (uf.__doc__ or "")
 
 
 @test("BOARD-GUARD-BTTS-AH — a single BTTS / AH-line fault at a direct book is refused on its own (#123)")

@@ -1,30 +1,27 @@
-"""UNIBET-UI-PLACER build-step 1 — Unibet real SITE odds (bookmaker `Unibet-Site`).
+"""UNIBET-SITE ODDS — the true unibet.ee site prices (bookmaker `Unibet-Site`).
 
-Captures the unibet.ee SPA's OWN Kindred `contest-page` responses via a RAW CDP
-Network session on the operator's established, logged-in tab — the ONLY transport
-that yields TRUE site prices. Proven live 2026-09-09 (Derby home 3.50 = site, not
-the 3.20 public Kambi feed). Parses 1x2 + Over/Under total goals into this repo's
-shared `(market, selection, odds, line)` vocabulary and writes them via
-`store_book_odds_snapshots` as bookmaker `Unibet-Site`.
+⚠️ UPDATED 2026-09-24 (#112): the history below describes the 2026-09-09 build on the
+operator's Mac. Current reality:
+  * WHERE: VPS scheduler job `unibet_site_odds` (every 30 min, :15/:45) since 2026-09-23
+    (UNIBET-ON-VPS), logged OUT, through the Estonian exit; the near-kickoff close is the
+    VPS timer `oddsintel-near-kickoff-epicbet`. The Mac plist is parked.
+  * SCOPE: a board-wide sweep (country categories + AF "World" fixtures routed to
+    Unibet's international / international clubs / international youth / uefa club
+    categories), not "a handful of candidates". Markets: 1x2, O/U, BTTS, DC, DNB,
+    corners, 1H corners, 1H goals, cards (UNIBET-SITE-MARKET-WIDENING-2026-09-15).
+  * The public Kambi feed (`Unibet-Kambi`) is RETIRED (2026-09-15) — it read higher than
+    the site on 38% of quotes. This module is the only Unibet price basis.
+  * Pairing: `coolbet_placer.fuzzy_match_event` (orientation-strict since #001) +
+    `unique_pairs` (one event → one fixture, #120); request budget via footprint (#110).
 
-WHY RAW CDP AND NOT AN API SWEEP (all four tested live 2026-09-09):
-  * Raw-CDP capture of the SPA's own response (established tab) → 200, true prices ✓
-  * Fresh / background CDP tab                                   → 500/204 DataDome challenge ✗
-  * Injected fetch() from the established page                  → CORS "Failed to fetch" ✗
-  * FlareSolverr → the Kindred API (Coolbet's odds pattern)     → HTTP 400 "Bad request" ✗
-So the Coolbet odds path (FlareSolverr → a plain JSON API) does NOT transfer: the
-Kindred API rejects everything but the SPA's own fully-formed XHR. Only reading the
-SPA's own responses works. Full matrix in dev/active/unibet-ui-placer-plan.md.
+HISTORY (2026-09-09). Captures the SPA's OWN Kindred `contest-page` responses — the only
+transport that yields TRUE site prices (Derby home 3.50 = site, not the 3.20 public Kambi
+feed). Tested live then: raw-CDP capture of the SPA's own response → 200 ✓; fresh CDP tab
+→ DataDome 500/204 ✗; injected fetch from the page → CORS ✗; FlareSolverr → the Kindred API
+→ 400 ✗. Full matrix in dev/active/unibet-ui-placer-plan.md.
 
-LOW-VOLUME BY DESIGN (parity with the placer). Because true site odds cost one tab
-navigation per event (no API, no derivable slug, no navigable contestKey), this
-fetches odds for the handful of CANDIDATE fixtures we route/place on — NOT a
-book-wide sweep. Broad soft-book screening for the Unibet trigger bots stays on the
-cheap public Kambi feed (`unibet_kambi.py`, bookmaker `Unibet-Kambi`); this module
-confirms the true PLACEABLE price per candidate before the router writes/places.
-
-SAFETY: read-only. It navigates the operator's tab and reads response bodies. It
-never selects an outcome, sets a stake, or places anything — that is `unibet_placer`.
+SAFETY: read-only. It reads response bodies; it never selects an outcome, sets a stake or
+places anything — that is `unibet_placer`.
 """
 from __future__ import annotations
 
