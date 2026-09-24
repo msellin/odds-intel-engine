@@ -201,11 +201,11 @@ def write_today_signals():
         return
     console.print(f"\nWriting {len(velocities):,} line_velocity rows...")
     from workers.api_clients.supabase_client import filter_unchanged_signals
+    tuples = [(mid, "line_velocity", v, "market", "derived") for mid, v in velocities.items()]
     tuples = filter_unchanged_signals(tuples)
     if not tuples:
         console.print("[dim]match_signals: all values unchanged since last capture — nothing to write[/dim]")
         return
-    tuples = [(mid, "line_velocity", v, "market", "derived") for mid, v in velocities.items()]
     with get_conn() as conn:
         with conn.cursor() as cur:
             from psycopg2.extras import execute_values

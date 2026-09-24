@@ -1,4 +1,8 @@
-"""ANON-AUTH PHASE 4 — weekly prune of stale anonymous Supabase users.
+"""⛔ UNSCHEDULED 2026-09-24 (SCHEDULER-DEAD-JOBS-2026-09-24) — see the note at
+the former registration in workers/scheduler.py. auth.users lives in Supabase,
+not the VPS Postgres this module connects to, so it cannot run as written.
+
+ANON-AUTH PHASE 4 — weekly prune of stale anonymous Supabase users.
 
 Anon users accumulate from drive-by clicks (favorite / tracker pick).
 Most never come back, but they still count toward Supabase MAU billing

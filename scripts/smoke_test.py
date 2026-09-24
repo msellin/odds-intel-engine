@@ -36692,6 +36692,94 @@ def test_signals_store_on_change_complete():
     )
 
 
+@test("SCHEDULER-DEAD-JOBS-2026-09-24 — the five jobs that failed every run now run (or are unregistered)")
+def test_scheduler_dead_jobs_2026_09_24():
+    """SCHEDULER-DEAD-JOBS-2026-09-24. Five registered jobs failed on every run:
+
+    * league_draw_rate / line_velocity / league_season_phase (nightly since
+      2026-09-07): SIGNALS-DEDUPE-BACKLOG (9b757d6b) inserted
+      `tuples = filter_unchanged_signals(tuples)` ABOVE the line that builds
+      `tuples`, so each write died with UnboundLocalError and no signal was
+      written for 17 nights. Exercised here for real, with the DB mocked — a
+      source-order pin is what let the original bug through (the existing
+      SIGNALS-STORE-ON-CHANGE-COMPLETE test only checked call-before-INSERT).
+    * aln_auto_tune (monthly, never once succeeded): imported `_ALN_BUMP`,
+      which is a local inside the candidate loop, not a module attribute.
+    * prune_anon_users (weekly): queried auth.users on the VPS Postgres, which
+      does not hold it since SUPABASE-TO-VPS — unregistered, not repointed.
+    """
+    import os, sys, re, importlib.util
+    root = os.path.dirname(__file__)
+    import psycopg2.extras as _pe
+    import workers.api_clients.supabase_client as _sc
+
+    written = []
+
+    class _Cur:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    class _Conn:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def cursor(self): return _Cur()
+        def commit(self): pass
+
+    def _load(name):
+        spec = importlib.util.spec_from_file_location(
+            f"_smoke_{name}", os.path.join(root, f"{name}.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.get_conn = lambda: _Conn()
+        return mod
+
+    orig_ev, orig_f = _pe.execute_values, _sc.filter_unchanged_signals
+    _pe.execute_values = lambda cur, sql, rows, **kw: written.extend(rows)
+    _sc.filter_unchanged_signals = lambda rows: rows
+    try:
+        m = _load("compute_line_velocity")
+        m._compute_velocities = lambda since: {"m1": 0.02}
+        m.write_today_signals()
+        assert written == [("m1", "line_velocity", 0.02, "market", "derived")], written
+
+        written.clear()
+        m = _load("compute_league_season_phase")
+        m._compute_phases = lambda: {"m1": 0.5, "m2": 0.9}
+        m.execute_query = lambda *a, **k: [{"id": "m1"}]
+        m.write_today_signals()
+        assert written == [("m1", "season_progress", 0.5, "league", "derived")], written
+
+        written.clear()
+        m = _load("compute_league_draw_rate")
+        m.execute_query = lambda *a, **k: [{"match_id": "m1", "n": 40, "draws": 10, "draw_rate": 0.25}]
+        m.write_today_signals()
+        assert written == [("m1", "league_draw_rate_ytd", 0.25, "league", "derived")], written
+
+        # the guard must still gate the write: all-unchanged -> no INSERT
+        written.clear()
+        _sc.filter_unchanged_signals = lambda rows: []
+        m.write_today_signals()
+        assert written == [], "draw_rate wrote rows the dedupe guard dropped"
+    finally:
+        _pe.execute_values, _sc.filter_unchanged_signals = orig_ev, orig_f
+
+    # aln_auto_tune: the bump reader must work without importing a local name
+    from workers.jobs import aln_auto_tune as _aln
+    code = re.sub(r"#.*?$", "", open(_aln.__file__, encoding="utf-8").read(), flags=re.M)
+    assert "import _ALN_BUMP" not in code, (
+        "aln_auto_tune imports _ALN_BUMP again — it is a local in "
+        "daily_pipeline_v2's candidate loop, so the monthly job dies with ImportError")
+    bumps = _aln._load_current_bumps()
+    assert set(bumps) == {"LOW", "MEDIUM", "HIGH", "NONE"}, bumps
+
+    # prune_anon_users must stay unregistered while auth.users is in Supabase
+    sched = re.sub(r"#.*?$", "", open(os.path.join(root, "..", "workers", "scheduler.py"),
+                                       encoding="utf-8").read(), flags=re.M)
+    assert "add_job(job_prune_anon_users" not in sched, (
+        "prune_anon_users is registered again — it queries auth.users, which is "
+        "not in the VPS Postgres, so it fails every Sunday")
+
+
 @test("SIGNALS-DEDUPE-LATEST-KEEP — the dedupe prune keeps the LATEST row per value, not earliest")
 def test_prune_match_signals_keeps_latest():
     """SIGNALS-DEDUPE-LATEST-KEEP-2026-09-07. prune_match_signals.py --pass

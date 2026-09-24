@@ -3601,11 +3601,15 @@ def main():
                       name="Accuracy: Publish Daily Picks (06:45 UTC)")
 
 
-    # ANON-AUTH PHASE 4 — prune anonymous users idle >90 days, Sunday 02:00 UTC.
-    # Cascade removes their profile + favorites + picks. Hard cap of 10k rows
-    # per run as a safety guard.
-    scheduler.add_job(job_prune_anon_users, CronTrigger(day_of_week="sun", hour=2, minute=0),
-                      id="prune_anon_users", name="Prune Anonymous Users Sunday 02:00")
+    # ANON-AUTH PHASE 4 prune_anon_users — UNREGISTERED 2026-09-24
+    # (SCHEDULER-DEAD-JOBS-2026-09-24). It queried auth.users on the VPS
+    # Postgres, but auth.users stayed in Supabase at SUPABASE-TO-VPS
+    # (2026-07-09), so every Sunday run since failed with `relation
+    # "auth.users" does not exist`. Not repointed: the web app no longer calls
+    # signInAnonymously (the favorites/tracker surfaces that created anon users
+    # went in PRODUCT-COLLAPSE 2026-06-24), and the FK cascade to profiles /
+    # favorites it relied on cannot cross two databases. job_prune_anon_users()
+    # is kept for reference only. Guard: smoke SCHEDULER-DEAD-JOBS-2026-09-24.
 
     # ODDS-BACKLOG-PRUNE — drain historical odds_snapshots past the retention
     # window. Simple DELETE (no window functions): keeps is_closing + is_opening

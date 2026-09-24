@@ -142,12 +142,12 @@ def write_today_signals():
         with conn.cursor() as cur:
             from psycopg2.extras import execute_values
             from workers.api_clients.supabase_client import filter_unchanged_signals
+            tuples = [(r["match_id"], "league_draw_rate_ytd", float(r["draw_rate"]),
+                       "league", "derived") for r in rows]
             tuples = filter_unchanged_signals(tuples)
             if not tuples:
                 console.print("[dim]match_signals: all values unchanged since last capture — nothing to write[/dim]")
                 return
-            tuples = [(r["match_id"], "league_draw_rate_ytd", float(r["draw_rate"]),
-                       "league", "derived") for r in rows]
             execute_values(
                 cur,
                 """INSERT INTO match_signals
@@ -156,7 +156,7 @@ def write_today_signals():
                 tuples,
             )
         conn.commit()
-    console.print(f"[green]✓ Inserted {len(rows):,} league_draw_rate_ytd rows[/green]")
+    console.print(f"[green]✓ Inserted {len(tuples):,} league_draw_rate_ytd rows[/green]")
 
 
 def main():

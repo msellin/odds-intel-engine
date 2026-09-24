@@ -25,8 +25,13 @@ console = Console()
 
 
 def _load_current_bumps() -> dict[str, float]:
-    """Read _ALN_BUMP from daily_pipeline_v2.py to compare against."""
-    from workers.jobs.daily_pipeline_v2 import _ALN_BUMP  # noqa: F401
+    """Read _ALN_BUMP from daily_pipeline_v2.py to compare against.
+
+    _ALN_BUMP is a LOCAL inside the candidate loop, not a module attribute, so
+    it cannot be imported — it is parsed out of the source instead. (A stray
+    module-level import of that name above the try made every monthly run since
+    2026-05-25 die with ImportError — ALN-AUTO-IMPORT-2026-09-24.)
+    """
     try:
         # Re-import inside the candidate-eval scope by parsing the file once
         # (the constant is defined inside run_morning, not at module level).
