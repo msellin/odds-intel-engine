@@ -1140,7 +1140,19 @@ def job_rating_1x2_shadow():
     before deciding whether the rating model replaces the XGBoost head in the served
     1X2 blend. Runs after the 04:00 morning chain has created today's and tomorrow's
     fixtures, and again at 17:30 for fixtures added during the day (~1-2 min each)."""
-    from workers.jobs.rating_1x2_shadow import run as _run_rating
+    # Subprocess, not in-process: a native crash (pandas 3.0.4 segfaults on
+    # tz-aware datetime takes — hit on this job's first VPS run, 2026-09-24) must
+    # kill only this job, never the scheduler that hosts every other job.
+    import subprocess
+
+    def _run_rating():
+        r = subprocess.run([sys.executable, "-m", "workers.jobs.rating_1x2_shadow"],
+                           cwd=str(Path(__file__).parent.parent), timeout=900,
+                           capture_output=True, text=True)
+        console.print(r.stdout[-1500:])
+        if r.returncode != 0:
+            raise RuntimeError(f"rating_1x2_shadow exit {r.returncode}: {r.stderr[-1500:]}")
+
     _run_job("rating_1x2_shadow", _run_rating)
 
 

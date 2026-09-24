@@ -1374,3 +1374,27 @@ embeds 200; every sensitive relation, both extension views and `rpc/get_latest_m
 **Adding a public surface now means:** a `*_public` view (owner rights, only the columns you
 mean to publish) + an explicit `GRANT SELECT … TO anon` in the same migration + the name added
 to the smoke test's list.
+
+## 26. A dependency that segfaults — and a scheduler that hosts every job in one process (2026-09-24)
+
+**What happened.** The first VPS run of the new `rating_1x2_shadow` job ([[#141]]) died with exit
+139 and no Python traceback. `-X faulthandler` put it in numpy's `maybe_promote`, reached from
+`pd.to_datetime` → `Series.map` → `take`. Reproduced in isolation in a throwaway venv on the VPS:
+**pandas 3.0.4 segfaults on any take / boolean filter / merge over a tz-aware datetime column with
+repeated values** (`df[mask]` is enough). pandas 3.0.2 is fine; numpy 2.3 vs 2.4 makes no difference.
+`requirements.txt` allows `pandas<3.1.0`, so the VPS has run 3.0.4 since 2026-06-29 and CI installs
+it too. My Mac had 3.0.2, so the harness never saw it.
+
+**Why it matters more than one job.** APScheduler runs jobs as threads inside `oddsintel-scheduler`.
+A segfault is not an exception — `_run_job`'s try/except cannot catch it — so **one native crash in any
+in-process job kills the scheduler and every other job with it.** Existing jobs survive only because
+none of them happens to build a tz-aware datetime column in pandas.
+
+**The tell.** Exit code 139 / "Segmentation fault" and a missing traceback. `journalctl` would show
+the scheduler restarting, not a failed job.
+
+**Guards now.** The rating job keeps `kickoff` as epoch seconds end to end and runs as a
+**subprocess** of the scheduler (same pattern as `weekly_retrain`); smoke `RATING-1X2-SHADOW-ISOLATED`
+pins both. Rule for new jobs that do heavy pandas / numpy / XGBoost work: run them in a subprocess, and
+do not put tz-aware datetimes in DataFrames on pandas 3.0.4. Pinning pandas to 3.0.2 was NOT done here
+— it changes the runtime of every job at once and deserves its own verified change.

@@ -54319,7 +54319,9 @@ def test_rating_1x2_leak_guard():
     for d in range(40):
         order = rng.permutation(teams)
         for k in range(0, 12, 2):
-            rows.append(dict(match_id=f"m{d:02d}_{k}", kickoff=pd.Timestamp("2025-01-01", tz="UTC") + pd.Timedelta(days=d),
+            # epoch seconds, as the production job passes them — a tz-aware datetime
+            # column segfaults pandas 3.0.4 (the version CI and the VPS install)
+            rows.append(dict(match_id=f"m{d:02d}_{k}", kickoff=1735689600.0 + d * 86400 + k * 60,
                              league_id="L", home=order[k], away=order[k + 1],
                              gh=int(rng.integers(0, 4)), ga=int(rng.integers(0, 4)),
                              hh=0, ha=0, tier=1))
@@ -54357,6 +54359,11 @@ def test_rating_1x2_shadow_isolated():
         "the shadow job must not write the shared predictions table"
     sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
     assert 'id="rating_1x2_shadow"' in sched and "def job_rating_1x2_shadow" in sched
+    body = sched[sched.index("def job_rating_1x2_shadow"):sched.index("def job_weekly_meta_retrain")]
+    assert '"-m", "workers.jobs.rating_1x2_shadow"' in body, \
+        "the job must run in a subprocess — a pandas segfault in-process kills the whole scheduler"
+    assert "to_datetime" not in job, \
+        "no tz-aware datetime columns in the job (pandas 3.0.4 segfaults on them) — keep epoch seconds"
     mig = _engine_path("supabase/migrations/412_rating_1x2_tables.sql").read_text(encoding="utf-8")
     assert "CREATE TABLE IF NOT EXISTS rating_history_results" in mig
     assert "CREATE TABLE IF NOT EXISTS rating_1x2_predictions" in mig

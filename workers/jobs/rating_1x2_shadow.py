@@ -31,11 +31,12 @@ console = Console()
 MODEL_VERSION = "r1x2_d8plus_v1"
 D8PLUS_FEATURES = D8_FEATURES + ["dp_logodds", "dp_pd"]
 TRAIN_FROM = "2022-07-01"
+TRAIN_FROM_EPOCH = 1656633600.0          # 2022-07-01T00:00:00Z
 
 
 def _load(conn) -> pd.DataFrame:
     m = pd.read_sql("""
-        SELECT m.id::text match_id, m.date kickoff, m.league_id::text league_id,
+        SELECT m.id::text match_id, extract(epoch FROM m.date)::float8 kickoff, m.league_id::text league_id,
                m.home_team_id::text home, m.away_team_id::text away,
                m.score_home gh, m.score_away ga, m.ht_score_home hh, m.ht_score_away ha,
                m.api_football_id af_fixture_id, m.home_team_api_id home_af,
@@ -46,14 +47,18 @@ def _load(conn) -> pd.DataFrame:
            AND ((m.status = 'finished' AND m.score_home IS NOT NULL AND m.score_away IS NOT NULL)
                 OR (m.status = 'scheduled' AND m.date < now() + interval '2 days'))
     """, conn)
-    m["kickoff"] = pd.to_datetime(m["kickoff"], utc=True)
+    # `kickoff` stays EPOCH SECONDS end to end. pandas 3.0.4 on the VPS segfaults on
+    # any take/filter/merge over a tz-aware datetime column (reproduced in isolation
+    # 2026-09-24 on the first production run; 3.0.2 is fine), and this job runs
+    # inside a subprocess of the scheduler precisely so that a native crash cannot
+    # take the scheduler down. build_features() accepts epoch seconds natively.
     m.loc[m.upcoming, ["gh", "ga", "hh", "ha"]] = np.nan
     m["extra"] = False
 
-    h = pd.read_sql("""SELECT af_fixture_id, af_league_id, kickoff, home_af, away_af, gh, ga, hh, ha
+    h = pd.read_sql("""SELECT af_fixture_id, af_league_id, extract(epoch FROM kickoff)::float8 kickoff,
+                              home_af, away_af, gh, ga, hh, ha
                          FROM rating_history_results WHERE kickoff < now()""", conn)
     if len(h):
-        h["kickoff"] = pd.to_datetime(h["kickoff"], utc=True)
         h = h[~h.af_fixture_id.isin(set(m.af_fixture_id.dropna().astype(int)))]
         team = {}
         for side in ("home", "away"):
@@ -84,7 +89,7 @@ def run() -> dict:
     f["dp_logodds"] = np.log(f.dp_ph.clip(1e-6) / f.dp_pa.clip(1e-6))
     f = f[~f.extra.astype(bool)]
     fin = f[~f.upcoming.astype(bool)]
-    tr = fin[(fin.kickoff >= TRAIN_FROM) & gated(fin)]
+    tr = fin[(fin.kickoff >= TRAIN_FROM_EPOCH) & gated(fin)]
     up = f[f.upcoming.astype(bool)]
     if up.empty:
         console.print("rating_1x2_shadow: no upcoming fixtures in the next 2 days")

@@ -63,8 +63,18 @@ def build_features(m: pd.DataFrame, stats: pd.DataFrame | None, P: dict | None =
     P = {**TUNED_PARAMS, **(P or {})}
     # Deterministic order: league-level updates inside a date do not commute
     # exactly, so ties on kickoff must break the same way on every run.
-    m = m.sort_values(["kickoff", "match_id"], kind="mergesort").reset_index(drop=True)
-    m["day"] = m["kickoff"].dt.tz_convert("UTC").dt.date if m["kickoff"].dt.tz is not None else m["kickoff"].dt.date
+    # `kickoff` may be tz-aware datetimes (research harness) or epoch SECONDS (the
+    # production job). Everything below runs on an integer UTC day number, because
+    # pandas 3.0.4 on the VPS segfaults on any take/filter over a tz-aware datetime
+    # column (reproduced 2026-09-24; 3.0.2 is fine) — so the serving path never
+    # builds one, and this function never needs one.
+    if pd.api.types.is_datetime64_any_dtype(m["kickoff"]):
+        secs = (m["kickoff"] - pd.Timestamp("1970-01-01", tz="UTC")).dt.total_seconds()
+    else:
+        secs = m["kickoff"].astype(float)
+    m = m.assign(_secs=secs.to_numpy())
+    m = m.sort_values(["_secs", "match_id"], kind="mergesort").reset_index(drop=True)
+    m["day"] = (m["_secs"] // 86400).astype(np.int64)
     if stats is not None:
         m = m.merge(stats[["match_id", "sot_h", "sot_a"]].drop_duplicates("match_id"), on="match_id", how="left")
     else:
@@ -118,8 +128,8 @@ def build_features(m: pd.DataFrame, stats: pd.DataFrame | None, P: dict | None =
                 dp_ph=dp[0], dp_pd=dp[1], dp_pa=dp[2],
                 ht_diff=hlh - hla, sot_diff=slh - sla,
                 form_diff=fppg(h) - fppg(a),
-                rest_diff=(min((day - last_day[h]).days, 21) if h in last_day else np.nan)
-                          - (min((day - last_day[a]).days, 21) if a in last_day else np.nan),
+                rest_diff=(min(day - last_day[h], 21) if h in last_day else np.nan)
+                          - (min(day - last_day[a], 21) if a in last_day else np.nan),
                 lg_home=lw[0], lg_draw=lw[1],
                 n_home=nplayed[h], n_away=nplayed[a],
             ))
@@ -174,7 +184,7 @@ def build_features(m: pd.DataFrame, stats: pd.DataFrame | None, P: dict | None =
             for t, pts in ((h, 3 if gd > 0 else 1 if gd == 0 else 0), (a, 3 if gd < 0 else 1 if gd == 0 else 0)):
                 if t in form:
                     p, w, ld = form[t]
-                    dec = 0.5 ** ((day - ld).days / P["form_hl_days"])
+                    dec = 0.5 ** ((day - ld) / P["form_hl_days"])
                     form[t] = (p * dec + pts, w * dec + 1, day)
                 else:
                     form[t] = (pts, 1.0, day)
@@ -182,7 +192,7 @@ def build_features(m: pd.DataFrame, stats: pd.DataFrame | None, P: dict | None =
                 last_day[t] = day
             # league outcome rates
             lw = lg[L]
-            dec = 0.5 ** (((day - lw[3]).days if lw[3] else 0) / P["league_hl_days"])
+            dec = 0.5 ** (((day - lw[3]) if lw[3] is not None else 0) / P["league_hl_days"])
             wprev = lw[2] * dec
             lg[L] = [(lw[0] * wprev + (gd > 0)) / (wprev + 1), (lw[1] * wprev + (gd == 0)) / (wprev + 1),
                      min(wprev + 1, 200.0), day]
@@ -196,7 +206,7 @@ def build_features(m: pd.DataFrame, stats: pd.DataFrame | None, P: dict | None =
                     [s * 0.95 + sum(vals), n * 0.95 + len(vals)]
 
     f = pd.DataFrame(rows)
-    out = m.merge(f, on="match_id", how="left")
+    out = m.drop(columns="_secs").merge(f, on="match_id", how="left")
     out["y"] = np.where(out.gh > out.ga, 0, np.where(out.gh == out.ga, 1, 2))
     out.loc[out.gh.isna() | out.ga.isna(), "y"] = -1
     return out
