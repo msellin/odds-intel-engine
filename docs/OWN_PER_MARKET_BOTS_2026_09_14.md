@@ -405,7 +405,7 @@ Not filed here — another agent owns that file this session. Ordered by value.
   market still writes daily. The "1st-half totals has zero co-priced fixtures"
   verdict is this outage, not a market property. 👥 too: we publish nothing on a
   market whose sharp anchor silently died.
-* **HT-STATS-FULL-MATCH-FALLBACK** 🤖👥 BOTH, ~1h — independently confirmed
+* **HT-STATS-FULL-MATCH-FALLBACK** 🤖👥 BOTH, ~1h — independently confirmed ✅ **FIXED 2026-09-24 in [[#111]]** — fallback removed from `parse_fixture_stats_halftime` (never reads the full-match block now), 1,002 contaminated rows since 2026-08-17 overwritten with AF's real first-half split (`scripts/repair_ht_stats_111.py`), smoke `XG-LATE-FILL` guards it. It sat here for ten days with no `PRIORITY_QUEUE.md` row.
   here (n=1,972; **54.2%** of `_ht` rows equal their full-match twin). Already
   recommended by `OWN_MARKET_EXPANSION_2026_09_14.md`; restated because it is
   the sole blocker on corners-1H and on any future 1H stat model.

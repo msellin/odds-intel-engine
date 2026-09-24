@@ -2364,6 +2364,19 @@ def job_clv_sharp():
     _run_job("clv_sharp", _go)
 
 
+def job_xg_late_fill():
+    """XG-LATE-FILL ([[#111]], 2026-09-24): since ~2026-08-31 API-Football adds xG
+    1-4 days after a match, but settlement fetches statistics once, hours after
+    kickoff. Re-fetch finished matches 36 h - 6 d old whose row still has no xG,
+    in leagues that carry xG (~100-500 calls/day)."""
+    from workers.jobs.xg_late_fill import run
+
+    def _go():
+        c = run()
+        console.print(f"[cyan]xg_late_fill: {c}[/cyan]")
+    _run_job("xg_late_fill", _go)
+
+
 def job_fh_1x2_paper_settle():
     """FIRST-HALF-1X2: grade pending picks from the HT score (no gap)."""
     from workers.jobs.first_half_1x2_paper_bot import settle_picks
@@ -3703,6 +3716,8 @@ def main():
                       id="fh_1x2_paper_pick", name="First-Half 1x2 Paper Pick")
     scheduler.add_job(job_clv_sharp, CronTrigger(hour=1, minute=40),
                       id="clv_sharp", name="CLV vs sharp close (after overnight settlement)")
+    scheduler.add_job(job_xg_late_fill, CronTrigger(hour=2, minute=20),
+                      id="xg_late_fill", name="Re-fetch stats whose xG AF added late (#111)")
     scheduler.add_job(job_fh_1x2_paper_settle, CronTrigger(minute=57),
                       id="fh_1x2_paper_settle", name="First-Half 1x2 Paper Settle")
     # COOLBET-MODEL-OU-SHADOW-BOT: mirror calibrated model O/U picks into

@@ -791,7 +791,9 @@ def parse_fixture_stats(stats_response: list[dict]) -> dict:
         # ⚠️ AND THEY ARE PRESENT WHERE xG IS NOT. Verified live 2026-09-23:
         # Argentine Liga Profesional fixture 1493144 returns the full
         # inside/outside split and NO `expected_goals` field at all, on a league
-        # that carried 109 xG matches in the preceding 90 days. 30,446 of our
+        # that carried 109 xG matches in the preceding 90 days. (#111, 2026-09-24:
+        # most such "missing" xG is AF publishing it 1-4 days late, not absent —
+        # see workers/jobs/xg_late_fill.py.) 30,446 of our
         # 56,463 stats rows have no xG; nearly all of them can carry this.
         result[f"shots_insidebox_{prefix}"] = _parse_int(stats.get("Shots insidebox"))
         result[f"shots_outsidebox_{prefix}"] = _parse_int(stats.get("Shots outsidebox"))
@@ -1648,11 +1650,16 @@ def parse_fixture_stats_halftime(halftime_response) -> dict:
     result = {}
     for i, team_data in enumerate(teams):
         prefix = "home" if i == 0 else "away"
-        # `statistics_1h` is the first-half split; fall back to `statistics` only
-        # when a caller passed a genuinely half-scoped payload.
+        # `statistics_1h` is the first-half split. NEVER fall back to `statistics`
+        # ([[#111]], 2026-09-24): that is the FULL-MATCH block. The batch
+        # `fixtures?ids=` response settlement mostly uses carries no half split, so
+        # the old fallback wrote full-match numbers into every `_ht` column — 650 of
+        # 652 rows in the week of 09-14 — and, because it returned a non-empty dict,
+        # also suppressed settlement's retry that would have fetched the real split.
+        # No half split -> nothing, so the caller's retry runs.
         half_stats = team_data.get("statistics_1h")
-        if half_stats is None:
-            half_stats = team_data.get("statistics", [])
+        if not half_stats:
+            continue
         stats = {s["type"]: s["value"] for s in half_stats}
 
         result[f"shots_{prefix}_ht"] = _parse_int(stats.get("Total Shots"))

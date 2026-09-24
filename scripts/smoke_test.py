@@ -51676,6 +51676,52 @@ def test_coolbet_sweep_observable():
         "the job invisible in the first place"
 
 
+@test("XG-LATE-FILL — #111 re-fetches rows whose xG AF published late, never overwrites with NULL")
+def test_xg_late_fill():
+    """[[#111]], 2026-09-24. From ~2026-08-31 API-Football adds xG 1-4 days after a
+    match, while settlement fetches statistics once, hours after kickoff — so nearly
+    every row since was stored without xG. The late-fill job must:
+
+    1. be scheduled (it is the only thing that ever re-fetches a finished match);
+    2. select only rows still missing xG, in the 36 h..6 d window, in leagues that
+       carry xG (so leagues AF never rates cost no calls);
+    3. store through bulk_store_match_stats, whose COALESCE upsert cannot replace a
+       stored value with NULL;
+    4. store only when the re-fetch actually returned xG.
+    Behaviour is checked with the API and the DB stubbed.
+    """
+    import inspect
+    from pathlib import Path
+    from unittest import mock
+    base = Path(__file__).parent.parent
+    sched = (base / "workers" / "scheduler.py").read_text()
+    assert "scheduler.add_job(job_xg_late_fill" in sched, "the late-fill job must be registered"
+    import workers.jobs.xg_late_fill as xl
+    assert "ms.xg_home IS NULL" in xl._SQL and "xg_leagues" in xl._SQL and "min_h" in xl._SQL
+    from workers.api_clients import supabase_client as sc
+    assert "COALESCE(EXCLUDED" in inspect.getsource(sc.bulk_store_match_stats)
+    rows = [{"match_id": "m1", "af": 1}, {"match_id": "m2", "af": 2}]
+    stored = []
+    def fake_stats(fid):
+        return [{"team": {"id": 1}, "statistics": [{"type": "expected_goals", "value": "1.25" if fid == 1 else None}]},
+                {"team": {"id": 2}, "statistics": [{"type": "expected_goals", "value": "0.50" if fid == 1 else None}]}]
+    with mock.patch("workers.api_clients.db.execute_query", return_value=rows), \
+         mock.patch("workers.api_clients.api_football.get_fixture_statistics", side_effect=fake_stats), \
+         mock.patch("workers.api_clients.supabase_client.bulk_store_match_stats",
+                    side_effect=lambda b: stored.extend(b)):
+        c = xl.run()
+    assert c["fetched"] == 2 and c["xg_filled"] == 1, c
+    assert [m for m, _ in stored] == ["m1"] and stored[0][1]["xg_home"] == 1.25, stored
+    # #111 sibling bug: a BATCH-shaped response (no statistics_1h) must yield NO
+    # half-time stats. The old parser fell back to the full-match block, wrote it
+    # into every _ht column (650/652 rows in the week of 09-14) and, being
+    # non-empty, suppressed settlement's retry for the real split.
+    from workers.api_clients.api_football import parse_fixture_stats_halftime
+    batch_shaped = [{"team": {"id": 1}, "statistics": [{"type": "Total Shots", "value": 13}]},
+                    {"team": {"id": 2}, "statistics": [{"type": "Total Shots", "value": 9}]}]
+    assert parse_fixture_stats_halftime(batch_shaped) == {}, parse_fixture_stats_halftime(batch_shaped)
+
+
 @test("WHEATCROFT-REPLICATION — #089 GAP update, promotion inheritance, fixed family, same rows")
 def test_wheatcroft_replication():
     """[[#089]], 2026-09-24. The faithful replication of Wheatcroft (2020, IJF) decides

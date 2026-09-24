@@ -3034,3 +3034,16 @@ and a **market-only** logistic betting the same way scored **+0.80%**, more than
 before attributing max-odds (or best-of-books) CLV to a model, run the same betting rule with the model
 term removed; the model owns only the difference. At a single book's own price (Pinnacle pre-close) the
 same model was −1.60%.
+
+## 76. `match_stats` `_ht` columns held FULL-MATCH values for ~2026-08-31..09-24 — repaired, but results computed then are suspect (#111, 2026-09-24)
+
+`parse_fixture_stats_halftime` fell back to the full-match block when a response had no half split,
+which the batch `fixtures?ids=` response never has. Up to 650 of 652 rows a week had half-time
+shots/corners equal to full time. Repaired on 2026-09-24 (1,002 rows re-fetched with the real split),
+so queries run AFTER that date are clean. Any 1H corners / 1H cards / `_ht`-based result computed
+between ~08-31 and 09-24 (`lineshop_new_markets.py`, `own_market_expansion_sweep.py`) must be
+re-run before it is cited. **Check:** `count(*) FILTER (WHERE shots_home_ht = shots_home AND
+shots_away_ht = shots_away AND corners_home_ht = corners_home)` per week should be ~0-1.
+
+Separately: **xG on rows < 6 days old is incomplete by design** — AF publishes it 1-4 days after the
+match and `job_xg_late_fill` fills it in. Do not read a recent xG gap as a coverage drop.

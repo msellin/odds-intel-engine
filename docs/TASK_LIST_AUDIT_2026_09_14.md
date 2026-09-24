@@ -147,7 +147,7 @@ pattern matches the audit's independently measured 2.0% vs 96.5%.)
 `PRIORITY_QUEUE.md` (`grep` → 0 hits each). The sweep deferred filing them
 because another agent held that file:
 
-* **`HT-STATS-FULL-MATCH-FALLBACK`** — `api_football.py::parse_fixture_stats_halftime`
+* **`HT-STATS-FULL-MATCH-FALLBACK`** — `api_football.py::parse_fixture_stats_halftime` ✅ **FIXED 2026-09-24 in [[#111]]** — fallback removed from `parse_fixture_stats_halftime` (never reads the full-match block now), 1,002 contaminated rows since 2026-08-17 overwritten with AF's real first-half split (`scripts/repair_ht_stats_111.py`), smoke `XG-LATE-FILL` guards it. It sat here for ten days with no `PRIORITY_QUEUE.md` row.
   falls back to the full-match `statistics` array when `statistics_1h` is
   absent, so **54.2% of `*_ht` rows hold full-match values**. Nothing bets on it
   today, but 303,120 `corners_1h_ou_45` snapshots are accumulating against a

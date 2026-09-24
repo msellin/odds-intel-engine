@@ -377,6 +377,13 @@ Argentine Liga Profesional fixture returns **no such field at all** — and that
 league had 109 xG matches in the preceding 90 days. **This is a supplier coverage
 change, not a parse bug.**
 
+> **CORRECTED 2026-09-24 ([[#111]]): it is a supplier DELAY, not a withdrawal.** From
+> ~2026-08-31 AF publishes `expected_goals` 1-4 days after the match instead of within
+> hours. On 496 rows stored without xG, AF later had it for 0/3 matches one day old,
+> 3/4 at two days, 6/8 at three and 8/8 at four; EPL fixtures from 09-04 that we hold
+> without xG return it today. We fetch once, hours after kickoff, so we stored the
+> gap. Fixed by `job_xg_late_fill` (daily 02:20 UTC) and a backfill from 2026-08-25.
+
 ⚠️ Our parse is **silent** when the field is absent (`if xg is not None`, no
 logging), so a supplier withdrawing a field is indistinguishable from a quiet day.
 

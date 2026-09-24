@@ -1222,6 +1222,11 @@ def fetch_post_match_enrichment() -> dict:
                 #
                 # Counting presence per run makes the next withdrawal visible the
                 # day it happens instead of the month someone goes looking.
+                #
+                # CORRECTED 2026-09-24 ([[#111]]): the 09-04 drop was a DELAY, not
+                # a withdrawal — AF now adds xG 1-4 days after the match, after this
+                # one-shot fetch. `workers/jobs/xg_late_fill.py` re-fetches those
+                # rows daily, so a low xg_present count here is now expected.
                 if full_stats.get("xg_home") is not None:
                     result["xg_present"] = 1
                 if full_stats.get("shots_insidebox_home") is not None:

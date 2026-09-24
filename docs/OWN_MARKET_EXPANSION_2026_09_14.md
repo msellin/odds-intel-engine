@@ -181,7 +181,7 @@ full-match on half our rows, and any future 1H stat model would train on it.
 Recommended rows for `PRIORITY_QUEUE.md` (not filed here — another agent owns
 that file this session):
 
-* **HT-STATS-FULL-MATCH-FALLBACK** 🤖👥 BOTH — remove the fallback so an absent
+* **HT-STATS-FULL-MATCH-FALLBACK** 🤖👥 BOTH — remove the fallback so an absent ✅ **FIXED 2026-09-24 in [[#111]]** — fallback removed from `parse_fixture_stats_halftime` (never reads the full-match block now), 1,002 contaminated rows since 2026-08-17 overwritten with AF's real first-half split (`scripts/repair_ht_stats_111.py`), smoke `XG-LATE-FILL` guards it. It sat here for ten days with no `PRIORITY_QUEUE.md` row.
   `statistics_1h` writes NULL rather than the full-match value (*honestly absent
   beats confidently wrong*, §61), and NULL the 54% of `_ht` rows that equal
   their full-match twin. ~1h.
