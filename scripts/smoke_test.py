@@ -51702,6 +51702,36 @@ def test_xg_gap_top_leagues():
     assert out[1] == 0.5 * 2 + 0.5 * 1 + 0.5 * 1 + 0.5 * 2, out   # xG, not shots (which are all 0)
 
 
+@test("SHARP-ANCHOR-EXCHANGE-REPLAY — #119 step C reads one CSV instant, live gate, 6 Holm tests")
+def test_sharp_anchor_exchange_replay():
+    """[[#119]] step C, 2026-09-24. Pinnacle vs Betfair-Exchange close as the sharp
+    anchor (ANALYSIS_GOTCHAS §78). What keeps a re-run honest:
+    1. every book is read at the exchange close's own timestamp (one CSV row, one
+       instant) — AF-live closes for the same books must not leak in;
+    2. both anchors go through the production Shin de-vig;
+    3. the gate is the live sharp trigger: 3% <= edge <= 8%, §9 outlier guard;
+    4. the AGREE anchor skips a match whose legs differ by > 2 pp;
+    5. the pre-registered test count (6) is asserted, so a new variant cannot
+       quietly widen the Holm family.
+    """
+    from pathlib import Path
+    src = (Path(__file__).parent.parent / "scripts" / "sharp_anchor_exchange_replay.py").read_text()
+    assert "o.timestamp = bx.ts" in src, "all books must be read at the exchange close's instant"
+    assert "from workers.model.devig import devig" in src
+    assert not any(k in src.upper() for k in ("INSERT INTO", "UPDATE ", "DELETE FROM")), "read-only"
+    from scripts import sharp_anchor_exchange_replay as m
+    assert (m.EDGE_FLOOR, m.EDGE_CEIL, m.AGREE_TOL, m.N_TESTS) == (0.03, 0.08, 0.02, 6)
+    assert m.GUARD == {"1x2": 1.25, "over_under_25": 1.30}
+    # behaviour: soft 2.30 vs anchor p=0.47 -> edge 0.0352, bets; blocked under AGREE if gap 3pp
+    rec = {"q": {"Bet365": [2.30, 3.4, 3.4]}, "y": 0, "gap": 0.03,
+           "p": {"PIN": [0.47, 0.27, 0.26], "EXC": [0.44, 0.29, 0.27], "BLEND": [0.455, 0.28, 0.265]}}
+    data = {"1x2": {"x": rec}}
+    assert len(m.bets(data, "1x2", "PIN")["x"]) == 1
+    assert m.bets(data, "1x2", "PIN")["x"][0][0] == 2.30 - 1.0
+    assert m.bets(data, "1x2", "EXC")["x"] == []          # edge 0.0052 < 3%
+    assert m.bets(data, "1x2", "AGREE")["x"] == []        # 3pp gap > 2pp
+
+
 @test("XG-LATE-FILL — #111 re-fetches rows whose xG AF published late, never overwrites with NULL")
 def test_xg_late_fill():
     """[[#111]], 2026-09-24. From ~2026-08-31 API-Football adds xG 1-4 days after a

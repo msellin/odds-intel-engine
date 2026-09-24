@@ -3061,3 +3061,56 @@ Before live Pinnacle collection (~July 2026 for most leagues), our Pinnacle O/U 
 **Rule:** to get a historical close, select `is_closing` explicitly. Never treat `is_opening` in history
 as an opening price or read its timestamp as real. A median "164 h before kickoff" on these rows is the
 stand-in stamp, not a fact about when the price existed.
+
+## 78. The Betfair-Exchange close is as sharp as Pinnacle's — and at the CLOSE a sharp trigger barely fires, so anchor choice cannot be settled on ROI (#119 step C, 2026-09-24)
+
+`scripts/sharp_anchor_exchange_replay.py` (read-only, pre-registered in its docstring). Data: the
+football-data CSV closes, **7,328 matches (1X2) / 7,299 (O/U 2.5), 13 leagues** (EPL, Championship,
+League One/Two, La Liga, Segunda, Serie A, Bundesliga, Ligue 1, Eredivisie, Primeira, Süper Lig,
+Jupiler), seasons 2024-25 + 2025-26 (to 2026-05). That is the whole overlap — the ~118k exchange rows
+are 9.8k matches, and Pinnacle's CSV close exists on 7.3k of them.
+
+**Read every book at the exchange row's own timestamp.** Each CSV row stamps all books identically;
+Bet365 / William Hill / 1xBet / Pinnacle ALSO carry AF-live `is_closing` rows at other timestamps.
+Joining on `o.timestamp = <exchange close ts>` keeps one instant and drops the AF rows.
+
+**De-vig.** CSV exchange odds are BACK prices before commission: overround median **1.0065**
+(p5 1.002, p95 1.013; 0.1% cross ≤1.000), against Pinnacle's **1.034**. Both through the same Shin
+`devig()`; at ~100.7% Shin ≈ proportional, and crossed books fall back to proportional.
+
+**Sharpness (paired outcome log-loss, lower = sharper).**
+
+| market | PIN | EXC | BLEND | EXC−PIN mean / median / winsor, t | BLEND−PIN t |
+|---|---|---|---|---|---|
+| 1X2 | 0.98584 | 0.98618 | 0.98587 | +0.00034 / −0.00045 / −0.00002, t=+0.83 | +0.12 |
+| O/U 2.5 | 0.67384 | 0.67432 | 0.67396 | +0.00048 / +0.00042 / +0.00012, t=+1.27 | +0.73 |
+
+Same sign in both seasons, no season significant. The two anchors differ by >2 pp on some leg in
+only 7.5% (1X2) / 6.5% (O/U) of matches (median max-leg gap 0.7 / 0.6 pp), and **on those
+disagreement matches neither is right more often** (EXC−PIN LL t=+1.39 / +0.83). Blending gains
+nothing measurable — a blend of two near-identical forecasts can only average their noise.
+
+**Replay at the CLOSE** — live sharp-trigger rule (3% ≤ p_anchor − 1/price ≤ 8%, §9 guard), best CSV
+close among soft books (1X2: Bet365, BetWin, Betfred, WH, 1xBet; O/U: Bet365 only), flat 1u:
+
+| market | PIN | EXC | BLEND | AGREE (≤2 pp) |
+|---|---|---|---|---|
+| 1X2 n / ROI ± SE | 91 / +8.6% ± 13.1 | 44 / +20.0% ± 18.2 | 46 / +18.5% ± 18.2 | 36 / +16.6% ± 20.1 |
+| O/U n / ROI ± SE | 47 / +3.0% ± 17.0 | 7 / +10.3% ± 39.0 | 8 / −2.1% ± 37.4 | 3 / −36% ± 64 |
+
+Six pre-registered tests (3 variants × 2 markets, per-match profit difference vs PIN): all **Holm
+p = 1.000** (raw p 0.75–0.94). Context: every selection at the best soft close returns −5.4% / −5.2%.
+The published forward-test rule (p·price − 1 ≥ 3%, odds ≤ 4.0) fires more (1X2: PIN 495 / +11.0% ± 6.5,
+EXC 318 / +12.7%, BLEND 312 / +18.3%, AGREE 270 / +19.8% ± 9.2) — descriptive only, same verdict.
+
+**What this does and does not say.**
+* The exchange close is a **peer** of Pinnacle's, not a better or worse anchor — extends the old
+  "identical to 4 dp" note (DATA_SOURCES, CSV-FULL-EXTRACT) with t-stats, O/U, the blend and seasons.
+* The "agree" filter cuts bets ~40-60% and the point ROI rises on 1X2 — but nothing is significant.
+  **Do not read it as evidence that disagreement flags bad bets.** On O/U, 45 of PIN's 47 bets were
+  on matches where the exchange disagreed >2 pp, i.e. at the close Pinnacle-only "edges" on Bet365 O/U
+  are mostly Pinnacle-vs-exchange disagreement; they returned +7.6% ± 17.5 — uninformative.
+* **CLOSE-to-close is the wrong instant for the live bots**, which decide hours earlier when soft
+  prices are staler and the anchor noisier. At the close soft books sit on the sharp line, which is
+  why the trigger fires on ~1% of matches. The stale-quote value of a second anchor (#119 B) can only
+  be measured on pre-close quotes — i.e. the live `exchange_quotes` history from 2026-09-24 on.
