@@ -51741,6 +51741,35 @@ def test_sharp_anchor_exchange_replay():
     assert m.bets(data, "1x2", "AGREE")["x"] == []        # 3pp gap > 2pp
 
 
+@test("STALE-WINDOW-STUDY — #121 Phase 2 (i) pivots legs by gap, grades vs a leave-Pinnacle-out close, 64 Holm tests")
+def test_stale_window_study():
+    """[[#121]] Phase 2 (i), 2026-09-24 (docs/STALE_WINDOW_STUDY_2026_09_24.md).
+    What keeps a re-run honest:
+    1. read-only;
+    2. a Coolbet 1X2 whose legs carry their own microsecond timestamps is ONE set
+       (grouped by gap), and a set missing a leg is dropped (§62);
+    3. the PRIMARY grader is the consensus close with Pinnacle excluded and the four
+       Estonian books removed — the same-feed trigger+grade trap (§67);
+    4. the pre-registered family is 64 tests and Holm is monotone.
+    """
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+    src = (Path(__file__).parent.parent / "scripts" / "stale_window_study.py").read_text()
+    assert not any(k in src.upper() for k in ("INSERT INTO", "UPDATE ", "DELETE FROM")), "read-only"
+    assert "exclude_book=PIN" in src and "b not in EE_BOOKS" in src
+    from scripts import stale_window_study as m
+    assert m.N_TESTS == 64 and m.THRESHOLDS == (0.0, 0.03) and m.MOVE_MIN == 0.03
+    assert (m.WF_RATIO, m.WF_PP, m.WF_MIN_BOOKS) == (1.5625, 0.04, 4)
+    t = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+    us = timedelta(microseconds=1)
+    rows = [(t, "home", 2.0), (t + us, "draw", 3.4), (t + 2 * us, "away", 3.9),
+            (t + timedelta(minutes=30), "home", 2.1), (t + timedelta(minutes=30), "draw", 3.3)]
+    sets = m.complete_sets(rows, ("home", "draw", "away"))
+    assert sets == [(t, [2.0, 3.4, 3.9])], sets
+    adj = m.holm([0.01, 0.04, 0.03, 0.5])
+    assert adj[0] == 0.04 and adj[2] == 0.09 and adj[1] == 0.09 and adj[3] == 0.5, adj
+
+
 @test("XG-LATE-FILL — #111 re-fetches rows whose xG AF published late, never overwrites with NULL")
 def test_xg_late_fill():
     """[[#111]], 2026-09-24. From ~2026-08-31 API-Football adds xG 1-4 days after a
