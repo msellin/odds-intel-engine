@@ -2,6 +2,35 @@ Parent row: **#139 UNIFIED-BOT-MODEL-EPIC** in PRIORITY_QUEUE.md.
 
 # HANDOVER — #139 unified bot model + admin dashboard (written 2026-09-24, end of session)
 
+> **UPDATE 2026-09-25 (second #139 session) — the admin dashboard track is DONE and live.**
+> - Shipped (web 219dc0c → 786e402 + the round-3 commit; engine 335635fe → latest): IA moves P1–P9 (owner decisions:
+>   the Coolbet footprint pause stops SWEEPING only, never real bets; LoL/Tennis/CS2/Place deleted; no Telegram
+>   footprint command); design system `src/components/oi/` (Panel, StatCard, StatusBadge, ChartCard/DonutCard,
+>   DataTable); top bar (breadcrumb, ⌘K that only navigates, attention bell); Overview (KPI cards, Urgent / To-check
+>   inbox with exact-row links, charts); every page redesigned (Bots, Pick queue = /admin/shadow-bots, Real bets,
+>   Feeds, Jobs = /admin/ops, new /admin/activity). URLs kept on purpose (65 smoke pins).
+> - UX: 3 testers scored 7 / 6 / 6.5; all findings fixed; re-test 7.5; its money findings fixed in round 3
+>   (30-day card "couldn't load" not €0; CAN STAKE = NO when a readable layer blocks — money-reviewed; Overview feed
+>   colours grey when the status check is stale; "1x2" finds "1×2").
+> - Also fixed along the way: /admin/bots slowness (router.replace re-rendered the page on the server on every
+>   click → history.replaceState); 'no picks for 48h' hourly false alarm (health_alerts reads all ledgers);
+>   migration 417 `pipeline_job_latest` (found 5 jobs failing 17–33 days → spun off as its own task); shadow
+>   clv_pinnacle_live NULL since ~09-03 (settlement select + migration 422, 20,090 rows); footprint hour-booking;
+>   CI flake (`_this_thread_only` for DB monkeypatches).
+> - #140 DONE (no slice survives) → #150 (sharp-trigger CLV grader) + #151 (Coolbet refusals under budget) filed.
+> - Phase 5 drafts for the owner: `dev/active/unified-bot-model-phase5-decisions.md` (six decisions, plain words,
+>   recommendations) and `…-phase5-schema-draft.md` (invariant map, 5b–5e path, ~15–17.5 d). NEXT: owner answers the
+>   six decisions → two independent schema reviews → 5b.
+> - Known small leftovers (UX re-test, minor): bot-registry prose "INSTRUMENT (paper, never placeable)" should read
+>   "not meant for real money" (technically has a placement path; € switch off) — edit via bot_registry.py +
+>   SYSTEM_MAP together; developer text in bot descriptions behind a "technical detail" toggle; Pick queue
+>   "OLD BOT PRICES" card wording; phone card layout for Pick queue / Bots tables; Feeds shows two Coolbet
+>   request counts for "this hour"; deep links opened directly don't scroll; Kill-switch Resume dialog's
+>   "Recorded reason" empty.
+> - Owner actions still outstanding: OWNER_USER_IDS (arming blocked until set), SHADOW_MODEL_VERSION pin,
+>   ROUTER_ALLOW_REAL=false — commands in §1 below.
+
+
 Read this first, then `docs/UNIFIED_BOT_MODEL_DESIGN_2026_09_24.md` and `dev/active/unified-bot-model-tasks.md`.
 
 ## 0. State at handover — everything is committed and pushed (verified 2026-09-24, end of session)

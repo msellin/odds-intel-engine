@@ -54308,7 +54308,8 @@ def test_control_telegram_stop_only():
 def test_control_page_fail_safe():
     """§2.6/§2.7/§3.4: unreadable state renders 'Unknown' (never 'Off') and disables the start
     direction while the stop stays available; only the SAFE direction is optimistic; the
-    CAN STAKE line reads UNKNOWN when any layer is unknown; the customer channel and real-money
+    CAN STAKE line reads NO when a readable layer blocks, else UNKNOWN when any layer is unknown,
+    and never YES with an unknown layer; the customer channel and real-money
     placement live in different cards (I10); /performance never reads show_on_picks (I12)."""
     d = _web_root / "src/app/(app)/admin/bots"
     sw = (d / "control-switch.tsx").read_text(encoding="utf-8")
@@ -54318,7 +54319,17 @@ def test_control_page_fail_safe():
     assert body.index("if (start) {") < body.index("setOptimistic((o) => ({ ...o, [k]: intent.value }))"), \
         "the start branch must return before any optimistic state is set"
     lad = _web_path("src/lib/bot-controls/ladder.ts").read_text(encoding="utf-8")
-    assert 'unknownAt.length > 0 ? "unknown"' in lad
+    # 2026-09-24 (UX re-test + money review): only a readable HARD gate — kill switch paused, not
+    # armed, or zero bots switched on counted raw (not through the page's placement-path filter) —
+    # overrides an unreadable layer (NO). Layers 1 (page copy of the path rule) and 5 (Mac heartbeat:
+    # a router stakes before it reports) are not hard. The conservative order (any unknown → UNKNOWN)
+    # is kept as canStakeStrict for the confirmation dialogs, which show the ladder while OPENING a gate.
+    # It is never YES while any layer is unknown.
+    assert 'const canStakeStrict = unknownAt.length > 0 ? "unknown" : blockedAt.length > 0 ? "no" : "yes";' in lad
+    assert "const hardBlock = paused === true || armed === false || rawOn === 0;" in lad
+    assert "p.ui_place_enabled && !p.locked_reason" in lad.split("const rawOn")[1].split("\n")[0]
+    ll = (d / "ladder-list.tsx").read_text(encoding="utf-8")
+    assert "strict={compact}" in ll, "dialogs (compact ladder) keep the conservative verdict"
     fleet = (d / "fleet-controls-card.tsx").read_text(encoding="utf-8")
     money = (d / "real-money-card.tsx").read_text(encoding="utf-8")
     assert 'control="publishing_paused"' in fleet and "placement_paused" not in fleet
@@ -55320,6 +55331,28 @@ def test_admin_bots_p7_sheet_ledger():
             assert m.group(1).startswith("type "), f"{f.name} imports a VALUE from server-only bot-board.ts"
     sheet = (d / "bot-sheet.tsx").read_text(encoding="utf-8")
     assert "<PicksTable v={v} ledger={ledger} onMore={onMore} placedOnly={placedOnly} onPlacedOnly={onPlacedOnly} />" in sheet
+
+
+@test("ADMIN-UX-ROUND3 — Overview money + feed honesty after the re-test (7.5/10)")
+def test_admin_ux_round3():
+    """2026-09-24 verification tester: (1) the Overview 30-day real-bets card showed "0 bets · €0
+    staked" beside "Unknown" when its read failed — a failure must say "couldn't load", never €0;
+    (2) with the kill switch paused, not armed and no bot on, CAN STAKE read UNKNOWN because one
+    layer (Mac heartbeat) was unreadable — now NO when a readable layer blocks; (3) the Overview
+    feeds card + donut stayed green while the status check was stale (Feeds greys them) — now
+    Unknown too; (4) "1x2" did not find "1×2 …" in ⌘K or Bots search."""
+    if not (_web_root / "src").exists():
+        return
+    page = _web_path("src/app/(app)/admin/page.tsx").read_text(encoding="utf-8")
+    assert "couldn't load the real-bet ledger" in page and "d.feedsStale" in page
+    ov = _web_path("src/lib/admin-overview.ts").read_text(encoding="utf-8")
+    assert "feedsStale:" in ov and "15 * 60_000" in ov
+    charts = _web_path("src/app/(app)/admin/overview-charts.tsx").read_text(encoding="utf-8")
+    assert "d.feedsStale" in charts
+    for f in ("src/components/admin/command-palette.tsx", "src/app/(app)/admin/bots/bots-board.tsx"):
+        assert '.replace(/×/g, "x")' in _web_path(f).read_text(encoding="utf-8"), f
+    lad = _web_path("src/lib/bot-controls/ladder.ts").read_text(encoding="utf-8")
+    assert 'stakingBots: canStake === "yes" ? staking : []' in lad
 
 
 @test("BOT-BOARD-DEV-PREVIEW-NEVER-IN-PROD — the no-login /admin/bots fixture preview is development-only")

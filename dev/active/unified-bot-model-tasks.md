@@ -11,14 +11,14 @@ Rule: every step ships with a smoke test and 1–2 independent review agents (2 
 - [x] Phase 1 — migration 410 views + bot_config, export job, /admin/bots rebuild (3 review rounds)
 - [x] Phase 1 — verified live (410/411 applied, export stored 111, page renders)
 - [x] Phase 3-A — control panel (mig 413), 3 money-safety review rounds
-- [ ] Admin dashboard: shared shell + design system + IA moves (see HANDOVER §2)
+- [x] Admin dashboard: shared shell + design system + IA moves (see HANDOVER update 2026-09-25)
   - [x] shared shell (57086ec)
   - [x] IA P1 footprint = info layer, readiness warning (owner: sweeping only) · P2 switch → /admin/feeds + 4th status line · P3 unaudited writers deleted
   - [x] design tokens + `components/oi` (Panel, StatCard+sparkline, StatusBadge/TrendPill, charts) + Overview rebuild (charts + attention inbox = P4) + mig 417 pipeline_job_latest
-  - [ ] shell top bar (breadcrumb, ⌘K, bell)
+  - [x] shell top bar (breadcrumb, ⌘K, bell)
   - [x] P8a delete cs2/lol/tennis
-  - [ ] P5 Money page · P6 Pick queue · P7 retire [bot] page · P8b delete /admin/place (14 smoke pins) · P9 Ops → Jobs
-  - [ ] per-page design pass: Bots, Feeds, Ops, Money, Queue (DataTable)
+  - [x] P5 Real bets · P6 Pick queue · P7 retire [bot] page · P8b delete /admin/place · P9 Ops → Jobs · G4 Activity
+  - [x] per-page design pass: Bots, Feeds, Ops, Money, Queue (DataTable) + 3 UX tests + 2 fix rounds + re-test (7.5)
 - [ ] Owner decisions (i)–(v) listed on the #139 row
 - [ ] Phase 5 schema rewritten from the invariants; 2 reviewers
 - [ ] Phase 2 — shadow-bots page becomes "today's picks" on bot_ledger
