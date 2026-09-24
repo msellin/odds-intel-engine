@@ -53081,6 +53081,22 @@ def test_sharp_tier():
     assert 'os.getenv("ANCHOR_USE_EXCHANGE", "0") == "1"' in src, "sharp tier must be OFF by default"
 
 
+@test("OPS-SHARP-COVERAGE — the ops snapshot counts a sharp anchor as Pinnacle OR a liquid exchange market")
+def test_ops_sharp_coverage():
+    """#119 (2026-09-24), migration 397. Owner: show sharp coverage, not Pinnacle-only."""
+    import inspect, re
+    from workers.api_clients import supabase_client as sc
+    src = inspect.getsource(sc.write_ops_snapshot)
+    assert "AS with_sharp" in src and "AS with_ex_liquid" in src
+    assert "max(x.lay / x.back) <= 1.05" in src and "x.market_matched >= 1000" in src
+    seg = src[src.index("INSERT INTO ops_snapshots ("):]
+    cols = seg[seg.index("(") + 1:seg.index(") VALUES")]
+    ncols = len([c for c in re.split(r"[,\s]+", cols) if c])
+    vals = seg[seg.index(") VALUES ("):seg.index('"""', seg.index(") VALUES ("))]
+    assert ncols == vals.count("%s"), "column / placeholder count drifted"
+    assert "matches_without_sharp" in cols
+
+
 @test("BETFAIR-GEO-PROBE — the one-shot exchange probe is read-only and uses the site's own query")
 def test_betfair_geo_probe():
     """#115 (2026-09-24): Betfair Exchange served no markets to the Finnish VPS. The

@@ -5896,6 +5896,9 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
     odds_snapshots_total_rows = 0
     distinct_bookmakers = 0
     matches_without_pinnacle = 0
+    matches_with_exchange_liquid = None
+    matches_with_sharp = None
+    matches_without_sharp = None
     odds_market_match_winner = 0
     odds_market_goals_ou = 0
     odds_market_btts = 0
@@ -5993,6 +5996,19 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
                   SELECT 1 FROM odds_snapshots WHERE match_id = m.id
                   AND bookmaker = 'Pinnacle' LIMIT 1
               ))                                                              AS with_pinnacle,
+              -- #119: a LIQUID Betfair Exchange match-odds capture is also a sharp anchor
+              COUNT(*) FILTER (WHERE EXISTS (
+                  SELECT 1 FROM exchange_quotes x WHERE x.match_id = m.id AND x.market = '1x2'
+                     AND x.market_matched >= 1000
+                   GROUP BY x.captured_at HAVING count(*) = 3 AND max(x.lay / x.back) <= 1.05
+              ))                                                              AS with_ex_liquid,
+              COUNT(*) FILTER (WHERE EXISTS (
+                  SELECT 1 FROM odds_snapshots WHERE match_id = m.id AND bookmaker = 'Pinnacle' LIMIT 1
+              ) OR EXISTS (
+                  SELECT 1 FROM exchange_quotes x WHERE x.match_id = m.id AND x.market = '1x2'
+                     AND x.market_matched >= 1000
+                   GROUP BY x.captured_at HAVING count(*) = 3 AND max(x.lay / x.back) <= 1.05
+              ))                                                              AS with_sharp,
               COUNT(*) FILTER (WHERE EXISTS (
                   SELECT 1 FROM odds_snapshots WHERE match_id = m.id
                   AND market = '1x2' LIMIT 1
@@ -6020,6 +6036,9 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
             matches_with_odds        = r_cov[0]["with_odds"]
             matches_with_pinnacle    = r_cov[0]["with_pinnacle"]
             matches_without_pinnacle = matches_with_odds - matches_with_pinnacle
+            matches_with_exchange_liquid = r_cov[0]["with_ex_liquid"]
+            matches_with_sharp = r_cov[0]["with_sharp"]
+            matches_without_sharp = matches_with_odds - matches_with_sharp
             odds_market_match_winner = r_cov[0]["mkt_match_winner"]
             odds_market_goals_ou     = r_cov[0]["mkt_goals_ou"]
             odds_market_btts         = r_cov[0]["mkt_btts"]
@@ -6493,7 +6512,8 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               total_users, pro_users, elite_users, new_signups_today,
               anon_users_total, anon_users_today, anon_users_engaged_7d, anon_upgrades_7d,
               sidelined_players_fetched, transfers_teams_fetched,
-              shadow_runs_today, shadow_bets_today
+              shadow_runs_today, shadow_bets_today,
+              matches_with_exchange_liquid, matches_with_sharp, matches_without_sharp
             ) VALUES (
               %s,
               %s, %s, %s, %s, %s, %s, %s, %s,
@@ -6509,7 +6529,8 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
               %s, %s, %s, %s,
               %s, %s, %s, %s,
               %s, %s,
-              %s, %s
+              %s, %s,
+              %s, %s, %s
             )
             """,
             [
@@ -6535,6 +6556,7 @@ def write_ops_snapshot(snapshot_date: str | None = None) -> None:
                 anon_users_total, anon_users_today, anon_users_engaged_7d, anon_upgrades_7d,
                 sidelined_players_fetched, transfers_teams_fetched,
                 shadow_runs_today, shadow_bets_today,
+                matches_with_exchange_liquid, matches_with_sharp, matches_without_sharp,
             ]
         )
         if failed_sections:
