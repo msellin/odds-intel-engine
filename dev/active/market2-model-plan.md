@@ -144,3 +144,14 @@ EV ≥ 5% (Shin): Holm passes 17/21 non-1X2 markets; O/U FT 2.5 +6.4% (n 67), 3.
 DNB +10.2%; corners O/U +8.7%. 1X2 calibration row +3.1% (≈ B2). Caveats: shrinks after 09-17 (pre-09-17 consensus built
 partly from stale opening rows), Bet365 ≈ 36% of picks, proportional de-vig unusable, whole AH lines conditional on no push.
 Next-market candidates for #149 round 2 (later): AH 0 / ±0.5 and DNB (need the push-aware CLV), corners (settlement 67%).
+
+## Next ideas (not yet tested — each needs its own pre-registration)
+1. **Per-book reliability.** Sep by-book CLV for S2: Epicbet +6.3%, Unibet(AF) +5.8%, Betano +6.7%, Unibet-Site +3.1%,
+   Bet365 +2.5%, Coolbet +1.0%, Betfair +0.2%, BetVictor −2.7%. Learn a per-book weight on Aug, test on Sep/forward —
+   small n per book, so shrink toward the pooled rate.
+2. **Takeability check for the live bot (as B5 did for 1X2):** how long each O/U outlier stays above EV 5% after the
+   job's run, per book — decides which books the O/U picks may name for Telegram readers.
+3. **Next market, same recipe:** AH 0 / ±0.5 and draw-no-bet (track 3: +10% CLV, holding after 09-17) — needs a
+   push-aware CLV (whole lines) and Pinnacle AH coverage; double chance (+5.5%, derived from Pinnacle 1X2).
+4. **O/U 4.5** (track 3: +11.7%, n=30) — add the line to the live job once it has its own confirm.
+5. **VIP candidate:** O/U EARLY is the strongest non-1X2 rule so far; owner decision after its 50-pick review.

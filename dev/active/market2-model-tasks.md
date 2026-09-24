@@ -8,4 +8,6 @@ Parent: [[#149]] SECOND-MARKET-MODEL-2026-09-24
 - [x] Production (as O3 T3 + T2, not the O1 model): workers/jobs/ou_sharp_outlier.py, migration 423, registry, SYSTEM_MAP, WORKFLOWS — `workers/model/combined_ou.py`, shadow rows, EV5/EV8 bots, migration, registry, SYSTEM_MAP
 - [x] Iteration 2 (O2, sharp-anchored; found the missing-close artefact) — new layer (candidates: shots/xG sum rating, longer decay for totals, Shin de-vig, per-book weights, alt-line derivation from Pinnacle main line)
 - [x] Iteration 3 (O3: early / two-anchor / fresh-anchor filters) — new layer (web research between iterations)
+- [x] First live run verified (13 picks, 21:14 UTC 09-24)
+- [ ] Owner review at 20/50/100 settled picks; takeability check; next ideas (plan doc)
 - [ ] Close-out: docs (MODEL_WHITEPAPER, SYSTEM_MAP, WORKFLOWS, ROADMAP), handover summary for owner
