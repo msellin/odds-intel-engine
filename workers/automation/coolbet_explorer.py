@@ -437,6 +437,14 @@ _MTID_CORNERS_AH    = {1724}    # "Corners Handicap (2 way)" -> corners_handicap
 # both teams to score" (1549) and "1st half [home] goals" (844) must not match.
 _MTID_1X2_1H       = {98}      # "1st half result"     -> 1x2_1h
 _MTID_TEAM_TOTAL   = {1551: "home", 1547: "away"}  # "[home]/[away] total goals"
+# #132 part 2 (2026-09-24): FIRST-HALF goals — Coolbet offers them (842 seen 339x, 844 1,008x,
+# 843 314x in coolbet_market_inventory) and we stored none, while Pinnacle writes
+# `over_under_1h_05/15` and `team_total_1h_{home,away}_05/15` on 150–190 fixtures a day — a
+# sharp anchor on the same market at our main placeable book. Only the .5/1.5 lines: the
+# ones with a cross-book namespace (and the only first-half lines in ALLOWED_OU_MARKETS).
+_MTID_OU_1H         = {842}                        # "1st half goals"          -> over_under_1h_NN
+_MTID_TEAM_TOTAL_1H = {844: "home", 843: "away"}   # "1st half [home]/[away] goals" -> team_total_1h_{side}_NN
+_FIRST_HALF_LINES   = (0.5, 1.5)
 _NAME_TEAM_TOTAL   = {"[home] total goals": "home", "[away] total goals": "away"}
 
 
@@ -712,6 +720,20 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
             rk = (oc.get("result_key") or "").strip("[]").lower()
             if rk in ("home", "draw", "away"):
                 _add("1x2_1h", rk, oc.get("id"))
+        return rows
+
+    if mtid in _MTID_OU_1H or mtid in _MTID_TEAM_TOTAL_1H:
+        if line_val is None or not any(abs(line_val - x) < 1e-9 for x in _FIRST_HALF_LINES):
+            return rows
+        nn = f"{round(line_val * 10):02d}"
+        tag = (f"over_under_1h_{nn}" if mtid in _MTID_OU_1H
+               else f"team_total_1h_{_MTID_TEAM_TOTAL_1H[mtid]}_{nn}")
+        for oc in mkt.get("outcomes") or []:
+            rk = (oc.get("result_key") or oc.get("name") or "").strip().lower()
+            if rk.startswith("over"):
+                _add(tag, "over", oc.get("id"), line_val)
+            elif rk.startswith("under"):
+                _add(tag, "under", oc.get("id"), line_val)
         return rows
 
     tt_side = _MTID_TEAM_TOTAL.get(mtid) or _NAME_TEAM_TOTAL.get(name.strip())

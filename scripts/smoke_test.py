@@ -53621,6 +53621,24 @@ def test_feeds_coverage_drop():
     assert "coverage_warning(ft, pt, fy, py, _hour)" in inspect.getsource(fh.run_feed_health)
 
 
+@test("COOLBET-FIRST-HALF-GOALS — Coolbet 1H goals and 1H team goals stored in Pinnacle's namespace (#132)")
+def test_coolbet_first_half_goals():
+    """#132 part 2 (2026-09-24): Coolbet offers '1st half goals' (842) and '1st half
+    [home]/[away] goals' (844/843) and we stored none, while Pinnacle writes over_under_1h_05/15
+    and team_total_1h_{home,away}_05/15 on 150-190 fixtures a day. Only the .5/1.5 lines."""
+    from workers.automation.coolbet_explorer import parse_market
+    om = {1: {"value": 1.4}, 2: {"value": 2.8}}
+    def m(mtid, name, line):
+        return {"market_type_id": mtid, "name": name, "line": line,
+                "outcomes": [{"id": 1, "result_key": "Over"}, {"id": 2, "result_key": "Under"}]}
+    assert parse_market(m(842, "1st half goals", 0.5), om) == [
+        ("over_under_1h_05", "over", 1.4, 0.5), ("over_under_1h_05", "under", 2.8, 0.5)]
+    assert parse_market(m(844, "1st half [home] goals", 0.5), om)[0][0] == "team_total_1h_home_05"
+    assert parse_market(m(843, "1st half [away] goals", 1.5), om)[0][0] == "team_total_1h_away_15"
+    assert parse_market(m(842, "1st half goals", 2.5), om) == [], "no cross-book namespace for 1H 2.5"
+    assert parse_market(m(818, "total goals", 2.5), om)[0][0] == "over_under_25"
+
+
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")
 def test_anon_least_privilege():
     """#072 (2026-09-24): anon held SELECT on 134/134 public relations via default privileges;
