@@ -22241,20 +22241,16 @@ def test_coolbet_ingest_banner():
     import pathlib
     # #139 P8b (2026-09-24): the banner lived only on the deleted /admin/place; Coolbet
     # collection freshness is shown on /admin/feeds. The banner stays deleted; the helper
-    # pin below stays until getCoolbetSnapshotFreshnessMinutes is removed from engine-data.
+    # helper was removed the same day (orphaned).
     banner_path = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/components/coolbet-ingest-banner.tsx")
     helper_path = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/lib/engine-data.ts")
     if not helper_path.exists():
         return
     assert not banner_path.exists(), "coolbet-ingest-banner.tsx stays deleted (ADMIN-PLACE-DELETED)"
     helper_src = helper_path.read_text()
-    assert "getCoolbetSnapshotFreshnessMinutes" in helper_src, (
-        "engine-data must export the freshness helper"
-    )
-    # Query must filter bookmaker='Coolbet' — Unibet proxy is a different stream
-    assert '.eq("bookmaker", "Coolbet")' in helper_src, (
-        "freshness query must specifically filter bookmaker='Coolbet'"
-    )
+    # 2026-09-24: getCoolbetSnapshotFreshnessMinutes had no caller left (WEB-NO-ORPHAN-FETCHERS)
+    # and was removed; Coolbet freshness is the Coolbet block on /admin/feeds (feed_status).
+    assert "getCoolbetSnapshotFreshnessMinutes" not in helper_src, "the orphaned helper stays removed"
 
 
 @test("MATCH-RECAPS — recap data functions + pages present in frontend")
@@ -32475,83 +32471,20 @@ def test_shadow_detail_page_uses_exec_odds():
 
     Mutation-verified: reverting the wonPnl line to Number(b.odds_at_pick) fails this.
     """
-    import os
-    base = os.path.join(os.path.dirname(__file__), "..", "..", "odds-intel-web",
-                        "src", "app", "(app)", "admin", "shadow-bots")
-    detail = os.path.join(base, "[bot]", "page.tsx")
-    if not os.path.exists(detail):
-        raise AssertionError(f"shadow-bots detail page not found at {detail}")
-    src = open(detail, encoding="utf-8").read()
-
-    # 1. The page must price at the executable odds.
-    #
-    # EXEC-ODDS-DELEGATION-2026-09-06: this used to assert the page contained
-    # its own inline `return Number(b.odds_at_pick ?? 0)` fallback. That is the
-    # DUPLICATION the sibling test EXEC-ODDS-SINGLE-SOURCE exists to forbid, so
-    # the two tests were pulling in opposite directions — and this one went red
-    # the moment the rule was correctly consolidated into engine-data.ts.
-    #
-    # Assert delegation instead, and check the fallback where it now lives.
-    assert "function execOdds(" in src, "detail page must define execOdds()"
-    helper = src[src.index("function execOdds("):]
-    helper = helper[:helper.index("\n}")]
-    assert "sharedExecOdds" in helper, (
-        "the detail page must delegate to execOdds() in lib/engine-data.ts "
-        "rather than re-implementing the rule — re-implementing it is how four "
-        "surfaces ended up on different price bases, and then a fifth"
-    )
-    shared = open(
-        os.path.join(os.path.dirname(__file__), "..", "..", "odds-intel-web",
-                     "src", "lib", "engine-data.ts"),
-        encoding="utf-8",
-    ).read()
-    shared_fn = shared[shared.index("export function execOdds("):]
-    shared_fn = shared_fn[:shared_fn.index("\n}")]
-    assert "odds_at_pick" in shared_fn.lower() or "oddsAtPick" in shared_fn, (
-        "the shared execOdds no longer references the pick-time price"
-    )
-    assert "return Number(oddsAtPick ?? 0)" in shared_fn, (
-        "shared execOdds must still fall back to the pick-time price rather "
-        "than dropping the row — dropping rows silently changes the cohort"
-    )
-
-    # 2. The P&L that feeds ROI must go through it, not read odds_at_pick raw.
-    pnl_lines = [l for l in src.splitlines() if "wonPnl" in l and "reduce" in l]
-    assert pnl_lines, "could not find the wonPnl reduce that feeds ROI"
-    pnl_line = pnl_lines[0]
-    assert "execOdds(b)" in pnl_line, (
-        f"wonPnl must price winners at execOdds(b); got: {pnl_line.strip()}"
-    )
-    assert "odds_at_pick" not in pnl_line, (
-        f"wonPnl must not read odds_at_pick directly; got: {pnl_line.strip()}"
-    )
-
-    # 3. The column has to be selected or execOdds silently always falls back.
-    assert "odds_at_pick_live" in src[:src.index("function execOdds(")] or \
-           "odds_at_pick_live, model_probability" in src, \
-           "odds_at_pick_live must be in the PostgREST select"
-
-    # 4. The basis must be labelled - an unlabelled return figure is what made
-    #    the old number misleading in the first place.
-    assert "exec" in src.lower(), "the page must say which price basis it shows"
-
-    # 5. Guard that this test is meaningful: the two bases must actually differ
-    #    on live data, otherwise it would pass even against a broken page.
-    from workers.api_clients.db import execute_query
-    row = execute_query(
-        """SELECT count(*) n,
-                  sum(CASE WHEN odds_at_pick_live IS NOT NULL
-                            AND abs(odds_at_pick_live - odds_at_pick) > 0.01
-                           THEN 1 ELSE 0 END) differing
-             FROM shadow_bets_unique
-            WHERE result IN ('won','lost')"""
-    )[0]
-    assert row["n"] > 0, "no settled shadow rows to validate against"
-    assert row["differing"] > 0, (
-        "no row has a live price differing from odds_at_pick - the bases are "
-        "identical, so this test cannot detect the bug it exists to pin"
-    )
-
+    # IA move P7 (2026-09-24): the detail page is RETIRED — it redirects to the /admin/bots sheet.
+    # The sheet prices nothing itself: its P/L and ROI come from bot_ledger.pnl_unit /
+    # bot_scoreboard.roi_unit, computed in SQL at the executable odds (migration 410). So the rule
+    # becomes: the retired page stays a redirect, and no /admin/bots file re-derives P/L from
+    # odds_at_pick (the high-water mark this test was written against).
+    import pathlib
+    web = _web_root / "src" / "app" / "(app)" / "admin"
+    detail = web / "shadow-bots" / "[bot]" / "page.tsx"
+    if not detail.exists():
+        raise SkipTest("odds-intel-web not checked out")
+    src = detail.read_text(encoding="utf-8")
+    assert "redirect(`/admin/bots?bot=" in src, "the retired detail page must redirect to the bots sheet"
+    for f in (web / "bots").glob("*.ts*"):
+        assert "odds_at_pick" not in f.read_text(encoding="utf-8"), f"{f.name} must not price at odds_at_pick"
 
 
 @test("COOLBET-DAILY-CAP-RAISE — daily caps must clear real pick volume and stay mutually consistent")
