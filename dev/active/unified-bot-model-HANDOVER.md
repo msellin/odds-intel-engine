@@ -4,26 +4,28 @@ Parent row: **#139 UNIFIED-BOT-MODEL-EPIC** in PRIORITY_QUEUE.md.
 
 Read this first, then `docs/UNIFIED_BOT_MODEL_DESIGN_2026_09_24.md` and `dev/active/unified-bot-model-tasks.md`.
 
-## 0. FIRST THING TO DO — uncommitted work from agents still running at handover
+## 0. State at handover — everything is committed and pushed (verified 2026-09-24, end of session)
 
-Three background agents were running when the session ended. Their output lands as **uncommitted files**.
-Check both checkouts before doing anything else:
+All three agents that were running have finished, and their output is committed:
+- the visual direction (§5, 387402ff);
+- the IA audit (§6, c9e2507a);
+- the shared admin shell (reviewed PASS; web 57086ec, engine 1c0cbdf0).
 
-```bash
-cd ~/www/odds-intel-engine && git status --short | grep -v "dev/archive/\|cdp-lifecycle"
-cd ~/www/odds-intel-web && git status --short
-```
+Both checkouts were clean for this work at handover, and **nothing is pending**.
 
-| Agent | Output | State at handover |
-|---|---|---|
-| Admin visual direction | `dev/active/admin-shell-visual-direction.md` + `dev/active/admin-refs/*.png` | **DONE + committed (387402ff) — see §5** |
-| Admin information-architecture audit | `dev/active/admin-information-architecture.md` | **DONE + committed — see §6** |
-| Shared admin layout (structural refactor) | odds-intel-web: `src/app/(app)/admin/layout.tsx` (one superadmin check + shell), `src/components/admin/{admin-shell,admin-sidebar,admin-nav,admin-status}.ts(x)`, `src/components/public-chrome.tsx` + `(app)/layout.tsx` (no public header under /admin), `bots/armed-bar.tsx`, `lib/bot-board.ts` loadFleetStatus, outer-wrapper edits in every admin page, `bots/admin-shell.tsx` deleted; engine smoke `ADMIN-SHARED-SHELL` (+ `CONTROL-PAGE-FAIL-SAFE` repointed) | **DONE — reviewed PASS and committed (web 57086ec, engine smoke tests in the following commit)** |
+**Priority note:** the owner set **#141 (1x2 model rebuild) as TOP PRIORITY** in another session (fd512f54).
+Check PRIORITY_QUEUE.md for the current order before picking up the #139 dashboard work below.
 
-If the files are incomplete, rerun that step from the prompts in §4.
-**Other sessions share both checkouts.** Never stage their files: the #141 1x2-model work touches
-`dev/active/1x2-model-rebuild-plan.md`, `workers/model/ratings_1x2.py` and `scripts/ab_1x2_rating_arms.py`,
-and the #142 work touches `workers/utils/footprint.py`.
+**Other sessions share both checkouts.** Never stage their files: the #141 work touches
+`dev/active/1x2-model-rebuild-plan.md`, `workers/model/ratings_1x2.py` and `scripts/ab_1x2_rating_arms.py`;
+the #142 work touches `workers/utils/footprint.py`. Also check `scripts/smoke_test.py` hunk by hunk.
+One stray #142 hunk slipped into 1c0cbdf0; it only removed 4 duplicated lines in test_book_footprint, and the test passes.
+
+**Owner's open answers** (collect them before the related work):
+1. Keep the real-money controls on /admin/bots? (The earlier decision was yes.)
+2. LoL and Tennis pages: delete, or keep in a collapsed "Archive" group?
+3. A Telegram command for the Coolbet footprint pause?
+4. The three owner commands in §1 (SHADOW_MODEL_VERSION pin, ROUTER_ALLOW_REAL, OWNER_USER_IDS). Check whether they have been run.
 
 ## 1. Where things stand
 
