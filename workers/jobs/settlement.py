@@ -87,6 +87,11 @@ SELECT
     -- SHADOW-CLV-BOOKMAKER-FIX-2026-08-26: needed to anchor closing_odds to the
     -- book the bot actually priced at instead of an arbitrary one.
     sb.recommended_bookmaker,
+    -- SHADOW-CLV-PINNACLE-LIVE-2026-09-24 (#140 finding): the shadow settle loop reads
+    -- bet.get("odds_at_pick_live") to write clv_pinnacle_live (the CLV at the price that was
+    -- actually on offer — what the CLV gate reads). It was never selected here, so the column
+    -- was NULL on every shadow pick settled since ~09-03. History repaired by migration 422.
+    sb.odds_at_pick_live,
     m.id as m_id, m.date as m_date, m.score_home, m.score_away,
     m.result as match_result, m.status as match_status,
     ht.name as home_team_name, ta.name as away_team_name

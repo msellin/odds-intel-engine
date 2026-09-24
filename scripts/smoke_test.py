@@ -42590,6 +42590,20 @@ def test_leakage_canary():
 
 
 
+@test("SHADOW-CLV-PINNACLE-LIVE — the shadow settler selects odds_at_pick_live, so clv_pinnacle_live is written")
+def test_shadow_clv_pinnacle_live():
+    """2026-09-24, found by #140's slice analysis: shadow_bets.clv_pinnacle_live (the CLV at the price
+    actually on offer — the CLV gate's column, migration 300) was NULL on every settled shadow pick
+    since ~2026-09-03: _PENDING_SHADOW_BETS_SQL never selected sb.odds_at_pick_live, and the settle
+    loop's bet.get("odds_at_pick_live") was always None. Same class as 04fff33f on simulated_bets.
+    Migration 422 repairs 20,090 rows from stored values (odds_live * (clv_pinnacle + 1) / odds - 1)."""
+    import workers.jobs.settlement as st
+    sql = st._PENDING_SHADOW_BETS_SQL
+    assert "sb.odds_at_pick_live" in sql.split("FROM shadow_bets")[0], "the shadow settle query must select odds_at_pick_live"
+    mig = _engine_path("supabase/migrations/422_backfill_shadow_clv_pinnacle_live.sql").read_text()
+    assert "clv_pinnacle_live IS NULL" in mig and "odds_at_pick_live * (clv_pinnacle + 1) / odds_at_pick - 1" in mig
+
+
 @test("NO-PICKS-ALL-LEDGERS — the 'no picks for 48h' alert reads every ledger and cannot repeat hourly")
 def test_no_picks_all_ledgers():
     """2026-09-24, owner forwarded hourly Telegram '[OI] No picks produced for 48h/49h/50h/51h'.
