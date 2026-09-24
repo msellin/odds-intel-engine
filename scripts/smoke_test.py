@@ -53776,6 +53776,10 @@ def test_sim_settle_selects_what_it_reads():
     assert not missing, f"settle loop reads columns the query never selects: {missing}"
     for col in ("recommended_bookmaker", "odds_at_pick_live"):
         assert col in selected, col
+    # #139 (2026-09-24): the sim family's admissible metric must be written by settlement,
+    # not only by a one-off backfill (it was NULL on every row settled after 2026-09-05).
+    upd = src[src.index('"UPDATE simulated_bets SET result = %s, pnl = %s, bankroll_after = %s, "'):]
+    assert "clv_pinnacle_devig = %s" in upd[:1500], "settlement must write clv_pinnacle_devig"
 
 
 @test("COOLBET-OU-MONOTONE-FT-ONLY — 1H goal lines never enter the full-match O/U ladder check (#132 fix)")

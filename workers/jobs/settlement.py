@@ -3969,6 +3969,12 @@ def _settle_pending_bets(pending: list, finished: list):
         execute_write(
             "UPDATE simulated_bets SET result = %s, pnl = %s, bankroll_after = %s, "
             "closing_odds = %s, clv = %s, clv_pinnacle = %s, clv_pinnacle_live = %s, "
+            # #139 (2026-09-24): clv_pinnacle_devig — the sim family's admissible metric in
+            # bot_scoreboard and the meta-model's training label — was filled only by the
+            # one-off backfill_simulated_clv_devig.py, so it was NULL on every row settled
+            # after 2026-09-05. Since CLV-PINNACLE-LIVE-TWO-DEFINITIONS (09-07) clv_pinnacle
+            # above IS the de-vigged value, so both columns get it.
+            "clv_pinnacle_devig = %s, "
             # SIMULATED-CLV-OWN-BOOK-2026-09-14: record WHICH book supplied the
             # close. Without it a NULL clv is indistinguishable from "we never
             # tried", and the historical marker for arbitrary-book rows
@@ -3977,7 +3983,7 @@ def _settle_pending_bets(pending: list, finished: list):
             "WHERE id = %s",
             [settlement["result"], settlement["pnl"], new_bankroll,
              closing_odds, settlement["clv"], clv_pinnacle, clv_pinnacle_live,
-             closing_bookmaker, bet["id"]]
+             clv_pinnacle, closing_bookmaker, bet["id"]]
         )
 
         settled += 1
