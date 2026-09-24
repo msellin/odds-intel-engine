@@ -121,7 +121,46 @@ def _odds_agg() -> dict[str, dict]:
              FROM odds_snapshots
             WHERE timestamp > now() - interval '24 hours'
             GROUP BY bookmaker""") or []
-    return {r["bookmaker"]: r for r in rows}
+    out = {r["bookmaker"]: r for r in rows}
+    # #117: the exchange writes exchange_quotes, not odds_snapshots — without this the
+    # feeds card read "0 prices stored today" on a day with ~12k exchange rows.
+    x = (execute_query(
+        """SELECT max(captured_at) AS last_at,
+                  count(*) FILTER (WHERE captured_at > now() - interval '1 hour') AS rows_1h,
+                  count(*) AS rows_24h,
+                  count(*) FILTER (WHERE captured_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AS rows_today,
+                  count(DISTINCT market) AS markets
+             FROM exchange_quotes
+            WHERE captured_at > now() - interval '24 hours'""") or [{}])[0]
+    if x.get("rows_24h"):
+        out["Betfair-Exchange"] = {"bookmaker": "Betfair-Exchange", **x}
+    return out
+
+
+def _exchange_liquid() -> dict[str, int]:
+    """Our fixtures today / yesterday (UTC) whose LATEST exchange 1X2 is a usable price:
+    every runner two-sided with lay/back - 1 <= MAX_SPREAD and the market >= MIN_MARKET_MATCHED
+    — the same rule as betfair_exchange_feed.is_liquid. The coverage line counts a fixture
+    as priced when it is merely LISTED (thin placeholders included); on 2026-09-24 that read
+    65/91 while 9 were usable, which is the number that matters for an anchor."""
+    from workers.automation.betfair_exchange_feed import MAX_SPREAD, MIN_MARKET_MATCHED
+    rows = execute_query(
+        """WITH f AS (SELECT id, (date AT TIME ZONE 'UTC')::date AS d FROM matches
+                       WHERE date >= (now() AT TIME ZONE 'UTC')::date - 1
+                         AND date <  (now() AT TIME ZONE 'UTC')::date + 1),
+                l AS (SELECT DISTINCT ON (x.match_id, x.selection) x.match_id, x.back, x.lay, x.market_matched
+                        FROM exchange_quotes x JOIN f ON f.id = x.match_id
+                       WHERE x.market = '1x2'
+                       ORDER BY x.match_id, x.selection, x.captured_at DESC),
+                m AS (SELECT match_id,
+                             bool_and(back > 0 AND lay IS NOT NULL AND lay / back - 1 <= %s) AS tight,
+                             max(market_matched) AS matched
+                        FROM l GROUP BY match_id)
+           SELECT f.d, count(*) FILTER (WHERE m.tight AND m.matched >= %s) AS liquid
+             FROM f JOIN m ON m.match_id = f.id GROUP BY f.d""",
+        (MAX_SPREAD, MIN_MARKET_MATCHED)) or []
+    today = datetime.now(timezone.utc).date()
+    return {("t" if r["d"] == today else "y"): int(r["liquid"]) for r in rows}
 
 
 def _table_data(spec: dict) -> dict:
@@ -415,6 +454,7 @@ def run_feed_health() -> dict:
     coverage = _coverage()
     odds = _odds_agg()
     fp = _footprint()
+    liq = _exchange_liquid()
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.executemany(
@@ -443,6 +483,8 @@ def run_feed_health() -> dict:
                   *((fp.get(b) or {}).get(k) for k in
                     ("requests_1h", "budget_1h", "challenges_1h", "errors_1h", "requests_24h")))
                  for b, ft, pt, fy, py in coverage])
+            cur.execute("""UPDATE feed_book_stats SET liquid_today = %s, liquid_yesterday = %s
+                            WHERE book = 'Betfair-Exchange'""", (liq.get("t", 0), liq.get("y", 0)))
         conn.commit()
     counts = {}
     for e in evals:

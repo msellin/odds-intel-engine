@@ -53598,5 +53598,24 @@ def test_tonybet_inplay_ou_all_lines():
     assert _r_ou_goals("over_under_225", "over", 1, 1, None) is _UNSETTLEABLE, "quarter line must not be guessed"
     assert _r_ou_goals("over_under_20", "over", 1, 1, None) is None, "whole line is a push"
 
+
+@test("FEEDS-EXCHANGE-LIQUID — the exchange card counts its own table and shows LIQUID, not just listed")
+def test_feeds_exchange_liquid():
+    """2026-09-24, owner: "why it says betfair stores 0 prices" + "can we at least see how many
+    fixtures we looked at". The exchange writes exchange_quotes, so the odds_snapshots-based
+    counter read 0 on a ~20k-row day; and "65/91 priced" counted LISTED fixtures when 9 were
+    liquid. Pins: _odds_agg reads exchange_quotes for Betfair-Exchange; the liquid count uses
+    the feed's own is_liquid thresholds (never re-typed); feed_book_stats carries it."""
+    import inspect
+    from pathlib import Path
+    from workers.jobs import feed_health as fh
+    agg = inspect.getsource(fh._odds_agg)
+    assert "FROM exchange_quotes" in agg and 'out["Betfair-Exchange"]' in agg
+    liq = inspect.getsource(fh._exchange_liquid)
+    assert "import MAX_SPREAD, MIN_MARKET_MATCHED" in liq, "thresholds must come from the feed, not be re-typed"
+    assert "liquid_today" in inspect.getsource(fh)
+    root = Path(__file__).resolve().parent.parent
+    assert (root / "supabase/migrations/403_feed_book_stats_liquid.sql").exists()
+
 if __name__ == "__main__":
     main()
