@@ -28091,7 +28091,8 @@ def test_shadow_autoselect_2026_08_26():
     assert 'os.environ.get("SHADOW_MODEL_VERSION", "").strip()' in src
     # Selection must never be able to break scoring.
     i = src.index("SHADOW-AUTOSELECT-2026-08-26")
-    block = src[i:i + 1800]
+    # window widened 1800 → 3200 (2026-09-24): the weekly-bundle-only comment (#139) grew the block.
+    block = src[i:i + 3200]
     assert "except Exception:" in block, "auto-select must be fail-safe"
     return "shadow A/B slot auto-selects the newest bundle"
 
@@ -45583,7 +45584,8 @@ def test_clv_always_own_book():
     # or the own-book guarantee is unverifiable after the fact
     import re as _re
     for m in _re.finditer(r"UPDATE (shadow_bets|simulated_bets) SET", src):
-        seg = src[m.start():m.start() + 600]
+        # window 600 → 1400 (2026-09-24): #139's clv_pinnacle_devig comment grew the statement.
+        seg = src[m.start():m.start() + 1400]
         if "clv = %s" in seg:
             assert "closing_bookmaker = %s" in seg, (
                 f"a write to {m.group(1)} sets clv without closing_bookmaker "
@@ -52531,7 +52533,9 @@ def test_consensus_arm_grading():
     assert "Grade <b>B</b>" in pf._grade_line({"grade": "B", "grade_reasons": []})
     assert "Grade <b>C</b>" in pf._grade_line({"grade": "C", "grade_reasons": []})
     sched = _engine_path("workers/scheduler.py").read_text()
-    assert 'if c.get("grade") == "D":' in sched, "grade D must be claimed but never sent"
+    # #139 (2026-09-24): /pausepicks joined the same skip — `if c.get("grade") == "D" or paused:`.
+    assert 'if c.get("grade") == "D":' in sched or 'if c.get("grade") == "D" or paused:' in sched, \
+        "grade D must be claimed but never sent"
     assert pf._grade_line({}) == "", "an ungraded (live-arm) pick must render no grade line"
 
     src = inspect.getsource(pf.claim)
