@@ -53633,6 +53633,24 @@ def test_feeds_coverage_drop():
     assert "coverage_warning(ft, pt, fy, py, _hour)" in inspect.getsource(fh.run_feed_health)
 
 
+@test("BOT-BOARD-DEV-PREVIEW-NEVER-IN-PROD — the no-login /admin/bots fixture preview is development-only")
+def test_bot_board_dev_preview_never_in_prod():
+    """#139 (2026-09-24): /admin/bots can render from a JSON snapshot without the superadmin
+    check so the page can be designed on real numbers locally (scripts/dump_bot_board_fixture.py).
+    That bypass must require BOTH a development build and the fixture env var — `next build`
+    always runs with NODE_ENV=production, so it can never switch on in the deployed app."""
+    lib = _web_root / "src" / "lib" / "bot-board.ts"
+    if not lib.exists():
+        return
+    src = lib.read_text(encoding="utf-8")
+    assert 'process.env.NODE_ENV === "development" && !!process.env.BOT_BOARD_FIXTURE' in src
+    for rel in ("src/app/(app)/admin/bots/page.tsx", "src/app/api/admin/bot-ledger/route.ts"):
+        f = (_web_root / rel).read_text(encoding="utf-8")
+        assert "if (!isBotBoardDevPreview())" in f and "is_superadmin" in f, rel
+    gi = (_web_root / ".gitignore").read_text(encoding="utf-8")
+    assert ".dev-fixtures/" in gi, "the real-data snapshot must never be committed"
+
+
 @test("SHADOW-COHORT-COVERS-TRIGGER-BOOKS — every trigger book's cohort is allowed by the shadow_cohort CHECK")
 def test_shadow_cohort_covers_trigger_books():
     """2026-09-24: 635be831 gave Epicbet / Tonybet their own trigger cohorts but not the CHECK
