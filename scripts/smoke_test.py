@@ -53304,6 +53304,39 @@ def test_results_check():
     assert 'id="results_check"' in (Path(__file__).resolve().parent.parent / "workers/scheduler.py").read_text()
 
 
+@test("RESULTS-TIEBREAK — a third read (AF re-fetch + ESPN) decides AF-vs-Tonybet; majority rewrites + re-grades")
+def test_results_tiebreak():
+    """#121 6b (owner chose C, 2026-09-24). Two sources cannot out-vote each other. The AF
+    re-fetch is a vote (ESPN covers ~25 top leagues; both real disagreements were lower-tier),
+    the STORED AF score is not (it is what is being judged). JOS Watergraafsmeer v TEC: AF
+    stored 4-4, Tonybet 2-2, AF re-fetch 2-2 -> corrected to 2-2 on first run."""
+    import inspect
+    from workers.jobs import results_check as rc
+    v = rc.verdict
+    assert v((2, 2), (2, 2), None) == ("corrected", (2, 2)), "AF corrected itself"
+    assert v((4, 4), (2, 2), (2, 2)) == ("corrected", (2, 2)), "ESPN + Tonybet out-vote AF"
+    assert v((4, 4), (2, 2), (4, 4)) == ("af_confirmed", None), "ESPN backs AF: nothing changes"
+    assert v((4, 4), (2, 2), None) == ("unresolved", None) and v(None, (2, 2), None)[0] == "unresolved"
+    src = inspect.getsource(rc._regrade) + rc._REGRADE_SQL
+    assert "LEFT(b.void_reason, 10) <> 'quarantine'" in src, "quarantined voids are never resurrected"
+    assert '("skip", b["result"])' in src, "only rewrite when the grade changes"
+    assert "current_bankroll" in src and "settle_picks_forward_test([mid])" in src
+    assert "execute_write_returning" in src, "reopen must COMMIT (execute_query does not)"
+    run = inspect.getsource(rc.run)
+    assert 'record_finding("results_corrected"' in run and '"af_confirmed" in seen' in run
+
+
+@test("NEAR-KICKOFF-COOLBET — Coolbet back in the 5-min close capture (#11)")
+def test_near_kickoff_coolbet():
+    """2026-09-24: removed 09-23 while zone.ee was Imperva-flagged; re-added once the board
+    sweep's refresh-by-kickoff cut Coolbet to ~70 requests/sweep. Without it Coolbet's last
+    pre-KO quote was 239 min old at p90 — own-book CLV at the book we bet at was stale."""
+    from pathlib import Path
+    unit = (Path(__file__).resolve().parent.parent / "deploy/vps/oddsintel-near-kickoff-epicbet.service").read_text()
+    exec_line = [l for l in unit.splitlines() if l.startswith("ExecStart=")][0]
+    assert "--books Epicbet,Unibet-Site,Tonybet,Coolbet" in exec_line
+
+
 @test("REFRESH-BY-KICKOFF — per-match fetches thin out far from kickoff (Coolbet, Epicbet deep board, Unibet)")
 def test_refresh_by_kickoff():
     """#112 (2026-09-24). Re-fetching every fixture's full board every 30 min — including

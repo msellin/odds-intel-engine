@@ -56,4 +56,8 @@ Environment=EPICBET_FLARE_SESSION=epicbet_nearko_reader
 # COOLBET-IMPERVA-FLAG-2026-09-23: Coolbet REMOVED from the close while the
 # zone.ee exit is flagged (runbook §7: back off, do not add footprint). Re-add
 # ',Coolbet' once the 30-min sweep writes rows again.
-ExecStart=/opt/odds-intel-engine/venv/bin/python -m workers.jobs.near_kickoff_capture --books Epicbet,Unibet-Site,Tonybet
+# COOLBET RE-ADDED 2026-09-24 (#11): the Imperva flag lifted (0 bot-checks since), and the
+# board sweep's refresh-by-kickoff cut it from ~230 to ~70 requests per sweep (~140/h of a 500
+# cap). Without the close capture Coolbet's last pre-kickoff quote was 239 min old at p90 (every
+# AF book ~5) — the own-book CLV at the book we bet at was stale.
+ExecStart=/opt/odds-intel-engine/venv/bin/python -m workers.jobs.near_kickoff_capture --books Epicbet,Unibet-Site,Tonybet,Coolbet

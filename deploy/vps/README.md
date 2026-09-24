@@ -84,8 +84,9 @@ Copied from the box so the repo records what runs there. Install/update with
   refuses a custom `--user-data-dir`.
 - **`oddsintel-near-kickoff-epicbet.{service,timer}`** — every 5 min, closing
   snapshots for fixtures inside T-15 at the direct books
-  (`--books Epicbet,Unibet-Site,Tonybet`; Coolbet removed 2026-09-23 while its
-  exit IP is flagged, #108). The name is historical.
+  (`--books Epicbet,Unibet-Site,Tonybet,Coolbet`; Coolbet removed 2026-09-23 while its
+  exit IP was flagged, #108, and re-added 2026-09-24 once the flag lifted and the
+  refresh-by-kickoff sweep cut its request load). The name is historical.
 
 ## Per-book fixed exits (#110 step 3, 2026-09-23)
 
