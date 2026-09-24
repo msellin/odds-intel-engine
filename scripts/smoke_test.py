@@ -53442,6 +53442,9 @@ def test_telegram_no_dead_end():
     assert "Upgrade at oddsintel.app/profile" not in src
     assert "profile page and click 'Connect Telegram'" not in src
     assert "https://t.me/oddsintelpicks" in src and "https://oddsintel.app/picks" in src
+    # review follow-up: the /performance leaderboard's upsells linked back to /performance
+    lb = _web_path("src/components/performance-leaderboard.tsx").read_text()
+    assert "Upgrade to Pro" not in lb and ">Upgrade →<" not in lb
 
 
 @test("MATCHER-ORIENTATION-STRICT — a book listing our teams reversed is refused, never stored mirrored (#001)")
