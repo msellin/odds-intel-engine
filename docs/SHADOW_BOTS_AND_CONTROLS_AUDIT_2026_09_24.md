@@ -83,7 +83,7 @@
    (n=335); that figure **no longer reproduces**, probably because of the #002 voids.
    On the /performance leaderboard, model rows show **raw** CLV (break-even ≈ +8%) and
    forward-test rows show **margin-corrected** CLV (break-even 0), in the same column.
-10. **`publishing_paused` also stops recording the pre-registered ledger.**
+10. **`publishing_paused` also stops recording the pre-registered ledger.** *(FIXED 2026-09-24, owner decision: the pause now skips only the Telegram send — see WORKFLOWS.md § Pause semantics.)*
     `job_publish_picks_forward_test` returns before `claim()` (`scheduler.py:2651-2655`).
     So `/pausepicks` stops the Telegram send **and** stops the live arm, the consensus
     arm and the junk control from being written to `picks_forward_test`. A publish switch

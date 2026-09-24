@@ -630,7 +630,9 @@ whether a euro moves. See the warning immediately below.
   publishing: on 2026-09-14 the OWN-path verdict flipped `placement_paused` and armed
   a silent customer-feed outage nobody chose. Publishing makes no Coolbet call and
   writes no `real_bets` row, so it is safe while placement is down — and
-  `is_publishing_paused()` falls *open* on DB error for that reason. Full table:
+  `is_publishing_paused()` falls *open* on DB error for that reason. Since 2026-09-24
+  (#139) the pause stops only the Telegram SEND — the pre-registered ledger, the /picks
+  watchlist and the funnel keep recording. Full table:
   `WORKFLOWS.md` § Pause semantics.
 - ✅ **`load_picks` now requires `retired_at IS NULL AND is_active`** (2026-09-24, #131
   audit; smoke `PLACER-SKIPS-RETIRED-BOTS`), matching `coolbet_placer.load_qualified_bets`.

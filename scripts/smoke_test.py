@@ -44353,7 +44353,10 @@ def test_picks_forward_test_scheduled():
         # PUBLISHER-PAUSE-GATE: /pausepicks must stop THIS publisher. It is the
         # only path that actually posts to @oddsintelpicks; until 2026-09-15 the
         # flag gated only the model signaler, which publishes nothing.
-        _sends.clear(); _rows.clear()
+        # PAUSE = SEND ONLY (#139, owner 2026-09-24): with FRESH legs (claims cleared) a
+        # paused pass must still RECORD both arms — a pausable pre-registered test is
+        # cherry-pickable — and must send nothing, now or after resume.
+        _sends.clear(); _rows.clear(); _claimed.clear()
         _st.is_publishing_paused = lambda: (True, "operator /pausepicks")
         res = _sch.job_publish_picks_forward_test()
         assert _sends == [], (
@@ -44361,6 +44364,11 @@ def test_picks_forward_test_scheduled():
             "/pausepicks would be a kill switch that misses the live feed."
         )
         assert res.get("paused") is True, f"paused run must report it: {res}"
+        assert "live" in _rows and "junk_anchor" in _rows, (
+            f"a paused pass must still record the pre-registered ledger, got {_rows}")
+        _st.is_publishing_paused = lambda: (False, None)
+        _sch.job_publish_picks_forward_test()
+        assert _sends == [], "legs claimed while paused must NOT be sent after /resumepicks"
     finally:
         (_pub.load_candidates, _pub.claim, _pub.attach_message_id,
          _pub.junk_anchor_arm, _tg.send_telegram_public,

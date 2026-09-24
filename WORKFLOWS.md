@@ -127,7 +127,9 @@ Telegram public channel posting — every calibrated-maturity pre-match pick (1x
 | Switch | Column | Set by | Stops placement | Stops `@oddsintelpicks` |
 |---|---|---|---|---|
 | Placement pause | `placement_paused` | `/pause`, daemon self-pause, migration 343 (OWN-path verdict) | ✅ | ❌ never |
-| Publishing pause | `publishing_paused` (mig 353) | `/pausepicks` only | ❌ | ✅ |
+| Publishing pause | `publishing_paused` (mig 353) | `/pausepicks` only | ❌ | ✅ (sends only) |
+
+**`/pausepicks` stops SENDING, never RECORDING (#139, owner decision 2026-09-24).** The publish job still claims every leg into `picks_forward_test` (live, consensus, junk control), refreshes the /picks watchlist and the candidate funnel; only the Telegram send is skipped. A pausable pre-registered test would be cherry-pickable — paused days would silently leave the record. Rows claimed while paused have no `telegram_message_id` and are not sent after `/resumepicks` (no burst of stale picks). They DO appear on /picks, which reads the ledger.
 
 Publishing is notification-only — no Coolbet API call, no `real_bets` write — so it is safe while placement is down, and `is_publishing_paused()` falls *open* for the same reason: a transient DB error must not silently mute customers, and it cannot stake money.
 

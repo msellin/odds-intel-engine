@@ -2687,11 +2687,19 @@ def job_publish_picks_forward_test():
     # path that was silent and left running the only path that actually posts
     # to @oddsintelpicks. That is RELIABILITY_LEDGER #4 — a second code path to
     # the same surface, inheriting none of the first one's gates.
+    #
+    # PAUSE = SEND ONLY (#139, owner decision 2026-09-24). This used to RETURN here, so a
+    # pause also stopped recording the pre-registered ledger (live, consensus and the junk
+    # control), the /picks watchlist and the candidate funnel. A forward test that can be
+    # paused is cherry-pickable: the paused days silently leave the record and nobody can
+    # tell whether they were good or bad days. Now every row is still claimed and recorded;
+    # only the Telegram send is skipped. Rows claimed while paused carry no
+    # telegram_message_id (identifiable), and are NOT sent after /resumepicks — the claim
+    # already exists, so no burst of stale picks goes out on resume.
     paused, reason = is_publishing_paused()
     if paused:
-        log.info("picks_forward_test: publishing paused by operator (%s) — "
-                 "/resumepicks to restore", reason or "no reason given")
-        return {"picks": 0, "published": 0, "paused": True}
+        log.info("picks_forward_test: Telegram sends paused by operator (%s) — recording "
+                 "continues; /resumepicks to restore", reason or "no reason given")
 
     # SCHEDULER-PUBLISHER-NEVER-RAN (2026-09-15). This block could not execute.
     # `load_candidates()` has returned a 2-TUPLE `(picks, pool)` since 2796dbd6,
@@ -2764,6 +2772,8 @@ def job_publish_picks_forward_test():
         if pick_id is None:
             skipped += 1
             continue
+        if paused:
+            continue
         mid = send_telegram_public(render(c))
         if mid is None:
             log.warning("picks_forward_test: send FAILED for %s v %s — "
@@ -2789,7 +2799,7 @@ def job_publish_picks_forward_test():
             continue
         # [[#098]] grade D (weak) is recorded to the ledger but NEVER sent —
         # owner: "we don't publish grade C picks at all" (the old C is now D).
-        if c.get("grade") == "D":
+        if c.get("grade") == "D" or paused:
             continue
         mid = send_telegram_public(render(c))
         if mid is None:
@@ -2824,7 +2834,7 @@ def job_publish_picks_forward_test():
              len(picks), sent, skipped, len(consensus_picks), c_sent)
     return {"picks": len(picks), "published": sent, "already_published": skipped,
             "consensus_picks": len(consensus_picks), "consensus_published": c_sent,
-            "room": room, "board": n_board}
+            "room": room, "board": n_board, "paused": paused}
 
 
 def _publish_picks_forward_test_wrapper():
