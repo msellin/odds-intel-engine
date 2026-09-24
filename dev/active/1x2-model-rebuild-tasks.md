@@ -36,7 +36,7 @@ Parent: [[#141]] 1X2-MODEL-REBUILD-2026-09-24 (PRIORITY_QUEUE.md) — 🔴 P0 TO
       the ROI-is-noise and book-split caveats. Admin only; never /performance.
 - [x] **B4. NEW+ outlier shadow bots** — ✅ 2026-09-24: `bot_combined_1x2_ev5_v1` / `_ev8_v1` (migration 418), smoke NEWPLUS-EV-BOTS. Was: — pre-register then add `bot_combined_1x2_ev_v1` (N2/N3-style: edge = p·odds − 1,
       EV ≥ 5% or 8%, Pinnacle price required, no min_prob, odds 1.30–6.00, all books), judged forward on CLV from its creation date.
-- [ ] **B5. Takeability of opening outlier quotes** — for picks like B2's, how often is the above-consensus quote still
+- [ ] 🔄 **B5. Takeability of opening outlier quotes** (started 2026-09-24; gates #148) — for picks like B2's, how often is the above-consensus quote still
       there 1 h / at Telegram send time, per book; AF-fed vs our own sweepers. Decides which books NEW+ picks may name.
 - [ ] **H. Shots/xG rating round** — pre-register (Wheatcroft: shots beat goals as rating input) using the fixture_details
       cache's shots / shots on target / xG; confirm FORWARD (08-31..09-24 is used up by rounds 1, 2, 3b, 3c) — owner approves design first.

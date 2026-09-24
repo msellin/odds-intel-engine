@@ -487,3 +487,15 @@ Pinnacle price required; no min_prob; odds 1.30–6.00; one pick per match (best
 **Readout (owner 2026-09-24):** review checkpoints at 20, 50 and 100 settled picks on `/admin/bots` — CLV vs de-vigged
 Pinnacle close first, ROI second; 20 is a sanity check, not a verdict. **Expected** (from B2, same-window, optimistic):
 EV5 CLV ≈ +1–2%, EV8 ≈ +2–3%, lower at our own sweepers; roughly 30–40 / 15–20 picks a week.
+
+## Pre-registration — B5: are outlier quotes takeable? (2026-09-24 ~21:30 UTC, BEFORE looking at the data)
+Question: when a book's 1X2 quote sits ≥ 5% EV above NEW+'s fair probability, is it still there when a subscriber
+could act on it? Data: the last 7 days of `odds_snapshots` (full history is kept for 7 days; older rows keep only
+opening + latest). Fair probability = NEW+ (`r1x2_comb_v1`, OPEN-price variant per match; the live rows only start
+2026-09-24). An **episode** = the first snapshot where book b quotes a selection at EV ≥ 5%, pre-kickoff.
+**Measured per book:** snapshot cadence; share of episodes where b still quotes EV ≥ 5% (and ≥ 0%) at +5 / +15 /
++30 / +60 min; median time until the quote drops below EV 5%; how the quote leaves (book moves vs consensus moves);
+share of episodes that exist in ONE snapshot only (phantom candidates); AF-fed vs our direct sweepers.
+**Decision rule, fixed now:** a book is **nameable in paid picks** if ≥ 60% of its episodes are still EV ≥ 5% at
++15 min AND median persistence ≥ 30 min AND single-snapshot episodes ≤ 25%. Books that fail are excluded from paid
+picks (they may still count in the consensus). Report n per book; a book with < 30 episodes = "insufficient", not pass.
