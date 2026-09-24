@@ -53507,6 +53507,14 @@ def test_book_exits_and_licensed_fallback():
         assert oa.run(dry_run=True).get("skipped"), "fallback must not spend credits while the own sweep runs"
     finally:
         oa.own_sweep_paused = saved
+    # 2026-09-24 (#33): the key is stored as OA_KEY; paid calls only after the FREE /events
+    # pre-check and never below the credit floor (the key is on a ~500/month plan).
+    import inspect
+    assert 'os.getenv("OA_KEY")' in inspect.getsource(oa._key)
+    rsrc = inspect.getsource(oa.run)
+    assert rsrc.index("has_events_in(") < rsrc.index('f"{API}/sports/{sport}/odds"')
+    assert "credits - CALL_COST < MIN_CREDITS" in rsrc and oa.MIN_CREDITS >= 50
+    assert 'id="odds_api_fallback"' in (root / "workers/scheduler.py").read_text()
 
 
 @test("OU-LOW-LINES-BIAS-SWEEP — #128 ladder guard, no Pinnacle O/U 0.5, Shin, 44-cell family")

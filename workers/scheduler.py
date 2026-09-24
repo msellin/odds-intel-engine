@@ -735,6 +735,18 @@ def _results_check_wrapper():
     _run_job("results_check", job_results_check)
 
 
+def job_odds_api_fallback():
+    """#110 step 4 (2026-09-24): licensed Coolbet prices from The Odds API, written as
+    'Coolbet-OddsAPI' (not an accessible book). A NO-OP unless coolbet_prematch is paused.
+    Paid credits: free /events pre-check + a credit floor (see the module docstring)."""
+    from workers.automation.odds_api_fallback import run
+    return run()
+
+
+def _odds_api_fallback_wrapper():
+    _run_job("odds_api_fallback", job_odds_api_fallback)
+
+
 def job_tonybet_live():
     """TONYBET phase 2 (#101, 2026-09-23): one request snapshots score / clock /
     status / corners / cards for EVERY live football event into book_live_stats.
@@ -3276,6 +3288,10 @@ def main():
     # #121: results cross-check, 20 min after the Tonybet results job (*/2 h at :20)
     scheduler.add_job(_results_check_wrapper, CronTrigger(hour="*/2", minute="40"),
                       id="results_check", name="Results cross-check [2h]", max_instances=1)
+    # #110 step 4: licensed Coolbet fallback — only does anything while the own sweep is paused
+    scheduler.add_job(_odds_api_fallback_wrapper, CronTrigger(hour="*/2", minute="50"),
+                      id="odds_api_fallback", name="Coolbet fallback via The Odds API [2h, only while paused]",
+                      max_instances=1)
     # BETFAIR-EXCHANGE-READER (#117): every 15 min so quotes exist close to kickoff
     # (the sharpness comparison needs a close), ~44 requests/h via the London exit.
     scheduler.add_job(_betfair_exchange_snapshot_wrapper,

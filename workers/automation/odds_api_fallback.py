@@ -15,11 +15,15 @@ WHAT IT IS NOT.
     same fixtures) is the owner's decision.
 
 COST. One call per soccer competition per sweep, costing (markets × regions) =
-2 credits (h2h + totals, eu). The sport list (`/v4/sports`) is free. With ~40
-active soccer competitions a sweep is ~80 credits.
+2 credits (h2h + totals, eu). The sport list (`/v4/sports`) and the per-competition
+event list (`/events`) are FREE, so a competition is only paid for when it has a
+kickoff inside the horizon. The key on file (2026-09-24) is on a ~500-credit/month
+plan with 245 left: a blind sweep of all 43 active competitions (~86 credits) would
+empty it in three runs. So every run also stops at a credit floor (MIN_CREDITS) —
+the fallback must never spend the last credits on one outage. Measured 2026-09-24:
+EPL = 20 events, Coolbet priced on 10 (1x2 + the MAIN total line only).
 
-Needs env ODDS_API_KEY. Not registered in the scheduler until the owner provides a
-key and decides the cadence.
+Needs env OA_KEY (or ODDS_API_KEY). Scheduled every 2 h (`odds_api_fallback`, scheduler) — a no-op while the own sweep runs.
 
     python3 -m workers.automation.odds_api_fallback --dry-run --max-sports 3
 """
@@ -38,12 +42,16 @@ API = "https://api.the-odds-api.com/v4"
 BOOK_KEY = "coolbet"
 LABEL = "Coolbet-OddsAPI"
 MARKETS = "h2h,totals"
+MIN_CREDITS = 60          # never go below this; ~1 emergency sweep of the busiest comps
+CALL_COST = 2             # markets(2) × regions(1)
 
 
 def _key() -> str:
-    k = os.getenv("ODDS_API_KEY")
+    # The key lives in .env as OA_KEY (same fallback order as api_clients/odds_api.py);
+    # reading only ODDS_API_KEY made this module report "not set" with a valid key present.
+    k = os.getenv("OA_KEY") or os.getenv("ODDS_API_KEY")
     if not k:
-        raise SystemExit("ODDS_API_KEY is not set — the licensed fallback needs the owner's key")
+        raise RuntimeError("OA_KEY is not set — the licensed fallback needs the owner's key")
     return k
 
 
@@ -54,11 +62,21 @@ def own_sweep_paused() -> bool:
     return bool(rows and rows[0]["paused"])
 
 
-def soccer_sports(key: str) -> list[str]:
+def soccer_sports(key: str) -> tuple[list[str], int | None]:
+    """Active soccer competitions + credits remaining (free call; the header carries it)."""
     r = requests.get(f"{API}/sports", params={"apiKey": key}, timeout=20)
     r.raise_for_status()
-    return [s["key"] for s in r.json() if s.get("group") == "Soccer" and s.get("active")
-            and not s.get("has_outrights")]
+    rem = r.headers.get("x-requests-remaining")
+    return ([s["key"] for s in r.json() if s.get("group") == "Soccer" and s.get("active")
+             and not s.get("has_outrights")], int(float(rem)) if rem is not None else None)
+
+
+def has_events_in(key: str, sport: str, start: datetime, end: datetime) -> bool:
+    """FREE pre-check: does this competition have a kickoff inside the horizon?"""
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    r = requests.get(f"{API}/sports/{sport}/events", timeout=20, params={
+        "apiKey": key, "commenceTimeFrom": start.strftime(fmt), "commenceTimeTo": end.strftime(fmt)})
+    return r.status_code == 200 and bool(r.json())
 
 
 def parse_event(ev: dict) -> list[tuple[str, str, float, float | None]]:
@@ -99,12 +117,22 @@ def run(*, dry_run: bool = False, force: bool = False, horizon_hours: float = 48
     af = _load_af_candidates(horizon_hours)
     now = datetime.now(timezone.utc)
     horizon = now + timedelta(hours=horizon_hours)
-    sports = soccer_sports(key)[:max_sports] if max_sports else soccer_sports(key)
+    sports, credits = soccer_sports(key)
+    c["credits_remaining"] = credits
+    sports = sports[:max_sports] if max_sports else sports
     for sport in sports:
+        if credits is not None and credits - CALL_COST < MIN_CREDITS:
+            c["stopped"] = f"credit floor {MIN_CREDITS} reached"
+            log.warning("odds-api fallback: %s credits left — stopping at the floor", credits)
+            break
+        if not has_events_in(key, sport, now, horizon):
+            continue
         r = requests.get(f"{API}/sports/{sport}/odds", timeout=30, params={
             "apiKey": key, "regions": "eu", "bookmakers": BOOK_KEY,
             "markets": MARKETS, "oddsFormat": "decimal"})
-        c["credits_remaining"] = r.headers.get("x-requests-remaining")
+        rem = r.headers.get("x-requests-remaining")
+        credits = int(float(rem)) if rem is not None else credits
+        c["credits_remaining"] = credits
         if r.status_code != 200:
             log.warning("odds-api %s: HTTP %s %s", sport, r.status_code, r.text[:200])
             continue
