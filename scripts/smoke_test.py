@@ -42178,7 +42178,9 @@ def test_health_ping_skip_not_failure_2026_09_14():
         "the scheduler must treat exit 3 as not-a-failure, or the skip still pages"
     )
     # ...and a genuine failure must STILL be recorded as failed.
-    assert "_fail" in window and "raise RuntimeError" in window, (
+    # #034 (2026-09-24): the probe now runs inside _run_job, so the failure path
+    # raises directly instead of via a `_fail` helper lambda.
+    assert 'raise RuntimeError(f"coolbet health_ping exited' in window, (
         "exit 1 must still record status=failed — that was itself a fix for a "
         "silent-failure trap and must not be undone by this one"
     )
@@ -52230,7 +52232,7 @@ def test_epicbet_1h_price_verify():
     assert "book_event_map" in src and "fetch_sidebets" in src, "fetch the ONE fixture by event id"
     assert "UPDATE shadow_bets" not in src, "verification must never change the pick"
     sched = _engine_path("workers/scheduler.py").read_text()
-    i = sched.index("def job_fh_1x2_paper_pick")
+    i = sched.index("def _job_fh_1x2_paper_pick_impl")  # body moved under _run_job by #034
     body = sched[i:i + 1200]
     assert body.index("generate_picks()") < body.index("verify_epicbet_picks()"), (
         "verify straight after picking, or the live look is minutes-to-hours late")
@@ -53355,6 +53357,55 @@ def test_picks_outlier_anchor_publishable():
     # 🤖 OWN paths still build their anchor from the reference set
     src = inspect.getsource(dp)
     assert src.count("list(PRICE_REFERENCE_BOOKMAKERS)") >= 2, "OWN shadow passes must keep the Estonian+Pinnacle anchor set"
+
+
+@test("OBS-LOG-ALL-JOBS — no job runs its work outside _run_job; a crash is a FAILED pipeline_runs row (#034)")
+def test_obs_log_all_jobs():
+    """#034 (2026-09-24): 20 jobs ran their body OUTSIDE _run_job and then called
+    `_run_job(name, lambda: None)` — a crash left NO pipeline_runs row, a success logged a
+    no-op, and a feed pause from /admin/feeds could not stop them. All converted to
+    `_run_job(name, _job_<name>_impl)`. Pins zero call sites (not a count) + the behaviour."""
+    import re as _re, sys as _sys, types as _types, importlib as _il
+    src = _engine_path("workers/scheduler.py").read_text()
+    live = _re.findall(r"^\s*_run_job\([^\n]*lambda: None\)", src, _re.M)
+    assert not live, f"the no-op-lambda pattern is back: {live}"
+
+    if "apscheduler" not in _sys.modules:
+        try:
+            import apscheduler  # noqa: F401
+        except ImportError:   # local dev without the scheduler deps: stub the imports only
+            for m in ("apscheduler", "apscheduler.schedulers", "apscheduler.schedulers.background",
+                      "apscheduler.executors", "apscheduler.executors.pool",
+                      "apscheduler.triggers", "apscheduler.triggers.cron", "apscheduler.triggers.interval"):
+                _sys.modules.setdefault(m, _types.ModuleType(m))
+            _sys.modules["apscheduler.schedulers.background"].BackgroundScheduler = object
+            _sys.modules["apscheduler.executors.pool"].ThreadPoolExecutor = object
+            _sys.modules["apscheduler.triggers.cron"].CronTrigger = object
+            _sys.modules["apscheduler.triggers.interval"].IntervalTrigger = object
+    sched = _il.import_module("workers.scheduler")
+    import workers.utils.pipeline_utils as pu
+    import workers.jobs.feed_control as fc
+    calls = []
+    saved = (pu.log_pipeline_start, pu.log_pipeline_complete, pu.log_pipeline_failed,
+             fc.is_job_paused, sched._kuma_push, sched._job_coolbet_price_sanity_impl)
+    try:
+        pu.log_pipeline_start = lambda name, d: calls.append(("start", name)) or 1
+        pu.log_pipeline_complete = lambda rid: calls.append(("completed",))
+        pu.log_pipeline_failed = lambda rid, msg: calls.append(("failed", msg))
+        fc.is_job_paused = lambda name: False
+        sched._kuma_push = lambda *a, **k: None
+        def _boom():
+            raise RuntimeError("deliberate")
+        sched._job_coolbet_price_sanity_impl = _boom
+        sched.job_coolbet_price_sanity()          # must NOT raise out of the job
+        assert ("start", "coolbet_price_sanity") in calls and ("failed", "deliberate") in calls, calls
+        calls.clear()
+        sched._job_coolbet_price_sanity_impl = lambda: None
+        sched.job_coolbet_price_sanity()
+        assert ("completed",) in calls, calls
+    finally:
+        (pu.log_pipeline_start, pu.log_pipeline_complete, pu.log_pipeline_failed,
+         fc.is_job_paused, sched._kuma_push, sched._job_coolbet_price_sanity_impl) = saved
 
 
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")

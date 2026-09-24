@@ -1302,7 +1302,7 @@ def job_weekly_bot_review():
 
 
 
-def job_coolbet_health_ping():
+def _job_coolbet_health_ping_impl():
     """COOLBET-FS-SESSION-STABLE Step 1.5 (2026-06-11): every 5 min, probe
     the full Coolbet auth chain (FS reachable → session alive → JWT valid →
     /s/casino/fo/maintenance returns 200). Updates coolbet_session_state
@@ -1320,7 +1320,6 @@ def job_coolbet_health_ping():
     # exit code 0 = healthy, 1 = unhealthy, 2 = config error,
     #           3 = SKIPPED ON PURPOSE (no usable credential to probe with)
     if result.returncode == 0:
-        _run_job("coolbet_health_ping", lambda: None)
         return
     # HEALTH-PING-SKIP-IS-NOT-A-FAILURE (2026-09-14): exit 3 means the probe
     # deliberately did not go on the wire, because we hold no usable JWT and a
@@ -1332,20 +1331,24 @@ def job_coolbet_health_ping():
     if result.returncode == 3:
         console.print("[dim]Coolbet health-ping: skipped (no usable credential) "
                       "— breaker working, not an outage[/dim]")
-        _run_job("coolbet_health_ping", lambda: None)
         return
     console.print(f"[yellow]Coolbet health-ping: exit {result.returncode}[/yellow]")
     console.print(result.stdout[-500:] or result.stderr[-500:])
-    # Raise from the lambda so _run_job records status=failed in
-    # pipeline_runs AND pushes status=down to Kuma. The old pattern
-    # (lambda: None) logged 'completed' on failure — a silent-failure trap.
+    # Raise so _run_job records status=failed in pipeline_runs AND pushes
+    # status=down to Kuma. The old pattern (lambda: None) logged 'completed'
+    # on failure — a silent-failure trap.
     exit_code = result.returncode
-    def _fail():
-        raise RuntimeError(f"coolbet health_ping exited {exit_code}")
-    _run_job("coolbet_health_ping", _fail)
+    raise RuntimeError(f"coolbet health_ping exited {exit_code}")
 
 
-def job_coolbet_daily_summary():
+def job_coolbet_health_ping():
+    """Scheduled entry. #034: the probe runs INSIDE _run_job, so a subprocess timeout or
+    crash is a FAILED pipeline_runs row too (it used to escape with no row at all).
+    Exit 0 (healthy) and 3 (deliberately skipped, no usable credential) are completed."""
+    _run_job("coolbet_health_ping", _job_coolbet_health_ping_impl)
+
+
+def _job_coolbet_daily_summary_impl():
     """COOLBET-DAILY-SUMMARY (2026-06-16, C1): one Telegram at 08:00 UTC
     summarising daemon health, JWT, catch-net liveness, 24h activity, and
     today's calibrated queue. Lets the operator confirm "everything is
@@ -1355,10 +1358,15 @@ def job_coolbet_daily_summary():
     r = run_daily_summary()
     if not r.get("sent"):
         console.print(f"[yellow]Coolbet daily summary: sent={r.get('sent')}[/yellow]")
-    _run_job("coolbet_daily_summary", lambda: None)
 
 
-def job_coolbet_prekickoff_alert():
+def job_coolbet_daily_summary():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("coolbet_daily_summary", _job_coolbet_daily_summary_impl)
+
+
+def _job_coolbet_prekickoff_alert_impl():
     """COOLBET-DAEMON-ALERTS (2026-06-16): pre-kickoff catch-net. Runs every
     5 min on the VPS, independent of the Mac. When the Mac daemon's
     heartbeat is stale or its last tick errored AND a calibrated-bot pick
@@ -1375,7 +1383,12 @@ def job_coolbet_prekickoff_alert():
             f"candidates={counters['candidates']} sent={counters['sent']} "
             f"skipped_dedup={counters['skipped_dedup']}[/yellow]"
         )
-    _run_job("coolbet_prekickoff_alert", lambda: None)
+
+
+def job_coolbet_prekickoff_alert():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("coolbet_prekickoff_alert", _job_coolbet_prekickoff_alert_impl)
 
 
 def job_pipeline_runs_failure_digest():
@@ -1474,7 +1487,7 @@ def job_pipeline_failure_alerter():
         raise
 
 
-def job_retrain_healthcheck():
+def _job_retrain_healthcheck_impl():
     """RETRAIN-HEALTHCHECK (2026-06-21): Mon/Tue 09:00 UTC sentinel for the
     weekly Sunday retrain. Alerts when (a) latest successful retrain is
     >9 days old, or (b) 2+ consecutive non-completed runs since last
@@ -1493,10 +1506,15 @@ def job_retrain_healthcheck():
             f"reason={counters['reason']} alert_sent={counters['alert_sent']} "
             f"recovery_sent={counters['recovery_sent']}[/yellow]"
         )
-    _run_job("retrain_healthcheck", lambda: None)
 
 
-def job_coolbet_daemon_healthcheck():
+def job_retrain_healthcheck():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("retrain_healthcheck", _job_retrain_healthcheck_impl)
+
+
+def _job_coolbet_daemon_healthcheck_impl():
     """COOLBET-DAEMON-HEALTHCHECK (2026-06-21): VPS-side safety net for
     the Mac daemon's in-process alert path. Reads coolbet_session_state +
     coolbet_heal_log every 30 min and Telegrams when the daemon is silent
@@ -1512,7 +1530,12 @@ def job_coolbet_daemon_healthcheck():
             f"reason={counters['reason']} alert_sent={counters['alert_sent']} "
             f"recovery_sent={counters['recovery_sent']}[/yellow]"
         )
-    _run_job("coolbet_daemon_healthcheck", lambda: None)
+
+
+def job_coolbet_daemon_healthcheck():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("coolbet_daemon_healthcheck", _job_coolbet_daemon_healthcheck_impl)
 
 
 def job_pinnacle_drift_refresh():
@@ -1599,7 +1622,7 @@ def _book_price_fidelity_wrapper():
     _run_job("book_price_fidelity", job_book_price_fidelity)
 
 
-def job_epicbet_odds_freshness():
+def _job_epicbet_odds_freshness_impl():
     """EPICBET-403-FROM-VPS-2026-08-29 — DB-side staleness watchdog for the
     Epicbet feed, the thing whose absence let a six-day outage pass unnoticed.
 
@@ -1612,10 +1635,15 @@ def job_epicbet_odds_freshness():
     c = check_feed("Epicbet")
     if c.get("alert_sent") or c.get("recovery_sent"):
         console.print(f"[yellow]Epicbet freshness: {c['status']} — {c['reason']}[/yellow]")
-    _run_job("epicbet_odds_freshness", lambda: None)
 
 
-def job_coolbet_odds_freshness():
+def job_epicbet_odds_freshness():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("epicbet_odds_freshness", _job_epicbet_odds_freshness_impl)
+
+
+def _job_coolbet_odds_freshness_impl():
     """COOLBET-ODDS-FRESHNESS-WATCHDOG (2026-07-03): DB-side freshness
     watchdog for Coolbet odds. The writer now runs on Mac launchd
     (post COOLBET-SCRAPERS-MOVED-TO-MAC), so its exit codes don't reach
@@ -1632,10 +1660,15 @@ def job_coolbet_odds_freshness():
             f"reason={counters['reason']} alert_sent={counters['alert_sent']} "
             f"recovery_sent={counters['recovery_sent']}[/yellow]"
         )
-    _run_job("coolbet_odds_freshness", lambda: None)
 
 
-def job_flaresolverr_sweep():
+def job_coolbet_odds_freshness():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("coolbet_odds_freshness", _job_coolbet_odds_freshness_impl)
+
+
+def _job_flaresolverr_sweep_impl():
     """COOLBET-FS-SESSION-STABLE sweeper (2026-06-11): hourly destroys
     stale FlareSolverr sessions that aren't in the active whitelist.
 
@@ -1653,7 +1686,16 @@ def job_flaresolverr_sweep():
     for line in result.stdout.splitlines():
         if any(k in line for k in ("destroyed", "stale", "no stale")):
             console.print(f"[dim]{line}[/dim]")
-    _run_job("flaresolverr_sweep", lambda: None)
+    if result.returncode != 0:
+        # #034: a sweep that exits non-zero leaked sessions stay leaked — say so.
+        raise RuntimeError(f"sweep_stale_sessions.py exited {result.returncode}: "
+                           f"{(result.stderr or result.stdout)[-300:]}")
+
+
+def job_flaresolverr_sweep():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("flaresolverr_sweep", _job_flaresolverr_sweep_impl)
 
 
 
@@ -2379,7 +2421,7 @@ def job_budget_sync():
     _run_job("budget_sync", budget.sync_with_server)
 
 
-def job_corners_paper_pick():
+def _job_corners_paper_pick_impl():
     """CORNERS-PAPER-FORWARD (2026-09-07): record paper corners picks for upcoming
     fixtures where the best Betano/Unibet price beats de-vigged Pinnacle. Runs as
     the shadow bot bot_corners_paper_shadow_v1 (writes shadow_bets, tracked on
@@ -2388,20 +2430,30 @@ def job_corners_paper_pick():
     c = generate_picks()
     if c.get("picked"):
         console.print(f"[cyan]corners paper: {c['picked']} new picks ({c['scanned']} scanned)[/cyan]")
-    _run_job("corners_paper_pick", lambda: None)
 
 
-def job_corners_paper_settle():
+def job_corners_paper_pick():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("corners_paper_pick", _job_corners_paper_pick_impl)
+
+
+def _job_corners_paper_settle_impl():
     """CORNERS-PAPER-FORWARD: grade pending corners paper picks from finished
     match_stats corner counts."""
     from workers.jobs.corners_paper_bot import settle_picks
     c = settle_picks()
     if c.get("settled"):
         console.print(f"[cyan]corners paper: settled {c['settled']} ({c['won']}W/{c['lost']}L)[/cyan]")
-    _run_job("corners_paper_settle", lambda: None)
 
 
-def job_team_total_paper_pick():
+def job_corners_paper_settle():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("corners_paper_settle", _job_corners_paper_settle_impl)
+
+
+def _job_team_total_paper_pick_impl():
     """USE-COLLECTED-MARKETS / TEAM-TOTAL-PAPER (2026-09-10): record paper picks for
     upcoming fixtures where the best Epicbet/Betano/Unibet full-match team-total price
     beats de-vigged Pinnacle. Shadow bot bot_team_total_paper_shadow_v1 (shadow_bets,
@@ -2410,20 +2462,30 @@ def job_team_total_paper_pick():
     c = generate_picks()
     if c.get("picked"):
         console.print(f"[cyan]team-total paper: {c['picked']} new picks ({c['scanned']} scanned)[/cyan]")
-    _run_job("team_total_paper_pick", lambda: None)
 
 
-def job_team_total_paper_settle():
+def job_team_total_paper_pick():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("team_total_paper_pick", _job_team_total_paper_pick_impl)
+
+
+def _job_team_total_paper_settle_impl():
     """TEAM-TOTAL-PAPER: grade pending team-total picks from the final score
     (matches.score_home/away) — no settlement-coverage gap."""
     from workers.jobs.team_total_paper_bot import settle_picks
     c = settle_picks()
     if c.get("settled"):
         console.print(f"[cyan]team-total paper: settled {c['settled']} ({c['won']}W/{c['lost']}L)[/cyan]")
-    _run_job("team_total_paper_settle", lambda: None)
 
 
-def job_fh_1x2_paper_pick():
+def job_team_total_paper_settle():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("team_total_paper_settle", _job_team_total_paper_settle_impl)
+
+
+def _job_fh_1x2_paper_pick_impl():
     """USE-COLLECTED-MARKETS / FIRST-HALF-1X2 (2026-09-10): record paper picks for the
     first-half result where the best Epicbet/Betano/Unibet 1H 1X2 price beats
     Shin-de-vigged Pinnacle. Shadow bot bot_1h_1x2_paper_shadow_v1."""
@@ -2436,7 +2498,12 @@ def job_fh_1x2_paper_pick():
     v = verify_epicbet_picks()
     if v.get("checked"):
         console.print(f"[cyan]fh-1x2 verify: {v}[/cyan]")
-    _run_job("fh_1x2_paper_pick", lambda: None)
+
+
+def job_fh_1x2_paper_pick():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("fh_1x2_paper_pick", _job_fh_1x2_paper_pick_impl)
 
 
 def job_clv_sharp():
@@ -2466,16 +2533,21 @@ def job_xg_late_fill():
     _run_job("xg_late_fill", _go)
 
 
-def job_fh_1x2_paper_settle():
+def _job_fh_1x2_paper_settle_impl():
     """FIRST-HALF-1X2: grade pending picks from the HT score (no gap)."""
     from workers.jobs.first_half_1x2_paper_bot import settle_picks
     c = settle_picks()
     if c.get("settled"):
         console.print(f"[cyan]fh-1x2 paper: settled {c['settled']} ({c['won']}W/{c['lost']}L)[/cyan]")
-    _run_job("fh_1x2_paper_settle", lambda: None)
 
 
-def job_coolbet_model_ou_shadow():
+def job_fh_1x2_paper_settle():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("fh_1x2_paper_settle", _job_fh_1x2_paper_settle_impl)
+
+
+def _job_coolbet_model_ou_shadow_impl():
     """COOLBET-MODEL-OU-SHADOW-BOT (2026-09-08): mirror the calibrated model's
     Over/Under picks (edge>=8% on calibrated_prob, lines 2.5/3.5) into shadow_bets
     under bot_coolbet_ou_model_v1 in the line-shop vocabulary (over_under_25/35),
@@ -2487,10 +2559,15 @@ def job_coolbet_model_ou_shadow():
     if c.get("written"):
         console.print(f"[cyan]model-ou shadow: {c['written']} picks written/updated "
                       f"({c['scanned']} scanned)[/cyan]")
-    _run_job("coolbet_model_ou_shadow", lambda: None)
 
 
-def job_pick_trigger_matcher():
+def job_coolbet_model_ou_shadow():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("coolbet_model_ou_shadow", _job_coolbet_model_ou_shadow_impl)
+
+
+def _job_pick_trigger_matcher_impl():
     """BOOK-AGNOSTIC-EDGE-ENGINE Stage B (2026-09-09, PAPER): match each book's
     latest swept odds against the Stage A trigger windows and emit shadow_bets for
     in-window prices (bot_coolbet_trigger_v1). PAPER — not in PLACEABLE_BOTS, can
@@ -2503,7 +2580,12 @@ def job_pick_trigger_matcher():
     tot = sum(v.get("written", 0) for v in c.values())
     if tot:
         console.print(f"[cyan]trigger matcher (paper): {tot} picks written[/cyan]")
-    _run_job("pick_trigger_matcher", lambda: None)
+
+
+def job_pick_trigger_matcher():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("pick_trigger_matcher", _job_pick_trigger_matcher_impl)
 
 
 def job_publish_picks_forward_test():
@@ -2720,7 +2802,7 @@ def job_pick_triggers():
     _run_job("pick_triggers", _run)
 
 
-def job_ou35_model_shadow():
+def _job_ou35_model_shadow_impl():
     """OU35-MODEL-SHADOW-BOT (2026-09-08): generate O/U 3.5 model-edge picks
     (calibrated over35 prob vs the single-book Coolbet price, edge>=8%) into
     shadow_bets under bot_ou35_model_v1. Forward paper tracker for the line
@@ -2731,10 +2813,15 @@ def job_ou35_model_shadow():
     if c.get("written"):
         console.print(f"[cyan]ou35 shadow: {c['written']} picks written/updated "
                       f"({c['scanned']} scanned)[/cyan]")
-    _run_job("ou35_model_shadow", lambda: None)
 
 
-def job_coolbet_model_1x2_shadow():
+def job_ou35_model_shadow():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("ou35_model_shadow", _job_ou35_model_shadow_impl)
+
+
+def _job_coolbet_model_1x2_shadow_impl():
     """COOLBET-MODEL-1X2-SHADOW-BOT (2026-09-08): mirror the calibrated model's
     1x2 HOME-UNDERDOG picks (edge>=10% on calibrated_prob, odds>=2.80) into
     shadow_bets under bot_coolbet_1x2_model_v1, WITHOUT vocabulary conversion
@@ -2749,10 +2836,15 @@ def job_coolbet_model_1x2_shadow():
     if c.get("written"):
         console.print(f"[cyan]model-1x2 shadow: {c['written']} picks written/updated "
                       f"({c['scanned']} scanned)[/cyan]")
-    _run_job("coolbet_model_1x2_shadow", lambda: None)
 
 
-def job_coolbet_price_sanity():
+def job_coolbet_model_1x2_shadow():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("coolbet_model_1x2_shadow", _job_coolbet_model_1x2_shadow_impl)
+
+
+def _job_coolbet_price_sanity_impl():
     """COOLBET-CROSS-BOOK-SANITY-GUARD (2026-09-07): flags Coolbet 1x2 prices
     whose favourite is inverted vs Pinnacle — the signature of a fuzzy-match
     wrong-fixture false positive writing another game's odds into odds_snapshots.
@@ -2762,7 +2854,12 @@ def job_coolbet_price_sanity():
     if c.get("suspects"):
         console.print(f"[yellow]coolbet price-sanity: {c['suspects']} suspects, "
                       f"alert_sent={c['alert_sent']}[/yellow]")
-    _run_job("coolbet_price_sanity", lambda: None)
+
+
+def job_coolbet_price_sanity():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
+    _run_job("coolbet_price_sanity", _job_coolbet_price_sanity_impl)
 
 
 def job_budget_attribution_flush():
