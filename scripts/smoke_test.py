@@ -36708,12 +36708,26 @@ def test_scheduler_dead_jobs_2026_09_24():
     * prune_anon_users (weekly): queried auth.users on the VPS Postgres, which
       does not hold it since SUPABASE-TO-VPS — unregistered, not repointed.
     """
-    import os, sys, re, importlib.util
+    import os, re, types, builtins, importlib.util
     root = os.path.dirname(__file__)
-    import psycopg2.extras as _pe
-    import workers.api_clients.supabase_client as _sc
 
+    # The suite runs tests in PARALLEL threads, so nothing global may be
+    # monkeypatched (doing so broke three unrelated tests in CI). The scripts
+    # import execute_values / filter_unchanged_signals INSIDE the function, so
+    # each loaded module gets its own __import__ that hands back fakes.
     written = []
+    state = {"filter": lambda rows: rows}
+    fake_extras = types.SimpleNamespace(
+        execute_values=lambda cur, sql, rows, **kw: written.extend(rows))
+    fake_sc = types.SimpleNamespace(
+        filter_unchanged_signals=lambda rows: state["filter"](rows))
+    fakes = {"psycopg2.extras": fake_extras,
+             "workers.api_clients.supabase_client": fake_sc}
+
+    def _imp(name, globals=None, locals=None, fromlist=(), level=0):
+        if name in fakes and fromlist:
+            return fakes[name]
+        return builtins.__import__(name, globals, locals, fromlist, level)
 
     class _Cur:
         def __enter__(self): return self
@@ -36729,39 +36743,35 @@ def test_scheduler_dead_jobs_2026_09_24():
         spec = importlib.util.spec_from_file_location(
             f"_smoke_{name}", os.path.join(root, f"{name}.py"))
         mod = importlib.util.module_from_spec(spec)
+        # before exec: functions capture their builtins at definition time
+        mod.__builtins__ = dict(vars(builtins), __import__=_imp)
         spec.loader.exec_module(mod)
         mod.get_conn = lambda: _Conn()
         return mod
 
-    orig_ev, orig_f = _pe.execute_values, _sc.filter_unchanged_signals
-    _pe.execute_values = lambda cur, sql, rows, **kw: written.extend(rows)
-    _sc.filter_unchanged_signals = lambda rows: rows
-    try:
-        m = _load("compute_line_velocity")
-        m._compute_velocities = lambda since: {"m1": 0.02}
-        m.write_today_signals()
-        assert written == [("m1", "line_velocity", 0.02, "market", "derived")], written
+    m = _load("compute_line_velocity")
+    m._compute_velocities = lambda since: {"m1": 0.02}
+    m.write_today_signals()
+    assert written == [("m1", "line_velocity", 0.02, "market", "derived")], written
 
-        written.clear()
-        m = _load("compute_league_season_phase")
-        m._compute_phases = lambda: {"m1": 0.5, "m2": 0.9}
-        m.execute_query = lambda *a, **k: [{"id": "m1"}]
-        m.write_today_signals()
-        assert written == [("m1", "season_progress", 0.5, "league", "derived")], written
+    written.clear()
+    m = _load("compute_league_season_phase")
+    m._compute_phases = lambda: {"m1": 0.5, "m2": 0.9}
+    m.execute_query = lambda *a, **k: [{"id": "m1"}]
+    m.write_today_signals()
+    assert written == [("m1", "season_progress", 0.5, "league", "derived")], written
 
-        written.clear()
-        m = _load("compute_league_draw_rate")
-        m.execute_query = lambda *a, **k: [{"match_id": "m1", "n": 40, "draws": 10, "draw_rate": 0.25}]
-        m.write_today_signals()
-        assert written == [("m1", "league_draw_rate_ytd", 0.25, "league", "derived")], written
+    written.clear()
+    m = _load("compute_league_draw_rate")
+    m.execute_query = lambda *a, **k: [{"match_id": "m1", "n": 40, "draws": 10, "draw_rate": 0.25}]
+    m.write_today_signals()
+    assert written == [("m1", "league_draw_rate_ytd", 0.25, "league", "derived")], written
 
-        # the guard must still gate the write: all-unchanged -> no INSERT
-        written.clear()
-        _sc.filter_unchanged_signals = lambda rows: []
-        m.write_today_signals()
-        assert written == [], "draw_rate wrote rows the dedupe guard dropped"
-    finally:
-        _pe.execute_values, _sc.filter_unchanged_signals = orig_ev, orig_f
+    # the guard must still gate the write: all-unchanged -> no INSERT
+    written.clear()
+    state["filter"] = lambda rows: []
+    m.write_today_signals()
+    assert written == [], "draw_rate wrote rows the dedupe guard dropped"
 
     # aln_auto_tune: the bump reader must work without importing a local name
     from workers.jobs import aln_auto_tune as _aln
