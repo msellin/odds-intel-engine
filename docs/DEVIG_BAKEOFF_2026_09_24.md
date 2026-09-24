@@ -131,7 +131,7 @@ published price — see CHECK P above. The comparison across methods is exact re
 ### Decision
 
 1. **Keep Shin as the de-vig everywhere.** No per-market switch clears the pre-registered bar.
-2. **The CREDIBLE-METHOD GATE is proposed, not switched on.** Publish only if edge ≥ 3% under Shin,
+2. **The CREDIBLE-METHOD GATE — switched ON for the consensus arm on 2026-09-24 (owner "yes"), as `consensus_edge_v2_2026_09_24`; the Pinnacle arm stays on its pre-registered v4.** Proposed as: Publish only if edge ≥ 3% under Shin,
    additive AND power. Measured cost on this panel: 3 of 45 live legs and 4 of 58 consensus legs, about
    7% of picks — exactly the ones whose edge depends on the formula. It would be a new `rule_version`
    on each published arm. **Owner decision.**

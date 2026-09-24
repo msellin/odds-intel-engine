@@ -687,6 +687,19 @@ def _betfair_exchange_snapshot_wrapper():
     _run_job("betfair_exchange_snapshot", job_betfair_exchange_snapshot)
 
 
+def job_board_audit():
+    """WRONG-FIXTURE-BOARDS (#120, 2026-09-24): re-screen boards already stored (kickoff
+    now−3 h … now+48 h) for another match's prices and home/away mirrors, and move the
+    offending snapshots to odds_snapshots_quarantined (reversible). Catches boards written
+    before enough other books had priced the fixture, which every write-time guard passes."""
+    from workers.jobs.board_audit import run
+    return run()
+
+
+def _board_audit_wrapper():
+    _run_job("board_audit", job_board_audit)
+
+
 def job_tonybet_live():
     """TONYBET phase 2 (#101, 2026-09-23): one request snapshots score / clock /
     status / corners / cards for EVERY live football event into book_live_stats.
@@ -2558,8 +2571,9 @@ def job_publish_picks_forward_test():
     # 5+ book consensus is a broken price, and publishing it would put our own
     # data faults in front of subscribers.
     c_sent = 0
+    # credible_gate: consensus v2 ([[#106]]) — edge >= 3% under Shin, additive AND power.
     consensus_picks = select(consensus_pool, daily_room(),
-                             max_edge=CONSENSUS_MAX_EDGE)
+                             max_edge=CONSENSUS_MAX_EDGE, credible_gate=True)
     for c in consensus_picks:
         pick_id = claim(c, CONSENSUS_ARM)
         if pick_id is None:
@@ -2584,7 +2598,7 @@ def job_publish_picks_forward_test():
         from workers.utils.candidate_funnel import record as _record_funnel
         _record_funnel(funnel_rows(pool, picks, "publisher_live")
                        + funnel_rows(consensus_pool, consensus_picks, "publisher_consensus",
-                                     max_edge=CONSENSUS_MAX_EDGE))
+                                     max_edge=CONSENSUS_MAX_EDGE, credible_gate=True))
     except Exception as _fe:  # noqa: BLE001
         log.warning("picks_forward_test: candidate funnel failed (non-fatal): %s", _fe)
 
@@ -3186,6 +3200,9 @@ def main():
                       CronTrigger(hour="*", minute="1,31"),
                       id="tonybet_odds_snapshot", name="Tonybet Odds [30min]",
                       max_instances=1)
+    # WRONG-FIXTURE-BOARDS (#120): read-back audit after the book sweeps have written.
+    scheduler.add_job(_board_audit_wrapper, CronTrigger(hour="*", minute="25,55"),
+                      id="board_audit", name="Board audit [30min]", max_instances=1)
     # BETFAIR-EXCHANGE-READER (#117): every 15 min so quotes exist close to kickoff
     # (the sharpness comparison needs a close), ~44 requests/h via the London exit.
     scheduler.add_job(_betfair_exchange_snapshot_wrapper,

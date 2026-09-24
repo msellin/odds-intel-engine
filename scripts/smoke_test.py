@@ -50977,8 +50977,10 @@ def test_v10_split_by_market():
     """
     from workers.registry.bot_registry import BOTS, active_names
     names = active_names()
-    assert "bot_v10_1x2" in names and "bot_v10_ou" in names, (
-        "the v10 reference bot must be registered as two per-market bots")
+    assert "bot_v10_1x2" in names, "the v10 1x2 half must stay registered"
+    # bot_v10_ou was RETIRED 2026-09-24 (migration 399, owner decision on [[#077]]):
+    # it must not come back into the active registry by accident.
+    assert "bot_v10_ou" not in names, "bot_v10_ou is retired (migration 399)"
     assert "bot_v10_all" not in names, (
         "bot_v10_all is retired by migration 375 — it must not be active again")
 
@@ -50986,8 +50988,7 @@ def test_v10_split_by_market():
     # The market label must be the real market, not "mixed". "mixed" is what hid
     # the divergence for five months.
     assert by_name["bot_v10_1x2"].market == "1x2"
-    assert by_name["bot_v10_ou"].market == "O/U 2.5"
-    for n in ("bot_v10_1x2", "bot_v10_ou"):
+    for n in ("bot_v10_1x2",):
         assert by_name[n].market != "mixed", (
             f"{n} must name one market — 'mixed' is what hid the divergence")
         assert not by_name[n].real_money, f"{n} is paper; it must never be real-money"
@@ -50999,6 +51000,7 @@ def test_v10_split_by_market():
     assert "bot_v10_all" not in BOTS_CONFIG, "bot_v10_all must not still generate picks"
     assert BOTS_CONFIG["bot_v10_1x2"]["markets"] == ["1x2"]
     assert BOTS_CONFIG["bot_v10_ou"]["markets"] == ["ou"]
+    assert BOTS_CONFIG["bot_v10_ou"].get("is_active") is False, "bot_v10_ou is retired (migration 399)"
     assert (BOTS_CONFIG["bot_v10_1x2"]["edge_thresholds"]
             == BOTS_CONFIG["bot_v10_ou"]["edge_thresholds"]), (
         "the split is accounting on the OUTPUT side — the thresholds must be "
@@ -51674,6 +51676,38 @@ def test_coolbet_sweep_observable():
     assert "_coolbet_odds_snapshot_wrapper" in registration, \
         "add_job must reference the wrapper — registering the bare function is what made " \
         "the job invisible in the first place"
+
+
+@test("CONSENSUS-CREDIBLE-DEVIG-GATE — #106 consensus v2 floors on every credible method, live arm untouched")
+def test_consensus_credible_devig_gate():
+    """[[#106]], 2026-09-24, owner "yes". Consensus rule v2: a leg publishes only if
+    edge >= 3% under Shin, additive AND power. Guards:
+    1. the rule version moved to v2 (a changed rule is a new test, never a patch);
+    2. the credible set is exactly those three — proportional / odds-ratio are
+       measurably worse calibrated and would reject short favourites wrongly;
+    3. select() applies the gate only when asked, and the scheduler asks ONLY for the
+       consensus arm — the live arm is pre-registered and must not change;
+    4. the funnel labels a gated leg 'method_sensitive', not 'deduped_or_capped'.
+    """
+    from pathlib import Path
+    from unittest import mock
+    import scripts.publish_picks_forward_test as pf
+    assert pf.CONSENSUS_RULE_VERSION == "consensus_edge_v2_2026_09_24"
+    assert pf.CREDIBLE_DEVIG_METHODS == ("shin", "additive", "power")
+    sched = (Path(__file__).parent.parent / "workers" / "scheduler.py").read_text()
+    assert "max_edge=CONSENSUS_MAX_EDGE, credible_gate=True)" in sched
+    assert "picks = select(pool, room)" in sched, "the live arm must be selected WITHOUT the gate"
+    legs = [{"match_id": "m1", "market": "1x2", "selection": "draw", "edge": 0.04,
+             "edge_credible_min": 0.02, "odds": 3.4},
+            {"match_id": "m2", "market": "1x2", "selection": "home", "edge": 0.04,
+             "edge_credible_min": 0.04, "odds": 1.5}]
+    with mock.patch.object(pf, "already_published_markets", return_value=set()):
+        assert len(pf.select(legs)) == 2
+        got = pf.select(legs, credible_gate=True)
+        assert [c["match_id"] for c in got] == ["m2"], got
+    with mock.patch.object(pf, "published_selection_keys", return_value=set()):
+        rows = pf.funnel_rows(legs, [legs[1]], "publisher_consensus", credible_gate=True)
+    assert {r["match_id"]: r["step"] for r in rows} == {"m1": "method_sensitive", "m2": "selected"}, rows
 
 
 @test("DEVIG-METHODS — #106 alternatives sum to 1, bracket Shin on favourites, live devig stays Shin")
@@ -53128,6 +53162,54 @@ def test_ops_sharp_coverage():
     vals = seg[seg.index(") VALUES ("):seg.index('"""', seg.index(") VALUES ("))]
     assert ncols == vals.count("%s"), "column / placeholder count drifted"
     assert "matches_without_sharp" in cols
+
+
+@test("BOARD-GUARD — another match's whole board is refused; single-market or longshot noise is not")
+def test_board_guard():
+    """#120 (2026-09-24). mirror_guard strips only 1X2, so a wrong-fixture pairing landed
+    every other market of the wrong match (~8 shadow bets). Cases from the real data."""
+    import inspect
+    from workers.utils import board_guard as g
+    from workers.jobs import board_audit as a
+    from workers.api_clients import supabase_client as sc
+    from workers.automation import coolbet_explorer as ce
+
+    def peers(**markets):   # market -> list of (sel dict) for 5 peer books
+        return {m: {f"B{i}": dict(q) for i, q in enumerate(qs)} for m, qs in markets.items()}
+    p = peers(**{"1x2": [{"home": 10.0, "draw": 5.5, "away": 1.28}] * 5,
+                 "over_under_25": [{"over": 1.40, "under": 2.90}] * 5,
+                 "over_under_35": [{"over": 2.06, "under": 1.75}] * 5})
+    # Trans Narva v Levadia, Epicbet: another match's board — 1X2 AND O/U far off
+    wrong = {"1x2": {"home": 1.95, "draw": 3.4, "away": 3.6},
+             "over_under_25": {"over": 2.55, "under": 1.50},
+             "over_under_35": {"over": 5.12, "under": 1.15}}
+    off = g.board_offenses(wrong, p)
+    assert g.is_wrong_board(off) and len(off) >= 2, off
+    # the same fixture priced sanely → nothing
+    ok = {"1x2": {"home": 9.5, "draw": 5.4, "away": 1.30}, "over_under_25": {"over": 1.42, "under": 2.85}}
+    assert g.board_offenses(ok, p) == []
+    # one market off only (a single-market fault) → not a wrong board
+    one = {"1x2": {"home": 1.95, "draw": 3.4, "away": 3.6}, "over_under_25": {"over": 1.42, "under": 2.85}}
+    assert not g.is_wrong_board(g.board_offenses(one, p))
+    # longshot noise: x1.8 on an 81.0 leg is ~1 prob-point, not another match
+    ls = peers(**{"1x2": [{"home": 45.0, "draw": 13.0, "away": 1.05}] * 5, "btts": [{"yes": 3.9, "no": 1.25}] * 5})
+    assert g.board_offenses({"1x2": {"home": 81.0, "draw": 13.0, "away": 1.05}}, ls) == []
+    # quorum: fewer than MIN_PEERS books → no judgement (fail open)
+    few = {m: dict(list(v.items())[:3]) for m, v in p.items()}
+    assert g.board_offenses(wrong, few) == []
+    # a mislabelled line (1xBet over_under_25 rows carrying 0.25) is never compared as 2.5
+    assert g._line_ok("over_under_25", 2.5) and not g._line_ok("over_under_25", 0.25)
+    # wired into all three direct-book writers, BEFORE the mirror guard
+    for fn in (sc.store_book_odds_snapshots, sc.store_odds):
+        src = inspect.getsource(fn)
+        assert "screen_board(" in src and src.index("screen_board(") < src.index("drop_mirrored_1x2(")
+    csrc = inspect.getsource(ce)
+    assert csrc.index("screen_board(match_id, \"Coolbet\"") < csrc.index("non_ou_rows = drop_mirrored_1x2(")
+    # read-back: minute-grouped (Coolbet microsecond legs), move = copy + delete, one transaction
+    asrc = inspect.getsource(a.run)
+    assert "INSERT INTO odds_snapshots_quarantined" in asrc and "DELETE FROM odds_snapshots WHERE id = ANY" in asrc
+    assert asrc.index("INSERT INTO odds_snapshots_quarantined") < asrc.index("DELETE FROM odds_snapshots")
+    assert "replace(second=0, microsecond=0)" in inspect.getsource(a._minute)
 
 
 @test("BETFAIR-GEO-PROBE — the one-shot exchange probe is read-only and uses the site's own query")

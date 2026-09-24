@@ -97,7 +97,10 @@ BOTS_CONFIG = {
         "min_prob": 0.30,
     },
     "bot_v10_ou": {
-        "description": "v10 model, all target leagues, tier-adjusted thresholds — over/under 2.5 only",
+        # RETIRED 2026-09-24 — migration 399 ([[#077]]). Kept for history; the pipeline
+        # skips it on is_active=False here and retired_at in the DB.
+        "is_active": False,
+        "description": "[RETIRED 2026-09-24] v10 model, all target leagues, tier-adjusted thresholds — over/under 2.5 only",
         "tier_label": "elite",
         "markets": ["ou"],
         "tier_filter": None,

@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from workers.api_clients.db import (
     execute_query, execute_write, execute_write_returning,
 )
-from workers.model.devig import devig
+from workers.model.devig import devig, devig_by
 from workers.utils.book_display import display_book
 from workers.notify.telegram import send_telegram_public
 
@@ -104,7 +104,19 @@ MAX_ANCHOR_OVERROUND = 0.04   # [v3] the anchor must actually BE a sharp line
 # it is supposed to be sharper than. So this arm does not lower the bar; it
 # stops using a ruler that turned out not to be one.
 CONSENSUS_ARM = "consensus_anchor"
-CONSENSUS_RULE_VERSION = "consensus_edge_v1_2026_09_22"
+CONSENSUS_RULE_VERSION = "consensus_edge_v2_2026_09_24"
+# v2 (2026-09-24, [[#106]], owner "yes"): the CREDIBLE-METHOD GATE. v1 published
+# whenever edge >= 3% under Shin. The de-vig bake-off (docs/DEVIG_BAKEOFF_2026_09_24.md)
+# found no method beats Shin, but three are equally well calibrated — Shin, additive
+# and power — and on this arm (each soft book de-vigged at an 8-10% margin, then
+# averaged) they move a leg's edge by a median 2.1pp, 90th pct 4.5pp. A leg whose
+# edge clears 3% under one credible method and not another exists because of the
+# formula, not the market. v2 publishes only when edge >= 3% under ALL of them
+# (~7% fewer picks on the frozen panel). Proportional and odds-ratio are NOT in the
+# set: both are measurably worse calibrated, and gating on them would reject short
+# favourites on a formula known to be wrong. v1 is closed at its n; the
+# leaderboard row pools versions, the pre-registered test count restarts.
+CREDIBLE_DEVIG_METHODS = ("shin", "additive", "power")
 CONSENSUS_MIN_BOOKS = 5     # a consensus of four books is four books
 # ⚠️ A CEILING, AND IT IS NOT OPTIONAL — the lesson of [[#007]] arrives here
 # unchanged. `edge = p * odds - 1` is MAXIMISED by a wrong price, so the biggest
@@ -337,7 +349,7 @@ HEADER = (
 )
 
 
-def _consensus_anchor(sides, side_q):
+def _consensus_anchor(sides, side_q, devig_fn=None):
     """Fair-value probabilities from a CONSENSUS of books, or None.
 
     Each book that prices the COMPLETE market is de-vigged on its own, then the
@@ -355,7 +367,7 @@ def _consensus_anchor(sides, side_q):
         quotes = [(side_q.get(s) or {}).get(b) for s in sides]
         if any(q is None or q[0] <= 1.0 for q in quotes):
             continue
-        probs = devig([q[0] for q in quotes])
+        probs = (devig_fn or devig)([q[0] for q in quotes])
         if probs:
             per.append(probs)
             stamps.append(max(q[1] for q in quotes))
@@ -440,6 +452,16 @@ def load_candidates(anchor: str = "pinnacle") -> tuple[list[dict], list[dict]]:
                 if got is None:
                     continue
                 prob_by_sel, anchor_ts, n_books = got
+                # [[#106]] the same consensus under every OTHER credible de-vig
+                # method, so each leg can carry its worst credible edge (v2 gate).
+                alt_probs = {}
+                for meth in CREDIBLE_DEVIG_METHODS:
+                    if meth == "shin":
+                        continue
+                    ga = _consensus_anchor(sides, side_q,
+                                           lambda o, meth=meth: devig_by(meth, o))
+                    if ga is not None:
+                        alt_probs[meth] = ga[0]
                 # The de-vigged consensus IS the fair line, so its overround is
                 # 0 by construction and MAX_ANCHOR_OVERROUND cannot be the
                 # quality test here. Book COUNT is (CONSENSUS_MIN_BOOKS above);
@@ -478,6 +500,10 @@ def load_candidates(anchor: str = "pinnacle") -> tuple[list[dict], list[dict]]:
                 if odds / anchor_odds[s] - 1.0 > MAX_RATIO:
                     continue          # phantom/stale price — see MAX_RATIO
                 edge = p_sharp * odds - 1.0
+                edge_credible_min = edge
+                if anchor == "consensus":
+                    for ap in alt_probs.values():
+                        edge_credible_min = min(edge_credible_min, ap[s] * odds - 1.0)
                 grade, grade_reasons = None, None
                 if anchor == "consensus":
                     idx = sides.index(s)
@@ -504,6 +530,7 @@ def load_candidates(anchor: str = "pinnacle") -> tuple[list[dict], list[dict]]:
                     "kickoff_at": m["kickoff"], "home_team": m["home_team"],
                     "away_team": m["away_team"], "league": m["league"] or "",
                     "grade": grade, "grade_reasons": grade_reasons,
+                    "edge_credible_min": edge_credible_min,
                 })
 
     return select(out), out
@@ -580,7 +607,7 @@ def daily_room() -> int:
 
 
 def select(cands: list[dict], room: int | None = None,
-           max_edge: float | None = None) -> list[dict]:
+           max_edge: float | None = None, credible_gate: bool = False) -> list[dict]:
     """Edge floor, then the best `room` by edge.
 
     `max_edge` is the [[#007]] ceiling and is used ONLY by the consensus arm —
@@ -592,7 +619,11 @@ def select(cands: list[dict], room: int | None = None,
     `room=None` means NO truncation — publish every leg that clears the floor.
     The live path passes `daily_room()`, which is the runaway breaker rather than
     a selection cap."""
+    # `credible_gate` ([[#106]], consensus v2 only): the floor must hold under every
+    # credible de-vig method, not just Shin. The live arm never passes it — its rule
+    # is pre-registered, and on Pinnacle the methods differ by only ~0.6pp.
     keep = [c for c in cands if c["edge"] >= MIN_EDGE
+            and (not credible_gate or c.get("edge_credible_min", c["edge"]) >= MIN_EDGE)
             and (max_edge is None or c["edge"] <= max_edge)]
     keep.sort(key=lambda c: -c["edge"])
 
@@ -633,7 +664,8 @@ def published_selection_keys(match_ids) -> set:
 
 
 def funnel_rows(pool: list[dict], picked: list[dict], source: str,
-                max_edge: float | None = None, published: set | None = None) -> list[dict]:
+                max_edge: float | None = None, published: set | None = None,
+                credible_gate: bool = False) -> list[dict]:
     """CANDIDATE-FUNNEL ([[#082]]): every pool leg within 5pp of the floor, with
     the reason it was or was not published. `select()` keeps nothing it drops,
     so without this no floor / ceiling / grade question has a population.
@@ -661,6 +693,8 @@ def funnel_rows(pool: list[dict], picked: list[dict], source: str,
             step = "below_floor"
         elif max_edge is not None and e > max_edge:
             step = "above_ceiling"
+        elif credible_gate and c.get("edge_credible_min", e) < MIN_EDGE:
+            step = "method_sensitive"     # [[#106]]: clears 3% under Shin, not under every credible method
         else:
             step = "deduped_or_capped"
         if source == "publisher_consensus":

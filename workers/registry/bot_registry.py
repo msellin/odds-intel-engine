@@ -171,6 +171,8 @@ BOTS: list[BotSpec] = [
     # RE-TIERED 2026-09-23 ([[#098]], migration 381): the letters shifted DOWN.
     # B = strongest (clean + odds 1.20-1.60), C = standard (clean, other odds),
     # D = weak (recorded, NEVER sent). Grade A is reserved for model picks.
+    # RULE v2 (2026-09-24, [[#106]]): the 3% floor must hold under EVERY credible de-vig
+    # method (Shin, additive, power), not just Shin — consensus_edge_v2_2026_09_24.
     BotSpec("bot_consensus_b_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5", ANCHOR_CONSENSUS,
             0.03, 1.20, False,
             "PUBLISHED (Telegram + /picks), never staked. **BETA — the STRONGEST consensus tier.** Every grade check passes (classified league, no second panel book disagrees, edge <= 6%) AND odds 1.20-1.60. The only rule positive in all three samples: ours 56 d +17.8% (n=48), unseen May-Jul +14.7% (n=29), Beat the Bookie 2015-16 +9.8% (n=696, Holm p<1e-4). Mechanism: favourite-longshot bias. ~1 pick/day. Ledger: picks_forward_test WHERE arm='consensus_anchor' AND grade='B'.",
@@ -203,14 +205,9 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_v10_1x2", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
             None, None, False,
             "The calibrated reference bot's 1x2 half: v10 model across target leagues, tier-adjusted thresholds. De-vigged Pinnacle CLV +2.50% (n=335, CI [+0.41,+4.60]) — but the positive record is July-2026 onward (May −0.87%, Jun −2.15%, Jul +8.35%, Aug +8.24%, Sep +7.25%), so it is a three-month yardstick, not a five-month one."),
-    # BETA, NOT CALIBRATED — and that is the point of the split. Negative in all 5
-    # months and all 7 model versions, so it survives gotcha 39 and is NOT an
-    # artefact of OU-CALIBRATOR-DOMAIN-MISMATCH (migration 335); that bug made a
-    # bad half worse rather than creating it. Has published nothing since
-    # 2026-09-13, so demoting it costs zero Telegram volume.
-    BotSpec("bot_v10_ou", FAM_INTERNAL, "O/U 2.5", ANCHOR_MODEL,
-            None, None, False,
-            "The calibrated reference bot's O/U 2.5 half, now tracked on its own record. De-vigged Pinnacle CLV −3.85% (n=181, CI [−5.01,−2.69]) against ROI −0.54% — measurably losing, labelled `beta` rather than `calibrated` because /performance sells `calibrated` as proven."),
+    # bot_v10_ou RETIRED 2026-09-24 (migration 399, owner "yes" on [[#077]]): de-vigged
+    # Pinnacle CLV -3.85% (n=181), negative in all 5 months and 7 model versions, and
+    # every O/U route measured 09-23/24 (#089, #118, #090 a) ends at alpha = 0.
     # REGISTRY-DRIFT-FIX-2026-09-09: bot_1x2_specialist, bot_dnb_specialist and
     # bot_summer_specialist were retired in the DB (migrations 323/324, 2026-09-09
     # 10:25–10:41) but left in the registry — removed here so active_names() matches
