@@ -52914,10 +52914,6 @@ def test_book_footprint():
         _seen = []
         _h = _lg.Handler(); _h.emit = lambda r: _seen.append(r.getMessage())
         fp.log.addHandler(_h)
-        import logging as _lg
-        _seen = []
-        _h = _lg.Handler(); _h.emit = lambda r: _seen.append(r.getMessage())
-        fp.log.addHandler(_h)
         try:
             fp.check("Coolbet")
             raise AssertionError("check() did not refuse at the budget")
@@ -54199,8 +54195,9 @@ def test_control_page_fail_safe():
     money = (d / "real-money-card.tsx").read_text(encoding="utf-8")
     assert 'control="publishing_paused"' in fleet and "placement_paused" not in fleet
     assert "publishing_paused" not in money
-    shell = (d / "admin-shell.tsx").read_text(encoding="utf-8")
-    assert '"Unknown"' in shell
+    # the sidebar status moved to the shared admin shell (ADMIN-SHARED-SHELL, 2026-09-24)
+    status = _web_path("src/components/admin/admin-status.ts").read_text(encoding="utf-8")
+    assert '"Unknown"' in status
     import re as _re
     agg = _web_path("src/lib/bot-aggregates.ts").read_text(encoding="utf-8")
     code = "\n".join(l for l in agg.splitlines() if not _re.match(r"\s*(//|\*|/\*)", l))
@@ -54250,6 +54247,44 @@ def test_auto_heal_clears_only_self_pause():
     assert 'reason=(f"{DAEMON_SELF_PAUSE_MARKER}: "' in daemon
     assert cs.is_daemon_self_pause(f"{cs.DAEMON_SELF_PAUSE_MARKER}: 7 consecutive errors over 207m")
     assert cs.is_daemon_self_pause("daemon self-pause: 7 consecutive errors")
+
+
+@test("ADMIN-SHARED-SHELL — one admin layout renders the sidebar and checks superadmin; no page brings its own shell")
+def test_admin_shared_shell():
+    """2026-09-24, owner: "the left navigation menu, when I navigate to other pages, loses the
+    navigation menu … the left menu should be a single component and we should only render the
+    middle block." The sidebar used to live in admin/bots/admin-shell.tsx and wrapped /admin/bots
+    only. Now src/app/(app)/admin/layout.tsx checks superadmin ONCE (dev fixture bypass only) and
+    renders the shared shell; the public Nav steps aside for /admin (public-chrome.tsx); pages
+    keep their own superadmin check (defence in depth) but never import a shell or sidebar."""
+    admin = _web_root / "src/app/(app)/admin"
+    layout = admin / "layout.tsx"
+    if not (_web_root / "src").exists():
+        return
+    assert layout.exists(), "admin/layout.tsx must exist — the one place the sidebar is rendered"
+    src = layout.read_text(encoding="utf-8")
+    assert 'from "@/components/admin/admin-shell"' in src and "<AdminShell" in src
+    assert "requireSuperadmin()" in src and "if (!isBotBoardDevPreview())" in src
+    shell = _web_path("src/components/admin/admin-shell.tsx").read_text(encoding="utf-8")
+    assert "<AdminSidebar" in shell
+    sidebar = _web_path("src/components/admin/admin-sidebar.tsx").read_text(encoding="utf-8")
+    assert "usePathname" in sidebar and "ADMIN_NAV" in sidebar
+    nav = _web_path("src/components/admin/admin-nav.ts").read_text(encoding="utf-8")
+    pages = sorted(admin.rglob("page.tsx"))
+    for p in pages:
+        rel = p.parent.relative_to(admin).as_posix()
+        route = "/admin" if rel == "." else f"/admin/{rel}"
+        if "[" in route:
+            continue
+        assert f'href: "{route}"' in nav, f"{route} has no sidebar entry in admin-nav.ts"
+        body = p.read_text(encoding="utf-8")
+        assert "admin-shell" not in body and "AdminShell" not in body and "AdminSidebar" not in body, p
+        assert "is_superadmin" in body, f"{p} must keep its own server-side superadmin check"
+    assert not (admin / "bots/admin-shell.tsx").exists(), "the per-page shell must stay deleted"
+    chrome = _web_path("src/components/public-chrome.tsx").read_text(encoding="utf-8")
+    assert 'pathname.startsWith("/admin/")' in chrome
+    app_layout = (_web_root / "src/app/(app)/layout.tsx").read_text(encoding="utf-8")
+    assert "<PublicChrome" in app_layout
 
 
 @test("BOT-BOARD-DEV-PREVIEW-NEVER-IN-PROD — the no-login /admin/bots fixture preview is development-only")

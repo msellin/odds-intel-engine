@@ -18,7 +18,7 @@ cd ~/www/odds-intel-web && git status --short
 |---|---|---|
 | Admin visual direction | `dev/active/admin-shell-visual-direction.md` + `dev/active/admin-refs/*.png` | **DONE + committed (387402ff) — see §5** |
 | Admin information-architecture audit | `dev/active/admin-information-architecture.md` | **DONE + committed — see §6** |
-| Shared admin layout (structural refactor) | odds-intel-web: `src/app/(app)/admin/layout.tsx` (one superadmin check + shell), `src/components/admin/{admin-shell,admin-sidebar,admin-nav,admin-status}.ts(x)`, `src/components/public-chrome.tsx` + `(app)/layout.tsx` (no public header under /admin), `bots/armed-bar.tsx`, `lib/bot-board.ts` loadFleetStatus, outer-wrapper edits in every admin page, `bots/admin-shell.tsx` deleted; engine smoke `ADMIN-SHARED-SHELL` (+ `CONTROL-PAGE-FAIL-SAFE` repointed) | **BUILT, verified in preview (sidebar persists, 1440/375); a pre-commit review agent was running at handover — if its result is not in git log, re-review then commit (web files + the smoke_test.py hunks only)** |
+| Shared admin layout (structural refactor) | odds-intel-web: `src/app/(app)/admin/layout.tsx` (one superadmin check + shell), `src/components/admin/{admin-shell,admin-sidebar,admin-nav,admin-status}.ts(x)`, `src/components/public-chrome.tsx` + `(app)/layout.tsx` (no public header under /admin), `bots/armed-bar.tsx`, `lib/bot-board.ts` loadFleetStatus, outer-wrapper edits in every admin page, `bots/admin-shell.tsx` deleted; engine smoke `ADMIN-SHARED-SHELL` (+ `CONTROL-PAGE-FAIL-SAFE` repointed) | **DONE — reviewed PASS and committed (web 57086ec, engine smoke tests in the following commit)** |
 
 If the files are incomplete, rerun that step from the prompts in §4.
 **Other sessions share both checkouts.** Never stage their files: the #141 1x2-model work touches
@@ -136,7 +136,7 @@ Top 10 moves, in the audit's order:
 (b) LoL/Tennis: delete, or keep under a collapsed "Archive" group? (c) add a Telegram command for footprint on/off?
 
 **Suggested order for the next agent:**
-- commit the shared shell (§0);
+- ~~commit the shared shell~~ (done, 57086ec);
 - IA move 1 (ladder correctness, 🤖 money), then 2 and 3;
 - then the visual design system (§5) page by page, with the IA sitemap as the sidebar groups;
 - then moves 4–9.
