@@ -383,6 +383,11 @@ _MTID_OU   = {818}
 _MTID_BTTS = {1377}         # "Both Teams To Score"
 _MTID_DC   = {1484}         # "Double Chance"
 _MTID_AH   = {1086}         # "Asian Handicap"
+# #132 (2026-09-24): "Draw No Bet" — seen 1,335 times in coolbet_market_inventory and never
+# stored, while Bet365 / Betano / BetVictor / Unibet-Site / William Hill / Tonybet all write
+# `draw_no_bet` home/away. mtid-keyed ONLY: "1st half draw no bet" is mtid 427 and must not
+# land in the full-match slot. Settled by settlement._r_draw_no_bet (draw = push).
+_MTID_DNB  = {70}
 
 # ── COOLBET-MATCH-CORNERS-NAME-2026-09-06 ────────────────────────────────────
 # Coolbet's MATCH-TOTAL corners market is called **"Match Corners"**, and that
@@ -833,6 +838,13 @@ def parse_market(mkt: dict, odds_map: dict[int, dict]) -> list[tuple[str, str, f
                 _add("btts", "yes", oc.get("id"))
             elif rk == "no":
                 _add("btts", "no", oc.get("id"))
+        return rows
+
+    if mtid in _MTID_DNB:
+        for oc in mkt.get("outcomes") or []:
+            rk = (oc.get("result_key") or oc.get("name") or "").strip().strip("[]").lower()
+            if rk in ("home", "away"):
+                _add("draw_no_bet", rk, oc.get("id"))
         return rows
 
     if is_dc:

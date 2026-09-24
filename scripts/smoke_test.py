@@ -53570,6 +53570,19 @@ def test_manual_real_bet_atomic():
     assert "prematch.some((u) => !seen.has(" in q
 
 
+@test("COOLBET-DRAW-NO-BET — Coolbet's full-match DNB is stored in the cross-book vocabulary (#132)")
+def test_coolbet_draw_no_bet():
+    """#132 (2026-09-24): Coolbet 'draw no bet' (mtid 70) sat in coolbet_market_inventory
+    1,335 times and was never stored, while six other books write `draw_no_bet` home/away.
+    mtid-keyed only — '1st half draw no bet' (mtid 427) must not reach the full-match slot."""
+    from workers.automation.coolbet_explorer import parse_market
+    om = {1: {"value": 1.55}, 2: {"value": 2.45}}
+    m = {"market_type_id": 70, "name": "draw no bet", "line": 0.0,
+         "outcomes": [{"id": 1, "result_key": "[Home]"}, {"id": 2, "result_key": "[Away]"}]}
+    assert parse_market(m, om) == [("draw_no_bet", "home", 1.55, None), ("draw_no_bet", "away", 2.45, None)]
+    assert parse_market(dict(m, market_type_id=427, name="1st half draw no bet"), om) == []
+
+
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")
 def test_anon_least_privilege():
     """#072 (2026-09-24): anon held SELECT on 134/134 public relations via default privileges;
