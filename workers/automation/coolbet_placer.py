@@ -1959,6 +1959,8 @@ def _place_bet_api(
     match_name: str,
     market_name: str,
     outcome_name: str = "",
+    *,
+    bot_name: str | None,
 ) -> str:
     """
     POST /s/bets/bets — place a single bet.
@@ -1972,7 +1974,17 @@ def _place_bet_api(
       No `currency` / `acceptOddsChanges` keys — Coolbet's schema strict-rejects
         unknown fields with GenericBadRequestError("Invalid request") and no
         further detail. Send EXACTLY the keys the browser sends.
+
+    PER-PICK GATE AT THE ONLY REAL-MONEY POST (#139, 2026-09-24, owner-approved). Callers
+    checked only the run-level gate (pause + real_money_armed), so
+    `scripts/place_coolbet_bets.py --execute` could stake on ANY active simulated_bets bot —
+    past the code whitelist PLACEABLE_BOTS, the per-bot `ui_place_enabled` toggle and the
+    daily caps that every other placer honours. The check lives here, at the single
+    function that POSTs a real bet, so no present or future caller can bypass it.
+    Raises PlacementRefused.
     """
+    from workers.automation.placement_gate import assert_may_place
+    assert_may_place(bot_name=bot_name, book="Coolbet", stake=stake)
     # deviceId — auto-managed via coolbet_session_state.device_id (mig 243).
     # First call generates a UUID4 and persists it; subsequent calls read
     # the same value. Coolbet validates only that it's UUID-shaped, not
@@ -2364,7 +2376,7 @@ def place_all_bets(
             try:
                 ticket_id = _place_bet_api(
                     session, oc_id, odds_uuid, stake, match_name,
-                    cb_market_name, "",
+                    cb_market_name, "", bot_name=bet.get("bot_name"),
                 )
                 log.info("✓ Coolbet ticket placed: %s", ticket_id)
             except Exception as e:

@@ -53633,6 +53633,49 @@ def test_feeds_coverage_drop():
     assert "coverage_warning(ft, pt, fy, py, _hour)" in inspect.getsource(fh.run_feed_health)
 
 
+@test("SHADOW-AUTOSELECT-WEEKLY-ONLY — the A/B shadow slot never auto-picks an experiment bundle")
+def test_shadow_autoselect_weekly_only():
+    """#139 decision (v), 2026-09-24: the stale SHADOW_MODEL_VERSION pin (v20260705, older than
+    production) was removed. Unpinned, the slot auto-selects the newest non-demoted bundle — which
+    that day was 'ab_ht_B', a research experiment. Restrict to weekly retrains (vYYYYMMDD...)."""
+    src = open("workers/jobs/daily_pipeline_v2.py").read()
+    i = src.index("SHADOW-AUTOSELECT-2026-08-26")
+    assert "version ~ '^v[0-9]{8}'" in src[i:i + 4000]
+
+
+@test("COOLBET-POST-GATED-PER-PICK — the only real-money Coolbet POST runs the per-pick allowlist gate first")
+def test_coolbet_post_gated_per_pick():
+    """#139 (2026-09-24, owner-approved): scripts/place_coolbet_bets.py --execute checked only the
+    run-level gate (pause + armed), so it could stake on ANY active simulated_bets bot, past
+    PLACEABLE_BOTS, ui_place_enabled and the daily caps. _place_bet_api is the single function that
+    POSTs a real Coolbet bet; it now calls assert_may_place itself. Proven here with a session whose
+    post() fails the test if reached."""
+    import inspect
+    import workers.automation.coolbet_placer as cp
+    from workers.automation.placement_gate import PlacementRefused
+    sig = inspect.signature(cp._place_bet_api)
+    assert sig.parameters["bot_name"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert sig.parameters["bot_name"].default is inspect.Parameter.empty, "bot_name must be required"
+    src = inspect.getsource(cp._place_bet_api)
+    assert src.index("assert_may_place(") < src.index("session.post(")
+
+    class _NoPost:
+        def post(self, *a, **k):
+            raise AssertionError("reached the real-money POST without passing the gate")
+    for bot in ("bot_v10_1x2", None):
+        try:
+            cp._place_bet_api(_NoPost(), 1, "x", 1.0, "A - B", "m", "", bot_name=bot)
+        except PlacementRefused:
+            pass
+        else:
+            raise AssertionError(f"{bot!r} was not refused")
+    callers = [l for l in open(cp.__file__).read().splitlines()
+               if "_place_bet_api(" in l and "def _place_bet_api" not in l]
+    assert callers, "no caller found"
+    whole = open(cp.__file__).read()
+    assert whole.count('bot_name=bet.get("bot_name")') >= len(callers)
+
+
 @test("BOT-BOARD-DEV-PREVIEW-NEVER-IN-PROD — the no-login /admin/bots fixture preview is development-only")
 def test_bot_board_dev_preview_never_in_prod():
     """#139 (2026-09-24): /admin/bots can render from a JSON snapshot without the superadmin

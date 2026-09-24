@@ -373,7 +373,7 @@ made by someone who is not thinking about what *readers* see.
 | `MAC-PLIST-ORPHANS` | 3 running jobs unreproducible from git |
 | Router dry-test never run green | the Coolbet arm was dead the whole time; `route(stage=True)` has never completed end-to-end |
 | Coolbet arm stores no routing note | book-choice analysis is Unibet-only today |
-| `ROUTER_ALLOW_REAL` | owner gate — deliberately unset |
+| `ROUTER_ALLOW_REAL` | owner gate — deliberately unset. ⚠️ Found `=true` in the Mac engine `.env` on 2026-09-24 (#139 audit), so it protected nothing; owner decided to set it `false` |
 
 ## 10. The remedy that guarantees the fault persists
 

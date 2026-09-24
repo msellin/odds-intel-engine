@@ -3187,8 +3187,13 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 try:
                     from workers.api_clients.db import execute_query as _eq_mv
                     _newest = _eq_mv(
+                        # Weekly-retrain bundles only (vYYYYMMDD...). Experiment
+                        # bundles (ab_*) share this registry; without the filter the
+                        # slot silently picked up whichever A/B a research session
+                        # trained last (2026-09-24: 'ab_ht_B'). #139 decision (v).
                         "SELECT version FROM model_versions "
                         "WHERE demoted_at IS NULL AND version <> %s "
+                        "AND version ~ '^v[0-9]{8}' "
                         "ORDER BY trained_at DESC LIMIT 1",
                         [_prod_ver],
                     )
