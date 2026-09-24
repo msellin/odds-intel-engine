@@ -252,7 +252,11 @@ def match_event_to_af(
         # "Levadia Tallinn") keep the direct score high (81.8) on a reversed listing.
         if swapped > direct:
             _se = (fuzz.ratio(eh, aw) + fuzz.ratio(ea, ah)) / 2.0
-            if (swapped, _se) > (best_swapped, best_swapped_exact):
+            # only a SAME-SQUAD reversed listing may block (review 2026-09-24: a reversed
+            # "Levadia B v Flora B" in the window blocked the senior "Flora v Levadia")
+            from workers.automation.epicbet_explorer import _squads_compatible
+            if (_squads_compatible(cb_home, cb_away, {"home": a.get("away"), "away": a.get("home")})
+                    and (swapped, _se) > (best_swapped, best_swapped_exact)):
                 best_swapped, best_swapped_exact = swapped, _se
             if swapped >= name_threshold:
                 ORIENTATION_REJECTS.append((cb_home, cb_away, a.get("home"), a.get("away"), round(swapped, 1)))

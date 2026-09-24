@@ -53484,6 +53484,10 @@ def test_matcher_orientation_strict():
     assert cp.fuzzy_match_event("Nacional", "Penarol", evs2, ko)["home"] == "Nacional"
     assert cm.match_event_to_af("Nacional", "Penarol", "uy", ko, af2)[0]["id"] == 1
     assert cm.match_event_to_af("Penarol Rivera", "Nacional Potosi", "uy", ko, af2)[0]["id"] == 2
+    af3 = [{"id": 1, "ko": ko, "home": "Flora Tallinn", "away": "FCI Levadia", "country": "Estonia"},
+           {"id": 2, "ko": ko, "home": "Levadia B", "away": "Flora B", "country": "Estonia"}]
+    assert (cm.match_event_to_af("Flora", "Levadia", "ee", ko, af3)[0] or {}).get("id") == 1, \
+        "a reversed B-team listing must not block the senior match"
     src = inspect.getsource(ce)
     assert "fuzz.token_sort_ratio(af_key, cb_key)" not in src
     assert "if _swapped > _direct:" in src

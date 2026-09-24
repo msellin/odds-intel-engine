@@ -1699,7 +1699,7 @@ def fuzzy_match_event(
     # a weaker direct candidate ("Penarol v Nacional" matched "Penarol Rivera v Nacional
     # Potosi" at 100 once the reversed real event was dropped). Ties at 100 are common
     # (subset names), so a tie is broken on EXACT name similarity.
-    if best_event is not None and best_swapped >= _FUZZY_THRESHOLD and (
+    if best_event is not None and best_score >= _FUZZY_THRESHOLD and best_swapped >= _FUZZY_THRESHOLD and (
             best_swapped > best_score
             or (best_swapped == best_score and best_swapped_exact > best_exact)):
         log.info("ORIENTATION: '%s v %s' — best fit is a reversed listing (%s >= %s); fixture refused",
