@@ -1465,6 +1465,9 @@ _VENUE_SNAPSHOT_BOOK = {
     "unibet": "Unibet-Site",
     "unibet-site": "Unibet-Site",
     "epicbet": "Epicbet",
+    # Added 2026-09-24 (sweeper-odds audit): a real bet logged at Tonybet had no
+    # own-book close to measure CLV against.
+    "tonybet": "Tonybet",
 }
 
 # A "closing" price older than this is not a close. Before NEAR-KICKOFF-CAPTURE

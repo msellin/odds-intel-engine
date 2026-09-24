@@ -37105,10 +37105,13 @@ def test_corners_paper_forward():
         "the corners bot must NEVER write simulated_bets — that would surface it on "
         "the public performance/picks pages"
     )
-    assert 'PLACEMENT_BOOKS = ("Betano", "Unibet")' in code, (
-        "the paper bot no longer gates to Betano/Unibet — the audit's edge was "
-        "entirely at those two books (Epicbet negative)"
-    )
+    # v2 (2026-09-24, sweeper-odds audit): v1 gated to ("Betano", "Unibet") because
+    # its audit's edge sat there — but Betano stopped being accessible on 2026-09-23
+    # and "Unibet" never matched the loaded 'Unibet-Site' rows, so v1 was in effect
+    # Betano-only. The retired bot keeps writing out-of-sample rows (owner, 09-18),
+    # now line-shopping our four own books under a bumped RULE_VERSION.
+    assert 'PLACEMENT_BOOKS = ("Coolbet", "Epicbet", "Unibet-Site", "Tonybet")' in code
+    assert 'RULE_VERSION = "corners_paper_devig_v2"' in code
     assert "_devig_two_way" in code and "Pinnacle" in code, (
         "the paper bot no longer de-vigs Pinnacle — edge would be measured "
         "against a vigged line"
@@ -47975,6 +47978,8 @@ def test_own_book_retention_exempt():
         "both hourly and compact conditions must append the exemption (exactly two uses)"
     assert build.count("bookmaker,\n                       timestamp") == 2, "both CTEs must expose bookmaker and timestamp for the exemption"
     from scripts import prune_odds_snapshots as pr
+    # Tonybet deliberately NOT here (#125 review): ~240k rows/day, 78% unchanged —
+    # its openings are protected via BETTABLE_OR_ANCHOR_BOOKS instead.
     assert set(pr.OWN_BOOKS_EXEMPT) == {"Coolbet", "Epicbet", "Unibet-Site"} and pr.OWN_BOOK_EXEMPT_DAYS == 60
 
 
@@ -49642,6 +49647,76 @@ def test_coolbet_probe_imperva_beats_timing():
         ex._WEDGED_AFTER_S = orig_wedge
     return "sighting -> challenged; no sighting -> wedged; both preserved"
 
+
+
+@test("SIGNALS-DEAD-WRITES-STOPPED — #085 deletion half: unread signals are denied at BOTH writers")
+def test_signals_dead_writes_stopped():
+    """[[#085]] deletion half, 2026-09-24. 30 signal names (~106k match_signals rows a
+    week, ~22% of all signal writes) were checked against every reader — including the
+    MFV builder in supabase_client.py, which is how market_implied_home/draw/away were
+    found to be READ and kept — and against the live model bundles' feature lists.
+    Guards: the deny-list covers them, BOTH writers honour it (the batch add() guard
+    AND store_match_signal), and the read/kept ones are NOT denied.
+    """
+    import workers.api_clients.supabase_client as sc
+    deny = sc._NEVER_READ_SIGNALS
+    for n in ("ah_bookmaker_disagreement", "league_elo_variance", "rest_days_norm_home",
+              "fixture_urgency_home", "h2h_total", "players_out_home", "manager_change_away_days"):
+        assert n in deny, f"{n} is unread and must be denied"
+    for n in ("market_implied_home", "market_implied_draw", "market_implied_away",
+              "pinnacle_ah_line", "fixture_importance", "h2h_win_pct", "injury_count_home"):
+        assert n not in deny, f"{n} is READ (MFV/model/#014) and must keep being written"
+    import inspect
+    assert "if signal_name in _NEVER_READ_SIGNALS" in inspect.getsource(sc.store_match_signal), (
+        "store_match_signal must honour the deny-list too, or a denied signal keeps being "
+        "written through the per-signal path")
+
+
+@test("OWN-BOOKS-IN-EVERY-COMPARISON — Coolbet/Epicbet/Unibet-Site/Tonybet wherever odds are compared")
+def test_own_books_in_every_comparison():
+    """Sweeper-odds audit, 2026-09-24 (owner: "make sure you also check the odds from
+    our own sweepers in all places where we need odds comparisons"). Tonybet became
+    our fourth own book on 2026-09-23 and was missing from eight live places; three
+    paper bots matched "Unibet" against rows loaded as 'Unibet-Site' so Unibet could
+    never win; two admin lookups read API-Football's dead 'Unibet' feed as a live
+    price. Guards every list the audit fixed. Deliberately NOT here: the real-money
+    router's PLACEABLE_BOOKS (Coolbet + Unibet-Site) — only those have placers, so a
+    Tonybet price there would route a bet that cannot be executed.
+    """
+    from pathlib import Path
+    root = Path(__file__).parent.parent
+    OWN = ("Coolbet", "Epicbet", "Unibet-Site", "Tonybet")
+    import scripts.prune_odds_snapshots as pr
+    # openings of every own book are protected; the FULL 60-day path is exempt for
+    # the three whose feeds are change-driven — Tonybet waits on change-only writes
+    # (#125 review: ~240k rows/day, 78% unchanged, ~6 GB if exempted in full).
+    assert set(OWN) <= set(pr.BETTABLE_OR_ANCHOR_BOOKS)
+    assert set(pr.OWN_BOOKS_EXEMPT) == set(OWN) - {"Tonybet"}
+    from workers.jobs.settlement import _VENUE_SNAPSHOT_BOOK
+    assert _VENUE_SNAPSHOT_BOOK.get("tonybet") == "Tonybet"
+    for mod in ("first_half_1x2_paper_bot", "team_total_paper_bot", "corners_paper_bot"):
+        m = __import__(f"workers.jobs.{mod}", fromlist=["PLACEMENT_BOOKS"])
+        assert tuple(m.PLACEMENT_BOOKS) == OWN, f"{mod} does not line-shop all own books"
+        assert "Unibet" not in m.PLACEMENT_BOOKS and m.RULE_VERSION.endswith("_v2"), mod
+    from workers.jobs.pick_trigger_matcher import BOOK_MARKET_BOTS
+    tight = {b for (b, _m, st), _bot in BOOK_MARKET_BOTS.items() if st == "sharp_1x2_tight"}
+    assert tight == set(OWN), f"the pooled tight instrument must pool all own books: {tight}"
+    # #125 review: the shadow_bets upsert key includes the cohort, so two books
+    # sharing a cohort overwrite each other's legs (it had already eaten most
+    # Coolbet legs). Every book must get its own cohort.
+    from workers.jobs.pick_trigger_matcher import _cohort_for
+    cohorts = [_cohort_for(b) for b in OWN]
+    assert len(set(cohorts)) == len(OWN), f"books share a trigger cohort: {dict(zip(OWN, cohorts))}"
+    assert _cohort_for("Coolbet") == "coolbet_trigger" and _cohort_for("Unibet-Site") == "unibet_trigger"
+    web = root.parent / "odds-intel-web" / "src"
+    if web.exists():
+        q = (web / "lib" / "shadow-bots" / "queries.ts").read_text()
+        assert '"Coolbet", "Unibet-Site", "Epicbet", "Tonybet"' in q
+        ed = (web / "lib" / "engine-data.ts").read_text()
+        assert '["Coolbet", "Unibet", "Bet365", "Pinnacle"]' not in ed, "/admin/place still reads the dead Unibet feed"
+        assert 'UNOBTAINABLE_BOOKMAKERS = ["Unibet-Kambi", "Unibet"]' in ed
+        r = (web / "app" / "api" / "admin" / "bot-book-odds" / "route.ts").read_text()
+        assert '"Coolbet", "Unibet", "Bet365"' not in r
 
 
 @test("SHARP-BOT-SPLIT-BY-MARKET — #122 the sharp arm is owned by market, the stopping-rule view untouched")

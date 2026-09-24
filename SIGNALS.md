@@ -37,6 +37,9 @@ We do not decide upfront which signals matter. We collect everything, store it w
 
 ## Signal Inventory
 
+> **WRITES STOPPED 2026-09-24 ([[#085]] deletion half).** 28 signal names (~106k `match_signals` rows/week, ~22% of all signal writes) had no reader anywhere — engine, scripts, odds-intel-web, the MFV builder, or any of the 103 stored model bundles' feature lists — and are now on `_NEVER_READ_SIGNALS`, honoured by BOTH writers (`batch_write_morning_signals` and `store_match_signal`). Their computations still run where they share code with live signals; only the writes stop. Remove a name from the set to resume it. Kept despite looking unread: `market_implied_home/draw/away` (read by the MFV builder), `pinnacle_ah_line` (needed by #014). Rows below are marked.
+
+
 ### Group 1 — Model Signals (probability estimates)
 
 | Signal | Where stored | When written | Status |
@@ -63,7 +66,7 @@ Data tier system:
 | Sportradar fair probability per outcome (Tonybet, margin-free) | `book_fair_probs` (not a signal row; latest value = fair close) | Every Tonybet sweep | ✅ Collected since 2026-09-23, **not yet read** — test as an anchor first |
 | Opening implied prob (draw) | `market_implied_draw` | Morning pipeline | ✅ Running |
 | Opening implied prob (away) | `market_implied_away` | Morning pipeline | ✅ Running |
-| Bookmaker count active | `bookmaker_count_active` | Morning pipeline (batch_write block 3) | ✅ Running (2026-05-08) |
+| Bookmaker count active | `bookmaker_count_active` | Morning pipeline (batch_write block 3) | ✅ Running (2026-05-08) ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
 | Bookmaker disagreement (max−min implied) | `bookmaker_disagreement` | Morning pipeline | ✅ Running |
 | Overnight line move (yesterday close → today open) | `overnight_line_move` | Morning pipeline | ✅ Running |
 | Odds drift (open → now, implied prob delta) | `odds_drift` | On bets (simulated_bets) | ✅ Running |
@@ -112,8 +115,8 @@ Data tier system:
 | ELO differential | `elo_diff` | Morning pipeline | ✅ Running |
 | Form PPG (10-match rolling) home | `form_ppg_home` | Morning pipeline | ✅ Running |
 | Form PPG (10-match rolling) away | `form_ppg_away` | Morning pipeline | ✅ Running |
-| Form slope (PPG last-5 minus PPG prior-5) home | `form_slope_home` | Morning pipeline | ✅ Running |
-| Form slope away | `form_slope_away` | Morning pipeline | ✅ Running |
+| Form slope (PPG last-5 minus PPG prior-5) home | `form_slope_home` | Morning pipeline | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| Form slope away | `form_slope_away` | Morning pipeline | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
 | Form vs ELO expectation residual home | `form_vs_elo_expectation_home` | Morning pipeline (block 7) | ✅ Running |
 | Form vs ELO expectation residual away | `form_vs_elo_expectation_away` | Morning pipeline (block 7) | ✅ Running |
 | Season goals for avg home | `goals_for_avg_home` | Morning pipeline (Tier A only) | ✅ Running |
@@ -131,11 +134,11 @@ Data tier system:
 | Points to relegation home | `points_to_relegation_home` | Morning pipeline | ✅ Running |
 | Points to relegation away | `points_to_relegation_away` | Morning pipeline | ✅ Running |
 | H2H home win pct (last 10 meetings, gated by sample size) | `h2h_win_pct` | Morning pipeline | ✅ Running (H2H-GATE: × min(n/10, 1)) |
-| H2H total meetings | `h2h_total` | Morning pipeline | ✅ Running |
+| H2H total meetings | `h2h_total` | Morning pipeline | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
 | Rest days home | `rest_days_home` | Morning pipeline | ✅ Running |
 | Rest days away | `rest_days_away` | Morning pipeline | ✅ Running |
-| Rest days log-transformed home (REST-NONLINEAR) | `rest_days_norm_home` | Morning pipeline (block 8) | ✅ Running |
-| Rest days log-transformed away | `rest_days_norm_away` | Morning pipeline (block 8) | ✅ Running |
+| Rest days log-transformed home (REST-NONLINEAR) | `rest_days_norm_home` | Morning pipeline (block 8) | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| Rest days log-transformed away | `rest_days_norm_away` | Morning pipeline (block 8) | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
 | Form momentum (last-3 ppg − last-10 ppg) home | `form_momentum_home` | MFV builder (live, 2026-05-25) | ✅ Running (MFV-FORM-MOMENTUM-BUG fix) |
 | Form momentum away | `form_momentum_away` | MFV builder (live, 2026-05-25) | ✅ Running |
 | Rolling avg AF player rating (last 10 matches) home | `team_avg_player_rating_home` | 22:50 UTC nightly | ✅ Running (AF-PLAYER-RATINGS 2026-05-25, n=1,696 entries) |
@@ -158,14 +161,14 @@ Data tier system:
 | News impact score | `news_impact_score` | `match_signals` + `simulated_bets` | News checker (4×/day) | ✅ Running |
 | Injury count home | `injury_count_home` | `match_signals` | Morning pipeline | ✅ Running |
 | Injury count away | `injury_count_away` | `match_signals` | Morning pipeline | ✅ Running |
-| Players out home | `players_out_home` | `match_signals` | Morning pipeline | ✅ Running |
-| Players out away | `players_out_away` | `match_signals` | Morning pipeline | ✅ Running |
+| Players out home | `players_out_home` | `match_signals` | Morning pipeline | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| Players out away | `players_out_away` | `match_signals` | Morning pipeline | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
 | Injury recurrence — home | `injury_recurrence_home` | `match_signals` | Morning pipeline (batch_write block 12) | ✅ Running (data from 2026-05-07) |
 | Injury recurrence — away | `injury_recurrence_away` | `match_signals` | Morning pipeline (batch_write block 12) | ✅ Running (data from 2026-05-07) |
-| Players doubtful — home | `players_doubtful_home` | `match_signals` | Morning pipeline (block 5) | ✅ Running (DOUBTFUL-SIGNAL 2026-05-07) |
-| Players doubtful — away | `players_doubtful_away` | `match_signals` | Morning pipeline (block 5) | ✅ Running (DOUBTFUL-SIGNAL 2026-05-07) |
-| Injury uncertainty — home | `injury_uncertainty_home` | `match_signals` | Morning pipeline (block 5) | ✅ Running (INJURY-UNCERTAINTY 2026-05-07) |
-| Injury uncertainty — away | `injury_uncertainty_away` | `match_signals` | Morning pipeline (block 5) | ✅ Running (INJURY-UNCERTAINTY 2026-05-07) |
+| Players doubtful — home | `players_doubtful_home` | `match_signals` | Morning pipeline (block 5) | ✅ Running (DOUBTFUL-SIGNAL 2026-05-07) ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| Players doubtful — away | `players_doubtful_away` | `match_signals` | Morning pipeline (block 5) | ✅ Running (DOUBTFUL-SIGNAL 2026-05-07) ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| Injury uncertainty — home | `injury_uncertainty_home` | `match_signals` | Morning pipeline (block 5) | ✅ Running (INJURY-UNCERTAINTY 2026-05-07) ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| Injury uncertainty — away | `injury_uncertainty_away` | `match_signals` | Morning pipeline (block 5) | ✅ Running (INJURY-UNCERTAINTY 2026-05-07) ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
 | Lineup confirmed | `lineup_confirmed` | `simulated_bets` | News checker | ✅ Running |
 | Lineup confidence | `lineup_confidence` | `simulated_bets` | News checker | ✅ Running |
 
@@ -182,32 +185,32 @@ Data tier system:
 | Referee home win pct | `referee_home_win_pct` | Morning pipeline | ✅ Running |
 | Referee over 2.5 pct | `referee_over25_pct` | Morning pipeline | ✅ Running |
 | Fixture importance (max urgency, 0–1) | `fixture_importance` | Morning pipeline | ✅ Running |
-| Fixture importance home team | `fixture_importance_home` | Morning pipeline | ✅ Running |
-| Fixture importance away team | `fixture_importance_away` | Morning pipeline | ✅ Running |
-| Importance asymmetry (home − away urgency) | `importance_diff` | Morning pipeline | ✅ Running |
-| Fixture urgency home (points gap / games rem × 3) | `fixture_urgency_home` | Morning pipeline (block 9) | ✅ Running (IMPORTANCE-GAMES-REM 2026-05-07) |
-| Fixture urgency away | `fixture_urgency_away` | Morning pipeline (block 9) | ✅ Running (IMPORTANCE-GAMES-REM 2026-05-07) |
+| Fixture importance home team | `fixture_importance_home` | Morning pipeline | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| Fixture importance away team | `fixture_importance_away` | Morning pipeline | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| Importance asymmetry (home − away urgency) | `importance_diff` | Morning pipeline | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| Fixture urgency home (points gap / games rem × 3) | `fixture_urgency_home` | Morning pipeline (block 9) | ✅ Running (IMPORTANCE-GAMES-REM 2026-05-07) ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| Fixture urgency away | `fixture_urgency_away` | Morning pipeline (block 9) | ✅ Running (IMPORTANCE-GAMES-REM 2026-05-07) ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
 | Games remaining home | `games_remaining_home` | Morning pipeline (block 9) | ✅ Running (IMPORTANCE-GAMES-REM 2026-05-07) |
 | Games remaining away | `games_remaining_away` | Morning pipeline (block 9) | ✅ Running (IMPORTANCE-GAMES-REM 2026-05-07) |
-| League home win pct (last 200 finished) | `league_home_win_pct` | Morning pipeline | ✅ Running |
+| League home win pct (last 200 finished) | `league_home_win_pct` | Morning pipeline | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
 | League draw pct | `league_draw_pct` | Morning pipeline | ✅ Running |
 | League avg goals | `league_avg_goals` | Morning pipeline | ✅ Running |
 | League over 2.5 pct (last 200 finished) | `league_over25_pct` | Morning pipeline | ✅ Running (LEAGUE-GOALS-DIST 2026-05-07) |
 | League BTTS pct (last 200 finished) | `league_btts_pct` | Morning pipeline | ✅ Running (LEAGUE-GOALS-DIST 2026-05-07) |
-| League ELO variance (stdev across today's teams) | `league_elo_variance` | Morning pipeline (batch_write block 6b) | ✅ Running (2026-05-08) |
-| League ELO range (max−min across today's teams) | `league_elo_range` | Morning pipeline (batch_write block 6b) | ✅ Running (2026-05-08) |
-| Manager change days — home | `manager_change_home_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
-| Manager change days — away | `manager_change_away_days` | Morning pipeline (batch_write block 3c) | ✅ Running |
-| Venue artificial turf | `venue_surface_artificial` | Morning pipeline (batch_write block 11b) | ✅ Running |
+| League ELO variance (stdev across today's teams) | `league_elo_variance` | Morning pipeline (batch_write block 6b) | ✅ Running (2026-05-08) ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| League ELO range (max−min across today's teams) | `league_elo_range` | Morning pipeline (batch_write block 6b) | ✅ Running (2026-05-08) ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| Manager change days — home | `manager_change_home_days` | Morning pipeline (batch_write block 3c) | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| Manager change days — away | `manager_change_away_days` | Morning pipeline (batch_write block 3c) | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| Venue artificial turf | `venue_surface_artificial` | Morning pipeline (batch_write block 11b) | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
 | Away team turf games this season (TURF-FAMILIARITY) | `away_team_turf_games_ytd` | Morning pipeline (batch_write block 11c) | ✅ Running (2026-05-07) |
-| H2H average goal diff (home perspective) | `h2h_avg_goal_diff` | Morning pipeline (batch_write block 2b) | ✅ Running |
-| H2H recency premium (last 3 vs overall) | `h2h_recency_premium` | Morning pipeline (batch_write block 2b) | ✅ Running |
+| H2H average goal diff (home perspective) | `h2h_avg_goal_diff` | Morning pipeline (batch_write block 2b) | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| H2H recency premium (last 3 vs overall) | `h2h_recency_premium` | Morning pipeline (batch_write block 2b) | ✅ Running ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
 | Pinnacle AH line (home handicap) | `pinnacle_ah_line` | Morning pipeline (batch_write block 3d) | ✅ Running (data from 2026-05-07) |
 | Pinnacle AH line move | `pinnacle_ah_line_move` | Morning pipeline (batch_write block 3d) | ✅ Running (data from 2026-05-07) |
-| AH bookmaker disagreement | `ah_bookmaker_disagreement` | Morning pipeline (batch_write block 3d) | ✅ Running (data from 2026-05-07) |
+| AH bookmaker disagreement | `ah_bookmaker_disagreement` | Morning pipeline (batch_write block 3d) | ✅ Running (data from 2026-05-07) ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
 | Pinnacle BTTS yes probability | `pinnacle_btts_yes_prob` | Morning pipeline (batch_write block 3e) | ✅ Running (data from 2026-05-07) |
-| H1 shot dominance — home | `h1_shot_dominance_home` | Morning pipeline (batch_write block 13) | ✅ Running (data from 2026-05-07) |
-| H1 shot dominance — away | `h1_shot_dominance_away` | Morning pipeline (batch_write block 13) | ✅ Running (data from 2026-05-07) |
+| H1 shot dominance — home | `h1_shot_dominance_home` | Morning pipeline (batch_write block 13) | ✅ Running (data from 2026-05-07) ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
+| H1 shot dominance — away | `h1_shot_dominance_away` | Morning pipeline (batch_write block 13) | ✅ Running (data from 2026-05-07) ⛔ writes stopped 2026-09-24 ([[#085]]) — no reader |
 | League season-to-date draw rate (current season only) | `league_draw_rate_ytd` | 23:05 UTC nightly | ✅ Running (LEAGUE-DRAW-YTD 2026-05-25, **+11.6pp Q4 vs Q1 lift**) |
 | League CLV-efficiency (60d mean pseudo_clv, league beatability) | `league_clv_efficiency` | Sun 02:30 UTC weekly | ✅ Running (LEAGUE-CLV-EFFICIENCY 2026-05-25, 4,159 entries) |
 | Pinnacle home implied-prob slope T-12h..T-2h | `line_velocity` | 23:10 UTC nightly | ✅ Running (LINE-VELOCITY 2026-05-25, **REVERSE signal -6.6pp CLV-beat Q4 |v|**) |

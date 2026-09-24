@@ -38,12 +38,12 @@ What remains in Block D, all doable today:
 
 | # | row | what | est | direction |
 |---|---|---|---|---|
-| 1 | new | own sweeper books (Coolbet/Epicbet/Unibet-Site/Tonybet) in every odds comparison — audit running | ½ d | BOTH |
+| 1 ✅ | #125 | own sweeper books in every odds comparison — DONE, reviewed | ½ d | BOTH |
 | 2 | #096 | grade the sharp bots' picks (price check on AF-fed books first) | ½ d | PICKS |
-| 3 | #085 | deletion half: duplicate signal code | ½ d | OWN |
+| 3 ✅ | #085 | deletion half — DONE: 28 unread signals stopped (~106k rows/wk) | ½ d | OWN |
 | 4 | #071 | dated odds-band re-check | 2 h | PICKS |
 
-Background (not work, decided by date): #103 Epicbet 1H check; grade B re-test at n >= 150.
+Moved to the MAIN queue (owner, 2026-09-24): #103 Epicbet 1H check (runs on its own) and #126 grade B re-test (trigger n >= 150) — neither holds Block D open. Filed to the main queue from the #125 audit: #127 consensus-arm anchor consistency (owner decision).
 
 ## Current order — 2026-09-24 (evening, after the owner decisions)
 

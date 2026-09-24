@@ -1309,6 +1309,11 @@ def store_match_signal(match_id: str, signal_name: str, signal_value: float | No
     Same signal can be stored multiple times (different timestamps).
     ML training uses the value closest to kickoff.
     """
+    # [[#085]] 2026-09-24: the deny-list applies to this per-signal writer too, not
+    # only to batch_write_morning_signals' add() guard — otherwise a signal retired
+    # there keeps being written through this path.
+    if signal_name in _NEVER_READ_SIGNALS:
+        return
     row = {
         "match_id": match_id,
         "signal_name": signal_name,
@@ -4501,6 +4506,29 @@ _NEVER_READ_SIGNALS: frozenset = frozenset({
     "goals_for_venue_home", "goals_for_venue_away",
     "goals_against_venue_home", "goals_against_venue_away",
     "injury_recurrence_home", "injury_recurrence_away",
+    # [[#085]] DELETION HALF, 2026-09-24. Each name below was checked against every
+    # match_signals reader in the engine, the scripts and odds-intel-web — including
+    # the MFV builder in THIS file (which is how market_implied_home/draw/away were
+    # caught as READ and kept) — and against the live model bundles' feature lists
+    # (v20260914_clean / v20260903_dense: no overlap). ~106k rows/week (~22% of all
+    # signal writes). NOT added: market_implied_* (read by the MFV builder),
+    # pinnacle_ah_line (kept for #014), squad_disruption_* (its step was removed
+    # with team_transfers, #087).
+    "ah_bookmaker_disagreement",
+    "league_elo_variance", "league_elo_range", "league_home_win_pct",
+    "bookmaker_count_active",
+    "rest_days_norm_home", "rest_days_norm_away",
+    "importance_diff",
+    "fixture_urgency_home", "fixture_urgency_away",
+    "fixture_importance_home", "fixture_importance_away",
+    "form_slope_home", "form_slope_away",
+    "h2h_avg_goal_diff", "h2h_recency_premium", "h2h_total",
+    "venue_surface_artificial",
+    "h1_shot_dominance_home", "h1_shot_dominance_away",
+    "players_out_home", "players_out_away",
+    "players_doubtful_home", "players_doubtful_away",
+    "injury_uncertainty_home", "injury_uncertainty_away",
+    "manager_change_home_days", "manager_change_away_days",
 })
 
 

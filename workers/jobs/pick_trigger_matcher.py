@@ -54,12 +54,27 @@ BOOK_MARKET_BOTS = {
     ("Coolbet",     "1x2", "sharp_1x2_tight"): "bot_trigger_1x2_sharp_tight_v1",
     ("Unibet-Site", "1x2", "sharp_1x2_tight"): "bot_trigger_1x2_sharp_tight_v1",
     ("Epicbet",     "1x2", "sharp_1x2_tight"): "bot_trigger_1x2_sharp_tight_v1",
+    # Tonybet ADDED 2026-09-24 (sweeper-odds audit): it became a placeable own book
+    # on 2026-09-23 and this instrument pools across our placeable books. The venue
+    # stays on each row (`recommended_bookmaker`), so pre/post-Tonybet is separable.
+    ("Tonybet",     "1x2", "sharp_1x2_tight"): "bot_trigger_1x2_sharp_tight_v1",
 }
 
 
 def _cohort_for(book: str) -> str:
-    """shadow_cohort per book so each book's trigger picks group + settle separately."""
-    return "unibet_trigger" if book.lower().startswith("unibet") else "coolbet_trigger"
+    """shadow_cohort per book so each book's trigger picks group + settle separately.
+
+    PER-BOOK COHORT (2026-09-24, #125 review). This returned "coolbet_trigger" for
+    EVERY non-Unibet book. The shadow_bets upsert key is (cohort, bot, match, market,
+    selection), so Coolbet and Epicbet legs of the pooled tight bot overwrote each
+    other (48 Coolbet vs 192 Epicbet rows had survived), and a later book's price
+    could sit beside an earlier book's pick time and quote age. Coolbet and Unibet
+    keep their historical cohort names; Epicbet and Tonybet get their own from here —
+    a discontinuity in the cohort column for Epicbet, not in the bot's record."""
+    b = book.lower()
+    if b.startswith("unibet"):
+        return "unibet_trigger"
+    return f"{b.split('-')[0]}_trigger"
 
 
 def _bot_id(name: str) -> str | None:

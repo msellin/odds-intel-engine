@@ -28,14 +28,19 @@ from collections import defaultdict
 # So this is a RULE version, deliberately not a model version string. Do NOT
 # join it against `model_versions` — bump it whenever the selection rule,
 # the edge floor or the fair-price basis changes.
-RULE_VERSION = "fh_1x2_paper_devig_v1"
+# v2 (2026-09-24, sweeper-odds audit): v1 listed "Unibet" while the SQL loads
+# 'Unibet-Site', so Unibet could never win the line-shop; it also used Betano (not
+# accessible to us since 2026-09-23) and omitted Coolbet and Tonybet. v2 line-shops
+# across all four OWN books. A rule change, hence the version bump — v1 and v2 rows
+# stay distinguishable (SHADOW-PICKS-UNATTRIBUTABLE).
+RULE_VERSION = "fh_1x2_paper_devig_v2"
 
 
 log = logging.getLogger(__name__)
 
 BOT_NAME = "bot_1h_1x2_paper_shadow_v1"
 SHADOW_COHORT = "fh_1x2_paper"
-PLACEMENT_BOOKS = ("Epicbet", "Betano", "Unibet")
+PLACEMENT_BOOKS = ("Coolbet", "Epicbet", "Unibet-Site", "Tonybet")
 STAKE_EUR = 10.0
 EDGE_FLOOR = float(os.getenv("FH_1X2_PAPER_EDGE_FLOOR", "0.0"))
 _SEL_IDX = {"home": 0, "draw": 1, "away": 2}
@@ -63,7 +68,7 @@ def generate_picks() -> dict:
               FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
              WHERE o.market = '1x2_1h'
                AND m.date > now()
-               AND o.bookmaker IN ('Epicbet','Betano','Unibet-Site','Pinnacle')
+               AND o.bookmaker IN ('Coolbet','Epicbet','Unibet-Site','Tonybet','Pinnacle')
                AND o.selection IN ('home','draw','away')
              ORDER BY o.match_id, o.selection, o.bookmaker, o."timestamp" DESC
             """

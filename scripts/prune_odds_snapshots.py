@@ -37,6 +37,12 @@ from workers.api_clients.db import execute_query, get_conn
 # OWN-BOOK-RETENTION-EXEMPT (2026-09-15, OWN Phase 1a). The books we can place at
 # keep their FULL pre-kickoff price path for 60 days in BOTH pruners; see the
 # note in prune_old_simple. Appended to each pruner's delete condition.
+# Tonybet DELIBERATELY NOT in the full 60-day exemption (#125 review, 2026-09-24):
+# its feed writes ~240k rows/day, 78% of them an UNCHANGED price, so a full-path
+# exemption would add ~14M rows / ~6 GB and more than double the exempt set. Its
+# OPENINGS are protected (BETTABLE_OR_ANCHOR_BOOKS below) and its path is thinned to
+# the first row per hour like a reference book. Add it here once the Tonybet feed
+# writes on price CHANGE only.
 OWN_BOOKS_EXEMPT = ("Coolbet", "Epicbet", "Unibet-Site")
 OWN_BOOK_EXEMPT_DAYS = 60
 OWN_BOOK_EXEMPT_SQL = (
@@ -231,8 +237,9 @@ INPLAY_BUCKET = os.getenv("ODDS_INPLAY_BUCKET", "minute")
 # ~3.3 GB first estimated — that figure wrongly halved a 6.6 GB number covering
 # both anchor kinds), plus ~74k/day of new reference openings written, of which
 # roughly the same 56 percent become eligible once their series has a second row.
+# Tonybet ADDED 2026-09-24 (sweeper-odds audit) — its openings were being trimmed.
 BETTABLE_OR_ANCHOR_BOOKS = (
-    "Betano", "Coolbet", "Epicbet", "Unibet", "Unibet-Site", "Pinnacle",
+    "Betano", "Coolbet", "Epicbet", "Unibet", "Unibet-Site", "Tonybet", "Pinnacle",
 )
 TRIM_REFERENCE_OPENINGS = os.getenv("ODDS_TRIM_REFERENCE_OPENINGS", "true").lower() == "true"
 
