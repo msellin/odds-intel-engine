@@ -21,5 +21,21 @@ MODEL_VERSION_OU(_T1)=v20260903_cut0820, DRAW_CAL_FACTOR=0.75.
 - Research cache under `data/research/1x2/` (gitignored? check) or scratchpad — never write
   research data into `matches`.
 
+## State at end of session 2026-09-24
+- Better model BUILT and in SHADOW: `workers/model/ratings_1x2.py` + `workers/jobs/rating_1x2_shadow.py`
+  (subprocess, 05:30/17:30 UTC) → `rating_1x2_predictions` (model_version `r1x2_d8plus_v1`).
+  History: `rating_history_results` (258,222 rows, migration 412).
+- Holdout 08-31..09-24: log-loss 1.0078 vs prod 1.0711; α vs Pinnacle = 0.
+- pandas 3.0.4 on the VPS/CI segfaults on tz-aware datetime takes → module runs on integer day
+  numbers, job keeps epoch seconds (RELIABILITY_LEDGER #26). Pinning pandas NOT done.
+- Research cache (gitignored): `data/models/_research/1x2/` (matches/stats/pinnacle parquet,
+  af_history.parquet, tuned_params.json).
+
 ## Next step
-Build data cache + ratings in `scripts/ab_1x2_rating_arms.py`.
+1. ~2026-10-01: `python3 scripts/ab_1x2_rating_arms.py --forward` (needs ≥2,000 settled rows).
+2. Owner decision: replace the Poisson/XGB legs of the served 1X2 blend with the rating model. If yes:
+   the stored 1X2 Platt params (`model_calibration` 1x2_*) were fitted on the old blend and must be
+   refit or bypassed (the rating model is already calibrated); touch `ensemble_prediction` /
+   `daily_pipeline_v2.py` ~3140 for 1X2 only; keep O/U untouched.
+3. Separately worth a row if promotion is declined: the stored 1X2 blend is worse than uniform
+   (Poisson leg, MODEL_WHITEPAPER §4.2 note).

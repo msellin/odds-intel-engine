@@ -38,6 +38,8 @@ Usage:
     python3 scripts/ab_1x2_rating_arms.py --tune
     python3 scripts/ab_1x2_rating_arms.py --q1
     python3 scripts/ab_1x2_rating_arms.py --q2
+    python3 scripts/ab_1x2_rating_arms.py --round2
+    python3 scripts/ab_1x2_rating_arms.py --forward   # score the shadow job's forward record
 Read-only against the database.
 """
 from __future__ import annotations
@@ -471,6 +473,57 @@ def run_round2() -> None:
                       f"base-gated {ll[gm].mean():.4f} (n={gm.sum():,})  ungated {ll[~gm].mean():.4f}")
 
 
+def run_forward(version: str = "r1x2_d8plus_v1") -> None:
+    """FORWARD CHECK — the genuinely unseen record. Scores the shadow job's stored
+    predictions (`rating_1x2_predictions`, written BEFORE kickoff) on settled
+    matches, against what production served for the same matches and against
+    Pinnacle's last pre-kickoff price. Read-only."""
+    c = _conn()
+    q = pd.read_sql("""
+        SELECT r.match_id::text match_id, r.p_home::float ph, r.p_draw::float pd, r.p_away::float pa, r.gated,
+               r.created_at, m.date kickoff_ts, m.score_home gh, m.score_away ga, coalesce(l.tier, 9) tier
+          FROM rating_1x2_predictions r JOIN matches m ON m.id = r.match_id
+          LEFT JOIN leagues l ON l.id = m.league_id
+         WHERE r.model_version = %(v)s AND m.status = 'finished' AND m.score_home IS NOT NULL
+           AND r.created_at < m.date""", c, params={"v": version})
+    c.close()
+    if q.empty:
+        print("no settled shadow predictions yet"); return
+    ids = q.match_id.tolist()
+    q = q.merge(served_reference(ids), on="match_id", how="left")
+    y = np.where(q.gh > q.ga, 0, np.where(q.gh == q.ga, 1, 2))
+    R = q[["ph", "pd", "pa"]].to_numpy()
+    # Pinnacle last pre-KO triple, straight from the DB (the cache may be stale)
+    c = _conn()
+    pin = pd.read_sql("""
+        SELECT DISTINCT ON (o.match_id, o.selection) o.match_id::text match_id, o.selection, o.odds::float odds
+          FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
+         WHERE o.match_id::text = ANY(%(ids)s) AND o.bookmaker = 'Pinnacle' AND o.market = '1x2'
+           AND o.is_live IS NOT TRUE AND o.odds > 1.01 AND o."timestamp" < m.date
+         ORDER BY o.match_id, o.selection, o."timestamp" DESC""", c, params={"ids": ids})
+    c.close()
+    pw = pin.pivot_table(index="match_id", columns="selection", values="odds")
+    inv = 1 / pw[["home", "draw", "away"]]
+    pk = inv.div(inv.sum(axis=1), axis=0)
+    q = q.merge(pk.rename(columns={"home": "k_h", "draw": "k_d", "away": "k_a"}), left_on="match_id",
+                right_index=True, how="left")
+    print(f"FORWARD {version}: {len(q):,} settled matches predicted before kickoff "
+          f"({int(q.gated.sum()):,} gated), {q.kickoff_ts.min()} .. {q.kickoff_ts.max()}")
+    for name, mk in (("ALL", np.ones(len(q), bool)), ("gated", q.gated.to_numpy())):
+        line = f"  {name:6s} n={mk.sum():,}  RATING {per_match_ll(R[mk], y[mk]).mean():.4f}"
+        sv = mk & q.served_ph.notna().to_numpy() if "served_ph" in q else np.zeros(len(q), bool)
+        if sv.sum() > 30:
+            S = q[["served_ph", "served_pd", "served_pa"]].to_numpy(float)
+            line += (f" | on {sv.sum():,} with SERVED: rating {per_match_ll(R[sv], y[sv]).mean():.4f}"
+                     f" vs served {per_match_ll(S[sv], y[sv]).mean():.4f}")
+        kv = mk & q.k_h.notna().to_numpy()
+        if kv.sum() > 30:
+            K = q[["k_h", "k_d", "k_a"]].to_numpy(float)
+            line += (f" | on {kv.sum():,} Pinnacle-priced: rating {per_match_ll(R[kv], y[kv]).mean():.4f}"
+                     f" vs Pinnacle {per_match_ll(K[kv], y[kv]).mean():.4f}")
+        print(line)
+
+
 def selfcheck(df: pd.DataFrame) -> None:
     """Leak guard: a match's features must not change if its own result is altered."""
     m = pd.read_parquet(CACHE / "matches.parquet")
@@ -501,6 +554,7 @@ def main() -> int:
     ap.add_argument("--q1", action="store_true")
     ap.add_argument("--q2", action="store_true")
     ap.add_argument("--round2", action="store_true")
+    ap.add_argument("--forward", action="store_true")
     a = ap.parse_args()
     if a.refresh_cache:
         refresh_cache()
@@ -510,6 +564,8 @@ def main() -> int:
         tune(extend=a.tune_extend)
     if a.round2:
         run_round2()
+    if a.forward:
+        run_forward()
     if a.q1 or a.q2:
         df = load_all()
         if a.q1: run_q1(df)
