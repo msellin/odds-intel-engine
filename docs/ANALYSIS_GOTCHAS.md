@@ -3159,4 +3159,14 @@ or join `data_quality_findings`** — they read as the largest edges on the boar
   2026-08-23 (corr 0.39 with a Pinnacle-derived fair price) and fully from 08-24 (0.90). Any backtest
   spanning that date will show a Coolbet over-0.5 "edge" that no longer exists. Split by period
   before believing it. Full result: `dev/active/ou-low-lines-bias-sweep.md`.
+* **AF live `live_match_snapshots.live_ou_05_*` is a FIRST-HALF price, not full-time.** At minute
+  5–10 / 0-0 the average over-0.5 is 1.41 and its implied 0.674 matches the HALF-TIME goal rate (0.671),
+  not full-time (0.908). Settled on FT goals it reads +27% ROI at t = 9.6. The ladder check
+  (over 0.5 < over 1.5 < over 2.5) catches only 27 of 207 such rows, so **do not use `live_ou_05_*` at
+  all**; on `live_ou_25_*` about 1% of rows in the first 15 minutes look 1H-shaped (drop rows with a
+  ladder violation), none after minute 45. The AF live parser accepts three generic market names
+  (`api_football.py` "Goals Over/Under", "Over/Under", "Over/Under Line") and one of them evidently
+  carries a 1H ladder for some bookmaker. The feed is retired (2026-08-21) but its history is still read
+  by in-play analyses — including the retired in-play bots' "over 2.5 early +15.98%" postmortem, which is
+  worth a spot-check before it is ever used to revive in-play.
 

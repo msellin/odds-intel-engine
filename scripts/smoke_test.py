@@ -53540,6 +53540,11 @@ def test_ou_low_lines_bias_sweep():
     bad = S.ladder_ok(w)
     assert bool(bad.loc[(1, "Coolbet")]) and not bool(bad.loc[(2, "Coolbet")])
     assert list(S.holm([0.01, 0.04, 0.5])) == [0.03, 0.08, 0.5]
+    # addendum: the in-play early-entry test must never read AF live O/U 0.5 as a FT price
+    # without the ladder guard, and must require a fresh AF score on Epicbet rows.
+    esrc = (Path(__file__).parent.parent / "scripts" / "ou05_inplay_early_entry.py").read_text()
+    assert "af.over < af.over15" in esrc and "w.over05 < w.over15" in esrc, "ladder guard on both sources"
+    assert "MAX_AF_AGE_S" in esrc and "score_home = 0 and score_away = 0" in esrc
 
 if __name__ == "__main__":
     main()

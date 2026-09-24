@@ -109,3 +109,35 @@ positive-EV cases are 1–6% and the EV is small.
 tier or price time. **CLOSED as a negative result.** Re-open trigger: a soft book's low-line price decouples
 from the sharp-derived fair price again (corr < 0.6 over a week), which is what the August lapse looked
 like. Monitoring for that belongs to [[#121]] (odds observatory), not to a bot.
+
+---
+
+## ADDENDUM — over 0.5 entered at minute 5–10 at 0-0 (owner follow-up, 2026-09-24)
+
+Owner: *"what happens with the 0.5 odds 5-10 minutes into play — what if we placed the bet there?"*
+**Stated before running:** the in-play price at 0-0 is fair minus the in-play margin (the 1x2 draw
+calibration measured earlier the same day matched within 0.4pp), so waiting should not beat pre-match;
+with ~100 bets only a glaring mispricing is detectable. Script `scripts/ou05_inplay_early_entry.py`.
+
+**Data held:** Coolbet in-play = 26 matches on one day (unusable). Epicbet in-play boards since
+2026-09-15 (1,540 matches, ~45 s cadence) — but Epicbet lists the 0.5 line early in only a minority of
+games. AF live (not placeable, to 2026-08-21) for sample size.
+
+**Epicbet (placeable):**
+
+| strategy | n | avg odds | hit | ROI ± 95% |
+|---|---|---|---|---|
+| wait, bet over 0.5 at min 5–10 if 0-0 | 89 | 1.089 | 93.3% | +1.5% ± 5.8 |
+| same matches, pre-match price | 75 | 1.099 | 93.3% | +2.6% ± 6.3 |
+| pre-match on every in-play-covered match | 128 | 1.103 | 93.0% | +1.5% ± 4.9 |
+
+The in-play price at minute 5–10 is **not longer** than the pre-match price on the same matches — median
+ratio **0.991**, i.e. slightly SHORTER. Epicbet's in-play margin eats more than the ~8 minutes of goalless
+time gives back. Waiting also loses 41% of the matches (a goal already, or no 0.5 line listed). Every
+figure is inside noise. **Verdict: no reason to wait; nothing here either way at this n.**
+
+**AF live `live_ou_05_*` is a FIRST-HALF market, not full-time** — at min 5–10 / 0-0 its average over
+price is 1.41, its de-vigged implied probability 0.674 against a **half-time** goal rate of 0.671 (and a
+full-time rate of 0.908). Settled on full-time goals it reads **+27% ROI at t = 9.6** — entirely fake.
+The contamination is concentrated in the 0.5 line at early minutes; on the 2.5 line ~1% of rows in the
+first 15 minutes look 1H-shaped and none after minute 45. See ANALYSIS_GOTCHAS §80.
