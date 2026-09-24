@@ -253,6 +253,29 @@ def footprint_warnings(fp: dict | None) -> list[str]:
     return out
 
 
+# COVERAGE DROP (#107 phase C, 2026-09-24). A book that silently stops pricing a chunk of
+# our fixtures still has fresh rows and green runs — the audit's example was Unibet at 29%
+# of today's fixtures against 58% yesterday, reading green (the COOLBET-SNAPSHOT-COVERAGE-GAP
+# shape: 0 of 8 Paraguay matches priced). Warn when today's priced share falls under half of
+# yesterday's. Guarded against the morning ramp (books list the day progressively) and small
+# denominators.
+COVERAGE_DROP_RATIO = 0.5
+COVERAGE_MIN_FIXTURES = 30
+COVERAGE_MIN_YDAY_SHARE = 0.20
+COVERAGE_FROM_HOUR_UTC = 8
+
+
+def coverage_warning(fix_t: int, pr_t: int, fix_y: int, pr_y: int, hour_utc: int) -> str | None:
+    """Pure → a warning reason, or None."""
+    if hour_utc < COVERAGE_FROM_HOUR_UTC or fix_t < COVERAGE_MIN_FIXTURES or not fix_y:
+        return None
+    share_t, share_y = pr_t / fix_t, pr_y / fix_y
+    if share_y < COVERAGE_MIN_YDAY_SHARE or share_t >= COVERAGE_DROP_RATIO * share_y:
+        return None
+    return (f"coverage dropped: priced {pr_t}/{fix_t} of today's fixtures ({share_t:.0%}) "
+            f"vs {share_y:.0%} yesterday")
+
+
 def evaluate() -> list[dict]:
     runs = _runs_by_job([f["job"] for f in FEEDS if f.get("job")])
     odds = _odds_agg()
@@ -441,6 +464,17 @@ def run_feed_health() -> dict:
             else:
                 e["status_reason"] = (f"paused by {c.get('paused_by') or 'operator'}"
                                       + (f": {c['paused_reason']}" if c.get("paused_reason") else ""))
+    # #107 C: coverage drop is a status input on the book's pre-match block (never over a
+    # louder fail / paused state).
+    coverage = _coverage()
+    _hour = datetime.now(timezone.utc).hour
+    _cov = {b: coverage_warning(ft, pt, fy, py, _hour) for b, ft, pt, fy, py in coverage}
+    for e in evals:
+        f = FEEDS_BY_ID[e["feed_id"]]
+        w = _cov.get(f.get("book")) if e["feed_id"].endswith("_prematch") else None
+        if w and e.get("status") in ("ok", "warn"):
+            e["status"] = "warn"
+            e["status_reason"] = "; ".join(filter(None, [e.get("status_reason"), w]))
     rows = []
     for e in evals:
         f = FEEDS_BY_ID[e["feed_id"]]
@@ -451,7 +485,6 @@ def run_feed_health() -> dict:
                   "controls": f.get("controls") or [], **e}
         merged["service_state"] = json.dumps(merged.get("service_state") or {})
         rows.append(tuple(merged.get(c) for c in _COLS))
-    coverage = _coverage()
     odds = _odds_agg()
     fp = _footprint()
     liq = _exchange_liquid()

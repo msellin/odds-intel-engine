@@ -53595,6 +53595,22 @@ def test_coolbet_draw_no_bet():
     assert parse_market(dict(m, market_type_id=427, name="1st half draw no bet"), om) == []
 
 
+@test("FEEDS-COVERAGE-DROP — a book pricing far fewer of today's fixtures than yesterday goes amber (#107 C)")
+def test_feeds_coverage_drop():
+    """#107 phase C (2026-09-24): Unibet at 29% of today's fixtures vs 58% yesterday read
+    green — fresh rows, green runs. Coverage drop is now a status input on the book's
+    pre-match block, guarded against the morning ramp and small denominators."""
+    import inspect
+    from workers.jobs import feed_health as fh
+    w = fh.coverage_warning
+    assert w(200, 58, 210, 122, 12) and "29%" in w(200, 58, 210, 122, 12)
+    assert w(200, 110, 210, 122, 12) is None, "a normal day"
+    assert w(200, 58, 210, 122, 6) is None, "morning ramp"
+    assert w(20, 2, 210, 122, 12) is None, "small denominator"
+    assert w(200, 10, 210, 20, 12) is None, "yesterday's share too small to judge"
+    assert "coverage_warning(ft, pt, fy, py, _hour)" in inspect.getsource(fh.run_feed_health)
+
+
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")
 def test_anon_least_privilege():
     """#072 (2026-09-24): anon held SELECT on 134/134 public relations via default privileges;
