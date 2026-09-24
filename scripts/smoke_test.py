@@ -53432,6 +53432,18 @@ def test_coverage_counts_fast():
     assert "SECURITY DEFINER" in body and "SET search_path = public" in body
 
 
+@test("TELEGRAM-NO-DEAD-END — the bot never sends users to a profile/upgrade page that cannot help them (#055)")
+def test_telegram_no_dead_end():
+    """#055 (2026-09-24): /start's failure and tier-gate replies said "go to your profile page
+    and click Connect Telegram" / "Upgrade at oddsintel.app/profile" — /profile has no
+    Telegram connect and there is no checkout. Replies now point at the public channel and
+    /picks. Runs locally (web repo); skipped in CI's single-repo checkout."""
+    src = _web_path("src/app/api/telegram/webhook/route.ts").read_text()
+    assert "Upgrade at oddsintel.app/profile" not in src
+    assert "profile page and click 'Connect Telegram'" not in src
+    assert "https://t.me/oddsintelpicks" in src and "https://oddsintel.app/picks" in src
+
+
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")
 def test_anon_least_privilege():
     """#072 (2026-09-24): anon held SELECT on 134/134 public relations via default privileges;
