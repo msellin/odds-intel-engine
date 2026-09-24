@@ -20168,91 +20168,22 @@ def _():
     )
 
 
-@test("LIGHTHOUSE-FIX-3 — unstable_cache wraps 7 heavy SSR queries")
+@test("LIGHTHOUSE-FIX-3 — the surviving heavy SSR query stays behind unstable_cache")
 def _():
-    """LIGHTHOUSE-FIX-3 (2026-06-05): PageSpeed runs landed with /matches
-    at 80 Perf, /pricing 87, /value-bets 89 (others ≥90). The 3 sub-90
-    pages share the SSR-heavy Supabase data-fetch pattern. Wrapping the
-    public/admin-client queries in Next's unstable_cache means a single
-    cold-cache hit per revalidate window instead of N per-request DB
-    round trips — exactly the load profile Lighthouse / Googlebot hit.
-
-    Revalidate windows (per data freshness):
-      60s   — matches + counts + odds-verified-at (pipeline refresh cadence)
-      120s  — today's bets + free daily pick (5-15min pipeline runs)
-      300s  — performance extras + league hit rates (stable rollups)
-
-    Skipped on purpose:
-      - getLiveSnapshots — genuinely live, staleness > speed
-      - getTodayPicks / getWhatChangedToday — use createSupabaseServer
-        which reads cookies. Can't wrap unless refactored to admin/public
-        client first.
-
-    Pinned (so the cache wiring can't silently degrade back to per-request
-    DB hits — the perf gain depends on the wrapper staying in place):
-      1. unstable_cache imported from "next/cache"
-      2. Cache-window constants CACHE_60S / CACHE_120S / CACHE_300S defined
-      3. getPublicMatches / getActiveMatches / getFinishedMatches all
-         routed through the cached _fetchMatches wrapper
-      4. getMatchCounts exported as a cached entry point
-      5. getTodayBets exported as a cached entry point
-      6. getFreeDailyPick exported as a cached entry point
-      7. getLeagueHitRates exported as a cached entry point
-      8. getOddsVerifiedAt exported as a cached entry point
-      9. getValueBetBookOdds exported as a cached entry point
-      10. getPublicPerformanceExtras exported as a cached entry point
+    """LIGHTHOUSE-FIX-3 (2026-06-05) wrapped 7 heavy SSR queries in Next's
+    unstable_cache for /matches and /value-bets. Those pages were deleted by
+    PRODUCT-COLLAPSE (2026-06-24) and the six fetchers that served only them were
+    removed as dead code on 2026-09-24 ([[#087]] step 2) — pinning them kept dead
+    code alive. What survives is the /performance extras query; it must stay cached,
+    or every request pays the full rollup again.
     """
     src = _web_path("src/lib/engine-data.ts").read_text()
-
     assert "unstable_cache" in src and 'from "next/cache"' in src, (
-        "engine-data must import unstable_cache from next/cache"
-    )
-    for const in ("CACHE_60S", "CACHE_120S", "CACHE_300S"):
-        assert const in src, f"cache-window constant {const} must be defined"
-
-    # Functions wrapped via the (impl-then-export-cached) pattern. Looking
-    # for the unstable_cache(...) export sites — the same identifier shouldn't
-    # appear as both `export async function NAME` (uncached) and the cached
-    # form. The smoke checks the cached form is present.
-    cached_exports = [
-        "fetchMatches_v1",
-        "getMatchCounts_v1",
-        "getTodayBets_v1",
-        "getFreeDailyPick_v1",
-        "getLeagueHitRates_v1",
-        "getOddsVerifiedAt_v1",
-        "getValueBetBookOdds_v1",
-        "getPublicPerformanceExtras_v1",
-    ]
-    for key in cached_exports:
-        assert key in src, (
-            f"cache key '{key}' must be present — wrapping {key.replace('_v1','')} "
-            "with unstable_cache is what cuts SSR DB latency on /matches "
-            "+ /value-bets"
-        )
-
-    # And the cached entry points must be exported as `const NAME =`
-    # (not `export async function NAME`) — that's how the wrapper replaces
-    # the impl while keeping the public API.
-    cached_funcs = [
-        "getMatchCounts",
-        "getTodayBets",
-        "getFreeDailyPick",
-        "getLeagueHitRates",
-        "getOddsVerifiedAt",
-        "getValueBetBookOdds",
-        "getPublicPerformanceExtras",
-    ]
-    for fn in cached_funcs:
-        # Bare uncached `export async function NAME` would defeat the cache
-        assert f"export async function {fn}(" not in src, (
-            f"{fn} must be exported as a cached const, not as a raw async function "
-            "— check the wrapper survived a future edit"
-        )
-        assert f"export const {fn} = unstable_cache(" in src, (
-            f"{fn} must be exported as `unstable_cache(...)` wrapper"
-        )
-
+        "engine-data must import unstable_cache from next/cache")
+    assert "CACHE_300S" in src, "the 300s cache window for the performance rollup must exist"
+    assert "getPublicPerformanceExtras_v1" in src, (
+        "getPublicPerformanceExtras must stay wrapped in unstable_cache (cache key _v1)")
+    assert "export const getPublicPerformanceExtras = unstable_cache(" in src
 
 @test("PINNACLE-WEEKEND-EXPERIMENT — time-boxed research script invariants")
 def _():
@@ -20500,16 +20431,9 @@ def _():
         "backfill must roll back the savepoint on per-row errors"
     )
 
-    # FE query helpers
-    eng = _web_path("src/lib/engine-data.ts")
-    e_src = eng.read_text()
-    assert "export async function getAccuracyStats" in e_src, (
-        "engine-data must export getAccuracyStats for the accuracy page"
-    )
-    assert "export async function getRecentPublishedPicks" in e_src, (
-        "engine-data must export getRecentPublishedPicks"
-    )
-    assert "PublishedPickRow" in e_src, "PublishedPickRow type must be exported"
+    # FE query helpers — REMOVED 2026-09-24 ([[#087]] step 2): the /accuracy page they
+    # were built for never shipped (zero callers), so getAccuracyStats /
+    # getRecentPublishedPicks were deleted as dead code. The data layer above stays.
 
 
 @test("MIGRATION-185-IDEMPOTENCY — DROP POLICY IF EXISTS guard restored")
@@ -24870,11 +24794,14 @@ def test_published_arm_has_a_record_2026_09_22():
     #    split into one bot per grade, so each (arm, grade) owns exactly one bot
     #    and no bot spans two of them.
     if "picks_public_all" not in pending:
+        # [[#122]] 2026-09-24: the live (sharp) arm is split the same way by MARKET,
+        # so its key is (arm, grade, market); consensus keys stay (arm, grade).
         rows = execute_query(
-            """SELECT DISTINCT arm, grade, bot FROM picks_public_all WHERE arm IS NOT NULL""")
+            """SELECT DISTINCT arm, grade, market, bot FROM picks_public_all WHERE arm IS NOT NULL""")
         by_key: dict = {}
         for r in rows:
-            by_key.setdefault((r["arm"], r["grade"]), set()).add(r["bot"])
+            k = (r["arm"], r["grade"], r["market"] if r["arm"] == "live" else None)
+            by_key.setdefault(k, set()).add(r["bot"])
         assert all(len(v) == 1 for v in by_key.values()), (
             f"one (arm, grade) maps to several bots: {by_key}")
         owners = [next(iter(v)) for v in by_key.values()]
@@ -49717,15 +49644,6 @@ def test_coolbet_probe_imperva_beats_timing():
 
 
 
-@test("WEB-NO-ORPHAN-FETCHERS — every exported function in engine-data.ts has a caller")
-def test_web_no_orphan_fetchers():
-    """[[#087]] step 2, 2026-09-24. PRODUCT-COLLAPSE (2026-06-24) deleted the pages but
-    left ~118 fetchers and types in `odds-intel-web/src/lib/engine-data.ts` with no
-    caller. Beyond the dead weight (6,525 -> 2,705 lines), they made grep-based audits
-    read tables as CONSUMED when nothing read them — the trap the #087 audit itself
-    fell into for three tables. Guard: every `export (async) function` in the file is
-    referenced somewhere else in the web src. Skipped when the web repo is absent (CI).
-    """
 @test("SHARP-BOT-SPLIT-BY-MARKET — #122 the sharp arm is owned by market, the stopping-rule view untouched")
 def test_sharp_bot_split_by_market():
     """[[#122]], 2026-09-24, owner: split ONLY the sharp bot. Bookkeeping, not a rule
@@ -49755,6 +49673,15 @@ def test_sharp_bot_split_by_market():
         assert "getPicksForwardTestSummary(arm, grade, market)" in src
 
 
+@test("WEB-NO-ORPHAN-FETCHERS — every exported function in engine-data.ts has a caller")
+def test_web_no_orphan_fetchers():
+    """[[#087]] step 2, 2026-09-24. PRODUCT-COLLAPSE (2026-06-24) deleted the pages but
+    left ~118 fetchers and types in `odds-intel-web/src/lib/engine-data.ts` with no
+    caller. Beyond the dead weight (6,525 -> 2,705 lines), they made grep-based audits
+    read tables as CONSUMED when nothing read them — the trap the #087 audit itself
+    fell into for three tables. Guard: every `export (async) function` in the file is
+    referenced somewhere else in the web src. Skipped when the web repo is absent (CI).
+    """
     import re
     import subprocess
     from pathlib import Path

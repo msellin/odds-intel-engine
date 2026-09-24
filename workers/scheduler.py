@@ -2664,6 +2664,8 @@ def job_publish_picks_forward_test():
                        + funnel_rows(consensus_pool, consensus_picks, "publisher_consensus",
                                      max_edge=CONSENSUS_MAX_EDGE, credible_gate=True))
     except Exception as _fe:  # noqa: BLE001
+        # non-critical: the funnel is diagnostics only — a failure here must never
+        # stop the publish job or the negative control below.
         log.warning("picks_forward_test: candidate funnel failed (non-fatal): %s", _fe)
 
     # Negative control — recorded, never published. Runs over the POOL, not the
