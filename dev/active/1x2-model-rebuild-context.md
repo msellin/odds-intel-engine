@@ -47,3 +47,24 @@ MODEL_VERSION_OU(_T1)=v20260903_cut0820, DRAW_CAL_FACTOR=0.75.
    `daily_pipeline_v2.py` ~3140 for 1X2 only; keep O/U untouched.
 3. Separately worth a row if promotion is declined: the stored 1X2 blend is worse than uniform
    (Poisson leg, MODEL_WHITEPAPER §4.2 note).
+
+
+## HANDOVER 2026-09-24 ~18:40 UTC (owner switching account — read this first)
+**Where everything is:**
+- Plan / pre-registrations / every result: `dev/active/1x2-model-rebuild-plan.md` (sections ROUND 1..3c, dated).
+- Checklist: `dev/active/1x2-model-rebuild-tasks.md` (A..G, in order). Queue row: #141 (🔴 P0, full plan on the row).
+- Code: `workers/model/ratings_1x2.py` (ratings), `market_consensus_1x2.py` (18-book consensus), `combined_1x2.py`
+  (per-group combiner), `player_strength_1x2.py` (round 3c); jobs `workers/jobs/rating_1x2_shadow.py`
+  (`run`, `--refresh`, `--dry-run`); scheduler `job_rating_1x2_shadow` (05:30/17:30) + `job_combined_1x2_refresh` (:10/:40).
+- Research scripts: `scripts/ab_1x2_rating_arms.py` (rounds 1-2, `--forward`), `ab_1x2_combined.py` (3b),
+  `ab_1x2_lineups.py` (3c), `fetch_1x2_history_cache.py` (prior seasons, `--to-db` done), `fetch_fixture_details_cache.py`.
+- DB (migrations 412-416): `rating_history_results` (258,222), `rating_1x2_predictions` (`r1x2_d8plus_v1`,
+  `r1x2_comb_v1`, `sources`), `combiner_1x2_params`, bots `bot_rating_1x2_v1` / `bot_combined_1x2_v1` (experimental).
+- Research cache (gitignored, owner's Mac): `data/models/_research/1x2/` — matches/stats/pinnacle parquet (`--refresh-cache`
+  rebuilds), `features_hist_full.parquet`, `legs_close/open.parquet`, `af_pred.parquet` (`ab_1x2_combined.py --pull`),
+  `af_history.parquet`, `tuned_params.json`, `fixture_details/` (in progress).
+**Running at handover:** the fixture-details fetch (task A) as a background process in the old session; if it died,
+re-run the same command — it resumes. API budget 09-24: ~141k left at 18:16 UTC before the fetch.
+**Gotchas learned:** pandas 3.0.4 segfaults on tz-aware datetime take/filter/merge (VPS + CI) → epoch seconds + subprocess
+(#145); shared checkout — other sessions keep uncommitted edits in scripts/smoke_test.py etc.: stage only own hunks
+(build from HEAD + own edit, `git hash-object -w` + `git update-index --cacheinfo`), never `git stash`.
