@@ -1,0 +1,311 @@
+loading pinnacle 1x2...
+loading pinnacle ou25...
+loading btts all books...
+19802 18320 24308 40616
+fixtures with pinnacle 1x2+ou and >=3 btts books: 17939
+{
+ "n": 17939,
+ "btts_rate": 0.5360387981492837,
+ "LL_base": 0.6905473367710544,
+ "LL_consensus": 0.6802677358163282,
+ "LL_derived_rho0.0": 0.6810248990201065,
+ "mean_derived_rho0.0": 0.5218350613703615,
+ "corr_derived_cons_rho0.0": 0.9859140672781205,
+ "mad_derived_cons_rho0.0": 0.01663384129071391,
+ "LL_derived_rho-0.1": 0.6804876318196377,
+ "mean_derived_rho-0.1": 0.5340975253626888,
+ "corr_derived_cons_rho-0.1": 0.9866880920654536,
+ "mad_derived_cons_rho-0.1": 0.008896559743850965,
+ "LL_derived_rho-0.15": 0.6804759579992408,
+ "mean_derived_rho-0.15": 0.5402658159349902,
+ "corr_derived_cons_rho-0.15": 0.9865489703373048,
+ "mad_derived_cons_rho-0.15": 0.009494699820933313,
+ "mean_consensus": 0.5364889558365271,
+ "books_strat": {
+  "Coolbet": {
+   "n": 7389,
+   "age_med": 84.0,
+   "LL_book_devig": 0.6823239635345593,
+   "LL_cons_ex": 0.6795434321208143,
+   "LL_derived": 0.6798766702677109,
+   "mean_book_minus_cons_pyes": -0.008907118018851957,
+   "derived_thr0.0": {
+    "n": 761,
+    "roi": 0.0443,
+    "t": 1.05,
+    "share_yes": 0.78
+   },
+   "derived_thr0.03": {
+    "n": 342,
+    "roi": 0.2762,
+    "t": 3.76,
+    "share_yes": 0.77
+   },
+   "derived_thr0.05": {
+    "n": 260,
+    "roi": 0.3073,
+    "t": 3.38,
+    "share_yes": 0.76
+   },
+   "derived_thr0.08": {
+    "n": 179,
+    "roi": 0.5455,
+    "t": 4.68,
+    "share_yes": 0.78
+   },
+   "cons_ex_thr0.0": {
+    "n": 546,
+    "roi": 0.1197,
+    "t": 2.25,
+    "share_yes": 0.73
+   },
+   "cons_ex_thr0.03": {
+    "n": 275,
+    "roi": 0.3744,
+    "t": 4.4,
+    "share_yes": 0.75
+   },
+   "cons_ex_thr0.05": {
+    "n": 201,
+    "roi": 0.4287,
+    "t": 3.98,
+    "share_yes": 0.78
+   },
+   "cons_ex_thr0.08": {
+    "n": 159,
+    "roi": 0.584,
+    "t": 4.61,
+    "share_yes": 0.79
+   }
+  },
+  "Epicbet": {
+   "n": 4363,
+   "age_med": 53.0,
+   "LL_book_devig": 0.6816171378532825,
+   "LL_cons_ex": 0.6795956224962343,
+   "LL_derived": 0.6796841540218697,
+   "mean_book_minus_cons_pyes": -0.0053098363674849176,
+   "derived_thr0.0": {
+    "n": 433,
+    "roi": 0.0853,
+    "t": 1.61,
+    "share_yes": 0.7
+   },
+   "derived_thr0.03": {
+    "n": 206,
+    "roi": 0.1339,
+    "t": 1.55,
+    "share_yes": 0.59
+   },
+   "derived_thr0.05": {
+    "n": 136,
+    "roi": 0.2082,
+    "t": 1.79,
+    "share_yes": 0.52
+   },
+   "derived_thr0.08": {
+    "n": 90,
+    "roi": 0.3749,
+    "t": 2.39,
+    "share_yes": 0.44
+   },
+   "cons_ex_thr0.0": {
+    "n": 305,
+    "roi": 0.142,
+    "t": 2.16,
+    "share_yes": 0.62
+   },
+   "cons_ex_thr0.03": {
+    "n": 143,
+    "roi": 0.209,
+    "t": 1.9,
+    "share_yes": 0.53
+   },
+   "cons_ex_thr0.05": {
+    "n": 103,
+    "roi": 0.3046,
+    "t": 2.19,
+    "share_yes": 0.49
+   },
+   "cons_ex_thr0.08": {
+    "n": 72,
+    "roi": 0.5246,
+    "t": 2.99,
+    "share_yes": 0.44
+   }
+  },
+  "Unibet-Site": {
+   "n": 1326,
+   "age_med": 15.0,
+   "LL_book_devig": 0.6766193313496012,
+   "LL_cons_ex": 0.6768602748750366,
+   "LL_derived": 0.6768679212276626,
+   "mean_book_minus_cons_pyes": 0.00133114195014518,
+   "derived_thr0.0": {
+    "n": 76,
+    "roi": -0.0697,
+    "t": -0.56,
+    "share_yes": 0.47
+   },
+   "derived_thr0.03": {
+    "n": 35,
+    "roi": -0.1931,
+    "t": -0.99,
+    "share_yes": 0.37
+   },
+   "derived_thr0.05": {
+    "n": 23,
+    "roi": -0.1361,
+    "t": -0.53,
+    "share_yes": 0.43
+   },
+   "derived_thr0.08": {
+    "n": 15,
+    "roi": -0.0507,
+    "t": -0.15,
+    "share_yes": 0.53
+   },
+   "cons_ex_thr0.0": {
+    "n": 58,
+    "roi": -0.0881,
+    "t": -0.59,
+    "share_yes": 0.4
+   },
+   "cons_ex_thr0.03": {
+    "n": 26,
+    "roi": -0.1296,
+    "t": -0.54,
+    "share_yes": 0.35
+   },
+   "cons_ex_thr0.05": {
+    "n": 20,
+    "roi": 0.1315,
+    "t": 0.45,
+    "share_yes": 0.4
+   },
+   "cons_ex_thr0.08": {
+    "n": 15,
+    "roi": -0.1873,
+    "t": -0.54,
+    "share_yes": 0.47
+   }
+  },
+  "Tonybet": {
+   "n": 52,
+   "age_med": 14.0,
+   "LL_book_devig": 0.7317715739716074,
+   "LL_cons_ex": 0.740483853570152,
+   "LL_derived": 0.7428813325652455,
+   "mean_book_minus_cons_pyes": -0.00011357000748705778,
+   "derived_thr0.0": {
+    "n": 4,
+    "roi": -0.2325,
+    "t": -0.6,
+    "share_yes": 0.0
+   },
+   "derived_thr0.03": {
+    "n": 2,
+    "roi": -0.15,
+    "t": null,
+    "share_yes": 0.0
+   },
+   "derived_thr0.05": {
+    "n": 2,
+    "roi": -0.15,
+    "t": null,
+    "share_yes": 0.0
+   },
+   "derived_thr0.08": {
+    "n": 1,
+    "roi": 0.7,
+    "t": null,
+    "share_yes": 0.0
+   },
+   "cons_ex_thr0.0": {
+    "n": 3,
+    "roi": -0.5433,
+    "t": -1.46,
+    "share_yes": 0.33
+   },
+   "cons_ex_thr0.03": {
+    "n": 1,
+    "roi": -1.0,
+    "t": null,
+    "share_yes": 0.0
+   },
+   "cons_ex_thr0.05": {
+    "n": 0,
+    "roi": null,
+    "t": null,
+    "share_yes": null
+   },
+   "cons_ex_thr0.08": {
+    "n": 0,
+    "roi": null,
+    "t": null,
+    "share_yes": null
+   }
+  }
+ },
+ "blend": {
+  "best_rho": -0.15,
+  "w_cons_only": [
+   0.010839906390286518,
+   0.7953134011771574
+  ],
+  "w_blend": [
+   0.008201924020561021,
+   0.5591480331071155,
+   0.23467985643692812
+  ],
+  "dLL_heldout": 5.886335256435518e-05,
+  "t": 0.9947775087265838,
+  "n_test": 8970
+ },
+ "pin_age_min_median": 5.0,
+ "fit_resid_max_median": 0.007708966672613005,
+ "calib_derived": [
+  [
+   0.4151485037808672,
+   0.42558528428093645
+  ],
+  [
+   0.49642113614628525,
+   0.5144927536231884
+  ],
+  [
+   0.5453437078263795,
+   0.5327571787008643
+  ],
+  [
+   0.5922873926458253,
+   0.5663322185061316
+  ],
+  [
+   0.6521297545185961,
+   0.6410256410256411
+  ]
+ ],
+ "calib_cons": [
+  [
+   0.41604606718756454,
+   0.42642140468227424
+  ],
+  [
+   0.4928730548113354,
+   0.5169095408303547
+  ],
+  [
+   0.5389159658206656,
+   0.5224827586206896
+  ],
+  [
+   0.585312249789332,
+   0.5703146755778334
+  ],
+  [
+   0.6493895645944389,
+   0.6435340022296544
+  ]
+ ]
+}

@@ -1,0 +1,141 @@
+FAMILY F size 51  benchmark family size 24
+
+=== DECISION (T-2h, intact 8 days) — family F (BTTS/AH) ===
+            market     anchor           bk   thr  days  fixtures_cov   n  per_day     dq  n_clean  mean_edge    clv  clv_sd      t  p_holm  roi_n    roi  roi_se
+24            btts  consensus      Coolbet  0.02   8.0         467.0  13    1.625  0.385      8.0      0.056 -0.018   0.045    NaN     1.0    8.0  0.586   0.470
+25            btts  consensus      Coolbet  0.03   8.0         467.0  10    1.250  0.400      6.0      0.068 -0.016   0.053    NaN     1.0    6.0  0.732   0.554
+26            btts  consensus      Coolbet  0.05   8.0         467.0   5    0.625  0.200      4.0      0.081 -0.016   0.063    NaN     1.0    4.0  0.895   0.642
+27            btts  consensus      Epicbet  0.02   8.0         815.0  19    2.375  0.053     18.0      0.048 -0.011   0.051 -0.927     1.0   18.0  0.329   0.279
+28            btts  consensus      Epicbet  0.03   8.0         815.0  14    1.750  0.071     13.0      0.057 -0.013   0.055 -0.802     1.0   13.0  0.202   0.336
+29            btts  consensus      Epicbet  0.05   8.0         815.0   5    0.625  0.200      4.0      0.100 -0.003   0.090    NaN     1.0    4.0  1.488   0.235
+30            btts  consensus  Unibet-Site  0.02   8.0         448.0  10    1.250  0.000     10.0      0.039 -0.018   0.055 -1.027     1.0    9.0  0.391   0.356
+31            btts  consensus  Unibet-Site  0.03   8.0         448.0   6    0.750  0.000      6.0      0.049 -0.016   0.066    NaN     1.0    5.0  0.168   0.482
+32            btts  consensus  Unibet-Site  0.05   8.0         448.0   2    0.250  0.000      2.0      0.072  0.065   0.029    NaN     1.0    1.0 -1.000     NaN
+33            btts  consensus      Tonybet  0.02   2.0          24.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN     1.0    0.0    NaN     NaN
+34            btts  consensus      Tonybet  0.03   2.0          24.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN     1.0    0.0    NaN     NaN
+35            btts  consensus      Tonybet  0.05   2.0          24.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN     1.0    0.0    NaN     NaN
+36            btts   exchange      Coolbet  0.02   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+37            btts   exchange      Coolbet  0.03   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+38            btts   exchange      Coolbet  0.05   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+39            btts   exchange      Epicbet  0.02   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+40            btts   exchange      Epicbet  0.03   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+41            btts   exchange      Epicbet  0.05   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+42            btts   exchange  Unibet-Site  0.02   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+43            btts   exchange  Unibet-Site  0.03   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+44            btts   exchange  Unibet-Site  0.05   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+45            btts   exchange      Tonybet  0.02   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+46            btts   exchange      Tonybet  0.03   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+47            btts   exchange      Tonybet  0.05   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+48  asian_handicap   pinnacle      Coolbet  0.02   7.0          28.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN     1.0    0.0    NaN     NaN
+49  asian_handicap   pinnacle      Coolbet  0.03   7.0          28.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN     1.0    0.0    NaN     NaN
+50  asian_handicap   pinnacle      Coolbet  0.05   7.0          28.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN     1.0    0.0    NaN     NaN
+51  asian_handicap   pinnacle      Epicbet  0.02   8.0          69.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN     1.0    0.0    NaN     NaN
+52  asian_handicap   pinnacle      Epicbet  0.03   8.0          69.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN     1.0    0.0    NaN     NaN
+53  asian_handicap   pinnacle      Epicbet  0.05   8.0          69.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN     1.0    0.0    NaN     NaN
+54  asian_handicap   pinnacle      Tonybet  0.02   2.0          11.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN     1.0    0.0    NaN     NaN
+55  asian_handicap   pinnacle      Tonybet  0.03   2.0          11.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN     1.0    0.0    NaN     NaN
+56  asian_handicap   pinnacle      Tonybet  0.05   2.0          11.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN     1.0    0.0    NaN     NaN
+57  asian_handicap  consensus      Coolbet  0.02   1.0           2.0   1    1.000  0.000      1.0      0.142  0.047     NaN    NaN     1.0    1.0  0.000     NaN
+58  asian_handicap  consensus      Coolbet  0.03   1.0           2.0   1    1.000  0.000      1.0      0.142  0.047     NaN    NaN     1.0    1.0  0.000     NaN
+59  asian_handicap  consensus      Coolbet  0.05   1.0           2.0   1    1.000  0.000      1.0      0.142  0.047     NaN    NaN     1.0    1.0  0.000     NaN
+60  asian_handicap  consensus      Epicbet  0.02   3.0           7.0   3    1.000  0.000      3.0      0.099  0.066   0.032    NaN     1.0    2.0  0.615   0.615
+61  asian_handicap  consensus      Epicbet  0.03   3.0           7.0   3    1.000  0.000      3.0      0.099  0.066   0.032    NaN     1.0    2.0  0.615   0.615
+62  asian_handicap  consensus      Epicbet  0.05   3.0           7.0   2    0.667  0.000      2.0      0.132  0.084   0.009    NaN     1.0    1.0  0.000     NaN
+63  asian_handicap  consensus      Tonybet  0.02   2.0           6.0   2    1.000  0.000      2.0      0.101  0.051   0.023    NaN     1.0    2.0  0.620   0.620
+64  asian_handicap  consensus      Tonybet  0.03   2.0           6.0   2    1.000  0.000      2.0      0.101  0.051   0.023    NaN     1.0    2.0  0.620   0.620
+65  asian_handicap  consensus      Tonybet  0.05   2.0           6.0   1    0.500  0.000      1.0      0.164  0.067     NaN    NaN     1.0    1.0  0.000     NaN
+66  asian_handicap   exchange      Coolbet  0.02   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+67  asian_handicap   exchange      Coolbet  0.03   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+68  asian_handicap   exchange      Coolbet  0.05   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+69  asian_handicap   exchange      Epicbet  0.02   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+70  asian_handicap   exchange      Epicbet  0.03   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+71  asian_handicap   exchange      Epicbet  0.05   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+72  asian_handicap   exchange      Tonybet  0.02   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+73  asian_handicap   exchange      Tonybet  0.03   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+74  asian_handicap   exchange      Tonybet  0.05   NaN           NaN   0      NaN    NaN      NaN        NaN    NaN     NaN    NaN     1.0    NaN    NaN     NaN
+
+=== DECISION — 1x2 benchmark (publisher gates: odds<=4, Pinnacle ovr<=4pct) ===
+   market     anchor           bk   thr  days  fixtures_cov   n  per_day     dq  n_clean  mean_edge    clv  clv_sd      t  p_holm  roi_n    roi  roi_se
+0     1x2   pinnacle      Coolbet  0.02   8.0         576.0   2    0.250  0.000      2.0      0.061  0.061   0.021    NaN   1.000    2.0  0.425   1.425
+1     1x2   pinnacle      Coolbet  0.03   8.0         576.0   2    0.250  0.000      2.0      0.061  0.061   0.021    NaN   1.000    2.0  0.425   1.425
+2     1x2   pinnacle      Coolbet  0.05   8.0         576.0   1    0.125  0.000      1.0      0.076  0.076     NaN    NaN   1.000    1.0  1.850     NaN
+3     1x2   pinnacle      Epicbet  0.02   8.0        1002.0   5    0.625  0.000      5.0      0.041  0.009   0.053    NaN   1.000    5.0  0.112   0.773
+4     1x2   pinnacle      Epicbet  0.03   8.0        1002.0   3    0.375  0.000      3.0      0.049  0.047   0.017    NaN   1.000    3.0  0.853   1.143
+5     1x2   pinnacle      Epicbet  0.05   8.0        1002.0   2    0.250  0.000      2.0      0.057  0.057   0.006    NaN   1.000    2.0  0.970   1.970
+6     1x2   pinnacle  Unibet-Site  0.02   8.0         588.0   3    0.375  0.000      3.0      0.029  0.005   0.035    NaN   1.000    3.0 -1.000   0.000
+7     1x2   pinnacle  Unibet-Site  0.03   8.0         588.0   1    0.125  0.000      1.0      0.038 -0.036     NaN    NaN   1.000    1.0 -1.000     NaN
+8     1x2   pinnacle  Unibet-Site  0.05   8.0         588.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN   1.000    0.0    NaN     NaN
+9     1x2   pinnacle      Tonybet  0.02   2.0          39.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN   1.000    0.0    NaN     NaN
+10    1x2   pinnacle      Tonybet  0.03   2.0          39.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN   1.000    0.0    NaN     NaN
+11    1x2   pinnacle      Tonybet  0.05   2.0          39.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN   1.000    0.0    NaN     NaN
+12    1x2  consensus      Coolbet  0.02   8.0         575.0  59    7.375  0.051     56.0      0.063  0.010   0.071  1.035   1.000   55.0 -0.143   0.168
+13    1x2  consensus      Coolbet  0.03   8.0         575.0  52    6.500  0.058     49.0      0.069  0.018   0.071  1.741   0.970   48.0 -0.276   0.173
+14    1x2  consensus      Coolbet  0.05   8.0         575.0  27    3.375  0.074     25.0      0.098  0.032   0.086  1.821   0.938   24.0 -0.213   0.263
+15    1x2  consensus      Epicbet  0.02   8.0         992.0  86   10.750  0.081     79.0      0.069  0.007   0.073  0.826   1.000   78.0  0.140   0.151
+16    1x2  consensus      Epicbet  0.03   8.0         992.0  67    8.375  0.104     60.0      0.083  0.017   0.076  1.708   0.976   59.0  0.107   0.176
+17    1x2  consensus      Epicbet  0.05   8.0         992.0  47    5.875  0.106     42.0      0.102  0.024   0.085  1.819   0.915   41.0  0.285   0.217
+18    1x2  consensus  Unibet-Site  0.02   8.0         575.0  56    7.000  0.018     55.0      0.067  0.001   0.072  0.054   1.000   52.0 -0.031   0.170
+19    1x2  consensus  Unibet-Site  0.03   8.0         575.0  46    5.750  0.022     45.0      0.077  0.005   0.077  0.401   1.000   42.0 -0.064   0.197
+20    1x2  consensus  Unibet-Site  0.05   8.0         575.0  33    4.125  0.030     32.0      0.093  0.010   0.086  0.676   1.000   29.0  0.011   0.257
+21    1x2  consensus      Tonybet  0.02   2.0          43.0   1    0.500  0.000      1.0      0.029 -0.082     NaN    NaN   1.000    1.0  1.230     NaN
+22    1x2  consensus      Tonybet  0.03   2.0          43.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN   1.000    0.0    NaN     NaN
+23    1x2  consensus      Tonybet  0.05   2.0          43.0   0    0.000    NaN      0.0        NaN    NaN     NaN    NaN   1.000    0.0    NaN     NaN
+
+=== CLOSE (60 d; edge==CLV by construction, ROI is the only check) ===
+             market     anchor           bk   thr  days  fixtures_cov    n  per_day     dq  n_clean  mean_edge  roi_n    roi  roi_se
+75              1x2   pinnacle      Coolbet  0.02  45.0        3232.0   63    1.400  0.000     63.0      0.047   63.0  0.235   0.185
+76              1x2   pinnacle      Coolbet  0.03  45.0        3232.0   46    1.022  0.000     46.0      0.056   46.0  0.124   0.223
+77              1x2   pinnacle      Coolbet  0.05  45.0        3232.0   25    0.556  0.000     25.0      0.072   25.0  0.190   0.320
+78              1x2   pinnacle      Epicbet  0.02  23.0        2641.0   86    3.739  0.000     86.0      0.051   86.0 -0.018   0.133
+79              1x2   pinnacle      Epicbet  0.03  23.0        2641.0   60    2.609  0.000     60.0      0.062   60.0 -0.096   0.159
+80              1x2   pinnacle      Epicbet  0.05  23.0        2641.0   31    1.348  0.000     31.0      0.084   31.0 -0.150   0.239
+81              1x2   pinnacle  Unibet-Site  0.02  16.0        1967.0   30    1.875  0.000     30.0      0.056   30.0 -0.021   0.243
+82              1x2   pinnacle  Unibet-Site  0.03  16.0        1967.0   22    1.375  0.000     22.0      0.067   22.0  0.184   0.307
+83              1x2   pinnacle  Unibet-Site  0.05  16.0        1967.0   11    0.688  0.000     11.0      0.096   11.0  0.027   0.453
+84              1x2   pinnacle      Tonybet  0.02   2.0          57.0    0    0.000    NaN      0.0        NaN    0.0    NaN     NaN
+85              1x2   pinnacle      Tonybet  0.03   2.0          57.0    0    0.000    NaN      0.0        NaN    0.0    NaN     NaN
+86              1x2   pinnacle      Tonybet  0.05   2.0          57.0    0    0.000    NaN      0.0        NaN    0.0    NaN     NaN
+87              1x2  consensus      Coolbet  0.02  45.0        3219.0  283    6.289  0.028    275.0      0.067  275.0 -0.044   0.080
+88              1x2  consensus      Coolbet  0.03  45.0        3219.0  220    4.889  0.032    213.0      0.080  213.0 -0.047   0.090
+89              1x2  consensus      Coolbet  0.05  45.0        3219.0  143    3.178  0.035    138.0      0.102  138.0  0.039   0.117
+90              1x2  consensus      Epicbet  0.02  23.0        2601.0  348   15.130  0.034    336.0      0.063  333.0 -0.067   0.068
+91              1x2  consensus      Epicbet  0.03  23.0        2601.0  273   11.870  0.040    262.0      0.074  260.0 -0.086   0.077
+92              1x2  consensus      Epicbet  0.05  23.0        2601.0  178    7.739  0.062    167.0      0.094  165.0  0.025   0.103
+93              1x2  consensus  Unibet-Site  0.02  16.0        1963.0  202   12.625  0.020    198.0      0.075  196.0 -0.144   0.088
+94              1x2  consensus  Unibet-Site  0.03  16.0        1963.0  166   10.375  0.024    162.0      0.086  160.0 -0.149   0.098
+95              1x2  consensus  Unibet-Site  0.05  16.0        1963.0  123    7.688  0.033    119.0      0.103  117.0 -0.160   0.117
+96              1x2  consensus      Tonybet  0.02   2.0          71.0    4    2.000  0.000      4.0      0.095    4.0 -0.150   0.532
+97              1x2  consensus      Tonybet  0.03   2.0          71.0    4    2.000  0.000      4.0      0.095    4.0 -0.150   0.532
+98              1x2  consensus      Tonybet  0.05   2.0          71.0    3    1.500  0.000      3.0      0.115    3.0 -0.267   0.733
+99             btts  consensus      Coolbet  0.02  43.0        2830.0  118    2.744  0.890     13.0      0.062   13.0 -0.100   0.282
+100            btts  consensus      Coolbet  0.03  43.0        2830.0   92    2.140  0.870     12.0      0.065   12.0 -0.191   0.290
+101            btts  consensus      Coolbet  0.05  43.0        2830.0   61    1.419  0.869      8.0      0.079    8.0 -0.769   0.231
+102            btts  consensus      Epicbet  0.02  23.0        2204.0   56    2.435  0.321     38.0      0.052   38.0  0.087   0.178
+103            btts  consensus      Epicbet  0.03  23.0        2204.0   39    1.696  0.385     24.0      0.067   24.0  0.127   0.229
+104            btts  consensus      Epicbet  0.05  23.0        2204.0   25    1.087  0.480     13.0      0.092   13.0 -0.065   0.357
+105            btts  consensus  Unibet-Site  0.02   9.0         806.0   26    2.889  0.192     21.0      0.062   20.0 -0.075   0.266
+106            btts  consensus  Unibet-Site  0.03   9.0         806.0   21    2.333  0.238     16.0      0.073   15.0 -0.213   0.304
+107            btts  consensus  Unibet-Site  0.05   9.0         806.0   15    1.667  0.267     11.0      0.088   10.0 -0.530   0.317
+108            btts  consensus      Tonybet  0.02   2.0          47.0    1    0.500  0.000      1.0      0.022    1.0 -1.000     NaN
+109            btts  consensus      Tonybet  0.03   2.0          47.0    0    0.000    NaN      0.0        NaN    0.0    NaN     NaN
+110            btts  consensus      Tonybet  0.05   2.0          47.0    0    0.000    NaN      0.0        NaN    0.0    NaN     NaN
+123  asian_handicap   pinnacle      Coolbet  0.02  42.0        2048.0   22    0.524  0.591      9.0      0.057    9.0  0.081   0.329
+124  asian_handicap   pinnacle      Coolbet  0.03  42.0        2048.0   17    0.405  0.588      7.0      0.065    7.0  0.247   0.391
+125  asian_handicap   pinnacle      Coolbet  0.05  42.0        2048.0   12    0.286  0.667      4.0      0.085    4.0  0.495   0.616
+126  asian_handicap   pinnacle      Epicbet  0.02  23.0        2462.0  119    5.174  0.008    118.0      0.060  118.0 -0.050   0.092
+127  asian_handicap   pinnacle      Epicbet  0.03  23.0        2462.0   91    3.957  0.011     90.0      0.071   90.0 -0.103   0.103
+128  asian_handicap   pinnacle      Epicbet  0.05  23.0        2462.0   57    2.478  0.018     56.0      0.090   56.0 -0.088   0.138
+129  asian_handicap   pinnacle      Tonybet  0.02   2.0          56.0    0    0.000    NaN      0.0        NaN    0.0    NaN     NaN
+130  asian_handicap   pinnacle      Tonybet  0.03   2.0          56.0    0    0.000    NaN      0.0        NaN    0.0    NaN     NaN
+131  asian_handicap   pinnacle      Tonybet  0.05   2.0          56.0    0    0.000    NaN      0.0        NaN    0.0    NaN     NaN
+132  asian_handicap  consensus      Coolbet  0.02  35.0         684.0   84    2.400  0.798     17.0      0.050   17.0  0.155   0.247
+133  asian_handicap  consensus      Coolbet  0.03  35.0         684.0   70    2.000  0.800     14.0      0.055   14.0  0.189   0.301
+134  asian_handicap  consensus      Coolbet  0.05  35.0         684.0   48    1.371  0.854      7.0      0.072    7.0  0.100   0.372
+135  asian_handicap  consensus      Epicbet  0.02  20.0         817.0  183    9.150  0.044    175.0      0.072  174.0  0.040   0.080
+136  asian_handicap  consensus      Epicbet  0.03  20.0         817.0  151    7.550  0.053    143.0      0.083  142.0  0.039   0.090
+137  asian_handicap  consensus      Epicbet  0.05  20.0         817.0  116    5.800  0.069    108.0      0.097  107.0 -0.032   0.107
+138  asian_handicap  consensus      Tonybet  0.02   2.0          19.0    2    1.000  0.000      2.0      0.057    2.0 -0.015   0.985
+139  asian_handicap  consensus      Tonybet  0.03   2.0          19.0    2    1.000  0.000      2.0      0.057    2.0 -0.015   0.985
+140  asian_handicap  consensus      Tonybet  0.05   2.0          19.0    1    0.500  0.000      1.0      0.079    1.0  0.970     NaN
+
+median per-leg CLV sd in decision cells: 0.0531  n for +2pct CLV at 80pct power one-sample: 44

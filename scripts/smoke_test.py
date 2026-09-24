@@ -53290,6 +53290,10 @@ def test_observatory_metrics():
     assert abs(om.robust_z(1.0, base)) < 1 and om.robust_z(3.0, base) > om.Z_ALERT
     src = inspect.getsource(om.run)
     assert "metric_shift" in src and "MIN_N.get(key, 0)" in src
+    # #13 frozen quotes + last-quote lag ride the same loop
+    assert "_frozen_quotes" in src and "_last_quote_lag" in src
+    assert om.FROZEN_MIN_SNAPSHOTS >= 6 and om.FROZEN_PIN_MOVE >= 0.08
+    assert "count(DISTINCT odds) d" in inspect.getsource(om._frozen_quotes)
     root = Path(__file__).resolve().parent.parent
     assert "CREATE TABLE IF NOT EXISTS obs_metric_values" in (root / "supabase/migrations/400_obs_metric_values.sql").read_text()
     assert 'id="observatory_metrics"' in (root / "workers/scheduler.py").read_text()

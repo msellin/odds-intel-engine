@@ -125,7 +125,7 @@ refresh by time to kickoff — >12 h out every 2 h, 3–12 h hourly, <3 h every 
 (+ the near-kickoff close capture). Expected: Coolbet ~150–250/h instead of 300–500, well
 clear of the block zone, with near-kickoff prices as fresh as today. **Budget rule once a
 week of data exists:** ~2× the measured peak, except where a danger level is known
-(Coolbet stays at 500).
+(Coolbet stays at 500). **Applied 2026-09-24** after 13–14 metered hours: Tonybet 150, Unibet-Site 400, Epicbet 1,200, Betfair Exchange 150, Epicbet in-play 3,000 (slimmed collector), Coolbet 500 (unchanged).
 
 ## Daily Request Budget (API-Football **Mega** — 150,000/day, 900/min)
 

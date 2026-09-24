@@ -34,14 +34,17 @@ from datetime import datetime, timezone
 log = logging.getLogger(__name__)
 
 # Requests per hour, per book, across all our processes.
+# RE-TUNED 2026-09-24 (#110/#112) from 13–14 metered hours: ~2x the measured peak, with
+# room for a startup catch-up landing in the same hour as a scheduled sweep. Coolbet is the
+# exception — it stays at the level set below the #108 danger zone (750–1,500/h got the
+# exit IP flagged), and its refresh-by-kickoff change should bring it well under this.
 _DEFAULT_BUDGETS = {
-    "Coolbet": 500,       # was 750–1,500/h before the #108 flag; search now capped
-    "Tonybet": 800,       # sweeps + deep boards + 2-min live + results; tighten once measured
-    "Unibet-Site": 500,   # the sweep's own cap is 180 fetches per run, 2 runs/h
-    "Epicbet": 4000,      # pre-match sweep + near-kickoff; ~200–400 per sweep
-    "Betfair-Exchange": 300,  # ~11 req per sweep (1 listing + 40 markets/price call), 4 sweeps/h
-    "Epicbet-inplay": 12000,  # paper-only in-play collector, ~9,600/h at its 60-fixture cap;
-                              # separate so it can never starve the pre-match sweep
+    "Coolbet": 500,           # peak 508 / median 294 before refresh-by-kickoff; danger zone 750+
+    "Tonybet": 150,           # peak 69 / median 51 (bulk API: pages of 100 events)
+    "Unibet-Site": 400,       # peak 177 / median 87, + headroom for the new "World" fixtures
+    "Epicbet": 1200,          # peak 576 / median 416 (2 sweeps/h + near-kickoff)
+    "Betfair-Exchange": 150,  # peak 53 / median 45 (~15 req per run incl. step-D markets, 4 runs/h)
+    "Epicbet-inplay": 3000,   # slimmed collector: 90 s x 25 fixtures ~ 2,000/h worst case
 }
 SLOW_S = 20.0
 _FLUSH_EVERY = 20
