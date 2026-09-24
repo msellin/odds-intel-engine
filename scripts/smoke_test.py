@@ -49714,7 +49714,9 @@ def test_own_books_in_every_comparison():
         assert '"Coolbet", "Unibet-Site", "Epicbet", "Tonybet"' in q
         ed = (web / "lib" / "engine-data.ts").read_text()
         assert '["Coolbet", "Unibet", "Bet365", "Pinnacle"]' not in ed, "/admin/place still reads the dead Unibet feed"
-        assert 'UNOBTAINABLE_BOOKMAKERS = ["Unibet-Kambi", "Unibet"]' in ed
+        # The PUBLIC obtainable figure must NOT drop AF 'Unibet' (owner, 2026-09-24): its
+        # "33.1%" is measured against unibet.ee — an OWN constraint, not a reader's.
+        assert 'UNOBTAINABLE_BOOKMAKERS = ["Unibet-Kambi"] as const' in ed
         r = (web / "app" / "api" / "admin" / "bot-book-odds" / "route.ts").read_text()
         assert '"Coolbet", "Unibet", "Bet365"' not in r
 
