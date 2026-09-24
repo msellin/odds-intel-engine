@@ -52977,6 +52977,40 @@ def test_coolbet_search_budget():
         "the budget check must run BEFORE the search request")
 
 
+@test("FOOTPRINT-HOUR-BOOKING — a request batch is booked under the hour it was counted; 'budget spent' only at the budget")
+def test_footprint_hour_booking():
+    """2026-09-24 (#139 Feeds review): Tonybet refusals made at 18:59:57 at 150/150 were flushed after
+    the hour turned and booked under 19:00 (81/150), so /admin/feeds said "request budget spent" in an
+    hour nowhere near its budget. Now the batch keeps the hour it was counted in and is flushed the
+    moment the hour changes; feed_health only says "budget spent" when requests >= budget."""
+    import workers.utils.footprint as f
+    import workers.jobs.feed_health as fh
+    import workers.api_clients.db as db
+    from datetime import datetime, timezone
+    calls = []
+    orig_w, orig_h = db.execute_write, f._hour
+    h18 = datetime(2026, 9, 24, 18, tzinfo=timezone.utc)
+    h19 = datetime(2026, 9, 24, 19, tzinfo=timezone.utc)
+    with _PUBLISHER_PATCH_LOCK:  # footprint module state is process-global
+        try:
+            db.execute_write = _this_thread_only(lambda sql, p=None: calls.append(p), orig_w)
+            f.flush()
+            calls.clear()
+            f._hour = lambda: h18
+            f.record("SmokeBook")
+            f._hour = lambda: h19
+            f.record("SmokeBook")
+            f.flush()
+        finally:
+            db.execute_write, f._hour = orig_w, orig_h
+    booked = [(c[0], c[1].hour) for c in calls if c and c[0] == "SmokeBook"]
+    assert booked == [("SmokeBook", 18), ("SmokeBook", 19)], booked
+    under = fh.footprint_warnings({"requests_1h": 73, "budget_1h": 150, "refused_1h": 4, "challenges_1h": 0})
+    assert under and "budget spent" not in under[0] and "under budget" in under[0], under
+    at = fh.footprint_warnings({"requests_1h": 150, "budget_1h": 150, "refused_1h": 4, "challenges_1h": 0})
+    assert at and "budget spent" in at[0], at
+
+
 @test("BOOK-FOOTPRINT — every book request is metered, capped per hour, and warned on before a block")
 def test_book_footprint():
     """#110 (2026-09-23). #108's Imperva flag followed ~7,500 Coolbet requests in 8 h that

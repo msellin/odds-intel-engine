@@ -71,6 +71,7 @@ _lock = threading.Lock()
 _pending: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 _pending_n = 0
 _last_flush = time.monotonic()
+_batch_hour = None  # the clock hour the pending batch was counted in (FOOTPRINT-HOUR-BOOKING)
 _db_cache: dict[str, tuple[float, int, datetime]] = {}
 
 
@@ -95,8 +96,16 @@ def _db_count(book: str) -> int:
     return n
 
 
+def _roll_hour() -> None:
+    """Flush a batch counted in an earlier clock hour before counting anything new."""
+    if _batch_hour is not None and _batch_hour != _hour():
+        flush()
+
+
 def check(book: str) -> None:
     """Raise FootprintBudgetExceeded when this book's hourly budget is spent."""
+    global _batch_hour
+    _roll_hour()
     cap = budget(book)
     if not cap:
         return
@@ -105,6 +114,8 @@ def check(book: str) -> None:
     db = _db_count(book)
     if db + local >= cap:
         with _lock:
+            if _batch_hour is None:
+                _batch_hour = _hour()
             _pending[book]["refused"] += 1
         # #110 follow-up (2026-09-24): refusals were counted but never logged, and ~17/h
         # showed up for Coolbet in hours whose DB total was 220-340 of 500. Log what THIS
@@ -123,7 +134,11 @@ def record(book: str, outcome: str = "ok", seconds: float | None = None, *,
     """Count one request and its outcome. `count_request=False` records only an
     outcome observed later (e.g. a bot-check page detected after the response)."""
     global _pending_n
+    global _batch_hour
+    _roll_hour()
     with _lock:
+        if _batch_hour is None:
+            _batch_hour = _hour()
         p = _pending[book]
         if count_request:
             p["requests"] += 1
@@ -138,20 +153,28 @@ def record(book: str, outcome: str = "ok", seconds: float | None = None, *,
 
 
 def _maybe_flush() -> None:
-    if _pending_n >= _FLUSH_EVERY or time.monotonic() - _last_flush > _FLUSH_S:
+    # FOOTPRINT-HOUR-BOOKING (2026-09-24): also flush the moment the clock hour changes, so a
+    # batch is never booked under the NEXT hour (see flush()).
+    if (_pending_n >= _FLUSH_EVERY or time.monotonic() - _last_flush > _FLUSH_S
+            or (_batch_hour is not None and _batch_hour != _hour())):
         flush()
 
 
 def flush() -> None:
-    global _pending_n, _last_flush
+    global _pending_n, _last_flush, _batch_hour
     with _lock:
         batch = {b: dict(c) for b, c in _pending.items() if any(c.values())}
+        # FOOTPRINT-HOUR-BOOKING (2026-09-24, #139 feeds review): book the batch under the hour it
+        # was COUNTED in, not the hour of the flush. Before, Tonybet refusals made at 18:59:57
+        # (150/150) landed under 19:00 (81/150), so /admin/feeds said "request budget spent" in an
+        # hour that was nowhere near its budget.
+        hour = _batch_hour or _hour()
         _pending.clear()
         _pending_n = 0
+        _batch_hour = None
         _last_flush = time.monotonic()
     if not batch:
         return
-    hour = _hour()
     try:
         from workers.api_clients.db import execute_write
         for book, c in batch.items():

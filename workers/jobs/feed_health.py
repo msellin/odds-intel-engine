@@ -266,8 +266,13 @@ def footprint_warnings(fp: dict | None) -> list[str]:
         return []
     out = []
     req, cap = fp.get("requests_1h") or 0, fp.get("budget_1h")
-    if fp.get("refused_1h"):
+    if fp.get("refused_1h") and cap and req >= cap:
         out.append(f"request budget spent — {fp['refused_1h']} requests refused this hour")
+    elif fp.get("refused_1h"):
+        # FOOTPRINT-REFUSED-UNDER-BUDGET (2026-09-24): refusals in an hour that is NOT at its
+        # budget — the old text said "budget spent" at 73/150. Late booking across the hour turn
+        # is fixed in footprint.flush(); what remains (Coolbet, ~1 per error) is #151.
+        out.append(f"{fp['refused_1h']} requests refused this hour while under budget ({req}/{cap}) — see #151")
     elif cap and req >= FOOTPRINT_WARN_SHARE * cap:
         out.append(f"{req}/{cap} requests this hour — near the budget")
     ch = fp.get("challenges_1h") or 0
