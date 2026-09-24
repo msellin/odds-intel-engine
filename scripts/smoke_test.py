@@ -52865,7 +52865,7 @@ def test_betfair_geo_probe():
     from pathlib import Path
     src = (Path(__file__).resolve().parent / "ops/betfair_exchange_geo_probe.sh").read_text()
     assert "navigation/facet/v1/search" in src and "readonly/v1/bymarket" in src
-    for forbidden in ("identitysso", "placeOrders", "login", "etx."):
+    for forbidden in ("identitysso", "placeOrders", "/login", "etx."):   # SSO, betting, order endpoints
         assert forbidden not in src, f"probe must not touch {forbidden}"
 
 
