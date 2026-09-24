@@ -53621,6 +53621,27 @@ def test_feeds_coverage_drop():
     assert "coverage_warning(ft, pt, fy, py, _hour)" in inspect.getsource(fh.run_feed_health)
 
 
+@test("SIM-SETTLE-SELECTS-WHAT-IT-READS — _PENDING_BETS_SQL carries every column the settle loop bet.get()s")
+def test_sim_settle_selects_what_it_reads():
+    """2026-09-24 (#139 5a inventory): the settle loop reads bet.get("recommended_bookmaker") and
+    bet.get("odds_at_pick_live"), but _PENDING_BETS_SQL selected neither — so every simulated_bets
+    row settled from 2026-09-14 got closing_odds / clv / closing_bookmaker = NULL (own-book-only
+    CLV had nothing to look up) and clv_pinnacle_live was never computed. This is the CLV column
+    on /performance. Guard: every simulated-bet key the loop reads must be selected."""
+    import re
+    import workers.jobs.settlement as st
+    src = open(st.__file__).read()
+    body = src[src.index("def _settle_pending_bets"):]
+    body = body[:body.index("\ndef ", 10)]
+    sql = st._PENDING_BETS_SQL
+    selected = set(re.findall(r"\b(?:sb|m)\.(\w+)", sql)) | set(re.findall(r"\bas (\w+)", sql))
+    read = set(re.findall(r'bet\.get\("(\w+)"\)', body)) | set(re.findall(r'bet\["(\w+)"\]', body))
+    missing = sorted(k for k in read - selected if k not in ("id",) and not k.startswith("_"))
+    assert not missing, f"settle loop reads columns the query never selects: {missing}"
+    for col in ("recommended_bookmaker", "odds_at_pick_live"):
+        assert col in selected, col
+
+
 @test("COOLBET-OU-MONOTONE-FT-ONLY — 1H goal lines never enter the full-match O/U ladder check (#132 fix)")
 def test_coolbet_ou_monotone_ft_only():
     """2026-09-24: after b44cd256 added over_under_1h_05/15, the full-match monotonicity guard

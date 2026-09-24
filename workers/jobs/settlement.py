@@ -53,6 +53,11 @@ SELECT
     sb.pnl, sb.clv, sb.calibrated_prob, sb.alignment_class, sb.kelly_fraction,
     sb.odds_drift, sb.news_impact_score, sb.reasoning, sb.bankroll_after,
     sb.closing_odds, sb.pick_time, sb.combo_legs, sb.combo_size, sb.system_type,
+    -- The settle loop reads both via bet.get(): without recommended_bookmaker it has no
+    -- own book, so closing_odds / clv / closing_bookmaker were written NULL on every row
+    -- settled from 2026-09-14 (own-book-only CLV) until 2026-09-24; without
+    -- odds_at_pick_live, clv_pinnacle_live was never computed on this path.
+    sb.recommended_bookmaker, sb.odds_at_pick_live,
     m.id as m_id, m.date as m_date, m.score_home, m.score_away,
     m.result as match_result, m.status as match_status,
     ht.name as home_team_name, ta.name as away_team_name
