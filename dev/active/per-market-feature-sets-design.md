@@ -108,10 +108,12 @@ moves (0,0), (1,0), (0,1), (1,1); for O/U 2.5 all four are Under so ρ does
 | feature | status |
 |---|---|
 | `min_lambda` = min(λ_home, λ_away) | **new** — BTTS is governed by the WEAKER attack |
-| `clean_sheet_pct_home/away` | **exists in `team_season_stats` at 96.87% fill, read by nothing** |
-| `failed_to_score_pct_home/away` | same |
+| `clean_sheet_pct_home/away` | ~~exists in `team_season_stats` at 96.87% fill~~ **⚠️ LEAKS — corrected 2026-09-24:** 96.87% is ROW fill of season-aggregate snapshots fetched mostly in May 2026; only **7.6%** of matches have a snapshot taken before kickoff. **Derive walk-forward from `matches` scores instead.** |
+| `failed_to_score_pct_home/away` | same leak — derive walk-forward from `matches` scores |
 | low-score dependence term (ρ or copula) | **new** |
 | `market_implied_btts_yes` | exists |
+
+> **BTTS verdict 2026-09-24 ([[#119]] research, `dev/active/sharp-anchor-v2-btts-ah-research/`):** do not build this head. A Dixon-Coles price derived from Pinnacle 1x2 + O/U 2.5 (ρ≈−0.10) tracks the soft consensus at r=0.987 and adds +0.00006 nats (t=1.0) to it, so a market-free BTTS model has nothing left to find — expected α = 0. The AH model route was closed the same day on the same basis.
 
 ### Draw — NOT a head, and not an edge target
 
@@ -319,7 +321,7 @@ read, [A] = abstract only, [D] = derivation.
 | market | shape | proposed size | beatability evidence | expected α |
 |---|---|---|---|---|
 | **AH** | difference; ±1+ lines also need the total [D] | ~8: `elo_diff`, explicit home adv, `exp_total` (wide lines), split home/away strengths from `league_standings` (99.77%, read by nothing), shots diff, rest diff, line type | the best-documented EFFICIENT football market [V] | 0 |
-| **team totals** | MARGINAL λ of one team; Dixon-Coles ρ **cancels out of both marginals exactly** [D], so independent Poisson is structurally right | ~7: own attack × opp defence (Maher), shots for/opp against, venue split, `failed_to_score_pct` + opp `clean_sheet_pct` (96.87%, unused), `league_avg_goals`, league dispersion | **no literature**; and team goal rates barely beat the league mean (away 0.87 vs 0.85 — worse) | ~0 |
+| **team totals** | MARGINAL λ of one team; Dixon-Coles ρ **cancels out of both marginals exactly** [D], so independent Poisson is structurally right | ~7: own attack × opp defence (Maher), shots for/opp against, venue split, `failed_to_score_pct` + opp `clean_sheet_pct` (derive walk-forward from `matches`; the `team_season_stats` copy leaks — see BTTS head), `league_avg_goals`, league dispersion | **no literature**; and team goal rates barely beat the league mean (away 0.87 vs 0.85 — worse) | ~0 |
 | **1H markets** | same three shapes on λ_1H ≈ s·λ_FT; s ≈ 0.44 [D from Maia 2023 V] — **measure s on our 172k HT scores** | ~6, a thin layer on the FT heads: FT λs, team + league 1H share, dependence term (0-0 dominates 1x2_1h), red-card/game-state priors | **no literature** pre-match; Pinnacle 1x2_1h only 3,439 matches → underpowered | unknown, low power |
 | **corners** | overdispersed (var/mean 1.186 vs goals 1.040, Yip et al. JORS 2024 [V]); total = SUM, team = marginal, handicap = difference | ~8: team corners for/against (4), Pinnacle-implied expected goals (+16.7% corners per expected goal), implied supremacy (drives the SPLIT, not the total), league corner mean + dispersion | small literature; the "profitable" results are one soft-book **under** bias (Betfair EPL under 10.5, p=0.001) that failed on transfer to the Bundesliga; best CV R² 0.017. **Our own corners bot: −4.86% CLV, t=−12.9, n=467** | ~0 |
 | **cards** | team yellows are UNDER-dispersed (var/mean 0.79-0.97, Philipson *JRSS A* 2026, 7,203 matches [V]) and home/away POSITIVELY correlated (τ 0.08-0.18) — so NB and bivariate-Poisson are the wrong defaults; two marginals + copula, total derived. 65.8% of yellows in 2H | ~9: league-season base rate, referee multiplier shrunk to league (0.81-1.23×), team received rates (shrunk), de-vigged 1x2 closeness q(1−q), home flag (0.88×), derby, match stakes, team fouls (33% — secondary) | the closest published analogue (Hargreaves & Powell 2022, with Sky Bet) found **no out-of-sample skill** (0.4920 vs 0.4998 constant, n.s.); **no literature** on card markets vs a closing line | ~0 |
