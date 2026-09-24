@@ -1,3 +1,10 @@
+# ✅ BLOCK D CLOSED 2026-09-24
+
+Every row in the BOTS-GATES-AND-SHARP-ANCHOR block is done, closed by decision with a reopen
+trigger, or moved to the main queue: #125 and #085 done today; #071 (trigger at consensus
+n≥200) and #096 (blocked on an external price check + an owner trade-off) moved out, as were
+#014, #062, #090 (c), #103 and #126 earlier the same day. Archived; the reasoning below is kept.
+
 Parent: the Block D rows in `PRIORITY_QUEUE.md` (topic block BOTS-GATES-AND-SHARP-ANCHOR). This file holds ORDER and reasoning only — every task is a queue row; status lives there.
 
 # Block D — implementation order after the research handover (2026-09-23)
