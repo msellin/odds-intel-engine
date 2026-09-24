@@ -29,6 +29,7 @@ We call **18** of the ~37 endpoints the plan exposes (`workers/api_clients/api_f
 
 Three odds caveats worth knowing before planning against this feed:
 
+- **AF book set shrank 2026-09-11..13 (#066, #131 audit).** API-Football stopped sending **10Bet and 888Sport (last row 09-11), Superbet and Unibet (09-12), Dafabet (09-13)**. It now sends 9: 1xBet, Bet365, Betano, Betfair (sportsbook), BetVictor, Marathonbet, Pinnacle, SBO, William Hill (measured from `odds_snapshots`, last 16 days). Anything that still names the five (e.g. the public obtainable-ROI set keeping AF `Unibet`, #125) is reading history, not live prices.
 - **Bookmaker coverage is partitioned per fixture.** "13 bookmakers" is an account-level ceiling, not what any given fixture returns. Unibet and Betano lost forward coverage for fixtures dated 2026-09-06 onward.
 - **AF retains odds for exactly 7 days**, then drops them. Anything older must come from our own `odds_snapshots` or a historical source.
 - **Pinnacle sends 19 bet types through the bulk `/odds` response, not 8 — we parse 15.** See `docs/ANALYSIS_GOTCHAS.md` § 45.
@@ -76,7 +77,7 @@ Two pieces fix it:
 
 - `book_event_map` (migration 333) — the AF fixture ↔ book event id pairing the
   three sweeps already compute, now persisted instead of discarded.
-- `workers/jobs/near_kickoff_capture.py` (Mac launchd, every 5 min) — for
+- `workers/jobs/near_kickoff_capture.py` (VPS systemd timer `oddsintel-near-kickoff-epicbet`, every 5 min since 2026-09-23; was Mac launchd) — for
   fixtures kicking off in the next 15 min, fetches that one event per book by id
   and writes it with `minutes_to_kickoff` ≤ 15, so it is stamped `is_closing`.
   It never walks a board; a (match, book) priced in the last 6 minutes is skipped.

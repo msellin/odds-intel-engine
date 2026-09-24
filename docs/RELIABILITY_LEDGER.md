@@ -687,7 +687,7 @@ thing that hides retired bots. The check and the bug shared a blind spot.
 **The guard:** both lookups now require `retired_at IS NULL`, so a DB retirement
 is self-enforcing and needs no code edit to take effect. Smoke test
 `RETIRED-BOTS-KEPT-GENERATING` pins both. The analogous gap in the placer's
-`load_picks` is still open and is flagged in `docs/SYSTEM_MAP.md` §4c.
+`load_picks` was closed 2026-09-24 (#131 audit, smoke `PLACER-SKIPS-RETIRED-BOTS`).
 
 **The pattern, generally:** when a kill switch lives in one system and the thing
 it kills lives in another, verify the kill at the *target*, never at the switch.

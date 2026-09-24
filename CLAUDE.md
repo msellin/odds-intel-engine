@@ -336,7 +336,7 @@ ssh root@204.168.199.8 'cd /opt/odds-intel-engine && git pull --ff-only \
 ## Architecture
 
 ```
-API-Football Mega (150K/day)  -> PRIMARY: fixtures, odds (13 bookmakers), live data,
+API-Football Mega (150K/day)  -> PRIMARY: fixtures, odds (9 bookmakers incl. Pinnacle since 2026-09-13; was 13), live data,
                                 lineups, injuries, standings, H2H, events, player stats
 Kambi API (free)             -> ⛔ RETIRED 2026-09-15, and ⚠️ NOT PLACEABLE before that
                                 (UNIBET-KAMBI-RETIRED). 41-league sweep
@@ -359,7 +359,7 @@ ESPN (free)                  -> Settlement results backup
      ── MORNING CHAIN — ONE sequential job at 04:00 UTC (morning_pipeline) ──
                     ① Fixtures    — AF fixtures (today + tomorrow rows; league refresh Mon)
                     ② Enrichment  — standings, H2H, team stats, injuries
-                    ③ Odds        — AF bulk odds (13 bookmakers) for today
+                    ③ Odds        — AF bulk odds (9 bookmakers incl. Pinnacle since 2026-09-13; was 13) for today
                     ④ Predictions — club model + AF predictions + national-team predictor
                     ⑤ Betting     — Poisson/XGBoost model + signals + trigger engine (morning cohort)
                                          |

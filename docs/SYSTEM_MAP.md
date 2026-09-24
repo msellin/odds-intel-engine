@@ -206,7 +206,7 @@ registry and regenerate.
 > `bots WHERE name=%s` with no `retired_at` check, so a retired bot kept writing
 > `shadow_bets` — it vanished from the page and carried on underneath. Both
 > lookups now require `retired_at IS NULL` (RETIRED-BOTS-KEPT-GENERATING). The
-> analogous gap in the placer's `load_picks` is still open — see §4c.
+> analogous gap in the placer's `load_picks` was closed 2026-09-24 (#131) — see §4c.
 
 > **Why eight bots became four, and why all twelve are listed here right now.**
 > The eight above are 2 anchors × 2 books × 2 markets, but the **book is a venue,
@@ -632,8 +632,9 @@ whether a euro moves. See the warning immediately below.
   writes no `real_bets` row, so it is safe while placement is down — and
   `is_publishing_paused()` falls *open* on DB error for that reason. Full table:
   `WORKFLOWS.md` § Pause semantics.
-- ⚠️ **`load_picks` has no `retired_at` / `is_active` check**, unlike
-  `coolbet_placer.load_qualified_bets`. Same reason it is currently safe.
+- ✅ **`load_picks` now requires `retired_at IS NULL AND is_active`** (2026-09-24, #131
+  audit; smoke `PLACER-SKIPS-RETIRED-BOTS`), matching `coolbet_placer.load_qualified_bets`.
+  Before that it had no retirement check and was safe only because placement was paused.
 
 ### 4d. The floors — and where they are NOT the single source
 

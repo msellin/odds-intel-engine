@@ -1172,6 +1172,8 @@ Alignment will be activated (move from log-only to staking modifier) after:
 
 ## 10b. CS2 Esports Model (2026-06-08)
 
+> **RETIRED 2026-08-26** — the CS2 pipeline and its tables were removed. This section is kept as history; nothing in it is live, and its open-work items are closed (#131 audit, 2026-09-24).
+
 A parallel pre-match model for Counter-Strike 2 series, built to extend the
 edge thesis to esports markets. Same accumulation/calibration discipline as
 the soccer model, but a different feature stack reflecting how CS2 outcomes

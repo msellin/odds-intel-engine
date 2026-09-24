@@ -53332,6 +53332,17 @@ def test_results_tiebreak():
     assert 'record_finding("results_corrected"' in run and '"af_confirmed" in seen' in run
 
 
+@test("PLACER-SKIPS-RETIRED-BOTS — the real-money Coolbet placer never loads a retired bot's picks")
+def test_placer_skips_retired_bots():
+    """#131 audit (2026-09-24): `load_picks` joined `bots` with no retired filter, unlike
+    the pipeline (2026-09-14). Harmless while placement is paused; money-losing once
+    re-armed with a stale bot list."""
+    import inspect
+    import scripts.place_coolbet_ui as pc
+    src = inspect.getsource(pc.load_picks)
+    assert "b.retired_at IS NULL AND b.is_active" in src
+
+
 @test("NEAR-KICKOFF-COOLBET — Coolbet back in the 5-min close capture (#11)")
 def test_near_kickoff_coolbet():
     """2026-09-24: removed 09-23 while zone.ee was Imperva-flagged; re-added once the board

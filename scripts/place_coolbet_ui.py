@@ -655,6 +655,11 @@ def load_picks(bot_name: str) -> list[dict]:
              JOIN teams   ht ON ht.id = m.home_team_id
              JOIN teams   at ON at.id = m.away_team_id
             WHERE b.name = %s
+              -- #131 audit (2026-09-24): a retired bot's still-pending picks must never
+              -- reach real placement. The pipeline got this filter 2026-09-14; the
+              -- placer's own loader did not, so re-arming the placer with a stale bot
+              -- list would have staked money on a retired strategy.
+              AND b.retired_at IS NULL AND b.is_active
               AND m.date > NOW()
               -- unsettled rows carry result='pending', not NULL
               AND (s.result IS NULL OR s.result = 'pending')

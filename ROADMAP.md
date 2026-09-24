@@ -51,7 +51,7 @@ Annual: Pro €39.99/yr (€3.33/mo) · Elite €119.99/yr (€9.99/mo)
 
 **Pro** (€4.99/mo)
 - Everything in Free
-- Full odds comparison across all 13 bookmakers with best-price highlighting (1X2, O/U 2.5, BTTS, O/U 1.5, O/U 3.5)
+- Full odds comparison across all AF bookmakers (9 bookmakers incl. Pinnacle since 2026-09-13; was 13) with best-price highlighting (1X2, O/U 2.5, BTTS, O/U 1.5, O/U 3.5)
 - Pre-match odds movement charts (1X2 + O/U 2.5)
 - Live in-play odds chart by match minute (FE-LIVE)
 - Intelligence Summary: top 5 signals in plain English with severity indicators (SUX-4/6)
@@ -229,7 +229,7 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | API-Football Ultra ($29/mo) | ✅ Primary data source |
 | ① Fixtures (04:00 + 4 refreshes/day) | ✅ AF fixtures + league coverage + postponement detection |
 | ② Enrichment (04:15/10:30/13:00/16:00 UTC) | ✅ Standings, H2H, team stats, injuries |
-| ③ Odds (every 30min 07-22 UTC + closing odds 13:30/17:30/20:00) | ✅ AF bulk odds, 13 bookmakers |
+| ③ Odds (every 30min 07-22 UTC + closing odds 13:30/17:30/20:00) | ✅ AF bulk odds, 9 bookmakers incl. Pinnacle since 2026-09-13; was 13 |
 | ④ Predictions (05:30 UTC) | ✅ AF predictions (coverage-aware) |
 | ⑤ Betting (8×/day: 06:00/09:30/11:00/13:30/15:00/17:30/19:00/20:30 UTC) | ✅ Poisson/XGBoost + Pinnacle anchor + sharp consensus gate + veto filters |
 | ⑥ LivePoller (24/7, adaptive 30s live / 120s idle) | ✅ Live scores, events, lineups, in-play odds + in-play bots |
@@ -338,8 +338,8 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 | Decision | Options | Status |
 |----------|---------|--------|
 | Tier names final? | Free/Pro/Elite | ✅ Done |
-| Tips: picks or signals? | "Today's picks" vs "What bot_X would bet" | ⏳ Pending |
-| Design: Stitch redesign or ship now? | Polish current vs wait for Stitch designs | ⏳ Pending |
+| Tips: picks or signals? | "Today's picks" vs "What bot_X would bet" | ⛔ Moot 2026-09-24 — PRODUCT-COLLAPSE removed the surface; the product is `/picks` |
+| Design: Stitch redesign or ship now? | Polish current vs wait for Stitch designs | ⛔ Moot 2026-09-24 — the redesigned surface was deleted (PRODUCT-COLLAPSE) |
 | user_bets feature at M3? | Follow a tip → personal P&L | ✅ Promoted to ENG-9 (Phase 2, ~May W3-4) |
 
 ---

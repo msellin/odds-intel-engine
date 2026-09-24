@@ -25,11 +25,11 @@
 07:15  TriggerCalWatch    trigger_calibrator_watch  TRIGGER-CALIBRATOR-WATCH (2026-09-11): SILENT until it can answer. The 1x2 trigger calibrator was fit POOLED over home/draw/away until 2026-09-11 (HOME under-estimated 10-15pp → bots fired only on longshots, CLV -6.6%); it is now per-selection. This checks whether the post-fix era has ~334 settled picks with a Pinnacle CLV — the size at which CLV is readable — and below that logs and says nothing. Then Telegrams the VERDICT once (deduped 7d): CLV positive → window-firing is sound, MIRROR-AND-TRIGGER-CONVERGENCE phase 2 worth building; still negative → mechanism suspect, do NOT move the real-money mirror bots onto it. Fires on the DATA being ready rather than a date, because a date-based reminder still defers the interpreting. Manual: `python3 scripts/trigger_calibrator_check.py --per-bot`.
 04:00  ① Fixtures        run_fixtures()            AF fixtures + league coverage (weekly Mon)
        ② Enrichment      run_enrichment()          Standings, H2H, team stats, injuries (full)
-       ③ Odds            run_odds()                AF bulk odds (13 bookmakers)
+       ③ Odds            run_odds()                AF bulk odds (9 bookmakers incl. Pinnacle since 2026-09-13; was 13)
        ④ Predictions     run_predictions()         AF predictions (coverage-aware)
        ⑤ Betting         run_betting()             Poisson/XGBoost model + signals + bet placement; sends Telegram DMs to connected Pro/Elite users on each new value bet
        (morning pipeline — chained sequentially, completes by ~06:30)
-24/7   ③ Odds            run_odds()                Every 30min (:00 and :30) — AF bulk odds, 13 bookmakers
+24/7   ③ Odds            run_odds()                Every 30min (:00 and :30) — AF bulk odds, 9 bookmakers incl. Pinnacle since 2026-09-13; was 13
                                                     From 16:00 UTC each run ALSO fetches TOMORROW (#113, 2026-09-23): after-midnight-UTC kickoffs sat on 4–6 h old AF quotes (Pinnacle incl.) every evening. Env ODDS_REFRESH_TOMORROW_FROM_UTC; ~160 extra AF calls/day.
                                                     + mark_closing runs at 13:30, 17:30, 20:00 (pre-KO windows)
                                                     (WC-OVERNIGHT-COVERAGE 2026-06-12 — was 07-22, expanded to cover overnight WC kickoffs)
@@ -370,7 +370,7 @@ restart. No extra hosting cost on the VPS; blast radius isolated.
 - Readiness gate: won't run unless ① Fixtures completed
 
 ### ③ Odds (`fetch_odds.py`)
-- AF bulk odds via `/odds?date=` — ~178 fixtures, 13 bookmakers, all markets (1X2, O/U, BTTS, DC)
+- AF bulk odds via `/odds?date=` — ~178 fixtures, 9 bookmakers incl. Pinnacle since 2026-09-13; was 13, all markets (1X2, O/U, BTTS, DC)
 - Bookmakers: 10Bet, 1xBet, 888Sport, Bet365, Betano, BetVictor, Betfair, Dafabet, Marathonbet, Pinnacle, SBO, Unibet, William Hill
 - Kambi removed 2026-05-06 — all leagues already covered by AF, no unique value
 - **Coolbet** ingested at :03/:33 UTC on the VPS (`job_coolbet_odds_snapshot`) via the **board sweep** (`coolbet_explorer.run_board_sweep`, 48 h) since 2026-09-23 (#091/#110): fo-tree + one listing per category (categories with nothing near-term skipped, re-probed every 6 passes; a FAILED listing is never learned as empty), markets only for matched events, odds batched. Replaced `run_bulk`, whose per-fixture search fallback sent ~7,500 requests in 8 h and got the exit IP flagged (#108). Coverage diff (`scripts/coolbet_board_coverage_diff.py`, Mac IP, 48 h): board 55 vs run_bulk 41, 1 only in run_bulk. Rollback: `COOLBET_SWEEP_MODE=bulk`. Raises on 0 categories or on 0 rows stored for 20+ near-term events. **Refresh by kickoff (#112, 2026-09-24):** a matched fixture's markets are re-fetched every pass under 3 h to kickoff, hourly at 3–12 h, ~2-hourly beyond (`coolbet_explorer.refresh_due`); the same tiers gate Epicbet's deep board (memo `~/.config/oddsintel/epicbet-deep-last.json`) and Unibet-Site's contest page. Matcher (Epicbet/Unibet `fuzzy_match_event`): book start within 45 min of our kickoff, our two teams on DIFFERENT book sides, one book event → one fixture (`unique_pairs`).
@@ -693,7 +693,7 @@ After step 5: bets are placed, value bets page has data.
 
 | Source | Role | Cost |
 |--------|------|------|
-| **API-Football Ultra** | Primary: fixtures, odds (13 bookmakers), predictions, injuries, lineups, standings, H2H, stats, live | $29/mo |
+| **API-Football Ultra** | Primary: fixtures, odds (9 bookmakers incl. Pinnacle since 2026-09-13; was 13), predictions, injuries, lineups, standings, H2H, stats, live | $29/mo |
 | ~~**Kambi**~~ | Removed 2026-05-06 — AF already covers all 41 Kambi leagues with 13 bookmakers | — |
 | **Epicbet** | Second EMTA-licensed, operator-reachable book — 1X2/OU/BTTS/AH plus corners, cards, 1H markets, team totals and DC via the deep board (2026-09-06), anonymous REST feed | Free |
 | **ESPN** | Settlement results backup | Free |
