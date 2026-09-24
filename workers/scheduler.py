@@ -1378,6 +1378,21 @@ def job_coolbet_daily_summary():
     _run_job("coolbet_daily_summary", _job_coolbet_daily_summary_impl)
 
 
+def _job_export_bot_config_impl():
+    """#139 UNIFIED-BOT-MODEL phase 1 (2026-09-24): write one `bot_config` row per bot
+    (active, retired, forward-test arms, control) from the code that actually runs —
+    floors, gates, books with file:line sources. Read by the bot_scoreboard /
+    bot_capabilities views (migration 410) and /admin/bots. Returns {'stored': n}."""
+    from scripts.export_bot_config import run
+    return run()
+
+
+def job_export_bot_config():
+    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
+    pipeline_runs row; the returned `stored` becomes records_count (#112)."""
+    _run_job("export_bot_config", _job_export_bot_config_impl)
+
+
 def _job_coolbet_prekickoff_alert_impl():
     """COOLBET-DAEMON-ALERTS (2026-06-16): pre-kickoff catch-net. Runs every
     5 min on the VPS, independent of the Mac. When the Mac daemon's
@@ -3544,6 +3559,12 @@ def main():
         CronTrigger(hour=3, minute=20),
         id="inplay_book_quotes_prune", name="In-play board prune 03:20 (90d)"
     )
+
+    # #139 UNIFIED-BOT-MODEL: daily export of every bot's config into bot_config
+    # (scripts/export_bot_config.py). The design says 'daily + on deploy'; on-deploy is not
+    # wired yet — after a config change run `python3 scripts/export_bot_config.py` by hand.
+    scheduler.add_job(job_export_bot_config, CronTrigger(hour=3, minute=40),
+                      id="export_bot_config", name="Export bot config 03:40")
 
     # ML-PIPELINE-UNIFY Stage 5a — weekly retrain Sunday 03:00 UTC, runs train.py +
     # compare_models.py. Promotion stays manual (operator flips MODEL_VERSION).

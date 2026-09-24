@@ -39,7 +39,7 @@ shows the evidence next to each switch.
 `rule_version`s and the junk-anchor control are read by the unified views, never re-labelled
 or re-scored in place.
 
-## Data contract — phase 1 (engine: migration 409 + export job)
+## Data contract — phase 1 (engine: migration 410 + export job)
 
 All views live in `public`, owned by `oddsintel_owner`, readable by `service_role`
 (**not** anon — admin only; #072).
@@ -63,19 +63,27 @@ All views live in `public`, owned by `oddsintel_owner`, readable by `service_rol
 | `clv_raw` | numeric | `clv` (raw price ratio — shown only as a secondary number) |
 | `clv_mc` | numeric | `clv_margin_corrected` where the ledger has it (shadow, forward test); NULL for sim |
 | `clv_pinnacle` | numeric | sim: `clv_pinnacle_devig`; shadow: `clv_pinnacle`; forward test: NULL |
-| `is_inplay` | boolean | sim `match_minute_at_pick IS NOT NULL`; shadow `inplay_minute IS NOT NULL` |
+| `is_inplay` | boolean | sim `match_minute_at_pick` OR `xg_source` set OR bot `inplay_%` (865 of 1,490 old in-play sim rows carry no minute); shadow `inplay_minute IS NOT NULL` |
 | `model_version` / `rule_version` | text | whichever the source carries |
 
-Rules: shadow rows come from `shadow_bets_unique` **excluding timing-cohort copies**
-(`shadow_cohort ~ '^[0-9]{4}$'`, audit B4); sim rows exclude combos (`combo_legs IS NOT NULL`);
-void rows stay (counted as void).
+Rules — **one ledger per bot** (ANALYSIS_GOTCHAS §18; corrected 2026-09-24 by the genesis
+research, `dev/active/unified-bot-model-genesis/ledgers.md` §6): a bot with any `simulated_bets`
+rows is read from `simulated_bets` only (its shadow rows are timing copies — 398 of 531 pre-05-20
+ones duplicate the sim pick); every other bot is read from ALL its `shadow_bets` rows, deduped
+per (bot, match, market, selection), earliest wins. The first draft excluded clock-time (`HHMM`)
+cohorts as "copies" — for 37 shadow-only bots those rows are the only record (11,447 picks).
+Sim rows exclude combos; void rows stay. CLV statistics skip |clv| > 1 (§9) and report the
+count as `clv_outlier_n`.
 
 ### `bot_scoreboard` (view) — one row per bot_name
 
-`bot_name, display_name, source, is_active, retired_at, maturity_label, family,
+`bot_name, display_name, source, scored_rule_version, earlier_version_picks, is_active, retired_at, maturity_label, family,
 picks_total, pending, settled (won+lost), won, lost, void, roi_unit (sum pnl_unit / settled),
 clv_mc_n, clv_mc_mean, clv_mc_se, clv_mc_t, clv_pin_n, clv_pin_mean, clv_pin_t,
-first_pick_at, last_pick_at, picks_7d, settled_7d` — `family` joined from `bot_config`.
+clv_pin_se, clv_outlier_n, first_pick_at, last_pick_at, picks_7d, settled_7d` — `family` joined from `bot_config`.
+**Pre-registered bots are scored on their current `rule_version` only** (a rule change is a new
+population, migration 346); earlier versions stay in the ledger, counted in
+`earlier_version_picks`, never pooled — which also drops the 8 `+DEGENERATE_JUNK_DAY1` control rows.
 
 ### `bot_config` (table, written by `scripts/export_bot_config.py`, daily + on deploy)
 
@@ -102,13 +110,15 @@ constants), not from docs. A bot with no resolvable config gets a row with
 
 ### `bot_capabilities` (view)
 
-`bot_name, collect (is_active AND retired_at IS NULL), publish (from bot_config.published /
+`bot_name, collect (is_active AND retired_at IS NULL), writing_7d (picks in the last 7 days —
+retired bots keep collecting ON PURPOSE, owner decisions 2026-05-20 and 09-18, so "retired" ≠
+"stopped"), publish (from bot_config.published /
 show_on_picks), telegram, place_capable (bot_config.placeable), place_enabled
 (coolbet_placer_bots.ui_place_enabled), fleet_placement_paused, fleet_real_money_armed`.
 
 ## Phases
 
-1. **Data + page (no behaviour change)** — migration 409 (`bot_ledger`, `bot_scoreboard`,
+1. **Data + page (no behaviour change)** — migration 410 (`bot_ledger`, `bot_scoreboard`,
    `bot_capabilities`, `bot_config` table), `scripts/export_bot_config.py` + a daily job;
    `/admin/bots` rebuilt on these: one row per active bot grouped by family (settings,
    capability chips, last pick, n, ROI, the family's admissible metric with t and a plain

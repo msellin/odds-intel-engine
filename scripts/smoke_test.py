@@ -53741,6 +53741,111 @@ def test_feeds_closing_capture():
     assert "interval '15 minutes'" in inspect.getsource(fh._closing_capture)
 
 
+@test("UNIFIED-BOT-VIEWS-CONTRACT — bot_ledger / bot_scoreboard / bot_capabilities / bot_config match the #139 contract")
+def test_unified_bot_views_contract():
+    """#139 UNIFIED-BOT-MODEL phase 1 (2026-09-24). Migration 410 builds one ledger over
+    simulated_bets / shadow_bets / picks_forward_test, one scoreboard, one capability view
+    and the bot_config table, per docs/UNIFIED_BOT_MODEL_DESIGN_2026_09_24.md § "Data
+    contract — phase 1". Pins: every contract column/view exists; admin-only (service_role,
+    never anon — #072); the ledger rules (no combos; one ledger per bot — sim-writing bots add
+    no shadow rows, every other bot keeps all cohorts deduped earliest-first; junk_anchor ->
+    control_junk_anchor); and the exporter resolves every ACTIVE
+    bot to a contract family with {name, value, source} gates, scheduled daily 03:40."""
+    import re as _re
+    sql = _engine_path("supabase/migrations/410_unified_bot_views.sql").read_text()
+    low = sql.lower()
+    assert "create table if not exists public.bot_config" in low
+    for v in ("bot_ledger", "bot_scoreboard", "bot_capabilities"):
+        assert f"create or replace view public.{v} as" in low, v
+    seg = lambda a, b: low[low.index(a):low.index(b)]
+    cfg = seg("create table if not exists public.bot_config", "comment on table public.bot_config")
+    for col in ("bot_name", "family", "description", "ledger", "writer_job", "cadence", "markets",
+                "prob_source", "edge_floor", "edge_floor_source", "odds_min", "odds_max", "gates",
+                "books", "books_source", "anchor", "placeable", "published", "telegram",
+                "admissible_metric", "exported_at"):
+        assert _re.search(rf"\n\s+{col}\s", cfg), f"bot_config.{col}"
+    assert _re.search(r"bot_name\s+text primary key", cfg) and _re.search(r"gates\s+jsonb", cfg)
+    assert _re.search(r"books\s+text\[\]", cfg) and _re.search(r"markets\s+text\[\]", cfg)
+    led = seg("create or replace view public.bot_ledger", "comment on view public.bot_ledger")
+    for col in ("source", "pick_id", "bot_name", "bot_id", "match_id", "kickoff", "pick_time",
+                "market", "selection", "odds", "bookmaker", "result", "pnl_unit", "clv_raw",
+                "clv_mc", "clv_pinnacle", "is_inplay", "model_version", "rule_version"):
+        assert _re.search(rf"\bas {col}\b", led), f"bot_ledger.{col}"
+    assert "combo_legs is null" in led
+    # ONE LEDGER PER BOT (ANALYSIS_GOTCHAS §18): sim-writing bots contribute no shadow rows;
+    # every other bot keeps ALL its shadow rows incl. HHMM cohorts (their only record — an
+    # HHMM exclusion lost 11,447 picks across 37 bots).
+    assert "shadow_cohort !~" not in led, "HHMM timing cohorts must not be excluded"
+    assert "not exists (select 1 from simulated_bets s2 where s2.bot_id = x.bot_id)" in led
+    assert "distinct on (x.bot_id, x.match_id, x.market, x.selection)" in led and "x.pick_time" in led
+    assert "s.xg_source is not null" in led, "in-play sim rows are flagged by xg_source too"
+    assert "'control_junk_anchor'" in led and "'junk_anchor'" in led
+    for n in ("bot_sharp_1x2_v1", "bot_sharp_ou_v1", "bot_consensus_b_v1", "bot_consensus_c_v1", "bot_consensus_d_v1"):
+        assert f"'{n}'" in led, n
+    assert "clv_margin_corrected" in led and "clv_pinnacle_devig" in led
+    sb = seg("create or replace view public.bot_scoreboard", "comment on view public.bot_scoreboard")
+    for col in ("bot_name", "display_name", "source", "is_active", "retired_at", "maturity_label",
+                "family", "picks_total", "pending", "settled", "won", "lost", "void", "roi_unit",
+                "clv_mc_n", "clv_mc_mean", "clv_mc_se", "clv_mc_t", "clv_pin_n", "clv_pin_mean",
+                "clv_pin_t", "first_pick_at", "last_pick_at", "picks_7d", "settled_7d",
+                "clv_pin_se", "clv_outlier_n", "scored_rule_version", "earlier_version_picks"):
+        assert _re.search(rf"\b{col}\b", sb), f"bot_scoreboard.{col}"
+    # pre-registration: forward-test bots scored on their CURRENT rule_version only (mig 346)
+    assert "l.rule_version = c.rule_version" in sb, "forward-test rule versions must never be pooled"
+    cap = seg("create or replace view public.bot_capabilities", "comment on view public.bot_capabilities")
+    for col in ("bot_name", "collect", "publish", "telegram", "place_capable", "place_enabled",
+                "fleet_placement_paused", "fleet_real_money_armed", "writing_7d"):
+        assert _re.search(rf"\b{col}\b", cap), f"bot_capabilities.{col}"
+    # retired bots keep writing on purpose (owner 05-20 / 09-18): shown, never hidden
+    assert "as writing_7d" in cap and "interval '7 days'" in cap
+    assert "coolbet_placer_bots" in cap and "coolbet_session_state" in cap
+    # admin only
+    grants = _re.findall(r"grant\s+select\s+on\s+([^;]+?)\s+to\s+(\w+)", low)
+    assert grants and all(role == "service_role" for _, role in grants), grants
+    assert "to anon" not in low and "to authenticated" not in low and "to public" not in low
+    rev = low[low.index("revoke all on public.bot_config"):]
+    assert "anon" in rev.split(";")[0] and "authenticated" in rev.split(";")[0]
+
+    # exporter: every active bot resolves to a contract family
+    from scripts import export_bot_config as ex
+    contract = {"model_sim", "model_shadow", "sharp_trigger", "sharp_generator", "inplay",
+                "forward_test", "control", "unknown"}
+    assert set(ex.FAMILIES) == contract, ex.FAMILIES
+    try:
+        db_bots = ex._load_db_bots()
+    except Exception:  # noqa: BLE001 — the source check must not need a DB
+        db_bots = None
+    rows = ex.build_rows(db_bots)
+    by = {r["bot_name"]: r for r in rows}
+    from workers.registry.bot_registry import active_names
+    active = set(active_names())
+    if db_bots:
+        active |= {b["name"] for b in db_bots if b.get("retired_at") is None}
+    assert len(by) == len(rows), "duplicate bot_config rows"
+    for r in rows:
+        assert r["family"] in contract, (r["bot_name"], r["family"])
+        assert r["admissible_metric"] == ex.FAMILY_METRIC[r["family"]], r["bot_name"]
+        for g in r["gates"]:
+            assert set(g) == {"name", "value", "source"}, (r["bot_name"], g)
+            # a source without a line number means src() missed — the code moved under us
+            assert _re.search(r":\d+", g["source"]) or "env" in g["source"], (r["bot_name"], g)
+    for n in active:
+        assert n in by, f"active bot {n} missing from the export"
+        assert by[n]["family"] != "unknown", f"active bot {n} has no resolvable config"
+    assert by["control_junk_anchor"]["family"] == "control"
+    # retired bots whose config is STILL in code must resolve ('unknown' = unresolvable only)
+    for n in ("bot_sweep_1x2_home_v1", "bot_sweep_1x2_draw_v1", "bot_sweep_ou25_v1", "bot_sweep_ou35_v1",
+              "bot_pin_1x2_home_v1", "bot_no_pin_shadow_v1", "bot_no_pin_home_v1", "bot_coolbet_value_v1"):
+        if n in by:
+            assert by[n]["family"] != "unknown", f"{n} config is in daily_pipeline_v2 but exported as unknown"
+    assert not any(g["name"] == "anchor_sanity_ratio" for r in rows for g in r["gates"]), "placeholder gate"
+    assert by["bot_inplay_slowstate_v1"]["admissible_metric"] == "lift"
+    assert by["bot_v10_1x2"]["admissible_metric"] == "clv_pinnacle"
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert '_run_job("export_bot_config", _job_export_bot_config_impl)' in sched
+    assert _re.search(r'job_export_bot_config, CronTrigger\(hour=3, minute=40\)', sched)
+
+
 @test("ANON-LEAST-PRIVILEGE — the public API role reads only what the site reads (#072)")
 def test_anon_least_privilege():
     """#072 (2026-09-24): anon held SELECT on 134/134 public relations via default privileges;
