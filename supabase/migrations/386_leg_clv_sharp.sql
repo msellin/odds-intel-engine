@@ -1,6 +1,6 @@
 -- 386 — CLV AGAINST THE DE-VIGGED SHARP CLOSE, for every leg of every ledger ([[#024]], 2026-09-23)
 --
--- Step 2 of the Block D re-order (dev/active/block-d-order-2026-09-23.md), the handover's T2.
+-- Step 2 of the Block D re-order (dev/archive/block-d-order-2026-09-23.md), the handover's T2.
 -- The published forward test decides on CLV against the pick's OWN soft book's close
 -- (7.8-11% margin). The research standard is the de-vigged SHARP close, which settles an
 -- edge in ~135-150 bets instead of ~13,500. This table holds that number for every settled

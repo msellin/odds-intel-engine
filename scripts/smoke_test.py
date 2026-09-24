@@ -4307,12 +4307,18 @@ def test_cb_ub_1h_tt_columns():
     assert tt == [("team_total_away_15", "over", 1.8, 1.5),
                   ("team_total_away_15", "under", 2.0, 1.5)], f"team total parse wrong: {tt}"
     # look-alikes must not land in either namespace (or the full-match slots)
-    for name, mtid in (("1st half result and 1st half both teams to score", 1549),
-                       ("1st half [home] goals", 844)):
+    # ("1st half [home] goals", 844) left this list on 2026-09-24: #132 part 2 maps it on
+    # purpose to team_total_1h_home_* (pinned by COOLBET-FIRST-HALF-GOALS) — never to the
+    # full-match team_total_home_* slot, which is what this guard protects.
+    for name, mtid in (("1st half result and 1st half both teams to score", 1549),):
         got = parse_market({"id": 3, "line": "0.5", "name": name, "market_type_id": mtid,
                             "outcomes": [{"id": 1, "result_key": "[Home]"},
                                          {"id": 4, "result_key": "Over"}]}, om)
         assert got == [], f"{name!r} must stay unmatched, got {got}"
+    got = parse_market({"id": 3, "line": "0.5", "name": "1st half [home] goals", "market_type_id": 844,
+                        "outcomes": [{"id": 1, "result_key": "[Home]"},
+                                     {"id": 4, "result_key": "Over"}]}, om)
+    assert all(r[0].startswith("team_total_1h_") for r in got), f"844 leaked into a full-match slot: {got}"
 
     fx = Path(__file__).parent.parent / "tests" / "fixtures" / "unibet_contest_derby.json"
     ub = [r for r in uof.parse_contest(json.loads(fx.read_text())) if r[0].startswith("team_total_")]
@@ -48595,7 +48601,13 @@ def test_shadow_bots_place_writes_real_bets():
     if not route.exists() or not action.exists():
         return
     r = route.read_text(encoding="utf-8"); a = action.read_text(encoding="utf-8")
-    assert "shadow_bet_id: shadowBetId ?? null" in r and "placed_real: null" in r, "manual bets are unconfirmed until the account reconciler sees the ticket"
+    # #022 (2026-09-24): the insert moved into the atomic RPC record_manual_real_bet (mig 407),
+    # which writes placed_real NULL; the route passes the shadow pick id as p_shadow_bet_id.
+    mig = _engine_root / "supabase" / "migrations" / "407_record_manual_real_bet.sql"
+    m = mig.read_text(encoding="utf-8")
+    assert "p_shadow_bet_id: shadowBetId ?? null" in r and "record_manual_real_bet" in r
+    assert "placed_real" in m and "p_bookmaker, p_captured_odds, p_actual_odds, p_stake, p_notes, NULL)" in m, \
+        "manual bets are unconfirmed (placed_real NULL) until the account reconciler sees the ticket"
     assert '"/api/admin/real-bet"' in a and "shadowBetId" in a
 
 

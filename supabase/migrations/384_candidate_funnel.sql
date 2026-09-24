@@ -6,7 +6,7 @@
 -- the form "would a lower floor / another grade / another de-vig have helped?"
 -- could ever be answered — #073 and #077 both hit that wall ("those picks do not
 -- exist"). This table is that population. Step 1 of the Block D re-order
--- (dev/active/block-d-order-2026-09-23.md).
+-- (dev/archive/block-d-order-2026-09-23.md).
 --
 -- ONE ROW PER (day, source, bot, match, market, selection), updated in place with
 -- the LATEST decision, so a candidate re-evaluated every hour costs one row a day.
