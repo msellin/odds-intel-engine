@@ -912,21 +912,34 @@ def check_signal_silence() -> None:
     Fires at most once per condition per day per channel.
     """
     # --- Condition B: pipeline produced nothing at all ---------------
+    # NO-PICKS-ALL-LEDGERS (2026-09-24): measure the NEWEST pick across all three
+    # ledgers (bot_ledger = simulated_bets ∪ shadow_bets ∪ picks_forward_test, #139
+    # migration 410). It used to read simulated_bets alone, which after the
+    # 2026-09-24 retirement of bot_v10_ou is written by ONE bot at 1-5 picks a day —
+    # so a normal 48h gap there fired this "pipeline failing silently" alert every
+    # hour while the pipeline ran 93 times and the other ledgers wrote all day.
     rows = execute_query(
-        "SELECT MAX(created_at) AS t FROM simulated_bets"
+        "SELECT source, MAX(pick_time) AS t FROM bot_ledger GROUP BY source"
     )
-    last_pick = rows[0]["t"] if rows else None
+    by_source = {r["source"]: r["t"] for r in rows if r.get("t") is not None}
+    last_pick = max(by_source.values()) if by_source else None
     now_utc = datetime.now(timezone.utc)
     if last_pick is not None:
         if last_pick.tzinfo is None:
             last_pick = last_pick.replace(tzinfo=timezone.utc)
         pick_age_h = (now_utc - last_pick).total_seconds() / 3600
         console.print(
-            f"[dim]health_alerts: last pick produced {pick_age_h:.1f}h ago[/dim]"
+            f"[dim]health_alerts: last pick produced {pick_age_h:.1f}h ago (any ledger)[/dim]"
         )
-        if pick_age_h > NO_PICKS_AFTER_HOURS:
+        # Send on the CROSSING (first hourly run past the threshold) and then once a
+        # day at the first run of the window (10 UTC). Stateless on purpose: the
+        # send_telegram dedup is in-process memory, so every scheduler restart (every
+        # engine deploy) re-armed it and the alert went out hourly.
+        crossing = NO_PICKS_AFTER_HOURS < pick_age_h <= NO_PICKS_AFTER_HOURS + 1
+        daily = pick_age_h > NO_PICKS_AFTER_HOURS and now_utc.hour == 10
+        if crossing or daily:
             msg = (
-                f"⚠️ No picks produced for {pick_age_h:.0f}h "
+                f"⚠️ No picks produced by ANY bot for {pick_age_h:.0f}h "
                 f"(last: {last_pick.strftime('%Y-%m-%d %H:%M UTC')}). "
                 f"The betting pipeline may be failing silently — check "
                 f"pipeline_runs for betting/betting_refresh."
@@ -935,7 +948,7 @@ def check_signal_silence() -> None:
             _alert_once(
                 "no_picks_produced",
                 f"No picks produced for {pick_age_h:.0f}h",
-                f"<p>The most recent <code>simulated_bets</code> row is "
+                f"<p>The most recent pick in ANY ledger (<code>bot_ledger</code>) is "
                 f"{pick_age_h:.0f} hours old (last write "
                 f"{last_pick.strftime('%Y-%m-%d %H:%M UTC')}).</p>"
                 f"<p>Pick volume swings a lot by fixture list, so this "

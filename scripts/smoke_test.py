@@ -42757,6 +42757,39 @@ def test_leakage_canary():
 
 
 
+@test("NO-PICKS-ALL-LEDGERS — the 'no picks for 48h' alert reads every ledger and cannot repeat hourly")
+def test_no_picks_all_ledgers():
+    """2026-09-24, owner forwarded hourly Telegram '[OI] No picks produced for 48h/49h/50h/51h'.
+    False alarm: the check read simulated_bets only, which after bot_v10_ou's retirement is one
+    bot at 1-5 picks/day, while the betting pipeline ran 93 times and shadow_bets /
+    picks_forward_test wrote all day. And it repeated hourly because send_telegram's dedup is
+    in-process memory that every scheduler restart (every engine deploy) clears.
+    Now: newest pick across bot_ledger (all three ledgers); send on the threshold CROSSING
+    plus one daily reminder at the 10 UTC run — stateless, so restarts cannot re-arm it."""
+    import inspect
+    import workers.jobs.health_alerts as h
+    src = inspect.getsource(h.check_signal_silence)
+    assert "FROM bot_ledger" in src and 'FROM simulated_bets"' not in src
+    assert "crossing" in src and "now_utc.hour == 10" in src
+    sent = []
+    orig = (h._notify_telegram, h._send_alert, h.execute_query)
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    def fake_q(sql, params=None, _age=[0]):
+        if "bot_ledger" in sql:
+            return [{"source": "sim", "t": now - timedelta(hours=60)},
+                    {"source": "shadow", "t": now - timedelta(hours=2)}]
+        return []
+    try:
+        h._notify_telegram = lambda t, dedup_key: sent.append(t)
+        h._send_alert = lambda s, b: sent.append(s)
+        h.execute_query = fake_q
+        h.check_signal_silence()
+    finally:
+        h._notify_telegram, h._send_alert, h.execute_query = orig
+    assert not any("No picks" in x for x in sent), "a quiet sim ledger alone must not alarm"
+
+
 @test("NO-PICKS-IS-NOT-NO-EVALUATION — an empty but working pipeline must not alarm")
 def test_no_picks_requires_no_pipeline_run():
     """The Coolbet watchdog's NO_PICKS state used `priced >= 20` as its proxy for
