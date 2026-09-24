@@ -146,6 +146,42 @@ BOTS_CONFIG = {
         "min_prob": 0.30,
         "prob_source": "combined_1x2",
     },
+    # NEW+ EV OUTLIER BOTS ([[#141]] B4, 2026-09-24; pre-registered in
+    # dev/active/1x2-model-rebuild-plan.md "B4"). The NEW+ twin above inherited
+    # bot_v10_1x2's probability-POINT thresholds + min_prob 0.30, which push a
+    # consensus-outlier strategy onto short odds and starve it (14 picks in the
+    # 08-31..09-24 backtest). These two use its natural unit instead —
+    # EV = p x odds - 1, flat across tiers (no T3+ bump) — require a Pinnacle
+    # price, drop min_prob, widen odds to 1.30-6.00 and take one pick per match.
+    # Backtest B2 (same window, so optimistic): EV>=5% CLV +2.0% (n=1,050),
+    # EV>=8% +3.1% (n=557); at our own sweepers +1.1% / +2.7%. experimental,
+    # paper, no placement path; owner reviews at 20 / 50 / 100 settled picks.
+    "bot_combined_1x2_ev5_v1": {
+        "description": "1x2 NEW+ EV5 — combined 1X2 model r1x2_comb_v1, EV >= 5% flat, Pinnacle price required, odds 1.30-6.00, one pick per match",
+        "tier_label": "elite",
+        "markets": ["1x2"],
+        "tier_filter": None,
+        "edge_thresholds": {t: {"1x2_fav": 0.05, "1x2_long": 0.05} for t in (1, 2, 3, 4)},
+        "odds_range": (1.30, 6.00),
+        "min_prob": 0.0,
+        "prob_source": "combined_1x2",
+        "edge_unit": "ev",
+        "require_pinnacle": True,
+        "one_per_match": True,
+    },
+    "bot_combined_1x2_ev8_v1": {
+        "description": "1x2 NEW+ EV8 — combined 1X2 model r1x2_comb_v1, EV >= 8% flat, Pinnacle price required, odds 1.30-6.00, one pick per match",
+        "tier_label": "elite",
+        "markets": ["1x2"],
+        "tier_filter": None,
+        "edge_thresholds": {t: {"1x2_fav": 0.08, "1x2_long": 0.08} for t in (1, 2, 3, 4)},
+        "odds_range": (1.30, 6.00),
+        "min_prob": 0.0,
+        "prob_source": "combined_1x2",
+        "edge_unit": "ev",
+        "require_pinnacle": True,
+        "one_per_match": True,
+    },
     "bot_v10_ou": {
         # RETIRED 2026-09-24 — migration 399 ([[#077]]). Kept for history; the pipeline
         # skips it on is_active=False here and retired_at in the DB.
@@ -1087,6 +1123,8 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_v10_1x2":          "all",
     "bot_rating_1x2_v1":    "all",    # RATING-1X2-BOT — same cohort as its twin
     "bot_combined_1x2_v1":  "all",    # RATING-1X2-BOT second arm (combined model)
+    "bot_combined_1x2_ev5_v1": "all",  # #141 B4 NEW+ EV outlier bots — same cohort as the twin
+    "bot_combined_1x2_ev8_v1": "all",
     "bot_v10_ou":           "all",
     "bot_summer_specialist": "all",   # BOT-SUMMER-SPECIALIST 2026-07-08 — fills midweek summer volume gap
     "bot_lower_1x2":        "all",
@@ -3669,7 +3707,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             # CLV is +3-6% at these tiers — model has marginal edge but not
             # enough to survive friction + smaller market liquidity. Add +3pp
             # to every threshold for tier 3 and 4 to cut the -EV long tail.
-            if tier >= 3 and thresholds:
+            if tier >= 3 and thresholds and config.get("edge_unit") != "ev":   # B4: EV bots are flat
                 # TIER-C-T3PLUS-GATE-EXPAND-2026-07-31: 90d audit found T3
                 # 1X2 at -24.30% ROI (n=170) and T4 at -22.86% (n=176) even
                 # after the original +3pp gate. Mean edge on those bets was
@@ -3862,8 +3900,15 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     _fstep("drop_nan_cal")
                     continue
 
-                # Use calibrated probability for edge calculation
-                edge = cal_prob - ip
+                # B4: an EV bot only bets where Pinnacle prices the selection (the
+                # backtest's no-reference picks — e.g. Iran draws — all lost).
+                if config.get("require_pinnacle") and pin_anchor is None:
+                    _fstep("drop_no_pinnacle")
+                    continue
+
+                # Use calibrated probability for edge calculation. B4: edge_unit="ev"
+                # measures it as expected value (p x odds - 1), not probability points.
+                edge = cal_prob * odds - 1 if config.get("edge_unit") == "ev" else cal_prob - ip
                 me = base_threshold + (0.0 if _rating_bot else edge_bump)
                 _fctx.update(fair_prob=cal_prob, threshold=me)
 
@@ -4075,6 +4120,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 bet_candidates.append((mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake, os_market, os_selection))
 
             bet_candidates.sort(key=lambda x: x[6], reverse=True)
+            _one_done = False
 
             for mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake, os_market, os_selection in bet_candidates:
                 _fctx = {"source": "pipeline_shadow" if shadow_mode else "pipeline", "bot": bot_name, "match_id": str(match_id),
@@ -4144,7 +4190,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         "odds": odds,
                         "model_prob": raw_mp,
                         "calibrated_prob": round(cal_prob, 4),
-                        "edge": edge,
+                        "edge": cal_prob - ip,   # stored edge is always probability points (B4 EV bots gate on EV)
                         "kelly_fraction": round(kelly, 6),
                         "placed_at": datetime.now().isoformat(),
                         "timing_cohort": bot_cohort,
@@ -4153,6 +4199,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         "strategy_profile": _strategy_alias or None,
                     })
                     total_bets += 1
+                    if config.get("one_per_match"):
+                        break
                     continue
 
                 # PIN-CROSS-DRIFT shadow flag — TRUE means the veto would have
@@ -4169,11 +4217,13 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         "odds": odds,
                         "model_prob": raw_mp,
                         "implied_prob": ip,
-                        "edge": edge,
+                        # Always probability points: store_bet derives cal - 1/odds and the
+                        # VETO_EDGE_CAP is in that unit. B4 EV bots gate/sort on EV only.
+                        "edge": cal_prob - ip,
                         "stake": stake,
                         "placed_at": datetime.now().isoformat(),
                         "pin_cross_drift_shadow_flag": _pin_shadow_flag,
-                        "reasoning": f"{('[combined r1x2_comb_v1] ' if config.get('prob_source') == 'combined_1x2' else '[rating r1x2_d8plus_v1] ') if _rating_bot else tier_tag}{f'[{_strategy_alias}] ' if _strategy_alias else ''}{match['home_team']} vs {match['away_team']} | edge={edge:.3f} cal={cal_prob:.3f} kelly={kelly:.4f} align={alignment['alignment_class']}",
+                        "reasoning": f"{('[combined r1x2_comb_v1] ' if config.get('prob_source') == 'combined_1x2' else '[rating r1x2_d8plus_v1] ') if _rating_bot else tier_tag}{f'[{_strategy_alias}] ' if _strategy_alias else ''}{'[EV] ' if config.get('edge_unit') == 'ev' else ''}{match['home_team']} vs {match['away_team']} | edge={edge:.3f} cal={cal_prob:.3f} kelly={kelly:.4f} align={alignment['alignment_class']}",
                         "strategy_profile": _strategy_alias or None,
                         # P1: Calibration
                         "calibrated_prob": round(cal_prob, 4),
@@ -4216,7 +4266,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                             _tele_bets[_tele_key] = {
                                 "home": match["home_team"], "away": match["away_team"],
                                 "mkt": mkt, "selection": selection, "odds": odds,
-                                "edge": edge, "alignment": alignment["alignment_class"],
+                                "edge": cal_prob - ip, "alignment": alignment["alignment_class"],  # pp, as stored
                                 "bm": bm,
                                 "league": match.get("league_path") or "",
                                 "bots": [],
@@ -4227,6 +4277,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                                 "first_bet_id": str(bet_id),
                             }
                         _tele_bets[_tele_key]["bots"].append(bot_name)
+                        if config.get("one_per_match"):
+                            _one_done = True
                         # Save Stage 1 snapshot: stats-only probability
                         try:
                             store_prediction_snapshot(
@@ -4249,6 +4301,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     # else: already placed today, skip silently
                 except Exception as e:
                     console.print(f"  [red]Error storing bet: {e}[/red]")
+                if _one_done:
+                    break   # B4 one_per_match: candidates are sorted best-edge first
 
         # Brief status
         ensemble_tag = " [ensemble]" if pred.get("ensemble") else ""

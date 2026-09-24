@@ -636,6 +636,13 @@ an owner decision, to be taken on the forward record from 2026-09-25.
 
 ---
 
+**NEW+ EV outlier bots (#141 B4, 2026-09-24).** `bot_combined_1x2_ev5_v1` / `_ev8_v1` use the combined probability
+in the unit a consensus-outlier strategy needs: edge = p × odds − 1 ≥ 5% / 8%, flat across tiers, Pinnacle price
+required, no min_prob, odds 1.30–6.00, one pick per match (stored `edge` stays cal − 1/odds). The twin's probability-point
+thresholds + min_prob 0.30 had pushed it onto short odds (14 picks in the backtest). Backtest B2, same window: CLV +2.0% /
++3.1% (weaker at our own sweepers, +1.1% / +2.7%). Round 3c (API-Football player-rating XI) failed on confirm for both
+models, so no lineup input is used. Experimental, paper; owner reviews at 20 / 50 / 100 settled picks.
+
 ## 5. Calibration Pipeline
 
 Raw model probabilities are systematically overconfident (10-15%). Two-stage calibration corrects this.

@@ -477,3 +477,13 @@ bump; every other B gate (incl. min_prob 0.30) is kept.
 **Verdict:** NEW+ as a consensus-outlier bettor shows real, repeatable positive CLV on this window, strongest at our
 own sweepers only for EV ≥ 5–8%. Per pre-registration nothing is promoted: the next step is a forward shadow bot
 (N2/N3-style rules) plus a takeability check of opening outlier quotes. Baseline and NEW have no bettable pocket.
+
+## Pre-registration — B4: NEW+ EV outlier shadow bots (2026-09-24 ~20:40 UTC, BEFORE they exist)
+Two `experimental` paper bots, judged FORWARD only, from their first pick (≥ 2026-09-25):
+`bot_combined_1x2_ev5_v1` ("1x2 NEW+ EV5") and `bot_combined_1x2_ev8_v1` ("1x2 NEW+ EV8") = B2 arms N2 / N3 as live rules:
+NEW+ probability (`r1x2_comb_v1`, as is); edge = p × odds − 1 ≥ 5% / 8%, flat across tiers (no tier table, no T3+ bump);
+Pinnacle price required; no min_prob; odds 1.30–6.00; one pick per match (best EV); all other live gates as the NEW+ twin
+(Pinnacle veto, mid-band, sharp gate, odds movement, alignment, Kelly, staking, cohort). Prices = the live book set.
+**Readout (owner 2026-09-24):** review checkpoints at 20, 50 and 100 settled picks on `/admin/bots` — CLV vs de-vigged
+Pinnacle close first, ROI second; 20 is a sanity check, not a verdict. **Expected** (from B2, same-window, optimistic):
+EV5 CLV ≈ +1–2%, EV8 ≈ +2–3%, lower at our own sweepers; roughly 30–40 / 15–20 picks a week.

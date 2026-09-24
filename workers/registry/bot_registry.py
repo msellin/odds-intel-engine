@@ -214,6 +214,12 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_combined_1x2_v1", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
             None, None, False,
             "1x2 market NEW+: the same twin of bot_v10_1x2, priced by the COMBINED 1X2 model r1x2_comb_v1 (ratings + de-vigged 18-book consensus + Pinnacle, API-Football only where unpriced; 0.9763 vs 1.0711 log-loss). Built mostly from market prices, so its edge is the quoted book sitting away from the consensus (consensus-outlier), not model-vs-market. experimental, paper, no placement path."),
+    BotSpec("bot_combined_1x2_ev5_v1", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
+            None, None, False,
+            "1x2 NEW+ EV5 (#141 B4): the combined model r1x2_comb_v1 as a consensus-outlier bettor in its natural unit — EV = p x odds - 1 >= 5% flat across tiers, Pinnacle price required, no min_prob, odds 1.30-6.00, one pick per match. Backtest B2 CLV +2.0% (n=1,050; +1.1% at our own sweepers), same window so optimistic. experimental, paper, no placement path."),
+    BotSpec("bot_combined_1x2_ev8_v1", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
+            None, None, False,
+            "1x2 NEW+ EV8 (#141 B4): as EV5 with EV >= 8%. Backtest B2 CLV +3.1% (n=557; +2.7% at our own sweepers). experimental, paper, no placement path."),
     # bot_v10_ou RETIRED 2026-09-24 (migration 399, owner "yes" on [[#077]]): de-vigged
     # Pinnacle CLV -3.85% (n=181), negative in all 5 months and 7 model versions, and
     # every O/U route measured 09-23/24 (#089, #118, #090 a) ends at alpha = 0.

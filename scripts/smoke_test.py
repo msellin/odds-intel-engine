@@ -32743,7 +32743,10 @@ def test_min_odds_formula():
     #    changes, every floor below is wrong again.
     pipe = open(os.path.join(root, "workers", "jobs", "daily_pipeline_v2.py"),
                 encoding="utf-8").read()
-    assert "edge = cal_prob - ip" in pipe, (
+    # #141 B4: EV bots gate on p*odds-1, but every STORED / Telegram edge stays cal - 1/odds
+    # (store_bet derives it), so the non-EV branch below is what these formulas rely on.
+    assert ('edge = cal_prob * odds - 1 if config.get("edge_unit") == "ev" else cal_prob - ip' in pipe
+            or "edge = cal_prob - ip" in pipe), (
         "the edge definition changed — every min-odds formula must be revisited"
     )
 
@@ -55410,6 +55413,35 @@ def test_lineups_3c_no_xi_fallback():
     src = _engine_path("scripts/ab_1x2_lineups.py").read_text(encoding="utf-8")
     assert "withxi[_no] = np.asarray(base, dtype=float)[_no]" in src, "L1 must fall back to the no-XI prediction"
     assert "P1[_no] = np.asarray(P0, dtype=float)[_no]" in src, "L2-L4 must fall back to the no-XI prediction"
+
+
+@test("NEWPLUS-EV-BOTS — #141 B4: EV5/EV8 bots gate on EV, need Pinnacle, one pick per match, store pp edge")
+def test_newplus_ev_bots():
+    """B4 ([[#141]], pre-registered in dev/active/1x2-model-rebuild-plan.md). The two NEW+
+    EV bots are only the pre-registered rules if: EV = p x odds - 1 is the gate (flat,
+    no T3+ bump), a Pinnacle price is required, min_prob is off, odds 1.30-6.00, one
+    pick per match — and the STORED edge stays probability points, because store_bet
+    derives cal - 1/odds and VETO_EDGE_CAP is in that unit."""
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
+    from workers.registry.bot_registry import BOTS
+    names = {b.name for b in BOTS}
+    for name, thr in (("bot_combined_1x2_ev5_v1", 0.05), ("bot_combined_1x2_ev8_v1", 0.08)):
+        c = BOTS_CONFIG[name]
+        assert c["prob_source"] == "combined_1x2" and c["edge_unit"] == "ev"
+        assert c["require_pinnacle"] is True and c["one_per_match"] is True
+        assert c["odds_range"] == (1.30, 6.00) and c["min_prob"] == 0.0 and c["markets"] == ["1x2"]
+        assert all(v == {"1x2_fav": thr, "1x2_long": thr} for v in c["edge_thresholds"].values())
+        assert set(c["edge_thresholds"]) == {1, 2, 3, 4}
+        assert BOT_TIMING_COHORTS[name] == BOT_TIMING_COHORTS["bot_combined_1x2_v1"]
+        assert name in names, f"{name} missing from bot_registry"
+    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
+    assert 'edge = cal_prob * odds - 1 if config.get("edge_unit") == "ev" else cal_prob - ip' in src
+    assert 'if tier >= 3 and thresholds and config.get("edge_unit") != "ev":' in src
+    assert 'if config.get("require_pinnacle") and pin_anchor is None:' in src
+    assert src.count('"edge": cal_prob - ip,') >= 3, "store_bet, shadow rows AND the Telegram buffer carry the pp edge"
+    assert "if _one_done:" in src and "_one_done = False" in src
+    mig = _engine_path("supabase/migrations/418_bot_combined_1x2_ev.sql").read_text(encoding="utf-8")
+    assert "'experimental', false" in mig and mig.count("'experimental', false") == 2, "paper + hidden from /picks"
 
 
 if __name__ == "__main__":

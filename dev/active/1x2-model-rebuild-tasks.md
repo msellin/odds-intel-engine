@@ -34,17 +34,22 @@ Parent: [[#141]] 1X2-MODEL-REBUILD-2026-09-24 (PRIORITY_QUEUE.md) — 🔴 P0 TO
 - [ ] **B-display.** Show the backtest on /admin/bots as "Backtest (simulated)" beside "Live since 2026-09-25": a private
       home for the summary JSON on the VPS (table without anon grant, or a deployed file), a superadmin server-side reader,
       the ROI-is-noise and book-split caveats. Admin only; never /performance.
-- [ ] **B4. NEW+ outlier shadow bot** — pre-register then add `bot_combined_1x2_ev_v1` (N2/N3-style: edge = p·odds − 1,
+- [x] **B4. NEW+ outlier shadow bots** — ✅ 2026-09-24: `bot_combined_1x2_ev5_v1` / `_ev8_v1` (migration 418), smoke NEWPLUS-EV-BOTS. Was: — pre-register then add `bot_combined_1x2_ev_v1` (N2/N3-style: edge = p·odds − 1,
       EV ≥ 5% or 8%, Pinnacle price required, no min_prob, odds 1.30–6.00, all books), judged forward on CLV from its creation date.
 - [ ] **B5. Takeability of opening outlier quotes** — for picks like B2's, how often is the above-consensus quote still
       there 1 h / at Telegram send time, per book; AF-fed vs our own sweepers. Decides which books NEW+ picks may name.
 - [ ] **H. Shots/xG rating round** — pre-register (Wheatcroft: shots beat goals as rating input) using the fixture_details
       cache's shots / shots on target / xG; confirm FORWARD (08-31..09-24 is used up by rounds 1, 2, 3b, 3c) — owner approves design first.
 - [ ] **C. Forward check ~2026-09-27** — `python3 scripts/ab_1x2_rating_arms.py --forward` (both versions vs served vs Pinnacle).
-- [ ] **D. OWNER DECISION (recommended yes): serve the combined model's 1X2** in place of the `predictions` ensemble
+- [ ] **D. OWNER SAID YES (2026-09-24): serve the combined model's 1X2.** Consumer audit: ~30 readers of the in-memory
+      `pred` 1X2 and the stored `predictions` ensemble rows (every 1X2/DC/DNB/AH bot, AH prediction rows, meta model, in-play,
+      triggers, previews, two calibration fits). Most do NOT filter by model_version and already mix in the shadow version →
+      **fix #147 first**, then swap: keep bots' decision inputs unchanged in the same commit unless each bot's rule_version is
+      bumped (a changed input is a rule change on /admin/bots), bypass/refit the 1X2 Platt + shrinkage for the new source,
+      write the NEW+ rows under their own model_version, fall back to the old blend where NEW+ has no row. Was: in place of the `predictions` ensemble
       (0.635·Poisson + 0.365·XGB, measured WORSE than uniform, 1.144). 1X2 only; the 1X2 Platt params in
       `model_calibration` were fitted on the old blend → refit or bypass; `daily_pipeline_v2.py` ~3140 / `ensemble_prediction`.
-- [ ] **E. Promotion rule for the NEW bots** (write before results exist): after 150 settled picks, CLV > 0 with CI above
+- [x] **E. DECIDED (owner 2026-09-24):** no hard rule — review checkpoints at 20 / 50 / 100 settled picks, bots clearly separated on /admin/bots so the owner can check the bets. Was: (write before results exist): after 150 settled picks, CLV > 0 with CI above
       zero AND above the grade-B consensus bot → public "Grade A (testing)" (owner idea; threshold/wording = owner).
 - [ ] **F. Model ideas still open:** Tonybet/Sportradar fair probs + Betfair exchange as consensus inputs once they have
       history; power/Shin de-vig and per-book accuracy weights; whether the rating-only bot should move to the combined model.
