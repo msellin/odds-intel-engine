@@ -71,3 +71,5 @@ COMMIT;
 -- Superuser-only (no-op when run as oddsintel_owner; applied by hand 2026-09-24):
 -- REVOKE SELECT ON public.pg_stat_statements, public.pg_stat_statements_info,
 --                  public.hypopg_list_indexes, public.hypopg_hidden_indexes FROM anon;
+-- REVOKE SELECT ON public.pg_stat_statements, public.pg_stat_statements_info FROM PUBLIC;
+-- GRANT  SELECT ON public.pg_stat_statements, public.pg_stat_statements_info TO oddsintel_owner;

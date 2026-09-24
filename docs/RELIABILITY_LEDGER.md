@@ -1341,7 +1341,11 @@ private until someone grants it on purpose. Smoke `ANON-LEAST-PRIVILEGE` pins th
 so they were revoked as superuser: `ssh root@204.168.199.8 "sudo -u postgres psql -d oddsintel -c
 'REVOKE SELECT ON public.pg_stat_statements, public.pg_stat_statements_info,
 public.hypopg_list_indexes, public.hypopg_hidden_indexes FROM anon'"`. Re-run it after any
-extension reinstall.
+extension reinstall. ⚠️ `pg_stat_statements` / `_info` are ALSO granted to **PUBLIC** by the
+extension (`=r/postgres`), so revoking from anon alone left them readable (probe: still 200);
+they were revoked from PUBLIC too and granted to `oddsintel_owner` explicitly (the only role
+that should read query statistics). Acceptance probe after all of it: the 12 site relations +
+embeds 200; every sensitive relation, both extension views and `rpc/get_latest_match_odds` 401.
 
 **Adding a public surface now means:** a `*_public` view (owner rights, only the columns you
 mean to publish) + an explicit `GRANT SELECT … TO anon` in the same migration + the name added
