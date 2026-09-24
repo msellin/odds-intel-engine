@@ -51844,12 +51844,16 @@ def test_consensus_credible_devig_gate():
              "edge_credible_min": 0.02, "odds": 3.4},
             {"match_id": "m2", "market": "1x2", "selection": "home", "edge": 0.04,
              "edge_credible_min": 0.04, "odds": 1.5}]
-    with mock.patch.object(pf, "already_published_markets", return_value=set()):
-        assert len(pf.select(legs)) == 2
-        got = pf.select(legs, credible_gate=True)
-        assert [c["match_id"] for c in got] == ["m2"], got
-    with mock.patch.object(pf, "published_selection_keys", return_value=set()):
-        rows = pf.funnel_rows(legs, [legs[1]], "publisher_consensus", credible_gate=True)
+    # PUBLISHER-PATCH-LOCK: patching pf unlocked raced the other publisher tests
+    # in the thread pool — select() then hit the real already_published_markets,
+    # which fails closed to [] in CI ("AssertionError: []", 2026-09-24).
+    with _PUBLISHER_PATCH_LOCK:
+        with mock.patch.object(pf, "already_published_markets", return_value=set()):
+            assert len(pf.select(legs)) == 2
+            got = pf.select(legs, credible_gate=True)
+            assert [c["match_id"] for c in got] == ["m2"], got
+        with mock.patch.object(pf, "published_selection_keys", return_value=set()):
+            rows = pf.funnel_rows(legs, [legs[1]], "publisher_consensus", credible_gate=True)
     assert {r["match_id"]: r["step"] for r in rows} == {"m1": "method_sensitive", "m2": "selected"}, rows
 
 
