@@ -31,6 +31,14 @@ the 36% of legs with no fresh Pinnacle close and BTTS, and it is computed for le
 WITH a Pinnacle close too so the two are always comparable. clv_sharp's own
 definition is untouched; readers that fall back must carry the source.
 
+THIN CONSENSUS CLOSE ([[#116]], migration 394). A leg with NO >=5-book close but 3–4
+books gets the same measure against that thinner close in SEPARATE columns
+(p_close_cons_thin / clv_cons_thin / cons_thin_n_books / cons_thin_status='ok_thin').
+A leg therefore carries at most one of clv_cons / clv_cons_thin — never pool them.
+MEASUREMENT ONLY: no staking input, no gate reads it. Its quality (ANALYSIS_GOTCHAS
+§74): a 3–4-book close sits further from the full close than a >=5-book one does, so
+it is reported beside, never as, the consensus CLV.
+
     python3 -m workers.jobs.clv_sharp            # all settled legs not yet scored
     python3 -m workers.jobs.clv_sharp --limit 5000
 """
@@ -48,6 +56,7 @@ ASSEMBLE_MIN = 2        # every side within ±2 min of the anchor side (set span
 # A leg with no fresh close is retried for 3 days after kickoff (a late closing
 # snap can still land); after that its 'no_fresh_close' is final.
 BATCH_MATCHES = 400
+THIN_MIN_BOOKS = 3      # #116: 3–4-book close, labelled, measurement only
 _DC = {"1x": (0, 1), "12": (0, 2), "x2": (1, 2)}
 
 
@@ -109,7 +118,8 @@ _LEGS_SQL = {
          WHERE p.outcome IN ('won','lost')
            AND (c.leg_id IS NULL
                 OR (c.status = 'no_fresh_close' AND m.date > now() - interval '3 days')
-                OR (c.cons_status IS NULL AND m.date > now() - make_interval(days => %(cons_days)s)))""",
+                OR ((c.cons_status IS NULL OR (c.cons_status = 'no_consensus' AND c.cons_thin_status IS NULL))
+                    AND m.date > now() - make_interval(days => %(cons_days)s)))""",
     "simulated_bets": """
         SELECT s.id::text leg_id, s.match_id::text match_id, s.market, s.selection,
                COALESCE(s.odds_at_pick_live, s.odds_at_pick)::float odds,
@@ -120,7 +130,8 @@ _LEGS_SQL = {
          WHERE s.result IN ('won','lost')
            AND (c.leg_id IS NULL
                 OR (c.status = 'no_fresh_close' AND m.date > now() - interval '3 days')
-                OR (c.cons_status IS NULL AND m.date > now() - make_interval(days => %(cons_days)s)))""",
+                OR ((c.cons_status IS NULL OR (c.cons_status = 'no_consensus' AND c.cons_thin_status IS NULL))
+                    AND m.date > now() - make_interval(days => %(cons_days)s)))""",
     "shadow_bets": """
         SELECT s.id::text leg_id, s.match_id::text match_id, s.market, s.selection,
                COALESCE(s.odds_at_pick_live, s.odds_at_pick)::float odds,
@@ -131,7 +142,8 @@ _LEGS_SQL = {
          WHERE s.result IN ('won','lost')
            AND (c.leg_id IS NULL
                 OR (c.status = 'no_fresh_close' AND m.date > now() - interval '3 days')
-                OR (c.cons_status IS NULL AND m.date > now() - make_interval(days => %(cons_days)s)))""",
+                OR ((c.cons_status IS NULL OR (c.cons_status = 'no_consensus' AND c.cons_thin_status IS NULL))
+                    AND m.date > now() - make_interval(days => %(cons_days)s)))""",
 }
 
 
@@ -180,7 +192,8 @@ def run(limit: int | None = None, cons_days: int = 7) -> dict:
             for l in by_match[mid]:
                 sides = sides_for(l["market"])
                 row = [l["ledger"], l["leg_id"], mid, l["market"], l["selection"], l["odds"],
-                       l["basis"], None, None, None, None, None, None, None, None, None]
+                       l["basis"], None, None, None, None, None, None, None, None, None,
+                       None, None, None, None]     # 16-19: thin consensus (#116)
                 # #113 — the SAME measure against a >=5-book consensus close (Pinnacle and
                 # the leg's own book excluded), for every leg incl. BTTS.
                 csides = sides_for(l["market"]) or anchor_sides(base_market(l["market"]))
@@ -190,16 +203,24 @@ def run(limit: int | None = None, cons_days: int = 7) -> dict:
                     ck = (mid, base_market(l["market"]), l.get("bk"))
                     if ck not in cons_cache:
                         sets = sets_from_rows(allbooks.get(ck[:2], []), csides)
+                        # min_thin_books=3: the resolver still returns 'consensus' whenever
+                        # >=5 books form, so the >=5 half is unchanged; 3–4 books now come
+                        # back as 'consensus_thin' instead of 'none' (#116)
                         cons_cache[ck] = compute_anchor(sets, csides, at=l["kickoff"],
-                                                        exclude_book=l.get("bk"), max_age_min=FRESH_MIN)
+                                                        exclude_book=l.get("bk"), max_age_min=FRESH_MIN,
+                                                        min_thin_books=THIN_MIN_BOOKS)
                     a = cons_cache[ck]
                     pc = (leg_prob(l["market"], l["selection"], [a.probs[x] for x in csides], csides)
-                          if a.source == "consensus" else None)
-                    if pc is not None and 0 < pc < 1:
+                          if a.source in ("consensus", "consensus_thin") else None)
+                    if a.source == "consensus" and pc is not None and 0 < pc < 1:
                         row[12], row[13], row[14], row[15] = pc, l["odds"] * pc - 1, a.n_books, "ok"
                     else:
                         row[15] = "no_consensus"
-                        row[14] = a.n_books or None
+                        row[14] = None
+                        if a.source == "consensus_thin" and pc is not None and 0 < pc < 1:
+                            row[16], row[17], row[18], row[19] = pc, l["odds"] * pc - 1, a.n_books, "ok_thin"
+                        else:
+                            row[19] = "too_few_books"
                 if sides is None or l["odds"] is None or l["market"] == "btts":
                     row[11] = "unsupported_market"
                 else:
@@ -218,13 +239,16 @@ def run(limit: int | None = None, cons_days: int = 7) -> dict:
                         row[11] = "ok"
                 counts[f"{l['ledger']}:{row[11]}"] += 1
                 counts[f"{l['ledger']}:cons_{row[15]}"] += 1
+                if row[19]:
+                    counts[f"{l['ledger']}:thin_{row[19]}"] += 1
                 out.append(tuple(row))
         with get_conn() as conn:
             with conn.cursor() as cur:
                 execute_values(cur, """
                     INSERT INTO leg_clv_sharp (ledger, leg_id, match_id, market, selection, odds,
                         odds_basis, p_close, close_ts, close_age_min, clv_sharp, status,
-                        p_close_cons, clv_cons, cons_n_books, cons_status)
+                        p_close_cons, clv_cons, cons_n_books, cons_status,
+                        p_close_cons_thin, clv_cons_thin, cons_thin_n_books, cons_thin_status)
                     VALUES %s ON CONFLICT (ledger, leg_id) DO UPDATE SET
                         -- the Pinnacle half keeps its original rule: only a
                         -- no_fresh_close row may be overwritten
@@ -238,6 +262,17 @@ def run(limit: int | None = None, cons_days: int = 7) -> dict:
                         clv_cons = COALESCE(leg_clv_sharp.clv_cons, EXCLUDED.clv_cons),
                         cons_n_books = COALESCE(leg_clv_sharp.cons_n_books, EXCLUDED.cons_n_books),
                         cons_status = CASE WHEN leg_clv_sharp.cons_status = 'ok' THEN 'ok' ELSE EXCLUDED.cons_status END,
+                        -- #116 thin half: fills once, and only on a leg that has NO >=5-book
+                        -- close — a leg never carries both clv_cons and clv_cons_thin
+                        p_close_cons_thin = CASE WHEN leg_clv_sharp.cons_status = 'ok' OR EXCLUDED.cons_status = 'ok' THEN NULL
+                                                 ELSE COALESCE(leg_clv_sharp.p_close_cons_thin, EXCLUDED.p_close_cons_thin) END,
+                        clv_cons_thin = CASE WHEN leg_clv_sharp.cons_status = 'ok' OR EXCLUDED.cons_status = 'ok' THEN NULL
+                                             ELSE COALESCE(leg_clv_sharp.clv_cons_thin, EXCLUDED.clv_cons_thin) END,
+                        cons_thin_n_books = CASE WHEN leg_clv_sharp.cons_status = 'ok' OR EXCLUDED.cons_status = 'ok' THEN NULL
+                                                 ELSE COALESCE(leg_clv_sharp.cons_thin_n_books, EXCLUDED.cons_thin_n_books) END,
+                        cons_thin_status = CASE WHEN leg_clv_sharp.cons_status = 'ok' OR EXCLUDED.cons_status = 'ok' THEN NULL
+                                                WHEN leg_clv_sharp.cons_thin_status = 'ok_thin' THEN 'ok_thin'
+                                                ELSE EXCLUDED.cons_thin_status END,
                         computed_at = now()
                     WHERE leg_clv_sharp.status = 'no_fresh_close' OR leg_clv_sharp.cons_status IS DISTINCT FROM 'ok'""",
                     out, page_size=2000)

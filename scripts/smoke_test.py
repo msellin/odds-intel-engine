@@ -52831,6 +52831,60 @@ def test_clv_consensus_close():
     assert "A" not in sets and sets["B"][0] == [1.9, 1.9]
 
 
+@test("THIN-CONSENSUS-CLV — 3–4-book close in SEPARATE columns, only on legs with no >=5-book close")
+def test_thin_consensus_clv():
+    """#116 (2026-09-24), migration 394. Measurement only — never pooled with clv_cons,
+    never a staking input or gate. Quality numbers: ANALYSIS_GOTCHAS §74."""
+    import inspect
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+    from workers.jobs import clv_sharp as cs
+    from workers.utils.anchor import compute_anchor
+    src = inspect.getsource(cs.run)
+    assert cs.THIN_MIN_BOOKS == 3 and "min_thin_books=THIN_MIN_BOOKS" in src
+    # the >=5 half only ever takes a 'consensus' anchor; thin goes to its own columns
+    assert 'if a.source == "consensus" and pc is not None' in src
+    assert '"ok_thin"' in src and "clv_cons_thin" in src
+    assert "p_close_cons_thin = CASE WHEN leg_clv_sharp.cons_status = 'ok' OR EXCLUDED.cons_status = 'ok' THEN NULL" in src, (
+        "a leg must never carry both clv_cons and clv_cons_thin")
+    assert "cons_thin_status IS NULL" in cs._LEGS_SQL["shadow_bets"], "7-day backfill of legs never tried thin"
+    mig = (Path(__file__).resolve().parent.parent / "supabase/migrations/394_leg_clv_thin_consensus.sql").read_text()
+    for c in ("p_close_cons_thin", "clv_cons_thin", "cons_thin_n_books", "cons_thin_status"):
+        assert c in mig, c
+    # resolver: >=5 books still 'consensus' with thin enabled; 3–4 → 'consensus_thin'; 2 → none
+    now = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
+    f = now - timedelta(minutes=5)
+    books = {b: ([2.0 + i * 0.02, 3.4, 3.8], f) for i, b in
+             enumerate(("Bet365", "Betano", "1xBet", "Marathonbet", "10Bet", "Superbet"))}
+    S = ("home", "draw", "away")
+    assert compute_anchor(books, S, at=now, min_thin_books=3).source == "consensus"
+    four = dict(list(books.items())[:4])
+    a = compute_anchor(four, S, at=now, min_thin_books=3)
+    assert a.source == "consensus_thin" and a.n_books == 4
+    assert compute_anchor(dict(list(books.items())[:2]), S, at=now, min_thin_books=3).source == "none"
+    # no staking/gate consumer reads the thin measure
+    root = Path(__file__).resolve().parent.parent / "workers"
+    readers = [p for p in root.rglob("*.py") if "clv_cons_thin" in p.read_text(errors="ignore")]
+    assert [p.name for p in readers] == ["clv_sharp.py"], readers
+
+
+@test("ANCHOR-WEIGHTING-REJECTED — equal weight stays; weighted/trimmed/median consensus did not win both criteria")
+def test_anchor_weighting_rejected():
+    """#116 (2026-09-24). 30 paired tests, Holm-corrected: no variant beat equal weight on
+    outcome log-loss in either market (all |t| < 2.3); accuracy weights moved the anchor
+    0.03–0.04 pp closer to the Pinnacle close — too small to matter and partly just
+    up-weighting the two Pinnacle-followers (1xBet~Marathonbet residual rho 0.88).
+    Re-open only by re-running scripts/anchor_weighting_research.py."""
+    import inspect
+    from pathlib import Path
+    from workers.utils import anchor
+    core = inspect.getsource(anchor.compute_anchor)
+    assert "sum(p[i] for p in per_book.values()) / len(per_book)" in core, "consensus is an EQUAL-WEIGHT mean"
+    s = (Path(__file__).resolve().parent / "anchor_weighting_research.py").read_text()
+    assert "= 30 paired tests, Holm-corrected" in s and "def holm(" in s
+    assert "HOLDOUT_DAYS" in s and "ko >= holdout_start" in s, "weights must be trained before the holdout"
+    assert (Path(__file__).resolve().parent / "anchor_thin_consensus_quality.py").exists()
+
 @test("ANCHOR-SANITY-CONSENSUS-FALLBACK — with no Pinnacle quote, the wrong-fixture guard uses a 4+-book median")
 def test_anchor_sanity_consensus_fallback():
     """#113 (2026-09-23). The guard was blind (fail-open) on every fixture Pinnacle does
