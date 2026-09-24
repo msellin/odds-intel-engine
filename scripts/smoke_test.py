@@ -51676,6 +51676,36 @@ def test_coolbet_sweep_observable():
         "the job invisible in the first place"
 
 
+@test("DEVIG-METHODS — #106 alternatives sum to 1, bracket Shin on favourites, live devig stays Shin")
+def test_devig_methods():
+    """[[#106]], 2026-09-24. The bake-off added additive / power / odds-ratio beside
+    Shin and proportional. What must hold:
+    1. every method returns probabilities in input order summing to 1, and a
+       margin-free market comes back unchanged;
+    2. on a favourite/longshot market, proportional gives the favourite LESS than Shin
+       and power gives it MORE (the calibration result: favourites win more often than
+       even Shin says, so proportional is the wrong direction);
+    3. additive returns None rather than a negative probability;
+    4. the live `devig()` is still Shin — the bake-off kept it, and a silent switch
+       would change every published edge;
+    5. WPO stays out of METHODS (it is algebraically identical to additive).
+    """
+    from workers.model.devig import METHODS, devig, shin_devig
+    for odds in ([1.4, 4.8, 8.0], [1.91, 1.91], [1.25, 3.9], [2.6, 3.3, 2.8]):
+        for m, f in METHODS.items():
+            p = f(odds)
+            assert p is not None and abs(sum(p) - 1) < 1e-9, (m, odds, p)
+    fair = [1 / 0.5, 1 / 0.3, 1 / 0.2]
+    for m, f in METHODS.items():
+        assert all(abs(a - b) < 1e-9 for a, b in zip(f(fair), [0.5, 0.3, 0.2])), m
+    fav = [1.25, 3.9]
+    assert METHODS["proportional"](fav)[0] < METHODS["shin"](fav)[0] < METHODS["power"](fav)[0]
+    # 20% margin, 1% longshot: an equal share of the margin (6.7pp) exceeds it
+    assert METHODS["additive"]([1.01, 5.0, 100.0]) is None
+    assert devig([1.4, 4.8, 8.0]) == shin_devig([1.4, 4.8, 8.0]), "live devig must stay Shin"
+    assert set(METHODS) == {"shin", "proportional", "additive", "power", "odds_ratio"}
+
+
 @test("XG-GAP-TOP-LEAGUES — #118 keeps FD closing rows, same rows across inputs, xG input wired")
 def test_xg_gap_top_leagues():
     """[[#118]], 2026-09-24. The xG-subset O/U test (null in every cell). What keeps a

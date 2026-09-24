@@ -104,6 +104,93 @@ def shin_devig(odds: list[float]) -> list[float] | None:
     return [p / s for p in probs]
 
 
+# ── ALTERNATIVE METHODS ([[#106]], 2026-09-24) ─────────────────────────────────
+# Added for the per-market bake-off (docs/DEVIG_BAKEOFF_2026_09_24.md). They do NOT
+# change what `devig()` returns — that stays Shin until the bake-off decides
+# otherwise and the owner switches a rule version. Each returns probabilities in
+# input order summing to 1, or None when the method is undefined for the market
+# (additive can push a longshot below zero at high margins).
+
+def _valid(odds) -> list[float] | None:
+    if not odds or any(o is None or o <= 1.0 for o in odds):
+        return None
+    return [1.0 / o for o in odds]
+
+
+def _solve(f, lo: float, hi: float) -> float:
+    """Bisection for a root of a monotone f on [lo, hi] (f(lo), f(hi) opposite signs)."""
+    flo = f(lo)
+    for _ in range(200):
+        mid = (lo + hi) / 2.0
+        fm = f(mid)
+        if (fm > 0) == (flo > 0):
+            lo, flo = mid, fm
+        else:
+            hi = mid
+        if hi - lo < 1e-12:
+            break
+    return (lo + hi) / 2.0
+
+
+def additive_devig(odds: list[float]) -> list[float] | None:
+    """Subtract an equal share of the margin from every outcome: p_i = pi_i − (PI−1)/n."""
+    implied = _valid(odds)
+    if implied is None:
+        return None
+    cut = (sum(implied) - 1.0) / len(implied)
+    probs = [p - cut for p in implied]
+    return probs if all(p > 0 for p in probs) else None
+
+
+def power_devig(odds: list[float]) -> list[float] | None:
+    """p_i = pi_i ** k with k chosen so the probabilities sum to 1. With a margin
+    k > 1, which shrinks small (longshot) probabilities proportionally more."""
+    implied = _valid(odds)
+    if implied is None:
+        return None
+    if abs(sum(implied) - 1.0) < 1e-12:
+        return implied
+    k = _solve(lambda k: sum(p ** k for p in implied) - 1.0, 0.2, 20.0)
+    probs = [p ** k for p in implied]
+    s = sum(probs)
+    return [p / s for p in probs]
+
+
+def odds_ratio_devig(odds: list[float]) -> list[float] | None:
+    """Cheung's odds-ratio method: the fair odds-ratio p/(1−p) is the implied
+    odds-ratio divided by a constant c, i.e. p_i = pi_i / (c + pi_i − c·pi_i)."""
+    implied = _valid(odds)
+    if implied is None:
+        return None
+    if abs(sum(implied) - 1.0) < 1e-12:
+        return implied
+    f = lambda c: sum(p / (c + p - c * p) for p in implied) - 1.0  # noqa: E731
+    c = _solve(f, 1e-6, 1e6)
+    probs = [p / (c + p - c * p) for p in implied]
+    s = sum(probs)
+    return [p / s for p in probs]
+
+
+# WPO ("margin weights proportional to the odds", Buchdahl) was in the pre-registered
+# list and is deliberately ABSENT: fair odds_i = n·o_i / (n − M·o_i) gives
+# p_i = 1/o_i − M/n, which is exactly `additive_devig`. Verified numerically
+# 2026-09-24 on 3-way and 2-way markets; keeping both would double-count one method.
+
+
+METHODS = {
+    "shin": shin_devig,
+    "proportional": proportional_devig,
+    "additive": additive_devig,
+    "power": power_devig,
+    "odds_ratio": odds_ratio_devig,
+}
+
+
+def devig_by(method: str, odds: list[float]) -> list[float] | None:
+    """De-vig with a named method from METHODS (the bake-off's entry point)."""
+    return METHODS[method](odds)
+
+
 def devig(odds: list[float]) -> list[float] | None:
     """De-vig a complete market with Shin's method.
 

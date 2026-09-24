@@ -905,7 +905,8 @@ def get_devigged_pinnacle_close_prob(
 
     Requires the FULL market at close (home/draw/away, or over/under) — a
     partial set cannot be de-vigged, so this returns None rather than guessing.
-    Uses Shin for 3-way and proportional for 2-way; see workers/model/devig.py.
+    Uses Shin for every market (2-way and 3-way) — corrected 2026-09-24 ([[#106]]); this line
+    used to say proportional for 2-way, which the code has not done. See workers/model/devig.py.
     """
     # DOUBLE-CHANCE-CLV-2026-08-26: Pinnacle quotes no double_chance market at
     # all (zero rows in odds_snapshots — its API-Football feed carries 8 bet

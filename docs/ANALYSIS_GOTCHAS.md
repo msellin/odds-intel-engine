@@ -3114,3 +3114,16 @@ EXC 318 / +12.7%, BLEND 312 / +18.3%, AGREE 270 / +19.8% ± 9.2) — descriptive
   prices are staler and the anchor noisier. At the close soft books sit on the sharp line, which is
   why the trigger fires on ~1% of matches. The stale-quote value of a second anchor (#119 B) can only
   be measured on pre-close quotes — i.e. the live `exchange_quotes` history from 2026-09-24 on.
+
+## 78. Never de-vig with the proportional method — it is the worst-calibrated method, and Shin still UNDER-states favourites (#106, 2026-09-24)
+
+On every finished match with a Pinnacle price (1x2 n = 26-35k), proportional de-vig loses to Shin on
+log-loss in every market. On 1x2 it is worse in every bootstrap draw. By outcome band on the 1x2 close:
+* favourites at a Shin probability of 0.60-0.72 won **67.1%** (Shin 65.2%, proportional 63.7%);
+* longshots at 0.00-0.20 won **13.4%** (Shin 14.2%, proportional 15.1%).
+
+**Rule:** use `workers.model.devig.devig` (Shin) for anything published. Proportional manufactures edge on
+longshots and hides it on favourites. A "worst-method" robustness check must span only methods that are
+not measurably worse than Shin (Shin, additive, power), or it rejects picks on a formula known to be
+wrong. On a soft book's 8-10% margin the methods differ by a median 2.1pp of edge, against 0.6pp on
+Pinnacle — so the consensus arm is where the choice bites.

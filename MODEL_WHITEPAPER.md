@@ -1661,6 +1661,20 @@ Note Shin is **not simply a stricter filter**: it fires *more* picks on 1X2
 (493 → 582) and fewer on OU 3.5 (483 → 378). It reshapes selection rather than
 shrinking it, which was not predictable from the theory alone.
 
+**Per-market bake-off, 2026-09-24 ([[#106]], `docs/DEVIG_BAKEOFF_2026_09_24.md`).**
+* **Setup.** Shin against proportional, additive, power and odds-ratio, per market (1x2, O/U 2.5, O/U
+  3.5, 1H 1x2), at the early and closing Pinnacle price. 26-35k matches for 1x2, scored on outcome
+  log-loss, Holm m = 32.
+* **Result: no method beats Shin anywhere.** Proportional and odds-ratio are worse on 1x2; additive and
+  power tie.
+* **Calibration by band shows the favourite-longshot bias is stronger than even Shin assumes.**
+  Favourites at a Shin probability of 0.60-0.72 won 67.1% of the time, against 65.2% under Shin. Shin
+  therefore stays, and it slightly UNDER-states short favourites' edges rather than inflating them.
+* **The method matters far more on soft books than on Pinnacle.** On the consensus anchor, which
+  de-vigs 8-10%-margin books, the methods differ by a median 2.1pp of edge. On Pinnacle it is 0.6pp.
+* A robustness gate over the credible methods (Shin, additive, power) would drop ~7% of published picks.
+  It is proposed as an owner-switched `rule_version`, not live.
+
 ### 10c.2c Line integrity — the quote must be for the line it claims
 
 The OU line-shop bots selected on an 11–13% de-vigged edge against Pinnacle that
