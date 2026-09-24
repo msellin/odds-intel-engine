@@ -58,7 +58,7 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 
 ## 2. Current Architecture (Implemented)
 
-> **2026-09-24 ([[#141]]):** 1X2 rating model in shadow — see MODEL_WHITEPAPER §4.4. It replaces nothing yet;
+> **2026-09-24 ([[#141]]):** 1X2 rating model and the COMBINED model (ratings + bookmaker consensus + Pinnacle) in shadow — see MODEL_WHITEPAPER §4.4 / §4.4b. It replaces nothing yet;
 > the stored 1X2 blend below measured worse than uniform (1.144 LL) because of its Poisson leg (§4.2 note).
 
 ```

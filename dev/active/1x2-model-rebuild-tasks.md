@@ -21,4 +21,10 @@ Parent: [[#141]] 1X2-MODEL-REBUILD-2026-09-24 (PRIORITY_QUEUE.md)
 - [ ] OWNER DECISION: replace the Poisson/XGB legs of the served 1X2 blend with the rating model
 - [x] ~~Schedule in-season refresh~~ DROPPED: the table already holds current seasons up to 2026-09-24, and those leagues are tracked in `matches` from here on, so new results arrive through the normal pipeline
 - [x] Smoke tests (WEEKLY-EVAL-NO-HOLDOUT, RATING-1X2-LEAK-GUARD, RATING-1X2-SHADOW-ISOLATED) + docs (MODEL_WHITEPAPER §4.4, MODEL_ANALYSIS, WORKFLOWS, DATA_SOURCES, ROADMAP, RELIABILITY_LEDGER #26)
+- [x] Round 3a (score-only tuning): all six arms fail the bar — recorded
+- [x] Round 3b: COMBINED model (ratings + consensus + Pinnacle + AF-where-unpriced) adopted, 0.9763 vs 1.0711
+- [x] Combined model in SHADOW: combined_1x2.py, market_consensus_1x2.py, migration 415, refresh job :10/:40
+- [ ] Round 3c: lineup / player-strength pilot — needs AF /fixtures/lineups + /fixtures/players backfill (owner arranging the fetch; ~30k-call pilot first)
+- [ ] Forward check of BOTH shadow versions (`--forward`, extend to r1x2_comb_v1)
+- [ ] OWNER DECISION: which version replaces the served 1X2 blend; whether a bot runs on the combined model
 - [ ] Close #141 after the forward check + owner decision; archive these dev docs

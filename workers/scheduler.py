@@ -1156,6 +1156,25 @@ def job_rating_1x2_shadow():
     _run_job("rating_1x2_shadow", _run_rating)
 
 
+def job_combined_1x2_refresh():
+    """COMBINED-1X2 refresh ([[#141]] round 3b) — every 30 min, re-apply the latest
+    stored combiner (fitted twice daily by job_rating_1x2_shadow) to CURRENT bookmaker
+    prices for the next 2 days' fixtures. Prices move towards kickoff, and the combined
+    model is only as good as the price it reads. SHADOW ONLY (rating_1x2_predictions,
+    model_version r1x2_comb_v1). Subprocess for the same reason as the rating job."""
+    import subprocess
+
+    def _run():
+        r = subprocess.run([sys.executable, "-m", "workers.jobs.rating_1x2_shadow", "--refresh"],
+                           cwd=str(Path(__file__).parent.parent), timeout=600,
+                           capture_output=True, text=True)
+        console.print(r.stdout[-800:])
+        if r.returncode != 0:
+            raise RuntimeError(f"combined_1x2_refresh exit {r.returncode}: {r.stderr[-1500:]}")
+
+    _run_job("combined_1x2_refresh", _run)
+
+
 def job_weekly_meta_retrain():
     """META-RETRAIN (2026-05-25): weekly retrain of the B-ML3 meta-model.
     Runs Sunday 04:00 UTC, AFTER the main XGBoost weekly_retrain at 03:00 UTC
@@ -3633,6 +3652,12 @@ def main():
     scheduler.add_job(job_rating_1x2_shadow, CronTrigger(hour="5,17", minute=30),
                       id="rating_1x2_shadow", name="1X2 rating model shadow 05:30/17:30",
                       max_instances=1, misfire_grace_time=1800)
+
+    # COMBINED-1X2 refresh ([[#141]]) — every 30 min at :10/:40 (clear of the :05/:35
+    # betting refresh so the pipeline reads a fresh combined price on its next pass).
+    scheduler.add_job(job_combined_1x2_refresh, CronTrigger(minute="10,40"),
+                      id="combined_1x2_refresh", name="Combined 1X2 refresh :10/:40",
+                      max_instances=1, misfire_grace_time=600)
 
     # META-RETRAIN (2026-05-25) — weekly B-ML3 meta-model retrain Sunday 04:00 UTC,
     # an hour after the main retrain (which refreshes MFV features the meta

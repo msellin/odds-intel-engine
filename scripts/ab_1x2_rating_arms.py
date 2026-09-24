@@ -565,7 +565,8 @@ def main() -> int:
     if a.round2:
         run_round2()
     if a.forward:
-        run_forward()
+        for v in ("r1x2_d8plus_v1", "r1x2_comb_v1"):     # rating-only, then COMBINED (round 3b)
+            run_forward(v)
     if a.q1 or a.q2:
         df = load_all()
         if a.q1: run_q1(df)

@@ -76,11 +76,65 @@ def _load(conn) -> pd.DataFrame:
     return m
 
 
+COMB_VERSION = "r1x2_comb_v1"
+COMB_TRAIN_FROM_EPOCH = 1777593600.0     # 2026-05-01: multi-book history starts here
+
+
+DRY_RUN = False     # --dry-run: compute everything, write nothing
+
+
+def _write(rows: list[tuple]) -> None:
+    if DRY_RUN:
+        return
+    from psycopg2.extras import execute_values
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            execute_values(cur, """
+                INSERT INTO rating_1x2_predictions
+                    (match_id, model_version, p_home, p_draw, p_away, n_home, n_away, gated, sources)
+                VALUES %s
+                ON CONFLICT (match_id, model_version) DO UPDATE SET
+                    p_home = EXCLUDED.p_home, p_draw = EXCLUDED.p_draw, p_away = EXCLUDED.p_away,
+                    n_home = EXCLUDED.n_home, n_away = EXCLUDED.n_away, gated = EXCLUDED.gated,
+                    sources = EXCLUDED.sources, updated_at = now()""", rows)
+        conn.commit()
+
+
+def _market_and_af(d: pd.DataFrame) -> pd.DataFrame:
+    """Attach consensus / Pinnacle (latest pre-kickoff price) and API-Football's prediction."""
+    from workers.model.market_consensus_1x2 import fetch_legs, consensus
+    ids = d.match_id.tolist()
+    with get_conn() as conn:
+        legs = pd.concat([fetch_legs(conn, ids[i:i + 3000], "close") for i in range(0, len(ids), 3000)]
+                         or [pd.DataFrame()], ignore_index=True)
+        af = pd.read_sql("""
+            SELECT id::text match_id,
+                   af_prediction->'predictions'->'percent'->>'home' af_h,
+                   af_prediction->'predictions'->'percent'->>'draw' af_d,
+                   af_prediction->'predictions'->'percent'->>'away' af_a,
+                   af_prediction->'comparison'->'total'->>'home' af_th
+              FROM matches WHERE id::text = ANY(%(ids)s) AND af_prediction IS NOT NULL""",
+                         conn, params={"ids": ids})
+    for k in ("af_h", "af_d", "af_a", "af_th"):
+        af[k] = pd.to_numeric(af[k].str.rstrip("%"), errors="coerce") / 100
+    d = d.merge(consensus(legs), left_on="match_id", right_index=True, how="left")
+    return d.merge(af, on="match_id", how="left")
+
+
+def _comb_rows(d: pd.DataFrame, params: dict) -> list[tuple]:
+    from workers.model.combined_1x2 import predict
+    P, grp = predict(d, params)
+    gg = gated(d).to_numpy() | (grp != "none")
+    return [(mid, COMB_VERSION, round(float(p[0]), 5), round(float(p[1]), 5), round(float(p[2]), 5),
+             int(nh), int(na), bool(g), str(gr))
+            for mid, p, nh, na, g, gr in zip(d.match_id, P, d.n_home, d.n_away, gg, grp)]
+
+
 def run() -> dict:
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
-    from psycopg2.extras import execute_values
+    from workers.model.combined_1x2 import fit as comb_fit
 
     with get_conn() as conn:
         m = _load(conn)
@@ -90,7 +144,7 @@ def run() -> dict:
     f = f[~f.extra.astype(bool)]
     fin = f[~f.upcoming.astype(bool)]
     tr = fin[(fin.kickoff >= TRAIN_FROM_EPOCH) & gated(fin)]
-    up = f[f.upcoming.astype(bool)]
+    up = f[f.upcoming.astype(bool)].copy()
     if up.empty:
         console.print("rating_1x2_shadow: no upcoming fixtures in the next 2 days")
         return {"written": 0}
@@ -98,30 +152,73 @@ def run() -> dict:
     med = tr[D8PLUS_FEATURES].median()
     mdl = make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000, C=1.0))
     mdl.fit(tr[D8PLUS_FEATURES].fillna(med), tr.y)
-    P = mdl.predict_proba(up[D8PLUS_FEATURES].fillna(med))
     cls = list(mdl.classes_)
-    ih, idr, ia = cls.index(0), cls.index(1), cls.index(2)
-    g = gated(up).to_numpy()
+    order = [cls.index(0), cls.index(1), cls.index(2)]
 
-    rows = [(mid, MODEL_VERSION, round(float(p[ih]), 5), round(float(p[idr]), 5), round(float(p[ia]), 5),
-             int(nh), int(na), bool(gg))
-            for mid, p, nh, na, gg in zip(up.match_id, P, up.n_home, up.n_away, g)]
+    def rate(d):
+        return mdl.predict_proba(d[D8PLUS_FEATURES].fillna(med))[:, order]
+
+    up[["r_h", "r_d", "r_a"]] = rate(up)
+    g = gated(up).to_numpy()
+    _write([(mid, MODEL_VERSION, round(float(p[0]), 5), round(float(p[1]), 5), round(float(p[2]), 5),
+             int(nh), int(na), bool(gg), None)
+            for mid, p, nh, na, gg in zip(up.match_id, up[["r_h", "r_d", "r_a"]].to_numpy(),
+                                          up.n_home, up.n_away, g)])
+    out = {"written": len(up), "gated": int(g.sum()), "train_rows": len(tr), "history_rows": n_hist,
+           "min_history": MIN_HISTORY}
+
+    # ── COMBINED model (round 3b): refit the per-group combiner on finished matches
+    # since 2026-05-01 (ratings from the fit above — mildly in-sample for these rows,
+    # 10 coefficients on ~140k rows), store it, and apply it to the upcoming fixtures.
+    hist = fin[fin.kickoff >= COMB_TRAIN_FROM_EPOCH].copy()
+    hist[["r_h", "r_d", "r_a"]] = rate(hist)
+    hist = _market_and_af(hist)
+    params = comb_fit(hist)
+    import json
     with get_conn() as conn:
         with conn.cursor() as cur:
-            execute_values(cur, """
-                INSERT INTO rating_1x2_predictions
-                    (match_id, model_version, p_home, p_draw, p_away, n_home, n_away, gated)
-                VALUES %s
-                ON CONFLICT (match_id, model_version) DO UPDATE SET
-                    p_home = EXCLUDED.p_home, p_draw = EXCLUDED.p_draw, p_away = EXCLUDED.p_away,
-                    n_home = EXCLUDED.n_home, n_away = EXCLUDED.n_away, gated = EXCLUDED.gated,
-                    updated_at = now()""", rows)
+            if not DRY_RUN:
+                cur.execute("INSERT INTO combiner_1x2_params (model_version, params, n_train) VALUES (%s, %s::jsonb, %s)",
+                            (COMB_VERSION, json.dumps(params), int(len(hist))))
         conn.commit()
-    out = {"written": len(rows), "gated": int(g.sum()), "train_rows": len(tr), "history_rows": n_hist,
-           "min_history": MIN_HISTORY}
-    console.print(f"rating_1x2_shadow ({MODEL_VERSION}): {out}")
+    rows = _comb_rows(_market_and_af(up), params)
+    _write(rows)
+    out.update(comb_written=len(rows), comb_train=len(hist),
+               comb_groups={k: v["n"] for k, v in params.items()})
+    console.print(f"rating_1x2_shadow ({MODEL_VERSION} + {COMB_VERSION}): {out}")
+    return out
+
+
+def refresh() -> dict:
+    """Every 30 min: re-apply the latest stored combiner to CURRENT prices for fixtures
+    that already carry a rating prediction. Cheap — no rating pass, no refit."""
+    import json
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT params FROM combiner_1x2_params WHERE model_version = %s
+                            ORDER BY fitted_at DESC LIMIT 1""", (COMB_VERSION,))
+            row = cur.fetchone()
+        if not row:
+            console.print("combined_1x2 refresh: no fitted combiner yet")
+            return {"written": 0}
+        params = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+        d = pd.read_sql("""
+            SELECT r.match_id::text match_id, r.p_home::float8 r_h, r.p_draw::float8 r_d,
+                   r.p_away::float8 r_a, r.n_home, r.n_away
+              FROM rating_1x2_predictions r JOIN matches m ON m.id = r.match_id
+             WHERE r.model_version = %(v)s AND m.status = 'scheduled'
+               AND m.date > now() AND m.date < now() + interval '2 days'""",
+                        conn, params={"v": MODEL_VERSION})
+    if d.empty:
+        return {"written": 0}
+    rows = _comb_rows(_market_and_af(d), params)
+    _write(rows)
+    out = {"written": len(rows), "groups": pd.Series([r[-1] for r in rows]).value_counts().to_dict()}
+    console.print(f"combined_1x2 refresh ({COMB_VERSION}): {out}")
     return out
 
 
 if __name__ == "__main__":
-    run()
+    import sys as _sys
+    DRY_RUN = "--dry-run" in _sys.argv
+    refresh() if "--refresh" in _sys.argv else run()

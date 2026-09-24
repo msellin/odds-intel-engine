@@ -54959,5 +54959,45 @@ def test_market_consensus_1x2():
     assert abs(c.pin_h - (1/2.0) / (1/2.0 + 1/3.5 + 1/4.0)) < 1e-9, "Pinnacle must be its own de-vigged input"
 
 
+@test("COMBINED-1X2 — #141 per-group combiner: AF only where unpriced, rule fallback, probabilities valid, refresh wired")
+def test_combined_1x2():
+    """COMBINED-1X2 ([[#141]] round 3b, COMB-HYB). Adopted on a pre-registered test
+    (0.9763 vs 1.0711 log-loss for the shipped head). Pins the three design rules
+    the result depends on: one model per availability group (a missing source is not
+    a zero), API-Football only in the no-price group (it hurt where the market
+    exists), and a group without fitted params falls back to Pinnacle > consensus >
+    rating rather than to nothing. Also pins the 30-min refresh job."""
+    import numpy as np
+    import pandas as pd
+    from workers.model.combined_1x2 import fit, predict, design
+    rng = np.random.default_rng(1)
+    n = 2400
+    def tri(k):
+        x = rng.dirichlet([4, 2.5, 3], k); return x
+    d = pd.DataFrame(tri(n), columns=["r_h", "r_d", "r_a"])
+    c = tri(n); d[["c_h", "c_d", "c_a"]] = c; d["n_books"] = rng.integers(1, 9, n)
+    d[["pin_h", "pin_d", "pin_a"]] = tri(n)
+    d[["af_h", "af_d", "af_a"]] = [0.45, 0.45, 0.10]; d["af_th"] = 0.5
+    d.loc[800:1599, ["pin_h", "pin_d", "pin_a"]] = np.nan                      # C only
+    d.loc[1600:, ["pin_h", "pin_d", "pin_a", "c_h", "c_d", "c_a"]] = np.nan    # none
+    d["y"] = [rng.choice(3, p=p) for p in c]
+    params = fit(d)
+    assert set(params) == {"P&C", "C", "none"}, params.keys()
+    assert np.asarray(params["P&C"]["coef"]).shape[1] == 7, "P&C = rating(2)+consensus(2)+log n(1)+Pinnacle(2), NO AF"
+    assert np.asarray(params["none"]["coef"]).shape[1] == 6, "none = rating(2)+AF percent(2)+AF total(1)+has_af(1)"
+    assert design(d.iloc[:5], "C").shape[1] == 5, "C = rating + consensus + log n_books, no AF"
+    P, grp = predict(d, params)
+    assert np.allclose(P.sum(1), 1) and (P > 0).all()
+    only_p = d.iloc[:3].copy(); only_p[["c_h", "c_d", "c_a"]] = np.nan
+    Pp, gp = predict(only_p, params)                                          # 'P' has no params -> Pinnacle
+    assert (gp == "P").all() and np.allclose(Pp, only_p[["pin_h", "pin_d", "pin_a"]].to_numpy())
+    sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    assert 'id="combined_1x2_refresh"' in sched
+    body = sched[sched.index("def job_combined_1x2_refresh"):sched.index("def job_weekly_meta_retrain")]
+    assert '"workers.jobs.rating_1x2_shadow", "--refresh"' in body, "refresh must run in a subprocess"
+    job = _engine_path("workers/jobs/rating_1x2_shadow.py").read_text(encoding="utf-8")
+    assert "INTO predictions" not in job and "to_datetime" not in job
+
+
 if __name__ == "__main__":
     main()

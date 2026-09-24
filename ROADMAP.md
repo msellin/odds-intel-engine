@@ -124,7 +124,9 @@ Filter toggle: "Show all matches" (default) / "Show matches with [my tier] data"
 
 > **Model update 2026-09-24 ([[#141]])** — a walk-forward 1X2 rating model (Elo / pi / dynamic Poisson from
 > scores, warmed with 258k prior-season results) beats the shipped XGBoost 1X2 head by −0.063 log-loss on
-> the 08-31..09-24 holdout, in every tier; it does not beat Pinnacle (α = 0). Running in **shadow** only
+> the 08-31..09-24 holdout, in every tier; it does not beat Pinnacle (α = 0). **Round 3b the same day:** a
+> COMBINED model (ratings + de-vigged 18-book consensus + Pinnacle, API-Football only where unpriced) scores
+> **0.9763 vs 1.0711** (−8.9%) and edges Pinnacle alone on priced matches (0.9795 vs 0.9812, closing prices). Running in **shadow** only
 > (`rating_1x2_predictions`); promotion into the served blend is pending the owner. Same day: the weekly
 > retrain's eval had been exiting without a verdict every Sunday since 09-06 — fixed with a `--cutoff` twin.
 

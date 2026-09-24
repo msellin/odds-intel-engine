@@ -602,6 +602,34 @@ vs actual 0.438/0.231/0.331). **It does not beat Pinnacle:** α = 0 overall on 1
 number — the same result as every earlier α test. Full method, pre-registration and every run:
 `dev/active/1x2-model-rebuild-plan.md`; harness `scripts/ab_1x2_rating_arms.py`.
 
+#### 4.4b COMBINED 1X2 model — ratings + bookmaker consensus + Pinnacle (round 3b, 2026-09-24)
+
+Score-only tuning hit the ceiling the literature describes (round 3a: six arms, none moved validation
+log-loss by 0.001; Hubáček et al. 2022 found five rating systems within 0.0002 RPS). The next input is
+the market. `workers/model/market_consensus_1x2.py` builds a **de-vigged consensus of 18 books** (incl.
+our direct scrapes Coolbet, Epicbet, Unibet-Site, Tonybet; SBO, Unibet-Kambi, Avg/Max and the exchange
+excluded; outlier and leg-timing guards; Pinnacle kept separate) — on 18,877 shared matches it is as
+accurate as Pinnacle (0.9781 vs 0.9783). `workers/model/combined_1x2.py` fits **one multinomial logit per
+availability group** — {Pinnacle & consensus, Pinnacle, consensus, none} — on the log-odds of whatever
+sources a match has; API-Football's prediction enters **only** in the no-price group (it helped there and
+hurt where the market exists; on its own it is worse than uniform).
+
+| 12,640 matches, 2026-08-31..09-24 | log-loss |
+|---|---|
+| shipped XGBoost head v20260830 | 1.0711 |
+| rating model (4.4) | 1.0049–1.0078 |
+| rule: Pinnacle, else consensus, else rating | 0.9810 |
+| **combined (COMB-HYB)** | **0.9763** (−0.0048 vs rule, CI −0.0065..−0.0029; −8.9% vs the shipped head) |
+
+By group: Pinnacle-priced 0.9795 vs **Pinnacle alone 0.9812** (CI excludes 0 — with closing prices;
+opening prices: −0.0014, CI touches 0); books-only 0.9619 vs consensus 0.9749; no price 0.9803 vs rating
+0.9849. Pre-registered, selected on 08-01..08-30, confirmed once — plan doc "ROUND 3b".
+
+Serving: the rating job (05:30/17:30) also refits the combiner on finished matches since 2026-05-01 and
+stores it (`combiner_1x2_params`); `job_combined_1x2_refresh` (:10/:40) re-applies it to **current**
+prices and writes `rating_1x2_predictions` rows with `model_version = r1x2_comb_v1` and `sources` = the
+group used. Shadow only, like 4.4.
+
 **Status: shadow.** `job_rating_1x2_shadow` (05:30/17:30 UTC) writes `rating_1x2_predictions` only.
 Nothing that stakes or publishes reads it. Replacing the XGBoost/Poisson legs of the served blend is
 an owner decision, to be taken on the forward record from 2026-09-25.
