@@ -53499,10 +53499,15 @@ def test_book_feed_tidyups():
     assert w("UEFA Nations League") == "international" and w("Friendlies") == "international"
     assert w("UEFA U21 Championship - Qualification") == "international youth"
     assert w("Friendlies Clubs") == "international clubs" and w("CAF Champions League") == "international clubs"
+    # review 2026-09-24: Unibet has its own 'uefa club' category; singular "club" counts
+    assert w("UEFA Champions League") == "uefa club" and w("UEFA Europa Conference League") == "uefa club"
+    assert w("Caribbean Club Championship") == "international clubs" and w("Leagues Cup") == "international clubs"
     src = inspect.getsource(uf)
     assert 'country_of(rn).lower() != "esoccer"' in src and 'groups.setdefault("world:"' in src
     sched = _engine_path("workers/scheduler.py").read_text()
     assert "log_pipeline_complete(run_id, records_count=_rc)" in sched
+    assert 'return {**res, "stored": int(stored or 0)}' in sched, "Coolbet job must return its counters"
+    assert 'return {**res, "stored": int(res.get("rows") or 0)}' in sched, "Betfair reports rows, not stored"
     assert "returned an empty board" in inspect.getsource(nk.capture_tonybet)
 
 

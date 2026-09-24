@@ -458,9 +458,14 @@ def _inject_expr(url: str) -> str:
             "catch(e){return JSON.stringify({s:0,e:String(e)});}})()")
 
 
-_WORLD_CLUB_KEYS = ("clubs", "champions league", "europa league", "conference league",
-                    "libertadores", "sudamericana", "club world", "confederation cup",
-                    "concacaf champions")
+_WORLD_CLUB_KEYS = ("club", "champions league", "europa league", "conference league",
+                    "libertadores", "sudamericana", "confederation cup", "concacaf champions",
+                    "leagues cup", "campeones cup", "intercontinental")
+# Unibet files UEFA's club competitions under their own top-level category (review
+# 2026-09-24: 'uefa club' is in the sweep's category list). Tried first for these;
+# 'international clubs' is the fallback when a sweep does not list it.
+_UEFA_CLUB_KEYS = ("uefa champions league", "uefa europa league", "uefa europa conference league",
+                   "uefa conference league", "uefa super cup", "uefa youth league")
 
 
 def world_category(league: str) -> str:
@@ -470,6 +475,8 @@ def world_category(league: str) -> str:
     friendlies, continental cups) → 'international'."""
     import re
     l = (league or "").lower()
+    if any(k in l for k in _UEFA_CLUB_KEYS) or (l.startswith("uefa") and "super cup" in l):
+        return "uefa club"
     if re.search(r"\bu(1[5-9]|2[0-3])\b", l) or "youth" in l or "junior" in l:
         return "international youth"
     if any(k in l for k in _WORLD_CLUB_KEYS):
@@ -667,6 +674,8 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
             if target.startswith("world:"):
                 want = target[len("world:"):]
                 best_rn = next((rn for rn, cn in rn_list if cn.lower() == want), None)
+                if not best_rn and want == "uefa club":
+                    best_rn = next((rn for rn, cn in rn_list if cn.lower() == "international clubs"), None)
                 if not best_rn:
                     c["world_unmapped"] = c.get("world_unmapped", 0) + len(fx)
                     continue

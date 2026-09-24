@@ -604,6 +604,9 @@ def job_coolbet_odds_snapshot():
         # "Coolbet unreachable" and this job recorded `completed`.
         if fixtures >= 10 and not stored:
             raise RuntimeError(f"Coolbet sweep stored 0 rows for {fixtures} due fixtures ({detail})")
+        # #112 review: return the counters so _run_job records pipeline_runs.records_count
+        # (the board sweep reports `stored_rows`; the bulk path `stored`).
+        return {**res, "stored": int(stored or 0)}
     except Exception as e:
         console.print(f"[red]Coolbet odds snapshot failed: {e}[/red]")
         console.print(f"[red dim]{traceback.format_exc()}[/red dim]")
@@ -694,7 +697,7 @@ def job_betfair_exchange_snapshot():
     res = run_bulk(horizon_hours=48)
     if res.get("matched_events", 0) >= 20 and not res.get("rows"):
         raise RuntimeError(f"Betfair Exchange stored 0 rows for {res.get('matched_events')} matched events")
-    return res
+    return {**res, "stored": int(res.get("rows") or 0)}   # records_count (#112 review)
 
 
 def _betfair_exchange_snapshot_wrapper():
