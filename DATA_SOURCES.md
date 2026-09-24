@@ -321,6 +321,7 @@ attractive on their pricing page and the disqualifier is not visible there.
 
 | Source | Looks like | Why it is ruled out | Ruled out |
 |---|---|---|---|
+| **Betfair Exchange website (public read endpoints)** | Sharp exchange prices for a wider anchor ([[#115]]) | **Geo-empty.** From the Finnish VPS the site loads but every market query returns no markets, even in a real browser — the exchange serves nothing to this jurisdiction. Reaching markets would need an IP where Betfair operates = geo-evasion; declined. AF's live 'Betfair' is the sportsbook (11.3% margin), not the exchange. Licensed route: The Odds API `betfair_ex_eu` (67 top competitions only). | 2026-09-24 |
 | **Betfair Exchange Developer Program** — free Delayed Application Key | A free exchange feed (1–180 s data lag) — i.e. the one price series with no bookmaker margin in it, which is exactly what a sharp anchor wants | **Licence, not latency.** The free Delayed App Key is granted for **personal use only**. OddsIntel is a commercial project (paid tiers, published picks), so ingesting it would breach the Developer Program terms. The 1–180 s lag is irrelevant to pre-match use and is *not* the blocker — the blocker is that we are not an eligible user of the free key. A paid/Live App Key is a separate commercial application and is not covered by this note. | 2026-09-21 |
 
 **Re-open only if** the licence position changes (a commercial key is obtained,
