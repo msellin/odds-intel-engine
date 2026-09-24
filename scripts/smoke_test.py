@@ -55436,7 +55436,7 @@ def test_newplus_ev_bots():
         assert name in names, f"{name} missing from bot_registry"
     src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
     assert 'edge = cal_prob * odds - 1 if config.get("edge_unit") == "ev" else cal_prob - ip' in src
-    assert 'if tier >= 3 and thresholds and config.get("edge_unit") != "ev":' in src
+    assert 'if config.get("edge_unit") == "ev":\n                pass' in src and "elif tier >= 3 and thresholds:" in src
     assert 'if config.get("require_pinnacle") and pin_anchor is None:' in src
     assert src.count('"edge": cal_prob - ip,') >= 3, "store_bet, shadow rows AND the Telegram buffer carry the pp edge"
     assert "if _one_done:" in src and "_one_done = False" in src

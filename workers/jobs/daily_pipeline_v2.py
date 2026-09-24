@@ -3715,7 +3715,9 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             # CLV is +3-6% at these tiers — model has marginal edge but not
             # enough to survive friction + smaller market liquidity. Add +3pp
             # to every threshold for tier 3 and 4 to cut the -EV long tail.
-            if tier >= 3 and thresholds and config.get("edge_unit") != "ev":   # B4: EV bots are flat
+            if config.get("edge_unit") == "ev":
+                pass   # #141 B4: EV bots are flat across tiers — no T3+ bump
+            elif tier >= 3 and thresholds:
                 # TIER-C-T3PLUS-GATE-EXPAND-2026-07-31: 90d audit found T3
                 # 1X2 at -24.30% ROI (n=170) and T4 at -22.86% (n=176) even
                 # after the original +3pp gate. Mean edge on those bets was
