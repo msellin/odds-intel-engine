@@ -80,7 +80,7 @@ _MIN_EDGE_BY_MARKET: dict[str, float | None] = {
     # ⚠️ FAVLONG-CUTS-2026-09-09: the pooled result HID that home-FAVOURITES are a
     # fold-robust loser at every floor; split by SELECTION TYPE, home-underdogs are
     # the one fold-robust engine and win at 0.10 (odds>=2.80). So the REAL-MONEY 1x2
-    # bot does NOT use this pooled 0.13 — it uses its per-bot BOT_THRESHOLDS=0.10
+    # bot does NOT use this pooled 0.13 — it uses _MODEL_1X2_HOME_FLOOR=0.10 via placement_floor.pick_clears (was BOT_THRESHOLDS, #162 W4.3)
     # (home-underdogs only) in scripts/place_coolbet_ui.py. This pooled value stays
     # 0.13. See docs/BETTING_GATE_DECISIONS.md "1x2 by SELECTION TYPE".
     "1x2":            0.13,

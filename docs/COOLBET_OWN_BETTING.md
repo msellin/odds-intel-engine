@@ -42,6 +42,22 @@
 > placer. Real money is sized FLAT (€10, `COOLBET_STAKE`) on every path — owner 2026-09-25, "Kelly hasn't proven
 > itself in this project yet"; the API placer's default guard no longer uses the Kelly suggestion.
 
+> **#162 W4.3 (2026-09-25) — ONE per-bot placement floor.** `BOT_THRESHOLDS` is DELETED. Every real-money
+> placer (UI placer pre-check at the pick price + `stage_bet` at the live Coolbet price; router `decide_book` +
+> both arms at the live price) calls `workers/automation/placement_floor.pick_clears(bot, market, selection,
+> odds, calibrated_prob)`: edge floor = **max(the bot's own generator floor, `min_edge_for_pick`)**, odds floor =
+> **max(the bot's own, `_min_odds_for`)** (owner decision 3C; `MARKET_FLOOR_OPT_OUT` is empty — an opt-out is an
+> owner call), plus the bot's own selections, odds ceiling, edge ceiling and (sharp bots) the 1.6× outlier cap.
+> Edge is probability points for all 11 capable bots. Unknown bot / wrong market / no probability / an empty
+> window = refuse. Effect: the two model bots are unchanged (O/U 8 pp @ ≥1.80; 1x2 home 10 pp @ ≥2.80 — now also
+> at the LIVE price); the sharp bots need 10–13 pp (1x2) / 8 pp (O/U) against their own ≤8 pp ceiling or 1.6×
+> cap, so they almost never clear, and `bot_trigger_1x2_sharp_v1` / `_tight_v1` / `bot_trigger_ou_sharp_v1`
+> have EMPTY windows (refused outright). Before this the UI placer gave every sharp bot 3 pp and the router
+> 13 pp — one pick, two answers. The per-selection rule is exported as the `placement_floor` gate in
+> `bot_config`. The Pick queue keeps showing each bot's OWN generating floor (the manual-placement signal),
+> pinned equal to the generator by smoke `PLACEMENT-FLOOR-ONE-RULE`. Rows below that say `BOT_THRESHOLDS`
+> describe the pre-W4.3 state.
+
 > **✅ PLACEMENT-GATE 2026-09-15 (OWN Phase 0).** Every function that can reach a money primitive — the UI placer (run level AND before `select_outcome`), the best-price router incl. its Unibet arm, `coolbet_placer.place_all_bets`, `place_all_inplay_bets`, ~~the orphaned `coolbet_inplay` execute mode~~ (**deleted 2026-09-21** — a money primitive with zero callers is one the gate can never be observed defending), and the VPS manual-place drain — now calls ONE fail-closed gate first: `workers/automation/placement_gate.py`. It requires `placement_paused = FALSE` (kill switch, fails CLOSED), **`real_money_armed = TRUE`** (arming switch, migration 354, default FALSE, owner-set with a reason), the bot in `PLACEABLE_BOTS ∩ ui_place_enabled` (since 2026-09-24: `placement_path_bots() ∩` the eligibility list — see the banner above), outside the kickoff cutoff, under the daily caps. `ROUTER_ALLOW_REAL` is no longer sufficient. Both `--execute` launchd jobs are unloaded (`~/Library/LaunchAgents/paused/`). Ledger: `real_bets.shadow_bet_id` (mig 354) fixes the FK violation that silently dropped every confirmed placement's ledger row since 2026-09-13; confirmed real stakes now settle on every pass. Gate-stack tables below predate this and describe the gates the gate now fronts. See `docs/SYSTEM_MAP.md` §4 and `dev/active/own-implementation-plan.md`.
 
 > **⚠️ PAPER MAC-DAEMON RETIRED 2026-09-10.** Every reference below to the `coolbet_mac_daemon` / "paper daemon" / `coolbet-mac-daemon` describes a RETIRED component. It is gone (booted out, plist archived). Its paper placement duplicated the pipeline's `simulated_bets`/`shadow_bets` (model refinement) and the real-money **UI placer** (`coolbet-ui-placer`); its session-keep (JWT heal) moved to `coolbet-feed-watchdog` (`coolbet_browser_sync.ensure_session_live`), operator control to the webhook. Correct architecture: **pipeline = paper sim, UI placer = real money, feed-watchdog = session-keep** (Unibet parity). Readiness: `python3 -m workers.automation.coolbet_control --status`. Sentences below that call the daemon "continuous"/live are stale as of that date. See COOLBET_RUNBOOK "PAPER-DAEMON RETIRED".
@@ -151,7 +167,7 @@ floor helper.
 | Source table | **`shadow_bets_unique`** (view over `shadow_bets`) | `simulated_bets` |
 | Which bot(s) | (pre-2026-09-24 — see top banner) code whitelist `PLACEABLE_BOTS` ∩ DB toggle `coolbet_placer_bots` — currently **`bot_coolbet_1x2_model_v1` + `bot_coolbet_ou_model_v1`, BOTH `ui_place_enabled=TRUE`**. (**`bot_coolbet_value_v1` was RETIRED 2026-09-08** — it is no longer a placer; the flat-3% line-shop path is gone.) | all model bots, gated to `calibrated` maturity |
 | Edge basis | **our calibrated MODEL vs Coolbet's OWN price** (MODEL edge = `cal_prob − 1/coolbet_odds`) | model ensemble vs de-vigged Pinnacle at best-accessible book |
-| Edge floor | **per-bot `BOT_THRESHOLDS` — 1x2 10% (home-underdogs only, odds≥2.80; FAVLONG-CUTS-2026-09-09) · O/U 8%** | per-market `_min_edge_for` — **1x2 13% · O/U 8%** |
+| Edge floor | **`placement_floor.pick_clears` (W4.3; was per-bot `BOT_THRESHOLDS`) — 1x2 10% (home-underdogs only, odds≥2.80; FAVLONG-CUTS-2026-09-09) · O/U 8%** | per-market `_min_edge_for` — **1x2 13% · O/U 8%** |
 | Odds floor | `_min_odds_for` ✓ (shared) | `_min_odds_for` ✓ (shared) |
 | Places real money? | **YES** — `--execute` in the plist; writer behind every `real_bets` row since 2026-08-27, incl. the 2026-08-31 −€92.80 incident. Per-bot on/off is the runtime `coolbet_placer_bots` toggle (superadmin, `/admin/bots` since 2026-09-24) | **No** — `execute=False` hardcoded in the daemon |
 | Uses our model? | **Yes** — the calibrated ensemble, priced at Coolbet's own odds | Yes — the calibrated ensemble |
@@ -229,7 +245,7 @@ DC). ~3,000 picks since 2026-08-26. `shadow_bets_unique` is a dedup VIEW over
 | 3 | **Odds-band (CLV)** | REALMONEY-ODDS-BAND-MISMATCH, gated on `odds_at_pick` | reject bands whose de-vigged CLV is decisively negative |
 | 4 | **Odds floor** (per-market) | `_min_odds_for(market)` — **shared with the API placer** | **1x2 ≥ 2.80 · O/U ≥ 1.80 · unknown ≥ 2.80** |
 | 5 | **Per-match exposure** | COOLBET-MATCH-EXPOSURE-GUARD | caps concurrent stake on one fixture |
-| 6 | **Edge threshold** | `BOT_THRESHOLDS[bot]` = **0.03** | the bot's flat 3% line-shop edge — **NOT** `_min_edge_for` |
+| 6 | **Edge threshold** | ~~`BOT_THRESHOLDS[bot]` = 0.03~~ → `placement_floor.pick_clears` (#162 W4.3) | stricter of the bot's own floor and `min_edge_for_pick`, at the pick price AND the live price |
 | 7 | **Real-money allowlist** (COOLBET-PLACER-CONTROL; **since 2026-09-24 `placement_path_bots() ∩ ui_place_enabled_bots()`, see top banner**) | `PLACEABLE_BOTS ∩ ui_place_enabled_bots()` | code-level hard whitelist `PLACEABLE_BOTS = {value_v1, ou_model_v1}` intersected with the runtime DB toggle `coolbet_placer_bots` (superadmin flips it at `/admin/bots` since 2026-09-24; was `/admin/shadow-bots`). Seed: value_v1 ON, ou_model_v1 OFF. **Fails CLOSED** (places nothing) on any DB read error. A bot outside `PLACEABLE_BOTS` can never place even if a row enables it. Any disallowed bot → forced dry-run |
 | 8 | **Kill switch** | `coolbet_state.is_placement_paused()` | DB flag halts the whole placement loop |
 
@@ -250,8 +266,8 @@ probabilities (`simulated_bets` of the named source bots — `BotConfig.source_b
 price (edge≥0.08 — the registry floor, not a copy), then writes them into
 `shadow_bets` in the line-shop vocabulary (`over_under_25`/`over_under_35` + `over`/`under`), so they load and
 place through this same Path-A UI placer with the validated per-market gates
-(edge≥8% via `BOT_THRESHOLDS[bot]=0.08` feeding `min_odds_for`, odds≥1.80 via
-`_min_odds_for('o/u')`). It settles via the generic goals O/U resolver — no
+(edge≥8% and odds≥1.80 via `placement_floor.pick_clears`, #162 W4.3 — was
+`BOT_THRESHOLDS[bot]=0.08` feeding `min_odds_for`). It settles via the generic goals O/U resolver — no
 custom settler. Real money stays OFF until its `coolbet_placer_bots` row is
 toggled `ui_place_enabled=true` (superadmin, `/admin/bots`) with explicit
 owner authorization — it is seeded OFF; this is the built vehicle for the

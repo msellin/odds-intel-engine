@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # SMOKE-SUITE-AUDIT 2026-09-01: playwright is imported lazily, inside the one
 # function that actually drives a browser. It used to be a module-level import,
 # which meant simply reading a constant from this file — e.g.
-# `from scripts.place_coolbet_ui import BOT_THRESHOLDS`, which the
+# `from scripts.place_coolbet_ui import bot_edge_floor` (was BOT_THRESHOLDS), which the
 # COOLBET-PLACER-CONTROL smoke test does — required the browser driver to be
 # installed. playwright is not in requirements.txt, so that test failed in CI
 # with ModuleNotFoundError while passing locally. _session_alive() already
@@ -50,27 +50,28 @@ log = logging.getLogger("place_coolbet_ui")
 # bankroll error; flat keeps every row equally weighted for the later audit.
 DEFAULT_STAKE = 10.00
 
-# The bot fires at a 3pct true edge (daily_pipeline_v2 _LINESHOP_TRUE_EDGE_MIN).
-# Keep this in step with BOT_EDGE_THRESHOLDS on the shadow-bots admin page —
-# they drifted apart once already and every min-odds floor was wrong.
-BOT_THRESHOLDS = {
-    # bot_coolbet_value_v1 (line-shop) RETIRED 2026-09-08 — removed from the map.
-    # COOLBET-MODEL-OU-SHADOW-BOT-2026-09-08: the model-edge O/U bot fires at an
-    # 8% calibrated edge (mirrors _MIN_EDGE_BY_MARKET['o/u'] and the mirror job's
-    # EDGE_FLOOR). The placer's live-edge gate 1/(cal_prob - threshold) uses this,
-    # so it MUST be 0.08 or the min-odds floor would be computed at the wrong edge.
-    "bot_coolbet_ou_model_v1": 0.08,
-    # FAVLONG-CUTS-2026-09-09: the model-edge 1x2 bot now bets HOME-UNDERDOGS ONLY at
-    # a 10% calibrated edge (odds>=2.80). The by-selection backtest (BETTING_GATE_DECISIONS
-    # "1x2 by type" + ANALYSIS_GOTCHAS §57) found home-underdogs are the one fold-robust 1x2
-    # engine and robust down to ~10% on the odds>=2.80 universe (cohort +21%, idealized +24%);
-    # home-favs lose, aways aren't robust, draws are a sharp edge the model can't see. The
-    # mirror job (coolbet_model_1x2_shadow) enforces the home + odds>=2.80 selection; this
-    # threshold is the placer's live-edge gate 1/(cal_prob - threshold), so it MUST be 0.10.
-    # NB the global _MIN_EDGE_BY_MARKET['1x2'] stays 0.13 (the paper daemon + trigger windows,
-    # which are all-selection/pooled) — the real-money placeable bot is deliberately distinct.
-    "bot_coolbet_1x2_model_v1": 0.10,
-}
+# [[#162]] W4.3 (2026-09-25): BOT_THRESHOLDS is gone. It was a second copy of each bot's floor that
+# was selection-blind and defaulted every unlisted bot (all the sharp bots) to 3 pp, while the router
+# stacked the 13 pp market floor on the same bots. Both placers now call ONE rule,
+# workers/automation/placement_floor.pick_clears: the stricter of the bot's own floor and the market
+# floor (owner decision 3C), plus the bot's own ceilings. The two model bots are unchanged by it:
+# O/U 8 pp at odds >= 1.80, 1x2 home at odds >= 2.80 at 10 pp.
+from workers.automation.placement_floor import pick_clears, placement_floor, bot_rules
+
+
+def bot_edge_floor(bot_name: str) -> float:
+    """The bot's headline edge floor (its first market and selection, at its odds floor), for
+    notes and log lines. NOT a gate: pick_clears() decides per pick and per price. Unknown bot =
+    1.0 (nothing clears), matching pick_clears' fail-closed refusal."""
+    rule = bot_rules().get(bot_name)
+    if rule is None:
+        return 1.0
+    sel = rule.selections[0] if rule.selections else None
+    f0 = placement_floor(bot_name, rule.markets[0], sel, None)
+    f = placement_floor(bot_name, rule.markets[0], sel, f0.odds_min) if f0 else None
+    return f.edge_min if f else 1.0
+
+
 DEFAULT_BOT = "bot_coolbet_ou_model_v1"  # value_v1 (line-shop) retired 2026-09-08
 
 # ── REAL-MONEY ALLOWLIST — two layers (COOLBET-PLACER-CONTROL-2026-09-08) ─────
@@ -634,21 +635,18 @@ def reconcile_account_to_real_bets(norms: list[dict]) -> int:
         note = (f"coolbet-account-sync ticket #{norm.get('ticket_id')} "
                 f"(self-verified {datetime.now(timezone.utc):%Y-%m-%d})")
         try:
-            # MARKET-VOCAB-CANONICAL: store the canonical spelling (AH/combo keep selection).
-            from workers.canonical_market import canonicalize_for_storage
-            _mkt, _sel = canonicalize_for_storage(matched["market"], matched["selection"])
-            # slippage_pct is a GENERATED column — never inserted.
-            execute_write(
-                # Stage 2: this row mirrors the operator's ACTUAL Coolbet account
-                # (a real, money-moved bet) → placed_real = TRUE.
-                """INSERT INTO real_bets
-                       (bot_id, match_id, market, selection, bookmaker,
-                        captured_odds, actual_odds, stake, placed_at,
-                        result, notes, placed_real)
-                   VALUES (%s, %s, %s, %s, 'Coolbet',
-                           %s, %s, %s, NOW(), 'pending', %s, TRUE)""",
-                (matched.get("bot_id"), matched["match_id"], _mkt,
-                 _sel, odds_val, odds_val, stake_val, note),
+            # [[#162]] W4.5: through THE real_bets writer (store_real_bet), like every other
+            # engine path — it canonicalises the vocabulary and refuses a non-positive stake or
+            # odds <= 1.0 (a ticket we could not parse is logged below, not stored as a EUR 0 bet;
+            # the per-pick account-holds check still sees it on the account). No pick link: an
+            # account ticket is not a pick. This row mirrors the operator's ACTUAL Coolbet
+            # account (a real, money-moved bet) → placed_real = TRUE.
+            from workers.api_clients.supabase_client import store_real_bet
+            store_real_bet(
+                match_id=matched["match_id"], market=matched["market"],
+                selection=matched["selection"], bookmaker="Coolbet",
+                actual_odds=odds_val, captured_odds=odds_val, stake=stake_val,
+                bot_id=matched.get("bot_id"), notes=note, placed_real=True,
             )
             inserted += 1
             print(f"account-verify: reconciled {matched['home_team']} v "
@@ -797,7 +795,9 @@ def place_for_bot(page, bot_name: str, picks: list[dict], execute: bool,
     from workers.automation.coolbet_browser_sync import match_coolbet_to_simulated
 
     account_holds = account_holds or []
-    threshold = BOT_THRESHOLDS.get(bot_name, 0.03)
+    # [[#162]] W4.3: the per-bot floor is placement_floor's (bot rule vs market rule, stricter wins);
+    # this number is only the pooled edge floor echoed in the attempt notes.
+    threshold = bot_edge_floor(bot_name)
     placed = staged = rejected = skipped_done = 0
     expected_rows = 0
     abort = False
@@ -870,19 +870,21 @@ def place_for_bot(page, bot_name: str, picks: list[dict], execute: bool,
             _pick_odds = float(p.get("odds_at_pick") or 0)
         except (TypeError, ValueError):
             _pick_odds = 0.0
-        _floor = _min_odds_for(p.get("market"))
-        if _pick_odds < _floor:
+        # [[#162]] W4.3: THE shared placement rule at the pick's own price (odds floor, edge floor,
+        # the bot's ceilings and selections), the one the router applies. stage_bet re-checks it at
+        # the live Coolbet price.
+        _ok, _why = pick_clears(bot_name, p.get("market"), p.get("selection"), _pick_odds,
+                                p.get("calibrated_prob"))  # calibrated only, as the router
+        if not _ok:
             rejected += 1
             expected_rows += 1
             up.record_attempt(
                 p, outcome="rejected", stage="odds_floor",
-                reason=(f"odds {_pick_odds:.2f} < {p.get('market')} floor "
-                        f"{_floor:.2f} (CLV negative below it)"),
+                reason=f"placement rule at pick price: {_why}",
                 stake_requested=stake, execute_mode=execute,
             )
             mark_pick(p["shadow_bet_id"], MARK_CHECKED)
-            print(f"skip     {label}\n         odds {_pick_odds:.2f} below "
-                  f"{p.get('market')} floor {_floor:.2f} — CLV in this band is negative")
+            print(f"skip     {label}\n         placement rule: {_why}")
             continue
 
         held = exposure.setdefault(p["match_id"], [])
@@ -919,6 +921,7 @@ def place_for_bot(page, bot_name: str, picks: list[dict], execute: bool,
             page, p, stake,
             execute=execute,
             edge_threshold=threshold,
+            bot_name=bot_name,
         )
         if res.placed:
             placed += 1
@@ -1140,10 +1143,10 @@ def main() -> int:
                 if not picks:
                     continue
                 exec_b = bot_execute[b]
-                threshold = BOT_THRESHOLDS.get(b, 0.03)
+                threshold = bot_edge_floor(b)
                 mode = "EXECUTE" if exec_b else ("STAGE" if args.stage else "DRY-RUN")
                 print(f"\n{b} — {len(picks)} pick(s) — stake EUR {args.stake:.2f} flat "
-                      f"— min-edge {threshold:.0%} — mode {mode}\n")
+                      f"— min-edge {threshold:.0%} (placement_floor) — mode {mode}\n")
                 counts = place_for_bot(page, b, picks, exec_b, args.stake, now,
                                        account_holds=account_holds)
                 for k in totals:

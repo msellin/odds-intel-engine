@@ -797,7 +797,7 @@ populations*:
 
 | | value | population | where |
 |---|---|---|---|
-| real-money 1x2 | **10%** | home-underdogs ONLY (home, odds ≥ 2.80) | `place_coolbet_ui.BOT_THRESHOLDS`, the 1x2 mirror, `_MODEL_1X2_HOME_FLOOR` |
+| real-money 1x2 | **10%** | home-underdogs ONLY (home, odds ≥ 2.80) | `_MODEL_1X2_HOME_FLOOR` via `placement_floor.pick_clears` (#162 W4.3; `BOT_THRESHOLDS` deleted), the 1x2 mirror |
 | pooled 1x2 | **13%** | all selections — trigger windows + publication | `_MIN_EDGE_BY_MARKET['1x2']` |
 
 They are not two answers to one question. Anyone reading "1x2 floor = 13%" as an

@@ -5368,7 +5368,7 @@ def test_system_map_registry_not_drifted():
     #    while the pooled/paper _MIN_EDGE_BY_MARKET['1x2'] stays 13%. Trigger/paper model
     #    bots are still gated by the global _min_edge_for. Odds floor is per-market for all.
     from workers.automation.coolbet_placer import _min_edge_for, _min_odds_for
-    from scripts.place_coolbet_ui import BOT_THRESHOLDS as _BT
+    from scripts.place_coolbet_ui import bot_edge_floor as _bef  # [[#162]] W4.3: was BOT_THRESHOLDS
     fk = {"1x2": "1x2", "O/U 2.5": "o/u"}  # registry market label -> placer floor key
     # RESOLVE EACH BOT AGAINST ITS OWN SOURCE OF TRUTH (2026-09-22, [[#033]]).
     # This used to assume every model-anchored bot inherits the global
@@ -5389,7 +5389,7 @@ def test_system_map_registry_not_drifted():
             if _cfg is not None and _cfg.edge_floor is not None:
                 expected, src = _cfg.edge_floor, "its own BotConfig.edge_floor"
             elif b.name in placeable_names():
-                expected, src = _BT[b.name], "BOT_THRESHOLDS"
+                expected, src = _bef(b.name), "placement_floor (bot_edge_floor)"
             else:
                 expected, src = _min_edge_for(fk[b.market]), "placer _min_edge_for"
             assert abs(b.edge_floor - expected) < 1e-9, (
@@ -5756,13 +5756,15 @@ def test_coolbet_model_ou_shadow():
     # whitelist PLACEABLE_BOTS. The model bot is PLACEABLE but seeded OFF in
     # migration 310, and the old COOLBET_UI_MODEL_EDGE_OU env flag is gone.
     ui = open(os.path.join(base, "place_coolbet_ui.py"), encoding="utf-8").read()
-    assert '"bot_coolbet_ou_model_v1": 0.08' in ui, "the model-edge O/U bot must be in BOT_THRESHOLDS at 0.08"
+    # [[#162]] W4.3: the floor is placement_floor's shared rule now (BOT_THRESHOLDS deleted).
+    from scripts.place_coolbet_ui import bot_edge_floor as _bef
+    assert abs(_bef("bot_coolbet_ou_model_v1") - 0.08) < 1e-9, "the model-edge O/U bot must place at 0.08"
     # #139 (owner decision 4, 2026-09-24): no hand-listed name set any more — the model
     # bot is capable by the placement-path RULE, and the retired line-shop bot is not
     # (placement_path_bots() requires an active bot).
     _assert_placement_path_rule()
-    assert '"bot_coolbet_value_v1"' not in ui.split("BOT_THRESHOLDS = {")[1][:1500].split("}")[0].replace(
-        "bot_coolbet_value_v1 (line-shop) RETIRED", ""), "the retired line-shop bot must not be in BOT_THRESHOLDS"
+    from workers.automation.placement_floor import bot_rules as _br
+    assert "bot_coolbet_value_v1" not in _br(), "the retired line-shop bot must have no placement rule"
     # Scoped to os.getenv, not the bare name: a comment legitimately mentions
     # the retired flag to explain the change.
     assert 'os.getenv("COOLBET_UI_MODEL_EDGE_OU")' not in ui, (
@@ -5893,8 +5895,9 @@ def test_coolbet_model_1x2_shadow():
 
     # ── UI placer: threshold present at 0.10 (FAVLONG-CUTS), bot PLACEABLE ────
     ui = open(os.path.join(base, "place_coolbet_ui.py"), encoding="utf-8").read()
-    assert '"bot_coolbet_1x2_model_v1": 0.10' in ui, (
-        "the model-edge 1x2 bot must be in BOT_THRESHOLDS at 0.10 — FAVLONG-CUTS: "
+    from scripts.place_coolbet_ui import bot_edge_floor as _bef  # [[#162]] W4.3: was BOT_THRESHOLDS
+    assert abs(_bef("bot_coolbet_1x2_model_v1") - 0.10) < 1e-9, (
+        "the model-edge 1x2 bot must place at 0.10 — FAVLONG-CUTS: "
         "home-underdogs are the fold-robust 1x2 engine, robust to 10% on odds>=2.80. "
         "The placer's live-edge gate 1/(cal_prob-threshold) reads this."
     )
@@ -5960,8 +5963,9 @@ def test_coolbet_own_betting_arch():
         "retired line-shop bot must have no BOT_THRESHOLDS gate entry "
         "(a scoped stop-loss guard may still reference the name)"
     )
-    assert '"bot_coolbet_ou_model_v1": 0.08' in ui and '"bot_coolbet_1x2_model_v1": 0.10' in ui, \
-        "UI placer edge gate is the per-model-bot BOT_THRESHOLDS (O/U 8%, 1x2 10%)"
+    from scripts.place_coolbet_ui import bot_edge_floor as _bef  # [[#162]] W4.3: was BOT_THRESHOLDS
+    assert abs(_bef("bot_coolbet_ou_model_v1") - 0.08) < 1e-9 and abs(_bef("bot_coolbet_1x2_model_v1") - 0.10) < 1e-9, \
+        "UI placer edge gate is the shared placement_floor rule (O/U 8%, 1x2 home 10%)"
     assert "_min_edge_for" not in ui, (
         "UI placer must NOT use the per-market model edge floor — real money is gated on "
         "the line-shop edge, and conflating the two is the exact confusion this test guards"
@@ -6387,8 +6391,7 @@ def test_coolbet_account_verify_gate():
         "match_exposure": m.match_exposure,
         "spent_today": m.spent_today,
         "mark_pick": m.mark_pick,
-        "record_attempt": m.up.record_attempt,
-        "stage_bet": m.up.stage_bet,
+        "up": m.up,
     }
     try:
         m.already_placed = lambda _sid: False          # not a prior confirmed place
@@ -6399,13 +6402,22 @@ def test_coolbet_account_verify_gate():
             captured["outcome"] = outcome
             captured["stage"] = stage
             return "rec-id"
-        m.up.record_attempt = _rec
         def _should_not_place(*a, **k):
             raise AssertionError(
                 "stage_bet was reached — a pick already on the account must be "
                 "skipped BEFORE any placement attempt"
             )
-        m.up.stage_bet = _should_not_place
+        # A proxy for place_coolbet_ui's `up`, NOT a patch of coolbet_ui_placer itself: the suite
+        # runs 8 tests in parallel, and patching the shared module made concurrent tests that
+        # inspect up.stage_bet see this stub ([[#162]] W4.3 widened that race; fixed here).
+        class _UpProxy:
+            def __init__(self, base, **over):
+                self._base = base
+                self.__dict__.update(over)
+
+            def __getattr__(self, k):
+                return getattr(self._base, k)
+        m.up = _UpProxy(_orig["up"], record_attempt=_rec, stage_bet=_should_not_place)
 
         counts = m.place_for_bot(
             page=None, bot_name="bot_coolbet_value_v1", picks=[pick],
@@ -6426,8 +6438,7 @@ def test_coolbet_account_verify_gate():
         m.match_exposure = _orig["match_exposure"]
         m.spent_today = _orig["spent_today"]
         m.mark_pick = _orig["mark_pick"]
-        m.up.record_attempt = _orig["record_attempt"]
-        m.up.stage_bet = _orig["stage_bet"]
+        m.up = _orig["up"]
 
     return "fails closed on unverified account; reconciles on verify; skips held bets"
 
@@ -6498,9 +6509,13 @@ def test_2d_gate_per_market_odds_floor():
         "coolbet_placer gate must call _min_odds_for(market), not a global constant"
     )
     ui = open(os.path.join(os.path.dirname(__file__), "place_coolbet_ui.py"), encoding="utf-8").read()
-    assert "from workers.automation.coolbet_placer import _min_odds_for" in ui and \
-           "_floor = _min_odds_for(p.get(\"market\"))" in ui, (
-        "place_coolbet_ui must import and use the SAME _min_odds_for helper (no drift)"
+    # [[#162]] W4.3: the UI placer's floor is placement_floor.pick_clears, which reads
+    # _min_odds_for itself — so the helper is still the one source of the market floor.
+    import inspect as _insp
+    from workers.automation import placement_floor as _pf
+    assert "_min_odds_for(market)" in _insp.getsource(_pf.placement_floor) and \
+           "pick_clears(bot_name" in ui, (
+        "place_coolbet_ui must gate through placement_floor, which uses the SAME _min_odds_for helper (no drift)"
     )
 
 
@@ -33778,7 +33793,9 @@ def test_placer_odds_floor():
     # (place_for_bot as of COOLBET-PLACER-CONTROL). (The old assertion pinned the
     # now-back-compat constant MIN_ODDS_FOR_PLACEMENT and went stale when the
     # 2D-gate landed — assert the real comparison instead.)
-    assert "_floor = _min_odds_for(" in src and "_pick_odds < _floor" in src, (
+    # [[#162]] W4.3: the comparison moved into placement_floor.pick_clears (odds floor
+    # first, at the pick's own odds_at_pick) — assert it is called with _pick_odds.
+    assert "pick_clears(bot_name, p.get(\"market\"), p.get(\"selection\"), _pick_odds" in src, (
         "the per-market odds floor must be compared against each pick's odds in "
         "the placement flow, not merely defined"
     )
@@ -34748,7 +34765,12 @@ def _placer_odds_floor_both_paths():
         "place_coolbet_ui.py must share coolbet_placer._min_odds_for, not "
         "re-implement the odds floor"
     )
-    assert "_min_odds_for(" in ui_src, "place_coolbet_ui.py lost its odds floor"
+    # [[#162]] W4.3: the UI placer's odds floor is placement_floor.pick_clears, which calls
+    # _min_odds_for — one implementation, reached through the shared rule.
+    assert "pick_clears(" in ui_src, "place_coolbet_ui.py lost its odds floor"
+    from workers.automation import placement_floor as _pf
+    assert "_min_odds_for(market)" in inspect.getsource(_pf.placement_floor), \
+        "placement_floor must take the market odds floor from _min_odds_for"
     from workers.automation.coolbet_placer import _min_odds_for
     assert 'os.getenv("COOLBET_MIN_ODDS", "2.80")' in inspect.getsource(_min_odds_for), (
         "_min_odds_for must keep the env-tunable COOLBET_MIN_ODDS 2.80 default"
@@ -37946,7 +37968,9 @@ def test_best_price_router_execute_wiring():
             # candidate in hand, not an empty pool — and no live DB pass (was 309 s in CI).
             from datetime import datetime, timedelta, timezone
             fx = {"match_id": "00000000-0000-0000-0000-00000000f1x7", "market": "1x2",
-                  "selection": "home", "bot_name": "bot_fixture_router_v1",
+                  # [[#162]] W4.3: a REAL capable bot — an unknown name has no placement rule and
+                  # is refused (fail closed). cal 0.40 @ 3.60 = +12.2 pp >= its 10 pp home floor.
+                  "selection": "home", "bot_name": "bot_coolbet_1x2_model_v1",
                   "calibrated_prob": 0.40, "home_team": "Fixture H", "away_team": "Fixture A",
                   "shadow_bet_id": None,
                   "match_date": datetime.now(timezone.utc) + timedelta(hours=6)}
@@ -40125,7 +40149,7 @@ def test_floor_table_matches_code():
     """
     import pathlib as _pl
     import workers.automation.coolbet_placer as cp
-    from scripts.place_coolbet_ui import BOT_THRESHOLDS
+    from scripts.place_coolbet_ui import bot_edge_floor  # [[#162]] W4.3: was BOT_THRESHOLDS
 
     doc = _pl.Path("docs/BETTING_GATE_DECISIONS.md").read_text()
     assert "THE FLOOR TABLE" in doc, (
@@ -40141,7 +40165,7 @@ def test_floor_table_matches_code():
     assert cp._MODEL_1X2_HOME_FLOOR == 0.10, (
         "the 1x2 home-underdog floor is the real-money one; table says 0.10"
     )
-    assert BOT_THRESHOLDS["bot_coolbet_1x2_model_v1"] == 0.10
+    assert abs(bot_edge_floor("bot_coolbet_1x2_model_v1") - 0.10) < 1e-9
     assert cp._MIN_EDGE_BY_MARKET["o/u"] == 0.08, (
         "table says the live O/U edge floor is 8% and that it is SOUND — but "
         "also that ROI COLLAPSES above 12% (13% -> -9.6%, 15% -> -18.9%). "
@@ -59601,6 +59625,117 @@ def test_retired_bots_no_new_picks():
             assert out.get("retired") is True and out["picked"] == 0, (mod, out)
         finally:
             m._bot_id, bs.bot_is_live, db.execute_write = o_id, o_live, o_w
+
+@test("PLACEMENT-FLOOR-ONE-RULE — every placer applies placement_floor.pick_clears to every capable bot")
+def test_placement_floor_one_rule():
+    """[[#162]] W4.3 (2026-09-25). The UI placer used BOT_THRESHOLDS (selection-blind, 3 pp default for every
+    sharp bot); the router stacked the 13 pp market floor on the same bots. One sharp pick passed one
+    placer and failed the other. Now both call placement_floor.pick_clears: the stricter of the bot's
+    own floor and the market floor (owner decision 3C), plus the bot's own ceilings, fail closed."""
+    import inspect
+    import scripts.export_bot_config as _ebc
+    import scripts.place_coolbet_ui as ui
+    import workers.automation.best_price_router as bpr
+    import workers.automation.coolbet_ui_placer as up
+    from workers.automation import placement_floor as pf
+
+    rules = pf.bot_rules()
+    capable = {r["bot_name"] for r in _ebc.build_rows() if r.get("placeable")}
+    missing = capable - set(rules)
+    assert not missing, f"real-money-capable bots with no placement rule (would all refuse): {sorted(missing)}"
+
+    # The two ex-real-money bots are bit-identical to their pre-W4.3 floors.
+    f = pf.placement_floor("bot_coolbet_ou_model_v1", "over_under_25", "over", 2.2, rules)
+    assert (f.edge_min, f.odds_min) == (0.08, 1.80), f
+    f = pf.placement_floor("bot_coolbet_1x2_model_v1", "1x2", "home", 3.0, rules)
+    assert (round(f.edge_min, 10), f.odds_min) == (0.10, 2.80), f
+    assert not pf.pick_clears("bot_coolbet_1x2_model_v1", "1x2", "away", 3.5, 0.6, rules)[0], "home only"
+    assert not pf.pick_clears("bot_coolbet_1x2_model_v1", "1x2", "home", 2.79, 0.6, rules)[0], "2.80 floor"
+    assert pf.pick_clears("bot_coolbet_1x2_model_v1", "1x2", "home", 3.0, 0.1 + 1 / 3.0, rules)[0], "on the floor passes"
+
+    # Decision 3C: the market floor is stacked on every bot unless the OWNER opts it out.
+    assert pf.MARKET_FLOOR_OPT_OUT == frozenset(), "an opt-out is a real-money policy change: owner only"
+    f = pf.placement_floor("bot_coolbet_trigger_sharp_1x2_v1", "1x2", "draw", 3.4, rules)
+    assert f.edge_min == 0.13 and f.odds_min == 2.80, f
+    # The bot's own ceilings apply (phantom-price guards the generator enforces).
+    assert not pf.pick_clears("bot_trigger_1x2_sharp_tight_v1", "1x2", "home", 2.9, 0.9, rules)[0]
+    assert pf.EDGE_UNIT == "pp"
+
+    # Fail closed.
+    assert not pf.pick_clears("bot_does_not_exist", "1x2", "home", 3.0, 0.9, rules)[0]
+    assert not pf.pick_clears("bot_coolbet_ou_model_v1", "1x2", "home", 3.0, 0.9, rules)[0], "wrong market"
+    assert not pf.pick_clears("bot_coolbet_ou_model_v1", "over_under_25", "over", 2.2, None, rules)[0]
+    assert ui.bot_edge_floor("bot_does_not_exist") == 1.0
+
+    # Every placer calls it; the old copies are gone.
+    assert not hasattr(ui, "BOT_THRESHOLDS"), "BOT_THRESHOLDS is deleted — the rule lives in placement_floor"
+    src_ui = inspect.getsource(ui.place_for_bot)
+    assert "pick_clears(" in src_ui and "bot_name=bot_name" in src_ui
+    src_stage = inspect.getsource(up.stage_bet)
+    assert "pick_clears(" in src_stage and "min_odds_to_clear(" in src_stage
+    src_route = inspect.getsource(bpr._route)
+    assert "clears=lambda" in src_route and "pick_clears(" in src_route and "BOT_THRESHOLDS" not in src_route
+    d = bpr.decide_book(0.45, 0.0, 1.0, {"Coolbet": 3.0},
+                        clears=lambda o: pf.pick_clears("bot_coolbet_trigger_sharp_1x2_v1", "1x2", "away", o, 0.45, rules))
+    assert d["winner"] is None, "a 3 pp sharp away edge must not clear the stacked 13 pp floor"
+    # Review round 1: the sharp bots' own outlier cap applies at placement, a one-point window
+    # (floor == ceiling) is empty, and both router arms re-check at the live price with the rule.
+    assert rules["bot_coolbet_trigger_sharp_1x2_v1"].outlier_mult, "sharp bots carry the outlier cap"
+    ok, why = pf.pick_clears("bot_coolbet_trigger_sharp_1x2_v1", "1x2", "home", 12.0, 0.30, rules)
+    assert not ok and "outlier cap" in why, why
+    ok, why = pf.pick_clears("bot_trigger_ou_sharp_v1", "over_under_25", "over", 2.0, 0.58, rules)
+    assert not ok and "empty edge window" in why, why
+    src_cb = inspect.getsource(bpr._dispatch_coolbet)
+    assert 'bot_name=pick.get("bot_name")' in src_cb, "router Coolbet arm must pass bot_name to stage_bet"
+    src_ub = inspect.getsource(bpr._dispatch_unibet)
+    assert "min_odds_to_clear(" in src_ub, "router Unibet arm must floor the live price at the rule's price"
+
+    # Pick queue parity: the web floor map shows each capable bot's OWN generating floor (the
+    # manual-placement signal), which must equal the generator's rule — it once fell back to 0.08
+    # for a 10% bot. (The stacked real-money floor is exported as the bot_config 'placement_floor' gate.)
+    import re as _re
+    from pathlib import Path as _P
+    web = _P(__file__).resolve().parent.parent.parent / "odds-intel-web" / "src/lib/coolbet-edge.ts"
+    if web.exists():
+        from workers.automation.coolbet_placer import min_edge_for_pick, _min_odds_for
+        wmap = {k: float(v) for k, v in _re.findall(r"^\s+(bot_[a-z0-9_]+):\s*([0-9.]+),", web.read_text(), _re.M)}
+        for b in sorted(capable):
+            r = rules[b]
+            sel = r.selections[0] if r.selections else ("home" if r.markets[0] == "1x2" else "over")
+            own = r.edge_floor if r.edge_floor is not None else min_edge_for_pick(
+                r.markets[0], sel, _min_odds_for(r.markets[0]))
+            assert b in wmap, f"{b} missing from BOT_EDGE_THRESHOLDS (would fall back to 0.08)"
+            assert abs(wmap[b] - float(own)) < 1e-9, f"{b}: web {wmap[b]} != generator floor {own}"
+
+@test("REAL-BETS-ONE-WRITER — every engine real_bets insert goes through store_real_bet; bets link to /picks picks")
+def test_real_bets_one_writer():
+    """[[#162]] W4.5 (2026-09-25). The account-sync reconcile had its own INSERT INTO real_bets beside
+    store_real_bet — a second writer that skipped the stake/odds validation — and a bet placed by hand on
+    a /picks pick had no link to it. Now: one engine writer, the manual RPC (the web path's only writer)
+    takes p_forward_test_pick_id, and the manual route canonicalises vocabulary like the engine."""
+    import inspect
+    import pathlib as _pl
+    import re as _re
+    root = _pl.Path(__file__).resolve().parent.parent
+    writers = []
+    for sub in ("workers", "scripts"):
+        for f in (root / sub).rglob("*.py"):
+            if f.name == "smoke_test.py" or "archive" in f.parts:
+                continue
+            if _re.search(r"INSERT\s+INTO\s+real_bets\b", f.read_text(errors="ignore"), _re.I):
+                writers.append(str(f.relative_to(root)))
+    assert writers == ["workers/api_clients/supabase_client.py"], f"second real_bets writer(s): {writers}"
+    from scripts import place_coolbet_ui as m
+    src = inspect.getsource(m.reconcile_account_to_real_bets)
+    assert "store_real_bet(" in src and "placed_real=True" in src, "account sync must use store_real_bet"
+    mig = (root / "supabase/migrations/448_real_bets_forward_test_link.sql").read_text()
+    assert "REFERENCES picks_forward_test(id) ON DELETE SET NULL" in mig and "p_forward_test_pick_id" in mig
+    assert "DROP FUNCTION IF EXISTS public.record_manual_real_bet" in mig, "no ambiguous overload"
+    web = root.parent / "odds-intel-web" / "src/app/api/admin/real-bet/route.ts"
+    if web.exists():
+        w = web.read_text()
+        assert "normalizeMarket(body.market, body.selection)" in w, "manual route must canonicalise vocabulary"
+        assert "p_forward_test_pick_id" in w
 
 if __name__ == "__main__":
     main()

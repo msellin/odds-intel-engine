@@ -508,6 +508,16 @@ are called out inline so the old claims are not silently replaced.
 Full detail: `docs/COOLBET_OWN_BETTING.md`. Recurring failure patterns:
 `docs/RELIABILITY_LEDGER.md`.
 
+> ### 🎯 ONE PLACEMENT FLOOR — 2026-09-25 (#162 W4.3). Every placer (UI placer at the pick price and at
+> the live Coolbet price; the router at each book's price and on both arms' live re-check) calls
+> `workers/automation/placement_floor.pick_clears`: the STRICTER of the bot's own generator floor and the
+> market floor (`min_edge_for_pick` / `_min_odds_for`), plus the bot's own selections, odds/edge ceilings
+> and — sharp bots — the 1.6× outlier cap. `BOT_THRESHOLDS` is deleted; the "two policies, both must pass"
+> stacking below now lives in that one function. Consequence for the sharp bots: real money needs 10–13 pp
+> (1x2) / 8 pp (O/U) against a de-vigged Pinnacle line, above their own 8 pp ceiling / outlier cap, so they
+> almost never clear and three have empty windows. Opting a bot out of the market floor is the owner's call
+> (`MARKET_FLOOR_OPT_OUT`, empty). Detail: `docs/COOLBET_OWN_BETTING.md` W4.3 banner.
+
 > ### 🎛 CONTROL PANEL — 2026-09-24 (#139 phase A, migration 413). Read first.
 >
 > `/admin/bots` is THE control surface for own real money (owner decision 3). It shows the six
@@ -788,7 +798,7 @@ hint, the trigger bots, and this map all read."* Audited 2026-09-11:
 
 | Policy | Copies | Where |
 |---|---|---|
-| Edge floors 0.10 / 0.08 | **6 → 3** | `_MIN_EDGE_BY_MARKET`, `_MODEL_1X2_HOME_FLOOR`, `BOT_THRESHOLDS`; the two mirrors' `EDGE_FLOOR` are now *derived* readouts (2026-09-11 PICK-GENERATOR-DELEGATION — the modules hold no gate of their own), and `upcoming-picks.ts` is generated from Python |
+| Edge floors 0.10 / 0.08 | **6 → 2** | `_MIN_EDGE_BY_MARKET`, `_MODEL_1X2_HOME_FLOOR` (`BOT_THRESHOLDS` deleted 2026-09-25, #162 W4.3 — every placer calls `placement_floor.pick_clears`, the stricter of the bot's own floor and these); the two mirrors' `EDGE_FLOOR` are now *derived* readouts (2026-09-11 PICK-GENERATOR-DELEGATION — the modules hold no gate of their own), and `upcoming-picks.ts` is generated from Python |
 | Odds floors 2.80 / 1.80 | **4 → 2** | `_MIN_ODDS_BY_MARKET`, `MIN_ODDS_FOR_PLACEMENT`; the 1x2 mirror's inlined SQL floor is GONE with its SQL, and `upcoming-picks.ts` is generated |
 | Home-underdog rule | **3 → 2 implementations** | `min_edge_for_pick` (Python) and the generated `upcoming-picks.ts` (TypeScript). The shadow-mirror SQL copy is gone: the rule is now `selections=("home",)` on a `BotConfig`, gated by the one Python predicate. |
 

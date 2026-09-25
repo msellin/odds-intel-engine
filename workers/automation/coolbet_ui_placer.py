@@ -1352,6 +1352,7 @@ def stage_bet(
     edge_threshold: float = 0.03,
     max_odds_drop_pct: float = 100.0,
     extra_notes: str | None = None,
+    bot_name: str | None = None,
 ) -> StageResult:
     """Drive one qualified pick through the UI up to (optionally) placement.
 
@@ -1525,7 +1526,19 @@ def stage_bet(
         return _fail("outcome", f"{bet['market']}/{bet['selection']} not offered on this page", ev)
 
     # ── price gates ──────────────────────────────────────────────────────────
-    floor = min_odds_for(bet, edge_threshold)
+    # [[#162]] W4.3: with a bot name, the floor is THE shared placement rule
+    # (placement_floor.pick_clears: the stricter of the bot's own floor and the
+    # market floor, plus the bot's ceilings), the one the router applies too.
+    # `edge_threshold` alone is the pre-W4.3 path, kept for callers without a bot.
+    # On the bot path the probability is calibrated_prob ONLY, as in the router: the raw model
+    # output is measured overconfident, and a fallback would let the two placers gate one pick on
+    # different numbers. (100% of capable-bot picks carry it, 2026-09-25.)
+    _prob = bet.get("calibrated_prob") if bot_name else (bet.get("calibrated_prob") or bet.get("model_probability"))
+    if bot_name:
+        from workers.automation.placement_floor import min_odds_to_clear
+        floor = min_odds_to_clear(bot_name, bet.get("market"), bet.get("selection"), _prob)
+    else:
+        floor = min_odds_for(bet, edge_threshold)
 
     # PLACER-EDGE-GATE-FAILED-OPEN (fixed 2026-09-11). `floor is None` used to
     # mean "skip the price gate", so a pick with no usable floor was placed with
@@ -1560,9 +1573,15 @@ def stage_bet(
         return _fail(
             "drift",
             f"below min odds: {outcome.odds} < {floor:.2f} "
-            f"(break-even at {edge_threshold:.0%} edge)",
+            + (f"(placement rule for {bot_name})" if bot_name else f"(break-even at {edge_threshold:.0%} edge)"),
             ev, outcome,
         )
+    if bot_name:
+        from workers.automation.placement_floor import pick_clears
+        _ok, _why = pick_clears(bot_name, bet.get("market"), bet.get("selection"),
+                                outcome.odds, _prob)
+        if not _ok:
+            return _fail("drift", f"placement rule at the live price: {_why}", ev, outcome)
     # floor is guaranteed non-None here — the None case now fails closed above.
     notes.append(f"min_odds={floor:.2f} coolbet={outcome.odds}")
 

@@ -14,8 +14,9 @@ A book with no fresh odds simply doesn't compete (so one book being down never
 costs the bet); the other still places if it clears.
 
 Per-book gate = the SAME gate the placer enforces, evaluated at THAT book's price:
-  edge = calibrated_prob − 1/odds  ≥  the bot's BOT_THRESHOLDS floor
-  AND odds ≥ `_min_odds_for(market)` (1x2 2.80 / o/u 1.80).
+  placement_floor.pick_clears(bot, market, selection, odds, calibrated_prob) — the
+  stricter of the bot's own floor and the market floor, plus the bot's ceilings
+  ([[#162]] W4.3; was BOT_THRESHOLDS stacked on the model floor).
 This is why a soft book can rescue a pick the reference price misses (a home
 underdog at 3.30 on Coolbet vs 3.55 on Unibet → route to Unibet).
 
@@ -128,7 +129,8 @@ def _has_exposure(match_id: str, market: str, selection: str) -> bool:
 def decide_book(cal_prob: float, threshold: float, odds_floor: float,
                 book_odds: dict, *, market: str | None = None,
                 selection: str | None = None,
-                apply_selection_floor: bool = True) -> dict:
+                apply_selection_floor: bool = True,
+                clears=None) -> dict:
     """Pure routing decision. `book_odds` = {book: odds}. A book clears iff its edge
     (cal_prob − 1/odds) ≥ threshold AND odds ≥ odds_floor. Winner = best clearing
     price; ties break by PLACEABLE_BOOKS order. Returns {clearing, winner, ...}.
@@ -165,6 +167,16 @@ def decide_book(cal_prob: float, threshold: float, odds_floor: float,
             considered[book] = {"odds": o, "cleared": False, "reason": "no usable price"}
             continue
         edge = cal_prob - 1.0 / o
+        if clears is not None:
+            # [[#162]] W4.3: the caller's ONE placement rule replaces the threshold /
+            # odds-floor / selection-floor stack below (placement_floor.pick_clears).
+            ok, why = clears(o)
+            reason = None if ok else why
+            considered[book] = {"odds": o, "edge": round(edge, 4),
+                                "cleared": ok, "reason": reason}
+            if ok:
+                clearing[book] = {"odds": o, "edge": round(edge, 4)}
+            continue
         # EDGE-FLOOR-ONE-PREDICATE (2026-09-11). This used the per-bot
         # BOT_THRESHOLDS value ALONE, which is selection-BLIND: it applied the
         # 1x2 bot's 10% to every 1x2 selection, including aways and home-favs.
@@ -310,9 +322,20 @@ def _dispatch_unibet(pick: dict, decision: dict, *, execute: bool) -> dict:
             return {"book": "Unibet-Site", "ok": False, "placed": False,
                     "reason": f"placement gate refused: {e}",
                     "event_url": r["url"], "outcome": name}
+    # [[#162]] W4.3: the live-price floor on this arm was the MARKET odds floor only (2.80 / 1.80),
+    # so a live Unibet price below the edge-clearing price still placed. It is now the lowest price
+    # at which THE placement rule passes (placement_floor.min_odds_to_clear), same as Coolbet's
+    # stage_bet; no clearing price at all refuses.
+    from workers.automation.placement_floor import min_odds_to_clear
+    _live_min = min_odds_to_clear(pick.get("bot_name"), pick.get("market"), pick.get("selection"),
+                                  pick.get("calibrated_prob"))
+    if _live_min is None:
+        return {"book": "Unibet-Site", "ok": False, "placed": False,
+                "reason": "placement rule: no price clears for this bot/pick (fail closed)",
+                "event_url": r["url"], "outcome": name}
     try:
         res = unibet_placer.place_bet(
-            r["url"], name, min_odds=float(decision["odds_floor"]),
+            r["url"], name, min_odds=max(float(decision["odds_floor"]), float(_live_min)),
             odds_lo=lo, odds_hi=hi, execute=execute, stake=STAKE_EUR)
     except Exception as e:  # noqa: BLE001
         return {"book": "Unibet-Site", "ok": False, "reason": f"place_bet raised: {e}",
@@ -414,9 +437,12 @@ def _dispatch_coolbet(pick: dict, *, execute: bool,
             # loosened the SECOND gate — the one whose entire purpose is to
             # re-verify at the live price. The value is already computed and
             # sitting in `decision`; pass it.
+            # [[#162]] W4.3: bot_name makes the live-price re-check THE shared placement rule
+            # (placement_floor.pick_clears), the one decide_book applied at the reference price.
             res = up.stage_bet(page, pick, STAKE_EUR, execute=execute,
                                edge_threshold=edge_threshold,
-                               extra_notes=routing_note)
+                               extra_notes=routing_note,
+                               bot_name=pick.get("bot_name"))
     except Exception as e:  # noqa: BLE001
         return {"book": "Coolbet", "ok": False, "reason": f"stage_bet raised: {e}"}
     placed = bool(getattr(res, "placed", False))
@@ -506,7 +532,7 @@ def _route(execute: bool = False, *, stage: bool = False, limit: int | None = No
     # from the UI placer. Any guard that reads real_bets without it sees half the
     # book and will happily double-bet the half it cannot see.
     from scripts.place_coolbet_ui import (
-        placement_path_bots, BOT_THRESHOLDS, load_picks,
+        placement_path_bots, bot_edge_floor, load_picks,
         already_placed, match_exposure, exposure_conflict, spent_today,
         KICKOFF_CUTOFF_MIN, MAX_BETS_PER_DAY, MAX_STAKE_PER_DAY,
     )
@@ -643,12 +669,18 @@ def _route(execute: bool = False, *, stage: bool = False, limit: int | None = No
                                    "reason": f"per-match exposure: {conflict}"})
             continue
 
-        threshold = float(BOT_THRESHOLDS.get(bot, 0.03))
-        odds_floor = _min_odds_for(_floor_key(market))
+        # [[#162]] W4.3: ONE placement rule, the same the UI placer applies
+        # (placement_floor.pick_clears). threshold / odds_floor are echoed for the audit only.
+        from workers.automation.placement_floor import pick_clears, placement_floor
+        _f = placement_floor(bot, market, sel, None)
+        threshold = float(bot_edge_floor(bot))
+        odds_floor = float(_f.odds_min) if _f else float("inf")
         books = _latest_book_odds(mid, market, sel)
         dec = decide_book(cal, threshold, odds_floor,
                           {b: d["odds"] for b, d in books.items()},
-                          market=market, selection=sel)
+                          market=market, selection=sel,
+                          clears=lambda o, _b=bot, _m=market, _s=sel, _c=cal:
+                              pick_clears(_b, _m, _s, o, _c))
         if not dec["winner"]:
             out["no_book_clears"] += 1
             out["skipped"].append({"pick": label, "reason": "no book clears the gate",

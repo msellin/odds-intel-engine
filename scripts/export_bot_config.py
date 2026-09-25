@@ -129,6 +129,26 @@ F_OU35 = "workers/jobs/ou35_model_shadow.py"
 F_INPLAY = "workers/jobs/inplay_collector.py"
 F_SIGNAL = "workers/automation/coolbet_signaler.py"
 F_REG = "workers/registry/bot_registry.py"
+F_PFLOOR = "workers/automation/placement_floor.py"
+
+
+def _placement_floor_gate(bot: str) -> dict | None:
+    """{selection: {edge_min, odds_min, odds_max, edge_max}} of the real-money rule, or None when
+    the bot has no placement rule (placement_floor refuses it)."""
+    from workers.automation import placement_floor as pf
+    rules = pf.bot_rules()
+    rule = rules.get(bot)
+    if rule is None:
+        return None
+    market = rule.markets[0]
+    sels = rule.selections or (("home", "draw", "away") if market == "1x2" else ("over", "under"))
+    out = {"market": market, "edge_unit": pf.EDGE_UNIT}
+    for s in sels:
+        f0 = pf.placement_floor(bot, market, s, None, rules)
+        f = pf.placement_floor(bot, market, s, f0.odds_min, rules)
+        out[s] = {"edge_min": round(f.edge_min, 4), "odds_min": f.odds_min,
+                  "odds_max": f.odds_max, "edge_max": f.edge_max}
+    return out
 
 
 def _pipeline_rows(db: dict) -> dict[str, dict]:
@@ -651,6 +671,11 @@ def build_rows(db_bots: list[dict] | None = None) -> list[dict]:
         r["placeable"] = active and placement_path_reason(r.get("family"), r.get("ledger"), r.get("books")) is None
         if r["placeable"]:
             r["gates"] = list(r["gates"]) + [gate("placement_path", True, src(F_GATE, r"^def placement_path_reason"))]
+            # [[#162]] W4.3: the floor REAL money applies (placement_floor.pick_clears — the stricter of
+            # this bot's own floor and the market floor), per selection, so the admin can show it.
+            _pfl = _placement_floor_gate(name)
+            if _pfl is not None:
+                r["gates"].append(gate("placement_floor", _pfl, src(F_PFLOOR, r"^def pick_clears")))
         if b.get("retired_at") is not None:
             r["published"] = False
             r["telegram"] = False

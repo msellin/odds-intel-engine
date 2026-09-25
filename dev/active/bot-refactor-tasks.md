@@ -32,7 +32,12 @@ bot-aggregates, engine-data. (admin-attention.ts: one agreed #139 edit, then #15
 - [x] W5.1 + W6.5 views (migration 437) for #155 — 2 reviewers (SQL + policy)
 - [x] W1.1/W1.2 autovoid = quarantine + bankroll + re-judge (2 of 90 fail) — 2 reviewers
 - [x] W4.1 real_bets labels (migration 440) — 2 reviewers
-- [ ] W1.5 shadow_bets autovoid (272) — needs owner OK
+- [x] W1.5 shadow_bets autovoid — owner OK (a); 196 legs voided
+- [x] W4.2 cap across books + router run lock; W4.3a flat stakes
+- [x] W6.1 Pick queue on bot_performance (web 1c06110)
+- [x] W7.1 retired bots write nothing (c7fcbfeb, 0fb91b64)
+- [x] W4.3 one placement floor (placement_floor.pick_clears) — 2 money reviews
+- [x] W4.5 one real_bets writer + forward_test_pick_id (mig 448)
 - [ ] steps per plan, each: smoke test, 1–2 review agents, deploy check
 
 ## Phase 3 — after #157 + #155

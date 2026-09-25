@@ -1,5 +1,7 @@
 # Shadow-bots page + the bot control map (2026-09-24)
 
+> **CHANGED 2026-09-25 (#162 W4.3):** `BOT_THRESHOLDS` (cited below) is deleted — every placer applies `workers/automation/placement_floor.pick_clears`, the stricter of the bot's own floor and the market floor. See the W4.3 banner in `docs/COOLBET_OWN_BETTING.md`.
+
 > **CHANGED 2026-09-24 (#139 IA P6/P7):** `/admin/shadow-bots/[bot]` is RETIRED — it redirects to `/admin/bots?bot=<name>&tab=picks` (the sheet carries Bet made + current prices; the model-edge "Min odds" was dropped, #139 finding b). `/admin/shadow-bots` is now the Pick queue (picks + Place only): its safety strip, scoreboard and promotions were removed (promotions moved to /admin/real-bets).
 
 

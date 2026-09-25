@@ -154,7 +154,7 @@ def main() -> int:
         console.print("  [dim]extra return per stake IF the better book can actually be "
                       "taken — ignores account limits, and an edge that gets you "
                       "limited is worth nothing.[/dim]")
-        # The bot fires at a 3% true edge (place_coolbet_ui.BOT_THRESHOLDS), so
+        # The bot fires at a 3% true edge (was place_coolbet_ui.BOT_THRESHOLDS, deleted #162 W4.3; now placement_floor), so
         # express the uplift against the bar it has to clear.
         console.print(f"  [dim]for scale: bot_coolbet_value_v1 fires at a 3% true edge, "
                       f"so this is {w / 3.0 * 100:.0f}% of that threshold again.[/dim]\n")
