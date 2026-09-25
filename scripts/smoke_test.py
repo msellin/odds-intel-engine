@@ -44648,7 +44648,7 @@ def test_performance_public_is_calibrated_or_beta():
         # + the parent retired by migration 402 ([[#122]]): until that migration has
         # run it is still active in the DB and still labels the sharp rows.
         _ledger = [b.name for b in _BOTS if b.family == _FT] + ["bot_sharp_forward_test_v1"]
-        rows = _eq("""SELECT b.name, b.maturity_label AS ml, b.vip,
+        rows = _eq("""SELECT b.name, b.maturity_label AS ml, b.vip, b.show_on_performance, b.hide_pending,
                              (SELECT count(*) FROM simulated_bets s
                                WHERE s.bot_id = b.id
                                  AND s.result IN ('won','lost'))
@@ -44662,6 +44662,12 @@ def test_performance_public_is_calibrated_or_beta():
         # own gate (`|| isVip`), not the maturity allowlist — so it is neither
         # "listed by label" nor "hidden", and its settled bets are not withheld.
         rows = [r for r in rows if not r.get("vip")]
+        # #152: owner-chosen TESTING bots are listed through their own gate (show_on_performance).
+        rows = [r for r in rows if not r.get("show_on_performance")]
+        # #148: hide_pending bots are DELIBERATELY private — their picks are the VIP bots' picks
+        # (EV8 = VIP #1's EV8 subset, TWO-ANCHOR shares VIP #2's), so listing them would give the
+        # paid picks away. They are neither "listed" nor "withheld evidence".
+        rows = [r for r in rows if not r.get("hide_pending")]
     except Exception:
         rows = None
     if rows:
@@ -56727,6 +56733,27 @@ def test_model_bots_new_models_step3():
     for bad in ("insert into", "update ", "delete from", "execute_values", "create table", "store_bet("):
         assert bad not in low, f"step-3 backtest must be read-only; found {bad!r}"
     assert "power_devig" in src, "CLV uses Pinnacle's POWER-de-vigged close (plan)"
+
+
+
+@test("V10-NEWPLUS-TWIN — #152: bot_v10_1x2 unchanged; its NEW+ twin runs EV >= 3%, VIP-excluded, on /performance")
+def test_v10_newplus_twin():
+    """#152 (owner 2026-09-25). bot_v10_1x2's live record (CLV ~+4.7% Jul-Sep) outranked a 10-pick
+    open-price backtest (ANALYSIS_GOTCHAS #84), so it is NOT switched; the new-model rule runs as a
+    twin and the two are compared live. The twin must be the backtested rule, never take a VIP pick,
+    stay 'testing', and be listed on /performance only through bots.show_on_performance."""
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
+    old, tw = BOTS_CONFIG["bot_v10_1x2"], BOTS_CONFIG["bot_v10_1x2_newplus_v1"]
+    assert "prob_source" not in old and old["edge_thresholds"][1]["1x2_fav"] == 0.08, "bot_v10_1x2 must stay unchanged"
+    assert tw["prob_source"] == "combined_1x2" and tw["edge_unit"] == "ev" and tw["vip_exclude"] is True
+    assert all(v == {"1x2_fav": 0.03, "1x2_long": 0.03} for v in tw["edge_thresholds"].values())
+    assert tw["odds_range"] == old["odds_range"] and tw["min_prob"] == old["min_prob"]
+    assert BOT_TIMING_COHORTS["bot_v10_1x2_newplus_v1"] == BOT_TIMING_COHORTS["bot_v10_1x2"]
+    mig = _engine_path("supabase/migrations/427_v10_newplus_twin.sql").read_text(encoding="utf-8")
+    assert "show_on_performance boolean" in mig and "'testing', false, true" in mig
+    web = _engine_path("../odds-intel-web/src/lib/bot-aggregates.ts")
+    if web.exists():
+        assert "b.showOnPerformance === true" in web.read_text(encoding="utf-8")
 
 
 if __name__ == "__main__":

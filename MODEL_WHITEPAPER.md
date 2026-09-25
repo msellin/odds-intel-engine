@@ -2137,4 +2137,9 @@ predictions to the #149 O1 research model) is fitted twice daily inside the 1X2 
 stored in `ou_model_predictions`. Served P(over) = Pinnacle where it prices the line, else the combined model. On the O1
 holdout it beat the served O/U ensemble on every line (1.5: 0.5655 vs 0.5934; 2.5: 0.6738 vs 0.7086; 3.5: 0.6428 vs 0.6961 —
 the ensemble was worse than the base rate on all three).
+**Existing model bots on the new models (#152 step 3, 2026-09-25).** A per-bot counterfactual (12 configs each, select/confirm
+split, Holm m=7) moved every old-model bot from −8..−14% CLV to between −1% and +1% on the new models, but none became
+clearly good. `bot_v10_1x2` was NOT switched: its live record (CLV +6.6% / +6.0% / +1.8% Jul/Aug/Sep, n 178) outranks a
+10-pick open-price backtest (ANALYSIS_GOTCHAS #84); its NEW+ rule (EV ≥ 3%, VIP-excluded) runs beside it as
+`bot_v10_1x2_newplus_v1` ("Match result — new model", testing, on /performance) and the two are compared live.
 

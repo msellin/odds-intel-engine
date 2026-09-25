@@ -156,6 +156,25 @@ BOTS_CONFIG = {
     # Backtest B2 (same window, so optimistic): EV>=5% CLV +2.0% (n=1,050),
     # EV>=8% +3.1% (n=557); at our own sweepers +1.1% / +2.7%. experimental,
     # paper, no placement path; owner reviews at 20 / 50 / 100 settled picks.
+    # bot_v10_1x2's NEW-MODEL TWIN ([[#152]], owner 2026-09-25). bot_v10_1x2 stays exactly as it
+    # is — its LIVE record is CLV +6.6% / +6.0% / +1.8% Jul/Aug/Sep (n 178) — and this twin runs the
+    # rule the backtest preferred beside it: NEW+ (r1x2_comb_v1) as is, EV >= 3% flat, odds 1.30-4.50,
+    # min_prob 0.30, never a VIP-held pick (NEW+ EV >= 5%) — in practice the EV 3-5% band. Backtest
+    # confirm half: 370 picks, CLV +1.0% (not significant vs the old rule). After 50-100 settled picks
+    # the two are compared LIVE and the better rule is kept (ANALYSIS_GOTCHAS #84).
+    # maturity 'testing', shown on /performance (bots.show_on_performance, migration 427).
+    "bot_v10_1x2_newplus_v1": {
+        "description": "1X2 model bot on the NEW+ model — twin of bot_v10_1x2: EV >= 3% flat, never a VIP-held pick",
+        "tier_label": "elite",
+        "markets": ["1x2"],
+        "tier_filter": None,
+        "edge_thresholds": {t: {"1x2_fav": 0.03, "1x2_long": 0.03} for t in (1, 2, 3, 4)},
+        "odds_range": (1.30, 4.50),
+        "min_prob": 0.30,
+        "prob_source": "combined_1x2",
+        "edge_unit": "ev",
+        "vip_exclude": True,
+    },
     "bot_combined_1x2_ev5_v1": {
         "description": "1x2 NEW+ EV5 — combined 1X2 model r1x2_comb_v1, EV >= 5% flat, Pinnacle price required, odds 1.30-6.00, one pick per match",
         "tier_label": "elite",
@@ -1123,7 +1142,8 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_v10_1x2":          "all",
     "bot_rating_1x2_v1":    "all",    # RATING-1X2-BOT — same cohort as its twin
     "bot_combined_1x2_v1":  "all",    # RATING-1X2-BOT second arm (combined model)
-    "bot_combined_1x2_ev5_v1": "all",  # #141 B4 NEW+ EV outlier bots — same cohort as the twin
+    "bot_combined_1x2_ev5_v1": "all",
+    "bot_v10_1x2_newplus_v1": "all",   # #152 twin of bot_v10_1x2 on the NEW+ model  # #141 B4 NEW+ EV outlier bots — same cohort as the twin
     "bot_combined_1x2_ev8_v1": "all",
     "bot_v10_ou":           "all",
     "bot_summer_specialist": "all",   # BOT-SUMMER-SPECIALIST 2026-07-08 — fills midweek summer volume gap
