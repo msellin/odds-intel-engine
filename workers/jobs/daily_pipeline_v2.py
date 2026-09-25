@@ -214,6 +214,30 @@ BOTS_CONFIG = {
         "odds_range": (1.30, 4.50),
         "min_prob": 0.30,
     },
+    # #152 (owner 2026-09-25: "unretire bot_v10_ou — it gets the new ou model"). The v10 O/U bot
+    # comes back as a TWIN, not by flipping bot_v10_ou's row back on: bot_v10_ou's record is 252
+    # settled picks on SEVEN old ensemble versions (sharp CLV -3.9%, n 138, 95% upper bound -2.65%),
+    # and bot_ledger counts every simulated_bets row of a bot in its record, so reusing the row
+    # would (a) raise the #155 'review this bot' flag on day one (n >= 50, CI below 0) and (b) sell
+    # the old model's record as this rule's. ANALYSIS_GOTCHAS #84: change a bot only via a twin.
+    # bot_v10_ou stays retired with its history in the retired section (#157).
+    # Rule: ou_comb_v1 served p (Pinnacle where priced, else combined; used as is, no calibrate_prob,
+    # no data-tier bump), EV = p x odds - 1 >= 3% flat across tiers, O/U 1.5/2.5/3.5 over+under,
+    # odds 1.30-3.00, min_prob 0.30, ONE pick per match (best EV first). Picks in O/U EARLY's range
+    # (EV 5-15% vs Pinnacle, >= 12 h out) or held by it are recorded and HELD BACK until kickoff by
+    # store_bet's VIP guard (#164, workers/utils/vip_guard.py) — the strong O/U value is VIP's by design.
+    "bot_v10_ou_comb_v1": {
+        "description": "O/U model bot on the combined O/U model ou_comb_v1 — successor of bot_v10_ou: EV >= 3% flat, lines 1.5/2.5/3.5, odds 1.30-3.00, one pick per match (VIP-held / VIP-range picks held back until kickoff, #164)",
+        "tier_label": "elite",
+        "markets": ["ou15", "ou", "ou35"],
+        "tier_filter": None,
+        "edge_thresholds": {t: {"ou": 0.03} for t in (1, 2, 3, 4)},
+        "odds_range": (1.30, 3.00),
+        "min_prob": 0.30,
+        "ou_prob_source": "combined_ou",
+        "edge_unit": "ev",
+        "one_per_match": True,
+    },
     # BOT-SUMMER-SPECIALIST (2026-07-08): fills the mid-week volume gap
     # during Northern-Hemisphere summer (June-August) when European top-5,
     # UK, and Greek/Turkish leagues are off-season. bot_v10_all covers the
@@ -1144,6 +1168,7 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_combined_1x2_ev5_v1": "all",
     "bot_v10_1x2_newplus_v1": "all",   # #152 twin of bot_v10_1x2 on the NEW+ model  # #141 B4 NEW+ EV outlier bots — same cohort as the twin
     "bot_v10_ou":           "all",
+    "bot_v10_ou_comb_v1":   "all",    # #152 successor twin of bot_v10_ou on ou_comb_v1 — same cohort
     "bot_summer_specialist": "all",   # BOT-SUMMER-SPECIALIST 2026-07-08 — fills midweek summer volume gap
     "bot_lower_1x2":        "all",
     "bot_aggressive":       "all",

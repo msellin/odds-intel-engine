@@ -230,6 +230,11 @@ BOTS: list[BotSpec] = [
     # bot_v10_ou RETIRED 2026-09-24 (migration 399, owner "yes" on [[#077]]): de-vigged
     # Pinnacle CLV -3.85% (n=181), negative in all 5 months and 7 model versions, and
     # every O/U route measured 09-23/24 (#089, #118, #090 a) ends at alpha = 0.
+    # Its return on the new O/U model (#152, owner 2026-09-25) is the TWIN below, so the old
+    # model's 252-pick record neither becomes the new rule's nor trips the #155 review flag.
+    BotSpec("bot_v10_ou_comb_v1", FAM_INTERNAL, "ou", ANCHOR_MODEL,
+            None, None, False,
+            "Goals over/under — NEW MODEL (#152, migration 443): successor of the retired bot_v10_ou on the combined O/U model ou_comb_v1 (served p = Pinnacle where priced, else combined), EV >= 3% flat, O/U 1.5/2.5/3.5 over+under, odds 1.30-3.00, one pick per match; O/U EARLY-held / VIP-range picks held back until kickoff (#164). Backtest 08-31..09-24 at open: 61 picks (~2.4/day), sharp CLV +2.0% [+1.0, +3.0]. testing, sent to /picks, paper."),
     # REGISTRY-DRIFT-FIX-2026-09-09: bot_1x2_specialist, bot_dnb_specialist and
     # bot_summer_specialist were retired in the DB (migrations 323/324, 2026-09-09
     # 10:25–10:41) but left in the registry — removed here so active_names() matches

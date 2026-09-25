@@ -184,7 +184,12 @@ def _pipeline_rows(db: dict) -> dict[str, dict]:
             writer_job="morning_pipeline + betting_refresh_interval (daily_pipeline_v2)",
             cadence="04:00 UTC + hourly :05/:35",
             markets=list(cfg.get("markets") or []),
-            prob_source="calibrated model probability (calibrated_prob)",
+            # #152: bots priced by the new models say so (used as is, no calibrate_prob)
+            prob_source={"combined_ou": "combined O/U model ou_comb_v1 (ou_model_predictions; Pinnacle where priced)",
+                         "combined_1x2": "combined 1X2 model r1x2_comb_v1 (rating_1x2_predictions)",
+                         "rating_1x2": "1X2 rating model r1x2_d8plus_v1 (rating_1x2_predictions)",
+                         }.get(cfg.get("ou_prob_source") or cfg.get("prob_source"),
+                               "calibrated model probability (calibrated_prob)"),
             edge_floor=floor, edge_floor_source=line,
             odds_min=lo, odds_max=hi, gates=gates,
             books=["*"], books_source=f"publishable = every book except _NON_OFFERS ({books_src})",

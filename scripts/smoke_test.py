@@ -57219,6 +57219,56 @@ def test_v10_newplus_twin():
     assert "is_active = false" in _engine_path("supabase/migrations/429_retire_high_odds_twin.sql").read_text(encoding="utf-8")
 
 
+@test("V10-OU-COMB-TWIN — #152: bot_v10_ou returns on ou_comb_v1 as a TESTING twin (EV >= 3%, 1.30-3.00, 1.5/2.5/3.5)")
+def test_v10_ou_comb_twin():
+    """#152 (owner 2026-09-25: "unretire bot_v10_ou — it gets the new ou model"). It returns as the
+    twin bot_v10_ou_comb_v1, NOT by re-activating bot_v10_ou: bot_ledger counts every simulated_bets
+    row of a bot, and bot_v10_ou's 252 settled old-ensemble picks (sharp CLV -3.9%, n 138) would
+    trip the #155 review flag on day one and be sold as the new rule's record (ANALYSIS_GOTCHAS #84).
+    Pins the rule the backtest measured (61 picks / ~2.4 a day, CLV +2.0%), that the old bot stays
+    retired, that store_bet's VIP guard covers every O/U line this bot writes (#164), and the
+    TESTING distribution labels (migration 443)."""
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
+    from workers.registry.bot_registry import BOTS, active_names
+    c = BOTS_CONFIG["bot_v10_ou_comb_v1"]
+    assert c["ou_prob_source"] == "combined_ou" and c["edge_unit"] == "ev", "priced by ou_comb_v1, EV unit"
+    assert "prob_source" not in c, "1X2 source must not be set on an O/U-only bot"
+    assert all(v == {"ou": 0.03} for v in c["edge_thresholds"].values()) and set(c["edge_thresholds"]) == {1, 2, 3, 4}
+    assert c["odds_range"] == (1.30, 3.00) and c["min_prob"] == 0.30
+    assert sorted(c["markets"]) == ["ou", "ou15", "ou35"], "lines 1.5 / 2.5 / 3.5"
+    assert c.get("one_per_match") is True and c.get("is_active", True) is True
+    assert "selection_filter" not in c, "over AND under"
+    assert BOT_TIMING_COHORTS.get("bot_v10_ou_comb_v1") == "all"
+    # the old bot stays retired
+    assert BOTS_CONFIG["bot_v10_ou"].get("is_active") is False and "bot_v10_ou" not in active_names()
+    spec = {b.name: b for b in BOTS}["bot_v10_ou_comb_v1"]
+    assert spec.market == "ou" and not spec.real_money
+    # VIP FIRST covers every O/U line this bot writes: store_bet canonicalises to over_under_NN and
+    # vip_guard.in_vip_range() evaluates exactly ou_sharp_outlier.LINES.
+    from workers.jobs import ou_sharp_outlier as ou
+    assert set(ou.LINES) == {"over_under_15", "over_under_25", "over_under_35"}
+    sb = _engine_path("workers/api_clients/supabase_client.py").read_text(encoding="utf-8")
+    assert sb.index("canonicalize_for_storage(row[\"market\"]") < sb.index("hold_back_fields(bot_id, match_id")
+    # new picks are separable by model_version
+    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
+    assert '**({"model_version": "ou_comb_v1"} if (_ou_new and mkt == "O/U") else {})' in src
+    mig = _engine_path("supabase/migrations/443_v10_ou_comb_twin.sql").read_text(encoding="utf-8")
+    assert "'bot_v10_ou_comb_v1'" in mig and "'testing', true, true" in mig
+    assert "ON CONFLICT (name) DO UPDATE" in mig, "ensure_bots may insert a bare row first"
+    try:
+        from workers.api_clients.db import execute_query
+        rows = {r["name"]: r for r in execute_query(
+            "SELECT name, is_active, retired_at, maturity_label, show_on_picks, show_on_performance, vip "
+            "FROM bots WHERE name IN ('bot_v10_ou', 'bot_v10_ou_comb_v1')")}
+    except Exception:
+        rows = None
+    if rows and "bot_v10_ou_comb_v1" in rows:
+        r = rows["bot_v10_ou_comb_v1"]
+        assert r["is_active"] and r["retired_at"] is None and r["maturity_label"] == "testing"
+        assert r["show_on_picks"] and r["show_on_performance"] and not r["vip"]
+        assert rows["bot_v10_ou"]["retired_at"] is not None
+
+
 @test("LANES-1X2-TWINS — #152 LANES: pre-registered s grid, twin rules, split date, Holm m=2, VIP exclusion")
 def test_lanes_1x2_twins():
     """#152 LANES. Pre-registered in dev/active/model-bots-new-models-plan.md ("Pre-registration

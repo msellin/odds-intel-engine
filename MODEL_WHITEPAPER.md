@@ -887,7 +887,7 @@ T+FT+1h  Post-match: stats, events, player stats enrichment
 
 | Category | Bots | Approach |
 |----------|------|----------|
-| Broad coverage | `bot_v10_1x2`, `bot_v10_ou`, `bot_aggressive` | All leagues, lower thresholds. **Split by market 2026-09-22 (migration 375):** the two markets measure on opposite sides of zero — 1x2 de-vigged CLV +2.50% (n=335) vs O/U 2.5 −3.85% (n=181) — so they are promoted and retired independently. |
+| Broad coverage | `bot_v10_1x2`, `bot_v10_ou` (retired 2026-09-24; successor `bot_v10_ou_comb_v1` on `ou_comb_v1`, 2026-09-25), `bot_aggressive` | All leagues, lower thresholds. **Split by market 2026-09-22 (migration 375):** the two markets measure on opposite sides of zero — 1x2 de-vigged CLV +2.50% (n=335) vs O/U 2.5 −3.85% (n=181) — so they are promoted and retired independently. |
 | Lower-tier specialist | `bot_lower_1x2`, `bot_high_roi_global` | Tiers 2-4 where pricing is softest |
 | Conservative | `bot_conservative` | 10%+ edge only, highest selectivity |
 | Country/region | `bot_greek_turkish` | Specific regions with backtest-confirmed edge |
@@ -2161,4 +2161,5 @@ split, Holm m=7) moved every old-model bot from −8..−14% CLV to between −1
 clearly good. `bot_v10_1x2` was NOT switched: its live record (CLV +6.6% / +6.0% / +1.8% Jul/Aug/Sep, n 178) outranks a
 10-pick open-price backtest (ANALYSIS_GOTCHAS #84); its NEW+ rule (EV ≥ 3%, VIP-excluded) runs beside it as
 `bot_v10_1x2_newplus_v1` ("Match result — new model", testing, on /performance) and the two are compared live.
+**`bot_v10_ou` returns on `ou_comb_v1` (#152, owner 2026-09-25; migration 443)** as the twin `bot_v10_ou_comb_v1` ("Goals over/under — new model", TESTING, sent): served P(over) used as is, EV = p×odds−1 ≥ 3% flat, O/U 1.5/2.5/3.5 over and under, odds 1.30–3.00, min_prob 0.30, one pick per match; picks inside O/U EARLY's range are recorded and held back until kickoff (#164). A twin rather than the old row because the old row's 252 settled old-ensemble picks (CLV −3.9%) would count in the new rule's record. Open-price backtest 08-31..09-24: 61 picks (~2.4/day), sharp CLV +2.0% [+1.0, +3.0] — where Pinnacle prices the line the served p IS de-vigged Pinnacle, so this is a soft-book-vs-Pinnacle outlier rule below VIP's 5% band, not a model-vs-market edge.
 
