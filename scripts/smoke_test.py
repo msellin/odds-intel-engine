@@ -49220,9 +49220,12 @@ def _():
     # ARM-SCOPED (2026-09-22, [[#068]]): the call now takes an arm, so the exact
     # text moved. UPDATED 2026-09-25 ([[#156]]): the row reads the CURRENT rule
     # version and its bets list is scoped to the same version, so they still reconcile.
-    assert "summary?.current" in perf and "getPicksForwardTestSummary(" in perf, (
+    # UPDATED 2026-09-25 ([[#158]]): the row's record is getForwardTestBotRecord (current rule
+    # + earlier picks that passed it on pick-time data), and the list is scoped on the rule a
+    # pick COUNTS under (record_rule_version), so the two still reconcile.
+    assert "record?.current" in perf and "getForwardTestBotRecord(" in perf, (
         "the public row must use the current rule version's record")
-    assert "ruleVersion ? { rule_version: ruleVersion }" in ed, (
+    assert "ruleVersion ? { record_rule_version: ruleVersion }" in ed, (
         "the bets list must be filterable to the row's rule version so it reconciles")
     return "watchlist future-only; bot row pooled; label is a top-N"
 
@@ -55823,18 +55826,122 @@ def test_forward_test_sharp_anchor_clv_on_performance():
     web_lib = _web_path("src/lib/engine-data.ts").read_text()
     page = _web_path("src/app/(app)/performance/page.tsx").read_text()
     lb = _web_path("src/components/performance-leaderboard.tsx").read_text()
-    i = web_lib.index("export async function getForwardTestAnchorClv(")
-    body = web_lib[i:i + 900]
-    assert "createSupabaseAdmin()" in body and '.from("picks_forward_test_anchor_clv")' in body, (
+    # [[#158]] the reader moved to picks_forward_test_bot_record (same CLV definition, 431)
+    i = web_lib.index("export async function getForwardTestBotRecord(")
+    body = web_lib[i:i + 700]
+    assert "createSupabaseAdmin()" in body and '.from("picks_forward_test_bot_record")' in body, (
         "the private aggregate must be read server-side with the service client")
-    assert "getForwardTestAnchorClv(x.arm, x.grade, x.market)" in page
+    assert "getForwardTestBotRecord(x.arm, x.grade, x.market)" in page
     assert 'clvDirection: sharp == null ? "neutral"' in page and "avgClv: isElite ? sharp : null" in page
-    assert "ownClv: mc" in page and "summary?.current" in page and "?.pooled" not in page
+    assert "ownClv: mc" in page and "record?.current" in page and "?.pooled" not in page
     flat = " ".join(lb.split())
     assert "vs sharp close {clvPct(ft.sharpClv)}" in flat and "Pinnacle / ${ft.nConsensus} consensus" in flat
     assert "vs the book&apos;s own close" in flat, "own-book figure must stay, labelled as secondary"
     assert "measured{\" \"} <span className=\"text-foreground\">vs the sharp close</span>" in flat, "legend must explain CLV"
     return "sharp-anchor main CLV, current rule, unsent D filtered, private aggregate"
+
+
+@test("RECHECK-FORWARD-TEST-PICK-TIME-ONLY — #158 earlier-rule picks re-checked on pick-time data count in the current record")
+def test_recheck_forward_test_pick_time_only():
+    """[[#158]] (2026-09-25, owner-approved). SENT consensus v1 picks are re-checked against v2
+    (credible-method gate) by rebuilding the consensus from odds_snapshots AS OF published_at
+    with the publisher's OWN functions; passing ones count in the bot's current /performance
+    record (marked re-checked), failing ones stay in the "didn't meet today's rule" line. Pins:
+    (1) the script never reads an outcome column; (2) it is idempotent (frozen verdicts);
+    (3) its arithmetic is the publisher's (synthetic market, compared against load_candidates'
+    own credible-min formula); (4) the view logic; (5) the web reads it."""
+    import inspect
+    from datetime import datetime, timedelta, timezone
+    import scripts.recheck_forward_test_picks as rc
+    import scripts.publish_picks_forward_test as pub
+    from workers.model.devig import devig_by
+    src = inspect.getsource(rc)
+    sql = rc.PICKS_SQL + rc.QUOTES_SQL
+    for col in ("outcome", "pnl", "closing", "clv", "settled_at", "leg_clv_sharp"):
+        assert col not in sql.lower(), f"re-check SQL reads a result column: {col}"
+    code = src.split('"""', 2)[2]                      # everything after the module docstring
+    for col in ('["outcome"]', '["pnl"]', '["clv', '["closing', "settled_at"):
+        assert col not in code, f"re-check code touches a result field: {col}"
+    assert "o.timestamp <= %s" in rc.QUOTES_SQL and "interval '6 hours'" in rc.QUOTES_SQL
+    assert "o.is_live IS NOT TRUE" in rc.QUOTES_SQL and "NOT (o.bookmaker = ANY(%s))" in rc.QUOTES_SQL
+    assert "telegram_message_id IS NOT NULL" in rc.PICKS_SQL, "only SENT picks are re-checked"
+    # (2) idempotent: frozen verdicts, never overwritten
+    assert "ON CONFLICT (pick_id, checked_rule_version) DO NOTHING" in src and "DO UPDATE" not in src
+    assert "if (p[\"id\"], target) in done:" in src
+    # (3) the publisher's own functions and constants — not a copy
+    for name in ("_consensus_anchor", "CREDIBLE_DEVIG_METHODS", "CONSENSUS_MIN_BOOKS",
+                 "CONSENSUS_MAX_EDGE", "EXCLUDED_BOOKS", "MIN_EDGE"):
+        assert name in src, name
+    assert rc.CURRENT_RULE["consensus_anchor"] == pub.CONSENSUS_RULE_VERSION
+    assert rc.CURRENT_RULE["live"] == pub.RULE_VERSION
+    t = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
+    books = {"A": (2.00, 3.50, 3.80), "B": (2.05, 3.40, 3.70), "C": (1.95, 3.60, 3.90),
+             "D": (2.02, 3.45, 3.75), "E": (1.98, 3.55, 3.85)}
+    sides = pub.MARKETS["1x2"]
+    side_q = {s: {b: (o[i], t - timedelta(minutes=5)) for b, o in books.items()} for i, s in enumerate(sides)}
+    side_q["home"]["Soft"] = (2.20, t)
+    probs, _, n_books = pub._consensus_anchor(sides, side_q)
+    edge = probs["home"] * 2.20 - 1.0
+    cm = edge
+    for m in pub.CREDIBLE_DEVIG_METHODS:
+        if m != "shin":
+            ga = pub._consensus_anchor(sides, side_q, lambda o, m=m: devig_by(m, o))
+            cm = min(cm, ga[0]["home"] * 2.20 - 1.0)
+    ok, d = rc.evaluate_consensus_leg(side_q, sides, "home", 2.20, "Soft", stored_p=probs["home"])
+    assert abs(d["edge_credible_min"] - cm) < 1e-6 and d["n_books"] == n_books
+    assert ok == (cm >= pub.MIN_EDGE and pub.MIN_EDGE <= edge <= pub.CONSENSUS_MAX_EDGE)
+    assert d["rebuild_reproduces_stored_p"] is True
+    # a rebuild that does not reproduce the recorded probability cannot pass on a thin margin
+    ok2, d2 = rc.evaluate_consensus_leg(side_q, sides, "home", 2.20, "Soft", stored_p=probs["home"] - 0.02)
+    assert d2["rebuild_reproduces_stored_p"] is False and d2["mismatch_slack_on_edge"] > 0.04
+    assert not ok2
+    few = {s: {b: q for b, q in v.items() if b in ("A", "B", "Soft")} for s, v in side_q.items()}
+    assert rc.evaluate_consensus_leg(few, sides, "home", 2.20, "Soft")[1]["reason"] == "no_pick_time_consensus"
+    sharp = {"selection": "home", "odds": 2.0, "edge": 0.05, "anchor_odds": {"home": 1.9},
+             "anchor_overround": 0.09, "alignment_gap_minutes": 5.0}
+    assert rc.evaluate_sharp_leg(sharp)[1]["reason"] == "anchor_overround"
+    # (4) view logic
+    mig = _engine_path("supabase/migrations/431_pick_rule_recheck.sql").read_text()
+    assert "PRIMARY KEY (pick_id, checked_rule_version)" in mig
+    assert "rc.checked_rule_version = cur.current_rule_version" in mig, (
+        "a verdict counts only against the arm's CURRENT rule")
+    assert "WHEN rc.passes IS TRUE  THEN 'rechecked_pass'" in mig and "'rechecked_fail'" in mig
+    assert mig.count("NOT (p.grade IS NOT DISTINCT FROM 'D' AND p.telegram_message_id IS NULL)") == 2
+    assert "TO anon" not in mig and "TO authenticated" not in mig
+    assert "REVOKE ALL ON public.pick_rule_recheck FROM PUBLIC, anon, authenticated, service_role;" in mig
+    assert "coalesce(r.record_rule_version, p.rule_version) AS record_rule_version" in mig
+    assert "r.record_state\n" in mig and "details" not in mig.split("CREATE OR REPLACE VIEW picks_forward_test_public", 1)[1]
+    from workers.api_clients.db import execute_query
+    applied = {r["filename"] for r in execute_query("SELECT filename FROM _schema_migrations")}
+    live = ""
+    if "431_pick_rule_recheck.sql" in applied:
+        r = execute_query("""SELECT
+              has_table_privilege('anon', 'public.pick_rule_recheck', 'SELECT') AS anon_t,
+              has_table_privilege('anon', 'public.picks_forward_test_bot_record', 'SELECT') AS anon_v,
+              (SELECT count(*) FROM picks_forward_test_record_leg l JOIN pick_rule_recheck c ON c.pick_id = l.id
+                WHERE c.passes AND c.checked_rule_version = l.current_rule_version
+                  AND l.record_rule_version <> l.current_rule_version) AS pass_not_current,
+              (SELECT count(*) FROM picks_forward_test_record_leg l JOIN pick_rule_recheck c ON c.pick_id = l.id
+                WHERE NOT c.passes AND l.record_state <> 'rechecked_fail') AS fail_counted,
+              (SELECT coalesce(sum(published), 0) FROM picks_forward_test_bot_record) AS rec_n,
+              (SELECT count(*) FROM picks_forward_test_public) AS pub_n,
+              (SELECT count(*) FROM pick_rule_recheck) AS n_checks""")[0]
+        assert not r["anon_t"] and not r["anon_v"], "re-check table / record view must stay private"
+        assert r["pass_not_current"] == 0 and r["fail_counted"] == 0, r
+        assert int(r["rec_n"]) == int(r["pub_n"]), f"bot record and the public list disagree: {r}"
+        live = f"; {r['n_checks']} verdicts live"
+    # (5) web
+    web_lib = _web_path("src/lib/engine-data.ts").read_text()
+    page = _web_path("src/app/(app)/performance/page.tsx").read_text()
+    lb = _web_path("src/components/performance-leaderboard.tsx").read_text()
+    i = web_lib.index("export async function getForwardTestBotRecord(")
+    body = web_lib[i:i + 700]
+    assert "createSupabaseAdmin()" in body and '.from("picks_forward_test_bot_record")' in body
+    assert "record_rule_version: ruleVersion" in web_lib, "the bet list must be scoped on the counted rule"
+    assert "getForwardTestBotRecord(x.arm, x.grade, x.market)" in page and "nRechecked: picksSummary.nRechecked" in page
+    flat = " ".join(lb.split())
+    assert "re-checked under {ft.rule}" in flat and "didn't meet today's rule" in flat
+    return "pick-time only, frozen verdicts, publisher arithmetic, private views" + live
 
 
 @test("PLACER-SKIPS-RETIRED-BOTS — the real-money Coolbet placer never loads a retired bot's picks")

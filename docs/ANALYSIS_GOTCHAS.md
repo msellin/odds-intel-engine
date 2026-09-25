@@ -3239,4 +3239,4 @@ control loses about the vig exactly as registered.
 * The same trap is #150 (sharp-trigger bots: own-book close = −margin when the book never moves). Own-book CLV is still
   the right measure for "did the book we bet at move against us" — it is the wrong one for "was the pick good".
 * Where it is used now: the forward test's amended stop rule (`scripts/picks_forward_test_checkpoint.py`, prereg
-  AMENDMENT 1) and the /performance CLV for the forward-test bots (view `picks_forward_test_anchor_clv`, migration 430).
+  AMENDMENT 1) and the /performance CLV for the forward-test bots (view `picks_forward_test_anchor_clv`, migration 430). Since [[#158]] /performance reads the same definition from `picks_forward_test_bot_record` (migration 431), whose "current" record also includes earlier-rule picks that passed the current rule on pick-time data — **query `picks_forward_test_summary` (rule_version as published), not the bot record, for anything about the pre-registered test.**

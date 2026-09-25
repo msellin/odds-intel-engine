@@ -477,3 +477,22 @@ and source mix ("vs sharp close +2.4% · 64 picks · 64 Pinnacle / 0 consensus")
 own-book figure shown beside it as the secondary. Each row is scored on its CURRENT
 `rule_version` only (as `bot_scoreboard` does); earlier versions stay in the ledger and on
 the row as "earlier rule" history, never pooled.
+
+### 2026-09-25 note ([[#158]]) — consensus v1 picks re-classified under v2 for /performance only
+
+The consensus arm's v2 (`consensus_edge_v2_2026_09_24`) differs from v1 in ONE gate: the edge
+must clear 3% under ALL of Shin / additive / power. Owner decision: every SENT v1 pick was
+re-checked against v2 using **pick-time data only** — its consensus rebuilt from
+`odds_snapshots` as of `published_at` with the publisher's own functions, never its result
+(`scripts/recheck_forward_test_picks.py`; verdicts in the private table `pick_rule_recheck`,
+frozen once written). Result: **B 3 pass / 2 fail, C 31 / 3, D (sent before the re-tier) 14 / 2**;
+the sharp arm's 8 v1 picks all fail v4 (anchor overround > 4%). Where the rebuild could not
+reproduce the Shin probability the publisher recorded (intraday snapshots are thinned after the
+fact), a pick passes only if its worst-method edge clears 3% by more than the discrepancy —
+3 picks failed that way as `rebuild_mismatch_inconclusive`.
+
+**This changes the /performance BOT RECORD only.** The pre-registered test's own counts are
+NOT changed: `picks_forward_test.rule_version` is never rewritten, `picks_forward_test_summary`
+still groups on the rule as published, and the stop-rule checkpoints keep counting v2-PUBLISHED
+picks only. A re-checked pick is marked as such on the bot's detail view.
+
