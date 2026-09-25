@@ -56590,5 +56590,34 @@ def test_ou_sharp_outlier():
     assert by_name(BOT_EARLY) and by_name(BOT_2ANCHOR)
 
 
+
+@test("COMBINED-OU-PRODUCTION — #152: O/U combiner fitted in the rating job, served = Pinnacle else combined")
+def test_combined_ou_production():
+    """#152 step 1. The production copy of #149's O1 model (workers/model/combined_ou.py) must be
+    the one the rating job fits and the 30-min refresh re-applies, it must SERVE Pinnacle where
+    Pinnacle prices the line (it was marginally better there), power de-vig only, and its table
+    must be private. Behavioural on synthetic rows + source inspection."""
+    import numpy as np, pandas as pd
+    from workers.model import combined_ou as OU
+    legs = pd.DataFrame([
+        dict(match_id="m1", market="over_under_25", bookmaker=b, selection=s, odds=o, ts=0.0)
+        for b, (ov, un) in {"Pinnacle": (1.95, 1.95), "Bet365": (1.90, 1.90), "Betano": (1.92, 1.88)}.items()
+        for s, o in (("over", ov), ("under", un))])
+    c = OU.consensus(legs)
+    row = c[c.market == "over_under_25"].iloc[0]
+    assert abs(row.pin_over - 0.5) < 1e-6 and row.n_books == 2
+    d = OU.frame(pd.DataFrame({"match_id": ["m1"], "lam": [2.7]}), c)
+    P, g = OU.predict(d, {})
+    s = OU.served_over(d, P)
+    r25 = d.market.to_numpy() == "over_under_25"
+    assert np.allclose(s[r25], 0.5), "served = Pinnacle where Pinnacle prices the line"
+    job = _engine_path("workers/jobs/rating_1x2_shadow.py").read_text(encoding="utf-8")
+    assert "out.update(_ou_run(fin, up))" in job and "out.update(ou_refresh())" in job
+    src = _engine_path("workers/model/combined_ou.py").read_text(encoding="utf-8")
+    assert "def power_devig" in src and "proportional" not in src.split("def power_devig")[1][:400]
+    mig = _engine_path("supabase/migrations/425_combined_ou.sql").read_text(encoding="utf-8")
+    assert "REVOKE ALL ON ou_model_predictions FROM anon, authenticated" in mig
+
+
 if __name__ == "__main__":
     main()

@@ -83,6 +83,83 @@ COMB_TRAIN_FROM_EPOCH = 1777593600.0     # 2026-05-01: multi-book history starts
 DRY_RUN = False     # --dry-run: compute everything, write nothing
 
 
+# ── COMBINED O/U ([[#152]]) — rides on the same walk-forward rating pass ─────────────
+def _write_ou(d: pd.DataFrame, p_comb, grp) -> int:
+    from workers.model.combined_ou import MODEL_VERSION as OU_VER, served_over
+    served = served_over(d, p_comb)
+    rows = [(mid, mk, OU_VER, round(float(s), 5), round(float(c), 5),
+             (round(float(pp), 5) if pd.notna(pp) else None), str(g),
+             (int(nb) if pd.notna(nb) else None), (round(float(lam), 4) if pd.notna(lam) else None))
+            for mid, mk, s, c, pp, g, nb, lam in zip(d.match_id, d.market, served, p_comb, d.pin_over,
+                                                     grp, d.n_books, d.lam)]
+    if DRY_RUN or not rows:
+        return len(rows)
+    from psycopg2.extras import execute_values
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            execute_values(cur, """
+                INSERT INTO ou_model_predictions
+                    (match_id, market, model_version, p_over, p_comb, p_pin, grp, n_books, lam_total)
+                VALUES %s
+                ON CONFLICT (match_id, market, model_version) DO UPDATE SET
+                    p_over = EXCLUDED.p_over, p_comb = EXCLUDED.p_comb, p_pin = EXCLUDED.p_pin,
+                    grp = EXCLUDED.grp, n_books = EXCLUDED.n_books, lam_total = EXCLUDED.lam_total,
+                    updated_at = now()""", rows)
+        conn.commit()
+    return len(rows)
+
+
+def _ou_run(fin: pd.DataFrame, up: pd.DataFrame) -> dict:
+    """Fit the O/U combiner on finished matches since 2026-05-01 and price the upcoming ones."""
+    import json
+    from workers.model import combined_ou as OU
+    hist = fin[fin.kickoff >= COMB_TRAIN_FROM_EPOCH]
+    hm = pd.DataFrame({"match_id": hist.match_id, "lam": (hist.dp_lh + hist.dp_la).to_numpy(),
+                       "total": (hist.gh + hist.ga).to_numpy()})
+    um = pd.DataFrame({"match_id": up.match_id, "lam": (up.dp_lh + up.dp_la).to_numpy()})
+    with get_conn() as conn:
+        legs = OU.fetch_legs(conn, hm.match_id.tolist() + um.match_id.tolist())
+    cons = OU.consensus(legs)
+    tr = OU.frame(hm.dropna(subset=["lam"]), cons)
+    params = OU.fit(tr)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            if not DRY_RUN:
+                cur.execute("INSERT INTO combiner_ou_params (model_version, params, n_train) VALUES (%s, %s::jsonb, %s)",
+                            (OU.MODEL_VERSION, json.dumps(params), int(len(hm))))
+        conn.commit()
+    te = OU.frame(um, cons)
+    P, g = OU.predict(te, params)
+    return {"ou_written": _write_ou(te, P, g), "ou_train": int(len(hm)),
+            "ou_groups": {mk: {G: v["n"] for G, v in prm.items()} for mk, prm in params.items()}}
+
+
+def ou_refresh() -> dict:
+    """Every 30 min: re-apply the latest O/U combiner to CURRENT prices (lam from the last fit)."""
+    import json
+    from workers.model import combined_ou as OU
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT params FROM combiner_ou_params WHERE model_version = %s
+                            ORDER BY fitted_at DESC LIMIT 1""", (OU.MODEL_VERSION,))
+            row = cur.fetchone()
+        if not row:
+            return {"ou_written": 0}
+        params = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+        um = pd.read_sql("""
+            SELECT DISTINCT ON (p.match_id) p.match_id::text match_id, p.lam_total::float8 lam
+              FROM ou_model_predictions p JOIN matches m ON m.id = p.match_id
+             WHERE p.model_version = %(v)s AND m.status = 'scheduled'
+               AND m.date > now() AND m.date < now() + interval '2 days'""",
+                         conn, params={"v": OU.MODEL_VERSION})
+        if um.empty:
+            return {"ou_written": 0}
+        legs = OU.fetch_legs(conn, um.match_id.tolist())
+    te = OU.frame(um, OU.consensus(legs))
+    P, g = OU.predict(te, params)
+    return {"ou_written": _write_ou(te, P, g)}
+
+
 def _write(rows: list[tuple]) -> None:
     if DRY_RUN:
         return
@@ -185,6 +262,11 @@ def run() -> dict:
     _write(rows)
     out.update(comb_written=len(rows), comb_train=len(hist),
                comb_groups={k: v["n"] for k, v in params.items()})
+    try:
+        out.update(_ou_run(fin, up))          # [[#152]] combined O/U model
+    except Exception as e:                    # never lose the 1X2 write to an O/U failure
+        console.print(f"[yellow]combined O/U fit failed: {e}[/yellow]")
+        out["ou_error"] = str(e)[:300]
     console.print(f"rating_1x2_shadow ({MODEL_VERSION} + {COMB_VERSION}): {out}")
     return out
 
@@ -214,6 +296,10 @@ def refresh() -> dict:
     rows = _comb_rows(_market_and_af(d), params)
     _write(rows)
     out = {"written": len(rows), "groups": pd.Series([r[-1] for r in rows]).value_counts().to_dict()}
+    try:
+        out.update(ou_refresh())              # [[#152]] combined O/U at current prices
+    except Exception as e:
+        console.print(f"[yellow]combined O/U refresh failed: {e}[/yellow]")
     console.print(f"combined_1x2 refresh ({COMB_VERSION}): {out}")
     return out
 

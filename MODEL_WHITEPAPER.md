@@ -2132,4 +2132,9 @@ rows, and its model-vs-Pinnacle disagreements lost CLV. O2: the fair price is th
 it by EV 5–15% reads ≈ +2% CLV where real closes exist (before mid-July there is no Pinnacle O/U close — ANALYSIS_GOTCHAS #83).
 O3: requiring the quote ≥ 12 h before kickoff lifts it to CLV +7.5% / +6.9% with ROI +10.4% / +10.8% (Aug / Sep); requiring
 the other books' consensus to be beaten too: +6.6% / +4.2%. Live: `bot_ou_sharp_early_v1`, `bot_ou_sharp_2anchor_v1`, paper.
+**Combined O/U model in production (#152, 2026-09-25).** `workers/model/combined_ou.py` (`ou_comb_v1`, byte-identical
+predictions to the #149 O1 research model) is fitted twice daily inside the 1X2 rating job and refreshed every 30 min;
+stored in `ou_model_predictions`. Served P(over) = Pinnacle where it prices the line, else the combined model. On the O1
+holdout it beat the served O/U ensemble on every line (1.5: 0.5655 vs 0.5934; 2.5: 0.6738 vs 0.7086; 3.5: 0.6428 vs 0.6961 —
+the ensemble was worse than the base rate on all three).
 
