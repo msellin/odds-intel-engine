@@ -58,7 +58,9 @@ log = logging.getLogger(__name__)
 # exit IP flagged), and its refresh-by-kickoff change should bring it well under this.
 _DEFAULT_BUDGETS = {
     "Coolbet": 500,           # peak 508 / median 294 before refresh-by-kickoff; danger zone 750+
-    "Tonybet": 150,           # peak 69 / median 51 (bulk API: pages of 100 events)
+    "Tonybet": 250,           # was 150 (peak 69 / median 51 weekdays); raised 2026-09-25 (#151): the
+                              # 09-25 weekend slate needed ~25 listing pages/sweep + ~120 deep boards/h.
+                              # Bulk API, no known block threshold (unlike Coolbet's #108 750+).
     "Unibet-Site": 400,       # peak 177 / median 87, + headroom for the new "World" fixtures
     "Epicbet": 1200,          # peak 576 / median 416 (2 sweeps/h + near-kickoff)
     "Betfair-Exchange": 150,  # peak 53 / median 45 (~15 req per run incl. step-D markets, 4 runs/h)
@@ -66,12 +68,12 @@ _DEFAULT_BUDGETS = {
 }
 # Share of each hour's budget kept back for requests that cannot wait (see PRIORITY
 # RESERVE above). Sized from the 09-25 metering: Tonybet's must-run traffic is live
-# stats (30/h) + near-kickoff closes (up to ~60/h on a busy slate) + results (~5)
-# against 150, so half is reserved; Coolbet's is near-kickoff (~2 requests per due
+# stats (30/h) + near-kickoff closes (up to ~60/h on a busy slate) + results (~5),
+# ~100 of its 250, so 40% is reserved; Coolbet's is near-kickoff (~2 requests per due
 # fixture, <=19 due/h) + the 5-min health ping (12/h) against 500.
 _RESERVE_SHARE = {
     "Coolbet": 0.2,
-    "Tonybet": 0.5,
+    "Tonybet": 0.4,
 }
 SLOW_S = 20.0
 _FLUSH_EVERY = 20
