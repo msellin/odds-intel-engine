@@ -54850,7 +54850,8 @@ def test_admin_ux_round2_shared():
     ov = _web_path("src/lib/admin-overview.ts").read_text(encoding="utf-8")
     assert "now - 30 * 86_400_000" in ov and "BLOCKER_WORDS" in ov
     pal = _web_path("src/components/admin/command-palette.tsx").read_text(encoding="utf-8")
-    assert "stop kill emergency" in pal and "already paused" in pal
+    # the action says the CURRENT state (round 6 plain words: was "already paused (kill switch)")
+    assert "stop kill emergency" in pal and "Real-money betting is stopped" in pal
     charts = _web_path("src/app/(app)/admin/overview-charts.tsx").read_text(encoding="utf-8")
     assert charts.count("defaultHidden={[RETIRED_SERIES]}") == 2
     for f in ("src/components/cookie-banner.tsx", "src/components/feedback-button.tsx"):
@@ -55471,6 +55472,15 @@ def test_admin_answer_first():
     assert "</button>\n                        {h.column.columnDef.meta?.tip && <InfoTip>" in dt
     ops = _web_path("src/app/(app)/admin/ops/page.tsx").read_text(encoding="utf-8")
     assert "Can't tell — settlement data unreadable" in ops and "settleLate" in ops
+    # round 6 (strict owner test 6.5/10): every chart says its period; ⌘K finds the open problems
+    # ("failing" found nothing); no "beat the close" / "Unresolved config" / "kill switch" on the face
+    ch = _web_path("src/components/oi/charts.tsx").read_text(encoding="utf-8")
+    assert "long?: string;" in ch and "?.long;" in ch
+    oc = _web_path("src/app/(app)/admin/overview-charts.tsx").read_text(encoding="utf-8")
+    assert 'long: "last 12 weeks"' in oc and 'centerLabel="beat the close"' not in oc
+    pal = _web_path("src/components/admin/command-palette.tsx").read_text(encoding="utf-8")
+    assert 'section: "Needs attention"' in pal and "(attention ?? []).map(" in pal and "(kill switch)" not in pal
+    assert "attention={attention} />" in _web_path("src/components/admin/admin-topbar.tsx").read_text(encoding="utf-8")
     att = _web_path("src/lib/admin-attention.ts").read_text(encoding="utf-8")
     assert 'import { humanJob, jobAnchor } from "./admin-jobs-model"' in att and "function humanJob" not in att
     # charts default to order 0 and jumped above the answers on a phone
