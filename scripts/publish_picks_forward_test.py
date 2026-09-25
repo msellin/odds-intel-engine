@@ -240,6 +240,17 @@ def _book_probs(sides, side_q, book):
 # about what a READER sees, so they must span every published arm, not one.
 PUBLISHED_ARMS = ("live", CONSENSUS_ARM)
 
+
+def arm_bot_sends(c: dict, arm: str, sent_bots: set | None) -> bool:
+    """[[#155]] ONE STATUS DECIDES DISTRIBUTION: may this published-arm pick be SENT?
+    Only when the bot the ledger row belongs to (bot_status.forward_test_bot — the same
+    mapping as picks_public_all) has a status that sends (bot_distribution.sent_public).
+    `sent_bots` None (unreadable) = send nothing. Recording is never affected."""
+    if sent_bots is None or arm not in PUBLISHED_ARMS:
+        return False
+    from workers.utils.bot_status import forward_test_bot
+    return forward_test_bot(arm, c.get("market"), c.get("grade")) in sent_bots
+
 # ── TWIN ARMS (2026-09-25, [[#161]], owner-approved) — RECORDED, NEVER PUBLISHED ──
 # Two hypothesis arms, each = its parent's rule in EVERY gate plus ONE extra gate the
 # [[#156]] audit pointed to. Pre-registered in dev/active/picks-forward-test-
@@ -1237,11 +1248,17 @@ def main() -> int:
     if not args.no_header:
         send_telegram_public(HEADER.format(n=len(picks)))
 
+    from workers.utils.bot_status import load_sent_public_bots
+    sent_bots = load_sent_public_bots()   # [[#155]] the bot's status decides the send
     sent = 0
     for c in picks:
         pick_id = claim(c, "live")
         if pick_id is None:
             log.info("already published, not re-sending: %s v %s",
+                     c["home_team"], c["away_team"])
+            continue
+        if not arm_bot_sends(c, "live", sent_bots):
+            log.info("status does not send (#155), recorded not sent: %s v %s",
                      c["home_team"], c["away_team"])
             continue
         if c.get("held_back_reason"):      # [[#164]] VIP FIRST: recorded, never sent

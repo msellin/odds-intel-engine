@@ -173,10 +173,13 @@ def _pipeline_rows(db: dict) -> dict[str, dict]:
                           src(F_PIPE, r"^_NON_OFFERS")))
         b = db.get(name) or {}
         live = b.get("retired_at") is None and b.get("is_active", True)
-        telegram = bool(live and b.get("maturity_label") == "calibrated")
+        # [[#155]] ONE STATUS DECIDES DISTRIBUTION: TESTING / BETA / CALIBRATED (not VIP, not
+        # retired) is sent to /picks AND the public channel; the same rule as bot_distribution.
+        from workers.utils.bot_status import sends_public
+        telegram = bool(live and sends_public(b.get("maturity_label"), b.get("retired_at"), b.get("vip")))
         if telegram:
-            gates.append(gate("public_telegram_if_maturity_calibrated", True,
-                              src(F_SIGNAL, r"group_has_calibrated")))
+            gates.append(gate("public_telegram_if_status_sends", True,
+                              src(F_SIGNAL, r"group_sends_public")))
         out[name] = _row(
             name, "model_sim",
             description=cfg.get("description"),
@@ -194,7 +197,7 @@ def _pipeline_rows(db: dict) -> dict[str, dict]:
             odds_min=lo, odds_max=hi, gates=gates,
             books=["*"], books_source=f"publishable = every book except _NON_OFFERS ({books_src})",
             anchor="model",
-            published=bool(live and b.get("show_on_picks")),
+            published=telegram,   # [[#155]] /picks and Telegram are the same status decision
             telegram=telegram,
         )
     return out
@@ -513,8 +516,10 @@ def _forward_test_rows(db: dict) -> dict[str, dict]:
     cons_arm = ft.CONSENSUS_ARM in ft.PUBLISHED_ARMS
 
     def _pub(name: str, arm_published: bool) -> bool:
+        # [[#155]] a published arm's bot is sent when its STATUS sends (bot_distribution).
+        from workers.utils.bot_status import sends_public
         b = db.get(name) or {}
-        return bool(arm_published and b.get("retired_at") is None)
+        return bool(arm_published and sends_public(b.get("maturity_label"), b.get("retired_at"), b.get("vip")))
 
     rows = {
         "bot_sharp_1x2_v1": _row("bot_sharp_1x2_v1", "forward_test", **common,
@@ -531,14 +536,18 @@ def _forward_test_rows(db: dict) -> dict[str, dict]:
                                 telegram=_pub("bot_sharp_ou_v1", live_arm)),
     }
     for g, name in (("B", "bot_consensus_b_v1"), ("C", "bot_consensus_c_v1"), ("D", "bot_consensus_d_v1")):
-        sent = g != "D"   # grade D is recorded, never sent (scheduler skips send; picks_public_all hides unsent D)
+        # [[#155]] sent iff the grade's bot's STATUS sends — grade D's bot is EXPERIMENTAL
+        # (recorded, never sent; the scheduler skips the send, picks_public_all hides unsent rows).
+        from workers.utils.bot_status import sends_public as _sends
+        _b = db.get(name) or {}
+        sent = _sends(_b.get("maturity_label"), _b.get("retired_at"), _b.get("vip"))
         extra = [gate("grade", g, src(F_FT, r"^GRADE_PANEL"))]
         omin = omax = None
         if g == "B":
             omin, omax = ft.STRONG_ODDS_MIN, ft.STRONG_ODDS_MAX
             extra.append(gate("odds_band", [omin, omax], src(F_FT, r"^STRONG_ODDS_MIN")))
         if not sent:
-            extra.append(gate("send", "recorded, not sent", src("workers/scheduler.py", r"c.get\(\"grade\"\) == \"D\"")))
+            extra.append(gate("send", "recorded, not sent", src("workers/scheduler.py", r"arm_bot_sends\(c, CONSENSUS_ARM")))
         rows[name] = _row(name, "forward_test", **common,
                           description=f"Forward test, arm='consensus_anchor', grade {g}.",
                           markets=list(ft.MARKETS), prob_source="de-vigged multi-book consensus",
@@ -654,7 +663,7 @@ def build_rows(db_bots: list[dict] | None = None) -> list[dict]:
 def _load_db_bots() -> list[dict]:
     from workers.api_clients.db import execute_query
     return execute_query(
-        "SELECT name, is_active, retired_at, maturity_label, show_on_picks, description FROM bots")
+        "SELECT name, is_active, retired_at, maturity_label, show_on_picks, vip, description FROM bots")
 
 
 _COLS = ("bot_name", "family", "description", "ledger", "writer_job", "cadence", "markets",

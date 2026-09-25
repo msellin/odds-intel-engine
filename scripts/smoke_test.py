@@ -17532,12 +17532,13 @@ def _():
     import pathlib
     src = pathlib.Path("workers/jobs/settlement.py").read_text()
     # The all-time and active headline queries now join bots and filter
-    assert "maturity_label != 'experimental'" in src, (
-        "settlement headline queries must exclude experimental bots via maturity_label"
+    # [[#155]] the guard is now the headline cohort itself (BETA/CALIBRATED, not VIP) — stricter.
+    assert "_HEADLINE_BOT_SQL" in src, (
+        "settlement headline queries must use the #155 headline cohort (workers/utils/bot_status.py)"
     )
     # Active-only query must have the same guard
     active_section = src[src.index("Active-only headline"):]
-    assert "maturity_label != 'experimental'" in active_section[:1200], (
+    assert "{_HEADLINE_BOT_SQL}" in active_section[:1200], (
         "active-only headline query must also exclude experimental bots"
     )
 
@@ -17564,8 +17565,8 @@ def _():
     )
     # ROI/CLV math section must still exclude experimental
     roi_section = grand_total_section[grand_total_section.index("ROI/CLV math"):]
-    assert "maturity_label != 'experimental'" in roi_section[:800], (
-        "ROI/CLV math must still exclude experimental bots"
+    assert "_HEADLINE_BOT_SQL" in roi_section[:800], (
+        "ROI/CLV math must still exclude experimental (and, since #155, testing / VIP) bots"
     )
 
 
@@ -18819,8 +18820,8 @@ def _():
     # the ROI headline above it describe different sets of bets.
     assert "b.is_active = true" in curve_block, "curve must filter active bots"
     assert "b.retired_at IS NULL" in curve_block, "curve must exclude retired"
-    assert "maturity_label != 'experimental'" in curve_block, \
-        "curve must exclude experimental"
+    assert "{_HEADLINE_BOT_SQL}" in curve_block, \
+        "curve must use the #155 headline cohort (excludes experimental, testing, VIP)"
     assert ("interval '30 days'" in curve_block
             or "interval '90 days'" in curve_block), (
         "curve window must come from a 30d or 90d settlement query"
@@ -22223,8 +22224,8 @@ def _():
     assert "interval '90 days'" in sot_block, "SoT query must cover 90 days"
     assert "b.is_active = true" in sot_block, "SoT curve must filter active bots"
     assert "b.retired_at IS NULL" in sot_block, "SoT curve must exclude retired"
-    assert "maturity_label != 'experimental'" in sot_block, (
-        "SoT curve must exclude experimental"
+    assert "{_HEADLINE_BOT_SQL}" in sot_block, (
+        "SoT curve must use the #155 headline cohort"
     )
     assert "daily_pnl_curve_30d" in sot_block, (
         "The 30d curve must be derived in the same block as the 90d curve"
@@ -22856,7 +22857,7 @@ def _():
     )
 
 
-@test("TELEGRAM-PUBLIC — coolbet_signaler hooks send_telegram_public for calibrated picks")
+@test("TELEGRAM-PUBLIC — coolbet_signaler hooks send_telegram_public for picks whose bot STATUS sends (#155)")
 def _():
     """The public channel posting (PUBLIC-CHANNEL-POST) must be gated to
     calibrated-tier picks on pre-match-public markets (1x2/OU/BTTS, no AH).
@@ -22876,9 +22877,10 @@ def _():
     # public post was silently skipped even though a calibrated bot backed the
     # pick — 7 of 109 calibrated picks (6.4%) suppressed over 60d, with nothing
     # logged because the operator post succeeded normally.
-    assert 'b.get("group_has_calibrated")' in src, (
-        "public post must be gated on the group-level calibrated flag, not on "
-        "the canonical row's maturity — see SIGNALER-MATURITY-SHADOWING"
+    # [[#155]] the group-level flag is now "any bot whose STATUS sends" (bot_distribution.sent_public).
+    assert 'b.get("group_sends_public")' in src, (
+        "public post must be gated on the group-level sent-status flag, not on "
+        "the canonical row's maturity — see SIGNALER-MATURITY-SHADOWING / #155"
     )
     assert 'b.get("maturity") == "calibrated"' not in src, (
         "the per-row maturity gate is the bug: a beta bot with a higher edge "
@@ -22887,12 +22889,12 @@ def _():
     # The SQL must actually compute the flag as a window function over the same
     # partition DISTINCT ON collapses, or the Python gate reads None and NOTHING
     # is ever posted publicly.
-    assert "bool_or(b.maturity_label = 'calibrated')" in src, (
-        "load_signal_candidates must compute group_has_calibrated in SQL"
+    assert "bool_or(bd.sent_public)" in src, (
+        "load_signal_candidates must compute group_sends_public in SQL"
     )
-    assert "AS group_has_calibrated" in src
+    assert "AS group_sends_public" in src
     assert src.count("PARTITION BY sb.match_id, sb.market, sb.selection") >= 2, (
-        "group_has_calibrated must partition on the SAME key DISTINCT ON uses "
+        "group_sends_public must partition on the SAME key DISTINCT ON uses "
         "(match_id, market, selection) — a different partition silently "
         "mis-gates every pick"
     )
@@ -44814,14 +44816,18 @@ def test_performance_public_is_calibrated_or_beta():
         "the allowlist is gone from lib/bot-aggregates.ts. Three surfaces decide "
         "this; three inline copies of a label list is how they drift apart."
     )
-    m = _r.search(r"PUBLIC_MATURITY_LABELS[^=]*=\s*new Set\(\s*\[(.*?)\]",
-                  agg_code, _r.DOTALL)
-    assert m, "PUBLIC_MATURITY_LABELS is no longer a literal Set of labels"
+    # [[#155]] (owner 2026-09-25): the set is the public STATUSES — TESTING joined (a TESTING bot is
+    # sent, so it is shown, marked TESTING, with its own record; it is NOT in the headline). The
+    # literal now lives in lib/bot-status.ts (one source with the engine's bot_public_status).
+    assert "new Set<string>(PUBLIC_STATUSES)" in agg_code, "PUBLIC_MATURITY_LABELS must be the status set"
+    bst = _code(_web_path("src/lib/bot-status.ts").read_text())
+    m = _r.search(r"PUBLIC_STATUSES\s*=\s*\[(.*?)\]", bst, _r.DOTALL)
+    assert m, "PUBLIC_STATUSES is no longer a literal list"
     labels = {t.strip().strip('"\'') for t in m.group(1).split(",") if t.strip()}
-    assert labels == {"calibrated", "beta"}, (
+    assert labels == {"calibrated", "beta", "testing"}, (
         f"the public leaderboard allowlist is {sorted(labels)}, not "
-        f"['beta', 'calibrated']. 'experimental' here would put the whole shadow "
-        f"fleet — 13 bots with zero settled bets between them — on a public page."
+        f"['beta', 'calibrated', 'testing']. 'experimental' here would put the whole shadow "
+        f"fleet — bots with zero settled bets between them — on a public page."
     )
 
     # ALL THREE surfaces must use it. They disagreed once already (the table
@@ -44972,21 +44978,25 @@ def test_vip_performance_settled_only():
         "picks are exactly the VIP bot's EV8 picks")
     assert "aggregateBets" not in page and "allBets" not in page
 
-    # 4. listing gate: isPublicBot || isVip, and the allowlist is untouched
-    assert _r.search(r"isPublicBot\(b\.maturityLabel\)\s*\|\|\s*isVipBot\(b\)", page), "cachedBots lacks the VIP gate"
-    m = _r.search(r"PUBLIC_MATURITY_LABELS[^=]*=\s*new Set\(\s*\[(.*?)\]", agg, _r.DOTALL)
-    assert m and "vip" not in m.group(1).lower(), "VIP must not widen PUBLIC_MATURITY_LABELS"
+    # 4. listing gate — [[#155]] the STATUS alone: a VIP bot is listed when its status is public
+    #    ("VIP · TESTING"); VIP · EXPERIMENTAL is admin-only like any experimental bot.
+    assert ".filter((b) => isPublicBot(b.maturityLabel))" in page, "cachedBots must list by status"
+    bst = _web_path("src/lib/bot-status.ts").read_text()
+    m = _r.search(r"PUBLIC_STATUSES\s*=\s*\[(.*?)\]", bst, _r.DOTALL)
+    assert m and "vip" not in m.group(1).lower(), "VIP must not widen the public statuses"
+    assert "new Set<string>(PUBLIC_STATUSES)" in agg
 
     # 5. hero count excludes VIP (activeBotCount gates on isPublicBot only)
     k = client.index("const activeBotCount")
     assert "isVip" not in client[k:k + 300], "VIP bot counted in the hero 'strategies live' number"
     assert "!b.isVip" in client, "botsTracked counts the VIP bot"
     # ...and it never joins the HEADLINE aggregates
-    h = _r.search(r"HEADLINE_MATURITY_LABELS\s*=\s*\[(.*?)\]", ed, _r.DOTALL)
-    assert h and "vip" not in h.group(1).lower()
+    h = _r.search(r"HEADLINE_STATUSES\s*=\s*\[(.*?)\]", bst, _r.DOTALL)
+    assert h and "vip" not in h.group(1).lower() and "HEADLINE_MATURITY_LABELS = HEADLINE_STATUSES" in ed
+    assert '.eq("vip", false)' in ed, "[[#155]] the headline cohort drops VIP bots explicitly"
 
     # 6. UI: chip in both render spots, legend, per-pick EV label, modal guard
-    assert lb.count("<VipChip isVip={bot.isVip} />") == 2, "VipChip missing from mobile or desktop row"
+    assert lb.count("<VipChip isVip status={bot.maturityLabel} />") == 2, "VIP · STATUS chip missing from mobile or desktop row"
     assert "paid-tier bot" in lb and "once settled" in lb, "VIP legend sentence missing"
     assert "vipEvLabel(b.modelProb, b.odds)" in lb, "per-pick EV8/EV5 label missing in the modal"
     assert "VIP_LIVE_SINCE" in lb, "'Live since' line missing"
@@ -50580,7 +50590,7 @@ def _():
                 "maturity": "calibrated", "match_date": ko,
                 "coolbet_match_id": None, "home_team": "H", "away_team": "A",
                 "league": "L", "country": "C", "bot_count": 1,
-                "already_placed": False, "group_has_calibrated": True}
+                "already_placed": False, "group_sends_public": True}
 
     fake = [
         _row(0.4782, 2.49, 0.08),   # derived 0.0766 — BELOW the 0.08 floor
@@ -52929,10 +52939,10 @@ def test_consensus_arm_grading():
         assert "Grade <b>B</b>" in pf._grade_line({"grade": "B", "grade_reasons": []})
         assert "Grade <b>C</b>" in pf._grade_line({"grade": "C", "grade_reasons": []})
         sched = _engine_path("workers/scheduler.py").read_text()
-        # #139 (2026-09-24): /pausepicks joined the same skip — `if c.get("grade") == "D" or paused:`.
-        assert ('if c.get("grade") == "D":' in sched or 'if c.get("grade") == "D" or paused:' in sched
-                or 'if c.get("grade") == "D" or paused or c.get("held_back_reason"):' in sched), \
-            "grade D must be claimed but never sent"
+        # #139 (2026-09-24): /pausepicks joined the same skip. [[#155]] (2026-09-25): the skip is now the
+        # grade's bot's STATUS (arm_bot_sends) — grade D's bot is EXPERIMENTAL, so still never sent.
+        assert "if not arm_bot_sends(c, CONSENSUS_ARM, sent_bots) or paused or c.get(\"held_back_reason\"):" in sched, \
+            "grade D must be claimed but never sent (by its bot's status, #155)"
         assert pf._grade_line({}) == "", "an ungraded (live-arm) pick must render no grade line"
 
         src = inspect.getsource(pf.claim)
@@ -55572,16 +55582,15 @@ def test_admin_bots_channel_reasons():
         return
     d = _web_root / "src/app/(app)/admin/bots"
     cr = (d / "channel-reasons.ts").read_text(encoding="utf-8")
-    assert 'fam === "forward_test"' in cr and "plays no part" in cr
-    assert 'g.name === "send" && g.value === "recorded, not sent"' in cr, "grade D is recorded, never sent"
-    assert "Not on Telegram because its label is" in cr and "“calibrated”" in cr
-    assert 'PERF_LABELS = new Set(["calibrated", "beta"])' in cr and "opts.vip === true" in cr
+    # [[#155]] rewritten: every customer channel line is derived from the STATUS (lib/bot-status.ts)
+    assert 'fam === "forward_test"' in cr and "sendsPublic(b)" in cr and "onPerformance(b)" in cr
+    assert "Not on Telegram because its status is" in cr and "opts.vip === true" in cr
     # the rules it states are the engine's
     exp = _engine_path("scripts/export_bot_config.py").read_text(encoding="utf-8")
-    assert 'telegram = bool(live and b.get("maturity_label") == "calibrated")' in exp
-    assert 'sent = g != "D"' in exp
+    assert 'telegram = bool(live and sends_public(b.get("maturity_label"), b.get("retired_at"), b.get("vip")))' in exp
+    assert 'sent = _sends(_b.get("maturity_label"), _b.get("retired_at"), _b.get("vip"))' in exp
     perf = _web_path("src/lib/bot-aggregates.ts").read_text(encoding="utf-8")
-    assert '"calibrated",\n  "beta",' in perf
+    assert "new Set<string>(PUBLIC_STATUSES)" in perf
     sheet = (d / "bot-sheet.tsx").read_text(encoding="utf-8")
     assert "channelLines(v, {" in sheet and "{lines.telegram.text}" in sheet and "{lines.performance.text}" in sheet
     assert "(maturity_label · I12)" not in sheet and "earned the “calibrated” label" not in sheet
@@ -57460,8 +57469,8 @@ def test_v10_newplus_twin():
     mig = _engine_path("supabase/migrations/427_v10_newplus_twin.sql").read_text(encoding="utf-8")
     assert "show_on_performance boolean" in mig and "'testing', false, true" in mig
     web = _engine_path("../odds-intel-web/src/app/(app)/performance/page.tsx")   # [[#159]] the gate moved here
-    if web.exists():
-        assert "b.showOnPerformance === true" in web.read_text(encoding="utf-8")
+    if web.exists():   # [[#155]] show_on_performance is derived from the status; the page reads the status
+        assert ".filter((b) => isPublicBot(b.maturityLabel))" in web.read_text(encoding="utf-8")
     # #155 (owner 2026-09-25): the twin and High-odds match result now SEND their picks to /picks.
     m432 = _engine_path("supabase/migrations/432_send_testing_model_picks.sql").read_text(encoding="utf-8")
     assert "SET show_on_picks = true" in m432 and "'bot_v10_1x2_newplus_v1'" in m432 and "'bot_high_roi_global_v2'" in m432
@@ -58270,10 +58279,10 @@ def test_perf_detail_open_one_row_rule():
     assert "hasEnoughData: picksSummary.published > 0" not in page, "forward-test rows follow the one row rule"
     assert "isPro ? " not in page, "W/L and P&L are not tier-gated any more"
     route = _ts_code159(_web_path("src/app/api/performance/bot-legs/route.ts").read_text())
-    # [[#164]] experimental bots (the #161 twin arms) are never listed unless VIP; held-back legs dropped in the lib
-    assert "(isPublicBot(b.maturityLabel) || b.showOnPerformance === true || LEDGER_BACKED_BOTS.has(b.name))" in route
-    assert "isVipBot(b) ||" in route and "!experimental &&" in route
-    assert "!b.retiredAt" in route and "settledOnly: isVipBot(b) || b.hidePending || experimental" in route
+    # [[#164]] experimental bots (the #161 twin arms) are never listed; held-back legs dropped in the lib.
+    # [[#155]] the listing is the STATUS alone (VIP bots need a public status too).
+    assert "const listed = !!b && !b.retiredAt && isPublicBot(b.maturityLabel);" in route
+    assert "settledOnly: isVipBot(b) || b.hidePending" in route
     lib = _ts_code159(_web_path("src/lib/bot-performance.ts").read_text())
     assert '.eq("in_record", true)' in lib and 'if (opts.settledOnly) q = q.in("result", SETTLED);' in lib
     assert 'const SETTLED = ["won", "lost", "void", "push"];' in lib, "pending is never in the settled list"
@@ -58662,7 +58671,8 @@ def test_vip_first_hold_back():
         web = _web_path("src/lib/bot-performance.ts").read_text(encoding="utf-8")
         assert "held_back\";" in web and web.count(".filter(isVisibleLeg)") == 2
         route = _web_path("src/app/api/performance/bot-legs/route.ts").read_text(encoding="utf-8")
-        assert 'b?.maturityLabel === "experimental"' in route and "b.hidePending || experimental" in route
+        # [[#155]] experimental bots are simply not listed (status alone), so no settled-only special case
+        assert "isPublicBot(b.maturityLabel)" in route and "settledOnly: isVipBot(b) || b.hidePending" in route
     except SkipTest:
         pass
     # (5) behaviour, rolled back
@@ -58988,6 +58998,182 @@ def test_smoke_new_vs_inherited():
 
     mig = inspect.getsource(test_migration_edits_are_invisible)
     assert "_newer_than_checkout" in mig and "%ct" in mig, "applied-after-this-commit migrations must be excused"
+
+
+# ── [[#155]] ONE STATUS DECIDES DISTRIBUTION ────────────────────────────────────────────────────
+
+def _m442() -> str:
+    return _engine_path("supabase/migrations/442_one_status_decides_distribution.sql").read_text()
+
+
+@test("ONE-STATUS-DECIDES-DISTRIBUTION — /picks, Telegram, headline and /performance all derive from the bot's status (#155)")
+def test_one_status_decides_distribution():
+    """[[#155]] (owner 2026-09-25). One status per bot decides distribution; no second per-bot setting may
+    drift from it. Parity across the four surfaces: (1) the SQL predicate bot_public_status and the view
+    bot_distribution; (2) bots.show_on_picks / show_on_performance DERIVED by trigger (update against the
+    status rejected); (3) picks_public_all + picks_forward_test_public gate on bot_distribution; (4) the
+    engine senders (coolbet_signaler, the forward-test publisher) read bot_distribution; (5) the headline
+    (settlement dashboard_cache + web HEADLINE_MATURITY_LABELS) is BETA/CALIBRATED minus VIP; (6) the web
+    /performance filter is the status alone. Live DB: every bot's derived columns equal the view."""
+    import re
+    import inspect
+    from workers.utils import bot_status as bs
+    sql = _m442()
+    # (1) one predicate — the Python sets equal the SQL literal
+    m = re.search(r"bot_public_status\(p_label text, p_retired_at timestamptz\).*?IN \(([^)]*)\)", sql, re.S)
+    assert m, "bot_public_status definition missing"
+    assert {x.strip().strip("'") for x in m.group(1).split(",")} == set(bs.PUBLIC_STATUSES)
+    assert bs.HEADLINE_STATUSES == {"beta", "calibrated"} and bs.HEADLINE_STATUSES < bs.PUBLIC_STATUSES
+    assert "maturity_label IN ('beta','calibrated') AND NOT b.vip" in bs.HEADLINE_BOT_SQL
+    # behaviour of the Python face
+    assert bs.sends_public("testing") and bs.sends_public("beta") and bs.sends_public("calibrated")
+    assert not bs.sends_public("experimental") and not bs.sends_public(None)
+    assert not bs.sends_public("testing", vip=True), "VIP is a channel: never sent publicly"
+    assert bs.on_performance("testing") and not bs.on_performance("testing", retired_at="2026-09-25")
+    assert not bs.in_headline("testing") and not bs.in_headline("calibrated", vip=True) and bs.in_headline("beta")
+    # (2) derived columns: trigger + rejection
+    assert "CREATE TRIGGER bots_zz_derive_distribution BEFORE INSERT OR UPDATE ON bots" in sql
+    assert "NEW.show_on_picks := v_picks;" in sql and "NEW.show_on_performance := v_pub;" in sql
+    assert sql.count("RAISE EXCEPTION") >= 2
+    # (3) public views gate on the view, and the forward-test arm→bot CASE matches forward_test_bot
+    for view in ("CREATE OR REPLACE VIEW picks_public_all", "CREATE OR REPLACE VIEW picks_forward_test_public"):
+        body = sql[sql.index(view):].split(";", 1)[0]
+        assert "bot_distribution bd" in body and "COALESCE(bd.sent_public, false) OR p.telegram_message_id IS NOT NULL" in body, view
+        assert "p.grade = 'D'::text AND p.telegram_message_id IS NULL" not in body, "the hard-coded grade-D rule is replaced by status"
+    pa = sql[sql.index("CREATE OR REPLACE VIEW picks_public_all"):].split(";", 1)[0]
+    assert "WHERE bd.sent_public" in pa and "b.show_on_picks" not in pa, "model branch must read the status, not the switch"
+    for arm, mkt, grade in (("consensus_anchor", "1x2", "D"), ("consensus_anchor", "1x2", "C"),
+                            ("consensus_anchor", "over_under_25", "B"), ("live", "over_under_25", None),
+                            ("live", "1x2", None)):
+        assert f"THEN '{bs.forward_test_bot(arm, mkt, grade)}'" in pa or bs.forward_test_bot(arm, mkt, grade) == "bot_sharp_1x2_v1"
+    # (4) engine senders
+    sig = _engine_path("workers/automation/coolbet_signaler.py").read_text()
+    assert "JOIN bot_distribution bd ON bd.bot_name = b.name" in sig and "bool_or(bd.sent_public)" in sig
+    assert "maturity_label = 'calibrated'" not in sig, "the old calibrated-only public gate must be gone"
+    assert "bd.sent_public DESC, sb.edge_percent DESC" in sig, "a SENT bot's row must supply the message"
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert "sent_bots = load_sent_public_bots()" in sched
+    assert 'not arm_bot_sends(c, "live", sent_bots)' in sched and "not arm_bot_sends(c, CONSENSUS_ARM, sent_bots)" in sched
+    assert 'c.get("grade") == "D" or paused' not in sched
+    import scripts.publish_picks_forward_test as pf
+    assert "arm_bot_sends(c, \"live\", sent_bots)" in inspect.getsource(pf.main)
+    sent = {"bot_sharp_1x2_v1", "bot_consensus_c_v1"}
+    assert pf.arm_bot_sends({"market": "1x2"}, "live", sent)
+    assert not pf.arm_bot_sends({"market": "over_under_25"}, "live", sent)
+    assert pf.arm_bot_sends({"market": "1x2", "grade": "C"}, pf.CONSENSUS_ARM, sent)
+    assert not pf.arm_bot_sends({"market": "1x2", "grade": "D"}, pf.CONSENSUS_ARM, sent)
+    assert not pf.arm_bot_sends({"market": "1x2"}, "live", None), "unreadable status = send nothing"
+    assert not pf.arm_bot_sends({"market": "1x2"}, "junk_anchor", sent | {"control_junk_anchor"})
+    ebc = _engine_path("scripts/export_bot_config.py").read_text()
+    assert 'sent = g != "D"' not in ebc and "sends_public(" in ebc
+    # (5) headline
+    st = _engine_path("workers/jobs/settlement.py").read_text()
+    wdc = st[st.index("def write_dashboard_cache"):]
+    wdc = wdc[:wdc.index("\ndef ", 10)]
+    assert "maturity_label != 'experimental'" not in wdc, "headline must be BETA/CALIBRATED (not 'anything but experimental')"
+    assert wdc.count("{_HEADLINE_BOT_SQL}") >= 5
+    # (6) web (skipped when the sibling repo is absent)
+    try:
+        ts = _web_path("src/lib/bot-status.ts").read_text()
+    except SkipTest:
+        ts = None
+    if ts is not None:
+        pub = re.search(r"PUBLIC_STATUSES = \[([^\]]*)\]", ts).group(1)
+        head = re.search(r"HEADLINE_STATUSES = \[([^\]]*)\]", ts).group(1)
+        assert {x.strip().strip('"') for x in pub.split(",")} == set(bs.PUBLIC_STATUSES)
+        assert {x.strip().strip('"') for x in head.split(",")} == set(bs.HEADLINE_STATUSES)
+        ed = _web_path("src/lib/engine-data.ts").read_text()
+        assert "export const HEADLINE_MATURITY_LABELS = HEADLINE_STATUSES;" in ed
+        coh = ed[ed.index("export async function getPublicCohortBotNames"):][:900]
+        assert '.eq("vip", false)' in coh, "VIP bots never in the headline cohort"
+        ag = _web_path("src/lib/bot-aggregates.ts").read_text()
+        assert "new Set<string>(PUBLIC_STATUSES)" in ag
+        page = _web_path("src/app/(app)/performance/page.tsx").read_text()
+        assert "b.showOnPerformance" not in page and ".filter((b) => isPublicBot(b.maturityLabel))" in page
+        legs = _web_path("src/app/api/performance/bot-legs/route.ts").read_text()
+        assert "showOnPerformance" not in legs and "isPublicBot(b.maturityLabel)" in legs
+        route = _web_path("src/app/api/admin/bots/controls/route.ts").read_text()
+        assert 'if (control === "show_on_picks") return bad(' in route, "the per-bot /picks switch is retired"
+        cr = _web_path("src/app/(app)/admin/bots/channel-reasons.ts").read_text()
+        assert "sendsPublic(b)" in cr and "showOnPicks ?" not in cr
+    # live parity (CI and local have the DB; skip only when unreachable)
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """SELECT b.name, b.show_on_picks, b.show_on_performance, d.sent_public, d.on_performance,
+                      d.label, d.status
+                 FROM bots b JOIN bot_distribution d ON d.bot_name = b.name""", [])
+    except Exception as e:  # noqa: BLE001
+        if "bot_distribution" in str(e) or "does not exist" in str(e):
+            return "migration 442 not applied yet (source checks passed)"
+        raise SkipTest(f"DB unreachable: {e}")
+    bad = [r["name"] for r in rows
+           if r["show_on_picks"] != r["sent_public"] or r["show_on_performance"] != r["on_performance"]]
+    if bad and not any("bot_public_status" in str(x) for x in execute_query(
+            "SELECT proname FROM pg_proc WHERE proname = 'bot_public_status'", [])):
+        return f"migration 442 not applied yet ({len(bad)} rows still on the old switches)"
+    assert not bad, f"derived columns drifted from the status: {bad}"
+    by = {r["name"]: r["label"] for r in rows}
+    want = {"bot_v10_1x2": "CALIBRATED", "bot_high_roi_global_v2": "BETA", "bot_sharp_1x2_v1": "TESTING",
+            "bot_sharp_ou_v1": "TESTING", "bot_consensus_c_v1": "TESTING", "bot_consensus_b_v1": "TESTING",
+            "bot_consensus_d_v1": "EXPERIMENTAL", "bot_combined_1x2_ev5_v1": "VIP · TESTING",
+            "bot_ou_sharp_early_v1": "VIP · TESTING", "bot_v10_1x2_newplus_v1": "TESTING"}
+    drift = {k: (by.get(k), v) for k, v in want.items() if k in by and by[k] not in (v, "RETIRED")}
+    assert not drift, f"owner #155 statuses drifted (have, want): {drift}"
+    return f"{len(rows)} bots: derived columns = status; owner statuses hold"
+
+
+@test("RLS-EXPERIMENTAL-PENDING-HIDDEN — anon cannot read pending picks of bots whose status keeps them private (#155)")
+def test_rls_experimental_pending_hidden():
+    """[[#155]] / #162 audit B §4.5: 17 EXPERIMENTAL bots' PENDING picks were anon-readable (the
+    simulated_bets public-read policy hid pending rows only for vip / hide_pending bots). Migration 442
+    routes the policy through bot_pending_public (public status, not VIP, not a VIP twin). Proven live AS
+    the anon role: zero pending rows readable for a bot whose status does not allow it, and
+    bot_distribution.pending_exposed = 0."""
+    sql = _m442()
+    pol = sql[sql.index('CREATE POLICY "Public read" ON simulated_bets'):].split(";", 1)[0]
+    assert "public.bot_pending_public(b.maturity_label, b.retired_at, b.vip, b.hide_pending)" in pol
+    assert "held_back_until > now()" in pol, "#164 VIP-FIRST hold-back must stay in the policy"
+    try:
+        from workers.api_clients.db import get_conn
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT to_regprocedure('public.bot_pending_public(text,timestamptz,boolean,boolean)') IS NOT NULL")
+            if not cur.fetchone()[0]:
+                conn.rollback()
+                return "migration 442 not applied yet (source checks passed)"
+            cur.execute("SELECT count(*) FROM bot_distribution WHERE pending_exposed")
+            exposed = cur.fetchone()[0]
+            cur.execute("SET LOCAL ROLE anon")
+            cur.execute("""SELECT count(*) FROM simulated_bets s JOIN bots b ON b.id = s.bot_id
+                            WHERE s.result = 'pending'
+                              AND NOT public.bot_pending_public(b.maturity_label, b.retired_at, b.vip, b.hide_pending)""")
+            leaked = cur.fetchone()[0]
+            conn.rollback()
+    except Exception as e:  # noqa: BLE001
+        raise SkipTest(f"DB unreachable: {e}")
+    assert exposed == 0, f"bot_distribution.pending_exposed = {exposed}"
+    assert leaked == 0, f"anon can read {leaked} pending picks of private-status bots"
+    return "pending_exposed = 0; anon reads 0 private pending picks"
+
+
+@test("REVIEW-THIS-BOT-FLAG — bot_review_flag reaches the admin inbox and /admin/bots, never retires (#155)")
+def test_review_this_bot_flag():
+    """[[#155]] owner rule: at n >= 50 settled with the sharp-anchor CLV CI entirely below 0 the bot gets a
+    'review this bot' flag in the admin attention inbox and on /admin/bots; the owner decides. One helper
+    (bot-board-model.ts reviewFlagIssues) over the engine view bot_review_flag (migration 437)."""
+    v437 = _engine_path("supabase/migrations/437_bot_distribution_and_review_flag.sql").read_text()
+    assert "SELECT 50 AS min_n" in v437 and "clv_public_upper95 < 0" in v437
+    model = _web_path("src/app/(app)/admin/bots/bot-board-model.ts").read_text()
+    assert "export function reviewFlagIssues" in model and 'r.review_flag === true' in model
+    board = _web_path("src/lib/bot-board.ts").read_text()
+    assert 'readAll<BotReviewFlagRow>("bot_review_flag")' in board
+    for f in ("src/lib/admin-overview.ts", "src/app/(app)/admin/bots/bots-board.tsx"):
+        src = _web_path(f).read_text()
+        assert "reviewFlagIssues(" in src and "reviewFlags.error" in src, f
+    for f in ("src/lib/admin-overview.ts", "src/app/(app)/admin/bots/bots-board.tsx", "src/app/(app)/admin/bots/bot-board-model.ts"):
+        assert "retired_at" not in _web_path(f).read_text().split("reviewFlagIssues", 1)[-1][:600], "a flag, never a retirement"
+
 
 
 # ── [[#155]] ONE STATUS DECIDES DISTRIBUTION ────────────────────────────────────────────────────

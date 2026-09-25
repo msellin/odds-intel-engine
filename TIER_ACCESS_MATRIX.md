@@ -274,8 +274,25 @@ best price available when the pick was made on all books; CLV against the sharp 
 | Full filterable history below the table | teaser (10) | ✓ (logged-in) | ✓ |
 
 The detail view's picks come from `/api/performance/bot-legs` (service role, server-side): only bots /performance
-lists (calibrated / beta, VIP, `show_on_performance`, published forward-test arms; never retired, never experimental —
-#155), and for VIP + hide_pending bots SETTLED legs only (their pending picks are the paid product, #148).
+lists (status TESTING / BETA / CALIBRATED — VIP bots included when their status is public; never retired, never
+experimental — [[#155]]), and for VIP + hide_pending bots SETTLED legs only (their pending picks are the paid product, #148).
+
+## Bot status → what the public sees ([[#155]], owner 2026-09-25)
+
+ONE status per bot decides distribution — the same for Anonymous, Free, Pro and Elite (VIP is the only
+tier-dependent channel). Source: engine view `bot_distribution` (migrations 437 + 442); full table in
+`docs/SYSTEM_MAP.md` "Lifecycle".
+
+| Status | /performance | /picks | Public Telegram | Own record | Headline totals |
+|---|---|---|---|---|---|
+| EXPERIMENTAL | ✗ (admin only) | ✗ | ✗ | admin only | ✗ |
+| TESTING | ✓ marked TESTING | ✓ | ✓ | ✓ | ✗ |
+| BETA / CALIBRATED | ✓ | ✓ | ✓ | ✓ | ✓ |
+| VIP · <status> | ✓ settled only | ✗ | ✗ (Pro/Elite DM + private channel) | ✓ | ✗ |
+
+Pending picks of an EXPERIMENTAL bot are no longer anon-readable (`simulated_bets` "Public read" policy via
+`bot_pending_public`, migration 442; before: 17 bots exposed). Every card shows its status label and its method
+label (MODEL / SHARP / CONSENSUS).
 
 ## VIP picks (#148, 2026-09-24)
 | Surface | Anonymous / Free | Pro / Elite |

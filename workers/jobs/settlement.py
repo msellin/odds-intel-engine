@@ -3365,7 +3365,11 @@ def write_dashboard_cache():
 
         # ROI/CLV math — still excludes experimental (acca/combo) bots whose
         # results would drag the headline into a misleading number.
-        _excl = "AND b.maturity_label != 'experimental'"
+        # [[#155]] HEADLINE = BETA / CALIBRATED only, never VIP, never TESTING (a TESTING bot is
+        # sent and keeps its own record but is not in the headline). Retired bots' picks keep
+        # counting in this ALL-TIME total (#157). One fragment: workers/utils/bot_status.py.
+        from workers.utils.bot_status import HEADLINE_BOT_SQL as _HEADLINE_BOT_SQL
+        _excl = f"AND ({_HEADLINE_BOT_SQL} OR b.retired_at IS NOT NULL) AND NOT b.vip"
         won = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result = 'won' {_excl}", [])[0]["n"]
         lost = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result = 'lost' {_excl}", [])[0]["n"]
         staked_row = execute_query(f"SELECT SUM(sb.stake) as s, SUM({_EXEC_PNL}) as p, NULL::numeric as c {_bets_join} WHERE sb.result IN ('won','lost') {_excl}", [])[0]
@@ -3390,7 +3394,7 @@ def write_dashboard_cache():
             FROM simulated_bets sb
             JOIN bots b ON b.id = sb.bot_id
             WHERE b.is_active = true AND b.retired_at IS NULL
-              AND b.maturity_label != 'experimental'
+              AND {_HEADLINE_BOT_SQL}   -- [[#155]] headline cohort
         """, [])[0]
         active_total_bets = int(active_total_bets_row["total_bets"] or 0)
         active_settled = int(active_total_bets_row["settled"] or 0)
@@ -3416,7 +3420,7 @@ def write_dashboard_cache():
             JOIN bots b ON b.id = sb.bot_id
             WHERE b.is_active = true
               AND b.retired_at IS NULL
-              AND b.maturity_label != 'experimental'
+              AND {_HEADLINE_BOT_SQL}   -- [[#155]] headline cohort
               AND sb.pick_time >= now() - interval '30 days'
             GROUP BY 1
         """, [])
@@ -3455,7 +3459,7 @@ def write_dashboard_cache():
             WHERE l.source = 'sim' AND l.in_record
               AND l.result IN ('won','lost')
               AND b.is_active = true AND b.retired_at IS NULL
-              AND b.maturity_label != 'experimental'
+              AND {_HEADLINE_BOT_SQL}   -- [[#155]] headline cohort
               AND l.pick_time >= now() - interval '90 days'
             GROUP BY 1 ORDER BY 1
         """, [])
@@ -3575,7 +3579,7 @@ def write_dashboard_cache():
                 JOIN bots b ON b.id = sb.bot_id
                 WHERE sb.pick_time >= %s
                   AND b.is_active = true
-                  AND b.maturity_label != 'experimental'
+                  AND {_HEADLINE_BOT_SQL}   -- [[#155]] headline cohort
                   AND b.retired_at IS NULL
             """, [_CUMULATIVE_CHAIN_START])[0]
             n = int(row["n_settled"] or 0)

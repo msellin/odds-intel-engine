@@ -997,8 +997,9 @@ def check_signal_silence() -> None:
         # date: the candidate query stopped filtering on `real_bets` (so
         # already-placed picks are candidates again, by design), and the
         # operator prompt went off by default (so a non-public-eligible pick —
-        # beta bot, or a market outside _PUBLIC_MARKETS — now has no sink and is
-        # deliberately left unmarked, in case a calibrated bot joins its group
+        # a bot whose status does not send (#155), or a market outside
+        # _PUBLIC_MARKETS — now has no sink and is
+        # deliberately left unmarked, in case a sent bot joins its group
         # before kickoff). Without this filter those picks accumulate forever
         # and this alert fires every day on picks that were never going
         # anywhere. `is_public_eligible` is imported rather than re-derived so

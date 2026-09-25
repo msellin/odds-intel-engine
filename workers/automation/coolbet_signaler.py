@@ -134,14 +134,16 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
                       AND rb.market    = sb.market
                       AND rb.selection = sb.selection
                  ) AS already_placed,
-                 -- SIGNALER-MATURITY-SHADOWING (2026-08-28): whether ANY bot in
-                 -- this (match, market, selection) group is calibrated — not
-                 -- just the canonical highest-edge row DISTINCT ON happens to
-                 -- keep. The public-channel gate reads this instead of the
-                 -- canonical row's maturity; see the note above the gate.
-                 bool_or(b.maturity_label = 'calibrated')
+                 -- [[#155]] ONE STATUS DECIDES DISTRIBUTION: whether ANY bot in
+                 -- this (match, market, selection) group has a status that SENDS
+                 -- picks (bot_distribution.sent_public = TESTING / BETA /
+                 -- CALIBRATED, not VIP, not retired). Replaces the old
+                 -- "calibrated only" gate. Group-level, not the canonical row's
+                 -- own status (SIGNALER-MATURITY-SHADOWING 2026-08-28).
+                 bd.sent_public    AS sends_public,
+                 bool_or(bd.sent_public)
                    OVER (PARTITION BY sb.match_id, sb.market, sb.selection)
-                   AS group_has_calibrated,
+                   AS group_sends_public,
                  -- #164 VIP FIRST: a free pick HELD BACK (VIP-held / in VIP range at pick
                  -- time, stamped by store_bet via workers/utils/vip_guard.py) is never sent.
                  -- Group-wide (filtered below): if ANY row on this selection is held back the
@@ -153,6 +155,7 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
                    AS group_held_back
           FROM simulated_bets sb
           JOIN bots          b   ON b.id   = sb.bot_id
+          JOIN bot_distribution bd ON bd.bot_name = b.name   -- [[#155]] the one status
           JOIN matches       m   ON m.id   = sb.match_id
           JOIN teams         ht  ON ht.id  = m.home_team_id
           JOIN teams         at2 ON at2.id = m.away_team_id
@@ -176,7 +179,10 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
             -- candidate set — it is surfaced per row and applied ONLY to the
             -- operator send below.
             AND TRUE
-          ORDER BY sb.match_id, sb.market, sb.selection, sb.edge_percent DESC
+          -- [[#155]] a SENT bot's row supplies the message when one exists, so an
+          -- EXPERIMENTAL bot's price/edge never reaches the public channel; the
+          -- floor is then checked on the pick that is actually published.
+          ORDER BY sb.match_id, sb.market, sb.selection, bd.sent_public DESC, sb.edge_percent DESC
         ) q
         WHERE NOT q.group_held_back
         ORDER BY q.match_date ASC, q.edge_percent DESC
@@ -228,10 +234,14 @@ def is_public_eligible(b: dict) -> bool:
     are stuck. Both must ask it the same way: a second hand-rolled copy of this
     rule is precisely how the floors and the gates drifted everywhere else.
 
-    Gates on whether ANY bot in the group is calibrated (SIGNALER-MATURITY-
-    SHADOWING 2026-08-28), not the canonical row's own maturity.
+    [[#155]] ONE STATUS DECIDES DISTRIBUTION: gates on whether ANY bot in the
+    group has a status that SENDS picks (bot_distribution.sent_public — TESTING,
+    BETA or CALIBRATED; never VIP, EXPERIMENTAL or retired). Was "any bot is
+    calibrated" until 2026-09-25, which kept TESTING/BETA bots off the channel
+    although their status says they are sent. Group-level, not the canonical
+    row's own status (SIGNALER-MATURITY-SHADOWING 2026-08-28).
     """
-    return (bool(b.get("group_has_calibrated"))
+    return (bool(b.get("group_sends_public"))
             and b.get("market") in _PUBLIC_MARKETS)
 
 
@@ -562,17 +572,20 @@ def signal_all_bets(*, lookahead_hours: int = 36,
         #     with nothing logged as a failure.
         # Publishing a pick we staked is if anything MORE warranted, not less.
         #
-        # SIGNALER-MATURITY-SHADOWING (2026-08-28) — gate on whether ANY bot in
-        # the group is calibrated, NOT the canonical row's own maturity.
+        # [[#155]] the gate is the group's STATUS (bot_distribution.sent_public),
+        # via is_public_eligible. History: SIGNALER-MATURITY-SHADOWING (2026-08-28)
+        # — gate on whether ANY bot in the group is calibrated, NOT the canonical
+        # row's own maturity.
         # load_signal_candidates collapses multi-bot picks with DISTINCT ON ...
         # ORDER BY edge_percent DESC, so the canonical row is just the
         # highest-edge one. When a BETA bot quoted a higher edge than a
         # calibrated bot on the identical (match, market, selection),
         # `b["maturity"]` read 'beta' and the public post was silently skipped
         # even though a calibrated bot backed that exact pick — 7 of 109
-        # calibrated picks (6.4%) over 60d. The canonical row still supplies the
-        # message CONTENT; re-ordering to prefer calibrated rows would have let a
-        # lower-edge calibrated row fall under the floor and drop the pick.
+        # calibrated picks (6.4%) over 60d. Since [[#155]] the canonical row is a
+        # SENT bot's row whenever one exists (ORDER BY sent_public DESC first), so
+        # the message and the floor check are about the pick actually published,
+        # never an EXPERIMENTAL bot's price.
         public_eligible = is_public_eligible(b)
         public_msg_id = None
         if public_eligible:
@@ -592,8 +605,8 @@ def signal_all_bets(*, lookahead_hours: int = 36,
         # ── DEDUP BOOKKEEPING ────────────────────────────────────────────────
         # `signaled_at` retires a pick from the candidate set. Mark it when a
         # send actually landed. A pick that is NOT public-eligible is left
-        # unmarked on purpose: `group_has_calibrated` can flip to true before
-        # kickoff (a calibrated bot joins the group), and marking it now would
+        # unmarked on purpose: `group_sends_public` can flip to true before
+        # kickoff (a sent bot joins the group), and marking it now would
         # permanently deny a pick that becomes publishable later.
         delivered = (tg_id is not None) or (public_msg_id is not None)
         if delivered:

@@ -177,7 +177,7 @@ BOTS: list[BotSpec] = [
     # method (Shin, additive, power), not just Shin — consensus_edge_v2_2026_09_24.
     BotSpec("bot_consensus_b_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5", ANCHOR_CONSENSUS,
             0.03, 1.20, False,
-            "PUBLISHED (Telegram + /picks), never staked. **BETA — the STRONGEST consensus tier.** Every grade check passes (classified league, no second panel book disagrees, edge <= 6%) AND odds 1.20-1.60. The only rule positive in all three samples: ours 56 d +17.8% (n=48), unseen May-Jul +14.7% (n=29), Beat the Bookie 2015-16 +9.8% (n=696, Holm p<1e-4). Mechanism: favourite-longshot bias. ~1 pick/day. Ledger: picks_forward_test WHERE arm='consensus_anchor' AND grade='B'.",
+            "PUBLISHED (Telegram + /picks), never staked. **TESTING (owner #155, 2026-09-25: n 3 — was BETA) — the STRONGEST consensus tier.** Every grade check passes (classified league, no second panel book disagrees, edge <= 6%) AND odds 1.20-1.60. The only rule positive in all three samples: ours 56 d +17.8% (n=48), unseen May-Jul +14.7% (n=29), Beat the Bookie 2015-16 +9.8% (n=696, Holm p<1e-4). Mechanism: favourite-longshot bias. ~1 pick/day. Ledger: picks_forward_test WHERE arm='consensus_anchor' AND grade='B'.",
             twin="bot_consensus_c_v1"),
     BotSpec("bot_consensus_c_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5", ANCHOR_CONSENSUS,
             0.03, None, False,
@@ -185,7 +185,7 @@ BOTS: list[BotSpec] = [
             twin="bot_consensus_b_v1"),
     BotSpec("bot_consensus_d_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5", ANCHOR_CONSENSUS,
             0.03, None, False,
-            "RECORDED, NOT PUBLISHED since 2026-09-23 — the WEAK consensus picks: tier-0 league, OR a second panel book sees no edge at the price, OR edge > 6%. Claimed to the ledger so the record stays checkable, never sent (scheduler skips send for grade D). Loses on our own data: -25.6% in sample, -2.8% unseen. Its earlier picks were published as grade C and stay on /performance. Ledger: grade='D'.",
+            "**EXPERIMENTAL (owner #155, 2026-09-25) — admin only.** RECORDED, NOT PUBLISHED since 2026-09-23 — the WEAK consensus picks: tier-0 league, OR a second panel book sees no edge at the price, OR edge > 6%. Claimed to the ledger so the record stays checkable, never sent (since #155 by its STATUS: the scheduler's arm_bot_sends reads bot_distribution). Loses on our own data: -25.6% in sample, -2.8% unseen. Its earlier picks were published as grade C and stay counted in picks_public_all (sent = counted); as an EXPERIMENTAL bot it has no /performance row. Ledger: grade='D'.",
             twin="bot_consensus_c_v1"),
 
 
@@ -218,12 +218,12 @@ BOTS: list[BotSpec] = [
             "Match result — NEW MODEL (#152): twin of bot_v10_1x2 on the NEW+ model (r1x2_comb_v1), EV >= 3% flat, odds 1.30-3.00 (LANES cap, 2026-09-25), never a VIP-held pick (so the EV 3-5% band). bot_v10_1x2 is unchanged (live CLV ~+4.7% Jul-Sep); the two are compared live after 50-100 settled picks. testing, shown on /performance, paper."),
     BotSpec("bot_combined_1x2_ev5_v1", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
             None, None, False,
-            "1x2 NEW+ EV5 (#141 B4): the combined model r1x2_comb_v1 as a consensus-outlier bettor in its natural unit — EV = p x odds - 1 >= 5% flat across tiers, Pinnacle price required, no min_prob, odds 1.30-6.00, one pick per match. Backtest B2 CLV +2.0% (n=1,050; +1.1% at our own sweepers), same window so optimistic. experimental, paper, no placement path."),
+            "1x2 NEW+ EV5 (#141 B4): the combined model r1x2_comb_v1 as a consensus-outlier bettor in its natural unit — EV = p x odds - 1 >= 5% flat across tiers, Pinnacle price required, no min_prob, odds 1.30-6.00, one pick per match. Backtest B2 CLV +2.0% (n=1,050; +1.1% at our own sweepers), same window so optimistic. VIP · TESTING (#155), paper, no placement path."),
     # bot_combined_1x2_ev8_v1 RETIRED 2026-09-25 (migration 444): a strict subset of the VIP bot
     # above; the EV8 band is now a split of the VIP ledger (per-pick vip_ev_label).
     BotSpec("bot_ou_sharp_early_v1", FAM_INTERNAL, "ou", ANCHOR_SHARP,
             None, None, False,
-            "O/U EARLY (#149): a soft book's O/U 1.5/2.5/3.5 quote beats Pinnacle's power-de-vigged fair price by EV 5-15% (cap = palpable-error guard) while it is >= 12 h before kickoff; one pick per (match, line). Backtest round O3 T3: CLV +7.5% (Aug, n=383) / +6.9% (Sep, n=459), ROI +10.4% / +10.8%. Job workers/jobs/ou_sharp_outlier.py. experimental, paper, no placement path."),
+            "O/U EARLY (#149): a soft book's O/U 1.5/2.5/3.5 quote beats Pinnacle's power-de-vigged fair price by EV 5-15% (cap = palpable-error guard) while it is >= 12 h before kickoff; one pick per (match, line). Backtest round O3 T3: CLV +7.5% (Aug, n=383) / +6.9% (Sep, n=459), ROI +10.4% / +10.8%. Job workers/jobs/ou_sharp_outlier.py. VIP · TESTING (#155), paper, no placement path."),
     BotSpec("bot_ou_sharp_2anchor_v1", FAM_INTERNAL, "ou", ANCHOR_SHARP,
             None, None, False,
             "O/U TWO-ANCHOR (#149): as O/U EARLY without the 12 h rule, but the book must ALSO beat the leave-one-out consensus of the other books by >= 2% EV. Backtest round O3 T2: CLV +6.6% (Aug, n=420) / +4.2% (Sep, n=480). experimental, paper, no placement path."),
@@ -321,6 +321,9 @@ BOTS: list[BotSpec] = [
 ]
 
 
+# [[#155]] ONE STATUS DECIDES DISTRIBUTION: a bot's status (bots.maturity_label) is the only per-bot
+# input for every customer channel — workers/utils/bot_status.py, view bot_distribution. VIP is a
+# CHANNEL on top of a status: both VIP bots read "VIP · TESTING" (owner 2026-09-25).
 # VIP ([[#148]], owner 2026-09-24). The paid-tier bot: its LIVE picks go only to
 # Pro/Elite users (Telegram DMs) and, once it exists, the private VIP channel
 # (TELEGRAM_VIP_CHAT_ID); the public sees them only once SETTLED on /performance.

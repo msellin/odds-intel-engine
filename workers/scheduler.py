@@ -2729,8 +2729,9 @@ def job_publish_picks_forward_test():
     from scripts.publish_picks_forward_test import (
         load_candidates, render, claim, attach_message_id, junk_anchor_arm,
         select, daily_room, write_board, DAILY_RUNAWAY_LIMIT,
-        CONSENSUS_ARM, CONSENSUS_MAX_EDGE, record_twin_arms,
+        CONSENSUS_ARM, CONSENSUS_MAX_EDGE, record_twin_arms, arm_bot_sends,
     )
+    from workers.utils.bot_status import load_sent_public_bots
     from workers.notify.telegram import send_telegram_public
     from workers.automation.coolbet_state import is_publishing_paused
 
@@ -2754,6 +2755,10 @@ def job_publish_picks_forward_test():
     if paused:
         log.info("picks_forward_test: Telegram sends paused by operator (%s) — recording "
                  "continues; /resumepicks to restore", reason or "no reason given")
+    # [[#155]] ONE STATUS DECIDES DISTRIBUTION: an arm's pick is SENT only when its bot's
+    # status sends (bot_distribution.sent_public). Read once per pass; unreadable = send
+    # nothing (recording continues). Replaces the hard-coded "grade D is never sent".
+    sent_bots = load_sent_public_bots()
 
     # SCHEDULER-PUBLISHER-NEVER-RAN (2026-09-15). This block could not execute.
     # `load_candidates()` has returned a 2-TUPLE `(picks, pool)` since 2796dbd6,
@@ -2828,7 +2833,8 @@ def job_publish_picks_forward_test():
             continue
         # [[#164]] VIP FIRST: claim() stamped it held back (VIP-held / in VIP range) —
         # recorded and counted, never sent; it appears on /picks at kickoff.
-        if paused or c.get("held_back_reason"):
+        # [[#155]] and never sent unless the arm's bot's status sends.
+        if paused or c.get("held_back_reason") or not arm_bot_sends(c, "live", sent_bots):
             continue
         mid = send_telegram_public(render(c))
         if mid is None:
@@ -2854,9 +2860,10 @@ def job_publish_picks_forward_test():
         pick_id = claim(c, CONSENSUS_ARM)
         if pick_id is None:
             continue
-        # [[#098]] grade D (weak) is recorded to the ledger but NEVER sent —
-        # owner: "we don't publish grade C picks at all" (the old C is now D).
-        if c.get("grade") == "D" or paused or c.get("held_back_reason"):   # [[#164]] held back
+        # [[#155]] sent only when the grade's bot's STATUS sends (bot_distribution) — grade D
+        # (bot_consensus_d_v1) is EXPERIMENTAL, so it is recorded but never sent, now by status
+        # rather than a hard-coded grade check ([[#098]] owner: weak picks are not published).
+        if not arm_bot_sends(c, CONSENSUS_ARM, sent_bots) or paused or c.get("held_back_reason"):   # [[#164]] held back
             continue
         mid = send_telegram_public(render(c))
         if mid is None:
