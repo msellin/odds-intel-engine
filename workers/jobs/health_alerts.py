@@ -336,7 +336,9 @@ def check_snapshot_staleness() -> None:
         return  # Outside live window — no matches expected
 
     rows = execute_query(
-        "SELECT MAX(created_at) AS last_snap FROM live_match_snapshots"
+        # The column is captured_at — `created_at` does not exist, so this check errored every run
+        # from 2026-09-24 and a dead LivePoller could not alert (found by #162's deploy checks).
+        "SELECT MAX(captured_at) AS last_snap FROM live_match_snapshots"
     )
     last_snap = rows[0]["last_snap"] if rows else None
 
@@ -1188,8 +1190,12 @@ def check_inplay_collector_heartbeat(max_age_min: int = 15) -> None:
              FROM pipeline_health_state WHERE pipeline_name = 'inplay_collector'""", [])
     live = execute_query(
         """SELECT count(*) AS n FROM matches
-            WHERE status IN ('live', '1H', '2H', 'HT', 'ET')
-               OR (date BETWEEN NOW() - INTERVAL '2 hours' AND NOW() AND status NOT IN ('finished','postponed','cancelled'))""", [])
+            WHERE status::text IN ('live', '1H', '2H', 'HT', 'ET')
+               OR (date BETWEEN NOW() - INTERVAL '2 hours' AND NOW()
+                   AND status::text NOT IN ('finished','postponed','cancelled'))""", [])
+    # ::text: `status` is the match_status ENUM, which has no '1H'/'2H'/'HT'/'ET' labels, so the bare
+    # comparison raised "invalid input value for enum" every run since 2026-09-24 — the dead-collector
+    # alert never fired (found by #162's deploy checks).
     n_live = int(live[0]["n"]) if live else 0
     age = float(rows[0]["age_min"]) if rows else None
     if n_live == 0:

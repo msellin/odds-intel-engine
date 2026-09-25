@@ -56356,5 +56356,23 @@ def test_uncertain_click_and_live_ceilings():
     assert pb.index("live_ok(float(pick[\"odds\"]))") < pb.index("page.locator(_OUTCOME).nth(pick[\"index\"]).click")
     assert "live_ok=lambda o" in inspect.getsource(bpr._dispatch_unibet)
 
+@test("HEALTH-CHECKS-RUN-AGAINST-THE-REAL-SCHEMA — snapshot staleness + in-play heartbeat queries execute")
+def test_health_checks_real_schema():
+    """Both checks raised on EVERY run from 2026-09-24 (`live_match_snapshots.created_at` does not
+    exist; the match_status enum has no '1H'/'HT' labels), so neither alert could ever fire. Run each
+    check's query for real (read-only)."""
+    import inspect
+    from workers.api_clients.db import execute_query
+    from workers.jobs import health_alerts as ha
+    src = inspect.getsource(ha.check_snapshot_staleness)
+    assert "MAX(captured_at)" in src
+    execute_query("SELECT MAX(captured_at) AS last_snap FROM live_match_snapshots")
+    hb = inspect.getsource(ha.check_inplay_collector_heartbeat)
+    assert "status::text IN ('live', '1H', '2H', 'HT', 'ET')" in hb
+    execute_query("""SELECT count(*) AS n FROM matches
+            WHERE status::text IN ('live', '1H', '2H', 'HT', 'ET')
+               OR (date BETWEEN NOW() - INTERVAL '2 hours' AND NOW()
+                   AND status::text NOT IN ('finished','postponed','cancelled'))""", [])
+
 if __name__ == "__main__":
     main()
