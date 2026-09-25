@@ -44675,7 +44675,10 @@ def test_performance_public_is_calibrated_or_beta():
         rows = None
     if rows:
         listed = [r for r in rows if r["ml"] in ("calibrated", "beta")]
-        hidden = [r for r in rows if r["ml"] not in ("calibrated", "beta")]
+        # #155 (owner 2026-09-25): EXPERIMENTAL = admins only BY DESIGN — its settled picks are not
+        # "evidence withheld", they are a bot that has not earned a public status. The withheld-evidence
+        # check applies to every OTHER non-public label (testing/active/…).
+        hidden = [r for r in rows if r["ml"] not in ("calibrated", "beta", "experimental")]
         assert listed, (
             "the allowlist selects NO active bot — /performance would render an "
             "empty leaderboard."
