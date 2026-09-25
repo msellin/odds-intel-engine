@@ -1,5 +1,12 @@
 # Book-Agnostic Edge Engine — the correct architecture for OWN betting
 
+> **CHANGED 2026-09-26 ([[#162]] W7.6).** The SHARP strategies no longer run Stage A → Stage B: every
+> sharp bot (per-book, merged, tight, O/U EARLY) is a config of the ONE sharp engine
+> (`workers/automation/sharp_engine.py`), decided at match time; `pick_trigger_matcher` asks the engine
+> instead of joining `pick_triggers`. Stage A still writes the sharp windows (same engine functions) as a
+> record for research scripts. The O/U fair price is power, not Shin (`devig.fair_prob`). See
+> `docs/SYSTEM_MAP.md` §1 "ONE SHARP ENGINE".
+
 > **SCOPE (read this first — the term is overloaded elsewhere).** "Book-agnostic
 > edge engine" = **this PAPER trigger engine only** (`pick_triggers` → `pick_trigger_matcher`,
 > 8 paper bots across Coolbet + Unibet-Site). It is a **measurement** system. It is

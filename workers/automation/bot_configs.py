@@ -106,8 +106,10 @@ _SHARP_EDGE_FLOOR = 0.03
 # `bot_trigger_1x2_sharp_v1` published, the smallest of which was +10.9%.
 # A floor alone cannot catch this: a wrong price inflates the edge, so it always
 # clears a lower bound and never trips one.
-_SHARP_EDGE_CEILING = 0.08
-_SHARP_ODDS_FLOOR = 1.01   # effectively off: these are observational paper bots
+# #162 W7.6: both are the sharp engine's shared values now (one ceiling / odds floor for every sharp
+# bot); these two bots are decided by workers/automation/sharp_engine.py via pick_generator.
+from workers.automation.sharp_engine import SHARP_EDGE_CEILING as _SHARP_EDGE_CEILING  # noqa: E402
+from workers.automation.sharp_engine import SHARP_ODDS_FLOOR as _SHARP_ODDS_FLOOR  # noqa: E402  (effectively off)
 
 TRIGGER_CONFIGS: list[BotConfig] = [
     # #162 W7.2 (2026-09-26): the MODEL-anchored triggers bot_trigger_1x2_model_v1 /

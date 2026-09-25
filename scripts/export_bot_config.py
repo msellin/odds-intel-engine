@@ -118,6 +118,7 @@ F_INPLAY = "workers/jobs/inplay_collector.py"
 F_SIGNAL = "workers/automation/coolbet_signaler.py"
 F_REG = "workers/registry/bot_registry.py"
 F_PFLOOR = "workers/automation/placement_floor.py"
+F_SHARP = "workers/automation/sharp_engine.py"
 
 
 def _placement_floor_gate(bot: str) -> dict | None:
@@ -244,20 +245,25 @@ def _generator_rows() -> dict[str, dict]:
             gate("odds_floor", odds_min, odds_src),
             gate("prob_source", c.prob_source, line),
             gate("shadow_cohort", c.shadow_cohort, line),
-            gate("book_quote_max_age_min", br.ODDS_FRESH_MAX_MIN, src(F_ROUTER, r"^ODDS_FRESH_MAX_MIN")),
         ]
         if sharp:
+            # #162 W7.6: sharp configs are decided by the one sharp engine (pick_generator._generate_sharp)
+            from workers.automation import sharp_engine as se
+            gates.append(gate("book_quote_max_age_min", se.SHARP_BOOK_MAX_AGE_MIN,
+                              src(F_SHARP, r"^SHARP_BOOK_MAX_AGE_MIN")))
             gates.append(gate("outlier_cap_max_odds_mult", OUTLIER_MULT,
-                              src(F_PICKGEN, r"max_odds = max\(1\.0 / \(cal_prob - ef\)")))
-        if c.prob_source not in ("predictions", "sharp_devig"):
+                              src(F_SHARP, r"lo = max\(1\.0 / \(p - rule\.edge_floor\)")))
+        else:
+            gates.append(gate("book_quote_max_age_min", br.ODDS_FRESH_MAX_MIN, src(F_ROUTER, r"^ODDS_FRESH_MAX_MIN")))
+        if c.prob_source == "pipeline":
             # mirrors pick_generator's own condition: the 1.25x own-book anchor check runs
-            # for prob_source='pipeline' only (predictions bots are NOT checked).
+            # for prob_source='pipeline' only (predictions bots are NOT checked; sharp bots never reach it).
             gates.append(gate("own_outlier_mult_vs_anchor", pg._OWN_OUTLIER_MULT,
-                              src(F_PICKGEN, r'if cfg\.prob_source not in \("predictions", "sharp_devig"\)')))
+                              src(F_PICKGEN, r'if cfg\.prob_source != "predictions":')))
         if c.selections is not None:
             gates.append(gate("selections", c.selections, line))
         if c.edge_ceiling is not None:
-            gates.append(gate("edge_ceiling", c.edge_ceiling, src(F_BOTCFG, r"^_SHARP_EDGE_CEILING")))
+            gates.append(gate("edge_ceiling", c.edge_ceiling, src(F_SHARP, r"^SHARP_EDGE_CEILING")))
         if c.prob_source == "pipeline":
             gates.append(gate("source_bots", c.source_bots, line))
         if c.lookahead_hours is not None:
@@ -270,7 +276,7 @@ def _generator_rows() -> dict[str, dict]:
             description=c.notes or None, ledger="shadow_bets",
             writer_job=writer, cadence="per sweep" + (" + :10/:40" if c.bot_name in mirror_jobs else ""),
             markets=list(c.markets),
-            prob_source={"sharp_devig": "Shin-de-vigged Pinnacle",
+            prob_source={"sharp_devig": "de-vigged Pinnacle (sharp_engine, devig.fair_prob: Shin 1x2, power O/U)",
                          "pipeline": "simulated_bets.calibrated_prob of calibrated bots",
                          "predictions": "predictions + per-selection calibrator"}.get(c.prob_source, c.prob_source),
             edge_floor=floor, edge_floor_source=floor_src,
@@ -312,13 +318,17 @@ def _trigger_rows() -> dict[str, dict]:
         ]
         if omax is not None:
             gates.append(gate("odds_ceiling", omax, src(F_TRIG, r"^_SHARP_MAX_ODDS_BY_STRATEGY")))
+        emax = pt._SHARP_MAX_EDGE_BY_MARKET.get(key)
+        if emax is not None:
+            gates.append(gate("edge_ceiling", emax, src(F_TRIG, r"^_SHARP_MAX_EDGE_BY_MARKET")))
         out[bot] = _row(
             bot, "sharp_trigger",
             ledger="shadow_bets",
-            writer_job="pick_triggers (Stage A) -> pick_trigger_matcher (Stage B)",
-            cadence="Stage A hourly :05, Stage B :15/:45",
+            # #162 W7.6: decided by the one sharp engine at match time (no longer the Stage A window)
+            writer_job="pick_trigger_matcher -> sharp_engine.evaluate(pick_triggers.sharp_rule)",
+            cadence=":15/:45",
             markets=sorted(d["markets"]),
-            prob_source=f"Shin-de-vigged {pt._SHARP_ANCHOR_BOOK}",
+            prob_source=f"de-vigged {pt._SHARP_ANCHOR_BOOK} (devig.fair_prob: Shin 1x2, power O/U)",
             edge_floor=f"{floor:g}" if floor is not None else None,
             edge_floor_source=src(F_TRIG, r"^_SHARP_MIN_EDGE_BY_MARKET"),
             odds_min=omin, odds_max=omax, gates=gates,

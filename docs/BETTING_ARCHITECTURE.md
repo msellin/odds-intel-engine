@@ -112,6 +112,7 @@ just not populated with non-Coolbet books.
   Floors imported from `coolbet_placer._min_edge_for/_min_odds_for` (can't drift). **Two anchors
   side by side**, `strategy` column = `model_*` (calibrated model) or `sharp_*` (Shin-de-vig Pinnacle).
   Markets: 1x2 + O/U 2.5.
+- *(CHANGED 2026-09-26, [[#162]] W7.6: the sharp per-book bots are now decided by the one sharp engine, `workers/automation/sharp_engine.py`, at match time — not by joining the Stage A window; see SYSTEM_MAP §1.)*
 - **Stage B — `workers/jobs/pick_trigger_matcher.py`** joins each book's latest `odds_snapshots`
   against the window and writes `shadow_bets`, **recomputing edge at that book's OWN price**
   (`edge = cal − 1/price`, `:82`), one bot per `(book × market × anchor)`. `BOOK_MARKET_BOTS`

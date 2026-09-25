@@ -3927,7 +3927,10 @@ def test_trigger_matcher_stage_b():
     import inspect
     from workers.jobs import pick_trigger_matcher as m
     src = inspect.getsource(m)
-    assert "pick_triggers" in src and "l.odds >= t.min_odds" in src, "must join the book price against the window"
+    # #162 W7.6 (2026-09-26): the in-window test moved from a SQL join on pick_triggers into the sharp
+    # engine (the same window formula, evaluated at match time) — pinned behaviourally in ONE-SHARP-ENGINE.
+    assert "se.evaluate(rule" in src and "sharp_rule(strategy, book, bot_name)" in src, \
+        "the matcher must decide through the sharp engine's rule for (strategy, book)"
     assert "cal\"]) - 1.0 / price" in src or "- 1.0 / price" in src, "edge must be computed at the BOOK's own price"
     # SAFETY: the per-(book×market×anchor) trigger bots must never stake by default.
     # #139 (owner decision 4, 2026-09-24): they HAVE a placement path now (shadow_bets,
@@ -4493,10 +4496,18 @@ def test_anchor_price_sanity_on_both_engines():
     assert "is_anchor_sane" in router_src, (
         "best_price_router._latest_book_odds no longer applies the anchor guard "
         "— this is the choke point every merged bot prices through")
-    matcher_src = inspect.getsource(pick_trigger_matcher.match_and_emit)
-    assert "is_anchor_sane" in matcher_src and "anchor_odds" in matcher_src, (
-        "pick_trigger_matcher.match_and_emit no longer applies the anchor guard "
+    # #162 W7.6 (2026-09-26): the per-book sharp bots (and the merged sharp generator bots) decide through
+    # the sharp engine, whose gate stack applies the guard against Pinnacle's own quote on every book.
+    from workers.automation import sharp_engine
+    assert "se.evaluate(rule" in inspect.getsource(pick_trigger_matcher.match_and_emit)
+    assert "is_anchor_sane(odds, anchor_odds)" in inspect.getsource(sharp_engine.price_refusal), (
+        "sharp_engine.price_refusal no longer applies the anchor guard "
         "— the per-book sharp bots would price off mis-mapped fixtures again")
+    _now = 1_000_000.0
+    from workers.jobs.pick_triggers import sharp_rule
+    assert not sharp_engine.evaluate(sharp_rule("sharp_1x2", "Coolbet", "x"), {("m", "1x2"): {
+        "ko": _now + 72000, "quotes": {"Pinnacle": {"home": (1.67, _now), "draw": (3.9, _now), "away": (5.2, _now)},
+                                       "Coolbet": {"home": (18.0, _now)}}}}, _now), "Beitar at 18.00 vs 1.67 accepted"
 
 
 @test("MIRROR-GUARD — every pre-match odds writer refuses a transposed 1x2 triple")
@@ -4661,13 +4672,16 @@ def test_sharp_bots_have_an_edge_ceiling():
     # half. Applied to the 25 phantom picks the cap alone rejects 14. This pins
     # the constant as IMPORTED, not re-typed — a copied number is how the two
     # paths diverged.
+    # #162 W7.6 (2026-09-26): there is no clone any more — both sharp paths decide through the sharp
+    # engine, whose gate stack applies the cap. Was: "OUTLIER_MULT" in pick_generator.generate's source.
     import inspect
-    from workers.automation import pick_generator
-    gen_src = inspect.getsource(pick_generator.generate)
-    assert "OUTLIER_MULT" in gen_src, (
-        "pick_generator.generate no longer applies the sharp window's outlier "
-        "cap — it is a clone of the matcher's sharp path and must not be the "
-        "weaker of the two")
+    from workers.automation import pick_generator, sharp_engine
+    assert "_generate_sharp(cfg" in inspect.getsource(pick_generator.generate)
+    assert "rule.outlier_mult" in inspect.getsource(sharp_engine.price_refusal), (
+        "the sharp engine no longer applies the window's outlier cap")
+    for c in ALL_CONFIGS:
+        if c.prob_source == "sharp_devig":
+            assert pick_generator.sharp_rule_for(c).outlier_mult == sharp_engine.OUTLIER_MULT, c.bot_name
     from workers.automation.anchor_sanity import OUTLIER_MULT
     assert OUTLIER_MULT == 1.6, (
         f"OUTLIER_MULT moved to {OUTLIER_MULT}; the generator inherits it, so "
@@ -37057,12 +37071,13 @@ def test_trigger_calibrator_revision():
         "from it is equally un-attributable without the stamp."
     )
 
-    msrc = inspect.getsource(ptm.emit_for_book) if hasattr(ptm, "emit_for_book") \
-        else inspect.getsource(ptm)
-    assert "t.model_version AS mv" in msrc and 'r["mv"]' in msrc, (
-        "the matcher must carry the window's stamped model_version onto the "
-        "PICK — the window knew which calibrator shaped it and the pick did "
-        "not, which is what made the two eras unseparable."
+    # #162 W7.6 (2026-09-26): the matcher no longer READS the window (the sharp engine decides at match
+    # time), so it stamps the pick with the same _stamp_cal(_SHARP_MODEL_VERSION) the window carries —
+    # the eras stay separable with the same string match. Was: "t.model_version AS mv" / r["mv"].
+    msrc = inspect.getsource(ptm.match_and_emit)
+    assert "_stamp_cal(_SHARP_MODEL_VERSION)" in msrc and "mv, (round(age_min, 1)" in msrc, (
+        "the matcher must stamp the calibrator revision onto the PICK — without it the two eras are "
+        "unseparable."
     )
 
 
@@ -44669,8 +44684,20 @@ def test_sharp_tight_freshness_refuses_stale():
         assert ptm.is_fresh_enough(st, None) is False, f"{st} accepts a quote of unknown age"
     src = _engine_path("workers/jobs/pick_trigger_matcher.py").read_text(encoding="utf-8")
     fn = src[src.index("def match_and_emit("):src.index("FRESHNESS_MAX_AGE_MIN")]
-    assert "AS age_min" in fn and "is_fresh_enough(strategy, age_min)" in fn, "matcher must compute the age and gate on it"
-    assert fn.index("is_fresh_enough(strategy, age_min)") < fn.index("INSERT INTO shadow_bets"), "the refusal must come BEFORE the write"
+    # #162 W7.6 (2026-09-26): the refusal moved into the sharp engine — the rule's book_max_age_min IS
+    # FRESHNESS_MAX_AGE_MIN[strategy], applied by sharp_engine.quote_fresh (which is_fresh_enough also
+    # calls), BEFORE the matcher sees a candidate. Behaviour pinned here and in ONE-SHARP-ENGINE.
+    from workers.automation import sharp_engine as _se
+    from workers.jobs.pick_triggers import sharp_rule as _sr
+    assert _sr("sharp_1x2_tight", "Coolbet", "x").book_max_age_min == 60.0
+    _now = 1_000_000.0
+    _ln = {("m", "1x2"): {"ko": _now + 20 * 3600, "quotes": {
+        "Pinnacle": {"home": (1.95, _now - 600), "draw": (3.6, _now - 600), "away": (4.1, _now - 600)},
+        "Coolbet": {"home": (2.30, _now - 61 * 60)}}}}
+    assert not _se.evaluate(_sr("sharp_1x2_tight", "Coolbet", "x"), _ln, _now), "a 61-min quote must be refused"
+    _ln[("m", "1x2")]["quotes"]["Coolbet"]["home"] = (2.30, _now - 59 * 60)
+    assert _se.evaluate(_sr("sharp_1x2_tight", "Coolbet", "x"), _ln, _now), "a 59-min quote must be allowed"
+    assert "age_min = r[\"quote_age_min\"]" in fn, "matcher must record the decision-quote age"
     assert "decision_quote_age_min" in fn, "the age must be written on insert"
     # Deliberately NOT in the DO UPDATE set (rig verifier 2026-09-15): the column
     # records the age at the FIRST decision, which is what `pick_time` dates. A
@@ -49317,6 +49344,152 @@ def test_clv_sharp_segments():
     assert 'where.append("dup_rank = 1")' in src and "abs(clv_sharp) <= %s" in src
 
 
+@test("ONE-SHARP-ENGINE — every sharp-anchor bot is a config of workers/automation/sharp_engine.py; parity fixture per migrated bot")
+def test_one_sharp_engine():
+    """#162 W7.6 (2026-09-26, audit A R13). The sharp idea — a soft book beating the de-vigged Pinnacle
+    line — had three implementations with their own fair-price method, Pinnacle age rule, floor/ceiling,
+    outlier cap and book-quote age (pick_generator sharp_devig, pick_triggers -> pick_trigger_matcher,
+    ou_sharp_outlier). Each producer is now a SharpRule and `sharp_engine.evaluate` is the one decision;
+    the producers keep only their loader and their write.
+
+    PARITY FIXTURE. The expected sets below were produced by the PRE-MOVE code (HEAD bd2bd721) on this
+    exact synthetic quote set through a fake DB. Every difference is a deliberate r2 change and is named:
+      * book quote <= 60 min for the merged generator bots (was the router's 180)   -> m_stale90 dropped
+      * every gate on every book, then the best price (was: ceiling on the winner) -> m_ceiling Unibet added
+      * the engine's 8% ceiling on the per-book 1x2 / O-U bots (they had none)     -> m_ceiling Coolbet dropped
+      * O/U fair price power, not Shin (devig.fair_prob)                           -> m_ou under out, over in
+    O/U EARLY (VIP #2) and TWO-ANCHOR must be IDENTICAL (paid live channel): no rule_version bump. Replayed
+    on 96 point-in-time instants (2026-09-23 22:14 .. 09-25 22:44 UTC): 515 candidates, identical, max float diff 2.6e-13."""
+    import inspect
+    from workers.automation import sharp_engine as se
+    from workers.automation.bot_configs import CONFIG_BY_NAME, ALL_CONFIGS
+    from workers.automation.pick_generator import sharp_rule_for
+    from workers.jobs import pick_trigger_matcher as ptm
+    from workers.jobs import ou_sharp_outlier as ou
+    from workers.jobs.pick_triggers import sharp_rule, _SHARP_STRATEGIES
+    from workers.registry.bot_registry import by_name
+
+    NOW = 1_000_000.0
+    KO_H = {"m_clean": 20, "m_stale90": 20, "m_ceiling": 20, "m_ou": 30, "m_oldpin": 20,
+            "m_tight": 20, "m_insane": 20, "m_nearko": 5}
+    lines: dict = {}
+
+    def put(mid, mk, book, sel, odds, age_min):
+        ln = lines.setdefault((mid, mk), {"ko": NOW + KO_H[mid] * 3600, "quotes": {}})
+        ln["quotes"].setdefault(book, {})[sel] = (odds, NOW - age_min * 60)
+
+    def pin3(mid, h, d, a, age_min=20):
+        for s, o in (("home", h), ("draw", d), ("away", a)):
+            put(mid, "1x2", "Pinnacle", s, o, age_min)
+    pin3("m_clean", 2.10, 3.40, 3.80); put("m_clean", "1x2", "Coolbet", "away", 4.85, 20)
+    put("m_clean", "1x2", "Unibet-Site", "away", 4.80, 25)
+    pin3("m_stale90", 2.10, 3.40, 3.80); put("m_stale90", "1x2", "Coolbet", "away", 4.85, 90)
+    pin3("m_ceiling", 2.50, 3.30, 3.00); put("m_ceiling", "1x2", "Coolbet", "home", 3.45, 15)
+    put("m_ceiling", "1x2", "Unibet-Site", "home", 2.92, 15)
+    put("m_ou", "over_under_25", "Pinnacle", "over", 1.40, 30); put("m_ou", "over_under_25", "Pinnacle", "under", 2.95, 30)
+    put("m_ou", "over_under_25", "Coolbet", "under", 3.57, 10); put("m_ou", "over_under_25", "Unibet-Site", "over", 1.52, 10)
+    pin3("m_oldpin", 2.10, 3.40, 3.80, age_min=480); put("m_oldpin", "1x2", "Coolbet", "away", 4.20, 10)
+    pin3("m_tight", 1.95, 3.60, 4.10); put("m_tight", "1x2", "Epicbet", "home", 2.10, 10)
+    put("m_tight", "1x2", "Tonybet", "home", 2.12, 10); put("m_tight", "1x2", "Coolbet", "home", 2.30, 10)
+    pin3("m_insane", 1.50, 4.20, 6.50); put("m_insane", "1x2", "Coolbet", "home", 4.80, 10)
+    pin3("m_nearko", 2.10, 3.40, 3.80, age_min=180); put("m_nearko", "1x2", "Coolbet", "away", 4.20, 10)
+
+    OLD = {  # what the pre-move producers emitted on these quotes
+        ("bot_coolbet_trigger_sharp_1x2_v1", "m_clean", "away", "Coolbet", 4.85),
+        ("bot_coolbet_trigger_sharp_1x2_v1", "m_tight", "home", "Coolbet", 2.30),
+        ("bot_coolbet_trigger_sharp_1x2_v1", "m_ceiling", "home", "Coolbet", 3.45),
+        ("bot_coolbet_trigger_sharp_ou_v1", "m_ou", "under", "Coolbet", 3.57),
+        ("bot_trigger_1x2_sharp_tight_v1", "m_tight", "home", "Coolbet", 2.30),
+        ("bot_trigger_1x2_sharp_tight_v1", "m_tight", "home", "Epicbet", 2.10),
+        ("bot_trigger_1x2_sharp_tight_v1", "m_tight", "home", "Tonybet", 2.12),
+        ("bot_trigger_1x2_sharp_v1", "m_clean", "away", "Coolbet", 4.85),
+        ("bot_trigger_1x2_sharp_v1", "m_tight", "home", "Coolbet", 2.30),
+        ("bot_trigger_1x2_sharp_v1", "m_stale90", "away", "Coolbet", 4.85),
+        ("bot_trigger_ou_sharp_v1", "m_ou", "under", "Coolbet", 3.57),
+        ("bot_unibet_trigger_sharp_1x2_v1", "m_ceiling", "home", "Unibet-Site", 2.92),
+        ("bot_unibet_trigger_sharp_1x2_v1", "m_clean", "away", "Unibet-Site", 4.80),
+    }
+    DROPPED = {
+        ("bot_trigger_1x2_sharp_v1", "m_stale90", "away", "Coolbet", 4.85),            # 90-min quote
+        ("bot_coolbet_trigger_sharp_1x2_v1", "m_ceiling", "home", "Coolbet", 3.45),    # edge 9.8% > ceiling
+        ("bot_coolbet_trigger_sharp_ou_v1", "m_ou", "under", "Coolbet", 3.57),         # Shin 3.2%, power 2.7%
+        ("bot_trigger_ou_sharp_v1", "m_ou", "under", "Coolbet", 3.57),
+    }
+    ADDED = {
+        ("bot_trigger_1x2_sharp_v1", "m_ceiling", "home", "Unibet-Site", 2.92),        # clean second book
+        ("bot_trigger_ou_sharp_v1", "m_ou", "over", "Unibet-Site", 1.52),              # Shin 3.0-, power 3.5%
+        ("bot_unibet_trigger_sharp_ou_v1", "m_ou", "over", "Unibet-Site", 1.52),
+    }
+    new = set()
+    for b in ("bot_trigger_1x2_sharp_v1", "bot_trigger_ou_sharp_v1"):
+        cfg = CONFIG_BY_NAME[b]
+        sub = {k: v for k, v in lines.items() if k[1] == cfg.markets[0]}
+        new |= {(b, c["match_id"], c["selection"], c["bookmaker"], c["odds"])
+                for c in se.evaluate(sharp_rule_for(cfg), sub, NOW)}
+    for (book, market, strategy), bot in ptm.BOOK_MARKET_BOTS.items():
+        sub = {k: v for k, v in lines.items() if k[1] == market}
+        new |= {(bot, c["match_id"], c["selection"], c["bookmaker"], c["odds"])
+                for c in se.evaluate(sharp_rule(strategy, book, bot), sub, NOW)}
+    assert new == (OLD - DROPPED) | ADDED, (sorted(new ^ ((OLD - DROPPED) | ADDED)))
+    # every bot whose picks changed carries a new rule_version; the tight instrument too (its fair
+    # price is now read at match time, not from the :05 window — a behaviour change even where it
+    # happens not to change a pick)
+    for b in ("bot_trigger_1x2_sharp_v1", "bot_trigger_ou_sharp_v1", "bot_coolbet_trigger_sharp_1x2_v1",
+              "bot_coolbet_trigger_sharp_ou_v1", "bot_unibet_trigger_sharp_1x2_v1",
+              "bot_unibet_trigger_sharp_ou_v1", "bot_trigger_1x2_sharp_tight_v1"):
+        assert by_name(b).rule_version == "r2", f"{b} changed behaviour under W7.6 and must be r2"
+
+    # O/U EARLY (VIP #2) + TWO-ANCHOR: IDENTICAL to the pre-move evaluate() (same fixture, same floats)
+    rows = [("a", "over_under_25", "Pinnacle", 2.00, 1.90, 0.5), ("a", "over_under_25", "Bet365", 1.95, 1.85, 0.5),
+            ("a", "over_under_25", "Betano", 1.96, 1.86, 1.0), ("a", "over_under_25", "1xBet", 1.97, 1.87, 0.2),
+            ("a", "over_under_25", "Epicbet", 2.20, 1.70, 0.3), ("a", "over_under_25", "Coolbet", 2.18, 1.72, 0.3),
+            ("a", "over_under_35", "Pinnacle", 3.40, 1.33, 0.5), ("a", "over_under_35", "Coolbet", 3.75, 1.28, 0.4),
+            ("a", "over_under_35", "Bet365", 3.30, 1.30, 0.4), ("a", "over_under_35", "Betano", 3.35, 1.31, 0.4),
+            ("b", "over_under_25", "Pinnacle", 1.70, 2.25, 2.5), ("b", "over_under_25", "Unibet-Site", 1.66, 2.50, 0.1),
+            ("b", "over_under_25", "Bet365", 1.65, 2.20, 0.1), ("b", "over_under_25", "Betano", 1.68, 2.22, 0.1),
+            ("b", "over_under_25", "1xBet", 1.69, 2.21, 0.1), ("b", "over_under_25", "Tonybet", 1.95, 2.60, 3.5),
+            ("c", "over_under_15", "Pinnacle", 1.30, 3.70, 0.5), ("c", "over_under_15", "Epicbet", 1.42, 3.30, 0.5),
+            ("d", "over_under_25", "Pinnacle", 1.90, 2.00, 0.5), ("d", "over_under_25", "Coolbet", 2.60, 1.50, 0.5)]
+    quotes = [dict(match_id=m, market=mk, bookmaker=b, selection=s, odds=o, ts=NOW - age * 3600)
+              for m, mk, b, ov, un, age in rows for s, o in (("over", ov), ("under", un))]
+    ko = {"a": NOW + 20 * 3600, "b": NOW + 30 * 3600, "c": NOW + 6 * 3600, "d": NOW + 20 * 3600}
+    got = sorted((p["bot"], p["match_id"], p["market"], p["selection"], p["bookmaker"], p["odds"],
+                  round(p["ev"], 6), None if p["ev_cons"] is None else round(p["ev_cons"], 6))
+                 for p in ou.evaluate(quotes, NOW, ko))
+    assert got == [("bot_ou_sharp_2anchor_v1", "a", "over_under_25", "over", "Epicbet", 2.2, 0.070697, 0.042316),
+                   ("bot_ou_sharp_2anchor_v1", "b", "over_under_25", "under", "Unibet-Site", 2.5, 0.067469, 0.064004),
+                   ("bot_ou_sharp_early_v1", "a", "over_under_25", "over", "Epicbet", 2.2, 0.070697, 0.042316),
+                   ("bot_ou_sharp_early_v1", "b", "over_under_25", "under", "Unibet-Site", 2.5, 0.067469, 0.064004)], got
+    assert by_name(ou.BOT_EARLY).rule_version == "r1" and by_name(ou.BOT_2ANCHOR).rule_version == "r1", (
+        "the O/U move was replayed identical — bumping VIP #2 would split a ledger that did not change")
+
+    # ONE engine: the producers decide through it and keep no de-vig / age / cap logic of their own
+    for f in ("workers/automation/pick_generator.py", "workers/jobs/pick_trigger_matcher.py",
+              "workers/jobs/pick_triggers.py", "workers/jobs/ou_sharp_outlier.py"):
+        src = _engine_path(f).read_text(encoding="utf-8")
+        assert "sharp_engine" in src, f"{f} no longer routes its sharp decision through the engine"
+        assert "anchor_line_too_old(" not in src and "is_anchor_sane(" not in src, (
+            f"{f} re-implements an engine gate — the fair price, anchor age and wrong-fixture guard live in sharp_engine")
+    assert not hasattr(__import__("workers.automation.pick_generator", fromlist=["x"]), "_candidates_from_sharp")
+    eng = inspect.getsource(se)
+    for tok in ("fair_prob", "anchor_line_too_old(", "is_anchor_sane(", "OUTLIER_MULT"):
+        assert tok in eng, f"sharp_engine lost {tok}"
+    # the shared numbers are the engine's, imported — not re-typed per producer
+    assert ptm.FRESHNESS_MAX_AGE_MIN == {s: se.SHARP_BOOK_MAX_AGE_MIN for s in ptm.FRESHNESS_MAX_AGE_MIN}
+    for c in ALL_CONFIGS:
+        if c.prob_source == "sharp_devig":
+            assert c.edge_ceiling == se.SHARP_EDGE_CEILING and sharp_rule_for(c).book_max_age_min == se.SHARP_BOOK_MAX_AGE_MIN
+    for strategy, *_ in _SHARP_STRATEGIES:
+        r = sharp_rule(strategy, "Coolbet", "x")
+        assert r is not None and r.book_max_age_min == se.SHARP_BOOK_MAX_AGE_MIN
+        # the pre-registered tight instrument keeps its own gate: no ceiling, odds <= 2.50
+        assert (r.edge_ceiling is None) == (strategy == "sharp_1x2_tight"), strategy
+    # the write paths did not move: first write wins on both shadow_bets writers
+    for f in ("workers/automation/pick_generator.py", "workers/jobs/pick_trigger_matcher.py"):
+        assert "ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING" in \
+            _engine_path(f).read_text(encoding="utf-8"), f
+
+
 @test("META-SERVING-SKEW — the meta-model does not score on features that are empty at bet time")
 def test_meta_serving_skew():
     """[[#085]] correctness half, 2026-09-23. meta_b_ml3 reads selection-specific
@@ -50179,7 +50352,14 @@ def test_anchor_sanity_consensus_fallback():
     from workers.jobs import pick_trigger_matcher as ptm
     assert a.CONSENSUS_QUORUM >= 4 and "Pinnacle" in a._NOT_A_REFERENCE
     assert "consensus_median_quotes(match_id, market)" in inspect.getsource(bpr._latest_book_odds)
-    assert "consensus_median_quotes(r[\"mid\"], r[\"market\"])" in inspect.getsource(ptm)
+    # #162 W7.6 (2026-09-26): the per-book sharp bots decide through the sharp engine, which needs a complete
+    # fresh Pinnacle line before it prices anything — so Pinnacle's own quote is always the reference there
+    # and the 4-book-median fallback cannot be reached (it stays on the router, which prices model bots).
+    from workers.automation import sharp_engine as _se
+    from workers.jobs.pick_triggers import sharp_rule as _sr
+    _now = 1_000_000.0
+    assert not _se.evaluate(_sr("sharp_1x2", "Coolbet", "x"), {("m", "1x2"): {"ko": _now + 72000, "quotes": {
+        "Coolbet": {"home": (9.85, _now - 60)}}}}, _now), "no Pinnacle line -> the sharp engine prices nothing"
     assert a.is_anchor_sane(9.85, 4.12) is False and a.is_anchor_sane(4.25, 4.04) is True
     assert a.is_anchor_sane(9.85, None) is True, "still fail-open when no reference exists"
 
@@ -54901,29 +55081,26 @@ def test_sharp_anchor_max_age():
     is now dropped when any side is older than SHARP_ANCHOR_MAX_AGE_H, or older than
     SHARP_ANCHOR_NEAR_KO_MAX_AGE_H within SHARP_ANCHOR_NEAR_KO_H of kick-off (where a pulled or moved
     market makes the "fair" price fiction). Exercised with the DB read faked on this thread only."""
-    import workers.api_clients.db as db
-    import workers.automation.pick_generator as pg_mod
+    # #162 W7.6 (2026-09-26): `_candidates_from_sharp` is gone — every sharp bot's fair price comes from
+    # sharp_engine.anchor_fair, which applies this rule; exercised there (was: the generator's SQL faked).
+    from workers.automation import sharp_engine as se
     from workers.automation.bot_configs import ALL_CONFIGS
+    from workers.automation.pick_generator import sharp_rule_for
     cfg = next(c for c in ALL_CONFIGS if c.prob_source == "sharp_devig" and c.markets[0] == "1x2")
-    def rows(mid, age, ko):
-        return [{"mid": mid, "selection": s, "odds": o, "age_h": age, "ko_in_h": ko}
-                for s, o in (("home", 2.10), ("draw", 3.40), ("away", 3.80))]
-    fake = rows("fresh", 0.5, 30) + rows("old_far", 8.0, 60) + rows("old_near", 3.0, 5) + rows("ok_far", 6.5, 60)
-    o_q = db.execute_query
-    try:
-        db.execute_query = _this_thread_only(lambda *a, **k: fake, o_q)
-        out = pg_mod._candidates_from_sharp(cfg, 0.03)
-    finally:
-        db.execute_query = o_q
-    mids = {r["match_id"] for r in out}
+    now = 1_000_000.0
+    def pin(age_h):
+        return {s: (o, now - age_h * 3600) for s, o in (("home", 2.10), ("draw", 3.40), ("away", 3.80))}
+    ok = {mid: se.anchor_fair(sharp_rule_for(cfg), pin(age), ("home", "draw", "away"), now, now + ko * 3600)
+          for mid, age, ko in (("fresh", 0.5, 30), ("old_far", 8.0, 60), ("old_near", 3.0, 5), ("ok_far", 6.5, 60))}
+    mids = {m for m, p in ok.items() if p is not None}
     assert mids == {"fresh", "ok_far"}, mids
     from workers.utils import anchor as an
     # 7 h: tomorrow's fixtures are refreshed at 10:00 and 16:00 UTC — a 6 h cap would drop them just before 16:00
     assert an.SHARP_ANCHOR_MAX_AGE_H == 7.0 and an.SHARP_ANCHOR_NEAR_KO_MAX_AGE_H == 2.0 and an.SHARP_ANCHOR_NEAR_KO_H == 12.0
-    # ONE rule: both sharp producers call the shared helper
-    for f in ("workers/automation/pick_generator.py", "workers/jobs/pick_triggers.py"):
-        src = _engine_path(f).read_text(encoding="utf-8")
-        assert "anchor_line_too_old(" in src and "from workers.utils.anchor import anchor_line_too_old" in src, f
+    # ONE rule: the sharp engine calls the shared helper, and every sharp producer goes through the engine
+    src = _engine_path("workers/automation/sharp_engine.py").read_text(encoding="utf-8")
+    assert "anchor_line_too_old(" in src and "from workers.utils.anchor import anchor_line_too_old" in src, \
+        "the sharp engine must call the shared W8.3 rule, imported"
 
 
 @test("FAIR-PRICE-ONE-RULE — one written de-vig rule per market shape, and every live copy pinned to its method")
@@ -55127,8 +55304,10 @@ def test_vip_first_hold_back():
     pipe = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
     assert '"vip_exclude"' not in pipe.split("# [[#164]] no `vip_exclude`")[0][-3000:] and "drop_vip_held" not in pipe
     # (3) VIP's O/U rule: one function, used by both
+    # #162 W7.6 (2026-09-26): evaluate() runs the sharp engine on _rules() and early_rule() is the engine's
+    # gate stack on the SAME EARLY rule — still one definition for both (was: evaluate called early_rule).
     ev_src = inspect.getsource(ou.evaluate)
-    assert "early_rule(o, p, (ko - now_ts) / 3600)" in ev_src and "in_ev_band(o, p)" in ev_src
+    assert "_rules()" in ev_src and "price_refusal(_rules()[0]" in inspect.getsource(ou.early_rule)
     assert "ou.early_rule(odds, p, hours)" in inspect.getsource(g.in_vip_range)
     assert ou.early_rule(2.00, 0.55, 13.0) and not ou.early_rule(2.00, 0.55, 11.9)
     assert not ou.early_rule(2.00, 0.60, 20.0), "EV 20% is above the 15% cap (misposted line)"

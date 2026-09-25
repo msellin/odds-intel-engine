@@ -1,0 +1,52 @@
+# #162 W7.6 — one sharp engine (2026-09-26). Checks that the deployed code is the engine and that the
+# r2 bots keep producing (a silent zero is this repo's recurring failure) — true once the scheduler has
+# restarted on this commit and the matcher / odds-arrival hook have run.
+task: "#162"
+checks:
+  - name: sharp_trigger_bots_stamped_r2
+    mode: eventually
+    # rule_version_sync writes the registry's r2 to bots at start-up
+    sql: |
+      SELECT count(*) FROM bots
+       WHERE name IN ('bot_trigger_1x2_sharp_v1','bot_trigger_ou_sharp_v1','bot_coolbet_trigger_sharp_1x2_v1',
+                      'bot_coolbet_trigger_sharp_ou_v1','bot_unibet_trigger_sharp_1x2_v1',
+                      'bot_unibet_trigger_sharp_ou_v1','bot_trigger_1x2_sharp_tight_v1')
+         AND rule_version = 'r2'
+    expect: "== 7"
+    run_after: {job: pick_trigger_matcher, since: "2026-09-26T00:00:00Z"}
+    expires: "2026-10-03T00:00:00Z"
+  - name: vip2_rule_unchanged
+    mode: invariant
+    # O/U EARLY / TWO-ANCHOR replayed identical under the engine — they must stay r1
+    sql: SELECT count(*) FROM bots WHERE name IN ('bot_ou_sharp_early_v1','bot_ou_sharp_2anchor_v1') AND rule_version <> 'r1'
+    expect: "== 0"
+    expires: "2026-10-31T00:00:00Z"
+  - name: per_book_sharp_bots_still_emit_under_r2
+    mode: eventually
+    # the matcher's per-book bots wrote ~40-75 rows/day before the move; r2 must not be a silent zero
+    sql: |
+      SELECT count(*) FROM shadow_bets s JOIN bots b ON b.id = s.bot_id
+       WHERE b.name IN ('bot_coolbet_trigger_sharp_1x2_v1','bot_unibet_trigger_sharp_1x2_v1','bot_trigger_1x2_sharp_tight_v1')
+         AND s.rule_version = 'r2'
+    expect: "> 0"
+    run_after: {job: pick_trigger_matcher, since: "2026-09-26T00:00:00Z"}
+    expires: "2026-10-03T00:00:00Z"
+  - name: merged_sharp_bots_still_emit_under_r2
+    mode: eventually
+    sql: |
+      SELECT count(*) FROM shadow_bets s JOIN bots b ON b.id = s.bot_id
+       WHERE b.name IN ('bot_trigger_1x2_sharp_v1','bot_trigger_ou_sharp_v1') AND s.rule_version = 'r2'
+    expect: "> 0"
+    run_after: {job: pick_trigger_matcher, since: "2026-09-26T00:00:00Z"}
+    expires: "2026-10-03T00:00:00Z"
+  - name: per_book_sharp_picks_respect_the_ceiling
+    mode: invariant
+    # the engine's 8 pp ceiling (not on the tight instrument): no r2 per-book 1x2 / O/U pick above it
+    sql: |
+      SELECT count(*) FROM shadow_bets s JOIN bots b ON b.id = s.bot_id
+       WHERE b.name IN ('bot_coolbet_trigger_sharp_1x2_v1','bot_coolbet_trigger_sharp_ou_v1',
+                        'bot_unibet_trigger_sharp_1x2_v1','bot_unibet_trigger_sharp_ou_v1',
+                        'bot_trigger_1x2_sharp_v1','bot_trigger_ou_sharp_v1')
+         AND s.rule_version = 'r2' AND s.edge_percent > 0.0801
+    expect: "== 0"
+    expires: "2026-10-31T00:00:00Z"

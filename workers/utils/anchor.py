@@ -70,6 +70,7 @@ MARKET_SIDES = {"1x2": ("home", "draw", "away"), "1x2_1h": ("home", "draw", "awa
 
 
 # ── SHARP-ANCHOR-MAX-AGE (#162 W8.3, 2026-09-25): ONE staleness rule for a Pinnacle line used as fair value.
+# (#162 W7.6: every sharp producer now calls this from workers/automation/sharp_engine.anchor_fair.)
 # The two sharp producers (pick_generator._candidates_from_sharp, pick_triggers sharp strategies) de-vigged
 # the LATEST Pinnacle line with no age limit, on paths that can feed real money. A line is too old when ANY
 # side is older than SHARP_ANCHOR_MAX_AGE_H, or older than SHARP_ANCHOR_NEAR_KO_MAX_AGE_H within

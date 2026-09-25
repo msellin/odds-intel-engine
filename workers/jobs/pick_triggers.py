@@ -40,7 +40,10 @@ from workers.automation.anchor_sanity import OUTLIER_MULT  # noqa: F401
 # model-anchored twins this was once compared against were deleted in #162 W7.2
 # (retired bots, no reader).
 _SHARP_ANCHOR_BOOK = "Pinnacle"
-_SHARP_MODEL_VERSION = "pinnacle_shin_devig"  # sentinel: not a model bundle
+# Sentinel: not a model bundle. Kept verbatim after the O/U sharp strategies moved Shin -> power
+# (#162 W7.6): research scripts key "sharp-anchored row" on this exact string (floor_grid_sweep
+# _SHARP_MV); the method a pick used is carried by its bot's rule_version instead.
+_SHARP_MODEL_VERSION = "pinnacle_shin_devig"
 
 # TRIGGER-CALIBRATOR-REVISION (2026-09-11). The window's `model_version` records
 # the PREDICTION bundle, which is not enough to tell two eras of trigger picks
@@ -117,6 +120,37 @@ _SHARP_MAX_ODDS_BY_STRATEGY = {"sharp_1x2_tight": 2.50}
 #     docs/BETTING_GATE_DECISIONS.md (sharp-anchor note).
 _SHARP_MIN_EDGE_BY_MARKET = {"1x2": 0.03, "o/u": 0.03, "1x2_tight": 0.02}
 _SHARP_MIN_ODDS_BY_MARKET = {"1x2": 1.01, "o/u": 1.01, "1x2_tight": 1.01}
+# EDGE CEILING per floor key (#162 W7.6, 2026-09-26) — the sharp engine's ONE ceiling, which the
+# merged generator bots have carried since SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES (2026-09-20) and the
+# per-book bots never had: a +10% overlay on a de-vigged Pinnacle line is a mis-mapped price. The
+# TIGHT instrument is deliberately absent: its gate is pre-registered (p - 1/odds >= 2 pct, odds <=
+# 2.50, dev/active/own-sharp-tight-preregistration.md) and a ceiling would change it.
+from workers.automation.sharp_engine import SHARP_EDGE_CEILING as _CEIL  # noqa: E402
+_SHARP_MAX_EDGE_BY_MARKET = {"1x2": _CEIL, "o/u": _CEIL}
+
+
+def sharp_rule(strategy: str, book: str, bot_name: str):
+    """The sharp engine's rule for one Stage-A sharp strategy priced at one book (#162 W7.6). The
+    strategy tables above are the source; the book-quote cap is the matcher's
+    FRESHNESS_MAX_AGE_MIN (a strategy without one is not runnable — unknown freshness is stale).
+    None when the strategy is not a sharp strategy."""
+    from workers.automation.sharp_engine import SharpRule, PICK_EACH_BOOK
+    from workers.jobs.pick_trigger_matcher import FRESHNESS_MAX_AGE_MIN
+    spec = next((x for x in _SHARP_STRATEGIES if x[0] == strategy), None)
+    if spec is None or strategy not in FRESHNESS_MAX_AGE_MIN:
+        return None
+    from workers.automation.coolbet_placer import _min_edge_for, _min_odds_for
+    _strategy, _market, key, sides = spec
+    return SharpRule(
+        bot_name=bot_name, books=(book,), selections=tuple(sides),
+        # an undeclared key falls back to the placer's floor (as Stage A always did), never a guess
+        edge_floor=float(_SHARP_MIN_EDGE_BY_MARKET.get(key, _min_edge_for(key))),
+        edge_ceiling=_SHARP_MAX_EDGE_BY_MARKET.get(key),
+        odds_floor=float(_SHARP_MIN_ODDS_BY_MARKET.get(key, _min_odds_for(key))),
+        odds_ceiling=_SHARP_MAX_ODDS_BY_STRATEGY.get(strategy),
+        book_max_age_min=float(FRESHNESS_MAX_AGE_MIN[strategy]),
+        pick=PICK_EACH_BOOK,
+    )
 
 
 def _window(cal: float, edge_floor: float, odds_floor: float):
@@ -209,68 +243,40 @@ def _fit_calibrator(kind: str):
 
 
 def _emit_sharp_anchor(counters: dict) -> None:
-    """Write SHARP-anchor trigger windows: fair value = Shin-de-vigged Pinnacle.
+    """Write SHARP-anchor trigger windows: fair value = de-vigged Pinnacle.
 
-    For each upcoming fixture with a full Pinnacle line on the market, de-vig it
-    to P_sharp per selection and write a window with the sharp edge/odds floors.
-    `cal_prob` holds P_sharp so Stage B computes
-    edge = P_sharp − 1/book_odds unchanged. Never raises (best-effort sibling)."""
-    from workers.api_clients.db import execute_query, execute_write
-    from workers.automation.coolbet_placer import (
-            _min_edge_for, _min_odds_for, min_edge_for_pick,
-        )
-    from workers.model.devig import devig
-    from workers.utils.anchor import anchor_line_too_old
+    #162 W7.6 (2026-09-26): these windows are now a RECORD, not an input — the matcher's sharp bots
+    are decided at match time by the sharp engine (workers/automation/sharp_engine.py) from the
+    Pinnacle line as it stands then, not from a window frozen here at :05. The rows are kept for the
+    research scripts that read them (floor sweeps, export_bot_config), and they are computed by the
+    SAME engine functions (anchor_fair = devig.fair_prob behind the shared W8.3 age rule; window =
+    max(1/(cal - edge_floor), odds_floor) .. x OUTLIER_MULT, odds-capped), so a window can never
+    disagree with the engine. `cal_prob` holds P_sharp. Never raises (best-effort sibling)."""
+    from datetime import datetime, timezone
+    from workers.api_clients.db import execute_write
+    from workers.automation import sharp_engine as se
 
     for strategy, market, floor_key, sides in _SHARP_STRATEGIES:
-        # SHARP floors: small edge vs a near-true line + a light sanity odds floor
-        edge_floor = float(_SHARP_MIN_EDGE_BY_MARKET.get(floor_key, _min_edge_for(floor_key)))
-        odds_floor = float(_SHARP_MIN_ODDS_BY_MARKET.get(floor_key, _min_odds_for(floor_key)))
+        rule = sharp_rule(strategy, _SHARP_ANCHOR_BOOK, strategy)
+        if rule is None:
+            continue
+        edge_floor, odds_floor = rule.edge_floor, rule.odds_floor
         counters["strategies"] += 1
-        # latest pre-match Pinnacle price per (match, selection) for this market
-        rows = execute_query(
-            """
-            SELECT DISTINCT ON (o.match_id, o.selection)
-                   o.match_id::text AS mid, o.selection, o.odds::float AS odds,
-                   m.date AS kickoff,
-                   EXTRACT(EPOCH FROM (NOW() - o.timestamp)) / 3600.0 AS age_h,
-                   EXTRACT(EPOCH FROM (m.date - NOW())) / 3600.0 AS ko_in_h
-              FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
-             WHERE o.bookmaker = %s AND o.market = %s
-               AND o.timestamp <= m.date AND m.date > NOW() AND m.status = 'scheduled'
-             ORDER BY o.match_id, o.selection, o.timestamp DESC
-            """,
-            [_SHARP_ANCHOR_BOOK, market],
-        )
-        # group into full markets: {mid: {selection: odds}} + kickoff
-        by_match: dict[str, dict] = {}
-        for r in rows:
-            m = by_match.setdefault(r["mid"], {"odds": {}, "kickoff": r["kickoff"], "age_h": 0.0,
-                                               "ko_in_h": float(r["ko_in_h"] or 0.0)})
-            m["odds"][r["selection"]] = r["odds"]
-            m["age_h"] = max(m["age_h"], float(r["age_h"] or 0.0))
-        for mid, m in by_match.items():
-            # SHARP-ANCHOR-MAX-AGE (#162 W8.3): the ONE staleness rule, shared with pick_generator. Only tightens.
-            if anchor_line_too_old(m["age_h"], m["ko_in_h"]):
+        lines, now_ts = se.load_lines((market,), ())
+        for (mid, _mk), line in lines.items():
+            probs = se.anchor_fair(rule, line["quotes"].get(_SHARP_ANCHOR_BOOK), tuple(sides),
+                                   now_ts, line["ko"])
+            if probs is None:
+                # SHARP-ANCHOR-MAX-AGE (#162 W8.3) or an incomplete line — the ONE staleness rule
                 counters["skipped_stale_anchor"] = counters.get("skipped_stale_anchor", 0) + 1
                 continue
-            quotes = [m["odds"].get(s) for s in sides]
-            if any(q is None or q <= 1.0 for q in quotes):
-                continue  # need the complete line to de-vig honestly
-            probs = devig(quotes)  # Shin, order matches `sides`
-            if probs is None:
-                continue
+            kickoff = datetime.fromtimestamp(line["ko"], tz=timezone.utc)
             for sel, p_sharp in zip(sides, probs):
-                win = _window(p_sharp, edge_floor, odds_floor)
+                win = se.window(p_sharp, rule)
                 if win is None:
                     counters["skipped_no_edge"] += 1
                     continue
                 min_odds, max_odds = win
-                _cap = _SHARP_MAX_ODDS_BY_STRATEGY.get(strategy)
-                if _cap is not None:
-                    if min_odds > _cap:
-                        continue          # window lies entirely above the cap
-                    max_odds = min(max_odds, _cap)
                 execute_write(
                     """INSERT INTO pick_triggers
                           (match_id, market, selection, strategy, cal_prob,
@@ -286,8 +292,7 @@ def _emit_sharp_anchor(counters: dict) -> None:
                                      kickoff_at=EXCLUDED.kickoff_at,
                                      computed_at=NOW()""",
                     [mid, market, sel, strategy, p_sharp, edge_floor, odds_floor,
-                     min_odds, max_odds, _stamp_cal(_SHARP_MODEL_VERSION),
-                     m["kickoff"]],
+                     min_odds, max_odds, _stamp_cal(_SHARP_MODEL_VERSION), kickoff],
                 )
                 counters["written"] += 1
 

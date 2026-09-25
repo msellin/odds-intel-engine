@@ -95,11 +95,13 @@ BOTS: list[BotSpec] = [
     # Trigger engine — book-agnostic windows, PAPER. Model vs Sharp anchor twins.
     BotSpec("bot_coolbet_trigger_sharp_1x2_v1", FAM_TRIGGER, "1x2", ANCHOR_SHARP,
             0.03, 1.01, False,
-            "Sharp twin: fires when Coolbet's 1x2 price beats the de-vigged Pinnacle line by ≥3% (no odds floor — experimental, observing all bands). Paper. Head-to-head vs the model twin."),
+            "Sharp twin: fires when Coolbet's 1x2 price beats the de-vigged Pinnacle line by ≥3% (no odds floor — experimental, observing all bands). Paper. Head-to-head vs the model twin. r2 (#162 W7.6, 2026-09-26): decided by the ONE sharp engine (workers/automation/sharp_engine.py) at match time (not from the :05 Stage-A window), with the engine's 8% edge ceiling and, on O/U, the power fair price (devig.fair_prob) instead of Shin.",
+            rule_version="r2"),
     BotSpec("bot_coolbet_trigger_sharp_ou_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_SHARP,
             0.03, 1.01, False,
-            "Sharp twin: fires when Coolbet's O/U 2.5 price beats the de-vigged Pinnacle line by ≥3% (no odds floor — experimental, observing all bands). Paper. Head-to-head vs the model twin.",
-            twin="bot_coolbet_trigger_ou_v1"),
+            "Sharp twin: fires when Coolbet's O/U 2.5 price beats the de-vigged Pinnacle line by ≥3% (no odds floor — experimental, observing all bands). Paper. Head-to-head vs the model twin. r2 (#162 W7.6, 2026-09-26): decided by the ONE sharp engine (workers/automation/sharp_engine.py) at match time (not from the :05 Stage-A window), with the engine's 8% edge ceiling and, on O/U, the power fair price (devig.fair_prob) instead of Shin.",
+            twin="bot_coolbet_trigger_ou_v1",
+            rule_version="r2"),
 
 
     # SHADOW-BOT-VERDICTS-2026-09-14: the three MODEL-anchored 1x2 trigger bots
@@ -122,11 +124,13 @@ BOTS: list[BotSpec] = [
     # on the sharp anchor here (soft-book mispricing vs de-vig Pinnacle, §57).
     BotSpec("bot_unibet_trigger_sharp_1x2_v1", FAM_TRIGGER, "1x2", ANCHOR_SHARP,
             0.03, 1.01, False,
-            "Sharp twin: fires when Unibet's 1x2 site price beats the de-vigged Pinnacle line by ≥3% (no odds floor). Paper. Where the draw edge should surface (§57)."),
+            "Sharp twin: fires when Unibet's 1x2 site price beats the de-vigged Pinnacle line by ≥3% (no odds floor). Paper. Where the draw edge should surface (§57). r2 (#162 W7.6, 2026-09-26): decided by the ONE sharp engine (workers/automation/sharp_engine.py) at match time (not from the :05 Stage-A window), with the engine's 8% edge ceiling and, on O/U, the power fair price (devig.fair_prob) instead of Shin.",
+            rule_version="r2"),
     BotSpec("bot_unibet_trigger_sharp_ou_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_SHARP,
             0.03, 1.01, False,
-            "Sharp twin: fires when Unibet's O/U 2.5 site price beats the de-vigged Pinnacle line by ≥3% (no odds floor). Paper.",
-            twin="bot_unibet_trigger_ou_v1"),
+            "Sharp twin: fires when Unibet's O/U 2.5 site price beats the de-vigged Pinnacle line by ≥3% (no odds floor). Paper. r2 (#162 W7.6, 2026-09-26): decided by the ONE sharp engine (workers/automation/sharp_engine.py) at match time (not from the :05 Stage-A window), with the engine's 8% edge ceiling and, on O/U, the power fair price (devig.fair_prob) instead of Shin.",
+            twin="bot_unibet_trigger_ou_v1",
+            rule_version="r2"),
 
     # MERGE-TRIGGER-BOTS-2026-09-11 — the book-agnostic replacements for the
     # eight above. The eight were 2 anchors x 2 books x 2 markets, but the BOOK
@@ -143,11 +147,13 @@ BOTS: list[BotSpec] = [
     # the verdict.
     BotSpec("bot_trigger_1x2_sharp_v1", FAM_TRIGGER, "1x2", ANCHOR_SHARP,
             0.03, 1.01, False,
-            "Book-agnostic SHARP 1x2 trigger: any placeable book beating the de-vigged Pinnacle line by >=3% AND by <=8% (no odds floor). Paper. The 3% floor is set EXPLICITLY — a sharp edge is measured against a near-true line and is never comparable to a model floor. The 8% CEILING exists for the mirror-image reason (SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20): the observed maximum overlay on Pinnacle is +6.6%, so a larger apparent edge is a mis-mapped price, not an opportunity. ⚠️ ITS ENTIRE TRACK RECORD (25 picks) WAS VOIDED on 2026-09-20 — every pick was priced off a quote belonging to another fixture, which published +549.9% ROI / EUR 1,319.80. n=0 today; any number quoted for this bot before that date is meaningless. ⚠️⚠️ AND THE 3% FLOOR WAS NEVER LIVE (SHARP-FLOOR-STACKED-ON-MODEL-FLOOR, fixed 2026-09-22, [[#007]]): `best_price_router.decide_book` re-imposed the 10%/13% MODEL selection floor on top of the explicit 3%, so the EFFECTIVE floor was 10-13% against an anchor whose largest genuine overlay is +6.6%. That is WHY all 25 picks were phantom — an unreachable floor can only be cleared by a wrong price. From 2026-09-20 the 8% ceiling sat BELOW that floor, leaving an empty band, and the bot emitted nothing at all between 2026-09-20 15:58 and the fix."),
+            "Book-agnostic SHARP 1x2 trigger: any placeable book beating the de-vigged Pinnacle line by >=3% AND by <=8% (no odds floor). Paper. The 3% floor is set EXPLICITLY — a sharp edge is measured against a near-true line and is never comparable to a model floor. The 8% CEILING exists for the mirror-image reason (SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20): the observed maximum overlay on Pinnacle is +6.6%, so a larger apparent edge is a mis-mapped price, not an opportunity. ⚠️ ITS ENTIRE TRACK RECORD (25 picks) WAS VOIDED on 2026-09-20 — every pick was priced off a quote belonging to another fixture, which published +549.9% ROI / EUR 1,319.80. n=0 today; any number quoted for this bot before that date is meaningless. ⚠️⚠️ AND THE 3% FLOOR WAS NEVER LIVE (SHARP-FLOOR-STACKED-ON-MODEL-FLOOR, fixed 2026-09-22, [[#007]]): `best_price_router.decide_book` re-imposed the 10%/13% MODEL selection floor on top of the explicit 3%, so the EFFECTIVE floor was 10-13% against an anchor whose largest genuine overlay is +6.6%. That is WHY all 25 picks were phantom — an unreachable floor can only be cleared by a wrong price. From 2026-09-20 the 8% ceiling sat BELOW that floor, leaving an empty band, and the bot emitted nothing at all between 2026-09-20 15:58 and the fix. r2 (#162 W7.6, 2026-09-26): decided by the ONE sharp engine (workers/automation/sharp_engine.py) — fair price devig.fair_prob (Shin 1x2, power O/U), book quote <= 60 min (was the router's 180), every gate on every book before the best price is chosen (the ceiling used to be checked on the winner only).",
+            rule_version="r2"),
     BotSpec("bot_trigger_ou_sharp_v1", FAM_TRIGGER, "O/U 2.5", ANCHOR_SHARP,
             0.03, 1.01, False,
-            "Book-agnostic SHARP O/U 2.5 trigger: any placeable book beating the de-vigged Pinnacle line by >=3% AND by <=8% (no odds floor). Paper. The ceiling matters MORE here than on 1x2: O/U prices are compressed into ~1.2-3.0, so a wrong fixture rarely trips a price-ratio guard — all 6 of this bot's picks passed the ratio test and all 6 were contaminated. ⚠️ ALL 6 VOIDED 2026-09-20 (SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES); n=0 today. ⚠️⚠️ The 3% floor was never live either — see the 1x2 twin: the effective floor was the 8% MODEL O/U floor, equal to the ceiling, so the admissible band was a single point and the bot last emitted 2026-09-19 16:21. Fixed 2026-09-22 ([[#007]]).",
-            twin="bot_trigger_ou_model_v1"),
+            "Book-agnostic SHARP O/U 2.5 trigger: any placeable book beating the de-vigged Pinnacle line by >=3% AND by <=8% (no odds floor). Paper. The ceiling matters MORE here than on 1x2: O/U prices are compressed into ~1.2-3.0, so a wrong fixture rarely trips a price-ratio guard — all 6 of this bot's picks passed the ratio test and all 6 were contaminated. ⚠️ ALL 6 VOIDED 2026-09-20 (SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES); n=0 today. ⚠️⚠️ The 3% floor was never live either — see the 1x2 twin: the effective floor was the 8% MODEL O/U floor, equal to the ceiling, so the admissible band was a single point and the bot last emitted 2026-09-19 16:21. Fixed 2026-09-22 ([[#007]]). r2 (#162 W7.6, 2026-09-26): decided by the ONE sharp engine (workers/automation/sharp_engine.py) — fair price devig.fair_prob (Shin 1x2, power O/U), book quote <= 60 min (was the router's 180), every gate on every book before the best price is chosen (the ceiling used to be checked on the winner only).",
+            twin="bot_trigger_ou_model_v1",
+            rule_version="r2"),
     # SHARP-TIGHT-INSTRUMENT-2026-09-15. An INSTRUMENT, not a strategy — the one
     # OWN configuration two independent research rounds agreed was worth
     # measuring and neither thought was worth a euro. Pre-registration:
@@ -155,7 +161,8 @@ BOTS: list[BotSpec] = [
     # margin-corrected own-book CLV > 0 at n>=300; ROI may never promote it.
     BotSpec("bot_trigger_1x2_sharp_tight_v1", FAM_TRIGGER, "1x2", ANCHOR_SHARP,
             0.02, 1.01, False,
-            "INSTRUMENT (paper, never placeable). SHARP 1x2 at the TIGHT gate the original 70,200-cell sweep could not express — it swept a constant expected-ROI floor while the live gate is a constant probability-difference floor, and roi_edge = prob_edge x odds makes the latter a CURVE in odds. Gate: P_shin - 1/odds >= 2% AND odds <= 2.50, pooled over Coolbet/Epicbet/Unibet-Site. Backtest n=225 ROI +17.07% CI [+4.18,+29.95] OOS +23.40% — but a 12-day effect whose margin-corrected own-book CLV is -5.4 to -7.6%, so it is being MEASURED, not believed."),
+            "INSTRUMENT (paper, never placeable). SHARP 1x2 at the TIGHT gate the original 70,200-cell sweep could not express — it swept a constant expected-ROI floor while the live gate is a constant probability-difference floor, and roi_edge = prob_edge x odds makes the latter a CURVE in odds. Gate: P_shin - 1/odds >= 2% AND odds <= 2.50, pooled over Coolbet/Epicbet/Unibet-Site. Backtest n=225 ROI +17.07% CI [+4.18,+29.95] OOS +23.40% — but a 12-day effect whose margin-corrected own-book CLV is -5.4 to -7.6%, so it is being MEASURED, not believed. r2 (#162 W7.6, 2026-09-26): decided by the ONE sharp engine at match time — fair price read then, not from the :05 Stage-A window; the pre-registered gate itself (>= 2%, odds <= 2.50, <= 60 min) is unchanged and it gets NO ceiling.",
+            rule_version="r2"),
 
     # UNIFIED-GATE-INSTRUMENT-2026-09-22 ([[#033]]). An INSTRUMENT, not a
     # strategy: it exists because the draw/away half of the owner's unified-gate

@@ -123,12 +123,15 @@ class BotConfig:
     # 'pipeline' is kept because it is the probability the real-money bots were
     # VALIDATED on; 'predictions' re-calibrates independently. Both are exposed
     # so the two can be compared on the same mechanism instead of argued about.
-    #   'sharp_devig'  — fair value from the Shin-de-vigged Pinnacle line, not
-    #                   our model at all. A bot on this source MUST set
+    #   'sharp_devig'  — fair value from the de-vigged Pinnacle line, not our
+    #                   model at all. A bot on this source MUST set
     #                   `edge_floor` explicitly (3%-ish): inheriting the
     #                   registry's model floors would demand a 13% overlay on
     #                   Pinnacle, which is nearly unobservable (max seen +6.6%),
-    #                   so the bot would never fire.
+    #                   so the bot would never fire. Since #162 W7.6 these bots
+    #                   are decided by the ONE sharp engine
+    #                   (workers/automation/sharp_engine.py, see `_generate_sharp`)
+    #                   and only WRITTEN here.
     prob_source: str = "pipeline"
     lookahead_hours: int | None = None           # None = any future kickoff
     notes: str = field(default="", compare=False)
@@ -189,6 +192,8 @@ def generate(cfg: BotConfig) -> dict:
             log.info("pick_generator: bot %s is retired or not registered — "
                      "skipping (RETIRED-BOTS-KEPT-GENERATING)", cfg.bot_name)
             return c
+        if cfg.prob_source == "sharp_devig":
+            return _generate_sharp(cfg, bot_id, c)
 
         # The floor used for the SQL pre-filter must be the loosest this bot can
         # apply, or the pre-filter would drop candidates a per-selection floor
@@ -223,8 +228,6 @@ def generate(cfg: BotConfig) -> dict:
 
         if cfg.prob_source == "predictions":
             rows = _candidates_from_predictions(cfg, loosest)
-        elif cfg.prob_source == "sharp_devig":
-            rows = _candidates_from_sharp(cfg, loosest)
         else:
             rows = _candidates_from_pipeline(cfg, loosest, sel_clause, ahead, params)
 
@@ -271,46 +274,16 @@ def generate(cfg: BotConfig) -> dict:
             price = float(decision["winner_odds"])
             edge = cal_prob - 1.0 / price     # derived; cannot disagree with price
 
-            # EDGE CEILING (see BotConfig.edge_ceiling). Against a near-true
-            # anchor an implausibly large edge is evidence the PRICE is wrong,
-            # not that the opportunity is big — and it is the one error mode the
-            # floor cannot catch, because the floor is a lower bound and this
-            # fault pushes edges up.
-            # OUTLIER CAP — INHERITED, NOT INVENTED (2026-09-20). The matcher
-            # engine has bounded every sharp window since it was written:
-            # the trigger writer emits `max_odds = min_odds x OUTLIER_MULT` and
-            # `pick_trigger_matcher` enforces it. THIS path is a second
-            # implementation of the same sharp anchor and it silently dropped
-            # that half of the window — the clone kept the floor and lost the
-            # cap. Applied to the 25 phantom picks the cap alone rejects 14,
-            # including every egregious one (101.00, 18.00, 9.00).
-            #
-            # It is kept ALONGSIDE `edge_ceiling` because neither dominates:
-            # the cap is a bound in ODDS space and the ceiling a bound in EDGE
-            # space, and they cross near cal_prob ~0.18 — below it the cap is
-            # tighter, above it the ceiling is. Importing `OUTLIER_MULT` rather
-            # than re-typing 1.6 is the point; a copied constant is how these
-            # two paths diverged in the first place.
-            if cfg.prob_source == "sharp_devig" and cal_prob > ef:
-                from workers.automation.anchor_sanity import OUTLIER_MULT
-                max_odds = max(1.0 / (cal_prob - ef), of) * OUTLIER_MULT
-                if price > max_odds:
-                    c["above_outlier_cap"] = c.get("above_outlier_cap", 0) + 1
-                    log.warning(
-                        "OUTLIER-CAP: %s skipped %s/%s on %s — %s %.2f is above "
-                        "the window's max_odds %.2f. A price this far above fair "
-                        "value is a stale or mis-mapped quote, not a gift.",
-                        cfg.bot_name, market, selection, r["match_id"],
-                        won_book, price, max_odds,
-                    )
-                    continue
-
-            if cfg.prob_source not in ("predictions", "sharp_devig"):
+            if cfg.prob_source != "predictions":
                 ok, why = _own_outlier_ok(r["match_id"], market, selection, price)
                 if not ok:
                     c[why] = c.get(why, 0) + 1
                     continue
 
+            # EDGE CEILING (see BotConfig.edge_ceiling) — set on sharp bots only, and those
+            # no longer reach this loop: `_generate_sharp` runs them through the sharp engine,
+            # which applies the ceiling, the OUTLIER_MULT cap and the anchor guard to every book
+            # (#162 W7.6). Kept here so a future model-anchored bot that sets one is not ignored.
             if cfg.edge_ceiling is not None and edge > cfg.edge_ceiling:
                 c["above_ceiling"] = c.get("above_ceiling", 0) + 1
                 log.warning(
@@ -323,24 +296,9 @@ def generate(cfg: BotConfig) -> dict:
                 )
                 continue
 
-            n_written = execute_write(
-                """INSERT INTO shadow_bets
-                       (shadow_run_id, shadow_cohort, bot_id, match_id, market,
-                        selection, odds_at_pick, odds_at_pick_live, pick_time,
-                        stake, model_probability, calibrated_prob, edge_percent,
-                        recommended_bookmaker, model_version)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s,%s,%s,%s,%s,%s)
-                   -- #162 W2.1 (owner 11A, 2026-09-25): the FIRST write is the pick. The old DO UPDATE
-                   -- rewrote price/prob/edge on every sweep but kept the first pick_time, so 22-52 per cent of
-                   -- rows carried a price 1.0-3.8 per cent above the quote at pick time (audit A §2).
-                   -- odds_at_pick_live = the price at THIS bot's book at pick time (review: #159's backfill
-                   -- would store the MAX across all four Estonian books — a price this bot could not take).
-                   ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING""",
-                [run_id, cfg.shadow_cohort, bot_id, r["match_id"], market,
-                 selection, price, price, cfg.stake,
-                 r["model_probability"], r["calibrated_prob"], edge, won_book,
-                 r.get("model_version")],
-            )
+            n_written = _write_pick(cfg, run_id, bot_id, r["match_id"], market, selection,
+                                    price, r["model_probability"], r["calibrated_prob"], edge,
+                                    won_book, r.get("model_version"))
             c["written"] += int(n_written or 0)   # DO NOTHING on a re-sweep writes 0 rows
 
         log.info("pick_generator[%s/%s]: scanned %d, wrote %d "
@@ -349,6 +307,72 @@ def generate(cfg: BotConfig) -> dict:
                  c["no_book_price"], c["no_book_clears"], c["unsupported"])
     except Exception as e:  # noqa: BLE001
         log.warning("pick_generator[%s] raised (non-fatal): %s", cfg.bot_name, e)
+    return c
+
+
+def _write_pick(cfg: BotConfig, run_id: str, bot_id: str, match_id: str, market: str,
+                selection: str, price: float, model_prob, cal_prob, edge: float, book: str,
+                model_version) -> int:
+    """THE shadow_bets write for every generator bot (model- and sharp-anchored alike)."""
+    from workers.api_clients.db import execute_write
+    return execute_write(
+        """INSERT INTO shadow_bets
+               (shadow_run_id, shadow_cohort, bot_id, match_id, market,
+                selection, odds_at_pick, odds_at_pick_live, pick_time,
+                stake, model_probability, calibrated_prob, edge_percent,
+                recommended_bookmaker, model_version)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s,%s,%s,%s,%s,%s)
+           -- #162 W2.1 (owner 11A, 2026-09-25): the FIRST write is the pick. The old DO UPDATE
+           -- rewrote price/prob/edge on every sweep but kept the first pick_time, so 22-52 per cent of
+           -- rows carried a price 1.0-3.8 per cent above the quote at pick time (audit A §2).
+           -- odds_at_pick_live = the price at THIS bot's book at pick time (review: #159's backfill
+           -- would store the MAX across all four Estonian books — a price this bot could not take).
+           ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING""",
+        [run_id, cfg.shadow_cohort, bot_id, match_id, market,
+         selection, price, price, cfg.stake,
+         model_prob, cal_prob, edge, book, model_version],
+    ) or 0
+
+
+def sharp_rule_for(cfg: BotConfig):
+    """The sharp engine's rule for a `sharp_devig` BotConfig: its books, selections and floors, and
+    the engine's shared defaults for everything else (fair price, anchor age, 60-min book quote,
+    OUTLIER_MULT cap, anchor guard). Per selection, the best clearing price across its books."""
+    from workers.automation.sharp_engine import SharpRule, SHARP_ODDS_FLOOR, PICK_BEST_BOOK
+    return SharpRule(
+        bot_name=cfg.bot_name, books=tuple(cfg.books),
+        selections=tuple(s.lower() for s in cfg.selections) if cfg.selections else None,
+        edge_floor=float(cfg.edge_floor),
+        edge_ceiling=cfg.edge_ceiling,
+        odds_floor=float(cfg.odds_floor if cfg.odds_floor is not None else SHARP_ODDS_FLOOR),
+        pick=PICK_BEST_BOOK,
+    )
+
+
+def _generate_sharp(cfg: BotConfig, bot_id: str, c: dict) -> dict:
+    """A `sharp_devig` bot: the sharp engine decides, this writes (#162 W7.6, rule_version r2).
+
+    Was `_candidates_from_sharp` + the loop in `generate`: Shin for O/U too, the router's 180-min book
+    quote, and the ceiling / outlier cap checked on the WINNING book only — so a phantom top price
+    hid a clean second book. Now the engine's shared rule: power for 2-way (devig.fair_prob), book
+    quote <= 60 min (the matcher's fresh-quote definition), every gate on every book, then the best."""
+    import uuid as _uuid
+    from workers.automation import sharp_engine as se
+    counts: dict = {}
+    lines, now_ts = se.load_lines(tuple(cfg.markets[:1]), tuple(cfg.books))
+    cands = se.evaluate(sharp_rule_for(cfg), lines, now_ts, counts=counts)
+    run_id = str(_uuid.uuid4())
+    c["scanned"] = len(cands)
+    c.update(counts)
+    for p in cands:
+        price = float(p["odds"])
+        cal_prob = float(p["p_fair"])
+        edge = cal_prob - 1.0 / price     # derived; cannot disagree with price
+        c["written"] += int(_write_pick(cfg, run_id, bot_id, p["match_id"], p["market"],
+                                        p["selection"], price, cal_prob, cal_prob, edge,
+                                        p["bookmaker"], None))
+    log.info("pick_generator[%s/sharp_devig]: %d candidates, wrote %d (%s)",
+             cfg.bot_name, len(cands), c["written"], counts)
     return c
 
 
@@ -419,96 +443,6 @@ def _candidates_from_pipeline(cfg, loosest, sel_clause, ahead, params):
             """,
             params,
     )
-
-
-def _candidates_from_sharp(cfg, loosest):
-    """Fair value = Shin-de-vigged Pinnacle, not our model.
-
-    A THIRD kind of probability, and the reason `edge_kind` has to be a
-    dimension everywhere: a sharp edge is measured against a near-true line, so
-    3% is a real 3% overlay, where a 3% MODEL edge is noise. That is why
-    `pick_triggers._SHARP_MIN_EDGE_BY_MARKET` is 3% while the model floors are
-    13%/8%, and why a bot on this source must set `edge_floor` explicitly
-    instead of inheriting the registry's model floors — inheriting them would
-    demand a 13% overlay on Pinnacle, which is nearly unobservable (max seen
-    +6.6%) and the bot would simply never fire.
-
-    Needs the COMPLETE line to de-vig honestly: a partial market is skipped
-    rather than de-vigged from two of three prices.
-    """
-    from workers.api_clients.db import execute_query
-    from workers.model.devig import devig
-    from workers.jobs.pick_triggers import _SHARP_ANCHOR_BOOK
-    from workers.utils.anchor import anchor_line_too_old
-
-    # `sides` must be the full market in a fixed order — devig returns
-    # probabilities positionally.
-    market = cfg.markets[0]
-    if market == "1x2":
-        sides = ("home", "draw", "away")
-    elif market.startswith("over_under"):
-        sides = ("over", "under")
-    else:
-        log.info("pick_generator[%s]: sharp_devig does not know the full-market "
-                 "shape for %s — generating nothing rather than de-vigging a "
-                 "partial line", cfg.bot_name, market)
-        return []
-
-    rows = execute_query(
-        """
-        SELECT DISTINCT ON (o.match_id, o.selection)
-               o.match_id::text AS mid, o.selection, o.odds::float AS odds,
-               EXTRACT(EPOCH FROM (NOW() - o.timestamp)) / 3600.0 AS age_h,
-               EXTRACT(EPOCH FROM (m.date - NOW())) / 3600.0 AS ko_in_h
-          FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
-         WHERE o.bookmaker = %s AND o.market = %s
-           AND o.timestamp <= m.date AND m.date > NOW() AND m.status = 'scheduled'
-         ORDER BY o.match_id, o.selection, o.timestamp DESC
-        """,
-        [_SHARP_ANCHOR_BOOK, market],
-    )
-    by_match: dict[str, dict] = {}
-    oldest_h: dict[str, float] = {}
-    ko_in: dict[str, float] = {}
-    for r in rows:
-        by_match.setdefault(r["mid"], {})[r["selection"]] = r["odds"]
-        oldest_h[r["mid"]] = max(oldest_h.get(r["mid"], 0.0), float(r["age_h"] or 0.0))
-        ko_in[r["mid"]] = float(r["ko_in_h"] or 0.0)
-
-    wanted = set(cfg.selections) if cfg.selections else set(sides)
-    out = []
-    stale = 0
-    for mid, quotes_by_sel in by_match.items():
-        # SHARP-ANCHOR-MAX-AGE (#162 W8.3): the ONE staleness rule (workers/utils/anchor.py). Only tightens.
-        if anchor_line_too_old(oldest_h.get(mid, 0.0), ko_in.get(mid, 99.0)):
-            stale += 1
-            continue
-        quotes = [quotes_by_sel.get(s) for s in sides]
-        if any(q is None or q <= 1.0 for q in quotes):
-            continue                      # incomplete line — do not guess
-        probs = devig(quotes)
-        if probs is None:
-            continue
-        for sel, p_sharp in zip(sides, probs):
-            # SHARP-PREFILTER-COMPARES-PROB-TO-EDGE (2026-09-22, [[#007]]).
-            # `loosest` is an EDGE floor; `p_sharp` is a PROBABILITY. Comparing
-            # them is a category error that happens to be harmless at 0.03 (it
-            # only drops sub-3% probabilities, which no floor would pass anyway)
-            # and becomes silently destructive the moment a sharp `edge_floor`
-            # is raised — at 0.30 it would discard every selection under 30%
-            # probability for a reason having nothing to do with edge. The
-            # NECESSARY condition on a probability is that a bet at the best
-            # possible price could still clear the floor; since edge =
-            # p - 1/price and price is unknown here, the only sound pre-filter
-            # is p > 0. Edge is gated properly downstream by decide_book.
-            if sel not in wanted or p_sharp is None or p_sharp <= 0.0:
-                continue
-            out.append({"match_id": mid, "market": market, "selection": sel,
-                        "calibrated_prob": float(p_sharp),
-                        "model_probability": float(p_sharp)})
-    if stale:
-        log.info("pick_generator[%s]: %d %s line(s) skipped — Pinnacle anchor too old", cfg.bot_name, stale, market)
-    return out
 
 
 def _candidates_from_predictions(cfg, loosest):

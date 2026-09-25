@@ -20,7 +20,6 @@ book's LATEST quote and Pinnacle's latest, both at most QUOTE_MAX_AGE_H old.
 """
 from __future__ import annotations
 
-import math
 from datetime import datetime, timezone
 
 from rich.console import Console
@@ -50,50 +49,57 @@ _STAGE = {"accepted": 5, "drop_one_per_match": 4, "drop_too_late": 3, "drop_no_c
           "drop_odds_too_low": 0, "drop_odds_too_high": 0}
 
 
+OVERROUND = (0.98, 1.30)   # a Pinnacle / book O/U line outside this is a data fault, not a price
+
+# #162 W7.6 (2026-09-26): both bots are CONFIGS of the one sharp engine (workers/automation/
+# sharp_engine.py) — the same fair-price service, gate stack and best-pick loop as every other
+# sharp bot. What stays here is only what is theirs: the constants above, the loader in run()
+# (72 h horizon, everything <= 3 h, publishable books) and the simulated_bets write + VIP send.
+# The move was replayed against the pre-move evaluate() on two days of odds snapshots before it
+# shipped: identical candidates on 96 instants (rule_version stays r1 — VIP #2 is a paid live channel).
+# The W7.5 funnel matched on 86/96; the rest differ by one row at EV exactly 0 (the old bisection put a
+# fair-priced quote at -1e-16, below the near-floor cut) — diagnostics only, never a pick.
+_BASE = dict(
+    books=None,                          # every book in the quotes except Pinnacle (run() pre-filters to publishable)
+    edge_unit="ev", edge_floor=EV_MIN, edge_ceiling=EV_CAP,
+    odds_floor=ODDS_LO, odds_ceiling=ODDS_HI,
+    outlier_mult=None,                   # the EV cap is this rule's palpable-error guard
+    anchor_max_age_h=QUOTE_MAX_AGE_H, book_max_age_min=QUOTE_MAX_AGE_H * 60,
+    overround=OVERROUND, sanity_guard=False,
+    consensus_min_books=CONS_MIN_BOOKS,  # ev_cons is recorded on every pick's reasoning
+    pick="best_per_line",                # one pick per (match, line) per bot, best EV
+)
+
+
+def _rules():
+    from workers.automation.sharp_engine import SharpRule
+    return (SharpRule(BOT_EARLY, min_hours_to_ko=EARLY_MIN_H, **_BASE),
+            SharpRule(BOT_2ANCHOR, consensus_edge_min=CONS_EV_MIN, **_BASE))
+
+
 def power_devig(o_over: float, o_under: float) -> float | None:
-    """2-way power de-vig (ANALYSIS_GOTCHAS #78: never proportional). Returns p(over)."""
-    a, b = 1 / o_over, 1 / o_under
-    if not (0.98 < a + b < 1.30):
-        return None
-    lo, hi = 0.2, 5.0
-    for _ in range(60):
-        k = (lo + hi) / 2
-        if a ** k + b ** k - 1 < 0:
-            hi = k
-        else:
-            lo = k
-    return a ** ((lo + hi) / 2)
-
-
-def in_ev_band(odds: float, p_fair: float) -> bool:
-    """The O/U sharp-outlier price rule shared by both bots: odds in ODDS_LO..ODDS_HI and
-    EV = odds x p_fair - 1 in EV_MIN..EV_CAP (larger gaps are misposted lines)."""
-    return ODDS_LO <= odds <= ODDS_HI and EV_MIN <= odds * p_fair - 1 <= EV_CAP
+    """p(over) from a 2-way O/U line — THE shared fair price (devig.fair_prob = power for 2-way,
+    ANALYSIS_GOTCHAS #78) behind this job's overround guard. Kept as a function for the VIP guard."""
+    from workers.automation.sharp_engine import fair_line
+    p = fair_line([o_over, o_under], OVERROUND)
+    return p[0] if p else None
 
 
 def early_rule(odds: float, p_fair: float, hours_to_kickoff: float) -> bool:
-    """O/U EARLY (VIP #2, bot_ou_sharp_early_v1): the EV band above AND >= EARLY_MIN_H to
-    kickoff. THE one definition — evaluate() uses it and so does the VIP guard
-    (workers/utils/vip_guard.py, #164), so "in VIP's range" can never drift from VIP's rule."""
-    return in_ev_band(odds, p_fair) and hours_to_kickoff >= EARLY_MIN_H
+    """O/U EARLY (VIP #2, bot_ou_sharp_early_v1): odds ODDS_LO..ODDS_HI, EV = odds x p_fair - 1 in
+    EV_MIN..EV_CAP (larger gaps are misposted lines) AND >= EARLY_MIN_H to kickoff. THE one
+    definition — it is the engine's gate stack on the EARLY rule, which evaluate() runs, and the
+    VIP guard (workers/utils/vip_guard.py, #164) calls this, so "in VIP's range" can never drift
+    from VIP's rule."""
+    from workers.automation.sharp_engine import price_refusal
+    return price_refusal(_rules()[0], p_fair, odds, None, hours_to_kickoff, None) is None
 
 
-def _logit(p: float) -> float:
-    p = min(max(p, 1e-4), 1 - 1e-4)
-    return math.log(p / (1 - p))
-
-
-def _band_step(odds: float, ev: float) -> str | None:
-    """Why in_ev_band() said no (None = it said yes). Order matches the rule: odds first."""
-    if odds < ODDS_LO:
-        return "drop_odds_too_low"
-    if odds > ODDS_HI:
-        return "drop_odds_too_high"
-    if ev < EV_MIN:
-        return "drop_edge"
-    if ev > EV_CAP:
-        return "drop_ev_cap"
-    return None
+# the sharp engine's refusal reasons (price_refusal) -> the W7.5 funnel step names
+_STEP_OF = {"below_odds_floor": "drop_odds_too_low", "above_odds_ceiling": "drop_odds_too_high",
+            "below_edge_floor": "drop_edge", "above_ceiling": "drop_ev_cap",
+            "too_close_to_ko": "drop_too_late"}
+_BAND_REASONS = frozenset({"below_odds_floor", "above_odds_ceiling", "below_edge_floor", "above_ceiling"})
 
 
 def evaluate(quotes: list[dict], now_ts: float, kickoff_ts: dict[str, float],
@@ -104,8 +110,10 @@ def evaluate(quotes: list[dict], now_ts: float, kickoff_ts: dict[str, float],
 
     `funnel` (optional, #162 W7.5): filled with the near-floor decisions — EV vs Pinnacle
     >= EV_MIN - NEAR_FLOOR_PP — keyed (bot, match, market, selection), one per key (the book
-    that got furthest; see _STAGE), with `step`. Does not change what is returned."""
-    from collections import defaultdict
+    that got furthest; see _STAGE), with `step`. Does not change what is returned. Since #162 W7.6
+    the decisions come from the sharp engine's `on_decision` callback (its refusal reason mapped to
+    the same step names) instead of a second copy of the gates here."""
+    from workers.automation.sharp_engine import evaluate as sharp_evaluate
     from workers.utils.candidate_funnel import NEAR_FLOOR_PP
 
     def note(bot: str, cand: dict, step: str) -> None:
@@ -121,76 +129,47 @@ def evaluate(quotes: list[dict], now_ts: float, kickoff_ts: dict[str, float],
         except Exception:  # noqa: BLE001
             pass
 
-    by = defaultdict(dict)                     # (match, market) -> book -> {over, under, ts}
+    def on_decision(rule, c: dict, why: str | None, book_quotes: dict) -> None:
+        # engine refusal reason -> the W7.5 funnel step; None = cleared (the winner is relabelled below)
+        try:
+            ev = c["edge"]
+            step = _STEP_OF.get(why, "drop_one_per_match") if why is not None else "drop_one_per_match"
+            if why == "consensus_not_beaten":
+                step = "drop_no_consensus" if c["edge_cons"] is None else "drop_consensus_edge"
+            if why in _BAND_REASONS and ev < EV_MIN - NEAR_FLOOR_PP:
+                return                                  # far below the floor answers nothing
+            fc = {"match_id": c["match_id"], "market": c["market"], "selection": c["selection"],
+                  "odds": c["odds"], "bookmaker": c["bookmaker"], "p_fair": c["p_fair"], "ev": ev,
+                  "ev_cons": None if why in _BAND_REASONS else c["edge_cons"],
+                  "ts": min(t for _o, t in book_quotes.values())}
+            note(rule.bot_name, fc, step)
+        except Exception:  # noqa: BLE001 — diagnostics never touch the pick
+            pass
+
+    lines: dict = {}
     for q in quotes:
+        # the age filter comes FIRST, as it always has: a book with only stale quotes is not in
+        # the line at all (so it can neither be picked nor sit in anyone's consensus)
         if now_ts - q["ts"] > QUOTE_MAX_AGE_H * 3600:
             continue
-        d = by[(q["match_id"], q["market"])].setdefault(q["bookmaker"], {})
-        d[q["selection"]] = q["odds"]; d["ts"] = min(d.get("ts", q["ts"]), q["ts"])
+        ln = lines.setdefault((q["match_id"], q["market"]), {"ko": kickoff_ts.get(q["match_id"]), "quotes": {}})
+        ln["quotes"].setdefault(q["bookmaker"], {})[q["selection"]] = (q["odds"], q["ts"])
     out = []
-    for (mid, mk), books in by.items():
-        ko = kickoff_ts.get(mid)
-        if ko is None or ko <= now_ts:
-            continue
-        pin = books.get("Pinnacle")
-        if not pin or "over" not in pin or "under" not in pin:
-            continue
-        p_over = power_devig(pin["over"], pin["under"])
-        if p_over is None:
-            continue
-        # per-book de-vigged logit for the leave-one-out consensus
-        logits = {}
-        for b, d in books.items():
-            if b == "Pinnacle" or "over" not in d or "under" not in d:
-                continue
-            p = power_devig(d["over"], d["under"])
-            if p is not None:
-                logits[b] = _logit(p)
-        best: dict[str, dict] = {}
-        for b, d in books.items():
-            if b == "Pinnacle":
-                continue
-            for sel in ("over", "under"):
-                o = d.get(sel)
-                if o is None:
-                    continue
-                p = p_over if sel == "over" else 1 - p_over
-                ev = o * p - 1
-                if not in_ev_band(o, p):
-                    if ev >= EV_MIN - NEAR_FLOOR_PP:     # far below the floor answers nothing
-                        c0 = {"match_id": mid, "market": mk, "selection": sel, "odds": o,
-                              "bookmaker": b, "p_fair": p, "ev": ev, "ev_cons": None, "ts": d["ts"]}
-                        for bot in BOTS:
-                            note(bot, c0, _band_step(o, ev))
-                    continue
-                others = [v for k, v in logits.items() if k != b]
-                ev_cons = None
-                if len(others) >= CONS_MIN_BOOKS:
-                    pc = 1 / (1 + math.exp(-sum(others) / len(others)))
-                    ev_cons = o * (pc if sel == "over" else 1 - pc) - 1
-                cand = {"match_id": mid, "market": mk, "selection": sel, "odds": o, "bookmaker": b,
-                        "p_fair": p, "ev": ev, "ev_cons": ev_cons}
-                fc = {**cand, "ts": d["ts"]}
-                if early_rule(o, p, (ko - now_ts) / 3600):
-                    note(BOT_EARLY, fc, "drop_one_per_match")   # the winner is relabelled below
-                    if BOT_EARLY not in best or ev > best[BOT_EARLY]["ev"]:
-                        best[BOT_EARLY] = cand
-                else:
-                    note(BOT_EARLY, fc, "drop_too_late")
-                if ev_cons is not None and ev_cons >= CONS_EV_MIN:
-                    note(BOT_2ANCHOR, fc, "drop_one_per_match")
-                    if BOT_2ANCHOR not in best or ev > best[BOT_2ANCHOR]["ev"]:
-                        best[BOT_2ANCHOR] = cand
-                else:
-                    note(BOT_2ANCHOR, fc, "drop_no_consensus" if ev_cons is None else "drop_consensus_edge")
-        for bot, c in best.items():
-            out.append({**c, "bot": bot})
-            if funnel is not None:
-                try:
-                    funnel[(bot, c["match_id"], c["market"], c["selection"])] = {
-                        **c, "bot": bot, "step": "accepted", "ts": books[c["bookmaker"]]["ts"]}
-                except Exception:  # noqa: BLE001 — diagnostics never touch the pick
-                    pass
+    for key, line in lines.items():
+        for rule in _rules():
+            for c in sharp_evaluate(rule, {key: line}, now_ts,
+                                    on_decision=on_decision if funnel is not None else None):
+                p = {"bot": c["bot"], "match_id": c["match_id"], "market": c["market"],
+                     "selection": c["selection"], "odds": c["odds"], "bookmaker": c["bookmaker"],
+                     "p_fair": c["p_fair"], "ev": c["edge"], "ev_cons": c["edge_cons"]}
+                out.append(p)
+                if funnel is not None:
+                    try:
+                        bq = line["quotes"][c["bookmaker"]]
+                        funnel[(p["bot"], p["match_id"], p["market"], p["selection"])] = {
+                            **p, "step": "accepted", "ts": min(t for _o, t in bq.values())}
+                    except Exception:  # noqa: BLE001 — diagnostics never touch the pick
+                        pass
     return out
 
 
