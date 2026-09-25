@@ -197,24 +197,20 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
                 )
                 continue
             edge = float(r["cal"]) - 1.0 / price   # edge at the book's OWN price
-            execute_write(
+            n_written = execute_write(
                 """INSERT INTO shadow_bets
                        (shadow_run_id, shadow_cohort, bot_id, match_id, market, selection,
                         odds_at_pick, odds_at_pick_live, pick_time, stake,
                         model_probability, calibrated_prob, edge_percent,
                         recommended_bookmaker, model_version, decision_quote_age_min)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s,%s,%s,%s)
-                   ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)
-                   DO UPDATE SET
-                        odds_at_pick      = EXCLUDED.odds_at_pick,
-                        odds_at_pick_live = EXCLUDED.odds_at_pick_live,
-                        calibrated_prob   = EXCLUDED.calibrated_prob,
-                        edge_percent      = EXCLUDED.edge_percent,
-                        recommended_bookmaker = EXCLUDED.recommended_bookmaker,
-                        model_version         = EXCLUDED.model_version""",
-                # decision_quote_age_min is deliberately NOT in the DO UPDATE set:
-                # it records the age at the FIRST decision (pick_time), and a
-                # 30-min re-evaluation must not overwrite it (verifier 2026-09-15).
+                   -- #162 W2.1 (owner 11A, 2026-09-25): the FIRST decision is the pick — no 30-min
+                   -- re-evaluation rewrite of price/prob/edge (it kept the first pick_time, so the recorded
+                   -- price drifted from the quote at pick time). odds_at_pick_live = this bot's own-book
+                   -- price at the decision (review: not #159's MAX across all four books).
+                   ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING""",
+                # decision_quote_age_min records the age at the FIRST decision (pick_time); since
+                # #162 W2.1 nothing about the pick is rewritten by a later re-evaluation.
                 # TRIGGER-BOOK-UNATTRIBUTED (2026-09-11): every trigger row was
                 # written with recommended_bookmaker NULL — 100% of them, 639 of
                 # a 950-pick sample landing in the unattributed bucket. `book`
@@ -240,7 +236,7 @@ def match_and_emit(book: str, market: str, strategy: str, bot_name: str) -> dict
                  price, price, STAKE_EUR, r["cal"], r["cal"], edge, book,
                  r["mv"], (round(age_min, 1) if age_min is not None else None)],
             )
-            counters["written"] += 1
+            counters["written"] += int(n_written or 0)   # DO NOTHING on a re-sweep writes 0 rows
         log.info("trigger matcher (%s/%s/%s): %s", book, market, strategy, counters)
     except Exception as e:  # noqa: BLE001
         log.warning("trigger matcher raised (non-fatal): %s", e)

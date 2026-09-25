@@ -323,28 +323,25 @@ def generate(cfg: BotConfig) -> dict:
                 )
                 continue
 
-            execute_write(
+            n_written = execute_write(
                 """INSERT INTO shadow_bets
                        (shadow_run_id, shadow_cohort, bot_id, match_id, market,
                         selection, odds_at_pick, odds_at_pick_live, pick_time,
                         stake, model_probability, calibrated_prob, edge_percent,
                         recommended_bookmaker, model_version)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s,%s,%s,%s,%s,%s)
-                   ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)
-                   DO UPDATE SET
-                        odds_at_pick          = EXCLUDED.odds_at_pick,
-                        odds_at_pick_live     = EXCLUDED.odds_at_pick_live,
-                        model_probability     = EXCLUDED.model_probability,
-                        calibrated_prob       = EXCLUDED.calibrated_prob,
-                        edge_percent          = EXCLUDED.edge_percent,
-                        recommended_bookmaker = EXCLUDED.recommended_bookmaker,
-                        model_version         = EXCLUDED.model_version""",
+                   -- #162 W2.1 (owner 11A, 2026-09-25): the FIRST write is the pick. The old DO UPDATE
+                   -- rewrote price/prob/edge on every sweep but kept the first pick_time, so 22-52% of
+                   -- rows carried a price 1.0-3.8% above the quote at pick time (audit A §2).
+                   -- odds_at_pick_live = the price at THIS bot's book at pick time (review: #159's backfill
+                   -- would store the MAX across all four Estonian books — a price this bot could not take).
+                   ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING""",
                 [run_id, cfg.shadow_cohort, bot_id, r["match_id"], market,
                  selection, price, price, cfg.stake,
                  r["model_probability"], r["calibrated_prob"], edge, won_book,
                  r.get("model_version")],
             )
-            c["written"] += 1
+            c["written"] += int(n_written or 0)   # DO NOTHING on a re-sweep writes 0 rows
 
         log.info("pick_generator[%s/%s]: scanned %d, wrote %d "
                  "(no price %d, no clear %d, unsupported %d)",

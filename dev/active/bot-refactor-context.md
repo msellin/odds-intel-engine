@@ -53,3 +53,6 @@ Parent row: PRIORITY_QUEUE.md #162
   (b954c603, mig 438); pending_exposed RLS gap → #155. #164 in progress (its files locked).
 - Owner 2026-09-25 (via bot session): FLAT STAKES EVERYWHERE (handover rule 9) — W8.2 re-bases pnl/bankroll on a flat unit; W4 sizes real money flat; compute_stake→flat is #155's after #164.
 - W8.2 stake/pnl/bankroll restatement MOVED to #155 (owner). Don't write simulated_bets.stake/pnl/bankroll_after.
+- LESSON (twice now: 05a088a9, f542bfbf): NEVER build the staged smoke_test.py from the working tree — other
+  sessions' uncommitted tests ride along. Build from `git show HEAD:scripts/smoke_test.py` + insert only my own
+  test text (and my own pin edits by exact replacement).

@@ -58422,5 +58422,24 @@ def test_real_bets_paper_never_counted():
         FROM real_bets""")[0]
     assert r == {"paper_left_null": 0, "real_not_true": 0}, r
 
+
+@test("PAPER-WRITERS-KEEP-FIRST-PRICE — a shadow pick's recorded price is the one at pick time, never rewritten (#162 W2.1)")
+def test_paper_writers_keep_first_price():
+    """#162 W2.1 (owner 11A, 2026-09-25). pick_generator and the trigger matcher upserted shadow_bets with
+    DO UPDATE on every sweep: price/prob/edge rewritten, pick_time kept — 22-52% of their rows carried a price
+    1.0-3.8% above the quote at pick time (audit A §2). The first write is now the pick (DO NOTHING), and
+    odds_at_pick_live is left NULL for workers/utils/pick_price.py (#159) to fill with the pick-time own and
+    public prices (it only fills NULLs, so a writer's single-book value pre-empted it)."""
+    for f in ("workers/automation/pick_generator.py", "workers/jobs/pick_trigger_matcher.py",
+              "workers/jobs/ou35_model_shadow.py"):
+        src = _engine_path(f).read_text(encoding="utf-8")
+        ins = src[src.index("INSERT INTO shadow_bets"):]
+        ins = ins[:ins.index('""",')]
+        assert "ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING" in ins, f
+        assert "DO UPDATE SET" not in ins, f
+        # odds_at_pick_live = this bot's OWN-book price at the decision (review: #159's backfill would store
+        # the MAX across all four Estonian books — a price a single-book bot could not take)
+        assert "%s,%s, now()" in ins, f"{f}: odds_at_pick_live must be the own-book price at insert"
+
 if __name__ == "__main__":
     main()

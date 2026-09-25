@@ -140,14 +140,9 @@ def generate_picks() -> dict:
                         odds_at_pick, odds_at_pick_live, pick_time, stake,
                         model_probability, calibrated_prob, edge_percent, model_version)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s, %s,%s,%s,%s)
-                   ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection)
-                   DO UPDATE SET
-                        odds_at_pick      = EXCLUDED.odds_at_pick,
-                        odds_at_pick_live = EXCLUDED.odds_at_pick_live,
-                        model_probability = EXCLUDED.model_probability,
-                        calibrated_prob   = EXCLUDED.calibrated_prob,
-                        edge_percent      = EXCLUDED.edge_percent,
-                        model_version     = EXCLUDED.model_version""",
+                   -- #162 W2.1 (owner 11A, 2026-09-25): the FIRST write is the pick (was a DO UPDATE that
+                   -- rewrote price/prob/edge every run while keeping the first pick_time).
+                   ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING""",
                 # SHADOW-PICKS-UNATTRIBUTABLE (2026-09-18): stamp the version of
                 # the prediction this pick was derived from. It was already read
                 # by the LATERAL join to pick the newest row, then discarded —
