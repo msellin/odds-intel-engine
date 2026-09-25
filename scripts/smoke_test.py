@@ -13578,15 +13578,17 @@ def _():
     assert "UPDATE matches SET status='postponed'" in branch_block, (
         "Postpone branch must still flip matches.status='postponed'"
     )
-    assert "UPDATE simulated_bets" in branch_block and "result='void'" in branch_block, (
-        "SETTLE-VOID-POSTPONED: postpone branch must void pending bets on the match. "
-        "Add `UPDATE simulated_bets SET result='void', pnl=0 WHERE match_id=%s "
-        "AND result='pending'` immediately after the matches UPDATE."
+    # #165 (2026-09-25): the inline UPDATE became the shared voider for every bet table; its
+    # pending-only scope and table list are pinned in DEAD-MATCH-VOID-EVERY-BET-TABLE.
+    assert "void_bets_on_dead_matches(match_id=match_id)" in branch_block, (
+        "SETTLE-VOID-POSTPONED: postpone branch must void pending bets on the match in the "
+        "same pass — call void_bets_on_dead_matches(match_id=match_id) after the matches UPDATE."
     )
-    assert "AND result='pending'" in branch_block, (
-        "Void UPDATE must be scoped to result='pending' rows only — never overwrite "
-        "settled (won/lost) bets."
-    )
+    import inspect
+    import workers.jobs.settlement as _st
+    assert all(("= 'pending'" in spec[0]) or ("outcome IS NULL" in spec[0])
+               for spec in _st._DEAD_MATCH_VOID_SPECS.values()), (
+        "the voider must only touch pending rows in every table — never settled bets")
 
 
 @test("SETTLE-READY-UNBOUNDLOCAL — home_name_display assigned for combo + non-combo bets")
@@ -27686,9 +27688,12 @@ def _():
         "oldest-first, so a budget-truncated run still drains the backlog "
         "instead of re-fetching the same head every time"
     )
-    assert "shadow_bets" in src, (
+    # #165 (2026-09-25): the per-table inline UPDATEs became ONE voider over every bet table
+    # (shadow_bets included) — pinned table-by-table in DEAD-MATCH-VOID-EVERY-BET-TABLE.
+    assert "void_bets_on_dead_matches(" in src, (
         "postponed matches must void shadow_bets too — voiding simulated_bets "
-        "only is what left 64 postponed-shadow zombies (MATCH-STATUS-SWEEPER)"
+        "only is what left 64 postponed-shadow zombies (MATCH-STATUS-SWEEPER); "
+        "the sweep must call the shared void_bets_on_dead_matches()"
     )
 
 
@@ -44906,8 +44911,9 @@ def test_performance_public_is_calibrated_or_beta():
         # own gate (`|| isVip`), not the maturity allowlist — so it is neither
         # "listed by label" nor "hidden", and its settled bets are not withheld.
         rows = [r for r in rows if not r.get("vip")]
-        # #152: owner-chosen TESTING bots are listed through their own gate (show_on_performance).
-        rows = [r for r in rows if not r.get("show_on_performance")]
+        # #155 (migration 442, 2026-09-25): show_on_performance is now DERIVED from the status
+        # (testing/beta/calibrated → true), so it is no longer a separate gate to exclude on —
+        # excluding on it removed every listed bot and made this test read "empty leaderboard".
         # #148: hide_pending bots are DELIBERATELY private — their picks are the VIP bots' picks
         # (EV8 = VIP #1's EV8 subset, TWO-ANCHOR shares VIP #2's), so listing them would give the
         # paid picks away. They are neither "listed" nor "withheld evidence".
@@ -44919,7 +44925,8 @@ def test_performance_public_is_calibrated_or_beta():
         # #155 (owner 2026-09-25): EXPERIMENTAL = admins only BY DESIGN — its settled picks are not
         # "evidence withheld", they are a bot that has not earned a public status. The withheld-evidence
         # check applies to every OTHER non-public label (testing/active/…).
-        hidden = [r for r in rows if r["ml"] not in ("calibrated", "beta", "experimental")]
+        # TESTING is public too since #155 (own record, not headline) — neither withheld nor required to have results.
+        hidden = [r for r in rows if r["ml"] not in ("calibrated", "beta", "testing", "experimental")]
         assert listed, (
             "the allowlist selects NO active bot — /performance would render an "
             "empty leaderboard."

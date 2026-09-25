@@ -82,6 +82,8 @@ SELECT s.id::text AS id, 'shadow' AS ledger, s.bot_name AS bot, s.match_id::text
   JOIN matches m ON m.id = s.match_id
  WHERE s.result IN ('won','lost') AND s.stake > 0
    AND s.bot_retired_at IS NULL
+   AND s.inplay_minute IS NULL           -- gotcha 14 applies to the shadow ledger too (2026-09-25: 847 in-play
+                                         -- slowstate picks had entered the cohort; the sim query always excluded them)
 """
 
 
