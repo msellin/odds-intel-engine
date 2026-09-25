@@ -56532,7 +56532,11 @@ def test_vip_bot():
     it, Pro/Elite DMs carry ONLY VIP picks, and the private-channel sender refuses the public or
     operator chat. Registry and DB flag must name the same bot."""
     from workers.registry.bot_registry import VIP_BOTS, vip_ev_label, by_name
-    assert VIP_BOTS == frozenset({"bot_combined_1x2_ev5_v1"}) and by_name("bot_combined_1x2_ev5_v1")
+    assert VIP_BOTS == frozenset({"bot_combined_1x2_ev5_v1", "bot_ou_sharp_early_v1"}) and by_name("bot_combined_1x2_ev5_v1")
+    m424 = _engine_path("supabase/migrations/424_vip_ou_early.sql").read_text(encoding="utf-8")
+    assert "vip = true" in m424 and "'bot_ou_sharp_early_v1'" in m424 and "'bot_ou_sharp_2anchor_v1'" in m424
+    ou = _engine_path("workers/jobs/ou_sharp_outlier.py").read_text(encoding="utf-8")
+    assert "_send_vip_pick(p)" in ou and "send_telegram_vip(msg)" in ou and 'tier_minimum="pro"' in ou
     assert vip_ev_label(0.60, 1.94) == "EV8" and vip_ev_label(0.55, 1.93) == "EV5"
     mig = _engine_path("supabase/migrations/420_vip_bot.sql").read_text(encoding="utf-8")
     assert "UPDATE bots SET vip = true WHERE name = 'bot_combined_1x2_ev5_v1';" in mig

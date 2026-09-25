@@ -257,7 +257,7 @@ All new tables have RLS policies: users can only read/write their own data.
 ## VIP picks (#148, 2026-09-24)
 | Surface | Anonymous / Free | Pro / Elite |
 |---|---|---|
-| VIP bot (`bot_combined_1x2_ev5_v1`) live picks | ✗ — hidden until settled (RLS, migration 420) | ✓ Telegram DM, each labelled EV8 / EV5 (and the private VIP channel once `TELEGRAM_VIP_CHAT_ID` is set) |
+| VIP bots (`bot_combined_1x2_ev5_v1` 1X2, `bot_ou_sharp_early_v1` O/U — migration 424) live picks | ✗ — hidden until settled (RLS, migration 420) | ✓ Telegram DM, each labelled EV8 / EV5 (and the private VIP channel once `TELEGRAM_VIP_CHAT_ID` is set) |
 | VIP bot settled picks on /performance | ✓ | ✓ |
 | Other bots' picks by Telegram DM | ✗ | ✗ — **since 2026-09-24 Pro/Elite DMs carry ONLY VIP picks** (owner) |
 

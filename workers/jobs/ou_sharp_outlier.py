@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 
 from rich.console import Console
 
+from workers.registry.bot_registry import VIP_BOTS, vip_ev_label
+
 console = Console()
 
 LINES = ("over_under_15", "over_under_25", "over_under_35")
@@ -121,6 +123,28 @@ def evaluate(quotes: list[dict], now_ts: float, kickoff_ts: dict[str, float]) ->
     return out
 
 
+def _send_vip_pick(p: dict) -> None:
+    """#148/#149 VIP: O/U EARLY's live pick goes ONLY to Pro/Elite users and the private VIP
+    channel (never the public channel — the signaler excludes VIP bots), labelled EV8 / EV5."""
+    from workers.api_clients.db import execute_query
+    from workers.notify.telegram import send_telegram_to_users, send_telegram_vip
+    try:
+        m = execute_query("""SELECT ht.name h, at.name a, l.name lg FROM matches m JOIN teams ht ON ht.id = m.home_team_id
+                               JOIN teams at ON at.id = m.away_team_id LEFT JOIN leagues l ON l.id = m.league_id
+                              WHERE m.id = %s""", (p["match_id"],))
+        h, a, lg = (m[0]["h"], m[0]["a"], m[0]["lg"]) if m else ("?", "?", None)
+        line = {"over_under_15": "1.5", "over_under_25": "2.5", "over_under_35": "3.5"}.get(p["market"], p["market"])
+        msg = (f"⭐ <b>VIP pick · {vip_ev_label(p['p_fair'], p['odds'])}</b>\n"
+               f"<b>{h} vs {a}</b>\n"
+               f"{p['selection'].capitalize()} {line} goals @ {p['odds']:.2f} ({p['bookmaker']})\n"
+               f"EV {p['ev']*100:+.1f}% · fair odds {1 / p['p_fair']:.2f} — take it down to {1.05 / p['p_fair']:.2f}"
+               + (f"\n{lg}" if lg else ""))
+        send_telegram_to_users(msg, tier_minimum="pro", dedup_key=f"user-bet-{p['match_id']}-{p['market']}-{p['selection']}")
+        send_telegram_vip(msg)
+    except Exception as e:                      # a notification must never lose a recorded pick
+        console.print(f"[yellow]VIP O/U notify failed: {e}[/yellow]")
+
+
 def run(dry_run: bool = False) -> int:
     """Scan upcoming matches and record new picks. Returns the number stored."""
     from workers.api_clients.db import execute_query
@@ -180,6 +204,8 @@ def run(dry_run: bool = False) -> int:
         if bet_id:
             stored += 1
             have.add((str(bid), p["match_id"], p["market"]))
+            if p["bot"] in VIP_BOTS:
+                _send_vip_pick(p)
     console.print(f"[green]ou_sharp_outlier: {stored} new picks ({len(picks)} candidates)[/green]")
     return stored
 
