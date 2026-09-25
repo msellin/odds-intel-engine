@@ -2229,11 +2229,22 @@ def fix_stale_live_matches():
                 home_goals = goals.get("home")
                 away_goals = goals.get("away")
                 if home_goals is None or away_goals is None:
-                    # ABD/WO with no score — mark finished with 0-0
+                    # [[#162]] W1.4 (owner Q5, 2026-09-25): an ABANDONED / walkover match with NO
+                    # score is VOID, as the books settle it — it used to be marked finished 0-0,
+                    # which graded every bet on it as if the match had ended goalless (under 2.5
+                    # won, BTTS no won, the draw won). Now the match goes to the dead status
+                    # 'cancelled' and every bet table is voided by the ONE shared voider (#165).
+                    # real_bets included: the BOOK's settlement governs a real bet, and books void
+                    # an abandoned match with no result; if one ever settles instead, the account
+                    # reconcile is where that shows. With a score, ABD still finishes at that
+                    # score (tracked separately: an abandoned match's partial score is not final).
                     if status_short in ("ABD", "WO"):
-                        home_goals, away_goals = 0, 0
-                    else:
-                        continue
+                        execute_write("UPDATE matches SET status='cancelled' WHERE id=%s", [match_id])
+                        voided = sum(void_bets_on_dead_matches(match_id=match_id).values())
+                        console.print(f"[yellow]Stale match {match_id} ({db_status}→cancelled): "
+                                      f"{status_short} with no score — voided {voided} pending bet(s)[/yellow]")
+                        fixed += 1
+                    continue
                 ht_h, ht_a, _, _ = extract_half_scores(fixture)
                 update_match_result(match_id, int(home_goals), int(away_goals),
                                     ht_home=ht_h, ht_away=ht_a)

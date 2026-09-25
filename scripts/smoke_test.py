@@ -1116,6 +1116,22 @@ def _():
     return "voids postponed+cancelled singles, leaves finished bets and combos alone"
 
 
+@test("ABANDONED-NO-SCORE-VOIDS — an ABD/WO match with no score voids every ledger, never grades 0-0 (#162 W1.4)")
+def test_abandoned_no_score_voids():
+    """[[#162]] W1.4 (owner Q5, 2026-09-25). fix_stale_live_matches marked an abandoned / walkover
+    fixture with NO score as finished 0-0, so every bet on it was graded as a goalless draw. Books
+    void such a match. Now: status 'cancelled' (a DEAD_MATCH_STATUSES value) + the shared voider."""
+    import inspect
+    from workers.jobs import settlement as st
+    src = inspect.getsource(st.fix_stale_live_matches)
+    assert "home_goals, away_goals = 0, 0" not in src, "an abandoned match with no score must not become 0-0"
+    i = src.index('if status_short in ("ABD", "WO"):')
+    block = src[i:i + 700]
+    assert "status='cancelled'" in block and "void_bets_on_dead_matches(match_id=match_id)" in block
+    assert "cancelled" in st.DEAD_MATCH_STATUSES, "the voider must treat 'cancelled' as dead"
+    assert "real_bets" in st._DEAD_MATCH_VOID_SPECS, "real bets on the match are voided too"
+
+
 @test("DEAD-MATCH-VOID-EVERY-BET-TABLE — one voider covers every bet table; shadow+simulated voided on postponed (#165)")
 def _():
     """#165 (2026-09-25): 219 shadow_bets sat pending on postponed matches since

@@ -605,6 +605,11 @@ pre-registration doc.) Three definitions differ from the bot ledgers and are loa
    15-min sweep, in `run_settlement`, and per match inside the stale sweep.
    Rule unchanged: void at once, pnl = 0, bankroll untouched; a postponed
    fixture that is later played is re-graded by `resettle_wrongly_voided_bets`.
+   **#162 W1.4 (2026-09-25): an abandoned / walkover match with NO score is void.**
+   The stale sweep used to mark it finished 0-0, grading every bet on it as a
+   goalless draw; it now sets `status='cancelled'` and runs the same voider
+   (real_bets included — books void it). ABD WITH a partial score still finishes
+   at that score (open question, PRIORITY_QUEUE #170).
    Health: `health_alerts.check_postponed_pending` (21:30) alerts on any pending
    pick on a postponed match > 6 h past its original kick-off.
 
