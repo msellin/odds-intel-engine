@@ -58406,5 +58406,13 @@ def test_own_betting_doc_current():
         assert fact in now, f"the current section must state: {fact}"
     assert "BOT_THRESHOLDS" not in now and "coolbet_mac_daemon" not in now.replace("paper Mac daemon", "")
 
+@test("SHADOW-UNIQUE-HAS-RULE-VERSION — shadow_bets_unique exposes the rule tag (migration 458 fixes 453)")
+def test_shadow_unique_has_rule_version():
+    """[[#162]]: migration 453 added shadow_bets.rule_version but not to shadow_bets_unique (a view
+    freezes its columns), which SHADOW-VIEW-COLUMN-DRIFT caught. 458 appends it with CREATE OR REPLACE."""
+    mig = _engine_path("supabase/migrations/458_shadow_bets_unique_rule_version.sql").read_text(encoding="utf-8")
+    assert "CREATE OR REPLACE VIEW shadow_bets_unique AS" in mig and "sb.rule_version\n   FROM shadow_bets sb" in mig
+    assert "SET lock_timeout" in mig
+
 if __name__ == "__main__":
     main()
