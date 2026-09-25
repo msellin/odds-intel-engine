@@ -109,12 +109,17 @@ def evaluate(quotes: list[dict], now_ts: float, kickoff_ts: dict[str, float],
     from workers.utils.candidate_funnel import NEAR_FLOOR_PP
 
     def note(bot: str, cand: dict, step: str) -> None:
+        # Diagnostics on the VIP #2 pick path: it must never be able to change or stop a pick
+        # ([[#162]] W7.5 review), so any bookkeeping error is swallowed.
         if funnel is None:
             return
-        k = (bot, cand["match_id"], cand["market"], cand["selection"])
-        old = funnel.get(k)
-        if old is None or (_STAGE[step], cand["ev"]) > (_STAGE[old["step"]], old["ev"]):
-            funnel[k] = {**cand, "bot": bot, "step": step}
+        try:
+            k = (bot, cand["match_id"], cand["market"], cand["selection"])
+            old = funnel.get(k)
+            if old is None or (_STAGE.get(step, -1), cand["ev"]) > (_STAGE.get(old["step"], -1), old["ev"]):
+                funnel[k] = {**cand, "bot": bot, "step": step}
+        except Exception:  # noqa: BLE001
+            pass
 
     by = defaultdict(dict)                     # (match, market) -> book -> {over, under, ts}
     for q in quotes:
@@ -181,8 +186,11 @@ def evaluate(quotes: list[dict], now_ts: float, kickoff_ts: dict[str, float],
         for bot, c in best.items():
             out.append({**c, "bot": bot})
             if funnel is not None:
-                funnel[(bot, c["match_id"], c["market"], c["selection"])] = {
-                    **c, "bot": bot, "step": "accepted", "ts": books[c["bookmaker"]]["ts"]}
+                try:
+                    funnel[(bot, c["match_id"], c["market"], c["selection"])] = {
+                        **c, "bot": bot, "step": "accepted", "ts": books[c["bookmaker"]]["ts"]}
+                except Exception:  # noqa: BLE001 — diagnostics never touch the pick
+                    pass
     return out
 
 
@@ -271,8 +279,9 @@ def run(dry_run: bool = False) -> int:
         if not bid or (str(bid), p["match_id"], p["market"]) in have:
             # picked on an earlier run: the SAME side stays `accepted`; the opposite side is
             # the one-pick-per-line rule applied across runs
-            if bid and have[(str(bid), p["match_id"], p["market"])] != p["selection"]:
-                funnel[(p["bot"], p["match_id"], p["market"], p["selection"])]["step"] = "drop_one_per_match"
+            _fk = funnel.get((p["bot"], p["match_id"], p["market"], p["selection"]))
+            if bid and _fk is not None and have[(str(bid), p["match_id"], p["market"])] != p["selection"]:
+                _fk["step"] = "drop_one_per_match"
             continue
         bet_id = store_bet(bid, p["match_id"], {
             "market": p["market"], "selection": p["selection"], "odds": p["odds"],

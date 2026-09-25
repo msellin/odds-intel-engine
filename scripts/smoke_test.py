@@ -60007,5 +60007,19 @@ def test_status_words_from_status_field():
         assert "status={p.bot_status}" in page
         assert "bot_status" in (web / "src/lib/forward-test-picks.ts").read_text()
 
+@test("OU-SHARP-FUNNEL-NEVER-BREAKS-PICKS — funnel bookkeeping on VIP #2's pick path swallows its own errors (#162 W7.5)")
+def test_ou_sharp_funnel_never_breaks_picks():
+    """[[#162]] W7.5 review: the candidate-funnel notes run INSIDE ou_sharp_outlier.evaluate() and run(),
+    i.e. on the paid VIP #2 channel's pick path. A bookkeeping KeyError there would stop every O/U EARLY
+    pick, so each funnel write is wrapped and the relabel reads with .get()."""
+    import inspect
+    from workers.jobs import ou_sharp_outlier as o
+    ev = inspect.getsource(o.evaluate)
+    i = ev.index("def note(")
+    assert "except Exception" in ev[i:i + 900], "note() must swallow its own errors"
+    assert ev.count("except Exception") >= 2, "the 'accepted' write must be guarded too"
+    run = inspect.getsource(o.run)
+    assert "funnel.get((p[\"bot\"]" in run, "the cross-run relabel must not index the funnel blindly"
+
 if __name__ == "__main__":
     main()

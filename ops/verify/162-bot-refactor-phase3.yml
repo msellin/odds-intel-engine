@@ -1,0 +1,41 @@
+# #162 bot refactor, phase 3 — live invariants of the landed steps (2026-09-25).
+task: "#162"
+checks:
+  - name: every_new_pick_carries_a_rule_version
+    mode: invariant
+    # owner (b) / migration 453: the BEFORE INSERT trigger stamps bots.rule_version on every new pick.
+    sql: |
+      SELECT (SELECT count(*) FROM simulated_bets WHERE pick_time > '2026-09-25 22:20+00' AND bot_id IS NOT NULL AND rule_version IS NULL)
+           + (SELECT count(*) FROM shadow_bets   WHERE pick_time > '2026-09-25 22:20+00' AND bot_id IS NOT NULL AND rule_version IS NULL)
+    expect: "== 0"
+    expires: "2026-10-09T00:00:00Z"
+  - name: registry_rule_versions_synced
+    mode: invariant
+    # bot_status.sync_rule_versions: the two bots changed in W7.7/W7.8 carry r2.
+    sql: SELECT count(*) FROM bots WHERE name IN ('bot_combined_1x2_ev5_v1','bot_v10_ou_comb_v1') AND rule_version <> 'r2'
+    expect: "== 0"
+    expires: "2026-10-09T00:00:00Z"
+  - name: one_per_match_bots_hold_one_pending_side
+    mode: invariant
+    # W7.8: a one_per_match bot never holds two pending picks on one match (picks made under r2).
+    sql: |
+      SELECT count(*) FROM (
+        SELECT s.match_id FROM simulated_bets s JOIN bots b ON b.id = s.bot_id
+         WHERE b.name IN ('bot_combined_1x2_ev5_v1','bot_v10_ou_comb_v1')
+           AND s.result = 'pending' AND s.rule_version = 'r2'
+         GROUP BY s.bot_id, s.match_id HAVING count(*) > 1) x
+    expect: "== 0"
+    expires: "2026-10-16T00:00:00Z"
+  - name: dashboard_cache_pruned
+    mode: eventually
+    # W8.9: the 02:50 prune keeps ~7 days (~700 rows).
+    sql: SELECT count(*) FROM dashboard_cache
+    expect: "< 1500"
+    run_after: {job: dashboard_cache_prune, since: "2026-09-26T02:40:00Z"}
+    expires: "2026-10-03T00:00:00Z"
+  - name: abandoned_no_score_never_zero_zero
+    mode: invariant
+    # W1.4: no match newly finished 0-0 by the stale sweep without a score (a cancelled match has no score).
+    sql: SELECT count(*) FROM matches WHERE status = 'cancelled' AND (score_home IS NOT NULL OR score_away IS NOT NULL)
+    expect: "== 0"
+    expires: "2026-10-31T00:00:00Z"
