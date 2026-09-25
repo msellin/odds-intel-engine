@@ -56772,7 +56772,8 @@ def test_newplus_ev_bots():
     from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
     from workers.registry.bot_registry import BOTS
     names = {b.name for b in BOTS}
-    for name, thr in (("bot_combined_1x2_ev5_v1", 0.05), ("bot_combined_1x2_ev8_v1", 0.08)):
+    # bot_combined_1x2_ev8_v1 retired 2026-09-25 (migration 444) — a strict subset of EV5.
+    for name, thr in (("bot_combined_1x2_ev5_v1", 0.05),):
         c = BOTS_CONFIG[name]
         assert c["prob_source"] == "combined_1x2" and c["edge_unit"] == "ev"
         assert c["require_pinnacle"] is True and c["one_per_match"] is True
@@ -58208,6 +58209,28 @@ def test_bot_distribution_and_review_flag():
     assert no_basis == 0, "a bot with no CLV basis must say so, not read as a silent 'not flagged'"
     assert flag_retired == 0, "the flag covers active bots only"
     assert anon == {"a": False, "b": False}, anon
+
+
+@test("EV8-SUBSET-BOT-RETIRED — owner 2026-09-25: the EV8 bot was a strict subset of the VIP bot; one ledger, split by tag")
+def test_ev8_subset_bot_retired():
+    """bot_combined_1x2_ev8_v1 ran the VIP bot's rule at EV >= 8% — every pick was also a VIP pick, and
+    /admin/bots showed two rows with the same numbers. Retired (migration 444); out of BOTS_CONFIG, its
+    cohort and the active registry, so it cannot keep generating. The per-pick EV8 tag stays."""
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
+    from workers.registry.bot_registry import by_name, vip_ev_label
+    assert "bot_combined_1x2_ev8_v1" not in BOTS_CONFIG and "bot_combined_1x2_ev8_v1" not in BOT_TIMING_COHORTS
+    assert by_name("bot_combined_1x2_ev8_v1") is None and by_name("bot_combined_1x2_ev5_v1") is not None
+    assert vip_ev_label(0.5, 2.2) == "EV8" and vip_ev_label(0.5, 2.12) == "EV5"
+    mig = _engine_path("supabase/migrations/444_retire_ev8_vip_subset.sql").read_text(encoding="utf-8")
+    assert "retired_at = now()" in mig and "'bot_combined_1x2_ev8_v1'" in mig
+    exp = _engine_path("scripts/export_bot_config.py").read_text(encoding="utf-8")
+    assert '"edge_unit", "prob_source"' in exp, "the board needs edge_unit to label an EV floor as EV"
+    try:
+        fmt = _web_path("src/app/(app)/admin/bots/bot-board-format.ts").read_text(encoding="utf-8")
+    except SkipTest:
+        return
+    assert "floorShort(parseFloor(cfg.edge_floor), edgeUnit(cfg))" in fmt and '"all publishable books"' in fmt
+    assert "Math.min(...vals) === Math.max(...vals)" in fmt, "one value across tiers must not read 'by tier'"
 
 
 @test("OU35-MODEL-BOT-RETIRED — owner 2026-09-25: retired after its 'review this bot' flag; the job records nothing")

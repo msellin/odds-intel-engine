@@ -194,19 +194,9 @@ BOTS_CONFIG = {
         "require_pinnacle": True,
         "one_per_match": True,
     },
-    "bot_combined_1x2_ev8_v1": {
-        "description": "1x2 NEW+ EV8 — combined 1X2 model r1x2_comb_v1, EV >= 8% flat, Pinnacle price required, odds 1.30-6.00, one pick per match",
-        "tier_label": "elite",
-        "markets": ["1x2"],
-        "tier_filter": None,
-        "edge_thresholds": {t: {"1x2_fav": 0.08, "1x2_long": 0.08} for t in (1, 2, 3, 4)},
-        "odds_range": (1.30, 6.00),
-        "min_prob": 0.0,
-        "prob_source": "combined_1x2",
-        "edge_unit": "ev",
-        "require_pinnacle": True,
-        "one_per_match": True,
-    },
+    # bot_combined_1x2_ev8_v1 RETIRED 2026-09-25 (migration 444, owner): it was a strict subset of
+    # the VIP bot bot_combined_1x2_ev5_v1 (same rule, EV >= 8%), so every EV8 pick already sits in
+    # the VIP ledger with its EV8 tag; the EV8-vs-EV5 comparison is a split of that one ledger.
     "bot_v10_ou": {
         # RETIRED 2026-09-24 — migration 399 ([[#077]]). Kept for history; the pipeline
         # skips it on is_active=False here and retired_at in the DB.
@@ -1153,7 +1143,6 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_combined_1x2_v1":  "all",    # RATING-1X2-BOT second arm (combined model)
     "bot_combined_1x2_ev5_v1": "all",
     "bot_v10_1x2_newplus_v1": "all",   # #152 twin of bot_v10_1x2 on the NEW+ model  # #141 B4 NEW+ EV outlier bots — same cohort as the twin
-    "bot_combined_1x2_ev8_v1": "all",
     "bot_v10_ou":           "all",
     "bot_summer_specialist": "all",   # BOT-SUMMER-SPECIALIST 2026-07-08 — fills midweek summer volume gap
     "bot_lower_1x2":        "all",

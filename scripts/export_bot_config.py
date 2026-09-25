@@ -162,7 +162,11 @@ def _pipeline_rows(db: dict) -> dict[str, dict]:
         if strategies:
             gates.append(gate("strategies", strategies, line))
         for key in ("min_prob", "selection_filter", "league_filter", "tier_filter",
-                    "markets", "is_active"):
+                    "markets", "is_active",
+                    # #155 2026-09-25: an EV bot's floor is p x odds - 1, not pp — the board
+                    # must say "EV >= 5%", and prob_source says WHICH model priced it.
+                    "edge_unit", "prob_source", "ou_prob_source", "require_pinnacle",
+                    "one_per_match"):
             if key in cfg:
                 gates.append(gate(key, cfg[key], line))
         gates.append(gate("books_excluded (publishable deny-list)", non_offers,

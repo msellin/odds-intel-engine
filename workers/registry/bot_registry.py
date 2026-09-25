@@ -219,9 +219,8 @@ BOTS: list[BotSpec] = [
     BotSpec("bot_combined_1x2_ev5_v1", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
             None, None, False,
             "1x2 NEW+ EV5 (#141 B4): the combined model r1x2_comb_v1 as a consensus-outlier bettor in its natural unit — EV = p x odds - 1 >= 5% flat across tiers, Pinnacle price required, no min_prob, odds 1.30-6.00, one pick per match. Backtest B2 CLV +2.0% (n=1,050; +1.1% at our own sweepers), same window so optimistic. experimental, paper, no placement path."),
-    BotSpec("bot_combined_1x2_ev8_v1", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
-            None, None, False,
-            "1x2 NEW+ EV8 (#141 B4): as EV5 with EV >= 8%. Backtest B2 CLV +3.1% (n=557; +2.7% at our own sweepers). experimental, paper, no placement path."),
+    # bot_combined_1x2_ev8_v1 RETIRED 2026-09-25 (migration 444): a strict subset of the VIP bot
+    # above; the EV8 band is now a split of the VIP ledger (per-pick vip_ev_label).
     BotSpec("bot_ou_sharp_early_v1", FAM_INTERNAL, "ou", ANCHOR_SHARP,
             None, None, False,
             "O/U EARLY (#149): a soft book's O/U 1.5/2.5/3.5 quote beats Pinnacle's power-de-vigged fair price by EV 5-15% (cap = palpable-error guard) while it is >= 12 h before kickoff; one pick per (match, line). Backtest round O3 T3: CLV +7.5% (Aug, n=383) / +6.9% (Sep, n=459), ROI +10.4% / +10.8%. Job workers/jobs/ou_sharp_outlier.py. experimental, paper, no placement path."),
