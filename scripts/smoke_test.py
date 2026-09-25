@@ -52995,6 +52995,7 @@ def test_unibet_tab_not_loaded():
     assert i < src.index("qb = await inj("), "the origin check must run before the first API fetch"
     assert '"method": "Page.navigate"' in src and 'origin.endswith("unibet.ee")' in src
     assert 'c["last_status"] = d.get("s")' in src and "tab not on unibet.ee" in src
+    assert "reuse any page tab" in src, "no unibet.ee tab at all must also self-heal, not fail the run"
 
 
 @test("FOOTPRINT-HOUR-BOOKING — a request batch is booked under the hour it was counted; 'budget spent' only at the budget")

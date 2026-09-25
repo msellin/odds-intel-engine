@@ -527,8 +527,12 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
         c["reason"] = f"CDP unreachable: {e}"; return c
     tab = next((t for t in (targets or []) if t.get("type") == "page"
                 and "unibet.ee" in (t.get("url") or "").lower()), None)
+    if not tab:
+        # UNIBET-TAB-NOT-LOADED (2026-09-25): no tab on unibet.ee (e.g. it ended up on about:blank
+        # after a Chrome restart) — reuse any page tab; the origin check below loads unibet.ee in it.
+        tab = next((t for t in (targets or []) if t.get("type") == "page" and t.get("webSocketDebuggerUrl")), None)
     if not tab or not tab.get("webSocketDebuggerUrl"):
-        c["reason"] = "no unibet.ee tab open in CDP-Chrome (self-revive will open + log one in)"; return c
+        c["reason"] = "no page tab open in CDP-Chrome (self-revive will open + log one in)"; return c
 
     # 2) DB fixtures within `days`
     fixtures = execute_query(
@@ -817,7 +821,7 @@ def run_bulk(days: int = 2, dry_run: bool = False, limit: int | None = None,
     # itself. Deduped 3h so it can't spam; never raises.
     try:
         reason = (res or {}).get("reason") or ""
-        stale = (res or {}).get("stored", 0) == 0 and "unibet.ee tab" in reason
+        stale = (res or {}).get("stored", 0) == 0 and ("unibet.ee tab" in reason or "page tab" in reason)
         if not dry_run and stale and heal in ("failed", "no_creds"):
             from workers.notify.telegram import send_telegram
             detail = ("auto-login FAILED (SMS/2FA or a changed login selector) — open unibet.ee "
