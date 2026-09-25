@@ -277,6 +277,22 @@ The detail view's picks come from `/api/performance/bot-legs` (service role, ser
 lists (status TESTING / BETA / CALIBRATED — VIP bots included when their status is public; never retired, never
 experimental — [[#155]]), and for VIP + hide_pending bots SETTLED legs only (their pending picks are the paid product, #148).
 
+## /performance work done + retired strategies ([[#157]], owner 2026-09-25)
+
+Same for every reader (no tier split). Kept visibly APART from the headline, which stays today's BETA + CALIBRATED
+strategies only (`getPublicCohortBotNames`, `retired_at IS NULL`) — retired picks count in the totals and in the
+retired section, never in the active ROI.
+
+| Surface | Anonymous / Free / Pro / Elite |
+|---|---|
+| "The work behind it": picks tested, strategies, distinct selections, settled, retired / internal / on-page counts (`bot_public_work_done`) | ✓ |
+| Collapsed "Show retired strategies": one row per FAMILY summing every retired bot (W-L, flat ROI at the price available at pick time, sharp-anchor CLV **number** with n, data-quality flag counts) + up to 2 representatives per family (chosen by sample and close coverage, never result) | ✓ |
+| Family lesson line: soft-book triggers vs the sharp line vs vs our model (family CLV + n only; no experimental bot's own record) | ✓ |
+| bot_v10_1x2 detail view: swap-window note (N of its picks priced 10 May–14 Sep while the 1X2 model was partly home/away-swapped, #065) | ✓ |
+
+Retired-family CLV is shown as a number to everyone (unlike active model-bot rows, direction only below Elite):
+it is the evidence for why a strategy was retired, and the owner approved the family-level CLV line (answer 3).
+
 ## Bot status → what the public sees ([[#155]], owner 2026-09-25)
 
 ONE status per bot decides distribution — the same for Anonymous, Free, Pro and Elite (VIP is the only

@@ -117,7 +117,7 @@ UPDATE {table} t SET odds_at_pick_available = t.odds_at_pick_live
 """
 
 
-PUBLIC_BASES = ("available", "our_books", "recorded")
+PUBLIC_BASES = ("available", "our_books", "recorded", "inplay")
 
 
 def public_price(row: dict) -> tuple[float, str]:
@@ -126,7 +126,12 @@ def public_price(row: dict) -> tuple[float, str]:
     else odds_at_pick_live, else the recorded odds_at_pick ('recorded' = no quote stored at
     pick time; counted as n_public_recorded, flagged on the row as pnl_price_basis).
     Settlement computes simulated_bets.pnl at this price (FLAT-STAKES-EVERYWHERE, #155), so
-    the stored P&L is the published one. Pure — no DB."""
+    the stored P&L is the published one. Pure — no DB.
+    [[#157]] An IN-PLAY leg (match_minute_at_pick / xg_source set) is priced at its recorded
+    in-play odds, basis 'inplay' — a pre-match quote is a different market (§14); migration 446
+    applies the same rule in bot_ledger."""
+    if row.get("match_minute_at_pick") is not None or row.get("xg_source") is not None:
+        return float(row["odds_at_pick"]), "inplay"
     for col, basis in (("odds_at_pick_available", "available"), ("odds_at_pick_live", "our_books")):
         v = row.get(col)
         if v is not None and float(v) > 1:

@@ -381,6 +381,12 @@ Two more Epicbet-specific facts worth knowing before writing a query against it:
 
 ## 14. CLV is meaningless for in-play bets — do not gate on it
 
+> **Same trap for PRICE, not just CLV ([[#157]], 2026-09-25).** A pre-#159 live backfill wrote `odds_at_pick_live`
+> on 1,104 settled in-play `simulated_bets` legs — the latest PRE-MATCH quote before a minute-35 pick. bot_ledger's
+> public/own price fell back to it, so `inplay_e` read **+22.9%** ROI against **+3.4%** at its own in-play odds (inplay_c
+> −64.5% vs −7.5%). Migration 446: an in-play leg is priced at its recorded odds on both bases (basis `inplay`). Never
+> price an in-play leg off `odds_snapshots` "at or before pick_time" — that is the pre-match board.
+
 `clv_pinnacle_devig` compares the taken price against Pinnacle's **pre-match
 close**. An in-play bet placed at minute 22 with a goal already on the board is
 a different market entirely, so the comparison is not a closing-line value at

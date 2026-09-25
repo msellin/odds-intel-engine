@@ -59433,5 +59433,67 @@ def test_review_this_bot_flag():
         assert "retired_at" not in _web_path(f).read_text().split("reviewFlagIssues", 1)[-1][:600], "a flag, never a retirement"
 
 
+@test("PERFORMANCE-RETIRED-PARITY — /performance work done + retired families read bot_performance; active headline excludes retired (#157)")
+def test_performance_retired_parity():
+    """[[#157]] owner 2026-09-25: /performance shows the work done (every strategy ever scored,
+    retired included) WITHOUT making the active ROI dishonest. Three separate things: the headline
+    (BETA + CALIBRATED, retired_at IS NULL — unchanged), bot_public_work_done (totals), and a
+    collapsed retired section (bot_public_record_group families + bot_public_record representatives,
+    migration 446). Every ROI/CLV there must be bot_performance's (#159) — a family is a SUM of its
+    bots' rows, never a second ROI path. Also pins the in-play price fix found on the way: an in-play
+    leg is priced at its recorded in-play odds (basis 'inplay'), never a pre-match quote (§14)."""
+    mig = _engine_path("supabase/migrations/446_bot_public_record.sql").read_text()
+    for v in ("bot_public_record", "bot_public_record_group", "bot_public_work_done"):
+        assert f"CREATE OR REPLACE VIEW public.{v} AS" in mig, v
+    assert "FROM bot_performance p" in mig, "the per-bot record must be bot_performance's rows"
+    assert "sum(pnl_units_public) / sum(settled)" in mig, "family ROI = sum of the bots' public pnl / settled"
+    assert "TO anon" not in mig, "private views only (#072)"
+    rep = mig[mig.index("rep AS ("):mig.index("SELECT r.bot_name, r.display_name")]
+    assert "roi_public" not in rep and "clv_public" not in rep.replace("clv_n", ""), \
+        "representatives are chosen by sample + close coverage, never by result"
+    assert "WHEN ip.inplay THEN s.odds_at_pick" in mig and "WHEN sh.inplay_minute IS NOT NULL THEN sh.odds_at_pick" in mig
+    from workers.utils.pick_price import public_price
+    assert public_price({"odds_at_pick": 2.5, "odds_at_pick_live": 1.7, "odds_at_pick_available": 1.8,
+                         "match_minute_at_pick": 35}) == (2.5, "inplay")
+    # web: the headline cohort never includes a retired bot; the work-done section is separate
+    ed = _web_path("src/lib/engine-data.ts").read_text()
+    coh = ed[ed.index("export async function getPublicCohortBotNames"):][:700]
+    assert '.is("retired_at", null)' in coh, "the active headline must exclude retired bots"
+    lib = _web_path("src/lib/performance-work-done.ts").read_text()
+    for v in ("bot_public_work_done", "bot_public_record_group", "bot_public_record"):
+        assert f'.from("{v}")' in lib, v
+    assert "roi_public" in lib and "pnl_unit_public" not in lib and "bot_ledger" not in lib, \
+        "the retired section reads the view's ROI, computes none from legs"
+    page = _web_path("src/app/(app)/performance/page.tsx").read_text()
+    assert "getWorkDone()" in page and "<PerformanceWorkDone" in page
+    assert "getWorkDone" not in _web_path("src/lib/engine-data.ts").read_text(), "work done must not feed the headline"
+    from workers.api_clients.db import execute_query
+    if not execute_query("SELECT to_regclass('public.bot_public_record') AS r", [])[0]["r"]:
+        return "446 not applied yet — source pins only"
+    bad = execute_query("""
+        SELECT r.bot_name FROM bot_public_record r JOIN bot_performance p USING (bot_name)
+         WHERE r.roi_public IS DISTINCT FROM p.roi_public OR r.settled <> p.settled
+            OR r.clv_public IS DISTINCT FROM p.clv_public OR r.pnl_units_public <> p.pnl_units_public""", [])
+    assert not bad, f"bot_public_record differs from bot_performance: {bad}"
+    fam = execute_query("""
+        WITH s AS (SELECT r.public_group, sum(p.settled) st, sum(p.pnl_units_public) pnl, sum(p.picks_total) pk
+                     FROM bot_public_record r JOIN bot_performance p USING (bot_name)
+                    WHERE r.is_retired GROUP BY 1)
+        SELECT g.public_group FROM bot_public_record_group g JOIN s USING (public_group)
+         WHERE g.is_retired AND (g.settled <> s.st OR g.picks_total <> s.pk
+               OR abs(g.pnl_units_public - s.pnl) > 1e-6
+               OR abs(coalesce(g.roi_public, 0) - coalesce(round(s.pnl / nullif(s.st, 0), 6), 0)) > 1e-6)""", [])
+    assert not fam, f"retired family rows are not the sum of their bots' bot_performance rows: {fam}"
+    w = execute_query("""SELECT (SELECT picks_total FROM bot_public_work_done) AS w,
+                                (SELECT sum(picks_total) FROM bot_performance) AS p,
+                                (SELECT strategies FROM bot_public_work_done) AS ws,
+                                (SELECT count(*) FROM bot_performance) AS ps""", [])[0]
+    assert w["w"] == w["p"] and w["ws"] == w["ps"], f"work done != every bot_performance row: {w}"
+    ip = execute_query("""SELECT count(*) AS n FROM bot_ledger WHERE is_inplay AND public_basis <> 'inplay'
+                           AND source IN ('sim', 'shadow')""", [])[0]["n"]
+    assert ip == 0, f"{ip} in-play legs priced off a pre-match quote"
+    return f"{w['ws']} strategies / {w['w']} picks; retired families == sum of bot_performance; in-play priced in-play"
+
+
 if __name__ == "__main__":
     main()
