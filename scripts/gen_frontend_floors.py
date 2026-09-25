@@ -47,6 +47,16 @@ _FIXTURE_INPUTS = [
 ]
 
 
+def _edge_unit(name: str) -> str:
+    """'ev' when the bot's own gate is an EV (p x odds - 1) floor, else 'pp'. Read from the
+    code that runs the bot, so the label cannot drift from the gate."""
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG
+    from workers.jobs.ou_sharp_outlier import BOTS as OU_SHARP_OUTLIER_BOTS
+    if (BOTS_CONFIG.get(name) or {}).get("edge_unit") == "ev" or name in OU_SHARP_OUTLIER_BOTS:
+        return "ev"
+    return "pp"
+
+
 def render() -> str:
     fixture = [
         {"market": m, "selection": s, "odds": o,
@@ -80,6 +90,11 @@ def render() -> str:
             # out of sync in the first place (see this file's header).
             "anchor": b.anchor,
             "market": b.market,
+            # [[#155]] owner 2026-09-25: the unit the bot's own edge gate is in. 'ev' = it gates
+            # on EV = p x odds - 1 (BOTS_CONFIG edge_unit='ev', or the O/U sharp-outlier bots,
+            # which gate on EV vs Pinnacle); 'pp' = probability points. The /performance detail
+            # view shows an EV column for 'ev' bots instead of the pp edge.
+            "edgeUnit": _edge_unit(b.name),
         }
         for b in sorted(BOTS, key=lambda x: x.name)
     }
@@ -113,6 +128,7 @@ export const ENGINE_BOT_FLOORS: Record<string, {{
   realMoney: boolean;
   anchor: string;
   market: string;
+  edgeUnit: "ev" | "pp";
 }}> =
   {json.dumps(bots, indent=2)};
 

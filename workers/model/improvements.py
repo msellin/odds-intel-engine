@@ -815,17 +815,26 @@ def _dim_pinnacle(match_id: str, selection: str, model_prob: float) -> int:
 
 
 # =============================================================================
-# P4: KELLY-BASED STAKE SIZING
+# P4: STAKE SIZING — FLAT ONE UNIT FOR EVERY BOT (FLAT-STAKES-EVERYWHERE, #155)
 # =============================================================================
+#
+# Owner 2026-09-25: "keep flat stakes everywhere, Kelly hasn't proven itself in this
+# project yet". Every bot records ONE flat unit per pick — paper, shadow, forward test,
+# VIP, twins — and real-money sizing is the same unit. WHY: readers bet flat units, so the
+# record must show what following the picks returns; every backtest that decided a bot
+# (B/B2/B3, O1-O3, LANES, #152) was already flat and judged on CLV, which is
+# stake-independent; and a stake-weighted ROI beside a flat one is how the /performance
+# detail view came to read EV5 at -53.8% where flat was -3%. Existing rows were restated
+# to this unit by migration 441 (original Kelly stake kept in stake_kelly_original).
+#
+# `kelly_fraction` is still COMPUTED and STORED on every pick as data (it is what a
+# future sizing study would test), but nothing sizes on it.
+FLAT_STAKE_EUR = 10.0
 
-# Fraction of Kelly to use — reduced from 0.25 to 0.15 (2026-04-29)
-# With 6 concurrent bots, 0.25× was stacking up to 9% bankroll exposure.
+# The retired fractional-Kelly constants. They survive ONLY inside
+# `kelly_stake_eligible` below, which keeps the PICK SET unchanged (see there).
 KELLY_FRACTION = 0.15
-# Maximum stake as fraction of bankroll — reduced from 1.5% to 1.0% (2026-04-29)
 MAX_STAKE_PCT = 0.010
-
-# Data tier multipliers (only non-model multiplier applied to stakes)
-# Alignment multipliers are NOT active yet (log-only mode)
 DATA_TIER_MULTIPLIERS = {
     "A": 1.0,
     "B": 0.5,
@@ -851,49 +860,40 @@ def compute_kelly(model_prob: float, odds: float) -> float:
     return max(kelly, 0.0)
 
 
+def kelly_stake_eligible(
+    kelly: float,
+    bankroll: float,
+    data_tier: str,
+    odds_penalty: float = 0.0,
+) -> bool:
+    """The PICK-SELECTION half of the retired Kelly sizing — kept so flat staking changes
+    no live bot's picks.
+
+    Under Kelly a pick whose fractional-Kelly stake came out below EUR 1 was dropped
+    (funnel step `drop_stake_low`, ~10% of accepted candidates in candidate_funnel on
+    2026-09-25) — in effect a minimum-Kelly gate that bites on data tiers B/C and on
+    adverse odds movement. Removing it together with the sizing would have changed which
+    picks every pipeline bot makes, and a live bot's rules change only via a twin + owner
+    OK (#162 policy). So the gate stays, with exactly the old arithmetic; only the SIZE
+    became flat. Retiring the gate is a separate, twin-tested decision."""
+    if kelly <= 0 or bankroll <= 0:
+        return False
+    stake = min(kelly * KELLY_FRACTION * bankroll, MAX_STAKE_PCT * bankroll)
+    stake *= DATA_TIER_MULTIPLIERS.get(data_tier, 0.5)
+    if odds_penalty > 0:
+        stake *= (1.0 - odds_penalty)
+    return stake >= 1.0
+
+
 def compute_stake(
     kelly: float,
     bankroll: float,
     data_tier: str,
     odds_penalty: float = 0.0,
 ) -> float:
-    """
-    Compute stake using fractional Kelly with simplified multipliers.
-
-    Simplified from 4-multiplier stack (assessment 4 flagged near-zero stakes)
-    to: Kelly × data_tier × odds_penalty only.
-
-    Alignment and tier multipliers are NOT applied yet (alignment is log-only,
-    tier is already captured in the calibration alpha).
-
-    Args:
-        kelly: Raw Kelly fraction
-        bankroll: Current bankroll
-        data_tier: "A", "B", or "C"
-        odds_penalty: 0.0-0.8 penalty from adverse odds movement
-
-    Returns:
-        Stake amount in EUR (rounded to 2dp), 0 if below minimum
-    """
-    if kelly <= 0 or bankroll <= 0:
-        return 0.0
-
-    base_stake = kelly * KELLY_FRACTION * bankroll
-    max_stake = MAX_STAKE_PCT * bankroll
-    stake = min(base_stake, max_stake)
-
-    # Apply data tier multiplier
-    stake *= DATA_TIER_MULTIPLIERS.get(data_tier, 0.5)
-
-    # Apply odds movement penalty (0 = no penalty, 0.8 = 80% reduction)
-    if odds_penalty > 0:
-        stake *= (1.0 - odds_penalty)
-
-    # Minimum stake floor — micro-bets are noise (assessment 4)
-    if stake < 1.0:
-        return 0.0
-
-    return round(stake, 2)
+    """Stake for a pick: FLAT_STAKE_EUR, or 0.0 when the pick fails the unchanged
+    minimum-Kelly selection gate (`kelly_stake_eligible`). Never Kelly-sized (#155)."""
+    return FLAT_STAKE_EUR if kelly_stake_eligible(kelly, bankroll, data_tier, odds_penalty) else 0.0
 
 
 def compute_rank_score(kelly: float, alignment_ratio: float) -> float:

@@ -292,7 +292,7 @@ it never stakes real money; in `record=True` mode it can still write paper
 | 4 | Dedup | `NOT EXISTS real_bets` for (match,market,selection) |
 | 5 | Live re-price @ Coolbet | `_MIN_REMAINING_EDGE` ≥ 3% at the live Coolbet price |
 | 6 | **Odds floor (per-market)** | `_min_odds_for` — **1x2 2.80 · O/U 1.80** (shared) |
-| 7 | Blast-radius | flat €10 (or Kelly), max-stake / max-bets-per-hour / self-pause |
+| 7 | Blast-radius | flat €10 (Kelly retired everywhere 2026-09-25, [[#155]]), max-stake / max-bets-per-hour / self-pause |
 
 This is the path `edge_floor_backtest.py` validates. It is model-edge (ensemble
 vs best book), which is a **different instrument** from Path A's line-shop edge.

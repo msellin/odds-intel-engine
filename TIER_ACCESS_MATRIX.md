@@ -265,9 +265,11 @@ best price available when the pick was made on all books; CLV against the sharp 
 |---|---|---|---|
 | Row: settled, W / L, ROI, P&L (€, flat) | ✓ | ✓ | ✓ |
 | Row: CLV direction icon | ✓ | ✓ | ✓ + Avg CLV number column |
-| Detail view (bankroll chart + every pick, sharp-CLV line with n and Pinnacle/consensus mix, bot's-own-stakes ROI as a labelled secondary) | ✓ | ✓ | ✓ |
+| Detail view (bankroll chart + every pick, sharp-CLV line with n and Pinnacle/consensus mix; header = the bot's `bot_performance` row read in the same request as the picks — the stake-weighted secondary is gone, every stake is flat since [[#155]]) | ✓ | ✓ | ✓ |
+| Detail view: per-pick **EV** (`model_prob × odds − 1`) for EV-unit bots (EV5 VIP, newplus, the O/U sharp bots) in place of the pp edge ([[#155]]) | ✓ | ✓ | ✓ |
+| Detail view: VIP bots — **EV8 / EV5 split** (n settled, flat ROI, sharp CLV per band; replaces the retired EV8 bot, [[#155]]) | ✓ | ✓ | ✓ |
 | Detail view: per-pick CLV | direction only | direction only | the number |
-| Detail view: per-pick stake, edge | ✗ | ✗ | ✓ |
+| Detail view: per-pick stake, edge (pp-edge bots; EV bots show EV to everyone) | ✗ | ✗ | ✓ |
 | VIP / hide_pending bots in the detail view | settled picks only | settled picks only | settled picks only |
 | Full filterable history below the table | teaser (10) | ✓ (logged-in) | ✓ |
 

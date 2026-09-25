@@ -40,6 +40,7 @@ from workers.api_clients.supabase_client import (
     build_referee_stats,
 )
 from workers.api_clients.db import execute_query, execute_write, execute_write_returning, bulk_upsert
+from workers.utils.pick_price import public_price
 
 console = Console()
 
@@ -58,6 +59,8 @@ SELECT
     -- settled from 2026-09-14 (own-book-only CLV) until 2026-09-24; without
     -- odds_at_pick_live, clv_pinnacle_live was never computed on this path.
     sb.recommended_bookmaker, sb.odds_at_pick_live,
+    -- FLAT-STAKES-EVERYWHERE (#155): pnl is computed at the PUBLIC price (pick_price.public_price)
+    sb.odds_at_pick_available,
     m.id as m_id, m.date as m_date, m.score_home, m.score_away,
     m.result as match_result, m.status as match_status,
     ht.name as home_team_name, ta.name as away_team_name
@@ -572,18 +575,26 @@ def _alert_unsettleable(bet: dict) -> None:
 
 
 def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
-                      closing_odds: float | None, stats: dict | None = None) -> dict:
+                      closing_odds: float | None, stats: dict | None = None,
+                      price: float | None = None) -> dict:
     """
     Determine if a bet won or lost, via the settlement resolver registry.
     Returns dict with result, pnl, clv, clv_live. `stats` carries non-goal
     outcome statistics (e.g. corners_home/corners_away) for markets that need
     them; goals markets ignore it. An unrecognised or ungradeable market returns
     result='skip' (leave pending + alert) — it is NEVER graded as a loss.
+
+    `price` = the price the P&L is computed at. simulated_bets callers pass
+    `pick_price.public_price(bet)` (FLAT-STAKES-EVERYWHERE, #155): the same price
+    bot_performance.roi_public uses, so stored pnl equals what /performance publishes
+    (smoke ONE-ROI-CLV-PARITY). None = the recorded odds_at_pick (other tables).
+    The legacy `clv` stays on odds_at_pick (its historical definition).
     """
     market = bet["market"].lower().strip()
     selection = bet["selection"].lower().strip()
     stake = float(bet["stake"])
     odds = float(bet["odds_at_pick"])
+    pnl_odds = float(price) if price and float(price) > 1 else odds
 
     # 1H markets grade on the HALF-TIME score, which most callers do not pass.
     # Fetch it here so no caller has to know, and so a missing HT score becomes
@@ -607,7 +618,7 @@ def settle_bet_result(bet: dict, home_goals: int, away_goals: int,
     if won is None:
         pnl = 0.0  # push — stake returned
     else:
-        pnl = round((odds - 1) * stake if won else -stake, 2)
+        pnl = round((pnl_odds - 1) * stake if won else -stake, 2)
 
     # CLV: positive = we got better odds than closing line.
     #
@@ -2366,6 +2377,7 @@ _WRONGLY_VOIDED_SQL = """
 SELECT
     sb.id, sb.bot_id, sb.match_id, sb.market, sb.selection, sb.stake,
     sb.odds_at_pick, sb.pnl, sb.void_reason, sb.recommended_bookmaker,
+    sb.odds_at_pick_live, sb.odds_at_pick_available,   -- #155: sim pnl at the public price
     m.score_home, m.score_away,
     ht.name AS home_team_name, ta.name AS away_team_name
 FROM {table} sb
@@ -2533,8 +2545,11 @@ def resettle_wrongly_voided_bets(limit: int = 2000, dry_run: bool = False) -> di
         for bet in rows or []:
             checked += 1
             try:
+                # FLAT-STAKES-EVERYWHERE (#155): simulated_bets pnl at the PUBLIC price, like
+                # every other sim settlement path (stored pnl == the published flat pnl).
                 settlement = settle_bet_result(
-                    bet, int(bet["score_home"]), int(bet["score_away"]), None
+                    bet, int(bet["score_home"]), int(bet["score_away"]), None,
+                    price=public_price(bet)[0] if table == "simulated_bets" else None,
                 )
             except Exception as e:
                 console.print(f"  [yellow]Void-integrity recompute failed for {bet['id']}: {e}[/yellow]")
@@ -2603,10 +2618,12 @@ def resettle_wrongly_voided_bets(limit: int = 2000, dry_run: bool = False) -> di
             try:
                 execute_write(
                     f"UPDATE {table} SET result = %s, pnl = %s, closing_odds = %s, "
-                    f"clv = %s, closing_bookmaker = %s, void_reason = NULL "
-                    f"WHERE id = %s",
-                    [settlement["result"], settlement["pnl"], closing_odds, clv,
-                     closing_bookmaker, bet["id"]],
+                    f"clv = %s, closing_bookmaker = %s, void_reason = NULL"
+                    + (", pnl_price_basis = %s" if table == "simulated_bets" else "")
+                    + " WHERE id = %s",
+                    [settlement["result"], settlement["pnl"], closing_odds, clv, closing_bookmaker]
+                    + ([public_price(bet)[1]] if table == "simulated_bets" else [])
+                    + [bet["id"]],
                 )
             except Exception as e:
                 console.print(f"  [yellow]Void-integrity write failed for {bet['id']}: {e}[/yellow]")
@@ -3820,6 +3837,35 @@ def _normalize_bet_selection(selection: str) -> str:
 
 
 
+def _price_before_settling(pending: list) -> None:
+    """FLAT-STAKES-EVERYWHERE (#155). simulated_bets.pnl is computed at the PUBLIC price
+    (pick_price.public_price — the price bot_performance.roi_public uses). store_bet prices a
+    pick right after its insert, but a pick another writer made may still have NULL price
+    columns until the 30-min producer job reaches it; if it were settled first, its stored pnl
+    would be on the recorded price and then disagree with /performance once the job filled the
+    column. So: run the ONE producer on exactly these legs first (NULL columns only, quotes at
+    or before pick_time — the same answer the job would give), then refresh the dicts.
+    Never blocks settlement."""
+    ids = [str(b["id"]) for b in pending
+           if b.get("combo_legs") is None and b.get("odds_at_pick_available") is None]
+    if not ids:
+        return
+    try:
+        from workers.utils.pick_price import price_legs
+        price_legs("simulated_bets", ids=ids, settled_only=False)
+        rows = execute_query(
+            "SELECT id::text AS id, odds_at_pick_live, odds_at_pick_available "
+            "FROM simulated_bets WHERE id = ANY(%s::uuid[])", [ids]) or []
+        fresh = {r["id"]: r for r in rows}
+        for b in pending:
+            r = fresh.get(str(b["id"]))
+            if r:
+                b["odds_at_pick_live"] = r["odds_at_pick_live"]
+                b["odds_at_pick_available"] = r["odds_at_pick_available"]
+    except Exception as e:  # noqa: BLE001 — a pricing miss settles at the recorded price, flagged
+        console.print(f"  [yellow]pre-settlement pricing failed (settling on recorded price): {e}[/yellow]")
+
+
 def _settle_pending_bets(pending: list, finished: list):
     """Settle all pending bets against finished match results."""
     console.print("\n[cyan]Settling bets...[/cyan]\n")
@@ -3838,6 +3884,8 @@ def _settle_pending_bets(pending: list, finished: list):
             "bankroll": float(b["current_bankroll"]),
             "name": b["name"],
         }
+
+    _price_before_settling(pending)
 
     t = Table(title="Settlement Results")
     t.add_column("Match", style="cyan")
@@ -3922,7 +3970,8 @@ def _settle_pending_bets(pending: list, finished: list):
             closing_odds = None
             clv_pinnacle = None
             closing_bookmaker = None
-            settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
+            settlement = settle_bet_result(bet, score_home, score_away, closing_odds,
+                                           price=public_price(bet)[0])
         else:
             # SIMULATED-CLV-OWN-BOOK-2026-09-14. This used to call
             # get_closing_odds WITHOUT a bookmaker — the unfiltered form, which
@@ -3974,7 +4023,8 @@ def _settle_pending_bets(pending: list, finished: list):
                         clv_pinnacle_live = round(float(_px_live) * true_p - 1.0, 4)
             except Exception as _e:  # never let a CLV lookup block a settlement
                 console.print(f"  [dim]devigged-pinnacle CLV failed for {bet.get('id')}: {_e}[/dim]")
-            settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
+            settlement = settle_bet_result(bet, score_home, score_away, closing_odds,
+                                           price=public_price(bet)[0])
 
         # SETTLEMENT-RESOLVER-REGISTRY: 'skip' = the registry cannot grade this
         # market (unknown, or missing the statistic it needs). Leave the row
@@ -4005,11 +4055,15 @@ def _settle_pending_bets(pending: list, finished: list):
             # close. Without it a NULL clv is indistinguishable from "we never
             # tried", and the historical marker for arbitrary-book rows
             # (closing_odds NOT NULL, closing_bookmaker NULL) cannot exist.
-            "closing_bookmaker = %s "
+            "closing_bookmaker = %s, "
+            # FLAT-STAKES-EVERYWHERE (#155, migration 441): which price the pnl was computed
+            # at — 'recorded' = no quote stored at pick time (flagged, as on the view).
+            "pnl_price_basis = %s "
             "WHERE id = %s",
             [settlement["result"], settlement["pnl"], new_bankroll,
              closing_odds, settlement["clv"], clv_pinnacle, clv_pinnacle_live,
-             clv_pinnacle, closing_bookmaker, bet["id"]]
+             clv_pinnacle, closing_bookmaker,
+             None if is_combo else public_price(bet)[1], bet["id"]]
         )
 
         settled += 1

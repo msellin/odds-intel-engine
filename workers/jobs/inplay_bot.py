@@ -34,6 +34,7 @@ import math
 import os
 from datetime import datetime, timezone
 from rich.console import Console
+from workers.model.improvements import FLAT_STAKE_EUR
 from workers.notify.telegram import send_telegram, send_telegram_to_users, clv_footer_line
 
 import logging
@@ -302,9 +303,9 @@ def _build_inplay_bet_data(
         "market": trigger["market"],
         "selection": trigger["selection"],
         "odds": trigger["odds"],
-        # INPLAY-STAKE-5: 5.0 puts inplay on the same scale as pre-match
-        # Kelly stakes; see run_inplay_strategies' comment for the history.
-        "stake": 5.0,
+        # FLAT-STAKES-EVERYWHERE (#155, owner 2026-09-25): one flat unit like every bot.
+        # Was 5.0 (INPLAY-STAKE-5, to match pre-match KELLY stakes, which are gone).
+        "stake": FLAT_STAKE_EUR,
         "model_prob": trigger["model_prob"],
         "edge": trigger["edge"] / 100,  # strategies store edge as %, DB expects decimal
         "xg_source": "live" if is_real else "shot_proxy",

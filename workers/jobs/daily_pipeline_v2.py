@@ -4195,8 +4195,9 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         _fstep("drop_min_alignment")
                         continue
 
-                # P4: Kelly-based stake sizing with soft odds penalty
-                # Use running bankroll (reduced by stakes already placed this run)
+                # P4: FLAT stake (FLAT-STAKES-EVERYWHERE, #155): compute_stake returns FLAT_STAKE_EUR,
+                # or 0 when the pick fails the UNCHANGED minimum-Kelly selection gate (the old
+                # "stake < EUR 1" drop — kept so no live bot's pick set changes). Kelly never sizes.
                 bot_bankroll = _running_bankroll.get(bot_name, 1000.0)
 
                 stake = compute_stake(
@@ -4263,13 +4264,15 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     # Never let meta scoring kill a placement — graceful fallthrough.
                     pass
 
-                # 11.6: Exposure management — halve stake for 3rd+ bet in same league per bot.
-                # SHADOW: skip exposure cap — shadows have fixed 10u stake, no bankroll to protect.
+                # 11.6: Exposure management — RETIRED as a SIZING rule with FLAT-STAKES-EVERYWHERE
+                # (#155, owner 2026-09-25). It halved the stake of a bot's 3rd+ pick in one league;
+                # every pick is now one flat unit (compute_stake), so a reader following the picks
+                # and the record stake the same. The count is still kept for the correlated-league
+                # report (_check_exposure_concentration). Shadows never had it.
                 _league_key = match.get("league_path", "unknown")
                 _league_count = league_bet_counts[bot_name][_league_key]
                 if not shadow_mode and _league_count >= 2:
-                    stake = max(round(stake * 0.5, 2), 1.0)
-                    console.print(f"  [dim]Exposure cap ({bot_name}): {_league_count} bets already in {_league_key} — stake halved to €{stake:.2f}[/dim]")
+                    console.print(f"  [dim]League exposure ({bot_name}): {_league_count} picks already in {_league_key} — flat stake, not halved (#155)[/dim]")
 
                 # SHADOW path: accumulate row, never call store_bet, never touch bankroll.
                 if shadow_mode:
@@ -5929,7 +5932,7 @@ def _run_pin_1x2_shadow_pass(today_str: str, cohort_tag: str = "morning", notify
 def _check_exposure_concentration():
     """
     11.6: Cross-match correlation / exposure management — post-placement audit.
-    Stakes are already reduced during placement (3rd+ bet per league per bot → 50% stake).
+    Stakes are FLAT (one unit per pick, #155 — the old 3rd+-pick-per-league halving is retired).
     This function logs a summary of any concentrated exposure after the fact.
 
     See MODEL_ANALYSIS.md Section 11.6.

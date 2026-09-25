@@ -11413,7 +11413,7 @@ def _():
         odds_age=2.5, bot_name="inplay_c",
     )
     assert out["market"] == "1x2"
-    assert out["stake"] == 5.0, "INPLAY-STAKE-5 must hold"
+    assert out["stake"] == 10.0, "FLAT-STAKES-EVERYWHERE (#155): in-play stakes the flat unit too"
     assert abs(out["edge"] - 0.085) < 1e-9, "edge must be converted % → decimal"
     reasoning = _json.loads(out["reasoning"])
     assert reasoning["strategy"] == "inplay_c"
@@ -11763,10 +11763,11 @@ def _():
         cand={"minute": 23, "score_home": 0, "score_away": 1},
         xg_h=1.2, xg_a=0.8, is_real=True, odds_age=12.0, bot_name="inplay_c",
     )
-    assert bet["stake"] == 5.0, (
-        f"inplay bet payload must stake 5.0, got {bet['stake']!r}. Pre-match "
-        "Kelly stakes land EUR 1-10 with a EUR 5 median; at EUR 1 the "
-        "highest-ROI bots carry near-zero weight in the headline ROI."
+    # FLAT-STAKES-EVERYWHERE (#155, owner 2026-09-25): every bot stakes the one flat unit;
+    # the EUR 5 was chosen to match pre-match KELLY stakes, which are retired.
+    from workers.model.improvements import FLAT_STAKE_EUR
+    assert bet["stake"] == FLAT_STAKE_EUR == 10.0, (
+        f"inplay bet payload must stake the flat unit, got {bet['stake']!r}."
     )
     # Pin the type too — a stake of 5 (int) survives the equality check above
     # but changes the DB column's numeric handling downstream.
@@ -57949,7 +57950,42 @@ def test_one_roi_clv_parity():
          WHERE r.s <> p.settled OR abs(r.p - p.pnl_units_public) > 0.005 * greatest(r.s, 1) OR r.na <> p.clv_n""", [])
     # picks_forward_test.pnl is stored rounded to 2 dp per pick; the view uses odds − 1 exactly
     assert not ft, f"forward-test rows differ from the #158 record: {ft}"
-    return "bot_scoreboard == bot_performance; forward-test rows == #158 record"
+    _one_roi_detail_view_parity()
+    return "bot_scoreboard == bot_performance; forward-test rows == #158 record; detail view + stored pnl + EV bands"
+
+
+def _one_roi_detail_view_parity():
+    """[[#155]] extension of ONE-ROI-CLV-PARITY (owner 2026-09-25). (1) The /performance DETAIL
+    VIEW: its header showed a stake-weighted ROI (EV5 −53.8% where flat was −3%) and its header
+    count came from the 2-min cached row while the chart counted freshly fetched legs (3 vs 2).
+    Now the route returns the bot's bot_performance row with the legs (one request) and the header
+    reads it; no stake-weighted figure is read. (2) After migration 441 the STORED
+    simulated_bets.pnl is the published one: 10 x bot_ledger.pnl_unit_public on every settled leg.
+    (3) The VIP EV8/EV5 split (bot_performance_ev_band) sums back to the bot_performance row."""
+    route = _ts_code159(_web_path("src/app/api/performance/bot-legs/route.ts").read_text())
+    assert "getBotPerformanceFresh(bot)" in route and "{ legs, perf, evBands }" in route
+    lib = _web_path("src/lib/bot-performance.ts").read_text()
+    assert "roi_staked" not in _ts_code159(lib), "the stake-weighted secondary is not read (#155 flat)"
+    assert '.from("bot_performance_ev_band")' in lib
+    lb = _ts_code159(_web_path("src/components/performance-leaderboard.tsx").read_text())
+    modal = lb[lb.index("function BotModal("):lb.index("export function PerformanceLeaderboard(")]
+    assert "roiStaked" not in lb, "no stake-weighted ROI in the detail view"
+    assert "setPerf(j.perf" in modal and "${hdr.settled} settled" in modal, "header reads the fetched row"
+    assert "${bot.settled} settled" not in modal, "header must not read the cached row once the fetch lands"
+    from workers.api_clients.db import execute_query
+    if not execute_query("SELECT to_regclass('public.bot_performance_ev_band') AS r", [])[0]["r"]:
+        return
+    bad = execute_query("""
+        SELECT count(*) AS n FROM bot_ledger l JOIN simulated_bets s ON s.id = l.pick_id
+         WHERE l.source = 'sim' AND l.result IN ('won','lost','void')
+           AND (abs(s.pnl - 10 * l.pnl_unit_public) > 0.006 OR s.stake <> 10)""", [])[0]["n"]
+    assert bad == 0, f"{bad} settled simulated_bets legs whose stored pnl is not the published flat pnl"
+    band = execute_query("""
+        SELECT p.bot_name FROM bot_performance p
+          JOIN (SELECT bot_name, sum(settled) s, sum(pnl_units_public) u, sum(clv_n) c
+                  FROM bot_performance_ev_band GROUP BY bot_name) b USING (bot_name)
+         WHERE b.s <> p.settled OR abs(b.u - p.pnl_units_public) > 1e-6 OR b.c <> p.clv_n""", [])
+    assert not band, f"EV bands do not sum to bot_performance: {[r['bot_name'] for r in band][:5]}"
 
 
 @test("LEGACY-CLV-PNL-NO-NEW-READERS — the deprecated CLV / pnl columns gain no reader (#159)")
@@ -58677,6 +58713,78 @@ def test_predictions_readers_production_only():
         for m in re.finditer(r"FROM predictions\b", src):
             window = src[m.start(): m.start() + 800]
             assert "source = 'ensemble'" in window or "source='ensemble'" in window, (f, window[:120])
+
+
+@test("FLAT-STAKES-EVERYWHERE — every bot stakes one flat unit; stored pnl is the published flat pnl (#155)")
+def test_flat_stakes_everywhere():
+    """[[#155]] owner 2026-09-25: "keep flat stakes everywhere, Kelly hasn't proven itself in this project
+    yet". compute_stake returns FLAT_STAKE_EUR (or 0 when the pick fails the UNCHANGED minimum-Kelly
+    selection gate — kept so no live bot's pick set changes); the 3rd-pick-per-league halving is gone;
+    in-play stakes the unit; settlement computes simulated_bets.pnl at the PUBLIC price (the rule of
+    bot_ledger.odds_public), so stored pnl == what /performance publishes. Migration 441 restated every
+    existing row (original stake in stake_kelly_original) and a trigger coerces any non-flat stake."""
+    import inspect
+    from workers.model import improvements as imp
+    assert imp.FLAT_STAKE_EUR == 10.0
+    # sizing is flat; the eligibility gate is the old arithmetic, bit for bit
+    def _legacy(k, br, t, pen):
+        if k <= 0 or br <= 0:
+            return 0.0
+        st = min(k * 0.15 * br, 0.010 * br) * {"A": 1.0, "B": 0.5, "C": 0.25}.get(t, 0.5)
+        st = st * (1 - pen) if pen > 0 else st
+        return 0.0 if st < 1.0 else round(st, 2)
+    for k in (0.0, 0.004, 0.007, 0.02, 0.1, 0.5):
+        for br in (0.0, 150.0, 1000.0, 5000.0):
+            for t in ("A", "B", "C", "?"):
+                for pen in (0.0, 0.5, 0.8):
+                    want = imp.FLAT_STAKE_EUR if _legacy(k, br, t, pen) > 0 else 0.0
+                    assert imp.compute_stake(k, br, t, odds_penalty=pen) == want, (k, br, t, pen)
+    from workers.jobs import daily_pipeline_v2 as dp
+    src = inspect.getsource(dp)
+    assert "stake * 0.5" not in src, "the league-exposure stake halving is retired (flat unit)"
+    assert "not shadow_mode and _league_count >= 2" in src   # the count/report stays
+    from workers.jobs.inplay_bot import _build_inplay_bet_data
+    assert _build_inplay_bet_data(trigger={"market": "1x2", "selection": "home", "odds": 2.0, "model_prob": 0.6,
+                                           "edge": 5.0, "extra": {}}, cand={"minute": 50, "score_home": 0,
+                                           "score_away": 0}, xg_h=1, xg_a=1, is_real=True, odds_age=1.0,
+                                  bot_name="inplay_c")["stake"] == imp.FLAT_STAKE_EUR
+    # the ONE public-price rule, same as bot_ledger (migration 433)
+    from workers.utils.pick_price import public_price
+    assert public_price({"odds_at_pick": 2.5, "odds_at_pick_live": 2.2, "odds_at_pick_available": 2.3}) == (2.3, "available")
+    assert public_price({"odds_at_pick": 2.5, "odds_at_pick_live": 2.2, "odds_at_pick_available": None}) == (2.2, "our_books")
+    assert public_price({"odds_at_pick": 2.5, "odds_at_pick_live": 1.0, "odds_at_pick_available": None}) == (2.5, "recorded")
+    m433 = _engine_path("supabase/migrations/433_one_bot_performance.sql").read_text()
+    assert ("CASE WHEN s.odds_at_pick_available > 1 THEN s.odds_at_pick_available\n"
+            "             WHEN s.odds_at_pick_live > 1 THEN s.odds_at_pick_live ELSE s.odds_at_pick END AS odds_public") in m433
+    from workers.jobs import settlement as st
+    sp = inspect.getsource(st._settle_pending_bets)
+    assert sp.count("price=public_price(bet)[0]") == 2 and "pnl_price_basis = %s" in sp
+    assert "_price_before_settling(pending)" in sp, "price the legs BEFORE settling (else pnl lands on the recorded price)"
+    won = st.settle_bet_result({"market": "1x2", "selection": "home", "stake": 10, "odds_at_pick": 3.0,
+                                "match_id": None}, 2, 0, None, price=2.5)
+    assert won["result"] == "won" and won["pnl"] == 15.0, won
+    assert 'price=public_price(bet)[0] if table == "simulated_bets"' in inspect.getsource(st.resettle_wrongly_voided_bets), \
+        "the void-integrity repair re-grades simulated_bets at the public price too"
+    from workers.jobs import results_check as rc
+    assert 'public_price(b)[0] if table == "simulated_bets"' in inspect.getsource(rc._regrade)
+    m441 = _engine_path("supabase/migrations/441_flat_stakes_restatement.sql").read_text()
+    assert "IF NEW.stake IS DISTINCT FROM 10 THEN" in m441 and "stake_kelly_original" in m441
+    assert "real_bets" not in m441.split("BEGIN;", 1)[1], "real_bets is untouched"
+    from workers.api_clients.db import execute_query
+    have = execute_query("""SELECT 1 AS x FROM information_schema.columns
+                             WHERE table_name = 'simulated_bets' AND column_name = 'stake_kelly_original'""", [])
+    if not have:
+        return "441 not applied yet — source pins only"
+    r = execute_query("""SELECT count(*) FILTER (WHERE stake <> 10) AS nonflat,
+                                count(*) FILTER (WHERE stake_kelly_original IS NULL) AS unpreserved,
+                                (SELECT count(*) FROM pg_trigger WHERE tgname = 'simulated_bets_flat_stake') AS trg
+                           FROM simulated_bets""", [])[0]
+    assert r["nonflat"] == 0 and r["trg"] == 1, r
+    basis = execute_query("""SELECT count(*) AS n FROM bot_ledger l JOIN simulated_bets s ON s.id = l.pick_id
+                              WHERE l.source = 'sim' AND l.result IN ('won','lost')
+                                AND s.pnl_price_basis IS DISTINCT FROM l.public_basis""", [])[0]["n"]
+    assert basis == 0, f"{basis} settled legs whose pnl_price_basis differs from bot_ledger.public_basis"
+    return "flat unit everywhere; stored pnl basis == public basis"
 
 if __name__ == "__main__":
     main()

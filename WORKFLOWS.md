@@ -468,7 +468,7 @@ Adding a third book is one `check_feed("Name")` call plus a `FEEDS` entry.
 
 - **MFV-LIVE-BUILD (2026-05-10):** `build_match_feature_vectors_live(today)` called immediately after the morning signals batch and before the match loop. Writes one `match_feature_vectors` row per pre-KO match (status != 'finished') so v10+ XGBoost inference (`_build_row_from_mfv`) finds a row instead of falling back to Poisson. Re-runs on every betting_refresh because opening_implied_* / odds_drift_home pick up newer snapshots between cron passes. Twin of the nightly `build_match_feature_vectors` (which only runs at settlement for finished matches); both share `_build_mfv_rows_for_matches`.
 - For each match with odds: compute Poisson/XGBoost prediction + store predictions
-- For each of 16 bots: calibrate, check odds movement (psycopg2), alignment (psycopg2), Kelly sizing, place bet
+- For each of 16 bots: calibrate, check odds movement (psycopg2), alignment (psycopg2), flat-unit stake (minimum-Kelly eligibility gate only, [[#155]]), place bet
 - `daily_pipeline_v2.py run_morning(skip_fetch=False)` still works for manual full runs
 
 #### Paper-bet chain — operating invariants (GROWTH-TRACK-RECORD-CONTINUITY)
@@ -530,7 +530,7 @@ a market family means adding a resolver. Behaviour on all existing markets is
 pinned by the SETTLEMENT-GOLDEN smoke fixture. See ANALYSIS_GOTCHAS §50.
 
 **Four ledgers are settled by the same machinery.** `simulated_bets` (bots,
-money at a Kelly stake), `shadow_bets` (paper twins), `real_bets` (own money),
+money at the flat EUR 10 unit since [[#155]] — Kelly-sized before, restated by migration 441), `shadow_bets` (paper twins), `real_bets` (own money),
 and — since **PICKS-FORWARD-TEST-SETTLEMENT-2026-09-14** — `picks_forward_test`,
 the pre-registered sharp-edge PICKS forward test. They share `settle_bet_result()`
 and `get_closing_odds()` deliberately: a parallel grader is how one column name
@@ -546,7 +546,7 @@ pre-registration doc.) Three definitions differ from the bot ledgers and are loa
 
 * **`pnl` is in UNITS at a flat 1-unit stake** (the pre-registration says flat
   stake; the table has no `stake` column), so `ROI = SUM(pnl)/COUNT(*)`. Never
-  pool it with `simulated_bets.pnl`, which is money at a Kelly stake.
+  pool it with `simulated_bets.pnl`, which is EUR at the flat EUR 10 stake (10 units, [[#155]]).
 * **`clv` is the RAW price ratio** `odds/closing_odds − 1`, no de-vig — the same
   definition as `simulated_bets.clv`. The close is taken at the pick's OWN book
   (stored in `closing_bookmaker`), not the unfiltered lookup, because a

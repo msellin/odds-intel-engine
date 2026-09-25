@@ -93,7 +93,9 @@ Submitted to 4 AI evaluators. Key verdicts that were implemented:
 │                                                             │
 │  edge = calibrated_prob - (1 / odds)                        │
 │  kelly = (calibrated_prob * odds - 1) / (odds - 1)         │
-│  stake = min(kelly * 0.15 * bankroll, 0.010 * bankroll)     │
+│  stake = FLAT EUR 10 (#155, 2026-09-25); the Kelly formula  │
+│  below survives only as a >= EUR 1 eligibility gate:        │
+│  min(kelly * 0.15 * bankroll, 0.010 * bankroll)             │
 │                                                             │
 │  Multipliers: × tier_mult × data_tier_mult × lineup_mult    │
 │  Alignment filter: LOG-ONLY (pending 300 bot bet validation) │
@@ -221,6 +223,7 @@ ev = model_prob * odds - 1
 # Kelly fraction (for ranking and stake sizing)
 kelly = (model_prob * odds - 1) / (odds - 1)
 
+# RETIRED 2026-09-25 (#155): stakes are a FLAT EUR 10 unit; this now only decides ELIGIBILITY (>= EUR 1)
 # Fractional Kelly stake (0.15× Kelly, 1.0% cap — updated 2026-04-29)
 stake = min(kelly * 0.15 * bankroll, 0.010 * bankroll)
 

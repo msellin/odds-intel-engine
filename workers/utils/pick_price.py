@@ -117,6 +117,23 @@ UPDATE {table} t SET odds_at_pick_available = t.odds_at_pick_live
 """
 
 
+PUBLIC_BASES = ("available", "our_books", "recorded")
+
+
+def public_price(row: dict) -> tuple[float, str]:
+    """The PUBLIC price of one simulated_bets / shadow_bets leg and its basis — the exact
+    rule of bot_ledger.odds_public / public_basis (migration 433): odds_at_pick_available,
+    else odds_at_pick_live, else the recorded odds_at_pick ('recorded' = no quote stored at
+    pick time; counted as n_public_recorded, flagged on the row as pnl_price_basis).
+    Settlement computes simulated_bets.pnl at this price (FLAT-STAKES-EVERYWHERE, #155), so
+    the stored P&L is the published one. Pure — no DB."""
+    for col, basis in (("odds_at_pick_available", "available"), ("odds_at_pick_live", "our_books")):
+        v = row.get(col)
+        if v is not None and float(v) > 1:
+            return float(v), basis
+    return float(row["odds_at_pick"]), "recorded"
+
+
 def _scope(ids: list | None, settled_only: bool, recent_days: int | None) -> tuple[str, dict]:
     if ids is not None:
         return "AND t.id = ANY(%(ids)s::uuid[])", {"ids": [str(i) for i in ids]}

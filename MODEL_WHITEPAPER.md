@@ -12,7 +12,7 @@ Bookmaker odds encode probabilities of match outcomes. When a bookmaker's implie
 
 1. Estimate match outcome probabilities independently of bookmaker odds
 2. Identify matches where our estimate diverges meaningfully from the market
-3. Size bets proportionally to the estimated edge using Kelly criterion
+3. Stake one FLAT unit per pick (EUR 10) — fractional Kelly was retired 2026-09-25 (#155, §6.2)
 4. Track performance via Closing Line Value (CLV) — the gold standard for betting model validation
 
 The core thesis: **bookmaker pricing is less efficient in lower-tier leagues** (divisions 2-4, smaller countries) because bookmakers invest less modelling effort there. Our model exploits this structural inefficiency.
@@ -800,27 +800,39 @@ A bet is placed only when edge exceeds a tier-specific threshold:
 
 Lower tiers require less edge because the market is less efficient — even a small model advantage has a higher probability of being real.
 
-### 6.2 Kelly Criterion Stake Sizing
+### 6.2 Stake Sizing — ONE FLAT UNIT for every bot (since 2026-09-25, [[#155]])
 
-```
-kelly_fraction = (calibrated_prob * odds - 1) / (odds - 1)
-stake = min(kelly_fraction * 0.15 * bankroll, 0.01 * bankroll)
-```
+**Owner 2026-09-25: "keep flat stakes everywhere, Kelly hasn't proven itself in this project yet."**
+Every bot records one flat unit per pick — `FLAT_STAKE_EUR = 10` (`workers/model/improvements.py`) —
+paper, shadow, forward test, VIP, twins, in-play; real-money placement is the same flat EUR 10
+(`COOLBET_STAKE` / `STAKE_EUR`). Why: readers bet flat units, so the record must show what following
+the picks returns; every backtest that decided a bot (B/B2/B3, O1–O3, LANES, #152) was already flat and
+judged on CLV, which is stake-independent; and a stake-weighted ROI beside a flat one is how the
+/performance detail view came to read EV5 at −53.8% where flat was −3%.
 
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| Kelly fraction | 0.15x (1/6.7 Kelly) | Conservative — reduces variance at cost of slower growth |
-| Max stake | 1.0% of bankroll | Hard cap prevents any single bet from dominating |
-| Minimum stake | EUR 1.00 | Sub-EUR 1 bets are noise — not placed |
+`kelly_fraction = (calibrated_prob * odds - 1) / (odds - 1)` is still **computed and stored** on every
+pick as data (a future sizing study's input). Nothing sizes on it.
 
-### 6.3 Stake Multipliers
+**What was kept, and why.** Under Kelly a pick whose fractional-Kelly stake came out below EUR 1 was
+dropped (`drop_stake_low`, ~10% of accepted candidates on 2026-09-25) — in effect a minimum-Kelly
+selection gate that bites on data tiers B/C and on adverse odds movement. Retiring it with the sizing
+would have changed every pipeline bot's pick set, and a live bot's rules change only via a twin. So
+`kelly_stake_eligible()` keeps exactly the old arithmetic as a GATE (`min(kelly × 0.15 × bankroll,
+1% × bankroll) × data-tier multiplier × (1 − odds penalty) ≥ EUR 1`); `compute_stake()` returns the flat
+unit when it passes, 0 otherwise. The 3rd-pick-per-league stake halving (exposure cap) is gone.
 
-Applied sequentially after Kelly calculation:
+**Existing rows restated** (migration 441): every `simulated_bets` row now has stake 10, pnl recomputed
+from result + 10 + the PUBLIC price (`odds_at_pick_available`, else `odds_at_pick_live`, else
+`odds_at_pick` — flagged `pnl_price_basis='recorded'`), bankroll_after recomputed sequentially and
+`bots.current_bankroll = starting + Σ pnl`. The original stake / pnl are kept in `stake_kelly_original` /
+`pnl_kelly_original`; a trigger coerces any non-flat stake a writer sends. Settlement computes new pnl at
+the same public price, so stored pnl == `10 × bot_ledger.pnl_unit_public` (smoke `FLAT-STAKES-EVERYWHERE`,
+`ONE-ROI-CLV-PARITY`).
 
-| Multiplier | Values | Purpose |
-|------------|--------|---------|
-| Data tier | A: 1.0, B: 0.5, C: 0.25 | Reduce exposure on less certain predictions |
-| Odds movement penalty | 0.0 to 0.8 | Scale down when market moves against pick (see below) |
+### 6.3 Stake Multipliers — RETIRED with Kelly (2026-09-25)
+
+The data-tier (A 1.0 / B 0.5 / C 0.25) and odds-movement (0–0.8) multipliers no longer scale a stake.
+They survive only inside the minimum-Kelly eligibility gate above.
 
 ### 6.4 Odds Movement Filter
 
@@ -862,7 +874,7 @@ T-24h    Fixtures published (daily 04:00 UTC)
 T-16h    Enrichment: standings, H2H, injuries, referee stats, form
 T-14h    Odds: first snapshot of the day
 T-12h    Predictions: Poisson + XGBoost + ensemble
-T-10h    Betting: edge detection, Kelly sizing, bet placement
+T-10h    Betting: edge detection, flat-unit sizing (#155), bet placement
 T-6h     News: first Gemini analysis pass
 T-3h     News: second pass (closer to kickoff)
 T-1h     Lineups published, lineup signals updated
@@ -1162,7 +1174,7 @@ Bot strategies are validated against a 354,518-match dataset (275 leagues, 2005-
 >                else a ≥5-book consensus close; thin consensus excluded; |CLV| > 1 dropped; never in-play
 > ```
 >
-> The stake-weighted ROI (the bot's own Kelly stakes at the same price) is a labelled secondary. The legacy
+> Since [[#155]] (migration 441) every stored stake is the flat unit, so there is no separate stake-weighted ROI. The legacy
 > `simulated_bets.clv` / `clv_pinnacle_devig` (below, "CLV (Pinnacle, fair)") is **no longer shown anywhere**: it has
 > no close-age limit and was priced at the recorded `odds_at_pick`, which before 2026-09-02 was a MAX over the
 > fixture's whole snapshot history. Measured 2026-09-25 for `bot_v10_1x2`: legacy CLV +7.0% / +0.8% on two pages →
@@ -1902,7 +1914,7 @@ selection signal only for the model-driven bots.
 | Poisson model | `workers/jobs/daily_pipeline_v2.py` | `_poisson_probs()` |
 | XGBoost ensemble | `workers/model/xgboost_ensemble.py` | `ensemble_prediction()` |
 | Calibration (shrinkage + Platt) | `workers/model/improvements.py` | `calibrate_prob()`, `apply_platt()` |
-| Kelly sizing | `workers/model/improvements.py` | `compute_kelly()`, `compute_stake()` |
+| Stake sizing (flat unit; Kelly kept as data + eligibility gate, #155) | `workers/model/improvements.py` | `FLAT_STAKE_EUR`, `compute_stake()`, `kelly_stake_eligible()`, `compute_kelly()` |
 | Odds movement | `workers/model/improvements.py` | `compute_odds_movement()` |
 | Alignment | `workers/model/improvements.py` | `compute_alignment()` |
 | Platt fitting | `scripts/fit_platt.py` | `fit_and_store()` |
@@ -1924,7 +1936,7 @@ selection signal only for the model-driven bots.
 |------|-----------|
 | **CLV** | Closing Line Value — ratio of odds at time of pick to odds at kickoff, minus 1. Positive = beat the closing line. |
 | **ECE** | Expected Calibration Error — weighted average of |predicted - actual| across probability bins. Lower is better. |
-| **Kelly criterion** | Optimal bet sizing formula: `f = (p*b - 1) / (b - 1)` where p = probability, b = decimal odds. We use 0.15x fractional Kelly. |
+| **Kelly criterion** | Optimal bet sizing formula: `f = (p*b - 1) / (b - 1)` where p = probability, b = decimal odds. Computed and stored per pick as data only — stakes are a flat unit since 2026-09-25 (#155). |
 | **Implied probability** | `1 / decimal_odds` — the probability a bookmaker's odds represent (before margin). |
 | **Edge** | `model_probability - implied_probability`. Positive = model thinks outcome is more likely than the market. |
 | **Platt scaling** | Post-hoc sigmoid calibration: `1/(1+exp(-(a*p+b)))`. Used for 1X2 markets. O/U uses a 2-feature logistic `sigmoid(w0*p + w1*log(odds) + b)` to handle odds-conditional miscalibration. |

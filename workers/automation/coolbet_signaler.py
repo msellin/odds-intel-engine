@@ -247,7 +247,6 @@ def _format_signal(b: dict) -> str:
     edge_pct = float(b["edge_percent"] or 0) * 100
     odds = float(b["odds_at_pick"] or 0)
     stake = float(b["stake"] or 0)
-    kelly = float(b["kelly_fraction"] or 0) * 100
     ko = b["match_date"]
     if isinstance(ko, datetime):
         ko_str = ko.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -290,7 +289,7 @@ def _format_signal(b: dict) -> str:
     # (`edge = odds * prob - 1.0`, _run_sweep_shadow_pass et al), so the unit
     # cannot be inferred from the column — only from which table the row came
     # from. This renderer reads simulated_bets.
-        f"💰 Stake €{stake:.2f}  (Kelly {kelly:.0f}%, edge +{edge_pct:.1f}pp)",
+        f"💰 Stake €{stake:.2f} flat  (edge +{edge_pct:.1f}pp)",   # #155: flat unit, Kelly retired
         f"⏰ {ko_str}  ·  {league}",
         f"🤖 {b.get('bot_name') or '?'}",
         f"🔗 {coolbet_link}",
