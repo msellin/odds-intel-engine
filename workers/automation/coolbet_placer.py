@@ -2158,10 +2158,11 @@ def place_all_bets(
         log.info("No qualifying bets found for today.")
         return []
 
-    # COOLBET-SAFETY-GUARDRAILS: default guard uses Kelly stakes so manual
-    # calls without an explicit guard still size correctly.
+    # #162 W4.3a (owner 2026-09-25, "flat stakes everywhere — Kelly hasn't proven itself in this
+    # project yet"): real money is sized FLAT (_DEFAULT_STAKE). Was PlacementGuard(use_kelly_stake=True),
+    # which staked the bot's Kelly suggestion (model_stake). kelly_fraction stays stored as data only.
     if guard is None:
-        guard = PlacementGuard(use_kelly_stake=True)
+        guard = PlacementGuard(use_kelly_stake=False)
 
     log.info("Found %d qualifying simulated_bets to evaluate", len(pending))
 
@@ -2772,7 +2773,7 @@ def place_all_inplay_bets(
         return []
 
     if guard is None:
-        guard = PlacementGuard(use_kelly_stake=True)
+        guard = PlacementGuard(use_kelly_stake=False)   # #162 W4.3a: real money sized flat (owner)
 
     log.info("Found %d qualifying inplay simulated_bet(s) to evaluate", len(pending))
 

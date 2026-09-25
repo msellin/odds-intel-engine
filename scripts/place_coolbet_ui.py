@@ -395,24 +395,34 @@ def exposure_conflict(pick: dict, held: list[dict], stake: float) -> str | None:
 
 
 def spent_today() -> tuple[int, float]:
-    """(bets, stake) confirmed placed since midnight UTC.
+    """(bets, stake) placed since midnight UTC — EVERY book, every real-money path.
 
-    Counts BOTH real-money Coolbet paths: the UI placer logs `coolbet_placement_attempts`;
-    the API placer (coolbet_placer._place_bet_api, gated per pick since #139) writes only
-    `real_bets` with notes 'auto ticket=...'. Before 2026-09-24 the API path's bets never
-    counted toward MAX_BETS_PER_DAY / MAX_STAKE_PER_DAY (#139 review D1)."""
+    #162 W4.2 (2026-09-25). Was Coolbet-only (the UI placer's attempts + the API path's 'auto ticket='
+    rows), so a Unibet stake never counted toward MAX_BETS_PER_DAY / MAX_STAKE_PER_DAY, and a manual or
+    UNVERIFIED stake (placed_real NULL — manual Place, an uncertain router placement) didn't either. The
+    cap is the runaway backstop, so it now counts:
+      * every `coolbet_placement_attempts` row with outcome 'placed' (placed even if its real_bets write
+        failed — the money left the account), plus
+      * every `real_bets` row placed today at ANY book with placed_real IS NOT FALSE (real or
+        unverified; only proven paper is excluded) that is not already one of those attempts
+        (de-duplicated on real_bet_id).
+    Only tightens: every row the old query counted is still counted."""
     r = execute_query(
-        """WITH t AS (SELECT date_trunc('day', NOW() AT TIME ZONE 'UTC') AS d)
-           SELECT (SELECT COUNT(*) FROM coolbet_placement_attempts, t
-                    WHERE outcome = 'placed' AND attempted_at >= t.d)
-                + (SELECT COUNT(*) FROM real_bets, t
-                    WHERE bookmaker = 'Coolbet' AND placed_real IS TRUE
-                      AND notes LIKE 'auto ticket=%%' AND placed_at >= t.d) AS n,
-                  (SELECT COALESCE(SUM(stake_applied), 0) FROM coolbet_placement_attempts, t
-                    WHERE outcome = 'placed' AND attempted_at >= t.d)
-                + (SELECT COALESCE(SUM(stake), 0) FROM real_bets, t
-                    WHERE bookmaker = 'Coolbet' AND placed_real IS TRUE
-                      AND notes LIKE 'auto ticket=%%' AND placed_at >= t.d) AS s"""
+        """WITH t AS (SELECT date_trunc('day', NOW() AT TIME ZONE 'UTC') AS d),
+                a AS (SELECT pa.real_bet_id, COALESCE(pa.stake_applied, lb.stake, 0) AS stake
+                        FROM coolbet_placement_attempts pa CROSS JOIN t
+                        LEFT JOIN real_bets lb ON lb.id = pa.real_bet_id
+                       WHERE pa.outcome = 'placed' AND pa.attempted_at >= t.d),
+                -- de-duplicate only against TODAY's placed attempts (review: an attempt dated yesterday
+                -- would otherwise hide a real_bets row placed today from both halves)
+                r AS (SELECT rb.id, rb.stake
+                        FROM real_bets rb, t
+                       WHERE rb.placed_at >= t.d AND rb.placed_real IS NOT FALSE
+                         AND NOT EXISTS (SELECT 1 FROM coolbet_placement_attempts pa
+                                          WHERE pa.real_bet_id = rb.id AND pa.outcome = 'placed'
+                                            AND pa.attempted_at >= t.d))
+           SELECT (SELECT COUNT(*) FROM a) + (SELECT COUNT(*) FROM r) AS n,
+                  (SELECT COALESCE(SUM(stake), 0) FROM a) + (SELECT COALESCE(SUM(stake), 0) FROM r) AS s"""
     )[0]
     return int(r["n"]), float(r["s"])
 

@@ -454,6 +454,29 @@ def _dispatch(winner: str, pick: dict, decision: dict, *, execute: bool) -> dict
 
 
 def route(execute: bool = False, *, stage: bool = False, limit: int | None = None) -> dict:
+    """Entry point. #162 W4.2 (2026-09-25): a real-money or staging run holds the SAME single-run lock as
+    `place_coolbet_ui.py` (flock on ~/.coolbet-daemon/ui-placer.lock) — the audit found the router had no
+    run lock, so it and the UI placer could drive the same browser and read the same "spent today"
+    concurrently (each seeing room under the daily cap). A busy lock refuses the run; never raises."""
+    if not (execute or stage):
+        return _route(execute, stage=stage, limit=limit)
+    from scripts.place_coolbet_ui import single_run_lock
+    lock = single_run_lock()
+    try:
+        lock.__enter__()
+    except RuntimeError as e:
+        # mode 'report' + real_refused, so main()'s heartbeat never records a real run that did not happen
+        return {"candidates": 0, "routed": 0, "no_book_clears": 0, "already_placed": 0,
+                "would_place": [], "skipped": [], "execute": execute,
+                "mode": "report", "dispatched": 0,
+                "aborted": f"run lock busy — {e}", "real_refused": f"run lock busy — {e}"}
+    try:
+        return _route(execute, stage=stage, limit=limit)
+    finally:
+        lock.__exit__(None, None, None)
+
+
+def _route(execute: bool = False, *, stage: bool = False, limit: int | None = None) -> dict:
     """Route the Family-1 real-money candidates across placeable books by best price.
 
     Three modes:

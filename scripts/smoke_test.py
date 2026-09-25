@@ -24253,7 +24253,7 @@ def test_unibet_uncertain_placement_2026_09_11():
     assert "VERIFY THIS ON THE ACCOUNT" in ud, "an uncertain bet must alert loudly"
 
     # in-pass guards must treat uncertain as spent, too
-    rsrc = inspect.getsource(bpr.route)
+    rsrc = inspect.getsource(bpr._route)   # #162 W4.2: body moved to _route
     assert 'disp.get("placed") or disp.get("uncertain")' in rsrc, (
         "an uncertain placement must occupy the per-match guard and the daily "
         "caps — money may have moved"
@@ -38499,7 +38499,8 @@ def test_router_real_money_cutover():
     from workers.automation import best_price_router as bpr
 
     # (1) the double gate
-    rsrc = _strip_prose(inspect.getsource(bpr.route))
+    # #162 W4.2: route() is now the run-lock wrapper; the routing body (and its gates) is _route()
+    rsrc = _strip_prose(inspect.getsource(bpr._route))
     assert 'os.getenv("ROUTER_ALLOW_REAL"' in rsrc, (
         "real money must require the env opt-in, not just execute=True"
     )
@@ -54035,7 +54036,7 @@ def test_coolbet_post_gated_per_pick():
     # D1: the daily caps count the API path's real_bets, not only UI-placer attempts
     import scripts.place_coolbet_ui as ui
     st = inspect.getsource(ui.spent_today)
-    assert "FROM real_bets" in st and "auto ticket=" in st
+    assert "FROM real_bets" in st and "pa.real_bet_id = rb.id" in st   # #162 W4.2: every book, de-duplicated
 
 
 # ── #139 phase A: the /admin/bots control panel (migration 413) ──────────────────────────────
@@ -58440,6 +58441,72 @@ def test_paper_writers_keep_first_price():
         # odds_at_pick_live = this bot's OWN-book price at the decision (review: #159's backfill would store
         # the MAX across all four Estonian books — a price a single-book bot could not take)
         assert "%s,%s, now()" in ins, f"{f}: odds_at_pick_live must be the own-book price at insert"
+
+
+@test("SPENT-TODAY-ALL-BOOKS — the daily cap counts every book and every placed or unverified stake (#162 W4.2)")
+def test_spent_today_all_books():
+    """#162 W4.2 (owner 3C, 2026-09-25). spent_today() — the runaway backstop behind MAX_BETS_PER_DAY /
+    MAX_STAKE_PER_DAY for BOTH the UI placer and the router — counted Coolbet only, so Unibet stakes and
+    manual / unverified real bets never counted. It now counts every placed attempt (even if its real_bets
+    write failed) plus every real_bets row today at ANY book with placed_real IS NOT FALSE, de-duplicated on
+    real_bet_id. Only tightens: measured over 30 days, the new count is >= the old one every day."""
+    import inspect
+    import scripts.place_coolbet_ui as ui
+    src = inspect.getsource(ui.spent_today)
+    assert "rb.placed_real IS NOT FALSE" in src and "bookmaker = 'Coolbet'" not in src
+    assert "pa.real_bet_id = rb.id AND pa.outcome = 'placed'" in src, "de-duplicated on real_bet_id"
+    from workers.api_clients.db import execute_query
+    try:
+        r = execute_query("""
+            WITH d AS (SELECT generate_series(date_trunc('day', now()) - interval '14 days',
+                                              date_trunc('day', now()), interval '1 day') AS d)
+            SELECT count(*) FILTER (WHERE new_n < old_n) AS looser FROM (
+              SELECT (SELECT count(*) FROM coolbet_placement_attempts WHERE outcome='placed'
+                        AND attempted_at >= d.d AND attempted_at < d.d + interval '1 day')
+                   + (SELECT count(*) FROM real_bets WHERE bookmaker='Coolbet' AND placed_real IS TRUE
+                        AND notes LIKE 'auto ticket=%%' AND placed_at >= d.d AND placed_at < d.d + interval '1 day') AS old_n,
+                     (SELECT count(*) FROM coolbet_placement_attempts WHERE outcome='placed'
+                        AND attempted_at >= d.d AND attempted_at < d.d + interval '1 day')
+                   + (SELECT count(*) FROM real_bets rb WHERE placed_at >= d.d AND placed_at < d.d + interval '1 day'
+                        AND placed_real IS NOT FALSE AND NOT EXISTS (SELECT 1 FROM coolbet_placement_attempts pa
+                        WHERE pa.real_bet_id = rb.id AND pa.outcome = 'placed')) AS new_n
+                FROM d) x""")[0]
+    except Exception:  # noqa: BLE001 — no DB here
+        return
+    assert r["looser"] == 0, "the new daily count must never be below the old one"
+
+
+@test("ROUTER-RUN-LOCK — the best-price router refuses a real/stage run while another pass holds the placer lock (#162 W4.2)")
+def test_router_run_lock():
+    """#162 W4.2 (2026-09-25). The router had no run lock, so it and place_coolbet_ui could drive the same
+    browser and read the same "spent today" concurrently. route(execute|stage) now takes the SAME flock
+    (~/.coolbet-daemon/ui-placer.lock); a busy lock returns aborted without dispatching anything."""
+    import workers.automation.best_price_router as br
+    import scripts.place_coolbet_ui as ui
+    called = []
+    with _ROUTER_ENV_LOCK:                          # the other route(execute=True) tests take the same flock
+        o_r = br._route
+        try:
+            br._route = lambda *a, **k: (called.append(1) or {"mode": "real", "aborted": None})
+            with ui.single_run_lock():
+                out = br.route(execute=True)
+            assert called == [] and "run lock busy" in (out.get("aborted") or ""), out
+            assert out["mode"] == "report" and out.get("real_refused"), "a refused run must not read as real"
+            out = br.route(execute=False)           # a plain report takes no lock
+            assert called == [1], called
+        finally:
+            br._route = o_r
+
+
+@test("REAL-MONEY-FLAT-STAKE — no real-money path sizes by Kelly (#162 W4.3a, owner 2026-09-25)")
+def test_real_money_flat_stake():
+    """Owner 2026-09-25: FLAT STAKES EVERYWHERE — real money too ("Kelly hasn't proven itself in this project
+    yet"; handover rule 9). coolbet_placer's default guards (place_all_bets, place_all_inplay_bets) used
+    PlacementGuard(use_kelly_stake=True), staking the bot's Kelly suggestion. They are flat now; the UI
+    placer and the router already stake a fixed STAKE_EUR."""
+    src = _engine_path("workers/automation/coolbet_placer.py").read_text(encoding="utf-8")
+    assert "PlacementGuard(use_kelly_stake=True)" not in src.replace("Was PlacementGuard(use_kelly_stake=True)", "")
+    assert src.count("PlacementGuard(use_kelly_stake=False)") >= 2
 
 if __name__ == "__main__":
     main()
