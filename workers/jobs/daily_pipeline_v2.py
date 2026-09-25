@@ -4413,7 +4413,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         # it decides the Pro/Elite DM and the private channel.
                         from workers.registry.bot_registry import VIP_BOTS as _VIP_BOTS
                         if bot_name in _VIP_BOTS:
-                            _tele_bets[_tele_key]["vip"] = {"odds": odds, "cal": cal_prob, "bm": bm}
+                            _tele_bets[_tele_key]["vip"] = {"odds": odds, "cal": cal_prob, "bm": bm,
+                                                            "bot": bot_name, "bet_id": str(bet_id)}
                         if config.get("one_per_match"):
                             _one_done = True
                         # Save Stage 1 snapshot: stats-only probability
@@ -4577,7 +4578,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         _vip = _tb.get("vip")
         if _vip:
             from workers.registry.bot_registry import vip_ev_label as _vip_label
-            from workers.notify.telegram import send_telegram_vip as _send_vip
+            from workers.notify.pick_sender import send_vip_pick as _send_vip_pick
             _ev = _vip["cal"] * _vip["odds"] - 1
             _vip_text = (
                 f"⭐ <b>VIP pick · {_vip_label(_vip['cal'], _vip['odds'])}</b>\n"
@@ -4586,12 +4587,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 f"EV {_ev*100:+.1f}% · fair odds {1 / _vip['cal']:.2f} — take it down to {1.05 / _vip['cal']:.2f}"
                 + (f"\n{_tb['league']}" if _tb['league'] else "")
             )
-            send_telegram_to_users(
-                _vip_text,
-                tier_minimum="pro",
-                dedup_key=f"user-bet-{_tk[0]}-{_tk[1]}-{_tk[2]}",
-            )
-            _send_vip(_vip_text)
+            # #162 W5.3: the ONE audited sender — DMs + VIP channel, each checked against the
+            # pause and bot_distribution.vip_channel, recorded in pick_sends and deduped in the
+            # DB on the VIP bot's own pick (was an in-memory 600 s key, lost on restart).
+            _send_vip_pick(_vip["bot"], _vip["bet_id"], _vip_text,
+                           match_id=_tk[0], market=_tk[1], selection=_tk[2])
 
     # ADMIN-TG-CLARITY (2026-05-29): collapse the long bet-block list into
     # a one-line counter. (The per-bet outcome edit, edit_bet_alert_outcome, was

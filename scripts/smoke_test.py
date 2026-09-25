@@ -21740,6 +21740,202 @@ def _():
     )
 
 
+def _fake_pick_sender():
+    """#162 W5.3 — replace pick_sender's DB touch points (pause, distribution, env, the
+    pick_sends claim/finalise) with an in-memory stand-in that honours the unique index, for
+    tests that drive a real sender end to end. Returns the restore callable."""
+    import workers.notify.pick_sender as _ps
+    saved = (_ps._pause_block, _ps._distribution_block, _ps._unconfigured, _ps._record, _ps._finalise)
+    rows: dict = {}
+
+    def _record(status, reason, key, meta):
+        cur = rows.get(key)
+        if cur and cur["status"] not in ("failed", "skipped"):
+            return []
+        rows[key] = {"id": key, "status": status, "reason": reason}
+        return [{"id": key}]
+
+    def _finalise(row_id, status, reason, message_id, recipients):
+        rows[row_id].update(status=status, reason=reason, message_id=message_id)
+
+    _ps._pause_block = lambda: None
+    _ps._distribution_block = lambda channel, bot: None
+    _ps._unconfigured = lambda channel: None
+    _ps._record, _ps._finalise = _record, _finalise
+    _ps._FALLBACK_SENT.clear()
+
+    def restore():
+        (_ps._pause_block, _ps._distribution_block, _ps._unconfigured, _ps._record,
+         _ps._finalise) = saved
+        _ps._FALLBACK_SENT.clear()
+    return restore
+
+
+@test("ONE-AUDITED-PICK-SENDER — #162 W5.3: every customer pick send goes through send_pick (pause, distribution, pick_sends, DB dedupe)")
+def test_one_audited_pick_sender():
+    """#162 W5.3 (audits B-publishing R3, A-producers R10). Five send paths each re-implemented or
+    forgot the pause and the distribution rule (the VIP ones read neither), and none recorded the
+    VIP send — dedupe was an in-memory 600 s dict lost on restart. Pins: (1) every customer pick
+    sender routes through pick_sender.send_pick, and no other module calls a customer transport;
+    (2) the channel -> bot_distribution column map; (3) behaviour: pause / distribution fail
+    CLOSED, the audit write fails OPEN, a pick is never sent twice to a channel, a skip is recorded
+    with its reason; (4) migration 457 is private and carries the unique dedupe index."""
+    import inspect
+    import workers.notify.pick_sender as ps
+    import workers.notify.telegram as tg
+    import workers.api_clients.db as db
+
+    # (1) every sender routes through send_pick
+    from workers.automation import coolbet_signaler as sig
+    send = inspect.getsource(sig.signal_all_bets)
+    assert "send_pick(CHANNEL_PUBLIC" in send and "send_telegram_public(" not in send
+    sch = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    job = sch[sch.index("def job_publish_picks_forward_test"):sch.index("def _publish_picks_forward_test_wrapper")]
+    assert "send_pick(CHANNEL_PUBLIC" in job and "send_telegram_public(" not in job
+    assert job.count("mid = _send_ft(c, ") == 2, "both published arms send through _send_ft -> send_pick"
+    pub = _engine_path("scripts/publish_picks_forward_test.py").read_text(encoding="utf-8")
+    main = pub[pub.index("def main("):]
+    assert "send_pick(CHANNEL_PUBLIC" in main and "send_telegram_public(render" not in pub
+    pipe = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
+    body = pipe[pipe.index("for _tk, _tb in _tele_bets.items():"):pipe.index("ADMIN-TG-CLARITY")]
+    assert "_send_vip_pick(_vip[\"bot\"], _vip[\"bet_id\"]" in body
+    assert "send_telegram_vip(" not in body and "send_telegram_to_users(" not in body
+    assert '"bot": bot_name, "bet_id": str(bet_id)' in pipe, "the VIP pick ref is the VIP bot's own row"
+    ou = _engine_path("workers/jobs/ou_sharp_outlier.py").read_text(encoding="utf-8")
+    assert "send_vip_pick(p[\"bot\"], bet_id" in ou
+    assert "send_telegram_vip(" not in ou and "send_telegram_to_users(" not in ou
+    # No module outside the allow-list calls a customer transport. inplay_bot: in-play betting
+    # is retired (INPLAY_STRATEGIES_ENABLED off) — route it through send_pick if ever revived.
+    # publish_picks_forward_test: the operator-requested method-change HEADER only (not a pick).
+    allowed = {"workers/notify/pick_sender.py", "workers/notify/telegram.py",
+               "workers/jobs/inplay_bot.py", "scripts/publish_picks_forward_test.py",
+               "scripts/test_telegram_public_channel.py", "scripts/smoke_test.py"}
+    import re as _re
+    pat = _re.compile(r"\bsend_telegram_(public|vip|to_users)\(")
+    for f in list(_engine_root.joinpath("workers").rglob("*.py")) + list(_engine_root.joinpath("scripts").glob("*.py")):
+        rel = str(f.relative_to(_engine_root))
+        if rel in allowed:
+            continue
+        code = "\n".join(l for l in f.read_text(encoding="utf-8").splitlines() if not l.lstrip().startswith("#"))
+        assert not pat.search(code), f"{rel} sends a customer message outside send_pick"
+    assert len(pat.findall(pub)) == 1, "publish_picks_forward_test may call the public transport for the header only"
+
+    # (2) the distribution rule for sends IS bot_distribution
+    assert ps.CHANNEL_DISTRIBUTION == {"public": "sent_public", "vip_channel": "vip_channel",
+                                       "vip_dm": "vip_channel"}
+    m442 = _engine_path("supabase/migrations/442_one_status_decides_distribution.sql").read_text(encoding="utf-8")
+    assert "(s.public_status AND NOT s.vip)                   AS sent_public" in m442
+    assert "(s.public_status AND s.vip)                       AS vip_channel" in m442
+
+    # (3) behaviour, against a fake DB and fake transports
+    state = {"paused": False, "pause_err": False, "dist_err": False, "audit_err": False,
+             "dist": {"bot_pub": (True, False), "bot_vip": (False, True)}}
+    rows: dict = {}
+    sends: list = []
+
+    def q(sql, params=None):
+        if "coolbet_session_state" in sql:
+            if state["pause_err"]:
+                raise RuntimeError("db down")
+            return [{"publishing_paused": state["paused"], "publishing_paused_reason": "op"}]
+        if "bot_distribution" in sql:
+            if state["dist_err"]:
+                raise RuntimeError("db down")
+            d = state["dist"].get(params[0])
+            if d is None:
+                return []
+            return [{"ok": d[0] if "sent_public" in sql else d[1], "label": "TESTING"}]
+        raise AssertionError(sql)
+
+    def wr(sql, params):
+        if state["audit_err"]:
+            raise RuntimeError("audit down")
+        assert "ON CONFLICT (channel, pick_table, pick_id)" in sql
+        key = (params[0], params[2], params[3])
+        cur = rows.get(key)
+        if cur and cur["status"] not in ("failed", "skipped"):
+            return []
+        rows[key] = {"id": key, "status": params[7], "reason": params[8]}
+        return [{"id": key}]
+
+    def w(sql, params):
+        if state["audit_err"]:
+            raise RuntimeError("audit down")
+        rows[params[-1]]["status"] = params[0]
+        rows[params[-1]]["message_id"] = params[2]
+        return 1
+
+    mid = {"v": 101}
+    saved = (db.execute_query, db.execute_write_returning, db.execute_write,
+             tg.send_telegram_public, tg.send_telegram_vip, tg.send_telegram_to_users, ps._unconfigured)
+    try:
+        db.execute_query, db.execute_write_returning, db.execute_write = q, wr, w
+        tg.send_telegram_public = lambda text, silent=False, reply_markup=None: (sends.append(("public", text)), mid["v"])[1]
+        tg.send_telegram_vip = lambda text, silent=False: (sends.append(("vip", text)), 7)[1]
+        tg.send_telegram_to_users = lambda text, tier_minimum="pro", **k: (sends.append(("dm", text)), 0)[1]
+        ps._unconfigured = lambda channel: None
+        ps._FALLBACK_SENT.clear()
+        S = ps.send_pick
+        # paused -> skipped, recorded, nothing sent (for EVERY channel, VIP included)
+        state["paused"] = True
+        r = S("public", "bot_pub", "simulated_bets", "p1", "x")
+        assert r.status == "skipped" and r.reason.startswith("paused") and not sends
+        assert rows[("public", "simulated_bets", "p1")]["status"] == "skipped"
+        assert S("vip_channel", "bot_vip", "simulated_bets", "v1", "x").status == "skipped" and not sends
+        state["paused"] = False
+        # unreadable pause / distribution -> fail CLOSED
+        state["pause_err"] = True
+        assert S("public", "bot_pub", "simulated_bets", "p1", "x").reason == "pause_unreadable" and not sends
+        state["pause_err"], state["dist_err"] = False, True
+        assert S("public", "bot_pub", "simulated_bets", "p1", "x").reason == "distribution_unreadable" and not sends
+        state["dist_err"] = False
+        # distribution: a VIP bot never reaches public; a public bot never the VIP channel; unknown bot
+        assert S("public", "bot_vip", "simulated_bets", "p2", "x").reason.startswith("not_distributed")
+        assert S("vip_channel", "bot_pub", "simulated_bets", "p2", "x").reason.startswith("not_distributed")
+        assert S("public", "nobody", "simulated_bets", "p2", "x").reason == "bot_unknown" and not sends
+        # caller's skip_reason: recorded, never sent
+        assert S("public", "bot_pub", "picks_forward_test", "f1", "x",
+                 skip_reason="held_back: vip_held").status == "skipped" and not sends
+        # happy path, then the DB dedupe: a re-claim of a skipped row sends; a sent row never again
+        r = S("public", "bot_pub", "simulated_bets", "p1", "x")
+        assert r.sent and r.message_id == 101 and len(sends) == 1
+        assert rows[("public", "simulated_bets", "p1")]["status"] == "sent"
+        r = S("public", "bot_pub", "simulated_bets", "p1", "x")
+        assert r.status == "skipped" and r.reason.startswith("duplicate") and len(sends) == 1
+        # a transport failure is 'failed' and may be retried
+        mid["v"] = None
+        assert S("public", "bot_pub", "simulated_bets", "p3", "x").status == "failed"
+        mid["v"] = 102
+        assert S("public", "bot_pub", "simulated_bets", "p3", "x").sent and len(sends) == 3
+        # audit DOWN -> still sends (fail OPEN), and the in-process stand-in stops a second send
+        state["audit_err"] = True
+        assert S("public", "bot_pub", "simulated_bets", "p4", "x").sent and len(sends) == 4
+        assert S("public", "bot_pub", "simulated_bets", "p4", "x").reason.startswith("duplicate") and len(sends) == 4
+        state["audit_err"] = False
+        # VIP: two channels, two rows; zero DM recipients is a failure, not a send
+        out = ps.send_vip_pick("bot_vip", "v2", "x")
+        assert out["vip_channel"].sent and out["vip_dm"].status == "failed"
+        assert rows[("vip_channel", "simulated_bets", "v2")]["status"] == "sent"
+        try:
+            S("owner_chat", "bot_pub", "simulated_bets", "p9", "x")
+            raise AssertionError("an unknown channel must be refused")
+        except ValueError:
+            pass
+    finally:
+        (db.execute_query, db.execute_write_returning, db.execute_write,
+         tg.send_telegram_public, tg.send_telegram_vip, tg.send_telegram_to_users, ps._unconfigured) = saved
+        ps._FALLBACK_SENT.clear()
+
+    # (4) migration 457: private, and the unique index is the dedupe
+    mig = _engine_path("supabase/migrations/457_pick_sends.sql").read_text(encoding="utf-8")
+    assert "SET lock_timeout" in mig
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS pick_sends_channel_pick_uq" in mig
+    assert "ON pick_sends (channel, pick_table, pick_id)" in mig
+    assert "REVOKE ALL ON pick_sends FROM PUBLIC, anon, authenticated;" in mig
+    assert "TO anon" not in mig and "TO authenticated" not in mig
+    assert "ON CONFLICT (channel, pick_table, pick_id)" in inspect.getsource(ps)
+
+
 @test("INPLAY-P-V2-BAYES-XG — Bayesian Gamma posterior update on 1-1 score state")
 def _():
     """Per INPLAY-P-V2-100-BET-CHECK 2026-06-24: gate passed (n=112, ROI +5.28%,
@@ -37942,7 +38138,8 @@ def test_signaler_public_only():
 
     # 3. The public post must not sit inside the operator-send success branch.
     send = inspect.getsource(sig.signal_all_bets)
-    pub_idx = send.find("send_telegram_public(")
+    # #162 W5.3: the public post now goes through the ONE audited sender.
+    pub_idx = send.find("send_pick(CHANNEL_PUBLIC")
     op_guard = send.find("if tg_id is not None:")
     assert pub_idx > 0 and op_guard > 0, "both send paths must exist"
     # Everything between the guard and the public call, at the guard's own
@@ -43003,6 +43200,7 @@ def test_picks_forward_test_scheduled():
         _claimed.add(key)
         return f"id-{len(_claimed)}"
 
+    _ps_restore = None
     _PUBLISHER_PATCH_LOCK.acquire()
     try:
         # ARM-AWARE STUB (2026-09-22, [[#068]]). `load_candidates` now takes
@@ -43025,9 +43223,13 @@ def test_picks_forward_test_scheduled():
         # [[#082]]: the job now records its candidate funnel to the LIVE table —
         # a fake leg must never reach it (it did once, 2026-09-23: 'SomeBook').
         _pub.funnel_rows = lambda *a, **k: []
-        _tg.send_telegram_public = lambda m: (_sends.append(m), 1)[1]
+        # #162 W5.3: send_pick passes silent=/reply_markup= through to the transport
+        _tg.send_telegram_public = lambda m, **_k: (_sends.append(m), 1)[1]
         _pub.render = _pub.render          # left real on purpose: it must not raise
 
+        # #162 W5.3: sends go through pick_sender.send_pick — its DB reads/writes are faked
+        # in memory (the unique index included) so this test never touches pick_sends.
+        _ps_restore = _fake_pick_sender()
         _st.is_publishing_paused = lambda: (False, None)
         res = _sch.job_publish_picks_forward_test()
         assert res.get("published") == 1, (
@@ -43091,6 +43293,8 @@ def test_picks_forward_test_scheduled():
         (_pub.load_candidates, _pub.claim, _pub.attach_message_id,
          _pub.junk_anchor_arm, _tg.send_telegram_public,
          _st.is_publishing_paused, _pub.funnel_rows) = _orig
+        if _ps_restore:
+            _ps_restore()
         _PUBLISHER_PATCH_LOCK.release()
         for _m in _stubbed:
             _sys.modules.pop(_m, None)
@@ -55872,7 +56076,11 @@ def test_vip_bot():
     m424 = _engine_path("supabase/migrations/424_vip_ou_early.sql").read_text(encoding="utf-8")
     assert "vip = true" in m424 and "'bot_ou_sharp_early_v1'" in m424 and "'bot_ou_sharp_2anchor_v1'" in m424
     ou = _engine_path("workers/jobs/ou_sharp_outlier.py").read_text(encoding="utf-8")
-    assert "_send_vip_pick(p)" in ou and "send_telegram_vip(msg)" in ou and 'tier_minimum="pro"' in ou
+    # #162 W5.3: both VIP senders go through pick_sender.send_vip_pick (DMs to pro+ AND the
+    # private channel, each gated on bot_distribution.vip_channel), keyed on the stored pick.
+    assert "_send_vip_pick(p, bet_id)" in ou and "send_vip_pick(p[\"bot\"], bet_id, msg" in ou
+    ps = _engine_path("workers/notify/pick_sender.py").read_text(encoding="utf-8")
+    assert 'tier_minimum="pro"' in ps and "send_telegram_vip(" in ps
     assert vip_ev_label(0.60, 1.94) == "EV8" and vip_ev_label(0.55, 1.93) == "EV5"
     mig = _engine_path("supabase/migrations/420_vip_bot.sql").read_text(encoding="utf-8")
     assert "UPDATE bots SET vip = true WHERE name = 'bot_combined_1x2_ev5_v1';" in mig
@@ -55885,8 +56093,8 @@ def test_vip_bot():
     pipe = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
     body = pipe[pipe.index("for _tk, _tb in _tele_bets.items():"):]
     body = body[:body.index("ADMIN-TG-CLARITY")]
-    assert body.count("send_telegram_to_users(") == 1 and 'if _vip:' in body
-    assert body.index("if _vip:") < body.index("send_telegram_to_users("), "user DMs only inside the VIP branch"
+    assert "send_telegram_to_users(" not in body and body.count("_send_vip_pick(") == 1 and 'if _vip:' in body
+    assert body.index("if _vip:") < body.index("_send_vip_pick("), "user DMs only inside the VIP branch"
     tg = _engine_path("workers/notify/telegram.py").read_text(encoding="utf-8")
     vip = tg[tg.index("def send_telegram_vip"):tg.index("def send_telegram_public")]
     assert 'os.getenv("TELEGRAM_VIP_CHAT_ID")' in vip and "if not token or not chat:" in vip
@@ -57194,7 +57402,8 @@ def test_vip_first_hold_back():
     assert 'if c.get("held_back_reason"):' in main
     sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
     job = sched[sched.index("def job_publish_picks_forward_test"):sched.index("def _publish_picks_forward_test_wrapper")]
-    assert job.count('c.get("held_back_reason")') == 2, "both published arms' send loops skip held-back picks"
+    # #162 W5.3: the two loop guards (the unsent-recorder also reads the reason, for pick_sends)
+    assert job.count('paused or c.get("held_back_reason")') == 2, "both published arms' send loops skip held-back picks"
     # no second copy of the rule anywhere in workers/ or scripts/ (the guard is the only reader of
     # rating_1x2 NEW+ for a hold-back decision, and nobody else writes held_back_until)
     for f in list(_engine_root.joinpath("workers").rglob("*.py")) + list(_engine_root.joinpath("scripts").glob("*.py")):

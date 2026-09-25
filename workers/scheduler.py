@@ -2558,9 +2558,26 @@ def job_publish_picks_forward_test():
         select, daily_room, write_board, DAILY_RUNAWAY_LIMIT,
         CONSENSUS_ARM, CONSENSUS_MAX_EDGE, record_twin_arms, arm_bot_sends,
     )
-    from workers.utils.bot_status import load_sent_public_bots
-    from workers.notify.telegram import send_telegram_public
+    from workers.utils.bot_status import load_sent_public_bots, forward_test_bot
+    from workers.notify.pick_sender import CHANNEL_PUBLIC, send_pick
     from workers.automation.coolbet_state import is_publishing_paused
+
+    # #162 W5.3 — every forward-test pick send goes through the ONE audited sender. It
+    # re-checks the pause and the arm's bot distribution itself (fail closed), writes the
+    # pick_sends row and dedupes on (channel, pick) in the DB — on top of claim(), which
+    # still decides "this run created the ledger row". Returns the message id (or None).
+    # `skip` = this pass already decided not to send: recorded with the reason, never sent.
+    def _send_ft(c, arm, pick_id, skip=None):
+        return send_pick(CHANNEL_PUBLIC, forward_test_bot(arm, c.get("market"), c.get("grade")),
+                         "picks_forward_test", pick_id, render(c), match_id=c.get("match_id"),
+                         market=c.get("market"), selection=c.get("selection"),
+                         skip_reason=skip).message_id
+
+    def _record_unsent(c, arm, pick_id, is_paused):
+        _send_ft(c, arm, pick_id, skip=(
+            "paused (read at pass start)" if is_paused
+            else f"held_back: {c['held_back_reason']}" if c.get("held_back_reason")
+            else "not_distributed: arm bot status does not send"))
 
     # PUBLISHER-PAUSE-GATE (2026-09-15). `/pausepicks` sets `publishing_paused`
     # (migration 353) and until now it gated ONLY the model signaler in
@@ -2661,9 +2678,13 @@ def job_publish_picks_forward_test():
         # [[#164]] VIP FIRST: claim() stamped it held back (VIP-held / in VIP range) —
         # recorded and counted, never sent; it appears on /picks at kickoff.
         # [[#155]] and never sent unless the arm's bot's status sends.
+        # #162 W5.3: send_pick re-checks pause + bot_distribution itself (fail closed); this
+        # pass-level pre-check stays so the pass behaves exactly as before, and its "no" is
+        # recorded in pick_sends with the reason.
         if paused or c.get("held_back_reason") or not arm_bot_sends(c, "live", sent_bots):
+            _record_unsent(c, "live", pick_id, paused)
             continue
-        mid = send_telegram_public(render(c))
+        mid = _send_ft(c, "live", pick_id)
         if mid is None:
             log.warning("picks_forward_test: send FAILED for %s v %s — "
                         "row kept, unpublished",
@@ -2691,8 +2712,9 @@ def job_publish_picks_forward_test():
         # (bot_consensus_d_v1) is EXPERIMENTAL, so it is recorded but never sent, now by status
         # rather than a hard-coded grade check ([[#098]] owner: weak picks are not published).
         if not arm_bot_sends(c, CONSENSUS_ARM, sent_bots) or paused or c.get("held_back_reason"):   # [[#164]] held back
+            _record_unsent(c, CONSENSUS_ARM, pick_id, paused)
             continue
-        mid = send_telegram_public(render(c))
+        mid = _send_ft(c, CONSENSUS_ARM, pick_id)
         if mid is None:
             log.warning("picks_forward_test[consensus]: send FAILED for %s v %s "
                         "— row kept, unpublished",

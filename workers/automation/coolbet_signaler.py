@@ -60,8 +60,9 @@ from workers.automation.coolbet_placer import (
     clears_edge_floor, min_edge_for_pick, model_edge, _MIN_EDGE,
 )
 from workers.notify.telegram import (
-    send_telegram, send_telegram_public, operator_pick_alerts_enabled,
+    send_telegram, operator_pick_alerts_enabled,
 )
+from workers.notify.pick_sender import CHANNEL_PUBLIC, send_pick
 
 log = logging.getLogger(__name__)
 
@@ -586,21 +587,28 @@ def signal_all_bets(*, lookahead_hours: int = 36,
         # SENT bot's row whenever one exists (ORDER BY sent_public DESC first), so
         # the message and the floor check are about the pick actually published,
         # never an EXPERIMENTAL bot's price.
+        #
+        # #162 W5.3: the post goes through the ONE audited sender, which re-checks the pause
+        # and the canonical bot's distribution (fail closed), writes the `pick_sends` row
+        # (now with the public message id) and dedupes in the DB.
         public_eligible = is_public_eligible(b)
         public_msg_id = None
+        already_sent = False
         if public_eligible:
-            try:
-                public_msg_id = send_telegram_public(_format_public_signal(b))
-                if public_msg_id is None:
-                    log.warning(
-                        "PUBLIC-CHANNEL-POST: send_telegram_public returned "
-                        "None for sim_id=%s — check that "
-                        "TELEGRAM_PUBLIC_CHANNEL is set and the bot is an "
-                        "admin of the channel.", sim_id,
-                    )
-            except Exception as e:
-                log.warning("PUBLIC-CHANNEL-POST failed for sim_id=%s "
-                            "(non-fatal): %s", sim_id, e)
+            _ps = send_pick(CHANNEL_PUBLIC, b["bot_name"], "simulated_bets", sim_id,
+                            _format_public_signal(b), match_id=b["match_id"],
+                            market=b["market"], selection=b["selection"])
+            public_msg_id = _ps.message_id
+            if _ps.reason and _ps.reason.startswith("duplicate"):
+                # Already out on an earlier pass whose signaled_at mark failed: retire it now.
+                already_sent = True
+                _mark_signaled(b["match_id"], b["market"], b["selection"])
+            elif public_msg_id is None:
+                log.warning(
+                    "PUBLIC-CHANNEL-POST: not sent for sim_id=%s (%s: %s) — check "
+                    "TELEGRAM_PUBLIC_CHANNEL and that the bot is an admin of the channel "
+                    "if this is a failure.", sim_id, _ps.status, _ps.reason,
+                )
 
         # ── DEDUP BOOKKEEPING ────────────────────────────────────────────────
         # `signaled_at` retires a pick from the candidate set. Mark it when a
@@ -620,7 +628,8 @@ def signal_all_bets(*, lookahead_hours: int = 36,
         else:
             results.append({
                 "simulated_bet_id": b["simulated_bet_id"],
-                "outcome": "not_public" if not public_eligible else "skipped",
+                "outcome": ("not_public" if not public_eligible
+                            else "already_sent" if already_sent else "skipped"),
                 "telegram_message_id": None,
                 "public_channel_message_id": None,
             })

@@ -206,11 +206,13 @@ def funnel_rows(funnel: dict, now_ts: float) -> list[dict]:
             for f in funnel.values()]
 
 
-def _send_vip_pick(p: dict) -> None:
+def _send_vip_pick(p: dict, bet_id: str) -> None:
     """#148/#149 VIP: O/U EARLY's live pick goes ONLY to Pro/Elite users and the private VIP
-    channel (never the public channel — the signaler excludes VIP bots), labelled EV8 / EV5."""
+    channel (never the public channel — the signaler excludes VIP bots), labelled EV8 / EV5.
+    #162 W5.3: through the ONE audited sender (pause, bot_distribution.vip_channel, pick_sends
+    row, DB dedupe on this pick)."""
     from workers.api_clients.db import execute_query
-    from workers.notify.telegram import send_telegram_to_users, send_telegram_vip
+    from workers.notify.pick_sender import send_vip_pick
     try:
         m = execute_query("""SELECT ht.name h, at.name a, l.name lg FROM matches m JOIN teams ht ON ht.id = m.home_team_id
                                JOIN teams at ON at.id = m.away_team_id LEFT JOIN leagues l ON l.id = m.league_id
@@ -222,8 +224,8 @@ def _send_vip_pick(p: dict) -> None:
                f"{p['selection'].capitalize()} {line} goals @ {p['odds']:.2f} ({p['bookmaker']})\n"
                f"EV {p['ev']*100:+.1f}% · fair odds {1 / p['p_fair']:.2f} — take it down to {1.05 / p['p_fair']:.2f}"
                + (f"\n{lg}" if lg else ""))
-        send_telegram_to_users(msg, tier_minimum="pro", dedup_key=f"user-bet-{p['match_id']}-{p['market']}-{p['selection']}")
-        send_telegram_vip(msg)
+        send_vip_pick(p["bot"], bet_id, msg, match_id=p["match_id"], market=p["market"],
+                      selection=p["selection"])
     except Exception as e:                      # a notification must never lose a recorded pick
         console.print(f"[yellow]VIP O/U notify failed: {e}[/yellow]")
 
@@ -295,7 +297,7 @@ def run(dry_run: bool = False) -> int:
             stored += 1
             have[(str(bid), p["match_id"], p["market"])] = p["selection"]
             if p["bot"] in VIP_BOTS:
-                _send_vip_pick(p)
+                _send_vip_pick(p, bet_id)
     _record_funnel(funnel, now_ts, dry_run)
     console.print(f"[green]ou_sharp_outlier: {stored} new picks ({len(picks)} candidates)[/green]")
     return stored

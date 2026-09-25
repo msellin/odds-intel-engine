@@ -1263,9 +1263,12 @@ def main() -> int:
         return 1
 
     if not args.no_header:
+        # Not a pick (a method-change announcement the operator asks for), so it does not go
+        # through send_pick (#162 W5.3) — the pause check above already covers it.
         send_telegram_public(HEADER.format(n=len(picks)))
 
-    from workers.utils.bot_status import load_sent_public_bots
+    from workers.utils.bot_status import load_sent_public_bots, forward_test_bot
+    from workers.notify.pick_sender import CHANNEL_PUBLIC, send_pick
     sent_bots = load_sent_public_bots()   # [[#155]] the bot's status decides the send
     sent = 0
     for c in picks:
@@ -1274,15 +1277,25 @@ def main() -> int:
             log.info("already published, not re-sending: %s v %s",
                      c["home_team"], c["away_team"])
             continue
+        # #162 W5.3: every outcome goes through the ONE audited sender (pause + distribution
+        # re-checked there, fail closed; pick_sends row; DB dedupe). A local "no" is passed as
+        # skip_reason so it is recorded, never sent.
+        _bot = forward_test_bot("live", c.get("market"), c.get("grade"))
+        _kw = dict(match_id=c.get("match_id"), market=c.get("market"), selection=c.get("selection"))
         if not arm_bot_sends(c, "live", sent_bots):
             log.info("status does not send (#155), recorded not sent: %s v %s",
                      c["home_team"], c["away_team"])
+            send_pick(CHANNEL_PUBLIC, _bot, "picks_forward_test", pick_id, render(c),
+                      skip_reason="not_distributed: arm bot status does not send", **_kw)
             continue
         if c.get("held_back_reason"):      # [[#164]] VIP FIRST: recorded, never sent
             log.info("held back (%s), recorded not sent: %s v %s", c["held_back_reason"],
                      c["home_team"], c["away_team"])
+            send_pick(CHANNEL_PUBLIC, _bot, "picks_forward_test", pick_id, render(c),
+                      skip_reason=f"held_back: {c['held_back_reason']}", **_kw)
             continue
-        mid = send_telegram_public(render(c))
+        mid = send_pick(CHANNEL_PUBLIC, _bot, "picks_forward_test", pick_id, render(c),
+                        **_kw).message_id
         if mid is None:
             log.warning("send FAILED: %s v %s — row kept, unpublished",
                         c["home_team"], c["away_team"])

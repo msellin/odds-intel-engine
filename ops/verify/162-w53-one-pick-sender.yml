@@ -1,0 +1,43 @@
+# #162 W5.3 — one audited pick sender (workers/notify/pick_sender.py, migration 457).
+task: "#162"
+checks:
+  - name: pick_sends_is_private
+    mode: now
+    # Nobody but service_role / the owner may read the audit table.
+    sql: |
+      SELECT count(*) FROM information_schema.role_table_grants
+       WHERE table_name = 'pick_sends' AND grantee IN ('anon', 'authenticated', 'PUBLIC')
+    expect: "== 0"
+    run_after: {migration: "457"}
+    expires: "2026-10-03T00:00:00Z"
+  - name: every_public_forward_test_send_is_audited
+    mode: eventually
+    # Every forward-test pick that got a Telegram message after the deploy has a 'sent' pick_sends row.
+    sql: |
+      SELECT count(*) FROM picks_forward_test p
+       WHERE p.telegram_message_id IS NOT NULL AND p.published_at > (
+             SELECT min(first_attempt_at) FROM pick_sends)
+         AND NOT EXISTS (SELECT 1 FROM pick_sends s WHERE s.channel = 'public'
+                          AND s.pick_table = 'picks_forward_test' AND s.pick_id = p.id AND s.status = 'sent')
+    expect: "== 0"
+    run_after: {migration: "457", job: publish_picks_forward_test, since: "2026-09-26T12:00:00Z"}
+    expires: "2026-10-03T00:00:00Z"
+  - name: no_pick_sent_twice_to_a_channel
+    mode: invariant
+    # The unique index makes this structural; the check is the tell if the index were ever dropped.
+    sql: |
+      SELECT count(*) FROM (SELECT channel, pick_table, pick_id FROM pick_sends
+                             WHERE status = 'sent' GROUP BY 1, 2, 3 HAVING count(*) > 1) d
+    expect: "== 0"
+    run_after: {migration: "457"}
+    expires: "2026-10-10T00:00:00Z"
+  - name: no_send_while_paused
+    mode: invariant
+    # A pick is never sent while /pausepicks is on (sent rows since the pause began).
+    sql: |
+      SELECT count(*) FROM pick_sends s, coolbet_session_state c
+       WHERE c.id = 1 AND c.publishing_paused AND s.status = 'sent'
+         AND s.sent_at > coalesce(c.publishing_paused_at, now())
+    expect: "== 0"
+    run_after: {migration: "457"}
+    expires: "2026-10-10T00:00:00Z"

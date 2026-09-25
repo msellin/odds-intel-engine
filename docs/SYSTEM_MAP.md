@@ -668,12 +668,42 @@ decides where its picks go. Every public surface reads it; no second per-bot set
   forward-test branch by the arm's bot status or already sent).
 - Public Telegram: `coolbet_signaler` (any SENT bot in the match·market·selection group — was
   "any calibrated bot"; a sent bot's row supplies the message) and the forward-test publisher
-  (`arm_bot_sends` → grade D's bot is EXPERIMENTAL, so recorded, never sent).
+  (`arm_bot_sends` → grade D's bot is EXPERIMENTAL, so recorded, never sent) — both re-checked at
+  the send by `send_pick` (#162 W5.3).
 - Headline totals: `HEADLINE_BOT_SQL` (settlement `write_dashboard_cache`) and web
   `HEADLINE_MATURITY_LABELS` = BETA + CALIBRATED, VIP excluded.
 - /performance: web `PUBLIC_MATURITY_LABELS` = TESTING + BETA + CALIBRATED (lib/bot-status.ts).
 - anon RLS on `simulated_bets`: pending rows only via `bot_pending_public` (+ #164 `held_back_until`).
 - Python: `workers/utils/bot_status.py`; web: `src/lib/bot-status.ts`.
+- **Every customer pick SEND (#162 W5.3, 2026-09-26):** `workers/notify/pick_sender.send_pick` —
+  see "One audited pick sender" below.
+
+### One audited pick sender — `send_pick` + `pick_sends` (#162 W5.3, 2026-09-26)
+
+Every pick that reaches a customer — the public channel (@oddsintelpicks), the private VIP channel
+(`TELEGRAM_VIP_CHAT_ID`) or the Pro/Elite DMs — goes through ONE function,
+`send_pick(channel, bot, pick_table, pick_id, text)` (`send_vip_pick` = DMs + VIP channel). Callers:
+`coolbet_signaler` (model bots → public), the forward-test publisher (scheduler job + the manual
+`--send`, → public), `daily_pipeline_v2`'s VIP branch and `ou_sharp_outlier` (VIP bots → DMs + VIP
+channel). Operator messages (alerts, summaries, the owner's per-pick prompt, the day-one header) are
+not picks and do not use it; the in-play DM (`inplay_bot`, retired) is the one exemption, to be routed
+here if in-play is ever revived. It:
+
+1. checks `publishing_paused` (`/pausepicks`) — for **every** channel; the VIP senders used to ignore it;
+2. checks the bot's distribution: public ⇐ `bot_distribution.sent_public`; VIP channel and DMs ⇐
+   `bot_distribution.vip_channel` (map `CHANNEL_DISTRIBUTION`);
+3. claims a **`pick_sends`** row (migration 457: channel, bot, pick table + id, match/market/selection,
+   message id / recipients, status `sent`/`failed`/`skipped` + reason, timestamps) before the send
+   and finalises it after — skips are recorded with their reason (paused, held back, not distributed);
+4. dedupes on the unique index `(channel, pick_table, pick_id)` — a restart can no longer double-send
+   (the VIP DMs used an in-memory 600 s key), and "which picks were sent where" is a query.
+
+**Failure policy:** pause / distribution unreadable → NOT sent, recorded (fail closed — stricter than
+`is_publishing_paused()`, which still falls open for its logging callers); the `pick_sends` write
+failing → sent anyway, logged at ERROR, an in-process set stands in for the dedupe (fail open — the
+audit must never mute customers); a `sending` row left by a crash mid-send is treated as sent. The
+forward test still writes `picks_forward_test.telegram_message_id` (public surfaces read it); the
+pre-registered selection rule is untouched. Smoke `ONE-AUDITED-PICK-SENDER`.
 
 **Current statuses (owner 2026-09-25, migration 442):** `bot_v10_1x2` CALIBRATED · `bot_high_roi_global_v2`
 BETA · `bot_sharp_1x2_v1`, `bot_sharp_ou_v1`, `bot_consensus_b_v1`, `bot_consensus_c_v1`,
