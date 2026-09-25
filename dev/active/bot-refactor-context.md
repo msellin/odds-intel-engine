@@ -51,3 +51,5 @@ Parent row: PRIORITY_QUEUE.md #162
 - ~19:00: migration 437 live (c8e5f10d) — views for #155. Owner answers via the bot session: Q7 sent =
   /picks AND public Telegram (sent_public drives both; no view change); bot_ou35_model_v1 RETIRED by them
   (b954c603, mig 438); pending_exposed RLS gap → #155. #164 in progress (its files locked).
+- Owner 2026-09-25 (via bot session): FLAT STAKES EVERYWHERE (handover rule 9) — W8.2 re-bases pnl/bankroll on a flat unit; W4 sizes real money flat; compute_stake→flat is #155's after #164.
+- W8.2 stake/pnl/bankroll restatement MOVED to #155 (owner). Don't write simulated_bets.stake/pnl/bankroll_after.
