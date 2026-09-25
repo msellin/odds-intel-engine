@@ -59517,5 +59517,35 @@ def test_performance_retired_parity():
     return f"{w['ws']} strategies / {w['w']} picks; retired families == sum of bot_performance; in-play priced in-play"
 
 
+
+@test("SQL-COMMENT-PERCENT — every parameterised SQL string in the bot writers formats with its own placeholders")
+def test_sql_comment_percent():
+    """2026-09-25: a bare '%' inside a `--` comment of a parameterised psycopg2 SQL string is read as a format
+    directive ("22-52% of", then "3.8% above" — '% a' is a valid conversion that eats an argument). Every
+    pick_generator write raised from ~15:25 UTC until fixed (85202b04 + the follow-up). psycopg2 formats the
+    WHOLE string, comments included, so write 'per cent' or '%%' in SQL comments. This formats each string with
+    dummy params the way psycopg2 does and fails on any mismatch."""
+    import re
+    files = ("workers/automation/pick_generator.py", "workers/jobs/pick_trigger_matcher.py",
+             "workers/jobs/ou35_model_shadow.py", "workers/jobs/pick_triggers.py", "workers/jobs/settlement.py",
+             "scripts/place_coolbet_ui.py", "workers/jobs/clv_sharp.py", "workers/automation/best_price_router.py",
+             "workers/automation/coolbet_placer.py", "workers/jobs/daily_pipeline_v2.py")
+    bad = []
+    for f in files:
+        src = _engine_path(f).read_text(encoding="utf-8")
+        for m in re.finditer(r'"""(.*?)"""', src, re.S):
+            body = m.group(1)
+            if not re.search(r"\b(SELECT|UPDATE|INSERT|WITH)\b", body):
+                continue
+            named = re.findall(r"%\((\w+)\)s", body)
+            n = body.count("%s")
+            if not named and n == 0:
+                continue
+            try:
+                body % ({k: "x" for k in named} if named else tuple(["x"] * n))
+            except Exception as e:  # noqa: BLE001
+                bad.append(f"{f}:{src[:m.start()].count(chr(10)) + 1} {type(e).__name__}: {e}")
+    assert not bad, "SQL strings that psycopg2 cannot format (a bare % in a comment?):\n" + "\n".join(bad)
+
 if __name__ == "__main__":
     main()

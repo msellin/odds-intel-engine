@@ -332,7 +332,7 @@ def generate(cfg: BotConfig) -> dict:
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now(), %s,%s,%s,%s,%s,%s)
                    -- #162 W2.1 (owner 11A, 2026-09-25): the FIRST write is the pick. The old DO UPDATE
                    -- rewrote price/prob/edge on every sweep but kept the first pick_time, so 22-52 per cent of
-                   -- rows carried a price 1.0-3.8% above the quote at pick time (audit A §2).
+                   -- rows carried a price 1.0-3.8 per cent above the quote at pick time (audit A §2).
                    -- odds_at_pick_live = the price at THIS bot's book at pick time (review: #159's backfill
                    -- would store the MAX across all four Estonian books — a price this bot could not take).
                    ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING""",
