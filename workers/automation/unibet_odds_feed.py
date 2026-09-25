@@ -562,6 +562,36 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
 
     async with websockets.connect(tab["webSocketDebuggerUrl"], max_size=40_000_000) as ws:
         nid = [0]
+
+        # UNIBET-TAB-NOT-LOADED (2026-09-25): after the 00:18 Chrome restart the tab was LISTED
+        # as unibet.ee (/json/list keeps the restored URL) while its document was about:blank.
+        # Every injected fetch from about:blank fails with status 0 (no unibet origin / cookies),
+        # the sweep read that as "session blocked?", and the feed auto-paused itself for 8 h.
+        # Check the real document origin and reload the page once if it is not unibet.ee.
+        async def _eval(expr: str, rid: int) -> object:
+            await ws.send(json.dumps({"id": rid, "method": "Runtime.evaluate",
+                                      "params": {"expression": expr, "returnByValue": True}}))
+            t0 = asyncio.get_event_loop().time()
+            while asyncio.get_event_loop().time() - t0 < 15:
+                try:
+                    evt = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
+                except asyncio.TimeoutError:
+                    continue
+                if evt.get("id") == rid:
+                    return ((evt.get("result") or {}).get("result") or {}).get("value")
+            return None
+
+        origin = await _eval("location.origin", 900001)
+        if not (isinstance(origin, str) and origin.endswith("unibet.ee")):
+            c["tab_reloaded"] = str(origin)
+            await ws.send(json.dumps({"id": 900002, "method": "Page.navigate",
+                                      "params": {"url": "https://www.unibet.ee/betting/odds"}}))
+            for _ in range(20):  # up to ~20 s for the page to become usable
+                await asyncio.sleep(1.0)
+                if await _eval("location.origin.endsWith('unibet.ee') && document.readyState", 900003) in ("interactive", "complete"):
+                    break
+            log.warning("unibet-site: tab was on %r, reloaded unibet.ee before the sweep", origin)
+
         async def inj(url: str) -> dict | None:
             # rate-limit + cap + abort-on-repeated-block
             if c["fetches"] >= _RATE_MAX_FETCHES:
@@ -599,6 +629,9 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
                     return None
                 footprint.record(_BOOKMAKER, footprint.classify_status(d.get("s")))
                 if d.get("s") != 200:
+                    # keep the status: 0 = the fetch never got an answer (tab not on unibet.ee /
+                    # network), 403/429 = a real block — "session blocked?" hid the difference.
+                    c["last_status"] = d.get("s")
                     c["blocks"] += 1; consec_blocks[0] += 1
                     return None
                 consec_blocks[0] = 0
@@ -627,7 +660,10 @@ async def _async_run_bulk(days: int, limit: int | None, dry_run: bool) -> dict:
                     walk_rn(v)
         walk_rn(qb or {})
         if not rns:
-            c["reason"] = "quickbrowse returned no country RNs (session blocked?)"; return c
+            st = c.get("last_status")
+            c["reason"] = ("quickbrowse returned no country RNs "
+                           + (f"(status {st}: {'no answer — tab not on unibet.ee or network down' if st == 0 else 'blocked'})"
+                              if st is not None else "(empty answer)")); return c
 
         def country_of(rn: str) -> str:
             return rn.split(":", 1)[1].replace("_", " ")

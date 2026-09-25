@@ -1441,3 +1441,20 @@ two are the only bots a placer can place") that was false — `load_picks` is ge
 (`placement_gate.placement_path_reason`) applied to the exported config, and who may bet is the audited
 per-bot switch (owner decision 4). Smoke `CONTROL-PLACEMENT-PATH-RULE-AGREES` keeps the Python, SQL and
 page copies of the rule in step.
+
+## 18. A listed tab is not a loaded page — and an auto-pause is an outage, not a pause
+
+**2026-09-25, Unibet-Site dark 00:09–08:23 UTC.** After the VPS CDP-Chrome restarted at 00:18, its
+`/json/list` still showed the tab at `https://www.unibet.ee/betting/odds` (the restored URL), but the
+document inside was `about:blank`. Every injected API fetch from `about:blank` fails with status 0 —
+no unibet origin, no cookies — and the sweep reported *"quickbrowse returned no country RNs (session
+blocked?)"*. After 4 failures the circuit breaker auto-paused the feed, and the admin Overview showed
+it as a calm blue "Paused 1" next to "22/23 fresh".
+
+**Tell:** the run fails in well under a second with `fetches: 1, blocks: 1`, and the tab's
+`location.origin` (via `Runtime.evaluate`), not its listed URL, is wrong.
+
+**Guard:** `_async_run_bulk` checks the real document origin before the first fetch and reloads
+unibet.ee once if it is wrong; non-200s keep their status, so the reason says "status 0: no answer"
+vs "blocked" (smoke `UNIBET-TAB-NOT-LOADED`). Separately: a feed paused BY THE ENGINE after
+failures must read as a failure on every surface, not as a deliberate pause (admin fix, same day).

@@ -52981,6 +52981,22 @@ def test_coolbet_search_budget():
         "the budget check must run BEFORE the search request")
 
 
+@test("UNIBET-TAB-NOT-LOADED — the Unibet sweep reloads a tab that is not really on unibet.ee, and names status 0")
+def test_unibet_tab_not_loaded():
+    """2026-09-25: Unibet-Site was dark 00:09-08:23 UTC (5 failed runs, auto-paused). After a Chrome
+    restart at 00:18 the CDP tab was LISTED as unibet.ee but its document was about:blank, so every
+    injected fetch failed with status 0 and the sweep reported "session blocked?". Fix: check the
+    document origin before sweeping and Page.navigate to unibet.ee once if it is wrong; keep the HTTP
+    status so the reason says "status 0: no answer" vs "blocked"."""
+    # read the file, not inspect.getsource: other Unibet tests reload the module concurrently
+    full = _engine_path("workers/automation/unibet_odds_feed.py").read_text(encoding="utf-8")
+    src = full[full.index("async def _async_run_bulk("):full.index("\ndef run_bulk(")]
+    i = src.index('origin = await _eval("location.origin"')
+    assert i < src.index("qb = await inj("), "the origin check must run before the first API fetch"
+    assert '"method": "Page.navigate"' in src and 'origin.endswith("unibet.ee")' in src
+    assert 'c["last_status"] = d.get("s")' in src and "tab not on unibet.ee" in src
+
+
 @test("FOOTPRINT-HOUR-BOOKING — a request batch is booked under the hour it was counted; 'budget spent' only at the budget")
 def test_footprint_hour_booking():
     """2026-09-24 (#139 Feeds review): Tonybet refusals made at 18:59:57 at 150/150 were flushed after
