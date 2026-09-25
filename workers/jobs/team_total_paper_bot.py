@@ -95,6 +95,11 @@ def generate_picks() -> dict:
         if not bot_id:
             log.warning("team-total paper: bot %s not registered (migration 327 unapplied?)", BOT_NAME)
             return counters
+        # #162: a retired bot records no new picks (its existing ones still settle)
+        from workers.utils.bot_status import bot_is_live
+        if not bot_is_live(BOT_NAME):
+            counters["retired"] = True
+            return counters
 
         rows = execute_query(
             """

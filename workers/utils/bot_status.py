@@ -84,3 +84,17 @@ def load_sent_public_bots() -> set[str] | None:
     except Exception as e:  # noqa: BLE001
         log.warning("bot_distribution unreadable — sending nothing this pass: %s", e)
         return None
+
+
+def bot_is_live(name: str) -> bool:
+    """True only for an ACTIVE, non-retired bot. #162 (owner 13A, 2026-09-25): a retired bot writes no new picks
+    in ANY writer — the pipeline gate (daily_pipeline_v2) and every standalone paper job that inserts
+    shadow_bets on its own schedule (team-total / corners / first-half 1x2 were retired 2026-09-14 and kept
+    writing). Their existing picks still settle and keep counting. Fails CLOSED (an unreadable row = not live:
+    skipping a paper pick is safe)."""
+    try:
+        from workers.api_clients.db import execute_query
+        r = execute_query("SELECT is_active AND retired_at IS NULL AS live FROM bots WHERE name = %s", [name])
+        return bool(r and r[0]["live"])
+    except Exception:  # noqa: BLE001
+        return False

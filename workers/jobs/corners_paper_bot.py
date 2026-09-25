@@ -131,6 +131,11 @@ def generate_picks() -> dict:
         if not bot_id:
             log.warning("corners paper: bot %s not registered (migration 308 unapplied?)", BOT_NAME)
             return counters
+        # #162: a retired bot records no new picks (its existing ones still settle)
+        from workers.utils.bot_status import bot_is_live
+        if not bot_is_live(BOT_NAME):
+            counters["retired"] = True
+            return counters
 
         # latest price per (match, market, selection, bookmaker) for upcoming
         # CORNERS-SETTLEMENT-GATE: only bet leagues whose corner stats reliably land,

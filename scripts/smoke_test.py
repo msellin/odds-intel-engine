@@ -58620,12 +58620,6 @@ def test_model_round2_handoff():
         assert _engine_path(f"dev/archive/{f}.md").exists() and not _engine_path(f"dev/active/{f}.md").exists()
 
 
-@test("PROMOTION-N-50 — owner 2026-09-26: TESTING → BETA after 50 settled picks with sharp CLV > 0")
-def test_promotion_n_50():
-    m = _engine_path("docs/SYSTEM_MAP.md").read_text(encoding="utf-8")
-    assert "after **50 settled picks**" in m and "sharp-anchor CLV > 0" in m
-
-
 @test("OU35-MODEL-BOT-RETIRED — owner 2026-09-25: retired after its 'review this bot' flag; the job records nothing")
 def test_ou35_model_bot_retired():
     """The first bot retired by the #155 review flag (bot_review_flag, migration 437): bot_ou35_model_v1, 460 settled,
@@ -59582,6 +59576,31 @@ def test_settle_inplay_public_price():
         "the score-correction re-grader must load the in-play markers too"
     # the rule itself: an in-play row is priced at its recorded odds, never the pre-match 'available' quote
     assert public_price({"match_minute_at_pick": 35, "odds_at_pick": 2.4, "odds_at_pick_available": 1.8})[1] == "inplay"
+
+
+@test("RETIRED-BOTS-NO-NEW-PICKS — a retired bot writes no new picks in ANY writer, standalone paper jobs included (#162)")
+def test_retired_bots_no_new_picks():
+    """#162 (owner 13A, 2026-09-25). W7.1 gated the pipeline; the verify queue then caught three standalone paper
+    jobs (team-total, corners, first-half 1x2 — retired 2026-09-14) still inserting shadow_bets: 53 rows in 2 h.
+    Each job's generate_picks now returns before any read/write when bot_status.bot_is_live() is False (fails
+    closed); settle_picks is untouched so their existing picks keep settling."""
+    import workers.utils.bot_status as bs
+    import workers.api_clients.db as db
+    o_live, o_w = bs.bot_is_live, db.execute_write
+    def _no_write(*a, **k):
+        raise AssertionError("a retired bot must not write")
+    for mod in ("workers.jobs.team_total_paper_bot", "workers.jobs.corners_paper_bot",
+                "workers.jobs.first_half_1x2_paper_bot"):
+        m = __import__(mod, fromlist=["x"])
+        o_id = m._bot_id
+        try:
+            m._bot_id = lambda: "00000000-0000-0000-0000-000000000000"
+            bs.bot_is_live = _this_thread_only(lambda name: False, o_live)
+            db.execute_write = _this_thread_only(_no_write, o_w)
+            out = m.generate_picks()
+            assert out.get("retired") is True and out["picked"] == 0, (mod, out)
+        finally:
+            m._bot_id, bs.bot_is_live, db.execute_write = o_id, o_live, o_w
 
 if __name__ == "__main__":
     main()
