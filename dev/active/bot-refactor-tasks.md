@@ -9,12 +9,12 @@ dashboard_cache, migrations touching bots/simulated_bets/picks_forward_test view
 bot-aggregates, engine-data. (admin-attention.ts: one agreed #139 edit, then #155 owns it.)
 
 ## Phase 1 — read-only
-- [ ] Audit A producers → dev/active/bot-refactor-audit/A-producers.md
-- [ ] Audit B publishing/visibility → B-publishing.md
-- [ ] Audit C settlement/scoring → C-scoring.md
-- [ ] Audit D surfaces + real money → D-surfaces-money.md
-- [ ] Synthesised plan → dev/active/bot-refactor-plan.md (merge/delete/rename/centralise, risks, §3 rules per step)
-- [ ] Independent review of the plan (2 agents: correctness + money safety)
+- [x] Audit A producers → dev/active/bot-refactor-audit/A-producers.md
+- [x] Audit B publishing/visibility → B-publishing.md
+- [x] Audit C settlement/scoring → C-scoring.md
+- [x] Audit D surfaces + real money → D-surfaces-money.md
+- [x] Synthesised plan → dev/active/bot-refactor-plan.md (merge/delete/rename/centralise, risks, §3 rules per step)
+- [x] Independent review of the plan (2 agents: correctness + money safety) — revised
 - [ ] Commit phase-1 docs (own files only)
 
 ## Phase 2 — after #159 + #161 (bot code, NOT /performance or status wiring)

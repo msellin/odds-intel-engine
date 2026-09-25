@@ -13,3 +13,21 @@ Parent row: PRIORITY_QUEUE.md #162
 
 ## State
 - 2026-09-25 ~11:40: row #162 filed/claimed (ea51c30b); 4 audit agents launched (A–D).
+- ~12:40: #139 round 6 pushed (web 9003e5d, engine 944e68fc); peer sent the hash. Audits A + B done and
+  committed. Key plan inputs so far: VIP leak (vip_exclude re-derives; forward test no VIP check);
+  one-per-match not across runs; VIP #1 live rule ≠ backtest (8 inherited gates, Kelly stakes); 4 de-vigs;
+  paper writers overwrite price but keep pick time; generator `predictions` source unfiltered; real-money
+  supply keyed on status label 'calibrated'; 33 retired bots still evaluated 48×/day; VIP senders keep no
+  sent record; anon can read EXPERIMENTAL pending picks; settlement never voids postponed shadow picks (219).
+- Waiting: audits C (scoring) + D (surfaces/money); peer message for phase 2.
+- Shared-checkout lesson: commit via a TEMP GIT_INDEX_FILE (read-tree HEAD + own files) and afterwards
+  `git reset -q -- <own paths>` only — a bare `git reset` dropped the web session's staged deletion once
+  (restored with `git rm --cached`).
+- Peer (bot session) took ownership 2026-09-25: VIP-PICKS-LEAK-TO-PUBLIC (P0) and
+  SHADOW-PICKS-POSTPONED-NEVER-VOIDED — LEAVE BOTH OUT of the refactor plan (reference only).
+  433_one_bot_performance.sql = #159's in-progress migration — don't touch. Still phase 1.
+- ~13:10: plan written + reviewed by 2 agents (correctness: 13 claims confirmed; money: 3 HIGH in W4 —
+  23 "unknown" rows are REAL bets; spent_today rewrite would loosen caps; floor move would loosen 3 ways)
+  and revised (lock table §0, W0 safety rails incl. DB guard money_gate_ready, W8 dropped findings).
+  #161 ✅; #159 still in progress → Phase 2 not open. #163/#164/#165 exist (164/165 = the two findings).
+- NEXT: when the bot session says #159 ✅ → Phase 2 starts with W0.1 baseline snapshot, W0.2 guard (OK).
