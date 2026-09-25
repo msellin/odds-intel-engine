@@ -81,6 +81,15 @@ import threading as _threading
 _PUBLISHER_PATCH_LOCK = _threading.Lock()
 
 
+# FOOTPRINT-SMOKE-NO-PROD-WRITES (#151, 2026-09-25). CI runs against the production DB, so a
+# test that forces a Coolbet refusal (BOOK-FOOTPRINT) or sends a fake request through a metered
+# session booked it into the REAL book_footprint row — the refused-while-under-budget of #151,
+# named by refused_by as runnervm…/smoke_test.py. Tests that exercise flush() turn writes back
+# on while db.execute_write is patched.
+import workers.utils.footprint as _footprint_mod
+_footprint_mod._WRITES_ENABLED = False
+
+
 def _this_thread_only(fake, real):
     """Wrap a monkeypatched shared function so ONLY the installing thread sees the fake.
 
@@ -53333,6 +53342,7 @@ def test_footprint_hour_booking():
     with _PUBLISHER_PATCH_LOCK:  # footprint module state is process-global
         try:
             db.execute_write = _this_thread_only(lambda sql, p=None: calls.append(p), orig_w)
+            f._WRITES_ENABLED = True   # harness default is off (FOOTPRINT-SMOKE-NO-PROD-WRITES)
             f.flush()
             calls.clear()
             f._hour = lambda: h18
@@ -53342,6 +53352,7 @@ def test_footprint_hour_booking():
             f.flush()
         finally:
             db.execute_write, f._hour = orig_w, orig_h
+            f._WRITES_ENABLED = False
     booked = [(c[0], c[1].hour) for c in calls if c and c[0] == "SmokeBook"]
     assert booked == [("SmokeBook", 18), ("SmokeBook", 19)], booked
     under = fh.footprint_warnings({"requests_1h": 73, "budget_1h": 150, "refused_1h": 4, "challenges_1h": 0})
@@ -53387,6 +53398,7 @@ def test_footprint_priority_reserve():
             # 2. a refusal records who refused, and flush writes it
             f._db_count = lambda book: f.budget(book)
             db.execute_write = _this_thread_only(lambda sql, p=None: calls.append((sql, p)), saved[1])
+            f._WRITES_ENABLED = True   # harness default is off (FOOTPRINT-SMOKE-NO-PROD-WRITES)
             try:
                 f.check("Coolbet")
                 raise AssertionError("check() did not refuse at the budget")
@@ -53409,6 +53421,7 @@ def test_footprint_priority_reserve():
         finally:
             f._db_count, db.execute_write, f._refused_by_col = saved
             f._pending.clear(); f._refusers.clear()
+            f._WRITES_ENABLED = False
 
     # 4. the deferrable callers are gated; the must-run ones are not
     bulk = inspect.getsource(tonybet_feed.run_bulk)
@@ -53499,6 +53512,8 @@ def test_book_footprint():
     assert fh.footprint_warnings({"requests_1h": 100, "budget_1h": 500, "challenges_1h": 8})
     assert fh.footprint_warnings({"requests_1h": 500, "budget_1h": 500, "refused_1h": 3})
 
+    # the harness must never book its fake refusals/errors into the production table (#151)
+    assert fp._WRITES_ENABLED is False, "smoke harness left footprint writes on — CI would write to prod"
     mig = Path(__file__).resolve().parent.parent / "supabase/migrations/392_book_footprint.sql"
     assert "CREATE TABLE IF NOT EXISTS book_footprint" in mig.read_text()
 

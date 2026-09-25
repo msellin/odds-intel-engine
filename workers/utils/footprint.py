@@ -100,6 +100,10 @@ _last_flush = time.monotonic()
 _batch_hour = None  # the clock hour the pending batch was counted in (FOOTPRINT-HOUR-BOOKING)
 _db_cache: dict[str, tuple[float, int, datetime]] = {}
 _refusers: dict[str, set[str]] = defaultdict(set)  # book -> {"host/proc/pid"} in the pending batch
+# Off only in the smoke harness (scripts/smoke_test.py): CI runs against the PRODUCTION DB, and
+# BOOK-FOOTPRINT's forced refusal was flushed into the real book_footprint row every run — the
+# "refused while under budget" of #151 (refused_by named runnervm…/smoke_test.py on the first try).
+_WRITES_ENABLED = True
 _refused_by_col = True  # False once the DB says migration 445 is not applied (then write without it)
 
 
@@ -244,7 +248,7 @@ def flush() -> None:
         _pending_n = 0
         _batch_hour = None
         _last_flush = time.monotonic()
-    if not batch:
+    if not batch or not _WRITES_ENABLED:
         return
     try:
         from workers.api_clients.db import execute_write

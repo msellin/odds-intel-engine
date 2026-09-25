@@ -307,6 +307,10 @@ poll, the results run and the near-kickoff close were the ones refused. **Tell:*
 at its budget for several hours in a row, with must-run jobs failing in 0 s on
 `FootprintBudgetExceeded`. Guard: deferrable callers ask `footprint.has_headroom()` and
 leave a per-book reserve; every refusal records its `host/proc/pid` in `book_footprint.refused_by`.
+That column named the "refused while under budget" source on its first hour: the CI smoke run,
+which tests against the production DB and flushed its forced refusal into the real row on every
+push. A test that exercises a shared counter must not write it — the harness now switches footprint
+writes off (`footprint._WRITES_ENABLED`).
 
 ## 7. A cache that fails closed is worse than no cache
 
@@ -1179,8 +1183,6 @@ thing that disagreed was the database, and nothing was comparing the two.
 **The guard:** `MIGRATION-EDITS-ARE-INVISIBLE` asserts every applied migration
 still exists on disk, and pins the follow-up file so it cannot later be deleted
 as a "duplicate" — it is not a duplicate, it is the half of 376 that never ran.
-(Since 2026-09-25, #167: it only counts migrations applied BEFORE the checkout's
-commit time — an older commit's run no longer calls a newer push's migration "missing".)
 (Since 2026-09-25, #167: it only counts migrations applied BEFORE the checkout's
 commit time — an older commit's run no longer calls a newer push's migration "missing".)
 
