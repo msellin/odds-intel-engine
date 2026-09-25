@@ -913,6 +913,12 @@ def job_dashboard_cache_refresh():
     _run_job("dashboard_cache_refresh", write_dashboard_cache)
 
 
+def job_rule_version_sync():
+    """[[#162]] (b): registry rule_version -> bots.rule_version (bot_status.sync_rule_versions)."""
+    from workers.utils.bot_status import sync_rule_versions
+    _run_job("rule_version_sync", sync_rule_versions, _log_run=False)
+
+
 def job_dashboard_cache_prune():
     """#162 W8.9 (C-K7): daily prune of dashboard_cache history. The refresh above appends a
     full snapshot row every 30 min (~95/day) and every reader wants only the newest one, so
@@ -3289,6 +3295,10 @@ def main():
     # 10-min threshold catches jobs that were <30 min old under the old logic.
     _cleanup_stale_runs(threshold_minutes=10, label="scheduler restarted")
 
+    # [[#162]] (b): tag new picks with the rule version this deploy ships — BEFORE any writer runs.
+    from workers.utils.bot_status import sync_rule_versions
+    sync_rule_versions()
+
     # SETTLEMENT-CATCHUP: if last night's daily settlement got killed mid-run
     # (process restart, host reboot), the 21:00 / 23:30 / 01:00 redundant runs
     # may all have been wiped. Detect that and fire one settlement run shortly
@@ -4164,6 +4174,10 @@ def main():
     # to avoid colliding with budget_sync (:00) and ops_snapshot (:30).
     scheduler.add_job(job_dashboard_cache_refresh, CronTrigger(minute="15,45"),
                       id="dashboard_cache_refresh", name="Dashboard Cache Refresh (30min)")
+
+    # [[#162]] (b): re-sync rule versions (covers a deploy whose restart raced migration 453).
+    scheduler.add_job(job_rule_version_sync, CronTrigger(minute="7,37"),
+                      id="rule_version_sync", name="Rule-version sync (30min)")
 
     # #162 W8.9: daily history prune for the table the job above appends to. 02:50 UTC — quiet
     # hour, clear of the :45 refresh and of the 03:30 backup (smaller dump).

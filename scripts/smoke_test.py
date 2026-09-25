@@ -59781,5 +59781,33 @@ def test_real_bets_one_writer():
         assert "normalizeMarket(body.market, body.selection)" in w, "manual route must canonicalise vocabulary"
         assert "p_forward_test_pick_id" in w
 
+@test("RULE-VERSION-TAGGED — every new pick carries its bot's rule version (owner decision (b), #162)")
+def test_rule_version_tagged():
+    """[[#162]] owner decision (b), 2026-09-25: no twins — a live bot's rule changes in place and each
+    pick is tagged with the rule it was made under. Source of truth = BotSpec.rule_version; the
+    scheduler syncs it to bots.rule_version before any writer runs; a DB trigger stamps new picks."""
+    import dataclasses
+    import inspect
+    import pathlib as _pl
+    import re as _re
+    from workers.registry.bot_registry import BOTS, BotSpec
+    from workers.utils import bot_status as bs
+    assert "rule_version" in {f.name for f in dataclasses.fields(BotSpec)}
+    bad = [b.name for b in BOTS if not _re.fullmatch(r"r[0-9]+", b.rule_version)]
+    assert not bad, f"rule_version must look like r1, r2 …: {bad}"
+    root = _pl.Path(__file__).resolve().parent.parent
+    mig = (root / "supabase/migrations/453_pick_rule_version.sql").read_text()
+    for t in ("simulated_bets", "shadow_bets"):
+        assert f"BEFORE INSERT ON {t}" in mig, f"{t} must be stamped by the trigger"
+    assert "IF NEW.rule_version IS NULL" in mig, "an explicit tag from a writer must win"
+    src = inspect.getsource(bs.sync_rule_versions)
+    assert "IS DISTINCT FROM" in src and "except Exception" in src, "idempotent and never raises"
+    sched = (root / "workers/scheduler.py").read_text()
+    main_src = sched[sched.index("\ndef main():"):]
+    i_sync = main_src.index("\n    sync_rule_versions()")
+    i_start = main_src.index("\n    _maybe_catchup_missed_settlement()")
+    assert i_sync < i_start, "sync must run before the catch-up / any writer"
+    assert 'id="rule_version_sync"' in sched
+
 if __name__ == "__main__":
     main()

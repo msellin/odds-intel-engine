@@ -3237,6 +3237,10 @@ confirm half, so a switch to the new model looked free. The live bot bets at MAT
 (`bot_ledger`, real Pinnacle closes from July) reads CLV +6.6% / +6.0% / +1.8% for Jul / Aug / Sep (≈ +4.7%, n=178). The
 switch was reverted before commit. Rule: before changing a live bot on backtest evidence, pull its live `bot_ledger` CLV by
 month (post mid-July only — #83) and put it beside the backtest; if they disagree, run the change as a twin and compare live.
+**CHANGED 2026-09-25 (owner decision (b), #162):** "run it as a twin" now means *change the live bot in place and bump its
+`rule_version`* (`workers/registry/bot_registry.py` BotSpec; migration 453 stamps it on every new pick). The before/after
+comparison is the SAME bot's ledger split by `rule_version` — `WHERE rule_version = 'r2'` vs `'r1'` (NULL = before tagging) —
+not a second bot whose record starts at zero.
 
 ## 85. Own-book close CLV is negative BY CONSTRUCTION for an outlier-picking strategy — judge it on the sharp anchor (#156, 2026-09-25)
 A rule that picks a leg BECAUSE one soft book's price is off the sharp line (the sharp-edge forward test, the consensus

@@ -631,6 +631,16 @@ stake (verified by read-back) → slip → place. Every exit writes exactly one
   placed ungated — including for picks whose probability was at or below the bot's
   threshold, i.e. those that could never clear it at any price
   (`PLACER-EDGE-GATE-FAILED-OPEN`). It now refuses.
+## Changing a live bot's rule — bump its RULE VERSION ([[#162]] owner decision (b), 2026-09-25)
+
+No twins: a live bot's pick rule (gates, floors, filters, probability source, one-per-match…) is changed
+IN PLACE, and every pick records the rule it was made under. Bump `rule_version` (`r1` → `r2` …) on the
+bot's `BotSpec` in `workers/registry/bot_registry.py` in the SAME commit as the rule change. The scheduler
+writes it to `bots.rule_version` at start-up and every 30 min (`bot_status.sync_rule_versions`), and a
+BEFORE INSERT trigger stamps it on every new `simulated_bets` / `shadow_bets` row (migration 453) — every
+writer is covered without being edited. Before/after = the same bot's ledger split by `rule_version`;
+NULL = made before tagging began (2026-09-25). Smoke `RULE-VERSION-TAGGED`.
+
 ## Lifecycle — ONE STATUS DECIDES DISTRIBUTION ([[#155]], owner 2026-09-25)
 
 A bot's **status** (`bots.maturity_label`; `retired_at` = retired) is the ONLY per-bot input that

@@ -72,6 +72,12 @@ class BotSpec:
     real_money: bool       # True == the registry's real-money family; must HAVE a placement path
     one_liner: str         # what it does, plain language
     twin: str | None = None    # the bot it is a head-to-head variant of
+    # [[#162]] owner decision (b), 2026-09-25: "no twins" — a live bot's rule is changed in place
+    # and every pick is tagged with the rule it was made under. BUMP THIS (r1 -> r2 …) in the same
+    # commit as any change to the bot's pick rule (gates, floors, filters, prob source). The
+    # scheduler writes it to bots.rule_version at start-up (bot_status.sync_rule_versions) and a DB
+    # trigger stamps it on every new simulated_bets / shadow_bets row (migration 453).
+    rule_version: str = "r1"
 
 
 # ── the active bots (must match `bots` WHERE retired_at IS NULL) ─────────────

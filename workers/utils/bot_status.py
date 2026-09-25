@@ -98,3 +98,31 @@ def bot_is_live(name: str) -> bool:
         return bool(r and r[0]["live"])
     except Exception:  # noqa: BLE001
         return False
+
+
+def sync_rule_versions() -> int:
+    """[[#162]] (b): write every registry bot's `rule_version` to `bots.rule_version`, so the
+    migration-453 trigger stamps the CURRENT rule on each new pick. Called at scheduler start-up
+    (the deploy that ships a rule change restarts it) and every 30 min (covers a deploy that raced
+    the migration). Idempotent; returns rows changed; never raises — a failed sync leaves the old
+    tag in place, which is logged loudly because it mislabels picks made after a rule change."""
+    try:
+        from workers.api_clients.db import execute_write
+        from workers.registry.bot_registry import BOTS
+        pairs = [(b.name, b.rule_version) for b in BOTS]
+        if not pairs:
+            return 0
+        values = ", ".join(["(%s, %s)"] * len(pairs))
+        flat = [x for pair in pairs for x in pair]
+        n = execute_write(
+            f"UPDATE bots SET rule_version = v.rv FROM (VALUES {values}) AS v(name, rv) "
+            f"WHERE bots.name = v.name AND bots.rule_version IS DISTINCT FROM v.rv",
+            flat,
+        ) or 0
+        if n:
+            log.warning("rule_version sync: %d bot(s) now tag new picks with a new rule version", n)
+        return n
+    except Exception as e:  # noqa: BLE001
+        log.error("rule_version sync FAILED (new picks keep the previous tag): %s", e)
+        return 0
+
