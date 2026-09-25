@@ -54,3 +54,17 @@ backtest priced its old rule at OPENING quotes (10 picks). A working live bot ou
 NEW+ version should run beside it as a twin and be compared live. See ANALYSIS_GOTCHAS #84.
 **The three formal "switch" verdicts are not acted on:** 5–9 priced picks each, and the two O/U ones are Coolbet pricing
 errors that the live Coolbet bots have no guard against — a separate bug (Coolbet price-sanity guard), to be fixed first.
+
+## Pre-registration — LANES: odds split between the two NEW+ public twins (2026-09-25, BEFORE the run)
+Owner: give the Match-result twin and the High-odds twin their own odds lanes so they do not publish the same picks,
+and find a split where BOTH stay profitable. Both use NEW+ (`r1x2_comb_v1`, walk-forward OPEN, as B2/B3), Pinnacle price
+required, `vip_exclude` (never a pick the VIP bot holds: NEW+ EV ≥ 5% same match+selection), one pick per match per bot.
+* **Match-result twin:** EV ≥ 3%, all selections, odds 1.30 – s (s exclusive).
+* **High-odds twin:** EV ≥ 2%, home/away only, odds s – 6.00, all leagues.
+* **Split s ∈ {2.00, 2.30, 2.50, 2.80, 3.00}** (5 candidates).
+**Select** on kickoffs 08-31..09-12: s = argmax of min(CLV_match, CLV_high) among s where both have ≥ 30 CLV picks.
+**Confirm ONCE** on 09-13..09-24 at that s: each twin's mean CLV vs Pinnacle's power-de-vigged close, one-sided bootstrap
+p (10k), Holm m = 2 (the two twins). **PASS** = both adj p < 0.05. Report per s and half: n, CLV [CI], ROI [CI], picks/day,
+remaining overlap between the twins (should be 0 by construction) and with VIP (0 by construction), plus the no-split
+reference (Match twin 1.30–4.50, High-odds twin 1.60–6.00) with its overlap count. Same window caveat as B2/B3: seen
+before, so the forward record decides.
