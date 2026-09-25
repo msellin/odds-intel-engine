@@ -412,9 +412,10 @@ def _store_and_notify(
                 home = pm.get("home_name") or "?"
                 away = pm.get("away_name") or "?"
                 cb_url = _coolbet_match_url(home, away)
-                from workers.notify.telegram import place_button_markup as _place_btn
+                # "Record at Coolbet" button removed 2026-09-25 (#162 W4.6) — its
+                # manual-placement drain and the API placer behind it are deleted.
                 from workers.notify.telegram import record_bet_alert as _rec_alert
-                _markup = _place_btn(str(bet_id)) if bet_id else None
+                _markup = None
                 _inplay_text = (
                     f"📡 <b>INPLAY</b> paper bet\n"
                     f"  <b>{home} vs {away}</b>\n"
@@ -664,48 +665,12 @@ def run_inplay_strategies():
 
     if bets_placed > 0:
         console.print(f"[bold green]InplayBot: {bets_placed} paper bet(s) placed this cycle[/bold green]")
-        try:
-            from workers.automation.coolbet_placer import place_all_inplay_bets
-            from workers.notify.telegram import edit_bet_alert_outcome as _edit_outcome
-            inplay_results = place_all_inplay_bets(record=True)
-            if inplay_results:
-                # ADMIN-TG-CLARITY (2026-05-29): edit each per-bet alert in
-                # place with the recording outcome so the admin sees status
-                # per bet at a glance instead of cross-referencing a list.
-                for r in inplay_results:
-                    sim_id = str(r.get("simulated_bet_id") or "")
-                    if not sim_id:
-                        continue
-                    outcome = r.get("outcome") or "error"
-                    if outcome == "placed":
-                        stake = float(r.get("stake") or 0)
-                        odds = float(r.get("live_odds") or 0)
-                        status = f"✓ Auto-recorded €{stake:.2f} @ {odds:.2f}"
-                    elif outcome == "edge_eroded":
-                        live_odds = float(r.get("live_odds") or 0)
-                        status = f"✗ edge_eroded (live {live_odds:.2f})"
-                    elif outcome == "no_event":
-                        status = "✗ no_event"
-                    elif outcome == "no_market":
-                        status = "✗ no_market"
-                    elif outcome == "search_blocked":
-                        status = "⚠️ search_blocked"
-                    else:
-                        status = f"✗ {outcome}"
-                    _edit_outcome(sim_id, status)
-
-                placed   = [r for r in inplay_results if r["outcome"] == "placed"]
-                eroded   = [r for r in inplay_results if r["outcome"] == "edge_eroded"]
-                blocked  = [r for r in inplay_results if r["outcome"] == "search_blocked"]
-                no_event = [r for r in inplay_results if r["outcome"] == "no_event"]
-                # Compact one-liner — silent unless blocked
-                parts = [f"🤖 Inplay: {len(placed)} placed"]
-                if eroded:   parts.append(f"{len(eroded)} eroded")
-                if no_event: parts.append(f"{len(no_event)} no_event")
-                if blocked:  parts.append(f"⚠️ {len(blocked)} blocked")
-                send_telegram(" · ".join(parts), silent=not blocked)
-        except Exception as e:
-            log.warning("Inplay Coolbet record failed: %s", e)
+        # The follow-on "record at Coolbet" step (coolbet_placer.place_all_inplay_bets,
+        # record mode → a placed_real=FALSE row in real_bets per paper bet) was DELETED
+        # 2026-09-25 (#162 W4.6) with the rest of the API "Path B" placer. In-play
+        # betting was retired 2026-08-21 (this function only runs when
+        # INPLAY_STRATEGIES_ENABLED is set), and a paper pick has no business in the
+        # money table: simulated_bets already holds it.
 
     # Done AFTER strategy checks so goal/equalizer windows are available next cycle.
     _update_game_state(candidates)

@@ -1,8 +1,19 @@
-# Local Mac daemon — Coolbet placement (option B)
+# Local Mac setup — FlareSolverr, Coolbet session, launchd jobs
 
-This directory holds everything the Mac-at-home daemon needs to run.
-Railway keeps doing data ingestion + edge detection + signaling; this
-Mac handles the final Coolbet POST from a residential IP.
+> **CHANGED 2026-09-25 (#162 W4.6).** This page used to set up the paper
+> **Coolbet Mac daemon** (`workers.automation.coolbet_mac_daemon`, plist
+> `com.oddsintel.coolbet-mac-daemon`). That daemon was retired 2026-09-10 and
+> its code, keepalive script and plist are now **deleted**. Real money is placed
+> only by the UI placer (`scripts/place_coolbet_ui.py`) and the best-price router
+> (`workers/automation/best_price_router.py`) — their plists live in
+> `local/launchd/paused/`. The session-keep and the Telegram heal button the
+> daemon used to run are in the feed watchdog
+> (`com.oddsintel.coolbet-feed-watchdog`). Steps 1–3 below are still current;
+> the sections after "Mac sleep policy" describe the retired daemon and are kept
+> as history only.
+
+This directory holds what the Mac-at-home side needs: the local FlareSolverr,
+the CDP-Chrome session and the launchd jobs in `local/launchd/`.
 
 ## One-time setup
 
@@ -25,28 +36,17 @@ python3 scripts/coolbet/flaresolverr_login_enroll.py start
 # (wait for SMS)
 python3 scripts/coolbet/flaresolverr_login_enroll.py verify 123456
 
-# 4. Sanity check — daemon does ONE tick and exits
-python3 -m workers.automation.coolbet_mac_daemon --once --dry-run
-
-# 5. Install launchd agent
-cp local/launchd/com.oddsintel.coolbet-mac-daemon.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.oddsintel.coolbet-mac-daemon.plist
-launchctl list | grep oddsintel    # confirm RUNNING with PID
-```
-
-## Verifying it works
-
-```bash
-# Tail daemon log
-tail -f dev/active/coolbet-mac-daemon.log
-
-# Force a tick now instead of waiting POLL_INTERVAL_S
-launchctl kickstart -k gui/$(id -u)/com.oddsintel.coolbet-mac-daemon
+# 4. Install the launchd jobs you need from local/launchd/ (NOT paused/ or
+#    retired/ — the placers stay paused until the owner arms real money)
+cp local/launchd/com.oddsintel.coolbet-feed-watchdog.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.oddsintel.coolbet-feed-watchdog.plist
+launchctl list | grep oddsintel
+python3 scripts/ops/launchd_drift_check.py   # installed copies == repo copies
 ```
 
 ## Mac sleep policy
 
-The daemon runs in the user session, so Mac sleep stops it. Options:
+The launchd jobs run in the user session, so Mac sleep stops it. Options:
 
 - **Best**: System Settings → Battery → Options → "Prevent automatic
   sleeping when the display is off" while plugged in.
@@ -55,7 +55,7 @@ The daemon runs in the user session, so Mac sleep stops it. Options:
   when you wake it. Pre-match value bets sit for hours so missing a
   few while asleep is usually fine.
 
-## Coexistence with the signaler
+## Coexistence with the signaler (HISTORICAL — retired daemon)
 
 The signaler keeps running on Railway, sending Telegram messages with
 inline ✅ Placed / ⏭ Skip buttons. Either side wins:

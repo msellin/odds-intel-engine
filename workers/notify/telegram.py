@@ -278,11 +278,11 @@ def record_bet_alert(
     original_text: str,
     chat_id: int | str | None = None,
 ) -> None:
-    """Persist a (simulated_bet_id → message_id) mapping so the auto-record
-    step and the manual-place drain can later edit this alert in place with
-    the recording outcome. Stores the original text so the edit can keep the
-    bet context visible above the status line. Best-effort: failures log a
-    warning and return.
+    """Persist a (simulated_bet_id → message_id) mapping in bet_telegram_alerts
+    so a later step can find and edit this alert. Its two editors — the in-play
+    auto-record and the manual-place drain — were DELETED 2026-09-25 (#162 W4.6)
+    with the API placer; the mapping is kept as a message ledger. Best-effort:
+    failures log a warning and return.
     """
     if not message_id:
         return
@@ -301,54 +301,6 @@ def record_bet_alert(
         )
     except Exception as e:
         log.warning("record_bet_alert(%s) failed: %s", simulated_bet_id, e)
-
-
-def edit_bet_alert_outcome(simulated_bet_id: str, status_line: str) -> bool:
-    """Look up the latest Telegram message for this bet and append a status
-    line (replaces the inline button). No-op if no mapping exists. Returns
-    True on successful edit.
-    """
-    try:
-        from workers.api_clients.db import execute_query
-        rows = execute_query(
-            """
-            SELECT chat_id, message_id, original_text
-            FROM bet_telegram_alerts
-            WHERE simulated_bet_id = %s
-            ORDER BY sent_at DESC
-            LIMIT 1
-            """,
-            (simulated_bet_id,),
-        )
-    except Exception as e:
-        log.warning("edit_bet_alert_outcome lookup failed: %s", e)
-        return False
-    if not rows:
-        return False
-    chat_id = rows[0]["chat_id"]
-    message_id = rows[0]["message_id"]
-    original = rows[0].get("original_text") or ""
-    # Keep original above the status so admin still sees what the bet was
-    new_text = (original + f"\n\n<b>{status_line}</b>") if original else f"<b>{status_line}</b>"
-    return edit_telegram_message(
-        chat_id, int(message_id),
-        new_text,
-        remove_buttons=True,
-    )
-
-
-def place_button_markup(simulated_bet_id: str, *, label: str = "📝 Record at Coolbet") -> dict:
-    """Build the inline_keyboard markup that triggers MANUAL-PLACE for a bet.
-
-    The webhook at /api/telegram/webhook parses callback_data prefix "place:"
-    and queues the placement; only the admin TELEGRAM_CHAT_ID is honored.
-    """
-    return {
-        "inline_keyboard": [[{
-            "text": label,
-            "callback_data": f"place:{simulated_bet_id}",
-        }]]
-    }
 
 
 def edit_telegram_message(

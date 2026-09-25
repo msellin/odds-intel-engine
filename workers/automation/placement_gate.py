@@ -15,7 +15,8 @@ three places and armed underneath all three:
     alone would have staked for both placer bots with the DB toggles OFF.
   * A THIRD executor, `_drain_manual_placement_queue` on the VPS every 10 s →
     `coolbet_placer.place_bet_by_id`, never consulted the pause (paper today
-    only because `execute=False` is a literal in the call).
+    only because `execute=False` is a literal in the call). [DELETED 2026-09-25,
+    #162 W4.6, with the whole API "Path B" placer — see LIVE EXECUTORS below.]
   * Two `--execute` launchd jobs were loaded on the Mac, inert only because an
     env var was unset and an allowlist intersection happened to be empty.
 
@@ -54,6 +55,24 @@ never be re-unified (`RELIABILITY_LEDGER` §9b).
 `placement_path_bots`, `ui_place_enabled_bots` and `effective_allowlist` LIVE
 here; `scripts/place_coolbet_ui.py` re-exports them.
 
+LIVE EXECUTORS (the complete list — smoke `PLACEMENT-GATE-ALL-EXECUTORS` and
+`RETIRED-MONEY-PATHS-GONE` pin it). Only two entry points can stake real money:
+
+  * `scripts/place_coolbet_ui.py`          — Coolbet UI placer (Mac launchd;
+                                              gate in `main()` + per pick in
+                                              `coolbet_ui_placer.stage_bet`);
+  * `workers/automation/best_price_router.py` — best-price router (Mac launchd),
+                                              which dispatches to
+                                              `coolbet_ui_placer` and
+                                              `unibet_placer.place_bet`.
+
+Everything else that once could is DELETED, not gated (#162 W4.6, 2026-09-25):
+the paper Mac daemon (`coolbet_mac_daemon`), the API "Path B" placer
+(`coolbet_placer.place_all_bets` / `place_all_inplay_bets` / `place_bet_by_id` /
+`_place_bet_api`, CLI `scripts/place_coolbet_bets.py`), the VPS manual-placement
+drain and the in-play capture (`coolbet_inplay`, 2026-09-21). A new executor
+must call this gate first AND be added to that test.
+
 WHO MAY BET MOVED TO THE DB (#139 phase A, owner decision 4, migration 413).
 The hand-listed `PLACEABLE_BOTS = {two names}` is gone. The owner selects which
 bots actively bet from /admin/bots: the eligibility list is the rows of
@@ -91,10 +110,9 @@ class PlacementRefused(RuntimeError):
 #     router) or Unibet-Site (the router's Unibet arm);
 #   * the bot is not a pre-registered publish-only test or its control.
 #
-# `simulated_bets` bots are NOT capable: the only placer that reads that ledger is
-# the old API placer (`coolbet_placer.place_all_bets`), which is not a supported
-# real-money executor any more — its launchd daemon is retired, the VPS drain is
-# pinned paper (`MANUAL_PLACE_EXECUTE = False`) and only a hand-run CLI remains.
+# `simulated_bets` bots are NOT capable: the only placer that read that ledger was
+# the old API placer (`coolbet_placer.place_all_bets`), DELETED 2026-09-25 (#162
+# W4.6) together with its daemon, the VPS drain and the hand-run CLI.
 #
 # The rule lives HERE (code, reviewed); the facts it is applied to (family,
 # ledger, books) come from `bot_config`, which `scripts/export_bot_config.py`

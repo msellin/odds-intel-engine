@@ -548,8 +548,8 @@ Full detail: `docs/COOLBET_OWN_BETTING.md`. Recurring failure patterns:
 > |---|---|---|
 > | Coolbet UI placer | `place_coolbet_ui.main()` (run level, before browser/lock) and `coolbet_ui_placer.stage_bet` **before `select_outcome`** | a single `is_placement_paused()` read AFTER the stake was typed, which fell OPEN on a DB error |
 > | Best-price router (Coolbet + **Unibet-Site**) | `route()` run level; `_dispatch_unibet` before `unibet_placer.place_bet` | `ROUTER_ALLOW_REAL` env var only — which was SET in `.env`, so the router ran in real mode every 30 min; it iterated `PLACEABLE_BOTS`, never the DB toggle |
-> | API placer + manual-place drain (VPS, every 10 s) | `coolbet_placer.place_all_bets`; `place_bet_by_id` routes through `MANUAL_PLACE_EXECUTE = False` | an inline pause read (this was the only executor that had one) |
-> | In-play API placer (`coolbet_placer.place_all_inplay_bets`) | run level when `execute` — added 2026-09-15 evening after the Phase 0 verifier found it ungated | nothing: it could stamp `placed_real=TRUE` (and post) with no pause/arming read |
+> | ~~API placer + manual-place drain (VPS, every 10 s)~~ **DELETED 2026-09-25 (#162 W4.6)** | ~~`coolbet_placer.place_all_bets`; `place_bet_by_id`~~ — code removed, not gated | an inline pause read (this was the only executor that had one) |
+> | ~~In-play API placer (`coolbet_placer.place_all_inplay_bets`)~~ **DELETED 2026-09-25 (#162 W4.6)** | — code removed | nothing: it could stamp `placed_real=TRUE` (and post) with no pause/arming read |
 > | ~~Orphaned in-play capture (`coolbet_inplay.capture_inplay_snapshot(mode="execute")`)~~ | **DELETED 2026-09-21** (COOLBET-INPLAY-ORPHAN) — a real-money execute branch with zero callers, kept for a consumer removed 2026-06-12 in a direction retired 2026-08-21 at ROI −0.31%. Migration 115 + table kept; smoke `COOLBET-INPLAY-CAPTURE-DELETED` keeps it gone. | nothing |
 >
 > Corrections to this section as written on 2026-09-11: the counts and claims

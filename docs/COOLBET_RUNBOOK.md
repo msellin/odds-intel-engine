@@ -720,8 +720,9 @@ curl -s http://localhost:8191/ | head -c 80
 # full session/JWT state (read-only)
 python3 -m workers.automation.coolbet_browser_sync --full-heal --full-heal-dry-run
 
-# run a single placement tick and watch the whole chain (paper, no writes with --dry-run)
-python3 -m workers.automation.coolbet_mac_daemon --once
+# (the old `python3 -m workers.automation.coolbet_mac_daemon --once` tick is gone — the paper
+#  daemon was DELETED 2026-09-25, #162 W4.6; the live placers are scripts/place_coolbet_ui.py
+#  and workers/automation/best_price_router.py, both paused)
 
 # is Coolbet odds landing?  (DB timestamps display ~3h behind wall-clock — compare deltas, not absolutes)
 psql "$DATABASE_URL" -c "select max(\"timestamp\"), count(*) from odds_snapshots where bookmaker='Coolbet' and \"timestamp\">=now()-interval '40 min'"

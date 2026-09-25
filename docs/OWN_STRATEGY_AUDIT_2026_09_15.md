@@ -1,5 +1,7 @@
 # 🤖 OWN — full audit and a tested plan, 2026-09-15 (reviewed)
 
+> **CHANGED 2026-09-25 (#162 W4.6):** the retired money paths cited below — the paper Mac daemon (`coolbet_mac_daemon`), `coolbet_daemon_healthcheck`, the VPS manual-placement drain, the API placer (`coolbet_placer.place_all_bets` / `place_all_inplay_bets` / `place_bet_by_id` / `_place_bet_api`, CLI `scripts/place_coolbet_bets.py`) and web `getPlaceableBets` / `getRealBets` / `real-money-tier.ts` — are DELETED. Live executors: `scripts/place_coolbet_ui.py` + `workers/automation/best_price_router.py` (`placement_gate.py`, smoke `RETIRED-MONEY-PATHS-GONE`).
+
 > **CHANGED 2026-09-22 — V10-SPLIT-BY-MARKET (migration 375, [[#040]]).** Every
 > `bot_v10_all` figure below is a **BLEND of two markets that measure on opposite
 > sides of zero** (1x2 de-vigged CLV +2.50% n=335; O/U 2.5 −3.85% n=181). The bot

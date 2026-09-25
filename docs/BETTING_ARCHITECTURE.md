@@ -141,7 +141,7 @@ just not populated with non-Coolbet books.
 
 | Path | Reads | Schedule | Real money? | Writes |
 |---|---|---|---|---|
-| ~~**Paper daemon** (`coolbet_mac_daemon`)~~ **RETIRED 2026-09-10** | — | — | — | Paper placement duplicated the pipeline's `simulated_bets`/`shadow_bets` (model refinement) + the real-money UI placer; phantom `real_bets` were noise. Session-keep + operator control moved to the feed-watchdog. See COOLBET_RUNBOOK "PAPER-DAEMON RETIRED". |
+| ~~**Paper daemon** (`coolbet_mac_daemon`)~~ **RETIRED 2026-09-10, code DELETED 2026-09-25 (#162 W4.6)** | — | — | — | Paper placement duplicated the pipeline's `simulated_bets`/`shadow_bets` (model refinement) + the real-money UI placer; phantom `real_bets` were noise. Session-keep + operator control moved to the feed-watchdog. See COOLBET_RUNBOOK "PAPER-DAEMON RETIRED". |
 | **Real-money UI placer** (`place_coolbet_ui.py --all-enabled --execute` → `coolbet_ui_placer.place_and_record`) | `shadow_bets_unique`, for `placement_path_bots() ∩ coolbet_placer_bots(ui_place_enabled)` | launchd hourly **06:00–21:00 UTC** | **YES** (balance-confirmed) | `real_bets` (real) + `coolbet_placement_attempts` |
 | **Unibet placer** (`unibet_placer.place_bet`) | **no pick table — args only** | **none — manual** | manual only | `real_bets` |
 

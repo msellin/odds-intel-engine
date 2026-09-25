@@ -1632,30 +1632,6 @@ def job_retrain_healthcheck():
     _run_job("retrain_healthcheck", _job_retrain_healthcheck_impl)
 
 
-def _job_coolbet_daemon_healthcheck_impl():
-    """COOLBET-DAEMON-HEALTHCHECK (2026-06-21): VPS-side safety net for
-    the Mac daemon's in-process alert path. Reads coolbet_session_state +
-    coolbet_heal_log every 30 min and Telegrams when the daemon is silent
-    (>90m since last tick) or sustainedly erroring (>2h without a
-    successful auto-heal). DB-backed dedup survives scheduler restarts.
-
-    Quiet on healthy. Logs a summary line when it fires (alert/recovery)."""
-    from workers.jobs.coolbet_daemon_healthcheck import run_daemon_healthcheck
-    counters = run_daemon_healthcheck()
-    if counters.get("alert_sent") or counters.get("recovery_sent"):
-        console.print(
-            f"[yellow]Coolbet daemon healthcheck: status={counters['status']} "
-            f"reason={counters['reason']} alert_sent={counters['alert_sent']} "
-            f"recovery_sent={counters['recovery_sent']}[/yellow]"
-        )
-
-
-def job_coolbet_daemon_healthcheck():
-    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
-    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
-    _run_job("coolbet_daemon_healthcheck", _job_coolbet_daemon_healthcheck_impl)
-
-
 def job_pinnacle_drift_refresh():
     """DRIFT-FEATURE-WRITER-2026-09-11 — keep `pinnacle_drift_*` populated.
 
@@ -1902,126 +1878,6 @@ def job_prune_live_snapshots():
             raise RuntimeError(f"prune_live_snapshots failed: exit {result.returncode}")
         console.print(result.stdout[-1500:])
     _run_job("prune_live_snapshots", _run)
-
-
-def _drain_manual_placement_queue():
-    """MANUAL-PLACE (2026-05-29): drain admin "Record at Coolbet" requests.
-
-    The Vercel webhook (Telegram callback_query handler) inserts a row into
-    manual_placement_queue when the admin taps the inline button on a value-bet
-    alert. This job runs every 10s, claims pending rows, calls the placer
-    with --bet-id filter, and edits the original Telegram message with the
-    outcome.
-
-    Stays silent when there's nothing pending (no pipeline_runs entries, no
-    console output). Idempotency: place_bet_by_id() short-circuits to
-    `already_recorded` when a real_bet row already exists for the
-    simulated_bet_id, so double-taps or auto-record racing the button are
-    both safe.
-    """
-    from workers.api_clients.db import execute_write, execute_write_returning
-    from workers.automation.coolbet_placer import place_bet_by_id
-    from workers.notify.telegram import edit_telegram_message
-
-    # Claim up to 3 pending rows in one tick — keeps Telegram round-trips
-    # serialised but lets a burst of taps drain quickly.
-    claimed = execute_write_returning(
-        """
-        UPDATE manual_placement_queue
-           SET status = 'processing'
-         WHERE id IN (
-             SELECT id FROM manual_placement_queue
-              WHERE status = 'pending'
-              ORDER BY requested_at
-              LIMIT 3
-         )
-        RETURNING id, simulated_bet_id, telegram_chat_id, telegram_message_id
-        """,
-    )
-    if not claimed:
-        return
-
-    # SCHEDULER-DRAIN-TIMEOUT-2026-08-16 — the historical hang pattern
-    # (SCHEDULER-AF-429-DEADLOCK, 4 occurrences in 5 weeks) traces back to
-    # place_bet_by_id blocking indefinitely when Coolbet auth is broken
-    # (CDP-Chrome down / JWT expired / FS session hung). Because APScheduler
-    # runs each job in a worker thread and max_instances=1 blocks future
-    # ticks, one stuck drain freezes this whole 10s-interval job forever.
-    # Wrap the call in a ThreadPoolExecutor.submit(...).result(timeout=90)
-    # so a hung placer surfaces as a TimeoutError instead of a permanent
-    # worker lock. 90s ceiling — a real Coolbet placement takes ~5-15s.
-    import concurrent.futures as _cf
-    _drain_executor = _cf.ThreadPoolExecutor(max_workers=1,
-                                              thread_name_prefix="drain-place")
-
-    for row in claimed:
-        queue_id = row["id"]
-        sim_id = str(row["simulated_bet_id"])
-        chat_id = row.get("telegram_chat_id")
-        message_id = row.get("telegram_message_id")
-        try:
-            future = _drain_executor.submit(place_bet_by_id, sim_id)
-            result = future.result(timeout=90)
-        except _cf.TimeoutError:
-            console.print(f"[red]manual_placement_drain {sim_id} TIMEOUT after 90s — "
-                          "likely Coolbet auth or FS session down[/red]")
-            result = {"outcome": "error",
-                       "reason": "timeout_90s_likely_coolbet_auth_or_fs_down"}
-        except Exception as e:
-            console.print(f"[red]manual_placement_drain {sim_id} failed: {e}[/red]")
-            result = {"outcome": "error", "reason": str(e)[:300]}
-
-        outcome = result.get("outcome") or "error"
-        # Build status line for Telegram edit. Keep it short — fits as a tail line.
-        if outcome == "placed":
-            stake = float(result.get("stake") or 0)
-            odds = float(result.get("live_odds") or result.get("model_odds") or 0)
-            status_line = f"✓ Recorded €{stake:.2f} @ {odds:.2f}"
-        elif outcome == "already_recorded":
-            status_line = "✓ Already recorded"
-        elif outcome == "no_event":
-            status_line = "✗ no_event (Coolbet doesn't list this match)"
-        elif outcome == "no_market":
-            reason = result.get("reason") or ""
-            status_line = f"✗ no_market{f' — {reason}' if reason else ''}"[:200]
-        elif outcome == "search_blocked":
-            status_line = "✗ search_blocked (refresh Imperva cookies)"
-        elif outcome == "edge_eroded":
-            status_line = "✗ edge_eroded (odds moved against us)"
-        elif outcome == "guard_skip":
-            status_line = f"✗ guard_skip — {result.get('reason') or ''}"[:200]
-        elif outcome == "not_found":
-            status_line = "✗ bet not in DB (settled or deleted?)"
-        else:
-            status_line = f"✗ {outcome}"
-
-        # Edit the original message: append status, remove the button
-        if chat_id and message_id:
-            edited = edit_telegram_message(
-                chat_id, int(message_id),
-                f"<b>{status_line}</b>\n\n<i>(original alert via MANUAL-PLACE)</i>",
-                remove_buttons=True,
-            )
-            if not edited:
-                console.print(f"[yellow]Telegram edit failed for queue={queue_id}[/yellow]")
-
-        execute_write(
-            """
-            UPDATE manual_placement_queue
-               SET status = 'done',
-                   result = %s,
-                   result_detail = %s,
-                   processed_at = NOW()
-             WHERE id = %s
-            """,
-            (outcome, status_line[:500], queue_id),
-        )
-
-    # Release the per-tick executor. wait=False so a still-hung placement
-    # doesn't block the drain from returning — the worker thread dies with
-    # the executor and we'll re-instantiate next tick. Hung threads are
-    # daemon and get reaped on scheduler exit.
-    _drain_executor.shutdown(wait=False)
 
 
 def job_league_draw_rate():
@@ -3333,11 +3189,10 @@ def main():
 
     # ── Register all jobs ──────────────────────────────────────────────
 
-    # MANUAL-PLACE drain: 10s tick to consume admin "Record at Coolbet" taps.
-    # Stays silent when empty — only logs when there's work. Skips _run_job
-    # so the pipeline_runs table isn't flooded with 8640 entries/day.
-    scheduler.add_job(_drain_manual_placement_queue, IntervalTrigger(seconds=10),
-                      id="manual_placement_drain", name="Manual Placement Drain [10s]")
+    # MANUAL-PLACE drain (manual_placement_drain, 10 s) — DELETED 2026-09-25 (#162 W4.6).
+    # It drained Telegram "Record at Coolbet" taps into coolbet_placer.place_bet_by_id,
+    # a pinned-paper third executor that wrote paper rows into real_bets. The queue had
+    # never held a row; the button and the webhook enqueue went in the same change.
 
     # Backfill jobs — micro-batch, runs every 25min.
     # If a run fails, only ~25-30 API calls are lost. Progress tracked in DB.
@@ -3836,18 +3691,9 @@ def main():
                       name="Retrain Healthcheck [Mon-Sat 09:00 UTC]",
                       max_instances=1, misfire_grace_time=3600)
 
-    # COOLBET-DAEMON-HEALTHCHECK (2026-06-21) — every 30 min, VPS-side
-    # safety net. Independent of the Mac daemon's in-process alert (which
-    # left a 3-day outage silent on 2026-06-18 → 21).
-    # DAEMON-RETIREMENT 2026-09-10: the Coolbet PAPER mac-daemon is retired (its
-    # paper placement was redundant with the pipeline's simulated_bets/shadow_bets
-    # and the real-money UI placer; its session-keep moved to the feed-watchdog).
-    # This healthcheck alerted when the daemon's tick went stale — with no daemon it
-    # would fire forever, flooding the ops channel. Placement readiness is now the
-    # UI-placer path (`coolbet_control.placement_readiness`, surfaced in the daily
-    # summary). Job de-registered.
-    # scheduler.add_job(job_coolbet_daemon_healthcheck, CronTrigger(minute="3,33"),
-    #                   id="coolbet_daemon_healthcheck", ...)  # RETIRED
+    # COOLBET-DAEMON-HEALTHCHECK — de-registered 2026-09-10 with the paper Mac
+    # daemon it watched, module DELETED 2026-09-25 (#162 W4.6). Placement readiness
+    # is `coolbet_control.placement_readiness` (UI-placer path, daily summary).
 
     # COOLBET-ODDS-FRESHNESS-WATCHDOG (2026-07-03) — 30-min freshness
     # check on odds_snapshots(bookmaker='Coolbet'). :13/:43 lands ~10 min

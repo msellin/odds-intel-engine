@@ -130,6 +130,18 @@ the status, not on who set it — `void_bets_on_dead_matches` scans every bet ta
 every 15 min; smoke `DEAD-MATCH-VOID-EVERY-BET-TABLE` fails if a table-specific
 voider or an inline postponed UPDATE re-forms.
 
+**The cheapest guard is deletion (#162 W4.6, 2026-09-25).** Five retired money
+paths were still in the tree, each "safe" only because of a literal
+(`MANUAL_PLACE_EXECUTE = False`), an unset env var (`INPLAY_STRATEGIES_ENABLED`) or
+a bot the gate happened to refuse: the paper Mac daemon, its VPS healthcheck, the
+10 s VPS manual-placement drain (+ the "Record at Coolbet" button that fed it), and
+the API "Path B" placer in `coolbet_placer.py` with its CLI. Every one of them had
+been gated in turn (PLACEMENT-GATE, 2026-09-15) — and every gate was a thing to keep
+correct on code nothing ran. They were deleted instead. **Guard:** the live
+executors are listed in `placement_gate.py` (UI placer + best-price router, nothing
+else) and smoke `RETIRED-MONEY-PATHS-GONE` fails if a deleted file, function,
+import or scheduler registration comes back.
+
 ## 4b. A gate whose only implementation lives in a research script is not a gate
 
 **SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20.** §4 is about a second code

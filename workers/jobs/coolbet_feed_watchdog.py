@@ -809,6 +809,99 @@ def _publish_breaker(state: str, reason: str) -> None:
         log.warning("could not publish sweep breaker state: %s", e)
 
 
+# ── Operator commands (Telegram heal button) ──────────────────────────────────
+#
+# MOVED here 2026-09-25 (#162 W4.6) from workers/automation/coolbet_mac_daemon.py,
+# which was deleted. The watchdog has been the only caller since the daemon's
+# retirement (2026-09-10); the bodies are unchanged. The web Telegram webhook
+# writes 'heal' rows to coolbet_daemon_commands; pause/resume are direct webhook
+# DB writes and never come through here.
+
+def _drain_operator_commands() -> int:
+    """INLINE-HEAL-BUTTONS (2026-06-17): poll coolbet_daemon_commands for
+    operator-initiated actions (Telegram button taps land there via the
+    odds-intel-web webhook). Currently handles 'heal' — runs auto_self_heal,
+    writes result to the row, sends a confirmation Telegram. Pause/resume
+    bypass this queue entirely (they're direct DB writes from the webhook).
+
+    Called from run() on the watchdog's :20/:50 cadence (it was the retired
+    daemon's ~30 s sleep slice). Returns count of commands processed."""
+    try:
+        from workers.automation.coolbet_state import (
+            claim_pending_daemon_command, finish_daemon_command,
+        )
+    except Exception as e:
+        log.debug("operator-command deps missing: %s", e)
+        return 0
+
+    processed = 0
+    while True:
+        cmd = claim_pending_daemon_command()
+        if not cmd:
+            break
+        cmd_type = cmd.get("command_type")
+        cmd_id = cmd.get("id")
+        log.info("operator command %s (id=%s) — executing", cmd_type, cmd_id)
+
+        if cmd_type == "heal":
+            try:
+                from workers.automation.coolbet_browser_sync import auto_self_heal
+                result = auto_self_heal(triggered_by="operator_tg")
+                status = "recovered" if result.get("recovered") else "stalled"
+                finish_daemon_command(
+                    command_id=cmd_id, status=status,
+                    message=result.get("message") or "",
+                    actions=result.get("actions") or [],
+                )
+                _notify_operator_heal_result(result, cmd_id=str(cmd_id))
+            except Exception as e:
+                log.exception("operator heal command failed: %s", e)
+                finish_daemon_command(
+                    command_id=cmd_id, status="error",
+                    message=f"daemon exception: {e}", actions=[],
+                )
+        else:
+            log.warning("unknown operator command type %r — marking error", cmd_type)
+            finish_daemon_command(
+                command_id=cmd_id, status="error",
+                message=f"unknown command_type {cmd_type!r}", actions=[],
+            )
+        processed += 1
+    return processed
+
+
+def _notify_operator_heal_result(result: dict, *, cmd_id: str) -> None:
+    """Confirmation Telegram after an operator-initiated heal completes.
+    Distinct from the auto-heal info ping — this one is in response to
+    a button tap, so the operator IS already engaged and a louder
+    confirmation is appropriate."""
+    import html as _html
+    from workers.notify.telegram import send_telegram
+
+    recovered = bool(result.get("recovered"))
+    glyph = "✅" if recovered else "⚠️"
+    state_before = result.get("state_before") or "unknown"
+    state_after = result.get("state_after") or "unknown"
+    actions = result.get("actions") or []
+    actions_str = "\n".join(f"  • {_html.escape(str(a), quote=False)}"
+                              for a in actions[:6]) or "  (no actions)"
+    message = _html.escape(str(result.get("message") or ""), quote=False)
+
+    body = (
+        f"{glyph} <b>Operator heal: {('recovered' if recovered else 'stalled')}</b>\n"
+        f"\n"
+        f"{_html.escape(state_before, quote=False)} → "
+        f"<b>{_html.escape(state_after, quote=False)}</b>\n"
+        f"\n"
+        f"Actions:\n{actions_str}\n"
+        f"\n"
+        f"{message}"
+    )
+    # Per-command-id dedup so an accidental double-tap doesn't double-send.
+    send_telegram(body, dedup_key=f"operator-heal-{cmd_id}",
+                  dedup_window_s=1800)
+
+
 def run(dry_run: bool = False) -> dict:
     # COOLBET-DAEMONS-PAUSE: honor the global footprint pause. When the operator
     # has paused Coolbet daemons (to calm Imperva), the odds-snapshot job is not
@@ -839,7 +932,6 @@ def run(dry_run: bool = False) -> dict:
         # tap can take up to that long, but the watchdog also AUTO-heals each run, so
         # the button is now a convenience, not the only recovery path. Never fatal.
         try:
-            from workers.automation.coolbet_mac_daemon import _drain_operator_commands
             drained = _drain_operator_commands()
             if drained:
                 log.info("coolbet feed watchdog: drained %d operator command(s)", drained)

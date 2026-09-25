@@ -5,6 +5,15 @@
 > job, or anything FlareSolverr-related.
 >
 > Last updated: 2026-06-12
+>
+> **🗑️ DELETED 2026-09-25 (#162 W4.6).** The Mac daemon (`coolbet_mac_daemon.py`) and the
+> API placer it drove (`coolbet_placer.place_all_bets` / `_place_bet_api` → POST
+> `/s/bets/bets`) described below no longer exist in the code — the daemon was retired
+> 2026-09-10 and the code, plist and keepalive were deleted on 2026-09-25, together with the
+> VPS manual-placement drain. `coolbet_placer.py` is now the shared helper module only
+> (floors, event search, fixture pairing). Real money is placed only by
+> `scripts/place_coolbet_ui.py` and `workers/automation/best_price_router.py` — see
+> `docs/COOLBET_OWN_BETTING.md`. Read §1 and the file table below as history.
 
 ---
 

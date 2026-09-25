@@ -1,5 +1,18 @@
 # Coolbet Own-Betting — Flow & Architecture (single source of truth)
 
+> **🗑️ DELETED 2026-09-25 (#162 W4.6).** The retired real-money code paths this page
+> still describes in places are now **deleted from the tree**, not just unscheduled: the paper
+> Mac daemon (`coolbet_mac_daemon`, its keepalive + plist), its VPS healthcheck
+> (`coolbet_daemon_healthcheck`), the VPS manual-placement drain (`_drain_manual_placement_queue`,
+> 10 s) with the Telegram "Record at Coolbet" button and webhook enqueue that fed it, and the API
+> "Path B" placer in `coolbet_placer.py` (`place_all_bets`, `place_all_inplay_bets`,
+> `place_bet_by_id`, `_place_bet_api`, the loaders, `PlacementGuard`) with its CLI
+> `scripts/place_coolbet_bets.py`. `coolbet_placer.py` now holds only the SHARED helpers (floors,
+> event search, fixture pairing). **The only live real-money executors are
+> `scripts/place_coolbet_ui.py` and `workers/automation/best_price_router.py`** (listed in
+> `placement_gate.py`; smoke `RETIRED-MONEY-PATHS-GONE`). Any row or paragraph below that
+> names one of the deleted pieces is history.
+
 > **🎛 CONTROL PANEL 2026-09-24 (#139 phase A, migration 413) — supersedes every `PLACEABLE_BOTS` line below.**
 > `/admin/bots` is now THE control surface for own real money (owner decision 3). The six separate layers,
 > in gate order, as the page's **layer ladder + CAN STAKE line** shows them:

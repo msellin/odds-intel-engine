@@ -4536,13 +4536,13 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         _bot_str = _tb["bots"][0] + (f" +{_n-1} more" if _n > 1 else "")
         _bots_line = "  bots: " + ", ".join(_tb["bots"]) if _n > 1 else ""
         _cb_url = coolbet_match_url(_tb["home"], _tb["away"])
-        # MANUAL-PLACE: attach "Record at Coolbet" button when we have a bet_id.
-        # send_telegram only sends to the admin chat (TELEGRAM_CHAT_ID); user
-        # broadcasts use send_telegram_to_users below, which doesn't get a button.
-        from workers.notify.telegram import place_button_markup as _place_btn
+        # MANUAL-PLACE "Record at Coolbet" button REMOVED 2026-09-25 (#162 W4.6): it
+        # enqueued manual_placement_queue for a VPS drain into the retired API placer
+        # (deleted in the same change). Real money is placed only by the UI placer /
+        # best-price router; the alert is information only.
         from workers.notify.telegram import record_bet_alert as _rec_alert
         _first_bet_id = _tb.get("first_bet_id")
-        _markup = _place_btn(_first_bet_id) if _first_bet_id else None
+        _markup = None
         _alert_text = (
             f"🎯 <b>PRE-MATCH</b> {_bot_str}\n"
             f"  <b>{_tb['home']} vs {_tb['away']}</b>\n"
@@ -4558,15 +4558,13 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         # helper so this path and the signaler cannot drift apart.
         #
         # When it is off there is no message to edit, so `_rec_alert` below is
-        # skipped naturally (_msg_id is None) and the "Record at Coolbet" button
-        # simply never appears. The webhook handler is untouched and works again
-        # the moment OPERATOR_PICK_ALERTS=true. The USER broadcast
+        # skipped naturally (_msg_id is None). The USER broadcast
         # (send_telegram_to_users, just below) is a different audience and is
         # NOT affected.
         from workers.notify.telegram import operator_pick_alerts_enabled as _op_alerts
         _msg_id = (send_telegram(_alert_text, reply_markup=_markup)
                    if _op_alerts() else None)
-        # Persist so _run_coolbet_record can edit this message with the outcome
+        # Persist the (bet → message) mapping (bet_telegram_alerts ledger)
         if _msg_id and _first_bet_id:
             # original_text includes the TELEGRAM_PREFIX so the editMessageText
             # call keeps the "[OI]" tag visible
@@ -4596,8 +4594,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             _send_vip(_vip_text)
 
     # ADMIN-TG-CLARITY (2026-05-29): collapse the long bet-block list into
-    # a one-line counter. Per-bet status now shows up inline on each alert
-    # via edit_bet_alert_outcome after auto-record runs — no need to repeat.
+    # a one-line counter. (The per-bet outcome edit, edit_bet_alert_outcome, was
+    # deleted 2026-09-25 with the API placer that produced the outcome — #162 W4.6.)
     if _new_bet_lines:
         send_telegram(
             f"🎯 {total_bets} value bet(s) found{cohort_label}",

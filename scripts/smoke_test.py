@@ -925,39 +925,6 @@ def _():
     )
 
 
-@test("COOLBET-NO-MARKET-PRESENCE — no_market path writes a presence-marker snapshot (source inspect)")
-def _():
-    """When Coolbet has the event but not the bet's specific market+selection,
-    the placer must still write one canonical odds_snapshot so the frontend's
-    `matchIdsWithCoolbetEvent` proxy can chip the row as `no_market` instead of
-    the misleading `no_event` ('⚠ no match'). Discovered when Sportivo Carapeguá
-    vs Atlético Tembetary showed '⚠ no match' for `double_chance x2` even
-    though the match exists on Coolbet — Coolbet just doesn't offer DC for the
-    Paraguay D. Intermedia league.
-    """
-    import inspect
-    from workers.automation import coolbet_placer
-    src = inspect.getsource(coolbet_placer)
-    assert "def _write_presence_marker_snapshot" in src, (
-        "presence-marker helper must exist in coolbet_placer"
-    )
-    # The helper has to be called from the no_market branch BEFORE the continue,
-    # so a single source-walk verifies the order.
-    no_mkt_idx = src.index('"outcome": "no_market"')
-    presence_idx = src.rindex("_write_presence_marker_snapshot", 0, no_mkt_idx)
-    assert presence_idx > 0 and presence_idx < no_mkt_idx, (
-        "presence marker must be written before the no_market continue"
-    )
-    fn = inspect.getsource(coolbet_placer._write_presence_marker_snapshot)
-    # COOLBET-SELECTION-CASE (2026-06-03): 1x2 selections lowercase now.
-    assert '"1x2"' in fn and '"home"' in fn, (
-        "helper must prefer 1x2 home (universally available across leagues)"
-    )
-    assert "store_coolbet_odds_snapshot" in fn, (
-        "helper must write to odds_snapshots (the frontend's evidence source)"
-    )
-
-
 # ---------------------------------------------------------------------------
 # SMOKE-SUITE-AUDIT-2026-08-31 — harness for turning WEAKEN tests behavioural.
 #
@@ -4284,12 +4251,11 @@ def test_signal_placer_1x2_align():
     # placer moved to 10%). Pin all three call sites by source inspection, and
     # assert NONE of them re-derives a per-pick floor from the market-only
     # _min_edge_for (that is exactly the blindness we removed).
+    # #162 W4.6 (2026-09-25): the Mac-daemon loader (load_qualified_bets) and the API placer's
+    # live re-eval (place_all_bets) were DELETED with the Path-B placer; the
+    # placers that remain gate through placement_floor (PLACEMENT-FLOOR-* tests).
     signaler_src = inspect.getsource(sg.load_signal_candidates)  # the LIVE Telegram path
-    loader_src = inspect.getsource(cp.load_qualified_bets)       # the Mac-daemon candidate loader
-    placer_src = inspect.getsource(cp.place_all_bets)            # the live-price re-eval
-    for name, src in (("coolbet_signaler.load_signal_candidates", signaler_src),
-                      ("coolbet_placer.load_qualified_bets", loader_src),
-                      ("coolbet_placer.place_all_bets (live re-eval)", placer_src)):
+    for name, src in (("coolbet_signaler.load_signal_candidates", signaler_src),):
         assert ("clears_edge_floor(" in src or "min_edge_for_pick(" in src), (
             f"{name} must gate picks on the SHARED edge-floor predicate "
             "(clears_edge_floor, which wraps min_edge_for_pick). A blind "
@@ -5571,8 +5537,8 @@ def test_coolbet_daemons_pause():
     """COOLBET-DAEMONS-PAUSE-2026-09-09: the footprint switch (on /admin/feeds since
     2026-09-24, #139 IA P2) flips coolbet_session_state.daemons_paused to calm Imperva. It only
     works if the FOOTPRINT daemons actually poll it and skip. Pin: the helper
-    exists, migration 318 adds the column, and all three footprint entry points
-    (odds-snapshot=coolbet_explorer, feed-watchdog, mac-daemon tick) check it."""
+    exists, migration 318 adds the column, and both footprint entry points
+    (odds-snapshot=coolbet_explorer, feed-watchdog) check it."""
     import inspect
     from workers.automation import coolbet_state as st
     assert hasattr(st, "is_daemons_paused") and hasattr(st, "set_daemons_paused"), (
@@ -5582,10 +5548,10 @@ def test_coolbet_daemons_pause():
     base = Path(__file__).parent.parent
     mig = (base / "supabase" / "migrations" / "318_coolbet_daemons_pause.sql").read_text()
     assert "daemons_paused" in mig, "migration 318 must add daemons_paused"
-    # every footprint daemon must consult the switch
+    # every footprint daemon must consult the switch (#162 W4.6 (2026-09-25): the third one,
+    # coolbet_mac_daemon, was deleted)
     for mod in ("workers/automation/coolbet_explorer.py",
-                "workers/jobs/coolbet_feed_watchdog.py",
-                "workers/automation/coolbet_mac_daemon.py"):
+                "workers/jobs/coolbet_feed_watchdog.py"):
         src = (base / mod).read_text()
         assert "is_daemons_paused" in src, f"{mod} must check is_daemons_paused to honor the pause"
 
@@ -6520,12 +6486,9 @@ def test_2d_gate_per_market_odds_floor():
     assert _MIN_ODDS_BY_MARKET["asian_handicap"] == 1.00, "AH odds-ungated pending AH-VIABILITY-REVIEW"
     # Both placement paths must resolve the floor through the shared helper, so a
     # future change to one market's floor cannot land on only one path.
+    # #162 W4.6 (2026-09-25): the API placer's own gate is deleted with place_all_bets;
+    # the paths left are the UI placer + router, both via placement_floor.
     import os
-    placer = open(os.path.join(os.path.dirname(__file__), "..", "workers",
-                  "automation", "coolbet_placer.py"), encoding="utf-8").read()
-    assert "_floor = _min_odds_for(bet.get(\"market\"))" in placer, (
-        "coolbet_placer gate must call _min_odds_for(market), not a global constant"
-    )
     ui = open(os.path.join(os.path.dirname(__file__), "place_coolbet_ui.py"), encoding="utf-8").read()
     # [[#162]] W4.3: the UI placer's floor is placement_floor.pick_clears, which reads
     # _min_odds_for itself — so the helper is still the one source of the market floor.
@@ -6610,28 +6573,8 @@ def _():
     # AH line mismatch
     res = resolve_placement_target(markets, odds, "asian_handicap", "Home -1.5")
     assert res is None, f"AH line mismatch must return None, got {res}"
-
-    # Placer per-bet loop wiring
-    import pathlib
-    placer = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
-    assert "from workers.automation.coolbet_explorer import" in placer, (
-        "placer must import the new-schema helpers from coolbet_explorer"
-    )
-    assert "resolve_placement_target" in placer, "placer must call resolve_placement_target"
-    assert "fetch_match_markets" in placer, "placer must call fetch_match_markets"
-    assert "fetch_odds_for_markets" in placer, "placer must call fetch_odds_for_markets"
-    # Make sure the per-bet loop no longer relies on criterion_label
-    # (legacy find_market_outcome may still exist for back-compat but must not
-    # be in the active placement path).
-    in_place_all = placer[placer.index("def place_all_bets"):]
-    # Comments referencing the old field are fine; what's forbidden is
-    # actually accessing it as a dict key, since the new schema has no such field.
-    assert 'bo["criterion_label"]' not in in_place_all, (
-        "place_all_bets must not read bo['criterion_label'] — field doesn't exist on new schema"
-    )
-    assert 'bo[\'criterion_label\']' not in in_place_all, (
-        "place_all_bets must not read bo['criterion_label'] — field doesn't exist on new schema"
-    )
+    # #162 W4.6 (2026-09-25): the placer-loop wiring half is gone with place_all_bets;
+    # resolve_placement_target is still used by scripts/coolbet_match_probe.py.
 
 
 @test("COOLBET-SEARCH-BLOCKED — non-200 raises, placer aborts loop, summary names it")
@@ -6712,42 +6655,9 @@ def test_coolbet_search_blocked():
         assert sess.calls == 2
     finally:
         cp.time.sleep = _orig_sleep
-
-    # Singles loop must catch + mark remaining bets as search_blocked + break
-    in_place_all = placer_src[placer_src.index("def place_all_bets"):]
-    singles_catch = in_place_all[:in_place_all.index("_place_combo_bets") + 200]
-    assert "except CoolbetSearchBlocked" in singles_catch, (
-        "singles loop must catch CoolbetSearchBlocked"
-    )
-    assert '"outcome": "search_blocked"' in singles_catch, (
-        "blocked bet rows must use outcome='search_blocked' (not 'no_event')"
-    )
-    assert "pending[idx:]" in singles_catch, (
-        "remaining unprocessed bets must be marked as search_blocked, not silently dropped"
-    )
-
-    # Combo phase is skipped when singles loop tripped the block
-    assert "if search_blocked:" in singles_catch, (
-        "place_all_bets must skip combo phase when singles tripped the block"
-    )
-
-    # Combo loop has matching handling
-    combo_src = placer_src[placer_src.index("def _place_combo_bets"):]
-    assert "except CoolbetSearchBlocked" in combo_src, (
-        "combo loop must also catch CoolbetSearchBlocked"
-    )
-    assert "combos[cidx:]" in combo_src, (
-        "remaining combos must be marked as search_blocked on mid-run block"
-    )
-
-    # CLI summary surfaces the block prominently
-    cli_src = pathlib.Path("scripts/place_coolbet_bets.py").read_text()
-    assert "search_blocked" in cli_src, (
-        "place_coolbet_bets.py summary must recognise search_blocked outcome"
-    )
-    assert "COOLBET_MANUAL_JWT" in cli_src, (
-        "CLI must tell user how to fix it (refresh COOLBET_MANUAL_JWT)"
-    )
+    # #162 W4.6 (2026-09-25): the singles/combo loop + CLI halves pinned place_all_bets,
+    # _place_combo_bets and scripts/place_coolbet_bets.py, all deleted. _do_search
+    # (above) is shared by every live Coolbet search.
 
 
 @test("COOLBET-FS-SESSION-STABLE — hybrid FS transport (GET via FS, POST via requests + FS cookies)")
@@ -7156,57 +7066,13 @@ def test_coolbet_jwt_db_backed():
     )
 
 
-@test("COOLBET-MAC-DAEMON — local Mac placement daemon + launchd + local FS")
-def test_coolbet_mac_daemon():
-    """COOLBET-MAC-DAEMON (2026-06-12): option B of the signaler/daemon
-    architecture. Mac at home runs the placement leg from a residential IP
-    so Imperva's cloud-IP block doesn't apply. Pin the deployable artifacts
-    so a future refactor can't quietly remove one half of the setup."""
+@test("LOCAL-FS-SETUP — local FlareSolverr compose keeps its profile volume; setup README exists")
+def test_local_fs_setup():
+    """RE-POINTED #162 W4.6 (2026-09-25) from COOLBET-MAC-DAEMON. That test pinned the
+    paper Mac daemon (module, launchd plist, paper-only call) — all DELETED. The half
+    that guards live infrastructure stays: the local FlareSolverr the odds feed and the
+    real-money placers run through, and the operator's setup README."""
     import pathlib
-    # Daemon module exists with the right entrypoints.
-    daemon_src = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
-    for fn in ("_tick", "run_forever", "main"):
-        assert f"def {fn}(" in daemon_src, f"daemon must expose {fn}()"
-    # Daemon calls the existing placer (NOT a fork) — same edge gates,
-    # same idempotency guarantees as the VPS-side implementation
-    # we just shelved. Drift here is the failure mode this test prevents.
-    assert "from workers.automation.coolbet_placer import" in daemon_src, (
-        "daemon must call the existing coolbet_placer — no fork of placement logic."
-    )
-    # CONTRACT (not literal syntax): daemon production path must call
-    # place_all_bets with record=True. record=False is only acceptable in
-    # the dry-run branch (which also forces execute=False). The original
-    # literal `place_all_bets(record=True, execute=not dry_run)` was
-    # refactored 2026-06 into an if/else with separate calls.
-    #
-    # INVERTED 2026-09-01 (SMOKE-SUITE-AUDIT). This asserted
-    # `execute=True` and had been failing since 2026-07-06, when the daemon
-    # was deliberately hardcoded to `execute=False` — paper-only while the
-    # models validate. The daemon's own comment says that exists to "prevent
-    # a future auth fix from silently turning real-money placement back on".
-    # So the test was demanding the exact change the code was written to
-    # prevent, and the obvious way to make it pass was to switch real-money
-    # placement on. A red test must never be answered that way: assert the
-    # safety invariant instead, so flipping to execute=True fails HERE first.
-    assert "place_all_bets(record=True, execute=False)" in daemon_src, (
-        "daemon production path must call place_all_bets(record=True, execute=False) — "
-        "record always so real_bets gets a paper row, execute=False because the "
-        "daemon is paper-only (2026-07-06) until the models are validated."
-    )
-    assert "place_all_bets(record=True, execute=True)" not in daemon_src, (
-        "daemon is hardcoded paper-only. Turning on real-money placement is a "
-        "deliberate, separately-authorised change — it must not arrive as a "
-        "quiet edit that happens to make a smoke test pass."
-    )
-    assert "place_all_bets(record=False, execute=False)" in daemon_src, (
-        "daemon dry-run path must call place_all_bets(record=False, execute=False) — "
-        "no DB writes when invoked with --dry-run."
-    )
-    # SIGTERM handler — must not crash the daemon on launchd shutdown.
-    assert "signal.SIGTERM" in daemon_src and "signal.SIGINT" in daemon_src, (
-        "daemon must trap SIGTERM/SIGINT for graceful launchd shutdown."
-    )
-
     # docker-compose for local FS exists with a persistent volume —
     # without the volume, tab-crash + container-restart loses device trust.
     fs_compose = pathlib.Path("local/flaresolverr/docker-compose.yml").read_text()
@@ -7214,47 +7080,17 @@ def test_coolbet_mac_daemon():
         "docker-compose must mount a persistent profile volume — without "
         "it, every restart loses Chrome's device-trust cookie."
     )
-    # `restart: always` (02e48c8, FS 24/7 self-heal) or `unless-stopped` — either
-    # auto-restarts so a crash doesn't leave the daemon on a dead endpoint.
     assert ("restart: always" in fs_compose or "restart: unless-stopped" in fs_compose), (
         "FS container must auto-restart so a crash doesn't leave the "
-        "daemon talking to a dead endpoint."
+        "feed and placers talking to a dead endpoint."
     )
-
-    # launchd plist exists and references the daemon module.
-    #
-    # RE-POINTED 2026-09-11 to local/launchd/retired/. The daemon was RETIRED
-    # 2026-09-10 (booted out, no longer installed), so its plist was moved out
-    # of the live plist dir — otherwise the launchd drift guard reports it
-    # MISSING forever and the guard's whole value is precision.
-    # The plist is still pinned, in its archived location, for two reasons:
-    # the daemon MODULE is not dead code (workers/jobs/coolbet_feed_watchdog.py
-    # imports `_drain_operator_commands` from it for the Telegram heal button),
-    # and the paper-only invariants asserted above still matter if anyone ever
-    # revives it.
-    plist = pathlib.Path(
-        "local/launchd/retired/com.oddsintel.coolbet-mac-daemon.plist").read_text()
-    assert "workers.automation.coolbet_mac_daemon" in plist, (
-        "launchd plist must invoke the daemon via -m workers.automation.coolbet_mac_daemon"
-    )
-    assert "<key>KeepAlive</key>" in plist and "<true/>" in plist, (
-        "launchd must KeepAlive — daemon auto-restart is the supervisor."
-    )
-    # Local FS URL override so daemon doesn't accidentally hit the VPS FS
-    # (defeats the residential-IP premise).
-    assert "http://localhost:8191" in plist, (
-        "plist must pin FLARESOLVERR_URL=http://localhost:8191 — the VPS FS "
-        "doesn't help us from the Mac; the whole point is using local."
-    )
-
-    # Setup README exists so the operator has a single source for the
-    # one-time install sequence.
     readme = pathlib.Path("local/README.md")
     assert readme.exists(), "local/README.md is the operator's setup guide"
     rt = readme.read_text()
-    for step in ("docker compose up", "flaresolverr_login_enroll.py",
-                  "launchctl load", "--once --dry-run"):
+    for step in ("docker compose up", "flaresolverr_login_enroll.py"):
         assert step in rt, f"README must document step: {step!r}"
+    assert "coolbet_mac_daemon --once" not in rt, (
+        "README still tells the operator to run the deleted paper daemon")
 
 
 @test("COOLBET-SIGNALER-A — Telegram bet-signaler replaces auto-placer (resilient to Imperva/FS)")
@@ -7496,52 +7332,9 @@ def test_coolbet_daemon_alerts():
         "diagnose_cdp_jwt_state must call CDP with allow_open_new_tab=False; "
         "opening a new tab during diagnosis would flash Chrome unexpectedly."
     )
-
-    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
-    assert "def _notify_consecutive_failures(" in daemon, (
-        "Mac daemon must define _notify_consecutive_failures() — the path "
-        "that pushes the Telegram alert when error streaks hit threshold."
-    )
-    assert "diagnose_cdp_jwt_state" in daemon, (
-        "Mac daemon must import + call diagnose_cdp_jwt_state() to classify "
-        "the failure before alerting — without classification, the operator "
-        "still has to tail the log to know what's broken."
-    )
-    assert "ALERT_AFTER_CONSECUTIVE_ERRORS" in daemon, (
-        "Mac daemon must expose ALERT_AFTER_CONSECUTIVE_ERRORS (env-tunable) "
-        "so the threshold can be raised on noisy networks without a redeploy."
-    )
-    # Dedup key MUST exist and MUST be hour-scoped — without an hour bucket,
-    # the in-process _LAST_SENT dict would suppress every alert after the
-    # first for the lifetime of the process (could be days).
-    assert "daemon-fail-burst-" in daemon, (
-        "Telegram alert must use dedup_key prefix 'daemon-fail-burst-' so "
-        "send_telegram's _LAST_SENT can dedup across ticks."
-    )
-    # The dedup key in the daemon must include an hour component (%H) so a
-    # sustained outage still produces ~one alert per hour.
-    notify_block = daemon[daemon.index("def _notify_consecutive_failures("):
-                          daemon.index("def _handle_sigterm(")]
-    assert "%Y%m%d%H" in notify_block or '"%H"' in notify_block, (
-        "Telegram dedup key must include hour-of-day — without an hour bucket "
-        "a multi-day outage would alert only once per process restart."
-    )
-
-    # The run_forever loop must (a) track consecutive errors, (b) reset on
-    # clean ticks, and (c) call _notify_consecutive_failures on threshold.
-    loop_block = daemon[daemon.index("def run_forever("):]
-    assert "consecutive_errors" in loop_block, (
-        "run_forever must maintain a consecutive_errors counter."
-    )
-    assert "_notify_consecutive_failures(" in loop_block, (
-        "run_forever must call _notify_consecutive_failures on the streak threshold."
-    )
-    # Reset-on-ok: a recovered daemon must NOT keep alerting next streak.
-    assert "consecutive_errors = 0" in loop_block, (
-        "run_forever must reset consecutive_errors on a clean tick — "
-        "otherwise a recovered daemon stays armed and a single later blip "
-        "would re-alert at threshold=1 instead of threshold=2."
-    )
+    # #162 W4.6 (2026-09-25): the daemon half (_notify_consecutive_failures, run_forever
+    # streak counter) went with coolbet_mac_daemon. diagnose_cdp_jwt_state is still
+    # read by ensure_session_live (feed watchdog) and the CDP rebootstrap script.
 
 
 @test("COOLBET-CDP-CLASSIFY-TIGHT — diagnose only returns jwt_expired when token lives in a KNOWN auth key")
@@ -7884,127 +7677,6 @@ def test_bot_maturity_label_invariant():
     )
 
 
-@test("COOLBET-DAEMON-HEALTHCHECK — VPS-side health alert for silent / sustained-erroring daemon")
-def test_coolbet_daemon_healthcheck():
-    """COOLBET-DAEMON-HEALTHCHECK (2026-06-21): closes the alerting gap
-    that left a 3-day outage silent on 2026-06-18 → 21. Three reasons the
-    in-process Mac daemon alert path can fail:
-
-      1. alert_fired_this_burst flag — only one alert per process
-         lifetime per failure burst; no clean ticks = no further alerts.
-      2. In-process Telegram dedup — dies with the process.
-      3. Mac daemon IS the alerter — Mac sleep / daemon crash kills the
-         alerter and the placer at the same time.
-
-    Fix: new the VPS job (every 30 min) reads coolbet_session_state +
-    coolbet_heal_log and Telegrams when the daemon is silent OR
-    sustainedly erroring. DB-backed dedup via last_health_alert_at
-    (migration 256) survives scheduler restarts.
-
-    Pin: migration 256 column, job module, alert/recovery code paths,
-    scheduler hook with 30-min cron."""
-    import pathlib
-
-    mig = pathlib.Path("supabase/migrations/256_coolbet_daemon_healthcheck.sql").read_text()
-    assert "last_health_alert_at" in mig and "TIMESTAMPTZ" in mig, (
-        "Migration 256 must add last_health_alert_at TIMESTAMPTZ — the "
-        "DB-backed dedup that survives scheduler restarts."
-    )
-
-    job_path = pathlib.Path("workers/jobs/coolbet_daemon_healthcheck.py")
-    assert job_path.exists(), (
-        "workers/jobs/coolbet_daemon_healthcheck.py must exist — this is "
-        "the VPS-side alerter."
-    )
-    job = job_path.read_text()
-    assert "def run_daemon_healthcheck(" in job, (
-        "job module must export run_daemon_healthcheck() — the scheduler "
-        "calls this every 30 min."
-    )
-
-    # Both alert conditions must be present — without one of them the
-    # job can't catch the corresponding failure class.
-    eval_block = job[job.index("def _evaluate_health("):
-                      job.index("def _format_alert(")]
-    assert '"silent"' in eval_block, (
-        "_evaluate_health must produce 'silent' status when "
-        "mac_daemon_last_tick_at is missing or stale."
-    )
-    assert '"erroring"' in eval_block, (
-        "_evaluate_health must produce 'erroring' status when last tick "
-        "has errors > 0 AND no recent successful auto-heal."
-    )
-
-    # Sustained-error check requires consulting coolbet_heal_log — without
-    # this, every transient errored tick fires an alert and the operator
-    # gets spammed during normal self-heal cycles.
-    assert "_last_successful_heal_at(" in job, (
-        "job must check coolbet_heal_log for recent successful heals to "
-        "distinguish sustained outages from transient blips."
-    )
-
-    # Dedup must be DB-backed (not in-process) — otherwise we reintroduce
-    # the Mac daemon's failure mode this job is supposed to fix.
-    assert "_set_last_health_alert_at(" in job, (
-        "job must write last_health_alert_at on alert send — DB-backed "
-        "dedup is the entire point (in-process dedup is what failed)."
-    )
-
-    # COOLBET-HEALTHCHECK-JWT-AWARE (2026-06-22): the original
-    # _evaluate_health only branched on `silent` or `erroring`. That
-    # missed the case where the daemon ticks SILENT-WHEN-EMPTY
-    # (errors=0, no work) while the JWT silently expires — a real
-    # 2026-06-22 morning state. Add a jwt_stale branch gated on
-    # pending calibrated picks within KO window.
-    assert '"jwt_stale"' in eval_block, (
-        "_evaluate_health must produce 'jwt_stale' when JWT is expired "
-        "AND calibrated picks have kickoff within the watch window. "
-        "Without it, a clean-tick + expired-JWT state stays invisible "
-        "until the first placement attempt fails."
-    )
-    assert "_pending_calibrated_picks_in_ko_window(" in job, (
-        "job must check pending calibrated picks to gate the jwt_stale "
-        "alert. Without the gate, every idle Sunday→Monday morning "
-        "would alert even though nothing's broken."
-    )
-    # Recovery message path — after an alert was sent and the daemon comes
-    # back online, the operator needs to know the incident closed.
-    run_block = job[job.index("def run_daemon_healthcheck("):]
-    assert "recovery_sent" in run_block, (
-        "run_daemon_healthcheck must surface a recovery_sent counter — "
-        "without the recovery Telegram, the operator is left wondering "
-        "if the daemon is still down."
-    )
-    # alert routing must include jwt_stale otherwise the evaluation
-    # produces the new status but no Telegram is ever sent for it.
-    assert '"jwt_stale"' in run_block, (
-        "run_daemon_healthcheck must route status='jwt_stale' to the "
-        "alert path. Adding the classifier without wiring it to the "
-        "sender is silent-fail by omission."
-    )
-    assert "_set_last_health_alert_at(None)" in run_block, (
-        "recovery path must CLEAR last_health_alert_at — otherwise the "
-        "next outage's first alert gets dedup-skipped."
-    )
-
-    # Scheduler hook — without this the job never actually runs.
-    sched = pathlib.Path("workers/scheduler.py").read_text()
-    assert "def job_coolbet_daemon_healthcheck(" in sched, (
-        "scheduler must define job_coolbet_daemon_healthcheck wrapper."
-    )
-    assert "coolbet_daemon_healthcheck" in sched and 'id="coolbet_daemon_healthcheck"' in sched, (
-        "scheduler must register the job with a stable id."
-    )
-    # Cadence: must run sub-hourly so a 90-min-silent threshold actually
-    # triggers in the same hour the daemon dies.
-    hook_idx = sched.index('id="coolbet_daemon_healthcheck"')
-    hook_block = sched[max(0, hook_idx - 500):hook_idx + 200]
-    assert ("CronTrigger(minute=" in hook_block), (
-        "scheduler hook must use a sub-hourly CronTrigger so a daemon "
-        "death is detected within one cycle."
-    )
-
-
 @test("CDP-NEW-METHOD-PUT — /json/new uses PUT (Chrome 124+ rejects GET with 405)")
 def _():
     """CDP-NEW-METHOD-PUT (2026-06-24): closes the auto-heal regression
@@ -8099,15 +7771,7 @@ def test_coolbet_selfheal_profile_picker():
         "step — otherwise the daemon would still try open_coolbet_tab first "
         "and re-enter the stall loop."
     )
-
-    # Daemon Telegram alert must include a recovery hint for the new state.
-    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
-    assert '"chrome_at_profile_picker"' in daemon, (
-        "coolbet_mac_daemon._notify_consecutive_failures must include a "
-        "recovery hint for chrome_at_profile_picker — without it the alert "
-        "falls back to the generic 'tail the log' message and the operator "
-        "has no idea what to click."
-    )
+    # #162 W4.6 (2026-09-25): the daemon's Telegram hint for this state went with the daemon.
 
 
 @test("COOLBET-AUTO-LOGIN-ON-HEAL — auto_self_heal recovers logged_out via cdp_auto_login when env-enabled")
@@ -8297,24 +7961,17 @@ def test_coolbet_inline_heal_buttons():
         "coolbet_state must define finish_daemon_command() for lifecycle close."
     )
 
-    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
-    assert "def _heal_action_buttons(" in daemon, (
-        "Daemon must define _heal_action_buttons() returning the inline "
-        "keyboard markup used by daemon-fail-burst alerts."
+    # #162 W4.6 (2026-09-25): the drain MOVED from the deleted coolbet_mac_daemon into the feed
+    # watchdog (its only caller since 2026-09-10). The daemon's own alert buttons and
+    # 30 s poll went with it; the daily summary (below) still carries the buttons.
+    wd = pathlib.Path("workers/jobs/coolbet_feed_watchdog.py").read_text()
+    assert "def _drain_operator_commands(" in wd, (
+        "the feed watchdog must define _drain_operator_commands() — the poller "
+        "that runs heal commands the operator queued via Telegram."
     )
-    for cb in ("coolbet-heal:", "coolbet-pause:", "coolbet-resume:"):
-        assert cb in daemon, (
-            f"Daemon must include callback_data '{cb}' in the heal buttons."
-        )
-    assert "def _drain_operator_commands(" in daemon, (
-        "Daemon must define _drain_operator_commands() — the poller that "
-        "runs heal commands the operator queued via Telegram."
-    )
-    # Poll loop runs at ~30s cadence inside the sleep slice.
-    assert "OPERATOR_POLL_EVERY_S" in daemon, (
-        "Daemon must expose OPERATOR_POLL_EVERY_S so button taps feel "
-        "responsive without waiting for the 30-min placement tick."
-    )
+    drain = wd[wd.index("def _drain_operator_commands("):wd.index("def _notify_operator_heal_result(")]
+    assert "claim_pending_daemon_command()" in drain and "finish_daemon_command(" in drain
+    assert 'auto_self_heal(triggered_by="operator_tg")' in drain
 
     # Daily summary attaches the same buttons.
     summary = pathlib.Path("workers/jobs/coolbet_daily_summary.py").read_text()
@@ -8449,47 +8106,6 @@ def test_coolbet_selfheal_docker_fs():
     )
 
 
-@test("COOLBET-DAEMON-SELFPAUSE — daemon auto-sets placement_paused after sustained errors, auto-clears on recovery")
-def test_coolbet_daemon_selfpause():
-    """COOLBET-DAEMON-SELFPAUSE (B3, 2026-06-16): after
-    SELFPAUSE_AFTER_MINUTES (default 180) of unbroken error ticks, the
-    daemon sets placement_paused=true with a "daemon self-pause: ..."
-    reason. On the first clean tick that follows, the daemon clears
-    the pause — but ONLY if reason matches daemon-self-pause (an
-    operator-set pause stays until the operator clears it).
-
-    Pin: env var + once-per-burst gate + reason convention + auto-clear
-    invariant. The reason-prefix match is load-bearing — without it, a
-    recovered daemon would clobber an operator's deliberate kill switch."""
-    import pathlib
-    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
-    assert "SELFPAUSE_AFTER_MINUTES" in daemon, (
-        "Daemon must expose SELFPAUSE_AFTER_MINUTES (env-tunable)."
-    )
-    loop = daemon[daemon.index("def run_forever("):]
-    assert "self_paused_this_burst" in loop, (
-        "Loop must track self_paused_this_burst — without the per-burst "
-        "gate the daemon would re-pause every tick after threshold."
-    )
-    # Reason convention is load-bearing — auto-clear matches on it.
-    assert "daemon self-pause" in loop, (
-        "Reason text must include 'daemon self-pause' — the auto-clear "
-        "branch matches on this substring to avoid clobbering operator "
-        "pauses."
-    )
-    # Auto-clear path must check the reason before clearing. Since
-    # SELFPAUSE-STICKY-FIX the clear lives in its own `clear_check_pending`
-    # block on the clean-tick path (no longer nested in the recovery
-    # branch), so slice from that gate.
-    clear_start = loop.index("if clear_check_pending:")
-    clear_block = loop[clear_start:loop.index("consecutive_errors = 0", clear_start)]
-    assert "is_daemon_self_pause" in clear_block, (
-        "Auto-clear must only clear daemon-set pauses (via the shared "
-        "is_daemon_self_pause helper) — operator-set pauses with "
-        "different reason text must remain in force."
-    )
-
-
 @test("SIGNAL-SILENCE-ALERT — pushes when eligible picks go unsignaled, or when no picks are produced at all")
 def test_signal_silence_alert():
     """SIGNAL-SILENCE-ALERT (2026-08-27): the 4-day Telegram mute
@@ -8568,69 +8184,6 @@ def test_signal_silence_alert():
     assert "check_signal_silence" in bundle, (
         "check_signal_silence must be registered in run_snapshot_check — "
         "defining it without wiring it is the same silent gap it fixes."
-    )
-
-
-@test("SELFPAUSE-STICKY-FIX — daemon self-pause auto-clears across a daemon restart")
-def test_selfpause_sticky_fix():
-    """SELFPAUSE-STICKY-FIX (2026-08-27): the auto-clear used to live
-    inside the `consecutive_errors > 0` branch AND be gated on the
-    in-memory `self_paused_this_burst`. Both reset to zero/False on
-    daemon restart, so a self-pause that outlived one restart could
-    never auto-clear — the restarted daemon ticks cleanly from zero, so
-    neither gate is ever true again. That is how the 2026-08-23
-    self-pause stayed on for 4 days and silenced 12 picks.
-
-    Pin: (a) the clear runs on ANY clean tick, not only a recovery tick;
-    (b) it is NOT gated on self_paused_this_burst; (c) clear_check_pending
-    is armed at boot so the first clean tick after a restart checks;
-    (d) it is re-armed on error ticks; (e) a failed clear leaves the flag
-    set so the next clean tick retries."""
-    import pathlib
-    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
-    loop = daemon[daemon.index("def run_forever("):]
-
-    assert "clear_check_pending = True" in loop, (
-        "Loop must arm clear_check_pending at boot — otherwise a "
-        "self-pause left by the previous process never gets checked."
-    )
-    # (a)+(b): the clear must be gated on clear_check_pending, and the
-    # gate must NOT be the per-burst in-memory flag.
-    clear_start = loop.index("if clear_check_pending:")
-    clear_end = loop.index("consecutive_errors = 0", clear_start)
-    clear_block = loop[clear_start:clear_end]
-    assert "self_paused_this_burst" not in clear_block, (
-        "Auto-clear must NOT be gated on self_paused_this_burst — that "
-        "flag resets on restart, which is the sticky-pause bug."
-    )
-    assert "set_placement_paused(False)" in clear_block, (
-        "Auto-clear block must actually clear the pause."
-    )
-    # (a): the clear sits OUTSIDE the `consecutive_errors > 0` recovery
-    # branch — a restarted daemon never enters that branch. "Outside"
-    # means same indentation depth, so compare the two gates' indents
-    # rather than their byte offsets.
-    def _indent_of(needle):
-        i = loop.index(needle)
-        return i - (loop.rindex("\n", 0, i) + 1)
-
-    recovery_indent = _indent_of("if consecutive_errors > 0:")
-    clear_indent = _indent_of("if clear_check_pending:")
-    assert clear_indent <= recovery_indent, (
-        "Auto-clear must not be nested inside the `consecutive_errors > 0` "
-        "recovery branch — a daemon restarted while paused ticks cleanly "
-        f"from zero and would never reach it (clear indent {clear_indent} "
-        f"> recovery indent {recovery_indent})."
-    )
-    # (d): re-armed when errors occur, so a NEW self-pause also clears.
-    err_start = loop.index("consecutive_errors += 1")
-    assert "clear_check_pending = True" in loop[err_start:err_start + 200], (
-        "clear_check_pending must be re-armed on error ticks."
-    )
-    # (e): the flag is cleared only on a successful check, inside try.
-    assert clear_block.index("clear_check_pending = False") < clear_block.index("except Exception"), (
-        "clear_check_pending must be cleared inside the try (only on "
-        "success) so a DB failure retries on the next clean tick."
     )
 
 
@@ -8780,29 +8333,8 @@ def test_coolbet_auto_self_heal():
     assert "--full-heal" in bs, (
         "main() must accept --full-heal — operator's one-command recovery."
     )
-
-    # Daemon attempts heal before alerting.
-    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
-    assert "def _try_auto_self_heal(" in daemon, (
-        "Daemon must define _try_auto_self_heal wrapper so the import "
-        "happens lazily and an exception in the helper can't break "
-        "the alert path."
-    )
-    loop = daemon[daemon.index("def run_forever("):]
-    # _try_auto_self_heal must be called BEFORE _notify_consecutive_failures
-    # in the run_forever loop. Otherwise the heal-or-alert order inverts.
-    heal_idx = loop.index("_try_auto_self_heal")
-    notify_idx = loop.index("_notify_consecutive_failures")
-    assert heal_idx < notify_idx, (
-        "_try_auto_self_heal must run BEFORE _notify_consecutive_failures "
-        "in the loop — otherwise we always alert before attempting recovery."
-    )
-    # Recovered → skip alert. Pin the explicit branch.
-    assert 'heal.get("recovered")' in loop, (
-        "Loop must check heal.get('recovered') and skip the Telegram alert "
-        "when self-heal succeeded. Without this, recovered failures still "
-        "spam Telegram."
-    )
+    # #162 W4.6 (2026-09-25): the daemon's heal-before-alert wiring went with the daemon; the
+    # feed watchdog calls auto_self_heal via ensure_session_live + the heal button.
 
 
 @test("COOLBET-DAILY-SUMMARY — one Telegram at 08:00 UTC summarises daemon + JWT + catch-net + 24h + queue")
@@ -8985,63 +8517,8 @@ def test_coolbet_proactive_jwt_refresh():
         "proactive_jwt_refresh must call BOTH persist_jwt and "
         "mark_login_success on success — without both, the row drifts."
     )
-
-    # Daemon wiring.
-    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
-    assert "proactive_jwt_refresh" in daemon, (
-        "Mac daemon must import + call proactive_jwt_refresh() — the "
-        "VPS scheduler never runs the daemon, so the call lives there."
-    )
-    tick_block = daemon[daemon.index("def _tick("):
-                        daemon.index("def run_forever(")]
-    # Call must be AFTER load_qualified_bets returns non-empty — we don't
-    # waste a CDP probe on ticks with nothing to place.
-    qualified_idx = tick_block.index("counters[\"qualified\"]")
-    refresh_idx = tick_block.index("proactive_jwt_refresh")
-    assert qualified_idx < refresh_idx, (
-        "proactive_jwt_refresh must run AFTER load_qualified_bets — "
-        "calling it on every tick (including empty ones) would flash "
-        "CDP-Chrome unnecessarily and defeat SILENT-WHEN-EMPTY."
-    )
-    # Refresh failure must NOT mark the tick errored. The reactive path
-    # inside CoolbetSession is the safety net 200ms later.
-    refresh_call_block = tick_block[refresh_idx - 200:refresh_idx + 800]
-    assert "non-fatal" in refresh_call_block.lower() or "log.debug" in refresh_call_block, (
-        "proactive_jwt_refresh failure must be logged at debug and not "
-        "increment counters['errors'] — the reactive _try_cdp_jwt in "
-        "_login is the safety net."
-    )
-
-
-@test("COOLBET-DAEMON-HEARTBEAT-ON-EMPTY — _tick writes mac_daemon heartbeat on ALL paths incl. empty-candidates")
-def test_coolbet_daemon_heartbeat_on_empty():
-    """COOLBET-DAEMON-HEARTBEAT-ON-EMPTY (2026-06-16): the daemon's _tick()
-    has three early `if not candidates: return counters` exits. Before the
-    fix those skipped mark_mac_daemon_tick() — so a healthy daemon finding
-    zero qualified picks for >60min would look stale to the
-    COOLBET-DAEMON-ALERTS pre-kickoff catch-net and trigger a false-positive
-    "PLACE MANUALLY — daemon down" Telegram.
-
-    Pin: the heartbeat write is inside a finally: block (or otherwise
-    structured so all return paths reach it)."""
-    import pathlib
-    daemon = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
-    tick_block = daemon[daemon.index("def _tick("):
-                        daemon.index("def run_forever(")]
-    assert "finally:" in tick_block, (
-        "_tick() must use a finally: block so the mark_mac_daemon_tick() "
-        "heartbeat write reaches all return paths, including the three "
-        "`if not candidates: return counters` early exits."
-    )
-    # The mark_mac_daemon_tick call must be inside the finally block, not
-    # before the except. Cheap structural check: finally appears before
-    # mark_mac_daemon_tick.
-    fin_idx = tick_block.index("finally:")
-    hb_idx = tick_block.index("mark_mac_daemon_tick")
-    assert fin_idx < hb_idx, (
-        "mark_mac_daemon_tick() must appear inside the finally block "
-        "(after `finally:`), not in a position the early returns can skip."
-    )
+    # #162 W4.6 (2026-09-25): the daemon wiring went with the daemon; ensure_session_live (feed
+    # watchdog) is the caller now.
 
 
 @test("COOLBET-PREKICKOFF-CATCHNET — the VPS job alerts on calibrated picks near KO when Mac daemon is down")
@@ -9191,49 +8668,6 @@ def test_coolbet_maturity_gate_live_consumers():
     _assert_placement_path_rule()
 
 
-@test("COOLBET-AUTO-PLACE-TG-NOTIFY — daemon Telegrams the operator after every successful placement")
-def test_coolbet_auto_place_tg_notify():
-    """AUTO-PLACE-TG-NOTIFY (2026-06-12): the operator must be notified
-    on Telegram every time the daemon places a real bet without their
-    button-tap. Without this, a real_bets row "just appears" with no
-    surfacing — confusing AND a real-money safety gap (operator might
-    not realise a placement happened until they check the dashboard).
-
-    Notify lives in the DAEMON not the placer — coolbet_placer.py is
-    intentionally Telegram-free for manual-CLI callers (TELE-BET-NOTIFY
-    smoke pin). The daemon iterates place_all_bets() results and fires
-    one notification per outcome=='placed' result.
-
-    Dedup key uses real_bet_id so a retry / log replay can't re-spam
-    the operator with stale messages."""
-    import pathlib
-    src = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
-    assert "def _notify_placement(" in src, (
-        "coolbet_mac_daemon must define _notify_placement(result, *, dry_run)"
-    )
-    assert "from workers.notify.telegram import send_telegram" in src, (
-        "daemon must import send_telegram (the placer must NOT — see "
-        "TELE-BET-NOTIFY pin which still applies)."
-    )
-    # Notify is wired inside the outcome loop, AND the placer is still
-    # Telegram-free (the existing TELE-BET-NOTIFY contract).
-    assert '_notify_placement(r' in src, (
-        "daemon's outcome loop must call _notify_placement(r, ...) for "
-        "each outcome=='placed' result."
-    )
-    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
-    assert "from workers.notify.telegram import send_telegram" not in placer_src, (
-        "coolbet_placer.py must STILL not import send_telegram — notify "
-        "lives in the Mac daemon. Manual CLI callers shouldn't push "
-        "messages to the operator's Telegram."
-    )
-    # Dedup key uses real_bet_id so re-firing the same tick doesn't spam.
-    assert "auto-placed-" in src and "real_bet_id" in src, (
-        "notify must dedup by real_bet_id (key prefix 'auto-placed-') "
-        "so retries / log replays can't re-spam."
-    )
-
-
 @test("COOLBET-MAC-DAEMON-HEARTBEAT — daemon writes mac_daemon_last_tick_at after every tick; /status reads it")
 def test_coolbet_mac_daemon_heartbeat():
     """COOLBET-MAC-DAEMON-HEARTBEAT (mig 251, 2026-06-12): the Telegram
@@ -9261,11 +8695,9 @@ def test_coolbet_mac_daemon_heartbeat():
         "coolbet_state must export mark_mac_daemon_tick(result) — the "
         "single write site for the heartbeat columns."
     )
-    daemon_src = pathlib.Path("workers/automation/coolbet_mac_daemon.py").read_text()
-    assert "mark_mac_daemon_tick" in daemon_src, (
-        "coolbet_mac_daemon must call mark_mac_daemon_tick at the end of "
-        "every _tick() so the Telegram /status surfaces process liveness."
-    )
+    # #162 W4.6 (2026-09-25): the writer (coolbet_mac_daemon) is DELETED, so the column is frozen at
+    # its 2026-09-10 value. The schema + reader pins below stay until the web /status
+    # line is re-based (tracked with the pre-kickoff alert re-base, #162).
     # Webhook side: dispatcher must route /status to handleStatusCommand,
     # and the handler must read mac_daemon_last_tick_at + render the
     # 35-min staleness threshold.
@@ -9333,77 +8765,6 @@ def test_coolbet_cdp_fetch_raw():
         "_async_fetch_pending_bets must early-return when the Coolbet tab is "
         "NOT already on the history page — never auto-navigate operator's tab."
     )
-
-
-@test("COOLBET-PLACEMENT-PAUSED-KILL-SWITCH — place_all_bets(execute=True) checks placement_paused before POSTing")
-def test_coolbet_placement_paused_kill_switch():
-    """COOLBET-PLACEMENT-PAUSED-KILL-SWITCH (2026-06-12): the placement_paused
-    flag in coolbet_session_state is the operator kill switch. It MUST gate
-    any real-money placement.
-
-    Originally it was checked only in workers/jobs/betting_pipeline.
-    _run_coolbet_record (the signaler path). The Mac daemon called
-    place_all_bets(execute=True) directly without checking, so the flag
-    failed silently — only the JWT-expired exception happened to stop
-    placement during the 2026-06-12 SMS-spam emergency. If JWT had been
-    fresh, bets would have continued despite paused=true.
-
-    This pin locks the check inside place_all_bets so every execute-mode
-    caller is gated (Mac daemon today, future placers tomorrow).
-    --record (paper logging) is intentionally NOT gated so we keep the
-    audit trail of what would have been placed.
-
-    SMOKE-SUITE-AUDIT 2026-09-01: this was three source-greps — that
-    `is_placement_paused` appears in the function, sits after an `if execute:`,
-    and has a `return []` within 500 chars. All three can hold while the switch
-    does nothing: the result can be computed and ignored, the `return` can
-    belong to a different branch, or a refactor can move the call somewhere it
-    never runs. For the control that stops real-money placement, "the string is
-    present" is not the assertion worth making.
-
-    Now exercised for real. `place_all_bets` checks the flag before it builds a
-    CoolbetSession, so substituting a raising session proves whether execution
-    short-circuits or proceeds — without touching the DB, the network or the
-    account."""
-    import workers.automation.coolbet_placer as cp
-    import workers.automation.coolbet_state as cs
-
-    class _ReachedPlacement(Exception):
-        """Raised if control gets past the kill switch to session setup."""
-
-    def _boom(*_a, **_kw):
-        raise _ReachedPlacement()
-
-    orig_paused = cs.is_placement_paused
-    orig_session = cp.CoolbetSession
-    try:
-        cs.is_placement_paused = lambda: (True, "smoke-test kill switch")
-        cp.CoolbetSession = _boom
-
-        # 1. execute=True while paused MUST short-circuit. If the guard is
-        #    removed or its result ignored, _boom fires and this raises.
-        out = cp.place_all_bets(record=True, execute=True)
-        assert out == [], (
-            f"place_all_bets(execute=True) must return [] while placement_paused "
-            f"is set — got {out!r}. The operator kill switch is the last thing "
-            "between a bad state and real money."
-        )
-
-        # 2. record-only (paper) must NOT be gated — the audit trail of what
-        #    WOULD have been placed is deliberately kept while paused. Reaching
-        #    session setup is the proof it was not short-circuited.
-        reached = False
-        try:
-            cp.place_all_bets(record=True, execute=False)
-        except _ReachedPlacement:
-            reached = True
-        assert reached, (
-            "record-only placement must NOT be blocked by placement_paused — "
-            "gating it loses the audit trail of what would have been placed."
-        )
-    finally:
-        cs.is_placement_paused = orig_paused
-        cp.CoolbetSession = orig_session
 
 
 @test("COOLBET-PLACER-FLARESOLVERR-WIRE — login script syncs Imperva cookies to .env so the placer can use them")
@@ -9677,8 +9038,6 @@ def test_inplay_resolve_args():
     someone re-orders the call.
     """
     import inspect
-    import pathlib
-    from workers.automation import coolbet_placer
     from workers.automation.coolbet_explorer import resolve_placement_target
 
     # Function signature is the contract: positional order must be markets first
@@ -9686,17 +9045,8 @@ def test_inplay_resolve_args():
     params = list(sig.parameters)
     assert params[:4] == ["markets", "odds_map", "our_market", "our_selection"], \
         f"resolve_placement_target signature changed: {params}"
-
-    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
-    # Inplay caller: `resolve_placement_target(markets, odds_data, mkt, sel)` — NOT (mkt, sel, ...)
-    inplay_fn = placer_src[placer_src.index("def place_all_inplay_bets"):]
-    assert "resolve_placement_target(markets, odds_data, mkt, sel)" in inplay_fn, \
-        "place_all_inplay_bets must pass (markets, odds_data, mkt, sel) — args were swapped pre-fix"
-    # And the return must be unpacked as a tuple, not dict-indexed
-    assert "bo_id, outcome_id, odds_uuid, ev_odds = target" in inplay_fn, \
-        "resolve_placement_target returns a 4-tuple — must be unpacked, not indexed as dict"
-    assert "target[\"market_id\"]" not in inplay_fn, \
-        "inplay caller must NOT treat the return value as a dict"
+    # #162 W4.6 (2026-09-25): the in-play caller (place_all_inplay_bets) is deleted; the
+    # signature contract above is what the remaining caller relies on.
 
 
 @test("ADMIN-TG-CLARITY — per-bet alerts edited with outcome + admin double-notify skipped + summaries collapsed")
@@ -9718,8 +9068,9 @@ def test_admin_tg_clarity():
 
     # 2. Notify module exposes the helpers
     from workers.notify import telegram as _tg
-    for fn in ("record_bet_alert", "edit_bet_alert_outcome"):
-        assert hasattr(_tg, fn), f"telegram.{fn} missing"
+    # #162 W4.6 (2026-09-25): edit_bet_alert_outcome was deleted — its only caller was the in-play
+    # auto-record step, which went with place_all_inplay_bets.
+    assert hasattr(_tg, "record_bet_alert"), "telegram.record_bet_alert missing"
 
     # 3. send_telegram_to_users skips the admin chat id
     notify_src = pathlib.Path("workers/notify/telegram.py").read_text()
@@ -9736,14 +9087,7 @@ def test_admin_tg_clarity():
     assert "record_bet_alert" in inplay_src, \
         "inplay_bot must call record_bet_alert after sending the per-bet alert"
 
-    # 5. Inplay auto-record edits per-bet messages with outcome. The
-    # pre-match `_run_coolbet_record` path was RETIRED 2026-06-12 by
-    # COOLBET-SIGNALER-A (Imperva/cloud-IP blocks made cloud auto-record
-    # unreliable; the signaler-then-Mac-daemon split replaced it). The
-    # pre-match outcome-edit invariant therefore no longer applies; only
-    # the inplay path still does its own placement + outcome edit.
-    assert "edit_bet_alert_outcome" in inplay_src, \
-        "inplay_bot must call edit_bet_alert_outcome after place_all_inplay_bets"
+    # 5. (removed #162 W4.6 (2026-09-25)) the in-play auto-record + outcome edit is deleted.
 
     # 6. Pre-match batch summary collapsed (no more bet_block list)
     assert "bet_block" not in pipeline_src or \
@@ -9876,77 +9220,6 @@ def _():
     assert "is_placement_paused()" in pipe, (
         "_run_coolbet_record must call is_placement_paused() at start of run"
     )
-
-
-@test("MANUAL-PLACE — admin button + webhook + drain loop end-to-end wiring")
-def test_manual_place_wiring():
-    """MANUAL-PLACE (2026-05-29): admin taps Telegram inline-keyboard button
-    on a value-bet alert; Vercel webhook queues, VPS scheduler drains
-    every 10s, edits the message with the outcome. Source-inspection only
-    (live flow runs across two services + a Telegram callback)."""
-    import inspect
-    import pathlib
-
-    # 1. Migration exists and creates the queue table
-    mig = pathlib.Path("supabase/migrations/153_manual_placement_queue.sql").read_text()
-    assert "CREATE TABLE IF NOT EXISTS manual_placement_queue" in mig
-    for col in ("simulated_bet_id", "requested_by_chat_id", "telegram_message_id",
-                "telegram_chat_id", "status", "result", "processed_at"):
-        assert col in mig, f"migration must define {col}"
-    assert "CHECK (status IN ('pending', 'processing', 'done', 'failed'))" in mig
-
-    # 2. Placer exposes place_bet_by_id + bet_id_filter
-    from workers.automation import coolbet_placer
-    assert hasattr(coolbet_placer, "place_bet_by_id"), \
-        "placer must expose place_bet_by_id for MANUAL-PLACE"
-    for fn_name in ("load_qualified_bets", "load_qualified_combo_bets",
-                    "load_qualified_inplay_bets", "place_all_bets",
-                    "place_all_inplay_bets"):
-        sig = inspect.signature(getattr(coolbet_placer, fn_name))
-        assert "bet_id_filter" in sig.parameters, \
-            f"{fn_name} must accept bet_id_filter for MANUAL-PLACE"
-
-    # 3. Notify helpers — button markup builder + edit fn
-    from workers.notify import telegram as _tg
-    assert hasattr(_tg, "place_button_markup"), "telegram.place_button_markup missing"
-    assert hasattr(_tg, "edit_telegram_message"), "telegram.edit_telegram_message missing"
-    markup = _tg.place_button_markup("00000000-0000-0000-0000-000000000000")
-    assert markup["inline_keyboard"][0][0]["callback_data"] == \
-        "place:00000000-0000-0000-0000-000000000000"
-
-    # 4. Alert sites attach the button — pre-match + inplay
-    pipeline_src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
-    assert "place_button_markup" in pipeline_src, \
-        "daily_pipeline_v2 must attach inline_keyboard via place_button_markup"
-    assert "first_bet_id" in pipeline_src, \
-        "_tele_bets must capture first_bet_id for the button callback_data"
-    inplay_src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    assert "place_button_markup" in inplay_src, \
-        "inplay_bot must attach inline_keyboard for live value bets"
-
-    # 5. Scheduler registers the 10s drain
-    sched_src = pathlib.Path("workers/scheduler.py").read_text()
-    assert "_drain_manual_placement_queue" in sched_src, \
-        "scheduler must define _drain_manual_placement_queue"
-    assert "manual_placement_drain" in sched_src, \
-        "scheduler must register the drain job id"
-    assert "IntervalTrigger(seconds=10)" in sched_src, \
-        "drain must fire on a 10-second interval"
-    # Drain wrapper imports placer + notify pieces
-    drain_block = sched_src[sched_src.index("def _drain_manual_placement_queue"):
-                             sched_src.index("def _drain_manual_placement_queue")
-                             + 4000]
-    assert "place_bet_by_id" in drain_block
-    assert "edit_telegram_message" in drain_block
-    assert "manual_placement_queue" in drain_block
-
-    # 6. Webhook handles callback_query and admin-gates by TELEGRAM_CHAT_ID
-    webhook_src = _web_path("src/app/api/telegram/webhook/route.ts").read_text()
-    assert "callback_query" in webhook_src, "webhook must handle callback_query"
-    assert "TELEGRAM_CHAT_ID" in webhook_src, "webhook must admin-gate by TELEGRAM_CHAT_ID"
-    assert "answerCallbackQuery" in webhook_src, "webhook must ack the callback"
-    assert "manual_placement_queue" in webhook_src, "webhook must insert into the queue"
-    assert "place:" in webhook_src, "webhook must parse the place: callback_data prefix"
 
 
 @test("COOLBET-FUZZY-CASE-INSENSITIVE — _ascii lowercases so 'Pepo' fuzzy-matches 'PEPO'")
@@ -10100,114 +9373,6 @@ def test_coolbet_search_sport_filter():
         f"_parse_event must iterate the football-filtered list (got "
         f"{parse_call.group(1)!r}) — iterating raw_events bypasses the filter"
     )
-
-
-@test("COMBO-FALLBACK-FO-CATEGORY — combo leg falls back to fo-category like singles + passes match_date")
-def test_combo_fallback_fo_category():
-    """COMBO-FALLBACK-FO-CATEGORY (2026-05-29): the combo placer was killing
-    every combo that had even one leg in a league Coolbet's `/search/v2`
-    doesn't index (e.g. Finland Kakkonen — MyPa vs Pepo). Singles already
-    handle this by falling back to the full `fo-category` tree; combos now
-    mirror that flow. Also: search call now passes `match_date` so the
-    fuzzy date guard runs on combo legs too (was silently bypassed)."""
-    import pathlib
-    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
-
-    combo_fn = placer_src[placer_src.index("def _place_combo_bets"):
-                          placer_src.index("# ── Refresh utility")
-                          if "# ── Refresh utility" in placer_src
-                          else len(placer_src)]
-
-    # Combo loop must capture leg kickoff and pass it to search_coolbet_event
-    assert 'team_rows[0].get("kick")' in combo_fn or 'team_rows[0]["kick"]' in combo_fn, (
-        "Combo leg must pull `kick` from the team_rows query so it can be "
-        "passed as match_date to the search/fuzzy match"
-    )
-    assert "search_coolbet_event(session, home, away, leg_kick)" in combo_fn, (
-        "Combo leg must pass leg_kick as match_date to search_coolbet_event "
-        "— without it the COOLBET-FUZZY-DATE-GUARD is bypassed for combos"
-    )
-
-    # fo-category fallback must exist in the combo loop (was singles-only before)
-    assert "fetch_coolbet_events(session)" in combo_fn, (
-        "Combo loop must fall back to fetch_coolbet_events when search "
-        "returns None — without this, any leg in a league not indexed by "
-        "/search/v2 (e.g. lower-tier Finland) kills the whole combo"
-    )
-    assert "fuzzy_match_event(home, away, _category_events, leg_kick)" in combo_fn, (
-        "Combo fo-category fallback must use fuzzy_match_event with leg_kick "
-        "so the date guard runs against same-team-different-day candidates"
-    )
-
-    # Cache loaded lazily and shared across combos (one fo-category call per run, not per leg)
-    assert "_category_events: list[dict] | None = None" in combo_fn, (
-        "Combo loop must declare _category_events cache at function scope "
-        "so the fo-category tree is fetched at most once per run"
-    )
-
-
-@test("COOLBET-SAFETY-GUARDRAILS — PlacementGuard stake + rate + total + edge + bot-filter")
-def _():
-    """COOLBET-SAFETY-GUARDRAILS (2026-05-20) — PlacementGuard holds the
-    runtime limits + tracking state for live placement. Verifies stake
-    selection (fixed/Kelly/cap), rate limit, session-stake cap, edge guard,
-    bot-filter, and the daemon CLI wiring."""
-    from workers.automation.coolbet_placer import PlacementGuard
-
-    # Fixed stake — default fallback
-    g = PlacementGuard()
-    bet = {"model_stake": 7.0, "edge_percent": 5.0, "bot_name": "x"}
-    s = g.stake_for(bet)
-    assert s == 10.0, f"default = COOLBET_STAKE env (10.0), got {s}"
-
-    # Kelly stake used when flag on
-    g = PlacementGuard(use_kelly_stake=True)
-    s = g.stake_for(bet)
-    assert s == 7.0, f"Kelly stake from bet['model_stake'], got {s}"
-
-    # Per-bet cap clamps both sources
-    g = PlacementGuard(use_kelly_stake=True, max_stake_per_bet=5.0)
-    assert g.stake_for(bet) == 5.0, "cap must clamp Kelly stake"
-    g = PlacementGuard(fixed_stake=20.0, max_stake_per_bet=5.0)
-    assert g.stake_for(bet) == 5.0, "cap must clamp fixed stake too"
-
-    # Edge guard refuses absurd-edge bets — edge_percent is DECIMAL (0.50 = 50%)
-    g = PlacementGuard(max_edge_pct=20.0)
-    high_edge_bet = {"model_stake": 5.0, "edge_percent": 0.50, "bot_name": "x"}
-    ok, reason = g.can_place(high_edge_bet, 5.0)
-    assert not ok and "edge" in reason.lower(), f"max_edge_pct must fire: {reason}"
-    # And a normal-edge bet (0.05 = 5%) must pass when cap is 20%
-    ok, _ = g.can_place({"model_stake": 5.0, "edge_percent": 0.05, "bot_name": "x"}, 5.0)
-    assert ok, "normal-edge bet (5%) must pass when --max-edge-pct=20"
-
-    # Bot filter
-    g = PlacementGuard(bot_filter=["bot_a", "bot_b"])
-    ok, reason = g.can_place({"bot_name": "bot_z", "edge_percent": 5}, 5.0)
-    assert not ok and "bot-filter" in reason, f"bot_filter must reject: {reason}"
-    ok, _ = g.can_place({"bot_name": "bot_a", "edge_percent": 5}, 5.0)
-    assert ok, "bot_filter must allow whitelisted"
-
-    # Total session-stake cap (record_placement adds to running total)
-    g = PlacementGuard(max_total_stake=12.0)
-    g.record_placement(5.0)  # total now 5
-    g.record_placement(5.0)  # total now 10
-    ok, reason = g.can_place({"bot_name": "x", "edge_percent": 5}, 5.0)  # would be 15
-    assert not ok and "max-total-stake" in reason, f"total cap must fire: {reason}"
-    ok, _ = g.can_place({"bot_name": "x", "edge_percent": 5}, 2.0)  # would be 12
-    assert ok, "total cap allows when still under"
-
-    # Rate limit — 2 bets max in window
-    g = PlacementGuard(max_bets_per_hour=2)
-    g.record_placement(1.0)
-    g.record_placement(1.0)
-    ok, reason = g.can_place({"bot_name": "x", "edge_percent": 5}, 1.0)
-    assert not ok and "max-bets-per-hour" in reason, f"rate limit must fire: {reason}"
-
-    # Placer accepts guard kwarg
-    import inspect
-    from workers.automation.coolbet_placer import place_all_bets
-    sig = inspect.signature(place_all_bets)
-    assert "guard" in sig.parameters, "place_all_bets must accept guard kwarg"
 
 
 @test("COOLBET-MARKET-NORM — _normalise_our_target handles lowercase DB values")
@@ -14377,17 +13542,14 @@ def test_place_bet_ux():
         "(match_id, bookmaker, market, selection, odds, handicap_line" in pipe, \
         "_store_parsed_odds INSERT must include handicap_line column"
 
-    engine_data = root.parent / "odds-intel-web" / "src" / "lib" / "engine-data.ts"
+    engine_data = _web_root / "src" / "lib" / "engine-data.ts"
     if not engine_data.exists():
         print("  [skip] odds-intel-web not present in CI")
         return
-    src = engine_data.read_text()
-    assert "alreadyPlaced" in src, "PlaceableBet must have alreadyPlaced field"
-    # Variable renamed placedMatchIds → placedToday (2026-05-25 smoke drift fix)
-    assert "placedToday" in src or "placedMatchIds" in src, \
-        "getPlaceableBets must query real_bets placed today"
-    assert "ahSnapMap" in src, "getPlaceableBets must use ahSnapMap for AH 5-part key lookup"
-    assert "double_chance" in src, "_mapPaperToSnapshotKey must handle double_chance market"
+    # #162 W4.6 (2026-09-25): getPlaceableBets (alreadyPlaced / placedToday / ahSnapMap /
+    # _mapPaperToSnapshotKey) is DELETED — its page (/admin/place) went in #139.
+    assert "export async function getPlaceableBets" not in engine_data.read_text(), \
+        "getPlaceableBets stays deleted (no caller since /admin/place)"
 
     # #139 P8b (2026-09-24): /admin/place and place-bet-table.tsx are deleted. The
     # "already placed" indicator lives on the Pick queue as the LOGGED chip.
@@ -16107,36 +15269,17 @@ def _():
     assert "COOLBET_USER" in session_src, "must read COOLBET_USER from env"
     assert "COOLBET_IMPERVA_COOKIES" in session_src, "must read COOLBET_IMPERVA_COOKIES from env"
 
+    # #162 W4.6 (2026-09-25): coolbet_placer is now the SHARED helper module only — the API
+    # "Path B" placer (load/place/POST/CLI) is deleted; RETIRED-MONEY-PATHS-GONE pins
+    # its absence. What is left here is what every live Coolbet reader imports.
     placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
-    assert "_BET_URL" in placer_src, "_BET_URL constant missing"
-    assert "/s/bets/bets" in placer_src, "bet placement URL must be /s/bets/bets"
-    assert "def load_qualified_bets" in placer_src, "load_qualified_bets missing"
     assert "def search_coolbet_event" in placer_src, "search_coolbet_event missing"
     assert "_SEARCH_URL" in placer_src, "_SEARCH_URL constant missing"
     assert "/s/sbgate/sports/search/v2" in placer_src, "search URL must be /s/sbgate/sports/search/v2"
     assert "def fetch_coolbet_events" in placer_src, "fetch_coolbet_events missing"
     assert "def fuzzy_match_event" in placer_src, "fuzzy_match_event missing"
-    assert "def find_market_outcome" in placer_src, "find_market_outcome missing"
-    assert "def get_live_odds_and_id" in placer_src, "get_live_odds_and_id missing"
-    assert "def _place_bet_api" in placer_src, "_place_bet_api missing"
-    assert "def place_all_bets" in placer_src, "place_all_bets missing"
-    assert "oddsIdByOutcomeId" in placer_src, "bet payload must include oddsIdByOutcomeId"
-    assert "store_real_bet" in placer_src, "must write to real_bets on success"
-    assert "NOT EXISTS" in placer_src, "dedup guard (NOT EXISTS real_bets) missing"
-
-    cli_src = pathlib.Path("scripts/place_coolbet_bets.py").read_text()
-    assert "--execute" in cli_src, "CLI must have --execute flag"
-    assert "--record" in cli_src, "CLI must have --record flag"
-    assert "place_all_bets" in cli_src, "CLI must call place_all_bets"
-
-    # Three-mode design: record=, execute=, dry-run default
-    assert "record=args.record" in placer_src or "record=" in placer_src, \
-        "place_all_bets must accept record= param"
-    assert "if execute:" in placer_src, "execute mode must imply record mode"
-
-    # Coolbet odds snapshot on every run
-    assert "store_coolbet_odds_snapshot" in placer_src, \
-        "placer must capture Coolbet odds snapshot on every run"
+    assert "_BET_URL" not in placer_src and "def _place_bet_api" not in placer_src, \
+        "the bet-placement POST must not be back in the shared helper module"
     assert "store_coolbet_odds_snapshot" in pathlib.Path(
         "workers/api_clients/supabase_client.py"
     ).read_text(), "store_coolbet_odds_snapshot must exist in supabase_client"
@@ -16414,64 +15557,6 @@ def _():
         "fuzzy_match_event must use token_set_ratio"
 
 
-@test("COOLBET-PLACER-STORES-SNAPSHOT — placer stores CLV snapshot per bet (no daemon sweep needed)")
-def _():
-    """COOLBET-PLACER-STORES-SNAPSHOT (was COOLBET-NO-SWEEP, narrowed
-    2026-06-12 after coolbet_daemon retirement): the placer captures the
-    snapshot at placement time via store_coolbet_odds_snapshot(). Without
-    this, removing the background sweep loop would have lost CLV data —
-    which is exactly what we did when retiring the daemon."""
-    import pathlib
-    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
-    assert "store_coolbet_odds_snapshot" in placer_src, (
-        "placer must call store_coolbet_odds_snapshot so CLV data is "
-        "captured at the moment of placement (per-bet, not via sweep)."
-    )
-
-
-@test("COOLBET-SLIPPAGE — captured_odds uses bot-edge odds (odds_at_pick), not live placement odds")
-def _():
-    """COOLBET-SLIPPAGE (2026-05-21, asserts updated 2026-05-25) — automated
-    Coolbet bets showed SLIP=0 because captured_odds was set to ev_odds (same
-    as actual_odds), making slippage always zero. Fix: pass the bot-edge odds
-    as captured_odds so slippage = (edge_odds − live_odds) / edge_odds.
-
-    The SELECT in the placer aliases `sb.odds_at_pick AS model_odds`, so since
-    commit 0fc822b (2026-05-23) the placer reads `bet["model_odds"]` rather
-    than `bet["odds_at_pick"]` — both refer to the same simulated_bets column.
-    Either literal is acceptable as long as the value isn't bare `ev_odds`."""
-    import pathlib
-    src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
-
-    # captured_odds must source from the bot-edge column (with ev_odds fallback),
-    # not bare ev_odds. Accept either the SQL alias (model_odds) or the raw
-    # column name (odds_at_pick) — they're the same field, just renamed.
-    bot_edge_patterns = (
-        'bet.get("odds_at_pick")', "bet['odds_at_pick']",
-        'bet.get("model_odds")',   "bet['model_odds']",
-    )
-    assert any(p in src for p in bot_edge_patterns), (
-        "store_real_bet captured_odds must read the bot-edge column "
-        "(odds_at_pick / model_odds), not bare ev_odds, so slippage reflects "
-        "drift from bot edge discovery to placement."
-    )
-    # Fallback to ev_odds must be present so a missing field doesn't crash.
-    fallback_patterns = (
-        'odds_at_pick") or ev_odds', "odds_at_pick'] or ev_odds",
-        'model_odds") or ev_odds',   "model_odds'] or ev_odds",
-    )
-    assert any(p in src for p in fallback_patterns), (
-        "captured_odds must fall back to ev_odds if the bot-edge field is "
-        "absent, e.g. `float(bet.get('model_odds') or ev_odds)`"
-    )
-    # actual_odds must remain live_odds (unchanged).
-    store_call_pos = src.index("store_real_bet(")
-    store_call = src[store_call_pos: store_call_pos + 400]
-    assert "actual_odds=live_odds" in store_call, (
-        "actual_odds must stay as live_odds (the real Coolbet placement odds)"
-    )
-
-
 @test("SIM-BETS-COHORT-CHECK — simulated_bets timing_cohort constraint allows 'all'")
 def _():
     """Migration 116 guard: BOT-COHORTS-ALL sets timing_cohort='all' on every bot.
@@ -16553,52 +15638,6 @@ def _():
     assert _normalise_our_target("ou15", "Over") == ("over_under_15", "over", None)
     # Singles path still works
     assert _normalise_our_target("o/u", "Over 2.5") == ("over_under_25", "over", None)
-
-
-@test("COMBO-PRINT-SAFE — place_coolbet_bets.py result printer handles combo result dicts")
-def _():
-    """COMBO-PRINT-SAFE (2026-05-23): combo result dicts don't carry
-    home_team / market / selection — they have combo_legs / system_type.
-    The summary printer must format both shapes without KeyError."""
-    import pathlib
-    src = (pathlib.Path(__file__).resolve().parent.parent /
-           "scripts" / "place_coolbet_bets.py").read_text()
-    assert "def _label" in src, (
-        "place_coolbet_bets.py must define a _label helper that handles "
-        "combo dicts (no home_team key)"
-    )
-    assert "combo_legs" in src and "live_combined_odds" in src, (
-        "_label must branch on combo_legs presence and use live_combined_odds"
-    )
-
-
-@test("COMBO-PLACER — placer iterates qualifying combo simulated_bets and writes multi-leg real_bets")
-def _():
-    """COMBO-PLACER (2026-05-23): the auto-placer needs to handle combo
-    simulated_bets (combo_legs JSONB) the same way as singles — resolve every
-    leg's Coolbet outcome and write a multi-leg real_bet via store_real_bet().
-    --execute is deferred until the Coolbet combo POST schema is captured."""
-    import pathlib
-    src = (pathlib.Path(__file__).resolve().parent.parent /
-           "workers" / "automation" / "coolbet_placer.py").read_text()
-    assert "def load_qualified_combo_bets" in src, (
-        "load_qualified_combo_bets() must exist"
-    )
-    assert "sb.combo_legs IS NOT NULL" in src, (
-        "combo query must filter combo_legs IS NOT NULL"
-    )
-    assert "jsonb_array_elements(sb.combo_legs)" in src, (
-        "combo query must verify every leg's match hasn't kicked off"
-    )
-    assert "def _place_combo_bets" in src, (
-        "_place_combo_bets() must exist"
-    )
-    assert "combo_legs=resolved_legs" in src, (
-        "combo path must pass resolved_legs into store_real_bet"
-    )
-    assert "COMBO-EXECUTE-COOLBET-API" in src, (
-        "combo --execute must be flagged as follow-up (no Coolbet schema yet)"
-    )
 
 
 @test("COOLBET-MARKET-NAMES — parse_market recognizes Coolbet's per-league naming variants")
@@ -16734,8 +15773,11 @@ def _():
     assert "edgePctTaken" in ed and "clv:" in ed, (
         "RealBet type must expose edgePctTaken + clv fields"
     )
-    assert "edge_pct_taken" in ed and ", clv," in ed, (
-        "getRealBets() select must include edge_pct_taken and clv columns"
+    # #162 W4.6 (2026-09-25): getRealBets() is deleted (no callers); the money ledger's reader is
+    # lib/admin-money.ts (BET_SELECT), so the column pin moved there.
+    am = (web / "src" / "lib" / "admin-money.ts").read_text()
+    assert "edge_pct_taken" in am and ", clv," in am, (
+        "admin-money.ts BET_SELECT must include edge_pct_taken and clv columns"
     )
     # #139 P5 (2026-09-24): the log is the DataTable in the real-bets page's client half.
     log = (web / "src" / "app" / "(app)" / "admin" / "real-bets" / "money-client.tsx").read_text()
@@ -16848,103 +15890,6 @@ def _():
     assert "handicap_line" in db.split("def store_live_odds_batch(")[1].split("def ")[0], (
         "store_live_odds_batch must include handicap_line in INSERT"
     )
-
-
-@test("ADMIN-PLACE-SKIP-REASON — per-row auto-placer status badge on /admin/place")
-def _():
-    """ADMIN-PLACE-SKIP-REASON (2026-05-24): /admin/place must show why each
-    bet would or wouldn't be auto-placed (below_min / edge_eroded / no_event /
-    no_market / ready). Backend computes the status; frontend renders the
-    badge. The `no_coolbet` umbrella status was split into `no_event` (no
-    Coolbet/Unibet snapshot for this match at all — fuzzy match likely failed)
-    vs `no_market` (match has snapshots but not for this market/selection) so
-    the user can manually spot-check fuzzy-matching gaps separately from
-    bookmaker market-coverage gaps."""
-    import pathlib
-    root = pathlib.Path(__file__).resolve().parent.parent
-    web = root.parent / "odds-intel-web"
-    if not web.exists():
-        print("  [skip frontend checks] odds-intel-web not present in CI")
-        return
-    ed = (web / "src" / "lib" / "engine-data.ts").read_text()
-    assert "autoPlaceStatus" in ed, "PlaceableBet must expose autoPlaceStatus"
-    assert "COOLBET_AUTO_MIN_EDGE" in ed, (
-        "engine-data must export COOLBET_AUTO_MIN_EDGE so UI mirrors placer threshold"
-    )
-    for status in ("below_min", "edge_eroded", "no_event", "no_market", "ready"):
-        assert f'"{status}"' in ed, f"autoPlaceStatus must include {status!r}"
-    # The old umbrella status should be gone — split into no_event / no_market.
-    assert '"no_coolbet"' not in ed, (
-        "autoPlaceStatus 'no_coolbet' should be split into 'no_event' / 'no_market'"
-    )
-    # Backend must track which match_ids have ANY Coolbet/Unibet evidence so
-    # it can pick between no_event and no_market when livePrice is null. Two
-    # evidence sources must both feed the set, because the original snaps-only
-    # detection mis-classified matches whose Coolbet snapshots fell off the
-    # 10k row cap (user saw a 1x2 home bet "✓ Placed" at Coolbet while a
-    # sibling double_chance row on the same match showed "⚠ no match"):
-    #   (a) dedicated lightweight odds_snapshots query (`coolbetEventRows`)
-    #       — separate from the 10k-capped main snaps query so older Coolbet
-    #       snapshots can't be pushed off the bottom.
-    #   (b) real_bets at Coolbet today — ground truth, since a placed bet
-    #       proves Coolbet has the event regardless of snapshot state.
-    assert "matchIdsWithCoolbetEvent" in ed, (
-        "engine-data must track match_ids with Coolbet/Unibet evidence to "
-        "distinguish no_event from no_market"
-    )
-    assert "coolbetEventRows" in ed, (
-        "engine-data must run a dedicated lightweight query for event-existence "
-        "(separate from the 10k-capped snaps query) to avoid false `no_event` chips"
-    )
-    assert 'r.bookmaker === "Coolbet"' in ed, (
-        "engine-data must treat real_bets placed at Coolbet as ground truth that "
-        "the event exists at Coolbet"
-    )
-    # ADMIN-PLACE-STRICT-COOLBET (2026-05-26): the auto-place gate must use
-    # `coolbetOdds` strictly — the Unibet proxy cannot stand in for "Coolbet
-    # supports this market". Coolbet (Estonia) and Unibet (global) share the
-    # Kambi backend but have different regional market catalogs (Coolbet often
-    # lacks DC, AH quarter lines, exotics). Previous code used
-    # `livePrice = coolbetOdds ?? unibetOdds` and gated on `livePrice == null`,
-    # which produced false-positive "⏵ auto-place" badges on bot_dc_value
-    # rows for matches where Coolbet only offers 1X2.
-    assert "coolbetGateEdge" in ed, (
-        "engine-data must compute a strict-Coolbet edge for the auto-place gate "
-        "(no Unibet proxy fallback)"
-    )
-    assert "coolbetOdds == null" in ed, (
-        "no_market / no_event branch must check coolbetOdds directly, not the "
-        "Unibet-proxy livePrice"
-    )
-    # DNB-PARSE follow-on: real Draw No Bet odds now land in odds_snapshots
-    # (market="draw_no_bet", selection="home"/"away"). The paper→snapshot key
-    # mapping must surface them so DNB rows on /admin/place show Coolbet/
-    # Bet365/Pinnacle prices instead of always "—".
-    # MARKET-VOCAB-CANONICAL (c865ee1): _mapPaperToSnapshotKey now gates on the
-    # canonical family set instead of a literal `m === "draw_no_bet"`.
-    assert '"draw_no_bet"' in ed and '.includes(c.family)' in ed, (
-        "_mapPaperToSnapshotKey must include draw_no_bet in its canonical "
-        "family set so DNB rows look up real Coolbet/Bet365/Pinnacle prices"
-    )
-    # ADMIN-PLACE-COOLBET-ONLY-EVIDENCE (2026-05-26): `matchIdsWithCoolbetEvent`
-    # must be Coolbet-only. Unibet snapshots come from AF's bulk-odds endpoint
-    # (no fuzzy match — fixture identity is known) and Unibet covers leagues
-    # Estonian Coolbet does not (Argentina Primera B reserves, women's lower
-    # divisions). Treating Unibet evidence as "Coolbet has this event"
-    # flipped legitimate no_event rows to false-positive no_market chips.
-    assert '.eq("bookmaker", "Coolbet")' in ed, (
-        "coolbetEventRows query must filter to bookmaker=Coolbet only "
-        "(Unibet doesn't prove Coolbet has the event)"
-    )
-    assert '.in("bookmaker", ["Coolbet", "Unibet"])' not in ed, (
-        "Unibet must not contribute to Coolbet event-presence detection — "
-        "see ADMIN-PLACE-COOLBET-ONLY-EVIDENCE"
-    )
-    # #139 P8b (2026-09-24): the badge's only renderer, place-bet-table.tsx on /admin/place,
-    # is deleted. The engine-data status above has no UI consumer left (dead code in
-    # getPlaceableBets — see PRIORITY_QUEUE follow-up); the table itself stays deleted.
-    assert not (web / "src" / "components" / "place-bet-table.tsx").exists(), \
-        "place-bet-table.tsx stays deleted (ADMIN-PLACE-DELETED)"
 
 
 @test("COOLBET-FUZZY-DATE-GUARD — fuzzy_match_event rejects same-team candidates on wrong date")
@@ -17142,52 +16087,6 @@ def _():
     )
 
 
-@test("REAL-BETS-EDGE-FORMULA-FIX — additive edge formula + placer edge-aware gate")
-def _():
-    """REAL-BETS-EDGE-FORMULA-FIX (2026-05-24):
-    1. store_real_bet must compute edge_pct_taken additively from calibrated_prob.
-    2. coolbet_placer must gate placement on edge at the current price,
-       not slippage, and must skip the real_bets row when edge < threshold."""
-    import pathlib
-    root = pathlib.Path(__file__).resolve().parent.parent
-
-    placer = (root / "workers" / "automation" / "coolbet_placer.py").read_text()
-    assert "_MIN_REMAINING_EDGE" in placer, (
-        "placer must define _MIN_REMAINING_EDGE env-driven gate"
-    )
-    assert "COOLBET_MIN_REMAINING_EDGE" in placer, (
-        "placer must read COOLBET_MIN_REMAINING_EDGE from env"
-    )
-    # Default must match _MIN_EDGE (3%) so live odds drift doesn't bypass the edge floor
-    assert 'str(_MIN_EDGE)' in placer, (
-        "_MIN_REMAINING_EDGE default must be str(_MIN_EDGE), not hardcoded 0.0"
-    )
-    assert "edge_eroded" in placer, (
-        "placer must emit outcome='edge_eroded' when bet skipped due to edge"
-    )
-    # SQL must pull calibrated_prob so the gate can compute edge at live odds.
-    assert "sb.calibrated_prob" in placer and "sb.model_probability" in placer, (
-        "load_qualified_bets must SELECT calibrated_prob + model_probability"
-    )
-    # Old slippage gate in the main path must no longer block placement.
-    assert 'odds_ok = drop <= _ODDS_TOLERANCE' not in placer, (
-        "main placement path must not gate on slippage tolerance"
-    )
-    # Fail-closed when live_edge is uncomputable — bets with no cal_prob/model_prob
-    # must skip, not slip through.
-    # UPDATED 2026-09-11 (EDGE-FLOOR-ONE-PREDICATE): the comparison moved into
-    # the shared `clears_edge_floor` predicate, so the literal `live_edge <`
-    # is gone. The INVARIANT is unchanged and is what this pins — an
-    # uncomputable live_edge must SKIP, never slip through.
-    assert "live_edge is None or not clears_edge_floor(" in placer, (
-        "placer must fail closed when live_edge is uncomputable (cal_prob == 0), "
-        "and must gate through the shared predicate rather than its own `<`"
-    )
-    assert "live_edge uncomputable" in placer, (
-        "placer must log the uncomputable-edge skip path"
-    )
-
-
 @test("DISCOVER-STRATEGIES — script exists and has required analysis functions")
 def _():
     import pathlib
@@ -17307,10 +16206,12 @@ def test_admin_real_bets_insights():
         print("  [skip] odds-intel-web not present in CI")
         return
 
-    # engine-data: RealBet now carries paper outcome via simulated_bet_id join
+    # engine-data: RealBet now carries paper outcome via simulated_bet_id join.
+    # #162 W4.6 (2026-09-25): getRealBets is deleted; the select lives in lib/admin-money.ts.
     ed = engine_data.read_text()
-    assert "paper:simulated_bet_id" in ed, (
-        "getRealBets must nested-select the paired simulated_bets row via simulated_bet_id"
+    am = (web / "lib" / "admin-money.ts").read_text()
+    assert "paper:simulated_bet_id" in am, (
+        "admin-money.ts must nested-select the paired simulated_bets row via simulated_bet_id"
     )
     assert "paper: {" in ed and "} | null" in ed, "RealBet interface must declare paper field"
 
@@ -17424,23 +16325,6 @@ def test_real_bet_api_dedup():
     assert "already_placed" in src, "dedup guard must return 'already_placed' error"
     assert "existingId" in src, "dedup response must surface existingId for UI to link to"
     assert "status: 409" in src, "must return 409 Conflict"
-
-
-@test("DUPE-FIX-2 — coolbet_placer skips store_real_bet when ticket_id is None")
-def test_placer_no_phantom_record():
-    """coolbet_placer used to write a phantom real_bets row even when no
-    Coolbet ticket was placed (no odds_uuid / odds drift / placement error).
-    That blocked manual placement of the same selection and polluted the
-    dataset. Now: skip the write and let the manual placer pick it up."""
-    import inspect
-    from workers.automation import coolbet_placer
-    src = inspect.getsource(coolbet_placer.place_all_bets)
-    assert "Skip real_bets write for" in src, (
-        "placer must explicitly skip store_real_bet when ticket_id is None"
-    )
-    assert '"reason": "no_ticket"' in src, (
-        "skipped placement must surface reason='no_ticket' in results dict"
-    )
 
 
 @test("DUPE-CLEAN — migration 123 voids the Joondalup phantom real_bet")
@@ -17760,12 +16644,8 @@ def _():
         "coolbet_explorer.py must not use _store_with_handicap workaround"
     assert "handicap_line=line" in explorer_src, \
         "coolbet_explorer.py must pass handicap_line=line to store_coolbet_odds_snapshot"
-    # Placer must extract line from _normalise_our_target and pass it through
-    placer_src = pathlib.Path("workers/automation/coolbet_placer.py").read_text()
-    assert "snap_line" in placer_src, \
-        "coolbet_placer.py must extract snap_line from _normalise_our_target"
-    assert "handicap_line=snap_line" in placer_src, \
-        "coolbet_placer.py must pass handicap_line=snap_line to store_coolbet_odds_snapshot"
+    # #162 W4.6 (2026-09-25): the placer half (per-bet snapshot with snap_line) is
+    # deleted with place_all_bets; the explorer is the Coolbet snapshot writer.
 
 
 @test("COOLBET-HALF-MATCH-FILTER-2026-08-22 — parse_market rejects sub-period markets on name-fallback")
@@ -18306,11 +17186,8 @@ def test_coolbet_anon_read():
     assert "if require_auth and not self._manual_jwt" in session_src, (
         "RuntimeError on missing creds must be gated by require_auth"
     )
-
-    # placer wires require_auth=execute (False for --record, True for --execute)
-    assert "CoolbetSession(require_auth=execute)" in placer_src, (
-        "place_all_bets must pass require_auth=execute to CoolbetSession"
-    )
+    # #162 W4.6 (2026-09-25): the placer half (place_all_bets → CoolbetSession(require_auth=
+    # execute)) is deleted; every remaining CoolbetSession caller is a reader.
 
 
 @test("INPLAY-COOLBET-URL — coolbet_match_url reads Imperva cookies from env, falls back gracefully")
@@ -18728,49 +17605,6 @@ def test_tele_dedup_multi_bot():
     # Per-bet immediate send_telegram calls must be gone
     assert 'f"🎯 <b>PRE-MATCH</b> {bot_name}' not in src, \
         "old per-bot immediate send_telegram must be removed"
-
-
-@test("INPLAY-COOLBET-PLACER — load_qualified_inplay_bets + place_all_inplay_bets wired into inplay_bot")
-def test_inplay_coolbet_placer():
-    import inspect
-    from workers.automation.coolbet_placer import (
-        load_qualified_inplay_bets, place_all_inplay_bets, PlacementGuard,
-    )
-    # load query must filter for kicked-off matches and time window
-    load_src = inspect.getsource(load_qualified_inplay_bets)
-    assert "m.date           <= NOW()" in load_src, "must filter for kicked-off matches"
-    assert "sb.pick_time     >= NOW()" in load_src, "must have time window filter"
-    assert "rb.simulated_bet_id = sb.id" in load_src, "must dedup via simulated_bet_id"
-    assert "_MIN_EDGE" in load_src, "must apply edge filter"
-
-    # place function must check edge at live price
-    place_src = inspect.getsource(place_all_inplay_bets)
-    assert "edge_eroded" in place_src, "must handle edge_eroded outcome"
-    # PER-MARKET-EDGE-V2 (2026-06-06): placer migrated from one global
-    # _MIN_REMAINING_EDGE to per-market floors via _min_edge_for(mkt). Same
-    # semantic gate (skip when live_edge < floor) — floor is market-specific.
-    # UPDATED 2026-09-11 (EDGE-FLOOR-ONE-PREDICATE). This pinned the
-    # SELECTION-BLIND `_min_edge_for(mkt)` — the pre-FAVLONG-CUTS floor, which
-    # applied the pooled 13% to the 1x2 home-underdogs the backtest cleared at
-    # 10%. The in-play path was the last caller still on it. Pinning the blind
-    # version would have kept this path divergent forever, so the assertion now
-    # requires the SELECTION-AWARE predicate.
-    assert "min_edge_for_pick(" in place_src, (
-        "in-play must apply the SELECTION-AWARE floor, not the blind "
-        "_min_edge_for(mkt)"
-    )
-    assert "clears_edge_floor(" in place_src, (
-        "in-play must compare live_edge through the shared predicate"
-    )
-    assert "search_blocked" in place_src, "must handle search_blocked"
-    assert 'notes=f"inplay-auto' in place_src, "must tag real_bets as inplay-auto"
-    assert "simulated_bet_id=sim_id" in place_src, "must link real_bet to simulated_bet"
-
-    # inplay_bot must call place_all_inplay_bets after bets_placed > 0
-    import pathlib
-    bot_src = (pathlib.Path(__file__).parent.parent / "workers/jobs/inplay_bot.py").read_text()
-    assert "place_all_inplay_bets" in bot_src, "inplay_bot must call place_all_inplay_bets"
-    assert "bets_placed > 0" in bot_src, "call must be gated on bets_placed > 0"
 
 
 @test("RETIRE-DC-SPECIALIST — migration 155 retires bot_dc_specialist; daily_pipeline_v2 description marked retired")
@@ -19233,56 +18067,6 @@ def _():
         "Listener handler must be named _on_max_instances_blocked"
 
 
-@test("CHERRY-PICK-PLACER-P1 — env-gated maturity filter on all three placer loaders, default unset = no filter")
-def _():
-    """Cherry-pick Phase 1: code lands with COOLBET_RECORD_ALLOWED_MATURITY
-    unset by default so behaviour is unchanged. Three loaders gated:
-      • load_qualified_bets (singles)
-      • load_qualified_combo_bets (combos)
-      • load_qualified_inplay_bets (inplay)
-    All three skip the gate when bet_id_filter is set (admin override).
-    Flip happens on 2026-06-08 by setting the env to 'calibrated' in /opt/odds-intel-engine/.env."""
-    import pathlib, os, inspect
-    from workers.automation import coolbet_placer
-
-    # Helper exists and treats unset/empty/'*' as None (no filter)
-    assert hasattr(coolbet_placer, "_allowed_maturity_labels"), \
-        "Helper _allowed_maturity_labels must exist"
-    for raw in ("", "  ", "*"):
-        os.environ["COOLBET_RECORD_ALLOWED_MATURITY"] = raw
-        assert coolbet_placer._allowed_maturity_labels() is None, \
-            f"_allowed_maturity_labels must return None for {raw!r}"
-    os.environ["COOLBET_RECORD_ALLOWED_MATURITY"] = "calibrated"
-    assert coolbet_placer._allowed_maturity_labels() == ["calibrated"], \
-        "Single-value parsing must return ['calibrated']"
-    os.environ["COOLBET_RECORD_ALLOWED_MATURITY"] = "active,calibrated"
-    assert coolbet_placer._allowed_maturity_labels() == ["active", "calibrated"], \
-        "Comma list parsing must return ['active','calibrated']"
-    # Reset to no-filter so other tests don't see the env
-    del os.environ["COOLBET_RECORD_ALLOWED_MATURITY"]
-
-    # All three loaders thread the filter in the SQL
-    for fn_name in ("load_qualified_bets", "load_qualified_combo_bets",
-                    "load_qualified_inplay_bets"):
-        fn = getattr(coolbet_placer, fn_name)
-        src = inspect.getsource(fn)
-        assert "_allowed_maturity_labels()" in src, \
-            f"{fn_name} must call _allowed_maturity_labels()"
-        assert "b.maturity_label = ANY(" in src, \
-            f"{fn_name} must filter on b.maturity_label = ANY(...)"
-        assert "CHERRY-PICK-PLACER" in src, \
-            f"{fn_name} must reference the task tag in a comment"
-
-    # bet_id_filter path bypasses the gate — admin override (verified by inspecting
-    # that the bet_id_filter branch does NOT include the maturity clause)
-    bets_src = inspect.getsource(coolbet_placer.load_qualified_bets)
-    bet_id_branch_idx = bets_src.index("if bet_id_filter is not None:")
-    main_branch_idx = bets_src.index("# ── Diagnostic")
-    bet_id_branch = bets_src[bet_id_branch_idx:main_branch_idx]
-    assert "_allowed_maturity_labels" not in bet_id_branch, \
-        "bet_id_filter branch must NOT call _allowed_maturity_labels (admin override)"
-
-
 @test("META-VALIDATE-WEEKLY — Sunday 05:00 UTC cron runs validate_meta_b_ml3 + emails verdict")
 def _():
     """Sunday 04:00 UTC: weekly_meta_retrain. New sibling at 05:00 UTC:
@@ -19728,67 +18512,6 @@ def _():
     wrapper_block = wrapper_block[:wrapper_block.index("\ndef ")]
     assert "log_pipeline_complete(run_id, metadata=counters)" in wrapper_block, (
         "alerter wrapper must stamp counters into pipeline_runs.metadata"
-    )
-
-
-@test("COOLBET-HEALTHCHECK-JWT-AWARE — jwt_stale branch alerts when JWT expired + pending picks in KO window")
-def _():
-    """COOLBET-HEALTHCHECK-JWT-AWARE (2026-06-22): closes a gap surfaced
-    this morning. Yesterday's daemon healthcheck (COOLBET-DAEMON-
-    HEALTHCHECK) only branches on `silent` (tick stale) or `erroring`
-    (errors > 0). Today's morning state had clean ticks (errors=0, no
-    work) but JWT expired 12h+ ago — the daemon is silent-when-empty
-    so JWT expiry never surfaces until the first placement attempt.
-
-    Fix: third branch `jwt_stale` that fires when (a) JWT expired beyond
-    a grace window AND (b) there are pending calibrated picks within KO
-    window. The pending-picks gate prevents idle-overnight false alarms.
-
-    Pin: branch exists in _evaluate_health, helper queries the picks
-    pipeline correctly, run_daemon_healthcheck routes jwt_stale to the
-    alert sender."""
-    job = _engine_path("workers/jobs/coolbet_daemon_healthcheck.py").read_text()
-
-    # The new branch.
-    assert '"jwt_stale"' in job, (
-        "_evaluate_health must produce 'jwt_stale' when JWT is expired "
-        "AND pending calibrated picks have kickoff within the window."
-    )
-
-    # The picks helper that gates the alert. Without the helper, an
-    # idle Sunday→Monday morning would alert every dedup cycle.
-    assert "def _pending_calibrated_picks_in_ko_window(" in job, (
-        "job must define _pending_calibrated_picks_in_ko_window — the "
-        "guard against false-positive idle-overnight alerts."
-    )
-    helper_block = job[job.index("def _pending_calibrated_picks_in_ko_window("):]
-    helper_block = helper_block[:helper_block.index("\ndef ")]
-    # Helper must select calibrated bots only — non-calibrated bot
-    # picks are sim-only and don't flow through the real placer.
-    assert "maturity_label = 'calibrated'" in helper_block, (
-        "pending-picks query must filter maturity_label='calibrated' — "
-        "non-calibrated bot picks never reach the real placer, so JWT "
-        "staleness can't actually break them."
-    )
-
-    # Routing — without this, the new status produces no Telegram.
-    run_block = job[job.index("def run_daemon_healthcheck("):]
-    assert "jwt_stale" in run_block, (
-        "run_daemon_healthcheck must route 'jwt_stale' through the "
-        "alert path. Producing the status without sending the alert "
-        "is silent-fail by omission."
-    )
-
-    # Hint dict in the alert formatter must address the jwt_stale case
-    # specifically. Without a dedicated hint, the operator gets a
-    # generic message that doesn't surface the pre-emptive recovery
-    # opportunity.
-    fmt_block = job[job.index("def _format_alert("):
-                     job.index("def _format_recovery(")]
-    assert 'status == "jwt_stale"' in fmt_block or "jwt_stale" in fmt_block, (
-        "_format_alert must include a jwt_stale-specific hint — the "
-        "recovery action is pre-emptive (heal before picks arrive), "
-        "not reactive (heal after a placement fails)."
     )
 
 
@@ -22493,57 +21216,6 @@ def _():
     )
 
 
-@test("REAL-MONEY-TIER — gating rules + calibrationKey mapping pinned")
-def test_real_money_tier_contract():
-    """REAL-MONEY-TIER (2026-06-06): operator-only "should I bet real money?"
-    badge on /admin/place reads from `src/lib/real-money-tier.ts` in
-    odds-intel-web. Logic is gating (weakest-link), so a silent rule change
-    can flip half the bets from green to gray. Pins:
-
-    - market→calibration-key mapping for each market (must match what
-      model_calibration table actually stores)
-    - tier-kind names (3 overall × 6 model × 4 bot) — a rename desyncs
-      the React badge component
-    - gating thresholds (ECE 5/15%, sample 100/500, days 7/14, CLV 3%)
-    """
-    import pathlib
-    tier_path = pathlib.Path("/Users/margussellin/www/odds-intel-web/src/lib/real-money-tier.ts")
-    if not tier_path.exists():
-        return  # frontend repo not checked out in CI — skip gracefully
-    src = tier_path.read_text()
-
-    # Tier kind name pins
-    for kind in ("mature", "established", "new", "partial", "under-study", "experimental"):
-        assert f'"{kind}"' in src, f"ModelTierKind '{kind}' missing"
-    for kind in ("proven", "building", "thin", "losing"):
-        assert f'"{kind}"' in src, f"BotTierKind '{kind}' missing"
-    for kind in ("bet", "cautious", "paper"):
-        assert f'"{kind}"' in src, f"OverallTier '{kind}' missing"
-
-    # Calibration-key mappings — must match model_calibration table keys
-    assert "1x2_${s}" in src, "1X2 key must be `1x2_${selection}`"
-    assert "btts_${s}" in src, "BTTS key must be `btts_${selection}`"
-    assert "double_chance_${s.replace" in src, "DC key must strip whitespace"
-    assert "asian_handicap_${s}" in src, "AH key must include selection (line) directly"
-    # MARKET-VOCAB-CANONICAL (c865ee1): OU key is now built from the normalized market
-    # (c.line/c.selection); the output format is still over_under_<line>_<side>.
-    assert 'over_under_${String(c.line).replace(".", "_")}_${c.selection}' in src, \
-        "OU key must follow over_under_LINE_SIDE (via normalizeMarket)"
-
-    # Gating threshold pins
-    assert "0.05" in src and "0.15" in src, "ECE gates (5% and 15%) must be present"
-    assert ">= 500" in src and ">= 100" in src and ">= 30" in src, (
-        "Sample-size gates (500/100/30) must be present"
-    )
-    assert ">= 14" in src and ">= 7" in src, "Day-age gates (14/7) must be present"
-    assert "0.03" in src, "Proven-bot CLV gate (3%) must be present"
-
-    # Gating direction — must collapse on weakest link, not average
-    assert 'experimental' in src and 'return "paper"' in src, (
-        "combineToOverall must explicitly check experimental model and return paper"
-    )
-
-
 @test("VALUE-BETS-DENSITY-PASS — page-header + live-strip + row chip rename")
 def test_value_bets_density_pass():
     """VALUE-BETS-DENSITY-PASS (2026-06-06): three-tier density reduction on
@@ -23617,45 +22289,6 @@ def test_coolbet_odds_freshness_watchdog():
     )
 
 
-@test("PAPER-ONLY-DAEMON — coolbet_mac_daemon runs place_all_bets(execute=False), no real money")
-def test_paper_only_daemon():
-    """PAPER-ONLY-DAEMON (2026-07-06): the Mac daemon is intentionally
-    paper-only until the models prove out. execute=True would POST to
-    /s/bets/bets (Coolbet's real placement endpoint) and risk real money
-    on every qualifying candidate. The operator's directive was: keep
-    paper-only for now, flip to real-money on a proven bot slice later.
-
-    Audit at time of this test: 761 real_bets rows over 2026-05-11 →
-    2026-06-26 at −€338 paper PnL. Real money is a future goal, not the
-    current mode. Do NOT weaken this gate without an explicit user
-    authorization to enable real placement (see memory
-    `feedback_real_money_future`).
-    """
-    import pathlib
-    src = (pathlib.Path(__file__).parent.parent
-           / "workers/automation/coolbet_mac_daemon.py").read_text()
-
-    # Must call place_all_bets with execute=False in the live tick path.
-    assert "place_all_bets(record=True, execute=False)" in src, (
-        "coolbet_mac_daemon must call place_all_bets(record=True, "
-        "execute=False) — daemon is paper-only until models prove out. "
-        "See memory feedback_real_money_future for the flip criteria."
-    )
-    # And no `place_all_bets(...execute=True...)` call must exist — guards
-    # against a partial edit that leaves a stray armed call. We look for
-    # the call pattern specifically (not the naked string "execute=True"
-    # which appears in narrative comments about the future flip plan).
-    import re
-    armed_calls = re.findall(r"place_all_bets\([^)]*execute\s*=\s*True", src)
-    assert not armed_calls, (
-        f"coolbet_mac_daemon has {len(armed_calls)} armed place_all_bets("
-        "execute=True) call(s) — paper-only invariant. If you're wiring "
-        "the real-money slice, put it behind an explicit runtime gate "
-        "(bot allowlist / ROI floor / operator flag) and update this "
-        "smoke deliberately."
-    )
-
-
 @test("COMPETITOR-AUDIT-FRESH — ledger/comparison_*.json snapshots within 14 days")
 def test_competitor_audits_fresh():
     """COMPETITOR-AUDIT-FRESH (2026-07-06): the odds-intel-web landing
@@ -23919,28 +22552,8 @@ def test_coolbet_cdp_cookie_export():
             "_IMPERVA_COOKIE_NAMES — Imperva fingerprints on this set."
         )
 
-    # 2. Daemon calls harvester BEFORE the SILENT-WHEN-EMPTY early return.
-    # Anchor on the exact header line (with 2026-06-12 date) — plain
-    # "SILENT-WHEN-EMPTY" also appears in explanatory comments elsewhere.
-    daemon_src = (root / "workers/automation/coolbet_mac_daemon.py").read_text()
-    harvest_call_idx = daemon_src.find(
-        "harvested = extract_imperva_cookies_from_cdp()"
-    )
-    silent_header_idx = daemon_src.find("SILENT-WHEN-EMPTY (2026-06-12)")
-    assert harvest_call_idx > 0, (
-        "daemon must invoke extract_imperva_cookies_from_cdp() to harvest "
-        "cookies (not just import it)."
-    )
-    assert silent_header_idx > 0, (
-        "SILENT-WHEN-EMPTY (2026-06-12) header must still exist — that's "
-        "where load_qualified_bets short-circuits."
-    )
-    assert harvest_call_idx < silent_header_idx, (
-        "Cookie harvest must run BEFORE the SILENT-WHEN-EMPTY early "
-        "return — otherwise ticks with no bets skip the cookie refresh "
-        "and NO_FS consumers eventually see stale DB cookies. Order "
-        "matters."
-    )
+    # 2. (removed #162 W4.6 (2026-09-25)) the daemon-tick harvest ordering went with
+    #    coolbet_mac_daemon; the feed watchdog's _refresh_cookies is the harvester now.
 
     # 3. persist_imperva_cookies helper writes both columns.
     state_src = (root / "workers/automation/coolbet_state.py").read_text()
@@ -24581,7 +23194,8 @@ def test_edge_floor_decimal_boundary_2026_09_11():
         "a pick with no edge cannot clear a floor — fail closed"
     )
 
-    for mod, fn in ((cs, "load_signal_candidates"), (cp, "load_qualified_bets")):
+    # #162 W4.6 (2026-09-25): coolbet_placer.load_qualified_bets (the second caller) is deleted.
+    for mod, fn in ((cs, "load_signal_candidates"),):
         fsrc = inspect.getsource(getattr(mod, fn))
         assert "clears_edge_floor(" in fsrc, (
             f"{mod.__name__}.{fn} must use the shared predicate, not its own "
@@ -25871,117 +24485,6 @@ def test_pause_inplay_p_v2_2026_07_31():
         "make this assertion vacuously true and silently disable every inplay bot"
 
 
-@test("RETIRED-BOT-LEAK-FIX-2026-07-31 — the placer loader will not return a retired bot's bet")
-def test_retired_bot_leak_fix_2026_07_31():
-    """Five acca/combo bots retired 2026-06-06 kept writing real_bets until
-    2026-07-30 — 16 bets, 0 wins, ~$85 bled — because `load_qualified_bets()`
-    and `load_qualified_combo_bets()` joined `bots` without gating on
-    `is_active` / `retired_at`.
-
-    SMOKE-SUITE-AUDIT: this test has now been strengthened twice and was still
-    a WEAKEN. v1 counted filter strings across the whole file (so the singles
-    query could carry both clauses twice while the combo query carried none —
-    exactly the shape of the bug). v2 scoped the count per function, which is
-    better but still only proves the words are present: a query that carries
-    the clause inside a comment, or that ANDs it against something always true,
-    passes.
-
-    v3 runs the loader. A retired bot and an active bot each get their own
-    fixture match and a qualifying pending bet; the loader must return one and
-    not the other. That cannot be satisfied by any amount of correct-looking
-    source.
-    """
-    from workers.automation import coolbet_placer as cp
-
-    with module_db_txn(cp) as cur:
-        # The loader requires DATE(m.date) = CURRENT_DATE *and* m.date > NOW(),
-        # so the fixture kickoff has to land later today. Near midnight there is
-        # no such time and the test cannot be built — skip rather than assert on
-        # an empty result, which would pass for the wrong reason.
-        cur.execute("SELECT (CURRENT_DATE + interval '1 day') - now()")
-        room = cur.fetchone()[0]
-        if room.total_seconds() < 900:
-            raise SkipTest("less than 15 min left in the UTC day; no valid "
-                           "same-day future kickoff to build a fixture with")
-        kickoff_sql = ("now() + LEAST(interval '1 hour', "
-                       "((CURRENT_DATE + interval '1 day') - now()) / 2)")
-
-        home, away, league = _fixture_ids(cur)
-        cur.execute("SELECT id FROM teams LIMIT 4")
-        teams = [r[0] for r in cur.fetchall()]
-        if len(teams) < 4:
-            raise SkipTest("need 4 teams to build two distinct fixtures")
-
-        # The loader carries two guards, `b.is_active IS TRUE` and
-        # `b.retired_at IS NULL`, but they CANNOT be exercised independently:
-        # the `bots_maturity_retired_invariant` trigger sets retired_at=now()
-        # and maturity_label='retired' whenever is_active is set false. An
-        # inactive-but-not-retired bot is therefore unrepresentable, and
-        # `retired_at IS NULL` alone is load-bearing — `is_active IS TRUE` is
-        # defensive redundancy.
-        #
-        # This is why an earlier version of this conversion looked strong and
-        # was not: it used one bot with both flags set, so removing either guard
-        # left the other excluding it and the test passed on broken code.
-        made = {}
-        for n, (label, active, retired) in enumerate(
-                (("active", True, False),
-                 ("retired", True, True))):
-            # Separate matches: the loader de-duplicates by
-            # (match, market, selection), so two bets on one fixture collapse
-            # into a single row and the test would prove nothing.
-            cur.execute(
-                f"""INSERT INTO matches (date, home_team_id, away_team_id,
-                                         league_id, season, status)
-                    VALUES ({kickoff_sql}, %s, %s, %s, 2026, 'scheduled')
-                    RETURNING id""",
-                (teams[n * 2], teams[n * 2 + 1], league))
-            mid = cur.fetchone()[0]
-            cur.execute(
-                """INSERT INTO bots (name, strategy, is_active, retired_at,
-                                     maturity_label)
-                   VALUES (%s, 'test', %s,
-                           CASE WHEN %s THEN now() ELSE NULL END, 'calibrated')
-                   RETURNING id""",
-                (f"zz_smoke_{label}", active, retired))
-            bid = cur.fetchone()[0]
-            cur.execute(
-                """INSERT INTO simulated_bets (bot_id, match_id, market, selection,
-                       odds_at_pick, stake, model_probability, edge_percent, result)
-                   VALUES (%s, %s, '1x2', 'home', 2.50, 10, 0.50, 0.25, 'pending')
-                   RETURNING id""",
-                (bid, mid))
-            made[label] = str(cur.fetchone()[0])
-
-        returned = {str(r["simulated_bet_id"]) for r in cp.load_qualified_bets()}
-
-        assert made["active"] in returned, (
-            "the ACTIVE bot's qualifying bet was not returned — the fixture no "
-            "longer satisfies the loader's filters, so this test would pass "
-            "even with the retired-bot guard deleted. Fix the fixture, not the "
-            "assertion.")
-        assert made["retired"] not in returned, (
-            "a bet from a bot with retired_at set was returned — the "
-            "`b.retired_at IS NULL` guard is gone. This is the exact leak of "
-            "RETIRED-BOT-LEAK-FIX: 16 bets, 0 wins, ~$85 bled over seven weeks "
-            "before anyone noticed.")
-
-        # Pin the invariant the reasoning above depends on. If the trigger is
-        # ever dropped, an inactive-but-not-retired bot becomes possible and
-        # `is_active IS TRUE` stops being redundant — at which point this test
-        # needs a third fixture to cover it.
-        cur.execute("""SELECT COUNT(*) FROM pg_trigger t JOIN pg_class c
-                        ON c.oid = t.tgrelid
-                       WHERE c.relname = 'bots' AND NOT t.tgisinternal
-                         AND t.tgname = 'bots_maturity_retired_invariant'""")
-        assert cur.fetchone()[0] == 1, (
-            "bots_maturity_retired_invariant is gone. An inactive-but-not-retired "
-            "bot is now possible, so `is_active IS TRUE` is no longer redundant "
-            "and needs its own fixture in this test.")
-
-    return "loader excludes retired bots; invariant trigger pinned"
-
-
 @test("MODEL-VERSION-RE-EVAL-2026-07-31 — OU override flip to v20260719 + eval docs on disk")
 def test_model_version_re_eval_2026_07_31():
     """MODEL-VERSION-RE-EVAL-2026-07-31: three rigorous OOS evals reconfirmed
@@ -26216,43 +24719,6 @@ def test_competitor_picks_csv_2026_08_01():
             f"matrix builder must reference {src} — that's the join population."
         )
     assert "picks_matched.csv" in matrix_txt
-
-
-@test("SCHEDULER-DRAIN-TIMEOUT-2026-08-16 — 90s hard timeout on manual_placement_drain")
-def test_scheduler_drain_timeout_2026_08_16():
-    """SCHEDULER-DRAIN-TIMEOUT-2026-08-16: manual_placement_drain fires every
-    10s and calls place_bet_by_id() which touches Coolbet auth. When Coolbet
-    JWT expires / CDP-Chrome down / FS session hangs, place_bet_by_id can
-    block indefinitely with no exception raised. APScheduler max_instances=1
-    then blocks every subsequent 10s fire — the recurring SCHEDULER-AF-
-    429-DEADLOCK hang pattern (4 occurrences in 5 weeks, most recent Aug 12
-    → Aug 15 Postgres OOM cascade).
-
-    Fix: wrap the place_bet_by_id call in a per-tick ThreadPoolExecutor
-    submit + result(timeout=90). Any tick that would otherwise wedge the
-    worker forever now surfaces as a TimeoutError, queue row marked error,
-    and the next drain tick proceeds normally. 90s ceiling is well above
-    the ~5-15s a real Coolbet placement takes.
-    """
-    from pathlib import Path
-    repo = Path(__file__).resolve().parent.parent
-    sched = (repo / "workers" / "scheduler.py").read_text()
-    assert "SCHEDULER-DRAIN-TIMEOUT-2026-08-16" in sched, (
-        "scheduler.py must document the drain timeout fix inline "
-        "so future readers don't restore the unbounded path."
-    )
-    assert "future.result(timeout=90)" in sched, (
-        "scheduler.py drain must call place_bet_by_id via "
-        "future.result(timeout=90) — anything else re-opens the hang path."
-    )
-    assert "_cf.TimeoutError" in sched, (
-        "scheduler.py drain must catch concurrent.futures.TimeoutError so "
-        "a timed-out placement is recorded as error, not re-raised."
-    )
-    assert "timeout_90s_likely_coolbet_auth_or_fs_down" in sched, (
-        "timeout branch must record a specific reason string — helps ops "
-        "triage the next hang from queue history alone."
-    )
 
 
 @test("DRAW-CALIBRATION-2026-08-16 — post-hoc DRAW_CAL_FACTOR shrink + renormalize in xgboost_ensemble")
@@ -27116,73 +25582,6 @@ def _():
         "track-record must sum the flat per-leg figure — the stored Kelly pnl would publish a "
         "different ROI than /performance")
     assert "(pr?.pnlUnit ?? " in track and "* FLAT_STAKE" in track
-
-
-@test("ADMIN-PLACE-COHORT-CLEANUP — /admin/place drops retired/inplay/exotic-market rows")
-def _():
-    """/admin/place used to show every pending simulated_bet — including
-    retired-bot rows (leaked in via ACCA-RETIRED-LEAK-FIX pre-2026-08-16
-    and still leaking via mid-flight retirement pending queue), inplay
-    bots (belong on a separate operator surface), and exotic markets
-    (combo, double_chance — both always net negative when they leak).
-
-    /admin/place composition audit 2026-08-21 (60d settled): retired
-    combo/acca bots contributed −€501 PnL, retired inplay bots −€244;
-    the winning cohort (bot_v10_all prematch calibrated) contributed
-    +€223. Cleaning the surface so it describes the same cohort as
-    /picks + /performance (production prematch × standard markets)
-    makes it the honest foundation for a future paid-tier filter view.
-
-    Pins the getPlaceableBets() cohort filter:
-      1. .select() pulls maturity_label + retired_at on the bot join
-      2. retired_at filter (bot?.retired_at → drop)
-      3. inplay_% filter (bot.name.startsWith('inplay_') → drop)
-      4. exotic-market filter (combo, double_chance → drop)
-    """
-    engine = _web_path("src/lib/engine-data.ts").read_text()
-
-    # Find the getPlaceableBets function body — the filters must live
-    # inside it, not in some unrelated helper.
-    import re as _re
-    m = _re.search(
-        r"export async function getPlaceableBets\b.*?\n\}\n",
-        engine,
-        flags=_re.DOTALL,
-    )
-    assert m is not None, (
-        "engine-data.ts must export getPlaceableBets — /admin/place depends on it."
-    )
-    fn_body = m.group(0)
-
-    # (1) bot select must include the fields we filter on. If a future
-    # refactor drops these from the projection, filter reads become
-    # undefined and every row silently passes.
-    assert "maturity_label" in fn_body and "retired_at" in fn_body, (
-        "getPlaceableBets bot join must select `maturity_label, retired_at` "
-        "— otherwise the cohort filters below silently no-op."
-    )
-
-    # (2) retired filter
-    assert "bot?.retired_at" in fn_body, (
-        "getPlaceableBets must drop rows where the bot is retired "
-        "(bot?.retired_at). Pending-bet leakage during mid-flight "
-        "retirement caused the −€501 combo tail in the 60d audit."
-    )
-
-    # (3) inplay filter — startsWith is the JS-side analog of the
-    # NOT LIKE 'inplay_%' filter on /picks + /performance.
-    assert 'startsWith("inplay_")' in fn_body, (
-        "getPlaceableBets must drop inplay bots — they belong on a "
-        "separate operator surface (different placement mechanics)."
-    )
-
-    # (4) exotic-market filter — combo + double_chance, case-insensitive
-    for exotic in ("combo", "double_chance"):
-        assert f'=== "{exotic}"' in fn_body, (
-            f"getPlaceableBets must drop market='{exotic}' — combo is "
-            "100% loss when it leaks (retired bots only), double_chance "
-            "is retired via null floor in coolbet-edge.ts."
-        )
 
 
 @test("USER-PICK-MARKS — migration 278 + /api/me/pick-marks route + tri-state wired")
@@ -28497,27 +26896,6 @@ def test_shadow_autoselect_2026_08_26():
     block = src[i:i + 3200]
     assert "except Exception:" in block, "auto-select must be fail-safe"
     return "shadow A/B slot auto-selects the newest bundle"
-
-
-@test("COOLBET-ODDS-STALE")
-def test_coolbet_odds_stale_2026_08_26():
-    """COOLBET-ODDS-STALE-2026-08-26 — the healthcheck must watch Coolbet's
-    OUTPUT, not just its heartbeat."""
-    import pathlib
-    from workers.jobs.coolbet_daemon_healthcheck import ODDS_STALE_THRESHOLD_H
-    src = pathlib.Path("workers/jobs/coolbet_daemon_healthcheck.py").read_text()
-
-    assert "def _hours_since_last_coolbet_odds" in src
-    assert "odds_stale" in src, "new status must exist"
-    # Must actually be in the alerting set, or it is computed and discarded.
-    assert '"silent", "erroring", "jwt_stale", "odds_stale"' in src, \
-        "odds_stale must be in the set of statuses that fire an alert"
-    assert "bookmaker = 'Coolbet'" in src, "must query real Coolbet odds rows"
-    assert 0 < ODDS_STALE_THRESHOLD_H <= 24, "threshold must be sane"
-    # A failed lookup must not manufacture OR suppress an alert.
-    i = src.index("def _hours_since_last_coolbet_odds")
-    assert "return None" in src[i:i + 900]
-    return "coolbet healthcheck alerts when no odds are written, not just on silence"
 
 
 @test("SHADOW-RETIRE-NEGATIVE-CLV")
@@ -34871,21 +33249,8 @@ def _placer_odds_floor_both_paths():
     import os
     import re
 
-    from workers.automation.coolbet_placer import place_all_bets
-
-    placer_src = inspect.getsource(place_all_bets)
-    # 2D-GATE-PER-MARKET-ODDS-FLOOR-2026-09-08 (1e82ef1): the global COOLBET_MIN_ODDS
-    # gate became the per-market _min_odds_for(market) helper, which reads
-    # os.getenv("COOLBET_MIN_ODDS","2.80") for the 1x2/default floor.
-    assert "_min_odds_for(" in placer_src, (
-        "coolbet_placer.place_all_bets no longer applies the per-market odds floor "
-        "— this is the path the Mac daemon actually calls"
-    )
-    # The rejection must be RECORDED, not silently skipped: a guard nobody can
-    # measure is indistinguishable from a guard that never fires.
-    assert '"odds_floor"' in placer_src or "'odds_floor'" in placer_src, (
-        "the placer's price rejection is not recorded with stage 'odds_floor'"
-    )
+    # #162 W4.6 (2026-09-25): the API placer (coolbet_placer.place_all_bets) half is deleted;
+    # the paths that remain are the UI placer and the router, via placement_floor.
 
     # Both paths must resolve the floor through the SAME helper so they cannot
     # drift: place_coolbet_ui.py imports _min_odds_for from coolbet_placer, and
@@ -37157,50 +35522,6 @@ def test_prune_match_signals_keeps_latest():
     )
 
 
-@test("ODDS-FLOOR-SKIP-NOT-ERROR — the daemon must not count legitimate declines as errors")
-def test_daemon_decline_not_error():
-    """ODDS-FLOOR-SKIP-NOT-ERROR-2026-09-07. The Coolbet mac-daemon self-pauses
-    after SELFPAUSE_AFTER_MINUTES of consecutive errored ticks — its only job is
-    to stop hammering Coolbet's auth chain during an OUTAGE. But the tick
-    classified every non-placed, non-(short skip list) outcome as an error,
-    and an odds-floor skip returns outcome="rejected". So a day whose candidates
-    are all below the 2.80 floor (a normal event, observed 2026-09-07) racked up
-    "errors" and would FALSELY self-pause a perfectly healthy daemon.
-
-    The fix inverts the classification: only genuine failures (`error`,
-    `search_blocked`) and a raised exception count as errors; every other
-    outcome — including `rejected` — is a skip. Pins that a `rejected` outcome
-    does NOT reach the error counter, and that `search_blocked` still does (real
-    outages must still pause).
-    """
-    import os, re
-    src = open(os.path.join(os.path.dirname(__file__), "..", "workers",
-                            "automation", "coolbet_mac_daemon.py"), encoding="utf-8").read()
-    code = re.sub(r"#.*?$", "", src, flags=re.M)
-
-    # The error branch must be an explicit allow-list, and must NOT be the
-    # catch-all else. Find the outcome-classification block.
-    m = re.search(r'if outcome == "placed":.*?counters\["skipped"\] \+= 1',
-                  code, flags=re.S)
-    assert m, "the daemon outcome-classification block changed shape — re-audit"
-    block = m.group(0)
-
-    # error branch names error/search_blocked explicitly
-    assert re.search(r'outcome in \([^)]*"search_blocked"[^)]*\):\s*\n\s*counters\["errors"\]',
-                     block), (
-        "the error branch no longer explicitly lists search_blocked — a real "
-        "outage might stop pausing, or the branch reverted to a catch-all"
-    )
-    # the CATCH-ALL else must increment skipped, not errors
-    tail_lines = block.strip().splitlines()[-2:]
-    joined = " ".join(l.strip() for l in tail_lines)
-    assert joined.startswith("else:") and 'counters["skipped"]' in joined, (
-        "the catch-all else no longer defaults to skipped — a `rejected` "
-        "odds-floor decline would count as an error again and falsely self-pause "
-        "the daemon (ODDS-FLOOR-SKIP-NOT-ERROR)"
-    )
-
-
 @test("FLARESOLVERR-HEALTH-WATCHDOG — FS-down alert probes the resolved URLs and never raises")
 def test_flaresolverr_health_watchdog():
     """COOLBET-FS-WATCHDOG-AND-ENV-2026-09-07. The Coolbet outage went unalerted
@@ -37873,12 +36194,12 @@ def test_real_bets_placed_real():
     # still be one of the inserted columns and bound to the parameter.
     assert '"placed_real"]' in src and "system_type, placed_real]" in src, "store_real_bet must INSERT placed_real"
 
-    # paper daemon path tags placed_real=execute (paper when execute=False)
+    # #162 W4.6 (2026-09-25): RE-POINTED. The paper daemon's writer (coolbet_placer's
+    # API placer, which tagged placed_real=execute / False) is DELETED, so that module
+    # writes no real_bets rows at all any more — a paper pick has no place in the money
+    # table. Pin that it stays that way.
     cp = inspect.getsource(__import__("workers.automation.coolbet_placer", fromlist=["x"]))
-    # #139 review (2026-09-24): only the single path that actually POSTs a bet may tag
-    # placed_real=execute; combo and in-play never POST, so they always write False.
-    assert cp.count("placed_real=execute,") == 1, "only the POSTing single path tags placed_real=execute"
-    assert cp.count("placed_real=False,") >= 2, "combo + in-play (no POST) must write placed_real=False"
+    assert "store_real_bet" not in cp, "coolbet_placer must not write real_bets (its placer is deleted)"
     # UI placer (balance-confirmed) tags True
     up = inspect.getsource(__import__("workers.automation.coolbet_ui_placer", fromlist=["x"]))
     assert "placed_real=True" in up, "UI placer (balance-confirmed) must tag placed_real=True"
@@ -37889,11 +36210,13 @@ def test_real_bets_placed_real():
     assert "placed_real IS NOT FALSE" in pcu, "real placer exposure/dedup must exclude paper rows"
 
     # frontend admin overlays exclude paper
-    ed = (root.parent / "odds-intel-web" / "src" / "lib" / "engine-data.ts")
-    if ed.exists():
-        t = ed.read_text()
-        assert t.count('.not("placed_real", "is", false)') >= 2, (
-            "getRealBets + getPlaceableBets must exclude paper rows")
+    # #162 W4.6 (2026-09-25): RE-POINTED from engine-data.ts's getRealBets + getPlaceableBets
+    # (both deleted, no callers) to the money ledger's own reader, lib/admin-money.ts.
+    am = (root.parent / "odds-intel-web" / "src" / "lib" / "admin-money.ts")
+    if am.exists():
+        t = am.read_text()
+        assert '.not("placed_real", "is", false)' in t, (
+            "the /admin/real-bets money ledger (admin-money.ts) must exclude paper rows")
 
 
 @test("UNIBET-SITE-SWEEP — broad run_bulk is rate-limited, capped, fail-safe, Unibet-Site")
@@ -38154,56 +36477,6 @@ def test_best_price_router_execute_wiring():
     assert "stage: bool = False" in src, "route() must expose the stage (dry-test-in-action) mode"
     assert "ROUTER_ALLOW_REAL" in src, "real money must be env-gated"
     assert "stage_bet" in src and "place_bet" in src, "both executor arms must be wired"
-
-
-@test("COOLBET-DAEMON-KEEPALIVE — StartInterval watchdog kickstarts a dead-but-loaded daemon")
-def test_coolbet_daemon_keepalive():
-    """COOLBET-DAEMON-DEATH-RECURRING (2026-09-10): launchd KeepAlive doesn't reliably
-    respawn the mac-daemon after Mac sleep, and `load -w` doesn't start it — only
-    `kickstart` does. A StartInterval watchdog (fires on wake) revives it. Pin: the
-    script kickstarts the daemon, respects a deliberate unload (doesn't fight it), and
-    the plist uses StartInterval (not just KeepAlive)."""
-    from pathlib import Path
-    sh = (Path(__file__).parent.parent / "scripts" / "ops" / "coolbet_daemon_keepalive.sh").read_text()
-    assert "pgrep -f coolbet_mac_daemon" in sh, "must detect the daemon process"
-    assert "launchctl kickstart" in sh, "must kickstart (load -w does NOT start a KeepAlive daemon)"
-    assert "coolbet-mac-daemon" in sh, "targets the mac-daemon label"
-    # respects a deliberate stop: if the job isn't loaded, don't revive it
-    assert "not loaded" in sh.lower() and ("launchctl list" in sh or "grep" in sh), (
-        "must skip revival when the daemon was deliberately unloaded")
-
-
-@test("COOLBET-SESSION-LIVENESS — daemon checks/heals the CDP session EVERY tick, before the no-candidate early return")
-def test_coolbet_session_liveness():
-    """COOLBET-DAEMON-DEATH-RECURRING session half (2026-09-10): the daemon sat
-    logged_out for 2 days (operator killed it on the STAY-COOL page) because the
-    tick only looked at the session when it had a pick to place — the
-    SILENT-WHEN-EMPTY `if not candidates: return` early-exits BEFORE any session
-    check, so on a quiet day the ~30-min JWT lapsed unnoticed. Fix: a per-tick
-    _ensure_session_live() heartbeat that runs BEFORE that early return, probes
-    cheaply, and heals via auto_self_heal when not valid. Pin the ordering (the
-    whole bug) and the heartbeat's behaviour."""
-    import inspect
-    from workers.automation import coolbet_mac_daemon as d
-
-    assert hasattr(d, "_ensure_session_live"), "the liveness heartbeat helper must exist"
-
-    tick_src = inspect.getsource(d._tick)
-    call_pos = tick_src.find("_ensure_session_live(")
-    early_return_pos = tick_src.find("if not candidates:")
-    assert call_pos != -1, "_tick must call _ensure_session_live()"
-    assert early_return_pos != -1, "_tick must still have the SILENT-WHEN-EMPTY early return"
-    assert call_pos < early_return_pos, (
-        "_ensure_session_live() must be called BEFORE the `if not candidates` early "
-        "return — otherwise a quiet day skips the session check (the original bug)")
-
-    heal_src = inspect.getsource(d._ensure_session_live)
-    # cheap probe first, full heal only when not valid, keep DB JWT fresh when valid
-    assert "diagnose_cdp_jwt_state" in heal_src, "must probe session state cheaply first"
-    assert "proactive_jwt_refresh" in heal_src, (
-        "must refresh the DB JWT when valid (the write skipped on no-candidate days)")
-    assert "auto_self_heal" in heal_src, "must invoke the tested recovery state machine when not valid"
-    assert "_LIVENESS_HEAL_MIN_GAP_S" in heal_src, "heal escalation must be throttled on a persistent outage"
 
 
 @test("COOLBET-SESSION-FREEZE-FIX — CDP-Chrome launches with background-throttling disabled so renew-token keeps firing")
@@ -46643,9 +44916,9 @@ def test_placement_gate_armed_required():
 @test("PLACEMENT-GATE-ALL-EXECUTORS — every path that can move money calls the gate BEFORE it acts")
 def test_placement_gate_all_executors():
     """Source inspection with POSITION, not presence: the gate call must come
-    before the first browser/API action in each executor. Four paths:
-    UI placer run-level, UI placer stage_bet, router (+ Unibet arm), API placer
-    (+ the manual-place drain's execute literal)."""
+    before the first browser/API action in each executor. Three paths:
+    UI placer run-level, UI placer stage_bet, router (+ Unibet arm). The API
+    placer and the manual-place drain were deleted 2026-09-25 (#162 W4.6)."""
     ui = _engine_path("scripts/place_coolbet_ui.py").read_text(encoding="utf-8")
     m = ui[ui.index("def main() -> int:"):]
     assert "assert_run_may_place()" in m, "place_coolbet_ui.main must call the run-level gate"
@@ -46672,24 +44945,11 @@ def test_placement_gate_all_executors():
     assert ub.index("assert_may_place(") < ub.index("unibet_placer.place_bet("), \
         "Unibet gate must run BEFORE place_bet"
 
-    cp = _engine_path("workers/automation/coolbet_placer.py").read_text(encoding="utf-8")
-    pab = cp[cp.index("def place_all_bets("):cp.index("def place_bet_by_id(")]
-    assert "assert_run_may_place()" in pab, "place_all_bets must call the run-level gate"
-    assert pab.index("assert_run_may_place()") < pab.index("CoolbetSession("), \
-        "API placer gate must run BEFORE a session is built"
-    assert "MANUAL_PLACE_EXECUTE = False" in cp, \
-        "the manual-place drain's execute literal must be the single pinned constant"
-    byid = cp[cp.index("def place_bet_by_id("):]
-    assert byid.count("execute=MANUAL_PLACE_EXECUTE") == 2, \
-        "both placer calls in place_bet_by_id must route through MANUAL_PLACE_EXECUTE"
-    # Phase 0 verifier (2026-09-15): two MORE functions reach a money primitive
-    # and were ungated — the in-play API placer and an orphaned in-play capture
-    # with an execute mode. "Every executor" means all FIVE.
-    inpl = cp[cp.index("def place_all_inplay_bets("):]
-    inpl = inpl[:inpl.index("\ndef ", 10)]
-    assert "assert_run_may_place()" in inpl, "place_all_inplay_bets must call the run-level gate when execute"
-    assert inpl.index("assert_run_may_place()") < inpl.index("CoolbetSession("), \
-        "in-play API placer gate must run BEFORE a session is built"
+    # #162 W4.6 (2026-09-25): the API "Path B" placer — place_all_bets, place_all_inplay_bets,
+    # place_bet_by_id (the manual-drain executor) and _place_bet_api — is DELETED,
+    # not gated: it was a second money path nothing live used. Its absence (and the
+    # drain's) is pinned by RETIRED-MONEY-PATHS-GONE; the live executors are the three
+    # checked above.
     # COOLBET-INPLAY-ORPHAN (2026-09-21): `coolbet_inplay.py` is DELETED. It
     # carried a mode-C execute branch with zero callers, so the gate in front of
     # it could only ever be asserted correct, never observed working — deleting
@@ -50210,6 +48470,107 @@ def test_cdp_selfheal_escalates():
         mod.EVENTS = orig
     return "escalates after 3, resets on success, per-tier, skip-aware"
 
+
+
+@test("RETIRED-MONEY-PATHS-GONE — the retired real-money code paths stay deleted, and only the live executors remain")
+def test_retired_money_paths_gone():
+    """#162 W4.6 (2026-09-25). RELIABILITY_LEDGER §4: a second code path to the same
+    money inherits none of the first one's gates. Five retired paths were still in the
+    tree, each "safe" only because of a literal, an unset env var or a refused bot:
+
+      * the paper Mac daemon (workers/automation/coolbet_mac_daemon.py, retired
+        2026-09-10) + its keepalive script and plist;
+      * its VPS healthcheck (workers/jobs/coolbet_daemon_healthcheck.py);
+      * the VPS manual-placement drain (scheduler `_drain_manual_placement_queue`,
+        every 10 s) and the Telegram "Record at Coolbet" button that fed it;
+      * the API "Path B" placer in coolbet_placer (place_all_bets /
+        place_all_inplay_bets / place_bet_by_id / _place_bet_api / the loaders /
+        PlacementGuard) and its CLI scripts/place_coolbet_bets.py;
+      * the in-play auto-record call in inplay_bot.
+
+    They were DELETED rather than gated. This pins that none of them comes back
+    quietly, and that placement_gate names exactly the live executors."""
+    import ast
+
+    # 1. the files are gone
+    for rel in ("workers/automation/coolbet_mac_daemon.py",
+                "workers/jobs/coolbet_daemon_healthcheck.py",
+                "scripts/place_coolbet_bets.py",
+                "scripts/ops/coolbet_daemon_keepalive.sh",
+                "local/launchd/retired/com.oddsintel.coolbet-mac-daemon.plist",
+                "local/launchd/com.oddsintel.coolbet-mac-daemon.plist"):
+        assert not _engine_path(rel).exists(), f"{rel} is back — it was deleted in #162 W4.6"
+
+    # 2. the Path-B placer's functions are gone from the shared helper module (a def,
+    #    not a mention: the module's tail note names them on purpose)
+    cp_src = _engine_path("workers/automation/coolbet_placer.py").read_text(encoding="utf-8")
+    top = {n.name for n in ast.parse(cp_src).body
+           if isinstance(n, (ast.FunctionDef, ast.ClassDef))}
+    dead = {"place_all_bets", "place_all_inplay_bets", "place_bet_by_id", "_place_bet_api",
+            "_place_combo_bets", "load_qualified_bets", "load_qualified_combo_bets",
+            "load_qualified_inplay_bets", "PlacementGuard", "get_live_odds_and_id",
+            "find_market_outcome"}
+    assert not (top & dead), f"retired placer functions are back in coolbet_placer: {sorted(top & dead)}"
+    assert "MANUAL_PLACE_EXECUTE" not in cp_src.split("# ── RETIRED")[0]
+    # ...while the shared helpers the live code imports are still there
+    for keep in ("min_edge_for_pick", "clears_edge_floor", "model_edge", "_min_edge_for",
+                 "_min_odds_for", "_canon_market", "fuzzy_match_event", "unique_pairs",
+                 "search_coolbet_event", "fetch_events_for_league", "_parse_iso_start"):
+        assert keep in top, f"coolbet_placer.{keep} is imported by live code and must stay"
+
+    # 3. nothing in workers/ or scripts/ imports a deleted name or module (AST, so a
+    #    comment or a docstring mentioning one is fine)
+    dead_mods = {"workers.automation.coolbet_mac_daemon", "workers.jobs.coolbet_daemon_healthcheck"}
+    dead_tg = {"place_button_markup", "edit_bet_alert_outcome"}
+    offenders = []
+    for base in ("workers", "scripts"):
+        for p in _engine_path(base).rglob("*.py"):
+            if p.name == "smoke_test.py":
+                continue
+            try:
+                tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
+            except SyntaxError:
+                continue
+            for n in ast.walk(tree):
+                bad = False
+                if isinstance(n, ast.ImportFrom) and n.module:
+                    names = {a.name for a in n.names}
+                    bad = (n.module in dead_mods
+                           or (n.module == "workers.automation.coolbet_placer" and names & dead)
+                           or (n.module == "workers.notify.telegram" and names & dead_tg)
+                           or (n.module in ("workers.automation", "workers.jobs")
+                               and {f"{n.module}.{x}" for x in names} & dead_mods))
+                elif isinstance(n, ast.Import):
+                    bad = bool({a.name for a in n.names} & dead_mods)
+                if bad:
+                    offenders.append(f"{p.relative_to(_engine_path('.'))}:{n.lineno}")
+    assert not offenders, f"these still import a deleted money path: {sorted(set(offenders))}"
+
+    # 4. no scheduler registration for the drain or the daemon healthcheck
+    sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    code = "\n".join(ln for ln in sched.splitlines() if not ln.strip().startswith("#"))
+    for needle in ("_drain_manual_placement_queue", "manual_placement_drain",
+                   "job_coolbet_daemon_healthcheck", "coolbet_daemon_healthcheck",
+                   "place_bet_by_id"):
+        assert needle not in code, f"workers/scheduler.py still references {needle}"
+    from workers.notify import telegram as _tg
+    assert not hasattr(_tg, "place_button_markup"), "the 'Record at Coolbet' button builder is back"
+
+    # 5. placement_gate names only the live executors
+    pg = _engine_path("workers/automation/placement_gate.py").read_text(encoding="utf-8")
+    live = pg[pg.index("LIVE EXECUTORS"):pg.index('"""', pg.index("LIVE EXECUTORS"))]
+    head = live[:live.index("Everything else")]
+    for exe in ("scripts/place_coolbet_ui.py", "workers/automation/best_price_router.py"):
+        assert exe in head, f"placement_gate's LIVE EXECUTORS list must name {exe}"
+    for gone in ("coolbet_mac_daemon", "place_all_bets", "place_bet_by_id",
+                 "_drain_manual_placement_queue", "place_coolbet_bets"):
+        assert gone not in head, f"placement_gate lists retired {gone} as a live executor"
+    # and every live executor still calls the gate (the positional proof is
+    # PLACEMENT-GATE-ALL-EXECUTORS; this is the cheap presence floor)
+    assert "assert_run_may_place()" in _engine_path("scripts/place_coolbet_ui.py").read_text(encoding="utf-8")
+    assert "assert_run_may_place()" in _engine_path(
+        "workers/automation/best_price_router.py").read_text(encoding="utf-8")
+    return "daemon, healthcheck, manual drain, Path-B placer + CLI deleted; two live executors"
 
 
 @test("COOLBET-PROBE-IMPERVA-BEATS-TIMING — a seen interstitial outranks the wedge heuristic")
@@ -54495,49 +52856,6 @@ def test_shadow_autoselect_weekly_only():
     assert "version ~ '^v[0-9]{8}$'" in src[i:i + 4000], "weekly bundles are exactly vYYYYMMDD"
 
 
-@test("COOLBET-POST-GATED-PER-PICK — the only real-money Coolbet POST runs the per-pick allowlist gate first")
-def test_coolbet_post_gated_per_pick():
-    """#139 (2026-09-24, owner-approved): scripts/place_coolbet_bets.py --execute checked only the
-    run-level gate (pause + armed), so it could stake on ANY active simulated_bets bot, past
-    PLACEABLE_BOTS, ui_place_enabled and the daily caps. _place_bet_api is the single function that
-    POSTs a real Coolbet bet; it now calls assert_may_place itself. Proven here with a session whose
-    post() fails the test if reached."""
-    import inspect
-    import workers.automation.coolbet_placer as cp
-    from workers.automation.placement_gate import PlacementRefused
-    sig = inspect.signature(cp._place_bet_api)
-    assert sig.parameters["bot_name"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert sig.parameters["bot_name"].default is inspect.Parameter.empty, "bot_name must be required"
-    src = inspect.getsource(cp._place_bet_api)
-    assert src.index("assert_may_place(") < src.index("session.post(")
-
-    class _NoPost:
-        def post(self, *a, **k):
-            raise AssertionError("reached the real-money POST without passing the gate")
-    for bot in ("bot_v10_1x2", None):
-        try:
-            cp._place_bet_api(_NoPost(), 1, "x", 1.0, "A - B", "m", "", bot_name=bot)
-        except PlacementRefused:
-            pass
-        else:
-            raise AssertionError(f"{bot!r} was not refused")
-    callers = [l for l in open(cp.__file__).read().splitlines()
-               if "_place_bet_api(" in l and "def _place_bet_api" not in l]
-    assert callers, "no caller found"
-    whole = open(cp.__file__).read()
-    assert whole.count('bot_name=bet.get("bot_name")') >= len(callers)
-    # review of b9d2d05c: combo / in-play never POST, so never real money
-    assert whole.count("placed_real=execute,") == 1, "only the POSTing single path may mark real money"
-    # D2: the allowlist is applied BEFORE the one-bot-per-selection DISTINCT ON on a real run
-    lq = inspect.getsource(cp.load_qualified_bets)
-    assert "only_bots" in lq and "{bots_clause}" in lq
-    assert "only_bots=_only" in inspect.getsource(cp.place_all_bets)
-    # D1: the daily caps count the API path's real_bets, not only UI-placer attempts
-    import scripts.place_coolbet_ui as ui
-    st = inspect.getsource(ui.spent_today)
-    assert "FROM real_bets" in st and "pa.real_bet_id = rb.id" in st   # #162 W4.2: every book, de-duplicated
-
-
 # ── #139 phase A: the /admin/bots control panel (migration 413) ──────────────────────────────
 # Spec: dev/active/bots-control-panel-spec.md (§16 owner decisions override the earlier text).
 
@@ -55071,9 +53389,8 @@ def test_auto_heal_clears_only_self_pause():
     assert "is_daemon_self_pause(paused_reason)" in block and "OWN-PATH-VERDICT" in block
     assert not cs.is_daemon_self_pause("operator: Mac daemon flaky")
     assert not cs.is_daemon_self_pause("this is NOT a daemon self-pause: operator pause")
-    # the daemon's real written format must still match
-    daemon = open("workers/automation/coolbet_mac_daemon.py", encoding="utf-8").read()
-    assert 'reason=(f"{DAEMON_SELF_PAUSE_MARKER}: "' in daemon
+    # the self-pause format the (deleted, #162 W4.6 (2026-09-25)) daemon wrote must still match —
+    # historical pause rows carry it
     assert cs.is_daemon_self_pause(f"{cs.DAEMON_SELF_PAUSE_MARKER}: 7 consecutive errors over 207m")
     assert cs.is_daemon_self_pause("daemon self-pause: 7 consecutive errors")
 
@@ -55396,12 +53713,13 @@ def test_admin_place_deleted():
     by hand today" — is done by the Pick queue (/admin/shadow-bots), whose Place €X action records
     the bet through /api/admin/real-bet → record_manual_real_bet. Deleted with the files ONLY it used:
     place-bet-table, coolbet-ingest-banner, real-money-tier-badge and the record-combo route (its one
-    caller was place-bet-table). src/lib/real-money-tier.ts stays: engine-data.ts still imports it."""
+    caller was place-bet-table). src/lib/real-money-tier.ts followed in #162 W4.6 (2026-09-25), with
+    engine-data's getPlaceableBets (its only importer)."""
     if not (_web_root / "src").exists():
         return
     for gone in ("src/app/(app)/admin/place", "src/components/place-bet-table.tsx",
                  "src/components/coolbet-ingest-banner.tsx", "src/components/real-money-tier-badge.tsx",
-                 "src/app/api/admin/record-combo"):
+                 "src/app/api/admin/record-combo", "src/lib/real-money-tier.ts"):
         assert not _web_path(gone).exists(), f"{gone} must stay deleted"
     for rel in ("src/components/admin/admin-nav.ts", "src/components/admin/command-palette.tsx"):
         p = _web_path(rel)
@@ -59132,9 +57450,11 @@ def test_real_money_flat_stake():
     yet"; handover rule 9). coolbet_placer's default guards (place_all_bets, place_all_inplay_bets) used
     PlacementGuard(use_kelly_stake=True), staking the bot's Kelly suggestion. They are flat now; the UI
     placer and the router already stake a fixed STAKE_EUR."""
+    # #162 W4.6 (2026-09-25): RE-POINTED. coolbet_placer's placers and PlacementGuard are deleted, so
+    # there is no Kelly switch left there to pin; assert it stays gone.
     src = _engine_path("workers/automation/coolbet_placer.py").read_text(encoding="utf-8")
-    assert "PlacementGuard(use_kelly_stake=True)" not in src.replace("Was PlacementGuard(use_kelly_stake=True)", "")
-    assert src.count("PlacementGuard(use_kelly_stake=False)") >= 2
+    assert "use_kelly_stake" not in src and "class PlacementGuard" not in src, (
+        "a Kelly-capable stake guard is back in coolbet_placer — real money is flat-staked")
 
 
 @test("PREDICTIONS-READERS-PRODUCTION-ONLY — bots that price off `predictions` read the production model, not any source (#162 W2.2)")
