@@ -202,19 +202,37 @@ def grade_consensus_pick(edge: float, odds: float, bookmaker: str,
     return ("B" if STRONG_ODDS_MIN <= odds <= STRONG_ODDS_MAX else "C"), reasons
 
 
-def _grade_line(c: dict) -> str:
+GRADE_BOTS = {"B": "bot_consensus_b_v1", "C": "bot_consensus_c_v1", "D": "bot_consensus_d_v1"}
+
+
+def _status_word(bot: str) -> str | None:
+    """[[#162]] W5.6: the bot's CURRENT status word, read from `bots` (the one status field,
+    [[#155]]). None when unreadable — the caller then prints no status rather than a wrong one."""
+    try:
+        from workers.api_clients.db import execute_query
+        from workers.utils.bot_status import status_of
+        r = execute_query("SELECT maturity_label, retired_at, is_active FROM bots WHERE name = %s", [bot])
+        return status_of(r[0]["maturity_label"], r[0]["retired_at"], r[0]["is_active"]) if r else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _grade_line(c: dict, status: str | None = None) -> str:
     """The reader-facing grade. Empty for ungraded (live-arm) picks.
 
-    Since [[#095]] each grade is its own tracked bot — B `beta`, C `testing` —
-    so the line names the status as well as the grade: a reader seeing a C
-    pick knows it is still on trial and scored separately."""
+    Since [[#095]] each grade is its own tracked bot, so the line names the bot's status as well as
+    the grade: a reader seeing a pick on trial knows it is scored separately. [[#162]] W5.6: the word
+    is READ from the bot's status (it was hard-coded "B beta / C testing", and went false when #155
+    moved bot_consensus_b_v1 to TESTING). `status` overrides the lookup (tests)."""
     grade = c.get("grade")
     if not grade:
         return ""
-    if grade == "B":
-        return "🟢 Grade <b>B</b> — strongest · <i>beta</i>\n"
-    if grade == "C":
-        return "🔵 Grade <b>C</b> — standard · <i>testing</i>\n"
+    if grade in ("B", "C"):
+        word = status if status is not None else _status_word(GRADE_BOTS[grade])
+        tail = f" · <i>{word}</i>" if word else ""
+        if grade == "B":
+            return f"🟢 Grade <b>B</b> — strongest{tail}\n"
+        return f"🔵 Grade <b>C</b> — standard{tail}\n"
     why, dissent = [], []
     for r in c.get("grade_reasons") or []:
         if r.startswith("panel:"):
@@ -753,8 +771,7 @@ def funnel_rows(pool: list[dict], picked: list[dict], source: str,
         else:
             step = "deduped_or_capped"
         if source == "publisher_consensus":
-            bot = {"B": "bot_consensus_b_v1", "C": "bot_consensus_c_v1",
-                   "D": "bot_consensus_d_v1"}.get(c.get("grade"), "bot_consensus_c_v1")
+            bot = GRADE_BOTS.get(c.get("grade"), "bot_consensus_c_v1")
         else:
             # [[#122]] the sharp arm is owned by market since migration 402
             bot = "bot_sharp_ou_v1" if c["market"] == "over_under_25" else "bot_sharp_1x2_v1"

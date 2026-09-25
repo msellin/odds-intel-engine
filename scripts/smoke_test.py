@@ -53073,8 +53073,9 @@ def test_consensus_split_by_grade():
         "picks_public_all must route grade C to its own bot")
     assert "GROUP BY rule_version, arm, grade" in mig, (
         "the summary must separate grades, or /performance pools B and C")
-    assert "beta" in pf._grade_line({"grade": "B", "grade_reasons": []})
-    assert "testing" in pf._grade_line({"grade": "C", "grade_reasons": ["tier0"]})
+    # [[#162]] W5.6: the status word is read from the bot's status now (B moved to TESTING in #155).
+    assert "<i>beta</i>" in pf._grade_line({"grade": "B", "grade_reasons": []}, status="beta")
+    assert "<i>testing</i>" in pf._grade_line({"grade": "C", "grade_reasons": ["tier0"]}, status="testing")
 
 
 @test("CONSENSUS-ARM-GRADING — every consensus pick carries a B/C grade; a label, never a gate")
@@ -59935,6 +59936,31 @@ def test_vip1_exact_rule_one_per_match():
     for n, cc in BOTS_CONFIG.items():
         if cc.get("one_per_match") and cc.get("is_active", True) and n in rv:
             assert rv[n] != "r1", f"{n}'s rule changed (W7.8) — its rule_version must be bumped"
+
+@test("STATUS-WORDS-FROM-STATUS-FIELD — a pick's status word is read from bots, never typed (#162 W5.6)")
+def test_status_words_from_status_field():
+    """[[#162]] W5.6 (audit B-R6). The consensus grade line said "B · beta / C · testing" as literals on
+    /picks AND in the Telegram post; #155 moved bot_consensus_b_v1 to TESTING and both kept telling
+    readers "beta". Now both read the bot's status; an unreadable status prints no word at all."""
+    import inspect
+    import pathlib as _pl
+    import scripts.publish_picks_forward_test as pf
+    src = inspect.getsource(pf._grade_line)
+    assert "<i>beta</i>" not in src and "<i>testing</i>" not in src, "no hard-coded status words"
+    assert pf._grade_line({"grade": "B"}, status="") == "🟢 Grade <b>B</b> — strongest\n", "no status → no word"
+    assert pf.GRADE_BOTS["B"] == "bot_consensus_b_v1" and pf.GRADE_BOTS["C"] == "bot_consensus_c_v1"
+    from workers.api_clients.db import execute_query
+    from workers.utils.bot_status import status_of
+    r = execute_query("SELECT maturity_label, retired_at, is_active FROM bots WHERE name = 'bot_consensus_b_v1'")
+    if r:
+        word = status_of(r[0]["maturity_label"], r[0]["retired_at"], r[0]["is_active"])
+        assert f"<i>{word}</i>" in pf._grade_line({"grade": "B"}), "the default path must print the DB status"
+    web = _pl.Path(__file__).resolve().parent.parent.parent / "odds-intel-web"
+    if web.exists():
+        page = (web / "src/app/picks/page.tsx").read_text()
+        assert "own bot (beta)" not in page and "own bot (testing)" not in page, "/picks must not type the status"
+        assert "status={p.bot_status}" in page
+        assert "bot_status" in (web / "src/lib/forward-test-picks.ts").read_text()
 
 if __name__ == "__main__":
     main()
