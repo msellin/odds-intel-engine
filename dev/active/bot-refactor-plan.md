@@ -182,7 +182,20 @@ W5.2 keeps only the status-based pending rule; the VIP half is #164's `vip_held(
 Each step is its own commit (code + smoke + docs), pushed only when its reviewer(s) pass, and verified live
 (drift check, a SELECT that proves the new path ran, a page read) before the next step starts.
 
-## 5. Owner decisions needed (collected; none block phase 2's first steps)
+## 5. Owner decisions — ✅ ALL ANSWERED 2026-09-25 ("I trust your recommendations")
+
+The owner approved every recommended option (the 16-question list sent 2026-09-25): 1C re-judge the 93
+autovoided bets on corrected closes · 2C three-state real_bets (493 paper / 23 real / 313 unverified) ·
+3C strictest-of floors + one cross-book cap (switching bots ON stays a separate owner call) · 4C Pick
+queue on bot_performance · 5A autovoid keeps a reason going forward · 6B abandoned-no-score = void (real
+bets take the book's result) · 7A flag on the PUBLIC basis · 8A show CLV coverage · 9A a /picks watchlist
+line counts as sent · 10A paper P&L / bankroll on the pick-time price · 11A paper writers keep the first
+price · 12A source-filter `predictions` readers · 13A stop shadow-evaluating the 33 retired bots ·
+14B Pick queue stays own-book-placeable bots only · 15A keep the legacy CLV column for the meta-model only ·
+16A build the four twins (VIP #1 exact rule, one-per-match, v10 on fair_prob, one sharp engine) — each
+switch decided by the owner on twin data. Every step still shows before/after before it lands.
+
+### (original question list, kept for the record)
 
 1. **W1.2** — the 93 CLV-autovoided bets: re-void, re-judge against today's close, or accept? (moves
    bot_v10_1x2 by 10 legs / +€45.7)
