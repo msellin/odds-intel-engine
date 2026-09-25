@@ -56762,5 +56762,42 @@ def test_v10_newplus_twin():
     assert "'testing', false, true" in _engine_path("supabase/migrations/428_high_odds_newplus_twin.sql").read_text(encoding="utf-8")
 
 
+@test("LANES-1X2-TWINS — #152 LANES: pre-registered s grid, twin rules, split date, Holm m=2, VIP exclusion")
+def test_lanes_1x2_twins():
+    """#152 LANES. Pre-registered in dev/active/model-bots-new-models-plan.md ("Pre-registration
+    — LANES") BEFORE the run: Match twin EV >= 3% all selections 1.30-s (s exclusive), High-odds
+    twin EV >= 2% home/away s-6.00, s in {2.00,2.30,2.50,2.80,3.00}; select on 08-31..09-12
+    (argmax min CLV, both >= 30 CLV picks), confirm once on 09-13..09-24, Holm m = 2; VIP holdings
+    (B2 N2) excluded before the one-pick-per-match choice. Source inspection only."""
+    import ast
+    from datetime import datetime, timezone
+    src = _engine_path("scripts/backtest_1x2_lanes.py").read_text(encoding="utf-8")
+    c = {}
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            tg = node.targets[0]
+            try:
+                val = ast.literal_eval(node.value)
+            except ValueError:
+                continue
+            if isinstance(tg, ast.Name):
+                c[tg.id] = val
+            elif isinstance(tg, ast.Tuple) and all(isinstance(e, ast.Name) for e in tg.elts):
+                c.update({e.id: v for e, v in zip(tg.elts, val)})
+    assert c["S_GRID"] == (2.00, 2.30, 2.50, 2.80, 3.00)
+    assert c["MATCH_EV"] == 0.03 and c["HIGH_EV"] == 0.02 and (c["ODDS_LO"], c["ODDS_HI"]) == (1.30, 6.00)
+    assert c["MATCH_SELS"] == ("home", "draw", "away") and c["HIGH_SELS"] == ("home", "away")
+    assert c["REF_MATCH_ODDS"] == (1.30, 4.50) and c["REF_HIGH_ODDS"] == (1.60, 6.00)
+    ep = lambda d: datetime.fromisoformat(d).replace(tzinfo=timezone.utc).timestamp()
+    assert c["SPLIT_EPOCH"] == ep("2026-09-13") and c["MIN_CLV_PICKS"] == 30
+    assert c["HOLM_M"] == 2 and c["ALPHA"] == 0.05 and c["N_BOOT"] >= 10000
+    assert 'run_b2_arm("N2", L)' in src and "exclude=vip" in src, "VIP (B2 N2) holdings must be excluded"
+    bt = _engine_path("scripts/backtest_1x2_new_bots.py").read_text(encoding="utf-8")
+    assert 'if exclude and (mid, sel) in exclude:' in bt, "exclusion must happen before the best-EV choice"
+    assert 'cfg.get("max_exclusive") and odds >= omax' in bt, "Match twin's upper bound s is exclusive"
+    for bad in ("insert into", "update ", "delete from", "execute_values", "create table"):
+        assert bad not in src.lower(), f"LANES must be read-only; found {bad!r}"
+
+
 if __name__ == "__main__":
     main()

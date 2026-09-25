@@ -68,3 +68,11 @@ p (10k), Holm m = 2 (the two twins). **PASS** = both adj p < 0.05. Report per s 
 remaining overlap between the twins (should be 0 by construction) and with VIP (0 by construction), plus the no-split
 reference (Match twin 1.30–4.50, High-odds twin 1.60–6.00) with its overlap count. Same window caveat as B2/B3: seen
 before, so the forward record decides.
+
+## RESULT — LANES (2026-09-25, `scripts/backtest_1x2_lanes.py`): pre-registered FAIL, one strong finding
+Chosen s = 2.30 (select half). Confirm: Match twin (1.30–2.30) n 113, CLV +2.91% [+1.70, +4.12], Holm p < 2e-4 PASS; High-odds
+twin (2.30–6.00) n 78, CLV +1.25% [−1.52, +4.15], p 0.19 FAIL → overall FAIL (both required).
+**Finding:** capping the Match twin's odds lifts it from +0.4/+0.6% (1.30–4.50, no split) to +2.5..+3.3% at EVERY cap 2.00–3.00
+in BOTH halves (confirm: 2.00 +3.09%, 2.50 +3.14%, 2.80 +3.02%, 3.00 +2.66%, n 86–157) — NEW+'s public-band edge sits at short
+odds (as the O/U finding did). A separate High-odds twin above the cap is thin and ≈ 0. Without a split the twins share
+~half their picks (177 / 129 on the two halves).

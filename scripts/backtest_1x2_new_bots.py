@@ -860,8 +860,13 @@ B2_NULL_RANGE = (1.30, 6.00)
 DIRECT_SWEEPER_BOOKS = frozenset({"Coolbet", "Unibet-Site", "Epicbet", "Tonybet"})   # everything else = API-Football feed
 
 
-def run_b2_arm(arm: str, L: dict) -> tuple[list[dict], Counter]:
-    cfg = B2_ARMS[arm]
+def run_b2_arm(arm: str, L: dict, cfg: dict | None = None, sels: tuple = SEL,
+               exclude: set | None = None) -> tuple[list[dict], Counter]:
+    """B2 arm. `cfg` / `sels` / `exclude` let the LANES test (scripts/backtest_1x2_lanes.py)
+    reuse the SAME gate stack: a custom {ev_min, odds_range[, max_exclusive]}, a selection
+    scope, and a set of (match_id, selection) the VIP bot holds, dropped BEFORE the
+    one-pick-per-match choice. Defaults reproduce B2 exactly."""
+    cfg = cfg or B2_ARMS[arm]
     thr, (omin, omax) = cfg["ev_min"], cfg["odds_range"]
     IMP.execute_query = _fake_execute_query
     SC.get_conn = _ro_get_conn
@@ -900,17 +905,20 @@ def run_b2_arm(arm: str, L: dict) -> tuple[list[dict], Counter]:
         fn["matches_evaluated"] += 1
         p1x2 = dict(zip(SEL, rr))
         accepted = []
-        for sel in SEL:
+        for sel in sels:
             odds = m["best"].get(sel, 0)
             if not odds or odds <= 0:
                 continue
             fn["candidates"] += 1
+            if exclude and (mid, sel) in exclude:
+                fn["drop_vip_holds"] += 1
+                continue
             p = p1x2[sel]
             if p is None or math.isnan(p):
                 fn["drop_nan_raw"] += 1
                 continue
             ev = p * odds - 1
-            if ev < thr or odds < omin or odds > omax:
+            if ev < thr or odds < omin or odds > omax or (cfg.get("max_exclusive") and odds >= omax):
                 fn["drop_ev" if ev < thr else "drop_odds_too_low" if odds < omin else "drop_odds_too_high"] += 1
                 continue
             gap = p - pin_imp[sel]
