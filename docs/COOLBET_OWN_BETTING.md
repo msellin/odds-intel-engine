@@ -1,5 +1,84 @@
 # Coolbet Own-Betting — Flow & Architecture (single source of truth)
 
+## HOW REAL MONEY WORKS TODAY — read this, not the history below (rewritten 2026-09-25, #162 W4.7)
+
+Everything under **"History"** further down describes earlier designs and is kept for the record.
+Where it disagrees with this section, **this section is right.**
+
+**State on 2026-09-25:** placement is PAUSED, real money is NOT ARMED, the money-gate lock is at 0
+(W4 being closed), all 11 per-bot € switches are OFF, and both executors' launchd jobs are parked in
+`local/launchd/paused/`. Nothing places real money until the owner deliberately turns each layer on.
+
+### The two executors (the only code that can stake)
+| Executor | Where | Books | What it runs |
+|---|---|---|---|
+| **UI placer** `scripts/place_coolbet_ui.py` → `coolbet_ui_placer.stage_bet` | operator's Mac (launchd `com.oddsintel.coolbet-ui-placer`, parked) | Coolbet | drives the logged-in Coolbet page through FlareSolverr |
+| **Best-price router** `workers/automation/best_price_router.py` | operator's Mac (launchd `com.oddsintel.best-price-router`, parked), `--execute` + env `ROUTER_ALLOW_REAL` | Coolbet (via `stage_bet`) and Unibet-Site (`unibet_placer`) | places each pick at the book with the better clearing price |
+
+Deleted on 2026-09-25 (#162 W4.6, RELIABILITY_LEDGER §4 "second code path"): the paper Mac daemon, the
+API placer (`coolbet_placer.place_all_bets` / `place_bet_by_id` / `_place_bet_api`) + its CLI, the VPS
+manual-placement drain, and the daemon health check. `coolbet_placer.py` now holds only shared helpers
+(floors, event search).
+
+### Which picks can be staked
+* **Supply:** pre-match `shadow_bets` of a bot with a **placement path** — `placement_gate.placement_path_reason`
+  over the exported `bot_config` (fails closed if the export is older than 36 h). 11 bots qualify. Which
+  pick a bot makes is its generator's rule (`bot_configs.py`, `pick_triggers.py`, …); the real-money-supply
+  model bots take candidates by bot NAME (`source_bots=("bot_v10_1x2",)`), never by status label.
+* **Maturity / status is NOT a money gate.** Status decides what customers see (#155). Money is decided
+  only by the switches below.
+
+### The gate stack, in order (every layer fails CLOSED)
+1. **Run level** — `placement_gate.assert_run_may_place`: `placement_paused` false · `real_money_armed` true ·
+   **money-gate lock**: `coolbet_session_state.money_gate_contract` ≥ 1 AND equal to the code's
+   `coolbet_state.GATE_CONTRACT` (so a stale Mac checkout cannot stake). Plus a single-run file lock
+   shared by both executors.
+2. **Per bot** — the audited € switch `coolbet_placer_bots.ui_place_enabled` (on /admin/bots, typed bot
+   name + reason; DB triggers refuse any other writer, and refuse switching ON while the lock is 0).
+3. **Per pick, before the browser** (both executors): already placed · account holds (the live Coolbet
+   account) · kickoff cutoff (3 min) · **the placement floor** at the pick's own price · per-match exposure.
+4. **Per pick, at the live price** — `placement_gate.assert_may_place(pick=…, held=…, odds=…)`, the last
+   call before money moves: allowlist, kickoff cutoff, daily caps, per-match exposure re-read from
+   `real_bets` across books, and the placement floor again at the price about to be staked (W4.2).
+
+### The placement floor — one rule (`workers/automation/placement_floor.pick_clears`, W4.3)
+Edge floor = **max(the bot's own generator floor, `min_edge_for_pick`)**, odds floor = **max(the bot's
+own, `_min_odds_for`)** — the stricter wins (owner decision 3C; `MARKET_FLOOR_OPT_OUT` is empty, an
+opt-out is the owner's call). Plus the bot's own selections, odds ceiling, edge ceiling and (sharp bots)
+the 1.6× outlier cap. Edge is probability points (`p − 1/odds`) for every capable bot. The per-selection
+result is exported to `bot_config` as the `placement_floor` gate.
+* Model bots: **1x2 home-underdogs 10 pp @ ≥ 2.80** (`bot_coolbet_1x2_model_v1`, also at the live price) ·
+  **O/U 8 pp @ ≥ 1.80** (`bot_coolbet_ou_model_v1`).
+* Sharp bots face 10–13 pp (1x2) / 8 pp (O/U) against a de-vigged Pinnacle line — above their own 8 pp
+  ceiling / outlier cap — so they almost never clear, and three have EMPTY windows. That is the stricter
+  rule working as designed; making a sharp bot placeable at its own floor is an owner decision.
+
+### Stake, caps, exposure
+* **Flat €10** on every path (owner 2026-09-25: "Kelly hasn't proven itself in this project yet").
+* **Daily caps** 80 bets / €800 across EVERY book: `spent_today()` = placed attempts ∪ today's `real_bets`
+  (`placed_real IS NOT FALSE`), de-duplicated.
+* **Per match** at most 2 bets / €20, never the same bet twice, never a second bet in the same market
+  family (`exposure_conflict`, reads both vocabularies).
+
+### The money record — `real_bets`
+* **One engine writer**, `supabase_client.store_real_bet` (the account-sync reconcile too, W4.5); the web
+  manual log goes through the RPC `record_manual_real_bet` (canonical vocabulary, same-day lock).
+* `placed_real`: TRUE = confirmed real money · NULL = **unverified** (hand-logged, or a placement whose
+  balance could not be read — it still blocks a retry and counts in the caps) · FALSE = paper, never counted.
+* Links: `shadow_bet_id`, `simulated_bet_id`, and since migration 448 `forward_test_pick_id` (a bet on a
+  /picks pick). Scored on the sharp-anchor close (`leg_clv_sharp`, ledger `real_bets`).
+* An abandoned / walkover match with no score is VOID on every ledger (W1.4); the book's own settlement governs.
+
+### Turning real money on (owner only, in this order)
+W4 closes → `money_gate_contract` 1 (migration) · arm real money on /admin/bots (typed) · resume placement
+(typed) · switch ON the chosen bot(s) · load the executor's launchd job on the Mac from `local/launchd/paused/`
+· for the router also set `ROUTER_ALLOW_REAL=true`. Each step is logged in `control_changes`.
+
+---
+
+## History — earlier designs (kept for the record; the section above supersedes)
+
+
 > **🗑️ DELETED 2026-09-25 (#162 W4.6).** The retired real-money code paths this page
 > still describes in places are now **deleted from the tree**, not just unscheduled: the paper
 > Mac daemon (`coolbet_mac_daemon`, its keepalive + plist), its VPS healthcheck
@@ -78,7 +157,7 @@
 
 
 
-## CURRENT STATE (2026-09-08) — RESOLVED: model-edge on both markets
+## (history) CURRENT STATE (2026-09-08) — RESOLVED: model-edge on both markets
 
 The old open question ("line-shop 3% vs model per-market floor governs real
 money") is **decided by evidence** (BOT-2D-AUDIT, held-out OOS): line-shop loses
@@ -137,7 +216,7 @@ This is the **🤖 OWN** path only. It is NOT the customer `/picks` product.
 
 ---
 
-## DATA FLOW — the definitive table map (audited & verified 2026-09-09)
+## (history) DATA FLOW — the definitive table map (audited & verified 2026-09-09)
 
 The recurring "which table do picks/bets come from?" confusion, settled with a full
 code+DB trace (COOLBET-PICK-TABLE-AUDIT). **Four tables, and they are NOT interchangeable:**
@@ -167,7 +246,7 @@ code+DB trace (COOLBET-PICK-TABLE-AUDIT). **Four tables, and they are NOT interc
 
 ---
 
-## ⚠ Read this first — there are TWO placers, and they are different
+## (history) ⚠ Read this first — there are TWO placers, and they are different
 
 Both write to the `real_bets` table (that table deliberately holds two market
 vocabularies, one per placer — see `place_coolbet_ui.py` header). They do NOT
@@ -209,7 +288,7 @@ is unchanged at 13% (still governs the trigger windows). One env var
 
 ---
 
-## Path A — the REAL-MONEY placer (the one that matters)
+## (history) Path A — the REAL-MONEY placer (the one that matters)
 
 ### A1. Where the picks come from — `bot_coolbet_value_v1` (a line-shop bot)
 
@@ -307,7 +386,7 @@ owner authorization — it is seeded OFF; this is the built vehicle for the
 
 ---
 
-## Path B — the API/paper placer (model-edge; the one we keep tuning)
+## (history) Path B — the API/paper placer (model-edge; the one we keep tuning)
 
 `coolbet_mac_daemon._tick()` (continuous) → `load_qualified_bets()` +
 `place_all_bets()` in `coolbet_placer.py`. **`execute=False` is hardcoded**, so
@@ -329,14 +408,14 @@ vs best book), which is a **different instrument** from Path A's line-shop edge.
 
 ---
 
-## Both paths are pre-match only
+## (history) Both paths are pre-match only
 
 Neither bets in-play. `coolbet_placer.load_qualified_inplay_bets` exists but is an
 **admin override** outside the daemon flow (INPLAY-SHELVED-REVIVE-GATE). Any
 "2.80 was an inplay floor" recollection is wrong — 2.80 is the pre-match 1x2 odds
 floor (Path A gate 4 / Path B gate 6).
 
-## Config (env, `.env`)
+## (history) Config (env, `.env`)
 
 | Env | Meaning | Default |
 |---|---|---|
@@ -352,7 +431,7 @@ Per-bot real-money on/off is **not** env — it is the DB table `coolbet_placer_
 (COOLBET-PLACER-CONTROL). The old `COOLBET_UI_MODEL_EDGE_OU` env flag was removed;
 the toggle replaces it. ~~`COOLBET_UI_PLACE_OU=1` (line-shop O/U restore)~~ removed 2026-09-15 with the line-shop stop.
 
-## Not to be confused with
+## (history) Not to be confused with
 
 - **`/admin/shadow-bots` page** — mostly a DISPLAY reading `shadow_bets` (many
   experimental bots), where the operator eyeballs picks for MANUAL placement.
@@ -364,7 +443,7 @@ the toggle replaces it. ~~`COOLBET_UI_PLACE_OU=1` (line-shop O/U restore)~~ remo
 - **`/picks` / `/value-bets`** — the 👥 PICKS customer product. Different cohort,
   different purpose.
 
-## Known-open / not-yet-validated
+## (history) Known-open / not-yet-validated
 
 - **`COOLBET-REALMONEY-EDGE-GATE-RECONCILE` (the big one).** Real money is gated
   by `bot_coolbet_value_v1`'s flat **3%** line-shop edge, which has never been

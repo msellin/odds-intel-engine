@@ -58390,5 +58390,21 @@ def test_placement_gate_exposure_and_floor():
     ub = inspect.getsource(bpr._dispatch_unibet)
     assert "pick=pick, held=[], odds=float(decision[\"winner_odds\"])" in ub
 
+@test("OWN-BETTING-DOC-CURRENT — COOLBET_OWN_BETTING.md opens with today's money path, history below (#162 W4.7)")
+def test_own_betting_doc_current():
+    """[[#162]] W4.7: the single source of truth for own real money had grown banner on banner over a
+    retired design (two placers, BOT_THRESHOLDS, maturity as a money gate). It now OPENS with one
+    current section; everything older sits under "History" and says so. Pin the facts that matter."""
+    doc = _engine_path("docs/COOLBET_OWN_BETTING.md").read_text(encoding="utf-8")
+    i_now, i_hist = doc.index("## HOW REAL MONEY WORKS TODAY"), doc.index("## History — earlier designs")
+    assert i_now < i_hist < doc.index("## (history) ")
+    now = doc[i_now:i_hist]
+    for fact in ("placement_floor.pick_clears", "Maturity / status is NOT a money gate",
+                 "money_gate_contract", "GATE_CONTRACT", "assert_may_place(pick=", "Flat €10",
+                 "store_real_bet", "forward_test_pick_id", "MARKET_FLOOR_OPT_OUT", "best_price_router.py",
+                 "scripts/place_coolbet_ui.py"):
+        assert fact in now, f"the current section must state: {fact}"
+    assert "BOT_THRESHOLDS" not in now and "coolbet_mac_daemon" not in now.replace("paper Mac daemon", "")
+
 if __name__ == "__main__":
     main()
