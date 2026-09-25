@@ -215,8 +215,19 @@ def main() -> None:
                 """SELECT count(*) AS n FROM simulated_bets b JOIN matches m ON m.id = b.match_id
                     WHERE b.result = 'pending' AND m.date < now() - interval '150 minutes'""")[0]["n"],
             "dq_24h": _rows(
-                """SELECT check_name, count(*) AS n FROM data_quality_findings
+                # DISTINCT problems (check x match x book), the same rule as src/lib/admin-overview.ts
+                """SELECT check_name, count(DISTINCT coalesce(match_id::text,'') || '|' || coalesce(bookmaker,'')) AS n
+                     FROM data_quality_findings
                     WHERE found_at > now() - interval '24 hours' GROUP BY 1"""),
+            "unconfirmed_manual_oldest": (_rows(
+                """SELECT min(placed_at) AS t FROM real_bets
+                    WHERE placed_real IS NULL AND placed_at >= '2026-09-10'
+                      AND placed_at < now() - interval '24 hours'""") or [{}])[0].get("t"),
+            # Coolbet block risk: same source as /admin/feeds (cap from feed_book_stats, this hour from book_footprint)
+            "coolbet_cap": (_rows("SELECT budget_1h FROM feed_book_stats WHERE book = 'Coolbet'") or [{}])[0].get("budget_1h"),
+            "footprint": _rows(
+                """SELECT book, hour, requests, refused, challenges, errors FROM book_footprint
+                    WHERE book = 'Coolbet' AND hour > now() - interval '2 hours'"""),
             "unconfirmed_manual": _rows(
                 """SELECT count(*) AS n FROM real_bets
                     WHERE placed_real IS NULL AND placed_at >= '2026-09-10'

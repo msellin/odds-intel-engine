@@ -16394,8 +16394,9 @@ def _():
     )
     # #139 P5 (2026-09-24): the log is the DataTable in the real-bets page's client half.
     log = (web / "src" / "app" / "(app)" / "admin" / "real-bets" / "money-client.tsx").read_text()
-    assert ">Edge<" in log and ">CLV<" in log, (
-        "the real-bets log must render Edge and CLV column headers"
+    # answer-first round (2026-09-25): the headers are plain words; "edge" / "CLV" live in the ⓘ
+    assert ">Expected advantage<" in log and ">vs final price<" in log and "(edge)" in log and "(CLV)" in log, (
+        "the real-bets log must render the edge and CLV columns (plain header, term in the ⓘ)"
     )
     assert "edgePctTaken" in log and "b.clv" in log, (
         "the real-bets log must render Edge + CLV cell values"
@@ -16937,7 +16938,7 @@ def test_admin_real_bets_page():
     assert "todayBets" in page_src, "page must compute todayBets"
     assert "Date.UTC" in page_src, "today boundary must be in UTC"
     assert "<StatCard" in page_src and "Today (UTC)" in page_src, "Overall + Today as StatCards"
-    assert "<BetLogTable bets={bets} />" in page_src, "page must render the bet log"
+    assert "<BetLogTable bets={bets} now={nowMs} />" in page_src, "page must render the bet log"
 
     log_src = log.read_text()
     assert '"use client"' in log_src, "the bet log must be a client component"
@@ -16983,7 +16984,8 @@ def test_admin_real_bets_insights():
     assert "daily(bets, 14)" in page_src, "page must build the last-14-days breakdown"
     assert "weekly(bets" in page_src, "page must build the weekly staked / P&L series"
     assert "<MoneyCharts" in page_src, "page must render the charts"
-    assert "At risk now" in page_src and "pays up to" in page_src, "open exposure incl. max potential payout"
+    assert 'label: "Open now"' in page_src and "at risk on" in page_src and "pays up to" in page_src, \
+        "open exposure incl. max potential payout (the Open now answer, 2026-09-25)"
     assert "Did we get the paper price?" in page_src, "page must show the paper-vs-real block"
     assert "Lost to worse prices" in page_src, "paper-vs-real must surface slippage cost in €"
     assert "Stake matched the paper stake" in page_src and "diverged" in page_src, "stake parity"
@@ -54502,7 +54504,7 @@ def test_admin_controls_one_writer():
     page = _web_path("src/app/(app)/admin/feeds/page.tsx").read_text(encoding="utf-8")
     assert "loadControlState(user.id)" in page and "<FootprintControl" in page
     status = _web_path("src/components/admin/admin-status.ts").read_text(encoding="utf-8")
-    assert '"Coolbet sweeping"' in status and "daemons_paused" in status
+    assert '"Coolbet collection"' in status and "daemons_paused" in status
     for gone in ("src/components/coolbet-daemons-pause.tsx", "src/components/coolbet-placer-toggle.tsx",
                  "src/app/api/admin/coolbet-daemons-pause/route.ts", "src/app/api/admin/coolbet-placer-bots/route.ts"):
         assert not _web_path(gone).exists(), f"{gone} must stay deleted"
@@ -54655,8 +54657,8 @@ def test_admin_feeds_page():
     d = "src/app/(app)/admin/feeds/"
     page = _web_path(d + "page.tsx").read_text(encoding="utf-8")
     assert "is_superadmin" in page and "loadFeedsPage()" in page and "<FeedsBoard" in page
-    assert "<FootprintControl" in page and "cb?.budget_1h" in page, "Coolbet switch sits with Coolbet's request budget"
-    assert "AF_DAILY_BUDGET" in page and 'id="af-budget"' in page and "Odds pipeline today" in page and "Live tracker" in page
+    assert "<FootprintControl" in page and "cbBudget?.cap" in page, "Coolbet switch sits with Coolbet's request budget"
+    assert "AF_DAILY_BUDGET" in page and 'id="af-budget"' in page and "Odds for today's matches" in page and "Live tracker" in page
     assert "<CoverageChart" in page and "<DqFindings" in page and "error={d.dq.error}" in page
     lib = _web_path("src/lib/admin-feeds.ts").read_text(encoding="utf-8")
     assert "AF_DAILY_BUDGET = 150_000" in lib and 'readAdminFixture<FeedsFixture>("feeds")' in lib
@@ -54671,7 +54673,7 @@ def test_admin_feeds_page():
     route = _web_path("src/app/api/admin/feed-control/route.ts").read_text(encoding="utf-8")
     assert 'from("feed_actions").insert' in route and "is_superadmin" in route, "every feed action stays audited"
     board = _web_path(d + "feeds-board.tsx").read_text(encoding="utf-8")
-    assert "statusTone(main)" in board, "a warn on the main feed must colour its block"
+    assert "statusTone(main)" in _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8") and "blockState(" in board, "a warn on the main feed must colour its block"
     for f in ("page.tsx", "feeds-board.tsx", "feed-controls.tsx", "dq-findings.tsx", "footprint-control.tsx"):
         t = _web_path(d + f).read_text(encoding="utf-8")
         for bad in ("emerald-", "amber-", "red-4", "red-5", "sky-5", "zinc-5"):
@@ -54794,7 +54796,7 @@ def test_money_page_ledger():
     page = page_p.read_text(encoding="utf-8")
     cl = _web_path("src/app/(app)/admin/real-bets/money-client.tsx").read_text(encoding="utf-8")
     lib = _web_path("src/lib/admin-money.ts").read_text(encoding="utf-8")
-    assert "is_superadmin" in page and "<PageHeader" in page and page.count("<StatCard") >= 6
+    assert "is_superadmin" in page and "<PageHeader" in page and "<AnswerStrip" in page and page.count("<StatCard") >= 3
     assert "/admin/place" not in page, "the deleted page must not be referenced"
     assert "unknown={unreadable" in page, "an unreadable ledger must read Unknown, never 0"
     assert "<Promotions" in page and "unconfirmedToDo(" in page and "<ToDoTable" in page
@@ -54806,7 +54808,9 @@ def test_money_page_ledger():
     assert '.not("placed_real", "is", false)' in lib, "paper rows stay out of the real-money ledger"
     assert ".range(" in lib and "MAX_PAGES" in lib, "must page past the 1,000-row cap"
     assert "placed_real" in lib.split("BET_SELECT")[1][:400], "placed_real must be selected for the to-do"
-    assert "MANUAL_RECONCILE_SINCE" in lib and "RECONCILE_AFTER_H = 24" in lib and "b.placedReal == null" in lib
+    fmt = _web_path("src/lib/admin-money-format.ts").read_text(encoding="utf-8")
+    assert "MANUAL_RECONCILE_SINCE" in fmt and "RECONCILE_AFTER_H = 24" in fmt and "b.placedReal == null" in fmt
+    assert 'confirmState(b, now) === "unconfirmed"' in lib, "the to-do uses the same rule as the ledger column"
     assert 'from("promo_terms")' in lib and "promo_ledger" in lib
     promo = _web_path("src/components/shadow-bots/promotions.tsx").read_text(encoding="utf-8")
     assert "promos.length === 0" in promo and "<details" in promo, "one line when empty, collapsed otherwise"
@@ -54828,7 +54832,8 @@ def test_admin_ux_round2_shared():
     assert "AREA_ORDER" in att and "money: 0" in att
     page = _web_path("src/app/(app)/admin/page.tsx").read_text(encoding="utf-8")
     assert '"Urgent"' in page and '"To check"' in page
-    assert 'label="Real bets · 30 days"' in page and "d.realBets.last30" in page
+    # answer-first pass (2026-09-25): the KPI cards became plain answers (AnswerStrip); the rules hold
+    assert 'label: "Real bets · 30 days"' in page and "d.realBets.last30" in page
     assert "moneyBlockers.join" in page and 'real_money_armed ? "danger" : "neutral"' in page
     ov = _web_path("src/lib/admin-overview.ts").read_text(encoding="utf-8")
     assert "now - 30 * 86_400_000" in ov and "BLOCKER_WORDS" in ov
@@ -54881,11 +54886,11 @@ def test_admin_feeds_budget_honest():
     assert 'from("book_footprint")' in lib and "footprint: miss(fx.footprint" in lib
     model = _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8")
     assert "export function budgetView(" in model and "export function budgetSentence(" in model
-    assert "Budget last ran out" in model and "resets at" in model and "logged a moment late" in model
+    assert "The hourly limit was last reached" in model and "resets at" in model and "logged a moment late" in model
     assert "BUDGET_REASON_RE = /^request budget spent/i" in model
-    assert "import" not in model.split("*/", 1)[1].split("export", 1)[0], "the model must stay import-free (client-safe)"
+    assert all(l.startswith("import type ") for l in model.splitlines() if l.startswith("import ")), "the model must stay client-safe (type-only imports)"
     board = _web_path("src/app/(app)/admin/feeds/feeds-board.tsx").read_text(encoding="utf-8")
-    assert "BUDGET_REASON_RE.test(raw)" in board and "budgetSentence(budget)" in board
+    assert "BUDGET_REASON_RE.test(raw) && budget" in model and "plainFeedReason(" in board and "budgetSentence(budget)" in board
     page = _web_path("src/app/(app)/admin/feeds/page.tsx").read_text(encoding="utf-8")
     assert "budgetSentence(cbBudget)" in page
     fx = _engine_path("scripts/admin_fixtures/feeds.py").read_text(encoding="utf-8")
@@ -54910,14 +54915,14 @@ def test_admin_feeds_stale_grey():
     assert "STATUS_STALE_MIN" not in page.split('from "./feeds-board"')[0].rsplit("import", 1)[1], (
         "a server component cannot read a constant out of a 'use client' file")
     board = _web_path("src/app/(app)/admin/feeds/feeds-board.tsx").read_text(encoding="utf-8")
-    assert "function statusTone(f: FeedStatus | undefined, stale = false)" in board
+    assert "export function statusTone(f: FeedStatus | undefined, stale = false)" in model
     assert "export function okWord(" in board and 'return "Fresh"' in board and "freshLimitMin(f)" in board
     assert 'STATUS_WORD: Record<FeedStatus["status"], string> = {\n  ok: "OK"' in board, "status ok is not automatically 'Fresh'"
     assert "id={`book-${b.key}`}" in board and "`#book-${next}`" in board
     sel = board[board.index("function select(key: string)"):]
     sel = sel[:sel.index("\n  }\n")]
     assert "setSelected((prev)" not in sel and "replaceState" in sel, "no history.replaceState inside a setState updater"
-    assert '{" "}paused' in page, "the 'bluepaused' legend lost its space"
+    assert "blue</span>: paused" in page, "the 'bluepaused' legend lost its space"
 
 
 @test("ADMIN-JOBS-DRAWER — Jobs rows open a drawer (last runs, error, Run now only where a feed path exists) and carry id=job-<name>")
@@ -54945,13 +54950,13 @@ def test_admin_jobs_drawer():
         assert w not in route, f"job-runs must be read-only ({w})"
     table = _web_path("src/app/(app)/admin/ops/jobs-table.tsx").read_text(encoding="utf-8")
     assert "id={jobAnchor(row.original.job)}" in table and "pageSize={0}" in table
-    assert "accessorFn: (r) => r.failingSince ?? undefined" in table and 'sortUndefined: "last"' in table
+    assert 'accessorFn: (r) => r.failingSince ?? (r.state === "failing" ? r.lastRun : undefined)' in table and 'sortUndefined: "last"' in table
     assert "onRowClick=" in table and "<JobDrawer" in table
     drawer = _web_path("src/app/(app)/admin/ops/job-drawer.tsx").read_text(encoding="utf-8")
     assert "JOB_FEED[v.job]" in drawer and "No Run-now button for this job" in drawer
     assert 'from "../feeds/feed-controls"' in drawer and "feedActionSpec(" in drawer
     page = _web_path("src/app/(app)/admin/ops/page.tsx").read_text(encoding="utf-8")
-    assert "longest failing:" in page and "most repeat failures:" in page and "worst:" not in page
+    assert "jobsAnswer(current, now)" in page and "worst:" not in page
     fx = _engine_path("scripts/admin_fixtures/jobs.py").read_text(encoding="utf-8")
     assert '"recent_runs"' in fx and '"feeds"' in fx
 
@@ -54990,12 +54995,12 @@ def test_admin_dq_groups():
     for check in ("single_market_off", "wrong_fixture_board", "mirrored_1x2", "swapped_two_way",
                   "results_disagree", "results_corrected"):
         assert f'case "{check}":' in fn, f"{check} has no plain category"
-    for label in ("Price far from the other books", "Wrong match on the board",
+    for label in ("Price far from the other books", "Prices from the wrong match",
                   "Home/away or over/under swapped", "Results disagree"):
         assert label in model
     assert "dqGroupLabel" in _web_path("src/lib/admin-feeds.ts").read_text(encoding="utf-8"), "re-exported from admin-feeds.ts"
     dq = _web_path("src/app/(app)/admin/feeds/dq-findings.tsx").read_text(encoding="utf-8")
-    assert "dqGroupLabel(f.check_name)" in dq and 'id="dq"' in dq
+    assert "dqProblems(findings)" in dq and 'id="dq"' in dq and "const group = dqGroupLabel(f.check_name)" in model
 
 
 @test("QUEUE-UX-FIX-ROUND — Pick queue: Place only on Place/Thin, visible reasons, shown edge, one stale wording, one row per bet, in-play hidden, sticky action, display names (#139)")
@@ -55103,7 +55108,7 @@ def test_real_bets_ux_fix_round():
     assert "display_name" in _engine_path("scripts/admin_fixtures/money.py").read_text(encoding="utf-8")
 
     # (5) confirmation wording + labelled exports
-    assert "Not confirmed (by hand)" in cl and ">\n            By hand\n" not in cl
+    assert "Not confirmed (by hand)" in fmt and "CONFIRM_LABEL[" in cl and ">\n            By hand\n" not in cl
     for label in ("Export all real bets", "Export unconfirmed bets", "Export results by bot", "Export day by day"):
         assert label in cl, f"export button must say what it exports: {label}"
 
@@ -55409,13 +55414,47 @@ def test_feed_auto_pause_is_a_failure():
     m = _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8")
     assert 'f.status === "paused" && f.paused_by === "auto"' in m and 'return "fail"' in m
     for f in ("src/lib/admin-attention.ts", "src/app/(app)/admin/page.tsx", "src/app/(app)/admin/overview-charts.tsx",
-              "src/app/(app)/admin/feeds/feeds-board.tsx", "src/app/(app)/admin/feeds/page.tsx"):
+              "src/app/(app)/admin/feeds/page.tsx"):
         assert "feedHealth(" in _web_path(f).read_text(encoding="utf-8"), f
+    assert "blockState(" in _web_path("src/app/(app)/admin/feeds/feeds-board.tsx").read_text(encoding="utf-8"), "the board colours through the model's feedHealth-based statusTone"
+    assert 'if (f.paused) return f.paused_by === "auto" ? "danger" : "info";' in m
     ch = _web_path("src/components/oi/charts.tsx").read_text(encoding="utf-8")
     assert "export function niceTicks(" in ch and "ticks={yTicks}" in ch
     assert "niceTicks(" in _web_path("src/app/(app)/admin/overview-charts.tsx").read_text(encoding="utf-8")
     tl = _web_path("src/app/(app)/admin/bots/activity-timeline.tsx").read_text(encoding="utf-8")
     assert "database change ${" not in tl and "export function isSetupActor(" in tl
+
+
+@test("ADMIN-ANSWER-FIRST — pages open with plain answers; card explanations are ⓘ tips, not paragraphs")
+def test_admin_answer_first():
+    """2026-09-25, owner on screenshots: "so this is the new clean and intuitive dashboard?" — every card
+    carried a paragraph and the KPI rows read like a report. (1) PanelHeader renders `description` as an
+    ⓘ InfoTip beside the title (one change, every card and chart on every page); ChartCard's footer small
+    print joins that tip. (2) Overview / Feeds / Jobs open with an AnswerStrip — one plain sentence per
+    question ("Unibet is down", "Off — nothing can bet automatically", "All 23 running")."""
+    if not (_web_root / "src").exists():
+        return
+    panel = _web_path("src/components/oi/panel.tsx").read_text(encoding="utf-8")
+    assert "<InfoTip>{description}</InfoTip>" in panel and '<p className="mt-0.5 text-xs text-muted-foreground">{description}</p>' not in panel
+    tip = _web_path("src/components/oi/info-tip.tsx").read_text(encoding="utf-8")
+    assert 'role="tooltip"' in tip and "aria-expanded" in tip and 'e.key === "Escape"' in tip
+    ch = _web_path("src/components/oi/charts.tsx").read_text(encoding="utf-8")
+    assert "border-t border-border px-4 py-2 text-xs text-muted-foreground\">{footer}" not in ch
+    for f in ("src/app/(app)/admin/page.tsx", "src/app/(app)/admin/feeds/page.tsx", "src/app/(app)/admin/ops/page.tsx"):
+        src = _web_path(f).read_text(encoding="utf-8")
+        assert "<AnswerStrip answers={answers} />" in src, f
+    ov = _web_path("src/app/(app)/admin/page.tsx").read_text(encoding="utf-8")
+    assert '"Armed, but nothing can bet right now"' in ov, "armed + blocked must not read 'Off'"
+    # ONE rule per fact across pages (strict owner test round 5): the Overview's Coolbet block risk is the
+    # Feeds page's coolbetBlockRisk over the same book_footprint hour, and job names come from Jobs.
+    lo = _web_path("src/lib/admin-overview.ts").read_text(encoding="utf-8")
+    assert 'coolbetBlockRisk(cbR.error ? null : budgetView("Coolbet"' in lo and "d.coolbetRisk.level" in ov
+    att = _web_path("src/lib/admin-attention.ts").read_text(encoding="utf-8")
+    assert 'import { humanJob } from "./admin-jobs-model"' in att and "function humanJob" not in att
+    # charts default to order 0 and jumped above the answers on a phone
+    assert 'className="order-3 flex flex-col' in ov
+    st = _web_path("src/components/admin/admin-status.ts").read_text(encoding="utf-8")
+    assert '"Coolbet collection"' in st and '"Coolbet sweeping"' not in st
 
 
 @test("BOT-BOARD-DEV-PREVIEW-NEVER-IN-PROD — the no-login /admin/bots fixture preview is development-only")
@@ -56796,6 +56835,216 @@ def test_lanes_1x2_twins():
     for bad in ("insert into", "update ", "delete from", "execute_values", "create table"):
         assert bad not in src.lower(), f"LANES must be read-only; found {bad!r}"
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# NEW tests (fixer F, round 5 — answer-first fix round, #139, 2026-09-25). Paste after
+# test_admin_answer_first in scripts/smoke_test.py.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+
+
+@test("ADMIN-FEEDS-ONE-SOURCE-BLOCK-RISK — every 'this hour' figure on /admin/feeds comes from book_footprint; one Coolbet block-risk rule")
+def test_admin_feeds_one_source_block_risk():
+    """Answer-first fix round (#139, 2026-09-25). The top answer read "348 of 500 this hour" from
+    feed_book_stats (5-min copy) while the Coolbet panel read "376/500" from book_footprint. Every
+    this-hour figure — requests, block checks, errors — now comes from budgetView() over book_footprint,
+    and the "Coolbet requests" answer became "Coolbet block risk: Low / Medium / High" from ONE pure
+    rule (coolbetBlockRisk, exported so the Overview shows the same answer): Low < 80% and 0 block
+    checks; Medium ≥ 80% or any block check; High at/over the limit or ≥ 5 block checks."""
+    if not (_web_root / "src").exists():
+        return
+    model = _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8")
+    assert "export function coolbetBlockRisk(" in model and "BLOCK_CHECKS_HIGH = 5" in model and "BLOCK_RISK_SHARE = 0.8" in model
+    fn = model[model.index("export function coolbetBlockRisk("):]
+    fn = fn[:fn.index("\n}\n")]
+    assert "share >= 1 || ch >= BLOCK_CHECKS_HIGH" in fn and "share >= BLOCK_RISK_SHARE || ch > 0" in fn
+    assert "challenges: Number(cur?.challenges" in model and "requests24h:" in model, "block checks come from the same footprint row"
+    lib = _web_path("src/lib/admin-feeds.ts").read_text(encoding="utf-8")
+    assert 'select("book, hour, requests, refused, challenges, errors")' in lib and "coolbetBlockRisk" in lib
+    page = _web_path("src/app/(app)/admin/feeds/page.tsx").read_text(encoding="utf-8")
+    assert "coolbetBlockRisk(cbBudget)" in page and 'label: "Coolbet block risk"' in page
+    assert 'label: "Coolbet requests"' not in page
+    for stale in ("cb.requests_1h", "cb?.requests_1h", "cb.challenges_1h", "cb?.challenges_1h", "cb.errors_1h", "cb?.requests_24h"):
+        assert stale not in page, f"{stale}: this-hour figures must come from book_footprint (budgetView)"
+    board = _web_path("src/app/(app)/admin/feeds/feeds-board.tsx").read_text(encoding="utf-8")
+    for stale in ("st.requests_1h", "st.challenges_1h", "st.errors_1h", "st.requests_24h"):
+        assert stale not in board, f"{stale}: the block details must use budgetView too"
+    assert "budget.requests" in board and "budget.challenges" in board
+    fx = _engine_path("scripts/admin_fixtures/feeds.py").read_text(encoding="utf-8")
+    assert "requests, refused, challenges, errors FROM book_footprint" in fx
+
+
+@test("ADMIN-FEEDS-ANSWER-MATCHES-BLOCKS — the Feeds answer is built from the block tones; blocks green only inside their own schedule")
+def test_admin_feeds_answer_matches_blocks():
+    """Answer-first fix round (#139, 2026-09-25). "All 23 running" sat above 8 blocks (23 was the
+    internal checks) and could read green beside an amber block. The block definitions and tone rules
+    moved to admin-feeds-model.ts; the page's Feeds answer names the red/amber blocks from the same
+    allBlockStates() the board draws, and the all-clear counts blocks ("6 bookmakers + 2 data
+    sources"). A block is green only within interval_min + FRESH_GRACE_MIN, and each card says its
+    normal refresh ("every 30 min"). The header badge says "Page refreshed … · data from …" instead of
+    "Checked … · every 60 s", which read as live data."""
+    if not (_web_root / "src").exists():
+        return
+    model = _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8")
+    assert "export const BOOK_BLOCKS" in model and "export const OTHER_BLOCKS" in model and "export function allBlockStates(" in model
+    assert "FRESH_GRACE_MIN = 10" in model and "return (f.interval_min ?? 30) + FRESH_GRACE_MIN;" in model
+    assert "export function everyText(" in model
+    page = _web_path("src/app/(app)/admin/feeds/page.tsx").read_text(encoding="utf-8")
+    assert "allBlockStates(feeds, budgets, now, statusStale)" in page
+    assert "bookmakers + ${nOther} data sources" in page and "running`" not in page.split("const answers")[1].split("];")[0].replace("All running", "")
+    assert "All ${feeds.length} running" not in page
+    assert "dataAt={updated}" in page
+    board = _web_path("src/app/(app)/admin/feeds/feeds-board.tsx").read_text(encoding="utf-8")
+    assert "blockState(b, byId, now, stale, budget)" in board and "everyText(main.interval_min)" in board
+    assert "const BOOKS:" not in board and "const OTHERS:" not in board, "one copy of the block definitions (the model's)"
+    ar = _web_path("src/app/(app)/admin/ops/auto-refresh.tsx").read_text(encoding="utf-8")
+    assert "Page refreshed {hhmm}" in ar and "data from {dataHhmm}" in ar and "Checked {hhmm}" not in ar
+
+
+@test("ADMIN-FEEDS-PLAIN-WORDS — Feeds: Coolbet collection On/Off in one line, distinct DQ problems, no jargon on the face of the page")
+def test_admin_feeds_plain_words():
+    """Answer-first fix round (#139, 2026-09-25). The Coolbet panel ("Coolbet sweeping (footprint
+    pause)", four sentences) is "Coolbet collection" with an On/Off switch, one line and an ⓘ — the
+    SAME audited daemons_paused control. Data quality counts DISTINCT problems (same match + book +
+    kind re-found every 30 min = one; the tester read "74 in 24 h" for a handful), says "set aside
+    automatically — no action needed" when that is true, drops the raw "Check" column, and writes
+    details without codes ("Handicap −0.75", not "ah:-0.75 … median … pp")."""
+    if not (_web_root / "src").exists():
+        return
+    d = "src/app/(app)/admin/feeds/"
+    fp = _web_path(d + "footprint-control.tsx").read_text(encoding="utf-8")
+    assert 'control="daemons_paused" invert label="Coolbet collection" onWord="On" offWord="Off"' in fp
+    assert "Coolbet sweeping <span" not in fp and "(footprint pause)</span>" not in fp and "<InfoTip>" in fp
+    page = _web_path(d + "page.tsx").read_text(encoding="utf-8")
+    for bad in ('"Bookmakers active"', '"Have a sharp price"', "(1X2)", '"Games with xG"', "(#110)", "exit IP", "snapshot rows", "Last live snapshot"):
+        assert bad not in page, f"jargon on /admin/feeds: {bad}"
+    assert "Bookmakers with a price today" in page and "Includes books we can't bet at" in page
+    model = _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8")
+    assert "export function dqProblems(" in model and "export function marketLabel(" in model and "export function dqHandled(" in model
+    assert '"Handicap ' in model and "other books ${m[4]}" in model
+    dq = _web_path(d + "dq-findings.tsx").read_text(encoding="utf-8")
+    assert "dqProblems(findings)" in dq and "set aside automatically, no action needed" in dq
+    assert 'header: "Check"' not in dq and 'column: "check"' not in dq
+    board = _web_path(d + "feeds-board.tsx").read_text(encoding="utf-8")
+    assert "plainFeedReason(" in board and '"FlareSolverr"' not in board and "(PostgREST)" not in board
+
+
+@test("ADMIN-JOBS-ANSWER-RULE — Jobs never says 'All running' while a failure is listed; failures chart splits fixed vs still failing")
+def test_admin_jobs_answer_rule():
+    """Answer-first fix round (#139, 2026-09-25). The Jobs page said "All running" beside "Model
+    upkeep: 1 of 8 failing" and "Every scheduled job: 1 failing". ONE rule (jobsAnswer, shared with the
+    Overview): any failing job → "1 job failing — <plain name>", red when its last run is within
+    RECENT_FAILURE_D (7) days, amber otherwise; the group badges and the list badge use the same tone.
+    "Failed job runs per day" drew red bars every day while one job was failing — it is now "Failed
+    runs, most fixed on their next try", stacked grey (fixed on a later run) vs red (still part of a
+    job's current failure). Jobs unregistered on purpose (retired_jobs, migration 426) are left out of
+    the chart as the view already leaves them out of the list."""
+    if not (_web_root / "src").exists():
+        return
+    model = _web_path("src/lib/admin-jobs-model.ts").read_text(encoding="utf-8")
+    assert "export function jobsAnswer(" in model and "RECENT_FAILURE_D = 7" in model
+    fn = model[model.index("export function jobsAnswer("):]
+    fn = fn[:fn.index("\n}\n")]
+    assert fn.index("if (failing.length)") < fn.index('"All running"'), "a failure is checked before the all-clear"
+    page = _web_path("src/app/(app)/admin/ops/page.tsx").read_text(encoding="utf-8")
+    assert "jobsAnswer(current, now)" in page and 'text: "All running"' not in page
+    assert "failTone(bad)" in page and "failTone(failing)" in page
+    lib = _web_path("src/lib/admin-jobs.ts").read_text(encoding="utf-8")
+    assert 'from("retired_jobs")' in lib and "still: number" in lib and "fixed: number" in lib
+    ch = _web_path("src/app/(app)/admin/ops/jobs-charts.tsx").read_text(encoding="utf-8")
+    assert "Failed runs, most fixed on their next try" in ch and "stacked" in ch
+    assert 'key: "fixed"' in ch and 'key: "still"' in ch and 'key: "failed"' not in ch
+    fx = _engine_path("scripts/admin_fixtures/jobs.py").read_text(encoding="utf-8")
+    assert "FROM retired_jobs" in fx
+
+
+@test("ADMIN-JOBS-PLAIN-NAMES — plain job names, four status words, old jobs collapsed, no developer instructions in the drawer")
+def test_admin_jobs_plain_names():
+    """Answer-first fix round (#139, 2026-09-25). snake_case ids were the primary text; JOB_LABELS
+    names every job (unmapped: title-cased words; the raw id is small secondary text). Status words are
+    OK / Failing / Stuck / Retired ("Running · 8 min ago" read as "executing now"); jobs quiet for 8+
+    days sit under a collapsed "Old jobs"; "Failing since: before 1 Sep" + "1 failed run in a row" is
+    "Failed on 1 Sep — it has not run since"; the drawer says "ask the developer to re-run it" instead
+    of workers/scheduler.py, with the Python error behind a "Technical detail" toggle; "What the jobs
+    do" is collapsed."""
+    if not (_web_root / "src").exists():
+        return
+    import re
+    model = _web_path("src/lib/admin-jobs-model.ts").read_text(encoding="utf-8")
+    for job, label in (("aln_auto_tune", "Monthly tuning of the confidence model"), ("league_draw_rate", "League draw rates"),
+                       ("mfv_b_ml3_nightly_refresh", "Nightly model features refresh"), ("settle_ready", "15-minute settlement sweep")):
+        assert f'{job}: "{label}"' in model, job
+    words = model[model.index("export const STATE_WORD"):]
+    words = set(re.findall(r': "(\w+)"', words[:words.index("};")]))
+    assert words == {"OK", "Failing", "Stuck", "Retired"}, words
+    assert "export function failingText(" in model and "Failed on ${dm(v.lastRun)}" in model
+    table = _web_path("src/app/(app)/admin/ops/jobs-table.tsx").read_text(encoding="utf-8")
+    assert "Old jobs (" in table and "<details" in table and "lastRunText(" in table and "failingText(" in table
+    assert 'header: "Last error"' not in table and 'header: "Bot id"' not in table
+    drawer = _web_path("src/app/(app)/admin/ops/job-drawer.tsx").read_text(encoding="utf-8")
+    assert "workers/scheduler.py" not in drawer and "ask the developer to re-run it" in drawer
+    assert "Technical detail" in drawer and "<details" in drawer
+    page = _web_path("src/app/(app)/admin/ops/page.tsx").read_text(encoding="utf-8")
+    assert "What the jobs do</summary>" in page and 'v.state !== "quiet"' in page
+
+
+@test("REAL-BETS-ANSWER-FIRST — /admin/real-bets opens with 4 plain answers; old hand-logged rows are 'Old entry', so the to-do count and the table agree (#139 round 5)")
+def test_real_bets_answer_first():
+    """#139 answer-first round (2026-09-25), non-technical tester on /admin/real-bets.
+    (1) The page opens with an AnswerStrip: last 30 days (realMoneyWindow — the Overview's numbers),
+    all time since the first bet, open now, to do. The Staked / P&L / At-risk cards it replaced are gone.
+    (2) BLOCKER: the to-do said 2 unconfirmed hand-logged bets while the ledger showed a 3rd (9 Sep) as
+    "Not confirmed" — placed_real NULL before MANUAL_RECONCILE_SINCE is an OLD row, not an unconfirmed
+    one. ONE rule, confirmState(), now drives the to-do AND the ledger column.
+    (3) BLOCKER: "Did we get the paper price?" had no period — it now shows its date range and its ⓘ says
+    why it differs from the all-time total. (4) No CLV / edge / slip / n= / market codes / bot ids on screen.
+    (5) Promotions hidden while none is recorded (a read error still shows)."""
+    page = _web_path("src/app/(app)/admin/real-bets/page.tsx").read_text(encoding="utf-8")
+    cl = _web_path("src/app/(app)/admin/real-bets/money-client.tsx").read_text(encoding="utf-8")
+    lib = _web_path("src/lib/admin-money.ts").read_text(encoding="utf-8")
+    fmt = _web_path("src/lib/admin-money-format.ts").read_text(encoding="utf-8")
+
+    # (1) answers first, with the Overview's window
+    assert "<AnswerStrip answers={answers} />" in page
+    assert page.index("<AnswerStrip") < page.index("<StatCard"), "the answers come before any card"
+    for label in ('label: "Last 30 days"', "All time · since", 'label: "Open now"', 'label: "To do"'):
+        assert label in page, f"missing answer {label}"
+    assert "realMoneyWindow(bets, now, 30)" in page and "last30.pnl" in page and "last30.bets" in page
+    assert '"Nothing at risk"' in page and "hand-placed" in page
+    assert 'label="Staked"' not in page and 'label="Profit / loss"' not in page and 'label="At risk now"' not in page, \
+        "cards that repeat the answers are removed"
+    assert 'label="Beat the close?"' not in page
+
+    # (2) one confirmation rule for the to-do and the ledger
+    assert "export function confirmState(" in fmt and '"legacy"' in fmt
+    assert "Old entry (before confirmation checks)" in fmt and "Not confirmed (by hand)" in fmt
+    fn = fmt[fmt.index("export function confirmState("):]
+    fn = fn[:fn.index("\n}\n")]
+    assert "Date.parse(RECONCILE_FROM)" in fn and "RECONCILE_AFTER_H * 3600_000" in fn
+    assert 'confirmState(b, now) === "unconfirmed"' in lib, "unconfirmedToDo must use confirmState"
+    assert "confirmState(row.original, now)" in cl and "CONFIRM_LABEL[confirmState(b, now)]" in cl, \
+        "the ledger column (and its facet) must use confirmState"
+    assert 'Not confirmed (by hand)"' not in cl.replace("CONFIRM_LABEL", ""), "no second hard-coded label in the client"
+    assert "now={nowMs}" in page, "now comes from the server render"
+
+    # (3) paper-vs-real carries its period and explains the subset
+    pv = page[page.index('title="Did we get the paper price?"'):]
+    pv = pv[:pv.index("</Panel>")]
+    assert "shortDate(pvr.from)" in pv and "shortDate(pvr.to)" in pv, "every figure gets its period"
+    assert "differs from the all-time total" in pv
+
+    # (4) no jargon on screen (technical terms only inside the ⓘ tips)
+    for gone in (">Edge<", ">CLV<", ">Pinnacle CLV<", '"Slip"', "n={row.original.clvN}", "Avg CLV<", "1×2 ${l}", "vs Pinnacle"):
+        assert gone not in cl and gone not in page, f"jargon still visible: {gone}"
+    assert "marketGroup(b.market)" in cl, "the Market facet shows plain names, not codes"
+    for plain in ('"Match result"', '"Handicap"', '"Double chance"', '"Both teams score"', '"Over/under goals"'):
+        assert plain in fmt
+    assert "font-mono text-[10px] text-muted-foreground/70\">{id}" not in cl, "bot id is hover text, not on screen"
+    assert "Daily limit: {DAILY_MAX_BETS} bets / {fmtEur(DAILY_MAX_STAKE_EUR)}" in page
+    assert "Automatic {todayAuto.length}/{DAILY_MAX_BETS}" not in page
+
+    # (5) promotions only when there is something (or a read error) to show
+    assert "(d.promos.length > 0 || d.promoError) &&" in page
 
 if __name__ == "__main__":
     main()

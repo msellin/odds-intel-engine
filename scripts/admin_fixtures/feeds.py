@@ -2,7 +2,8 @@
 feed_status, feed_book_stats, data_quality_findings (7 d), today's ops_snapshots row (odds
 pipeline / live tracker / API-Football budget moved here from /admin/ops, IA §2.1) and the
 newest live_match_snapshots time, and book_footprint for the last 25 clock hours (which hour's
-request budget actually ran out — #139 UX fix round)."""
+request budget actually ran out — #139 UX fix round; since the 2026-09-25 answer-first round also
+the hour's block checks and errors, so every "this hour" figure on the page comes from one row)."""
 
 
 def snapshot(rows) -> dict:
@@ -18,6 +19,6 @@ def snapshot(rows) -> dict:
                    "ORDER BY found_at DESC LIMIT 100"),
         "snapshot": snap[0] if snap else None,
         "last_live_at": live[0]["at"] if live else None,
-        "footprint": rows("SELECT book, hour, requests, refused FROM book_footprint "
+        "footprint": rows("SELECT book, hour, requests, refused, challenges, errors FROM book_footprint "
                           "WHERE hour >= now() - interval '25 hours' ORDER BY hour"),
     }

@@ -173,3 +173,19 @@ Top 10 moves, in the audit's order:
 - then moves 4–9.
 
 Every step gets a reviewer.
+
+## 7. Input for the refactor from other sessions (owner-forwarded, 2026-09-25)
+
+- **#153 /admin/models brief** → `dev/active/admin-models-page-brief.md`. Read its top section before
+  the phase-5 schema: picks carry `model_version` but **no rule/config version**, rules live in
+  BOTS_CONFIG + four standalone jobs (already resolved by `scripts/export_bot_config.py` → `bot_config`,
+  migration 410), two edge units (probability points vs EV) are in use, and visibility is split across
+  four fields. The owner said more input is coming from the session building the new bots — wait for it
+  before starting phase 5 or the Bots page / Pick queue redesign.
+- **Real bets page / `real_bets` table (owner, 2026-09-25).** The owner never opens `/admin/real-bets`; the
+  per-bot picks table already shows "Bet made". What the page adds: € P/L (bots count units), one cross-bot
+  list, forward-test bets (no bot_id → unlinkable), reconcile to-do, daily-limit use. Proposal: fold into a
+  "Real money" view on Bots and drop the page. The TABLE is load-bearing though — dedupe before placing
+  (coolbet_placer, mac daemon, best_price_router), per-match exposure + daily caps, settlement, alerts.
+  Refactor question: keep a parallel table joined back by id, or one bets table with a real-money flag
+  + actual stake/price/book (which would also fix the unlinkable forward-test bets). Decide in the audit.

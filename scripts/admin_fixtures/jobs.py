@@ -2,7 +2,8 @@
 production: view pipeline_job_latest (migration 417), failed pipeline_runs of the last 14 days,
 pending simulated_bets with their kickoff, today's ops_snapshots row, signups in 7 days; plus
 (#139 UX fix round) the feeds with a run-now control and the newest 20 runs of every job for the
-detail drawer (/api/admin/job-runs answers from `recent_runs` in the preview)."""
+detail drawer (/api/admin/job-runs answers from `recent_runs` in the preview); and (answer-first
+round, 2026-09-25) the retired_jobs names (migration 426), left out of the failures chart."""
 
 
 def snapshot(rows) -> dict:
@@ -23,6 +24,7 @@ def snapshot(rows) -> dict:
         "snapshot": snap[0] if snap else None,
         "feeds": rows("SELECT feed_id, label, book, schedule, controls, paused, run_now_pending FROM feed_status"),
         "recent_runs": _recent_runs(rows),
+        "retired": [r["job_name"] for r in rows("SELECT job_name FROM retired_jobs")],
         "signups_7d": rows("SELECT count(*) AS n FROM profiles WHERE created_at > now() - interval '7 days'")[0]["n"],
     }
 
