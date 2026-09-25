@@ -57919,5 +57919,81 @@ def test_pickgen_source_by_name():
         m = _web_path("src/app/(app)/admin/bots/bot-board-model.ts").read_text(encoding="utf-8")
         assert 'g.name === "source_bots"' in m and "src.includes(a.name)" in m, "the Bots page must read the new gate"
 
+
+@test("SHARP-ANCHOR-MAX-AGE — pick_generator's sharp fair price never comes from a stale Pinnacle line")
+def test_sharp_anchor_max_age():
+    """#162 W8.3 (2026-09-25). `_candidates_from_sharp` de-vigs the latest Pinnacle line per selection with
+    NO age limit, on a path that can feed real money (the per-book sharp trigger bots are capable). A line
+    is now dropped when any side is older than SHARP_ANCHOR_MAX_AGE_H, or older than
+    SHARP_ANCHOR_NEAR_KO_MAX_AGE_H within SHARP_ANCHOR_NEAR_KO_H of kick-off (where a pulled or moved
+    market makes the "fair" price fiction). Exercised with the DB read faked on this thread only."""
+    import workers.api_clients.db as db
+    import workers.automation.pick_generator as pg_mod
+    from workers.automation.bot_configs import ALL_CONFIGS
+    cfg = next(c for c in ALL_CONFIGS if c.prob_source == "sharp_devig" and c.markets[0] == "1x2")
+    def rows(mid, age, ko):
+        return [{"mid": mid, "selection": s, "odds": o, "age_h": age, "ko_in_h": ko}
+                for s, o in (("home", 2.10), ("draw", 3.40), ("away", 3.80))]
+    fake = rows("fresh", 0.5, 30) + rows("old_far", 8.0, 60) + rows("old_near", 3.0, 5) + rows("ok_far", 6.5, 60)
+    o_q = db.execute_query
+    try:
+        db.execute_query = _this_thread_only(lambda *a, **k: fake, o_q)
+        out = pg_mod._candidates_from_sharp(cfg, 0.03)
+    finally:
+        db.execute_query = o_q
+    mids = {r["match_id"] for r in out}
+    assert mids == {"fresh", "ok_far"}, mids
+    from workers.utils import anchor as an
+    # 7 h: tomorrow's fixtures are refreshed at 10:00 and 16:00 UTC — a 6 h cap would drop them just before 16:00
+    assert an.SHARP_ANCHOR_MAX_AGE_H == 7.0 and an.SHARP_ANCHOR_NEAR_KO_MAX_AGE_H == 2.0 and an.SHARP_ANCHOR_NEAR_KO_H == 12.0
+    # ONE rule: both sharp producers call the shared helper
+    for f in ("workers/automation/pick_generator.py", "workers/jobs/pick_triggers.py"):
+        src = _engine_path(f).read_text(encoding="utf-8")
+        assert "anchor_line_too_old(" in src and "from workers.utils.anchor import anchor_line_too_old" in src, f
+
+
+@test("FAIR-PRICE-ONE-RULE — one written de-vig rule per market shape, and every live copy pinned to its method")
+def test_fair_price_one_rule():
+    """#162 W3.1/W3.2 (2026-09-25). The audit found fair probability computed four ways, so CLV judged a pick
+    with a different fair price from the one that chose it. `devig.fair_prob` + FAIR_METHOD_BY_SHAPE is the
+    written rule (Shin for 3-way per ANALYSIS_GOTCHAS #78, power for 2-way). Each separate copy still in
+    production is pinned here to the reference method it implements, so a silent edit to one copy fails CI;
+    the proportional users are listed so none is added. Moving a live caller is #162 W3.3 (twin + OK)."""
+    import math
+    from workers.model import devig as dv
+    assert dv.FAIR_METHOD_BY_SHAPE == {3: "shin", 2: "power"}
+    three = [(2.10, 3.40, 3.80), (1.35, 5.20, 9.50), (4.20, 3.60, 1.90)]
+    two = [(1.90, 1.95), (1.55, 2.55), (3.10, 1.38)]
+    for o in three:
+        assert dv.fair_prob(list(o)) == dv.shin_devig(list(o))
+    for o in two:
+        assert dv.fair_prob(list(o)) == dv.power_devig(list(o))
+    assert dv.fair_prob([1.9, None]) is None and dv.fair_prob([1.0, 2.0]) is None
+
+    close = lambda a, b: math.isclose(a, b, abs_tol=1e-6)
+    # power copies (live): VIP #2's job and the combined O/U model
+    from workers.jobs.ou_sharp_outlier import power_devig as vip2_power
+    from workers.model.combined_ou import power_devig as ou_power
+    for o in two:
+        ref = dv.power_devig(list(o))[0]
+        assert close(vip2_power(*o), ref), ("ou_sharp_outlier.power_devig drifted", o)
+        assert close(float(ou_power(o[0], o[1])), ref), ("combined_ou.power_devig drifted", o)
+    # proportional copies (known violations of #78 — to move under W3.3, never to spread)
+    from workers.jobs.corners_paper_bot import _devig_two_way as corners_prop
+    from workers.jobs.team_total_paper_bot import _devig_two_way as tt_prop
+    for o in two:
+        ref = dv.proportional_devig(list(o))
+        assert close(corners_prop(*o)[0], ref[0]) and close(tt_prop(*o)[0], ref[0])
+    # no NEW module may define its own de-vig: the set of files that do is frozen
+    import re
+    allowed = {"workers/model/devig.py", "workers/model/combined_ou.py", "workers/jobs/ou_sharp_outlier.py",
+               "workers/jobs/corners_paper_bot.py", "workers/jobs/team_total_paper_bot.py"}
+    found = set()
+    for f in _engine_root.joinpath("workers").rglob("*.py"):
+        txt = f.read_text(encoding="utf-8", errors="ignore")
+        if re.search(r"^def _?(power|shin|proportional|additive)_?devig|^def _devig_two_way", txt, re.M):
+            found.add(str(f.relative_to(_engine_root)))
+    assert found <= allowed, f"new de-vig copy outside workers/model/devig.py: {sorted(found - allowed)} — use devig.fair_prob"
+
 if __name__ == "__main__":
     main()

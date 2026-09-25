@@ -3136,6 +3136,14 @@ not measurably worse than Shin (Shin, additive, power), or it rejects picks on a
 wrong. On a soft book's 8-10% margin the methods differ by a median 2.1pp of edge, against 0.6pp on
 Pinnacle — so the consensus arm is where the choice bites.
 
+**Where the rule lives (#162 W3.1, 2026-09-25):** `workers.model.devig.fair_prob` + `FAIR_METHOD_BY_SHAPE`
+(3-way → Shin, 2-way → power). Smoke FAIR-PRICE-ONE-RULE pins every remaining copy to its method and refuses a new
+one; the proportional users still live are corners/team-total paper bots, the `pinnacle_implied_*` signal
+writer and `market_consensus_1x2` (#154) — each moves under #162 W3.3 (twin + owner OK for live bots).
+**And a Pinnacle line used as fair value has an age limit** (#162 W8.3): `workers.utils.anchor.anchor_line_too_old`
+— older than 7 h, or 2 h inside 12 h of kick-off, is not fair value. Apply the same rule in any analysis that
+de-vigs "the latest Pinnacle price".
+
 ## 79. Historical odds from our own scrapers contain other matches' boards (2026-09-24)
 
 Before 2026-09-24 the Epicbet / Unibet-Site matcher paired events up to ±6 h from our

@@ -24,7 +24,9 @@ bot-aggregates, engine-data. (admin-attention.ts: one agreed #139 edit, then #15
 - [x] W0.3 pre-kickoff alert honours the kill switch
 - [x] W0.4 unibet_placer run-level gate; router pauses on an unrecorded Unibet bet
 - [x] W0.2 web half: ladder layer 8 + route 409 (web 232e135)
-- [x] W4.4 pick_generator real-money supply by bot name (+ is_active/retired filter)
+- [x] W4.4 pick_generator real-money supply by bot name (+ is_active/retired filter) — 57b63f75, bot_config re-exported
+- [x] W8.3 sharp anchor age cap (pick_generator + pick_triggers, shared helper)
+- [x] W3.1/W3.2 one fair-price rule + parity pins
 - [ ] steps per plan, each: smoke test, 1–2 review agents, deploy check
 
 ## Phase 3 — after #157 + #155

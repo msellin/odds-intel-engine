@@ -442,6 +442,7 @@ def _candidates_from_sharp(cfg, loosest):
     from workers.api_clients.db import execute_query
     from workers.model.devig import devig
     from workers.jobs.pick_triggers import _SHARP_ANCHOR_BOOK
+    from workers.utils.anchor import anchor_line_too_old
 
     # `sides` must be the full market in a fixed order — devig returns
     # probabilities positionally.
@@ -459,7 +460,9 @@ def _candidates_from_sharp(cfg, loosest):
     rows = execute_query(
         """
         SELECT DISTINCT ON (o.match_id, o.selection)
-               o.match_id::text AS mid, o.selection, o.odds::float AS odds
+               o.match_id::text AS mid, o.selection, o.odds::float AS odds,
+               EXTRACT(EPOCH FROM (NOW() - o.timestamp)) / 3600.0 AS age_h,
+               EXTRACT(EPOCH FROM (m.date - NOW())) / 3600.0 AS ko_in_h
           FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
          WHERE o.bookmaker = %s AND o.market = %s
            AND o.timestamp <= m.date AND m.date > NOW() AND m.status = 'scheduled'
@@ -468,12 +471,21 @@ def _candidates_from_sharp(cfg, loosest):
         [_SHARP_ANCHOR_BOOK, market],
     )
     by_match: dict[str, dict] = {}
+    oldest_h: dict[str, float] = {}
+    ko_in: dict[str, float] = {}
     for r in rows:
         by_match.setdefault(r["mid"], {})[r["selection"]] = r["odds"]
+        oldest_h[r["mid"]] = max(oldest_h.get(r["mid"], 0.0), float(r["age_h"] or 0.0))
+        ko_in[r["mid"]] = float(r["ko_in_h"] or 0.0)
 
     wanted = set(cfg.selections) if cfg.selections else set(sides)
     out = []
+    stale = 0
     for mid, quotes_by_sel in by_match.items():
+        # SHARP-ANCHOR-MAX-AGE (#162 W8.3): the ONE staleness rule (workers/utils/anchor.py). Only tightens.
+        if anchor_line_too_old(oldest_h.get(mid, 0.0), ko_in.get(mid, 99.0)):
+            stale += 1
+            continue
         quotes = [quotes_by_sel.get(s) for s in sides]
         if any(q is None or q <= 1.0 for q in quotes):
             continue                      # incomplete line — do not guess
@@ -497,6 +509,8 @@ def _candidates_from_sharp(cfg, loosest):
             out.append({"match_id": mid, "market": market, "selection": sel,
                         "calibrated_prob": float(p_sharp),
                         "model_probability": float(p_sharp)})
+    if stale:
+        log.info("pick_generator[%s]: %d %s line(s) skipped — Pinnacle anchor too old", cfg.bot_name, stale, market)
     return out
 
 

@@ -209,3 +209,31 @@ def devig_one(odds: list[float], index: int) -> float | None:
     if probs is None or not (0 <= index < len(probs)):
         return None
     return probs[index]
+
+
+# ── ONE fair-price rule per market shape (#162 W3.1, 2026-09-25) ────────────────
+# The #162 audit (dev/active/bot-refactor-audit/A-producers.md §2) found fair probability computed FOUR
+# ways across the producers, so CLV judged a pick with a different fair price from the one that chose it.
+# This table is the written rule; `fair_prob` is the one entry point. It CHANGES NOTHING by itself —
+# callers move to it one at a time, and a live bot's move is a twin + owner OK (#162 W3.3).
+#   * 3-way (1x2) → Shin: ANALYSIS_GOTCHAS #78 — "use Shin for anything published"; proportional loses to
+#     Shin on log-loss in every market (1x2 n = 26-35k) and manufactures edge on longshots.
+#   * 2-way (O/U, BTTS, …) → power: what the live O/U paths already use (combined_ou, ou_sharp_outlier);
+#     #78 lists power among the methods "not measurably worse than Shin". Never proportional.
+# Known proportional users (to move, each via W3.3): corners_paper_bot / team_total_paper_bot
+# `_devig_two_way`, the pinnacle_implied_* signal writer (supabase_client), market_consensus_1x2 (#154).
+# smoke FAIR-PRICE-ONE-RULE pins every copy to its reference method so none can drift silently.
+FAIR_METHOD_BY_SHAPE = {3: "shin", 2: "power"}
+
+
+def fair_method(n_outcomes: int) -> str:
+    """The method for a complete market of `n_outcomes` mutually exclusive outcomes."""
+    return FAIR_METHOD_BY_SHAPE.get(n_outcomes, "shin")
+
+
+def fair_prob(odds: list[float]) -> list[float] | None:
+    """THE fair probabilities of a complete market (fixed order in, same order out, sums to 1),
+    by FAIR_METHOD_BY_SHAPE. None when the method is undefined for these prices."""
+    if _valid(odds) is None:          # every price present and > 1.0
+        return None
+    return devig_by(fair_method(len(odds)), list(odds))

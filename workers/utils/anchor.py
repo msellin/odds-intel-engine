@@ -68,6 +68,25 @@ MARKET_SIDES = {"1x2": ("home", "draw", "away"), "1x2_1h": ("home", "draw", "awa
                 "double_chance": ("1x", "12", "x2")}
 
 
+
+# ── SHARP-ANCHOR-MAX-AGE (#162 W8.3, 2026-09-25): ONE staleness rule for a Pinnacle line used as fair value.
+# The two sharp producers (pick_generator._candidates_from_sharp, pick_triggers sharp strategies) de-vigged
+# the LATEST Pinnacle line with no age limit, on paths that can feed real money. A line is too old when ANY
+# side is older than SHARP_ANCHOR_MAX_AGE_H, or older than SHARP_ANCHOR_NEAR_KO_MAX_AGE_H within
+# SHARP_ANCHOR_NEAR_KO_H of kick-off (where a pulled/moved market makes the "fair" price fiction).
+# 7 h, not 6: tomorrow's fixtures are fetched at 10:00 and 16:00 UTC, a 6 h gap (review 2026-09-25).
+# Measured that day: ~1/3 of upcoming lines were < 2 h old and ~2/3 at 2-4 h (normal cadence); this
+# drops 2 per market that are > 24 h old and ~10 per market that are 2 h+ old inside 12 h of kick-off.
+SHARP_ANCHOR_MAX_AGE_H = 7.0
+SHARP_ANCHOR_NEAR_KO_H = 12.0
+SHARP_ANCHOR_NEAR_KO_MAX_AGE_H = 2.0
+
+
+def anchor_line_too_old(oldest_side_age_h: float, ko_in_h: float) -> bool:
+    """True when a sharp anchor line must not be used as fair value (see SHARP_ANCHOR_MAX_AGE above)."""
+    return oldest_side_age_h > SHARP_ANCHOR_MAX_AGE_H or (
+        ko_in_h < SHARP_ANCHOR_NEAR_KO_H and oldest_side_age_h > SHARP_ANCHOR_NEAR_KO_MAX_AGE_H)
+
 def market_sides(market: str) -> tuple[str, ...] | None:
     m = (market or "").lower()
     if m in MARKET_SIDES:

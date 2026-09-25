@@ -260,6 +260,7 @@ def _emit_sharp_anchor(counters: dict) -> None:
             _min_edge_for, _min_odds_for, min_edge_for_pick,
         )
     from workers.model.devig import devig
+    from workers.utils.anchor import anchor_line_too_old
 
     for strategy, market, floor_key, sides in _SHARP_STRATEGIES:
         # SHARP floors: small edge vs a near-true line + a light sanity odds floor
@@ -271,7 +272,9 @@ def _emit_sharp_anchor(counters: dict) -> None:
             """
             SELECT DISTINCT ON (o.match_id, o.selection)
                    o.match_id::text AS mid, o.selection, o.odds::float AS odds,
-                   m.date AS kickoff
+                   m.date AS kickoff,
+                   EXTRACT(EPOCH FROM (NOW() - o.timestamp)) / 3600.0 AS age_h,
+                   EXTRACT(EPOCH FROM (m.date - NOW())) / 3600.0 AS ko_in_h
               FROM odds_snapshots o JOIN matches m ON m.id = o.match_id
              WHERE o.bookmaker = %s AND o.market = %s
                AND o.timestamp <= m.date AND m.date > NOW() AND m.status = 'scheduled'
@@ -282,9 +285,15 @@ def _emit_sharp_anchor(counters: dict) -> None:
         # group into full markets: {mid: {selection: odds}} + kickoff
         by_match: dict[str, dict] = {}
         for r in rows:
-            m = by_match.setdefault(r["mid"], {"odds": {}, "kickoff": r["kickoff"]})
+            m = by_match.setdefault(r["mid"], {"odds": {}, "kickoff": r["kickoff"], "age_h": 0.0,
+                                               "ko_in_h": float(r["ko_in_h"] or 0.0)})
             m["odds"][r["selection"]] = r["odds"]
+            m["age_h"] = max(m["age_h"], float(r["age_h"] or 0.0))
         for mid, m in by_match.items():
+            # SHARP-ANCHOR-MAX-AGE (#162 W8.3): the ONE staleness rule, shared with pick_generator. Only tightens.
+            if anchor_line_too_old(m["age_h"], m["ko_in_h"]):
+                counters["skipped_stale_anchor"] = counters.get("skipped_stale_anchor", 0) + 1
+                continue
             quotes = [m["odds"].get(s) for s in sides]
             if any(q is None or q <= 1.0 for q in quotes):
                 continue  # need the complete line to de-vig honestly

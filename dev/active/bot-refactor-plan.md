@@ -108,8 +108,8 @@ Verify: dry-run counts before/after on the VPS DB (SELECT only), then run, then 
 | W2.2 | Every `predictions` reader filters `source='ensemble'` + the production version (A-R6): generator, pick_triggers, ou35_model_shadow, publish_daily_picks | §3.5 | Changes picks of unified_gate / ou35 (experimental) | **OK** (experimental only) |
 
 ### W3 — One fair price (Phase 2 for the service + parity; switching live consumers is Twin)
-| W3.1 | `workers/model/devig.py` + `utils/anchor.py`: one `fair_prob(match, market, at, method, max_age)`; method per market written down with its citation (Shin 1X2, power O/U — GOTCHAS #78) | §3.5 | None until callers move | none |
-| W3.2 | Parity tests: each current copy vs the service on 30 days of rows; the forward-test `_consensus_anchor` is **frozen by pre-registration** → parity-test only, never swapped | §3.5 | — | none |
+| W3.1 | ✅ 2026-09-25 (`devig.fair_prob` + `FAIR_METHOD_BY_SHAPE`) `workers/model/devig.py` + `utils/anchor.py`: one `fair_prob(match, market, at, method, max_age)`; method per market written down with its citation (Shin 1X2, power O/U — GOTCHAS #78) | §3.5 | None until callers move | none |
+| W3.2 | ✅ 2026-09-25 (smoke FAIR-PRICE-ONE-RULE; copies frozen) Parity tests: each current copy vs the service on 30 days of rows; the forward-test `_consensus_anchor` is **frozen by pre-registration** → parity-test only, never swapped | §3.5 | — | none |
 | W3.3 | Move consumers one at a time: signal writer `pinnacle_implied_*`, both `power_devig` copies, `market_consensus_1x2._triples` (with #154) | §3.5 | `bot_v10_1x2`'s calibrate anchor + Pinnacle veto, NEW+ fit | **Twin + OK** per live consumer |
 
 ### W4 — One real-money gate (Phase 2; MUST land before the owner switches any bot ON)
@@ -156,7 +156,7 @@ W5.2 keeps only the status-based pending rule; the VIP half is #164's `vip_held(
 ### W8 — ⟲ Findings the first draft dropped (from the audits; each small)
 | W8.1 | **Tell the owner now**: the VIP channel reaches nobody — `TELEGRAM_VIP_CHAT_ID` unset on the VPS, 0 profiles with Telegram linked; the VPS `.env` has `TELEGRAM_PUBLIC_CHANNEL` twice (values not read) | owner's call (`.env` is the owner's) | — | message only |
 | W8.2 | `pnl`, `bankroll_after` and Kelly compounding still use the `odds_at_pick` high-water price (C-P4) — no row owns it; propose to #159 or take it after | §3.5 | Changes paper P&L | **OK** |
-| W8.3 | `pick_generator` `sharp_devig` has no Pinnacle age cap on a real-money-CAPABLE path → cap it (with W3.1's max_age) | money | Only tightens | Phase 2 |
+| W8.3 | ✅ 2026-09-25 (+ pick_triggers sharp strategies, one shared rule `anchor_line_too_old`, 7 h / 2 h-in-12 h) `pick_generator` `sharp_devig` has no Pinnacle age cap on a real-money-CAPABLE path → cap it (with W3.1's max_age) | money | Only tightens | Phase 2 |
 | W8.4 | web `ladder.ts` misses the engine's 36 h config-staleness rule → add it (the CAN STAKE answer) | money honesty | Only tightens | after #159 frees bot-board files |
 | W8.5 | Pick queue shows no simulated-ledger bots (v10, VIP #1) — decide if it should | 🤖 OWN | — | owner Q |
 | W8.6 | `CONSENSUS_BOOKS` includes AF Unibet, which feeds VIP #1 → pointer to #154 | — | — | note on #154 |
