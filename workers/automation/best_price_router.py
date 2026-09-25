@@ -368,6 +368,19 @@ def _dispatch_unibet(pick: dict, decision: dict, *, execute: bool) -> dict:
                       "cross-book dedup is blind to this bet until it is "
                       "recorded by hand: match=%s %s/%s", e,
                       pick.get("match_id"), pick.get("market"), pick.get("selection"))
+            # #162 W0.4 (2026-09-25): logging and carrying on left this stake invisible to the
+            # daily cap and the cross-book dedupe for every later pass — the next pass could place
+            # the same selection again. Stop placement (audited engine pause) until a human records
+            # it; the owner resumes from /admin/bots. A failed pause write must not hide the error.
+            try:
+                from workers.automation.coolbet_state import set_placement_paused
+                set_placement_paused(
+                    True, source="engine", actor="best_price_router",
+                    reason=(f"Unibet bet placed but NOT recorded ({type(e).__name__}) — match "
+                            f"{pick.get('match_id')} {pick.get('market')}/{pick.get('selection')}; "
+                            "record it in real_bets, then resume"))
+            except Exception as pe:  # noqa: BLE001
+                log.error("could not pause placement after the unrecorded Unibet bet: %s", pe)
 
     return {"book": "Unibet-Site", "ok": placed or staged, "event_url": r["url"],
             "outcome": name, "placed": placed, "staged": staged,

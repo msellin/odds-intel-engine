@@ -76,6 +76,17 @@ def place_bet(event_url: str, outcome_name: str, min_odds: float,
     out = {"event": event_url, "outcome": outcome_name, "execute": execute,
            "placed": False, "reason": None, "odds": None,
            "balance_before": None, "balance_after": None}
+    # #162 W0.4 (2026-09-25): this function stakes but had no gate of its own — only the router's
+    # per-pick call guarded it, so any second caller would bypass the pause, the arming switch and
+    # the money-gate lock. Run-level gate here, before the browser opens (the per-pick allowlist +
+    # caps stay with the caller, which knows the bot). Staging (execute=False) is not gated.
+    if execute:
+        from workers.automation.placement_gate import assert_run_may_place, PlacementRefused
+        try:
+            assert_run_may_place()
+        except PlacementRefused as e:
+            out["reason"] = f"placement gate refused: {e}"
+            return out
     with sync_playwright() as pw:
         try:
             ctx = ubs._get_context(pw)

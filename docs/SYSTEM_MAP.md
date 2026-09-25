@@ -496,6 +496,7 @@ Full detail: `docs/COOLBET_OWN_BETTING.md`. Recurring failure patterns:
 > Unibet "Tee panus" click, the Coolbet API bet POST), and every one now calls
 > **one fail-closed gate** before it does: `workers/automation/placement_gate.py`
 > (`assert_run_may_place` at run level, `assert_may_place` per pick). The gate
+> **#162 W0.2 (2026-09-25, migration 436):** the run-level gate also requires the money-gate contract (`coolbet_session_state.money_gate_contract` ≥ 1 and = code `GATE_CONTRACT`); it is 0 until #162 W4 unifies the placement checks, and the DB refuses a real-money switch ON / arming until then.
 > checks, in order, `placement_paused` (KILL switch, now fails CLOSED),
 > `real_money_armed` (ARMING switch, migration 354, default FALSE, owner-set only),
 > `effective_allowlist()` = `PLACEABLE_BOTS` ∩ `coolbet_placer_bots.ui_place_enabled`,

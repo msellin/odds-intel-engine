@@ -1421,6 +1421,12 @@ STARTs — `real_money_armed` false→true and `placement_paused` true→false a
 unless the audited function set its transaction-local flag — and an existing `locked_reason` can only be lifted
 by a migration (`SET LOCAL oddsintel.migration = 'on'`). Every STOP stays open to every writer. The guards also fire on INSERT (a row may be added only by a migration, OFF, and the singleton must start paused and not armed), DELETE and TRUNCATE are always refused on both tables (DELETE + re-INSERT was the way around the lock and the audit), and API roles may only UPDATE them. The self-pause test is a PREFIX match on `daemon self-pause:` in both Python and SQL (a substring match accepted "this is NOT a daemon self-pause").
 
+**Migration 436 (#162 W0.2, 2026-09-25) adds a second START refusal on top:** while
+`coolbet_session_state.money_gate_contract` is 0, `ui_place_enabled` false→true and `real_money_armed`
+false→true are refused for EVERY writer — the audited functions included — until the placement checks are
+unified (#162 W4); the contract is raised only by a migration, and the engine gate also requires it to equal
+the code's `GATE_CONTRACT` so a stale checkout cannot stake. Same limit as below: an accident guard.
+
 **These flags are an ACCIDENT GUARD, not a security boundary.** Anyone with direct SQL as the table owner can
 set `oddsintel.control_fn` themselves; `pg_trigger_depth()` / `current_user` cannot tell the function from the
 engine (both run as `oddsintel_owner` at depth 1). What they do guarantee: the web's `service_role` reaches the

@@ -38487,6 +38487,8 @@ def test_coolbet_placement_readiness():
         "daemons_paused": False,
         # PLACEMENT-GATE (2026-09-15): the arming switch (mig 354) is a gate.
         "real_money_armed": True,
+        # #162 W0.2 (mig 436): the placement-check contract is a gate too
+        "money_gate_ready": True,
         "last_ui_attempt_at": now - timedelta(minutes=11),
         "last_real_placement_at": now - timedelta(hours=2),
         # deliberately BAD odds/API-path values — these must NOT block real money:
@@ -38513,6 +38515,9 @@ def test_coolbet_placement_readiness():
     assert not disarmed["can_place_now"] and any("NOT ARMED" in b for b in disarmed["blockers"]), (
         "real_money_armed=False must block placement (PLACEMENT-GATE, migration 354)"
     )
+    locked = cc._evaluate_readiness({**green_state, "money_gate_ready": False}, green_bots, now)
+    assert not locked["can_place_now"] and any("placement checks are unified" in b for b in locked["blockers"]), \
+        "money_gate_ready=False must block (#162 W0.2, migration 436)"
     paused = cc._evaluate_readiness({**green_state, "placement_paused": True,
                                      "placement_paused_reason": "operator test"}, green_bots, now)
     assert paused["can_place_now"] is False and any("paus" in b.lower() for b in paused["blockers"])
@@ -46117,8 +46122,9 @@ def test_placement_gate_armed_required():
     import workers.automation.coolbet_state as cs
     import workers.automation.placement_gate as pg
     o1, o2, o3 = cs.is_placement_paused, cs.is_real_money_armed, pg.ui_place_enabled_bots
-    o4 = pg.placement_path_bots
+    o4, o5 = pg.placement_path_bots, cs.is_money_gate_ready
     try:
+        cs.is_money_gate_ready = _this_thread_only(lambda: (True, None), o5)   # #162 W0.2 lock: MONEY-GATE-READY-LOCK
         # #139: the capable set is read from bot_config; pin it so this stays DB-free.
         pg.placement_path_bots = lambda: {"bot_coolbet_1x2_model_v1", "bot_coolbet_ou_model_v1"}
         cs.is_placement_paused = lambda: (False, None)
@@ -46149,7 +46155,7 @@ def test_placement_gate_armed_required():
             raise AssertionError("a bot with no placement path must be refused")
     finally:
         cs.is_placement_paused, cs.is_real_money_armed, pg.ui_place_enabled_bots = o1, o2, o3
-        pg.placement_path_bots = o4
+        pg.placement_path_bots, cs.is_money_gate_ready = o4, o5
 
 
 @test("PLACEMENT-GATE-ALL-EXECUTORS — every path that can move money calls the gate BEFORE it acts")
@@ -47884,10 +47890,12 @@ def test_router_no_allowlist_bypass():
     o_p, o_a, o_e, o_lp, o_env = (cs.is_placement_paused, cs.is_real_money_armed,
                                   pg.ui_place_enabled_bots, ui.load_picks,
                                   os.environ.get("ROUTER_ALLOW_REAL"))
+    o_g = cs.is_money_gate_ready
     with _ROUTER_ENV_LOCK:                      # ROUTER-ENV-LOCK: process-wide env
       try:
         cs.is_placement_paused = lambda: (False, None)
         cs.is_real_money_armed = lambda: (True, "test")
+        cs.is_money_gate_ready = _this_thread_only(lambda: (True, None), o_g)     # #162 W0.2: gate forced open here too
         pg.ui_place_enabled_bots = lambda: set()          # every bot OFF
         ui.load_picks = lambda bot: (loaded.append(bot) or [])
         os.environ["ROUTER_ALLOW_REAL"] = "1"
@@ -47897,6 +47905,7 @@ def test_router_no_allowlist_bypass():
         assert out.get("dispatched") == 0 and out.get("candidates") == 0, out
       finally:
         cs.is_placement_paused, cs.is_real_money_armed, pg.ui_place_enabled_bots = o_p, o_a, o_e
+        cs.is_money_gate_ready = o_g
         ui.load_picks = o_lp
         if o_env is None:
             os.environ.pop("ROUTER_ALLOW_REAL", None)
@@ -54360,7 +54369,8 @@ def test_control_page_fail_safe():
     # is kept as canStakeStrict for the confirmation dialogs, which show the ladder while OPENING a gate.
     # It is never YES while any layer is unknown.
     assert 'const canStakeStrict = unknownAt.length > 0 ? "unknown" : blockedAt.length > 0 ? "no" : "yes";' in lad
-    assert "const hardBlock = paused === true || armed === false || rawOn === 0;" in lad
+    # #162 W0.2: the money-gate lock (migration 436) is a hard block too
+    assert "const hardBlock = paused === true || armed === false || rawOn === 0 || gateReady === false;" in lad
     assert "p.ui_place_enabled && !p.locked_reason" in lad.split("const rawOn")[1].split("\n")[0]
     ll = (d / "ladder-list.tsx").read_text(encoding="utf-8")
     assert "strict={compact}" in ll, "dialogs (compact ladder) keep the conservative verdict"
@@ -54464,7 +54474,7 @@ def test_admin_shared_shell():
 def test_footprint_pause_not_a_money_gate():
     """#139 (owner decision 2026-09-24, "only sweeping stops"). `daemons_paused` stops the Coolbet
     odds sweeps, the feed watchdog and the paper Mac daemon. The real-money placers pass through
-    placement_gate.assert_run_may_place(), which reads only placement_paused + real_money_armed.
+    placement_gate.assert_run_may_place(), which reads placement_paused + real_money_armed + money_gate_ready (migration 436), never daemons_paused.
     coolbet_control's readiness used to list the footprint pause as a BLOCKER, so the daily Telegram
     summary said BLOCKED on a pause that would not have stopped a real bet. Now: the gate ignores it
     (on purpose), readiness reports it as a warning, and the /admin/bots ladder shows it as an
@@ -54476,7 +54486,7 @@ def test_footprint_pause_not_a_money_gate():
     gate_src = inspect.getsource(pg.assert_run_may_place)
     assert "daemons" not in gate_src, "owner decision: the footprint pause is NOT a real-money gate"
     now = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
-    st = {"placement_paused": False, "real_money_armed": True, "daemons_paused": True,
+    st = {"placement_paused": False, "real_money_armed": True, "money_gate_ready": True, "daemons_paused": True,
           "daemons_paused_reason": "imperva", "last_ui_attempt_at": now - timedelta(minutes=5)}
     r = cc._evaluate_readiness(st, [{"bot_name": "b", "ui_place_enabled": True}], now)
     assert r["can_place_now"] is True and not any("daemon" in b.lower() for b in r["blockers"]), r
@@ -57778,6 +57788,114 @@ def test_perf_detail_open_one_row_rule():
     assert 'const SETTLED = ["won", "lost", "void", "push"];' in lib, "pending is never in the settled list"
     tam = _engine_path("TIER_ACCESS_MATRIX.md").read_text()
     assert "#159" in tam and "detail view opens for every reader" in tam
+
+
+@test("MONEY-GATE-READY-LOCK — no real-money switch ON / arming until #162 W4 unifies the placement checks")
+def test_money_gate_ready_lock():
+    """#162 W0.2 (migration 436). The audits found a switched-on bot would stake a looser strategy than
+    the one it is scored on (per-bot floors cover 2 of 11 capable bots, two placers with different
+    floors, a Coolbet-only daily cap). "Finish W4 before any switch" is enforced, not promised:
+    (1) DB triggers refuse ui_place_enabled false->true and real_money_armed false->true while
+    coolbet_session_state.money_gate_ready is FALSE — for EVERY writer, the audited functions
+    included — and the flag itself goes TRUE only inside a reviewed migration; every STOP stays open;
+    (2) the engine gate refuses a run while it is FALSE and the read fails CLOSED;
+    (3) while any #162 W4 step is open in the plan, the live flag must still be FALSE."""
+    mig = _engine_path("supabase/migrations/436_money_gate_ready.sql").read_text(encoding="utf-8")
+    assert "ADD COLUMN IF NOT EXISTS money_gate_contract integer NOT NULL DEFAULT 0" in mig
+    assert "BEFORE INSERT OR UPDATE OF ui_place_enabled ON coolbet_placer_bots" in mig
+    assert "BEFORE INSERT OR UPDATE OF real_money_armed, money_gate_contract ON coolbet_session_state" in mig
+    assert "SET lock_timeout = '3s';" in mig, "the kill-switch table must not queue behind this migration"
+    assert "current_setting('oddsintel.migration', true), '') <> 'on'" in mig, "only a migration sets the flag"
+    assert "REVOKE ALL ON FUNCTION public.money_gate_ready_guard() FROM PUBLIC, anon, authenticated" in mig
+    # a STOP is never refused: the guard only fires on false->true transitions
+    assert "coalesce(NEW.ui_place_enabled, false) AND NOT v_was_on" in mig
+    assert "coalesce(NEW.real_money_armed, false) AND NOT v_was_on" in mig
+    # stale code cannot stake after the DB is raised: ready = DB contract >= 1 AND == the code's
+    st = _engine_path("workers/automation/coolbet_state.py").read_text(encoding="utf-8")
+    assert "GATE_CONTRACT = 0" in st, "GATE_CONTRACT is raised only by the commit that closes #162 W4"
+    assert "if db_c != GATE_CONTRACT:" in st and "if db_c < 1:" in st
+
+    import workers.automation.coolbet_state as cs
+    import workers.automation.placement_gate as pg
+    import workers.api_clients.db as db
+    o_p, o_a, o_g, o_q = cs.is_placement_paused, cs.is_real_money_armed, cs.is_money_gate_ready, db.execute_query
+    try:
+        cs.is_placement_paused = _this_thread_only(lambda: (False, None), o_p)
+        cs.is_real_money_armed = _this_thread_only(lambda: (True, "test"), o_a)
+        cs.is_money_gate_ready = _this_thread_only(lambda: (False, "placement checks not unified yet (#162 W4)"), o_g)
+        try:
+            pg.assert_run_may_place()
+        except pg.PlacementRefused as e:
+            assert "money_gate_ready" in str(e), str(e)
+        else:
+            raise AssertionError("the gate must refuse while money_gate_ready is FALSE")
+        cs.is_money_gate_ready = _this_thread_only(lambda: (True, None), o_g)
+        pg.assert_run_may_place()                     # pause clear + armed + ready -> passes
+        cs.is_money_gate_ready = o_g                  # the REAL reader fails closed on a DB error
+        def _boom(*a, **k):
+            raise RuntimeError("db down")
+        db.execute_query = _this_thread_only(_boom, o_q)
+        ok, why = cs.is_money_gate_ready()
+        assert ok is False and "unreadable" in (why or ""), (ok, why)
+        db.execute_query = _this_thread_only(lambda *a, **k: [{"money_gate_contract": 1}], o_q)
+        o_gc = cs.GATE_CONTRACT
+        try:
+            cs.GATE_CONTRACT = 0                      # code older than the DB contract -> refuses
+            ok, why = cs.is_money_gate_ready()
+            assert ok is False and "mismatch" in (why or ""), (ok, why)
+            cs.GATE_CONTRACT = 1
+            ok, why = cs.is_money_gate_ready()
+            assert ok is True, (ok, why)
+        finally:
+            cs.GATE_CONTRACT = o_gc
+    finally:
+        cs.is_placement_paused, cs.is_real_money_armed, cs.is_money_gate_ready = o_p, o_a, o_g
+        db.execute_query = o_q
+
+    # the web says so before anyone tries: CAN STAKE never reads YES while locked, and the refusal is a
+    # readable 409, not a 500 crash (ops review 2026-09-25)
+    if (_web_root / "src").exists():
+        lad = _web_path("src/lib/bot-controls/ladder.ts").read_text(encoding="utf-8")
+        assert 'key: "gate"' in lad and "gateReady === false" in lad and "contract >= 1" in lad
+        assert "money_gate_contract" in _web_path("src/lib/bot-board.ts").read_text(encoding="utf-8")
+        for r in ("src/app/api/admin/bots/controls/route.ts", "src/app/api/admin/bots/controls/arm/route.ts"):
+            assert "/placement checks are unified/.test(error.message)) return bad(error.message, 409)" in _web_path(r).read_text(encoding="utf-8"), r
+    plan = _engine_path("dev/active/bot-refactor-plan.md")
+    w4_open = plan.exists() and "### W4" in plan.read_text(encoding="utf-8") and "W4 CLOSED" not in plan.read_text(encoding="utf-8")
+    try:
+        rows = o_q("SELECT money_gate_contract FROM coolbet_session_state WHERE id = 1")
+    except Exception:  # noqa: BLE001 — column not there yet (migration applies in parallel with CI)
+        rows = None
+    if rows and w4_open:
+        assert int(rows[0]["money_gate_contract"] or 0) == 0, \
+            "money_gate_contract was raised while #162 W4 is still open in dev/active/bot-refactor-plan.md"
+
+
+@test("PREKICKOFF-HONOURS-KILL-SWITCH — the 'PLACE MANUALLY' prompt is silent while placement is paused")
+def test_prekickoff_honours_kill_switch():
+    """#162 W0.3 (2026-09-25). coolbet_prekickoff_alert pushes an urgent "place this real-money pick
+    manually" Telegram when the Mac daemon looks down. It never read placement_paused, and the daemon
+    heartbeat it keys on has been frozen since the daemon was retired (2026-09-10), so it always
+    thought the daemon was down — only an empty candidate list kept it quiet. With the kill switch ON
+    it must return before loading candidates or sending anything (the heartbeat still records)."""
+    import workers.automation.coolbet_state as cs
+    from workers.jobs import coolbet_prekickoff_alert as pk
+    import workers.notify.telegram as tg
+    o_p, o_l, o_s, o_h = cs.is_placement_paused, pk.load_prekickoff_candidates, tg.send_telegram, pk._mac_daemon_is_healthy
+    def _never(*a, **k):
+        raise AssertionError("must not run while placement is paused")
+    try:
+        cs.is_placement_paused = lambda: (True, "smoke kill switch")
+        pk.load_prekickoff_candidates = _never
+        pk._mac_daemon_is_healthy = _never
+        tg.send_telegram = _never
+        out = pk.run_prekickoff_alert(dry_run=True)
+        assert out["paused"] is True and out["sent"] == 0 and out["candidates"] == 0, out
+    finally:
+        cs.is_placement_paused, pk.load_prekickoff_candidates, tg.send_telegram, pk._mac_daemon_is_healthy = o_p, o_l, o_s, o_h
+    src = _engine_path("workers/jobs/coolbet_prekickoff_alert.py").read_text(encoding="utf-8")
+    run = src[src.index("def run_prekickoff_alert("):]
+    assert run.index("is_placement_paused()") < run.index("_mac_daemon_is_healthy()") < run.index("load_prekickoff_candidates()")
 
 if __name__ == "__main__":
     main()

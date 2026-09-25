@@ -18,7 +18,13 @@ bot-aggregates, engine-data. (admin-attention.ts: one agreed #139 edit, then #15
 - [ ] Commit phase-1 docs (own files only)
 
 ## Phase 2 — after #159 + #161 (bot code, NOT /performance or status wiring)
-- [ ] re-read handover + git log; re-verify plan deltas
+- [x] re-read handover + git log; re-verify plan deltas (handover unchanged since 000046e3)
+- [x] W0.1 baseline snapshot
+- [x] W0.2 money-gate contract lock (mig 436) — 2 reviewers, live rolled-back dry runs (all 7 cases)
+- [x] W0.3 pre-kickoff alert honours the kill switch
+- [x] W0.4 unibet_placer run-level gate; router pauses on an unrecorded Unibet bet
+- [ ] W0.2 web half: ladder layer 8 + route 409 (after mig 436 applies)
+- [ ] W4.4 pick_generator real-money supply by bot name
 - [ ] steps per plan, each: smoke test, 1–2 review agents, deploy check
 
 ## Phase 3 — after #157 + #155

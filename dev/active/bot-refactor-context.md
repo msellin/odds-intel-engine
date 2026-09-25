@@ -31,3 +31,9 @@ Parent row: PRIORITY_QUEUE.md #162
   and revised (lock table §0, W0 safety rails incl. DB guard money_gate_ready, W8 dropped findings).
   #161 ✅; #159 still in progress → Phase 2 not open. #163/#164/#165 exist (164/165 = the two findings).
 - NEXT: when the bot session says #159 ✅ → Phase 2 starts with W0.1 baseline snapshot, W0.2 guard (OK).
+- ~16:30: Phase 2 started on free files (bot session "waiting"; told it; no objection). W0.1–W0.4 done:
+  mig 436 money_gate_contract (int) + trigger; placement_gate refuses unless DB contract >=1 AND == code
+  coolbet_state.GATE_CONTRACT (=0 now; the W4-closing commit raises both to 1). Reviewers: bypass (none;
+  fixed contract/lock_timeout/INSERT/thread stubs) + ops (web ladder layer, readiness blocker, docs).
+  Dry runs on prod in BEGIN…ROLLBACK caught a PL/pgSQL CASE-in-IF syntax error before commit.
+  NEXT: push engine → migrate applies 436 → web: FLEET_COLS money_gate_contract, ladder layer 8, route 409.

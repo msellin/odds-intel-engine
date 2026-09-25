@@ -212,6 +212,17 @@ def assert_run_may_place() -> None:
             + (f": {why}" if why else "")
         )
 
+    # #162 W0.2 (migration 436): the per-bot floors and the cross-book daily cap are not unified yet,
+    # so a switched-on bot would stake a looser strategy than the one it is scored on. The DB refuses
+    # switching a bot ON or arming while this is FALSE; this refuses a run in case a switch is
+    # already ON (or the engine runs ahead of the migration — the read fails closed).
+    try:
+        ready, why = cs.is_money_gate_ready()
+    except Exception as e:  # noqa: BLE001
+        raise PlacementRefused(f"cannot read money_gate_ready ({e}) — refusing") from e
+    if not ready:
+        raise PlacementRefused(f"money_gate_ready: not ready (migration 436) — {why or 'placement checks not unified yet (#162 W4)'}")
+
 
 def assert_may_place(
     *,

@@ -24,6 +24,17 @@
 > Effective allowlist = `placement_path_bots() ∩ ui_place_enabled_bots()`. Spec:
 > `dev/active/bots-control-panel-spec.md`.
 
+> **🔒 MONEY-GATE LOCK 2026-09-25 (#162 W0.2, migration 436).** Real money is LOCKED until the placement
+> checks are unified (#162 W4: one per-bot floor read from `bot_config`, one daily cap across books, the
+> exposure/account checks inside `placement_gate`). `coolbet_session_state.money_gate_contract` = 0 until
+> the migration that closes W4 raises it to 1: while it is 0 the DB REFUSES switching any bot's
+> `ui_place_enabled` ON and arming `real_money_armed` (trigger `money_gate_ready_guard`, every writer incl.
+> the audited functions; every STOP stays open), and `assert_run_may_place` refuses a run unless the DB
+> contract is ≥ 1 AND equals the code's `coolbet_state.GATE_CONTRACT` (so a stale Mac checkout cannot stake).
+> The run-level gate is therefore **pause + armed + money-gate contract**. Why: the #162 audit found a bot
+> switched ON today would stake a looser strategy than the one it is scored on
+> (`dev/active/bot-refactor-audit/D-surfaces-money.md`).
+
 > **✅ PLACEMENT-GATE 2026-09-15 (OWN Phase 0).** Every function that can reach a money primitive — the UI placer (run level AND before `select_outcome`), the best-price router incl. its Unibet arm, `coolbet_placer.place_all_bets`, `place_all_inplay_bets`, ~~the orphaned `coolbet_inplay` execute mode~~ (**deleted 2026-09-21** — a money primitive with zero callers is one the gate can never be observed defending), and the VPS manual-place drain — now calls ONE fail-closed gate first: `workers/automation/placement_gate.py`. It requires `placement_paused = FALSE` (kill switch, fails CLOSED), **`real_money_armed = TRUE`** (arming switch, migration 354, default FALSE, owner-set with a reason), the bot in `PLACEABLE_BOTS ∩ ui_place_enabled` (since 2026-09-24: `placement_path_bots() ∩` the eligibility list — see the banner above), outside the kickoff cutoff, under the daily caps. `ROUTER_ALLOW_REAL` is no longer sufficient. Both `--execute` launchd jobs are unloaded (`~/Library/LaunchAgents/paused/`). Ledger: `real_bets.shadow_bet_id` (mig 354) fixes the FK violation that silently dropped every confirmed placement's ledger row since 2026-09-13; confirmed real stakes now settle on every pass. Gate-stack tables below predate this and describe the gates the gate now fronts. See `docs/SYSTEM_MAP.md` §4 and `dev/active/own-implementation-plan.md`.
 
 > **⚠️ PAPER MAC-DAEMON RETIRED 2026-09-10.** Every reference below to the `coolbet_mac_daemon` / "paper daemon" / `coolbet-mac-daemon` describes a RETIRED component. It is gone (booted out, plist archived). Its paper placement duplicated the pipeline's `simulated_bets`/`shadow_bets` (model refinement) and the real-money **UI placer** (`coolbet-ui-placer`); its session-keep (JWT heal) moved to `coolbet-feed-watchdog` (`coolbet_browser_sync.ensure_session_live`), operator control to the webhook. Correct architecture: **pipeline = paper sim, UI placer = real money, feed-watchdog = session-keep** (Unibet parity). Readiness: `python3 -m workers.automation.coolbet_control --status`. Sentences below that call the daemon "continuous"/live are stale as of that date. See COOLBET_RUNBOOK "PAPER-DAEMON RETIRED".

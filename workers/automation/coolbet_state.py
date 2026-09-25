@@ -381,6 +381,35 @@ def is_real_money_armed() -> tuple[bool, str | None]:
         return (False, f"unreadable ({type(e).__name__})")
 
 
+# The placement-check contract this code implements (#162 W0.2, migration 436). 0 = the per-bot
+# floors and the cross-book daily cap are NOT unified yet (#162 W4 open). The commit that closes W4
+# raises this to 1 together with the migration that raises the DB's money_gate_contract to 1; code
+# older than that (e.g. a stale Mac checkout) then mismatches and refuses. Never raise it by itself.
+GATE_CONTRACT = 0
+
+
+def is_money_gate_ready() -> tuple[bool, str | None]:
+    """Returns (ready, reason). Ready = the DB contract (coolbet_session_state.money_gate_contract,
+    migration 436) is >= 1 AND equals this code's GATE_CONTRACT. While NOT ready no executor may
+    stake, and the DB refuses a real-money switch ON or arming. FAILS CLOSED: any error, a missing
+    row or a missing column (migration not yet applied) reads as NOT ready."""
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query("SELECT money_gate_contract FROM coolbet_session_state WHERE id = 1")
+        if not rows:
+            return (False, "coolbet_session_state row missing")
+        db_c = int(rows[0].get("money_gate_contract") or 0)
+        if db_c < 1:
+            return (False, "placement checks not unified yet (#162 W4)")
+        if db_c != GATE_CONTRACT:
+            return (False, f"placement-check contract mismatch: database {db_c}, this code {GATE_CONTRACT} "
+                           "— this checkout predates or postdates the unified checks; update it")
+        return (True, None)
+    except Exception as e:
+        log.error("money_gate_contract read failed — failing CLOSED (treated as NOT ready): %s", e)
+        return (False, f"unreadable ({type(e).__name__})")
+
+
 # ── audited fleet-switch writes (#139 phase A, migration 413) ─────────────────
 # Every setter below writes the change AND its `control_changes` audit row in ONE
 # statement, so the page's Activity log sees engine writes (the daemon

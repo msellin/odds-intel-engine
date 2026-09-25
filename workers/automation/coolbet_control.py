@@ -28,7 +28,7 @@ and hands the rows to the helper.
 
 Design note — the "can place" conjunction mirrors what the real placer
 (`scripts/place_coolbet_ui.py`) and the run-level gate
-(`placement_gate.assert_run_may_place`: placement_paused + real_money_armed) already enforce.
+(`placement_gate.assert_run_may_place`: placement_paused + real_money_armed + the money-gate contract, migration 436) already enforce.
 This surface does NOT introduce a new gate; if it says BLOCKED, the placer
 would place nothing anyway.
 """
@@ -110,10 +110,17 @@ def _evaluate_readiness(state: dict, bots: list[dict], now: datetime | None = No
         blockers.append(
             f"placement paused (operator kill switch): {placement_paused_reason or 'no reason given'}"
         )
+    # #162 W0.2 (migration 436): real money is locked until the placement checks are unified; the
+    # gate refuses every run while it is, so "can place" must not be claimed. Missing = not ready.
+    if not state.get("money_gate_ready", False):
+        blockers.append(
+            "real money locked until the placement checks are unified (#162 W4, migration 436)"
+            + (f": {state.get('money_gate_reason')}" if state.get("money_gate_reason") else "")
+        )
     # FOOTPRINT-NOT-A-MONEY-GATE (#139, owner decision 2026-09-24): `daemons_paused`
     # stops the Coolbet odds SWEEPS, the feed watchdog and the paper Mac daemon. It
     # does NOT stop the real-money placers — `placement_gate.assert_run_may_place()`
-    # reads only placement_paused + real_money_armed, and the owner chose to keep it
+    # reads placement_paused + real_money_armed + money_gate_ready (mig 436), and the owner chose to keep it
     # that way ("only sweeping stops"). It used to be listed as a blocker here, so the
     # daily summary said BLOCKED on a pause that would not have stopped a real bet.
     # It is context now (a warning, added below); the kill switch stops real bets.
@@ -210,6 +217,9 @@ def placement_readiness() -> dict:
         from workers.automation.coolbet_state import is_real_money_armed
         armed, armed_reason = is_real_money_armed()
         state["real_money_armed"], state["real_money_armed_reason"] = armed, armed_reason
+        # #162 W0.2 (migration 436): the same fail-closed reader the placement gate uses
+        from workers.automation.coolbet_state import is_money_gate_ready
+        state["money_gate_ready"], state["money_gate_reason"] = is_money_gate_ready()
 
         # The REAL-money liveness signal: the UI placer's own attempt ledger
         # (coolbet_placement_attempts). last attempt = job/browser ran; last

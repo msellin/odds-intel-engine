@@ -267,8 +267,18 @@ def run_prekickoff_alert(*, dry_run: bool = False) -> dict:
     (mig 252)."""
     from workers.notify.telegram import send_telegram
 
-    counters = {"healthy": False, "candidates": 0, "sent": 0, "skipped_dedup": 0}
+    counters = {"healthy": False, "candidates": 0, "sent": 0, "skipped_dedup": 0, "paused": False}
     try:
+        # #162 W0.3 (2026-09-25): the kill switch silences this prompt too. It asks the operator to
+        # "PLACE MANUALLY" a real-money pick; with placement paused that contradicts the stop, and the
+        # daemon heartbeat it keys on has been frozen since the daemon's retirement (2026-09-10), so it
+        # always reads "daemon down". The read fails CLOSED (an unreadable switch = paused = silent).
+        from workers.automation.coolbet_state import is_placement_paused
+        paused, _why = is_placement_paused()
+        if paused:
+            counters["paused"] = True
+            return counters
+
         healthy, reason = _mac_daemon_is_healthy()
         counters["healthy"] = healthy
         if healthy:
