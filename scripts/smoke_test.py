@@ -56026,7 +56026,7 @@ def test_rating_1x2_bot_twin():
         assert comb[k] == old[k], f"combined twin drifted on {k}"
     assert BOT_TIMING_COHORTS["bot_combined_1x2_v1"] == BOT_TIMING_COHORTS["bot_v10_1x2"]
     src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
-    i = src.index("if _rating_bot:\n                    cal_prob = raw_mp")
+    i = src.index('if _rating_bot or (_ou_new and mkt == "O/U"):\n                    cal_prob = raw_mp')  # #152 added O/U
     assert "calibrate_prob(" in src[i:i + 600], "the non-rating path must still calibrate"
     assert '_funnel[bot_name]["drop_no_rating"]' in src, "no rating row must mean no bet, never a fallback price"
     assert 'candidate_specs.append(("1X2", "Home", odds, _p1x2["home_prob"]' in src
@@ -56617,6 +56617,25 @@ def test_combined_ou_production():
     assert "def power_devig" in src and "proportional" not in src.split("def power_devig")[1][:400]
     mig = _engine_path("supabase/migrations/425_combined_ou.sql").read_text(encoding="utf-8")
     assert "REVOKE ALL ON ou_model_predictions FROM anon, authenticated" in mig
+
+
+
+@test("PIPELINE-OU-NEW-MODEL-AND-VIP-SPLIT — #152: O/U bots can price off ou_comb_v1; public bots skip VIP-held picks")
+def test_pipeline_ou_new_model_and_vip_split():
+    """#152 step 2 plumbing. `ou_prob_source='combined_ou'` makes a BOTS_CONFIG bot price its O/U
+    lines off ou_model_predictions (served: Pinnacle where priced, else combined), uncalibrated
+    and without the old data-tier bump; the substituted `pred` must be restored before the next
+    bot on the same match. `vip_exclude=True` makes a PUBLIC bot skip any pick a VIP bot holds
+    (1X2: NEW+ EV >= 5%; O/U: EV vs Pinnacle 5-15% and >= 12 h to kickoff) — the owner's split."""
+    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
+    assert 'FROM ou_model_predictions' in src and '_ou_new = config.get("ou_prob_source") == "combined_ou"' in src
+    assert "_pred_orig = pred" in src and "pred = _pred_orig" in src
+    assert src.index("_pred_orig = pred") < src.index("pred = _pred_orig") < src.index(
+        "for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:")
+    assert 'if _rating_bot or (_ou_new and mkt == "O/U"):' in src
+    assert 'config.get("vip_exclude") and mkt == "1X2"' in src and 'config.get("vip_exclude") and mkt == "O/U"' in src
+    assert '_pv * odds - 1 >= 0.05' in src and '0.05 <= _pp * odds - 1 <= 0.15 and _hko >= 12' in src
+    assert '"model_version": "ou_comb_v1"' in src
 
 
 if __name__ == "__main__":

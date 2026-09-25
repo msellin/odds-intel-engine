@@ -2990,6 +2990,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
     sharp_consensus_by_match: dict[str, float] = {}
     rating_1x2_by_match: dict[str, tuple[float, float, float]] = {}   # RATING-1X2-BOT
     combined_1x2_by_match: dict[str, tuple[float, float, float]] = {}  # ... combined arm
+    # #152: combined O/U model (ou_model_predictions) — (match_id, market) -> (served p_over, p_pin or None)
+    ou_model_by_match: dict[tuple[str, str], tuple[float, float | None]] = {}
     if all_match_ids_for_signals:
         try:
             from workers.api_clients.db import execute_query as _eq_pin
@@ -3037,6 +3039,18 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     float(_rr["p_home"]), float(_rr["p_draw"]), float(_rr["p_away"]))
         except Exception as e:
             console.print(f"  [yellow]Rating 1X2 load failed (non-critical; rating bot idles): {e}[/yellow]")
+
+        try:
+            from workers.model.combined_ou import MODEL_VERSION as _OU_VER
+            for _ro in _eq_pin(
+                """SELECT match_id, market, p_over, p_pin FROM ou_model_predictions
+                    WHERE model_version = %s AND match_id = ANY(%s::uuid[])""",
+                (_OU_VER, all_match_ids_for_signals),
+            ):
+                ou_model_by_match[(str(_ro["match_id"]), _ro["market"])] = (
+                    float(_ro["p_over"]), float(_ro["p_pin"]) if _ro["p_pin"] is not None else None)
+        except Exception as e:
+            console.print(f"  [yellow]Combined O/U load failed (non-critical; O/U model bots idle): {e}[/yellow]")
 
         # CAL-SHARP-GATE: batch-load sharp_consensus_home for all matches.
         # Skip 1X2 home bets where sharp_consensus < -0.02 (sharps say home
@@ -3737,6 +3751,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             # RATING-1X2-BOT: a bot may take its 1X2 probability from the rating
             # model instead of the ensemble. Everything else in this loop is shared.
             _rating_bot = config.get("prob_source") in ("rating_1x2", "combined_1x2")
+            # #152: an O/U bot priced by the combined O/U model (served: Pinnacle where priced, else combined)
+            _ou_new = config.get("ou_prob_source") == "combined_ou"
             _p1x2 = pred
             if _rating_bot:
                 _rr = (combined_1x2_by_match if config["prob_source"] == "combined_1x2"
@@ -3762,6 +3778,20 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             # 1X2: Away
             if "1x2" in config["markets"] and match["odds_away"] > 0 and (not sel_filter or "Away" in sel_filter):
                 candidate_specs.append(("1X2", "Away", match["odds_away"], _p1x2["away_prob"], "1x2", "away", thresholds.get("1x2_long", 0.08)))
+
+            # #152: combined-O/U bots read the new model for every O/U line; a line it has no row for is skipped.
+            _ou_p = {}
+            _pred_orig = pred            # restored below: `pred` is shared by every later bot on this match
+            if _ou_new:
+                for _mk in ("over_under_15", "over_under_25", "over_under_35"):
+                    _r = ou_model_by_match.get((str(match_id), _mk))
+                    if _r is not None:
+                        _ou_p[_mk] = _r
+                pred = dict(pred)
+                for _mk, _k in (("over_under_15", "15"), ("over_under_25", "25"), ("over_under_35", "35")):
+                    _r = _ou_p.get(_mk)
+                    pred[f"over_{_k}_prob"] = _r[0] if _r else float("nan")
+                    pred[f"under_{_k}_prob"] = (1 - _r[0]) if _r else float("nan")
 
             # O/U 2.5 — AGGRESSIVE-V2: sel_filter (when set) gates OU side
             if "ou" in config.get("markets", []) and match.get("odds_over_25", 0) > 0 and (not sel_filter or "Over 2.5" in sel_filter):
@@ -3870,6 +3900,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         if not sel_filter or "Away" in sel_filter:
                             candidate_specs.append(("draw_no_bet", "Away", dnb_a_odds, dnb_a_prob, "draw_no_bet", "away", thresholds.get("dnb", 0.05)))
 
+            pred = _pred_orig            # #152: never leak this bot's O/U substitution to the next bot
             for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:
                 _fctx = {"source": "pipeline_shadow" if shadow_mode else "pipeline", "bot": bot_name, "match_id": str(match_id),
                          "market": os_market, "selection": os_selection, "odds": odds,
@@ -3898,9 +3929,9 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 pin_anchor = _cal_pmap.get(str(match_id)) if _cal_pmap is not None else None
                 # RATING-1X2-BOT: the rating model's probability is used as is (see
                 # the BOTS_CONFIG note) — calibrate_prob would replace it with Platt(Pinnacle).
-                if _rating_bot:
+                if _rating_bot or (_ou_new and mkt == "O/U"):
                     cal_prob = raw_mp
-                    _fctx["fair_source"] = config["prob_source"]
+                    _fctx["fair_source"] = config.get("prob_source") or config.get("ou_prob_source")
                 else:
                     cal_prob = calibrate_prob(raw_mp, ip, tier=tier, market=platt_market,
                                               anchor_implied=pin_anchor, odds=odds)
@@ -3919,7 +3950,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 # Use calibrated probability for edge calculation. B4: edge_unit="ev"
                 # measures it as expected value (p x odds - 1), not probability points.
                 edge = cal_prob * odds - 1 if config.get("edge_unit") == "ev" else cal_prob - ip
-                me = base_threshold + (0.0 if _rating_bot else edge_bump)
+                me = base_threshold + (0.0 if (_rating_bot or _ou_new) else edge_bump)
                 _fctx.update(fair_prob=cal_prob, threshold=me)
 
                 if edge < me or odds < odds_min or odds > odds_max or cal_prob < min_prob:
@@ -3933,6 +3964,27 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     else:
                         _fstep("drop_min_prob")
                     continue
+
+                # #152 VIP SPLIT (owner 2026-09-25): a PUBLIC bot never takes a pick a VIP bot holds,
+                # or the free feed would reveal the paid pick before kickoff.
+                if config.get("vip_exclude") and mkt == "1X2":
+                    _cv = combined_1x2_by_match.get(str(match_id))
+                    if _cv is not None:
+                        _pv = {"Home": _cv[0], "Draw": _cv[1], "Away": _cv[2]}.get(selection)
+                        if _pv is not None and _pv * odds - 1 >= 0.05:          # NEW+ EV5 (VIP #1) holds it
+                            _fstep("drop_vip_held"); continue
+                if config.get("vip_exclude") and mkt == "O/U":
+                    _line_mk = {"1.5": "over_under_15", "2.5": "over_under_25", "3.5": "over_under_35"}.get(selection.split()[-1])
+                    _rp = ou_model_by_match.get((str(match_id), _line_mk)) if _line_mk else None
+                    if _rp is not None and _rp[1] is not None:
+                        _pp = _rp[1] if selection.startswith("Over") else 1 - _rp[1]
+                        try:
+                            _hko = (datetime.fromisoformat(str(match.get("start_time")).replace("Z", "+00:00"))
+                                    - datetime.now(timezone.utc)).total_seconds() / 3600
+                        except (ValueError, TypeError):
+                            _hko = 0.0
+                        if 0.05 <= _pp * odds - 1 <= 0.15 and _hko >= 12:        # O/U EARLY (VIP #2) holds it
+                            _fstep("drop_vip_held"); continue
 
                 # Pinnacle disagreement veto: skip bets where our model is significantly
                 # more optimistic than Pinnacle (the sharpest book).
@@ -4264,6 +4316,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         # XGB bundle — tag the row with it so /admin/bots shows the truth.
                         **({"model_version": ("r1x2_comb_v1" if config["prob_source"] == "combined_1x2"
                                               else "r1x2_d8plus_v1")} if _rating_bot else {}),
+                        **({"model_version": "ou_comb_v1"} if (_ou_new and mkt == "O/U") else {}),
                     })
                     if bet_id:
                         total_bets += 1
