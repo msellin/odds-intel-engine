@@ -828,6 +828,30 @@ BOTS_CONFIG = {
         "odds_range": (1.50, 5.50),
         "min_prob": 0.28,
     },
+    # High-odds match result's NEW-MODEL TWIN ([[#152]], owner 2026-09-25: "lets try it anyways").
+    # IDENTICAL rules to bot_high_roi_global_v2 (Spain/Australia/Iceland, home/away, odds 1.50-5.50,
+    # min_prob 0.28, the same tier thresholds in probability points) — ONLY the probability changes,
+    # to NEW+ (r1x2_comb_v1, used as is). vip_exclude: a public bot never takes a VIP-held pick.
+    # The original keeps its live record (CLV +6.9%, ~+5.6% on 30 picks since July); the backtest
+    # could not judge this niche (its own rule made 0-1 open-price picks) and its NEW+ variants were
+    # negative, so this is a live experiment, not a confirmed improvement. Compare live, keep the better.
+    "bot_high_roi_global_v2_newplus_v1": {
+        "description": "High-odds match result on the NEW+ model — twin of bot_high_roi_global_v2, same rules, only the probability changes",
+        "tier_label": "elite",
+        "markets": ["1x2"],
+        "selection_filter": ["Home", "Away"],
+        "tier_filter": None,
+        "league_filter": ["Spain", "Australia", "Iceland"],
+        "edge_thresholds": {
+            1: {"1x2_fav": 0.06, "1x2_long": 0.09},
+            2: {"1x2_fav": 0.05, "1x2_long": 0.08},
+            3: {"1x2_fav": 0.05, "1x2_long": 0.08},
+        },
+        "odds_range": (1.50, 5.50),
+        "min_prob": 0.28,
+        "prob_source": "combined_1x2",
+        "vip_exclude": True,
+    },
 
     # ─── Double Chance bots (DC-BOTS 2026-05-11) ──────────────────────────────
     # DC probs derived at placement time from 1X2 calibrated probs:
@@ -1155,6 +1179,7 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_proven_leagues_v2": "all",
     "bot_high_roi_global":      "all",
     "bot_high_roi_global_v2":   "all",
+    "bot_high_roi_global_v2_newplus_v1": "all",   # #152 twin on the NEW+ model
     "bot_ou15_defensive":   "all",
     "bot_ou35_attacking":   "all",
     "bot_ou25_global":          "all",   # RETIRED 2026-05-29 — kept for shadow tracking

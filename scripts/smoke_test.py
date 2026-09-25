@@ -56754,6 +56754,12 @@ def test_v10_newplus_twin():
     web = _engine_path("../odds-intel-web/src/lib/bot-aggregates.ts")
     if web.exists():
         assert "b.showOnPerformance === true" in web.read_text(encoding="utf-8")
+    # High-odds twin (owner 2026-09-25): identical rules to bot_high_roi_global_v2, only the probability changes.
+    h, ht = BOTS_CONFIG["bot_high_roi_global_v2"], BOTS_CONFIG["bot_high_roi_global_v2_newplus_v1"]
+    assert "prob_source" not in h and ht["prob_source"] == "combined_1x2" and ht["vip_exclude"] is True
+    for k in ("markets", "selection_filter", "league_filter", "edge_thresholds", "odds_range", "min_prob"):
+        assert ht[k] == h[k], f"high-odds twin drifted on {k}"
+    assert "'testing', false, true" in _engine_path("supabase/migrations/428_high_odds_newplus_twin.sql").read_text(encoding="utf-8")
 
 
 if __name__ == "__main__":
