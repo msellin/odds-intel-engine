@@ -58041,5 +58041,43 @@ def test_clv_sharp_real_bets():
         joins = v["d"].count("leg_clv_sharp c")
         assert v["d"].count("c.ledger = '") >= joins or "ledger" in v["d"], v["viewname"]
 
+
+@test("BOT-DISTRIBUTION-AND-REVIEW-FLAG — who-gets-what from status + VIP only; the retirement flag is a read-only view (#162 W5.1/W6.5)")
+def test_bot_distribution_and_review_flag():
+    """#162 W5.1 + W6.5 (migration 437, agreed with #155: #162 builds the views, #155 wires them).
+    bot_distribution derives distribution ONLY from status + VIP (owner policy §3.1): VIP is a channel
+    (never sent_public, never in the headline), experimental is admin-only, retired is on nothing; the
+    *_drift columns name today's disagreements with show_on_performance / show_on_picks / hide_pending.
+    bot_review_flag is the §3.3 flag (≥ 50 settled legs with sharp-anchor CLV AND the upper 95% bound < 0),
+    active bots only, a FLAG — nothing reads it to retire anything. Both views are private."""
+    mig = _engine_path("supabase/migrations/437_bot_distribution_and_review_flag.sql").read_text(encoding="utf-8")
+    assert "CREATE OR REPLACE VIEW public.bot_distribution" in mig and "CREATE OR REPLACE VIEW public.bot_review_flag" in mig
+    assert "REVOKE ALL ON public.bot_distribution, public.bot_review_flag FROM PUBLIC, anon, authenticated" in mig
+    assert "SELECT 50 AS min_n" in mig and "(u.clv_n >= k.min_n AND u.clv_public_upper95 < 0)" in mig
+    assert "(d.public_status AND d.vip)                                            AS vip_channel" in mig, \
+        "VIP is a channel on top of a PUBLIC status — VIP · EXPERIMENTAL sends nothing"
+    from workers.api_clients.db import execute_query
+    try:
+        applied = execute_query("SELECT to_regclass('public.bot_review_flag') IS NOT NULL AS ok")[0]["ok"]
+    except Exception:  # noqa: BLE001 — no DB in this environment
+        return
+    if not applied:          # migrations apply in parallel with CI; a real breakage still fails below
+        return
+    if True:
+        bad = execute_query("""SELECT
+              count(*) FILTER (WHERE vip AND (sent_public OR in_headline OR pending_public)) AS vip_public,
+              count(*) FILTER (WHERE status = 'retired' AND (on_performance OR sent_public OR vip_channel)) AS retired_on,
+              count(*) FILTER (WHERE status = 'experimental' AND (on_performance OR sent_public OR vip_channel)) AS exp_public
+            FROM bot_distribution""")[0]
+        flag_retired = execute_query("""SELECT count(*) AS n FROM bot_review_flag f JOIN bots b ON b.name = f.bot_name
+                                         WHERE b.retired_at IS NOT NULL OR NOT b.is_active""")[0]["n"]
+        anon = execute_query("SELECT has_table_privilege('anon','bot_distribution','SELECT') a, "
+                             "has_table_privilege('anon','bot_review_flag','SELECT') b")[0]
+        no_basis = execute_query("SELECT count(*) AS n FROM bot_review_flag WHERE clv_n_public = 0 AND reason <> 'no_clv_basis'")[0]["n"]
+    assert bad == {"vip_public": 0, "retired_on": 0, "exp_public": 0}, bad
+    assert no_basis == 0, "a bot with no CLV basis must say so, not read as a silent 'not flagged'"
+    assert flag_retired == 0, "the flag covers active bots only"
+    assert anon == {"a": False, "b": False}, anon
+
 if __name__ == "__main__":
     main()

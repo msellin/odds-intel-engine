@@ -29,6 +29,7 @@ bot-aggregates, engine-data. (admin-attention.ts: one agreed #139 edit, then #15
 - [x] W3.1/W3.2 one fair-price rule + parity pins
 - [x] W6.4 real_bets scored on the sharp-anchor close (engine)
 - [x] W7.3 (part) dead telegram_bot.py deleted
+- [x] W5.1 + W6.5 views (migration 437) for #155 — 2 reviewers (SQL + policy)
 - [ ] steps per plan, each: smoke test, 1–2 review agents, deploy check
 
 ## Phase 3 — after #157 + #155
