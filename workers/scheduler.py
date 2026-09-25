@@ -3068,6 +3068,18 @@ def job_health_alerts_feeds():
     _run_job("health_alerts_feeds", run_feed_checks)
 
 
+def job_verify_queue():
+    """#168a VERIFY-QUEUE (2026-09-25) — every 30 min at :10/:40, 24/7.
+
+    Runs the post-deploy checks tasks hand off in ops/verify/*.yml and migration
+    `-- verify:` lines, once due, on a read-only session; results in verify_results;
+    Telegram to the operator chat only on mismatch / error / expiry. :10/:40 so a
+    check waiting on the :05/:35 betting refresh sees it the same half hour.
+    """
+    from workers.jobs.verify_queue import run_verify_queue
+    _run_job("verify_queue", run_verify_queue)
+
+
 def job_health_alerts_settlement():
     from workers.jobs.health_alerts import run_settlement_check
     _run_job("health_alerts_settlement", run_settlement_check)
@@ -4173,6 +4185,9 @@ def main():
     # outages it was written for started outside that window.
     scheduler.add_job(job_health_alerts_feeds, CronTrigger(minute=50),
                       id="health_alerts_feeds", name="Health Alerts Direct Feeds :50")
+    # VERIFY-QUEUE (#168a): background post-deploy checks — nobody waits for a deploy.
+    scheduler.add_job(job_verify_queue, CronTrigger(minute="10,40"),
+                      id="verify_queue", name="Verify Queue :10/:40")
     # Settlement check at 21:30 (after 21:00 settlement job has had 30 min to run)
     scheduler.add_job(job_health_alerts_settlement, CronTrigger(hour=21, minute=30),
                       id="health_alerts_settlement", name="Health Alerts Settlement 21:30")

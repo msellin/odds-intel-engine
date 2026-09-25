@@ -59000,6 +59000,73 @@ def test_smoke_new_vs_inherited():
     assert "_newer_than_checkout" in mig and "%ct" in mig, "applied-after-this-commit migrations must be excused"
 
 
+@test("VERIFY-QUEUE — ops/verify/*.yml parse, checks run read-only, state machine alerts once, job scheduled")
+def test_verify_queue():
+    """#168a (2026-09-25). Tasks hand off post-deploy checks as ops/verify/<task>.yml (or a
+    migration `-- verify:` line) and the scheduler's verify_queue job runs them when due — so no
+    agent waits for a deploy. This pins: every committed spec parses (a malformed file would sit
+    silently unrun); only a single SELECT/WITH is accepted and the session is read-only; the
+    state machine (now / eventually / invariant) alerts once per transition, and expiry fires."""
+    import inspect
+    from datetime import datetime, timedelta, timezone
+    from workers.jobs import verify_queue as vq
+
+    specs = vq.load_yaml_specs()
+    assert len(specs) >= 5, f"seed checks missing: {len(specs)}"
+    assert len({s["check_id"] for s in specs}) == len(specs), "duplicate check ids"
+    for bad in ("DELETE FROM bots", "SELECT 1; DELETE FROM bots", "UPDATE bots SET name='x'"):
+        try:
+            vq._check_sql(bad)
+            raise AssertionError(f"accepted {bad!r}")
+        except ValueError:
+            pass
+    assert "default_transaction_read_only=on" in inspect.getsource(vq._ro_connect)
+    assert "statement_timeout" in inspect.getsource(vq._ro_connect)
+
+    ev = vq.evaluate
+    assert ev(3, ">= 1") and not ev(0, ">= 1") and ev(0, "== 0") and ev("t", "true")
+    assert ev(True, "true") and not ev(None, "not null") and ev("abc", "== 'abc'") and not ev(None, "== 0")
+
+    now = datetime(2026, 9, 25, 16, tzinfo=timezone.utc)
+    base = {"check_id": "x::y", "task": "t", "source": "x", "name": "y", "sql": "SELECT 1", "cmd": None,
+            "cmd_value": "stdout", "expect": "== 0", "run_after": {}, "expires": now + timedelta(hours=1)}
+    bad = lambda s: 5  # noqa: E731
+    good = lambda s: 0  # noqa: E731
+    r = vq.decide({**base, "mode": "now"}, None, now, True, "", bad)
+    assert r["status"] == "failed", r
+    r2 = vq.decide({**base, "mode": "now"}, {**r, "alerted_status": "failed"}, now, True, "", bad)
+    assert r2["alerted_status"] == "failed", "same failure must not re-alert"
+    assert vq.decide({**base, "mode": "now"}, None, now, True, "", good)["status"] == "passed"
+    assert vq.decide({**base, "mode": "eventually"}, None, now, True, "", bad)["status"] == "pending"
+    inv = vq.decide({**base, "mode": "invariant"}, None, now, True, "", good)
+    assert inv["status"] == "holding", "an invariant keeps being watched after it holds"
+    late = now + timedelta(hours=2)
+    assert vq.decide({**base, "mode": "invariant"}, inv, late, True, "", good)["status"] == "passed"
+    assert vq.decide({**base, "mode": "eventually"}, None, late, True, "", bad)["status"] == "expired"
+    nd = vq.decide({**base, "mode": "now"}, None, late, False, "migration 999 not applied", bad)
+    assert nd["status"] == "expired" and "never became due" in nd["detail"], nd
+    boom = vq.decide({**base, "mode": "now"}, None, now, True, "", lambda s: 1 / 0)
+    assert boom["status"] == "error" and "ZeroDivisionError" in boom["detail"]
+    edited = vq.decide({**base, "mode": "now", "expect": "== 5"}, {**r, "status": "passed"}, now, True, "", bad)
+    assert edited["status"] == "passed" and edited["runs"] == 1, "an edited check starts over"
+
+    applied = {"447_verify_results.sql": now}
+    assert vq.is_due({**base, "run_after": {"migration": "447"}}, now, applied, lambda j, s: False)[0]
+    assert not vq.is_due({**base, "run_after": {"migration": "999"}}, now, applied, lambda j, s: True)[0]
+    assert not vq.is_due({**base, "run_after": {"job": "betting_refresh", "since": "2026-09-25T15:30:00Z"}},
+                         now, applied, lambda j, s: False)[0]
+    mig = vq.load_migration_specs(applied, now)
+    assert any(m["check_id"].endswith("447_verify_results.sql::verify1") for m in mig), mig
+
+    sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    assert '_run_job("verify_queue", run_verify_queue)' in sched and 'id="verify_queue"' in sched
+    assert "PyYAML" in _engine_path("requirements.txt").read_text(encoding="utf-8")
+    wf = _engine_path(".github/workflows/migrate.yml").read_text(encoding="utf-8")
+    assert "Run migration verify lines" in wf and "default_transaction_read_only=on" in wf
+    assert "ops/verify/<task>.yml" in _engine_path("CLAUDE.md").read_text(encoding="utf-8")
+    assert "verify_queue" in _engine_path("WORKFLOWS.md").read_text(encoding="utf-8")
+
+
 # ── [[#155]] ONE STATUS DECIDES DISTRIBUTION ────────────────────────────────────────────────────
 
 def _m442() -> str:

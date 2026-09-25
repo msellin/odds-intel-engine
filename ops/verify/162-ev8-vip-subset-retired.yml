@@ -1,0 +1,8 @@
+# #162 / migration 444 — bot_combined_1x2_ev8_v1 is retired.
+task: "#162"
+checks:
+  - name: ev8_vip_subset_retired
+    sql: SELECT retired_at IS NOT NULL FROM bots WHERE name = 'bot_combined_1x2_ev8_v1'
+    expect: "true"
+    run_after: {migration: "444"}
+    expires: "2026-09-27T00:00:00Z"

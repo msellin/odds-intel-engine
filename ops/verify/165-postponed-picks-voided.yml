@@ -1,0 +1,27 @@
+# #165 — settlement.void_bets_on_dead_matches() voids every pending pick on a postponed or
+# cancelled match; nothing should still be pending 6 h past kickoff in ANY bet table
+# (same per-table pending rules as settlement._DEAD_MATCH_VOID_SPECS).
+task: "#165"
+checks:
+  - name: no_pending_pick_on_dead_match_6h_after_kickoff
+    mode: invariant
+    sql: |
+      SELECT
+        (SELECT count(*) FROM real_bets b JOIN matches m ON m.id = b.match_id
+          WHERE b.result = 'pending' AND b.combo_legs IS NULL
+            AND m.status IN ('postponed','cancelled') AND m.date < now() - interval '6 hours')
+      + (SELECT count(*) FROM simulated_bets b JOIN matches m ON m.id = b.match_id
+          WHERE b.result = 'pending' AND b.combo_legs IS NULL
+            AND m.status IN ('postponed','cancelled') AND m.date < now() - interval '6 hours')
+      + (SELECT count(*) FROM shadow_bets b JOIN matches m ON m.id = b.match_id
+          WHERE b.result = 'pending'
+            AND m.status IN ('postponed','cancelled') AND m.date < now() - interval '6 hours')
+      + (SELECT count(*) FROM picks_forward_test b JOIN matches m ON m.id = b.match_id
+          WHERE b.outcome IS NULL
+            AND m.status IN ('postponed','cancelled') AND m.date < now() - interval '6 hours')
+      + (SELECT count(*) FROM picks_board b JOIN matches m ON m.id = b.match_id
+          WHERE b.outcome IS NULL
+            AND m.status IN ('postponed','cancelled') AND m.date < now() - interval '6 hours')
+    expect: "== 0"
+    run_after: {job: settle_ready, since: "2026-09-25T15:30:00Z"}
+    expires: "2026-09-28T00:00:00Z"

@@ -109,7 +109,7 @@ backlog forms outside the master.
 
 ### Speed rules — shared checkout, never wait (owner, 2026-09-25)
 
-- **Never wait for CI, deploys, migrations or scheduled runs.** Push once, move on. Hand back your *verification steps* (the query/command + the expected result + when it becomes true, e.g. "after migration 441 applies") for the coordinating session to run in bulk. Never `gh run watch`.
+- **Never wait for CI, deploys, migrations or scheduled runs.** Push once, move on. Hand back your *verification steps* (the query/command + the expected result + when it becomes true, e.g. "after migration 441 applies") for the coordinating session to run in bulk. Never `gh run watch`. **Write them to `ops/verify/<task>.yml`** — the scheduler's `verify_queue` job runs them when due and Telegram-alerts only on mismatch/expiry (WORKFLOWS.md, VERIFY-QUEUE).
 - **A red CI run is only yours if it is NEW.** The job summary and the end of the log split failures into **NEW (this push)** vs **INHERITED** (`SMOKE-NEW-VS-INHERITED`; also in the `smoke-failures` artifact). Fix NEW; leave inherited to their owner. The job stays red for either.
 - **One commit + one push per task per repo**, not one per step.
 - **The checkout and index are shared with other live sessions.** Never `git stash`, `git reset`, or `git checkout` files you did not edit. Stage only your own hunks; `git pull --rebase --autostash` right before pushing.

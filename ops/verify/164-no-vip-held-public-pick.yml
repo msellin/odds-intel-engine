@@ -1,0 +1,13 @@
+# #164 — a pick VIP-held (held_back_until > now()) must never be visible on the public feed.
+task: "#164"
+checks:
+  - name: no_pending_public_pick_is_vip_held
+    mode: invariant
+    sql: |
+      SELECT count(*) FROM picks_public_all v
+       WHERE v.outcome IS NULL
+         AND (EXISTS (SELECT 1 FROM simulated_bets s WHERE s.id = v.id AND s.held_back_until > now())
+              OR EXISTS (SELECT 1 FROM picks_forward_test f WHERE f.id = v.id AND f.held_back_until > now()))
+    expect: "== 0"
+    run_after: {migration: "439"}
+    expires: "2026-09-28T00:00:00Z"

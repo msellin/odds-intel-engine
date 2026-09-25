@@ -164,6 +164,7 @@ jobs:
           fi
 
           applied=0
+          applied_files=()
           for f in supabase/migrations/*.sql; do
             name=$(basename "$f")
             if grep -qxF "$name" /tmp/applied.txt; then
@@ -175,8 +176,32 @@ jobs:
               "INSERT INTO _schema_migrations (filename) VALUES ('$name')" >/dev/null
             echo "── OK: $name ──"
             applied=$((applied + 1))
+            applied_files+=("$name")
           done
           echo "Applied $applied new migration(s)."
+          printf '%s\n' "${applied_files[@]:-}" > /tmp/applied_now.txt
+
+      # VERIFY-QUEUE (#168a, 2026-09-25): a migration may carry `-- verify: <boolean SQL>`
+      # lines. They run here straight after apply so the CI log says PASS/FAIL at once, and
+      # the scheduler's verify_queue job re-runs them (and Telegram-alerts — this repo has
+      # no Telegram secrets). NON-FATAL on purpose: the migration is already applied and
+      # recorded, and a red here would read as "migration failed" when it did not.
+      - name: Run migration verify lines
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          export PGCONNECT_TIMEOUT=15
+          export PGOPTIONS="-c default_transaction_read_only=on -c statement_timeout=20000"
+          while read -r name; do
+            [ -n "$name" ] || continue
+            grep -E '^--[[:space:]]*verify:' "supabase/migrations/$name" \
+              | sed -E 's/^--[[:space:]]*verify:[[:space:]]*//; s/;[[:space:]]*$//' \
+              | while IFS= read -r expr; do
+                  got=$(psql "$DATABASE_URL" -tAc "SELECT ($expr)::boolean" 2>&1 | tr -d '[:space:]' || true)
+                  if [ "$got" = "t" ]; then echo "verify PASS $name: $expr"
+                  else echo "::warning::verify FAIL $name ($got): $expr"; fi
+                done
+          done < /tmp/applied_now.txt
 
       # POSTGREST-SCHEMA-RELOAD-2026-09-08: PostgREST caches the DB schema, so a
       # migration that CREATES a table leaves the API 500ing ("could not find

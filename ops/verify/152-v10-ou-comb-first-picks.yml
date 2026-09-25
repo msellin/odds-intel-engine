@@ -1,0 +1,24 @@
+# #152 — bot_v10_ou_comb_v1 (migration 443) is the TESTING twin of bot_v10_ou on the combined
+# O/U model. Its first picks should land at the first betting refresh after 15:30 UTC.
+task: "#152"
+checks:
+  - name: first_picks_within_24h
+    mode: eventually
+    sql: |
+      SELECT count(*) FROM simulated_bets s JOIN bots b ON b.id = s.bot_id
+       WHERE b.name = 'bot_v10_ou_comb_v1' AND s.model_version = 'ou_comb_v1'
+         AND s.edge_percent >= 0.03 AND s.odds_at_pick BETWEEN 1.30 AND 3.00
+    expect: ">= 1"
+    run_after: {job: betting_refresh, since: "2026-09-25T15:30:00Z"}
+    expires: "2026-09-26T16:00:00Z"
+  - name: every_pick_inside_the_rule
+    mode: invariant
+    # EV >= 3%, odds 1.30-3.00, ou_comb_v1 — any row outside it is a rule leak.
+    sql: |
+      SELECT count(*) FROM simulated_bets s JOIN bots b ON b.id = s.bot_id
+       WHERE b.name = 'bot_v10_ou_comb_v1'
+         AND (s.model_version IS DISTINCT FROM 'ou_comb_v1' OR s.edge_percent < 0.03
+              OR s.odds_at_pick NOT BETWEEN 1.30 AND 3.00)
+    expect: "== 0"
+    run_after: {job: betting_refresh, since: "2026-09-25T15:30:00Z"}
+    expires: "2026-09-27T16:00:00Z"

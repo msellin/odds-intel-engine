@@ -62,3 +62,5 @@ stripe>=15.0.0
 # RESIDENTIAL-EGRESS 2026-09-22 — socks5h:// support in `requests`, so the VPS
 # can reach Epicbet/Coolbet through the WireGuard residential egress.
 PySocks>=1.7.1
+# VERIFY-QUEUE 2026-09-25 (#168a) — ops/verify/*.yml check specs read by workers/jobs/verify_queue.py.
+PyYAML>=6.0
