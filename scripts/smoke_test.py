@@ -26058,7 +26058,7 @@ def _():
     # status labels + legend carry the evidence judgement; an ROI-based count contradicted them.
     assert "proven strategies" not in leaderboard_early and "underperforming</span>" not in leaderboard_early, (
         "the leaderboard must not carry a second, ROI-based 'proven' judgement beside the status labels")
-    assert "retired</span>" in leaderboard_early, "keep the tested-to-date / retired count (the work done)"
+    assert "strategies tested, {retiredBotCount} retired" in leaderboard_early, "keep the tested-to-date / retired count (the work done)"
 
     history = _web_path("src/components/performance-history.tsx").read_text()
     assert "leagueFilter" in history, (
