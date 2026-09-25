@@ -58,6 +58,19 @@ def power_devig(o_over: float, o_under: float) -> float | None:
     return a ** ((lo + hi) / 2)
 
 
+def in_ev_band(odds: float, p_fair: float) -> bool:
+    """The O/U sharp-outlier price rule shared by both bots: odds in ODDS_LO..ODDS_HI and
+    EV = odds x p_fair - 1 in EV_MIN..EV_CAP (larger gaps are misposted lines)."""
+    return ODDS_LO <= odds <= ODDS_HI and EV_MIN <= odds * p_fair - 1 <= EV_CAP
+
+
+def early_rule(odds: float, p_fair: float, hours_to_kickoff: float) -> bool:
+    """O/U EARLY (VIP #2, bot_ou_sharp_early_v1): the EV band above AND >= EARLY_MIN_H to
+    kickoff. THE one definition — evaluate() uses it and so does the VIP guard
+    (workers/utils/vip_guard.py, #164), so "in VIP's range" can never drift from VIP's rule."""
+    return in_ev_band(odds, p_fair) and hours_to_kickoff >= EARLY_MIN_H
+
+
 def _logit(p: float) -> float:
     p = min(max(p, 1e-4), 1 - 1e-4)
     return math.log(p / (1 - p))
@@ -99,12 +112,12 @@ def evaluate(quotes: list[dict], now_ts: float, kickoff_ts: dict[str, float]) ->
                 continue
             for sel in ("over", "under"):
                 o = d.get(sel)
-                if o is None or not (ODDS_LO <= o <= ODDS_HI):
+                if o is None:
                     continue
                 p = p_over if sel == "over" else 1 - p_over
-                ev = o * p - 1
-                if not (EV_MIN <= ev <= EV_CAP):
+                if not in_ev_band(o, p):
                     continue
+                ev = o * p - 1
                 others = [v for k, v in logits.items() if k != b]
                 ev_cons = None
                 if len(others) >= CONS_MIN_BOOKS:
@@ -112,7 +125,7 @@ def evaluate(quotes: list[dict], now_ts: float, kickoff_ts: dict[str, float]) ->
                     ev_cons = o * (pc if sel == "over" else 1 - pc) - 1
                 cand = {"match_id": mid, "market": mk, "selection": sel, "odds": o, "bookmaker": b,
                         "p_fair": p, "ev": ev, "ev_cons": ev_cons}
-                if (ko - now_ts) >= EARLY_MIN_H * 3600:
+                if early_rule(o, p, (ko - now_ts) / 3600):
                     if BOT_EARLY not in best or ev > best[BOT_EARLY]["ev"]:
                         best[BOT_EARLY] = cand
                 if ev_cons is not None and ev_cons >= CONS_EV_MIN:

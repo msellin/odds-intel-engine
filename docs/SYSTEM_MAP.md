@@ -247,7 +247,7 @@ registry and regenerate.
 |---|---|---|---|---|---|---|
 | ~~`bot_v10_all`~~ | — | — | — | — | **SPLIT 2026-09-22** | **RETIRED BY SPLIT, not by performance** (migration 375, [[#040]]). Every row it owned was re-attributed by market to the two bots below, so its record is not lost — it is disaggregated. |
 | `bot_v10_1x2` | 1x2 | model | — | — | paper | The 1x2 half of the old reference bot. De-vigged Pinnacle CLV **+2.50%** (n=335, 95% CI [+0.41, +4.60]), ROI **+7.3% at executable prices** (n=400; the stored-`pnl` figure is +12.80%, inflated by the `odds_at_pick` high-water basis — STALE-BEST-ODDS, see [[#074]]) — `calibrated`. ⚠️ **Read the record as three months, not five:** monthly CLV runs May −0.87%, Jun −2.15%, Jul **+8.35%**, Aug **+8.24%**, Sep **+7.25%**, so the whole positive pooled figure is July-onward (n=142 vs n=193 before it). |
-| `bot_v10_1x2_newplus_v1` | 1x2 | model (combined) | — | — | paper | **"Match result — new model"** ([[#152]], 2026-09-25, owner). Twin of `bot_v10_1x2` on the NEW+ model (`r1x2_comb_v1`, used as is): EV ≥ 3% flat, **odds 1.30–3.00** (LANES cap 2026-09-25: confirm CLV +2.66% vs +0.60% uncapped), min_prob 0.30, `vip_exclude` (never a pick the VIP bot holds — so the EV 3–5% band). `bot_v10_1x2` is unchanged because its LIVE record is CLV +6.6% / +6.0% / +1.8% Jul/Aug/Sep (n 178) while the backtest that preferred this rule priced the old one at opening quotes (ANALYSIS_GOTCHAS #84). Compared live after 50–100 settled picks. `testing`, on /performance via `bots.show_on_performance` (migration 427). |
+| `bot_v10_1x2_newplus_v1` | 1x2 | model (combined) | — | — | paper | **"Match result — new model"** ([[#152]], 2026-09-25, owner). Twin of `bot_v10_1x2` on the NEW+ model (`r1x2_comb_v1`, used as is): EV ≥ 3% flat, **odds 1.30–3.00** (LANES cap 2026-09-25: confirm CLV +2.66% vs +0.60% uncapped), min_prob 0.30. (Until 2026-09-25 it SKIPPED VIP-held picks via a re-derived `vip_exclude`; since [[#164]] it records them and they are HELD BACK until kickoff — see *VIP FIRST* below.) `bot_v10_1x2` is unchanged because its LIVE record is CLV +6.6% / +6.0% / +1.8% Jul/Aug/Sep (n 178) while the backtest that preferred this rule priced the old one at opening quotes (ANALYSIS_GOTCHAS #84). Compared live after 50–100 settled picks. `testing`, on /performance via `bots.show_on_performance` (migration 427). |
 | `bot_rating_1x2_v1` | 1x2 | model (rating) | — | — | paper | **"1x2 market NEW"** (added 2026-09-24, [[#141]], owner request). A **twin of `bot_v10_1x2`** — same tier thresholds, odds 1.30–4.50, min_prob 0.30, cohort, Pinnacle veto, meta gate and staking — whose 1X2 probability comes from the walk-forward **rating model** (`rating_1x2_predictions`, `r1x2_d8plus_v1`, gated rows only), used **as is**. It skips `calibrate_prob` on purpose: with `shrinkage_alpha_*_1x2` ≈ 0 that step returns Platt(Pinnacle), which makes `bot_v10_1x2` in effect a *market* bot, so the pair is a clean model-vs-market A/B. Rating model on the 08-31..09-24 holdout: log-loss 1.008 vs 1.071 for the old head, but **α vs Pinnacle = 0** — read its ROI only alongside CLV. `experimental`: `simulated_bets`, not public, no placement path. MODEL_WHITEPAPER §4.4. |
 | `bot_combined_1x2_v1` | 1x2 | model (combined) | — | — | paper | **"1x2 market NEW+"** (added 2026-09-24, [[#141]] round 3b, owner request). Same twin of `bot_v10_1x2` as `bot_rating_1x2_v1`, priced by the **COMBINED** model (`r1x2_comb_v1`: ratings + de-vigged 18-book consensus + Pinnacle, API-Football only where no book prices the match; 0.9763 vs 1.0711 log-loss on the 08-31..09-24 holdout). Because the probability is built mostly from market prices, a pick means the quoted book sits away from the consensus (the consensus-outlier strategy, Kaunitz et al.), not that our model disagrees with the market — read it on CLV. The pair of NEW bots separates the two questions. `experimental`, `simulated_bets`, no placement path. MODEL_WHITEPAPER §4.4b. |
 | `bot_combined_1x2_ev5_v1` | 1x2 | model (combined) | — | — | paper | **⭐ VIP bot ([[#148]], `bots.vip`, `VIP_BOTS`)** — live picks only to Pro/Elite Telegram DMs + the private VIP channel (`TELEGRAM_VIP_CHAT_ID`), each labelled EV8 / EV5; excluded from the public channel; pending rows hidden from anon/authenticated by RLS (migration 420). **"1x2 NEW+ EV5"** (added 2026-09-24, [[#141]] B4, pre-registered in `dev/active/1x2-model-rebuild-plan.md`). The combined model as a consensus-outlier bettor in its natural unit: **EV = p × odds − 1 ≥ 5%, flat across tiers**, Pinnacle price required, no min_prob, odds 1.30–6.00, one pick per match; stored `edge` stays probability points (store_bet derives it). Backtest B2 CLV +2.0% (n=1,050; +1.1% at our own sweepers), same window as B so optimistic. Owner reviews at 20 / 50 / 100 settled picks. `experimental`, `simulated_bets`, no placement path. |
@@ -258,6 +258,36 @@ registry and regenerate.
 | `bot_high_roi_global_v2` | 1x2 | **model** | 6%/9% by tier | 1.50–5.50 | paper | 1x2 home/away in Spain/Australia/Iceland. **ANCHOR CORRECTED 2026-09-22** — it was recorded as `none` ("internal strategy validator"), which reads as *no fair-value basis*. False: `daily_pipeline_v2` gives it `edge_thresholds` (`1x2_fav` 0.06 / `1x2_long` 0.09) — the **same model edge `bot_v10_1x2` uses** — then filters by league, side and odds band. A filter over model picks is still MODEL-anchored. It mattered because the /performance method chip renders straight off this field, so a customer surface was telling readers this bot priced against something it does not. `ANCHOR_NONE` now means what it says: no model and no sharp reference, i.e. the in-play rig pricing off the book's own de-vigged probability. |
 <!-- bot_1x2_specialist, bot_dnb_specialist, bot_summer_specialist RETIRED 2026-09-09 (migrations 323/324) and removed from bot_registry.py:116-119 — do not re-add. -->
 <!-- NB: bot generation stores best-of-books odds for these general bots (recommended_bookmaker), NOT the Coolbet/Unibet executable price — the SHADOW-PAGE-ROI-INFLATED gap; per-book executable ROI/CLV is the EXECUTABLE-SHADOW-EVAL work. -->
+
+### ⭐ VIP FIRST — free picks are held back when VIP holds them ([[#164]], owner 2026-09-25)
+
+**The VIP bots** (`bots.vip` = `VIP_BOTS`: `bot_combined_1x2_ev5_v1` "1x2 NEW+ EV5", `bot_ou_sharp_early_v1`
+"O/U EARLY"; plus their `hide_pending` twins EV8 / TWO-ANCHOR) sell their live picks to Pro/Elite before kickoff
+and **never give a pick up**. **Every FREE bot** (any other bot — the `show_on_picks` model bots `bot_v10_1x2`,
+`bot_high_roi_global_v2`, `bot_v10_1x2_newplus_v1`, and the published forward-test arms `live` / `consensus_anchor`)
+still RECORDS its pick exactly as its own rule decides — its record and the pre-registered test are unchanged —
+but the pick is **HELD BACK** (not on /picks or the watchlist, not sent to the public Telegram channel, not listed
+as pending on /performance or `/api/performance/bot-legs`, hidden from anon by RLS) **until kickoff** when it is:
+
+| | Rule | Source |
+|---|---|---|
+| (a) VIP-HELD | a VIP / hide_pending bot has a PENDING pick on the same match + market + selection | the ledger (`simulated_bets`), never re-derived |
+| (b) IN VIP'S RANGE at the free pick's decision time and price | 1X2: NEW+ (`rating_1x2_predictions` r1x2_comb_v1) EV = p × odds − 1 ≥ the EV5 bot's own floor (5%), inside its odds range 1.30–6.00 · O/U: `ou_sharp_outlier.early_rule()` — EV vs Pinnacle's power-de-vigged latest price 5–15%, odds 1.30–6.00, ≥ 12 h to kickoff | the VIP bot's OWN config / function, imported, never copied |
+
+(b) is what ends *"free first, VIP later"*: if VIP would take this price now, the free copy waits for kickoff.
+
+**Where it lives — one module, every writer, every surface filters the data.** `workers/utils/vip_guard.py`
+decides; `store_bet` (every `simulated_bets` pick), the forward-test `claim()` and the `/picks` board writer stamp
+`held_back_until` (= kickoff) + `held_back_reason` on the row; a VIP pick written AFTER free picks on the same
+selection stamps them too (`hold_back_followers`). Surfaces filter on the column (migration 439):
+`picks_public_all`, `picks_board_public`, `picks_forward_test_public`, the `simulated_bets` anon policy, the
+signaler's candidate query (group-wide), and the web's pending views via `bot_ledger_display.held_back`. After
+kickoff nothing is sent — a held-back pick simply appears on /picks and in the record. Fails CLOSED
+(`guard_error` = held back). **Retired:** the pipeline's `vip_exclude`, which re-derived the VIP rule at the free
+bot's CURRENT price with hard-coded constants and SKIPPED the pick — after a price move it let VIP-held picks
+through, and three other public paths had no check at all (the #164 leak: 10 in 18 h, 3 sent to Telegram).
+**Retroactive (2026-09-25):** pending free picks that broke the rule were held back; ones already sent or settled
+keep their record and carry `vip_rule_breach = true` (never deleted, never unsent). Smoke `VIP-FIRST-HOLD-BACK`.
 
 ### Pre-registered PICKS forward test (published, not staked)
 

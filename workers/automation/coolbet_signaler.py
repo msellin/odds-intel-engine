@@ -141,7 +141,16 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
                  -- canonical row's maturity; see the note above the gate.
                  bool_or(b.maturity_label = 'calibrated')
                    OVER (PARTITION BY sb.match_id, sb.market, sb.selection)
-                   AS group_has_calibrated
+                   AS group_has_calibrated,
+                 -- #164 VIP FIRST: a free pick HELD BACK (VIP-held / in VIP range at pick
+                 -- time, stamped by store_bet via workers/utils/vip_guard.py) is never sent.
+                 -- Group-wide (filtered below): if ANY row on this selection is held back the
+                 -- selection is not sent, so a sibling bot's row cannot carry it out. Held
+                 -- until kickoff, and this query only sends before kickoff — so a held-back
+                 -- pick is simply never sent; it appears on /picks at kickoff.
+                 COALESCE(bool_or(sb.held_back_until > NOW())
+                   OVER (PARTITION BY sb.match_id, sb.market, sb.selection), false)
+                   AS group_held_back
           FROM simulated_bets sb
           JOIN bots          b   ON b.id   = sb.bot_id
           JOIN matches       m   ON m.id   = sb.match_id
@@ -169,6 +178,7 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
             AND TRUE
           ORDER BY sb.match_id, sb.market, sb.selection, sb.edge_percent DESC
         ) q
+        WHERE NOT q.group_held_back
         ORDER BY q.match_date ASC, q.edge_percent DESC
         """,
         (sorted(VIP_BOTS), _MIN_EDGE, lookahead_hours),

@@ -2348,6 +2348,18 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
     # over_under_25+'over', 1X2 -> 1x2, …). AH/combo keep their selection. Idempotent.
     row["market"], row["selection"] = canonicalize_for_storage(row["market"], row["selection"])
 
+    # [[#164]] VIP FIRST — the ONE hold-back rule (workers/utils/vip_guard.py), applied HERE,
+    # where every simulated_bets pick is written, so no bot path can skip it. A FREE pick that
+    # a VIP / hide_pending bot holds, or that is in VIP's range at this price right now, is
+    # recorded as its rule decided but stamped held_back_until = kickoff; every public surface
+    # (picks_public_all, the signaler, the anon policy, the web's pending views) hides it until
+    # then. Pre-match only: an in-play pick is past kickoff by definition. Fails closed.
+    _is_prematch = row.get("match_minute_at_pick") is None and not bet_data.get("combo_legs")
+    if _is_prematch:
+        from workers.utils.vip_guard import hold_back_fields
+        row.update(hold_back_fields(bot_id, match_id, row["market"], row["selection"],
+                                    row["odds_at_pick"]))
+
     # Sanitize all values: numpy types -> native Python, NaN/Inf -> None
     row = {k: _sanitize_for_json(v) for k, v in row.items()}
 
@@ -2373,6 +2385,18 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
         if "duplicate" in str(e).lower() or "unique" in str(e).lower() or "uq_bet" in str(e).lower():
             return None  # already placed, skip silently
         raise
+    # [[#164]] a VIP / hide_pending pick written AFTER free picks on the same selection holds
+    # those back too (and flags any already sent) — VIP never gives a pick up.
+    if _is_prematch:
+        try:
+            from workers.utils.vip_guard import is_protected_bot, hold_back_followers
+            if is_protected_bot(bot_id):
+                _hb = hold_back_followers(match_id, row["market"], row["selection"])
+                if any(_hb.values()):
+                    console.print(f"[yellow]VIP-FIRST: held back free picks {_hb} behind "
+                                  f"{row['market']}/{row['selection']} {match_id[:8]}[/yellow]")
+        except Exception as e:  # noqa: BLE001 — never lose the VIP pick over this
+            console.print(f"[red]VIP-FIRST: hold_back_followers failed for {new_row['id']}: {e}[/red]")
     # [[#159]] WRITER FIX — record the price actually on offer AT PICK TIME, on both bases
     # (odds_at_pick_live = our books, odds_at_pick_available = every publishable book), from
     # the quotes each book showed at or before pick_time. Every public / admin ROI prices off

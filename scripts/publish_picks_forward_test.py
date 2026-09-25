@@ -927,14 +927,28 @@ def claim(c: dict, arm: str) -> str | None:
     So: INSERT ... RETURNING id. A returned id means WE created the row and may
     send. An empty result means somebody already did, and we must not.
     """
+    # [[#164]] VIP FIRST — a PUBLISHED arm's pick that a VIP bot holds, or that is in VIP's
+    # range at this price now, is still claimed and counted (the pre-registered test keeps
+    # every pick; prereg deviation 2026-09-25: such picks publish at kickoff, not before) but
+    # is stamped held_back_until = kickoff in the SAME insert, and `c["held_back_reason"]` tells
+    # every sender to skip it. The ONE rule: workers/utils/vip_guard.py. Recorded-only arms
+    # (junk control, twins) are never public, so they are not judged.
+    held_until = held_reason = None
+    if arm in PUBLISHED_ARMS:
+        from workers.utils.vip_guard import is_held_back
+        held_reason, _ko = is_held_back(c["match_id"], c["market"], c["selection"], c["odds"],
+                                        kickoff=c.get("kickoff_at"))
+        held_until = _ko if held_reason else None
+    c["held_back_reason"] = held_reason
     rows = execute_write_returning(
         """
         INSERT INTO picks_forward_test
             (match_id, market, selection, odds, bookmaker, edge, p_sharp,
              anchor_odds, anchor_overround, anchor_quoted_at, odds_quoted_at,
              alignment_gap_minutes, arm, rule_version, kickoff_at,
-             telegram_message_id, anchor_bookmaker, grade, grade_reasons)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+             telegram_message_id, anchor_bookmaker, grade, grade_reasons,
+             held_back_until, held_back_reason)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         ON CONFLICT (match_id, market, selection, arm) DO NOTHING
         RETURNING id
         """,
@@ -949,7 +963,7 @@ def claim(c: dict, arm: str) -> str | None:
          ARM_RULE_VERSION[arm],
          c["kickoff_at"], None, c.get("anchor_bookmaker"),
          # [[#094]] consensus-arm grade; NULL on the live/junk arms.
-         c.get("grade"), c.get("grade_reasons")),
+         c.get("grade"), c.get("grade_reasons"), held_until, held_reason),
     )
     pick_id = str(rows[0]["id"]) if rows else None
     # [[#161]] the twin arms' extra-gate evidence, written in a SEPARATE statement and
@@ -1013,12 +1027,19 @@ def write_board(pool: list[dict]) -> int:
     surfaces without being filtered out in the writer.
     """
     try:
+        from workers.utils.vip_guard import is_held_back
         rows = []
         for c in pool:
             be, b3, a5 = required_odds(c["p_sharp"])
+            # [[#164]] VIP FIRST: a watchlist leg VIP holds (or would take at this price) is
+            # kept on the board's record but hidden by picks_board_public until kickoff —
+            # otherwise the "prices to watch" panel would print the paid pick.
+            _hr, _ko = is_held_back(c["match_id"], c["market"], c["selection"], c["odds"],
+                                    kickoff=c.get("kickoff_at"))
             rows.append((c["match_id"], c["market"], c["selection"], c["odds"],
                          c["bookmaker"], c["p_sharp"], c["edge"], be, b3, a5,
-                         c["anchor_overround"], c["kickoff_at"]))
+                         c["anchor_overround"], c["kickoff_at"],
+                         _ko if _hr else None, _hr))
         if not rows:
             return 0
         # PICKS-BOARD-TRACKED: rows are NO LONGER deleted after kickoff. They
@@ -1029,10 +1050,10 @@ def write_board(pool: list[dict]) -> int:
                 """INSERT INTO picks_board
                      (match_id, market, selection, odds, bookmaker, p_sharp,
                       edge, odds_breakeven, odds_grade_b, odds_grade_a,
-                      anchor_overround, kickoff_at, updated_at,
+                      anchor_overround, kickoff_at, held_back_until, held_back_reason, updated_at,
                       first_seen_at, best_odds_seen, best_odds_book, best_odds_at,
                       target_b_met_at, target_a_met_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, NOW(),
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, NOW(),
                            NOW(), %s, %s, NOW(),
                            CASE WHEN %s >= %s THEN NOW() END,
                            CASE WHEN %s >= %s THEN NOW() END)
@@ -1052,6 +1073,9 @@ def write_board(pool: list[dict]) -> int:
                      -- A published target is a promise about a number; it has to
                      -- be the number we published.
                      anchor_overround = EXCLUDED.anchor_overround,
+                     -- [[#164]] once held back, held until kickoff (VIP never gives it up)
+                     held_back_until = COALESCE(picks_board.held_back_until, EXCLUDED.held_back_until),
+                     held_back_reason = COALESCE(picks_board.held_back_reason, EXCLUDED.held_back_reason),
                      updated_at = NOW(),
                      -- HIGH-WATER MARK, never a running value. The question the
                      -- record has to answer is "was the target ever reachable",
@@ -1076,7 +1100,7 @@ def write_board(pool: list[dict]) -> int:
                               THEN NOW() END)""",
                 # best_odds_seen, best_odds_book, then the two target CASEs.
                 # r = (match, market, selection, odds, book, p_sharp, edge,
-                #      breakeven, grade_b, grade_a, overround, kickoff)
+                #      breakeven, grade_b, grade_a, overround, kickoff, held_until, held_reason)
                 r + (r[3], r[4], r[3], r[8], r[3], r[9]))
     except Exception as e:
         log.warning("write_board failed (non-fatal — publishing is unaffected): %s", e)
@@ -1218,6 +1242,10 @@ def main() -> int:
         pick_id = claim(c, "live")
         if pick_id is None:
             log.info("already published, not re-sending: %s v %s",
+                     c["home_team"], c["away_team"])
+            continue
+        if c.get("held_back_reason"):      # [[#164]] VIP FIRST: recorded, never sent
+            log.info("held back (%s), recorded not sent: %s v %s", c["held_back_reason"],
                      c["home_team"], c["away_team"])
             continue
         mid = send_telegram_public(render(c))

@@ -29,7 +29,7 @@ Both new models refit twice daily inside `job_rating_1x2_shadow` (05:30/17:30) a
 | `bot_combined_1x2_ev8_v1` "1x2 NEW+ EV8" | EV ≥ 8% subset of EV5 | unlisted measuring bot, `hide_pending` | B2 +3.1% |
 | `bot_ou_sharp_early_v1` — ⭐ **VIP #2 "O/U EARLY"** | soft book beats Pinnacle's power-de-vigged O/U price by EV 5–15%, quote ≥ 12 h before KO; NO model | VIP; job `workers/jobs/ou_sharp_outlier.py` :14/:44 | O3 T3 CLV +7.5%/+6.9%, ROI +10.4/+10.8 |
 | `bot_ou_sharp_2anchor_v1` "O/U TWO-ANCHOR" | same, must also beat other-book consensus by ≥ 2% | experimental, `hide_pending` (shares VIP #2's picks) | O3 T2 +6.6%/+4.2% |
-| `bot_v10_1x2_newplus_v1` "Match result — new model" | twin of `bot_v10_1x2`: NEW+ EV ≥ 3%, **odds 1.30–3.00** (LANES), `vip_exclude` | testing, `show_on_performance`, `show_on_picks` (migration 432) | LANES confirm CLV +2.66% (n 157) |
+| `bot_v10_1x2_newplus_v1` "Match result — new model" | twin of `bot_v10_1x2`: NEW+ EV ≥ 3%, **odds 1.30–3.00** (LANES); VIP-held picks held back until kickoff ([[#164]]) | testing, `show_on_performance`, `show_on_picks` (migration 432) | LANES confirm CLV +2.66% (n 157) |
 | `bot_rating_1x2_v1` "NEW", `bot_combined_1x2_v1` "NEW+" | twins of the OLD v10 rule on the new models | experimental | old rules starve on accurate models (NEW+ twin 14 picks) |
 | `bot_high_roi_global_v2_newplus_v1` | created and **retired** same day (migration 429) | retired | its exact rule made 0 backtest picks |
 | `bot_v10_1x2`, `bot_high_roi_global_v2` | **deliberately NOT switched** to the new model | CALIBRATED / BETA; both send picks | live CLV ≈ +4.7% Jul–Sep (v10) — ANALYSIS_GOTCHAS #84 |
@@ -37,7 +37,7 @@ Both new models refit twice daily inside `job_rating_1x2_shadow` (05:30/17:30) a
 | forward-test arms `bot_sharp_1x2_v1`, `bot_sharp_ou_v1`, `bot_consensus_b/c/d_v1` | reviewed 2026-09-25: keep 4 as TESTING, D → EXPERIMENTAL; two recorded-only twin arms → [[#161]] | see [[#155]] | sharp-anchor CLV +2.4 / +0.7 / B n 3 / C −0.05 (n 34) / D −5.4 |
 
 Pipeline plumbing added (`daily_pipeline_v2.py`): `prob_source` (rating_1x2 / combined_1x2), `ou_prob_source='combined_ou'`,
-`edge_unit='ev'`, `require_pinnacle`, `one_per_match`, `vip_exclude` (a public bot never takes a VIP-held pick). The shared
+`edge_unit='ev'`, `require_pinnacle`, `one_per_match`, ~~`vip_exclude`~~ (removed 2026-09-25, [[#164]] — replaced by the VIP-FIRST hold-back in `store_bet`). The shared
 `pred` is restored before the next bot on the match (`_pred_orig`). Shadow-model rows now use sources `ensemble_shadow` /
 `xgboost_shadow` ([[#147]], migration 419) — most readers never filtered model_version.
 
@@ -54,7 +54,13 @@ Pipeline plumbing added (`daily_pipeline_v2.py`): `prob_source` (rating_1x2 / co
    backtest is not the bot you run.
 5. **Fix root causes** (memory `feedback_fix_root_causes`): any number fix = one shared computation + parity test + deprecate
    the wrong source + fix the writer.
-6. **VIP split**: public bots never take a VIP-held pick (`vip_exclude`); VIP twins that share picks get `hide_pending`.
+6. **VIP FIRST** ([[#164]], owner 2026-09-25 — replaces the old "VIP split" / `vip_exclude`): VIP bots never give up a
+   pick. FREE bots still RECORD a pick that is VIP-HELD (a VIP / hide_pending bot has it pending — read from the
+   ledger) or IN VIP'S RANGE at their price and decision time (1X2 NEW+ EV ≥ 5%; O/U 5–15% above Pinnacle, ≥ 12 h
+   out), but it is HELD BACK — not shown, not sent, not pending anywhere public — until kickoff. One module
+   (`workers/utils/vip_guard.py`), applied by the writers (`store_bet`, forward-test `claim`, the board), stored as
+   `held_back_until`; every surface filters that column (migration 439). `vip_exclude` (which SKIPPED the pick on a
+   re-derived rule and leaked after price moves) is gone. VIP twins that share picks keep `hide_pending`.
 7. **Re-checked older-rule picks** ([[#158]]): a bot's record = current-rule picks + older picks that pass the current rule
    on PICK-TIME data only (table `pick_rule_recheck`); the pre-registered test counts are not changed.
 8. **/performance design**: bot column = name + status + method labels only; details in the click-open view (opening to

@@ -2824,7 +2824,9 @@ def job_publish_picks_forward_test():
         if pick_id is None:
             skipped += 1
             continue
-        if paused:
+        # [[#164]] VIP FIRST: claim() stamped it held back (VIP-held / in VIP range) —
+        # recorded and counted, never sent; it appears on /picks at kickoff.
+        if paused or c.get("held_back_reason"):
             continue
         mid = send_telegram_public(render(c))
         if mid is None:
@@ -2852,7 +2854,7 @@ def job_publish_picks_forward_test():
             continue
         # [[#098]] grade D (weak) is recorded to the ledger but NEVER sent —
         # owner: "we don't publish grade C picks at all" (the old C is now D).
-        if c.get("grade") == "D" or paused:
+        if c.get("grade") == "D" or paused or c.get("held_back_reason"):   # [[#164]] held back
             continue
         mid = send_telegram_public(render(c))
         if mid is None:

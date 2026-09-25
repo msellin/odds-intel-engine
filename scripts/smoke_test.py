@@ -52642,7 +52642,8 @@ def test_consensus_arm_grading():
         assert "Grade <b>C</b>" in pf._grade_line({"grade": "C", "grade_reasons": []})
         sched = _engine_path("workers/scheduler.py").read_text()
         # #139 (2026-09-24): /pausepicks joined the same skip — `if c.get("grade") == "D" or paused:`.
-        assert 'if c.get("grade") == "D":' in sched or 'if c.get("grade") == "D" or paused:' in sched, \
+        assert ('if c.get("grade") == "D":' in sched or 'if c.get("grade") == "D" or paused:' in sched
+                or 'if c.get("grade") == "D" or paused or c.get("held_back_reason"):' in sched), \
             "grade D must be claimed but never sent"
         assert pf._grade_line({}) == "", "an ungraded (live-arm) pick must render no grade line"
 
@@ -57023,8 +57024,9 @@ def test_pipeline_ou_new_model_and_vip_split():
     assert src.index("_pred_orig = pred") < src.index("pred = _pred_orig") < src.index(
         "for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:")
     assert 'if _rating_bot or (_ou_new and mkt == "O/U"):' in src
-    assert 'config.get("vip_exclude") and mkt == "1X2"' in src and 'config.get("vip_exclude") and mkt == "O/U"' in src
-    assert '_pv * odds - 1 >= 0.05' in src and '0.05 <= _pp * odds - 1 <= 0.15 and _hko >= 12' in src
+    # [[#164]] the re-derived `vip_exclude` skip is GONE — VIP-held / VIP-range picks are recorded
+    # and HELD BACK by store_bet (workers/utils/vip_guard.py); smoke VIP-FIRST-HOLD-BACK pins it.
+    assert 'config.get("vip_exclude")' not in src and "drop_vip_held" not in src
     assert '"model_version": "ou_comb_v1"' in src
 
 
@@ -57073,7 +57075,7 @@ def test_v10_newplus_twin():
     from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG, BOT_TIMING_COHORTS
     old, tw = BOTS_CONFIG["bot_v10_1x2"], BOTS_CONFIG["bot_v10_1x2_newplus_v1"]
     assert "prob_source" not in old and old["edge_thresholds"][1]["1x2_fav"] == 0.08, "bot_v10_1x2 must stay unchanged"
-    assert tw["prob_source"] == "combined_1x2" and tw["edge_unit"] == "ev" and tw["vip_exclude"] is True
+    assert tw["prob_source"] == "combined_1x2" and tw["edge_unit"] == "ev" and "vip_exclude" not in tw  # [[#164]]
     assert all(v == {"1x2_fav": 0.03, "1x2_long": 0.03} for v in tw["edge_thresholds"].values())
     assert tw["odds_range"] == (1.30, 3.00) and tw["min_prob"] == old["min_prob"], "LANES cap (owner 2026-09-25)"
     assert BOT_TIMING_COHORTS["bot_v10_1x2_newplus_v1"] == BOT_TIMING_COHORTS["bot_v10_1x2"]
@@ -58092,6 +58094,147 @@ def test_ou35_model_bot_retired():
     mig = _engine_path("supabase/migrations/438_retire_ou35_model_bot.sql").read_text(encoding="utf-8")
     assert "retired_at = now()" in mig and "'bot_ou35_model_v1'" in mig
 
+
+
+@test("VIP-FIRST-HOLD-BACK — #164: ONE guard holds free picks back until kickoff when VIP holds (or would take) them")
+def test_vip_first_hold_back():
+    """[[#164]] VIP FIRST (owner 2026-09-25). VIP bots never give up a pick. A FREE pick that a VIP /
+    hide_pending bot holds (the ledger), or that is in VIP's range at its price and decision time, is
+    RECORDED but held back — held_back_until = kickoff — and every public surface filters on that
+    column. Pins: (1) ONE module decides, and every writer calls it (store_bet, the forward-test claim,
+    the /picks board); (2) the re-derived pipeline `vip_exclude` is gone; (3) VIP's O/U rule is ONE
+    function used by the VIP bot and the guard; (4) every public surface filters the data (views, anon
+    policy, signaler, web pending views); (5) BEHAVIOUR in a rolled-back txn: a free pick written before
+    a VIP pick on the same selection is held back by the VIP write, is absent from picks_public_all and
+    picks_forward_test_public before kickoff, and appears after kickoff."""
+    import inspect
+    from workers.utils import vip_guard as g
+    from workers.jobs import ou_sharp_outlier as ou
+    # (1) one decision, every writer
+    sb = _engine_path("workers/api_clients/supabase_client.py").read_text(encoding="utf-8")
+    body = sb[sb.index("def store_bet("):sb.index("def bulk_store_shadow_bets(")]
+    assert "from workers.utils.vip_guard import hold_back_fields" in body
+    assert body.index("hold_back_fields(") < body.index("INSERT INTO simulated_bets"), "stamped IN the insert"
+    assert "hold_back_followers(" in body and body.index("INSERT INTO simulated_bets") < body.index("hold_back_followers(")
+    pub = _engine_path("scripts/publish_picks_forward_test.py").read_text(encoding="utf-8")
+    claim = pub[pub.index("def claim("):pub.index("def attach_message_id(")]
+    assert "from workers.utils.vip_guard import is_held_back" in claim and "held_back_until, held_back_reason)" in claim
+    assert "if arm in PUBLISHED_ARMS:" in claim
+    board = pub[pub.index("def write_board("):pub.index("def _break_even(")]
+    assert "is_held_back(" in board and "held_back_until = COALESCE(picks_board.held_back_until" in board
+    main = pub[pub.index("def main("):]
+    assert 'if c.get("held_back_reason"):' in main
+    sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    job = sched[sched.index("def job_publish_picks_forward_test"):sched.index("def _publish_picks_forward_test_wrapper")]
+    assert job.count('c.get("held_back_reason")') == 2, "both published arms' send loops skip held-back picks"
+    # no second copy of the rule anywhere in workers/ or scripts/ (the guard is the only reader of
+    # rating_1x2 NEW+ for a hold-back decision, and nobody else writes held_back_until)
+    for f in list(_engine_root.joinpath("workers").rglob("*.py")) + list(_engine_root.joinpath("scripts").glob("*.py")):
+        rel = str(f.relative_to(_engine_root))
+        txt = f.read_text(encoding="utf-8", errors="ignore")
+        if rel in ("workers/utils/vip_guard.py", "scripts/smoke_test.py"):
+            continue
+        assert "SET held_back_until" not in txt, f"{rel} writes held_back_until outside vip_guard"
+        assert 'config.get("vip_exclude")' not in txt, f"{rel} re-derives the VIP rule (vip_exclude)"
+    # (2) the pipeline no longer re-derives or skips
+    pipe = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text(encoding="utf-8")
+    assert '"vip_exclude"' not in pipe.split("# [[#164]] no `vip_exclude`")[0][-3000:] and "drop_vip_held" not in pipe
+    # (3) VIP's O/U rule: one function, used by both
+    ev_src = inspect.getsource(ou.evaluate)
+    assert "early_rule(o, p, (ko - now_ts) / 3600)" in ev_src and "in_ev_band(o, p)" in ev_src
+    assert "ou.early_rule(odds, p, hours)" in inspect.getsource(g.in_vip_range)
+    assert ou.early_rule(2.00, 0.55, 13.0) and not ou.early_rule(2.00, 0.55, 11.9)
+    assert not ou.early_rule(2.00, 0.60, 20.0), "EV 20% is above the 15% cap (misposted line)"
+    assert not ou.early_rule(1.25, 0.90, 20.0), "below VIP's odds floor"
+    # 1X2 range reads the EV5 bot's OWN config (never a copied constant)
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG
+    assert g._vip_1x2_rule() == (BOTS_CONFIG[g.VIP_1X2_BOT]["edge_thresholds"][1]["1x2_fav"],
+                                 *BOTS_CONFIG[g.VIP_1X2_BOT]["odds_range"])
+    from workers.registry.bot_registry import VIP_BOTS
+    assert g.VIP_1X2_BOT in VIP_BOTS
+    # fails CLOSED
+    orig = g.vip_held
+    try:
+        g.vip_held = lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
+        from datetime import datetime, timedelta, timezone
+        r, _ = g.is_held_back("00000000-0000-0000-0000-000000000000", "1x2", "home", 2.0,
+                              kickoff=datetime.now(timezone.utc) + timedelta(hours=5))
+        assert r == g.REASON_ERROR, "an evaluation failure must hold the pick back"
+    finally:
+        g.vip_held = orig
+    # (4) every public surface filters the stored data
+    mig = _engine_path("supabase/migrations/439_vip_first_hold_back.sql").read_text(encoding="utf-8")
+    for v in ("picks_public_all", "picks_board_public", "picks_forward_test_public", "bot_ledger_display"):
+        assert f"CREATE OR REPLACE VIEW {v} AS" in mig, v
+    assert mig.count("NOT COALESCE(p.held_back_until > now(), false)") == 2
+    assert "NOT COALESCE(s.held_back_until > now(), false)" in mig and "NOT COALESCE(b.held_back_until > now(), false)" in mig
+    assert 'CREATE POLICY "Public read" ON simulated_bets' in mig and "AND NOT COALESCE(held_back_until > now(), false))" in mig
+    sig = _engine_path("workers/automation/coolbet_signaler.py").read_text(encoding="utf-8")
+    assert "COALESCE(bool_or(sb.held_back_until > NOW())" in sig and "WHERE NOT q.group_held_back" in sig
+    try:
+        web = _web_path("src/lib/bot-performance.ts").read_text(encoding="utf-8")
+        assert "held_back\";" in web and web.count(".filter(isVisibleLeg)") == 2
+        route = _web_path("src/app/api/performance/bot-legs/route.ts").read_text(encoding="utf-8")
+        assert 'b?.maturityLabel === "experimental"' in route and "b.hidePending || experimental" in route
+    except SkipTest:
+        pass
+    # (5) behaviour, rolled back
+    import workers.api_clients.db as dbm
+    try:
+        with module_db_txn(dbm) as cur:
+            home, away, league = _fixture_ids(cur)
+            cur.execute("""INSERT INTO matches (date, home_team_id, away_team_id, league_id, season, status)
+                           VALUES (now() + interval '20 hours', %s, %s, %s, 2026, 'scheduled') RETURNING id""",
+                        (home, away, league))
+            mid = cur.fetchone()[0]
+            cur.execute("SELECT id FROM bots WHERE name = 'bot_v10_1x2'")
+            free_bot = cur.fetchone()[0]
+            cur.execute("SELECT id FROM bots WHERE name = %s", (g.VIP_1X2_BOT,))
+            vip_bot = cur.fetchone()[0]
+            ins = """INSERT INTO simulated_bets (bot_id, match_id, market, selection, odds_at_pick, pick_time,
+                                                 stake, model_probability, edge_percent, result, reasoning)
+                     VALUES (%s, %s, '1x2', 'home', 2.10, now(), 10, 0.52, 0.04, 'pending', 'smoke #164')
+                     RETURNING id"""
+            cur.execute(ins, (free_bot, mid)); free_id = cur.fetchone()[0]
+            cur.execute("""INSERT INTO picks_forward_test (match_id, market, selection, odds, bookmaker, edge,
+                             p_sharp, anchor_odds, anchor_quoted_at, odds_quoted_at, alignment_gap_minutes,
+                             arm, rule_version, kickoff_at)
+                           VALUES (%s, '1x2', 'home', 2.10, 'Bet365', 0.04, 0.50, '{}'::jsonb, now(), now(), 0,
+                                   'consensus_anchor', 'smoke', now() + interval '20 hours') RETURNING id""", (mid,))
+            ft_id = cur.fetchone()[0]
+            def visible(view, pid):
+                cur.execute(f"SELECT count(*) FROM {view} WHERE id = %s", (pid,))
+                return cur.fetchone()[0] == 1
+            assert visible("picks_public_all", free_id) and visible("picks_forward_test_public", ft_id), \
+                "fixture must start visible"
+            # the VIP pick lands AFTER the free ones — VIP never gives it up
+            cur.execute(ins, (vip_bot, mid))
+            assert g.vip_held(str(mid), "1x2", "home")
+            got = g.hold_back_followers(str(mid), "1x2", "home")
+            assert got == {"simulated_bets": 1, "picks_forward_test": 1}, got
+            cur.execute("SELECT held_back_reason, held_back_until = (SELECT date FROM matches WHERE id = %s) "
+                        "FROM simulated_bets WHERE id = %s", (mid, free_id))
+            assert cur.fetchone() == (g.REASON_HELD, True), "held until KICKOFF, reason recorded"
+            assert not visible("picks_public_all", free_id), "a VIP-held free pick must not be on /picks before kickoff"
+            assert not visible("picks_public_all", ft_id) and not visible("picks_forward_test_public", ft_id)
+            # a NEW free pick on the same selection is held back at write time
+            reason, ko = g.is_held_back(str(mid), "1x2", "home", 2.05)
+            assert reason == g.REASON_HELD and ko is not None
+            # the VIP bot's own pick is never "held back" — it is the protected pick
+            assert g.hold_back_fields(str(vip_bot), str(mid), "1x2", "home", 2.10) == {}
+            # after kickoff it simply appears (and nothing is held any more)
+            cur.execute("UPDATE matches SET date = now() - interval '1 minute' WHERE id = %s", (mid,))
+            cur.execute("UPDATE simulated_bets SET held_back_until = now() - interval '1 minute' WHERE id = %s", (free_id,))
+            cur.execute("UPDATE picks_forward_test SET held_back_until = now() - interval '1 minute', "
+                        "kickoff_at = now() - interval '1 minute' WHERE id = %s", (ft_id,))
+            assert visible("picks_public_all", free_id) and visible("picks_forward_test_public", ft_id)
+            assert g.is_held_back(str(mid), "1x2", "home", 2.05)[0] is None, "after kickoff nothing is held"
+    except SkipTest:
+        raise
+    except Exception as e:                       # noqa: BLE001
+        if "could not connect" in str(e).lower() or "connection" in str(e).lower():
+            raise SkipTest(f"DB not reachable: {e}")
+        raise
 
 if __name__ == "__main__":
     main()

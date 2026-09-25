@@ -281,4 +281,13 @@ lists (calibrated / beta, VIP, `show_on_performance`, published forward-test arm
 | VIP bots (`bot_combined_1x2_ev5_v1` 1X2, `bot_ou_sharp_early_v1` O/U — migration 424) live picks | ✗ — hidden until settled (RLS, migration 420) | ✓ Telegram DM, each labelled EV8 / EV5 (and the private VIP channel once `TELEGRAM_VIP_CHAT_ID` is set) |
 | VIP bot settled picks on /performance | ✓ | ✓ |
 | Other bots' picks by Telegram DM | ✗ | ✗ — **since 2026-09-24 Pro/Elite DMs carry ONLY VIP picks** (owner) |
+| A FREE bot's pick that VIP holds or would take (VIP FIRST, [[#164]]) | ✗ before kickoff — recorded, but held back from /picks, the watchlist, the public channel and every pending view; appears at kickoff | same — the VIP copy is what they get |
+
+**VIP FIRST ([[#164]], owner 2026-09-25).** VIP never gives a pick up. A free bot's (or a published forward-test
+arm's) pick that is VIP-HELD (a VIP / hide_pending bot has it pending) or IN VIP'S RANGE at its price and decision
+time (1X2 NEW+ EV ≥ 5%; O/U 5–15% above Pinnacle with ≥ 12 h to kickoff) is still recorded and counted, but
+`held_back_until` = kickoff hides it from every free surface until then. Decided once in
+`workers/utils/vip_guard.py`; surfaces filter the stored column (migration 439). The detail view
+(`/api/performance/bot-legs`) also never lists an EXPERIMENTAL bot (the #161 twin arms were readable, pending legs
+included) and drops held-back pending legs for every bot.
 

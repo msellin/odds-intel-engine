@@ -594,3 +594,28 @@ above the consensus arm's, the gain concentrated on Pinnacle-priced fixtures.
 
 **The calculation is code:** `python3 -m scripts.picks_forward_test_checkpoint --twins`
 (read-only). Pinned by smoke `FORWARD-TEST-TWIN-ARMS`.
+
+## DEVIATION — 2026-09-25 ([[#164]], owner decision "VIP FIRST") — some picks publish at kickoff
+
+**What changes.** A pick of a PUBLISHED arm (`live`, `consensus_anchor`) that a VIP bot holds (a VIP /
+hide_pending bot has a pending pick on the same match + market + selection) or that is in VIP's range at its
+price and claim time (1X2 NEW+ EV ≥ 5%; O/U 5–15% above Pinnacle with ≥ 12 h to kickoff) is **still claimed,
+recorded and counted** exactly as before, but it is **not sent to the channel** and is hidden from /picks until
+kickoff (`picks_forward_test.held_back_until` = kickoff, `held_back_reason`; `workers/utils/vip_guard.py`).
+At kickoff it appears on /picks and in the record; nothing is sent after kickoff.
+
+**What does NOT change.** The selection rule, the pricing, `daily_room()`, the junk control, the twin arms, the
+stopping rule (Amendment 1) and n: a held-back pick counts in n and in every checkpoint like any other. The test
+measures the RULE's picks, and every one of them is still in the ledger at its claim-time price.
+
+**Why this is a deviation, stated plainly.** The pre-registration said qualifying picks are *published* before
+kickoff. Held-back picks are recorded before kickoff (the claim timestamp is the proof they were not chosen
+after the fact) but published at kickoff, so a reader could not have acted on them. Any readout that asks
+"what could a subscriber have taken" must exclude them (`held_back_reason IS NOT NULL`); the rule's own result
+includes them.
+
+**Retroactive (2026-09-25).** Pending published-arm picks that broke the rule were held back from that moment;
+ones already sent to the channel, or already settled, keep their record and carry `vip_rule_breach = true`
+(never deleted, never unsent). Counts at the time: 13 pending picks held back (consensus 10 = B 1 / C 6 / D 3,
+live 3); 10 of them had already been sent and are flagged `vip_rule_breach`; the 3 D picks were never sent. No
+settled published-arm pick broke the rule. Smoke `VIP-FIRST-HOLD-BACK`.

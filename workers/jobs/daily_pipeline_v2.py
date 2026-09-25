@@ -159,7 +159,8 @@ BOTS_CONFIG = {
     # bot_v10_1x2's NEW-MODEL TWIN ([[#152]], owner 2026-09-25). bot_v10_1x2 stays exactly as it
     # is — its LIVE record is CLV +6.6% / +6.0% / +1.8% Jul/Aug/Sep (n 178) — and this twin runs the
     # rule the backtest preferred beside it: NEW+ (r1x2_comb_v1) as is, EV >= 3% flat, odds 1.30-4.50,
-    # min_prob 0.30, never a VIP-held pick (NEW+ EV >= 5%) — in practice the EV 3-5% band. Backtest
+    # min_prob 0.30. It used to SKIP VIP-held picks (NEW+ EV >= 5%, the EV 3-5% band in practice);
+    # since [[#164]] (owner, VIP FIRST) it records them and they are HELD BACK until kickoff. Backtest
     # confirm half: 370 picks, CLV +1.0% (not significant vs the old rule). After 50-100 settled picks
     # the two are compared LIVE and the better rule is kept (ANALYSIS_GOTCHAS #84).
     # maturity 'testing', shown on /performance (bots.show_on_performance, migration 427).
@@ -168,7 +169,7 @@ BOTS_CONFIG = {
     # +0.60% uncapped (1.30-4.50). (The pre-registered pick was 2.30; 3.00 keeps more volume at almost
     # the same CLV — owner's call.) scripts/backtest_1x2_lanes.py.
     "bot_v10_1x2_newplus_v1": {
-        "description": "1X2 model bot on the NEW+ model — twin of bot_v10_1x2: EV >= 3% flat, never a VIP-held pick",
+        "description": "1X2 model bot on the NEW+ model — twin of bot_v10_1x2: EV >= 3% flat (VIP-held / VIP-range picks held back until kickoff, #164)",
         "tier_label": "elite",
         "markets": ["1x2"],
         "tier_filter": None,
@@ -177,7 +178,8 @@ BOTS_CONFIG = {
         "min_prob": 0.30,
         "prob_source": "combined_1x2",
         "edge_unit": "ev",
-        "vip_exclude": True,
+        # [[#164]] no `vip_exclude`: VIP-held / VIP-range picks are recorded and HELD BACK
+        # until kickoff by store_bet (workers/utils/vip_guard.py), for every free bot alike.
     },
     "bot_combined_1x2_ev5_v1": {
         "description": "1x2 NEW+ EV5 — combined 1X2 model r1x2_comb_v1, EV >= 5% flat, Pinnacle price required, odds 1.30-6.00, one pick per match",
@@ -3992,26 +3994,12 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         _fstep("drop_min_prob")
                     continue
 
-                # #152 VIP SPLIT (owner 2026-09-25): a PUBLIC bot never takes a pick a VIP bot holds,
-                # or the free feed would reveal the paid pick before kickoff.
-                if config.get("vip_exclude") and mkt == "1X2":
-                    _cv = combined_1x2_by_match.get(str(match_id))
-                    if _cv is not None:
-                        _pv = {"Home": _cv[0], "Draw": _cv[1], "Away": _cv[2]}.get(selection)
-                        if _pv is not None and _pv * odds - 1 >= 0.05:          # NEW+ EV5 (VIP #1) holds it
-                            _fstep("drop_vip_held"); continue
-                if config.get("vip_exclude") and mkt == "O/U":
-                    _line_mk = {"1.5": "over_under_15", "2.5": "over_under_25", "3.5": "over_under_35"}.get(selection.split()[-1])
-                    _rp = ou_model_by_match.get((str(match_id), _line_mk)) if _line_mk else None
-                    if _rp is not None and _rp[1] is not None:
-                        _pp = _rp[1] if selection.startswith("Over") else 1 - _rp[1]
-                        try:
-                            _hko = (datetime.fromisoformat(str(match.get("start_time")).replace("Z", "+00:00"))
-                                    - datetime.now(timezone.utc)).total_seconds() / 3600
-                        except (ValueError, TypeError):
-                            _hko = 0.0
-                        if 0.05 <= _pp * odds - 1 <= 0.15 and _hko >= 12:        # O/U EARLY (VIP #2) holds it
-                            _fstep("drop_vip_held"); continue
+                # [[#164]] VIP FIRST: the re-derived `vip_exclude` skip that stood here is GONE.
+                # It re-computed the VIP rule at this bot's CURRENT price with hard-coded
+                # constants, so after a price move it let through picks VIP already held, and it
+                # SKIPPED the pick (changing the bot's rule). Now every free pick is recorded as
+                # its rule decides and store_bet() holds it back from every public surface until
+                # kickoff when VIP holds it or would take it (workers/utils/vip_guard.py).
 
                 # Pinnacle disagreement veto: skip bets where our model is significantly
                 # more optimistic than Pinnacle (the sharpest book).
