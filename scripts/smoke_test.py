@@ -45285,10 +45285,18 @@ def test_forward_test_versions_do_not_vanish():
     # pools. What must NOT change is that the pre-registered stopping rules stay
     # on `current`, or an n=200 checkpoint fires early on a mixture of rules.
     # ARM-SCOPED (2026-09-22, [[#068]]): the call takes an arm now, so the exact
-    # text moved again. Pin the PROPERTY — `.pooled`, never `.current`.
-    assert "?.pooled" in perf and "getPicksForwardTestSummary(" in perf, (
-        "the performance leaderboard row must read the POOLED figure, so the "
-        "summary reconciles with the per-pick list a reader can count"
+    # text moved again.
+    # UPDATED 2026-09-25 ([[#156]], owner-approved): the row now reads `.current` —
+    # the CURRENT rule_version only, as bot_scoreboard scores it (bot_sharp_1x2_v1 was
+    # pooling 8 picks of the closed v1). Reconciliation is kept the other way round:
+    # its bet list is scoped to the same rule_version, and earlier versions are named
+    # on the row. Pin that pair.
+    assert "summary?.current" in perf and "getPicksForwardTestSummary(" in perf, (
+        "the performance leaderboard row must read the CURRENT rule version"
+    )
+    assert 'rv("bot_sharp_1x2_v1")' in perf and "earlier:" in perf, (
+        "the bet list must be scoped to the row's rule version, and earlier versions "
+        "must stay visible on the row, or row and list stop reconciling"
     )
     eng = _web_path("src/lib/engine-data.ts").read_text(encoding="utf-8")
     assert "current: PicksForwardTestSummary;" in eng and "pooled: PicksForwardTestSummary;" in eng, (
@@ -49210,11 +49218,12 @@ def _():
 
     perf = (web / "app" / "(app)" / "performance" / "page.tsx").read_text()
     # ARM-SCOPED (2026-09-22, [[#068]]): the call now takes an arm, so the exact
-    # text moved. The PROPERTY is unchanged and is what matters — the public row
-    # reads `.pooled`, never `.current`, so it reconciles with the bets list.
-    assert "?.pooled" in perf and "getPicksForwardTestSummary(" in perf, (
-        "the public row must use the pooled record so it reconciles with the "
-        "bets list a reader can count")
+    # text moved. UPDATED 2026-09-25 ([[#156]]): the row reads the CURRENT rule
+    # version and its bets list is scoped to the same version, so they still reconcile.
+    assert "summary?.current" in perf and "getPicksForwardTestSummary(" in perf, (
+        "the public row must use the current rule version's record")
+    assert "ruleVersion ? { rule_version: ruleVersion }" in ed, (
+        "the bets list must be filterable to the row's rule version so it reconciles")
     return "watchlist future-only; bot row pooled; label is a top-N"
 
 @test("PINNACLE-LIMITS — the validity-gate reader is read-only, polite, and fails safe")
@@ -49886,7 +49895,7 @@ def test_sharp_bot_split_by_market():
         src = page.read_text()
         assert '{ arm: "live", market: "1x2", bot: "bot_sharp_1x2_v1" }' in src
         assert '{ arm: "live", market: "over_under_25", bot: "bot_sharp_ou_v1" }' in src
-        assert "getPicksForwardTestSummary(arm, grade, market)" in src
+        assert "getPicksForwardTestSummary(x.arm, x.grade, x.market)" in src  # [[#156]] parallelised
 
 
 @test("WEB-NO-ORPHAN-FETCHERS — every exported function in engine-data.ts has a caller")
@@ -55373,9 +55382,10 @@ def test_admin_ux_round3():
     if not (_web_root / "src").exists():
         return
     page = _web_path("src/app/(app)/admin/page.tsx").read_text(encoding="utf-8")
-    assert "couldn't load the real-bet ledger" in page and "d.feedsStale" in page
+    # review 2026-09-25: the Overview's feed answer IS the Feeds page's feedsAnswer (same blocks, same stale rule)
+    assert "couldn't load the real-bet ledger" in page and "d.feedsAnswer" in page
     ov = _web_path("src/lib/admin-overview.ts").read_text(encoding="utf-8")
-    assert "feedsStale:" in ov and "15 * 60_000" in ov
+    assert "STATUS_STALE_MIN * 60_000" in ov and "newestStatus == null ||" in ov, "no status row at all is 'can't tell', as on /admin/feeds"
     charts = _web_path("src/app/(app)/admin/overview-charts.tsx").read_text(encoding="utf-8")
     assert "d.feedsStale" in charts
     for f in ("src/components/admin/command-palette.tsx", "src/app/(app)/admin/bots/bots-board.tsx"):
@@ -55413,9 +55423,11 @@ def test_feed_auto_pause_is_a_failure():
         return
     m = _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8")
     assert 'f.status === "paused" && f.paused_by === "auto"' in m and 'return "fail"' in m
-    for f in ("src/lib/admin-attention.ts", "src/app/(app)/admin/page.tsx", "src/app/(app)/admin/overview-charts.tsx",
+    for f in ("src/lib/admin-attention.ts", "src/app/(app)/admin/overview-charts.tsx",
               "src/app/(app)/admin/feeds/page.tsx"):
         assert "feedHealth(" in _web_path(f).read_text(encoding="utf-8"), f
+    # the Overview's feeds answer is the Feeds page's feedsAnswer over the model's blocks (statusTone → feedHealth)
+    assert "feedsAnswer(" in _web_path("src/lib/admin-overview.ts").read_text(encoding="utf-8")
     assert "blockState(" in _web_path("src/app/(app)/admin/feeds/feeds-board.tsx").read_text(encoding="utf-8"), "the board colours through the model's feedHealth-based statusTone"
     assert 'if (f.paused) return f.paused_by === "auto" ? "danger" : "info";' in m
     ch = _web_path("src/components/oi/charts.tsx").read_text(encoding="utf-8")
@@ -55448,9 +55460,16 @@ def test_admin_answer_first():
     # ONE rule per fact across pages (strict owner test round 5): the Overview's Coolbet block risk is the
     # Feeds page's coolbetBlockRisk over the same book_footprint hour, and job names come from Jobs.
     lo = _web_path("src/lib/admin-overview.ts").read_text(encoding="utf-8")
-    assert 'coolbetBlockRisk(cbR.error ? null : budgetView("Coolbet"' in lo and "d.coolbetRisk.level" in ov
+    assert 'cbBudget = cbR.error ? null : budgetView("Coolbet"' in lo and "coolbetRisk: coolbetBlockRisk(cbBudget)" in lo and "d.coolbetRisk.level" in ov
+    # review 2026-09-25 fixes: unreadable arming never reads "Off"; jobs = the Jobs page's jobsAnswer;
+    # the ⓘ in a sortable header sits beside the sort button, never inside it (button-in-button)
+    assert "Can't tell if real money is armed" in ov and "d.jobsAnswer.text" in ov and "jobsAnswer(views.filter(" in lo
+    dt = _web_path("src/components/oi/data-table.tsx").read_text(encoding="utf-8")
+    assert "</button>\n                        {h.column.columnDef.meta?.tip && <InfoTip>" in dt
+    ops = _web_path("src/app/(app)/admin/ops/page.tsx").read_text(encoding="utf-8")
+    assert "Can't tell — settlement data unreadable" in ops and "settleLate" in ops
     att = _web_path("src/lib/admin-attention.ts").read_text(encoding="utf-8")
-    assert 'import { humanJob } from "./admin-jobs-model"' in att and "function humanJob" not in att
+    assert 'import { humanJob, jobAnchor } from "./admin-jobs-model"' in att and "function humanJob" not in att
     # charts default to order 0 and jumped above the answers on a phone
     assert 'className="order-3 flex flex-col' in ov
     st = _web_path("src/components/admin/admin-status.ts").read_text(encoding="utf-8")
@@ -55719,6 +55738,103 @@ def test_anon_least_privilege():
     for fn in ("get_best_match_odds", "get_latest_match_odds", "get_historical_match_odds",
                "get_bookmaker_count_for_match", "handle_new_user"):
         assert _re.search(rf"REVOKE EXECUTE ON FUNCTION public\.{fn}\(.*FROM anon, PUBLIC", sql), fn
+
+
+@test("PICKS-FORWARD-TEST-AMENDED-CHECKPOINT — #156 stop rule = sharp-anchor CLV, live vs junk control")
+def test_picks_forward_test_amended_checkpoint():
+    """[[#156]] (2026-09-25, owner-approved, before live n=200). The pre-registered n=200/400
+    stop rule was judged on own-book margin-corrected CLV, which cannot separate the live arm
+    from the random junk-anchor control (−0.4pp [−1.9,+1.2]) because the rule picks legs a book
+    misprices and that book's own close sits at ~−margin by construction. AMENDMENT 1: sharp-
+    anchor CLV (clv_sharp, else >=5-book clv_cons, thin excluded), market-stratified live −
+    control, one-sided bootstrap B=10k seed 20260925, CONTINUE only if p < 0.025 at n=200 and
+    n=400. Guards: the pre-stated constants, the arithmetic, read-only, the thin exclusion, and
+    that the amendment was APPENDED (the original rule text is still there, unedited)."""
+    import inspect
+    import scripts.picks_forward_test_checkpoint as ck
+    assert ck.CHECKPOINTS == (200, 400) and ck.ALPHA == 0.025
+    assert ck.BOOT_B == 10_000 and ck.SEED == 20260925 and ck.CLV_ABS_MAX == 1.0
+    sql = ck.SQL
+    assert "c.status = 'ok' THEN c.clv_sharp" in sql and "c.cons_status = 'ok' THEN c.clv_cons" in sql
+    assert "thin" not in sql, "3–4-book thin consensus must never enter the decision"
+    assert "p.rule_version = %s" in sql and "'junk_anchor'" in sql and "('won', 'lost')" in sql
+    src = inspect.getsource(ck)
+    for w in ("INSERT ", "UPDATE ", "DELETE ", "execute_write"):
+        assert w not in src.replace("UPDATED", ""), f"checkpoint script must be read-only ({w})"
+    assert "SET TRANSACTION READ ONLY" in src
+    # arithmetic: stratified by the LIVE arm's market shares
+    c = {("live", "1x2"): [0.03, 0.01], ("junk_anchor", "1x2"): [-0.02, -0.02, -0.02],
+         ("live", "ou"): [0.0], ("junk_anchor", "ou"): [-0.03]}
+    d, per = ck.stratified_delta(c)
+    assert abs(d - (2 / 3 * 0.04 + 1 / 3 * 0.03)) < 1e-12, d
+    assert abs(per["1x2"]["w"] - 2 / 3) < 1e-12
+    assert ck.stratified_delta({("live", "1x2"): [0.1]})[0] is None, "no control -> no statistic"
+    assert ck.anchor_value({"clv_anchor": 1.5}) is None and ck.anchor_value({"clv_anchor": -0.2}) == -0.2
+    p, lo = ck.bootstrap({k: v * 20 for k, v in c.items()}, b=300)
+    assert p == 0.0 and lo > 0
+    p2, _ = ck.bootstrap({("live", "m"): [0.01, -0.01] * 20, ("junk_anchor", "m"): [0.01, -0.01] * 20}, b=300)
+    assert p2 > 0.2, "identical arms must not pass"
+    assert ck.verdict(88, 0.0).startswith("NO CHECKPOINT YET")
+    assert "CONTINUE" in ck.verdict(200, 0.01) and "STOP" in ck.verdict(200, 0.025)
+    assert "n=400" in ck.verdict(450, 0.5) and "STOP" in ck.verdict(450, 0.5)
+    assert "STOP" in ck.verdict(200, None)
+    doc = _engine_path("dev/active/picks-forward-test-preregistration.md").read_text()
+    assert "## AMENDMENT 1 — 2026-09-25" in doc
+    assert "| **n = 200** | CLV (margin-corrected, `EV ≈ (1+clv)/(1+m) − 1`, m ≈ 7.6%) < −2% |" in doc, (
+        "the original registered rule must stay in place, unedited — amendments are appended")
+    assert doc.index("## AMENDMENT 1") > doc.index("## A second arm"), "the amendment is appended, not inserted"
+    assert "scripts.picks_forward_test_checkpoint" in doc and "p < 0.025" in doc
+    return f"ALPHA={ck.ALPHA} B={ck.BOOT_B}; amendment appended, original text intact"
+
+
+@test("FORWARD-TEST-SHARP-ANCHOR-CLV-ON-PERFORMANCE — #156 main CLV = sharp close; current rule; unsent D out")
+def test_forward_test_sharp_anchor_clv_on_performance():
+    """[[#156]] (2026-09-25, owner-approved). /performance's forward-test rows (a) lead with the
+    SHARP-ANCHOR CLV (clv_sharp, else >=5-book clv_cons) with its n and Pinnacle/consensus mix, the
+    own-book figure only as a labelled secondary; (b) are scored on the CURRENT rule_version
+    (as bot_scoreboard) — bot_sharp_1x2_v1 was pooling 8 picks of closed v1; (c) drop grade-D
+    picks that were never sent (the filter picks_public_all has), written NULL-safe so a live
+    pick recorded during a Telegram pause is NOT dropped. leg_clv_sharp stays private: the
+    aggregate view is service_role only, so the ANON-LEAST-PRIVILEGE list does not change."""
+    from workers.api_clients.db import execute_query
+    mig = _engine_path("supabase/migrations/430_forward_test_sharp_anchor_clv.sql").read_text()
+    null_safe = "NOT (grade IS NOT DISTINCT FROM 'D' AND telegram_message_id IS NULL)"
+    assert mig.count(null_safe) == 2, "both summary views need the NULL-safe unsent-D filter"
+    assert mig.count("NOT (p.grade IS NOT DISTINCT FROM 'D' AND p.telegram_message_id IS NULL)") == 2
+    assert "grade = 'D'::text AND" not in mig, "the NULL-unsafe form drops paused live picks"
+    for v in ("picks_forward_test_summary AS", "picks_forward_test_summary_by_market AS",
+              "picks_forward_test_public AS", "public.picks_forward_test_anchor_clv AS"):
+        assert f"CREATE OR REPLACE VIEW {v}" in mig, v
+    assert "c.status = 'ok' THEN c.clv_sharp" in mig and "c.cons_status = 'ok' THEN c.clv_cons" in mig
+    assert "thin" not in mig.split("CREATE OR REPLACE VIEW public.picks_forward_test_anchor_clv", 1)[1].split("COMMENT ON", 1)[0]
+    assert "TO anon" not in mig and "TO authenticated" not in mig
+    assert "REVOKE ALL ON public.picks_forward_test_anchor_clv FROM PUBLIC, anon, authenticated, service_role;" in mig
+    assert "GRANT SELECT ON public.picks_forward_test_anchor_clv TO service_role;" in mig
+    applied = {r["filename"] for r in execute_query("SELECT filename FROM _schema_migrations")}
+    if "430_forward_test_sharp_anchor_clv.sql" in applied:
+        r = execute_query("""SELECT has_table_privilege('anon', 'public.picks_forward_test_anchor_clv', 'SELECT') AS anon_can,
+              (SELECT coalesce(sum(published), 0) FROM picks_forward_test_summary WHERE grade = 'D') AS d_view,
+              (SELECT count(*) FROM picks_forward_test WHERE arm = 'consensus_anchor' AND grade = 'D'
+                  AND telegram_message_id IS NOT NULL) AS d_sent""")[0]
+        assert not r["anon_can"], "the anchor-CLV aggregate must not be readable by anon"
+        assert int(r["d_view"]) == int(r["d_sent"]), f"unsent grade-D picks still in the summary: {r}"
+    g = _engine_path("docs/ANALYSIS_GOTCHAS.md").read_text()
+    assert "## 85. Own-book close CLV is negative BY CONSTRUCTION" in g
+    web_lib = _web_path("src/lib/engine-data.ts").read_text()
+    page = _web_path("src/app/(app)/performance/page.tsx").read_text()
+    lb = _web_path("src/components/performance-leaderboard.tsx").read_text()
+    i = web_lib.index("export async function getForwardTestAnchorClv(")
+    body = web_lib[i:i + 900]
+    assert "createSupabaseAdmin()" in body and '.from("picks_forward_test_anchor_clv")' in body, (
+        "the private aggregate must be read server-side with the service client")
+    assert "getForwardTestAnchorClv(x.arm, x.grade, x.market)" in page
+    assert 'clvDirection: sharp == null ? "neutral"' in page and "avgClv: isElite ? sharp : null" in page
+    assert "ownClv: mc" in page and "summary?.current" in page and "?.pooled" not in page
+    flat = " ".join(lb.split())
+    assert "vs sharp close {clvPct(ft.sharpClv)}" in flat and "Pinnacle / ${ft.nConsensus} consensus" in flat
+    assert "vs the book&apos;s own close" in flat, "own-book figure must stay, labelled as secondary"
+    assert "measured{\" \"} <span className=\"text-foreground\">vs the sharp close</span>" in flat, "legend must explain CLV"
+    return "sharp-anchor main CLV, current rule, unsent D filtered, private aggregate"
 
 
 @test("PLACER-SKIPS-RETIRED-BOTS — the real-money Coolbet placer never loads a retired bot's picks")
@@ -56891,7 +57007,8 @@ def test_admin_feeds_answer_matches_blocks():
     assert "export function everyText(" in model
     page = _web_path("src/app/(app)/admin/feeds/page.tsx").read_text(encoding="utf-8")
     assert "allBlockStates(feeds, budgets, now, statusStale)" in page
-    assert "bookmakers + ${nOther} data sources" in page and "running`" not in page.split("const answers")[1].split("];")[0].replace("All running", "")
+    assert "bookmakers + ${blocks.length - nBooks} data sources" in model and "feedsAnswer(blocks, { error: !!d.feeds.error, stale: statusStale })" in page
+    assert "running`" not in page.split("const answers")[1].split("];")[0].replace("All running", "")
     assert "All ${feeds.length} running" not in page
     assert "dataAt={updated}" in page
     board = _web_path("src/app/(app)/admin/feeds/feeds-board.tsx").read_text(encoding="utf-8")
