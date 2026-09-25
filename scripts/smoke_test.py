@@ -55990,10 +55990,15 @@ def test_recheck_forward_test_pick_time_only():
                 WHERE NOT c.passes AND l.record_state <> 'rechecked_fail') AS fail_counted,
               (SELECT coalesce(sum(published), 0) FROM picks_forward_test_bot_record) AS rec_n,
               (SELECT count(*) FROM picks_forward_test_public) AS pub_n,
+              -- [[#164]] VIP FIRST: a held-back pick is in the record but not on the public list
+              -- until kickoff (migration 439), so the two differ by exactly the held-back picks.
+              (SELECT count(*) FROM picks_forward_test p WHERE p.arm IN ('live', 'consensus_anchor')
+                  AND p.held_back_until > now()
+                  AND NOT (p.grade IS NOT DISTINCT FROM 'D' AND p.telegram_message_id IS NULL)) AS held_n,
               (SELECT count(*) FROM pick_rule_recheck) AS n_checks""")[0]
         assert not r["anon_t"] and not r["anon_v"], "re-check table / record view must stay private"
         assert r["pass_not_current"] == 0 and r["fail_counted"] == 0, r
-        assert int(r["rec_n"]) == int(r["pub_n"]), f"bot record and the public list disagree: {r}"
+        assert int(r["rec_n"]) == int(r["pub_n"]) + int(r["held_n"]), f"bot record and the public list disagree: {r}"
         live = f"; {r['n_checks']} verdicts live"
     # (5) web
     web_lib = _web_path("src/lib/engine-data.ts").read_text()
@@ -57810,8 +57815,10 @@ def test_perf_detail_open_one_row_rule():
     assert "hasEnoughData: picksSummary.published > 0" not in page, "forward-test rows follow the one row rule"
     assert "isPro ? " not in page, "W/L and P&L are not tier-gated any more"
     route = _ts_code159(_web_path("src/app/api/performance/bot-legs/route.ts").read_text())
-    assert "isPublicBot(b.maturityLabel) || isVipBot(b) || b.showOnPerformance === true || LEDGER_BACKED_BOTS.has(b.name)" in route
-    assert "!b.retiredAt" in route and "settledOnly: isVipBot(b) || b.hidePending" in route
+    # [[#164]] experimental bots (the #161 twin arms) are never listed unless VIP; held-back legs dropped in the lib
+    assert "(isPublicBot(b.maturityLabel) || b.showOnPerformance === true || LEDGER_BACKED_BOTS.has(b.name))" in route
+    assert "isVipBot(b) ||" in route and "!experimental &&" in route
+    assert "!b.retiredAt" in route and "settledOnly: isVipBot(b) || b.hidePending || experimental" in route
     lib = _ts_code159(_web_path("src/lib/bot-performance.ts").read_text())
     assert '.eq("in_record", true)' in lib and 'if (opts.settledOnly) q = q.in("result", SETTLED);' in lib
     assert 'const SETTLED = ["won", "lost", "void", "push"];' in lib, "pending is never in the settled list"
