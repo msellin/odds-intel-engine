@@ -64,3 +64,15 @@ Parent row: PRIORITY_QUEUE.md #162
   W1.5 shadow autovoid, W6.1 Pick queue on bot_performance (+ "can't judge yet"), headline _EXEC_PNL = stored pnl
   (+9.6% → +12.2%, = /performance), in-play markers loaded by settlement + results_check (#157 leftover).
   Owner answered a-d all ⭐. New rules: one commit per task per repo, ops/verify/<task>.yml, no git reset/stash.
+
+## State 2026-09-25 late (end of the phase-3 push)
+* W4 CLOSED (migration 459 + GATE_CONTRACT = 1). Live: placement PAUSED, NOT armed, 0 of 11 € switches ON,
+  executors parked in local/launchd/paused/. Turning on = owner (COOLBET_OWN_BETTING "Turning real money on").
+* Landed today via worktree agents + temp-index commits: W1.3 W1.4 W4.2 W4.3 W4.5 W4.6 W4.7 W5.3 W5.4 W5.6 W6.3
+  W6.8 W7.2 W7.4 W7.5 W7.7 W7.8 W8.4 W8.8 W8.9, rule-version tagging (453/458), pre-lock fixes.
+* Handed off: W3.3 + W2.2b + W8.6 → #154 (model changes). Closed with evidence: W5.2, W6.6, W6.7, W8.5.
+* Still open: W5.5 + W7.6 (agents running at time of writing), W6.2 (owner OK), W8.1 (tell owner).
+* Landing recipe for an agent worktree commit: rebase it on origin/main in its worktree
+  (`git -c core.commentChar=';' rebase` — a '#162' subject line is otherwise eaten as a comment), then
+  scratchpad land.sh (patch → working tree + temp index from HEAD → commit-tree → push → restore --staged).
+
