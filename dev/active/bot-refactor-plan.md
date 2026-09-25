@@ -192,7 +192,7 @@ Each step is its own commit (code + smoke + docs), pushed only when its reviewer
 5. **W1.4** — abandoned matches with no score: void (book practice) or 0-0?
 6. **W6.7** — the meta-model label (`clv_pinnacle_devig`, no age limit): move it (a model change → research
    first) or keep writing the legacy column for it alone?
-7. **W5.1** — for a sim-ledger TESTING bot, does "sent" mean Telegram, /picks, or both? (decides whether
+7. ✅ ANSWERED 2026-09-25 (owner, via the bot session): "sent" for TESTING-or-above = /picks AND the public Telegram channel — `bot_distribution.sent_public` drives both. **W5.1** — for a sim-ledger TESTING bot, does "sent" mean Telegram, /picks, or both? (decides whether
    bot_high_roi_global_v2 and bot_v10_1x2_newplus_v1 start going to Telegram)
 8. **W4.1 / W4.3 / W4.5** — the money-record back-fill (3 states; 23 rows are real, 313 unverified to check
    against the May Coolbet statement) and the per-bot floors in the placers.

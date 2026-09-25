@@ -43,3 +43,11 @@ Parent row: PRIORITY_QUEUE.md #162
   Live verified after each: contract 0, paused, not armed, 0/11 ON.
 - Remaining phase-2 steps mostly need the OWNER's OK (W1.1, W2.1, W2.2, W4.1, W4.2, W6.1) or wait on #164/#165/
   #155 files. Doing the no-OK free ones next: W6.4 (real_bets into leg_clv_sharp), W7.3 (dead telegram_bot.py).
+- ~17:55: e543f59f (W6.4 real_bets in leg_clv_sharp — 143 legs scored on the VPS: 139 fresh Pinnacle close,
+  mean clv_sharp −0.9% (125, cons ok) / −4.8% (14); W7.3 telegram_bot.py deleted). CI red on 4f402bbf /
+  57b63f75 = CONTROL-FN-REFUSES only, fixed by bf110d6b (awaiting its run).
+- No-OK, free steps are now exhausted. Everything left needs the owner (list in plan §5) or #164/#165/#155/
+  #157 to close. Next when unblocked: W2.1 (OK), W4.2 (OK, money), W6.1 (OK), W1.1 (OK); after #164: W5.x.
+- ~19:00: migration 437 live (c8e5f10d) — views for #155. Owner answers via the bot session: Q7 sent =
+  /picks AND public Telegram (sent_public drives both; no view change); bot_ou35_model_v1 RETIRED by them
+  (b954c603, mig 438); pending_exposed RLS gap → #155. #164 in progress (its files locked).
