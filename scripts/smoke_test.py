@@ -45291,7 +45291,8 @@ def test_forward_test_versions_do_not_vanish():
     # pooling 8 picks of the closed v1). Reconciliation is kept the other way round:
     # its bet list is scoped to the same rule_version, and earlier versions are named
     # on the row. Pin that pair.
-    assert "summary?.current" in perf and "getPicksForwardTestSummary(" in perf, (
+    # [[#158]] the row's record reader is getForwardTestBotRecord (current rule + re-checked).
+    assert "record?.current" in perf and "getForwardTestBotRecord(" in perf, (
         "the performance leaderboard row must read the CURRENT rule version"
     )
     assert 'rv("bot_sharp_1x2_v1")' in perf and "earlier:" in perf, (
@@ -49898,7 +49899,7 @@ def test_sharp_bot_split_by_market():
         src = page.read_text()
         assert '{ arm: "live", market: "1x2", bot: "bot_sharp_1x2_v1" }' in src
         assert '{ arm: "live", market: "over_under_25", bot: "bot_sharp_ou_v1" }' in src
-        assert "getPicksForwardTestSummary(x.arm, x.grade, x.market)" in src  # [[#156]] parallelised
+        assert "getForwardTestBotRecord(x.arm, x.grade, x.market)" in src  # [[#156]] parallelised; [[#158]] record reader
 
 
 @test("WEB-NO-ORPHAN-FETCHERS — every exported function in engine-data.ts has a caller")
