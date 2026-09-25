@@ -1945,8 +1945,7 @@ def _():
       (2) threshold constant is 1.65,
       (3) update uses execute_write_returning (not execute_query — which
           doesn't commit, per the 2026-06 COOLBET-INLINE-HEAL-BUTTONS bug),
-      (4) WHERE clause is idempotent — skips rows already tagged with
-          CLV-AUTOVOID so re-running settlement doesn't double-tag,
+      (4) idempotent via result IN ('won','lost'); the void is a quarantine (#162 W1.1),
       (5) only touches won/lost rows (not pending, not already void),
       (6) closing_odds NOT NULL + > 0 guard,
       (7) sets result='void' AND pnl=0 so the void drops from headline ROI.
@@ -1963,9 +1962,13 @@ def _():
         "CLV-AUTOVOID: must use execute_write_returning (execute_query does NOT commit)"
     )
     # Idempotency + row-guard clauses
-    assert "NOT LIKE '%%CLV-AUTOVOID%%'" in helper_src or "NOT LIKE '%CLV-AUTOVOID%'" in helper_src, (
-        "CLV-AUTOVOID: idempotency clause (skip rows already tagged) missing"
+    # #162 W1.1 (2026-09-25): idempotency now comes from `result IN ('won','lost')` (a voided row is never
+    # matched again) — the old "skip rows already tagged" clause is gone ON PURPOSE so a row the resettle
+    # pass re-graded is re-judged; the void is a quarantine resettle skips (CLV-AUTOVOID-STICKS).
+    assert "NOT LIKE '%%CLV-AUTOVOID%%'" not in helper_src.split("WITH hit AS")[1].split("), voided AS")[0], (
+        "CLV-AUTOVOID: must not skip previously tagged rows (they are re-judged)"
     )
+    assert "void_reason = 'quarantine: clv-autovoid" in helper_src, "CLV-AUTOVOID: the void must be a quarantine"
     assert "result IN ('won', 'lost')" in helper_src, (
         "CLV-AUTOVOID: must only touch won/lost rows (not pending, not already void)"
     )
@@ -58235,6 +58238,38 @@ def test_vip_first_hold_back():
         if "could not connect" in str(e).lower() or "connection" in str(e).lower():
             raise SkipTest(f"DB not reachable: {e}")
         raise
+
+
+
+@test("CLV-AUTOVOID-STICKS — an autovoid is a quarantine, so the resettle pass can no longer undo it (#162 W1.1/W1.2)")
+def test_clv_autovoid_sticks():
+    """#162 W1.1/W1.2 (owner decisions 1C + 5A, 2026-09-25). CLV-AUTOVOID voided bets whose pick price was
+    ≥ 1.65× the close (a data error) but wrote no void_reason; resettle_wrongly_voided_bets re-grades every
+    void whose reason is not a quarantine, so 90 of 93 came back graded (net +591 paper). The autovoid now
+    writes void_reason 'quarantine: clv-autovoid — …' (which resettle skips) and no longer excludes rows it
+    tagged before, so a re-graded row is RE-JUDGED on today's corrected close. Live invariant: no settled
+    won/lost simulated bet fails the 1.65× test (checked after the first run of the new step)."""
+    st = _engine_path("workers/jobs/settlement.py").read_text(encoding="utf-8")
+    fn = st[st.index("def _apply_clv_autovoid("):]
+    fn = fn[:fn.index("RETURNING id")]
+    assert "void_reason = 'quarantine: clv-autovoid" in fn, "the autovoid must record a quarantine reason"
+    assert "LEAST(odds_at_pick, COALESCE(odds_at_pick_live, odds_at_pick)) / closing_odds" in fn, "judged at the lower of recorded and executable"
+    assert "AND (reasoning IS NULL OR reasoning NOT LIKE" not in fn, "tagged-then-regraded rows must be re-judged"
+    assert "LEFT(sb.void_reason, 10) <> 'quarantine'" in st, "resettle must keep skipping quarantines"
+    # review 2026-09-25: the paper bankroll moves with the void in the SAME statement (BOT-BANKROLL-DRIFT),
+    # and the step also runs in the 15-minute settle pass, not only the evening run_settlement
+    assert "UPDATE bots b" in fn and "current_bankroll = b.current_bankroll - d.removed" in fn
+    rd = st[st.index("def settle_ready_matches("):]
+    rd = rd[:rd.index("def resettle_wrongly_voided_bets(")]
+    assert rd.index("_apply_clv_autovoid()") < rd.index("resettle_wrongly_voided_bets()")
+    from workers.api_clients.db import execute_query
+    try:
+        n = execute_query("""SELECT count(*) AS n FROM simulated_bets
+                              WHERE result IN ('won','lost') AND closing_odds > 0
+                                AND LEAST(odds_at_pick, COALESCE(odds_at_pick_live, odds_at_pick)) / closing_odds >= 1.65""")[0]["n"]
+    except Exception:  # noqa: BLE001 — no DB here
+        return
+    assert n == 0, f"{n} settled bet(s) fail the 1.65x data-error test — the autovoid step did not run or was undone"
 
 if __name__ == "__main__":
     main()

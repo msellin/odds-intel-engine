@@ -2322,6 +2322,14 @@ def settle_ready_matches():
     except Exception as e:
         console.print(f"  [yellow]Picks-board catch-up settle error (non-fatal): {e}[/yellow]")
 
+    # #162 W1.1 (review 2026-09-25): the data-error autovoid runs HERE too, not only in the three evening
+    # run_settlement passes — a bet settled in the afternoon at ≥ 1.65x its close no longer stays won/lost
+    # for hours. Before the resettle pass, like run_settlement.
+    try:
+        _apply_clv_autovoid()
+    except Exception as e:
+        console.print(f"  [yellow]CLV auto-void sweep error (non-fatal): {e}[/yellow]")
+
     # BET-VOID-INTEGRITY-2026-08-24 — a postponed fixture that later gets played
     # leaves its bets voided forever, because nothing ever revisited them. Run
     # after the settle passes above so freshly-finished matches are already
@@ -2823,8 +2831,8 @@ def run_settlement():
     # Threshold 1.65× is intentionally conservative — legitimate value picks
     # that close shorter (squad-news drops, sharp arrival) rarely exceed 1.5×.
     # Anything ≥ 1.65× is far more likely a data error than a real edge that
-    # closed. Manual review is available for edge cases via the reasoning
-    # column (idempotent — the update skips rows already tagged CLV-AUTOVOID).
+    # closed. Idempotent (a voided row is never matched again); the void is a quarantine the
+    # resettle pass skips, and the bankroll moves with it (#162 W1.1, 2026-09-25).
     try:
         _apply_clv_autovoid()
     except Exception as e:
@@ -4767,41 +4775,63 @@ CLV_AUTOVOID_RATIO_THRESHOLD = 1.65
 
 
 def _apply_clv_autovoid() -> int:
-    """Auto-void settled won/lost bets whose pick_odds were demonstrably not
-    reachable at the real closing market. Idempotent — the WHERE clause skips
-    rows already tagged with 'CLV-AUTOVOID' in reasoning.
+    """Auto-void settled won/lost simulated bets whose pick price was demonstrably not reachable at the
+    real closing market: price / closing_odds >= CLV_AUTOVOID_RATIO_THRESHOLD (1.65x) — a data error, not
+    an edge.
 
-    Called from run_settlement() right after _settle_pending_bets. Any bet
-    where odds_at_pick / closing_odds ≥ CLV_AUTOVOID_RATIO_THRESHOLD (1.65×)
-    is flipped to result='void', pnl=0, and gets a reasoning note attributing
-    the void to this sweep. Bankroll is not restated retroactively — the
-    void just removes the bet from headline ROI / P&L aggregations.
-
-    Returns count of rows voided in this pass.
+    #162 W1.1/W1.2 (owner decisions 1C + 5A, 2026-09-25):
+      * the void is a QUARANTINE (void_reason 'quarantine: clv-autovoid — …'), so
+        resettle_wrongly_voided_bets / results_check can no longer re-grade it. Before this, 90 of 93
+        autovoids were re-graded within days (net +591 paper);
+      * rows tagged by an earlier autovoid and then re-graded are RE-JUDGED on today's close (the old
+        "skip rows already tagged" exclusion is gone) — measured that day: 2 still fail, 88 stand;
+      * the price judged is the LOWER of the high-water mark (odds_at_pick) and the executable price
+        (odds_at_pick_live) — an inflated recording must not void a genuine pick, and an executable price
+        ABOVE the high-water mark is itself a recording error (5 May in-play legs);
+      * the bot's paper bankroll moves by the removed pnl IN THE SAME STATEMENT (review: every other
+        re-grader does; a void that zeroes pnl without it drifts current_bankroll from
+        starting + sum(pnl) — smoke BOT-BANKROLL-DRIFT).
+    Idempotent: a voided row is never matched again (result IN ('won','lost')). Returns rows voided.
     """
     updated = execute_write_returning(
         """
-        UPDATE simulated_bets
-           SET result   = 'void',
-               pnl      = 0,
-               reasoning = COALESCE(reasoning || E'\n', '')
-                           || 'CLV-AUTOVOID 2026-08-19: odds_at_pick/closing_odds '
-                           || ROUND((odds_at_pick / closing_odds)::numeric, 2) || 'x '
-                           || '(threshold %sx) — pick price not reachable at real market.'
-         WHERE result IN ('won', 'lost')
-           AND closing_odds IS NOT NULL
-           AND closing_odds > 0
-           AND (odds_at_pick / closing_odds) >= %s
-           AND (reasoning IS NULL OR reasoning NOT LIKE '%%CLV-AUTOVOID%%')
-         RETURNING id
+        WITH hit AS (
+            SELECT id, bot_id, coalesce(pnl, 0) AS old_pnl,
+                   ROUND((LEAST(odds_at_pick, COALESCE(odds_at_pick_live, odds_at_pick)) / closing_odds)::numeric, 2) AS ratio
+              FROM simulated_bets
+             WHERE result IN ('won', 'lost')
+               AND closing_odds IS NOT NULL
+               AND closing_odds > 0
+               AND (LEAST(odds_at_pick, COALESCE(odds_at_pick_live, odds_at_pick)) / closing_odds) >= %s
+             FOR UPDATE
+        ), voided AS (
+            UPDATE simulated_bets s
+               SET result = 'void',
+                   pnl = 0,
+                   void_reason = 'quarantine: clv-autovoid — price/closing_odds ' || h.ratio || 'x >= %sx',
+                   reasoning = CASE WHEN s.reasoning LIKE '%%CLV-AUTOVOID%%' THEN s.reasoning
+                                    ELSE COALESCE(s.reasoning || E'\n', '')
+                                         || 'CLV-AUTOVOID: price/closing_odds ' || h.ratio || 'x '
+                                         || '(threshold %sx) — pick price not reachable at real market.' END
+              FROM hit h
+             WHERE s.id = h.id
+         RETURNING s.id
+        ), bank AS (
+            UPDATE bots b
+               SET current_bankroll = b.current_bankroll - d.removed
+              FROM (SELECT bot_id, sum(old_pnl) AS removed FROM hit GROUP BY bot_id) d
+             WHERE b.id = d.bot_id AND d.removed <> 0
+         RETURNING b.id
+        )
+        SELECT id FROM voided
         """,
-        [CLV_AUTOVOID_RATIO_THRESHOLD, CLV_AUTOVOID_RATIO_THRESHOLD],
+        [CLV_AUTOVOID_RATIO_THRESHOLD, CLV_AUTOVOID_RATIO_THRESHOLD, CLV_AUTOVOID_RATIO_THRESHOLD],
     )
     n = len(updated) if updated else 0
     if n > 0:
         console.print(
             f"  [yellow]CLV-AUTOVOID: {n} bet(s) voided "
-            f"(odds_at_pick/closing_odds ≥ {CLV_AUTOVOID_RATIO_THRESHOLD}×)[/yellow]"
+            f"(price/closing_odds ≥ {CLV_AUTOVOID_RATIO_THRESHOLD}×; bankroll adjusted)[/yellow]"
         )
     else:
         console.print(f"  [dim]CLV-AUTOVOID: no data-error prices to void[/dim]")
