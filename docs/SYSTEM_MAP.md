@@ -664,7 +664,7 @@ BETA · `bot_sharp_1x2_v1`, `bot_sharp_ou_v1`, `bot_consensus_b_v1`, `bot_consen
 
 - **EXPERIMENTAL → TESTING:** owner decision (the bot is ready to be SENT and scored in public). No
   statistical bar, because TESTING is exactly where the public record is gathered.
-- **TESTING → BETA:** after **N settled picks** (N set by the owner per bot — default proposal 100)
+- **TESTING → BETA:** after **50 settled picks** (owner 2026-09-26 — the same n as the review flag, so a TESTING bot is either promotable or flagged by n = 50)
   with **sharp-anchor CLV > 0** (`bot_performance.clv_public`, the one CLV every page shows). The
   model-bot bar in `docs/BETA_PROMOTION_BAR.md` remains the stricter reference for model bots.
 - **BETA → CALIBRATED:** the rule below ("`beta` → `calibrated`").

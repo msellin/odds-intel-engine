@@ -102,7 +102,7 @@ All verified live on the VPS DB in one batch pass (2026-09-25 ~15:45 UTC), not a
 
 **Current statuses (bot_distribution):** CALIBRATED `bot_v10_1x2` · BETA `bot_high_roi_global_v2` · TESTING (sent, own record, not headline) `bot_consensus_b_v1`, `bot_consensus_c_v1`, `bot_sharp_1x2_v1`, `bot_sharp_ou_v1`, `bot_v10_1x2_newplus_v1`, `bot_v10_ou_comb_v1` · VIP · TESTING `bot_combined_1x2_ev5_v1`, `bot_ou_sharp_early_v1` · EXPERIMENTAL everything else incl. `bot_consensus_d_v1`.
 
-**Still open, owner's call:** N for TESTING → BETA (docs propose 100). **Open rows:** [[#160]] Coolbet price guard · [[#153]] admin models page · [[#166]] real-money badge + pick-queue ROI · [[#168]] b+ (fast/slow CI tiers, slim queue, split smoke file, worktree per session) · [[#169]] serve NEW+ as the production 1X2 (owner said yes) · [[#154]] modelling round 2 — hand-off brief `dev/active/model-inputs-round2-brief.md`. Known leftover: the dashboard headline P&L query in `settlement.py` is flat but priced at our books, not the published price (was mid-edit by #162).
+**Owner 2026-09-26:** TESTING → BETA after 50 settled picks with sharp-anchor CLV > 0. **Open rows:** [[#160]] Coolbet price guard · [[#153]] admin models page · [[#166]] real-money badge + pick-queue ROI · [[#168]] b+ (fast/slow CI tiers, slim queue, split smoke file, worktree per session) · [[#169]] serve NEW+ as the production 1X2 (owner said yes) · [[#154]] modelling round 2 — hand-off brief `dev/active/model-inputs-round2-brief.md`. Known leftover: the dashboard headline P&L query in `settlement.py` is flat but priced at our books, not the published price (was mid-edit by #162).
 
 ## 6. Where the evidence lives
 

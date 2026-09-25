@@ -58620,6 +58620,12 @@ def test_model_round2_handoff():
         assert _engine_path(f"dev/archive/{f}.md").exists() and not _engine_path(f"dev/active/{f}.md").exists()
 
 
+@test("PROMOTION-N-50 — owner 2026-09-26: TESTING → BETA after 50 settled picks with sharp CLV > 0")
+def test_promotion_n_50():
+    m = _engine_path("docs/SYSTEM_MAP.md").read_text(encoding="utf-8")
+    assert "after **50 settled picks**" in m and "sharp-anchor CLV > 0" in m
+
+
 @test("OU35-MODEL-BOT-RETIRED — owner 2026-09-25: retired after its 'review this bot' flag; the job records nothing")
 def test_ou35_model_bot_retired():
     """The first bot retired by the #155 review flag (bot_review_flag, migration 437): bot_ou35_model_v1, 460 settled,
