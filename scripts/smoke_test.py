@@ -26054,11 +26054,11 @@ def _():
         "25 live on the same page."
     )
     leaderboard_early = _web_path("src/components/performance-leaderboard.tsx").read_text()
-    assert 'proven ·' in leaderboard_early or "proven strategies" in leaderboard_early, (
-        "performance-leaderboard.tsx subhead must say 'proven' (matches the "
-        "funnel line's 'X proven') not 'active' — the ambiguous 'active' was "
-        "reading as 'currently running' but meant 'currently winning'."
-    )
+    # 2026-09-25 (owner): the "N proven / underperforming / maturing" counts were REMOVED — the
+    # status labels + legend carry the evidence judgement; an ROI-based count contradicted them.
+    assert "proven strategies" not in leaderboard_early and "underperforming</span>" not in leaderboard_early, (
+        "the leaderboard must not carry a second, ROI-based 'proven' judgement beside the status labels")
+    assert "retired</span>" in leaderboard_early, "keep the tested-to-date / retired count (the work done)"
 
     history = _web_path("src/components/performance-history.tsx").read_text()
     assert "leagueFilter" in history, (
