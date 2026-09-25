@@ -118,11 +118,25 @@ hours at 750–1,500/h). Measured, first 12–13 metered hours:
 
 | Book | Req/h median / peak | Budget | Why it costs what it costs |
 |---|---|---|---|
-| Betfair Exchange | ~37 | 300 | **Bulk**: one listing request for all football markets in 48 h, prices 40 markets/request (~11–15 per run, every 15 min). |
-| Tonybet | 54 / 69 | 800 | **Bulk**: one request returns 100 events WITH main odds (~6 pages / 48 h); full boards only at ~24 h / 3 h / 30 min; most of the count is the 2-min live poll. |
-| Unibet-Site | 84 / 177 | 500 | **Per match**: one lobby page per country + one contest page per matched fixture; low only because it matches ~28% of fixtures (the "World" gap, #112). |
-| Epicbet | 416 / 576 | 4,000 | **Per match, deep**: ~140 league listings + the FULL board (100+ markets) per matched fixture, up to 250 per sweep, 2 sweeps/h. |
+| Betfair Exchange | ~37 | 150 | **Bulk**: one listing request for all football markets in 48 h, prices 40 markets/request (~11–15 per run, every 15 min). |
+| Tonybet | 54 / 69 | 150 | **Bulk**: one request returns 100 events WITH main odds (~6 pages / 48 h); full boards only at ~24 h / 3 h / 30 min; most of the count is the 2-min live poll. |
+| Unibet-Site | 84 / 177 | 400 | **Per match**: one lobby page per country + one contest page per matched fixture; low only because it matches ~28% of fixtures (the "World" gap, #112). |
+| Epicbet | 416 / 576 | 1,200 | **Per match, deep**: ~140 league listings + the FULL board (100+ markets) per matched fixture, up to 250 per sweep, 2 sweeps/h. |
 | Coolbet | 298 / 508 | 500 | **Per match, via a browser**: fo-tree + ~100 category listings + one market request per matched fixture; FlareSolverr page loads count too. ~250 per sweep. The cap is biting (62 refusals in 13 h, tail of busy sweeps). |
+
+_Budget column corrected 2026-09-25 to the values in `footprint._DEFAULT_BUDGETS` (re-tuned 2026-09-24 to
+~2× the measured peak; the table had kept the earlier numbers)._
+
+**Weekend load and the priority reserve (#151, 2026-09-25).** The medians above are weekday. On the
+Friday 09-25 slate BOTH books sat at their budget 10:00–15:00 UTC: Tonybet's full-board ("deep")
+fetches rose ~10/h → ~120/h (the 24 h-ahead window hitting Saturday's kickoffs) and its pre-match
+listing reached ~25 pages per sweep; Coolbet's sweep alone filled the 500. Being first-come-first-served,
+the cap starved the requests that matter most — Tonybet live stats (2 requests in the 14:00 hour
+instead of 30) and the 14:20 results run, Coolbet's near-kickoff closing capture. Deferrable callers now
+call `footprint.has_headroom(book)` and skip once the hour is past its deferrable share, keeping a
+reserve (Tonybet 50%, Coolbet 20%) for the close, live stats, results and the health ping: Tonybet deep
+boards fall back to the main board; the Coolbet sweep keeps a far-off fixture's last price (fixtures
+< 3 h out are still fetched every pass). A deferral is not a refusal and is not booked as one.
 
 **The expensive pattern** is re-fetching every match's full board every 30 min, including
 matches two days out whose prices barely move. **Fix (SHIPPED 2026-09-24, #112 — Coolbet, Epicbet deep board, Unibet contest page):**

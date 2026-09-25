@@ -46,6 +46,8 @@ from datetime import datetime, timedelta, timezone
 import requests
 from rapidfuzz import fuzz
 
+from workers.utils import footprint
+
 log = logging.getLogger(__name__)
 
 BOOKMAKER = "Tonybet"
@@ -394,7 +396,8 @@ def run_bulk(hours: int = 48, dry_run: bool = False) -> dict:
         _minutes_to_kickoff, _squads_compatible, drop_non_monotone_ft_ou)
 
     c = {"events": 0, "db_matches": 0, "matched": 0, "flipped_skipped": 0,
-         "rows": 0, "stored": 0, "fair_probs": 0, "ou_dropped": 0, "deep": 0}
+         "rows": 0, "stored": 0, "fair_probs": 0, "ou_dropped": 0, "deep": 0,
+         "deep_deferred": 0}
     sess = _session()
     events = [e for e in fetch_events(sess, hours) if e["home"] and e["away"]]
     c["events"] = len(events)
@@ -425,7 +428,14 @@ def run_bulk(hours: int = 48, dry_run: bool = False) -> dict:
 
     for m, ev in pairs:
         markets = ev["markets"]
-        if not dry_run and _in_deep_window(_minutes_to_kickoff(ev["start"])):
+        deep_ok = not dry_run and _in_deep_window(_minutes_to_kickoff(ev["start"]))
+        # PRIORITY RESERVE (#151, 2026-09-25): a deep board is optional (the main board below
+        # is the fallback). On the 09-25 weekend slate these grew to ~120/h and spent the whole
+        # 150 before live stats, the near-kickoff close and results could run.
+        if deep_ok and not footprint.has_headroom(BOOKMAKER):
+            c["deep_deferred"] += 1
+            deep_ok = False
+        if deep_ok:
             try:
                 time.sleep(_SLEEP_S)
                 markets = fetch_deep_markets(sess, ev["id"]) or markets

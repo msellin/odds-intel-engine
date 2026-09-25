@@ -49,6 +49,7 @@ from workers.api_clients.supabase_client import (
     store_coolbet_odds_snapshot,
 )
 from workers.automation.coolbet_session import CoolbetSession
+from workers.utils import footprint
 from workers.automation.coolbet_placer import (
     _parse_event,
     _FO_MATCH_URL,
@@ -2109,6 +2110,14 @@ def refresh_due(start, last_at, now) -> bool:
     return (now - last_at).total_seconds() / 60 >= max_age
 
 
+def _within_every_pass_tier(start, now) -> bool:
+    """Pure. True when a fixture is in the tier re-fetched on every pass (max age 0)."""
+    if start is None:
+        return True
+    hours = (start - now).total_seconds() / 3600
+    return next(age for below, age in _REFRESH_TIERS if hours < below) == 0
+
+
 def _last_stored_by_match(bookmaker: str, match_ids: list) -> dict:
     """{match_id: newest stored timestamp} for this book. Fails open (empty → all due)."""
     if not match_ids:
@@ -2243,6 +2252,14 @@ def run_board_sweep(
             if not refresh_due(cb_start, last_stored.get(str(af_row["id"])), now):
                 c["refresh_skipped"] += 1   # priced recently enough for its distance to kickoff
                 continue
+            # PRIORITY RESERVE (#151, 2026-09-25): once the hour is past its deferrable share,
+            # only fixtures inside the every-pass tier (< 3 h) are still fetched; the rest keep
+            # their last price until a quieter pass. On 09-25 the sweep alone spent the 500 and
+            # the near-kickoff closing capture was refused at 14:53 and 14:59.
+            if (last_stored.get(str(af_row["id"])) is not None and not _within_every_pass_tier(cb_start, now)
+                    and not footprint.has_headroom("Coolbet")):
+                c["reserve_deferred"] = c.get("reserve_deferred", 0) + 1
+                continue
             try:
                 # ONE request per event now, not four: fo-match is redundant with
                 # sidebets (measured), and odds are fetched for the whole buffer
@@ -2285,7 +2302,8 @@ def run_board_sweep(
     console.print(
         f"[cyan]Board sweep {'[DRY-RUN] ' if dry_run else ''}— {c['categories'] or len(cats)} categories, "
         f"{c['events_seen']} events ({c['near_term']} near-term), matched {c['matched']}, "
-        f"unmatched {c['unmatched']}, stored {c['stored_rows']} rows[/cyan]"
+        f"unmatched {c['unmatched']}, stored {c['stored_rows']} rows"
+        f"{', deferred for the budget reserve ' + str(c['reserve_deferred']) if c.get('reserve_deferred') else ''}[/cyan]"
     )
     c["categories"] = len(cats)
 

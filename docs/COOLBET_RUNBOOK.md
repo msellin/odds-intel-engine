@@ -675,6 +675,11 @@ escalates; it does not.
   "Requests this hour N / budget"; the block turns amber at 80% of budget or when
   bot-check answers exceed 5% (≥5) — the warning that comes BEFORE the block.
   **POSTs (placement) are counted but never refused.**
+  Since #151 (2026-09-25) the sweep also defers fixtures ≥ 3 h from kickoff once the hour
+  passes 400/500 (`footprint.has_headroom`), so the last 100 stay for the near-kickoff
+  close and the health ping; a refusal records its `host/proc/pid` in
+  `book_footprint.refused_by` (migration 445) — read that row first when refusals appear
+  under budget.
 - **And the sweep itself shrank (#091, 2026-09-23):** the scheduled job now runs the
   board sweep, not `run_bulk`'s search fallback. Verify coverage any time, from an
   IP Coolbet is not blocking, with `scripts/coolbet_board_coverage_diff.py

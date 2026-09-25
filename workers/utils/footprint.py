@@ -20,12 +20,29 @@ hiccup, because a counter outage must not become a data outage.
 
 Budgets (requests per hour) are set just above measured normal volume; override
 per book with env FOOTPRINT_BUDGET_<BOOK> (e.g. FOOTPRINT_BUDGET_COOLBET=400).
+
+PRIORITY RESERVE (FOOTPRINT-PRIORITY-RESERVE, #151, 2026-09-25). A single cap is
+first-come-first-served, and the lowest-value requests come first: on the Friday
+09-25 weekend slate both books sat AT their budget 10:00-15:00 UTC. Tonybet deep
+boards (full market lists for tomorrow's kickoffs) grew ~10/h -> ~120/h and starved
+live stats (2 requests in the 14:00 hour instead of 30) and the 14:20 results run;
+the Coolbet sweep's refresh of fixtures many hours out starved the near-kickoff
+closing capture. Deferrable callers now ask `has_headroom(book)` first and skip
+their optional request once the hour is past (1 - reserve) of its budget, leaving
+the rest for the requests that cannot wait (closing price, live, results). A
+deferral is NOT a refusal: nothing is booked, the caller falls back.
+
+REFUSER IDENTITY (#151). Every refusal also records WHO refused it
+(host/proc/pid) in `book_footprint.refused_by` (migration 445). The log line alone
+could not explain the "refused while under budget" hours, because the refusing
+process's stdout was not in the VPS journal.
 """
 from __future__ import annotations
 
 import atexit
 import logging
 import os
+import socket
 import sys
 import threading
 import time
@@ -46,6 +63,15 @@ _DEFAULT_BUDGETS = {
     "Epicbet": 1200,          # peak 576 / median 416 (2 sweeps/h + near-kickoff)
     "Betfair-Exchange": 150,  # peak 53 / median 45 (~15 req per run incl. step-D markets, 4 runs/h)
     "Epicbet-inplay": 3000,   # slimmed collector: 90 s x 25 fixtures ~ 2,000/h worst case
+}
+# Share of each hour's budget kept back for requests that cannot wait (see PRIORITY
+# RESERVE above). Sized from the 09-25 metering: Tonybet's must-run traffic is live
+# stats (30/h) + near-kickoff closes (up to ~60/h on a busy slate) + results (~5)
+# against 150, so half is reserved; Coolbet's is near-kickoff (~2 requests per due
+# fixture, <=19 due/h) + the 5-min health ping (12/h) against 500.
+_RESERVE_SHARE = {
+    "Coolbet": 0.2,
+    "Tonybet": 0.5,
 }
 SLOW_S = 20.0
 _FLUSH_EVERY = 20
@@ -73,6 +99,8 @@ _pending_n = 0
 _last_flush = time.monotonic()
 _batch_hour = None  # the clock hour the pending batch was counted in (FOOTPRINT-HOUR-BOOKING)
 _db_cache: dict[str, tuple[float, int, datetime]] = {}
+_refusers: dict[str, set[str]] = defaultdict(set)  # book -> {"host/proc/pid"} in the pending batch
+_refused_by_col = True  # False once the DB says migration 445 is not applied (then write without it)
 
 
 def _hour() -> datetime:
@@ -102,6 +130,23 @@ def _roll_hour() -> None:
         flush()
 
 
+def has_headroom(book: str, reserve: float | None = None) -> bool:
+    """True while this hour's count is below the part of the budget open to DEFERRABLE
+    requests, i.e. cap * (1 - reserve). Never raises and books nothing — the caller
+    simply skips its optional request (PRIORITY RESERVE). No budget -> always True."""
+    cap = budget(book)
+    if not cap:
+        return True
+    share = _RESERVE_SHARE.get(book, 0.0) if reserve is None else reserve
+    with _lock:
+        local = _pending[book]["requests"]
+    return _db_count(book) + local < cap * (1.0 - share)
+
+
+def _whoami() -> str:
+    return f"{socket.gethostname()}/{os.path.basename(sys.argv[0] or '?')}/{os.getpid()}"
+
+
 def check(book: str) -> None:
     """Raise FootprintBudgetExceeded when this book's hourly budget is spent."""
     global _batch_hour
@@ -117,6 +162,7 @@ def check(book: str) -> None:
             if _batch_hour is None:
                 _batch_hour = _hour()
             _pending[book]["refused"] += 1
+            _refusers[book].add(_whoami())
         # #110 follow-up (2026-09-24): refusals were counted but never logged, and ~17/h
         # showed up for Coolbet in hours whose DB total was 220-340 of 500. Log what THIS
         # process believed at the moment it refused, so the refusing caller can be found.
@@ -160,10 +206,35 @@ def _maybe_flush() -> None:
         flush()
 
 
+_UPSERT = """INSERT INTO book_footprint (book, hour, requests, challenges, errors, slow, refused)
+   VALUES (%s, %s, %s, %s, %s, %s, %s)
+   ON CONFLICT (book, hour) DO UPDATE SET
+     requests = book_footprint.requests + EXCLUDED.requests,
+     challenges = book_footprint.challenges + EXCLUDED.challenges,
+     errors = book_footprint.errors + EXCLUDED.errors,
+     slow = book_footprint.slow + EXCLUDED.slow,
+     refused = book_footprint.refused + EXCLUDED.refused"""
+# Same, plus the distinct union of refusers (host/proc/pid) seen in this hour (#151).
+_UPSERT_WITH_WHO = """INSERT INTO book_footprint (book, hour, requests, challenges, errors, slow, refused, refused_by)
+   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+   ON CONFLICT (book, hour) DO UPDATE SET
+     requests = book_footprint.requests + EXCLUDED.requests,
+     challenges = book_footprint.challenges + EXCLUDED.challenges,
+     errors = book_footprint.errors + EXCLUDED.errors,
+     slow = book_footprint.slow + EXCLUDED.slow,
+     refused = book_footprint.refused + EXCLUDED.refused,
+     refused_by = CASE WHEN EXCLUDED.refused_by IS NULL THEN book_footprint.refused_by
+                       ELSE (SELECT array_agg(DISTINCT x ORDER BY x)
+                               FROM unnest(coalesce(book_footprint.refused_by, '{}') || EXCLUDED.refused_by) x)
+                  END"""
+
+
 def flush() -> None:
-    global _pending_n, _last_flush, _batch_hour
+    global _pending_n, _last_flush, _batch_hour, _refused_by_col
     with _lock:
         batch = {b: dict(c) for b, c in _pending.items() if any(c.values())}
+        who = {b: sorted(v) for b, v in _refusers.items() if v}
+        _refusers.clear()
         # FOOTPRINT-HOUR-BOOKING (2026-09-24, #139 feeds review): book the batch under the hour it
         # was COUNTED in, not the hour of the flush. Before, Tonybet refusals made at 18:59:57
         # (150/150) landed under 19:00 (81/150), so /admin/feeds said "request budget spent" in an
@@ -178,17 +249,18 @@ def flush() -> None:
     try:
         from workers.api_clients.db import execute_write
         for book, c in batch.items():
-            execute_write(
-                """INSERT INTO book_footprint (book, hour, requests, challenges, errors, slow, refused)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)
-                   ON CONFLICT (book, hour) DO UPDATE SET
-                     requests = book_footprint.requests + EXCLUDED.requests,
-                     challenges = book_footprint.challenges + EXCLUDED.challenges,
-                     errors = book_footprint.errors + EXCLUDED.errors,
-                     slow = book_footprint.slow + EXCLUDED.slow,
-                     refused = book_footprint.refused + EXCLUDED.refused""",
-                (book, hour, c.get("requests", 0), c.get("challenges", 0), c.get("errors", 0),
-                 c.get("slow", 0), c.get("refused", 0)))
+            vals = (book, hour, c.get("requests", 0), c.get("challenges", 0), c.get("errors", 0),
+                    c.get("slow", 0), c.get("refused", 0))
+            if _refused_by_col:
+                try:
+                    execute_write(_UPSERT_WITH_WHO, vals + (who.get(book) or None,))
+                except Exception as e:  # noqa: BLE001
+                    if "refused_by" not in str(e):
+                        raise
+                    _refused_by_col = False   # migration 445 not applied yet: keep counting without it
+                    execute_write(_UPSERT, vals)
+            else:
+                execute_write(_UPSERT, vals)
             cached = _db_cache.get(book)
             if cached and cached[2] == hour:
                 _db_cache[book] = (cached[0], cached[1] + c.get("requests", 0), hour)

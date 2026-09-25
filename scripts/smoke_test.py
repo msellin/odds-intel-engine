@@ -53170,6 +53170,90 @@ def test_footprint_hour_booking():
     assert at and "budget spent" in at[0], at
 
 
+@test("FOOTPRINT-PRIORITY-RESERVE — deferrable requests stop before the cap; every refusal names its process")
+def test_footprint_priority_reserve():
+    """#151 (2026-09-25). Friday's weekend slate held BOTH books at their hourly budget 10:00-15:00
+    UTC: Tonybet deep boards (~120/h) starved live stats (2 requests in the 14:00 hour, not 30) and
+    the 14:20 results run; the Coolbet sweep's refresh of far-off fixtures got the near-kickoff close
+    refused at 14:53/14:59. Deferrable callers now ask has_headroom() and keep a per-book reserve for
+    the requests that cannot wait. Separately, a stray refusal under budget had no log line anywhere
+    on the VPS, so each refusal now records host/proc/pid into book_footprint.refused_by (mig 445)."""
+    import inspect
+    from pathlib import Path
+    from datetime import datetime, timedelta, timezone
+    import workers.utils.footprint as f
+    import workers.jobs.feed_health as fh
+    import workers.api_clients.db as db
+    from workers.automation import tonybet_feed, coolbet_explorer as ce
+    from workers.jobs import near_kickoff_capture as nk
+
+    calls = []
+    with _PUBLISHER_PATCH_LOCK:  # footprint module state is process-global
+        saved = (f._db_count, db.execute_write, f._refused_by_col)
+        try:
+            f.flush()
+            f._pending.clear(); f._refusers.clear()
+            # 1. reserve thresholds: Tonybet keeps half of 150, Coolbet a fifth of 500
+            f._db_count = lambda book: 74
+            assert f.has_headroom("Tonybet")
+            f._db_count = lambda book: 75
+            assert not f.has_headroom("Tonybet")
+            f._db_count = lambda book: 399
+            assert f.has_headroom("Coolbet")
+            f._db_count = lambda book: 400
+            assert not f.has_headroom("Coolbet")
+            assert f.has_headroom("NoSuchBook")
+            assert not f._pending["Tonybet"]["refused"], "a deferral must never be booked as a refusal"
+            # 2. a refusal records who refused, and flush writes it
+            f._db_count = lambda book: f.budget(book)
+            db.execute_write = _this_thread_only(lambda sql, p=None: calls.append((sql, p)), saved[1])
+            try:
+                f.check("Coolbet")
+                raise AssertionError("check() did not refuse at the budget")
+            except f.FootprintBudgetExceeded:
+                pass
+            f.flush()
+            rows = [p for sql, p in calls if p and p[0] == "Coolbet"]
+            assert rows and "refused_by" in calls[-1][0] and rows[-1][7] and "/" in rows[-1][7][0], calls
+            # 3. before migration 445 is applied, counting continues without the column
+            calls.clear()
+            def _no_col(sql, p=None):
+                if "refused_by" in sql:
+                    raise RuntimeError('column "refused_by" of relation "book_footprint" does not exist')
+                calls.append((sql, p))
+            db.execute_write = _this_thread_only(_no_col, saved[1])
+            f._refused_by_col = True
+            f.record("SmokeBook")
+            f.flush()
+            assert calls and calls[-1][1][0] == "SmokeBook" and len(calls[-1][1]) == 7, calls
+        finally:
+            f._db_count, db.execute_write, f._refused_by_col = saved
+            f._pending.clear(); f._refusers.clear()
+
+    # 4. the deferrable callers are gated; the must-run ones are not
+    bulk = inspect.getsource(tonybet_feed.run_bulk)
+    assert "footprint.has_headroom(BOOKMAKER)" in bulk and "deep_deferred" in bulk
+    assert "has_headroom" not in inspect.getsource(nk), "the near-kickoff close is what the reserve is FOR"
+    for fn in (tonybet_feed.run_live, tonybet_feed.run_results):
+        assert "has_headroom" not in inspect.getsource(fn)
+    sweep = inspect.getsource(ce.run_board_sweep)
+    assert 'footprint.has_headroom("Coolbet")' in sweep and "_within_every_pass_tier" in sweep
+    now = datetime(2026, 9, 25, 12, tzinfo=timezone.utc)
+    assert ce._within_every_pass_tier(now + timedelta(hours=2), now)
+    assert not ce._within_every_pass_tier(now + timedelta(hours=20), now)
+    sched = (Path(__file__).resolve().parent.parent / "workers/scheduler.py").read_text()
+    job = sched[sched.index("def job_coolbet_odds_snapshot"):sched.index("def _coolbet_odds_snapshot_wrapper")]
+    assert "reserve_deferred" in job, (
+        "a pass that deferred for the reserve must not count as 'stored 0 rows for N due fixtures'")
+
+    # 5. the Feeds warning names the refuser
+    w = fh.footprint_warnings({"requests_1h": 39, "budget_1h": 500, "refused_1h": 1,
+                               "challenges_1h": 0, "refused_by": ["mac/foo.py/123"]})
+    assert w and "by mac/foo.py/123" in w[0], w
+    mig = Path(__file__).resolve().parent.parent / "supabase/migrations/445_book_footprint_refused_by.sql"
+    assert "ADD COLUMN IF NOT EXISTS refused_by text[]" in mig.read_text()
+
+
 @test("BOOK-FOOTPRINT — every book request is metered, capped per hour, and warned on before a block")
 def test_book_footprint():
     """#110 (2026-09-23). #108's Imperva flag followed ~7,500 Coolbet requests in 8 h that
@@ -57327,7 +57411,7 @@ def test_admin_feeds_one_source_block_risk():
     assert "share >= 1 || ch >= BLOCK_CHECKS_HIGH" in fn and "share >= BLOCK_RISK_SHARE || ch > 0" in fn
     assert "challenges: Number(cur?.challenges" in model and "requests24h:" in model, "block checks come from the same footprint row"
     lib = _web_path("src/lib/admin-feeds.ts").read_text(encoding="utf-8")
-    assert 'select("book, hour, requests, refused, challenges, errors")' in lib and "coolbetBlockRisk" in lib
+    assert 'select("book, hour, requests, refused, challenges, errors, refused_by")' in lib and "coolbetBlockRisk" in lib
     page = _web_path("src/app/(app)/admin/feeds/page.tsx").read_text(encoding="utf-8")
     assert "coolbetBlockRisk(cbBudget, statusStale)" in page and 'label: "Coolbet block risk"' in page
     assert 'label: "Coolbet requests"' not in page

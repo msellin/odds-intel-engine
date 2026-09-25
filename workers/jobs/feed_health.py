@@ -254,9 +254,17 @@ def _footprint() -> dict[str, dict]:
     except Exception as e:  # noqa: BLE001 — table may predate migration 392
         log.debug("footprint read failed: %s", e)
         return {}
+    # #151 (migration 445): who refused this hour. Separate query so the counts above still
+    # read on a DB where 445 is not applied yet.
+    try:
+        who = {r["book"]: list(r["refused_by"] or []) for r in (execute_query(
+            "SELECT book, refused_by FROM book_footprint WHERE hour = date_trunc('hour', now())") or [])}
+    except Exception:  # noqa: BLE001
+        who = {}
     return {r["book"]: {"requests_1h": int(r["req_1h"] or 0), "challenges_1h": int(r["ch_1h"] or 0),
                         "errors_1h": int(r["err_1h"] or 0), "refused_1h": int(r["ref_1h"] or 0),
-                        "requests_24h": int(r["req_24h"] or 0), "budget_1h": budget(r["book"])}
+                        "requests_24h": int(r["req_24h"] or 0), "budget_1h": budget(r["book"]),
+                        "refused_by": who.get(r["book"]) or []}
             for r in rows}
 
 
@@ -272,7 +280,9 @@ def footprint_warnings(fp: dict | None) -> list[str]:
         # FOOTPRINT-REFUSED-UNDER-BUDGET (2026-09-24): refusals in an hour that is NOT at its
         # budget — the old text said "budget spent" at 73/150. Late booking across the hour turn
         # is fixed in footprint.flush(); what remains (Coolbet, ~1 per error) is #151.
-        out.append(f"{fp['refused_1h']} requests refused this hour while under budget ({req}/{cap}) — see #151")
+        # #151 (migration 445): name the refusing host/proc/pid when the row carries it.
+        by = f" by {', '.join(fp['refused_by'])}" if fp.get("refused_by") else ""
+        out.append(f"{fp['refused_1h']} requests refused this hour while under budget ({req}/{cap}){by} — see #151")
     elif cap and req >= FOOTPRINT_WARN_SHARE * cap:
         out.append(f"{req}/{cap} requests this hour — near the budget")
     ch = fp.get("challenges_1h") or 0

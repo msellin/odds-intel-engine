@@ -300,6 +300,14 @@ book's requests are metered per hour in `book_footprint`, capped by a per-book
 budget that refuses before sending, and warned on at 80% of budget or a rising
 bot-check share — on /admin/feeds, before the block rather than after it.
 
+**And a cap is not a priority (2026-09-25, #151).** The budget held — and starved the
+wrong requests. On a weekend slate the optional work (Tonybet full boards for tomorrow,
+Coolbet refreshes of fixtures a day out) ran first each hour and spent it, so the live
+poll, the results run and the near-kickoff close were the ones refused. **Tell:** a book
+at its budget for several hours in a row, with must-run jobs failing in 0 s on
+`FootprintBudgetExceeded`. Guard: deferrable callers ask `footprint.has_headroom()` and
+leave a per-book reserve; every refusal records its `host/proc/pid` in `book_footprint.refused_by`.
+
 ## 7. A cache that fails closed is worse than no cache
 
 Every negative cache here (league prior, category memo) must:
@@ -1171,6 +1179,8 @@ thing that disagreed was the database, and nothing was comparing the two.
 **The guard:** `MIGRATION-EDITS-ARE-INVISIBLE` asserts every applied migration
 still exists on disk, and pins the follow-up file so it cannot later be deleted
 as a "duplicate" — it is not a duplicate, it is the half of 376 that never ran.
+(Since 2026-09-25, #167: it only counts migrations applied BEFORE the checkout's
+commit time — an older commit's run no longer calls a newer push's migration "missing".)
 
 **The rule:** an applied migration is immutable. New columns get a new file,
 always — even when the edit is one line and the original shipped ten minutes ago.

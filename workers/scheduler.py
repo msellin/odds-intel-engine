@@ -592,7 +592,9 @@ def job_coolbet_odds_snapshot():
             # REFRESH-BY-KICKOFF (#112): a pass where no matched fixture was DUE stores
             # nothing by design (night passes with nothing < 3 h out) — only fixtures that
             # were due count toward "stored nothing" (review #2, 2026-09-24).
-            fixtures = (res.get("matched") or 0) - (res.get("refresh_skipped") or 0)
+            # PRIORITY RESERVE (#151): fixtures deferred to keep budget for the close are not due either.
+            fixtures = ((res.get("matched") or 0) - (res.get("refresh_skipped") or 0)
+                        - (res.get("reserve_deferred") or 0))
             stored = res.get("stored_rows")
             detail = (f"categories {res.get('categories')}, listing fails {res.get('cat_fails', 0)}, "
                       f"matched {res.get('matched')}, due {fixtures}, "
