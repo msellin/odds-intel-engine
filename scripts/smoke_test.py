@@ -58017,5 +58017,29 @@ def test_fair_price_one_rule():
             found.add(str(f.relative_to(_engine_root)))
     assert found <= allowed, f"new de-vig copy outside workers/model/devig.py: {sorted(found - allowed)} — use devig.fair_prob"
 
+
+@test("CLV-SHARP-REAL-BETS — real money is judged on the same sharp-anchor close as every bot, confirmed singles only")
+def test_clv_sharp_real_bets():
+    """#162 W6.4 (2026-09-25). real_bets had only the legacy own-book close (no age limit), so the money
+    page and the bot pages judged CLV differently. clv_sharp scores a fourth ledger 'real_bets' at the odds
+    actually taken ('executed'), CONFIRMED placements only (placed_real IS TRUE — the NULL rows still mix
+    legacy real bets with unlabelled paper rows until #162 W4.1) and singles only. Every view that reads
+    leg_clv_sharp joins on an explicit ledger, so real-bet rows never reach a bot's score."""
+    from workers.jobs import clv_sharp as cs
+    sql = cs._LEGS_SQL["real_bets"]
+    assert "r.placed_real IS TRUE" in sql and "r.combo_legs IS NULL" in sql and "'executed' basis" in sql
+    from workers.api_clients.db import execute_query
+    try:
+        rows = execute_query("""SELECT count(*) AS n FROM leg_clv_sharp c LEFT JOIN real_bets r ON r.id = c.leg_id
+                                 WHERE c.ledger = 'real_bets' AND (r.id IS NULL OR r.placed_real IS NOT TRUE)""")
+        views = execute_query("""SELECT viewname, pg_get_viewdef(viewname::regclass) AS d FROM pg_views
+                                  WHERE schemaname = 'public' AND definition ILIKE '%%leg_clv_sharp%%'""")
+    except Exception:  # noqa: BLE001 — no DB in this environment
+        return
+    assert rows[0]["n"] == 0, "a real_bets CLV row must belong to a confirmed placement"
+    for v in views:
+        joins = v["d"].count("leg_clv_sharp c")
+        assert v["d"].count("c.ledger = '") >= joins or "ledger" in v["d"], v["viewname"]
+
 if __name__ == "__main__":
     main()

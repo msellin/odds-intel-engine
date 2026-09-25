@@ -27,6 +27,8 @@ bot-aggregates, engine-data. (admin-attention.ts: one agreed #139 edit, then #15
 - [x] W4.4 pick_generator real-money supply by bot name (+ is_active/retired filter) — 57b63f75, bot_config re-exported
 - [x] W8.3 sharp anchor age cap (pick_generator + pick_triggers, shared helper)
 - [x] W3.1/W3.2 one fair-price rule + parity pins
+- [x] W6.4 real_bets scored on the sharp-anchor close (engine)
+- [x] W7.3 (part) dead telegram_bot.py deleted
 - [ ] steps per plan, each: smoke test, 1–2 review agents, deploy check
 
 ## Phase 3 — after #157 + #155

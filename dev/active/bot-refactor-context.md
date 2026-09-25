@@ -37,3 +37,9 @@ Parent row: PRIORITY_QUEUE.md #162
   fixed contract/lock_timeout/INSERT/thread stubs) + ops (web ladder layer, readiness blocker, docs).
   Dry runs on prod in BEGIN…ROLLBACK caught a PL/pgSQL CASE-in-IF syntax error before commit.
   NEXT: push engine → migrate applies 436 → web: FLEET_COLS money_gate_contract, ladder layer 8, route 409.
+- ~17:25: landed 4f402bbf (W0 + mig 436), web 232e135, 57b63f75 + web a46ce32 (W4.4, bot_config re-exported
+  on the VPS: source_bots), b488cb9d (W8.3 anchor age 7 h / 2 h-in-12 h shared helper; W3.1/W3.2 fair_prob +
+  FAIR-PRICE-ONE-RULE), bf110d6b (CONTROL-FN-REFUSES follows the lock — CI found it on 4f402bbf).
+  Live verified after each: contract 0, paused, not armed, 0/11 ON.
+- Remaining phase-2 steps mostly need the OWNER's OK (W1.1, W2.1, W2.2, W4.1, W4.2, W6.1) or wait on #164/#165/
+  #155 files. Doing the no-OK free ones next: W6.4 (real_bets into leg_clv_sharp), W7.3 (dead telegram_bot.py).

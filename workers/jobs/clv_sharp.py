@@ -14,6 +14,7 @@ each side separately, so one close can mix moments. Its age is stored
 
 THE PRICE a leg is judged at:
   * picks_forward_test — the published odds ('published')
+  * real_bets — the odds actually taken ('executed'); confirmed singles only (#162 W6.4)
   * simulated_bets / shadow_bets — `odds_at_pick_live` when set ('executable'),
     else `odds_at_pick`, which is a MAX() high-water mark ('high_water') —
     ANALYSIS_GOTCHAS §30. The basis is stored so the two are never pooled blind.
@@ -140,6 +141,21 @@ _LEGS_SQL = {
           FROM shadow_bets s JOIN matches m ON m.id = s.match_id
           LEFT JOIN leg_clv_sharp c ON c.ledger = 'shadow_bets' AND c.leg_id = s.id
          WHERE s.result IN ('won','lost')
+           AND (c.leg_id IS NULL
+                OR (c.status = 'no_fresh_close' AND m.date > now() - interval '3 days')
+                OR ((c.cons_status IS NULL OR (c.cons_status = 'no_consensus' AND c.cons_thin_status IS NULL))
+                    AND m.date > now() - make_interval(days => %(cons_days)s)))""",
+    # #162 W6.4 (2026-09-25): real money judged on the SAME sharp-anchor close as every bot (it had only the
+    # legacy own-book close with no age limit). CONFIRMED placements only (placed_real IS TRUE) — the
+    # NULL rows still mix legacy real bets with unlabelled paper rows until #162 W4.1 sorts them — and
+    # singles only (a combo has no single close). Price = the odds actually taken ('executed').
+    "real_bets": """
+        SELECT r.id::text leg_id, r.match_id::text match_id, r.market, r.selection,
+               r.actual_odds::float odds, 'executed' basis, m.date kickoff, r.bookmaker bk
+          FROM real_bets r JOIN matches m ON m.id = r.match_id
+          LEFT JOIN leg_clv_sharp c ON c.ledger = 'real_bets' AND c.leg_id = r.id
+         WHERE r.placed_real IS TRUE AND r.combo_legs IS NULL AND r.result IN ('won','lost')
+           AND r.actual_odds > 1
            AND (c.leg_id IS NULL
                 OR (c.status = 'no_fresh_close' AND m.date > now() - interval '3 days')
                 OR ((c.cons_status IS NULL OR (c.cons_status = 'no_consensus' AND c.cons_thin_status IS NULL))
