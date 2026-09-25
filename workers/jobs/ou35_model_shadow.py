@@ -39,7 +39,9 @@ EDGE_FLOOR = float(os.getenv("OU35_MODEL_EDGE_FLOOR", "0.08"))
 
 def _bot_id() -> str | None:
     from workers.api_clients.db import execute_query
-    r = execute_query("SELECT id::text AS id FROM bots WHERE name=%s", [BOT_NAME])
+    # RETIRED 2026-09-25 (owner, after its 'review this bot' flag: 460 settled, sharp-anchor CLV −4.5%, upper 95% −4.0%;
+    # migration 438). A retired bot records nothing — the lookup excludes it, so the job becomes a no-op.
+    r = execute_query("SELECT id::text AS id FROM bots WHERE name=%s AND retired_at IS NULL AND is_active", [BOT_NAME])
     return r[0]["id"] if r else None
 
 

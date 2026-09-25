@@ -190,9 +190,8 @@ BOTS: list[BotSpec] = [
 
 
     # Coolbet own-price paper bots
-    BotSpec("bot_ou35_model_v1", FAM_COOLBET_PAPER, "O/U 3.5", ANCHOR_MODEL,
-            0.08, 1.80, False,
-            "Model-edge O/U 3.5 vs Coolbet's own 3.5 price (own isotonic calibration). Paper. +7.8% not-robust, accruing forward."),
+    # bot_ou35_model_v1 RETIRED 2026-09-25 (migration 438, owner): the first 'review this bot' flag (#155) — 460 settled,
+    # sharp-anchor CLV −4.5% (upper 95% −4.0%); #152 step 3 read −8% on the old model. Picks stay in the totals (#157).
 
     # Internal model / strategy validators (paper, not a Coolbet placement path)
     # V10-SPLIT-BY-MARKET (migration 375, 2026-09-22, [[#040]]). `bot_v10_all` was

@@ -58079,5 +58079,19 @@ def test_bot_distribution_and_review_flag():
     assert flag_retired == 0, "the flag covers active bots only"
     assert anon == {"a": False, "b": False}, anon
 
+
+@test("OU35-MODEL-BOT-RETIRED — owner 2026-09-25: retired after its 'review this bot' flag; the job records nothing")
+def test_ou35_model_bot_retired():
+    """The first bot retired by the #155 review flag (bot_review_flag, migration 437): bot_ou35_model_v1, 460 settled,
+    sharp-anchor CLV −4.5%. Retired in the DB (migration 438); its job's bot lookup excludes retired bots so it
+    cannot keep generating (RETIRED-BOTS-KEPT-GENERATING); out of the active registry."""
+    from workers.registry.bot_registry import by_name
+    assert by_name("bot_ou35_model_v1") is None, "retired bot must not be in the active registry"
+    src = _engine_path("workers/jobs/ou35_model_shadow.py").read_text(encoding="utf-8")
+    assert "AND retired_at IS NULL AND is_active" in src
+    mig = _engine_path("supabase/migrations/438_retire_ou35_model_bot.sql").read_text(encoding="utf-8")
+    assert "retired_at = now()" in mig and "'bot_ou35_model_v1'" in mig
+
+
 if __name__ == "__main__":
     main()
