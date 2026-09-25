@@ -1,5 +1,7 @@
 # Unified bot model: step 5a inventory (#139, 2026-09-24)
 
+> **CHANGED 2026-09-26 (#162 W1.3):** the three paper bots' own `settle_picks` (corners / team_total / fh) and their :50/:55/:57 jobs are DELETED, and `_PENDING_SHADOW_BETS_SQL` no longer excludes `corners_ou_%` — `_settle_pending_shadow_bets` is the one shadow settler for those markets (corners via the `_corner_stats` hook). The "settled twice, a race" note below is history.
+
 > **CHANGED 2026-09-24 (#139 IA P6/P7):** `/admin/shadow-bots/[bot]` is RETIRED — it redirects to `/admin/bots?bot=<name>&tab=picks` (the sheet carries Bet made + current prices; the model-edge "Min odds" was dropped, #139 finding b). `/admin/shadow-bots` is now the Pick queue (picks + Place only): its safety strip, scoreboard and promotions were removed (promotions moved to /admin/real-bets).
 
 

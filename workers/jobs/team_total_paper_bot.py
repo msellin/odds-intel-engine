@@ -18,7 +18,8 @@ de-vigged Pinnacle fair value (edge = price * devig_p - 1 >= floor). EUR 10 nomi
 
 Market encoding: team_total_home_15 = home team over/under 1.5 goals. The regex
 excludes first-half team totals (`team_total_1h_*`) — those settle from HT, a later
-bot. Subcommands: pick | settle | report. Never raises out of the scheduler wrappers.
+bot. Subcommands: pick | report (settlement is the generic shadow settler's —
+#162 W1.3). Never raises out of the scheduler wrappers.
 """
 from __future__ import annotations
 
@@ -177,50 +178,11 @@ def generate_picks() -> dict:
     return counters
 
 
-def settle_picks() -> dict:
-    """Grade pending team-total picks from the FINAL score. No settlement gap — every
-    finished match carries a score, so no auto-void is needed. Never raises."""
-    counters = {"settled": 0, "won": 0, "lost": 0}
-    try:
-        from workers.api_clients.db import execute_query, execute_write
-        bot_id = _bot_id()
-        if not bot_id:
-            return counters
-        rows = execute_query(
-            """
-            SELECT sb.id, sb.market, sb.selection, sb.odds_at_pick,
-                   m.score_home, m.score_away
-              FROM shadow_bets sb
-              JOIN matches m ON m.id = sb.match_id
-             WHERE sb.bot_id = %s
-               AND sb.result = 'pending'
-               AND sb.market LIKE 'team_total_%%'
-               AND m.status = 'finished'
-               AND m.score_home IS NOT NULL AND m.score_away IS NOT NULL
-            """,
-            [bot_id],
-        )
-        for r in rows:
-            dec = _decode(r["market"])
-            if dec is None:
-                continue
-            side, line = dec
-            actual = int(r["score_home"] if side == "home" else r["score_away"])
-            over = actual > line          # .5 lines -> never a push
-            won = (over and r["selection"] == "over") or (not over and r["selection"] == "under")
-            pnl = round(STAKE_EUR * (float(r["odds_at_pick"]) - 1.0), 2) if won else -STAKE_EUR
-            execute_write(
-                "UPDATE shadow_bets SET result=%s, pnl=%s WHERE id=%s",
-                ["won" if won else "lost", pnl, r["id"]],
-            )
-            counters["settled"] += 1
-            counters["won" if won else "lost"] += 1
-        if counters["settled"]:
-            log.info("team-total paper: settled %d (%dW/%dL)",
-                     counters["settled"], counters["won"], counters["lost"])
-    except Exception as e:  # noqa: BLE001
-        log.warning("team-total paper settle_picks raised (non-fatal): %s", e)
-    return counters
+# #162 W1.3 (2026-09-26): settle_picks() is DELETED. The generic shadow settler
+# (settlement._settle_pending_shadow_bets) grades team_total_* legs from the final
+# score through its resolver registry (_r_team_total) and writes closes + CLV, which
+# this self-settler never did. One shadow settlement path; the
+# 'team_total_paper_settle' schedule is gone too.
 
 
 def report() -> dict:
@@ -242,12 +204,10 @@ def report() -> dict:
 def main() -> int:
     import argparse, json
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("pick", "settle", "report"))
+    ap.add_argument("cmd", choices=("pick", "report"))
     a = ap.parse_args()
     if a.cmd == "pick":
         print(json.dumps(generate_picks(), default=str, indent=2))
-    elif a.cmd == "settle":
-        print(json.dumps(settle_picks(), default=str, indent=2))
     else:
         print(json.dumps(report(), default=str, indent=2))
     return 0

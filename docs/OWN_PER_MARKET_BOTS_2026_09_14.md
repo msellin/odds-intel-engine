@@ -394,7 +394,7 @@ Not filed here — another agent owns that file this session. Ordered by value.
   and **−4.45% (t=−7.2)** at a 2% probability gate with no dose-response. Retire
   it **in the DB** (per `RETIRED-BOTS-KEPT-GENERATING`, a registry edit alone
   does not stop generation) and record the number. *Do not replace it.*
-* **CORNERS-SETTLER-NO-CLV** 🤖 OWN, ~2h — `corners_paper_bot.settle_picks()`
+* **CORNERS-SETTLER-NO-CLV** *(DONE 2026-09-26, #162 W1.3: the self-settler is deleted; the generic shadow settler grades corners and writes the close + CLV)* 🤖 OWN, ~2h — `corners_paper_bot.settle_picks()`
   writes `clv = NULL` by design, so 639 picks looked unreadable for a week while
   Betano carried a full own-book close on 75.6% of them. Even if the bot is
   retired, wire the close: the next market-specific settler will repeat this.

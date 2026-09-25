@@ -5763,7 +5763,9 @@ def test_coolbet_model_ou_shadow():
 
     # ── the generic settler DOES grade over_under_ shadow rows (not skipped) ──
     settle = open(os.path.join(base, "..", "workers", "jobs", "settlement.py"), encoding="utf-8").read()
-    assert "sb.market NOT LIKE 'corners_ou_%%'" in settle, "shadow settler still scoped to skip corners only"
+    # #162 W1.3: the corners exclusion is gone too — the generic settler now grades
+    # corners_ou_* itself (stats hook), so the pending SQL excludes NO market.
+    assert "NOT LIKE 'corners_ou_" not in settle, "shadow settler must not exclude any market"
     assert "over_under" in settle, "the goals O/U resolver must still match over_under markets"
 
     # ── UI placer: threshold present at 0.08, real money OFF by default ───────
@@ -15014,6 +15016,49 @@ def test_stake_kelly_safety_audit():
                   "Kelly recompute", "Negative-EV", "open_exposure"):
         assert check in src, f"safety audit must include '{check}' check"
     assert "VERDICT" in src, "audit must print a verdict"
+
+
+@test("SHADOW-SELF-SETTLERS-GONE — one shadow settlement path: paper bots no longer grade their own legs")
+def test_shadow_self_settlers_gone():
+    """#162 W1.3 (C-K5), 2026-09-26. The corners, team-total and first-half-1x2 paper
+    bots each graded their own shadow_bets with private settle_picks() functions on
+    their own schedules (:50/:55/:57), writing result + pnl and NO close / CLV —
+    1,183 settled corners legs carried zero closes. The generic shadow settler
+    already had resolvers for all three markets; only corners lacked the stats.
+    Pins: the self-settlers and their schedules are gone, the pending SQL excludes
+    no market, the loop loads corner counts (finished-only) and passes them, a
+    corners leg is graded from corners and never from goals, and the >1-day
+    no-stats auto-void moved into settlement with the same reason string."""
+    import inspect
+    from workers.jobs import corners_paper_bot as cp, team_total_paper_bot as tt
+    from workers.jobs import first_half_1x2_paper_bot as fh
+    import workers.jobs.settlement as st
+    for mod in (cp, tt, fh):
+        assert not hasattr(mod, "settle_picks"), f"{mod.__name__} self-settles again"
+        assert "settle_picks" not in inspect.getsource(mod.main), mod.__name__
+    sched = _engine_path("workers/scheduler.py").read_text()
+    for job in ("corners_paper_settle", "team_total_paper_settle", "fh_1x2_paper_settle"):
+        assert f'id="{job}"' not in sched and f"job_{job}" not in sched, f"{job} is scheduled again"
+    assert "NOT LIKE" not in st._PENDING_SHADOW_BETS_SQL, (
+        "the pending shadow SQL excludes a market again — that market would need a self-settler")
+    loop = inspect.getsource(st._settle_pending_shadow_bets)
+    assert "_corner_stats(match_id)" in loop and "stats=stats" in loop, (
+        "the shadow loop must load corner counts and pass them to settle_bet_result")
+    hook = inspect.getsource(st._corner_stats)
+    assert "match_stats" in hook and "m.status = 'finished'" in hook, "corners grade from finished counts only"
+    # graded from the corner COUNT: 2-1 goals but 7+4=11 corners on a 9.5 line
+    bet = {"market": "corners_ou_95", "selection": "over", "stake": 10.0, "odds_at_pick": 2.0, "id": 1}
+    r = st.settle_bet_result(bet, 2, 1, None, stats={"corners_home": 7, "corners_away": 4})
+    assert r["result"] == "won" and r["pnl"] == 10.0, r
+    assert st.settle_bet_result(dict(bet, selection="under"), 2, 1, None,
+                                stats={"corners_home": 7, "corners_away": 4})["result"] == "lost"
+    assert st.settle_bet_result(bet, 2, 1, None)["result"] == "skip", "no stats must SKIP, never goal-grade"
+    # the auto-void moved, with the bot's exact reason string, and runs in settle_ready
+    assert st._CORNERS_VOID_REASON.startswith("corners unsettleable"), "reason string changed"
+    ready = inspect.getsource(st.settle_ready_matches)
+    assert "void_ungradeable_corners_bets()" in ready, "the corners void sweep is not wired"
+    vs = inspect.getsource(st.void_ungradeable_corners_bets)
+    assert "UPDATE shadow_bets" in vs and "interval '1 day'" in vs and "simulated_bets" not in vs
 
 
 @test("LEAGUE-CLV-EFFICIENCY — per-league CLV index script + weekly cron wired")
@@ -37477,22 +37522,22 @@ def test_corners_paper_forward():
         "the paper bot no longer de-vigs Pinnacle — edge would be measured "
         "against a vigged line"
     )
-    assert "ms.corners_home" in code, "the settle path no longer reads match_stats corners"
+    # #162 W1.3: this module no longer settles (the generic shadow settler does,
+    # from match_stats corners via settlement._corner_stats) — SHADOW-SELF-SETTLERS-GONE.
+    assert "def settle_picks" not in code, "the corners bot must not self-settle again"
     # PAPER ONLY: it must never touch the real placer / post a bet.
     assert "place_all_bets" not in code and "execute=True" not in code, (
         "the corners paper bot references real placement — it must stay paper-only"
     )
 
-    # (3) the generic goals-based shadow settler MUST exclude corners_ou_% or it
-    # grades them on the goal score and silently voids every corners pick. The
-    # wildcard is doubled because the SQL string is bound with params at every
-    # call site (a lone percent is read as a parameter marker).
+    # (3) #162 W1.3 (2026-09-26): the generic shadow settler used to EXCLUDE
+    # corners_ou_% here (it passed no stats, so it could not grade them). It now
+    # loads the corner counts itself and grades corners through _r_corners_ou, so
+    # the exclusion is gone on purpose — the behaviour is pinned by
+    # SHADOW-SELF-SETTLERS-GONE, which also checks corners are never goal-graded.
     st = open(os.path.join(root, "..", "workers", "jobs", "settlement.py"), encoding="utf-8").read()
     assert "_PENDING_SHADOW_BETS_SQL" in st
-    assert "NOT LIKE 'corners_ou_%%'" in st, (
-        "the generic shadow settler no longer excludes corners_ou markets (or the "
-        "wildcard is not doubled) — it would void the corners paper bot's picks"
-    )
+    assert "def _corner_stats(" in st, "the generic settler lost its corners stats hook"
 
 
 @test("SETTLEMENT-GOLDEN — registry refactor grades every known market byte-identically")
@@ -39077,14 +39122,14 @@ def test_team_total_paper_bot():
     assert tt._decode("team_total_1h_home_05") is None, "must EXCLUDE first-half team totals"
     gp = inspect.getsource(tt.generate_picks)
     assert "team_total_(home|away)_[0-9]+" in gp and "Pinnacle" in gp, "line-shop vs Pinnacle sharp anchor"
-    sp = inspect.getsource(tt.settle_picks)
-    assert "score_home" in sp and "score_away" in sp, "settles from the final score (no gap)"
+    # #162 W1.3: settled by the generic registry (_r_team_total), not by the bot.
+    assert not hasattr(tt, "settle_picks"), "the team-total bot must not self-settle again"
     # registered in the bot registry (SYSTEM-MAP drift)
     reg = open("workers/registry/bot_registry.py").read()
     assert "bot_team_total_paper_shadow_v1" in reg, "must be in the bot registry"
     # scheduled (pick + settle)
     sched = open("workers/scheduler.py").read()
-    assert "job_team_total_paper_pick" in sched and "job_team_total_paper_settle" in sched
+    assert "job_team_total_paper_pick" in sched and "job_team_total_paper_settle" not in sched
 
 
 @test("TEAM-TOTAL-SETTLEMENT — the registry grades team_total from the final score, no pending pile-up")
@@ -39132,12 +39177,12 @@ def test_first_half_1x2_paper_bot():
     gp = inspect.getsource(b.generate_picks)
     assert "devig(" in gp and "1x2_1h" in gp, "must Shin-de-vig the Pinnacle 1H triple (3-way sharp anchor)"
     assert "home" in gp and "draw" in gp and "away" in gp, "3-way selections"
-    sp = inspect.getsource(b.settle_picks)
-    assert "ht_score_home" in sp and "ht_score_away" in sp, "settles from the HT score"
+    # #162 W1.3: settled by the generic registry (_r_1x2_1h, HT score), not by the bot.
+    assert not hasattr(b, "settle_picks"), "the 1H bot must not self-settle again"
     reg = open("workers/registry/bot_registry.py").read()
     assert "bot_1h_1x2_paper_shadow_v1" in reg, "must be in the bot registry"
     sched = open("workers/scheduler.py").read()
-    assert "job_fh_1x2_paper_pick" in sched and "job_fh_1x2_paper_settle" in sched
+    assert "job_fh_1x2_paper_pick" in sched and "job_fh_1x2_paper_settle" not in sched
 
 
 @test("HT-SCORE-NEVER-ARRIVES — 1H bets with no half-time score get VOIDED, not re-alerted forever")

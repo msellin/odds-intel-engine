@@ -106,17 +106,15 @@ LEFT JOIN matches m ON sb.match_id = m.id
 LEFT JOIN teams ht ON m.home_team_id = ht.id
 LEFT JOIN teams ta ON m.away_team_id = ta.id
 WHERE sb.result = 'pending'
--- CORNERS-PAPER-FORWARD-2026-09-07: bot_corners_paper_shadow_v1 writes
--- market='corners_ou_<line>' rows. settle_bet_result() grades on the GOAL
--- score and matches none of its branches, so it would silently VOID every
--- corners pick. Those rows are settled from match_stats corners by
--- workers/jobs/corners_paper_bot.settle_picks() instead — keep the generic
--- goals settler away from them.
--- NB: the LIKE pattern doubles its wildcard char. This SQL string is passed to
--- psycopg2 with bound params at every call site, so a literal percent sign must
--- be doubled or it is read as a parameter marker (IndexError at runtime). For
--- the same reason this comment must not contain a lone percent sign either.
-  AND sb.market NOT LIKE 'corners_ou_%%'
+-- #162 W1.3 (2026-09-26): corners_ou_<line> rows are NO LONGER excluded here.
+-- From CORNERS-PAPER-FORWARD-2026-09-07 until now they were, and
+-- corners_paper_bot.settle_picks() graded them on its own — with no closing
+-- price and no CLV at all (1,183 settled corners legs, zero closes). The
+-- generic loop now loads the corner counts itself (_corner_stats) and grades
+-- them through _r_corners_ou, so corners get closes like every other leg.
+-- ONE shadow settlement path: the three paper bots' settle_picks are deleted.
+-- This SQL string is bound with params at every call site: never put a lone
+-- percent sign in it, not even in a comment.
 """
 
 
@@ -463,11 +461,32 @@ def _decode_corners_line(market: str) -> float | None:
     return int(m.group(1)) / 10.0 if m else None
 
 
+def _corner_stats(match_id) -> dict | None:
+    """{'corners_home', 'corners_away'} for a FINISHED match, or None when AF has
+    not (or never will) publish the corner counts. #162 W1.3: the stats hook the
+    shadow settle loop passes to settle_bet_result for corners_ou_* legs. Reads
+    exactly what corners_paper_bot.settle_picks read (match_stats corners), plus
+    a finished-status guard so a partial in-play count can never grade a bet."""
+    rows = execute_query(
+        """SELECT ms.corners_home, ms.corners_away
+             FROM match_stats ms JOIN matches m ON m.id = ms.match_id
+            WHERE ms.match_id = %s AND m.status = 'finished'
+              AND ms.corners_home IS NOT NULL AND ms.corners_away IS NOT NULL
+            LIMIT 1""",
+        [str(match_id)],
+    )
+    if not rows:
+        return None
+    return {"corners_home": int(rows[0]["corners_home"]),
+            "corners_away": int(rows[0]["corners_away"])}
+
+
 def _r_corners_ou(market, selection, home_goals, away_goals, stats):
     """Corners are settled from the corner COUNT, not the goal score. Needs
-    stats={'corners_home','corners_away'} — without it we cannot grade, so SKIP
-    (this is why the generic goals-path, which passes no stats, leaves corners
-    pending for corners_paper_bot to settle)."""
+    stats={'corners_home','corners_away'} — without it we cannot grade, so SKIP.
+    The shadow settle loop passes them via _corner_stats (#162 W1.3); callers
+    that pass no stats (resettle_wrongly_voided_bets, simulated_bets — which
+    carry no corners legs) still SKIP, never guess."""
     if not stats:
         return _UNSETTLEABLE
     ch, ca = stats.get("corners_home"), stats.get("corners_away")
@@ -2386,6 +2405,13 @@ def settle_ready_matches():
     except Exception as e:
         console.print(f"  [yellow]1H void sweep error (non-fatal): {e}[/yellow]")
 
+    # #162 W1.3 — the corners twin of the sweep above (moved here from
+    # corners_paper_bot.settle_picks, which is deleted).
+    try:
+        void_ungradeable_corners_bets()
+    except Exception as e:
+        console.print(f"  [yellow]Corners void sweep error (non-fatal): {e}[/yellow]")
+
 
 _WRONGLY_VOIDED_SQL = """
 SELECT
@@ -2501,6 +2527,34 @@ def void_ungradeable_1h_bets(min_age_h: int = _HT_VOID_AFTER_H,
             f"(reason={_HT_VOID_REASON}, reversible if AF backfills)[/yellow]"
         )
     return out
+
+
+# CORNERS-SETTLEMENT-GATE (2026-09-10), moved here by #162 W1.3. AF publishes
+# corner counts for only part of the finished fixtures (gotcha 56), so a corners
+# leg on a match finished more than a day ago with no counts will never grade.
+# Void it with the same reason string corners_paper_bot used, so pending means
+# truly open. shadow_bets only: no simulated_bets or real_bets row is a corners leg.
+_CORNERS_VOID_REASON = "corners unsettleable — no AF corner stats (non-reporting league)"
+
+
+def void_ungradeable_corners_bets() -> int:
+    """Void pending corners_ou_* shadow legs whose finished match (older than a
+    day) has no corner counts. Returns the number voided. Steady state: zero."""
+    n = execute_write(
+        """UPDATE shadow_bets sb SET result='void', void_reason=%s
+             FROM matches m
+            WHERE sb.match_id = m.id
+              AND sb.result = 'pending'
+              AND sb.market LIKE 'corners_ou_%%'
+              AND m.status = 'finished'
+              AND m.date < now() - interval '1 day'
+              AND NOT EXISTS (SELECT 1 FROM match_stats ms
+                               WHERE ms.match_id = sb.match_id AND ms.corners_home IS NOT NULL)""",
+        [_CORNERS_VOID_REASON],
+    ) or 0
+    if n:
+        console.print(f"[yellow]Corners void sweep: voided {n} unsettleable corners leg(s)[/yellow]")
+    return n
 
 
 def resettle_wrongly_voided_bets(limit: int = 2000, dry_run: bool = False) -> dict:
@@ -4196,6 +4250,21 @@ def _settle_pending_shadow_bets(pending: list, finished: list) -> int:
         odds_market = _normalize_bet_market(bet["market"], bet["selection"])
         odds_selection = _normalize_bet_selection(bet["selection"])
 
+        # #162 W1.3 — the corners stats hook. corners_ou_* grade on the corner
+        # COUNT, which this loop used to never load (so corners were excluded
+        # from the pending SQL and self-settled by corners_paper_bot, with no
+        # close). No counts yet is the common, expected case — AF publishes
+        # corners for only part of the fixtures, sometimes hours late — so it
+        # is a quiet skip, not the "Unsettleable market" alert; a finished
+        # match still without counts after a day is voided by
+        # void_ungradeable_corners_bets, exactly as the bot used to.
+        stats = None
+        if str(bet.get("market", "")).startswith("corners_ou_"):
+            stats = _corner_stats(match_id)
+            if stats is None:
+                skipped += 1
+                continue
+
         # SHADOW-CLV-BOOKMAKER-FIX-2026-08-26: prefer the book the bot actually
         # priced at, so `closing_odds` answers "what happened to MY price"
         # rather than "what happened to whichever book sorted last".
@@ -4286,11 +4355,12 @@ def _settle_pending_shadow_bets(pending: list, finished: list) -> int:
         except Exception as _e:  # never let a CLV lookup block a settlement
             console.print(f"  [dim]devigged-pinnacle CLV failed for {bet['id']}: {_e}[/dim]")
 
-        settlement = settle_bet_result(bet, score_home, score_away, closing_odds)
+        settlement = settle_bet_result(bet, score_home, score_away, closing_odds,
+                                       stats=stats)
 
-        # SETTLEMENT-RESOLVER-REGISTRY: leave ungradeable markets pending (the
-        # corners paper bot settles corners_ou itself; anything else unknown must
-        # not be written as 'skip' or feed a None pnl into the totals).
+        # SETTLEMENT-RESOLVER-REGISTRY: leave ungradeable markets pending (an
+        # unknown market must not be written as 'skip' or feed a None pnl into
+        # the totals).
         if settlement["result"] == "skip":
             _alert_unsettleable(bet)
             skipped += 1

@@ -2558,21 +2558,6 @@ def job_corners_paper_pick():
     _run_job("corners_paper_pick", _job_corners_paper_pick_impl)
 
 
-def _job_corners_paper_settle_impl():
-    """CORNERS-PAPER-FORWARD: grade pending corners paper picks from finished
-    match_stats corner counts."""
-    from workers.jobs.corners_paper_bot import settle_picks
-    c = settle_picks()
-    if c.get("settled"):
-        console.print(f"[cyan]corners paper: settled {c['settled']} ({c['won']}W/{c['lost']}L)[/cyan]")
-
-
-def job_corners_paper_settle():
-    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
-    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
-    _run_job("corners_paper_settle", _job_corners_paper_settle_impl)
-
-
 def _job_team_total_paper_pick_impl():
     """USE-COLLECTED-MARKETS / TEAM-TOTAL-PAPER (2026-09-10): record paper picks for
     upcoming fixtures where the best Epicbet/Betano/Unibet full-match team-total price
@@ -2588,21 +2573,6 @@ def job_team_total_paper_pick():
     """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
     pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
     _run_job("team_total_paper_pick", _job_team_total_paper_pick_impl)
-
-
-def _job_team_total_paper_settle_impl():
-    """TEAM-TOTAL-PAPER: grade pending team-total picks from the final score
-    (matches.score_home/away) — no settlement-coverage gap."""
-    from workers.jobs.team_total_paper_bot import settle_picks
-    c = settle_picks()
-    if c.get("settled"):
-        console.print(f"[cyan]team-total paper: settled {c['settled']} ({c['won']}W/{c['lost']}L)[/cyan]")
-
-
-def job_team_total_paper_settle():
-    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
-    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
-    _run_job("team_total_paper_settle", _job_team_total_paper_settle_impl)
 
 
 def _job_fh_1x2_paper_pick_impl():
@@ -2651,20 +2621,6 @@ def job_xg_late_fill():
         c = run()
         console.print(f"[cyan]xg_late_fill: {c}[/cyan]")
     _run_job("xg_late_fill", _go)
-
-
-def _job_fh_1x2_paper_settle_impl():
-    """FIRST-HALF-1X2: grade pending picks from the HT score (no gap)."""
-    from workers.jobs.first_half_1x2_paper_bot import settle_picks
-    c = settle_picks()
-    if c.get("settled"):
-        console.print(f"[cyan]fh-1x2 paper: settled {c['settled']} ({c['won']}W/{c['lost']}L)[/cyan]")
-
-
-def job_fh_1x2_paper_settle():
-    """Scheduled entry. #034: the body runs INSIDE _run_job, so a crash becomes a FAILED
-    pipeline_runs row (it used to run outside and then log a no-op lambda as completed)."""
-    _run_job("fh_1x2_paper_settle", _job_fh_1x2_paper_settle_impl)
 
 
 def _job_coolbet_model_ou_shadow_impl():
@@ -4104,23 +4060,20 @@ def main():
     # COOLBET-CROSS-BOOK-SANITY-GUARD: :25/:55, after AF (:00/:30) + Coolbet (:03/:33) sweeps land.
     scheduler.add_job(job_coolbet_price_sanity, CronTrigger(minute="25,55"),
                       id="coolbet_price_sanity", name="Coolbet Price Sanity")
-    # CORNERS-PAPER-FORWARD: pick across the day (odds update), settle after matches finish.
+    # CORNERS-PAPER-FORWARD: pick across the day (odds update).
+    # #162 W1.3 (2026-09-26): the three paper SETTLE jobs (corners :50, team total :55,
+    # first-half 1x2 :57) are gone — the generic shadow settler in settle_ready grades
+    # these markets every 15 min, with closes + CLV the self-settlers never wrote.
     scheduler.add_job(job_corners_paper_pick, CronTrigger(hour="8,12,16,20", minute=20),
                       id="corners_paper_pick", name="Corners Paper Pick")
-    scheduler.add_job(job_corners_paper_settle, CronTrigger(minute=50),
-                      id="corners_paper_settle", name="Corners Paper Settle")
     scheduler.add_job(job_team_total_paper_pick, CronTrigger(hour="8,12,16,20", minute=25),
                       id="team_total_paper_pick", name="Team Total Paper Pick")
-    scheduler.add_job(job_team_total_paper_settle, CronTrigger(minute=55),
-                      id="team_total_paper_settle", name="Team Total Paper Settle")
     scheduler.add_job(job_fh_1x2_paper_pick, CronTrigger(hour="8,12,16,20", minute=27),
                       id="fh_1x2_paper_pick", name="First-Half 1x2 Paper Pick")
     scheduler.add_job(job_clv_sharp, CronTrigger(hour=1, minute=40),
                       id="clv_sharp", name="CLV vs sharp close (after overnight settlement)")
     scheduler.add_job(job_xg_late_fill, CronTrigger(hour=2, minute=20),
                       id="xg_late_fill", name="Re-fetch stats whose xG AF added late (#111)")
-    scheduler.add_job(job_fh_1x2_paper_settle, CronTrigger(minute=57),
-                      id="fh_1x2_paper_settle", name="First-Half 1x2 Paper Settle")
     # COOLBET-MODEL-OU-SHADOW-BOT: mirror calibrated model O/U picks into
     # shadow_bets at :10/:40, alongside the shadow interval run, so the
     # model-edge O/U picks the UI placer reads stay current. No settler branch —

@@ -14,16 +14,17 @@ fixture take the best price among the books we can actually place corners at
 price beats de-vigged Pinnacle fair value (edge = price * devig_p - 1 >= 0).
 EUR 10 nominal. Settled from match_stats.corners_home + corners_away.
 
-The generic goals-based shadow settler is taught to SKIP corners_ou_% markets
-(settlement.py, _PENDING_SHADOW_BETS_SQL) — it grades on the goal score and
-would silently VOID these. settle_picks() below grades them from corner counts.
+Settlement (#162 W1.3, 2026-09-26): the generic shadow settler grades corners_ou_*
+from the corner counts (settlement._corner_stats -> _r_corners_ou) and writes the
+close + CLV. Until then this module self-settled them with no close at all, and
+the generic settler excluded corners from its pending SQL.
 
 Why paper, not real money: the historical +20.99% did NOT reproduce at
 executable prices (audit z=+0.33..+3.62, edge Betano/Unibet-only, Epicbet
 negative, no dose-response, one 9-day pre-collapse window). Prove it forward on
 real executable prices first.
 
-Subcommands: pick | settle | report. Never raises out of the scheduler wrappers.
+Subcommands: pick | report. Never raises out of the scheduler wrappers.
 """
 from __future__ import annotations
 
@@ -230,89 +231,12 @@ def generate_picks() -> dict:
     return counters
 
 
-def settle_picks() -> dict:
-    """Grade this bot's pending corners picks whose match has a finished corner
-    count. Writes result + pnl into shadow_bets. Never raises.
-
-    CORNERS-ANCHOR-EXISTS-2026-09-14 — this docstring used to say "clv columns
-    stay NULL — no corners closing anchor is wired", and that premise was FALSE.
-    Pinnacle prices corners on 2,045 fixtures / 43 lines in 30 days, covering
-    95% of the corners fixtures Coolbet quotes and 87% of Epicbet's. The bot
-    already de-vigs that same Pinnacle line to SELECT (see _devig_two_way) — the
-    settler simply never used it.
-
-    Cost of the belief: 568 settled picks with no CLV at all, so the bot could
-    not be judged on the only basis that decides anything, while its unanchored
-    +9.60% ROI sat on the dashboard looking like evidence. Recomputed from
-    odds_snapshots afterwards: margin-corrected own-book CLV -4.86%,
-    CI [-5.59,-4.12], t=-12.93, n=467 — decisively losing, which is why the bot
-    is retired (migration 351).
-
-    The lesson is RELIABILITY_LEDGER's: a capability assumed absent is never
-    re-checked. The anchor was there the whole time."""
-    counters = {"settled": 0, "won": 0, "lost": 0, "voided": 0}
-    try:
-        from workers.api_clients.db import execute_query, execute_write
-        bot_id = _bot_id()
-        if not bot_id:
-            return counters
-
-        # AUTO-VOID stale unsettleable picks (CORNERS-SETTLEMENT-GATE 2026-09-10): a
-        # match finished >1 day ago with no AF corner stats will NEVER settle (the ~83%
-        # AF ceiling / a non-reporting league). Void it — excluded from ROI and cleared
-        # from the pending list — rather than leave it "waiting" forever. The league
-        # gate stops NEW ones; this cleans the historical tail so pending == truly-open.
-        voided = execute_write(
-            """UPDATE shadow_bets sb SET result='void',
-                      void_reason='corners unsettleable — no AF corner stats (non-reporting league)'
-                 FROM matches m
-                WHERE sb.match_id = m.id
-                  AND sb.bot_id = %s
-                  AND sb.result = 'pending'
-                  AND sb.market LIKE 'corners_ou_%%'
-                  AND m.status = 'finished'
-                  AND m.date < now() - interval '1 day'
-                  AND NOT EXISTS (SELECT 1 FROM match_stats ms
-                                   WHERE ms.match_id = sb.match_id AND ms.corners_home IS NOT NULL)""",
-            [bot_id],
-        )
-        counters["voided"] = voided or 0
-        if counters["voided"]:
-            log.info("corners paper: voided %d stale unsettleable picks", counters["voided"])
-
-        rows = execute_query(
-            """
-            SELECT sb.id, sb.market, sb.selection, sb.odds_at_pick,
-                   (ms.corners_home + ms.corners_away) AS actual
-              FROM shadow_bets sb
-              JOIN match_stats ms ON ms.match_id = sb.match_id
-             WHERE sb.bot_id = %s
-               AND sb.result = 'pending'
-               AND sb.market LIKE 'corners_ou_%%'
-               AND ms.corners_home IS NOT NULL AND ms.corners_away IS NOT NULL
-            """,
-            [bot_id],
-        )
-        for r in rows:
-            line = _decode_line(r["market"])
-            if line is None:
-                continue
-            actual = int(r["actual"])
-            over = actual > line          # .5 lines -> never a push
-            won = (over and r["selection"] == "over") or (not over and r["selection"] == "under")
-            pnl = round(STAKE_EUR * (float(r["odds_at_pick"]) - 1.0), 2) if won else -STAKE_EUR
-            execute_write(
-                "UPDATE shadow_bets SET result=%s, pnl=%s WHERE id=%s",
-                ["won" if won else "lost", pnl, r["id"]],
-            )
-            counters["settled"] += 1
-            counters["won" if won else "lost"] += 1
-        if counters["settled"]:
-            log.info("corners paper: settled %d (%dW/%dL)",
-                     counters["settled"], counters["won"], counters["lost"])
-    except Exception as e:
-        log.warning("corners paper settle_picks raised (non-fatal): %s", e)
-    return counters
+# #162 W1.3 (2026-09-26): settle_picks() is DELETED. The generic shadow settler
+# (settlement._settle_pending_shadow_bets) grades corners_ou_* legs from match_stats
+# corner counts through its resolver registry (_r_corners_ou, fed by the _corner_stats
+# hook; the >1-day no-stats auto-void is void_ungradeable_corners_bets) and writes
+# closes + CLV, which this self-settler never did. One shadow settlement path; the
+# 'corners_paper_settle' schedule is gone too.
 
 
 def report() -> dict:
@@ -345,12 +269,10 @@ def report() -> dict:
 def main() -> int:
     import argparse, json
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("pick", "settle", "report"))
+    ap.add_argument("cmd", choices=("pick", "report"))
     a = ap.parse_args()
     if a.cmd == "pick":
         print(json.dumps(generate_picks(), default=str, indent=2))
-    elif a.cmd == "settle":
-        print(json.dumps(settle_picks(), default=str, indent=2))
     else:
         print(json.dumps(report(), default=str, indent=2))
     return 0

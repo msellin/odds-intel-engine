@@ -9,7 +9,8 @@ for an upcoming fixture, de-vig the Pinnacle 1H home/draw/away triple with the
 shared `workers.model.devig.devig` (Shin-de-vig — the SAME sharp anchor the trigger
 engine uses), then for each selection take the best reachable book price (Epicbet/
 Betano/Unibet) and record a paper pick when price*P_sharp - 1 >= floor. EUR 10
-nominal, shadow_bets only. Subcommands: pick | settle | report.
+nominal, shadow_bets only. Subcommands: pick | report (settlement is the generic
+shadow settler's — #162 W1.3).
 """
 from __future__ import annotations
 
@@ -229,39 +230,11 @@ def verify_epicbet_picks() -> dict:
     return c
 
 
-def settle_picks() -> dict:
-    """Grade pending 1H-1X2 picks from the HALF-TIME result. No settlement gap."""
-    counters = {"settled": 0, "won": 0, "lost": 0}
-    try:
-        from workers.api_clients.db import execute_query, execute_write
-        bot_id = _bot_id()
-        if not bot_id:
-            return counters
-        rows = execute_query(
-            """
-            SELECT sb.id, sb.selection, sb.odds_at_pick, m.ht_score_home, m.ht_score_away
-              FROM shadow_bets sb JOIN matches m ON m.id = sb.match_id
-             WHERE sb.bot_id = %s AND sb.result = 'pending' AND sb.market = '1x2_1h'
-               AND m.status = 'finished'
-               AND m.ht_score_home IS NOT NULL AND m.ht_score_away IS NOT NULL
-            """,
-            [bot_id],
-        )
-        for r in rows:
-            hh, ha = int(r["ht_score_home"]), int(r["ht_score_away"])
-            result = "home" if hh > ha else ("away" if ha > hh else "draw")
-            won = r["selection"] == result
-            pnl = round(STAKE_EUR * (float(r["odds_at_pick"]) - 1.0), 2) if won else -STAKE_EUR
-            execute_write("UPDATE shadow_bets SET result=%s, pnl=%s WHERE id=%s",
-                          ["won" if won else "lost", pnl, r["id"]])
-            counters["settled"] += 1
-            counters["won" if won else "lost"] += 1
-        if counters["settled"]:
-            log.info("fh-1x2 paper: settled %d (%dW/%dL)",
-                     counters["settled"], counters["won"], counters["lost"])
-    except Exception as e:  # noqa: BLE001
-        log.warning("fh-1x2 paper settle_picks raised (non-fatal): %s", e)
-    return counters
+# #162 W1.3 (2026-09-26): settle_picks() is DELETED. The generic shadow settler
+# (settlement._settle_pending_shadow_bets) grades 1x2_1h legs from the half-time score
+# through its resolver registry (_r_1x2_1h, which also fetches a missing HT score from
+# AF) and writes closes + CLV, which this self-settler never did. One shadow
+# settlement path; the 'fh_1x2_paper_settle' schedule is gone too.
 
 
 def report() -> dict:
@@ -280,9 +253,9 @@ def report() -> dict:
 def main() -> int:
     import argparse, json
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=("pick", "settle", "report"))
+    ap.add_argument("cmd", choices=("pick", "report"))
     a = ap.parse_args()
-    fn = {"pick": generate_picks, "settle": settle_picks, "report": report}[a.cmd]
+    fn = {"pick": generate_picks, "report": report}[a.cmd]
     print(json.dumps(fn(), default=str, indent=2))
     return 0
 
