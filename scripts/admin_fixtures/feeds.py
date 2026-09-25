@@ -16,7 +16,7 @@ def snapshot(rows) -> dict:
         "feeds": rows("SELECT * FROM feed_status"),
         "books": rows("SELECT * FROM feed_book_stats"),
         "dq": rows("SELECT * FROM data_quality_findings WHERE found_at > now() - interval '7 days' "
-                   "ORDER BY found_at DESC LIMIT 100"),
+                   "ORDER BY found_at DESC, id DESC LIMIT 5000"),
         "snapshot": snap[0] if snap else None,
         "last_live_at": live[0]["at"] if live else None,
         "footprint": rows("SELECT book, hour, requests, refused, challenges, errors FROM book_footprint "

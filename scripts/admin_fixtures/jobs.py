@@ -3,7 +3,9 @@ production: view pipeline_job_latest (migration 417), failed pipeline_runs of th
 pending simulated_bets with their kickoff, today's ops_snapshots row, signups in 7 days; plus
 (#139 UX fix round) the feeds with a run-now control and the newest 20 runs of every job for the
 detail drawer (/api/admin/job-runs answers from `recent_runs` in the preview); and (answer-first
-round, 2026-09-25) the retired_jobs names (migration 426), left out of the failures chart."""
+round, 2026-09-25) the retired_jobs names (migration 426), left out of the failures chart; and (round 6, 2026-09-25) `cadence_runs` — the start/finish
+times loadJobCadence reads (last 4 days, plus up to 14 days for jobs quiet longer; shadow slots
+left out), from which the page derives each job's usual gap and the Late state."""
 
 
 def snapshot(rows) -> dict:
@@ -18,12 +20,17 @@ def snapshot(rows) -> dict:
             "AND job_name NOT IN ('hist_backfill','backfill_coaches','backfill_transfers') "
             "ORDER BY started_at DESC LIMIT 5000"),
         "pending": rows(
-            "SELECT b.id, b.market, b.pick_time, b.bot_id, m.date AS match_kickoff "
+            "SELECT b.id, b.market, b.pick_time, b.bot_id, m.date AS match_kickoff, m.status::text AS match_status "
             "FROM simulated_bets b LEFT JOIN matches m ON m.id = b.match_id "
             "WHERE b.result = 'pending' ORDER BY b.pick_time LIMIT 5000"),
         "snapshot": snap[0] if snap else None,
         "feeds": rows("SELECT feed_id, label, book, schedule, controls, paused, run_now_pending FROM feed_status"),
         "recent_runs": _recent_runs(rows),
+        "cadence_runs": rows(
+            "SELECT job_name, started_at, completed_at, status FROM pipeline_runs WHERE job_name NOT LIKE 'shadow_%' AND ("
+            "started_at > now() - interval '4 days' OR (started_at > now() - interval '14 days' AND job_name IN ("
+            "SELECT job_name FROM pipeline_job_latest WHERE started_at <= now() - interval '4 days'))) "
+            "ORDER BY started_at"),
         "retired": [r["job_name"] for r in rows("SELECT job_name FROM retired_jobs")],
         "signups_7d": rows("SELECT count(*) AS n FROM profiles WHERE created_at > now() - interval '7 days'")[0]["n"],
     }

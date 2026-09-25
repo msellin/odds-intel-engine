@@ -214,11 +214,20 @@ def main() -> None:
             "stale_pending": _rows(
                 """SELECT count(*) AS n FROM simulated_bets b JOIN matches m ON m.id = b.match_id
                     WHERE b.result = 'pending' AND m.date < now() - interval '150 minutes'""")[0]["n"],
-            "dq_24h": _rows(
-                # DISTINCT problems (check x match x book), the same rule as src/lib/admin-overview.ts
-                """SELECT check_name, count(DISTINCT coalesce(match_id::text,'') || '|' || coalesce(bookmaker,'')) AS n
-                     FROM data_quality_findings
-                    WHERE found_at > now() - interval '24 hours' GROUP BY 1"""),
+            # same reads as src/lib/admin-overview.ts (round 6): 7 days of findings (dqProblems/dqAdvice run
+            # in the page), each job's run history (usual gaps), and postponed leftovers (simulated + shadow)
+            "dq_findings": _rows("SELECT * FROM data_quality_findings WHERE found_at > now() - interval '7 days' ORDER BY found_at DESC LIMIT 5000"),
+            "cadence_runs": _rows(
+                "SELECT job_name, started_at, completed_at, status FROM pipeline_runs WHERE job_name NOT LIKE 'shadow_%' AND ("
+                "started_at > now() - interval '4 days' OR (started_at > now() - interval '14 days' AND job_name IN ("
+                "SELECT job_name FROM pipeline_job_latest WHERE started_at <= now() - interval '4 days'))) ORDER BY started_at"),
+            "postponed_open": _rows(
+                """SELECT count(*) AS n FROM (
+                     SELECT b.match_id FROM simulated_bets b JOIN matches m ON m.id = b.match_id
+                      WHERE b.result = 'pending' AND m.status IN ('postponed','cancelled') AND m.date < now() - interval '6 hours'
+                     UNION ALL
+                     SELECT b.match_id FROM shadow_bets b JOIN matches m ON m.id = b.match_id
+                      WHERE b.result = 'pending' AND m.status IN ('postponed','cancelled') AND m.date < now() - interval '6 hours') x""")[0]["n"],
             "unconfirmed_manual_oldest": (_rows(
                 """SELECT min(placed_at) AS t FROM real_bets
                     WHERE placed_real IS NULL AND placed_at >= '2026-09-10'

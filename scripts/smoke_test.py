@@ -55468,10 +55468,10 @@ def test_admin_answer_first():
     # ONE rule per fact across pages (strict owner test round 5): the Overview's Coolbet block risk is the
     # Feeds page's coolbetBlockRisk over the same book_footprint hour, and job names come from Jobs.
     lo = _web_path("src/lib/admin-overview.ts").read_text(encoding="utf-8")
-    assert 'cbBudget = cbR.error ? null : budgetView("Coolbet"' in lo and "coolbetRisk: coolbetBlockRisk(cbBudget)" in lo and "d.coolbetRisk.level" in ov
+    assert 'cbBudget = cbR.error ? null : budgetView("Coolbet"' in lo and "coolbetRisk: coolbetBlockRisk(cbBudget, feedsStale)" in lo and "d.coolbetRisk.level" in ov
     # review 2026-09-25 fixes: unreadable arming never reads "Off"; jobs = the Jobs page's jobsAnswer;
     # the ⓘ in a sortable header sits beside the sort button, never inside it (button-in-button)
-    assert "Can't tell if real money is armed" in ov and "d.jobsAnswer.text" in ov and "jobsAnswer(views.filter(" in lo
+    assert "Can't tell if real money is armed" in ov and "d.jobsAnswer.text" in ov and "jobsAnswer(jobViews.filter(" in lo
     dt = _web_path("src/components/oi/data-table.tsx").read_text(encoding="utf-8")
     assert "</button>\n                        {h.column.columnDef.meta?.tip && <InfoTip>" in dt
     ops = _web_path("src/app/(app)/admin/ops/page.tsx").read_text(encoding="utf-8")
@@ -55485,6 +55485,25 @@ def test_admin_answer_first():
     pal = _web_path("src/components/admin/command-palette.tsx").read_text(encoding="utf-8")
     assert 'section: "Needs attention"' in pal and "(attention ?? []).map(" in pal and "(kill switch)" not in pal
     assert "attention={attention} />" in _web_path("src/components/admin/admin-topbar.tsx").read_text(encoding="utf-8")
+    # round 6 wiring: the Overview inherits the Jobs page's late/stuck views (each job's usual gap) and the
+    # Feeds page's odds-problem advice — no private 3 h rule, no private ≥10 threshold
+    assert "loadJobCadenceCached()," in lo and "buildJobViews(jobsR.v, now, cadR.error ? null : cadR.v)" in lo
+    assert "dqAdvice(dqProbs, now)" in lo and "loadDqFindings(db, now)" in lo and "loadPostponedOpen(db, now)" in lo
+    att = _web_path("src/lib/admin-attention.ts").read_text(encoding="utf-8")
+    assert "DQ_ATTENTION_MIN" not in att and "JOB_STUCK_H" not in att and "i.dq.needsLook" in att and "i.lateJobs" in att
+    # round-6 review fixes: unreadable run history is SAID (never a green "All running"); Stuck uses the
+    # longest SUCCESSFUL run (settlement's normal 21:00 run read Stuck nightly); no lateness verdict on
+    # under a day of history; the cadence read is cached 10 min; Medium block risk survives a stale check;
+    # postponed leftovers count shadow picks too (219 open since 23 Aug — settlement voids only real +
+    # forward-test), one loader for both pages
+    assert 'unreadable("job-cadence"' in att and "No failures — can't tell if any job is late" in ov
+    jm = _web_path("src/lib/admin-jobs-model.ts").read_text(encoding="utf-8")
+    assert "Math.max(...durs)" in jm and 'r.status === "completed"' in jm and "spanMs >= 86_400_000" in jm
+    jl = _web_path("src/lib/admin-jobs.ts").read_text(encoding="utf-8")
+    assert '["admin-job-cadence-v1"]' in jl and "revalidate: 600" in jl and "lateness not checked" in jl
+    assert 'q("shadow_bets")' in jl and "POSTPONED_GRACE_H" in jl and "loadPostponedOpen(db, now)" in lo
+    fm = _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8")
+    assert "if (stale && share < BLOCK_RISK_SHARE && ch === 0)" in fm
     att = _web_path("src/lib/admin-attention.ts").read_text(encoding="utf-8")
     assert 'import { humanJob, jobAnchor } from "./admin-jobs-model"' in att and "function humanJob" not in att
     # charts default to order 0 and jumped above the answers on a phone
@@ -57102,7 +57121,7 @@ def test_admin_feeds_one_source_block_risk():
     lib = _web_path("src/lib/admin-feeds.ts").read_text(encoding="utf-8")
     assert 'select("book, hour, requests, refused, challenges, errors")' in lib and "coolbetBlockRisk" in lib
     page = _web_path("src/app/(app)/admin/feeds/page.tsx").read_text(encoding="utf-8")
-    assert "coolbetBlockRisk(cbBudget)" in page and 'label: "Coolbet block risk"' in page
+    assert "coolbetBlockRisk(cbBudget, statusStale)" in page and 'label: "Coolbet block risk"' in page
     assert 'label: "Coolbet requests"' not in page
     for stale in ("cb.requests_1h", "cb?.requests_1h", "cb.challenges_1h", "cb?.challenges_1h", "cb.errors_1h", "cb?.requests_24h"):
         assert stale not in page, f"{stale}: this-hour figures must come from book_footprint (budgetView)"
@@ -57164,7 +57183,7 @@ def test_admin_feeds_plain_words():
     assert "export function dqProblems(" in model and "export function marketLabel(" in model and "export function dqHandled(" in model
     assert '"Handicap ' in model and "other books ${m[4]}" in model
     dq = _web_path(d + "dq-findings.tsx").read_text(encoding="utf-8")
-    assert "dqProblems(findings)" in dq and "set aside automatically, no action needed" in dq
+    assert "dqProblems(findings)" in dq and "dqAdvice(problems, now)" in dq and "all set aside automatically, no action needed" in model
     assert 'header: "Check"' not in dq and 'column: "check"' not in dq
     board = _web_path(d + "feeds-board.tsx").read_text(encoding="utf-8")
     assert "plainFeedReason(" in board and '"FlareSolverr"' not in board and "(PostgREST)" not in board
@@ -57193,7 +57212,7 @@ def test_admin_jobs_answer_rule():
     lib = _web_path("src/lib/admin-jobs.ts").read_text(encoding="utf-8")
     assert 'from("retired_jobs")' in lib and "still: number" in lib and "fixed: number" in lib
     ch = _web_path("src/app/(app)/admin/ops/jobs-charts.tsx").read_text(encoding="utf-8")
-    assert "Failed runs, most fixed on their next try" in ch and "stacked" in ch
+    assert 'title="Failed runs per day"' in ch and 'long: "last 14 days"' in ch and "stacked" in ch
     assert 'key: "fixed"' in ch and 'key: "still"' in ch and 'key: "failed"' not in ch
     fx = _engine_path("scripts/admin_fixtures/jobs.py").read_text(encoding="utf-8")
     assert "FROM retired_jobs" in fx
@@ -57213,14 +57232,14 @@ def test_admin_jobs_plain_names():
     import re
     model = _web_path("src/lib/admin-jobs-model.ts").read_text(encoding="utf-8")
     for job, label in (("aln_auto_tune", "Monthly tuning of the confidence model"), ("league_draw_rate", "League draw rates"),
-                       ("mfv_b_ml3_nightly_refresh", "Nightly model features refresh"), ("settle_ready", "15-minute settlement sweep")):
+                       ("mfv_b_ml3_nightly_refresh", "Nightly model features refresh"), ("settle_ready", "Settles finished matches (every 15 min)")):
         assert f'{job}: "{label}"' in model, job
     words = model[model.index("export const STATE_WORD"):]
     words = set(re.findall(r': "(\w+)"', words[:words.index("};")]))
-    assert words == {"OK", "Failing", "Stuck", "Retired"}, words
+    assert words == {"OK", "Failing", "Stuck", "Late", "Retired"}, words
     assert "export function failingText(" in model and "Failed on ${dm(v.lastRun)}" in model
     table = _web_path("src/app/(app)/admin/ops/jobs-table.tsx").read_text(encoding="utf-8")
-    assert "Old jobs (" in table and "<details" in table and "lastRunText(" in table and "failingText(" in table
+    assert "oldJobsText(old.length)" in table and "<details" in table and "lastRunText(" in table and "failingText(" in table
     assert 'header: "Last error"' not in table and 'header: "Bot id"' not in table
     drawer = _web_path("src/app/(app)/admin/ops/job-drawer.tsx").read_text(encoding="utf-8")
     assert "workers/scheduler.py" not in drawer and "ask the developer to re-run it" in drawer
@@ -57423,6 +57442,157 @@ def test_forward_test_twin_arms():
     assert "NOT SUPPORTED" in ck.twin_verdict(120, None, 0.0)
     assert "'junk_anchor'" in ck.SQL, "the pre-registered live-vs-junk query is untouched"
     return "2 twins: parent gates + one, own dedupe, never published, pre-registered, readout at n=50/100"
+
+
+
+# Round 6 (#139, 2026-09-25) — fixer G: Jobs + Feeds. New tests, to append to scripts/smoke_test.py
+# next to the other ADMIN-JOBS-* / ADMIN-FEEDS-* tests. Edited pins are listed at the bottom.
+
+
+@test("ADMIN-JOBS-LATE — a job well past its OWN usual gap reads Late (not OK); Late counts in the Jobs answer and 'Late or stuck'")
+def test_admin_jobs_late():
+    """Round 6 (#139, 2026-09-25). Jobs showed "Feed status check · OK · ran 83 min ago" while Feeds and
+    the Overview said that check had stopped: "OK" only meant "the last run did not fail". The usual gap
+    and run time now come from each job's own pipeline_runs (jobCadence; loader loadJobCadence reads 4
+    days, plus 14 days for jobs quiet longer, paged under PostgREST's 10k cap). Late = last run finished,
+    median gap under 24 h, and now − last run > max(3 × median gap, median gap + 30 min, 1.5 × its usual
+    LONGEST gap). The longest-gap term is the k-th largest gap, k = days of history, so a pause that
+    happens every day (settlement's 01:00→21:00) sets it but a one-off outage does not — without it,
+    nightly settlement and the pre-kick-off odds job read Late every afternoon (measured on 4 days).
+    Stuck = running longer than max(6 × usual run time, run time + 30 min), always after 3 h. 8+ days
+    quiet stays Retired. jobsAnswer names a late job in amber; the second answer is "Late or stuck" and
+    is never a green "Nothing hanging" when the run history is unreadable."""
+    if not (_web_root / "src").exists():
+        return
+    import re
+    model = _web_path("src/lib/admin-jobs-model.ts").read_text(encoding="utf-8")
+    for s in ("export function jobCadence(", "export function isLate(", "export const lateAfterMs", "export const stuckAfterMs",
+              "LATE_MAX_GAP_H = 24", "longGapMs", "desc[days - 1]"):
+        assert s in model, s
+    assert "Math.max(3 * gapMs, gapMs + 30 * 60_000, 1.5 * (longGapMs ?? 0))" in model
+    late = model[model.index("export function isLate("):]
+    late = late[:late.index("\n}\n")]
+    assert '"running"' in late and "LATE_MAX_GAP_H" in late and "JOB_QUIET_D" in late, "late: finished runs only, sub-daily jobs only, not retired ones"
+    st = model[model.index("function stateOf("):]
+    st = st[:st.index("\n}\n")]
+    assert st.index('"failing"') < st.index("stuckAfterMs") < st.index("isLate(") < st.index('"quiet"'), "failing > stuck > late > quiet"
+    assert "cadence?: Record<string, JobCadence> | null" in model, "buildJobViews keeps its two-argument form for the Overview"
+    words = model[model.index("export const STATE_WORD"):]
+    assert set(re.findall(r': "(\w+)"', words[:words.index("};")])) == {"OK", "Failing", "Stuck", "Late", "Retired"}
+    assert "Late: its last run was fine" in model
+    fn = model[model.index("export function jobsAnswer("):]
+    fn = fn[:fn.index("\n}\n")]
+    assert fn.index("if (failing.length)") < fn.index("if (late.length)") < fn.index('"All running"'), "failing, then late, then the all-clear"
+    assert 'v.state === "late" || v.state === "stuck"' in fn and "late," in fn, "jobsAnswer returns the late jobs for the Overview"
+    lib = _web_path("src/lib/admin-jobs.ts").read_text(encoding="utf-8")
+    assert "export async function loadJobCadence(" in lib and "CADENCE_DAYS = 4" in lib and ".range(from, from + PAGE - 1)" in lib
+    assert '.order("id", { ascending: true })' in lib, "paging needs a total order"
+    page = _web_path("src/app/(app)/admin/ops/page.tsx").read_text(encoding="utf-8")
+    assert "buildJobViews(d.jobs.v, now, d.cadence.error ? null : d.cadence.v)" in page
+    assert 'label: "Late or stuck"' in page and 'label: "Stuck"' not in page and '"Nothing hanging"' not in page
+    assert "Can't tell if any job is late" in page
+    fx = _engine_path("scripts/admin_fixtures/jobs.py").read_text(encoding="utf-8")
+    assert '"cadence_runs"' in fx and "interval '4 days'" in fx
+
+
+@test("ADMIN-JOBS-PLAIN-FACE — no job ids on the face of Jobs; postponed bets are an action only when settlement missed them")
+def test_admin_jobs_plain_face():
+    """Round 6 (#139, 2026-09-25). The grey `aln_auto_tune` second line under every job moved into the
+    drawer ("Job id: …", for telling the developer). "15-minute settlement sweep", "low-score adjustment
+    refit", "probability recalibration" are plain sentences. "Postponed today 2 — any pending bets on these
+    need voiding" was an aside that asked for nothing specific: settlement voids bets on postponed matches
+    itself (settlement.py SETTLE-VOID-POSTPONED), so the card says so, and only a pending bet it MISSED
+    reads as an action ("Void N bets…"); postponedNeedingVoid is exported for the Overview's attention
+    list. Old jobs: "2 jobs haven't run for over a week — probably switched off" (neutral). The stale-bets
+    line is one line + ⓘ, and the failures chart says its period in the title."""
+    if not (_web_root / "src").exists():
+        return
+    d = "src/app/(app)/admin/ops/"
+    table = _web_path(d + "jobs-table.tsx").read_text(encoding="utf-8")
+    assert "{row.original.job}</span>" not in table and "{v.job}</span>" not in table, "no job id on the face of the table"
+    assert "oldJobsText(old.length)" in table and "not running any more?" not in table
+    drawer = _web_path(d + "job-drawer.tsx").read_text(encoding="utf-8")
+    assert "Job id: {v.job}" in drawer and "15-minute sweep" not in drawer and "morning pipeline" not in drawer
+    model = _web_path("src/lib/admin-jobs-model.ts").read_text(encoding="utf-8")
+    for bad in ("15-minute settlement sweep", "adjustment refit", "probability recalibration", "model blend refit"):
+        assert bad not in model, bad
+    assert 'settle_ready: "Settles finished matches (every 15 min)"' in model
+    assert "run for over a week — probably switched off" in model
+    page = _web_path(d + "page.tsx").read_text(encoding="utf-8")
+    for bad in ("any pending bets on these need voiding", "15-minute sweep", "Model rows built today"):
+        assert bad not in page, bad
+    # review 2026-09-25: "voided automatically" was false for paper/shadow picks (settlement voids only real
+    # bets + forward-test picks) — the card now counts both ledgers and says so
+    assert "d.postponedPending" in page and "settlement doesn&apos;t void these yet" in page and "voided automatically" not in page
+    assert "<InfoTip>" in page
+    lib = _web_path("src/lib/admin-jobs.ts").read_text(encoding="utf-8")
+    assert "export function postponedNeedingVoid(" in lib and 'match:match_id(date, status)' in lib
+    ch = _web_path(d + "jobs-charts.tsx").read_text(encoding="utf-8")
+    assert 'long: "last 14 days"' in ch and 'long: "last 7 days"' in ch
+    fx = _engine_path("scripts/admin_fixtures/jobs.py").read_text(encoding="utf-8")
+    assert "m.status::text AS match_status" in fx
+
+
+@test("ADMIN-DQ-ONE-COUNT — one odds-problem count and one advice rule (dqLast24h / dqAdvice) for Feeds and the Overview")
+def test_admin_dq_one_count():
+    """Round 6 (#139, 2026-09-25). Feeds said "12 in 24 h … no action needed", the Overview "14 … worth a
+    look": the Overview counted per raw check over its own 24 h read and alarmed at ≥10; the page counted
+    distinct problems over a 7-day read capped at 100 rows. Now ONE read (loadDqFindings, 7 days, cap
+    5000) → dqProblems → dqLast24h (problems whose LAST sighting is in the last 24 h) → dqAdvice
+    { count, open, needsLook, text }: needsLook = any of those not set aside / corrected by the checks,
+    no size threshold. The table's title states its period ("last 7 days")."""
+    if not (_web_root / "src").exists():
+        return
+    model = _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8")
+    assert "export function dqLast24h(" in model and "export function dqAdvice(" in model and "DQ_WINDOW_D = 7" in model
+    adv = model[model.index("export function dqAdvice("):]
+    adv = adv[:adv.index("\n}\n")]
+    assert "dqLast24h(problems, now)" in adv and "!p.handled" in adv and "needsLook: true" in adv
+    assert ">= 10" not in adv and "DQ_ATTENTION_MIN" not in adv, "no size threshold — one unhandled problem needs a look"
+    lib = _web_path("src/lib/admin-feeds.ts").read_text(encoding="utf-8")
+    assert "export async function loadDqFindings(" in lib and "DQ_READ_LIMIT = 5000" in lib and ".limit(100)" not in lib
+    dq = _web_path("src/app/(app)/admin/feeds/dq-findings.tsx").read_text(encoding="utf-8")
+    assert "dqAdvice(problems, now)" in dq and "dqLast24h(problems, now)" in dq and "last ${DQ_WINDOW_D} days" in dq
+    assert "now - new Date(p.last).getTime() < 86_400_000" not in dq, "the 24 h rule lives in dqLast24h only"
+    fx = _engine_path("scripts/admin_fixtures/feeds.py").read_text(encoding="utf-8")
+    assert "LIMIT 5000" in fx and "LIMIT 100\"" not in fx
+
+
+@test("ADMIN-FEEDS-STALE-ALL-UNKNOWN — a late feed check greys Infrastructure and Coolbet block risk too; a book past its schedule stays amber")
+def test_admin_feeds_stale_all_unknown():
+    """Round 6 (#139, 2026-09-25). Headline "Can't tell — the feed check itself is late" sat above
+    "Infrastructure · All 10 OK" and "Coolbet block risk: Low". While the check is late: Infrastructure
+    reads "Unknown", coolbetBlockRisk(b, stale) returns Unknown unless the counted facts say High, and the
+    meters go grey. One exception keeps rule 6 (nothing calm that needs action): a book that was ALREADY past
+    its own schedule when the check last looked (updated_at − last_data_at, staleLate) stays amber and the
+    headline names it. Measured from the check's time, not now: counting the check's own delay turned all
+    six books amber at 83 min late on the 25 Sep fixture — alarm without information. The stale banner is
+    one line + ⓘ."""
+    if not (_web_root / "src").exists():
+        return
+    model = _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8")
+    assert "export function coolbetBlockRisk(b: Pick<BudgetView" in model and "stale = false" in model
+    fn = model[model.index("export function coolbetBlockRisk("):]
+    fn = fn[:fn.index("\n}\n")]
+    assert fn.index("if (stale") < fn.index('word: "High"'), "stale → Unknown is decided before Low/Medium"
+    assert "export function staleLate(f: FeedStatus | undefined)" in model and "f.updated_at" in model and "stale && staleLate(main)" in model
+    fa = model[model.index("export function feedsAnswer("):]
+    fa = fa[:fa.index("\n}\n")]
+    assert "already late when last checked" in fa
+    page = _web_path("src/app/(app)/admin/feeds/page.tsx").read_text(encoding="utf-8")
+    assert "coolbetBlockRisk(cbBudget, statusStale)" in page and "Can't tell — the feed check is late" in page
+    board = _web_path("src/app/(app)/admin/feeds/feeds-board.tsx").read_text(encoding="utf-8")
+    assert '{stale ? "Unknown" : extras.every' in board
+    assert "so every block is grey — unknown, not healthy. The times shown" not in board and "<InfoTip>" in board
+
+
+# ── [[#159]] ONE ROI + CLV DEFINITION, OPEN DETAIL VIEW (2026-09-25, owner-approved) ─────────────
+
+def _ts_code159(src: str) -> str:
+    """TS/TSX source with /* */ and // comments removed (asserting ABSENCE must not match prose)."""
+    import re as _r
+    x = _r.sub(r"/\*.*?\*/", "", src, flags=_r.DOTALL)
+    return _r.sub(r"(?<![:\"'])//.*", "", x)
 
 
 if __name__ == "__main__":
