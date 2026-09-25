@@ -1606,8 +1606,12 @@ def stage_bet(
     if execute:
         from workers.automation.placement_gate import assert_may_place, PlacementRefused
         try:
+            # [[#162]] W4.2: held=[] — place_for_bot already applied this run's in-pass exposure,
+            # and each confirmed placement is in real_bets (which the gate reads) before the next pick.
             assert_may_place(bot_name=bet.get("bot_name"), book="Coolbet",
-                             stake=stake, kickoff_at=bet.get("match_date"))
+                             stake=stake, kickoff_at=bet.get("match_date"),
+                             pick=bet, held=[], odds=outcome.odds,
+                             prob=bet.get("calibrated_prob") if bot_name else None)
         except PlacementRefused as e:
             return _fail("placement_gate", f"gate refused: {e}", ev, outcome)
 

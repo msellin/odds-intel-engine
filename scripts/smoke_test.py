@@ -37884,7 +37884,8 @@ def test_real_bets_placed_real():
     assert "placed_real=True" in up, "UI placer (balance-confirmed) must tag placed_real=True"
     # reconcile (mirrors the real account) tags TRUE; real placer dedup excludes paper
     pcu = (root / "scripts" / "place_coolbet_ui.py").read_text()
-    assert "result, notes, placed_real)" in pcu and "NOW(), 'pending', %s, TRUE)" in pcu, "reconciled manual bets tag TRUE"
+    # [[#162]] W4.5: the account-sync reconcile writes through store_real_bet now (one writer).
+    assert "store_real_bet(" in pcu and "placed_real=True" in pcu, "reconciled manual bets tag TRUE"
     assert "placed_real IS NOT FALSE" in pcu, "real placer exposure/dedup must exclude paper rows"
 
     # frontend admin overlays exclude paper
@@ -46578,7 +46579,9 @@ def test_placement_gate_fail_closed():
         else:
             raise AssertionError("assert_run_may_place must raise when the DB is down")
         try:
-            pg.assert_may_place(bot_name="bot_coolbet_1x2_model_v1", book="Coolbet", stake=10.0)
+            pg.assert_may_place(bot_name="bot_coolbet_1x2_model_v1", book="Coolbet", stake=10.0,
+                                pick={"match_id": "00000000-0000-0000-0000-000000000000",
+                                      "market": "1x2", "selection": "home"}, held=[])  # #162 W4.2
         except pg.PlacementRefused:
             pass
         else:
@@ -46600,29 +46603,34 @@ def test_placement_gate_armed_required():
     try:
         cs.is_money_gate_ready = _this_thread_only(lambda: (True, None), o5)   # #162 W0.2 lock: MONEY-GATE-READY-LOCK
         # #139: the capable set is read from bot_config; pin it so this stays DB-free.
-        pg.placement_path_bots = lambda: {"bot_coolbet_1x2_model_v1", "bot_coolbet_ou_model_v1"}
-        cs.is_placement_paused = lambda: (False, None)
-        cs.is_real_money_armed = lambda: (False, "disarmed")
+        # [[#162]] W4.2: thread-only — the suite runs 8 tests at once and a process-wide patch here
+        # made PLACEMENT-GATE-FAIL-CLOSED / -DB-ELIGIBILITY read these fakes.
+        pg.placement_path_bots = _this_thread_only(lambda: {"bot_coolbet_1x2_model_v1", "bot_coolbet_ou_model_v1"}, o4)
+        cs.is_placement_paused = _this_thread_only(lambda: (False, None), o1)
+        cs.is_real_money_armed = _this_thread_only(lambda: (False, "disarmed"), o2)
         try:
             pg.assert_run_may_place()
         except pg.PlacementRefused as e:
             assert "real_money_armed" in str(e), str(e)
         else:
             raise AssertionError("gate must refuse when not armed")
-        cs.is_real_money_armed = lambda: (True, "test")
+        cs.is_real_money_armed = _this_thread_only(lambda: (True, "test"), o2)
         pg.assert_run_may_place()  # pause clear + armed → passes
-        pg.ui_place_enabled_bots = lambda: {"bot_coolbet_1x2_model_v1"}
+        pg.ui_place_enabled_bots = _this_thread_only(lambda: {"bot_coolbet_1x2_model_v1"}, o3)
+        # [[#162]] W4.2: pick + held are required keywords (exposure is checked at the gate).
+        _P = {"match_id": "00000000-0000-0000-0000-000000000000", "market": "1x2", "selection": "home"}
         pg.assert_may_place(bot_name="bot_coolbet_1x2_model_v1", book="Coolbet",
-                            stake=10.0, check_caps=False)
+                            stake=10.0, check_caps=False, pick=_P, held=[])
         try:
             pg.assert_may_place(bot_name="bot_coolbet_ou_model_v1", book="Coolbet",
-                                stake=10.0, check_caps=False)
+                                stake=10.0, check_caps=False, pick=_P, held=[])
         except pg.PlacementRefused as e:
             assert "ui_place_enabled is OFF" in str(e), str(e)
         else:
             raise AssertionError("a bot toggled OFF must be refused")
         try:
-            pg.assert_may_place(bot_name="bot_v10_all", book="Coolbet", stake=10.0, check_caps=False)
+            pg.assert_may_place(bot_name="bot_v10_all", book="Coolbet", stake=10.0, check_caps=False,
+                                pick=_P, held=[])
         except pg.PlacementRefused as e:
             assert "no placement path" in str(e), str(e)
         else:
@@ -60020,6 +60028,47 @@ def test_ou_sharp_funnel_never_breaks_picks():
     assert ev.count("except Exception") >= 2, "the 'accepted' write must be guarded too"
     run = inspect.getsource(o.run)
     assert "funnel.get((p[\"bot\"]" in run, "the cross-run relabel must not index the funnel blindly"
+
+@test("PLACEMENT-GATE-EXPOSURE-AND-FLOOR — the last gate before money checks per-match exposure and the placement floor (#162 W4.2)")
+def test_placement_gate_exposure_and_floor():
+    """[[#162]] W4.2 (structural). The per-match exposure rule and the placement floor lived only in the
+    callers, so a second executor that skipped them staked unchecked (RELIABILITY_LEDGER 'second path').
+    assert_may_place now takes REQUIRED `pick` + `held`, re-reads real_bets exposure on the match and,
+    given the price, re-applies placement_floor.pick_clears. Both live executors pass them."""
+    import inspect
+    import workers.automation.coolbet_state as cs
+    import workers.automation.placement_gate as pg
+    import workers.automation.best_price_router as bpr
+    import workers.automation.coolbet_ui_placer as up
+    sig = inspect.signature(pg.assert_may_place).parameters
+    assert sig["pick"].default is inspect.Parameter.empty and sig["held"].default is inspect.Parameter.empty
+    o = (cs.is_placement_paused, cs.is_real_money_armed, cs.is_money_gate_ready,
+         pg.ui_place_enabled_bots, pg.placement_path_bots)
+    try:
+        cs.is_placement_paused = _this_thread_only(lambda: (False, None), o[0])
+        cs.is_real_money_armed = _this_thread_only(lambda: (True, "t"), o[1])
+        cs.is_money_gate_ready = _this_thread_only(lambda: (True, None), o[2])
+        pg.ui_place_enabled_bots = _this_thread_only(lambda: {"bot_coolbet_1x2_model_v1"}, o[3])
+        pg.placement_path_bots = _this_thread_only(lambda: {"bot_coolbet_1x2_model_v1"}, o[4])
+        P = {"match_id": "00000000-0000-0000-0000-000000000000", "market": "1x2", "selection": "home"}
+        kw = dict(bot_name="bot_coolbet_1x2_model_v1", book="Coolbet", stake=10.0, check_caps=False)
+        pg.assert_may_place(**kw, pick=P, held=[], odds=3.0, prob=0.45)          # clears: 11.7 pp >= 10
+        for bad, why in ((dict(pick=None, held=[]), "no pick"),
+                         (dict(pick=P, held=[{"family": "result", "canon": "home", "stake": 10.0}]), "exposure"),
+                         (dict(pick=P, held=[], odds=2.5, prob=0.60), "floor"),
+                         (dict(pick=P, held=[], odds=3.0, prob=0.40), "floor")):
+            try:
+                pg.assert_may_place(**kw, **bad)
+            except pg.PlacementRefused:
+                continue
+            raise AssertionError(f"the gate must refuse ({why}): {bad}")
+    finally:
+        (cs.is_placement_paused, cs.is_real_money_armed, cs.is_money_gate_ready,
+         pg.ui_place_enabled_bots, pg.placement_path_bots) = o
+    sb = inspect.getsource(up.stage_bet)
+    assert "pick=bet, held=[], odds=outcome.odds" in sb
+    ub = inspect.getsource(bpr._dispatch_unibet)
+    assert "pick=pick, held=[], odds=float(decision[\"winner_odds\"])" in ub
 
 if __name__ == "__main__":
     main()

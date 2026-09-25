@@ -316,8 +316,12 @@ def _dispatch_unibet(pick: dict, decision: dict, *, execute: bool) -> dict:
     if execute:
         from workers.automation.placement_gate import assert_may_place, PlacementRefused
         try:
+            # [[#162]] W4.2: held=[] — _route applied this run's in-pass exposure before dispatch;
+            # the gate re-reads real_bets across books and re-checks the floor at the routed price.
             assert_may_place(bot_name=pick.get("bot_name"), book="Unibet-Site",
-                             stake=STAKE_EUR, kickoff_at=pick.get("match_date"))
+                             stake=STAKE_EUR, kickoff_at=pick.get("match_date"),
+                             pick=pick, held=[], odds=float(decision["winner_odds"]),
+                             prob=pick.get("calibrated_prob"))
         except PlacementRefused as e:
             return {"book": "Unibet-Site", "ok": False, "placed": False,
                     "reason": f"placement gate refused: {e}",

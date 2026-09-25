@@ -229,13 +229,25 @@ def assert_may_place(
     bot_name: str | None,
     book: str,
     stake: float,
+    pick: dict | None,
+    held: list[dict] | None,
     kickoff_at: datetime | None = None,
     now: datetime | None = None,
     check_caps: bool = True,
+    odds: float | None = None,
+    prob: float | None = None,
 ) -> None:
     """Per-pick gate. Everything in `assert_run_may_place()` PLUS allowlist,
-    kickoff cutoff and daily caps. Raises `PlacementRefused`; never returns
-    False. `book` is recorded in the reason only — the allowlist is per bot.
+    kickoff cutoff, daily caps, per-match exposure and — when `odds` is given —
+    the bot's placement floor at that price. Raises `PlacementRefused`; never
+    returns False. `book` is recorded in the reason only — the allowlist is per bot.
+
+    [[#162]] W4.2: `pick` (match_id / market / selection) and `held` (exposure this
+    run has already taken on the match, on top of what `real_bets` shows) are
+    REQUIRED keywords with no default, so an executor cannot call the gate without
+    deciding what it holds. The exposure rule (same bet, same market family, per-match
+    caps) and the placement floor used to live only in the callers — every executor
+    now gets them from the last gate before money moves. `pick=None` refuses.
     """
     assert_run_may_place()
 
@@ -273,6 +285,27 @@ def assert_may_place(
             raise PlacementRefused(
                 f"daily stake cap: EUR {stake_today:.2f} + {float(stake):.2f} "
                 f"> {MAX_STAKE_PER_DAY:.2f}")
+
+    # [[#162]] W4.2: per-match exposure — what real_bets holds on the match (any book, placed or
+    # unverified) plus this run's in-pass `held`, through the ONE rule (exposure_conflict).
+    if not pick or not pick.get("match_id"):
+        raise PlacementRefused("no pick (match/market/selection) given — cannot check exposure, refusing")
+    try:
+        from scripts.place_coolbet_ui import exposure_conflict, match_exposure
+        mid = str(pick["match_id"])
+        on_match = list(match_exposure([mid]).get(mid, [])) + list(held or [])
+        conflict = exposure_conflict(pick, on_match, float(stake))
+    except Exception as e:  # noqa: BLE001
+        raise PlacementRefused(f"cannot read per-match exposure ({e}) — refusing") from e
+    if conflict:
+        raise PlacementRefused(f"per-match exposure: {conflict}")
+
+    # [[#162]] W4.3 at the gate: the bot's placement floor at the price about to be staked.
+    if odds is not None:
+        from workers.automation.placement_floor import pick_clears
+        ok, why = pick_clears(bot_name, pick.get("market"), pick.get("selection"), odds, prob)
+        if not ok:
+            raise PlacementRefused(f"placement floor at {book} @ {odds}: {why}")
 
 
 def gate_status() -> dict:
