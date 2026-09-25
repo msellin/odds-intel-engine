@@ -10885,17 +10885,17 @@ def _():
     # "correct" means. It now imports settlement's single expression, so if the
     # writer's basis ever changes again this test follows it — and if someone
     # edits only one of the two customer-facing paths, it still fails.
-    from workers.jobs.settlement import _EXEC_PNL
-    _LIVE_SQL = f"""
-        SELECT b.name,
-               COUNT(sb.id) FILTER (WHERE sb.result IN ('won','lost')) as settled,
-               COALESCE(SUM({_EXEC_PNL}) FILTER (WHERE sb.result IN ('won','lost')), 0) as total_pnl
+    # [[#159]] (2026-09-25): bot_breakdown is now a COPY of the view bot_performance (public
+    # basis, flat EUR 10). Reconcile against that view — the one computation — not a re-derived
+    # SUM over simulated_bets.
+    _LIVE_SQL = """
+        SELECT b.name, COALESCE(p.settled, 0) AS settled,
+               COALESCE(p.pnl_units_public, 0) * 10 AS total_pnl
         FROM bots b
-        LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
+        LEFT JOIN bot_performance p ON p.bot_name = b.name
         WHERE b.is_active = true AND b.retired_at IS NULL
           AND b.name NOT LIKE 'bot_acca%%'
           AND b.name NOT LIKE 'bot_combo%%'
-        GROUP BY b.id, b.name
     """
 
     def _read_cache():
@@ -10917,9 +10917,13 @@ def _():
             l = live_by_name.get(c.get("name"))
             if not l:
                 continue
+            # a pick that settled after the cache was written moves the live view — only bots
+            # whose settled count is unchanged are comparable (the view has no as-of read)
+            if int(c.get("settled") or 0) != int(l["settled"]):
+                continue
             c_pnl = float(c.get("total_pnl") or 0)
             l_pnl = float(l["total_pnl"])
-            if abs(c_pnl - l_pnl) > max(1.0, abs(l_pnl) * 0.01):  # €1 abs OR 1% rel
+            if abs(c_pnl - l_pnl) > 0.05:
                 out.append((c.get("name"), c_pnl, l_pnl))
         return out
 
@@ -10943,17 +10947,10 @@ def _():
     if breakdown is None:
         return  # no cache row yet — skip
 
-    as_of_sql = _LIVE_SQL.replace(
-        "WHERE b.is_active = true",
-        "WHERE (sb.id IS NULL OR sb.settled_at IS NULL OR sb.settled_at <= %s)\n"
-        "          AND b.is_active = true",
-    )
-    try:
-        live = execute_query(as_of_sql, (cache_ts,))
-    except Exception:
-        # Migration 366 not applied on this database yet — fall back to the old
-        # snapshot-stability dance rather than failing on a missing column.
-        live = execute_query(_LIVE_SQL)
+    as_of_sql = _LIVE_SQL
+    live = execute_query(_LIVE_SQL)
+    if breakdown and "clv_n" not in breakdown[0]:
+        return "cache row predates #159 — next rebuild is the first comparable one"
     drifted = _drift(breakdown, live)
 
     if drifted:
@@ -10962,10 +10959,7 @@ def _():
             # a cache rebuild ran during the test — the first comparison raced a
             # moving target. Re-read both against the newer snapshot and re-judge.
             breakdown, cache_ts = _read_cache()
-            try:
-                live = execute_query(as_of_sql, (cache_ts,))
-            except Exception:
-                live = execute_query(_LIVE_SQL)
+            live = execute_query(as_of_sql)
             drifted = _drift(breakdown, live)
 
     assert not drifted, (
@@ -53845,9 +53839,18 @@ def test_bot_weekly_view_411():
     rule = "(l.source <> 'forward_test' OR l.rule_version = c.rule_version)"
     assert sql.count(rule) == 2, "both bot_weekly and bot_market_stats carry the pre-registration filter"
     assert "abs(l.clv_mc) <= 1" in sql and "l.result <> 'void'" in sql
+    # [[#159]] migration 433 re-bases both on bot_ledger's RECORD legs (in_record = the #158
+    # record for forward-test arms — never pooled across rules) and keeps them service_role-only;
+    # the fixture dump reads the views directly instead of an inline copy.
+    m433 = _engine_path("supabase/migrations/433_one_bot_performance.sql").read_text()
+    for v in ("CREATE VIEW public.bot_weekly AS", "CREATE OR REPLACE VIEW public.bot_market_stats AS",
+              "CREATE OR REPLACE VIEW public.bot_ledger_display AS"):
+        assert v in m433, v
+    assert "WHERE l.in_record AND l.pick_time >=" in m433 and m433.count(" WHERE l.in_record") >= 2
+    assert "abs(l.clv_anchor_own) <= 1" in m433
     dump = _engine_path("scripts/dump_bot_board_fixture.py").read_text()
-    assert dump.count(rule) == 2 and '"weekly": weekly' in dump and "ht.name AS home_team" in dump
-    assert '"market_stats": _rows(_MARKET_STATS_SQL)' in dump
+    assert 'FROM public.bot_weekly' in dump and 'FROM public.bot_market_stats' in dump
+    assert '"weekly": weekly' in dump and '"market_stats": _rows(_MARKET_STATS_SQL)' in dump
 
 
 @test("SHADOW-AUTOSELECT-WEEKLY-ONLY — the A/B shadow slot never auto-picks an experiment bundle")
@@ -57649,7 +57652,8 @@ def test_one_roi_clv_parity():
             FROM picks_forward_test_bot_record WHERE is_current GROUP BY 1)
         SELECT r.bot, r.s, p.settled, r.p, p.pnl_units_public, r.na, p.clv_n
           FROM r JOIN bot_performance p ON p.bot_name = r.bot
-         WHERE r.s <> p.settled OR abs(r.p - p.pnl_units_public) > 1e-6 OR r.na <> p.clv_n""", [])
+         WHERE r.s <> p.settled OR abs(r.p - p.pnl_units_public) > 0.005 * greatest(r.s, 1) OR r.na <> p.clv_n""", [])
+    # picks_forward_test.pnl is stored rounded to 2 dp per pick; the view uses odds − 1 exactly
     assert not ft, f"forward-test rows differ from the #158 record: {ft}"
     return "bot_scoreboard == bot_performance; forward-test rows == #158 record"
 
