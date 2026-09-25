@@ -76,6 +76,22 @@ def is_protected_bot(bot_id: str) -> bool:
     return _bot_flags[key]
 
 
+# #162 W8.8: the VIP set lives twice — `bot_registry.VIP_BOTS` (the signaler exclusion, the VIP
+# Telegram branch, ou_sharp_outlier) and `bots.vip` (the RLS policies and this module's SQL). If
+# they drift, one path treats a bot as VIP and another publishes its live pick. Same predicate as
+# PROTECTED_BOT_SQL's `b.vip` — no retired_at filter, because the DB flag is what the RLS reads.
+VIP_DB_SQL = "SELECT name FROM bots WHERE vip"
+
+
+def vip_registry_drift() -> tuple[set[str], set[str]]:
+    """(in code only, in DB only) between VIP_BOTS and `bots.vip`. Both empty = in step.
+    Raises on a DB error — callers decide (smoke fails; the scheduler only warns)."""
+    from workers.api_clients.db import execute_query
+    from workers.registry.bot_registry import VIP_BOTS
+    db = {r["name"] for r in (execute_query(VIP_DB_SQL) or [])}
+    return set(VIP_BOTS) - db, db - set(VIP_BOTS)
+
+
 def vip_held(match_id: str, market: str, selection: str) -> bool:
     """(a) — a VIP / hide_pending bot holds a PENDING pick on this exact selection (the ledger)."""
     from workers.api_clients.db import execute_query

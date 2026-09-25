@@ -262,7 +262,7 @@ registry and regenerate.
 
 ### ⭐ VIP FIRST — free picks are held back when VIP holds them ([[#164]], owner 2026-09-25)
 
-**The VIP bots** (`bots.vip` = `VIP_BOTS`: `bot_combined_1x2_ev5_v1` "1x2 NEW+ EV5", `bot_ou_sharp_early_v1`
+**The VIP bots** (`bots.vip` = `VIP_BOTS` — kept equal by smoke `VIP-BOTS-MATCH-DB` + a scheduler startup warning, `vip_guard.vip_registry_drift`, #162 W8.8: `bot_combined_1x2_ev5_v1` "1x2 NEW+ EV5", `bot_ou_sharp_early_v1`
 "O/U EARLY"; plus their `hide_pending` twins EV8 / TWO-ANCHOR) sell their live picks to Pro/Elite before kickoff
 and **never give a pick up**. **Every FREE bot** (any other bot — the `show_on_picks` model bots `bot_v10_1x2`,
 `bot_high_roi_global_v2`, `bot_v10_1x2_newplus_v1`, and the published forward-test arms `live` / `consensus_anchor`)
@@ -525,7 +525,7 @@ Full detail: `docs/COOLBET_OWN_BETTING.md`. Recurring failure patterns:
 > pause → armed → Mac executors (heartbeat) → per-pick gates** — and a computed CAN STAKE line
 > (UNKNOWN when any layer is unreadable). The two-name `PLACEABLE_BOTS` set is gone:
 > `effective_allowlist()` = `placement_path_bots()` (code rule over the exported `bot_config`,
-> fail-closed, stale > 36 h = empty) ∩ `ui_place_enabled_bots()` (the `coolbet_placer_bots`
+> fail-closed, stale > 36 h = empty — mirrored on the page as ladder layer 9 "Bot config fresh", #162 W8.4) ∩ `ui_place_enabled_bots()` (the `coolbet_placer_bots`
 > eligibility list: ON, not `locked_reason`, not retired). Arming is owner-only and two-step on
 > the page (typed `ARM REAL MONEY` + ≥20-char reason, `admin_arm_real_money`); resume is page-only
 > with a typed phrase + reason; Telegram `/pause` is a stop-only emergency command. Every write is

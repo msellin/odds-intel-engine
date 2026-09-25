@@ -3305,6 +3305,16 @@ def main():
     # after startup.
     _maybe_catchup_missed_settlement()
 
+    # #162 W8.8: VIP_BOTS (code) must equal bots.vip (DB) — warn loudly, never block startup.
+    try:
+        from workers.utils.vip_guard import vip_registry_drift
+        _code_only, _db_only = vip_registry_drift()
+        if _code_only or _db_only:
+            console.print(f"[bold red]VIP drift: VIP_BOTS only {sorted(_code_only)} · bots.vip only "
+                          f"{sorted(_db_only)} — fix bot_registry.VIP_BOTS or bots.vip[/bold red]")
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[yellow]VIP drift check skipped: {e}[/yellow]")
+
     # Sync budget in background (API call can take 2-5s, don't block startup)
     def _initial_budget_sync():
         try:

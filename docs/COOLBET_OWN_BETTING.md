@@ -7,7 +7,8 @@
 > placed iff its picks are pre-match `shadow_bets` (the placers load `shadow_bets_unique` by bot name, for any
 > bot) priced at Coolbet (UI placer + router) or Unibet-Site (router's Unibet arm), and it is not in-play /
 > forward-test / the control: `placement_gate.placement_path_reason`, applied to the exported `bot_config`
-> (fails closed on a read error or an export older than 36 h). `simulated_bets` bots are NOT capable — their
+> (fails closed on a read error or an export older than 36 h — the page's ladder mirrors that as layer 9
+> "Bot config fresh" since #162 W8.4: stale bots leave the CAN STAKE set, and none left = NO). `simulated_bets` bots are NOT capable — their
 > only placer (`coolbet_placer.place_all_bets`) is no longer a supported executor (daemon retired, VPS drain
 > pinned paper; only a hand-run CLI remains, and it is per-pick gated). 11 active bots are capable today.
 > **(2) per-bot eligibility (€ switch)** — `coolbet_placer_bots` rows ARE the eligibility list (owner decision 4):

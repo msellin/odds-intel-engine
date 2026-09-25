@@ -44138,6 +44138,49 @@ def test_own_sweep_verification():
     )
 
 
+@test("VIP-BOTS-MATCH-DB — #162 W8.8: bot_registry.VIP_BOTS equals the bots.vip set in the DB")
+def test_vip_bots_match_db():
+    """The VIP set lives twice: VIP_BOTS (signaler exclusion, VIP Telegram branch, ou_sharp_outlier)
+    and bots.vip (the RLS policies, vip_guard's SQL). A drift means one path treats a bot as VIP and
+    another publishes its live pick early. Same predicate as vip_guard (`WHERE vip`, no retired
+    filter — the RLS reads the flag). The scheduler logs the same check at startup (warn only)."""
+    from workers.utils.vip_guard import VIP_DB_SQL, vip_registry_drift
+    assert VIP_DB_SQL == "SELECT name FROM bots WHERE vip"
+    code_only, db_only = vip_registry_drift()
+    assert not code_only and not db_only, (
+        f"VIP drift — only in VIP_BOTS: {sorted(code_only)}; only in bots.vip: {sorted(db_only)}")
+    sched = _engine_path("workers/scheduler.py").read_text(encoding="utf-8")
+    body = sched[sched.index("def main():"):]
+    i = body.index("vip_registry_drift()")
+    assert "except Exception" in body[i:i + 600], "the startup check must warn, never crash the scheduler"
+
+
+@test("LADDER-CONFIG-STALENESS — #162 W8.4: web CAN STAKE honours the engine's 36 h bot_config rule")
+def test_ladder_config_staleness():
+    """placement_gate.placement_path_bots() keeps only bot_config rows exported within
+    CONFIG_MAX_AGE_H (36 h) and fails closed. The web ladder used to ignore that, so a missed daily
+    export read CAN STAKE: YES while the engine placed nothing. Layer 9 ("config") mirrors it: both
+    ladder call sites drop stale bots via splitStaleConfig, and staleness that leaves no capable bot
+    is a HARD block. The € switch keeps the plain path rule (controls-context passes capableSet)."""
+    import re
+    from workers.automation import placement_gate as pg
+    gate = _engine_path("workers/automation/placement_gate.py").read_text(encoding="utf-8")
+    assert "c.exported_at > NOW() - INTERVAL '{int(CONFIG_MAX_AGE_H)} hours'" in gate
+    pp = _web_path("src/lib/bot-controls/placement-path.ts").read_text(encoding="utf-8")
+    m = re.search(r"export const CONFIG_MAX_AGE_H = (\d+);", pp)
+    assert m and int(m.group(1)) == pg.CONFIG_MAX_AGE_H, "web and engine staleness windows must match"
+    assert "if (!exportedAt) return true;" in pp, "a missing export is stale (NULL fails the engine's >)"
+    assert "now - t >= CONFIG_MAX_AGE_H * 3_600_000" in pp
+    lad = _web_path("src/lib/bot-controls/ladder.ts").read_text(encoding="utf-8")
+    assert 'key: "config"' in lad and "staleConfig: string[] | null," in lad
+    assert "|| gateReady === false || configStale;" in lad, "stale config with no fresh bot is a hard block"
+    for rel in ("src/app/(app)/admin/bots/controls-context.tsx", "src/lib/admin-overview.ts"):
+        src = _web_path(rel).read_text(encoding="utf-8")
+        assert "splitStaleConfig(capable," in src and "computeLadder(" in src, rel
+        call = src[src.index("computeLadder(", src.index("splitStaleConfig(capable,")):]
+        assert call.startswith(("computeLadder(state, fresh, now, stale)", "computeLadder(control, fresh, now, stale)")), rel
+
+
 @test("SHADOW-CLV-NO-ARBITRARY-FALLBACK — CLV is NULL without an own-book close, never another book's")
 def test_shadow_clv_no_arbitrary_fallback():
     """SHADOW-CLV-NO-ARBITRARY-FALLBACK (2026-09-14).
@@ -54872,7 +54915,8 @@ def test_control_page_fail_safe():
     # It is never YES while any layer is unknown.
     assert 'const canStakeStrict = unknownAt.length > 0 ? "unknown" : blockedAt.length > 0 ? "no" : "yes";' in lad
     # #162 W0.2: the money-gate lock (migration 436) is a hard block too
-    assert "const hardBlock = paused === true || armed === false || rawOn === 0 || gateReady === false;" in lad
+    # #162 W8.4: + configStale (every capable bot's bot_config 36 h+ old — the engine places nothing)
+    assert "const hardBlock = paused === true || armed === false || rawOn === 0 || gateReady === false || configStale;" in lad
     assert "p.ui_place_enabled && !p.locked_reason" in lad.split("const rawOn")[1].split("\n")[0]
     ll = (d / "ladder-list.tsx").read_text(encoding="utf-8")
     assert "strict={compact}" in ll, "dialogs (compact ladder) keep the conservative verdict"

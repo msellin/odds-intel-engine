@@ -333,7 +333,7 @@ BOTS: list[BotSpec] = [
 # VIP ([[#148]], owner 2026-09-24). The paid-tier bot: its LIVE picks go only to
 # Pro/Elite users (Telegram DMs) and, once it exists, the private VIP channel
 # (TELEGRAM_VIP_CHAT_ID); the public sees them only once SETTLED on /performance.
-# Mirrors `bots.vip` (migration 420) — smoke VIP-BOT pins the two together.
+# Mirrors `bots.vip` (migration 420) — smoke VIP-BOTS-MATCH-DB checks the two sets are equal (#162 W8.8).
 # Each pick is labelled by its expected value: EV8 (>= 8%) or EV5 (5-8%).
 VIP_BOTS: frozenset[str] = frozenset({"bot_combined_1x2_ev5_v1", "bot_ou_sharp_early_v1"})  # 1X2 VIP + O/U VIP (#149, owner 2026-09-25)
 VIP_EV8_MIN = 0.08
