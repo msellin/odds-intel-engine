@@ -1,16 +1,12 @@
 # #162 bot refactor, phase 2 — the live invariants each landed step promised (2026-09-25).
 task: "#162"
 checks:
-  - name: money_gate_still_locked
+  - name: money_gate_contract_matches_code
     mode: invariant
-    # W0.2 / migration 436: real money stays locked until #162 W4 closes (contract raised by that migration).
+    # W4 CLOSED 2026-09-25 (migration 459): the DB contract equals the code's GATE_CONTRACT (1).
     sql: SELECT money_gate_contract FROM coolbet_session_state WHERE id = 1
-    expect: "== 0"
-    expires: "2026-10-31T00:00:00Z"
-  - name: no_real_money_switch_on_while_locked
-    mode: invariant
-    sql: SELECT count(*) FROM coolbet_placer_bots WHERE ui_place_enabled
-    expect: "== 0"
+    expect: "== 1"
+    run_after: {time: "2026-09-25T23:59:00Z"}
     expires: "2026-10-31T00:00:00Z"
   - name: retired_bots_write_no_shadow_rows
     mode: invariant

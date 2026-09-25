@@ -382,10 +382,11 @@ def is_real_money_armed() -> tuple[bool, str | None]:
 
 
 # The placement-check contract this code implements (#162 W0.2, migration 436). 0 = the per-bot
-# floors and the cross-book daily cap are NOT unified yet (#162 W4 open). The commit that closes W4
-# raises this to 1 together with the migration that raises the DB's money_gate_contract to 1; code
-# older than that (e.g. a stale Mac checkout) then mismatches and refuses. Never raise it by itself.
-GATE_CONTRACT = 0
+# floors and the cross-book daily cap were NOT unified yet (#162 W4 open). 1 = W4 CLOSED 2026-09-25:
+# raised in the SAME commit as migration 459, which raises the DB's money_gate_contract to 1; code
+# older than that (e.g. a stale Mac checkout) mismatches and refuses. Never change it by itself —
+# a future change to the placement checks that old code must not run bumps both to 2.
+GATE_CONTRACT = 1
 
 
 def is_money_gate_ready() -> tuple[bool, str | None]:

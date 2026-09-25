@@ -50669,7 +50669,12 @@ def test_control_fn_refuses():
                         "SELECT 1 FROM information_schema.columns WHERE table_name = 'coolbet_session_state' "
                         "AND column_name = 'money_gate_contract')")
             has_gate = cur.fetchone()[0]
+            # #162 W4 CLOSED (migration 459): once the contract is 1 the lock no longer refuses; the
+            # "refused while 0" branch is exercised by forcing 0 inside this rolled-back transaction.
             if has_gate:
+                cur.execute("SELECT set_config('oddsintel.migration', 'on', true)")
+                cur.execute("UPDATE coolbet_session_state SET money_gate_contract = 0 WHERE id = 1")
+                cur.execute("SELECT set_config('oddsintel.migration', '', true)")
                 cur.execute("SAVEPOINT money_gate")
                 try:
                     call("placer_enabled", bot, True, "a reason long enough", bot, expected=False)
@@ -54500,7 +54505,13 @@ def test_money_gate_ready_lock():
     assert "coalesce(NEW.real_money_armed, false) AND NOT v_was_on" in mig
     # stale code cannot stake after the DB is raised: ready = DB contract >= 1 AND == the code's
     st = _engine_path("workers/automation/coolbet_state.py").read_text(encoding="utf-8")
-    assert "GATE_CONTRACT = 0" in st, "GATE_CONTRACT is raised only by the commit that closes #162 W4"
+    # #162 W4 CLOSED 2026-09-25 (migration 459): code and DB contract are both 1 now.
+    assert "GATE_CONTRACT = 1" in st, "GATE_CONTRACT moves only with the migration that raises the DB contract"
+    m459 = _engine_path("supabase/migrations/459_money_gate_contract_1_w4_closed.sql").read_text(encoding="utf-8")
+    assert "SET LOCAL oddsintel.migration = 'on';" in m459 and "money_gate_contract = 1" in m459
+    assert "BEGIN;" in m459 and "COMMIT;" in m459, "psql -f has no wrapping transaction; SET LOCAL needs one"
+    for word in ("real_money_armed = true", "placement_paused = false", "ui_place_enabled = true"):
+        assert word not in m459, f"closing W4 unlocks — it must never arm, resume or switch on ({word})"
     assert "if db_c != GATE_CONTRACT:" in st and "if db_c < 1:" in st
 
     import workers.automation.coolbet_state as cs

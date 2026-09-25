@@ -1460,6 +1460,7 @@ by a migration (`SET LOCAL oddsintel.migration = 'on'`). Every STOP stays open t
 false→true are refused for EVERY writer — the audited functions included — until the placement checks are
 unified (#162 W4); the contract is raised only by a migration, and the engine gate also requires it to equal
 the code's `GATE_CONTRACT` so a stale checkout cannot stake. Same limit as below: an accident guard.
+_(Lifted 2026-09-25 when #162 W4 closed: migration 459 raised the contract to 1 together with the code's `GATE_CONTRACT`; arming, resuming and every € switch stay the owner's.)_
 
 **These flags are an ACCIDENT GUARD, not a security boundary.** Anyone with direct SQL as the table owner can
 set `oddsintel.control_fn` themselves; `pg_trigger_depth()` / `current_user` cannot tell the function from the

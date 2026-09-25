@@ -11,8 +11,3 @@ checks:
     expect: "== 0"
     run_after: {job: export_bot_config, since: "2026-09-25T23:00:00Z"}
     expires: "2026-10-03T00:00:00Z"
-  - name: real_money_still_locked_during_w4
-    mode: invariant
-    sql: SELECT money_gate_contract FROM coolbet_session_state WHERE id = 1
-    expect: "== 0"
-    expires: "2026-10-31T00:00:00Z"

@@ -5,9 +5,11 @@
 Everything under **"History"** further down describes earlier designs and is kept for the record.
 Where it disagrees with this section, **this section is right.**
 
-**State on 2026-09-25:** placement is PAUSED, real money is NOT ARMED, the money-gate lock is at 0
-(W4 being closed), all 11 per-bot € switches are OFF, and both executors' launchd jobs are parked in
-`local/launchd/paused/`. Nothing places real money until the owner deliberately turns each layer on.
+**State on 2026-09-25:** placement is PAUSED, real money is NOT ARMED, all 11 per-bot € switches are
+OFF, and both executors' launchd jobs are parked in `local/launchd/paused/`. The money-gate lock was
+lifted when W4 closed (migration 459: contract 1 = code `GATE_CONTRACT` 1) — it no longer REFUSES the
+owner's switches, but it turned nothing on. Nothing places real money until the owner deliberately
+turns each layer on. A Mac checkout older than that commit refuses to stake until it is updated.
 
 ### The two executors (the only code that can stake)
 | Executor | Where | Books | What it runs |
@@ -70,7 +72,8 @@ result is exported to `bot_config` as the `placement_floor` gate.
 * An abandoned / walkover match with no score is VOID on every ledger (W1.4); the book's own settlement governs.
 
 ### Turning real money on (owner only, in this order)
-W4 closes → `money_gate_contract` 1 (migration) · arm real money on /admin/bots (typed) · resume placement
+~~W4 closes → `money_gate_contract` 1 (migration)~~ ✅ done 2026-09-25 (migration 459) · update the
+Mac checkout (`git pull` — older code refuses on the contract mismatch) · arm real money on /admin/bots (typed) · resume placement
 (typed) · switch ON the chosen bot(s) · load the executor's launchd job on the Mac from `local/launchd/paused/`
 · for the router also set `ROUTER_ALLOW_REAL=true`. Each step is logged in `control_changes`.
 
