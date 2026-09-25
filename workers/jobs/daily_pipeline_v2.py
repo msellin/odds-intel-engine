@@ -193,6 +193,14 @@ BOTS_CONFIG = {
         "edge_unit": "ev",
         "require_pinnacle": True,
         "one_per_match": True,
+        # [[#162]] W7.7/W8.7 (owner decision (b), 2026-09-25; rule r2): run EXACTLY the pre-registered
+        # B2 rule — EV >= 5% vs NEW+, odds 1.30-6.00, Pinnacle-priced, one pick per match, flat stake.
+        # This bot sat inside the legacy loop and inherited ~8 gates B2 never tested (Pinnacle mid-band
+        # +2pp, 0.12 veto, sharp home gate, odds-movement veto, ALN-1 +1pp, the min-Kelly stake drop,
+        # the meta-model, PIN-cross-drift): measured over 7 days they dropped 35 candidates that cleared
+        # the B2 rule against 26 accepted, so the record did not measure the approved rule. The skipped
+        # gates are listed at each `if not _exact` below.
+        "exact_rule": True,
     },
     # bot_combined_1x2_ev8_v1 RETIRED 2026-09-25 (migration 444, owner): it was a strict subset of
     # the VIP bot bot_combined_1x2_ev5_v1 (same rule, EV >= 8%), so every EV8 pick already sits in
@@ -4051,8 +4059,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 # Fix: require +2pp higher edge in the mid-band for 1X2/OU
                 # (only markets with real Pinnacle anchor). Env-flip for
                 # rollback: ANCHOR_GAP_MID_BAND_ENABLED=false.
+                _exact = bool(config.get("exact_rule"))   # [[#162]] W7.7: pre-registered rule only
                 if (
-                    os.getenv("ANCHOR_GAP_MID_BAND_ENABLED", "true").lower() != "false"
+                    not _exact
+                    and os.getenv("ANCHOR_GAP_MID_BAND_ENABLED", "true").lower() != "false"
                     and mkt in ("1X2", "O/U")
                     and _pin_implied is not None
                     and 0.06 <= _anchor_gap < 0.10
@@ -4060,7 +4070,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 ):
                     _fstep("drop_pin_mid_band")
                     continue
-                if _anchor_gap > _veto_gap:
+                if not _exact and _anchor_gap > _veto_gap:
                     _fstep("drop_pin_veto")
                     continue  # Model too far above market anchor — skip
 
@@ -4069,7 +4079,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 # Diagnostic (2026-05-06): gate is conservative — avg sharp_consensus
                 # was -0.0034 across 31 settled home bets, meaning most bets had
                 # sharps roughly aligned. When sharps do disagree strongly, this fires.
-                if mkt == "1X2" and selection == "Home":
+                if not _exact and mkt == "1X2" and selection == "Home":
                     sc = sharp_consensus_by_match.get(str(match_id))
                     if sc is not None and sc < -0.02:
                         _fstep("drop_sharp_gate")
@@ -4083,7 +4093,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     )
                 odds_mv = odds_movement_cache[mv_key]
 
-                if odds_mv["veto"]:
+                if not _exact and odds_mv["veto"]:
                     _fstep("drop_odds_mv")
                     continue  # Market moved >10% against pick — hard skip
 
@@ -4096,7 +4106,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 # gate below. Activate via PIN_CROSS_DRIFT_VETO_ENABLED=true after
                 # 7-day shadow run confirms predictions.
                 _pin_cross_drift_decision = None
-                if os_market != "1x2":
+                if os_market != "1x2" and not _exact:
                     if _pin_cross_drift_mfv is None:
                         # PIN-CROSS-DRIFT-T6H-LIVE fix (2026-06-10): drift now
                         # comes from odds_snapshots (live, 30-min cadence via AF)
@@ -4173,6 +4183,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                         elif eff <= -0.01:
                             eff_bump = 0.01
 
+                if _exact:
+                    aln_bump = eff_bump = 0.0   # the B2 threshold is EV >= 5% flat — no ALN-1 / league bump
                 _fctx["threshold"] = me + aln_bump + eff_bump
                 if edge < me + aln_bump + eff_bump:
                     # Charge the funnel bucket whose bump made the difference.
@@ -4188,7 +4200,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 # NONE < LOW < MEDIUM < HIGH.
                 _ALN_RANK = {"NONE": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3}
                 _min_aln = config.get("min_alignment_class")
-                if _min_aln is not None:
+                if _min_aln is not None and not _exact:
                     cur_rank = _ALN_RANK.get(alignment["alignment_class"], 0)
                     min_rank = _ALN_RANK.get(_min_aln, 0)
                     if cur_rank < min_rank:
@@ -4204,6 +4216,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                     kelly, bot_bankroll, data_tier,
                     odds_penalty=odds_mv.get("penalty", 0.0),
                 )
+                if _exact:
+                    # B2 is flat with no minimum-Kelly selection gate (the backtest never had one).
+                    from workers.model.improvements import FLAT_STAKE_EUR
+                    stake = FLAT_STAKE_EUR
                 if stake < 1.0:
                     _fstep("drop_stake_low")
                     continue
@@ -4213,6 +4229,23 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
 
             bet_candidates.sort(key=lambda x: x[6], reverse=True)
             _one_done = False
+            # [[#162]] W7.8 (rule r2 for every one_per_match bot): ONE pick per match ACROSS runs, not
+            # just within one. The flag below was only set by a NEW store in this run, so a later run
+            # took the other side of a match the bot already held (VIP #1 held home @2.37 and away
+            # @3.38 on one fixture, both sent as VIP DMs). Same rule ou_sharp_outlier applies: skip the
+            # match if the bot already holds a pending pick on it. Paper (shadow_mode) rows are not
+            # stored in simulated_bets, so this reads the live ledger only.
+            if config.get("one_per_match") and bet_candidates and not shadow_mode:
+                try:
+                    from workers.api_clients.db import execute_query as _eq_opm
+                    if _eq_opm("SELECT 1 FROM simulated_bets WHERE bot_id = %s AND match_id = %s "
+                               "AND result = 'pending' LIMIT 1", [bot_ids[bot_name], match_id]):
+                        _funnel[bot_name]["drop_one_per_match_held"] = _funnel[bot_name].get("drop_one_per_match_held", 0) + 1
+                        bet_candidates = []
+                except Exception as _e_opm:  # noqa: BLE001
+                    # Fail closed: an unreadable ledger must not let a second side of the match out.
+                    console.print(f"  [yellow]one_per_match check failed for {bot_name} — skipping match: {_e_opm}[/yellow]")
+                    bet_candidates = []
 
             for mkt, selection, odds, raw_mp, cal_prob, ip, edge, kelly, alignment, odds_mv, stake, os_market, os_selection in bet_candidates:
                 _fctx = {"source": "pipeline_shadow" if shadow_mode else "pipeline", "bot": bot_name, "match_id": str(match_id),
@@ -4257,7 +4290,7 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                             ensemble_prob=cal_prob,
                             opening_implied=ip,
                         )
-                        if not _meta.should_fire(meta_score):
+                        if not config.get("exact_rule") and not _meta.should_fire(meta_score):
                             _fstep("drop_meta_b_ml3")
                             continue
                 except Exception:
@@ -4402,6 +4435,10 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                             )
                         except Exception:
                             pass  # non-critical
+                    elif config.get("one_per_match"):
+                        # [[#162]] W7.8: store_bet dedup (the bot already holds THIS selection) still
+                        # means the bot holds the match — never fall through to the next side.
+                        _one_done = True
                     # else: already placed today, skip silently
                 except Exception as e:
                     console.print(f"  [red]Error storing bet: {e}[/red]")

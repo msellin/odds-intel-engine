@@ -224,7 +224,8 @@ BOTS: list[BotSpec] = [
             "Match result — NEW MODEL (#152): twin of bot_v10_1x2 on the NEW+ model (r1x2_comb_v1), EV >= 3% flat, odds 1.30-3.00 (LANES cap, 2026-09-25), never a VIP-held pick (so the EV 3-5% band). bot_v10_1x2 is unchanged (live CLV ~+4.7% Jul-Sep); the two are compared live after 50-100 settled picks. testing, shown on /performance, paper."),
     BotSpec("bot_combined_1x2_ev5_v1", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
             None, None, False,
-            "1x2 NEW+ EV5 (#141 B4): the combined model r1x2_comb_v1 as a consensus-outlier bettor in its natural unit — EV = p x odds - 1 >= 5% flat across tiers, Pinnacle price required, no min_prob, odds 1.30-6.00, one pick per match. Backtest B2 CLV +2.0% (n=1,050; +1.1% at our own sweepers), same window so optimistic. VIP · TESTING (#155), paper, no placement path."),
+            "1x2 NEW+ EV5 (#141 B4): the combined model r1x2_comb_v1 as a consensus-outlier bettor in its natural unit — EV = p x odds - 1 >= 5% flat across tiers, Pinnacle price required, no min_prob, odds 1.30-6.00, one pick per match. Backtest B2 CLV +2.0% (n=1,050; +1.1% at our own sweepers), same window so optimistic. VIP · TESTING (#155), paper, no placement path. r2 (#162 W7.7/W7.8, 2026-09-25): runs EXACTLY the B2 rule — the ~8 inherited legacy gates are skipped (exact_rule) — and holds one pick per match ACROSS runs.",
+            rule_version="r2"),
     # bot_combined_1x2_ev8_v1 RETIRED 2026-09-25 (migration 444): a strict subset of the VIP bot
     # above; the EV8 band is now a split of the VIP ledger (per-pick vip_ev_label).
     BotSpec("bot_ou_sharp_early_v1", FAM_INTERNAL, "ou", ANCHOR_SHARP,
@@ -240,7 +241,8 @@ BOTS: list[BotSpec] = [
     # model's 252-pick record neither becomes the new rule's nor trips the #155 review flag.
     BotSpec("bot_v10_ou_comb_v1", FAM_INTERNAL, "ou", ANCHOR_MODEL,
             None, None, False,
-            "Goals over/under — NEW MODEL (#152, migration 443): successor of the retired bot_v10_ou on the combined O/U model ou_comb_v1 (served p = Pinnacle where priced, else combined), EV >= 3% flat, O/U 1.5/2.5/3.5 over+under, odds 1.30-3.00, one pick per match; O/U EARLY-held / VIP-range picks held back until kickoff (#164). Backtest 08-31..09-24 at open: 61 picks (~2.4/day), sharp CLV +2.0% [+1.0, +3.0]. testing, sent to /picks, paper."),
+            "Goals over/under — NEW MODEL (#152, migration 443): successor of the retired bot_v10_ou on the combined O/U model ou_comb_v1 (served p = Pinnacle where priced, else combined), EV >= 3% flat, O/U 1.5/2.5/3.5 over+under, odds 1.30-3.00, one pick per match; O/U EARLY-held / VIP-range picks held back until kickoff (#164). Backtest 08-31..09-24 at open: 61 picks (~2.4/day), sharp CLV +2.0% [+1.0, +3.0]. testing, sent to /picks, paper. r2 (#162 W7.8, 2026-09-25): one pick per match ACROSS runs, not just within one.",
+            rule_version="r2"),
     # REGISTRY-DRIFT-FIX-2026-09-09: bot_1x2_specialist, bot_dnb_specialist and
     # bot_summer_specialist were retired in the DB (migrations 323/324, 2026-09-09
     # 10:25–10:41) but left in the registry — removed here so active_names() matches

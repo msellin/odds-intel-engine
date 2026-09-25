@@ -15503,7 +15503,8 @@ def test_ah_veto_widen():
     # inline expression vanished and this failed — while the behaviour it
     # guards was unchanged. Assert the comparison against the per-market gap,
     # which is the actual contract.
-    assert "if _anchor_gap > _veto_gap:" in src, \
+    # [[#162]] W7.7: the veto now skips the exact-rule VIP bot (`not _exact and …`); same comparison.
+    assert "_anchor_gap > _veto_gap:" in src, \
         "Veto check must compare the anchor gap against the per-market _veto_gap, "\
         "not the fixed PINNACLE_VETO_GAP"
     assert "_anchor_gap" in src and "_veto_anchor" in src, \
@@ -59852,6 +59853,43 @@ def test_rule_version_tagged():
     i_start = main_src.index("\n    _maybe_catchup_missed_settlement()")
     assert i_sync < i_start, "sync must run before the catch-up / any writer"
     assert 'id="rule_version_sync"' in sched
+
+@test("VIP1-EXACT-RULE-ONE-PER-MATCH — VIP #1 runs the pre-registered B2 rule only; one pick per match across runs (#162 W7.7/W7.8)")
+def test_vip1_exact_rule_one_per_match():
+    """[[#162]] W7.7/W7.8/W8.7 (owner decision (b), 2026-09-25). VIP #1 (bot_combined_1x2_ev5_v1) inherited
+    ~8 legacy gates its backtest never tested (they dropped 35 B2-clearing candidates vs 26 accepted in 7
+    days), and one_per_match held only within a run (it held home AND away on one fixture). Now: an
+    `exact_rule` flag skips every inherited gate for it, and every one_per_match bot skips a match it
+    already holds a pending pick on — failing CLOSED if the ledger is unreadable. Both bots are r2."""
+    import pathlib as _pl
+    from workers.jobs.daily_pipeline_v2 import BOTS_CONFIG
+    from workers.registry.bot_registry import BOTS
+    exact = sorted(n for n, c in BOTS_CONFIG.items() if c.get("exact_rule"))
+    assert exact == ["bot_combined_1x2_ev5_v1"], f"exact_rule is VIP #1's pre-registration, nothing else: {exact}"
+    src = (_pl.Path(__file__).resolve().parent.parent / "workers/jobs/daily_pipeline_v2.py").read_text()
+    for guard in ("not _exact\n                    and os.getenv(\"ANCHOR_GAP_MID_BAND_ENABLED\"",
+                  "if not _exact and _anchor_gap > _veto_gap:",
+                  "if not _exact and mkt == \"1X2\" and selection == \"Home\":",
+                  "if not _exact and odds_mv[\"veto\"]:",
+                  "if os_market != \"1x2\" and not _exact:",
+                  "aln_bump = eff_bump = 0.0",
+                  "if _min_aln is not None and not _exact:",
+                  "stake = FLAT_STAKE_EUR",
+                  "if not config.get(\"exact_rule\") and not _meta.should_fire(meta_score):"):
+        assert guard in src, f"inherited gate not skipped for the exact-rule bot: {guard!r}"
+    # The B2 rule itself is still enforced for it: EV floor, odds range, Pinnacle required.
+    c = BOTS_CONFIG["bot_combined_1x2_ev5_v1"]
+    assert c["edge_unit"] == "ev" and c["odds_range"] == (1.30, 6.00) and c["require_pinnacle"] and c["one_per_match"]
+    assert all(v == {"1x2_fav": 0.05, "1x2_long": 0.05} for v in c["edge_thresholds"].values())
+    # One per match across runs, fail closed, and a dedup counts as holding the match.
+    i = src.index("W7.8 (rule r2 for every one_per_match bot)")
+    blk = src[i:i + 1800]
+    assert "result = 'pending'" in blk and "bet_candidates = []" in blk and "Fail closed" in blk
+    assert "elif config.get(\"one_per_match\"):\n                        # [[#162]] W7.8: store_bet dedup" in src
+    rv = {b.name: b.rule_version for b in BOTS}
+    for n, cc in BOTS_CONFIG.items():
+        if cc.get("one_per_match") and cc.get("is_active", True) and n in rv:
+            assert rv[n] != "r1", f"{n}'s rule changed (W7.8) — its rule_version must be bumped"
 
 if __name__ == "__main__":
     main()
