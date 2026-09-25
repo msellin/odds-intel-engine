@@ -57287,5 +57287,143 @@ def test_real_bets_answer_first():
     # (5) promotions only when there is something (or a read error) to show
     assert "(d.promos.length > 0 || d.promoError) &&" in page
 
+@test("FORWARD-TEST-TWIN-ARMS — #161 two recorded, never-published twins: parent gates + exactly one, pre-registered")
+def test_forward_test_twin_arms():
+    """[[#161]] (2026-09-25, owner-approved). Two twins of the pre-registered arms, each = its
+    parent's rule in EVERY gate plus ONE: (A) sharp_own_book_aligned — at Coolbet / Unibet-Site
+    / Epicbet / Tonybet the quote must be <= 5 min from the Pinnacle anchor; (B)
+    consensus_pin_confirmed — where a fresh tight Pinnacle exists, EV >= 0 against it too.
+    Guards: (1) never published — not in PUBLISHED_ARMS, no send path, every public view's arm
+    allow-list excludes them, EXPERIMENTAL bots rows; (2) the twin's selection equals the
+    parent's selection over the pool with the one extra filter applied, and nothing else;
+    (3) own-arm dedupe; (4) the pre-registration section exists, appended, before any pick;
+    (5) the checkpoint readout exists with the pre-stated constants."""
+    import inspect
+    from datetime import datetime, timezone
+    from unittest import mock
+    import scripts.publish_picks_forward_test as pf
+    import scripts.picks_forward_test_checkpoint as ck
+
+    # (1) identity + never published
+    assert pf.TWIN_ARMS == ("sharp_own_book_aligned", "consensus_pin_confirmed")
+    assert not set(pf.TWIN_ARMS) & set(pf.PUBLISHED_ARMS), "a twin arm must never reach the channel"
+    rv = pf.ARM_RULE_VERSION
+    assert rv["live"] == rv["junk_anchor"] == pf.RULE_VERSION and rv[pf.CONSENSUS_ARM] == pf.CONSENSUS_RULE_VERSION
+    assert rv[pf.ALIGNED_ARM] == "sharp_edge_v4_ownbook_align5_2026_09_25"
+    assert rv[pf.PINCONF_ARM] == "consensus_edge_v2_pinconf_2026_09_25"
+    assert len(set(rv.values())) == 4, "each twin needs its OWN rule_version"
+    assert set(pf.OWN_DIRECT_BOOKS) == {"Coolbet", "Unibet-Site", "Epicbet", "Tonybet"}
+    assert pf.OWN_BOOK_ALIGN_MIN == 5.0 and pf.PINCONF_MIN_EV == 0.0
+    rec = inspect.getsource(pf.record_twin_arms)
+    for fn in (pf.record_twin_arms, pf.aligned_twin_arm, pf.pin_confirmed_twin_arm):
+        assert "send_telegram" not in inspect.getsource(fn), f"{fn.__name__} must never send"
+    assert "except Exception" in rec, "a twin failure must never stop the published arms"
+    cl = inspect.getsource(pf.claim)
+    ins = cl[cl.index("INSERT INTO picks_forward_test"):cl.index("RETURNING id")]
+    assert "twin_gate" not in ins, "the published arms' INSERT must stay unchanged (deploy/migration race)"
+    assert "ARM_RULE_VERSION[arm]" in cl
+    sch = _engine_path("workers/scheduler.py").read_text()
+    job = sch[sch.index("def job_publish_picks_forward_test"):sch.index("def _publish_picks_forward_test_wrapper")]
+    assert "record_twin_arms(pool, consensus_pool, room, consensus_room)" in job
+    assert job.index("record_twin_arms(pool") > job.index('claim(c, "junk_anchor")'), "twins run last"
+    mig = _engine_path("supabase/migrations/434_forward_test_twin_arms.sql").read_text()
+    for a in pf.TWIN_ARMS:
+        assert f"'{a}'::text" in mig, f"arm CHECK must admit {a}"
+    for b in ("bot_sharp_aligned_v1", "bot_consensus_pinconf_v1"):
+        assert f"'{b}'" in mig
+    assert mig.count("TRUE, 'experimental', 1.00, 1.00, FALSE, FALSE") == 2, "EXPERIMENTAL, not on /picks or /performance"
+    agg = _web_path("src/lib/bot-aggregates.ts").read_text()
+    blk = agg[agg.index("LEDGER_BACKED_BOTS"):]
+    blk = blk[:blk.index("]);")]
+    assert '"bot_sharp_aligned_v1"' in blk and '"bot_consensus_pinconf_v1"' in blk
+    try:
+        from workers.api_clients.db import execute_query
+        views = execute_query("""SELECT viewname, definition FROM pg_views WHERE schemaname = 'public'
+            AND viewname IN ('picks_public_all', 'picks_forward_test_public', 'picks_forward_test_summary',
+                             'picks_forward_test_summary_by_market', 'picks_forward_test_anchor_clv',
+                             'picks_forward_test_record_leg', 'picks_forward_test_bot_record')""")
+    except Exception:
+        views = None
+    if views:
+        for v in views:
+            d = v["definition"]
+            if v["viewname"] != "picks_forward_test_bot_record":   # reads record_leg, which filters
+                assert "'live'" in d, f"{v['viewname']} lost its explicit arm allow-list"
+            for a in pf.TWIN_ARMS:
+                assert a not in d, f"{v['viewname']} exposes twin arm {a} publicly"
+
+    # (2)+(3) behaviour on pure functions — the ledger dedupe is mocked, and recorded
+    ko = datetime.now(timezone.utc)
+
+    def leg(i, book, gap, edge, market="1x2", sel="home", odds=2.5):
+        return {"match_id": f"00000000-0000-0000-0000-{i:012d}", "market": market, "selection": sel,
+                "odds": odds, "bookmaker": book, "edge": edge, "p_sharp": (1 + edge) / odds,
+                "alignment_gap_minutes": gap, "edge_credible_min": edge, "grade": "C",
+                "kickoff_at": ko, "anchor_odds": {}, "anchor_overround": 0.03}
+    pool = [leg(1, "Epicbet", 22.0, 0.05), leg(2, "Coolbet", 3.0, 0.04), leg(3, "Bet365", 40.0, 0.06),
+            leg(4, "Tonybet", 5.0, 0.035), leg(5, "Unibet-Site", 6.0, 0.02),
+            leg(6, "Epicbet", 30.0, 0.09, sel="away"), leg(6, "SBO", 0.0, 0.04, sel="home")]
+    seeds = []
+
+    def _apm(arms=pf.PUBLISHED_ARMS):
+        seeds.append(tuple(arms))
+        return set()
+    key = lambda cs: [(c["match_id"], c["market"], c["selection"], c["bookmaker"], c["odds"]) for c in cs]
+    with _PUBLISHER_PATCH_LOCK, mock.patch.object(pf, "already_published_markets", _apm):
+        parent = pf.select(pool)
+        twin = pf.aligned_twin_arm(pool)
+        expect = pf.select([c for c in pool if pf.own_book_aligned(c)])
+        assert key(twin) == key(expect), "twin A must be the parent rule + the alignment filter, nothing else"
+        assert all(c["arm"] == pf.ALIGNED_ARM and c["twin_gate"] for c in twin)
+        tk = {k[:3] for k in key(twin)}
+        assert (pool[0]["match_id"], "1x2", "home") not in tk, "own-book leg 22 min off the anchor must drop"
+        assert {pool[1]["match_id"], pool[2]["match_id"], pool[3]["match_id"]} <= {c["match_id"] for c in twin}, (
+            "aligned own-book legs and API-Football books must pass unchanged")
+        # match 6: parent takes the higher-edge Epicbet away; twin falls back to the SBO home side
+        assert ("00000000-0000-0000-0000-000000000006", "1x2", "away") in {k[:3] for k in key(parent)}
+        assert ("00000000-0000-0000-0000-000000000006", "1x2", "home") in tk
+        no_own = [c for c in pool if c["bookmaker"] not in pf.OWN_DIRECT_BOOKS]
+        assert key(pf.aligned_twin_arm(no_own)) == key(pf.select(no_own)), "no own-book legs -> twin == parent"
+        assert (pf.ALIGNED_ARM,) in seeds, "twin A must dedupe against its OWN ledger"
+
+        cpool = pool + [leg(7, "Bet365", 0.0, 0.15)]           # above the consensus ceiling
+        cpar = pf.select(cpool, max_edge=pf.CONSENSUS_MAX_EDGE, credible_gate=True)
+        assert key(pf.pin_confirmed_twin_arm(cpool, pin_lookup=lambda m, mk, at: None)) == key(cpar), (
+            "no tight Pinnacle anywhere -> twin B must equal consensus v2 exactly")
+        # tight Pinnacle on match 2 says no value at 2.5 (p 0.38 -> EV -5%); on match 3 value (p 0.42)
+        pins = {pool[1]["match_id"]: {"home": 0.38}, pool[2]["match_id"]: {"home": 0.42}}
+        tb = pf.pin_confirmed_twin_arm(cpool, pin_lookup=lambda m, mk, at: pins.get(m))
+        ids = {c["match_id"] for c in tb}
+        assert pool[1]["match_id"] not in ids and pool[2]["match_id"] in ids
+        assert ids == {c["match_id"] for c in cpar} - {pool[1]["match_id"]}, "B's only extra effect is the Pinnacle veto"
+        assert all(c["arm"] == pf.PINCONF_ARM for c in tb) and (pf.PINCONF_ARM,) in seeds
+        assert [c for c in tb if c["match_id"] == pool[2]["match_id"]][0]["twin_gate"]["pin_tight"] is True
+        assert pf.select([leg(9, "X", 0, 0.05)])  # default seed unchanged for the published arms
+        assert seeds[-1] == tuple(pf.PUBLISHED_ARMS)
+    src = inspect.getsource(pf.pinnacle_tight_probs)
+    assert 'a.source == "pinnacle_tight"' in src and "compute_anchor({PIN: pin}" in src
+
+    # (4) pre-registration present, appended after Amendment 1, original text intact
+    doc = _engine_path("dev/active/picks-forward-test-preregistration.md").read_text()
+    assert "## TWIN ARMS — 2026-09-25" in doc and doc.index("## TWIN ARMS") > doc.index("## AMENDMENT 1")
+    for s in (pf.ALIGNED_RULE_VERSION, pf.PINCONF_RULE_VERSION, "n = 50", "n = 100", "0.0125",
+              "--twins", "Registered before either arm's first pick"):
+        assert s in doc, f"pre-registration is missing {s!r}"
+    assert "| **n = 200** | CLV (margin-corrected" in doc, "the original rule must stay unedited"
+
+    # (5) checkpoint readout
+    assert ck.TWINS == {"sharp_own_book_aligned": "live", "consensus_pin_confirmed": "consensus_anchor"}
+    assert ck.TWIN_CHECKPOINTS == (50, 100) and ck.TWIN_ALPHA_VS_CONTROL == 0.025 and ck.TWIN_ALPHA_VS_PARENT == 0.0125
+    c = {("t", "1x2"): [0.03, 0.01], ("p", "1x2"): [0.0]}
+    assert abs(ck.stratified_delta(c, "t", "p")[0] - 0.02) < 1e-12
+    assert ck.twin_verdict(10, 0.0, 0.0).startswith("NO CHECKPOINT YET")
+    assert "INTERIM" in ck.twin_verdict(60, 0.0, 0.0)
+    assert "READOUT: SUPPORTED" in ck.twin_verdict(100, 0.01, 0.02)
+    assert "NOT SUPPORTED" in ck.twin_verdict(100, 0.02, 0.0), "vs parent must clear the Bonferroni 0.0125"
+    assert "NOT SUPPORTED" in ck.twin_verdict(120, None, 0.0)
+    assert "'junk_anchor'" in ck.SQL, "the pre-registered live-vs-junk query is untouched"
+    return "2 twins: parent gates + one, own dedupe, never published, pre-registered, readout at n=50/100"
+
+
 if __name__ == "__main__":
     main()

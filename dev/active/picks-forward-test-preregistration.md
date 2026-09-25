@@ -496,3 +496,101 @@ NOT changed: `picks_forward_test.rule_version` is never rewritten, `picks_forwar
 still groups on the rule as published, and the stop-rule checkpoints keep counting v2-PUBLISHED
 picks only. A re-checked pick is marked as such on the bot's detail view.
 
+## TWIN ARMS — 2026-09-25 ([[#161]], owner-approved) — two recorded, never-published hypothesis arms
+
+**Registered before either arm's first pick.** Nothing above this section is edited: the
+live arm, the consensus arm, the junk control, their constants, their n and their
+checkpoints are untouched. These are two NEW arms, each with its own `arm` and
+`rule_version` in `picks_forward_test`, each testing ONE extra gate that the [[#156]] audit
+pointed to. Both are hypotheses born on small cells (n 7–57), so they are judged forward
+only — nothing measured before today counts toward them.
+
+### Common to both arms
+
+* **Recorded, never published.** Never sent to Telegram, never on /picks, never on
+  /performance, never in the pre-registered live counts or the runaway breaker
+  (`PUBLISHED_ARMS` does not contain them; every public view filters an explicit arm
+  allow-list). Status **EXPERIMENTAL** under [[#155]] — admins only. Like the junk control.
+* **Same cadence, same candidate pool, same room.** They run inside the same
+  `job_publish_picks_forward_test` pass (:05/:35), over the exact pool the parent arm
+  selects from, truncated at the same runaway room the parent was given.
+* **Own-arm dedupe.** One selection per (match, market), seeded from the twin's OWN ledger
+  rows only. A twin is by construction a subset of its parent's qualifying legs, so seeding
+  it from the published arms would suppress every twin pick. Consequence, stated up front:
+  the parent is deduped against the OTHER published arm and the twin is not, so a few twin
+  picks may have no parent row.
+* **Settled and scored by the same arm-agnostic code** — `settle_picks_forward_test` and
+  `workers/jobs/clv_sharp.py` (`leg_clv_sharp`) have no branch on `arm`.
+* **The evidence for the extra gate is stored per row** in `picks_forward_test.twin_gate`
+  (jsonb, NULL on every other arm).
+
+### (A) `arm = 'sharp_own_book_aligned'` · `rule_version = 'sharp_edge_v4_ownbook_align5_2026_09_25'`
+
+**Rule:** the live v4 rule in every gate (3% floor, odds ≤ 4.0, 60-min alignment,
+price ratio ≤ 0.20, anchor overround ≤ 4%, 45-min lead, 14 h lookahead, the same excluded
+books, one selection per market, no daily cap) **PLUS**: when the leg's book is one of our
+own direct books — **Coolbet, Unibet-Site, Epicbet, Tonybet** — the book's quote and the
+Pinnacle anchor quote must be **≤ 5 minutes apart** (`alignment_gap_minutes`). API-Football
+books arrive in the same fetch as Pinnacle (gap 0) and are unaffected. The gate applies to
+the leg AS v4 SELECTED IT (the best aligned price): a failing leg is dropped, never
+re-routed to the next-best book, so every twin pick is exactly the (book, price) v4 took.
+
+**What it tests:** that our own books' stale quotes are what drags the sharp arm there —
+the audit read sharp picks at our books at **+3.9% vs the sharp close when ≤ 5 min apart
+and −0.6% at 5–60 min**. Expected: twin CLV above the live arm's.
+
+### (B) `arm = 'consensus_pin_confirmed'` · `rule_version = 'consensus_edge_v2_pinconf_2026_09_25'`
+
+**Rule:** consensus v2 in every gate (≥ 5-book consensus, 3% under Shin AND additive AND
+power, 8% ceiling, odds ≤ 4.0, the shared alignment / ratio / lead / lookahead, grades
+B / C / D labelled and recorded exactly as the parent) **PLUS**: where a fresh tight
+Pinnacle anchor exists at the moment of the pass — `workers/utils/anchor.py`
+`pinnacle_tight`: a complete Pinnacle set from one fetch, ≤ 60 min old, overround ≤ 4% —
+the leg must ALSO have **EV ≥ 0% against that Shin-de-vigged Pinnacle price**. Where no
+tight Pinnacle exists the leg passes unchanged, so on those fixtures the twin equals its
+parent. `twin_gate` records `{pin_tight, pin_p, pin_ev}` per row.
+
+**What it tests:** that consensus picks Pinnacle disagrees with are the drag — the audit
+read consensus picks at our books at **−2.1% vs the sharp close**. Expected: twin CLV
+above the consensus arm's, the gain concentrated on Pinnacle-priced fixtures.
+
+### Readout (pre-stated — do not tune)
+
+* **Instrument and method: AMENDMENT 1 verbatim** — sharp-anchor CLV (`clv_sharp`, else
+  ≥ 5-book `clv_cons`; thin excluded; |clv| > 1 excluded), market-stratified Δ weighted by
+  the TWIN's market shares, one-sided bootstrap B = 10,000 within arm × market cells, seed
+  20260925. Each arm is read on its own current `rule_version`.
+* **Two comparisons per twin:** twin − parent (A vs `live`, B vs `consensus_anchor`) and
+  twin − `junk_anchor` (the v4 control).
+* **Checkpoints:** the twin's SETTLED (won/lost) count reaching **n = 50** (interim —
+  reported, decides nothing) and **n = 100** (the readout).
+* **At n = 100 a twin is SUPPORTED only if** twin − junk has p < 0.025 **and** twin − parent
+  has p < **0.0125** (0.025 Bonferroni-split across the two twins — two gates tested, two
+  chances to find one by luck). Otherwise NOT SUPPORTED.
+* **Known bias, stated:** twin legs are mostly a subset of the parent's, so the two samples
+  are positively correlated; the bootstrap resamples them as independent, which overstates
+  the variance of the difference. That makes SUPPORTED harder to reach, not easier.
+* **What a result licenses.** SUPPORTED lets the owner adopt the gate into the parent as a
+  NEW `rule_version` — a new test with a new start date, per this document's own rule —
+  never retroactively. NOT SUPPORTED closes the twin at its n; its rows stay in the ledger.
+  Neither result touches the live or consensus arms' own checkpoints.
+
+### Expected volume — measured on the ledger before the first twin pick (pick-time data only)
+
+* **(A)** of the live arm's 69 v4 picks in the 7 days to 2026-09-25, **35 would have
+  been recorded**. All 34 drops are at our own books with gaps of 11–37 min: 27 of the
+  arm's 29 Epicbet picks (mostly at 21–23 min — Epicbet's feed cadence, not an occasional
+  stale quote), 4 of 8 Coolbet, 3 of 4 Unibet-Site. So (A) roughly halves the arm's
+  volume and removes nearly all of its Epicbet picks.
+* **(B)** of the consensus arm's 89 picks in the 4 days to 2026-09-25, **none had a tight
+  Pinnacle anchor at pick time** (28 had no Pinnacle set within 60 min; 61 had one at
+  4.2–15.4% overround — `pinnacle_wide`). Pinnacle tightens toward kickoff and these
+  picks are made hours out, so **as specified, (B) will rarely differ from its parent** and
+  will reach n = 100 with few or no legs where its gate bound. Recorded here, before the
+  first pick, so a null readout is not later mistaken for a finding about Pinnacle
+  confirmation: `twin_gate.pin_tight` counts how often the gate was even testable. A
+  looser variant (e.g. any fresh Pinnacle) would be a DIFFERENT twin with its own arm and
+  registration — the owner's call, not an edit to this one.
+
+**The calculation is code:** `python3 -m scripts.picks_forward_test_checkpoint --twins`
+(read-only). Pinned by smoke `FORWARD-TEST-TWIN-ARMS`.

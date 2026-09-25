@@ -40,6 +40,13 @@ THE AMENDED RULE (pre-stated, do not tune):
 
     python3 -m scripts.picks_forward_test_checkpoint
     python3 -m scripts.picks_forward_test_checkpoint --rule-version sharp_edge_v4_2026_09_15
+    python3 -m scripts.picks_forward_test_checkpoint --twins
+
+TWIN ARMS ([[#161]], 2026-09-25, pre-registered in the same doc, "TWIN ARMS"). `--twins`
+reads each recorded-never-published twin with the SAME method against (a) its parent arm
+and (b) the junk control, each arm on its own newest rule_version, stratified by the
+TWIN's market shares. Checkpoints n=50 (interim, decides nothing) and n=100: SUPPORTED
+only if twin − junk p < 0.025 AND twin − parent p < 0.0125 (Bonferroni over two twins).
 """
 from __future__ import annotations
 
@@ -56,6 +63,13 @@ ALPHA = 0.025            # one-sided, per look
 BOOT_B = 10_000
 SEED = 20260925
 CLV_ABS_MAX = 1.0
+
+# [[#161]] twin arms -> their parent arm. Readout constants are pre-registered.
+TWINS = {"sharp_own_book_aligned": "live", "consensus_pin_confirmed": "consensus_anchor"}
+CONTROL_ARM = "junk_anchor"
+TWIN_CHECKPOINTS = (50, 100)
+TWIN_ALPHA_VS_CONTROL = 0.025
+TWIN_ALPHA_VS_PARENT = 0.0125     # 0.025 split across the two twins
 
 SQL = """
 SELECT p.arm, p.market, p.outcome, p.clv_margin_corrected,
@@ -88,18 +102,21 @@ def cells(rows: list[dict], key: str = "clv") -> dict:
     return out
 
 
-def stratified_delta(c: dict) -> tuple[float | None, dict]:
+def stratified_delta(c: dict, treat: str = "live",
+                     ctrl: str = "junk_anchor") -> tuple[float | None, dict]:
     """Δ = Σ_m w_m (mean_live_m − mean_ctrl_m), w = live arm's share per market.
-    Markets missing from either arm are dropped (and their weight renormalised)."""
-    markets = sorted({m for (a, m) in c if a == "live"})
-    usable = [m for m in markets if c.get(("live", m)) and c.get(("junk_anchor", m))]
-    n_live = sum(len(c[("live", m)]) for m in usable)
+    Markets missing from either arm are dropped (and their weight renormalised).
+    `treat`/`ctrl` default to the pre-registered live-vs-junk pair; the [[#161]] twin
+    readout passes its own arms (the key is still named "live" in the output)."""
+    markets = sorted({m for (a, m) in c if a == treat})
+    usable = [m for m in markets if c.get((treat, m)) and c.get((ctrl, m))]
+    n_live = sum(len(c[(treat, m)]) for m in usable)
     if n_live == 0:
         return None, {}
     per = {}
     d = 0.0
     for m in usable:
-        lv, cv = c[("live", m)], c[("junk_anchor", m)]
+        lv, cv = c[(treat, m)], c[(ctrl, m)]
         diff = sum(lv) / len(lv) - sum(cv) / len(cv)
         w = len(lv) / n_live
         per[m] = {"w": w, "live": sum(lv) / len(lv), "ctrl": sum(cv) / len(cv),
@@ -108,13 +125,14 @@ def stratified_delta(c: dict) -> tuple[float | None, dict]:
     return d, per
 
 
-def bootstrap(c: dict, b: int = BOOT_B, seed: int = SEED) -> tuple[float, float]:
+def bootstrap(c: dict, b: int = BOOT_B, seed: int = SEED,
+              treat: str = "live", ctrl: str = "junk_anchor") -> tuple[float, float]:
     """One-sided p (share of Δ* <= 0) and the 97.5% lower bound of Δ."""
     rng = random.Random(seed)
     reps = []
     for _ in range(b):
         rc = {k: [v[rng.randrange(len(v))] for _ in range(len(v))] for k, v in c.items() if v}
-        d, _ = stratified_delta(rc)
+        d, _ = stratified_delta(rc, treat, ctrl)
         if d is not None:
             reps.append(d)
     reps.sort()
@@ -135,6 +153,79 @@ def verdict(n_settled_live: int, p: float | None) -> str:
     return f"n={k} CHECKPOINT: STOP — live does not beat control (one-sided p={p:.4f} >= {ALPHA})"
 
 
+def twin_verdict(n_settled: int, p_parent: float | None, p_ctrl: float | None) -> str:
+    """[[#161]] pre-registered twin readout. n=50 is interim and decides nothing."""
+    if n_settled < TWIN_CHECKPOINTS[0]:
+        return f"NO CHECKPOINT YET (twin settled n={n_settled}; next at {TWIN_CHECKPOINTS[0]})"
+    if n_settled < TWIN_CHECKPOINTS[1]:
+        return f"n={TWIN_CHECKPOINTS[0]} INTERIM — reported only, decides nothing"
+    if p_parent is None or p_ctrl is None:
+        return f"n={TWIN_CHECKPOINTS[1]} READOUT: NOT SUPPORTED — missing sharp-anchor data"
+    ok = p_ctrl < TWIN_ALPHA_VS_CONTROL and p_parent < TWIN_ALPHA_VS_PARENT
+    return (f"n={TWIN_CHECKPOINTS[1]} READOUT: {'SUPPORTED' if ok else 'NOT SUPPORTED'} "
+            f"(vs control p={p_ctrl:.4f} < {TWIN_ALPHA_VS_CONTROL}? · "
+            f"vs parent p={p_parent:.4f} < {TWIN_ALPHA_VS_PARENT}?)")
+
+
+PAIR_SQL = """
+SELECT p.arm, p.market, p.outcome, p.clv_margin_corrected,
+       CASE WHEN c.status = 'ok' THEN c.clv_sharp
+            WHEN c.cons_status = 'ok' THEN c.clv_cons END           AS clv_anchor,
+       CASE WHEN c.status = 'ok' THEN 'pinnacle'
+            WHEN c.cons_status = 'ok' THEN 'consensus' END          AS anchor_source
+  FROM picks_forward_test p
+  LEFT JOIN leg_clv_sharp c ON c.ledger = 'picks_forward_test' AND c.leg_id = p.id
+ WHERE ((p.arm = %s AND p.rule_version = %s) OR (p.arm = %s AND p.rule_version = %s))
+   AND p.outcome IN ('won', 'lost')
+"""
+
+
+def newest_rule_version(cur, arm: str) -> str | None:
+    cur.execute("""SELECT rule_version FROM picks_forward_test WHERE arm = %s
+                    ORDER BY published_at DESC LIMIT 1""", (arm,))
+    r = cur.fetchone()
+    return r[0] if r else None
+
+
+def _pair_p(cur, treat: str, ctrl: str) -> tuple[int, float | None]:
+    """Print one twin comparison; return (treat settled n, one-sided p or None)."""
+    rv_t, rv_c = newest_rule_version(cur, treat), newest_rule_version(cur, ctrl)
+    if rv_t is None or rv_c is None:
+        print(f"  {treat} vs {ctrl}: no picks yet")
+        return 0, None
+    cur.execute(PAIR_SQL, (treat, rv_t, ctrl, rv_c))
+    rows = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
+    for r in rows:
+        r["clv"] = anchor_value(r)
+    n_t = sum(1 for r in rows if r["arm"] == treat)
+    c = cells(rows, "clv")
+    d, per = stratified_delta(c, treat, ctrl)
+    print(f"  {treat} [{rv_t}] vs {ctrl} [{rv_c}] — settled {n_t} vs "
+          f"{sum(1 for r in rows if r['arm'] == ctrl)}")
+    for m, x in per.items():
+        print(f"    {m:14s} twin {x['live']*100:+.2f}% (n={x['n_live']})  "
+              f"{ctrl} {x['ctrl']*100:+.2f}% (n={x['n_ctrl']})  Δ {x['diff']*100:+.2f}pp  w={x['w']:.2f}")
+    if d is None:
+        print("    no overlapping sharp-anchor data")
+        return n_t, None
+    p, lo = bootstrap(c, treat=treat, ctrl=ctrl)
+    print(f"    stratified Δ {d*100:+.2f}pp · 97.5% lower bound {lo*100:+.2f}pp · one-sided p={p:.4f}")
+    return n_t, p
+
+
+def twins_main() -> int:
+    from workers.api_clients.db import get_conn
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SET TRANSACTION READ ONLY")
+        for twin, parent in TWINS.items():
+            print(f"TWIN {twin} (parent {parent})")
+            n, p_par = _pair_p(cur, twin, parent)
+            _, p_ctl = _pair_p(cur, twin, CONTROL_ARM)
+            print("  VERDICT: " + twin_verdict(n, p_par, p_ctl) + "\n")
+    return 0
+
+
 def current_live_rule_version(cur) -> str:
     cur.execute("""SELECT rule_version FROM picks_forward_test WHERE arm = 'live'
                     ORDER BY published_at DESC LIMIT 1""")
@@ -144,7 +235,11 @@ def current_live_rule_version(cur) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--rule-version", help="default: the live arm's newest rule_version")
+    ap.add_argument("--twins", action="store_true",
+                    help="[[#161]] read the two twin arms vs their parent and the junk control")
     args = ap.parse_args()
+    if args.twins:
+        return twins_main()
 
     from workers.api_clients.db import get_conn
     import psycopg2.extras

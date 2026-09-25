@@ -530,6 +530,32 @@ def _forward_test_rows(db: dict) -> dict[str, dict]:
                           gates=cons_gates + extra, anchor="consensus",
                           published=_pub(name, cons_arm and sent),
                           telegram=_pub(name, cons_arm and sent))
+    # [[#161]] twin arms — each is its parent's gates PLUS one, recorded, never published.
+    def _swap_rv(gates, rv, rv_const):
+        return ([g for g in gates if g["name"] != "rule_version"]
+                + [gate("rule_version", rv, src(F_FT, rf"^{rv_const}"))])
+    never_sent = gate("send", "recorded, never sent (not in PUBLISHED_ARMS)", src(F_FT, r"^TWIN_ARMS"))
+    rows["bot_sharp_aligned_v1"] = _row(
+        "bot_sharp_aligned_v1", "forward_test", **common,
+        description=f"Twin of the sharp arm (arm='{ft.ALIGNED_ARM}'): live v4 + own-book quote "
+                    f"within {ft.OWN_BOOK_ALIGN_MIN:g} min of the anchor. Recorded, never published.",
+        markets=list(ft.MARKETS), prob_source="Shin-de-vigged Pinnacle", odds_max=ft.MAX_ODDS,
+        gates=_swap_rv(live_gates, ft.ALIGNED_RULE_VERSION, "ALIGNED_RULE_VERSION") + [
+            gate("own_direct_books", ft.OWN_DIRECT_BOOKS, src(F_FT, r"^OWN_DIRECT_BOOKS")),
+            gate("own_book_quote_anchor_max_gap_min", ft.OWN_BOOK_ALIGN_MIN,
+                 src(F_FT, r"^OWN_BOOK_ALIGN_MIN")), never_sent],
+        anchor="sharp", published=False, telegram=False)
+    rows["bot_consensus_pinconf_v1"] = _row(
+        "bot_consensus_pinconf_v1", "forward_test", **common,
+        description=f"Twin of the consensus arm (arm='{ft.PINCONF_ARM}'): consensus v2 + EV >= "
+                    f"{ft.PINCONF_MIN_EV:g} vs a fresh tight Pinnacle where one exists. "
+                    f"Recorded, never published.",
+        markets=list(ft.MARKETS), prob_source="de-vigged multi-book consensus (+ Pinnacle confirm)",
+        odds_max=ft.MAX_ODDS,
+        gates=_swap_rv(cons_gates, ft.PINCONF_RULE_VERSION, "PINCONF_RULE_VERSION") + [
+            gate("min_ev_vs_pinnacle_tight", ft.PINCONF_MIN_EV, src(F_FT, r"^PINCONF_MIN_EV")),
+            never_sent],
+        anchor="consensus", published=False, telegram=False)
     rows[CONTROL_NAME] = _row(
         CONTROL_NAME, "control", ledger="picks_forward_test (arm='junk_anchor')",
         description="Negative control: shuffled anchor over the same unfiltered pool; never published.",
@@ -574,7 +600,10 @@ def build_rows(db_bots: list[dict] | None = None) -> list[dict]:
             resolved.setdefault(k, v)
 
     rows = []
-    names = sorted(set(db) | {CONTROL_NAME})
+    # + registry bots whose `bots` row is still in a pending migration (the smoke/migrate
+    # race SYSTEM-MAP-REGISTRY-NOT-DRIFTED also forgives) — a new bot is exported from day 0.
+    from workers.registry.bot_registry import active_names as _registry_active
+    names = sorted(set(db) | {CONTROL_NAME} | _registry_active())
     for name in names:
         b = db.get(name) or {}
         if name in resolved:

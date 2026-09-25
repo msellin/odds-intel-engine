@@ -240,6 +240,43 @@ def _book_probs(sides, side_q, book):
 # about what a READER sees, so they must span every published arm, not one.
 PUBLISHED_ARMS = ("live", CONSENSUS_ARM)
 
+# ── TWIN ARMS (2026-09-25, [[#161]], owner-approved) — RECORDED, NEVER PUBLISHED ──
+# Two hypothesis arms, each = its parent's rule in EVERY gate plus ONE extra gate the
+# [[#156]] audit pointed to. Pre-registered in dev/active/picks-forward-test-
+# preregistration.md ("TWIN ARMS — 2026-09-25") before their first pick. Like the junk
+# control they are NOT in PUBLISHED_ARMS: never sent, never on /picks or /performance
+# (every public view filters an explicit arm allow-list), never in daily_room(). They
+# dedupe against their OWN ledger only — a twin is a subset of its parent's legs, so
+# seeding it from the published arms would suppress every twin pick.
+#
+# (A) own-book quote alignment. At our own direct books the book's quote and the
+# Pinnacle anchor quote must be <= 5 min apart. Audit: sharp picks at our books read
+# +3.9% vs the sharp close when <= 5 min, -0.6% at 5-60 min. API-Football books arrive
+# in the same fetch as Pinnacle (gap 0), so they are untouched. The set is frozen HERE
+# rather than imported from board_guard.DIRECT_BOOKS: a pre-registered rule must not
+# change because an unrelated module's set did.
+ALIGNED_ARM = "sharp_own_book_aligned"
+ALIGNED_RULE_VERSION = "sharp_edge_v4_ownbook_align5_2026_09_25"
+OWN_DIRECT_BOOKS = ("Coolbet", "Unibet-Site", "Epicbet", "Tonybet")
+OWN_BOOK_ALIGN_MIN = 5.0
+# (B) sharp confirmation. Where a fresh TIGHT Pinnacle anchor exists
+# (workers/utils/anchor.py `pinnacle_tight`), the consensus leg must ALSO clear
+# EV >= 0% against it. Audit: consensus picks at our books read -2.1% vs the sharp close.
+PINCONF_ARM = "consensus_pin_confirmed"
+PINCONF_RULE_VERSION = "consensus_edge_v2_pinconf_2026_09_25"
+PINCONF_MIN_EV = 0.0
+TWIN_ARMS = (ALIGNED_ARM, PINCONF_ARM)
+
+# Every arm's rule_version, in one place. claim() raises KeyError on an unknown arm —
+# the ledger's CHECK constraint would refuse it anyway, this just fails before the DB.
+ARM_RULE_VERSION = {
+    "live": RULE_VERSION,
+    "junk_anchor": RULE_VERSION,
+    CONSENSUS_ARM: CONSENSUS_RULE_VERSION,
+    ALIGNED_ARM: ALIGNED_RULE_VERSION,
+    PINCONF_ARM: PINCONF_RULE_VERSION,
+}
+
 # MAX_ANCHOR_OVERROUND is v3's one change (PICKS-ANCHOR-QUALITY-GATE-2026-09-14).
 #
 # `anchor_overround` was already COMPUTED on every leg (see load_candidates) and
@@ -536,8 +573,11 @@ def load_candidates(anchor: str = "pinnacle") -> tuple[list[dict], list[dict]]:
     return select(out), out
 
 
-def already_published_markets() -> set:
+def already_published_markets(arms: tuple = PUBLISHED_ARMS) -> set:
     """(match_id, market) pairs that already have a LIVE pick out.
+
+    `arms` defaults to PUBLISHED_ARMS; only the recorded-never-published twin arms
+    ([[#161]]) pass their own arm, so their dedupe is against their own ledger.
 
     ONE-SELECTION-PER-MARKET, part 2 (2026-09-15). `select()` dedupes within a
     single run, which was enough at one run a day and is not enough at 48. On
@@ -559,7 +599,7 @@ def already_published_markets() -> set:
         rows = execute_query(
             """SELECT DISTINCT match_id::text AS m, market
                  FROM picks_forward_test WHERE arm = ANY(%s)""",
-            (list(PUBLISHED_ARMS),),
+            (list(arms),),
         )
         return {(r["m"], r["market"]) for r in rows}
     except Exception as e:
@@ -607,7 +647,8 @@ def daily_room() -> int:
 
 
 def select(cands: list[dict], room: int | None = None,
-           max_edge: float | None = None, credible_gate: bool = False) -> list[dict]:
+           max_edge: float | None = None, credible_gate: bool = False,
+           dedupe_arms: tuple | None = None) -> list[dict]:
     """Edge floor, then the best `room` by edge.
 
     `max_edge` is the [[#007]] ceiling and is used ONLY by the consensus arm —
@@ -635,7 +676,10 @@ def select(cands: list[dict], room: int | None = None,
     # "8 picks" are not 8 opinions. Keep the highest-edge side only.
     # Seed the dedupe with markets that ALREADY have a published pick, so a
     # later run cannot publish the opposite side of one we have already sent.
-    published = already_published_markets()
+    # `dedupe_arms` is passed ONLY by the recorded twin arms ([[#161]]): they dedupe
+    # against their own ledger. Every other caller keeps the published-arms seed.
+    published = (already_published_markets() if dedupe_arms is None
+                 else already_published_markets(dedupe_arms))
     if published is None:
         return []
     seen: set = {(m, mk) for m, mk in published}
@@ -761,6 +805,102 @@ def junk_anchor_arm(pool: list[dict]) -> list[dict]:
     return select(junk)
 
 
+def own_book_aligned(c: dict) -> bool:
+    """[[#161]] twin (A)'s ONE extra gate: at our own direct books, quote and anchor
+    must be <= OWN_BOOK_ALIGN_MIN apart. Every other book passes unchanged."""
+    return (c["bookmaker"] not in OWN_DIRECT_BOOKS
+            or float(c["alignment_gap_minutes"]) <= OWN_BOOK_ALIGN_MIN)
+
+
+def aligned_twin_arm(pool: list[dict], room: int | None = None) -> list[dict]:
+    """Twin (A): the live v4 rule over the SAME pool, plus own_book_aligned().
+
+    The gate filters the pool BEFORE select(), exactly where every other v4 gate sits,
+    so one-selection-per-market picks the best side among legs that pass. A failing
+    leg is dropped, never re-routed to another book: every twin pick is the same
+    (book, price) v4 would have taken. Recorded, never published."""
+    out = []
+    for c in pool:
+        if not own_book_aligned(c):
+            continue
+        d = dict(c)
+        d["arm"] = ALIGNED_ARM
+        d["twin_gate"] = {"own_book": c["bookmaker"] in OWN_DIRECT_BOOKS,
+                          "gap_min": round(float(c["alignment_gap_minutes"]), 2),
+                          "max_gap_min": OWN_BOOK_ALIGN_MIN}
+        out.append(d)
+    return select(out, room, dedupe_arms=(ALIGNED_ARM,))
+
+
+def pinnacle_tight_probs(match_id, market: str, at: datetime) -> dict | None:
+    """{selection: Shin p} from a fresh TIGHT Pinnacle set, or None — the anchor.py
+    `pinnacle_tight` tier on its own (one complete set from one fetch, <= 60 min old,
+    overround <= 4%). Consensus members are deliberately not passed in: this asks only
+    whether the sharp line is there and tight."""
+    from workers.utils.anchor import PIN, PIN_MAX_AGE_MIN, compute_anchor, load_sets, market_sides
+    sides = market_sides(market)
+    if not sides:
+        return None
+    pin = load_sets(str(match_id), market, sides, at=at, lookback_min=PIN_MAX_AGE_MIN).get(PIN)
+    if not pin:
+        return None
+    a = compute_anchor({PIN: pin}, sides, at=at)
+    return dict(a.probs) if a.source == "pinnacle_tight" else None
+
+
+def pin_confirmed_twin_arm(consensus_pool: list[dict], room: int | None = None,
+                           at: datetime | None = None, pin_lookup=None) -> list[dict]:
+    """Twin (B): consensus v2 over the SAME pool (same ceiling, same credible-method
+    gate, grades as the parent), plus: where a fresh tight Pinnacle anchor exists the
+    leg must ALSO have EV >= PINCONF_MIN_EV against it. No tight Pinnacle -> the leg
+    passes unchanged. Recorded, never published.
+
+    Pinnacle is looked up only for legs already at or above MIN_EDGE (select() drops
+    the rest anyway), once per (match, market). `pin_lookup` is injectable for tests."""
+    at = at or datetime.now(timezone.utc)
+    lookup = pin_lookup or pinnacle_tight_probs
+    cache: dict = {}
+    out = []
+    for c in consensus_pool:
+        d = dict(c)
+        d["arm"] = PINCONF_ARM
+        if c["edge"] >= MIN_EDGE:
+            key = (str(c["match_id"]), c["market"])
+            if key not in cache:
+                cache[key] = lookup(c["match_id"], c["market"], at)
+            probs = cache[key]
+            p = (probs or {}).get(c["selection"])
+            if p:
+                ev = p * c["odds"] - 1.0
+                d["twin_gate"] = {"pin_tight": True, "pin_p": round(p, 5),
+                                  "pin_ev": round(ev, 5), "min_ev": PINCONF_MIN_EV}
+                if ev < PINCONF_MIN_EV:
+                    continue
+            else:
+                d["twin_gate"] = {"pin_tight": False}
+        out.append(d)
+    return select(out, room, max_edge=CONSENSUS_MAX_EDGE, credible_gate=True,
+                  dedupe_arms=(PINCONF_ARM,))
+
+
+def record_twin_arms(pool: list[dict], consensus_pool: list[dict],
+                     room: int, consensus_room: int) -> dict:
+    """Claim both twin arms' picks. Never sends. Never raises: a twin is an experiment
+    and must not be able to take down the published arms or the junk control — a
+    failure is returned in the counts (job metadata) and logged."""
+    out = {}
+    for arm, fn in ((ALIGNED_ARM, lambda: aligned_twin_arm(pool, max(0, room))),
+                    (PINCONF_ARM, lambda: pin_confirmed_twin_arm(consensus_pool,
+                                                                 max(0, consensus_room)))):
+        try:
+            picks = fn()
+            out[arm] = sum(1 for c in picks if claim(c, arm) is not None)
+        except Exception as e:  # noqa: BLE001
+            log.warning("twin arm %s failed (non-fatal, nothing published): %s", arm, e)
+            out[arm] = f"error: {type(e).__name__}"
+    return out
+
+
 def claim(c: dict, arm: str) -> str | None:
     """Reserve this leg BEFORE sending, returning its new row id — or None if it
     was already published.
@@ -806,12 +946,19 @@ def claim(c: dict, arm: str) -> str | None:
          # and was never written, so no row could say what it was priced against.
          # With two anchors live that is no longer a tidiness issue — it is the
          # difference between two arms' results being separable and not.
-         CONSENSUS_RULE_VERSION if arm == CONSENSUS_ARM else RULE_VERSION,
+         ARM_RULE_VERSION[arm],
          c["kickoff_at"], None, c.get("anchor_bookmaker"),
          # [[#094]] consensus-arm grade; NULL on the live/junk arms.
          c.get("grade"), c.get("grade_reasons")),
     )
-    return str(rows[0]["id"]) if rows else None
+    pick_id = str(rows[0]["id"]) if rows else None
+    # [[#161]] the twin arms' extra-gate evidence, written in a SEPARATE statement and
+    # only for twin rows: the published arms' INSERT above stays column-for-column what
+    # it was, so a deploy that lands before migration 434 cannot break the channel.
+    if pick_id and arm in TWIN_ARMS and c.get("twin_gate") is not None:
+        execute_write("UPDATE picks_forward_test SET twin_gate = %s WHERE id = %s",
+                      (json.dumps(c["twin_gate"], default=float), pick_id))
+    return pick_id
 
 
 def attach_message_id(pick_id: str, message_id: int | None) -> None:

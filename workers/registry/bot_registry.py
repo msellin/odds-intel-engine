@@ -285,6 +285,20 @@ BOTS: list[BotSpec] = [
             ANCHOR_SHARP, 0.03, None, False,
             "O/U 2.5 half of the published sharp picks (clv_sharp +0.67% n=22 at the split; retire on its own record if its CI is entirely below 0 at n >= 100). " + "The PUBLISHED picks. Pre-registered forward test started 2026-09-14: best book price beats the Shin-de-vigged Pinnacle line by >=3%, odds <=4.0 (a CAP, not a floor), anchor and bet quote within 60 min, top 8/day. Uses NO model output. Flat 1 unit, no Kelly, no bankroll. Writes NO simulated_bets and NO shadow_bets — read-through only, via picks_forward_test_shadow. Prior: +5.5% ROI backtest, 95% CI [-0.7,+11.7] = NO DEMONSTRATED EDGE. Stops at n=200/400 unless it beats the junk-anchor control on sharp-anchor CLV (one-sided bootstrap p<0.025; AMENDED 2026-09-25, #156 — own-book margin-corrected CLV is still reported, decides nothing), promote/kill at n=800 on the ROI CI. Junk-anchor negative control runs alongside, unpublished. Rule locked in dev/active/picks-forward-test-preregistration.md.",
             twin="bot_sharp_1x2_v1"),
+    # TWIN ARMS ([[#161]], 2026-09-25, owner-approved, migration 434). Each is its parent's
+    # rule in every gate plus ONE gate the #156 audit pointed to, under its own arm and
+    # rule_version. RECORDED, NEVER PUBLISHED (not in PUBLISHED_ARMS; every public view
+    # filters an explicit arm allow-list) — EXPERIMENTAL under #155. Pre-registered in
+    # dev/active/picks-forward-test-preregistration.md ("TWIN ARMS"); readout at n=50/100
+    # by scripts/picks_forward_test_checkpoint.py --twins.
+    BotSpec("bot_sharp_aligned_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5 (twin)",
+            ANCHOR_SHARP, 0.03, None, False,
+            "RECORDED, NOT PUBLISHED. Twin of the sharp picks: live v4 in every gate PLUS, at our own direct books (Coolbet, Unibet-Site, Epicbet, Tonybet), the book's quote and the Pinnacle anchor quote must be <= 5 min apart (API-Football books arrive with gap 0). Audit: sharp picks at our books +3.9% vs sharp close at <= 5 min, -0.6% at 5-60 min (small cells). Ledger: picks_forward_test WHERE arm='sharp_own_book_aligned'. Judged vs arm='live' and the junk control on sharp-anchor CLV at n=100.",
+            twin="bot_sharp_1x2_v1"),
+    BotSpec("bot_consensus_pinconf_v1", FAM_FORWARD_TEST, "1x2 + O/U 2.5 (twin)",
+            ANCHOR_CONSENSUS, 0.03, None, False,
+            "RECORDED, NOT PUBLISHED. Twin of the consensus picks: consensus v2 in every gate PLUS, where a fresh tight Pinnacle anchor exists (anchor.py pinnacle_tight), EV >= 0% against that Pinnacle price too. Audit: consensus picks at our books -2.1% vs sharp close. Ledger: picks_forward_test WHERE arm='consensus_pin_confirmed'. Judged vs arm='consensus_anchor' and the junk control on sharp-anchor CLV at n=100.",
+            twin="bot_consensus_c_v1"),
     # OWN Phase 1b (2026-09-15) — the in-play slow-state RIG. Two paper bots, one
     # measurement: the LIVE arm prices the two LOCKED triggers (0-0 at 35-54' ->
     # under 2.5; two-goal lead at 70-89' -> the leader; both at <= 2.20) at

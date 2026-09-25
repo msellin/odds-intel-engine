@@ -2725,7 +2725,7 @@ def job_publish_picks_forward_test():
     from scripts.publish_picks_forward_test import (
         load_candidates, render, claim, attach_message_id, junk_anchor_arm,
         select, daily_room, write_board, DAILY_RUNAWAY_LIMIT,
-        CONSENSUS_ARM, CONSENSUS_MAX_EDGE,
+        CONSENSUS_ARM, CONSENSUS_MAX_EDGE, record_twin_arms,
     )
     from workers.notify.telegram import send_telegram_public
     from workers.automation.coolbet_state import is_publishing_paused
@@ -2841,7 +2841,8 @@ def job_publish_picks_forward_test():
     # data faults in front of subscribers.
     c_sent = 0
     # credible_gate: consensus v2 ([[#106]]) — edge >= 3% under Shin, additive AND power.
-    consensus_picks = select(consensus_pool, daily_room(),
+    consensus_room = daily_room()
+    consensus_picks = select(consensus_pool, consensus_room,
                              max_edge=CONSENSUS_MAX_EDGE, credible_gate=True)
     for c in consensus_picks:
         pick_id = claim(c, CONSENSUS_ARM)
@@ -2879,12 +2880,18 @@ def job_publish_picks_forward_test():
     for c in junk_anchor_arm(pool)[:max(0, room)]:
         claim(c, "junk_anchor")
 
+    # TWIN ARMS ([[#161]], 2026-09-25) — recorded, NEVER sent. Each is its parent's rule
+    # plus one gate, over the SAME pool with the SAME room the parent was given, deduped
+    # against its own ledger only. Last, so it cannot affect anything the published arms
+    # or the control did this pass; record_twin_arms never raises.
+    twins = record_twin_arms(pool, consensus_pool, room, consensus_room)
+
     log.info("picks_forward_test: %d picks, %d published, %d already out; "
-             "consensus %d picks, %d published",
-             len(picks), sent, skipped, len(consensus_picks), c_sent)
+             "consensus %d picks, %d published; twins %s",
+             len(picks), sent, skipped, len(consensus_picks), c_sent, twins)
     return {"picks": len(picks), "published": sent, "already_published": skipped,
             "consensus_picks": len(consensus_picks), "consensus_published": c_sent,
-            "room": room, "board": n_board, "paused": paused}
+            "room": room, "board": n_board, "paused": paused, "twins_recorded": twins}
 
 
 def _publish_picks_forward_test_wrapper():
