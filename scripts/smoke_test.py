@@ -55371,6 +55371,28 @@ def test_admin_ux_round3():
     assert 'stakingBots: canStake === "yes" ? staking : []' in lad
 
 
+@test("FEED-AUTO-PAUSE-IS-A-FAILURE — an engine auto-pause reads as Stopped everywhere; round axis ticks; no 'database change 413'")
+def test_feed_auto_pause_is_a_failure():
+    """2026-09-25 (owner screenshots): Unibet-Site was dark 8 h, auto-paused by the circuit breaker, and
+    the Overview showed a calm blue "Paused 1" beside "22/23 fresh". feedHealth() maps paused_by='auto'
+    to "fail" and every surface (Overview KPI + donut, attention inbox, Feeds cards + counts) uses it;
+    only an operator's deliberate pause reads "paused". Also: the CLV chart's axis read +4.7%/+2.7%/
+    −0.3% with no 0 (niceTicks: round steps, 0 always a tick), and "last change … by database change
+    413" became "no one has changed it since the change log started"."""
+    if not (_web_root / "src").exists():
+        return
+    m = _web_path("src/lib/admin-feeds-model.ts").read_text(encoding="utf-8")
+    assert 'f.status === "paused" && f.paused_by === "auto"' in m and 'return "fail"' in m
+    for f in ("src/lib/admin-attention.ts", "src/app/(app)/admin/page.tsx", "src/app/(app)/admin/overview-charts.tsx",
+              "src/app/(app)/admin/feeds/feeds-board.tsx", "src/app/(app)/admin/feeds/page.tsx"):
+        assert "feedHealth(" in _web_path(f).read_text(encoding="utf-8"), f
+    ch = _web_path("src/components/oi/charts.tsx").read_text(encoding="utf-8")
+    assert "export function niceTicks(" in ch and "ticks={yTicks}" in ch
+    assert "niceTicks(" in _web_path("src/app/(app)/admin/overview-charts.tsx").read_text(encoding="utf-8")
+    tl = _web_path("src/app/(app)/admin/bots/activity-timeline.tsx").read_text(encoding="utf-8")
+    assert "database change ${" not in tl and "export function isSetupActor(" in tl
+
+
 @test("BOT-BOARD-DEV-PREVIEW-NEVER-IN-PROD — the no-login /admin/bots fixture preview is development-only")
 def test_bot_board_dev_preview_never_in_prod():
     """#139 (2026-09-24): /admin/bots can render from a JSON snapshot without the superadmin
@@ -56652,6 +56674,41 @@ def test_pipeline_ou_new_model_and_vip_split():
     assert 'config.get("vip_exclude") and mkt == "1X2"' in src and 'config.get("vip_exclude") and mkt == "O/U"' in src
     assert '_pv * odds - 1 >= 0.05' in src and '0.05 <= _pp * odds - 1 <= 0.15 and _hko >= 12' in src
     assert '"model_version": "ou_comb_v1"' in src
+
+
+@test("MODEL-BOTS-NEW-MODELS-STEP3 — #152: pre-registered per-bot family (12), split date, Holm m=7, read-only")
+def test_model_bots_new_models_step3():
+    """#152 step 3. Pre-registered in dev/active/model-bots-new-models-plan.md ("Pre-registration
+    — step 3") BEFORE any run: per bot, model {old,new} x edge unit {own pp rule, EV} x threshold
+    {own, -2pp/lower, +2pp/higher; EV 5/3/8%} with the bot's identity fixed; select on
+    08-31..09-12 (>= 20 CLV picks), confirm ONCE on 09-13..09-24 vs the current config,
+    one-sided bootstrap (10k), Holm m = 7, SWITCH only at adj p < 0.05 with confirm CLV > 0.
+    Pins the design so it cannot be tuned on the output. Source inspection only."""
+    import ast
+    from datetime import datetime, timezone
+    src = _engine_path("scripts/backtest_model_bots_new_models.py").read_text(encoding="utf-8")
+    c = {}
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            try:
+                c[node.targets[0].id] = ast.literal_eval(node.value)
+            except ValueError:
+                pass
+    assert c["MODELS"] == ("old", "new") and c["UNITS"] == ("pp", "ev")
+    assert c["PP_STEPS"] == (0.0, -0.02, 0.02) and c["EV_THRESHOLDS"] == (0.05, 0.03, 0.08)
+    assert "FAMILY_SIZE = len(MODELS) * len(UNITS) * 3" in src, "family = 2 x 2 x 3 = 12 per bot"
+    ep = lambda d: datetime.fromisoformat(d).replace(tzinfo=timezone.utc).timestamp()
+    assert c["SPLIT_EPOCH"] == ep("2026-09-13")
+    assert c["MIN_CLV_PICKS_SELECT"] == 20 and c["HOLM_M"] == 7 and c["ALPHA"] == 0.05 and c["N_BOOT"] >= 10000
+    assert c["VIP_1X2_ARM"] == "N2" and c["VIP_OU_EV"] == (0.05, 0.15) and c["VIP_OU_MIN_HOURS"] == 12.0
+    for b in ("bot_v10_1x2", "bot_high_roi_global_v2", "bot_coolbet_1x2_model_v1", "bot_unified_gate_1x2_paper_v1",
+              "bot_coolbet_ou_model_v1", "bot_ou35_model_v1", "bot_v10_ou"):
+        assert f'"{b}": dict(' in src, f"{b} missing from the 7-bot family"
+    assert src.count("public=True") == 3, "public-bot constraint = v10_1x2, high_roi_global_v2, v10_ou"
+    low = src.lower()
+    for bad in ("insert into", "update ", "delete from", "execute_values", "create table", "store_bet("):
+        assert bad not in low, f"step-3 backtest must be read-only; found {bad!r}"
+    assert "power_devig" in src, "CLV uses Pinnacle's POWER-de-vigged close (plan)"
 
 
 if __name__ == "__main__":
