@@ -23,8 +23,8 @@ bot-aggregates, engine-data. (admin-attention.ts: one agreed #139 edit, then #15
 - [x] W0.2 money-gate contract lock (mig 436) — 2 reviewers, live rolled-back dry runs (all 7 cases)
 - [x] W0.3 pre-kickoff alert honours the kill switch
 - [x] W0.4 unibet_placer run-level gate; router pauses on an unrecorded Unibet bet
-- [ ] W0.2 web half: ladder layer 8 + route 409 (after mig 436 applies)
-- [ ] W4.4 pick_generator real-money supply by bot name
+- [x] W0.2 web half: ladder layer 8 + route 409 (web 232e135)
+- [x] W4.4 pick_generator real-money supply by bot name (+ is_active/retired filter)
 - [ ] steps per plan, each: smoke test, 1–2 review agents, deploy check
 
 ## Phase 3 — after #157 + #155

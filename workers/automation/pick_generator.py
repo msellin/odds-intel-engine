@@ -98,7 +98,12 @@ class BotConfig:
     # (the registry floor is 13%) and a ceiling there would gut the bot.
     edge_ceiling: float | None = None
     convert: Callable[[str, str], tuple[str, str] | None] | None = None
-    maturity: tuple[str, ...] = ("calibrated",)  # source cohort, `pipeline` source only
+    # Source cohort for prob_source='pipeline': the bots whose pending picks feed this generator, BY NAME.
+    # #162 W4.4 (2026-09-25): was `maturity=("calibrated",)` — "every bot labelled calibrated" — so the
+    # #155 status rollout (statuses = distribution, owner policy §3.1) would silently change what the
+    # real-money-CAPABLE Coolbet model bots see. Real money is not a status. Same set as before the
+    # change: bot_v10_1x2 was the only calibrated bot (verified on the DB 2026-09-25).
+    source_bots: tuple[str, ...] = ("bot_v10_1x2",)
     # WHERE THE CANDIDATE PROBABILITIES COME FROM. This is the single most
     # consequential setting here, and getting it wrong is why the mirrors were
     # ~81x narrower than the trigger bots.
@@ -207,7 +212,7 @@ def generate(cfg: BotConfig) -> dict:
             return c
 
         sel_clause = ""
-        params: list = [list(cfg.markets), list(cfg.maturity), loosest]
+        params: list = [list(cfg.markets), list(cfg.source_bots), loosest]
         if cfg.selections:
             sel_clause = "AND lower(sb.selection) = ANY(%s)"
             params.append(list(cfg.selections))
@@ -402,7 +407,8 @@ def _candidates_from_pipeline(cfg, loosest, sel_clause, ahead, params):
               JOIN bots    b ON b.id = sb.bot_id
               JOIN matches m ON m.id = sb.match_id
              WHERE lower(sb.market) = ANY(%s)
-               AND b.maturity_label = ANY(%s)
+               AND b.name = ANY(%s)
+               AND b.is_active AND b.retired_at IS NULL   -- a retired source stops feeding at once (review 2026-09-25)
                AND sb.calibrated_prob IS NOT NULL
                AND sb.calibrated_prob > %s
                AND sb.result = 'pending'

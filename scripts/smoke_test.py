@@ -5543,7 +5543,8 @@ def test_coolbet_model_ou_shadow():
         "the real-money O/U bot must stay on the probability it was VALIDATED "
         "on; the wide-source experiment is the separate paper twin"
     )
-    assert cfg.maturity == ("calibrated",), "source must be the calibrated cohort"
+    # #162 W4.4: the source cohort is a list of bot NAMES, not a status label (real money is not a status)
+    assert cfg.source_bots == ("bot_v10_1x2",), "source must be bot_v10_1x2's picks, by name"
     # Accepts BOTH the legacy 'o/u' spelling and the canonical ones so it keeps
     # feeding through the DB vocabulary migration (MARKET-VOCAB-CANONICAL).
     assert set(cfg.markets) == {"o/u", "over_under_25", "over_under_35"}, cfg.markets
@@ -5686,7 +5687,8 @@ def test_coolbet_model_1x2_shadow():
     assert cfg.prob_source == "pipeline", (
         "the real-money 1x2 bot must stay on the probability it was VALIDATED on"
     )
-    assert cfg.maturity == ("calibrated",), "source must be the calibrated cohort"
+    # #162 W4.4: the source cohort is a list of bot NAMES, not a status label (real money is not a status)
+    assert cfg.source_bots == ("bot_v10_1x2",), "source must be bot_v10_1x2's picks, by name"
     assert cfg.markets == ("1x2",), "market is written straight through — no conversion"
     assert cfg.convert is None, (
         "the 1x2 bot must NOT carry a vocabulary conversion — 1x2 is already "
@@ -57896,6 +57898,26 @@ def test_prekickoff_honours_kill_switch():
     src = _engine_path("workers/jobs/coolbet_prekickoff_alert.py").read_text(encoding="utf-8")
     run = src[src.index("def run_prekickoff_alert("):]
     assert run.index("is_placement_paused()") < run.index("_mac_daemon_is_healthy()") < run.index("load_prekickoff_candidates()")
+
+
+@test("PICKGEN-SOURCE-BY-NAME — the real-money Coolbet model bots take candidates from named bots, never from a status label")
+def test_pickgen_source_by_name():
+    """#162 W4.4 (2026-09-25). pick_generator's prob_source='pipeline' bots (incl. the real-money-CAPABLE
+    bot_coolbet_1x2_model_v1 / bot_coolbet_ou_model_v1) read the pending picks of every bot LABELLED
+    'calibrated'. Statuses now mean distribution (#155, owner policy §3.1: "real money is not a status"),
+    so a label flip would silently change what a money bot stakes on. The cohort is a list of bot names —
+    the same set as before (bot_v10_1x2 was the only calibrated bot) — and the export says so."""
+    src = _engine_path("workers/automation/pick_generator.py").read_text(encoding="utf-8")
+    pipe = src[src.index("def _candidates_from_pipeline("):]
+    pipe = pipe[:pipe.index("\ndef ", 10)]
+    assert "b.name = ANY(%s)" in pipe and "maturity_label" not in pipe, "source cohort must be by bot name"
+    assert "AND b.is_active AND b.retired_at IS NULL" in pipe, "a retired source bot must stop feeding at once"
+    assert 'source_bots: tuple[str, ...] = ("bot_v10_1x2",)' in src and "maturity: tuple" not in src
+    ex = _engine_path("scripts/export_bot_config.py").read_text(encoding="utf-8")
+    assert 'gate("source_bots", c.source_bots, line)' in ex and "source_maturity" not in ex
+    if (_web_root / "src").exists():
+        m = _web_path("src/app/(app)/admin/bots/bot-board-model.ts").read_text(encoding="utf-8")
+        assert 'g.name === "source_bots"' in m and "src.includes(a.name)" in m, "the Bots page must read the new gate"
 
 if __name__ == "__main__":
     main()

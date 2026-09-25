@@ -312,7 +312,7 @@ def _generator_rows() -> dict[str, dict]:
         if c.edge_ceiling is not None:
             gates.append(gate("edge_ceiling", c.edge_ceiling, src(F_BOTCFG, r"^_SHARP_EDGE_CEILING")))
         if c.prob_source == "pipeline":
-            gates.append(gate("source_maturity", c.maturity, line))
+            gates.append(gate("source_bots", c.source_bots, line))
         if c.lookahead_hours is not None:
             gates.append(gate("lookahead_hours", c.lookahead_hours, line))
         writer = "pick_generator.on_odds_written (every Coolbet / Unibet-Site sweep)"

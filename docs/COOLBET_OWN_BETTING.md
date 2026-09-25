@@ -238,7 +238,7 @@ default).** `workers/jobs/coolbet_model_ou_shadow.py` (scheduled :10/:40) is the
 entry point; since PICK-GENERATOR-DELEGATION (2026-09-11) the mechanism itself is
 `workers/automation/pick_generator.generate` and the bot's gates are a `BotConfig`
 in `workers/automation/bot_configs.py`. It takes the calibrated model's O/U
-probabilities (`simulated_bets` calibrated cohort, lines 2.5/3.5 only),
+probabilities (`simulated_bets` of the named source bots — `BotConfig.source_bots`, today `bot_v10_1x2`; by NAME since #162 W4.4 2026-09-25, was "every bot labelled calibrated" — lines 2.5/3.5 only),
 **re-prices them at every book it may bet** and derives the edge from the winning
 price (edge≥0.08 — the registry floor, not a copy), then writes them into
 `shadow_bets` in the line-shop vocabulary (`over_under_25`/`over_under_35` + `over`/`under`), so they load and
