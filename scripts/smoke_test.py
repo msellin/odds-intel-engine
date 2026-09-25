@@ -20068,6 +20068,34 @@ def _():
     assert d["should_veto"] is False, "Unknown markets are not vetoed"
 
 
+@test("DASHBOARD-CACHE-PRUNED — dashboard_cache history pruned daily, batched, newest row always kept (#162 W8.9)")
+def _():
+    """#162 W8.9 (C-K7): the 30-min refresh appended a full snapshot row forever (11,057 rows /
+    133 MB on 2026-09-26) while every reader wants only the newest row. Pins: the daily job is
+    registered, the DELETE is batched and never removes the newest row, and the batch loop stops."""
+    import pathlib
+    from unittest import mock
+    sched = pathlib.Path("workers/scheduler.py").read_text()
+    assert "def job_dashboard_cache_prune" in sched
+    assert 'id="dashboard_cache_prune"' in sched, "prune job must be registered with the scheduler"
+
+    import workers.jobs.settlement as st
+    assert st.DASHBOARD_CACHE_KEEP_DAYS >= 1
+    calls = []
+    returns = iter([5000, 5000, 372])
+
+    def fake_write(sql, params=None):
+        calls.append((sql, params))
+        return next(returns)
+    with mock.patch.object(st, "execute_write", fake_write):
+        total = st.prune_dashboard_cache()
+    assert total == 10372 and len(calls) == 3, (total, len(calls))
+    sql, params = calls[0]
+    assert "LIMIT %(batch)s" in sql and params["batch"] == 5000, "DELETE must be batched"
+    assert "SELECT MAX(computed_at) FROM dashboard_cache" in sql, "newest row must never be deleted"
+    assert params["keep"] == st.DASHBOARD_CACHE_KEEP_DAYS
+
+
 @test("PIN-CROSS-DRIFT-PIPELINE — daily_pipeline_v2 calls helper + writes shadow flag + gates on env")
 def _():
     """The veto helper must be wired into daily_pipeline_v2 so it actually

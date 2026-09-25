@@ -913,6 +913,15 @@ def job_dashboard_cache_refresh():
     _run_job("dashboard_cache_refresh", write_dashboard_cache)
 
 
+def job_dashboard_cache_prune():
+    """#162 W8.9 (C-K7): daily prune of dashboard_cache history. The refresh above appends a
+    full snapshot row every 30 min (~95/day) and every reader wants only the newest one, so
+    rows older than 7 days are deleted in 5,000-row batches (newest row always kept).
+    See prune_dashboard_cache() in workers/jobs/settlement.py."""
+    from workers.jobs.settlement import prune_dashboard_cache
+    _run_job("dashboard_cache_prune", prune_dashboard_cache)
+
+
 def job_news_checker():
     from workers.jobs.news_checker import run_news_checker
     _run_job("news_checker", run_news_checker)
@@ -4155,6 +4164,11 @@ def main():
     # to avoid colliding with budget_sync (:00) and ops_snapshot (:30).
     scheduler.add_job(job_dashboard_cache_refresh, CronTrigger(minute="15,45"),
                       id="dashboard_cache_refresh", name="Dashboard Cache Refresh (30min)")
+
+    # #162 W8.9: daily history prune for the table the job above appends to. 02:50 UTC — quiet
+    # hour, clear of the :45 refresh and of the 03:30 backup (smaller dump).
+    scheduler.add_job(job_dashboard_cache_prune, CronTrigger(hour=2, minute=50),
+                      id="dashboard_cache_prune", name="Dashboard Cache Prune 02:50")
 
     # Orphan cleanup: every 30 min — marks pipeline_runs stuck >60 min as failed
     # Catches records that slipped past startup cleanup (were <10 min old at restart time)

@@ -3763,6 +3763,44 @@ def write_dashboard_cache():
         import traceback; traceback.print_exc()
 
 
+# #162 W8.9 (C-K7): dashboard_cache gained a full snapshot row every 30 min and was never pruned —
+# 11,057 rows / 133 MB (113 MB of it TOAST: the JSON blobs) on 2026-09-26. Every reader wants ONLY
+# the newest row: web getDashboardCache() (ORDER BY computed_at DESC LIMIT 1), telegram
+# _get_elite_clv_pct (same), health_alerts (MAX(computed_at)), scripts/bot_aggregates_reconcile.py
+# (latest). The 30d/90d curves live INSIDE each row as JSON, so no chart reads across rows.
+# 7 days is margin for debugging "what did the site show on Tuesday", not a reader need.
+DASHBOARD_CACHE_KEEP_DAYS = 7
+_DASHBOARD_CACHE_PRUNE_BATCH = 5000
+
+
+def prune_dashboard_cache(keep_days: int = DASHBOARD_CACHE_KEEP_DAYS, dry_run: bool = False) -> int:
+    """Delete dashboard_cache rows older than keep_days, in batches of 5,000 so no single
+    statement holds row locks long. The newest row is ALWAYS kept, even if the writer has been
+    down longer than keep_days — an empty table would blank /performance's hero (web falls back
+    to null) and make the stale-cache alert read "no rows" instead of "N hours old".
+    Returns rows deleted (or, with dry_run, rows that would be deleted)."""
+    where = (
+        "computed_at < NOW() - make_interval(days => %(keep)s) "
+        "AND computed_at < (SELECT MAX(computed_at) FROM dashboard_cache)"
+    )
+    if dry_run:
+        return int(execute_query(f"SELECT COUNT(*) AS n FROM dashboard_cache WHERE {where}",
+                                 {"keep": keep_days})[0]["n"])
+    total = 0
+    while True:
+        n = execute_write(
+            f"DELETE FROM dashboard_cache WHERE id IN ("
+            f"  SELECT id FROM dashboard_cache WHERE {where} "
+            f"  ORDER BY computed_at LIMIT %(batch)s)",
+            {"keep": keep_days, "batch": _DASHBOARD_CACHE_PRUNE_BATCH},
+        )
+        total += n
+        if n < _DASHBOARD_CACHE_PRUNE_BATCH:
+            break
+    console.print(f"  dashboard_cache pruned: {total} rows older than {keep_days}d")
+    return total
+
+
 def run_ml_etl():
     """
     ML ETL phase — runs separately from core settlement.
