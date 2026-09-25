@@ -338,9 +338,13 @@ def _dispatch_unibet(pick: dict, decision: dict, *, execute: bool) -> dict:
                 "reason": "placement rule: no price clears for this bot/pick (fail closed)",
                 "event_url": r["url"], "outcome": name}
     try:
+        from workers.automation.placement_floor import pick_clears
         res = unibet_placer.place_bet(
             r["url"], name, min_odds=max(float(decision["odds_floor"]), float(_live_min)),
-            odds_lo=lo, odds_hi=hi, execute=execute, stake=STAKE_EUR)
+            odds_lo=lo, odds_hi=hi, execute=execute, stake=STAKE_EUR,
+            # [[#162]] W4 pre-lock review: the WHOLE rule (ceilings + outlier cap too) at the live slip price.
+            live_ok=lambda o, _p=pick: pick_clears(_p.get("bot_name"), _p.get("market"),
+                                                   _p.get("selection"), o, _p.get("calibrated_prob")))
     except Exception as e:  # noqa: BLE001
         return {"book": "Unibet-Site", "ok": False, "reason": f"place_bet raised: {e}",
                 "event_url": r["url"], "outcome": name}
@@ -465,8 +469,11 @@ def _dispatch_coolbet(pick: dict, *, execute: bool,
     # ROUTER-COOLBET-ARM-DEAD and ROUTER-EDGE-THRESHOLD above. Each time the
     # arm reported a bare falsy result that looked like a normal decline.
     reason = str(getattr(res, "reason", "") or "")
+    # [[#162]] W4 pre-lock review: an uncertain Coolbet click (stage_bet recorded an UNVERIFIED row)
+    # occupies the per-match guard and the daily caps in this run too, exactly like the Unibet arm.
+    uncertain = bool(getattr(res, "uncertain", False))
     return {"book": "Coolbet", "ok": placed or staged, "placed": placed,
-            "staged": staged, "reason": reason or None,
+            "staged": staged, "reason": reason or None, "uncertain": uncertain,
             "result": {"placed": placed, "ok": getattr(res, "ok", None),
                        "reason": reason or None,
                        "notes": list(getattr(res, "notes", []) or [])}}

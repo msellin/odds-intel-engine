@@ -56041,5 +56041,32 @@ def test_shadow_unique_has_rule_version():
     assert "CREATE OR REPLACE VIEW shadow_bets_unique AS" in mig and "sb.rule_version\n   FROM shadow_bets sb" in mig
     assert "SET lock_timeout" in mig
 
+@test("UNCERTAIN-CLICK-AND-LIVE-CEILINGS — an unconfirmed Coolbet click blocks a retry; Unibet checks the whole rule at the live price (#162 W4)")
+def test_uncertain_click_and_live_ceilings():
+    """[[#162]] W4 pre-lock money review. (1) stage_bet refused to claim a Coolbet click the balance
+    could not confirm but wrote NOTHING, so the router (no account reconcile) could re-place it on
+    either book. It now writes an UNVERIFIED real_bets row (placed_real NULL — counted by exposure and
+    caps), returns uncertain=True, and both executors count it like a placement in-run. (2) The Unibet
+    arm checked only a min price at the live slip, which may sit +12 per cent over the routed price —
+    so the bot's odds / edge ceilings and outlier cap were never applied to the price taken."""
+    import inspect
+    import workers.automation.coolbet_ui_placer as up
+    import workers.automation.best_price_router as bpr
+    import workers.automation.unibet_placer as unp
+    import scripts.place_coolbet_ui as ui
+    assert "uncertain" in {f for f in up.StageResult.__dataclass_fields__}
+    sb = inspect.getsource(up.stage_bet)
+    i = sb.index("balance unreadable after the click")
+    blk = sb[i - 1500:i + 2500]
+    assert "placed_real=None" in blk and "res.uncertain = True" in blk
+    assert "set_placement_paused(True" in blk, "if even the UNVERIFIED row cannot be written, placement pauses"
+    assert sb.index("balance_before = read_balance(page)") < sb.index("after = place(page)"), "read before the click"
+    assert '"uncertain": uncertain' in inspect.getsource(bpr._dispatch_coolbet)
+    assert 'getattr(res, "uncertain", False)' in inspect.getsource(ui.place_for_bot)
+    pb = inspect.getsource(unp.place_bet)
+    assert "live_ok" in inspect.signature(unp.place_bet).parameters and "_ok, _why = False" in pb
+    assert pb.index("live_ok(float(pick[\"odds\"]))") < pb.index("page.locator(_OUTCOME).nth(pick[\"index\"]).click")
+    assert "live_ok=lambda o" in inspect.getsource(bpr._dispatch_unibet)
+
 if __name__ == "__main__":
     main()

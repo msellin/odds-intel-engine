@@ -64,13 +64,18 @@ def _clear_slip(page) -> None:
 
 def place_bet(event_url: str, outcome_name: str, min_odds: float,
               odds_lo: float, odds_hi: float, *, execute: bool = False,
-              stake: float = STAKE_EUR) -> dict:
+              stake: float = STAKE_EUR, live_ok=None) -> dict:
     """Place (execute=True) or stage (execute=False) a single bet on unibet.ee.
 
     `outcome_name` is matched against the outcome button text (e.g. the home team for
     a 1x2 home); `odds_lo`/`odds_hi` disambiguate the intended market (the button text
     is "<name><odds>", so a tight odds band pins the right market). `min_odds` is the
     eligibility floor — the LIVE slip odds must be >= this or we abort. Never raises.
+
+    `live_ok(odds) -> (ok, reason)` ([[#162]] W4 pre-lock review): the caller's full placement
+    rule (placement_floor.pick_clears) applied to the LIVE slip price before the click — the band
+    above lets the live price sit up to +12 per cent over the routed one, so without it a bot's own
+    odds / edge ceilings and outlier cap were never checked at the price actually taken.
     """
     from playwright.sync_api import sync_playwright
     out = {"event": event_url, "outcome": outcome_name, "execute": execute,
@@ -137,6 +142,14 @@ def place_bet(event_url: str, outcome_name: str, min_odds: float,
         if pick["odds"] < min_odds:
             out["reason"] = f"live odds {pick['odds']} < min_odds {min_odds} — not eligible now"
             return out
+        if live_ok is not None:
+            try:
+                _ok, _why = live_ok(float(pick["odds"]))
+            except Exception as e:  # noqa: BLE001 — fail closed: an unevaluable rule places nothing
+                _ok, _why = False, f"placement rule raised: {e}"
+            if not _ok:
+                out["reason"] = f"placement rule at the live price {pick['odds']}: {_why}"
+                return out
 
         page.locator(_OUTCOME).nth(pick["index"]).click(timeout=4000)
         page.wait_for_timeout(2500)

@@ -1341,6 +1341,9 @@ class StageResult:
     stake_applied: float = 0.0
     placed: bool = False
     notes: list[str] = field(default_factory=list)
+    # [[#162]] W4 pre-lock review: the place button was clicked but the balance could not confirm
+    # what happened. An UNVERIFIED real_bets row (placed_real NULL) was written so no executor retries.
+    uncertain: bool = False
 
 
 def stage_bet(
@@ -1680,14 +1683,55 @@ def stage_bet(
     # The UI gives no ticket id and the slip clears on success AND on several
     # failures, so the balance delta is the only trustworthy signal.
     balance_before = read_balance(page)
+    if balance_before is None:
+        # Nothing clicked yet: an unreadable balance BEFORE the click is a clean refusal.
+        clear_stake(page, outcome.market_id)
+        return _fail("place", "cannot read balance before the click — refusing to place "
+                              "a bet that could not be confirmed", ev, outcome, None, applied)
     after = place(page)
     balance_after = read_balance(page)
-    if balance_before is None or balance_after is None:
-        clear_stake(page, outcome.market_id)
-        return _fail("place", "cannot read balance — refusing to claim a placement "
-                              "that cannot be confirmed", ev, outcome, after, applied)
-    moved = balance_before - balance_after
+    moved = None if balance_after is None else balance_before - balance_after
+    if moved is None or (abs(moved - applied) > 0.01 and abs(moved) > 0.01):
+        # [[#162]] W4 pre-lock review. The place button WAS clicked and the balance cannot say
+        # what happened (unreadable after, or it moved by something other than the stake). Money
+        # may have moved, so this must create exposure or the next pass — of either executor —
+        # re-places it: the double-bet bug by another route. Record an UNVERIFIED row
+        # (placed_real NULL: counted by match_exposure / spent_today, never claimed as confirmed),
+        # exactly as the router's Unibet arm does. A human confirms it on the account.
+        why = ("balance unreadable after the click" if moved is None else
+               f"balance {balance_before:.2f} -> {balance_after:.2f} (moved {moved:.2f}, expected {applied:.2f})")
+        rb_id = None
+        try:
+            from workers.api_clients.supabase_client import store_real_bet
+            rb_id = store_real_bet(
+                match_id=str(bet["match_id"]), market=bet["market"], selection=bet["selection"],
+                bookmaker="Coolbet", actual_odds=outcome.odds, stake=applied,
+                captured_odds=float(captured) if captured else outcome.odds,
+                bot_id=str(bet["bot_id"]) if bet.get("bot_id") else None,
+                simulated_bet_id=(str(bet["shadow_bet_id"]) if bet.get("shadow_bet_id") else None),
+                notes=f"UNVERIFIED: clicked place, {why}. Recorded to block a retry; confirm on the account."
+                      + (f" | {extra_notes}" if extra_notes else ""),
+                placed_real=None,
+            )
+        except Exception as e:  # noqa: BLE001
+            log.error("COOLBET UNCERTAIN placement and the real_bets write FAILED (%s) — pausing "
+                      "placement so nothing re-places it", e)
+            try:
+                from workers.automation import coolbet_state as _cs
+                _cs.set_placement_paused(True, reason=f"uncertain Coolbet placement not recorded: {why}")
+            except Exception:  # noqa: BLE001
+                pass
+        log.error("COOLBET UNCERTAIN placement on %s %s/%s (%s) — real_bets %s placed_real=NULL. "
+                  "VERIFY THIS ON THE ACCOUNT.", bet.get("match_id"), bet.get("market"),
+                  bet.get("selection"), why, rb_id)
+        record_attempt(bet, outcome="rejected", stage="place", reason=f"UNCERTAIN: {why}",
+                       ev=ev, ui_outcome=outcome, slip=after, stake_requested=stake,
+                       stake_applied=applied, execute_mode=True, real_bet_id=rb_id)
+        res = StageResult(False, f"uncertain: {why}", ev, outcome, after, applied, False, notes)
+        res.uncertain = True
+        return res
     if abs(moved - applied) > 0.01:
+        # The balance did not move at all: the click placed nothing (the 3 known cases).
         return _fail(
             "place",
             f"placement NOT confirmed: balance {balance_before:.2f} -> "

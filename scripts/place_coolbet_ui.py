@@ -923,14 +923,18 @@ def place_for_bot(page, bot_name: str, picks: list[dict], execute: bool,
             edge_threshold=threshold,
             bot_name=bot_name,
         )
-        if res.placed:
+        if res.placed or getattr(res, "uncertain", False):
+            # [[#162]] W4 pre-lock review: an UNCERTAIN click (balance could not confirm it; an
+            # UNVERIFIED real_bets row was written) may have moved money, so it counts like a
+            # placement for this pass's per-match guard and daily caps.
             placed += 1
             _canon = canon_bet(p["market"], p["selection"])
             if _canon:
                 held.append({"family": _canon[0], "canon": _canon[1],
                              "stake": float(res.stake_applied or stake)})
             mark_pick(p["shadow_bet_id"], MARK_PLACED)
-            print(f"PLACED   {label}\n         {'; '.join(res.notes)}")
+            print(f"{'PLACED  ' if res.placed else 'UNCERTAIN'} {label}\n         "
+                  f"{res.reason if not res.placed else '; '.join(res.notes)}")
         elif res.ok:
             staged += 1
             # Without --execute nothing is placed, so in-run exposure would
