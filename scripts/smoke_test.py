@@ -10431,20 +10431,17 @@ def _():
     assert "--bot" in cli, "CLI must expose --bot for focused output"
 
 
-@test("SHADOW-RETIRED-OK — retired bots still produce shadow_bets")
+@test("SHADOW-RETIRED-OK — retired bots are skipped in EVERY mode, shadow passes included (#162 W7.1)")
 def _():
-    """Retired bot notes promise '≥30 bets at ≥3% ROI in shadow_bets' as a
-    recovery criterion. That criterion is only measurable if retired bots
-    still run in shadow_mode. The gate must skip retired bots only when
-    shadow_mode=False, not unconditionally."""
+    """REVERSED 2026-09-25 (#162 W7.1, owner 13A). 2026-05-20 kept retired BOTS_CONFIG bots running in the
+    shadow passes for a "≥30 bets at ≥3% ROI in shadow_bets" recovery criterion that nothing ever read; it cost
+    ~58k shadow rows / 30 days from 42 retired bots. The gate now skips a retired / inactive bot
+    unconditionally. Their existing picks keep counting (policy §3.3; #157 totals)."""
     import inspect
     from workers.jobs.daily_pipeline_v2 import run_morning
     src = inspect.getsource(run_morning)
-    assert "if not shadow_mode and not _bot_active.get(bot_name, True):" in src, (
-        "retired-bot gate must be `if not shadow_mode and not _bot_active...` — "
-        "otherwise the shadow-bets recovery path described in retired bots' "
-        "notes (bot_lower_1x2, bot_opt_home_lower) can never trigger."
-    )
+    assert "if not _bot_active.get(bot_name, True):\n                continue" in src, "retired bots must be skipped in every mode"
+    assert "if not shadow_mode and not _bot_active.get(bot_name, True):" not in src
 
 
 @test("BOT-QUAL-LIB — bot-aggregates lib exports the shared helpers")
@@ -58580,6 +58577,22 @@ def test_real_money_flat_stake():
     src = _engine_path("workers/automation/coolbet_placer.py").read_text(encoding="utf-8")
     assert "PlacementGuard(use_kelly_stake=True)" not in src.replace("Was PlacementGuard(use_kelly_stake=True)", "")
     assert src.count("PlacementGuard(use_kelly_stake=False)") >= 2
+
+
+@test("PREDICTIONS-READERS-PRODUCTION-ONLY — bots that price off `predictions` read the production model, not any source (#162 W2.2)")
+def test_predictions_readers_production_only():
+    """#162 W2.2 (owner 12A, 2026-09-25). pick_generator, pick_triggers (candidates AND the isotonic calibrator
+    fit) and ou35_model_shadow took `DISTINCT ON … ORDER BY model_version DESC` over EVERY source, so on the
+    audit day 276 of 780 upcoming 1x2 match-markets priced off API-Football's own predictions and 21 off raw
+    xgboost; the calibrators were fitted on the same mixed pool. The production model is written as
+    source='ensemble' (per-market version: 1x2 v20260830, O/U 2.5 v20260903_cut0820, rest v20260712 on
+    2026-09-25); shadow candidates are 'ensemble_shadow' since migration 419."""
+    import re
+    for f in ("workers/automation/pick_generator.py", "workers/jobs/pick_triggers.py", "workers/jobs/ou35_model_shadow.py"):
+        src = _engine_path(f).read_text(encoding="utf-8")
+        for m in re.finditer(r"FROM predictions\b", src):
+            window = src[m.start(): m.start() + 800]
+            assert "source = 'ensemble'" in window or "source='ensemble'" in window, (f, window[:120])
 
 if __name__ == "__main__":
     main()

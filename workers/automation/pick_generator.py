@@ -560,6 +560,10 @@ def _candidates_from_predictions(cfg, loosest):
                p.model_probability::float AS praw, p.model_version AS mv
           FROM predictions p JOIN matches m ON m.id = p.match_id
          WHERE p.market = ANY(%s) AND m.date > NOW() AND m.status = 'scheduled'
+           -- #162 W2.2: the production model only. predictions is unique per (match, market, source), so this is
+           -- exactly ONE row: the pipeline's latest production write (was: any source — AF / raw xgboost /
+           -- national_team_v1 won the version-string sort on ~100 fixtures per 1x2 selection)
+           AND p.source = 'ensemble'
            AND p.model_probability IS NOT NULL
            {ahead_sql}
          ORDER BY p.match_id, p.market, p.model_version DESC
@@ -638,6 +642,7 @@ def _predictions_ou(cfg, loosest, lines: list[str]):
                    p.model_probability::float AS praw, p.model_version AS mv
               FROM predictions p JOIN matches m ON m.id = p.match_id
              WHERE p.market = %s AND m.date > NOW() AND m.status = 'scheduled'
+               AND p.source = 'ensemble'   -- #162 W2.2: the production model only
                AND p.model_probability IS NOT NULL
                {ahead_sql}
              ORDER BY p.match_id, p.model_version DESC

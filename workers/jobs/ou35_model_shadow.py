@@ -55,7 +55,7 @@ def _fit_calibrator():
                ((m.score_home + m.score_away) > 3.5)::int AS y
           FROM matches m
           JOIN LATERAL (SELECT model_probability FROM predictions
-                        WHERE match_id = m.id AND market = 'over35'
+                        WHERE match_id = m.id AND market = 'over35' AND source = 'ensemble'
                         ORDER BY model_version DESC LIMIT 1) po ON true
          WHERE m.status = 'finished' AND m.score_home IS NOT NULL
         """
@@ -110,7 +110,7 @@ def generate_picks() -> dict:
               FROM matches m
               JOIN cb ON cb.mid = m.id::text
               JOIN LATERAL (SELECT model_probability, model_version FROM predictions
-                            WHERE match_id = m.id AND market = 'over35'
+                            WHERE match_id = m.id AND market = 'over35' AND source = 'ensemble'
                             ORDER BY model_version DESC LIMIT 1) po ON true
              WHERE m.date > NOW()
              GROUP BY m.id, po.model_probability, po.model_version

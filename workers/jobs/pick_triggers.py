@@ -186,6 +186,7 @@ def _fit_calibrator(kind: str):
                       (CASE WHEN replace(p.market,'1x2_','') = m.result::text THEN 1 ELSE 0 END) AS y
                  FROM predictions p JOIN matches m ON m.id = p.match_id
                 WHERE p.market IN ('1x2_home','1x2_draw','1x2_away')
+                  AND p.source = 'ensemble'   -- #162 W2.2: fit on the production model only
                   AND m.status='finished' AND m.result IS NOT NULL
                   AND p.model_probability IS NOT NULL"""
         )
@@ -230,7 +231,7 @@ def _fit_calibrator(kind: str):
                       ((m.score_home + m.score_away) > %s)::int AS y
                  FROM matches m
                  JOIN LATERAL (SELECT model_probability FROM predictions
-                               WHERE match_id=m.id AND market=%s
+                               WHERE match_id=m.id AND market=%s AND source = 'ensemble'
                                ORDER BY model_version DESC LIMIT 1) po ON true
                 WHERE m.status='finished' AND m.score_home IS NOT NULL""",
             [line, pred_market],
@@ -364,6 +365,7 @@ def compute_triggers() -> dict:
                        p.model_version AS mv
                   FROM predictions p JOIN matches m ON m.id = p.match_id
                  WHERE p.market = ANY(%s) AND m.date > NOW() AND m.status = 'scheduled'
+                   AND p.source = 'ensemble'   -- #162 W2.2: the production model only
                  ORDER BY p.match_id, p.market, p.model_version DESC
                 """,
                 [list(pred_markets)],

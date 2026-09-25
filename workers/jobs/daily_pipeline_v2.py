@@ -3714,12 +3714,12 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         af_pred = af_pred_for_match
 
         for bot_name, config, _strategy_alias in _bot_strategy_iter:
-            # ODDS-QUALITY-CLEANUP: skip bots flagged is_active=false or retired.
-            # SHADOW-RETIRED-OK (2026-05-20): retired bots still produce shadow_bets
-            # so the retirement-note recovery criterion ("≥30 bets at ≥3% ROI in
-            # shadow_bets") is actually measurable. They never produce live
-            # simulated_bets — only shadow rows feeding the alpha-recovery check.
-            if not shadow_mode and not _bot_active.get(bot_name, True):
+            # ODDS-QUALITY-CLEANUP: skip bots flagged is_active=false or retired — in EVERY mode.
+            # #162 W7.1 (owner 13A, 2026-09-25): retired bots no longer run in the shadow passes either.
+            # SHADOW-RETIRED-OK (2026-05-20) kept them writing shadow_bets for a "≥30 bets at ≥3% ROI"
+            # recovery criterion that nothing ever read (audit A/B4); it cost ~58k shadow rows / 30 days
+            # from 42 retired bots. Their EXISTING picks keep counting (policy §3.3, #157's totals).
+            if not _bot_active.get(bot_name, True):
                 continue
 
             # BOT-TIMING: skip bots not in the active cohort.
