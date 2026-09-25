@@ -1,0 +1,29 @@
+# #162 W6.3 + W5.4 — one anchor_clv() rule and the forward-test arm registry (migration 454), 2026-09-26.
+# Row-for-row parity of all 20 affected views was proven in the BEGIN ... ROLLBACK dry run; these
+# only confirm the migration landed as dry-run.
+task: "#162"
+checks:
+  - name: arm_registry_seeded
+    mode: eventually
+    sql: SELECT count(*) FROM forward_test_arms
+    expect: "== 5"
+    run_after: {migration: "454"}
+    expires: "2026-10-03T00:00:00Z"
+  - name: no_view_hard_codes_a_forward_test_arm
+    mode: eventually
+    sql: SELECT count(*) FROM pg_views WHERE schemaname = 'public' AND definition LIKE '%''consensus_anchor''%'
+    expect: "== 0"
+    run_after: {migration: "454"}
+    expires: "2026-10-03T00:00:00Z"
+  - name: no_view_restates_the_anchor_case
+    mode: eventually
+    sql: SELECT count(*) FROM pg_views WHERE schemaname = 'public' AND definition ~ 'WHEN \w+\.cons_status = ''ok''::text THEN'
+    expect: "== 0"
+    run_after: {migration: "454"}
+    expires: "2026-10-03T00:00:00Z"
+  - name: every_forward_leg_has_a_registered_arm
+    mode: eventually
+    sql: SELECT count(*) FROM picks_forward_test p LEFT JOIN forward_test_leg_arm f ON f.leg_id = p.id WHERE f.leg_id IS NULL
+    expect: "== 0"
+    run_after: {migration: "454"}
+    expires: "2026-10-03T00:00:00Z"

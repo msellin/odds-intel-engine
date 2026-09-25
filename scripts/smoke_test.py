@@ -2773,6 +2773,153 @@ def _():
     assert isinstance(cnt, int), f"Expected int count, got {type(cnt)}"
 
 
+_M454 = "supabase/migrations/454_anchor_clv_and_arm_registry.sql"
+
+
+def _m454_applied():
+    """True / False once the DB is readable; None when there is no DB in this environment."""
+    try:
+        from workers.api_clients.db import execute_query
+        return bool(execute_query("SELECT 1 FROM _schema_migrations WHERE filename = %s",
+                                  ["454_anchor_clv_and_arm_registry.sql"]))
+    except Exception:  # noqa: BLE001 — no DB here; the source pins still run
+        return None
+
+
+def _ft_arm_seed():
+    """The forward-test arm registry exactly as migration 454 seeds it:
+    ({arm: {role, published, in_bot_ledger, rule_version, parent}}, [(arm, grade, market, bot)])."""
+    import re as _re
+    sql = _engine_path(_M454).read_text(encoding="utf-8")
+    blk = sql.split("INSERT INTO public.forward_test_arms", 1)[1].split("ON CONFLICT", 1)[0]
+    arms = {}
+    for m in _re.finditer(r"\('(\w+)',\s*'(\w+)',\s*(true|false),\s*(true|false),\s*'([\w.]+)',\s*(NULL|'\w+')", blk):
+        arms[m[1]] = {"role": m[2], "published": m[3] == "true", "in_bot_ledger": m[4] == "true",
+                      "rule_version": m[5], "parent": None if m[6] == "NULL" else m[6].strip("'")}
+    blk = sql.split("INSERT INTO public.forward_test_arm_bots", 1)[1].split("ON CONFLICT", 1)[0]
+    nul = lambda s: None if s == "NULL" else s.strip("'")  # noqa: E731
+    bots = [(m[1], nul(m[2]), nul(m[3]), m[4]) for m in
+            _re.finditer(r"\('(\w+)',\s*(NULL|'\w+'),\s*(NULL|'\w+'),\s*'(\w+)'\)", blk)]
+    assert len(arms) == 5 and len(bots) == 7, (arms, bots)
+    return arms, bots
+
+
+def _ft_seed_bot(bots, arm, market, grade):
+    """forward_test_leg_arm's lookup, in Python: the most specific (grade, then market) row wins."""
+    hits = [b for b in bots if b[0] == arm and b[1] in (None, grade) and b[2] in (None, market)]
+    hits.sort(key=lambda b: (b[1] is not None, b[2] is not None), reverse=True)
+    return hits[0][3] if hits else None
+
+
+@test("ANCHOR-CLV-ONE-FUNCTION — one sharp-anchor rule (anchor_source) behind every view and the checkpoint (#162 W6.3)")
+def test_anchor_clv_one_function():
+    """#162 W6.3 (audit C-K3), migration 454. "Which close is a forward-test leg judged against" —
+    the Pinnacle close (status='ok'), else the >=5-book consensus (cons_status='ok'), thin NEVER —
+    is the pre-registered #156 AMENDMENT 1 stop rule, and it was the same CASE copied ten times
+    (views 430 / 431 / bot_ledger x6, the checkpoint x2). It lives in anchor_source() now;
+    anchor_clv() (the STORED clv — bit-identical, recomputing drifts in the 16th digit) and
+    anchor_p_close() (the probability bot_ledger re-prices) only pick the column. The migration
+    was dry-run with every recreated and downstream view hashed identical row-for-row."""
+    import re as _re
+    sql = _engine_path(_M454).read_text(encoding="utf-8")
+    # the one rule: pinnacle first, >=5-book consensus second, nothing else (no thin)
+    fn = sql.split("FUNCTION public.anchor_source(", 1)[1].split("$$;", 1)[0]
+    assert _re.search(r"WHEN p_status = 'ok' THEN 'pinnacle'::text\s+WHEN p_cons_status = 'ok' THEN 'consensus'::text END", fn), fn
+    assert "thin" not in fn, "3-4-book thin consensus must never be an anchor"
+    for f in ("anchor_clv", "anchor_p_close"):
+        body = sql.split(f"FUNCTION public.{f}(", 1)[1].split("$$;", 1)[0]
+        assert "public.anchor_source(p_status, p_cons_status)" in body and "IMMUTABLE" in body, f
+    views = sql.split("CREATE OR REPLACE VIEW public.picks_forward_test_arm_rule", 1)[1]
+    assert "cons_status = 'ok'" not in views, "a view in 454 re-states the anchor CASE — call anchor_source()"
+    assert views.count("anchor_clv(c.status, c.cons_status, c.clv_sharp, c.clv_cons)") == 2      # 430, 431
+    assert views.count("anchor_p_close(c.status, c.cons_status, c.p_close, c.p_close_cons)") == 4  # bot_ledger
+    assert views.count("anchor_source(c.status, c.cons_status)") == 5
+    # the pre-registered checkpoint reads the SAME function (both queries)
+    import scripts.picks_forward_test_checkpoint as ck
+    for q in (ck.SQL, ck.PAIR_SQL):
+        assert "anchor_clv(c.status, c.cons_status, c.clv_sharp, c.clv_cons)" in q
+        assert "anchor_source(c.status, c.cons_status)" in q and "cons_status = 'ok'" not in q
+    # no NEW copy: a later migration choosing between the two closes by hand
+    for f in sorted(_engine_path("supabase/migrations").glob("*.sql")):
+        if f.name > "454_" and _re.search(r"THEN \w+\.(clv_cons|p_close_cons)\b", f.read_text(encoding="utf-8")):
+            raise AssertionError(f"{f.name} picks the anchor close by hand — use anchor_clv()/anchor_p_close()")
+    if _m454_applied():
+        from workers.api_clients.db import execute_query
+        copies = execute_query("""SELECT viewname FROM pg_views WHERE schemaname = 'public'
+                                   AND definition ~ 'WHEN \\w+\\.cons_status = ''ok''::text THEN'""")
+        assert not copies, f"live views re-state the anchor CASE: {[r['viewname'] for r in copies]}"
+        drift = execute_query("""SELECT count(*) AS n FROM leg_clv_sharp
+            WHERE anchor_clv(status, cons_status, clv_sharp, clv_cons) IS DISTINCT FROM
+                  CASE WHEN status = 'ok' THEN clv_sharp WHEN cons_status = 'ok' THEN clv_cons END""")
+        assert drift[0]["n"] == 0
+    return "anchor_source() is the rule; 430/431/bot_ledger/checkpoint call it"
+
+
+@test("FORWARD-TEST-ARM-REGISTRY — the arm lists and arm->bot map live in forward_test_arms; code maps pinned to it (#162 W5.4)")
+def test_forward_test_arm_registry():
+    """#162 W5.4 (audits C-K4, B-R5), migration 454. Which forward-test arms are published, which
+    is the negative control and which bot owns a leg was a hard-coded ARRAY in eight views (a third
+    member in bot_ledger), four copies of the arm -> bot CASE and six Python maps. The views read
+    forward_test_arms / forward_test_arm_bots (via forward_test_leg_arm) now, and the ledger's arm
+    CHECK became an FK to the registry. The Python maps are PINNED to the seed rather than
+    rewritten to read the DB: the publisher is pre-registered and must not depend on a DB read.
+    Adding an arm = a registry row (migration) + the code maps, and this test says which."""
+    arms, bots = _ft_arm_seed()
+    published = {a for a, r in arms.items() if r["published"]}
+    control = [a for a, r in arms.items() if r["role"] == "control"]
+    twins = {a: r["parent"] for a, r in arms.items() if r["role"] == "twin"}
+    assert published == {"live", "consensus_anchor"} and control == ["junk_anchor"]
+    assert {a for a, r in arms.items() if r["in_bot_ledger"]} == published | set(control)
+
+    import scripts.publish_picks_forward_test as ft
+    assert set(ft.PUBLISHED_ARMS) == published, "publisher PUBLISHED_ARMS != forward_test_arms.published"
+    assert set(ft.TWIN_ARMS) == set(twins), "publisher TWIN_ARMS != registry twins"
+    # rule_version strings unchanged (PICKS-FORWARD-TEST-RULE-LOCKED pins them to the doc)
+    assert ft.ARM_RULE_VERSION == {a: r["rule_version"] for a, r in arms.items()}, (
+        "ARM_RULE_VERSION and forward_test_arms.rule_version disagree")
+    from workers.utils import vip_guard
+    assert set(vip_guard.PUBLISHED_FT_ARMS) == published
+    import scripts.picks_forward_test_checkpoint as ck
+    assert ck.TWINS == twins and ck.CONTROL_ARM == control[0]
+    from scripts.export_bot_config import CONTROL_NAME
+    assert _ft_seed_bot(bots, control[0], "1x2", None) == CONTROL_NAME
+    # the publisher's send decision uses bot_status.forward_test_bot — it must name the same bot
+    # the public views file the leg under, for every grade and market a published arm writes
+    from workers.utils.bot_status import forward_test_bot
+    for arm in published:
+        for market in ("1x2", "over_under_25"):
+            for grade in (None, "B", "C", "D"):
+                assert forward_test_bot(arm, market, grade) == _ft_seed_bot(bots, arm, market, grade), (
+                    arm, market, grade)
+
+    # the views read the registry — no arm literal left in any view 454 recreates
+    sql = _engine_path(_M454).read_text(encoding="utf-8")
+    views = sql.split("CREATE OR REPLACE VIEW public.picks_forward_test_arm_rule", 1)[1]
+    for lit in ("'live'", "'consensus_anchor'", "'junk_anchor'", "'consensus_ungraded'"):
+        assert lit not in views, f"{lit} is hard-coded in a 454 view — read forward_test_arms"
+    assert views.count("FROM forward_test_arms fta WHERE fta.published") == 5
+    assert views.count("JOIN forward_test_leg_arm fb ON fb.leg_id = p.id") == 4
+    assert "FOREIGN KEY (arm) REFERENCES public.forward_test_arms(arm)" in sql
+    assert "REVOKE ALL ON public.forward_test_arms, public.forward_test_arm_bots, public.forward_test_leg_arm\n    FROM anon, authenticated" in sql, (
+        "a signed-in user must not be able to publish an arm")
+
+    if _m454_applied():
+        from workers.api_clients.db import execute_query
+        db_arms = {r["arm"]: {"role": r["role"], "published": r["published"], "in_bot_ledger": r["in_bot_ledger"],
+                              "rule_version": r["rule_version"], "parent": r["parent_arm"]}
+                   for r in execute_query("SELECT * FROM forward_test_arms")}
+        assert db_arms == arms, f"forward_test_arms drifted from the code pins: {db_arms}"
+        db_bots = sorted((r["arm"], r["grade"], r["market"], r["bot_name"]) for r in
+                         execute_query("SELECT * FROM forward_test_arm_bots"))
+        assert set(db_bots) == set(bots), f"forward_test_arm_bots drifted from the code pins: {db_bots}"
+        for v in ("picks_forward_test_public", "picks_public_all", "picks_forward_test_summary",
+                  "picks_forward_test_summary_by_market", "picks_forward_test_anchor_clv",
+                  "picks_forward_test_record_leg", "picks_forward_test_arm_rule", "bot_ledger", "clv_sharp_legs"):
+            d = execute_query("SELECT pg_get_viewdef(%s::regclass, true) AS d", [v])[0]["d"]
+            assert "'consensus_anchor'" not in d and ("forward_test_arms" in d or "forward_test_leg_arm" in d), f"{v} is not reading the registry"
+    return f"{len(arms)} arms, {len(bots)} bot rows; publisher/vip_guard/bot_status/checkpoint/export pinned"
+
+
 @test("INJURY-UNCERTAINTY — injury_uncertainty_home/away queryable in match_signals")
 def _():
     from workers.api_clients.db import execute_query
@@ -21887,8 +22034,14 @@ def test_published_arm_has_a_record_2026_09_22():
     for view in ("picks_forward_test_public", "picks_forward_test_summary"):
         d = execute_query(
             "SELECT pg_get_viewdef(%s::regclass, true) AS d", [view])[0]["d"]
+        # #162 W5.4 (migration 454): the views no longer spell the arms out — they read the
+        # forward_test_arms registry. Then "admits the arm" means the registry publishes it.
+        reg = set()
+        if "forward_test_arms" in d or "forward_test_leg_arm" in d:
+            reg = {r["arm"] for r in execute_query(
+                "SELECT arm FROM forward_test_arms WHERE published")}
         for arm in PUBLISHED_ARMS:
-            ok = f"'{arm}'" in d or (view in pending and f"'{arm}'" in pending)
+            ok = f"'{arm}'" in d or arm in reg or (view in pending and f"'{arm}'" in pending)
             assert ok, (
                 f"{view} does not admit arm {arm!r}, and no pending migration "
                 f"adds it — its picks would be sent to readers with no track "
@@ -52388,7 +52541,10 @@ def test_picks_forward_test_amended_checkpoint():
     assert ck.CHECKPOINTS == (200, 400) and ck.ALPHA == 0.025
     assert ck.BOOT_B == 10_000 and ck.SEED == 20260925 and ck.CLV_ABS_MAX == 1.0
     sql = ck.SQL
-    assert "c.status = 'ok' THEN c.clv_sharp" in sql and "c.cons_status = 'ok' THEN c.clv_cons" in sql
+    # #162 W6.3 (migration 454): the pinnacle-else-consensus precedence is the SQL function
+    # anchor_clv()/anchor_source() now, shared with the /performance views — ANCHOR-CLV-ONE-FUNCTION
+    # pins its body. The checkpoint must call it rather than re-state it.
+    assert "anchor_clv(c.status, c.cons_status, c.clv_sharp, c.clv_cons)" in sql
     assert "thin" not in sql, "3–4-book thin consensus must never enter the decision"
     assert "p.rule_version = %s" in sql and "'junk_anchor'" in sql and "('won', 'lost')" in sql
     src = inspect.getsource(ck)

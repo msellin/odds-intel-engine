@@ -377,6 +377,28 @@ versions, via `picks_forward_test_arm_summary`). Settled by
 Rule locked in `dev/active/picks-forward-test-preregistration.md`, pinned by
 smoke `PICKS-FORWARD-TEST-RULE-LOCKED`.
 
+**The arms and the anchor rule are each defined ONCE (migration 454, [[#162]] W5.4 + W6.3, 2026-09-26).**
+* **Arm registry — `forward_test_arms`** (one row per arm: `role` published / control / twin,
+  `published`, `in_bot_ledger`, `rule_version`, a twin's `parent_arm`) and **`forward_test_arm_bots`**
+  (arm + optional grade / market → bot; NULL = any; the most specific row wins, read through the view
+  `forward_test_leg_arm`). Every forward-test view — `picks_forward_test_{arm_rule,record_leg,anchor_clv,
+  summary,summary_by_market,public}`, `picks_public_all`, `clv_sharp_legs`, `bot_ledger` — reads it
+  instead of a hard-coded `ARRAY['live','consensus_anchor']` / arm→bot CASE, and `picks_forward_test.arm`
+  has an FK to it (the arm CHECK is gone). Today: published `live`, `consensus_anchor`; control
+  `junk_anchor` (→ `control_junk_anchor`, in `bot_ledger` only); twins `sharp_own_book_aligned`,
+  `consensus_pin_confirmed` (no bot rows — `clv_sharp_legs` labels them by arm name). Private
+  (service_role read-only; anon/authenticated revoked — changed by migration only). The Python maps
+  (`PUBLISHED_ARMS`, `TWIN_ARMS`, `ARM_RULE_VERSION`, `vip_guard.PUBLISHED_FT_ARMS`,
+  `bot_status.forward_test_bot`, the checkpoint's `TWINS`/`CONTROL_ARM`) are **pinned equal** to the seed
+  by smoke `FORWARD-TEST-ARM-REGISTRY` — the pre-registered publisher does not read the DB. **A new arm =
+  a registry row + those maps, in one commit.**
+* **Sharp-anchor rule — `anchor_source(status, cons_status)`**: Pinnacle close if `status='ok'`, else
+  ≥5-book consensus if `cons_status='ok'`, thin never. `anchor_clv(…, clv_sharp, clv_cons)` returns the
+  STORED clv (430/431 views and the checkpoint script — bit-identical to the pre-registered numbers);
+  `anchor_p_close(…, p_close, p_close_cons)` returns the close probability `bot_ledger` re-prices at the
+  public / own price. Smoke `ANCHOR-CLV-ONE-FUNCTION` fails on a new hand-written copy. Dry-run: all 20
+  affected views hashed row-for-row identical before/after, both checkpoint queries identical.
+
 ---
 
 ### 2a. ⚠️ The sharp bots' track record was VOIDED on 2026-09-20 — read this before quoting any sharp number

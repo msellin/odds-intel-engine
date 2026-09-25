@@ -43,6 +43,7 @@ VIP_1X2_BOT = "bot_combined_1x2_ev5_v1"
 # simulated_bets anon policy and /performance's settled-only rule read (migrations 420/421).
 PROTECTED_BOT_SQL = "(b.vip OR b.hide_pending)"
 # Forward-test arms that reach a public surface (picks_public_all's allow-list).
+# forward_test_arms (migration 454) mirrors this; smoke FORWARD-TEST-ARM-REGISTRY pins them equal.
 PUBLISHED_FT_ARMS = ("live", "consensus_anchor")
 
 REASON_HELD = "vip_held"

@@ -256,6 +256,7 @@ def _book_probs(sides, side_q, book):
 
 # Arms that actually reach the channel. The dedupe and the runaway breaker are
 # about what a READER sees, so they must span every published arm, not one.
+# The DB registry forward_test_arms (migration 454) mirrors this; smoke FORWARD-TEST-ARM-REGISTRY pins them equal.
 PUBLISHED_ARMS = ("live", CONSENSUS_ARM)
 
 
@@ -297,7 +298,8 @@ PINCONF_MIN_EV = 0.0
 TWIN_ARMS = (ALIGNED_ARM, PINCONF_ARM)
 
 # Every arm's rule_version, in one place. claim() raises KeyError on an unknown arm —
-# the ledger's CHECK constraint would refuse it anyway, this just fails before the DB.
+# the ledger's FK to forward_test_arms would refuse it anyway, this just fails before the DB.
+# forward_test_arms (migration 454) mirrors this; smoke FORWARD-TEST-ARM-REGISTRY pins them equal.
 ARM_RULE_VERSION = {
     "live": RULE_VERSION,
     "junk_anchor": RULE_VERSION,

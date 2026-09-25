@@ -21,6 +21,10 @@ THE AMENDED RULE (pre-stated, do not tune):
       status = 'ok', else `clv_cons` (>=5-book consensus close) when cons_status = 'ok'.
       The source is recorded. 3–4-book "thin" consensus is EXCLUDED. |clv| > 1 is
       excluded as a data fault (same guard as bot_scoreboard).
+      That precedence lives in ONE place since 2026-09-26: the SQL functions
+      `anchor_source()` / `anchor_clv()` (migration 454, #162 W6.3), which the
+      /performance views read too. The SQL below calls them rather than re-stating the
+      CASE, so the checkpoint and the public record cannot judge a leg differently.
   * Populations = arm 'live' vs arm 'junk_anchor', the SAME rule_version (the live
     arm's current one). The '+DEGENERATE_JUNK_DAY1' rows are a different
     rule_version, so they never enter.
@@ -65,6 +69,7 @@ SEED = 20260925
 CLV_ABS_MAX = 1.0
 
 # [[#161]] twin arms -> their parent arm. Readout constants are pre-registered.
+# forward_test_arms (migration 454) mirrors this; smoke FORWARD-TEST-ARM-REGISTRY pins them equal.
 TWINS = {"sharp_own_book_aligned": "live", "consensus_pin_confirmed": "consensus_anchor"}
 CONTROL_ARM = "junk_anchor"
 TWIN_CHECKPOINTS = (50, 100)
@@ -73,10 +78,8 @@ TWIN_ALPHA_VS_PARENT = 0.0125     # 0.025 split across the two twins
 
 SQL = """
 SELECT p.arm, p.market, p.outcome, p.clv_margin_corrected,
-       CASE WHEN c.status = 'ok' THEN c.clv_sharp
-            WHEN c.cons_status = 'ok' THEN c.clv_cons END           AS clv_anchor,
-       CASE WHEN c.status = 'ok' THEN 'pinnacle'
-            WHEN c.cons_status = 'ok' THEN 'consensus' END          AS anchor_source
+       anchor_clv(c.status, c.cons_status, c.clv_sharp, c.clv_cons) AS clv_anchor,
+       anchor_source(c.status, c.cons_status)                       AS anchor_source
   FROM picks_forward_test p
   LEFT JOIN leg_clv_sharp c ON c.ledger = 'picks_forward_test' AND c.leg_id = p.id
  WHERE p.arm IN ('live', 'junk_anchor')
@@ -169,10 +172,8 @@ def twin_verdict(n_settled: int, p_parent: float | None, p_ctrl: float | None) -
 
 PAIR_SQL = """
 SELECT p.arm, p.market, p.outcome, p.clv_margin_corrected,
-       CASE WHEN c.status = 'ok' THEN c.clv_sharp
-            WHEN c.cons_status = 'ok' THEN c.clv_cons END           AS clv_anchor,
-       CASE WHEN c.status = 'ok' THEN 'pinnacle'
-            WHEN c.cons_status = 'ok' THEN 'consensus' END          AS anchor_source
+       anchor_clv(c.status, c.cons_status, c.clv_sharp, c.clv_cons) AS clv_anchor,
+       anchor_source(c.status, c.cons_status)                       AS anchor_source
   FROM picks_forward_test p
   LEFT JOIN leg_clv_sharp c ON c.ledger = 'picks_forward_test' AND c.leg_id = p.id
  WHERE ((p.arm = %s AND p.rule_version = %s) OR (p.arm = %s AND p.rule_version = %s))

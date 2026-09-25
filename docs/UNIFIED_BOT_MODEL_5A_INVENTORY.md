@@ -1,5 +1,7 @@
 # Unified bot model: step 5a inventory (#139, 2026-09-24)
 
+> **CHANGED 2026-09-26 (#162 W5.4 + W6.3, migration 454):** the arm→bot mapping is ONE table now (`forward_test_arm_bots`, read through `forward_test_leg_arm`), shared by `picks_public_all`, `picks_forward_test_public`, `clv_sharp_legs` and `bot_ledger`; ungraded consensus maps to `bot_consensus_b_v1` everywhere (`consensus_ungraded` is gone — zero rows had it). The published-arm lists are `forward_test_arms`, and the sharp-anchor CASE is the function `anchor_source()` / `anchor_clv()` / `anchor_p_close()`. The "written three times" note below is history.
+
 > **CHANGED 2026-09-26 (#162 W1.3):** the three paper bots' own `settle_picks` (corners / team_total / fh) and their :50/:55/:57 jobs are DELETED, and `_PENDING_SHADOW_BETS_SQL` no longer excludes `corners_ou_%` — `_settle_pending_shadow_bets` is the one shadow settler for those markets (corners via the `_corner_stats` hook). The "settled twice, a race" note below is history.
 
 > **CHANGED 2026-09-25 (#162 W4.6):** the retired money paths cited below — the paper Mac daemon (`coolbet_mac_daemon`), `coolbet_daemon_healthcheck`, the VPS manual-placement drain, the API placer (`coolbet_placer.place_all_bets` / `place_all_inplay_bets` / `place_bet_by_id` / `_place_bet_api`, CLI `scripts/place_coolbet_bets.py`) and web `getPlaceableBets` / `getRealBets` / `real-money-tier.ts` — are DELETED. Live executors: `scripts/place_coolbet_ui.py` + `workers/automation/best_price_router.py` (`placement_gate.py`, smoke `RETIRED-MONEY-PATHS-GONE`).

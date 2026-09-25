@@ -61,7 +61,9 @@ def in_headline(maturity_label: str | None, retired_at=None, vip: bool | None = 
 
 def forward_test_bot(arm: str, market: str | None, grade: str | None) -> str:
     """Which bot a forward-test ledger row belongs to — the SAME mapping as the CASE in
-    picks_public_all (migration 442). Only the two published arms map to bots here."""
+    picks_public_all (since migration 454: forward_test_arm_bots, read through the
+    forward_test_leg_arm view). Only the two published arms map to bots here; smoke
+    FORWARD-TEST-ARM-REGISTRY pins this function to that table for every grade and market."""
     if arm == "consensus_anchor":
         if grade == "D":
             return "bot_consensus_d_v1"
