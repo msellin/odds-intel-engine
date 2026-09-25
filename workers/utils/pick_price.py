@@ -57,8 +57,19 @@ _LEGS = """
       FROM {table} t
      WHERE t.pick_time IS NOT NULL
        AND t.{column} IS NULL
+       {prematch}
        {scope}
 """
+
+# IN-PLAY legs are never priced here. "Latest quote at or before pick_time" for a pick made at
+# minute 35 finds the PRE-MATCH board — a different market (ANALYSIS_GOTCHAS §14). The in-play
+# writers record their own on-screen price at insert; a pre-#159 run of the live backfill had no
+# such guard. (Found on the first #159 run: the in-play shadow bots read +86% "all books" ROI.)
+_PREMATCH = {
+    "simulated_bets": ("AND t.match_minute_at_pick IS NULL AND t.xg_source IS NULL "
+                       "AND NOT EXISTS (SELECT 1 FROM bots bb WHERE bb.id = t.bot_id AND bb.name LIKE 'inplay\\_%%')"),
+    "shadow_bets": "AND t.inplay_minute IS NULL",
+}
 
 _BEST = """
 WITH b AS ({legs}),
@@ -70,6 +81,7 @@ q AS (
        AND  LOWER(o.market)    = b.market
        AND  LOWER(o.selection) = b.selection
        AND  o.is_closing = false
+       AND  o.is_live IS NOT TRUE
        AND  o.odds > 1
        AND  {book_filter}
        AND  o.timestamp <= b.pick_time          -- the quote each book showed when the pick was made
@@ -101,7 +113,7 @@ UPDATE {table} t
 # our-books price IS a publishable price available at pick time.
 _FLOOR = """
 UPDATE {table} t SET odds_at_pick_available = t.odds_at_pick_live
- WHERE t.odds_at_pick_available IS NULL AND t.odds_at_pick_live > 1 {scope}
+ WHERE t.odds_at_pick_available IS NULL AND t.odds_at_pick_live > 1 {prematch} {scope}
 """
 
 
@@ -132,14 +144,14 @@ def price_legs(table: str, ids: list | None = None, settled_only: bool = True,
               "ou_blacklist": sorted(BLACKLISTED_OU_SOURCES)}
     stmts = [
         ("odds_at_pick_live", _BEST.format(
-            legs=_LEGS.format(table=table, column="odds_at_pick_live", scope=scope),
+            legs=_LEGS.format(table=table, column="odds_at_pick_live", scope=scope, prematch=_PREMATCH[table]),
             book_filter="o.bookmaker = ANY(%(books)s)", table=table,
             column="odds_at_pick_live", value="best.best")),
         ("odds_at_pick_available", _BEST.format(
-            legs=_LEGS.format(table=table, column="odds_at_pick_available", scope=scope),
+            legs=_LEGS.format(table=table, column="odds_at_pick_available", scope=scope, prematch=_PREMATCH[table]),
             book_filter="o.bookmaker <> ALL(%(non_offers)s)", table=table,
             column="odds_at_pick_available", value="GREATEST(best.best, t.odds_at_pick_live)")),
-        ("odds_at_pick_available_floor", _FLOOR.format(table=table, scope=scope)),
+        ("odds_at_pick_available_floor", _FLOOR.format(table=table, scope=scope, prematch=_PREMATCH[table])),
     ]
     out: dict[str, int] = {}
 

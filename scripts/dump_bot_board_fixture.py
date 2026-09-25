@@ -12,9 +12,8 @@ check (src/lib/bot-board.ts isBotBoardDevPreview — development builds only).
 
 `overview` holds the non-bot reads of the /admin Overview (feeds, jobs, DQ, real bets per week).
 `weekly` (the 12-week strip), `market_stats` and the ledger's home_team / away_team come from
-migration 411's views bot_weekly / bot_market_stats / bot_ledger_display. They are computed here with the SAME SQL inline (below)
-rather than read from the views, so the fixture works before 411 is applied. Keep the two in
-step with supabase/migrations/411_bot_weekly_view.sql.
+migration 411's views bot_weekly / bot_market_stats / bot_ledger_display (re-based by 433, #159),
+read directly.
 """
 import argparse
 import datetime as dt
@@ -46,54 +45,11 @@ def _rows(sql, params=None):
     return [{k: _plain(v) for k, v in r.items()} for r in execute_query(sql, params)]
 
 
-# Same body as the bot_weekly view (migration 411).
-_WEEKLY_SQL = """
-WITH cur AS (
-    SELECT DISTINCT ON (bot_name) bot_name, rule_version
-      FROM public.bot_ledger
-     WHERE source = 'forward_test'
-     ORDER BY bot_name, pick_time DESC
-)
-SELECT l.bot_name,
-       date_trunc('week', l.pick_time)                                                      AS week,
-       count(*)                                                                             AS picks,
-       count(*) FILTER (WHERE l.result IN ('won', 'lost'))                                  AS settled,
-       count(l.clv_mc)       FILTER (WHERE l.result <> 'void' AND abs(l.clv_mc) <= 1)       AS clv_mc_n,
-       avg(l.clv_mc)         FILTER (WHERE l.result <> 'void' AND abs(l.clv_mc) <= 1)       AS clv_mc_mean,
-       count(l.clv_pinnacle) FILTER (WHERE l.result <> 'void' AND abs(l.clv_pinnacle) <= 1) AS clv_pin_n,
-       avg(l.clv_pinnacle)   FILTER (WHERE l.result <> 'void' AND abs(l.clv_pinnacle) <= 1) AS clv_pin_mean,
-       sum(l.pnl_unit)                                                                      AS pnl_unit
-  FROM public.bot_ledger l
-  LEFT JOIN cur c ON c.bot_name = l.bot_name
- WHERE l.pick_time >= date_trunc('week', now()) - interval '11 weeks'
-   AND (l.source <> 'forward_test' OR l.rule_version = c.rule_version)
- GROUP BY l.bot_name, date_trunc('week', l.pick_time)
- ORDER BY 1, 2
-"""
-
-
-# Same body as the bot_market_stats view (migration 411).
-_MARKET_STATS_SQL = """
-WITH cur AS (
-    SELECT DISTINCT ON (bot_name) bot_name, rule_version
-      FROM public.bot_ledger
-     WHERE source = 'forward_test'
-     ORDER BY bot_name, pick_time DESC
-)
-SELECT l.bot_name,
-       l.market,
-       count(*) FILTER (WHERE l.result IN ('won', 'lost'))                                  AS settled,
-       count(*) FILTER (WHERE l.result = 'won')                                             AS won,
-       count(*) FILTER (WHERE l.result IN ('won', 'lost') AND l.odds > 1)                   AS odds_n,
-       sum(1 / l.odds) FILTER (WHERE l.result IN ('won', 'lost') AND l.odds > 1)            AS sum_inv_odds,
-       count(l.clv_mc)       FILTER (WHERE l.result <> 'void' AND abs(l.clv_mc) <= 1)       AS clv_mc_n,
-       avg(l.clv_mc)         FILTER (WHERE l.result <> 'void' AND abs(l.clv_mc) <= 1)       AS clv_mc_mean,
-       stddev_samp(l.clv_mc) FILTER (WHERE l.result <> 'void' AND abs(l.clv_mc) <= 1)       AS clv_mc_sd
-  FROM public.bot_ledger l
-  LEFT JOIN cur c ON c.bot_name = l.bot_name
- WHERE (l.source <> 'forward_test' OR l.rule_version = c.rule_version)
- GROUP BY l.bot_name, l.market
-"""
+# [[#159]] read the views themselves now (411 and 433 are applied): bot_weekly / bot_market_stats
+# are built on bot_ledger's RECORD legs with the sharp-anchor CLV (clv_anchor_*) and the flat
+# our-books pnl. An inline copy of their SQL went stale the day 433 re-based them.
+_WEEKLY_SQL = "SELECT * FROM public.bot_weekly ORDER BY bot_name, week"
+_MARKET_STATS_SQL = "SELECT * FROM public.bot_market_stats"
 
 
 # Same body as the pipeline_job_latest view (migration 417).

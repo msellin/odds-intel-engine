@@ -57714,6 +57714,12 @@ def test_pick_price_at_pick_time():
     assert "GREATEST(best.best, t.odds_at_pick_live)" in src
     assert "lag_h <= %(max_lag_h)s AND age_h <= %(max_age_h)s" in src and "ou_blacklist" in src
     assert "ODDS_MAX_LAG_HOURS" in src and "_NON_OFFERS" in src and "ACCESSIBLE_BOOKMAKERS" in src
+    # in-play legs are never priced off the pre-match board (first run read +86% "all books")
+    assert pp._PREMATCH["shadow_bets"] == "AND t.inplay_minute IS NULL"
+    assert "t.match_minute_at_pick IS NULL AND t.xg_source IS NULL" in pp._PREMATCH["simulated_bets"]
+    assert "o.is_live IS NOT TRUE" in src and "{prematch}" in pp._LEGS and "{prematch}" in pp._FLOOR
+    m435 = _engine_path("supabase/migrations/435_shadow_bets_unique_available_price.sql").read_text()
+    assert "sb.odds_at_pick_available" in m435 and "inplay_minute IS NOT NULL" in m435
     for w in ("SET odds_at_pick =", "SET pnl", "bankroll_after ="):
         assert w not in src, f"the producer must never rewrite the historical record ({w})"
     # scope: ids / settled + recent
