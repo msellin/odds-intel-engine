@@ -77,6 +77,14 @@ count as `clv_outlier_n`.
 
 ### `bot_scoreboard` (view) — one row per bot_name
 
+> **CHANGED 2026-09-25 ([[#159]], migration 433).** `bot_scoreboard` is now a projection of the view
+> `bot_performance` — the ONE per-bot ROI/CLV computation that /performance also reads. `roi_unit` = FLAT
+> ROI at OUR books' price (`odds_at_pick_live`), `roi_public` beside it = the same at the best price
+> available on ALL books (the /performance figure); `clv_pin_*` are REMOVED (legacy `clv_pinnacle_devig`)
+> and replaced by `clv_anchor_n / _n_pinnacle / _n_consensus / _mean / _se / _t` (sharp-anchor close); forward-test
+> rows count the [[#158]] record. `bot_config.admissible_metric` is `clv_anchor` for every non-in-play family.
+> The column list below is the original contract.
+
 `bot_name, display_name, source, scored_rule_version, earlier_version_picks, is_active, retired_at, maturity_label, family,
 picks_total, pending, settled (won+lost), won, lost, void, roi_unit (sum pnl_unit / settled),
 clv_mc_n, clv_mc_mean, clv_mc_se, clv_mc_t, clv_pin_n, clv_pin_mean, clv_pin_t,

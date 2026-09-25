@@ -6004,7 +6004,9 @@ def test_scheduled_live_price_producer():
     src = open(bf, encoding="utf-8").read()
     assert "def apply_backfill(" in src, "the schedulable apply_backfill() callable is gone"
     # it must COMMIT (a dry-run producer would price nothing)
-    assert "conn.commit()" in src, "apply_backfill must commit"
+    # [[#159]] the SQL moved to workers/utils/pick_price.py (one producer, both price bases)
+    pp = open(os.path.join(os.path.dirname(__file__), "..", "workers", "utils", "pick_price.py"), encoding="utf-8").read()
+    assert "price_legs(" in src and "c.commit()" in pp, "apply_backfill must commit (via price_legs)"
     from scripts.backfill_odds_at_pick_live import apply_backfill
     assert callable(apply_backfill)
     sched = open(os.path.join(os.path.dirname(__file__), "..", "workers", "scheduler.py"), encoding="utf-8").read()
@@ -10354,7 +10356,7 @@ def _():
         "buildBotStats",
         "buildSummary",
         "buildMarketStats",
-        "buildPublicBotStats",
+        # buildPublicBotStats retired by [[#159]] — /performance rows come from bot_performance
         "buildPerformanceStats",
     ]
     for sym in required_exports:
@@ -10451,16 +10453,14 @@ def _():
     #   3. Retired bots are excluded from the "strategies live" count.
     #   4. /performance passes the unsanitized aggregate bets in, or the
     #      recompute silently works off display-rounded numbers.
-    assert "buildPublicBotStats" in src, (
-        "PerformanceClient must recompute the public leaderboard client-side "
-        "from raw bets — reading only a cached aggregate reintroduces the "
-        "30-minute staleness this component exists to avoid"
-    )
-    assert "filterExperimental" in src, (
-        "PerformanceClient must strip experimental-maturity bots before "
-        "building the public leaderboard — an unproven bot on the public "
-        "page is a published claim we cannot defend"
-    )
+    # [[#159]] (2026-09-25) INVERTED: the client-side recompute (buildPublicBotStats) was a
+    # SECOND definition of per-bot ROI/CLV (stake-weighted, legacy clv) — the reason a Pro and a
+    # Free reader saw different numbers. Rows now come from the engine view bot_performance,
+    # read live server-side (2-min cache), so freshness no longer needs a browser recompute.
+    # The experimental gate is the page's isPublicBot filter (PERF-PUBLIC-IS-CALIBRATED-OR-BETA).
+    _src_code = _ts_code159(src)
+    assert "buildPublicBotStats" not in _src_code and "aggregateBets" not in _src_code, (
+        "PerformanceClient recomputes per-bot figures in the browser again — one definition only")
     assert "retiredAt" in src, (
         "PerformanceClient must know about retirement — the live/retired "
         "strategy counts on the hero are derived from it"
@@ -10469,9 +10469,8 @@ def _():
     assert "PerformanceClient" in page, (
         "/performance/page.tsx must render PerformanceClient (not PerformanceLeaderboard directly)"
     )
-    assert "aggregateBets" in page, (
-        "/performance/page.tsx must pass aggregateBets so Pro+ users get toggle data"
-    )
+    assert "getBotPerformance()" in page and "isPublicBot(b.maturityLabel)" in page, (
+        "/performance rows must come from bot_performance behind the public maturity gate")
 
 
 @test("INPLAY-LOOSEN-SILENT-L — Strategy L edge gate 4% → 3% so it can accumulate data")
@@ -18517,16 +18516,12 @@ def _():
     import pathlib
     page = _web_path("src/app/(app)/performance/page.tsx").read_text()
 
-    # liveRetiredNames must be defined once and consumed by both the active and retired filters
-    assert "liveRetiredNames" in page, "page.tsx must define liveRetiredNames from botsDB"
-    assert "retiredAt" in page, "liveRetiredNames must derive from botsDB[].retiredAt"
-
-    # cachedBots construction must include the .filter against liveRetiredNames
-    cb_start = page.index("const cachedBots = buildCachedBotStats(")
+    # [[#159]]: rows are built from the live botsDB (not the 30-min cache), so the retired
+    # filter is a direct `!b.retiredAt` on that list.
+    cb_start = page.index("const cachedBots: PublicBotStat[] = botsDB")
     cb_end = page.index(";", cb_start)
     cb_block = page[cb_start:cb_end]
-    assert "liveRetiredNames" in cb_block, \
-        "cachedBots must filter out names in liveRetiredNames (active leaderboard freshness)"
+    assert "!b.retiredAt" in cb_block, "cachedBots must drop retired bots from the live bot list"
     # MATURITY GATE — assert the GATE, not the spelling (corrected 2026-09-16).
     # This required the literal substring "experimental", i.e. the old
     # `maturityLabel !== 'experimental'`. That filter was removed on 09-15 and
@@ -20540,7 +20535,10 @@ def _():
         "buildBotStats must filter post-cutoff cohort by placedAt"
     )
 
-    modal = _web_path("src/components/bot-dashboard-client.tsx").read_text()
+    _mp = _web_path("src/components/bot-dashboard-client.tsx")
+    if not _mp.exists():
+        return  # [[#159]] the dead admin bot-dashboard client was deleted (no importer since #139)
+    modal = _mp.read_text()
     assert "MODEL_BATCH_CUTOFF" in modal, (
         "modal must import MODEL_BATCH_CUTOFF to label the post-cutoff row"
     )
@@ -22063,7 +22061,7 @@ def _():
 
     # ── (4) PerformanceClient no longer overrides hero stats ────────────
     perf_client = _web_path("src/components/performance-client.tsx").read_text()
-    assert "UI-METRIC-SOT" in perf_client, (
+    assert "UI-METRIC-SOT" in perf_client or "[[#159]]" in perf_client, (
         "performance-client must document the SoT contract"
     )
     assert "computedActivePerf" not in perf_client, (
@@ -22095,8 +22093,11 @@ def _():
         "buildChartData must NOT fall back to bankrollAfter snapshots — they go stale on void cleanup"
     )
 
-    # Admin /admin/bots chart has the same fix
-    admin_client = _web_path("src/components/bot-dashboard-client.tsx").read_text()
+    # Admin /admin/bots chart had the same fix. [[#159]]: that dead client was deleted.
+    _adm = _web_path("src/components/bot-dashboard-client.tsx")
+    if not _adm.exists():
+        return
+    admin_client = _adm.read_text()
     admin_chart_idx = admin_client.index("function buildBankrollData")
     admin_chart_block = admin_client[admin_chart_idx:admin_chart_idx + 1500]
     assert "running += b.pnl" in admin_chart_block, (
@@ -24842,7 +24843,8 @@ def test_published_arm_has_a_record_2026_09_22():
     #    repo — the DB assertions above still run there.
     src = _web_path("src/lib/engine-data.ts").read_text(encoding="utf-8")
     if src:
-        for fn in ("getPicksForwardTestSummary", "getPicksForwardTestBets"):
+        # [[#159]] getPicksForwardTestBets is gone — the bet list is the row's bot_ledger record legs
+        for fn in ("getPicksForwardTestSummary",):
             i = src.index(f"export async function {fn}(")
             body = src[i:i + 1400]
             assert 'arm: string = "live"' in body and '.eq("arm", arm)' in body, (
@@ -24862,7 +24864,8 @@ def test_published_arm_has_a_record_2026_09_22():
             "being added to that list"
         )
         # [[#095]] 2026-09-23: the consensus arm is TWO bots, one per grade.
-        for bot in ("bot_sharp_forward_test_v1", "bot_consensus_b_v1", "bot_consensus_c_v1", "bot_consensus_d_v1"):
+        # [[#122]] the sharp arm is two bots by market (bot_sharp_forward_test_v1 is the retired parent)
+        for bot in ("bot_sharp_1x2_v1", "bot_sharp_ou_v1", "bot_consensus_b_v1", "bot_consensus_c_v1", "bot_consensus_d_v1"):
             assert bot in page, f"{bot} is not injected into the leaderboard"
 
     # 6. And the publisher must never put a pick on a match that is not on.
@@ -25969,9 +25972,9 @@ def _():
         "performance/page.tsx must gate the streaming history on isLoggedIn, "
         "not isPro — the tier system was collapsed 2026-06-24."
     )
-    assert "LoggedInPerformanceSection" in page, (
-        "performance/page.tsx must have a LoggedInPerformanceSection that "
-        "streams allBets for the full ledger."
+    assert "LoggedInHistorySection" in page and "getCohortLegs(" in page, (
+        "performance/page.tsx must have a LoggedInHistorySection that streams the full "
+        "ledger (since [[#159]] from the same per-leg view the rows are computed from)."
     )
     assert "toFullBetItems" in page, (
         "performance/page.tsx must map SanitizedBotBet → FullBetItem so the "
@@ -26047,7 +26050,7 @@ def _():
         "to stats.settledBets is only OK when the calibrated cache is cold."
     )
     client = _web_path("src/components/performance-client.tsx").read_text()
-    assert "isLiveBot(b.name)" in client and "maturityLabel" in client and "experimental" in client, (
+    assert "isLiveBot(b.name)" in client and "maturityLabel" in client and "isPublicBot(" in client, (
         "performance-client.tsx must build activeBotCount from the SAME "
         "cohort as the leaderboard funnel (non-in-play, non-experimental, "
         "non-retired) — otherwise the hero says 43 live and the funnel says "
@@ -26697,15 +26700,16 @@ def _():
     )
     # Headline function must compute flat PnL from odds_at_pick + result
     # (not from stake + pnl which are Kelly). Look for the signature pattern.
-    assert 'FLAT_STAKE_EUR * (odds - 1)' in engine, (
-        "engine-data.ts must compute flat PnL as FLAT_STAKE_EUR * (odds - 1) "
-        "on wins. Missing pattern = silent revert to Kelly PnL."
-    )
-    assert 'pnlFlat' in engine and 'stakeFlat' in engine, (
-        "engine-data.ts must maintain pnlFlat / stakeFlat accumulators "
-        "for the headline aggregate — Kelly accumulators (pnl/stake) alone "
-        "would silently publish Kelly ROI."
-    )
+    # [[#159]] the headline sums the engine view's FLAT per-leg figure (bot_ledger.pnl_unit_public:
+    # won = odds − 1, lost = −1, at 1 unit) × the flat stake — never stake/pnl (Kelly).
+    perf_lib = _web_path("src/lib/bot-performance.ts").read_text()
+    assert "export const PERF_FLAT_STAKE_EUR = 10;" in perf_lib and "pnl_unit_public" in perf_lib
+    head = engine[engine.index("const _getCalibratedHeadlineStatsUncached"):]
+    head = head[:head.index("export const getCalibratedHeadlineStats")]
+    assert "getHeadlineFlat(" in head and "PERF_FLAT_STAKE_EUR" in head, (
+        "the headline must be summed from the flat per-leg view figure")
+    mig = _engine_path("supabase/migrations/433_one_bot_performance.sql").read_text()
+    assert "CASE s.result::text WHEN 'won' THEN x.odds_public - 1 WHEN 'lost' THEN -1::numeric ELSE 0::numeric END AS pnl_unit_public" in mig
 
     # /api/v1/track-record must project the same fields and use FLAT_STAKE
     assert "FLAT_STAKE" in track, (
@@ -26721,18 +26725,11 @@ def _():
     # dropping `result` while leaving the string intact elsewhere would have
     # sailed through. Assert the columns are present, individually, and that
     # the flat computation actually consumes them.
-    _agg = track[track.index("FLAT-ROI-EVERYWHERE"):][:3000]
-    for col in ("odds_at_pick", "result"):
-        assert col in _agg, (
-            f"track-record aggregate select must include {col} — flat ROI is "
-            f"computed from price and outcome, not from the Kelly stake/pnl "
-            f"columns"
-        )
-    assert "FLAT_STAKE * (odds - 1)" in track, (
-        "track-record must compute the winning payout at the FLAT stake. "
-        "Falling back to the stored Kelly pnl silently publishes a different "
-        "ROI than /performance and the landing."
-    )
+    # [[#159]] the API's aggregate and rows use the SAME flat per-leg view figure as the hero.
+    assert "getHeadlineFlat(" in track and "head.pnlUnits * FLAT_STAKE" in track, (
+        "track-record must sum the flat per-leg figure — the stored Kelly pnl would publish a "
+        "different ROI than /performance")
+    assert "(pr?.pnlUnit ?? " in track and "* FLAT_STAKE" in track
 
 
 @test("ADMIN-PLACE-COHORT-CLEANUP — /admin/place drops retired/inplay/exotic-market rows")
@@ -31612,13 +31609,9 @@ def _ou_live_price_blind():
     """
     from pathlib import Path as _Path
     root = _Path(__file__).resolve().parent.parent
-    src = (root / "scripts" / "backfill_odds_at_pick_live.py").read_text()
-
-    # Assert against the SQL, not the module: the docstring above describes the
-    # bug in detail, so a whole-file substring search matches the prose and
-    # passes with the join reverted.
-    i = src.index("_SQL = ")
-    sql = src[i:src.index('"""', src.index('"""', i) + 3)]
+    # [[#159]] the SQL moved to workers/utils/pick_price.py (one producer, both price bases)
+    from workers.utils import pick_price as _pp
+    sql = _pp._LEGS + _pp._BEST
 
     assert "LOWER(o.market)" in sql and "LOWER(o.selection)" in sql, (
         "the snapshot side of the join must be case-normalised — shadow_bets "
@@ -32591,27 +32584,17 @@ def test_landing_perf_roi_basis():
     ep = ep[:ep.index("\nexport ")] if "\nexport " in ep else ep[:2000]
     assert "combo_legs" in ep, "execPnl must leave combo bets on their stored pnl"
 
-    # 3. The public HEADLINE loop specifically must price at executable odds.
-    #    Checking the whole file is not enough: the per-bet ledger also calls
-    #    execOdds, so a file-wide substring check passes even when the headline
-    #    aggregate is reverted. Scope the assertion to the aggregate block.
-    start = api_src.index("let total = 0;")
-    end = api_src.index("function median(")
-    agg_block = api_src[start:end]
-    assert "pnl +=" in agg_block, "could not locate the headline P&L accumulation"
-    pnl_stmt = [l for l in agg_block.splitlines() if "pnl +=" in l][0]
-    odds_var = pnl_stmt.split("FLAT_STAKE * (")[1].split(" -")[0].strip()
-    decl = [l for l in agg_block.splitlines()
-            if f"const {odds_var} =" in l or f"let {odds_var} =" in l]
-    assert decl, f"could not find the declaration of `{odds_var}` in the headline loop"
-    assert "execOdds(" in decl[0], (
-        f"the headline ROI is computed from `{odds_var}`, which is not execOdds-derived: "
-        f"{decl[0].strip()}"
-    )
-    assert "odds_at_pick_live" in agg_block, (
-        "the headline aggregate must consider odds_at_pick_live"
-    )
-    assert "odds_at_pick_live" in api_src, "the API must select odds_at_pick_live"
+    # 3. [[#159]] The public HEADLINE is summed from the engine view's per-leg PUBLIC price
+    #    (bot_ledger.pnl_unit_public — best price available at pick time, all books; never the
+    #    MAX-over-history odds_at_pick). Both public surfaces call the same summing function.
+    assert "getHeadlineFlat(" in api_src, "track-record must sum the per-leg view figure"
+    head = lib_src[lib_src.index("const _getCalibratedHeadlineStatsUncached"):]
+    head = head[:head.index("export const getCalibratedHeadlineStats")]
+    assert "getHeadlineFlat(" in head, "/performance's headline must use the same summing function"
+    assert "Number(r.odds_at_pick ?? 0)" not in head
+    perf_lib = open(os.path.join(web, "lib", "bot-performance.ts"), encoding="utf-8").read()
+    fl = perf_lib[perf_lib.index("export async function getHeadlineFlat("):]
+    assert ".select(\"pick_id, pick_time, pnl_unit_public, public_basis\")" in fl and '.from("bot_ledger")' in fl
 
     # 4. The headline must ship with an interval and a stated basis.
     for key in ("roi_ci_low_pct", "roi_ci_high_pct", "roi_se_pct", "price_basis"):
@@ -32766,16 +32749,14 @@ def test_public_cohort_shared():
     for name in ("CALIBRATED_SINCE", "CALIBRATED_PUBLIC_MARKETS", "FLAT_STAKE_EUR"):
         assert name in api, f"track-record must import {name} from engine-data"
 
-    # Both must price at executable odds.
-    assert "execOdds(r.odds_at_pick, r.odds_at_pick_live)" in api, (
-        "track-record headline must price at executable odds"
-    )
+    # [[#159]] Both sum the SAME per-leg view figure over the SAME cohort function.
+    assert "getHeadlineFlat(" in api and "getPublicCohortBotNames()" in api, (
+        "track-record headline must use the shared summing function + cohort")
     head = lib[lib.index("_getCalibratedHeadlineStatsUncached"):]
     head = head[:head.index("export const getCalibratedHeadlineStats")]
-    assert "execOdds(r.odds_at_pick, r.odds_at_pick_live)" in head, (
-        "/performance headline must price at executable odds too, or the two "
-        "public pages report different ROI for the same bets"
-    )
+    assert "getHeadlineFlat(" in head and "getPublicCohortBotNames()" in head, (
+        "/performance headline must use the same function, or the two public pages "
+        "report different ROI for the same bets")
     assert "Number(r.odds_at_pick ?? 0)" not in head, (
         "/performance headline still reads raw odds_at_pick"
     )
@@ -36564,16 +36545,16 @@ def test_clv_public_withdrawn_complete():
     code = re.sub(r"//.*?$", "", page, flags=re.M)
     code = re.sub(r"/\*.*?\*/", "", code, flags=re.S)
 
-    # The sanitizeBets clv assignment must be Elite-gated, exactly like its
-    # siblings. A bare `clv: b.clv` (no isElite) is the regression.
-    m = re.search(r"clv:\s*([^,\n]+)", code)
-    assert m, "sanitizeBets no longer assigns clv at all — structure changed, re-audit"
-    rhs = m.group(1)
-    assert "isElite" in rhs, (
-        "per-row clv on the PUBLIC /performance ledger is no longer gated behind "
-        "isElite — it renders simulated_bets.clv (raw, un-de-vigged, high-water) "
-        "to anonymous visitors, reintroducing CLV-PUBLISHED-VIGGED"
-    )
+    # [[#159]]: the history rows are built by toFullBetItems from the per-leg view (the CLV is
+    # now the sharp-anchor close, never simulated_bets.clv) — and the per-row NUMBER stays
+    # Elite-gated. The detail view's per-pick cell likewise shows the number to Elite only.
+    m = re.search(r"const clvExact = ([^;\n]+)", code)
+    assert m and "isElite" in m.group(1), (
+        "per-row clv on the PUBLIC /performance ledger is no longer gated behind isElite")
+    lb = _web_path("src/components/performance-leaderboard.tsx").read_text()
+    assert "{isElite && b.clv != null ? (" in lb, "the detail view's per-pick CLV number must stay Elite-only"
+    assert "clv_anchor_public" in _web_path("src/lib/bot-performance.ts").read_text(), (
+        "per-leg CLV must be the sharp-anchor close, not the legacy column")
 
     # The auth-free JSON route must still emit no derived CLV field.
     route = _web_path("src/app/api/v1/track-record/route.ts").read_text()
@@ -44734,19 +44715,20 @@ def test_vip_performance_settled_only():
         "dropVipUnsettled must allowlist settled results, not denylist 'pending' — "
         "any new unsettled state would otherwise leak the paid pick")
 
-    # 3. page drops them BEFORE both client arrays are built
-    assert "dropVipUnsettled(" in page, "/performance does not strip VIP unsettled rows server-side"
+    # 3. [[#159]] no raw bet array reaches a browser any more: the detail view fetches its legs
+    #    from /api/performance/bot-legs (service_role), which returns SETTLED legs only for VIP
+    #    and hide_pending bots; the history table drops their pending legs server-side too.
+    route = _web_path("src/app/api/performance/bot-legs/route.ts").read_text()
+    assert "settledOnly: isVipBot(b) || b.hidePending" in route, "/performance leaks VIP pending picks"
+    lib159 = _web_path("src/lib/bot-performance.ts").read_text()
+    assert 'const SETTLED = ["won", "lost", "void", "push"];' in lib159 and "hidePendingBots.has(" in lib159
     assert "b.hidePending" in page and "hide_pending" in ed, (
         "the EV8 twin (bots.hide_pending, migration 421) is not stripped — its pending "
         "picks are exactly the VIP bot's EV8 picks")
-    d = page.index("dropVipUnsettled(")
-    assert d < page.index("sanitizeBets(allBetsRaw"), "VIP rows are stripped after sanitising"
-    assert "aggregateBets={allBetsRaw}" in page and d < page.index("aggregateBets={allBetsRaw}"), (
-        "the raw aggregate array reaches the client without the VIP filter")
+    assert "aggregateBets" not in page and "allBets" not in page
 
     # 4. listing gate: isPublicBot || isVip, and the allowlist is untouched
-    assert _r.search(r"isPublicBot\(b\.maturityLabel\)\s*\|\|\s*b\.isVip", page), "cachedBots lacks the VIP gate"
-    assert _r.search(r"isPublicBot\(b\.maturityLabel\)\s*\|\|\s*isVipBot\(b\)", agg), "buildPublicBotStats lacks the VIP gate"
+    assert _r.search(r"isPublicBot\(b\.maturityLabel\)\s*\|\|\s*isVipBot\(b\)", page), "cachedBots lacks the VIP gate"
     m = _r.search(r"PUBLIC_MATURITY_LABELS[^=]*=\s*new Set\(\s*\[(.*?)\]", agg, _r.DOTALL)
     assert m and "vip" not in m.group(1).lower(), "VIP must not widen PUBLIC_MATURITY_LABELS"
 
@@ -44770,8 +44752,8 @@ def test_vip_performance_settled_only():
     # 7. dashboard_cache.bot_breakdown (anonymous fallback) must not maturity-filter,
     #    or the VIP card vanishes for logged-out readers.
     st = _engine_path("workers/jobs/settlement.py").read_text()
-    q = st[st.index("bot_rows = execute_query(f"):]
-    q = q[:q.index("GROUP BY b.id, b.name")]
+    q = st[st.index("bot_rows = execute_query("):]
+    q = q[:q.index("\"\"\", [])")]   # [[#159]] now a read of bot_performance
     assert "maturity_label" not in q and "vip" not in q.lower(), (
         "bot_breakdown now filters by maturity — the VIP bot needs an explicit include")
     return "VIP listed via its own gate; unsettled rows dropped server-side; EV8/EV5 per pick"
@@ -45298,10 +45280,11 @@ def test_forward_test_versions_do_not_vanish():
     assert "record?.current" in perf and "getForwardTestBotRecord(" in perf, (
         "the performance leaderboard row must read the CURRENT rule version"
     )
-    assert 'rv("bot_sharp_1x2_v1")' in perf and "earlier:" in perf, (
-        "the bet list must be scoped to the row's rule version, and earlier versions "
-        "must stay visible on the row, or row and list stop reconciling"
-    )
+    # [[#159]] the bet list is the row's own record legs (bot_ledger in_record = the #158 record),
+    # fetched by the detail view — scoped to the same rule by construction.
+    assert "earlier:" in perf, "earlier versions must stay visible on the row"
+    assert '.eq("in_record", true)' in _web_path("src/lib/bot-performance.ts").read_text(), (
+        "the bet list must be the row's record legs, or row and list stop reconciling")
     eng = _web_path("src/lib/engine-data.ts").read_text(encoding="utf-8")
     assert "current: PicksForwardTestSummary;" in eng and "pooled: PicksForwardTestSummary;" in eng, (
         "the getter must still expose BOTH — `pooled` for the public row and "
@@ -49229,8 +49212,11 @@ def _():
     # pick COUNTS under (record_rule_version), so the two still reconcile.
     assert "record?.current" in perf and "getForwardTestBotRecord(" in perf, (
         "the public row must use the current rule version's record")
-    assert "ruleVersion ? { record_rule_version: ruleVersion }" in ed, (
-        "the bets list must be filterable to the row's rule version so it reconciles")
+    # [[#159]] the bets list IS the row's record legs (bot_ledger in_record = the #158 record,
+    # read by /api/performance/bot-legs), so it reconciles with the row by construction.
+    perf_lib = (web / "lib" / "bot-performance.ts").read_text()
+    assert '.eq("in_record", true)' in perf_lib, (
+        "the bets list must be the row's own record legs so it reconciles")
     return "watchlist future-only; bot row pooled; label is a top-N"
 
 @test("PINNACLE-LIMITS — the validity-gate reader is read-only, polite, and fails safe")
@@ -49871,7 +49857,10 @@ def test_own_books_in_every_comparison():
         assert '["Coolbet", "Unibet", "Bet365", "Pinnacle"]' not in ed, "/admin/place still reads the dead Unibet feed"
         # The PUBLIC obtainable figure must NOT drop AF 'Unibet' (owner, 2026-09-24): its
         # "33.1%" is measured against unibet.ee — an OWN constraint, not a reader's.
-        assert 'UNOBTAINABLE_BOOKMAKERS = ["Unibet-Kambi"] as const' in ed
+        # [[#159]] the public price basis is computed in the engine over is_publishable_book,
+        # whose deny-list excludes Unibet-Kambi but NOT AF 'Unibet' (owner, 2026-09-24).
+        from workers.jobs.daily_pipeline_v2 import is_publishable_book
+        assert not is_publishable_book("Unibet-Kambi") and "UNOBTAINABLE_BOOKMAKERS" in ed
         r = (web / "app" / "api" / "admin" / "bot-book-odds" / "route.ts").read_text()
         assert '"Coolbet", "Unibet", "Bet365"' not in r
 
@@ -52336,8 +52325,8 @@ def test_ledger_backed_bots_not_duplicated():
     for b in BOTS:
         if b.family == FAM_FORWARD_TEST:
             assert f'"{b.name}"' in block, f"{b.name} missing from LEDGER_BACKED_BOTS"
-    assert "!LEDGER_BACKED_BOTS.has(b.name)" in agg, "toggle path must skip ledger bots"
-    assert "!LEDGER_BACKED_BOTS.has(b.name)" in page, "cached path must skip ledger bots"
+    # [[#159]] one fleet path now (the client toggle recompute is gone)
+    assert "!LEDGER_BACKED_BOTS.has(b.name)" in page, "the fleet path must skip ledger bots"
 
 
 @test("BTB-REPLAY-MIRRORS-LIVE-RULE — the Beat the Bookie grade test uses the publisher's own rule")
@@ -55741,7 +55730,7 @@ def test_unified_bot_views_contract():
             assert by[n]["family"] != "unknown", f"{n} config is in daily_pipeline_v2 but exported as unknown"
     assert not any(g["name"] == "anchor_sanity_ratio" for r in rows for g in r["gates"]), "placeholder gate"
     assert by["bot_inplay_slowstate_v1"]["admissible_metric"] == "lift"
-    assert by["bot_v10_1x2"]["admissible_metric"] == "clv_pinnacle"
+    assert by["bot_v10_1x2"]["admissible_metric"] == "clv_anchor"   # [[#159]] one CLV everywhere
     sched = _engine_path("workers/scheduler.py").read_text()
     assert '_run_job("export_bot_config", _job_export_bot_config_impl)' in sched
     assert _re.search(r'job_export_bot_config, CronTrigger\(hour=3, minute=40\)', sched)
@@ -55865,8 +55854,10 @@ def test_forward_test_sharp_anchor_clv_on_performance():
     assert "createSupabaseAdmin()" in body and '.from("picks_forward_test_bot_record")' in body, (
         "the private aggregate must be read server-side with the service client")
     assert "getForwardTestBotRecord(x.arm, x.grade, x.market)" in page
-    assert 'clvDirection: sharp == null ? "neutral"' in page and "avgClv: isElite ? sharp : null" in page
-    assert "ownClv: mc" in page and "record?.current" in page and "?.pooled" not in page
+    # [[#159]] the row's figures + sharp CLV come from bot_performance (same definition), the
+    # own-book figure stays the labelled secondary from the #158 record.
+    assert 'clvDirection: clv == null ? "neutral"' in page and "avgClv: isElite ? clv : null" in page
+    assert "ownClv: cur.clvMarginCorrected" in page and "record?.current" in page and "?.pooled" not in page
     flat = " ".join(lb.split())
     assert "vs sharp close {clvPct(ft.sharpClv)}" in flat and "Pinnacle / ${ft.nConsensus} consensus" in flat
     assert "vs the book&apos;s own close" in flat, "own-book figure must stay, labelled as secondary"
@@ -55970,8 +55961,12 @@ def test_recheck_forward_test_pick_time_only():
     i = web_lib.index("export async function getForwardTestBotRecord(")
     body = web_lib[i:i + 700]
     assert "createSupabaseAdmin()" in body and '.from("picks_forward_test_bot_record")' in body
-    assert "record_rule_version: ruleVersion" in web_lib, "the bet list must be scoped on the counted rule"
-    assert "getForwardTestBotRecord(x.arm, x.grade, x.market)" in page and "nRechecked: picksSummary.nRechecked" in page
+    # [[#159]] the bet list = the row's record legs (bot_ledger in_record, built on
+    # picks_forward_test_record_leg); the row reads nRechecked from the #158 record
+    mig433 = _engine_path("supabase/migrations/433_one_bot_performance.sql").read_text()
+    assert "LEFT JOIN picks_forward_test_record_leg r ON r.id = p.id" in mig433
+    assert "COALESCE(r.record_state IN ('native', 'rechecked_pass'), false) END AS in_record" in mig433
+    assert "getForwardTestBotRecord(x.arm, x.grade, x.market)" in page and "nRechecked: cur.nRechecked" in page
     flat = " ".join(lb.split())
     assert "re-checked under {ft.rule}" in flat and "didn't meet today's rule" in flat
     return "pick-time only, frozen verdicts, publisher arithmetic, private views" + live
@@ -56717,10 +56712,10 @@ def test_admin_bots_perf_charts():
     assert "Cumulative P/L · flat stake" in c
     sheet = (d / "bot-sheet.tsx").read_text(encoding="utf-8")
     assert "<BotPerfCharts v={v} weekly={weekly} />" in sheet
-    assert '{v.metric.metric === "clv_mc" && <th className="py-1 text-right font-normal">mc-CLV</th>}' in sheet
+    assert '{v.metric.metric === "clv_anchor" && <th className="py-1 text-right font-normal">sharp CLV</th>}' in sheet  # [[#159]]
     # the weekly strip / chart source redacts in-play CLV in the data layer
     lib = _web_path("src/lib/bot-board.ts").read_text(encoding="utf-8")
-    assert "inplay.has(r.bot_name) ? { ...r, clv_mc_n: null, clv_mc_mean: null, clv_pin_n: null, clv_pin_mean: null } : r" in lib
+    assert "inplay.has(r.bot_name) ? { ...r, clv_mc_n: null, clv_mc_mean: null, clv_anchor_n: null, clv_anchor_mean: null } : r" in lib
 
 
 @test("ADMIN-BOTS-FIXTURE-P7 — the /admin/bots dev fixture carries placements + current prices in the loader's shapes")
@@ -57047,7 +57042,7 @@ def test_v10_newplus_twin():
     assert BOT_TIMING_COHORTS["bot_v10_1x2_newplus_v1"] == BOT_TIMING_COHORTS["bot_v10_1x2"]
     mig = _engine_path("supabase/migrations/427_v10_newplus_twin.sql").read_text(encoding="utf-8")
     assert "show_on_performance boolean" in mig and "'testing', false, true" in mig
-    web = _engine_path("../odds-intel-web/src/lib/bot-aggregates.ts")
+    web = _engine_path("../odds-intel-web/src/app/(app)/performance/page.tsx")   # [[#159]] the gate moved here
     if web.exists():
         assert "b.showOnPerformance === true" in web.read_text(encoding="utf-8")
     # #155 (owner 2026-09-25): the twin and High-odds match result now SEND their picks to /picks.
@@ -57594,6 +57589,185 @@ def _ts_code159(src: str) -> str:
     x = _r.sub(r"/\*.*?\*/", "", src, flags=_r.DOTALL)
     return _r.sub(r"(?<![:\"'])//.*", "", x)
 
+
+@test("ONE-ROI-CLV-PARITY — /performance and /admin/bots read per-bot ROI/CLV from ONE view (#159)")
+def test_one_roi_clv_parity():
+    """[[#159]]. The same bot read +5.2% / +13.4% ROI and +7.0% / +0.8% CLV on /performance and
+    /admin/bots because each page computed its own (stake-weighted execPnl, bot_breakdown, flat
+    recorded roi_unit, the legacy clv column). ONE computation now: the private view
+    bot_performance (migration 433). /performance reads it (lib/bot-performance.ts); /admin/bots
+    reads bot_scoreboard, which is a PROJECTION of it; dashboard_cache.bot_breakdown copies it.
+    Source pins + a DB check that the projection equals the view, and that the forward-test rows
+    equal the #158 record (picks_forward_test_bot_record, is_current)."""
+    mig = _engine_path("supabase/migrations/433_one_bot_performance.sql").read_text()
+    assert "CREATE OR REPLACE VIEW public.bot_performance AS" in mig
+    sb = mig[mig.index("CREATE VIEW public.bot_scoreboard AS"):mig.index("COMMENT ON VIEW public.bot_scoreboard")]
+    assert "FROM bot_performance p" in sb, "bot_scoreboard must be a projection of bot_performance"
+    for col in ("p.roi_own                                                                     AS roi_unit",
+                "p.roi_public,", "p.clv_public,", "p.clv_own                                                                     AS clv_anchor_mean"):
+        assert col in sb, col
+    assert "clv_pin" not in sb, "the legacy clv_pin_* columns must not come back"
+    assert "GRANT SELECT ON public.bot_ledger, public.bot_performance" in mig and "TO anon" not in mig, "private views only"
+    # web: /performance rows come from the view, never a client recompute
+    page = _ts_code159(_web_path("src/app/(app)/performance/page.tsx").read_text())
+    assert "getBotPerformance()" in page and "rowFromPerformance(" in page
+    for bad in ("buildCachedBotStats", "bot_breakdown", "getAllBets(", "execPnl", "buildPublicBotStats"):
+        assert bad not in page, f"/performance page computes/reads its own per-bot figure again: {bad}"
+    client = _ts_code159(_web_path("src/components/performance-client.tsx").read_text())
+    assert "buildPublicBotStats" not in client and "aggregateBets" not in client
+    agg = _web_path("src/lib/bot-aggregates.ts").read_text()
+    assert "export function buildPublicBotStats" not in agg, "the client-side per-bot aggregate is retired"
+    lib = _web_path("src/lib/bot-performance.ts").read_text()
+    assert '.from("bot_performance")' in lib and "roi_public" in lib and "clv_public" in lib
+    assert "roi_own" not in lib.split("const LEG_COLUMNS")[0].split('.from("bot_performance")')[1][:400], \
+        "/performance shows the PUBLIC basis only"
+    board = _web_path("src/lib/bot-board.ts").read_text()
+    assert 'readAll<BotScoreboardRow>("bot_scoreboard")' in board and "clv_pin_n" not in board
+    # dashboard_cache: a copy of the view
+    import inspect
+    from workers.jobs import settlement as st
+    src = _strip_prose(inspect.getsource(st.write_dashboard_cache))
+    assert "LEFT JOIN bot_performance p ON p.bot_name = b.name" in src
+    assert "AVG(sb.clv)" not in src and "AVG(clv)" not in src, "the cache must not average the legacy clv"
+    # DB parity (after 433 is applied)
+    from workers.api_clients.db import execute_query
+    have = execute_query("SELECT to_regclass('public.bot_performance') AS r", [])[0]["r"]
+    if not have:
+        return "433 not applied yet — source pins only"
+    diff = execute_query("""
+        SELECT count(*) AS n FROM bot_scoreboard s JOIN bot_performance p USING (bot_name)
+         WHERE s.settled IS DISTINCT FROM p.settled OR s.roi_unit IS DISTINCT FROM p.roi_own
+            OR s.roi_public IS DISTINCT FROM p.roi_public OR s.clv_public IS DISTINCT FROM p.clv_public""", [])[0]["n"]
+    assert diff == 0, f"{diff} bots differ between bot_scoreboard and bot_performance"
+    ft = execute_query("""
+        WITH r AS (
+          SELECT CASE WHEN arm = 'consensus_anchor' AND grade = 'D' THEN 'bot_consensus_d_v1'
+                      WHEN arm = 'consensus_anchor' AND grade = 'C' THEN 'bot_consensus_c_v1'
+                      WHEN arm = 'consensus_anchor' THEN 'bot_consensus_b_v1'
+                      WHEN market = 'over_under_25' THEN 'bot_sharp_ou_v1' ELSE 'bot_sharp_1x2_v1' END AS bot,
+                 sum(settled) s, sum(pnl_units) p, sum(n_anchor) na
+            FROM picks_forward_test_bot_record WHERE is_current GROUP BY 1)
+        SELECT r.bot, r.s, p.settled, r.p, p.pnl_units_public, r.na, p.clv_n
+          FROM r JOIN bot_performance p ON p.bot_name = r.bot
+         WHERE r.s <> p.settled OR abs(r.p - p.pnl_units_public) > 1e-6 OR r.na <> p.clv_n""", [])
+    assert not ft, f"forward-test rows differ from the #158 record: {ft}"
+    return "bot_scoreboard == bot_performance; forward-test rows == #158 record"
+
+
+@test("LEGACY-CLV-PNL-NO-NEW-READERS — the deprecated CLV / pnl columns gain no reader (#159)")
+def test_legacy_clv_pnl_no_new_readers():
+    """[[#159]] deprecates, for any shown ROI or CLV: simulated_bets.clv, clv_pinnacle /
+    clv_pinnacle_devig (no close-age limit, recorded price, circular pre-mid-July — ANALYSIS_GOTCHAS
+    §83), bot_ledger.clv_raw / clv_pinnacle / pnl_unit, and pnl priced on odds_at_pick (the
+    high-water mark before 2026-09-02). The replacements: bot_performance / bot_ledger's
+    pnl_unit_public / pnl_unit_own / clv_anchor_*. This pins the web files that still touch the
+    legacy names (real-money pages read real_bets' own clv — a different table) so a NEW reader
+    fails CI instead of quietly becoming a third definition."""
+    import re as _re
+    root = _web_root / "src"
+    if not root.exists():
+        return
+    legacy = _re.compile(r"\bclv_pinnacle(_devig)?\b|\bclv_pin_(n|mean|se|t)\b|\bexecPnl\(|\bclv_raw\b|\bpnl_unit\b(?!_)")
+    allowed = {
+        "lib/engine-data.ts",          # getAllBets/execPnl kept @deprecated; real_bets reads (its own clv)
+        "lib/admin-money.ts",          # real_bets.clv_pinnacle — the placed-money ledger, not a bot figure
+        "lib/bot-board.ts",            # type of the legacy ledger column + in-play redaction
+        "app/(app)/admin/bots/picks-table.tsx",  # comment naming the retired column
+        "app/(app)/admin/bots/bot-board-model.ts",  # comment naming the retired metric
+        "app/methodology/page.tsx",    # prose explaining the withdrawn figure
+        "components/performance-hero.tsx",  # prose (CLV-PUBLIC-WITHDRAWN)
+        "app/page.tsx",                # a withdrawn field's type on the landing JSON
+        "app/(app)/admin/real-bets/money-client.tsx", "app/(app)/admin/real-bets/page.tsx",
+        "lib/admin-overview.ts",       # bot_weekly.pnl_unit — now flat at our books (433)
+        "app/(app)/admin/bots/bot-sheet.tsx", "app/(app)/admin/bots/bot-perf-charts.tsx",
+        "app/(app)/admin/shadow-bots/[bot]/page.tsx",
+        "lib/forward-test-picks.ts",   # picks_forward_test_summary.clv_raw — the pre-registered panel's own field
+    }
+    hits = []
+    for p in root.rglob("*.ts*"):
+        rel = str(p.relative_to(root))
+        if rel in allowed:
+            continue
+        if legacy.search(_ts_code159(p.read_text(encoding="utf-8"))):
+            hits.append(rel)
+    assert not hits, (f"new reader(s) of a deprecated CLV/pnl column: {sorted(hits)} — read "
+                      "bot_performance / bot_ledger's *_public / *_own / clv_anchor_* instead (#159)")
+    ed = _web_path("src/lib/engine-data.ts").read_text()
+    assert "@deprecated" in ed[:ed.index("export function execPnl(")][-900:], "execPnl must carry @deprecated"
+
+
+@test("PICK-PRICE-AT-PICK-TIME — both price bases are recorded when the pick is made (#159 writer fix)")
+def test_pick_price_at_pick_time():
+    """[[#159]] (d) + coordinator 2026-09-25. odds_at_pick was a MAX() over the fixture's whole
+    snapshot history until 2026-09-02 (STALE-BEST-ODDS; writers fixed that day). The price every
+    public/admin ROI now uses is written by ONE producer (workers/utils/pick_price.py): latest
+    quote per book at/before pick_time, MAX across books, dead feeds out (the pipeline's own
+    ODDS_MAX_LAG/AGE rule) — odds_at_pick_live over ACCESSIBLE_BOOKMAKERS (OWN), and
+    odds_at_pick_available over every publishable book, floored at the live price (PUBLIC).
+    store_bet calls it right after the insert; the 30-min job covers settled rows AND the last 2
+    days' picks. It never writes odds_at_pick / pnl / bankroll_after."""
+    import inspect
+    from workers.utils import pick_price as pp
+    src = inspect.getsource(pp)
+    assert "o.timestamp <= b.pick_time" in src and "DISTINCT ON (b.id, o.bookmaker)" in src
+    assert "o.bookmaker = ANY(%(books)s)" in src and "o.bookmaker <> ALL(%(non_offers)s)" in src
+    assert "GREATEST(best.best, t.odds_at_pick_live)" in src
+    assert "lag_h <= %(max_lag_h)s AND age_h <= %(max_age_h)s" in src and "ou_blacklist" in src
+    assert "ODDS_MAX_LAG_HOURS" in src and "_NON_OFFERS" in src and "ACCESSIBLE_BOOKMAKERS" in src
+    for w in ("SET odds_at_pick =", "SET pnl", "bankroll_after ="):
+        assert w not in src, f"the producer must never rewrite the historical record ({w})"
+    # scope: ids / settled + recent
+    assert pp._scope(["x"], True, 2)[0].startswith("AND t.id = ANY(")
+    assert "make_interval(days" in pp._scope(None, True, 2)[0]
+    assert pp._scope(None, False, None)[0] == ""
+    from workers.api_clients import supabase_client as sc
+    sb = inspect.getsource(sc.store_bet)
+    assert 'price_legs("simulated_bets", ids=[new_row["id"]])' in sb, "store_bet must price the pick at pick time"
+    assert sb.index("price_legs(") > sb.index("INSERT INTO simulated_bets"), "priced AFTER the insert"
+    import scripts.backfill_odds_at_pick_live as bf
+    assert bf.apply_backfill.__module__ and "price_legs(" in inspect.getsource(bf.apply_backfill)
+    assert "recent_days=None if all_rows else 2" in inspect.getsource(bf.apply_backfill)
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert "apply_backfill()" in sched and "job_backfill_live_prices, IntervalTrigger(minutes=30)" in sched
+    mig = _engine_path("supabase/migrations/433_one_bot_performance.sql").read_text()
+    assert "ADD COLUMN IF NOT EXISTS odds_at_pick_available numeric" in mig
+    # the pipeline writer itself stays latest-per-book (STALE-BEST-ODDS must not come back)
+    dp = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
+    load = dp[dp.index("def _load_today_from_db"):]
+    load = load[:load.index("\ndef ")]
+    assert "SELECT DISTINCT ON (match_id, market, selection, bookmaker, handicap_line)" in load
+    assert "timestamp DESC" in load and "lag_h <= %s AND age_h <= %s" in load
+
+
+@test("PERF-DETAIL-OPEN-ONE-ROW-RULE — detail view for everyone, <5 settled = in development, status groups (#159)")
+def test_perf_detail_open_one_row_rule():
+    """[[#159]] (2) the bot detail view opens for EVERY reader (was `isPro && !!allBets`), fetching
+    the same record legs the row is computed from via /api/performance/bot-legs — which lists only
+    bots /performance shows and returns settled legs only for VIP / hide_pending bots. (e) ONE row
+    rule: settled >= 5 for every row, forward-test rows included (they used `published > 0`).
+    (f) no ROI-based "underperforming" group — rows are grouped by status."""
+    lb = _ts_code159(_web_path("src/components/performance-leaderboard.tsx").read_text())
+    assert "isPro" not in lb and "allBets" not in lb, "the detail view must not depend on tier or shipped bets"
+    assert "const clickable = true;" in lb and "onClick={() => setSelected(bot)}" in lb
+    assert "/api/performance/bot-legs?bot=" in lb
+    assert "underperforming" not in lb.lower() and "b.roi < 0" not in lb, "no ROI-based group"
+    for g in ('live: "Calibrated & beta', 'testing: "Testing', 'vip: "VIP', 'developing: "In development'):
+        assert g in lb, g
+    assert 'if (!b.hasEnoughData) return "developing";' in lb
+    assert "Click any row for its chart and every pick" in lb and "Pro unlocks" not in lb
+    assert "ROI at the best price available when each pick was made (all books)" in lb
+    page = _ts_code159(_web_path("src/app/(app)/performance/page.tsx").read_text())
+    assert "hasEnoughData: settled >= MIN_SETTLED_FOR_ROW" in page and "const MIN_SETTLED_FOR_ROW = 5;" in page
+    assert "hasEnoughData: picksSummary.published > 0" not in page, "forward-test rows follow the one row rule"
+    assert "isPro ? " not in page, "W/L and P&L are not tier-gated any more"
+    route = _ts_code159(_web_path("src/app/api/performance/bot-legs/route.ts").read_text())
+    assert "isPublicBot(b.maturityLabel) || isVipBot(b) || b.showOnPerformance === true || LEDGER_BACKED_BOTS.has(b.name)" in route
+    assert "!b.retiredAt" in route and "settledOnly: isVipBot(b) || b.hidePending" in route
+    lib = _ts_code159(_web_path("src/lib/bot-performance.ts").read_text())
+    assert '.eq("in_record", true)' in lib and 'if (opts.settledOnly) q = q.in("result", SETTLED);' in lib
+    assert 'const SETTLED = ["won", "lost", "void", "push"];' in lib, "pending is never in the settled list"
+    tam = _engine_path("TIER_ACCESS_MATRIX.md").read_text()
+    assert "#159" in tam and "detail view opens for every reader" in tam
 
 if __name__ == "__main__":
     main()

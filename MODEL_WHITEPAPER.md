@@ -1149,6 +1149,25 @@ Bot strategies are validated against a 354,518-match dataset (275 leagues, 2005-
 
 ## 9. Performance Measurement
 
+> **ONE ROI + CLV DEFINITION FOR EVERY BOT (#159, 2026-09-25, owner-approved) — read first.** Every per-bot
+> figure we show (/performance, /admin/bots, the hero, `dashboard_cache`, `/api/v1/track-record`) is computed once,
+> in the view `bot_performance` (migration 433):
+>
+> ```
+> ROI (public) = mean over settled picks of  (won: odds_available − 1,  lost: −1)      flat 1 unit
+>                odds_available = max over publishable books of the latest quote at or before pick_time
+>                                 (dead feeds out), floored at odds_at_pick_live
+> ROI (own)    = the same at odds_at_pick_live (our 4 Estonian books)                  /admin/bots only
+> CLV          = odds × p_close − 1,  p_close = fresh Shin-de-vigged Pinnacle close (≤ 60 min pre-kickoff),
+>                else a ≥5-book consensus close; thin consensus excluded; |CLV| > 1 dropped; never in-play
+> ```
+>
+> The stake-weighted ROI (the bot's own Kelly stakes at the same price) is a labelled secondary. The legacy
+> `simulated_bets.clv` / `clv_pinnacle_devig` (below, "CLV (Pinnacle, fair)") is **no longer shown anywhere**: it has
+> no close-age limit and was priced at the recorded `odds_at_pick`, which before 2026-09-02 was a MAX over the
+> fixture's whole snapshot history. Measured 2026-09-25 for `bot_v10_1x2`: legacy CLV +7.0% / +0.8% on two pages →
+> sharp-anchor +5.6% (public price) / +3.0% (our books), n = 170 of 397 (the rest have no fresh close).
+
 ### 9.1 Primary Metric: Closing Line Value (CLV)
 
 CLV is the industry standard for evaluating betting models independently of short-term variance:

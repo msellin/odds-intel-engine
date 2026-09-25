@@ -3239,4 +3239,24 @@ control loses about the vig exactly as registered.
 * The same trap is #150 (sharp-trigger bots: own-book close = −margin when the book never moves). Own-book CLV is still
   the right measure for "did the book we bet at move against us" — it is the wrong one for "was the pick good".
 * Where it is used now: the forward test's amended stop rule (`scripts/picks_forward_test_checkpoint.py`, prereg
-  AMENDMENT 1) and the /performance CLV for the forward-test bots (view `picks_forward_test_anchor_clv`, migration 430). Since [[#158]] /performance reads the same definition from `picks_forward_test_bot_record` (migration 431), whose "current" record also includes earlier-rule picks that passed the current rule on pick-time data — **query `picks_forward_test_summary` (rule_version as published), not the bot record, for anything about the pre-registered test.**
+  AMENDMENT 1) and the /performance CLV for the forward-test bots (view `picks_forward_test_anchor_clv`, migration 430). Since [[#159]] the same close judges EVERY bot — see §86. Since [[#158]] /performance reads the same definition from `picks_forward_test_bot_record` (migration 431), whose "current" record also includes earlier-rule picks that passed the current rule on pick-time data — **query `picks_forward_test_summary` (rule_version as published), not the bot record, for anything about the pre-registered test.**
+
+## 86. Per-bot ROI and CLV have ONE source — `bot_performance`; never recompute them (#159, 2026-09-25)
+The same bot read +5.2% / +13.4% ROI and +7.0% / +0.8% CLV on /performance and /admin/bots because each surface
+computed its own: stake-weighted `execPnl`, `dashboard_cache.bot_breakdown`, flat-at-recorded-odds
+`bot_scoreboard.roi_unit`, and the legacy `clv` / `clv_pinnacle_devig`. Now:
+* **Per bot:** `SELECT … FROM bot_performance` (private, service_role). `roi_public` = flat at the best price
+  available at pick time on ALL publishable books (`odds_at_pick_available`) — the /performance figure; `roi_own` =
+  flat at our 4 books (`odds_at_pick_live`) — /admin/bots. `clv_public` / `clv_own` = sharp-anchor close (§85).
+* **Per leg:** `bot_ledger.pnl_unit_public` / `pnl_unit_own` / `clv_anchor_public` / `clv_anchor_own`, `in_record`
+  (the #158 record for forward-test arms). Filter `in_record` or your n will not match the page.
+* **Deprecated for any shown figure:** `simulated_bets.clv`, `clv_pinnacle(_devig)`, `bot_ledger.pnl_unit` /
+  `clv_raw` / `clv_pinnacle`, stored `pnl` (Kelly stakes at the recorded price). They stay in the tables as history.
+* **The price writers.** `odds_at_pick` stopped being a MAX over the whole snapshot history on 2026-09-02 (§30;
+  writers now take the latest quote per book). The residual gap to our-books price on post-fix rows (2.1% mean on
+  197 settled sim legs) is the BOOK SET, not staleness — Unibet-Kambi / Bet365 / BetVictor quoted higher. Both
+  pick-time prices are now written by ONE producer (`workers/utils/pick_price.py`) right after the insert and by the
+  30-min job — same latest-per-book rule, plus the pipeline's own dead-feed guard (ODDS_MAX_LAG/AGE).
+* **Retention caveat:** `odds_snapshots` keeps only the latest pre-kickoff row per series after ~7 days (§59), so an
+  `odds_at_pick_available` backfilled today for an old leg can find fewer quotes than existed at pick time; it is
+  floored at `odds_at_pick_live` (a real pick-time quote from a subset of the same books) for that reason.

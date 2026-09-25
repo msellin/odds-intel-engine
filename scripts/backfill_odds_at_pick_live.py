@@ -7,6 +7,10 @@ snapshot history and taking max(), so it recorded the best price ANY book
 showed at ANY time. The fix is not retroactive and `pnl` settles from
 `odds_at_pick`, so the historical record — the one we publish — is inflated.
 
+[[#159]] 2026-09-25: the producer now fills TWO bases in one pass — see
+workers/utils/pick_price.py (the single definition). This docstring describes the
+our-books basis, `odds_at_pick_live`.
+
 This computes, per bet, the price a person could actually have taken:
 
     latest quote PER BOOK at or before pick_time, then MAX across books
@@ -64,99 +68,28 @@ console = Console()
 # so the two cannot drift — a book added there but missed here would silently
 # under-price every future bet.
 from workers.jobs.daily_pipeline_v2 import ACCESSIBLE_BOOKMAKERS  # noqa: E402
-
-TABLES = ("simulated_bets", "shadow_bets")
-
-# One statement. Doing this per-bet in Python was the first shape and it was
-# ~40 minutes of round-trips; this runs server-side in one pass.
-_SQL = """
-WITH b AS (
-    -- OU-LIVE-PRICE-BLIND-2026-09-03: the bet tables and odds_snapshots do not
-    -- share a market vocabulary, so the join below has to normalise both sides
-    -- onto the snapshot's spelling. Getting this wrong is silent: an unmatched
-    -- market simply contributes no rows and the script reports success. That
-    -- is exactly how O/U sat at 0 of 1,111 settled bets while 1x2 worked.
-    --
-    --   bets       market 'o/u'          selection 'under 2.5'
-    --   snapshots  market 'over_under_25' selection 'under'
-    --
-    -- 1x2 already agreed on both sides; LOWER() additionally folds in
-    -- shadow_bets' uppercase '1X2' and 'O/U' variants, which had the same
-    -- problem for the same reason.
-    SELECT t.id, t.match_id, t.pick_time,
-           CASE
-             -- 'o/u' + 'under 2.5' -> 'over_under_25'. Only when the selection
-             -- actually carries a line: a bare 'over' cannot be resolved to one,
-             -- and inventing a default would silently price it off the wrong
-             -- ladder rung. Those rows stay NULL, which is the honest answer.
-             WHEN LOWER(t.market) IN ('o/u', 'ou') AND t.selection ~ '[0-9]'
-               THEN 'over_under_' || REPLACE(
-                      REGEXP_REPLACE(t.selection, '^[^0-9]*', ''), '.', '')
-             ELSE LOWER(t.market)
-           END AS market,
-           -- Strip any trailing line off the selection ('under 2.5' -> 'under').
-           -- Applies to markets already spelled 'over_under_NN' too, where the
-           -- market is right but the selection still carries the line.
-           CASE
-             WHEN LOWER(t.market) IN ('o/u', 'ou')
-               OR LOWER(t.market) LIKE 'over_under%%'
-               THEN LOWER(REGEXP_REPLACE(t.selection, '[[:space:]]*[0-9.]+[[:space:]]*$', ''))
-             ELSE LOWER(t.selection)
-           END AS selection
-      FROM {table} t
-     WHERE t.pick_time IS NOT NULL
-       AND t.odds_at_pick_live IS NULL
-       {only_settled}
-),
-live AS (
-    SELECT DISTINCT ON (b.id, o.bookmaker) b.id, o.odds
-      FROM b
-      JOIN odds_snapshots o
-        ON  o.match_id  = b.match_id
-       AND  LOWER(o.market)    = b.market
-       AND  LOWER(o.selection) = b.selection
-       AND  o.is_closing = false
-       AND  o.odds > 1
-       AND  o.bookmaker = ANY(%(books)s)
-       -- the quote each book was showing when the bet was raised
-       AND  o.timestamp <= b.pick_time
-     ORDER BY b.id, o.bookmaker, o.timestamp DESC
-),
-best AS (
-    SELECT id, MAX(odds) AS live_best FROM live GROUP BY id
-)
-UPDATE {table} t
-   SET odds_at_pick_live = best.live_best
-  FROM best
- WHERE t.id = best.id
-"""
+# [[#159]] the SQL moved to workers/utils/pick_price.py — ONE producer for BOTH price bases
+# (odds_at_pick_live = our books, odds_at_pick_available = every publishable book), called at
+# pick time by store_bet and every 30 min by job_backfill_live_prices. This script is its CLI.
+from workers.utils.pick_price import TABLES, price_legs  # noqa: E402
 
 
-def apply_backfill(tables: tuple[str, ...] = TABLES, all_rows: bool = False) -> dict[str, int]:
-    """Populate `odds_at_pick_live` for rows where it is still NULL, from
-    snapshot history (latest quote per accessible book at/before pick_time, max
-    across books). Commits. Returns {table: rows_updated}.
+def apply_backfill(tables: tuple[str, ...] = TABLES, all_rows: bool = False) -> dict[str, dict]:
+    """Populate `odds_at_pick_live` and `odds_at_pick_available` where still NULL, from
+    snapshot history (latest quote per book at/before pick_time, max across books).
+    Commits. Returns {table: {statement: rows_updated}}.
 
     SCHEDULED-LIVE-PRICE-PRODUCER-2026-09-08: this is the ONGOING producer for
     the executable-pricing basis. Previously `odds_at_pick_live` was filled ONLY
     by manual `--apply` runs of this script, so after the last manual run every
     new bet had a NULL live price and silently dropped out of the PUBLISHED ROI
-    base (`/api/v1/track-record` prices at `odds_at_pick_live`) — the base froze
-    on 2026-09-04 while `total_bets` kept climbing. `job_backfill_live_prices`
-    in the scheduler now calls this so new bets are always priced. Settled-only
-    by default, matching the manual runs that produced the published record.
+    base — the base froze on 2026-09-04 while `total_bets` kept climbing.
+    `job_backfill_live_prices` in the scheduler now calls this so new bets are always priced.
+    [[#159]]: settled rows AND anything picked in the last 2 days (so a new pick is priced
+    within 30 min of being written, from the quotes at its pick_time), both bases.
     """
-    from workers.api_clients.db import get_conn
-    books = sorted(ACCESSIBLE_BOOKMAKERS)
-    only_settled = "" if all_rows else "AND t.result IN ('won','lost')"
-    updated: dict[str, int] = {}
-    for table in tables:
-        sql = _SQL.format(table=table, only_settled=only_settled)
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.execute(sql, {"books": books})
-            updated[table] = cur.rowcount
-            conn.commit()
-    return updated
+    return {t: price_legs(t, settled_only=not all_rows, recent_days=None if all_rows else 2)
+            for t in tables}
 
 
 def _counts(cur, table: str) -> dict:
@@ -211,21 +144,18 @@ def main() -> int:
     from workers.api_clients.db import get_conn
 
     for table in tables:
-        with get_conn() as conn, conn.cursor() as cur:
-            before = _counts(cur, table)
-            sql = _SQL.format(
-                table=table,
-                only_settled="" if args.all_rows else "AND t.result IN ('won','lost')",
-            )
-            cur.execute(sql, {"books": books})
-            n = cur.rowcount
-            if args.apply:
-                conn.commit()
-            else:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                before = _counts(cur, table)
+            res = price_legs(table, settled_only=not args.all_rows,
+                             recent_days=None if args.all_rows else 2,
+                             conn=conn, commit=args.apply)
+            n = res.get("odds_at_pick_live", 0)
+            console.print(f"  [dim]{table}: {res}[/dim]")
+            if not args.apply:
                 conn.rollback()
             # Re-read on a fresh connection so a rolled-back dry run reports
             # the real state rather than its own uncommitted view.
-            pass
 
         with get_conn() as conn2, conn2.cursor() as cur2:
             after = _counts(cur2, table)

@@ -2430,7 +2430,9 @@ def job_backfill_live_prices():
     manual run (froze 2026-09-04). Only touches NULL rows, so runs are cheap once caught up."""
     def _run():
         from scripts.backfill_odds_at_pick_live import apply_backfill
-        n = apply_backfill()  # settled-only, both tables (simulated_bets + shadow_bets)
+        # [[#159]] both price bases (our books + all publishable books), settled rows AND
+        # picks from the last 2 days, both tables (simulated_bets + shadow_bets).
+        n = apply_backfill()
         import logging
         logging.getLogger("scheduler").info("backfill_live_prices updated %s", n)
     _run_job("backfill_live_prices", _run)

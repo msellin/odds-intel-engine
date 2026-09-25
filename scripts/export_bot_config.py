@@ -41,14 +41,21 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 # ── contract: families and their ONE admissible verdict metric ───────────────
+# [[#159]] 2026-09-25 (owner): ONE CLV for every bot — the SHARP-ANCHOR close (fresh Shin-
+# de-vigged Pinnacle close, else a >=5-book consensus close; bot_performance / bot_scoreboard
+# clv_anchor_*). Was clv_pinnacle (legacy clv_pinnacle_devig: no close-age limit, priced at the
+# recorded odds, circular before mid-July — ANALYSIS_GOTCHAS §83) for the model bots and clv_mc
+# (the bet book's OWN close, margin-corrected) for the rest; clv_mc is negative by construction
+# for rules that pick a soft book's mispriced line (§85), so it stays only as a labelled
+# secondary. In-play keeps lift: no closing line exists in play (§14).
 FAMILY_METRIC: dict[str, str | None] = {
-    "model_sim": "clv_pinnacle",      # de-vigged Pinnacle close
-    "model_shadow": "clv_mc",
-    "sharp_trigger": "clv_mc",
-    "sharp_generator": "clv_mc",
+    "model_sim": "clv_anchor",
+    "model_shadow": "clv_anchor",
+    "sharp_trigger": "clv_anchor",
+    "sharp_generator": "clv_anchor",
     "inplay": "lift",                 # hit rate − de-vigged implied; no CLV, no min-odds
-    "forward_test": "clv_mc",         # pre-registered
-    "control": "clv_mc",              # the noise floor the forward test is read against
+    "forward_test": "clv_anchor",     # pre-registered; stopping rule amended to sharp anchor (#156)
+    "control": "clv_anchor",          # the noise floor the forward test is read against
     "unknown": None,
 }
 FAMILIES = tuple(FAMILY_METRIC)

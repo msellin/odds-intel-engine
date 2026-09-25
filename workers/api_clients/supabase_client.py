@@ -2369,11 +2369,21 @@ def store_bet(bot_id: str, match_id: str, bet_data: dict) -> str | None:
                 )
                 conn.commit()
                 new_row = cur.fetchone()
-                return new_row["id"]
     except Exception as e:
         if "duplicate" in str(e).lower() or "unique" in str(e).lower() or "uq_bet" in str(e).lower():
             return None  # already placed, skip silently
         raise
+    # [[#159]] WRITER FIX — record the price actually on offer AT PICK TIME, on both bases
+    # (odds_at_pick_live = our books, odds_at_pick_available = every publishable book), from
+    # the quotes each book showed at or before pick_time. Every public / admin ROI prices off
+    # these, never off odds_at_pick. Best effort: the 30-min job_backfill_live_prices fills
+    # anything this misses, from the same quotes, so a failure here can never lose a bet.
+    try:
+        from workers.utils.pick_price import price_legs
+        price_legs("simulated_bets", ids=[new_row["id"]])
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[yellow]PICK-PRICE: at-pick pricing skipped for {new_row['id']}: {e}[/yellow]")
+    return new_row["id"]
 
 
 def bulk_store_shadow_bets(rows: list[dict], shadow_run_id: str, shadow_cohort: str) -> int:

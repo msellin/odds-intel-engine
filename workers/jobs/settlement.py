@@ -3253,6 +3253,9 @@ def _build_upcoming_model_summary() -> dict | None:
 # anything else (void/push) keeps its stored value.
 #
 # Pinned by smoke `PERF-ONE-PRICE-BASIS`.
+# [[#159]] the public figures are FLAT EUR 10 per pick (engine-data FLAT_STAKE_EUR).
+PUBLIC_FLAT_STAKE_EUR = 10
+
 _EXEC_PNL = """
     CASE
       WHEN sb.combo_legs IS NOT NULL THEN sb.pnl
@@ -3278,6 +3281,11 @@ def write_dashboard_cache():
     simulated_bets.
     """
     console.print("[cyan]Writing dashboard cache...[/cyan]")
+    # [[#159]] LEGACY CLV RETIRED FROM THE CACHE. Every AVG(sb.clv) this function used to write
+    # (avg_clv, active_avg_clv, market_breakdown / value-bets clv) read simulated_bets.clv —
+    # no close-age limit, priced at the recorded odds (ANALYSIS_GOTCHAS §83). dashboard_cache is
+    # anon-readable, so a column nothing renders is still PUBLISHED. They are written NULL now;
+    # the one CLV is bot_performance.clv_public, copied into bot_breakdown below.
     try:
         # Per-bot rollup. Voids excluded from settled/won/staked/pnl/clv.
         # Void rows retain their original pnl/stake (we only flip `result`), so any
@@ -3287,39 +3295,25 @@ def write_dashboard_cache():
         # public leaderboard — they're paper experiments with 0 settled bets,
         # don't belong on /performance until they prove themselves. Still
         # visible on /admin/bots (different query path).
-        bot_rows = execute_query(f"""
-            SELECT
-                b.name,
-                COUNT(sb.id) FILTER (WHERE sb.result IN ('won','lost')) as settled,
-                COUNT(sb.id) FILTER (WHERE sb.result = 'won') as won,
-                SUM({_EXEC_PNL}) FILTER (WHERE sb.result IN ('won','lost')) as total_pnl,
-                SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost')) as total_staked,
-                AVG(sb.clv) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) as avg_clv
+        bot_rows = execute_query("""
+            SELECT b.name, p.settled, p.won, p.pnl_units_public, p.roi_public, p.roi_own,
+                   p.clv_public, p.clv_n, p.clv_n_pinnacle, p.clv_n_consensus
             FROM bots b
-            LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
+            LEFT JOIN bot_performance p ON p.bot_name = b.name
             WHERE b.is_active = true
               AND b.retired_at IS NULL
               AND b.name NOT LIKE 'bot_acca%%'
               AND b.name NOT LIKE 'bot_combo%%'
-            GROUP BY b.id, b.name
         """, [])
 
         # Retired bot rollup — feeds the collapsed "Retired Strategies" section.
         # Includes retired_at + retired_reason so the page can show *why*.
-        retired_rows = execute_query(f"""
-            SELECT
-                b.name,
-                b.retired_at,
-                b.retired_reason,
-                COUNT(sb.id) FILTER (WHERE sb.result IN ('won','lost')) as settled,
-                COUNT(sb.id) FILTER (WHERE sb.result = 'won') as won,
-                SUM({_EXEC_PNL}) FILTER (WHERE sb.result IN ('won','lost')) as total_pnl,
-                SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost')) as total_staked,
-                AVG(sb.clv) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) as avg_clv
+        retired_rows = execute_query("""
+            SELECT b.name, b.retired_at, b.retired_reason,
+                   p.settled, p.won, p.pnl_units_public, p.roi_public, p.clv_public
             FROM bots b
-            LEFT JOIN simulated_bets sb ON sb.bot_id = b.id
+            LEFT JOIN bot_performance p ON p.bot_name = b.name
             WHERE b.is_active = false OR b.retired_at IS NOT NULL
-            GROUP BY b.id, b.name, b.retired_at, b.retired_reason
         """, [])
 
         # Grand total counts — ALL bots including experimental and retired.
@@ -3336,7 +3330,7 @@ def write_dashboard_cache():
         _excl = "AND b.maturity_label != 'experimental'"
         won = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result = 'won' {_excl}", [])[0]["n"]
         lost = execute_query(f"SELECT COUNT(*) as n {_bets_join} WHERE sb.result = 'lost' {_excl}", [])[0]["n"]
-        staked_row = execute_query(f"SELECT SUM(sb.stake) as s, SUM({_EXEC_PNL}) as p, AVG(sb.clv) as c {_bets_join} WHERE sb.result IN ('won','lost') {_excl}", [])[0]
+        staked_row = execute_query(f"SELECT SUM(sb.stake) as s, SUM({_EXEC_PNL}) as p, NULL::numeric as c {_bets_join} WHERE sb.result IN ('won','lost') {_excl}", [])[0]
         total_staked = float(staked_row["s"] or 0)
         total_pnl = float(staked_row["p"] or 0)
         avg_clv = float(staked_row["c"] or 0) if staked_row["c"] else None
@@ -3354,7 +3348,7 @@ def write_dashboard_cache():
                 COUNT(*) FILTER (WHERE sb.result = 'lost') as lost,
                 SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost')) as staked,
                 SUM({_EXEC_PNL}) FILTER (WHERE sb.result IN ('won','lost')) as pnl,
-                AVG(sb.clv) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) as avg_clv
+                NULL::numeric as avg_clv
             FROM simulated_bets sb
             JOIN bots b ON b.id = sb.bot_id
             WHERE b.is_active = true AND b.retired_at IS NULL
@@ -3379,7 +3373,7 @@ def write_dashboard_cache():
                 COUNT(*) FILTER (WHERE sb.result = 'won') AS won,
                 SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost')) AS staked,
                 SUM({_EXEC_PNL}) FILTER (WHERE sb.result IN ('won','lost')) AS pnl,
-                AVG(sb.clv) FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) AS avg_clv
+                NULL::numeric AS avg_clv
             FROM simulated_bets sb
             JOIN bots b ON b.id = sb.bot_id
             WHERE b.is_active = true
@@ -3411,16 +3405,20 @@ def write_dashboard_cache():
         # chart reads `daily_pnl_curve_90d`. Both are now derived from a SINGLE
         # 90-day query so endpoints can't drift — the 30d series is just the
         # 90d series sliced to its tail. UI-METRIC-SOT (2026-06-06).
+        # [[#159]] FLAT EUR 10 at the PUBLIC price basis (best price available at pick time,
+        # all books — bot_ledger.pnl_unit_public), the same per-leg definition the leaderboard
+        # rows read from bot_performance, so the chart and the table cannot disagree.
         daily_pnl_rows_90d = execute_query(f"""
             SELECT
-                DATE(sb.pick_time) AS d,
-                ROUND(SUM({_EXEC_PNL})::numeric, 2) AS daily_pnl
-            FROM simulated_bets sb
-            JOIN bots b ON b.id = sb.bot_id
-            WHERE sb.result IN ('won','lost')
+                DATE(l.pick_time) AS d,
+                ROUND(SUM(l.pnl_unit_public * {PUBLIC_FLAT_STAKE_EUR})::numeric, 2) AS daily_pnl
+            FROM bot_ledger l
+            JOIN bots b ON b.id = l.bot_id
+            WHERE l.source = 'sim' AND l.in_record
+              AND l.result IN ('won','lost')
               AND b.is_active = true AND b.retired_at IS NULL
               AND b.maturity_label != 'experimental'
-              AND sb.pick_time >= now() - interval '90 days'
+              AND l.pick_time >= now() - interval '90 days'
             GROUP BY 1 ORDER BY 1
         """, [])
         # Walk twice: first build the 90d cumulative, then slice the last 30d
@@ -3473,7 +3471,7 @@ def write_dashboard_cache():
                     COUNT(*) FILTER (WHERE sb.result = 'won')                       AS won,
                     SUM(sb.stake) FILTER (WHERE sb.result IN ('won','lost'))        AS staked,
                     SUM({_EXEC_PNL}) FILTER (WHERE sb.result IN ('won','lost'))     AS pnl,
-                    AVG(sb.clv)   FILTER (WHERE sb.result IN ('won','lost') AND sb.clv IS NOT NULL) AS avg_clv
+                    NULL::numeric AS avg_clv
                 FROM simulated_bets sb
                 JOIN bots b ON b.id = sb.bot_id
                 WHERE sb.pick_time >= now() - interval '30 days'
@@ -3531,8 +3529,8 @@ def write_dashboard_cache():
                     COUNT(*) FILTER (WHERE sb.result = 'won')                          AS won,
                     SUM(sb.stake) FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void')) AS staked,
                     SUM({_EXEC_PNL}) FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void')) AS pnl,
-                    AVG(sb.clv)   FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void') AND sb.clv IS NOT NULL) AS avg_clv,
-                    SUM(sb.clv * sb.stake) FILTER (WHERE sb.result IS NOT NULL AND sb.result NOT IN ('pending','void') AND sb.clv IS NOT NULL) AS cumulative_clv_eur,
+                    NULL::numeric AS avg_clv,
+                    NULL::numeric AS cumulative_clv_eur,
                     MIN(sb.pick_time) AS first_pick,
                     MAX(sb.pick_time) AS last_pick
                 FROM simulated_bets sb
@@ -3576,34 +3574,36 @@ def write_dashboard_cache():
         # DEAD-DASHBOARD-CACHE-COMPUTE (2026-09-07): written, never read.
         # `_value_bets_cumulative` itself stays — it still feeds the 30d fields.
 
+        # [[#159]] ONE definition: bot_breakdown is a copy of bot_performance (the private view
+        # every surface reads) on the PUBLIC basis — flat stake at the best price available at
+        # pick time (all books), sharp-anchor CLV with its n and source mix. Nothing here
+        # recomputes ROI or CLV. total_pnl is in EUR at the FLAT EUR 10 the page states.
         bot_breakdown = []
         for r in bot_rows:
             s = int(r.get("settled") or 0)
-            w = int(r.get("won") or 0)
-            p = float(r.get("total_pnl") or 0)
-            st = float(r.get("total_staked") or 0)
             bot_breakdown.append({
                 "name": r["name"],
                 "settled": s,
-                "won": w,
-                "total_pnl": round(p, 2),
-                "roi_pct": round(p / st * 100, 1) if st > 0 and s > 0 else None,
-                "avg_clv": round(float(r["avg_clv"]), 4) if r.get("avg_clv") else None,
+                "won": int(r.get("won") or 0),
+                "total_pnl": round(float(r.get("pnl_units_public") or 0) * PUBLIC_FLAT_STAKE_EUR, 2),
+                "roi_pct": round(float(r["roi_public"]) * 100, 1) if r.get("roi_public") is not None and s > 0 else None,
+                "avg_clv": round(float(r["clv_public"]), 4) if r.get("clv_public") is not None else None,
+                "clv_n": int(r.get("clv_n") or 0),
+                "clv_n_pinnacle": int(r.get("clv_n_pinnacle") or 0),
+                "clv_n_consensus": int(r.get("clv_n_consensus") or 0),
+                "roi_own_pct": round(float(r["roi_own"]) * 100, 1) if r.get("roi_own") is not None and s > 0 else None,
             })
 
         retired_bot_breakdown = []
-        for r in retired_rows:
+        for r in retired_rows:     # [[#159]] same bot_performance basis as bot_breakdown
             s = int(r.get("settled") or 0)
-            w = int(r.get("won") or 0)
-            p = float(r.get("total_pnl") or 0)
-            st = float(r.get("total_staked") or 0)
             retired_bot_breakdown.append({
                 "name": r["name"],
                 "settled": s,
-                "won": w,
-                "total_pnl": round(p, 2),
-                "roi_pct": round(p / st * 100, 1) if st > 0 and s > 0 else None,
-                "avg_clv": round(float(r["avg_clv"]), 4) if r.get("avg_clv") else None,
+                "won": int(r.get("won") or 0),
+                "total_pnl": round(float(r.get("pnl_units_public") or 0) * PUBLIC_FLAT_STAKE_EUR, 2),
+                "roi_pct": round(float(r["roi_public"]) * 100, 1) if r.get("roi_public") is not None and s > 0 else None,
+                "avg_clv": round(float(r["clv_public"]), 4) if r.get("clv_public") is not None else None,
                 "retired_at": r["retired_at"].isoformat() if r.get("retired_at") else None,
                 "retired_reason": r.get("retired_reason"),
             })
@@ -3612,7 +3612,7 @@ def write_dashboard_cache():
             SELECT market,
                 COUNT(*) FILTER (WHERE result IN ('won','lost')) as bets,
                 COUNT(*) FILTER (WHERE result = 'won') as won,
-                AVG(clv) FILTER (WHERE result IN ('won','lost') AND clv IS NOT NULL) as avg_clv
+                NULL::numeric as avg_clv
             FROM simulated_bets
             GROUP BY market ORDER BY bets DESC
         """, [])

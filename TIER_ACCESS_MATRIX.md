@@ -220,7 +220,7 @@ All new tables have RLS policies: users can only read/write their own data.
 | `/matches` | Public |
 | `/matches/[id]` | Public (pro sections gated in UI) |
 | `/login`, `/signup` | Public |
-| `/performance` | Public (hero, CLV education, status, progress, early results, feature comparison). Pro: full history + CLV. Elite: + edge %. Bot P&L superadmin only. `/track-record` is a redirect to this canonical URL. |
+| `/performance` | Public — hero, bot leaderboard (settled, **W/L, P&L, ROI** for everyone since [[#159]]), and **every row's detail view (chart + every pick) for every reader** since [[#159]]. Logged-in: full filterable history. Elite: + per-pick stake / edge / CLV number, Avg CLV column. `/track-record` is a redirect to this canonical URL. |
 | `/how-it-works` | Public |
 | `/my-picks` | Authenticated (login modal if not signed in) |
 | `/profile` | Authenticated |
@@ -254,6 +254,26 @@ All new tables have RLS policies: users can only read/write their own data.
 - [x] Stripe integration for paid tier upgrades (checkout + webhook + portal, profile upgrade buttons)
 - [x] STRIPE_WEBHOOK_SECRET — configured in Vercel
 - [x] Tier-aware data API (B3 — strip fields by tier in Next.js layer)
+
+## /performance bot leaderboard (#159, 2026-09-25, owner-approved)
+
+The "Pro unlocks W/L, P&L, charts" split on /performance **ended**: the bot detail view opens for every reader,
+the same view Pro had. Numbers come from ONE engine view (`bot_performance`) on the PUBLIC basis — flat €10 at the
+best price available when the pick was made on all books; CLV against the sharp closing line.
+
+| Surface | Anonymous / Free | Pro | Elite / superadmin |
+|---|---|---|---|
+| Row: settled, W / L, ROI, P&L (€, flat) | ✓ | ✓ | ✓ |
+| Row: CLV direction icon | ✓ | ✓ | ✓ + Avg CLV number column |
+| Detail view (bankroll chart + every pick, sharp-CLV line with n and Pinnacle/consensus mix, bot's-own-stakes ROI as a labelled secondary) | ✓ | ✓ | ✓ |
+| Detail view: per-pick CLV | direction only | direction only | the number |
+| Detail view: per-pick stake, edge | ✗ | ✗ | ✓ |
+| VIP / hide_pending bots in the detail view | settled picks only | settled picks only | settled picks only |
+| Full filterable history below the table | teaser (10) | ✓ (logged-in) | ✓ |
+
+The detail view's picks come from `/api/performance/bot-legs` (service role, server-side): only bots /performance
+lists (calibrated / beta, VIP, `show_on_performance`, published forward-test arms; never retired, never experimental —
+#155), and for VIP + hide_pending bots SETTLED legs only (their pending picks are the paid product, #148).
 
 ## VIP picks (#148, 2026-09-24)
 | Surface | Anonymous / Free | Pro / Elite |
