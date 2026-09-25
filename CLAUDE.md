@@ -100,32 +100,20 @@ backlog forms outside the master.
 
 ### When done — before committing
 
-**Always add a smoke test.** Every task must have at least one test in `scripts/smoke_test.py` before the commit. No exceptions — even code-only changes get a source-inspection test.
+**Always add a smoke test** in `scripts/smoke_test.py` (source inspection is fine). Run ONLY yours locally: `python3 scripts/smoke_test.py -f MY-NEW-TEST` (piping the full suite to grep saves nothing). The full suite is CI's job.
 
-**Never run the full smoke suite locally.** The full suite takes ~60s and GitHub Actions runs it on every push to main — that's the gate, not your local run. Locally, run only your new test using the `--filter` flag:
+**Docs, in the same commit as the code** — three obligations, not a nine-row checklist:
+1. The `PRIORITY_QUEUE.md` row → ✅ Done YYYY-MM-DD.
+2. **The doc that OWNS what you changed** (pipeline job → `WORKFLOWS.md`, tier → `TIER_ACCESS_MATRIX.md`, source → `DATA_SOURCES.md`, infra/cost → `INFRASTRUCTURE.md`, built surface → `ROADMAP.md`, signal → `SIGNALS.md`). Always-mandatory where they apply: bot / edge / floor / model version → `docs/SYSTEM_MAP.md` **and** `workers/registry/bot_registry.py` together (CI drift test `SYSTEM-MAP-REGISTRY-NOT-DRIFTED`); model logic → `MODEL_WHITEPAPER.md`.
+3. The ripple grep (see "Keeping Docs Updated").
 
-```bash
-python3 scripts/smoke_test.py --filter MY-NEW-TEST     # substring, case-insensitive
-python3 scripts/smoke_test.py -f INPLAY-LAMBDA          # short form
-```
+### Speed rules — shared checkout, never wait (owner, 2026-09-25)
 
-The pipe-to-grep pattern (`smoke_test.py 2>&1 | grep ...`) does NOT save runtime — the suite still runs, only the output is filtered. Use `--filter`. If you broke something elsewhere, CI will catch it after push — don't burn local time on the full suite for routine tasks.
-
-Update **all** of the following that apply. "Not relevant" is almost never true for more than 2 of these:
-
-| Doc | Update when |
-|-----|-------------|
-| `PRIORITY_QUEUE.md` | Always — change status to ✅ Done with date |
-| `ROADMAP.md` (Current System State) | Any change to what's built or what tier sees what |
-| `SIGNALS.md` | Any change to signal collection, storage, or UX surface |
-| `TIER_ACCESS_MATRIX.md` | Any change to what tier can see or do |
-| `WORKFLOWS.md` | Any change to pipeline jobs or schedule |
-| `DATA_SOURCES.md` | Any change to data sources or coverage |
-| `INFRASTRUCTURE.md` | Any change to costs, services, or infra |
-| `docs/SYSTEM_MAP.md` + `workers/registry/bot_registry.py` | **Any change to a bot, an edge definition, a floor, or a model version** — update BOTH in the same commit. The drift test `SYSTEM-MAP-REGISTRY-NOT-DRIFTED` fails CI otherwise. |
-| `MODEL_WHITEPAPER.md` | **Any change to model logic** — calibration, features, ensemble, sizing, signals, ELO, or bot strategies |
-
-Then commit docs **in the same commit as the code**. Never separate them — a code commit without doc update is an incomplete task.
+- **Never wait for CI, deploys, migrations or scheduled runs.** Push once, move on. Hand back your *verification steps* (the query/command + the expected result + when it becomes true, e.g. "after migration 441 applies") for the coordinating session to run in bulk. Never `gh run watch`.
+- **A red CI run is only yours if it is NEW.** The job summary and the end of the log split failures into **NEW (this push)** vs **INHERITED** (`SMOKE-NEW-VS-INHERITED`; also in the `smoke-failures` artifact). Fix NEW; leave inherited to their owner. The job stays red for either.
+- **One commit + one push per task per repo**, not one per step.
+- **The checkout and index are shared with other live sessions.** Never `git stash`, `git reset`, or `git checkout` files you did not edit. Stage only your own hunks; `git pull --rebase --autostash` right before pushing.
+- **Never read `PRIORITY_QUEUE.md` (2.4 MB) or `scripts/smoke_test.py` (58k lines) whole** — `grep -n`, then read line ranges.
 
 ### Don't file what you can fix — the queue is not a diary
 
@@ -306,13 +294,7 @@ looks stale, check the workflow run rather than SSHing in and pulling.
 | `supabase/migrations/**` | DB | `migrate.yml` | applies + records in `_schema_migrations` |
 | `odds-intel-web/**` | web → VPS | `odds-intel-web/.github/workflows/deploy.yml` | pull + clean build + `pm2 restart` |
 
-**Why this is written down (ENGINE-DEPLOY-2026-08-24):** the engine had no
-deploy automation until 2026-08-24 while the web repo and migrations both did.
-On that date the VPS was found **21 commits behind** — `BOT-NO-PIN-TIER0-GUARD`
-and `BOT-NO-PIN-MODEL-SANITY`, both shipped the previous day specifically to
-stop bad picks, had never run. Because the frontend half of the same day's work
-*had* auto-deployed, the task looked shipped. Assume nothing about what is live
-on the box; the drift check is the only thing that actually proves it.
+Assume nothing about what is live on the box (ENGINE-DEPLOY-2026-08-24: the VPS was once 21 commits behind while the task looked shipped); the drift check is the proof.
 
 `deploy_drift_check.yml` runs daily at 06:00 UTC and Telegram-alerts if either
 repo is behind, on a non-main branch, has uncommitted tracked changes, or if
@@ -330,6 +312,7 @@ ssh root@204.168.199.8 'cd /opt/odds-intel-engine && git pull --ff-only \
 
 - Naming convention: `NNN_short_description.sql` — e.g. `016_free_user_features.sql`
 - NNN = zero-padded sequential number, next is always current highest + 1
+- **A duplicate NNN is legal — do not rename to dodge one.** `migrate.yml` keys `_schema_migrations` on the full FILENAME (primary key) and applies in glob order; 343, 354, 355, 356 and 361 already exist twice. On a collision keep your number with a distinct suffix. Renaming a *pushed* migration makes it a new, never-applied file (and orphans the old row). If two same-number files depend on each other, say so in a `-- depends on:` comment.
 - Applied automatically via GitHub Actions (`migrate.yml`) on any push to main that touches `supabase/migrations/`
 - Can also be triggered manually via Actions → "OddsIntel — Run DB Migrations" → Run workflow
 

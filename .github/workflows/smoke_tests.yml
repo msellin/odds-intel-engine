@@ -36,6 +36,11 @@ concurrency:
   group: smoke-${{ github.ref }}
   cancel-in-progress: true
 
+# SMOKE-NEW-VS-INHERITED-2026-09-25: reading the previous run's artifact needs actions:read.
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -115,10 +120,41 @@ jobs:
               -L 5433:localhost:5432 root@204.168.199.8
           nc -z localhost 5433 && echo "tunnel up on localhost:5433"
 
+      # SMOKE-NEW-VS-INHERITED-2026-09-25 (dev-process speed audit #1). 16 of 37 red runs on
+      # 2026-09-25 held only failures that were already red on the run before. Fetch the last
+      # COMPLETED main run's failing-name list so the runner can print NEW (this push) vs
+      # INHERITED. Never fails the job: no artifact → every failure is reported as NEW.
+      - name: Fetch previous run's failing-test list (baseline)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p _baseline
+          for id in $(gh run list -R "$GITHUB_REPOSITORY" --workflow smoke_tests.yml --branch main \
+                        --status completed -L 15 --json databaseId,conclusion \
+                        --jq '.[] | select(.conclusion=="success" or .conclusion=="failure") | .databaseId'); do
+            [ "$id" -lt "$GITHUB_RUN_ID" ] || continue
+            if gh run download "$id" -R "$GITHUB_REPOSITORY" -n smoke-failures -D _baseline 2>/dev/null; then
+              echo "baseline = run $id"; break
+            fi
+          done
+          ls _baseline || true
+
       - name: Run smoke tests
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python scripts/smoke_test.py
+        # Exit code unchanged: ANY failure keeps the job red. The NEW/INHERITED split is a
+        # reading aid (end of log + job summary), not a filter.
+        run: python scripts/smoke_test.py --failures-json smoke_failures.json --baseline _baseline/smoke_failures.json
+
+      - name: Upload failing-test list (next run's baseline)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-failures
+          path: smoke_failures.json
+          retention-days: 14
+          if-no-files-found: ignore

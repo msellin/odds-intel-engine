@@ -1181,6 +1181,8 @@ still exists on disk, and pins the follow-up file so it cannot later be deleted
 as a "duplicate" — it is not a duplicate, it is the half of 376 that never ran.
 (Since 2026-09-25, #167: it only counts migrations applied BEFORE the checkout's
 commit time — an older commit's run no longer calls a newer push's migration "missing".)
+(Since 2026-09-25, #167: it only counts migrations applied BEFORE the checkout's
+commit time — an older commit's run no longer calls a newer push's migration "missing".)
 
 **The rule:** an applied migration is immutable. New columns get a new file,
 always — even when the edit is one line and the original shipped ten minutes ago.

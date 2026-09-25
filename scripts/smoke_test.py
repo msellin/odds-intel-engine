@@ -108,6 +108,47 @@ def _this_thread_only(fake, real):
 # this lock.
 _ROUTER_ENV_LOCK = _threading.Lock()
 
+import contextlib as _contextlib
+
+
+@_contextlib.contextmanager
+def _router_offline(picks=(), books=None):
+    """ROUTER-TESTS-OFFLINE (2026-09-25, dev-process speed audit). Run the REAL
+    `best_price_router.route()` — gates, modes, lock, dispatch decision — against
+    fixture data instead of the live DB. Stubs only the data seams `_route` reads
+    through (load_picks, match_exposure, spent_today, already_placed,
+    placement_path_bots, _has_exposure, _latest_book_odds) and records `_dispatch`
+    instead of driving a browser. Thread-local (`_this_thread_only`) and restored.
+
+    Why: BEST-PRICE-ROUTER-EXECUTE-WIRING ran a live report pass over every
+    placement bot (19 s locally, 309 s in CI under the 8-wide DB load), and the
+    other two router tests queued behind it on _ROUTER_ENV_LOCK (262 s / 261 s
+    measured, almost all lock wait). They were the critical path of the suite."""
+    import workers.automation.best_price_router as br
+    import scripts.place_coolbet_ui as ui
+    rec = {"loaded": [], "dispatched": []}
+    picks = [dict(p) for p in picks]
+    fakes = [
+        (ui, "placement_path_bots", lambda: {p["bot_name"] for p in picks}),
+        (ui, "load_picks", lambda bot: (rec["loaded"].append(bot)
+                                        or [dict(p) for p in picks if p["bot_name"] == bot])),
+        (ui, "match_exposure", lambda ids: {}),
+        (ui, "spent_today", lambda: (0, 0.0)),
+        (ui, "already_placed", lambda sbid: False),
+        (br, "_has_exposure", lambda m, mk, s: False),
+        (br, "_latest_book_odds", lambda m, mk, s: {b: {"odds": o} for b, o in (books or {}).items()}),
+        (br, "_dispatch", lambda winner, pick, dec, *, execute: (
+            rec["dispatched"].append((winner, execute)) or {"ok": True})),
+    ]
+    originals = [(mod, name, getattr(mod, name)) for mod, name, _ in fakes]
+    try:
+        for (mod, name, fake), (_, _, real) in zip(fakes, originals):
+            setattr(mod, name, _this_thread_only(fake, real))
+        yield rec
+    finally:
+        for mod, name, real in originals:
+            setattr(mod, name, real)
+
 import pathlib as _pathlib
 _engine_root = _pathlib.Path(__file__).resolve().parent.parent
 _web_root = _engine_root.parent / "odds-intel-web"
@@ -13662,6 +13703,14 @@ def main():
         help="Run only tests whose name matches this substring (case-insensitive). "
              "Use this for a single new test locally — full suite is CI's job."
     )
+    parser.add_argument(
+        "--failures-json", default=None,
+        help="Write this run's failing test names (+ first-red SHA per name) to PATH. "
+             "CI uploads it as the artifact the NEXT run diffs against.")
+    parser.add_argument(
+        "--baseline", default=None,
+        help="A previous run's --failures-json. Failures are then split into NEW "
+             "(caused by this push) and INHERITED (already red before it).")
     args = parser.parse_args()
 
     if args.filter:
@@ -13737,7 +13786,72 @@ def main():
     print(f"  Slowest: " + " | ".join(f"{r[0][:40]} {r[3]:.1f}s" for r in slowest))
     print("═" * 60 + "\n")
 
+    _report_new_vs_inherited(results, args.failures_json, args.baseline)
     sys.exit(0 if failed == 0 else 1)
+
+
+def _report_new_vs_inherited(results, failures_json, baseline_path, *, summary=None, quiet=False):
+    """SMOKE-NEW-VS-INHERITED (2026-09-25, dev-process speed audit #1).
+
+    On 2026-09-25, 16 of 37 red CI runs carried ONLY failures that were already red
+    on the run before — yet every agent that pushed had to diagnose the whole list.
+    This splits the failures against the previous completed main run's list:
+    NEW = red now, not red before (act on these); INHERITED = already red (someone
+    else's, with the SHA it first went red at). It does NOT change the exit code —
+    any failure still makes the job red. No baseline (first run, artifact expired,
+    download failed) → every failure is reported as NEW, never silently dropped."""
+    import json, os
+    sha = os.getenv("GITHUB_SHA", "local")[:12]
+    failing = sorted(n for n, st, _, _ in results if st == "fail")
+    errors = {n: e for n, st, e, _ in results if st == "fail"}
+    base = None
+    if baseline_path:
+        try:
+            with open(baseline_path) as fh:
+                base = json.load(fh)
+        except Exception as e:  # noqa: BLE001 — a missing baseline must not break the run
+            if not quiet:
+                print(f"  (baseline unreadable: {type(e).__name__}: {e} — treating every failure as NEW)")
+    prev_failed = set((base or {}).get("failed", []))
+    prev_first = (base or {}).get("first_red", {})
+    new = [n for n in failing if n not in prev_failed]
+    inherited = [n for n in failing if n in prev_failed]
+    ran = {n for n, _, _, _ in results}
+    fixed = sorted(n for n in prev_failed if n in ran and n not in set(failing))
+    first_red = {n: (prev_first.get(n) or (base or {}).get("sha") or sha) if n in prev_failed else sha
+                 for n in failing}
+
+    if failures_json:
+        try:
+            with open(failures_json, "w") as fh:
+                json.dump({"sha": sha, "failed": failing, "first_red": first_red,
+                           "new": new if base is not None else failing,
+                           "inherited": inherited, "fixed": fixed,
+                           "baseline_sha": (base or {}).get("sha")}, fh, indent=1)
+        except Exception as e:  # noqa: BLE001
+            print(f"  (could not write {failures_json}: {e})")
+
+    if base is None and not baseline_path:
+        return                                   # plain local run — nothing to diff against
+    label = f"baseline {base.get('sha', '?')}" if base else "NO baseline"
+    lines = [f"## Smoke: {len(new)} NEW, {len(inherited)} inherited, {len(fixed)} fixed ({label})", ""]
+    lines.append("### NEW failures (caused by this push — fix these)" if new else "### NEW failures: none")
+    lines += [f"- `{n}` — {errors.get(n, '')[:300]}" for n in new]
+    if inherited:
+        lines += ["", "### Inherited (already red before this push — not yours)"]
+        lines += [f"- `{n}` (red since {first_red.get(n)})" for n in inherited]
+    if fixed:
+        lines += ["", "### Fixed by this push"] + [f"- `{n}`" for n in fixed]
+    if quiet:
+        return                                   # the smoke test of this function — no log, no job summary
+    print("\n".join(lines) + "\n")
+    summary = summary if summary is not None else os.getenv("GITHUB_STEP_SUMMARY")
+    if summary:
+        try:
+            with open(summary, "a") as fh:
+                fh.write("\n".join(lines) + "\n")
+        except Exception:  # noqa: BLE001
+            pass
 
 
 @test("DC-BOTS — pipeline has DC market support: MARKET_TO_FIELD, match dict, candidate_specs, settlement")
@@ -37811,9 +37925,20 @@ def test_best_price_router_execute_wiring():
     with _ROUTER_ENV_LOCK:
         os.environ["ROUTER_ALLOW_REAL"] = "false"
         try:
-            r = bpr.route(execute=True)
+            # ROUTER-TESTS-OFFLINE: fixture pick that WOULD route (Coolbet 3.60 at cal 0.40
+            # clears a 3% edge + the 2.80 floor), so "dispatched 0" is proven with a real
+            # candidate in hand, not an empty pool — and no live DB pass (was 309 s in CI).
+            from datetime import datetime, timedelta, timezone
+            fx = {"match_id": "00000000-0000-0000-0000-00000000f1x7", "market": "1x2",
+                  "selection": "home", "bot_name": "bot_fixture_router_v1",
+                  "calibrated_prob": 0.40, "home_team": "Fixture H", "away_team": "Fixture A",
+                  "shadow_bet_id": None,
+                  "match_date": datetime.now(timezone.utc) + timedelta(hours=6)}
+            with _router_offline([fx], {"Coolbet": 3.60}) as rec:
+                r = bpr.route(execute=True)
             assert r["mode"] == "report", "execute=True without ROUTER_ALLOW_REAL must degrade to report"
-            assert r["dispatched"] == 0, "no dispatch without the real-money env gate"
+            assert r["candidates"] == 1 and r["routed"] == 1, f"fixture pick must reach routing: {r}"
+            assert r["dispatched"] == 0 and rec["dispatched"] == [], "no dispatch without the real-money env gate"
             assert "real_refused" in r, "must record that real money was refused"
         finally:
             # Restore, or every later test in this process runs with real money off.
@@ -47964,8 +48089,15 @@ def test_gate_status_reads_the_same_env():
     pg = importlib.import_module("workers.automation.placement_gate")
 
     prev = _os.environ.get("ROUTER_ALLOW_REAL")
+    # ROUTER-TESTS-OFFLINE (2026-09-25): the DB-backed fields are stubbed (this thread only) —
+    # the test is about the ENV read, and six live gate_status() passes held the lock for minutes.
+    import workers.automation.coolbet_state as _cs
+    _o_gs = (_cs.is_placement_paused, _cs.is_real_money_armed, pg.effective_allowlist)
     with _ROUTER_ENV_LOCK:                      # see ROUTER-ENV-LOCK above
      try:
+        _cs.is_placement_paused = _this_thread_only(lambda: (False, None), _o_gs[0])
+        _cs.is_real_money_armed = _this_thread_only(lambda: (False, None), _o_gs[1])
+        pg.effective_allowlist = _this_thread_only(lambda: set(), _o_gs[2])
         for value, expected in (("true", True), ("1", True), ("  TRUE  ", True),
                                 ("false", False), ("", False), ("no", False)):
             _os.environ["ROUTER_ALLOW_REAL"] = value
@@ -47975,6 +48107,7 @@ def test_gate_status_reads_the_same_env():
                 f"ROUTER_ALLOW_REAL={value!r} — expected {expected}"
             )
      finally:
+        _cs.is_placement_paused, _cs.is_real_money_armed, pg.effective_allowlist = _o_gs
         if prev is None:
             _os.environ.pop("ROUTER_ALLOW_REAL", None)
         else:
@@ -48005,29 +48138,30 @@ def test_router_no_allowlist_bypass():
     import workers.automation.coolbet_state as cs
     import workers.automation.placement_gate as pg
     import workers.automation.best_price_router as br
-    import scripts.place_coolbet_ui as ui
 
-    loaded: list[str] = []
-    o_p, o_a, o_e, o_lp, o_env = (cs.is_placement_paused, cs.is_real_money_armed,
-                                  pg.ui_place_enabled_bots, ui.load_picks,
-                                  os.environ.get("ROUTER_ALLOW_REAL"))
+    # ROUTER-TESTS-OFFLINE (2026-09-25): a fixture pick exists for a bot that is toggled
+    # OFF, and the data seams are stubbed (thread-local) — the real route()/gate code runs,
+    # no live DB pass. load_picks is recorded by _router_offline.
+    fx = {"match_id": "00000000-0000-0000-0000-0000000a11ow", "market": "1x2", "selection": "home",
+          "bot_name": "bot_fixture_off_v1", "calibrated_prob": 0.40, "shadow_bet_id": None}
+    o_p, o_a, o_e, o_env = (cs.is_placement_paused, cs.is_real_money_armed,
+                            pg.ui_place_enabled_bots, os.environ.get("ROUTER_ALLOW_REAL"))
     o_g = cs.is_money_gate_ready
     with _ROUTER_ENV_LOCK:                      # ROUTER-ENV-LOCK: process-wide env
       try:
-        cs.is_placement_paused = lambda: (False, None)
-        cs.is_real_money_armed = lambda: (True, "test")
+        cs.is_placement_paused = _this_thread_only(lambda: (False, None), o_p)
+        cs.is_real_money_armed = _this_thread_only(lambda: (True, "test"), o_a)
         cs.is_money_gate_ready = _this_thread_only(lambda: (True, None), o_g)     # #162 W0.2: gate forced open here too
-        pg.ui_place_enabled_bots = lambda: set()          # every bot OFF
-        ui.load_picks = lambda bot: (loaded.append(bot) or [])
+        pg.ui_place_enabled_bots = _this_thread_only(lambda: set(), o_e)          # every bot OFF
         os.environ["ROUTER_ALLOW_REAL"] = "1"
-        out = br.route(execute=True)
+        with _router_offline([fx], {"Coolbet": 3.60}) as rec:
+            out = br.route(execute=True)
         assert out.get("mode") == "real", out.get("mode")
-        assert loaded == [], f"router loaded picks for OFF bots: {loaded}"
-        assert out.get("dispatched") == 0 and out.get("candidates") == 0, out
+        assert rec["loaded"] == [], f"router loaded picks for OFF bots: {rec['loaded']}"
+        assert out.get("dispatched") == 0 and out.get("candidates") == 0 and rec["dispatched"] == [], out
       finally:
         cs.is_placement_paused, cs.is_real_money_armed, pg.ui_place_enabled_bots = o_p, o_a, o_e
         cs.is_money_gate_ready = o_g
-        ui.load_picks = o_lp
         if o_env is None:
             os.environ.pop("ROUTER_ALLOW_REAL", None)
         else:
@@ -51690,14 +51824,49 @@ def test_migration_edits_are_invisible():
 
     try:
         from workers.api_clients.db import execute_query
-        applied = {r["filename"] for r in execute_query(
-            "SELECT filename FROM _schema_migrations")}
+        applied_at = {r["filename"]: r["applied_at"] for r in execute_query(
+            "SELECT filename, applied_at FROM _schema_migrations")}
     except Exception:
         return  # offline — the source-level lesson below still stands
+    applied = set(applied_at)
 
     # Every applied migration must still exist. A DELETED-but-applied migration
     # is the same class of silent divergence.
-    gone = sorted(applied - files)
+    #
+    # MIGRATION-RACE-2026-09-25 (dev-process speed audit #7): the smoke run for an
+    # OLDER commit reads the LIVE DB, where migrate.yml may already have applied a
+    # migration from a NEWER push — 4a772552's run saw 440 (applied by f542bfbf) and
+    # called it "missing from disk"; 9 false reds that day. A file this checkout
+    # cannot have seen is not "gone". So only count migrations applied BEFORE this
+    # checkout's commit time, and (locally) excuse any file present at origin/main.
+    import subprocess, datetime as _dt
+    root = Path(__file__).parent.parent
+    try:
+        head_ts = int(subprocess.run(["git", "-C", str(root), "log", "-1", "--format=%ct", "HEAD"],
+                                     capture_output=True, text=True, timeout=10).stdout.strip())
+        head_at = _dt.datetime.fromtimestamp(head_ts, _dt.timezone.utc)
+    except Exception:  # noqa: BLE001 — no git: fall back to the prefix rule
+        head_at = None
+
+    def _newer_than_checkout(name: str) -> bool:
+        if head_at is not None:
+            at = applied_at.get(name)
+            if at is not None and getattr(at, "tzinfo", None) is None:
+                at = at.replace(tzinfo=_dt.timezone.utc)
+            if at is not None and at > head_at:
+                return True
+        else:
+            import re as _re
+            top = max(int(_re.match(r"\d+", f).group()) for f in files if _re.match(r"\d+", f))
+            m = _re.match(r"\d+", name)
+            if m and int(m.group()) > top:
+                return True
+        # local checkouts: the file may exist on origin/main already (no fetch — best effort)
+        return subprocess.run(["git", "-C", str(root), "cat-file", "-e",
+                               f"origin/main:supabase/migrations/{name}"],
+                              capture_output=True, timeout=10).returncode == 0
+
+    gone = sorted(n for n in applied - files if not _newer_than_checkout(n))
     assert not gone, (
         f"migrations recorded as applied but missing from disk: {gone}. The "
         f"database has been changed by a file nobody can read any more")
@@ -58785,6 +58954,216 @@ def test_flat_stakes_everywhere():
                                 AND s.pnl_price_basis IS DISTINCT FROM l.public_basis""", [])[0]["n"]
     assert basis == 0, f"{basis} settled legs whose pnl_price_basis differs from bot_ledger.public_basis"
     return "flat unit everywhere; stored pnl basis == public basis"
+
+
+@test("SMOKE-NEW-VS-INHERITED — CI splits failures into NEW vs INHERITED, stays red on any; router tests run offline; migration race excused")
+def test_smoke_new_vs_inherited():
+    """Dev-process speed audit steps 1-3 (2026-09-25). (1) the runner diffs this run's failing names
+    against the previous completed main run's artifact and never changes the exit code; (2) the three
+    router tests that were the suite's critical path (309/262/261 s in CI) run on fixtures; (3)
+    MIGRATION-EDITS-ARE-INVISIBLE no longer reads a NEWER push's migration as "missing from disk"."""
+    import json, tempfile, os, inspect
+    d = tempfile.mkdtemp()
+    base, out = os.path.join(d, "b.json"), os.path.join(d, "o.json")
+    with open(base, "w") as fh:
+        json.dump({"sha": "prev", "failed": ["OLD-RED", "NOW-GREEN"], "first_red": {"OLD-RED": "sha0"}}, fh)
+    results = [("OLD-RED", "fail", "x", 0.0), ("MINE", "fail", "y", 0.0), ("NOW-GREEN", "pass", "", 0.0)]
+    _report_new_vs_inherited(results, out, base, quiet=True)
+    r = json.load(open(out))
+    assert r["new"] == ["MINE"] and r["inherited"] == ["OLD-RED"] and r["fixed"] == ["NOW-GREEN"], r
+    assert r["first_red"]["OLD-RED"] == "sha0", "inherited failures keep the SHA they first went red at"
+    _report_new_vs_inherited(results, out, os.path.join(d, "missing.json"), quiet=True)
+    assert json.load(open(out))["new"] == ["MINE", "OLD-RED"], "no baseline → every failure is NEW, none dropped"
+    src = inspect.getsource(main)
+    assert "sys.exit(0 if failed == 0 else 1)" in src, "the split must never turn a red run green"
+
+    wf = _engine_path(".github/workflows/smoke_tests.yml").read_text(encoding="utf-8")
+    assert "--baseline _baseline/smoke_failures.json" in wf and "--failures-json smoke_failures.json" in wf
+    assert "name: smoke-failures" in wf and "if: always()" in wf, "a red run must still publish its list"
+    assert "actions: read" in wf and "continue-on-error: true" in wf, "baseline fetch must never fail the job"
+
+    for fn in (test_best_price_router_execute_wiring, test_router_no_allowlist_bypass):
+        assert "_router_offline(" in inspect.getsource(fn), f"{fn.__name__} must run route() on fixtures"
+    assert "_this_thread_only(" in inspect.getsource(test_gate_status_reads_the_same_env)
+
+    mig = inspect.getsource(test_migration_edits_are_invisible)
+    assert "_newer_than_checkout" in mig and "%ct" in mig, "applied-after-this-commit migrations must be excused"
+
+
+# ── [[#155]] ONE STATUS DECIDES DISTRIBUTION ────────────────────────────────────────────────────
+
+def _m442() -> str:
+    return _engine_path("supabase/migrations/442_one_status_decides_distribution.sql").read_text()
+
+
+@test("ONE-STATUS-DECIDES-DISTRIBUTION — /picks, Telegram, headline and /performance all derive from the bot's status (#155)")
+def test_one_status_decides_distribution():
+    """[[#155]] (owner 2026-09-25). One status per bot decides distribution; no second per-bot setting may
+    drift from it. Parity across the four surfaces: (1) the SQL predicate bot_public_status and the view
+    bot_distribution; (2) bots.show_on_picks / show_on_performance DERIVED by trigger (update against the
+    status rejected); (3) picks_public_all + picks_forward_test_public gate on bot_distribution; (4) the
+    engine senders (coolbet_signaler, the forward-test publisher) read bot_distribution; (5) the headline
+    (settlement dashboard_cache + web HEADLINE_MATURITY_LABELS) is BETA/CALIBRATED minus VIP; (6) the web
+    /performance filter is the status alone. Live DB: every bot's derived columns equal the view."""
+    import re
+    import inspect
+    from workers.utils import bot_status as bs
+    sql = _m442()
+    # (1) one predicate — the Python sets equal the SQL literal
+    m = re.search(r"bot_public_status\(p_label text, p_retired_at timestamptz\).*?IN \(([^)]*)\)", sql, re.S)
+    assert m, "bot_public_status definition missing"
+    assert {x.strip().strip("'") for x in m.group(1).split(",")} == set(bs.PUBLIC_STATUSES)
+    assert bs.HEADLINE_STATUSES == {"beta", "calibrated"} and bs.HEADLINE_STATUSES < bs.PUBLIC_STATUSES
+    assert "maturity_label IN ('beta','calibrated') AND NOT b.vip" in bs.HEADLINE_BOT_SQL
+    # behaviour of the Python face
+    assert bs.sends_public("testing") and bs.sends_public("beta") and bs.sends_public("calibrated")
+    assert not bs.sends_public("experimental") and not bs.sends_public(None)
+    assert not bs.sends_public("testing", vip=True), "VIP is a channel: never sent publicly"
+    assert bs.on_performance("testing") and not bs.on_performance("testing", retired_at="2026-09-25")
+    assert not bs.in_headline("testing") and not bs.in_headline("calibrated", vip=True) and bs.in_headline("beta")
+    # (2) derived columns: trigger + rejection
+    assert "CREATE TRIGGER bots_zz_derive_distribution BEFORE INSERT OR UPDATE ON bots" in sql
+    assert "NEW.show_on_picks := v_picks;" in sql and "NEW.show_on_performance := v_pub;" in sql
+    assert sql.count("RAISE EXCEPTION") >= 2
+    # (3) public views gate on the view, and the forward-test arm→bot CASE matches forward_test_bot
+    for view in ("CREATE OR REPLACE VIEW picks_public_all", "CREATE OR REPLACE VIEW picks_forward_test_public"):
+        body = sql[sql.index(view):].split(";", 1)[0]
+        assert "bot_distribution bd" in body and "COALESCE(bd.sent_public, false) OR p.telegram_message_id IS NOT NULL" in body, view
+        assert "p.grade = 'D'::text AND p.telegram_message_id IS NULL" not in body, "the hard-coded grade-D rule is replaced by status"
+    pa = sql[sql.index("CREATE OR REPLACE VIEW picks_public_all"):].split(";", 1)[0]
+    assert "WHERE bd.sent_public" in pa and "b.show_on_picks" not in pa, "model branch must read the status, not the switch"
+    for arm, mkt, grade in (("consensus_anchor", "1x2", "D"), ("consensus_anchor", "1x2", "C"),
+                            ("consensus_anchor", "over_under_25", "B"), ("live", "over_under_25", None),
+                            ("live", "1x2", None)):
+        assert f"THEN '{bs.forward_test_bot(arm, mkt, grade)}'" in pa or bs.forward_test_bot(arm, mkt, grade) == "bot_sharp_1x2_v1"
+    # (4) engine senders
+    sig = _engine_path("workers/automation/coolbet_signaler.py").read_text()
+    assert "JOIN bot_distribution bd ON bd.bot_name = b.name" in sig and "bool_or(bd.sent_public)" in sig
+    assert "maturity_label = 'calibrated'" not in sig, "the old calibrated-only public gate must be gone"
+    assert "bd.sent_public DESC, sb.edge_percent DESC" in sig, "a SENT bot's row must supply the message"
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert "sent_bots = load_sent_public_bots()" in sched
+    assert 'not arm_bot_sends(c, "live", sent_bots)' in sched and "not arm_bot_sends(c, CONSENSUS_ARM, sent_bots)" in sched
+    assert 'c.get("grade") == "D" or paused' not in sched
+    import scripts.publish_picks_forward_test as pf
+    assert "arm_bot_sends(c, \"live\", sent_bots)" in inspect.getsource(pf.main)
+    sent = {"bot_sharp_1x2_v1", "bot_consensus_c_v1"}
+    assert pf.arm_bot_sends({"market": "1x2"}, "live", sent)
+    assert not pf.arm_bot_sends({"market": "over_under_25"}, "live", sent)
+    assert pf.arm_bot_sends({"market": "1x2", "grade": "C"}, pf.CONSENSUS_ARM, sent)
+    assert not pf.arm_bot_sends({"market": "1x2", "grade": "D"}, pf.CONSENSUS_ARM, sent)
+    assert not pf.arm_bot_sends({"market": "1x2"}, "live", None), "unreadable status = send nothing"
+    assert not pf.arm_bot_sends({"market": "1x2"}, "junk_anchor", sent | {"control_junk_anchor"})
+    ebc = _engine_path("scripts/export_bot_config.py").read_text()
+    assert 'sent = g != "D"' not in ebc and "sends_public(" in ebc
+    # (5) headline
+    st = _engine_path("workers/jobs/settlement.py").read_text()
+    wdc = st[st.index("def write_dashboard_cache"):]
+    wdc = wdc[:wdc.index("\ndef ", 10)]
+    assert "maturity_label != 'experimental'" not in wdc, "headline must be BETA/CALIBRATED (not 'anything but experimental')"
+    assert wdc.count("{_HEADLINE_BOT_SQL}") >= 5
+    # (6) web (skipped when the sibling repo is absent)
+    try:
+        ts = _web_path("src/lib/bot-status.ts").read_text()
+    except SkipTest:
+        ts = None
+    if ts is not None:
+        pub = re.search(r"PUBLIC_STATUSES = \[([^\]]*)\]", ts).group(1)
+        head = re.search(r"HEADLINE_STATUSES = \[([^\]]*)\]", ts).group(1)
+        assert {x.strip().strip('"') for x in pub.split(",")} == set(bs.PUBLIC_STATUSES)
+        assert {x.strip().strip('"') for x in head.split(",")} == set(bs.HEADLINE_STATUSES)
+        ed = _web_path("src/lib/engine-data.ts").read_text()
+        assert "export const HEADLINE_MATURITY_LABELS = HEADLINE_STATUSES;" in ed
+        coh = ed[ed.index("export async function getPublicCohortBotNames"):][:900]
+        assert '.eq("vip", false)' in coh, "VIP bots never in the headline cohort"
+        ag = _web_path("src/lib/bot-aggregates.ts").read_text()
+        assert "new Set<string>(PUBLIC_STATUSES)" in ag
+        page = _web_path("src/app/(app)/performance/page.tsx").read_text()
+        assert "b.showOnPerformance" not in page and ".filter((b) => isPublicBot(b.maturityLabel))" in page
+        legs = _web_path("src/app/api/performance/bot-legs/route.ts").read_text()
+        assert "showOnPerformance" not in legs and "isPublicBot(b.maturityLabel)" in legs
+        route = _web_path("src/app/api/admin/bots/controls/route.ts").read_text()
+        assert 'if (control === "show_on_picks") return bad(' in route, "the per-bot /picks switch is retired"
+        cr = _web_path("src/app/(app)/admin/bots/channel-reasons.ts").read_text()
+        assert "sendsPublic(b)" in cr and "showOnPicks ?" not in cr
+    # live parity (CI and local have the DB; skip only when unreachable)
+    try:
+        from workers.api_clients.db import execute_query
+        rows = execute_query(
+            """SELECT b.name, b.show_on_picks, b.show_on_performance, d.sent_public, d.on_performance,
+                      d.label, d.status
+                 FROM bots b JOIN bot_distribution d ON d.bot_name = b.name""", [])
+    except Exception as e:  # noqa: BLE001
+        if "bot_distribution" in str(e) or "does not exist" in str(e):
+            return "migration 442 not applied yet (source checks passed)"
+        raise SkipTest(f"DB unreachable: {e}")
+    bad = [r["name"] for r in rows
+           if r["show_on_picks"] != r["sent_public"] or r["show_on_performance"] != r["on_performance"]]
+    if bad and not any("bot_public_status" in str(x) for x in execute_query(
+            "SELECT proname FROM pg_proc WHERE proname = 'bot_public_status'", [])):
+        return f"migration 442 not applied yet ({len(bad)} rows still on the old switches)"
+    assert not bad, f"derived columns drifted from the status: {bad}"
+    by = {r["name"]: r["label"] for r in rows}
+    want = {"bot_v10_1x2": "CALIBRATED", "bot_high_roi_global_v2": "BETA", "bot_sharp_1x2_v1": "TESTING",
+            "bot_sharp_ou_v1": "TESTING", "bot_consensus_c_v1": "TESTING", "bot_consensus_b_v1": "TESTING",
+            "bot_consensus_d_v1": "EXPERIMENTAL", "bot_combined_1x2_ev5_v1": "VIP · TESTING",
+            "bot_ou_sharp_early_v1": "VIP · TESTING", "bot_v10_1x2_newplus_v1": "TESTING"}
+    drift = {k: (by.get(k), v) for k, v in want.items() if k in by and by[k] not in (v, "RETIRED")}
+    assert not drift, f"owner #155 statuses drifted (have, want): {drift}"
+    return f"{len(rows)} bots: derived columns = status; owner statuses hold"
+
+
+@test("RLS-EXPERIMENTAL-PENDING-HIDDEN — anon cannot read pending picks of bots whose status keeps them private (#155)")
+def test_rls_experimental_pending_hidden():
+    """[[#155]] / #162 audit B §4.5: 17 EXPERIMENTAL bots' PENDING picks were anon-readable (the
+    simulated_bets public-read policy hid pending rows only for vip / hide_pending bots). Migration 442
+    routes the policy through bot_pending_public (public status, not VIP, not a VIP twin). Proven live AS
+    the anon role: zero pending rows readable for a bot whose status does not allow it, and
+    bot_distribution.pending_exposed = 0."""
+    sql = _m442()
+    pol = sql[sql.index('CREATE POLICY "Public read" ON simulated_bets'):].split(";", 1)[0]
+    assert "public.bot_pending_public(b.maturity_label, b.retired_at, b.vip, b.hide_pending)" in pol
+    assert "held_back_until > now()" in pol, "#164 VIP-FIRST hold-back must stay in the policy"
+    try:
+        from workers.api_clients.db import get_conn
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT to_regprocedure('public.bot_pending_public(text,timestamptz,boolean,boolean)') IS NOT NULL")
+            if not cur.fetchone()[0]:
+                conn.rollback()
+                return "migration 442 not applied yet (source checks passed)"
+            cur.execute("SELECT count(*) FROM bot_distribution WHERE pending_exposed")
+            exposed = cur.fetchone()[0]
+            cur.execute("SET LOCAL ROLE anon")
+            cur.execute("""SELECT count(*) FROM simulated_bets s JOIN bots b ON b.id = s.bot_id
+                            WHERE s.result = 'pending'
+                              AND NOT public.bot_pending_public(b.maturity_label, b.retired_at, b.vip, b.hide_pending)""")
+            leaked = cur.fetchone()[0]
+            conn.rollback()
+    except Exception as e:  # noqa: BLE001
+        raise SkipTest(f"DB unreachable: {e}")
+    assert exposed == 0, f"bot_distribution.pending_exposed = {exposed}"
+    assert leaked == 0, f"anon can read {leaked} pending picks of private-status bots"
+    return "pending_exposed = 0; anon reads 0 private pending picks"
+
+
+@test("REVIEW-THIS-BOT-FLAG — bot_review_flag reaches the admin inbox and /admin/bots, never retires (#155)")
+def test_review_this_bot_flag():
+    """[[#155]] owner rule: at n >= 50 settled with the sharp-anchor CLV CI entirely below 0 the bot gets a
+    'review this bot' flag in the admin attention inbox and on /admin/bots; the owner decides. One helper
+    (bot-board-model.ts reviewFlagIssues) over the engine view bot_review_flag (migration 437)."""
+    v437 = _engine_path("supabase/migrations/437_bot_distribution_and_review_flag.sql").read_text()
+    assert "SELECT 50 AS min_n" in v437 and "clv_public_upper95 < 0" in v437
+    model = _web_path("src/app/(app)/admin/bots/bot-board-model.ts").read_text()
+    assert "export function reviewFlagIssues" in model and 'r.review_flag === true' in model
+    board = _web_path("src/lib/bot-board.ts").read_text()
+    assert 'readAll<BotReviewFlagRow>("bot_review_flag")' in board
+    for f in ("src/lib/admin-overview.ts", "src/app/(app)/admin/bots/bots-board.tsx"):
+        src = _web_path(f).read_text()
+        assert "reviewFlagIssues(" in src and "reviewFlags.error" in src, f
+    for f in ("src/lib/admin-overview.ts", "src/app/(app)/admin/bots/bots-board.tsx", "src/app/(app)/admin/bots/bot-board-model.ts"):
+        assert "retired_at" not in _web_path(f).read_text().split("reviewFlagIssues", 1)[-1][:600], "a flag, never a retirement"
+
 
 if __name__ == "__main__":
     main()
