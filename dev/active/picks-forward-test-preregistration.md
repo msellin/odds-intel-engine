@@ -261,6 +261,10 @@ priced at `odds_at_pick`, flat stake, no discretionary exclusions.
 | **n = 800** | ROI 95% CI entirely above 0 | **PROMOTE** — publish the number, claim the record. |
 | **n = 800** | CI straddles 0 | **CONTINUE to n = 1,600**, then decide. Do not re-cut the rule. |
 
+> ⚠️ **AMENDED 2026-09-25 ([[#156]]) — the n=200 and n=400 rows above are superseded** by
+> *AMENDMENT 1* at the end of this document (instrument = sharp-anchor CLV, stop condition relative
+> to the junk-anchor control). The text above is kept exactly as registered. The n=800 rows are unchanged.
+
 **The primary instrument is margin-corrected CLV, not ROI.** Per-bet return
 variance is ~1.32; confirming a true +3% ROI at 80% power needs ≈15,600 bets.
 CLV captures ~95% of everything extractable from single-bet P&L (verified: a
@@ -385,3 +389,91 @@ the bar; it stops using a ruler that turned out not to be one.
 `anchor_bookmaker` (`Pinnacle` vs `consensus:N`). They are deduplicated against
 each other so no match/market can carry both, and the live arm claims first, so a
 pre-registered pick always wins the tie. Pinned by smoke `PICKS-CONSENSUS-ARM`.
+
+
+## AMENDMENT 1 — 2026-09-25 ([[#156]], owner-approved) — the n=200 / n=400 stopping rule
+
+**Recorded before the live arm reached n=200** (it stood at 88 settled on
+`sharp_edge_v4_2026_09_15`). Nothing above this section has been edited except the one
+dated pointer under the criteria table. The rule, its constants, the arms and the n=800
+ROI criteria are unchanged; only the instrument and the stop condition at the n=200 and
+n=400 checkpoints change.
+
+### Why the original instrument has to go
+
+The registered instrument is `clv_margin_corrected` — the pick's odds against **the same
+soft book's own close**, margin-corrected (`workers/jobs/settlement.py`, `get_closing_odds`
+and the margin block after it). This rule selects a leg *because* that book misprices it
+against the sharp line. A soft line that is wrong and is never corrected closes where it
+opened, and its own close then scores the pick at roughly **minus the book's margin, by
+construction** — whether or not the pick was good. The measure is therefore blind to the
+one thing the test exists to measure:
+
+| measure (v4, settled) | live − junk-anchor control |
+|---|---|
+| own-book margin-corrected CLV | **−0.4pp [−1.9, +1.2]** in the 2026-09-25 audit; **+0.4pp, one-sided p = 0.24** in the checkpoint script at amendment time — indistinguishable either way |
+| sharp-anchor CLV | **+4.6pp (1X2), +3.7pp (O/U)** in the audit; stratified **+4.3pp, 97.5% lower bound +3.3pp** in the script (1X2 +4.6pp, O/U +3.4pp) |
+
+An instrument that cannot separate the pre-registered rule from a randomly-anchored copy
+of itself cannot fail the rule for the right reason either: at n=200 the original "< −2%"
+test would stop or continue on the soft books' margins, not on the rule. The junk control
+reads −2.2% / −2.8% on the sharp close — it loses roughly the vig, exactly as registered
+("Expected: loses roughly the vig"), which is also the evidence that the sharp-anchor
+harness is sound.
+
+### Against the lock — said plainly
+
+The registration says any change to the stopping criterion after the first pick
+"invalidates the test and starts a new one". This amendment is that kind of change, and
+it is made anyway, openly, by the owner's decision (2026-09-25), for two reasons: the
+SELECTION rule, its constants, the arms, the start date and the n are untouched, so the
+picks being judged are exactly the registered ones; and the criterion being replaced
+could not fail for the right reason (above). Two costs are recorded rather than hidden:
+**(1)** the new criterion was chosen AFTER seeing interim data (n=88, where the live arm
+already leads the control on the sharp close), which biases toward continuation — the
+counterweight is that the new bar is stricter than the old one (a significant margin over
+a control, not merely "not clearly negative"); **(2)** the ROI rules at n=800, which are
+the only claim-making criteria, are not touched, so no amendment here can manufacture a
+published claim. The v4 test is therefore NOT restarted; a reader can re-run the original
+criterion from the same output at any time.
+
+### The amended rule (pre-stated — do not tune)
+
+* **Instrument — SHARP-ANCHOR CLV**, per settled (won/lost) leg, from `leg_clv_sharp`
+  (`workers/jobs/clv_sharp.py`): `clv_sharp` (odds × Shin-de-vigged *fresh* Pinnacle close
+  − 1) where `status = 'ok'`; otherwise `clv_cons` (the ≥5-book consensus close,
+  `workers/utils/anchor.py`, Pinnacle and the pick's own book excluded) where
+  `cons_status = 'ok'`. The source (Pinnacle / consensus) is recorded per leg and
+  reported. **3–4-book thin consensus (`clv_cons_thin`) is excluded** — never pooled. A leg
+  with neither is unscored and reported as such. `|clv| > 1` is excluded as a data fault
+  (the `bot_scoreboard` guard).
+* **Populations:** arm `live` vs arm `junk_anchor` on the **same `rule_version`** (the live
+  arm's current one). The `+DEGENERATE_JUNK_DAY1` rows carry a different `rule_version`
+  and never enter.
+* **Statistic:** the market-stratified difference in mean sharp-anchor CLV,
+  **Δ = Σₘ wₘ (mean_liveₘ − mean_controlₘ)**, with wₘ = the live arm's share of scored legs
+  in market m. Stratified because the arms carry different market mixes (control ~61% 1X2,
+  live ~71%) and the markets sit at different CLV levels.
+* **Test:** one-sided bootstrap, **B = 10,000**, resampling legs with replacement within
+  each arm × market cell, **seed 20260925**; p = share of replicates with Δ* ≤ 0.
+* **Checkpoints** are unchanged in timing — the live arm's SETTLED count reaching **n = 200**
+  and **n = 400**. At each: **CONTINUE only if p < 0.025** (one-sided; equivalently the 97.5%
+  lower bound of Δ is above zero); **otherwise STOP.** A rule with no edge survives both looks
+  with probability ≤ 0.025. This is deliberately stricter than the original, which continued
+  unless the point estimate was clearly negative.
+* **The original own-book figure keeps being computed and published beside it** — on the
+  checkpoint output for both arms and on /performance as a labelled secondary ("vs the
+  book's own close"). It decides nothing.
+* **n = 800 / 1,600 ROI criteria: UNCHANGED.**
+
+**The calculation is code, not prose:** `python3 -m scripts.picks_forward_test_checkpoint`
+(read-only) prints both measures for both arms, per market and stratified, the source mix,
+and the verdict under this amendment. Pinned by smoke `PICKS-FORWARD-TEST-AMENDED-CHECKPOINT`.
+
+### What this does to /performance
+
+The published CLV for every forward-test bot becomes the sharp-anchor figure with its n
+and source mix ("vs sharp close +2.4% · 64 picks · 64 Pinnacle / 0 consensus"), with the
+own-book figure shown beside it as the secondary. Each row is scored on its CURRENT
+`rule_version` only (as `bot_scoreboard` does); earlier versions stay in the ledger and on
+the row as "earlier rule" history, never pooled.

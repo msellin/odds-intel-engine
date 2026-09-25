@@ -120,6 +120,7 @@
 | Track record — early results (contextualized, collapsible) | Y | Y | Y | Y |
 | Track record — prediction history (limited 20 rows, basic columns) | Y | Y | Y | Y |
 | Track record — prediction history (full + best odds + CLV column) | — | — | Y | Y |
+| Performance — forward-test bot rows (sharp/consensus): sharp-anchor CLV + n + Pinnacle/consensus mix, own-book CLV beside it, earlier rule versions named ([[#156]], 2026-09-25). Model-bot rows still show CLV as a direction arrow only (numbers Elite) | Y | Y | Y | Y |
 | Track record — prediction history (+ edge % column) | — | — | — | Y |
 | Track record — feature comparison table | Y | Y | Y | — |
 | Track record — today's picks (match + pick + confidence) | Y | Y | Y | Y |

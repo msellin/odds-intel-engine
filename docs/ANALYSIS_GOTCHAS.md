@@ -3223,3 +3223,20 @@ confirm half, so a switch to the new model looked free. The live bot bets at MAT
 (`bot_ledger`, real Pinnacle closes from July) reads CLV +6.6% / +6.0% / +1.8% for Jul / Aug / Sep (≈ +4.7%, n=178). The
 switch was reverted before commit. Rule: before changing a live bot on backtest evidence, pull its live `bot_ledger` CLV by
 month (post mid-July only — #83) and put it beside the backtest; if they disagree, run the change as a twin and compare live.
+
+## 85. Own-book close CLV is negative BY CONSTRUCTION for an outlier-picking strategy — judge it on the sharp anchor (#156, 2026-09-25)
+A rule that picks a leg BECAUSE one soft book's price is off the sharp line (the sharp-edge forward test, the consensus
+arms, every "book beats Pinnacle" trigger) cannot be judged against THAT book's own close. A soft line that is wrong and
+never corrected closes where it opened, so `odds / own_close − 1` ≈ 0 raw and ≈ **minus the book's margin** once
+margin-corrected — whatever the pick was worth. Measured on the forward test (v4, settled): live − random junk-anchor
+control on own-book margin-corrected CLV **−0.4pp [−1.9, +1.2]** (audit) / **+0.4pp, p = 0.24** (checkpoint script) —
+indistinguishable; on the sharp-anchor close **+4.6pp 1X2 / +3.4–3.7pp O/U**, lower bound well above zero, and the
+control loses about the vig exactly as registered.
+* **Use `leg_clv_sharp`**: `clv_sharp` (fresh Shin-de-vigged Pinnacle close) where `status='ok'`, else `clv_cons`
+  (≥5-book consensus, own book and Pinnacle excluded). Carry the source. **Never pool `clv_cons_thin`** (§74).
+* **Compare against a control, not against zero** when the measure's own zero is in doubt — the junk arm is what showed
+  the own-book measure was blind.
+* The same trap is #150 (sharp-trigger bots: own-book close = −margin when the book never moves). Own-book CLV is still
+  the right measure for "did the book we bet at move against us" — it is the wrong one for "was the pick good".
+* Where it is used now: the forward test's amended stop rule (`scripts/picks_forward_test_checkpoint.py`, prereg
+  AMENDMENT 1) and the /performance CLV for the forward-test bots (view `picks_forward_test_anchor_clv`, migration 430).

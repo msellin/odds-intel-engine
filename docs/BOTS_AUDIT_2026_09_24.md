@@ -184,6 +184,7 @@ Also in `picks_forward_test` and **not a bot**: `arm='junk_anchor'` — the nega
 arm (−2.88%) is **statistically indistinguishable from the control** on the pre-registered
 metric; the pre-registration's first stop is "n=200 with mc-CLV < −2%" and the live arm is
 at n=84 and −2.9%.
+> *CHANGED 2026-09-25 ([[#156]]): the n=200/400 stop rule was amended — it is now sharp-anchor CLV, live vs this control (prereg AMENDMENT 1). The own-book figure above is still reported and decides nothing.*
 
 ### B3. Code paths that produce bots — per family
 

@@ -583,6 +583,7 @@ control has no bot at all.
   rule, the stopping criterion or the success criterion after the first pick is published
   invalidates the test and starts a new one."*
   - Stops: n=200 mc-CLV < −2%; n=400 mc-CLV < 0; n=800 ROI CI < 0 (`:258-260`).
+    *CHANGED 2026-09-25 ([[#156]]): the n=200/400 stops were amended to sharp-anchor CLV relative to the junk control (prereg AMENDMENT 1); n=800 unchanged.*
   - Each version's n is **not carried forward**.
   - The live arm must never gain an edge ceiling (`publish_picks_forward_test.py:127`).
   - The junk arm must be selected from the same pool, with the same cadence and room,
