@@ -2,6 +2,8 @@
 
 > **CHANGED 2026-09-25 (#162 W4.6):** the retired money paths cited below — the paper Mac daemon (`coolbet_mac_daemon`), `coolbet_daemon_healthcheck`, the VPS manual-placement drain, the API placer (`coolbet_placer.place_all_bets` / `place_all_inplay_bets` / `place_bet_by_id` / `_place_bet_api`, CLI `scripts/place_coolbet_bets.py`) and web `getPlaceableBets` / `getRealBets` / `real-money-tier.ts` — are DELETED. Live executors: `scripts/place_coolbet_ui.py` + `workers/automation/best_price_router.py` (`placement_gate.py`, smoke `RETIRED-MONEY-PATHS-GONE`).
 
+> **CHANGED 2026-09-26 (#162 W6.8):** `/admin/real-bets` (cited below) is RETIRED — it redirects to the Real money tab of `/admin/bots` (`/admin/bots?section=money`).
+
 > **CHANGED 2026-09-25 (#162 W4.3):** `BOT_THRESHOLDS` (cited below) is deleted — every placer applies `workers/automation/placement_floor.pick_clears`, the stricter of the bot's own floor and the market floor. See the W4.3 banner in `docs/COOLBET_OWN_BETTING.md`.
 
 > **CHANGED 2026-09-24 (#139 IA P6/P7):** `/admin/shadow-bots/[bot]` is RETIRED — it redirects to `/admin/bots?bot=<name>&tab=picks` (the sheet carries Bet made + current prices; the model-edge "Min odds" was dropped, #139 finding b). `/admin/shadow-bots` is now the Pick queue (picks + Place only): its safety strip, scoreboard and promotions were removed (promotions moved to /admin/real-bets).

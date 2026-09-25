@@ -14568,7 +14568,8 @@ def _():
         "admin-money.ts BET_SELECT must include edge_pct_taken and clv columns"
     )
     # #139 P5 (2026-09-24): the log is the DataTable in the real-bets page's client half.
-    log = (web / "src" / "app" / "(app)" / "admin" / "real-bets" / "money-client.tsx").read_text()
+    # #162 W6.8 (2026-09-26): /admin/real-bets folded into /admin/bots?section=money — same code, now admin/bots/money-view.tsx + money-client.tsx.
+    log = (web / "src" / "app" / "(app)" / "admin" / "bots" / "money-client.tsx").read_text()
     # answer-first round (2026-09-25): the headers are plain words; "edge" / "CLV" live in the ⓘ
     assert ">Expected advantage<" in log and ">vs final price<" in log and "(edge)" in log and "(CLV)" in log, (
         "the real-bets log must render the edge and CLV columns (plain header, term in the ⓘ)"
@@ -14857,8 +14858,9 @@ def test_admin_real_bets_page():
     root = pathlib.Path(__file__).resolve().parents[1]
     # #139 P5 (2026-09-24): Overall/Today are StatCards and the log is a paged DataTable in
     # money-client.tsx (the INITIAL_VISIBLE/Show-all log was replaced by DataTable paging).
-    page = root.parent / "odds-intel-web" / "src" / "app" / "(app)" / "admin" / "real-bets" / "page.tsx"
-    log = root.parent / "odds-intel-web" / "src" / "app" / "(app)" / "admin" / "real-bets" / "money-client.tsx"
+    # #162 W6.8 (2026-09-26): /admin/real-bets folded into /admin/bots?section=money — same code, now admin/bots/money-view.tsx + money-client.tsx.
+    page = root.parent / "odds-intel-web" / "src" / "app" / "(app)" / "admin" / "bots" / "money-view.tsx"
+    log = root.parent / "odds-intel-web" / "src" / "app" / "(app)" / "admin" / "bots" / "money-client.tsx"
     if not page.exists() or not log.exists():
         print("  [skip] odds-intel-web not present in CI")
         return
@@ -14885,9 +14887,10 @@ def test_admin_real_bets_insights():
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1]
     web = root.parent / "odds-intel-web" / "src"
-    page = web / "app" / "(app)" / "admin" / "real-bets" / "page.tsx"
+    # #162 W6.8 (2026-09-26): /admin/real-bets folded into /admin/bots?section=money — same code, now admin/bots/money-view.tsx + money-client.tsx.
+    page = web / "app" / "(app)" / "admin" / "bots" / "money-view.tsx"
     # #139 P5 (2026-09-24): chart + log moved into the page's client half (ChartCard + DataTable).
-    log = web / "app" / "(app)" / "admin" / "real-bets" / "money-client.tsx"
+    log = web / "app" / "(app)" / "admin" / "bots" / "money-client.tsx"
     chart = log
     engine_data = web / "lib" / "engine-data.ts"
     if not page.exists() or not log.exists() or not engine_data.exists():
@@ -15618,6 +15621,104 @@ def test_user_tele_notify():
         "/stop must null out profiles.telegram_chat_id — replying "
         "'Disconnected' without clearing the row keeps the alerts flowing"
     )
+
+
+@test("BOTS-PAGE-READS-CACHED — /admin/bots reads once per request: React.cache, one superadmin check, pruned bot_config, optional server-only POSTGREST_INTERNAL_URL (#162 W7.4)")
+def test_bots_page_reads_cached():
+    """#162 W7.4 (audit D-R4 / D §1.3, 2026-09-26). A cold /admin/bots render made ~40 PostgREST
+    calls: loadBotBoard (7) and the control reads (5) ran TWICE (the shell's Overview loader and the
+    page), the fleet row three times, and the superadmin check twice (two remote auth.getUser). Each
+    call left the VPS for Cloudflare and came back (0.12-0.30 s vs 0.04-0.06 s on 127.0.0.1:3012).
+    Pins: (1) the board, control-row and fleet reads and requireSuperadmin are React.cache'd, and the
+    control rows are cached WITHOUT the viewer id (it only decides isOwner — caching on it would
+    split the layout's null call from the page's); (2) the bots page uses the shared cached gate,
+    not its own copy; (3) bot_config is read by a named column list, never "*"; (4) the optional
+    server-only POSTGREST_INTERNAL_URL is honoured by every service client, rewrites supabase-js's
+    /rest/v1/ prefix (PostgREST serves at its root; nginx normally strips it), is never
+    NEXT_PUBLIC_ and never reaches a client component."""
+    if not (_web_root / "src").exists():
+        print("  [skip] odds-intel-web not present")
+        return
+    import re as _re
+    board = _web_path("src/lib/bot-board.ts").read_text(encoding="utf-8")
+    assert 'import { cache } from "react";' in board
+    assert "export const loadBotBoard = cache(" in board
+    assert "const loadControlRows = cache(" in board and "const readFleet = cache(" in board
+    ctl = board[board.index("export async function loadControlState("):]
+    ctl = ctl[:ctl.index("\n}\n")]
+    assert "await loadControlRows()" in ctl and "readRows<" not in ctl, \
+        "the per-viewer part must only add isOwner on top of the cached rows"
+    # (3) bot_config: named columns, never "*"
+    assert 'readAll<BotConfigRow>("bot_config", BOT_CONFIG_COLS)' in board
+    assert _re.search(r'readAll<BotConfigRow>\("bot_config"\)', board) is None
+    cols = board[board.index("export const BOT_CONFIG_COLS ="):]
+    cols = cols[:cols.index(";")]
+    assert "*" not in cols and "gates" in cols and "exported_at" in cols
+    # (1)+(2) one superadmin check per request
+    auth = _web_path("src/lib/admin-auth.ts").read_text(encoding="utf-8")
+    assert 'import { cache } from "react";' in auth and "const superadminOnce = cache(" in auth
+    assert "return superadminOnce();" in auth
+    page = _web_path("src/app/(app)/admin/bots/page.tsx").read_text(encoding="utf-8")
+    assert "await requireSuperadmin()" in page and "auth.getUser" not in page and 'from("profiles")' not in page, \
+        "the bots page must use the shared, cached gate — not a second auth round-trip"
+    layout = _web_path("src/app/(app)/admin/layout.tsx").read_text(encoding="utf-8")
+    assert "requireSuperadmin()" in layout
+    # (4) optional, server-only internal URL
+    url = _web_path("src/lib/postgrest-server-url.ts").read_text(encoding="utf-8")
+    assert "process.env.POSTGREST_INTERNAL_URL" in url and 'typeof window !== "undefined"' in url
+    assert "/rest/v1/" in url and "NEXT_PUBLIC_POSTGREST_URL" in url, "falls back to the public URL"
+    assert 'from "next/headers"' not in url, "must stay importable from modules a client bundle reaches"
+    for rel in ("src/lib/supabase-server.ts", "src/lib/bot-performance.ts", "src/lib/performance-work-done.ts"):
+        t = _web_path(rel).read_text(encoding="utf-8")
+        assert "serverPostgrestOptions(url)" in t, f"{rel}: the service client must honour POSTGREST_INTERNAL_URL"
+    pub = _web_path("src/lib/supabase-public.ts").read_text(encoding="utf-8")
+    assert "POSTGREST_INTERNAL_URL" not in pub and "serverPostgrestOptions" not in pub, \
+        "the anon client is also used in the browser — it keeps the public URL"
+    for f in (_web_root / "src").rglob("*.ts*"):
+        t = f.read_text(encoding="utf-8")
+        assert "NEXT_PUBLIC_POSTGREST_INTERNAL" not in t, f"{f}: the internal URL must never be NEXT_PUBLIC_"
+        if t.lstrip().startswith('"use client"'):
+            assert "POSTGREST_INTERNAL_URL" not in t and "postgrest-server-url" not in t, \
+                f"{f}: a client component must never use the internal PostgREST URL"
+    infra = _engine_path("INFRASTRUCTURE.md").read_text(encoding="utf-8")
+    assert "POSTGREST_INTERNAL_URL" in infra, "the owner-set env var must be documented"
+
+
+@test("REAL-BETS-FOLDED-INTO-BOTS — /admin/real-bets redirects to the Real money view of /admin/bots (#162 W6.8)")
+def test_real_bets_folded_into_bots():
+    """#162 W6.8 (owner 2026-09-25: the real-bets page is not used; its information belongs on the
+    bot view). The page moved whole to admin/bots/money-view.tsx (+ money-client.tsx) and renders
+    for /admin/bots?section=money behind a Bots | Real money tab strip, after the bots page's
+    superadmin check. Each section loads only its own data (the board does not pay for loadMoney).
+    /admin/real-bets is kept as a redirect (bookmarks, Telegram text), leaves the sidebar, and a
+    ⌘K action points at the new view; no link in the app still targets the old URL."""
+    if not (_web_root / "src").exists():
+        print("  [skip] odds-intel-web not present")
+        return
+    old = _web_path("src/app/(app)/admin/real-bets/page.tsx").read_text(encoding="utf-8")
+    assert 'redirect("/admin/bots?section=money")' in old and "RETIRED" in old
+    assert "loadMoney" not in old and "createServerServiceClient" not in old, "the old URL renders nothing itself"
+    assert not _web_path("src/app/(app)/admin/real-bets/money-client.tsx").exists()
+    page = _web_path("src/app/(app)/admin/bots/page.tsx").read_text(encoding="utf-8")
+    assert 'section === "money"' in page and "<RealMoneyView" in page
+    i_gate, i_money, i_board = page.index("await requireSuperadmin()"), page.index("<RealMoneyView"), page.index("loadBotBoard()")
+    assert i_gate < i_money < i_board, "gate first; the money section returns before the board's reads"
+    assert 'href="/admin/bots?section=money"' in page and "Real money" in page
+    view = _web_path("src/app/(app)/admin/bots/money-view.tsx").read_text(encoding="utf-8")
+    assert "export async function RealMoneyView(" in view and "await loadMoney()" in view
+    for part in ("<BotMoneyTable", "<ToDoTable", "Daily limit: {DAILY_MAX_BETS}", "<MoneyCharts", "<BetLogTable", "<Promotions"):
+        assert part in view, f"the Real money view lost {part}"
+    assert "export const metadata" not in view and "export default" not in view, "a section, not a page"
+    nav = _web_path("src/components/admin/admin-nav.ts").read_text(encoding="utf-8")
+    assert '"/admin/real-bets"' not in nav
+    pal = _web_path("src/components/admin/command-palette.tsx").read_text(encoding="utf-8")
+    assert 'href: "/admin/bots?section=money"' in pal
+    for f in (_web_root / "src").rglob("*.ts*"):
+        if "admin/real-bets" in f.as_posix():
+            continue
+        t = f.read_text(encoding="utf-8")
+        for bad in ('href="/admin/real-bets"', 'href: "/admin/real-bets"', '"/admin/real-bets")'):
+            assert bad not in t, f"{f} still links the retired URL ({bad})"
 
 
 @test("PROVEN-LEAGUES-V2 — migration 142 retires old league bots; creates bot_proven_leagues_v2 with Italy/France/USA + Austria/Belgium beta")
@@ -22342,7 +22443,9 @@ def _():
     #    POSTGREST envs with Supabase fallback.
     server_lib = web_root / "src/lib/supabase-server.ts"
     assert server_lib.exists(), f"{server_lib} must exist"
-    src = server_lib.read_text()
+    # #162 W7.4: the URL is resolved in postgrest-server-url.ts (publicPostgrestUrl + the optional
+    # server-only POSTGREST_INTERNAL_URL), so read both files.
+    src = server_lib.read_text() + (web_root / "src/lib/postgrest-server-url.ts").read_text()
     assert "export function createServerServiceClient(" in src, \
         "supabase-server.ts must export createServerServiceClient()"
     assert "NEXT_PUBLIC_POSTGREST_URL" in src and "POSTGREST_SERVICE_KEY" in src, \
@@ -45315,7 +45418,8 @@ def test_shadow_bots_promo_panel():
     # #139 P5 (2026-09-24): Promotions moved to the money page (EV vs realised is money).
     q = (_web_root / "src" / "lib" / "admin-money.ts").read_text(encoding="utf-8")
     assert "promo_terms" in q and "promo_ledger" in q, "the panel's reads live in the money loader"
-    page = (_web_root / "src" / "app" / "(app)" / "admin" / "real-bets" / "page.tsx").read_text(encoding="utf-8")
+    # #162 W6.8 (2026-09-26): /admin/real-bets folded into /admin/bots?section=money — same code, now admin/bots/money-view.tsx + money-client.tsx.
+    page = (_web_root / "src" / "app" / "(app)" / "admin" / "bots" / "money-view.tsx").read_text(encoding="utf-8")
     assert "<Promotions" in page, "the panel must actually be rendered"
 
 
@@ -45499,7 +45603,8 @@ def test_shadow_bots_logged_pick_is_visible():
     queue = (_web_root / "src" / "app" / "(app)" / "admin" / "shadow-bots" / "page.tsx").read_text(encoding="utf-8")
     assert "t.confirmedCount + t.unconfirmedCount" in queue and "unconfirmedCount > 0" in queue and "by hand" in queue, \
         "manual logs are real exposure — they must be VISIBLE in the day's total, not tooltip-only"
-    money = (_web_root / "src" / "app" / "(app)" / "admin" / "real-bets" / "page.tsx").read_text(encoding="utf-8")
+    # #162 W6.8 (2026-09-26): /admin/real-bets folded into /admin/bots?section=money — same code, now admin/bots/money-view.tsx + money-client.tsx.
+    money = (_web_root / "src" / "app" / "(app)" / "admin" / "bots" / "money-view.tsx").read_text(encoding="utf-8")
     assert "todayHand.length > 0" in money and "by hand" in money
     route = (_web_root / "src" / "app" / "api" / "admin" / "real-bet" / "route.ts").read_text(encoding="utf-8")
     assert 'revalidatePath("/admin/shadow-bots")' in route, \
@@ -51205,10 +51310,16 @@ def test_admin_shared_shell():
         route = "/admin" if rel == "." else f"/admin/{rel}"
         if "[" in route:
             continue
-        assert f'href: "{route}"' in nav, f"{route} has no sidebar entry in admin-nav.ts"
         body = p.read_text(encoding="utf-8")
+        # #162 W6.8 (2026-09-26): a RETIRED page that only redirects (/admin/real-bets →
+        # /admin/bots?section=money) keeps its URL but has no sidebar entry, and needs no gate of
+        # its own — the target re-checks superadmin, like the /admin/shadow-bots/[bot] redirect.
+        if "RETIRED" in body and "redirect(" in body and "createServerServiceClient" not in body:
+            continue
+        assert f'href: "{route}"' in nav, f"{route} has no sidebar entry in admin-nav.ts"
         assert "admin-shell" not in body and "AdminShell" not in body and "AdminSidebar" not in body, p
-        assert "is_superadmin" in body, f"{p} must keep its own server-side superadmin check"
+        # requireSuperadmin() (lib/admin-auth.ts) is the shared is_superadmin check (#162 W7.4)
+        assert "is_superadmin" in body or "requireSuperadmin()" in body, f"{p} must keep its own server-side superadmin check"
     assert not (admin / "bots/admin-shell.tsx").exists(), "the per-page shell must stay deleted"
     chrome = _web_path("src/components/public-chrome.tsx").read_text(encoding="utf-8")
     assert 'pathname.startsWith("/admin/")' in chrome
@@ -51371,8 +51482,11 @@ def test_admin_topbar_palette_table():
     for feat in ("getSortedRowModel", "getFilteredRowModel", "getPaginationRowModel", "Export CSV", "Columns"):
         assert feat in dt, feat
     nav = _web_path("src/components/admin/admin-nav.ts").read_text(encoding="utf-8")
-    for entry in ('label: "Pick queue"', 'label: "Real bets"', 'label: "Jobs"', 'href: "/admin/activity"'):
+    # #162 W6.8 (2026-09-26): "Real bets" left the sidebar — the ledger is the Real money tab of
+    # /admin/bots, reachable from the ⌘K Actions (REAL-BETS-FOLDED-INTO-BOTS).
+    for entry in ('label: "Pick queue"', 'label: "Jobs"', 'href: "/admin/activity"'):
         assert entry in nav, entry
+    assert 'label: "Real bets"' not in nav
     assert "/admin/place" not in nav and "unused: true" not in nav
 
 
@@ -51556,13 +51670,17 @@ def test_money_page_ledger():
     counted from the SAME MANUAL_RECONCILE_SINCE the Overview's attention bell uses, so the two
     cannot disagree. The loader pages past PostgREST's 1,000-row cap (992 rows on 2026-09-24) and
     excludes paper rows. An unreadable ledger shows "Unknown", never €0."""
-    page_p = _web_path("src/app/(app)/admin/real-bets/page.tsx")
+    # #162 W6.8 (2026-09-26): /admin/real-bets folded into /admin/bots?section=money — same code, now admin/bots/money-view.tsx + money-client.tsx.
+    # The superadmin check is the bots page's (requireSuperadmin), made before the view renders.
+    page_p = _web_path("src/app/(app)/admin/bots/money-view.tsx")
     if not page_p.exists():
         return
     page = page_p.read_text(encoding="utf-8")
-    cl = _web_path("src/app/(app)/admin/real-bets/money-client.tsx").read_text(encoding="utf-8")
+    cl = _web_path("src/app/(app)/admin/bots/money-client.tsx").read_text(encoding="utf-8")
     lib = _web_path("src/lib/admin-money.ts").read_text(encoding="utf-8")
-    assert "is_superadmin" in page and "<PageHeader" in page and "<AnswerStrip" in page and page.count("<StatCard") >= 3
+    host = _web_path("src/app/(app)/admin/bots/page.tsx").read_text(encoding="utf-8")
+    assert "requireSuperadmin()" in host and host.index("requireSuperadmin()") < host.index("<RealMoneyView")
+    assert "<PageHeader" in page and "<AnswerStrip" in page and page.count("<StatCard") >= 3
     assert "/admin/place" not in page, "the deleted page must not be referenced"
     assert "unknown={unreadable" in page, "an unreadable ledger must read Unknown, never 0"
     assert "<Promotions" in page and "unconfirmedToDo(" in page and "<ToDoTable" in page
@@ -51855,8 +51973,9 @@ def test_real_bets_ux_fix_round():
         return
     lib = lib_p.read_text(encoding="utf-8")
     fmt = _web_path("src/lib/admin-money-format.ts").read_text(encoding="utf-8")
-    page = _web_path("src/app/(app)/admin/real-bets/page.tsx").read_text(encoding="utf-8")
-    cl = _web_path("src/app/(app)/admin/real-bets/money-client.tsx").read_text(encoding="utf-8")
+    # #162 W6.8 (2026-09-26): /admin/real-bets folded into /admin/bots?section=money — same code, now admin/bots/money-view.tsx + money-client.tsx.
+    page = _web_path("src/app/(app)/admin/bots/money-view.tsx").read_text(encoding="utf-8")
+    cl = _web_path("src/app/(app)/admin/bots/money-client.tsx").read_text(encoding="utf-8")
     promo = _web_path("src/components/shadow-bots/promotions.tsx").read_text(encoding="utf-8")
 
     # (6) one window definition
@@ -54079,8 +54198,9 @@ def test_real_bets_answer_first():
     (3) BLOCKER: "Did we get the paper price?" had no period — it now shows its date range and its ⓘ says
     why it differs from the all-time total. (4) No CLV / edge / slip / n= / market codes / bot ids on screen.
     (5) Promotions hidden while none is recorded (a read error still shows)."""
-    page = _web_path("src/app/(app)/admin/real-bets/page.tsx").read_text(encoding="utf-8")
-    cl = _web_path("src/app/(app)/admin/real-bets/money-client.tsx").read_text(encoding="utf-8")
+    # #162 W6.8 (2026-09-26): /admin/real-bets folded into /admin/bots?section=money — same code, now admin/bots/money-view.tsx + money-client.tsx.
+    page = _web_path("src/app/(app)/admin/bots/money-view.tsx").read_text(encoding="utf-8")
+    cl = _web_path("src/app/(app)/admin/bots/money-client.tsx").read_text(encoding="utf-8")
     lib = _web_path("src/lib/admin-money.ts").read_text(encoding="utf-8")
     fmt = _web_path("src/lib/admin-money-format.ts").read_text(encoding="utf-8")
 
@@ -54538,7 +54658,8 @@ def test_legacy_clv_pnl_no_new_readers():
         "app/methodology/page.tsx",    # prose explaining the withdrawn figure
         "components/performance-hero.tsx",  # prose (CLV-PUBLIC-WITHDRAWN)
         "app/page.tsx",                # a withdrawn field's type on the landing JSON
-        "app/(app)/admin/real-bets/money-client.tsx", "app/(app)/admin/real-bets/page.tsx",
+        # the money ledger (real_bets' own clv) — moved from admin/real-bets by #162 W6.8
+        "app/(app)/admin/bots/money-client.tsx", "app/(app)/admin/bots/money-view.tsx",
         "lib/admin-overview.ts",       # bot_weekly.pnl_unit — now flat at our books (433)
         "app/(app)/admin/bots/bot-sheet.tsx", "app/(app)/admin/bots/bot-perf-charts.tsx",
         "app/(app)/admin/shadow-bots/[bot]/page.tsx",

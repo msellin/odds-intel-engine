@@ -550,6 +550,12 @@ Full detail: `docs/COOLBET_OWN_BETTING.md`. Recurring failure patterns:
 
 > ### 🎛 CONTROL PANEL — 2026-09-24 (#139 phase A, migration 413). Read first.
 >
+> **CHANGED 2026-09-26 (#162 W6.8):** the money ledger that was `/admin/real-bets` (€ P/L, the
+> cross-bot table, the reconcile to-do, today's use of the daily limit, promotions, every real bet)
+> is now the **Real money** tab of this page, `/admin/bots?section=money`; the old URL redirects
+> there. **W7.4:** the page's board / control / superadmin reads happen once per request
+> (React.cache) and can go to PostgREST on localhost (`POSTGREST_INTERNAL_URL`, INFRASTRUCTURE.md).
+>
 > `/admin/bots` is THE control surface for own real money (owner decision 3). It shows the six
 > separate layers in gate order — **placement path (code rule) → per-bot € switch → placement
 > pause → armed → Mac executors (heartbeat) → per-pick gates** — and a computed CAN STAKE line
