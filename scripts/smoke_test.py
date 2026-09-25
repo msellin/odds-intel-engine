@@ -56694,5 +56694,40 @@ def test_pipeline_ou_new_model_and_vip_split():
     assert '"model_version": "ou_comb_v1"' in src
 
 
+@test("MODEL-BOTS-NEW-MODELS-STEP3 — #152: pre-registered per-bot family (12), split date, Holm m=7, read-only")
+def test_model_bots_new_models_step3():
+    """#152 step 3. Pre-registered in dev/active/model-bots-new-models-plan.md ("Pre-registration
+    — step 3") BEFORE any run: per bot, model {old,new} x edge unit {own pp rule, EV} x threshold
+    {own, -2pp/lower, +2pp/higher; EV 5/3/8%} with the bot's identity fixed; select on
+    08-31..09-12 (>= 20 CLV picks), confirm ONCE on 09-13..09-24 vs the current config,
+    one-sided bootstrap (10k), Holm m = 7, SWITCH only at adj p < 0.05 with confirm CLV > 0.
+    Pins the design so it cannot be tuned on the output. Source inspection only."""
+    import ast
+    from datetime import datetime, timezone
+    src = _engine_path("scripts/backtest_model_bots_new_models.py").read_text(encoding="utf-8")
+    c = {}
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            try:
+                c[node.targets[0].id] = ast.literal_eval(node.value)
+            except ValueError:
+                pass
+    assert c["MODELS"] == ("old", "new") and c["UNITS"] == ("pp", "ev")
+    assert c["PP_STEPS"] == (0.0, -0.02, 0.02) and c["EV_THRESHOLDS"] == (0.05, 0.03, 0.08)
+    assert "FAMILY_SIZE = len(MODELS) * len(UNITS) * 3" in src, "family = 2 x 2 x 3 = 12 per bot"
+    ep = lambda d: datetime.fromisoformat(d).replace(tzinfo=timezone.utc).timestamp()
+    assert c["SPLIT_EPOCH"] == ep("2026-09-13")
+    assert c["MIN_CLV_PICKS_SELECT"] == 20 and c["HOLM_M"] == 7 and c["ALPHA"] == 0.05 and c["N_BOOT"] >= 10000
+    assert c["VIP_1X2_ARM"] == "N2" and c["VIP_OU_EV"] == (0.05, 0.15) and c["VIP_OU_MIN_HOURS"] == 12.0
+    for b in ("bot_v10_1x2", "bot_high_roi_global_v2", "bot_coolbet_1x2_model_v1", "bot_unified_gate_1x2_paper_v1",
+              "bot_coolbet_ou_model_v1", "bot_ou35_model_v1", "bot_v10_ou"):
+        assert f'"{b}": dict(' in src, f"{b} missing from the 7-bot family"
+    assert src.count("public=True") == 3, "public-bot constraint = v10_1x2, high_roi_global_v2, v10_ou"
+    low = src.lower()
+    for bad in ("insert into", "update ", "delete from", "execute_values", "create table", "store_bet("):
+        assert bad not in low, f"step-3 backtest must be read-only; found {bad!r}"
+    assert "power_devig" in src, "CLV uses Pinnacle's POWER-de-vigged close (plan)"
+
+
 if __name__ == "__main__":
     main()

@@ -37,3 +37,20 @@ backtest shown only if it passes.
 **Expected:** old configs ≈ 0 or negative CLV everywhere (B3: baseline negative in 95% of configs); the new model helps the
 bots whose rule is an EV/edge rule with room below the VIP band; the public-bot constraint may leave v10_1x2 and v10_ou
 with little or no edge — in which case that is the answer, not a reason to loosen the constraint.
+
+## RESULTS — step 3 (2026-09-25 morning; `scripts/backtest_model_bots_new_models.py`, 12 configs/bot)
+| bot | current, confirm half | best new-model config, confirm half | pre-reg verdict |
+|---|---|---|---|
+| bot_v10_1x2 | n 10, CLV −0.1% | NEW+ EV ≥ 3%, VIP-excluded: n 370, +1.0% | no switch (Holm 1.0) |
+| bot_high_roi_global_v2 | n 1 | nothing better (−4.6%) | no switch |
+| bot_coolbet_1x2_model_v1 | n 312, −10.7% | NEW+ EV ≥ 5%: n 24 (9 priced), +12.8% (median +0.9%) | switch — fragile |
+| bot_unified_gate_1x2_paper_v1 | n 704, −14.2% | NEW+ EV ≥ 8%: n 82, −1.0% | no switch (still < 0) |
+| bot_coolbet_ou_model_v1 | n 4, −13.7% | new O/U: n 30 (6 priced), +18% | switch — all 6 are Coolbet quotes > 1.25× Pinnacle |
+| bot_ou35_model_v1 | n 169, −8.0% | new O/U: n 32 (5 priced), +23.6% | switch — same suspect quotes |
+| bot_v10_ou | n 0 | new O/U EV ≥ 3%: 21 picks, +1.6% | < 20 priced picks |
+**Owner-approved switch of bot_v10_1x2 was REVERTED before commit (2026-09-25):** its LIVE record (bot_ledger, match-day
+prices, real Pinnacle closes) is CLV +6.6% Jul (n 40), +6.0% Aug (82), +1.8% Sep (56) — ≈ +4.7% on 178 picks — while this
+backtest priced its old rule at OPENING quotes (10 picks). A working live bot outranks a 10-pick open-price backtest; the
+NEW+ version should run beside it as a twin and be compared live. See ANALYSIS_GOTCHAS #84.
+**The three formal "switch" verdicts are not acted on:** 5–9 priced picks each, and the two O/U ones are Coolbet pricing
+errors that the live Coolbet bots have no guard against — a separate bug (Coolbet price-sanity guard), to be fixed first.

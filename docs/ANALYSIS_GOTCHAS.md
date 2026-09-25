@@ -3216,3 +3216,10 @@ short-odds AF picks); from mid-July, with real closes, the same arm reads CLV +2
   (`ts_close` ≥ `ts_open` + something, and near kickoff). The 7-day retention (open + latest only) makes this worse for any
   older window. Check the same for 1X2 before trusting an old 1X2 CLV.
 * **When CLV and a large-n ROI disagree by several standard errors, believe the ROI** and look for the broken anchor.
+
+## 84. An OPEN-price backtest is not the bot you run — check the live ledger before switching a live bot (#152, 2026-09-25)
+The #152 step-3 backtest priced `bot_v10_1x2`'s old rule at each book's OPENING quote and found 10 picks, CLV −0.1% on the
+confirm half, so a switch to the new model looked free. The live bot bets at MATCH-DAY prices, and its own ledger
+(`bot_ledger`, real Pinnacle closes from July) reads CLV +6.6% / +6.0% / +1.8% for Jul / Aug / Sep (≈ +4.7%, n=178). The
+switch was reverted before commit. Rule: before changing a live bot on backtest evidence, pull its live `bot_ledger` CLV by
+month (post mid-July only — #83) and put it beside the backtest; if they disagree, run the change as a twin and compare live.
