@@ -56283,8 +56283,15 @@ def test_placement_floor_one_rule():
     # Review round 1: the sharp bots' own outlier cap applies at placement, a one-point window
     # (floor == ceiling) is empty, and both router arms re-check at the live price with the rule.
     assert rules["bot_coolbet_trigger_sharp_1x2_v1"].outlier_mult, "sharp bots carry the outlier cap"
-    ok, why = pf.pick_clears("bot_coolbet_trigger_sharp_1x2_v1", "1x2", "home", 12.0, 0.30, rules)
+    # Since W7.6 every sharp bot also carries the 8 pp ceiling, so with the stacked floor their windows
+    # are EMPTY (refused before any price check). Exercise the outlier cap on a ceiling-free copy.
+    import dataclasses as _dc
+    _r2 = dict(rules)
+    _r2["bot_coolbet_trigger_sharp_1x2_v1"] = _dc.replace(rules["bot_coolbet_trigger_sharp_1x2_v1"], edge_ceiling=None)
+    ok, why = pf.pick_clears("bot_coolbet_trigger_sharp_1x2_v1", "1x2", "home", 12.0, 0.30, _r2)
     assert not ok and "outlier cap" in why, why
+    ok, why = pf.pick_clears("bot_coolbet_trigger_sharp_1x2_v1", "1x2", "home", 3.2, 0.45, rules)
+    assert not ok and "empty edge window" in why, why
     ok, why = pf.pick_clears("bot_trigger_ou_sharp_v1", "over_under_25", "over", 2.0, 0.58, rules)
     assert not ok and "empty edge window" in why, why
     src_cb = inspect.getsource(bpr._dispatch_coolbet)
@@ -56552,6 +56559,21 @@ def test_health_checks_real_schema():
             WHERE status::text IN ('live', '1H', '2H', 'HT', 'ET')
                OR (date BETWEEN NOW() - INTERVAL '2 hours' AND NOW()
                    AND status::text NOT IN ('finished','postponed','cancelled'))""", [])
+
+@test("PLACEMENT-FLOOR-MIRRORS-SHARP-ENGINE-CEILING — the placement re-check uses the generator's edge ceiling (#162 W7.6)")
+def test_placement_floor_mirrors_sharp_ceiling():
+    """[[#162]] W7.6 gave the per-book sharp trigger bots the 8% edge ceiling at generation
+    (pick_triggers.sharp_rule); the placement re-check must apply the same one, or a phantom
+    price the generator refuses could be staked if it reached the placer another way."""
+    from workers.automation.placement_floor import bot_rules
+    from workers.jobs import pick_triggers as pt
+    from workers.jobs import pick_trigger_matcher as pm
+    rules = bot_rules()
+    for (book, market, strategy), bot in pm.BOOK_MARKET_BOTS.items():
+        sr = pt.sharp_rule(strategy, book, bot)
+        if sr is None or bot not in rules:
+            continue
+        assert rules[bot].edge_ceiling == sr.edge_ceiling, (bot, rules[bot].edge_ceiling, sr.edge_ceiling)
 
 if __name__ == "__main__":
     main()

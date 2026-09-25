@@ -111,6 +111,9 @@ def bot_rules() -> dict[str, BotRule]:
             edge_floor=pt._SHARP_MIN_EDGE_BY_MARKET[key],
             odds_floor=pt._SHARP_MIN_ODDS_BY_MARKET[key],
             odds_max=pt._SHARP_MAX_ODDS_BY_STRATEGY.get(strategy),
+            # [[#162]] W7.6: the generator (sharp_engine via pick_triggers.sharp_rule) applies this
+            # per-market edge ceiling; the placement re-check applies the same one.
+            edge_ceiling=getattr(pt, "_SHARP_MAX_EDGE_BY_MARKET", {}).get(key),
             outlier_mult=float(OUTLIER_MULT),
             source="workers/jobs/pick_triggers.py",
         )

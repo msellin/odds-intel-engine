@@ -52,7 +52,7 @@ result is exported to `bot_config` as the `placement_floor` gate.
 * Model bots: **1x2 home-underdogs 10 pp @ ≥ 2.80** (`bot_coolbet_1x2_model_v1`, also at the live price) ·
   **O/U 8 pp @ ≥ 1.80** (`bot_coolbet_ou_model_v1`).
 * Sharp bots face 10–13 pp (1x2) / 8 pp (O/U) against a de-vigged Pinnacle line — above their own 8 pp
-  ceiling / outlier cap — so they almost never clear, and three have EMPTY windows. That is the stricter
+  ceiling / outlier cap — since W7.6 every sharp bot carries the 8 pp ceiling at generation AND at placement, so under the stacked floor their windows are EMPTY (refused outright). That is the stricter
   rule working as designed; making a sharp bot placeable at its own floor is an owner decision.
 
 ### Stake, caps, exposure
