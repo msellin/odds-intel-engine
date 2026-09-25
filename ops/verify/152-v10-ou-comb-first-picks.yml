@@ -14,10 +14,13 @@ checks:
   - name: every_pick_inside_the_rule
     mode: invariant
     # EV >= 3%, odds 1.30-3.00, ou_comb_v1 — any row outside it is a rule leak.
+    # EV = calibrated_prob x odds - 1. NOT edge_percent: store_bet keeps that column in probability
+    # points (cal - 1/odds) for every bot, so an EV-rule pick at EV 5.4% reads 0.022 there (2026-09-25).
     sql: |
       SELECT count(*) FROM simulated_bets s JOIN bots b ON b.id = s.bot_id
        WHERE b.name = 'bot_v10_ou_comb_v1'
-         AND (s.model_version IS DISTINCT FROM 'ou_comb_v1' OR s.edge_percent < 0.03
+         AND (s.model_version IS DISTINCT FROM 'ou_comb_v1'
+              OR s.calibrated_prob * s.odds_at_pick - 1 < 0.03 - 1e-9
               OR s.odds_at_pick NOT BETWEEN 1.30 AND 3.00)
     expect: "== 0"
     run_after: {job: betting_refresh, since: "2026-09-25T15:30:00Z"}
