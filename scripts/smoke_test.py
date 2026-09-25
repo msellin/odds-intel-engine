@@ -56910,6 +56910,9 @@ def test_v10_newplus_twin():
     web = _engine_path("../odds-intel-web/src/lib/bot-aggregates.ts")
     if web.exists():
         assert "b.showOnPerformance === true" in web.read_text(encoding="utf-8")
+    # #155 (owner 2026-09-25): the twin and High-odds match result now SEND their picks to /picks.
+    m432 = _engine_path("supabase/migrations/432_send_testing_model_picks.sql").read_text(encoding="utf-8")
+    assert "SET show_on_picks = true" in m432 and "'bot_v10_1x2_newplus_v1'" in m432 and "'bot_high_roi_global_v2'" in m432
     # High-odds twin: created and retired 2026-09-25 (migration 429) — must not come back by accident.
     assert "bot_high_roi_global_v2_newplus_v1" not in BOTS_CONFIG
     assert "is_active = false" in _engine_path("supabase/migrations/429_retire_high_odds_twin.sql").read_text(encoding="utf-8")
