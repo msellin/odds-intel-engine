@@ -2486,51 +2486,6 @@ def bulk_store_shadow_bets(rows: list[dict], shadow_run_id: str, shadow_cohort: 
     return inserted if inserted >= 0 else len(tuples)
 
 
-def store_prediction_snapshot(
-    bet_id: str, stage: str, model_probability: float,
-    implied_probability: float = None, edge_percent: float = None,
-    odds_at_snapshot: float = None, metadata: dict = None,
-) -> str | None:
-    """
-    Store a prediction snapshot for audit trail.
-    Tracks model probability at each info stage: stats_only, post_ai, pre_kickoff, closing.
-    Returns snapshot UUID, or None if this stage already exists for this bet.
-    """
-    row = {
-        "bet_id": bet_id,
-        "stage": stage,
-        "model_probability": model_probability,
-        "captured_at": datetime.now(timezone.utc).isoformat(),
-    }
-    if implied_probability is not None:
-        row["implied_probability"] = implied_probability
-    if edge_percent is not None:
-        row["edge_percent"] = edge_percent
-    if odds_at_snapshot is not None:
-        row["odds_at_snapshot"] = odds_at_snapshot
-    if metadata:
-        row["metadata"] = Json(metadata)
-
-    columns = list(row.keys())
-    col_str = ", ".join(columns)
-    placeholders = ", ".join(["%s"] * len(columns))
-    values = tuple(row[c] for c in columns)
-
-    try:
-        with get_conn() as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(
-                    f"INSERT INTO prediction_snapshots ({col_str}) VALUES ({placeholders}) RETURNING id",
-                    values,
-                )
-                conn.commit()
-                return cur.fetchone()["id"]
-    except Exception as e:
-        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
-            return None  # stage already recorded
-        raise
-
-
 def store_match_stats(match_id: str, stats: dict):
     """
     Store final match stats (xG, shots, possession, corners, cards).
@@ -5849,29 +5804,6 @@ def _real_bets_has_shadow_col() -> bool:
     return _REAL_BETS_SHADOW_COL
 
 
-def upsert_inplay_bot_stats(strategy_stats: dict[str, dict[str, int]]) -> None:
-    """Upsert per-strategy tried/fired counts for today's UTC date.
-
-    Called on every inplay_bot heartbeat. Uses GREATEST so counts never decrease
-    across multiple writes from the same session (safe for retry).
-    `strategy_stats` is the module-level _strategy_stats dict: {name: {tried, fired}}.
-    """
-    if not strategy_stats:
-        return
-    import datetime
-    today = datetime.date.today().isoformat()
-    for name, d in strategy_stats.items():
-        execute_write(
-            """INSERT INTO inplay_bot_stats (stat_date, strategy, tried, fired, updated_at)
-               VALUES (%s, %s, %s, %s, NOW())
-               ON CONFLICT (stat_date, strategy) DO UPDATE SET
-                 tried      = GREATEST(inplay_bot_stats.tried, EXCLUDED.tried),
-                 fired      = GREATEST(inplay_bot_stats.fired, EXCLUDED.fired),
-                 updated_at = NOW()""",
-            [today, name, int(d.get("tried", 0)), int(d.get("fired", 0))],
-        )
-
-
 # ============================================================
 # OPS SNAPSHOT — Operational Health Dashboard
 # ============================================================
@@ -6609,7 +6541,7 @@ if __name__ == "__main__":
 
     for table in ["bots", "matches", "simulated_bets", "predictions", "odds_snapshots",
                   "leagues", "teams", "live_match_snapshots", "match_events",
-                  "prediction_snapshots", "match_stats", "model_evaluations",
+                  "match_stats", "model_evaluations",
                   "team_elo_daily", "team_form_cache"]:
         try:
             result = eq(f"SELECT COUNT(*) AS cnt FROM {table}")

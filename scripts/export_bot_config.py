@@ -84,18 +84,6 @@ def src(rel: str, pattern: str) -> str:
     return rel
 
 
-def _src_value(rel: str, pattern: str) -> tuple[float | None, str]:
-    """(value, 'rel:line') for a function-local numeric constant `NAME = 1.23` that
-    cannot be imported. Logged when missing, like src()."""
-    rx = re.compile(pattern + r"\s*=\s*([0-9.]+)")
-    for i, line in enumerate(_lines(rel), 1):
-        m = rx.search(line)
-        if m:
-            return float(m.group(1)), f"{rel}:{i}"
-    log.warning("export_bot_config: constant %r not found in %s", pattern, rel)
-    return None, rel
-
-
 def gate(name: str, value, source: str) -> dict:
     if isinstance(value, (tuple, set, frozenset)):
         value = sorted(value) if isinstance(value, (set, frozenset)) else list(value)
@@ -220,79 +208,6 @@ def _pipeline_rows(db: dict) -> dict[str, dict]:
             published=telegram,   # [[#155]] /picks and Telegram are the same status decision
             telegram=telegram,
         )
-    return out
-
-
-def _pipeline_shadow_pass_rows() -> dict[str, dict]:
-    """(a') the pipeline's own shadow passes (daily_pipeline_v2 _run_*_shadow_pass /
-    _run_coolbet_value_pass). Every bot here is RETIRED — the generation was stopped or the
-    pass skips retired bots — but the config is still in code, so it is exported, not
-    'unknown'."""
-    from workers.jobs import daily_pipeline_v2 as p
-    acc = sorted(p.ACCESSIBLE_BOOKMAKERS)
-    acc_src = f"ACCESSIBLE_BOOKMAKERS ({src(F_PIPE, r'^ACCESSIBLE_BOOKMAKERS')})"
-    ls_min, ls_src = p._LINESHOP_TRUE_EDGE_MIN, src(F_PIPE, r"^_LINESHOP_TRUE_EDGE_MIN")
-    tiers_g = gate("league_tiers", p._LINESHOP_TIERS, src(F_PIPE, r"^_LINESHOP_TIERS"))
-    common = dict(ledger="shadow_bets", cadence="pipeline shadow cohorts",
-                  books=acc, books_source=acc_src)
-    out: dict[str, dict] = {}
-    for cfg in p._SWEEP_SHADOW_CONFIGS:
-        line = src(F_PIPE, rf'"name":\s*"{re.escape(cfg["name"])}"')
-        out[cfg["name"]] = _row(
-            cfg["name"], "model_shadow", **common,
-            description="Config-sweep shadow bot (CONFIG-SWEEP-2026-08-19): model edge on one (market, selection, tier, odds band).",
-            writer_job="daily_pipeline_v2._run_sweep_shadow_pass", markets=[cfg["market"]],
-            prob_source="ensemble model probability", anchor="model",
-            edge_floor=f"{cfg['edge_min']:g}", edge_floor_source=line,
-            odds_min=cfg["odds_min"], odds_max=cfg["odds_max"],
-            gates=[gate(k, cfg[k], line) for k in
-                   ("selection", "tier_filter", "edge_min", "odds_min", "odds_max", "min_prob", "require_pinnacle")])
-    for cfg in p._PIN_OU_SHADOW_CONFIGS:
-        line = src(F_PIPE, rf'"name":\s*"{re.escape(cfg["name"])}"')
-        out[cfg["name"]] = _row(
-            cfg["name"], "sharp_generator", **common,
-            description="Pinnacle O/U line-shop shadow bot (retired, migration 313 — line-shop loses OOS).",
-            writer_job="daily_pipeline_v2._run_pin_ou_shadow_pass (generation stopped)", markets=[cfg["market"]],
-            prob_source="de-vigged Pinnacle", anchor="sharp",
-            edge_floor=f"{ls_min:g}", edge_floor_source=ls_src,
-            gates=[gate("edge_floor", ls_min, ls_src), tiers_g])
-    for cfg in p._PIN_1X2_SHADOW_CONFIGS:
-        line = src(F_PIPE, rf'"name":\s*"{re.escape(cfg["name"])}"')
-        out[cfg["name"]] = _row(
-            cfg["name"], "sharp_generator", **common,
-            description="Pinnacle 1x2 line-shop shadow bot (retired, migration 313 — line-shop loses OOS).",
-            writer_job="daily_pipeline_v2._run_pin_1x2_shadow_pass (generation stopped)", markets=["1x2"],
-            prob_source="de-vigged Pinnacle", anchor="sharp",
-            edge_floor=f"{cfg['edge_min']:g}", edge_floor_source=ls_src,
-            gates=[gate("edge_floor", cfg["edge_min"], ls_src), gate("selection", cfg["selection"], line), tiers_g])
-    # no-pin: the pass's gates are function-local constants, read from the source.
-    thr, thr_src = _src_value(F_PIPE, r"^\s+_EDGE_THRESHOLD")
-    omin, omin_src = _src_value(F_PIPE, r"^\s+_ODDS_MIN")
-    omax, omax_src = _src_value(F_PIPE, r"^\s+_ODDS_MAX")
-    for name, sel in (("bot_no_pin_shadow_v1", None), ("bot_no_pin_home_v1", "home")):
-        g = [gate("edge_floor", thr, thr_src), gate("odds_min", omin, omin_src), gate("odds_max", omax, omax_src),
-             gate("requires_no_pinnacle_price", True, src(F_PIPE, r"^def _run_no_pin_shadow_pass"))]
-        if sel:
-            g.append(gate("selection", sel, src(F_PIPE, r"home_bot_id = _active_bots")))
-        out[name] = _row(
-            name, "model_shadow", **common,
-            description="No-Pinnacle shadow bot: model 1x2 picks on fixtures Pinnacle does not price (skips itself when retired).",
-            writer_job="daily_pipeline_v2._run_no_pin_shadow_pass", markets=["1x2"],
-            prob_source="ensemble model probability", anchor="model",
-            edge_floor=f"{thr:g}" if thr is not None else None, edge_floor_source=thr_src,
-            odds_min=omin, odds_max=omax, gates=g)
-    cv = p._COOLBET_VALUE_BOT
-    out[cv] = _row(
-        cv, "sharp_generator", ledger="shadow_bets", cadence="pipeline shadow cohorts",
-        description="Coolbet line-shop bot vs de-vigged Pinnacle (retired 2026-09-08, generation stopped).",
-        writer_job="daily_pipeline_v2._run_coolbet_value_pass (generation stopped)",
-        markets=list(p._COOLBET_MARKETS), prob_source="de-vigged Pinnacle", anchor="sharp",
-        edge_floor=f"{ls_min:g}", edge_floor_source=ls_src,
-        odds_min=p._COOLBET_ODDS_MIN, odds_max=p._COOLBET_ODDS_MAX,
-        gates=[gate("edge_floor", ls_min, ls_src),
-               gate("odds_range", [p._COOLBET_ODDS_MIN, p._COOLBET_ODDS_MAX], src(F_PIPE, r"^_COOLBET_ODDS_MIN")),
-               tiers_g],
-        books=["Coolbet"], books_source=src(F_PIPE, r"^_COOLBET_VALUE_BOT"))
     return out
 
 
@@ -623,6 +538,24 @@ _LINEAGE = {
     "bot_coolbet_trigger_ou_v1": ("model_shadow", "model-anchored per-book trigger, removed from BOOK_MARKET_BOTS (OWN Phase 5 cull)"),
     "bot_unibet_trigger_1x2_v1": ("model_shadow", "model-anchored per-book trigger, removed from BOOK_MARKET_BOTS (OWN Phase 5 cull)"),
     "bot_unibet_trigger_ou_v1": ("model_shadow", "model-anchored per-book trigger, removed from BOOK_MARKET_BOTS (OWN Phase 5 cull)"),
+    # #162 W7.2 (2026-09-26): the pipeline's own shadow passes (daily_pipeline_v2
+    # _run_no_pin / _run_sweep / _run_pin_ou / _run_pin_1x2 _shadow_pass and
+    # _run_coolbet_value_pass) were deleted — every bot they served was retired, so
+    # each pass was a no-op. Their configs left the code with them; history is in git.
+    "bot_sweep_1x2_home_v1": ("model_shadow", "config-sweep shadow bot (CONFIG-SWEEP-2026-08-19), shadow_bets; its pass was deleted in #162 W7.2"),
+    "bot_sweep_1x2_draw_v1": ("model_shadow", "config-sweep shadow bot (CONFIG-SWEEP-2026-08-19), shadow_bets; its pass was deleted in #162 W7.2"),
+    "bot_sweep_btts_yes_v1": ("model_shadow", "config-sweep shadow bot (BTTS-RETIRED-2026-09-03), shadow_bets; its pass was deleted in #162 W7.2"),
+    "bot_no_pin_shadow_v1": ("model_shadow", "no-Pinnacle model 1x2 shadow bot, shadow_bets; its pass was deleted in #162 W7.2"),
+    "bot_no_pin_home_v1": ("model_shadow", "no-Pinnacle model 1x2 home-only shadow bot, shadow_bets; its pass was deleted in #162 W7.2"),
+    "bot_sweep_ou25_v1": ("sharp_generator", "Pinnacle O/U 2.5 line-shop shadow bot (retired migration 313, line-shop loses OOS); its pass was deleted in #162 W7.2"),
+    "bot_sweep_ou35_v1": ("sharp_generator", "Pinnacle O/U 3.5 line-shop shadow bot (retired migration 313, line-shop loses OOS); its pass was deleted in #162 W7.2"),
+    "bot_pin_1x2_home_v1": ("sharp_generator", "Pinnacle 1x2 home line-shop shadow bot (retired migration 313, line-shop loses OOS); its pass was deleted in #162 W7.2"),
+    "bot_pin_1x2_draw_tier4_v1": ("sharp_generator", "Pinnacle 1x2 draw tier-4 line-shop shadow bot (retired migration 281, vig-inclusive edge); its pass was deleted in #162 W7.2"),
+    "bot_coolbet_value_v1": ("sharp_generator", "Coolbet line-shop bot vs de-vigged Pinnacle (retired 2026-09-08); its pass was deleted in #162 W7.2"),
+    # #162 W7.2: the model-anchored pick_generator triggers (prob_source='predictions'),
+    # retired 2026-09-13 / 09-14 (BOT-RETIREMENT-ON-CLV) and deleted from TRIGGER_CONFIGS.
+    "bot_trigger_1x2_model_v1": ("model_shadow", "model-anchored 1x2 trigger (retired 2026-09-13), deleted from bot_configs.TRIGGER_CONFIGS in #162 W7.2"),
+    "bot_trigger_ou_model_v1": ("model_shadow", "model-anchored O/U 2.5 trigger (retired 2026-09-14), deleted from bot_configs.TRIGGER_CONFIGS in #162 W7.2"),
 }
 
 
@@ -639,8 +572,7 @@ def build_rows(db_bots: list[dict] | None = None) -> list[dict]:
     resolved: dict[str, dict] = {}
     # later resolvers never overwrite earlier ones; order = most specific first
     for part in (_forward_test_rows(db), _trigger_rows(), _generator_rows(),
-                 _paper_module_rows(), _inplay_rows(), _pipeline_rows(db),
-                 _pipeline_shadow_pass_rows()):
+                 _paper_module_rows(), _inplay_rows(), _pipeline_rows(db)):
         for k, v in part.items():
             resolved.setdefault(k, v)
 
@@ -654,7 +586,7 @@ def build_rows(db_bots: list[dict] | None = None) -> list[dict]:
         if name in resolved:
             r = resolved[name]
         elif name.startswith("inplay_"):
-            r = _row(name, "inplay", description="Retired in-play bot (InplayBot, simulated_bets with match minute); config no longer in code.")
+            r = _row(name, "inplay", description="Retired in-play bot (InplayBot, simulated_bets with match minute); config no longer in code (inplay_bot.py deleted in #162 W7.2).")
         elif name in _LINEAGE:
             fam, why = _LINEAGE[name]
             r = _row(name, fam, description=f"Retired; config no longer in code — {why}.")

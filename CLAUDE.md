@@ -348,7 +348,7 @@ ESPN (free)                  -> Settlement results backup
                                          |
      ── STANDALONE SCHEDULED JOBS ──
                     Odds refresh   (24/7, every :00/:30 — NOT windowed) — AF bulk odds
-                    ⑥ LivePoller    (24/7 background thread, 45s live/120s idle) — live scores/odds/stats for settlement; in-play BETTING retired 2026-08-21 (/odds/live gated off, InplayBot not placing)
+                    ⑥ LivePoller    (24/7 background thread, 45s live/120s idle) — live scores/odds/stats for settlement; in-play BETTING retired 2026-08-21 (/odds/live gated off; InplayBot code deleted 2026-09-26, #162 W7.2)
                     ⑦ News Checker  (09:00/12:30/14:30/16:30/18:30 UTC) — Gemini AI analysis
                     ⑧ Settlement    (21:00/23:30/01:00 UTC) — settle bets, post-match stats, ELO, CLV
                     ⑨ Betting Refresh (hourly at :05/:35, 24/7) — re-evaluation with fresh odds

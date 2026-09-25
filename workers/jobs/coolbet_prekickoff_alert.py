@@ -244,7 +244,7 @@ def _format_urgent_signal(b: dict, *, daemon_reason: str) -> str:
     # calibration is fixed, and it breaks silently.
     #
     # Note the SHADOW passes store a genuine return in the same column name
-    # (`edge = odds * prob - 1.0`, _run_sweep_shadow_pass et al), so the unit
+    # (`edge = odds * prob - 1.0`, the pipeline shadow passes deleted in #162 W7.2), so the unit
     # cannot be inferred from the column — only from which table the row came
     # from. This renderer reads simulated_bets.
         f"💰 €{stake:.2f}  ·  edge +{edge_pct:.1f}pp",

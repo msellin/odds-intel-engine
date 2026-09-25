@@ -562,13 +562,11 @@ class LivePoller:
         # `_probe_finishing_matches` + `settle_finished_matches` are how F/T is
         # detected and bets are settled. Removing the poller would break
         # settlement for the whole product.
-        if os.getenv("INPLAY_STRATEGIES_ENABLED", "false").lower() in ("true", "1", "yes"):
-            try:
-                from workers.jobs.inplay_bot import run_inplay_strategies
-                run_inplay_strategies()
-            except Exception as e:
-                console.print(f"[red]InplayBot error: {e}[/red]")
-                import traceback
-                traceback.print_exc()
+        #
+        # #162 W7.2 (2026-09-26): the env-gated hook (INPLAY_STRATEGIES_ENABLED,
+        # default off since 2026-09-03) and workers/jobs/inplay_bot.py itself are
+        # DELETED — every inplay_* bot is retired and nothing had written since
+        # 2026-08-21. The in-play slow-state rig is a separate service
+        # (workers/jobs/inplay_collector.py) and is untouched.
 
         return True  # Live matches were found this cycle — use fast sleep interval

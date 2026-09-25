@@ -523,6 +523,8 @@ Stopgap reasoning: Sunday cron (`fit_platt.py`) under `MODEL_VERSION=v20260524_m
 
 **INPLAY-CALIBRATED-PROB-WIRE (2026-06-06).** Discovered that ALL 898 historical in-play bets had `simulated_bets.calibrated_prob = NULL` — the in-play bet builder (`_build_inplay_bet_data` at `workers/jobs/inplay_bot.py`) never propagated `cal_model_prob` from `trigger.extra` to the dedicated column. Strategy E was computing the calibrated probability via `apply_platt()` but only storing it inside the `reasoning` JSON. Fix: 4-line propagation in `_build_inplay_bet_data`. Going forward, inplay_e bets persist `calibrated_prob` to the column for downstream analysis.
 
+*(In-play history below: InplayBot — `workers/jobs/inplay_bot.py` — and its calibration scripts were deleted 2026-09-26, #162 W7.2; in-play betting was retired 2026-08-21.)*
+
 **INPLAY-CALIBRATION-COMPLETE (2026-06-15).** Productized the original spec's "12 near-duplicate clone scripts" approach into a single parameterized `scripts/fit_platt_inplay.py --strategy NAME` plus a central `apply_platt` call in `_build_inplay_bet_data`. Every in-play strategy now writes `calibrated_prob` regardless of whether a Platt row exists for its key — `apply_platt` returns the raw prob unchanged for unknown keys, so the column equals raw `model_probability` until a fit lands. Canonical key shape is `{bot}_{market}_{selection}` (e.g. `inplay_p_v2_1x2_home`, `inplay_o_btts_yes`); both read (builder) and write (fitter) paths share `workers.jobs.inplay_bot.inplay_market_key()` so the naming can't drift. Strategy E keeps its pre-existing explicit `"inplay_e_under_25"` key via the `trigger["market_key"]` override path. Per-selection buckets follow the spec — `inplay_p_v2_1x2_home` and `_away` fit separately, each with its own ≥100 settled-bet gate (override via `--min-samples`). First dry-run on `inplay_p_v2` (n=80, below gate) surfaced real miscalibration: home bucket mean_pred 41.5% vs actual hit 25.6% (ECE 24% pre-fit), away bucket 44.6% vs 36.6% (ECE 21%) — bot is systematically over-confident, particularly on home picks. Fits will land automatically once samples cross the gate.
 
 **FIT-PLATT-INPLAY-EXCLUDE (2026-06-06).** With in-play bets now writing `calibrated_prob`, the next prematch Platt fit risked corruption (in-play O/U distribution differs from prematch; both share `market='o/u'`). Added `match_minute_at_pick IS NULL` filter to `scripts/fit_platt.py` OU + BTTS queries and to `scripts/threshold_check.py` CAL-PLATT counting queries. Both files now operate on prematch-only cohort and stay in lockstep (verified by FIT-PLATT-THRESHOLD-CONTRACT smoke).
@@ -1818,7 +1820,7 @@ because Coolbet is the venue real money is placed at.
 
 `COOLBET-OU-LINE-MISLABEL-GUARD-2026-08-22` does not catch this: that guard
 rejects a non-monotone OU ladder, and a single uniformly shifted line stays
-internally monotone. `_ou_line_is_consistent()` now rejects any soft quote that
+internally monotone. *(#162 W7.2, 2026-09-26: this guard lived only in the pin-OU line-shop shadow pass and was deleted with it — its bots were retired 2026-09-08.)* `_ou_line_is_consistent()` now rejects any soft quote that
 sits nearer a *different* Pinnacle line than the one it is labelled with. It is
 deliberately bookmaker-agnostic — it tests the price, not the source.
 

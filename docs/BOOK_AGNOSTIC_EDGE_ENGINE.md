@@ -264,6 +264,11 @@ odds — deliberately different from the model floors, see BETTING_GATE_DECISION
 Stage B routes by **(book, market, strategy)** so the model and sharp anchors emit
 into separate paper bots and never blend:
 
+> **CHANGED 2026-09-26 (#162 W7.2):** Stage A now emits the SHARP anchor only. The
+> `model_1x2` / `model_ou25` strategies (and the O/U calibrator) were deleted — every
+> model-anchored matcher bot was retired and removed from `BOOK_MARKET_BOTS`, so their
+> windows had no reader. The rows below are history.
+
 | strategy | bot | status |
 |---|---|---|
 | model_1x2  | `bot_coolbet_trigger_1x2_v1` | **RETIRED 2026-09-14** (mig 336) |

@@ -939,6 +939,9 @@ Two things make it worse than it first looks:
   Pinnacle price. On Dandenong it anchored to 2.81 (ceiling 3.79) and passed
   the stale 3.70; the live 2.73 caps at 3.69 and would have rejected it.
 
+*(#162 W7.2, 2026-09-26: the shadow passes named in this entry are deleted — every bot they
+served was retired. The rule and the pattern below still hold for any odds query.)*
+
 **The pattern to copy** (already used correctly by `_run_pin_1x2_shadow_pass`,
 `_run_pin_ou_shadow_pass` and the Coolbet pass):
 

@@ -32,7 +32,7 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from google import genai
-from workers.api_clients.supabase_client import store_prediction_snapshot, store_match_signal
+from workers.api_clients.supabase_client import store_match_signal
 from workers.api_clients.db import execute_query, execute_write
 
 console = Console()
@@ -383,56 +383,10 @@ def run_news_checker(dry_run: bool = False):
                 except Exception:
                     pass  # Duplicate or non-critical
 
-            # Save Stage 2 snapshot: post-AI probability with full structured data
-            try:
-                odds = bet["odds_at_pick"]
-                store_prediction_snapshot(
-                    bet_id=bet["id"],
-                    stage="post_ai",
-                    model_probability=updated_prob,
-                    implied_probability=1 / odds if odds > 0 else None,
-                    edge_percent=updated_prob - (1 / odds) if odds > 0 else None,
-                    odds_at_snapshot=odds,
-                    metadata={
-                        "ai_flag": flag,
-                        "ai_reason": reason[:200],
-                        "confidence_adjustment": adj,
-                        "home_net_impact": home_impact,
-                        "away_net_impact": away_impact,
-                        "news_impact_score": round(news_impact, 4),
-                        "players_out_count": len(players_out),
-                        "players_doubtful_count": len(players_doubtful),
-                        "players_returning_count": len(players_returning),
-                        "lineups_confirmed": match_context.get("lineups", {}).get("home_confirmed", False),
-                    },
-                )
-            except Exception:
-                pass  # non-critical
-
-            # Save Stage 3 snapshot: pre_kickoff for matches kicking off within 3 hours
-            kickoff_str = bet.get("match_date", "")
-            if kickoff_str:
-                try:
-                    kickoff_dt = datetime.fromisoformat(kickoff_str.replace("Z", "+00:00"))
-                    if kickoff_dt.tzinfo is None:
-                        kickoff_dt = kickoff_dt.replace(tzinfo=timezone.utc)
-                    hours_to_kickoff = (kickoff_dt - datetime.now(timezone.utc)).total_seconds() / 3600
-                    if 0 <= hours_to_kickoff <= 3:
-                        store_prediction_snapshot(
-                            bet_id=bet["id"],
-                            stage="pre_kickoff",
-                            model_probability=updated_prob,
-                            implied_probability=1 / odds if odds > 0 else None,
-                            edge_percent=updated_prob - (1 / odds) if odds > 0 else None,
-                            odds_at_snapshot=odds,
-                            metadata={
-                                "hours_to_kickoff": round(hours_to_kickoff, 2),
-                                "ai_flag": flag,
-                                "news_impact_score": round(news_impact, 4),
-                            },
-                        )
-                except Exception:
-                    pass  # non-critical
+            # #162 W7.2 (2026-09-26): the post_ai / pre_kickoff prediction_snapshots
+            # writes were deleted — that table does not exist in the VPS DB
+            # (to_regclass = NULL) and nothing reads it, so every call failed inside
+            # a try/pass.
 
     # Summary table
     console.print()

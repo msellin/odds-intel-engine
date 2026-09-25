@@ -2762,10 +2762,10 @@ def _publish_picks_forward_test_wrapper():
 
 def job_pick_triggers():
     """BOOK-AGNOSTIC-EDGE-ENGINE Stage A (2026-09-09): recompute the per-fixture
-    trigger windows (calibrated fair value + [min_odds,max_odds]) for upcoming
-    1x2 + O/U 2.5 fixtures into pick_triggers. Book-agnostic; Stage B matches each
-    book's swept odds against these. Cheap (isotonic fit + upserts), no HTTP, no
-    money. docs/BOOK_AGNOSTIC_EDGE_ENGINE.md."""
+    trigger windows (fair value + [min_odds,max_odds]) for upcoming 1x2 + O/U 2.5
+    fixtures into pick_triggers. Book-agnostic; Stage B matches each book's swept
+    odds against these. SHARP anchor only since #162 W7.2 (the model anchor had no
+    reader). Cheap (upserts), no HTTP, no money. docs/BOOK_AGNOSTIC_EDGE_ENGINE.md."""
     # PICK-TRIGGERS-UNWRAPPED (fixed 2026-09-11): the real work used to run
     # OUTSIDE _run_job, with `_run_job("pick_triggers", lambda: None)` called
     # after it. That broke observability in both directions — if

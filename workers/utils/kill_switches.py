@@ -5,7 +5,6 @@ Usage: set the env var to "1" or "true" in /opt/odds-intel-engine/.env → subsy
 Unset or "0" = enabled (default). Changes take effect within one cycle (30s–5min).
 
 Available flags:
-  DISABLE_INPLAY_STRATEGIES  — InplayBot stops placing paper bets (LivePoller keeps running)
   DISABLE_ENRICHMENT         — Morning enrichment skipped (standings, H2H, team stats, injuries)
   DISABLE_NEWS_CHECKER       — Gemini news analysis skipped (saves API cost during incidents)
   DISABLE_PAPER_BETTING      — Betting pipeline skipped (no new paper bets placed)
@@ -17,7 +16,7 @@ from rich.console import Console
 console = Console()
 
 _FLAGS = {
-    "inplay":        "DISABLE_INPLAY_STRATEGIES",
+    # "inplay" (DISABLE_INPLAY_STRATEGIES) removed with InplayBot (#162 W7.2).
     "enrichment":    "DISABLE_ENRICHMENT",
     "news_checker":  "DISABLE_NEWS_CHECKER",
     "paper_betting": "DISABLE_PAPER_BETTING",

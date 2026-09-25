@@ -118,7 +118,7 @@ Sun 06:30 ㉟ Bot review   job_weekly_bot_review()         BOT-MATURITY-REVIEW-W
 [REMOVED 2026-08-26] Sun 03:00 ㊶ CS2 map stats job_cs2_compute_map_stats()  CS2-REMOVAL — CS2 surface deleted; job no longer registered.
 [REMOVED 2026-08-26] */2 :05  ⑳ CS2 HLTV ups  job_cs2_hltv_upcoming()  CS2-REMOVAL — HLTV scrape deleted; job no longer registered.
 24/7   ⑥ LivePoller      live_poller.py            Still runs (background thread, LIVE_POLLER_IN_SCHEDULER default ON): 45s live scores/odds/stats, 120s idle. Feeds live scores + settlement, NOT in-play betting.
-[RETIRED 2026-08-21] ⑫ InplayBot  inplay_bot.py  In-play betting retired: /odds/live gated off, INPLAY_* poll gates default OFF, no in-play placement. Pre-match only.
+[RETIRED 2026-08-21, CODE DELETED 2026-09-26] ⑫ InplayBot  ~~inplay_bot.py~~  In-play betting retired: /odds/live gated off, INPLAY_* poll gates default OFF, no in-play placement. Pre-match only. #162 W7.2 deleted the module, its env-gated live_poller hook (INPLAY_STRATEGIES_ENABLED), the DISABLE_INPLAY_STRATEGIES kill switch, upsert_inplay_bot_stats and the scripts that only served it (replay_inplay, fit_platt_inplay[_e], inplay_bot_report). The VPS in-play slow-state rig (oddsintel-inplay-collector.service, inplay_collector.py) is separate and untouched.
 */30   ⑯ Dash Cache Ref  write_dashboard_cache()   Rebuilds dashboard_cache at :15 and :45 — keeps /performance fresh
 *:07/:37 ⑯c Rule-version sync  job_rule_version_sync()  Every 30 min + at scheduler start (#162 owner decision (b), 2026-09-25). Writes each registry bot's `rule_version` to `bots.rule_version`; migration 453's trigger stamps it on every new simulated_bets / shadow_bets row, so a live bot's rule can change in place and its ledger splits by rule. Idempotent, never raises.
 02:50  ⑯b Dash Cache Prune  job_dashboard_cache_prune()  Daily (#162 W8.9, 2026-09-26). Deletes dashboard_cache rows older than 7 days in 5,000-row batches, never the newest row (`settlement.prune_dashboard_cache`). Why: the refresh appends a full snapshot every 30 min and nothing pruned it — 11,057 rows / 133 MB (113 MB TOAST) by 2026-09-26 — while every reader (web `getDashboardCache`, telegram, health_alerts, `bot_aggregates_reconcile.py`) reads only the latest row; the 30d/90d curves live inside each row. Steady state ~700 rows. Freed space is reused by Postgres, not returned to disk (no VACUUM FULL).
@@ -305,6 +305,16 @@ BET-TIMING-MONITOR — 32 runs/day at :05/:35 past each hour 07–22 UTC (shadow
 - Cohort label = 'HHMM' UTC (e.g. '0705', '1435') — enables per-hour ROI analysis
 
 Shadow bets are settled nightly. Analysis: `scripts/shadow_timing_report.py`.
+
+**Pipeline shadow passes — DELETED 2026-09-26 (#162 W7.2).** `run_morning` used to call
+`_run_no_pin_shadow_pass` + `_run_sweep_shadow_pass` on the morning cohort and on every
+shadow cohort (~49×/day), and carried three never-called passes (`_run_pin_ou_shadow_pass`,
+`_run_pin_1x2_shadow_pass`, `_run_coolbet_value_pass`). Every bot they wrote for was retired
+(2026-08-21..09-08), so each call returned 0. ~1,340 lines removed; `_get_bot_id_by_name`
+stays (imported by `ou_sharp_outlier`). The retired bots' `bot_config` rows now come from
+`export_bot_config._LINEAGE`. The stats-only `store_prediction_snapshot` write (and News
+Checker's post_ai / pre_kickoff ones) went too: the `prediction_snapshots` table does not
+exist in the VPS DB and nothing reads it.
 
 **Acca leg shadows (ACCA-LEG-SHADOW, 2026-05-25):** `run_acca_pass` also writes
 every picked leg (across all 5 acca variants, deduped) as a `shadow_bets` row
@@ -522,6 +532,7 @@ The `simulated_bets` table is the **public track-record chain** — the basis fo
 - Gemini 2.5 Flash AI analysis of pending bets
 - Qualitative signals: manager changes, fatigue, weather, tactical shifts
 - Stores `news_impact_score`, `lineup_confidence` signals
+- (No `prediction_snapshots` rows since #162 W7.2 — that table was never migrated to the VPS; the writes failed silently and were deleted.)
 
 ### ⑧ Settlement (`settlement.py`)
 

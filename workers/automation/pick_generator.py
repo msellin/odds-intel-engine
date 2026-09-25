@@ -527,17 +527,13 @@ def _candidates_from_predictions(cfg, loosest):
     from workers.jobs.pick_triggers import _fit_calibrator
 
     want = {m.lower() for m in cfg.markets}
-    ou_lines = [m for m in ("over_under_25", "over_under_35") if m in want]
     if "1x2" not in want:
-        if ou_lines:
-            return _predictions_ou(cfg, loosest, ou_lines)
-        # A bare legacy 'o/u' does not say WHICH line, and the calibrator is
-        # per-line — so refuse rather than pick one. Every other market
-        # (btts, double_chance, asian_handicap) has no calibrator at all.
+        # #162 W7.2 (2026-09-26): 1x2 only. The O/U half (`_predictions_ou`, and
+        # the 'ou25'/'ou35' calibrator it used) was deleted with its only bot,
+        # bot_trigger_ou_model_v1 (retired 2026-09-14). Every other market has
+        # no calibrator, so no candidates rather than a guessed calibration.
         log.info("pick_generator[%s]: prob_source='predictions' supports 1x2 "
-                 "and the canonical over_under_25 / over_under_35 lines; %s "
-                 "names none of them, so no candidates rather than a guessed "
-                 "calibration", cfg.bot_name, cfg.markets)
+                 "only; %s is not 1x2, so no candidates", cfg.bot_name, cfg.markets)
         return []
     cal = _fit_calibrator("1x2")
     if cal is None:
@@ -587,84 +583,6 @@ def _candidates_from_predictions(cfg, loosest):
                     "selection": sel, "calibrated_prob": cp,
                     "model_probability": r["praw"],
                     "model_version": _stamp_cal(r.get("mv"))})
-    return out
-
-
-
-
-def _predictions_ou(cfg, loosest, lines: list[str]):
-    """The O/U half of the wide candidate source (PREDICTIONS-SOURCE-OU, 2026-09-11).
-
-    Until today `prob_source='predictions'` covered 1x2 only and said so rather
-    than guessing — which was right, but it left `bot_trigger_ou_model_v1`
-    REGISTERED AND INERT, a bot that exists, appears on every page, and writes
-    nothing. A silent zero is the failure mode this repo keeps paying for, so
-    the gap gets closed rather than documented again.
-
-    WHY A SINGLE FIT IS SOUND HERE AND WAS NOT FOR 1x2. Over and under are
-    complements of ONE event on a .5 line, which can never push, so
-    P(under) = 1 - P(over) is exact rather than a second estimate. 1x2 is three
-    DIFFERENT events whose reliability diverges by ~20pp, which is precisely why
-    pooling them under-estimated HOME by 10-15pp and made those bots fire only
-    on longshots (TRIGGER-CALIBRATOR-POOLED-BIAS).
-
-    The calibrator is `pick_triggers._fit_calibrator('ou25'|'ou35')` — reused,
-    not re-fitted, so there is one calibrator per line and not a third copy. A
-    line with no calibrator yields nothing for that line and says why; it does
-    not fall back to the other line's curve.
-    """
-    from workers.api_clients.db import execute_query
-    from workers.jobs.pick_triggers import _fit_calibrator, _stamp_cal
-
-    # canonical O/U market -> (calibrator kind, the predictions row to read)
-    LINES = {"over_under_25": ("ou25", "over25"),
-             "over_under_35": ("ou35", "over35")}
-    wanted_sels = {s.lower() for s in (cfg.selections or ("over", "under"))}
-
-    out = []
-    for market in lines:
-        kind, pred_market = LINES[market]
-        cal = _fit_calibrator(kind)
-        if cal is None:
-            log.warning("pick_generator[%s]: no %s calibrator — skipping %s "
-                        "rather than using raw probabilities or the other "
-                        "line's curve", cfg.bot_name, kind, market)
-            continue
-        ahead_sql = ""
-        params: list = [pred_market]
-        if cfg.lookahead_hours:
-            ahead_sql = "AND m.date < NOW() + (%s * INTERVAL '1 hour')"
-            params.append(cfg.lookahead_hours)
-        rows = execute_query(
-            f"""
-            SELECT DISTINCT ON (p.match_id)
-                   p.match_id::text AS match_id,
-                   p.model_probability::float AS praw, p.model_version AS mv
-              FROM predictions p JOIN matches m ON m.id = p.match_id
-             WHERE p.market = %s AND m.date > NOW() AND m.status = 'scheduled'
-               AND p.source = 'ensemble'   -- #162 W2.2: the production model only
-               AND p.model_probability IS NOT NULL
-               {ahead_sql}
-             ORDER BY p.match_id, p.model_version DESC
-            """,
-            params,
-        )
-        for r in rows:
-            p_over = cal(r["praw"])
-            if p_over is None:
-                continue
-            # Both sides from ONE fit: exhaustive outcomes, no second estimate.
-            for sel, cp, praw in (("over", p_over, r["praw"]),
-                                  ("under", 1.0 - p_over, 1.0 - r["praw"])):
-                if sel not in wanted_sels or cp <= loosest:
-                    continue      # no price can clear when cal_prob <= the floor
-                out.append({"match_id": r["match_id"], "market": market,
-                            "selection": sel, "calibrated_prob": cp,
-                            "model_probability": praw,
-                            # Same stamp as the 1x2 path: an unstamped pick is
-                            # classified PRE-fix by trigger_calibrator_check and
-                            # silently corrupts the baseline that gates the epic.
-                            "model_version": _stamp_cal(r.get("mv"))})
     return out
 
 

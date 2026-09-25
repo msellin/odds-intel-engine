@@ -2,26 +2,24 @@
 BOOK-AGNOSTIC-EDGE-ENGINE Stage A — compute per-fixture trigger windows.
 See docs/BOOK_AGNOSTIC_EDGE_ENGINE.md.
 
-For every UPCOMING fixture the model predicts, write a book-INDEPENDENT trigger
-window per (market, selection) into `pick_triggers`:
+For every UPCOMING fixture with a full Pinnacle line, write a book-INDEPENDENT
+trigger window per (market, selection) into `pick_triggers`:
 
-    min_odds = max( 1/(cal_prob − edge_floor), odds_floor )
+    min_odds = max( 1/(P_sharp − edge_floor), odds_floor )
     max_odds = min_odds × OUTLIER_MULT
 
-`cal_prob` is the CALIBRATED model probability (isotonic on settled history —
-the raw predictions are over-confident). The edge/odds floors are sourced from
-the placer (`coolbet_placer._min_edge_for` / `_min_odds_for`) so the trigger and
-the placement gate can never drift apart. Stage B (per book) matches each book's
-swept odds against this window.
+`P_sharp` is the Shin-de-vigged Pinnacle price (stored in the `cal_prob` column).
+Stage B (per book) matches each book's swept odds against this window.
 
-Markets: 1x2 + O/U 2.5 (the only markets we bet today — this also keeps the sweep
-scope tight). Idempotent upsert on (match_id, market, selection, strategy).
+Markets: 1x2 + O/U 2.5. Idempotent upsert on (match_id, market, selection, strategy).
 
-Two ANCHORS, written side by side (the `strategy` column distinguishes them, and
-Stage B routes each to its own paper bot):
-  * model_* — fair value = our calibrated model probability (cal_prob).
-  * sharp_* — fair value = Shin-de-vigged Pinnacle price (P_sharp). Same window
-    math, same floors; only the reference number differs. See _emit_sharp_anchor.
+ONE anchor since #162 W7.2 (2026-09-26): `sharp_*` (see _emit_sharp_anchor). The
+MODEL anchor (`model_1x2` / `model_ou25`, fair value = our calibrated model
+probability) was deleted: its four per-book bots were removed from
+`pick_trigger_matcher.BOOK_MARKET_BOTS` in the OWN Phase 5 cull (2026-09-15, all
+retired), so every model window written after that was read by nobody.
+`_fit_calibrator('1x2')` stays — `pick_generator`'s prob_source='predictions' path
+(bot_unified_gate_1x2_paper_v1, active) still uses it.
 
 Never places, never touches money. Run:  python3 -m workers.jobs.pick_triggers
 """
@@ -36,21 +34,11 @@ log = logging.getLogger(__name__)
 # PICK-GENERATOR forbids that — it must derive windows, not read them).
 from workers.automation.anchor_sanity import OUTLIER_MULT  # noqa: F401
 
-# MODEL anchor: (strategy, placer market, placer floor-key, {selection: prediction market})
-# Fair value = OUR calibrated model probability.
-_STRATEGIES = [
-    ("model_1x2", "1x2", "1x2",
-     {"home": "1x2_home", "draw": "1x2_draw", "away": "1x2_away"}),
-    ("model_ou25", "over_under_25", "o/u",
-     {"over": "over25", "under": "under25"}),
-]
-
 # SHARP anchor: (strategy, market = pick_triggers.market AND odds-snapshot market,
 #                placer floor-key, selections in de-vig order)
-# Fair value = Shin-de-vigged Pinnacle price (workers.model.devig.devig). Same
-# window math and SAME floors as the model anchor, so model-vs-sharp is a clean
-# same-gate comparison — only the anchor differs. Scope mirrors _STRATEGIES
-# (1x2 + O/U 2.5) so each sharp bot has a model-anchored twin.
+# Fair value = Shin-de-vigged Pinnacle price (workers.model.devig.devig). The
+# model-anchored twins this was once compared against were deleted in #162 W7.2
+# (retired bots, no reader).
 _SHARP_ANCHOR_BOOK = "Pinnacle"
 _SHARP_MODEL_VERSION = "pinnacle_shin_devig"  # sentinel: not a model bundle
 
@@ -174,11 +162,19 @@ def _fit_calibrator(kind: str):
     0.2784, the exact shared value. NB granularity itself was NOT the problem —
     per-selection fits have the same ~33 steps. The bias was.
 
-    Returns a callable. For '1x2' it takes (praw, selection) and dispatches to
-    the per-selection fit; for 'ou25' it takes (praw) as before. None if too
-    little history or sklearn is missing.
+    Returns a callable taking (praw, selection) that dispatches to the
+    per-selection fit. None if too little history or sklearn is missing.
+
+    #162 W7.2 (2026-09-26): 1x2 ONLY. Its one caller is pick_generator's
+    prob_source='predictions' path (bot_unified_gate_1x2_paper_v1). The O/U
+    ('ou25' / 'ou35') branch was deleted with its only consumers — the model_ou25
+    trigger strategy and bot_trigger_ou_model_v1 (retired 2026-09-14).
     """
     from workers.api_clients.db import execute_query
+    if kind != "1x2":
+        log.warning("pick_triggers: no calibrator for %r (1x2 only since #162 W7.2) — "
+                    "returning None rather than guessing a calibration", kind)
+        return None
     if kind == "1x2":
         rows = execute_query(
             """SELECT p.market AS mk,
@@ -210,51 +206,14 @@ def _fit_calibrator(kind: str):
             f = fits.get((selection or "").strip().lower())
             return float(f.predict([praw])[0]) if f is not None else None
         return _cal_1x2
-    # ou25 / ou35: over and under are COMPLEMENTS of one event, so a single fit
-    # is sound here — unlike 1x2, where home/draw/away are three DIFFERENT
-    # events whose reliability diverges by ~20pp (see above). The fit is on the
-    # OVER probability; the under side is 1 - that, which is exact because the
-    # two outcomes are exhaustive (a .5 line can never push).
-    #
-    # PREDICTIONS-SOURCE-OU (2026-09-11): 'ou35' added so the wide candidate
-    # source can cover the 3.5 line its bots declare. Same shape, different
-    # goal line and prediction market — generalised rather than copied, since a
-    # second near-identical calibrator is how the mirrors drifted.
-    _OU_KINDS = {"ou25": (2.5, "over25"), "ou35": (3.5, "over35")}
-    if kind not in _OU_KINDS:
-        log.warning("pick_triggers: unknown calibrator kind %r — returning None "
-                    "rather than guessing a calibration", kind)
-        return None
-    line, pred_market = _OU_KINDS[kind]
-    rows = execute_query(
-            """SELECT po.model_probability::float AS praw,
-                      ((m.score_home + m.score_away) > %s)::int AS y
-                 FROM matches m
-                 JOIN LATERAL (SELECT model_probability FROM predictions
-                               WHERE match_id=m.id AND market=%s AND source = 'ensemble'
-                               ORDER BY model_version DESC LIMIT 1) po ON true
-                WHERE m.status='finished' AND m.score_home IS NOT NULL""",
-            [line, pred_market],
-        )
-    xs = [r["praw"] for r in rows if r["praw"] is not None]
-    ys = [r["y"] for r in rows if r["praw"] is not None]
-    if len(xs) < 500:
-        return None
-    try:
-        from sklearn.isotonic import IsotonicRegression
-    except Exception as e:  # noqa: BLE001
-        log.warning("pick_triggers: sklearn unavailable (%s) — cannot calibrate %s", e, kind)
-        return None
-    iso = IsotonicRegression(out_of_bounds="clip").fit(xs, ys)
-    return lambda p: float(iso.predict([p])[0])
 
 
 def _emit_sharp_anchor(counters: dict) -> None:
     """Write SHARP-anchor trigger windows: fair value = Shin-de-vigged Pinnacle.
 
     For each upcoming fixture with a full Pinnacle line on the market, de-vig it
-    to P_sharp per selection and write a window with the SAME edge/odds floors as
-    the model anchor. `cal_prob` holds P_sharp so Stage B computes
+    to P_sharp per selection and write a window with the sharp edge/odds floors.
+    `cal_prob` holds P_sharp so Stage B computes
     edge = P_sharp − 1/book_odds unchanged. Never raises (best-effort sibling)."""
     from workers.api_clients.db import execute_query, execute_write
     from workers.automation.coolbet_placer import (
@@ -334,13 +293,10 @@ def _emit_sharp_anchor(counters: dict) -> None:
 
 
 def compute_triggers() -> dict:
-    """Write trigger windows for all upcoming predicted fixtures. Never raises."""
+    """Write sharp-anchor trigger windows for all upcoming fixtures. Never raises."""
     counters = {"strategies": 0, "written": 0, "skipped_no_edge": 0, "cleaned": 0}
     try:
-        from workers.api_clients.db import execute_query, execute_write
-        from workers.automation.coolbet_placer import (
-            _min_edge_for, _min_odds_for, min_edge_for_pick,
-        )
+        from workers.api_clients.db import execute_write
 
         # housekeeping: drop windows for fixtures already kicked off > 1 day ago
         try:
@@ -348,95 +304,10 @@ def compute_triggers() -> dict:
         except Exception:
             pass
 
-        cal_1x2 = _fit_calibrator("1x2")
-        cal_ou = _fit_calibrator("ou25")
+        # #162 W7.2: the MODEL-anchor loop (model_1x2 / model_ou25) that used to run
+        # here is deleted — no matcher bot reads those strategies any more.
 
-        for strategy, market, floor_key, sel_preds in _STRATEGIES:
-            odds_floor = float(_min_odds_for(floor_key))
-            counters["strategies"] += 1
-
-            # upcoming matches with predictions for this market's selections
-            pred_markets = tuple(sel_preds.values())
-            rows = execute_query(
-                """
-                SELECT DISTINCT ON (p.match_id, p.market)
-                       p.match_id::text AS mid, m.date AS kickoff,
-                       p.market AS pred_market, p.model_probability::float AS praw,
-                       p.model_version AS mv
-                  FROM predictions p JOIN matches m ON m.id = p.match_id
-                 WHERE p.market = ANY(%s) AND m.date > NOW() AND m.status = 'scheduled'
-                   AND p.source = 'ensemble'   -- #162 W2.2: the production model only
-                 ORDER BY p.match_id, p.market, p.model_version DESC
-                """,
-                [list(pred_markets)],
-            )
-            # invert {selection: pred_market} → {pred_market: selection}
-            sel_by_pred = {v: k for k, v in sel_preds.items()}
-            for r in rows:
-                sel = sel_by_pred.get(r["pred_market"])
-                if sel is None or r["praw"] is None:
-                    continue
-                # calibrate
-                if strategy == "model_1x2":
-                    # TRIGGER-CALIBRATOR-POOLED-BIAS (2026-09-11): the 1x2
-                    # calibrator is now PER SELECTION, so it needs to know which
-                    # one. Pooled, home was under-estimated ~10-15pp and the
-                    # windows only ever fired on longshots.
-                    cal = cal_1x2(r["praw"], sel) if cal_1x2 else None
-                else:  # over/under 2.5 — calibrate 'over', derive 'under' as 1-over
-                    if not cal_ou:
-                        cal = None
-                    else:
-                        cal_over = cal_ou(r["praw"] if sel == "over" else (1.0 - r["praw"]))
-                        cal = cal_over
-                if cal is None:
-                    continue
-                # TRIGGER-FLOOR-SELECTION-AWARE (2026-09-11). This used the
-                # market-only `_min_edge_for(floor_key)` — 13% for every 1x2
-                # selection — while the real-money bot bets home-underdogs at
-                # 10%. So the trigger demanded MORE edge than the thing it is
-                # meant to shadow, and never emitted the 10-13% band at all.
-                #
-                # The odds argument is `odds_floor`, and that is exact rather
-                # than an approximation: `_window` returns
-                # max(1/(cal - floor), odds_floor), so EVERY window this job
-                # emits already starts at or above the odds floor. For 1x2 that
-                # floor is 2.80, so a HOME window lies entirely inside
-                # home-underdog territory — which is precisely the condition
-                # `min_edge_for_pick` tests. Draws and aways are unaffected and
-                # keep the pooled 13%.
-                #
-                # Owner 2026-09-11: "keep trigger bots accumulating more picks at
-                # lower floor (apply same 10% floor and odds)". These are PAPER
-                # bots, so a wider net costs nothing and buys the sample we do
-                # not have — their CLV is negative today and the question of
-                # whether any slice works needs volume to answer.
-                edge_floor = float(min_edge_for_pick(market, sel, odds_floor))
-                win = _window(cal, edge_floor, odds_floor)
-                if win is None:
-                    counters["skipped_no_edge"] += 1
-                    continue
-                min_odds, max_odds = win
-                execute_write(
-                    """INSERT INTO pick_triggers
-                          (match_id, market, selection, strategy, cal_prob,
-                           edge_floor, odds_floor, min_odds, max_odds, model_version, kickoff_at)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                       ON CONFLICT (match_id, market, selection, strategy)
-                       DO UPDATE SET cal_prob=EXCLUDED.cal_prob,
-                                     edge_floor=EXCLUDED.edge_floor,
-                                     odds_floor=EXCLUDED.odds_floor,
-                                     min_odds=EXCLUDED.min_odds,
-                                     max_odds=EXCLUDED.max_odds,
-                                     model_version=EXCLUDED.model_version,
-                                     kickoff_at=EXCLUDED.kickoff_at,
-                                     computed_at=NOW()""",
-                    [r["mid"], market, sel, strategy, cal, edge_floor, odds_floor,
-                     min_odds, max_odds, _stamp_cal(r["mv"]), r["kickoff"]],
-                )
-                counters["written"] += 1
-
-        # SHARP anchor (Pinnacle de-vig) — sibling strategies, best-effort
+        # SHARP anchor (Pinnacle de-vig), best-effort
         try:
             _emit_sharp_anchor(counters)
         except Exception as e:  # noqa: BLE001

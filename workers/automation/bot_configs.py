@@ -110,24 +110,10 @@ _SHARP_EDGE_CEILING = 0.08
 _SHARP_ODDS_FLOOR = 1.01   # effectively off: these are observational paper bots
 
 TRIGGER_CONFIGS: list[BotConfig] = [
-    BotConfig(
-        bot_name="bot_trigger_1x2_model_v1",
-        shadow_cohort="trigger_1x2_model",
-        markets=("1x2",),
-        books=PLACEABLE_BOOKS,
-        prob_source="predictions",
-        notes="model-anchored 1x2 trigger, both books; replaces "
-              "bot_{coolbet,unibet}_trigger_1x2_v1",
-    ),
-    BotConfig(
-        bot_name="bot_trigger_ou_model_v1",
-        shadow_cohort="trigger_ou_model",
-        markets=("over_under_25",),
-        books=PLACEABLE_BOOKS,
-        prob_source="predictions",
-        notes="model-anchored O/U 2.5 trigger, both books; live since "
-              "PREDICTIONS-SOURCE-OU (2026-09-11)",
-    ),
+    # #162 W7.2 (2026-09-26): the MODEL-anchored triggers bot_trigger_1x2_model_v1 /
+    # bot_trigger_ou_model_v1 were deleted from here. Both were retired in the DB
+    # (2026-09-13 / 09-14, BOT-RETIREMENT-ON-CLV) and every sweep exited at `_bot_id`.
+    # Their `bot_config` rows now come from export_bot_config._LINEAGE.
     BotConfig(
         bot_name="bot_trigger_1x2_sharp_v1",
         shadow_cohort="trigger_1x2_sharp",
@@ -190,12 +176,9 @@ TRIGGER_CONFIGS: list[BotConfig] = [
     ),
 ]
 
-# WIDE_CONFIGS are RETIRED by migration 331 and deliberately NOT in the run set:
-# `bot_trigger_1x2_model_v1` uses the same prob_source='predictions' and adds
-# draw/away, so the home-only wide twin is a strict subset of it and would write
-# duplicate home rows under a second name. The comparison the twins were created
-# for is unchanged — it is the merged trigger bot filtered to home, against
-# `bot_coolbet_1x2_model_v1`. Kept here as the record of why, not as config.
+# WIDE_CONFIGS were RETIRED by migration 331 and are deliberately NOT in the run set
+# (see the WIDE-SOURCE note above); the merged bot_trigger_1x2_model_v1 that
+# superseded them is itself retired and deleted (#162 W7.2).
 ALL_CONFIGS: list[BotConfig] = CONFIGS + TRIGGER_CONFIGS
 
 CONFIG_BY_NAME = {c.bot_name: c for c in ALL_CONFIGS}

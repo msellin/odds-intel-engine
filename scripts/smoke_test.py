@@ -532,15 +532,6 @@ def _():
         raise errors[0]
 
 
-@test("inplay_bot — _get_live_candidates query parses and runs")
-def _():
-    from workers.api_clients.db import execute_query
-    from workers.jobs.inplay_bot import _get_live_candidates
-    # Should return a list (possibly empty outside match hours) without crashing
-    candidates = _get_live_candidates(execute_query)
-    assert isinstance(candidates, list), f"Expected list, got {type(candidates)}"
-
-
 @test("1H-HT-GOALS — extract_half_scores parses HT + derives 2H = FT-HT")
 def _():
     from workers.api_clients.api_football import extract_half_scores
@@ -1395,31 +1386,6 @@ def _():
     assert r4["result"] == "won", f"O/U over 25 with 3 goals should win, got {r4['result']}"
 
 
-@test("_poisson_over_prob — no NaN/inf at edge cases (lam=0, lam=0.001)")
-def _():
-    from workers.jobs.inplay_bot import _poisson_over_prob
-    import math
-    for lam in (0.0, 0.001, 0.1, 3.0, 10.0):
-        p = _poisson_over_prob(lam, 2.5)
-        assert not math.isnan(p), f"NaN at lam={lam}"
-        assert not math.isinf(p), f"Inf at lam={lam}"
-        assert 0.0 <= p <= 1.0, f"Probability out of [0,1] at lam={lam}: {p}"
-
-
-@test("_bayesian_posterior — valid probability at edge cases (minute=0, total xg=0)")
-def _():
-    from workers.jobs.inplay_bot import _bayesian_posterior
-    # minute=0: should return prematch xg unchanged
-    r = _bayesian_posterior(prematch_xg_total=2.5, live_xg_total=0.0, minute=0)
-    assert r == 2.5, f"At minute=0 should return prematch xg, got {r}"
-    # zero xg inputs — should not crash or return negative
-    r2 = _bayesian_posterior(prematch_xg_total=0.0, live_xg_total=0.0, minute=45)
-    assert r2 == 0.0, f"Zero xg at minute=45 should return 0.0, got {r2}"
-    # normal case — result should be positive
-    r3 = _bayesian_posterior(prematch_xg_total=1.4, live_xg_total=0.8, minute=60)
-    assert r3 > 0, f"Expected positive posterior, got {r3}"
-
-
 @test("VIG-REMOVE — vig normalization: fair probs sum to 1.0 and are each less than raw")
 def _():
     import math
@@ -2124,171 +2090,6 @@ def _():
     assert "CLV-AUTOVOID-2026-08-19" in run_src, (
         "CLV-AUTOVOID: run_settlement hook must carry the CLV-AUTOVOID-2026-08-19 marker"
     )
-
-
-@test("CONFIG-SWEEP-PHASE-D — sweep shadow pass fires 2 bots with tier-2-3 configs (1X2 home / draw; BTTS retired)")
-def _():
-    """Phase D shadow bots derived from CONFIG-SWEEP-2026-08-19. Guards:
-      (1) three configs registered in _SWEEP_SHADOW_CONFIGS with correct
-          markets and Pinnacle-required flags matching the sweep report,
-      (2) both surviving constrained to tier_filter = (2, 3) — the sweep's
-          universal signal,
-      (3) both surviving write via bulk_store_shadow_bets (never simulated_bets),
-      (4) pass is invoked from run_morning, morning cohort only, skipped
-          when shadow_mode=True,
-      (5) migration 272 registers both surviving bots with maturity_label='experimental'.
-    """
-    import inspect
-    from workers.jobs import daily_pipeline_v2
-    cfgs = daily_pipeline_v2._SWEEP_SHADOW_CONFIGS
-    names = {c["name"] for c in cfgs}
-    # BTTS-RETIRED-2026-09-03: was the three sweep winners including
-    # bot_sweep_btts_yes_v1. BTTS is retired at every layer — shadow BTTS
-    # measured n=427, ROI -12.76% at live prices, t=-2.87 (p<0.01), and
-    # recalibration made the surviving picks worse rather than better. The
-    # BTTS entry is asserted ABSENT below so it cannot quietly return.
-    assert names == {"bot_sweep_1x2_home_v1", "bot_sweep_1x2_draw_v1"}, (
-        f"sweep configs must register exactly the 2 surviving winners, got {names}"
-    )
-    for c in cfgs:
-        assert c["tier_filter"] == (2, 3), (
-            f"sweep {c['name']}: tier_filter must be (2, 3) — the sweep's universal signal"
-        )
-    home = next(c for c in cfgs if c["name"] == "bot_sweep_1x2_home_v1")
-    assert home["edge_min"] == 0.10 and home["require_pinnacle"] is True and home["mkt_key"] == "1x2_home", (
-        "1X2 home config drift from sweep result"
-    )
-    draw = next(c for c in cfgs if c["name"] == "bot_sweep_1x2_draw_v1")
-    assert draw["edge_min"] == 0.05 and draw["require_pinnacle"] is True and draw["mkt_key"] == "1x2_draw", (
-        "1X2 draw config drift from sweep result"
-    )
-    # BTTS-RETIRED-2026-09-03: assert ABSENCE rather than config shape. The
-    # config existing at all is the regression now.
-    assert not any(c["name"] == "bot_sweep_btts_yes_v1" for c in cfgs), (
-        "bot_sweep_btts_yes_v1 is back in the sweep configs. BTTS is retired: "
-        "shadow BTTS is n=427, ROI -12.76% at live prices, t=-2.87, and better "
-        "calibration made the surviving picks worse, not better."
-    )
-    # Pass exists, uses bulk_store_shadow_bets, invoked from run_morning
-    pass_src = inspect.getsource(daily_pipeline_v2._run_sweep_shadow_pass)
-    assert "bulk_store_shadow_bets" in pass_src, "sweep shadow must write via bulk_store_shadow_bets"
-    assert "CONFIG-SWEEP-2026-08-19" in pass_src, "CONFIG-SWEEP marker missing from _run_sweep_shadow_pass"
-    run_src = inspect.getsource(daily_pipeline_v2.run_morning)
-    assert "_run_sweep_shadow_pass" in run_src, "sweep pass must be invoked from run_morning"
-    # Migration exists and inserts both surviving bots as experimental
-    import os
-    mig_path = os.path.join(
-        os.path.dirname(inspect.getfile(daily_pipeline_v2)),
-        "..", "..", "supabase", "migrations", "272_bot_sweep_shadows.sql",
-    )
-    with open(mig_path) as f:
-        mig = f.read()
-    for name in ("bot_sweep_1x2_home_v1", "bot_sweep_1x2_draw_v1"):
-        assert f"'{name}'" in mig, f"migration 272 must INSERT {name}"
-    assert mig.count("'experimental'") >= 3, "migration 272 must set maturity_label='experimental' on all 3 bots"
-
-
-@test("BOT-NO-PIN-SHADOW — shadow pass fires on 1X2 matches without Pinnacle when ≥3 accessible books quote")
-def _():
-    """Phase 1 data-collection bot for matches Pinnacle doesn't price.
-    Guards:
-      (1) function exists and is called from run_morning (morning cohort only,
-          skipped when shadow_mode=True to avoid double-writes),
-      (2) requires ensemble model probability + skips matches with Pinnacle,
-      (3) requires ≥3 accessible-book quotes per selection (min-books gate),
-      (4) applies same 1.35× median outlier check as ODDS-OUTLIER-FILTER,
-      (5) edge threshold 8% (higher than production to compensate for
-          unknown calibration on non-Pinnacle leagues),
-      (6) writes to shadow_bets only via bulk_store_shadow_bets — never to
-          simulated_bets, never touches bankroll,
-      (7) migration 271 registers bot_no_pin_shadow_v1 with
-          maturity_label='experimental'."""
-    import inspect
-    from workers.jobs import daily_pipeline_v2
-    src = inspect.getsource(daily_pipeline_v2._run_no_pin_shadow_pass)
-    assert "BOT-NO-PIN-SHADOW-2026-08-18" in src, "shadow pass marker missing"
-    assert "source = 'ensemble'" in src, (
-        "no-pin shadow must query ensemble predictions (production model), not af/poisson"
-    )
-    assert "has_pinnacle" in src and "if mid in has_pinnacle:" in src, (
-        "no-pin shadow must skip matches that DO have Pinnacle coverage"
-    )
-    assert "_MIN_BOOKS = 3" in src, "min-books gate must be 3"
-    assert "_EDGE_THRESHOLD = 0.08" in src, (
-        "edge threshold must be 8% — higher than prod bots to compensate for unknown "
-        "calibration on non-Pinnacle leagues"
-    )
-    assert "best_odds > median_odds * 1.35" in src, (
-        "no-pin shadow must reject outlier best_odds via 1.35× median check "
-        "(same principle as ODDS-OUTLIER-FILTER)"
-    )
-    assert "bulk_store_shadow_bets" in src, (
-        "no-pin shadow must write via bulk_store_shadow_bets — never touches simulated_bets"
-    )
-    assert "bot_no_pin_shadow_v1" in src, "bot name must resolve to bot_no_pin_shadow_v1"
-    # BOT-NO-PIN-SHADOW-FALLBACK-GUARD-2026-08-19: must reject the ensemble's
-    # uniform (1/3, 1/3, 1/3) no-information fallback so we don't compute fake
-    # edges from a prob the model never actually predicted.
-    assert "BOT-NO-PIN-SHADOW-FALLBACK-GUARD-2026-08-19" in src, (
-        "no-pin shadow: fallback-uniform guard marker missing — bot would score fake edges on "
-        "leagues the ensemble model has no coverage for"
-    )
-    assert "_FALLBACK_UNIFORM_TOL" in src, "fallback-uniform tolerance constant missing"
-    assert "_FALLBACK_SHAPES" in src, (
-        "fallback shape table missing — must enumerate known no-information ensemble outputs "
-        "(uniform 1/3, AF underdog-prior (0.10, 0.45, 0.45), AF binary (0.00, 0.50, 0.50))"
-    )
-    # Must include all three fallback shape families (uniform, underdog-prior, binary)
-    assert "(1/3, 1/3, 1/3)" in src, "fallback shapes must include uniform (1/3, 1/3, 1/3)"
-    assert "(0.10, 0.45, 0.45)" in src, "fallback shapes must include AF underdog prior (0.10, 0.45, 0.45)"
-    assert "(0.00, 0.50, 0.50)" in src, "fallback shapes must include AF binary (0.00, 0.50, 0.50)"
-    assert "skipped_fallback" in src, "fallback-guard rejection counter missing"
-    # BOT-NO-PIN-MODEL-SANITY-2026-08-23: must reject picks where the ensemble is
-    # more than 20pp above the market median-implied probability. Catches cases like
-    # Sireți vs Dacia-Buiucani (model 60% vs market 29% implied → 107% fake edge,
-    # producing a ≥1.80 min odds when the match actually trades at 3.45-3.60).
-    # The fallback-shape filter catches round-number priors but not miscalibrated
-    # real model outputs on leagues with thin training data.
-    assert "BOT-NO-PIN-MODEL-SANITY-2026-08-23" in src, (
-        "no-pin shadow: model-sanity guard marker missing — without it, extreme "
-        "model-market disagreements (e.g. model 60% vs market 29%) produce fake "
-        "100%+ edges and useless min-odds floors"
-    )
-    assert "_median_implied" in src, (
-        "no-pin shadow: must compute _median_implied = 1/median_odds to check "
-        "model vs market gap — this is the sanity bound variable"
-    )
-    assert "prob - _median_implied > 0.20" in src, (
-        "no-pin shadow: must reject when model prob exceeds market median-implied "
-        "by more than 20pp — the threshold that blocks the Sireți-class errors"
-    )
-    # BOT-NO-PIN-TIER0-GUARD: matches query must join leagues and exclude tier=0.
-    # 5 settled picks on tier=0 leagues (Saudi Div 1, Costa Rica Liga de Ascenso,
-    # Germany Regionalliga) accumulated -62.4% ROI because the ensemble has no
-    # real signal there and passes through a Poisson guess (e.g. 58% model vs
-    # 26% Pinnacle for Al Saqer vs Damac, 2026-08-23).
-    assert "l.tier > 0" in src or "(l.tier IS NULL OR l.tier > 0)" in src, (
-        "no-pin shadow: must exclude tier=0 leagues (BOT-NO-PIN-TIER0-GUARD) — "
-        "ensemble has no coverage there and generates fake edges"
-    )
-    # Hook check — must be called from run_morning, morning cohort only, not in shadow_mode
-    run_morning_src = inspect.getsource(daily_pipeline_v2.run_morning)
-    assert "_run_no_pin_shadow_pass" in run_morning_src, (
-        "no-pin shadow pass must be invoked from run_morning"
-    )
-    assert 'cohort in (None, "morning") and not shadow_mode' in run_morning_src, (
-        "no-pin shadow must run in morning cohort only, skipped when shadow_mode=True"
-    )
-    # Migration exists and registers the bot with the right maturity label
-    import os
-    mig_path = os.path.join(
-        os.path.dirname(inspect.getfile(daily_pipeline_v2)),
-        "..", "..", "supabase", "migrations", "271_bot_no_pin_shadow.sql",
-    )
-    with open(mig_path) as f:
-        mig = f.read()
-    assert "'bot_no_pin_shadow_v1'" in mig, "migration 271 must INSERT bot_no_pin_shadow_v1"
-    assert "'experimental'" in mig, "bot must ship as maturity_label='experimental'"
 
 
 @test("ODDS-OUTLIER-FILTER — 1X2/BTTS/DC offers rejected when far above Pinnacle-or-median consensus")
@@ -3417,116 +3218,6 @@ def _():
         del os.environ["DISABLE_NEWS_CHECKER"]
 
 
-@test("INPLAY-UUID-FIX — mid converted to str before prematch dict lookup")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    # Verify the main loop uses str(cand["match_id"]) not raw UUID
-    assert 'mid = str(cand["match_id"])' in src, (
-        "mid must be str() — psycopg2 returns UUID objects, prematch dict has string keys"
-    )
-
-
-@test("INPLAY-UUID-FIX — prematch dict keyed on str(match_id)")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    fn_start = src.index("def _get_prematch_data(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    assert 'str(r["match_id"])' in fn_body, (
-        "_get_prematch_data must key the return dict on str(match_id)"
-    )
-
-
-@test("INPLAY-DROP-F — inplay_f removed from INPLAY_BOTS dict and dispatcher")
-def _():
-    import pathlib, re
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-
-    # INPLAY_BOTS dict block: pull only the dict literal
-    dict_start = src.index("INPLAY_BOTS = {")
-    dict_end = src.index("\n}\n", dict_start) + 2
-    bots_block = src[dict_start:dict_end]
-    assert '"inplay_f"' not in bots_block, (
-        "inplay_f must not be a key in INPLAY_BOTS — strategy F was dropped 2026-05-08"
-    )
-
-    # Dispatcher block: _check_strategy() function body
-    disp_start = src.index("def _check_strategy(")
-    disp_end = src.index("\ndef ", disp_start + 1)
-    disp_body = src[disp_start:disp_end]
-    assert 'bot_name == "inplay_f"' not in disp_body, (
-        "_check_strategy dispatcher must not route to inplay_f"
-    )
-
-
-@test("INPLAY-FIX-B-MODEL — strategy B uses _poisson_over_prob, not BTTS exp formula")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    fn_start = src.index("def _check_strategy_b(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    # The buggy version computed btts_prob = 1 - exp(-blended_lambda) and bet OU 2.5
-    assert "_poisson_over_prob(" in fn_body, (
-        "Strategy B must compute P(Over 2.5) via _poisson_over_prob() — fix from 5-AI review"
-    )
-    assert "btts_prob = 1.0 - math.exp" not in fn_body, (
-        "Strategy B must not use the old btts_prob = 1 - exp(-lambda) phantom-edge formula"
-    )
-
-
-@test("INPLAY-FIX-E-FALLBACK — prematch query falls back to league avg, exposes flag")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    fn_start = src.index("def _get_prematch_data(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    # Old code: COALESCE(tss_h.goals_for_avg::numeric, 1.3) — flat 1.3 fallback
-    # New code: COALESCE(tss_h.goals_for_avg, la.league_avg, 1.1)
-    assert "la.league_avg" in fn_body, (
-        "Prematch query must fall back to per-league average before global default"
-    )
-    assert "xg_fallback_used" in fn_body, (
-        "Query must expose xg_fallback_used flag so strategies can apply edge penalty"
-    )
-    assert ", 1.3) AS prematch_xg_home" not in fn_body, (
-        "The flat 1.3 fallback was the source of inflated E ROI — must be replaced"
-    )
-
-
-@test("INPLAY-FIX-E-FALLBACK — strategy E proxy mode disabled (if not is_real: return None)")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    fn_start = src.index("def _check_strategy_e(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    assert "if not is_real:" in fn_body and "return None" in fn_body, (
-        "Strategy E must bail early on proxy mode — 182 shot_proxy bets at −4.7% ROI confirmed bad"
-    )
-    assert "shot_proxy" not in fn_body or "disabled" in fn_body, (
-        "Strategy E must not produce shot_proxy bets — proxy formula inflated expected_shots"
-    )
-    assert "expected_shots_at_minute" not in fn_body, (
-        "The buggy expected_shots_at_minute formula must be removed from strategy E"
-    )
-
-
-@test("INPLAY-FIX-E-FALLBACK — migration 085 voids settled shot_proxy bets")
-def _():
-    import pathlib
-    src = pathlib.Path("supabase/migrations/085_void_e_proxy_bets_settled.sql").read_text()
-    assert "xg_source = 'shot_proxy'" in src, "085 must scope to shot_proxy bets"
-    assert "result = 'void'" in src, "085 must set result = 'void' (enum value, not 'voided')"
-    assert "result IN ('won', 'lost')" in src, (
-        "085 must target settled bets — 079's 'pending' filter matched zero rows after settlement"
-    )
-    assert "inplay_e" in src, "085 must scope to inplay_e bot"
-
-
 @test("VOID-AGG-EXCLUSION — dashboard_cache and post-mortem queries exclude voids")
 def _():
     """Voided bets keep their original pnl/stake (we only flip `result` to 'void').
@@ -3547,204 +3238,6 @@ def _():
     )
     assert "result IN ('won','lost')" in non_comment, (
         "write_dashboard_cache must use the void-aware filter"
-    )
-
-
-@test("INPLAY-MERGE-A2 — inplay_a2 removed from INPLAY_BOTS and dispatcher")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-
-    dict_start = src.index("INPLAY_BOTS = {")
-    dict_end = src.index("\n}\n", dict_start) + 2
-    bots_block = src[dict_start:dict_end]
-    assert '"inplay_a2"' not in bots_block, (
-        "inplay_a2 must not be a key in INPLAY_BOTS — merged into A on 2026-05-08"
-    )
-
-    disp_start = src.index("def _check_strategy(")
-    disp_end = src.index("\ndef ", disp_start + 1)
-    disp_body = src[disp_start:disp_end]
-    assert 'bot_name == "inplay_a2"' not in disp_body, (
-        "_check_strategy dispatcher must not route to inplay_a2"
-    )
-
-    # The merged A must accept total_goals <= 1 (covers 0-0, 1-0, 0-1)
-    a_start = src.index("def _check_strategy_a(")
-    a_end = src.index("\ndef ", a_start + 1)
-    a_body = src[a_start:a_end]
-    assert "if sh + sa > 1:" in a_body, (
-        "Merged Strategy A must filter on total_goals <= 1, not just (0,0)"
-    )
-
-
-@test("INPLAY-MERGE-CHOME — inplay_c_home removed; C handles home/away in one path")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-
-    dict_start = src.index("INPLAY_BOTS = {")
-    dict_end = src.index("\n}\n", dict_start) + 2
-    bots_block = src[dict_start:dict_end]
-    assert '"inplay_c_home"' not in bots_block, (
-        "inplay_c_home must not be a key in INPLAY_BOTS — merged into C on 2026-05-08"
-    )
-
-    disp_start = src.index("def _check_strategy(")
-    disp_end = src.index("\ndef ", disp_start + 1)
-    disp_body = src[disp_start:disp_end]
-    assert 'bot_name == "inplay_c_home"' not in disp_body, (
-        "_check_strategy dispatcher must not route to inplay_c_home"
-    )
-
-    # _check_strategy_c must no longer take a home_only parameter
-    c_start = src.index("def _check_strategy_c(")
-    c_signature_end = src.index(":", c_start)
-    c_signature = src[c_start:c_signature_end]
-    assert "home_only" not in c_signature, (
-        "_check_strategy_c signature must not include home_only — merged into single strategy"
-    )
-
-
-@test("INPLAY-LOOSEN-A — strategy A uses minute 20-40 + live_xg ≥ 0.6 + sot ≥ 3")
-def _():
-    import pathlib, re
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    fn_start = src.index("def _check_strategy_a(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    body = src[fn_start:fn_end]
-    assert "if minute < 20 or minute > 40" in body, "A minute window must loosen to 20-40"
-    assert "live_xg < 0.6" in body, "A real-xG floor must drop to 0.6 (was 0.9)"
-    assert "sot < 3" in body, "A real SoT floor must drop to 3 (was 4)"
-    assert "sot < 6" in body, "A proxy SoT floor must drop to 6 (was 9)"
-    assert "pm_xg_total * 1.08" in body, "A posterior multiplier must drop to 1.08 (was 1.15)"
-
-
-@test("INPLAY-LOOSEN-D — strategy D uses minute 48-80 + live_xg ≥ 0.7 + odds > 2.10")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    fn_start = src.index("def _check_strategy_d(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    body = src[fn_start:fn_end]
-    assert "if minute < 48 or minute > 80" in body, "D minute window must loosen to 48-80"
-    assert "live_xg < 0.7" in body, "D real-xG floor must drop to 0.7 (was 1.0)"
-    assert "odds <= 2.10" in body, "D OU odds floor must drop to 2.10 (was 2.50)"
-
-
-@test("INPLAY-LOOSEN-B-C — B window 12-50, C possession 52/55 (real)")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    b_start = src.index("def _check_strategy_b(")
-    b_end = src.index("\ndef ", b_start + 1)
-    b_body = src[b_start:b_end]
-    assert "if minute < 12 or minute > 50" in b_body, "B window must loosen to 12-50"
-
-    c_start = src.index("def _check_strategy_c(")
-    c_end = src.index("\ndef ", c_start + 1)
-    c_body = src[c_start:c_end]
-    assert "min_poss = 52.0 if home_is_fav else 55.0" in c_body, (
-        "C real-xG possession thresholds must drop to 52% home / 55% away"
-    )
-
-
-@test("INPLAY-NEW-CORNER — Strategy G (Corner Cluster Over) registered + dispatched")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-
-    dict_start = src.index("INPLAY_BOTS = {")
-    dict_end = src.index("\n}\n", dict_start) + 2
-    bots_block = src[dict_start:dict_end]
-    assert '"inplay_g"' in bots_block, (
-        "inplay_g must be registered in INPLAY_BOTS — Strategy G (corner cluster, 4/5 AI consensus)"
-    )
-
-    disp_start = src.index("def _check_strategy(")
-    disp_end = src.index("\ndef ", disp_start + 1)
-    disp_body = src[disp_start:disp_end]
-    assert 'bot_name == "inplay_g"' in disp_body, "Dispatcher must route inplay_g"
-
-    # Function must exist and accept execute_query for the corner-history lookup
-    assert "def _check_strategy_g(cand: dict, pm: dict, has_red_card: bool,\n                      execute_query)" in src, (
-        "_check_strategy_g must accept execute_query for the 9-11 min corner-history lookup"
-    )
-    # Verify the strategy actually checks corner delta — no point if it doesn't
-    g_start = src.index("def _check_strategy_g(")
-    g_end = src.index("\ndef ", g_start + 1)
-    g_body = src[g_start:g_end]
-    assert "corners_delta < 2" in g_body, "G must require ≥ 2-corner delta in 10-min window"
-
-
-@test("INPLAY-NEW-HT-RESTART — Strategy H (HT Restart Surge) registered + dispatched")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-
-    dict_start = src.index("INPLAY_BOTS = {")
-    dict_end = src.index("\n}\n", dict_start) + 2
-    bots_block = src[dict_start:dict_end]
-    assert '"inplay_h"' in bots_block, "inplay_h must be registered (3/5 AI consensus)"
-
-    disp_start = src.index("def _check_strategy(")
-    disp_end = src.index("\ndef ", disp_start + 1)
-    disp_body = src[disp_start:disp_end]
-    assert 'bot_name == "inplay_h"' in disp_body, "Dispatcher must route inplay_h"
-
-    h_start = src.index("def _check_strategy_h(")
-    h_end = src.index("\ndef ", h_start + 1)
-    h_body = src[h_start:h_end]
-    assert "if minute < 46 or minute > 55" in h_body, "H window must be 46-55"
-    assert "if sh != 0 or sa != 0" in h_body, "H must require 0-0 at entry"
-    assert "minute BETWEEN 40 AND 46" in h_body, "H must look up an HT-end snapshot"
-    # Dual-line ladder: O2.5 if odds > 2.30 (was 2.80, loosened by INPLAY-LOOSEN-SILENT
-    # 2026-05-17 — avg O2.5 market was 2.37 so 2.80 was firing almost never), else O1.5
-    # if odds > 1.60.
-    assert "o25_odds > 2.30" in h_body, "H must take O2.5 only when its odds > 2.30 (INPLAY-LOOSEN-SILENT)"
-    assert "o15_odds > 1.60" in h_body, "H must fall back to O1.5 when its odds > 1.60"
-    assert "live_ou_15_over" in h_body, "H must read live_ou_15_over for the fallback"
-
-
-@test("INPLAY-NEW-RED-CARD — Strategy Q (Red Card Overreaction Over 2.5) registered + dispatched")
-def _():
-    """Strategy Q is the only inplay strategy that *requires* a red card —
-    every other strategy excludes red-card matches as noise. This test guards
-    registration, dispatcher routing, and the entry conditions from the spec
-    (red minute 15-55, total goals ≤ 1, 11-man possession ≥ 55%, OU2.5 > 2.30)."""
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-
-    dict_start = src.index("INPLAY_BOTS = {")
-    dict_end = src.index("\n}\n", dict_start) + 2
-    bots_block = src[dict_start:dict_end]
-    assert '"inplay_q"' in bots_block, (
-        "inplay_q must be registered in INPLAY_BOTS — Red Card Overreaction"
-    )
-
-    disp_start = src.index("def _check_strategy(")
-    disp_end = src.index("\ndef ", disp_start + 1)
-    disp_body = src[disp_start:disp_end]
-    assert 'bot_name == "inplay_q"' in disp_body, "Dispatcher must route inplay_q"
-
-    assert "def _check_strategy_q(cand: dict, pm: dict, has_red_card: bool,\n                      execute_query)" in src, (
-        "_check_strategy_q must accept execute_query — needs red-card lookup from match_events"
-    )
-
-    # Q is currently the last function in the file — slice from def to end-of-file
-    # then trim at the next top-level def if a newer one is added later.
-    q_start = src.index("def _check_strategy_q(")
-    q_after = src[q_start:]
-    next_def = q_after.find("\ndef ", 1)
-    q_body = q_after if next_def < 0 else q_after[:next_def]
-    assert "minute BETWEEN 15 AND 55" in q_body, (
-        "Q must require the red card to fall in minute 15-55 (per spec)"
-    )
-    assert "total_goals > 1" in q_body, "Q must require total goals ≤ 1"
-    assert "eleven_man_poss < 55.0" in q_body, "Q must require 11-man possession ≥ 55%"
-    assert "odds <= 2.30" in q_body, "Q must require live OU 2.5 over odds > 2.30"
-    assert "if not has_red_card" in q_body, (
-        "Q must early-out when there's no red card — opposite of every other strategy"
     )
 
 
@@ -3772,25 +3265,6 @@ def _():
     af_src = pathlib.Path("workers/api_clients/api_football.py").read_text()
     assert "_HARD_QUOTA_FLOOR" in af_src, (
         "_get() must have a hard quota floor to protect settlement"
-    )
-
-
-@test("REPLAY-INPLAY — scripts/replay_inplay.py imports without DB writes")
-def _():
-    """Defensive: backfill script must be dry-run only — no INSERT/UPDATE/DELETE
-    in the replay path so a stray invocation can't pollute simulated_bets."""
-    import pathlib
-    src = pathlib.Path("scripts/replay_inplay.py").read_text()
-    # Allow these in queries — they're SELECT-side only
-    write_ops = ["execute_write(", "store_bet(", "INSERT INTO", "UPDATE simulated", "DELETE FROM"]
-    for op in write_ops:
-        assert op not in src, (
-            f"replay_inplay.py must stay dry-run — found '{op}'. "
-            "Backfill is review-only until --apply is explicitly added."
-        )
-    # Sanity: dedup against existing inplay bets is wired up
-    assert "fetch_existing_inplay_bets" in src, (
-        "replay must skip (match,bot) pairs that already have a real bet in DB"
     )
 
 
@@ -4287,15 +3761,13 @@ def test_lineshop_family_retired():
     """LINESHOP-FAMILY-RETIRED-2026-09-08: bot_coolbet_value_v1 (retired mig 317),
     bot_pin_1x2_home_v1 + bot_sweep_ou25/35_v1 (retired mig 313) all lose OOS.
     Their generation passes must NOT be called from the pipeline — a retired bot
-    that still writes shadow_bets is pure noise. The pass FUNCTIONS may remain
-    defined (dead), but no CALL site may."""
-    import os, re
+    that still writes shadow_bets is pure noise. #162 W7.2 (2026-09-26): the pass functions are
+    now DELETED, not merely uncalled (DEAD-PIPELINE-PASSES-GONE pins the full set)."""
+    import os
     src = open(os.path.join(os.path.dirname(__file__), "..", "workers", "jobs",
                             "daily_pipeline_v2.py"), encoding="utf-8").read()
     for fn in ("_run_coolbet_value_pass", "_run_pin_1x2_shadow_pass", "_run_pin_ou_shadow_pass"):
-        # a call is `fn(today_str...` NOT preceded by 'def '
-        calls = [m for m in re.findall(rf"(def )?{fn}\(today_str", src) if m != "def "]
-        assert not calls, f"{fn} must not be CALLED — its line-shop bot is retired"
+        assert fn not in src, f"{fn} is back — its line-shop bot is retired"
 
 
 @test("TRIGGER-MATCHER-STAGE-B — paper matcher: in-window join, never placeable")
@@ -4341,7 +3813,8 @@ def test_trigger_matcher_stage_b():
         "sharp anchors routed per book: sharp_1x2, sharp_ou25 (+ the tight instrument)"
     )
     from workers.jobs import pick_triggers as _pt
-    _emitted = {x[0] for x in _pt._STRATEGIES} | {x[0] for x in _pt._SHARP_STRATEGIES}
+    # #162 W7.2 (2026-09-26): the MODEL anchor (_STRATEGIES) is deleted; Stage A emits sharp only.
+    _emitted = {x[0] for x in _pt._SHARP_STRATEGIES}
     assert strategies <= _emitted, (
         f"matcher routes strategies Stage A never emits: {sorted(strategies - _emitted)} "
         f"— a route with no windows behind it silently produces nothing"
@@ -4364,6 +3837,7 @@ def test_pick_triggers_stage_a():
     import inspect
     from workers.jobs import pick_triggers as m
     src = inspect.getsource(m)
+    # _fit_calibrator('1x2') stays for pick_generator's predictions source (#162 W7.2 (2026-09-26)).
     assert "IsotonicRegression" in src and "_fit_calibrator" in src, "must calibrate — raw probs are over-confident"
     assert "_min_edge_for" in src and "_min_odds_for" in src, (
         "edge/odds floors must be sourced from coolbet_placer so trigger and placer can't drift"
@@ -4371,9 +3845,9 @@ def test_pick_triggers_stage_a():
     # the window math
     assert "1.0 / (cal - edge_floor)" in src and "max(" in src, "min_odds = max(1/(cal−floor), odds_floor)"
     assert m.OUTLIER_MULT > 1.0, "max_odds must cap outliers above min_odds"
-    # only the markets we bet (keeps sweep scope tight)
-    strats = {s[0] for s in m._STRATEGIES}
-    assert strats == {"model_1x2", "model_ou25"}, "Stage A covers 1x2 + O/U 2.5 (the markets we bet)"
+    # #162 W7.2 (2026-09-26): the MODEL anchor (model_1x2 / model_ou25) is deleted — no matcher bot
+    # read it after the OWN Phase 5 cull, so every model window was written for nobody.
+    assert not hasattr(m, "_STRATEGIES"), "the model-anchor strategies are back with no reader"
     # SHARP anchor: sibling strategies, de-vigged Pinnacle, SMALL edge floor (a sharp
     # edge vs a near-true line is real at 3%; the 13%/8% model floors would never fire).
     sharp = {s[0] for s in m._SHARP_STRATEGIES}
@@ -4384,8 +3858,7 @@ def test_pick_triggers_stage_a():
     # strategies are allowed and are how a gate gets measured before it is
     # believed; each must declare a floor, which the loop below enforces.
     assert {"sharp_1x2", "sharp_ou25"} <= sharp, (
-        "every model market must keep a sharp sibling — that pairing is the "
-        "anchor head-to-head this engine exists for"
+        "Stage A must keep its two sharp markets, 1x2 + O/U 2.5"
     )
     for _strategy, _market, _floor_key, _sides in m._SHARP_STRATEGIES:
         assert _floor_key in m._SHARP_MIN_EDGE_BY_MARKET, (
@@ -5964,6 +5437,90 @@ def test_coolbet_own_betting_arch():
     assert "COOLBET-REALMONEY-EDGE-GATE-RECONCILE" in doc, "doc must flag the unreconciled real-money edge-gate decision"
 
 
+@test("DEAD-PIPELINE-PASSES-GONE — no-op shadow passes, model triggers, InplayBot and prediction_snapshots writes stay deleted (#162 W7.2)")
+def test_dead_pipeline_passes_gone():
+    """[[#162]] W7.2 (2026-09-26). Five pieces of code ran on every cycle and produced
+    nothing, because everything they served was retired:
+
+      * daily_pipeline_v2's no-pin / sweep shadow passes (called ~49x a day, every bot
+        retired 2026-08-21..26 -> early return) and the pin-OU / pin-1x2 / Coolbet
+        line-shop passes (never called; bots retired 2026-09-08);
+      * pick_triggers' MODEL anchor (model_1x2 / model_ou25): no matcher bot has read
+        it since the OWN Phase 5 cull, and TRIGGER_CONFIGS' bot_trigger_{1x2,ou}_model_v1
+        (retired 09-13/14) exited at `_bot_id` every sweep;
+      * InplayBot (3,270 lines) behind INPLAY_STRATEGIES_ENABLED, off since 09-03;
+      * store_prediction_snapshot: its table does not exist (to_regclass = NULL), so every
+        call failed inside a try/pass.
+
+    Pins that none of it comes back, that nothing still imports or schedules it, and that
+    the pieces deliberately KEPT are still there: `_get_bot_id_by_name` (imported by
+    ou_sharp_outlier), the 1x2 calibrator (bot_unified_gate_1x2_paper_v1 uses it), the
+    sharp Stage A anchor, and LivePoller settlement.
+    """
+    import re as _re
+    gone_files = ("workers/jobs/inplay_bot.py", "scripts/replay_inplay.py", "scripts/fit_platt_inplay.py",
+                  "scripts/fit_platt_inplay_e.py", "scripts/inplay_bot_report.py")
+    for f in gone_files:
+        assert not _engine_path(f).exists(), f"{f} is back — it served only the deleted InplayBot"
+
+    pipe = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
+    for sym in ("_run_no_pin_shadow_pass", "_run_sweep_shadow_pass", "_run_coolbet_value_pass",
+                "_run_pin_ou_shadow_pass", "_run_pin_1x2_shadow_pass", "_ou_line_is_consistent",
+                "_SWEEP_SHADOW_CONFIGS", "_PIN_OU_SHADOW_CONFIGS", "_PIN_1X2_SHADOW_CONFIGS",
+                "_LINESHOP_TRUE_EDGE_MIN", "_COOLBET_VALUE_BOT", "_PAIR_MAX_GAP_H",
+                "store_prediction_snapshot"):
+        assert sym not in pipe, f"daily_pipeline_v2 carries {sym} again — a pass for retired bots"
+    assert "def _get_bot_id_by_name(" in pipe, "_get_bot_id_by_name is imported by ou_sharp_outlier — keep it"
+
+    # Nothing live may still import / call / schedule a deleted symbol.
+    dead = _re.compile(r"_run_(no_pin|sweep|pin_ou|pin_1x2)_shadow_pass|_run_coolbet_value_pass|"
+                       r"workers\.jobs\.inplay_bot|run_inplay_strategies|store_prediction_snapshot|"
+                       r"upsert_inplay_bot_stats|_predictions_ou\(|INSERT INTO prediction_snapshots")
+    hits = []
+    for base in ("workers", "scripts"):
+        for p in sorted(_engine_path(base).rglob("*.py")):
+            if p.name == "smoke_test.py":
+                continue
+            for n, line in enumerate(p.read_text(errors="ignore").splitlines(), 1):
+                code = line.split("#", 1)[0]
+                if dead.search(code):
+                    hits.append(f"{p.relative_to(_engine_path('.'))}:{n}: {line.strip()[:80]}")
+    assert not hits, "deleted code is referenced again:\n" + "\n".join(hits)
+
+    sched = _engine_path("workers/scheduler.py").read_text()
+    for token in ("inplay_bot", "shadow_pass", "coolbet_value_pass", "prediction_snapshot"):
+        assert token not in sched.replace("InplayBot", ""), f"scheduler references {token}"
+    lp = _engine_path("workers/live_poller.py").read_text()
+    assert "_probe_finishing_matches" in lp and "settle_finished_matches" in lp, \
+        "LivePoller settlement must survive the InplayBot deletion"
+    from workers.utils import kill_switches as _ks
+    assert "inplay" not in _ks._FLAGS, "the InplayBot kill switch guards nothing now"
+
+    # Stage A: sharp only; the 1x2 calibrator stays for the predictions source.
+    from workers.jobs import pick_triggers as pt
+    assert not hasattr(pt, "_STRATEGIES"), "the model-anchor trigger strategies are back"
+    assert {x[0] for x in pt._SHARP_STRATEGIES} >= {"sharp_1x2", "sharp_ou25"}
+    assert pt._fit_calibrator("ou25") is None, "the O/U calibrator was deleted with its only consumer"
+    import inspect as _insp
+    from workers.automation import pick_generator as pg
+    from workers.automation.bot_configs import ALL_CONFIGS, TRIGGER_CONFIGS
+    assert "_fit_calibrator(\"1x2\")" in _insp.getsource(pg._candidates_from_predictions)
+    names = {c.bot_name for c in TRIGGER_CONFIGS}
+    assert not names & {"bot_trigger_1x2_model_v1", "bot_trigger_ou_model_v1"}, "retired model triggers are back"
+    # every predictions-sourced bot left is 1x2 — the only market with a calibrator now
+    for c in ALL_CONFIGS:
+        if c.prob_source == "predictions":
+            assert set(m.lower() for m in c.markets) == {"1x2"}, (c.bot_name, c.markets)
+
+    # The exporter still describes every retired bot (no silent 'unknown').
+    from scripts import export_bot_config as ex
+    assert not hasattr(ex, "_pipeline_shadow_pass_rows")
+    for n in ("bot_sweep_1x2_home_v1", "bot_no_pin_home_v1", "bot_sweep_ou25_v1", "bot_pin_1x2_home_v1",
+              "bot_coolbet_value_v1", "bot_trigger_1x2_model_v1", "bot_trigger_ou_model_v1"):
+        assert n in ex._LINEAGE, f"{n} lost its bot_config description"
+    return "dead passes, model triggers, InplayBot and prediction_snapshots writes stay deleted"
+
+
 @test("BOT-2D-AUDIT — the Step-1 OOS audit tool holds its shape")
 def test_bot_2d_audit():
     """BOT-2D-AUDIT (2026-09-08): the durable Step-1 consolidation tool. Its
@@ -6033,19 +5590,6 @@ def test_shadow_bot_consolidation_retire():
     for keep in ("bot_btts_all", "bot_ah_away_dog", "bot_sweep_ou35_v1",
                  "bot_ou15_defensive", "bot_sweep_1x2_home_v1", "bot_v10_all"):
         assert keep not in in_list, f"{keep} has a profitable frame — must NOT be in the retire list"
-
-
-@test("STOP-LINESHOP-OU-GENERATION — line-shop bot is 1x2-only")
-def test_stop_lineshop_ou_generation():
-    """STOP-LINESHOP-OU-GENERATION (2026-09-08): the line-shop bot
-    (bot_coolbet_value_v1) lost -17% on O/U; model-edge O/U (+19%) replaced it.
-    Placement was already stopped; generation is now stopped too so its O/U
-    shadow picks don't add noise. Pin the market list to 1x2-only."""
-    import workers.jobs.daily_pipeline_v2 as dp
-    assert dp._COOLBET_MARKETS == ("1x2",), (
-        "the line-shop value bot must generate 1x2 ONLY — O/U generation was "
-        "retired (model-edge O/U places O/U instead)"
-    )
 
 
 @test("COOLBET-PLACER-CONTROL-DROP-LINESHOP — line-shop 1x2 removed from the control block")
@@ -8934,96 +8478,6 @@ def test_coolbet_ingest_anon():
     )
 
 
-@test("INPLAY-SCORE-ODDS-CONSISTENCY — guard rejects stale-score/fresh-odds snapshots + 1X2 drift events")
-def test_inplay_score_odds_consistency():
-    """INPLAY-SCORE-ODDS-CONSISTENCY (2026-05-30): bookmaker odds react to a
-    goal within seconds; API-Football's score field lags by 30-60s. That
-    window let the bot fire a fictional +56% edge bet on Yanbian Longding vs
-    Changchun Yatai (home equalised at 23', snapshot at 07:25:10 had post-goal
-    odds but score still 0-1, bot fired at 07:25:19, score corrected at
-    07:25:53). Two new guards:
-      • _score_odds_consistent: leading-team-implied-by-score must have
-        shorter 1X2 odds than trailing team. Disagreement → skip.
-      • _odds_drift_recent: any 1X2 leg moving ≥30% in 60s = goal-event
-        signature → skip.
-    """
-    from workers.jobs.inplay_bot import (
-        _score_odds_consistent,
-        _odds_drift_recent,
-        _ODDS_DRIFT_THRESHOLD,
-        _ODDS_DRIFT_WINDOW_SEC,
-    )
-
-    # The exact bug from production: score 0-1, but home odds shorter than away
-    bad = {"score_home": 0, "score_away": 1,
-           "live_1x2_home": 2.10, "live_1x2_draw": 3.00, "live_1x2_away": 4.00}
-    assert _score_odds_consistent(bad) is False, \
-        "must reject when leading team (away, 0-1) has longer 1X2 odds (4.00) than trailing (2.10)"
-
-    # Pre-goal snapshot in the same match — consistent, allow through
-    ok = {"score_home": 0, "score_away": 1,
-          "live_1x2_home": 3.75, "live_1x2_draw": 3.40, "live_1x2_away": 1.95}
-    assert _score_odds_consistent(ok) is True, "leading away (1.95) shorter than trailing home (3.75) — fresh"
-
-    # Tied score: no winner-implied check; always allow
-    tied = {"score_home": 1, "score_away": 1,
-            "live_1x2_home": 2.00, "live_1x2_draw": 3.00, "live_1x2_away": 4.33}
-    assert _score_odds_consistent(tied) is True, "tied scores have no implied leader"
-
-    # Missing odds — allow (no signal to disagree)
-    missing = {"score_home": 0, "score_away": 1,
-               "live_1x2_home": None, "live_1x2_away": None}
-    assert _score_odds_consistent(missing) is True
-
-    # Mirror case: home leading 1-0 but home odds longer than away → reject
-    mirror = {"score_home": 1, "score_away": 0,
-              "live_1x2_home": 4.00, "live_1x2_draw": 3.00, "live_1x2_away": 2.10}
-    assert _score_odds_consistent(mirror) is False, \
-        "must reject when leading home (1-0) has longer odds (4.00) than away (2.10)"
-
-    # Drift threshold sanity
-    assert _ODDS_DRIFT_THRESHOLD == 0.30
-    assert _ODDS_DRIFT_WINDOW_SEC == 60
-
-    # _odds_drift_recent uses a real query — fake the execute_query to exercise
-    # the calculation logic without hitting Postgres.
-    class _FakeQuery:
-        def __init__(self, rows): self.rows = rows
-        def __call__(self, sql, params): return self.rows
-
-    # Goal-event signature: home 3.75 → 2.10 (44% move, exceeds 30%)
-    goal = _FakeQuery([
-        {"live_1x2_home": 3.75, "live_1x2_draw": 3.40, "live_1x2_away": 1.95},
-        {"live_1x2_home": 2.10, "live_1x2_draw": 3.00, "live_1x2_away": 4.00},
-    ])
-    assert _odds_drift_recent(goal, "mid") is True, \
-        "44% move on home leg must trigger drift guard"
-
-    # Quiet game: legs drift a few percent — allow
-    quiet = _FakeQuery([
-        {"live_1x2_home": 2.10, "live_1x2_draw": 3.30, "live_1x2_away": 3.80},
-        {"live_1x2_home": 2.08, "live_1x2_draw": 3.30, "live_1x2_away": 3.90},
-    ])
-    assert _odds_drift_recent(quiet, "mid") is False, \
-        "sub-threshold drift must not trigger guard"
-
-    # Single-row window — can't compute drift; allow through
-    one = _FakeQuery([
-        {"live_1x2_home": 2.00, "live_1x2_draw": 3.00, "live_1x2_away": 4.00},
-    ])
-    assert _odds_drift_recent(one, "mid") is False
-
-    # Funnel wiring: candidate-eval loop checks both guards
-    import pathlib
-    bot_src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    assert "_score_odds_consistent(cand)" in bot_src, \
-        "inplay_bot must call _score_odds_consistent inside the candidate eval loop"
-    assert "_odds_drift_recent(execute_query, mid)" in bot_src, \
-        "inplay_bot must call _odds_drift_recent inside the candidate eval loop"
-    assert 'score_odds_inconsistent' in bot_src
-    assert 'odds_drift_event' in bot_src
-
-
 @test("INPLAY-RESOLVE-ARGS — place_all_inplay_bets calls resolve_placement_target correctly + unpacks 4-tuple")
 def test_inplay_resolve_args():
     """INPLAY-RESOLVE-ARGS-FIX (2026-05-29): two silent bugs in the inplay
@@ -9083,9 +8537,8 @@ def test_admin_tg_clarity():
     pipeline_src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
     assert "record_bet_alert" in pipeline_src, \
         "daily_pipeline_v2 must call record_bet_alert after sending the per-bet alert"
-    inplay_src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    assert "record_bet_alert" in inplay_src, \
-        "inplay_bot must call record_bet_alert after sending the per-bet alert"
+    # #162 W7.2 (2026-09-26): workers/jobs/inplay_bot.py is deleted, so its record_bet_alert /
+    # edit_bet_alert_outcome pins went with it; the pre-match site above is the live one.
 
     # 5. (removed #162 W4.6 (2026-09-25)) the in-play auto-record + outcome edit is deleted.
 
@@ -9823,48 +9276,6 @@ def _():
     )
     assert "getBotPerformance()" in page and "isPublicBot(b.maturityLabel)" in page, (
         "/performance rows must come from bot_performance behind the public maturity gate")
-
-
-@test("INPLAY-LOOSEN-SILENT-L — Strategy L edge gate 4% → 3% so it can accumulate data")
-def _():
-    """Strategy L fired only 2 times in 14d on 1,930 first-goal events in
-    min 15-35 (the score/minute gate). Investigation pointed to the edge ≥ 4%
-    gate as the binding constraint — live OU 2.5 reprices fast after a 1-0,
-    leaving narrow edge. Loosened to ≥ 3% (matches G's real-xG floor) to let
-    L accumulate enough bets for calibration. Tighten back if 50+ bets land
-    at negative ROI."""
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    # Locate Strategy L block and confirm edge gate is 3.0
-    l_start = src.find("def _check_strategy_l(")
-    assert l_start >= 0, "Strategy L function missing"
-    l_end = src.find("def _check_strategy_", l_start + 1)
-    l_block = src[l_start:l_end if l_end > 0 else l_start + 5000]
-    assert "if edge_pct < 3.0:" in l_block, "Strategy L edge gate must be < 3.0 (INPLAY-LOOSEN-SILENT-L)"
-    assert "if edge_pct < 4.0:" not in l_block, "Strategy L stale < 4.0 gate found — must be removed"
-
-
-@test("INPLAY-LOOSEN-SILENT — G/H/J thresholds relaxed so silent strategies can fire")
-def _():
-    """G/H/J had 0 settled bets in 14 days despite hundreds of thousands of
-    snapshot evaluations. Funnel analysis (2026-05-17) showed each had one
-    binding operational constraint set tighter than what the live market
-    actually produces:
-      - G: corners_delta ≥3 in 10min — too rare; relaxed to ≥2
-      - H: O2.5 odds > 2.80 — only 2 candidates in 14d (avg market 2.37); to 2.30
-      - J: OU1.5 odds ≥ 2.85 — only 1,325 candidates (avg 2.37); to 2.50
-    Edge filters at end stay the same — these only open the candidate pool so
-    the strategies can accumulate enough bets to validate the thesis."""
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    # G — corners_delta gate is now < 2 (was < 3)
-    assert "if corners_delta < 2:" in src, "Strategy G corners_delta gate must be < 2 (INPLAY-LOOSEN-SILENT)"
-    assert "if corners_delta < 3:" not in src, "Strategy G stale < 3 gate found — must be removed"
-    # H — O2.5 path threshold is 2.30 (was 2.80)
-    assert 'min_val=2.30)' in src, "Strategy H O2.5 _resolve_odds min_val must be 2.30 (INPLAY-LOOSEN-SILENT)"
-    # J — OU1.5 threshold is 2.50 (was 2.85)
-    assert "if ou15 < 2.50:" in src, "Strategy J OU1.5 gate must be < 2.50 (INPLAY-LOOSEN-SILENT)"
-    assert "if ou15 < 2.85:" not in src, "Strategy J stale < 2.85 gate found — must be removed"
 
 
 @test("BOTS-RETIRE-1X2 — migration 103 retirement preserved in history")
@@ -10631,115 +10042,6 @@ def _():
             f"signal→column mapping missing {sig}→{col}"
 
 
-@test("INPLAY-LAYER-ARCH — stages 3/4/5 extracted as pure/IO functions")
-def _():
-    """INPLAY-LAYER-ARCH 2026-06-07 — stages 3 (bet payload), 4 (safety checks),
-    5 (store+notify) all extracted. Guards:
-    (1) _build_inplay_bet_data is pure and produces correct payload shape
-    (2) _run_safety_checks returns (False, None) on stale odds
-    (3) _run_safety_checks returns (True, odds_age) on fresh odds when DB
-        checks are bypassed via a no-op execute_query
-    (4) _update_game_state updates goal-contagion globals correctly
-    (5) _store_and_notify is importable (callable shape)
-    """
-    import json as _json
-    from workers.jobs.inplay_bot import (
-        _build_inplay_bet_data, _run_safety_checks, _store_and_notify,
-        _update_game_state,
-    )
-
-    # Stage 3 — payload builder
-    trigger = {
-        "market": "1x2", "selection": "home", "odds": 1.80,
-        "model_prob": 0.62, "edge": 8.5,
-        "posterior_rate": 0.030, "prematch_xg_total": 2.7,
-        "extra": {"foo": "bar"},
-    }
-    cand = {"minute": 67, "score_home": 1, "score_away": 0}
-    out = _build_inplay_bet_data(
-        trigger=trigger, cand=cand, xg_h=1.4, xg_a=0.6, is_real=True,
-        odds_age=2.5, bot_name="inplay_c",
-    )
-    assert out["market"] == "1x2"
-    assert out["stake"] == 10.0, "FLAT-STAKES-EVERYWHERE (#155): in-play stakes the flat unit too"
-    assert abs(out["edge"] - 0.085) < 1e-9, "edge must be converted % → decimal"
-    reasoning = _json.loads(out["reasoning"])
-    assert reasoning["strategy"] == "inplay_c"
-    assert reasoning["foo"] == "bar", "extra fields must be merged"
-    assert reasoning["odds_age_ms"] == 2500
-
-    # Stage 4 — safety checks: stale odds path (no captured_at → None age)
-    stale_cand = {}
-    ok, age = _run_safety_checks(None, "mid-1", stale_cand)
-    assert not ok and age is None, "_run_safety_checks must reject missing captured_at"
-
-    # Stage 4 — fresh odds, DB checks no-op (score match, no drift)
-    from datetime import datetime as _dt, timezone as _tz
-    ts = _dt.now(_tz.utc).isoformat()
-    fresh_cand = {
-        "captured_at": ts,
-        "score_home": 1, "score_away": 0,
-        "live_1x2_home": 1.80, "live_1x2_draw": 3.60, "live_1x2_away": 4.20,
-        "live_ou_25_over": 2.10,
-    }
-    def _noop_eq(sql, *a, **kw): return [{"score_home": 1, "score_away": 0, "cnt": 0}]
-    ok2, age2 = _run_safety_checks(_noop_eq, "mid-1", fresh_cand)
-    assert ok2, "_run_safety_checks must pass fresh odds with matching score"
-    assert isinstance(age2, float) and age2 >= 0
-
-    # Stage 5 — callable shape guard (can't call without real DB)
-    import inspect as _inspect
-    sig = _inspect.signature(_store_and_notify)
-    params = list(sig.parameters)
-    assert "store_bet" in params and "bot_id" in params and "trigger" in params
-
-    # _update_game_state — goal contagion window
-    import workers.jobs.inplay_bot as _ib
-    _ib._prev_total_goals.clear(); _ib._goal_event_window.clear()
-    _ib._cycle_count = 5
-    _update_game_state([{"match_id": "abc", "score_home": 1, "score_away": 0}])
-    assert _ib._goal_event_window.get("abc") == 5, "first goal must open window"
-    _update_game_state([{"match_id": "abc", "score_home": 1, "score_away": 0}])
-    assert "abc" in _ib._goal_event_window, "window should still be open (cycle 5, check cycle 5)"
-
-
-@test("INPLAY-SOFT-GATES — _gate_score helper + env-gated reference impl in strategy_c")
-def _():
-    """INPLAY-SOFT-GATES 2026-05-25 — continuous closeness score replaces
-    boolean cliff-edge gates in inplay strategies. Default OFF (boolean
-    path preserved); INPLAY_SOFT_GATES_ENABLED=true activates the soft
-    path. Guards: helper math, env-flag default, strategy_d wired to use
-    the helper, boolean fallback preserved (anti-regression).
-    """
-    import importlib
-    from workers.jobs import inplay_bot
-    importlib.reload(inplay_bot)
-    gs = inplay_bot._gate_score
-    # Hard pass / fail
-    assert gs(60, 55, side="above") == 1.0, "value above threshold = full credit"
-    # tolerance band = |threshold|*tolerance_pct → 55*0.10 = 5.5
-    assert gs(40, 55, side="above", tolerance_pct=0.10) == 0.0, "value far below band = no credit"
-    # Ramp in tolerance band
-    score = gs(52, 55, side="above", tolerance_pct=0.10)
-    assert 0.0 < score < 1.0, f"in-band should ramp, got {score}"
-    # Below side
-    assert gs(40, 55, side="below") == 1.0
-    assert gs(80, 55, side="below", tolerance_pct=0.10) == 0.0
-    # None / NaN safety
-    assert gs(None, 55) == 0.0
-    assert gs(float("nan"), 55) == 0.0
-    # Default OFF
-    assert inplay_bot._SOFT_GATES_ENABLED is False, \
-        "INPLAY_SOFT_GATES_ENABLED must default to False"
-    # Strategy_c (favourite-leading-loser) wired as the reference impl
-    import inspect
-    src = inspect.getsource(inplay_bot._check_strategy_c)
-    assert "_SOFT_GATES_ENABLED" in src, "strategy_c must consult the env flag"
-    assert "_gate_score(" in src, "strategy_c must use _gate_score"
-    # Boolean fallback still present (so default behaviour is unchanged)
-    assert "if fav_sot < opp_sot:" in src, "boolean SoT guard must be preserved"
-
-
 @test("INJURY-SEVERITY — keyword classifier maps reasons to SEVERE/MODERATE/MINOR/UNKNOWN")
 def _():
     """INJURY-SEVERITY 2026-05-25 — replaces raw injury count with
@@ -10984,44 +10286,6 @@ def _():
         assert f"'{b}'" in mig, (
             f"migration 104 must backfill retired_reason for {b} (BOTS-RETIRE-1X2)"
         )
-
-
-@test("INPLAY-STAKE-5-NEW — new inplay bets stake €5 (not €1)")
-def _():
-    """INPLAY-STAKE-5 (PERF-HONEST-HEADLINE follow-up): pre-match Kelly stakes
-    land €1-10 with €5 median. Inplay was fixed €1, meaning the highest-ROI
-    bots had near-zero weight in the headline ROI. Bumped to €5 so new bets
-    contribute meaningfully. Guard the new constant so a refactor can't
-    silently roll it back to €1.
-
-    SMOKE-SUITE-AUDIT 2026-09-01: this searched an 800-character window after
-    a literal `"market": trigger["market"]` for the string `"stake": 5.0`.
-    Fragile in both directions — reordering the dict or growing it past 800
-    chars breaks the test without changing behaviour, and the string can sit
-    in the source while a later line overwrites the value. Stake size is
-    money; call the builder and read what it actually produces.
-
-    `_build_inplay_bet_data` is documented pure (no DB, no console), so this
-    is a direct call with a synthetic trigger."""
-    from workers.jobs.inplay_bot import _build_inplay_bet_data
-
-    bet = _build_inplay_bet_data(
-        trigger={"market": "O/U", "selection": "over 2.5", "odds": 2.10,
-                 "model_prob": 0.55, "edge": 8.0, "extra": {}},
-        cand={"minute": 23, "score_home": 0, "score_away": 1},
-        xg_h=1.2, xg_a=0.8, is_real=True, odds_age=12.0, bot_name="inplay_c",
-    )
-    # FLAT-STAKES-EVERYWHERE (#155, owner 2026-09-25): every bot stakes the one flat unit;
-    # the EUR 5 was chosen to match pre-match KELLY stakes, which are retired.
-    from workers.model.improvements import FLAT_STAKE_EUR
-    assert bet["stake"] == FLAT_STAKE_EUR == 10.0, (
-        f"inplay bet payload must stake the flat unit, got {bet['stake']!r}."
-    )
-    # Pin the type too — a stake of 5 (int) survives the equality check above
-    # but changes the DB column's numeric handling downstream.
-    assert isinstance(bet["stake"], float), (
-        f"stake must be a float, got {type(bet['stake']).__name__}"
-    )
 
 
 @test("INPLAY-STAKE-5-NORMALIZE-SCRIPT — retroactive normalize script present and guarded")
@@ -11407,111 +10671,6 @@ def _():
     )
 
 
-@test("INPLAY-E-NULL-SHOTS — strategy E proxy disabled; real-xG only (no shot data access)")
-def _():
-    """Proxy mode disabled 2026-05-09 — 182 bets at −4.7% ROI. Strategy E now requires
-    real xG and returns None immediately for proxy candidates."""
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    fn_start = src.index("def _check_strategy_e(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    # Proxy disabled — must bail before any shot data access
-    assert "if not is_real:" in fn_body and "return None" in fn_body, (
-        "Strategy E must bail on proxy mode via 'if not is_real: return None'"
-    )
-    assert "expected_shots_at_minute" not in fn_body, (
-        "Strategy E must not reference expected_shots_at_minute — proxy formula removed"
-    )
-
-
-@test("INPLAY-NEW-IJL — bots I, J, L registered in INPLAY_BOTS + dispatched")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    for name in ("inplay_i", "inplay_j", "inplay_l"):
-        assert f'"{name}"' in src, f"{name} missing from INPLAY_BOTS"
-    for fn in ("_check_strategy_i", "_check_strategy_j", "_check_strategy_l"):
-        assert f"def {fn}(" in src, f"{fn} not defined"
-    assert "inplay_i" in src and "inplay_j" in src and "inplay_l" in src
-    assert "_check_strategy_i" in src and "_check_strategy_j" in src and "_check_strategy_l" in src
-
-
-@test("INPLAY-J-GOAL-DEBT — strategy J requires 0-0 and live_ou_15_over ≥ 2.85")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    fn_start = src.index("def _check_strategy_j(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    assert "live_ou_15_over" in fn_body, "Strategy J must read live_ou_15_over from candidate"
-    assert "2.85" in fn_body, "Strategy J must have min odds floor of 2.85"
-    assert '0.55' in fn_body, "Strategy J must require prematch_o25_prob >= 0.55 (INPLAY-J-LOOSEN)"
-    # Verify no false-trigger on 1-0 score
-    assert 'sh != 0 or sa != 0' in fn_body, "Strategy J must exit early if score is not 0-0"
-
-
-@test("INPLAY-L-GOAL-CONTAGION — strategy L reads _goal_event_window + guards minute range")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    fn_start = src.index("def _check_strategy_l(")
-    # L is the last function — slice to end of file
-    try:
-        fn_end = src.index("\ndef ", fn_start + 1)
-    except ValueError:
-        fn_end = len(src)
-    fn_body = src[fn_start:fn_end]
-    assert "_goal_event_window" in fn_body, "Strategy L must check _goal_event_window"
-    assert "_cycle_count" in fn_body, "Strategy L must compare cycle count for window expiry"
-    assert "total_goals != 1" in fn_body, "Strategy L must fire only when exactly 1 goal scored"
-    assert "live_ou_25_over" in fn_body, "Strategy L must check live_ou_25_over for execution"
-
-
-@test("INPLAY-I-FAV-STALL — strategy I uses bivariate Poisson and requires 0-0")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    fn_start = src.index("def _check_strategy_i(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    assert "_bivariate_poisson_win_prob" in fn_body, "Strategy I must use bivariate Poisson"
-    assert "3.0" in fn_body, "Strategy I must require live odds drift ≥ 3.0"
-    assert "0.62" in fn_body, "Strategy I must require prematch_win_prob ≥ 0.62"
-    assert "sh != 0 or sa != 0" in fn_body, "Strategy I must exit early if score is not 0-0"
-
-
-@test("INPLAY-L-STATE-UPDATE — goal contagion state updated after strategy checks")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    fn_start = src.index("def run_inplay_strategies(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    assert "_prev_total_goals" in fn_body, "run_inplay_strategies must update _prev_total_goals"
-    assert "_goal_event_window" in fn_body, "run_inplay_strategies must update _goal_event_window"
-
-
-@test("INPLAY-CANDS-OU15 — live_ou_15_over fetched in _get_live_candidates SELECT")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    fn_start = src.index("def _get_live_candidates(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    assert "live_ou_15_over" in fn_body, "_get_live_candidates must select live_ou_15_over"
-    # LIVE-STOPPAGE-TIME (2026-06-05): added_time + derived effective_minute
-    # must be available to strategies so they can opt-in to stoppage-time
-    # precision (e.g. "fire only before 90+2'").
-    assert "lms.added_time" in fn_body, (
-        "_get_live_candidates must select added_time from live_match_snapshots "
-        "so strategies can read stoppage minute"
-    )
-    assert "effective_minute" in fn_body, (
-        "_get_live_candidates must derive effective_minute = minute + added_time"
-    )
-
-
 @test("INPLAY-NEXT-10-MIN-MARKET — parser captures market id=65 / Next 10 Minutes Total")
 def _():
     """Free capture from existing /odds/live payload — zero new AF calls."""
@@ -11534,345 +10693,6 @@ def _():
     sb_src = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
     assert '"live_next10_over"' in sb_src, (
         "supabase_client store_live_snapshot optional_fields must include live_next10_over"
-    )
-
-
-@test("INPLAY-FUNNEL-LOGGING — _funnel counters incremented at every skip point")
-def _():
-    """Funnel keys: no_prematch, league_xg_gate, existing_bet, no_strategy_trigger,
-    odds_stale, score_changed, store_bet_error. All seven must be incremented to
-    diagnose silent-failure regressions when a strategy goes quiet."""
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    for key in ("no_prematch", "league_xg_gate", "existing_bet",
-                "no_strategy_trigger", "odds_stale", "score_changed",
-                "store_bet_error"):
-        assert f'_funnel["{key}"] += 1' in src, (
-            f"Funnel counter '{key}' must be incremented in run_inplay_strategies"
-        )
-    # Heartbeat must read funnel and reset
-    assert "funnel since-last" in src, (
-        "Heartbeat output must include 'funnel since-last' line"
-    )
-
-
-@test("INPLAY-BAYESIAN-ENGINE — _remaining_goals_prob helper extracted, L/M call it")
-def _():
-    """Shared Bayesian remaining-goals helper used by the "soft attack" family
-    of strategies (L, M, future ones). Strategy J originally used this helper
-    too, but INPLAY-J-LIGHT-SHRINKAGE (2026-06-03, commit b216574) replaced
-    J's heavy posterior with a local conjugate Gamma update — the helper
-    deliberately doesn't fit J's thesis anymore. The INPLAY-J-LIGHT-SHRINKAGE
-    smoke pins that new behaviour; this one pins the helper + its other
-    callers (L, M)."""
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    assert "def _remaining_goals_prob(" in src, (
-        "_remaining_goals_prob helper must exist (used by strategies L, M, future N/O)"
-    )
-    for fn in ("_check_strategy_l", "_check_strategy_m"):
-        fs = src.index(f"def {fn}(")
-        try:
-            fe = src.index("\ndef ", fs + 1)
-        except ValueError:
-            fe = len(src)
-        assert "_remaining_goals_prob(" in src[fs:fe], (
-            f"Strategy {fn[-1].upper()} must use _remaining_goals_prob helper"
-        )
-
-
-@test("INPLAY-EQUALIZER-MAGNET — strategy M registered, dispatched, uses _remaining_goals_prob")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    # Registered in INPLAY_BOTS
-    dict_start = src.index("INPLAY_BOTS = {")
-    dict_end = src.index("\n}\n", dict_start) + 2
-    bots_block = src[dict_start:dict_end]
-    assert '"inplay_m"' in bots_block, "inplay_m must be registered in INPLAY_BOTS"
-    # Dispatched
-    disp_start = src.index("def _check_strategy(")
-    disp_end = src.index("\ndef ", disp_start + 1)
-    assert '_check_strategy_m(' in src[disp_start:disp_end], (
-        "_check_strategy must dispatch inplay_m → _check_strategy_m"
-    )
-    # Body uses the shared Bayesian helper + correct entry conditions
-    fn_start = src.index("def _check_strategy_m(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    assert "_remaining_goals_prob(" in fn_body, (
-        "Strategy M must use _remaining_goals_prob (1 goal observed → P(2 more))"
-    )
-    assert "0.48" in fn_body, "Strategy M must require prematch_btts_prob ≥ 0.48"
-    assert "2.40" in fn_body, "Strategy M OU floor must be 2.40 (lowered from 3.0 — INPLAY-M-THRESHOLD-FIX)"
-    assert "minute < 30 or minute > 60" in fn_body, (
-        "Strategy M minute window is 30-60"
-    )
-
-
-@test("INPLAY-LATE-FAV-PUSH — strategy N registered, dispatched, bivariate Poisson home win")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    dict_start = src.index("INPLAY_BOTS = {")
-    dict_end = src.index("\n}\n", dict_start) + 2
-    bots_block = src[dict_start:dict_end]
-    assert '"inplay_n"' in bots_block, "inplay_n must be registered in INPLAY_BOTS"
-    disp_start = src.index("def _check_strategy(")
-    disp_end = src.index("\ndef ", disp_start + 1)
-    assert '_check_strategy_n(' in src[disp_start:disp_end], (
-        "_check_strategy must dispatch inplay_n"
-    )
-    fn_start = src.index("def _check_strategy_n(")
-    try:
-        fn_end = src.index("\ndef ", fn_start + 1)
-    except ValueError:
-        fn_end = len(src)
-    fn_body = src[fn_start:fn_end]
-    assert "_bivariate_poisson_win_prob(" in fn_body, (
-        "Strategy N must price the favourite win via _bivariate_poisson_win_prob"
-    )
-    # Window expanded 2026-05-22 from 72-80 to 65-82 (funnel showed 2.2× more
-    # candidates); threshold lowered 0.65 → 0.62 so the away-favourite path
-    # has enough sample to fire. Guard the current values.
-    assert "0.62" in fn_body, "Strategy N must require prematch fav prob ≥ 0.62"
-    assert "2.20" in fn_body, "Strategy N must require live favourite odds ≥ 2.20"
-    assert "minute < 65 or minute > 82" in fn_body, (
-        "Strategy N minute window is 65-82 (widened from 72-80 on 2026-05-22)"
-    )
-
-
-@test("INPLAY-TIME-DECAY-PRIOR — w_live = 1 - exp(-minute/30) blend in _bayesian_posterior + _remaining_goals_prob")
-def _():
-    """
-    Guard the time-decay-prior calibration (5/5 round-3 AI consensus). At min 30
-    the live signal must outweigh prematch ~63/37; at min 60 ~86/14. The flat
-    (pm + live)/(1 + minute/90) blend is gone.
-    """
-    import pathlib, math, importlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    assert "def _time_decay_weight(" in src, "_time_decay_weight helper must exist"
-    assert "1.0 - math.exp(-minute / 30.0)" in src, (
-        "_time_decay_weight must implement 1 - exp(-minute/30)"
-    )
-
-    # _bayesian_posterior must blend in rate-space using the new weight
-    bp_start = src.index("def _bayesian_posterior(")
-    bp_end = src.index("\ndef ", bp_start + 1)
-    bp_body = src[bp_start:bp_end]
-    assert "_time_decay_weight(minute)" in bp_body, (
-        "_bayesian_posterior must call _time_decay_weight"
-    )
-    assert "live_xg_total * 90.0 / minute" in bp_body, (
-        "_bayesian_posterior must normalize live signal to per-90 rate"
-    )
-    # Old flat blend must be removed
-    assert "(prematch_xg_total + live_xg_total) / (1.0 + minute / 90.0)" not in bp_body, (
-        "Old flat blend formula must be replaced"
-    )
-
-    # _remaining_goals_prob must also use the time-decay weight
-    rg_start = src.index("def _remaining_goals_prob(")
-    rg_end = src.index("\ndef ", rg_start + 1)
-    rg_body = src[rg_start:rg_end]
-    assert "_time_decay_weight(minute)" in rg_body, (
-        "_remaining_goals_prob must call _time_decay_weight"
-    )
-
-    # Unit-style: weight values match spec
-    spec = importlib.import_module("workers.jobs.inplay_bot")
-    assert abs(spec._time_decay_weight(30) - (1 - math.exp(-1))) < 1e-9
-    assert abs(spec._time_decay_weight(60) - (1 - math.exp(-2))) < 1e-9
-    assert spec._time_decay_weight(0) == 0.0
-
-
-@test("INPLAY-PERIOD-RATES — period multiplier (0.85× ≤15, 1.20× ≥76) applied to remaining lambda")
-def _():
-    import pathlib, importlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    assert "def _period_multiplier(" in src, "_period_multiplier helper must exist"
-    pm_start = src.index("def _period_multiplier(")
-    pm_end = src.index("\ndef ", pm_start + 1)
-    pm_body = src[pm_start:pm_end]
-    assert "0.85" in pm_body, "_period_multiplier must use 0.85× for early period"
-    assert "1.20" in pm_body, "_period_multiplier must use 1.20× for late period"
-    assert "minute <= 15" in pm_body, "Early threshold is minute ≤ 15"
-    assert "minute >= 76" in pm_body, "Late threshold is minute ≥ 76"
-
-    # Must be applied inside both _remaining_goals_prob and _scaled_remaining_lam
-    rg_start = src.index("def _remaining_goals_prob(")
-    rg_end = src.index("\ndef ", rg_start + 1)
-    assert "_period_multiplier(minute)" in src[rg_start:rg_end], (
-        "_remaining_goals_prob must apply _period_multiplier"
-    )
-    sr_start = src.index("def _scaled_remaining_lam(")
-    sr_end = src.index("\ndef ", sr_start + 1)
-    assert "_period_multiplier(minute)" in src[sr_start:sr_end], (
-        "_scaled_remaining_lam must apply _period_multiplier"
-    )
-
-    spec = importlib.import_module("workers.jobs.inplay_bot")
-    assert spec._period_multiplier(10) == 0.85
-    assert spec._period_multiplier(80) == 1.20
-    assert spec._period_multiplier(45) == 1.0
-
-
-@test("INPLAY-LAMBDA-STATE — score-state multipliers wired into total + per-team lambdas")
-def _():
-    """
-    Total: late-level +5%, late-imbalanced +2.5% (averages trailing+15% / leading-10%).
-    Per-team (Strategy N): trailing +15%, leading −10%, level +5%, all only ≥ minute 60.
-    Strategies J/L/M must pass score_home/score_away to _remaining_goals_prob; N must
-    apply per-team multipliers when computing bivariate Poisson lambdas.
-    """
-    import pathlib, importlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    assert "def _state_multiplier_total(" in src, "_state_multiplier_total helper must exist"
-    assert "def _state_multiplier_team(" in src, "_state_multiplier_team helper must exist"
-
-    spec = importlib.import_module("workers.jobs.inplay_bot")
-    # Total multiplier: pre-60 always 1.0
-    assert spec._state_multiplier_total(45, 0, 0) == 1.0
-    assert spec._state_multiplier_total(70, 0, 0) == 1.05
-    assert spec._state_multiplier_total(70, 1, 0) == 1.025
-    assert spec._state_multiplier_total(70, 2, 1) == 1.025
-    # Per-team multiplier
-    assert spec._state_multiplier_team(70, "trailing") == 1.15
-    assert spec._state_multiplier_team(70, "leading") == 0.90
-    assert spec._state_multiplier_team(70, "level") == 1.05
-    assert spec._state_multiplier_team(45, "trailing") == 1.0  # pre-60 disabled
-
-    # L/M must pass score_home/score_away to _remaining_goals_prob.
-    # J intentionally bypasses the helper (INPLAY-J-LIGHT-SHRINKAGE) and is
-    # pinned by its own smoke instead — see INPLAY-BAYESIAN-ENGINE.
-    for fn in ("_check_strategy_l", "_check_strategy_m"):
-        fs = src.index(f"def {fn}(")
-        fe = src.index("\ndef ", fs + 1)
-        body = src[fs:fe]
-        call_idx = body.index("_remaining_goals_prob(")
-        # Tolerate multi-line call — slice forward to the closing paren
-        call_block = body[call_idx:body.index(")", call_idx) + 1] if ")" in body[call_idx:call_idx+400] else body[call_idx:call_idx+400]
-        assert "score_home=" in call_block, (
-            f"{fn} must pass score_home= to _remaining_goals_prob (LAMBDA-STATE)"
-        )
-        assert "score_away=" in call_block, (
-            f"{fn} must pass score_away= to _remaining_goals_prob (LAMBDA-STATE)"
-        )
-
-    # N must apply per-team multipliers. By construction N only fires at level
-    # scores (`if sh != sa: return None`), so both home_state and away_state
-    # resolve to "level" — the trailing/leading branches can never run inside
-    # N. The helper is still exercised through home_state/away_state vars so
-    # the multiplier infrastructure (shared with J/L/M) stays wired.
-    n_start = src.index("def _check_strategy_n(")
-    n_end = src.index("\ndef ", n_start + 1)
-    n_body = src[n_start:n_end]
-    assert "_state_multiplier_team(" in n_body, (
-        "Strategy N must apply per-team state multipliers to bivariate lambdas"
-    )
-    assert "home_state" in n_body and "away_state" in n_body, (
-        "Strategy N must classify each side via home_state/away_state vars"
-    )
-    assert '"level"' in n_body, (
-        "Strategy N body must mention 'level' state (level scores are its entry condition)"
-    )
-
-
-@test("INPLAY-EMA-LIVE-XG — _attach_ema_live_xg + run_inplay_strategies wires + replay port")
-def _():
-    """
-    Live mode: _attach_ema_live_xg replaces cand['xg_home/away'] with EMA-smoothed
-    cumulative readings (5-min half-life, time-aware alpha) before strategies run.
-    Replay mode: apply_ema_live_xg_replay does the same in-memory across all
-    snapshots loaded from the historical window.
-    """
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    assert "def _attach_ema_live_xg(" in src, "_attach_ema_live_xg helper must exist"
-
-    # Helper must compute time-aware alpha (half-life-based) and update xg_home/away in-place
-    fn_start = src.index("def _attach_ema_live_xg(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    assert "1.0 - math.exp(-delta / max(half_life_min" in fn_body, (
-        "EMA must use time-aware alpha = 1 - exp(-delta / half_life_min)"
-    )
-    assert "live_match_snapshots" in fn_body, (
-        "EMA helper must read prior snapshots from live_match_snapshots"
-    )
-    assert 'cand["xg_home"] = ema_h' in fn_body, (
-        "EMA helper must overwrite cand['xg_home'] in-place so strategies pick it up"
-    )
-
-    # Must be called from run_inplay_strategies after _get_live_candidates
-    run_start = src.index("def run_inplay_strategies(")
-    run_end = src.index("\ndef ", run_start + 1)
-    run_body = src[run_start:run_end]
-    assert "_attach_ema_live_xg(candidates" in run_body, (
-        "run_inplay_strategies must call _attach_ema_live_xg(candidates, ...)"
-    )
-
-    # Replay-side port
-    replay_src = pathlib.Path("scripts/replay_inplay.py").read_text()
-    assert "def apply_ema_live_xg_replay(" in replay_src, (
-        "scripts/replay_inplay.py must expose apply_ema_live_xg_replay for backfill"
-    )
-    assert "apply_ema_live_xg_replay(snapshots" in replay_src, (
-        "Replay main() must call apply_ema_live_xg_replay before run_replay"
-    )
-
-
-@test("INPLAY-REPLAY-Q-INMEM — replay_strategy_q + bulk red_card_idx, no per-snapshot SQL")
-def _():
-    """
-    Replay's Q strategy must use the bulk-fetched red-card index, not a
-    per-snapshot SQL query. The live path runs `_check_strategy_q(... execute_query)`
-    which queries match_events for every snapshot — ~3-5k round-trips on the
-    backfill window and the dominant runtime cost. The replay port reads
-    `red_card_idx[mid]` instead.
-    """
-    import pathlib
-    src = pathlib.Path("scripts/replay_inplay.py").read_text()
-    assert "def replay_strategy_q(" in src, "replay_strategy_q must exist"
-    assert "def fetch_red_card_index(" in src, "bulk red-card index helper must exist"
-
-    fn_start = src.index("def replay_strategy_q(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    assert "red_card_idx.get(mid)" in fn_body, (
-        "replay_strategy_q must look up the precomputed index (no SQL per snapshot)"
-    )
-    assert "execute_query" not in fn_body, (
-        "replay_strategy_q must NOT call execute_query — defeats the perf win"
-    )
-
-    # Dispatch in run_replay must route inplay_q to the in-memory port
-    rr_start = src.index("def run_replay(")
-    rr_end = src.index("\ndef ", rr_start + 1)
-    rr_body = src[rr_start:rr_end]
-    assert 'bot_name == "inplay_q"' in rr_body, (
-        "run_replay must dispatch inplay_q to replay_strategy_q"
-    )
-    assert "replay_strategy_q(" in rr_body, "replay_strategy_q must be invoked from run_replay"
-
-
-@test("INPLAY-CALIBRATION-STACK — _scaled_remaining_lam used by every per-strategy lambda_remaining")
-def _():
-    """
-    A/C/D/E/G/H/Q each compute their own lambda_remaining outside _remaining_goals_prob.
-    All must funnel through _scaled_remaining_lam so the calibration stack
-    (h2_uplift × period × state) lands once, in one helper.
-    """
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    assert "def _scaled_remaining_lam(" in src, "_scaled_remaining_lam helper must exist"
-    # No raw `posterior * remaining_minutes / 90.0` left — every callsite must use the helper
-    assert "lambda_remaining = posterior * remaining_minutes / 90.0" not in src, (
-        "All strategies must compute lambda_remaining via _scaled_remaining_lam — "
-        "raw posterior * remaining_minutes / 90.0 bypasses the calibration stack"
-    )
-    assert "lambda_remaining = posterior * remaining / 90.0" not in src, (
-        "All strategies must compute lambda_remaining via _scaled_remaining_lam"
     )
 
 
@@ -13290,41 +12110,6 @@ def _():
     assert away_pos is not None, "Must parse 'Away +0.5' into selection='away', handicap_line=0.5"
 
 
-@test("INPLAY-LIVE-DEBUG — inplay_bot has prematch fallback, per-strategy stats, and _resolve_odds helper")
-def _():
-    """INPLAY-LIVE-DEBUG (2026-05-11): Live odds coverage ~12% caused 0 fired bets.
-    Source guards:
-    1. _resolve_odds helper exists and returns (float, bool).
-    2. _strategy_stats dict tracks tried/fired per bot.
-    3. Prematch SQL LATERAL subquery fetches prematch_ou25_over.
-    4. Strategy A uses _resolve_odds (prematch fallback active).
-    5. Strategy Q uses _resolve_odds with min_val=2.30 and records odds_source in extra."""
-    import pathlib
-    inplay = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-
-    assert "def _resolve_odds(" in inplay, (
-        "_resolve_odds helper must exist for live-to-prematch fallback"
-    )
-    assert "tuple[float, bool]" in inplay, (
-        "_resolve_odds must declare return type tuple[float, bool]"
-    )
-    assert "_strategy_stats" in inplay, (
-        "_strategy_stats dict must exist for per-bot tried/fired tracking"
-    )
-    assert "strategy rates" in inplay, (
-        "heartbeat must log strategy rates from _strategy_stats"
-    )
-    assert "prematch_ou25_over" in inplay, (
-        "prematch SQL must fetch prematch_ou25_over via LATERAL subquery"
-    )
-    assert "_resolve_odds(cand.get(\"live_ou_25_over\")" in inplay, (
-        "strategy A must call _resolve_odds with live_ou_25_over for prematch fallback"
-    )
-    assert "odds_source" in inplay, (
-        "return dicts must include odds_source key to distinguish live vs prematch"
-    )
-
-
 @test("DNB-COMPUTE — draw_no_bet settlement and candidate_specs generation")
 def _():
     """DNB-COMPUTE (2026-05-11): Draw No Bet bots computed from 1X2 odds.
@@ -13439,7 +12224,11 @@ def _():
     # The invariant that actually matters survives and is stated directly: the
     # Estonian test must still be APPLIED SOMEWHERE, or "placeable" stops
     # meaning anything. OWN-PICKS-BOOK-SEAM pins which side each belongs on.
-    assert "bm not in ACCESSIBLE_BOOKMAKERS" in pipeline, (
+    # #162 W7.2 (2026-09-26): the shadow passes that applied it in the pipeline
+    # (`bm not in ACCESSIBLE_BOOKMAKERS`) were deleted — every bot they served was
+    # retired. The live OWN application is pick_generator._own_outlier_ok.
+    _pg_src = pathlib.Path("workers/automation/pick_generator.py").read_text()
+    assert "b in ACCESSIBLE_BOOKMAKERS" in _pg_src, (
         "no path applies the Estonian allow-list any more. OWN must keep it — "
         "without it the operator is shown, and could stake at, books that "
         "Estonia blocks")
@@ -13509,25 +12298,6 @@ def test_freshness_bookmaker_engine_side():
     assert "slippage_pct" in rsrc, "real_perf_report.py must show slippage"
 
 
-@test("INPLAY-STATS-DB — upsert_inplay_bot_stats wiring (source inspect)")
-def test_inplay_stats_db():
-    """INPLAY-STATS-DB (2026-05-11): strategy tried/fired stats persisted to DB on heartbeat."""
-    import pathlib
-    client = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
-    assert "upsert_inplay_bot_stats" in client, "upsert_inplay_bot_stats must be in supabase_client.py"
-    assert "inplay_bot_stats" in client, "must target inplay_bot_stats table"
-    assert "GREATEST" in client, "must use GREATEST for safe accumulation"
-    assert "ON CONFLICT" in client, "must upsert not insert"
-
-    bot = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    assert "upsert_inplay_bot_stats" in bot, "inplay_bot.py must call upsert_inplay_bot_stats on heartbeat"
-    assert "_strategy_stats" in bot, "_strategy_stats dict must be passed to upsert"
-
-    migration = pathlib.Path("supabase/migrations/095_inplay_bot_stats.sql").read_text()
-    assert "inplay_bot_stats" in migration, "migration 095 must create inplay_bot_stats"
-    assert "UNIQUE" in migration, "must have UNIQUE(stat_date, strategy)"
-
-
 @test("PLACE-BET-UX — already-placed indicator + AH/DC bets (source inspect)")
 def test_place_bet_ux():
     """PLACE-BET-UX (2026-05-11): /admin/place shows already-placed badge + AH/DC bets now visible."""
@@ -13557,22 +12327,6 @@ def test_place_bet_ux():
     assert not table.exists(), "place-bet-table.tsx stays deleted (ADMIN-PLACE-DELETED)"
     row = root.parent / "odds-intel-web" / "src" / "components" / "shadow-bots" / "picks-row.tsx"
     assert "LOGGED" in row.read_text(), "the Pick queue must show an already-logged pick"
-
-
-@test("INPLAY-BOT-REPORT — script structure (source inspect)")
-def test_inplay_bot_report():
-    """INPLAY-BOT-REPORT (2026-05-11): inplay_bot_report.py reads inplay_bot_stats + simulated_bets."""
-    import pathlib
-    src = (pathlib.Path(__file__).resolve().parent / "inplay_bot_report.py").read_text()
-    assert "inplay_bot_stats" in src, "must query inplay_bot_stats table"
-    assert "simulated_bets" in src, "must join simulated_bets for P&L"
-    assert "xg_source IS NOT NULL" in src, "must filter to live bets only"
-    assert "section_summary" in src, "must have summary section"
-    assert "section_strategy_table" in src, "must have per-strategy table"
-    assert "section_daily_activity" in src, "must have daily heatmap"
-    assert "section_recent_bets" in src, "must have recent bets section"
-    assert "--strategy" in src, "must support --strategy filter"
-    assert "--days" in src, "must support --days filter"
 
 
 @test("AH-CALIBRATED-PROB — value-bets uses calibrated_prob not raw model_probability (source inspect)")
@@ -14892,103 +13646,6 @@ def _():
     )
 
 
-@test("INPLAY-UNDERDOG-HOLD — strategy O registered, dispatched, checks prematch prob < 35% + live odds")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-
-    # Bot registered in INPLAY_BOTS
-    assert '"inplay_o"' in src, "inplay_o must be in INPLAY_BOTS"
-
-    # Dispatched in _check_strategy
-    fn_start = src.index("def _check_strategy(bot_name:")
-    fn_end = src.index("\ndef _check_strategy_a(", fn_start)
-    dispatch_body = src[fn_start:fn_end]
-    assert '"inplay_o"' in dispatch_body, "inplay_o must be dispatched in _check_strategy"
-
-    # Strategy function has correct gates
-    fn_start = src.index("def _check_strategy_o(")
-    fn_end = src.index("\ndef _check_strategy_p(", fn_start)
-    fn_body = src[fn_start:fn_end]
-    assert "pm_home >= 0.35" in fn_body, "Strategy O must gate on prematch_home_prob >= 0.35"
-    assert "pm_away >= 0.35" in fn_body, "Strategy O must gate on prematch_away_prob >= 0.35"
-    assert "2.80" in fn_body, "Strategy O must require live odds >= 2.80"
-    assert "_poisson_win_prob(" in fn_body, "Strategy O must use _poisson_win_prob for edge"
-    assert "live_1x2_home" in fn_body and "live_1x2_away" in fn_body, (
-        "Strategy O must read live_1x2_home and live_1x2_away from candidate"
-    )
-
-
-@test("INPLAY-POST-EQUALIZER — strategy P_v2 registered, dispatched, uses equalizer window + Poisson")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-
-    # v2 bot registered
-    assert '"inplay_p_v2"' in src, "inplay_p_v2 must be in INPLAY_BOTS"
-
-    # v2 dispatched
-    fn_start = src.index("def _check_strategy(bot_name:")
-    fn_end = src.index("\ndef _check_strategy_a(", fn_start)
-    dispatch_body = src[fn_start:fn_end]
-    assert '"inplay_p_v2"' in dispatch_body, "inplay_p_v2 must be dispatched in _check_strategy"
-    assert "inplay_p_v2" in dispatch_body, "inplay_p not dispatched (retired)"
-
-    # Module-level state vars exist
-    assert "_equalizer_event_window" in src, "_equalizer_event_window dict must exist"
-    assert "_prev_scores" in src, "_prev_scores dict must exist"
-
-    # v2 strategy function checks window and 1-1 score
-    fn_start = src.index("def _check_strategy_p_v2(")
-    try:
-        fn_end_p = src.index("\ndef ", fn_start + 1)
-    except ValueError:
-        fn_end_p = len(src)
-    fn_body = src[fn_start:fn_end_p]
-    assert "_equalizer_event_window" in fn_body, "Strategy P v2 must check _equalizer_event_window"
-    assert "sh != 1 or sa != 1" in fn_body, "Strategy P v2 must exit if score is not 1-1"
-    assert "2.20" in fn_body, "Strategy P v2 must require live odds >= 2.20"
-    assert "_poisson_win_prob(" in fn_body, "Strategy P v2 must use _poisson_win_prob for edge"
-
-    # _update_game_state is called at the end of run_inplay_strategies
-    assert "_update_game_state(candidates)" in src, "_update_game_state must be called each cycle"
-
-    # Equalizer detection logic (now inside _update_game_state) updates both dicts
-    fn_start = src.index("def _update_game_state(")
-    try:
-        fn_end = src.index("\ndef ", fn_start + 1)
-    except ValueError:
-        fn_end = len(src)
-    update_body = src[fn_start:fn_end]
-    assert "_prev_scores[mid]" in update_body, "Must update _prev_scores each cycle"
-    assert "_equalizer_event_window[mid]" in update_body, "Must record equalizer event"
-
-
-@test("INPLAY-POISSON-WIN-PROB — _poisson_win_prob helper unit tests")
-def _():
-    import sys
-    sys.path.insert(0, ".")
-    from workers.jobs.inplay_bot import _poisson_win_prob
-
-    # At 0-0, symmetric lambdas: each team wins with equal probability < 0.5
-    prob = _poisson_win_prob(0.5, 0.5, lead_a=0)
-    assert 0.20 < prob < 0.40, f"Symmetric 0-0 win prob should be ~0.3, got {prob}"
-
-    # Leading 1-0 with equal remaining lambdas: ~60-70% win probability
-    prob = _poisson_win_prob(0.6, 0.6, lead_a=1)
-    assert 0.55 < prob < 0.80, f"1-0 lead win prob should be 55-80%, got {prob}"
-
-    # Strong underdog (low lambda) leading vs strong favourite (high lambda)
-    # at 1-0 with 40 min remaining — should still be >35% (better than implied 2.80)
-    prob_strong_lead = _poisson_win_prob(0.49, 0.89, lead_a=1)  # 1.1*(40/90), 2.0*(40/90)
-    assert prob_strong_lead > 0.36, f"Underdog holding 1-0 with 40min left: {prob_strong_lead:.3f}"
-
-    # With lead_a=0 and lambda_a > lambda_b, A should have higher win prob
-    prob_a = _poisson_win_prob(1.0, 0.5, lead_a=0)
-    prob_b = _poisson_win_prob(0.5, 1.0, lead_a=0)
-    assert prob_a > prob_b, "Higher-lambda team should win more often from equal state"
-
-
 @test("OPT-AWAY-ODDS-FIX — bot_opt_away_british + europe odds_range widened to 2.20-3.50")
 def _():
     import pathlib
@@ -15004,22 +13661,6 @@ def _():
     europe_body = src[europe_start:europe_end]
     assert "(2.20, 3.50)" in europe_body, "bot_opt_away_europe odds_range must be (2.20, 3.50)"
     assert "(2.50, 3.00)" not in europe_body, "bot_opt_away_europe old odds_range (2.50, 3.00) still present"
-
-
-@test("INPLAY-J-LOOSEN — strategy J prematch_o25 gate lowered to 0.55")
-def _():
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    fn_start = src.index("def _check_strategy_j(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    fn_body = src[fn_start:fn_end]
-    assert "pm_o25 < 0.55" in fn_body, "Strategy J must use pm_o25 < 0.55 gate (INPLAY-J-LOOSEN)"
-    assert "pm_o25 < 0.62" not in fn_body, "Strategy J old gate 0.62 still present"
-
-    dict_start = src.index('"inplay_j"')
-    dict_end = src.index('"inplay_l"', dict_start)
-    dict_body = src[dict_start:dict_end]
-    assert "0.55" in dict_body, "INPLAY_BOTS description for inplay_j must reflect 0.55"
 
 
 @test("INPLAY-CLV-NULL — settlement skips CLV for inplay bots (live odds not a valid closing line)")
@@ -15790,74 +14431,6 @@ def _():
     )
 
 
-@test("INPLAY-BTTS-BOTS-V1 — two BTTS-Yes inplay bots ship with migration 126 + dispatch")
-def _():
-    """INPLAY-BTTS-AH-BOTS (2026-05-24): ship inplay_btts_press_v1 +
-    inplay_btts_dryspell_v1 as uncalibrated first-cut bots. Verify
-    migration adds the bot rows + snapshot columns, INPLAY_BOTS lists
-    them, dispatcher routes them, and the prob helper exists."""
-    import pathlib, sys
-    root = pathlib.Path(__file__).resolve().parent.parent
-
-    mig = (root / "supabase" / "migrations" / "126_inplay_btts_bots.sql").read_text()
-    assert "live_btts_yes" in mig and "live_btts_no" in mig, (
-        "migration 126 must add live_btts_yes/no columns to live_match_snapshots"
-    )
-    assert "live_ah_main_line" in mig and "live_ah_home_odds" in mig and "live_ah_away_odds" in mig, (
-        "migration 126 must add AH triple columns to live_match_snapshots"
-    )
-    assert "inplay_btts_press_v1" in mig and "inplay_btts_dryspell_v1" in mig, (
-        "migration 126 must INSERT both BTTS bot rows"
-    )
-
-    sys.path.insert(0, str(root))
-    from workers.jobs import inplay_bot as ib
-    assert "inplay_btts_press_v1" in ib.INPLAY_BOTS, "INPLAY_BOTS must list inplay_btts_press_v1"
-    assert "inplay_btts_dryspell_v1" in ib.INPLAY_BOTS, "INPLAY_BOTS must list inplay_btts_dryspell_v1"
-    assert hasattr(ib, "_btts_yes_remaining_prob"), "prob helper _btts_yes_remaining_prob must exist"
-    assert hasattr(ib, "_check_strategy_btts_press_v1"), "strategy fn must exist"
-    assert hasattr(ib, "_check_strategy_btts_dryspell_v1"), "strategy fn must exist"
-
-    # Smoke the prob helper with hand-picked inputs.
-    p_both_score = ib._btts_yes_remaining_prob(1.5, 1.5, 60, 0, 0)
-    p_one_left   = ib._btts_yes_remaining_prob(1.5, 1.5, 60, 1, 0)
-    p_already    = ib._btts_yes_remaining_prob(1.5, 1.5, 60, 1, 1)
-    assert 0.0 < p_both_score < p_one_left < 1.0, (
-        f"BTTS prob monotonicity broken: 0-0={p_both_score:.3f} 1-0={p_one_left:.3f}"
-    )
-    assert p_already == 1.0, "Already-BTTS-Yes must return 1.0"
-
-    # Candidate SELECT must include live_btts_yes so strategy reads it (INPLAY-BTTS-QUERY-FIX 2026-05-28)
-    ib_src = (root / "workers" / "jobs" / "inplay_bot.py").read_text()
-    assert "lms.live_btts_yes" in ib_src, (
-        "_get_live_candidates SELECT must include lms.live_btts_yes — INPLAY-BTTS-QUERY-FIX 2026-05-28"
-    )
-
-    # Dispatcher must route both new names.
-    inplay_src = ib_src
-    assert '"inplay_btts_press_v1"' in inplay_src and '_check_strategy_btts_press_v1' in inplay_src, (
-        "dispatcher must route inplay_btts_press_v1"
-    )
-    assert '"inplay_btts_dryspell_v1"' in inplay_src and '_check_strategy_btts_dryspell_v1' in inplay_src, (
-        "dispatcher must route inplay_btts_dryspell_v1"
-    )
-
-    # build_snapshot must embed BTTS + AH fields (BTTS via f"live_btts_{sel}").
-    lt = (root / "workers" / "jobs" / "live_tracker.py").read_text()
-    assert 'live_btts_' in lt and 'live_ah_main_line' in lt, (
-        "build_snapshot must embed BTTS + AH fields from parsed live odds"
-    )
-    # store_live_snapshots_batch + store_live_snapshot must persist them.
-    sc = (root / "workers" / "api_clients" / "supabase_client.py").read_text()
-    assert 'live_btts_yes' in sc and 'live_ah_main_line' in sc, (
-        "store_live_snapshot optional_fields must include BTTS + AH cols"
-    )
-    dbf = (root / "workers" / "api_clients" / "db.py").read_text()
-    assert 'live_btts_yes' in dbf and 'live_ah_main_line' in dbf, (
-        "store_live_snapshots_batch columns must include BTTS + AH cols"
-    )
-
-
 @test("LIVE-BTTS-AH-FIX — parser captures BTTS + Asian Handicap from /odds/live")
 def _():
     """LIVE-BTTS-AH-FIX (2026-05-24): parse_live_odds must emit BTTS rows
@@ -16118,38 +14691,6 @@ def _():
     assert "PSCH" in src, "must use Pinnacle closing columns"
     assert "clv" in src, "must compute CLV (B365 / Pinnacle closing)"
     assert "backtest-football-data.csv" in src, "must write output CSV"
-
-
-@test("INPLAY-CONFIG-LOOSEN — inplay_e window 25-30, inplay_m OU 2.20, inplay_n window 65-82 + away")
-def _():
-    """INPLAY-CONFIG-LOOSEN (2026-05-22): three inplay bot configs loosened based on
-    funnel analysis of live_match_snapshots. Verifies exact threshold values in source."""
-    import pathlib
-    src = (pathlib.Path(__file__).resolve().parents[1] /
-           "workers" / "jobs" / "inplay_bot.py").read_text()
-
-    # inplay_e: window tightened to 25-30
-    e_start = src.index("def _check_strategy_e(")
-    e_end = src.index("\ndef _check_strategy_g(")
-    e_body = src[e_start:e_end]
-    assert "minute > 30" in e_body, "inplay_e upper window must be 30 (INPLAY-CONFIG-LOOSEN)"
-    assert "minute > 50" not in e_body, "inplay_e must not still have old 50-min gate"
-
-    # inplay_m: OU floor 2.20
-    m_start = src.index("def _check_strategy_m(")
-    m_end = src.index("\ndef _check_strategy_n(")
-    m_body = src[m_start:m_end]
-    assert "min_val=2.20" in m_body, "inplay_m must use min_val=2.20 (INPLAY-CONFIG-LOOSEN)"
-    assert "min_val=2.40" not in m_body, "inplay_m must not still have old 2.40 floor"
-
-    # inplay_n: window 65-82, away-favourite path
-    n_start = src.index("def _check_strategy_n(")
-    n_end = src.index("\ndef _check_strategy_q(")
-    n_body = src[n_start:n_end]
-    assert "minute < 65" in n_body, "inplay_n lower window must be 65 (INPLAY-CONFIG-LOOSEN)"
-    assert "minute > 82" in n_body, "inplay_n upper window must be 82 (INPLAY-CONFIG-LOOSEN)"
-    assert "pm_away_prob" in n_body, "inplay_n must check away-favourite path (INPLAY-CONFIG-LOOSEN)"
-    assert "minute < 72" not in n_body, "inplay_n must not still have old 72-min gate"
 
 
 @test("MARKET-CASE-NORMALIZE — store_bet normalizes market to lowercase")
@@ -16493,20 +15034,13 @@ def test_odds_timing_validate_script():
     )
 
 
-@test("TELE-BET-NOTIFY — send_telegram in inplay_bot + daily_pipeline; team names in prematch query")
+@test("TELE-BET-NOTIFY — daily_pipeline sends the value-bet Telegram summary; placer does not")
 def test_telegram_bet_notify():
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1]
-    bot_src = (root / "workers" / "jobs" / "inplay_bot.py").read_text()
+    # #162 W7.2 (2026-09-26): the inplay_bot.py half of this pin is gone with the module.
     pipeline_src = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
     placer_src = (root / "workers" / "automation" / "coolbet_placer.py").read_text()
-
-    assert "from workers.notify.telegram import send_telegram" in bot_src, \
-        "inplay_bot.py must import send_telegram"
-    assert "home_name" in bot_src and "away_name" in bot_src, \
-        "prematch query must select home_name / away_name from teams"
-    assert "send_telegram" in bot_src, \
-        "inplay_bot.py must call send_telegram after bet placement"
 
     assert "_new_bet_lines" in pipeline_src, \
         "daily_pipeline_v2.py must accumulate _new_bet_lines for Telegram summary"
@@ -16908,10 +15442,7 @@ def test_user_tele_notify():
     assert "send_telegram_to_users" in pipeline_src, \
         "daily_pipeline_v2.py must call send_telegram_to_users for user bet alerts"
 
-    # inplay_bot wires user notifications
-    bot_src = (root / "workers" / "jobs" / "inplay_bot.py").read_text()
-    assert "send_telegram_to_users" in bot_src, \
-        "inplay_bot.py must call send_telegram_to_users for user bet alerts"
+    # #162 W7.2 (2026-09-26): inplay_bot.py (the second user-notification site) is deleted.
 
     # Webhook route exists in frontend (source-inspect via relative path guess)
     # SMOKE-SUITE-AUDIT 2026-09-06 — the `/api/telegram/disconnect` route
@@ -16995,105 +15526,6 @@ def test_hrg_v2():
     assert '"Australia"' in pipeline or "'Australia'" in pipeline, "Australia must be in league_filter"
     # Home/Away selection filter (no Draw)
     assert '"Away"' in pipeline or "'Away'" in pipeline, "Away selection must be included"
-
-
-@test("INPLAY-LOW-FIRE-XG-FALLBACKS — A/D/G/H/I/N unlock 62% of matches missing predictions data")
-def test_inplay_low_fire_xg_fallbacks():
-    import pathlib
-    src = pathlib.Path(__file__).resolve().parents[1].joinpath(
-        "workers/jobs/inplay_bot.py"
-    ).read_text()
-
-    def get_fn_body(name):
-        start = src.index(f"def _check_strategy_{name}(")
-        try:
-            end = src.index(f"\ndef _check_strategy_", start + 1)
-        except ValueError:
-            end = len(src)
-        return src[start:end]
-
-    # A, D, G, H: xG fallback when prematch_o25_prob absent
-    for letter, threshold in [("a", "2.70"), ("d", "2.55"), ("g", "2.55"), ("h", "2.70")]:
-        body = get_fn_body(letter)
-        assert threshold in body, (
-            f"Strategy {letter.upper()} must have xG fallback at {threshold}"
-            f" — INPLAY-{letter.upper()}-XG-FALLBACK 2026-05-28"
-        )
-        assert "_fb_xg" in body, (
-            f"Strategy {letter.upper()} must use _fb_xg variable for xG fallback"
-        )
-
-    # I, N: bivariate Poisson fallback when prematch_home/away_prob absent
-    for letter in ("i", "n"):
-        body = get_fn_body(letter)
-        assert "_bivariate_poisson_win_prob" in body, (
-            f"Strategy {letter.upper()} must call _bivariate_poisson_win_prob for fav fallback"
-            f" — INPLAY-{letter.upper()}-FAV-FALLBACK 2026-05-28"
-        )
-        assert "pm_home_prob == 0 and pm_away_prob == 0" in body, (
-            f"Strategy {letter.upper()} must guard fallback with both probs == 0 check"
-        )
-
-
-@test("INPLAY-P-V2-ODDS-FILTER — v2 excludes 2.50-2.99 bucket and caps at 5.0 (retirement data 2026-05-28)")
-def test_inplay_p_v2_odds_filter():
-    import pathlib
-    src = pathlib.Path(__file__).resolve().parents[1].joinpath(
-        "workers/jobs/inplay_bot.py"
-    ).read_text()
-    fn_start = src.index("def _check_strategy_p_v2(")
-    try:
-        fn_end = src.index("\ndef ", fn_start + 1)
-    except ValueError:
-        fn_end = len(src)
-    fn_body = src[fn_start:fn_end]
-    assert "2.50" in fn_body, "Strategy P v2 must reference 2.50 (exclude 2.50-2.99 bucket)"
-    assert "3.00" in fn_body, "Strategy P v2 must reference 3.00 (exclude 2.50-2.99 bucket)"
-    assert "odds >= 5.0" in fn_body, "Strategy P v2 must cap at 5.0"
-
-
-@test("INPLAY-J-XG-FALLBACK — strategy J derives O25 from prematch xG when prob unavailable")
-def test_inplay_j_xg_fallback():
-    import pathlib
-    src = pathlib.Path(__file__).resolve().parents[1].joinpath(
-        "workers/jobs/inplay_bot.py"
-    ).read_text()
-    fn_start = src.index("def _check_strategy_j(")
-    try:
-        fn_end = src.index("\ndef ", fn_start + 1)
-    except ValueError:
-        fn_end = len(src)
-    fn_body = src[fn_start:fn_end]
-    assert "2.90" in fn_body, (
-        "Strategy J must fall back to xG total >= 2.90 when prematch_o25_prob absent"
-        " — INPLAY-J-XG-FALLBACK 2026-05-28"
-    )
-    assert "prematch_xg_home" in fn_body, (
-        "Strategy J xG fallback must read prematch_xg_home — INPLAY-J-XG-FALLBACK 2026-05-28"
-    )
-
-
-@test("INPLAY-Q-POSS-OPTIONAL — strategy Q skips possession gate when data absent")
-def test_inplay_q_poss_optional():
-    import pathlib
-    src = pathlib.Path(__file__).resolve().parents[1].joinpath(
-        "workers/jobs/inplay_bot.py"
-    ).read_text()
-    fn_start = src.index("def _check_strategy_q(")
-    try:
-        fn_end = src.index("\ndef ", fn_start + 1)
-    except ValueError:
-        fn_end = len(src)
-    fn_body = src[fn_start:fn_end]
-    assert "poss_h_raw is not None" in fn_body, (
-        "Strategy Q must guard possession_home with 'is not None' check"
-        " — INPLAY-Q-POSS-OPTIONAL 2026-05-28"
-    )
-    # Old default-to-50 pattern must be gone
-    assert "or 50)" not in fn_body, (
-        "Strategy Q must NOT default possession to 50 — silently blocks all data-absent matches"
-        " — INPLAY-Q-POSS-OPTIONAL 2026-05-28"
-    )
 
 
 @test("COVERAGE-EXTENDED — generate_targets_extended.py script present and pipeline loads targets_extended.csv")
@@ -17193,17 +15625,15 @@ def test_coolbet_anon_read():
 @test("INPLAY-COOLBET-URL — coolbet_match_url reads Imperva cookies from env, falls back gracefully")
 def test_inplay_coolbet_url():
     """Helper moved from inplay_bot.py to coolbet_session.py (TELE-COOLBET-URL,
-    commit ab46c53) — inspect the new home and confirm inplay_bot still wires it."""
+    commit ab46c53). #162 W7.2 (2026-09-26): inplay_bot.py is deleted; the helper's live callers
+    are daily_pipeline_v2 and coolbet_signaler."""
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1]
-    bot_src = (root / "workers" / "jobs" / "inplay_bot.py").read_text()
     helper_src = (root / "workers" / "automation" / "coolbet_session.py").read_text()
 
-    # Helper exists (now in coolbet_session.py, imported as _coolbet_match_url)
+    # Helper exists (now in coolbet_session.py)
     assert "def coolbet_match_url" in helper_src, \
         "coolbet_match_url must be defined in workers/automation/coolbet_session.py"
-    assert "_coolbet_match_url" in bot_src, \
-        "inplay_bot.py must import the helper as _coolbet_match_url"
 
     # Reads Imperva env vars (same as CoolbetSession)
     assert "COOLBET_COOKIE_REESE84" in helper_src, \
@@ -17217,11 +15647,10 @@ def test_inplay_coolbet_url():
     assert "coolbet.com/et/sport/match/" in helper_src, \
         "coolbet_match_url must return /et/sport/match/{id} URL"
 
-    # Wired into admin Telegram send_telegram call from inplay_bot
-    assert 'cb_url = _coolbet_match_url' in bot_src, \
-        "_coolbet_match_url must be called in the bet placement block"
-    assert 'Open on Coolbet' in bot_src, \
-        "admin Telegram alert must include 'Open on Coolbet' link when cb_url is set"
+    # Wired into the pre-match alert (the in-play one went with inplay_bot.py)
+    pipe_src = (root / "workers" / "jobs" / "daily_pipeline_v2.py").read_text()
+    assert "coolbet_match_url(" in pipe_src, \
+        "daily_pipeline_v2 must link the Coolbet match page in its alert"
 
     # Never raises (try/except)
     assert "except Exception" in helper_src, \
@@ -18533,76 +16962,6 @@ def _():
     assert "share_token" in src, "index must cover share_token"
 
 
-@test("INPLAY-J-LIGHT-SHRINKAGE — strategy J uses local Gamma update, not _remaining_goals_prob")
-def _():
-    """INPLAY-J-LIGHT-SHRINKAGE 2026-06-03. After INPLAY-J-SILENT-FAILURE
-    diagnosed that the portfolio's `_time_decay_weight` was shrinking
-    strategy J's posterior so aggressively it could never fire, the
-    strategy switched to a local conjugate Gamma update with prior
-    strength s=2 (matches worth). Guards:
-
-    1. The function does NOT call `_remaining_goals_prob` (would re-apply
-       the heavy shrinkage).
-    2. It uses `J_PRIOR_STRENGTH` constant in the local Gamma formula.
-    3. The known-good case (pm_xg_total=2.8, minute=40, 0-0) yields
-       posterior ≈ 2.29 and fires when market odds ≥ ~3.20.
-
-    Math sanity (no DB hit): import the strategy, build a synthetic
-    `cand` and `pm`, call it, check the posterior + edge values.
-    """
-    import importlib
-    sys.path.insert(0, str(_engine_path("").parent.resolve()))
-    inplay = importlib.import_module("workers.jobs.inplay_bot")
-
-    src = _engine_path("workers/jobs/inplay_bot.py").read_text()
-    j_block_start = src.index("def _check_strategy_j(")
-    j_block_end = src.index("\ndef ", j_block_start + 10)
-    j_block = src[j_block_start:j_block_end]
-
-    # 1. Does NOT call _remaining_goals_prob (would re-apply heavy shrinkage)
-    assert "_remaining_goals_prob(" not in j_block, (
-        "strategy_j must NOT call _remaining_goals_prob — INPLAY-J-LIGHT-SHRINKAGE "
-        "uses a local Gamma update to avoid the heavy posterior shrinkage that "
-        "previously caused INPLAY-J-SILENT-FAILURE (zero bets in 25+ days)."
-    )
-    # 2. Uses local J_PRIOR_STRENGTH constant + the Gamma formula
-    assert "J_PRIOR_STRENGTH" in j_block, (
-        "strategy_j must define J_PRIOR_STRENGTH constant for the local "
-        "Gamma update (matches worth of prior information)."
-    )
-    assert "_scaled_remaining_lam" in j_block, (
-        "strategy_j must reuse _scaled_remaining_lam so the h2/period/state "
-        "multipliers stay consistent with the other inplay strategies."
-    )
-
-    # 3. Known-good case: pm_xg_total=2.8, minute=40, 0-0, odds 3.50
-    # Expected: posterior ≈ 2.29, remaining ≈ 1.27, model_prob ≈ 0.37,
-    # market_prob ≈ 0.286, edge ≈ +8pp → should fire.
-    cand = {
-        "minute": 40,
-        "score_home": 0,
-        "score_away": 0,
-        "live_ou_15_over": 3.50,
-    }
-    pm = {
-        "prematch_o25_prob": 0.60,
-        "prematch_xg_home": 1.4,
-        "prematch_xg_away": 1.4,
-        "prematch_ou15_over": None,
-    }
-    trigger = inplay._check_strategy_j(cand, pm, has_red_card=False)
-    assert trigger is not None, (
-        "known-good case (pm_xg_total=2.8, min=40, 0-0, odds=3.50) must fire"
-    )
-    assert trigger["market"] == "O/U"
-    assert trigger["selection"] == "over 1.5"
-    # posterior at min 40 with pm_xg_total=2.8 and s=2:
-    # (2.8 * 2 + 0) / (2 + 40/90) = 5.6 / 2.444 ≈ 2.29
-    assert 2.20 <= trigger["posterior_rate"] <= 2.40, (
-        f"posterior_rate ~2.29 expected, got {trigger['posterior_rate']}"
-    )
-
-
 @test("INPLAY-L-PROMOTE — migration 174 flips bot_inplay_l maturity to calibrated")
 def _():
     """INPLAY-L-PROMOTE 2026-06-03. After INPLAY-CALIBRATION-IJL surfaced
@@ -18636,20 +16995,8 @@ def _():
     for col in ("match_minute_at_pick", "score_home_at_pick", "score_away_at_pick"):
         assert col in mig_src, f"migration 173 must add column {col}"
 
-    # 2. Builder includes the fields
-    builder_src = _engine_path("workers/jobs/inplay_bot.py").read_text()
-    builder_block_start = builder_src.index("def _build_inplay_bet_data")
-    builder_block_end = builder_src.index("\ndef ", builder_block_start + 10)
-    builder_block = builder_src[builder_block_start:builder_block_end]
-    assert "\"match_minute_at_pick\": cand.get(\"minute\")" in builder_block, (
-        "_build_inplay_bet_data must include match_minute_at_pick from cand['minute']"
-    )
-    assert "\"score_home_at_pick\": cand.get(\"score_home\")" in builder_block, (
-        "_build_inplay_bet_data must include score_home_at_pick from cand['score_home']"
-    )
-    assert "\"score_away_at_pick\": cand.get(\"score_away\")" in builder_block, (
-        "_build_inplay_bet_data must include score_away_at_pick from cand['score_away']"
-    )
+    # 2. (retired) the builder, inplay_bot._build_inplay_bet_data — deleted in #162 W7.2 (2026-09-26).
+    #    The columns stay: historical in-play rows carry them.
 
     # 3. store_bet whitelists the fields. The file has two `optional_fields`
     # lists; we need the one inside store_bet, not the earlier helper.
@@ -19056,72 +17403,6 @@ def _():
     assert "cal_model_prob" in src, "Must check inplay_e cal_model_prob trail"
     # Exit code contract — operator depends on nonzero for failure signalling.
     assert "exit_code = 1" in src, "Must set nonzero exit code on silent failure"
-
-
-@test("INPLAY-E-RECAL-FIT — fit_platt_inplay_e produces a Platt row that improves ECE")
-def _():
-    """INPLAY-E-RECALIBRATE (2026-06-03): the diagnostic ECE re-check on bot_inplay_e
-    showed 21.93% ECE on 216 settled bets — wildly miscalibrated despite the
-    'calibrated' maturity_label. fit_platt_inplay_e fits a 1-feature Platt
-    sigmoid using the existing fit_platt machinery and stores the row under
-    market='inplay_e_under_25'. Critical properties asserted here:
-      - Script reuses fit_platt_params + platt_transform + compute_ece (not
-        a reinvention of the math)
-      - It writes to model_calibration with the correct market key
-      - MIN_SAMPLES gate exists so we don't fit a row with too little data"""
-    p = _engine_path("scripts/fit_platt_inplay_e.py")
-    assert p.exists(), "fit_platt_inplay_e.py must exist"
-    src = p.read_text()
-    assert "MARKET_KEY = \"inplay_e_under_25\"" in src, (
-        "Calibration row must use market key 'inplay_e_under_25' so apply_platt finds it"
-    )
-    assert "from scripts.fit_platt import" in src, (
-        "Must reuse fit_platt machinery (fit_platt_params, platt_transform, compute_ece)"
-    )
-    assert "fit_platt_params" in src and "platt_transform" in src and "compute_ece" in src, (
-        "All three reused symbols must be present"
-    )
-    assert "MIN_SAMPLES" in src, "Must have a minimum-samples gate"
-    assert "execute_write" in src, "Must actually write to DB (not just compute and print)"
-
-
-@test("INPLAY-E-RECAL-WIRE — _check_strategy_e applies Platt under env gate, stores both probs")
-def _():
-    """INPLAY-E-RECALIBRATE wire-in: _check_strategy_e must compute calibrated
-    prob via apply_platt('inplay_e_under_25', ...), gate the choice of raw vs
-    calibrated behind INPLAY_E_PLATT_ENABLED env, and store BOTH probs in
-    extras so post-hoc validation can see what the calibrated cohort would
-    have looked like — independent of the env flag.
-
-    Default env=false keeps current production behaviour (edge gate uses raw)
-    until the shadow window confirms the policy. The shadow trail in extras
-    is what we'll query in ~7 days to decide whether to flip the env."""
-    src = _engine_path("workers/jobs/inplay_bot.py").read_text()
-    # Locate the strategy E function body so assertions are scoped correctly.
-    fn_start = src.index("def _check_strategy_e(")
-    fn_end = src.index("\ndef ", fn_start + 1)
-    body = src[fn_start:fn_end]
-
-    assert "from workers.model.improvements import apply_platt" in body, (
-        "_check_strategy_e must import apply_platt for in-flight Platt"
-    )
-    assert "apply_platt(raw_model_prob, \"inplay_e_under_25\"" in body, (
-        "_check_strategy_e must call apply_platt with the correct market key"
-    )
-    assert "INPLAY_E_PLATT_ENABLED" in body, (
-        "Env gate INPLAY_E_PLATT_ENABLED must control raw-vs-calibrated edge calc"
-    )
-    # Default must be 'false' so live behaviour doesn't change on deploy.
-    assert "getenv(\"INPLAY_E_PLATT_ENABLED\", \"false\")" in body, (
-        "Env gate must default to 'false' (shadow mode) on deploy"
-    )
-    # Both probs must be in the returned extras for shadow validation.
-    assert "raw_model_prob" in body and "cal_model_prob" in body, (
-        "extras must carry BOTH raw_model_prob and cal_model_prob"
-    )
-    assert "\"platt_enabled\": platt_enabled" in body, (
-        "extras must record whether the gate was active for each bet"
-    )
 
 
 @test("INPLAY-E-RECAL-CALIBROW — apply_platt resolves the new market key cleanly")
@@ -20071,10 +18352,7 @@ def _():
     assert "clv_footer_line(" in dp, (
         "daily_pipeline_v2.py user broadcast must append clv_footer_line()"
     )
-    ib = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    assert "clv_footer_line(" in ib, (
-        "inplay_bot.py user broadcast must append clv_footer_line()"
-    )
+    # #162 W7.2 (2026-09-26): inplay_bot.py (the live broadcast site) is deleted.
 
     # 3. Email digests inject CLV strip under the logo (both templates)
     ed = pathlib.Path("workers/jobs/email_digest.py").read_text()
@@ -20232,82 +18510,6 @@ def test_inplay_o_quarantine_holds():
         f"inplay_o quarantine cohort shrank: only {void_count} void bets, "
         f"expected ≥ 62 (the 2026-06-06 quarantine batch)"
     )
-
-
-@test("INPLAY-N-MODEL-VS-MARKET-GATE — _check_strategy_n skips model-overconfident picks")
-def test_inplay_n_model_vs_market_gate():
-    """INPLAY-N-MODEL-VS-MARKET-GATE (2026-06-06): inplay_n strategy assumes
-    the prematch ensemble is well-calibrated. In low-data leagues the model
-    returns 65-83% prematch win probs for teams the market priced at 19-47%.
-    24 bets at -50.6% ROI confirmed the model, not the market, was wrong.
-    Gate: if (model_prob - market_implied) > 0.15, skip the candidate.
-
-    Asserts:
-      • _get_prematch_data SELECT includes prematch_implied_home/away
-      • _check_strategy_n reads prematch_implied_{home,away} from pm dict
-      • Gate fires for known-bad cases (Mbarara 0.66/0.19, St. Anna 0.83/0.35)
-      • Gate does NOT fire when model and market agree (Tacoma 0.71/0.58)
-    """
-    import pathlib
-    bot_src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    assert "prematch_implied_home" in bot_src, "missing prematch_implied_home in inplay_bot"
-    assert "prematch_implied_away" in bot_src, "missing prematch_implied_away in inplay_bot"
-    assert 'pm.get("prematch_implied_home")' in bot_src, \
-        "_check_strategy_n must read prematch_implied_home from pm dict"
-    assert 'pm.get("prematch_implied_away")' in bot_src, \
-        "_check_strategy_n must read prematch_implied_away from pm dict"
-    assert "INPLAY-N-MODEL-VS-MARKET-GATE" in bot_src, \
-        "gate marker comment missing from inplay_bot.py"
-
-    # Behavioural check — exercise _check_strategy_n directly with synthetic
-    # candidates that mimic the bad-data cases.
-    from workers.jobs.inplay_bot import _check_strategy_n
-
-    def _cand(score_h=0, score_a=0, minute=70, live_h=3.50, live_a=2.00):
-        return {
-            "minute": minute,
-            "score_home": score_h,
-            "score_away": score_a,
-            "live_1x2_home": live_h,
-            "live_1x2_away": live_a,
-        }
-
-    # Case 1: Mbarara — model 66% home, market implied 18.9%, live odds 7.50.
-    # Should be SKIPPED by the gate (0.66 - 0.189 = 0.47 > 0.15).
-    pm_mbarara = {
-        "prematch_home_prob": 0.6607, "prematch_away_prob": 0.0918,
-        "prematch_implied_home": 0.1887, "prematch_implied_away": 0.5236,
-        "prematch_xg_home": 1.2, "prematch_xg_away": 1.8,
-    }
-    assert _check_strategy_n(_cand(score_h=1, score_a=1, minute=73, live_h=7.50, live_a=1.30),
-                              pm_mbarara, has_red_card=False) is None, \
-        "Mbarara case (model 66% vs market 18.9%) must be vetoed"
-
-    # Case 2: St. Anna — model 83% home, market implied 35.5%, live odds 13.00.
-    # Should be SKIPPED (0.83 - 0.355 = 0.48 > 0.15).
-    pm_stanna = {
-        "prematch_home_prob": 0.8312, "prematch_away_prob": 0.0238,
-        "prematch_implied_home": 0.3546, "prematch_implied_away": 0.4219,
-        "prematch_xg_home": 1.5, "prematch_xg_away": 1.0,
-    }
-    assert _check_strategy_n(_cand(score_h=0, score_a=0, minute=66, live_h=13.00, live_a=1.11),
-                              pm_stanna, has_red_card=False) is None, \
-        "St. Anna case (model 83% vs market 35.5%) must be vetoed"
-
-    # Case 3: gate falls back gracefully when implied prob is missing (0/None).
-    # The strategy must not crash — it should treat missing implied as "skip
-    # the gate" (don't second-guess when we have no market signal).
-    pm_no_implied = {
-        "prematch_home_prob": 0.70, "prematch_away_prob": 0.10,
-        "prematch_implied_home": None, "prematch_implied_away": None,
-        "prematch_xg_home": 1.5, "prematch_xg_away": 1.0,
-    }
-    # Should not raise; should not be blocked by gate (later checks may still veto)
-    try:
-        _check_strategy_n(_cand(score_h=0, score_a=0, minute=70, live_h=2.50, live_a=4.00),
-                          pm_no_implied, has_red_card=False)
-    except (TypeError, ValueError) as e:
-        assert False, f"gate crashed on missing implied prob: {e}"
 
 
 @test("CLV-BACKFILL — scripts/clv_report.py + ingest script structure")
@@ -20811,264 +19013,6 @@ def test_post_cal_impact_structure():
     # The shift Δ column is what tells us how much calibration is moving things
     assert "calibrated_prob - model_probability" in src, (
         "must compute shift = calibrated_prob - model_probability per market"
-    )
-
-
-@test("INPLAY-I-BAYES-XG — _check_strategy_i applies Gamma update + market gate")
-def test_inplay_i_bayes_xg():
-    """INPLAY-I-BAYES-XG (2026-06-06): inplay_i (Favourite Stall) was -36.5%
-    ROI / 17.6% hit-rate on 17 bets — INPLAY-I-INVESTIGATE diagnosed two
-    causes:
-      1. Strategy used pm_xg × remaining_frac as the lambda, treating it as if
-         the match hadn't started — ignored the information in the 0-0 score.
-      2. Every bet fired in low-tier / friendly leagues where the prematch
-         model is over-confident vs the market (same family as inplay_n).
-    Fix: apply Strategy J's Gamma posterior update (s=2 prior) + reuse
-    inplay_n's pm_fav_prob−pm_implied_fav > 0.15 gate.
-
-    Asserts:
-      • Bayesian update lines present in _check_strategy_i (posterior_xg_h/a,
-        I_PRIOR_STRENGTH)
-      • Model-vs-market gate present (pm_fav_prob - pm_implied_fav > 0.15)
-      • Behavioural — known low-tier overconfident case skipped, healthy
-        case still passes
-    """
-    import pathlib
-    bot_src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-
-    # Bayesian-update lines must be inside _check_strategy_i (we slice the
-    # function body to enforce locality; otherwise this test would pass if
-    # only Strategy J had the update)
-    fn_start = bot_src.index("def _check_strategy_i(")
-    fn_end = bot_src.index("\ndef _check_strategy_j(", fn_start)
-    fn_body = bot_src[fn_start:fn_end]
-
-    assert "INPLAY-I-BAYES-XG" in fn_body, (
-        "Strategy I must carry the INPLAY-I-BAYES-XG marker so future refactors "
-        "can't silently drop the Gamma update"
-    )
-    assert "I_PRIOR_STRENGTH" in fn_body, (
-        "Strategy I must define a local prior strength constant for the Gamma update"
-    )
-    assert "posterior_xg_h" in fn_body and "posterior_xg_a" in fn_body, (
-        "Strategy I must compute posterior xG for BOTH sides (the favourite-stall "
-        "thesis requires conditioning on 0-0)"
-    )
-
-    # Model-vs-market gate — copies the inplay_n shape
-    assert "INPLAY-I-MODEL-VS-MARKET-GATE" in fn_body, (
-        "Strategy I must carry the INPLAY-I-MODEL-VS-MARKET-GATE marker"
-    )
-    assert "pm_fav_prob - pm_implied_fav" in fn_body, (
-        "Strategy I must subtract pm_implied_fav from pm_fav_prob for the gate"
-    )
-    assert "0.15" in fn_body, (
-        "Strategy I gate threshold (15pp) must match inplay_n for consistency"
-    )
-
-    # Behavioural — exercise _check_strategy_i directly
-    from workers.jobs.inplay_bot import _check_strategy_i
-
-    def _cand(minute=42, score_h=0, score_a=0, live_h=4.50, live_a=2.00):
-        return {
-            "minute": minute,
-            "score_home": score_h,
-            "score_away": score_a,
-            "live_1x2_home": live_h,
-            "live_1x2_away": live_a,
-        }
-
-    # Case 1: Mbarara City home @ 4.50 — prematch model 66% home, market priced
-    # home at 18.9% (47pp gap). Must be SKIPPED by the model-vs-market gate.
-    pm_mbarara = {
-        "prematch_home_prob": 0.6607, "prematch_away_prob": 0.0918,
-        "prematch_implied_home": 0.1887, "prematch_implied_away": 0.5236,
-        "prematch_xg_home": 1.5, "prematch_xg_away": 1.1,
-    }
-    assert _check_strategy_i(_cand(minute=42, live_h=4.50, live_a=1.50),
-                             pm_mbarara, has_red_card=False) is None, (
-        "Mbarara-style case (model 66% vs market 19%) must be vetoed by the gate"
-    )
-
-    # Case 2: Healthy case — model 64%, market priced same side at 55% (9pp gap,
-    # under the 15pp threshold). Live odds drifted to 3.0+ at 0-0 min 50.
-    # Bayesian update + edge check decide; gate should NOT veto here.
-    pm_healthy = {
-        "prematch_home_prob": 0.64, "prematch_away_prob": 0.16,
-        "prematch_implied_home": 0.55, "prematch_implied_away": 0.20,
-        "prematch_xg_home": 1.7, "prematch_xg_away": 1.0,
-    }
-    result = _check_strategy_i(_cand(minute=50, live_h=3.20, live_a=2.50),
-                               pm_healthy, has_red_card=False)
-    # Result may or may not fire depending on edge after Bayesian update — what
-    # matters is the gate didn't kill it short-circuit (would manifest as the
-    # function returning None before reaching the edge check). The returned
-    # dict, if present, must carry the new extras as evidence the new code path
-    # ran.
-    if result is not None:
-        assert "posterior_xg_h" in result["extra"], (
-            "passing bet must expose posterior_xg_h so we can audit later"
-        )
-        assert "pm_implied_fav" in result["extra"], (
-            "passing bet must expose pm_implied_fav for audit"
-        )
-
-    # Case 3: Missing implied — gate must not crash; falls back to letting
-    # downstream filters decide (same behaviour as inplay_n).
-    pm_no_implied = {
-        "prematch_home_prob": 0.70, "prematch_away_prob": 0.10,
-        "prematch_implied_home": None, "prematch_implied_away": None,
-        "prematch_xg_home": 1.5, "prematch_xg_away": 1.0,
-    }
-    try:
-        _check_strategy_i(_cand(minute=45, live_h=3.50, live_a=2.30),
-                          pm_no_implied, has_red_card=False)
-    except (TypeError, ValueError) as e:
-        assert False, f"strategy I crashed on missing implied prob: {e}"
-
-
-@test("INPLAY-CALIBRATED-PROB-WIRE — _build_inplay_bet_data propagates cal_model_prob")
-def test_inplay_calibrated_prob_wire():
-    """INPLAY-CALIBRATED-PROB-WIRE (2026-06-06): all 898 historical in-play bets
-    had `calibrated_prob = NULL` because _build_inplay_bet_data never put it on
-    the bet payload, even though strategy E was already computing it. Today's
-    inplay_e_under_25 Platt row (landed 2026-06-06 10:35 UTC) would have been
-    invisible to any column-reading consumer.
-
-    Asserts:
-      • _build_inplay_bet_data reads cal_model_prob from trigger.extra
-      • Writes it as top-level bet_data["calibrated_prob"] when present
-      • Does NOT write the key when cal_model_prob is missing (keeps NULL for
-        strategies that haven't wired apply_platt — honest signal)
-    """
-    from workers.jobs.inplay_bot import _build_inplay_bet_data
-
-    def _trigger(extra_cal=None):
-        extra = {"raw_model_prob": 0.55, "platt_enabled": False}
-        if extra_cal is not None:
-            extra["cal_model_prob"] = extra_cal
-        return {
-            "market": "O/U",
-            "selection": "under 2.5",
-            "odds": 2.10,
-            "model_prob": 0.55,
-            "edge": 4.5,
-            "extra": extra,
-        }
-
-    cand = {"minute": 60, "score_home": 0, "score_away": 0}
-
-    # Case 1: strategy E shape — extras includes cal_model_prob
-    bet = _build_inplay_bet_data(
-        trigger=_trigger(extra_cal=0.49),
-        cand=cand, xg_h=0.7, xg_a=0.6, is_real=True,
-        odds_age=2.3, bot_name="inplay_e",
-    )
-    assert "calibrated_prob" in bet, (
-        "calibrated_prob must appear in the bet payload when extras carries cal_model_prob"
-    )
-    assert abs(bet["calibrated_prob"] - 0.49) < 1e-9, (
-        f"calibrated_prob must round-trip the extras value (got {bet['calibrated_prob']})"
-    )
-
-    # Case 2: strategy I/N/etc shape — no cal_model_prob in extras.
-    # INPLAY-CALIBRATION-COMPLETE (2026-06-15) changed the contract here:
-    # `_build_inplay_bet_data` now calls apply_platt centrally so every
-    # in-play strategy writes calibrated_prob. apply_platt returns the raw
-    # prob unchanged when no Platt row exists for the market_key, so
-    # without a fit it equals trigger["model_prob"] — that's honest behavior
-    # (calibrated_prob == raw means "no calibration applied yet").
-    bet_no_cal = _build_inplay_bet_data(
-        trigger=_trigger(extra_cal=None),
-        cand=cand, xg_h=0.7, xg_a=0.6, is_real=True,
-        odds_age=2.3, bot_name="inplay_i",
-    )
-    assert "calibrated_prob" in bet_no_cal, (
-        "post-INPLAY-CALIBRATION-COMPLETE, calibrated_prob must always be set "
-        "(equals raw model_prob until a Platt row lands for the strategy)"
-    )
-    assert abs(bet_no_cal["calibrated_prob"] - bet_no_cal["model_prob"]) < 1e-9, (
-        "without a fitted Platt row, apply_platt returns raw prob unchanged — "
-        f"got calibrated_prob={bet_no_cal['calibrated_prob']} model_prob={bet_no_cal['model_prob']}"
-    )
-
-
-@test("INPLAY-CALIBRATION-COMPLETE — central market_key + apply_platt wired in builder + parameterized fitter")
-def test_inplay_calibration_complete():
-    """INPLAY-CALIBRATION-COMPLETE (2026-06-15) — productizes the per-strategy
-    Platt fitter that the original spec proposed as 12 near-duplicate scripts.
-    One parameterized fitter + central apply_platt call in the bet builder so
-    every in-play strategy gets calibration "for free" once a row lands.
-
-    Pins:
-      • inplay_market_key() canonical normalization (bot+market+selection)
-      • _build_inplay_bet_data calls apply_platt when no cal_model_prob present
-      • Strategy E backward compat: trigger["market_key"] override still works
-        (Strategy E's pre-existing "inplay_e_under_25" key stays canonical)
-      • fit_platt_inplay.py exists, requires --strategy, uses inplay_market_key
-        for write path so it can't drift from the read path
-    """
-    from workers.jobs.inplay_bot import inplay_market_key, _build_inplay_bet_data
-
-    # Canonical key shape: {bot}_{market_canonical}_{selection_canonical}
-    assert inplay_market_key("inplay_p_v2", "1x2", "home") == "inplay_p_v2_1x2_home"
-    assert inplay_market_key("inplay_p_v2", "1X2", "home") == "inplay_p_v2_1x2_home", (
-        "must lowercase market — DB stores lowercase but strategies return upper"
-    )
-    assert inplay_market_key("inplay_o", "BTTS", "yes") == "inplay_o_btts_yes"
-    assert inplay_market_key("inplay_c", "O/U", "over 2.5") == "inplay_c_ou_over_25", (
-        "must drop '/' from market and '.' from selection, replace spaces with _"
-    )
-
-    # Read path: builder calls apply_platt centrally
-    import pathlib
-    bot_src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    assert "from workers.model.improvements import apply_platt" in bot_src, (
-        "builder must import apply_platt"
-    )
-    # apply_platt called with (raw_prob, market_key, odds) — pin the call site
-    # so a refactor can't silently break the wiring.
-    assert "apply_platt(trigger[\"model_prob\"], market_key, trigger[\"odds\"])" in bot_src, (
-        "_build_inplay_bet_data must call apply_platt(model_prob, market_key, odds)"
-    )
-
-    # Strategy E backward compat — explicit market_key from trigger overrides
-    # the default normalizer (E uses "inplay_e_under_25", not the default
-    # "inplay_e_ou_under_25" the normalizer would produce).
-    assert 'trigger.get("market_key")' in bot_src, (
-        "builder must respect trigger['market_key'] override before falling back to default"
-    )
-
-    # Smoke that the dispatch works end-to-end without a DB
-    cand = {"minute": 60, "score_home": 0, "score_away": 1}
-    trigger = {
-        "market": "1x2", "selection": "home", "odds": 3.5,
-        "model_prob": 0.32, "edge": 4.0,
-        "extra": {"raw_model_prob": 0.32},
-    }
-    bet = _build_inplay_bet_data(
-        trigger=trigger, cand=cand, xg_h=0.4, xg_a=0.8, is_real=True,
-        odds_age=1.5, bot_name="inplay_p_v2",
-    )
-    # apply_platt returns raw unchanged when no Platt row exists → cal == raw
-    assert "calibrated_prob" in bet, "every in-play bet must carry calibrated_prob"
-    assert abs(bet["calibrated_prob"] - 0.32) < 1e-6, (
-        "no Platt row → calibrated_prob equals raw model_prob"
-    )
-
-    # Write path: parameterized fitter
-    fit_src = pathlib.Path("scripts/fit_platt_inplay.py").read_text()
-    assert "--strategy" in fit_src, "fitter must require --strategy"
-    assert "from workers.jobs.inplay_bot import inplay_market_key" in fit_src, (
-        "fitter must import inplay_market_key from the bot module — write path "
-        "and read path MUST share the key generator (anti-drift)"
-    )
-    assert "DEFAULT_MIN_SAMPLES = 100" in fit_src, (
-        "fitter must default to the spec'd ≥100 settled bet gate per selection"
-    )
-    assert "--per-selection" not in fit_src or "buckets" in fit_src, (
-        "fitter must bucket bets by (market, selection) per the original spec — "
-        "one Platt row per bucket, e.g. inplay_p_v2_1x2_home AND inplay_p_v2_1x2_away"
     )
 
 
@@ -21936,32 +19880,6 @@ def test_one_audited_pick_sender():
     assert "ON CONFLICT (channel, pick_table, pick_id)" in inspect.getsource(ps)
 
 
-@test("INPLAY-P-V2-BAYES-XG — Bayesian Gamma posterior update on 1-1 score state")
-def _():
-    """Per INPLAY-P-V2-100-BET-CHECK 2026-06-24: gate passed (n=112, ROI +5.28%,
-    hit 29.5%). Per-bucket: 3.00-3.99 still -14.7% on n=59 — bucket weakness
-    consistent with under-correcting the leading team's residual scoring
-    rate. Apply the same s=2 Gamma update Strategy J / inplay_i uses so the
-    remaining-minutes Poisson on a 1-1 score is grounded in posteriors,
-    not pre-match priors. Next gate: ≥100 bets after this fix → fit Platt
-    via scripts/fit_platt_inplay_p_v2.py."""
-    import pathlib
-    src = pathlib.Path("workers/jobs/inplay_bot.py").read_text()
-    p_v2_block = src[src.index("def _check_strategy_p_v2(") : src.index("def _check_strategy_p_v2(") + 4000]
-    assert "INPLAY-P-V2-BAYES-XG" in p_v2_block, (
-        "_check_strategy_p_v2 must carry the INPLAY-P-V2-BAYES-XG tag"
-    )
-    assert "P_PRIOR_STRENGTH = 2.0" in p_v2_block, (
-        "Bayesian prior strength s=2 must be defined (matches inplay_i / J)"
-    )
-    assert "posterior_xg_eq" in p_v2_block and "posterior_xg_opp" in p_v2_block, (
-        "Posterior lambdas for both equalizer and opponent must be computed"
-    )
-    assert "P_PRIOR_STRENGTH + goals_eq" in p_v2_block or "P_PRIOR_STRENGTH + goals_eq)" in p_v2_block, (
-        "Posterior update must use actual goals scored (information from 1-1 state)"
-    )
-
-
 @test("T24H-COVERAGE — 4x daily odds_tomorrow crons spaced for T-24h ±3h")
 def _():
     """The day-ahead backtest (2026-06-24) found +19.76% ROI on the T-24h
@@ -22357,29 +20275,6 @@ def test_tier_c_t3plus_gate():
     assert thresholds_lookup_idx < gate_idx < odds_idx, (
         "TIER-C-T3PLUS-GATE: boost block must appear between thresholds lookup and odds_range unpack"
     )
-
-
-@test("INPLAY-I-30-BET-WATCH — inplay_i retired in code and migration 266 exists")
-def test_inplay_i_retirement():
-    import pathlib
-    root = pathlib.Path(__file__).parent.parent
-
-    inplay_src = (root / "workers/jobs/inplay_bot.py").read_text()
-    assert "[RETIRED 2026-06-30]" in inplay_src, (
-        "inplay_bot.py must mark inplay_i as [RETIRED 2026-06-30] in its description"
-    )
-    assert "INPLAY-I-30-BET-WATCH" in inplay_src, (
-        "inplay_bot.py must reference the INPLAY-I-30-BET-WATCH gate in the retirement comment"
-    )
-
-    migration = root / "supabase/migrations/266_retire_inplay_i.sql"
-    assert migration.exists(), "migration 266_retire_inplay_i.sql must exist"
-    migration_src = migration.read_text()
-    assert "is_active" in migration_src and "false" in migration_src, (
-        "migration 266 must set is_active = false"
-    )
-    assert "inplay_i" in migration_src, "migration 266 must target bot_name = 'inplay_i'"
-    assert "retired_at" in migration_src, "migration 266 must set retired_at"
 
 
 @test("PMF-CONTENT-PAUSED — Gemini UI-content jobs disabled while user count is ~0")
@@ -24558,40 +22453,6 @@ def test_backtest_tweak_opt_home_lower_2026_07_31():
     )
 
 
-@test("BACKTEST-TWEAK-INPLAY-ODDS-CAP-2026-07-31 — family-wide odds cap at 3.50")
-def test_backtest_tweak_inplay_odds_cap_2026_07_31():
-    """BACKTEST-TWEAK-INPLAY-ODDS-CAP-2026-07-31: cross-inplay-family 60d
-    eval showed every strategy losing at odds >= 3.50 (family-wide -14.3%
-    ROI, n=171). Cap enforced at _store_and_notify (Stage 5) via
-    INPLAY_FAMILY_MAX_ODDS module constant (default 3.50). Env-tunable
-    via INPLAY_FAMILY_MAX_ODDS for A/B experiments.
-    """
-    from pathlib import Path
-    src = (Path(__file__).resolve().parent.parent / "workers" /
-           "jobs" / "inplay_bot.py").read_text()
-    assert "INPLAY_FAMILY_MAX_ODDS" in src, (
-        "workers/jobs/inplay_bot.py must define INPLAY_FAMILY_MAX_ODDS "
-        "module constant."
-    )
-    assert 'os.getenv("INPLAY_FAMILY_MAX_ODDS", "3.50")' in src, (
-        "INPLAY_FAMILY_MAX_ODDS must default to 3.50 (env-tunable). "
-        "If you're raising the cap, re-run the odds-bucket backtest "
-        "first and update this test."
-    )
-    # Gate must be applied in _store_and_notify body before store_bet is called.
-    sn_start = src.find("def _store_and_notify(")
-    sn_end = src.find("\ndef ", sn_start + 1)
-    sn_body = src[sn_start:sn_end]
-    assert "INPLAY_FAMILY_MAX_ODDS" in sn_body, (
-        "INPLAY_FAMILY_MAX_ODDS must be applied inside _store_and_notify "
-        "so the cap is enforced at the family level, not per-strategy."
-    )
-    assert "odds_above_family_cap" in sn_body, (
-        "Family cap should increment _funnel[..]['odds_above_family_cap'] "
-        "so the drop is diagnosable."
-    )
-
-
 @test("DNB-FUNNEL-INSTRUMENTATION-2026-07-31 — pre-candidate funnel counters")
 def test_dnb_funnel_instrumentation_2026_07_31():
     """DNB-FUNNEL-INSTRUMENTATION-2026-07-31: bot_dnb_specialist has 297
@@ -24624,61 +22485,6 @@ def test_dnb_funnel_instrumentation_2026_07_31():
         )
 
 
-@test("PAUSE-INPLAY-E-2026-07-31 — inplay_e config commented out")
-def test_pause_inplay_e_2026_07_31():
-    """PAUSE-INPLAY-E-2026-07-31: closed the P1 model-regression
-    misdiagnosis. inplay_e doesn't consume predictions.model_probability
-    — the "regression" was fixture-mix (WC 2026 + SA summer took over
-    when European season ended). Paused via DB (is_active=false) + config
-    comment-out. Un-pause after 2026-08-15 season restart + apply
-    INPLAY-E-FIXTURE-FILTER.
-
-    If you're reviving inplay_e, ensure INPLAY-E-FIXTURE-FILTER is
-    applied first (competition exclusion + odds floor) and update this
-    test.
-    """
-        # SMOKE-SUITE-AUDIT 2026-09-01: this asserted the literal
-    # '\n    "inplay_e": {' was absent from the source — i.e. that the config key
-    # is not present at exactly four spaces of indentation. Re-indenting the
-    # dict, or re-adding the key with any other whitespace, silently un-pauses
-    # the bot while the test stays green. Assert the registry the dispatcher
-    # actually reads instead.
-    from workers.jobs.inplay_bot import INPLAY_BOTS
-    assert "inplay_e" not in INPLAY_BOTS, (
-        "inplay_e is back in INPLAY_BOTS — it was paused 2026-07-31 and a bot in "
-        "this registry is dispatched. Re-enable deliberately, with the fixture-mix "
-        "analysis that paused it revisited, not as a config edit."
-    )
-    assert INPLAY_BOTS, "INPLAY_BOTS must not be empty — an empty registry would "\
-        "make this assertion vacuously true and silently disable every inplay bot"
-
-
-@test("PAUSE-INPLAY-P-V2-2026-07-31 — inplay_p_v2 config commented out")
-def test_pause_inplay_p_v2_2026_07_31():
-    """PAUSE-INPLAY-P-V2-2026-07-31: 30d ROI -11.0% on n=83, home leg
-    5W-23L on n=28, trajectory worse each window. Bot paused via DB
-    (is_active=false + retired_at) AND config comment-out so no more
-    simulated_bets get written from the inplay strategy loop.
-
-    This smoke pins the config comment — a merge conflict or accidental
-    un-comment would silently zombie-restart the bot. If you're
-    reviving inplay_p_v2 (or shipping inplay_p_v3), fix the home-leg
-    regression first + update this test.
-    """
-    # SMOKE-SUITE-AUDIT 2026-09-01: this asserted the literal
-    # '\n    "inplay_p_v2": {' was absent from the source — i.e. that the config key
-    # is not present at exactly four spaces of indentation. Re-indenting the
-    # dict, or re-adding the key with any other whitespace, silently un-pauses
-    # the bot while the test stays green. Assert the registry the dispatcher
-    # actually reads instead.
-    from workers.jobs.inplay_bot import INPLAY_BOTS
-    assert "inplay_p_v2" not in INPLAY_BOTS, (
-        "inplay_p_v2 is back in INPLAY_BOTS — it was paused 2026-07-31 and a bot in "
-        "this registry is dispatched. Re-enable deliberately, with the fixture-mix "
-        "analysis that paused it revisited, not as a config edit."
-    )
-    assert INPLAY_BOTS, "INPLAY_BOTS must not be empty — an empty registry would "\
-        "make this assertion vacuously true and silently disable every inplay bot"
 
 
 @test("MODEL-VERSION-RE-EVAL-2026-07-31 — OU override flip to v20260719 + eval docs on disk")
@@ -25351,187 +23157,9 @@ def _():
         "defaulting to 'true' (opt-out, not opt-in)"
     )
 
-    ip = _engine_path("workers/jobs/inplay_bot.py").read_text()
-    assert 'INPLAY_TELEGRAM_ENABLED' in ip, (
-        "inplay_bot.py must gate the per-pick Telegram post on "
-        "INPLAY_TELEGRAM_ENABLED — otherwise the operator channel "
-        "gets flooded with paper-only inplay noise."
-    )
-    # Default must be off — presence of "false" as the default fallback
-    assert 'INPLAY_TELEGRAM_ENABLED", "false"' in ip, (
-        "INPLAY_TELEGRAM_ENABLED must default to 'false' — reverting "
-        "restores the pre-refactor noise (inplay per-pick posts)."
-    )
-
-    dp = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
-    # Count runners that call notify_shadow_picks. Should be 4 hooks for
-    # 4 shadow passes (no_pin, sweep, pin_ou, pin_1x2).
-    hook_count = dp.count("notify_shadow_picks as _notify")
-    assert hook_count >= 4, (
-        f"daily_pipeline_v2.py must call notify_shadow_picks from ≥4 "
-        f"shadow-bet writers (no_pin, sweep, pin_ou, pin_1x2). Found "
-        f"{hook_count} — a runner is missing the hook and its shadow "
-        f"picks won't reach the operator channel."
-    )
-
-
-@test("BOT-NO-PIN-HOME — home-only refined shadow bot replaces bot_no_pin_shadow_v1")
-def _():
-    """BOT-NO-PIN-HOME-2026-08-21: audit of bot_no_pin_shadow_v1 revealed
-    home picks won (n=42 ROI +32.7%) while draw + away lost (-25%, -18%).
-    Ships home-only refined bot_no_pin_home_v1 to capture just the
-    winning slice. Migrations 276 (retire) + 277 (ship home).
-
-    Pins:
-      1. Migration 277 registers bot_no_pin_home_v1
-      2. Migration 276 retires bot_no_pin_shadow_v1 + bot_acca_leg_shadow
-      3. _run_no_pin_shadow_pass writes home-selection rows to home_v1
-      4. Runner filters to only active bots (retired ones skip)
-    """
-    mig_retire = _engine_path("supabase/migrations/276_retire_shadow_bots_2026_08_21.sql").read_text()
-    assert "bot_no_pin_shadow_v1" in mig_retire and "is_active = FALSE" in mig_retire, (
-        "migration 276 must retire bot_no_pin_shadow_v1"
-    )
-    assert "bot_acca_leg_shadow" in mig_retire, (
-        "migration 276 must retire bot_acca_leg_shadow"
-    )
-
-    mig_home = _engine_path("supabase/migrations/277_bot_no_pin_home.sql").read_text()
-    assert "bot_no_pin_home_v1" in mig_home and "experimental" in mig_home, (
-        "migration 277 must register bot_no_pin_home_v1 as experimental"
-    )
-
-    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
-    # Runner must route home-only picks to home_v1
-    assert 'if home_bot_id and sel_lower == "home"' in src, (
-        "no-pin runner must route home selections to bot_no_pin_home_v1. "
-        "Removing this check would fire home_v1 on all selections, "
-        "replicating the losing draw/away picks it was designed to avoid."
-    )
-    # Runner must filter to active bots only
-    assert "is_active = TRUE AND retired_at IS NULL" in src, (
-        "no-pin runner must filter to active bots — otherwise the retired "
-        "bot_no_pin_shadow_v1 would continue writing shadow_bets."
-    )
-
-
-@test("BOT-PIN-1X2-SHADOW — 1x2 line-shopping shadow bot (home tiers 1-2)")
-def _():
-    """BOT-PIN-1X2-SHADOW-2026-08-21, re-gated by PER-BOT-SWEEP-2026-08-24.
-
-    Originally shipped two bots. The draw/tier-4 bot is now RETIRED
-    (migration 281): its 5% edge gate sat below the 12.2% Pinnacle overround
-    on tier-4 draws, so 85% of its live picks were negative-EV by
-    construction — live -40.8%, and the operator went 0W/11L on real money.
-
-    The home bot survives and is the strongest of the eight: positive in all
-    three replay windows, positive across every tier variation tested, best
-    CLV (+15.6%), zero negative-true-edge picks live.
-
-    Away picks were never shipped (audit showed -3 to -20% across tiers).
-
-    Pins:
-      1. _PIN_1X2_SHADOW_CONFIGS defined, home bot present
-      2. draw/tier-4 bot NOT in the live config tuple
-      3. Runner function _run_pin_1x2_shadow_pass exists + is called
-      4. No away config
-      5. Migration 275 (original registration) still records both bots
-    """
-    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
-    assert "_PIN_1X2_SHADOW_CONFIGS" in src, "_PIN_1X2_SHADOW_CONFIGS must be defined"
-    assert '"bot_pin_1x2_home_v1"' in src, "config missing for bot_pin_1x2_home_v1"
-    assert "def _run_pin_1x2_shadow_pass" in src, "runner must exist"
-    # Prefix match — the writer takes (today_str, cohort_tag, notify_telegram)
-    # since SHADOW-BOTS-MULTI-COHORT-2026-08-21.
-    # LINESHOP-FAMILY-RETIRED-2026-09-08 (f537af7): bot_pin_1x2_home_v1 retired
-    # (line-shop loses OOS). _run_pin_1x2_shadow_pass stays as a dead def but must
-    # NOT be called — the "must NOT run" invariant is pinned by LINESHOP-FAMILY-RETIRED.
-    import re as _re_pin1x2
-    assert not [x for x in _re_pin1x2.findall(r"(def )?_run_pin_1x2_shadow_pass\(today_str", src) if x != "def "], (
-        "_run_pin_1x2_shadow_pass must NOT be scheduled — its line-shop bot is retired"
-    )
-
-    cfg_block = src[src.index("_PIN_1X2_SHADOW_CONFIGS: tuple[dict, ...] = ("):]
-    cfg_block = cfg_block[: cfg_block.index(")\n")]
-
-    # Retired bot must be gone from the LIVE tuple (comments above it may
-    # still name it — that's the retirement note, which we want kept).
-    assert '"bot_pin_1x2_draw_tier4_v1"' not in cfg_block, (
-        "bot_pin_1x2_draw_tier4_v1 is retired (migration 281) and must not "
-        "remain in _PIN_1X2_SHADOW_CONFIGS — a 5% gate cannot beat a 12.2% "
-        "overround."
-    )
-    assert '"selection": "home"' in cfg_block, "home selection filter missing"
-    assert '"selection": "away"' not in cfg_block, (
-        "must NOT have an away shadow bot config — historical audit shows "
-        "-3 to -20% ROI on away picks at line-shopping edges (soft-book "
-        "away lines systematically inflated)."
-    )
-
-    # Migration 275 is the historical registration — both bots stay recorded
-    # there; retirement happens in 281.
-    mig = _engine_path("supabase/migrations/275_bot_pin_1x2_shadow.sql").read_text()
-    for expected in ("bot_pin_1x2_home_v1", "bot_pin_1x2_draw_tier4_v1"):
-        assert expected in mig, f"migration 275 must INSERT bot {expected}"
-
-
-@test("BOT-PIN-OU-SHADOW — OU 2.5 + OU 3.5 shadow bots present + migration registered")
-def _():
-    """BOT-PIN-OU-SHADOW-2026-08-21 — two shadow bots fire on OU 2.5 +
-    OU 3.5 where Pinnacle has odds but existing bots don't fire due to
-    v10 model coverage. Analog to bot_no_pin_shadow_v1 (Aug 18, 1x2
-    without Pinnacle).
-
-    Historical simulation showed 3,308 tier-1-4 OU 2.5 picks at 8%+
-    edge in past 3.5 months; only 45 (1.4%) were actually taken by
-    production bots. OU 3.5 similar gap. Expected shadow volume from
-    tomorrow forward: ~30-60 picks/day combined.
-
-    Pins:
-      1. Two configs in _PIN_OU_SHADOW_CONFIGS (bot_sweep_ou25_v1 + ou35_v1)
-      2. Runner function _run_pin_ou_shadow_pass exists
-      3. Hooked into run_morning (cohort in [None,'morning'] gate)
-      4. Migration 274 registers both bots with maturity_label='experimental'
-    """
-    src = _engine_path("workers/jobs/daily_pipeline_v2.py").read_text()
-    assert '_PIN_OU_SHADOW_CONFIGS' in src, (
-        "_PIN_OU_SHADOW_CONFIGS must be defined in daily_pipeline_v2.py"
-    )
-    for expected_name in ("bot_sweep_ou25_v1", "bot_sweep_ou35_v1"):
-        assert f'"{expected_name}"' in src, (
-            f"config for {expected_name} missing from _PIN_OU_SHADOW_CONFIGS"
-        )
-    assert "def _run_pin_ou_shadow_pass" in src, (
-        "runner _run_pin_ou_shadow_pass must be defined"
-    )
-    # SMOKE-FIX-2026-08-24: this asserted `_run_pin_ou_shadow_pass(today_str)`
-    # with no further args, but the writer has taken (today_str, cohort_tag,
-    # notify_telegram) since SHADOW-BOTS-MULTI-COHORT-2026-08-21. The literal
-    # never matched, so this test had been failing on main. Match the call by
-    # prefix instead so signature changes don't silently re-break it.
-    # LINESHOP-FAMILY-RETIRED-2026-09-08 (f537af7): bot_sweep_ou25/35_v1 retired
-    # (mig 313). _run_pin_ou_shadow_pass is a dead def and must NOT be scheduled.
-    import re as _re_pinou
-    assert not [x for x in _re_pinou.findall(r"(def )?_run_pin_ou_shadow_pass\(today_str", src) if x != "def "], (
-        "_run_pin_ou_shadow_pass must NOT be scheduled — its line-shop bots are retired"
-    )
-    # PER-BOT-SWEEP-2026-08-24: both OU bots now carry a tier filter. They
-    # previously had none at all and fired on untiered leagues.
-    for expected_name in ("bot_sweep_ou25_v1", "bot_sweep_ou35_v1"):
-        _cfg = src[src.index(f'"{expected_name}"'):]
-        assert '"tiers"' in _cfg[:_cfg.index("}")], (
-            f"{expected_name} must declare a tier filter"
-        )
-    # Migration existence
-    mig = _engine_path("supabase/migrations/274_bot_pin_ou_shadow.sql").read_text()
-    for expected_name in ("bot_sweep_ou25_v1", "bot_sweep_ou35_v1"):
-        assert expected_name in mig, (
-            f"migration 274 must INSERT bot {expected_name}"
-        )
-    assert "'experimental'" in mig, (
-        "shadow bots must ship as maturity_label='experimental' — writes "
-        "to shadow_bets only, never simulated_bets or bankroll."
-    )
+    # #162 W7.2 (2026-09-26): pins 3-4 are gone with their subjects — inplay_bot.py (the
+    # INPLAY_TELEGRAM_ENABLED gate) and the four pipeline shadow passes that
+    # called notify_shadow_picks were deleted (every bot they served was retired).
 
 
 @test("AF-PLAYER-STATS-HOME-FALLBACK — settlement derives home_team_api_id from fixture data")
@@ -26225,39 +23853,9 @@ def _():
         "bot in the DB does not stop its shadow pass from firing"
     )
 
-    # (2) + (3) de-vig
-    assert "_LINESHOP_TRUE_EDGE_MIN = 0.03" in src, "de-vigged edge floor missing"
-    assert "_LINESHOP_TIERS: tuple[int, ...] = (1, 2)" in src, "line-shop tier set missing"
-    # Both writers must de-vig. LINESHOP-SHIN-DEVIG-2026-08-26 replaced the
-    # proportional formulas these two lines used to pin — `(1/pin)/total_implied`
-    # and `(1/pin)/overround` — with Shin, so assert on the CURRENT mechanism
-    # instead. The intent of the original assertion is preserved: an
-    # un-de-vigged writer must still fail this test.
-    assert "from workers.model.devig import devig as _devig" in src, \
-        "line-shop writers must import the shared de-vig helper"
-    assert "_probs = _devig([pin_over, pin_under])" in src, "OU writer must de-vig"
-    assert "_pin_probs = _devig(pin_three)" in src, "1X2 writer must de-vig"
-    assert "(1.0 / pin_odds) / total_implied" not in src, \
-        "OU writer must not fall back to proportional de-vig"
-    assert "(1.0 / pin_odds) / overround" not in src, \
-        "1X2 writer must not fall back to proportional de-vig"
-
-    # (4) retired bot removed from the live tuple
-    cfg_block = src[src.index("_PIN_1X2_SHADOW_CONFIGS: tuple[dict, ...] = ("):]
-    cfg_block = cfg_block[: cfg_block.index(")\n")]
-    assert "bot_pin_1x2_draw_tier4_v1" not in cfg_block, (
-        "retired draw/tier-4 bot must not remain in _PIN_1X2_SHADOW_CONFIGS"
-    )
-
-    # (5) OU tier gate + NULL-tier exclusion
-    ou = src[src.index("def _run_pin_ou_shadow_pass"):]
-    ou = ou[: ou.index("\ndef ")]
-    assert "l.tier IS NOT NULL" in ou, "OU pass must exclude NULL-tier leagues"
-    assert 'stats["wrong_tier"]' in ou, "OU pass must apply a tier filter"
-
-    # (6) side lock — only the best side of a total is kept
-    assert "PER-BOT-SWEEP-SIDE-LOCK-2026-08-24" in ou, "side-lock marker missing"
-    assert "max(candidates" in ou, "OU pass must write only the higher-edge side"
+    # (2)-(6) pinned the line-shop / OU shadow passes, DELETED in #162 W7.2 (2026-09-26) (every bot
+    # they served was retired). (1) and (7) stay — _get_bot_id_by_name is still
+    # imported by workers/jobs/ou_sharp_outlier.py.
 
     # NULL-tier must not silently become tier 1 anywhere in the shadow writers
     assert "COALESCE(l.tier, 1)" not in src, (
@@ -26673,15 +24271,18 @@ def test_shin_devig_2026_08_26():
     # No-overround market falls back to proportional rather than failing.
     assert shin_devig([2.0, 2.0]) is not None
 
+    # #162 W7.2 (2026-09-26): the two line-shop sites this pinned (daily_pipeline_v2's
+    # pin-OU / pin-1x2 shadow passes) were deleted with their retired bots. The live
+    # sharp de-vig sites are Stage A (pick_triggers) and the generator's sharp source.
     src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
-    assert "from workers.model.devig import devig as _devig" in src, \
-        "daily_pipeline_v2 must import the shared devig helper"
     assert "true_prob = (1.0 / pin_odds) / total_implied" not in src, \
         "OU line-shop still uses the old proportional de-vig"
     assert "true_prob = (1.0 / pin_odds) / overround" not in src, \
         "1X2 line-shop still uses the old proportional de-vig"
-    assert src.count("_devig(") >= 2, "expected devig used at both line-shop sites"
-    return "Shin de-vig wired into both line-shop sites; longshot correction verified"
+    for live in ("workers/jobs/pick_triggers.py", "workers/automation/pick_generator.py"):
+        assert "from workers.model.devig import devig" in pathlib.Path(live).read_text(), \
+            f"{live} must de-vig with the shared Shin helper"
+    return "Shin de-vig wired into the live sharp sites; longshot correction verified"
 
 
 @test("SHADOW-CLV-BOOKMAKER")
@@ -26782,37 +24383,6 @@ def test_shadow_promotion_gate_2026_08_26():
     assert "def t_gate_sim" in sim and "shadow_bets_unique" in sim
     return "t-statistic promotion gate (|t|>=1.65, n>=200) replaces ROI>=3% at n>=50"
 
-
-
-@test("OU-LINE-INTEGRITY")
-def test_ou_line_integrity_2026_08_26():
-    """SHADOW-OU-EDGE-AUDIT-2026-08-26 — a soft-book OU quote must be priced for
-    the line it is labelled with. Coolbet's 'over 2.5' was pricing like a 3.0."""
-    import pathlib
-    from workers.jobs.daily_pipeline_v2 import _ou_line_is_consistent as ok
-
-    # Real averages from the audit: Coolbet 1.96 on picks labelled
-    # over_under_25/over, where Pinnacle's 2.5 was 1.60 and its 3.5 was 2.44.
-    # 1/1.96 = .510 sits nearer 1/2.44 = .410 than 1/1.60 = .625 -> reject.
-    grouped = {
-        "over_under_25": {"m1": {"over": {"Pinnacle": 1.60}}},
-        "over_under_35": {"m1": {"over": {"Pinnacle": 2.44}}},
-    }
-    assert ok(1.96, "over_under_25", "over", "m1", grouped) is False, \
-        "a 2.5 quote priced like a 3.0 must be rejected"
-    assert ok(1.70, "over_under_25", "over", "m1", grouped) is True, \
-        "a genuinely better 2.5 price must survive"
-    assert ok(2.50, "over_under_35", "over", "m1", grouped) is True, \
-        "a clean 3.5 quote must survive"
-    # No Pinnacle reference -> defer to the other guards, never reject blind.
-    assert ok(1.96, "over_under_25", "under", "m1", grouped) is True
-    assert ok(1.96, "over_under_25", "over", "unknown_match", grouped) is True
-
-    src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
-    assert "_ou_line_is_consistent(best_odds, mkt, sel, mid, grouped)" in src, \
-        "guard must be wired into the OU line-shop scoring loop"
-    assert '"line_mismatch"' in src, "rejections must be counted in the funnel stats"
-    return "OU line-integrity guard rejects mislabelled totals (Coolbet 35% drift)"
 
 
 @test("SHADOW-DISCRETION-PANEL")
@@ -27772,40 +25342,9 @@ def test_coolbet_value_bot_2026_08_26():
     import pathlib
     src = pathlib.Path("workers/jobs/daily_pipeline_v2.py").read_text()
 
-    assert "_COOLBET_VALUE_BOT = \"bot_coolbet_value_v1\"" in src
-    assert "def _run_coolbet_value_pass(" in src
-    fn = src[src.index("def _run_coolbet_value_pass("):src.index("def _run_pin_ou_shadow_pass(")]
-
-    # It must price at Coolbet and NOT take a max across books — that is the
-    # entire reason it exists. 57 of 58 sweep/pin picks were negative-EV at
-    # Coolbet on 2026-08-26 despite showing +7% on the page.
-    assert '"recommended_bookmaker": "Coolbet"' in fn, \
-        "every pick must be quoted at Coolbet"
-    assert "max(" not in fn, "must not take a best-of-N price"
-
-    # Fair value must come from Pinnacle. Valuing Coolbet against Coolbet is
-    # circular — a book can never look mispriced against itself.
-    assert "_devig(pin)" in fn, "fair value must be the Shin-de-vigged Pinnacle close"
-    assert "'Coolbet', 'Pinnacle'" in fn, "must read both books"
-
-    # Guards carried over from the sibling bots.
-    assert "_LINESHOP_TRUE_EDGE_MIN" in fn, "must use the shared 3% post-vig floor"
-    assert "_LINESHOP_TIERS" in fn, "must keep the tier 1-2 gate"
-    assert "1.35 if mkt ==" in fn, (
-        "outlier guard required — COOLBET-OU-LINE-SHIFT found a bracketed TEAM "
-        "total sitting in the full-match OU slot at 17.00 vs Pinnacle's 4.19"
-    )
-    # One side per total, or we pay the vig twice for a guaranteed loss.
-    assert "edge > best[\"edge\"]" in fn, "must keep only the best side per market"
-
-    # COOLBET-LINESHOP-BOT-RETIRED-2026-09-08 (9a800f1): bot_coolbet_value_v1 retired
-    # (line-shop loses OOS); the two model-edge bots are the real-money path. The
-    # pass is now a dead def and must NOT be scheduled — so it no longer needs a
-    # cohort call site or the error-isolation wrapper that guarded that call.
-    calls = src.count("_run_coolbet_value_pass(today_str") - src.count("def _run_coolbet_value_pass(today_str")
-    assert calls == 0, (
-        f"retired line-shop bot's pass must NOT be scheduled (found {calls} call sites)"
-    )
+    # #162 W7.2 (2026-09-26): _run_coolbet_value_pass and its constants are DELETED (the bot was
+    # retired 2026-09-08). The migration + the web surfaces below are still live.
+    assert "_run_coolbet_value_pass" not in src and "_COOLBET_VALUE_BOT" not in src
 
     mig = pathlib.Path("supabase/migrations/287_bot_coolbet_value.sql").read_text()
     assert "bot_coolbet_value_v1" in mig and "ON CONFLICT (name) DO NOTHING" in mig
@@ -27969,37 +25508,6 @@ def _():
         "from the other scheduler jobs now that it re-raises"
     )
     return "Epicbet ingest: vocabulary pinned, reserve/youth false-matches blocked, :02/:32 slot"
-
-
-@test("COOLBET-FEED-PAIRING")
-def test_coolbet_feed_pairing_2026_08_28():
-    """COOLBET-FEED-PAIRING-2026-08-28 — never price a Coolbet quote against a
-    Pinnacle quote taken hours earlier, and record how far apart they were."""
-    import inspect
-    import pathlib
-    from workers.jobs.daily_pipeline_v2 import _PAIR_MAX_GAP_H, _run_coolbet_value_pass
-
-    src = inspect.getsource(_run_coolbet_value_pass)
-
-    # The bot used to take each book's LATEST row with no window between them.
-    # Measured on its last 79 picks: median gap 1.63h, 56pct over 1h, 37pct
-    # over 4h, max 15.6h. Coolbet swings 14-19pct intraday, so that can invent
-    # edge — the same mechanism produced apparent +55.6pct DC edges from
-    # quotes 16h apart.
-    assert "stale_pair" in src, "stale pairings must be counted, not silently used"
-    assert "_PAIR_MAX_GAP_H" in src, "pairing must be time-bounded"
-    assert 0 < _PAIR_MAX_GAP_H <= 12, "pairing window must be sane"
-
-    # Staleness must be auditable after the fact, not reconstructable only by
-    # re-querying odds_snapshots (which ages out).
-    assert "pair_gap_hours" in src, "each pick must record its own pairing gap"
-    writer = pathlib.Path("workers/api_clients/supabase_client.py").read_text()
-    assert "pair_gap_hours" in writer, "the writer must persist the gap"
-
-    mig = pathlib.Path("supabase/migrations/289_shadow_bets_pair_gap.sql").read_text()
-    assert "ADD COLUMN IF NOT EXISTS pair_gap_hours" in mig
-
-    return "cross-book pairing time-bounded + gap recorded per pick"
 
 
 @test("COOLBET-UI-PLACER")
@@ -29471,8 +26979,8 @@ def _stale_best_odds():
     # Every query that aggregates odds_snapshots into a "best price" must
     # collapse to one row per bookmaker first. Checked structurally rather
     # than by counting occurrences, so adding a new pass cannot slip through.
-    for fn_name in ("_load_today_from_db", "_run_no_pin_shadow_pass",
-                    "_run_sweep_shadow_pass"):
+    # #162 W7.2 (2026-09-26): the no-pin / sweep shadow passes are deleted; the PICKS loader stays.
+    for fn_name in ("_load_today_from_db",):
         i = src.index(f"def {fn_name}")
         # up to the next top-level def
         m = _re.compile(r"\ndef ").search(src, i + 10)
@@ -29752,19 +27260,11 @@ def _btts_platt():
         "uncalibrated value tells /methodology readers the model was "
         "calibrated when it was not."
     )
-    # And the passes that genuinely don't calibrate must say so with None.
-    for fn in ("_run_sweep_shadow_pass", "_run_no_pin_shadow_pass"):
-        i = src.index(f"def {fn}")
-        m = _re.compile(r"\ndef ").search(src, i + 10)
-        body = src[i:m.start() if m else len(src)]
-        assert '"calibrated_prob": None' in body, (
-            f"{fn} does not calibrate, so it must record calibrated_prob=None "
-            "rather than the raw ensemble output"
-        )
+    # #162 W7.2 (2026-09-26): the two passes that recorded calibrated_prob=None (sweep, no-pin) are deleted.
     return "no pass writes a raw probability into calibrated_prob"
 
 
-@test("INPLAY-RETIRED — in-play betting is off by default; LivePoller settlement survives")
+@test("INPLAY-RETIRED — InplayBot and its live_poller hook are deleted; LivePoller settlement survives")
 def _inplay_retired():
     """INPLAY-RETIRED-2026-09-03. Four months of in-play paper trading produced
     n=1,246 settled at ROI −0.31%, t=−0.07 — no edge. Priced at odds actually
@@ -29786,15 +27286,15 @@ def _inplay_retired():
     root = _Path(__file__).resolve().parent.parent
     lp = (root / "workers" / "live_poller.py").read_text()
 
-    assert 'os.getenv("INPLAY_STRATEGIES_ENABLED", "false")' in lp, (
-        "in-play strategies must be opt-in — retired 2026-09-03 for having no "
-        "measurable edge"
+    # #162 W7.2 (2026-09-26): the env-gated hook is DELETED, with workers/jobs/inplay_bot.py —
+    # re-pointed from "opt-in only" to "gone". A revert would bring back 3,270
+    # lines of a bot with no measured edge.
+    assert "run_inplay_strategies" not in lp and "from workers.jobs.inplay_bot" not in lp, (
+        "the InplayBot hook is back in live_poller — in-play betting was retired "
+        "2026-09-03 for having no measurable edge and its module was deleted"
     )
-    # Anchor on the CODE, not the comment above it, which also names the flag.
-    i = lp.index('os.getenv("INPLAY_STRATEGIES_ENABLED"')
-    assert "run_inplay_strategies()" in lp[i:i + 400], (
-        "the run_inplay_strategies() call must sit INSIDE the env gate"
-    )
+    assert not (root / "workers" / "jobs" / "inplay_bot.py").exists(), \
+        "workers/jobs/inplay_bot.py was deleted in #162 W7.2"
     # The settlement path must survive the retirement.
     for keep in ("_probe_finishing_matches", "settle_finished_matches"):
         assert keep in lp, (
@@ -29815,7 +27315,7 @@ def _inplay_retired():
         "historical in-play bets must NOT be deleted — they are evidence of "
         "due diligence (OUT-OF-BETA-CUTOFF: never delete historical bets)"
     )
-    return "in-play opt-in only; LivePoller settlement intact; history kept"
+    return "InplayBot gone; LivePoller settlement intact; history kept"
 
 
 @test("SQL-PERCENT-GUARD — no bare per-cent sign inside a parameterised SQL literal")
@@ -39165,11 +36665,8 @@ def test_trigger_floor_selection_aware():
     from workers.jobs import pick_triggers as pt
     from workers.automation.coolbet_placer import min_edge_for_pick, _min_odds_for
 
-    src_pt = inspect.getsource(pt)
-    assert "min_edge_for_pick(market, sel, odds_floor)" in src_pt, (
-        "the model-anchor emitter must take its edge floor from the shared "
-        "selection-aware predicate, evaluated at the odds floor."
-    )
+    # #162 W7.2 (2026-09-26): the model-anchor emitter this pinned is deleted (no reader since the
+    # OWN Phase 5 cull). The _window invariant and the shared floors stay pinned.
     # The invariant that makes passing odds_floor exact: _window never returns a
     # minimum below the odds floor. If that changes, this call becomes wrong.
     w = pt._window(0.50, 0.10, 2.80)
@@ -39230,9 +36727,12 @@ def test_trigger_calibrator_per_selection():
     )
     # the model-anchor emitter lives inside compute_triggers (the sharp one is
     # the separately-named _emit_sharp_anchor)
-    esrc = inspect.getsource(pt.compute_triggers)
-    assert 'cal_1x2(r["praw"], sel)' in esrc, (
-        "the emitter must pass the selection so the per-selection fit is used"
+    # #162 W7.2 (2026-09-26): the trigger emitter's model loop is deleted; the calibrator's one
+    # caller is now pick_generator's prob_source='predictions' path.
+    from workers.automation import pick_generator as _pg
+    esrc = inspect.getsource(_pg._candidates_from_predictions)
+    assert 'cal(r["praw"], sel)' in esrc, (
+        "the caller must pass the selection so the per-selection fit is used"
     )
     # It must REFUSE rather than silently fall back to the pooled fit.
     assert "refusing to calibrate" in fsrc, (
@@ -39288,9 +36788,12 @@ def test_trigger_calibrator_revision():
         "a missing bundle must still carry the revision, not silently drop it"
     )
 
-    csrc = inspect.getsource(pt.compute_triggers)
-    assert "_stamp_cal(r[\"mv\"])" in csrc, (
-        "the model-anchor emitter must stamp its windows"
+    # #162 W7.2 (2026-09-26): the model-anchor window emitter is deleted; the predictions-source
+    # generator (bot_unified_gate_1x2_paper_v1) is the model path that stamps now.
+    from workers.automation import pick_generator as _pg
+    csrc = inspect.getsource(_pg._candidates_from_predictions)
+    assert "_stamp_cal(r.get(\"mv\"))" in csrc, (
+        "the predictions-source generator must stamp its picks"
     )
     ssrc = inspect.getsource(pt._emit_sharp_anchor)
     assert "_stamp_cal(" in ssrc, (
@@ -39655,89 +37158,6 @@ def test_pick_generator():
     for c in CONFIGS:
         assert c.books, f"{c.bot_name} must declare which books it may bet"
         assert c.prob_source in ("pipeline", "predictions"), c.prob_source
-
-
-@test("PREDICTIONS-SOURCE-OU — the wide candidate source covers O/U, per line, or refuses")
-def test_predictions_source_ou():
-    """PREDICTIONS-SOURCE-OU (2026-09-11). `prob_source='predictions'` covered
-    1x2 only, which left `bot_trigger_ou_model_v1` REGISTERED AND INERT — a bot
-    that exists, appears on every admin page, and writes nothing. A silent zero
-    is the failure mode this repo keeps paying for (the 1x2 mirror wrote 0 picks
-    for two days behind a swallowed SQL error), so the gap was closed rather
-    than documented a second time.
-
-    THE INVARIANT THAT MATTERS IS NOT "O/U WORKS" — it is that a market without
-    a calibrator still REFUSES. The whole trigger-bot incident was a calibration
-    applied where it did not belong: one pooled 1x2 curve over three different
-    events, under-estimating HOME by 10-15pp, which made those bots fire only on
-    longshots. So this pins both halves:
-
-      * the two canonical O/U lines each get their OWN fit (`ou25` / `ou35`) and
-        a line with no calibrator is skipped, never served the other line's curve
-      * a bare legacy 'o/u' — which does not say WHICH line — yields nothing
-      * every other market (btts, double_chance, asian_handicap) yields nothing
-
-    Over/under from ONE fit is sound where pooled 1x2 was not, and the reason is
-    structural, not a judgement call: on a .5 line the two outcomes are
-    exhaustive and cannot push, so P(under) = 1 - P(over) is exact. Pinned here
-    so a future "let's pool it for consistency" has to argue with the reason.
-    """
-    import inspect
-    from workers.automation import pick_generator as pg
-    from workers.automation.bot_configs import CONFIG_BY_NAME
-    from workers.jobs.pick_triggers import _fit_calibrator
-
-    # Per-line calibrators exist and are DIFFERENT curves.
-    c25, c35 = _fit_calibrator("ou25"), _fit_calibrator("ou35")
-    assert c25 is not None and c35 is not None, (
-        "both O/U lines must have their own isotonic fit"
-    )
-    assert abs(c25(0.55) - c35(0.55)) > 1e-6, (
-        "the 2.5 and 3.5 calibrators must be distinct fits — serving one line "
-        "the other's curve is the pooled-calibrator mistake in a new place"
-    )
-    # An unknown kind must refuse, not fall through to a default line.
-    assert _fit_calibrator("btts") is None, (
-        "an unknown calibrator kind must return None rather than guess"
-    )
-
-    src = _strip_prose(inspect.getsource(pg._predictions_ou))
-    assert '"over_under_25": ("ou25", "over25")' in src and \
-           '"over_under_35": ("ou35", "over35")' in src, (
-        "each canonical line must map to its OWN calibrator and its OWN "
-        "predictions market"
-    )
-    assert "1.0 - p_over" in src, (
-        "the under side must be the exact complement of the over fit — on a .5 "
-        "line the outcomes are exhaustive, so a second estimate would be both "
-        "redundant and inconsistent"
-    )
-    assert "_stamp_cal" in src, (
-        "picks must carry the calibrator revision, exactly as the 1x2 path "
-        "does: an unstamped pick is classified PRE-fix by "
-        "trigger_calibrator_check and silently corrupts the baseline that "
-        "gates the convergence epic"
-    )
-
-    # A market with no calibration must produce NOTHING rather than guess.
-    from workers.automation.pick_generator import BotConfig, _candidates_from_predictions
-    for markets in (("btts",), ("o/u",), ("asian_handicap",), ("double_chance",)):
-        cfg = BotConfig(bot_name="probe", shadow_cohort="probe",
-                        markets=markets, books=("Coolbet",),
-                        prob_source="predictions")
-        assert _candidates_from_predictions(cfg, 0.08) == [], (
-            f"prob_source='predictions' must yield nothing for {markets} — a "
-            f"bare 'o/u' does not even say which line, and the rest have no "
-            f"calibrator at all"
-        )
-
-    # And the bot that was inert is now declared live.
-    ou = CONFIG_BY_NAME["bot_trigger_ou_model_v1"]
-    assert ou.prob_source == "predictions" and ou.markets == ("over_under_25",)
-    assert "inert" not in ou.notes, (
-        "the config note must stop saying the bot is inert once it generates — "
-        "a stale note is how a known-zero bot stays invisible"
-    )
 
 
 @test("LIVENESS-IS-NOT-CAPABILITY — the watchdogs must check the thing, not a proxy for it")
@@ -40225,10 +37645,12 @@ def test_merge_trigger_bots():
     # and NO config may be per-book. That is strictly stronger, because a count
     # of four would also have passed if someone deleted a merged bot and added a
     # per-book one.
-    MERGED = {"bot_trigger_1x2_model_v1", "bot_trigger_ou_model_v1",
-              "bot_trigger_1x2_sharp_v1", "bot_trigger_ou_sharp_v1"}
+    # #162 W7.2 (2026-09-26): the two MODEL-anchored merged bots (bot_trigger_1x2_model_v1 /
+    # bot_trigger_ou_model_v1, retired 2026-09-13/14) are deleted from TRIGGER_CONFIGS.
+    MERGED = {"bot_trigger_1x2_sharp_v1", "bot_trigger_ou_sharp_v1"}
     have = {c.bot_name for c in TRIGGER_CONFIGS}
     assert MERGED <= have, f"merged trigger bots missing: {sorted(MERGED - have)}"
+    assert not have & {"bot_trigger_1x2_model_v1", "bot_trigger_ou_model_v1"}, "retired model triggers are back"
     for c in TRIGGER_CONFIGS:
         assert len(c.books) >= 2, (
             f"{c.bot_name} must span both placeable books — splitting per book "
@@ -40237,7 +37659,7 @@ def test_merge_trigger_bots():
     # #139: capable by rule, but PAPER unless the owner switches its seeded-OFF row on.
     _assert_placer_rows_seed_off()
     anchors = {c.prob_source for c in TRIGGER_CONFIGS if c.bot_name in MERGED}
-    assert anchors == {"predictions", "sharp_devig"}, anchors
+    assert anchors == {"sharp_devig"}, anchors
 
     # 2. The SHARP configs must set their floors explicitly. Inheriting the
     #    registry's 13% model floor would demand a 13% overlay on a de-vigged
@@ -49156,9 +46578,9 @@ def test_telegram_edge_units():
     calibration is fixed.
 
     THE UNIT CANNOT BE INFERRED FROM THE COLUMN, which is why this is pinned
-    rather than left to care: the shadow passes store a genuine expected return
-    under the same name (`edge = odds * prob - 1.0` in _run_sweep_shadow_pass,
-    _run_no_pin_shadow_pass, _run_coolbet_value_pass, _run_pin_ou_shadow_pass).
+    rather than left to care: the (now deleted, #162 W7.2) pipeline shadow passes
+    stored a genuine expected return under the same name (`edge = odds * prob - 1.0`),
+    and those historical shadow_bets rows keep it.
     Same column, two quantities; only the source TABLE tells them apart. So the
     test also asserts these renderers still read simulated_bets — if one is ever
     repointed at shadow_bets, "pp" becomes the wrong label rather than the right
@@ -49770,16 +47192,17 @@ def test_own_picks_book_seam():
     # 2. The OWN paths must KEEP it. This is the direction that matters most:
     #    publishing a price the operator cannot reach as if he could is worse
     #    than hiding one he can.
-    for fn in ("_run_no_pin_shadow_pass", "_run_sweep_shadow_pass"):
-        blk = src[src.index(f"def {fn}("):]
-        blk = blk[:blk.index("\ndef ", 1)]
-        assert "ACCESSIBLE_BOOKMAKERS" in blk, (
-            f"{fn} no longer tests ACCESSIBLE_BOOKMAKERS. It writes shadow_bets, "
-            f"which is the OWN shadow-bots page — gating it on the publishable "
-            f"set would show the operator picks at books Estonia blocks")
-        assert "is_publishable_book(" not in blk, (
-            f"{fn} uses the PICKS predicate. OWN must stay on the Estonian "
-            f"allow-list")
+    # #162 W7.2 (2026-09-26): the no-pin / sweep shadow passes this used to check are deleted. The
+    # live OWN-side Estonian gate is pick_generator._own_outlier_ok.
+    import inspect as _insp
+    from workers.automation import pick_generator as _pg
+    blk = _insp.getsource(_pg._own_outlier_ok)
+    assert "ACCESSIBLE_BOOKMAKERS" in blk, (
+        "pick_generator._own_outlier_ok no longer tests ACCESSIBLE_BOOKMAKERS — the "
+        "OWN anchor would read books Estonia blocks")
+    assert "is_publishable_book(" not in blk, (
+        "pick_generator._own_outlier_ok uses the PICKS predicate. OWN must stay on "
+        "the Estonian allow-list")
 
     # 3. The deny-list may only ever contain NON-OFFERS, never a legality call.
     m = _re.search(r"_NON_OFFERS: frozenset = frozenset\(\{(.*?)\}\)", src, _re.S)
@@ -52755,10 +50178,8 @@ def test_picks_outlier_anchor_publishable():
     assert "bookmaker not in PRICE_REFERENCE_BOOKMAKERS" not in block, "anchor must not read the Estonian set"
     assert dp.is_publishable_book("1xBet") and dp.is_publishable_book("Pinnacle")
     assert not dp.is_publishable_book("Unibet-Kambi") and not dp.is_publishable_book("Max")
-    # 🤖 OWN is unchanged. The LIVE shadow passes filter on ACCESSIBLE_BOOKMAKERS (the
-    # PRICE_REFERENCE_BOOKMAKERS uses are in retired passes — review 2026-09-24):
-    for fn in (dp._run_no_pin_shadow_pass, dp._run_sweep_shadow_pass):
-        assert "ACCESSIBLE_BOOKMAKERS" in inspect.getsource(fn), fn.__name__
+    # 🤖 OWN is unchanged. (#162 W7.2 (2026-09-26): the pipeline shadow passes that also filtered on
+    # ACCESSIBLE_BOOKMAKERS are deleted — every bot they served was retired.)
     # …and OWN bots fed from simulated_bets re-apply the pre-#129 Estonian anchor,
     # because #129 lets thinner fixtures into that table:
     import workers.automation.pick_generator as pg
@@ -54904,11 +52325,12 @@ def test_unified_bot_views_contract():
         assert n in by, f"active bot {n} missing from the export"
         assert by[n]["family"] != "unknown", f"active bot {n} has no resolvable config"
     assert by["control_junk_anchor"]["family"] == "control"
-    # retired bots whose config is STILL in code must resolve ('unknown' = unresolvable only)
+    # retired bots whose passes were deleted (#162 W7.2 (2026-09-26)) keep their family via _LINEAGE
     for n in ("bot_sweep_1x2_home_v1", "bot_sweep_1x2_draw_v1", "bot_sweep_ou25_v1", "bot_sweep_ou35_v1",
-              "bot_pin_1x2_home_v1", "bot_no_pin_shadow_v1", "bot_no_pin_home_v1", "bot_coolbet_value_v1"):
+              "bot_pin_1x2_home_v1", "bot_no_pin_shadow_v1", "bot_no_pin_home_v1", "bot_coolbet_value_v1",
+              "bot_trigger_1x2_model_v1", "bot_trigger_ou_model_v1"):
         if n in by:
-            assert by[n]["family"] != "unknown", f"{n} config is in daily_pipeline_v2 but exported as unknown"
+            assert by[n]["family"] != "unknown", f"{n} lost its family — add it to export_bot_config._LINEAGE"
     assert not any(g["name"] == "anchor_sanity_ratio" for r in rows for g in r["gates"]), "placeholder gate"
     assert by["bot_inplay_slowstate_v1"]["admissible_metric"] == "lift"
     assert by["bot_v10_1x2"]["admissible_metric"] == "clv_anchor"   # [[#159]] one CLV everywhere
@@ -57710,11 +55132,7 @@ def test_flat_stakes_everywhere():
     src = inspect.getsource(dp)
     assert "stake * 0.5" not in src, "the league-exposure stake halving is retired (flat unit)"
     assert "not shadow_mode and _league_count >= 2" in src   # the count/report stays
-    from workers.jobs.inplay_bot import _build_inplay_bet_data
-    assert _build_inplay_bet_data(trigger={"market": "1x2", "selection": "home", "odds": 2.0, "model_prob": 0.6,
-                                           "edge": 5.0, "extra": {}}, cand={"minute": 50, "score_home": 0,
-                                           "score_away": 0}, xg_h=1, xg_a=1, is_real=True, odds_age=1.0,
-                                  bot_name="inplay_c")["stake"] == imp.FLAT_STAKE_EUR
+    # #162 W7.2 (2026-09-26): the in-play builder (inplay_bot._build_inplay_bet_data) is deleted; no in-play stake is written.
     # the ONE public-price rule, same as bot_ledger (migration 433)
     from workers.utils.pick_price import public_price
     assert public_price({"odds_at_pick": 2.5, "odds_at_pick_live": 2.2, "odds_at_pick_available": 2.3}) == (2.3, "available")

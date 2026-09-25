@@ -199,6 +199,14 @@ registry and regenerate.
 > cleanest evidence here that the **anchor**, not the market or the book, is what
 > separates a winning bot from a losing one.
 >
+> **CODE DELETED 2026-09-26 (#162 W7.2).** `bot_trigger_1x2_model_v1` and
+> `bot_trigger_ou_model_v1` left `bot_configs.TRIGGER_CONFIGS`, and Stage A's MODEL
+> anchor (`pick_triggers` `model_1x2` / `model_ou25`, no matcher bot read it after the
+> OWN Phase 5 cull) was deleted with the O/U half of `_fit_calibrator` and
+> `pick_generator._predictions_ou`. The 1x2 calibrator stays: `bot_unified_gate_1x2_paper_v1`
+> (prob_source='predictions') uses it. Their `bot_config` rows come from
+> `export_bot_config._LINEAGE`.
+>
 > **The four MODEL-anchored O/U trigger bots are NOT retired**, deliberately.
 > Every settled pick they own falls inside the OU-CALIBRATOR-DOMAIN-MISMATCH
 > window (2026-09-03 → 2026-09-13), so excising it leaves them with zero
@@ -494,7 +502,7 @@ Same-looking numbers, different meaning per screen. This is the glossary.
 | **/shadow-bots** — bot "ROI" | realised | settled paper/real P&L at the executable price. Retired bots' losses are in the "including retired" total only. |
 | **/shadow-bots** — bot "CLV" | closing-line value | edge vs the closing line — the leading indicator; ROI is noisier at low n. |
 | **`value_v1` / line-shop** — "edge ≥ 3%" | sharp edge | `P_sharp − 1/odds`. A different edge from /picks (§1). |
-| **pick_triggers** — `cal_prob` | anchor prob | model prob for `model_*` strategies; **de-vigged Pinnacle prob** for `sharp_*` strategies. |
+| **pick_triggers** — `cal_prob` | anchor prob | **de-vigged Pinnacle prob** (`sharp_*` strategies — the only anchor since #162 W7.2; historical `model_*` rows held the model prob). |
 
 ---
 
@@ -916,8 +924,8 @@ which feeds `simulated_bets` → /picks) the ODDS-OUTLIER-FILTER anchor is Pinna
 median of ≥3 **publishable** books (`is_publishable_book`) — the same set that path prices from
 since #005. It used to read the four Estonian books + Pinnacle, so fixtures without Pinnacle
 and with <3 Estonian books had no anchor and every pick on them was rejected (the model bots
-dried up). 🤖 OWN is unchanged: the live shadow passes filter on `ACCESSIBLE_BOOKMAKERS`, and
-OWN bots fed from `simulated_bets` (`pick_generator._candidates_from_pipeline`) re-apply the
+dried up). 🤖 OWN is unchanged: the pipeline shadow passes that filtered on `ACCESSIBLE_BOOKMAKERS`
+were deleted with their retired bots (#162 W7.2, 2026-09-26), and OWN bots fed from `simulated_bets` (`pick_generator._candidates_from_pipeline`) re-apply the
 pre-#129 rule in `_own_outlier_ok` — Pinnacle, else median of ≥3 Estonian books, 1.25× ceiling —
 because #129 lets thinner fixtures into that table. Marathonbet and 1xBet count as ONE source
 toward the ≥3-book anchor (identical price 38–59% of the time, vs ~17% for any other pair).
