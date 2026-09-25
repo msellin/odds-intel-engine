@@ -67,6 +67,9 @@ Pipeline plumbing added (`daily_pipeline_v2.py`): `prob_source` (rating_1x2 / co
    everyone in [[#159]]); no ROI-based "proven/underperforming" judgements beside the status labels; headline later split
    VIP vs everything else; "work done" totals = 16,681 picks across 94 strategies, 68 retired ([[#157]]).
 
+9. **FLAT STAKES EVERYWHERE** (owner 2026-09-25): every bot records one flat unit per pick, real-money sizing included; Kelly
+   is not used until it proves itself. `kelly_fraction` stays stored as data only. All our backtests were flat and CLV-decided.
+
 ## 4. Definitions (the traps we fell into)
 
 * **CLV = sharp-anchor close**: `leg_clv_sharp.clv_sharp` (fresh Pinnacle close) else `clv_cons` (≥ 5-book consensus); thin
