@@ -54099,6 +54099,25 @@ def test_control_fn_refuses():
             assert r["outcome"] == "refused", "a start with unreadable state must be refused"
             r = call("placer_enabled", bot, True, "a reason long enough", bot, expected=True)
             assert r["outcome"] == "conflict", r
+            # #162 W0.2 (migration 436): while the money-gate contract is 0 even a VALID € ON is refused
+            # by the trigger (an exception — the savepoint keeps the rest of this transaction usable)
+            cur.execute("SELECT to_regclass('public.coolbet_session_state') IS NOT NULL AND EXISTS ("
+                        "SELECT 1 FROM information_schema.columns WHERE table_name = 'coolbet_session_state' "
+                        "AND column_name = 'money_gate_contract')")
+            has_gate = cur.fetchone()[0]
+            if has_gate:
+                cur.execute("SAVEPOINT money_gate")
+                try:
+                    call("placer_enabled", bot, True, "a reason long enough", bot, expected=False)
+                except Exception as e:  # noqa: BLE001
+                    assert "placement checks are unified" in str(e), e
+                else:
+                    raise AssertionError("a € switch ON must be refused while money_gate_contract = 0 (migration 436)")
+                cur.execute("ROLLBACK TO SAVEPOINT money_gate")
+                # raise the contract inside THIS rolled-back transaction to exercise 413's own behaviour
+                cur.execute("SELECT set_config('oddsintel.migration', 'on', true)")
+                cur.execute("UPDATE coolbet_session_state SET money_gate_contract = 1 WHERE id = 1")
+                cur.execute("SELECT set_config('oddsintel.migration', '', true)")
             r = call("placer_enabled", bot, True, "a reason long enough", bot, expected=False)
             assert r["outcome"] == "applied", r
             cur.execute("SELECT ui_place_enabled FROM coolbet_placer_bots WHERE bot_name = %s", (bot,))
@@ -54139,7 +54158,8 @@ def test_control_fn_refuses():
                     cur.execute(stmt, args)
                 except Exception as e:  # noqa: BLE001
                     cur.execute("ROLLBACK TO SAVEPOINT g")
-                    assert frag in str(e), e
+                    frags = (frag,) if isinstance(frag, str) else frag
+                    assert any(f in str(e) for f in frags), e
                     return
                 raise AssertionError(f"must be refused: {stmt}")
             cur.execute("SELECT set_config('oddsintel.control_fn', '', true)")
@@ -54157,8 +54177,10 @@ def test_control_fn_refuses():
             refused("TRUNCATE coolbet_placer_bots", frag="refused")
             refused("INSERT INTO coolbet_placer_bots (bot_name, ui_place_enabled) VALUES ('bot_smoke_v0', false)",
                     frag="reviewed migration")
+            # an armed INSERT is refused by 413's start guard — or, first (triggers fire alphabetically),
+            # by migration 436's money-gate lock; either refusal is correct
             refused("INSERT INTO coolbet_session_state (id, real_money_armed, placement_paused) VALUES (2, true, false)",
-                    frag="must start paused")
+                    frag=("must start paused", "placement checks are unified"))
             cur.execute("SELECT has_table_privilege('service_role', 'coolbet_session_state', 'DELETE'), "
                         "has_table_privilege('service_role', 'coolbet_placer_bots', 'INSERT'), "
                         "has_table_privilege('service_role', 'coolbet_placer_bots', 'TRUNCATE'), "
