@@ -19721,6 +19721,16 @@ def _():
     )
 
 
+@test("CI-SMOKE-SUPERSEDE — a newer push to main cancels the older in-flight smoke run")
+def _():
+    """CI-SMOKE-SUPERSEDE-2026-09-25: 7 smoke runs were in flight at once from sessions
+    pushing minutes apart; only the newest main matters for the gate."""
+    import pathlib
+    wf = (pathlib.Path(__file__).resolve().parent.parent / ".github/workflows/smoke_tests.yml").read_text()
+    assert "concurrency:" in wf and "cancel-in-progress: true" in wf, (
+        "smoke_tests.yml must cancel superseded runs (concurrency + cancel-in-progress)")
+
+
 @test("SMOKE-SKIPTEST — _web_path raises SkipTest when odds-intel-web is absent; runner counts skips separately from failures")
 def _():
     """SMOKE-SKIPTEST (2026-06-03): smoke_tests.yml only checks out this engine

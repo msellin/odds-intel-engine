@@ -29,6 +29,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# CI-SMOKE-SUPERSEDE-2026-09-25 — several sessions push to main minutes apart, and each
+# push started its own 5-8 min run (7 in flight at once on 2026-09-25). Only the newest
+# main matters for the gate, so a newer push cancels the older in-flight run.
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
