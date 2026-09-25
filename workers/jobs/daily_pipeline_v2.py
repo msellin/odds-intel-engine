@@ -163,13 +163,17 @@ BOTS_CONFIG = {
     # confirm half: 370 picks, CLV +1.0% (not significant vs the old rule). After 50-100 settled picks
     # the two are compared LIVE and the better rule is kept (ANALYSIS_GOTCHAS #84).
     # maturity 'testing', shown on /performance (bots.show_on_performance, migration 427).
+    # LANES (2026-09-25, owner): odds CAPPED at 3.00 — the pre-registered lane backtest found NEW+'s
+    # public-band edge sits at short odds: confirm-half CLV +2.66% (n 157, ~13/day) at 1.30-3.00 vs
+    # +0.60% uncapped (1.30-4.50). (The pre-registered pick was 2.30; 3.00 keeps more volume at almost
+    # the same CLV — owner's call.) scripts/backtest_1x2_lanes.py.
     "bot_v10_1x2_newplus_v1": {
         "description": "1X2 model bot on the NEW+ model — twin of bot_v10_1x2: EV >= 3% flat, never a VIP-held pick",
         "tier_label": "elite",
         "markets": ["1x2"],
         "tier_filter": None,
         "edge_thresholds": {t: {"1x2_fav": 0.03, "1x2_long": 0.03} for t in (1, 2, 3, 4)},
-        "odds_range": (1.30, 4.50),
+        "odds_range": (1.30, 3.00),   # LANES 2026-09-25 (owner): capped — +2.7% vs +0.6% uncapped
         "min_prob": 0.30,
         "prob_source": "combined_1x2",
         "edge_unit": "ev",
@@ -828,30 +832,9 @@ BOTS_CONFIG = {
         "odds_range": (1.50, 5.50),
         "min_prob": 0.28,
     },
-    # High-odds match result's NEW-MODEL TWIN ([[#152]], owner 2026-09-25: "lets try it anyways").
-    # IDENTICAL rules to bot_high_roi_global_v2 (Spain/Australia/Iceland, home/away, odds 1.50-5.50,
-    # min_prob 0.28, the same tier thresholds in probability points) — ONLY the probability changes,
-    # to NEW+ (r1x2_comb_v1, used as is). vip_exclude: a public bot never takes a VIP-held pick.
-    # The original keeps its live record (CLV +6.9%, ~+5.6% on 30 picks since July); the backtest
-    # could not judge this niche (its own rule made 0-1 open-price picks) and its NEW+ variants were
-    # negative, so this is a live experiment, not a confirmed improvement. Compare live, keep the better.
-    "bot_high_roi_global_v2_newplus_v1": {
-        "description": "High-odds match result on the NEW+ model — twin of bot_high_roi_global_v2, same rules, only the probability changes",
-        "tier_label": "elite",
-        "markets": ["1x2"],
-        "selection_filter": ["Home", "Away"],
-        "tier_filter": None,
-        "league_filter": ["Spain", "Australia", "Iceland"],
-        "edge_thresholds": {
-            1: {"1x2_fav": 0.06, "1x2_long": 0.09},
-            2: {"1x2_fav": 0.05, "1x2_long": 0.08},
-            3: {"1x2_fav": 0.05, "1x2_long": 0.08},
-        },
-        "odds_range": (1.50, 5.50),
-        "min_prob": 0.28,
-        "prob_source": "combined_1x2",
-        "vip_exclude": True,
-    },
+    # High-odds match result's NEW+ twin (bot_high_roi_global_v2_newplus_v1) was created and RETIRED
+    # on 2026-09-25 (migration 429, owner): its exact rule made 0 picks in the backtest window and a
+    # widened high-odds lane was weak on the confirm half (LANES). Revisit after #154.
 
     # ─── Double Chance bots (DC-BOTS 2026-05-11) ──────────────────────────────
     # DC probs derived at placement time from 1X2 calibrated probs:
@@ -1179,7 +1162,6 @@ BOT_TIMING_COHORTS: dict[str, str] = {
     "bot_proven_leagues_v2": "all",
     "bot_high_roi_global":      "all",
     "bot_high_roi_global_v2":   "all",
-    "bot_high_roi_global_v2_newplus_v1": "all",   # #152 twin on the NEW+ model
     "bot_ou15_defensive":   "all",
     "bot_ou35_attacking":   "all",
     "bot_ou25_global":          "all",   # RETIRED 2026-05-29 — kept for shadow tracking

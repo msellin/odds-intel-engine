@@ -5373,7 +5373,8 @@ def test_system_map_registry_not_drifted():
         for stmt in _blocks + _rest.split(";"):
             if not _re.search(r"\bset\b.*?\bretired_at\s*=", stmt, _re.I | _re.S):
                 continue
-            retiring |= {n for n in db if n in stmt}
+            # quoted, exact name: a bare substring made retiring 'x_v2_newplus_v1' also "retire" 'x_v2' (#152)
+            retiring |= {n for n in db if f"'{n}'" in stmt}
         # ...AND THE MIRROR CASE (2026-09-22, [[#033]]). A bot INSERTed by a
         # pending migration is in the registry and not yet in the table, which is
         # the same legitimate state as a pending retirement and was not handled.
@@ -56747,19 +56748,16 @@ def test_v10_newplus_twin():
     assert "prob_source" not in old and old["edge_thresholds"][1]["1x2_fav"] == 0.08, "bot_v10_1x2 must stay unchanged"
     assert tw["prob_source"] == "combined_1x2" and tw["edge_unit"] == "ev" and tw["vip_exclude"] is True
     assert all(v == {"1x2_fav": 0.03, "1x2_long": 0.03} for v in tw["edge_thresholds"].values())
-    assert tw["odds_range"] == old["odds_range"] and tw["min_prob"] == old["min_prob"]
+    assert tw["odds_range"] == (1.30, 3.00) and tw["min_prob"] == old["min_prob"], "LANES cap (owner 2026-09-25)"
     assert BOT_TIMING_COHORTS["bot_v10_1x2_newplus_v1"] == BOT_TIMING_COHORTS["bot_v10_1x2"]
     mig = _engine_path("supabase/migrations/427_v10_newplus_twin.sql").read_text(encoding="utf-8")
     assert "show_on_performance boolean" in mig and "'testing', false, true" in mig
     web = _engine_path("../odds-intel-web/src/lib/bot-aggregates.ts")
     if web.exists():
         assert "b.showOnPerformance === true" in web.read_text(encoding="utf-8")
-    # High-odds twin (owner 2026-09-25): identical rules to bot_high_roi_global_v2, only the probability changes.
-    h, ht = BOTS_CONFIG["bot_high_roi_global_v2"], BOTS_CONFIG["bot_high_roi_global_v2_newplus_v1"]
-    assert "prob_source" not in h and ht["prob_source"] == "combined_1x2" and ht["vip_exclude"] is True
-    for k in ("markets", "selection_filter", "league_filter", "edge_thresholds", "odds_range", "min_prob"):
-        assert ht[k] == h[k], f"high-odds twin drifted on {k}"
-    assert "'testing', false, true" in _engine_path("supabase/migrations/428_high_odds_newplus_twin.sql").read_text(encoding="utf-8")
+    # High-odds twin: created and retired 2026-09-25 (migration 429) — must not come back by accident.
+    assert "bot_high_roi_global_v2_newplus_v1" not in BOTS_CONFIG
+    assert "is_active = false" in _engine_path("supabase/migrations/429_retire_high_odds_twin.sql").read_text(encoding="utf-8")
 
 
 @test("LANES-1X2-TWINS — #152 LANES: pre-registered s grid, twin rules, split date, Holm m=2, VIP exclusion")
