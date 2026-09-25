@@ -105,6 +105,7 @@ WITH r AS (
       FROM public.pipeline_runs
      WHERE started_at > now() - interval '35 days'
        AND job_name NOT IN ('hist_backfill', 'backfill_coaches', 'backfill_transfers')
+       AND job_name NOT IN (SELECT job_name FROM public.retired_jobs)
 ), f AS (
     SELECT job_name,
            -- distinct minutes, not rows: some jobs write two rows per run (prune_anon_users)

@@ -55372,6 +55372,23 @@ def test_admin_ux_round3():
     assert 'stakingBots: canStake === "yes" ? staking : []' in lad
 
 
+@test("RETIRED-JOBS-OUT-OF-FAILURES — unregistered jobs leave the job-health view; week-old failures are not urgent")
+def test_retired_jobs_out_of_failures():
+    """2026-09-25: prune_anon_users (unregistered by #146 on 09-24) and aln_auto_tune (fixed by #146, monthly,
+    next run 10-01) still read as URGENT failures on /admin the next morning, because their last run in the
+    35-day window failed. Migration 426: retired_jobs (seeded with prune_anon_users) is excluded from
+    pipeline_job_latest; the attention rule demotes a failure whose last run is > 7 days old to To check."""
+    mig = _engine_path("supabase/migrations/426_retired_jobs.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS public.retired_jobs" in mig and "'prune_anon_users'" in mig
+    assert "NOT IN (SELECT job_name FROM public.retired_jobs)" in mig and "TO anon" not in mig
+    wf = _engine_path("WORKFLOWS.md").read_text()
+    assert "add a `retired_jobs` row in the same commit" in wf
+    if not (_web_root / "src").exists():
+        return
+    att = _web_path("src/lib/admin-attention.ts").read_text(encoding="utf-8")
+    assert "> 7 * H24" in att and 'severity: old ? "warn" : "danger"' in att
+
+
 @test("FEED-AUTO-PAUSE-IS-A-FAILURE — an engine auto-pause reads as Stopped everywhere; round axis ticks; no 'database change 413'")
 def test_feed_auto_pause_is_a_failure():
     """2026-09-25 (owner screenshots): Unibet-Site was dark 8 h, auto-paused by the circuit breaker, and
