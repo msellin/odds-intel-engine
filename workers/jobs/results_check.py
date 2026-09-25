@@ -93,7 +93,7 @@ def verdict(af_now, tonybet, espn) -> tuple[str, tuple[int, int] | None]:
 
 _REGRADE_SQL = """SELECT b.id, b.bot_id, b.match_id::text AS match_id, b.market, b.selection,
                          b.stake, b.odds_at_pick, b.result, b.pnl,
-                         b.odds_at_pick_live, b.odds_at_pick_available
+                         b.odds_at_pick_live, b.odds_at_pick_available {inplay_cols}
                     FROM {table} b
                    WHERE b.match_id = %s AND b.result IN ('won', 'lost', 'void')
                      AND (b.void_reason IS NULL OR LEFT(b.void_reason, 10) <> 'quarantine')"""
@@ -114,7 +114,10 @@ def _regrade(mid: str, hg: int, ag: int) -> dict:
     from workers.utils.pick_price import public_price
     out = {"shadow_bets": 0, "simulated_bets": 0, "picks_forward_test": 0, "pnl_delta": 0.0}
     for table in ("shadow_bets", "simulated_bets"):
-        for b in execute_query(_REGRADE_SQL.format(table=table), (mid,)) or []:
+        # #162: public_price() needs the in-play markers to price an in-play simulated leg at its own odds
+        # (shadow_bets has no such columns and no public-price pnl)
+        cols = ", b.match_minute_at_pick, b.xg_source" if table == "simulated_bets" else ""
+        for b in execute_query(_REGRADE_SQL.format(table=table, inplay_cols=cols), (mid,)) or []:
             # FLAT-STAKES-EVERYWHERE (#155): simulated_bets pnl lives on the PUBLIC price — the
             # same one the first settlement used — so a regrade moves it by the grade only.
             new = settle_bet_result(b, hg, ag, None,

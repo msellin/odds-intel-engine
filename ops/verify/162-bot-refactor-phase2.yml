@@ -1,0 +1,78 @@
+# #162 bot refactor, phase 2 — the live invariants each landed step promised (2026-09-25).
+task: "#162"
+checks:
+  - name: money_gate_still_locked
+    mode: invariant
+    # W0.2 / migration 436: real money stays locked until #162 W4 closes (contract raised by that migration).
+    sql: SELECT money_gate_contract FROM coolbet_session_state WHERE id = 1
+    expect: "== 0"
+    expires: "2026-10-31T00:00:00Z"
+  - name: no_real_money_switch_on_while_locked
+    mode: invariant
+    sql: SELECT count(*) FROM coolbet_placer_bots WHERE ui_place_enabled
+    expect: "== 0"
+    expires: "2026-10-31T00:00:00Z"
+  - name: retired_bots_write_no_shadow_rows
+    mode: invariant
+    # W7.1 (c7fcbfeb, scheduler restarted 2026-09-25 15:27 UTC): retired/inactive bots are skipped in every mode.
+    sql: |
+      SELECT count(*) FROM shadow_bets s JOIN bots b ON b.id = s.bot_id
+       WHERE (b.retired_at IS NOT NULL OR NOT b.is_active)
+         AND s.pick_time > greatest(now() - interval '2 hours', '2026-09-25 15:28+00'::timestamptz)
+         AND s.pick_time > coalesce(b.retired_at, '-infinity')
+    expect: "== 0"
+    run_after: {job: betting_refresh, since: "2026-09-25T15:28:00Z"}
+    expires: "2026-10-09T00:00:00Z"
+  - name: no_settled_bet_fails_the_data_error_test
+    mode: invariant
+    # W1.1 (3be5404d): the autovoid (every 15 min) leaves no settled won/lost simulated bet at >= 1.65x its close.
+    sql: |
+      SELECT count(*) FROM simulated_bets
+       WHERE result IN ('won','lost') AND closing_odds > 0
+         AND LEAST(odds_at_pick, COALESCE(odds_at_pick_live, odds_at_pick)) / closing_odds >= 1.65
+         AND settled_at < now() - interval '30 minutes'
+    expect: "== 0"
+    expires: "2026-10-31T00:00:00Z"
+  - name: provably_paper_real_bets_never_counted
+    mode: invariant
+    # W4.1 / migration 440: the provably-paper classes are placed_real = FALSE.
+    sql: |
+      SELECT count(*) FROM real_bets
+       WHERE placed_real IS NULL
+         AND (notes LIKE 'inplay-auto%' OR notes LIKE 'auto-combo%'
+              OR (notes LIKE 'auto ticket=None%' AND placed_at >= '2026-05-23 08:00+00' AND placed_at < '2026-09-25'))
+    expect: "== 0"
+    expires: "2026-10-31T00:00:00Z"
+  - name: real_bets_scored_on_sharp_close
+    mode: eventually
+    # W6.4 (e543f59f): confirmed real singles carry a leg_clv_sharp row.
+    sql: |
+      SELECT count(*) FROM real_bets r
+       WHERE r.placed_real IS TRUE AND r.combo_legs IS NULL AND r.result IN ('won','lost') AND r.actual_odds > 1
+         AND r.placed_at > now() - interval '30 days'
+         AND NOT EXISTS (SELECT 1 FROM leg_clv_sharp c WHERE c.ledger = 'real_bets' AND c.leg_id = r.id)
+    expect: "== 0"
+    run_after: {job: clv_sharp, since: "2026-09-25T18:00:00Z"}
+    expires: "2026-10-03T00:00:00Z"
+  - name: pick_generator_writes_again_after_percent_hotfix
+    mode: eventually
+    # dff516db: a bare % in a SQL comment broke every pick_generator write ~15:25–16:05 UTC 2026-09-25.
+    sql: |
+      SELECT count(*) FROM shadow_bets s JOIN bots b ON b.id = s.bot_id
+       WHERE b.name IN ('bot_trigger_1x2_sharp_v1','bot_trigger_ou_sharp_v1','bot_unified_gate_1x2_paper_v1',
+                        'bot_coolbet_1x2_model_v1','bot_coolbet_ou_model_v1','bot_trigger_1x2_sharp_tight_v1')
+         AND s.pick_time > '2026-09-25 16:05+00'
+    expect: ">= 1"
+    run_after: {time: "2026-09-25T16:10:00Z"}
+    expires: "2026-09-26T16:10:00Z"
+  - name: shadow_data_error_legs_voided
+    mode: invariant
+    # W1.5: the autovoid (every 15 min) now covers shadow_bets too — no settled shadow leg at >= 1.65x its close.
+    sql: |
+      SELECT count(*) FROM shadow_bets
+       WHERE result IN ('won','lost') AND closing_odds > 0
+         AND LEAST(odds_at_pick, COALESCE(odds_at_pick_live, odds_at_pick)) / closing_odds >= 1.65
+         AND pick_time < now() - interval '1 day'
+    expect: "== 0"
+    run_after: {job: settle_ready, since: "2026-09-25T17:00:00Z"}
+    expires: "2026-10-31T00:00:00Z"

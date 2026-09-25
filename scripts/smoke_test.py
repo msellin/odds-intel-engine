@@ -4820,7 +4820,7 @@ def test_quarantine_voids_survive_the_resettler():
     # End-to-end against the live DB: the SQL runs (the IndexError above is a
     # runtime fault a source check cannot see) and returns none of our rows.
     from workers.api_clients.db import execute_query
-    rows = execute_query(sql.format(table="shadow_bets"), [5000])
+    rows = execute_query(sql.format(table="shadow_bets", inplay_cols=""), [5000])   # #162: shadow has no in-play markers
     resurrectable = {str(r["id"]) for r in rows}
     quarantined = {
         str(r["id"]) for r in execute_query(
@@ -49122,14 +49122,17 @@ def test_shadow_bots_roi_over_all_settled():
     q = (_web_root / "src" / "lib" / "shadow-bots" / "queries.ts").read_text(encoding="utf-8")
     if not q:
         return
-    assert "shadow_bot_scoreboard" in q, "the page must read the engine's scoreboard view"
+    # #162 W6.1 (owner 4C + (d), 2026-09-25): the chip reads bot_performance (the ONE per-bot computation),
+    # not the own-book scoreboard; Pinnacle-anchored families are "can't judge yet" until #150
+    assert 'from("bot_performance")' in q and 'from("bot_config")' in q, "the chip reads bot_performance + family"
     # #139 P6 (2026-09-24): the scoreboard SECTION is deleted (bot scores live on /admin/bots).
     # The view is still read for the per-pick track chip, which must use the CLV columns only.
     assert not (_web_root / "src" / "components" / "shadow-bots" / "scoreboard.tsx").exists(), \
         "scoreboard.tsx stays deleted (QUEUE-HAS-NO-SCOREBOARD)"
     tbl = (_web_root / "src" / "components" / "shadow-bots" / "picks-table.tsx").read_text(encoding="utf-8")
-    assert "clv_mc_mean" in tbl and "settled_roi" not in tbl and "shadow_bets_own_book_clv" not in tbl, \
-        "the track chip reads margin-corrected CLV, never ROI or a re-derived subset"
+    assert "clv_mean" in tbl and "settled_roi" not in tbl and "shadow_bets_own_book_clv" not in tbl, \
+        "the track chip reads the sharp-anchor CLV, never ROI or a re-derived subset"
+    assert "UNJUDGEABLE_FAMILIES.has(r.family)" in tbl and '"WAITING"' in tbl
 
 
 @test("SHADOW-BOTS-AUTOMATION-IS-NOT-A-VERDICT — a paused placer never hides the price verdict or blocks recording a hand-placed bet")
@@ -51569,16 +51572,14 @@ def test_perf_one_price_basis():
     assert hasattr(st, "_EXEC_PNL"), (
         "settlement must define the executable-price expression in ONE place")
     expr = st._EXEC_PNL
-    for needed in ("combo_legs IS NOT NULL", "odds_at_pick_live", "result = 'won'",
-                   "result = 'lost'", "-sb.stake"):
-        assert needed in expr, f"_EXEC_PNL must mirror execPnl's `{needed}` branch"
+    # #162 (2026-09-25): since #155's flat restatement (migration 441) the STORED pnl is the public figure
+    # (flat EUR 10 at the PUBLISHED price = bot_ledger.pnl_unit_public), so the ONE expression is the stored
+    # pnl — on both sides. Re-pricing at our books (odds_at_pick_live) put the hero at +9.6% against
+    # /performance's +12.2% on the same 447 bets.
+    assert expr.strip() == "sb.pnl", "_EXEC_PNL must be the stored (published-price, flat) pnl"
 
-    # Every aggregate that reaches a customer surface must use it — a raw
-    # SUM(sb.pnl) anywhere in the cache writer reintroduces the split basis.
+    # Every aggregate that reaches a customer surface must still go through the ONE expression.
     src = inspect.getsource(st.write_dashboard_cache)
-    assert "SUM(sb.pnl)" not in src, (
-        "write_dashboard_cache still sums the STORED pnl somewhere — that is the "
-        "high-water basis, and it is what made the hero disagree with the table")
     assert src.count("_EXEC_PNL") >= 4, (
         "all four customer-facing aggregates (all-time, active headline, "
         "bot_breakdown, retired_bot_breakdown) must use _EXEC_PNL")
@@ -51588,9 +51589,12 @@ def test_perf_one_price_basis():
     # out rather than the shared standard.
     web = Path(__file__).parent.parent.parent / "odds-intel-web"
     ed = (web / "src/lib/engine-data.ts").read_text()
-    assert "export function execPnl(" in ed and "export function execOdds(" in ed, (
-        "execPnl/execOdds are the reference implementation _EXEC_PNL mirrors")
-    assert "pnl: execPnl(row)" in ed, "LiveBet.pnl must stay on the executable basis"
+    assert "export function execPnl(" in ed, "execPnl is the web half of the ONE P&L expression"
+    body = ed[ed.index("export function execPnl("):]
+    body = body[:body.index("\n}\n")]
+    assert "return Number(row.pnl || 0);" in body and "execOdds(" not in body, \
+        "execPnl must read the stored (published-price) pnl, exactly like settlement._EXEC_PNL"
+    assert "pnl: execPnl(row)" in ed
 
 
 @test("OU-ODDS-FLOOR-SWEEP — the O/U floor question is answered on the CLEAN era, centred")
@@ -55224,7 +55228,8 @@ def test_queue_has_no_scoreboard():
     row = _web_path("src/components/shadow-bots/picks-row.tsx").read_text(encoding="utf-8")
     assert "<PlaceAction" in row and "shadowBetId={pick.id}" in row, "Place €X must still record against the pick"
     build = _web_path("src/components/shadow-bots/picks-table.tsx").read_text(encoding="utf-8")
-    assert "clv_mc_mean" in build and "settled_roi" not in build, "the track chip reads CLV, never ROI"
+    # #162 W6.1: the chip reads bot_performance's sharp-anchor CLV (clv_mean) — never ROI
+    assert "clv_mean" in build and "settled_roi" not in build, "the track chip reads CLV, never ROI"
     how = _web_path("src/components/shadow-bots/how-it-works.tsx").read_text(encoding="utf-8")
     assert "<details" in how and "useState" not in how, "the explainer is a collapsed panel, not a modal"
 
@@ -58795,9 +58800,14 @@ def test_clv_autovoid_sticks():
     assert rd.index("_apply_clv_autovoid()") < rd.index("resettle_wrongly_voided_bets()")
     from workers.api_clients.db import execute_query
     try:
-        n = execute_query("""SELECT count(*) AS n FROM simulated_bets
+        n = execute_query("""SELECT (SELECT count(*) FROM simulated_bets
                               WHERE result IN ('won','lost') AND closing_odds > 0
-                                AND LEAST(odds_at_pick, COALESCE(odds_at_pick_live, odds_at_pick)) / closing_odds >= 1.65""")[0]["n"]
+                                AND settled_at < now() - interval '30 minutes'
+                                AND LEAST(odds_at_pick, COALESCE(odds_at_pick_live, odds_at_pick)) / closing_odds >= 1.65)
+                           + (SELECT count(*) FROM shadow_bets   -- #162 W1.5: the same rule on shadow picks
+                              WHERE result IN ('won','lost') AND closing_odds > 0
+                                AND LEAST(odds_at_pick, COALESCE(odds_at_pick_live, odds_at_pick)) / closing_odds >= 1.65
+                                AND pick_time < now() - interval '1 day') AS n""")[0]["n"]
     except Exception:  # noqa: BLE001 — no DB here
         return
     assert n == 0, f"{n} settled bet(s) fail the 1.65x data-error test — the autovoid step did not run or was undone"
@@ -59546,6 +59556,26 @@ def test_sql_comment_percent():
             except Exception as e:  # noqa: BLE001
                 bad.append(f"{f}:{src[:m.start()].count(chr(10)) + 1} {type(e).__name__}: {e}")
     assert not bad, "SQL strings that psycopg2 cannot format (a bare % in a comment?):\n" + "\n".join(bad)
+
+
+@test("SETTLE-INPLAY-PUBLIC-PRICE — settlement loads the in-play markers public_price() needs (#162, the #157 leftover)")
+def test_settle_inplay_public_price():
+    """#157 (migration 446) priced in-play paper legs at their own in-play odds in bot_ledger, and
+    pick_price.public_price() does the same — IF the row carries match_minute_at_pick / xg_source. Neither
+    settlement read loaded them, so settling or re-grading an in-play simulated leg priced its pnl at a
+    PRE-MATCH quote (a different market, ANALYSIS_GOTCHAS §14)."""
+    from workers.jobs import settlement as st
+    from workers.utils.pick_price import public_price
+    src = _engine_path("workers/jobs/settlement.py").read_text(encoding="utf-8")
+    assert "sb.match_minute_at_pick, sb.xg_source," in src
+    assert 'inplay_cols="sb.match_minute_at_pick, sb.xg_source," if table == "simulated_bets" else ""' in src
+    sim = st._WRONGLY_VOIDED_SQL.format(table="simulated_bets", inplay_cols="sb.match_minute_at_pick, sb.xg_source,")
+    assert "sb.match_minute_at_pick" in sim
+    rc = _engine_path("workers/jobs/results_check.py").read_text(encoding="utf-8")
+    assert 'cols = ", b.match_minute_at_pick, b.xg_source" if table == "simulated_bets" else ""' in rc, \
+        "the score-correction re-grader must load the in-play markers too"
+    # the rule itself: an in-play row is priced at its recorded odds, never the pre-match 'available' quote
+    assert public_price({"match_minute_at_pick": 35, "odds_at_pick": 2.4, "odds_at_pick_available": 1.8})[1] == "inplay"
 
 if __name__ == "__main__":
     main()

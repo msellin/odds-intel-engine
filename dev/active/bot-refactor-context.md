@@ -56,3 +56,11 @@ Parent row: PRIORITY_QUEUE.md #162
 - LESSON (twice now: 05a088a9, f542bfbf): NEVER build the staged smoke_test.py from the working tree — other
   sessions' uncommitted tests ride along. Build from `git show HEAD:scripts/smoke_test.py` + insert only my own
   test text (and my own pin edits by exact replacement).
+- ~21:30: landed 3be5404d (W1.1/1.2 autovoid; run once on VPS: 2 voided, v10 bankroll 1302.49 consistent),
+  f542bfbf+bed9a549 (W4.1 mig 440 real_bets labels 464/31/354; reverted #165 hunks I swept), c070e737 (W2.1
+  paper writers DO NOTHING), 2663c1e0 + web 45ba206 (W4.2 cap all books + router lock; W4.3a flat real money).
+  Migrations 441-443 reserved for #155 → mine from 444. W8.2 pnl restatement moved to #155.
+- ~16:40 phase 3 (GO received): HOTFIX dff516db (second bare % in pick_generator SQL comment); batch A =
+  W1.5 shadow autovoid, W6.1 Pick queue on bot_performance (+ "can't judge yet"), headline _EXEC_PNL = stored pnl
+  (+9.6% → +12.2%, = /performance), in-play markers loaded by settlement + results_check (#157 leftover).
+  Owner answered a-d all ⭐. New rules: one commit per task per repo, ops/verify/<task>.yml, no git reset/stash.

@@ -61,6 +61,9 @@ SELECT
     sb.recommended_bookmaker, sb.odds_at_pick_live,
     -- FLAT-STAKES-EVERYWHERE (#155): pnl is computed at the PUBLIC price (pick_price.public_price)
     sb.odds_at_pick_available,
+    -- #162 (2026-09-25, the #157 leftover): public_price() recognises an IN-PLAY leg by these two columns and
+    -- prices it at its own in-play odds; without them settlement priced it at a PRE-MATCH quote (§14).
+    sb.match_minute_at_pick, sb.xg_source,
     m.id as m_id, m.date as m_date, m.score_home, m.score_away,
     m.result as match_result, m.status as match_status,
     ht.name as home_team_name, ta.name as away_team_name
@@ -2378,6 +2381,7 @@ SELECT
     sb.id, sb.bot_id, sb.match_id, sb.market, sb.selection, sb.stake,
     sb.odds_at_pick, sb.pnl, sb.void_reason, sb.recommended_bookmaker,
     sb.odds_at_pick_live, sb.odds_at_pick_available,   -- #155: sim pnl at the public price
+    {inplay_cols}                                      -- #162: public_price() needs the in-play markers
     m.score_home, m.score_away,
     ht.name AS home_team_name, ta.name AS away_team_name
 FROM {table} sb
@@ -2537,7 +2541,11 @@ def resettle_wrongly_voided_bets(limit: int = 2000, dry_run: bool = False) -> di
 
     for table in ("shadow_bets", "simulated_bets"):
         try:
-            rows = execute_query(_WRONGLY_VOIDED_SQL.format(table=table), [limit])
+            rows = execute_query(_WRONGLY_VOIDED_SQL.format(
+                table=table,
+                # shadow_bets carries no match_minute_at_pick / xg_source (and no public-price pnl)
+                inplay_cols="sb.match_minute_at_pick, sb.xg_source," if table == "simulated_bets" else ""),
+                [limit])
         except Exception as e:
             console.print(f"  [yellow]Void-integrity query failed for {table}: {e}[/yellow]")
             continue
@@ -3294,18 +3302,12 @@ def _build_upcoming_model_summary() -> dict | None:
 # [[#159]] the public figures are FLAT EUR 10 per pick (engine-data FLAT_STAKE_EUR).
 PUBLIC_FLAT_STAKE_EUR = 10
 
-_EXEC_PNL = """
-    CASE
-      WHEN sb.combo_legs IS NOT NULL THEN sb.pnl
-      WHEN sb.stake IS NULL OR sb.stake <= 0 THEN sb.pnl
-      WHEN sb.result = 'won' THEN
-        CASE WHEN COALESCE(NULLIF(sb.odds_at_pick_live, 0), sb.odds_at_pick) > 1
-             THEN (COALESCE(NULLIF(sb.odds_at_pick_live, 0), sb.odds_at_pick) - 1) * sb.stake
-             ELSE sb.pnl END
-      WHEN sb.result = 'lost' THEN -sb.stake
-      ELSE sb.pnl
-    END
-"""
+# #162 (2026-09-25): since #155's flat restatement (migration 441) the STORED pnl IS the public figure —
+# flat EUR 10 at the PUBLISHED price (pnl_price_basis; 0 mismatches against bot_ledger.pnl_unit_public). Re-
+# pricing here at our books (odds_at_pick_live) made the hero read +9.6% where /performance's table and
+# bot_performance read +12.2% on the same 447 bets — the exact hero-vs-table split this constant exists to
+# prevent. Web engine-data.execPnl reads stored pnl too (same commit), so the two still cannot drift.
+_EXEC_PNL = "sb.pnl"
 
 
 def write_dashboard_cache():
@@ -4899,6 +4901,28 @@ def _apply_clv_autovoid() -> int:
         [CLV_AUTOVOID_RATIO_THRESHOLD, CLV_AUTOVOID_RATIO_THRESHOLD, CLV_AUTOVOID_RATIO_THRESHOLD],
     )
     n = len(updated) if updated else 0
+    # #162 W1.5 (owner, 2026-09-25): the SAME data-error rule on shadow_bets — the Pick queue's picks, which the
+    # owner bets on by hand; the autovoid only ever covered simulated_bets (196 settled shadow legs failed it that
+    # day, mostly retired bots; net pnl moved +3.20). Shadow bots carry no bankroll, so no bankroll step.
+    shadow = execute_write_returning(
+        """
+        UPDATE shadow_bets
+           SET result = 'void',
+               pnl = 0,
+               void_reason = 'quarantine: clv-autovoid — price/closing_odds '
+                             || ROUND((LEAST(odds_at_pick, COALESCE(odds_at_pick_live, odds_at_pick)) / closing_odds)::numeric, 2)
+                             || 'x >= %sx'
+         WHERE result IN ('won', 'lost')
+           AND closing_odds IS NOT NULL
+           AND closing_odds > 0
+           AND (LEAST(odds_at_pick, COALESCE(odds_at_pick_live, odds_at_pick)) / closing_odds) >= %s
+         RETURNING id
+        """,
+        [CLV_AUTOVOID_RATIO_THRESHOLD, CLV_AUTOVOID_RATIO_THRESHOLD],
+    )
+    n_shadow = len(shadow) if shadow else 0
+    if n_shadow:
+        console.print(f"  [yellow]CLV-AUTOVOID: {n_shadow} shadow bet(s) voided (same rule)[/yellow]")
     if n > 0:
         console.print(
             f"  [yellow]CLV-AUTOVOID: {n} bet(s) voided "

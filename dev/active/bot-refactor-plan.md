@@ -103,7 +103,7 @@ read), docs rippled (SYSTEM_MAP + registry in the same commit when a bot changes
 | W1.4 | Abandoned-with-no-score = void, not 0-0, in #165's void function (C-P10). ⟲ Must cover `real_bets` too (today such a match is graded 0-0 and real bets on it settle); any new status value (e.g. 'abandoned') added to the dead-match void query or real bets stay pending forever; real bets on abandoned matches take the BOOK's own result from account reconcile | §3.2 | Touches € (0 historical real bets affected today) | **OK** (owner Q5); after #165; 2 reviewers |
 Verify: dry-run counts before/after on the VPS DB (SELECT only), then run, then diff bot_performance.
 
-| W1.5 | ⟲ (found by the W1.1 review 2026-09-25) the autovoid covers `simulated_bets` only — **272 settled `shadow_bets` fail the same 1.65x data-error test**. Shadow picks are what the owner places real money on by hand (Pick queue), so their records carry these errors. Same rule (LEAST price, quarantine reason, no bankroll on shadow) | §3.5 | Moves shadow bots' records (Pick queue figures) | **OK** (new: not covered by decision 1C, which was the 93 simulated autovoids) |
+| W1.5 | ✅ 2026-09-25 | ⟲ (found by the W1.1 review 2026-09-25) the autovoid covers `simulated_bets` only — **272 settled `shadow_bets` fail the same 1.65x data-error test**. Shadow picks are what the owner places real money on by hand (Pick queue), so their records carry these errors. Same rule (LEAST price, quarantine reason, no bankroll on shadow) | §3.5 | Moves shadow bots' records (Pick queue figures) | **OK** (new: not covered by decision 1C, which was the 93 simulated autovoids) |
 
 ### W2 — One recorded price (Phase 2; after #159's `pick_price.py` lands)
 | W2.1 | ✅ 2026-09-25 (DO NOTHING; own-book price kept at insert — review: #159's backfill would store the 4-book MAX) The three paper writers stop overwriting price on re-run (`DO UPDATE` sets only a new `last_seen_odds`) and never write `odds_at_pick_live` — `pick_price` owns it (A-R5) | §3.5 | Shadow scoreboards shift −1…−4% ROI. ⟲ Includes the real-money-CAPABLE `bot_coolbet_*_model_v1` figures on the Pick queue, where the owner places by hand | **OK** (shown with W6.1's before/after) |
@@ -137,7 +137,7 @@ W5.2 keeps only the status-based pending rule; the VIP half is #164's `vip_held(
 | W5.6 | Status words from the status field (Telegram render, /picks chips, registry one-liners); `channel-reasons.ts` prints W5.1's reason (B-R6/R7) | §3.1 | Text only | after W5.1 |
 
 ### W6 — One score everywhere (Phase 2 after #159; the flag in Phase 3)
-| W6.1 | Pick queue verdict chip reads `bot_performance`; retire `botVerdict` / `botTrack` / `shadow_bot_scoreboard` (C-K2, D-R5) | §3.5, 🤖 OWN | Changes which bot reads "lead" on the manual-placement queue | **OK** (owner sees it before/after) |
+| W6.1 | ✅ 2026-09-25 (sharp families + forward-test sharp arms = "can't judge yet"; fails closed) Pick queue verdict chip reads `bot_performance`; retire `botVerdict` / `botTrack` / `shadow_bot_scoreboard` (C-K2, D-R5) | §3.5, 🤖 OWN | Changes which bot reads "lead" on the manual-placement queue | **OK** (owner sees it before/after) |
 | W6.2 | /picks forward-test panel leads with sharp-anchor CLV, own-book mc-CLV as labelled secondary — ADD columns, pre-registration unchanged (C-K8) | §3.5, 👥 PICKS | ⟲ Changes the PUBLIC headline (sharp arm −2.6% → +2.4%) + methodology wording | **OK**; after #159 (engine-data) |
 | W6.3 | One `anchor_clv()` function used by views 430/431/433 + the checkpoint script, parity on all 753 settled forward legs (C-K3) | §3.5 | Pre-registered numbers must not move | after #159 + #161 |
 | W6.4 | ✅ 2026-09-25 engine side (confirmed singles; the admin view shows it with W6.8) real_bets into `leg_clv_sharp` (4th ledger); /admin real-money view shows anchor CLV (C-K9) | definition | AH needs the line | none |
@@ -197,6 +197,13 @@ price · 12A source-filter `predictions` readers · 13A stop shadow-evaluating t
 14B Pick queue stays own-book-placeable bots only · 15A keep the legacy CLV column for the meta-model only ·
 16A build the four twins (VIP #1 exact rule, one-per-match, v10 on fair_prob, one sharp engine) — each
 switch decided by the owner on twin data. Every step still shows before/after before it lands.
+
+### Second round — ✅ answered 2026-09-25 (owner: "all ⭐")
+(a) W1.5 void the shadow data-error legs with the same rule (✅ done — 196 legs; published effect −24.6 units on
+mostly-retired bots, headline unaffected) · (b) NO twins — change live bots directly and tag each pick with its rule
+version (one ledger, per-pick tag; W7.7 / W7.8 / W3.3 / W7.6 re-scoped accordingly) · (c) flat €10 real money
+(✅ W4.3a) · (d) Pick queue on bot_performance; Pinnacle-anchored bots (sharp_trigger / sharp_generator families +
+the three forward-test sharp arms) read "can't judge yet" until #150's grader (✅ W6.1).
 
 ### (original question list, kept for the record)
 
