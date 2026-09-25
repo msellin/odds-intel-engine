@@ -52,7 +52,7 @@ MODEL_VERSION_OU(_T1)=v20260903_cut0820, DRAW_CAL_FACTOR=0.75.
 ## HANDOVER 2026-09-24 ~18:40 UTC (owner switching account — read this first)
 **Where everything is:**
 - Plan / pre-registrations / every result: `dev/active/1x2-model-rebuild-plan.md` (sections ROUND 1..3c, dated).
-- Checklist: `dev/active/1x2-model-rebuild-tasks.md` (A..G, in order). Queue row: #141 (🔴 P0, full plan on the row).
+- Checklist: `dev/archive/1x2-model-rebuild-tasks.md` (archived 2026-09-25 when #141 closed; open items → #154/#169/#153) (A..G, in order). Queue row: #141 (🔴 P0, full plan on the row).
 - Code: `workers/model/ratings_1x2.py` (ratings), `market_consensus_1x2.py` (18-book consensus), `combined_1x2.py`
   (per-group combiner), `player_strength_1x2.py` (round 3c); jobs `workers/jobs/rating_1x2_shadow.py`
   (`run`, `--refresh`, `--dry-run`); scheduler `job_rating_1x2_shadow` (05:30/17:30) + `job_combined_1x2_refresh` (:10/:40).

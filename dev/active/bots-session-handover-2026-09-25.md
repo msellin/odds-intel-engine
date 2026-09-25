@@ -26,10 +26,11 @@ Both new models refit twice daily inside `job_rating_1x2_shadow` (05:30/17:30) a
 | Bot | What | Status / visibility | Evidence |
 |---|---|---|---|
 | `bot_combined_1x2_ev5_v1` — ⭐ **VIP #1 "1x2 NEW+ EV5"** | NEW+, EV = p×odds−1 ≥ 5% flat, Pinnacle required, odds 1.30–6.00, one pick/match | VIP (`bots.vip`, `VIP_BOTS`), live picks → Pro/Elite DM + private channel; public settled-only | backtest B2 CLV +2.0% (n 1,050) |
-| `bot_combined_1x2_ev8_v1` "1x2 NEW+ EV8" | EV ≥ 8% subset of EV5 | unlisted measuring bot, `hide_pending` | B2 +3.1% |
+| ~~`bot_combined_1x2_ev8_v1`~~ "1x2 NEW+ EV8" | EV ≥ 8% subset of EV5 | **RETIRED 2026-09-25** (migration 444) — a strict subset of VIP #1; the EV8-vs-EV5 comparison is now a split of the VIP ledger (`bot_performance_ev_band`, VIP detail view) | B2 +3.1% |
 | `bot_ou_sharp_early_v1` — ⭐ **VIP #2 "O/U EARLY"** | soft book beats Pinnacle's power-de-vigged O/U price by EV 5–15%, quote ≥ 12 h before KO; NO model | VIP; job `workers/jobs/ou_sharp_outlier.py` :14/:44 | O3 T3 CLV +7.5%/+6.9%, ROI +10.4/+10.8 |
 | `bot_ou_sharp_2anchor_v1` "O/U TWO-ANCHOR" | same, must also beat other-book consensus by ≥ 2% | experimental, `hide_pending` (shares VIP #2's picks) | O3 T2 +6.6%/+4.2% |
 | `bot_v10_1x2_newplus_v1` "Match result — new model" | twin of `bot_v10_1x2`: NEW+ EV ≥ 3%, **odds 1.30–3.00** (LANES); VIP-held picks held back until kickoff ([[#164]]) | testing, `show_on_performance`, `show_on_picks` (migration 432) | LANES confirm CLV +2.66% (n 157) |
+| `bot_v10_ou_comb_v1` "Goals over/under — new model" | twin of the retired `bot_v10_ou` on `ou_comb_v1`: EV ≥ 3%, O/U 1.5/2.5/3.5 over+under, odds 1.30–3.00, min_prob 0.30, ONE pick per match (owner), `model_version=ou_comb_v1` | TESTING, sent (migration 443). `bot_v10_ou` stays retired with its 252-pick history (CLV −3.9%) | backtest 08-31..09-24: 61 picks (~2.4/day), sharp CLV +2.0% [+1.0,+3.0] — fitted on the same window |
 | `bot_rating_1x2_v1` "NEW", `bot_combined_1x2_v1` "NEW+" | twins of the OLD v10 rule on the new models | experimental | old rules starve on accurate models (NEW+ twin 14 picks) |
 | `bot_high_roi_global_v2_newplus_v1` | created and **retired** same day (migration 429) | retired | its exact rule made 0 backtest picks |
 | `bot_v10_1x2`, `bot_high_roi_global_v2` | **deliberately NOT switched** to the new model | CALIBRATED / BETA; both send picks | live CLV ≈ +4.7% Jul–Sep (v10) — ANALYSIS_GOTCHAS #84 |
@@ -83,11 +84,25 @@ Pipeline plumbing added (`daily_pipeline_v2.py`): `prob_source` (rating_1x2 / co
 * The 1X2 served model was **home/away-swapped 05-10..09-14** ([[#065]]) — most of `bot_v10_1x2`'s record comes from then.
 * O/U calibration bug window 09-03 10:49 .. 09-13 21:00 UTC.
 
-## 5. Open work (see each PRIORITY_QUEUE row)
+## 5. State at hand-off (2026-09-25 evening) — what landed after the first handover
 
-[[#159]] one ROI/CLV definition (in progress) · [[#157]] retired bots + totals · [[#155]] status rollout + retirement flag ·
-[[#161]] twin arms (in progress) · [[#160]] Coolbet price-sanity guard · [[#153]] admin models page · [[#154]] model inputs
-round 2 (both markets) · [[#152]] bot_v10_ou un-retire on `ou_comb_v1` (public TESTING vs admin-only still open).
+All verified live on the VPS DB in one batch pass (2026-09-25 ~15:45 UTC), not assumed from commits.
+
+| Row | What landed | Where | Live check |
+|---|---|---|---|
+| [[#164]] ✅ | VIP FIRST: one guard `workers/utils/vip_guard.py`; free picks VIP-held or in VIP range are recorded with `held_back_until` = kickoff; every public surface filters it (migration 439); `vip_exclude` deleted; 21 pending picks held back retroactively, 10 already-sent ones flagged `vip_rule_breach` | engine c057254c ac2b5cad 63239f4e · web 52684ae | 0 VIP-held picks public |
+| [[#165]] ✅ | ONE dead-match voider `void_bets_on_dead_matches()` for all 5 bet tables; 219 stuck shadow picks voided; health check `check_postponed_pending()` | cc86b964 · web 34034c4 | 0 pending on postponed |
+| [[#155]] A ✅ | FLAT STAKES EVERYWHERE: `compute_stake` = €10 for every bot (in-play too); migration 441 restated 4,783 simulated_bets (price basis available 2,583 / our_books 1,104 / recorded 630 flagged), Kelly originals kept in `stake_kelly_original`/`pnl_kelly_original` (NULL on post-flat picks by design), trigger `simulated_bets_flat_stake`; settlement writes pnl at the published price (`pnl_price_basis`); detail view reads `bot_performance` fresh, EV column, VIP EV8/EV5 split (`bot_performance_ev_band`). The Kelly "< €1 → drop pick" rule is kept as a SELECTION check (changing it changes which picks live bots make → twin only) | 729055e3 · web 9ed6694 | stake≠10: 0; stored pnl vs public: 0 mismatches |
+| [[#155]] B ✅ | ONE STATUS DECIDES DISTRIBUTION (migration 442): `show_on_picks`/`show_on_performance` derived from status by trigger (contradicting writes rejected); signaler + forward-test publisher gate on status; headline = BETA/CALIBRATED minus VIP; RLS hides experimental pending picks; "review this bot" flag in attention inbox + /admin/bots. New bots default experimental | 9722dd4d · web cd4e4c3 | pending_exposed 0 (was 16); drift 0 |
+| [[#155]] C / [[#152]] ✅ | `bot_v10_ou_comb_v1` (above) | 85ecc6c9 · web da746f9 | 0 picks at first refresh = BY DESIGN (Pinnacle-required + implied-sum gates, same as the backtest); first picks expected from the 04:00 run — verify queue check |
+| EV8 retired | migration 444; /admin/bots identity line reads "EV ≥ 5%" for EV bots (export_bot_config exports `edge_unit`/`prob_source`/`require_pinnacle`/`one_per_match`), no "by tier" for a flat floor, "all publishable books" | ce72b5ef · web 1752548 | retired_at set |
+| [[#157]] ✅ | retired bots + "work done" totals: views `bot_public_record` (retired families, same roi_public) + `bot_public_work_done` (95 strategies, 70 retired, 16,881 picks); collapsed Retired section with the sharp-vs-model trigger lesson (+8.3% vs −5.9% CLV); swap-window note on bot_v10_1x2 / bot_high_roi_global_v2. Fixed: 1,104 in-play paper picks priced at a pre-match quote (inplay_e +22.9% → +3.4%). Left for #162: settlement does not load the in-play price columns on a re-grade | 903beb79 (mig 446) · web 14642a8 | parity 0 / work-done sums match |
+| [[#167]] ✅ | process: CI prints NEW vs INHERITED smoke failures; 3 router tests on fixtures (309/262/261 s → < 1 s); duplicate migration numbers legal (never rename a pushed one); CLAUDE.md: never wait on CI/deploys/runs, hand back checks | 1575e28a | — |
+| [[#168]]a ✅ | background VERIFICATION QUEUE: `ops/verify/<task>.yml` → job `verify_queue` (:10/:40) → `verify_results` (migration 447), Telegram to operator only on mismatch/expiry | 025898c8 | first run at the next :10/:40 |
+
+**Current statuses (bot_distribution):** CALIBRATED `bot_v10_1x2` · BETA `bot_high_roi_global_v2` · TESTING (sent, own record, not headline) `bot_consensus_b_v1`, `bot_consensus_c_v1`, `bot_sharp_1x2_v1`, `bot_sharp_ou_v1`, `bot_v10_1x2_newplus_v1`, `bot_v10_ou_comb_v1` · VIP · TESTING `bot_combined_1x2_ev5_v1`, `bot_ou_sharp_early_v1` · EXPERIMENTAL everything else incl. `bot_consensus_d_v1`.
+
+**Still open, owner's call:** N for TESTING → BETA (docs propose 100). **Open rows:** [[#160]] Coolbet price guard · [[#153]] admin models page · [[#166]] real-money badge + pick-queue ROI · [[#168]] b+ (fast/slow CI tiers, slim queue, split smoke file, worktree per session) · [[#169]] serve NEW+ as the production 1X2 (owner said yes) · [[#154]] modelling round 2 — hand-off brief `dev/active/model-inputs-round2-brief.md`. Known leftover: the dashboard headline P&L query in `settlement.py` is flat but priced at our books, not the published price (was mid-edit by #162).
 
 ## 6. Where the evidence lives
 

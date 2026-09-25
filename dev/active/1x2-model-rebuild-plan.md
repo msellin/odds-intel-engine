@@ -1,7 +1,7 @@
 # 1X2 model rebuild — plan, research answers, pre-registration
 
 Parent row: **[[#141]]** `1X2-MODEL-REBUILD-2026-09-24` in `PRIORITY_QUEUE.md`.
-Tasks: `dev/active/1x2-model-rebuild-tasks.md`. Context: `dev/active/1x2-model-rebuild-context.md`.
+Tasks: `dev/archive/1x2-model-rebuild-tasks.md` (archived 2026-09-25 when #141 closed; open items → #154/#169/#153). Context: `dev/active/1x2-model-rebuild-context.md`.
 
 Written 2026-09-24, **before any training run**, per CLAUDE.md "Research before you train".
 

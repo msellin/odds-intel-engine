@@ -5,7 +5,7 @@ Parent: [[#141]] 1X2-MODEL-REBUILD-2026-09-24 — 🔴 P0 TOP PRIORITY (owner, 2
 Written 2026-09-24 ~18:45 UTC when the owner switched accounts. Detail lives in three companion
 docs, but everything needed to continue is here:
 `dev/active/1x2-model-rebuild-plan.md` (every pre-registration and result, dated) ·
-`dev/active/1x2-model-rebuild-tasks.md` (checklist) · `dev/active/1x2-model-rebuild-context.md` (notes).
+`dev/archive/1x2-model-rebuild-tasks.md` (archived 2026-09-25 when #141 closed; open items → #154/#169/#153) (checklist) · `dev/active/1x2-model-rebuild-context.md` (notes).
 
 ---
 

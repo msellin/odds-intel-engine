@@ -58593,6 +58593,20 @@ def test_ev8_subset_bot_retired():
     assert "Math.min(...vals) === Math.max(...vals)" in fmt, "one value across tiers must not read 'by tier'"
 
 
+@test("MODEL-ROUND2-HANDOFF — #154 can start outside the bots session: brief with prerequisites, #169 carries the serve-NEW+ decision")
+def test_model_round2_handoff():
+    """2026-09-25: the bots session closed #141/#149/#152/#155 and handed modelling to a fresh session. The
+    brief must name its parent row, list prerequisites, and every promoted item must have a live home."""
+    b = _engine_path("dev/active/model-inputs-round2-brief.md").read_text(encoding="utf-8")
+    assert b.startswith("Parent row: [[#154]]") and "## 0. Prerequisites" in b
+    assert "ab_1x2_rating_arms.py --forward" in b and "implied-sum" in b.lower()
+    q = _engine_path("PRIORITY_QUEUE.md").read_text(encoding="utf-8")
+    assert "> **#169 " in q and "SERVE-NEWPLUS-AS-PRODUCTION-1X2" in q
+    assert "model-inputs-round2-brief.md" in q.split("> **#154 ", 1)[1].split("\n", 1)[0]
+    for f in ("1x2-model-rebuild-tasks", "market2-model-tasks", "model-bots-new-models-tasks"):
+        assert _engine_path(f"dev/archive/{f}.md").exists() and not _engine_path(f"dev/active/{f}.md").exists()
+
+
 @test("OU35-MODEL-BOT-RETIRED — owner 2026-09-25: retired after its 'review this bot' flag; the job records nothing")
 def test_ou35_model_bot_retired():
     """The first bot retired by the #155 review flag (bot_review_flag, migration 437): bot_ou35_model_v1, 460 settled,
