@@ -2980,6 +2980,13 @@ de-vig question needs. Three rules for reading it:
    appear under two bots; `accepted` means it passed every gate, not that a bet was stored (the
    same-day dedupe can still skip it). A published leg is written once, as `selected`, and never
    re-labelled on later passes.
+6. **`source='ou_sharp'`** (since 2026-09-26, #162 W7.5) is the O/U sharp-outlier job
+   (`bot_ou_sharp_early_v1` = VIP #2, `bot_ou_sharp_2anchor_v1`). Its edge is multiplicative EV vs
+   Pinnacle's POWER-de-vigged price (`fair_source='pinnacle_power'`), `threshold = 0.05`. The key has
+   no bookmaker, so each (bot, match, line, side) keeps the book that got furthest through the rule.
+7. **The one reader** is view `candidate_funnel_7d` (migration 456; per bot, source, step — private,
+   no anon grant), behind "Why not picked · last 7 days" on the /admin/bots bot sheet (Performance tab).
+   Retention stays the writer's 90 days; ~5k rows/day on 2026-09-25 before the O/U source.
 
 ## 73. A consensus anchor and Pinnacle are PEERS, not substitutes — and they sit ~1 pt apart (#113, 2026-09-23)
 

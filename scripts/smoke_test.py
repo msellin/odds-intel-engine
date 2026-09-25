@@ -12017,6 +12017,51 @@ def _():
     assert won.get("clv") is None, "combo CLV must be None"
 
 
+@test("FUNNEL-READER-AND-OU-SOURCE — #162 W7.5: O/U sharp job writes candidate_funnel; private 7-day view; bot sheet reads it")
+def test_funnel_reader_and_ou_source():
+    """#162 W7.5 (audit B-R11). candidate_funnel had writers and no reader, and the O/U sharp
+    bots (VIP #2) were not a source. (1) ou_sharp_outlier.evaluate() fills a funnel with one
+    decision per (bot, match, line, side) — accepted / drop_edge / drop_too_late / … — without
+    changing its picks, and run() writes it through the shared never-raising helper;
+    (2) migration 456's view candidate_funnel_7d is private (no anon grant, #072);
+    (3) the /admin/bots bot sheet reads the view server-side (web part skipped without the repo)."""
+    from workers.jobs.ou_sharp_outlier import evaluate, funnel_rows, BOT_EARLY, BOT_2ANCHOR, FUNNEL_SOURCE
+    now = 1_000_000.0
+    def q(book, over, under, age_h=0.5, mid="m1", mk="over_under_25"):
+        return [dict(match_id=mid, market=mk, bookmaker=book, selection="over", odds=over, ts=now - age_h * 3600),
+                dict(match_id=mid, market=mk, bookmaker=book, selection="under", odds=under, ts=now - age_h * 3600)]
+    base = q("Pinnacle", 2.00, 1.90) + q("Bet365", 1.95, 1.85) + q("Betano", 1.96, 1.86) + q("1xBet", 1.97, 1.87)
+    quotes = base + q("Epicbet", 2.20, 1.70) + q("Olybet", 2.12, 1.72)
+    f: dict = {}
+    picks = evaluate(quotes, now, {"m1": now + 20 * 3600}, f)
+    assert picks == evaluate(quotes, now, {"m1": now + 20 * 3600}), "the funnel must not change the picks"
+    early = f[(BOT_EARLY, "m1", "over_under_25", "over")]
+    assert early["step"] == "accepted" and early["bookmaker"] == "Epicbet", \
+        "one row per key: the winning book, not the last book seen (the table key has no bookmaker)"
+    late: dict = {}
+    evaluate(quotes, now, {"m1": now + 5 * 3600}, late)
+    assert late[(BOT_EARLY, "m1", "over_under_25", "over")]["step"] == "drop_too_late"
+    near: dict = {}
+    assert not evaluate(base + q("Epicbet", 2.08, 1.74), now, {"m1": now + 20 * 3600}, near)
+    assert near[(BOT_EARLY, "m1", "over_under_25", "over")]["step"] == "drop_edge", "EV 0-5 per cent is a near miss"
+    rows = funnel_rows(f, now)
+    assert {r["source"] for r in rows} == {FUNNEL_SOURCE} and {r["bot"] for r in rows} <= {BOT_EARLY, BOT_2ANCHOR}
+    assert all(r["odds"] and r["fair_prob"] and r["quote_age_min"] == 30.0 for r in rows)
+    src = _engine_path("workers/jobs/ou_sharp_outlier.py").read_text(encoding="utf-8")
+    body = src[src.index("def _record_funnel"):]
+    assert "from workers.utils.candidate_funnel import record" in body and "except Exception" in body \
+        and "if dry_run" in body, "written through the shared helper, never raising, never on a dry run"
+    run = src[src.index("def run("):src.index("def _record_funnel")]
+    assert run.count("_record_funnel(funnel, now_ts, dry_run)") == 2, "both exits (0 picks, picks) record"
+    mig = _engine_path("supabase/migrations/456_candidate_funnel_7d.sql").read_text(encoding="utf-8")
+    assert "CREATE OR REPLACE VIEW public.candidate_funnel_7d" in mig and "GROUP BY bot, source, step" in mig
+    assert "TO anon" not in mig and "REVOKE ALL ON public.candidate_funnel_7d FROM PUBLIC, anon, authenticated" in mig
+    loader = _web_path("src/lib/bot-board.ts").read_text(encoding="utf-8")
+    assert 'readAll<BotFunnelRow>("candidate_funnel_7d")' in loader, "read with the service client (readAll)"
+    sheet = _web_path("src/app/(app)/admin/bots/bot-sheet.tsx").read_text(encoding="utf-8")
+    assert "Why not picked" in sheet and "<FunnelPanel" in sheet
+
+
 @test("COMBO-JOINT-PROB-MATH — joint probability matrix is mathematically valid")
 def _():
     """COMBO-RESEARCH-PHASE-B: SGM bot will price multi-leg same-game bets by

@@ -41,6 +41,13 @@ BOT_EARLY = "bot_ou_sharp_early_v1"
 BOT_2ANCHOR = "bot_ou_sharp_2anchor_v1"
 BOTS = (BOT_EARLY, BOT_2ANCHOR)
 MODEL_VERSION = "ou_sharp_v1"
+FUNNEL_SOURCE = "ou_sharp"
+# CANDIDATE-FUNNEL (#162 W7.5): how far a decision got, for keeping ONE row per
+# (bot, match, line, side) — the table's key has no bookmaker, and the helper keeps the
+# LAST row per key, so the book that came closest to being picked must be the one written.
+_STAGE = {"accepted": 5, "drop_one_per_match": 4, "drop_too_late": 3, "drop_no_consensus": 3,
+          "drop_consensus_edge": 3, "drop_ev_cap": 2, "drop_edge": 1,
+          "drop_odds_too_low": 0, "drop_odds_too_high": 0}
 
 
 def power_devig(o_over: float, o_under: float) -> float | None:
@@ -76,11 +83,39 @@ def _logit(p: float) -> float:
     return math.log(p / (1 - p))
 
 
-def evaluate(quotes: list[dict], now_ts: float, kickoff_ts: dict[str, float]) -> list[dict]:
+def _band_step(odds: float, ev: float) -> str | None:
+    """Why in_ev_band() said no (None = it said yes). Order matches the rule: odds first."""
+    if odds < ODDS_LO:
+        return "drop_odds_too_low"
+    if odds > ODDS_HI:
+        return "drop_odds_too_high"
+    if ev < EV_MIN:
+        return "drop_edge"
+    if ev > EV_CAP:
+        return "drop_ev_cap"
+    return None
+
+
+def evaluate(quotes: list[dict], now_ts: float, kickoff_ts: dict[str, float],
+             funnel: dict | None = None) -> list[dict]:
     """Pure decision function (unit-tested). `quotes`: latest pre-kickoff O/U quote per
     (match_id, market, bookmaker, selection) with keys odds, ts (epoch s). Returns candidate
-    picks: {bot, match_id, market, selection, odds, bookmaker, p_fair, ev, ev_cons}."""
+    picks: {bot, match_id, market, selection, odds, bookmaker, p_fair, ev, ev_cons}.
+
+    `funnel` (optional, #162 W7.5): filled with the near-floor decisions — EV vs Pinnacle
+    >= EV_MIN - NEAR_FLOOR_PP — keyed (bot, match, market, selection), one per key (the book
+    that got furthest; see _STAGE), with `step`. Does not change what is returned."""
     from collections import defaultdict
+    from workers.utils.candidate_funnel import NEAR_FLOOR_PP
+
+    def note(bot: str, cand: dict, step: str) -> None:
+        if funnel is None:
+            return
+        k = (bot, cand["match_id"], cand["market"], cand["selection"])
+        old = funnel.get(k)
+        if old is None or (_STAGE[step], cand["ev"]) > (_STAGE[old["step"]], old["ev"]):
+            funnel[k] = {**cand, "bot": bot, "step": step}
+
     by = defaultdict(dict)                     # (match, market) -> book -> {over, under, ts}
     for q in quotes:
         if now_ts - q["ts"] > QUOTE_MAX_AGE_H * 3600:
@@ -115,9 +150,14 @@ def evaluate(quotes: list[dict], now_ts: float, kickoff_ts: dict[str, float]) ->
                 if o is None:
                     continue
                 p = p_over if sel == "over" else 1 - p_over
-                if not in_ev_band(o, p):
-                    continue
                 ev = o * p - 1
+                if not in_ev_band(o, p):
+                    if ev >= EV_MIN - NEAR_FLOOR_PP:     # far below the floor answers nothing
+                        c0 = {"match_id": mid, "market": mk, "selection": sel, "odds": o,
+                              "bookmaker": b, "p_fair": p, "ev": ev, "ev_cons": None, "ts": d["ts"]}
+                        for bot in BOTS:
+                            note(bot, c0, _band_step(o, ev))
+                    continue
                 others = [v for k, v in logits.items() if k != b]
                 ev_cons = None
                 if len(others) >= CONS_MIN_BOOKS:
@@ -125,15 +165,37 @@ def evaluate(quotes: list[dict], now_ts: float, kickoff_ts: dict[str, float]) ->
                     ev_cons = o * (pc if sel == "over" else 1 - pc) - 1
                 cand = {"match_id": mid, "market": mk, "selection": sel, "odds": o, "bookmaker": b,
                         "p_fair": p, "ev": ev, "ev_cons": ev_cons}
+                fc = {**cand, "ts": d["ts"]}
                 if early_rule(o, p, (ko - now_ts) / 3600):
+                    note(BOT_EARLY, fc, "drop_one_per_match")   # the winner is relabelled below
                     if BOT_EARLY not in best or ev > best[BOT_EARLY]["ev"]:
                         best[BOT_EARLY] = cand
+                else:
+                    note(BOT_EARLY, fc, "drop_too_late")
                 if ev_cons is not None and ev_cons >= CONS_EV_MIN:
+                    note(BOT_2ANCHOR, fc, "drop_one_per_match")
                     if BOT_2ANCHOR not in best or ev > best[BOT_2ANCHOR]["ev"]:
                         best[BOT_2ANCHOR] = cand
+                else:
+                    note(BOT_2ANCHOR, fc, "drop_no_consensus" if ev_cons is None else "drop_consensus_edge")
         for bot, c in best.items():
             out.append({**c, "bot": bot})
+            if funnel is not None:
+                funnel[(bot, c["match_id"], c["market"], c["selection"])] = {
+                    **c, "bot": bot, "step": "accepted", "ts": books[c["bookmaker"]]["ts"]}
     return out
+
+
+def funnel_rows(funnel: dict, now_ts: float) -> list[dict]:
+    """evaluate()'s funnel as candidate_funnel rows. fair_prob is Pinnacle's power-de-vigged
+    probability; threshold is EV_MIN (a multiplicative EV floor like the publisher's — never
+    comparable to the pipeline's model edge, ANALYSIS_GOTCHAS #72)."""
+    return [{"source": FUNNEL_SOURCE, "bot": f["bot"], "match_id": f["match_id"],
+             "market": f["market"], "selection": f["selection"], "bookmaker": f["bookmaker"],
+             "odds": f["odds"], "fair_prob": f["p_fair"], "fair_source": "pinnacle_power",
+             "raw_prob": None, "threshold": EV_MIN, "step": f["step"],
+             "quote_age_min": round((now_ts - f["ts"]) / 60, 1) if f.get("ts") else None}
+            for f in funnel.values()]
 
 
 def _send_vip_pick(p: dict) -> None:
@@ -184,16 +246,18 @@ def run(dry_run: bool = False) -> int:
     )
     quotes = [dict(r) for r in rows if r["bookmaker"] == "Pinnacle" or is_publishable_book(r["bookmaker"])]
     kickoff = {r["match_id"]: float(r["ko"]) for r in rows}
-    picks = evaluate(quotes, now_ts, kickoff)
+    funnel: dict = {}
+    picks = evaluate(quotes, now_ts, kickoff, funnel)
     if not picks:
         console.print("[dim]ou_sharp_outlier: 0 candidates[/dim]")
+        _record_funnel(funnel, now_ts, dry_run)
         return 0
     bot_ids = {b: _get_bot_id_by_name(b) for b in BOTS}
     # one pick per (match, line) per bot, across runs too: never add the opposite side later
-    have = {(str(r["bot_id"]), str(r["match_id"]), r["market"]) for r in execute_query(
-        "SELECT bot_id, match_id, market FROM simulated_bets WHERE bot_id = ANY(%s::uuid[]) AND result = 'pending'",
+    have = {(str(r["bot_id"]), str(r["match_id"]), r["market"]): r["selection"] for r in execute_query(
+        "SELECT bot_id, match_id, market, selection FROM simulated_bets WHERE bot_id = ANY(%s::uuid[]) AND result = 'pending'",
         ([v for v in bot_ids.values() if v],),
-    )} if any(bot_ids.values()) else set()
+    )} if any(bot_ids.values()) else {}
     stored = 0
     for p in picks:
         bid = bot_ids.get(p["bot"])
@@ -205,6 +269,10 @@ def run(dry_run: bool = False) -> int:
             console.print(f"  DRY {p['match_id'][:8]} {reasoning}")
             continue
         if not bid or (str(bid), p["match_id"], p["market"]) in have:
+            # picked on an earlier run: the SAME side stays `accepted`; the opposite side is
+            # the one-pick-per-line rule applied across runs
+            if bid and have[(str(bid), p["match_id"], p["market"])] != p["selection"]:
+                funnel[(p["bot"], p["match_id"], p["market"], p["selection"])]["step"] = "drop_one_per_match"
             continue
         bet_id = store_bet(bid, p["match_id"], {
             "market": p["market"], "selection": p["selection"], "odds": p["odds"],
@@ -216,11 +284,25 @@ def run(dry_run: bool = False) -> int:
         })
         if bet_id:
             stored += 1
-            have.add((str(bid), p["match_id"], p["market"]))
+            have[(str(bid), p["match_id"], p["market"])] = p["selection"]
             if p["bot"] in VIP_BOTS:
                 _send_vip_pick(p)
+    _record_funnel(funnel, now_ts, dry_run)
     console.print(f"[green]ou_sharp_outlier: {stored} new picks ({len(picks)} candidates)[/green]")
     return stored
+
+
+def _record_funnel(funnel: dict, now_ts: float, dry_run: bool) -> None:
+    """CANDIDATE-FUNNEL (#162 W7.5): write this run's near-floor decisions through the shared
+    helper (upsert, latest decision per candidate per day, 90-day retention). Diagnostics only
+    — never raises into the job (record() swallows DB errors; this guards the row building)."""
+    if dry_run or not funnel:
+        return
+    try:
+        from workers.utils.candidate_funnel import record
+        record(funnel_rows(funnel, now_ts))
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[yellow]ou_sharp_outlier: candidate funnel failed (non-fatal): {e}[/yellow]")
 
 
 if __name__ == "__main__":
