@@ -9,7 +9,8 @@ Conditions checked:
   1. Morning bet check (09:30): 0 bets placed today with ≥10 scheduled matches
   2. Odds coverage (09:15): Pinnacle odds missing for >10 of today's scheduled matches
   3. Snapshot staleness (hourly 10-23 UTC): no live snapshot in last 25 min during active window
-  4. Settlement check (21:30): 0 results settled when >5 bets were pending before settlement
+  4. Settlement check (21:30): 0 results settled when >5 bets were pending before settlement;
+     plus (#165) any pending pick in any bet table on a postponed/cancelled match past 6h
   5. Signal silence (hourly 10-23 UTC): picks eligible for Telegram but unsent past a
      grace period, or no picks produced at all for 48h (SIGNAL-SILENCE-ALERT)
   6. Direct-feed staleness (hourly, 24/7): Coolbet / Unibet-Site / Epicbet — the three
@@ -387,6 +388,35 @@ def check_settlement() -> None:
             f"<p>Settlement job may have failed on {today}. "
             f"Check the VPS logs for the 21:00 UTC settlement job and pipeline_runs table.</p>",
         )
+
+
+# #165 — grace before a pending pick on a postponed match counts as leaked.
+# Same 6 h as the /admin attention item (odds-intel-web admin-jobs.ts
+# POSTPONED_GRACE_H), measured from the ORIGINAL kick-off. The 15-min
+# settle_ready_matches sweep voids these immediately, so anything past the
+# grace means the shared voider stopped running or a bet table was added
+# without a row in settlement._DEAD_MATCH_VOID_SPECS.
+POSTPONED_PENDING_GRACE_H = 6
+
+
+def check_postponed_pending() -> int:
+    """Pending picks in ANY bet table on postponed/cancelled matches past the grace."""
+    from workers.jobs.settlement import void_bets_on_dead_matches
+    counts = void_bets_on_dead_matches(dry_run=True,
+                                       older_than_h=POSTPONED_PENDING_GRACE_H)
+    total = sum(counts.values())
+    console.print(f"[dim]health_alerts: {total} pending pick(s) on postponed matches "
+                  f"past {POSTPONED_PENDING_GRACE_H}h ({counts})[/dim]")
+    if total:
+        detail = ", ".join(f"{t}: {n}" for t, n in counts.items() if n)
+        _alert_once(
+            "postponed_pending",
+            f"Postponed-void gap — {total} pending pick(s) on postponed matches",
+            f"<p>{detail}</p><p>settle_ready_matches should void these every 15 min "
+            f"via settlement.void_bets_on_dead_matches. Check the scheduler log "
+            f"for 'Dead-match void failed'.</p>",
+        )
+    return total
 
 
 def check_odds_bloat() -> None:
@@ -1226,6 +1256,10 @@ def run_settlement_check() -> None:
         check_settlement()
     except Exception as e:
         console.print(f"[yellow]health_alerts settlement check error: {e}[/yellow]")
+    try:
+        check_postponed_pending()
+    except Exception as e:
+        console.print(f"[yellow]health_alerts postponed-pending check error: {e}[/yellow]")
     try:
         check_odds_bloat()
     except Exception as e:

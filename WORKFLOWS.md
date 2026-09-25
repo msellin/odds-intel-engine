@@ -593,6 +593,19 @@ pre-registration doc.) Three definitions differ from the bot ledgers and are loa
    truncated run still drains the backlog. Postponed matches now void
    `shadow_bets` as well as `simulated_bets`, stamping `void_reason='postponed'`.
 
+   **#165 (2026-09-25): one dead-match voider for every bet table.** Voiding
+   used to depend on WHO set `status='postponed'` — the stale sweep voided
+   shadow/simulated inline, but `store_match()` (fixtures refresh) flips
+   scheduled→postponed without voiding, so 219 shadow picks sat pending from
+   2026-08-23. `settlement.void_bets_on_dead_matches()` now scans real_bets
+   (singles), simulated_bets (singles), shadow_bets, picks_forward_test and
+   picks_board from one spec table (`_DEAD_MATCH_VOID_SPECS`) at the top of every
+   15-min sweep, in `run_settlement`, and per match inside the stale sweep.
+   Rule unchanged: void at once, pnl = 0, bankroll untouched; a postponed
+   fixture that is later played is re-graded by `resettle_wrongly_voided_bets`.
+   Health: `health_alerts.check_postponed_pending` (21:30) alerts on any pending
+   pick on a postponed match > 6 h past its original kick-off.
+
    **BET-VOID-INTEGRITY (2026-08-24):** the sweep ends with
    `resettle_wrongly_voided_bets()`. Voiding a postponed fixture's bets was a
    one-way door — when AF later reported FT and the match flipped to `finished`

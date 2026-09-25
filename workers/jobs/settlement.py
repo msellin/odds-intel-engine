@@ -1659,40 +1659,114 @@ def _settle_real_bets_for_matches(match_ids: list[str]):
         console.print(f"[green]Settled {settled} real bet(s) across {len(match_ids)} match(es)[/green]")
 
 
-def _void_real_bets_on_dead_matches() -> int:
-    """Void any pending real_bet whose match was postponed / cancelled / abandoned.
+# ─── Dead-match voiding — ONE function for EVERY bet table (#165) ───────────
+#
+# WHY ONE FUNCTION. Until 2026-09-25 there were three table-specific voiders
+# (real_bets, picks_forward_test, picks_board) plus inline UPDATEs in
+# fix_stale_live_matches. `shadow_bets` and `simulated_bets` were voided ONLY
+# by that inline path, i.e. only when the stale-match sweep itself flipped the
+# status. Every other writer of `matches.status='postponed'` — above all
+# `store_match()` in the fixtures refresh, which flips scheduled→postponed on
+# AF PST/CANC/ABD/WO/AWD — left their picks pending forever. On 2026-09-25 that
+# was 219 shadow picks on 10 postponed matches, oldest 2026-08-23. The fix is
+# to stop depending on WHO set the status: every sweep scans every table.
+#
+# THE RULE (unchanged from the real_bets path it generalises): a pending row on
+# a match whose status is postponed/cancelled is voided at once, pnl = 0 — what
+# every book does. No grace, no wait for a new date.
+#
+# THE RE-SCHEDULE CASE. A postponed fixture that is later PLAYED is repaired by
+# `resettle_wrongly_voided_bets` (shadow + simulated): it re-grades any void
+# whose void_reason is 'postponed' once the match is finished with a score.
+# That is why shadow/simulated voids MUST carry void_reason='postponed' — a
+# quarantine-prefixed reason would never be revisited. real_bets and the
+# forward test follow the book's own behaviour (a postponed bet is refunded,
+# not carried to the new date), as before.
+#
+# BANKROLL. Untouched for every table. `bots.current_bankroll` moves only by
+# settled pnl (stake is never debited at placement), so a void at pnl = 0 owes
+# nothing; `resettle_wrongly_voided_bets` credits the pnl if it is re-graded.
+# shadow_bets are fixed-stake and carry no bankroll at all.
+#
+# Combos: real_bets (and simulated_bets, which has the column) exclude
+# combo_legs rows — a postponed leg makes the combo settle on the remaining
+# legs at reduced product odds via settle_combo_bet, never a flat void.
+DEAD_MATCH_STATUSES = ("postponed", "cancelled")
 
-    Mirrors what Coolbet (and every other book) does automatically: stake is
-    refunded, pnl = 0. Singles only — combo legs are handled inside
-    settle_combo_bet (a postponed leg makes the combo settle on the remaining
-    legs at the reduced product odds, not a flat void).
+# table -> (pending predicate on alias b, SET clause). Adding a bet table means
+# adding a row here; smoke DEAD-MATCH-VOID-EVERY-BET-TABLE fails otherwise.
+_DEAD_MATCH_VOID_SPECS: dict[str, tuple[str, str]] = {
+    "real_bets": (
+        "b.result = 'pending' AND b.combo_legs IS NULL",
+        "result = 'void', pnl = 0, resolved_at = NOW(), "
+        "notes = COALESCE(b.notes,'') || CASE WHEN b.notes IS NULL OR b.notes='' "
+        "THEN '' ELSE ' | ' END || 'auto-voided: match postponed/cancelled'",
+    ),
+    "simulated_bets": (
+        "b.result = 'pending' AND b.combo_legs IS NULL",
+        "result = 'void', pnl = 0, void_reason = 'postponed', settled_at = NOW()",
+    ),
+    "shadow_bets": (
+        "b.result = 'pending'",
+        "result = 'void', pnl = 0, void_reason = 'postponed'",
+    ),
+    "picks_forward_test": (
+        "b.outcome IS NULL",
+        "outcome = 'void', pnl = 0, settled_at = NOW()",
+    ),
+    "picks_board": (
+        "b.outcome IS NULL",
+        "outcome = 'void', settled_at = NOW()",
+    ),
+}
+
+
+def void_bets_on_dead_matches(match_id: str | None = None,
+                              tables: tuple[str, ...] | None = None,
+                              dry_run: bool = False,
+                              older_than_h: float | None = None) -> dict[str, int]:
+    """Void every pending pick, in every bet table, on a postponed/cancelled match.
+
+    `match_id` narrows to one fixture (the stale-match sweep, right after it
+    flips the status); `tables` narrows the table set (tests);
+    `older_than_h` keeps only matches whose (original) kick-off is that many
+    hours ago — the health check uses it with dry_run as its grace. Returns
+    {table: rows voided (or that would be, with dry_run)}. Each table is its
+    own statement and its own try, so one table's failure cannot leave the
+    others pending. Steady state does zero writes.
     """
-    # match_status enum has 'postponed' and 'cancelled'. store_match() collapses
-    # AF's PST/CANC/ABD/WO/AWD all to 'postponed', so 'postponed' is what we
-    # actually see today; 'cancelled' is covered for completeness.
-    rows = execute_query(
-        """SELECT rb.id
-           FROM real_bets rb
-           JOIN matches m ON m.id = rb.match_id
-           WHERE rb.result = 'pending'
-             AND rb.combo_legs IS NULL
-             AND m.status IN ('postponed', 'cancelled')""",
-        [],
-    )
-    if not rows:
-        return 0
-    ids = [r["id"] for r in rows]
-    execute_write(
-        """UPDATE real_bets
-           SET result='void', pnl=0, resolved_at=NOW(),
-               notes = COALESCE(notes,'') ||
-                       CASE WHEN notes IS NULL OR notes='' THEN '' ELSE ' | ' END ||
-                       'auto-voided: match postponed/cancelled'
-           WHERE id = ANY(%s::uuid[])""",
-        [ids],
-    )
-    console.print(f"[green]Voided {len(ids)} real bet(s) on postponed/cancelled match(es)[/green]")
-    return len(ids)
+    out: dict[str, int] = {}
+    for table in (tables or tuple(_DEAD_MATCH_VOID_SPECS)):
+        pending, set_clause = _DEAD_MATCH_VOID_SPECS[table]
+        where = (f"m.id = b.match_id AND {pending} "
+                 f"AND m.status IN ('postponed', 'cancelled')")
+        args: list = []
+        if match_id is not None:
+            where += " AND m.id = %s"
+            args.append(match_id)
+        if older_than_h is not None:
+            where += " AND m.date < NOW() - (%s * INTERVAL '1 hour')"
+            args.append(older_than_h)
+        try:
+            if dry_run:
+                rows = execute_query(
+                    f"SELECT COUNT(*) AS n FROM {table} b JOIN matches m "
+                    f"ON {where}", args)
+                out[table] = int(rows[0]["n"]) if rows else 0
+            else:
+                out[table] = execute_write(
+                    f"UPDATE {table} b SET {set_clause} FROM matches m WHERE {where}",
+                    args) or 0
+        except Exception as e:  # noqa: BLE001
+            console.print(f"  [yellow]Dead-match void failed for {table}: {e}[/yellow]")
+            out[table] = 0
+    n = sum(out.values())
+    if n:
+        verb = "Would void" if dry_run else "Voided"
+        detail = ", ".join(f"{t} {c}" for t, c in out.items() if c)
+        console.print(f"[green]{verb} {n} pending pick(s) on postponed/cancelled "
+                      f"match(es): {detail}[/green]")
+    return out
 
 
 
@@ -1786,35 +1860,6 @@ def closing_book_margin(match_id: str, market: str, bookmaker: str) -> float | N
     # >50% one means the legs were assembled from incompatible quotes. Refuse
     # both rather than emit a correction that would move the stopping rule.
     return m if 0.0 <= m <= 0.5 else None
-
-
-def _void_forward_test_on_dead_matches() -> int:
-    """Void forward-test picks whose fixture was postponed/cancelled.
-
-    Same rule every book applies: stake returned, pnl = 0. Without this, a
-    postponed fixture's pick never reaches status='finished' and sits pending
-    forever, quietly holding `n` below the checkpoint it is being counted
-    towards. Mirrors _void_real_bets_on_dead_matches.
-    """
-    rows = execute_query(
-        """SELECT p.id FROM picks_forward_test p
-             JOIN matches m ON m.id = p.match_id
-            WHERE p.outcome IS NULL
-              AND m.status IN ('postponed', 'cancelled')""",
-        [],
-    )
-    if not rows:
-        return 0
-    ids = [r["id"] for r in rows]
-    execute_write(
-        """UPDATE picks_forward_test
-              SET outcome = 'void', pnl = 0, settled_at = NOW()
-            WHERE id = ANY(%s::uuid[])""",
-        [ids],
-    )
-    console.print(f"[green]Forward test: voided {len(ids)} pick(s) on "
-                  f"postponed/cancelled match(es)[/green]")
-    return len(ids)
 
 
 def settle_picks_forward_test(match_ids: list[str] | None = None) -> int:
@@ -1937,25 +1982,6 @@ SELECT b.match_id::text AS match_id, b.market, b.selection,
    AND m.score_home IS NOT NULL
    AND m.score_away IS NOT NULL
 """
-
-
-def _void_board_on_dead_matches() -> int:
-    """Void board legs whose fixture was postponed or cancelled.
-
-    Without this they sit `outcome IS NULL` forever and are re-queried on every
-    settlement sweep — the same leak `_void_forward_test_on_dead_matches` closes
-    for the ledger.
-    """
-    n = execute_write(
-        """UPDATE picks_board b
-              SET outcome = 'void', settled_at = NOW()
-             FROM matches m
-            WHERE m.id = b.match_id
-              AND b.outcome IS NULL
-              AND m.status IN ('postponed', 'cancelled')""",
-        [],
-    )
-    return n or 0
 
 
 def settle_picks_board(match_ids: list[str] | None = None) -> int:
@@ -2210,21 +2236,10 @@ def fix_stale_live_matches():
                     "UPDATE matches SET status='postponed' WHERE id=%s",
                     [match_id],
                 )
-                voided = execute_write(
-                    """UPDATE simulated_bets
-                       SET result='void', pnl=0, void_reason='postponed'
-                       WHERE match_id=%s AND result='pending'""",
-                    [match_id],
-                ) or 0
-                # Void shadow_bets too. MATCH-STATUS-SWEEPER (2026-08-22) found 64
-                # postponed-match shadow zombies precisely because this path voided
-                # simulated_bets only; the standalone sweeper does both.
-                voided += execute_write(
-                    """UPDATE shadow_bets
-                       SET result='void', pnl=0, void_reason='postponed'
-                       WHERE match_id=%s AND result='pending'""",
-                    [match_id],
-                ) or 0
+                # #165: every bet table through the ONE shared voider (it used
+                # to be two inline UPDATEs here, which is how shadow picks on
+                # matches postponed by any OTHER writer were never voided).
+                voided = sum(void_bets_on_dead_matches(match_id=match_id).values())
                 msg = f"[yellow]Stale match {match_id} ({db_status}→postponed): {status_short}"
                 if voided:
                     msg += f" — voided {voided} pending bet(s)"
@@ -2257,12 +2272,12 @@ def settle_ready_matches():
     # First: fix any matches stuck on 'live' that have actually finished
     fix_stale_live_matches()
 
-    # SETTLEMENT-POSTPONED-VOID (2026-05-25): scan-and-void real_bets on
-    # postponed/cancelled/abandoned matches. Independent of the finished-match
-    # path below — postponed matches never reach status='finished', so without
-    # this they sit pending forever.
+    # SETTLEMENT-POSTPONED-VOID (2026-05-25, every table since #165): scan-and-
+    # void pending picks in EVERY bet table on postponed/cancelled matches.
+    # Independent of the finished-match path below — postponed matches never
+    # reach status='finished', so without this they sit pending forever.
     try:
-        _void_real_bets_on_dead_matches()
+        void_bets_on_dead_matches()
     except Exception as e:
         console.print(f"  [yellow]Postponed-void sweep error: {e}[/yellow]")
 
@@ -2312,12 +2327,10 @@ def settle_ready_matches():
     # above, so query the forward-test ledger directly. Idempotent — the query
     # filters on outcome IS NULL.
     try:
-        _void_forward_test_on_dead_matches()
         settle_picks_forward_test()
     except Exception as e:
         console.print(f"  [yellow]Forward-test catch-up settle error (non-fatal): {e}[/yellow]")
     try:
-        _void_board_on_dead_matches()
         settle_picks_board()
     except Exception as e:
         console.print(f"  [yellow]Picks-board catch-up settle error (non-fatal): {e}[/yellow]")
@@ -2860,12 +2873,12 @@ def run_settlement():
     # stopping rules must never be able to block real-bet settlement, and a
     # failure here must never be swallowed by an earlier one.
     try:
-        _void_forward_test_on_dead_matches()
+        # #165: one voider for every bet table, before the ledgers settle.
+        void_bets_on_dead_matches()
         settle_picks_forward_test()
     except Exception as e:
         console.print(f"  [yellow]Forward-test settlement error: {e}[/yellow]")
     try:
-        _void_board_on_dead_matches()
         settle_picks_board()
     except Exception as e:
         console.print(f"  [yellow]Picks-board settlement error: {e}[/yellow]")

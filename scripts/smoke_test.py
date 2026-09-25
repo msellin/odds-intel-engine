@@ -1025,7 +1025,7 @@ def _():
                     (mid, combo))
                 made[label] = cur.fetchone()[0]
 
-            settlement._void_real_bets_on_dead_matches()
+            settlement.void_bets_on_dead_matches(tables=("real_bets",))
 
             cur.execute("SELECT id, result, pnl FROM real_bets WHERE id = ANY(%s::uuid[])",
                         ([v for v in made.values()],))
@@ -1059,11 +1059,113 @@ def _():
 
     # The sweep must still call it, or the behaviour above never runs.
     import inspect
-    assert "_void_real_bets_on_dead_matches" in inspect.getsource(
+    assert "void_bets_on_dead_matches" in inspect.getsource(
         settlement.settle_ready_matches), (
-        "settle_ready_matches must call _void_real_bets_on_dead_matches, or "
+        "settle_ready_matches must call void_bets_on_dead_matches, or "
         "postponed bets need a separate finished-match trigger to clear")
     return "voids postponed+cancelled singles, leaves finished bets and combos alone"
+
+
+@test("DEAD-MATCH-VOID-EVERY-BET-TABLE — one voider covers every bet table; shadow+simulated voided on postponed (#165)")
+def _():
+    """#165 (2026-09-25): 219 shadow_bets sat pending on postponed matches since
+    2026-08-23, because shadow/simulated were voided only inline by the
+    stale-match sweep — any OTHER writer of status='postponed' (store_match in
+    the fixtures refresh) left them pending forever. Now there is ONE voider,
+    `void_bets_on_dead_matches`, with a spec row per bet table, called by every
+    sweep. This pins (1) the table set, (2) that no second inline void path
+    re-forms, (3) the wiring, and (4) the real behaviour on shadow+simulated.
+    """
+    import inspect, re as _re165
+    from workers.jobs import settlement as st
+    tables = set(st._DEAD_MATCH_VOID_SPECS)
+    for t in ("real_bets", "simulated_bets", "shadow_bets",
+              "picks_forward_test", "picks_board"):
+        assert t in tables, f"{t} has no row in _DEAD_MATCH_VOID_SPECS — its picks on postponed matches are never voided"
+    for t in ("simulated_bets", "shadow_bets"):
+        assert "void_reason = 'postponed'" in st._DEAD_MATCH_VOID_SPECS[t][1], (
+            f"{t} voids must carry void_reason='postponed' so resettle_wrongly_voided_bets "
+            f"re-grades them if the fixture is later played (the re-schedule case)")
+    src = inspect.getsource(st)
+    # No second, table-specific dead-match voider may re-form.
+    assert not _re165.search(r"def _void_\w+_on_dead_matches", src), (
+        "a table-specific _void_*_on_dead_matches exists again — add a spec row instead")
+    inline = _re165.findall(
+        r"UPDATE\s+(real_bets|simulated_bets|shadow_bets|picks_forward_test|picks_board)\b[^;]{0,300}?void_reason\s*=\s*'postponed'",
+        src)
+    assert not inline, f"inline postponed-void UPDATE outside the shared voider: {inline}"
+    for fn in ("settle_ready_matches", "run_settlement", "fix_stale_live_matches"):
+        assert "void_bets_on_dead_matches(" in inspect.getsource(getattr(st, fn)), (
+            f"{fn} no longer calls void_bets_on_dead_matches")
+
+    try:
+        with module_db_txn(st) as cur:
+            home, away, league = _fixture_ids(cur)
+            cur.execute("SELECT id FROM bots LIMIT 1")
+            bot = cur.fetchone()[0]
+            mids = {}
+            for status in ("postponed", "finished"):
+                cur.execute(
+                    """INSERT INTO matches (date, home_team_id, away_team_id, league_id, season, status)
+                       VALUES (now() - interval '2 days', %s, %s, %s, 2026, %s) RETURNING id""",
+                    (home, away, league, status))
+                mids[status] = cur.fetchone()[0]
+            made = {}
+            for status, mid in mids.items():
+                cur.execute(
+                    """INSERT INTO shadow_bets (shadow_run_id, shadow_cohort, bot_id, match_id, market,
+                                                selection, odds_at_pick, model_probability, edge_percent, result)
+                       VALUES (gen_random_uuid(), 'morning', %s, %s, '1x2', 'home', 2.0, 0.5, 1, 'pending')
+                       RETURNING id""", (bot, mid))
+                made[("shadow_bets", status)] = cur.fetchone()[0]
+                cur.execute(
+                    """INSERT INTO simulated_bets (bot_id, match_id, market, selection, odds_at_pick,
+                                                   stake, model_probability, edge_percent, result)
+                       VALUES (%s, %s, '1x2', 'home', 2.0, 10, 0.5, 1, 'pending') RETURNING id""",
+                    (bot, mid))
+                made[("simulated_bets", status)] = cur.fetchone()[0]
+            cur.execute("SELECT current_bankroll FROM bots WHERE id = %s", (bot,))
+            bank_before = cur.fetchone()[0]
+            st.void_bets_on_dead_matches(tables=("shadow_bets", "simulated_bets"))
+            for (table, status), bid in made.items():
+                cur.execute(f"SELECT result, pnl, void_reason FROM {table} WHERE id = %s", (bid,))
+                res, pnl, why = cur.fetchone()
+                if status == "postponed":
+                    assert res == "void" and float(pnl) == 0.0 and why == "postponed", (
+                        f"{table} on a postponed match: result={res!r} pnl={pnl!r} void_reason={why!r}")
+                else:
+                    assert res == "pending", f"{table} on a FINISHED match was touched ({res!r})"
+            cur.execute("SELECT current_bankroll FROM bots WHERE id = %s", (bot,))
+            assert cur.fetchone()[0] == bank_before, "a void must not move bots.current_bankroll"
+    except SkipTest:
+        raise
+    except Exception as e:                       # noqa: BLE001
+        if "could not connect" in str(e).lower() or "connection" in str(e).lower():
+            raise SkipTest(f"DB not reachable: {e}")
+        raise
+    return f"{len(tables)} bet tables share one voider; shadow+simulated voided, finished untouched"
+
+
+@test("POSTPONED-PENDING-HEALTH — no pending pick in any bet table on a postponed match past the grace (#165)")
+def _():
+    """The health half of #165. settle_ready_matches voids these every 15 min,
+    so any row past POSTPONED_PENDING_GRACE_H (6 h after the original kick-off,
+    the same grace as the /admin attention item) is a leak. Also pins that the
+    21:30 settlement health check runs it, so it alerts, not just tests."""
+    import inspect
+    from workers.jobs import health_alerts as ha
+    assert "check_postponed_pending()" in inspect.getsource(ha.run_settlement_check), (
+        "run_settlement_check no longer runs check_postponed_pending")
+    try:
+        from workers.jobs.settlement import void_bets_on_dead_matches
+        counts = void_bets_on_dead_matches(dry_run=True,
+                                           older_than_h=ha.POSTPONED_PENDING_GRACE_H)
+    except Exception as e:                       # noqa: BLE001
+        raise SkipTest(f"DB not reachable: {e}")
+    leaked = {t: n for t, n in counts.items() if n}
+    assert not leaked, (
+        f"pending picks on postponed/cancelled matches past {ha.POSTPONED_PENDING_GRACE_H}h: {leaked}")
+    return f"0 leaked across {len(counts)} tables"
 
 
 @test("write_ops_snapshot — wired to ops_snapshots + pipeline_runs (source inspect)")
@@ -27624,10 +27726,15 @@ def _bet_void_integrity():
     # Both deliberate-void writers must stamp a reason, or the re-settler
     # cannot tell a postponement from a mystery UPDATE.
     stale = inspect.getsource(st.fix_stale_live_matches)
-    assert stale.count("void_reason='postponed'") >= 2, (
-        "fix_stale_live_matches must stamp void_reason on BOTH simulated_bets "
-        "and shadow_bets"
+    # #165: the stamp now lives in the ONE shared voider's spec table, which
+    # fix_stale_live_matches calls per match.
+    assert "void_bets_on_dead_matches(match_id=" in stale, (
+        "fix_stale_live_matches must void through void_bets_on_dead_matches"
     )
+    for _t in ("simulated_bets", "shadow_bets"):
+        assert "void_reason = 'postponed'" in st._DEAD_MATCH_VOID_SPECS[_t][1], (
+            f"{_t} dead-match voids must stamp void_reason='postponed'"
+        )
     sweeper = (Path(__file__).resolve().parent / "match_status_sweeper.py").read_text()
     assert sweeper.count("void_reason = 'postponed'") >= 2, (
         "match_status_sweeper must stamp void_reason on both bet tables too"
@@ -44971,7 +45078,7 @@ def test_picks_board_settlement():
     assert "status = 'finished'" in src[src.index("_PENDING_BOARD_SQL"):][:600], (
         "the board pending query no longer requires a finished fixture."
     )
-    assert "def _void_board_on_dead_matches" in src, (
+    assert '"picks_board": (' in src[src.index("_DEAD_MATCH_VOID_SPECS"):], (
         "a postponed fixture's board leg stays outcome IS NULL forever and is "
         "re-queried on every settlement sweep."
     )
@@ -57563,9 +57670,9 @@ def test_admin_jobs_plain_face():
     page = _web_path(d + "page.tsx").read_text(encoding="utf-8")
     for bad in ("any pending bets on these need voiding", "15-minute sweep", "Model rows built today"):
         assert bad not in page, bad
-    # review 2026-09-25: "voided automatically" was false for paper/shadow picks (settlement voids only real
-    # bets + forward-test picks) — the card now counts both ledgers and says so
-    assert "d.postponedPending" in page and "settlement doesn&apos;t void these yet" in page and "voided automatically" not in page
+    # review 2026-09-25: "voided automatically" was false for paper/shadow picks until engine #165 made
+    # settlement void every bet table — the card counts both ledgers and says a leftover means a missed sweep
+    assert "d.postponedPending" in page and "settlement should void these every 15 min" in page and "doesn&apos;t void these yet" not in page
     assert "<InfoTip>" in page
     lib = _web_path("src/lib/admin-jobs.ts").read_text(encoding="utf-8")
     assert "export function postponedNeedingVoid(" in lib and 'match:match_id(date, status)' in lib

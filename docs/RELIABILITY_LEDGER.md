@@ -122,6 +122,14 @@ daily caps. **Reuse, never reimplement:** `canon_bet()` collapses the two market
 vocabularies in `real_bets` (`'o/u'`+`'over 2.5'` vs `'over_under_25'`+`'over'`),
 and a guard without it sees half the book and double-bets the half it cannot see.
 
+**Same shape, settlement side (#165, 2026-09-25):** postponed-match voiding lived
+inside the ONE writer that flipped the status (the stale sweep). A second writer
+of `status='postponed'` — `store_match()` in the fixtures refresh — inherited no
+void, and 219 shadow picks sat pending for a month. **Guard:** the void keys on
+the status, not on who set it — `void_bets_on_dead_matches` scans every bet table
+every 15 min; smoke `DEAD-MATCH-VOID-EVERY-BET-TABLE` fails if a table-specific
+voider or an inline postponed UPDATE re-forms.
+
 ## 4b. A gate whose only implementation lives in a research script is not a gate
 
 **SHARP-BOT-PRICED-OFF-PHANTOM-FIXTURES-2026-09-20.** §4 is about a second code
