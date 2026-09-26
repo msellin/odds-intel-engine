@@ -15,3 +15,6 @@ Parent: PRIORITY_QUEUE.md #191 OWN-BOT-LINEUP-AND-ADMIN-BOTS-CLEANUP-2026-09-26
 - [ ] Record lineup first-seen time (lineups_fetched_at is overwritten)
 - [ ] Fix "placeable" for sharp bots whose placement floor is an empty band
 - [ ] bot_consensus_d_v1 frozen admin record (moot if retired)
+- [x] OWN research: promo EV (POSITIVE), local lag (neg), cross-book arbs (neg), derived inconsistency (neg) — see context doc
+- [ ] Promo EV build (owner go): Combo Club assistant + Telegram (~1 d) → daily streak pick (~½ d) → promo/leaderboard watcher seeding promo_terms (~½ d)
+- [ ] Retire the two Coolbet real-money-family bots (bot_coolbet_1x2_model_v1, bot_coolbet_ou_model_v1 / #133) — ~75 smoke pins + placement code

@@ -21,3 +21,13 @@ Decisions:
 - Instruments block only if it is clean and intuitive (owner sceptical).
 Pending: owner approval of the audit table.
 Next steps: see own-bot-lineup-tasks.md.
+
+## OWN research results (2026-09-26/27) — the four "invent, don't copy" ideas
+| Idea | Verdict | Key number | File |
+|---|---|---|---|
+| Promo EV | **POSITIVE** — build | ~€150–500/month; Coolbet Football Combo Club alone ~€75–255 (3% top-5 margin, free bet ≈ 0.65–0.74 of face); +10% profit boosts LOSE (break-even +12–16%) | own-research-promo-ev.md |
+| Local lag vs live exchange | negative | 0 fires on 456 matches; books follow the exchange within their first re-scrape (Unibet 5, Tonybet 7, Epicbet 13, Coolbet 16 min); margin > lag | own-research-local-lag-live.md |
+| Cross-book arbitrage | negative | ~5 clean arbs/day, ~1.1% margin, €60–240/month at €50–200/leg; one stale leg carries 100% of the edge (palp + limiting risk) | own-research-cross-book-arbs.md |
+| Derived-market inconsistency | negative | 0.24% fire rate; flagged legs close −4.8% [−8.5, −1.1] (n 45) | own-research-derived-inconsistency.md |
+Side findings: Epicbet placeholder boards escape the wrong-board guard (#194); "Estonian price above the Betfair lay" (~6–21/day) is a candidate single-book signal for OWN SHARP once exchange history is longer.
+Owner checks for promos: Coolbet no active sport bonus (blocks Combo Club); Unibet acca-insurance cap; Olybet "My campaigns" profit-boost challenge.
