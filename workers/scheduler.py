@@ -1498,6 +1498,19 @@ def job_model_accuracy():
     _run_job("model_accuracy", _job_model_accuracy_impl)
 
 
+def _job_own_bet_board_impl():
+    """[[#182]] (2026-09-26): the OWN board — every pending pre-match bot selection priced at each
+    Estonian book vs Pinnacle's fair line (the one sharp engine), replaced in own_bet_board
+    (migration 470) for the admin OWN board. Read-only apart from its own table."""
+    from workers.jobs.own_bet_board import run
+    r = run()
+    return {"stored": r.get("written", 0)}
+
+
+def job_own_bet_board():
+    _run_job("own_bet_board", _job_own_bet_board_impl)
+
+
 # #162 (2026-09-26): the pre-kickoff "PLACE MANUALLY" catch-net is DELETED. It keyed on the retired
 # Mac daemon's heartbeat (frozen since 2026-09-10, so it always read "daemon down"), picked
 # candidates by maturity label and gated them with the old coolbet_placer floor — a second
@@ -3566,6 +3579,9 @@ def main():
     # [[#153]] model accuracy for /admin/models — after the 01:00 settlement, before the 03:30 backup
     scheduler.add_job(job_model_accuracy, CronTrigger(hour=2, minute=40),
                       id="model_accuracy", name="Model accuracy 02:40")
+    # [[#182]] OWN board — every 10 min, 24/7 (Estonian sweeps are ~hourly, Pinnacle every 30 min)
+    scheduler.add_job(job_own_bet_board, IntervalTrigger(minutes=10),
+                      id="own_bet_board", name="OWN board every 10 min")
 
     # ML-PIPELINE-UNIFY Stage 5a — weekly retrain Sunday 03:00 UTC, runs train.py +
     # compare_models.py. Promotion stays manual (operator flips MODEL_VERSION).

@@ -57193,6 +57193,49 @@ def test_footprint_requests_by_caller():
     return "attributed per job, cleared after, merged at flush"
 
 
+@test("OWN-BET-BOARD — Estonian-book prices x Pinnacle fair via the ONE sharp engine; take_at; stale and no-fair never clear (#182)")
+def test_own_bet_board():
+    """[[#182]] the OWN board (owner 2026-09-26: "where do I put my real money right now"). Rank =
+    price vs Pinnacle fair AND a bot agrees. Pinned: (1) fair price / freshness / gates come from
+    sharp_engine (no second computation); (2) a stale book quote or a missing Pinnacle line never
+    clears; (3) take_at = (1 + floor) / fair; (4) the books are ACCESSIBLE_BOOKMAKERS; (5) private table,
+    replaced atomically, job every 10 min."""
+    from datetime import datetime, timezone
+    from workers.jobs import own_bet_board as ob
+    now = 1_800_000_000.0
+    ko = now + 5 * 3600
+    kick = datetime.fromtimestamp(ko, tz=timezone.utc)
+    pick = lambda bot, sel, mid="m1": {"source": "shadow", "pick_id": bot + sel, "bot_name": bot, "match_id": mid,
+                                       "market": "1x2", "selection": sel, "pick_time": "2026-09-26 10:00",
+                                       "display_name": bot, "status": "testing", "vip": bot == "v",
+                                       "kickoff": kick, "home": "A", "away": "B", "league": "L"}
+    pin = {"home": (2.00, now - 600), "draw": (3.60, now - 600), "away": (4.20, now - 600)}
+    lines = {("m1", "1x2"): {"ko": ko, "quotes": {
+        "Pinnacle": pin,
+        "Coolbet": {"home": (2.14, now - 1200)},                 # fresh, ~+5.7% over fair (< 8% ceiling)
+        "Epicbet": {"home": (2.40, now - 3 * 3600)}}}}           # higher, but stale
+    rows = ob.build([pick("a", "home"), pick("v", "home"), pick("a", "away", "m2")], lines, now,
+                    ("Coolbet", "Epicbet"))
+    r = next(x for x in rows if x["match_id"] == "m1")
+    assert r["n_bots"] == 2 and r["bots"][0]["bot"] == "v", "grouped per selection, VIP first"
+    assert r["clears"] and r["best_book"] == "Coolbet", r
+    assert r["prices"]["Epicbet"]["refusal"] == "stale_quote", "a stale price never clears, however high"
+    assert abs(r["take_at"] - (1 + ob.EDGE_FLOOR) / r["p_fair"]) < 1e-12
+    assert abs(r["best_edge"] - (2.14 * r["p_fair"] - 1)) < 1e-12
+    r2 = next(x for x in rows if x["match_id"] == "m2")
+    assert not r2["clears"] and r2["p_fair"] is None, "no Pinnacle line -> no fair price -> never clears"
+    src = _engine_path("workers/jobs/own_bet_board.py").read_text()
+    for pin_ in ("from workers.automation.sharp_engine import", "anchor_fair(", "price_refusal(",
+                 "ACCESSIBLE_BOOKMAKERS", 'DELETE FROM own_bet_board', "coalesce(d.status, '') <> 'retired'"):
+        assert pin_ in src, pin_
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert '_run_job("own_bet_board", _job_own_bet_board_impl)' in sched
+    assert 'IntervalTrigger(minutes=10),\n                      id="own_bet_board"' in sched
+    mig = _engine_path("supabase/migrations/470_own_bet_board.sql").read_text()
+    assert "REVOKE ALL ON public.own_bet_board FROM anon, authenticated" in mig and "TO anon" not in mig
+    return "synthetic board: clears/stale/no-fair/take_at pinned; sharp engine reused; private, 10-min job"
+
+
 @test("MODEL-ACCURACY-JOB — every production probability source scored forward, vs base rate and Pinnacle on the same rows (#153)")
 def test_model_accuracy_job():
     """[[#153]]: /admin/models reads model_accuracy (migration 466), written daily 02:40 by
