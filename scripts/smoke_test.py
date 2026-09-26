@@ -57553,6 +57553,9 @@ def test_own_bots():
     assert "from workers.jobs.own_bet_board import" in src and "ON CONFLICT (shadow_cohort, bot_id, match_id, market, selection) DO NOTHING" in src
     mig = _engine_path("supabase/migrations/473_own_bots.sql").read_text()
     assert "'bot_own_1x2_v1'" in mig and "'experimental', false, false" in mig
+    # the cohort it writes must be in the shadow_bets check list (queue audit 2026-09-26: 'own' was not — the
+    # first qualifying pick failed at 19:53 UTC)
+    assert '"own"' in src and "'own'" in _engine_path("supabase/migrations/477_shadow_cohort_own.sql").read_text()
     sched = _engine_path("workers/scheduler.py").read_text()
     assert '_run_job("own_bots", _job_own_bots_impl)' in sched and 'id="own_bots"' in sched
     return "one bot, best clearing confirmed book, 3 h window, >= 3 confirmers, paper"

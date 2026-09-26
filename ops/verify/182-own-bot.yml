@@ -1,0 +1,17 @@
+# [[#182]] the OWN bot writes paper picks once migration 477 lets its cohort in. Read the record at n ~ 60-80 (~10-14).
+task: "#182"
+checks:
+  - name: own_bot_first_pick
+    mode: eventually
+    sql: "SELECT count(*) FROM shadow_bets s JOIN bots b ON b.id = s.bot_id WHERE b.name = 'bot_own_1x2_v1'"
+    expect: ">= 1"
+    run_after:
+      migration: "477"
+    expires: "2026-10-03T00:00:00Z"
+  - name: own_bot_record_review_due
+    mode: eventually
+    sql: "SELECT count(*) FROM bot_ledger WHERE bot_name = 'bot_own_1x2_v1' AND result IN ('won','lost')"
+    expect: ">= 60"
+    run_after:
+      time: 2026-10-14T00:00:00Z
+    expires: "2026-10-21T00:00:00Z"
