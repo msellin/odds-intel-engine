@@ -2137,7 +2137,10 @@ LISTING_REUSE_MAX_MIN = 55
 # PASS_BUDGET_SHARE of the hourly budget: past it, a category is listed only from cache (any age) and every
 # fixture outside the every-pass tier is deferred — the < 3 h fixtures are still fetched. The category order
 # rotates each pass (_SWEEP_OFFSET) so the categories at the end of the list are not always the ones starved.
-PASS_BUDGET_SHARE = 0.45
+# 0.45 → 0.35 (2026-09-26 13:00, measured): two passes x 45% left ~50/h for the must-run callers, which
+# spent 70 (near-kickoff 22-38, health ping 20-32) on the Saturday slate — hours 10-12 still hit 500 with
+# 141-183 refused. 2 x 35% = 350 leaves the 20% reserve plus ~50 of slack.
+PASS_BUDGET_SHARE = 0.35
 _SWEEP_ROTATE = 37
 _SWEEP_OFFSET = 0
 
@@ -2216,7 +2219,11 @@ def run_board_sweep(
     pass_cap = _pass_budget()
 
     def _over_pass_budget() -> bool:
-        return pass_cap is not None and footprint.process_requests("Coolbet") - pass_start >= pass_cap
+        # the pass's own share OR the hour past its deferrable line (has_headroom) — whichever comes first;
+        # past either, only the every-pass tier (< 3 h) is fetched and listings come from cache
+        if pass_cap is not None and footprint.process_requests("Coolbet") - pass_start >= pass_cap:
+            return True
+        return not footprint.has_headroom("Coolbet")
     if not cats:
         # Loud, not silent: an empty enumeration means the whole pass wrote
         # nothing, which starves the placement price feed. Surface it as an

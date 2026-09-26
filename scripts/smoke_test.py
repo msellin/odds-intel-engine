@@ -57329,7 +57329,7 @@ def test_coolbet_pass_pacing():
     import inspect
     from workers.automation import coolbet_explorer as ce
     from workers.utils import footprint as fp
-    assert ce.PASS_BUDGET_SHARE <= 0.5, "two passes an hour must both fit, with room for the must-run callers"
+    assert ce.PASS_BUDGET_SHARE <= 0.35, "2 passes/h must leave the reserve + slack for near-kickoff and the health ping"
     assert ce._pass_budget() == int(fp.budget("Coolbet") * ce.PASS_BUDGET_SHARE)
     assert ce._rotated([1, 2, 3, 4], 5) == [2, 3, 4, 1] and ce._rotated([], 3) == []
     before = fp.process_requests("SmokeBook-pass")
@@ -57341,6 +57341,7 @@ def test_coolbet_pass_pacing():
     src = inspect.getsource(ce.run_board_sweep)
     assert "cats = _rotated(cats, _SWEEP_OFFSET)" in src and "pass_start = footprint.process_requests(\"Coolbet\")" in src
     assert "elif _over_pass_budget():" in src and "or _over_pass_budget())" in src
+    assert 'return not footprint.has_headroom("Coolbet")' in src, "past the hour's deferrable line, no uncached listings"
     assert src.index("_listing_reusable(cached, now)") < src.index("elif _over_pass_budget():") < src.index("fetch_events_for_league(session, cat")
     return f"pass cap {ce._pass_budget()} of {fp.budget('Coolbet')}/h"
 
