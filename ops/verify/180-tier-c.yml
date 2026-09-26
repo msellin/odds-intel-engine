@@ -1,0 +1,12 @@
+# [[#180]] Tier C 1X2 / O/U rows are no longer stored as source='ensemble' (deploy 2026-09-26 ~13:30 UTC).
+task: "#180"
+checks:
+  - name: no_new_tier_c_ensemble_1x2_rows
+    mode: invariant
+    sql: |
+      SELECT count(*) FROM predictions
+       WHERE source = 'ensemble' AND reasoning = 'data_tier=C'
+         AND (market LIKE '1x2_%' OR market LIKE 'over%' OR market LIKE 'under%')
+         AND created_at > '2026-09-26 14:30+00'
+    expect: "== 0"
+    expires: "2026-10-26T00:00:00Z"

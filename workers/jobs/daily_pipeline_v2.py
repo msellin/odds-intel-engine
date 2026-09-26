@@ -1467,25 +1467,6 @@ def _dc_tau(h: int, a: int, exp_h: float, exp_a: float, rho: float) -> float:
     return 1.0
 
 
-def _parse_af_xg(val) -> float | None:
-    """Parse an AF expected-goals field ('1.7', 1.7, etc.) into a float.
-
-    Returns None when the value is missing, non-numeric, or outside the
-    plausible per-team xG range [0.1, 6.0]. AF occasionally returns blank
-    strings for matches with no team-stats coverage — those collapse to None
-    so the Tier C fallback (TIER-C-AF-XG) keeps using its hardcoded prior.
-    """
-    if val is None:
-        return None
-    try:
-        f = float(str(val).strip().rstrip("%"))
-    except (ValueError, TypeError):
-        return None
-    if not (0.1 <= f <= 6.0):
-        return None
-    return f
-
-
 def _poisson_probs(exp_h: float, exp_a: float, rho: float | None = None, league_draw_pct: float | None = None) -> dict:
     """Compute 1X2 + O/U (1.5, 2.5, 3.5) + BTTS probabilities from expected goals.
 
@@ -3261,55 +3242,25 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                 if total > 0:
                     hp, dp, ap = hp / total, dp / total, ap / total
 
-                # TIER-C-AF-XG (2026-05-19): when AF supplies its own expected-goals
-                # (af_goals_home / af_goals_away — e.g. "1.7" / "1.2"), feed them
-                # into _poisson_probs() instead of using the hardcoded 50/50 OU prior
-                # and league-average BTTS. Same scoring grid as Tier A; same DC rho;
-                # same DRAW-PER-LEAGUE inflation. Unlocks OU 1.5/2.5/3.5/4.5, BTTS,
-                # and AH markets (which gate on exp_home/exp_away) for every Tier C
-                # match where AF returns a goals model. Falls back to the old prior
-                # path when AF gives 1X2 but no xG (rare — small leagues with
-                # team-stats gaps). The +8% Tier C edge bump in DATA_TIER_EDGE_BUMP
-                # is kept unchanged here — that's a separate calibration decision.
-                xg_h = _parse_af_xg(af_pred_for_match.get("af_goals_home"))
-                xg_a = _parse_af_xg(af_pred_for_match.get("af_goals_away"))
+                # TIER-C-AF-XG (2026-05-19) was DELETED 2026-09-26 ([[#180]]): it read AF's
+                # predictions.goals as expected goals, but that field is an over/under LINE hint
+                # ("-2.5" = under 2.5; every stored value is negative or blank), so _parse_af_xg returned
+                # None for all of them and the branch never ran. Tier C is the fallback below, and since
+                # #180 no bot without its own model forms a Tier C candidate (see the candidate gate).
                 league_id_str = str(match.get("league_id", ""))
                 btts_rate = _league_btts_rates.get(league_id_str, _global_btts_rate)
-
-                if xg_h is not None and xg_a is not None:
-                    league_tier = int(match.get("tier") or 1)
-                    tier_rho = _load_dc_rho_cache().get(league_tier)
-                    poisson_pred = _poisson_probs(xg_h, xg_a, rho=tier_rho, league_draw_pct=_ldp)
-                    # AF 1X2 percentages are usually close to but not identical to the
-                    # Poisson grid's renormalised probs. Trust the AF percentages for
-                    # the 1X2 markets (the /predictions endpoint blends form + H2H +
-                    # standings — more signal than xG alone), use the Poisson grid for
-                    # the goals/BTTS markets (which the AF response doesn't price).
-                    poisson_pred["home_prob"] = hp
-                    poisson_pred["draw_prob"] = dp
-                    poisson_pred["away_prob"] = ap
-                    poisson_pred["exp_home"] = xg_h
-                    poisson_pred["exp_away"] = xg_a
-                    poisson_pred["data_tier"] = "C"
-                else:
-                    # Fallback: AF gave us 1X2 but no usable xG.
-                    # - 1x2: AF win probabilities (normalised)
-                    # - O/U 2.5: neutral 50/50 prior (no goals model)
-                    # - BTTS: league-average historical BTTS rate as prior.
-                    #   Czech Republic averages 35.8% BTTS; Sweden 63.7%. This is
-                    #   real signal vs the market's implied probability, even without
-                    #   match-specific Poisson expected-goals data.
-                    poisson_pred = {
-                        "home_prob": hp,
-                        "draw_prob": dp,
-                        "away_prob": ap,
-                        "over_25_prob": 0.50, "under_25_prob": 0.50,  # neutral prior
-                        "btts_yes_prob": btts_rate,
-                        "btts_no_prob": 1.0 - btts_rate,
-                        "exp_home": None,
-                        "exp_away": None,
-                        "data_tier": "C",
-                    }
+                # AF gave us 1X2 (5% steps); no goals model.
+                poisson_pred = {
+                    "home_prob": hp,
+                    "draw_prob": dp,
+                    "away_prob": ap,
+                    "over_25_prob": 0.50, "under_25_prob": 0.50,  # neutral prior
+                    "btts_yes_prob": btts_rate,
+                    "btts_no_prob": 1.0 - btts_rate,
+                    "exp_home": None,
+                    "exp_away": None,
+                    "data_tier": "C",
+                }
             else:
                 continue  # No Poisson data AND no AF prediction — truly skip
 
@@ -3603,6 +3554,11 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             }[market]
 
             odds_val = match.get(odds_key, 0)
+            # [[#180]]: a Tier C `pred` is API-Football's 1X2 + a 50/50 O/U prior — not an ensemble output.
+            # Stored as source='ensemble' it made up 22% of that model's rows in the scorecard (Tier C 1X2
+            # log-loss 1.51 vs Tier A 1.12 / B 1.19, 30 d). Not written any more; BTTS (league rate) kept.
+            if data_tier == "C" and not market.startswith("btts"):
+                continue
             if odds_val > 0:
                 prob = pred.get(prob_key)
                 if prob is None:
@@ -3673,7 +3629,8 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
         # ~7.5% home-advantage underestimation in raw Poisson (AH-HOME-BIAS 2026-05-21).
         _cal_ph = pred.get("home_prob")
         _cal_pd = pred.get("draw_prob")
-        if _cal_ph and _cal_pd and _cal_ph > 0 and _cal_pd > 0:
+        # [[#180]]: not from a Tier C pred (API-Football's 1X2 — nothing to invert)
+        if data_tier != "C" and _cal_ph and _cal_pd and _cal_ph > 0 and _cal_pd > 0:
             _cal_lambdas = _solve_lambdas_calibrated(float(_cal_ph), float(_cal_pd))
             if _cal_lambdas:
                 _exp_h_cal, _exp_a_cal = _cal_lambdas
@@ -3972,6 +3929,18 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
                             candidate_specs.append(("draw_no_bet", "Away", dnb_a_odds, dnb_a_prob, "draw_no_bet", "away", thresholds.get("dnb", 0.05)))
 
             pred = _pred_orig            # #152: never leak this bot's O/U substitution to the next bot
+            # [[#180]] (2026-09-26): a Tier C match has no model of its own — its `pred` is API-Football's
+            # 1X2 percentages (forward log-loss 1.527 vs 1.058 for guessing, #144) plus a flat 50/50 O/U prior
+            # and a league-average BTTS rate, and every DC / DNB / AH probability is derived from those. So on
+            # Tier C only a bot that brings its OWN model for the market (NEW+ / ratings on 1X2, the combined
+            # O/U model on O/U) may form a candidate; everything else is dropped and counted.
+            if data_tier == "C":
+                _kept = [c for c in candidate_specs
+                         if (_rating_bot and c[0] == "1X2") or (_ou_new and c[0] == "O/U")]
+                if len(_kept) < len(candidate_specs):
+                    _funnel[bot_name]["drop_tier_c_no_model"] += len(candidate_specs) - len(_kept)
+                candidate_specs = _kept
+
             for mkt, selection, odds, raw_mp, os_market, os_selection, base_threshold in candidate_specs:
                 _fctx = {"source": "pipeline_shadow" if shadow_mode else "pipeline", "bot": bot_name, "match_id": str(match_id),
                          "market": os_market, "selection": os_selection, "odds": odds,

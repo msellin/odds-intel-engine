@@ -218,7 +218,8 @@ BOTS: list[BotSpec] = [
     # was compared to a blend. "mixed" as a market label was hiding that.
     BotSpec("bot_v10_1x2", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
             None, None, False,
-            "The reference bot's 1x2 half (status ACTIVE — was CALIBRATED until #175 merged BETA + CALIBRATED, 2026-09-26): v10 model across target leagues, tier-adjusted thresholds. De-vigged Pinnacle CLV +2.50% (n=335, CI [+0.41,+4.60]) — but the positive record is July-2026 onward (May −0.87%, Jun −2.15%, Jul +8.35%, Aug +8.24%, Sep +7.25%), so it is a three-month yardstick, not a five-month one."),
+            "The reference bot's 1x2 half (status ACTIVE — was CALIBRATED until #175 merged BETA + CALIBRATED, 2026-09-26): v10 model across target leagues, tier-adjusted thresholds. De-vigged Pinnacle CLV +2.50% (n=335, CI [+0.41,+4.60]) — but the positive record is July-2026 onward (May −0.87%, Jun −2.15%, Jul +8.35%, Aug +8.24%, Sep +7.25%), so it is a three-month yardstick, not a five-month one. r2 (#180, 2026-09-26): no Tier C candidates — a Tier C match's probability is API-Football's 1X2 (worse than guessing) + a 50/50 O/U prior.",
+            rule_version="r2"),
     # RATING-1X2-BOT ([[#141]], 2026-09-24): owner request "1x2 market NEW".
     BotSpec("bot_rating_1x2_v1", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
             None, None, False,
@@ -269,7 +270,8 @@ BOTS: list[BotSpec] = [
     # sharp reference at all.
     BotSpec("bot_high_roi_global_v2", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
             None, None, False,
-            "1x2 home/away in Spain/Australia/Iceland, odds 1.50–5.50. Internal paper strategy validator."),
+            "1x2 home/away in Spain/Australia/Iceland, odds 1.50–5.50. Internal paper strategy validator. r2 (#180, 2026-09-26): no Tier C candidates — a Tier C match's probability is API-Football's 1X2 (worse than guessing) + a 50/50 O/U prior.",
+            rule_version="r2"),
 
     # PICKS-FORWARD-TEST-BOT-2026-09-14 — the published PICKS rule, registered so
     # it is not a silent strategy. It is unlike every other row in this list in

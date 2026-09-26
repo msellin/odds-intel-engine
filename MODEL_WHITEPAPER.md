@@ -561,10 +561,18 @@ Not all matches have sufficient data for both models:
 |------|-------------|-------------|-----------------|
 | A | Full historical stats + odds (18 leagues) | Poisson + XGBoost ensemble | 100% |
 | B | Results-only history (22+ leagues) | Poisson only | 50% |
-| C | No history, AF supplies xG (af_goals_home/_away) | AF 1X2 + Poisson grid driven by AF xG | 20% |
-| D | No history and AF has no xG | Skipped — no model can fire | Not bet on |
+| C | No history; API-Football /predictions only | AF 1X2 + 50/50 O/U prior + league BTTS rate — **no model; since #180 no bot without its own model forms a Tier C candidate, and no Tier C 1X2/O-U row is stored as `ensemble`** | — |
+| D | No history and no AF prediction | Skipped | Not bet on |
 
-**TIER-C-AF-XG (2026-05-19):** Tier C was previously hardcoded to a 50/50 OU prior + league-average BTTS with `exp_home/exp_away = None` (so AH and OU 1.5/3.5 never fired). API-Football's `/predictions` endpoint actually returns per-team expected goals (`af_goals_home`, `af_goals_away`) for every match it covers — typically ~70-80% of fixtures including most non-CSV-covered leagues. The fallback now parses those xG values and feeds them into the same `_poisson_probs()` grid Tier A uses (same Dixon-Coles rho, same per-league draw inflation). 1X2 probabilities still come from AF's blended percentages (form + H2H + standings — stronger than xG alone); OU 1.5/2.5/3.5/4.5, BTTS, and AH are now model-priced. The +8% `DATA_TIER_EDGE_BUMP` for Tier C is kept unchanged so the existing safety margin still applies.
+**⚠️ CORRECTED 2026-09-26 ([[#180]]): the TIER-C-AF-XG paragraph below never worked.** AF's `predictions.goals` is an
+over/under LINE hint (`"-2.5"` = under 2.5), not expected goals — every stored value is negative or blank, so the parser
+returned None for all of them and Tier C always took the 50/50 fallback. The branch and parser are deleted. AF's 1X2
+percentages score 1.527 log-loss vs 1.058 for guessing (#144; ≈ 1.16 excluding its 0% calls), and Tier C rows were 22% of
+the stored `ensemble` 1X2 rows (log-loss 1.51 vs Tier A 1.12 / Tier B 1.19 — both also worse than guessing). Since #180 a
+Tier C match feeds only bots with their own model for the market (NEW+ / ratings on 1X2, combined O/U on O/U); its 1X2 /
+O/U / AH rows are no longer written. `bot_v10_1x2` and `bot_high_roi_global_v2` moved to rule_version r2 for this.
+
+*Historical (wrong) description:* **TIER-C-AF-XG (2026-05-19):** Tier C was previously hardcoded to a 50/50 OU prior + league-average BTTS with `exp_home/exp_away = None` (so AH and OU 1.5/3.5 never fired). API-Football's `/predictions` endpoint actually returns per-team expected goals (`af_goals_home`, `af_goals_away`) for every match it covers — typically ~70-80% of fixtures including most non-CSV-covered leagues. The fallback now parses those xG values and feeds them into the same `_poisson_probs()` grid Tier A uses (same Dixon-Coles rho, same per-league draw inflation). 1X2 probabilities still come from AF's blended percentages (form + H2H + standings — stronger than xG alone); OU 1.5/2.5/3.5/4.5, BTTS, and AH are now model-priced. The +8% `DATA_TIER_EDGE_BUMP` for Tier C is kept unchanged so the existing safety margin still applies.
 
 
 ### 4.4 1X2 walk-forward rating model — SHADOW (2026-09-24, [[#141]])
