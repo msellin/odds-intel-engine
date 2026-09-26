@@ -680,6 +680,12 @@ escalates; it does not.
   close and the health ping; a refusal records its `host/proc/pid` in
   `book_footprint.refused_by` (migration 445) — read that row first when refusals appear
   under budget.
+  **The reserve is not holding (found 2026-09-26, #142):** Coolbet was at 500/500 in every
+  hour of 09-25/26 and the must-run callers (`near_kickoff_capture` = the closing price,
+  `health_ping`) were refused 18-184 times an hour. Since migration 465 each hour's
+  `book_footprint.requests_by` says WHO spent it ({scheduler job | process: n}) — read it
+  before touching the budget or the reserve:
+  `SELECT hour, requests, refused, requests_by FROM book_footprint WHERE book='Coolbet' ORDER BY hour DESC LIMIT 6;`
 - **And the sweep itself shrank (#091, 2026-09-23):** the scheduled job now runs the
   board sweep, not `run_bulk`'s search fallback. Verify coverage any time, from an
   IP Coolbet is not blocking, with `scripts/coolbet_board_coverage_diff.py

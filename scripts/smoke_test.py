@@ -50303,8 +50303,10 @@ def test_footprint_priority_reserve():
             except f.FootprintBudgetExceeded:
                 pass
             f.flush()
-            rows = [p for sql, p in calls if p and p[0] == "Coolbet"]
-            assert rows and "refused_by" in calls[-1][0] and rows[-1][7] and "/" in rows[-1][7][0], calls
+            # (#142: flush may add a requests_by merge after the upsert — judge the upsert itself)
+            ups = [(sql, p) for sql, p in calls if "INSERT INTO book_footprint" in sql]
+            rows = [p for sql, p in ups if p and p[0] == "Coolbet"]
+            assert rows and "refused_by" in ups[-1][0] and rows[-1][7] and "/" in rows[-1][7][0], calls
             # 3. before migration 445 is applied, counting continues without the column
             calls.clear()
             def _no_col(sql, p=None):
@@ -50315,10 +50317,11 @@ def test_footprint_priority_reserve():
             f._refused_by_col = True
             f.record("SmokeBook")
             f.flush()
-            assert calls and calls[-1][1][0] == "SmokeBook" and len(calls[-1][1]) == 7, calls
+            ups = [(sql, p) for sql, p in calls if "INSERT INTO book_footprint" in sql]
+            assert ups and ups[-1][1][0] == "SmokeBook" and len(ups[-1][1]) == 7, calls
         finally:
             f._db_count, db.execute_write, f._refused_by_col = saved
-            f._pending.clear(); f._refusers.clear()
+            f._pending.clear(); f._refusers.clear(); f._by.clear()
             f._WRITES_ENABLED = False
 
     # 4. the deferrable callers are gated; the must-run ones are not
@@ -57126,6 +57129,35 @@ def test_r2a_devig_prereg():
         assert pin in pre, pin
     assert "r2a_devig_round_due" in _engine_path("ops/verify/154-r2a-devig-round-due.yml").read_text()
     return "v1 proportional; R2-A pre-registered with its reminder"
+
+
+@test("FOOTPRINT-REQUESTS-BY-CALLER — every counted bookmaker request is attributed to a job or process (#142)")
+def test_footprint_requests_by_caller():
+    """[[#142]]: Coolbet sat at 500/500 every hour with the closing-price capture refused, and
+    book_footprint could not say who spent the budget. Requests are now attributed to the scheduler
+    job on the thread (set_caller from _run_job) else the process, merged into requests_by (465)."""
+    import inspect
+    from workers.utils import footprint as fp
+    book = "SmokeBook-by-caller"
+    fp.set_caller("smoke_job")
+    try:
+        fp.record(book, "ok", count_request=True)
+        fp.record(book, "challenge", count_request=False)     # an outcome only: not a request
+    finally:
+        fp.set_caller(None)
+    with fp._lock:
+        got = dict(fp._by.get(book, {}))
+        fp._by.pop(book, None)
+        fp._pending.pop(book, None)
+    assert got == {"smoke_job": 1}, got
+    assert fp._caller_label() != "smoke_job", "the label must be cleared after the job"
+    fl = inspect.getsource(fp.flush)
+    assert "_MERGE_BY" in fl and "_requests_by_col = False" in fl, "flush must merge requests_by and survive a pre-465 DB"
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert "_fp.set_caller(name)" in sched and "_fp.set_caller(None)" in sched
+    assert "ADD COLUMN IF NOT EXISTS requests_by jsonb" in _engine_path(
+        "supabase/migrations/465_book_footprint_requests_by.sql").read_text()
+    return "attributed per job, cleared after, merged at flush"
 
 
 if __name__ == "__main__":

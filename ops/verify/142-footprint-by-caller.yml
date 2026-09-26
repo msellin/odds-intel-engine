@@ -1,0 +1,10 @@
+# [[#142]] per-caller attribution is being written (migration 465 + footprint.set_caller).
+task: "#142"
+checks:
+  - name: coolbet_requests_attributed
+    mode: eventually
+    sql: |
+      SELECT count(*) FROM book_footprint
+       WHERE book = 'Coolbet' AND requests_by IS NOT NULL AND hour > now() - interval '3 hours'
+    expect: ">= 1"
+    expires: "2026-09-28T00:00:00Z"

@@ -107,6 +107,23 @@ _refusers: dict[str, set[str]] = defaultdict(set)  # book -> {"host/proc/pid"} i
 # "refused while under budget" of #151 (refused_by named runnervm…/smoke_test.py on the first try).
 _WRITES_ENABLED = True
 _refused_by_col = True  # False once the DB says migration 445 is not applied (then write without it)
+# REQUESTS-BY-CALLER (2026-09-26, #142): who SPENT the hour. Coolbet sat at 500/500 every hour of
+# 09-25/26 with the must-run callers (near_kickoff_capture, health_ping) refused 18-184 times an
+# hour, and nothing said which caller used the budget, so the reserve could not be tuned. Each
+# counted request is attributed to the scheduler job running on this thread (set_caller, called
+# by scheduler._run_job) or else to the process script name.
+_by: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+_caller = threading.local()
+_requests_by_col = True  # False once the DB says migration 465 is not applied
+
+
+def set_caller(label: str | None) -> None:
+    """Label this thread's requests (scheduler._run_job sets the job name, clears it after)."""
+    _caller.label = label
+
+
+def _caller_label() -> str:
+    return getattr(_caller, "label", None) or os.path.basename(sys.argv[0] or "?")
 
 
 def _hour() -> datetime:
@@ -195,6 +212,7 @@ def record(book: str, outcome: str = "ok", seconds: float | None = None, *,
         if count_request:
             p["requests"] += 1
             _pending_n += 1
+            _by[book][_caller_label()] += 1
         if outcome == "challenge":
             p["challenges"] += 1
         elif outcome == "error":
@@ -235,12 +253,25 @@ _UPSERT_WITH_WHO = """INSERT INTO book_footprint (book, hour, requests, challeng
                   END"""
 
 
+# Merge this batch's {caller: n} into the hour's jsonb, summing per key.
+_MERGE_BY = """UPDATE book_footprint SET requests_by = (
+     SELECT jsonb_object_agg(k, n) FROM (
+       SELECT k, sum(n)::int AS n FROM (
+         SELECT key AS k, value::int AS n FROM jsonb_each_text(coalesce(requests_by, '{}'::jsonb))
+         UNION ALL
+         SELECT key, value::int FROM jsonb_each_text(%s::jsonb)) u
+       GROUP BY k) s)
+   WHERE book = %s AND hour = %s"""
+
+
 def flush() -> None:
-    global _pending_n, _last_flush, _batch_hour, _refused_by_col
+    global _pending_n, _last_flush, _batch_hour, _refused_by_col, _requests_by_col
     with _lock:
         batch = {b: dict(c) for b, c in _pending.items() if any(c.values())}
         who = {b: sorted(v) for b, v in _refusers.items() if v}
         _refusers.clear()
+        by = {b: dict(v) for b, v in _by.items() if v}
+        _by.clear()
         # FOOTPRINT-HOUR-BOOKING (2026-09-24, #139 feeds review): book the batch under the hour it
         # was COUNTED in, not the hour of the flush. Before, Tonybet refusals made at 18:59:57
         # (150/150) landed under 19:00 (81/150), so /admin/feeds said "request budget spent" in an
@@ -267,6 +298,14 @@ def flush() -> None:
                     execute_write(_UPSERT, vals)
             else:
                 execute_write(_UPSERT, vals)
+            if _requests_by_col and by.get(book):
+                import json as _json
+                try:
+                    execute_write(_MERGE_BY, (_json.dumps(by[book]), book, hour))
+                except Exception as e:  # noqa: BLE001
+                    if "requests_by" not in str(e):
+                        raise
+                    _requests_by_col = False   # migration 465 not applied yet: keep counting without it
             cached = _db_cache.get(book)
             if cached and cached[2] == hour:
                 _db_cache[book] = (cached[0], cached[1] + c.get("requests", 0), hour)

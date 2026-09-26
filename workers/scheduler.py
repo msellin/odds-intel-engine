@@ -127,6 +127,12 @@ def _run_job(name: str, fn, *args, _log_run: bool = True, **kwargs):
                            "started_at": started.isoformat()}
     _result = None
     try:
+        # REQUESTS-BY-CALLER (#142): bookmaker requests made on this thread are booked to this job.
+        from workers.utils import footprint as _fp
+        _fp.set_caller(name)
+    except Exception:  # noqa: BLE001 — attribution must never stop a job
+        _fp = None
+    try:
         _result = fn(*args, **kwargs)
         status = "completed"
     except Exception as e:
@@ -148,6 +154,8 @@ def _run_job(name: str, fn, *args, _log_run: bool = True, **kwargs):
         if len(_recent_errors) > _MAX_RECENT_ERRORS:
             _recent_errors.pop(0)
 
+    if _fp is not None:
+        _fp.set_caller(None)
     with _inflight_lock:
         _inflight.pop(_tid, None)
         _stall_reported.discard((_tid, full_name))
