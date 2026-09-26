@@ -316,7 +316,7 @@ def _bucket(v, edges, labels):
 # ── loading ──────────────────────────────────────────────────────────────────
 def _sql(table: str, maturity: str) -> str:
     if maturity == "calibrated":
-        mat = "AND b.maturity_label = 'calibrated'"
+        mat = "AND b.maturity_label = 'active'"  # [[#175]] calibrated merged into active
     elif maturity == "cohort":
         mat = "AND b.maturity_label IN ('calibrated','beta','active')"
     else:

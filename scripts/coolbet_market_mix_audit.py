@@ -146,7 +146,7 @@ cur.execute("""
            COUNT(*) AS n,
            ROUND(AVG(edge_percent)::numeric, 2) AS avg_edge,
            COUNT(*) FILTER (WHERE bot_id IN (
-               SELECT id FROM bots WHERE maturity_label='calibrated' AND is_active=true
+               SELECT id FROM bots WHERE maturity_label='active' AND is_active=true
            )) AS n_calibrated
     FROM simulated_bets
     WHERE created_at >= NOW() - INTERVAL '14 days'

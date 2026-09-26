@@ -1,5 +1,9 @@
 # Promoting a shadow bot to `/performance` (BETA) — the bar, and who clears it
 
+> **RETIRED WORDING 2026-09-26 ([[#175]]):** there is no BETA status any more — BETA and CALIBRATED were merged
+> into ACTIVE (migration 462). A bot now goes EXPERIMENTAL → TESTING → ACTIVE (50 settled, sharp CLV > 0;
+> `docs/SYSTEM_MAP.md` "Lifecycle"). The bar below stays the stricter evidence reference for MODEL bots.
+
 > **CHANGED 2026-09-22 — V10-SPLIT-BY-MARKET (migration 375, [[#040]]).** Every
 > `bot_v10_all` figure below is a **BLEND of two markets that measure on opposite
 > sides of zero** (1x2 de-vigged CLV +2.50% n=335; O/U 2.5 −3.85% n=181). The bot

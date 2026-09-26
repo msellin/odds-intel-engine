@@ -46,8 +46,8 @@ EDGE GATES ([[#174]], owner decision 2026-09-26 — changed): the two sinks now
 use DIFFERENT gates, because they do different jobs.
   * PUBLIC channel (👥 PICKS) — THE public-Telegram rule
     `bot_status.public_channel_skip_reason`, shared with the forward-test
-    publisher and re-checked inside `pick_sender.send_pick`: every BETA /
-    CALIBRATED pick, plus TESTING picks at EV >= 5% (calibrated_prob x
+    publisher and re-checked inside `pick_sender.send_pick`: every ACTIVE
+    pick (BETA / CALIBRATED before [[#175]] merged them), plus TESTING picks at EV >= 5% (calibrated_prob x
     odds_at_pick - 1). NO Coolbet real-money floor: those floors (13pp 1x2 /
     8pp O/U) kept every pick of the EV-unit TESTING bots (bot_v10_1x2_newplus_v1,
     bot_v10_ou_comb_v1) off the channel — 0 of 103 upcoming picks — although
@@ -151,8 +151,8 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
                  ) AS already_placed,
                  -- [[#155]] ONE STATUS DECIDES DISTRIBUTION: whether ANY bot in
                  -- this (match, market, selection) group has a status that SENDS
-                 -- picks (bot_distribution.sent_public = TESTING / BETA /
-                 -- CALIBRATED, not VIP, not retired). Replaces the old
+                 -- picks (bot_distribution.sent_public = TESTING / ACTIVE,
+                 -- not VIP, not retired). Replaces the old
                  -- "calibrated only" gate. Group-level, not the canonical row's
                  -- own status (SIGNALER-MATURITY-SHADOWING 2026-08-28).
                  bd.sent_public    AS sends_public,
@@ -195,9 +195,9 @@ def load_signal_candidates(*, lookahead_hours: int = 36) -> list[dict]:
             AND TRUE
           -- [[#155]] a SENT bot's row supplies the message when one exists, so an
           -- EXPERIMENTAL bot's price/edge never reaches the public channel.
-          -- [[#174]] then a HEADLINE-status (BETA/CALIBRATED) row, then the highest-EV row: with this order
+          -- [[#174]] then a HEADLINE-status (ACTIVE, [[#175]]) row, then the highest-EV row: with this order
           -- the canonical row passes the public-Telegram rule iff ANY row in the group
-          -- does (BETA/CALIBRATED always; TESTING at EV >= 0.05 -> the max-EV row is the
+          -- does (ACTIVE always; TESTING at EV >= 0.05 -> the max-EV row is the
           -- one to test), so the rule is applied once, in Python, on the row published.
           ORDER BY sb.match_id, sb.market, sb.selection, bd.sent_public DESC,
                    (bd.status = ANY(%s)) DESC,      -- bot_status.HEADLINE_STATUSES
@@ -262,14 +262,14 @@ def is_public_eligible(b: dict) -> bool:
     rule is precisely how the floors and the gates drifted everywhere else.
 
     [[#155]] ONE STATUS DECIDES DISTRIBUTION: gates on whether ANY bot in the
-    group has a status that SENDS picks (bot_distribution.sent_public — TESTING,
-    BETA or CALIBRATED; never VIP, EXPERIMENTAL or retired). Was "any bot is
+    group has a status that SENDS picks (bot_distribution.sent_public — TESTING
+    or ACTIVE; never VIP, EXPERIMENTAL or retired). Was "any bot is
     calibrated" until 2026-09-25, which kept TESTING/BETA bots off the channel
     although their status says they are sent. Group-level, not the canonical
     row's own status (SIGNALER-MATURITY-SHADOWING 2026-08-28).
 
     [[#174]] (owner 2026-09-26): and the canonical row must pass THE public-Telegram
-    rule (bot_status.public_channel_eligible) — BETA/CALIBRATED always, TESTING only at
+    rule (bot_status.public_channel_eligible) — ACTIVE always, TESTING only at
     EV >= 5%. The query orders the group so the canonical row passes iff any row does.
     No Coolbet placement floor here (that is `clears_placement_floor`, operator only).
     """

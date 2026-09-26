@@ -102,7 +102,8 @@ class BotConfig:
     # #162 W4.4 (2026-09-25): was `maturity=("calibrated",)` — "every bot labelled calibrated" — so the
     # #155 status rollout (statuses = distribution, owner policy §3.1) would silently change what the
     # real-money-CAPABLE Coolbet model bots see. Real money is not a status. Same set as before the
-    # change: bot_v10_1x2 was the only calibrated bot (verified on the DB 2026-09-25).
+    # change: bot_v10_1x2 was the only calibrated bot (verified on the DB 2026-09-25; the status is
+    # 'active' since #175 merged BETA + CALIBRATED, 2026-09-26 — name-based, so unaffected).
     source_bots: tuple[str, ...] = ("bot_v10_1x2",)
     # WHERE THE CANDIDATE PROBABILITIES COME FROM. This is the single most
     # consequential setting here, and getting it wrong is why the mirrors were

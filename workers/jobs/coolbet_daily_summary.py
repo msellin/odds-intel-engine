@@ -17,7 +17,7 @@ What's in scope:
 - Daemon health (last tick age, last tick result, JWT TTL)
 - Catch-net liveness (last run age, recent sends)
 - 24h activity (real_bets placed + settled + PnL)
-- Today's calibrated queue (count, first KO)
+- Today's ACTIVE-bot queue (count, first KO)
 - Warnings (only when applicable — silent when healthy)
 
 Out of scope:
@@ -114,8 +114,9 @@ def _gather_state() -> dict:
     ) or []
     out["activity_24h"] = dict(activity[0]) if activity else {}
 
-    # Today's calibrated queue. Mirror the cherry-pick placer's gate so
-    # the count means the same thing it does to the daemon.
+    # Today's ACTIVE-bot queue. Mirror the cherry-pick placer's gate so
+    # the count means the same thing it does to the daemon. [[#175]] 2026-09-26:
+    # was maturity_label='calibrated' — CALIBRATED + BETA merged into ACTIVE.
     queue = execute_query(
         """SELECT COUNT(*)              AS queued,
                   MIN(m.date)           AS first_ko
@@ -126,7 +127,7 @@ def _gather_state() -> dict:
               AND sb.combo_legs IS NULL
               AND sb.user_placed_at IS NULL
               AND sb.user_skipped_at IS NULL
-              AND b.maturity_label = 'calibrated'
+              AND b.maturity_label = 'active'
               AND m.date > NOW()
               AND m.date < NOW() + INTERVAL '24 hours'
               AND NOT EXISTS (
@@ -235,7 +236,7 @@ def _format_summary(s: dict) -> str:
         f"",
         f"📊 24h: {placed_24h} placed{_book_split} · W{won_24h}/L{lost_24h} "
         f"· staked €{float(activity.get('staked') or 0):.2f} · pnl €{pnl_24h:+.2f}",
-        f"📅 Today: {queued} calibrated picks queued"
+        f"📅 Today: {queued} active-bot picks queued"
         + (f" · first KO {first_ko_str}" if first_ko_str else ""),
     ]
     if warnings:

@@ -45,7 +45,7 @@ Pipeline plumbing added (`daily_pipeline_v2.py`): `prob_source` (rating_1x2 / co
 ## 3. Owner decisions and rules (these are policy, not suggestions)
 
 1. **Lifecycle statuses = distribution (PICKS track)** ([[#155]]): EXPERIMENTAL admin-only, nothing sent · TESTING on
-   /performance, picks SENT, counted in own record, not in headline · BETA / CALIBRATED sent + headline. **⭐ VIP is a CHANNEL**
+   /performance, picks SENT, counted in own record, not in headline · ACTIVE sent + headline (**2026-09-26 [[#175]]: BETA + CALIBRATED merged into ACTIVE**, migration 462). **⭐ VIP is a CHANNEL**
    on top of any status (Pro/Elite + private channel live; public settled-only) → "VIP · TESTING" until earned.
    Real money is NOT a status — it is the per-bot switch on /admin/bots.
 2. **Anything sent is counted** in the bot's own public record; never publish without keeping score.
@@ -100,9 +100,9 @@ All verified live on the VPS DB in one batch pass (2026-09-25 ~15:45 UTC), not a
 | [[#167]] ✅ | process: CI prints NEW vs INHERITED smoke failures; 3 router tests on fixtures (309/262/261 s → < 1 s); duplicate migration numbers legal (never rename a pushed one); CLAUDE.md: never wait on CI/deploys/runs, hand back checks | 1575e28a | — |
 | [[#168]]a ✅ | background VERIFICATION QUEUE: `ops/verify/<task>.yml` → job `verify_queue` (:10/:40) → `verify_results` (migration 447), Telegram to operator only on mismatch/expiry | 025898c8 | first run at the next :10/:40 |
 
-**Current statuses (bot_distribution):** CALIBRATED `bot_v10_1x2` · BETA `bot_high_roi_global_v2` · TESTING (sent, own record, not headline) `bot_consensus_b_v1`, `bot_consensus_c_v1`, `bot_sharp_1x2_v1`, `bot_sharp_ou_v1`, `bot_v10_1x2_newplus_v1`, `bot_v10_ou_comb_v1` · VIP · TESTING `bot_combined_1x2_ev5_v1`, `bot_ou_sharp_early_v1` · EXPERIMENTAL everything else incl. `bot_consensus_d_v1`.
+**Current statuses (bot_distribution, after migration 462):** ACTIVE `bot_v10_1x2` (was CALIBRATED) · ACTIVE `bot_high_roi_global_v2` (was BETA) · TESTING (sent, own record, not headline) `bot_consensus_b_v1`, `bot_consensus_c_v1`, `bot_sharp_1x2_v1`, `bot_sharp_ou_v1`, `bot_v10_1x2_newplus_v1`, `bot_v10_ou_comb_v1` · VIP · TESTING `bot_combined_1x2_ev5_v1`, `bot_ou_sharp_early_v1` · EXPERIMENTAL everything else incl. `bot_consensus_d_v1`.
 
-**Owner 2026-09-26:** TESTING → BETA after 50 settled picks with sharp-anchor CLV > 0. **Open rows:** [[#160]] Coolbet price guard · [[#153]] admin models page · [[#166]] real-money badge + pick-queue ROI · [[#168]] b+ (fast/slow CI tiers, slim queue, split smoke file, worktree per session) · [[#169]] serve NEW+ as the production 1X2 (owner said yes) · [[#154]] modelling round 2 — hand-off brief `dev/active/model-inputs-round2-brief.md`. Known leftover: the dashboard headline P&L query in `settlement.py` is flat but priced at our books, not the published price (was mid-edit by #162).
+**Owner 2026-09-26:** TESTING → ACTIVE (was → BETA; #175) after 50 settled picks with sharp-anchor CLV > 0. **Open rows:** [[#160]] Coolbet price guard · [[#153]] admin models page · [[#166]] real-money badge + pick-queue ROI · [[#168]] b+ (fast/slow CI tiers, slim queue, split smoke file, worktree per session) · [[#169]] serve NEW+ as the production 1X2 (owner said yes) · [[#154]] modelling round 2 — hand-off brief `dev/active/model-inputs-round2-brief.md`. Known leftover: the dashboard headline P&L query in `settlement.py` is flat but priced at our books, not the published price (was mid-edit by #162).
 
 ## 6. Where the evidence lives
 

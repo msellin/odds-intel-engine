@@ -274,13 +274,13 @@ best price available when the pick was made on all books; CLV against the sharp 
 | Full filterable history below the table | teaser (10) | ✓ (logged-in) | ✓ |
 
 The detail view's picks come from `/api/performance/bot-legs` (service role, server-side): only bots /performance
-lists (status TESTING / BETA / CALIBRATED — VIP bots included when their status is public; never retired, never
+lists (status TESTING / ACTIVE — VIP bots included when their status is public; never retired, never
 experimental — [[#155]]), and for VIP + hide_pending bots SETTLED legs only (their pending picks are the paid product, #148).
 
 ## /performance work done + retired strategies ([[#157]], owner 2026-09-25)
 
-Same for every reader (no tier split). Kept visibly APART from the headline, which stays today's BETA + CALIBRATED
-strategies only (`getPublicCohortBotNames`, `retired_at IS NULL`) — retired picks count in the totals and in the
+Same for every reader (no tier split). Kept visibly APART from the headline, which stays today's ACTIVE
+strategies only (BETA + CALIBRATED until [[#175]]) (`getPublicCohortBotNames`, `retired_at IS NULL`) — retired picks count in the totals and in the
 retired section, never in the active ROI.
 
 | Surface | Anonymous / Free / Pro / Elite |
@@ -295,6 +295,10 @@ it is the evidence for why a strategy was retired, and the owner approved the fa
 
 ## Bot status → what the public sees ([[#155]], owner 2026-09-25)
 
+**CHANGED 2026-09-26 ([[#175]], migration 462):** BETA and CALIBRATED merged into ONE status, **ACTIVE** — the
+only status that counts in the headline totals. /performance labels it "counts in the totals above"; TESTING
+reads "own record only — not in totals", and the hero ROI tiles say "ACTIVE bots only".
+
 ONE status per bot decides distribution — the same for Anonymous, Free, Pro and Elite (VIP is the only
 tier-dependent channel). Source: engine view `bot_distribution` (migrations 437 + 442); full table in
 `docs/SYSTEM_MAP.md` "Lifecycle".
@@ -303,7 +307,7 @@ tier-dependent channel). Source: engine view `bot_distribution` (migrations 437 
 |---|---|---|---|---|---|
 | EXPERIMENTAL | ✗ (admin only) | ✗ | ✗ | admin only | ✗ |
 | TESTING | ✓ marked TESTING | ✓ (every pick) | ✓ only at EV ≥ 5% ([[#174]], 2026-09-26) | ✓ | ✗ |
-| BETA / CALIBRATED | ✓ | ✓ | ✓ | ✓ | ✓ |
+| ACTIVE | ✓ "counts in the totals above" | ✓ | ✓ (every pick) | ✓ | ✓ (headline = ACTIVE only) |
 | VIP · <status> | ✓ settled only | ✗ | ✗ (Pro/Elite DM + private channel) | ✓ | ✗ |
 
 Pending picks of an EXPERIMENTAL bot are no longer anon-readable (`simulated_bets` "Public read" policy via

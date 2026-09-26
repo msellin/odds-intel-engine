@@ -138,7 +138,7 @@ def pull_calibrated_ledger(since: str) -> list[dict]:
         JOIN bots b      ON b.id = sb.bot_id
         JOIN matches m   ON m.id = sb.match_id
         LEFT JOIN leagues l ON l.id = m.league_id
-        WHERE b.maturity_label = 'calibrated'
+        WHERE b.maturity_label = 'active'  -- [[#175]]: was 'calibrated' (merged into 'active')
           AND b.retired_at IS NULL
           AND b.name NOT LIKE 'inplay\\_%%'
           AND sb.market IN ('1x2','o/u','over_under_25','btts')

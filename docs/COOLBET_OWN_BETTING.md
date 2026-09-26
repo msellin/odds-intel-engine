@@ -285,7 +285,7 @@ paper/trigger path. So the per-market edge-floor work now DOES reach real money 
 floor (`_min_odds_for`) remains shared across both placers.
 
 > **CHANGED 2026-09-26 ([[#174]]): the edge floors are PLACEMENT-ONLY.** The public Telegram channel no
-> longer applies them (it uses the public-Telegram rule — BETA/CALIBRATED + TESTING at EV ≥ 5%, see
+> longer applies them (it uses the public-Telegram rule — ACTIVE (was BETA/CALIBRATED until [[#175]]) + TESTING at EV ≥ 5%, see
 > `docs/SYSTEM_MAP.md` Lifecycle). In `coolbet_signaler` the shared `clears_edge_floor` now sets a per-row
 > `clears_placement_floor` that gates only the operator's manual-placement prompt. The paragraph below is
 > history for the signal path.
@@ -413,7 +413,7 @@ it never stakes real money; in `record=True` mode it can still write paper
 | # | Gate | Value |
 |---|------|-------|
 | 1 | Source | `simulated_bets`, pending, `m.date > NOW()` (pre-match only) |
-| 2 | Maturity (CHERRY-PICK) | `COOLBET_RECORD_ALLOWED_MATURITY` = **calibrated** |
+| 2 | Maturity (CHERRY-PICK) | `COOLBET_RECORD_ALLOWED_MATURITY` = **calibrated** — ⚠️ 2026-09-26: no code reads this env any more (Path B is history) and the `calibrated` status no longer exists ([[#175]] merged it into `active`); the VPS `.env` line is inert |
 | 3 | **Edge floor (per-market)** | `_min_edge_for` — **1x2 13% · O/U 8% · AH 5% · DNB 5%** (BTTS/DC retired = ∞) |
 | 4 | Dedup | `NOT EXISTS real_bets` for (match,market,selection) |
 | 5 | Live re-price @ Coolbet | `_MIN_REMAINING_EDGE` ≥ 3% at the live Coolbet price |
@@ -437,7 +437,7 @@ floor (Path A gate 4 / Path B gate 6).
 | Env | Meaning | Default |
 |---|---|---|
 | `COOLBET_MIN_ODDS` | 1x2/default odds floor (O/U=1.80, AH/DNB ungated via `_MIN_ODDS_BY_MARKET`) — **both placers** | 2.80 |
-| `COOLBET_RECORD_ALLOWED_MATURITY` | maturity allowlist — **Path B only** | calibrated |
+| `COOLBET_RECORD_ALLOWED_MATURITY` | maturity allowlist — **Path B only**; unread by code since Path B retired; `calibrated` merged into `active` 2026-09-26 ([[#175]]) | calibrated |
 | `COOLBET_MIN_EDGE` / `COOLBET_MIN_REMAINING_EDGE` | global + live edge prefilter — **Path B** | 0.03 |
 | `COOLBET_STAKE` | flat stake € | 10.0 |
 | per-market edge floors | `_MIN_EDGE_BY_MARKET` (Path B) | 1x2 0.13 · o/u 0.08 · ah 0.05 · dnb 0.05 |

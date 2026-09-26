@@ -916,6 +916,8 @@ T+FT+1h  Post-match: stats, events, player stats enrichment
 
 ### 8.1b Maturity Ladder and the Promotion Gate (BOT-GATE-REACHABLE, 2026-08-28)
 
+> **CHANGED 2026-09-26 ([[#175]], migration 462):** the ladder is now EXPERIMENTAL → TESTING → ACTIVE → RETIRED (⭐ VIP a channel on top). `beta` and `calibrated` were merged into `active` — the one status that counts in the headline totals and posts every pick to public Telegram; TESTING → ACTIVE after 50 settled picks with sharp-anchor CLV > 0. Authoritative: `docs/SYSTEM_MAP.md` "Lifecycle". The text below is history.
+
 Every bot carries a `bots.maturity_label` — `experimental` → `beta` → `active` →
 `calibrated`, plus the terminal `retired`. The label is a **capability grant**,
 not a description: it decides what the bot is allowed to touch.

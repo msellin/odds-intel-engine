@@ -218,7 +218,7 @@ BOTS: list[BotSpec] = [
     # was compared to a blend. "mixed" as a market label was hiding that.
     BotSpec("bot_v10_1x2", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
             None, None, False,
-            "The calibrated reference bot's 1x2 half: v10 model across target leagues, tier-adjusted thresholds. De-vigged Pinnacle CLV +2.50% (n=335, CI [+0.41,+4.60]) — but the positive record is July-2026 onward (May −0.87%, Jun −2.15%, Jul +8.35%, Aug +8.24%, Sep +7.25%), so it is a three-month yardstick, not a five-month one."),
+            "The reference bot's 1x2 half (status ACTIVE — was CALIBRATED until #175 merged BETA + CALIBRATED, 2026-09-26): v10 model across target leagues, tier-adjusted thresholds. De-vigged Pinnacle CLV +2.50% (n=335, CI [+0.41,+4.60]) — but the positive record is July-2026 onward (May −0.87%, Jun −2.15%, Jul +8.35%, Aug +8.24%, Sep +7.25%), so it is a three-month yardstick, not a five-month one."),
     # RATING-1X2-BOT ([[#141]], 2026-09-24): owner request "1x2 market NEW".
     BotSpec("bot_rating_1x2_v1", FAM_INTERNAL, "1x2", ANCHOR_MODEL,
             None, None, False,

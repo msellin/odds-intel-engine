@@ -236,7 +236,7 @@ All other services (GitHub Actions, Sentry, Kambi, ESPN) on free tiers. (Vercel 
 |---------|---------|------|
 | GitHub (public repo) | Daily ledger commits (`ledger/YYYY-MM-DD.json`) signed by `github-actions[bot]` | €0 (open-source GitHub Actions minutes well under free tier — 1 cron at ~30s/day) |
 | OpenTimestamps calendars | Bitcoin blockchain anchor on every daily snapshot — free public service via `pip install opentimestamps-client` | €0 |
-| Telegram (public channel `@oddsintelpicks`) | Auto-posts every calibrated-maturity pick at signal time. Free for everyone, no signup. | €0 |
+| Telegram (public channel `@oddsintelpicks`) | Auto-posts every ACTIVE-status pick + TESTING picks at EV ≥ 5% ([[#174]]/[[#175]], 2026-09-26; was calibrated-only). Free for everyone, no signup. | €0 |
 | Bot rename via @BotFather | "Coolbet Bot" → "OddsIntel" | €0 |
 
 T-24h coverage adds ~40 AF calls/day (3 new `job_odds_tomorrow` cron runs at 04/10/16 UTC) on the 7500/day Ultra budget — fits comfortably within the existing $39/mo API-Football tier.

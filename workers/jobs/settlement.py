@@ -3436,7 +3436,7 @@ def write_dashboard_cache():
 
         # ROI/CLV math — still excludes experimental (acca/combo) bots whose
         # results would drag the headline into a misleading number.
-        # [[#155]] HEADLINE = BETA / CALIBRATED only, never VIP, never TESTING (a TESTING bot is
+        # [[#155]]/[[#175]] HEADLINE = ACTIVE only (BETA + CALIBRATED merged 2026-09-26), never VIP, never TESTING (a TESTING bot is
         # sent and keeps its own record but is not in the headline). Retired bots' picks keep
         # counting in this ALL-TIME total (#157). One fragment: workers/utils/bot_status.py.
         from workers.utils.bot_status import HEADLINE_BOT_SQL as _HEADLINE_BOT_SQL
@@ -3606,8 +3606,9 @@ def write_dashboard_cache():
                 "clv_pct":      round(clv, 2) if clv is not None else None,
             }
 
+        # [[#175]] 2026-09-26: was maturity_label='calibrated'; CALIBRATED + BETA merged into ACTIVE.
         pro_value_bets_30d = _value_bets_cohort(
-            "b.is_active = true AND b.maturity_label = 'calibrated'"
+            "b.is_active = true AND b.maturity_label = 'active'"
         )
         elite_value_bets_30d = _value_bets_cohort(
             "b.is_active = true"

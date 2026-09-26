@@ -7,8 +7,10 @@ decides where its picks go. No second per-bot switch may drift from it:
     TESTING       row on /performance marked TESTING · every pick on /picks · public Telegram only
                   at EV >= 5% ([[#174]], public_channel_skip_reason below)
                   · counted in its own record · NOT in the headline totals
-    BETA          sent · own record · headline totals
-    CALIBRATED    same as BETA, with the strongest evidence
+    ACTIVE        sent (/picks + every pick to public Telegram) · own record · COUNTS IN THE
+                  HEADLINE TOTALS. [[#175]] (owner 2026-09-26, migration 462): BETA and CALIBRATED
+                  were merged into ACTIVE — they differed in nothing a reader saw or received.
+                  Promotion TESTING -> ACTIVE: 50 settled picks with sharp-anchor CLV > 0.
     VIP           a CHANNEL on top of a public status ("VIP · TESTING"): live picks to the paid
                   channel only, the public sees settled picks, own record, never the headline
     RETIRED       nothing sent; its picks keep counting in the retired totals (#157)
@@ -28,13 +30,13 @@ import logging
 
 log = logging.getLogger(__name__)
 
-PUBLIC_STATUSES: frozenset[str] = frozenset({"testing", "beta", "calibrated"})
-HEADLINE_STATUSES: frozenset[str] = frozenset({"beta", "calibrated"})
+PUBLIC_STATUSES: frozenset[str] = frozenset({"testing", "active"})
+HEADLINE_STATUSES: frozenset[str] = frozenset({"active"})
 
 # SQL fragment for "this bot's settled picks count in the headline totals" over `bots b`.
 # VIP bots never count in the headline (they have their own record). Used by the
 # dashboard_cache headline aggregates in workers/jobs/settlement.py.
-HEADLINE_BOT_SQL = "(b.maturity_label IN ('beta','calibrated') AND NOT b.vip)"
+HEADLINE_BOT_SQL = "(b.maturity_label = 'active' AND NOT b.vip)"
 
 
 def status_of(maturity_label: str | None, retired_at=None, is_active: bool | None = True) -> str:
@@ -77,9 +79,9 @@ def forward_test_bot(arm: str, market: str | None, grade: str | None) -> str:
 
 
 # ── THE PUBLIC TELEGRAM CHANNEL RULE ([[#174]], owner decision 2026-09-26) ─────────────────────
-# /picks shows EVERY pick of a TESTING / BETA / CALIBRATED bot (unchanged). The public Telegram
+# /picks shows EVERY pick of a TESTING / ACTIVE bot (unchanged). The public Telegram
 # channel is a stricter subset, so each post feels special:
-#   * every pick of a BETA or CALIBRATED bot, plus
+#   * every pick of an ACTIVE bot (BETA / CALIBRATED before [[#175]]), plus
 #   * a TESTING pick only when its EV >= PUBLIC_TESTING_MIN_EV (5%), where
 #     EV = the bot's own probability x the pick's published odds - 1
 #     (simulated_bets: calibrated_prob x odds_at_pick; picks_forward_test: fair_prob (= p_sharp)

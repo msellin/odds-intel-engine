@@ -43,7 +43,7 @@ why the job had never once emitted a PROMOTE or a DEMOTE in 10 weeks of runs:
 Verdict thresholds (verdict window = 60d) — see BOT-GATE-TSTAT below:
   basis    de-vigged Pinnacle CLV once n >= CLV_MIN_N (100), else per-bet ROI
            once n >= MIN_SETTLED_FOR_DECISION (200)
-  PROMOTE  t >= +1.65 AND maturity != calibrated AND >= 14d observed
+  PROMOTE  t >= +1.65 AND maturity != active AND >= 14d observed
   DEMOTE   t <= -1.65, at ANY maturity
   DEMOTE   real-money tripwire: calibrated AND real n >= 20 AND real ROI < -5%
   HOLD     everything else; the digest names the binding constraint per bot
@@ -414,7 +414,8 @@ def _verdict(maturity, gate_t, basis, n_basis, observation_days, real60, ledger=
     constraint binds, so the operator can act without re-deriving it.
     """
     real_n, _, real_roi, _ = real60
-    is_calibrated = maturity == "calibrated"
+    # [[#175]] 2026-09-26: the top status is ACTIVE (BETA + CALIBRATED merged into it).
+    is_calibrated = maturity == "active"
 
     # ---- Real-money tripwire ----------------------------------------------
     # Deliberately NOT a statistical verdict: at n=20 the ROI standard error is
@@ -449,7 +450,7 @@ def _verdict(maturity, gate_t, basis, n_basis, observation_days, real60, ledger=
                           f"{_clv_basis_note(basis, ledger)}")
     if gate_t >= PROMOTE_T:
         if is_calibrated:
-            return "HOLD", f"already calibrated ({basis} t={gate_t:+.2f})"
+            return "HOLD", f"already active ({basis} t={gate_t:+.2f})"
         return "PROMOTE", f"{basis} t={gate_t:+.2f} >= {PROMOTE_T:+.2f} on n={n_basis}"
 
     return "HOLD", f"{basis} t={gate_t:+.2f} inconclusive on n={n_basis}"
@@ -572,7 +573,7 @@ def main():
     print("Gate: a one-sided t-test on the metric that converges, NOT a raw ROI level.")
     print(f"  basis    · de-vigged Pinnacle CLV once n >= {CLV_MIN_N}; else per-bet ROI once n >= {MIN_SETTLED_FOR_DECISION}")
     print(f"             (CLV per-bet SD 0.090 vs ROI 1.341 — CLV needs ~222x fewer bets)")
-    print(f"  PROMOTE  · t >= {PROMOTE_T:+.2f} AND maturity != calibrated AND >= {MIN_DAYS_FOR_DECISION}d observed")
+    print(f"  PROMOTE  · t >= {PROMOTE_T:+.2f} AND maturity != active AND >= {MIN_DAYS_FOR_DECISION}d observed")
     print(f"  DEMOTE   · t <= {RETIRE_T:+.2f} at ANY maturity")
     print(f"  DEMOTE   · real-money tripwire: calibrated AND real n >= {MIN_BETS_FOR_VERDICT} "
           f"AND real ROI < {DEMOTE_REAL_ROI_PCT:+.0f}% (deliberately not a significance test)")

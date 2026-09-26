@@ -1,0 +1,43 @@
+# #175 — BETA + CALIBRATED merged into ONE status, ACTIVE (migration 462). The headline is ACTIVE only.
+task: "#175"
+checks:
+  - name: migration_462_applied
+    mode: eventually
+    sql: SELECT count(*) FROM _schema_migrations WHERE filename LIKE '462_merge_beta_calibrated_into_active%'
+    expect: "== 1"
+    expires: "2026-09-27T12:00:00Z"
+  - name: no_beta_or_calibrated_left
+    mode: invariant
+    sql: SELECT count(*) FROM bots WHERE maturity_label IN ('beta', 'calibrated')
+    expect: "== 0"
+    expires: "2026-10-10T00:00:00Z"
+  - name: two_active_bots
+    mode: eventually
+    sql: SELECT count(*) FROM bots WHERE retired_at IS NULL AND maturity_label = 'active' AND name IN ('bot_v10_1x2', 'bot_high_roi_global_v2')
+    expect: "== 2"
+    expires: "2026-09-27T12:00:00Z"
+  - name: headline_is_active_only
+    mode: invariant
+    sql: SELECT count(*) FROM bot_distribution WHERE in_headline AND status <> 'active'
+    expect: "== 0"
+    expires: "2026-10-10T00:00:00Z"
+  - name: active_bots_in_headline_and_sent
+    mode: eventually
+    sql: SELECT count(*) FROM bot_distribution WHERE status = 'active' AND NOT vip AND in_headline AND sent_public AND on_performance
+    expect: ">= 2"
+    expires: "2026-09-27T12:00:00Z"
+  - name: derived_columns_match_status
+    mode: invariant
+    sql: |
+      SELECT count(*) FROM bots b JOIN bot_distribution d ON d.bot_name = b.name
+       WHERE b.show_on_picks IS DISTINCT FROM d.sent_public OR b.show_on_performance IS DISTINCT FROM d.on_performance
+    expect: "== 0"
+    expires: "2026-10-10T00:00:00Z"
+  - name: active_picks_still_reach_public_telegram
+    mode: eventually
+    sql: |
+      SELECT count(*) FROM pick_sends ps JOIN bot_distribution bd ON bd.bot_name = ps.bot_name
+       WHERE ps.channel = 'public' AND ps.status = 'sent' AND bd.status = 'active'
+         AND ps.sent_at > now() - interval '3 days'
+    expect: ">= 1"
+    expires: "2026-09-30T00:00:00Z"

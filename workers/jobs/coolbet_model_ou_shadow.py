@@ -27,7 +27,8 @@ for HOW a pick is made; read the config for WHAT this bot's gates are
 
 WHAT THIS BOT IS, in the axes that actually distinguish one bot from another:
     candidate source   `pipeline` — `simulated_bets.calibrated_prob` on the
-                       'calibrated' cohort. Narrow (AF-API-derived, and it
+                       old 'calibrated' cohort (selected BY NAME since #162 W4.4;
+                       the status word is 'active' since #175). Narrow (AF-API-derived, and it
                        contains no Coolbet prices at all), but it is the
                        probability this real-money bot was VALIDATED on. The
                        wide-source paper twin `bot_wide_ou_model_v1` exists to

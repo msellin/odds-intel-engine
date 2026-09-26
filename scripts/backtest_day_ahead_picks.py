@@ -86,7 +86,7 @@ def _norm_market(m: str) -> str:
 def pull_picks(start: str, end: str, cohort: str) -> list[dict]:
     """Pull settled calibrated (or broader) picks in the window."""
     if cohort == "calibrated":
-        maturity_clause = "b.maturity_label = 'calibrated'"
+        maturity_clause = "b.maturity_label = 'active'"  # [[#175]] calibrated merged into active
     elif cohort == "broad":
         maturity_clause = "b.maturity_label IN ('calibrated','beta','active')"
     else:

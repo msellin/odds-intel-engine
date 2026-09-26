@@ -123,6 +123,8 @@ just not populated with non-Coolbet books.
 
 ## 4. SURFACES — exactly what each reads and gates on
 
+> **CHANGED 2026-09-26 ([[#175]]):** the `calibrated` / `beta` / `active` cohort values below are history — the statuses are now experimental / testing / active / retired, and every public surface reads `bot_distribution` (docs/SYSTEM_MAP.md "Lifecycle").
+
 | Surface | Table | Cohort / gate | Edge floor | Price basis | Real money? |
 |---|---|---|---|---|---|
 | **/picks** (`upcoming-picks.ts`) | `simulated_bets` | maturity `['calibrated']` public / `+beta,active` signed-in; retired excl.; date window | **NONE** (dedup highest-edge; shows a per-pick break-even `min_odds`; `placeMinOdds` 13/8+2.8/1.8 admin-only) | `odds_at_pick` | no |
