@@ -121,13 +121,16 @@ import contextlib as _contextlib
 
 
 @_contextlib.contextmanager
-def _router_offline(picks=(), books=None):
+def _router_offline(picks=(), books=None, account=(True, ())):
     """ROUTER-TESTS-OFFLINE (2026-09-25, dev-process speed audit). Run the REAL
     `best_price_router.route()` — gates, modes, lock, dispatch decision — against
     fixture data instead of the live DB. Stubs only the data seams `_route` reads
     through (load_picks, match_exposure, spent_today, already_placed,
     placement_path_bots, _has_exposure, _latest_book_odds) and records `_dispatch`
     instead of driving a browser. Thread-local (`_this_thread_only`) and restored.
+    #162 W4.2: the Coolbet account read (`_read_coolbet_account`) returns `account`
+    (default: verified, no holds) and the reconcile is recorded, not run; `rec["events"]`
+    orders reconcile vs dispatch.
 
     Why: BEST-PRICE-ROUTER-EXECUTE-WIRING ran a live report pass over every
     placement bot (19 s locally, 309 s in CI under the 8-wide DB load), and the
@@ -135,8 +138,9 @@ def _router_offline(picks=(), books=None):
     measured, almost all lock wait). They were the critical path of the suite."""
     import workers.automation.best_price_router as br
     import scripts.place_coolbet_ui as ui
-    rec = {"loaded": [], "dispatched": []}
+    rec = {"loaded": [], "dispatched": [], "events": [], "reconciled": []}
     picks = [dict(p) for p in picks]
+    _acct = (account[0], [dict(h) for h in account[1]])
     fakes = [
         (ui, "placement_path_bots", lambda: {p["bot_name"] for p in picks}),
         (ui, "load_picks", lambda bot: (rec["loaded"].append(bot)
@@ -147,7 +151,11 @@ def _router_offline(picks=(), books=None):
         (br, "_has_exposure", lambda m, mk, s: False),
         (br, "_latest_book_odds", lambda m, mk, s: {b: {"odds": o} for b, o in (books or {}).items()}),
         (br, "_dispatch", lambda winner, pick, dec, *, execute: (
-            rec["dispatched"].append((winner, execute)) or {"ok": True})),
+            rec["events"].append("dispatch")
+            or rec["dispatched"].append((winner, execute)) or {"ok": True})),
+        (br, "_read_coolbet_account", lambda: (rec["events"].append("account_read") or _acct)),
+        (ui, "reconcile_account_to_real_bets", lambda holds: (
+            rec["events"].append("reconcile") or rec["reconciled"].append(list(holds)) or 0)),
     ]
     originals = [(mod, name, getattr(mod, name)) for mod, name, _ in fakes]
     try:
@@ -28448,6 +28456,81 @@ def test_telegram_controls_audited():
     sql = _engine_path("supabase/migrations/413_bot_controls.sql").read_text(encoding="utf-8")
     assert "(p_control = 'publishing_paused' AND v_on AND p_source = 'web')" in sql
     assert "GRANT EXECUTE ON FUNCTION public.admin_set_control(text, text, jsonb, text, text, text, uuid, text, jsonb, uuid)\n    TO service_role;" in sql
+
+
+@test("ROUTER-ACCOUNT-RECONCILE — a real router run reads + reconciles the Coolbet account first, fails closed, and skips held picks on BOTH arms (#162 W4.2)")
+def test_router_account_reconcile():
+    """#162 W4.2 / audit D-R2 (2026-09-26). The UI placer reads the live Coolbet account before placing
+    (fetch_account_holds → reconcile_account_to_real_bets → per-pick account-holds skip); the router did
+    none of it, so a bet placed by hand at Coolbet and never logged could be placed AGAIN. Runs the REAL
+    route() on fixtures (_router_offline) with the gate forced open and the account read stubbed:
+    (a) unreadable account → report mode, no dispatch; (b) a held selection is skipped whether Coolbet or
+    Unibet would win it; (c) the reconcile runs before any dispatch."""
+    import os
+    from datetime import datetime, timedelta, timezone
+    import workers.automation.coolbet_state as cs
+    import workers.automation.placement_gate as pg
+    import workers.automation.best_price_router as br
+    import scripts.place_coolbet_ui as ui
+    bot = "bot_coolbet_1x2_model_v1"   # a real capable bot: cal 0.40 @ 3.40-3.70 clears its home floor
+    ko = datetime.now(timezone.utc) + timedelta(hours=6)
+    held_pick = {"match_id": "00000000-0000-0000-0000-0000000acc01", "market": "1x2", "selection": "home",
+                 "bot_name": bot, "calibrated_prob": 0.40, "shadow_bet_id": None, "match_date": ko,
+                 "home_team": "Heldover Rovers", "away_team": "Account Athletic"}
+    free_pick = dict(held_pick, match_id="00000000-0000-0000-0000-0000000acc02",
+                     home_team="Freshfield United", away_team="Openplay Town")
+    # a normalised Coolbet ticket (normalize_for_dedup shape) for held_pick's selection
+    ticket = {"ticket_id": "T1", "match_name": "Heldover Rovers - Account Athletic",
+              "market": "Lõpptulemus", "selection": "Heldover Rovers", "stake": 10, "odds": 3.5}
+    o = (cs.is_placement_paused, cs.is_real_money_armed, cs.is_money_gate_ready,
+         pg.ui_place_enabled_bots, os.environ.get("ROUTER_ALLOW_REAL"))
+    with _ROUTER_ENV_LOCK:                      # ROUTER-ENV-LOCK: process-wide env + the placer flock
+      try:
+        cs.is_placement_paused = _this_thread_only(lambda: (False, None), o[0])
+        cs.is_real_money_armed = _this_thread_only(lambda: (True, "test"), o[1])
+        cs.is_money_gate_ready = _this_thread_only(lambda: (True, None), o[2])
+        pg.ui_place_enabled_bots = _this_thread_only(lambda: {bot}, o[3])
+        os.environ["ROUTER_ALLOW_REAL"] = "1"
+
+        # (a) unreadable account → nothing real on either arm, and the output says why
+        with _router_offline([free_pick], {"Coolbet": 3.60}, account=(False, ())) as rec:
+            out = br.route(execute=True)
+        assert out["mode"] == "report" and "UNVERIFIED" in (out.get("real_refused") or ""), out
+        assert rec["dispatched"] == [] and out["dispatched"] == 0, out
+        assert "reconcile" not in rec["events"], "an unverified account must not be reconciled"
+
+        # (b)+(c) verified account holding held_pick — Coolbet would win it, then Unibet would
+        for books, arm in (({"Coolbet": 3.60}, "Coolbet"),
+                           ({"Coolbet": 3.40, "Unibet-Site": 3.70}, "Unibet-Site")):
+            with _router_offline([held_pick, free_pick], books, account=(True, [ticket])) as rec:
+                out = br.route(execute=True)
+            assert out["mode"] == "real", out
+            assert rec["dispatched"] == [(arm, True)], f"{arm}: only the un-held pick may dispatch: {rec}"
+            assert any("Coolbet account" in (s.get("reason") or "") and "Heldover" in s["pick"]
+                       for s in out["skipped"]), out["skipped"]
+            assert rec["reconciled"] == [[ticket]], rec["reconciled"]
+            ev = rec["events"]
+            assert ev.index("account_read") < ev.index("reconcile") < ev.index("dispatch"), ev
+
+        # a reconcile that raises also fails closed
+        with _router_offline([free_pick], {"Coolbet": 3.60}, account=(True, [ticket])) as rec:
+            inner = ui.reconcile_account_to_real_bets
+
+            def _boom(_holds):
+                raise RuntimeError("simulated reconcile failure")
+            ui.reconcile_account_to_real_bets = _this_thread_only(_boom, inner)
+            try:
+                out = br.route(execute=True)
+            finally:
+                ui.reconcile_account_to_real_bets = inner
+        assert out["mode"] == "report" and "reconcile failed" in (out.get("real_refused") or ""), out
+        assert rec["dispatched"] == [], rec
+      finally:
+        cs.is_placement_paused, cs.is_real_money_armed, cs.is_money_gate_ready, pg.ui_place_enabled_bots = o[:4]
+        if o[4] is None:
+            os.environ.pop("ROUTER_ALLOW_REAL", None)
+        else:
+            os.environ["ROUTER_ALLOW_REAL"] = o[4]
 
 
 @test("ODDS-NO-MAX-AGE — a dead feed's last quote is not priced as a live offer")

@@ -27,7 +27,8 @@ SAFETY (three modes, see route()):
     before the place click. A complete no-op against the account.
   * REAL MONEY (execute=True) — places at the winning book. DOUBLE-GATED: refused
     unless env `ROUTER_ALLOW_REAL` is truthy, so a stray execute=True cannot move
-    money. This is the owner-gated cutover.
+    money. This is the owner-gated cutover. A real run first reads + reconciles the live Coolbet
+    account (fail closed) and refuses picks already held there on either arm ([[#162]] W4.2).
 The executor arms are `coolbet_ui_placer.stage_bet` (Coolbet) and
 `unibet_placer.place_bet` after `unibet_odds_feed.resolve_event_url` (Unibet), each
 of which re-reads LIVE odds and gates on min_odds at dispatch time.
@@ -124,6 +125,23 @@ def _has_exposure(match_id: str, market: str, selection: str) -> bool:
         (match_id, market, selection),
     )
     return bool(r)
+
+
+def _read_coolbet_account() -> tuple[bool, list[dict]]:
+    """[[#162]] W4.2 (D-R2): read the operator's ACTUAL Coolbet pending singles, the SAME way the UI
+    placer does — `place_coolbet_ui.fetch_account_holds` on a page of the same CDP Chrome the Coolbet
+    arm attaches to. Returns (verified, holds); anything unreadable is (False, []), never a raise, so
+    the caller fails CLOSED. The context is closed again before any dispatch opens its own."""
+    try:
+        from playwright.sync_api import sync_playwright
+        from workers.automation import coolbet_ui_placer as up
+        from scripts.place_coolbet_ui import fetch_account_holds
+        with sync_playwright() as pw:
+            _browser, page = up.attach(pw)
+            return fetch_account_holds(page)
+    except Exception as e:  # noqa: BLE001
+        log.error("router account-verify: could not read the Coolbet account (%s) — failing closed", e)
+        return (False, [])
 
 
 def decide_book(cal_prob: float, threshold: float, odds_floor: float,
@@ -594,6 +612,37 @@ def _route(execute: bool = False, *, stage: bool = False, limit: int | None = No
             log.warning("router: load_picks(%s) failed: %s", bot, e)
     out["candidates"] = len(picks)
 
+    # ACCOUNT VERIFY + RECONCILE ([[#162]] W4.2 / audit D-R2, 2026-09-26). The UI placer reads the live
+    # Coolbet account before placing; the router did not, so a bet placed by hand at Coolbet and never
+    # logged was invisible to every exposure check below and the router could place it AGAIN. Same
+    # functions as place_coolbet_ui.main(), same order: read (fail CLOSED — no verified account, no real
+    # money on EITHER arm, because a Coolbet-held bet must also block the same selection at Unibet),
+    # reconcile the holds into real_bets BEFORE match_exposure seeds from it, then refuse held picks
+    # per pick with the placer's matcher. Real mode only, and only when there is something to place.
+    account_holds: list[dict] = []
+    if real and picks:
+        from scripts.place_coolbet_ui import reconcile_account_to_real_bets
+        verified, account_holds = _read_coolbet_account()
+        refuse = None
+        if not verified:
+            refuse = ("Coolbet account UNVERIFIED (could not read + confirm the logged-in bet "
+                      "history) — failing closed, no real-money placement on any book this run")
+        else:
+            try:
+                n_rec = reconcile_account_to_real_bets(account_holds)
+                out["account_reconciled"] = n_rec
+            except Exception as e:  # noqa: BLE001
+                refuse = (f"Coolbet account reconcile failed ({type(e).__name__}: {e}) — failing "
+                          "closed, no real-money placement on any book this run")
+        if refuse:
+            log.error("router: %s", refuse)
+            real = False
+            mode = out["mode"] = "report"
+            out["real_refused"] = real_refused = refuse
+            account_holds = []
+        else:
+            out["account_holds"] = len(account_holds)
+
     # Seed per-match exposure from real_bets ONCE for every candidate match (one
     # query, not one per pick). Cross-book by construction: match_exposure reads
     # real_bets by match_id with no bookmaker filter, so a Unibet bet blocks a
@@ -631,6 +680,19 @@ def _route(execute: bool = False, *, stage: bool = False, limit: int | None = No
         if _has_exposure(mid, market, sel):
             out["already_placed"] += 1
             out["skipped"].append({"pick": label, "reason": "already have a real bet (cross-book dedup)"}); continue
+        # [[#162]] W4.2: held on the live Coolbet account (manual or prior) — refused BEFORE the book is
+        # chosen, so it blocks the Unibet arm too. Same conservative matcher as place_for_bot; it also
+        # catches a ticket the reconcile could not resolve to a real_bets row. A raise refuses the pick.
+        if account_holds:
+            try:
+                from workers.automation.coolbet_browser_sync import match_coolbet_to_simulated
+                on_account = any(match_coolbet_to_simulated(h, [p]) for h in account_holds)
+            except Exception as e:  # noqa: BLE001
+                out["skipped"].append({"pick": label, "reason": f"account-holds check failed: {e}"}); continue
+            if on_account:
+                out["already_placed"] += 1
+                out["skipped"].append({"pick": label, "reason": "already held on the Coolbet account "
+                                                                "(manual or prior placement)"}); continue
 
         # GATE 1 — already placed. A confirmed 'placed' attempt for this exact
         # shadow_bet means the work is done; re-placing is a duplicate.

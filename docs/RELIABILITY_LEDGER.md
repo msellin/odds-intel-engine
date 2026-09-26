@@ -121,6 +121,11 @@ functions — `already_placed` (fail closed), kickoff cutoff, `exposure_conflict
 daily caps. **Reuse, never reimplement:** `canon_bet()` collapses the two market
 vocabularies in `real_bets` (`'o/u'`+`'over 2.5'` vs `'over_under_25'`+`'over'`),
 and a guard without it sees half the book and double-bets the half it cannot see.
+The same gap survived one more layer: until #162 W4.2 (2026-09-26, audit D-R2) the
+router never read the live Coolbet ACCOUNT, so a bet placed by hand and never logged
+was invisible to all of the above. It now calls the placer's own
+`fetch_account_holds` (fail closed) → `reconcile_account_to_real_bets` →
+per-pick held check, before choosing a book (smoke `ROUTER-ACCOUNT-RECONCILE`).
 
 **Same shape, settlement side (#165, 2026-09-25):** postponed-match voiding lived
 inside the ONE writer that flipped the status (the stale sweep). A second writer

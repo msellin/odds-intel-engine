@@ -39,6 +39,13 @@ manual-placement drain, and the daemon health check. `coolbet_placer.py` now hol
    name + reason; DB triggers refuse any other writer, and refuse switching ON while the lock is 0).
 3. **Per pick, before the browser** (both executors): already placed · account holds (the live Coolbet
    account) · kickoff cutoff (3 min) · **the placement floor** at the pick's own price · per-match exposure.
+   The account holds come from ONE read per real run, before any pick: `fetch_account_holds` (fails
+   CLOSED — unverifiable account → the run places nothing real) → `reconcile_account_to_real_bets` (so
+   the per-match exposure seeded from `real_bets` sees hand-placed bets) → per pick
+   `match_coolbet_to_simulated` against the holds. The router does this since #162 W4.2 (2026-09-26,
+   audit D-R2) with the same functions, and applies the holds BEFORE choosing a book, so a bet held at
+   Coolbet also blocks the same selection at Unibet. **Unibet has no account read** (no bet-history
+   reader exists) — a bet placed by hand on Unibet and not logged is invisible to both executors.
 4. **Per pick, at the live price** — `placement_gate.assert_may_place(pick=…, held=…, odds=…)`, the last
    call before money moves: allowlist, kickoff cutoff, daily caps, per-match exposure re-read from
    `real_bets` across books, and the placement floor again at the price about to be staked (W4.2).
@@ -135,7 +142,7 @@ Mac checkout (`git pull` — older code refuses on the contract mismatch) · arm
 > EVERY book and every placed or unverified stake — `spent_today()` = placed `coolbet_placement_attempts` ∪ today's
 > `real_bets` with `placed_real IS NOT FALSE` at any book, de-duplicated on `real_bet_id` (it was Coolbet-only,
 > so Unibet and hand-logged stakes never counted). The best-price router takes the same single-run lock as the UI
-> placer. Real money is sized FLAT (€10, `COOLBET_STAKE`) on every path — owner 2026-09-25, "Kelly hasn't proven
+> placer, and (2026-09-26) the same Coolbet account verify + reconcile + held-pick skip (gate stack step 3). Real money is sized FLAT (€10, `COOLBET_STAKE`) on every path — owner 2026-09-25, "Kelly hasn't proven
 > itself in this project yet"; the API placer's default guard no longer uses the Kelly suggestion.
 
 > **#162 W4.3 (2026-09-25) — ONE per-bot placement floor.** `BOT_THRESHOLDS` is DELETED. Every real-money

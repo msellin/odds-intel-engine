@@ -633,7 +633,9 @@ Full detail: `docs/COOLBET_OWN_BETTING.md`. Recurring failure patterns:
 ⚠️ **Previously undocumented.** The router can place at **Coolbet OR Unibet-Site**
 (`PLACEABLE_BOOKS`), so "Coolbet own-betting" no longer describes the whole surface.
 It reuses `place_coolbet_ui`'s gate functions rather than copying them — the only
-place in the codebase that pattern is followed.
+place in the codebase that pattern is followed. Since #162 W4.2 (2026-09-26) that includes
+R5 above: a real router run reads the Coolbet account (`fetch_account_holds`, fail closed →
+report mode), reconciles it into `real_bets`, and skips picks held there on BOTH arms.
 
 ### 4b. The UI placer, in execution order
 
