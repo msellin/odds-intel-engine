@@ -38597,8 +38597,14 @@ def test_perf_chart_event_markers():
     code = _re.sub(r"^\s*//.*$", "", code, flags=_re.M)
 
     assert "const EVENTS" in src, "event markers must come from a dated list"
+    # 2026-09-26 (owner): the calibration-bug markers came off the chart ("they distract people") and a
+    # "New models" milestone went on. The bug stays DISCLOSED where a reader checks a bot: the detail
+    # view's affected-pick note and the work-done card's flag counts (#157).
+    assert '{ iso: "2026-09-24", label: "New models"' in code, "the New models milestone marker is missing"
     for iso in ("2026-09-03", "2026-09-13"):
-        assert iso in src, f"{iso} marker missing (calibration bug window)"
+        assert iso not in code, f"{iso} bug marker is back on the chart (owner removed it 2026-09-26)"
+    wd = _web_path("src/components/performance-work-done.tsx").read_text()
+    assert "nOuCalBug" in wd and "nSwapWindow" in wd, "the bug windows must stay disclosed in the work-done card"
 
     # The filter is the whole point — without it a marker outside the window is
     # a silent no-op, which is the bug this replaced.
@@ -38614,12 +38620,6 @@ def test_perf_chart_event_markers():
     assert 'x="May 6"' not in code and 'x="May 24"' not in code, (
         "hardcoded categorical marker dates render nothing once they leave the "
         "window — drive them from EVENTS instead"
-    )
-    # The caption is load-bearing: without it the green marker reads as "the line
-    # should turn up from here", which over-claims on a curve whose newest days
-    # are still filling in.
-    assert "showsBugWindow" in src, (
-        "the explanatory caption must be gated on BOTH markers being visible"
     )
 
 
