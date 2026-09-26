@@ -46,6 +46,23 @@
 > Full resume procedure: `CROSSRANK_PAUSE_HANDOVER.md` in
 > `github.com/msellin/crossfit-ranking`.
 
+## Servers — what runs where (inventory, 2026-09-26)
+
+> Owner, 2026-09-26: *"we have quite a lot of infra now … list our VPSs so we know what runs on each, so our
+> costs don't grow too much."* **One row per machine we pay for or depend on. Add a row BEFORE buying one.**
+> Monthly prices marked ⚠️ are from the order/plan name, not from an invoice — check the provider console.
+
+| Machine | Provider / plan | Monthly | What runs on it | Why it exists | If it dies |
+|---|---|---|---|---|---|
+| **Main VPS** `ubuntu-4gb-hel1-1`, 204.168.199.8 (Helsinki) | Hetzner Cloud, resized to 15 GB RAM / 301 GB disk | ⚠️ €5.49 on the CX22 order — the resize almost certainly raised it; check the Hetzner console | Postgres 17 (all data) · PostgREST (api.oddsintel.app) · `oddsintel-scheduler` (every pipeline job, LivePoller) · Next.js web (pm2, nginx) · FlareSolverr (Docker) · Unibet Chrome (`oddsintel-unibet-chrome`, Xvfb) · in-play collector · egress tunnels to the two exits below · nightly backup. **Shared with CrossRank** (same Postgres, same box). | Everything. | Everything stops. Backups: Storage Box below. |
+| **Estonian exit** `oddsintel-zone-egress` (:1081 on the main VPS), 217.146.76.113 | zone.ee VPS | ~€6.50 | Nothing but a SOCKS exit. | Estonian IP for the books that refuse datacenter / foreign IPs: Coolbet, Unibet-Site, Epicbet, Tonybet (and Optibet — 403 since 09-26). **One IP shared by every book** — one book's volume risks all (#108, #110 step 3). | Estonian-book collection stops; Pinnacle/AF unaffected. |
+| **London exit** `ubuntu-s-1vcpu-512mb-10gb-lon1`, 178.62.96.205 | DigitalOcean Droplet (owner's account) | ~$4 (~€3.70) | Nothing but a SOCKS exit (`oddsintel-egress@betfair`, :1082). | Betfair Exchange serves no markets to Finland ([[#117]]). | Exchange anchor goes dark → the anchor falls back to Pinnacle / consensus. |
+| **Storage Box** | Hetzner Storage Box (shared with CrossRank) | ⚠️ check console | Nightly Postgres dumps (90-day remote retention), CrossRank archive. | Off-box backup. | No backups — nothing live breaks. |
+| **Operator's Mac** | — | €0 | Coolbet real-money placer (unloaded while OWN is paused), near-kickoff capture (launchd, every 5 min), local FlareSolverr, Coolbet session/JWT tools. | Coolbet account session lives in the owner's browser. | Real-money placement and some closing-price capture stop. |
+
+**Candidates on the table (not bought):** a second zone.ee exit per book (~€6.50 each, #110 step 3) — the
+first to buy if one book's traffic ever gets the shared Estonian IP blocked.
+
 ## Service Stack
 
 | Service | Role | Plan | Status |
@@ -214,16 +231,19 @@ All scheduled jobs run on Hetzner VPS (systemd). GitHub Actions used only for ma
 
 ---
 
-## Current Monthly Cost: ~€40/mo (Free tier active since 2026-07-13)
+## Current Monthly Cost: ~€50/mo + the unverified Hetzner resize (updated 2026-09-26; was ~€40 before the two exits)
 
 | Service | Plan | Monthly Cost |
 |---------|------|-------------|
 | API-Football | 150K tier | ~€36 ($39) |
 | Supabase | **Free** ✅ since 2026-07-13 | €0 |
-| Hetzner VPS | CX22 | ~€5.49/mo |
+| Hetzner VPS | CX22 ordered, since resized (15 GB / 301 GB) | ⚠️ ~€5.49/mo on the order — check the console |
+| zone.ee VPS (Estonian exit) | smallest | ~€6.50/mo |
+| DigitalOcean Droplet (London exit, Betfair) | s-1vcpu-512mb | ~€3.70/mo ($4) |
+| Hetzner Storage Box | shared with CrossRank | ⚠️ check console |
 | Gemini API | Pay-as-you-go | ~€0.20 ($0.20) |
 | Domain | oddsintel.app | ~€1 amortized |
-| **Total** | | **~€40/mo** ↓ from ~€65/mo |
+| **Total** | | **~€50/mo + the Hetzner resize** (was ~€40 before the two exits, ~€65 before Supabase Free) |
 
 > Saved ~€25/mo (~€300/yr) on OddsIntel alone by dropping Supabase Pro. CrossRank/BoxRank shared project also downgraded same day for another ~€25/mo saved. Data plane on Hetzner VPS (own DB), Supabase Auth + Storage fit under Free tier caps.
 
