@@ -3409,6 +3409,10 @@ def write_dashboard_cache():
               AND b.retired_at IS NULL
               AND b.name NOT LIKE 'bot_acca%%'
               AND b.name NOT LIKE 'bot_combo%%'
+              -- ONE STATUS DECIDES DISTRIBUTION (#155): dashboard_cache is ANON-readable, so an
+              -- EXPERIMENTAL or own-money bot's figures must never enter it — /performance hid them,
+              -- but the API served them (#162 review 2026-09-26; smoke OWN-BOTS-OFF-CUSTOMER-SURFACES).
+              AND EXISTS (SELECT 1 FROM bot_distribution d WHERE d.bot_name = b.name AND d.on_performance)
         """, [])
 
         # Retired bot rollup — feeds the collapsed "Retired Strategies" section.

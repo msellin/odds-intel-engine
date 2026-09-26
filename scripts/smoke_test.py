@@ -44664,7 +44664,14 @@ def test_own_bots_off_customer_surfaces():
     # amount of UI curation and fails on the thing that would really leak — an
     # OWN bot starting to write the customer ledger.
     import json as _json
-    cache = execute_query("SELECT bot_breakdown FROM dashboard_cache LIMIT 1")
+    # The NEWEST row is what /performance and the API serve (an unordered LIMIT 1 read an arbitrary
+    # one and started failing when the W8.9 prune changed which row came first). The writer itself is
+    # pinned below: only public-status bots enter the anon-readable cache.
+    import inspect as _insp
+    from workers.jobs import settlement as _st
+    assert "d.bot_name = b.name AND d.on_performance" in _insp.getsource(_st.write_dashboard_cache), \
+        "write_dashboard_cache must admit only bots whose status puts them on /performance"
+    cache = execute_query("SELECT bot_breakdown FROM dashboard_cache ORDER BY computed_at DESC LIMIT 1")
     if cache and cache[0].get("bot_breakdown"):
         bb = cache[0]["bot_breakdown"]
         if isinstance(bb, str):
@@ -56438,8 +56445,15 @@ def test_vip1_exact_rule_one_per_match():
     assert all(v == {"1x2_fav": 0.05, "1x2_long": 0.05} for v in c["edge_thresholds"].values())
     # One per match across runs, fail closed, and a dedup counts as holding the match.
     i = src.index("W7.8 (rule r2 for every one_per_match bot)")
-    blk = src[i:i + 1800]
+    blk = src[i:i + 3500]
     assert "result = 'pending'" in blk and "bet_candidates = []" in blk and "Fail closed" in blk
+    # follow-up: shadow cohorts read shadow_bets, and only the ALREADY-HELD side survives (repeat
+    # snapshots of the same pick are by design; the other side is a second bet on the match)
+    assert '"shadow_bets" if shadow_mode else "simulated_bets"' in blk and "_keep = [c for c in bet_candidates" in blk
+    from workers.canonical_market import canonicalize_for_storage as _c
+    held = {_c("1x2", "away")}
+    cands = [("1X2", "Home"), ("1X2", "Away")]
+    assert [c for c in cands if _c(c[0], c[1].lower()) in held] == [("1X2", "Away")]
     assert "elif config.get(\"one_per_match\"):\n                        # [[#162]] W7.8: store_bet dedup" in src
     rv = {b.name: b.rule_version for b in BOTS}
     for n, cc in BOTS_CONFIG.items():

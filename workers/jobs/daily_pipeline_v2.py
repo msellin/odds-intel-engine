@@ -4232,15 +4232,29 @@ def run_morning(skip_fetch: bool = False, cohort: str | None = None,
             # just within one. The flag below was only set by a NEW store in this run, so a later run
             # took the other side of a match the bot already held (VIP #1 held home @2.37 and away
             # @3.38 on one fixture, both sent as VIP DMs). Same rule ou_sharp_outlier applies: skip the
-            # match if the bot already holds a pending pick on it. Paper (shadow_mode) rows are not
-            # stored in simulated_bets, so this reads the live ledger only.
-            if config.get("one_per_match") and bet_candidates and not shadow_mode:
+            # match if the bot already holds a pending pick on it — or rather, keep ONLY the side it
+            # already holds: a re-store of the same selection is a no-op in the live ledger (store_bet
+            # dedupes) and is the deliberate repeat snapshot in the shadow cohorts, but the OTHER side is
+            # a second bet on one match. Shadow cohorts record into shadow_bets, so the rule reads that
+            # ledger there (the live review found VIP #1 holding away 00:41 and home 05:41 of one match in
+            # shadow_bets — #162 W7.8 follow-up).
+            if config.get("one_per_match") and bet_candidates:
                 try:
                     from workers.api_clients.db import execute_query as _eq_opm
-                    if _eq_opm("SELECT 1 FROM simulated_bets WHERE bot_id = %s AND match_id = %s "
-                               "AND result = 'pending' LIMIT 1", [bot_ids[bot_name], match_id]):
-                        _funnel[bot_name]["drop_one_per_match_held"] = _funnel[bot_name].get("drop_one_per_match_held", 0) + 1
-                        bet_candidates = []
+                    from workers.canonical_market import canonicalize_for_storage as _canon_opm
+                    _opm_table = "shadow_bets" if shadow_mode else "simulated_bets"
+                    _held = {(str(r["market"]).lower(), str(r["selection"]).lower()) for r in _eq_opm(
+                        f"SELECT market, selection FROM {_opm_table} WHERE bot_id = %s AND match_id = %s "
+                        "AND result = 'pending'", [bot_ids[bot_name], match_id])}
+                    if _held:
+                        _held = {_canon_opm(m, sel) for m, sel in _held}
+                        _keep = [c for c in bet_candidates
+                                 if _canon_opm(c[0], str(c[1]).lower()) in _held]
+                        if len(_keep) < len(bet_candidates):
+                            _funnel[bot_name]["drop_one_per_match_held"] = (
+                                _funnel[bot_name].get("drop_one_per_match_held", 0)
+                                + len(bet_candidates) - len(_keep))
+                        bet_candidates = _keep
                 except Exception as _e_opm:  # noqa: BLE001
                     # Fail closed: an unreadable ledger must not let a second side of the match out.
                     console.print(f"  [yellow]one_per_match check failed for {bot_name} — skipping match: {_e_opm}[/yellow]")
