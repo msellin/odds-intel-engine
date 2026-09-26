@@ -286,12 +286,30 @@ def _():
 
 @test("build_match_feature_vectors — runs without error (uuid casts + datetime)")
 def _():
-    from workers.api_clients.supabase_client import build_match_feature_vectors
+    from workers.api_clients import supabase_client as sc
     # Use a date we know has finished matches
     yesterday = (date.today() - timedelta(days=1)).isoformat()
-    count = build_match_feature_vectors(None, yesterday)
+    with _mfv_capture_upserts(sc):           # no production write (MFV-TESTS-NO-PROD-WRITES)
+        count = sc.build_match_feature_vectors(None, yesterday)
     # count may be 0 if no finished matches yesterday (weekend gap), just no exception
     assert isinstance(count, int), f"Expected int, got {type(count)}"
+
+
+@contextlib.contextmanager
+def _mfv_capture_upserts(sc):
+    """Capture supabase_client.bulk_upsert rows on THIS thread instead of writing them (other threads
+    keep the real function). Yields the list of captured rows."""
+    rows: list = []
+    real = sc.bulk_upsert
+
+    def _fake(table, columns, batch, *a, **k):
+        rows.extend(dict(zip(columns, r)) for r in batch)
+        return len(batch)
+    sc.bulk_upsert = _this_thread_only(_fake, real)
+    try:
+        yield rows
+    finally:
+        sc.bulk_upsert = real
 
 
 @test("build_match_feature_vectors — returns rows for a known finished date")
@@ -306,9 +324,16 @@ def _():
     a date with ~70 fixtures starts timing out too, the slowdown is in the
     builder itself and that's the real bug — don't bump the date again,
     investigate query plans."""
-    from workers.api_clients.supabase_client import build_match_feature_vectors
-    count = build_match_feature_vectors(None, "2026-06-02")
+    # MFV-TESTS-NO-PROD-WRITES (2026-09-26): this REBUILT and UPSERTED 2026-06-02's feature rows into
+    # production on every CI run — with the current code over odds that retention has since pruned,
+    # i.e. it could overwrite richer training rows with poorer ones — and the upsert (row locks vs the
+    # live pipeline) was ~80 s of the suite. The builder is exercised in full; the write is captured
+    # on this thread only.
+    from workers.api_clients import supabase_client as sc
+    with _mfv_capture_upserts(sc) as rows:
+        count = sc.build_match_feature_vectors(None, "2026-06-02")
     assert_gt(count, 0, "Expected feature vectors for 2026-06-02")
+    assert rows and all(r.get("match_id") for r in rows), "the builder must hand real rows to the upsert"
 
 
 @test("MFV-LIVE-BUILD — build_match_feature_vectors_live runs and returns int")
@@ -328,9 +353,10 @@ def _():
             ORDER BY date LIMIT 3""",
         (f"{today_str}T00:00:00", f"{today_str}T23:59:59"))
     # May be 0 (no scheduled fixtures today) — no-op is fine, exception is not.
-    count = sc._build_mfv_rows_for_matches(few, today_str) if few else 0
+    with _mfv_capture_upserts(sc) as rows:     # no production write (MFV-TESTS-NO-PROD-WRITES)
+        count = sc._build_mfv_rows_for_matches(few, today_str) if few else 0
     assert isinstance(count, int), f"Expected int, got {type(count)}"
-    return f"shared builder on {len(few)} fixture(s) -> {count} row(s)"
+    return f"shared builder on {len(few)} fixture(s) -> {count} row(s), {len(rows)} captured"
 
 
 @test("MFV-LIVE-BUILD — live builder selects non-finished matches (status guard)")
@@ -57065,6 +57091,11 @@ def test_ci_smoke_fast_and_matching():
     assert "name: smoke-failures-${{ matrix.shard }}" in wf and "-p 'smoke-failures*'" in wf
     assert 'json.dump({"failed": sorted(failed), "first_red": first}, open("_baseline/smoke_failures.json", "w"))' in wf
     assert "registry = [t for i, t in enumerate(registry) if i % _n == _k]" in inspect.getsource(main)
+    # MFV-TESTS-NO-PROD-WRITES: the three builder tests capture their upserts, never write production rows
+    src_all = _engine_path("scripts/smoke_test.py").read_text()
+    import re as _re_mfv
+    assert len(_re_mfv.findall(r"\n\s+with _mfv_capture_upserts\(sc\)( as rows)?:", src_all)) == 3, \
+        "an MFV builder test writes production rows again"
     src = _engine_path("scripts/smoke_test.py").read_text()
     assert "sc._build_mfv_rows_for_matches(few, today_str)" in src and "ORDER BY date LIMIT 3" in src
     assert "count(*) n,\n                  sum(CASE WHEN o.timestamp > m.date" not in src
