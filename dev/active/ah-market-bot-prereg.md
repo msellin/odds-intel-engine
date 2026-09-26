@@ -93,3 +93,30 @@ dropped. No book is banned by name. Share of picks with no neighbour to check is
 
 Because this guard was designed after seeing discovery results, the discovery cells are **re-run with it and
 re-tested with Holm**; only cells passing that re-run are carried to the holdout, which is still run ONCE.
+
+## TWIN — LADDER FIT (pre-registered 2026-09-26, before any ladder-fit number)
+
+**Why.** 12 h+ before kickoff Pinnacle quotes ~3.5 AH rungs per fetch while the soft books quote ~7.5, so the
+live rule cannot price most early rungs — and early is when soft books err most (the O/U EARLY lesson).
+
+**Fit.** Per Pinnacle fetch, power-de-vig every rung with both sides → q_obs(L) (home side). Model the goal
+difference D = home − away as Skellam(μh, μa) on D ∈ [−15, 15]. For home line L the model's break-even
+probability is q(L) = W / (W + Lo), where W / Lo = the stake-weighted probability of the bet winning / losing
+(a quarter line = half the stake on each neighbouring line; a whole-line push is neither) — the same
+break-even definition the de-vig gives. Fit (μh, μa) by least squares over the fetch's rungs; need ≥ 2
+rungs; **reject the fit** when any rung's |q(L) − q_obs(L)| > 0.03 (Pinnacle's own ladder inconsistent).
+
+**Twin rule.** Identical to the pooled rule (EV 3–15%, same fetch, ladder guard, one pick per match), except
+a rung Pinnacle does NOT quote in that fetch is priced at the fitted q(L). Rungs Pinnacle quotes keep their
+own de-vigged price, so the twin's candidates are a superset of the base rule's.
+
+**Test.** Same data, same measures. Primary: the **FITTED-RUNG picks** (the pick's rung was not quoted by
+Pinnacle at the decision) must show independent-close CLV > 0 at one-sided p < 0.05 on discovery (07-01 →
+08-31) AND on 09-01 → 09-25 (that window was used for the base rule's holdout; the fitted-rung picks are a
+new hypothesis and were never evaluated). Secondary: the twin's pooled CLV and pick count vs the base rule's.
+**SUPPORTED** → ship as a twin bot (EXPERIMENTAL, own rule_version) beside `bot_ah_sharp_v1`, compared live at
+n = 100 — the base bot is not changed (ANALYSIS_GOTCHAS §84).
+
+**Expected.** More early picks (fitted rungs are mostly early); fitted-rung CLV positive but smaller than the
+base rule's (a fitted fair price is noisier than a quoted one). Most likely failure: the fit's error on
+quarter / far rungs is as large as the edge, so fitted-rung CLV ≈ 0.
