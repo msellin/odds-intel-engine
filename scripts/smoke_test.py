@@ -4990,50 +4990,12 @@ def test_anchor_research_outlier_guard():
         f"line-shop guard is 1.25; widening it here re-admits the inverted rows")
 
 
-@test("PER-BOOK-SHARP-TRIGGERS-NOT-RETIRED-WHILE-MERGED-UNDERFIRE — keep the evidence base")
-def test_per_book_sharp_triggers_not_retired_while_merged_underfire():
-    """MERGED-TRIGGER-BOTS-UNDERFIRE-2026-09-19.
-
-    MERGE-TRIGGER-BOTS collapsed 8 per-book trigger bots into 4 book-agnostic
-    configs, and bot_configs.py says a follow-up migration retires the per-book
-    pair once the calibrator watch reports. Measured 2026-09-19, the merged bots
-    fire at ~7% of their per-book twins over 30 days (1x2: 15 vs 204 / 176;
-    O/U: 4 vs 54 / 43) despite being a superset of them by construction — same
-    anchor, same market, same 3% floor, same two books.
-
-    So that retirement must NOT land before the volume gap is explained: the
-    sharp anchor is the one axis with a positive-leaning result, and retiring
-    the pair on today's numbers deletes ~92% of the evidence for it.
-
-    This is a SOURCE-INSPECTION guard, not a behaviour test. It fails the moment
-    someone removes the per-book sharp bots from the registry, which is exactly
-    the change the open queue row says to hold. If you are deliberately closing
-    that row, delete this test IN THE SAME COMMIT and say why.
-    """
-    from workers.registry.bot_registry import active_names
-
-    keepers = {
-        "bot_coolbet_trigger_sharp_1x2_v1",
-        "bot_unibet_trigger_sharp_1x2_v1",
-        "bot_coolbet_trigger_sharp_ou_v1",
-        "bot_unibet_trigger_sharp_ou_v1",
-    }
-    missing = keepers - active_names()
-    assert not missing, (
-        f"per-book sharp trigger bots retired while their merged replacements underfire: "
-        f"{sorted(missing)}. See PRIORITY_QUEUE MERGED-TRIGGER-BOTS-UNDERFIRE-2026-09-19 — "
-        f"explain the ~13x volume gap before retiring the pair, or close that row and "
-        f"delete this test in the same commit."
-    )
-
-    # The row is only actionable while it is actually open — pin that too, so the
-    # guard and its justification cannot drift apart.
-    from pathlib import Path
-    q = Path(__file__).resolve().parent.parent / "PRIORITY_QUEUE.md"
-    assert "MERGED-TRIGGER-BOTS-UNDERFIRE-2026-09-19" in q.read_text(encoding="utf-8"), (
-        "this guard cites a PRIORITY_QUEUE row that no longer exists — remove the test "
-        "or restore the row"
-    )
+# PER-BOOK-SHARP-TRIGGERS-NOT-RETIRED-WHILE-MERGED-UNDERFIRE — DELETED 2026-09-26 ([[#191]], migration 480), as its
+# docstring instructed ("delete this test in the same commit and say why"). Why: the #191 audit measured that since
+# 2026-09-22 96–100% of each per-book bot's picks were ALSO the book-agnostic bot's — the volume gap it guarded is
+# gone; the per-book and book-agnostic sharp triggers are all retired and folded into bot_own_1x2_v1 (OWN 1X2 ·
+# SHARP, v2 anchor, #182 guards); and the evidence base it protected is KEPT — retirement leaves every pick in
+# shadow_bets / bot_ledger and the Retired section.
 
 
 @test("SYSTEM-MAP-REGISTRY-NOT-DRIFTED — the bot registry matches code, DB and the map")
@@ -22261,8 +22223,11 @@ def test_unified_gate_instrument_2026_09_22():
 
     # 3. It must reach nobody: no real money, no publication.
     spec = next((b for b in BOTS if b.name == NAME), None)
-    assert spec is not None, "the bot must be in the registry (and SYSTEM_MAP)"
-    assert spec.real_money is False, "an instrument never stakes"
+    if spec is None:   # [[#191]] retired 2026-09-26 (migration 480): its question is answered (indep. CLV −14.1%, n 241)
+        assert "'bot_unified_gate_1x2_paper_v1'" in _engine_path(
+            "supabase/migrations/480_retire_own_track_triggers.sql").read_text(), "gone from the registry without a retirement"
+    else:
+        assert spec.real_money is False, "an instrument never stakes"
     # #139: it has a placement path by rule, but its eligibility row is seeded OFF and only
     # an audited /admin/bots action (typed name + reason) can switch it on.
     _assert_placer_rows_seed_off()
@@ -49706,6 +49671,8 @@ def test_one_sharp_engine():
     for b in ("bot_trigger_1x2_sharp_v1", "bot_trigger_ou_sharp_v1", "bot_coolbet_trigger_sharp_1x2_v1",
               "bot_coolbet_trigger_sharp_ou_v1", "bot_unibet_trigger_sharp_1x2_v1",
               "bot_unibet_trigger_sharp_ou_v1", "bot_trigger_1x2_sharp_tight_v1"):
+        if by_name(b) is None:      # [[#191]] retired 2026-09-26 (migration 480): no live rule to version
+            continue
         assert by_name(b).rule_version == "r2", f"{b} changed behaviour under W7.6 and must be r2"
 
     # O/U EARLY (VIP #2) + TWO-ANCHOR: IDENTICAL to the pre-move evaluate() (same fixture, same floats)

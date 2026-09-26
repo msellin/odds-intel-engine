@@ -117,6 +117,16 @@ def bot_rules() -> dict[str, BotRule]:
             outlier_mult=float(OUTLIER_MULT),
             source="workers/jobs/pick_triggers.py",
         )
+    # [[#191]] the OWN bot (paper; real money only if the owner switches it on). Its generator gates on EV >= 3%
+    # over the v2 anchor with the sharp engine's 8% ceiling; the placement re-check uses the SAME 0.03 in
+    # probability points, which is STRICTER than EV 3% at every price > 1.0 — conservative for real money.
+    from workers.jobs import own_bots as _own
+    from workers.automation.sharp_engine import SHARP_EDGE_CEILING as _CEIL
+    out[_own.OWN_BOT] = BotRule(
+        bot=_own.OWN_BOT, anchor="sharp", markets=("1x2",),
+        edge_floor=0.03, odds_floor=None, edge_ceiling=_CEIL,
+        outlier_mult=float(OUTLIER_MULT), source="workers/jobs/own_bots.py",
+    )
     out[ou35.BOT_NAME] = BotRule(
         bot=ou35.BOT_NAME, anchor="model", markets=("o/u",),
         edge_floor=ou35.EDGE_FLOOR, odds_floor=None,
