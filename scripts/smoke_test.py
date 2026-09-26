@@ -56739,6 +56739,26 @@ def test_headline_includes_forward_test():
         "the track-record list must carry the forward-test legs meta.roi_pct now sums")
 
 
+@test("PNL-CHART-SHARP-LINE — /performance P&L chart carries a second line for the ACTIVE sharp bots (#183)")
+def test_pnl_chart_sharp_line():
+    """[[#183]] owner 2026-09-26: the ROI rise came with the sharp bot's promotion — show it as its own line
+    on the chart. The line reads the forward-test ledger from SHARP_RECORD_SINCE (v4, 2026-09-15; the eight
+    14 Sep v1 picks fail v4) at the same flat-EUR-10 public basis as the main curve, and is labelled as a
+    PART of the total, never a second total."""
+    import pathlib as _pl
+    web = _pl.Path(__file__).resolve().parent.parent.parent / "odds-intel-web"
+    if not web.exists():
+        return "web repo not checked out"
+    bp = (web / "src/lib/bot-performance.ts").read_text()
+    fn = bp[bp.index("export async function getSharpDailyCurve"):]
+    assert '.eq("source", "forward_test")' in fn and '.eq("in_record", true)' in fn and "pnl_unit_public" in fn
+    assert 'SHARP_RECORD_SINCE = "2026-09-15"' in (web / "src/lib/engine-data.ts").read_text()
+    page = (web / "src/app/(app)/performance/page.tsx").read_text()
+    assert "getSharpDailyCurve(" in page and "LEDGER_BACKED_BOTS.has(b)" in page, "ACTIVE ledger-backed bots only"
+    ch = (web / "src/components/performance-pnl-chart-toggle.tsx").read_text()
+    assert 'dataKey="sharp"' in ch and "also inside the total" in ch
+
+
 @test("STATUS-WORDS-FROM-STATUS-FIELD — a pick's status word is read from bots, never typed (#162 W5.6)")
 def test_status_words_from_status_field():
     """[[#162]] W5.6 (audit B-R6). The consensus grade line said "B · beta / C · testing" as literals on
