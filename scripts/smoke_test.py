@@ -50787,7 +50787,9 @@ def test_picks_outlier_anchor_publishable():
     assert "_own_outlier_ok(" in inspect.getsource(pg.generate)
     ok, why = pg._own_outlier_ok("00000000-0000-0000-0000-000000000000", "1x2", "home", 2.0)
     assert (ok, why) == (False, "no_own_anchor"), "no Estonian anchor must reject for OWN"
-    assert pg._own_outlier_ok("x", "over_under_25", "over", 2.0) == (True, "")
+    # [[#160]] (2026-09-26): O/U is guarded too (1.15x) — it used to pass unchecked.
+    ok, why = pg._own_outlier_ok("00000000-0000-0000-0000-000000000000", "over_under_25", "over", 2.0)
+    assert (ok, why) == (False, "no_own_anchor"), "O/U must be anchored for OWN since #160"
     # one price source under two names counts once toward the >= 3-book anchor
     assert 'bookmaker == "Marathonbet" and any(b == "1xBet"' in load
 
@@ -56908,6 +56910,39 @@ def test_pandas_304_excluded():
     import pandas
     assert pandas.__version__ != "3.0.4", "pandas 3.0.4 is installed — it segfaults on tz-aware datetimes"
     return f"{line.strip()}; installed {pandas.__version__}"
+
+
+@test("COOLBET-MODEL-PRICE-GUARD — every model-anchored generator path checks the price against the anchor; O/U at 1.15x (#160)")
+def test_coolbet_model_price_guard():
+    """[[#160]]: #152 step 3 found the Coolbet O/U model bot's "edges" were Coolbet pricing
+    errors (every priced confirm pick > 1.25x Pinnacle) — O/U had no entry in
+    _OWN_OUTLIER_MULT, and the 'predictions' path (bot_unified_gate_1x2_paper_v1, prices to
+    61.00) skipped the check entirely. One guard, every model path, refusals in candidate_funnel."""
+    import inspect
+    import workers.automation.pick_generator as pg
+    src = inspect.getsource(pg.generate)
+    assert 'if cfg.prob_source != "predictions":' not in src, "no path may skip the price guard"
+    assert src.count("_own_outlier_ok(") == 1
+    assert '"source": "pick_generator"' in src and "_record_funnel(funnel)" in src
+    for m in ("over_under_15", "over_under_25", "over_under_35"):
+        assert pg._OWN_OUTLIER_MULT[m] == 1.15, m
+    assert pg._OWN_OUTLIER_MULT["1x2"] == 1.25
+    # the guard's arithmetic, anchor stubbed: 2.30 vs Pinnacle 2.00 (x1.15) passes, 2.31 is refused
+    import workers.api_clients.db as _db
+    real = _db.execute_query
+    try:
+        _db.execute_query = lambda *a, **k: [{"bookmaker": "Pinnacle", "odds": 2.00}]
+        assert pg._own_outlier_ok("m", "over_under_25", "over", 2.30) == (True, "")
+        assert pg._own_outlier_ok("m", "over_under_25", "over", 2.31) == (False, "above_own_outlier")
+        assert pg._own_outlier_ok("m", "1x2", "home", 2.45) == (True, "")
+    finally:
+        _db.execute_query = real
+    # every model-anchored Coolbet bot runs through generate() (sharp ones through the sharp engine,
+    # which has its own anchor guard) — no second writer for these bots
+    from workers.automation.bot_configs import ALL_CONFIGS as cfgs
+    names = {c.bot_name for c in cfgs if c.prob_source != "sharp_devig"}
+    assert {"bot_coolbet_1x2_model_v1", "bot_coolbet_ou_model_v1", "bot_unified_gate_1x2_paper_v1"} <= names, names
+    return "O/U 1.15x, 1x2/BTTS/DC 1.25x, no path skips it"
 
 
 if __name__ == "__main__":

@@ -1022,6 +1022,13 @@ were deleted with their retired bots (#162 W7.2, 2026-09-26), and OWN bots fed f
 pre-#129 rule in `_own_outlier_ok` — Pinnacle, else median of ≥3 Estonian books, 1.25× ceiling —
 because #129 lets thinner fixtures into that table. Marathonbet and 1xBet count as ONE source
 toward the ≥3-book anchor (identical price 38–59% of the time, vs ~17% for any other pair).
+**Since [[#160]] (2026-09-26) this check runs on EVERY model-anchored `pick_generator` path**, the `predictions`
+one included (it was skipped there, which left `bot_unified_gate_1x2_paper_v1` with no price check at prices up to
+61.00), and **O/U is guarded at 1.15×** (it had no entry, so the Coolbet O/U model bot's #152 "edges" were Coolbet
+pricing errors). 1.15 = the p99 of honest Coolbet-vs-Pinnacle disagreement on O/U (p50 0.99, p90 1.03, p99
+1.14–1.17 over 21 days) and ~2× the largest genuine overlay against Pinnacle; 1x2 / BTTS / DC stay 1.25×. Every
+refusal is a `candidate_funnel` row (`source = 'pick_generator'`, `step` = `above_own_outlier` | `no_own_anchor`).
+Smoke `COOLBET-MODEL-PRICE-GUARD`.
 
 ---
 

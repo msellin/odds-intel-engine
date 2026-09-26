@@ -327,6 +327,9 @@ keep the pick if:
                                          #129 widened only the PICKS path's anchor, and
                                          pick_generator._own_outlier_ok re-applies the
                                          Estonian anchor to OWN bots fed from simulated_bets)
+                                        [#160, 2026-09-26: the model bots' check now runs on every
+                                         pick_generator model path incl. 'predictions', O/U at 1.15×
+                                         Pinnacle (else ≥3-Estonian-book median), 1x2/BTTS/DC 1.25×]
 → write to shadow_bets as bot_coolbet_value_v1
 ```
 

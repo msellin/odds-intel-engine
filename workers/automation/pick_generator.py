@@ -233,6 +233,7 @@ def generate(cfg: BotConfig) -> dict:
             rows = _candidates_from_pipeline(cfg, loosest, sel_clause, ahead, params)
 
         run_id = str(uuid.uuid4())
+        funnel: list[dict] = []
         for r in rows:
             src_market = (r["market"] or "").lower().strip()
             src_sel = (r["selection"] or "").lower().strip()
@@ -275,11 +276,23 @@ def generate(cfg: BotConfig) -> dict:
             price = float(decision["winner_odds"])
             edge = cal_prob - 1.0 / price     # derived; cannot disagree with price
 
-            if cfg.prob_source != "predictions":
-                ok, why = _own_outlier_ok(r["match_id"], market, selection, price)
-                if not ok:
-                    c[why] = c.get(why, 0) + 1
-                    continue
+            # [[#160]] (2026-09-26): EVERY model-anchored path, 'predictions' included. It was
+            # skipped for 'predictions' because the rule was written for #129's widened pipeline
+            # cohort — which left bot_unified_gate_1x2_paper_v1 (prices up to 61.00) with no
+            # price check at all: the "second code path inheriting no gates" pattern
+            # (RELIABILITY_LEDGER). Each refusal is logged to candidate_funnel so the guard's
+            # effect is measurable (source 'pick_generator', step = the reason).
+            ok, why = _own_outlier_ok(r["match_id"], market, selection, price)
+            if not ok:
+                c[why] = c.get(why, 0) + 1
+                funnel.append({"source": "pick_generator", "bot": cfg.bot_name,
+                               "match_id": r["match_id"], "market": market,
+                               "selection": selection, "bookmaker": won_book, "odds": price,
+                               "fair_prob": cal_prob, "fair_source": cfg.prob_source,
+                               "raw_prob": r.get("model_probability"),
+                               "threshold": _OWN_OUTLIER_MULT.get(market), "step": why,
+                               "quote_age_min": None})
+                continue
 
             # EDGE CEILING (see BotConfig.edge_ceiling) — set on sharp bots only, and those
             # no longer reach this loop: `_generate_sharp` runs them through the sharp engine,
@@ -302,6 +315,9 @@ def generate(cfg: BotConfig) -> dict:
                                     won_book, r.get("model_version"))
             c["written"] += int(n_written or 0)   # DO NOTHING on a re-sweep writes 0 rows
 
+        if funnel:
+            from workers.utils.candidate_funnel import record as _record_funnel
+            _record_funnel(funnel)   # never raises
         log.info("pick_generator[%s/%s]: scanned %d, wrote %d "
                  "(no price %d, no clear %d, unsupported %d)",
                  cfg.bot_name, cfg.prob_source, c["scanned"], c["written"],
@@ -385,7 +401,16 @@ def _generate_sharp(cfg: BotConfig, bot_id: str, c: dict) -> dict:
 # Estonian reference set (Pinnacle, else the median of >= 3 ACCESSIBLE books) and must
 # sit within the same 1.25x ceiling. `_latest_book_odds`' own sanity check fails OPEN
 # without an anchor, which is why this is not redundant.
-_OWN_OUTLIER_MULT = {"1x2": 1.25, "btts": 1.25, "double_chance": 1.25}
+_OWN_OUTLIER_MULT = {"1x2": 1.25, "btts": 1.25, "double_chance": 1.25,
+                     # [[#160]] (2026-09-26): O/U had NO entry, so the Coolbet O/U model bot's
+                     # "edges" in #152 step 3 were Coolbet pricing errors (all priced confirm
+                     # picks > 1.25x Pinnacle). O/U prices are compressed (~1.2-3.0), so the
+                     # 1x2 multiplier is far too loose there: over 21 days of latest Coolbet vs
+                     # latest Pinnacle quotes the ratio is p50 0.99, p90 1.03-1.04, p99 1.14-1.17
+                     # (8,498 / 6,792 / 5,064 pairs on 2.5 / 3.5 / 1.5), while the largest genuine
+                     # overlay ever seen against de-vigged Pinnacle is ~+6.6% (ratio ~1.07). 1.15
+                     # sits at honest disagreement's p99 and double the largest real overlay.
+                     "over_under_15": 1.15, "over_under_25": 1.15, "over_under_35": 1.15}
 
 
 def _own_outlier_ok(match_id: str, market: str, selection: str, price: float) -> tuple[bool, str]:

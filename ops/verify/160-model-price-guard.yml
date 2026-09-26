@@ -1,0 +1,24 @@
+# [[#160]] pick_generator's price guard on every model path; refusals land in candidate_funnel.
+task: "#160"
+checks:
+  - name: refusals_logged
+    mode: eventually
+    sql: |
+      SELECT count(*) FROM candidate_funnel
+       WHERE source = 'pick_generator' AND step IN ('above_own_outlier', 'no_own_anchor')
+         AND last_seen > now() - interval '24 hours'
+    expect: ">= 1"
+    expires: "2026-09-29T00:00:00Z"
+  - name: no_new_ou_model_pick_above_115x_pinnacle
+    mode: invariant
+    sql: |
+      SELECT count(*) FROM shadow_bets s JOIN bots b ON b.id = s.bot_id
+       CROSS JOIN LATERAL (SELECT o.odds FROM odds_snapshots o
+                            WHERE o.match_id = s.match_id AND o.market = s.market AND o.selection = s.selection
+                              AND o.bookmaker = 'Pinnacle' AND o.timestamp <= s.pick_time
+                            ORDER BY o.timestamp DESC LIMIT 1) p
+       WHERE b.name IN ('bot_coolbet_ou_model_v1', 'bot_coolbet_1x2_model_v1', 'bot_unified_gate_1x2_paper_v1')
+         AND s.pick_time > '2026-09-26 12:00+00'
+         AND s.odds_at_pick > p.odds * CASE WHEN s.market LIKE 'over_under%' THEN 1.15 ELSE 1.25 END + 0.001
+    expect: "== 0"
+    expires: "2026-10-26T00:00:00Z"
