@@ -3600,6 +3600,11 @@ def main():
     # wired yet — after a config change run `python3 scripts/export_bot_config.py` by hand.
     scheduler.add_job(job_export_bot_config, CronTrigger(hour=3, minute=40),
                       id="export_bot_config", name="Export bot config 03:40")
+    # [[#191]] (2026-09-26): ALSO once at every start = every deploy. A bot added in the day had no bot_config row
+    # until 03:40 and showed under "Settings unknown" on /admin/bots (bot_ah_sharp_v1, bot_own_1x2_v1). A few seconds.
+    scheduler.add_job(job_export_bot_config, trigger="date",
+                      run_date=datetime.now(timezone.utc) + timedelta(seconds=120),
+                      id="export_bot_config_on_start", name="Export bot config on start (one-off)", replace_existing=True)
     # [[#153]] model accuracy for /admin/models — after the 01:00 settlement, before the 03:30 backup
     scheduler.add_job(job_model_accuracy, CronTrigger(hour=2, minute=40),
                       id="model_accuracy", name="Model accuracy 02:40")

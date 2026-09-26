@@ -57593,6 +57593,13 @@ def test_interval_jobs_starved():
     return "every interval job <= 120 s"
 
 
+@test("BOT-CONFIG-EXPORT-ON-START — every deploy refreshes bot_config, so a new bot is never 'Settings unknown' until 03:40 (#191)")
+def test_bot_config_export_on_start():
+    sched = _engine_path("workers/scheduler.py").read_text()
+    assert 'id="export_bot_config_on_start"' in sched and "scheduler.add_job(job_export_bot_config, trigger=\"date\"" in sched
+    return "one-off export at start + daily 03:40"
+
+
 @test("MODEL-ACCURACY-JOB — every production probability source scored forward, vs base rate and Pinnacle on the same rows (#153)")
 def test_model_accuracy_job():
     """[[#153]]: /admin/models reads model_accuracy (migration 466), written daily 02:40 by
